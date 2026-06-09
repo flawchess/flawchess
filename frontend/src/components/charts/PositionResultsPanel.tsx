@@ -6,6 +6,7 @@ import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
 import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
 import { EvalCpuPlaceholder } from '@/components/stats/EvalCpuPlaceholder';
+import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { useReadiness } from '@/hooks/useReadiness';
 import { formatSignedEvalPawns } from '@/lib/clockFormat';
 import {
@@ -111,18 +112,15 @@ export function PositionResultsPanel({
     : `Avg eval at MG entry: ${hasMgEval ? (stats.avg_eval_pawns as number).toFixed(2) : '—'} pawns`;
 
   return (
-    <div
-      className={`charcoal-texture rounded-md overflow-hidden ${className}`}
+    <Card
+      className={className}
       style={isUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined}
       data-testid="wdl-moves-position"
     >
-      <h4
-        className="flex items-center gap-2 px-4 py-2 bg-black/20 border-b border-border/40 text-sm font-semibold"
-        data-testid="wdl-moves-position-header"
-      >
+      <CardHeader as="h4" size="compact" data-testid="wdl-moves-position-header">
         {label}
-      </h4>
-      <div className="p-4">
+      </CardHeader>
+      <CardBody>
 
       {/* Three same-width chart rows (indicator-left / chart-right). */}
       <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
@@ -251,7 +249,7 @@ export function PositionResultsPanel({
           <EvalCpuPlaceholder />
         )}
       </div>
-      </div>
-    </div>
+      </CardBody>
+    </Card>
   );
 }

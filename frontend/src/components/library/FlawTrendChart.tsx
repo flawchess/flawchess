@@ -1,6 +1,7 @@
 import { useId } from 'react';
 import { Area, AreaChart, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
+import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import { SEV_BLUNDER } from '@/lib/theme';
 import type { FlawTrendPoint } from '@/types/library';
 
@@ -79,7 +80,7 @@ export function FlawTrendChart({ trend, windowSize }: FlawTrendChartProps) {
                 const point = payload[0]?.payload as FlawTrendPoint | undefined;
                 if (!point) return null;
                 return (
-                  <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-sm shadow-xl space-y-1">
+                  <ChartTooltipBox className="text-sm">
                     <div className="font-bold text-muted-foreground">{label as string}</div>
                     <div style={{ color: SEV_BLUNDER }}>
                       {point.rate.toFixed(2)} blunders / game
@@ -87,7 +88,7 @@ export function FlawTrendChart({ trend, windowSize }: FlawTrendChartProps) {
                     <div className="text-muted-foreground text-sm">
                       {point.game_count} games in window
                     </div>
-                  </div>
+                  </ChartTooltipBox>
                 );
               }}
             />

@@ -32,6 +32,7 @@ import { SCORE_BULLET_CENTER, clampScoreCi } from '@/lib/scoreBulletConfig';
 import { isConfident } from '@/lib/significance';
 import { MIN_GAMES_FOR_RELIABLE_STATS, ZONE_NEUTRAL } from '@/lib/theme';
 import type { EndgamePerformanceResponse } from '@/types/endgames';
+import { CardHeader } from '@/components/ui/card';
 
 import { ENDGAME_TILE_SCORE_DOMAIN, deriveLevel } from './EndgameOverallShared';
 
@@ -73,9 +74,7 @@ export function EntryCard({ data }: EntryCardProps) {
   return (
     <div data-testid="tile-at-endgame-entry">
       {/* Full-bleed card header bar (matches the Time Pressure cards). */}
-      <h3 className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40 text-base font-semibold">
-        Eval at Endgame Entry
-      </h3>
+      <CardHeader>Eval at Endgame Entry</CardHeader>
       <div className="flex flex-col gap-4 p-4">
         {/* Row 1: entry-eval bullet (pawns) */}
         {showEntryEvalChart ? (

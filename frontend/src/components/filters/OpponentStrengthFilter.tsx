@@ -44,7 +44,7 @@ export function OpponentStrengthFilter({ value, onChange }: OpponentStrengthFilt
   return (
     <div>
       <div className="mb-1 flex items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           <span className="inline-flex items-center gap-1">
             Opponent Strength
             <InfoPopover
@@ -78,7 +78,7 @@ export function OpponentStrengthFilter({ value, onChange }: OpponentStrengthFilt
         </p>
         <span
           className={cn(
-            'text-xs tabular-nums',
+            'text-sm tabular-nums',
             activePreset && activePreset !== 'any'
               ? 'font-medium text-toggle-active'
               : 'text-muted-foreground',
@@ -101,7 +101,7 @@ export function OpponentStrengthFilter({ value, onChange }: OpponentStrengthFilt
               data-testid={`filter-opponent-strength-preset-${preset}`}
               aria-pressed={isActive}
               className={cn(
-                'rounded border h-11 sm:h-7 text-xs transition-colors',
+                'rounded border h-11 sm:h-7 text-sm transition-colors',
                 isActive
                   ? 'border-toggle-active bg-toggle-active text-toggle-active-foreground'
                   : 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',
@@ -125,7 +125,7 @@ export function OpponentStrengthFilter({ value, onChange }: OpponentStrengthFilt
           thumbLabels={['Minimum opponent Elo gap', 'Maximum opponent Elo gap']}
           data-testid="filter-opponent-strength-slider"
         />
-        <div className="mt-1 flex justify-between text-xs tabular-nums text-muted-foreground">
+        <div className="mt-1 flex justify-between text-sm tabular-nums text-muted-foreground">
           <span>≤−{Math.abs(SLIDER_MIN)}</span>
           <span>0</span>
           <span>≥+{SLIDER_MAX}</span>

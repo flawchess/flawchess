@@ -24,7 +24,7 @@ export function PublicHeader() {
             <Button variant="ghost" size="sm" asChild data-testid="nav-login">
               <Link to="/login">Log in</Link>
             </Button>
-            <Button size="sm" asChild className="btn-brand" data-testid="nav-signup">
+            <Button size="sm" asChild data-testid="nav-signup">
               <Link to="/login?tab=register">Sign up free</Link>
             </Button>
           </div>

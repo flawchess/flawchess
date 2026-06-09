@@ -10,6 +10,7 @@ import {
   WDL_BORDER_LOSS,
   WDL_BORDER_WIN,
 } from '@/lib/theme';
+import { Card, CardHeader } from '@/components/ui/card';
 import { Tooltip } from '@/components/ui/tooltip';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
@@ -270,29 +271,25 @@ export function LibraryGameCard({ game }: LibraryGameCardProps) {
     </span>
   );
 
-  // HEADER — full-width, bottom-bordered.
-  // Desktop: single-line "■ White (rating) vs □ Black (rating)" in text-sm font-bold.
-  // Mobile: two stacked lines in text-sm (weight 400), no "vs".
-
-  const desktopHeader = (
-    <div className="hidden sm:flex items-center gap-2 pb-2 mb-2 border-b border-border">
-      <span className="text-sm font-bold truncate">
-        <span className="text-foreground">■ {whiteName} {whiteRating}</span>
-        <span className="mx-1.5 text-muted-foreground">vs</span>
-        <span className="text-foreground">□ {blackName} {blackRating}</span>
+  // HEADER — banded title bar via the shared CardHeader (compact size). rounded-t-md
+  // because the card is overflowVisible (the eval tooltip must escape the border), so
+  // the band's top corners aren't clipped by the shell and have to round themselves.
+  // Desktop: single line "■ White (rating) vs □ Black (rating)"; mobile: two stacked
+  // lines, no "vs". The CardHeader is always flex, so the responsive switch lives on
+  // the two inner blocks rather than on the header element.
+  const header = (
+    <CardHeader as="h4" size="compact" className="rounded-t-md">
+      <span className="hidden sm:block truncate text-foreground min-w-0">
+        ■ {whiteName} {whiteRating}
+        <span className="mx-1.5 text-muted-foreground font-normal">vs</span>□ {blackName}{' '}
+        {blackRating}
       </span>
-      {platformIconAndLink}
-    </div>
-  );
-
-  const mobileHeader = (
-    <div className="flex sm:hidden items-center gap-2 pb-2 mb-2 border-b border-border">
-      <div className="flex-1 min-w-0 flex flex-col text-sm">
-        <span className="text-foreground truncate">■ {whiteName} {whiteRating}</span>
-        <span className="text-foreground truncate">□ {blackName} {blackRating}</span>
+      <div className="flex sm:hidden min-w-0 flex-1 flex-col text-foreground">
+        <span className="truncate">■ {whiteName} {whiteRating}</span>
+        <span className="truncate">□ {blackName} {blackRating}</span>
       </div>
       {platformIconAndLink}
-    </div>
+    </CardHeader>
   );
 
   // Opening line
@@ -410,26 +407,24 @@ export function LibraryGameCard({ game }: LibraryGameCardProps) {
     );
 
   return (
-    // overflow-visible (overriding .charcoal-texture's overflow:hidden) lets the
+    // overflowVisible (overriding .charcoal-texture's overflow:hidden) lets the
     // EvalChart tooltip overlap the card border instead of being clipped at it.
     // z-30 while hovering: `.charcoal-texture > *` puts every column in a
     // z-index:1 stacking context, so a later card's column would otherwise paint
     // over this card's escaping tooltip. Lifting the whole hovered card above its
     // siblings keeps the tooltip on top of the following card and its divider.
-    <article
+    <Card
+      as="article"
       data-testid={`library-game-card-${game.game_id}`}
-      className={cn(
-        'charcoal-texture border border-border/20 border-l-4 rounded px-4 py-3 overflow-visible',
-        hoverPly != null && 'z-30',
-      )}
-      style={{ borderLeftColor: BORDER_COLORS[game.user_result] }}
+      accentColor={BORDER_COLORS[game.user_result]}
+      overflowVisible
+      className={cn('border border-border/20', hoverPly != null && 'z-30')}
     >
-      {/* Full-width header (desktop single-line, mobile two-line) */}
-      {desktopHeader}
-      {mobileHeader}
+      {/* Banded header (desktop single-line, mobile two-line) */}
+      {header}
 
       {/* Mobile body: board+info row, eval chart block, flaw block */}
-      <div className="flex flex-col gap-2 sm:hidden">
+      <div className="flex flex-col gap-2 sm:hidden px-4 py-4">
         <div className="flex gap-3 items-start">
           {boardFen && (
             <LazyMiniBoard
@@ -474,7 +469,7 @@ export function LibraryGameCard({ game }: LibraryGameCardProps) {
       {/* Tablet/desktop body: 2 columns (sm–lg) → 3 columns (lg+). On tablet the
           flaw column (col-span-2) drops to a full-width second row beneath
           board+info / eval chart; on desktop all three share one row. */}
-      <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:gap-3 sm:items-start">
+      <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:gap-3 sm:items-start px-4 py-4">
         {/* Col 1: mini board + opening + metadata */}
         <div className="flex gap-3 items-start">
           {boardFen && (
@@ -521,6 +516,6 @@ export function LibraryGameCard({ game }: LibraryGameCardProps) {
           {flawContent}
         </div>
       </div>
-    </article>
+    </Card>
   );
 }

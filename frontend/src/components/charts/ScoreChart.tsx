@@ -1,6 +1,8 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { BookMarked } from 'lucide-react';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { CardHeader } from '@/components/ui/card';
+import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { createDateTickFormatter, formatDateWithYear, niceWinRateAxis } from '@/lib/utils';
@@ -76,16 +78,13 @@ export function ScoreChart({ bookmarks, series }: ScoreChartProps) {
   if (allDates.length === 0) {
     return (
       <>
-        <h3
-          className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40 text-base font-semibold"
-          data-testid="score-chart-header"
-        >
+        <CardHeader data-testid="score-chart-header">
           <BookMarked className="h-5 w-5" />
           Bookmarked Openings: Score over Time
           <InfoPopover ariaLabel="Score chart info" testId="score-chart-info" side="top">
             Shows your chess score (W + 0.5·D) / N for each saved or most played position over time. Each point is the score over your last 50 games through that position. Only data points with at least 10 games are shown to avoid noisy early values.
           </InfoPopover>
-        </h3>
+        </CardHeader>
         <div className="p-4 text-center text-muted-foreground py-8">
           No game history available for saved positions yet.
         </div>
@@ -117,16 +116,13 @@ export function ScoreChart({ bookmarks, series }: ScoreChartProps) {
 
   return (
     <>
-      <h3
-        className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40 text-base font-semibold"
-        data-testid="score-chart-header"
-      >
+      <CardHeader data-testid="score-chart-header">
         <BookMarked className="h-5 w-5" />
         Bookmarked Openings: Score over Time
         <InfoPopover ariaLabel="Score chart info" testId="score-chart-info" side="top">
           Shows your chess score (W + 0.5·D) / N for each saved or most played position over time. Each point is the score over your last 50 games through that position. Only data points with at least 10 games are shown to avoid noisy early values.
         </InfoPopover>
-      </h3>
+      </CardHeader>
       <div className="p-4">
       <div className={isMobile ? '' : 'flex items-stretch'}>
         {!isMobile && (
@@ -151,7 +147,7 @@ export function ScoreChart({ bookmarks, series }: ScoreChartProps) {
               content={({ active, payload, label }) => {
                 if (!active || !payload?.length) return null;
                 return (
-                  <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
+                  <ChartTooltipBox>
                     <div className="font-medium">{formatDateWithYear(label as string)}</div>
                     {payload
                       .filter((item) => item.value !== undefined)
@@ -178,7 +174,7 @@ export function ScoreChart({ bookmarks, series }: ScoreChartProps) {
                           </div>
                         );
                       })}
-                  </div>
+                  </ChartTooltipBox>
                 );
               }}
             />

@@ -40,6 +40,7 @@ import { EntryCard } from './EndgameOverallEntryCard';
 import { ScoreGapRow } from './EndgameOverallScoreGapRow';
 import { deriveLevel } from './EndgameOverallShared';
 import { PercentileChip } from './PercentileChip';
+import { CardHeader } from '@/components/ui/card';
 
 // 260514: Achievable (±5pp) and Endgame (±10pp) Score Gaps now use distinct
 // bands — see reports/benchmarks-latest.md §3.1.5. Helper is parameterized
@@ -157,9 +158,7 @@ export function EndgameOverallPerformanceSection({
           <EntryCard data={data} />
           <div data-testid="endgame-score-differences">
             {/* Full-bleed card header bar (matches the Time Pressure cards). */}
-            <h3 className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40 text-base font-semibold">
-              Endgame Score Differences
-            </h3>
+            <CardHeader>Endgame Score Differences</CardHeader>
             <div className="flex flex-col gap-4 p-4">
               <ScoreGapRow
                 label={

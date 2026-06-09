@@ -35,6 +35,8 @@ import {
 } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { CardHeader } from '@/components/ui/card';
+import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import { NEUTRAL_PCT_THRESHOLD } from '@/generated/endgameZones';
 import {
   ENDGAME_VOLUME_BAR_COLOR,
@@ -141,12 +143,7 @@ export function EndgameClockDiffOverTimeChart({
       role="img"
       aria-label="Average clock gap over time"
     >
-      {/* Card header band: recessed background + bottom separator, full-bleed to
-          the card edges (matches EndgameMetricsByTcCard / EndgameTimePressureCard). */}
-      <h3
-        className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40 text-base font-semibold"
-        data-testid="clock-diff-over-time-header"
-      >
+      <CardHeader data-testid="clock-diff-over-time-header">
         Clock Gap at Endgame Entry
         <InfoPopover
           ariaLabel="Clock gap at endgame entry info"
@@ -166,7 +163,7 @@ export function EndgameClockDiffOverTimeChart({
             show how many games you played.
           </p>
         </InfoPopover>
-      </h3>
+      </CardHeader>
       <div className="p-4">
       <p className="text-sm text-muted-foreground mb-3">
         Are you banking time into the endgame or burning it down?
@@ -257,7 +254,7 @@ export function EndgameClockDiffOverTimeChart({
                 const diff = point.avg_clock_diff_pct;
                 const sign = diff > 0 ? '+' : '';
                 return (
-                  <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
+                  <ChartTooltipBox>
                     <div className="font-medium">
                       Week of {formatDateWithYear(label as string)}
                     </div>
@@ -277,7 +274,7 @@ export function EndgameClockDiffOverTimeChart({
                     <div className="text-muted-foreground">
                       Games this week: {point.per_week_game_count}
                     </div>
-                  </div>
+                  </ChartTooltipBox>
                 );
               }}
             />

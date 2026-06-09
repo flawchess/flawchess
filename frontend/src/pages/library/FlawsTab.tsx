@@ -3,6 +3,8 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { ExternalLink, SlidersHorizontal, Tags, X } from 'lucide-react';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
 import { Button } from '@/components/ui/button';
+import { LoadError } from '@/components/ui/load-error';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Tooltip } from '@/components/ui/tooltip';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
@@ -338,7 +340,7 @@ export function FlawsTab() {
 
   // Tags (flaw-filter) panel — staged: edits update pendingFlawFilter only; Apply commits.
   const tagsFilterPanelContent = (
-    <div className="p-4">
+    <div className="p-4 space-y-3">
       <FlawFilterControl
         severity={pendingFlawFilter.severity}
         tags={pendingFlawFilter.tags}
@@ -378,23 +380,19 @@ export function FlawsTab() {
   const mainContent = (
     <div className="flex flex-col gap-6">
       {/* Error state — MANDATORY isError branch (CLAUDE.md) */}
-      {flawsError && (
-        <p className="text-sm text-muted-foreground">
-          Failed to load flaws. Something went wrong. Please try again in a moment.
-        </p>
-      )}
+      {flawsError && <LoadError resource="flaws" />}
 
       {/* No games imported empty state */}
       {noGamesImported && (
-        <div className="flex flex-col items-center gap-3 py-8 text-center">
-          <p className="text-base font-bold">No games imported yet</p>
-          <p className="text-sm text-muted-foreground">
-            Import your games from chess.com or lichess to start analyzing.
-          </p>
-          <Button asChild variant="default" size="sm">
-            <Link to="/library/import">Import Games</Link>
-          </Button>
-        </div>
+        <EmptyState
+          title="No games imported yet"
+          subtitle="Import your games from chess.com or lichess to start analyzing."
+          action={
+            <Button asChild variant="default" size="sm">
+              <Link to="/library/import">Import Games</Link>
+            </Button>
+          }
+        />
       )}
 
       {/* Flaw list — only when not errored */}
@@ -407,12 +405,10 @@ export function FlawsTab() {
           )}
 
           {noMatchedFlaws && (
-            <div className="flex flex-col items-center gap-2 py-8 text-center">
-              <p className="text-base font-bold">No flaws matched</p>
-              <p className="text-sm text-muted-foreground">
-                Try adjusting the flaw filter or game filters.
-              </p>
-            </div>
+            <EmptyState
+              title="No flaws matched"
+              subtitle="Try adjusting the flaw filter or game filters."
+            />
           )}
 
           {matchedCount > 0 && (

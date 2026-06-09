@@ -1,6 +1,7 @@
 import { Clock, Zap, Brain, Target, Clover, TrendingDown, Swords } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { InfoPopover } from '@/components/ui/info-popover';
 import {
   FAM_TEMPO,
   FAM_TEMPO_BG,
@@ -96,8 +97,9 @@ function TagFilterButton({ tag, selected, color, bg, onToggle }: TagFilterButton
       aria-pressed={selected}
       aria-label={`Filter flaws by tag: ${tag}`}
       className={cn(
-        'inline-flex items-center gap-1 h-11 sm:h-7 rounded-full px-3 py-0.5 text-sm font-bold border transition-colors',
-        !selected && 'border-border bg-inactive-bg text-muted-foreground',
+        'inline-flex items-center gap-1 h-11 sm:h-7 rounded-full px-3 py-0.5 text-sm border transition-colors',
+        !selected
+          && 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',
       )}
       style={selected ? { color, borderColor: color, backgroundColor: bg } : undefined}
       onClick={() => onToggle(tag)}
@@ -158,10 +160,10 @@ export function FlawFilterControl({
             data-testid="filter-flaw-severity-blunder"
             aria-pressed={severity.includes('blunder')}
             className={cn(
-              'h-11 sm:h-7 rounded-md px-3 text-sm font-bold border transition-colors',
+              'h-11 sm:h-7 rounded px-3 text-sm border transition-colors',
               severity.includes('blunder')
-                ? 'border-toggle-active bg-toggle-active text-toggle-active-foreground'
-                : 'border-border bg-inactive-bg text-muted-foreground',
+                ? 'border-toggle-active bg-toggle-active text-toggle-active-foreground pointer-fine:hover:bg-toggle-active-hover'
+                : 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',
             )}
             onClick={() => handleSeverityToggle('blunder')}
           >
@@ -172,10 +174,10 @@ export function FlawFilterControl({
             data-testid="filter-flaw-severity-mistake"
             aria-pressed={severity.includes('mistake')}
             className={cn(
-              'h-11 sm:h-7 rounded-md px-3 text-sm font-bold border transition-colors',
+              'h-11 sm:h-7 rounded px-3 text-sm border transition-colors',
               severity.includes('mistake')
-                ? 'border-toggle-active bg-toggle-active text-toggle-active-foreground'
-                : 'border-border bg-inactive-bg text-muted-foreground',
+                ? 'border-toggle-active bg-toggle-active text-toggle-active-foreground pointer-fine:hover:bg-toggle-active-hover'
+                : 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',
             )}
             onClick={() => handleSeverityToggle('mistake')}
           >
@@ -189,7 +191,7 @@ export function FlawFilterControl({
       {/* ── Tag family groups (Timing / Opportunity / Impact) ──────────── */}
       {FAMILY_SECTIONS.map((section) => (
         <div key={section.testid} className="flex flex-col gap-2">
-          <p className="text-sm text-muted-foreground font-bold uppercase tracking-wide">
+          <p className="text-sm text-muted-foreground">
             {section.label}
           </p>
           <div
@@ -211,6 +213,30 @@ export function FlawFilterControl({
           </div>
         </div>
       ))}
+
+      {/* ── Filter Logic explainer ─────────────────────────────────────── */}
+      <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+        <span>Filter Logic</span>
+        <InfoPopover
+          ariaLabel="How tag filters combine"
+          testId="filter-flaw-logic-info"
+          side="top"
+        >
+          <p>
+            Tags in the same group are combined with <strong>OR</strong>; different
+            groups are combined with <strong>AND</strong>.
+          </p>
+          <p className="mt-1.5">
+            Example: picking <em>Hasty</em> and <em>Unrushed</em> (Timing) plus{' '}
+            <em>Miss</em> (Opportunity) keeps flaws that are{' '}
+            <em>(hasty or unrushed)</em> and a <em>miss</em>.
+          </p>
+          <p className="mt-1.5">
+            Applied to games, only games with at least one matching blunder or
+            mistake are included.
+          </p>
+        </InfoPopover>
+      </div>
     </div>
   );
 }

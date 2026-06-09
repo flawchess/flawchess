@@ -125,3 +125,48 @@ Current leanings (not validated):
 
 **Resolved:** _(open)_
 
+---
+
+## Q-007: Flaw-stats opponent comparison — per-user game-count distribution & benchmark delta-IQR feasibility
+
+**Asked:** 2026-06-09 (during `/gsd-explore` on the flaw-stats opponent-comparison rework — see [SEED-040](../seeds/SEED-040-flaw-stats-opponent-comparison.md))
+
+**Context:** SEED-040 plots, per flaw tag, a paired per-game *delta* (you − opponents) with a confidence interval, against a benchmark "typical" zone = the IQR of that delta across ELO-matched peers. Two unknowns gate the design before the milestone is scoped:
+
+1. **Section-gate floor + CI usefulness.** The comparison is computed over the user's own analyzed games (≥90% eval coverage). We need the *distribution of per-user analyzed-game counts* to (a) set the section-level "analyze more games to unlock comparison" floor N, and (b) judge whether the median user's paired-delta CIs are tight enough to be useful — especially for the curated combos (`hasty+miss`, `low-clock+miss`), whose intersection counts may be a dozen events even for active users.
+2. **Benchmark delta-IQR computability + TC-collapse.** Confirm the delta-IQR zone is computable on current benchmark-DB eval coverage for the eval-only families (tempo/phase/opportunity/impact), given the 11–62% per-cell coverage in `reports/benchmark/benchmark-eval-coverage-2026-05-25.md`. For each flaw-delta metric, run the established `/benchmarks` Cohen's-d collapse verdict to decide whether the zone needs cell-specific bounds or collapses across TC (and/or ELO).
+
+**How to answer:**
+1. Against `flawchess-prod-db` (read-only): distribution (median, p25, p90) of *analyzed* games per user (apply the ≥90% eval-coverage gate), broken out by total-game-count tier. Cross with typical per-game event rates for the rarest v1 bullets (the two combos) to estimate CI half-widths at the median user.
+2. Against `flawchess-benchmark-db` (after opponent-flaw materialization is run there): per (ELO bucket × TC) cell, count cohort users with enough analyzed games to contribute a stable per-user delta; confirm each cell clears the established K-user floor for a quartile estimate.
+3. Run the `/benchmarks` collapse verdict per flaw-delta metric.
+
+**Why deferred:** Sizes the section gate and confirms the benchmark zone is viable before committing the milestone. Not needed until the SEED-040 milestone is scoped; the benchmark half specifically requires phase 1 (opponent-flaw materialization) to have run against the benchmark DB.
+
+**Partial answer (2026-06-09) — prod analyzed-game distribution (half 1a only):**
+
+Ran against `flawchess-prod-db`. "Analyzed" = full eval present, proxied by `white_blunders IS NOT NULL OR black_blunders IS NOT NULL` (the summary-column proxy the eval-coverage report validated to ~0.13% of the ≥90%-coverage definition). `game_flaws` is **absent in prod** (v1.24 unshipped) so combo event rates were NOT measured.
+
+103 of 126 users have games. Per-user analyzed-game counts are **strongly bimodal**, not uniformly low:
+
+| Metric | Value |
+|---|---|
+| Median analyzed games/user | **6** |
+| p75 | 511 |
+| p90 | 1,062 |
+| max | 5,133 |
+| Avg % of a user's games analyzed | 12.2% |
+| Users ≥20 analyzed | 51 |
+| ≥50 | 48 |
+| ≥100 | 41 |
+| ≥200 | 37 |
+
+**Implications for SEED-040:**
+- Two populations: a bottom half with almost nothing (median = 6, mostly chess.com / analysis-off lichess) and a top ~37–51 users with hundreds-to-thousands; almost no middle (median 6 → p75 511).
+- The **section gate is load-bearing**: at a ~20-analyzed-game floor, ~half of active users (51/103) ever see the comparison. Frame the feature as "for engaged-analysis users"; the empty state must sell "enable analysis / import more."
+- **Combos remain the open risk.** Even an above-gate user with ~50 analyzed games has few `hasty+miss` events (rare intersection), so those two bullets likely straddle zero for all but the ~37 heaviest users. Quantifying needs per-game combo event rates from `game_flaws`.
+
+**Still open (need opponent-flaw materialization first):** (1b) combo CI widths at scale, and (2) benchmark delta-IQR computability + TC-collapse per cell. Both deferred until milestone phase 1 (materialization) has run against the benchmark DB. The dev DB has `game_flaws` for users 28 & 44 only — a 2-user estimate is available but too thin to set thresholds.
+
+**Resolved:** _(partial — half 1a answered above; halves 1b + 2 deferred to post-materialization)_
+

@@ -17,6 +17,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Area, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
+import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import {
   EVAL_CHART_AREA_BLACK_AHEAD,
   EVAL_CHART_AREA_WHITE_AHEAD,
@@ -394,10 +395,7 @@ function buildTooltipContent(
     const marker = markerMap.get(point.ply); // M/B only — undefined on clean plies
 
     return (
-      // text-xs: intentional — established project recharts chart-tooltip pattern.
-      // Same as EndgameScoreOverTimeChart, EndgameClockDiffOverTimeChart, FlawTrendChart.
-      // CLAUDE.md explicitly exempts hover/tap chart tooltips (popover-surface exception).
-      <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
+      <ChartTooltipBox>
         <div className="text-muted-foreground">
           {moveLabel} &middot; {evalStr}
         </div>
@@ -409,7 +407,7 @@ function buildTooltipContent(
           </div>
         )}
         {marker && <FlawTooltipDetail marker={marker} />}
-      </div>
+      </ChartTooltipBox>
     );
   };
 }

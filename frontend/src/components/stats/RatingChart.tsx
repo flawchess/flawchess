@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
+import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
 import { inactivityGapReferenceLines } from '@/components/charts/InactivityGapReferenceLines';
@@ -189,7 +190,7 @@ export function RatingChart({ data, platform, enabledTimeControls }: RatingChart
           content={({ active, payload, label }) => {
             if (!active || !payload?.length) return null;
             return (
-              <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
+              <ChartTooltipBox>
                 <div className="font-medium">{formatDateWithYear(label as string)}</div>
                 {payload
                   .filter((item) => item.value !== undefined)
@@ -208,7 +209,7 @@ export function RatingChart({ data, platform, enabledTimeControls }: RatingChart
                       </div>
                     );
                   })}
-              </div>
+              </ChartTooltipBox>
             );
           }}
         />

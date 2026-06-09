@@ -3,6 +3,7 @@ import type { OpeningWDL } from '@/types/stats';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
+import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { Tooltip } from '@/components/ui/tooltip';
 import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
 import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
@@ -107,13 +108,10 @@ export function OpeningStatsCard({
   const dimEvalRow = hasMgEval && !isConfident(opening.eval_confidence);
 
   // Full-height left spine on the card root (see OpeningFindingCard). Reliable
-  // cards get the score-zone accent down the whole left edge; unreliable cards
-  // (n < MIN_GAMES) get no spine — the uniform 1px border stays, avoiding a 4px
-  // transparent gap and any color signal on sparse data. The whole-card opacity
-  // dim was removed in 260603-pgv (per-row dimming replaces it).
-  const rootStyle: React.CSSProperties = {
-    ...(isReliableScore ? { borderLeftColor } : {}),
-  };
+  // cards get the score-zone accent down the whole left edge (Card accentColor);
+  // unreliable cards (n < MIN_GAMES) get no spine — the uniform 1px border stays,
+  // avoiding a 4px transparent gap and any color signal on sparse data. The
+  // whole-card opacity dim was removed in 260603-pgv (per-row dimming replaces it).
 
   // Phase 80 MG eval text — signed pawns to one decimal (e.g. "+2.1"), zone color
   // anchored at 0 cp. Mirrors MostPlayedOpeningsTable lines 78-87.
@@ -284,29 +282,21 @@ export function OpeningStatsCard({
   );
 
   return (
-    <div
+    <Card
       data-testid={cardTestId}
-      className={`relative charcoal-texture border border-border/20 rounded-md overflow-hidden${
-        isReliableScore ? ' border-l-4' : ''
-      }`}
-      style={rootStyle}
+      accentColor={isReliableScore ? borderLeftColor : undefined}
+      className="relative border border-border/20"
     >
-      <h4
-        className="flex items-center gap-2 px-4 py-2 bg-black/20 border-b border-border/40 text-sm font-semibold"
-        data-testid={`${cardTestId}-header`}
-      >
+      <CardHeader as="h4" size="compact" data-testid={`${cardTestId}-header`}>
         <span className="truncate text-foreground min-w-0">
           {opening.display_name}
           {opening.opening_eco && (
             <span className="ml-1 text-muted-foreground font-normal">({opening.opening_eco})</span>
           )}
         </span>
-      </h4>
+      </CardHeader>
 
-      <div
-        data-testid={`${cardTestId}-content`}
-        className="px-4 py-4"
-      >
+      <CardBody data-testid={`${cardTestId}-content`}>
         {/* Mobile: board left, content right */}
         <div className="flex flex-col gap-2 sm:hidden">
           <div className="flex gap-3 items-start">
@@ -336,7 +326,7 @@ export function OpeningStatsCard({
             {linksRow}
           </div>
         </div>
-      </div>
-    </div>
+      </CardBody>
+    </Card>
   );
 }

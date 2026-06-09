@@ -1,4 +1,5 @@
 import { InfoPopover } from '@/components/ui/info-popover';
+import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import type { WDLByCategory } from '@/types/stats';
 import type { TimeControl } from '@/types/api';
@@ -19,17 +20,14 @@ interface WDLCategoryChartProps {
 
 function WDLCategoryChart({ data, title, testId, infoTooltip }: WDLCategoryChartProps) {
   return (
-    <div className="charcoal-texture rounded-md overflow-hidden">
-      <h3
-        className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40 text-base font-semibold"
-        data-testid={`${testId}-header`}
-      >
+    <Card>
+      <CardHeader data-testid={`${testId}-header`}>
         {title}
         <InfoPopover ariaLabel={`${title} info`} testId={`${testId}-info`} side="top">
           {infoTooltip}
         </InfoPopover>
-      </h3>
-      <div className="p-4">
+      </CardHeader>
+      <CardBody>
         {data.length === 0 ? (
           <div data-testid={testId} className="text-center text-muted-foreground py-8">
             No data available.
@@ -47,8 +45,8 @@ function WDLCategoryChart({ data, title, testId, infoTooltip }: WDLCategoryChart
             ))}
           </div>
         )}
-      </div>
-    </div>
+      </CardBody>
+    </Card>
   );
 }
 

@@ -24,6 +24,7 @@ import {
   YAxis,
 } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
+import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 import {
   clampDeltaCi,
@@ -249,10 +250,7 @@ export function ScoreGapTooltipContent({ point }: { point: ChartPoint }) {
       : '95% normal-approx CI';
 
   return (
-    <div
-      className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1"
-      data-testid="score-gap-tooltip"
-    >
+    <ChartTooltipBox data-testid="score-gap-tooltip">
       <div className="font-medium">Time Bucket: {point.rangeLabel}</div>
       <div className="flex items-center gap-1.5">
         <div
@@ -275,7 +273,7 @@ export function ScoreGapTooltipContent({ point }: { point: ChartPoint }) {
       <div>{conclusionText(point.delta, point.p_value, point.n)}</div>
       <div className="text-muted-foreground italic">{testLine}</div>
       <div className="text-muted-foreground italic">{ciLine}</div>
-    </div>
+    </ChartTooltipBox>
   );
 }
 

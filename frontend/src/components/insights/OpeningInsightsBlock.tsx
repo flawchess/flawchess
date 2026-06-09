@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { LoadError } from '@/components/ui/load-error';
 import { OpeningFindingCard } from './OpeningFindingCard';
 import { useOpeningInsights } from '@/hooks/useOpeningInsights';
 import type { OpeningInsightFinding, OpeningInsightsResponse } from '@/types/insights';
@@ -120,9 +121,7 @@ function SkeletonBlock() {
 function ErrorState({ onRetry }: { onRetry: () => void }) {
   return (
     <div data-testid="opening-insights-error" role="alert">
-      <p className="text-sm text-muted-foreground">
-        Failed to load opening insights. Something went wrong. Please try again in a moment.
-      </p>
+      <LoadError resource="opening insights" />
       <Button
         variant="brand-outline"
         onClick={onRetry}

@@ -2,6 +2,7 @@ import { ArrowRightLeft, Cpu, Swords } from 'lucide-react';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
+import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { Tooltip } from '@/components/ui/tooltip';
 import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
 import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
@@ -70,10 +71,6 @@ export function OpeningFindingCard({
   // the header band, leaving the rounded top-left corner un-accented.
   // Per-row dimming (260603-pgv): the whole-card opacity dim was removed; each
   // stat row now dims independently (see dimScoreRow / dimEvalRow below).
-  const rootStyle: React.CSSProperties = {
-    borderLeftColor,
-  };
-
   const cardTestId = `opening-finding-card-${idx}`;
 
   // WDL bar — same pattern as OpeningStatsCard.tsx.
@@ -286,15 +283,12 @@ export function OpeningFindingCard({
   );
 
   return (
-    <div
+    <Card
       data-testid={cardTestId}
-      className="relative charcoal-texture border border-border/20 border-l-4 rounded-md overflow-hidden"
-      style={rootStyle}
+      accentColor={borderLeftColor}
+      className="relative border border-border/20"
     >
-      <h4
-        className="flex items-center gap-2 px-4 py-2 bg-black/20 border-b border-border/40 text-sm font-semibold"
-        data-testid={`${cardTestId}-header`}
-      >
+      <CardHeader as="h4" size="compact" data-testid={`${cardTestId}-header`}>
         <span className="truncate text-foreground min-w-0">
           {isUnnamed ? (
             <span className="italic text-muted-foreground font-normal">{finding.display_name}</span>
@@ -305,12 +299,9 @@ export function OpeningFindingCard({
             <span className="ml-1 text-muted-foreground font-normal">({finding.opening_eco})</span>
           )}
         </span>
-      </h4>
+      </CardHeader>
 
-      <div
-        data-testid={`${cardTestId}-content`}
-        className="px-4 py-4"
-      >
+      <CardBody data-testid={`${cardTestId}-content`}>
         {/* Mobile: board + caption left, content right */}
         <div className="flex flex-col gap-2 sm:hidden">
           <div className="flex gap-3 items-start">
@@ -349,7 +340,7 @@ export function OpeningFindingCard({
             {linksRow}
           </div>
         </div>
-      </div>
-    </div>
+      </CardBody>
+    </Card>
   );
 }

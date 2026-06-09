@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { SlidersHorizontal, Tags, X } from 'lucide-react';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
 import { Button } from '@/components/ui/button';
+import { LoadError } from '@/components/ui/load-error';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
 import {
   DEFAULT_FILTERS,
@@ -204,7 +206,7 @@ export function GamesTab() {
 
   // Tags (flaw-filter) panel — staged: edits update pendingFlawFilter only; Apply commits.
   const tagsFilterPanelContent = (
-    <div className="p-4">
+    <div className="p-4 space-y-3">
       <FlawFilterControl
         severity={pendingFlawFilter.severity}
         tags={pendingFlawFilter.tags}
@@ -243,29 +245,22 @@ export function GamesTab() {
 
   const mainContent = (
     <div className="flex flex-col gap-8">
-      {gamesError && (
-        <p className="text-sm text-muted-foreground">
-          Failed to load games. Something went wrong. Please try again in a moment.
-        </p>
-      )}
+      {gamesError && <LoadError resource="games" />}
 
       {noGamesImported && (
-        <div className="flex flex-col items-center gap-3 py-8 text-center">
-          <p className="text-base font-bold">No games imported yet</p>
-          <p className="text-sm text-muted-foreground">
-            Import your games from chess.com or lichess to start analyzing.
-          </p>
-          <Button asChild variant="default" size="sm">
-            <Link to="/library/import">Import Games</Link>
-          </Button>
-        </div>
+        <EmptyState
+          title="No games imported yet"
+          subtitle="Import your games from chess.com or lichess to start analyzing."
+          action={
+            <Button asChild variant="default" size="sm">
+              <Link to="/library/import">Import Games</Link>
+            </Button>
+          }
+        />
       )}
 
       {noMatchedGames && (
-        <div className="flex flex-col items-center gap-2 py-8 text-center">
-          <p className="text-base font-bold">No games matched</p>
-          <p className="text-sm text-muted-foreground">Try adjusting the filters.</p>
-        </div>
+        <EmptyState title="No games matched" subtitle="Try adjusting the filters." />
       )}
 
       {!gamesError && matchedCount > 0 && (
@@ -398,8 +393,11 @@ export function GamesTab() {
           </DrawerContent>
         </Drawer>
 
-        {/* Stacked main content (mobile) */}
-        {mainContent}
+        {/* Stacked main content (mobile).
+            Isolate into its own stacking context (relative z-0) so a card's
+            hover/touch state (z-30 in LibraryGameCard) can't paint over the
+            sticky z-20 Filters/Tags bar above while scrolling. */}
+        <div className="relative z-0">{mainContent}</div>
       </div>
     </div>
   );

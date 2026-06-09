@@ -265,7 +265,7 @@ export function FilterPanel({
       {/* Played as */}
       {show('playedAs') && (
         <div>
-          <p className="mb-1 text-xs text-muted-foreground">Played as</p>
+          <p className="mb-1 text-sm text-muted-foreground">Played as</p>
           <ToggleGroup
             type="single"
             value={filters.playedAs}
@@ -278,9 +278,9 @@ export function FilterPanel({
             data-testid="filter-played-as"
             className="w-full"
           >
-            <ToggleGroupItem value="either" data-testid="filter-played-as-either" className="min-h-11 sm:min-h-0 flex-1">Either</ToggleGroupItem>
-            <ToggleGroupItem value="white" data-testid="filter-played-as-white" className="min-h-11 sm:min-h-0 flex-1">White</ToggleGroupItem>
-            <ToggleGroupItem value="black" data-testid="filter-played-as-black" className="min-h-11 sm:min-h-0 flex-1">Black</ToggleGroupItem>
+            <ToggleGroupItem value="either" data-testid="filter-played-as-either" className="min-h-11 sm:min-h-0 flex-1 text-sm">Either</ToggleGroupItem>
+            <ToggleGroupItem value="white" data-testid="filter-played-as-white" className="min-h-11 sm:min-h-0 flex-1 text-sm">White</ToggleGroupItem>
+            <ToggleGroupItem value="black" data-testid="filter-played-as-black" className="min-h-11 sm:min-h-0 flex-1 text-sm">Black</ToggleGroupItem>
           </ToggleGroup>
         </div>
       )}
@@ -288,7 +288,7 @@ export function FilterPanel({
       {/* Recency */}
       {show('recency') && (
         <div>
-          <p className="mb-1 text-xs text-muted-foreground">Recency</p>
+          <p className="mb-1 text-sm text-muted-foreground">Recency</p>
           {/*
             Desktop: Popover anchored to the Select trigger via PopoverAnchor asChild (D-03).
             Mobile:  Popover is never open; CustomRangeDrawer handles the nested sheet (D-06).
@@ -399,7 +399,7 @@ export function FilterPanel({
       {/* Time controls */}
       {show('timeControl') && (
         <div>
-          <p className="mb-1 text-xs text-muted-foreground">Time control</p>
+          <p className="mb-1 text-sm text-muted-foreground">Time control</p>
           <div className="grid grid-cols-4 gap-1">
             {TIME_CONTROLS.map((tc) => (
               <button
@@ -409,7 +409,7 @@ export function FilterPanel({
                 aria-label={`${TIME_CONTROL_LABELS[tc]} time control`}
                 aria-pressed={isTimeControlActive(tc)}
                 className={cn(
-                  'rounded border h-11 sm:h-7 text-xs transition-colors',
+                  'rounded border h-11 sm:h-7 text-sm transition-colors',
                   isTimeControlActive(tc)
                     ? 'border-toggle-active bg-toggle-active text-toggle-active-foreground pointer-fine:hover:bg-toggle-active-hover'
                     : 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',
@@ -428,7 +428,7 @@ export function FilterPanel({
       {/* Platform */}
       {show('platform') && (
         <div>
-          <p className="mb-1 text-xs text-muted-foreground">Platform</p>
+          <p className="mb-1 text-sm text-muted-foreground">Platform</p>
           <div className="grid grid-cols-2 gap-1">
             {PLATFORMS.map((p) => (
               <button
@@ -438,7 +438,7 @@ export function FilterPanel({
                 aria-label={`${PLATFORM_LABELS[p]} platform`}
                 aria-pressed={isPlatformActive(p)}
                 className={cn(
-                  'rounded border h-11 sm:h-7 text-xs transition-colors',
+                  'rounded border h-11 sm:h-7 text-sm transition-colors',
                   isPlatformActive(p)
                     ? 'border-toggle-active bg-toggle-active text-toggle-active-foreground pointer-fine:hover:bg-toggle-active-hover'
                     : 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',
@@ -470,7 +470,7 @@ export function FilterPanel({
             onClick={() => setMoreOpen((v) => !v)}
             aria-expanded={moreOpen}
             data-testid="filter-more-toggle"
-            className="flex w-full items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            className="flex w-full items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <ChevronDown
               className={cn('h-3.5 w-3.5 transition-transform', moreOpen && 'rotate-180')}
@@ -481,7 +481,7 @@ export function FilterPanel({
             <div className="mt-2 space-y-3">
               {show('opponent') && (
                 <div>
-                  <p className="mb-1 text-xs text-muted-foreground">Opponent Type</p>
+                  <p className="mb-1 text-sm text-muted-foreground">Opponent Type</p>
                   <ToggleGroup
                     type="single"
                     value={filters.opponentType}
@@ -494,16 +494,16 @@ export function FilterPanel({
                     data-testid="filter-opponent"
                     className="w-full"
                   >
-                    <ToggleGroupItem value="human" data-testid="filter-opponent-human" className="min-h-11 sm:min-h-0 flex-1">Human</ToggleGroupItem>
-                    <ToggleGroupItem value="bot" data-testid="filter-opponent-bot" className="min-h-11 sm:min-h-0 flex-1">Bot</ToggleGroupItem>
-                    <ToggleGroupItem value="both" data-testid="filter-opponent-both" className="min-h-11 sm:min-h-0 flex-1">Both</ToggleGroupItem>
+                    <ToggleGroupItem value="human" data-testid="filter-opponent-human" className="min-h-11 sm:min-h-0 flex-1 text-sm">Human</ToggleGroupItem>
+                    <ToggleGroupItem value="bot" data-testid="filter-opponent-bot" className="min-h-11 sm:min-h-0 flex-1 text-sm">Bot</ToggleGroupItem>
+                    <ToggleGroupItem value="both" data-testid="filter-opponent-both" className="min-h-11 sm:min-h-0 flex-1 text-sm">Both</ToggleGroupItem>
                   </ToggleGroup>
                 </div>
               )}
 
               {show('rated') && (
                 <div>
-                  <p className="mb-1 text-xs text-muted-foreground">Rated</p>
+                  <p className="mb-1 text-sm text-muted-foreground">Rated</p>
                   <ToggleGroup
                     type="single"
                     value={filters.rated === null ? 'all' : filters.rated ? 'rated' : 'casual'}
@@ -516,9 +516,9 @@ export function FilterPanel({
                     data-testid="filter-rated"
                     className="w-full"
                   >
-                    <ToggleGroupItem value="all" data-testid="filter-rated-all" className="min-h-11 sm:min-h-0 flex-1">All</ToggleGroupItem>
-                    <ToggleGroupItem value="rated" data-testid="filter-rated-rated" className="min-h-11 sm:min-h-0 flex-1">Rated</ToggleGroupItem>
-                    <ToggleGroupItem value="casual" data-testid="filter-rated-casual" className="min-h-11 sm:min-h-0 flex-1">Casual</ToggleGroupItem>
+                    <ToggleGroupItem value="all" data-testid="filter-rated-all" className="min-h-11 sm:min-h-0 flex-1 text-sm">All</ToggleGroupItem>
+                    <ToggleGroupItem value="rated" data-testid="filter-rated-rated" className="min-h-11 sm:min-h-0 flex-1 text-sm">Rated</ToggleGroupItem>
+                    <ToggleGroupItem value="casual" data-testid="filter-rated-casual" className="min-h-11 sm:min-h-0 flex-1 text-sm">Casual</ToggleGroupItem>
                   </ToggleGroup>
                 </div>
               )}

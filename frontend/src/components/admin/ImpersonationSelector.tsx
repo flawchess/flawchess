@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useDebounce } from '@/hooks/useDebounce';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { LoadError } from '@/components/ui/load-error';
 import {
   Command, CommandInput, CommandList, CommandItem, CommandEmpty, CommandGroup,
 } from '@/components/ui/command';
@@ -83,9 +84,11 @@ export function ImpersonationSelector() {
               </div>
             )}
             {isError && (
-              <div className="p-3 text-xs text-destructive" data-testid="admin-combobox-error">
-                Failed to load users. Something went wrong. Please try again in a moment.
-              </div>
+              <LoadError
+                resource="users"
+                className="p-3 text-destructive"
+                data-testid="admin-combobox-error"
+              />
             )}
             {data && data.length === 0 && !isLoading && !isError && debounced.length >= MIN_QUERY_LEN && (
               <CommandEmpty data-testid="admin-combobox-empty">No users found.</CommandEmpty>

@@ -155,7 +155,7 @@ function ExploreButton({ label, ready, hint, testId, onGo }: {
 }) {
   if (ready) {
     return (
-      <Button className="btn-brand flex-1 sm:flex-none" data-testid={testId} onClick={onGo}>
+      <Button className="flex-1 sm:flex-none" data-testid={testId} onClick={onGo}>
         {label}
       </Button>
     );
@@ -163,7 +163,7 @@ function ExploreButton({ label, ready, hint, testId, onGo }: {
   return (
     <Tooltip content={hint}>
       <span className="inline-flex flex-1 cursor-not-allowed sm:flex-none" tabIndex={0}>
-        <Button className="btn-brand w-full sm:w-auto" disabled data-testid={testId}>
+        <Button className="w-full sm:w-auto" disabled data-testid={testId}>
           {label}
         </Button>
       </span>
@@ -343,7 +343,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
                 onClick={() => handleSync('chess.com')}
                 disabled={trigger.isPending || !chessComUsername.trim() || activePlatforms.has('chess.com')}
                 data-testid="btn-sync-chess-com"
-                className="btn-brand self-end"
+                className="self-end"
               >
                 Sync
               </Button>
@@ -391,7 +391,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
                 onClick={() => handleSync('lichess')}
                 disabled={trigger.isPending || !lichessUsername.trim() || activePlatforms.has('lichess')}
                 data-testid="btn-sync-lichess"
-                className="btn-brand self-end"
+                className="self-end"
               >
                 Sync
               </Button>

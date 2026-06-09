@@ -566,7 +566,7 @@ export function OpeningsPage() {
       <div className="space-y-3">
         <div>
           <div className="mb-1 flex items-center gap-1">
-            <p className="text-xs text-muted-foreground">Piece filter</p>
+            <p className="text-sm text-muted-foreground">Piece filter</p>
             <InfoPopover ariaLabel="Piece filter info" testId="piece-filter-info" side="top">
               Use the option "Mine" to find games with a specific formation (e.g. the London System) regardless of the opponent's moves. "Mine" matches only your pieces, "Opponent" only theirs, and "Both" requires an exact match of all pieces. The Moves tab always uses "Both".
             </InfoPopover>
@@ -583,9 +583,9 @@ export function OpeningsPage() {
             className="w-full"
             data-testid="filter-piece-filter"
           >
-            <ToggleGroupItem value="mine" className="flex-1" data-testid="filter-piece-filter-mine">Mine</ToggleGroupItem>
-            <ToggleGroupItem value="opponent" className="flex-1" data-testid="filter-piece-filter-opponent">Opponent</ToggleGroupItem>
-            <ToggleGroupItem value="both" className="flex-1" data-testid="filter-piece-filter-both">Both</ToggleGroupItem>
+            <ToggleGroupItem value="mine" className="flex-1 text-sm" data-testid="filter-piece-filter-mine">Mine</ToggleGroupItem>
+            <ToggleGroupItem value="opponent" className="flex-1 text-sm" data-testid="filter-piece-filter-opponent">Opponent</ToggleGroupItem>
+            <ToggleGroupItem value="both" className="flex-1 text-sm" data-testid="filter-piece-filter-both">Both</ToggleGroupItem>
           </ToggleGroup>
         </div>
       </div>
@@ -717,6 +717,30 @@ export function OpeningsPage() {
     />
   );
 
+  // Shared filter notification dot for the mobile filter affordances: the board
+  // settings-column button (Moves/Games subtabs) and the sticky Filters button
+  // (Stats/Insights subtabs). Mirrors the desktop SidebarLayout notificationDot.
+  const mobileFiltersDot = showFiltersHint ? (
+    <span
+      className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+      data-testid="filters-notification-dot-mobile"
+    >
+      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+    </span>
+  ) : isFiltersModified ? (
+    <span
+      className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+      data-testid="filters-modified-dot-mobile"
+      aria-hidden="true"
+    >
+      {isFiltersPulsing && (
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-brown opacity-75" />
+      )}
+      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-brand-brown" />
+    </span>
+  ) : null;
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   if (needsRedirect) {
@@ -730,8 +754,61 @@ export function OpeningsPage() {
   return (
     <div data-testid="openings-page" className="flex min-h-0 flex-1 flex-col bg-background">
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 md:py-6 md:px-6">
-        {/* Desktop: sidebar strip + (subnav over board column + main content). Tabs lives INSIDE
-            SidebarLayout so the subnav does NOT span above the sidebar strip — matches Endgames. */}
+        {/* Desktop: full-width subnav above the sidebar strip + board/content row (Phase 111 —
+            matches the Library page). Tabs wraps SidebarLayout so the subnav spans both the
+            strip and the content; TabsContent stays inside SidebarLayout to keep Tabs context. */}
+        <Tabs
+          value={activeTab}
+          onValueChange={(val) => { navigate(`/openings/${val}`); window.scrollTo({ top: 0 }); }}
+          className="hidden lg:flex"
+        >
+          <EvalCoverageHeader />
+          <TabsList variant="brand" className="w-full mb-4" data-testid="openings-tabs">
+            <TabsTrigger value="explorer" data-testid="tab-move-explorer" className="flex-1">
+              <ArrowRightLeft className="mr-1.5 h-4 w-4" />
+              Moves
+              {activeTab === 'explorer' && (
+                <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
+                  <InfoPopover ariaLabel={TAB_INFO.explorer.aria} testId="tab-explorer-info" side="bottom">
+                    {TAB_INFO.explorer.text}
+                  </InfoPopover>
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
+              <Swords className="mr-1.5 h-4 w-4" />
+              Games
+              {activeTab === 'games' && (
+                <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
+                  <InfoPopover ariaLabel={TAB_INFO.games.aria} testId="tab-games-info" side="bottom">
+                    {TAB_INFO.games.text}
+                  </InfoPopover>
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
+              <BarChart2 className="mr-1.5 h-4 w-4" />
+              Stats
+              {activeTab === 'stats' && (
+                <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
+                  <InfoPopover ariaLabel={TAB_INFO.stats.aria} testId="tab-stats-info" side="bottom">
+                    {TAB_INFO.stats.text}
+                  </InfoPopover>
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="insights" data-testid="tab-insights" className="flex-1">
+              <Lightbulb className="mr-1.5 h-4 w-4" />
+              Insights
+              {activeTab === 'insights' && (
+                <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
+                  <InfoPopover ariaLabel={TAB_INFO.insights.aria} testId="tab-insights-info" side="bottom">
+                    {TAB_INFO.insights.text}
+                  </InfoPopover>
+                </span>
+              )}
+            </TabsTrigger>
+          </TabsList>
         <SidebarLayout
           breakpoint="lg"
           panels={[
@@ -815,58 +892,7 @@ export function OpeningsPage() {
             </Tooltip>
           }
         >
-          <EvalCoverageHeader />
-          <Tabs
-            value={activeTab}
-            onValueChange={(val) => { navigate(`/openings/${val}`); window.scrollTo({ top: 0 }); }}
-          >
-            <TabsList variant="brand" className="w-full" data-testid="openings-tabs">
-              <TabsTrigger value="explorer" data-testid="tab-move-explorer" className="flex-1">
-                <ArrowRightLeft className="mr-1.5 h-4 w-4" />
-                Moves
-                {activeTab === 'explorer' && (
-                  <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
-                    <InfoPopover ariaLabel={TAB_INFO.explorer.aria} testId="tab-explorer-info" side="bottom">
-                      {TAB_INFO.explorer.text}
-                    </InfoPopover>
-                  </span>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
-                <Swords className="mr-1.5 h-4 w-4" />
-                Games
-                {activeTab === 'games' && (
-                  <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
-                    <InfoPopover ariaLabel={TAB_INFO.games.aria} testId="tab-games-info" side="bottom">
-                      {TAB_INFO.games.text}
-                    </InfoPopover>
-                  </span>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
-                <BarChart2 className="mr-1.5 h-4 w-4" />
-                Stats
-                {activeTab === 'stats' && (
-                  <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
-                    <InfoPopover ariaLabel={TAB_INFO.stats.aria} testId="tab-stats-info" side="bottom">
-                      {TAB_INFO.stats.text}
-                    </InfoPopover>
-                  </span>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="insights" data-testid="tab-insights" className="flex-1">
-                <Lightbulb className="mr-1.5 h-4 w-4" />
-                Insights
-                {activeTab === 'insights' && (
-                  <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
-                    <InfoPopover ariaLabel={TAB_INFO.insights.aria} testId="tab-insights-info" side="bottom">
-                      {TAB_INFO.insights.text}
-                    </InfoPopover>
-                  </span>
-                )}
-              </TabsTrigger>
-            </TabsList>
-            <div className="mt-4 flex flex-row items-start gap-6">
+            <div className="flex flex-row items-start gap-6">
               <div className={getBoardContainerClassName(activeTab)} data-testid="openings-board-container">
                 <ChessBoard
                   position={chess.position}
@@ -911,17 +937,18 @@ export function OpeningsPage() {
                 <TabsContent value="insights">{insightsTabEl}</TabsContent>
               </div>
             </div>
-          </Tabs>
-        </SidebarLayout>
+          </SidebarLayout>
+        </Tabs>
 
         {/* Mobile: sticky subnav + non-sticky board (matches Endgames pattern, 71.1-02) */}
         <div className="lg:hidden flex flex-col min-w-0">
           <EvalCoverageHeader />
         <Tabs value={activeTab} onValueChange={(val) => { navigate(`/openings/${val}`); window.scrollTo({ top: 0 }); }} className="flex flex-col gap-2 min-w-0">
-          {/* Sticky sub-navigation + filter button (D-05, D-11) */}
-          {/* z-20 keeps subnav above ToggleGroupItem's focus:z-10 and below SidebarLayout panel z-40 */}
+          {/* Full-width, non-sticky sub-navigation (like the Library page). The filter
+              affordance lives in the board settings column on Moves/Games, and as a
+              sticky Filters button on Stats/Insights (rendered just below). */}
           <div
-            className="sticky top-0 z-20 flex items-center gap-2 h-[52px] bg-white/20 backdrop-blur-md rounded-md px-1 py-1"
+            className="flex items-center gap-2 h-[40px] rounded-md"
             data-testid="openings-mobile-subnav"
           >
             <TabsList variant="brand" className="flex-1 !h-full !p-0" data-testid="openings-tabs-mobile">
@@ -966,39 +993,26 @@ export function OpeningsPage() {
                 )}
               </TabsTrigger>
             </TabsList>
-            <Tooltip content="Open filters" side="left">
+          </div>
+
+          {/* Sticky Filters button on the non-board subtabs (Stats/Insights), styled
+              like the Library page. On Moves/Games the filter button lives in the
+              board settings column instead, so it is not rendered here. */}
+          {(activeTab === 'stats' || activeTab === 'insights') && (
+            <div className="sticky top-0 z-20 flex justify-end gap-2 py-2 bg-background/80 backdrop-blur-sm">
               <Button
-                variant="ghost"
-                size="icon"
-                className="h-11 w-11 shrink-0 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80 relative"
+                variant="brand-outline"
+                className="relative"
                 onClick={openFilterSidebar}
                 data-testid="subnav-filter-button"
                 aria-label="Open filters"
               >
-                <SlidersHorizontal className="h-4 w-4" />
-                {showFiltersHint ? (
-                  <span
-                    className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-                    data-testid="filters-notification-dot-mobile"
-                  >
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-                  </span>
-                ) : isFiltersModified ? (
-                  <span
-                    className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-                    data-testid="filters-modified-dot-mobile"
-                    aria-hidden="true"
-                  >
-                    {isFiltersPulsing && (
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-brown opacity-75" />
-                    )}
-                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-brand-brown" />
-                  </span>
-                ) : null}
+                <SlidersHorizontal className="mr-2 h-4 w-4" />
+                Filters
+                {mobileFiltersDot}
               </Button>
-            </Tooltip>
-          </div>
+            </div>
+          )}
 
           {/* Non-sticky board block — only visible on Moves + Games subtabs (D-07, D-08, D-09) */}
           {(activeTab === 'explorer' || activeTab === 'games') && (
@@ -1022,27 +1036,19 @@ export function OpeningsPage() {
                     canGoForward={chess.currentPly < chess.moveHistory.length}
                   />
                 </div>
-                {/* Settings column: 3 stacked 44px buttons — bookmarks, played-as, info (filter button moved to subnav) */}
+                {/* Settings column: 4 stacked 44px buttons — filters, played-as, bookmarks, info */}
                 <div className="flex flex-col gap-1 w-11" data-testid="openings-mobile-settings-column">
-                  <Tooltip content="Open bookmarks" side="left">
+                  <Tooltip content="Open filters" side="left">
                     <Button
                       variant="ghost"
                       size="icon"
                       className="h-11 w-11 shrink-0 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80 relative"
-                      onClick={openBookmarkSidebar}
-                      data-testid="btn-open-bookmark-sidebar"
-                      aria-label="Open bookmarks"
+                      onClick={openFilterSidebar}
+                      data-testid="subnav-filter-button"
+                      aria-label="Open filters"
                     >
-                      <BookMarked className="h-4 w-4" />
-                      {showBookmarksHint && (
-                        <span
-                          className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-                          data-testid="bookmarks-notification-dot-mobile"
-                        >
-                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-                        </span>
-                      )}
+                      <SlidersHorizontal className="h-4 w-4" />
+                      {mobileFiltersDot}
                     </Button>
                   </Tooltip>
                   <Tooltip content={`Playing as ${filters.color}`} side="left">
@@ -1068,6 +1074,27 @@ export function OpeningsPage() {
                         <span
                           className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
                           data-testid="played-as-notification-dot-mobile"
+                        >
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                        </span>
+                      )}
+                    </Button>
+                  </Tooltip>
+                  <Tooltip content="Open bookmarks" side="left">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-11 w-11 shrink-0 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80 relative"
+                      onClick={openBookmarkSidebar}
+                      data-testid="btn-open-bookmark-sidebar"
+                      aria-label="Open bookmarks"
+                    >
+                      <BookMarked className="h-4 w-4" />
+                      {showBookmarksHint && (
+                        <span
+                          className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+                          data-testid="bookmarks-notification-dot-mobile"
                         >
                           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
                           <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
@@ -1119,7 +1146,7 @@ export function OpeningsPage() {
                     it's always accessible via btn-toggle-played-as in the sticky mobile header. */}
                 <div>
                   <div className="mb-1 flex items-center gap-1">
-                    <p className="text-xs text-muted-foreground">Piece filter</p>
+                    <p className="text-sm text-muted-foreground">Piece filter</p>
                     <InfoPopover ariaLabel="Piece filter info" testId="piece-filter-info-sidebar" side="top">
                       Use the option "Mine" to find games with a specific formation (e.g. the London System) regardless of the opponent's moves. "Mine" matches only your pieces, "Opponent" only theirs, and "Both" requires an exact match of all pieces. The Moves tab always uses "Both".
                     </InfoPopover>
@@ -1136,9 +1163,9 @@ export function OpeningsPage() {
                     data-testid="filter-piece-filter-sidebar"
                     className="w-full"
                   >
-                    <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine-sidebar" className="flex-1 min-h-11">Mine</ToggleGroupItem>
-                    <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent-sidebar" className="flex-1 min-h-11">Opponent</ToggleGroupItem>
-                    <ToggleGroupItem value="both" data-testid="filter-piece-filter-both-sidebar" className="flex-1 min-h-11">Both</ToggleGroupItem>
+                    <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine-sidebar" className="flex-1 min-h-11 text-sm">Mine</ToggleGroupItem>
+                    <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent-sidebar" className="flex-1 min-h-11 text-sm">Opponent</ToggleGroupItem>
+                    <ToggleGroupItem value="both" data-testid="filter-piece-filter-both-sidebar" className="flex-1 min-h-11 text-sm">Both</ToggleGroupItem>
                   </ToggleGroup>
                 </div>
 

@@ -46,11 +46,11 @@ export function LibraryPage({
 
   return (
     <div data-testid="library-page" className="flex min-h-0 flex-1 flex-col bg-background">
-      {/* Wrapper is a <div>, not <main>: the embedded subtab pages (ImportPage,
-          GlobalStatsPage) each render their own <main>, and App already wraps
-          routes in a <main>. A <main> here would produce triple-nested <main>
-          landmarks (invalid HTML, LIB-09). Openings/Endgames use <main> here
-          because their subtabs are bare fragments; Library's are full pages. */}
+      {/* Wrapper is a <div>, not <main>: ImportPage still renders its own <main>
+          (narrower max-w-2xl import form), and App already wraps routes in a <main>.
+          A <main> here would produce nested <main> landmarks (invalid HTML, LIB-09).
+          The Stats subtab (GlobalStatsPage) deliberately renders NO own <main>/max-w
+          wrapper so it spans the same width as the Games/Flaws subtabs. */}
       <div className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 md:py-6 md:px-6">
 
         {/* Desktop: Tabs above content */}
@@ -103,7 +103,7 @@ export function LibraryPage({
             }}
           >
             <div
-              className="sticky top-0 z-20 flex items-center gap-2 h-[52px] bg-white/20 backdrop-blur-md rounded-md px-1 py-1"
+              className="flex items-center gap-2 h-[40px] rounded-md"
               data-testid="library-mobile-control-row"
             >
               <TabsList
@@ -116,7 +116,7 @@ export function LibraryPage({
                   className="flex-1"
                   data-testid="tab-import-mobile"
                 >
-                  <DownloadIcon className="mr-1.5 h-4 w-4" />
+                  <DownloadIcon className="h-4 w-4" />
                   Import
                 </TabsTrigger>
                 <TabsTrigger
@@ -124,7 +124,7 @@ export function LibraryPage({
                   className="flex-1"
                   data-testid="tab-games-mobile"
                 >
-                  <BookOpen className="mr-1.5 h-4 w-4" />
+                  <BookOpen className="h-4 w-4" />
                   Games
                 </TabsTrigger>
                 <TabsTrigger
@@ -132,7 +132,7 @@ export function LibraryPage({
                   className="flex-1"
                   data-testid="tab-flaws-mobile"
                 >
-                  <AlertTriangle className="mr-1.5 h-4 w-4" />
+                  <AlertTriangle className="h-4 w-4" />
                   Flaws
                 </TabsTrigger>
                 <TabsTrigger
@@ -140,7 +140,7 @@ export function LibraryPage({
                   className="flex-1"
                   data-testid="tab-stats-mobile"
                 >
-                  <BarChart2 className="mr-1.5 h-4 w-4" />
+                  <BarChart2 className="h-4 w-4" />
                   Stats
                 </TabsTrigger>
               </TabsList>
@@ -152,10 +152,10 @@ export function LibraryPage({
                 onJobDismissed={onJobDismissed}
               />
             </TabsContent>
-            <TabsContent value="games" className="mt-4">
+            <TabsContent value="games" className="mt-1">
               <GamesTab />
             </TabsContent>
-            <TabsContent value="flaws" className="mt-4">
+            <TabsContent value="flaws" className="mt-1">
               <FlawsTab />
             </TabsContent>
             <TabsContent value="stats" className="mt-4">

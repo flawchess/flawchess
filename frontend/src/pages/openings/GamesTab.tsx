@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom';
 import type { UseQueryResult } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
+import { LoadError } from '@/components/ui/load-error';
+import { EmptyState } from '@/components/ui/empty-state';
 import { PositionResultsPanel } from '@/components/charts/PositionResultsPanel';
 import { GameCardList } from '@/components/results/GameCardList';
 import type { OpeningsResponse } from '@/types/api';
@@ -40,27 +42,24 @@ export function GamesTab({
           <p className="text-muted-foreground">Loading games...</p>
         </div>
       ) : hasNoGames ? (
-        <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
-          <p className="mb-2 text-base font-medium text-foreground">No games imported yet</p>
-          <p className="mb-6 text-sm text-muted-foreground">
-            Import your games from chess.com or lichess to start analyzing positions.
-          </p>
-          <Button variant="outline" size="sm" asChild>
-            <Link to="/library/import">Import Games</Link>
-          </Button>
-        </div>
+        <EmptyState
+          layout="page"
+          title="No games imported yet"
+          subtitle="Import your games from chess.com or lichess to start analyzing positions."
+          action={
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/library/import">Import Games</Link>
+            </Button>
+          }
+        />
       ) : filtersMatchNothing ? (
-        <div className="flex flex-1 flex-col items-center justify-center py-12 text-center text-muted-foreground">
-          <p className="text-base font-medium text-foreground">No games matched</p>
-          <p className="mt-1 text-sm">Try adjusting the time control, opponent, rated, or recency filters.</p>
-        </div>
+        <EmptyState
+          layout="page"
+          title="No games matched"
+          subtitle="Try adjusting the time control, opponent, rated, or recency filters."
+        />
       ) : gamesQuery.isError ? (
-        <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
-          <p className="mb-2 text-base font-medium text-foreground">Failed to load games</p>
-          <p className="text-sm text-muted-foreground">
-            Something went wrong. Please try again in a moment.
-          </p>
-        </div>
+        <LoadError variant="centered" resource="games" />
       ) : gamesData ? (
         <>
           <PositionResultsPanel

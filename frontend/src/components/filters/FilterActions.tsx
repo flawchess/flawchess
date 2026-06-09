@@ -15,8 +15,8 @@ interface FilterActionsProps {
 /**
  * FilterActions — reusable 50/50 Reset + Apply footer row for filter panels.
  *
- * Reset is on the LEFT (brand-outline), Apply is on the RIGHT (btn-brand, no variant).
- * Matches the Import "Sync" button style exactly.
+ * Reset is on the LEFT (brand-outline = secondary), Apply is on the RIGHT
+ * (default variant = brand-brown primary). Matches the Import "Sync" button.
  *
  * Both buttons are full-width within the row (flex-1), ensuring a 50/50 split.
  * The wrapper adds a top border to separate the footer from the filter controls.
@@ -47,7 +47,7 @@ export function FilterActions({
         <Button
           type="button"
           size="lg"
-          className="btn-brand flex-1 min-h-11 sm:min-h-0"
+          className="flex-1 min-h-11 sm:min-h-0"
           data-testid={applyTestId}
           aria-label="Apply"
           onClick={onApply}

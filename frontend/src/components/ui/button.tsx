@@ -9,7 +9,10 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground [a]:hover:bg-primary/80",
+        // Primary CTA — solid brand brown, white text. The single high-emphasis
+        // button style. Pairs with "brand-outline" as the secondary action.
+        default:
+          "bg-brand-brown text-white hover:bg-brand-brown-hover aria-expanded:bg-brand-brown-hover",
         outline:
           "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         "brand-outline":

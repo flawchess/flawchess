@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
 import { Tooltip } from '@/components/ui/tooltip';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS } from '@/components/filters/FilterPanel';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { useGlobalStats, useRatingHistory } from '@/hooks/useStats';
@@ -95,38 +96,32 @@ export function GlobalStatsPage() {
     <div className="space-y-6">
       {/* Chess.com Rating section */}
       {(selectedPlatforms === null || selectedPlatforms.includes('chess.com')) && (
-        <section data-testid="rating-section-chess-com" className="charcoal-texture rounded-md overflow-hidden">
-          <h3
-            className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40 text-base font-semibold"
-            data-testid="rating-chess-com-header"
-          >
+        <Card as="section" data-testid="rating-section-chess-com">
+          <CardHeader data-testid="rating-chess-com-header">
             Chess.com Rating
             <InfoPopover ariaLabel="Chess.com rating info" testId="rating-chess-com-info" side="top">
               Your Chess.com rating over time by time control. Granularity adapts automatically: daily for shorter spans, weekly or monthly for longer ones.
             </InfoPopover>
-          </h3>
-          <div className="p-4">
+          </CardHeader>
+          <CardBody>
             <RatingChart data={ratingData?.chess_com ?? []} platform="Chess.com" enabledTimeControls={filters.timeControls} />
-          </div>
-        </section>
+          </CardBody>
+        </Card>
       )}
 
       {/* Lichess Rating section */}
       {(selectedPlatforms === null || selectedPlatforms.includes('lichess')) && (
-        <section data-testid="rating-section-lichess" className="charcoal-texture rounded-md overflow-hidden">
-          <h3
-            className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40 text-base font-semibold"
-            data-testid="rating-lichess-header"
-          >
+        <Card as="section" data-testid="rating-section-lichess">
+          <CardHeader data-testid="rating-lichess-header">
             Lichess Rating
             <InfoPopover ariaLabel="Lichess rating info" testId="rating-lichess-info" side="top">
               Your Lichess rating over time by time control. Granularity adapts automatically: daily for shorter spans, weekly or monthly for longer ones. Lichess uses Glicko-2 ratings which start at 1500 and tend to run 200-400 points higher than Chess.com, so the two are not directly comparable.
             </InfoPopover>
-          </h3>
-          <div className="p-4">
+          </CardHeader>
+          <CardBody>
             <RatingChart data={ratingData?.lichess ?? []} platform="Lichess" enabledTimeControls={filters.timeControls} />
-          </div>
-        </section>
+          </CardBody>
+        </Card>
       )}
 
       {/* WDL charts — each card owns its own shell inside GlobalStatsCharts */}
@@ -146,8 +141,11 @@ export function GlobalStatsPage() {
   );
 
   return (
-    <div data-testid="global-stats-page" className="flex min-h-0 flex-1 flex-col bg-background">
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 md:py-6 md:px-6">
+    // No own max-width/padding/main wrapper: this page only renders as the Library
+    // "Stats" subtab, nested inside LibraryPage's max-w-7xl container and App's <main>.
+    // Wrapping again would double the horizontal padding (narrower than the Games/Flaws
+    // subtabs) and nest a second <main> landmark. Plain div = same width as Games/Flaws.
+    <div data-testid="global-stats-page">
 
         {/* Desktop: sidebar strip + filter panel + content */}
         <SidebarLayout
@@ -228,7 +226,6 @@ export function GlobalStatsPage() {
 
           {content}
         </div>
-      </main>
     </div>
   );
 }

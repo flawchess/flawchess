@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { LoadError } from '@/components/ui/load-error';
 import { FlawStatsBand } from './FlawStatsBand';
 import { FlawTrendChart } from './FlawTrendChart';
 import { FlawTagDistribution } from './FlawTagDistribution';
@@ -139,11 +140,7 @@ export function FlawStatsPanel({ stats, isLoading, isError }: FlawStatsPanelProp
       </div>
 
       {/* Error state — mandatory CLAUDE.md isError copy */}
-      {isError && (
-        <p className="text-sm text-muted-foreground mt-4">
-          Failed to load flaw statistics. Something went wrong. Please try again in a moment.
-        </p>
-      )}
+      {isError && <LoadError resource="flaw statistics" className="mt-4" />}
 
       {/* Loading state */}
       {!isError && isLoading && (

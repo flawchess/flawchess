@@ -156,7 +156,7 @@ export function HomePageContent() {
               <Button
                 size="lg"
                 asChild
-                className={cn('btn-brand', 'min-h-11 min-w-40')}
+                className="min-h-11 min-w-40"
                 data-testid="hero-cta-signup"
               >
                 <Link to="/login?tab=register">
@@ -546,7 +546,7 @@ export function HomePageContent() {
           <Button
             size="lg"
             asChild
-            className={cn('btn-brand', 'min-h-11 min-w-40')}
+            className="min-h-11 min-w-40"
             data-testid="footer-cta-signup"
           >
             <Link to="/login?tab=register">

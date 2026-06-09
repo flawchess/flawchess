@@ -8,7 +8,13 @@ import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  FormCard,
+  FormCardContent,
+  FormCardDescription,
+  FormCardHeader,
+  FormCardTitle,
+} from '@/components/ui/form-card';
 import { apiClient } from '@/api/client';
 import type { GuestPromoteResponse } from '@/types/api';
 
@@ -157,12 +163,12 @@ export function RegisterForm() {
   };
 
   return (
-    <Card className="w-full max-w-sm">
-      <CardHeader>
-        <CardTitle>Create Account</CardTitle>
-        <CardDescription>Sign up to start analyzing your games.</CardDescription>
-      </CardHeader>
-      <CardContent>
+    <FormCard className="w-full max-w-sm">
+      <FormCardHeader>
+        <FormCardTitle>Create Account</FormCardTitle>
+        <FormCardDescription>Sign up to start analyzing your games.</FormCardDescription>
+      </FormCardHeader>
+      <FormCardContent>
         {/* Google OAuth — only shown when configured */}
         {googleAvailable === true && (
           <>
@@ -238,7 +244,7 @@ export function RegisterForm() {
             Sign in
           </Link>
         </p>
-      </CardContent>
-    </Card>
+      </FormCardContent>
+    </FormCard>
   );
 }
