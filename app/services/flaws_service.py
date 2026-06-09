@@ -52,10 +52,11 @@ EVAL_COVERAGE_MIN: float = 0.90
 
 # Impact ladder thresholds (flaw-tag-definitions.md §Impact).
 # Outcome-independent: computed from es_before/es_after only, never the game result.
-FROM_WINNING_ES: float = 0.85  # squandered entry (>= 85%: overwhelming advantage)
-WINNING_LINE_ES: float = 0.70  # reversed entry (>= 70%: clearly winning, ~+2.3 eval)
-LOSING_LINE_ES: float = 0.30  # reversed exit (<= 30%: clearly losing, ~−2.3 eval)
-SQUANDERED_EXIT_ES: float = 0.60  # squandered exit (<= 60%: erased back to roughly even)
+# Recalibrated 2026-06-09 to round-eval anchors (sigmoid of ±1.0/±2.0/+3.0).
+FROM_WINNING_ES: float = 0.7511  # squandered entry (>= 75%: winning, near-decisive, ≈ +3.0)
+WINNING_LINE_ES: float = 0.6762  # reversed entry (>= 68%: clearly winning, ≈ +2.0)
+LOSING_LINE_ES: float = 0.3238  # reversed exit (<= 32%: clearly losing, ≈ −2.0)
+SQUANDERED_EXIT_ES: float = 0.5910  # squandered exit (<= 59%: back to a slight edge, ≈ +1.0)
 
 # Tempo thresholds — relative to base_time_seconds (RESEARCH §Pattern 6).
 # [ASSUMED] initial values; tunable once real data is available.
@@ -405,10 +406,10 @@ def _classify_impact(es_before: float, es_after: float) -> Literal["reversed", "
     "or below"; differs from the prior strict < exit — Pitfall 4).
 
     Rungs:
-      reversed   — es_before >= WINNING_LINE_ES (0.70) AND es_after <= LOSING_LINE_ES (0.30)
+      reversed   — es_before >= WINNING_LINE_ES (0.6762) AND es_after <= LOSING_LINE_ES (0.3238)
                    Full reversal: winning game turned into a losing one.
-      squandered — es_before >= FROM_WINNING_ES (0.85) AND es_after <= SQUANDERED_EXIT_ES (0.60)
-                   AND not reversed. Overwhelming advantage erased back to roughly even.
+      squandered — es_before >= FROM_WINNING_ES (0.7511) AND es_after <= SQUANDERED_EXIT_ES (0.5910)
+                   AND not reversed. Winning, near-decisive advantage erased back to a slight edge.
     """
     if es_before >= WINNING_LINE_ES and es_after <= LOSING_LINE_ES:
         return "reversed"

@@ -129,20 +129,20 @@ class TestConstants:
         assert EVAL_COVERAGE_MIN == 0.90
 
     def test_from_winning_es_value(self) -> None:
-        """FROM_WINNING_ES must equal 0.85 (squandered entry)."""
-        assert FROM_WINNING_ES == 0.85
+        """FROM_WINNING_ES must equal 0.7511 (squandered entry, ES of +3.0)."""
+        assert FROM_WINNING_ES == 0.7511
 
     def test_winning_line_es_value(self) -> None:
-        """WINNING_LINE_ES must equal 0.70 (reversed entry: clearly winning)."""
-        assert WINNING_LINE_ES == 0.70
+        """WINNING_LINE_ES must equal 0.6762 (reversed entry: clearly winning, ES of +2.0)."""
+        assert WINNING_LINE_ES == 0.6762
 
     def test_losing_line_es_value(self) -> None:
-        """LOSING_LINE_ES must equal 0.30 (reversed exit: clearly losing)."""
-        assert LOSING_LINE_ES == 0.30
+        """LOSING_LINE_ES must equal 0.3238 (reversed exit: clearly losing, ES of −2.0)."""
+        assert LOSING_LINE_ES == 0.3238
 
     def test_squandered_exit_es_value(self) -> None:
-        """SQUANDERED_EXIT_ES must equal 0.60 (squandered exit: back to roughly even)."""
-        assert SQUANDERED_EXIT_ES == 0.60
+        """SQUANDERED_EXIT_ES must equal 0.5910 (squandered exit: back to a slight edge, ES of +1.0)."""
+        assert SQUANDERED_EXIT_ES == 0.5910
 
 
 class TestTypeContract:
@@ -1013,43 +1013,43 @@ class TestImpactLadder:
     # ------------------------------------------------------------------
 
     def test_reversed_at_exact_entry_exit_boundary(self) -> None:
-        """es_before=0.70 and es_after=0.30 (exact boundary) must return 'reversed'."""
-        assert _classify_impact(0.70, 0.30) == "reversed"
+        """es_before=0.6762 and es_after=0.3238 (exact boundary) must return 'reversed'."""
+        assert _classify_impact(0.6762, 0.3238) == "reversed"
 
     def test_reversed_entry_below_boundary_returns_none(self) -> None:
-        """es_before=0.69 (just below WINNING_LINE_ES) must not return 'reversed'."""
-        assert _classify_impact(0.69, 0.30) is None
+        """es_before=0.67 (just below WINNING_LINE_ES) must not return 'reversed'."""
+        assert _classify_impact(0.67, 0.30) is None
 
     def test_reversed_exit_above_boundary_returns_none(self) -> None:
-        """es_after=0.31 (just above LOSING_LINE_ES) must not return 'reversed'."""
-        assert _classify_impact(0.70, 0.31) is None
+        """es_after=0.33 (just above LOSING_LINE_ES) must not return 'reversed'."""
+        assert _classify_impact(0.70, 0.33) is None
 
     def test_squandered_at_exact_boundary(self) -> None:
-        """es_before=0.85 and es_after=0.60 (exact boundary) must return 'squandered'."""
-        assert _classify_impact(0.85, 0.60) == "squandered"
+        """es_before=0.7511 and es_after=0.5910 (exact boundary) must return 'squandered'."""
+        assert _classify_impact(0.7511, 0.5910) == "squandered"
 
     def test_squandered_exit_above_boundary_returns_none(self) -> None:
-        """es_after=0.61 (just above SQUANDERED_EXIT_ES) must not return 'squandered'."""
-        assert _classify_impact(0.85, 0.61) is None
+        """es_after=0.60 (just above SQUANDERED_EXIT_ES) must not return 'squandered'."""
+        assert _classify_impact(0.85, 0.60) is None
 
     def test_most_severe_wins_reversed_beats_squandered(self) -> None:
         """An overwhelming swing (0.90 -> 0.25) qualifies for both rungs;
         most-severe-wins means only 'reversed' is returned.
         """
-        # es_before=0.90 >= FROM_WINNING_ES (0.85) => qualifies for squandered entry
-        # es_after=0.25 <= LOSING_LINE_ES (0.30)   => qualifies for reversed exit
+        # es_before=0.90 >= FROM_WINNING_ES (0.7511) => qualifies for squandered entry
+        # es_after=0.25 <= LOSING_LINE_ES (0.3238)   => qualifies for reversed exit
         # Both conditions met; reversed is the more severe and wins.
         assert _classify_impact(0.90, 0.25) == "reversed"
 
-    def test_deliberate_no_impact_gap_78_to_45(self) -> None:
-        """es_before=0.78 -> es_after=0.45 carries no impact tag (deliberate gap).
+    def test_deliberate_no_impact_gap_70_to_45(self) -> None:
+        """es_before=0.70 -> es_after=0.45 carries no impact tag (deliberate gap).
 
-        reversed needs entry >= WINNING_LINE_ES (0.70) AND exit <= LOSING_LINE_ES (0.30):
-        entry 0.78 qualifies, but exit 0.45 > 0.30, so reversed does not fire.
-        squandered needs entry >= FROM_WINNING_ES (0.85): 0.78 < 0.85, so squandered does not fire.
-        A clear-but-not-overwhelming swing is captured by blunder severity, not impact.
+        reversed needs entry >= WINNING_LINE_ES (0.6762) AND exit <= LOSING_LINE_ES (0.3238):
+        entry 0.70 qualifies, but exit 0.45 > 0.3238, so reversed does not fire.
+        squandered needs entry >= FROM_WINNING_ES (0.7511): 0.70 < 0.7511, so squandered does not fire.
+        A clear-but-not-near-decisive swing is captured by blunder severity, not impact.
         """
-        assert _classify_impact(0.78, 0.45) is None
+        assert _classify_impact(0.70, 0.45) is None
 
     def test_outcome_independence_reversed(self) -> None:
         """The same ES swing must produce 'reversed' for any user_result value.
@@ -1080,8 +1080,8 @@ class TestImpactLadder:
 
     def test_reversed_in_tags_when_full_reversal(self) -> None:
         """A full-reversal blunder (winning -> losing) produces 'reversed' in tags."""
-        # eval_cp_to_expected_score(300, "white") ≈ 0.733 >= 0.70 (WINNING_LINE_ES)
-        # eval_cp_to_expected_score(-500, "white") ≈ 0.160 <= 0.30 (LOSING_LINE_ES)
+        # eval_cp_to_expected_score(300, "white") ≈ 0.733 >= 0.6762 (WINNING_LINE_ES)
+        # eval_cp_to_expected_score(-500, "white") ≈ 0.160 <= 0.3238 (LOSING_LINE_ES)
         game = _make_game(pgn=self._PGN, user_color="white")
         positions = self._make_standard_positions(12)
         positions[1] = _make_pos(1, eval_cp=300)  # es_before ≈ 0.733
@@ -1096,10 +1096,10 @@ class TestImpactLadder:
     def test_squandered_in_tags_when_overwhelming_advantage_erased(self) -> None:
         """An overwhelming-to-roughly-even blunder produces 'squandered' in tags.
 
-        es_before >= 0.85 (FROM_WINNING_ES) and es_after <= 0.60 (SQUANDERED_EXIT_ES)
-        but es_after > 0.30 (above LOSING_LINE_ES) so reversed does NOT fire.
-        eval_cp_to_expected_score(600, "white") ≈ 0.859 >= 0.85
-        eval_cp_to_expected_score(50, "white")  ≈ 0.568 <= 0.60 but > 0.30
+        es_before >= 0.7511 (FROM_WINNING_ES) and es_after <= 0.5910 (SQUANDERED_EXIT_ES)
+        but es_after > 0.3238 (above LOSING_LINE_ES) so reversed does NOT fire.
+        eval_cp_to_expected_score(600, "white") ≈ 0.859 >= 0.7511
+        eval_cp_to_expected_score(50, "white")  ≈ 0.568 <= 0.5910 but > 0.3238
         """
         game = _make_game(pgn=self._PGN, user_color="white")
         positions = self._make_standard_positions(12)
@@ -1114,11 +1114,11 @@ class TestImpactLadder:
 
     def test_no_impact_tag_for_moderate_blunder(self) -> None:
         """A moderate blunder (below impact thresholds) carries no impact tag."""
-        # eval_cp_to_expected_score(200, "white") ≈ 0.685 < WINNING_LINE_ES (0.70)
-        # drop is a blunder but does not cross the reversed threshold
+        # eval_cp_to_expected_score(100, "white") ≈ 0.591 < WINNING_LINE_ES (0.6762)
+        # drop is a blunder but does not cross the reversed/squandered entry threshold
         game = _make_game(pgn=self._PGN, user_color="white")
         positions = self._make_standard_positions(12)
-        positions[1] = _make_pos(1, eval_cp=200)  # es_before ≈ 0.685
+        positions[1] = _make_pos(1, eval_cp=100)  # es_before ≈ 0.591
         positions[2] = _make_pos(2, eval_cp=-500)  # es_after ≈ 0.160
         result = classify_game_flaws(game, positions)
         assert isinstance(result, list)
