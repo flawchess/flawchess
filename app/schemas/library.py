@@ -83,7 +83,7 @@ class GameFlawCard(BaseModel):
     opening_name: str | None
     opening_eco: str | None
     user_color: str
-    move_count: int | None
+    ply_count: int | None
     termination: str | None = None
     time_control_str: str | None = None
     result_fen: str | None = None
@@ -139,10 +139,10 @@ class FlawListItem(BaseModel):
     user_result: Literal["win", "draw", "loss"]
     played_at: datetime.datetime | None
     time_control_bucket: str | None
-    # Game-info line parity with the Games card (raw TC string, move count,
+    # Game-info line parity with the Games card (raw TC string, ply count,
     # termination reason). All from the games join; nullable like the source rows.
     time_control_str: str | None
-    move_count: int | None
+    ply_count: int | None
     termination: str | None
     platform: str
     platform_url: str | None

@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.25
 milestone_name: Flaw-Stats Opponent Comparison
-status: executing
-last_updated: "2026-06-10T19:47:32.584Z"
-last_activity: "2026-06-10 -- Completed quick task 260610-sha: prod DB query & index tuning (SEED-041 items 1-8)"
+status: verifying
+last_updated: "2026-06-10T20:45:38.557Z"
+last_activity: 2026-06-10
 progress:
   total_phases: 3
   completed_phases: 2
@@ -17,10 +17,10 @@ progress:
 
 ## Current Position
 
-Phase: 114 (benchmark-flaw-delta-zone-computation) — COMPLETE
-Plan: 1 of 1 complete
-Status: Ready to execute
-Last activity: 2026-06-10 -- Completed quick task 260610-sha: prod DB query & index tuning (SEED-041 items 1-8)
+Phase: 115
+Plan: Not started
+Status: Phase complete — ready for verification
+Last activity: 2026-06-10
 
 ## Project Reference
 
@@ -317,6 +317,8 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 | Phase 113-opponent-flaw-materialization P01 | 38 | 2 tasks | 4 files |
 | Phase 113 P02 | 16 | 2 tasks | 5 files |
 | Phase 113-opponent-flaw-materialization P03 | 10 | - tasks | - files |
+| Phase 114.1 P01 | 8m | 4 tasks | 12 files |
+| Phase 114.1 P02 | 14min | 4 tasks | 11 files |
 
 ## Decisions
 
@@ -352,3 +354,4 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 - [Phase ?]: Game JOIN added to R3/R4/R5 to bring user_color into scope for player_only_gate (D-04)
 - [Phase ?]: is_opponent_expr/player_only_gate params widened to Any — ty InstrumentedAttribute subtype mismatch
 - [Phase ?]: D-09 confirmed: backfill_flaws.py needed zero code changes — D-10 single-classify-path propagated both-sides behavior from Plan-01 kernel change automatically
+- [Phase ?]: Single migration 07994baf3b15 replaces move_count with ply_count in one transaction; ply_count = len(nodes) exact half-move count; stays nullable (D-02a); all readers use ply_count directly (D-03)

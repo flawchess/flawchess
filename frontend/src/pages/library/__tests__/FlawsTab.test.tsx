@@ -85,7 +85,7 @@ type MockFlawsResult = {
       played_at: string | null;
       time_control_bucket: string | null;
       time_control_str: string | null;
-      move_count: number | null;
+      ply_count: number | null;
       termination: string | null;
       platform: string;
       platform_url: string | null;
@@ -238,7 +238,7 @@ describe('FlawsTab', () => {
               played_at: '2026-05-01T10:00:00Z',
               time_control_bucket: 'blitz',
               time_control_str: '300+0',
-              move_count: 41,
+              ply_count: 82,
               termination: 'resignation',
               platform: 'lichess',
               platform_url: 'https://lichess.org/abcd1234',
@@ -263,7 +263,7 @@ describe('FlawsTab', () => {
               played_at: '2026-05-02T12:00:00Z',
               time_control_bucket: 'rapid',
               time_control_str: '600+5',
-              move_count: 58,
+              ply_count: 116,
               termination: 'timeout',
               platform: 'chess.com',
               platform_url: null,
@@ -316,7 +316,7 @@ describe('FlawsTab', () => {
               played_at: '2026-05-01T10:00:00Z',
               time_control_bucket: 'blitz',
               time_control_str: '300+0',
-              move_count: 41,
+              ply_count: 82,
               termination: 'resignation',
               platform: 'lichess',
               platform_url: 'https://lichess.org/abcd1234',
@@ -341,7 +341,7 @@ describe('FlawsTab', () => {
               played_at: '2026-05-02T12:00:00Z',
               time_control_bucket: 'rapid',
               time_control_str: '600+5',
-              move_count: 58,
+              ply_count: 116,
               termination: 'timeout',
               platform: 'chess.com',
               platform_url: 'https://www.chess.com/game/live/999',

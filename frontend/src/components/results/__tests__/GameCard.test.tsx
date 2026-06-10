@@ -45,7 +45,7 @@ const mockGame: GameRecord = {
   time_control_bucket: 'blitz',
   time_control_str: '300+3',
   termination: 'resignation',
-  move_count: 40,
+  ply_count: 80,
 };
 
 describe('GameCard', () => {

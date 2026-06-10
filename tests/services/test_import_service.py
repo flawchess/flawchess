@@ -97,7 +97,7 @@ def _make_opening_only_processing_result() -> dict[str, Any]:
         }
         for i in range(4)
     ]
-    return {"plies": plies, "result_fen": None, "move_count": 2}
+    return {"plies": plies, "result_fen": None, "ply_count": 4}
 
 
 def _make_midgame_needs_eval_processing_result() -> dict[str, Any]:
@@ -149,7 +149,7 @@ def _make_midgame_needs_eval_processing_result() -> dict[str, Any]:
             "phase": 1,  # middlegame entry — needs eval
         },
     ]
-    return {"plies": plies, "result_fen": None, "move_count": 1}
+    return {"plies": plies, "result_fen": None, "ply_count": 1}
 
 
 # ---------------------------------------------------------------------------

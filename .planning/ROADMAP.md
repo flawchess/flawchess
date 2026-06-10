@@ -49,7 +49,7 @@ Reworks the Library flaw-stats surface from a self-only descriptive panel into a
   - The `/benchmarks` skill report includes a flaw-delta zones section under `reports/`, consumable by plan-time calibration
   - Design path: `/gsd-discuss-phase 114` → `/gsd-plan-phase 114`
 
-- [ ] **Phase 114.1: Replace `move_count` with exact `ply_count` (INSERTED 2026-06-10)** — SEED-041 item 9. `games.move_count` is the full-move count (`ceil(plies/2)`), so it pins the half-move total only to ±1, blocking an exact per-game user-move denominator without a 190M-row `game_positions` scan. Store the exact half-move count instead; source: `.planning/seeds/SEED-041-prod-db-query-and-index-tuning.md` §9
+- [x] **Phase 114.1: Replace `move_count` with exact `ply_count` (INSERTED 2026-06-10)** — SEED-041 item 9. `games.move_count` is the full-move count (`ceil(plies/2)`), so it pins the half-move total only to ±1, blocking an exact per-game user-move denominator without a 190M-row `game_positions` scan. Store the exact half-move count instead; source: `.planning/seeds/SEED-041-prod-db-query-and-index-tuning.md` §9 (completed 2026-06-10)
   - ONE hand-written Alembic migration (single transaction): add `ply_count INT` nullable, backfill `ply_count = max(ply)` from `game_positions` per game (measured ~10s on prod, runs before uvicorn serves — no NULL window, no script, no HUMAN gate), drop `move_count`; readers ship in the same release (REVISED 2026-06-10, D-02/D-02a/D-03)
   - Import path writes the exact half-move count: `zobrist.py` (~L271) sets `ply_count = len(nodes)` (not `(len(nodes)+1)//2`); `import_service.py` bulk UPDATE (~L738-770) writes `ply_count`
   - Display stays full-moves: expose `ply_count` in API schemas (`openings.py`, `library.py`), derive the rendered count as `(ply_count + 1) // 2` so "N Moves" in `LibraryGameCard`/`GameCard`/`FlawCard` is unchanged; update all readers (`library_service`/`library_repository`, `openings_service`, `endgame_service`, frontend `types/api.ts` + `types/library.ts`) and `test_zobrist`/`test_import_service` fixtures
@@ -57,8 +57,8 @@ Reworks the Library flaw-stats surface from a self-only descriptive panel into a
   - Follow-on: simplify `scripts/benchmarks/chapter5.py` `user_moves_per_game` to read `games.ply_count`, then regenerate §5
   - Independent of SEED-041 items 1-8 (already merged on `main`)
   - **Plans:** 2 plans (Wave 1: backend swap — single migration + import-path + all backend readers · Wave 2: frontend cards + chapter5 §5 follow-on)
-    - [ ] 114.1-01-PLAN.md — single migration (add nullable + backfill + drop move_count, with downgrade); model + import-path + all backend readers/schemas switch to ply_count; backend fixtures; suite green
-    - [ ] 114.1-02-PLAN.md — frontend types + 3 cards (plysToFullMoves helper, display unchanged) + fixtures; chapter5 user_moves_per_game reads games.ply_count + §5 fast-path regen
+    - [x] 114.1-01-PLAN.md — single migration (add nullable + backfill + drop move_count, with downgrade); model + import-path + all backend readers/schemas switch to ply_count; backend fixtures; suite green
+    - [x] 114.1-02-PLAN.md — frontend types + 3 cards (plysToFullMoves helper, display unchanged) + fixtures; chapter5 user_moves_per_game reads games.ply_count + §5 fast-path regen
   - Design path: `/gsd-discuss-phase 114.1` → `/gsd-plan-phase 114.1`
 
 - [ ] **Phase 115: You-vs-Opponent Comparison API + Bullet-Grid UI** — Two-CI-method flaw-stats endpoint + ~13-bullet grid replacing the current tag-distribution zone; requirements: FLAWCMP-01, FLAWCMP-02, FLAWCMP-03, FLAWCMP-04, FLAWCMP-05, FLAWUI-01, FLAWUI-02, FLAWUI-03, FLAWUI-04, FLAWUI-05, FLAWUI-06

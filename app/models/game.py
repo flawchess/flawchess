@@ -116,8 +116,8 @@ class Game(Base):
     opening_name: Mapped[str | None] = mapped_column(String(200))
     opening_eco: Mapped[str | None] = mapped_column(String(10))
 
-    # Move count (total full moves in the game)
-    move_count: Mapped[int | None] = mapped_column(nullable=True)
+    # Exact half-move count (replaces move_count, Phase 114.1)
+    ply_count: Mapped[int | None] = mapped_column(nullable=True)
 
     # Final position FEN (piece placement only, from board.board_fen())
     result_fen: Mapped[str | None] = mapped_column(String(100), nullable=True)

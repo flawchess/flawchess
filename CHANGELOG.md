@@ -15,6 +15,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Changed
 
 - **Faster openings explorer & lighter imports** (SEED-041 items 1-8) — the openings explorer query now forces a hash join over the user's games instead of a per-game nested loop, cutting its main cost driver on large accounts; recent-games and pending-evals lookups gain matching indexes; `game_positions` now uses a single composite foreign key (halving per-row FK work during import and enforcing that a position's owner matches its game); and `game_positions` autovacuum + `games` heap density are tuned for cache residency. Schema and performance changes only — no behavior change.
+- **Exact half-move counts** (Phase 114.1, SEED-041 item 9) — `games.move_count` (full-move count, accurate only to ±1 half-move) is replaced by an exact `games.ply_count`. This gives an exact per-game user-move denominator without scanning the 190M-row positions table, and lets the benchmark §5 flaw-delta rates drop an ~87M-row join. Game-card "N Moves" labels are unchanged. Internal/schema change, no user-facing behavior change.
 
 ## [v1.24] Library Page — 2026-06-09
 

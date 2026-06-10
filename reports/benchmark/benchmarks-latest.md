@@ -576,8 +576,9 @@ Only `mixed` clears the ≥30-joined-user floor at the combined ≥10-game + ≥
 
 > **D-01 unified estimator**: per game, delta = (player_tag_count − opp_tag_count)
 > / user_moves_in_game (proportion); displayed as per-100-moves via ×100 at the
-> render layer ("pp" unit). user_moves uses ply-parity counting from game_positions
-> (even ply = white mover, odd ply = black mover). Per-cohort-user delta = mean
+> render layer ("pp" unit). user_moves derived from `games.ply_count` (Phase 114.1):
+> FLOOR(ply_count/2) for white, CEIL(ply_count/2) for black — no game_positions scan.
+> Per-cohort-user delta = mean
 > over ≥20 analyzed games. Negative delta means cohort
 > users commit fewer flaws of this type than equally-rated opponents.
 >

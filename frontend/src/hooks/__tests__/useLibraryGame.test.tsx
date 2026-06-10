@@ -52,7 +52,7 @@ const MOCK_CARD: GameFlawCard = {
   opening_name: 'Sicilian Defense',
   opening_eco: 'B20',
   user_color: 'white',
-  move_count: 40,
+  ply_count: 80,
   termination: 'checkmate',
   time_control_str: '10+5',
   result_fen: null,

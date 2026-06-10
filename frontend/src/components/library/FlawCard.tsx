@@ -27,6 +27,7 @@ import { flawPlyUrl } from '@/lib/platformLinks';
 import { sanToSquares } from '@/lib/sanToSquares';
 import { formatMoveNotation } from '@/lib/openingInsights';
 import { formatFlawEvalParts } from '@/lib/formatFlawEval';
+import { plysToFullMoves } from '@/lib/chess';
 import { useLibraryGame } from '@/hooks/useLibrary';
 import type { FlawListItem, FlawSeverity } from '@/types/library';
 import type { UserResult } from '@/types/api';
@@ -223,10 +224,10 @@ export function FlawCard({ flaw }: { flaw: FlawListItem }) {
     </span>
   );
 
-  const moveCountItem = flaw.move_count !== null && (
+  const moveCountItem = flaw.ply_count !== null && (
     <span className="inline-flex items-center gap-1">
       <Hash className="h-3.5 w-3.5" />
-      {flaw.move_count}
+      {plysToFullMoves(flaw.ply_count)}
       {/* "Moves" label is desktop-only; mobile shows just "# <n>" to save width. */}
       <span className="hidden sm:inline">&nbsp;Moves</span>
     </span>

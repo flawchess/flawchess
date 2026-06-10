@@ -376,7 +376,7 @@ def _build_card(
         opening_name=game.opening_name,
         opening_eco=game.opening_eco,
         user_color=game.user_color,
-        move_count=game.move_count,
+        ply_count=game.ply_count,
         termination=game.termination,
         time_control_str=game.time_control_str,
         result_fen=game.result_fen,

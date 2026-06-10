@@ -64,7 +64,7 @@ class GameProcessingResult(TypedDict):
 
     plies: list[PlyData]
     result_fen: str | None
-    move_count: int
+    ply_count: int
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +142,7 @@ def process_game_pgn(pgn_text: str) -> GameProcessingResult | None:
 
     Replaces the triple-PGN-parse pattern (D-01). Walks the mainline once,
     computing hashes, classification, eval, clock, and move SAN for each ply.
-    Also derives move_count and result_fen (D-02).
+    Also derives ply_count and result_fen (D-02).
 
     Returns None for empty, unparseable, or moveless PGNs.
 
@@ -151,7 +151,7 @@ def process_game_pgn(pgn_text: str) -> GameProcessingResult | None:
 
     Returns:
         A ``GameProcessingResult`` TypedDict with ``plies`` (list of ``PlyData``),
-        ``result_fen``, and ``move_count``. Returns ``None`` when *pgn_text* is
+        ``result_fen``, and ``ply_count``. Returns ``None`` when *pgn_text* is
         empty, unparseable, or contains no moves.
     """
     try:
@@ -268,12 +268,12 @@ def process_game_pgn(pgn_text: str) -> GameProcessingResult | None:
         pd["phase"] = phase
 
     result_fen = board.board_fen()
-    move_count = (len(nodes) + 1) // 2
+    ply_count = len(nodes)
 
     return GameProcessingResult(
         plies=plies,
         result_fen=result_fen,
-        move_count=move_count,
+        ply_count=ply_count,
     )
 
 

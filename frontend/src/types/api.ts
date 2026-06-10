@@ -108,7 +108,7 @@ export interface GameRecord {
   opening_name: string | null;
   opening_eco: string | null;
   user_color: string;
-  move_count: number | null;
+  ply_count: number | null;
   white_username: string | null;
   black_username: string | null;
   white_rating: number | null;

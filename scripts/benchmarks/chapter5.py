@@ -7,8 +7,8 @@ marginals + the established Cohen's-d collapse verdict per axis (FLAWBMK-01/02/0
 plus a per-metric viability diagnostic (D-06).
 
 D-01 estimator: for each game, delta = (player_tag_count − opp_tag_count) / user_moves
-(a proportion), where user_moves is the count of game_positions rows with ply >= 1 AND
-mover parity matches user_color (even ply = white mover, odd ply = black mover). The
+(a proportion), where user_moves is derived from games.ply_count (Phase 114.1):
+FLOOR(ply_count/2) for white, CEIL(ply_count/2) for black (no game_positions scan). The
 SQL stores the raw proportion; the ×100 scaling to "per-100-moves" display units is
 applied at the render layer via the "pp" unit formatter (SKILL.md "Display formatting"
 invariant: never bake scaling into SQL, apply at the rendering layer). Per-cohort-user
@@ -129,9 +129,9 @@ def _per_user_cte() -> str:
     CTE chain:
       selected_users  — canonical cohort filter (benchmark_selected_users + completed checkpoint)
       base_games      — analyzed cohort games (BASE_GAME_FILTER + evals_completed_at IS NOT NULL);
-                        MATERIALIZED to narrow game_flaws and game_positions scans.
-      user_moves_per_game — count of game_positions rows where ply >= 1 AND mover = user
-                            (even ply = white mover, odd ply = black mover — canonical convention).
+                        MATERIALIZED to narrow the game_flaws scan.
+      user_moves_per_game — derived from games.ply_count (Phase 114.1): FLOOR(ply_count/2)
+                            for white, CEIL(ply_count/2) for black (no game_positions scan).
       per_game_tags   — per-game player/opponent tag counts for all 15 metrics, driven from
                         base_games (ALL analyzed games) LEFT JOIN game_flaws so clean games
                         count as a 0 delta (not dropped). The ≥20 floor below is therefore over
@@ -227,7 +227,7 @@ def _per_user_cte() -> str:
     return (
         f"WITH {sql.SELECTED_USERS_CTE},\n"
         # base_games: analyzed cohort games (BASE_GAME_FILTER + evals_completed_at).
-        # MATERIALIZED narrows the game_flaws and game_positions scans from ~3.8M → ~1.6M rows.
+        # MATERIALIZED narrows the game_flaws scan from ~3.8M → ~1.6M rows.
         "base_games AS MATERIALIZED (\n"
         "  SELECT g.id AS game_id, g.user_id, g.user_color,\n"
         f"         ({sql.USER_ELO_AT_GAME_SQL}) AS ueag,\n"
@@ -237,19 +237,17 @@ def _per_user_cte() -> str:
         f"  WHERE {sql.BASE_GAME_FILTER}\n"
         "    AND g.evals_completed_at IS NOT NULL\n"
         "),\n"
-        # user_moves_per_game: count game_positions plies where mover = user (ply >= 1).
-        # Even ply = white mover, odd ply = black mover (canonical ply-parity convention;
-        # mirrors fetch_total_user_moves() in library_repository.py).
+        # user_moves_per_game: read games.ply_count (exact half-moves, Phase 114.1).
+        # floor(ply_count/2) = white user moves, ceil(ply_count/2) = black user moves.
+        # No game_positions scan needed (dropped ~87M-row join).
         "user_moves_per_game AS (\n"
-        "  SELECT gp.game_id, COUNT(*) AS user_moves\n"
-        "  FROM game_positions gp\n"
-        "  JOIN base_games bg ON bg.game_id = gp.game_id\n"
-        "  WHERE gp.ply >= 1\n"
-        "    AND (\n"
-        "      (gp.ply % 2 = 0 AND bg.user_color = 'white')\n"
-        "      OR (gp.ply % 2 = 1 AND bg.user_color = 'black')\n"
-        "    )\n"
-        "  GROUP BY gp.game_id\n"
+        "  SELECT bg.game_id,\n"
+        "    CASE\n"
+        "      WHEN bg.user_color = 'white' THEN FLOOR(g.ply_count / 2.0)\n"
+        "      ELSE CEIL(g.ply_count / 2.0)\n"
+        "    END AS user_moves\n"
+        "  FROM base_games bg\n"
+        "  JOIN games g ON g.id = bg.game_id\n"
         "),\n"
         # per_game_tags: per-game player/opponent tag counts for all 15 metrics.
         # Driven from base_games (ALL analyzed games) with a LEFT JOIN to game_flaws, so a
@@ -468,8 +466,9 @@ def render(values: Chapter5Values) -> str:
     parts += [
         "> **D-01 unified estimator**: per game, delta = (player_tag_count − opp_tag_count)",
         "> / user_moves_in_game (proportion); displayed as per-100-moves via ×100 at the",
-        '> render layer ("pp" unit). user_moves uses ply-parity counting from game_positions',
-        "> (even ply = white mover, odd ply = black mover). Per-cohort-user delta = mean",
+        '> render layer ("pp" unit). user_moves derived from `games.ply_count` (Phase 114.1):',
+        "> FLOOR(ply_count/2) for white, CEIL(ply_count/2) for black — no game_positions scan.",
+        "> Per-cohort-user delta = mean",
         f"> over ≥{FLAW_DELTA_MIN_GAMES} analyzed games. Negative delta means cohort",
         "> users commit fewer flaws of this type than equally-rated opponents.",
         ">",

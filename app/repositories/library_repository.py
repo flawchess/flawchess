@@ -325,7 +325,7 @@ async def query_flaws(
             played_at=game.played_at,
             time_control_bucket=game.time_control_bucket,
             time_control_str=game.time_control_str,
-            move_count=game.move_count,
+            ply_count=game.ply_count,
             termination=game.termination,
             platform=game.platform,
             platform_url=game.platform_url,

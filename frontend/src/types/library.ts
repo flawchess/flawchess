@@ -62,7 +62,7 @@ export interface GameFlawCard {
   opening_name: string | null;
   opening_eco: string | null;
   user_color: string;
-  move_count: number | null;
+  ply_count: number | null;
   termination: string | null;
   time_control_str: string | null;
   result_fen: string | null;
@@ -205,7 +205,7 @@ export interface FlawListItem {
   time_control_bucket: string | null;
   /** Game-info line parity with the Games card (Phase 112 follow-up). */
   time_control_str: string | null;
-  move_count: number | null;
+  ply_count: number | null;
   termination: string | null;
   platform: string;
   platform_url: string | null;

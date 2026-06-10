@@ -102,7 +102,7 @@ function makeFlaw(overrides: Partial<FlawListItem> = {}): FlawListItem {
     played_at: '2026-01-15T10:00:00Z',
     time_control_bucket: 'rapid',
     time_control_str: '600+5',
-    move_count: 42,
+    ply_count: 84,
     termination: 'resignation',
     platform: 'lichess',
     platform_url: 'https://lichess.org/abcd1234',
@@ -201,8 +201,8 @@ describe('FlawCard', () => {
       expect(article.textContent).toContain('resignation');
     });
 
-    it('omits the move-count segment when move_count is null', () => {
-      render(<FlawCard flaw={makeFlaw({ move_count: null })} />);
+    it('omits the move-count segment when ply_count is null', () => {
+      render(<FlawCard flaw={makeFlaw({ ply_count: null })} />);
       const article = screen.getByTestId('flaw-card-42-2');
       expect(article.textContent).not.toContain('Moves');
     });
@@ -246,7 +246,7 @@ describe('FlawCard', () => {
       opening_name: null,
       opening_eco: null,
       user_color: 'white',
-      move_count: 30,
+      ply_count: 60,
       termination: 'checkmate',
       time_control_str: '10+5',
       result_fen: null,

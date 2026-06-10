@@ -111,7 +111,7 @@ class GameRecord(BaseModel):
     opening_name: str | None
     opening_eco: str | None
     user_color: str
-    move_count: int | None
+    ply_count: int | None
     termination: str | None = None
     time_control_str: str | None = None
     result_fen: str | None = None

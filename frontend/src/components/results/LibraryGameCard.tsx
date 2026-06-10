@@ -19,6 +19,7 @@ import { SeverityBadge } from '@/components/library/SeverityBadge';
 import { TagChip, TagLegend } from '@/components/library/TagChip';
 import { NoAnalysisState } from '@/components/library/NoAnalysisState';
 import { gamePlatformUrl } from '@/lib/platformLinks';
+import { plysToFullMoves } from '@/lib/chess';
 import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
 import type { GameFlawCard, FlawSeverity, FlawTag } from '@/types/library';
 import type { UserResult } from '@/types/api';
@@ -345,10 +346,10 @@ export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
     </span>
   );
 
-  const moveCountItem = game.move_count !== null && (
+  const moveCountItem = game.ply_count !== null && (
     <span className="inline-flex items-center gap-1">
       <Hash className="h-3.5 w-3.5" />
-      {game.move_count} Moves
+      {plysToFullMoves(game.ply_count)} Moves
     </span>
   );
 

@@ -7,6 +7,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { gamePlatformUrl } from '@/lib/platformLinks';
+import { plysToFullMoves } from '@/lib/chess';
 import type { GameRecord, UserResult } from '@/types/api';
 
 interface GameCardProps {
@@ -154,10 +155,10 @@ export function GameCard({ game }: GameCardProps) {
     </span>
   );
 
-  const moveCountItem = game.move_count !== null && (
+  const moveCountItem = game.ply_count !== null && (
     <span className="inline-flex items-center gap-1">
       <Hash className="h-3.5 w-3.5" />
-      {game.move_count}
+      {plysToFullMoves(game.ply_count)}
       {/* "Moves" label is desktop-only; mobile shows just "# <n>" to save width. */}
       <span className="hidden sm:inline">&nbsp;Moves</span>
     </span>
