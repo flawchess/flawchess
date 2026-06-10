@@ -27,8 +27,37 @@
 - ✅ **v1.22 Maintenance — Test Isolation & Frontend Major Upgrades** — Phases 100, 101 (shipped 2026-05-31) — see [milestones/v1.22-ROADMAP.md](milestones/v1.22-ROADMAP.md)
 - ✅ **v1.23 LLM Endgame-Insights Statistical-Reasoning Rework** — Phases 102, 103 (shipped 2026-06-03) — see [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md)
 - ✅ **v1.24 Library Page** — Phases 104–112 (shipped 2026-06-09) — see [milestones/v1.24-ROADMAP.md](milestones/v1.24-ROADMAP.md)
+- 🚧 **v1.25 Flaw-Stats Opponent Comparison** — Phases 113–115 (in progress)
 
 ## Phases
+
+### 🚧 v1.25 Flaw-Stats Opponent Comparison (Phases 113–115) — IN PROGRESS
+
+Reworks the Library flaw-stats surface from a self-only descriptive panel into a you-vs-opponent comparison. Three dependency-ordered phases: the data foundation (opponent flaws materialized into `game_flaws` via a nearly-free extension of the existing classifier), the benchmark backfill (per-cohort you−opponent deltas, Q1/Q3 quartile zones per ELO×TC cell, Cohen's-d collapse verdicts), and the full comparison surface (two-CI-method endpoint + ~13-bullet grid replacing the current tag-distribution zone). The bullet chart reuses the existing `MiniBulletChart` / endgame "Clock Gap" pattern; the benchmark zone is the lightweight delta-IQR (not a full percentile CDF), keeping costs manageable as tactic-motif families land in future milestones.
+
+- [ ] **Phase 113: Opponent-Flaw Materialization** — Extend `game_flaws` with `is_opponent`, drop the player-only filter, Alembic migration + dev/benchmark backfill; requirements: FLAWX-01, FLAWX-02, FLAWX-03, FLAWX-04
+  - Both sides' flaws are persisted in `game_flaws` for every analyzed game, queryable as player vs opponent via `is_opponent`
+  - Alembic migration runs cleanly and adds an efficient index on `is_opponent`
+  - All three classify paths (import hook, `reclassify_positions.py`, `backfill_flaws.py`) persist opponent flaws without a second engine evaluation
+  - `backfill_flaws.py` repopulates opponent flaws for dev/benchmark games in a single idempotent pass; prod ships with an empty `game_flaws` table as before
+  - Design path: `/gsd-discuss-phase 113` → `/gsd-plan-phase 113`
+
+- [ ] **Phase 114: Benchmark Flaw-Delta Zone Computation** — Compute per-cohort user you−opponent deltas, emit Q1/Q3 quartiles per ELO×TC, run Cohen's-d collapse verdict, extend `/benchmarks` skill with flaw-delta zones; requirements: FLAWBMK-01, FLAWBMK-02, FLAWBMK-03, FLAWBMK-04
+  - The benchmark pipeline produces a per-(metric, ELO bucket, TC) Q1/Q3 quartile table for all ~13 flaw-delta metrics from the cohort's own `game_flaws` data
+  - ELO and TC marginals are emitted alongside cell-level quartiles
+  - Cohen's-d collapse verdict runs per metric per axis; each metric is classified as needing cell-specific zones or collapsing to a single global zone
+  - The `/benchmarks` skill report includes a flaw-delta zones section under `reports/`, consumable by plan-time calibration
+  - Design path: `/gsd-discuss-phase 114` → `/gsd-plan-phase 114`
+
+- [ ] **Phase 115: You-vs-Opponent Comparison API + Bullet-Grid UI** — Two-CI-method flaw-stats endpoint + ~13-bullet grid replacing the current tag-distribution zone; requirements: FLAWCMP-01, FLAWCMP-02, FLAWCMP-03, FLAWCMP-04, FLAWCMP-05, FLAWUI-01, FLAWUI-02, FLAWUI-03, FLAWUI-04, FLAWUI-05, FLAWUI-06
+  - The flaw-stats endpoint returns the full ~13-bullet inventory (count-rate families via paired per-game delta + bootstrap/normal CI; proportion families via Wilson difference-of-proportions), honoring all existing game filters
+  - The curated combo bullets `hasty + miss` and `low-clock + miss` are included and their CI-width adequacy is confirmed against the materialized data
+  - The section-level sample gate returns an "analyze more games" state below floor N; above it every bullet renders with its CI (wide bar reads as inconclusive)
+  - The current tag-distribution zone is replaced by a uniform grid of ~13 `MiniBulletChart` bullets, each showing measure + CI error bar + benchmark "typical" blue zone (when available); the trend chart remains comparison-free
+  - Each bullet carries a tooltip disclosing metric definition, sign convention, tempo-interaction caveat (where applicable), and filter×zone interaction (TC filter shifts the zone; user-local filters move only the point estimate)
+  - The bullet grid is responsive on mobile, follows `data-testid`/ARIA/semantic-HTML conventions on all new elements, and has desktop + mobile parity
+  - Design path: `/gsd-discuss-phase 115` → `/gsd-plan-phase 115`
+  - **UI hint**: yes
 
 ### ✅ v1.24 Library Page (Phases 104–112) — SHIPPED 2026-06-09
 
@@ -362,6 +391,9 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 100-101. v1.22 phases | v1.22 | 3/3 | Complete | 2026-05-31 |
 | 102-103. v1.23 phases | v1.23 | 3/3 | Complete (103 unplanned follow-on) | 2026-06-03 |
 | 104-112. v1.24 phases | v1.24 | 37/37 | Complete (111 shipped direct, no plan artifacts) | 2026-06-09 |
+| 113. Opponent-Flaw Materialization | v1.25 | 0/TBD | Not started | - |
+| 114. Benchmark Flaw-Delta Zone Computation | v1.25 | 0/TBD | Not started | - |
+| 115. You-vs-Opponent Comparison API + Bullet-Grid UI | v1.25 | 0/TBD | Not started | - |
 
 ## Backlog
 

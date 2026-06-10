@@ -81,31 +81,31 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FLAWX-01 | TBD | Pending |
-| FLAWX-02 | TBD | Pending |
-| FLAWX-03 | TBD | Pending |
-| FLAWX-04 | TBD | Pending |
-| FLAWBMK-01 | TBD | Pending |
-| FLAWBMK-02 | TBD | Pending |
-| FLAWBMK-03 | TBD | Pending |
-| FLAWBMK-04 | TBD | Pending |
-| FLAWCMP-01 | TBD | Pending |
-| FLAWCMP-02 | TBD | Pending |
-| FLAWCMP-03 | TBD | Pending |
-| FLAWCMP-04 | TBD | Pending |
-| FLAWCMP-05 | TBD | Pending |
-| FLAWUI-01 | TBD | Pending |
-| FLAWUI-02 | TBD | Pending |
-| FLAWUI-03 | TBD | Pending |
-| FLAWUI-04 | TBD | Pending |
-| FLAWUI-05 | TBD | Pending |
-| FLAWUI-06 | TBD | Pending |
+| FLAWX-01 | Phase 113 | Pending |
+| FLAWX-02 | Phase 113 | Pending |
+| FLAWX-03 | Phase 113 | Pending |
+| FLAWX-04 | Phase 113 | Pending |
+| FLAWBMK-01 | Phase 114 | Pending |
+| FLAWBMK-02 | Phase 114 | Pending |
+| FLAWBMK-03 | Phase 114 | Pending |
+| FLAWBMK-04 | Phase 114 | Pending |
+| FLAWCMP-01 | Phase 115 | Pending |
+| FLAWCMP-02 | Phase 115 | Pending |
+| FLAWCMP-03 | Phase 115 | Pending |
+| FLAWCMP-04 | Phase 115 | Pending |
+| FLAWCMP-05 | Phase 115 | Pending |
+| FLAWUI-01 | Phase 115 | Pending |
+| FLAWUI-02 | Phase 115 | Pending |
+| FLAWUI-03 | Phase 115 | Pending |
+| FLAWUI-04 | Phase 115 | Pending |
+| FLAWUI-05 | Phase 115 | Pending |
+| FLAWUI-06 | Phase 115 | Pending |
 
 **Coverage:**
 - v1 requirements: 19 total
-- Mapped to phases: 0 (roadmap pending)
-- Unmapped: 19 ⚠️ (filled by roadmapper)
+- Mapped to phases: 19 ✓
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-06-09 (milestone v1.25 open, sourced from SEED-040)*
-*Last updated: 2026-06-09 after initial definition*
+*Last updated: 2026-06-10 after roadmap creation (Phases 113–115 assigned)*
