@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.25
 milestone_name: Flaw-Stats Opponent Comparison
-status: planning
-last_updated: "2026-06-09T21:50:55.411Z"
-last_activity: 2026-06-09
+status: Defining requirements
+last_updated: "2026-06-10T04:51:16.002Z"
+last_activity: 2026-06-09 — Milestone v1.25 started
 progress:
   total_phases: 3
   completed_phases: 0
