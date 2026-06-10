@@ -43,6 +43,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.core.config import db_url_for_target, settings  # noqa: E402
 from app.models.game import Game  # noqa: E402
+
+# Game.user_id has a FK to users.id; importing only Game leaves the users table
+# unregistered and select(Game...) raises NoReferencedTableError at compile time.
+# User in turn declares a relationship to OAuthAccount, so both must be imported.
+from app.models.oauth_account import OAuthAccount  # noqa: E402, F401
+from app.models.user import User  # noqa: E402, F401
 from app.repositories.flaws_repository import fetch_game_positions_ordered  # noqa: E402
 from app.repositories.game_flaws_repository import (  # noqa: E402
     bulk_insert_game_flaws,
