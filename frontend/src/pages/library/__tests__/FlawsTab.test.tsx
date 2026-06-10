@@ -107,10 +107,14 @@ let mockFlawsResult: MockFlawsResult = {
   isError: false,
 };
 
+// Controllable flaw-stats mock — analyzed_n decides which matched_count=0 empty
+// state renders (NoEngineAnalysisFlawsState vs "No flaws matched").
+let mockStatsResult: { data: { analyzed_n: number } | undefined } = { data: undefined };
+
 vi.mock('@/hooks/useLibrary', () => ({
   useLibraryFlaws: () => mockFlawsResult,
   useLibraryGames: () => ({ data: undefined, isLoading: false, isError: false }),
-  useLibraryFlawStats: () => ({ data: undefined, isLoading: false, isError: false }),
+  useLibraryFlawStats: () => ({ ...mockStatsResult, isLoading: false, isError: false }),
   // useLibraryGame is called by FlawCard (rendered inside the grid); disabled by default
   useLibraryGame: () => ({ data: undefined, isLoading: false, isError: false }),
 }));
@@ -166,6 +170,7 @@ beforeEach(() => {
     isLoading: false,
     isError: false,
   };
+  mockStatsResult = { data: undefined };
 });
 
 afterEach(() => {
@@ -400,17 +405,31 @@ describe('FlawsTab', () => {
   });
 
   describe('empty states', () => {
-    it('shows "No flaws matched" empty state when matched_count=0', () => {
+    it('shows "No flaws matched" when matched_count=0 but analyzed games exist', () => {
       mockFlawsResult = {
         data: { flaws: [], matched_count: 0, offset: 0, limit: 20 },
         isLoading: false,
         isError: false,
       };
+      mockStatsResult = { data: { analyzed_n: 12 } };
       renderFlawsTab();
       const headings = screen.getAllByText('No flaws matched');
       expect(headings.length).toBeGreaterThanOrEqual(1);
       const captions = screen.getAllByText('Try adjusting the flaw filter or game filters.');
       expect(captions.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('shows the no-engine-analysis state when no games are analyzed (quick-260610-vru)', () => {
+      mockFlawsResult = {
+        data: { flaws: [], matched_count: 0, offset: 0, limit: 20 },
+        isLoading: false,
+        isError: false,
+      };
+      mockStatsResult = { data: { analyzed_n: 0 } };
+      renderFlawsTab();
+      const states = screen.getAllByTestId('flaws-no-engine-analysis');
+      expect(states.length).toBeGreaterThanOrEqual(1);
+      expect(screen.queryByText('No flaws matched')).toBeNull();
     });
   });
 

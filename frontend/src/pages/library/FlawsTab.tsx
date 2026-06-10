@@ -23,7 +23,7 @@ import {
   useFlawFilterStore,
   DEFAULT_FLAW_FILTER,
 } from '@/hooks/useFlawFilterStore';
-import { useLibraryFlaws } from '@/hooks/useLibrary';
+import { useLibraryFlaws, useLibraryFlawStats } from '@/hooks/useLibrary';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
@@ -208,14 +208,24 @@ export function FlawsTab() {
   const totalImported =
     profile != null ? profile.chess_com_game_count + profile.lichess_game_count : 0;
 
+  // Flaw stats (cached, shared query key with the Stats panel) — analyzed_n
+  // distinguishes "you have no engine-analyzed games at all" from "your filters
+  // matched no flaws". Showing the no-engine-analysis message to a user who DOES
+  // have analyzed games would be misleading (CLAUDE.md empty-state rule).
+  const { data: statsData } = useLibraryFlawStats(appliedFilters, flawFilter);
+
   // ── Derived state ────────────────────────────────────────────────────────────
   const totalGames = totalImported;
   const matchedCount = flawsData?.matched_count ?? 0;
   const flaws = flawsData?.flaws ?? [];
 
   const noGamesImported = !flawsLoading && !flawsError && totalGames === 0;
-  const noAnalyzedGames = !flawsLoading && !flawsError && totalGames > 0 && matchedCount === 0 && flawsData != null;
-  const noMatchedFlaws = noAnalyzedGames;
+  const noMatchedFlaws =
+    !flawsLoading && !flawsError && totalGames > 0 && matchedCount === 0 && flawsData != null;
+  // No engine-analyzed games at all → the big "engine analysis missing" state.
+  // Defaults to true while stats are loading so users with zero analyzed games
+  // (the common case for this state) don't flash the filter-hint message first.
+  const noAnalyzedGames = statsData == null || statsData.analyzed_n === 0;
 
   // ── Filter panel content ─────────────────────────────────────────────────────
 
@@ -297,7 +307,15 @@ export function FlawsTab() {
             </p>
           )}
 
-          {noMatchedFlaws && <NoEngineAnalysisFlawsState />}
+          {noMatchedFlaws &&
+            (noAnalyzedGames ? (
+              <NoEngineAnalysisFlawsState />
+            ) : (
+              <EmptyState
+                title="No flaws matched"
+                subtitle="Try adjusting the flaw filter or game filters."
+              />
+            ))}
 
           {matchedCount > 0 && (
             <div

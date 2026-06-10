@@ -109,6 +109,8 @@ function makeFlaw(overrides: Partial<FlawListItem> = {}): FlawListItem {
     white_username: 'Alice',
     black_username: 'Bob',
     user_color: 'white',
+    clock_seconds: 125,
+    move_seconds: 8.4,
     ...overrides,
   };
 }
@@ -130,29 +132,30 @@ afterEach(() => {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('FlawCard', () => {
-  describe('CardHeader — usernames and ratings (SC-4)', () => {
-    it('renders white username in the header', () => {
+  describe('CardHeader — opponent-only (quick-260610-vru)', () => {
+    it('renders "vs <opponent>" — the opponent name only, not the user', () => {
       render(<FlawCard flaw={makeFlaw()} />);
       const article = screen.getByTestId('flaw-card-42-2');
-      expect(article.textContent).toContain('Alice');
-    });
-
-    it('renders black username in the header', () => {
-      render(<FlawCard flaw={makeFlaw()} />);
-      const article = screen.getByTestId('flaw-card-42-2');
+      // User is white → opponent is Bob; the user's own name must not appear
+      // in the header text (it remains in the View-game aria-label only).
+      expect(article.textContent).toContain('vs');
       expect(article.textContent).toContain('Bob');
+      expect(article.textContent).not.toContain('Alice');
     });
 
-    it('renders white rating in parentheses when non-null', () => {
-      render(<FlawCard flaw={makeFlaw()} />);
-      const article = screen.getByTestId('flaw-card-42-2');
-      expect(article.textContent).toContain('(1850)');
-    });
-
-    it('renders black rating in parentheses when non-null', () => {
+    it('renders the opponent rating in parentheses, not the user rating', () => {
       render(<FlawCard flaw={makeFlaw()} />);
       const article = screen.getByTestId('flaw-card-42-2');
       expect(article.textContent).toContain('(1720)');
+      expect(article.textContent).not.toContain('(1850)');
+    });
+
+    it('shows the white player when the user played black', () => {
+      render(<FlawCard flaw={makeFlaw({ user_color: 'black' })} />);
+      const article = screen.getByTestId('flaw-card-42-2');
+      expect(article.textContent).toContain('Alice');
+      expect(article.textContent).toContain('(1850)');
+      expect(article.textContent).not.toContain('Bob');
     });
 
     it('omits parentheses when white_rating is null (no empty parens)', () => {
@@ -189,22 +192,32 @@ describe('FlawCard', () => {
     });
   });
 
-  describe('Game-info block (Phase 112 follow-up — TC name + base[+inc] • # n Moves)', () => {
-    it('renders time control name + base[+inc], move count, and termination', () => {
+  describe('Game-info block (quick-260610-vru — clock + move time, no TC/moves/termination)', () => {
+    it('renders "mm:ss (Move Ns)" and drops TC, move count, and termination', () => {
       render(<FlawCard flaw={makeFlaw()} />);
       const article = screen.getByTestId('flaw-card-42-2');
-      // "rapid" bucket + formatTimeControl("600+5") → "10+5"
-      expect(article.textContent).toContain('rapid');
-      expect(article.textContent).toContain('10+5');
-      // "Moves" label is desktop-only and joined with a non-breaking space.
-      expect(article.textContent).toContain('42 Moves');
-      expect(article.textContent).toContain('resignation');
+      // clock_seconds=125 → "2:05"; move_seconds=8.4 → "(Move 8.4s)"
+      expect(article.textContent).toContain('2:05');
+      expect(article.textContent).toContain('(Move 8.4s)');
+      // Replaced segments must be gone.
+      expect(article.textContent).not.toContain('rapid');
+      expect(article.textContent).not.toContain('10+5');
+      expect(article.textContent).not.toContain('Moves');
+      expect(article.textContent).not.toContain('resignation');
     });
 
-    it('omits the move-count segment when ply_count is null', () => {
-      render(<FlawCard flaw={makeFlaw({ ply_count: null })} />);
+    it('omits the "(Move Ns)" suffix when move_seconds is null', () => {
+      render(<FlawCard flaw={makeFlaw({ move_seconds: null })} />);
       const article = screen.getByTestId('flaw-card-42-2');
-      expect(article.textContent).not.toContain('Moves');
+      expect(article.textContent).toContain('2:05');
+      expect(article.textContent).not.toContain('(Move');
+    });
+
+    it('omits the clock line entirely when both clock fields are null', () => {
+      render(<FlawCard flaw={makeFlaw({ clock_seconds: null, move_seconds: null })} />);
+      const article = screen.getByTestId('flaw-card-42-2');
+      expect(article.textContent).not.toContain('2:05');
+      expect(article.textContent).not.toContain('(Move');
     });
   });
 
