@@ -3,6 +3,7 @@ import { libraryApi } from '@/api/client';
 import { resolveDateRange, dateRangeToWireParams } from '@/lib/recency';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { FlawTag } from '@/types/library';
+import { isFlawFilterNonDefault } from '@/hooks/useFlawFilterStore';
 import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
 import type { GameFlawCard } from '@/types/library';
 
@@ -52,7 +53,18 @@ export function useLibraryGames(
   offset: number,
   limit: number,
 ) {
-  const params = buildLibraryParams(filters, flawFilter.severity, flawFilter.tags);
+  // Bug fix: the default flaw filter (severity = blunder+mistake, no tags) used
+  // to be sent to GET /library/games, where the backend's severity EXISTS
+  // excludes every game without engine analysis — users with only unanalyzed
+  // games saw "0 games matched" with no filters set. The default state means
+  // "no flaw filtering" on the Games tab (matching the modified-dot logic), so
+  // only send severity/tags when the user actively changed the flaw filter.
+  const isFiltering = isFlawFilterNonDefault(flawFilter);
+  const params = buildLibraryParams(
+    filters,
+    isFiltering ? flawFilter.severity : [],
+    isFiltering ? flawFilter.tags : [],
+  );
   return useQuery({
     queryKey: ['library-games', params, offset, limit],
     queryFn: () => libraryApi.getGames({ ...params, offset, limit }),
