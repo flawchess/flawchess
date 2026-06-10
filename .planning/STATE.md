@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.25
 milestone_name: Flaw-Stats Opponent Comparison
 status: executing
-last_updated: "2026-06-10T19:21:35.425Z"
+last_updated: "2026-06-10T19:47:32.584Z"
 last_activity: "2026-06-10 -- Completed quick task 260610-sha: prod DB query & index tuning (SEED-041 items 1-8)"
 progress:
   total_phases: 3
