@@ -212,6 +212,10 @@ export interface FlawListItem {
   white_username: string | null;
   black_username: string | null;
   user_color: string;
+  /** Mover's remaining clock AFTER the flawed move; null = no %clk (chess.com). Plan 260610-vru. */
+  clock_seconds: number | null;
+  /** Time spent on the flawed move (1dp); null when prior clock unknown. Plan 260610-vru. */
+  move_seconds: number | null;
 }
 
 /** Response for GET /api/library/flaws — paginated per-flaw list (mirrors LibraryFlawsResponse). */

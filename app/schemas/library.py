@@ -149,6 +149,11 @@ class FlawListItem(BaseModel):
     white_username: str | None
     black_username: str | None
     user_color: str
+    # Clock context for the flaw card (plan 260610-vru).
+    # clock_seconds: mover's remaining clock AFTER the flawed move; null = no %clk (chess.com).
+    # move_seconds: time spent on the flawed move (1dp); null when prior clock unknown.
+    clock_seconds: float | None
+    move_seconds: float | None
 
 
 class LibraryFlawsResponse(BaseModel):

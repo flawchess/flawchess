@@ -37,6 +37,7 @@ from app.services.flaws_service import (
     FlawSeverity,
     FlawTag,
 )
+from app.services.normalization import parse_base_and_increment
 from app.services.openings_service import derive_user_result
 
 # ---------------------------------------------------------------------------
@@ -195,6 +196,42 @@ def _reconstruct_tags(flaw: GameFlaw) -> list[FlawTag]:
     return tags
 
 
+def _compute_move_seconds(
+    pos_at: GamePosition | None,
+    pos_two_before: GamePosition | None,
+    time_control_str: str | None,
+) -> float | None:
+    """Return time spent on the flawed move in seconds (1dp), or None if unavailable.
+
+    Mirrors flaws_service._move_time (source of truth for the formula): same-side
+    clock is two plies back — PositionTwoBefore (ply=N-2), not PositionBefore
+    (ply=N-1) which is the opponent's clock (Pitfall 2 in RESEARCH).
+
+    Formula: prev_same_side_clock - clock_after_move + increment
+    (increment is added when the move is completed, so clock_after already
+    reflects the pre-increment state; we add increment back to recover spent time).
+
+    Returns None when:
+    - either position is absent (LEFT JOIN null — ply < 2 or no clock data),
+    - either clock_seconds is null (chess.com — no %clk),
+    - increment cannot be parsed from time_control_str,
+    - computed value is negative (corrupt/inconsistent clock data — WR-05).
+    """
+    if pos_at is None or pos_two_before is None:
+        return None
+    prev = pos_two_before.clock_seconds
+    curr = pos_at.clock_seconds
+    if prev is None or curr is None:
+        return None
+    _, increment = parse_base_and_increment(time_control_str) if time_control_str else (None, None)
+    if increment is None:
+        return None
+    move_time = prev - curr + increment
+    if move_time < 0:
+        return None
+    return round(move_time, 1)
+
+
 async def query_flaws(
     session: AsyncSession,
     *,
@@ -241,16 +278,19 @@ async def query_flaws(
     """
     flaw_clauses = build_flaw_filter_clauses(severity, tags)
 
-    # Two aliases for game_positions (Phase 112, D-08):
-    # PositionAt:     ply=N  → move_san + eval-after (same row as the flawed move)
-    # PositionBefore: ply=N-1 → eval-before (position BEFORE the flawed move)
-    # User-scoped on both joins (T-112-02: no cross-user position rows can attach).
+    # Three aliases for game_positions (Phase 112, D-08; extended 260610-vru):
+    # PositionAt:        ply=N   → move_san + eval-after + clock_seconds (mover's remaining clock)
+    # PositionBefore:    ply=N-1 → eval-before (position BEFORE the flawed move)
+    # PositionTwoBefore: ply=N-2 → same-side previous clock for move_seconds computation
+    #   (Pitfall 2 from flaws_service._move_time: same-side clock is two plies back, not one)
+    # User-scoped on all joins (T-112-02: no cross-user position rows can attach).
     PositionAt = aliased(GamePosition, name="pos_at")  # noqa: N806
     PositionBefore = aliased(GamePosition, name="pos_before")  # noqa: N806
+    PositionTwoBefore = aliased(GamePosition, name="pos_two_before")  # noqa: N806
 
-    # Base: game_flaws JOIN games + two LEFT JOINs on game_positions scoped to user
+    # Base: game_flaws JOIN games + three LEFT JOINs on game_positions scoped to user
     base_stmt = (
-        select(GameFlaw, Game, PositionAt, PositionBefore)
+        select(GameFlaw, Game, PositionAt, PositionBefore, PositionTwoBefore)
         .join(Game, Game.id == GameFlaw.game_id)
         .outerjoin(
             PositionAt,
@@ -263,6 +303,12 @@ async def query_flaws(
             (PositionBefore.game_id == GameFlaw.game_id)
             & (PositionBefore.user_id == GameFlaw.user_id)
             & (PositionBefore.ply == GameFlaw.ply - 1),
+        )
+        .outerjoin(
+            PositionTwoBefore,
+            (PositionTwoBefore.game_id == GameFlaw.game_id)
+            & (PositionTwoBefore.user_id == GameFlaw.user_id)
+            & (PositionTwoBefore.ply == GameFlaw.ply - 2),
         )
         .where(
             GameFlaw.user_id == user_id,
@@ -332,8 +378,10 @@ async def query_flaws(
             white_username=game.white_username,
             black_username=game.black_username,
             user_color=game.user_color,
+            clock_seconds=pos_at.clock_seconds if pos_at else None,
+            move_seconds=_compute_move_seconds(pos_at, pos_two_before, game.time_control_str),
         )
-        for flaw, game, pos_at, pos_before in rows
+        for flaw, game, pos_at, pos_before, pos_two_before in rows
     ]
     return items, matched_count
 
