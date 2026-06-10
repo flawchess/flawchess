@@ -494,8 +494,16 @@ export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
           flaw column (col-span-2) drops to a full-width second row beneath
           board+info / eval chart; on desktop all three share one row. */}
       <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:gap-3 sm:items-start px-4 py-4">
-        {/* Col 1: mini board + opening + metadata */}
-        <div className="flex gap-3 items-start">
+        {/* Col 1: mini board + opening + metadata. When the game has no engine
+            analysis the eval-chart column (col 2) is dropped, so this column
+            spans into its space to give the game info room to breathe instead of
+            wrapping in a cramped 1/3-width column. */}
+        <div
+          className={cn(
+            'flex gap-3 items-start',
+            game.analysis_state !== 'analyzed' && 'sm:col-span-2 lg:col-span-2'
+          )}
+        >
           {boardFen && (
             <LazyMiniBoard
               fen={boardFen}
@@ -510,31 +518,36 @@ export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
             {metadata}
           </div>
         </div>
-        {/* Col 2: eval chart (analyzed) or NoAnalysisState pill */}
-        <div className="flex items-center justify-center" data-testid={`card-col2-${game.game_id}`}>
-          {game.analysis_state === 'analyzed' &&
-          game.eval_series &&
-          game.flaw_markers &&
-          game.phase_transitions ? (
-            <EvalChart
-              gameId={game.game_id}
-              evalSeries={game.eval_series}
-              flawMarkers={game.flaw_markers}
-              phaseTransitions={game.phase_transitions}
-              moves={game.moves ?? []}
-              flipped={game.user_color === 'black'}
-              onHoverPlyChange={handleHoverPlyChange}
-              highlightedPlies={highlightedPlies}
-              outlinedPlies={outlinedPlies}
-              focusedPly={focusedPly}
-              // Match the miniboard height (DESKTOP_BOARD_SIZE = 132px). Literal
-              // arbitrary value so Tailwind's JIT scanner emits the class.
-              heightClass="h-[132px]"
-            />
-          ) : (
-            <NoAnalysisState gameId={game.game_id} />
-          )}
-        </div>
+        {/* Col 2: eval chart — analyzed games only. Unanalyzed games omit this
+            column entirely (the single remaining "No Analysis" pill lives in
+            col 3) so col 1 can reclaim the space. The inner branch still falls
+            back to a pill for the analyzed-but-missing-series edge case. */}
+        {game.analysis_state === 'analyzed' && (
+          <div
+            className="flex items-center justify-center"
+            data-testid={`card-col2-${game.game_id}`}
+          >
+            {game.eval_series && game.flaw_markers && game.phase_transitions ? (
+              <EvalChart
+                gameId={game.game_id}
+                evalSeries={game.eval_series}
+                flawMarkers={game.flaw_markers}
+                phaseTransitions={game.phase_transitions}
+                moves={game.moves ?? []}
+                flipped={game.user_color === 'black'}
+                onHoverPlyChange={handleHoverPlyChange}
+                highlightedPlies={highlightedPlies}
+                outlinedPlies={outlinedPlies}
+                focusedPly={focusedPly}
+                // Match the miniboard height (DESKTOP_BOARD_SIZE = 132px). Literal
+                // arbitrary value so Tailwind's JIT scanner emits the class.
+                heightClass="h-[132px]"
+              />
+            ) : (
+              <NoAnalysisState gameId={game.game_id} />
+            )}
+          </div>
+        )}
         {/* Col 3: flaw column. Spans both columns on tablet (full-width second
             row), single column on desktop (the grid separates columns — no divider). */}
         <div className="flex flex-col gap-2 sm:col-span-2 lg:col-span-1">

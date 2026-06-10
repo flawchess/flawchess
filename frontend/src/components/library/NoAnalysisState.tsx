@@ -16,7 +16,7 @@ export function NoAnalysisState({ gameId }: NoAnalysisStateProps) {
       data-testid={`no-analysis-${gameId}`}
     >
       <span className="h-2 w-2 rounded-full border border-muted-foreground" />
-      No engine analysis
+      No Analysis
     </span>
   );
 }
