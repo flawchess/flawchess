@@ -2,25 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.25
 milestone_name: Flaw-Stats Opponent Comparison
-status: Defining requirements
-last_updated: "2026-06-10T04:51:16.002Z"
-last_activity: 2026-06-09 — Milestone v1.25 started
+status: verifying
+last_updated: "2026-06-10T10:00:34.354Z"
+last_activity: 2026-06-10
 progress:
   total_phases: 3
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  completed_phases: 1
+  total_plans: 3
+  completed_plans: 3
+  percent: 33
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-06-09 — Milestone v1.25 started
+Phase: 114
+Plan: Not started
+Status: Phase complete — ready for verification
+Last activity: 2026-06-10
 
 ## Project Reference
 
@@ -312,6 +312,9 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 | Phase 110 P06 | 3min | 3 tasks | 0 files |
 | Phase 110-flaw-tag-taxonomy-overhaul-rename-impact-family-rebuild-tool P07 | continuation close-out | 3 tasks | 2 files |
 | Phase 112-flaws-subtab-card-rework P04 | 10 | 3 tasks | 8 files |
+| Phase 113-opponent-flaw-materialization P01 | 38 | 2 tasks | 4 files |
+| Phase 113 P02 | 16 | 2 tasks | 5 files |
+| Phase 113-opponent-flaw-materialization P03 | 10 | - tasks | - files |
 
 ## Decisions
 
@@ -341,3 +344,9 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 - [Phase ?]: D-04 honored: gen_flaw_thresholds_ts.py is independent; two CI drift gates remain separate
 - [Phase ?]: D-07 amendment: FlawFilterControl renders canonical lowercase-with-dash tag slugs with Radix Popover.Anchor hover definitions; TAG_LABELS map removed| 113 | Unstick mobile Library subtab nav; only Filters/Tags row pins | 2026-06-09 | 56bebc21 | — |
 - [Phase ?]: useLibraryGame fetches only when modal opens (enabled: gameId !== null); Dialog sm:max-w-4xl per UI-SPEC
+- [Phase ?]: is_opponent_expr in query_utils.py: single tested ply-parity source, closes off-by-one trap
+- [Phase ?]: classify_game_flaws drops player-only filter: emits both movers with per-mover subject_result
+- [Phase ?]: R6 fixed via R1 choke point: no query_utils.py edit needed
+- [Phase ?]: Game JOIN added to R3/R4/R5 to bring user_color into scope for player_only_gate (D-04)
+- [Phase ?]: is_opponent_expr/player_only_gate params widened to Any — ty InstrumentedAttribute subtype mismatch
+- [Phase ?]: D-09 confirmed: backfill_flaws.py needed zero code changes — D-10 single-classify-path propagated both-sides behavior from Plan-01 kernel change automatically

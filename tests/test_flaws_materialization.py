@@ -12,6 +12,9 @@ Coverage:
 - Each boolean column matches tag membership
 - A GameNotAnalyzed game produces zero rows
 
+Phase 113 additions: TestBothSidesMaterialization — after both-sides kernel,
+ungated row count roughly doubles for a two-color-flaw game.
+
 No dev DB reset needed — tests use the db_session rollback fixture.
 """
 
@@ -675,4 +678,149 @@ class TestMaterializationRoundTrip:
         rows_in_db = db_result.scalars().all()
         assert len(rows_in_db) == 0, (
             f"GameNotAnalyzed must produce zero game_flaws rows, got {len(rows_in_db)}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# TestBothSidesMaterialization — Phase 113 (FLAWX-01/FLAWX-02) integration
+# ---------------------------------------------------------------------------
+#
+# After the both-sides kernel change (D-06), classifying a game with flaws on
+# both colors and inserting the results must produce roughly 2× more rows than
+# a player-only game. The PK (user_id, game_id, ply) never collides because
+# each ply belongs to exactly one side.
+#
+# CP values that produce opponent (black) blunders:
+#   eval_cp=-300 at positions[2]: es_before for black = 1 - es_white(-300) ≈ 0.667
+#   eval_cp=400  at positions[3]: es_after for black  = 1 - es_white(400)  ≈ 0.269
+#   drop ≈ 0.398 >= BLUNDER_DROP → black blunder at ply 3 (odd → black mover)
+
+
+def _build_both_sides_positions() -> list[GamePosition]:
+    """10 positions (plies 0-9) with white blunder at ply 2 and black blunder at ply 3.
+
+    White blunder at ply 2 (even → white mover):
+        eval_cp=200  at [1] → es_before for white ≈ 0.685
+        eval_cp=-500 at [2] → es_after for white ≈ 0.160 → drop ≈ 0.525 (blunder)
+
+    Black blunder at ply 3 (odd → black mover):
+        eval_cp=-500 at [2] → es_before for black = 1 - es_white(-500) ≈ 0.840
+        eval_cp=300  at [3] → es_after for black  = 1 - es_white(300)  ≈ 0.270
+        drop ≈ 0.570 (blunder)
+
+    Coverage = 9/10 = 0.90 >= EVAL_COVERAGE_MIN.
+    """
+    positions = [_make_pos(i, eval_cp=20) for i in range(10)]
+
+    # White blunder at ply 2
+    positions[1] = _make_pos(1, eval_cp=_CP_BLUNDER_BEFORE)
+    positions[2] = _make_pos(2, eval_cp=_CP_BLUNDER_AFTER, move_san="Nf3")
+
+    # Black blunder at ply 3: es_before for black = 1 - es_white(_CP_BLUNDER_AFTER)
+    # eval_cp=-500 at positions[2] is already set; positions[3] needs the "after" for black
+    positions[3] = _make_pos(3, eval_cp=300, move_san="Nc6")
+
+    # Final ply has no eval
+    positions[9] = _make_pos(9)
+
+    return positions
+
+
+class TestBothSidesMaterialization:
+    """After the both-sides kernel, classifying+inserting a two-color-flaw game
+    produces rows for BOTH colors — the ungated count is at least 2× the
+    player-only count for the same game.
+
+    This is the FLAWX-01 row-count doubles invariant from VALIDATION.md.
+    """
+
+    @pytest.mark.asyncio
+    async def test_both_sides_row_count_at_least_double_player_only(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Ungated game_flaws row count is >= 2× player-only count for a two-color-flaw game."""
+        game_obj_white = _make_game_obj(user_color="white", result="1-0")
+        positions = _build_both_sides_positions()
+
+        # Classify (should now emit flaws for both colors)
+        result = classify_game_flaws(game_obj_white, positions)
+        assert isinstance(result, list), "Expected list[FlawRecord], got GameNotAnalyzed"
+
+        # Count player-only (white) flaws
+        player_flaws = [f for f in result if f["side"] == "white"]
+        opponent_flaws = [f for f in result if f["side"] == "black"]
+
+        assert len(player_flaws) >= 1, (
+            "Expected at least one player (white) FlawRecord (blunder at ply 2)"
+        )
+        assert len(opponent_flaws) >= 1, (
+            "Expected at least one opponent (black) FlawRecord (blunder at ply 3). "
+            "Did the both-sides kernel change get applied?"
+        )
+
+        total_flaws = len(result)
+        assert total_flaws >= 2 * len(player_flaws), (
+            f"Expected total flaws >= 2x player flaws. "
+            f"total={total_flaws}, player={len(player_flaws)}, opponent={len(opponent_flaws)}"
+        )
+
+        # Insert via the D-10 path and verify row counts in DB
+        game = await _seed_game(db_session)
+        rows = [
+            flaw_record_to_row(user_id=game.user_id, game_id=game.id, flaw=flaw) for flaw in result
+        ]
+        await bulk_insert_game_flaws(db_session, rows)
+        await db_session.flush()
+
+        db_result = await db_session.execute(
+            select(GameFlaw).where(
+                GameFlaw.user_id == game.user_id,
+                GameFlaw.game_id == game.id,
+            )
+        )
+        all_rows = db_result.scalars().all()
+        assert len(all_rows) == total_flaws, (
+            f"DB row count {len(all_rows)} should equal classify output {total_flaws}"
+        )
+
+        # Verify PK never collides: each ply appears at most once
+        plies = [r.ply for r in all_rows]
+        assert len(plies) == len(set(plies)), (
+            "PK violation: duplicate ply values in game_flaws "
+            f"(each ply belongs to exactly one mover). plies={sorted(plies)}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_opponent_flaw_row_has_correct_ply_for_black(
+        self, db_session: AsyncSession
+    ) -> None:
+        """The opponent (black) blunder at ply 3 produces a DB row with ply=3."""
+        game_obj = _make_game_obj(user_color="white", result="1-0")
+        positions = _build_both_sides_positions()
+
+        result = classify_game_flaws(game_obj, positions)
+        assert isinstance(result, list)
+
+        game = await _seed_game(db_session)
+        rows = [
+            flaw_record_to_row(user_id=game.user_id, game_id=game.id, flaw=flaw) for flaw in result
+        ]
+        await bulk_insert_game_flaws(db_session, rows)
+        await db_session.flush()
+
+        # Ply 3 (odd → black mover) should have a game_flaws row
+        ply3_result = await db_session.execute(
+            select(GameFlaw).where(
+                GameFlaw.user_id == game.user_id,
+                GameFlaw.game_id == game.id,
+                GameFlaw.ply == 3,
+            )
+        )
+        ply3_row = ply3_result.scalar_one_or_none()
+        assert ply3_row is not None, (
+            "Expected a game_flaws row at ply=3 for the opponent (black) blunder. "
+            "Did the both-sides kernel change get applied?"
+        )
+        assert ply3_row.severity == 2, (
+            f"Expected blunder (severity=2) at ply 3, got {ply3_row.severity}"
         )

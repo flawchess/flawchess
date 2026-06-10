@@ -4,11 +4,16 @@ Covers Phase 105 LIBG-02/06/07: severity classification, 8 attribution tags,
 TypedDict output contract, eval coverage gate, mate Option B, FEN recomputation.
 No DB required — all tests construct GamePosition objects in memory.
 
+Phase 113 additions: TestIsOpponentExpr (parity helper), TestClassifyBothColors
+(both-mover kernel), TestOpponentLuckyTag (per-mover subject_result).
+
 Sign convention: eval_cp / eval_mate are white-perspective (Stockfish / python-chess).
 """
 
 import chess
 import pytest
+from sqlalchemy import literal, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
@@ -591,22 +596,20 @@ class TestClassifyGameFlaws:
         flaw = ply2_flaws[0]
         assert flaw["es_before"] > flaw["es_after"]
 
-    def test_opponent_flaws_not_in_result_for_white_user(self) -> None:
-        """Only user's (white's) flaws appear in the result — opponent errors are filtered."""
+    def test_opponent_flaws_in_result_for_white_user(self) -> None:
+        """Phase 113 (D-06): both movers' flaws appear in the result.
+
+        After dropping the mover != user_color filter, classify_game_flaws emits
+        FlawRecords for BOTH movers. An opponent (black) blunder at ply 3 must
+        appear alongside any player (white) flaws. Readers that need player-only
+        rows use is_opponent_expr() at query time (CONTEXT D-01).
+        """
         pgn = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O *"
         game = _make_game(pgn=pgn, user_color="white")
 
         # Induce a blunder for BLACK at ply 3 (odd ply => black mover).
-        # ES_before = _ply_to_es(positions[2], "black"); ES_after = _ply_to_es(positions[3], "black")
-        # For black: eval_cp=+500 is BAD for black (white winning) => low black ES
-        # eval_cp_to_expected_score(+200, "black") ≈ 0.315 (before)
-        # eval_cp_to_expected_score(-500, "black") ≈ 0.840 (after — black recovers??)
-        # Actually: we want black to make a blunder (drop in black's ES).
-        # pos[2].eval_cp = -300 => es_before for black ≈ eval_cp_to_expected_score(-300, "black")
-        #                        = 1 - eval_cp_to_expected_score(-300, "white")
-        #                        ≈ 1 - 0.333 = 0.667 (black was winning)
-        # pos[3].eval_cp = +200 => es_after for black ≈ eval_cp_to_expected_score(+200, "black")
-        #                        ≈ 1 - 0.685 = 0.315 (black now losing)
+        # pos[2].eval_cp = -300 => es_before for black ≈ 0.667 (black was winning)
+        # pos[3].eval_cp = +200 => es_after for black ≈ 0.315 (black now losing)
         # drop = 0.667 - 0.315 = 0.352 => blunder for black
         positions = [_make_pos(i, eval_cp=0) for i in range(10)]
         positions[2] = _make_pos(2, eval_cp=-300)  # before black's ply-3 move
@@ -615,11 +618,12 @@ class TestClassifyGameFlaws:
 
         result = classify_game_flaws(game, positions)
         assert isinstance(result, list)
-        # White is user_color — no black flaws should appear
-        for flaw in result:
-            assert flaw["side"] == "white", (
-                f"Opponent (black) flaw at ply {flaw['ply']} should not appear in result"
-            )
+        # Phase 113: both sides emitted — the opponent (black) blunder must appear
+        black_flaws = [f for f in result if f["side"] == "black"]
+        assert len(black_flaws) >= 1, (
+            "Phase 113 kernel change: opponent (black) flaw at ply 3 must appear in result. "
+            "Readers use is_opponent_expr() to filter player-only at query time."
+        )
 
     def test_flaws_are_sorted_by_ply(self) -> None:
         """Returned FlawRecords are ordered by ply ascending (iteration order)."""
@@ -1269,9 +1273,11 @@ class TestOracleCloseness:
         flaws = classify_game_flaws(game, positions)
         assert isinstance(flaws, list)
 
-        # Derived counts from emitted records (mistakes + blunders only)
-        derived_blunders = sum(1 for f in flaws if f["severity"] == "blunder")
-        derived_mistakes = sum(1 for f in flaws if f["severity"] == "mistake")
+        # Phase 113: kernel emits both movers. Filter to white side only for oracle comparison.
+        # (Oracle counts are per-color; derive_blunders must match the white-only subset.)
+        white_flaws = [f for f in flaws if f["side"] == "white"]
+        derived_blunders = sum(1 for f in white_flaws if f["severity"] == "blunder")
+        derived_mistakes = sum(1 for f in white_flaws if f["severity"] == "mistake")
 
         # For inaccuracy count: re-run all-moves pass and count inaccuracy severity entries for white
         # (inaccuracies are count-only per the 2026-06-05 amendment — not emitted but classifiable)
@@ -1313,8 +1319,10 @@ class TestOracleCloseness:
         flaws = classify_game_flaws(game, positions)
         assert isinstance(flaws, list)
 
-        derived_blunders = sum(1 for f in flaws if f["severity"] == "blunder")
-        derived_mistakes = sum(1 for f in flaws if f["severity"] == "mistake")
+        # Phase 113: kernel emits both movers. Filter to black side only for oracle comparison.
+        black_flaws = [f for f in flaws if f["side"] == "black"]
+        derived_blunders = sum(1 for f in black_flaws if f["severity"] == "blunder")
+        derived_mistakes = sum(1 for f in black_flaws if f["severity"] == "mistake")
 
         from app.services.flaws_service import _run_all_moves_pass as _ramp_black
 
@@ -1333,4 +1341,281 @@ class TestOracleCloseness:
         )
         assert abs(derived_inaccuracies - bi) <= SANITY_TOLERANCE, (
             f"Black inaccuracies: derived={derived_inaccuracies} oracle={bi} diff={abs(derived_inaccuracies - bi)}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Phase 113 tests: is_opponent_expr, both-mover kernel, per-mover lucky tag
+# ---------------------------------------------------------------------------
+
+# PLY_EVEN / PLY_ODD: named constants so tests do not scatter bare magic numbers.
+# Convention (mirrors _run_all_moves_pass): even ply → white mover; odd ply → black mover.
+_PLY_EVEN = 2  # white mover (first even ply after the initial position)
+_PLY_ODD = 3  # black mover
+
+
+class TestIsOpponentExpr:
+    """Mandatory parity gate: is_opponent_expr must return the correct boolean for
+    all 4 (ply parity × user_color) combinations evaluated against the real DB.
+
+    Code-reading alone is insufficient — a prior off-by-one bug lived here
+    (CONTEXT D-01; RESEARCH Pitfall 1). Only a live SQL evaluation closes the trap.
+
+    Convention:
+        even ply → white mover → is_opponent when user_color == 'black'
+        odd ply  → black mover → is_opponent when user_color == 'white'
+    """
+
+    async def _eval_is_opponent(
+        self,
+        session: AsyncSession,
+        ply: int,
+        user_color: str,
+    ) -> bool:
+        """Evaluate is_opponent_expr(literal(ply), literal(user_color)) via a real DB query."""
+        from app.repositories.query_utils import is_opponent_expr
+
+        expr = is_opponent_expr(literal(ply), literal(user_color))
+        result = await session.execute(select(expr))
+        value = result.scalar_one()
+        # SQLAlchemy may return a Python bool or a DB-backend truthy value.
+        return bool(value)
+
+    @pytest.mark.asyncio
+    async def test_white_user_even_ply_is_player(self, db_session: AsyncSession) -> None:
+        """White user at even ply (white moves): is_opponent == False (player)."""
+        assert await self._eval_is_opponent(db_session, _PLY_EVEN, "white") is False
+
+    @pytest.mark.asyncio
+    async def test_white_user_odd_ply_is_opponent(self, db_session: AsyncSession) -> None:
+        """White user at odd ply (black moves): is_opponent == True (opponent)."""
+        assert await self._eval_is_opponent(db_session, _PLY_ODD, "white") is True
+
+    @pytest.mark.asyncio
+    async def test_black_user_even_ply_is_opponent(self, db_session: AsyncSession) -> None:
+        """Black user at even ply (white moves): is_opponent == True (opponent)."""
+        assert await self._eval_is_opponent(db_session, _PLY_EVEN, "black") is True
+
+    @pytest.mark.asyncio
+    async def test_black_user_odd_ply_is_player(self, db_session: AsyncSession) -> None:
+        """Black user at odd ply (black moves): is_opponent == False (player)."""
+        assert await self._eval_is_opponent(db_session, _PLY_ODD, "black") is False
+
+
+class TestClassifyBothColors:
+    """classify_game_flaws emits FlawRecords for BOTH movers (Phase 113 FLAWX-02).
+
+    After dropping the mover != user_color filter, the kernel must return at
+    least one FlawRecord for each color when both colors make mistakes/blunders.
+    """
+
+    # PGN long enough for 8 plies (positions[0..7]); plies 2/4 even = white,
+    # plies 3/5 odd = black.
+    _PGN = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 *"
+
+    def _build_both_color_positions(self) -> list[GamePosition]:
+        """Positions with a white blunder at ply 2 and a black blunder at ply 3."""
+        # 8 positions (plies 0-7), all with baseline eval_cp=20
+        positions = [_make_pos(i, eval_cp=20) for i in range(8)]
+
+        # White blunder at ply 2 (even → white mover):
+        # ES drop for white: eval_cp drops from +200 to -500 → drop ≈ 0.525
+        positions[1] = _make_pos(1, eval_cp=200)  # before ply 2 (white's view)
+        positions[2] = _make_pos(2, eval_cp=-500)  # after white's blunder
+
+        # Black blunder at ply 3 (odd → black mover):
+        # After ply 2: white is −500 cp (black advantage), so es_before for black
+        # is high. At ply 3, eval swings to +300 (black's ES drops sharply).
+        # eval_cp=-500 at positions[2] → es_before for black = 1 - es_white ≈ 1 - 0.16 = 0.84
+        # eval_cp=300 at positions[3] → es_after for black = 1 - es_white ≈ 1 - 0.73 = 0.27
+        # drop ≈ 0.84 - 0.27 = 0.57 ≥ BLUNDER_DROP
+        positions[3] = _make_pos(3, eval_cp=300)  # after black's blunder
+
+        # Final ply: no eval (coverage gate: 7/8 = 0.875 < 0.90, so add more covered)
+        # Make coverage 7/8 = 0.875... need 90%: for 8 positions need at least 7.2,
+        # so this is marginal. Use 10 positions to be safe.
+        return positions
+
+    def _build_positions_10(self) -> list[GamePosition]:
+        """10 positions (plies 0-9) with white blunder at ply 2 and black blunder at ply 3.
+
+        Coverage = 9/10 = 0.90 >= EVAL_COVERAGE_MIN.
+        Final ply 9 has no eval.
+        """
+        positions = [_make_pos(i, eval_cp=20) for i in range(10)]
+
+        # White blunder at ply 2 (even → white mover)
+        positions[1] = _make_pos(1, eval_cp=200)
+        positions[2] = _make_pos(2, eval_cp=-500)
+
+        # Black blunder at ply 3 (odd → black mover)
+        # es_before for black at ply 3 = 1 - eval_cp_to_es(-500, "white") ≈ 1 - 0.16 = 0.84
+        # es_after for black at ply 3 = 1 - eval_cp_to_es(300, "white") ≈ 1 - 0.73 = 0.27
+        # drop ≈ 0.57 >= BLUNDER_DROP
+        positions[3] = _make_pos(3, eval_cp=300)
+
+        # Final ply has no eval
+        positions[9] = _make_pos(9)
+
+        return positions
+
+    # Long PGN for 10 positions
+    _PGN_10 = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O *"
+
+    def test_emits_flaws_for_both_movers(self) -> None:
+        """classify_game_flaws returns at least one FlawRecord for each color."""
+        game = _make_game(pgn=self._PGN_10, user_color="white", result="1-0")
+        positions = self._build_positions_10()
+
+        result = classify_game_flaws(game, positions)
+        assert isinstance(result, list), "Expected list[FlawRecord], got GameNotAnalyzed"
+
+        sides = {flaw["side"] for flaw in result}
+        assert "white" in sides, (
+            "Expected at least one FlawRecord with side='white' (player's blunder at ply 2)"
+        )
+        assert "black" in sides, (
+            "Expected at least one FlawRecord with side='black' (opponent's blunder at ply 3)"
+        )
+
+    def test_white_user_opponent_flaw_has_black_side(self) -> None:
+        """For a white user, the opponent flaw has side='black'."""
+        game = _make_game(pgn=self._PGN_10, user_color="white", result="1-0")
+        positions = self._build_positions_10()
+
+        result = classify_game_flaws(game, positions)
+        assert isinstance(result, list)
+
+        black_flaws = [f for f in result if f["side"] == "black"]
+        assert len(black_flaws) >= 1, "Expected at least one opponent (black) FlawRecord"
+        assert all(f["severity"] in ("mistake", "blunder") for f in black_flaws)
+
+    def test_black_user_opponent_flaw_has_white_side(self) -> None:
+        """For a black user, the opponent flaw has side='white'."""
+        # Same positions but user_color='black': player is black (odd plies),
+        # opponent is white (even plies). White blunders at ply 2 (opponent).
+        game = _make_game(pgn=self._PGN_10, user_color="black", result="0-1")
+        positions = self._build_positions_10()
+
+        result = classify_game_flaws(game, positions)
+        assert isinstance(result, list)
+
+        white_flaws = [f for f in result if f["side"] == "white"]
+        assert len(white_flaws) >= 1, (
+            "Expected at least one opponent (white) FlawRecord when user_color='black'"
+        )
+
+
+class TestOpponentLuckyTag:
+    """Per-mover subject_result drives the lucky end-of-game rule correctly.
+
+    After Phase 113, classify_game_flaws passes derive_user_result(game.result, mover)
+    to _build_tags instead of the pre-resolved user_result. This means:
+    - An opponent end-of-game blunder where the OPPONENT LOST must NOT carry 'lucky'
+      (subject_result for the opponent is 'loss'; lucky requires subject_result != 'loss').
+    - A genuinely unpunished blunder (opponent erred in reply) still gets 'lucky'.
+
+    RESEARCH Pitfall 2: The prior code passed user_result='win' (player won) to _build_tags
+    for all flaws, incorrectly tagging opponent end-of-game blunders as 'lucky'.
+    """
+
+    # PGN for 8 positions (plies 0-7), enough for the end-of-game blunder test
+    _PGN = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 *"
+
+    def _build_end_of_game_positions(self, n_plies: int = 10) -> list[GamePosition]:
+        """Build positions for a game ending after an opponent blunder at the last ply."""
+        positions = [_make_pos(i, eval_cp=20) for i in range(n_plies)]
+        # Final ply has no eval (end of game)
+        positions[n_plies - 1] = _make_pos(n_plies - 1)
+        return positions
+
+    def test_opponent_end_of_game_blunder_no_lucky_tag_when_opponent_lost(self) -> None:
+        """Opponent blunders on the last move and then loses: no 'lucky' tag.
+
+        The opponent's subject_result is 'loss' (they resigned/flagged).
+        _is_unpunished end-of-game rule: return subject_result != 'loss'.
+        With subject_result='loss', this returns False → no lucky tag.
+        """
+        # White user, game result=1-0 (white won). Black is opponent.
+        # Build a game where black blunders at the last move (odd ply, before game ends).
+        # Use a position where all moves have eval except the last.
+        # For the opponent (black) blundering at ply 3 (odd) to be "end of game"
+        # we need ply 4 to have no next entry in all_moves (it's the final position).
+
+        # 5 positions (plies 0-4): ply 4 has no eval → it's the final position
+        # Coverage: 4/5 = 0.80 < EVAL_COVERAGE_MIN... need more
+        # Use 10 positions: ply 9 has no eval; black blunders at ply 9 is the "end"
+        # Actually: "end of game" means there's no next move (n+1 not in all_moves).
+        # So the blunder at ply N is "end of game" if N = last evaluated ply and
+        # positions[N+1] has no eval.
+        # Let's build: 11 positions (plies 0-10), final ply 10 has no eval.
+        # Black blunders at ply 9 (odd → black mover). Ply 10 is the game end (no eval).
+        # all_moves won't have an entry at ply 10 (no es_before/after available).
+        # So _is_unpunished for ply 9: entry = all_moves.get(10) → None → end-of-game rule.
+        n_plies = 11
+        positions = [_make_pos(i, eval_cp=20) for i in range(n_plies)]
+
+        # Black blunder at ply 9 (odd → black mover):
+        # es_before for black = 1 - es_white(eval_cp=-300) ≈ 1 - 0.333 = 0.667
+        # es_after for black = 1 - es_white(eval_cp=400) ≈ 1 - 0.731 = 0.269
+        # drop ≈ 0.398 >= BLUNDER_DROP
+        positions[8] = _make_pos(8, eval_cp=-300)  # before ply 9 (black's view)
+        positions[9] = _make_pos(9, eval_cp=400)  # after black's blunder
+
+        # Ply 10: no eval (end of game, opponent resigned/lost)
+        positions[10] = _make_pos(10)
+
+        # Game result: white won (1-0). Opponent (black) lost.
+        # For black (the mover at ply 9): subject_result = derive_user_result("1-0", "black") = "loss"
+        # _is_unpunished end-of-game: subject_result != "loss" → False → no lucky tag
+        pgn = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O *"  # placeholder PGN
+        game = _make_game(pgn=pgn, user_color="white", result="1-0")
+
+        result = classify_game_flaws(game, positions)
+        assert isinstance(result, list)
+
+        # Find the opponent (black) flaw at ply 9
+        black_flaw_at_9 = next((f for f in result if f["side"] == "black" and f["ply"] == 9), None)
+        assert black_flaw_at_9 is not None, (
+            "Expected a black FlawRecord at ply 9 (opponent blunder). "
+            f"Got flaws: {[(f['side'], f['ply'], f['severity']) for f in result]}"
+        )
+        assert "lucky" not in black_flaw_at_9["tags"], (
+            f"Opponent end-of-game blunder where opponent lost must NOT carry 'lucky'. "
+            f"Tags: {black_flaw_at_9['tags']}"
+        )
+
+    def test_player_end_of_game_blunder_lucky_when_player_did_not_lose(self) -> None:
+        """Player blunders on the last move but does not lose: 'lucky' tag fires.
+
+        Per-mover subject_result: player's result != 'loss' → lucky.
+        """
+        # White user, result='1/2-1/2' (draw). White blunders at ply 8 (even → white mover).
+        # Ply 9 has no eval (end of game). all_moves has no entry at ply 9.
+        # _is_unpunished for ply 8: entry = all_moves.get(9) → None.
+        # subject_result = derive_user_result("1/2-1/2", "white") = "draw" != "loss" → True → lucky
+        n_plies = 10
+        positions = [_make_pos(i, eval_cp=20) for i in range(n_plies)]
+
+        # White blunder at ply 8 (even → white mover)
+        positions[7] = _make_pos(7, eval_cp=200)
+        positions[8] = _make_pos(8, eval_cp=-500)
+
+        # Ply 9: no eval (end of game)
+        positions[9] = _make_pos(9)
+
+        pgn = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O *"
+        game = _make_game(pgn=pgn, user_color="white", result="1/2-1/2")
+
+        result = classify_game_flaws(game, positions)
+        assert isinstance(result, list)
+
+        white_flaw_at_8 = next((f for f in result if f["side"] == "white" and f["ply"] == 8), None)
+        assert white_flaw_at_8 is not None, (
+            "Expected a white FlawRecord at ply 8. "
+            f"Got flaws: {[(f['side'], f['ply'], f['severity']) for f in result]}"
+        )
+        assert "lucky" in white_flaw_at_8["tags"], (
+            f"Player end-of-game blunder where player did not lose should carry 'lucky'. "
+            f"Tags: {white_flaw_at_8['tags']}"
         )

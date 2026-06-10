@@ -411,12 +411,14 @@ async def flaws_test_state(test_engine: Any) -> dict[str, Any]:
         result="0-1",
         user_color="black",
     )
-    # Flaws on game A1: ply 4 (blunder), ply 8 (mistake, reversed)
+    # Flaws on game A1: ply 5 (blunder), ply 7 (mistake, reversed)
+    # game_a1 is user_color="black" → black moves at ODD plies (player rows per
+    # D-04 player_only_gate: odd ply + black user = black mover = player).
     await _seed_flaw_committed(
         session_maker,
         user_id=user_a_id,
         game_id=game_a1,
-        ply=4,
+        ply=5,
         severity=2,
         phase=0,  # blunder, opening
     )
@@ -424,7 +426,7 @@ async def flaws_test_state(test_engine: Any) -> dict[str, Any]:
         session_maker,
         user_id=user_a_id,
         game_id=game_a1,
-        ply=8,
+        ply=7,
         severity=1,
         phase=1,
         is_reversed=True,  # mistake, reversed
@@ -643,7 +645,7 @@ class TestGetLibraryFlaws:
         """Flaws are ordered played_at DESC then ply ASC (D-07).
 
         User A has flaws across 3 games (Jan, Feb, Mar). Expected order:
-          game_a3 ply 10 → game_a2 ply 2 → game_a2 ply 6 → game_a1 ply 4 → game_a1 ply 8
+          game_a3 ply 10 → game_a2 ply 2 → game_a2 ply 6 → game_a1 ply 5 → game_a1 ply 7
         (newest game first; within a game, lower ply first).
         """
         async with httpx.AsyncClient(
@@ -671,8 +673,8 @@ class TestGetLibraryFlaws:
             (game_a3, 10),
             (game_a2, 2),
             (game_a2, 6),
-            (game_a1, 4),
-            (game_a1, 8),
+            (game_a1, 5),
+            (game_a1, 7),
         ]
         actual = [(f["game_id"], f["ply"]) for f in flaws]
         assert actual == expected, f"Expected order {expected}, got {actual}"
@@ -728,7 +730,7 @@ class TestGetLibraryFlaws:
         assert resp.status_code == 200
         body = resp.json()
         flaws = body["flaws"]
-        # User A has 3 blunders (game_a1 ply4, game_a2 ply2, game_a2 ply6)
+        # User A has 3 blunders (game_a1 ply5, game_a2 ply2, game_a2 ply6)
         assert body["matched_count"] == 3
         for flaw in flaws:
             assert flaw["severity"] == "blunder", f"Expected blunder, got {flaw['severity']}"
@@ -755,7 +757,7 @@ class TestGetLibraryFlaws:
                 params={"severity": "blunder"},
                 headers=flaws_test_state["headers_a"],
             )
-        # "mistake" only → 2 mistakes (game_a1 ply8, game_a3 ply10)
+        # "mistake" only → 2 mistakes (game_a1 ply7, game_a3 ply10)
         assert resp_m.status_code == 200
         assert resp_m.json()["matched_count"] == 2
         for flaw in resp_m.json()["flaws"]:
@@ -779,11 +781,11 @@ class TestGetLibraryFlaws:
             )
         assert resp.status_code == 200
         body = resp.json()
-        # Only game_a1 ply8 has is_reversed=True
+        # Only game_a1 ply7 has is_reversed=True
         assert body["matched_count"] == 1
         flaw = body["flaws"][0]
         assert flaw["game_id"] == flaws_test_state["game_a1"]
-        assert flaw["ply"] == 8
+        assert flaw["ply"] == 7
         assert "reversed" in flaw["tags"]
 
     @pytest.mark.asyncio

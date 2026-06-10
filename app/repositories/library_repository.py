@@ -30,7 +30,7 @@ from app.repositories.game_flaws_repository import (
     _SEVERITY_INT,
     _TEMPO_INT,
 )
-from app.repositories.query_utils import apply_game_filters
+from app.repositories.query_utils import apply_game_filters, player_only_gate
 from app.schemas.library import FlawListItem
 from app.services.flaws_service import (
     EVAL_COVERAGE_MIN,
@@ -150,10 +150,15 @@ def flaw_exists_from_table(
     if not clauses:
         # No filter — match all games (caller decides whether to add to statement)
         return true()
+    # D-04: player-only gate — after Phase 113 game_flaws contains both sides;
+    # the EXISTS filter for the Games tab must only match player flaws so an
+    # opponent-only flaw does not falsely flag a game into the Flaw filter (R1/R6).
+    # Game.id is the outer correlating column (correlated EXISTS pattern).
     return exists(
         select(GameFlaw.ply).where(
             GameFlaw.game_id == Game.id,
             GameFlaw.user_id == user_id,
+            player_only_gate(GameFlaw.ply, Game.user_color),  # D-04 player gate
             *clauses,
         )
     )
@@ -261,6 +266,10 @@ async def query_flaws(
         )
         .where(
             GameFlaw.user_id == user_id,
+            # D-04: player-only gate — after Phase 113 game_flaws contains both sides;
+            # the Flaws-subtab list must only show player flaws so opponent blunders do
+            # not appear as flaw cards. Game is already joined above (R2 gate).
+            player_only_gate(GameFlaw.ply, Game.user_color),
             *flaw_clauses,
         )
     )
@@ -345,9 +354,18 @@ async def fetch_page_game_flaws(
     """
     if not game_ids:
         return {}
-    stmt = select(GameFlaw).where(
-        GameFlaw.user_id == user_id,
-        GameFlaw.game_id.in_(game_ids),
+    # D-04: player-only gate — after Phase 113 game_flaws contains both sides;
+    # fetch_page_game_flaws feeds chip/M+B building on Games-tab cards so it must
+    # return only player rows. Game JOIN is added here to bring user_color into
+    # scope for player_only_gate (R3 gate).
+    stmt = (
+        select(GameFlaw)
+        .join(Game, Game.id == GameFlaw.game_id)
+        .where(
+            GameFlaw.user_id == user_id,
+            GameFlaw.game_id.in_(game_ids),
+            player_only_gate(GameFlaw.ply, Game.user_color),  # D-04 player gate
+        )
     )
     rows = list((await session.execute(stmt)).scalars().all())
     result: dict[int, list[GameFlaw]] = {gid: [] for gid in game_ids}
@@ -452,22 +470,30 @@ async def fetch_stats_aggregates(
         .subquery("filtered_analyzed")
     )
 
-    stmt = select(
-        func.count().filter(GameFlaw.severity == _SEVERITY_INT["mistake"]),
-        func.count().filter(GameFlaw.severity == _SEVERITY_INT["blunder"]),
-        func.count().filter(GameFlaw.tempo == _TEMPO_INT["low-clock"]),
-        func.count().filter(GameFlaw.tempo == _TEMPO_INT["hasty"]),
-        func.count().filter(GameFlaw.tempo == _TEMPO_INT["unrushed"]),
-        func.count().filter(GameFlaw.is_reversed.is_(True)),
-        func.count().filter(GameFlaw.is_miss.is_(True)),
-        func.count().filter(GameFlaw.is_lucky.is_(True)),
-        func.count().filter(GameFlaw.is_squandered.is_(True)),
-        func.count().filter(GameFlaw.phase == _PHASE_INT["opening"]),
-        func.count().filter(GameFlaw.phase == _PHASE_INT["middlegame"]),
-        func.count().filter(GameFlaw.phase == _PHASE_INT["endgame"]),
-    ).where(
-        GameFlaw.user_id == user_id,
-        GameFlaw.game_id.in_(select(filtered_analyzed_subq.c.id)),
+    # D-04: Game JOIN required so Game.user_color is in scope for player_only_gate.
+    # After Phase 113 game_flaws contains both sides; this gate ensures the stats
+    # panel aggregates count only player flaws (no opponent inflation — R4).
+    stmt = (
+        select(
+            func.count().filter(GameFlaw.severity == _SEVERITY_INT["mistake"]),
+            func.count().filter(GameFlaw.severity == _SEVERITY_INT["blunder"]),
+            func.count().filter(GameFlaw.tempo == _TEMPO_INT["low-clock"]),
+            func.count().filter(GameFlaw.tempo == _TEMPO_INT["hasty"]),
+            func.count().filter(GameFlaw.tempo == _TEMPO_INT["unrushed"]),
+            func.count().filter(GameFlaw.is_reversed.is_(True)),
+            func.count().filter(GameFlaw.is_miss.is_(True)),
+            func.count().filter(GameFlaw.is_lucky.is_(True)),
+            func.count().filter(GameFlaw.is_squandered.is_(True)),
+            func.count().filter(GameFlaw.phase == _PHASE_INT["opening"]),
+            func.count().filter(GameFlaw.phase == _PHASE_INT["middlegame"]),
+            func.count().filter(GameFlaw.phase == _PHASE_INT["endgame"]),
+        )
+        .join(Game, Game.id == GameFlaw.game_id)
+        .where(
+            GameFlaw.user_id == user_id,
+            GameFlaw.game_id.in_(select(filtered_analyzed_subq.c.id)),
+            player_only_gate(GameFlaw.ply, Game.user_color),  # D-04 player gate (R4)
+        )
     )
     row = (await session.execute(stmt)).one()
     return (
@@ -540,14 +566,19 @@ async def fetch_stats_trend(
     )
 
     # Flaw counts per game (0 for games with no flaws in game_flaws)
+    # D-04: Game JOIN required so Game.user_color is in scope for player_only_gate.
+    # After Phase 113 game_flaws contains both sides; this gate ensures the per-game
+    # M+B trend counts only player flaws (no opponent inflation — R5).
     flaw_counts_subq = (
         select(
             GameFlaw.game_id,
             func.count().label("mb_count"),
         )
+        .join(Game, Game.id == GameFlaw.game_id)
         .where(
             GameFlaw.user_id == user_id,
             GameFlaw.game_id.in_(select(filtered_analyzed_game_ids.c.id)),
+            player_only_gate(GameFlaw.ply, Game.user_color),  # D-04 player gate (R5)
         )
         .group_by(GameFlaw.game_id)
         .subquery("flaw_counts")

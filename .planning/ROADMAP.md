@@ -35,12 +35,12 @@
 
 Reworks the Library flaw-stats surface from a self-only descriptive panel into a you-vs-opponent comparison. Three dependency-ordered phases: the data foundation (opponent flaws materialized into `game_flaws` via a nearly-free extension of the existing classifier), the benchmark backfill (per-cohort you−opponent deltas, Q1/Q3 quartile zones per ELO×TC cell, Cohen's-d collapse verdicts), and the full comparison surface (two-CI-method endpoint + ~13-bullet grid replacing the current tag-distribution zone). The bullet chart reuses the existing `MiniBulletChart` / endgame "Clock Gap" pattern; the benchmark zone is the lightweight delta-IQR (not a full percentile CDF), keeping costs manageable as tactic-motif families land in future milestones.
 
-- [ ] **Phase 113: Opponent-Flaw Materialization** — Extend `game_flaws` with `is_opponent`, drop the player-only filter, Alembic migration + dev/benchmark backfill; requirements: FLAWX-01, FLAWX-02, FLAWX-03, FLAWX-04
-  - Both sides' flaws are persisted in `game_flaws` for every analyzed game, queryable as player vs opponent via `is_opponent`
-  - Alembic migration runs cleanly and adds an efficient index on `is_opponent`
-  - All three classify paths (import hook, `reclassify_positions.py`, `backfill_flaws.py`) persist opponent flaws without a second engine evaluation
-  - `backfill_flaws.py` repopulates opponent flaws for dev/benchmark games in a single idempotent pass; prod ships with an empty `game_flaws` table as before
-  - Design path: `/gsd-discuss-phase 113` → `/gsd-plan-phase 113`
+- [x] **Phase 113: Opponent-Flaw Materialization** — Generalize the classify kernel to emit both sides, derive the player/opponent split at query time (no column/migration/index), retrofit a player-only gate on all existing readers, dev/benchmark backfill; requirements: FLAWX-01, FLAWX-02, FLAWX-04 (FLAWX-03 VOIDED per 113-CONTEXT D-02/D-03) (completed 2026-06-10)
+  - Both sides' flaws are persisted in `game_flaws` for every analyzed game; the player vs opponent split is **derived at query time** via a single tested `is_opponent_expr(ply, games.user_color)` helper — **no `is_opponent` column, no Alembic migration, no new index** (113-CONTEXT D-01/D-02/D-03)
+  - All three classify paths (import hook, `reclassify_positions.py`, `backfill_flaws.py`) persist opponent flaws without a second engine evaluation (D-10 preserved)
+  - Every existing `game_flaws` reader is retrofitted with a player-only gate so opponent rows do not leak into the self-only Library UI (113-CONTEXT D-04, the scope that replaces voided FLAWX-03); existing self-only reads return UNCHANGED counts (no regression)
+  - `backfill_flaws.py` repopulates dev users 28 & 44 + the benchmark cohort in a single idempotent, batched pass; prod ships with an empty `game_flaws` table as before
+  - Plans: 3 (kernel + parity helper → reader gating → dev backfill + benchmark HUMAN-UAT)
 
 - [ ] **Phase 114: Benchmark Flaw-Delta Zone Computation** — Compute per-cohort user you−opponent deltas, emit Q1/Q3 quartiles per ELO×TC, run Cohen's-d collapse verdict, extend `/benchmarks` skill with flaw-delta zones; requirements: FLAWBMK-01, FLAWBMK-02, FLAWBMK-03, FLAWBMK-04
   - The benchmark pipeline produces a per-(metric, ELO bucket, TC) Q1/Q3 quartile table for all ~13 flaw-delta metrics from the cohort's own `game_flaws` data
@@ -60,38 +60,57 @@ Reworks the Library flaw-stats surface from a self-only descriptive panel into a
   - **UI hint**: yes
 
 #### Phase 113: Opponent-Flaw Materialization
-**Goal**: Both sides' flaws are persisted in `game_flaws` for every analyzed game, distinguished by a new `is_opponent` boolean, so the flaw-stats surface can later contrast the user against their actual opponents — at zero added engine cost (the classifier already evaluates both colors).
-**Depends on**: Existing `game_flaws` table + `flaws_service` classifier and the three classify paths (import hook, `scripts/reclassify_positions.py`, `scripts/backfill_flaws.py`) from v1.24 Phase 108. No new engine work.
-**Requirements**: FLAWX-01, FLAWX-02, FLAWX-03, FLAWX-04
+
+**Goal**: Both sides' flaws are persisted in `game_flaws` for every analyzed game, with the player/opponent split **derived at query time** (no new column), so the flaw-stats surface can later contrast the user against their actual opponents — at zero added engine cost (the classifier already evaluates both colors).
+**Depends on**: Existing `game_flaws` table + `flaws_service` classifier and the three classify paths (import hook, `scripts/reclassify_positions.py`, `scripts/backfill_flaws.py`) from v1.24 Phase 108. No new engine work, no schema change.
+**Requirements**: FLAWX-01, FLAWX-02, FLAWX-04 (FLAWX-03 VOIDED — see 113-CONTEXT D-02/D-03 and REQUIREMENTS.md; no column/migration/index)
 **Success Criteria** (what must be TRUE):
-  1. Both sides' flaws are persisted in `game_flaws` for every analyzed game, queryable as player vs opponent via a new `is_opponent` boolean derived from ply parity + the user's color (FLAWX-01).
+
+  1. Both sides' flaws are persisted in `game_flaws` for every analyzed game; the player vs opponent split is derived at query time via a single tested `is_opponent_expr(ply, games.user_color)` helper — no `is_opponent` column, no migration, no index (FLAWX-01, amended by 113-CONTEXT D-01).
   2. The player-only upsert filter is dropped so opponent flaws persist on every classify path (import hook, `reclassify_positions.py`, `backfill_flaws.py`) with no second engine evaluation, preserving the D-10 single-classify-path invariant (FLAWX-02).
-  3. An Alembic migration adds `is_opponent` to `game_flaws` with index support enabling efficient per-side and combined per-game filtering, and runs cleanly (FLAWX-03).
-  4. `scripts/backfill_flaws.py` repopulates opponent flaws for dev users 28 & 44 and the benchmark cohort in a single idempotent, batched (OOM-safe) pass; prod `game_flaws` continues to ship empty (FLAWX-04).
-**Plans**: TBD
+  3. Every existing `game_flaws` reader is retrofitted with a player-only gate (`~is_opponent_expr(...)`) so opponent rows do not leak into the self-only Library UI; existing self-only reads return UNCHANGED counts (no-regression invariant). This is the D-04 scope that replaces voided FLAWX-03.
+  4. `scripts/backfill_flaws.py` repopulates opponent flaws for dev users 28 & 44 and the benchmark cohort in a single idempotent, batched (OOM-safe) pass; prod `game_flaws` continues to ship empty (FLAWX-04). The benchmark run is a HUMAN-UAT step that does not gate phase completion.**Plans**: 3 plans
+
+**Wave 1**
+
+  - [x] 113-01-PLAN.md — Generalize classify kernel to both movers + add tested `is_opponent_expr` parity helper (FLAWX-01, FLAWX-02)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+  - [x] 113-02-PLAN.md — Retrofit player-only gate on all 5 existing `game_flaws` readers + cross-tab EXISTS; prove no-regression (D-04 / FLAWX-01, FLAWX-04)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+  - [x] 113-03-PLAN.md — Idempotent dev backfill (users 28 & 44) + benchmark-cohort HUMAN-UAT backfill (FLAWX-04)
 
 #### Phase 114: Benchmark Flaw-Delta Zone Computation
+
 **Goal**: The benchmark pipeline produces a lightweight per-(ELO bucket × TC) Q1/Q3 "typical" delta zone for every flaw-delta metric, with Cohen's-d collapse verdicts, consumable at plan time to calibrate the comparison surface — deliberately NOT the heavy 99-breakpoint endgame CDF.
 **Depends on**: Phase 113 (materialized opponent flaws in `game_flaws`); the existing `/benchmarks` skill, ELO/TC bucketing, and the established Cohen's-d collapse-verdict infrastructure.
 **Requirements**: FLAWBMK-01, FLAWBMK-02, FLAWBMK-03, FLAWBMK-04
 **Success Criteria** (what must be TRUE):
+
   1. The pipeline computes, for each flaw-delta metric, every cohort user's own you−opponent delta over their own games, replicating the `flaws_service` classification over the cohort's moves (FLAWBMK-01).
   2. It emits per-(ELO bucket × TC) Q1/Q3 quartiles of each delta plus ELO and TC marginals — two quartiles of one derived metric per cell, not a full percentile CDF (FLAWBMK-02).
   3. The established Cohen's-d collapse verdict runs per metric per axis ({ELO, TC}), classifying each metric as needing cell-specific zones or collapsing to a single global zone (FLAWBMK-03).
   4. The `/benchmarks` skill is extended to produce these flaw-delta quartiles, marginals, and collapse verdicts, written to the benchmark report under `reports/` (FLAWBMK-04).
+
 **Plans**: TBD
 
 #### Phase 115: You-vs-Opponent Comparison API + Bullet-Grid UI
+
 **Goal**: The Library flaw-stats panel's self-only tag-distribution zone is replaced by a you-vs-opponent comparison: a two-CI-method endpoint feeding a uniform ~13-bullet grid (measure + CI + benchmark "typical" zone), making flaw rates actionable by contrasting the user against their actual opponents.
 **Depends on**: Phase 113 (materialized opponent flaws) + Phase 114 (benchmark delta zones); the `MiniBulletChart` / endgame "Clock Gap" component, the existing flaw-stats endpoint/panel, the project's Wilson chess-score util, and the tooltip-popover + percentile-chip-disclosure precedents.
 **Requirements**: FLAWCMP-01, FLAWCMP-02, FLAWCMP-03, FLAWCMP-04, FLAWCMP-05, FLAWUI-01, FLAWUI-02, FLAWUI-03, FLAWUI-04, FLAWUI-05, FLAWUI-06
 **Success Criteria** (what must be TRUE):
+
   1. The endpoint returns the full ~13-bullet inventory: count-rate families via the mean paired per-game delta with a bootstrap/normal CI, proportion families via the Wilson difference-of-proportions CI (existing chess-score util), honoring all existing game filters plus the severity filter (FLAWCMP-01, FLAWCMP-02, FLAWCMP-03).
   2. The curated combo bullets `hasty + miss` (flagship) and `low-clock + miss` are included and their CI-width adequacy is validated against the materialized opponent-flaw data (FLAWCMP-04).
   3. A section-level sample gate returns an "analyze more games" state below a plan-time floor N; above it every bullet renders its measure + CI (a wide bar reads as inconclusive), and a bullet shows a blank/no-zone state only on literally zero events for that tag (FLAWCMP-05).
   4. The current tag-distribution zone is replaced by a uniform grid of ~13 `MiniBulletChart` bullets — measure (you−opponent delta) + CI error bar + benchmark "typical" blue zone (when the cohort stat exists); future zoneless tactic-motif bullets degrade gracefully; the trend chart stays comparison-free (FLAWUI-01, FLAWUI-04, FLAWUI-05).
   5. Each bullet carries a tooltip disclosing metric definition, sign convention, tempo-interaction caveat (clock-conditioned tags), and the filter×zone interaction (TC filter shifts the zone; user-local filters move only the point estimate) (FLAWUI-02, FLAWUI-03).
   6. The bullet grid is responsive on mobile and follows `data-testid` / ARIA / semantic-HTML conventions on all new elements, with desktop + mobile parity (FLAWUI-06).
+
 **Plans**: TBD
 **UI hint**: yes
 
@@ -427,7 +446,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 100-101. v1.22 phases | v1.22 | 3/3 | Complete | 2026-05-31 |
 | 102-103. v1.23 phases | v1.23 | 3/3 | Complete (103 unplanned follow-on) | 2026-06-03 |
 | 104-112. v1.24 phases | v1.24 | 37/37 | Complete (111 shipped direct, no plan artifacts) | 2026-06-09 |
-| 113. Opponent-Flaw Materialization | v1.25 | 0/TBD | Not started | - |
+| 113. Opponent-Flaw Materialization | v1.25 | 3/3 | Complete    | 2026-06-10 |
 | 114. Benchmark Flaw-Delta Zone Computation | v1.25 | 0/TBD | Not started | - |
 | 115. You-vs-Opponent Comparison API + Bullet-Grid UI | v1.25 | 0/TBD | Not started | - |
 
@@ -437,7 +456,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 2/2 plans complete
+**Plans:** 3/3 plans complete
 
 Plans:
 

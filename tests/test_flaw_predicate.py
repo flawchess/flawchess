@@ -51,7 +51,11 @@ async def _create_test_users(db_session: AsyncSession) -> None:
         await ensure_test_user(db_session, uid)
 
 
-async def _seed_game(session: AsyncSession, user_id: int = 77001) -> Game:
+async def _seed_game(
+    session: AsyncSession,
+    user_id: int = 77001,
+    user_color: str = "white",
+) -> Game:
     """Insert a Game row and flush to obtain an ID."""
     game = Game(
         user_id=user_id,
@@ -60,7 +64,7 @@ async def _seed_game(session: AsyncSession, user_id: int = 77001) -> Game:
         platform_url="https://lichess.org/pred-test",
         pgn="1. e4 e5 *",
         result="1-0",
-        user_color="white",
+        user_color=user_color,
         time_control_str="600+0",
         time_control_bucket="blitz",
         time_control_seconds=600,
@@ -486,3 +490,160 @@ class TestFlawExistsFromTable:
             candidate_game_ids={game.id},
         )
         assert game.id not in matched, "a game with no flaw rows must not satisfy severity filter"
+
+
+# ---------------------------------------------------------------------------
+# TestFlawExistsPlayerOnly — D-04 player-only gate on flaw_exists_from_table (R1/R6)
+# ---------------------------------------------------------------------------
+
+
+class TestFlawExistsPlayerOnly:
+    """flaw_exists_from_table must gate on player flaws only after both-sides materialization.
+
+    After Phase 113 Plan 01, game_flaws contains rows for BOTH the player and
+    the opponent (distinguished by ply parity + games.user_color). The EXISTS
+    check (R1/R6) must apply the player-only gate so opponent-only flaws do NOT
+    flag a game into the cross-tab Flaw filter (D-04).
+
+    Parity convention (is_opponent_expr — query_utils.py):
+        even ply → white mover → player row iff user_color == 'white'
+        odd ply  → black mover → player row iff user_color == 'black'
+    """
+
+    @pytest.mark.asyncio
+    async def test_opponent_only_flaw_does_not_flag_game_white_user(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Opponent-only flaw (odd ply, white user) must NOT pass the EXISTS check.
+
+        White user → odd ply = black mover = opponent.
+        After gating, the game must not appear in the Flaw filter results.
+        """
+        game = await _seed_game(db_session, user_id=77001, user_color="white")
+        # Insert ONLY an opponent flaw: odd ply + white user → black mover → opponent
+        await bulk_insert_game_flaws(
+            db_session,
+            [_flaw_row(user_id=77001, game_id=game.id, ply=1, severity=_SEV_BLUNDER)],
+        )
+
+        matched = await _games_matching_exists(
+            db_session,
+            user_id=77001,
+            severity=["blunder"],
+            tags=[],
+            candidate_game_ids={game.id},
+        )
+        assert game.id not in matched, (
+            "opponent-only flaw (odd ply, white user) must NOT flag game in EXISTS filter "
+            "(D-04: player-only gate on flaw_exists_from_table)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_opponent_only_flaw_does_not_flag_game_black_user(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Opponent-only flaw (even ply, black user) must NOT pass the EXISTS check.
+
+        Black user → even ply = white mover = opponent.
+        After gating, the game must not appear in the Flaw filter results.
+        """
+        game = await _seed_game(db_session, user_id=77001, user_color="black")
+        # Insert ONLY an opponent flaw: even ply + black user → white mover → opponent
+        await bulk_insert_game_flaws(
+            db_session,
+            [_flaw_row(user_id=77001, game_id=game.id, ply=2, severity=_SEV_BLUNDER)],
+        )
+
+        matched = await _games_matching_exists(
+            db_session,
+            user_id=77001,
+            severity=["blunder"],
+            tags=[],
+            candidate_game_ids={game.id},
+        )
+        assert game.id not in matched, (
+            "opponent-only flaw (even ply, black user) must NOT flag game in EXISTS filter "
+            "(D-04: player-only gate on flaw_exists_from_table)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_player_flaw_still_flags_game_white_user(self, db_session: AsyncSession) -> None:
+        """Player flaw (even ply, white user) MUST pass the EXISTS check.
+
+        White user → even ply = white mover = player.
+        The gate must not inadvertently exclude player flaws.
+        """
+        game = await _seed_game(db_session, user_id=77001, user_color="white")
+        # Insert a player flaw: even ply + white user → white mover → player
+        await bulk_insert_game_flaws(
+            db_session,
+            [_flaw_row(user_id=77001, game_id=game.id, ply=2, severity=_SEV_BLUNDER)],
+        )
+
+        matched = await _games_matching_exists(
+            db_session,
+            user_id=77001,
+            severity=["blunder"],
+            tags=[],
+            candidate_game_ids={game.id},
+        )
+        assert game.id in matched, (
+            "player flaw (even ply, white user) MUST pass the EXISTS filter "
+            "(D-04 gate must not block player rows)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_player_flaw_still_flags_game_black_user(self, db_session: AsyncSession) -> None:
+        """Player flaw (odd ply, black user) MUST pass the EXISTS check.
+
+        Black user → odd ply = black mover = player.
+        """
+        game = await _seed_game(db_session, user_id=77001, user_color="black")
+        # Insert a player flaw: odd ply + black user → black mover → player
+        await bulk_insert_game_flaws(
+            db_session,
+            [_flaw_row(user_id=77001, game_id=game.id, ply=1, severity=_SEV_BLUNDER)],
+        )
+
+        matched = await _games_matching_exists(
+            db_session,
+            user_id=77001,
+            severity=["blunder"],
+            tags=[],
+            candidate_game_ids={game.id},
+        )
+        assert game.id in matched, (
+            "player flaw (odd ply, black user) MUST pass the EXISTS filter "
+            "(D-04 gate must not block player rows)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_game_with_both_player_and_opponent_flaw_matches_on_player(
+        self, db_session: AsyncSession
+    ) -> None:
+        """With both player and opponent flaws, game is flagged (player flaw qualifies).
+
+        White user: even ply = player, odd ply = opponent.
+        Both rows present — game should still match because the player flaw qualifies.
+        """
+        game = await _seed_game(db_session, user_id=77001, user_color="white")
+        await bulk_insert_game_flaws(
+            db_session,
+            [
+                # Player flaw (even ply, white user → white mover → player)
+                _flaw_row(user_id=77001, game_id=game.id, ply=2, severity=_SEV_BLUNDER),
+                # Opponent flaw (odd ply, white user → black mover → opponent)
+                _flaw_row(user_id=77001, game_id=game.id, ply=3, severity=_SEV_BLUNDER),
+            ],
+        )
+
+        matched = await _games_matching_exists(
+            db_session,
+            user_id=77001,
+            severity=["blunder"],
+            tags=[],
+            candidate_game_ids={game.id},
+        )
+        assert game.id in matched, (
+            "game with both player and opponent flaws must match on the player flaw"
+        )

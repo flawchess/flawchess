@@ -5,8 +5,70 @@ from collections.abc import Sequence
 from typing import Any, cast
 
 from sqlalchemy import case
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.models.game import Game
+
+# ---------------------------------------------------------------------------
+# Ply-parity convention (single source — CONTEXT D-01, Phase 113)
+# ---------------------------------------------------------------------------
+# Even ply → white mover; odd ply → black mover.
+# This mirrors _run_all_moves_pass in flaws_service.py (line ~227):
+#     mover = "white" if n % 2 == 0 else "black"
+# A prior off-by-one bug lived here (see CONTEXT D-01 / RESEARCH Pitfall 1).
+# Do NOT scatter ply % 2 math across query sites — always use is_opponent_expr.
+_PLY_EVEN_MOVER_WHITE = 0  # ply % 2 == 0 means white moved
+
+
+def is_opponent_expr(
+    ply_col: Any,
+    user_color_col: Any,
+) -> ColumnElement[bool]:
+    """Return a SQL expression that is True when the mover at ply_col is the OPPONENT.
+
+    Convention (mirrors _run_all_moves_pass in flaws_service.py):
+        even ply → white mover → is_opponent iff user_color == 'black'
+        odd ply  → black mover → is_opponent iff user_color == 'white'
+
+    Single source of the ply-parity convention. Unit-tested for all 4
+    (ply parity × user_color) combinations (TestIsOpponentExpr). A prior
+    off-by-one bug lived here — see CONTEXT D-01 / RESEARCH Pitfall 1.
+
+    Args:
+        ply_col: A column or literal expression resolving to the ply integer.
+                 Accepts ColumnElement[int] or ORM InstrumentedAttribute[int]
+                 (typed as Any because ty does not recognise InstrumentedAttribute
+                 as a ColumnElement subtype — they share SQLColumnExpression lineage).
+        user_color_col: A column or literal expression resolving to 'white'/'black'.
+                 Same Any widening reason as ply_col.
+
+    Returns:
+        A SQLAlchemy ColumnElement[bool] usable in WHERE/FILTER clauses.
+    """
+    return case(
+        (ply_col % 2 == _PLY_EVEN_MOVER_WHITE, user_color_col == "black"),
+        else_=user_color_col == "white",
+    )
+
+
+def player_only_gate(
+    ply_col: Any,
+    user_color_col: Any,
+) -> ColumnElement[bool]:
+    """Convenience inverse of is_opponent_expr — True when the mover is the PLAYER.
+
+    Use at read-gating call sites (D-04) so intent reads as 'player only'
+    rather than a negation. Equivalent to ~is_opponent_expr(...).
+
+    Args:
+        ply_col: A column or literal expression resolving to the ply integer.
+                 Accepts ColumnElement[int] or ORM InstrumentedAttribute[int].
+        user_color_col: A column or literal expression resolving to 'white'/'black'.
+
+    Returns:
+        A SQLAlchemy ColumnElement[bool] for player-only filtering.
+    """
+    return ~is_opponent_expr(ply_col, user_color_col)
 
 
 def apply_game_filters(

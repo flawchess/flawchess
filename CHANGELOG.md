@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- **Opponent-flaw materialization foundation** (Phase 113 Plan 01) — `classify_game_flaws` now records mistakes/blunders for both the player and their opponent (previously player-only). The player/opponent split is derived at query time via `is_opponent_expr(ply, user_color)` — a single tested helper in `query_utils.py` that encodes the ply-parity convention and closes a documented off-by-one trap. Per-mover `subject_result` fixes the `lucky` end-of-game tag for opponent flaws. Foundation for phase-115 flaw-comparison UI.
+
 ## [v1.24] Library Page — 2026-06-09
 
 The **Library** — a new top-level destination and SEED-036's analysis half: an eval-driven mistake/flaw archive over your analyzed games. Import and Overview fold in as subtabs; new Games and Flaws subtabs surface every blunder, mistake, and inaccuracy with per-game eval charts, family-colored flaw tags, a finalized tag taxonomy, and a cross-tab Flaw filter. Phases 104–112.

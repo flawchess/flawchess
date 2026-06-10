@@ -13,12 +13,12 @@ Requirements for this milestone. Each maps to exactly one roadmap phase.
 
 The data foundation: `game_flaws` currently stores player flaws only. Nearly free to extend — the classifier already evaluates both colors.
 
-- [ ] **FLAWX-01**: `game_flaws` records opponent flaws alongside player flaws, distinguished by a new `is_opponent` boolean derived from ply parity + the user's color in that game, so both sides' mistakes/blunders are queryable per game.
+- [x] **FLAWX-01**: `game_flaws` records opponent flaws alongside player flaws, distinguished by a new `is_opponent` boolean derived from ply parity + the user's color in that game, so both sides' mistakes/blunders are queryable per game.
   - **AMENDED (113-CONTEXT D-01):** `is_opponent` is **derived at query time** via a single `is_opponent_expr(ply, games.user_color)` repo helper, **not** stored as a column. Both sides' flaws are persisted as rows in existing columns at their own plies; the player/opponent split is a read-time expression. Indexing gave no benefit (50% selective); the helper keeps the fragile parity convention in one tested place.
-- [ ] **FLAWX-02**: The player-only upsert filter is dropped from the materialization so opponent flaws persist on **every** classify path (import hook, `scripts/reclassify_positions.py`, `scripts/backfill_flaws.py`), preserving the D-10 single-classify-path invariant; no Stockfish/engine cost is added (both colors are already evaluated).
+- [x] **FLAWX-02**: The player-only upsert filter is dropped from the materialization so opponent flaws persist on **every** classify path (import hook, `scripts/reclassify_positions.py`, `scripts/backfill_flaws.py`), preserving the D-10 single-classify-path invariant; no Stockfish/engine cost is added (both colors are already evaluated).
 - [ ] **FLAWX-03**: ~~An Alembic migration adds `is_opponent` to `game_flaws` with index support enabling efficient per-side (player vs opponent) and combined per-game filtering.~~
   - **VOIDED (113-CONTEXT D-02/D-03):** No column → no migration, no new index. The premise was false — `is_opponent` is ~50% selective (no useful index) and a `GROUP BY` dimension, not a selective filter. Existing PK `(user_id, game_id, ply)` covers per-game two-sided reads; existing `(user_id, severity)` covers severity scans. **New required scope in its place:** retrofit a player-only gate onto every existing `game_flaws` reader (D-04) so opponent rows don't leak into the current self-only Library UI.
-- [ ] **FLAWX-04**: `scripts/backfill_flaws.py` repopulates opponent flaws for existing analyzed games (dev users 28 & 44 and the benchmark cohort), idempotent and batched (OOM-safe); prod `game_flaws` continues to ship empty (no prod data migration this milestone).
+- [x] **FLAWX-04**: `scripts/backfill_flaws.py` repopulates opponent flaws for existing analyzed games (dev users 28 & 44 and the benchmark cohort), idempotent and batched (OOM-safe); prod `game_flaws` continues to ship empty (no prod data migration this milestone).
 
 ### Benchmark "Typical" Zone (FLAWBMK)
 
@@ -83,10 +83,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FLAWX-01 | Phase 113 | Pending |
-| FLAWX-02 | Phase 113 | Pending |
+| FLAWX-01 | Phase 113 | Complete |
+| FLAWX-02 | Phase 113 | Complete |
 | FLAWX-03 | Phase 113 | Pending |
-| FLAWX-04 | Phase 113 | Pending |
+| FLAWX-04 | Phase 113 | Complete |
 | FLAWBMK-01 | Phase 114 | Pending |
 | FLAWBMK-02 | Phase 114 | Pending |
 | FLAWBMK-03 | Phase 114 | Pending |
@@ -104,6 +104,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FLAWUI-06 | Phase 115 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 19 total
 - Mapped to phases: 19 ✓
 - Unmapped: 0 ✓

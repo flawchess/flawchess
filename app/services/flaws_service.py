@@ -534,18 +534,26 @@ def classify_game_flaws(
     # Resolve increment once via shared helper (Phase 109: single source of truth).
     increment = _resolve_increment(game)
 
-    user_result = derive_user_result(game.result, game.user_color)
-
-    # Emit FlawRecords for user's mistakes and blunders only (inaccuracies are count-only)
-    user_color = game.user_color
+    # Phase 113 (D-06 / FLAWX-02): emit FlawRecords for BOTH movers (player and opponent).
+    # The previous filter `if mover != user_color: continue` is DROPPED so the kernel
+    # records both sides at zero added engine cost (the all-moves pass already evaluates
+    # both colors). Readers that need player-only data use is_opponent_expr() at query time
+    # (CONTEXT D-01; RESEARCH Pitfall 3 — do not scatter parity math across query sites).
+    #
+    # Per-mover subject_result: the lucky end-of-game rule (_is_unpunished) checks
+    # `subject_result != "loss"`. For opponent flaws this must be the opponent's result,
+    # not the player's. Passing game.user_color here would mark any opponent end-of-game
+    # blunder in a game the player won as "lucky" — a logic error (RESEARCH Pitfall 2).
+    # Fix: call derive_user_result(game.result, mover) once per flaw instead of once
+    # globally at the top of classify_game_flaws.
     flaws: list[FlawRecord] = []
     for n, (mover, severity, es_before, es_after) in all_moves.items():
-        if mover != user_color:
-            continue
         if severity not in ("mistake", "blunder"):
             # Inaccuracies are count-only per the 2026-06-05 amendment
             continue
         flaw = _build_flaw_record(n, mover, severity, es_before, es_after, fen_map, positions)
+        # Per-mover subject_result drives the lucky tag correctly for both sides (D-05).
+        subject_result = derive_user_result(game.result, mover)
         flaw["tags"] = _build_tags(
             n,
             severity,
@@ -553,7 +561,7 @@ def classify_game_flaws(
             es_after,
             positions,
             all_moves,
-            user_result,
+            subject_result,
             increment,
             game.base_time_seconds,
         )
