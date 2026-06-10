@@ -65,15 +65,17 @@ render; the blue zone renders only when the cohort stat exists for that metric.
 
 ## Locked design decisions (from the planting exploration)
 
+> **Phase 114 D-04 amendment (2026-06-10):** The "Denominator (count-rate families)" and "Proportion CI method" rows below are **superseded** by the unified estimator from 114-CONTEXT D-01. All 15 metrics use the same paired per-game delta on a per-100-of-your-own-moves basis. The count-rate/proportion family split no longer exists. "Proportion CI method" (Wilson) is **voided** — Phase 115 uses bootstrap/normal CI over per-game deltas for every bullet. See REQUIREMENTS.md FLAWCMP-01 (amended) and FLAWCMP-02 (voided).
+
 | Decision | Choice | Rationale |
 |---|---|---|
 | Headline comparison | **A (opponent rates) backbone**, light B zone integrated | Only option that survives the tactic-motif roadmap without a benchmark-recompute explosion |
 | Expression | **Rate per exposure** (difference in frequency) | Intuitive magnitude; same-game → directly comparable |
-| Denominator (count-rate families) | **Per 100 of your own moves** (toggle removed) | Within-game length confound is absent (shared game), but game length rises with ELO → per-100 keeps the *benchmark zone* portable across ELO cells |
+| Denominator (count-rate families) | **Per 100 of your own moves** (toggle removed) — **AMENDED (D-01/D-04): now universal across ALL 15 metrics, no proportion-family exception** | Within-game length confound is absent (shared game), but game length rises with ELO → per-100 keeps the *benchmark zone* portable across ELO cells |
 | Flaw base | **Mistakes + Blunders combined** | Bigger N (crucial for combos/rare tags); existing severity filter can still narrow to blunders-only |
 | Severity family | **Single "Flaw Rate" bullet** (M+B / 100 moves) | Branded term "Flaw" = mistakes+blunders; M-vs-B split not shown directly; definition in metric tooltip |
 | Count-rate CI method | **Paired per-game difference** | Same game set → pairing removes game-level variance, tighter CI, partially controls the interaction; bootstrap/normal CI |
-| Proportion CI method | **Wilson difference-of-proportions** (existing chess-score util) | `miss`/`lucky`/`reversed`/`squandered` are proportions (denominator = opportunities faced / flaws), not per-move rates |
+| Proportion CI method | ~~**Wilson difference-of-proportions** (existing chess-score util)~~ — **VOIDED (D-04)**: superseded by unified paired per-game delta for all 15 metrics; Phase 115 uses bootstrap/normal CI over per-game deltas universally | ~~`miss`/`lucky`/`reversed`/`squandered` are proportions (denominator = opportunities faced / flaws), not per-move rates~~ |
 | Tempo interaction confound | **Show + caveat tooltip** | Clock-conditioned tags read high partly from the interaction; honest tooltip, uniform grid (matches project tooltip-disclosure pattern) |
 | Thin samples | **Let the CI speak + section gate** | Section-level "analyze more games" floor; above it every bullet renders with its CI (wide bar = inconclusive); per-bullet blank only on literally zero events |
 | Trend chart | **No comparison** | ELO-peer matching irons out the *level*; the signal is in *composition* (the bullets), not the trend delta |

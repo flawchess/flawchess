@@ -2,25 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.25
 milestone_name: Flaw-Stats Opponent Comparison
-status: verifying
-last_updated: "2026-06-10T10:00:34.354Z"
-last_activity: 2026-06-10
+status: executing
+last_updated: "2026-06-10T18:17:32.000Z"
+last_activity: 2026-06-10 -- Phase 114 complete
 progress:
   total_phases: 3
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
-  percent: 33
+  completed_phases: 2
+  total_plans: 4
+  completed_plans: 4
+  percent: 67
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 114
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-06-10
+Phase: 114 (benchmark-flaw-delta-zone-computation) — COMPLETE
+Plan: 1 of 1 complete
+Status: Phase 114 complete; Phase 115 (comparison API + bullet-grid UI) not yet planned
+Last activity: 2026-06-10 -- Phase 114 complete
 
 ## Project Reference
 

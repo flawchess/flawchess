@@ -1,6 +1,6 @@
 ---
 name: benchmarks
-description: Generate FlawChess endgame population benchmarks from the benchmark DB. Computes per-user distributions for score-gap (endgame vs non-endgame), Conversion/Parity/Recovery rates, composite Endgame Skill, time-pressure stats at endgame entry, time-pressure-vs-performance curves, and per-endgame-class (rook/minor_piece/pawn/queen/mixed/pawnless) score and conv/recov rates. All metrics are bucketed via 400-wide ELO buckets (anchored at 800/1200/1600/2000/2400) computed from the cohort user's **rating at game time** (`games.white_rating`/`games.black_rating`, never the frozen selection-snapshot rating — see "Rating-lag selection bias" in chapter 1) and the 4 TC buckets (anchored from `benchmark_selected_users.tc_bucket`). For every metric, the skill produces a Cohen's-d-based collapse verdict per axis ({TC, ELO}) that determines whether the metric needs cell-specific zones or collapses to a single global zone. Use this skill whenever the user asks about endgame benchmarks, neutral zones, gauge ranges, "what's typical", baseline distributions, calibrating thresholds, comparing time controls, deciding whether to collapse zones across TC or ELO, or breaking down stats by endgame class. Trigger on phrases like "benchmark", "benchmarks", "baseline", "neutral zone", "gauge range", "collapse verdict", "Cohen's d", "calibrate thresholds", "endgame type breakdown", "by endgame class", "rook vs minor piece". Writes the latest markdown report to reports/benchmark/benchmarks-latest.md, rotating any prior latest file to reports/benchmark/benchmarks-YYYY-MM-DD.md based on its first-line date.
+description: Generate FlawChess endgame population benchmarks from the benchmark DB. Computes per-user distributions for score-gap (endgame vs non-endgame), Conversion/Parity/Recovery rates, composite Endgame Skill, time-pressure stats at endgame entry, time-pressure-vs-performance curves, per-endgame-class (rook/minor_piece/pawn/queen/mixed/pawnless) score and conv/recov rates, and (Phase 114, §5) flaw-delta zones: 15-metric you−opponent paired-delta per-(ELO×TC) Q1/Q3 zones (flaw rate, tempo, phase, opportunity, impact, combos) with Cohen's-d collapse verdicts and viability diagnostics. All metrics are bucketed via 400-wide ELO buckets (anchored at 800/1200/1600/2000/2400) computed from the cohort user's **rating at game time** (`games.white_rating`/`games.black_rating`, never the frozen selection-snapshot rating — see "Rating-lag selection bias" in chapter 1) and the 4 TC buckets (anchored from `benchmark_selected_users.tc_bucket`). For every metric, the skill produces a Cohen's-d-based collapse verdict per axis ({TC, ELO}) that determines whether the metric needs cell-specific zones or collapses to a single global zone. Use this skill whenever the user asks about endgame benchmarks, neutral zones, gauge ranges, "what's typical", baseline distributions, calibrating thresholds, comparing time controls, deciding whether to collapse zones across TC or ELO, breaking down stats by endgame class, or flaw-delta zones / you-vs-opponent flaw comparisons / flaw-delta typical range / flaw zone calibration. Trigger on phrases like "benchmark", "benchmarks", "baseline", "neutral zone", "gauge range", "collapse verdict", "Cohen's d", "calibrate thresholds", "endgame type breakdown", "by endgame class", "rook vs minor piece", "flaw delta", "flaw zone", "you vs opponent". Writes the latest markdown report to reports/benchmark/benchmarks-latest.md, rotating any prior latest file to reports/benchmark/benchmarks-YYYY-MM-DD.md based on its first-line date.
 ---
 
 # Benchmarks
@@ -3223,6 +3223,145 @@ The 99-element `breakpoints` array is the row that lands in `GLOBAL_PERCENTILE_C
 
 ---
 
+## 5. Flaw-Delta Zones
+
+> **Added Phase 114 (D-01 unified estimator, D-04 amendment).** This chapter computes the population-level "typical zone" for all 15 flaw-delta metrics using the single **per-100-moves paired-delta estimator** — no count-rate/proportion family split. The code/LLM seam is identical to §§2–3: `scripts/benchmarks/chapter5.py` computes the numbers; you apply the verdict *words* and write recommendations.
+
+This chapter is **read from the generator artifact** (`chapters["5-flaw-delta-zones"]` in `reports/benchmark/benchmarks-generated.json`). Do NOT re-run any SQL by hand. The per-metric markdown tables are already rendered in `reports/benchmark/benchmarks-generated.md` — splice them and write the verdict words + recommendations.
+
+### D-01 unified estimator (mandatory — applies to all 15 metrics)
+
+For each cohort user, for each metric:
+- **Per game**: `delta = (player_tag_count − opp_tag_count) / user_moves_in_game × 100`
+  - `player_tag_count`: count of `game_flaws` rows where ply-parity matches user_color AND the tag predicate holds (even ply = white mover, odd ply = black mover)
+  - `opp_tag_count`: count of `game_flaws` rows where ply-parity is the OTHER color AND the tag predicate holds
+  - `user_moves_in_game`: count of `game_positions` rows with `ply >= 1` AND ply-parity matches user_color
+- **Per-cohort-user delta**: mean of per-game deltas over ≥20 analyzed games (D-08 floor = `FLAW_DELTA_MIN_GAMES`)
+- **All analyzed games count** (Phase 114 fix): the estimator is driven from `base_games` LEFT JOIN `game_flaws`, so a game with zero detected flaws contributes a 0 delta rather than being dropped (a clean game IS evidence of a zero you−opponent delta). The ≥20 floor is therefore over **analyzed** games, not flawed games.
+- **Sign convention**: negative delta means the cohort user commits FEWER flaws of this type than equal-rated opponents — a negative flaw-delta is *good*. State this explicitly in every metric's recommendation prose.
+
+**Applies uniformly to**: Flaw Rate (M+B), tempo (low-clock/hasty/unrushed), phase (opening/middlegame/endgame), opportunity (miss/lucky), impact (reversed/squandered), and combos (hasty+miss, low-clock+miss). No Wilson difference-of-proportions — FLAWCMP-02 is voided (D-04).
+
+### The 15 metrics
+
+| § | Metric key | Description | Tag predicate in game_flaws |
+|---|---|---|---|
+| 5.1 | `flaw_rate` | All mistakes+blunders | `TRUE` (any row) |
+| 5.2 | `low_clock` | Tempo = 0 (under time pressure) | `tempo = 0` |
+| 5.3 | `hasty` | Tempo = 1 (moved fast despite time) | `tempo = 1` |
+| 5.4 | `unrushed` | Tempo = 2 (blundered with time in hand) | `tempo = 2` |
+| 5.5 | `opening` | Phase = 0 (opening-phase flaws) | `phase = 0` |
+| 5.6 | `middlegame` | Phase = 1 (middlegame flaws) | `phase = 1` |
+| 5.7 | `endgame_phase` | Phase = 2 (endgame-phase flaws) | `phase = 2` |
+| 5.8 | `miss` | Missed winning opportunity | `is_miss = TRUE` |
+| 5.9 | `lucky` | Opponent-let-off lucky escape | `is_lucky = TRUE` |
+| 5.10 | `reversed` | Reversed advantage | `is_reversed = TRUE` |
+| 5.11 | `squandered` | Squandered winning position | `is_squandered = TRUE` |
+| 5.12 | `hasty_miss` | Hasty + missed win (flagship combo) | `tempo = 1 AND is_miss = TRUE` |
+| 5.13 | `low_clock_miss` | Low-clock + missed win | `tempo = 0 AND is_miss = TRUE` |
+| 5.14 | `mistake` | Severity = 1 only | `severity = 1` |
+| 5.15 | `blunder` | Severity = 2 only | `severity = 2` |
+
+**Encoding note**: `tempo` and `phase` are stored as integers in `game_flaws` (not strings). Encoding from `game_flaws_repository.py`: `_TEMPO_INT = {"low-clock":0,"hasty":1,"unrushed":2}`, `_PHASE_INT = {"opening":0,"middlegame":1,"endgame":2}`. Boolean columns: `is_miss`, `is_lucky`, `is_reversed`, `is_squandered`.
+
+### Cell floor, sparse-cell exclusion, equal-footing filter
+
+The §5 queries reuse the same methodology as §§1–3:
+- **Cell contributor floor** (`_CELL_CONTRIBUTOR_FLOOR = 30`): cells with fewer than 30 contributors emit null Q1/Q3. Phase 115 falls back to the metric's ELO/TC marginal or global zone (D-07). This mirrors the ≥30-user cell rule in §3.
+- **Sparse-cell exclusion**: `(2400, classical)` is excluded from marginals and Cohen's d (pool-exhausted, n=12).
+- **Equal-footing filter**: §5 applies the same `abs(opp_rating − user_rating) ≤ 100` filter as §§2–3, via `sql.BASE_GAME_FILTER`. The pairing design (same game's opponent on both sides) already conditions on game context, but the equal-footing filter further ensures both sides of the delta are from matched-rating games, improving zone stability and consistency with §§2–3 methodology.
+- **Per-user analyzed-games floor**: `FLAW_DELTA_MIN_GAMES = 20` (D-08). Matches `ENDGAME_MIN_GAMES` from §3.2.
+
+### Collapse verdict methodology
+
+Same as §§1–3 — the generator emits `max_abs_d` per (metric, axis); you convert to a verdict word:
+- **< 0.2**: collapse — single global zone is sufficient; ELO/TC variation is negligible
+- **0.2–0.5**: review — marginal or partial stratification may help; inspect the ELO/TC marginal shape
+- **≥ 0.5**: keep separate — cell-specific zones are warranted; collapsing would lose meaningful variation
+
+Report each metric's verdict for both TC and ELO axes. The generator's `chapters["5-flaw-delta-zones"]["values"][metric_key]["verdicts"]` list holds both axes' `Verdict` objects with `max_abs_d` and `pair` (the TC bucket or ELO bucket showing the largest effect).
+
+### Narration procedure
+
+For each of the 15 metrics (splice from `benchmarks-generated.md`):
+
+1. **Pooled distribution** — the generator emits `n`, `mean`, `sd`, `p05`, `p25`, `p50`, `p75`, `p95`. State `p25`/`p75` as the "typical range" and flag if the median is notably far from zero (indicates structural directional bias).
+2. **ELO marginal** — splice the ELO marginal table. Flag if any ELO bucket's Q1/Q3 is null (thin cell). Note whether the marginal shows a monotone ramp (biologically expected: higher ELO players tend toward smaller absolute flaw deltas; reversed or irregular patterns are worth flagging).
+3. **TC marginal** — splice the TC marginal table. Flag thin cells.
+4. **Verdict block** — apply the verdict words from the `max_abs_d` → word threshold table above. State: `TC verdict: {word} (max |d| = {value}, worst pair: {tc pair})` and `ELO verdict: {word} (max |d| = {value}, worst pair: {elo pair})`.
+5. **Recommendation** — state the Phase 115 implication: whether to stratify, collapse, or review; whether the metric's viability diagnostic flags adequacy concerns for CI-width (D-06); whether `squandered`/`lucky` need the state-conditional caveat tooltip (D-03).
+
+**Rare-numerator flag (D-06 → FLAWCMP-04)**: for `low_clock`, `low_clock_miss`, and `hasty_miss`, always include the viability diagnostic row: `users_contributing` / `users_total` and `pct_nonzero`. If `pct_nonzero < 80%`, flag explicitly: "Thin numerator — Phase 115 must verify CI-width adequacy against the materialized opponent-flaw data (FLAWCMP-04)."
+
+**State-conditional metrics** (`squandered`, `lucky`): add a one-line note per D-03: "Under ELO-matched pairing this reads partly as 'how often the situation arose', not purely conversion skill. Disclose via Phase 115 tooltip."
+
+### Viability diagnostic (§5.16)
+
+The generator emits a per-metric viability table (`values["viability"]`). It carries:
+- `metric`: metric key
+- `users_contributing`: users with non-zero per-user mean delta (at least one player event)
+- `users_total`: users passing the `FLAW_DELTA_MIN_GAMES` floor
+- `pct_nonzero`: `users_contributing / users_total × 100`
+- `median_events_per_user`: median raw player event count (unscaled numerator) — a RAW absolute count totalled over the user's analyzed games, NOT a per-100-moves rate (unlike the §5.1–5.15 zone columns). It gauges raw event volume for CI-width adequacy.
+
+Splice this table into the report as §5.16. Interpretation: `squandered` and `lucky` should be ~99–100% non-zero (every player in the cohort made at least one flaw in the situation). `low_clock` should be ~75–77% non-zero (one-quarter of users played only blitz/rapid with no low-clock flaws). `low_clock_miss` and `hasty_miss` should be ~60–70% non-zero (combos are rarer). Flag any metric below 50% as a viability concern for Phase 115.
+
+### Report section structure
+
+```markdown
+## 5. Flaw-Delta Zones
+
+> **D-01 unified estimator** (Phase 114): for each game, delta = (player_tag_count − opp_tag_count) /
+> user_moves_in_game × 100. Per-cohort-user delta = mean over ≥20 analyzed games. Negative delta means
+> cohort users commit FEWER flaws of this type than equally-rated opponents.
+>
+> **Equal-footing filter applies** (same as §§2–3): `abs(opp_rating − user_rating) ≤ 100`, via
+> `sql.BASE_GAME_FILTER`. Cell floor: ≥30 contributors per (ELO×TC) cell. Sparse cell (2400, classical)
+> excluded from marginals and verdicts.
+>
+> **D-04 amendment**: the count-rate/proportion family split from SEED-040 is superseded. FLAWCMP-02
+> (Wilson difference-of-proportions) is voided — Phase 115 uses this unified estimator for all 15 metrics.
+
+### 5.1 Flaw Rate (all mistakes + blunders)
+
+#### Pooled distribution (you − opponent delta, per 100 moves)
+
+[pooled_table from generator]
+
+#### ELO marginal
+
+[marginal_table from generator]
+
+#### TC marginal
+
+[marginal_table from generator]
+
+[verdict_block from generator, with verdict WORDS applied]
+
+**Recommendation**: [Phase 115 implication — stratify/collapse/review]
+
+---
+
+[Repeat §5.2 through §5.15 for the remaining 14 metrics]
+
+### 5.16 Viability Diagnostic (D-06)
+
+**Cohort basis** (from `values["cohort"]`): `{n_analyzed_games} analyzed games across {n_user_cells}
+user×(ELO,TC) cells ({n_distinct_users} distinct users)`. Splice this line above the table — it is the
+analyzed-game denominator behind every §5 zone.
+
+> Flags rare numerators (low-clock, low-clock+miss) so Phase 115 can assess combo CI-width adequacy.
+> Non-zero = user has ≥1 player event of this tag over their ≥20 analyzed games.
+> `median_events_per_user` is a RAW, unscaled count (player events of this tag totalled over the
+> user's analyzed games) — NOT a per-100-moves rate, unlike the §5.1–5.15 zone columns. It gauges
+> raw event volume for CI-width adequacy.
+> `users_total` counts user×(ELO,TC) cells, not distinct users (a user spanning buckets counts once per cell).
+
+[viability table from generator]
+```
+
+---
+
 ## Report file layout
 
 Write to `reports/benchmark/benchmarks-latest.md`. Before writing, if that file already exists, read the date from its first line (`# FlawChess Benchmarks — YYYY-MM-DD`) and rename it to `reports/benchmark/benchmarks-YYYY-MM-DD.md`. Don't overwrite an existing dated archive — if `benchmarks-YYYY-MM-DD.md` already exists for that date, leave the archive alone and overwrite `benchmarks-latest.md` in place. Layout:
@@ -3281,6 +3420,26 @@ Write to `reports/benchmark/benchmarks-latest.md`. Before writing, if that file 
 #### 3.4.2 Per-span Score Gap by Endgame Type
 #### 3.4.3 Endgame Type Score vs Score Gap — agreement / redundancy analysis
 
+## 5. Flaw-Delta Zones
+
+### 5.1 Flaw Rate (all mistakes + blunders)
+### 5.2 Low-Clock Flaws
+### 5.3 Hasty Flaws
+### 5.4 Unrushed Flaws
+### 5.5 Opening-Phase Flaws
+### 5.6 Middlegame Flaws
+### 5.7 Endgame-Phase Flaws
+### 5.8 Missed-Win Flaws
+### 5.9 Lucky-Escape Flaws
+### 5.10 Reversed Advantage Flaws
+### 5.11 Squandered Win Flaws
+### 5.12 Hasty+Miss Combo
+### 5.13 Low-Clock+Miss Combo
+### 5.14 Mistakes
+### 5.15 Blunders
+### 5.16 Viability Diagnostic (D-06)
+(Per-metric viability table: users_contributing / users_total / pct_nonzero / median_events_per_user)
+
 ## Top-axis collapse summary (HEADLINE DELIVERABLE)
 
 | Metric | Subchapter | TC verdict (d_max) | ELO verdict (d_max) | Implication |
@@ -3313,6 +3472,21 @@ Write to `reports/benchmark/benchmarks-latest.md`. Before writing, if that file 
 | Per-bucket Score Gap — Parity (Section 2) | 3.2.2 | ... | ... | ... |
 | Per-bucket Score Gap — Recovery (Section 2) | 3.2.2 | ... | ... | ... |
 | Per-bucket Score Gap — Skill (Section 2) | 3.2.2 | ... | ... | ... |
+| Flaw Rate (M+B per 100 moves, you−opp delta) | 5.1 | ... | ... | ... |
+| Low-Clock Flaws delta | 5.2 | ... | ... | ... |
+| Hasty Flaws delta | 5.3 | ... | ... | ... |
+| Unrushed Flaws delta | 5.4 | ... | ... | ... |
+| Opening-Phase Flaws delta | 5.5 | ... | ... | ... |
+| Middlegame Flaws delta | 5.6 | ... | ... | ... |
+| Endgame-Phase Flaws delta | 5.7 | ... | ... | ... |
+| Miss (missed-win) delta | 5.8 | ... | ... | ... |
+| Lucky-escape delta | 5.9 | ... | ... | ... |
+| Reversed-advantage delta | 5.10 | ... | ... | ... |
+| Squandered-win delta | 5.11 | ... | ... | ... |
+| Hasty+Miss combo delta | 5.12 | ... | ... | ... |
+| Low-Clock+Miss combo delta | 5.13 | ... | ... | ... |
+| Mistake delta (severity=1) | 5.14 | ... | ... | ... |
+| Blunder delta (severity=2) | 5.15 | ... | ... | ... |
 
 Every cell states `max |d|` and a verdict. Drives Phase 73 zone calibration in SEED-006.
 

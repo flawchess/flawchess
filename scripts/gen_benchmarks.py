@@ -76,6 +76,7 @@ from scripts.benchmarks import (  # noqa: E402
     chapter3_3,
     chapter3_4,
     chapter4,
+    chapter5,
 )
 
 DbTarget = Literal["benchmark", "dev"]
@@ -144,6 +145,7 @@ CHAPTER_STUBS: tuple[tuple[str, str], ...] = (
     ("3.2-endgame-metrics-elo", "SKILL.md §3.2 — Conversion/Parity/Recovery + composite vs ELO"),
     ("3.3-time-pressure", "SKILL.md §3.3 — time-pressure stats + per-pressure-bin curves"),
     ("3.4-endgame-type", "SKILL.md §3.4 — per-class (rook/minor/pawn/queen/mixed/pawnless)"),
+    ("5-flaw-delta-zones", "SKILL.md §5 — flaw-delta per-(ELO×TC) Q1/Q3 zones + collapse verdicts"),
     (
         "4-global-percentile-cdf",
         "SKILL.md §4 — already deterministic via gen_global_percentile_cdf.py",
@@ -162,6 +164,7 @@ _CHAPTER_BUILDERS: dict[str, Callable[[AsyncSession], Awaitable[dict[str, Any]]]
     "3.2-endgame-metrics-elo": chapter3.build_32,
     "3.3-time-pressure": chapter3_3.build,
     "3.4-endgame-type": chapter3_4.build,
+    "5-flaw-delta-zones": chapter5.build,
     # §4 is a separate deliverable (its own generator + report + gates); the chapter is a
     # reference-only payload (markdown=None) that records cross-refs without a report body.
     "4-global-percentile-cdf": chapter4.build,

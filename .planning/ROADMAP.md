@@ -42,7 +42,7 @@ Reworks the Library flaw-stats surface from a self-only descriptive panel into a
   - `backfill_flaws.py` repopulates dev users 28 & 44 + the benchmark cohort in a single idempotent, batched pass; prod ships with an empty `game_flaws` table as before
   - Plans: 3 (kernel + parity helper → reader gating → dev backfill + benchmark HUMAN-UAT)
 
-- [ ] **Phase 114: Benchmark Flaw-Delta Zone Computation** — Compute per-cohort user you−opponent deltas, emit Q1/Q3 quartiles per ELO×TC, run Cohen's-d collapse verdict, extend `/benchmarks` skill with flaw-delta zones; requirements: FLAWBMK-01, FLAWBMK-02, FLAWBMK-03, FLAWBMK-04
+- [x] **Phase 114: Benchmark Flaw-Delta Zone Computation** — Compute per-cohort user you−opponent deltas, emit Q1/Q3 quartiles per ELO×TC, run Cohen's-d collapse verdict, extend `/benchmarks` skill with flaw-delta zones; requirements: FLAWBMK-01, FLAWBMK-02, FLAWBMK-03, FLAWBMK-04
   - The benchmark pipeline produces a per-(metric, ELO bucket, TC) Q1/Q3 quartile table for all ~13 flaw-delta metrics from the cohort's own `game_flaws` data
   - ELO and TC marginals are emitted alongside cell-level quartiles
   - Cohen's-d collapse verdict runs per metric per axis; each metric is classified as needing cell-specific zones or collapsing to a single global zone
@@ -95,7 +95,10 @@ Reworks the Library flaw-stats surface from a self-only descriptive panel into a
   3. The established Cohen's-d collapse verdict runs per metric per axis ({ELO, TC}), classifying each metric as needing cell-specific zones or collapsing to a single global zone (FLAWBMK-03).
   4. The `/benchmarks` skill is extended to produce these flaw-delta quartiles, marginals, and collapse verdicts, written to the benchmark report under `reports/` (FLAWBMK-04).
 
-**Plans**: TBD
+**Plans**: 1 plan
+Plans:
+
+- [x] 114-01-PLAN.md — §5 Flaw-Delta Zones chapter (15-metric per-100-moves paired-delta, Q1/Q3 + ELO/TC marginals + Cohen's-d verdicts + viability), diff-gate test, gen_benchmarks registration, SKILL.md §5 narration, D-04 REQUIREMENTS amendment fan-out
 
 #### Phase 115: You-vs-Opponent Comparison API + Bullet-Grid UI
 
@@ -447,7 +450,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 102-103. v1.23 phases | v1.23 | 3/3 | Complete (103 unplanned follow-on) | 2026-06-03 |
 | 104-112. v1.24 phases | v1.24 | 37/37 | Complete (111 shipped direct, no plan artifacts) | 2026-06-09 |
 | 113. Opponent-Flaw Materialization | v1.25 | 3/3 | Complete    | 2026-06-10 |
-| 114. Benchmark Flaw-Delta Zone Computation | v1.25 | 0/TBD | Not started | - |
+| 114. Benchmark Flaw-Delta Zone Computation | v1.25 | 1/1 | Complete | 2026-06-10 |
 | 115. You-vs-Opponent Comparison API + Bullet-Grid UI | v1.25 | 0/TBD | Not started | - |
 
 ## Backlog

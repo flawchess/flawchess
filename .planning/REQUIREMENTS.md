@@ -24,18 +24,20 @@ The data foundation: `game_flaws` currently stores player flaws only. Nearly fre
 
 The lightweight "B" — the IQR of the *delta* across ELO-matched peers, deliberately NOT the heavy 99-breakpoint endgame CDF.
 
-- [ ] **FLAWBMK-01**: The benchmark pipeline computes, for each flaw-delta metric, every cohort user's own you−opponent delta over their own games (count-rate or proportion per the metric's family), replicating the `flaws_service` classification over the cohort's moves.
-- [ ] **FLAWBMK-02**: The pipeline emits per-(ELO bucket × TC) **Q1/Q3 quartiles** of each delta plus ELO and TC marginals — two quartiles of one derived metric per cell, not a full percentile CDF.
-- [ ] **FLAWBMK-03**: The established Cohen's-d collapse verdict runs per metric per axis ({ELO, TC}) to decide whether each metric needs cell-specific zones or collapses to a single global zone.
-- [ ] **FLAWBMK-04**: The `/benchmarks` skill is extended to produce these flaw-delta quartiles, marginals, and collapse verdicts, written to the benchmark report under `reports/`.
+- [x] **FLAWBMK-01**: The benchmark pipeline computes, for each flaw-delta metric, every cohort user's own you−opponent delta over their own games (unified per-100-moves paired-delta for all metric families — see **AMENDED D-01** note in FLAWCMP-01/FLAWCMP-02), replicating the `flaws_service` classification over the cohort's moves.
+- [x] **FLAWBMK-02**: The pipeline emits per-(ELO bucket × TC) **Q1/Q3 quartiles** of each delta plus ELO and TC marginals — two quartiles of one derived metric per cell, not a full percentile CDF.
+- [x] **FLAWBMK-03**: The established Cohen's-d collapse verdict runs per metric per axis ({ELO, TC}) to decide whether each metric needs cell-specific zones or collapses to a single global zone.
+- [x] **FLAWBMK-04**: The `/benchmarks` skill is extended to produce these flaw-delta quartiles, marginals, and collapse verdicts, written to the benchmark report under `reports/`.
 
 ### You-vs-Opponent Comparison API (FLAWCMP)
 
-The statistical core: two CI methods, split by denominator and boundedness.
+The statistical core: unified per-100-moves paired-delta for all metric families (D-01/D-04 amendment — SEED-040 family split superseded).
 
-- [ ] **FLAWCMP-01**: For **count-rate families** (Flaw Rate = M+B/100 moves, tempo `low-clock`/`hasty`/`unrushed`, phase `opening`/`middlegame`/`endgame`), the endpoint returns the mean **paired per-game delta** `(your_count − opp_count) / your_moves_in_game × 100` with a confidence interval (bootstrap or normal approx over the per-game deltas), the game as the pairing unit.
-- [ ] **FLAWCMP-02**: For **proportion families** (`miss`, `lucky`, `reversed`, `squandered`), the endpoint returns the you−opponent **Wilson difference-of-proportions** with its CI, using the project's existing chess-score util (no parallel significance test invented).
-- [ ] **FLAWCMP-03**: The flaw-stats endpoint returns the full ~13-bullet inventory — per-tag delta + CI + (when available) benchmark zone bounds — honoring all existing game filters (platform, color, time control, rated, opponent type, recency) and the severity filter, which can still narrow the M+B base to blunders-only.
+- [ ] **FLAWCMP-01**: ~~For **count-rate families** (Flaw Rate = M+B/100 moves, tempo `low-clock`/`hasty`/`unrushed`, phase `opening`/`middlegame`/`endgame`), the endpoint returns the mean **paired per-game delta** `(your_count − opp_count) / your_moves_in_game × 100` with a confidence interval (bootstrap or normal approx over the per-game deltas), the game as the pairing unit.~~
+  - **AMENDED (114-CONTEXT D-01/D-04):** The endpoint uses the **unified per-100-moves paired-delta for ALL 15 metrics** (Flaw Rate, all tempo/phase/opportunity/impact tags, and both combos). There is no count-rate vs proportion family split. CI method: bootstrap or normal approx over per-game deltas for every bullet. SEED-040's "Denominator (count-rate families)" and "Statistical method detail → proportion families" rows are superseded.
+- [ ] ~~**FLAWCMP-02**: For **proportion families** (`miss`, `lucky`, `reversed`, `squandered`), the endpoint returns the you−opponent **Wilson difference-of-proportions** with its CI, using the project's existing chess-score util (no parallel significance test invented).~~
+  - **VOIDED (114-CONTEXT D-04):** The count-rate/proportion family split is superseded by the unified paired per-game delta estimator (D-01). Phase 115's endpoint uses the same per-100-moves estimator for all 15 metrics. Wilson difference-of-proportions is not implemented. SEED-040 "Proportion CI method" row is superseded.
+- [ ] **FLAWCMP-03**: The flaw-stats endpoint returns the full 15-bullet inventory (expanded from ~13 to include `mistake` and `blunder` severity split) — per-tag delta + CI + (when available) benchmark zone bounds — honoring all existing game filters (platform, color, time control, rated, opponent type, recency) and the severity filter, which can still narrow the M+B base to blunders-only.
 - [ ] **FLAWCMP-04**: The curated combo bullets `hasty + miss` (flagship, least confounded) and `low-clock + miss` are included in the inventory; their CI-width adequacy is validated at plan time against the materialized opponent-flaw data (combo viability is the milestone's known thin-sample risk).
 - [ ] **FLAWCMP-05**: A section-level sample gate returns an "analyze more games" state below a floor N (value set at plan time against the bimodal prod distribution); above the floor every bullet returns its measure + CI (a wide bar reads as inconclusive), and a bullet returns a blank/no-zone state only on literally zero events for that tag.
 
@@ -87,12 +89,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FLAWX-02 | Phase 113 | Complete |
 | FLAWX-03 | Phase 113 | Pending |
 | FLAWX-04 | Phase 113 | Complete |
-| FLAWBMK-01 | Phase 114 | Pending |
-| FLAWBMK-02 | Phase 114 | Pending |
-| FLAWBMK-03 | Phase 114 | Pending |
-| FLAWBMK-04 | Phase 114 | Pending |
-| FLAWCMP-01 | Phase 115 | Pending |
-| FLAWCMP-02 | Phase 115 | Pending |
+| FLAWBMK-01 | Phase 114 | Complete |
+| FLAWBMK-02 | Phase 114 | Complete |
+| FLAWBMK-03 | Phase 114 | Complete |
+| FLAWBMK-04 | Phase 114 | Complete |
+| FLAWCMP-01 | Phase 115 | Pending (amended D-01/D-04: unified estimator for all 15 metrics) |
+| FLAWCMP-02 | Phase 115 | **VOIDED** (D-04: Wilson proportion method superseded by unified paired-delta) |
 | FLAWCMP-03 | Phase 115 | Pending |
 | FLAWCMP-04 | Phase 115 | Pending |
 | FLAWCMP-05 | Phase 115 | Pending |
@@ -105,10 +107,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 **Coverage:**
 
-- v1 requirements: 19 total
-- Mapped to phases: 19 ✓
+- v1 requirements: 19 total (1 voided: FLAWCMP-02)
+- Mapped to phases: 19 ✓ (18 active + 1 voided)
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-06-09 (milestone v1.25 open, sourced from SEED-040)*
 *Last updated: 2026-06-10 after roadmap creation (Phases 113–115 assigned)*
+*Amended: 2026-06-10 (Phase 114 D-04 fan-out: FLAWCMP-02 voided, FLAWCMP-01 amended to unified estimator, FLAWBMK-01 updated)*
