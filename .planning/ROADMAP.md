@@ -27,11 +27,11 @@
 - ✅ **v1.22 Maintenance — Test Isolation & Frontend Major Upgrades** — Phases 100, 101 (shipped 2026-05-31) — see [milestones/v1.22-ROADMAP.md](milestones/v1.22-ROADMAP.md)
 - ✅ **v1.23 LLM Endgame-Insights Statistical-Reasoning Rework** — Phases 102, 103 (shipped 2026-06-03) — see [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md)
 - ✅ **v1.24 Library Page** — Phases 104–112 (shipped 2026-06-09) — see [milestones/v1.24-ROADMAP.md](milestones/v1.24-ROADMAP.md)
-- 🚧 **v1.25 Flaw-Stats Opponent Comparison** — Phases 113–115 (in progress)
+- 🚧 **v1.25 Flaw-Stats Opponent Comparison** — Phases 113–115 (incl. 114.1) (in progress)
 
 ## Phases
 
-### 🚧 v1.25 Flaw-Stats Opponent Comparison (Phases 113–115) — IN PROGRESS
+### 🚧 v1.25 Flaw-Stats Opponent Comparison (Phases 113–115, incl. 114.1) — IN PROGRESS
 
 Reworks the Library flaw-stats surface from a self-only descriptive panel into a you-vs-opponent comparison. Three dependency-ordered phases: the data foundation (opponent flaws materialized into `game_flaws` via a nearly-free extension of the existing classifier), the benchmark backfill (per-cohort you−opponent deltas, Q1/Q3 quartile zones per ELO×TC cell, Cohen's-d collapse verdicts), and the full comparison surface (two-CI-method endpoint + ~13-bullet grid replacing the current tag-distribution zone). The bullet chart reuses the existing `MiniBulletChart` / endgame "Clock Gap" pattern; the benchmark zone is the lightweight delta-IQR (not a full percentile CDF), keeping costs manageable as tactic-motif families land in future milestones.
 
@@ -48,6 +48,20 @@ Reworks the Library flaw-stats surface from a self-only descriptive panel into a
   - Cohen's-d collapse verdict runs per metric per axis; each metric is classified as needing cell-specific zones or collapsing to a single global zone
   - The `/benchmarks` skill report includes a flaw-delta zones section under `reports/`, consumable by plan-time calibration
   - Design path: `/gsd-discuss-phase 114` → `/gsd-plan-phase 114`
+
+- [ ] **Phase 114.1: Replace `move_count` with exact `ply_count` (INSERTED 2026-06-10)** — SEED-041 item 9. `games.move_count` is the full-move count (`ceil(plies/2)`), so it pins the half-move total only to ±1, blocking an exact per-game user-move denominator without a 190M-row `game_positions` scan. Store the exact half-move count instead; source: `.planning/seeds/SEED-041-prod-db-query-and-index-tuning.md` §9
+  - Alembic `add → backfill → enforce` migration: add `ply_count INT` nullable, batch-backfill `ply_count = max(ply)` from `game_positions` per game (dev + prod via `bin/prod_db_tunnel.sh`), then drop `move_count` once all readers are migrated
+  - Import path writes the exact half-move count: `zobrist.py` (~L271) sets `ply_count = len(nodes)` (not `(len(nodes)+1)//2`); `import_service.py` bulk UPDATE (~L738-770) writes `ply_count`
+  - Display stays full-moves: expose `ply_count` in API schemas (`openings.py`, `library.py`), derive the rendered count as `(ply_count + 1) // 2` so "N Moves" in `LibraryGameCard`/`GameCard`/`FlawCard` is unchanged; update all readers (`library_service`/`library_repository`, `openings_service`, `endgame_service`, frontend `types/api.ts` + `types/library.ts`) and `test_zobrist`/`test_import_service` fixtures
+  - Payoff: exact per-game `user_moves` with ZERO `game_positions` access — speeds the §5 benchmark chapter and the Phase 115 live "you vs opponent" endpoint (same per-game denominator on every request)
+  - Follow-on: simplify `scripts/benchmarks/chapter5.py` `user_moves_per_game` to read `games.ply_count`, then regenerate §5
+  - Independent of SEED-041 items 1-8 (already merged on `main`)
+  - **Plans:** 4 plans (Wave 1: schema + import-path + Migration A · Wave 2: backfill script · Wave 3: backend + frontend readers · Wave 4: enforce migration + chapter5 §5 follow-on)
+    - [ ] 114.1-01-PLAN.md — add ply_count column + Migration A; zobrist/import_service write exact half-moves; Wave 0 fixture renames
+    - [ ] 114.1-02-PLAN.md — scripts/backfill_ply_count.py (resumable, --db dev|benchmark|prod); dev backfill + prod HUMAN-UAT runbook
+    - [ ] 114.1-03-PLAN.md — backend schemas/readers + frontend types/cards switch to ply_count (Math.ceil display); no fallback (D-03)
+    - [ ] 114.1-04-PLAN.md — Migration B (NOT NULL + drop move_count) + chapter5 user_moves_per_game simplification + §5 regen (HUMAN-gated)
+  - Design path: `/gsd-discuss-phase 114.1` → `/gsd-plan-phase 114.1`
 
 - [ ] **Phase 115: You-vs-Opponent Comparison API + Bullet-Grid UI** — Two-CI-method flaw-stats endpoint + ~13-bullet grid replacing the current tag-distribution zone; requirements: FLAWCMP-01, FLAWCMP-02, FLAWCMP-03, FLAWCMP-04, FLAWCMP-05, FLAWUI-01, FLAWUI-02, FLAWUI-03, FLAWUI-04, FLAWUI-05, FLAWUI-06
   - The flaw-stats endpoint returns the full ~13-bullet inventory (count-rate families via paired per-game delta + bootstrap/normal CI; proportion families via Wilson difference-of-proportions), honoring all existing game filters
