@@ -47,6 +47,11 @@ class Game(Base):
         UniqueConstraint(
             "user_id", "platform", "platform_game_id", name="uq_games_user_platform_game_id"
         ),
+        # SEED-041 §B1: unique index on (id, user_id) is the target of the
+        # game_positions composite FK (game_id, user_id) -> games(id, user_id).
+        # Built CONCURRENTLY in the migration; declared here as a unique index
+        # (not a constraint) to match the migration and keep metadata in sync.
+        Index("uq_games_id_user_id", "id", "user_id", unique=True),
         # SEED-041 §A2: (user_id, played_at DESC) lets the recent-games WindowAgg
         # run-condition early-terminate instead of scanning the user's full game
         # history. Replaces the former index=True on user_id (ix_games_user_id) —
