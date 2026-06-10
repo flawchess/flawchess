@@ -18,8 +18,9 @@ scope: small-medium (items 1-8 are quick/migration tasks; item 9 is a phase-size
 > was wrong — verified vs live DB).
 > **Still pending (manual prod ops, NOT in any migration):** item 6's
 > `VACUUM FULL games` (applies the toast knob to existing rows; VACUUM can't run in
-> an Alembic transaction). **Item 9 remains dormant** — left as its own phase per
-> the user's "no new phase" instruction. Verify via `pg_stat_statements` deltas +
+> an Alembic transaction). **Item 9 is now Phase 114.1** (inserted 2026-06-10,
+> `move_count → ply_count`; design path `/gsd-discuss-phase 114.1` → `/gsd-plan-phase 114.1`)
+> — no longer dormant. Verify items 1-8 via `pg_stat_statements` deltas +
 > `/db-report` ~1 week after deploy.
 
 Implement the findings of `reports/db-stats/db-schema-analysis-2026-06-10.md`

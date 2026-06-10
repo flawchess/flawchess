@@ -104,12 +104,17 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FLAWUI-04 | Phase 115 | Pending |
 | FLAWUI-05 | Phase 115 | Pending |
 | FLAWUI-06 | Phase 115 | Pending |
+| FLAWTAC-01 | Deferred (v2 — SEED-039) | Deferred |
+| FLAWTAC-02 | Deferred (v2 — SEED-039) | Deferred |
+| FLAWTAC-03 | Deferred (v2 — SEED-039) | Deferred |
+| FLAWCOV-01 | Deferred (v2 — SEED-012) | Deferred |
 
 **Coverage:**
 
 - v1 requirements: 19 total (1 voided: FLAWCMP-02)
 - Mapped to phases: 19 ✓ (18 active + 1 voided)
 - Unmapped: 0 ✓
+- v2 (deferred, not in this roadmap): 4 — FLAWTAC-01/02/03 (SEED-039), FLAWCOV-01 (SEED-012); tracked in the table for completeness, owned by their seeds
 
 ---
 *Requirements defined: 2026-06-09 (milestone v1.25 open, sourced from SEED-040)*
