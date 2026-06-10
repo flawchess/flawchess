@@ -1,6 +1,6 @@
 ---
 id: SEED-041
-status: dormant
+status: partial  # items 1-8 implemented 2026-06-10 (quick task 260610-sha); item 9 remains dormant
 planted: 2026-06-10
 planted_during: v1.25 (Flaw-Stats Opponent Comparison), Phase 114 (benchmark flaw-delta zones) in progress
 trigger_when: after Phase 114 merges — run as /gsd-quick tasks (items 1-4 in one task; items 5-6 each need their own migration-bearing task); item 9 (move_count→ply_count) is a larger migration + API/UI change, plan as its own phase
@@ -8,6 +8,19 @@ scope: small-medium (items 1-8 are quick/migration tasks; item 9 is a phase-size
 ---
 
 # SEED-041: Prod DB query & index tuning (from 2026-06-10 schema analysis)
+
+> **STATUS 2026-06-10 — items 1-8 IMPLEMENTED** (quick task `260610-sha`, on `main`,
+> not yet deployed). Three Alembic migrations off head `f8a2d1c9b345`:
+> `b7c1d9e2f3a4` (batch 1: items 1a, 2, 3, 4), `c8d2e0f3a4b5` (item 5 composite FK),
+> `d9e3f1a4b5c6` (item 6 toast reloption); query rewrite for item 1b; model
+> cleanups for items 7, 8. **Correction logged:** item 5's user_id FK is really
+> named `fk_game_positions_user_id` (the checklist's `game_positions_user_id_fkey`
+> was wrong — verified vs live DB).
+> **Still pending (manual prod ops, NOT in any migration):** item 6's
+> `VACUUM FULL games` (applies the toast knob to existing rows; VACUUM can't run in
+> an Alembic transaction). **Item 9 remains dormant** — left as its own phase per
+> the user's "no new phase" instruction. Verify via `pg_stat_statements` deltas +
+> `/db-report` ~1 week after deploy.
 
 Implement the findings of `reports/db-stats/db-schema-analysis-2026-06-10.md`
 (companion to `db-report-prod-2026-06-10.md`). All findings are backed by prod
