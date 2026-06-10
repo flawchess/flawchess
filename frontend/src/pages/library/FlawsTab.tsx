@@ -33,6 +33,12 @@ import type { FlawTag } from '@/types/library';
 
 const PAGE_SIZE = 20;
 
+// Filter-independent probe for "does the user have ANY engine-analyzed games":
+// no date/TC/platform restriction, both opponent types, no flaw filter. Module
+// level so the TanStack query key stays stable across renders.
+const UNFILTERED_PROBE_FILTERS: FilterState = { ...DEFAULT_FILTERS, opponentType: 'both' };
+const NO_FLAW_FILTER: FlawFilterState = { severity: [], tags: [] };
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 /**
@@ -208,11 +214,12 @@ export function FlawsTab() {
   const totalImported =
     profile != null ? profile.chess_com_game_count + profile.lichess_game_count : 0;
 
-  // Flaw stats (cached, shared query key with the Stats panel) — analyzed_n
-  // distinguishes "you have no engine-analyzed games at all" from "your filters
-  // matched no flaws". Showing the no-engine-analysis message to a user who DOES
-  // have analyzed games would be misleading (CLAUDE.md empty-state rule).
-  const { data: statsData } = useLibraryFlawStats(appliedFilters, flawFilter);
+  // Unfiltered flaw-stats probe — analyzed_n distinguishes "you have no
+  // engine-analyzed games at all" from "your filters matched no flaws". It must
+  // NOT inherit the applied filters: a filter set matching zero games would
+  // yield analyzed_n=0 and falsely show the no-engine-analysis message to a
+  // user who DOES have analyzed games (CLAUDE.md empty-state rule).
+  const { data: statsData } = useLibraryFlawStats(UNFILTERED_PROBE_FILTERS, NO_FLAW_FILTER);
 
   // ── Derived state ────────────────────────────────────────────────────────────
   const totalGames = totalImported;

@@ -108,13 +108,18 @@ let mockFlawsResult: MockFlawsResult = {
 };
 
 // Controllable flaw-stats mock — analyzed_n decides which matched_count=0 empty
-// state renders (NoEngineAnalysisFlawsState vs "No flaws matched").
+// state renders (NoEngineAnalysisFlawsState vs "No flaws matched"). Args are
+// captured so tests can assert the probe is filter-independent.
 let mockStatsResult: { data: { analyzed_n: number } | undefined } = { data: undefined };
+let capturedStatsArgs: unknown[] | null = null;
 
 vi.mock('@/hooks/useLibrary', () => ({
   useLibraryFlaws: () => mockFlawsResult,
   useLibraryGames: () => ({ data: undefined, isLoading: false, isError: false }),
-  useLibraryFlawStats: () => ({ ...mockStatsResult, isLoading: false, isError: false }),
+  useLibraryFlawStats: (...args: unknown[]) => {
+    capturedStatsArgs = args;
+    return { ...mockStatsResult, isLoading: false, isError: false };
+  },
   // useLibraryGame is called by FlawCard (rendered inside the grid); disabled by default
   useLibraryGame: () => ({ data: undefined, isLoading: false, isError: false }),
 }));
@@ -171,6 +176,7 @@ beforeEach(() => {
     isError: false,
   };
   mockStatsResult = { data: undefined };
+  capturedStatsArgs = null;
 });
 
 afterEach(() => {
@@ -417,6 +423,23 @@ describe('FlawsTab', () => {
       expect(headings.length).toBeGreaterThanOrEqual(1);
       const captions = screen.getAllByText('Try adjusting the flaw filter or game filters.');
       expect(captions.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('probes flaw stats filter-independently (no inherited game/flaw filters)', () => {
+      // Even with a restrictive flaw filter applied, the analyzed_n probe must
+      // run unfiltered — otherwise a zero-match filter set yields analyzed_n=0
+      // and falsely shows the no-engine-analysis message.
+      mockStoreState = { severity: ['blunder'], tags: ['miss'] };
+      renderFlawsTab();
+      expect(capturedStatsArgs).toBeTruthy();
+      const [probeFilters, probeFlawFilter] = capturedStatsArgs! as [
+        { opponentType: string; recency: unknown },
+        { severity: string[]; tags: string[] },
+      ];
+      expect(probeFilters.opponentType).toBe('both');
+      expect(probeFilters.recency).toBeNull();
+      expect(probeFlawFilter.severity).toEqual([]);
+      expect(probeFlawFilter.tags).toEqual([]);
     });
 
     it('shows the no-engine-analysis state when no games are analyzed (quick-260610-vru)', () => {
