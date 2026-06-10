@@ -1,6 +1,7 @@
 import { BookMarked, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { LoadError } from '@/components/ui/load-error';
 import { OpeningStatsSection, type OpeningStatsSectionDescriptor } from '@/components/stats/OpeningStatsSection';
 import { ScoreChart } from '@/components/charts/ScoreChart';
 import {
@@ -246,12 +247,11 @@ export function StatsTab({
 
       {/* Most Played Openings — error / loading branches per CLAUDE.md */}
       {mostPlayedError && (
-        <div
-          className="charcoal-texture rounded-md p-4 text-center text-muted-foreground"
+        <LoadError
+          resource="most-played openings"
+          className="charcoal-texture rounded-md p-4 text-center"
           data-testid="mpo-error"
-        >
-          Failed to load most-played openings. Something went wrong. Please try again in a moment.
-        </div>
+        />
       )}
       {!mostPlayedError && mostPlayedLoading && !mostPlayedData && (
         <div

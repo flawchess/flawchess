@@ -1,7 +1,13 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { Chessboard } from 'react-chessboard';
 import { arrowSortKey, DARK_BLUE } from '../../lib/arrowColor';
-import { darkSquareStyle, lightSquareStyle, BOARD_DARK_SQUARE, BOARD_LIGHT_SQUARE } from '../../lib/theme';
+import {
+  darkSquareStyle,
+  lightSquareStyle,
+  BOARD_DARK_SQUARE,
+  BOARD_LIGHT_SQUARE,
+  MOVE_HIGHLIGHT_SQUARE,
+} from '../../lib/theme';
 import { HIGHLIGHT_PULSE_DURATION_MS, HIGHLIGHT_PULSE_ITERATIONS } from '../../lib/highlightPulse';
 import { squareToCoords, buildArrowPath } from './arrowGeometry';
 
@@ -229,7 +235,7 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, a
   const squareStyles = useMemo<Record<string, React.CSSProperties>>(() => {
     const styles: Record<string, React.CSSProperties> = {};
     if (lastMoveFrom && lastMoveTo) {
-      const highlightStyle: React.CSSProperties = { backgroundColor: 'rgba(255, 255, 0, 0.35)' };
+      const highlightStyle: React.CSSProperties = { backgroundColor: MOVE_HIGHLIGHT_SQUARE };
       styles[lastMoveFrom] = highlightStyle;
       styles[lastMoveTo] = highlightStyle;
     }

@@ -1,5 +1,35 @@
 # Milestones: FlawChess
 
+## v1.24 Library Page (Shipped: 2026-06-09)
+
+**Phases completed:** 9 phases (104–112), 37 plans. All landed on `main` via local squash-merge or direct gated commits. Phase 111 (Library UI polish) shipped via direct commits with no GSD plan/summary artifacts — its record lives in `milestones/v1.24-ROADMAP.md` + git history.
+**Stats:** 131 code files changed (`app` + `frontend/src` + `scripts`), +13,182 / -1,242 lines, ~105 commits over 6 days (2026-06-03 → 2026-06-09) since v1.23 (`a3585d6c` → `4192f4b9`). Four Alembic migrations (create `game_flaws`, alter impact columns, rename `lucky`, drop display columns).
+**Milestone goal:** Introduce the **Library** as a top-level destination and build out SEED-036's analysis half — an eval-driven mistake/flaw archive over the user's analyzed games. What began as a pure-frontend shell + route migration grew into a full-stack flaw layer: an on-the-fly classifier, a materialized `game_flaws` table, Games and Flaws subtabs, per-card eval charts, a finalized flaw-tag taxonomy, and a cross-tab Flaw filter.
+
+**Key accomplishments:**
+
+- **Library shell + migration** (Phase 104, LIB-01..09) — a new top-level **Library** page hosting Import and Overview as deep-linkable URL-routed `<Tabs variant="brand">` subtabs (`/library/import`, `/library/overview`), mirroring the Openings/Endgames pattern. Top-level nav dropped to Library · Openings · Endgames (+ Admin); `/import`, `/overview`, `/rating`, `/global-stats` redirect into the matching subtab; the `totalGames === 0` dot moved to Library; state-dependent landing. Pure frontend, no backend changes.
+- **On-the-fly mistake kernel** (Phases 105–106, LIBG-02/06/07/08/09) — a server-side `flaws` service deriving per-ply severity (Lichess-aligned 0.05/0.10/0.15 ES-drop thresholds, mate via ±1000 cp-equivalent Option B) + attribution tags from stored `eval_cp`/`eval_mate`, with no schema change; two endpoints (`GET /api/library/games` mistake-filtered archive + per-game B/M/I counts/chips, `GET /api/library/mistake-stats` aggregates) over an `apply_game_filters` `EXISTS` and a SQL window-scan.
+- **Games subtab** (Phase 107, LIBG-01/03) — the headline surface: a filterable game-card archive + a Flaw-Stats panel (per-severity rates per game / per 100 moves, tag distribution, trend over time, explicit `% analyzed` + N), now the returning-user default subtab.
+- **Flaws subtab + materialization** (Phase 108, SEED-038) — the Flaws subtab (one card per flawed position) backed by a new derived **`game_flaws`** table (composite PK `(user_id, game_id, ply)`, typed tag-family columns + display payload, M+B-only), a per-flaw list endpoint, and a shared cross-tab **Flaw filter** (single-flaw `EXISTS`, OR-within-family / AND-across-family). `apply_game_filters` migrated off the on-the-fly window-scan onto `game_flaws`; `scripts/backfill_flaws.py` + a single classify path (D-10) across import hook / reclassify / backfill. Also fixed: flaw position stored one ply too early; severity filter leaking "or worse"; tag filters not applying on Games.
+- **Per-card eval chart** (Phase 109, LIBG-10) — each analyzed Games card gains a recharts expected-score area chart (white-perspective lichess sigmoid, 50% midline, advantage shading) as a new middle column (three equal thirds), with your-flaw dots, phase-transition lines, checkmate-to-mate bar, and per-ply tooltips that scrub the miniboard. Delivered inline on the existing payload (no new endpoint, no migration).
+- **Flaw-tag taxonomy overhaul** (Phase 110) — tempo `impatient`→`hasty` / `considered`→`unrushed`; impact family rebuilt from the outcome-dependent `result-changing`/`while-ahead` to the outcome-independent ladder `reversed` (ES ≥70%→≤30%) / `squandered` (ES ≥85%→≤60%); canonical `lowercase-with-dash` chip names + restored definition popovers (thresholds interpolated from shared constants, codegen'd to `flawThresholds.ts` under a CI drift gate); chip→Flaws deep-links dropped; active-filter chip emphasis. New alter migration, dev-only backfill (users 28 & 44).
+- **Filter-UX polish + Flaws-card rework** (Phases 111–112) — a staged **Apply-only** filter model across every filter panel (Reset + Apply footer; closing any other way discards changes); the Library "Flaw filters" panel renamed **Tags**. The Flaws subtab reworked into a responsive 2-up `Card` grid matching the Games visual language (banded header, 132px miniboard with flaw arrow, move notation + user-POV mate-aware eval swing, family-colored chips), with a **View game** modal backed by a new `GET /api/library/games/{game_id}` single-game endpoint.
+
+**Deferred (still in SEED-036):** the Analysis detail viewer (LIBG-04) and the on-demand best-move endpoint (LIBG-05) — intentionally left for a later phase.
+
+**Tech debt (carried forward, informational):**
+
+- Phase 111 has no GSD plan/summary artifacts (shipped direct).
+- Dev-only `game_flaws` backfill (users 28 & 44); `game_flaws` ships empty to prod on the v1.24 release.
+- SEED-030 Track A (split oversized multi-concern modules) remains open.
+
+**Known deferred items at close:** see STATE.md Deferred Items (open-artifact audit at close: 24 items — 3 phase UATs human-passed-at-ship with stale frontmatter, 10 quick tasks, 5 long-range todos, 6 dormant seeds incl. SEED-036's deferred half; none block the release).
+
+See `.planning/milestones/v1.24-ROADMAP.md` and `.planning/milestones/v1.24-REQUIREMENTS.md` (16/16 in-scope requirements complete; LIBG-04 / LIBG-05 deferred).
+
+---
+
 ## v1.23 LLM Endgame-Insights Statistical-Reasoning Rework (Shipped: 2026-06-03)
 
 **Phases completed:** 2 phases (102, 103), 3 plans. Phase 102 landed on `main` via local squash-merge (PR #173 closed in favour of the squash) after full HUMAN-UAT; Phase 103 landed as direct gated commits.

@@ -1,75 +1,87 @@
-import * as React from "react"
+import * as React from 'react';
 
-import { cn } from "@/lib/utils"
+import { cn } from '@/lib/utils';
+
+// FlawChess themed card primitive: a textured surface with an optional banded
+// header. This is the canonical "card with header" used across Openings, Endgames,
+// Stats, and the game lists. The visual treatment (texture, header band) lives here
+// so it can change in one place; callers describe ROLE (accent, header size), not style.
+//
+// Composition:
+//   <Card accentColor={resultColor}>
+//     <CardHeader size="compact">Title <RightControls className="ml-auto" /></CardHeader>
+//     <CardBody>…</CardBody>
+//   </Card>
+//
+// The stock shadcn card (neutral bg-card) lives in ui/form-card.tsx as FormCard*.
+
+interface CardProps extends React.HTMLAttributes<HTMLElement> {
+  /** Root element. Defaults to div; use section/article to keep page semantics. */
+  as?: 'div' | 'section' | 'article';
+  /** Optional colored left spine — renders a 4px left border in this color. */
+  accentColor?: string;
+  /**
+   * Let content overflow the card bounds (default clips). Needed only for cards
+   * whose children must visually escape the border, e.g. an eval-chart tooltip.
+   * When set, give CardHeader `className="rounded-t-md"` so the header band's top
+   * corners still conform to the radius (the clip no longer rounds them).
+   */
+  overflowVisible?: boolean;
+}
 
 function Card({
+  as: Tag = 'div',
+  accentColor,
+  overflowVisible = false,
   className,
-  size = "default",
+  style,
   ...props
-}: React.ComponentProps<"div"> & { size?: "default" | "sm" }) {
+}: CardProps) {
   return (
-    <div
-      data-slot="card"
-      data-size={size}
+    <Tag
       className={cn(
-        "group/card flex flex-col gap-4 overflow-hidden rounded-xl bg-card py-4 text-sm text-card-foreground ring-1 ring-foreground/10 has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:gap-3 data-[size=sm]:py-3 data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
-        className
+        'charcoal-texture rounded-md',
+        overflowVisible ? 'overflow-visible' : 'overflow-hidden',
+        className,
+        // Accent spine last: tailwind-merge must keep border-l-4 over any `border`
+        // width the caller passes in className (else the left spine width is lost).
+        accentColor && 'border-l-4',
+      )}
+      style={accentColor ? { borderLeftColor: accentColor, ...style } : style}
+      {...props}
+    />
+  );
+}
+
+type CardHeaderTag = 'h2' | 'h3' | 'h4';
+
+interface CardHeaderProps extends React.HTMLAttributes<HTMLHeadingElement> {
+  /** Heading level for the title bar. Defaults to h3. */
+  as?: CardHeaderTag;
+  /** 'default' = text-base / py-3 (section cards); 'compact' = text-sm / py-2 (list/result cards). */
+  size?: 'default' | 'compact';
+}
+
+function CardHeader({
+  as: Tag = 'h3',
+  size = 'default',
+  className,
+  ...props
+}: CardHeaderProps) {
+  return (
+    <Tag
+      className={cn(
+        'flex items-center gap-2 px-4 bg-black/20 border-b border-border/40 font-semibold',
+        size === 'compact' ? 'py-2 text-sm' : 'py-3 text-base',
+        className,
       )}
       {...props}
     />
-  )
+  );
 }
 
-function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="card-header"
-      className={cn(
-        "group/card-header @container/card-header grid auto-rows-min items-start gap-1 rounded-t-xl px-4 group-data-[size=sm]/card:px-3 has-data-[slot=card-action]:grid-cols-[1fr_auto] has-data-[slot=card-description]:grid-rows-[auto_auto] [.border-b]:pb-4 group-data-[size=sm]/card:[.border-b]:pb-3",
-        className
-      )}
-      {...props}
-    />
-  )
+function CardBody({ className, ...props }: React.ComponentProps<'div'>) {
+  return <div className={cn('p-4', className)} {...props} />;
 }
 
-function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="card-title"
-      className={cn(
-        "text-base leading-snug font-medium group-data-[size=sm]/card:text-sm",
-        className
-      )}
-      {...props}
-    />
-  )
-}
-
-function CardDescription({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="card-description"
-      className={cn("text-sm text-muted-foreground", className)}
-      {...props}
-    />
-  )
-}
-
-function CardContent({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="card-content"
-      className={cn("px-4 group-data-[size=sm]/card:px-3", className)}
-      {...props}
-    />
-  )
-}
-
-export {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-}
+export { Card, CardHeader, CardBody };

@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sketch 002 — Flaw-Stats Panel</title>
+<link rel="stylesheet" href="../themes/default.css">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font-sans); background: var(--color-bg); color: var(--color-text); padding-top: 56px; -webkit-font-smoothing: antialiased; }
+
+  #variant-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 9998; background: var(--color-surface); border-bottom: 1px solid var(--color-border); padding: 10px 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  #variant-nav .brand { font-family: var(--font-brand); font-weight: 700; color: var(--brand-brown-highlight); margin-right: 12px; font-size: var(--text-lg); }
+  .variant-tab { font-family: var(--font-sans); font-size: var(--text-sm); font-weight: 700; background: transparent; color: var(--color-text-muted); border: 1px solid var(--color-border); border-radius: var(--radius-full); padding: 6px 14px; cursor: pointer; transition: all .15s ease; }
+  .variant-tab:hover { color: var(--color-text); border-color: var(--color-border-strong); }
+  .variant-tab.active { background: var(--brand-brown); color: #fff; border-color: var(--brand-brown); }
+
+  .variant { display: none; padding: 28px 20px 80px; max-width: 1080px; margin: 0 auto; }
+  .variant.active { display: block; }
+  .note { color: var(--color-text-muted); font-size: var(--text-sm); margin: 4px 0 20px; line-height: 1.5; max-width: 900px; }
+  .note b { color: var(--color-text); }
+  .col-head { font-family: var(--font-brand); font-weight: 600; color: var(--color-text-muted); font-size: var(--text-sm); text-transform: uppercase; letter-spacing: .05em; margin: 22px 0 12px; }
+
+  /* panel shell */
+  .panel { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 18px 20px; }
+  .panel-head { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+  .panel-title { font-family: var(--font-brand); font-weight: 600; font-size: var(--text-lg); }
+  .denom { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; font-size: var(--text-sm); color: var(--color-text-muted); background: oklch(1 0 0 / 4%); border: 1px solid var(--color-border); border-radius: var(--radius-full); padding: 4px 11px; }
+  .denom b { color: var(--brand-brown-highlight); }
+  .seg { display: inline-flex; border: 1px solid var(--color-border); border-radius: var(--radius-full); overflow: hidden; }
+  .seg button { background: transparent; color: var(--color-text-muted); border: none; padding: 4px 11px; font-size: var(--text-chip); font-weight: 700; cursor: pointer; font-family: var(--font-sans); }
+  .seg button.on { background: var(--brand-brown); color: #fff; }
+
+  /* KPI numbers */
+  .kpi-num { font-weight: 800; line-height: 1; }
+  .kpi-lab { font-size: var(--text-chip); color: var(--color-text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+  .delta { font-size: var(--text-chip); font-weight: 800; }
+  .delta.good { color: oklch(0.72 0.14 145); } .delta.bad { color: oklch(0.70 0.16 35); }
+
+  .sev-b { color: var(--sev-blunder); } .sev-m { color: var(--sev-mistake); } .sev-i { color: var(--sev-inaccuracy); }
+
+  /* band (variant A) */
+  .band { display: flex; gap: 8px; flex-wrap: wrap; }
+  .band .cell { flex: 1; min-width: 120px; background: var(--color-charcoal); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 12px 14px; display: flex; flex-direction: column; gap: 5px; }
+  .band .cell .kpi-num { font-size: var(--text-2xl); }
+
+  /* tiles (variant C) */
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  @media (max-width: 720px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+  .tile { background: var(--color-charcoal); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 12px; display: flex; flex-direction: column; gap: 4px; }
+  .tile .kpi-num { font-size: var(--text-xl); }
+  .tile.span2 { grid-column: span 2; }
+
+  /* two-col (variant B) */
+  .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 760px) { .twocol { grid-template-columns: 1fr; } }
+  .sub { background: var(--color-charcoal); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 14px 16px; }
+  .sub h4 { font-size: var(--text-sm); font-weight: 800; margin-bottom: 12px; color: var(--color-text); }
+  .rate-row { display: flex; align-items: baseline; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--color-border); }
+  .rate-row:last-child { border-bottom: none; }
+  .rate-row .l { font-weight: 700; font-size: var(--text-sm); }
+  .rate-row .v { font-weight: 800; font-size: var(--text-lg); }
+  .rate-row .sub2 { font-size: var(--text-chip); color: var(--color-text-muted); margin-left: 6px; }
+
+  /* horizontal bars */
+  .bar-row { display: grid; grid-template-columns: 96px 1fr 44px; align-items: center; gap: 10px; margin: 9px 0; font-size: var(--text-sm); }
+  .bar-row .bl { color: var(--color-text-muted); font-weight: 700; }
+  .bar-track { height: 8px; background: oklch(1 0 0 / 7%); border-radius: var(--radius-full); overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: var(--radius-full); }
+  .bar-row .bv { text-align: right; font-weight: 800; }
+
+  /* tempo split stacked bar */
+  .stacked { display: flex; height: 14px; border-radius: var(--radius-full); overflow: hidden; border: 1px solid var(--color-border); }
+  .stacked > div { height: 100%; }
+  .seg-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; font-size: var(--text-chip); color: var(--color-text-muted); }
+  .seg-legend .dot { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 5px; vertical-align: middle; }
+
+  /* trend chart */
+  .trend { background: var(--color-charcoal); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 14px 16px; margin-top: 14px; }
+  .trend-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .trend-head .t { font-size: var(--text-sm); font-weight: 800; }
+  .trend svg { width: 100%; height: auto; display: block; }
+  .axis { fill: var(--color-text-muted); font-size: 11px; font-family: var(--font-sans); }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 18px 0 0; font-size: var(--text-sm); color: var(--color-text-muted); }
+  .legend .swatch { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 5px; vertical-align: middle; }
+
+  #tools { position: fixed; bottom: 12px; right: 12px; z-index: 9999; font-family: system-ui; font-size: 12px; background: rgba(0,0,0,.75); color: #fff; padding: 8px 10px; border-radius: 8px; opacity: .45; transition: opacity .2s; display: flex; gap: 6px; align-items: center; }
+  #tools:hover { opacity: 1; }
+  #tools button { background: #333; color: #fff; border: 1px solid #555; border-radius: 5px; padding: 4px 8px; cursor: pointer; font-size: 12px; }
+  #tools button.on { background: var(--brand-brown); border-color: var(--brand-brown); }
+</style>
+</head>
+<body>
+
+<div id="variant-nav">
+  <span class="brand">FlawChess ▸ 002 Flaw-Stats Panel</span>
+  <button class="variant-tab active" onclick="showVariant('a', event)">A: Band → trend → tags ★ Selected</button>
+  <button class="variant-tab" onclick="showVariant('b', event)">B: 2-col + trend</button>
+  <button class="variant-tab" onclick="showVariant('c', event)">C: KPI tiles</button>
+</div>
+
+<!-- ===== VARIANT A ===== -->
+<section id="variant-a" class="variant active">
+  <p class="note"><b>A — Stat band → trend → tag distribution (winner).</b> A single row of severity-rate cells (per-game / per-100 toggle in the head, analyzed denominator pinned right), then the full-width <b>trend</b> chart — the headline "am I blundering less?" insight, kept high — and the full <b>tag distribution</b> at the bottom (tempo split, phase, opportunity, impact). Reads how often → over time → of what kind.</p>
+  <div class="panel">
+    <div class="panel-head">
+      <span class="panel-title">Flaw-Stats</span>
+      <span class="seg"><button class="on" onclick="setNorm('game',event)">per game</button><button onclick="setNorm('100',event)">per 100 moves</button></span>
+      <span class="denom">📊 <b>74%</b> analyzed · N = <b>312</b></span>
+    </div>
+    <div class="band">
+      <div class="cell"><span class="kpi-num sev-b" data-g="1.8" data-h="0.9">1.8</span><span class="kpi-lab sev-b">Blunders / game</span><span class="delta good">▼ 18% vs prior</span></div>
+      <div class="cell"><span class="kpi-num sev-m" data-g="2.4" data-h="1.2">2.4</span><span class="kpi-lab sev-m">Mistakes / game</span><span class="delta good">▼ 9%</span></div>
+      <div class="cell"><span class="kpi-num sev-i" data-g="5.1" data-h="2.6">5.1</span><span class="kpi-lab sev-i">Inaccuracies / game</span><span class="delta bad">▲ 4%</span></div>
+      <div class="cell"><span class="kpi-num" style="color:var(--fam-impact)">31%</span><span class="kpi-lab">Result-changing</span><span class="delta">of blunders flipped the game</span></div>
+    </div>
+    <div class="trend" id="trendA"></div>
+    <div class="sub" style="margin-top:14px">
+      <h4>Tag distribution</h4>
+      <div style="font-size:var(--text-chip);color:var(--color-text-muted);margin-bottom:6px">Tempo split of mistakes + blunders</div>
+      <div class="stacked"><div style="width:30%;background:oklch(0.74 0.16 290)"></div><div style="width:20%;background:oklch(0.62 0.15 300)"></div><div style="width:38%;background:oklch(0.50 0.13 305)"></div><div style="width:12%;background:oklch(0.40 0 0)"></div></div>
+      <div class="seg-legend">
+        <span><span class="dot" style="background:oklch(0.74 0.16 290)"></span>Low-clock 30%</span>
+        <span><span class="dot" style="background:oklch(0.62 0.15 300)"></span>Impatient 20%</span>
+        <span><span class="dot" style="background:oklch(0.50 0.13 305)"></span>Considered 38%</span>
+        <span><span class="dot" style="background:oklch(0.40 0 0)"></span>Unmeasured 12%</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px">
+        <div><div class="kpi-lab" style="margin-bottom:6px">By phase</div>
+          <div class="bar-row" style="grid-template-columns:64px 1fr 34px"><span class="bl">Opening</span><span class="bar-track"><span class="bar-fill" style="width:18%;background:var(--phase-opening)"></span></span><span class="bv">18%</span></div>
+          <div class="bar-row" style="grid-template-columns:64px 1fr 34px"><span class="bl">Middle</span><span class="bar-track"><span class="bar-fill" style="width:47%;background:var(--phase-middle)"></span></span><span class="bv">47%</span></div>
+          <div class="bar-row" style="grid-template-columns:64px 1fr 34px"><span class="bl">Endgame</span><span class="bar-track"><span class="bar-fill" style="width:35%;background:var(--phase-endgame)"></span></span><span class="bv">35%</span></div>
+        </div>
+        <div><div class="kpi-lab" style="margin-bottom:6px">Opportunity</div>
+          <div class="bar-row" style="grid-template-columns:74px 1fr 34px"><span class="bl">Miss</span><span class="bar-track"><span class="bar-fill" style="width:12%;background:var(--fam-opportunity)"></span></span><span class="bv">12%</span></div>
+          <div class="bar-row" style="grid-template-columns:74px 1fr 34px"><span class="bl">Lucky-escape</span><span class="bar-track"><span class="bar-fill" style="width:21%;background:var(--fam-opportunity)"></span></span><span class="bv">21%</span></div>
+        </div>
+        <div><div class="kpi-lab" style="margin-bottom:6px">Impact</div>
+          <div class="bar-row" style="grid-template-columns:90px 1fr 34px"><span class="bl">While-ahead</span><span class="bar-track"><span class="bar-fill" style="width:14%;background:var(--fam-impact)"></span></span><span class="bv">14%</span></div>
+          <div class="bar-row" style="grid-template-columns:90px 1fr 34px"><span class="bl">Result-chg</span><span class="bar-track"><span class="bar-fill" style="width:31%;background:var(--fam-impact)"></span></span><span class="bv">31%</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== VARIANT B ===== -->
+<section id="variant-b" class="variant">
+  <p class="note"><b>B — Two-column + full-width trend.</b> Left card = severity rates (with the per-game / per-100 toggle) and the analyzed denominator. Right card = the full tag breakdown (tempo stacked bar, opportunity/impact rates, phase histogram). Trend spans the full width below. Clean separation of "how many" vs "what kind."</p>
+  <div class="panel">
+    <div class="panel-head">
+      <span class="panel-title">Flaw-Stats</span>
+      <span class="denom">📊 <b>74%</b> analyzed · N = <b>312</b></span>
+    </div>
+    <div class="twocol">
+      <div class="sub">
+        <div style="display:flex;align-items:center;margin-bottom:8px"><h4 style="margin:0">Severity rates</h4>
+          <span class="seg" style="margin-left:auto"><button class="on" onclick="setNorm('game',event)">/ game</button><button onclick="setNorm('100',event)">/ 100</button></span></div>
+        <div class="rate-row"><span class="l sev-b">Blunders</span><span><span class="v sev-b" data-g="1.8" data-h="0.9">1.8</span><span class="sub2">561 total · ▼18%</span></span></div>
+        <div class="rate-row"><span class="l sev-m">Mistakes</span><span><span class="v sev-m" data-g="2.4" data-h="1.2">2.4</span><span class="sub2">749 total · ▼9%</span></span></div>
+        <div class="rate-row"><span class="l sev-i">Inaccuracies</span><span><span class="v sev-i" data-g="5.1" data-h="2.6">5.1</span><span class="sub2">1,591 total · ▲4%</span></span></div>
+        <div class="rate-row"><span class="l" style="color:var(--fam-impact)">Result-changing</span><span><span class="v" style="color:var(--fam-impact)">31%</span><span class="sub2">of blunders</span></span></div>
+      </div>
+      <div class="sub">
+        <h4>Tag distribution</h4>
+        <div style="font-size:var(--text-chip);color:var(--color-text-muted);margin-bottom:6px">Tempo split</div>
+        <div class="stacked"><div style="width:30%;background:oklch(0.74 0.16 290)"></div><div style="width:20%;background:oklch(0.62 0.15 300)"></div><div style="width:38%;background:oklch(0.50 0.13 305)"></div><div style="width:12%;background:oklch(0.40 0 0)"></div></div>
+        <div class="seg-legend">
+          <span><span class="dot" style="background:oklch(0.74 0.16 290)"></span>Low-clock 30%</span>
+          <span><span class="dot" style="background:oklch(0.62 0.15 300)"></span>Impatient 20%</span>
+          <span><span class="dot" style="background:oklch(0.50 0.13 305)"></span>Considered 38%</span>
+          <span><span class="dot" style="background:oklch(0.40 0 0)"></span>Unmeasured 12%</span>
+        </div>
+        <div class="kpi-lab" style="margin:14px 0 4px">By phase</div>
+        <div class="bar-row"><span class="bl">Opening</span><span class="bar-track"><span class="bar-fill" style="width:18%;background:var(--phase-opening)"></span></span><span class="bv">18%</span></div>
+        <div class="bar-row"><span class="bl">Middlegame</span><span class="bar-track"><span class="bar-fill" style="width:47%;background:var(--phase-middle)"></span></span><span class="bv">47%</span></div>
+        <div class="bar-row"><span class="bl">Endgame</span><span class="bar-track"><span class="bar-fill" style="width:35%;background:var(--phase-endgame)"></span></span><span class="bv">35%</span></div>
+      </div>
+    </div>
+    <div class="trend" id="trendB"></div>
+  </div>
+</section>
+
+<!-- ===== VARIANT C ===== -->
+<section id="variant-c" class="variant">
+  <p class="note"><b>C — Compact KPI tiles.</b> Densest option: a tile grid (each = number + label + delta vs the prior window) with the trend folded into a wide sparkline tile and the denominator as its own tile. Reflows to 2-up on mobile. Best when the panel must stay short above a long card list, weakest for the full tag breakdown (it links out instead).</p>
+  <div class="panel">
+    <div class="panel-head">
+      <span class="panel-title">Flaw-Stats</span>
+      <span class="seg" style="margin-left:auto"><button class="on" onclick="setNorm('game',event)">per game</button><button onclick="setNorm('100',event)">per 100</button></span>
+    </div>
+    <div class="tiles">
+      <div class="tile"><span class="kpi-num sev-b" data-g="1.8" data-h="0.9">1.8</span><span class="kpi-lab sev-b">Blunders / game</span><span class="delta good">▼ 18%</span></div>
+      <div class="tile"><span class="kpi-num sev-m" data-g="2.4" data-h="1.2">2.4</span><span class="kpi-lab sev-m">Mistakes / game</span><span class="delta good">▼ 9%</span></div>
+      <div class="tile"><span class="kpi-num sev-i" data-g="5.1" data-h="2.6">5.1</span><span class="kpi-lab sev-i">Inacc. / game</span><span class="delta bad">▲ 4%</span></div>
+      <div class="tile"><span class="kpi-num" style="color:var(--fam-impact)">31%</span><span class="kpi-lab">Result-changing</span><span class="delta">of blunders</span></div>
+      <div class="tile"><span class="kpi-num" style="color:var(--fam-tempo)">34%</span><span class="kpi-lab">Low-clock</span><span class="delta">of mistakes</span></div>
+      <div class="tile"><span class="kpi-num" style="color:var(--phase-endgame)">35%</span><span class="kpi-lab">Endgame flaws</span><span class="delta">share of total</span></div>
+      <div class="tile"><span class="kpi-num" style="color:var(--brand-brown-highlight);font-size:var(--text-lg)">74%</span><span class="kpi-lab">Analyzed</span><span class="delta">N = 312 games</span></div>
+      <div class="tile span2" id="trendC" style="grid-row:span 1"></div>
+    </div>
+  </div>
+  <p class="note" style="margin-top:14px">In C the full tempo/opportunity/phase breakdown lives behind a "View tag breakdown ▸" link rather than inline — keeps the panel short. Trade-off: the distribution isn't visible at rest.</p>
+</section>
+
+<div class="legend">
+  <span><span class="swatch" style="background:var(--sev-blunder)"></span>Blunder</span>
+  <span><span class="swatch" style="background:var(--sev-mistake)"></span>Mistake</span>
+  <span><span class="swatch" style="background:var(--sev-inaccuracy)"></span>Inaccuracy</span>
+  <span><span class="swatch" style="background:var(--fam-tempo)"></span>Tempo</span>
+  <span><span class="swatch" style="background:var(--fam-opportunity)"></span>Opportunity</span>
+  <span><span class="swatch" style="background:var(--fam-impact)"></span>Impact</span>
+  <span style="opacity:.7">Denominator is always explicit (% analyzed + N) — the panel never implies clean games where evals are simply absent.</span>
+</div>
+
+<div id="tools">
+  <span style="opacity:.6">view</span>
+  <button onclick="setVw('full', event)" class="on">Full</button>
+  <button onclick="setVw('1280', event)">1280</button>
+  <button onclick="setVw('420', event)">420</button>
+</div>
+
+<script>
+/* ---- trend chart (blunders/game by month, declining) ---- */
+function trendSVG(compact) {
+  const pts = [2.9, 2.7, 2.8, 2.5, 2.3, 2.4, 2.1, 1.9, 2.0, 1.8];
+  const labels = ['Sep','','Nov','','Jan','','Mar','','May',''];
+  const W = 900, H = compact ? 92 : 150, pad = compact ? 8 : 26, padL = compact ? 8 : 34;
+  const max = 3.2, min = 1.4;
+  const x = i => padL + i * (W - padL - pad) / (pts.length - 1);
+  const y = v => pad + (1 - (v - min) / (max - min)) * (H - pad * 2);
+  const line = pts.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const area = `${padL},${H - pad} ${line} ${W - pad},${H - pad}`;
+  const dots = compact ? '' : pts.map((v, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3" fill="var(--sev-blunder)"/>`).join('');
+  const xlabels = compact ? '' : labels.map((l, i) => l ? `<text class="axis" x="${x(i).toFixed(1)}" y="${H - 6}" text-anchor="middle">${l}</text>` : '').join('');
+  const ylabels = compact ? '' : `<text class="axis" x="2" y="${y(3).toFixed(1)}">3</text><text class="axis" x="2" y="${y(2).toFixed(1)}">2</text>`;
+  const head = compact ? '' : `<div class="trend-head"><span class="t" style="color:var(--sev-blunder)">Blunders / game</span><span style="color:var(--color-text-muted);font-size:var(--text-chip)">last 10 months · ▼ trending down</span><span class="seg" style="margin-left:auto"><button class="on">monthly</button><button onclick="event.stopPropagation()">by 50 games</button></span></div>`;
+  return `${head}<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    <defs><linearGradient id="g${compact?'c':''}" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="var(--sev-blunder)" stop-opacity="0.32"/><stop offset="100%" stop-color="var(--sev-blunder)" stop-opacity="0"/></linearGradient></defs>
+    <polygon points="${area}" fill="url(#g${compact?'c':''})"/>
+    <polyline points="${line}" fill="none" stroke="var(--sev-blunder)" stroke-width="2.5" stroke-linejoin="round"/>
+    ${dots}${xlabels}${ylabels}
+    ${compact ? `<text class="axis" x="${padL}" y="12" style="font-weight:700">Blunders/game ▼</text>` : ''}
+  </svg>`;
+}
+document.getElementById('trendA').innerHTML = trendSVG(false);
+document.getElementById('trendB').innerHTML = trendSVG(false);
+document.getElementById('trendC').innerHTML = trendSVG(true);
+
+/* ---- per-game / per-100 toggle ---- */
+function setNorm(mode, e) {
+  const wrap = e.target.closest('.panel');
+  wrap.querySelectorAll('.seg button').forEach(b => b.classList.remove('on'));
+  e.target.classList.add('on');
+  wrap.querySelectorAll('[data-g]').forEach(el => { el.textContent = mode === 'game' ? el.dataset.g : el.dataset.h; });
+  wrap.querySelectorAll('.kpi-lab').forEach(l => { l.textContent = l.textContent.replace(/\/ (game|100( moves)?)/, mode === 'game' ? '/ game' : '/ 100'); });
+}
+
+function showVariant(id, e) {
+  document.querySelectorAll('.variant').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.variant-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('variant-' + id).classList.add('active');
+  e.target.classList.add('active');
+}
+function setVw(w, e) {
+  document.querySelectorAll('#tools button').forEach(b => b.classList.remove('on'));
+  e.target.classList.add('on');
+  document.querySelectorAll('.variant').forEach(v => { v.style.maxWidth = w === 'full' ? '1080px' : w + 'px'; });
+}
+</script>
+</body>
+</html>

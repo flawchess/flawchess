@@ -1,16 +1,24 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
+import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
 import { inactivityGapReferenceLines } from '@/components/charts/InactivityGapReferenceLines';
 import type { RatingDataPoint } from '@/types/stats';
+import type { TimeControl } from '@/types/api';
 
 interface RatingChartProps {
   data: RatingDataPoint[];
   platform: string;
+  /**
+   * Which time-control series to render. null (default) = all four series.
+   * When the user disables a TC in the Stats-tab TC filter, that series is
+   * excluded from the chart. The legend click hide/show is layered on top.
+   */
+  enabledTimeControls?: TimeControl[] | null;
 }
 
-const TIME_CONTROLS = ['bullet', 'blitz', 'rapid', 'classical'];
+const TIME_CONTROLS: TimeControl[] = ['bullet', 'blitz', 'rapid', 'classical'];
 
 const MOBILE_BREAKPOINT_PX = 768;
 
@@ -35,9 +43,24 @@ const chartConfig = {
   classical: { label: 'Classic', color: 'oklch(0.60 0.22 310)' },
 };
 
-export function RatingChart({ data, platform }: RatingChartProps) {
+export function RatingChart({ data, platform, enabledTimeControls }: RatingChartProps) {
   const isMobile = useIsMobile();
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
+
+  // TCs that actually have at least one data point. Omit empty series so a
+  // never-played time control (e.g. bullet) shows no line and no legend entry.
+  const tcsWithData = useMemo(
+    () => TIME_CONTROLS.filter((tc) => data.some((pt) => pt.time_control_bucket === tc)),
+    [data],
+  );
+
+  // Series to render: intersection of the filter set (all four when null) and the
+  // TCs that have data. Drives both the <Line> series and the recharts legend
+  // payload (legend items derive from rendered <Line> children).
+  const visibleTcs: TimeControl[] = useMemo(
+    () => (enabledTimeControls ?? TIME_CONTROLS).filter((tc) => tcsWithData.includes(tc)),
+    [enabledTimeControls, tcsWithData],
+  );
 
   const handleLegendClick = useCallback((dataKey: string) => {
     setHiddenKeys((prev) => {
@@ -76,15 +99,18 @@ export function RatingChart({ data, platform }: RatingChartProps) {
   const sortedGapDates = useMemo(() => [...allDates].sort(), [allDates]);
 
   const { yDomain, yTicks } = useMemo(() => {
-    const visibleTcs = TIME_CONTROLS.filter((tc) => !hiddenKeys.has(tc));
-    if (visibleTcs.length === 0 || chartData.length === 0) {
+    // visibleTcs already excludes empty series and filter-disabled TCs.
+    // hiddenKeys applies the legend click hide/show on top so hidden series
+    // don't inflate the Y-axis scale.
+    const effectiveTcs = visibleTcs.filter((tc) => !hiddenKeys.has(tc));
+    if (effectiveTcs.length === 0 || chartData.length === 0) {
       return { yDomain: ['auto', 'auto'] as [string, string], yTicks: undefined };
     }
 
     let min = Infinity;
     let max = -Infinity;
     for (const row of chartData) {
-      for (const tc of visibleTcs) {
+      for (const tc of effectiveTcs) {
         const val = row[tc];
         if (typeof val === 'number') {
           if (val < min) min = val;
@@ -127,7 +153,14 @@ export function RatingChart({ data, platform }: RatingChartProps) {
       yDomain: [domainMin, domainMax] as [number, number],
       yTicks: ticks,
     };
-  }, [chartData, hiddenKeys]);
+  }, [chartData, hiddenKeys, visibleTcs]);
+
+  // Narrow the chart config to the visible series so the legend and the generated
+  // --color-* CSS vars never reference an omitted/empty series.
+  const legendConfig = useMemo(
+    () => Object.fromEntries(visibleTcs.map((tc) => [tc, chartConfig[tc as keyof typeof chartConfig]])),
+    [visibleTcs],
+  );
 
   if (data.length === 0) {
     return (
@@ -141,7 +174,7 @@ export function RatingChart({ data, platform }: RatingChartProps) {
   }
 
   return (
-    <ChartContainer config={chartConfig} className="w-full h-72" data-testid={testId}>
+    <ChartContainer config={legendConfig} className="w-full h-72" data-testid={testId}>
       <LineChart
         data={chartData}
         margin={{ top: 5, right: 10, left: isMobile ? 0 : 10, bottom: 10 }}
@@ -157,7 +190,7 @@ export function RatingChart({ data, platform }: RatingChartProps) {
           content={({ active, payload, label }) => {
             if (!active || !payload?.length) return null;
             return (
-              <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
+              <ChartTooltipBox>
                 <div className="font-medium">{formatDateWithYear(label as string)}</div>
                 {payload
                   .filter((item) => item.value !== undefined)
@@ -176,7 +209,7 @@ export function RatingChart({ data, platform }: RatingChartProps) {
                       </div>
                     );
                   })}
-              </div>
+              </ChartTooltipBox>
             );
           }}
         />
@@ -191,7 +224,7 @@ export function RatingChart({ data, platform }: RatingChartProps) {
             (single default axis). Covers both Chess.com and Lichess instances
             (same component, platform prop only affects testid/labels). */}
         {inactivityGapReferenceLines({ dates: sortedGapDates })}
-        {TIME_CONTROLS.map((tc) => (
+        {visibleTcs.map((tc) => (
           <Line
             key={tc}
             type="monotone"

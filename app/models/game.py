@@ -6,6 +6,7 @@ from sqlalchemy import (
     Enum as SAEnum,
     Float,
     ForeignKey,
+    Index,
     SmallInteger,
     String,
     Text,
@@ -46,12 +47,28 @@ class Game(Base):
         UniqueConstraint(
             "user_id", "platform", "platform_game_id", name="uq_games_user_platform_game_id"
         ),
+        # SEED-041 §B1: unique index on (id, user_id) is the target of the
+        # game_positions composite FK (game_id, user_id) -> games(id, user_id).
+        # Built CONCURRENTLY in the migration; declared here as a unique index
+        # (not a constraint) to match the migration and keep metadata in sync.
+        Index("uq_games_id_user_id", "id", "user_id", unique=True),
+        # SEED-041 §A2: (user_id, played_at DESC) lets the recent-games WindowAgg
+        # run-condition early-terminate instead of scanning the user's full game
+        # history. Replaces the former index=True on user_id (ix_games_user_id) —
+        # this index's user_id prefix serves every user_id-only lookup too.
+        Index("ix_games_user_played_at", "user_id", sa.text("played_at DESC")),
+        # SEED-041 §A3: partial index for the per-import-batch pending-evals gate
+        # (users_with_zero_pending). Near-zero size at steady state. Keep
+        # ix_games_evals_pending (on id) for the id-ordered drain poll.
+        Index(
+            "ix_games_user_evals_pending",
+            "user_id",
+            postgresql_where=sa.text("evals_completed_at IS NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
-    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
 
     # Platform identity
     platform: Mapped[str] = mapped_column(String(20), nullable=False)  # "chess.com" | "lichess"
@@ -77,9 +94,10 @@ class Game(Base):
         time_control_bucket_enum
     )  # "bullet"|"blitz"|"rapid"|"classical"
     time_control_seconds: Mapped[int | None]  # estimated duration in seconds (base + inc*40)
-    base_time_seconds: Mapped[int | None] = mapped_column(
-        SmallInteger, nullable=True
-    )  # starting clock in seconds
+    # starting clock in seconds. SMALLINT is safe for live chess (SEED-041 §B3:
+    # prod max 10,800; daily/correspondence games store NULL) but would overflow
+    # the 32,767 ceiling if daily base times were ever stored here.
+    base_time_seconds: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     increment_seconds: Mapped[float | None] = mapped_column(
         Float, nullable=True
     )  # increment per move in seconds (Float: chess.com emits fractional values like 0.1s)
@@ -98,8 +116,8 @@ class Game(Base):
     opening_name: Mapped[str | None] = mapped_column(String(200))
     opening_eco: Mapped[str | None] = mapped_column(String(10))
 
-    # Move count (total full moves in the game)
-    move_count: Mapped[int | None] = mapped_column(nullable=True)
+    # Exact half-move count (replaces move_count, Phase 114.1)
+    ply_count: Mapped[int | None] = mapped_column(nullable=True)
 
     # Final position FEN (piece placement only, from board.board_fen())
     result_fen: Mapped[str | None] = mapped_column(String(100), nullable=True)

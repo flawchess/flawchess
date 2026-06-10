@@ -156,7 +156,7 @@ export function HomePageContent() {
               <Button
                 size="lg"
                 asChild
-                className={cn('btn-brand', 'min-h-11 min-w-40')}
+                className="min-h-11 min-w-40"
                 data-testid="hero-cta-signup"
               >
                 <Link to="/login?tab=register">
@@ -546,7 +546,7 @@ export function HomePageContent() {
           <Button
             size="lg"
             asChild
-            className={cn('btn-brand', 'min-h-11 min-w-40')}
+            className="min-h-11 min-w-40"
             data-testid="footer-cta-signup"
           >
             <Link to="/login?tab=register">
@@ -620,7 +620,7 @@ export function HomePage() {
     // New users (0 games on both platforms) land on /import for onboarding.
     const hasGames =
       (profile?.chess_com_game_count ?? 0) + (profile?.lichess_game_count ?? 0) > 0;
-    return <Navigate to={hasGames ? '/openings' : '/import'} replace />;
+    return <Navigate to={hasGames ? '/openings' : '/library/import'} replace />;
   }
 
   return <HomePageContent />;

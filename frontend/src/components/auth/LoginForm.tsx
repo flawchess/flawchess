@@ -8,7 +8,13 @@ import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  FormCard,
+  FormCardContent,
+  FormCardDescription,
+  FormCardHeader,
+  FormCardTitle,
+} from '@/components/ui/form-card';
 import { apiClient } from '@/api/client';
 
 export function LoginForm() {
@@ -67,12 +73,12 @@ export function LoginForm() {
   };
 
   return (
-    <Card className="w-full max-w-sm">
-      <CardHeader>
-        <CardTitle>Sign In</CardTitle>
-        <CardDescription>Enter your credentials to access your account.</CardDescription>
-      </CardHeader>
-      <CardContent>
+    <FormCard className="w-full max-w-sm">
+      <FormCardHeader>
+        <FormCardTitle>Sign In</FormCardTitle>
+        <FormCardDescription>Enter your credentials to access your account.</FormCardDescription>
+      </FormCardHeader>
+      <FormCardContent>
         {/* Google OAuth — only shown when configured */}
         {googleAvailable === true && (
           <>
@@ -136,8 +142,8 @@ export function LoginForm() {
             Create one
           </Link>
         </p>
-      </CardContent>
-    </Card>
+      </FormCardContent>
+    </FormCard>
   );
 }
 

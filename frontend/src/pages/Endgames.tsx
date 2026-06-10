@@ -4,6 +4,8 @@ import { SlidersHorizontal, X, BarChart2Icon, SwordsIcon, Lightbulb, Cpu } from 
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
+import { LoadError } from '@/components/ui/load-error';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
 import { Tooltip } from '@/components/ui/tooltip';
 import {
@@ -302,32 +304,39 @@ export function EndgamesPage() {
     PAGE_SIZE,
   );
 
-  // ── Desktop sidebar handler — defers filter apply until the panel closes ────
-  // When the filter panel closes (filters -> null or filters -> other), commit
-  // pending -> applied. When it opens, snapshot applied as pending.
+  // ── Desktop sidebar handler — staged Apply-only model ────────────────────────
+  // On open: snapshot committed filters as pending draft.
+  // On close without Apply: discard the draft (do NOT commit).
   const handleSidebarOpenChange = useCallback((panelId: string | null) => {
-    if (sidebarOpen === 'filters' && panelId !== 'filters') {
-      setAppliedFilters(pendingFilters);
-      setGamesOffset(0);
-    }
     if (sidebarOpen !== 'filters' && panelId === 'filters') {
       setPendingFilters(appliedFilters);
     }
     setSidebarOpen(panelId);
-  }, [sidebarOpen, pendingFilters, appliedFilters, setAppliedFilters]);
+  }, [sidebarOpen, appliedFilters]);
 
-  // ── Mobile drawer handler — defers filter apply until the drawer closes ─────
+  // ── Desktop Apply handler — commits pending to store, fires pulse, closes panel ──
+  const handleDesktopFiltersApply = useCallback(() => {
+    setAppliedFilters(pendingFilters);
+    setGamesOffset(0);
+    setSidebarOpen(null);
+  }, [pendingFilters, setAppliedFilters, setGamesOffset]);
+
+  // ── Mobile drawer handler — staged Apply-only model ───────────────────────────
+  // On open: snapshot committed filters as pending draft.
+  // On close without Apply: discard the draft (do NOT commit).
   const handleMobileFiltersOpenChange = useCallback((open: boolean) => {
-    if (!open && mobileFiltersOpen) {
-      // Commit deferred filters on close
-      setAppliedFilters(pendingFilters);
-      setGamesOffset(0);
-    }
     if (open && !mobileFiltersOpen) {
       setPendingFilters(appliedFilters);
     }
     setMobileFiltersOpen(open);
-  }, [mobileFiltersOpen, pendingFilters, appliedFilters, setAppliedFilters]);
+  }, [mobileFiltersOpen, appliedFilters]);
+
+  // ── Mobile Apply handler — commits pending to store, fires pulse, closes drawer ──
+  const handleMobileFiltersApply = useCallback(() => {
+    setAppliedFilters(pendingFilters);
+    setGamesOffset(0);
+    setMobileFiltersOpen(false);
+  }, [pendingFilters, setAppliedFilters, setGamesOffset]);
 
   // ── Category selection handler ──────────────────────────────────────────────
 
@@ -380,7 +389,7 @@ export function EndgamesPage() {
             <>
               <Accordion type="single" collapsible>
                 <AccordionItem value="concepts" className="charcoal-texture rounded-md overflow-hidden border-none" data-testid="endgame-concepts-trigger">
-                  <AccordionTrigger className="w-full flex items-center gap-2 px-4 py-3 bg-black/20 border-0 rounded-none data-[state=open]:border-b data-[state=open]:border-b-border/40 text-left hover:no-underline hover:bg-black/30 cursor-pointer [&>svg:last-child]:ml-0">
+                  <AccordionTrigger band>
                     <span className="flex items-center gap-2 flex-1">
                       <h3 className="text-base font-semibold text-foreground">Endgame Statistics Concepts</h3>
                     </span>
@@ -687,30 +696,24 @@ export function EndgamesPage() {
           <SectionInsightSlot sectionId="type_breakdown" data={sectionBySection.type_breakdown} />
         </>
       ) : overviewError ? (
-        <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
-          <p className="mb-2 text-base font-medium text-foreground">Failed to load endgame data</p>
-          <p className="text-sm text-muted-foreground">
-            Something went wrong. Please try again in a moment.
-          </p>
-        </div>
+        <LoadError variant="centered" resource="endgame data" />
       ) : statsData && statsData.categories.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
-          <p className="mb-2 text-base font-medium text-foreground">No endgame data yet</p>
-          <p className="mb-6 text-sm text-muted-foreground">
-            No games have reached an Endgame Phase yet with the current filters. Try adjusting
-            the time control or recency filters.
-          </p>
-        </div>
+        <EmptyState
+          layout="page"
+          title="No endgame data yet"
+          subtitle="No games have reached an Endgame Phase yet with the current filters. Try adjusting the time control or recency filters."
+        />
       ) : (
-        <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
-          <p className="mb-2 text-base font-medium text-foreground">No games imported yet</p>
-          <p className="mb-6 text-sm text-muted-foreground">
-            Import your games from chess.com or lichess to see endgame analysis.
-          </p>
-          <Button variant="outline" size="sm" asChild>
-            <Link to="/import">Import Games</Link>
-          </Button>
-        </div>
+        <EmptyState
+          layout="page"
+          title="No games imported yet"
+          subtitle="Import your games from chess.com or lichess to see endgame analysis."
+          action={
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/library/import">Import Games</Link>
+            </Button>
+          }
+        />
       )}
     </div>
   );
@@ -760,19 +763,13 @@ export function EndgamesPage() {
           <p className="text-muted-foreground">Loading games...</p>
         </div>
       ) : gamesError ? (
-        <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
-          <p className="mb-2 text-base font-medium text-foreground">Failed to load games</p>
-          <p className="text-sm text-muted-foreground">
-            Something went wrong. Please try again in a moment.
-          </p>
-        </div>
+        <LoadError variant="centered" resource="games" />
       ) : gamesData && gamesData.games.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
-          <p className="mb-2 text-base font-medium text-foreground">No games matched</p>
-          <p className="text-sm text-muted-foreground">
-            Try adjusting the time control, platform, or recency filters.
-          </p>
-        </div>
+        <EmptyState
+          layout="page"
+          title="No games matched"
+          subtitle="Try adjusting the time control, platform, or recency filters."
+        />
       ) : gamesData ? (
         <GameCardList
           games={gamesData.games}
@@ -814,69 +811,80 @@ export function EndgamesPage() {
     <div data-testid="endgames-page" className="flex min-h-0 flex-1 flex-col bg-background">
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 md:py-6 md:px-6">
 
-        {/* Desktop: sidebar strip + filter panel + content */}
-        <SidebarLayout
-          panels={[
-            {
-              id: 'filters',
-              label: 'Filters',
-              icon: <SlidersHorizontal className="h-5 w-5" />,
-              notificationDot: modifiedDotNode,
-              content: (
-                <div className="p-3">
-                  <FilterPanel
-                    filters={pendingFilters}
-                    onChange={setPendingFilters}
-                    showDeferredApplyHint
-                  />
-                </div>
-              ),
-            },
-          ]}
-          activePanel={sidebarOpen}
-          onActivePanelChange={handleSidebarOpenChange}
+        {/* Desktop: full-width subnav above the sidebar strip + content (Phase 111 —
+            matches the Library page; the subnav spans both the strip and content
+            instead of sitting only over the content column). Tabs wraps SidebarLayout
+            so TabsContent keeps its Tabs context while TabsList renders full-width above. */}
+        <Tabs
+          value={activeTab}
+          onValueChange={(val) => navigate(`/endgames/${val}`)}
+          className="hidden md:flex"
         >
           <EvalCoverageHeader />
-          <Tabs value={activeTab} onValueChange={(val) => navigate(`/endgames/${val}`)}>
-            <TabsList variant="brand" className="w-full" data-testid="endgames-tabs">
-              <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
-                <BarChart2Icon className="mr-1.5 h-4 w-4" />
-                Stats
-                {activeTab === 'stats' && (
-                  <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
-                    <InfoPopover ariaLabel={TAB_INFO.stats.aria} testId="tab-stats-info" side="bottom">
-                      {TAB_INFO.stats.text}
-                    </InfoPopover>
-                  </span>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
-                <SwordsIcon className="mr-1.5 h-4 w-4" />
-                Games
-                {activeTab === 'games' && (
-                  <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
-                    <InfoPopover ariaLabel={TAB_INFO.games.aria} testId="tab-games-info" side="bottom">
-                      {TAB_INFO.games.text}
-                    </InfoPopover>
-                  </span>
-                )}
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="stats" className="mt-4">
+          <TabsList variant="brand" className="w-full mb-4" data-testid="endgames-tabs">
+            <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
+              <BarChart2Icon className="mr-1.5 h-4 w-4" />
+              Stats
+              {activeTab === 'stats' && (
+                <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
+                  <InfoPopover ariaLabel={TAB_INFO.stats.aria} testId="tab-stats-info" side="bottom">
+                    {TAB_INFO.stats.text}
+                  </InfoPopover>
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
+              <SwordsIcon className="mr-1.5 h-4 w-4" />
+              Games
+              {activeTab === 'games' && (
+                <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
+                  <InfoPopover ariaLabel={TAB_INFO.games.aria} testId="tab-games-info" side="bottom">
+                    {TAB_INFO.games.text}
+                  </InfoPopover>
+                </span>
+              )}
+            </TabsTrigger>
+          </TabsList>
+          <SidebarLayout
+            panels={[
+              {
+                id: 'filters',
+                label: 'Filters',
+                icon: <SlidersHorizontal className="h-5 w-5" />,
+                notificationDot: modifiedDotNode,
+                content: (
+                  <div className="p-3">
+                    {/* 'playedAs' omitted: endgame queries ignore color/playedAs entirely
+                        (see useEndgames "no color per D-02"), so the control was a no-op here. */}
+                    <FilterPanel
+                      filters={pendingFilters}
+                      onChange={setPendingFilters}
+                      onApply={handleDesktopFiltersApply}
+                      visibleFilters={['timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency']}
+                    />
+                  </div>
+                ),
+              },
+            ]}
+            activePanel={sidebarOpen}
+            onActivePanelChange={handleSidebarOpenChange}
+          >
+            <TabsContent value="stats">
               {statisticsContent}
             </TabsContent>
-            <TabsContent value="games" className="mt-4">
+            <TabsContent value="games">
               {gamesContent}
             </TabsContent>
-          </Tabs>
-        </SidebarLayout>
+          </SidebarLayout>
+        </Tabs>
 
         {/* Mobile: single column */}
         <div className="md:hidden flex flex-col min-w-0">
           <EvalCoverageHeader />
           <Tabs value={activeTab} onValueChange={(val) => { navigate(`/endgames/${val}`); window.scrollTo({ top: 0 }); }}>
-            {/* Sticky sub-navigation + filter button */}
-            <div className="sticky top-0 z-20 flex items-center gap-2 h-[52px] bg-white/20 backdrop-blur-md rounded-md px-1 py-1" data-testid="endgames-mobile-control-row">
+            {/* Full-width, non-sticky sub-navigation (like the Library page). The
+                filter affordance is a sticky Filters button rendered just below. */}
+            <div className="flex items-center gap-2 h-[40px] rounded-md" data-testid="endgames-mobile-control-row">
               <TabsList variant="brand" className="flex-1 !h-full !p-0" data-testid="endgames-tabs-mobile">
                 <TabsTrigger value="stats" className="flex-1" data-testid="tab-stats-mobile">
                   <BarChart2Icon className="mr-1.5 h-4 w-4" />
@@ -901,30 +909,22 @@ export function EndgamesPage() {
                   )}
                 </TabsTrigger>
               </TabsList>
-              <Tooltip content="Open filters" side="left">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="relative h-11 w-11 shrink-0 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80"
-                  onClick={() => setMobileFiltersOpen(true)}
-                  data-testid="btn-open-filter-drawer"
-                  aria-label="Open filters"
-                >
-                  <SlidersHorizontal className="h-4 w-4" />
-                  {isModified && (
-                    <span
-                      className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-                      data-testid="filters-modified-dot-mobile"
-                      aria-hidden="true"
-                    >
-                      {isPulsing && (
-                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-brown opacity-75" />
-                      )}
-                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-brand-brown" />
-                    </span>
-                  )}
-                </Button>
-              </Tooltip>
+            </div>
+
+            {/* Sticky Filters button, styled like the Library page. The full-width
+                subnav above is non-sticky; this button pins on scroll. */}
+            <div className="sticky top-0 z-20 flex justify-end gap-2 py-2 bg-background/80 backdrop-blur-sm">
+              <Button
+                variant="brand-outline"
+                className="relative"
+                onClick={() => setMobileFiltersOpen(true)}
+                data-testid="btn-open-filter-drawer"
+                aria-label="Open filters"
+              >
+                <SlidersHorizontal className="mr-2 h-4 w-4" />
+                Filters
+                {modifiedDotNode}
+              </Button>
             </div>
 
             {/* Filter drawer */}
@@ -941,10 +941,12 @@ export function EndgamesPage() {
                   </Tooltip>
                 </DrawerHeader>
                 <div className="overflow-y-auto flex-1 p-4 space-y-4">
+                  {/* 'playedAs' omitted — see desktop panel note (no-op for endgame queries). */}
                   <FilterPanel
                     filters={pendingFilters}
                     onChange={setPendingFilters}
-                    showDeferredApplyHint
+                    onApply={handleMobileFiltersApply}
+                    visibleFilters={['timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency']}
                   />
                 </div>
               </DrawerContent>
@@ -1012,7 +1014,7 @@ function SectionInsightSlot({
       >
         <AccordionTrigger
           data-testid={`insights-section-${sectionId}-trigger`}
-          className="w-full flex items-center gap-2 px-4 py-3 bg-black/20 border-0 rounded-none data-[state=open]:border-b data-[state=open]:border-b-border/40 text-left hover:no-underline hover:bg-black/30 cursor-pointer [&>svg:last-child]:ml-0"
+          band
         >
           {headline}
         </AccordionTrigger>

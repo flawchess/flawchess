@@ -10,7 +10,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { DownloadIcon, BookOpenIcon, LayoutDashboard, MenuIcon, LogOutIcon, TrophyIcon, DoorOpen, Shield } from 'lucide-react';
+import { BookOpenIcon, MenuIcon, LogOutIcon, TrophyIcon, DoorOpen, Shield, FolderOpen } from 'lucide-react';
 import {
   Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose,
 } from '@/components/ui/drawer';
@@ -22,11 +22,10 @@ import { ImpersonationPill } from '@/components/admin/ImpersonationPill';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { AuthPage } from '@/pages/Auth';
 import { HomePage } from '@/pages/Home';
-import { ImportPage } from '@/pages/Import';
+import { LibraryPage } from '@/pages/library/LibraryPage';
 import { OAuthCallbackPage } from '@/pages/OAuthCallbackPage';
 import { OpeningsPage } from '@/pages/Openings';
 import { EndgamesPage } from '@/pages/Endgames';
-import { GlobalStatsPage } from '@/pages/GlobalStats';
 import { AdminPage } from '@/pages/Admin';
 import { PrivacyPage } from '@/pages/Privacy';
 // Throwaway prototype for GM-coach review of the Train (spaced-repetition) UX.
@@ -57,17 +56,15 @@ function ImportJobWatcher({ jobId, onDone }: { jobId: string; onDone: (jobId: st
 // ─── Nav items ────────────────────────────────────────────────────────────────
 
 const NAV_ITEMS = [
-  { to: '/import', label: 'Import', Icon: DownloadIcon },
+  { to: '/library', label: 'Library', Icon: FolderOpen },
   { to: '/openings', label: 'Openings', Icon: BookOpenIcon },
   { to: '/endgames', label: 'Endgames', Icon: TrophyIcon },
-  { to: '/overview', label: 'Overview', Icon: LayoutDashboard },
 ] as const;
 
 const BOTTOM_NAV_ITEMS = [
-  { to: '/import', label: 'Import', Icon: DownloadIcon },
+  { to: '/library', label: 'Library', Icon: FolderOpen },
   { to: '/openings', label: 'Openings', Icon: BookOpenIcon },
   { to: '/endgames', label: 'Endgames', Icon: TrophyIcon },
-  { to: '/overview', label: 'Overview', Icon: LayoutDashboard },
 ] as const;
 
 // D-16: Admin nav item appended at render time when profile.is_superuser === true.
@@ -77,16 +74,16 @@ const BOTTOM_NAV_ITEMS = [
 const ADMIN_NAV_ITEM = { to: '/admin', label: 'Admin', Icon: Shield } as const;
 
 const ROUTE_TITLES: Record<string, string> = {
-  '/import': 'Import',
+  '/library': 'Library',
   '/openings': 'Openings',
   '/endgames': 'Endgames',
-  '/overview': 'Overview',
   '/admin': 'Admin',
 };
 
 // ─── Active route helper ───────────────────────────────────────────────────────
 
 function isActive(to: string, pathname: string): boolean {
+  if (to === '/library') return pathname.startsWith('/library');
   if (to === '/openings') return pathname.startsWith('/openings');
   if (to === '/endgames') return pathname.startsWith('/endgames');
   return pathname === to;
@@ -125,7 +122,7 @@ function NavHeader() {
           </Link>
           <nav aria-label="Main navigation" className="flex items-stretch h-full">
             {navItems.map(({ to, label, Icon }) => {
-              const locked = to !== '/import' && to !== '/admin' && !navUnlocked;
+              const locked = to !== '/library' && to !== '/admin' && !navUnlocked;
               return (
               <Link
                 key={to}
@@ -144,10 +141,11 @@ function NavHeader() {
               >
                 <Icon className="h-4 w-4" aria-hidden="true" />
                 {label}
-                {to === '/import' && noGames && (
+                {to === '/library' && noGames && (
                   <span
                     className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-                    data-testid="import-notification-dot"
+                    data-testid="library-notification-dot"
+                    aria-hidden="true"
                   >
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
                     <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
@@ -261,7 +259,7 @@ function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
       className="fixed bottom-0 inset-x-0 flex sm:hidden z-40 bg-background border-t border-border pb-safe"
     >
       {BOTTOM_NAV_ITEMS.map(({ to, label, Icon }) => {
-        const locked = to !== '/import' && !navUnlocked;
+        const locked = to !== '/library' && !navUnlocked;
         return (
         <Link
           key={to}
@@ -278,10 +276,11 @@ function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
         >
           <Icon className="h-5 w-5" aria-hidden="true" />
           <span className="text-xs">{label}</span>
-          {to === '/import' && noGames && (
+          {to === '/library' && noGames && (
             <span
               className="absolute top-1.5 right-[30%] flex h-2 w-2"
-              data-testid="import-notification-dot-mobile"
+              data-testid="library-notification-dot-mobile"
+              aria-hidden="true"
             >
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
@@ -328,6 +327,7 @@ function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
   const { logout } = useAuth();
   const { data: profile } = useUserProfile();
   const totalGames = profile != null ? profile.chess_com_game_count + profile.lichess_game_count : 0;
+  const noGames = profile != null && totalGames === 0;
   // See NavHeader — unlock only once games exist AND import phase 1 is complete.
   const { tier1 } = useReadiness();
   const navUnlocked = totalGames > 0 && tier1;
@@ -345,7 +345,7 @@ function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
         <div className="px-4 pb-4">
           <nav className="flex flex-col gap-1">
             {navItems.map(({ to, label }) => {
-              const locked = to !== '/import' && to !== '/admin' && !navUnlocked;
+              const locked = to !== '/library' && to !== '/admin' && !navUnlocked;
               return (
               <DrawerClose key={to} asChild>
                 <Link
@@ -355,12 +355,22 @@ function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
                   title={locked ? IMPORT_REQUIRED_MESSAGE : undefined}
                   onClick={locked ? (e) => e.preventDefault() : undefined}
                   className={cn(
-                    'rounded-md px-3 py-2 text-base',
+                    'relative rounded-md px-3 py-2 text-base',
                     locked && 'opacity-40 cursor-not-allowed',
                     isActive(to, location.pathname) ? 'text-primary font-medium' : 'text-foreground',
                   )}
                 >
                   {label}
+                  {to === '/library' && noGames && (
+                    <span
+                      className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+                      data-testid="library-notification-dot-drawer"
+                      aria-hidden="true"
+                    >
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                    </span>
+                  )}
                 </Link>
               </DrawerClose>
               );
@@ -476,7 +486,7 @@ function ImportRequiredRoute({ children }: { children: React.ReactNode }) {
     return <div className="p-6 text-muted-foreground" data-testid="import-required-loading">Loading...</div>;
   }
   if (shouldRedirect) {
-    return <Navigate to="/import" replace />;
+    return <Navigate to="/library/import" replace />;
   }
   return <>{children}</>;
 }
@@ -586,12 +596,13 @@ function AppRoutes() {
         <Route path="/train-sketch" element={<TrainSketchPage />} />
         {/* Protected layout wraps all authenticated pages */}
         <Route element={<ProtectedLayout />}>
-          <Route path="/import" element={<ImportPage onImportStarted={handleImportStarted} activeJobIds={activeJobIds} onJobDismissed={handleJobDismissed} />} />
+          <Route path="/library/*" element={<LibraryPage onImportStarted={handleImportStarted} activeJobIds={activeJobIds} onJobDismissed={handleJobDismissed} />} />
+          <Route path="/import" element={<Navigate to="/library/import" replace />} />
+          <Route path="/overview" element={<Navigate to="/library/stats" replace />} />
+          <Route path="/rating" element={<Navigate to="/library/stats" replace />} />
+          <Route path="/global-stats" element={<Navigate to="/library/stats" replace />} />
           <Route path="/openings/*" element={<ImportRequiredRoute><OpeningsPage /></ImportRequiredRoute>} />
           <Route path="/endgames/*" element={<ImportRequiredRoute><EndgamesPage /></ImportRequiredRoute>} />
-          <Route path="/rating" element={<Navigate to="/overview" replace />} />
-          <Route path="/global-stats" element={<Navigate to="/overview" replace />} />
-          <Route path="/overview" element={<ImportRequiredRoute><GlobalStatsPage /></ImportRequiredRoute>} />
           <Route path="/admin" element={<SuperuserRoute><AdminPage /></SuperuserRoute>} />
         </Route>
         {/* Catch-all redirects to homepage */}

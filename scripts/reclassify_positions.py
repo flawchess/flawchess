@@ -34,11 +34,19 @@ import chess.pgn
 import sentry_sdk
 from sqlalchemy import distinct, func, select, text
 from sqlalchemy import update as sa_update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import async_session_maker, engine
 from app.models.game import Game
 from app.models.game_position import GamePosition
+from app.repositories.flaws_repository import fetch_game_positions_ordered
+from app.repositories.game_flaws_repository import (
+    bulk_insert_game_flaws,
+    delete_flaws_for_game,
+    flaw_record_to_row,
+)
+from app.services.flaws_service import classify_game_flaws
 from app.services.position_classifier import PositionClassification, classify_position
 
 _BATCH_SIZE = 10  # games per DB commit — OOM-safe (STATE.md critical constraint)
@@ -172,6 +180,53 @@ async def backfill_game(session, game_id: int, pgn: str) -> int:
     return positions_updated
 
 
+async def _recompute_game_flaws(
+    session: AsyncSession,
+    game_id: int,
+    user_id: int,
+) -> None:
+    """Recompute game_flaws for one game using the shared D-10 classify path.
+
+    Must be called AFTER backfill_game so position phase/eval columns reflect
+    the reclassified values. Runs sequentially in the caller's loop — never
+    called from asyncio.gather (CLAUDE.md: AsyncSession is not concurrency-safe).
+
+    Delete-then-insert = idempotent (same row set on repeated runs, no duplicates).
+    GameNotAnalyzed is skipped silently (chess.com / no eval coverage).
+    Sentry-guarded: one bad game does not abort the batch.
+    """
+    try:
+        # Load game object and freshly updated positions (in-session, not committed yet)
+        game_result = await session.execute(select(Game).where(Game.id == game_id))
+        game_obj = game_result.scalar_one_or_none()
+        if game_obj is None:
+            return
+
+        positions = await fetch_game_positions_ordered(session, game_id=game_id, user_id=user_id)
+
+        result = classify_game_flaws(game_obj, positions)
+
+        # GameNotAnalyzed: skip silently (chess.com / insufficient eval coverage).
+        # TypedDict is a plain dict at runtime; discriminate on "reason" key.
+        if "reason" in result:
+            return
+
+        # Delete-then-insert = idempotent recompute (threshold-change safe).
+        await delete_flaws_for_game(session, game_id=game_id, user_id=user_id)
+        rows = [flaw_record_to_row(user_id=user_id, game_id=game_id, flaw=flaw) for flaw in result]
+        await bulk_insert_game_flaws(session, rows)
+
+    except Exception as exc:
+        # Per-game errors must not abort the reclassify batch.
+        # Never embed variables in the message (CLAUDE.md Sentry rule).
+        sentry_sdk.set_context(
+            "reclassify_game_flaws",
+            {"game_id": game_id, "user_id": user_id},
+        )
+        sentry_sdk.capture_exception(exc)
+        _log(f"ERROR: game_flaws recompute failed for game_id={game_id}: {exc}")
+
+
 async def run_vacuum() -> None:
     """Run VACUUM ANALYZE on game_positions outside a transaction.
 
@@ -231,11 +286,13 @@ async def main() -> None:
             if not game_ids:
                 break
 
-            # Fetch PGN for this batch
-            result = await session.execute(select(Game.id, Game.pgn).where(Game.id.in_(game_ids)))
+            # Fetch PGN + user_id for this batch
+            result = await session.execute(
+                select(Game.id, Game.pgn, Game.user_id).where(Game.id.in_(game_ids))
+            )
             id_pgn_pairs = result.fetchall()
 
-            for game_id, pgn in id_pgn_pairs:
+            for game_id, pgn, game_user_id in id_pgn_pairs:
                 if not pgn:
                     skipped_ids.add(game_id)
                     total_errors += 1
@@ -249,6 +306,12 @@ async def main() -> None:
                     skipped_ids.add(game_id)
                     total_errors += 1
                     continue
+
+                # D-10: recompute game_flaws using the single classify path.
+                # Must run AFTER backfill_game so position phase/eval columns are updated.
+                # Sequential within the loop (no asyncio.gather — CLAUDE.md hard rule).
+                await _recompute_game_flaws(session, game_id, game_user_id)
+
                 total_games += 1
 
                 if total_games % _PROGRESS_INTERVAL == 0:

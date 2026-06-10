@@ -27,7 +27,7 @@ from app.services.import_service import (
 def _make_mock_processing_result(
     plies: list[dict] | None = None,
     result_fen: str = "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR",
-    move_count: int = 1,
+    ply_count: int = 1,
 ) -> dict:
     """Build a mock GameProcessingResult dict for testing."""
     if plies is None:
@@ -71,7 +71,7 @@ def _make_mock_processing_result(
                 "phase": 0,
             },
         ]
-    return {"plies": plies, "result_fen": result_fen, "move_count": move_count}
+    return {"plies": plies, "result_fen": result_fen, "ply_count": ply_count}
 
 
 # ---------------------------------------------------------------------------
@@ -575,7 +575,7 @@ class TestRunImport:
                     "phase": 0,
                 },
             ],
-            move_count=1,
+            ply_count=1,
         )
 
         with (
@@ -671,11 +671,11 @@ class TestRunImport:
         assert job.status == JobStatus.COMPLETED
 
     @pytest.mark.asyncio
-    async def test_move_count_populated(self):
-        """After importing a game, move_count is set correctly via bulk CASE UPDATE (D-04)."""
+    async def test_ply_count_populated(self):
+        """After importing a game, ply_count is set correctly via bulk UPDATE (D-04)."""
         job_id = create_job(user_id=1, platform="chess.com", username="alice")
 
-        # 1. e4 e5 = 2 plies = 1 full move => move_count = 1
+        # 1. e4 e5 = 2 plies = 2 half-moves => ply_count = 2
         pgn = "1. e4 e5 *"
 
         async def _yield_one_game(*args, **kwargs):
@@ -732,14 +732,14 @@ class TestRunImport:
 
             await run_import(job_id)
 
-        # Verify session.execute was called with a bulk UPDATE for move_count (D-04)
+        # Verify session.execute was called with a bulk UPDATE for ply_count (D-04)
         execute_calls = mock_session.execute.call_args_list
         update_calls = [
             call
             for call in execute_calls
             if hasattr(call.args[0], "is_update") and call.args[0].is_update
         ]
-        assert len(update_calls) >= 1, "Expected at least one UPDATE call for move_count"
+        assert len(update_calls) >= 1, "Expected at least one UPDATE call for ply_count"
 
     @pytest.mark.asyncio
     async def test_position_rows_include_material_count(self):
@@ -1328,13 +1328,13 @@ class TestIncrementalProgress:
 # invariant — Stage 5 SQL must not include literal game ids that vary per
 # batch, and result_fen must never be silently NULLed.
 class TestFlushBatchStage5:
-    """Unit tests for _flush_batch Stage 5: move_count + result_fen UPDATE.
+    """Unit tests for _flush_batch Stage 5: ply_count + result_fen UPDATE.
 
     Verifies:
-    1. move_count is persisted for every game in the batch.
+    1. ply_count is persisted for every game in the batch.
     2. result_fen=None for a game does not overwrite a pre-existing result_fen.
     3. When ALL result_fens are None, no result_fen UPDATE is issued.
-    4. When move_counts is empty, no Stage-5 UPDATEs are issued.
+    4. When ply_counts is empty, no Stage-5 UPDATEs are issued.
     5. The compiled SQL text for both UPDATE statements is invariant across batches
        with different game-id sets (the leak regression guard).
     """
@@ -1369,12 +1369,12 @@ class TestFlushBatchStage5:
     def _make_processing_result(
         self,
         result_fen: str | None,
-        move_count: int = 5,
+        ply_count: int = 5,
     ) -> dict:
         """Build a minimal process_game_pgn result with no eval targets (phase=0)."""
         return {
             "result_fen": result_fen,
-            "move_count": move_count,
+            "ply_count": ply_count,
             "plies": [
                 {
                     "ply": 0,
@@ -1399,8 +1399,8 @@ class TestFlushBatchStage5:
         }
 
     @pytest.mark.asyncio
-    async def test_move_count_lands_for_all_games(self):
-        """After _flush_batch, a Stage 5 execute call is issued for move_count for all games."""
+    async def test_ply_count_lands_for_all_games(self):
+        """After _flush_batch, a Stage 5 execute call is issued for ply_count for all games."""
         from app.services.import_service import _flush_batch
 
         # 3 games, all with valid fens.
@@ -1417,9 +1417,9 @@ class TestFlushBatchStage5:
             for gid in [101, 102, 103]
         ]
         pgn_results = {
-            "gid-101": self._make_processing_result("fen_101", move_count=10),
-            "gid-102": self._make_processing_result("fen_102", move_count=20),
-            "gid-103": self._make_processing_result("fen_103", move_count=30),
+            "gid-101": self._make_processing_result("fen_101", ply_count=10),
+            "gid-102": self._make_processing_result("fen_102", ply_count=20),
+            "gid-103": self._make_processing_result("fen_103", ply_count=30),
         }
 
         def _pgn_side_effect(pgn):
@@ -1456,14 +1456,14 @@ class TestFlushBatchStage5:
             for call in execute_calls
             if len(call.args) > 0 and hasattr(call.args[0], "is_update") and call.args[0].is_update
         ]
-        assert len(update_calls) >= 1, "Expected at least one Stage 5 UPDATE for move_count"
+        assert len(update_calls) >= 1, "Expected at least one Stage 5 UPDATE for ply_count"
 
     @pytest.mark.asyncio
     async def test_result_fen_none_preserved(self):
         """A game with result_fen=None must NOT appear in the fen UPDATE params list.
 
         Contract:
-        - Exactly 2 UPDATE execute calls: one for move_count (all 3 games), one for fen
+        - Exactly 2 UPDATE execute calls: one for ply_count (all 3 games), one for fen
           (only games 101 and 103 which have non-None fens).
         - Game 102 does NOT appear in the fen UPDATE params.
 
@@ -1486,9 +1486,9 @@ class TestFlushBatchStage5:
             for gid in [101, 102, 103]
         ]
         pgn_results = {
-            "gid-101": self._make_processing_result("fen_101", move_count=10),
-            "gid-102": self._make_processing_result(None, move_count=8),  # None fen
-            "gid-103": self._make_processing_result("fen_103", move_count=30),
+            "gid-101": self._make_processing_result("fen_101", ply_count=10),
+            "gid-102": self._make_processing_result(None, ply_count=8),  # None fen
+            "gid-103": self._make_processing_result("fen_103", ply_count=30),
         }
 
         call_index = [0]
@@ -1522,11 +1522,11 @@ class TestFlushBatchStage5:
         ]
 
         # Phase 91: _flush_batch now has 3 UPDATE groups:
-        #   (a) move_count for all games, (b) result_fen for non-None fens,
+        #   (a) ply_count for all games, (b) result_fen for non-None fens,
         #   (c) Stage 5c evals_completed_at for covered games (no entry plies needing eval).
         # Games with "1. e4 *" PGN have no phase=1 or endgame entries, so all 3 are covered.
         assert len(update_calls) >= 2, (
-            f"Expected at least 2 Stage 5 UPDATE calls (move_count group + fen group). "
+            f"Expected at least 2 Stage 5 UPDATE calls (ply_count group + fen group). "
             f"Got {len(update_calls)}."
         )
 
@@ -1567,7 +1567,7 @@ class TestFlushBatchStage5:
             for gid in [101, 102, 103]
         ]
         # All games parse to result_fen=None.
-        all_none_result = self._make_processing_result(None, move_count=5)
+        all_none_result = self._make_processing_result(None, ply_count=5)
 
         with (
             patch(
@@ -1601,8 +1601,8 @@ class TestFlushBatchStage5:
         )
 
     @pytest.mark.asyncio
-    async def test_empty_move_counts_short_circuits(self):
-        """When rows_result.move_counts is empty, no Stage-5 UPDATE execute calls are made.
+    async def test_empty_ply_counts_short_circuits(self):
+        """When rows_result.ply_counts is empty, no Stage-5 UPDATE execute calls are made.
 
         This happens when bulk_insert_games returns no new IDs (all duplicates).
         """
@@ -1638,7 +1638,7 @@ class TestFlushBatchStage5:
             if len(call.args) > 0 and hasattr(call.args[0], "is_update") and call.args[0].is_update
         ]
         assert len(update_calls) == 0, (
-            f"Expected no UPDATE calls when move_counts is empty, "
+            f"Expected no UPDATE calls when ply_counts is empty, "
             f"but found {len(update_calls)} update call(s)."
         )
 
@@ -1677,7 +1677,7 @@ class TestFlushBatchStage5:
                 }
                 for gid in game_ids
             ]
-            processing_result = self._make_processing_result("test_fen", move_count=5)
+            processing_result = self._make_processing_result("test_fen", ply_count=5)
 
             with (
                 patch(
@@ -1753,7 +1753,7 @@ class TestFlushBatchStage5:
                 }
                 for gid in game_ids
             ]
-            processing_result = self._make_processing_result("test_fen", move_count=5)
+            processing_result = self._make_processing_result("test_fen", ply_count=5)
             with (
                 patch(
                     "app.services.import_service.game_repository.bulk_insert_games",
@@ -2832,7 +2832,7 @@ class TestFlushBatchStage5RealDb:
         user_id: int,
         n_games: int,
     ) -> list[int]:
-        """Insert a test user and N Game rows with NULL move_count / result_fen.
+        """Insert a test user and N Game rows with NULL ply_count / result_fen.
 
         Returns the list of inserted game ids in order.
         """
@@ -2876,15 +2876,15 @@ class TestFlushBatchStage5RealDb:
         game_ids = await self._seed_user_and_games(db_session, 9501, 3)
         games_table = Game.__table__
 
-        # Group (a): move_count for ALL games. This must NOT raise.
-        move_count_stmt = (
+        # Group (a): ply_count for ALL games. This must NOT raise.
+        ply_count_stmt = (
             update(games_table)  # ty: ignore[invalid-argument-type]
             .where(games_table.c.id == bindparam("b_id"))
-            .values(move_count=bindparam("b_mc"))
+            .values(ply_count=bindparam("b_pc"))
         )
         await db_session.execute(
-            move_count_stmt,
-            [{"b_id": gid, "b_mc": 10 + i} for i, gid in enumerate(game_ids)],
+            ply_count_stmt,
+            [{"b_id": gid, "b_pc": 10 + i} for i, gid in enumerate(game_ids)],
         )
 
         # Group (b): result_fen for a SUBSET — only the first game.
@@ -2902,15 +2902,15 @@ class TestFlushBatchStage5RealDb:
         # Verify both groups landed correctly.
         rows = (
             await db_session.execute(
-                select(Game.id, Game.move_count, Game.result_fen)
+                select(Game.id, Game.ply_count, Game.result_fen)
                 .where(Game.id.in_(game_ids))
                 .order_by(Game.id)
             )
         ).all()
 
         assert len(rows) == 3
-        # move_count set for all 3
-        assert [r.move_count for r in rows] == [10, 11, 12]
+        # ply_count set for all 3
+        assert [r.ply_count for r in rows] == [10, 11, 12]
         # result_fen set ONLY for the first
         assert rows[0].result_fen == "8/8/8/8/8/8/8/8 w - -"
         assert rows[1].result_fen is None
@@ -2935,13 +2935,13 @@ class TestFlushBatchStage5RealDb:
         game_ids = await self._seed_user_and_games(db_session, 9502, 2)
 
         bad_stmt = (
-            update(Game).where(Game.id == bindparam("b_id")).values(move_count=bindparam("b_mc"))
+            update(Game).where(Game.id == bindparam("b_id")).values(ply_count=bindparam("b_pc"))
         )
 
         with pytest.raises(InvalidRequestError, match="bulk synchronize"):
             await db_session.execute(
                 bad_stmt,
-                [{"b_id": gid, "b_mc": i} for i, gid in enumerate(game_ids)],
+                [{"b_id": gid, "b_pc": i} for i, gid in enumerate(game_ids)],
             )
 
 

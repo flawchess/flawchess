@@ -146,6 +146,7 @@ async def query_results_by_time_control(
     opponent_type: str = "human",
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
+    color: str | None = None,
 ) -> list[Row[Any]]:
     """Return (time_control_bucket, total, wins, draws, losses) via SQL aggregation.
 
@@ -186,6 +187,7 @@ async def query_results_by_time_control(
         opponent_type=opponent_type,
         from_date=from_date,
         to_date=to_date,
+        color=color,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -204,6 +206,7 @@ async def query_results_by_color(
     opponent_type: str = "human",
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
+    color: str | None = None,
 ) -> list[Row[Any]]:
     """Return (user_color, total, wins, draws, losses) via SQL aggregation.
 
@@ -244,6 +247,7 @@ async def query_results_by_color(
         opponent_type=opponent_type,
         from_date=from_date,
         to_date=to_date,
+        color=color,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -284,14 +288,43 @@ async def query_top_openings_sql_wdl(
     per condition — game-level columns are stable across a game's
     `game_positions` rows so DISTINCT collapses correctly.
     """
-    win_cond = or_(
-        and_(Game.result == "1-0", Game.user_color == "white"),
-        and_(Game.result == "0-1", Game.user_color == "black"),
+    # SEED-041 §A1 (fix #2): materialize the user's qualifying games FIRST, then
+    # join positions against that CTE. The MATERIALIZED optimizer fence forces a
+    # hash join over the user's ~30-55k games instead of the planner's nested loop
+    # of ~187k random games_pkey probes (80% of the old plan's buffers). Raising
+    # the full_hash statistics target alone did NOT flip the plan in prod: the
+    # join goes through openings_dedup's DISTINCT ON subquery, which blocks MCV
+    # propagation, so the planner kept underestimating the join cardinality. All
+    # standard game filters move INTO the CTE so the fence sees the final games set.
+    user_games_select = select(
+        Game.id.label("id"),
+        Game.result.label("result"),
+        Game.user_color.label("user_color"),
+    ).where(
+        Game.user_id == user_id,
+        Game.user_color == color,
     )
-    draw_cond = Game.result == "1/2-1/2"
+    user_games_select = apply_game_filters(
+        user_games_select,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
+    )
+    user_games = user_games_select.cte("user_games").prefix_with("MATERIALIZED")
+
+    win_cond = or_(
+        and_(user_games.c.result == "1-0", user_games.c.user_color == "white"),
+        and_(user_games.c.result == "0-1", user_games.c.user_color == "black"),
+    )
+    draw_cond = user_games.c.result == "1/2-1/2"
     loss_cond = or_(
-        and_(Game.result == "0-1", Game.user_color == "white"),
-        and_(Game.result == "1-0", Game.user_color == "black"),
+        and_(user_games.c.result == "0-1", user_games.c.user_color == "white"),
+        and_(user_games.c.result == "1-0", user_games.c.user_color == "black"),
     )
 
     # 2026-04-26 (PRE-01): off-color rows are surfaced with `vs. ` prefix so
@@ -306,7 +339,7 @@ async def query_top_openings_sql_wdl(
         else_=_openings_dedup.c.name,
     ).label("display_name")
 
-    distinct_game_count = func.count(func.distinct(Game.id))
+    distinct_game_count = func.count(func.distinct(user_games.c.id))
 
     stmt = (
         select(
@@ -332,12 +365,8 @@ async def query_top_openings_sql_wdl(
                 GamePosition.ply <= MAX_EXPLORER_PLY,
             ),
         )
-        .join(Game, Game.id == GamePosition.game_id)
-        .where(
-            Game.user_id == user_id,
-            Game.user_color == color,
-            _openings_dedup.c.ply_count >= min_ply,
-        )
+        .join(user_games, user_games.c.id == GamePosition.game_id)
+        .where(_openings_dedup.c.ply_count >= min_ply)
         .group_by(
             _openings_dedup.c.eco,
             _openings_dedup.c.name,
@@ -349,18 +378,6 @@ async def query_top_openings_sql_wdl(
         .having(distinct_game_count >= min_games)
         .order_by(distinct_game_count.desc())
         .limit(limit)
-    )
-
-    stmt = apply_game_filters(
-        stmt,
-        time_control=time_control,
-        platform=platform,
-        rated=rated,
-        opponent_type=opponent_type,
-        from_date=from_date,
-        to_date=to_date,
-        opponent_gap_min=opponent_gap_min,
-        opponent_gap_max=opponent_gap_max,
     )
 
     result = await session.execute(stmt)

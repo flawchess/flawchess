@@ -7,11 +7,15 @@ export function LazyMiniBoard({
   flipped,
   size,
   arrows,
+  cornerDot,
+  lastMove,
 }: {
   fen: string;
   flipped: boolean;
   size: number;
   arrows?: ReadonlyArray<{ from: string; to: string; color: string }>;
+  cornerDot?: { square: string; color: string };
+  lastMove?: { from: string; to: string };
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
@@ -39,7 +43,16 @@ export function LazyMiniBoard({
       className="shrink-0 rounded overflow-hidden bg-muted"
       style={{ width: size, height: size }}
     >
-      {visible && <MiniBoard fen={fen} size={size} flipped={flipped} arrows={arrows} />}
+      {visible && (
+        <MiniBoard
+          fen={fen}
+          size={size}
+          flipped={flipped}
+          arrows={arrows}
+          cornerDot={cornerDot}
+          lastMove={lastMove}
+        />
+      )}
     </div>
   );
 }

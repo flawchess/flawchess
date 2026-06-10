@@ -26,6 +26,7 @@ import { wilsonBounds } from '@/lib/scoreConfidence';
 import { isConfident } from '@/lib/significance';
 import { MIN_GAMES_FOR_RELIABLE_STATS, ZONE_NEUTRAL } from '@/lib/theme';
 import type { EndgameWDLSummary } from '@/types/endgames';
+import { CardHeader } from '@/components/ui/card';
 
 import { ENDGAME_TILE_SCORE_DOMAIN, deriveLevel } from './EndgameOverallShared';
 
@@ -83,9 +84,7 @@ export function EndgameCard({
   return (
     <div data-testid={tileTestId}>
       {/* Full-bleed card header bar (matches the Time Pressure cards). */}
-      <h3 className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40 text-base font-semibold">
-        {title}
-      </h3>
+      <CardHeader>{title}</CardHeader>
       <div className="flex flex-col gap-4 p-4">
         {showWdl ? (
           <div className="flex flex-col gap-2">

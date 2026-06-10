@@ -1,6 +1,15 @@
 from typing import Optional
 
-from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, SmallInteger, String, text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    ForeignKeyConstraint,
+    Index,
+    PrimaryKeyConstraint,
+    SmallInteger,
+    String,
+    text,
+)
 from sqlalchemy.dialects.postgresql import REAL
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -25,6 +34,22 @@ MAX_EXPLORER_PLY: int = 28
 class GamePosition(Base):
     __tablename__ = "game_positions"
     __table_args__ = (
+        # Explicit PK in the prod/migration column order (user_id, game_id, ply).
+        # SEED-041 §B2: without this, SQLAlchemy infers PK order from the
+        # mapped_column declaration order (game_id, user_id, ply), which drifts
+        # from prod and any metadata-derived DDL / autogenerate diff.
+        PrimaryKeyConstraint("user_id", "game_id", "ply", name="game_positions_pkey"),
+        # SEED-041 §B1: composite FK (game_id, user_id) -> games(id, user_id)
+        # replaces the former per-column FKs (game_id -> games.id,
+        # user_id -> users.id). Halves per-row FK trigger work on COPY import and
+        # enforces that a position's denormalized user_id matches the owning game.
+        # The chain to users stays intact via games.user_id -> users.id.
+        ForeignKeyConstraint(
+            ["game_id", "user_id"],
+            ["games.id", "games.user_id"],
+            ondelete="CASCADE",
+            name="game_positions_game_user_fkey",
+        ),
         # Composite indexes for "my pieces only" queries (Phase 3).
         # Partial WHERE ply <= MAX_EXPLORER_PLY (SEED-033): the explorer is hard-capped
         # at that depth, so no hash lookup ever targets a position past the boundary —
@@ -76,14 +101,12 @@ class GamePosition(Base):
     # Natural composite PK (SEED-035): (user_id, game_id, ply) replaces the former
     # surrogate `id` column. The key is provably unique (one row per user/game/half-move).
     # The SQLAlchemy identity map now keys rows on the 3-tuple instead of a single id.
-    game_id: Mapped[int] = mapped_column(
-        ForeignKey("games.id", ondelete="CASCADE"), nullable=False, primary_key=True, index=True
-    )
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, primary_key=True
-    )  # denormalized for query perf
+    # PK + FK are declared at table level in __table_args__ (SEED-041 §B1/§B2);
+    # index=True on game_id keeps ix_game_positions_game_id (backs the cascade).
+    game_id: Mapped[int] = mapped_column(nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(nullable=False)  # denormalized for query perf
     ply: Mapped[int] = mapped_column(
-        SmallInteger, nullable=False, primary_key=True
+        SmallInteger, nullable=False
     )  # half-move number (0 = initial), max ~600
 
     # Zobrist hashes — explicit BIGINT for 64-bit values

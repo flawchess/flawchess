@@ -371,11 +371,11 @@ def test_process_game_pgn_move_san_correct():
     assert result["plies"][-1]["move_san"] is None
 
 
-def test_process_game_pgn_move_count():
-    """PGN '1. e4 e5 2. Nf3 *' has move_count=2 (2 full moves)."""
+def test_process_game_pgn_ply_count():
+    """PGN '1. e4 e5 2. Nf3 *' has 3 half-moves → ply_count=3."""
     result = process_game_pgn(SIMPLE_PGN_3_MOVES)
     assert result is not None
-    assert result["move_count"] == 2
+    assert result["ply_count"] == 3
 
 
 def test_process_game_pgn_result_fen():

@@ -11,6 +11,10 @@ export const BOARD_LIGHT_SQUARE = '#F0DAB7';
 export const darkSquareStyle = { backgroundColor: BOARD_DARK_SQUARE } as const;
 export const lightSquareStyle = { backgroundColor: BOARD_LIGHT_SQUARE } as const;
 
+// Move from/to square highlight (translucent yellow) — shared by the Openings
+// ChessBoard last-move highlight and the Library eval-chart MiniBoard scrub.
+export const MOVE_HIGHLIGHT_SQUARE = 'rgba(255, 255, 0, 0.35)';
+
 // WDL colors — used in all win/draw/loss visualizations
 // Richer base colors; the glass overlay softens them visually when applied
 export const WDL_WIN = 'oklch(0.50 0.14 145)';
@@ -22,6 +26,51 @@ export const WDL_LOSS = 'oklch(0.50 0.15 25)';
 export const WDL_BORDER_WIN = '#036C22';
 export const WDL_BORDER_DRAW = '#6B7280';
 export const WDL_BORDER_LOSS = '#9E2020';
+
+// Severity colors (B/M/I — flaw stats panel and library game cards, Phase 107)
+export const SEV_BLUNDER = 'oklch(0.58 0.19 25)';
+export const SEV_MISTAKE = 'oklch(0.70 0.16 55)';
+export const SEV_INACCURACY = 'oklch(0.82 0.13 95)';
+
+// Eval chart area fill and line colors (Phase 109 — EvalChart.tsx).
+// White-ahead region (above midline) = lighter grey; black-ahead region
+// (below midline) = dark grey, mirroring the white/black pieces.
+export const EVAL_CHART_AREA_WHITE_AHEAD = 'oklch(0.78 0 0)';
+export const EVAL_CHART_AREA_BLACK_AHEAD = 'oklch(0.32 0 0)';
+export const EVAL_CHART_LINE = 'oklch(0.82 0 0)';
+// Shared by the dashed 50% midline, the hover crosshair, and the
+// middlegame/endgame phase verticals (one grey for all reference lines).
+export const EVAL_CHART_PHASE_LINE = 'oklch(0.55 0 0 / 0.60)';
+// Muted grey for the vertical "Middlegame" / "Endgame" text labels rendered
+// alongside the phase verticals — a touch lighter than the line so the rotated
+// text stays legible over both the light and dark eval-bar regions.
+export const EVAL_CHART_PHASE_LABEL = 'oklch(0.65 0 0)';
+// White outline drawn around eval-chart flaw markers whose tags match an active
+// flaw-tag filter (mirrors the TagChip active-filter ring, on the chart).
+export const EVAL_MARKER_FILTER_OUTLINE = 'oklch(1 0 0)';
+
+// Tag families (flaw chip color-by-family, Phase 107)
+export const FAM_TEMPO = 'oklch(0.70 0.17 290)';
+export const FAM_TEMPO_BG = 'oklch(0.70 0.17 290 / 0.15)';
+export const FAM_TEMPO_LOW_CLOCK = 'oklch(0.74 0.16 290)';
+export const FAM_TEMPO_HASTY = 'oklch(0.62 0.15 300)';
+export const FAM_TEMPO_UNRUSHED = 'oklch(0.50 0.13 305)';
+export const FAM_TEMPO_UNMEASURED = 'oklch(0.40 0 0)';
+export const FAM_OPPORTUNITY = 'oklch(0.72 0.12 200)';
+export const FAM_OPPORTUNITY_BG = 'oklch(0.72 0.12 200 / 0.15)';
+export const FAM_IMPACT = 'oklch(0.66 0.18 330)';
+export const FAM_IMPACT_BG = 'oklch(0.66 0.18 330 / 0.15)';
+
+// D-05 active-filter ring — applied to TagChip when its tag matches an active
+// useFlawFilterStore filter. Ring only: no fill, bold, or size change. The ring
+// color is applied inline (per-family) so only the Tailwind ring-width + offset
+// classes are constant here; callers combine this with a family color string.
+export const ACTIVE_FILTER_RING_CLASS = 'ring-2 ring-offset-1';
+
+// Phase histogram bar fills (flaw tag distribution, Phase 107)
+export const PHASE_OPENING = 'oklch(0.62 0.06 70)';
+export const PHASE_MIDDLEGAME = 'oklch(0.62 0.10 230)';
+export const PHASE_ENDGAME = 'oklch(0.62 0.12 300)';
 
 // Glass-effect overlay: white highlight fading to transparent
 // Applied as backgroundImage on WDL bar segments for a polished look

@@ -2,7 +2,46 @@
 
 *A living document updated after each milestone. Lessons feed forward into future planning.*
 
-> Note: v1.18, v1.19, and v1.20 closes did not add retrospective sections (only the ROADMAP archives + — for v1.18 — a MILESTONES entry were written). Not backfilled here to avoid reconstructing reflections after the fact; their facts live in `milestones/v1.18-…`–`v1.20-ROADMAP.md` and `MILESTONES.md`.
+> Note: v1.18, v1.19, v1.20, and v1.23 closes did not add retrospective sections (only the ROADMAP archives + MILESTONES entries were written). Not backfilled here to avoid reconstructing reflections after the fact; their facts live in the corresponding `milestones/v1.XX-ROADMAP.md` and `MILESTONES.md`.
+
+## Milestone: v1.24 — Library Page
+
+**Shipped:** 2026-06-09
+**Phases:** 9 (104–112) | **Plans:** 37
+
+### What Was Built
+
+The **Library** — SEED-036's analysis half. Started as a pure-frontend shell folding Import + Overview into deep-linkable subtabs (104), then grew into a full-stack eval-driven mistake/flaw archive: an on-the-fly mistake-detection kernel (105), Games-surface backend (106), Games subtab (107), Flaws subtab backed by a materialized `game_flaws` table + cross-tab Flaw filter (108), per-card expected-score eval charts (109), a finalized flaw-tag taxonomy (110), an Apply-only filter-UX polish (111), and a Flaws-card rework with a single-game modal (112).
+
+### What Worked
+
+- **On-the-fly first, materialize later.** Phases 105/106 shipped the classifier with zero schema change behind a typed `FlawRecord` contract (LIBG-07 designed for exactly this); the `game_flaws` materialization in 108 was a clean drop-in once pagination demanded it. Decoupling the algorithm from its storage let the UI phases (107) land before the table existed.
+- **Inline payload over new endpoints** (109) — the per-ply eval series rode the existing games payload, avoiding an N+1 and a migration for a chart feature.
+- **Single classify path** (108 D-10) — one `classify_game_flaws` invoked from import hook / reclassify / backfill kept the three write paths from drifting.
+- **Codegen + CI drift gate** for the flaw thresholds (110) mirrored the established `endgameZones.ts` pattern, keeping Python and TS in lock-step through a behavioral taxonomy change.
+
+### What Was Inefficient
+
+- **Roadmap bookkeeping drifted badly from reality.** The milestone header listed Phases 104–110 while 111 and 112 lived stranded in the Backlog section; the REQUIREMENTS traceability still marked three shipped requirements "Planned"; STATE.md frontmatter said `total_phases: 13, completed: 7` for a 9-phase, fully-shipped milestone. The close had to reconcile all of this before archiving. Lesson: when a milestone grows past its original scope, update the roadmap milestone grouping + the progress table at each phase add, not just at close.
+- **Phase 111 shipped with no GSD plan/summary artifacts** (direct commits into an empty phase dir). Its record had to be reconstructed from git for the archive. Either run the standard plan→execute chain or write a one-line SUMMARY at ship even for polish passes.
+- **Scope crept ~3× silently.** Requirements were defined for a single-phase shell (LIB-01..09); the milestone delivered nine phases. The growth was the right call (SEED-036/SEED-038 + explore decisions), but four phases carry no requirement IDs, so traceability lives only in the archive prose.
+
+### Patterns Established
+
+- `game_flaws` materialization (composite PK `(user_id, game_id, ply)`, typed tag-family columns + display payload, M+B-only) as the canonical derived-flaw store.
+- Outcome-independent impact tagging (`reversed`/`squandered` ES ladder) — swing magnitude, not game result, as the impact signal.
+- Apply-only filter panels (Reset + Apply footer; close-any-other-way discards) unifying the prior desktop-live / mobile-on-close split across every panel.
+
+### Key Lessons
+
+- Update the ROADMAP milestone grouping + progress table at each phase add when a milestone is actively growing — don't let phases pile up in Backlog.
+- Write at least a stub SUMMARY for any phase that ships, including direct-commit polish passes, so the close doesn't reconstruct from git.
+- A typed service contract (LIBG-07) is what makes "ship on-the-fly, materialize later" cheap — design the contract up front even when not materializing yet.
+
+### Cost Observations
+
+- Model mix: predominantly opus (Opus 4.8 1M) across discuss/plan/execute. Sessions: many over 6 days.
+- Notable: the late phases (108–112) carried the bulk of the backend + DB work; the early shell phases were cheap. Per-phase human UAT at ship time (108, 109, 112) substituted for a formal milestone audit at close.
 
 ## Milestone: v1.22 — Maintenance — Test Isolation & Frontend Major Upgrades
 

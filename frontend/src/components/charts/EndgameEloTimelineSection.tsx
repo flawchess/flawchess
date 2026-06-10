@@ -35,6 +35,8 @@ import { useState, useCallback, useMemo, useEffect, useId } from 'react';
 import { ChartContainer, ChartTooltip, ChartLegend } from '@/components/ui/chart';
 import { ComposedChart, Line, Area, Bar, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { CardHeader } from '@/components/ui/card';
+import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import { createDateTickFormatter, formatDateWithYear, niceEloAxis } from '@/lib/utils';
 import {
   ELO_COMBO_COLORS,
@@ -326,13 +328,10 @@ export function EndgameEloTimelineSection({
   // card edges (matches EndgameMetricsByTcCard / EndgameTimePressureCard). The
   // subtitle moves into the padded body below, rendered by each branch.
   const headerBand = (
-    <h3
-      className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40 text-base font-semibold"
-      data-testid="endgame-elo-timeline-header"
-    >
+    <CardHeader data-testid="endgame-elo-timeline-header">
       Endgame ELO Timeline
       {infoPopover}
-    </h3>
+    </CardHeader>
   );
   const subtitle = (
     <p className="text-sm text-muted-foreground mb-3">
@@ -489,7 +488,7 @@ export function EndgameEloTimelineSection({
                 const perWeekTotal =
                   (dateRow.per_week_total_visible as number | undefined) ?? 0;
                 return (
-                  <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
+                  <ChartTooltipBox>
                     <div className="font-medium">{formatDateWithYear(label as string)}</div>
                     <div className="text-muted-foreground">
                       Games this week: {perWeekTotal}
@@ -539,7 +538,7 @@ export function EndgameEloTimelineSection({
                         </div>
                       );
                     })}
-                  </div>
+                  </ChartTooltipBox>
                 );
               }}
             />

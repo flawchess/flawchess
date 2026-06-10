@@ -156,13 +156,67 @@ For sizing decisions and gut-check on viability.
 
 ## What This Seed Does NOT Cover
 
-- **Server-side analysis fallback** — for users who never run client analysis, no evals exist. That's fine; tactics features are explicitly opt-in. Do not silently fall back to a server-side queue; that's the failure mode this seed is designed to avoid.
+- **Server-side analysis fallback** — for users who never run client analysis, no evals exist. That's fine; tactics features are explicitly opt-in. Do not silently fall back to a server-side queue; that's the failure mode this seed is designed to avoid. **⚠️ Being reconsidered (2026-06-09) — see the server-side continuous-but-preemptible analysis amendment below. This non-goal was set when the box was 4-vCPU; the box is now CPX42 (8 vCPU / 16 GB) and SEED-040 surfaced that eval coverage is the gating bottleneck for the entire flaw-comparison feature.**
 - **Real-time analysis during play** — out of scope. FlawChess is post-game analytics, not a play platform.
 - **Cloud eval API integration** (chessdb.cn, lichess cloud eval, etc.) — possible future optimization for the opening prefix, but adds external-dependency risk. Not part of v1 of this seed.
 - **Self-validation against tactical puzzles** — interesting product surface but separate from the pipeline.
 
+## Amendment (2026-06-09): server-side continuous-but-preemptible analysis — reconsidering non-goal #1
+
+Surfaced during the [[SEED-040-flaw-stats-opponent-comparison]] exploration. A Q-007
+prod probe showed eval coverage is the **gating bottleneck** for the whole flaw-stats
+opponent-comparison feature: per-user analyzed-game counts are strongly bimodal (median
+6, only ~37–51 of 103 active users clear plausible floors), because **chess.com exposes
+no Stockfish evals via its API** and lichess only when the user enabled analysis.
+
+That reframes the client-only stance. The original non-goal #1 rejected a server-side
+queue on a 4-vCPU box that genuinely couldn't afford it. The box is now CPX42 (8 vCPU /
+16 GB), and the failure mode the non-goal feared (on-demand server analysis blocking the
+API) is avoidable with a **continuous-but-preemptible drain** rather than an on-demand
+fallback.
+
+**The idea:** run Stockfish on the prod server **continuously** (up to ~6 of 8 cores),
+disengaging fast whenever higher-priority work arrives, draining a **priority queue**
+ordered by:
+1. **Active users** — recent `last_activity` first (analysis serves who's actually here).
+2. **More recent games** — recency matches what users view.
+3. **Longer time controls** — higher analysis value, and bullet rarely has lichess evals
+   anyway. Prefer longer-TC games that *lack* existing evals.
+
+**Why it's attractive vs the client path:** works for ALL users with no client action,
+is centrally trustworthy (sidesteps non-goal #4's fake-eval concern), and can reuse the
+same position-keyed `position_evals` schema (Decision #2) so server and client work share
+one dedup'd store. The two paths are complementary, not exclusive.
+
+**Capacity — Stockfish was NOT the OOM cause (correcting an earlier draft of this
+amendment).** The FLAWCHESS-3Q / 2026-03 / 2026-05 OOM-kills were **import memory
+pressure**: oversized and concurrent game imports, import batch size, and SQLAlchemy
+connection-pool exhaustion against host RAM. The 2026-05-21 incident involved no Stockfish
+at all (pure chess.com import fetch + connection fan-out). So the box can dedicate **~6 of
+8 cores to a constantly-running analysis drain** — not a single timid niced worker.
+
+**The binding requirement is fast preemption, not low utilization:**
+- **Yield immediately to higher-priority work** — uvicorn request handling, Postgres
+  load, and especially the **import-time eval pass** (analysis must never compete with an
+  active game import, which is where the real memory pressure lives). Implement via cgroup
+  CPU quota / a load-or-import signal that pauses or scales down the workers within
+  seconds, then resumes when clear.
+- **Bound total memory so a concurrent import + workers + Postgres coexist within RAM** —
+  this is the actual OOM lesson. Modest per-worker hash, capped worker count, headroom for
+  import + Postgres. Core count is not the constraint; combined memory footprint is.
+- **Adaptive depth (Decision #5) applies** — book/forced-move skipping + two-pass depth to
+  keep per-game cost low.
+
+**Status:** captured as an option to evaluate when the eval-pipeline milestone is scoped;
+not yet a locked decision. It does not replace the client-side path — they can coexist
+(server backfills the long tail; client handles a user's on-demand "analyze my last 200").
+Promote/decide via `/gsd-new-milestone` or a focused `/gsd-discuss-phase` when SEED-040 or
+tactics features go near-term.
+
 ## Cross-References
 
+- **SEED-040** (flaw-stats opponent comparison) — the feature whose eval-coverage need
+  surfaced this amendment; SEED-040 consumes the coverage this pipeline produces.
 - **SEED-036** (Library milestone, split from SEED-010) — explicitly defers tactical-pattern filters until "Stockfish eval coverage or a client-side eval pipeline makes those reliable." This seed *is* that pipeline.
 - `scripts/backfill_eval.py` — existing server-side backfill of endgame entry positions only. Stays as-is; the client-side path covers the rest.
 - `app/repositories/query_utils.py` — existing shared filter layer; tactical filters added here.

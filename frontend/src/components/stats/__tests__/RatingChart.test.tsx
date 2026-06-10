@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 /**
- * Regression tests for RatingChart inactivity-gap annotation (SC-4 Task 3).
+ * Regression tests for RatingChart.
  *
- * Asserts that the shared inactivityGapReferenceLines helper renders the
- * Palmtree break annotation for a >90-day gap fixture and no-ops gracefully
- * for a gap-free fixture and an empty data array. Also verifies that the
- * defensive sort in sortedGapDates makes the annotation land correctly even
- * when input dates arrive out of order.
+ * 1. Inactivity-gap annotation (SC-4 Task 3): Palmtree break annotation for >90-day
+ *    gaps, no-op for gap-free fixtures, and out-of-order date handling.
+ *
+ * 2. Empty-series omission (#260606-jvg Task 1): series and legend entries for TCs
+ *    with no data points are omitted; filter prop (enabledTimeControls) still wins
+ *    even when data for the filtered TC exists.
  */
 import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
@@ -60,8 +61,8 @@ afterEach(() => {
   cleanup();
 });
 
-function makePoint(date: string, rating: number = 1500): RatingDataPoint {
-  return { date, rating, time_control_bucket: 'blitz' };
+function makePoint(date: string, rating: number = 1500, tc: RatingDataPoint['time_control_bucket'] = 'blitz'): RatingDataPoint {
+  return { date, rating, time_control_bucket: tc };
 }
 
 /** Dates with a >90-day gap between index 0 and 1 (121 days). */
@@ -117,5 +118,61 @@ describe('RatingChart inactivity gap annotations', () => {
       <RatingChart data={OUT_OF_ORDER_GAP_DATA} platform="lichess" />,
     );
     expect(container.querySelector('[data-testid="inactivity-gap-label"]')).not.toBeNull();
+  });
+});
+
+// ── Empty-series omission (#260606-jvg Task 1) ─────────────────────────────
+
+/** Blitz and Rapid data only — no Bullet or Classical points. */
+const BLITZ_RAPID_DATA: RatingDataPoint[] = [
+  makePoint('2024-01-01', 1500, 'blitz'),
+  makePoint('2024-01-08', 1510, 'blitz'),
+  makePoint('2024-01-01', 1600, 'rapid'),
+  makePoint('2024-01-08', 1610, 'rapid'),
+];
+
+/** All four TCs present. */
+const ALL_TC_DATA: RatingDataPoint[] = [
+  makePoint('2024-01-01', 1200, 'bullet'),
+  makePoint('2024-01-01', 1500, 'blitz'),
+  makePoint('2024-01-01', 1600, 'rapid'),
+  makePoint('2024-01-01', 1800, 'classical'),
+];
+
+describe('RatingChart empty-series omission', () => {
+  it('omits Bullet Line when no bullet data points exist', () => {
+    const { container } = render(<RatingChart data={BLITZ_RAPID_DATA} platform="chess.com" />);
+    // recharts adds class "recharts-line" to each rendered Line group; the count
+    // must equal the number of TCs with data (2: blitz, rapid).
+    const lines = container.querySelectorAll('.recharts-line');
+    expect(lines.length).toBe(2);
+  });
+
+  it('renders Blitz and Rapid Lines when only blitz/rapid data exists', () => {
+    const { container } = render(<RatingChart data={BLITZ_RAPID_DATA} platform="lichess" />);
+    const lines = container.querySelectorAll('.recharts-line');
+    expect(lines.length).toBe(2);
+  });
+
+  it('filter prop wins: bullet data present but enabledTimeControls=["blitz"] omits bullet Line', () => {
+    const { container } = render(
+      <RatingChart data={ALL_TC_DATA} platform="chess.com" enabledTimeControls={['blitz']} />,
+    );
+    const lines = container.querySelectorAll('.recharts-line');
+    expect(lines.length).toBe(1);
+  });
+
+  it('renders all four Lines when all TCs have data and no filter', () => {
+    const { container } = render(<RatingChart data={ALL_TC_DATA} platform="chess.com" />);
+    const lines = container.querySelectorAll('.recharts-line');
+    expect(lines.length).toBe(4);
+  });
+
+  it('renders all four Lines when enabledTimeControls is null (all enabled)', () => {
+    const { container } = render(
+      <RatingChart data={ALL_TC_DATA} platform="chess.com" enabledTimeControls={null} />,
+    );
+    const lines = container.querySelectorAll('.recharts-line');
+    expect(lines.length).toBe(4);
   });
 });

@@ -18,6 +18,7 @@ import { ChevronDown } from 'lucide-react';
 import { OpponentStrengthFilter } from './OpponentStrengthFilter';
 import { CustomRangePopover, formatCustomRangeLabel } from './CustomRangePopover';
 import { CustomRangeDrawer } from './CustomRangeDrawer';
+import { FilterActions } from './FilterActions';
 
 // ─── Mobile breakpoint detection ──────────────────────────────────────────────
 // Same threshold as ScoreChart.tsx (768px = Tailwind `md`).
@@ -52,6 +53,8 @@ export interface FilterState {
   /** Custom date range set by the user. Non-null only when recency === 'custom'. */
   customRange: { from?: Date; to?: Date } | null;
   color: Color;
+  /** Tri-state color filter for Library surfaces (Either/White/Black). Default 'either' = no filter. */
+  playedAs: 'either' | 'white' | 'black';
 }
 
 export const DEFAULT_FILTERS: FilterState = {
@@ -64,6 +67,7 @@ export const DEFAULT_FILTERS: FilterState = {
   recency: null,
   customRange: null,
   color: 'white',
+  playedAs: 'either',
 };
 
 /**
@@ -82,6 +86,7 @@ export const FILTER_DOT_FIELDS: ReadonlyArray<keyof FilterState> = [
   'opponentStrength',
   'recency',
   'customRange',
+  'playedAs',
 ] as const;
 
 /**
@@ -131,18 +136,29 @@ export function areFiltersEqual(
   return true;
 }
 
-type FilterField = 'timeControl' | 'platform' | 'rated' | 'opponent' | 'opponentStrength' | 'recency';
+type FilterField = 'timeControl' | 'platform' | 'rated' | 'opponent' | 'opponentStrength' | 'recency' | 'playedAs';
 
 interface FilterPanelProps {
   filters: FilterState;
   onChange: (filters: FilterState) => void;
   /** Which filter sections to show. Defaults to all. */
   visibleFilters?: FilterField[];
-  /** When true, shows a muted helper line below the Reset button explaining deferred apply. */
-  showDeferredApplyHint?: boolean;
+  /**
+   * When provided, renders FilterActions (Reset + Apply) footer below the filters.
+   * Apply commits the current pending state (handled by caller); Reset clears to
+   * DEFAULT_FILTERS while preserving `color` and `customRange: null`.
+   * When omitted (and hideReset is false), renders a lone Reset button.
+   */
+  onApply?: () => void;
+  /**
+   * When true, hides the built-in Reset Filters button. Use when the parent
+   * component (e.g. LibraryFilterPanel) owns the Reset button itself so it can
+   * also clear non-FilterState fields (e.g. severityFilter).
+   */
+  hideReset?: boolean;
 }
 
-const ALL_FILTERS: FilterField[] = ['timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency'];
+const ALL_FILTERS: FilterField[] = ['timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency', 'playedAs'];
 
 const TIME_CONTROLS: TimeControl[] = ['bullet', 'blitz', 'rapid', 'classical'];
 const TIME_CONTROL_LABELS: Record<TimeControl, string> = {
@@ -162,7 +178,8 @@ export function FilterPanel({
   filters,
   onChange,
   visibleFilters = ALL_FILTERS,
-  showDeferredApplyHint = false,
+  onApply,
+  hideReset = false,
 }: FilterPanelProps) {
   const update = (partial: Partial<FilterState>) => {
     onChange({ ...filters, ...partial });
@@ -245,10 +262,33 @@ export function FilterPanel({
 
   return (
     <div className="space-y-3">
+      {/* Played as */}
+      {show('playedAs') && (
+        <div>
+          <p className="mb-1 text-sm text-muted-foreground">Played as</p>
+          <ToggleGroup
+            type="single"
+            value={filters.playedAs}
+            onValueChange={(v) => {
+              if (!v) return;
+              update({ playedAs: v as FilterState['playedAs'] });
+            }}
+            variant="outline"
+            size="sm"
+            data-testid="filter-played-as"
+            className="w-full"
+          >
+            <ToggleGroupItem value="either" data-testid="filter-played-as-either" className="min-h-11 sm:min-h-0 flex-1 text-sm">Either</ToggleGroupItem>
+            <ToggleGroupItem value="white" data-testid="filter-played-as-white" className="min-h-11 sm:min-h-0 flex-1 text-sm">White</ToggleGroupItem>
+            <ToggleGroupItem value="black" data-testid="filter-played-as-black" className="min-h-11 sm:min-h-0 flex-1 text-sm">Black</ToggleGroupItem>
+          </ToggleGroup>
+        </div>
+      )}
+
       {/* Recency */}
       {show('recency') && (
         <div>
-          <p className="mb-1 text-xs text-muted-foreground">Recency</p>
+          <p className="mb-1 text-sm text-muted-foreground">Recency</p>
           {/*
             Desktop: Popover anchored to the Select trigger via PopoverAnchor asChild (D-03).
             Mobile:  Popover is never open; CustomRangeDrawer handles the nested sheet (D-06).
@@ -359,7 +399,7 @@ export function FilterPanel({
       {/* Time controls */}
       {show('timeControl') && (
         <div>
-          <p className="mb-1 text-xs text-muted-foreground">Time control</p>
+          <p className="mb-1 text-sm text-muted-foreground">Time control</p>
           <div className="grid grid-cols-4 gap-1">
             {TIME_CONTROLS.map((tc) => (
               <button
@@ -369,7 +409,7 @@ export function FilterPanel({
                 aria-label={`${TIME_CONTROL_LABELS[tc]} time control`}
                 aria-pressed={isTimeControlActive(tc)}
                 className={cn(
-                  'rounded border h-11 sm:h-7 text-xs transition-colors',
+                  'rounded border h-11 sm:h-7 text-sm transition-colors',
                   isTimeControlActive(tc)
                     ? 'border-toggle-active bg-toggle-active text-toggle-active-foreground pointer-fine:hover:bg-toggle-active-hover'
                     : 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',
@@ -388,7 +428,7 @@ export function FilterPanel({
       {/* Platform */}
       {show('platform') && (
         <div>
-          <p className="mb-1 text-xs text-muted-foreground">Platform</p>
+          <p className="mb-1 text-sm text-muted-foreground">Platform</p>
           <div className="grid grid-cols-2 gap-1">
             {PLATFORMS.map((p) => (
               <button
@@ -398,7 +438,7 @@ export function FilterPanel({
                 aria-label={`${PLATFORM_LABELS[p]} platform`}
                 aria-pressed={isPlatformActive(p)}
                 className={cn(
-                  'rounded border h-11 sm:h-7 text-xs transition-colors',
+                  'rounded border h-11 sm:h-7 text-sm transition-colors',
                   isPlatformActive(p)
                     ? 'border-toggle-active bg-toggle-active text-toggle-active-foreground pointer-fine:hover:bg-toggle-active-hover'
                     : 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',
@@ -430,7 +470,7 @@ export function FilterPanel({
             onClick={() => setMoreOpen((v) => !v)}
             aria-expanded={moreOpen}
             data-testid="filter-more-toggle"
-            className="flex w-full items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            className="flex w-full items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <ChevronDown
               className={cn('h-3.5 w-3.5 transition-transform', moreOpen && 'rotate-180')}
@@ -441,7 +481,7 @@ export function FilterPanel({
             <div className="mt-2 space-y-3">
               {show('opponent') && (
                 <div>
-                  <p className="mb-1 text-xs text-muted-foreground">Opponent Type</p>
+                  <p className="mb-1 text-sm text-muted-foreground">Opponent Type</p>
                   <ToggleGroup
                     type="single"
                     value={filters.opponentType}
@@ -454,16 +494,16 @@ export function FilterPanel({
                     data-testid="filter-opponent"
                     className="w-full"
                   >
-                    <ToggleGroupItem value="human" data-testid="filter-opponent-human" className="min-h-11 sm:min-h-0 flex-1">Human</ToggleGroupItem>
-                    <ToggleGroupItem value="bot" data-testid="filter-opponent-bot" className="min-h-11 sm:min-h-0 flex-1">Bot</ToggleGroupItem>
-                    <ToggleGroupItem value="both" data-testid="filter-opponent-both" className="min-h-11 sm:min-h-0 flex-1">Both</ToggleGroupItem>
+                    <ToggleGroupItem value="human" data-testid="filter-opponent-human" className="min-h-11 sm:min-h-0 flex-1 text-sm">Human</ToggleGroupItem>
+                    <ToggleGroupItem value="bot" data-testid="filter-opponent-bot" className="min-h-11 sm:min-h-0 flex-1 text-sm">Bot</ToggleGroupItem>
+                    <ToggleGroupItem value="both" data-testid="filter-opponent-both" className="min-h-11 sm:min-h-0 flex-1 text-sm">Both</ToggleGroupItem>
                   </ToggleGroup>
                 </div>
               )}
 
               {show('rated') && (
                 <div>
-                  <p className="mb-1 text-xs text-muted-foreground">Rated</p>
+                  <p className="mb-1 text-sm text-muted-foreground">Rated</p>
                   <ToggleGroup
                     type="single"
                     value={filters.rated === null ? 'all' : filters.rated ? 'rated' : 'casual'}
@@ -476,9 +516,9 @@ export function FilterPanel({
                     data-testid="filter-rated"
                     className="w-full"
                   >
-                    <ToggleGroupItem value="all" data-testid="filter-rated-all" className="min-h-11 sm:min-h-0 flex-1">All</ToggleGroupItem>
-                    <ToggleGroupItem value="rated" data-testid="filter-rated-rated" className="min-h-11 sm:min-h-0 flex-1">Rated</ToggleGroupItem>
-                    <ToggleGroupItem value="casual" data-testid="filter-rated-casual" className="min-h-11 sm:min-h-0 flex-1">Casual</ToggleGroupItem>
+                    <ToggleGroupItem value="all" data-testid="filter-rated-all" className="min-h-11 sm:min-h-0 flex-1 text-sm">All</ToggleGroupItem>
+                    <ToggleGroupItem value="rated" data-testid="filter-rated-rated" className="min-h-11 sm:min-h-0 flex-1 text-sm">Rated</ToggleGroupItem>
+                    <ToggleGroupItem value="casual" data-testid="filter-rated-casual" className="min-h-11 sm:min-h-0 flex-1 text-sm">Casual</ToggleGroupItem>
                   </ToggleGroup>
                 </div>
               )}
@@ -487,34 +527,38 @@ export function FilterPanel({
         </div>
       )}
 
-      {/* Reset Filters — full panel width, below the last filter row.
+      {/* Reset + Apply footer — full panel width, below the last filter row.
+          When onApply is provided: renders FilterActions (Reset left / Apply right).
+          When onApply is absent: renders a lone Reset button (backward-compat for callers
+          that do not yet pass onApply). Suppress entirely with hideReset=true when the
+          parent owns the footer (e.g. LibraryFilterPanel).
           GLOBAL RESET: clears every FilterState field to DEFAULT_FILTERS EXCEPT `color`
-          (Played-as), which is preserved at its current value. This uniform behavior applies
-          on every consumer (Openings, Endgames, GlobalStats) and every form factor (desktop
-          sidebar, mobile drawer). Because the modified-dot also ignores `color` (see
-          FILTER_DOT_FIELDS), Reset is guaranteed to drop the dot on every page. */}
-      <div className="pt-2 border-t border-border/40">
-        <Button
-          type="button"
-          variant="brand-outline"
-          size="lg"
-          className="w-full min-h-11 sm:min-h-0"
-          data-testid="btn-reset-filters"
-          onClick={() => {
-            onChange({ ...DEFAULT_FILTERS, color: filters.color, customRange: null });
-          }}
-        >
-          Reset Filters
-        </Button>
-        {showDeferredApplyHint && (
-          <p
-            className="mt-2 text-sm italic leading-tight text-muted-foreground"
-            data-testid="filter-deferred-apply-hint"
-          >
-            <span className="font-semibold text-foreground/80">Tip:</span> Filter changes apply on closing the filters panel.
-          </p>
-        )}
-      </div>
+          (Played-as), which is preserved at its current value. Because the modified-dot
+          also ignores `color` (see FILTER_DOT_FIELDS), Reset is guaranteed to drop the
+          dot on every page. */}
+      {!hideReset && (
+        onApply != null ? (
+          <FilterActions
+            onReset={() => onChange({ ...DEFAULT_FILTERS, color: filters.color, customRange: null })}
+            onApply={onApply}
+          />
+        ) : (
+          <div className="pt-2 border-t border-border/40">
+            <Button
+              type="button"
+              variant="brand-outline"
+              size="lg"
+              className="w-full min-h-11 sm:min-h-0"
+              data-testid="btn-reset-filters"
+              onClick={() => {
+                onChange({ ...DEFAULT_FILTERS, color: filters.color, customRange: null });
+              }}
+            >
+              Reset Filters
+            </Button>
+          </div>
+        )
+      )}
     </div>
   );
 }

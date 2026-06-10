@@ -31,9 +31,10 @@ export function useGlobalStats(
   const dateParams = dateRangeToWireParams(resolveDateRange(filters));
   // safe: length === 1 check guarantees index 0 exists
   const platform = platforms && platforms.length === 1 ? platforms[0]! : null;
+  const color = filters.playedAs === 'either' ? null : filters.playedAs;
   return useQuery({
-    queryKey: ['globalStats', dateParams.from_date ?? null, dateParams.to_date ?? null, platform, opponentType, opponentStrength.min, opponentStrength.max],
-    queryFn: () => statsApi.getGlobalStats(dateParams, platform, opponentType, opponentStrength),
+    queryKey: ['globalStats', dateParams.from_date ?? null, dateParams.to_date ?? null, platform, opponentType, opponentStrength.min, opponentStrength.max, color],
+    queryFn: () => statsApi.getGlobalStats(dateParams, platform, opponentType, opponentStrength, color),
   });
 }
 
@@ -49,6 +50,7 @@ export function useMostPlayedOpenings(filters?: {
   const resolvedFilters: FilterState = {
     matchSide: 'both',
     color: 'white',
+    playedAs: 'either',
     recency: filters?.recency ?? null,
     customRange: filters?.customRange ?? null,
     timeControls: filters?.timeControls ?? null,
@@ -94,6 +96,7 @@ export function useBookmarkPhaseEntryMetrics(
   const resolvedFilters: FilterState = {
     matchSide: 'both',
     color: 'white',
+    playedAs: 'either',
     recency: filters.recency,
     customRange: filters.customRange,
     timeControls: filters.timeControls,

@@ -93,13 +93,13 @@ class _PositionRowsResult:
     """Aggregate output of `_collect_position_rows`.
 
     Carries the position rows ready for bulk insert plus the per-game
-    metadata needed by downstream stages (move_count / result_fen bulk
+    metadata needed by downstream stages (ply_count / result_fen bulk
     UPDATE, and the post-insert engine eval pass).
     """
 
     new_game_ids: Sequence[int]
     position_rows: list[dict[str, Any]] = field(default_factory=list)
-    move_counts: dict[int, int] = field(default_factory=dict)
+    ply_counts: dict[int, int] = field(default_factory=dict)
     result_fens: dict[int, str | None] = field(default_factory=dict)
     # Each entry is (game_id, pgn_text, plies_list) — used by the eval pass
     # to avoid a second PGN parse loop and to call _board_at_ply on demand.
@@ -692,7 +692,7 @@ async def _flush_batch(
 
     Uses process_game_pgn for a single PGN parse per game (D-01),
     platform_game_id lookup to avoid redundant SELECT Game.pgn (D-03),
-    and bulk CASE UPDATE for move_count/result_fen (D-04).
+    and bulk UPDATE for ply_count/result_fen (D-04).
 
     WR-05: this function does NOT commit. The caller owns the transaction
     boundary so the row inserts and the per-batch progress-counter UPDATE
@@ -735,7 +735,7 @@ async def _flush_batch(
     # fragile (SQLAlchemy issue #9075 drops the expression in some executemany
     # contexts). See 90-RESEARCH.md Pitfall 1.
 
-    # Stage 5: bulk UPDATE move_count and result_fen via two executemany groups.
+    # Stage 5: bulk UPDATE ply_count and result_fen via two executemany groups.
     #
     # We target the underlying Table (`Game.__table__`) rather than the ORM
     # `Game` mapper. SQLAlchemy 2.x routes `update(Game).where(...)` with
@@ -753,21 +753,21 @@ async def _flush_batch(
     #  update with additional WHERE criteria right now" against a real DB.
     # Unit tests using AsyncMock sessions never exercised this path. Pinned
     # by TestFlushBatchStage5RealDb against the rollback-scoped db_session.
-    if rows_result.move_counts:
+    if rows_result.ply_counts:
         # ty: __table__ is typed as FromClause on declarative base, but is a
         # Table at runtime. Cast at module level not needed — the Table API
         # is what we use here.
         games_table = Game.__table__
-        # Group (a): move_count for ALL games in the batch.
-        move_count_stmt = (
+        # Group (a): ply_count for ALL games in the batch.
+        ply_count_stmt = (
             update(games_table)  # ty: ignore[invalid-argument-type]
             .where(games_table.c.id == bindparam("b_id"))
-            .values(move_count=bindparam("b_mc"))
+            .values(ply_count=bindparam("b_pc"))
         )
-        move_count_params: list[dict[str, Any]] = [
-            {"b_id": gid, "b_mc": mc} for gid, mc in rows_result.move_counts.items()
+        ply_count_params: list[dict[str, Any]] = [
+            {"b_id": gid, "b_pc": pc} for gid, pc in rows_result.ply_counts.items()
         ]
-        await session.execute(move_count_stmt, move_count_params)
+        await session.execute(ply_count_stmt, ply_count_params)
 
         # Group (b): result_fen ONLY for games where result_fen is not None.
         # Games without a parsed result_fen keep their prior column value (or
@@ -856,8 +856,8 @@ async def _collect_position_rows(
         if processing_result is None:
             continue
 
-        # Accumulate move_count and result_fen for bulk UPDATE (D-04).
-        out.move_counts[game_id] = processing_result["move_count"]
+        # Accumulate ply_count and result_fen for bulk UPDATE (D-04).
+        out.ply_counts[game_id] = processing_result["ply_count"]
         out.result_fens[game_id] = processing_result["result_fen"]
 
         # Retain plies for the eval pass — done here to avoid a second PGN parse loop.

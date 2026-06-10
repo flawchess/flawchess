@@ -53,9 +53,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import async_session_maker
 from app.models.game import Game
 from app.models.game_position import GamePosition
+from app.repositories.game_flaws_repository import bulk_insert_game_flaws, flaw_record_to_row
 from app.repositories.game_repository import users_with_zero_pending
 from app.services import engine as engine_service
 from app.services import percentile_compute_registry
+from app.services.flaws_service import classify_game_flaws
 from app.services.user_benchmark_percentiles_service import compute_stage_b
 from app.services.zobrist import PlyData
 
@@ -490,6 +492,72 @@ async def _collect_eval_targets_from_db(
     return targets
 
 
+async def _classify_and_insert_flaws(
+    session: AsyncSession,
+    game_ids: Sequence[int],
+) -> None:
+    """Classify game_flaws for a batch of just-evaluated games and bulk-insert.
+
+    Called in the cold-lane write session AFTER _apply_eval_results and BEFORE
+    _mark_evals_completed — so eval_cp is committed before classification reads
+    it, and flaw rows commit atomically with the eval results (Pitfall 2 guard).
+
+    SEQUENTIAL loop — AsyncSession is not safe for concurrent use from multiple
+    coroutines (CLAUDE.md hard rule). The drain batch size is _DRAIN_BATCH_SIZE
+    (10 games), producing ~1-5 M+B flaw rows each (~50 rows max) — well within
+    the memory envelope. No asyncio.gather on this session.
+
+    Skips GameNotAnalyzed games silently (chess.com / low eval coverage).
+    Per-game classify errors are Sentry-captured and the loop continues (T-108-04:
+    one bad game must not abort the whole drain batch).
+
+    D-10: reuses classify_game_flaws (the single classification kernel) and
+    flaw_record_to_row (the single FlawRecord→row mapping) so the materialized
+    table never drifts from the live kernel.
+    """
+    games_result = await session.execute(select(Game).where(Game.id.in_(game_ids)))
+    games = games_result.scalars().all()
+
+    for game in games:
+        try:
+            # Load positions ordered by ply, scoped to game.user_id (T-108-05 guard)
+            positions_result = await session.execute(
+                select(GamePosition)
+                .where(
+                    GamePosition.game_id == game.id,
+                    GamePosition.user_id == game.user_id,
+                )
+                .order_by(GamePosition.ply)
+            )
+            positions = list(positions_result.scalars().all())
+
+            result = classify_game_flaws(game, positions)
+            if "reason" in result:
+                # GameNotAnalyzed = chess.com / insufficient eval coverage — no rows.
+                # TypedDict is a plain dict at runtime; discriminate on "reason" key.
+                continue
+
+            rows = [
+                flaw_record_to_row(
+                    user_id=game.user_id,
+                    game_id=game.id,
+                    flaw=flaw,
+                )
+                for flaw in result
+            ]
+            await bulk_insert_game_flaws(session, rows)
+
+        except Exception as exc:
+            # T-108-04: per-game errors must not abort the whole drain batch.
+            # Never embed variables in the message (CLAUDE.md Sentry rule).
+            sentry_sdk.set_context(
+                "game_flaws",
+                {"game_id": game.id, "user_id": game.user_id},
+            )
+            sentry_sdk.capture_exception(exc)
+            continue
+
+
 async def run_eval_drain() -> None:
     """Continuously evaluate entry plies for games with evals_completed_at IS NULL.
 
@@ -543,6 +611,12 @@ async def run_eval_drain() -> None:
             async with async_session_maker() as session:
                 if eval_targets:
                     await _apply_eval_results(session, eval_targets, list(eval_results))
+                # Phase 108-02 D-10: classify + bulk-insert game_flaws for all
+                # just-evaluated games. Runs AFTER _apply_eval_results so eval_cp
+                # is available for classification, and BEFORE _mark_evals_completed
+                # so flaw rows commit atomically with the eval results (Pitfall 2).
+                # Sequential, no asyncio.gather (CLAUDE.md hard rule).
+                await _classify_and_insert_flaws(session, game_ids)
                 # Mark all picked games done regardless of eval success/failure.
                 # engine.evaluate() returning (None, None) is treated as
                 # "evaluated — engine failed for this position, leave row NULL"

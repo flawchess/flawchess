@@ -8,9 +8,46 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- **Opponent-flaw materialization foundation** (Phase 113 Plan 01) — `classify_game_flaws` now records mistakes/blunders for both the player and their opponent (previously player-only). The player/opponent split is derived at query time via `is_opponent_expr(ply, user_color)` — a single tested helper in `query_utils.py` that encodes the ply-parity convention and closes a documented off-by-one trap. Per-mover `subject_result` fixes the `lucky` end-of-game tag for opponent flaws. Foundation for phase-115 flaw-comparison UI.
+
 ### Changed
 
+- **Faster openings explorer & lighter imports** (SEED-041 items 1-8) — the openings explorer query now forces a hash join over the user's games instead of a per-game nested loop, cutting its main cost driver on large accounts; recent-games and pending-evals lookups gain matching indexes; `game_positions` now uses a single composite foreign key (halving per-row FK work during import and enforcing that a position's owner matches its game); and `game_positions` autovacuum + `games` heap density are tuned for cache residency. Schema and performance changes only — no behavior change.
+- **Exact half-move counts** (Phase 114.1, SEED-041 item 9) — `games.move_count` (full-move count, accurate only to ±1 half-move) is replaced by an exact `games.ply_count`. This gives an exact per-game user-move denominator without scanning the 190M-row positions table, and lets the benchmark §5 flaw-delta rates drop an ~87M-row join. Game-card "N Moves" labels are unchanged. Internal/schema change, no user-facing behavior change.
+
+## [v1.24] Library Page — 2026-06-09
+
+The **Library** — a new top-level destination and SEED-036's analysis half: an eval-driven mistake/flaw archive over your analyzed games. Import and Overview fold in as subtabs; new Games and Flaws subtabs surface every blunder, mistake, and inaccuracy with per-game eval charts, family-colored flaw tags, a finalized tag taxonomy, and a cross-tab Flaw filter. Phases 104–112.
+
+### Added
+
+- **Library page** (Phase 104) — a new top-level **Library** destination in the main nav that hosts Import and Overview as deep-linkable subtabs (`/library/import`, `/library/overview`). Visiting the Library lands you on Import when you have no games yet and on Overview once you do.
+- **Games subtab** (Phase 107) — the Library's headline surface: a filterable game-card archive with a Flaw-Stats panel above it. Each analyzed game card shows blunder/mistake/inaccuracy counts plus family-colored tag chips (miss, lucky, reversed, time pressure, hasty, …), with an explicit "no engine analysis" state for unanalyzed games. The Flaw-Stats panel summarizes per-severity rates (per game and per 100 moves), tag distribution (tempo split, phase histogram), trend over time, and the `% analyzed` denominator. Filters (platform, color, time control, rated, opponent, recency, plus a mistake-severity toggle) drive both the list and the panel together. The Games subtab is now the default landing for returning users with games.
+- **Per-flaw platform deep-link** (Phase 108) — each flaw card on the Flaws subtab now shows the platform icon and an external link that opens the board at the exact half-move where the flaw occurred: lichess via the game viewer, chess.com via the analysis board. On lichess the board opens from your side (flipped when you played black).
+- **Lichess game links open from your perspective** — "open on platform" links on the Openings and Library game cards now flip the lichess board to your side when you played black, matching the card's miniboard orientation. chess.com links are unchanged (no board-orientation URL parameter).
+- **`game_flaws` backfill script** (Phase 108 Plan 06) — `scripts/backfill_flaws.py` recomputes the `game_flaws` materialization table for existing users' analyzed games. Supports `--db {dev,benchmark,prod}`, `--user-id`, `--dry-run`, and `--limit`; batched at 100 games per commit (OOM-safe). `scripts/reclassify_positions.py` now also recomputes `game_flaws` during position reclassification, completing the D-10 single-classify-path invariant across import hook, reclassify, and backfill.
+- **Per-game eval chart** (Phase 109) — each analyzed game card on the Library Games subtab now shows an expected-score area chart (white-perspective, lichess sigmoid): light grey above the 50% midline when White is ahead, dark grey below. Dots mark your own flaws (red blunders, orange mistakes, yellow inaccuracies), and vertical lines mark the middlegame and endgame transitions. Hovering any ply shows the eval (pawns or mate), clock, and move time, and scrubs the card's miniboard to that position. The desktop card is restructured into three equal columns (board + info, chart, tags); on mobile the chart stacks full-width. Unanalyzed games keep the existing no-analysis state.
+
+### Changed
+
+- **Flaws subtab card rework** (Phase 112) — the Library Flaws subtab now shows each flaw as a card in a responsive 2-up grid (1 column on mobile, 2 columns on larger screens). Each card shows the miniboard at the pre-flaw position with the flawed-move arrow, the player names and ratings in a banded header, the move notation and user-perspective eval swing, a severity badge, family-colored tag chips, and game metadata. A "View game" button on each card opens a full-game modal with the eval chart and all analyzed positions. The old flat flaw row list is replaced.
+- **Consistent game-info line next to miniboards** — the metadata beside the board on every game card (Library Games, Library Flaws, Openings Games) now follows one order: the time control ("Rapid 10+5") and move count ("# 42 Moves") on the first line, then the date, then the termination. The two parts of the first line wrap onto separate lines only when the card is too narrow. The Flaws cards gained the move count and termination (added to the flaws API payload) to match.
+- The flaw filter (Blunders/Mistakes severity + tag families) now lives in its own **Flaw filters** panel with a dedicated button, separate from the game-metadata **Filters** panel, on both the Games and Flaws subtabs (Phase 108). On mobile, flaw-filter selections now apply when you close the panel (matching the game filters), fixing tag selections that previously did not reliably take effect on close.
+- Import and Overview are no longer standalone nav items; they live inside the Library page. The old `/import`, `/overview`, `/rating`, and `/global-stats` links redirect into the matching Library subtab, and the "no games yet" notification dot now sits on the Library nav item (Phase 104).
 - Endgame insights are no longer rate-limited; report caching already keeps the number of fresh AI calls low, so the old hourly limit only got in the way.
+- **Flaw-tag taxonomy overhaul** (Phase 110) — the flaw tags shown on game and flaw cards are renamed and rebuilt for clarity. The tempo tags `impatient` and `considered` are now `hasty` and `unrushed`. The impact tags `while ahead` and `result-changing` are replaced by an outcome-independent swing ladder: `reversed` (a winning position that flipped to losing) and `squandered` (a clearly winning position thrown away to roughly equal), so a tag now reflects how far the position swung rather than the eventual game result. Tag chips show the tag's definition on hover or tap, with the exact thresholds, and no longer act as links into the Flaws subtab.
+- Library Games cards (Phase 110): tag chips now show how often each tag occurred in the game and are a touch smaller; the inaccuracy badge spells out "Inaccuracies"; the Blunders/Mistakes count badges highlight when you filter to that severity (matching the tag chips); and hovering a tag chip or a Blunders/Mistakes badge highlights the matching flaw dots on that card's eval chart while dimming the rest.
+- Library game cards now carry the same banded title-bar header (player names + platform link in a tinted bar above a divider) used by the Openings and Stats cards, for a consistent card look across the app. Card visuals are now driven by a single shared `Card`/`CardHeader`/`CardBody` primitive.
+- **Filter panels now apply on demand** — every filter panel (Library Games, Library Tags, Openings, Endgames, Stats) has a Reset and an Apply button at the bottom. Filter changes no longer take effect as you make them; they apply only when you click Apply, which also closes the panel. Closing the panel any other way (the X, clicking outside, or the panel toggle) discards your unapplied changes. Reset clears the panel back to defaults without applying until you press Apply. This replaces the previous mix of live-apply on desktop and apply-on-close on mobile, and the "applies on closing" tip is gone. The Library "Flaw filters" panel is renamed **Tags**. The Openings and Endgames filter panels no longer show the "Played as" tri-state (Openings has a dedicated white/black piece button outside the panel, and endgame stats ignore color entirely); it remains in the Library and Stats panels.
+
+### Fixed
+
+- The Flaws subtab miniboard showed the position one ply too early (the board before the move *preceding* the flaw, rather than the decision point right before the flawed move). The flawed-move arrow still pointed at the right squares, so the mistake was subtle. The materialized flaw position is now stored at the correct ply (Phase 108).
+- The severity filter on the Games and Flaws subtabs now selects exactly the chosen tiers (Phase 108). Selecting **Mistakes** only previously also showed blunders, because the filter used a "mistake or worse" threshold; it now uses set-membership, so Mistakes shows mistakes only and Blunders shows blunders only.
+- Tag filters now apply on the **Games** subtab (Phase 108). Selecting tag families (time pressure, miss, result-changing, …) previously had no effect on the game list; the Games archive now shows only games containing at least one flaw matching the combined tag filter (same single-flaw, AND-across-families semantics as the Flaws subtab).
+- Library eval chart: games ending in checkmate now run the eval bar all the way to the mating move (a flat 100% / 0% bar with a "Checkmate" tooltip) instead of breaking off early, since the engine never evaluates a mated position. Flaw dots at the very top or bottom of the chart no longer get clipped, the white-ahead / black-ahead fills now read as lighter grey vs dark grey, and the 50% midline and hover crosshair share the same grey as the phase lines.
 
 ## [v1.23] LLM Endgame-Insights Statistical-Reasoning Rework — 2026-06-03
 
@@ -685,7 +722,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.23...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.24...HEAD
+[v1.24]: https://github.com/flawchess/flawchess/compare/v1.23...v1.24
 [v1.23]: https://github.com/flawchess/flawchess/compare/v1.22...v1.23
 [v1.22]: https://github.com/flawchess/flawchess/compare/v1.21...v1.22
 [v1.21]: https://github.com/flawchess/flawchess/compare/v1.20...v1.21

@@ -11,6 +11,8 @@ import { useEffect, useId, useMemo, useState } from 'react';
 import { Area, Bar, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { CardHeader } from '@/components/ui/card';
+import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import {
   ENDGAME_VOLUME_BAR_COLOR,
   SCORE_TIMELINE_FILL_ABOVE,
@@ -143,12 +145,7 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
 
   return (
     <div data-testid="endgame-score-timeline-chart">
-      {/* Card header band: recessed background + bottom separator, full-bleed to
-          the card edges (matches EndgameMetricsByTcCard / EndgameTimePressureCard). */}
-      <h3
-        className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40 text-base font-semibold"
-        data-testid="endgame-score-timeline-header"
-      >
+      <CardHeader data-testid="endgame-score-timeline-header">
         Endgame Score Gap over Time
         <InfoPopover
           ariaLabel="Endgame vs Non-Endgame Score timeline info"
@@ -166,7 +163,7 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
             trails.
           </p>
         </InfoPopover>
-      </h3>
+      </CardHeader>
       <div className="p-4">
       <p className="text-sm text-muted-foreground mb-3">
         Are your endgames a weakness or a strength, and is the gap closing?
@@ -214,7 +211,7 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
                 const gap = point.endgame - point.non_endgame;
                 const gapSign = gap > 0 ? '+' : '';
                 return (
-                  <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
+                  <ChartTooltipBox>
                     <div className="font-medium">
                       Week of {formatDateWithYear(label as string)}
                     </div>
@@ -248,7 +245,7 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
                     <div className="text-muted-foreground">
                       Games this week: {point.per_week_total_games}
                     </div>
-                  </div>
+                  </ChartTooltipBox>
                 );
               }}
             />
