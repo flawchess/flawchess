@@ -55,11 +55,17 @@ export function LibraryGameCardList({
         {matchedCount} of {total} games
       </p>
 
-      {/* Card stack */}
+      {/* Card stack — 2-column grid on md+; analyzed cards span full width, unanalyzed half-width.
+          Wrapping div per card carries the span class so LibraryGameCard stays layout-agnostic. */}
       {games.length > 0 && (
-        <div className="flex flex-col gap-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
           {games.map((game) => (
-            <LibraryGameCard key={game.game_id} game={game} />
+            <div
+              key={game.game_id}
+              className={game.analysis_state === 'analyzed' ? 'md:col-span-2' : 'md:col-span-1'}
+            >
+              <LibraryGameCard game={game} />
+            </div>
           ))}
         </div>
       )}

@@ -16,6 +16,7 @@ import { FlawFilterControl } from '@/components/filters/FlawFilterControl';
 import { FilterActions } from '@/components/filters/FilterActions';
 import { usePulseOnChange, ModifiedDot } from '@/components/filters/FilterModifiedDot';
 import { FlawCard } from '@/components/library/FlawCard';
+import { NoEngineAnalysisFlawsState } from '@/components/library/NoEngineAnalysisFlawsState';
 import { Pagination } from '@/components/results/Pagination';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import {
@@ -296,12 +297,7 @@ export function FlawsTab() {
             </p>
           )}
 
-          {noMatchedFlaws && (
-            <EmptyState
-              title="No flaws matched"
-              subtitle="Try adjusting the flaw filter or game filters."
-            />
-          )}
+          {noMatchedFlaws && <NoEngineAnalysisFlawsState />}
 
           {matchedCount > 0 && (
             <div

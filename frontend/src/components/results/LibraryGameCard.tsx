@@ -361,18 +361,14 @@ export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
   );
 
   // Shared game-info block (same order on every game card):
-  //   line 1: "<TC name> <base>[+inc]" • "# n Moves" — the two parts wrap at the
-  //           bullet when the column is too narrow for one line.
-  //   line 2: date
-  //   line 3: termination (result chip + reason)
+  //   line 1: "<TC name> <base>[+inc]"
+  //   line 2: "# n Moves" — on its own line below TC (plan 260610-vru)
+  //   line 3: date
+  //   line 4: termination (result chip + reason)
   const metadata = (
     <div className="flex flex-col gap-1 text-sm text-muted-foreground">
-      {/* TC + move count share a line, separated by a gap; they wrap onto
-          separate lines (no dangling separator) when the column is too narrow. */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
-        {timeControlItem}
-        {moveCountItem}
-      </div>
+      {timeControlItem}
+      {moveCountItem}
       {dateItem}
       {terminationItem}
     </div>
