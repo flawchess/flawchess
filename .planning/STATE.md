@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.25
 milestone_name: Flaw-Stats Opponent Comparison
 status: executing
-last_updated: "2026-06-10T18:17:32.000Z"
-last_activity: 2026-06-10 -- Completed quick task 260610-sha: prod DB query & index tuning (SEED-041 items 1-8)
+last_updated: "2026-06-10T19:21:35.425Z"
+last_activity: "2026-06-10 -- Completed quick task 260610-sha: prod DB query & index tuning (SEED-041 items 1-8)"
 progress:
   total_phases: 3
   completed_phases: 2
@@ -19,7 +19,7 @@ progress:
 
 Phase: 114 (benchmark-flaw-delta-zone-computation) — COMPLETE
 Plan: 1 of 1 complete
-Status: Phase 114 complete; Phase 115 (comparison API + bullet-grid UI) not yet planned
+Status: Ready to execute
 Last activity: 2026-06-10 -- Completed quick task 260610-sha: prod DB query & index tuning (SEED-041 items 1-8)
 
 ## Project Reference
@@ -147,6 +147,7 @@ Carried forward from v1.11 close (still relevant):
 
 ### Roadmap Evolution
 
+- 2026-06-10: **Phase 114.1 inserted after Phase 114 (URGENT) — Replace `move_count` with exact `ply_count`** (SEED-041 item 9). `games.move_count` is the full-move count (`ceil(plies/2)`), so it pins the half-move total only to ±1, blocking an exact per-game user-move denominator without a 190M-row `game_positions` scan. Alembic `add → backfill → enforce` migration (add `ply_count INT`, backfill `max(ply)` per game on dev + prod, then drop `move_count`); import path writes `len(nodes)` in `zobrist.py`; API exposes `ply_count` with display deriving full-moves as `(ply_count+1)//2` so the "N Moves" label is unchanged; update all readers + benchmark `chapter5.py` follow-on. Independent of SEED-041 items 1-8 (already on `main`). Source: `.planning/seeds/SEED-041-prod-db-query-and-index-tuning.md` §9. Next: `/gsd-discuss-phase 114.1` → `/gsd-plan-phase 114.1`.
 - 2026-06-09: **Phase 112 added — Flaws Subtab Card Rework** (via `/gsd-explore`). Rework Library → Flaws so each flaw renders as a proper `Card` matching the Games-subtab language: banded header (player/opponent names + ratings), 132px miniboard with flaw arrow, **standard move notation + eval swing on one line**, family-colored `TagChip` + shared `Explanation` (`TagLegend`) tooltip; laid out as a **responsive 2-up card grid** (1-up mobile). A **`View game`** action opens a **modal** with the full analyzed `LibraryGameCard`. Backend prereqs: add `white_rating`/`black_rating` to `FlawListItem`/`/library/flaws`, and a new `GET /api/library/games/{game_id}` returning a single `GameFlawCard` for the modal. Decisions: D-01 2-up grid + compressed internals (not a wide internal-3-col full-width row); D-02 self-contained modal (not deep-link into Games subtab — no per-game anchor exists); D-03 surface the previously-unused eval swing. Depends on Phase 108 + 110. Next: `/gsd-plan-phase 112`.
 - 2026-06-09: **Phase 111 added — Library UI polish.** Details to be discussed.
 - 2026-06-06: **Phase 108 added to v1.24 — Flaws subtab.** The **Flaws** subtab (row = one flawed position: miniboard + marked move + severity/tags) backed by a new per-flaw list endpoint, plus a shared cross-tab **Flaw filter** (single-flaw `EXISTS` semantics; OR-within-family / AND-across-family) surfaced in both Games and Flaws. Materializes Phase 105's on-the-fly classifier into a derived **`game_flaws`** table (composite PK `(user_id, game_id, ply)`, typed tag-family columns + display payload), populated on import + eval-backfill via `classify_game_flaws`, recomputed via a new `scripts/backfill_flaws.py`; wires Phase 107's display-only card chips into deep-links to the pre-filtered Flaws view. Scoped to Flaws only — the **Analysis detail viewer + best-move endpoint stay deferred to a later phase** (SEED-036 item 5 split). Sources: SEED-036 §"Flaws subtab" + SEED-038 (locks the cross-tab filter UX + `game_flaws` schema/materialization). Requirements TBD. Details to be discussed. Next: `/gsd-discuss-phase 108` → `/gsd-plan-phase 108`.
