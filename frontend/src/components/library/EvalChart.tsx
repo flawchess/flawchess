@@ -17,16 +17,18 @@
  * Interaction model: one `activePly` state (hoverPly ?? sliderPly) drives the white
  * crosshair + active-ply dot, the floating tooltip, the slider thumb, and the parent
  * miniboard. The native range slider below the chart is the persistent scrub input
- * (and the only one on touch); chart hover is a transient scrub layered on top.
+ * (and the only one on touch — the chart surface is pointer-events-none on coarse
+ * pointers, see useIsCoarsePointer); chart hover is a transient scrub layered on
+ * top for mouse users only.
  * Mouse-leave reverts activePly to the slider value; at rest the slider defaults to
  * the last eval'd ply. The tooltip is self-positioned at the active datapoint's x
  * (flipping sides at the chart's midpoint): vertically centered on the chart while
  * hover-driven, bottom-aligned just above the thumb while slider-driven. Semi-
  * transparent so the chart stays readable beneath it; shown only while interacting
- * (hover or slider focus).
+ * (hover or slider focus on desktop; slider touch until an outside tap on mobile).
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Area, ComposedChart, Line, ReferenceDot, ReferenceLine, XAxis, YAxis } from 'recharts';
 import { ChartContainer } from '@/components/ui/chart';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
@@ -178,6 +180,26 @@ const TOOLTIP_SIDE_FLIP_PCT = 50;
 const SLIDER_THUMB_PX = 12;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * True when the primary pointer is coarse (touch). Pointer capability — not the
+ * usual width-based useIsMobile — is the right axis here: the chart's hover scrub
+ * and the slider's focus/blur tooltip gating are mouse interaction models that
+ * break on touch regardless of viewport width (a tap "hovers" the chart and then
+ * sticks, and iOS Safari never focuses a range input on touch).
+ */
+function useIsCoarsePointer(): boolean {
+  const [isCoarse, setIsCoarse] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(pointer: coarse)');
+    const update = (): void => setIsCoarse(mq.matches);
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+  return isCoarse;
+}
 
 /** Map FlawSeverity to its theme color constant. No inline literals. */
 function severityColor(sev: FlawSeverity): string {
@@ -531,11 +553,27 @@ export function EvalChart({
     setSliderPly(Number(e.target.value));
   };
 
-  // Tooltip is interaction-gated: chart hover or slider focus. A focused slider keeps
-  // the tooltip up after a drag (desktop click-away / mobile tap on another control
-  // blurs it); at rest nothing floats over the chart.
+  // Tooltip is interaction-gated: chart hover or slider engagement. On desktop the
+  // slider's focus/blur pair gates it (a focused slider keeps the tooltip up after a
+  // drag; click-away blurs it). On touch, focus is unreliable (iOS Safari never
+  // focuses a range input on tap), so touchstart on the slider engages it and a
+  // document-level touch outside the component dismisses it — same UX, explicit events.
+  const isTouch = useIsCoarsePointer();
+  const rootRef = useRef<HTMLDivElement>(null);
   const [sliderFocused, setSliderFocused] = useState(false);
   const tooltipVisible = hoverPly != null || sliderFocused;
+
+  useEffect(() => {
+    if (!isTouch || !sliderFocused) return;
+    const dismissOnOutsideTouch = (e: TouchEvent): void => {
+      const root = rootRef.current;
+      if (root && e.target instanceof Node && !root.contains(e.target)) {
+        setSliderFocused(false);
+      }
+    };
+    document.addEventListener('touchstart', dismissOnOutsideTouch);
+    return () => document.removeEventListener('touchstart', dismissOnOutsideTouch);
+  }, [isTouch, sliderFocused]);
 
   // Tooltip content for activePly (original floating-tooltip content: move + eval,
   // clock + move time, M/B flaw detail — inaccuracy plies show eval only).
@@ -573,13 +611,19 @@ export function EvalChart({
       // Suppress the UA focus outline recharts shows when its surface / tabIndex=-1
       // takes focus on click. Tooltip z-lift hack removed (tooltip is gone).
       className="w-full [&_:focus]:outline-none [&_:focus-visible]:outline-none"
+      ref={rootRef}
     >
       {/* Chart area — relative so the self-positioned tooltip anchors to it. */}
       <div className="relative w-full">
       <ChartContainer
         config={{}}
         // Clip the recharts surface SVG (not the wrapper) to rounded corners.
-        className={`w-full ${heightClass} [&_.recharts-surface]:!overflow-hidden [&_.recharts-surface]:rounded-md`}
+        // On touch the chart surface is inert (pointer-events-none): a tap would
+        // otherwise set a sticky hoverPly (no mouse-leave ever fires) that blocks
+        // the slider until tapping outside. The slider is the only touch scrub.
+        className={`w-full ${heightClass} [&_.recharts-surface]:!overflow-hidden [&_.recharts-surface]:rounded-md ${
+          isTouch ? 'pointer-events-none' : ''
+        }`}
       >
         <ComposedChart
           data={chartSeries}
@@ -754,6 +798,9 @@ export function EvalChart({
           onChange={handleSliderChange}
           onFocus={() => setSliderFocused(true)}
           onBlur={() => setSliderFocused(false)}
+          // Touch engagement — see the sliderFocused comment above (focus never
+          // fires on iOS Safari; dismissal is the document-level outside-touch).
+          onTouchStart={() => setSliderFocused(true)}
           data-testid={`eval-slider-${gameId}`}
           aria-label={`Scrub move for game ${gameId}`}
           className="w-full h-4 appearance-none bg-transparent cursor-pointer
