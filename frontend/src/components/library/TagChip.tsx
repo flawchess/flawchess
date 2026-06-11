@@ -75,6 +75,13 @@ const TAG_FAMILY_COLORS: Record<TagFamily, FamilyColors> = {
   impact: { color: FAM_IMPACT, bg: FAM_IMPACT_BG },
 };
 
+// Hover/focus highlight: the family BG constants are translucent (alpha 0.15), so a
+// plain brightness filter barely registers on them. While the chip is the active
+// pointer/focus target we bump the fill to a denser alpha (and brighten the
+// font/icon/border via a filter) so it clearly reads as highlighted for as long as
+// it has focus. All three FAM_*_BG strings end in `/ 0.15)`.
+const HIGHLIGHT_BG = (bg: string): string => bg.replace('/ 0.15)', '/ 0.3)');
+
 // ─── Tag → glyph (lucide icons, rendered at h-3 w-3) ─────────────────────
 
 const TAG_ICONS: Record<FlawTag, LucideIcon> = {
@@ -153,6 +160,9 @@ export function TagChip({ tag, gameId, count, onHover, definition = true }: TagC
   const popoverSide = isMobile ? 'bottom' : 'top';
 
   const [open, setOpen] = React.useState(false);
+  // Brighten the chip while it is hovered or focused (tap-focus on mobile), held
+  // for as long as it has focus.
+  const [highlighted, setHighlighted] = React.useState(false);
   const openTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -178,13 +188,15 @@ export function TagChip({ tag, gameId, count, onHover, definition = true }: TagC
         // text-xs (one level below the severity badges) is an intentional
         // deviation from the CLAUDE.md text-sm floor, per explicit request to
         // make the tag chips a bit smaller than the M/B/I count badges.
-        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 cursor-pointer text-xs font-bold transition-all hover:brightness-110 hover:-translate-y-px',
+        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 cursor-pointer text-xs font-bold transition-all hover:-translate-y-px',
         isActive && ACTIVE_FILTER_RING_CLASS,
       )}
       style={{
         color,
-        backgroundColor: bg,
+        backgroundColor: highlighted ? HIGHLIGHT_BG(bg) : bg,
         borderColor: color,
+        // Brighten font/icon/border while hovered or focused.
+        filter: highlighted ? 'brightness(1.2)' : undefined,
         // Ring color matches the family color for D-05 active-filter emphasis.
         ...(isActive ? { '--tw-ring-color': color } as React.CSSProperties : {}),
       }}
@@ -195,11 +207,15 @@ export function TagChip({ tag, gameId, count, onHover, definition = true }: TagC
       onMouseEnter={() => {
         if (definition) scheduleOpen();
         onHover?.(true);
+        setHighlighted(true);
       }}
       onMouseLeave={() => {
         if (definition) scheduleClose();
         onHover?.(false);
+        setHighlighted(false);
       }}
+      onFocus={() => setHighlighted(true)}
+      onBlur={() => setHighlighted(false)}
     >
       {count != null && count > 1 && <span className="font-bold">{count}</span>}
       <Icon className="h-3 w-3 shrink-0" />
