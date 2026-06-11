@@ -362,7 +362,8 @@ function flawDotElement(
  * Draws filled circles (player) or hollow squares (opponent). Mistake/blunder dots
  * are always drawn; inaccuracy dots are off-chart by default and only drawn when
  * their ply is highlighted (Inaccuracies-badge hover/tap), rendered yellow at the
- * normal blunder size. Returns empty <g> for non-flaw / hidden plies — never null
+ * same enlarged size as highlighted M/B dots. Returns empty <g> for non-flaw /
+ * hidden plies — never null
  * (Pitfall 7). `markerMap` carries all severities (the caller filters via drawing).
  */
 function buildDotRenderer(
@@ -396,10 +397,10 @@ function buildDotRenderer(
       return <g key={`nodot-${payload.ply}`} />;
     }
     const color = severityColor(marker.severity);
-    // Matched M/B dots enlarge for emphasis; a revealed inaccuracy dot renders at
-    // the normal blunder size (hidden→visible is itself the emphasis).
-    const enlarge = matched && marker.severity !== 'inaccuracy';
-    const radius = enlarge ? FLAW_DOT_RADIUS * HIGHLIGHT_RADIUS_FACTOR : FLAW_DOT_RADIUS;
+    // All matched dots enlarge for emphasis — including revealed inaccuracies, so
+    // hovering the Inaccuracies badge shows them at the same size as highlighted
+    // mistake/blunder dots.
+    const radius = matched ? FLAW_DOT_RADIUS * HIGHLIGHT_RADIUS_FACTOR : FLAW_DOT_RADIUS;
     const opacity = !highlightActive || matched ? 1 : DIMMED_MARKER_OPACITY;
     const outline = outlinedPlies != null && outlinedPlies.has(payload.ply);
     const dot = flawDotElement(
