@@ -43,7 +43,28 @@ BLUNDER_DROP: float = 0.15
 # Mate Option B: map mate eval to ±1000 cp before the sigmoid (CONTEXT.md §Mate).
 # Do NOT use eval_mate_to_expected_score (hard 1.0/0.0) for drop math — that
 # function is for endgame span averaging and would mis-size mate transitions.
+# Since the mate-ladder addition (2026-06-11) Option B only supplies the
+# es_before/es_after payload values (impact tags, eval charts); SEVERITY on
+# mate-involved transitions comes from _classify_mate_ladder instead.
 MATE_CP_EQUIVALENT: int = 1000
+
+# Lichess mate-ladder thresholds (lila modules/tree/src/main/Advice.scala,
+# MateAdvice). Severity of a mate transition is graded by the cp eval on the
+# non-mate side of the transition, mover-POV:
+#   MateCreated (cp -> mate against mover): blunder, downgraded to mistake when
+#     the mover was already heavily lost (prev cp < -700) and to inaccuracy when
+#     the game was already decided (prev cp < -999).
+#   MateLost (mover's forced mate -> cp, or -> mate against mover): blunder,
+#     downgraded to mistake when still winning big (next cp > 700) and to
+#     inaccuracy when still completely winning (next cp > 999); a mate that
+#     flips to a mate AGAINST the mover has no cp side (treated as 0 -> blunder).
+# The benchmark-DB sanity check (reports/misc/flaw-count-sanity-lichess-vs-
+# game_flaws-2026-06-11.md) showed Option-B-only severity reproduces lichess
+# exactly in mate-free games (100.2%) but misses ~12-25% of flaws in mate games:
+# flattening every mate to ES 0.9755 makes "threw away a forced mate back to
+# +5" a sub-threshold ~0.09 drop that lichess scores as a blunder.
+MATE_LADDER_DECIDED_CP: int = 999  # |cp| beyond this: game already decided -> inaccuracy
+MATE_LADDER_LOPSIDED_CP: int = 700  # |cp| beyond this: heavily lopsided -> mistake
 
 # Eval coverage gate: fraction of plies with non-null eval required for "analyzed".
 # The final ply always has null eval (zobrist.py: no move annotated), so a fully-
@@ -155,6 +176,68 @@ def _ply_to_es(
     return None
 
 
+def _pov_mate(pos: GamePosition, mover_color: Literal["white", "black"]) -> int | None:
+    """Mover-POV signed mate distance for this ply, or None if no mate eval."""
+    if pos.eval_mate is None:
+        return None
+    return pos.eval_mate if mover_color == "white" else -pos.eval_mate
+
+
+def _pov_cp_or_zero(pos: GamePosition, mover_color: Literal["white", "black"]) -> int:
+    """Mover-POV cp eval, defaulting to 0 when absent (lila's `cp.so(_.centipawns)`).
+
+    The 0 default only matters on the mate side of a MateLost mate->mate flip,
+    where lila grades severity from a cp that doesn't exist: 0 -> blunder.
+    """
+    if pos.eval_cp is None:
+        return 0
+    return pos.eval_cp if mover_color == "white" else -pos.eval_cp
+
+
+def _classify_mate_ladder(
+    prev: GamePosition,
+    cur: GamePosition,
+    mover_color: Literal["white", "black"],
+) -> FlawSeverity | None:
+    """Lichess MateAdvice severity for a transition involving a mate eval.
+
+    Port of lila modules/tree Advice.scala (MateSequence + MateAdvice), mover-POV:
+
+      MateCreated  prev is cp, cur is mate AGAINST the mover.
+      MateLost     prev is the mover's forced mate, cur is cp or mate against.
+
+    Everything else returns None — matching lila, where a mate-involved
+    transition can never produce CpAdvice (the mate side has no cp), so e.g.
+    mate-in-3 -> mate-in-8 (MateDelayed), escaping a mate-against, or walking
+    deeper into one are never the mover's flaw.
+
+    Must only be called when at least one endpoint has eval_mate set; the caller
+    guarantees both endpoints carry SOME eval (Option B ES is non-None).
+    """
+    prev_mate = _pov_mate(prev, mover_color)
+    cur_mate = _pov_mate(cur, mover_color)
+
+    # MateCreated: had a cp position, now facing a forced mate.
+    if prev_mate is None and cur_mate is not None and cur_mate < 0:
+        prev_cp = _pov_cp_or_zero(prev, mover_color)
+        if prev_cp < -MATE_LADDER_DECIDED_CP:
+            return "inaccuracy"
+        if prev_cp < -MATE_LADDER_LOPSIDED_CP:
+            return "mistake"
+        return "blunder"
+
+    # MateLost: had a forced mate, now a cp position or a mate against the mover.
+    if prev_mate is not None and prev_mate > 0 and (cur_mate is None or cur_mate < 0):
+        cur_cp = _pov_cp_or_zero(cur, mover_color)
+        if cur_cp > MATE_LADDER_DECIDED_CP:
+            return "inaccuracy"
+        if cur_cp > MATE_LADDER_LOPSIDED_CP:
+            return "mistake"
+        return "blunder"
+
+    return None
+
+
 def _classify_severity(drop: float) -> FlawSeverity | None:
     """Map a mover-POV ES drop to a severity label, or None if below threshold.
 
@@ -221,6 +304,13 @@ def _run_all_moves_pass(
         positions[N].eval_cp = eval AFTER move N was played.
         ES_before = _ply_to_es(positions[N-1], mover)  # board before mover plays move N
         ES_after  = _ply_to_es(positions[N],   mover)  # board after mover plays move N
+
+    Severity routing mirrors lila's Advice dispatch: cp->cp transitions use the
+    ES-drop thresholds (CpAdvice); any transition touching a mate eval uses the
+    mate ladder (MateAdvice) — under Option B both endpoints of a mate stretch
+    flatten to ~0.9755, so the drop math is blind there (it under-counted thrown
+    mates by ~12-25% vs lichess; see MATE_LADDER_* constants). The Option B ES
+    values are still recorded for the payload (impact tags, eval charts).
     """
     all_moves: dict[int, _MoveEntry] = {}
     for n in range(1, len(positions)):
@@ -230,8 +320,10 @@ def _run_all_moves_pass(
         if es_before is None or es_after is None:
             # Skip plies with missing eval (Pitfall 4: interior null)
             continue
-        drop = es_before - es_after
-        severity = _classify_severity(drop)
+        if positions[n - 1].eval_mate is not None or positions[n].eval_mate is not None:
+            severity = _classify_mate_ladder(positions[n - 1], positions[n], mover)
+        else:
+            severity = _classify_severity(es_before - es_after)
         all_moves[n] = (mover, severity, es_before, es_after)
     return all_moves
 
