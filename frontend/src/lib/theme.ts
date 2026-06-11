@@ -48,12 +48,8 @@ export const SEV_INACCURACY_BORDER = 'oklch(0.82 0.13 95 / 0.30)';
 export const EVAL_CHART_AREA_WHITE_AHEAD = 'oklch(0.78 0 0)';
 export const EVAL_CHART_AREA_BLACK_AHEAD = 'oklch(0.32 0 0)';
 export const EVAL_CHART_LINE = 'oklch(0.82 0 0)';
-// Shared by the dashed 50% midline, the hover crosshair, and the
-// middlegame/endgame phase verticals (one grey for all reference lines).
-export const EVAL_CHART_PHASE_LINE = 'oklch(0.55 0 0 / 0.60)';
-// Muted grey for the vertical "Middlegame" / "Endgame" text labels rendered
-// alongside the phase verticals — a touch lighter than the line so the rotated
-// text stays legible over both the light and dark eval-bar regions.
+// Muted grey for the rotated "Midgame" / "Endgame" text labels centered on the
+// phase boundaries — legible over both the light and dark eval-bar regions.
 export const EVAL_CHART_PHASE_LABEL = 'oklch(0.65 0 0)';
 // White outline drawn around eval-chart flaw markers whose tags match an active
 // flaw-tag filter (mirrors the TagChip active-filter ring, on the chart).

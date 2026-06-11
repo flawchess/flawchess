@@ -3,10 +3,10 @@
  *
  * White-perspective ES per ply, shown as a filled eval bar: the area below the
  * ES line (0% → eval) is grey, the area above it (eval → 100%) is near-black,
- * with rounded chart corners, a 50% midline, at most two
- * phase-transition vertical lines
- * (middlegame, endgame — no ply-0 line per D-06), and dual-marker flaw dots
- * (filled = player, hollow = opponent, color = severity — D-07).
+ * with rounded chart corners, at most two
+ * rotated phase-transition labels centered on the phase boundary
+ * (middlegame, endgame — no vertical lines, no ply-0 label per D-06), and
+ * dual-marker flaw dots (filled = player, hollow = opponent, color = severity — D-07).
  *
  * Flaw dots use a custom `dot` render prop on an invisible <Line> overlay inside
  * ComposedChart — the established EndgameClockDiffOverTimeChart pattern. This
@@ -35,7 +35,6 @@ import {
   EVAL_CHART_CURSOR,
   EVAL_CHART_LINE,
   EVAL_CHART_PHASE_LABEL,
-  EVAL_CHART_PHASE_LINE,
   EVAL_MARKER_FILTER_OUTLINE,
   SEV_BLUNDER,
   SEV_INACCURACY,
@@ -106,9 +105,6 @@ interface EvalChartProps {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** ES midline — the 50% reference line. */
-const ES_MIDLINE = 0.5;
-
 /** ES domain bounds — the two area fills span from the eval line to these. */
 const ES_FLOOR = 0;
 const ES_CEIL = 1;
@@ -135,10 +131,9 @@ const PHASE_TAGS: ReadonlySet<FlawTag> = new Set(['opening', 'middlegame', 'endg
  */
 const PHASE_LINE_PLY_OFFSET = 1;
 
-/** Rotated phase-line label geometry (SVG px). */
+/** Rotated phase-boundary label geometry (SVG px). */
 const PHASE_LABEL_FONT_SIZE = 10;
-const PHASE_LABEL_X_OFFSET = 4; // px right of the line
-const PHASE_LABEL_TOP_PAD = 4;  // px below the chart top
+const PHASE_LABEL_TOP_PAD = 4; // px below the chart top
 
 /** Mistake/blunder flaw-dot radius. */
 const FLAW_DOT_RADIUS = 4.5;
@@ -189,10 +184,12 @@ function severityColor(sev: FlawSeverity): string {
 }
 
 /**
- * `label` render prop for a phase-transition ReferenceLine: vertical text drawn
- * just right of the line, reading top-to-bottom ("Middlegame" / "Endgame").
- * recharts passes the line's viewBox (x = line x, y = chart top). The text is
- * rotated 90° about its anchor so it hangs downward from near the top edge.
+ * `label` render prop for a phase-transition ReferenceLine: vertical text reading
+ * top-to-bottom ("Midgame" / "Endgame"), horizontally centered on the phase
+ * boundary x (the stroke-less ReferenceLine's position). recharts passes the
+ * line's viewBox (x = boundary x, y = chart top). The text is rotated 90° about
+ * its anchor so it hangs downward; dominantBaseline="central" centers the glyphs
+ * across the rotated baseline, i.e. horizontally on the boundary.
  */
 function phaseLineLabel(text: string) {
   return function PhaseLineLabel(props: {
@@ -200,7 +197,7 @@ function phaseLineLabel(text: string) {
   }): React.ReactElement {
     const vb = props.viewBox;
     if (!vb || vb.x == null) return <g />;
-    const x = vb.x + PHASE_LABEL_X_OFFSET;
+    const x = vb.x;
     const y = (vb.y ?? 0) + PHASE_LABEL_TOP_PAD;
     return (
       <text
@@ -209,6 +206,7 @@ function phaseLineLabel(text: string) {
         fill={EVAL_CHART_PHASE_LABEL}
         fontSize={PHASE_LABEL_FONT_SIZE}
         textAnchor="start"
+        dominantBaseline="central"
         transform={`rotate(90, ${x}, ${y})`}
         aria-hidden="true"
       >
@@ -607,15 +605,6 @@ export function EvalChart({
             isAnimationActive={false}
           />
 
-          {/* 50% midline — dashed horizontal reference. */}
-          <ReferenceLine
-            y={ES_MIDLINE}
-            stroke={EVAL_CHART_PHASE_LINE}
-            strokeWidth={1}
-            strokeDasharray="3 3"
-            aria-hidden="true"
-          />
-
           {/* Active crosshair — tracks the unified activePly (hover OR slider).
               Solid white (same as the slider thumb) so the interactive cursor is
               visually distinct from the dashed grey reference geometry. */}
@@ -626,12 +615,12 @@ export function EvalChart({
             aria-hidden="true"
           />
 
-          {/* Phase-transition vertical lines (D-06). */}
+          {/* Phase-transition labels (D-06) — stroke-less ReferenceLines used purely
+              to position the rotated label at the boundary x; no visible line. */}
           {phaseTransitions.middlegame_ply != null && (
             <ReferenceLine
               x={phaseTransitions.middlegame_ply - PHASE_LINE_PLY_OFFSET}
-              stroke={EVAL_CHART_PHASE_LINE}
-              strokeWidth={1}
+              stroke="none"
               label={phaseLineLabel('Midgame')}
               aria-hidden="true"
             />
@@ -639,8 +628,7 @@ export function EvalChart({
           {phaseTransitions.endgame_ply != null && (
             <ReferenceLine
               x={phaseTransitions.endgame_ply - PHASE_LINE_PLY_OFFSET}
-              stroke={EVAL_CHART_PHASE_LINE}
-              strokeWidth={1}
+              stroke="none"
               label={phaseLineLabel('Endgame')}
               aria-hidden="true"
             />
