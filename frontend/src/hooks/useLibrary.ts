@@ -94,6 +94,27 @@ export function useLibraryFlawStats(
 }
 
 /**
+ * Fetch the 15-bullet flaw comparison for the current filter + flaw filter.
+ *
+ * Query key: ['library-flaw-comparison', params]
+ * Independent of ['library-flaw-stats', params] — separate endpoint, separate type.
+ * Same buildLibraryParams + LIBRARY_STALE_TIME + refetchOnWindowFocus:false as
+ * useLibraryFlawStats (exact analog).
+ */
+export function useLibraryFlawComparison(
+  filters: FilterState,
+  flawFilter: FlawFilterState,
+) {
+  const params = buildLibraryParams(filters, flawFilter.severity, flawFilter.tags);
+  return useQuery({
+    queryKey: ['library-flaw-comparison', params],
+    queryFn: () => libraryApi.getFlawComparison(params),
+    staleTime: LIBRARY_STALE_TIME,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/**
  * Fetch a single game by id for the "View game" modal.
  *
  * Query key: ['library-game', gameId]

@@ -7,22 +7,18 @@ import type { SeverityRates } from '@/types/library';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Format a per-game or per-100 rate to 2 decimal places. */
+/** Format a per-100 rate to 2 decimal places. */
 function formatRate(rate: number): string {
   return rate.toFixed(2);
 }
 
 // ─── Cell definitions ─────────────────────────────────────────────────────────
 
-type NormalizationMode = 'per_game' | 'per_100_moves';
-
 interface SeverityCellConfig {
   testId: string;
   color: string;
-  /** Label base — suffix "/ game" or "/ 100 moves" appended for severity cells. */
+  /** Label base — "/ 100 moves" suffix appended. */
   labelBase: string;
-  /** Whether this cell respects the normalization toggle. */
-  responsive: boolean;
 }
 
 const SEVERITY_CELLS: SeverityCellConfig[] = [
@@ -30,19 +26,16 @@ const SEVERITY_CELLS: SeverityCellConfig[] = [
     testId: 'stat-cell-blunders',
     color: SEV_BLUNDER,
     labelBase: 'Blunders',
-    responsive: true,
   },
   {
     testId: 'stat-cell-mistakes',
     color: SEV_MISTAKE,
     labelBase: 'Mistakes',
-    responsive: true,
   },
   {
     testId: 'stat-cell-inaccuracies',
     color: SEV_INACCURACY,
     labelBase: 'Inaccuracies',
-    responsive: true,
   },
 ];
 
@@ -51,8 +44,6 @@ const SEVERITY_CELLS: SeverityCellConfig[] = [
 interface FlawStatsBandProps {
   /** Severity rates (both per_game and per_100_moves are present). */
   rates: SeverityRates;
-  /** Which normalization to display for B/M/I cells. */
-  normalization: NormalizationMode;
   /** When true, all cells show "—" (zero analyzed games in the current filter). */
   analyzedEmpty: boolean;
 }
@@ -62,30 +53,25 @@ interface FlawStatsBandProps {
 /**
  * Zone 1: three severity-rate cells for the Flaw-Stats panel (UI-SPEC §Zone 1).
  *
- * Blunders / Mistakes / Inaccuracies cells display the per-game or per-100-moves
- * value driven by the `normalization` prop (no re-fetch — both values come from
- * the same FlawStatsResponse).
- *
- * D-02 (Phase 110): removed the impact rate cell entirely — aggregate impact
- * rates now live only in the tag distribution block (Zone 3).
+ * Fixed to per-100-moves (D-02, Phase 115): the normalization toggle was removed.
+ * Displays per_100_moves rates only; the "/ 100 moves" suffix is hardcoded.
  *
  * Colors imported from theme.ts: SEV_BLUNDER / SEV_MISTAKE / SEV_INACCURACY.
  * No hard-coded oklch values in this component.
  */
 export function FlawStatsBand({
   rates,
-  normalization,
   analyzedEmpty,
 }: FlawStatsBandProps) {
-  const normDict = rates[normalization];
-  const suffix = normalization === 'per_game' ? '/ game' : '/ 100 moves';
+  const normDict = rates.per_100_moves;
+  const suffix = '/ 100 moves';
 
   return (
     <div
       className="flex flex-wrap gap-2 mt-3"
       data-testid="flaw-stats-band"
     >
-      {/* B / M / I cells — responsive to normalization toggle */}
+      {/* B / M / I cells — per-100-moves (fixed, D-02) */}
       {SEVERITY_CELLS.map((cell) => {
         const severityKey = cell.testId === 'stat-cell-blunders'
           ? 'blunder'

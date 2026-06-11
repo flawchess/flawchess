@@ -33,24 +33,24 @@ The lightweight "B" — the IQR of the *delta* across ELO-matched peers, deliber
 
 The statistical core: unified per-100-moves paired-delta for all metric families (D-01/D-04 amendment — SEED-040 family split superseded).
 
-- [ ] **FLAWCMP-01**: ~~For **count-rate families** (Flaw Rate = M+B/100 moves, tempo `low-clock`/`hasty`/`unrushed`, phase `opening`/`middlegame`/`endgame`), the endpoint returns the mean **paired per-game delta** `(your_count − opp_count) / your_moves_in_game × 100` with a confidence interval (bootstrap or normal approx over the per-game deltas), the game as the pairing unit.~~
+- [x] **FLAWCMP-01**: ~~For **count-rate families** (Flaw Rate = M+B/100 moves, tempo `low-clock`/`hasty`/`unrushed`, phase `opening`/`middlegame`/`endgame`), the endpoint returns the mean **paired per-game delta** `(your_count − opp_count) / your_moves_in_game × 100` with a confidence interval (bootstrap or normal approx over the per-game deltas), the game as the pairing unit.~~
   - **AMENDED (114-CONTEXT D-01/D-04):** The endpoint uses the **unified per-100-moves paired-delta for ALL 15 metrics** (Flaw Rate, all tempo/phase/opportunity/impact tags, and both combos). There is no count-rate vs proportion family split. CI method: bootstrap or normal approx over per-game deltas for every bullet. SEED-040's "Denominator (count-rate families)" and "Statistical method detail → proportion families" rows are superseded.
 - [ ] ~~**FLAWCMP-02**: For **proportion families** (`miss`, `lucky`, `reversed`, `squandered`), the endpoint returns the you−opponent **Wilson difference-of-proportions** with its CI, using the project's existing chess-score util (no parallel significance test invented).~~
   - **VOIDED (114-CONTEXT D-04):** The count-rate/proportion family split is superseded by the unified paired per-game delta estimator (D-01). Phase 115's endpoint uses the same per-100-moves estimator for all 15 metrics. Wilson difference-of-proportions is not implemented. SEED-040 "Proportion CI method" row is superseded.
-- [ ] **FLAWCMP-03**: The flaw-stats endpoint returns the full 15-bullet inventory (expanded from ~13 to include `mistake` and `blunder` severity split) — per-tag delta + CI + (when available) benchmark zone bounds — honoring all existing game filters (platform, color, time control, rated, opponent type, recency) and the severity filter, which can still narrow the M+B base to blunders-only.
-- [ ] **FLAWCMP-04**: The curated combo bullets `hasty + miss` (flagship, least confounded) and `low-clock + miss` are included in the inventory; their CI-width adequacy is validated at plan time against the materialized opponent-flaw data (combo viability is the milestone's known thin-sample risk).
-- [ ] **FLAWCMP-05**: A section-level sample gate returns an "analyze more games" state below a floor N (value set at plan time against the bimodal prod distribution); above the floor every bullet returns its measure + CI (a wide bar reads as inconclusive), and a bullet returns a blank/no-zone state only on literally zero events for that tag.
+- [x] **FLAWCMP-03**: The flaw-stats endpoint returns the full 15-bullet inventory (expanded from ~13 to include `mistake` and `blunder` severity split) — per-tag delta + CI + (when available) benchmark zone bounds — honoring all existing game filters (platform, color, time control, rated, opponent type, recency) and the severity filter, which can still narrow the M+B base to blunders-only.
+- [x] **FLAWCMP-04**: The curated combo bullets `hasty + miss` (flagship, least confounded) and `low-clock + miss` are included in the inventory; their CI-width adequacy is validated at plan time against the materialized opponent-flaw data (combo viability is the milestone's known thin-sample risk).
+- [x] **FLAWCMP-05**: A section-level sample gate returns an "analyze more games" state below a floor N (value set at plan time against the bimodal prod distribution); above the floor every bullet returns its measure + CI (a wide bar reads as inconclusive), and a bullet returns a blank/no-zone state only on literally zero events for that tag.
 
 ### Bullet-Grid Presentation (FLAWUI)
 
 Replaces the current self-only tag-distribution zone with the comparison surface. Reuses the SEED-021 bullet-chart component.
 
-- [ ] **FLAWUI-01**: The flaw-stats panel's current tag-distribution zone is replaced by a uniform grid of ~13 bullet charts (reusing the `MiniBulletChart` / endgame "Clock Gap" pattern), one per tag: measure (you−opponent delta), CI error bar, and the benchmark "typical" blue zone.
-- [ ] **FLAWUI-02**: Each bullet discloses its metric definition, sign convention, and — for clock-conditioned tags — the tempo-interaction caveat (clock-conditioned tags read high partly because burning your clock feeds the opponent thinking time), via the project's tooltip-popover pattern in a uniform grid.
-- [ ] **FLAWUI-03**: A tooltip line discloses the filter×zone interaction: the TC filter changes which (ELO×TC) zone you are compared against, while user-local filters (platform / color / opponent type / recency) move only your point estimate, not the zone (the percentile-chip-disclosure precedent).
-- [ ] **FLAWUI-04**: A bullet degrades gracefully — measure + CI always render when events exist; the blue zone renders only when the cohort stat exists for that metric (future tactic-motif bullets render zoneless without breaking the grid).
-- [ ] **FLAWUI-05**: The flaw trend chart remains comparison-free (no opponent delta) — ELO-peer matching already irons out the absolute level; the signal lives in the bullets' *composition*, not a trend delta.
-- [ ] **FLAWUI-06**: The bullet grid works on mobile (responsive layout) and follows browser-automation conventions (`data-testid`, ARIA labels, semantic HTML) on all new interactive elements and containers, with desktop + mobile parity.
+- [x] **FLAWUI-01**: The flaw-stats panel's current tag-distribution zone is replaced by a uniform grid of ~13 bullet charts (reusing the `MiniBulletChart` / endgame "Clock Gap" pattern), one per tag: measure (you−opponent delta), CI error bar, and the benchmark "typical" blue zone.
+- [x] **FLAWUI-02**: Each bullet discloses its metric definition, sign convention, and — for clock-conditioned tags — the tempo-interaction caveat (clock-conditioned tags read high partly because burning your clock feeds the opponent thinking time), via the project's tooltip-popover pattern in a uniform grid.
+- [x] **FLAWUI-03**: A tooltip line discloses the filter×zone interaction: the TC filter changes which (ELO×TC) zone you are compared against, while user-local filters (platform / color / opponent type / recency) move only your point estimate, not the zone (the percentile-chip-disclosure precedent).
+- [x] **FLAWUI-04**: A bullet degrades gracefully — measure + CI always render when events exist; the blue zone renders only when the cohort stat exists for that metric (future tactic-motif bullets render zoneless without breaking the grid).
+- [x] **FLAWUI-05**: The flaw trend chart remains comparison-free (no opponent delta) — ELO-peer matching already irons out the absolute level; the signal lives in the bullets' *composition*, not a trend delta.
+- [x] **FLAWUI-06**: The bullet grid works on mobile (responsive layout) and follows browser-automation conventions (`data-testid`, ARIA labels, semantic HTML) on all new interactive elements and containers, with desktop + mobile parity.
 
 ## v2 Requirements
 
@@ -95,15 +95,15 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FLAWBMK-04 | Phase 114 | Complete |
 | FLAWCMP-01 | Phase 115 | Pending (amended D-01/D-04: unified estimator for all 15 metrics) |
 | FLAWCMP-02 | Phase 115 | **VOIDED** (D-04: Wilson proportion method superseded by unified paired-delta) |
-| FLAWCMP-03 | Phase 115 | Pending |
-| FLAWCMP-04 | Phase 115 | Pending |
-| FLAWCMP-05 | Phase 115 | Pending |
-| FLAWUI-01 | Phase 115 | Pending |
-| FLAWUI-02 | Phase 115 | Pending |
-| FLAWUI-03 | Phase 115 | Pending |
-| FLAWUI-04 | Phase 115 | Pending |
-| FLAWUI-05 | Phase 115 | Pending |
-| FLAWUI-06 | Phase 115 | Pending |
+| FLAWCMP-03 | Phase 115 | Complete |
+| FLAWCMP-04 | Phase 115 | Complete |
+| FLAWCMP-05 | Phase 115 | Complete |
+| FLAWUI-01 | Phase 115 | Complete |
+| FLAWUI-02 | Phase 115 | Complete |
+| FLAWUI-03 | Phase 115 | Complete |
+| FLAWUI-04 | Phase 115 | Complete |
+| FLAWUI-05 | Phase 115 | Complete |
+| FLAWUI-06 | Phase 115 | Complete |
 | FLAWTAC-01 | Deferred (v2 — SEED-039) | Deferred |
 | FLAWTAC-02 | Deferred (v2 — SEED-039) | Deferred |
 | FLAWTAC-03 | Deferred (v2 — SEED-039) | Deferred |

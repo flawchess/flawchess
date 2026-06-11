@@ -225,3 +225,49 @@ export interface LibraryFlawsResponse {
   offset: number;
   limit: number;
 }
+
+// ─── Flaw comparison (GET /api/library/flaw-comparison) ───────────────────────
+
+/**
+ * Per-bullet data for one of the 15 flaw-delta metrics (mirrors backend FlawBullet).
+ *
+ * snake_case field names to match the JSON payload exactly (same convention as
+ * FlawStatsResponse). delta and CI fields are null when both player_events and
+ * opp_events are zero (zero-event bullet — D-11).
+ */
+export interface FlawBullet {
+  tag: string;
+  delta: number | null;
+  ci_low: number | null;
+  ci_high: number | null;
+  /** Mean per-game player flaw rate per 100 of the user's moves (null = zero-event). */
+  player_rate: number | null;
+  /** Mean per-game opponent flaw rate per 100 of the user's moves (null = zero-event).
+   *  player_rate - opp_rate === delta exactly (paired comparison). */
+  opp_rate: number | null;
+  /** Two-sided p-value vs H0: delta === 0 (null = zero-event / n < 2). */
+  p_value: number | null;
+  player_events: number;
+  opp_events: number;
+  zone_lo: number;
+  zone_hi: number;
+  domain: number;
+  has_zone: boolean;
+}
+
+/**
+ * Response for GET /api/library/flaw-comparison (mirrors backend FlawComparisonResponse).
+ *
+ * bullets: always 15 entries ordered by family when below_gate=false;
+ *          empty list when below_gate=true.
+ * analyzed_n: analyzed game count after the current filter set.
+ * analyzed_gate: minimum required (constant = 20); exposed so the frontend
+ *                can render "N of 20" without hardcoding.
+ * below_gate: true when analyzed_n < analyzed_gate — frontend shows CTA (D-10).
+ */
+export interface FlawComparisonResponse {
+  bullets: FlawBullet[];
+  analyzed_n: number;
+  analyzed_gate: number;
+  below_gate: boolean;
+}

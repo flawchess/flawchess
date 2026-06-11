@@ -32,34 +32,52 @@ export const SEV_BLUNDER = 'oklch(0.58 0.19 25)';
 export const SEV_MISTAKE = 'oklch(0.70 0.16 55)';
 export const SEV_INACCURACY = 'oklch(0.82 0.13 95)';
 
+// Severity pill composites — the same oklch hues at 14% (background) and 30%
+// (border) alpha. Shared by the severity count badges (SeverityBadge) and the
+// severity filter toggles (FlawFilterControl) so both read as one colored pill.
+export const SEV_BLUNDER_BG = 'oklch(0.58 0.19 25 / 0.14)';
+export const SEV_MISTAKE_BG = 'oklch(0.70 0.16 55 / 0.14)';
+export const SEV_INACCURACY_BG = 'oklch(0.82 0.13 95 / 0.14)';
+export const SEV_BLUNDER_BORDER = 'oklch(0.58 0.19 25 / 0.30)';
+export const SEV_MISTAKE_BORDER = 'oklch(0.70 0.16 55 / 0.30)';
+export const SEV_INACCURACY_BORDER = 'oklch(0.82 0.13 95 / 0.30)';
+
 // Eval chart area fill and line colors (Phase 109 — EvalChart.tsx).
 // White-ahead region (above midline) = lighter grey; black-ahead region
 // (below midline) = dark grey, mirroring the white/black pieces.
 export const EVAL_CHART_AREA_WHITE_AHEAD = 'oklch(0.78 0 0)';
 export const EVAL_CHART_AREA_BLACK_AHEAD = 'oklch(0.32 0 0)';
 export const EVAL_CHART_LINE = 'oklch(0.82 0 0)';
-// Shared by the dashed 50% midline, the hover crosshair, and the
-// middlegame/endgame phase verticals (one grey for all reference lines).
-export const EVAL_CHART_PHASE_LINE = 'oklch(0.55 0 0 / 0.60)';
-// Muted grey for the vertical "Middlegame" / "Endgame" text labels rendered
-// alongside the phase verticals — a touch lighter than the line so the rotated
-// text stays legible over both the light and dark eval-bar regions.
+// Muted grey for the rotated "Midgame" / "Endgame" text labels centered on the
+// phase boundaries — legible over both the light and dark eval-bar regions.
 export const EVAL_CHART_PHASE_LABEL = 'oklch(0.65 0 0)';
 // White outline drawn around eval-chart flaw markers whose tags match an active
 // flaw-tag filter (mirrors the TagChip active-filter ring, on the chart).
 export const EVAL_MARKER_FILTER_OUTLINE = 'oklch(1 0 0)';
+// Eval-chart scrub cursor: the vertical crosshair line and the active-ply dot.
+// Matches --foreground in forced dark mode, i.e. the same near-white as the
+// scrub slider's `bg-foreground` thumb, so cursor and knob read as one control.
+export const EVAL_CHART_CURSOR = 'oklch(0.985 0 0)';
 
 // Tag families (flaw chip color-by-family, Phase 107)
 export const FAM_TEMPO = 'oklch(0.70 0.17 290)';
 export const FAM_TEMPO_BG = 'oklch(0.70 0.17 290 / 0.15)';
-export const FAM_TEMPO_LOW_CLOCK = 'oklch(0.74 0.16 290)';
-export const FAM_TEMPO_HASTY = 'oklch(0.62 0.15 300)';
-export const FAM_TEMPO_UNRUSHED = 'oklch(0.50 0.13 305)';
-export const FAM_TEMPO_UNMEASURED = 'oklch(0.40 0 0)';
+// FAM_TEMPO_LOW_CLOCK / FAM_TEMPO_HASTY / FAM_TEMPO_UNRUSHED / FAM_TEMPO_UNMEASURED
+// were used by FlawTagDistribution (deleted Phase 115 D-02). Removed to keep knip clean.
 export const FAM_OPPORTUNITY = 'oklch(0.72 0.12 200)';
 export const FAM_OPPORTUNITY_BG = 'oklch(0.72 0.12 200 / 0.15)';
 export const FAM_IMPACT = 'oklch(0.66 0.18 330)';
 export const FAM_IMPACT_BG = 'oklch(0.66 0.18 330 / 0.15)';
+// Three additional families surfaced only in the Flaw-Stats you-vs-opponent
+// comparison grid (Phase 115 UAT): Severity, Phase, Combos. Hues chosen to stay
+// clear of the red/green/blue semantic zone colors (25 / 145 / 260) so a family
+// tint never reads as a danger/success verdict.
+export const FAM_SEVERITY = 'oklch(0.70 0.16 55)'; // amber
+export const FAM_SEVERITY_BG = 'oklch(0.70 0.16 55 / 0.15)';
+export const FAM_PHASE = 'oklch(0.78 0.13 95)'; // gold
+export const FAM_PHASE_BG = 'oklch(0.78 0.13 95 / 0.15)';
+export const FAM_COMBO = 'oklch(0.68 0.14 350)'; // rose
+export const FAM_COMBO_BG = 'oklch(0.68 0.14 350 / 0.15)';
 
 // D-05 active-filter ring — applied to TagChip when its tag matches an active
 // useFlawFilterStore filter. Ring only: no fill, bold, or size change. The ring
@@ -67,10 +85,8 @@ export const FAM_IMPACT_BG = 'oklch(0.66 0.18 330 / 0.15)';
 // classes are constant here; callers combine this with a family color string.
 export const ACTIVE_FILTER_RING_CLASS = 'ring-2 ring-offset-1';
 
-// Phase histogram bar fills (flaw tag distribution, Phase 107)
-export const PHASE_OPENING = 'oklch(0.62 0.06 70)';
-export const PHASE_MIDDLEGAME = 'oklch(0.62 0.10 230)';
-export const PHASE_ENDGAME = 'oklch(0.62 0.12 300)';
+// Phase histogram bar fills (PHASE_OPENING/MIDDLEGAME/ENDGAME) were used by
+// FlawTagDistribution (deleted Phase 115 D-02). Removed to keep knip clean.
 
 // Glass-effect overlay: white highlight fading to transparent
 // Applied as backgroundImage on WDL bar segments for a polished look

@@ -266,3 +266,47 @@ class FlawStatsResponse(BaseModel):
     analyzed_pct: float
     analyzed_n: int
     total_n: int
+
+
+class FlawBullet(BaseModel):
+    """Per-bullet data for one of the 15 flaw-delta metrics (Phase 115, FLAWCMP-01/03)."""
+
+    tag: str
+    delta: (
+        float | None
+    )  # mean per-game delta (per 100 of user's moves); None = both sides zero events
+    ci_low: float | None  # 95% CI lower bound (per 100 moves)
+    ci_high: float | None  # 95% CI upper bound (per 100 moves)
+    # Per-player rates (Phase 115 UAT): mean per-game flaw rate per 100 of the
+    # user's moves, for player and opponent separately. Both opponent and player
+    # counts are normalized by the user's move count per game so that
+    # player_rate - opp_rate == delta exactly (the comparison stays paired).
+    # None for zero-event bullets.
+    player_rate: float | None
+    opp_rate: float | None
+    # Two-sided p-value vs H0: delta == 0, from the same Wald-z that produces the
+    # CI (z = mean / SE, p = erfc(|z| / sqrt(2))). None for zero-event bullets.
+    p_value: float | None
+    player_events: int  # total player-side tag events across analyzed games
+    opp_events: int  # total opponent-side tag events across analyzed games
+    zone_lo: float  # Q1 from FLAW_DELTA_ZONES registry
+    zone_hi: float  # Q3 from FLAW_DELTA_ZONES registry
+    domain: float  # axis half-width from registry (D-04)
+    has_zone: bool = True  # False for future zoneless bullets (FLAWUI-04)
+
+
+class FlawComparisonResponse(BaseModel):
+    """Response for GET /api/library/flaw-comparison (Phase 115, FLAWCMP-01/03).
+
+    bullets: always 15 entries ordered by family (severity → tempo → phase →
+             opportunity → impact → combos) when below_gate=False; empty list
+             when below_gate=True.
+    analyzed_n: analyzed game count after the current filter set.
+    analyzed_gate: minimum required (constant = FLAW_COMPARISON_GATE = 20).
+    below_gate: True when analyzed_n < analyzed_gate — frontend shows CTA (D-10).
+    """
+
+    bullets: list[FlawBullet]
+    analyzed_n: int
+    analyzed_gate: int = 20  # exposed so frontend can render "X of 20" without hardcoding
+    below_gate: bool

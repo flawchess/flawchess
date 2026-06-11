@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_async_session
 from app.models.user import User
 from app.schemas.library import (
+    FlawComparisonResponse,
     FlawStatsResponse,
     GameFlawCard,
     LibraryFlawsResponse,
@@ -150,6 +151,45 @@ async def get_flaw_stats(
     if from_date is not None and to_date is not None and from_date > to_date:
         raise HTTPException(status_code=422, detail="from_date must be <= to_date")
     return await library_service.get_flaw_stats(
+        session,
+        user_id=user.id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
+        flaw_severity=list(severity) if severity else None,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
+        color=color,
+    )
+
+
+@router.get("/flaw-comparison", response_model=FlawComparisonResponse)
+async def get_flaw_comparison(
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+    severity: list[SeverityFilter] | None = Query(default=None),
+    time_control: list[str] | None = Query(default=None),
+    platform: list[str] | None = Query(default=None),
+    from_date: datetime.date | None = Query(default=None),
+    to_date: datetime.date | None = Query(default=None),
+    rated: bool | None = Query(default=None),
+    opponent_type: str = Query(default="human"),
+    opponent_gap_min: int | None = Query(default=None),
+    opponent_gap_max: int | None = Query(default=None),
+    color: str | None = Query(default=None),
+) -> FlawComparisonResponse:
+    """Return the 15-bullet you-vs-opponent comparison for the filtered analyzed set (Phase 115).
+
+    user_id is taken exclusively from the authenticated user — never from a
+    request parameter (IDOR prevention, T-115-01 / T-108-10 pattern).
+    Returns below_gate=True with empty bullets when analyzed_n < 20 (FLAWCMP-05, D-09).
+    """
+    if from_date is not None and to_date is not None and from_date > to_date:
+        raise HTTPException(status_code=422, detail="from_date must be <= to_date")
+    return await library_service.get_flaw_comparison(
         session,
         user_id=user.id,
         time_control=time_control,

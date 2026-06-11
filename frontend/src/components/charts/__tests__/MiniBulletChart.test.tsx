@@ -487,3 +487,169 @@ describe('MiniBulletChart — asymmetric neutral zone (260516-0ax)', () => {
     expect(normalizeOklch(barSuccess?.style.backgroundColor)).toBe(normalizeOklch(ZONE_SUCCESS));
   });
 });
+
+// ─── invertColors prop (Phase 115 D-08) ──────────────────────────────────────
+
+describe('MiniBulletChart — invertColors prop (Phase 115, D-08)', () => {
+  /**
+   * When invertColors=true, the color semantics are reversed for flaw-delta
+   * bullets where NEGATIVE delta = fewer flaws than opponents = better.
+   *
+   * Normal (invertColors=false, default):
+   *   value > absNeutralMax → ZONE_SUCCESS (good = high)
+   *   value >= absNeutralMin → ZONE_NEUTRAL
+   *   value < absNeutralMin → ZONE_DANGER (bad = low)
+   *
+   * Inverted (invertColors=true):
+   *   value > absNeutralMax → ZONE_DANGER (bad = high)
+   *   value >= absNeutralMin → ZONE_NEUTRAL
+   *   value < absNeutralMin → ZONE_SUCCESS (good = low)
+   *
+   * Background zone order also inverts:
+   *   LEFT zone: ZONE_SUCCESS (not ZONE_DANGER)
+   *   CENTER zone: ZONE_NEUTRAL (unchanged)
+   *   RIGHT zone: ZONE_DANGER (not ZONE_SUCCESS)
+   */
+
+  function normalizeOklch(s: string | undefined): string {
+    if (!s) return '';
+    return s.replace(/[\d]+\.?[\d]*/g, (m) => Number.parseFloat(m).toString());
+  }
+
+  function getValueBar(container: Element): HTMLElement | null {
+    return container.querySelector('[data-testid="mini-bullet-value-bar"]') as HTMLElement | null;
+  }
+
+  function zoneDivs(container: Element): readonly Element[] {
+    const chart = container.querySelector('[data-testid="mini-bullet-chart"]');
+    if (!chart) return [];
+    const zoneRow = chart.querySelector(':scope > div.absolute.inset-0.flex');
+    if (!zoneRow) return [];
+    return Array.from(zoneRow.children);
+  }
+
+  // ── Value bar fill color tests ─────────────────────────────────────────────
+
+  it('invertColors=true: value ABOVE neutral band → ZONE_DANGER fill (bad)', () => {
+    // value=0.3 above band(lo=-0.1, hi=0.0) → absNeutralMax=0, value > 0 → ZONE_DANGER
+    const { container } = render(
+      <MiniBulletChart
+        value={0.3}
+        neutralMin={-0.1}
+        neutralMax={0.0}
+        domain={0.5}
+        center={0}
+        invertColors
+      />,
+    );
+    const bar = getValueBar(container);
+    expect(bar).not.toBeNull();
+    expect(normalizeOklch(bar?.style.backgroundColor)).toBe(normalizeOklch(ZONE_DANGER));
+  });
+
+  it('invertColors=true: value BELOW neutral band → ZONE_SUCCESS fill (good)', () => {
+    // value=-0.3 below band(lo=-0.1, hi=0.0) → absNeutralMin=-0.1, value < -0.1 → ZONE_SUCCESS
+    const { container } = render(
+      <MiniBulletChart
+        value={-0.3}
+        neutralMin={-0.1}
+        neutralMax={0.0}
+        domain={0.5}
+        center={0}
+        invertColors
+      />,
+    );
+    const bar = getValueBar(container);
+    expect(bar).not.toBeNull();
+    expect(normalizeOklch(bar?.style.backgroundColor)).toBe(normalizeOklch(ZONE_SUCCESS));
+  });
+
+  it('invertColors=true: value INSIDE neutral band → ZONE_NEUTRAL fill', () => {
+    // value=-0.05 inside band(lo=-0.1, hi=0.0) → ZONE_NEUTRAL
+    const { container } = render(
+      <MiniBulletChart
+        value={-0.05}
+        neutralMin={-0.1}
+        neutralMax={0.0}
+        domain={0.5}
+        center={0}
+        invertColors
+      />,
+    );
+    const bar = getValueBar(container);
+    expect(bar).not.toBeNull();
+    expect(normalizeOklch(bar?.style.backgroundColor)).toBe(normalizeOklch(ZONE_NEUTRAL));
+  });
+
+  // ── Background zone order tests ────────────────────────────────────────────
+
+  it('invertColors=true: background zones are [ZONE_SUCCESS, ZONE_NEUTRAL, ZONE_DANGER]', () => {
+    // With symmetric band (-0.05, +0.05) and domain=0.40, center=0:
+    // Left zone = ZONE_SUCCESS, Center = ZONE_NEUTRAL, Right = ZONE_DANGER
+    const { container } = render(
+      <MiniBulletChart
+        value={0}
+        neutralMin={-0.05}
+        neutralMax={0.05}
+        domain={0.40}
+        center={0}
+        invertColors
+      />,
+    );
+    const [left, center, right] = zoneDivs(container);
+    expect(normalizeOklch((left as HTMLElement | undefined)?.style.backgroundColor)).toBe(normalizeOklch(ZONE_SUCCESS));
+    expect(normalizeOklch((center as HTMLElement | undefined)?.style.backgroundColor)).toBe(normalizeOklch(ZONE_NEUTRAL));
+    expect(normalizeOklch((right as HTMLElement | undefined)?.style.backgroundColor)).toBe(normalizeOklch(ZONE_DANGER));
+  });
+
+  // ── Regression: default (invertColors=false) must be unchanged ─────────────
+
+  it('invertColors=false (default): value ABOVE neutral band → ZONE_SUCCESS fill (original behavior)', () => {
+    // value=0.3 above band(lo=-0.1, hi=0.0) → ZONE_SUCCESS (original behavior)
+    const { container } = render(
+      <MiniBulletChart
+        value={0.3}
+        neutralMin={-0.1}
+        neutralMax={0.0}
+        domain={0.5}
+        center={0}
+      />,
+    );
+    const bar = getValueBar(container);
+    expect(bar).not.toBeNull();
+    expect(normalizeOklch(bar?.style.backgroundColor)).toBe(normalizeOklch(ZONE_SUCCESS));
+  });
+
+  it('invertColors=false (default): value BELOW neutral band → ZONE_DANGER fill (original behavior)', () => {
+    // value=-0.3 below band(lo=-0.1, hi=0.0) → ZONE_DANGER (original behavior)
+    const { container } = render(
+      <MiniBulletChart
+        value={-0.3}
+        neutralMin={-0.1}
+        neutralMax={0.0}
+        domain={0.5}
+        center={0}
+      />,
+    );
+    const bar = getValueBar(container);
+    expect(bar).not.toBeNull();
+    expect(normalizeOklch(bar?.style.backgroundColor)).toBe(normalizeOklch(ZONE_DANGER));
+  });
+
+  it('invertColors=false (default): background zones are [ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS]', () => {
+    // Default: Left=DANGER, Center=NEUTRAL, Right=SUCCESS
+    const { container } = render(
+      <MiniBulletChart
+        value={0}
+        neutralMin={-0.05}
+        neutralMax={0.05}
+        domain={0.40}
+        center={0}
+      />,
+    );
+    const [left, center, right] = zoneDivs(container);
+    expect(normalizeOklch((left as HTMLElement | undefined)?.style.backgroundColor)).toBe(normalizeOklch(ZONE_DANGER));
+    expect(normalizeOklch((center as HTMLElement | undefined)?.style.backgroundColor)).toBe(normalizeOklch(ZONE_NEUTRAL));
+    expect(normalizeOklch((right as HTMLElement | undefined)?.style.backgroundColor)).toBe(normalizeOklch(ZONE_SUCCESS));
+  });
+});

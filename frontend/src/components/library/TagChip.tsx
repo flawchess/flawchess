@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
-import { Clock, Zap, Brain, Target, Clover, TrendingDown, Swords } from 'lucide-react';
+import { Clock, Zap, Brain, Target, Clover, TrendingDown, Swords, ArrowDownUp, BookOpen, Trophy } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -83,11 +83,11 @@ const TAG_ICONS: Record<FlawTag, LucideIcon> = {
   'unrushed': Brain,
   'miss': Target,
   'lucky': Clover,
-  'reversed': Swords,
+  'reversed': ArrowDownUp,
   'squandered': TrendingDown,
-  'opening': Brain,
-  'middlegame': Brain,
-  'endgame': Brain,
+  'opening': BookOpen,
+  'middlegame': Swords,
+  'endgame': Trophy,
 };
 
 // ─── Component ───────────────────────────────────────────────────────────────
