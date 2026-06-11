@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Chess } from 'chess.js';
 import { BookOpen, Calendar, Clock, Equal, ExternalLink, Hash, Minus, Plus } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -203,8 +203,19 @@ export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
     if (next) yieldFocus();
     setHighlight(next);
   };
+  // EvalChart now reports a non-null resting ply at mount (its slider default). We
+  // must NOT yield focus on that initial report — the focus ping must survive until
+  // the user actually scrubs. Skip yieldFocus on the very first call (mount report);
+  // every subsequent call is a real user-driven scrub or hover.
+  const evalChartMountedRef = useRef(false);
   const handleHoverPlyChange = (ply: number | null) => {
-    if (ply != null) yieldFocus();
+    if (ply != null) {
+      if (evalChartMountedRef.current) {
+        yieldFocus(); // user-driven scrub: clear the focus ping
+      } else {
+        evalChartMountedRef.current = true; // first call is the mount report — skip focus-yield
+      }
+    }
     setHoverPly(ply);
   };
   const highlightedPlies = useMemo(() => {
@@ -300,8 +311,7 @@ export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
   );
 
   // HEADER — banded title bar via the shared CardHeader (compact size). rounded-t-md
-  // because the card is overflowVisible (the eval tooltip must escape the border), so
-  // the band's top corners aren't clipped by the shell and have to round themselves.
+  // so the band's top corners match the card's outer border radius.
   // Desktop: single line "■ White (rating) vs □ Black (rating)"; mobile: two stacked
   // lines, no "vs". The CardHeader is always flex, so the responsive switch lives on
   // the two inner blocks rather than on the header element.
@@ -430,18 +440,13 @@ export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
     );
 
   return (
-    // overflowVisible (overriding .charcoal-texture's overflow:hidden) lets the
-    // EvalChart tooltip overlap the card border instead of being clipped at it.
-    // z-30 while hovering: `.charcoal-texture > *` puts every column in a
-    // z-index:1 stacking context, so a later card's column would otherwise paint
-    // over this card's escaping tooltip. Lifting the whole hovered card above its
-    // siblings keeps the tooltip on top of the following card and its divider.
+    // The docked readout and slider live inside the card, so overflowVisible and
+    // the z-30 hover hack (previously needed for the escaping tooltip) are removed.
     <Card
       as="article"
       data-testid={`library-game-card-${game.game_id}`}
       accentColor={BORDER_COLORS[game.user_result]}
-      overflowVisible
-      className={cn('border border-border/20', hoverPly != null && 'z-30')}
+      className="border border-border/20"
     >
       {/* Banded header (desktop single-line, mobile two-line) */}
       {header}
@@ -479,9 +484,10 @@ export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
               highlightedPlies={highlightedPlies}
               outlinedPlies={outlinedPlies}
               focusedPly={focusedPly}
-              // Match the miniboard height (MOBILE_BOARD_SIZE = 130px). Literal
-              // arbitrary value so Tailwind's JIT scanner emits the class.
-              heightClass="h-[130px]"
+              // Chart + 16px slider row = MOBILE_BOARD_SIZE (130px), so the eval
+              // block matches the miniboard height. Literal arbitrary value so
+              // Tailwind's JIT scanner emits the class.
+              heightClass="h-[114px]"
             />
           )}
         {/* Full-width flaw block on mobile */}
@@ -539,9 +545,9 @@ export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
                 highlightedPlies={highlightedPlies}
                 outlinedPlies={outlinedPlies}
                 focusedPly={focusedPly}
-                // Match the miniboard height (DESKTOP_BOARD_SIZE = 132px). Literal
-                // arbitrary value so Tailwind's JIT scanner emits the class.
-                heightClass="h-[132px]"
+                // Chart + 16px slider row = DESKTOP_BOARD_SIZE (132px), so the eval
+                // block matches the miniboard column height exactly.
+                heightClass="h-[116px]"
               />
             ) : (
               <NoAnalysisState gameId={game.game_id} />

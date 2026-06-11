@@ -12,15 +12,27 @@
  * ComposedChart — the established EndgameClockDiffOverTimeChart pattern. This
  * replaces the previously considered <Scatter> approach; recharts 3.8.1 Scatter
  * uses area-based `size` not radius `r`, making pixel-precise sizing unreliable.
+ *
+ * Interaction model: one `activePly` state (hoverPly ?? sliderPly) drives the white
+ * crosshair + active-ply dot, the floating tooltip, the slider thumb, and the parent
+ * miniboard. The native range slider below the chart is the persistent scrub input
+ * (and the only one on touch); chart hover is a transient scrub layered on top.
+ * Mouse-leave reverts activePly to the slider value; at rest the slider defaults to
+ * the last eval'd ply. The tooltip is self-positioned at the active datapoint's x
+ * (flipping sides at the chart's midpoint): vertically centered on the chart while
+ * hover-driven, bottom-aligned just above the thumb while slider-driven. Semi-
+ * transparent so the chart stays readable beneath it; shown only while interacting
+ * (hover or slider focus).
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Area, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from 'recharts';
-import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
+import { useEffect, useMemo, useState } from 'react';
+import { Area, ComposedChart, Line, ReferenceDot, ReferenceLine, XAxis, YAxis } from 'recharts';
+import { ChartContainer } from '@/components/ui/chart';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import {
   EVAL_CHART_AREA_BLACK_AHEAD,
   EVAL_CHART_AREA_WHITE_AHEAD,
+  EVAL_CHART_CURSOR,
   EVAL_CHART_LINE,
   EVAL_CHART_PHASE_LABEL,
   EVAL_CHART_PHASE_LINE,
@@ -46,7 +58,11 @@ interface EvalChartProps {
   phaseTransitions: PhaseTransitions;
   /** SAN mainline (moves[i] = move at ply i) — labels the tooltip for any ply. */
   moves: string[];
-  /** Tailwind height class — 'h-24' (desktop default) or 'h-20' (mobile). */
+  /**
+   * Tailwind height class for the chart area only — 'h-[116px]' (desktop) or
+   * 'h-[114px]' (mobile). Chart height + the 16px (h-4) slider row should equal
+   * the adjacent miniboard size so the eval block lines up with the board.
+   */
   heightClass?: string;
   /**
    * Flip the chart vertically (player perspective). The eval series is always
@@ -58,9 +74,10 @@ interface EvalChartProps {
    */
   flipped?: boolean;
   /**
-   * Fired with the exact hovered ply (null on mouse-leave) so the parent card can
-   * drive its miniboard to that position. No snapping — the crosshair, tooltip,
-   * and board all track the precise hovered ply.
+   * Reports the active scrub ply (from slider or chart hover) to the parent so
+   * the miniboard scrubs in sync. At rest the resting slider ply is reported
+   * (always a number, never null). During chart hover the hovered ply is reported;
+   * on mouse-leave it reverts to the slider value.
    */
   onHoverPlyChange?: (ply: number | null) => void;
   /**
@@ -87,14 +104,7 @@ interface EvalChartProps {
   focusedPly?: number | null;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Map FlawSeverity to its theme color constant. No inline literals. */
-function severityColor(sev: FlawSeverity): string {
-  if (sev === 'blunder') return SEV_BLUNDER;
-  if (sev === 'mistake') return SEV_MISTAKE;
-  return SEV_INACCURACY;
-}
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 /** ES midline — the 50% reference line. */
 const ES_MIDLINE = 0.5;
@@ -128,7 +138,55 @@ const PHASE_LINE_PLY_OFFSET = 1;
 /** Rotated phase-line label geometry (SVG px). */
 const PHASE_LABEL_FONT_SIZE = 10;
 const PHASE_LABEL_X_OFFSET = 4; // px right of the line
-const PHASE_LABEL_TOP_PAD = 4; // px below the chart top
+const PHASE_LABEL_TOP_PAD = 4;  // px below the chart top
+
+/** Mistake/blunder flaw-dot radius. */
+const FLAW_DOT_RADIUS = 4.5;
+
+/** Radius multiplier for an emphasized (hover-highlighted) marker. */
+const HIGHLIGHT_RADIUS_FACTOR = 1.45;
+
+/** Opacity for non-matching markers while a hover highlight is active. */
+const DIMMED_MARKER_OPACITY = 0.2;
+
+/** Hollow-square half-side as a fraction of FLAW_DOT_RADIUS (visually balances the filled circle). */
+const SQUARE_HALF_SIDE_FACTOR = 0.85;
+
+/** White-outline stroke width for filter-matched flaw markers. */
+const FLAW_MARKER_OUTLINE_WIDTH = 1.5;
+
+/** Focus "ping" ring: expands from the dot radius to this radius while fading out. */
+const FOCUS_PULSE_MAX_RADIUS = 13;
+/** Focus-ping stroke width and one-cycle duration (SVG SMIL). */
+const FOCUS_PULSE_STROKE_WIDTH = 2;
+const FOCUS_PULSE_DURATION = '1.4s';
+
+/** Inline glyph size (px) for MarkerGlyph in the tooltip flaw detail. */
+const GLYPH_BOX = 12;
+
+/** Active-ply dot radius — slightly under FLAW_DOT_RADIUS so flaw markers stay dominant. */
+const ACTIVE_DOT_RADIUS = 4;
+
+/** Horizontal gap (px) between the active datapoint and the tooltip box. */
+const TOOLTIP_GAP_PX = 10;
+/** Datapoint x-position (%) past which the tooltip flips to the left side. */
+const TOOLTIP_SIDE_FLIP_PCT = 50;
+
+/**
+ * Slider thumb diameter (px) — MUST match the w-3/h-3 thumb classes on the range
+ * input below. The slider container is widened by this amount (half on each side)
+ * so the thumb center, rather than its edge, spans the chart's full width.
+ */
+const SLIDER_THUMB_PX = 12;
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Map FlawSeverity to its theme color constant. No inline literals. */
+function severityColor(sev: FlawSeverity): string {
+  if (sev === 'blunder') return SEV_BLUNDER;
+  if (sev === 'mistake') return SEV_MISTAKE;
+  return SEV_INACCURACY;
+}
 
 /**
  * `label` render prop for a phase-transition ReferenceLine: vertical text drawn
@@ -178,30 +236,6 @@ function trimToEvalRange(series: EvalPoint[]): EvalPoint[] {
   return series.slice(start, end);
 }
 
-/** Mistake/blunder flaw-dot radius. */
-const FLAW_DOT_RADIUS = 4.5;
-
-/** Radius multiplier for an emphasized (hover-highlighted) marker. */
-const HIGHLIGHT_RADIUS_FACTOR = 1.45;
-
-/** Opacity for non-matching markers while a hover highlight is active. */
-const DIMMED_MARKER_OPACITY = 0.2;
-
-/** Touch movement (px) past which a touch is treated as a drag, not a tap. */
-const TOUCH_SLOP_PX = 10;
-
-/** Hollow-square half-side as a fraction of FLAW_DOT_RADIUS (visually balances the filled circle). */
-const SQUARE_HALF_SIDE_FACTOR = 0.85;
-
-/** White-outline stroke width for filter-matched flaw markers. */
-const FLAW_MARKER_OUTLINE_WIDTH = 1.5;
-
-/** Focus "ping" ring: expands from the dot radius to this radius while fading out. */
-const FOCUS_PULSE_MAX_RADIUS = 13;
-/** Focus-ping stroke width and one-cycle duration (SVG SMIL). */
-const FOCUS_PULSE_STROKE_WIDTH = 2;
-const FOCUS_PULSE_DURATION = '1.4s';
-
 /**
  * Expanding-and-fading "ping" ring behind the focused flaw's marker — the same
  * attention affordance the app uses elsewhere (Tailwind `animate-ping`), expressed
@@ -241,8 +275,8 @@ function focusPulseElement(color: string, cx: number, cy: number, key: string): 
 /**
  * The flaw-marker glyph: filled circle for the player (is_user), hollow square
  * for the opponent — color = severity (D-07). Shared by the chart dot renderer
- * and the tooltip so the two surfaces stay in sync. fill="none" is explicit on
- * the square to avoid SVG's default black fill (Pitfall 6 — omitting the fill
+ * and the tooltip so the two surfaces stay in sync. fill="none" is explicit
+ * on the square to avoid SVG's default black fill (Pitfall 6 — omitting the fill
  * attribute is not the same as transparent).
  */
 function flawDotElement(
@@ -363,18 +397,21 @@ function formatMoveLabel(ply: number, san: string | null): string {
   return ply % 2 === 0 ? `${moveNumber}.${san}` : `${moveNumber}...${san}`;
 }
 
-/** White-perspective eval string for a ply — mate takes priority over cp. */
-function formatEval(point: EvalPoint | undefined): string {
+/**
+ * Bare white-perspective eval value for a ply — mate takes priority over cp.
+ * Returns the bare value without a "Eval:" prefix so callers can compose labels.
+ * Mate-priority and '#'-ending "Checkmate" detection preserved.
+ */
+function formatEvalBare(point: EvalPoint | undefined): string {
   if (point?.eval_mate != null) {
-    // Signed, white-perspective: "Mate in 5#" (White) / "Mate in -6#" (Black).
-    return `Eval: Mate in ${point.eval_mate}#`;
+    return `Mate in ${point.eval_mate}#`;
   }
   if (point?.eval_cp != null) {
     const cpValue = point.eval_cp / 100;
     const sign = cpValue >= 0 ? '+' : '';
-    return `Eval: ${sign}${cpValue.toFixed(1)}`;
+    return `${sign}${cpValue.toFixed(1)}`;
   }
-  return 'Eval: —';
+  return '—';
 }
 
 /** Clock remaining as m:ss (floored), e.g. 179.4 → "2:59". */
@@ -385,8 +422,7 @@ function formatClock(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-/** Inline glyph matching the chart's flaw dot, for the tooltip legend. */
-const GLYPH_BOX = 12;
+/** Inline glyph matching the chart's flaw dot, for the tooltip flaw detail. */
 function MarkerGlyph({ isUser, color }: { isUser: boolean; color: string }): React.ReactElement {
   const c = GLYPH_BOX / 2;
   return (
@@ -402,87 +438,15 @@ function MarkerGlyph({ isUser, color }: { isUser: boolean; color: string }): Rea
   );
 }
 
-/** Flaw detail block (glyph + You/Opponent + severity + tags) for a M/B marker. */
-function FlawTooltipDetail({ marker }: { marker: FlawMarker }): React.ReactElement {
-  const color = severityColor(marker.severity);
-  // Drop game-phase tags (opening/middlegame/endgame) — conveyed by the phase
-  // lines, not the tooltip.
-  const tags = marker.tags.filter((t) => !PHASE_TAGS.has(t));
-  return (
-    <>
-      <div className="flex items-center gap-1.5" style={{ color }}>
-        <MarkerGlyph isUser={marker.is_user} color={color} />
-        <span>
-          {marker.is_user ? 'You' : 'Opponent'} &middot;{' '}
-          {marker.severity.charAt(0).toUpperCase() + marker.severity.slice(1)}
-        </span>
-      </div>
-      {tags.length > 0 && (
-        <ul className="list-disc pl-5 text-muted-foreground">
-          {tags.map((t) => (
-            <li key={t}>{t}</li>
-          ))}
-        </ul>
-      )}
-    </>
-  );
-}
-
-/**
- * Tooltip content render prop. Tracks the exact hovered ply (no snapping): shows
- * that ply's move (PGN notation) + white-perspective eval, plus a You/Opponent
- * glyph + severity + tags when the hovered ply is itself a mistake/blunder.
- * Returns null for plies with no eval (es == null).
- */
-function buildTooltipContent(
-  moves: string[],
-  markerMap: Map<number, FlawMarker>,
-  evalByPly: Map<number, EvalPoint>,
-) {
-  return function TooltipContent({
-    active,
-    payload,
-  }: {
-    active?: boolean;
-    payload?: ReadonlyArray<{ payload?: EvalPoint }>;
-  }): React.ReactElement | null {
-    if (!active || !payload?.length) return null;
-    const point = payload[0]?.payload as EvalPoint | undefined;
-    if (!point || point.ply == null || point.es == null) return null;
-
-    const san = moves[point.ply] ?? null;
-    // A mating move (SAN ends '#') has no engine eval — show "Checkmate" instead
-    // of an empty "Eval: —" so the decisive final ply reads clearly.
-    const evalStr = san?.endsWith('#') ? 'Checkmate' : formatEval(evalByPly.get(point.ply));
-    const moveLabel = formatMoveLabel(point.ply, san);
-    const marker = markerMap.get(point.ply); // M/B only — undefined on clean plies
-
-    return (
-      <ChartTooltipBox>
-        <div className="text-muted-foreground">
-          {moveLabel} &middot; {evalStr}
-        </div>
-        {(point.clock_seconds != null || point.move_seconds != null) && (
-          <div className="text-muted-foreground">
-            {point.clock_seconds != null && <>Clock: {formatClock(point.clock_seconds)}</>}
-            {point.clock_seconds != null && point.move_seconds != null && <> &middot; </>}
-            {point.move_seconds != null && <>Move: {point.move_seconds.toFixed(1)}s</>}
-          </div>
-        )}
-        {marker && <FlawTooltipDetail marker={marker} />}
-      </ChartTooltipBox>
-    );
-  };
-}
-
 // ─── Component ────────────────────────────────────────────────────────────────
 
 /**
  * Expected-score area chart embedded in LibraryGameCard (Phase 109, LIBG-10).
  *
- * Renders at desktop height h-24 (default) or mobile height h-20 when
- * `heightClass="h-20"` is passed. Wraps in a div with data-testid + aria-label
- * for browser automation and accessibility.
+ * Renders the chart at the height specified by `heightClass` (desktop: h-[116px],
+ * mobile: h-[114px]) with a native range scrub slider below it, and a floating
+ * semi-transparent tooltip anchored at the active datapoint while interacting.
+ * The outer wrapper keeps data-testid + aria-label for accessibility.
  */
 export function EvalChart({
   gameId,
@@ -490,175 +454,133 @@ export function EvalChart({
   flawMarkers,
   phaseTransitions,
   moves,
-  heightClass = 'h-24',
+  heightClass = 'h-[116px]',
   flipped = false,
   onHoverPlyChange,
   highlightedPlies,
   outlinedPlies,
   focusedPly,
 }: EvalChartProps) {
-  // evalByPly resolves a ply to its eval string for the tooltip.
-  const mbMarkers = flawMarkers.filter((m) => m.severity !== 'inaccuracy');
-  const evalByPly = new Map(evalSeries.map((p) => [p.ply, p]));
-
   // Tooltip stays mistakes/blunders-only (inaccuracy plies show eval only, no flaw
   // detail). The dot renderer gets the all-severity map so it can reveal inaccuracy
   // dots when the Inaccuracies badge is hovered; it hides them otherwise.
-  const markerMap = new Map(mbMarkers.map((m) => [m.ply, m]));
-  const allMarkerMap = new Map(flawMarkers.map((m) => [m.ply, m]));
+  const mbMarkers = flawMarkers.filter((m) => m.severity !== 'inaccuracy');
+  const evalByPly = useMemo(() => new Map(evalSeries.map((p) => [p.ply, p])), [evalSeries]);
+  const markerMap = useMemo(() => new Map(mbMarkers.map((m) => [m.ply, m])), [mbMarkers]);
+  const allMarkerMap = useMemo(() => new Map(flawMarkers.map((m) => [m.ply, m])), [flawMarkers]);
   const dotRenderer = buildDotRenderer(allMarkerMap, highlightedPlies, outlinedPlies, focusedPly);
-  const tooltipContent = buildTooltipContent(moves, markerMap, evalByPly);
 
   // Chart data trimmed to the eval'd ply range so the fill spans the full width
   // (see trimToEvalRange). Fall back to the raw series if every ply lacks an eval.
-  // MUST be memoized: the component re-renders on every hover move (setHoverPly),
-  // and recharts keys its tooltip/active-hover state on the `data` prop identity —
-  // a fresh array each render resets that state, breaking mouse-leave dismissal and
-  // the touch-drag activeLabel. A stable reference keeps the hover behaviour intact.
+  // MUST be memoized: a fresh array each render resets recharts' internal hover state.
+  // The same trimmed array drives BOTH the chart domain AND the slider min/max bounds.
   const chartSeries = useMemo(() => {
     const trimmed = trimToEvalRange(evalSeries);
     return trimmed.length > 0 ? trimmed : evalSeries;
   }, [evalSeries]);
 
-  // Hover crosshair tracks the EXACT hovered ply (no snapping). We mirror the ply
-  // up to the parent (onHoverPlyChange) so the card's miniboard scrubs in sync,
-  // and draw our own vertical ReferenceLine at that ply (the default tooltip
-  // cursor is disabled below).
+  // Slider bounds derived from the trimmed eval range.
+  const sliderMin = chartSeries[0]?.ply ?? 0;
+  const sliderMax = chartSeries[chartSeries.length - 1]?.ply ?? 0;
+
+  // STATE MODEL: one active-ply source of truth.
+  //   hoverPly — transient, chart-hover-only; null when not hovering.
+  //   sliderPly — persistent; the last explicitly-set slider position.
+  //   activePly — derived as hoverPly ?? sliderPly; drives crosshair, tooltip,
+  //   slider thumb, and parent (hover sweeps the thumb along with it).
+  //
+  // Initialize sliderPly to the last eval'd ply (locked decision 5).
+  const [sliderPly, setSliderPly] = useState<number>(sliderMax);
   const [hoverPly, setHoverPly] = useState<number | null>(null);
-  const updateHoverPly = (ply: number | null) => {
-    setHoverPly(ply);
-    onHoverPlyChange?.(ply);
-  };
 
-  // Mobile sticky-tooltip fix. A touch *drag* emits no synthesized mouse events, so
-  // after the finger lifts a subsequent outside tap never fires the chart's
-  // mouseleave — the path that normally dismisses Recharts' tooltip + our crosshair
-  // (a simple tap works because it *does* synthesize mouse events), leaving the
-  // tooltip up but un-dismissable by an outside tap. We want it to STAY on release
-  // and only clear on an outside tap, so after a real drag we "pin" the tooltip and
-  // arm a document-level outside-pointer listener (below) to dismiss it. Recharts
-  // keeps its tooltip active after the drag, so we leave active uncontrolled
-  // (undefined) and only force it hidden (active={false}) when dismissing.
-  const wrapperRef = useRef<HTMLDivElement>(null);
-  const [suppressTooltip, setSuppressTooltip] = useState(false);
-  const [pinned, setPinned] = useState(false);
-  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
-  const draggedRef = useRef(false);
-
-  // Mouse and touch share this handler. Recharts fires onMouseMove only on
-  // pointer devices, so on touch the crosshair + parent miniboard never updated
-  // (the tooltip kept working because Recharts tracks tooltip state internally,
-  // independent of these callbacks). onTouchMove delivers the same nextState
-  // with activeLabel, so wiring it here syncs the crosshair/miniboard on drag.
-  const handlePointerMove = (state: { activeLabel?: string | number }) => {
-    setSuppressTooltip(false); // any fresh move re-enables the tooltip
-    const raw = state?.activeLabel;
-    updateHoverPly(raw == null ? null : Number(raw));
-  };
-  const handleMouseLeave = () => updateHoverPly(null);
-
-  // Raw touch tracking on the wrapper (Recharts' chart-level handlers don't expose
-  // pixel coordinates). A movement past TOUCH_SLOP_PX counts as a drag.
-  const handleTouchStart = (e: React.TouchEvent): void => {
-    const t = e.touches[0];
-    touchStartRef.current = t ? { x: t.clientX, y: t.clientY } : null;
-    draggedRef.current = false;
-    setPinned(false); // a new touch inside the chart starts a fresh interaction
-    // suppress is left as-is — handlePointerMove re-enables on the first real move,
-    // so a stale (pre-dismiss) Recharts tooltip never flashes before the new ply.
-  };
-  const handleTouchMoveRaw = (e: React.TouchEvent): void => {
-    const start = touchStartRef.current;
-    const t = e.touches[0];
-    if (
-      start &&
-      t &&
-      (Math.abs(t.clientX - start.x) > TOUCH_SLOP_PX ||
-        Math.abs(t.clientY - start.y) > TOUCH_SLOP_PX)
-    ) {
-      draggedRef.current = true;
-    }
-  };
-  const handleTouchEnd = (): void => {
-    // Keep the tooltip up after a drag (do NOT clear). Pin it so the document
-    // listener below can dismiss it on the next tap outside the chart.
-    if (draggedRef.current) setPinned(true);
-    touchStartRef.current = null;
-  };
-
-  // While pinned (tooltip left up after a touch drag), a tap/click anywhere outside
-  // the chart dismisses it — the "tap outside to close" the synthesized-mouse path
-  // can't deliver after a drag. Only armed on mobile (pinned is set by a drag).
+  // Reset sliderPly when the series identity changes (e.g. data swap on a different game).
+  // useEffect runs after render — setState inside triggers a re-render with the new value.
   useEffect(() => {
-    if (!pinned) return;
-    const onOutsidePointerDown = (e: PointerEvent): void => {
-      const node = wrapperRef.current;
-      if (node && e.target instanceof Node && node.contains(e.target)) return; // inside → keep
-      setSuppressTooltip(true); // force Recharts' still-active tooltip hidden
-      setHoverPly(null);
-      onHoverPlyChange?.(null);
-      setPinned(false);
-    };
-    document.addEventListener('pointerdown', onOutsidePointerDown, true);
-    return () => document.removeEventListener('pointerdown', onOutsidePointerDown, true);
-  }, [pinned, onHoverPlyChange]);
+    setSliderPly(sliderMax);
+  }, [sliderMax]);
+
+  const activePly = hoverPly ?? sliderPly;
+
+  // Report activePly to parent on every change — drives the parent's miniboard.
+  useEffect(() => {
+    onHoverPlyChange?.(activePly);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePly]); // intentionally exclude onHoverPlyChange to avoid spurious re-fires
+
+  // Chart mouse handlers: hover sets hoverPly; leave clears it (activePly falls back to sliderPly).
+  const handlePointerMove = (state: { activeLabel?: string | number }) => {
+    const raw = state?.activeLabel;
+    setHoverPly(raw == null ? null : Number(raw));
+  };
+  const handleMouseLeave = () => setHoverPly(null);
+
+  // Slider handler: explicit user scrub sets sliderPly (hoverPly stays null; activePly = sliderPly).
+  const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSliderPly(Number(e.target.value));
+  };
+
+  // Tooltip is interaction-gated: chart hover or slider focus. A focused slider keeps
+  // the tooltip up after a drag (desktop click-away / mobile tap on another control
+  // blurs it); at rest nothing floats over the chart.
+  const [sliderFocused, setSliderFocused] = useState(false);
+  const tooltipVisible = hoverPly != null || sliderFocused;
+
+  // Tooltip content for activePly (original floating-tooltip content: move + eval,
+  // clock + move time, M/B flaw detail — inaccuracy plies show eval only).
+  const activeSan = moves[activePly] ?? null;
+  const activePoint = evalByPly.get(activePly);
+  // A mating move (SAN ends '#') has no engine eval — show "Checkmate" instead.
+  const evalStr = activeSan?.endsWith('#') ? 'Checkmate' : `Eval: ${formatEvalBare(activePoint)}`;
+  const moveLabel = formatMoveLabel(activePly, activeSan);
+  // M/B flaw marker at activePly (undefined on clean or inaccuracy plies).
+  const activeMarker = markerMap.get(activePly);
+  const tooltipTags = activeMarker ? activeMarker.tags.filter((t) => !PHASE_TAGS.has(t)) : [];
+
+  // Active datapoint position as a fraction of the eval'd ply range. Plies in
+  // chartSeries are contiguous and recharts' point scale (zero padding, zero margins)
+  // maps first→0% and last→100% of the chart width, so this percentage matches the
+  // datapoint's x pixel. The slider is widened by one thumb width (see the slider
+  // container below) so the thumb CENTER travels this same 0%–100% chart span —
+  // crosshair, datapoint, and thumb center all share one x mapping.
+  const plyRange = sliderMax - sliderMin;
+  const activeXPct = plyRange > 0 ? ((activePly - sliderMin) / plyRange) * 100 : 50;
+  // The tooltip box flips sides at the midpoint so it never runs off the near edge.
+  // Vertical anchor depends on the input driving the scrub:
+  //   chart hover  → vertically centered on the chart (the box is nearly chart-height;
+  //                  anchoring to the datapoint's y would push it out of the card).
+  //   slider scrub → bottom-aligned to the chart, i.e. floating just above the thumb,
+  //                  so it tracks the cursor/finger like the original hover tooltip.
+  const tooltipOnLeft = activeXPct > TOOLTIP_SIDE_FLIP_PCT;
+  const hoverDriven = hoverPly != null;
 
   return (
     <div
-      ref={wrapperRef}
       data-testid={`eval-chart-${gameId}`}
       aria-label={`Expected score chart for game ${gameId}`}
       role="img"
       // Suppress the UA focus outline recharts shows when its surface / tabIndex=-1
-      // tooltip wrapper takes focus on click (looked like a white border on the chart).
-      //
-      // relative z-10 while hovering: the tooltip escapes the chart viewBox (y=true)
-      // and overlaps the card content stacked below it (the mobile flaw block, which
-      // is later in DOM within the same .charcoal-texture column and would otherwise
-      // paint on top). Lifting the chart's subtree keeps the tooltip readable. The
-      // card itself bumps to z-30 on hover to clear the *following* card (see
-      // LibraryGameCard).
-      className={`w-full [&_:focus]:outline-none [&_:focus-visible]:outline-none${
-        hoverPly != null ? ' relative z-10' : ''
-      }`}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMoveRaw}
-      onTouchEnd={handleTouchEnd}
-      onTouchCancel={handleTouchEnd}
+      // takes focus on click. Tooltip z-lift hack removed (tooltip is gone).
+      className="w-full [&_:focus]:outline-none [&_:focus-visible]:outline-none"
     >
+      {/* Chart area — relative so the self-positioned tooltip anchors to it. */}
+      <div className="relative w-full">
       <ChartContainer
         config={{}}
-        // Clip the recharts surface SVG (not the wrapper) to rounded corners:
-        // !overflow-hidden overrides recharts' inline overflow:visible, and rounds
-        // the fill. This does NOT clip the escape-viewBox tooltip, which lives in a
-        // sibling div outside the surface.
+        // Clip the recharts surface SVG (not the wrapper) to rounded corners.
         className={`w-full ${heightClass} [&_.recharts-surface]:!overflow-hidden [&_.recharts-surface]:rounded-md`}
       >
         <ComposedChart
           data={chartSeries}
-          // Zero margins so the eval-bar fill spans the chart's full height and
-          // width, aligning its top/bottom with the adjacent miniboard.
           margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
           onMouseMove={handlePointerMove}
           onMouseLeave={handleMouseLeave}
-          onTouchMove={handlePointerMove}
         >
-          {/* Hidden axes — compact sparkline mode, no ticks or labels. Default
-              category axis (point scale) maps first/last ply to the edges. */}
+          {/* Hidden axes — compact sparkline mode, no ticks or labels. */}
           <XAxis dataKey="ply" hide />
-          {/* reversed when the player is black: flips the whole chart along the 50%
-              midline so the player's advantage reads as up and their (dark) share
-              fills from the bottom. Areas, markers, crosshair, and phase lines all
-              follow the reversed scale automatically — no data transform needed. */}
+          {/* reversed when the player is black. */}
           <YAxis hide reversed={flipped} domain={[ES_FLOOR - ES_PAD, ES_CEIL + ES_PAD]} />
 
-          {/* Eval bar — two solid regions split by the ES line. The black area
-              fills from the line up to the top edge (baseValue=ES_CEIL+ES_PAD);
-              the grey area fills from the line down to the bottom edge
-              (baseValue=ES_FLOOR-ES_PAD). Extending the baseValues into the
-              ES_PAD headroom keeps both fills full-bleed (so the rounded corners
-              show) while the markers still get ES_PAD of clip-free room at the
-              extremes. Grey is drawn last so it carries the ES stroke line. */}
+          {/* Eval bar — two solid regions split by the ES line. */}
           <Area
             type="monotone"
             dataKey="es"
@@ -685,8 +607,7 @@ export function EvalChart({
             isAnimationActive={false}
           />
 
-          {/* 50% midline — dashed horizontal reference. Uses the phase-line grey
-              so it reads at the same weight as the middlegame/endgame verticals. */}
+          {/* 50% midline — dashed horizontal reference. */}
           <ReferenceLine
             y={ES_MIDLINE}
             stroke={EVAL_CHART_PHASE_LINE}
@@ -695,21 +616,17 @@ export function EvalChart({
             aria-hidden="true"
           />
 
-          {/* Hover crosshair — tracks the exact hovered ply (no snapping). The
-              default tooltip cursor is disabled; this dashed vertical line is
-              drawn at the hovered ply via the real x-axis scale. */}
-          {hoverPly != null && (
-            <ReferenceLine
-              x={hoverPly}
-              stroke={EVAL_CHART_PHASE_LINE}
-              strokeWidth={1}
-              strokeDasharray="3 3"
-              aria-hidden="true"
-            />
-          )}
+          {/* Active crosshair — tracks the unified activePly (hover OR slider).
+              Solid white (same as the slider thumb) so the interactive cursor is
+              visually distinct from the dashed grey reference geometry. */}
+          <ReferenceLine
+            x={activePly}
+            stroke={EVAL_CHART_CURSOR}
+            strokeWidth={1}
+            aria-hidden="true"
+          />
 
-          {/* Phase-transition vertical lines — at most two (D-06).
-              Opening boundary (ply 0) gets no line — implicit start of chart. */}
+          {/* Phase-transition vertical lines (D-06). */}
           {phaseTransitions.middlegame_ply != null && (
             <ReferenceLine
               x={phaseTransitions.middlegame_ply - PHASE_LINE_PLY_OFFSET}
@@ -729,11 +646,7 @@ export function EvalChart({
             />
           )}
 
-          {/*
-            Invisible line overlay — renders flaw dots via custom dot render prop.
-            stroke="none" keeps the line invisible; the dot prop draws the markers.
-            Uses the EndgameClockDiffOverTimeChart hollow/filled circle pattern.
-          */}
+          {/* Invisible line overlay — renders flaw dots via custom dot render prop. */}
           <Line
             type="monotone"
             dataKey="es"
@@ -744,20 +657,123 @@ export function EvalChart({
             isAnimationActive={false}
           />
 
-          {/* Per-ply tooltip showing eval + You/Opponent flaw info.
-              allowEscapeViewBox y=true lets it render above/below the short
-              sparkline instead of covering it (the chart is only h-20/h-24, so
-              an in-viewBox tooltip blankets the whole thing on mobile). */}
-          <ChartTooltip
-            content={tooltipContent}
-            cursor={false}
-            allowEscapeViewBox={{ x: false, y: true }}
-            // Controlled only to force-hide after a touch drag (see suppressTooltip);
-            // undefined otherwise so Recharts keeps its normal hover/tap behavior.
-            active={suppressTooltip ? false : undefined}
-          />
+          {/* Active-ply dot — white highlight where the crosshair meets the ES line.
+              Drawn after the flaw-marker overlay so on a flaw ply it sits inside the
+              (slightly larger) severity dot, reading as a severity-colored ring around
+              the white cursor dot. Skipped on eval-gap plies (no y to anchor to). */}
+          {activePoint?.es != null && (
+            <ReferenceDot
+              x={activePly}
+              y={activePoint.es}
+              r={ACTIVE_DOT_RADIUS}
+              fill={EVAL_CHART_CURSOR}
+              stroke="none"
+              aria-hidden="true"
+            />
+          )}
         </ComposedChart>
       </ChartContainer>
+
+      {/* Floating tooltip — self-positioned at the active datapoint's x, vertically
+          centered on the chart, flipping sides at the midpoint. Semi-transparent so
+          the eval bar stays readable beneath it; pointer-events-none so it never
+          steals the chart's hover. Shown only while interacting (hover / slider focus). */}
+      {tooltipVisible && (
+        <div
+          data-testid={`eval-tooltip-${gameId}`}
+          className={`absolute z-10 pointer-events-none ${hoverDriven ? 'top-1/2' : 'bottom-0'}`}
+          style={{
+            left: `${activeXPct}%`,
+            transform: `translate(${
+              tooltipOnLeft ? `calc(-100% - ${TOOLTIP_GAP_PX}px)` : `${TOOLTIP_GAP_PX}px`
+            }, ${hoverDriven ? '-50%' : '0'})`,
+          }}
+        >
+          <ChartTooltipBox className="bg-background/55 backdrop-blur-[2px] whitespace-nowrap">
+            <div className="text-muted-foreground">
+              {moveLabel} &middot; {evalStr}
+            </div>
+            {(activePoint?.clock_seconds != null || activePoint?.move_seconds != null) && (
+              <div className="text-muted-foreground">
+                {activePoint.clock_seconds != null && <>Clock: {formatClock(activePoint.clock_seconds)}</>}
+                {activePoint.clock_seconds != null && activePoint.move_seconds != null && (
+                  <> &middot; </>
+                )}
+                {activePoint.move_seconds != null && <>Move: {activePoint.move_seconds.toFixed(1)}s</>}
+              </div>
+            )}
+            {activeMarker && (
+              <>
+                <div
+                  className="flex items-center gap-1.5"
+                  style={{ color: severityColor(activeMarker.severity) }}
+                >
+                  <MarkerGlyph
+                    isUser={activeMarker.is_user}
+                    color={severityColor(activeMarker.severity)}
+                  />
+                  <span>
+                    {activeMarker.is_user ? 'You' : 'Opponent'} &middot;{' '}
+                    {activeMarker.severity.charAt(0).toUpperCase() + activeMarker.severity.slice(1)}
+                  </span>
+                </div>
+                {tooltipTags.length > 0 && (
+                  <ul className="list-disc pl-5 text-muted-foreground">
+                    {tooltipTags.map((t) => (
+                      <li key={t}>{t}</li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
+          </ChartTooltipBox>
+        </div>
+      )}
+      </div>
+
+      {/* Scrub slider — widened by one thumb width and shifted half a thumb left so
+          the thumb CENTER (not its edge) travels exactly the chart's 0%–100% width.
+          A native range thumb at min/max has its EDGE flush with the track end, which
+          would put the thumb center half a thumb inside the chart edges and misalign
+          it with the crosshair. The 6px overhang lands in the card's px-4 padding. */}
+      <div
+        className="relative"
+        style={{
+          width: `calc(100% + ${SLIDER_THUMB_PX}px)`,
+          marginLeft: `${-SLIDER_THUMB_PX / 2}px`,
+        }}
+      >
+        <input
+          type="range"
+          min={sliderMin}
+          max={sliderMax}
+          step={1}
+          value={activePly}
+          onChange={handleSliderChange}
+          onFocus={() => setSliderFocused(true)}
+          onBlur={() => setSliderFocused(false)}
+          data-testid={`eval-slider-${gameId}`}
+          aria-label={`Scrub move for game ${gameId}`}
+          className="w-full h-4 appearance-none bg-transparent cursor-pointer
+            [&::-webkit-slider-runnable-track]:h-1.5
+            [&::-webkit-slider-runnable-track]:rounded-full
+            [&::-webkit-slider-runnable-track]:bg-border/40
+            [&::-moz-range-track]:h-1.5
+            [&::-moz-range-track]:rounded-full
+            [&::-moz-range-track]:bg-border/40
+            [&::-webkit-slider-thumb]:appearance-none
+            [&::-webkit-slider-thumb]:w-3
+            [&::-webkit-slider-thumb]:h-3
+            [&::-webkit-slider-thumb]:rounded-full
+            [&::-webkit-slider-thumb]:bg-foreground
+            [&::-webkit-slider-thumb]:mt-[-3px]
+            [&::-moz-range-thumb]:w-3
+            [&::-moz-range-thumb]:h-3
+            [&::-moz-range-thumb]:rounded-full
+            [&::-moz-range-thumb]:bg-foreground
+            [&::-moz-range-thumb]:border-0"
+        />
+      </div>
     </div>
   );
 }

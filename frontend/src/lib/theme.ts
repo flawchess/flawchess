@@ -58,6 +58,10 @@ export const EVAL_CHART_PHASE_LABEL = 'oklch(0.65 0 0)';
 // White outline drawn around eval-chart flaw markers whose tags match an active
 // flaw-tag filter (mirrors the TagChip active-filter ring, on the chart).
 export const EVAL_MARKER_FILTER_OUTLINE = 'oklch(1 0 0)';
+// Eval-chart scrub cursor: the vertical crosshair line and the active-ply dot.
+// Matches --foreground in forced dark mode, i.e. the same near-white as the
+// scrub slider's `bg-foreground` thumb, so cursor and knob read as one control.
+export const EVAL_CHART_CURSOR = 'oklch(0.985 0 0)';
 
 // Tag families (flaw chip color-by-family, Phase 107)
 export const FAM_TEMPO = 'oklch(0.70 0.17 290)';
