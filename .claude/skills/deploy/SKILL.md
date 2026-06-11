@@ -1,6 +1,6 @@
 ---
 name: deploy
-description: Deploy FlawChess to production end-to-end without interruption — open a PR from main to production, squash-merge it immediately (CI does not run on PRs), run bin/deploy.sh (which runs the full CI matrix on the production branch), fix anything CI complains about (Dependabot CVEs, ruff/ty drift, merge conflicts, branch divergence, frontend lint), and monitor it through to a verified server SHA on flawchess.com. Use this skill whenever the user asks to deploy, ship, release, push to prod, promote main to production, cut a release, or run bin/deploy.sh. Trigger on phrases like "deploy", "deploy to prod", "ship it", "release", "promote main", "push to production", "cut a release", "go live", or any request to get current main running on flawchess.com. This is a SET-AND-FORGET flow: stream status as milestones complete, but do not pause for user approval at any stage — only halt when a situation is genuinely ambiguous (dirty working tree that might be in-progress work, repeated unrecoverable CI failure after multiple fix attempts, server SHA mismatch after deploy) or destructive (force-push, branch deletion, manual SSH deploy).
+description: Deploy FlawChess to production end-to-end without interruption — open a PR from main to production, fix anything CI complains about (Dependabot CVEs, ruff/ty drift, merge conflicts, branch divergence, frontend lint), squash-merge once green, run bin/deploy.sh, monitor it through to a verified server SHA on flawchess.com. Use this skill whenever the user asks to deploy, ship, release, push to prod, promote main to production, cut a release, or run bin/deploy.sh. Trigger on phrases like "deploy", "deploy to prod", "ship it", "release", "promote main", "push to production", "cut a release", "go live", or any request to get current main running on flawchess.com. This is a SET-AND-FORGET flow: stream status as milestones complete, but do not pause for user approval at any stage — only halt when a situation is genuinely ambiguous (dirty working tree that might be in-progress work, repeated unrecoverable CI failure after multiple fix attempts, server SHA mismatch after deploy) or destructive (force-push, branch deletion, manual SSH deploy).
 ---
 
 # Deploy to Production
@@ -22,7 +22,7 @@ FlawChess uses GitLab Flow:
 - `production` = exactly what's deployed
 - A deploy = `main → production` PR, squash-merged, then `bin/deploy.sh` (which deploys the `production` branch via GitHub Actions).
 
-The full pipeline is: **preflight → open PR → squash-merge (no PR checks — CI does not run on PRs) → announce → bin/deploy.sh (this is where CI runs, on `production`) → monitor → verify**.
+The full pipeline is: **preflight → open PR → CI green (fix anything that fails; "no checks reported" = conflicted PR, see Step 3) → squash-merge → announce → bin/deploy.sh → monitor → verify**.
 
 This is **set-and-forget**: run the whole pipeline end-to-end without asking for approval at intermediate steps. CI babysitting, Dependabot bumps, formatter fixes, ty errors, merge conflicts, branch divergence — handle autonomously, stream a one-line status update at each milestone, and keep moving. Stop only for situations described under *When to halt* below. Never wait for a "go ahead" between merge and deploy — that defeats the purpose of the skill.
 
@@ -81,19 +81,34 @@ EOF
 
 Capture the PR number — you'll need it for the merge step.
 
-## Step 3: No CI on PRs — merge directly
+## Step 3: Watch CI, fix anything red
 
-**CI does NOT run on pull requests in this repo.** There are no PR checks on the release PR; `gh pr checks <PR#>` reports "no checks reported" and `--watch` would wait forever. Do not wait for, poll, or try to trigger PR checks.
+```bash
+gh pr checks <PR#> --watch
+```
 
-The full CI matrix runs later, when `bin/deploy.sh` dispatches the workflow on the `production` branch (Step 6). That run is the real gate — a red run there blocks the deploy. The local gates from Step 1 are what keep that run green.
+**Gotcha (cost a hung deploy on 2026-06-11): if this reports "no checks reported", the PR is almost certainly unmergeable.** CI triggers on `pull_request`, and GitHub cannot build the `refs/pull/N/merge` ref for a conflicted PR — so the workflow never starts and there is nothing to wait for. Check `gh pr view <PR#> --json mergeable`. The usual cause is a missing forward-port of the previous release (production's last squash commit not reachable from main). Fix:
 
-If CI fails during Step 6, fix on `main` and restart the flow from Step 2 (new release PR with the fix included), or see `references/ci-fixes.md` for the common failure modes (Dependabot vulnerabilities, ruff/ty drift, frontend test flakes, etc.).
+```bash
+git merge -s ours origin/production -m "chore(release): forward-port production merge commit (keep main's tree)"
+git push origin main
+```
+
+The push resolves the conflict and the `pull_request` check starts immediately. Do NOT wait in a polling loop on a conflicted PR.
+
+When checks complete, if anything is failing, diagnose and fix. **Do not wake the user for this** — that's the whole point of this skill running autonomously through CI. See `references/ci-fixes.md` for the common failure modes (Dependabot vulnerabilities, ruff/ty drift, frontend test flakes, etc.) and how to resolve each.
+
+For every fix:
+1. Apply the fix on `main` (not on a side branch — the release PR tracks `main`).
+2. Commit with a focused prefix: `fix(deps):`, `chore(ci):`, `style:`, etc.
+3. `git push origin main` — this updates the open PR automatically.
+4. `gh pr checks <PR#> --watch` again.
 
 If you've tried 2-3 distinct fixes for the same failure and it's still red, stop and report what you've tried. Don't churn indefinitely.
 
 ## Step 4: Squash-merge
 
-Immediately after opening the PR (no checks to wait for):
+Once all checks are green:
 
 ```bash
 gh pr merge <PR#> --squash --delete-branch=false
