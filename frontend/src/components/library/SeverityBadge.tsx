@@ -38,6 +38,13 @@ const SEV_BORDER_COLORS: Record<FlawSeverity, string> = {
   inaccuracy: SEV_INACCURACY_BORDER,
 };
 
+// Hover/focus highlight (mirrors TagChip): the SEV_*_BG composites are translucent
+// (alpha 0.14), so a plain brightness filter barely registers on them. While the
+// badge is the active pointer/focus target we bump the fill to a denser alpha (and
+// brighten the font/border via a filter) so it clearly reads as highlighted for as
+// long as it has focus. All three SEV_*_BG strings end in `/ 0.14)`.
+const HIGHLIGHT_BG = (bg: string): string => bg.replace('/ 0.14)', '/ 0.3)');
+
 // Full (plural) label text per severity — used with a leading count (Games card)
 const SEVERITY_LABELS: Record<FlawSeverity, string> = {
   blunder: 'Blunders',
@@ -100,26 +107,44 @@ export function SeverityBadge({
     flawFilter.severity.length === 1 &&
     flawFilter.severity.includes(severity);
 
+  // Brighten the badge while it is hovered or focused (tap-focus on mobile), held
+  // for as long as it has focus.
+  const [highlighted, setHighlighted] = React.useState(false);
+
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 whitespace-nowrap',
+        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 whitespace-nowrap transition-all hover:-translate-y-px',
         isActive && ACTIVE_FILTER_RING_CLASS,
         className,
       )}
       style={{
         color: SEV_COLORS[severity],
-        backgroundColor: SEV_BG_COLORS[severity],
+        backgroundColor: highlighted ? HIGHLIGHT_BG(SEV_BG_COLORS[severity]) : SEV_BG_COLORS[severity],
         borderColor: SEV_BORDER_COLORS[severity],
+        // Brighten font/border while hovered or focused.
+        filter: highlighted ? 'brightness(1.2)' : undefined,
         // Ring color matches the severity color for active-filter emphasis.
         ...(isActive ? ({ '--tw-ring-color': SEV_COLORS[severity] } as React.CSSProperties) : {}),
       }}
       aria-label={showCount ? `${count} ${severity}s` : SEVERITY_LABELS_SINGULAR[severity]}
       data-testid={`severity-${severity}-${gameId}`}
-      onMouseEnter={onHover ? () => onHover(true) : undefined}
-      onMouseLeave={onHover ? () => onHover(false) : undefined}
-      onFocus={onHover ? () => onHover(true) : undefined}
-      onBlur={onHover ? () => onHover(false) : undefined}
+      onMouseEnter={() => {
+        onHover?.(true);
+        setHighlighted(true);
+      }}
+      onMouseLeave={() => {
+        onHover?.(false);
+        setHighlighted(false);
+      }}
+      onFocus={() => {
+        onHover?.(true);
+        setHighlighted(true);
+      }}
+      onBlur={() => {
+        onHover?.(false);
+        setHighlighted(false);
+      }}
     >
       {showCount && <span className="text-base font-bold">{count}</span>}
       <span className="text-sm font-bold">
