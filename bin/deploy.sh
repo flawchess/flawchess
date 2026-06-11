@@ -76,3 +76,35 @@ if [ "$SERVER_SHA" != "$TARGET_SHA" ]; then
   exit 1
 fi
 echo "Production is at $(ssh flawchess "cd /opt/flawchess && git log -1 --format='%h %s'")"
+
+# Forward-port: record the release squash commit as merged into main so the
+# NEXT release PR doesn't conflict. Without this, GitHub can't even start the
+# pull_request CI run on the next release PR ("no checks reported"), because a
+# conflicted PR has no buildable merge ref. See CLAUDE.md § Version Control.
+#
+# `-s ours` keeps main's tree byte-for-byte and only records ancestry. That is
+# only unconditionally safe when main's tree is IDENTICAL to production's —
+# the normal case when deploying right after merging the release PR. If the
+# trees differ (main moved ahead, or a hotfix landed on production that main
+# doesn't have), an automatic `-s ours` could silently bury real differences,
+# so we skip and tell the operator what to verify and run.
+echo ""
+echo "Forward-porting ${DEPLOY_BRANCH} merge commit into main..."
+git fetch origin main --quiet
+if git merge-base --is-ancestor "origin/${DEPLOY_BRANCH}" origin/main; then
+  echo "  already reconciled (${DEPLOY_BRANCH} is an ancestor of main)."
+elif [ "$(git rev-parse "origin/${DEPLOY_BRANCH}^{tree}")" != "$(git rev-parse "origin/main^{tree}")" ]; then
+  echo "  SKIPPED: main and ${DEPLOY_BRANCH} trees differ (main moved ahead, or a"
+  echo "  hotfix landed on ${DEPLOY_BRANCH} that main lacks). Verify ${DEPLOY_BRANCH}"
+  echo "  has no unique code, then run on a clean main checkout:"
+  echo "    git merge -s ours origin/${DEPLOY_BRANCH} && git push origin main"
+elif [ "$(git rev-parse --abbrev-ref HEAD)" != "main" ] || [ -n "$(git status --porcelain)" ]; then
+  echo "  SKIPPED: need a clean working tree on main. Run manually:"
+  echo "    git merge -s ours origin/${DEPLOY_BRANCH} && git push origin main"
+else
+  git pull --ff-only --quiet origin main
+  git merge -s ours "origin/${DEPLOY_BRANCH}" \
+    -m "chore(release): forward-port ${DEPLOY_BRANCH} merge commit (keep main's tree)"
+  git push origin main
+  echo "  forward-port pushed to main."
+fi
