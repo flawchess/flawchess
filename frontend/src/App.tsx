@@ -561,6 +561,13 @@ function AppRoutes() {
     queryClient.invalidateQueries({ queryKey: ['games'] });
     queryClient.invalidateQueries({ queryKey: ['gameCount'] });
     queryClient.invalidateQueries({ queryKey: ['userProfile'] });
+    // Bug fix (quick 260611): the Library tab queries use 5-minute staleTime
+    // with refetchOnWindowFocus disabled, so without invalidation newly
+    // imported games only appeared after a hard page reload.
+    queryClient.invalidateQueries({ queryKey: ['library-games'] });
+    queryClient.invalidateQueries({ queryKey: ['library-game'] });
+    queryClient.invalidateQueries({ queryKey: ['library-flaws'] });
+    queryClient.invalidateQueries({ queryKey: ['library-flaw-stats'] });
     // Bug fix (Phase 94.1-11): the percentile background tasks (Stage A on
     // import-complete, Stage B on eval-drain) write to user_benchmark_percentiles
     // asynchronously after the job completes. Without invalidating endgameOverview

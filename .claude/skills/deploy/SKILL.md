@@ -22,7 +22,7 @@ FlawChess uses GitLab Flow:
 - `production` = exactly what's deployed
 - A deploy = `main → production` PR, squash-merged, then `bin/deploy.sh` (which deploys the `production` branch via GitHub Actions).
 
-The full pipeline is: **preflight → open PR → CI green (fix anything that fails) → squash-merge → announce → bin/deploy.sh → monitor → verify**.
+The full pipeline is: **preflight → open PR → CI green (fix anything that fails; "no checks reported" = conflicted PR, see Step 3) → squash-merge → announce → bin/deploy.sh → monitor → verify**.
 
 This is **set-and-forget**: run the whole pipeline end-to-end without asking for approval at intermediate steps. CI babysitting, Dependabot bumps, formatter fixes, ty errors, merge conflicts, branch divergence — handle autonomously, stream a one-line status update at each milestone, and keep moving. Stop only for situations described under *When to halt* below. Never wait for a "go ahead" between merge and deploy — that defeats the purpose of the skill.
 
@@ -86,6 +86,15 @@ Capture the PR number — you'll need it for the merge step.
 ```bash
 gh pr checks <PR#> --watch
 ```
+
+**Gotcha (cost a hung deploy on 2026-06-11): if this reports "no checks reported", the PR is almost certainly unmergeable.** CI triggers on `pull_request`, and GitHub cannot build the `refs/pull/N/merge` ref for a conflicted PR — so the workflow never starts and there is nothing to wait for. Check `gh pr view <PR#> --json mergeable`. The usual cause is a missing forward-port of the previous release (production's last squash commit not reachable from main). Fix:
+
+```bash
+git merge -s ours origin/production -m "chore(release): forward-port production merge commit (keep main's tree)"
+git push origin main
+```
+
+The push resolves the conflict and the `pull_request` check starts immediately. Do NOT wait in a polling loop on a conflicted PR.
 
 When checks complete, if anything is failing, diagnose and fix. **Do not wake the user for this** — that's the whole point of this skill running autonomously through CI. See `references/ci-fixes.md` for the common failure modes (Dependabot vulnerabilities, ruff/ty drift, frontend test flakes, etc.) and how to resolve each.
 

@@ -257,6 +257,12 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
       queryClient.invalidateQueries({ queryKey: ['games'] });
       queryClient.invalidateQueries({ queryKey: ['gameCount'] });
       queryClient.invalidateQueries({ queryKey: ['userProfile'] });
+      // Bug fix (quick 260611): Library queries cache for 5 minutes — drop
+      // them so the Games/Flaws tabs empty out immediately after delete-all.
+      queryClient.invalidateQueries({ queryKey: ['library-games'] });
+      queryClient.invalidateQueries({ queryKey: ['library-game'] });
+      queryClient.invalidateQueries({ queryKey: ['library-flaws'] });
+      queryClient.invalidateQueries({ queryKey: ['library-flaw-stats'] });
       // Bug fix (Phase 94.1-11): delete-all-games leaves the percentile rows
       // until the next import, but the endgame overview must drop the chip
       // immediately. Invalidate so the FE refetches and renders the empty state.
