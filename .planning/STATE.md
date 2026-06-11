@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.25
 milestone_name: Flaw-Stats Opponent Comparison
 status: verifying
-last_updated: "2026-06-10T20:45:38.557Z"
-last_activity: 2026-06-10
+last_updated: "2026-06-11T17:03:07.431Z"
+last_activity: 2026-06-11
 progress:
   total_phases: 3
-  completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
-  percent: 67
+  completed_phases: 3
+  total_plans: 6
+  completed_plans: 6
+  percent: 100
 ---
 
 # Project State: FlawChess
@@ -20,7 +20,7 @@ progress:
 Phase: 115
 Plan: Not started
 Status: Phase complete — ready for verification
-Last activity: 2026-06-10 - Completed quick task 260610-vru: Library card layout polish
+Last activity: 2026-06-11
 
 ## Project Reference
 
@@ -321,6 +321,7 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 | Phase 113-opponent-flaw-materialization P03 | 10 | - tasks | - files |
 | Phase 114.1 P01 | 8m | 4 tasks | 12 files |
 | Phase 114.1 P02 | 14min | 4 tasks | 11 files |
+| Phase 115 P01 | 14 | 3 tasks | 6 files |
 
 ## Decisions
 

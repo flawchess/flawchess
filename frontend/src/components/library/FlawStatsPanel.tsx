@@ -1,9 +1,10 @@
-import { useState } from 'react';
 import { LoadError } from '@/components/ui/load-error';
 import { FlawStatsBand } from './FlawStatsBand';
 import { FlawTrendChart } from './FlawTrendChart';
-import { FlawTagDistribution } from './FlawTagDistribution';
+import { FlawComparisonGrid } from './FlawComparisonGrid';
 import type { FlawStatsResponse } from '@/types/library';
+import type { FilterState } from '@/components/filters/FilterPanel';
+import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -12,61 +13,19 @@ function formatAnalyzedPct(pct: number): string {
   return String(Math.round(pct));
 }
 
-// ─── Normalization toggle ─────────────────────────────────────────────────────
-
-type NormalizationMode = 'per_game' | 'per_100_moves';
-
-interface NormToggleProps {
-  value: NormalizationMode;
-  onChange: (v: NormalizationMode) => void;
-}
-
-function NormToggle({ value, onChange }: NormToggleProps) {
-  return (
-    <div
-      className="inline-flex items-center rounded-full border border-border text-sm font-bold overflow-hidden shrink-0"
-      data-testid="flaw-stats-norm-toggle"
-    >
-      <button
-        type="button"
-        className="px-3 py-1 transition-colors"
-        style={
-          value === 'per_game'
-            ? { background: 'var(--brand-brown)', color: '#fff' }
-            : { background: 'transparent', color: 'var(--color-text-muted)' }
-        }
-        aria-pressed={value === 'per_game'}
-        data-testid="flaw-stats-toggle-game"
-        onClick={() => onChange('per_game')}
-      >
-        per game
-      </button>
-      <button
-        type="button"
-        className="px-3 py-1 transition-colors"
-        style={
-          value === 'per_100_moves'
-            ? { background: 'var(--brand-brown)', color: '#fff' }
-            : { background: 'transparent', color: 'var(--color-text-muted)' }
-        }
-        aria-pressed={value === 'per_100_moves'}
-        data-testid="flaw-stats-toggle-100"
-        onClick={() => onChange('per_100_moves')}
-      >
-        per 100 moves
-      </button>
-    </div>
-  );
-}
-
 // ─── Denominator pill ─────────────────────────────────────────────────────────
 
-interface DenominatorPillProps {
+interface FlawDenominatorPillProps {
   analyzedPct: number;
   analyzedN: number;
 }
 
-function DenominatorPill({ analyzedPct, analyzedN }: DenominatorPillProps) {
+/**
+ * Analyzed-coverage pill ("📊 31% analyzed · N = 124"). Rendered by the page
+ * beside the "Flaw Statistics" section heading (Phase 115 UAT — the panel no
+ * longer owns its own header row).
+ */
+export function FlawDenominatorPill({ analyzedPct, analyzedN }: FlawDenominatorPillProps) {
   return (
     <div
       className="ml-auto inline-flex items-center gap-1 rounded-full border border-border px-3 py-1 text-sm font-bold shrink-0"
@@ -98,16 +57,24 @@ interface FlawStatsPanelProps {
   stats: FlawStatsResponse | undefined;
   isLoading: boolean;
   isError: boolean;
+  /** Shared filter state — passed down to FlawComparisonGrid (Zone 3). */
+  filters: FilterState;
+  /** Flaw filter state — passed down to FlawComparisonGrid (Zone 3). */
+  flawFilter: FlawFilterState;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
 /**
- * Flaw-Stats panel shell (UI-SPEC §"Flaw-Stats Panel" and PATTERNS.md §FlawStatsPanel).
+ * Flaw-Stats panel content (UI-SPEC §"Flaw-Stats Panel").
  *
- * Composes FlawStatsBand (Zone 1) + FlawTrendChart (Zone 2) + FlawTagDistribution
- * (Zone 3). The per-game/per-100 normalization toggle is local state — it drives only
- * FlawStatsBand with no re-fetch.
+ * Composes FlawStatsBand (Zone 1) + FlawTrendChart (Zone 2) + FlawComparisonGrid
+ * (Zone 3). The Band is fixed to per-100-moves (Phase 115 D-02). The section
+ * heading and the analyzed-coverage pill (FlawDenominatorPill) are rendered by
+ * the host page (GlobalStats) — this panel is body content only (Phase 115 UAT).
+ *
+ * Zone 3 (FlawComparisonGrid) self-fetches and handles its own loading/error/gate
+ * states — the panel's isLoading/isError chain gates only Zones 1–2.
  *
  * States:
  * - isError: shows CLAUDE.md-mandated error copy (never falls through to empty state).
@@ -115,36 +82,23 @@ interface FlawStatsPanelProps {
  * - analyzed_n === 0: empty-analyzed-set state per UI-SPEC.
  * - Normal: full panel content.
  *
- * Data-fetching (useLibraryFlawStats) lives in GlobalStats (Stats tab, quick-260606-glq).
+ * Data-fetching (useLibraryFlawStats) lives in GlobalStats (Stats tab).
  */
-export function FlawStatsPanel({ stats, isLoading, isError }: FlawStatsPanelProps) {
-  const [normalization, setNormalization] = useState<NormalizationMode>('per_game');
-
+export function FlawStatsPanel({
+  stats,
+  isLoading,
+  isError,
+  filters,
+  flawFilter,
+}: FlawStatsPanelProps) {
   return (
-    <section
-      className="border border-border rounded-lg p-4"
-      style={{ background: 'var(--color-surface)' }}
-      aria-label="Flaw statistics"
-      data-testid="flaw-stats-panel"
-    >
-      {/* Panel header row */}
-      <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-lg font-bold font-brand">Flaw-Stats</h2>
-        <NormToggle value={normalization} onChange={setNormalization} />
-        {stats !== undefined && (
-          <DenominatorPill
-            analyzedPct={stats.analyzed_pct}
-            analyzedN={stats.analyzed_n}
-          />
-        )}
-      </div>
-
+    <div className="mt-3" aria-label="Flaw statistics" data-testid="flaw-stats-panel">
       {/* Error state — mandatory CLAUDE.md isError copy */}
-      {isError && <LoadError resource="flaw statistics" className="mt-4" />}
+      {isError && <LoadError resource="flaw statistics" />}
 
       {/* Loading state */}
       {!isError && isLoading && (
-        <div className="mt-4 space-y-3 animate-pulse">
+        <div className="space-y-3 animate-pulse">
           <div className="flex gap-2">
             {[...Array(3)].map((_, i) => (
               <div
@@ -163,37 +117,31 @@ export function FlawStatsPanel({ stats, isLoading, isError }: FlawStatsPanelProp
       {!isError && !isLoading && stats !== undefined && (() => {
         const analyzedEmpty = stats.analyzed_n === 0;
 
-        // Compute totalMbFlaws from per_severity_counts (M+B only, not inaccuracy).
-        const totalMbFlaws = stats.per_severity_counts.mistake + stats.per_severity_counts.blunder;
-
         // Window size from first trend point (all points share the same window_size).
         const firstPoint = stats.trend[0];
         const windowSize = firstPoint !== undefined ? firstPoint.window_size : 20;
 
         return (
           <>
-            {/* Zone 1: Severity-rate band */}
+            {/* Zone 1: Severity-rate band — fixed to per-100-moves (D-02) */}
             <FlawStatsBand
               rates={stats.rates}
-              normalization={normalization}
               analyzedEmpty={analyzedEmpty}
             />
 
-            {/* Zone 2: Blunders/game trend */}
+            {/* Zone 2: Blunders/game trend — comparison-free (FLAWUI-05) */}
             <FlawTrendChart
               trend={analyzedEmpty ? [] : stats.trend}
               windowSize={windowSize}
             />
 
-            {/* Zone 3: Tag distribution */}
-            <FlawTagDistribution
-              tagDistribution={stats.tag_distribution}
-              totalMbFlaws={totalMbFlaws}
-              analyzedEmpty={analyzedEmpty}
-            />
+            {/* Zone 3: Flaw comparison grid — self-fetches, handles own gate/loading/error */}
+            <div className="mt-6">
+              <FlawComparisonGrid filters={filters} flawFilter={flawFilter} />
+            </div>
           </>
         );
       })()}
-    </section>
+    </div>
   );
 }

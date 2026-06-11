@@ -11,7 +11,7 @@ import { useFilterStore } from '@/hooks/useFilterStore';
 import { useGlobalStats, useRatingHistory } from '@/hooks/useStats';
 import { useLibraryFlawStats } from '@/hooks/useLibrary';
 import { DEFAULT_FLAW_FILTER } from '@/hooks/useFlawFilterStore';
-import { FlawStatsPanel } from '@/components/library/FlawStatsPanel';
+import { FlawStatsPanel, FlawDenominatorPill } from '@/components/library/FlawStatsPanel';
 import { GlobalStatsCharts } from '@/components/stats/GlobalStatsCharts';
 import { EvalCoverageHeader } from '@/components/EvalCoverageHeader';
 import { RatingChart } from '@/components/stats/RatingChart';
@@ -93,50 +93,80 @@ export function GlobalStatsPage() {
   const content = isLoading ? (
     <div className="text-muted-foreground">Loading...</div>
   ) : (
-    <div className="space-y-6">
-      {/* Chess.com Rating section */}
-      {(selectedPlatforms === null || selectedPlatforms.includes('chess.com')) && (
-        <Card as="section" data-testid="rating-section-chess-com">
-          <CardHeader data-testid="rating-chess-com-header">
-            Chess.com Rating
-            <InfoPopover ariaLabel="Chess.com rating info" testId="rating-chess-com-info" side="top">
-              Your Chess.com rating over time by time control. Granularity adapts automatically: daily for shorter spans, weekly or monthly for longer ones.
-            </InfoPopover>
-          </CardHeader>
-          <CardBody>
-            <RatingChart data={ratingData?.chess_com ?? []} platform="Chess.com" enabledTimeControls={filters.timeControls} />
-          </CardBody>
-        </Card>
+    <div className="space-y-8">
+      {/* ── Flaw Statistics: Blunders & Mistakes (top of page, UAT) ── */}
+      <section data-testid="flaw-stats-section">
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="text-lg font-semibold text-foreground mt-2">
+            Flaw Statistics: Blunders &amp; Mistakes
+          </h2>
+          {flawStatsData !== undefined && (
+            <FlawDenominatorPill
+              analyzedPct={flawStatsData.analyzed_pct}
+              analyzedN={flawStatsData.analyzed_n}
+            />
+          )}
+        </div>
+        {/* Shared filters, empty severity (severity is scoped to Games tab) */}
+        <FlawStatsPanel
+          stats={flawStatsData}
+          isLoading={flawStatsLoading}
+          isError={flawStatsError}
+          filters={filters}
+          flawFilter={DEFAULT_FLAW_FILTER}
+        />
+      </section>
+
+      {/* ── ELO Ratings ── */}
+      {(selectedPlatforms === null ||
+        selectedPlatforms.includes('chess.com') ||
+        selectedPlatforms.includes('lichess')) && (
+        <section data-testid="elo-ratings-section">
+          <h2 className="text-lg font-semibold text-foreground mt-2">ELO Ratings</h2>
+          <div className="space-y-8 mt-3">
+            {(selectedPlatforms === null || selectedPlatforms.includes('chess.com')) && (
+              <Card as="section" data-testid="rating-section-chess-com">
+                <CardHeader data-testid="rating-chess-com-header">
+                  Chess.com Rating
+                  <InfoPopover ariaLabel="Chess.com rating info" testId="rating-chess-com-info" side="top">
+                    Your Chess.com rating over time by time control. Granularity adapts automatically: daily for shorter spans, weekly or monthly for longer ones.
+                  </InfoPopover>
+                </CardHeader>
+                <CardBody>
+                  <RatingChart data={ratingData?.chess_com ?? []} platform="Chess.com" enabledTimeControls={filters.timeControls} />
+                </CardBody>
+              </Card>
+            )}
+
+            {(selectedPlatforms === null || selectedPlatforms.includes('lichess')) && (
+              <Card as="section" data-testid="rating-section-lichess">
+                <CardHeader data-testid="rating-lichess-header">
+                  Lichess Rating
+                  <InfoPopover ariaLabel="Lichess rating info" testId="rating-lichess-info" side="top">
+                    Your Lichess rating over time by time control. Granularity adapts automatically: daily for shorter spans, weekly or monthly for longer ones. Lichess uses Glicko-2 ratings which start at 1500 and tend to run 200-400 points higher than Chess.com, so the two are not directly comparable.
+                  </InfoPopover>
+                </CardHeader>
+                <CardBody>
+                  <RatingChart data={ratingData?.lichess ?? []} platform="Lichess" enabledTimeControls={filters.timeControls} />
+                </CardBody>
+              </Card>
+            )}
+          </div>
+        </section>
       )}
 
-      {/* Lichess Rating section */}
-      {(selectedPlatforms === null || selectedPlatforms.includes('lichess')) && (
-        <Card as="section" data-testid="rating-section-lichess">
-          <CardHeader data-testid="rating-lichess-header">
-            Lichess Rating
-            <InfoPopover ariaLabel="Lichess rating info" testId="rating-lichess-info" side="top">
-              Your Lichess rating over time by time control. Granularity adapts automatically: daily for shorter spans, weekly or monthly for longer ones. Lichess uses Glicko-2 ratings which start at 1500 and tend to run 200-400 points higher than Chess.com, so the two are not directly comparable.
-            </InfoPopover>
-          </CardHeader>
-          <CardBody>
-            <RatingChart data={ratingData?.lichess ?? []} platform="Lichess" enabledTimeControls={filters.timeControls} />
-          </CardBody>
-        </Card>
-      )}
-
-      {/* WDL charts — each card owns its own shell inside GlobalStatsCharts */}
-      <GlobalStatsCharts
-        byTimeControl={globalStats?.by_time_control ?? []}
-        byColor={globalStats?.by_color ?? []}
-        enabledTimeControls={filters.timeControls}
-      />
-
-      {/* Flaw stats panel — shared filters, empty severity (severity is scoped to Games tab) */}
-      <FlawStatsPanel
-        stats={flawStatsData}
-        isLoading={flawStatsLoading}
-        isError={flawStatsError}
-      />
+      {/* ── Results Breakdown (Results by Time Control + Results by Color) ── */}
+      <section data-testid="results-breakdown-section">
+        <h2 className="text-lg font-semibold text-foreground mt-2">Results Breakdown</h2>
+        <div className="mt-3">
+          {/* WDL charts — each card owns its own shell inside GlobalStatsCharts */}
+          <GlobalStatsCharts
+            byTimeControl={globalStats?.by_time_control ?? []}
+            byColor={globalStats?.by_color ?? []}
+            enabledTimeControls={filters.timeControls}
+          />
+        </div>
+      </section>
     </div>
   );
 

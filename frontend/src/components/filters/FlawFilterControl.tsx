@@ -1,7 +1,9 @@
-import { Clock, Zap, Brain, Target, Clover, TrendingDown, Swords } from 'lucide-react';
+import { Clock, Zap, Brain, Target, Clover, TrendingDown, ArrowDownUp } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { BlunderIcon, MistakeIcon } from '@/components/icons/SeverityGlyphIcon';
+import type { FlawIcon } from '@/lib/flawComparisonMeta';
 import {
   FAM_TEMPO,
   FAM_TEMPO_BG,
@@ -9,6 +11,10 @@ import {
   FAM_OPPORTUNITY_BG,
   FAM_IMPACT,
   FAM_IMPACT_BG,
+  SEV_BLUNDER,
+  SEV_BLUNDER_BG,
+  SEV_MISTAKE,
+  SEV_MISTAKE_BG,
 } from '@/lib/theme';
 import type { FlawTag } from '@/types/library';
 
@@ -29,9 +35,24 @@ const TAG_ICONS: Record<string, LucideIcon> = {
   'unrushed': Brain,
   'miss': Target,
   'lucky': Clover,
-  'reversed': Swords,
+  'reversed': ArrowDownUp,
   'squandered': TrendingDown,
 };
+
+// ─── Severity → pill style (mirrors the page severity badges) ─────────────────
+
+interface SeverityButtonConfig {
+  sev: 'blunder' | 'mistake';
+  label: string;
+  icon: FlawIcon;
+  color: string;
+  bg: string;
+}
+
+const SEVERITY_BUTTONS: SeverityButtonConfig[] = [
+  { sev: 'blunder', label: 'Blunders', icon: BlunderIcon, color: SEV_BLUNDER, bg: SEV_BLUNDER_BG },
+  { sev: 'mistake', label: 'Mistakes', icon: MistakeIcon, color: SEV_MISTAKE, bg: SEV_MISTAKE_BG },
+];
 
 // ─── Family sections ──────────────────────────────────────────────────────────
 
@@ -110,6 +131,42 @@ function TagFilterButton({ tag, selected, color, bg, onToggle }: TagFilterButton
   );
 }
 
+// ─── Severity filter button ───────────────────────────────────────────────────
+
+interface SeverityFilterButtonProps {
+  config: SeverityButtonConfig;
+  selected: boolean;
+  onToggle: (sev: 'blunder' | 'mistake') => void;
+}
+
+/**
+ * A severity toggle styled like the tag pills (and the page severity badges):
+ * rounded-full, severity-colored when selected, with the severity glyph icon
+ * (red "??" / orange "?"). Replaces the old neutral rectangular toggle so the
+ * severity row reads as the same family of pills as the tags below it.
+ */
+function SeverityFilterButton({ config, selected, onToggle }: SeverityFilterButtonProps) {
+  const { sev, label, icon: Icon, color, bg } = config;
+  return (
+    <button
+      type="button"
+      data-testid={`filter-flaw-severity-${sev}`}
+      aria-pressed={selected}
+      aria-label={`Filter flaws by severity: ${label}`}
+      className={cn(
+        'inline-flex items-center gap-1 h-11 sm:h-7 rounded-full px-3 py-0.5 text-sm border transition-colors',
+        !selected
+          && 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',
+      )}
+      style={selected ? { color, borderColor: color, backgroundColor: bg } : undefined}
+      onClick={() => onToggle(sev)}
+    >
+      <Icon className="h-4 w-4 shrink-0" />
+      {label}
+    </button>
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 /**
@@ -155,34 +212,14 @@ export function FlawFilterControl({
       {/* ── Severity section ───────────────────────────────────────────── */}
       <div className="flex flex-col gap-2">
         <div className="flex gap-2 flex-wrap">
-          <button
-            type="button"
-            data-testid="filter-flaw-severity-blunder"
-            aria-pressed={severity.includes('blunder')}
-            className={cn(
-              'h-11 sm:h-7 rounded px-3 text-sm border transition-colors',
-              severity.includes('blunder')
-                ? 'border-toggle-active bg-toggle-active text-toggle-active-foreground pointer-fine:hover:bg-toggle-active-hover'
-                : 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',
-            )}
-            onClick={() => handleSeverityToggle('blunder')}
-          >
-            Blunders
-          </button>
-          <button
-            type="button"
-            data-testid="filter-flaw-severity-mistake"
-            aria-pressed={severity.includes('mistake')}
-            className={cn(
-              'h-11 sm:h-7 rounded px-3 text-sm border transition-colors',
-              severity.includes('mistake')
-                ? 'border-toggle-active bg-toggle-active text-toggle-active-foreground pointer-fine:hover:bg-toggle-active-hover'
-                : 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',
-            )}
-            onClick={() => handleSeverityToggle('mistake')}
-          >
-            Mistakes
-          </button>
+          {SEVERITY_BUTTONS.map((config) => (
+            <SeverityFilterButton
+              key={config.sev}
+              config={config}
+              selected={severity.includes(config.sev)}
+              onToggle={handleSeverityToggle}
+            />
+          ))}
         </div>
       </div>
 

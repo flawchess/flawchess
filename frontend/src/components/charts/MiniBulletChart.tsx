@@ -80,6 +80,13 @@ interface MiniBulletChartProps {
    *   Stats and Insights cards (Tufte/Few bullet-chart convention).
    */
   barColor?: 'zone' | 'neutral';
+  /**
+   * When true, inverts zone color semantics: values LEFT of the neutral band
+   * paint ZONE_SUCCESS (fewer flaws = good); values RIGHT paint ZONE_DANGER.
+   * Used for flaw-delta bullets where negative delta = better performance (D-08).
+   * Default false — preserves all existing callers unchanged.
+   */
+  invertColors?: boolean;
 }
 
 function formatSigned(value: number): string {
@@ -100,6 +107,7 @@ export function MiniBulletChart({
   ciHigh,
   tickPawns,
   barColor = 'zone',
+  invertColors = false,
 }: MiniBulletChartProps) {
   // Axis spans [center - domain, center + domain], so the reference line and
   // neutral band sit at the visual middle regardless of `center`. With center=0
@@ -123,13 +131,17 @@ export function MiniBulletChart({
 
   // Fill color follows the zone the raw (unclamped) value falls into,
   // measured against absolute (center-shifted) bounds.
+  // invertColors: negative delta (left of zone) = good → ZONE_SUCCESS left, ZONE_DANGER right
+  const positiveColor = invertColors ? ZONE_DANGER : ZONE_SUCCESS;
+  const negativeColor = invertColors ? ZONE_SUCCESS : ZONE_DANGER;
+
   let fillColor: string;
   if (value >= absNeutralMax) {
-    fillColor = ZONE_SUCCESS;
+    fillColor = positiveColor;
   } else if (value >= absNeutralMin) {
     fillColor = ZONE_NEUTRAL;
   } else {
-    fillColor = ZONE_DANGER;
+    fillColor = negativeColor;
   }
 
   // Actual bar fill: neutral grey when barColor='neutral' (Openings cards),
@@ -153,13 +165,14 @@ export function MiniBulletChart({
       aria-label={ariaLabel ?? `Score difference ${formatSigned(value)}`}
       data-testid="mini-bullet-chart"
     >
-      {/* Background zones: poor | neutral | good */}
+      {/* Background zones: left | neutral | right
+          invertColors flips left=ZONE_SUCCESS / right=ZONE_DANGER (flaw-delta, D-08) */}
       <div className="absolute inset-0 flex">
         <div
           className="h-full"
           style={{
             width: `${neutralMinPct}%`,
-            backgroundColor: ZONE_DANGER,
+            backgroundColor: invertColors ? ZONE_SUCCESS : ZONE_DANGER,
             opacity: ZONE_OPACITY,
           }}
         />
@@ -175,7 +188,7 @@ export function MiniBulletChart({
           className="h-full"
           style={{
             width: `${100 - neutralMaxPct}%`,
-            backgroundColor: ZONE_SUCCESS,
+            backgroundColor: invertColors ? ZONE_DANGER : ZONE_SUCCESS,
             opacity: ZONE_OPACITY,
           }}
         />

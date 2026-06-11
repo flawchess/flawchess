@@ -13,7 +13,7 @@ import type {
   BookmarkPhaseEntryResponse,
 } from '@/types/stats';
 import type { EndgameGamesResponse, EndgameOverviewResponse } from '@/types/endgames';
-import type { GameFlawCard, LibraryGamesResponse, FlawStatsResponse, LibraryFlawsResponse } from '@/types/library';
+import type { GameFlawCard, LibraryGamesResponse, FlawStatsResponse, LibraryFlawsResponse, FlawComparisonResponse } from '@/types/library';
 import type { OpponentStrengthRange } from '@/types/api';
 import { rangeToQueryParams } from '@/lib/opponentStrength';
 
@@ -258,6 +258,24 @@ export const libraryApi = {
     severity?: ('blunder' | 'mistake')[];
   }) =>
     apiClient.get<FlawStatsResponse>('/library/flaw-stats', {
+      params: {
+        ...buildFilterParams(params),
+        ...(params.severity && params.severity.length > 0 ? { severity: params.severity } : {}),
+      },
+    }).then(r => r.data),
+
+  getFlawComparison: (params: {
+    time_control?: string[] | null;
+    platform?: string[] | null;
+    from_date?: string | null;
+    to_date?: string | null;
+    rated?: boolean | null;
+    opponent_type?: string;
+    opponent_strength?: OpponentStrengthRange;
+    color?: string | null;
+    severity?: ('blunder' | 'mistake')[];
+  }) =>
+    apiClient.get<FlawComparisonResponse>('/library/flaw-comparison', {
       params: {
         ...buildFilterParams(params),
         ...(params.severity && params.severity.length > 0 ? { severity: params.severity } : {}),

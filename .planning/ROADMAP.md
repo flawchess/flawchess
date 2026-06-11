@@ -61,7 +61,7 @@ Reworks the Library flaw-stats surface from a self-only descriptive panel into a
     - [x] 114.1-02-PLAN.md — frontend types + 3 cards (plysToFullMoves helper, display unchanged) + fixtures; chapter5 user_moves_per_game reads games.ply_count + §5 fast-path regen
   - Design path: `/gsd-discuss-phase 114.1` → `/gsd-plan-phase 114.1`
 
-- [ ] **Phase 115: You-vs-Opponent Comparison API + Bullet-Grid UI** — Two-CI-method flaw-stats endpoint + ~13-bullet grid replacing the current tag-distribution zone; requirements: FLAWCMP-01, FLAWCMP-02, FLAWCMP-03, FLAWCMP-04, FLAWCMP-05, FLAWUI-01, FLAWUI-02, FLAWUI-03, FLAWUI-04, FLAWUI-05, FLAWUI-06
+- [x] **Phase 115: You-vs-Opponent Comparison API + Bullet-Grid UI** — Two-CI-method flaw-stats endpoint + ~13-bullet grid replacing the current tag-distribution zone; requirements: FLAWCMP-01, FLAWCMP-02, FLAWCMP-03, FLAWCMP-04, FLAWCMP-05, FLAWUI-01, FLAWUI-02, FLAWUI-03, FLAWUI-04, FLAWUI-05, FLAWUI-06 (completed 2026-06-11)
   - The flaw-stats endpoint returns the full ~13-bullet inventory (count-rate families via paired per-game delta + bootstrap/normal CI; proportion families via Wilson difference-of-proportions), honoring all existing game filters
   - The curated combo bullets `hasty + miss` and `low-clock + miss` are included and their CI-width adequacy is confirmed against the materialized data
   - The section-level sample gate returns an "analyze more games" state below floor N; above it every bullet renders with its CI (wide bar reads as inconclusive)
@@ -126,7 +126,15 @@ Plans:
   5. Each bullet carries a tooltip disclosing metric definition, sign convention, tempo-interaction caveat (clock-conditioned tags), and the filter×zone interaction (TC filter shifts the zone; user-local filters move only the point estimate) (FLAWUI-02, FLAWUI-03).
   6. The bullet grid is responsive on mobile and follows `data-testid` / ARIA / semantic-HTML conventions on all new elements, with desktop + mobile parity (FLAWUI-06).
 
-**Plans**: TBD
+**Plans**: 2 plans
+**Wave 1**
+
+  - [x] 115-01-PLAN.md — Backend: flaw-comparison endpoint, zone registry, per-game delta + CI, sample gate
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+  - [x] 115-02-PLAN.md — Frontend: MiniBulletChart invertColors + family-grouped bullet grid, tooltips, panel surgery
+
 **UI hint**: yes
 
 ### ✅ v1.24 Library Page (Phases 104–112) — SHIPPED 2026-06-09
@@ -463,7 +471,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 104-112. v1.24 phases | v1.24 | 37/37 | Complete (111 shipped direct, no plan artifacts) | 2026-06-09 |
 | 113. Opponent-Flaw Materialization | v1.25 | 3/3 | Complete    | 2026-06-10 |
 | 114. Benchmark Flaw-Delta Zone Computation | v1.25 | 1/1 | Complete | 2026-06-10 |
-| 115. You-vs-Opponent Comparison API + Bullet-Grid UI | v1.25 | 0/TBD | Not started | - |
+| 115. You-vs-Opponent Comparison API + Bullet-Grid UI | v1.25 | 2/2 | Complete    | 2026-06-11 |
 
 ## Backlog
 
@@ -471,7 +479,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 3/3 plans complete
+**Plans:** 2/2 plans complete
 
 Plans:
 

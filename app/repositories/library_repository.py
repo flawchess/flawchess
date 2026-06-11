@@ -15,7 +15,7 @@ interpolation of user input (T-108-06).
 
 import datetime
 from collections.abc import Sequence
-from typing import Literal
+from typing import Any, Literal
 
 from sqlalchemy import Float, Select, Subquery, case, exists, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,7 +30,7 @@ from app.repositories.game_flaws_repository import (
     _SEVERITY_INT,
     _TEMPO_INT,
 )
-from app.repositories.query_utils import apply_game_filters, player_only_gate
+from app.repositories.query_utils import apply_game_filters, is_opponent_expr, player_only_gate
 from app.schemas.library import FlawListItem
 from app.services.flaws_service import (
     EVAL_COVERAGE_MIN,
@@ -936,4 +936,290 @@ async def analyzed_game_ids(
         .order_by(Game.played_at.asc().nulls_last())
     )
     rows = (await session.execute(stmt)).scalars().all()
+    return list(rows)
+
+
+async def fetch_flaw_comparison(
+    session: AsyncSession,
+    user_id: int,
+    analyzed_game_ids_subq: Subquery,
+    *,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
+    flaw_severity: Sequence[str] | None,
+    opponent_gap_min: int | None,
+    opponent_gap_max: int | None,
+    color: str | None,
+) -> list[Any]:
+    """Per-game player/opp counts for all 15 metrics over the analyzed+filtered set.
+
+    LEFT JOIN anchor: analyzed+filtered games list → LEFT JOIN game_flaws so games
+    with zero flaws contribute a zero-delta row (§5 all-analyzed-games basis,
+    Pitfall 1 / FLAWCMP-01).
+    Returns one row per (game_id, user_moves) with 30 COUNT columns (15 player +
+    15 opp). Python aggregates mean + CI per metric.
+
+    Pitfall 2 (divide-by-zero): games with ply_count IS NULL or ply_count = 0
+    are excluded at the anchor level — _analyzed_game_ids_subquery does NOT
+    filter ply_count. Use func.count(GameFlaw.ply) NOT func.count() so absent
+    LEFT-JOIN rows (NULL ply) are not counted. Use is_opponent_expr from
+    query_utils — never inline ply % 2 math (CONTEXT D-01, Pitfall 3).
+    """
+    base_filtered_subq = _filtered_games_base(
+        user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
+        flaw_severity=flaw_severity,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
+        color=color,
+    ).subquery("filtered_fc")
+
+    # Anchor: analyzed+filtered games with valid ply_count (Pitfall 2 — divide-by-zero guard)
+    anchor_subq = (
+        select(
+            Game.id.label("game_id"),
+            Game.user_color,
+            case(
+                (Game.user_color == "white", func.floor(Game.ply_count / 2.0)),
+                else_=func.ceil(Game.ply_count / 2.0),
+            ).label("user_moves"),
+        )
+        .where(
+            Game.user_id == user_id,
+            Game.id.in_(select(base_filtered_subq.c.id)),
+            Game.id.in_(select(analyzed_game_ids_subq.c.game_id)),
+            Game.ply_count.isnot(None),
+            Game.ply_count > 0,
+        )
+        .subquery("anchor")
+    )
+
+    # LEFT JOIN game_flaws — 30 COUNT(GameFlaw.ply) FILTER columns (15 metrics × 2 sides).
+    # func.count(GameFlaw.ply) (not func.count()) ensures NULL ply from LEFT JOIN miss = 0.
+    stmt = (
+        select(
+            anchor_subq.c.game_id,
+            anchor_subq.c.user_moves,
+            # --- Severity family ---
+            # flaw_rate: mistake OR blunder
+            func.count(GameFlaw.ply)
+            .filter(
+                ~is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.severity.in_([_SEVERITY_INT["mistake"], _SEVERITY_INT["blunder"]]),
+            )
+            .label("player_flaw_rate"),
+            func.count(GameFlaw.ply)
+            .filter(
+                is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.severity.in_([_SEVERITY_INT["mistake"], _SEVERITY_INT["blunder"]]),
+            )
+            .label("opp_flaw_rate"),
+            # mistake
+            func.count(GameFlaw.ply)
+            .filter(
+                ~is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.severity == _SEVERITY_INT["mistake"],
+            )
+            .label("player_mistake"),
+            func.count(GameFlaw.ply)
+            .filter(
+                is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.severity == _SEVERITY_INT["mistake"],
+            )
+            .label("opp_mistake"),
+            # blunder
+            func.count(GameFlaw.ply)
+            .filter(
+                ~is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.severity == _SEVERITY_INT["blunder"],
+            )
+            .label("player_blunder"),
+            func.count(GameFlaw.ply)
+            .filter(
+                is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.severity == _SEVERITY_INT["blunder"],
+            )
+            .label("opp_blunder"),
+            # --- Tempo family ---
+            # low_clock
+            func.count(GameFlaw.ply)
+            .filter(
+                ~is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.tempo == _TEMPO_INT["low-clock"],
+            )
+            .label("player_low_clock"),
+            func.count(GameFlaw.ply)
+            .filter(
+                is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.tempo == _TEMPO_INT["low-clock"],
+            )
+            .label("opp_low_clock"),
+            # hasty
+            func.count(GameFlaw.ply)
+            .filter(
+                ~is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.tempo == _TEMPO_INT["hasty"],
+            )
+            .label("player_hasty"),
+            func.count(GameFlaw.ply)
+            .filter(
+                is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.tempo == _TEMPO_INT["hasty"],
+            )
+            .label("opp_hasty"),
+            # unrushed
+            func.count(GameFlaw.ply)
+            .filter(
+                ~is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.tempo == _TEMPO_INT["unrushed"],
+            )
+            .label("player_unrushed"),
+            func.count(GameFlaw.ply)
+            .filter(
+                is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.tempo == _TEMPO_INT["unrushed"],
+            )
+            .label("opp_unrushed"),
+            # --- Phase family ---
+            # opening
+            func.count(GameFlaw.ply)
+            .filter(
+                ~is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.phase == _PHASE_INT["opening"],
+            )
+            .label("player_opening"),
+            func.count(GameFlaw.ply)
+            .filter(
+                is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.phase == _PHASE_INT["opening"],
+            )
+            .label("opp_opening"),
+            # middlegame
+            func.count(GameFlaw.ply)
+            .filter(
+                ~is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.phase == _PHASE_INT["middlegame"],
+            )
+            .label("player_middlegame"),
+            func.count(GameFlaw.ply)
+            .filter(
+                is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.phase == _PHASE_INT["middlegame"],
+            )
+            .label("opp_middlegame"),
+            # endgame_phase
+            func.count(GameFlaw.ply)
+            .filter(
+                ~is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.phase == _PHASE_INT["endgame"],
+            )
+            .label("player_endgame_phase"),
+            func.count(GameFlaw.ply)
+            .filter(
+                is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.phase == _PHASE_INT["endgame"],
+            )
+            .label("opp_endgame_phase"),
+            # --- Opportunity family ---
+            # miss
+            func.count(GameFlaw.ply)
+            .filter(
+                ~is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.is_miss.is_(True),
+            )
+            .label("player_miss"),
+            func.count(GameFlaw.ply)
+            .filter(
+                is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.is_miss.is_(True),
+            )
+            .label("opp_miss"),
+            # lucky
+            func.count(GameFlaw.ply)
+            .filter(
+                ~is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.is_lucky.is_(True),
+            )
+            .label("player_lucky"),
+            func.count(GameFlaw.ply)
+            .filter(
+                is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.is_lucky.is_(True),
+            )
+            .label("opp_lucky"),
+            # --- Impact family ---
+            # reversed
+            func.count(GameFlaw.ply)
+            .filter(
+                ~is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.is_reversed.is_(True),
+            )
+            .label("player_reversed"),
+            func.count(GameFlaw.ply)
+            .filter(
+                is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.is_reversed.is_(True),
+            )
+            .label("opp_reversed"),
+            # squandered
+            func.count(GameFlaw.ply)
+            .filter(
+                ~is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.is_squandered.is_(True),
+            )
+            .label("player_squandered"),
+            func.count(GameFlaw.ply)
+            .filter(
+                is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.is_squandered.is_(True),
+            )
+            .label("opp_squandered"),
+            # --- Combo family ---
+            # hasty_miss: hasty AND miss
+            func.count(GameFlaw.ply)
+            .filter(
+                ~is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.tempo == _TEMPO_INT["hasty"],
+                GameFlaw.is_miss.is_(True),
+            )
+            .label("player_hasty_miss"),
+            func.count(GameFlaw.ply)
+            .filter(
+                is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.tempo == _TEMPO_INT["hasty"],
+                GameFlaw.is_miss.is_(True),
+            )
+            .label("opp_hasty_miss"),
+            # low_clock_miss: low-clock AND miss (D-12: ships despite degenerate zone)
+            func.count(GameFlaw.ply)
+            .filter(
+                ~is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.tempo == _TEMPO_INT["low-clock"],
+                GameFlaw.is_miss.is_(True),
+            )
+            .label("player_low_clock_miss"),
+            func.count(GameFlaw.ply)
+            .filter(
+                is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.tempo == _TEMPO_INT["low-clock"],
+                GameFlaw.is_miss.is_(True),
+            )
+            .label("opp_low_clock_miss"),
+        )
+        .outerjoin(
+            GameFlaw,
+            (GameFlaw.game_id == anchor_subq.c.game_id) & (GameFlaw.user_id == user_id),
+        )
+        .group_by(anchor_subq.c.game_id, anchor_subq.c.user_moves, anchor_subq.c.user_color)
+    )
+    rows = (await session.execute(stmt)).all()
     return list(rows)
