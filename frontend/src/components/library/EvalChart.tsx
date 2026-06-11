@@ -144,7 +144,7 @@ const PHASE_LABEL_TOP_PAD = 3; // px gap between tick end and label start
 const FLAW_DOT_RADIUS = 4.5;
 
 /** Radius multiplier for an emphasized (hover-highlighted) marker. */
-const HIGHLIGHT_RADIUS_FACTOR = 1.45;
+const HIGHLIGHT_RADIUS_FACTOR = 1.25;
 
 /** Opacity for non-matching markers while a hover highlight is active. */
 const DIMMED_MARKER_OPACITY = 0.2;
