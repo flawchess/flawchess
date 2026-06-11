@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.25
 milestone_name: Flaw-Stats Opponent Comparison
-status: verifying
-last_updated: "2026-06-11T17:03:07.431Z"
+status: Phase 115 shipped — squash-merged to main (854996fb)
+last_updated: "2026-06-11T21:30:27.314Z"
 last_activity: 2026-06-11
 progress:
   total_phases: 3
@@ -19,7 +19,7 @@ progress:
 
 Phase: 115
 Plan: Not started
-Status: Phase complete — ready for verification
+Status: Phase 115 shipped — squash-merged to main (854996fb)
 Last activity: 2026-06-11
 
 ## Project Reference
