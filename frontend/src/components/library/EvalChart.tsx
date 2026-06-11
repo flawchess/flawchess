@@ -4,8 +4,9 @@
  * White-perspective ES per ply, shown as a filled eval bar: the area below the
  * ES line (0% → eval) is grey, the area above it (eval → 100%) is near-black,
  * with rounded chart corners, at most two
- * rotated phase-transition labels centered on the phase boundary
- * (middlegame, endgame — no vertical lines, no ply-0 label per D-06), and
+ * phase-transition annotations (fine top tick + rotated label) centered on the
+ * phase boundary (middlegame, endgame — no full vertical lines, no ply-0
+ * annotation per D-06), and
  * dual-marker flaw dots (filled = player, hollow = opponent, color = severity — D-07).
  *
  * Flaw dots use a custom `dot` render prop on an invisible <Line> overlay inside
@@ -133,7 +134,9 @@ const PHASE_LINE_PLY_OFFSET = 1;
 
 /** Rotated phase-boundary label geometry (SVG px). */
 const PHASE_LABEL_FONT_SIZE = 10;
-const PHASE_LABEL_TOP_PAD = 4; // px below the chart top
+const PHASE_TICK_LENGTH = 5; // fine tick hanging down from the chart top edge
+const PHASE_TICK_WIDTH = 1;
+const PHASE_LABEL_TOP_PAD = 3; // px gap between tick end and label start
 
 /** Mistake/blunder flaw-dot radius. */
 const FLAW_DOT_RADIUS = 4.5;
@@ -184,11 +187,12 @@ function severityColor(sev: FlawSeverity): string {
 }
 
 /**
- * `label` render prop for a phase-transition ReferenceLine: vertical text reading
- * top-to-bottom ("Midgame" / "Endgame"), horizontally centered on the phase
- * boundary x (the stroke-less ReferenceLine's position). recharts passes the
- * line's viewBox (x = boundary x, y = chart top). The text is rotated 90° about
- * its anchor so it hangs downward; dominantBaseline="central" centers the glyphs
+ * `label` render prop for a phase-transition ReferenceLine: a fine tick hanging
+ * from the chart's top edge plus vertical text reading top-to-bottom
+ * ("Midgame" / "Endgame"), both horizontally centered on the phase boundary x
+ * (the stroke-less ReferenceLine's position). recharts passes the line's viewBox
+ * (x = boundary x, y = chart top). The text is rotated 90° about its anchor so it
+ * hangs downward below the tick; dominantBaseline="central" centers the glyphs
  * across the rotated baseline, i.e. horizontally on the boundary.
  */
 function phaseLineLabel(text: string) {
@@ -198,20 +202,30 @@ function phaseLineLabel(text: string) {
     const vb = props.viewBox;
     if (!vb || vb.x == null) return <g />;
     const x = vb.x;
-    const y = (vb.y ?? 0) + PHASE_LABEL_TOP_PAD;
+    const top = vb.y ?? 0;
+    const y = top + PHASE_TICK_LENGTH + PHASE_LABEL_TOP_PAD;
     return (
-      <text
-        x={x}
-        y={y}
-        fill={EVAL_CHART_PHASE_LABEL}
-        fontSize={PHASE_LABEL_FONT_SIZE}
-        textAnchor="start"
-        dominantBaseline="central"
-        transform={`rotate(90, ${x}, ${y})`}
-        aria-hidden="true"
-      >
-        {text}
-      </text>
+      <g aria-hidden="true">
+        <line
+          x1={x}
+          x2={x}
+          y1={top}
+          y2={top + PHASE_TICK_LENGTH}
+          stroke={EVAL_CHART_PHASE_LABEL}
+          strokeWidth={PHASE_TICK_WIDTH}
+        />
+        <text
+          x={x}
+          y={y}
+          fill={EVAL_CHART_PHASE_LABEL}
+          fontSize={PHASE_LABEL_FONT_SIZE}
+          textAnchor="start"
+          dominantBaseline="central"
+          transform={`rotate(90, ${x}, ${y})`}
+        >
+          {text}
+        </text>
+      </g>
     );
   };
 }
