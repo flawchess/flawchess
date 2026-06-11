@@ -31,6 +31,7 @@ from app.repositories.import_job_repository import ImportJobNotFound
 from app.schemas.normalization import NormalizedGame
 from app.services import chesscom_client, lichess_client, percentile_compute_registry
 from app.services.eval_drain import (
+    _classify_and_insert_flaws,
     _collect_midgame_eval_targets,
     _collect_endgame_span_eval_targets,
 )  # Phase 91: cross-module use of eval_drain internals is intentional — see SEED-023.
@@ -801,6 +802,14 @@ async def _flush_batch(
             .values(evals_completed_at=now_ts)
         )
         await session.execute(covered_stmt, [{"b_id": gid} for gid in covered_ids])
+        # Bug fix (quick 260611): covered games never reach the cold drain (the
+        # drain only picks evals_completed_at IS NULL), so the drain's
+        # _classify_and_insert_flaws never ran for them — games imported WITH
+        # full lichess %eval got eval_cp on positions but zero game_flaws rows
+        # (badges showed 0 while the live eval chart showed flaws). Classify
+        # here, in the same transaction as the position inserts, so flaw rows
+        # commit atomically with the batch.
+        await _classify_and_insert_flaws(session, covered_ids)
 
     # WR-05: caller owns the commit (single transaction per batch).
     return len(rows_result.new_game_ids)
