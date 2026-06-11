@@ -29,17 +29,21 @@ from app.services.flaws_service import (
     SQUANDERED_EXIT_ES,
     TIME_PRESSURE_CLOCK_FRACTION,
     HASTY_MOVE_FRACTION,
+    MATE_LADDER_DECIDED_CP,
+    MATE_LADDER_LOPSIDED_CP,
     WINNING_LINE_ES,
     FlawRecord,
     GameFlawsResult,
     GameNotAnalyzed,
     _classify_impact,
+    _classify_mate_ladder,
     _classify_severity,
     _classify_tempo,
     _compute_eval_coverage,
     _move_time,
     _ply_to_es,
     _recompute_fen_map,
+    _run_all_moves_pass,
     classify_game_flaws,
 )
 
@@ -304,6 +308,167 @@ class TestMateOptionB:
         # Classify the drop — should NOT be classified as blunder
         severity = _classify_severity(drop) if drop >= 0 else None
         assert severity is None or severity == "inaccuracy"
+
+
+class TestMateLadder:
+    """Tests for _classify_mate_ladder — the lila MateAdvice port (2026-06-11).
+
+    Sign convention reminder: eval_cp/eval_mate are WHITE-perspective; the
+    ladder inverts internally for a black mover. Thresholds are strict
+    (lila `prevCp < -999` etc.), so the boundary value itself does NOT downgrade.
+    """
+
+    def test_constants_match_lila(self) -> None:
+        """Ladder cp thresholds must match lila Advice.scala (999 / 700)."""
+        assert MATE_LADDER_DECIDED_CP == 999
+        assert MATE_LADDER_LOPSIDED_CP == 700
+
+    # --- MateCreated: cp -> mate against the mover ---
+
+    def test_mate_created_from_playable_position_is_blunder(self) -> None:
+        prev = _make_pos(1, eval_cp=200)
+        cur = _make_pos(2, eval_mate=-3)
+        assert _classify_mate_ladder(prev, cur, "white") == "blunder"
+
+    def test_mate_created_when_heavily_lost_is_mistake(self) -> None:
+        prev = _make_pos(1, eval_cp=-750)
+        cur = _make_pos(2, eval_mate=-3)
+        assert _classify_mate_ladder(prev, cur, "white") == "mistake"
+
+    def test_mate_created_when_already_decided_is_inaccuracy(self) -> None:
+        prev = _make_pos(1, eval_cp=-1200)
+        cur = _make_pos(2, eval_mate=-3)
+        assert _classify_mate_ladder(prev, cur, "white") == "inaccuracy"
+
+    def test_mate_created_boundaries_are_strict(self) -> None:
+        """lila uses strict <: exactly -700 stays blunder, exactly -999 stays mistake."""
+        cur = _make_pos(2, eval_mate=-3)
+        assert _classify_mate_ladder(_make_pos(1, eval_cp=-700), cur, "white") == "blunder"
+        assert _classify_mate_ladder(_make_pos(1, eval_cp=-701), cur, "white") == "mistake"
+        assert _classify_mate_ladder(_make_pos(1, eval_cp=-999), cur, "white") == "mistake"
+        assert _classify_mate_ladder(_make_pos(1, eval_cp=-1000), cur, "white") == "inaccuracy"
+
+    # --- MateLost: mover's forced mate -> cp / mate against ---
+
+    def test_mate_lost_back_to_moderate_advantage_is_blunder(self) -> None:
+        """The conversion-throw case the Option-B drop math missed (game 1958407)."""
+        prev = _make_pos(1, eval_mate=5)
+        cur = _make_pos(2, eval_cp=550)
+        assert _classify_mate_ladder(prev, cur, "white") == "blunder"
+
+    def test_mate_lost_still_winning_big_is_mistake(self) -> None:
+        prev = _make_pos(1, eval_mate=5)
+        cur = _make_pos(2, eval_cp=750)
+        assert _classify_mate_ladder(prev, cur, "white") == "mistake"
+
+    def test_mate_lost_still_completely_winning_is_inaccuracy(self) -> None:
+        prev = _make_pos(1, eval_mate=5)
+        cur = _make_pos(2, eval_cp=1200)
+        assert _classify_mate_ladder(prev, cur, "white") == "inaccuracy"
+
+    def test_mate_flipped_to_mate_against_is_blunder(self) -> None:
+        """Mate FOR the mover -> mate AGAINST: no cp side exists (lila defaults 0)."""
+        prev = _make_pos(1, eval_mate=4)
+        cur = _make_pos(2, eval_mate=-2)
+        assert _classify_mate_ladder(prev, cur, "white") == "blunder"
+
+    # --- No-advice transitions (must all return None, matching lila) ---
+
+    def test_mate_delayed_is_not_a_flaw(self) -> None:
+        """Mate-in-3 -> mate-in-8 (still winning): lila MateDelayed has no judgement."""
+        prev = _make_pos(1, eval_mate=3)
+        cur = _make_pos(2, eval_mate=8)
+        assert _classify_mate_ladder(prev, cur, "white") is None
+
+    def test_escaping_mate_against_is_not_a_flaw(self) -> None:
+        prev = _make_pos(1, eval_mate=-5)
+        cur = _make_pos(2, eval_cp=-600)
+        assert _classify_mate_ladder(prev, cur, "white") is None
+
+    def test_creating_mate_for_mover_is_not_a_flaw(self) -> None:
+        prev = _make_pos(1, eval_cp=300)
+        cur = _make_pos(2, eval_mate=5)
+        assert _classify_mate_ladder(prev, cur, "white") is None
+
+    def test_sinking_deeper_into_mate_against_is_not_a_flaw(self) -> None:
+        prev = _make_pos(1, eval_mate=-5)
+        cur = _make_pos(2, eval_mate=-3)
+        assert _classify_mate_ladder(prev, cur, "white") is None
+
+    # --- Black-mover symmetry (white-POV inputs are inverted internally) ---
+
+    def test_black_mover_mate_created_is_blunder(self) -> None:
+        """Black walks from a level cp position into a forced mate by white."""
+        prev = _make_pos(2, eval_cp=-50)  # black slightly better (white POV -50)
+        cur = _make_pos(3, eval_mate=4)  # white now mates in 4
+        assert _classify_mate_ladder(prev, cur, "black") == "blunder"
+
+    def test_black_mover_mate_lost_still_winning_is_mistake(self) -> None:
+        """Black throws a forced mate but keeps a +800 (black-POV) position."""
+        prev = _make_pos(2, eval_mate=-3)  # black mates in 3
+        cur = _make_pos(3, eval_cp=-800)  # black still up the equivalent of +800
+        assert _classify_mate_ladder(prev, cur, "black") == "mistake"
+
+
+class TestMateLadderRouting:
+    """_run_all_moves_pass must route mate-involved transitions to the ladder."""
+
+    def test_mate_transition_uses_ladder_not_drop(self) -> None:
+        """prev cp -800 -> mate against white: Option-B drop is ~0.025 (sub-threshold,
+        previously None); the ladder grades it a mistake (heavily lost, not decided).
+        """
+        positions = [
+            _make_pos(0, eval_cp=0),
+            _make_pos(1, eval_cp=-800),
+            _make_pos(2, eval_mate=-5),
+        ]
+        all_moves = _run_all_moves_pass(positions)
+        mover, severity, _es_before, _es_after = all_moves[2]
+        assert mover == "white"
+        assert severity == "mistake"
+
+    def test_thrown_mate_is_blunder_via_kernel(self) -> None:
+        """Black reaches a forced mate then throws it back to ~+550 (black POV):
+        under Option B the drop is ~0.09 (below MISTAKE_DROP); lichess and the
+        ladder call it a blunder.
+        """
+        positions = [
+            _make_pos(0, eval_cp=-400),
+            _make_pos(1, eval_mate=-8),  # black has forced mate
+            _make_pos(2, eval_mate=-8),  # white can't prevent it
+            _make_pos(3, eval_cp=-550),  # black throws the mate, still winning
+        ]
+        all_moves = _run_all_moves_pass(positions)
+        mover, severity, _es_before, _es_after = all_moves[3]
+        assert mover == "black"
+        assert severity == "blunder"
+
+    def test_cp_only_transitions_unchanged(self) -> None:
+        """Pure cp->cp games keep ES-drop classification (regression guard)."""
+        positions = [
+            _make_pos(0, eval_cp=20),
+            _make_pos(1, eval_cp=30),
+            _make_pos(2, eval_cp=-450),  # white throws ~0.36 ES -> blunder
+        ]
+        all_moves = _run_all_moves_pass(positions)
+        _mover, severity, _es_before, _es_after = all_moves[2]
+        assert severity == "blunder"
+
+    def test_ladder_severity_flows_into_flaw_records(self) -> None:
+        """classify_game_flaws emits a FlawRecord for a ladder-graded thrown mate."""
+        game = _make_game(pgn="1. e4 e5 2. Nf3 Nc6 *", user_color="black", result="0-1")
+        positions = [
+            _make_pos(0, eval_cp=-400, move_san="e4"),
+            _make_pos(1, eval_mate=-8, move_san="e5"),
+            _make_pos(2, eval_mate=-8, move_san="Nf3"),
+            _make_pos(3, eval_cp=-550, move_san="Nc6"),
+        ]
+        result = classify_game_flaws(game, positions)
+        assert isinstance(result, list)
+        thrown = [f for f in result if f["ply"] == 3]
+        assert len(thrown) == 1
+        assert thrown[0]["severity"] == "blunder"
+        assert thrown[0]["side"] == "black"
 
 
 class TestEvalCoverageGate:
