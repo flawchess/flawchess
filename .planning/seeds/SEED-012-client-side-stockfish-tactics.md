@@ -213,6 +213,83 @@ not yet a locked decision. It does not replace the client-side path — they can
 Promote/decide via `/gsd-new-milestone` or a focused `/gsd-discuss-phase` when SEED-040 or
 tactics features go near-term.
 
+## Amendment (2026-06-12): server-first v1 locked — /gsd-explore session decisions
+
+Explored in a dedicated `/gsd-explore` session (user pushed this up the priority list as
+the unlock for SEED-039 tactic tags and SEED-037 Train). The 2026-06-09 amendment's
+"reconsidering" is now resolved: **non-goal #1 is reversed. v1 is server-side.** The
+client-side path is deferred, not dead — see D-8.
+
+### What already exists (the v1 delta is smaller than this seed assumed)
+
+- `app/services/eval_drain.py` — a continuous background drain (Phase 91) already
+  evaluates games with `evals_completed_at IS NULL`, with OOM-hardened short-transaction
+  session discipline. Today it only targets ~2–3 plies/game (middlegame entry + endgame
+  span entries).
+- `app/services/engine.py` — `EnginePool` whose Stockfish processes run under
+  **SCHED_IDLE**: the kernel preempts them instantly when uvicorn/Postgres want CPU. The
+  "fast preemption" requirement from the 2026-06-09 amendment is already implemented at
+  the kernel level.
+
+The v1 work is therefore: an **all-ply target collector**, a **priority queue** replacing
+the D-11 LIFO id-DESC pick, a **node-budget search** call, and the hybrid demand UX.
+
+### Locked decisions (2026-06-12)
+
+- **D-1 — Server-first v1; client path deferred.** Reverses non-goal #1.
+- **D-2 — Coverage bar: full per-ply analysis of *recent games for active users*,** not
+  the full library. Tactic features must show "(only analyzed games)" indicators + a CTA
+  (decision #3's implication stands).
+- **D-3 — Hybrid demand model.** Automatic window (last ~100–200 games) queued on import
+  completion / user activity, so features light up by themselves; plus an explicit
+  "analyze more" UX with progress (reuse the import-job mental model).
+- **D-4 — Queue tiers + fairness.** Tier 1 explicit requests > tier 2 automatic windows >
+  tier 3 idle backlog drain (cores never sit idle). **Round-robin per user within a
+  tier** (one game each, cycle) so concurrent users all see steady progress;
+  most-recent-game-first within a user.
+- **D-5 — Storage: fill `game_positions.eval_cp/eval_mate` directly.** Supersedes
+  decision #2's position-keyed `position_evals` table *for the server path* — that
+  design was motivated by untrusted client writers and cross-user sharing; with the
+  server as sole writer, the existing columns (already read by the flaw classifier and
+  all stats) win. Dedup at compute time: before each engine call on **ply ≤ 20 only**,
+  an indexed lookup by `full_hash` copies any existing server eval (hit rates collapse
+  after the opening prefix). The position-keyed table may return if/when client workers
+  land.
+- **D-6 — Search budget: single pass, fixed 1,000,000 nodes/position, NNUE, multiPV=1
+  (Lichess parity).** Supersedes decision #5's two-pass adaptive depth for the server
+  drain. Researched 2026-06-12: lichess "Request a computer analysis" runs on fishnet
+  volunteer clients at exactly this budget (lila `Work.scala`: `manualRequest =
+  1_000_000` nodes; ~depth 20–23 in middlegames; judgements at winning-chances delta
+  ≥0.3/0.2/0.1; accuracy formula at lichess.org/page/accuracy). **This is a calibration
+  requirement, not a quality preference:** `game_flaws` rows and the Phase 114
+  flaw-delta benchmark zones are computed from lichess %evals, which ARE fishnet
+  1M-node evals. Depth-15 evals for chess.com games would put a shallower-eval
+  population against zones calibrated on deeper evals. 1M nodes puts both platforms on
+  one scale, and users can verify against lichess's own review.
+- **D-7 — PV capture for SEED-039, no second pass.** The refutation line SEED-039 needs
+  is the PV of the position *after* the flawed move — a position the all-ply pass
+  analyzes anyway, and `analyse()` returns the PV alongside the score. Persist the PV
+  for flaw-adjacent plies, discard the rest. (Planning detail: skip book plies except
+  the *last* book position — the first non-book move needs an eval-before.)
+- **D-8 — Pluggable-worker queue (the fishnet model).** Design the v1 queue so a worker
+  is "anything that leases a job and posts back evals". The server `EnginePool` is the
+  only v1 worker; the later client-side path (this seed's original stockfish.wasm idea)
+  becomes browsers leasing jobs from the *same* queue into the *same* storage — not a
+  second pipeline. This resolves the original client-vs-server question as "both,
+  sequenced".
+
+### Throughput (napkin — pending Q-008 benchmark)
+
+~60 evaluated plies/game × 1M nodes at ~0.7–1.5M nps/core ≈ **1–2 min core-time per
+game** → ~4–8k games/day on ~6 SCHED_IDLE cores. Initial catch-up for ~100 active users
+× 200 recent games ≈ a week; one user's 200-game window ≈ 1–2 h; per-import increments
+are minutes. Q-008 in `.planning/research/questions.md` pins the real number on the
+CPX42 and sizes the automatic window.
+
+**Status: promote-ready.** Prerequisite 1 (COOP/COEP / iOS Safari) is no longer a v1
+blocker (client path deferred); prerequisite 2 (classifier prior art) was resolved by
+SEED-039 (cook.py reimplementation). Promote via `/gsd-new-milestone` when prioritized.
+
 ## Cross-References
 
 - **SEED-040** (flaw-stats opponent comparison) — the feature whose eval-coverage need

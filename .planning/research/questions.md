@@ -170,3 +170,22 @@ Ran against `flawchess-prod-db`. "Analyzed" = full eval present, proxied by `whi
 
 **Resolved:** _(partial — half 1a answered above; halves 1b + 2 deferred to post-materialization)_
 
+---
+
+## Q-008: Full-game eval drain — prod 1M-node throughput + catch-up queue sizing
+
+**Asked:** 2026-06-12 (during `/gsd-explore` on prioritizing Stockfish analysis of chess.com games — see [SEED-012](../seeds/SEED-012-client-side-stockfish-tactics.md), 2026-06-12 amendment)
+
+**Context:** SEED-012's server-first v1 locked a fixed **1,000,000-node NNUE** search per position (Lichess fishnet parity, D-6) for the all-ply eval drain. All throughput planning rests on a napkin estimate (~1–2 min core-time/game, ~4–8k games/day on ~6 SCHED_IDLE cores). Two unknowns gate the milestone's queue/window sizing:
+
+1. **Real 1M-node latency on the CPX42.** Benchmark Stockfish (the prod binary/version) at `nodes=1_000_000`, NNUE, multiPV=1, hash per `engine.py` config, across a representative mix of opening/middlegame/endgame positions — on the prod box under SCHED_IDLE, both idle and while normal traffic runs. Output: seconds/position (p50/p90), effective games/day for pool sizes 4–6, and confirmation SCHED_IDLE keeps API latency unaffected at full tilt.
+2. **Catch-up queue size.** Against `flawchess-prod-db`: count of recently-active users (e.g. activity within 30/60/90 days) × their last-100/200/500 game counts *lacking full eval coverage* (chess.com games + analysis-off lichess games). Output: total games in the tier-2 automatic catch-up at each candidate window size, and the implied catch-up duration at the measured throughput from half 1.
+
+**How to answer:**
+1. A ~10-minute spike: small script (à la `scripts/backfill_eval.py`) or one-off invocation of `EnginePool` with a `chess.engine.Limit(nodes=1_000_000)` over ~50 sampled prod-shaped positions; run on the prod host (or measure locally and scale by a one-position prod calibration run).
+2. Read-only queries via `flawchess-prod-db` (tunnel required), reusing the Q-007 "analyzed" proxy inverted (games where the eval columns are NULL across plies).
+
+**Why deferred:** Pins the automatic-window size (D-3) and the expected catch-up duration before the milestone commits to UX copy ("your games will be analyzed within ~X") and queue tier design. Not needed until SEED-012 is promoted via `/gsd-new-milestone`.
+
+**Resolved:** _(open)_
+
