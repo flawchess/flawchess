@@ -107,7 +107,7 @@ export function GlobalStatsPage() {
       {/* ── Flaw Statistics (top of page, UAT) ── */}
       <section data-testid="flaw-stats-section">
         <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-lg font-semibold text-foreground mt-2">Flaw Statistics</h2>
+          <h2 className="text-lg font-semibold text-foreground mt-2">Flaw Stats</h2>
           {flawStatsData !== undefined && (
             <FlawDenominatorPill
               analyzedN={flawStatsData.analyzed_n}
