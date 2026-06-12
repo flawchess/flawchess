@@ -62,11 +62,20 @@ def fmt_unsigned(value: float | Decimal | str, decimals: int) -> str:
 #           SD unsigned 1 dp; " cp" suffix on pooled rows only (marginals bare).
 #   score — proportion rendered as percent: unsigned, 1 dp, "%" suffix everywhere.
 #   pp    — signed proportion rendered as percentage points: 1 dp, "pp" everywhere
-#           (SD unsigned).
-Unit = Literal["cp", "score", "pp"]
+#           (SD unsigned). Used by §3 score-gap deltas (magnitudes up to ~±13pp).
+#   pp3   — same as pp but percentile (Q1/median/Q3 + p05/p95) columns at 3 dp. Used by
+#           §5 flaw-delta zones only: those deltas are tiny (e.g. low-clock pooled Q1/Q3
+#           ≈ ±0.08pp), so at 1 dp the whole quartile box collapses to ±0.0/−0.1pp and the
+#           distribution shape (notably the low-clock right-skew) is invisible. The SQL
+#           already rounds to 6 proportion dp (= 4 pp dp), so 3 dp loses no computed
+#           precision. Mean/SD stay at 1 dp (summary stats, not the calibration quartiles).
+Unit = Literal["cp", "score", "pp", "pp3"]
 Role = Literal["mean", "sd", "pct"]
 
-_UNIT_SCALE: dict[Unit, int] = {"cp": 1, "score": 100, "pp": 100}
+_UNIT_SCALE: dict[Unit, int] = {"cp": 1, "score": 100, "pp": 100, "pp3": 100}
+
+# Percentile-column decimal places for the pp3 unit (the §5 quartile-precision variant).
+_PP3_PCT_DECIMALS: int = 3
 
 
 def fmt_value(value: float | Decimal | str, unit: Unit, role: Role, *, pooled: bool = False) -> str:
@@ -76,12 +85,17 @@ def fmt_value(value: float | Decimal | str, unit: Unit, role: Role, *, pooled: b
     on marginal rows, matching benchmarks-latest.md).
     """
     scaled = float(value) * _UNIT_SCALE[unit]
-    decimals = 0 if (unit == "cp" and role == "pct") else 1
-    signed = unit in ("cp", "pp") and role != "sd"
+    if unit == "cp" and role == "pct":
+        decimals = 0
+    elif unit == "pp3" and role == "pct":
+        decimals = _PP3_PCT_DECIMALS
+    else:
+        decimals = 1
+    signed = unit in ("cp", "pp", "pp3") and role != "sd"
     body = fmt_signed(scaled, decimals) if signed else fmt_unsigned(scaled, decimals)
     if unit == "score":
         return f"{body}%"
-    if unit == "pp":
+    if unit in ("pp", "pp3"):
         return f"{body}pp"
     return f"{body} cp" if pooled else body  # cp
 

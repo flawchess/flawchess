@@ -503,7 +503,7 @@ def render(values: Chapter5Values) -> str:
         parts += _metric_section(
             f"### {label}",
             block,
-            "pp",
+            "pp3",  # pp with 3 dp percentile columns — §5 deltas are tiny; see render.Unit
             pooled_label="Pooled distribution (you − opponent delta, per 100 moves)",
         )
         parts += ["", "---", ""]
