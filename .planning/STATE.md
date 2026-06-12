@@ -2,25 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.26
 milestone_name: Full-Game Eval Pipeline
-status: planning
-last_updated: "2026-06-12T15:51:09.875Z"
-last_activity: 2026-06-12
+status: verifying
+last_updated: "2026-06-12T19:49:11.009Z"
+last_activity: 2026-06-12 -- Phase 116 execution started
 progress:
-  total_phases: 3
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 7
+  completed_phases: 1
+  total_plans: 3
+  completed_plans: 3
+  percent: 14
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 0 of 3 (roadmap created, ready to plan Phase 116)
-Plan: —
-Status: Ready to plan
-Last activity: 2026-06-12 — Roadmap created: 3 phases (116–118), 16/16 requirements mapped
+Phase: 116 (all-ply-engine-core) — EXECUTING
+Plan: 3 of 3
+Status: Phase complete — ready for verification
+Last activity: 2026-06-12 -- Phase 116 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -338,6 +338,9 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 | Phase 114.1 P01 | 8m | 4 tasks | 12 files |
 | Phase 114.1 P02 | 14min | 4 tasks | 11 files |
 | Phase 115 P01 | 14 | 3 tasks | 6 files |
+| Phase 116-all-ply-engine-core P01 | 16min | 3 tasks | 6 files |
+| Phase 116-all-ply-engine-core P02 | 35 | 3 tasks | 3 files |
+| Phase 116-all-ply-engine-core P03 | 25min | 3 tasks | 3 files |
 
 ## Decisions
 
@@ -374,3 +377,9 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 - [Phase ?]: is_opponent_expr/player_only_gate params widened to Any — ty InstrumentedAttribute subtype mismatch
 - [Phase ?]: D-09 confirmed: backfill_flaws.py needed zero code changes — D-10 single-classify-path propagated both-sides behavior from Plan-01 kernel change automatically
 - [Phase ?]: Single migration 07994baf3b15 replaces move_count with ply_count in one transaction; ply_count = len(nodes) exact half-move count; stays nullable (D-02a); all readers use ply_count directly (D-03)
+- [Phase 116]: _NODES_TIMEOUT_S=5.0 for 1M-node calls (4x prod p90=1.277s, spike 002); _TIMEOUT_S=2.0 retained for depth-15 only
+- [Phase 116]: In-migration backfill for full_evals_completed_at: EXPLAIN on dev confirmed 798ms via indexed nested loop (no full scan), estimated ~2.6s on prod
+- [Phase 116]: ix_games_full_evals_pending is migration-only (not in Game.__table_args__) matching ix_games_evals_pending pattern (Critical Constraint 5)
+- [Phase ?]: Phase 116 Plan 03
+- [Phase ?]: .planning/phases/116-all-ply-engine-core/116-03-SUMMARY.md
+- [Phase ?]: .planning/phases/116-all-ply-engine-core/116-03-SUMMARY.md

@@ -151,6 +151,13 @@ class Game(Base):
     evals_completed_at: Mapped[datetime.datetime | None] = mapped_column(
         sa.DateTime(timezone=True), nullable=True
     )
+    # Phase 116 EVAL-05 / D-116-05: full-game (all-ply) analysis completion marker.
+    # Mirrors evals_completed_at exactly. NULL = pending for the full-ply drain.
+    # The pending-pick partial index (WHERE NULL, on id) lives in the migration only,
+    # matching the ix_games_evals_pending pattern (Critical Constraint 5).
+    full_evals_completed_at: Mapped[datetime.datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
 
     positions: Mapped[list["GamePosition"]] = relationship(  # ty: ignore[unresolved-reference]
         back_populates="game", cascade="all, delete-orphan"

@@ -46,13 +46,15 @@ import asyncpg
 import chess
 import chess.pgn
 import sentry_sdk
+import sqlalchemy as sa
 from sqlalchemy import bindparam, select, update
 from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_maker
 from app.models.game import Game
-from app.models.game_position import GamePosition
+from app.models.game_position import DEDUP_MAX_PLY, GamePosition
+from app.models.import_job import ImportJob
 from app.repositories.game_flaws_repository import bulk_insert_game_flaws, flaw_record_to_row
 from app.repositories.game_repository import users_with_zero_pending
 from app.services import engine as engine_service
@@ -81,6 +83,227 @@ _RETRIABLE_DB_OUTAGE_ERRORS: tuple[type[BaseException], ...] = (
 
 _DRAIN_BATCH_SIZE = 10  # D-11 (LIFO id-DESC pick size)
 _DRAIN_IDLE_SLEEP_SECONDS = 5  # D-13 (poll interval when queue empty)
+
+# Phase 116 EVAL-03 / D-116-02: dedup only in the opening region.
+# WR-08: aliased from the model constant (single source of truth) so this
+# boundary can never drift from the ply <= N predicate of the
+# ix_gp_full_hash_opening partial index — drifting above it would silently
+# stop dedup lookups from using the index.
+_DEDUP_MAX_PLY: int = DEDUP_MAX_PLY
+
+
+# ---------------------------------------------------------------------------
+# Phase 116 full-ply drain: dataclass + helpers
+# ---------------------------------------------------------------------------
+
+
+@dataclass(slots=True)
+class _FullPlyEvalTarget:
+    """One position scheduled for full-ply eval (Phase 116 EVAL-01).
+
+    ply: game_positions.ply (0-indexed; 0 = initial position before first move)
+    full_hash: for dedup batch-lookup at ply <= _DEDUP_MAX_PLY (EVAL-03)
+    board: board snapshot for the engine call (if not dedup'd)
+    eval_cp / eval_mate: the row's CURRENT stored values from the DB. Carried so
+        the drain can skip engine calls for plies whose result would be
+        discarded by the D-116-04 preservation gate anyway (WR-01), and so the
+        write path's belt-and-braces preservation check needs no row re-scan.
+    """
+
+    game_id: int
+    ply: int
+    full_hash: int
+    board: chess.Board
+    eval_cp: int | None
+    eval_mate: int | None
+
+
+def _collect_full_ply_targets(
+    game_id: int,
+    pgn_text: str,
+    game_positions_rows: Sequence[tuple[int, int, int | None, int | None]],
+) -> list[_FullPlyEvalTarget]:
+    """Collect one target per non-terminal ply (EVAL-01).
+
+    game_positions_rows: (ply, full_hash, eval_cp, eval_mate) loaded from DB.
+
+    Terminal exclusion: mainline iterator yields positions BEFORE each push.
+    The post-last-move board (game-over) is never visited — no is_game_over()
+    guard needed during the walk. Simply skip adding a snapshot after the loop.
+
+    Returns [] on PGN parse failure or None game.
+    """
+    try:
+        game = chess.pgn.read_game(io.StringIO(pgn_text))
+    except Exception:
+        return []
+    if game is None:
+        return []
+
+    # Build ply -> (full_hash, eval_cp, eval_mate) lookup from DB rows
+    ply_meta: dict[int, tuple[int, int | None, int | None]] = {
+        ply: (fh, cp, mt) for ply, fh, cp, mt in game_positions_rows
+    }
+
+    board = game.board()
+    targets: list[_FullPlyEvalTarget] = []
+    for ply, node in enumerate(game.mainline()):
+        meta = ply_meta.get(ply)
+        if meta is not None:
+            fh, cp, mt = meta
+            targets.append(
+                _FullPlyEvalTarget(
+                    game_id=game_id,
+                    ply=ply,
+                    full_hash=fh,
+                    board=board.copy(),
+                    eval_cp=cp,
+                    eval_mate=mt,
+                )
+            )
+        board.push(node.move)
+    # board is now the terminal position — NOT added.
+    return targets
+
+
+async def _fetch_dedup_evals(
+    session: AsyncSession,
+    full_hashes: Sequence[int],
+) -> dict[int, tuple[int | None, int | None]]:
+    """Batch-fetch parity evals for opening-region hashes (EVAL-03, D-116-02).
+
+    Marker gate: source games must have full_evals_completed_at IS NOT NULL
+    (parity by construction). Do NOT use evals_completed_at here — that gate
+    includes depth-15 source rows (Pitfall 4, RESEARCH.md).
+
+    Engine-source-only gate (WR-02): source games must NOT be is_analyzed
+    (white_blunders IS NULL). Lichess %eval values are post-move evals — a row
+    at ply k stores the eval of the position AFTER its move (zobrist.py:182),
+    while the row's full_hash is the position BEFORE the move. Engine-written
+    rows (this drain) evaluate the pre-push position, so only those are
+    position-keyed by construction and safe to transplant cross-game by
+    full_hash. Preserved lichess rows in drain-completed is_analyzed games
+    would attach "eval after the SOURCE game's move" to a target game that may
+    have played a different move from that position.
+
+    Returns {full_hash: (eval_cp, eval_mate)} for hashes with at least one hit.
+    """
+    if not full_hashes:
+        return {}
+    result = await session.execute(
+        select(GamePosition.full_hash, GamePosition.eval_cp, GamePosition.eval_mate)
+        .join(Game, GamePosition.game_id == Game.id)
+        .where(
+            GamePosition.full_hash.in_(full_hashes),
+            GamePosition.ply <= _DEDUP_MAX_PLY,
+            Game.full_evals_completed_at.isnot(None),
+            # WR-02: engine-written sources only — see docstring.
+            Game.white_blunders.is_(None),
+            sa.or_(GamePosition.eval_cp.isnot(None), GamePosition.eval_mate.isnot(None)),
+        )
+        .distinct(GamePosition.full_hash)
+        .limit(len(full_hashes))
+    )
+    return {row[0]: (row[1], row[2]) for row in result.all()}
+
+
+async def _any_active_import_or_entry_ply_pending(session: AsyncSession) -> bool:
+    """True if the full drain should yield to higher-priority work (D-116-11).
+
+    Returns True when:
+    (a) any import_job with status IN ('pending', 'in_progress') exists, OR
+    (b) any game with evals_completed_at IS NULL exists (entry-ply drain backlog).
+    Both checks use existing partial indexes and are sub-millisecond.
+    """
+    active_import = await session.scalar(
+        select(sa.func.count())
+        .select_from(ImportJob)
+        .where(ImportJob.status.in_(["pending", "in_progress"]))
+    )
+    if active_import:
+        return True
+    entry_ply_pending = await session.scalar(
+        select(sa.func.count()).select_from(Game).where(Game.evals_completed_at.is_(None)).limit(1)
+    )
+    return bool(entry_ply_pending)
+
+
+def _resolve_full_eval(
+    target: _FullPlyEvalTarget,
+    dedup_map: dict[int, tuple[int | None, int | None]],
+    engine_result_map: dict[int, tuple[int | None, int | None]],
+) -> tuple[int | None, int | None]:
+    """Resolve the eval to write for one ply (pure; WR-04).
+
+    Priority: dedup hit (EVAL-03, opening region only) > engine result >
+    (None, None) hole (D-116-07).
+    """
+    if target.ply <= _DEDUP_MAX_PLY and target.full_hash in dedup_map:
+        return dedup_map[target.full_hash]
+    return engine_result_map.get(target.ply, (None, None))
+
+
+async def _apply_full_eval_results(
+    session: AsyncSession,
+    targets: Sequence[_FullPlyEvalTarget],
+    dedup_map: dict[int, tuple[int | None, int | None]],
+    engine_result_map: dict[int, tuple[int | None, int | None]],
+    is_analyzed: bool,
+) -> int:
+    """Write resolved full-ply evals to GamePosition rows (WR-04 extraction).
+
+    Mirrors _apply_eval_results for the entry-ply drain: UPDATEs run
+    sequentially against the caller-owned session (CLAUDE.md hard rule:
+    AsyncSession is not safe under asyncio.gather); the caller commits.
+
+    D-116-04 is_analyzed gate:
+    - is_analyzed=True: lichess %evals present; preserve existing non-NULL
+      rows (T-78-17). Belt-and-braces — covered plies are already filtered
+      out before the gather (WR-01).
+    - is_analyzed=False: legacy depth-15 evals; overwrite all (D-116-03).
+
+    Returns the number of failed (NULL-hole) plies. Sentry reporting is the
+    caller's responsibility — ONE aggregated event per game, never per ply
+    (WR-05: a full game can have 60-600 plies; per-ply messages would flood
+    Sentry whenever the engine pool degrades).
+    """
+    failed_ply_count = 0
+    for target in targets:
+        eval_cp, eval_mate = _resolve_full_eval(target, dedup_map, engine_result_map)
+
+        if eval_cp is None and eval_mate is None:
+            # D-116-07: engine failure — leave NULL hole; counted for the
+            # caller's per-game aggregated Sentry event (WR-05).
+            failed_ply_count += 1
+            continue
+
+        # D-116-04 preservation (see docstring). The target carries the row's
+        # original eval values, so no gp_rows re-scan.
+        if is_analyzed and (target.eval_cp is not None or target.eval_mate is not None):
+            continue
+
+        stmt = update(GamePosition).where(
+            GamePosition.game_id == target.game_id,
+            GamePosition.ply == target.ply,
+        )
+        await session.execute(stmt.values(eval_cp=eval_cp, eval_mate=eval_mate))
+    return failed_ply_count
+
+
+async def _mark_full_evals_completed(session: AsyncSession, game_id: int) -> None:
+    """Mark one game as fully analyzed (EVAL-05, D-116-07).
+
+    Sets full_evals_completed_at unconditionally — even when some plies are NULL
+    holes (engine failure). One UPDATE per game (single tick), not batch.
+    """
+    now_ts = datetime.now(timezone.utc)
+    games_table = Game.__table__
+    stmt = (
+        update(games_table)  # ty: ignore[invalid-argument-type]
+        .where(games_table.c.id == game_id)
+        .values(full_evals_completed_at=now_ts)
+    )
+    await session.execute(stmt)
 
 
 # ---------------------------------------------------------------------------
@@ -661,5 +884,184 @@ async def run_eval_drain() -> None:
         except Exception:
             logger.exception("eval_drain: unexpected error — continuing")
             sentry_sdk.set_tag("source", "eval_drain")
+            sentry_sdk.capture_exception()
+            await asyncio.sleep(_DRAIN_IDLE_SLEEP_SECONDS)
+
+
+async def _full_drain_tick() -> bool:
+    """Run ONE full-drain tick: yield gate, pick, collect, dedup, gather, write.
+
+    Returns True when a game was processed and marked complete; False when the
+    tick did nothing (yield gate active, or no pending non-guest game) or the
+    all-fail circuit breaker tripped (WR-05 — game stays pending for retry).
+
+    Extracted from run_full_eval_drain (WR-07) so tests can drive exactly one
+    tick deterministically — no wall-clock sleeps, no loop cancellation, no
+    dependence on other tests' committed rows beyond the single LIFO pick.
+
+    Session discipline (CLAUDE.md hard rule: AsyncSession not safe for concurrent use):
+      Step 0: yield gate — short read tx, close.
+      Step 1: pick ONE game (LIFO id-DESC) — short read tx, close.
+      Step 2: load PGN + game_positions rows — short read tx, close.
+      Step 3: asyncio.gather(evaluate_nodes) with NO session open.
+      Step 4: write session (open LATE): ~60 UPDATEs + full marker + commit, close.
+    """
+    # Step 0: yield gate (D-116-11).
+    # Short read session to check active import or entry-ply backlog.
+    async with async_session_maker() as gate_session:
+        should_yield = await _any_active_import_or_entry_ply_pending(gate_session)
+    if should_yield:
+        return False
+
+    # Step 1: pick ONE game (LIFO id-DESC, D-116-09/D-116-10).
+    # Guest filter (D-116-10): join to users, exclude is_guest.
+    # Short read session, then close.
+    from app.models.user import User
+
+    async with async_session_maker() as pick_session:
+        pick_result = await pick_session.execute(
+            select(
+                Game.id,
+                Game.pgn,
+                Game.white_blunders.isnot(None).label("is_analyzed"),
+                Game.user_id,
+            )
+            .join(User, Game.user_id == User.id)
+            .where(
+                Game.full_evals_completed_at.is_(None),
+                User.is_guest == False,  # noqa: E712 — SQLAlchemy requires == not is
+            )
+            .order_by(Game.id.desc())
+            .limit(1)
+        )
+        row = pick_result.one_or_none()
+
+    if row is None:
+        return False
+
+    game_id: int = row[0]
+    pgn_text: str = row[1]
+    is_analyzed: bool = row[2]
+
+    # Step 2: load game_positions rows for this game.
+    # Build targets via _collect_full_ply_targets; partition dedup candidates.
+    # Short read session, then close.
+    async with async_session_maker() as load_session:
+        pos_result = await load_session.execute(
+            select(
+                GamePosition.ply,
+                GamePosition.full_hash,
+                GamePosition.eval_cp,
+                GamePosition.eval_mate,
+            ).where(GamePosition.game_id == game_id)
+        )
+        gp_rows = [(r[0], r[1], r[2], r[3]) for r in pos_result.all()]
+
+        # Collect one target per non-terminal ply (EVAL-01).
+        targets = _collect_full_ply_targets(game_id, pgn_text, gp_rows)
+
+        # WR-01: for is_analyzed games, plies whose row already carries
+        # a non-NULL lichess %eval are preserved at write time anyway
+        # (D-116-04 / T-78-17) — evaluating them is pure waste (a fully
+        # analyzed game would burn ~60+ 1M-node calls whose results are
+        # all discarded). Filter them out BEFORE dedup + gather.
+        if is_analyzed:
+            targets = [t for t in targets if t.eval_cp is None and t.eval_mate is None]
+
+        # Partition opening-region hashes for dedup (EVAL-03).
+        dedup_hashes = [t.full_hash for t in targets if t.ply <= _DEDUP_MAX_PLY]
+        dedup_map = await _fetch_dedup_evals(load_session, dedup_hashes)
+    # load_session is now closed.
+
+    # Step 3: asyncio.gather — NO session open.
+    # CLAUDE.md hard rule: gather must never run inside an AsyncSession scope.
+    # Targets with a dedup hit skip the engine call (EVAL-03).
+    engine_targets = [t for t in targets if t.ply > _DEDUP_MAX_PLY or t.full_hash not in dedup_map]
+    if engine_targets:
+        engine_results: Sequence[tuple[int | None, int | None]] = await asyncio.gather(
+            *(engine_service.evaluate_nodes(t.board) for t in engine_targets)
+        )
+    else:
+        engine_results = []
+
+    # WR-05 circuit breaker: when EVERY engine call for the game failed, the
+    # cause is overwhelmingly an engine-pool problem (e.g. all workers
+    # permanently dead after failed restarts), not a position problem. Marking
+    # the game complete would convert a transient outage into permanent,
+    # silent loss of full-eval coverage across the whole backlog at maximum
+    # loop speed. Leave the game pending (re-picked next tick) and report ONE
+    # Sentry event. Per-position holes remain mark-and-continue per D-116-07.
+    if engine_targets and all(cp is None and mt is None for cp, mt in engine_results):
+        sentry_sdk.set_context(
+            "eval", {"game_id": game_id, "failed_ply_count": len(engine_targets)}
+        )
+        sentry_sdk.set_tag("source", "full_eval_drain")
+        sentry_sdk.capture_message(
+            "full-drain: all engine evals failed for game — leaving pending", level="warning"
+        )
+        return False
+
+    # Build a ply -> (eval_cp, eval_mate) resolution map.
+    # Dedup hits take priority; then engine results; unresolved = (None, None).
+    engine_result_map: dict[int, tuple[int | None, int | None]] = {}
+    for t, res in zip(engine_targets, engine_results, strict=True):
+        engine_result_map[t.ply] = res
+
+    # Step 4: write session — open LATE, after gather completes.
+    # Per-ply resolution + UPDATEs live in _apply_full_eval_results (WR-04).
+    async with async_session_maker() as write_session:
+        failed_ply_count = await _apply_full_eval_results(
+            write_session, targets, dedup_map, engine_result_map, is_analyzed
+        )
+        if failed_ply_count:
+            # WR-05: ONE aggregated Sentry event per game (never per ply).
+            sentry_sdk.set_context(
+                "eval", {"game_id": game_id, "failed_ply_count": failed_ply_count}
+            )
+            sentry_sdk.set_tag("source", "full_eval_drain")
+            sentry_sdk.capture_message("full-drain engine returned None tuple", level="warning")
+        # D-116-07: mark complete even with partial NULL holes (the all-fail
+        # case is intercepted by the circuit breaker above).
+        await _mark_full_evals_completed(write_session, game_id)
+        await write_session.commit()
+    return True
+
+
+async def run_full_eval_drain() -> None:
+    """Continuously evaluate all non-terminal plies for games with full_evals_completed_at IS NULL.
+
+    Phase 116 EVAL-01/EVAL-02/EVAL-03/EVAL-05 / D-116-08.
+
+    Thin loop over _full_drain_tick (WR-07): sleeps _DRAIN_IDLE_SLEEP_SECONDS
+    whenever the tick processed nothing (yield gate active or queue empty),
+    loops immediately after a processed game.
+
+    D-116-09: LIFO id-DESC interim pick (replaced by queue in Phase 117).
+    D-116-10: guest filter — WHERE NOT users.is_guest.
+    D-116-11: yield gate — sleep if active import OR entry-ply drain has backlog.
+
+    Exception handling (three-tier mirrors run_eval_drain):
+    - asyncio.CancelledError: propagates (lifespan shutdown contract).
+    - _RETRIABLE_DB_OUTAGE_ERRORS: sleep + continue (Postgres restart mid-tick).
+    - Exception: log + capture + continue.
+
+    Wired in app/main.py lifespan as full-eval-drain alongside the entry-ply drain.
+    """
+    while True:
+        try:
+            processed = await _full_drain_tick()
+            if not processed:
+                await asyncio.sleep(_DRAIN_IDLE_SLEEP_SECONDS)
+
+        except asyncio.CancelledError:
+            raise
+        except _RETRIABLE_DB_OUTAGE_ERRORS as exc:
+            logger.warning("full_eval_drain: DB outage, retrying in %ds", _DRAIN_IDLE_SLEEP_SECONDS)
+            sentry_sdk.set_tag("source", "full_eval_drain")
+            sentry_sdk.capture_exception(exc)
+            await asyncio.sleep(_DRAIN_IDLE_SLEEP_SECONDS)
+        except Exception:
+            logger.exception("full_eval_drain: unexpected error — continuing")
+            sentry_sdk.set_tag("source", "full_eval_drain")
             sentry_sdk.capture_exception()
             await asyncio.sleep(_DRAIN_IDLE_SLEEP_SECONDS)

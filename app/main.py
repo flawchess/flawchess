@@ -25,7 +25,7 @@ from app.routers.library import router as library_router
 from app.routers.stats import router as stats_router
 from app.routers.users import router as users_router
 from app.services.engine import start_engine, stop_engine
-from app.services.eval_drain import run_eval_drain
+from app.services.eval_drain import run_eval_drain, run_full_eval_drain
 from app.services.import_service import cleanup_orphaned_jobs, run_periodic_reaper
 from app.services.insights_llm import get_insights_agent
 
@@ -75,6 +75,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # stop_engine() runs AFTER both tasks are awaited so in-flight evaluations
     # can complete before the EnginePool is torn down (T-91-20 ordering gate).
     drain_task = asyncio.create_task(run_eval_drain(), name="eval-drain")
+    # Phase 116 / EVAL-01: full-ply drain — analyzes every non-terminal ply at 1M nodes.
+    # Runs alongside the entry-ply drain (D-116-08: entry-ply drain untouched).
+    full_drain_task = asyncio.create_task(run_full_eval_drain(), name="full-eval-drain")
     try:
         yield
     finally:
@@ -85,6 +88,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         # awaits in an inner try/finally so the engine shutdown is unconditional.
         reaper_task.cancel()
         drain_task.cancel()
+        full_drain_task.cancel()
         try:
             try:
                 await reaper_task
@@ -98,6 +102,12 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                 pass  # expected on shutdown
             except Exception:
                 logger.exception("Eval drain task raised on shutdown")
+            try:
+                await full_drain_task
+            except asyncio.CancelledError:
+                pass  # expected on shutdown
+            except Exception:
+                logger.exception("Full eval drain task raised on shutdown")
         finally:
             await stop_engine()
 

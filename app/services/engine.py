@@ -13,9 +13,10 @@ scheduling (the relevant `os.sched_setscheduler` API is Linux-only).
 
 Two APIs:
     Module-level (live FastAPI traffic, prod imports):
-        start_engine()       -- call from FastAPI lifespan startup.
-        stop_engine()        -- call from lifespan shutdown.
-        evaluate(board)      -- async; returns (eval_cp, eval_mate).
+        start_engine()          -- call from FastAPI lifespan startup.
+        stop_engine()           -- call from lifespan shutdown.
+        evaluate(board)         -- async; returns (eval_cp, eval_mate); depth-15.
+        evaluate_nodes(board)   -- async; returns (eval_cp, eval_mate); 1M nodes (EVAL-02).
 
         With STOCKFISH_POOL_SIZE=1 (the dev/CI default) this behaves exactly
         like the original singleton. Set STOCKFISH_POOL_SIZE=2+ on prod to get
@@ -73,34 +74,65 @@ def _resolve_stockfish_path() -> str:
 _STOCKFISH_PATH: str = _resolve_stockfish_path()
 # D-03: UCI options live ONLY in this module (ENG-03 grep gate)
 # Bug fix (2026-05-16, FLAWCHESS-56 / FLAWCHESS-3Q): reduced 64 -> 32. With
-# prod STOCKFISH_POOL_SIZE=4 the pool reserved 4 * 64 = 256MB of hash tables
-# alone, a material contributor to the import-time Postgres OOM-kill. At
-# depth 15 over import-time evals the smaller hash has negligible quality
-# impact (per-position search, not long analysis).
+# the hotfix-era STOCKFISH_POOL_SIZE=4 the pool reserved 4 * 64 = 256MB of
+# hash tables alone, a material contributor to the import-time Postgres
+# OOM-kill. At depth 15 over import-time evals the smaller hash has negligible
+# quality impact (per-position search, not long analysis). Prod has since been
+# raised to STOCKFISH_POOL_SIZE=6 stably for several weeks (see pool comment).
 _HASH_MB: int = 32
 _THREADS: int = 1
 # SPEC constraint: depth 15 fixed, no per-call tuning
 _DEPTH: int = 15
 # D-05: defensive per-eval timeout
 _TIMEOUT_S: float = 2.0
+# Phase 116 EVAL-02: node-budget constants for full-game analysis drain.
+# _NODES_TIMEOUT_S is distinct from _TIMEOUT_S: depth-15 mean ~0.09s; 1M-node
+# mean ~0.98s (prod spike 002 p90 = 1.277s). _TIMEOUT_S = 2.0 would time out ~50%
+# of node-budget calls on prod. 5.0s = ~4x prod p90 (spike 002).
+_NODES_BUDGET: int = 1_000_000  # EVAL-02: Lichess fishnet parity (D-6 SEED-012)
+_NODES_TIMEOUT_S: float = 5.0  # 4x prod p90 (1.277s, spike 002)
 #
 # NOTE (2026-05-29): eval_cp is NOT reproducible across machines/runs, and the
 # eval-derived percentiles (achievable_score_gap, score_gap_conv/parity/recovery)
 # therefore differ slightly between independently-backfilled DBs (e.g. dev vs prod)
 # even for identical imports. Two causes: (1) this wall-clock timeout is
-# machine-speed-dependent — a slower/busier host times out more depth-15 searches,
+# machine-speed-dependent -- a slower/busier host times out more depth-15 searches,
 # leaving eval_cp=NULL, which classify_span() routes to "parity"; (2) the TT
 # persists across positions within a pool worker (python-chess only clears on a
 # `game=` change, which we don't pass) so depth-15 evals are mildly order-/
-# scheduling-dependent. Stockfish has no RNG seed — its search isn't randomized —
+# scheduling-dependent. Stockfish has no RNG seed -- its search isn't randomized --
 # so there's nothing to seed; determinism would require a node limit + per-position
 # hash clear + pinned binary/net. Decided NOT worth fixing: differences are
-# sub-percentile and at the ±100cp classification boundary. If dev/prod must match
+# sub-percentile and at the +-100cp classification boundary. If dev/prod must match
 # exactly, copy eval_cp/eval_mate between DBs rather than re-backfilling each.
-# Module-level pool size. Default 1 = legacy singleton behavior. Prod sets
-# STOCKFISH_POOL_SIZE=4 to use all 4 vCPUs for parallel import-time evals;
-# safe because each child runs under Linux SCHED_IDLE (see _sched_idle_preexec)
-# and only consumes idle cycles. Read at start_engine() time.
+#
+# QUEUE-07 / D-116-12: Memory accounting for the pool-size decision (Phase 116).
+#
+# Measured per-worker RSS at 1M-node budget on the dev box (2026-06-12):
+#   1 worker:  277 MB    (includes full NNUE net load)
+#   4 workers: 1056 MB   (264 MB/worker -- sub-linear: NNUE net is OS page-cache-shared)
+#   6 workers: 1586 MB   (264 MB/worker)
+#   8 workers: 2083 MB   (260 MB/worker)
+# The sub-linear scaling (8x277 would be 2216 MB; actual 2083 MB) confirms the
+# 125 MiB NNUE net is shared across workers from the same binary via page cache (A3).
+#
+# Conservative prod estimate (Phase 91 stress test measured ~368 MB/worker at
+# depth-15 with concurrent imports; 1M-node calls are similar in working-set):
+#   8 workers x 368 MB = ~2.94 GB Stockfish
+#   FastAPI/Uvicorn ~0.3 GB
+#   Total estimate:   ~3.24 GB
+#   4g mem_limit headroom: ~0.76 GB  (sufficient; import-era OOM needed ~3.7+ GB)
+#
+# Deploy decision (D-116-13): ship at STOCKFISH_POOL_SIZE=6 first, monitor prod
+# API p50/p90 and container RSS for ~24 h, then raise to 8 only if (a) the
+# accounting fits 4g with headroom AND (b) API latency is clean. All Phase 116
+# throughput targets (5.83 pos/s, 8.4k games/day) were benchmarked at 6 workers.
+#
+# Module-level pool size. Default 1 = dev/CI singleton behavior. Prod sets
+# STOCKFISH_POOL_SIZE via .env (currently 6; 8 is the Phase 116 target,
+# contingent on the QUEUE-07 accounting check -- see comment above). Workers
+# run under Linux SCHED_IDLE (see _sched_idle_preexec) so they only consume
+# idle CPU and never preempt Uvicorn or Postgres. Read at start_engine() time.
 _POOL_SIZE_ENV: str = "STOCKFISH_POOL_SIZE"
 _DEFAULT_POOL_SIZE: int = 1
 
@@ -192,6 +224,19 @@ async def evaluate(board: chess.Board) -> tuple[int | None, int | None]:
     return await _pool.evaluate(board)
 
 
+async def evaluate_nodes(board: chess.Board) -> tuple[int | None, int | None]:
+    """Evaluate position at 1M nodes. Returns (eval_cp, eval_mate) in white perspective.
+
+    EVAL-02: Lichess-parity budget for full-game analysis drain.
+    Returns (None, None) on engine failure — same contract as evaluate().
+    Single PV only (Phase 116). PV capture is EVAL-04 / Phase 117.
+    Scalar InfoDict returned directly, handled by existing _score_to_cp_mate().
+    """
+    if _pool is None:
+        return None, None
+    return await _pool.evaluate_nodes(board)
+
+
 def _score_to_cp_mate(
     info: chess.engine.InfoDict,
 ) -> tuple[int | None, int | None]:
@@ -265,7 +310,9 @@ class EnginePool:
                 continue
             try:
                 await protocol.quit()
-            except (chess.engine.EngineError, chess.engine.EngineTerminatedError):
+            except (chess.engine.EngineError, chess.engine.EngineTerminatedError, RuntimeError):
+                # RuntimeError: quit() on an already-dead engine writes to a closed
+                # uvloop transport ("the handler is closed") — FLAWCHESS-59.
                 pass
         self._transports.clear()
         self._protocols.clear()
@@ -279,7 +326,12 @@ class EnginePool:
         if old_protocol is not None:
             try:
                 await old_protocol.quit()
-            except (chess.engine.EngineError, chess.engine.EngineTerminatedError):
+            except (chess.engine.EngineError, chess.engine.EngineTerminatedError, RuntimeError):
+                # RuntimeError: when the engine process died (e.g. SIGINT from dev
+                # reload), quit() writes to a closed uvloop transport and raises
+                # "the handler is closed" — not an EngineError subclass. Letting it
+                # escape aborted the restart and left the dead protocol in the slot,
+                # causing a raise-loop on every subsequent pickup (FLAWCHESS-59).
                 pass
         try:
             transport, protocol = await chess.engine.popen_uci(
@@ -294,8 +346,18 @@ class EnginePool:
         self._protocols[idx] = protocol
         return True
 
-    async def evaluate(self, board: chess.Board) -> tuple[int | None, int | None]:
-        """Evaluate a position on the next idle worker. Same contract as evaluate()."""
+    async def _analyse(
+        self,
+        board: chess.Board,
+        limit: chess.engine.Limit,
+        timeout: float,
+    ) -> tuple[int | None, int | None]:
+        """Shared worker-acquisition / analyse / failure-restart path (WR-06).
+
+        Single implementation behind evaluate() and evaluate_nodes() — the
+        acquisition, exception tuple, restart-on-failure, and slot-release
+        logic must never diverge between the two public methods.
+        """
         if not self._started:
             return None, None
         idx = await self._available.get()
@@ -305,8 +367,8 @@ class EnginePool:
                 return None, None
             try:
                 info = await asyncio.wait_for(
-                    protocol.analyse(board, chess.engine.Limit(depth=_DEPTH)),
-                    timeout=_TIMEOUT_S,
+                    protocol.analyse(board, limit),
+                    timeout=timeout,
                 )
             except (
                 asyncio.TimeoutError,
@@ -321,3 +383,16 @@ class EnginePool:
             return _score_to_cp_mate(info)
         finally:
             self._available.put_nowait(idx)
+
+    async def evaluate(self, board: chess.Board) -> tuple[int | None, int | None]:
+        """Evaluate a position at depth 15 on the next idle worker."""
+        return await self._analyse(board, chess.engine.Limit(depth=_DEPTH), _TIMEOUT_S)
+
+    async def evaluate_nodes(self, board: chess.Board) -> tuple[int | None, int | None]:
+        """Evaluate at 1M nodes on the next idle worker. EVAL-02.
+
+        Same contract as evaluate() but uses Limit(nodes=_NODES_BUDGET) and
+        _NODES_TIMEOUT_S. Single PV only (Phase 116); PV capture is EVAL-04 / Phase 117.
+        Scalar InfoDict returned directly, handled by _score_to_cp_mate() unchanged.
+        """
+        return await self._analyse(board, chess.engine.Limit(nodes=_NODES_BUDGET), _NODES_TIMEOUT_S)

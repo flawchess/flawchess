@@ -178,6 +178,9 @@ def main() -> None:
     ap.add_argument("--games", type=int, default=12)
     ap.add_argument("--depth", type=int, default=None)
     ap.add_argument("--json-out", default=None)
+    # Spike 002 helper: dump "game_id;ply;fen" lines and exit (no engine run),
+    # so the prod benchmark needs no DB access.
+    ap.add_argument("--dump-fens", default=None)
     args = ap.parse_args()
 
     games = asyncio.run(fetch_games(args.games))
@@ -185,6 +188,13 @@ def main() -> None:
     for game_id, pgn_text in games:
         positions.extend(collect_positions(game_id, pgn_text))
     print(f"Sampled {len(positions)} positions from {len(games)} games")
+
+    if args.dump_fens:
+        with open(args.dump_fens, "w") as f:
+            for game_id, ply, _fraction, board in positions:
+                f.write(f"{game_id};{ply};{board.fen()}\n")
+        print(f"Wrote {len(positions)} FENs to {args.dump_fens}")
+        return
 
     results = run_benchmark(positions, args.hash, args.nodes, args.depth)
     summary = summarize(results, args.hash, args.nodes)

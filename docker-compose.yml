@@ -76,9 +76,16 @@ services:
     # runaway uvicorn + Stockfish footprint gets OOM-killed inside the
     # container (auto-restarts) instead of dragging the host into the swap
     # thrash that preceded the 2026-05-20 and 2026-05-21 Postgres OOM-kills.
-    # Sized for the CPX42 host (16 GB) with STOCKFISH_POOL_SIZE up to 6. The
-    # Phase 91 stress test peaked at 1.47 GiB with 4 workers; 6 workers add
-    # roughly 400 MB, leaving ~2 GB headroom under this cap.
+    # Phase 116 / QUEUE-07 memory accounting (measured 2026-06-12):
+    #   8 workers x ~368 MB (conservative Phase 91 prod baseline) = ~2.94 GB
+    #   FastAPI/Uvicorn + import pipeline                         = ~0.30 GB
+    #   Total estimate                                            = ~3.24 GB
+    #   Headroom under 4g                                         = ~0.76 GB
+    # Dev measurement at 1M-node budget: 1w=277MB, 8w=2083MB(260MB/w).
+    # NNUE net is OS page-cache-shared, so N-worker total is sub-linear.
+    # Current prod pool: STOCKFISH_POOL_SIZE=6 (stable for several weeks).
+    # Phase 116 target: 8, contingent on prod soak confirming the ~0.76 GB
+    # headroom holds and API latency is clean (D-116-13). Deploy at 6 first.
     mem_limit: 4g
     memswap_limit: 4g
     depends_on:

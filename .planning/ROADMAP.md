@@ -35,6 +35,11 @@
 ### v1.26 Full-Game Eval Pipeline (Phases 116–118)
 
 - [ ] **Phase 116: All-Ply Engine Core** - Search-budget upgrade + all-ply target collector + dedup + completion marker + memory bounds
+  - **Plans:** 3 plans
+  - Plans:
+    - [x] 116-01-PLAN.md — Schema + engine API: full_evals_completed_at column, dedup index, verified backfill migration, evaluate_nodes() 1M-node call (EVAL-02, EVAL-05, EVAL-03)
+    - [x] 116-02-PLAN.md — run_full_eval_drain coroutine: all-ply collector, ply≤20 dedup, preserve/overwrite write, completion marker, yield gate, lifespan wiring (EVAL-01, EVAL-03, EVAL-05, QUEUE-07)
+    - [x] 116-03-PLAN.md — QUEUE-07 memory accounting: measure per-worker RSS at 1M nodes, document 4g budget, correct stale pool-size comments, gate pool→8 (QUEUE-07)
 - [ ] **Phase 117: Priority Queue + Flaw Integration** - Tiered priority queue replacing LIFO pick + round-robin fairness + tier-1 fan-out + idle drain + lease/report contract + PV capture + flaw flow-through + guest exclusion
 - [ ] **Phase 118: Demand UX + Auto-Enqueue** - Automatic window enqueue on import/activity + explicit "analyze more" affordance + coverage indicators + in-flight status
 
@@ -355,21 +360,26 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 ## Phase Details
 
 ### Phase 116: All-Ply Engine Core
+
 **Goal**: The eval drain analyzes every ply of queued games at Lichess-parity depth, storing results directly in `game_positions.eval_cp/eval_mate` with dedup and a distinct full-analysis completion marker, and the worker pool's memory footprint is explicitly bounded before the pool size is raised
 **Depends on**: Nothing (extends existing `eval_drain.py` + `engine.py`)
 **Requirements**: EVAL-01, EVAL-02, EVAL-03, EVAL-05, QUEUE-07
 **Success Criteria** (what must be TRUE):
+
   1. A queued game's `game_positions` rows have `eval_cp`/`eval_mate` populated on every ply (terminal game-over positions excluded — no book-skip, so eval charts have no opening gap), and plies ≤ 20 skip the engine call when a matching `full_hash` already has a server eval (the dedup that makes the shared opening region cheap)
   2. The search budget is exactly 1,000,000 nodes, NNUE, multiPV=1 per worker call (Lichess fishnet parity), replacing the former depth-15 convention for games processed by this pipeline
   3. A game that completes full-ply analysis carries a completion marker that is distinct from `evals_completed_at` (the existing entry-ply marker), so coverage queries can report each tier independently
   4. The combined memory footprint of `STOCKFISH_POOL_SIZE` workers at the new budget, an active import, and Postgres fits inside the backend container's 4g limit with documented headroom
+
 **Plans**: TBD
 
 ### Phase 117: Priority Queue + Flaw Integration
+
 **Goal**: A tiered priority queue replaces the current LIFO id-DESC game pick, serving explicit requests first, then automatic windows, then idle backlog, with round-robin per-user fairness, tier-1 fan-out across the full worker pool, and newly analyzed games flowing automatically into `game_flaws`
 **Depends on**: Phase 116
 **Requirements**: EVAL-04, EVAL-06, QUEUE-01, QUEUE-02, QUEUE-03, QUEUE-05, QUEUE-06, QUEUE-08
 **Success Criteria** (what must be TRUE):
+
   1. The drain selects the next game via a tiered pick: any tier-1 job takes precedence over tier-2, which takes precedence over the tier-3 idle backlog; within a tier, the next game comes from the user who has waited longest (round-robin); within a user, the most recent unanalyzed game goes first
   2. A tier-1 single-game request fans all of that game's positions across the entire worker pool and completes in approximately 10 seconds wall-clock on an otherwise-idle pool (Lichess game-review UX reference)
   3. Idle workers pick from the tier-3 backlog so no core sits unused when tier-1 and tier-2 queues are empty; full-DB coverage accrues over time
@@ -377,19 +387,23 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
   5. The PV string is persisted in `game_positions` for plies adjacent to a flaw (so SEED-039 needs no second engine pass), and discarded for all other plies
   6. Once a game's positions are fully evaluated, `classify_game_flaws` runs automatically and `game_flaws` rows appear for that game without any user action (import itself stays fast — the hot lane and its quick entry-ply pass are untouched; full evals + flaws arrive progressively after import)
   7. Guest accounts (`users.is_guest`) are excluded from every tier — no guest game is ever enqueued or drained; full-game analysis requires a real account (inactive-guest games are cleanup candidates, so analyzing them wastes compute)
+
 **Plans**: TBD
 **Open for phase planning**: time-control prioritization within tiers (the SEED-012 amendment's "longer TC first" ordering is a starting point, not locked — discuss during `/gsd-discuss-phase 117`)
 
 ### Phase 118: Demand UX + Auto-Enqueue
+
 **Goal**: Users' recent games are automatically queued for analysis on import completion and on activity, with a visible explicit "analyze more" affordance showing real-time progress, coverage indicators on eval-dependent surfaces, and live in-flight status — all without requiring the user to initiate or monitor analysis manually
 **Depends on**: Phase 117
 **Requirements**: QUEUE-04, EVUX-01, EVUX-02, EVUX-03
 **Success Criteria** (what must be TRUE):
+
   1. After a game import completes (or on first activity), the user's most recent ~200 unanalyzed games are automatically enqueued at tier 2 without any user action, and Library flaw features light up progressively as analysis finishes
   2. A user can explicitly trigger "analyze more games" and see a progress indicator (games analyzed / games queued) that updates without a full page refresh — reusing the import-job mental model
   3. Eval-dependent surfaces (Library Flaw-Stats panel, comparison grid) display "based on N of M analyzed games" and a CTA to analyze more when coverage is below a useful threshold, rather than silently showing data over a small analyzed subset
   4. A user can see whether their games are currently queued or being analyzed (in-flight status) without refreshing the page blindly
   5. Guest users see account promotion presented as the unlock for full-game analysis (QUEUE-08's UX face) instead of analyze affordances that would silently do nothing
+
 **Plans**: TBD
 **UI hint**: yes
 
@@ -437,7 +451,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 2/2 plans complete
+**Plans:** 3/3 plans complete
 
 Plans:
 
