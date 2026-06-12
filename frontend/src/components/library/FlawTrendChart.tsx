@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Bar, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from 'recharts';
+import { Card, CardBody, CardHeader } from '@/components/ui/card';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import { inactivityGapReferenceLines } from '@/components/charts/InactivityGapReferenceLines';
@@ -67,127 +68,125 @@ export function FlawTrendChart({ trend, windowSize }: FlawTrendChartProps) {
   const barMax = Math.max(1, ...trend.map((p) => p.per_week_games));
 
   return (
-    <div
-      className="rounded border border-border p-4 mt-4"
-      style={{ background: 'var(--color-charcoal)' }}
+    <Card
+      className="mt-4"
       data-testid="flaw-trend-chart"
       aria-label="Flaws per 100 moves trend chart"
     >
-      <div className="mb-2">
-        <span className="text-sm font-bold text-foreground">Flaws Timeline</span>
-      </div>
-
-      {/* Empty / insufficient-data state */}
-      {trend.length < 2 ? (
-        <p className="text-sm text-muted-foreground text-center py-4">
-          Not enough games to show a trend
-        </p>
-      ) : (
-        <>
-          <ChartContainer
-            config={{}}
-            className="w-full h-48"
-            data-testid="flaw-trend-composed-chart"
-          >
-            <ComposedChart data={trend} margin={{ top: 5, right: 10, left: 0, bottom: 10 }}>
-              <CartesianGrid vertical={false} yAxisId="rate" stroke="var(--color-border)" />
-              <XAxis dataKey="date" tickFormatter={formatDateTick} tick={{ fontSize: 12 }} />
-              <YAxis
-                yAxisId="rate"
-                tick={{ fontSize: 12 }}
-                tickLine={false}
-                axisLine={false}
-                width={32}
-              />
-              {/* Hidden right axis for volume bars: domain [0, barMax*5] pins the tallest
-                  bar to the bottom 20% of the canvas (mirrors the Endgame ELO Timeline). */}
-              <YAxis yAxisId="bars" orientation="right" hide domain={[0, barMax * 5]} />
-              <ChartTooltip
-                content={({ active, payload, label }) => {
-                  if (!active || !payload?.length) return null;
-                  const point = payload[0]?.payload as FlawTrendPoint | undefined;
-                  if (!point) return null;
-                  return (
-                    <ChartTooltipBox className="text-sm">
-                      <div className="font-bold text-muted-foreground">
-                        {formatDateWithYear(label as string)}
-                      </div>
-                      {SERIES.filter((s) => !hiddenKeys.has(s.key)).map((s) => (
-                        <div
-                          key={s.key}
-                          className="flex items-center gap-1.5"
-                          style={{ color: s.color }}
-                        >
-                          <span
-                            className="h-2 w-2 shrink-0 rounded-[2px]"
-                            style={{ backgroundColor: s.color }}
-                          />
-                          {s.label}: {point[s.key].toFixed(2)} / 100
-                        </div>
-                      ))}
-                      <div className="text-muted-foreground text-sm">
-                        {point.per_week_games} games this week · {point.games_in_window} in window
-                      </div>
-                    </ChartTooltipBox>
-                  );
-                }}
-              />
-              {/* Inactivity markers BEFORE the data series so they sit behind in z-order. */}
-              {inactivityGapReferenceLines({ dates: allDates, yAxisId: 'rate' })}
-              <Bar
-                yAxisId="bars"
-                dataKey="per_week_games"
-                fill={ENDGAME_VOLUME_BAR_COLOR}
-                legendType="none"
-                isAnimationActive={false}
-                data-testid="flaw-trend-volume-bars"
-              />
-              {SERIES.map((s) => (
-                <Line
-                  key={s.key}
-                  yAxisId="rate"
-                  type="monotone"
-                  dataKey={s.key}
-                  stroke={s.color}
-                  strokeWidth={2}
-                  dot={{ r: 2.5, fill: s.color, strokeWidth: 0 }}
-                  activeDot={{ r: 4, fill: s.color, strokeWidth: 0 }}
-                  isAnimationActive={false}
-                  hide={hiddenKeys.has(s.key)}
-                />
-              ))}
-            </ComposedChart>
-          </ChartContainer>
-
-          {/* Rolling-window caption, directly below the x-axis label. */}
-          <p className="text-sm text-muted-foreground text-center mt-1">
-            last {windowSize} games · rolling window
+      <CardHeader size="compact">Flaws Timeline</CardHeader>
+      <CardBody>
+        {/* Empty / insufficient-data state */}
+        {trend.length < 2 ? (
+          <p className="text-sm text-muted-foreground text-center py-4">
+            Not enough games to show a trend
           </p>
-
-          {/* Toggleable legend below the chart (click to show/hide a series). */}
-          <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm pt-2 justify-center">
-            {SERIES.map((s) => {
-              const isHidden = hiddenKeys.has(s.key);
-              return (
-                <button
-                  key={s.key}
-                  type="button"
-                  onClick={() => handleLegendClick(s.key)}
-                  className={`inline-flex min-w-0 items-center gap-1.5 cursor-pointer ${isHidden ? 'opacity-50 line-through' : ''}`}
-                  data-testid={`flaw-trend-legend-${s.key}`}
-                  aria-pressed={!isHidden}
-                >
-                  <span
-                    className="h-2 w-2 shrink-0 rounded-[2px]"
-                    style={{ backgroundColor: s.color }}
+        ) : (
+          <>
+            <ChartContainer
+              config={{}}
+              className="w-full h-48"
+              data-testid="flaw-trend-composed-chart"
+            >
+              <ComposedChart data={trend} margin={{ top: 5, right: 10, left: 0, bottom: 10 }}>
+                <CartesianGrid vertical={false} yAxisId="rate" stroke="var(--color-border)" />
+                <XAxis dataKey="date" tickFormatter={formatDateTick} tick={{ fontSize: 12 }} />
+                <YAxis
+                  yAxisId="rate"
+                  tick={{ fontSize: 12 }}
+                  tickLine={false}
+                  axisLine={false}
+                  width={32}
+                />
+                {/* Hidden right axis for volume bars: domain [0, barMax*5] pins the tallest
+                    bar to the bottom 20% of the canvas (mirrors the Endgame ELO Timeline). */}
+                <YAxis yAxisId="bars" orientation="right" hide domain={[0, barMax * 5]} />
+                <ChartTooltip
+                  content={({ active, payload, label }) => {
+                    if (!active || !payload?.length) return null;
+                    const point = payload[0]?.payload as FlawTrendPoint | undefined;
+                    if (!point) return null;
+                    return (
+                      <ChartTooltipBox className="text-sm">
+                        <div className="font-bold text-muted-foreground">
+                          {formatDateWithYear(label as string)}
+                        </div>
+                        {SERIES.filter((s) => !hiddenKeys.has(s.key)).map((s) => (
+                          <div
+                            key={s.key}
+                            className="flex items-center gap-1.5"
+                            style={{ color: s.color }}
+                          >
+                            <span
+                              className="h-2 w-2 shrink-0 rounded-[2px]"
+                              style={{ backgroundColor: s.color }}
+                            />
+                            {s.label}: {point[s.key].toFixed(2)} / 100
+                          </div>
+                        ))}
+                        <div className="text-muted-foreground text-sm">
+                          {point.per_week_games} games this week · {point.games_in_window} in window
+                        </div>
+                      </ChartTooltipBox>
+                    );
+                  }}
+                />
+                {/* Inactivity markers BEFORE the data series so they sit behind in z-order. */}
+                {inactivityGapReferenceLines({ dates: allDates, yAxisId: 'rate' })}
+                <Bar
+                  yAxisId="bars"
+                  dataKey="per_week_games"
+                  fill={ENDGAME_VOLUME_BAR_COLOR}
+                  legendType="none"
+                  isAnimationActive={false}
+                  data-testid="flaw-trend-volume-bars"
+                />
+                {SERIES.map((s) => (
+                  <Line
+                    key={s.key}
+                    yAxisId="rate"
+                    type="monotone"
+                    dataKey={s.key}
+                    stroke={s.color}
+                    strokeWidth={2}
+                    dot={{ r: 2.5, fill: s.color, strokeWidth: 0 }}
+                    activeDot={{ r: 4, fill: s.color, strokeWidth: 0 }}
+                    isAnimationActive={false}
+                    hide={hiddenKeys.has(s.key)}
                   />
-                  <span className="truncate">{s.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </>
-      )}
-    </div>
+                ))}
+              </ComposedChart>
+            </ChartContainer>
+
+            {/* Rolling-window caption, directly below the x-axis label. */}
+            <p className="text-sm text-muted-foreground text-center mt-1">
+              last {windowSize} games · rolling window
+            </p>
+
+            {/* Toggleable legend below the chart (click to show/hide a series). */}
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm pt-2 justify-center">
+              {SERIES.map((s) => {
+                const isHidden = hiddenKeys.has(s.key);
+                return (
+                  <button
+                    key={s.key}
+                    type="button"
+                    onClick={() => handleLegendClick(s.key)}
+                    className={`inline-flex min-w-0 items-center gap-1.5 cursor-pointer ${isHidden ? 'opacity-50 line-through' : ''}`}
+                    data-testid={`flaw-trend-legend-${s.key}`}
+                    aria-pressed={!isHidden}
+                  >
+                    <span
+                      className="h-2 w-2 shrink-0 rounded-[2px]"
+                      style={{ backgroundColor: s.color }}
+                    />
+                    <span className="truncate">{s.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </CardBody>
+    </Card>
   );
 }
