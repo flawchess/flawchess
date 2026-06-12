@@ -1,6 +1,6 @@
 ---
 name: db-report
-description: Generate a database storage and performance report for FlawChess. Use this skill when the user asks about database size, storage usage, table sizes, index sizes, game counts, position counts, slow queries, query performance, cache hit ratio, sequential scans, index usage, dead tuples, or wants a DB health/status overview. Trigger on phrases like "db report", "database report", "how big is the database", "storage usage", "index sizes", "table sizes", "slow queries", "query performance", "db performance", "db health", or any question about DB metrics. Supports both production and local dev databases. Writes a timestamped markdown report to reports/db-stats/db-report-{env}-YYYY-MM-DD.md.
+description: Generate a database storage and performance report for FlawChess. Use this skill when the user asks about database size, storage usage, table sizes, index sizes, game counts, position counts, slow queries, query performance, cache hit ratio, sequential scans, index usage, dead tuples, data integrity / sanity checks (e.g. do the games blunder/mistake count columns match game_flaws), or wants a DB health/status overview. Trigger on phrases like "db report", "database report", "how big is the database", "storage usage", "index sizes", "table sizes", "slow queries", "query performance", "db performance", "db health", "data integrity", "sanity check", or any question about DB metrics. Supports both production and local dev databases. Writes a timestamped markdown report to reports/db-stats/db-report-{env}-YYYY-MM-DD.md.
 ---
 
 # DB Report
@@ -24,7 +24,7 @@ Both accept a single `sql` parameter. Run one SQL statement per call (no semicol
 
 ## Report scope
 
-The report has three sections. By default, run **all** sections and write the output to `reports/db-stats/db-report-{env}-YYYY-MM-DD.md` (UTC date, where `{env}` is `prod` or `local`). If the user only asks for storage/sizes, run Section 1 only. If the user only asks for performance/slow queries, run Section 2 only — in that case, append to today's report rather than overwriting prior sections.
+The report has four sections (Users, Storage, Performance, Sanity Checks). By default, run **all** sections and write the output to `reports/db-stats/db-report-{env}-YYYY-MM-DD.md` (UTC date, where `{env}` is `prod` or `local`). If the user only asks for storage/sizes, run Section 1 only. If the user only asks for performance/slow queries, run Section 2 only. If the user only asks for data integrity / sanity checks, run Section 3 only. When running a subset, append to today's report rather than overwriting prior sections.
 
 When writing the report, always include at the top:
 - Target DB (prod/local) and snapshot timestamp (ISO UTC)
@@ -165,6 +165,82 @@ If pg_stat_statements has never been reset (check `stats_reset` from `pg_stat_da
 
 ---
 
+## Section 3: Sanity Checks
+
+Data-integrity checks. The first check verifies that the per-color move-quality count columns on `games` (`white_mistakes`, `black_mistakes`, `white_blunders`, `black_blunders`) are consistent with the derived `game_flaws` table.
+
+### Background (read before interpreting results)
+
+- `games.{white,black}_{mistakes,blunders}` come **directly from the lichess analysis API** and are per-color counts for the whole game. They are **NULL for chess.com** (chess.com supplies game-level *accuracy*, not M/B counts) and NULL for lichess games lichess never analyzed.
+- `game_flaws` is an **independently derived** materialization (one row per mistake/blunder, both players, severity 1=mistake / 2=blunder), classified from move evals using lila-mirrored ES thresholds (see `app/services/flaws_service.py`). It is only populated for **lichess games that lichess analyzed**; chess.com games have **zero** `game_flaws` rows even though their evals are completed.
+- Because the two are independent classifiers (lichess win% vs our Option-B ES thresholds), small per-game disagreement is **expected, not a bug** — aggregate totals should agree within ~1%. The mate-ladder path is known to drift (see `MATE_LADDER_*` in `flaws_service.py`).
+
+Two things we want to know:
+1. **Do the counts match?** For lichess games with counts present, does `white_mistakes + black_mistakes` equal the `game_flaws` mistake count (severity 1), and likewise for blunders (severity 2)?
+2. **Are the count columns NULL when they should have a value?** I.e. a lichess game that has `game_flaws` rows (so it *was* analyzed) but whose count columns are all NULL — that is a genuine data gap.
+
+Both checks are **scoped to `platform = 'lichess'`**. chess.com is excluded by design (NULL counts + no flaw rows is the correct state there).
+
+### Query 9 — Flaw count integrity summary
+```sql
+WITH gf AS (
+  SELECT game_id,
+         count(*) FILTER (WHERE severity = 1) AS gf_mistakes,
+         count(*) FILTER (WHERE severity = 2) AS gf_blunders
+  FROM game_flaws GROUP BY game_id
+)
+SELECT
+  count(*) FILTER (WHERE gf.game_id IS NOT NULL) AS lichess_games_with_flaws,
+  count(*) FILTER (WHERE gf.game_id IS NOT NULL
+                     AND g.white_mistakes IS NULL AND g.black_mistakes IS NULL
+                     AND g.white_blunders IS NULL AND g.black_blunders IS NULL) AS flaws_but_all_counts_null,
+  count(*) FILTER (WHERE (g.white_mistakes IS NOT NULL OR g.white_blunders IS NOT NULL)
+                     AND coalesce(g.white_mistakes,0)+coalesce(g.black_mistakes,0) = coalesce(gf.gf_mistakes,0)
+                     AND coalesce(g.white_blunders,0)+coalesce(g.black_blunders,0) = coalesce(gf.gf_blunders,0)) AS exact_match,
+  count(*) FILTER (WHERE (g.white_mistakes IS NOT NULL OR g.white_blunders IS NOT NULL)
+                     AND coalesce(g.white_mistakes,0)+coalesce(g.black_mistakes,0) <> coalesce(gf.gf_mistakes,0)) AS mistake_mismatch,
+  count(*) FILTER (WHERE (g.white_mistakes IS NOT NULL OR g.white_blunders IS NOT NULL)
+                     AND coalesce(g.white_blunders,0)+coalesce(g.black_blunders,0) <> coalesce(gf.gf_blunders,0)) AS blunder_mismatch
+FROM games g
+LEFT JOIN gf ON gf.game_id = g.id
+WHERE g.platform = 'lichess';
+```
+
+### Query 10 — Mismatch direction & aggregate totals (diagnostic; run only if Query 9 shows mismatches)
+```sql
+WITH gf AS (
+  SELECT game_id,
+         count(*) FILTER (WHERE severity = 1) AS gf_mistakes,
+         count(*) FILTER (WHERE severity = 2) AS gf_blunders
+  FROM game_flaws GROUP BY game_id
+)
+SELECT
+  count(*) FILTER (WHERE coalesce(g.white_mistakes,0)+coalesce(g.black_mistakes,0) > coalesce(gf.gf_mistakes,0)) AS mistakes_gf_under,
+  count(*) FILTER (WHERE coalesce(g.white_mistakes,0)+coalesce(g.black_mistakes,0) < coalesce(gf.gf_mistakes,0)) AS mistakes_gf_over,
+  count(*) FILTER (WHERE coalesce(g.white_blunders,0)+coalesce(g.black_blunders,0) > coalesce(gf.gf_blunders,0)) AS blunders_gf_under,
+  count(*) FILTER (WHERE coalesce(g.white_blunders,0)+coalesce(g.black_blunders,0) < coalesce(gf.gf_blunders,0)) AS blunders_gf_over,
+  sum(coalesce(g.white_mistakes,0)+coalesce(g.black_mistakes,0)) AS total_lichess_mistakes,
+  sum(coalesce(gf.gf_mistakes,0)) AS total_gf_mistakes,
+  sum(coalesce(g.white_blunders,0)+coalesce(g.black_blunders,0)) AS total_lichess_blunders,
+  sum(coalesce(gf.gf_blunders,0)) AS total_gf_blunders
+FROM games g
+LEFT JOIN gf ON gf.game_id = g.id
+WHERE g.platform = 'lichess'
+  AND (g.white_mistakes IS NOT NULL OR g.white_blunders IS NOT NULL);
+```
+
+### Sanity Checks output format
+
+1. **NULL-count gap** — report `flaws_but_all_counts_null`. This is the headline integrity number: it **should be 0**. Any non-zero value means lichess games have derived flaws but the source count columns were never populated — a real bug to investigate.
+2. **Count match rate** — `exact_match / lichess_games_with_flaws` as a percentage, plus the raw `mistake_mismatch` / `blunder_mismatch` counts. A match rate above ~97% is healthy given the two classifiers are independent.
+3. **Mismatch diagnosis** (only if mismatches exist) — from Query 10, report whether `game_flaws` over- or under-counts relative to lichess, and the aggregate totals (these should agree within ~1%). Frame per-game drift as expected classifier disagreement unless the **aggregate** totals diverge by more than a few percent or the NULL-count gap is non-zero.
+
+Verdict line: **PASS** if `flaws_but_all_counts_null = 0` and aggregate totals agree within ~1%; **INVESTIGATE** otherwise.
+
+> Reference (prod snapshot 2026-06-12): `flaws_but_all_counts_null = 0`, match rate 98.4% (38,355 / 38,964), aggregate totals within ~1% (mistakes 112,838 vs 111,939; blunders 177,472 vs 177,206). Verdict: PASS.
+
+---
+
 ## Report file layout
 
 Write to `reports/db-stats/db-report-{env}-YYYY-MM-DD.md` using today's UTC date, where `{env}` is `prod` or `local`. Separate files per environment so a local snapshot never clobbers a prod snapshot taken the same day. Layout:
@@ -174,7 +250,7 @@ Write to `reports/db-stats/db-report-{env}-YYYY-MM-DD.md` using today's UTC date
 
 - **DB**: prod / local
 - **Snapshot taken**: <ISO UTC timestamp>
-- **Sections run**: users / storage / performance
+- **Sections run**: users / storage / performance / sanity
 
 ## 0. Users Overview
 ...
@@ -183,6 +259,9 @@ Write to `reports/db-stats/db-report-{env}-YYYY-MM-DD.md` using today's UTC date
 ...
 
 ## 2. Performance Analysis
+...
+
+## 3. Sanity Checks
 ...
 
 ## Summary
