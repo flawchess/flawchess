@@ -1,26 +1,26 @@
 ---
 gsd_state_version: 1.0
-milestone: none
-milestone_name: null
-status: v1.25 shipped to production 2026-06-12 (PR #185, 78c19514); archived + tagged. No active milestone.
-last_updated: "2026-06-12T00:00:00.000Z"
+milestone: v1.26
+milestone_name: Full-Game Eval Pipeline
+status: planning
+last_updated: "2026-06-12T15:51:09.875Z"
 last_activity: 2026-06-12
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 8
-  completed_plans: 8
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 115 (v1.25 complete)
-Plan: Not started
-Status: v1.25 Flaw-Stats Opponent Comparison shipped to production 2026-06-12 (PR #185, `78c19514`); milestone archived + tagged `v1.25`. No active milestone.
-Last activity: 2026-06-12 - Extended quick task 260612-fow (branch quick/library-tag-filter-eval-cycle) with 3 follow-up requests: severity count badges now also cycle eval-chart flaws on click (inaccuracy reveal + tooltip detail), the Flaws subtab tag list now shows the phase tag, and the eval tooltip uses family-colored tag icons + a unified "🕐 mm:ss · Move Ns" clock format (also on FlawCard); tag icon/color maps consolidated into lib/tagVisuals.ts. Earlier in the task: Blunders/Mistakes default-inactive, full-stack Game Phase filter family (teal), mobile Stats gap, click-to-cycle on tag chips. Full gate green (backend 2522 passed; frontend 903 + build). Not merged — user merges the branch.
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-06-12 — Milestone v1.26 started
 
 ## Project Reference
 
