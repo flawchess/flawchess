@@ -129,7 +129,7 @@ Current leanings (not validated):
 
 ## Q-007: Flaw-stats opponent comparison — per-user game-count distribution & benchmark delta-IQR feasibility
 
-**Asked:** 2026-06-09 (during `/gsd-explore` on the flaw-stats opponent-comparison rework — see [SEED-040](../seeds/SEED-040-flaw-stats-opponent-comparison.md))
+**Asked:** 2026-06-09 (during `/gsd-explore` on the flaw-stats opponent-comparison rework — see [SEED-040](../seeds/closed/SEED-040-flaw-stats-opponent-comparison.md))
 
 **Context:** SEED-040 plots, per flaw tag, a paired per-game *delta* (you − opponents) with a confidence interval, against a benchmark "typical" zone = the IQR of that delta across ELO-matched peers. Two unknowns gate the design before the milestone is scoped:
 
@@ -169,4 +169,28 @@ Ran against `flawchess-prod-db`. "Analyzed" = full eval present, proxied by `whi
 **Still open (need opponent-flaw materialization first):** (1b) combo CI widths at scale, and (2) benchmark delta-IQR computability + TC-collapse per cell. Both deferred until milestone phase 1 (materialization) has run against the benchmark DB. The dev DB has `game_flaws` for users 28 & 44 only — a 2-user estimate is available but too thin to set thresholds.
 
 **Resolved:** _(partial — half 1a answered above; halves 1b + 2 deferred to post-materialization)_
+
+---
+
+## Q-008: Full-game eval drain — prod 1M-node throughput + catch-up queue sizing
+
+**Asked:** 2026-06-12 (during `/gsd-explore` on prioritizing Stockfish analysis of chess.com games — see [SEED-012](../seeds/SEED-012-client-side-stockfish-tactics.md), 2026-06-12 amendment)
+
+**Context:** SEED-012's server-first v1 locked a fixed **1,000,000-node NNUE** search per position (Lichess fishnet parity, D-6) for the all-ply eval drain. All throughput planning rests on a napkin estimate (~1–2 min core-time/game, ~4–8k games/day on ~6 SCHED_IDLE cores). Two unknowns gate the milestone's queue/window sizing:
+
+1. **Real 1M-node latency on the CPX42.** Benchmark Stockfish (the prod binary/version) at `nodes=1_000_000`, NNUE, multiPV=1, hash per `engine.py` config, across a representative mix of opening/middlegame/endgame positions — on the prod box under SCHED_IDLE, both idle and while normal traffic runs. Output: seconds/position (p50/p90), effective games/day for pool sizes 4–6, and confirmation SCHED_IDLE keeps API latency unaffected at full tilt.
+2. **Catch-up queue size.** Against `flawchess-prod-db`: count of recently-active users (e.g. activity within 30/60/90 days) × their last-100/200/500 game counts *lacking full eval coverage* (chess.com games + analysis-off lichess games). Output: total games in the tier-2 automatic catch-up at each candidate window size, and the implied catch-up duration at the measured throughput from half 1.
+
+**How to answer:**
+1. A ~10-minute spike: small script (à la `scripts/backfill_eval.py`) or one-off invocation of `EnginePool` with a `chess.engine.Limit(nodes=1_000_000)` over ~50 sampled prod-shaped positions; run on the prod host (or measure locally and scale by a one-position prod calibration run).
+2. Read-only queries via `flawchess-prod-db` (tunnel required), reusing the Q-007 "analyzed" proxy inverted (games where the eval columns are NULL across plies).
+
+**Why deferred:** Pins the automatic-window size (D-3) and the expected catch-up duration before the milestone commits to UX copy ("your games will be analyzed within ~X") and queue tier design. Not needed until SEED-012 is promoted via `/gsd-new-milestone`.
+
+**Resolved (2026-06-12):** Both halves answered by spikes 001–003 (`.planning/spikes/`).
+
+1. **Throughput (spikes 001+002):** 1M-node NNUE = mean **0.98 s/position on the prod CPX42** (depth ~22 reached, budget always fully consumed). Six concurrent SCHED_IDLE workers scale near-perfectly (no per-position penalty) → **5.83 positions/s ≈ 8.4k games/day**; API latency unaffected at full tilt (p50 65→67 ms). Tier-1 single-game fan-out across 6 workers ≈ **10 s wall-clock**. Surprise: Lichess parity costs ~10× depth-15 (not the estimated 3–5×) — recorded in spike 001; does not overturn D-6 (calibration argument). Hash 32 vs 64 MB: no difference at this budget.
+2. **Queue sizing (spike 003):** 93% of prod games (558k of 598k) lack per-ply evals. Tier-2 catch-up for 30d-active users (56 with games): w100 ≈ **0.5 days**, w200 ≈ **0.9 days**, w500 ≈ **2.1 days**; the 31–60d cohort adds ~55%. Tier-3 idle drain reaches full-DB coverage in ~66 days. Caveat: `users.last_activity` was backfilled ~2026-03-22, so activity windows >60d are meaningless. Real evaluated-plies/game ≈ 53 (vs 60 assumed — projections mildly conservative).
+
+**Implication:** set the automatic window at 200 (or even 500) games; UX copy can promise same-day/next-day analysis for newly active users.
 

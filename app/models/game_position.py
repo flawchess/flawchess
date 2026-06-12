@@ -30,6 +30,19 @@ from app.models.base import Base
 # past the boundary silently miss the partial index.
 MAX_EXPLORER_PLY: int = 28
 
+# Phase 116 EVAL-03 / D-116-02: opening-region boundary for the full-ply drain's
+# cross-user full_hash dedup lookup. Intentionally tighter than MAX_EXPLORER_PLY.
+#
+# COUPLING INVARIANT (WR-08): this constant MUST equal:
+#   1. The partial-index WHERE predicate on ix_gp_full_hash_opening below
+#      (postgresql_where=text(f"ply <= {DEDUP_MAX_PLY}")).
+#   2. The drain-side boundary in app/services/eval_drain.py (which imports
+#      this constant — _DEDUP_MAX_PLY is an alias, never a separate literal).
+# If the drain boundary ever drifted above the index predicate, dedup lookups
+# would silently stop using the partial index — the same failure mode the
+# MAX_EXPLORER_PLY invariant above guards against.
+DEDUP_MAX_PLY: int = 20
+
 
 class GamePosition(Base):
     __tablename__ = "game_positions"
@@ -96,6 +109,16 @@ class GamePosition(Base):
         # ix_gp_user_game_ply removed in SEED-035 — its (user_id, game_id, ply) key is
         # absorbed by the composite PK below (the partial ply BETWEEN 0 AND 17 /
         # INCLUDE(full_hash, move_san) specialization was acceptable to retire).
+        # Phase 116 EVAL-03: cross-user dedup index for opening-region full_hash lookups.
+        # No user_id column — the drain's dedup query is cross-user (D-116-02).
+        # Predicate interpolates DEDUP_MAX_PLY (WR-08 coupling invariant — see the
+        # constant's docstring above); intentionally tighter than MAX_EXPLORER_PLY (28)
+        # and distinct from the user-scoped indexes.
+        Index(
+            "ix_gp_full_hash_opening",
+            "full_hash",
+            postgresql_where=text(f"ply <= {DEDUP_MAX_PLY}"),
+        ),
     )
 
     # Natural composite PK (SEED-035): (user_id, game_id, ply) replaces the former

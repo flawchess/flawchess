@@ -104,6 +104,13 @@ export function TagChip({ tag, gameId, count, onHover, onActivate, definition = 
   const isMobile = useIsMobile();
   const popoverSide = isMobile ? 'bottom' : 'top';
 
+  // The chip only earns hover/tap affordances when something is actually wired to
+  // it: a chart-highlight callback (onHover), a click action (onActivate), or the
+  // inline definition popover (definition). FlawsTab renders chips with none of
+  // these (it surfaces definitions via <TagLegend> instead), so there they are
+  // purely decorative — no highlight, no lift, no cursor, not focusable.
+  const interactive = Boolean(onHover || onActivate || definition);
+
   const [open, setOpen] = React.useState(false);
   // Brighten the chip while it is hovered or focused (tap-focus on mobile), held
   // for as long as it has focus.
@@ -133,7 +140,8 @@ export function TagChip({ tag, gameId, count, onHover, onActivate, definition = 
         // text-xs (one level below the severity badges) is an intentional
         // deviation from the CLAUDE.md text-sm floor, per explicit request to
         // make the tag chips a bit smaller than the M/B/I count badges.
-        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 cursor-pointer text-xs font-bold transition-all hover:-translate-y-px',
+        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-bold',
+        interactive && 'cursor-pointer transition-all hover:-translate-y-px',
         isActive && ACTIVE_FILTER_RING_CLASS,
       )}
       style={{
@@ -145,22 +153,30 @@ export function TagChip({ tag, gameId, count, onHover, onActivate, definition = 
         // Ring color matches the family color for D-05 active-filter emphasis.
         ...(isActive ? { '--tw-ring-color': color } as React.CSSProperties : {}),
       }}
-      role="button"
-      tabIndex={0}
+      role={interactive ? 'button' : undefined}
+      tabIndex={interactive ? 0 : undefined}
       aria-label={`Tag: ${tag} — ${TAG_DEFINITIONS[tag]}`}
       data-testid={`chip-${tag}-${gameId}`}
-      onMouseEnter={() => {
-        if (definition) scheduleOpen();
-        onHover?.(true);
-        setHighlighted(true);
-      }}
-      onMouseLeave={() => {
-        if (definition) scheduleClose();
-        onHover?.(false);
-        setHighlighted(false);
-      }}
-      onFocus={() => setHighlighted(true)}
-      onBlur={() => setHighlighted(false)}
+      onMouseEnter={
+        interactive
+          ? () => {
+              if (definition) scheduleOpen();
+              onHover?.(true);
+              setHighlighted(true);
+            }
+          : undefined
+      }
+      onMouseLeave={
+        interactive
+          ? () => {
+              if (definition) scheduleClose();
+              onHover?.(false);
+              setHighlighted(false);
+            }
+          : undefined
+      }
+      onFocus={interactive ? () => setHighlighted(true) : undefined}
+      onBlur={interactive ? () => setHighlighted(false) : undefined}
       onClick={onActivate ? () => onActivate() : undefined}
       onKeyDown={
         onActivate

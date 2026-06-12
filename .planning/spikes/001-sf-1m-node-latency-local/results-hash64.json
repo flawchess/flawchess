@@ -1,0 +1,655 @@
+{
+  "summary": {
+    "hash_mb": 64,
+    "nodes_budget": 1000000,
+    "n_positions": 60,
+    "buckets": {
+      "endgame": {
+        "n": 24,
+        "p50_s": 0.68,
+        "p90_s": 0.934,
+        "mean_s": 0.679,
+        "mean_depth": 24.4,
+        "mean_nps": 1669896,
+        "mean_pv_len": 15.5
+      },
+      "middlegame": {
+        "n": 14,
+        "p50_s": 0.98,
+        "p90_s": 1.117,
+        "mean_s": 0.951,
+        "mean_depth": 21.2,
+        "mean_nps": 1094634,
+        "mean_pv_len": 14.2
+      },
+      "opening-exit": {
+        "n": 22,
+        "p50_s": 1.098,
+        "p90_s": 1.19,
+        "mean_s": 1.109,
+        "mean_depth": 21.2,
+        "mean_nps": 910179,
+        "mean_pv_len": 14.7
+      }
+    },
+    "overall": {
+      "p50_s": 0.968,
+      "p90_s": 1.171,
+      "mean_s": 0.9,
+      "mean_depth": 22.5
+    },
+    "projections": {
+      "core_seconds_per_game": 54.0,
+      "games_per_day_4_workers": 6399,
+      "games_per_day_6_workers": 9599,
+      "tier1_wallclock_s_6_workers": 9.0
+    },
+    "machine": {
+      "cpu_count": 16,
+      "platform": "Linux-6.17.0-35-generic-x86_64-with-glibc2.39",
+      "cpu_model": "AMD Ryzen 7 7840HS w/ Radeon 780M Graphics"
+    }
+  },
+  "results": [
+    {
+      "game_id": 671653,
+      "ply": 13,
+      "bucket": "opening-exit",
+      "seconds": 1.0728,
+      "nodes": 1000134,
+      "depth": 21,
+      "nps": 938212,
+      "pv_len": 23
+    },
+    {
+      "game_id": 671653,
+      "ply": 14,
+      "bucket": "opening-exit",
+      "seconds": 0.8198,
+      "nodes": 1000547,
+      "depth": 19,
+      "nps": 1223162,
+      "pv_len": 19
+    },
+    {
+      "game_id": 671653,
+      "ply": 26,
+      "bucket": "middlegame",
+      "seconds": 0.5948,
+      "nodes": 1000264,
+      "depth": 20,
+      "nps": 1683946,
+      "pv_len": 25
+    },
+    {
+      "game_id": 671653,
+      "ply": 39,
+      "bucket": "endgame",
+      "seconds": 0.5724,
+      "nodes": 1000404,
+      "depth": 20,
+      "nps": 1752021,
+      "pv_len": 18
+    },
+    {
+      "game_id": 671653,
+      "ply": 47,
+      "bucket": "endgame",
+      "seconds": 0.53,
+      "nodes": 1000260,
+      "depth": 20,
+      "nps": 1894431,
+      "pv_len": 16
+    },
+    {
+      "game_id": 671641,
+      "ply": 14,
+      "bucket": "opening-exit",
+      "seconds": 1.151,
+      "nodes": 1000631,
+      "depth": 21,
+      "nps": 873150,
+      "pv_len": 2
+    },
+    {
+      "game_id": 671641,
+      "ply": 23,
+      "bucket": "opening-exit",
+      "seconds": 1.0848,
+      "nodes": 1000665,
+      "depth": 21,
+      "nps": 923975,
+      "pv_len": 23
+    },
+    {
+      "game_id": 671641,
+      "ply": 47,
+      "bucket": "middlegame",
+      "seconds": 0.9706,
+      "nodes": 1000278,
+      "depth": 24,
+      "nps": 1031214,
+      "pv_len": 25
+    },
+    {
+      "game_id": 671641,
+      "ply": 70,
+      "bucket": "endgame",
+      "seconds": 0.5855,
+      "nodes": 1000650,
+      "depth": 18,
+      "nps": 1710512,
+      "pv_len": 12
+    },
+    {
+      "game_id": 671641,
+      "ply": 84,
+      "bucket": "endgame",
+      "seconds": 0.6842,
+      "nodes": 1000455,
+      "depth": 24,
+      "nps": 1464795,
+      "pv_len": 2
+    },
+    {
+      "game_id": 671632,
+      "ply": 11,
+      "bucket": "opening-exit",
+      "seconds": 1.2069,
+      "nodes": 1000149,
+      "depth": 23,
+      "nps": 831379,
+      "pv_len": 2
+    },
+    {
+      "game_id": 671632,
+      "ply": 14,
+      "bucket": "middlegame",
+      "seconds": 1.1436,
+      "nodes": 1000027,
+      "depth": 22,
+      "nps": 875680,
+      "pv_len": 27
+    },
+    {
+      "game_id": 671632,
+      "ply": 22,
+      "bucket": "middlegame",
+      "seconds": 1.0701,
+      "nodes": 1000304,
+      "depth": 21,
+      "nps": 935738,
+      "pv_len": 1
+    },
+    {
+      "game_id": 671632,
+      "ply": 33,
+      "bucket": "endgame",
+      "seconds": 1.0466,
+      "nodes": 1000149,
+      "depth": 22,
+      "nps": 956165,
+      "pv_len": 1
+    },
+    {
+      "game_id": 671632,
+      "ply": 40,
+      "bucket": "endgame",
+      "seconds": 0.224,
+      "nodes": 1000410,
+      "depth": 63,
+      "nps": 4486143,
+      "pv_len": 7
+    },
+    {
+      "game_id": 671624,
+      "ply": 14,
+      "bucket": "opening-exit",
+      "seconds": 1.1749,
+      "nodes": 1000302,
+      "depth": 23,
+      "nps": 856422,
+      "pv_len": 1
+    },
+    {
+      "game_id": 671624,
+      "ply": 26,
+      "bucket": "opening-exit",
+      "seconds": 1.1477,
+      "nodes": 1000461,
+      "depth": 20,
+      "nps": 872241,
+      "pv_len": 19
+    },
+    {
+      "game_id": 671624,
+      "ply": 53,
+      "bucket": "middlegame",
+      "seconds": 0.8226,
+      "nodes": 1000363,
+      "depth": 26,
+      "nps": 1219954,
+      "pv_len": 1
+    },
+    {
+      "game_id": 671624,
+      "ply": 80,
+      "bucket": "endgame",
+      "seconds": 0.7564,
+      "nodes": 1000385,
+      "depth": 23,
+      "nps": 1326770,
+      "pv_len": 30
+    },
+    {
+      "game_id": 671624,
+      "ply": 96,
+      "bucket": "endgame",
+      "seconds": 0.6012,
+      "nodes": 1000023,
+      "depth": 34,
+      "nps": 1666705,
+      "pv_len": 1
+    },
+    {
+      "game_id": 671616,
+      "ply": 14,
+      "bucket": "opening-exit",
+      "seconds": 1.0764,
+      "nodes": 1000384,
+      "depth": 20,
+      "nps": 934065,
+      "pv_len": 19
+    },
+    {
+      "game_id": 671616,
+      "ply": 16,
+      "bucket": "opening-exit",
+      "seconds": 1.0875,
+      "nodes": 1000260,
+      "depth": 20,
+      "nps": 920202,
+      "pv_len": 28
+    },
+    {
+      "game_id": 671616,
+      "ply": 32,
+      "bucket": "middlegame",
+      "seconds": 0.8771,
+      "nodes": 1000152,
+      "depth": 20,
+      "nps": 1141726,
+      "pv_len": 24
+    },
+    {
+      "game_id": 671616,
+      "ply": 48,
+      "bucket": "endgame",
+      "seconds": 0.7093,
+      "nodes": 1000113,
+      "depth": 21,
+      "nps": 1412588,
+      "pv_len": 18
+    },
+    {
+      "game_id": 671616,
+      "ply": 57,
+      "bucket": "endgame",
+      "seconds": 0.768,
+      "nodes": 1000578,
+      "depth": 22,
+      "nps": 1306237,
+      "pv_len": 20
+    },
+    {
+      "game_id": 671603,
+      "ply": 11,
+      "bucket": "opening-exit",
+      "seconds": 1.1899,
+      "nodes": 1000111,
+      "depth": 22,
+      "nps": 843263,
+      "pv_len": 2
+    },
+    {
+      "game_id": 671603,
+      "ply": 14,
+      "bucket": "middlegame",
+      "seconds": 1.1115,
+      "nodes": 1000172,
+      "depth": 22,
+      "nps": 900244,
+      "pv_len": 2
+    },
+    {
+      "game_id": 671603,
+      "ply": 22,
+      "bucket": "middlegame",
+      "seconds": 1.1169,
+      "nodes": 1000490,
+      "depth": 21,
+      "nps": 897300,
+      "pv_len": 19
+    },
+    {
+      "game_id": 671603,
+      "ply": 33,
+      "bucket": "endgame",
+      "seconds": 0.9266,
+      "nodes": 1000410,
+      "depth": 21,
+      "nps": 1080356,
+      "pv_len": 1
+    },
+    {
+      "game_id": 671603,
+      "ply": 40,
+      "bucket": "endgame",
+      "seconds": 0.8463,
+      "nodes": 1000554,
+      "depth": 19,
+      "nps": 1184087,
+      "pv_len": 17
+    },
+    {
+      "game_id": 671591,
+      "ply": 12,
+      "bucket": "opening-exit",
+      "seconds": 1.0944,
+      "nodes": 1000255,
+      "depth": 19,
+      "nps": 916824,
+      "pv_len": 1
+    },
+    {
+      "game_id": 671591,
+      "ply": 14,
+      "bucket": "opening-exit",
+      "seconds": 1.0672,
+      "nodes": 1000204,
+      "depth": 20,
+      "nps": 938277,
+      "pv_len": 2
+    },
+    {
+      "game_id": 671591,
+      "ply": 24,
+      "bucket": "middlegame",
+      "seconds": 1.1129,
+      "nodes": 1000132,
+      "depth": 20,
+      "nps": 898591,
+      "pv_len": 2
+    },
+    {
+      "game_id": 671591,
+      "ply": 36,
+      "bucket": "endgame",
+      "seconds": 0.9548,
+      "nodes": 1000016,
+      "depth": 22,
+      "nps": 1048234,
+      "pv_len": 2
+    },
+    {
+      "game_id": 671591,
+      "ply": 44,
+      "bucket": "endgame",
+      "seconds": 0.8059,
+      "nodes": 1000436,
+      "depth": 24,
+      "nps": 1242777,
+      "pv_len": 27
+    },
+    {
+      "game_id": 671582,
+      "ply": 14,
+      "bucket": "opening-exit",
+      "seconds": 1.0424,
+      "nodes": 1000455,
+      "depth": 22,
+      "nps": 963829,
+      "pv_len": 20
+    },
+    {
+      "game_id": 671582,
+      "ply": 19,
+      "bucket": "opening-exit",
+      "seconds": 1.1655,
+      "nodes": 1000624,
+      "depth": 22,
+      "nps": 859642,
+      "pv_len": 23
+    },
+    {
+      "game_id": 671582,
+      "ply": 38,
+      "bucket": "middlegame",
+      "seconds": 0.637,
+      "nodes": 1000262,
+      "depth": 21,
+      "nps": 1572738,
+      "pv_len": 18
+    },
+    {
+      "game_id": 671582,
+      "ply": 57,
+      "bucket": "endgame",
+      "seconds": 0.4967,
+      "nodes": 1000258,
+      "depth": 19,
+      "nps": 2016649,
+      "pv_len": 17
+    },
+    {
+      "game_id": 671582,
+      "ply": 68,
+      "bucket": "endgame",
+      "seconds": 0.4322,
+      "nodes": 1000077,
+      "depth": 21,
+      "nps": 2320364,
+      "pv_len": 22
+    },
+    {
+      "game_id": 671572,
+      "ply": 14,
+      "bucket": "opening-exit",
+      "seconds": 1.1934,
+      "nodes": 1000659,
+      "depth": 22,
+      "nps": 840889,
+      "pv_len": 23
+    },
+    {
+      "game_id": 671572,
+      "ply": 31,
+      "bucket": "opening-exit",
+      "seconds": 1.1,
+      "nodes": 1000155,
+      "depth": 21,
+      "nps": 910059,
+      "pv_len": 2
+    },
+    {
+      "game_id": 671572,
+      "ply": 62,
+      "bucket": "middlegame",
+      "seconds": 0.8696,
+      "nodes": 1000499,
+      "depth": 20,
+      "nps": 1152648,
+      "pv_len": 1
+    },
+    {
+      "game_id": 671572,
+      "ply": 93,
+      "bucket": "endgame",
+      "seconds": 0.8508,
+      "nodes": 1000479,
+      "depth": 20,
+      "nps": 1179810,
+      "pv_len": 24
+    },
+    {
+      "game_id": 671572,
+      "ply": 112,
+      "bucket": "endgame",
+      "seconds": 0.6659,
+      "nodes": 1000022,
+      "depth": 41,
+      "nps": 1503792,
+      "pv_len": 5
+    },
+    {
+      "game_id": 671564,
+      "ply": 14,
+      "bucket": "opening-exit",
+      "seconds": 1.0802,
+      "nodes": 1000270,
+      "depth": 21,
+      "nps": 928755,
+      "pv_len": 26
+    },
+    {
+      "game_id": 671564,
+      "ply": 18,
+      "bucket": "opening-exit",
+      "seconds": 1.0759,
+      "nodes": 1000492,
+      "depth": 22,
+      "nps": 930690,
+      "pv_len": 28
+    },
+    {
+      "game_id": 671564,
+      "ply": 37,
+      "bucket": "middlegame",
+      "seconds": 1.0388,
+      "nodes": 1000490,
+      "depth": 20,
+      "nps": 963863,
+      "pv_len": 1
+    },
+    {
+      "game_id": 671564,
+      "ply": 56,
+      "bucket": "endgame",
+      "seconds": 0.4888,
+      "nodes": 1000282,
+      "depth": 32,
+      "nps": 2053967,
+      "pv_len": 31
+    },
+    {
+      "game_id": 671564,
+      "ply": 67,
+      "bucket": "endgame",
+      "seconds": 0.4415,
+      "nodes": 1000082,
+      "depth": 16,
+      "nps": 2272913,
+      "pv_len": 15
+    },
+    {
+      "game_id": 671555,
+      "ply": 14,
+      "bucket": "opening-exit",
+      "seconds": 1.1155,
+      "nodes": 1000634,
+      "depth": 22,
+      "nps": 899850,
+      "pv_len": 17
+    },
+    {
+      "game_id": 671555,
+      "ply": 22,
+      "bucket": "opening-exit",
+      "seconds": 1.1713,
+      "nodes": 1000066,
+      "depth": 22,
+      "nps": 854757,
+      "pv_len": 23
+    },
+    {
+      "game_id": 671555,
+      "ply": 45,
+      "bucket": "middlegame",
+      "seconds": 0.9651,
+      "nodes": 1000661,
+      "depth": 21,
+      "nps": 1038030,
+      "pv_len": 23
+    },
+    {
+      "game_id": 671555,
+      "ply": 68,
+      "bucket": "endgame",
+      "seconds": 0.9341,
+      "nodes": 1000515,
+      "depth": 21,
+      "nps": 1072363,
+      "pv_len": 23
+    },
+    {
+      "game_id": 671555,
+      "ply": 81,
+      "bucket": "endgame",
+      "seconds": 0.8936,
+      "nodes": 1000223,
+      "depth": 20,
+      "nps": 1121326,
+      "pv_len": 24
+    },
+    {
+      "game_id": 671545,
+      "ply": 14,
+      "bucket": "opening-exit",
+      "seconds": 1.096,
+      "nodes": 1000156,
+      "depth": 22,
+      "nps": 915893,
+      "pv_len": 2
+    },
+    {
+      "game_id": 671545,
+      "ply": 22,
+      "bucket": "opening-exit",
+      "seconds": 1.181,
+      "nodes": 1000269,
+      "depth": 21,
+      "nps": 848404,
+      "pv_len": 19
+    },
+    {
+      "game_id": 671545,
+      "ply": 45,
+      "bucket": "middlegame",
+      "seconds": 0.9888,
+      "nodes": 1000042,
+      "depth": 19,
+      "nps": 1013213,
+      "pv_len": 30
+    },
+    {
+      "game_id": 671545,
+      "ply": 67,
+      "bucket": "endgame",
+      "seconds": 0.6754,
+      "nodes": 1000545,
+      "depth": 22,
+      "nps": 1484488,
+      "pv_len": 20
+    },
+    {
+      "game_id": 671545,
+      "ply": 81,
+      "bucket": "endgame",
+      "seconds": 0.3979,
+      "nodes": 1000451,
+      "depth": 21,
+      "nps": 2520027,
+      "pv_len": 20
+    }
+  ]
+}

@@ -163,15 +163,24 @@ Users get position-precise WDL analysis (openings + endgames + time pressure) on
 - ✓ Exact `games.ply_count` replacing `move_count` — one migration (add + backfill + drop, ~10s on prod); display stays full-moves; exact per-game user-move denominator with zero `game_positions` access (SEED-041 §9) — v1.25 Phase 114.1
 - ✓ You-vs-opponent flaw comparison — `GET /api/library/flaw-comparison` returning the full 15-bullet inventory via a unified per-100-moves paired per-game delta + CI (FLAWCMP-02 Wilson method voided in favour of one estimator), honoring all game filters; old tag-distribution zone replaced by a family-grouped `MiniBulletChart` grid (measure + CI + benchmark blue zone) with per-bullet tooltips (definition / sign / tempo caveat / filter×zone) and a section-level sample gate (FLAWCMP-01/03/04/05, FLAWUI-01..06) — v1.25 Phase 115
 
-## Current Milestone: None
+## Current Milestone: v1.26 Full-Game Eval Pipeline
 
-v1.25 Flaw-Stats Opponent Comparison shipped to production 2026-06-12. No active milestone. Start the next with `/gsd-new-milestone`. Leading candidates below.
+**Goal:** Every active user's recent games get full per-ply Stockfish analysis at Lichess parity, server-side, unlocking flaw features for chess.com games and broadening v1.25's comparison reach beyond the ~37–51 heavy-analysis users.
 
-### Backlog candidates (next-milestone candidates)
+**Target features:**
+- All-ply eval drain — extend `eval_drain.py` from entry-plies to all non-book plies at 1M nodes / NNUE / multiPV=1 (SEED-012 D-6; measured 0.98s/position on prod); evals into `game_positions.eval_cp/eval_mate` with ply≤20 `full_hash` dedup lookup (D-5)
+- Tiered priority queue — explicit requests > automatic windows > idle backlog (D-4); round-robin per user within tiers; tier-1 fans one game's positions across the whole pool (~10s wall-clock, measured); replaces the LIFO id-DESC pick
+- Hybrid demand UX (D-3) — automatic window (~200 recent games, <1 day catch-up measured) queued on import/activity; explicit "analyze more" affordance with progress; "(only analyzed games)" indicators
+- PV capture at flaw-adjacent plies (D-7) — persisted so SEED-039's motif classifier needs no second engine pass later
+- Flaw materialization follow-through — newly evaluated games flow through the existing `classify_game_flaws` path so Library/comparison features light up as analysis completes
+- Pluggable-worker queue shape (D-8) — workers lease jobs and post evals, so browser/external workers can join later without redesign
+
+**Key context:** All throughput numbers measured (spikes 001–003, Q-008 resolved): 5.83 positions/s on 6 SCHED_IDLE workers ≈ 8.4k games/day, zero API impact; full-DB idle drain ~66 days. Memory accounting against the backend container's 4g limit before raising `STOCKFISH_POOL_SIZE` is a known constraint. SEED-039 (tactic motifs) and SEED-037 (Train) stay out of scope — natural v1.27+ candidates.
+
+### Backlog candidates (future-milestone candidates)
 
 - [ ] **SEED-037 Train** — spaced-repetition blunder drills over the `game_flaws` archive (split from SEED-010; natural follow-on now that both-mover flaws are materialized)
-- [ ] **SEED-039 tactic-family flaw tags** — the tactic-motif taxonomy that upgrades `miss` from proxy to literal `missed-fork` etc.; extends the v1.25 comparison backbone (FLAWTAC); deferred on cohort-PV cost
-- [ ] **SEED-012 client-side / server-side Stockfish** — the eval-coverage enabler that broadens v1.25's reach beyond the ~37–51 heavy-analysis users (FLAWCOV); the gating upstream dependency, owned separately
+- [ ] **SEED-039 tactic-family flaw tags** — the tactic-motif taxonomy that upgrades `miss` from proxy to literal `missed-fork` etc.; extends the v1.25 comparison backbone (FLAWTAC); consumes the PVs v1.26 captures
 - [ ] **SEED-036 remainder** — the Analysis detail viewer (LIBG-04) + on-demand best-move endpoint (LIBG-05), deferred from v1.24; full spec in `.planning/seeds/SEED-036-library-page-milestone.md`
 - [ ] **SEED-030 Track A** — split oversized multi-concern modules (structural code-health; Track B closed by Phase 99.1)
 - [ ] Other dormant seeds: SEED-029 (benchmarks deterministic rebuild), SEED-033 (cap explorer + partial-index Zobrist hashes)
@@ -411,6 +420,8 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
+*Last updated: 2026-06-12 — v1.26 Full-Game Eval Pipeline milestone opened (sourced from SEED-012's server-first v1 amendment; continues at Phase 116). Server-side all-ply Stockfish drain at Lichess parity (1M nodes NNUE, measured 0.98s/position on prod, 5.83 pos/s on 6 SCHED_IDLE workers ≈ 8.4k games/day with zero API impact — spikes 001–003, Q-008 resolved): tiered priority queue (explicit > auto windows > idle backlog, round-robin per user, tier-1 position fan-out ≈ 10s/game), hybrid demand UX (~200-game auto window, <1 day catch-up), evals into `game_positions` with ply≤20 dedup, PV capture at flaw-adjacent plies for SEED-039, flaw-classification follow-through, pluggable-worker queue shape for future browser workers. Out of scope: SEED-039 motif classifier, SEED-037 Train, client-side workers. (Prior footer below.)*
+
 *Last updated: 2026-06-12 after v1.25 Flaw-Stats Opponent Comparison milestone shipped to production (Phases 113, 114, 114.1, 115; tag v1.25; PR #185, `78c19514`). The Library flaw-stats panel is now a you-vs-opponent comparison: both-mover `game_flaws` materialization with a query-time `is_opponent_expr` split (no `is_opponent` column — FLAWX-03 voided), a `/benchmarks` §5 chapter of per-(ELO×TC) Q1/Q3 flaw-delta "typical" zones with Cohen's-d collapse verdicts, an inserted `move_count`→exact `ply_count` swap (SEED-041 §9), and a `GET /api/library/flaw-comparison` endpoint feeding a family-grouped 15-bullet `MiniBulletChart` grid. The SEED-040 count-rate/proportion family split was superseded by a single unified per-100-moves paired-delta estimator (FLAWCMP-02 Wilson method voided). Ships for the ~37–51 heavy-analysis users; broader reach gated on SEED-012. Deferred to v2: tactic-motif families (SEED-039), coverage raising (SEED-012). No active milestone follows; next is `/gsd-new-milestone` (leading candidates: SEED-037 Train, SEED-039 tactic-motif tags, or the SEED-036 remainder). (Prior footer below.)*
 
 *Last updated: 2026-06-09 — v1.25 Flaw-Stats Opponent Comparison milestone opened (sourced from SEED-040; continues at Phase 113). Reworks the Library flaw-stats panel from self-only descriptive stats into a you-vs-opponent comparison: per flaw tag, one bullet chart = the you−opponent frequency delta + a real CI + a lightweight benchmark "typical" zone (per-(ELO×TC) IQR of that delta, not full percentiles). Spine: opponent-flaw materialization (add `is_opponent`, drop the player-only filter — nearly free, no engine cost) → benchmark backfill + `/benchmarks` extension (delta quartiles + Cohen's-d collapse verdict per flaw-delta metric) → API + ~13-bullet UI grid reusing `MiniBulletChart`. Two CI methods by design: paired per-game rate-deltas/100-moves (count families: Flaw Rate, tempo, phase) vs Wilson difference-of-proportions (`miss`/`lucky`/`reversed`/`squandered`). Out of scope: eval-coverage raising (Q-007 bottleneck — ships for the ~37–51 heavy-analysis users, coverage stays SEED-012's job) and tactic-motif bullets (SEED-039, cohort-PV cost). Already done upstream: the `game_flaws` table (v1.24 Phase 108), impact-tag threshold recalibration (`35f742af`/`4192f4b9`), the bullet component (SEED-021). (Prior footer below.)*

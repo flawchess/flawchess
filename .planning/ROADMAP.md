@@ -28,15 +28,25 @@
 - ✅ **v1.23 LLM Endgame-Insights Statistical-Reasoning Rework** — Phases 102, 103 (shipped 2026-06-03) — see [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md)
 - ✅ **v1.24 Library Page** — Phases 104–112 (shipped 2026-06-09) — see [milestones/v1.24-ROADMAP.md](milestones/v1.24-ROADMAP.md)
 - ✅ **v1.25 Flaw-Stats Opponent Comparison** — Phases 113–115 (incl. 114.1) (shipped 2026-06-12) — see [milestones/v1.25-ROADMAP.md](milestones/v1.25-ROADMAP.md)
+- **v1.26 Full-Game Eval Pipeline** — Phases 116–118 (in progress)
 
 ## Phases
 
-### ✅ v1.25 Flaw-Stats Opponent Comparison (Phases 113–115, incl. 114.1) — SHIPPED 2026-06-12
+### v1.26 Full-Game Eval Pipeline (Phases 116–118)
 
-Reworked the Library flaw-stats surface from a self-only descriptive panel into an actionable you-vs-opponent comparison, in four phases: opponent-flaw materialization with a query-time player/opponent split (113), the benchmark §5 flaw-delta delta-IQR zones with Cohen's-d collapse verdicts (114), an inserted `move_count`→exact `ply_count` swap for an exact per-game denominator (114.1, SEED-041 §9), and the comparison surface — a unified per-100-moves paired-delta endpoint feeding a uniform 15-bullet `MiniBulletChart` grid (115). The SEED-040 count-rate/proportion family split was superseded by one unified estimator (FLAWCMP-02 voided); the `is_opponent` column was voided in favour of a query-time helper (FLAWX-03 voided). Deferred to v2: tactic-motif families (SEED-039) and coverage raising (SEED-012).
+- [ ] **Phase 116: All-Ply Engine Core** - Search-budget upgrade + all-ply target collector + dedup + completion marker + memory bounds
+  - **Plans:** 3 plans
+  - Plans:
+    - [x] 116-01-PLAN.md — Schema + engine API: full_evals_completed_at column, dedup index, verified backfill migration, evaluate_nodes() 1M-node call (EVAL-02, EVAL-05, EVAL-03)
+    - [x] 116-02-PLAN.md — run_full_eval_drain coroutine: all-ply collector, ply≤20 dedup, preserve/overwrite write, completion marker, yield gate, lifespan wiring (EVAL-01, EVAL-03, EVAL-05, QUEUE-07)
+    - [x] 116-03-PLAN.md — QUEUE-07 memory accounting: measure per-worker RSS at 1M nodes, document 4g budget, correct stale pool-size comments, gate pool→8 (QUEUE-07)
+- [ ] **Phase 117: Priority Queue + Flaw Integration** - Tiered priority queue replacing LIFO pick + round-robin fairness + tier-1 fan-out + idle drain + lease/report contract + PV capture + flaw flow-through + guest exclusion
+- [ ] **Phase 118: Demand UX + Auto-Enqueue** - Automatic window enqueue on import/activity + explicit "analyze more" affordance + coverage indicators + in-flight status
 
 <details>
 <summary>✅ v1.25 Flaw-Stats Opponent Comparison (Phases 113–115, incl. 114.1) — SHIPPED 2026-06-12</summary>
+
+Reworked the Library flaw-stats surface from a self-only descriptive panel into an actionable you-vs-opponent comparison, in four phases: opponent-flaw materialization with a query-time player/opponent split (113), the benchmark §5 flaw-delta delta-IQR zones with Cohen's-d collapse verdicts (114), an inserted `move_count`→exact `ply_count` swap for an exact per-game denominator (114.1, SEED-041 §9), and the comparison surface — a unified per-100-moves paired-delta endpoint feeding a uniform 15-bullet `MiniBulletChart` grid (115). The SEED-040 count-rate/proportion family split was superseded by one unified estimator (FLAWCMP-02 voided); the `is_opponent` column was voided in favour of a query-time helper (FLAWX-03 voided). Deferred to v2: tactic-motif families (SEED-039) and coverage raising (SEED-012).
 
 - [x] Phase 113: Opponent-Flaw Materialization (3/3 plans) — both-mover `game_flaws` + query-time `is_opponent_expr` split, reader gating, dev/benchmark backfill — completed 2026-06-10
 - [x] Phase 114: Benchmark Flaw-Delta Zone Computation (1/1 plan) — §5 chapter, 15-metric Q1/Q3 + ELO/TC marginals + Cohen's-d verdicts — completed 2026-06-10
@@ -47,12 +57,10 @@ See [milestones/v1.25-ROADMAP.md](milestones/v1.25-ROADMAP.md) for full details.
 
 </details>
 
-### ✅ v1.24 Library Page (Phases 104–112) — SHIPPED 2026-06-09
-
-SEED-036's analysis half, built in nine phases: the Library shell + Import/Overview migration (104), the on-the-fly mistake-detection kernel (105), the Games-surface backend (106), the Games subtab UI (107), the Flaws subtab + `game_flaws` materialization + cross-tab Flaw filter (108), per-card expected-score eval charts (109), the flaw-tag taxonomy overhaul (110), a filter-UX polish pass (111), and the Flaws-card rework + single-game modal (112). The deferred SEED-036 surfaces (Analysis detail viewer, best-move endpoint) stay specified in `.planning/seeds/SEED-036-library-page-milestone.md`.
-
 <details>
 <summary>✅ v1.24 Library Page (Phases 104–112) — SHIPPED 2026-06-09</summary>
+
+SEED-036's analysis half, built in nine phases: the Library shell + Import/Overview migration (104), the on-the-fly mistake-detection kernel (105), the Games-surface backend (106), the Games subtab UI (107), the Flaws subtab + `game_flaws` materialization + cross-tab Flaw filter (108), per-card expected-score eval charts (109), the flaw-tag taxonomy overhaul (110), a filter-UX polish pass (111), and the Flaws-card rework + single-game modal (112). The deferred SEED-036 surfaces (Analysis detail viewer, best-move endpoint) stay specified in `.planning/seeds/SEED-036-library-page-milestone.md`.
 
 - [x] Phase 104: Library Page Shell + Import & Overview Subtab Migration (2/2 plans) — completed 2026-06-05
 - [x] Phase 105: Mistake-Detection + Classification + Tagging Service on-the-fly (2/2 plans) — completed 2026-06-05
@@ -349,40 +357,93 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 
 </details>
 
+## Phase Details
+
+### Phase 116: All-Ply Engine Core
+
+**Goal**: The eval drain analyzes every ply of queued games at Lichess-parity depth, storing results directly in `game_positions.eval_cp/eval_mate` with dedup and a distinct full-analysis completion marker, and the worker pool's memory footprint is explicitly bounded before the pool size is raised
+**Depends on**: Nothing (extends existing `eval_drain.py` + `engine.py`)
+**Requirements**: EVAL-01, EVAL-02, EVAL-03, EVAL-05, QUEUE-07
+**Success Criteria** (what must be TRUE):
+
+  1. A queued game's `game_positions` rows have `eval_cp`/`eval_mate` populated on every ply (terminal game-over positions excluded — no book-skip, so eval charts have no opening gap), and plies ≤ 20 skip the engine call when a matching `full_hash` already has a server eval (the dedup that makes the shared opening region cheap)
+  2. The search budget is exactly 1,000,000 nodes, NNUE, multiPV=1 per worker call (Lichess fishnet parity), replacing the former depth-15 convention for games processed by this pipeline
+  3. A game that completes full-ply analysis carries a completion marker that is distinct from `evals_completed_at` (the existing entry-ply marker), so coverage queries can report each tier independently
+  4. The combined memory footprint of `STOCKFISH_POOL_SIZE` workers at the new budget, an active import, and Postgres fits inside the backend container's 4g limit with documented headroom
+
+**Plans**: TBD
+
+### Phase 117: Priority Queue + Flaw Integration
+
+**Goal**: A tiered priority queue replaces the current LIFO id-DESC game pick, serving explicit requests first, then automatic windows, then idle backlog, with round-robin per-user fairness, tier-1 fan-out across the full worker pool, and newly analyzed games flowing automatically into `game_flaws`
+**Depends on**: Phase 116
+**Requirements**: EVAL-04, EVAL-06, QUEUE-01, QUEUE-02, QUEUE-03, QUEUE-05, QUEUE-06, QUEUE-08
+**Success Criteria** (what must be TRUE):
+
+  1. The drain selects the next game via a tiered pick: any tier-1 job takes precedence over tier-2, which takes precedence over the tier-3 idle backlog; within a tier, the next game comes from the user who has waited longest (round-robin); within a user, the most recent unanalyzed game goes first
+  2. A tier-1 single-game request fans all of that game's positions across the entire worker pool and completes in approximately 10 seconds wall-clock on an otherwise-idle pool (Lichess game-review UX reference)
+  3. Idle workers pick from the tier-3 backlog so no core sits unused when tier-1 and tier-2 queues are empty; full-DB coverage accrues over time
+  4. Workers interact with the queue through a lease-then-report contract (claim job → evaluate positions → post evals), such that adding a second worker type (e.g. browser-based) requires no queue redesign
+  5. The PV string is persisted in `game_positions` for plies adjacent to a flaw (so SEED-039 needs no second engine pass), and discarded for all other plies
+  6. Once a game's positions are fully evaluated, `classify_game_flaws` runs automatically and `game_flaws` rows appear for that game without any user action (import itself stays fast — the hot lane and its quick entry-ply pass are untouched; full evals + flaws arrive progressively after import)
+  7. Guest accounts (`users.is_guest`) are excluded from every tier — no guest game is ever enqueued or drained; full-game analysis requires a real account (inactive-guest games are cleanup candidates, so analyzing them wastes compute)
+
+**Plans**: TBD
+**Open for phase planning**: time-control prioritization within tiers (the SEED-012 amendment's "longer TC first" ordering is a starting point, not locked — discuss during `/gsd-discuss-phase 117`)
+
+### Phase 118: Demand UX + Auto-Enqueue
+
+**Goal**: Users' recent games are automatically queued for analysis on import completion and on activity, with a visible explicit "analyze more" affordance showing real-time progress, coverage indicators on eval-dependent surfaces, and live in-flight status — all without requiring the user to initiate or monitor analysis manually
+**Depends on**: Phase 117
+**Requirements**: QUEUE-04, EVUX-01, EVUX-02, EVUX-03
+**Success Criteria** (what must be TRUE):
+
+  1. After a game import completes (or on first activity), the user's most recent ~200 unanalyzed games are automatically enqueued at tier 2 without any user action, and Library flaw features light up progressively as analysis finishes
+  2. A user can explicitly trigger "analyze more games" and see a progress indicator (games analyzed / games queued) that updates without a full page refresh — reusing the import-job mental model
+  3. Eval-dependent surfaces (Library Flaw-Stats panel, comparison grid) display "based on N of M analyzed games" and a CTA to analyze more when coverage is below a useful threshold, rather than silently showing data over a small analyzed subset
+  4. A user can see whether their games are currently queued or being analyzed (in-flight status) without refreshing the page blindly
+  5. Guest users see account promotion presented as the unlock for full-game analysis (QUEUE-08's UX face) instead of analyze affordances that would silently do nothing
+
+**Plans**: TBD
+**UI hint**: yes
+
 ## Progress
 
-| Phase | Milestone | Plans Complete | Status | Completed |
-|-------|-----------|----------------|--------|-----------|
-| 1-10. v1.0 phases | v1.0 | 36/36 | Complete | 2024-03-15 |
-| 11-16. v1.1 phases | v1.1 | 14/14 | Complete | 2024-03-18 |
-| 17-19. v1.2 phases | v1.2 | 5/5 | Complete | 2024-03-21 |
-| 20-23. v1.3 phases | v1.3 | 10/10 | Complete | 2026-03-22 |
-| 24. Web Analytics | v1.4 | 2/2 | Complete | 2026-03-22 |
-| 26-33. v1.5 phases | v1.5 | 18/19 | Complete (28-03 deferred) | 2026-03-28 |
-| 34-39. v1.6 phases | v1.6 | 11/11 | Complete | 2026-03-30 |
-| 40-43. v1.7 phases | v1.7 | 11/11 | Complete | 2026-04-03 |
-| 44-47. v1.8 phases | v1.8 | N/A | Complete | 2026-04-06 |
-| 49-51. v1.9 phases | v1.9 | 7/7 | Complete | 2026-04-10 |
-| 48, 52-62. v1.10 phases | v1.10 | 28/28 | Complete | 2026-04-19 |
-| 63-68. v1.11 phases | v1.11 | 23/23 | Complete (Phase 67 descoped) | 2026-04-24 |
-| 69. Benchmark DB Infra & Ingestion | v1.12 | 6/6 | Complete (follow-on phases → SEED-006) | 2026-04-26 |
-| 70-71.1. v1.13 phases | v1.13 | 14/14 | Complete (Phases 72/73/74 descoped) | 2026-04-27 |
-| 75-77. v1.14 phases | v1.14 | 16/16 | Complete (INSIGHT-UI-04 descoped) | 2026-04-29 |
-| 78-79. v1.15 phases | v1.15 | 10/10 | Complete (VAL-01 / PHASE-VAL-01 rescinded) | 2026-05-03 |
-| 80-83. v1.16 phases | v1.16 | 24/24 | Complete | 2026-05-11 |
-| 84-88.4. v1.17 phases | v1.17 | ~54/~54 | Complete (89 dropped, 87.3 superseded) | 2026-05-19 |
-| 90-92. v1.18 phases | v1.18 | 17/17 | Complete | 2026-05-22 |
-| 93. Global Percentile Benchmark Artifact | v1.19 | 2/2 | Complete    | 2026-05-22 |
-| 94. Backend & Frontend Percentile Annotations | v1.19 | 3/3 | Complete   | 2026-05-23 |
-| 95-96. v1.20 phases | v1.20 | 5/5 | Complete | 2026-05-29 |
-| 97-99.1. v1.21 phases | v1.21 | 15/15 | Complete (99.1 INSERTED) | 2026-05-31 |
-| 100-101. v1.22 phases | v1.22 | 3/3 | Complete | 2026-05-31 |
-| 102-103. v1.23 phases | v1.23 | 3/3 | Complete (103 unplanned follow-on) | 2026-06-03 |
-| 104-112. v1.24 phases | v1.24 | 37/37 | Complete (111 shipped direct, no plan artifacts) | 2026-06-09 |
-| 113. Opponent-Flaw Materialization | v1.25 | 3/3 | Complete    | 2026-06-10 |
-| 114. Benchmark Flaw-Delta Zone Computation | v1.25 | 1/1 | Complete | 2026-06-10 |
-| 114.1. Replace move_count with exact ply_count (INSERTED) | v1.25 | 2/2 | Complete | 2026-06-10 |
-| 115. You-vs-Opponent Comparison API + Bullet-Grid UI | v1.25 | 2/2 | Complete    | 2026-06-11 |
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 1-10. v1.0 phases | 36/36 | Complete | 2024-03-15 |
+| 11-16. v1.1 phases | 14/14 | Complete | 2024-03-18 |
+| 17-19. v1.2 phases | 5/5 | Complete | 2024-03-21 |
+| 20-23. v1.3 phases | 10/10 | Complete | 2026-03-22 |
+| 24. Web Analytics | 2/2 | Complete | 2026-03-22 |
+| 26-33. v1.5 phases | 18/19 | Complete (28-03 deferred) | 2026-03-28 |
+| 34-39. v1.6 phases | 11/11 | Complete | 2026-03-30 |
+| 40-43. v1.7 phases | 11/11 | Complete | 2026-04-03 |
+| 44-47. v1.8 phases | N/A | Complete | 2026-04-06 |
+| 49-51. v1.9 phases | 7/7 | Complete | 2026-04-10 |
+| 48, 52-62. v1.10 phases | 28/28 | Complete | 2026-04-19 |
+| 63-68. v1.11 phases | 23/23 | Complete (Phase 67 descoped) | 2026-04-24 |
+| 69. Benchmark DB Infra & Ingestion | 6/6 | Complete (follow-on phases → SEED-006) | 2026-04-26 |
+| 70-71.1. v1.13 phases | 14/14 | Complete (Phases 72/73/74 descoped) | 2026-04-27 |
+| 75-77. v1.14 phases | 16/16 | Complete (INSIGHT-UI-04 descoped) | 2026-04-29 |
+| 78-79. v1.15 phases | 10/10 | Complete (VAL-01 / PHASE-VAL-01 rescinded) | 2026-05-03 |
+| 80-83. v1.16 phases | 24/24 | Complete | 2026-05-11 |
+| 84-88.4. v1.17 phases | ~54/~54 | Complete (89 dropped, 87.3 superseded) | 2026-05-19 |
+| 90-92. v1.18 phases | 17/17 | Complete | 2026-05-22 |
+| 93. Global Percentile Benchmark Artifact | 2/2 | Complete | 2026-05-22 |
+| 94. Backend & Frontend Percentile Annotations | 3/3 | Complete | 2026-05-23 |
+| 95-96. v1.20 phases | 5/5 | Complete | 2026-05-29 |
+| 97-99.1. v1.21 phases | 15/15 | Complete (99.1 INSERTED) | 2026-05-31 |
+| 100-101. v1.22 phases | 3/3 | Complete | 2026-05-31 |
+| 102-103. v1.23 phases | 3/3 | Complete (103 unplanned follow-on) | 2026-06-03 |
+| 104-112. v1.24 phases | 37/37 | Complete (111 shipped direct, no plan artifacts) | 2026-06-09 |
+| 113. Opponent-Flaw Materialization | 3/3 | Complete | 2026-06-10 |
+| 114. Benchmark Flaw-Delta Zone Computation | 1/1 | Complete | 2026-06-10 |
+| 114.1. Replace move_count with exact ply_count (INSERTED) | 2/2 | Complete | 2026-06-10 |
+| 115. You-vs-Opponent Comparison API + Bullet-Grid UI | 2/2 | Complete | 2026-06-11 |
+| **116. All-Ply Engine Core** | **0/TBD** | **Not started** | **-** |
+| **117. Priority Queue + Flaw Integration** | **0/TBD** | **Not started** | **-** |
+| **118. Demand UX + Auto-Enqueue** | **0/TBD** | **Not started** | **-** |
 
 ## Backlog
 
@@ -390,7 +451,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 2/2 plans complete
+**Plans:** 3/3 plans complete
 
 Plans:
 

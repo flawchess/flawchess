@@ -10,6 +10,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Added
 
+- **Full-game engine analysis (background)** — a new background analyzer evaluates every move of your imported games with Stockfish at lichess-comparable strength (1M nodes per move), beyond the endgame-entry evaluations added in earlier releases. It runs only when no import or endgame-eval work is pending, reuses evaluations for shared opening positions across games, and never overwrites lichess's own analysis. Newest games are analyzed first. (Phase 116)
 - **Game Phase flaw filter** — the Library Flaws/Games tag filter now has a Game Phase family (Opening / Middlegame / Endgame, teal) so you can narrow to flaws in a specific phase, combined with the other tag families. Eval-chart markers are outlined to match an active phase filter, and the Flaws subtab now shows each flaw's phase tag in its tag list.
 - **Click a tag or severity badge to step through its flaws** — clicking (or tapping) a tag chip or a Blunders/Mistakes/Inaccuracy badge on a game card scrubs the eval chart through those flaws one at a time, parking the slider on each and showing its tooltip; click again to advance. Hovering still highlights all matching markers at once.
 
@@ -18,6 +19,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - **Blunders/Mistakes filter now narrows like the other families** — the Blunders and Mistakes toggles in the Flaws tag filter start inactive (both shown). Activating just one narrows to that severity; activating both is the same as activating neither. Previously both rendered active by default.
 - **Eval-chart tooltip polish** — the tooltip lists a flaw's tags with their family-colored icons instead of plain bullets, and shows clock info as "🕐 mm:ss · Move Ns". The Flaws card clock line uses the same format.
 - **Smaller top gap on the mobile Stats subtab** — the mobile Library Stats subtab now matches the Games subtab's spacing above the sticky Filters button.
+
+### Fixed
+
+- **Engine worker recovery after a crash** — when a Stockfish worker process died, the automatic restart could abort and leave that worker slot permanently broken until the next backend restart. The restart path now handles the dead process cleanly. (Phase 116, FLAWCHESS-59)
 
 ## [v1.25] Flaw-Stats Opponent Comparison — 2026-06-12
 
