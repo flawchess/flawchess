@@ -129,7 +129,7 @@ Current leanings (not validated):
 
 ## Q-007: Flaw-stats opponent comparison — per-user game-count distribution & benchmark delta-IQR feasibility
 
-**Asked:** 2026-06-09 (during `/gsd-explore` on the flaw-stats opponent-comparison rework — see [SEED-040](../seeds/SEED-040-flaw-stats-opponent-comparison.md))
+**Asked:** 2026-06-09 (during `/gsd-explore` on the flaw-stats opponent-comparison rework — see [SEED-040](../seeds/closed/SEED-040-flaw-stats-opponent-comparison.md))
 
 **Context:** SEED-040 plots, per flaw tag, a paired per-game *delta* (you − opponents) with a confidence interval, against a benchmark "typical" zone = the IQR of that delta across ELO-matched peers. Two unknowns gate the design before the milestone is scoped:
 
