@@ -288,13 +288,18 @@ the D-11 LIFO id-DESC pick, a **node-budget search** call, and the hybrid demand
   second pipeline. This resolves the original client-vs-server question as "both,
   sequenced".
 
-### Throughput (napkin — pending Q-008 benchmark)
+### Throughput (MEASURED — Q-008 resolved 2026-06-12, spikes 001–003)
 
-~60 evaluated plies/game × 1M nodes at ~0.7–1.5M nps/core ≈ **1–2 min core-time per
-game** → ~4–8k games/day on ~6 SCHED_IDLE cores. Initial catch-up for ~100 active users
-× 200 recent games ≈ a week; one user's 200-game window ≈ 1–2 h; per-import increments
-are minutes. Q-008 in `.planning/research/questions.md` pins the real number on the
-CPX42 and sizes the automatic window.
+Benchmarked on the prod CPX42 (spikes in `.planning/spikes/`): **0.98 s/position**
+mean at 1M nodes (depth ~22), six SCHED_IDLE workers scale with no per-position
+penalty → **5.83 positions/s ≈ 8.4k games/day**, API latency unaffected at full tilt.
+Tier-1 single-game fan-out ≈ **10 s wall-clock** (beats the 15–30 s lichess UX
+reference). Tier-2 catch-up for 30d-active users: w200 window ≈ **0.9 days**, w500 ≈
+2.1 days; tier-3 idle drain covers the entire prod DB (~558k unanalyzed games, 93%)
+in ~66 days. Per-import increments (~50 games) ≈ 8 min of one worker. Set the
+automatic window at 200–500 games. Note: Lichess parity costs ~10× depth-15 (measured
+0.98 vs 0.09 s/position) — the calibration argument (D-6) stands, but the premium is
+real and recorded. Hash 32 vs 64 MB: no difference at this budget.
 
 **Status: promote-ready.** Prerequisite 1 (COOP/COEP / iOS Safari) is no longer a v1
 blocker (client path deferred); prerequisite 2 (classifier prior art) was resolved by

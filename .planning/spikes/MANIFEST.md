@@ -22,4 +22,4 @@ size, UX copy, and the 15–30s tier-1 wall-clock target.
 |---|------|------|-----------|---------|------|
 | 001 | sf-1m-node-latency-local | standard | 1M-node per-position latency on dev machine, real-game positions | VALIDATED | stockfish, throughput, seed-012, q-008 |
 | 002 | sf-1m-node-latency-prod | standard | Same benchmark on prod CPX42 under SCHED_IDLE with live traffic; API latency unaffected | VALIDATED | stockfish, throughput, prod, seed-012, q-008 |
-| 003 | catchup-queue-sizing | standard | Tier-2 catch-up queue size from prod DB (active users × recent games lacking evals) | PENDING | prod-db, queue-sizing, seed-012, q-008 |
+| 003 | catchup-queue-sizing | standard | Tier-2 catch-up queue size from prod DB (active users × recent games lacking evals) | VALIDATED | prod-db, queue-sizing, seed-012, q-008 |

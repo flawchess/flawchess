@@ -187,5 +187,10 @@ Ran against `flawchess-prod-db`. "Analyzed" = full eval present, proxied by `whi
 
 **Why deferred:** Pins the automatic-window size (D-3) and the expected catch-up duration before the milestone commits to UX copy ("your games will be analyzed within ~X") and queue tier design. Not needed until SEED-012 is promoted via `/gsd-new-milestone`.
 
-**Resolved:** _(open)_
+**Resolved (2026-06-12):** Both halves answered by spikes 001–003 (`.planning/spikes/`).
+
+1. **Throughput (spikes 001+002):** 1M-node NNUE = mean **0.98 s/position on the prod CPX42** (depth ~22 reached, budget always fully consumed). Six concurrent SCHED_IDLE workers scale near-perfectly (no per-position penalty) → **5.83 positions/s ≈ 8.4k games/day**; API latency unaffected at full tilt (p50 65→67 ms). Tier-1 single-game fan-out across 6 workers ≈ **10 s wall-clock**. Surprise: Lichess parity costs ~10× depth-15 (not the estimated 3–5×) — recorded in spike 001; does not overturn D-6 (calibration argument). Hash 32 vs 64 MB: no difference at this budget.
+2. **Queue sizing (spike 003):** 93% of prod games (558k of 598k) lack per-ply evals. Tier-2 catch-up for 30d-active users (56 with games): w100 ≈ **0.5 days**, w200 ≈ **0.9 days**, w500 ≈ **2.1 days**; the 31–60d cohort adds ~55%. Tier-3 idle drain reaches full-DB coverage in ~66 days. Caveat: `users.last_activity` was backfilled ~2026-03-22, so activity windows >60d are meaningless. Real evaluated-plies/game ≈ 53 (vs 60 assumed — projections mildly conservative).
+
+**Implication:** set the automatic window at 200 (or even 500) games; UX copy can promise same-day/next-day analysis for newly active users.
 
