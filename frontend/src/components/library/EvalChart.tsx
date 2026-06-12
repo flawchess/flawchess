@@ -549,8 +549,21 @@ export function EvalChart({
   };
   const handleMouseLeave = () => setHoverPly(null);
 
-  // Slider handler: explicit user scrub sets sliderPly (hoverPly stays null; activePly = sliderPly).
+  // Slider handler: explicit user scrub sets sliderPly. It MUST also clear any
+  // lingering hoverPly. The input is controlled to `activePly` (= hoverPly ??
+  // sliderPly), so while hoverPly is non-null the value is pinned to it and the
+  // thumb can't move: every onChange re-renders with the same pinned value, the
+  // DOM re-fires change, and React aborts the setState↔re-render fight with
+  // "Maximum update depth exceeded" (FLAWCHESS-5F). hoverPly only goes sticky when
+  // mouse-leave never fires — a tap on the chart surface on a touch device the
+  // (pointer: coarse) guard misclassified as fine (Android desktop-site mode,
+  // hybrid pointers). Clearing it here frees the controlled value regardless of how
+  // the pointer was detected, so the slider always tracks the drag.
+  const handleSliderEngage = (): void => {
+    if (hoverPly != null) setHoverPly(null);
+  };
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (hoverPly != null) setHoverPly(null);
     setSliderPly(Number(e.target.value));
   };
 
@@ -797,11 +810,18 @@ export function EvalChart({
           step={1}
           value={activePly}
           onChange={handleSliderChange}
+          // Free any sticky hover the instant the slider is grabbed, before the
+          // first onChange — otherwise the controlled value stays pinned to hoverPly
+          // for one frame and the thumb can't start moving (see handleSliderChange).
+          onPointerDown={handleSliderEngage}
           onFocus={() => setSliderFocused(true)}
           onBlur={() => setSliderFocused(false)}
           // Touch engagement — see the sliderFocused comment above (focus never
           // fires on iOS Safari; dismissal is the document-level outside-touch).
-          onTouchStart={() => setSliderFocused(true)}
+          onTouchStart={() => {
+            setSliderFocused(true);
+            handleSliderEngage();
+          }}
           data-testid={`eval-slider-${gameId}`}
           aria-label={`Scrub move for game ${gameId}`}
           className="w-full h-4 appearance-none bg-transparent cursor-pointer
