@@ -8,6 +8,17 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- **Game Phase flaw filter** — the Library Flaws/Games tag filter now has a Game Phase family (Opening / Middlegame / Endgame, teal) so you can narrow to flaws in a specific phase, combined with the other tag families. Eval-chart markers are outlined to match an active phase filter, and the Flaws subtab now shows each flaw's phase tag in its tag list.
+- **Click a tag or severity badge to step through its flaws** — clicking (or tapping) a tag chip or a Blunders/Mistakes/Inaccuracy badge on a game card scrubs the eval chart through those flaws one at a time, parking the slider on each and showing its tooltip; click again to advance. Hovering still highlights all matching markers at once.
+
+### Changed
+
+- **Blunders/Mistakes filter now narrows like the other families** — the Blunders and Mistakes toggles in the Flaws tag filter start inactive (both shown). Activating just one narrows to that severity; activating both is the same as activating neither. Previously both rendered active by default.
+- **Eval-chart tooltip polish** — the tooltip lists a flaw's tags with their family-colored icons instead of plain bullets, and shows clock info as "🕐 mm:ss · Move Ns". The Flaws card clock line uses the same format.
+- **Smaller top gap on the mobile Stats subtab** — the mobile Library Stats subtab now matches the Games subtab's spacing above the sticky Filters button.
+
 ## [v1.25] Flaw-Stats Opponent Comparison — 2026-06-12
 
 Reworked the Library flaw-stats surface from a self-only descriptive panel into an actionable **you-vs-opponent comparison**. Flaw rates only reveal a *specific* recurring weakness when contrasted against ELO-matched peers, so the panel now compares you against your actual opponents: both sides' flaws are materialized into `game_flaws`, a benchmark §5 chapter computes per-cohort "typical" delta zones, and a new endpoint feeds a uniform 15-bullet grid (your rate minus your opponents', with a confidence interval and a benchmark zone). Phases 113–115 (incl. an inserted `move_count`→exact `ply_count` swap).

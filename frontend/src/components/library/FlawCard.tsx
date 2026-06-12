@@ -183,19 +183,16 @@ export function FlawCard({ flaw }: { flaw: FlawListItem }) {
     </span>
   );
 
-  // Clock/move-time line: "<Clock icon> mm:ss (Move Ns)"
-  // Renders the clock part only when clock_seconds is non-null;
-  // appends "(Move Ns)" suffix only when move_seconds is non-null.
-  // When both are null the item is falsy and omitted from the metadata block.
+  // Clock/move-time line: "<Clock icon> mm:ss · Move Ns" (matches the eval-chart tooltip).
+  // Renders the clock part only when clock_seconds is non-null; the "· Move Ns" part
+  // only when move_seconds is non-null. When both are null the item is falsy and
+  // omitted from the metadata block.
   const clockMoveItem = (flaw.clock_seconds != null || flaw.move_seconds != null) && (
     <span className="inline-flex items-center gap-1">
       <Clock className="h-3.5 w-3.5" />
       {flaw.clock_seconds != null && formatClock(flaw.clock_seconds)}
-      {flaw.move_seconds != null && (
-        <span className="text-muted-foreground">
-          {flaw.clock_seconds != null ? ' ' : ''}(Move {flaw.move_seconds.toFixed(1)}s)
-        </span>
-      )}
+      {flaw.clock_seconds != null && flaw.move_seconds != null && <span>&middot;</span>}
+      {flaw.move_seconds != null && <span>Move {flaw.move_seconds.toFixed(1)}s</span>}
     </span>
   );
 

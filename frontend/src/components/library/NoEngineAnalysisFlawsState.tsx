@@ -1,4 +1,5 @@
 import { Cpu } from 'lucide-react';
+import { ANALYSIS_COVERAGE_PARAGRAPHS } from './analysisCoverageCopy';
 
 /**
  * Full-width message shown on the Flaws tab when the user has imported games
@@ -19,14 +20,11 @@ export function NoEngineAnalysisFlawsState() {
     >
       <Cpu className="h-8 w-8 text-amber-600" aria-hidden="true" />
       <h2 className="text-xl font-semibold text-foreground">Engine analysis coming soon</h2>
-      <p className="text-sm text-muted-foreground max-w-sm">
-        Engine analysis is currently available only for games imported from Lichess that already
-        have computer analysis enabled.
-      </p>
-      <p className="text-sm text-muted-foreground max-w-sm">
-        Native engine analysis on FlawChess is on the way. Chess.com games and unanalyzed Lichess
-        games will be supported once it ships.
-      </p>
+      {ANALYSIS_COVERAGE_PARAGRAPHS.map((para) => (
+        <p key={para} className="text-sm text-muted-foreground max-w-sm">
+          {para}
+        </p>
+      ))}
     </div>
   );
 }

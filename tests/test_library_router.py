@@ -588,17 +588,29 @@ class TestGetLibraryGamesTagFilter:
         assert resp.json()["matched_count"] == 0
 
     @pytest.mark.asyncio
-    async def test_phase_tag_rejected_422(self, flaws_test_state: dict[str, Any]) -> None:
-        """Phase tags (display-only) in ?tag= are rejected, matching /flaws."""
+    async def test_phase_tag_filters_games(self, flaws_test_state: dict[str, Any]) -> None:
+        """Phase tags in ?tag= select games with a player flaw in that phase.
+
+        Seed (user A player flaws): opening→game_a1; middlegame→game_a1, game_a2;
+        endgame→game_a3. opening+endgame ORs within the phase family → 2 games.
+        """
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            resp = await client.get(
-                "/api/library/games",
-                params={"tag": "opening"},
-                headers=flaws_test_state["headers_a"],
-            )
-        assert resp.status_code == 422
+
+            async def count(params: dict[str, Any]) -> int:
+                resp = await client.get(
+                    "/api/library/games",
+                    params=params,
+                    headers=flaws_test_state["headers_a"],
+                )
+                assert resp.status_code == 200, resp.text
+                return resp.json()["matched_count"]
+
+            assert await count({"tag": "opening"}) == 1
+            assert await count({"tag": "middlegame"}) == 2
+            assert await count({"tag": "endgame"}) == 1
+            assert await count({"tag": ["opening", "endgame"]}) == 2
 
 
 class TestGetLibraryFlaws:
@@ -858,24 +870,34 @@ class TestGetLibraryFlaws:
         assert body["matched_count"] == 5
 
     @pytest.mark.asyncio
-    async def test_phase_tag_in_query_rejected_422(self, flaws_test_state: dict[str, Any]) -> None:
-        """Phase tags (opening/middlegame/endgame) in ?tag= are rejected with 422.
+    async def test_phase_tag_filters_flaws(self, flaws_test_state: dict[str, Any]) -> None:
+        """Phase tags in ?tag= filter the flaw list on game_flaws.phase.
 
-        FlawTagFilter excludes phase tags so FastAPI validates and rejects them
-        (T-108-11 mitigation — phase tags are display-only, not filter predicates).
+        Seed (user A player flaws): opening×1 (game_a1 ply5), middlegame×3
+        (game_a1 ply7, game_a2 ply2/ply6), endgame×1 (game_a3 ply10). Phase ANDs
+        with other families: middlegame+reversed matches only game_a1 ply7.
         """
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            for phase_tag in ("opening", "middlegame", "endgame"):
+
+            async def count(params: dict[str, Any]) -> int:
                 resp = await client.get(
                     "/api/library/flaws",
-                    params={"tag": phase_tag},
+                    params=params,
                     headers=flaws_test_state["headers_a"],
                 )
-                assert resp.status_code == 422, (
-                    f"Expected 422 for phase tag '{phase_tag}', got {resp.status_code}"
-                )
+                assert resp.status_code == 200, resp.text
+                return resp.json()["matched_count"]
+
+            assert await count({"tag": "opening"}) == 1
+            assert await count({"tag": "middlegame"}) == 3
+            assert await count({"tag": "endgame"}) == 1
+            # OR within the phase family.
+            assert await count({"tag": ["opening", "endgame"]}) == 2
+            # AND across families: phase × impact.
+            assert await count({"tag": ["middlegame", "reversed"]}) == 1
+            assert await count({"tag": ["opening", "reversed"]}) == 0
 
     @pytest.mark.asyncio
     async def test_invalid_severity_rejected_422(self, flaws_test_state: dict[str, Any]) -> None:
@@ -935,6 +957,17 @@ class TestGetLibraryFlaws:
         lc_flaw = flaw_map.get((game_a2, 6))
         assert lc_flaw is not None, "game_a2 ply 6 flaw not found"
         assert "low-clock" in lc_flaw["tags"], f"Expected 'low-clock' in tags: {lc_flaw['tags']}"
+
+        # Phase tag is surfaced in the Flaws list (Quick 260612-fow): game_a2 ply 2/6
+        # are middlegame, game_a1 ply 5 is opening, game_a3 ply 10 is endgame.
+        assert "middlegame" in miss_flaw["tags"], f"Expected phase in tags: {miss_flaw['tags']}"
+        assert "middlegame" in lc_flaw["tags"], f"Expected phase in tags: {lc_flaw['tags']}"
+        game_a1 = flaws_test_state["game_a1"]
+        game_a3 = flaws_test_state["game_a3"]
+        opening_flaw = flaw_map.get((game_a1, 5))
+        assert opening_flaw is not None and "opening" in opening_flaw["tags"]
+        endgame_flaw = flaw_map.get((game_a3, 10))
+        assert endgame_flaw is not None and "endgame" in endgame_flaw["tags"]
 
 
 # ---------------------------------------------------------------------------

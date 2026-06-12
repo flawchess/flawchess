@@ -161,24 +161,28 @@ class TestBuildFlawFilterClausesUnit:
         clauses = build_flaw_filter_clauses([], ["low-clock", "reversed"])
         assert len(clauses) == 2, "tags from two families should produce two clauses"
 
-    def test_phase_tags_produce_no_clause(self) -> None:
-        """Phase tags (opening, middlegame, endgame) must never produce a clause."""
+    def test_phase_tags_produce_one_clause(self) -> None:
+        """Each phase tag (opening/middlegame/endgame) produces one phase clause."""
         from app.services.flaws_service import FlawTag
         from typing import cast
         from collections.abc import Sequence as Seq
 
         for phase_tag in ("opening", "middlegame", "endgame"):
             # Cast the str literal to Sequence[FlawTag] for ty compliance.
-            # Phase tags are valid FlawTag values but must produce no filter clause.
             tags = cast(Seq[FlawTag], [phase_tag])
             clauses = build_flaw_filter_clauses([], tags)
-            assert clauses == [], f"phase tag '{phase_tag}' must produce zero clauses"
+            assert len(clauses) == 1, f"phase tag '{phase_tag}' should produce one clause"
 
-    def test_phase_tags_mixed_with_real_tags_ignored(self) -> None:
-        """Phase tags are skipped even when mixed with real filter tags."""
+    def test_phase_family_ors_within_one_clause(self) -> None:
+        """Multiple phase tags OR within a single phase-family clause."""
+        clauses = build_flaw_filter_clauses([], ["opening", "endgame"])
+        assert len(clauses) == 1, "phase tags share one OR-within clause"
+
+    def test_phase_tags_mixed_with_real_tags_add_a_clause(self) -> None:
+        """Phase is its own family — AND-ed across with other families."""
         clauses = build_flaw_filter_clauses([], ["low-clock", "opening"])
-        # Only the tempo family clause — opening is ignored
-        assert len(clauses) == 1, "phase tags must not add extra clauses"
+        # tempo family (1) + phase family (1) = 2
+        assert len(clauses) == 2, "phase is a distinct family clause"
 
     def test_severity_plus_tags_produce_correct_count(self) -> None:
         """Severity + tags from two families → three clauses total."""

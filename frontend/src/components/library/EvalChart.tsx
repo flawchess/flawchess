@@ -29,9 +29,11 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Area, ComposedChart, Line, ReferenceDot, ReferenceLine, XAxis, YAxis } from 'recharts';
+import { Clock, Cpu } from 'lucide-react';
+import { Area, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from 'recharts';
 import { ChartContainer } from '@/components/ui/chart';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
+import { TAG_ICONS, getTagColor } from '@/lib/tagVisuals';
 import {
   EVAL_CHART_AREA_BLACK_AHEAD,
   EVAL_CHART_AREA_WHITE_AHEAD,
@@ -104,6 +106,16 @@ interface EvalChartProps {
    * the chart, handing the chart back to the hover-driven highlight systems.
    */
   focusedPly?: number | null;
+  /**
+   * Imperative "scrub to this ply and show its tooltip" command, used by the
+   * card's click-to-cycle-through-a-tag's-flaws interaction. `commandedPly` is the
+   * target ply; `commandSeq` is a monotonically increasing nonce so repeating the
+   * same ply (e.g. a tag with a single matching flaw, or re-clicking) re-fires the
+   * effect. On a new seq the slider jumps to commandedPly, clears any hover, and
+   * shows the floating tooltip (slider-engaged). Mount value (seq 0) is ignored.
+   */
+  commandedPly?: number | null;
+  commandSeq?: number;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -164,8 +176,8 @@ const FOCUS_PULSE_DURATION = '1.4s';
 /** Inline glyph size (px) for MarkerGlyph in the tooltip flaw detail. */
 const GLYPH_BOX = 12;
 
-/** Active-ply dot radius — slightly under FLAW_DOT_RADIUS so flaw markers stay dominant. */
-const ACTIVE_DOT_RADIUS = 4;
+/** Active-ply dot radius — well under FLAW_DOT_RADIUS so flaw markers stay dominant. */
+const ACTIVE_DOT_RADIUS = 2;
 
 /** Horizontal gap (px) between the active datapoint and the tooltip box. */
 const TOOLTIP_GAP_PX = 10;
@@ -173,11 +185,11 @@ const TOOLTIP_GAP_PX = 10;
 const TOOLTIP_SIDE_FLIP_PCT = 50;
 
 /**
- * Slider thumb diameter (px) — MUST match the w-3/h-3 thumb classes on the range
+ * Slider thumb diameter (px) — MUST match the w-4/h-4 thumb classes on the range
  * input below. The slider container is widened by this amount (half on each side)
  * so the thumb center, rather than its edge, spans the chart's full width.
  */
-const SLIDER_THUMB_PX = 12;
+const SLIDER_THUMB_PX = 16;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -425,11 +437,11 @@ function buildDotRenderer(
   };
 }
 
-/** PGN move-number label for a ply — even ply = White ("N.san"), odd = Black ("N...san"). */
+/** PGN move-number label for a ply — even ply = White ("N. san"), odd = Black ("N... san"). */
 function formatMoveLabel(ply: number, san: string | null): string {
   if (!san) return `Ply ${ply}`; // fallback when SAN is missing (e.g. final position)
   const moveNumber = Math.floor(ply / 2) + 1;
-  return ply % 2 === 0 ? `${moveNumber}.${san}` : `${moveNumber}...${san}`;
+  return ply % 2 === 0 ? `${moveNumber}. ${san}` : `${moveNumber}... ${san}`;
 }
 
 /**
@@ -495,13 +507,14 @@ export function EvalChart({
   highlightedPlies,
   outlinedPlies,
   focusedPly,
+  commandedPly,
+  commandSeq,
 }: EvalChartProps) {
-  // Tooltip stays mistakes/blunders-only (inaccuracy plies show eval only, no flaw
-  // detail). The dot renderer gets the all-severity map so it can reveal inaccuracy
-  // dots when the Inaccuracies badge is hovered; it hides them otherwise.
-  const mbMarkers = flawMarkers.filter((m) => m.severity !== 'inaccuracy');
+  // The tooltip shows flaw detail whenever the marker's dot is visible: M/B always,
+  // inaccuracy only when revealed (highlighted via its badge, or cycled to). The dot
+  // renderer gets the all-severity map so it can reveal inaccuracy dots on demand and
+  // hide them otherwise; the tooltip applies the same visibility gate (below).
   const evalByPly = useMemo(() => new Map(evalSeries.map((p) => [p.ply, p])), [evalSeries]);
-  const markerMap = useMemo(() => new Map(mbMarkers.map((m) => [m.ply, m])), [mbMarkers]);
   const allMarkerMap = useMemo(() => new Map(flawMarkers.map((m) => [m.ply, m])), [flawMarkers]);
   const dotRenderer = buildDotRenderer(allMarkerMap, highlightedPlies, outlinedPlies, focusedPly);
 
@@ -567,6 +580,23 @@ export function EvalChart({
     setSliderPly(Number(e.target.value));
   };
 
+  // Touch scrub over the chart. On coarse pointers the recharts surface is inert
+  // (pointer-events-none, see below) so recharts' onMouseMove never fires; a
+  // transparent overlay (rendered below the chart) forwards finger drags here. We
+  // map clientX → nearest ply across the chart's 0%–100% span and write sliderPly
+  // (not hoverPly — touch has no leave event to clear a sticky hover), giving touch
+  // users the same drag-to-scrub the desktop hover provides.
+  const handleChartTouchScrub = (e: React.TouchEvent<HTMLDivElement>): void => {
+    const touch = e.touches[0];
+    if (!touch) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const frac = Math.max(0, Math.min(1, (touch.clientX - rect.left) / rect.width));
+    setHoverPly(null);
+    setSliderPly(Math.round(sliderMin + frac * (sliderMax - sliderMin)));
+    setSliderFocused(true);
+  };
+
   // Tooltip is interaction-gated: chart hover or slider engagement. On desktop the
   // slider's focus/blur pair gates it (a focused slider keeps the tooltip up after a
   // drag; click-away blurs it). On touch, focus is unreliable (iOS Safari never
@@ -574,6 +604,7 @@ export function EvalChart({
   // document-level touch outside the component dismisses it — same UX, explicit events.
   const isTouch = useIsCoarsePointer();
   const rootRef = useRef<HTMLDivElement>(null);
+  const sliderRef = useRef<HTMLInputElement>(null);
   const [sliderFocused, setSliderFocused] = useState(false);
   const tooltipVisible = hoverPly != null || sliderFocused;
 
@@ -589,15 +620,40 @@ export function EvalChart({
     return () => document.removeEventListener('touchstart', dismissOnOutsideTouch);
   }, [isTouch, sliderFocused]);
 
+  // Imperative scrub command (card click-to-cycle). On a new seq, jump the slider
+  // to the commanded ply, drop any sticky hover, and surface the tooltip. Focusing
+  // the input on a fine pointer gives keyboard scrub + natural blur-to-dismiss; on
+  // touch the outside-touch handler above dismisses it. seq 0 (mount) is skipped.
+  const lastCommandSeq = useRef(0);
+  useEffect(() => {
+    if (commandSeq == null || commandSeq === lastCommandSeq.current) return;
+    lastCommandSeq.current = commandSeq;
+    if (commandedPly == null) return;
+    setHoverPly(null);
+    setSliderPly(commandedPly);
+    setSliderFocused(true);
+    if (!isTouch) sliderRef.current?.focus({ preventScroll: true });
+  }, [commandSeq, commandedPly, isTouch]);
+
   // Tooltip content for activePly (original floating-tooltip content: move + eval,
   // clock + move time, M/B flaw detail — inaccuracy plies show eval only).
   const activeSan = moves[activePly] ?? null;
   const activePoint = evalByPly.get(activePly);
   // A mating move (SAN ends '#') has no engine eval — show "Checkmate" instead.
-  const evalStr = activeSan?.endsWith('#') ? 'Checkmate' : `Eval: ${formatEvalBare(activePoint)}`;
+  // The "Eval:" label is rendered as a Cpu icon in the tooltip (see below).
+  const evalStr = activeSan?.endsWith('#') ? 'Checkmate' : formatEvalBare(activePoint);
   const moveLabel = formatMoveLabel(activePly, activeSan);
-  // M/B flaw marker at activePly (undefined on clean or inaccuracy plies).
-  const activeMarker = markerMap.get(activePly);
+  // Flaw marker at activePly, shown only when its dot is visible: M/B always,
+  // inaccuracy only when revealed (highlighted/cycled) or focused — matching the dot
+  // renderer's reveal rule so a hidden inaccuracy dot never gets a flaw-detail line.
+  const activeMarkerAny = allMarkerMap.get(activePly);
+  const activeMarker =
+    activeMarkerAny != null &&
+    (activeMarkerAny.severity !== 'inaccuracy' ||
+      (highlightedPlies?.has(activePly) ?? false) ||
+      focusedPly === activePly)
+      ? activeMarkerAny
+      : undefined;
   const tooltipTags = activeMarker ? activeMarker.tags.filter((t) => !PHASE_TAGS.has(t)) : [];
 
   // Active datapoint position as a fraction of the eval'd ply range. Plies in
@@ -616,6 +672,41 @@ export function EvalChart({
   //                  so it tracks the cursor/finger like the original hover tooltip.
   const tooltipOnLeft = activeXPct > TOOLTIP_SIDE_FLIP_PCT;
   const hoverDriven = hoverPly != null;
+
+  // Active-ply dot, drawn as a custom dot of its own <Line> (declared AFTER the
+  // flaw-marker Line below). Recharts paints reference elements (ReferenceDot) in a
+  // separate layer with no ordering guarantee vs Line dots, so a ReferenceDot here
+  // could land UNDER a flaw marker; rendering it as a later Line's dot guarantees it
+  // paints on top (graphical items render in children order). On a flaw ply it reads
+  // as a white center inside the severity dot. Skipped on eval-gap plies (es == null).
+  const activeDotRenderer = (props: {
+    cx?: number;
+    cy?: number;
+    payload?: EvalPoint;
+  }): React.ReactElement => {
+    const { cx, cy, payload } = props;
+    if (
+      !payload ||
+      payload.ply !== activePly ||
+      payload.es == null ||
+      cx == null ||
+      cy == null ||
+      !Number.isFinite(cx) ||
+      !Number.isFinite(cy)
+    ) {
+      return <g key={`noactive-${String(payload?.ply ?? cx)}`} />;
+    }
+    return (
+      <circle
+        key="active-dot"
+        cx={cx}
+        cy={cy}
+        r={ACTIVE_DOT_RADIUS}
+        fill={EVAL_CHART_CURSOR}
+        aria-hidden="true"
+      />
+    );
+  };
 
   return (
     <div
@@ -718,21 +809,37 @@ export function EvalChart({
           />
 
           {/* Active-ply dot — white highlight where the crosshair meets the ES line.
-              Drawn after the flaw-marker overlay so on a flaw ply it sits inside the
-              (slightly larger) severity dot, reading as a severity-colored ring around
-              the white cursor dot. Skipped on eval-gap plies (no y to anchor to). */}
-          {activePoint?.es != null && (
-            <ReferenceDot
-              x={activePly}
-              y={activePoint.es}
-              r={ACTIVE_DOT_RADIUS}
-              fill={EVAL_CHART_CURSOR}
-              stroke="none"
-              aria-hidden="true"
-            />
-          )}
+              A second invisible Line whose only visible dot is at activePly; declared
+              after the flaw-marker Line above so recharts paints it on top (graphical
+              items render in children order, unlike a ReferenceDot which lands in a
+              separate layer and could sit UNDER a flaw marker). On a flaw ply the white
+              center reads inside the severity dot. Skipped on eval-gap plies. */}
+          <Line
+            type="monotone"
+            dataKey="es"
+            stroke="none"
+            dot={activeDotRenderer}
+            activeDot={false}
+            connectNulls={false}
+            isAnimationActive={false}
+          />
         </ComposedChart>
       </ChartContainer>
+
+      {/* Touch scrub overlay — the recharts surface is inert on coarse pointers, so this
+          transparent layer captures finger drags across the chart and maps them to a ply
+          (handleChartTouchScrub), giving touch users the same scrub-by-dragging-over-the-chart
+          that desktop hover provides. touch-none disables scroll-pan during a drag. Desktop
+          (fine pointer) keeps recharts' native hover and never renders this. */}
+      {isTouch && (
+        <div
+          className="absolute inset-0 z-10 touch-none"
+          onTouchStart={handleChartTouchScrub}
+          onTouchMove={handleChartTouchScrub}
+          data-testid={`eval-chart-scrub-${gameId}`}
+          aria-hidden="true"
+        />
+      )}
 
       {/* Floating tooltip — self-positioned at the active datapoint's x, vertically
           centered on the chart, flipping sides at the midpoint. Semi-transparent so
@@ -750,16 +857,24 @@ export function EvalChart({
           }}
         >
           <ChartTooltipBox className="bg-background/55 backdrop-blur-[2px] whitespace-nowrap">
-            <div className="text-muted-foreground">
-              {moveLabel} &middot; {evalStr}
+            <div className="flex items-center gap-1 text-muted-foreground">
+              <span>{moveLabel}</span>
+              <span>&middot;</span>
+              <Cpu className="h-3 w-3 shrink-0" aria-hidden="true" />
+              <span>{evalStr}</span>
             </div>
             {(activePoint?.clock_seconds != null || activePoint?.move_seconds != null) && (
-              <div className="text-muted-foreground">
-                {activePoint.clock_seconds != null && <>Clock: {formatClock(activePoint.clock_seconds)}</>}
-                {activePoint.clock_seconds != null && activePoint.move_seconds != null && (
-                  <> &middot; </>
+              <div className="flex items-center gap-1 text-muted-foreground">
+                {activePoint.clock_seconds != null && (
+                  <>
+                    <Clock className="h-3 w-3 shrink-0" aria-hidden="true" />
+                    {formatClock(activePoint.clock_seconds)}
+                  </>
                 )}
-                {activePoint.move_seconds != null && <>Move: {activePoint.move_seconds.toFixed(1)}s</>}
+                {activePoint.clock_seconds != null && activePoint.move_seconds != null && (
+                  <span>&middot;</span>
+                )}
+                {activePoint.move_seconds != null && <span>Move {activePoint.move_seconds.toFixed(1)}s</span>}
               </div>
             )}
             {activeMarker && (
@@ -778,10 +893,16 @@ export function EvalChart({
                   </span>
                 </div>
                 {tooltipTags.length > 0 && (
-                  <ul className="list-disc pl-5 text-muted-foreground">
-                    {tooltipTags.map((t) => (
-                      <li key={t}>{t}</li>
-                    ))}
+                  <ul className="flex flex-col gap-0.5 text-muted-foreground">
+                    {tooltipTags.map((t) => {
+                      const TagIcon = TAG_ICONS[t];
+                      return (
+                        <li key={t} className="flex items-center gap-1.5">
+                          <TagIcon className="h-3 w-3 shrink-0" style={{ color: getTagColor(t) }} />
+                          {t}
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </>
@@ -804,6 +925,7 @@ export function EvalChart({
         }}
       >
         <input
+          ref={sliderRef}
           type="range"
           min={sliderMin}
           max={sliderMax}
@@ -824,7 +946,7 @@ export function EvalChart({
           }}
           data-testid={`eval-slider-${gameId}`}
           aria-label={`Scrub move for game ${gameId}`}
-          className="w-full h-4 appearance-none bg-transparent cursor-pointer
+          className="w-full h-5 appearance-none bg-transparent cursor-pointer
             [&::-webkit-slider-runnable-track]:h-1.5
             [&::-webkit-slider-runnable-track]:rounded-full
             [&::-webkit-slider-runnable-track]:bg-border/40
@@ -832,13 +954,13 @@ export function EvalChart({
             [&::-moz-range-track]:rounded-full
             [&::-moz-range-track]:bg-border/40
             [&::-webkit-slider-thumb]:appearance-none
-            [&::-webkit-slider-thumb]:w-3
-            [&::-webkit-slider-thumb]:h-3
+            [&::-webkit-slider-thumb]:w-4
+            [&::-webkit-slider-thumb]:h-4
             [&::-webkit-slider-thumb]:rounded-full
             [&::-webkit-slider-thumb]:bg-foreground
-            [&::-webkit-slider-thumb]:mt-[-3px]
-            [&::-moz-range-thumb]:w-3
-            [&::-moz-range-thumb]:h-3
+            [&::-webkit-slider-thumb]:mt-[-5px]
+            [&::-moz-range-thumb]:w-4
+            [&::-moz-range-thumb]:h-4
             [&::-moz-range-thumb]:rounded-full
             [&::-moz-range-thumb]:bg-foreground
             [&::-moz-range-thumb]:border-0"

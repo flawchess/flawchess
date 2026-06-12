@@ -158,7 +158,7 @@ export function LibraryPage({
             <TabsContent value="flaws" className="mt-1">
               <FlawsTab />
             </TabsContent>
-            <TabsContent value="stats" className="mt-4">
+            <TabsContent value="stats" className="mt-1">
               <StatsTab />
             </TabsContent>
           </Tabs>

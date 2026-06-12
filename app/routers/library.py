@@ -37,11 +37,11 @@ router = APIRouter(prefix="/library", tags=["library"])
 # boundary (T-106-02V, T-108-11).
 SeverityFilter = Literal["mistake", "blunder"]
 
-# Tag filter for GET /library/flaws — the 7 non-phase tags only.
-# Phase tags (opening/middlegame/endgame) are EXCLUDED from the HTTP filter
-# because build_flaw_filter_clauses intentionally produces no clause for them
-# (they are display-only per UI-SPEC §Tag-family sections / RESEARCH Pitfall 5).
-# FastAPI 422-rejects any value outside this Literal (T-108-11 mitigation).
+# Tag filter for GET /library/games and /library/flaws — the 7 classification
+# tags plus the 3 phase tags. Phase tags became a first-class filter family in
+# Quick 260612-fow (build_flaw_filter_clauses filters on game_flaws.phase),
+# superseding the earlier display-only decision. FastAPI 422-rejects any value
+# outside this Literal (T-108-11 mitigation).
 FlawTagFilter = Literal[
     "miss",
     "lucky",
@@ -50,6 +50,9 @@ FlawTagFilter = Literal[
     "low-clock",
     "hasty",
     "unrushed",
+    "opening",
+    "middlegame",
+    "endgame",
 ]
 
 
@@ -231,8 +234,8 @@ async def get_library_flaws(
     raw eval + ratings added.
 
     Severity defaults to M+B when omitted (D-08); game_flaws stores M+B only
-    (D-03). Phase tags (opening/middlegame/endgame) in `tag` are rejected with
-    422 since FlawTagFilter excludes them (T-108-11).
+    (D-03). Phase tags (opening/middlegame/endgame) in `tag` filter on the
+    game_flaws.phase column (OR within the phase family, Quick 260612-fow).
 
     user_id is taken exclusively from the authenticated user (never from a
     request parameter) to prevent IDOR (T-108-10).

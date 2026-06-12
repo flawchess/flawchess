@@ -68,14 +68,16 @@ export const FAM_OPPORTUNITY = 'oklch(0.72 0.12 200)';
 export const FAM_OPPORTUNITY_BG = 'oklch(0.72 0.12 200 / 0.15)';
 export const FAM_IMPACT = 'oklch(0.66 0.18 330)';
 export const FAM_IMPACT_BG = 'oklch(0.66 0.18 330 / 0.15)';
-// Three additional families surfaced only in the Flaw-Stats you-vs-opponent
-// comparison grid (Phase 115 UAT): Severity, Phase, Combos. Hues chosen to stay
-// clear of the red/green/blue semantic zone colors (25 / 145 / 260) so a family
-// tint never reads as a danger/success verdict.
+// Three additional families surfaced in the Flaw-Stats you-vs-opponent comparison
+// grid and (Phase, Quick 260612-fow) the Flaws tag-filter panel: Severity, Phase,
+// Combos. Hues chosen to stay clear of the red/green/blue semantic zone colors
+// (25 / 145 / 260) so a family tint never reads as a danger/success verdict.
+// FAM_PHASE is teal (not gold) so it never collides with the yellow inaccuracy
+// severity in the tag-filter palette.
 export const FAM_SEVERITY = 'oklch(0.70 0.16 55)'; // amber
 export const FAM_SEVERITY_BG = 'oklch(0.70 0.16 55 / 0.15)';
-export const FAM_PHASE = 'oklch(0.78 0.13 95)'; // gold
-export const FAM_PHASE_BG = 'oklch(0.78 0.13 95 / 0.15)';
+export const FAM_PHASE = 'oklch(0.72 0.13 170)'; // teal
+export const FAM_PHASE_BG = 'oklch(0.72 0.13 170 / 0.15)';
 export const FAM_COMBO = 'oklch(0.68 0.14 350)'; // rose
 export const FAM_COMBO_BG = 'oklch(0.68 0.14 350 / 0.15)';
 

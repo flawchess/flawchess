@@ -67,8 +67,8 @@ def build_flaw_filter_clauses(
 
     OR within family, AND across families: each returned clause covers one family;
     the caller ANDs all clauses together. Phase tags (opening/middlegame/endgame)
-    are NOT filter predicates per UI-SPEC §Tag-family sections — they produce no
-    clause here.
+    are a filter family too (Quick 260612-fow) — set-membership on the denormalized
+    game_flaws.phase column.
 
     Encoding maps (_SEVERITY_INT / _TEMPO_INT) are imported from
     game_flaws_repository — single source of truth, no duplication (SEED-038 /
@@ -80,7 +80,7 @@ def build_flaw_filter_clauses(
                   matches either. Empty = no severity filter (match all severities
                   present in game_flaws).
         tags: Selected FlawTag values from FlawFilterControl. Empty = no tag
-              filter. Phase tags are ignored (never produce a clause).
+              filter. Includes the phase family (opening/middlegame/endgame).
 
     Returns:
         A list of SQLAlchemy column expressions. Empty list = no flaw filter
@@ -120,8 +120,14 @@ def build_flaw_filter_clauses(
             imp_clauses.append(GameFlaw.is_squandered.is_(True))
         clauses.append(or_(*imp_clauses))
 
-    # Phase tags (opening/middlegame/endgame) are intentionally NOT handled —
-    # they are display-only tags in the UI, not filter predicates (RESEARCH Pitfall 5).
+    # Phase family: OR within {opening, middlegame, endgame}. Each flaw carries
+    # exactly one phase (denormalized game_flaws.phase 0/1/2), so set-membership
+    # on the typed column is the predicate. Phase filtering is now a first-class
+    # filter family (Quick 260612-fow) — superseding the earlier display-only
+    # decision (RESEARCH Pitfall 5).
+    phase_tags = [t for t in tags if t in {"opening", "middlegame", "endgame"}]
+    if phase_tags:
+        clauses.append(GameFlaw.phase.in_([_PHASE_INT[t] for t in phase_tags]))
 
     return clauses
 
@@ -169,16 +175,18 @@ def _reconstruct_tags(flaw: GameFlaw) -> list[FlawTag]:
     """Reconstruct FlawTag list from game_flaws typed columns in deterministic order.
 
     Order: opportunity (miss, lucky) → impact (reversed, squandered)
-    → tempo. Phase tags (opening/middlegame/endgame) are intentionally EXCLUDED from
-    the per-flaw tag list returned by the endpoint (they are display-only per UI-SPEC).
+    → tempo → phase (opening/middlegame/endgame). The Flaws subtab surfaces the
+    phase tag in the per-flaw tag list (Quick 260612-fow); the Games-card chips
+    are curated separately (`_curate_chips_from_rows`) and still omit phase.
 
-    The deterministic order mirrors _CHIP_ORDER in library_service.
+    The deterministic order mirrors _CHIP_ORDER in library_service, with the phase
+    tag appended last.
 
     Args:
         flaw: A GameFlaw ORM row with typed boolean + int columns.
 
     Returns:
-        A list of FlawTag strings in canonical order, with no phase tags.
+        A list of FlawTag strings in canonical order, phase tag last.
     """
     tags: list[FlawTag] = []
     if flaw.is_miss:
@@ -193,6 +201,9 @@ def _reconstruct_tags(flaw: GameFlaw) -> list[FlawTag]:
         tempo_tag = _TEMPO_INT_TO_TAG.get(flaw.tempo)
         if tempo_tag is not None:
             tags.append(tempo_tag)
+    phase_tag = _PHASE_INT_TO_TAG.get(flaw.phase)
+    if phase_tag is not None:
+        tags.append(phase_tag)
     return tags
 
 

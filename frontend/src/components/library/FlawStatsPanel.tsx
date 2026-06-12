@@ -4,15 +4,12 @@ import { InfoPopover } from '@/components/ui/info-popover';
 import { FlawStatsBand } from './FlawStatsBand';
 import { FlawTrendChart } from './FlawTrendChart';
 import { FlawComparisonGrid } from './FlawComparisonGrid';
+import { ANALYSIS_COVERAGE_COPY } from './analysisCoverageCopy';
 import type { FlawStatsResponse } from '@/types/library';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
 
 // ─── Denominator pill ─────────────────────────────────────────────────────────
-
-/** Popover copy explaining why only a subset of games is analyzed. */
-const ANALYSIS_COVERAGE_COPY =
-  'Full game Stockfish analysis is currently available only for games imported from Lichess that already have computer analysis enabled. Native full game analysis on FlawChess is coming soon.';
 
 interface FlawDenominatorPillProps {
   /** Games with engine analysis in the current filter (the "x" in "x of y"). */
@@ -34,10 +31,10 @@ export function FlawDenominatorPill({ analyzedN, totalN }: FlawDenominatorPillPr
       style={{ background: 'oklch(1 0 0 / 4%)' }}
       data-testid="flaw-stats-denominator"
     >
-      <Cpu className="h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" />
-      <span style={{ color: 'var(--brand-brown-highlight)', fontWeight: 700 }}>{analyzedN}</span>
+      <Cpu className="h-4 w-4 shrink-0" aria-hidden="true" />
+      <span style={{ color: 'white', fontWeight: 700 }}>{analyzedN}</span>
       <span className="text-muted-foreground">of</span>
-      <span style={{ color: 'var(--brand-brown-highlight)', fontWeight: 700 }}>{totalN}</span>
+      <span style={{ color: 'white', fontWeight: 700 }}>{totalN}</span>
       <span className="text-muted-foreground">Games</span>
       <InfoPopover ariaLabel="About game analysis coverage" testId="flaw-stats-denominator-info">
         {ANALYSIS_COVERAGE_COPY}

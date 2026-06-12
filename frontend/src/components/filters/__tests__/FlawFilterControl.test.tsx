@@ -50,7 +50,7 @@ describe('FlawFilterControl', () => {
       expect(onSeverityChange).toHaveBeenCalledWith(['blunder', 'mistake']);
     });
 
-    it('at-least-one-severity guard: deselecting last active severity is a no-op', () => {
+    it('deselecting the last active severity yields [] (both shown — no guard)', () => {
       const onSeverityChange = vi.fn();
       render(
         <FlawFilterControl
@@ -59,18 +59,29 @@ describe('FlawFilterControl', () => {
           onSeverityChange={onSeverityChange}
         />,
       );
-      // Clicking the only active severity should NOT call onSeverityChange
+      // Clicking the only active severity clears it — empty severity = both shown.
       fireEvent.click(screen.getByTestId('filter-flaw-severity-blunder'));
-      expect(onSeverityChange).not.toHaveBeenCalled();
+      expect(onSeverityChange).toHaveBeenCalledWith([]);
+    });
+
+    it('defaults render both severity buttons inactive (empty severity = both shown)', () => {
+      render(<FlawFilterControl {...defaultProps} severity={[]} />);
+      expect(
+        screen.getByTestId('filter-flaw-severity-blunder').getAttribute('aria-pressed'),
+      ).toBe('false');
+      expect(
+        screen.getByTestId('filter-flaw-severity-mistake').getAttribute('aria-pressed'),
+      ).toBe('false');
     });
   });
 
   describe('tag family groups', () => {
-    it('renders all 3 family groups', () => {
+    it('renders all 4 family groups (incl. Game Phase)', () => {
       render(<FlawFilterControl {...defaultProps} />);
       expect(screen.getByTestId('filter-flaw-family-tempo')).toBeTruthy();
       expect(screen.getByTestId('filter-flaw-family-opportunity')).toBeTruthy();
       expect(screen.getByTestId('filter-flaw-family-impact')).toBeTruthy();
+      expect(screen.getByTestId('filter-flaw-family-phase')).toBeTruthy();
     });
 
     it('renders all 7 non-phase tag buttons', () => {
@@ -89,11 +100,18 @@ describe('FlawFilterControl', () => {
       }
     });
 
-    it('phase tags are absent', () => {
+    it('renders the 3 phase tag buttons', () => {
       render(<FlawFilterControl {...defaultProps} />);
-      expect(screen.queryByTestId('filter-flaw-tag-opening')).toBeNull();
-      expect(screen.queryByTestId('filter-flaw-tag-middlegame')).toBeNull();
-      expect(screen.queryByTestId('filter-flaw-tag-endgame')).toBeNull();
+      expect(screen.getByTestId('filter-flaw-tag-opening')).toBeTruthy();
+      expect(screen.getByTestId('filter-flaw-tag-middlegame')).toBeTruthy();
+      expect(screen.getByTestId('filter-flaw-tag-endgame')).toBeTruthy();
+    });
+
+    it('toggling a phase tag calls onTagChange with the tag added', () => {
+      const onTagChange = vi.fn();
+      render(<FlawFilterControl {...defaultProps} onTagChange={onTagChange} />);
+      fireEvent.click(screen.getByTestId('filter-flaw-tag-middlegame'));
+      expect(onTagChange).toHaveBeenCalledWith(['middlegame']);
     });
 
     it('toggling an unselected tag calls onTagChange with the tag added', () => {

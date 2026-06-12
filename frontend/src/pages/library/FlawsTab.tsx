@@ -22,6 +22,7 @@ import { useFilterStore } from '@/hooks/useFilterStore';
 import {
   useFlawFilterStore,
   DEFAULT_FLAW_FILTER,
+  isFlawFilterNonDefault,
 } from '@/hooks/useFlawFilterStore';
 import { useLibraryFlaws, useLibraryFlawStats } from '@/hooks/useLibrary';
 import { useUserProfile } from '@/hooks/useUserProfile';
@@ -84,10 +85,8 @@ export function FlawsTab() {
     const urlSeverity = initialSearchParams.current.getAll('severity') as ('blunder' | 'mistake')[];
 
     if (urlTags.length > 0 || urlSeverity.length > 0) {
-      setFlawFilter({
-        tags: urlTags,
-        severity: urlSeverity.length > 0 ? urlSeverity : ['blunder', 'mistake'],
-      });
+      // Empty severity in the URL = both shown (the default narrowing-off state).
+      setFlawFilter({ tags: urlTags, severity: urlSeverity });
     }
   }, [setFlawFilter]);
 
@@ -124,10 +123,7 @@ export function FlawsTab() {
     () => !areFiltersEqual(appliedFilters, DEFAULT_FILTERS, FILTER_DOT_FIELDS),
     [appliedFilters],
   );
-  const isFlawModified = useMemo(() => {
-    const { severity, tags } = flawFilter;
-    return severity.length < 2 || tags.length > 0;
-  }, [flawFilter]);
+  const isFlawModified = useMemo(() => isFlawFilterNonDefault(flawFilter), [flawFilter]);
 
   const gamePulsing = usePulseOnChange(appliedFilters);
   const flawPulsing = usePulseOnChange(flawFilter);
