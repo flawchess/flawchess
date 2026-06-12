@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.25
-milestone_name: Flaw-Stats Opponent Comparison
-status: Phase 115 shipped — squash-merged to main (854996fb)
-last_updated: "2026-06-11T21:30:27.314Z"
-last_activity: 2026-06-11
+milestone: none
+milestone_name: null
+status: v1.25 shipped to production 2026-06-12 (PR #185, 78c19514); archived + tagged. No active milestone.
+last_updated: "2026-06-12T00:00:00.000Z"
+last_activity: 2026-06-12
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 6
-  completed_plans: 6
+  total_phases: 4
+  completed_phases: 4
+  total_plans: 8
+  completed_plans: 8
   percent: 100
 ---
 
@@ -17,18 +17,20 @@ progress:
 
 ## Current Position
 
-Phase: 115
+Phase: 115 (v1.25 complete)
 Plan: Not started
-Status: Phase 115 shipped — squash-merged to main (854996fb)
-Last activity: 2026-06-11 - Completed quick task 260611-rqu: EvalChart slider + docked readout (replaces floating tooltip)
+Status: v1.25 Flaw-Stats Opponent Comparison shipped to production 2026-06-12 (PR #185, `78c19514`); milestone archived + tagged `v1.25`. No active milestone.
+Last activity: 2026-06-12 - Deployed v1.25 to prod and closed the milestone (archive, tag, GitHub release)
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-09 after v1.24 milestone)
+See: .planning/PROJECT.md (updated 2026-06-12 after v1.25 milestone)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report.
-Current focus: No active milestone. v1.24 delivered the **Library** — Import/Overview folded into deep-linkable subtabs plus the full eval-driven mistake/flaw archive of SEED-036's analysis half (on-the-fly mistake kernel, materialized `game_flaws` table, Games + Flaws subtabs, per-card eval charts, finalized flaw-tag taxonomy, cross-tab Flaw filter, Apply-only filters). Deferred to a later phase (still in SEED-036): the Analysis detail viewer (LIBG-04) + best-move endpoint (LIBG-05). Start the next milestone with `/gsd-new-milestone` (leading candidates: the SEED-036 remainder, or SEED-037 Train — spaced-repetition blunder drills over the new `game_flaws` archive).
+Current focus: No active milestone. v1.25 reworked the Library flaw-stats panel into a you-vs-opponent comparison — both-mover `game_flaws` materialization (query-time `is_opponent_expr` split, Phase 113), benchmark §5 flaw-delta delta-IQR zones with Cohen's-d collapse verdicts (Phase 114), an inserted `move_count`→exact `ply_count` swap (Phase 114.1, SEED-041 §9), and a unified per-100-moves paired-delta endpoint feeding a family-grouped 15-bullet `MiniBulletChart` grid (Phase 115). Deferred to v2: tactic-motif comparison families (SEED-039), analyzed-game coverage raising (SEED-012). Start the next milestone with `/gsd-new-milestone` (leading candidates: SEED-037 Train — spaced-repetition blunder drills over the `game_flaws` archive; the SEED-036 remainder LIBG-04/05; or SEED-039 tactic-motif flaw tags which extend the v1.25 comparison backbone).
 
 ## Milestone Progress
+
+Twenty-five milestones complete (v1.0–v1.25). v1.25 Flaw-Stats Opponent Comparison shipped 2026-06-12 — 4 phases (113, 114, 114.1, 115), 8 plans, released via PR #185 (`78c19514`); archived to milestones/v1.25-ROADMAP.md, tagged v1.25. v1.24 Library Page shipped 2026-06-09 — 9 phases (104–112), 37 plans. v1.23 LLM Endgame-Insights Statistical-Reasoning Rework shipped 2026-06-03 — 2 phases (102, 103). v1.22 Maintenance (Test Isolation & Frontend Major Upgrades) shipped 2026-05-31 — 2 phases (100, 101).
 
 Twenty-two milestones complete (v1.0–v1.21). v1.21 Time-Control-Aware Endgame Metrics shipped 2026-05-31 — 4 phases (97, 98, 99, 99.1), 15 plans, PRs #160/#163/#164/#167/#168; archived to milestones/v1.21-ROADMAP.md, tagged v1.21. v1.20 Import Pipeline Hardening Follow-Up and Readiness shipped 2026-05-29 — 2 phases (95 asyncpg COPY, 96 Import Readiness Gate), 5 plans, PRs #148/#149/#151; regrouped post-hoc from standalone phases on 2026-05-30, tagged at `dcd22fef`. v1.19 Endgame Percentiles shipped 2026-05-27 — 6 phases (93, 94, 94.1, 94.2, 94.3, 94.4), ~45 plans, delivered via PR #145 + earlier per-phase PRs. 26/26 PCTL/TPCTL/PRPCR requirements satisfied. v1.18 Import Pipeline Hardening shipped 2026-05-22 (3 phases, 17 plans, PRs #130/#137/#138 + hotfix #139 + container-budget hotfix #144). v1.17 Endgame Stats Card Redesign shipped 2026-05-19 — 13 phases (84, 85, 85.1, 86, 87, 87.1, 87.2, 87.4, 87.5, 87.6, 88, 88.3, 88.4), ~54 plans, 203 commits over 8 days, delivered via PRs #89–#117 (plus production-branch OOM hotfix #99/#100/#101). the Polish phase (#89) dropped from scope at close; the percentile-composite phase (#87.3) superseded by 87.4→87.6. v1.16 Stockfish Eval Analyses shipped 2026-05-11 (5 phases, 24 plans, PRs #80/#82/#85/#86/#88).
 
@@ -49,6 +51,16 @@ Twenty-two milestones complete (v1.0–v1.21). v1.21 Time-Control-Aware Endgame 
 ## Accumulated Context
 
 ### Deferred Items
+
+Acknowledged and deferred at **v1.25 milestone close on 2026-06-12** (user directed completion of a feature already deployed to prod; open-artifact audit: 26 items, none blocking the release):
+
+| Category | Item | Disposition |
+|----------|------|-------------|
+| quick_task | 13 incomplete (`unknown`/`missing` status): 260531-jga, 260601-og7, 260603-o8m/pgv/q85, 260604-t54, 260606-glq/hfy/io6, 260608-w23, 260610-vru, 260611-rqu, 260612-bdr | Resolved in fact — all shipped (each appears in CHANGELOG + git log); only the frontmatter status is unset (known false-positive pattern). Not v1.25 blockers. |
+| uat | Phase 113 / 114.1 UAT (`passed`); Phase 115 UAT (`testing`, 2 pending manual scenarios — visual grid inspection + data-basis pre-check) | Carried — Phase 115's 2 pending scenarios are manual visual/data-basis checks on a feature now live in prod; not a functional gap. |
+| verification | Phase 115 VERIFICATION.md (`human_needed`) | Carried — human verification on a shipped, deployed feature; user directed milestone completion. |
+| todos | 5 pending (bitboard storage, phase-70 amendments, benchmark-rebuild/-skill-v2, rerun-benchmarks) + more | Carried — long-range ideas + per-phase backfill tasks, not v1.25-scoped. |
+| seeds | SEED-040 (DELIVERED this milestone — Phases 113–115); SEED-012, SEED-037, SEED-039 (dormant) | SEED-040 delivered (audit still lists it dormant — known staleness). SEED-039 (tactic-motif) + SEED-037 (Train) are leading next-milestone candidates; SEED-012 (coverage) owns the feature's broader reach. |
 
 Reviewed and resolved/carried at **v1.24 milestone close on 2026-06-09** (user chose "mark all resolved & proceed"; open-artifact audit: 24 items, none blocking the release):
 

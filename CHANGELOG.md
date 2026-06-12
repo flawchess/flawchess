@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v1.25] Flaw-Stats Opponent Comparison — 2026-06-12
+
+Reworked the Library flaw-stats surface from a self-only descriptive panel into an actionable **you-vs-opponent comparison**. Flaw rates only reveal a *specific* recurring weakness when contrasted against ELO-matched peers, so the panel now compares you against your actual opponents: both sides' flaws are materialized into `game_flaws`, a benchmark §5 chapter computes per-cohort "typical" delta zones, and a new endpoint feeds a uniform 15-bullet grid (your rate minus your opponents', with a confidence interval and a benchmark zone). Phases 113–115 (incl. an inserted `move_count`→exact `ply_count` swap).
+
 ### Added
 
 - **Flaws Timeline chart** — the Library Stats panel's trend chart is rebuilt in the Endgame ELO Timeline style: three severity lines (blunders, mistakes, inaccuracies) as flaws per 100 moves over a trailing 100-game rolling window, bucketed by week, with per-week volume bars, inactivity markers, span-aware date ticks, and a toggleable legend. Rates are sourced from the per-game lichess move-quality counts.
@@ -727,7 +731,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.24...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.25...HEAD
+[v1.25]: https://github.com/flawchess/flawchess/compare/v1.24...v1.25
 [v1.24]: https://github.com/flawchess/flawchess/compare/v1.23...v1.24
 [v1.23]: https://github.com/flawchess/flawchess/compare/v1.22...v1.23
 [v1.22]: https://github.com/flawchess/flawchess/compare/v1.21...v1.22
