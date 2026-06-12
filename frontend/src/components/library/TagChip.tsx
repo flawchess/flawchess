@@ -1,17 +1,8 @@
 import * as React from 'react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
-import { Clock, Zap, Brain, Target, Clover, TrendingDown, Swords, ArrowDownUp, BookOpen, Trophy } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import {
-  FAM_TEMPO,
-  FAM_TEMPO_BG,
-  FAM_OPPORTUNITY,
-  FAM_OPPORTUNITY_BG,
-  FAM_IMPACT,
-  FAM_IMPACT_BG,
-  ACTIVE_FILTER_RING_CLASS,
-} from '@/lib/theme';
+import { ACTIVE_FILTER_RING_CLASS } from '@/lib/theme';
+import { TAG_ICONS, getTagFamily, TAG_FAMILY_COLORS } from '@/lib/tagVisuals';
 import type { FlawTag } from '@/types/library';
 import { TAG_DEFINITIONS } from '@/lib/tagDefinitions';
 import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
@@ -37,65 +28,12 @@ function useIsMobile(): boolean {
   return isMobile;
 }
 
-// ─── Tag → family mapping ────────────────────────────────────────────────────
-
-type TagFamily = 'tempo' | 'opportunity' | 'impact';
-
-function getTagFamily(tag: FlawTag): TagFamily {
-  switch (tag) {
-    case 'low-clock':
-    case 'hasty':
-    case 'unrushed':
-      return 'tempo';
-    case 'miss':
-    case 'lucky':
-      return 'opportunity';
-    case 'reversed':
-    case 'squandered':
-      return 'impact';
-    // Phase tags are excluded by upstream curation (Phase 106); render as impact
-    // fallback if somehow received — no branching on phase tags expected here.
-    case 'opening':
-    case 'middlegame':
-    case 'endgame':
-      return 'impact';
-  }
-}
-
-// ─── Family → colors (from theme.ts FAM_* constants) ──────────────────────
-
-interface FamilyColors {
-  color: string; // foreground + border
-  bg: string;    // background
-}
-
-const TAG_FAMILY_COLORS: Record<TagFamily, FamilyColors> = {
-  tempo: { color: FAM_TEMPO, bg: FAM_TEMPO_BG },
-  opportunity: { color: FAM_OPPORTUNITY, bg: FAM_OPPORTUNITY_BG },
-  impact: { color: FAM_IMPACT, bg: FAM_IMPACT_BG },
-};
-
 // Hover/focus highlight: the family BG constants are translucent (alpha 0.15), so a
 // plain brightness filter barely registers on them. While the chip is the active
 // pointer/focus target we bump the fill to a denser alpha (and brighten the
 // font/icon/border via a filter) so it clearly reads as highlighted for as long as
 // it has focus. All three FAM_*_BG strings end in `/ 0.15)`.
 const HIGHLIGHT_BG = (bg: string): string => bg.replace('/ 0.15)', '/ 0.3)');
-
-// ─── Tag → glyph (lucide icons, rendered at h-3 w-3) ─────────────────────
-
-const TAG_ICONS: Record<FlawTag, LucideIcon> = {
-  'low-clock': Clock,
-  'hasty': Zap,
-  'unrushed': Brain,
-  'miss': Target,
-  'lucky': Clover,
-  'reversed': ArrowDownUp,
-  'squandered': TrendingDown,
-  'opening': BookOpen,
-  'middlegame': Swords,
-  'endgame': Trophy,
-};
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -115,6 +53,13 @@ interface TagChipProps {
    * alongside the definition popover; omitted call sites get no highlight wiring.
    */
   onHover?: (active: boolean) => void;
+  /**
+   * Optional click/tap activation (Games card only, used with definition={false}).
+   * Fires when the chip is clicked or activated via keyboard — the card uses it to
+   * cycle the eval chart through this tag's flaw plies. Omitted call sites are
+   * unaffected (the chip stays a plain highlight-only span).
+   */
+  onActivate?: () => void;
   /**
    * When false, the per-chip hover/tap definition popover is suppressed and the
    * chip renders as a plain (highlight-only) span. The Games card sets this and
@@ -144,7 +89,7 @@ interface TagChipProps {
  *
  * Colors come from theme.ts FAM_* constants — no per-tag color sprawl.
  */
-export function TagChip({ tag, gameId, count, onHover, definition = true }: TagChipProps) {
+export function TagChip({ tag, gameId, count, onHover, onActivate, definition = true }: TagChipProps) {
   const family = getTagFamily(tag);
   const { color, bg } = TAG_FAMILY_COLORS[family];
   const Icon = TAG_ICONS[tag];
@@ -216,6 +161,17 @@ export function TagChip({ tag, gameId, count, onHover, definition = true }: TagC
       }}
       onFocus={() => setHighlighted(true)}
       onBlur={() => setHighlighted(false)}
+      onClick={onActivate ? () => onActivate() : undefined}
+      onKeyDown={
+        onActivate
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onActivate();
+              }
+            }
+          : undefined
+      }
     >
       {count != null && count > 1 && <span className="font-bold">{count}</span>}
       <Icon className="h-3 w-3 shrink-0" />

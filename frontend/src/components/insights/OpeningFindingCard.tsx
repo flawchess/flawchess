@@ -240,7 +240,7 @@ export function OpeningFindingCard({
     <div className="flex items-center gap-4">
       <span className="hidden sm:inline text-sm text-muted-foreground">
         after{' '}
-        <span className="font-mono text-foreground">{candidateMoveDisplay}</span>
+        <span className="text-foreground">{candidateMoveDisplay}</span>
       </span>
       <Tooltip content={`Open ${finding.display_name} in the Move Explorer`}>
         <button
@@ -278,7 +278,7 @@ export function OpeningFindingCard({
   const moveCaption = (
     <span className="text-sm text-muted-foreground">
       after{' '}
-      <span className="font-mono text-foreground">{candidateMoveDisplay}</span>
+      <span className="text-foreground">{candidateMoveDisplay}</span>
     </span>
   );
 

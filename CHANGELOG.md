@@ -10,6 +10,21 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Added
 
+- **Game Phase flaw filter** — the Library Flaws/Games tag filter now has a Game Phase family (Opening / Middlegame / Endgame, teal) so you can narrow to flaws in a specific phase, combined with the other tag families. Eval-chart markers are outlined to match an active phase filter, and the Flaws subtab now shows each flaw's phase tag in its tag list.
+- **Click a tag or severity badge to step through its flaws** — clicking (or tapping) a tag chip or a Blunders/Mistakes/Inaccuracy badge on a game card scrubs the eval chart through those flaws one at a time, parking the slider on each and showing its tooltip; click again to advance. Hovering still highlights all matching markers at once.
+
+### Changed
+
+- **Blunders/Mistakes filter now narrows like the other families** — the Blunders and Mistakes toggles in the Flaws tag filter start inactive (both shown). Activating just one narrows to that severity; activating both is the same as activating neither. Previously both rendered active by default.
+- **Eval-chart tooltip polish** — the tooltip lists a flaw's tags with their family-colored icons instead of plain bullets, and shows clock info as "🕐 mm:ss · Move Ns". The Flaws card clock line uses the same format.
+- **Smaller top gap on the mobile Stats subtab** — the mobile Library Stats subtab now matches the Games subtab's spacing above the sticky Filters button.
+
+## [v1.25] Flaw-Stats Opponent Comparison — 2026-06-12
+
+Reworked the Library flaw-stats surface from a self-only descriptive panel into an actionable **you-vs-opponent comparison**. Flaw rates only reveal a *specific* recurring weakness when contrasted against ELO-matched peers, so the panel now compares you against your actual opponents: both sides' flaws are materialized into `game_flaws`, a benchmark §5 chapter computes per-cohort "typical" delta zones, and a new endpoint feeds a uniform 15-bullet grid (your rate minus your opponents', with a confidence interval and a benchmark zone). Phases 113–115 (incl. an inserted `move_count`→exact `ply_count` swap).
+
+### Added
+
 - **Flaws Timeline chart** — the Library Stats panel's trend chart is rebuilt in the Endgame ELO Timeline style: three severity lines (blunders, mistakes, inaccuracies) as flaws per 100 moves over a trailing 100-game rolling window, bucketed by week, with per-week volume bars, inactivity markers, span-aware date ticks, and a toggleable legend. Rates are sourced from the per-game lichess move-quality counts.
 - **Opponent-flaw materialization foundation** (Phase 113 Plan 01) — `classify_game_flaws` now records mistakes/blunders for both the player and their opponent (previously player-only). The player/opponent split is derived at query time via `is_opponent_expr(ply, user_color)` — a single tested helper in `query_utils.py` that encodes the ply-parity convention and closes a documented off-by-one trap. Per-mover `subject_result` fixes the `lucky` end-of-game tag for opponent flaws. Foundation for phase-115 flaw-comparison UI.
 - **You-vs-opponent flaw comparison backend** (Phase 115 Plan 01) — new `GET /api/library/flaw-comparison` endpoint returning 15 per-metric bullets (severity / tempo / phase / opportunity / impact / combos) with mean per-game delta (you minus opponent, per-100-moves) and a 95% Wald-z CI per bullet. Zone bounds (`zone_lo`/`zone_hi`/`domain`) from the §5 benchmark Q1/Q3 are embedded in the response — no frontend constants required. Below 20 analyzed games the endpoint returns an empty bullet list with `below_gate=True`; zero-event bullets (no events on either side) return `delta=null` rather than 0.0 so absence-of-events is visually distinct from exactly-typical performance. Each bullet now also carries your and your opponent's per-100-move rate and a two-sided p-value.
@@ -727,7 +742,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.24...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.25...HEAD
+[v1.25]: https://github.com/flawchess/flawchess/compare/v1.24...v1.25
 [v1.24]: https://github.com/flawchess/flawchess/compare/v1.23...v1.24
 [v1.23]: https://github.com/flawchess/flawchess/compare/v1.22...v1.23
 [v1.22]: https://github.com/flawchess/flawchess/compare/v1.21...v1.22

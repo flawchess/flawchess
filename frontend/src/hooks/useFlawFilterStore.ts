@@ -4,31 +4,31 @@ import type { FlawTag } from '@/types/library';
 // ─── State shape ─────────────────────────────────────────────────────────────
 
 export interface FlawFilterState {
-  /** Severity tiers to display. Default: both M+B. */
+  /**
+   * Severity tiers to NARROW to. Empty = both M+B shown (the default — same
+   * "select to narrow" semantic as the tag families). `['blunder']` shows
+   * blunders only; selecting both is equivalent to selecting neither.
+   */
   severity: ('blunder' | 'mistake')[];
   /** Tag predicates (AND across families, OR within family). Default: empty (no filter). */
   tags: FlawTag[];
 }
 
 export const DEFAULT_FLAW_FILTER: FlawFilterState = {
-  severity: ['blunder', 'mistake'],
+  severity: [],
   tags: [],
 };
 
 /**
- * True when the flaw filter differs from DEFAULT_FLAW_FILTER — any tag selected,
- * or severity not exactly the default M+B set. Single source of truth for the
- * "non-default" predicate used by the filter-dot indicators (Games + Flaws tabs)
- * and the FlawFilterControl clear affordance, so the default never drifts across
- * call sites.
+ * True when the flaw filter actually narrows the result set — any tag selected,
+ * or severity narrowed to exactly one tier. Empty severity (both shown) and both
+ * tiers selected (also both shown) are NOT narrowing, matching the tag-family
+ * "select to narrow" model. Single source of truth for the filter-dot indicators
+ * (Games + Flaws tabs) and the games-query gate, so the default never drifts
+ * across call sites.
  */
 export function isFlawFilterNonDefault(filter: FlawFilterState): boolean {
-  return (
-    filter.tags.length > 0 ||
-    filter.severity.length !== DEFAULT_FLAW_FILTER.severity.length ||
-    !filter.severity.includes('blunder') ||
-    !filter.severity.includes('mistake')
-  );
+  return filter.tags.length > 0 || filter.severity.length === 1;
 }
 
 // ─── Module-level shared state ───────────────────────────────────────────────

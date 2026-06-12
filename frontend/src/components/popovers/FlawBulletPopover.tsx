@@ -87,16 +87,22 @@ function TooltipBody({ bullet }: { bullet: FlawBullet }) {
 
   // Paragraph 2 — you vs opponent per 100 moves.
   const magnitude = Math.abs(bullet.delta).toFixed(2);
-  const ratesSuffix = ` (you: ${rate(bullet.player_rate)}, opponents: ${rate(bullet.opp_rate)})`;
+  const ratesSentence = (
+    <>
+      {' '}
+      You: <strong>{rate(bullet.player_rate)}</strong>, opponents:{' '}
+      <strong>{rate(bullet.opp_rate)}</strong>.
+    </>
+  );
   const valuePara =
     bullet.delta === 0 ? (
       <p>
-        You have the same rate of {meta.noun} per 100 moves as your opponents{ratesSuffix}.
+        You have the same rate of {meta.noun} per 100 moves as your opponents.{ratesSentence}
       </p>
     ) : (
       <p>
         You have <strong>{magnitude}</strong> {bullet.delta < 0 ? 'fewer' : 'more'} {meta.noun} per
-        100 moves than your opponents{ratesSuffix}.
+        100 moves than your opponents.{ratesSentence}
       </p>
     );
 

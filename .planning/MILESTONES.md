@@ -1,5 +1,25 @@
 # Milestones: FlawChess
 
+## v1.25 Flaw-Stats Opponent Comparison (Shipped: 2026-06-12)
+
+**Phases completed:** 4 phases (113, 114, 114.1 INSERTED, 115), 8 plans. All landed on `main` via local squash-merge / gated commits; released to production 2026-06-12 via PR #185 (`78c19514`).
+**Stats:** 56 code files changed (`app` + `frontend/src` + `scripts`), +4,635 / -1,393 lines across the phase work; phases completed 2026-06-10 → 2026-06-11, shipped to prod 2026-06-12. One Alembic migration (114.1: `move_count` → `ply_count`); Phase 113 added no schema (query-time `is_opponent_expr`).
+**Milestone goal:** Rework the Library flaw-stats surface from a self-only descriptive panel into an actionable **you-vs-opponent comparison** — flaw rates only reveal a specific recurring weakness when contrasted against ELO-matched peers.
+
+**Key accomplishments:**
+
+- **Opponent-flaw materialization** (Phase 113, FLAWX-01/02/04) — `game_flaws` now records both sides' mistakes/blunders for every analyzed game, with the player/opponent split **derived at query time** via a single tested `is_opponent_expr(ply, games.user_color)` helper — no `is_opponent` column, no migration, no index (113-CONTEXT D-01/D-02/D-03 voided FLAWX-03). All three classify paths persist opponent flaws without a second engine evaluation (D-10 preserved); every existing reader was retrofitted with a player-only gate so opponent rows don't leak into the self-only UI. Dev users 28 & 44 + the benchmark cohort backfilled idempotently; prod ships empty.
+- **Benchmark flaw-delta zones** (Phase 114, FLAWBMK-01..04) — the `/benchmarks` skill gained a §5 chapter computing per-(metric, ELO×TC) Q1/Q3 quartile "typical" delta zones for all 15 flaw-delta metrics with ELO/TC marginals and per-axis Cohen's-d collapse verdicts — the lightweight delta-IQR zone, deliberately not the heavy 99-breakpoint endgame CDF.
+- **Exact `ply_count`** (Phase 114.1 INSERTED, SEED-041 §9) — replaced `games.move_count` (±1 half-move accurate) with an exact `games.ply_count` via one hand-written migration (add + backfill + drop, ~10s on prod, no NULL window). Display stays full-moves; payoff is an exact per-game user-move denominator with zero `game_positions` access, speeding both the §5 benchmark chapter and the Phase 115 live endpoint.
+- **You-vs-opponent comparison API + bullet grid** (Phase 115, FLAWCMP-01/03/04/05 + FLAWUI-01..06) — a new `GET /api/library/flaw-comparison` endpoint returning the full 15-bullet inventory via a **unified per-100-moves paired per-game delta** estimator with a bootstrap/normal CI (114-CONTEXT D-01/D-04 superseded the SEED-040 count-rate/proportion split; FLAWCMP-02 Wilson method voided), honoring all game filters + severity. The old tag-distribution zone is replaced by a uniform `MiniBulletChart` grid (measure + CI error bar + benchmark "typical" blue zone), family-grouped, with per-bullet tooltips disclosing definition, sign convention, tempo caveat, and filter×zone interaction. Section-level sample gate below floor N; responsive + `data-testid`/ARIA parity.
+
+**Deferred (v2, owned by seeds):** tactic-motif comparison families and the literal `missed-X` upgrade (FLAWTAC — SEED-039); analyzed-game coverage raising via client-side `stockfish.wasm` / server idle-time analysis (FLAWCOV — SEED-012). The feature ships for the ~37–51 heavy-analysis users.
+
+**Known deferred items at close:** see STATE.md Deferred Items (open-artifact audit at close: 26 items — 13 quick tasks all shipped [false-positive `unknown` status], Phase 115's 2 manual UAT scenarios + human-needed verification on a feature now live in prod, 5 long-range todos, 4 dormant seeds incl. SEED-040's delivered scope; none block the release).
+
+See `.planning/milestones/v1.25-ROADMAP.md` and `.planning/milestones/v1.25-REQUIREMENTS.md` (18/18 active requirements complete; FLAWX-03 + FLAWCMP-02 voided; FLAWTAC / FLAWCOV deferred to v2).
+
+
 ## v1.24 Library Page (Shipped: 2026-06-09)
 
 **Phases completed:** 9 phases (104–112), 37 plans. All landed on `main` via local squash-merge or direct gated commits. Phase 111 (Library UI polish) shipped via direct commits with no GSD plan/summary artifacts — its record lives in `milestones/v1.24-ROADMAP.md` + git history.

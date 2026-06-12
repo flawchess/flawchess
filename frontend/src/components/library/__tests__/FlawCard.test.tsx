@@ -5,7 +5,7 @@
  * Tests:
  * 1. CardHeader renders white + black usernames with ratings
  * 2. Ratings in parentheses; omitted (no empty parens) when null
- * 3. Move notation: ply=2 (white) → "2.Nxd4", ply=3 (black) → "2...c5"
+ * 3. Move notation: ply=2 (white) → "2. Nxd4", ply=3 (black) → "2... c5"
  * 4. Board at size 132 with a flaw-move arrow when move_san is set
  * 5. data-testid on root article: flaw-card-{game_id}-{ply}
  * 6. Platform link testid and aria-label present
@@ -173,16 +173,16 @@ describe('FlawCard', () => {
   });
 
   describe('Move notation (SC-5)', () => {
-    it('renders white move notation: ply=2 → "2.Nxd4"', () => {
+    it('renders white move notation: ply=2 → "2. Nxd4"', () => {
       render(<FlawCard flaw={makeFlaw({ ply: 2, move_san: 'Nxd4' })} />);
       const article = screen.getByTestId('flaw-card-42-2');
-      expect(article.textContent).toContain('2.Nxd4');
+      expect(article.textContent).toContain('2. Nxd4');
     });
 
-    it('renders black move notation: ply=3 → "2...c5"', () => {
+    it('renders black move notation: ply=3 → "2... c5"', () => {
       render(<FlawCard flaw={makeFlaw({ ply: 3, move_san: 'c5', game_id: 43 })} />);
       const article = screen.getByTestId('flaw-card-43-3');
-      expect(article.textContent).toContain('2...c5');
+      expect(article.textContent).toContain('2... c5');
     });
 
     it('falls back to "Ply N" when move_san is null', () => {
@@ -193,12 +193,12 @@ describe('FlawCard', () => {
   });
 
   describe('Game-info block (quick-260610-vru — clock + move time, no TC/moves/termination)', () => {
-    it('renders "mm:ss (Move Ns)" and drops TC, move count, and termination', () => {
+    it('renders "mm:ss · Move Ns" and drops TC, move count, and termination', () => {
       render(<FlawCard flaw={makeFlaw()} />);
       const article = screen.getByTestId('flaw-card-42-2');
-      // clock_seconds=125 → "2:05"; move_seconds=8.4 → "(Move 8.4s)"
+      // clock_seconds=125 → "2:05"; move_seconds=8.4 → "Move 8.4s"
       expect(article.textContent).toContain('2:05');
-      expect(article.textContent).toContain('(Move 8.4s)');
+      expect(article.textContent).toContain('Move 8.4s');
       // Replaced segments must be gone.
       expect(article.textContent).not.toContain('rapid');
       expect(article.textContent).not.toContain('10+5');
@@ -206,18 +206,18 @@ describe('FlawCard', () => {
       expect(article.textContent).not.toContain('resignation');
     });
 
-    it('omits the "(Move Ns)" suffix when move_seconds is null', () => {
+    it('omits the "Move Ns" suffix when move_seconds is null', () => {
       render(<FlawCard flaw={makeFlaw({ move_seconds: null })} />);
       const article = screen.getByTestId('flaw-card-42-2');
       expect(article.textContent).toContain('2:05');
-      expect(article.textContent).not.toContain('(Move');
+      expect(article.textContent).not.toContain('Move 8.4s');
     });
 
     it('omits the clock line entirely when both clock fields are null', () => {
       render(<FlawCard flaw={makeFlaw({ clock_seconds: null, move_seconds: null })} />);
       const article = screen.getByTestId('flaw-card-42-2');
       expect(article.textContent).not.toContain('2:05');
-      expect(article.textContent).not.toContain('(Move');
+      expect(article.textContent).not.toContain('Move 8.4s');
     });
   });
 

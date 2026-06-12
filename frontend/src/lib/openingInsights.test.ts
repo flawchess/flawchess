@@ -6,27 +6,27 @@ describe('formatCandidateMove', () => {
   it('renders a white candidate after a long entry sequence with the move-number prefix only', () => {
     expect(
       formatCandidateMove(['e4', 'c5', 'Nf3', 'd6', 'd4', 'cxd4'], 'Nxd4'),
-    ).toBe('4.Nxd4');
+    ).toBe('4. Nxd4');
   });
 
   it('renders a white candidate after exactly 2 entry plys', () => {
-    expect(formatCandidateMove(['e4', 'c5'], 'Nf3')).toBe('2.Nf3');
+    expect(formatCandidateMove(['e4', 'c5'], 'Nf3')).toBe('2. Nf3');
   });
 
   it('renders a black candidate with continuation notation', () => {
-    expect(formatCandidateMove(['e4'], 'c5')).toBe('1...c5');
+    expect(formatCandidateMove(['e4'], 'c5')).toBe('1... c5');
   });
 
   it('renders the first move when the entry sequence is empty', () => {
-    expect(formatCandidateMove([], 'e4')).toBe('1.e4');
+    expect(formatCandidateMove([], 'e4')).toBe('1. e4');
   });
 
   it('renders a black candidate after a 3-ply entry sequence', () => {
-    expect(formatCandidateMove(['e4', 'c5', 'Nf3'], 'd6')).toBe('2...d6');
+    expect(formatCandidateMove(['e4', 'c5', 'Nf3'], 'd6')).toBe('2... d6');
   });
 
   it('renders a white candidate after a 4-ply entry sequence', () => {
-    expect(formatCandidateMove(['e4', 'c5', 'Nf3', 'd6'], 'd4')).toBe('3.d4');
+    expect(formatCandidateMove(['e4', 'c5', 'Nf3', 'd6'], 'd4')).toBe('3. d4');
   });
 });
 

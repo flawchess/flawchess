@@ -312,9 +312,9 @@ describe('OpeningFindingCard', () => {
       />,
     );
     const text = screen.getByTestId('opening-finding-card-11').textContent ?? '';
-    expect(text).toContain('4.Nxd4');
+    expect(text).toContain('4. Nxd4');
     // Earlier entry plys should no longer appear in the rendered prose.
-    expect(text).not.toContain('3.d4 cxd4');
+    expect(text).not.toContain('3. d4 cxd4');
   });
 
   describe('WDL bar row + eval bullet row (quick task 260506-u2b)', () => {

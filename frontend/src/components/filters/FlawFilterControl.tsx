@@ -1,4 +1,15 @@
-import { Clock, Zap, Brain, Target, Clover, TrendingDown, ArrowDownUp } from 'lucide-react';
+import {
+  Clock,
+  Zap,
+  Brain,
+  Target,
+  Clover,
+  TrendingDown,
+  ArrowDownUp,
+  BookOpen,
+  Swords,
+  Trophy,
+} from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { InfoPopover } from '@/components/ui/info-popover';
@@ -11,6 +22,8 @@ import {
   FAM_OPPORTUNITY_BG,
   FAM_IMPACT,
   FAM_IMPACT_BG,
+  FAM_PHASE,
+  FAM_PHASE_BG,
   SEV_BLUNDER,
   SEV_BLUNDER_BG,
   SEV_MISTAKE,
@@ -37,6 +50,10 @@ const TAG_ICONS: Record<string, LucideIcon> = {
   'lucky': Clover,
   'reversed': ArrowDownUp,
   'squandered': TrendingDown,
+  // Phase family — same glyphs as the Stats comparison grid (flawComparisonMeta).
+  'opening': BookOpen,
+  'middlegame': Swords,
+  'endgame': Trophy,
 };
 
 // ─── Severity → pill style (mirrors the page severity badges) ─────────────────
@@ -56,7 +73,8 @@ const SEVERITY_BUTTONS: SeverityButtonConfig[] = [
 
 // ─── Family sections ──────────────────────────────────────────────────────────
 
-// Non-phase tags only (phase tags excluded per UI-SPEC §Tag-family sections + Pitfall 5).
+// Tag-family sections, including the phase family (Quick 260612-fow — phase is now
+// a first-class filter family, filtered on game_flaws.phase by the backend).
 interface FamilySection {
   label: string;
   ariaLabel: string;
@@ -90,6 +108,14 @@ const FAMILY_SECTIONS: FamilySection[] = [
     tags: ['reversed', 'squandered'],
     color: FAM_IMPACT,
     bg: FAM_IMPACT_BG,
+  },
+  {
+    label: 'Game Phase',
+    ariaLabel: 'Game phase tag filters',
+    testid: 'filter-flaw-family-phase',
+    tags: ['opening', 'middlegame', 'endgame'],
+    color: FAM_PHASE,
+    bg: FAM_PHASE_BG,
   },
 ];
 
@@ -173,8 +199,8 @@ function SeverityFilterButton({ config, selected, onToggle }: SeverityFilterButt
  * FlawFilterControl — severity × tag-family multi-select filter control.
  *
  * Renders:
- * - Two severity toggle buttons (Blunders / Mistakes) with at-least-one guard
- * - Three family groups: Timing / Opportunity / Impact (phase tags excluded)
+ * - Two severity toggle buttons (Blunders / Mistakes) — empty = both shown
+ * - Four family groups: Timing / Opportunity / Impact / Game Phase
  *
  * Tag buttons show the canonical lowercase-with-dash name (matching chips + panel).
  * Definitions live in the <TagLegend> "Tags" popover on the Games cards, not as
@@ -193,12 +219,13 @@ export function FlawFilterControl({
   onSeverityChange,
   onTagChange,
 }: FlawFilterControlProps) {
-  // At-least-one-severity guard: ignore click that would empty the severity array
+  // Severity toggles narrow like the tag families: empty = both shown, one = that
+  // tier only, both = both shown (same as empty). Deselecting the last severity is
+  // allowed (yields []) — there is no at-least-one guard.
   const handleSeverityToggle = (sev: 'blunder' | 'mistake'): void => {
     const next = severity.includes(sev)
       ? severity.filter((s) => s !== sev)
       : [...severity, sev];
-    if (next.length === 0) return; // prevent deselecting last active severity
     onSeverityChange(next);
   };
 

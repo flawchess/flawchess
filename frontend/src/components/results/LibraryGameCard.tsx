@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import {
   SEV_BLUNDER,
   SEV_MISTAKE,
+  SEV_INACCURACY,
   WDL_BORDER_DRAW,
   WDL_BORDER_LOSS,
   WDL_BORDER_WIN,
@@ -41,10 +42,11 @@ interface LibraryGameCardProps {
 const MOBILE_BOARD_SIZE = 130;
 const DESKTOP_BOARD_SIZE = 132;
 
-// Mistake/blunder corner-dot colors (orange/red) for the live hover miniboard.
-const DOT_COLOR: Record<'mistake' | 'blunder', string> = {
-  mistake: SEV_MISTAKE,
+// Severity corner-dot colors (red/orange/yellow) for the live hover miniboard.
+const DOT_COLOR: Record<FlawSeverity, string> = {
   blunder: SEV_BLUNDER,
+  mistake: SEV_MISTAKE,
+  inaccuracy: SEV_INACCURACY,
 };
 
 /** One reconstructed ply: the FEN after the move plus the move's from/to squares. */
@@ -95,12 +97,40 @@ const SEVERITY_ORDER: FlawSeverity[] = ['blunder', 'mistake', 'inaccuracy'];
 
 // Flaw-tag families, mirroring the backend game-selection filter
 // (build_flaw_filter_clauses in library_repository.py): OR within family, AND
-// across families. Phase tags are not filter predicates and are excluded.
+// across families. The phase family is handled separately below — phase isn't
+// stored in a marker's tag list, so it's derived from phase_transitions.
 const TAG_FAMILIES: readonly (readonly FlawTag[])[] = [
   ['low-clock', 'hasty', 'unrushed'],
   ['miss', 'lucky'],
   ['reversed', 'squandered'],
 ];
+
+// Phase family (Quick 260612-fow): a filterable family on the backend
+// (game_flaws.phase). Markers don't carry a phase tag, so each ply's phase is
+// derived from the game's phase_transitions to mirror the filter on the chart.
+const PHASE_FILTER_TAGS: readonly FlawTag[] = ['opening', 'middlegame', 'endgame'];
+
+/** Derive a ply's game phase from the transition plies (first ply of each phase). */
+function plyPhase(
+  ply: number,
+  pt: { middlegame_ply: number | null; endgame_ply: number | null },
+): FlawTag {
+  if (pt.endgame_ply != null && ply >= pt.endgame_ply) return 'endgame';
+  // Before middlegame starts = opening; otherwise middlegame (incl. when no
+  // middlegame boundary was recorded for a short game).
+  if (pt.middlegame_ply != null && ply < pt.middlegame_ply) return 'opening';
+  return 'middlegame';
+}
+
+// A flaw chip/badge the user can hover (highlight) or click (cycle): either a tag
+// chip or a severity badge. Shared by the hover-highlight and click-to-cycle paths.
+type FlawRef = { kind: 'tag'; tag: FlawTag } | { kind: 'severity'; severity: FlawSeverity };
+
+function sameFlawRef(a: FlawRef, b: FlawRef): boolean {
+  if (a.kind === 'tag' && b.kind === 'tag') return a.tag === b.tag;
+  if (a.kind === 'severity' && b.kind === 'severity') return a.severity === b.severity;
+  return false;
+}
 
 // Copied verbatim from GameCard.tsx — same display requirements (D-05 forbids shared import).
 function formatDate(dateStr: string | null): string {
@@ -168,10 +198,13 @@ export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
   const [focusedPly, setFocusedPly] = useState<number | null>(focusPly ?? null);
   const yieldFocus = () => setFocusedPly(null);
   const perPly = useMemo(() => buildPerPly(game.moves), [game.moves]);
-  const mbByPly = useMemo(() => {
-    const m = new Map<number, 'mistake' | 'blunder'>();
+  // All flaw severities (blunder/mistake/inaccuracy) get a corner dot on the
+  // hover miniboard, colored by severity. One marker per ply (a ply is a single
+  // half-move), so the map key never collides.
+  const flawByPly = useMemo(() => {
+    const m = new Map<number, FlawSeverity>();
     for (const fm of game.flaw_markers ?? []) {
-      if (fm.severity === 'mistake' || fm.severity === 'blunder') m.set(fm.ply, fm.severity);
+      m.set(fm.ply, fm.severity);
     }
     return m;
   }, [game.flaw_markers]);
@@ -189,17 +222,45 @@ export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
     return m;
   }, [game.flaw_markers]);
 
+  // Per-tag ascending list of the user's marker plies, for click-to-cycle: clicking
+  // a tag chip steps the eval-chart slider through these plies (showing each
+  // flaw's tooltip). Scoped to is_user M/B markers, matching the chip counts.
+  const tagPlies = useMemo(() => {
+    const m = new Map<FlawTag, number[]>();
+    for (const fm of game.flaw_markers ?? []) {
+      if (!fm.is_user) continue;
+      for (const t of fm.tags) {
+        const arr = m.get(t);
+        if (arr) arr.push(fm.ply);
+        else m.set(t, [fm.ply]);
+      }
+    }
+    for (const arr of m.values()) arr.sort((a, b) => a - b);
+    return m;
+  }, [game.flaw_markers]);
+
+  // Per-severity ascending list of the user's marker plies (B/M/I), for click-to-
+  // cycle on the severity count badges. Inaccuracies are included — the chart
+  // reveals them while their badge drives the highlight.
+  const severityPlies = useMemo(() => {
+    const m = new Map<FlawSeverity, number[]>();
+    for (const fm of game.flaw_markers ?? []) {
+      if (!fm.is_user) continue;
+      const arr = m.get(fm.severity);
+      if (arr) arr.push(fm.ply);
+      else m.set(fm.severity, [fm.ply]);
+    }
+    for (const arr of m.values()) arr.sort((a, b) => a - b);
+    return m;
+  }, [game.flaw_markers]);
+
   // Transient hover highlight: hovering a tag chip or a severity badge in the flaw
   // column emphasizes the matching markers on this card's eval chart. Inaccuracy is
   // included — its markers are off-chart by default and get revealed on its hover.
-  const [highlight, setHighlight] = useState<
-    { kind: 'tag'; tag: FlawTag } | { kind: 'severity'; severity: FlawSeverity } | null
-  >(null);
+  const [highlight, setHighlight] = useState<FlawRef | null>(null);
   // Hovering a tag/severity (non-null highlight) or scrubbing the chart is the user
   // reaching for the category-highlight tools, so the focus pulse steps aside.
-  const setHighlightYieldingFocus = (
-    next: { kind: 'tag'; tag: FlawTag } | { kind: 'severity'; severity: FlawSeverity } | null,
-  ) => {
+  const setHighlightYieldingFocus = (next: FlawRef | null) => {
     if (next) yieldFocus();
     setHighlight(next);
   };
@@ -218,19 +279,29 @@ export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
     }
     setHoverPly(ply);
   };
+  // Click-to-cycle state, declared here so the highlight derivation below can keep a
+  // clicked tag/severity's markers lit. `cycle` holds the active ref + index;
+  // `commandSeq` is the chart-scrub nonce (see handleActivate).
+  const [cycle, setCycle] = useState<{ ref: FlawRef; pos: number } | null>(null);
+  const [commandSeq, setCommandSeq] = useState(0);
+
+  // A clicked tag/severity (cycle) keeps its markers lit even after the pointer
+  // leaves the chip — matching touch, where no mouse-leave fires to clear the hover
+  // highlight. A live hover (`highlight`) takes precedence over the locked cycle ref.
   const highlightedPlies = useMemo(() => {
-    if (!highlight) return null;
+    const ref = highlight ?? cycle?.ref ?? null;
+    if (!ref) return null;
     const set = new Set<number>();
     for (const fm of game.flaw_markers ?? []) {
       if (!fm.is_user) continue;
       const matches =
-        highlight.kind === 'severity'
-          ? fm.severity === highlight.severity
-          : fm.tags.includes(highlight.tag); // inaccuracies have no tags → never match a tag hover
+        ref.kind === 'severity'
+          ? fm.severity === ref.severity
+          : fm.tags.includes(ref.tag); // inaccuracies have no tags → never match a tag hover
       if (matches) set.add(fm.ply);
     }
     return set;
-  }, [highlight, game.flaw_markers]);
+  }, [highlight, cycle, game.flaw_markers]);
 
   // Persistent (not hover) white outline: user markers matching the active flaw-tag
   // filter under the SAME predicate used to select games (OR within family, AND
@@ -243,22 +314,46 @@ export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
     const requiredGroups = TAG_FAMILIES.map((fam) => fam.filter((t) => filterSet.has(t))).filter(
       (sel) => sel.length > 0,
     );
-    if (requiredGroups.length === 0) return null; // no (recognized) tag filter → no outline
+    // Phase family is derived per-ply (markers carry no phase tag), AND-ed across.
+    const phaseSel = PHASE_FILTER_TAGS.filter((t) => filterSet.has(t));
+    if (requiredGroups.length === 0 && phaseSel.length === 0) return null; // no tag filter → no outline
+    const pt = game.phase_transitions;
     const set = new Set<number>();
     for (const fm of game.flaw_markers ?? []) {
       if (!fm.is_user) continue;
       const markerTags = new Set<FlawTag>(fm.tags);
       // AND across families: every selected family group must be satisfied by ≥1 tag.
-      if (requiredGroups.every((sel) => sel.some((t) => markerTags.has(t)))) set.add(fm.ply);
+      if (!requiredGroups.every((sel) => sel.some((t) => markerTags.has(t)))) continue;
+      // AND the phase family (OR within): the ply's derived phase must be selected.
+      if (phaseSel.length > 0 && (!pt || !phaseSel.includes(plyPhase(fm.ply, pt)))) continue;
+      set.add(fm.ply);
     }
     return set;
-  }, [filterTags, game.flaw_markers]);
+  }, [filterTags, game.flaw_markers, game.phase_transitions]);
+
+  // Click-to-cycle: clicking a tag chip advances through that tag's flaw plies,
+  // commanding the eval chart to scrub to each and show its tooltip. `cycle`/
+  // `commandSeq` are declared above (the highlight derivation reads `cycle`). The
+  // nonce re-fires the chart command on re-click or a single-ply tag; clicking a
+  // different tag restarts at 0.
+  const pliesForRef = (ref: FlawRef): number[] =>
+    (ref.kind === 'tag' ? tagPlies.get(ref.tag) : severityPlies.get(ref.severity)) ?? [];
+  const handleActivate = (ref: FlawRef) => {
+    const plies = pliesForRef(ref);
+    if (plies.length === 0) return;
+    const pos = cycle && sameFlawRef(cycle.ref, ref) ? (cycle.pos + 1) % plies.length : 0;
+    setCycle({ ref, pos });
+    setCommandSeq((s) => s + 1);
+    // Also emphasize this ref's markers (dim others) so the click reads as a focus.
+    setHighlightYieldingFocus(ref);
+  };
+  const commandedPly = cycle ? (pliesForRef(cycle.ref)[cycle.pos] ?? null) : null;
 
   const activePly =
     hoverPly != null && perPly ? Math.min(Math.max(hoverPly, 0), perPly.length - 1) : null;
   const hoverEntry = activePly != null ? perPly?.[activePly] : undefined;
   const boardFen = hoverEntry?.fen ?? game.result_fen ?? null;
-  const hoverSeverity = activePly != null ? mbByPly.get(activePly) : undefined;
+  const hoverSeverity = activePly != null ? flawByPly.get(activePly) : undefined;
   const cornerDot =
     hoverEntry && hoverSeverity
       ? { square: hoverEntry.to, color: DOT_COLOR[hoverSeverity] }
@@ -411,6 +506,7 @@ export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
                 onHover={(active) =>
                   setHighlightYieldingFocus(active ? { kind: 'severity', severity: sev } : null)
                 }
+                onActivate={() => handleActivate({ kind: 'severity', severity: sev })}
               />
             );
           })}
@@ -429,6 +525,7 @@ export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
                 count={tagCounts.get(tag)}
                 definition={false}
                 onHover={(active) => setHighlightYieldingFocus(active ? { kind: 'tag', tag } : null)}
+                onActivate={() => handleActivate({ kind: 'tag', tag })}
               />
             ))}
             <TagLegend tags={game.chips} gameId={game.game_id} label="Tags" />
@@ -484,6 +581,8 @@ export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
               highlightedPlies={highlightedPlies}
               outlinedPlies={outlinedPlies}
               focusedPly={focusedPly}
+              commandedPly={commandedPly}
+              commandSeq={commandSeq}
               // Chart + 16px slider row = MOBILE_BOARD_SIZE (130px), so the eval
               // block matches the miniboard height. Literal arbitrary value so
               // Tailwind's JIT scanner emits the class.
@@ -545,6 +644,8 @@ export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
                 highlightedPlies={highlightedPlies}
                 outlinedPlies={outlinedPlies}
                 focusedPly={focusedPly}
+                commandedPly={commandedPly}
+                commandSeq={commandSeq}
                 // Chart + 16px slider row = DESKTOP_BOARD_SIZE (132px), so the eval
                 // block matches the miniboard column height exactly.
                 heightClass="h-[116px]"

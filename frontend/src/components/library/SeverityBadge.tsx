@@ -71,6 +71,13 @@ interface SeverityBadgeProps {
    */
   onHover?: (active: boolean) => void;
   /**
+   * Optional click/tap activation (Games card only). Fires on click or keyboard
+   * (Enter/Space) — the card uses it to cycle the eval chart through this
+   * severity's flaw plies. When provided the badge becomes a button (role/tabIndex/
+   * cursor); omitted call sites (FlawsTab) stay a plain non-interactive span.
+   */
+  onActivate?: () => void;
+  /**
    * When false, render the singular label only ("Blunder") with no leading count —
    * the Flaws card uses this since each card is exactly one flaw. Defaults to true
    * (Games card keeps the count + plural, e.g. "3 Blunders").
@@ -98,6 +105,7 @@ export function SeverityBadge({
   count,
   gameId,
   onHover,
+  onActivate,
   showCount = true,
   className,
 }: SeverityBadgeProps) {
@@ -113,8 +121,22 @@ export function SeverityBadge({
 
   return (
     <span
+      role={onActivate ? 'button' : undefined}
+      tabIndex={onActivate ? 0 : undefined}
+      onClick={onActivate ? () => onActivate() : undefined}
+      onKeyDown={
+        onActivate
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onActivate();
+              }
+            }
+          : undefined
+      }
       className={cn(
         'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 whitespace-nowrap transition-all hover:-translate-y-px',
+        onActivate && 'cursor-pointer',
         isActive && ACTIVE_FILTER_RING_CLASS,
         className,
       )}
