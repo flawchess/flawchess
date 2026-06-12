@@ -110,8 +110,8 @@ export function GlobalStatsPage() {
           <h2 className="text-lg font-semibold text-foreground mt-2">Flaw Statistics</h2>
           {flawStatsData !== undefined && (
             <FlawDenominatorPill
-              analyzedPct={flawStatsData.analyzed_pct}
               analyzedN={flawStatsData.analyzed_n}
+              totalN={flawStatsData.total_n}
             />
           )}
         </div>

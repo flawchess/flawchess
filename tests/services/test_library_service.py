@@ -439,12 +439,20 @@ async def _seed_db_game(
     black_mistakes: int | None = None,
     white_inaccuracies: int | None = None,
     black_inaccuracies: int | None = None,
+    analyzed: bool = True,
 ) -> object:
     """Insert a Game row, returning the persisted object.
 
     ply_count defaults to 10 so the macro per-100 denominator (floor/ceil(ply_count/2))
     yields 5 user moves for a white user. The white/black oracle move-quality columns
     feed the stats-panel inaccuracy rate (D-03) and the per-100 macro trend chart.
+
+    analyzed (default True) marks the game as having full move-quality analysis via
+    the cheap Game.is_analyzed detector (white_blunders IS NOT NULL) — count_
+    filtered_and_analyzed counts these toward analyzed_n. When analyzed and no
+    explicit white_blunders is given, white_blunders defaults to 0 (analyzed, zero
+    blunders); 0 and NULL are equivalent for the oracle trend. Pass analyzed=False
+    to seed a deliberately unanalyzed (e.g. chess.com) game.
     """
     import datetime as _dt
     import uuid
@@ -452,6 +460,9 @@ async def _seed_db_game(
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.models.game import Game as GameModel
+
+    if analyzed and white_blunders is None:
+        white_blunders = 0
 
     sess = cast(AsyncSession, session)
     game = GameModel(
@@ -775,7 +786,9 @@ class TestFlawStats:
         session = cast(AsyncSession, db_session)
         await ensure_test_user(session, 99974)
 
-        game = await _seed_db_game(session, user_id=99974, user_color="white", platform="chess.com")
+        game = await _seed_db_game(
+            session, user_id=99974, user_color="white", platform="chess.com", analyzed=False
+        )
         for ply in range(10):
             await _seed_db_pos(session, game=game, ply=ply, eval_cp=None)  # no eval
 

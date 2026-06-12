@@ -58,11 +58,17 @@ async def _seed_game(
     *,
     user_id: int = 99999,
     user_color: str = "white",
+    white_blunders: int | None = None,
+    platform: str = "lichess",
 ) -> Game:
-    """Insert a Game row and flush to obtain an ID."""
+    """Insert a Game row and flush to obtain an ID.
+
+    white_blunders drives Game.is_analyzed (the cheap analyzed detector): pass a
+    non-None value to mark the game as having full move-quality analysis.
+    """
     game = Game(
         user_id=user_id,
-        platform="lichess",
+        platform=platform,
         platform_game_id=str(uuid.uuid4()),
         platform_url="https://lichess.org/test",
         pgn="1. e4 e5 *",
@@ -75,6 +81,7 @@ async def _seed_game(
         increment_seconds=0.0,
         rated=True,
         is_computer_game=False,
+        white_blunders=white_blunders,
     )
     session.add(game)
     await session.flush()
@@ -370,16 +377,22 @@ class TestAnalyzedDenominator:
     async def test_analyzed_denominator_counts_only_covered_games(
         self, db_session: AsyncSession
     ) -> None:
-        """One fully-analyzed game + one all-null game: total_n==2, analyzed_n==1."""
-        # Analyzed game: 5 plies, only the final ply has null eval -> 4/5 = 0.80?
-        # The kernel coverage gate is >= 0.90, so we need (N-1)/N >= 0.90 -> N >= 10.
-        # Seed 10 plies with eval on the first 9 (final ply null is the realistic shape).
-        analyzed = await _seed_game(db_session, user_id=99999, user_color="white")
+        """One analyzed game + one unanalyzed game: total_n==2, analyzed_n==1.
+
+        count_filtered_and_analyzed keys analyzed_n off Game.is_analyzed (the
+        cheap white_blunders detector); analyzed_game_ids still uses the per-ply
+        eval-coverage gate. The seeded "analyzed" game satisfies BOTH (it carries
+        move-quality counts AND >=90% eval coverage), mirroring a real Lichess
+        game with computer analysis.
+        """
+        # Analyzed game: move-quality counts present (is_analyzed) AND >=90% eval
+        # coverage (9/10 plies, final ply null — the realistic shape).
+        analyzed = await _seed_game(db_session, user_id=99999, user_color="white", white_blunders=1)
         for ply in range(9):
             await _seed_position(db_session, game=analyzed, ply=ply, eval_cp=0)
         await _seed_position(db_session, game=analyzed, ply=9, eval_cp=None)  # final null
 
-        # chess.com-style game: all-null eval -> coverage 0.0 -> NOT analyzed.
+        # chess.com-style game: no move-quality counts, all-null eval -> NOT analyzed.
         chesscom = await _seed_game(db_session, user_id=99999, user_color="white")
         for ply in range(10):
             await _seed_position(db_session, game=chesscom, ply=ply, eval_cp=None)
@@ -393,10 +406,9 @@ class TestAnalyzedDenominator:
             opponent_type="all",
             from_date=None,
             to_date=None,
-            flaw_severity=None,
         )
         assert total_n == 2, "both games are in the filtered set"
-        assert analyzed_n == 1, "only the >=90%-coverage game counts as analyzed"
+        assert analyzed_n == 1, "only the game with move-quality analysis counts"
 
         ids = await analyzed_game_ids(
             db_session,
@@ -411,6 +423,32 @@ class TestAnalyzedDenominator:
         )
         assert analyzed.id in ids
         assert chesscom.id not in ids
+
+    @pytest.mark.asyncio
+    async def test_total_n_spans_all_platforms(self, db_session: AsyncSession) -> None:
+        """total_n counts chess.com games too; only the analyzed lichess game is analyzed_n.
+
+        Regression: the coverage badge denominator must NOT be platform- or
+        flaw-restricted. An unanalyzed chess.com game (white_blunders NULL) is in
+        total_n but not analyzed_n, so the badge reads "1 of 2", not "1 of 1".
+        """
+        lichess = await _seed_game(db_session, user_id=99999, platform="lichess", white_blunders=0)
+        await _seed_position(db_session, game=lichess, ply=0, eval_cp=0)
+        chesscom = await _seed_game(db_session, user_id=99999, platform="chess.com")
+        await _seed_position(db_session, game=chesscom, ply=0, eval_cp=None)
+
+        total_n, analyzed_n = await count_filtered_and_analyzed(
+            db_session,
+            user_id=99999,
+            time_control=None,
+            platform=None,  # no platform filter -> both platforms counted
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+        )
+        assert total_n == 2, "chess.com game must be counted in the denominator"
+        assert analyzed_n == 1, "only the analyzed lichess game counts as analyzed"
 
     @pytest.mark.asyncio
     async def test_analyzed_denominator_user_scoped(self, db_session: AsyncSession) -> None:
@@ -429,7 +467,6 @@ class TestAnalyzedDenominator:
             opponent_type="all",
             from_date=None,
             to_date=None,
-            flaw_severity=None,
         )
         assert total_n == 0
         assert analyzed_n == 0

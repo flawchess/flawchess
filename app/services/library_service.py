@@ -757,6 +757,8 @@ async def get_flaw_stats(
     analyzed_n. An empty analyzed set returns zeros + empty trend, never raises.
     """
     try:
+        # Coverage badge: omit flaw_severity so total_n spans the WHOLE filtered
+        # game set and analyzed_n <= total_n (a flaw EXISTS would collapse them).
         total_n, analyzed_n = await library_repository.count_filtered_and_analyzed(
             session,
             user_id=user_id,
@@ -766,7 +768,6 @@ async def get_flaw_stats(
             opponent_type=opponent_type,
             from_date=from_date,
             to_date=to_date,
-            flaw_severity=flaw_severity,
             opponent_gap_min=opponent_gap_min,
             opponent_gap_max=opponent_gap_max,
             color=color,
@@ -1106,6 +1107,8 @@ async def get_flaw_comparison(
             color=color,
         )
 
+        # Gate on the analyzed-game count for the SEVERITY-FILTERED set (passes
+        # flaw_severity), so analyzed_n matches the set the bullets aggregate over.
         _total_n, analyzed_n = await library_repository.count_filtered_and_analyzed(
             session,
             user_id=user_id,
