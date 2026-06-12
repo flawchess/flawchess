@@ -247,6 +247,16 @@ the D-11 LIFO id-DESC pick, a **node-budget search** call, and the hybrid demand
   tier 3 idle backlog drain (cores never sit idle). **Round-robin per user within a
   tier** (one game each, cycle) so concurrent users all see steady progress;
   most-recent-game-first within a user.
+  - **Scheduling granularity per tier (addendum, same session).** Positions within a
+    game are independent, so a tier-1 explicit request fans ONE game's positions across
+    the **entire pool** → ~60 core-seconds of work completes in ~10–30s wall-clock on an
+    idle pool. This matches the lichess game-review UX users know as the reference point
+    (lichess analysis returns in ~15–30s because a fishnet volunteer throws all its
+    cores at one game). Tiers 2/3 keep game-granularity per worker — throughput is
+    identical either way (same core-seconds); game granularity is simpler queue
+    accounting and fair under round-robin. Preemption is naturally position-granular:
+    each engine call is a ~1s unit, so a tier-1 arrival waits at most one in-flight
+    position per worker.
 - **D-5 — Storage: fill `game_positions.eval_cp/eval_mate` directly.** Supersedes
   decision #2's position-keyed `position_evals` table *for the server path* — that
   design was motivated by untrusted client writers and cross-user sharing; with the
