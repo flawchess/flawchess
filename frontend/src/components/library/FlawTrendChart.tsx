@@ -52,7 +52,11 @@ interface FlawTrendChartProps {
  * Renders a text fallback when fewer than 2 datapoints are available.
  */
 export function FlawTrendChart({ trend, windowSize }: FlawTrendChartProps) {
-  const [hiddenKeys, setHiddenKeys] = useState<Set<SeriesKey>>(() => new Set());
+  // Inaccuracies are hidden by default — they dominate the y-axis and bury the
+  // blunder/mistake signal. The user can toggle them back on via the legend.
+  const [hiddenKeys, setHiddenKeys] = useState<Set<SeriesKey>>(
+    () => new Set<SeriesKey>(['inaccuracy_rate']),
+  );
 
   const handleLegendClick = useCallback((key: SeriesKey) => {
     setHiddenKeys((prev) => {
