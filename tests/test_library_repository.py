@@ -33,7 +33,6 @@ from app.repositories.library_repository import (
     count_filtered_and_analyzed,
     fetch_page_game_flaws,
     fetch_stats_aggregates,
-    fetch_stats_trend,
     query_filtered_games,
     query_flaws,
 )
@@ -958,7 +957,7 @@ class TestFlawsEndpointSchema:
 
 
 class TestStatsAggregatesPlayerOnly:
-    """fetch_stats_aggregates and fetch_stats_trend gated to player-only (D-04, R4, R5).
+    """fetch_stats_aggregates gated to player-only (D-04, R4).
 
     The no-regression invariant (highest-risk D-04 invariant, RESEARCH Pitfall 5):
         gated counts == pre-phase player-only baseline
@@ -1108,82 +1107,7 @@ class TestStatsAggregatesPlayerOnly:
             f"baseline ({baseline_total}) after both-sides materialization"
         )
 
-    @pytest.mark.asyncio
-    async def test_stats_trend_gated_equals_player_only_baseline(
-        self, db_session: AsyncSession
-    ) -> None:
-        """gated fetch_stats_trend per-game counts equal player-only baseline (D-04, R5).
-
-        Verifies that fetch_stats_trend counts only player flaws after gating:
-        one white-user game with 2 player flaws + 2 opponent flaws injected
-        afterward → gated trend shows mb_count == 2 (player-only), unchanged.
-        """
-        # White user: player = even ply
-        game = await self._seed_analyzed_game_with_positions(
-            db_session, user_id=99999, user_color="white"
-        )
-        # Player flaws (even plies, white user → white mover → player)
-        await bulk_insert_game_flaws(
-            db_session,
-            [
-                _flaw_row(user_id=99999, game_id=game.id, ply=2, severity=_SEV_BLUNDER),
-                _flaw_row(user_id=99999, game_id=game.id, ply=4, severity=_SEV_BLUNDER),
-            ],
-        )
-
-        analyzed_subq = await self._make_analyzed_subq(db_session, user_id=99999)
-
-        # Baseline trend: only player flaws
-        baseline_trend = await fetch_stats_trend(
-            db_session,
-            user_id=99999,
-            analyzed_game_ids_subq=analyzed_subq,
-            time_control=None,
-            platform=None,
-            rated=None,
-            opponent_type="all",
-            from_date=None,
-            to_date=None,
-            flaw_severity=None,
-            opponent_gap_min=None,
-            opponent_gap_max=None,
-            color=None,
-        )
-        # Find our game's entry
-        game_entry = next((entry for entry in baseline_trend if entry[1] > 0), None)
-        assert game_entry is not None, "trend must include the seeded game with player flaws"
-        baseline_mb = game_entry[1]
-        assert baseline_mb == 2, f"baseline trend must show 2 player flaws, got {baseline_mb}"
-
-        # Add opponent flaws (odd plies, white user → black mover → opponent)
-        await bulk_insert_game_flaws(
-            db_session,
-            [
-                _flaw_row(user_id=99999, game_id=game.id, ply=1, severity=_SEV_BLUNDER),
-                _flaw_row(user_id=99999, game_id=game.id, ply=3, severity=_SEV_BLUNDER),
-            ],
-        )
-
-        # Gated trend must match baseline (player-only gate prevents opponent inflation)
-        gated_trend = await fetch_stats_trend(
-            db_session,
-            user_id=99999,
-            analyzed_game_ids_subq=analyzed_subq,
-            time_control=None,
-            platform=None,
-            rated=None,
-            opponent_type="all",
-            from_date=None,
-            to_date=None,
-            flaw_severity=None,
-            opponent_gap_min=None,
-            opponent_gap_max=None,
-            color=None,
-        )
-        gated_entry = next((entry for entry in gated_trend if entry[1] > 0), None)
-        assert gated_entry is not None, "gated trend must still include the game"
-        gated_mb = gated_entry[1]
-        assert gated_mb == baseline_mb, (
-            f"gated trend mb_count ({gated_mb}) must equal player-only baseline "
-            f"({baseline_mb}) — opponent flaws must not inflate the trend (D-04, R5)"
-        )
+    # NOTE: the per-game M+B trend (fetch_stats_trend) was removed in the flaw-trend
+    # rebuild — the trend chart now reads the games-table oracle columns
+    # (white_/black_blunders/mistakes/inaccuracies) via fetch_flaw_trend_rows, which are
+    # inherently player-only by color selection, so no game_flaws player-gating applies.

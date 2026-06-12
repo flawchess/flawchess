@@ -214,6 +214,7 @@ class TestGetFlawStats:
             "rates",
             "tag_distribution",
             "trend",
+            "trend_window",
             "analyzed_pct",
             "analyzed_n",
             "total_n",

@@ -117,9 +117,8 @@ export function FlawStatsPanel({
       {!isError && !isLoading && stats !== undefined && (() => {
         const analyzedEmpty = stats.analyzed_n === 0;
 
-        // Window size from first trend point (all points share the same window_size).
-        const firstPoint = stats.trend[0];
-        const windowSize = firstPoint !== undefined ? firstPoint.window_size : 20;
+        // Rolling window size (games) for the trend chart subheading.
+        const windowSize = stats.trend_window;
 
         return (
           <>
@@ -129,7 +128,7 @@ export function FlawStatsPanel({
               analyzedEmpty={analyzedEmpty}
             />
 
-            {/* Zone 2: Blunders/game trend — comparison-free (FLAWUI-05) */}
+            {/* Zone 2: Flaws / 100 moves trend — 3 severity lines, comparison-free */}
             <FlawTrendChart
               trend={analyzedEmpty ? [] : stats.trend}
               windowSize={windowSize}

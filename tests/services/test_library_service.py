@@ -432,8 +432,20 @@ async def _seed_db_game(
     result: str = "1-0",
     played_at: object = None,
     platform: str = "lichess",
+    ply_count: int = 10,
+    white_blunders: int | None = None,
+    black_blunders: int | None = None,
+    white_mistakes: int | None = None,
+    black_mistakes: int | None = None,
+    white_inaccuracies: int | None = None,
+    black_inaccuracies: int | None = None,
 ) -> object:
-    """Insert a Game row, returning the persisted object."""
+    """Insert a Game row, returning the persisted object.
+
+    ply_count defaults to 10 so the macro per-100 denominator (floor/ceil(ply_count/2))
+    yields 5 user moves for a white user. The white/black oracle move-quality columns
+    feed the stats-panel inaccuracy rate (D-03) and the per-100 macro trend chart.
+    """
     import datetime as _dt
     import uuid
 
@@ -457,6 +469,13 @@ async def _seed_db_game(
         increment_seconds=0.0,
         rated=True,
         is_computer_game=False,
+        ply_count=ply_count,
+        white_blunders=white_blunders,
+        black_blunders=black_blunders,
+        white_mistakes=white_mistakes,
+        black_mistakes=black_mistakes,
+        white_inaccuracies=white_inaccuracies,
+        black_inaccuracies=black_inaccuracies,
         played_at=played_at or _dt.datetime(2026, 1, 1, tzinfo=_dt.timezone.utc),
     )
     sess.add(game)
@@ -518,10 +537,9 @@ class TestFlawStats:
 
         prev_b, curr_b = _cp_for_white_drop(BLUNDER_DROP)
         # White (user) game, plies 0..10 (11 positions, all evaled -> coverage 1.0).
-        # User (white) moves are even plies >= 2: 2,4,6,8,10 = 5 user moves.
-        # game_positions provide eval coverage + total_user_moves denominator.
-        # game_flaws provide the M+B count for fetch_stats_aggregates (D-02).
-        game = await _seed_db_game(session, user_id=99971, user_color="white")
+        # Macro per-100 denominator = floor(ply_count/2) = floor(10/2) = 5 user moves.
+        # game_positions provide eval coverage; game_flaws provide the M+B count.
+        game = await _seed_db_game(session, user_id=99971, user_color="white", ply_count=10)
         await _seed_db_pos(session, game=game, ply=0, eval_cp=prev_b)
         await _seed_db_pos(session, game=game, ply=1, eval_cp=prev_b)  # black clean
         await _seed_db_pos(session, game=game, ply=2, eval_cp=curr_b)  # white blunder
@@ -543,13 +561,101 @@ class TestFlawStats:
         )
         assert resp.per_severity_counts["blunder"] == 1
         assert resp.per_severity_counts["mistake"] == 0
+        # No oracle inaccuracies seeded -> NULL -> 0.
+        assert resp.per_severity_counts["inaccuracy"] == 0
         assert resp.analyzed_n == 1
         assert resp.total_n == 1
         assert resp.analyzed_pct == 1.0
-        # 1 blunder / 5 user moves * 100 = 20.0
+        # Macro: single game, 1 blunder / 5 user moves * 100 = 20.0.
         assert resp.rates.per_100_moves["blunder"] == pytest.approx(20.0)
+        assert resp.rates.per_100_moves["inaccuracy"] == 0.0
         # 1 blunder / 1 analyzed game = 1.0
         assert resp.rates.per_game["blunder"] == pytest.approx(1.0)
+
+    @pytest.mark.asyncio
+    async def test_per_100_inaccuracy_from_oracle_columns(self, db_session: object) -> None:
+        """Inaccuracy per-100 comes from the oracle columns (D-03), not game_flaws.
+
+        White user, ply_count=10 -> 5 user moves, white_inaccuracies=2 -> 2/5*100=40.0.
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.services.library_service import get_flaw_stats
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99981)
+
+        # Analyzed (full eval coverage) white game with 2 oracle inaccuracies, no M+B.
+        game = await _seed_db_game(
+            session, user_id=99981, user_color="white", ply_count=10, white_inaccuracies=2
+        )
+        for ply in range(11):
+            await _seed_db_pos(session, game=game, ply=ply, eval_cp=0)  # flat -> no M+B
+
+        resp = await get_flaw_stats(
+            session,
+            user_id=99981,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            flaw_severity=None,
+        )
+        assert resp.per_severity_counts["inaccuracy"] == 2
+        assert resp.per_severity_counts["mistake"] == 0
+        assert resp.per_severity_counts["blunder"] == 0
+        # 2 inaccuracies / 5 user moves * 100 = 40.0
+        assert resp.rates.per_100_moves["inaccuracy"] == pytest.approx(40.0)
+        assert resp.rates.per_100_moves["blunder"] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_per_100_is_macro_mean_of_per_game_rates(self, db_session: object) -> None:
+        """per_100_moves is a MACRO mean of per-game rates, not a pooled (micro) rate.
+
+        Game A: ply_count=10 (5 user moves), 1 blunder -> 20.0/100.
+        Game B: ply_count=40 (20 user moves), 1 blunder -> 5.0/100.
+        Macro mean = (20 + 5) / 2 = 12.5. (Micro/pooled would be 2/25*100 = 8.0.)
+        This is the fix that makes the card equal the you-vs-opponent bullet's
+        player_rate, which aggregates the same per-game-then-mean way.
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.services.library_service import get_flaw_stats
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99982)
+
+        # Game A — short: 10 plies, one white blunder at ply 2.
+        game_a = await _seed_db_game(session, user_id=99982, user_color="white", ply_count=10)
+        for ply in range(11):
+            await _seed_db_pos(session, game=game_a, ply=ply, eval_cp=0)
+        await _seed_db_flaw(session, game=game_a, ply=2, severity=2, phase=1)
+
+        # Game B — long: 40 plies, one white blunder at ply 2.
+        game_b = await _seed_db_game(session, user_id=99982, user_color="white", ply_count=40)
+        for ply in range(41):
+            await _seed_db_pos(session, game=game_b, ply=ply, eval_cp=0)
+        await _seed_db_flaw(session, game=game_b, ply=2, severity=2, phase=1)
+
+        resp = await get_flaw_stats(
+            session,
+            user_id=99982,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            flaw_severity=None,
+        )
+        assert resp.analyzed_n == 2
+        assert resp.per_severity_counts["blunder"] == 2
+        # Macro mean of per-game rates: (20.0 + 5.0) / 2 = 12.5 (NOT the micro 8.0).
+        assert resp.rates.per_100_moves["blunder"] == pytest.approx(12.5)
 
     @pytest.mark.asyncio
     async def test_reversed_rate_and_distribution(self, db_session: object) -> None:
@@ -601,28 +707,38 @@ class TestFlawStats:
         assert sum(resp.tag_distribution.tempo.values()) == 0
 
     @pytest.mark.asyncio
-    async def test_trend_point_date_is_window_last_game(self, db_session: object) -> None:
-        """Each FlawTrendPoint.date is its rolling window's last-game date."""
+    async def test_trend_iso_week_macro_rates_from_oracle(self, db_session: object) -> None:
+        """The trend is per-100-moves MACRO from oracle columns, bucketed by ISO week.
+
+        10 white games in one ISO week, ply_count=10 (5 user moves), oracle
+        blunders=1 / mistakes=0 / inaccuracies=2 each -> one point with
+        blunder_rate=20, mistake_rate=0, inaccuracy_rate=40, dated the week's Monday.
+        """
         import datetime as _dt
 
         from sqlalchemy.ext.asyncio import AsyncSession
 
-        from app.services.library_service import get_flaw_stats
+        from app.services.library_service import FLAW_TREND_WINDOW, get_flaw_stats
         from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
         from tests.conftest import ensure_test_user
 
         session = cast(AsyncSession, db_session)
         await ensure_test_user(session, 99973)
 
-        # Seed MIN_GAMES_FOR_TIMELINE analyzed games on distinct ascending dates so
-        # at least one trend point is emitted; assert its date == the last game date.
-        n_games = MIN_GAMES_FOR_TIMELINE
-        last_date: _dt.datetime | None = None
-        for i in range(n_games):
-            played = _dt.datetime(2026, 2, 1, tzinfo=_dt.timezone.utc) + _dt.timedelta(days=i)
-            last_date = played
-            game = await _seed_db_game(session, user_id=99973, user_color="white", played_at=played)
-            # 10 plies, fully evaled, flat -> analyzed but no flaws.
+        n_games = MIN_GAMES_FOR_TIMELINE  # exactly fills the partial-window floor
+        played = _dt.datetime(2026, 6, 10, 12, 0, tzinfo=_dt.timezone.utc)  # all same ISO week
+        for _ in range(n_games):
+            game = await _seed_db_game(
+                session,
+                user_id=99973,
+                user_color="white",
+                ply_count=10,
+                played_at=played,
+                white_blunders=1,
+                white_mistakes=0,
+                white_inaccuracies=2,
+            )
+            # Positions only to clear the analyzed_n>0 gate (trend itself reads oracle).
             for ply in range(10):
                 await _seed_db_pos(session, game=game, ply=ply, eval_cp=0)
 
@@ -637,12 +753,16 @@ class TestFlawStats:
             to_date=None,
             flaw_severity=None,
         )
-        assert resp.analyzed_n == n_games
-        assert len(resp.trend) >= 1
-        last_point = resp.trend[-1]
-        assert last_date is not None
-        assert last_point.date == last_date.strftime("%Y-%m-%d")
-        assert last_point.game_count >= MIN_GAMES_FOR_TIMELINE
+        assert resp.trend_window == FLAW_TREND_WINDOW
+        assert len(resp.trend) == 1
+        pt = resp.trend[0]
+        iso = played.isocalendar()
+        assert pt.date == _dt.date.fromisocalendar(iso.year, iso.week, 1).isoformat()
+        assert pt.games_in_window == n_games
+        assert pt.per_week_games == n_games
+        assert pt.blunder_rate == pytest.approx(20.0)  # 1 / 5 * 100
+        assert pt.mistake_rate == pytest.approx(0.0)
+        assert pt.inaccuracy_rate == pytest.approx(40.0)  # 2 / 5 * 100
 
     @pytest.mark.asyncio
     async def test_empty_analyzed_set_returns_zeros(self, db_session: object) -> None:

@@ -23,7 +23,7 @@ remaining tag type (game-level dedupe), in a deterministic order.
 import datetime
 import math
 from collections.abc import Sequence
-from typing import Literal
+from typing import Any, Literal
 
 import sentry_sdk
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -62,7 +62,6 @@ from app.services.flaws_service import (
 )
 from app.services.openings_service import (
     MIN_GAMES_FOR_TIMELINE,
-    ROLLING_WINDOW_SIZE,
     derive_user_result,
 )
 
@@ -537,25 +536,54 @@ async def get_library_games(
 _SEVERITY_TIERS: tuple[FlawSeverity, ...] = ("inaccuracy", "mistake", "blunder")
 _TEMPO_TAGS: tuple[TempoTag, ...] = ("low-clock", "hasty", "unrushed")
 _PER_100 = 100.0
+# Trailing rolling window (games) for the flaw trend chart. Matches the Endgame ELO
+# Timeline window (endgame_service.ENDGAME_ELO_TIMELINE_WINDOW = 100) so the two
+# time-series charts read consistently.
+FLAW_TREND_WINDOW = 100
 
 
-def _compute_rates(
+def _macro_per_100_rates(per_game_rows: list[Any]) -> dict[FlawSeverity, float]:
+    """Macro per-100-move rate per severity: mean over games of count/user_moves*100.
+
+    Each analyzed game is weighted equally (macro), which is exactly how
+    _compute_bullets builds the you-vs-opponent bullet's player_rate — so the card's
+    blunder/mistake per-100 equal the bullet tooltip (and sit consistently under the
+    §5 benchmark band). Inaccuracy uses the per-game oracle count (NULL -> 0); it has
+    no game_flaws/bullet counterpart so it stands alone (D-03).
+
+    Rows come from fetch_stats_per_game_rates (one per game). The game-count
+    denominator is shared across tiers and matches the bullet's len(player_vals).
+    """
+    rate_sums: dict[FlawSeverity, float] = {tier: 0.0 for tier in _SEVERITY_TIERS}
+    n_games = 0
+    for row in per_game_rows:
+        moves = int(row.user_moves) if row.user_moves else 0
+        if moves <= 0:
+            continue
+        n_games += 1
+        rate_sums["mistake"] += int(row.player_mistake or 0) / moves * _PER_100
+        rate_sums["blunder"] += int(row.player_blunder or 0) / moves * _PER_100
+        rate_sums["inaccuracy"] += int(row.player_inaccuracy or 0) / moves * _PER_100
+    if n_games == 0:
+        return {tier: 0.0 for tier in _SEVERITY_TIERS}
+    return {tier: rate_sums[tier] / n_games for tier in _SEVERITY_TIERS}
+
+
+def _build_rates(
     counts: SeverityCounts,
     analyzed_n: int,
-    total_user_moves: int,
+    per_100_moves: dict[FlawSeverity, float],
 ) -> SeverityRates:
-    """Per-game and per-100-user-move rates per severity tier.
+    """Assemble SeverityRates: per_game from counts, per_100_moves from the macro pass.
 
-    per_game = count / analyzed_n; per_100_moves = count / total_user_moves * 100
-    (W2 denominator). Both guard divide-by-zero -> 0.0.
+    per_game = count / analyzed_n (flaws per analyzed game; divide-by-zero -> 0.0).
+    per_100_moves is the macro mean computed by _macro_per_100_rates, so it matches
+    the you-vs-opponent bullet's player_rate for mistake/blunder.
     """
     per_game: dict[FlawSeverity, float] = {}
-    per_100: dict[FlawSeverity, float] = {}
     for tier in _SEVERITY_TIERS:
-        c = counts[tier]
-        per_game[tier] = c / analyzed_n if analyzed_n > 0 else 0.0
-        per_100[tier] = c / total_user_moves * _PER_100 if total_user_moves > 0 else 0.0
-    return SeverityRates(per_game=per_game, per_100_moves=per_100)
+        per_game[tier] = counts[tier] / analyzed_n if analyzed_n > 0 else 0.0
+    return SeverityRates(per_game=per_game, per_100_moves=per_100_moves)
 
 
 def _build_tag_distribution(
@@ -604,48 +632,78 @@ def _build_tag_distribution(
     )
 
 
-def _compute_trend(
-    per_game: list[tuple[datetime.datetime | None, int]],
-) -> list[FlawTrendPoint]:
-    """Trailing rolling-GAME-window M+B-per-game trend (D3, W5).
+def _user_moves_from_ply_count(user_color: str, ply_count: int) -> int:
+    """User move count from total half-moves (ply_count). White moves first.
 
-    D-02 migration: per_game is now a list of (played_at, mb_count) tuples from
-    a game_flaws GROUP BY aggregate (fetch_stats_trend), ordered chronologically.
-    Includes analyzed games with zero M+B flaws (mb_count=0) — they anchor the
-    rolling window but don't inflate the rate (zero numerator).
-
-    Reuses the get_time_series windowing precedent: a trailing ROLLING_WINDOW_SIZE
-    window over the chronological analyzed games, one datapoint per game (deduped
-    to the last game per date), dropping early points with fewer than
-    MIN_GAMES_FOR_TIMELINE games. Each point's `date` is the played_at date of the
-    window's LAST game — a label, NOT a calendar bucket (W5).
+    ply_count is the total number of half-moves (== max game_positions.ply). White
+    plays the odd-indexed half-moves -> ceil(ply_count/2); black the even ones ->
+    floor(ply_count/2). (game_flaws.ply is a 0-indexed from-position 0..ply_count-1,
+    a separate numbering — irrelevant here since the trend reads oracle counts.)
     """
-    flaws_so_far: list[int] = []  # M+B flaw count per chronological game
-    data_by_date: dict[str, FlawTrendPoint] = {}
-    for played_at, mb_count in per_game:
-        flaws_so_far.append(mb_count)
-        window = flaws_so_far[-ROLLING_WINDOW_SIZE:]
-        window_total = len(window)
-        rate = sum(window) / window_total if window_total > 0 else 0.0
-        # Undated games (played_at None) cannot anchor a trend label; skip them.
-        if played_at is None:
+    if user_color == "white":
+        return (ply_count + 1) // 2  # ceil
+    return ply_count // 2  # floor
+
+
+def _compute_flaw_trend(rows: list[Any]) -> list[FlawTrendPoint]:
+    """ISO-week per-100-move MACRO flaw trend over a trailing FLAW_TREND_WINDOW window.
+
+    Mirrors the Endgame ELO Timeline windowing (endgame_service._compute_score_gap_timeline):
+    walk games chronologically, keep a trailing FLAW_TREND_WINDOW-game window of per-game
+    rates, and emit ONE point per ISO week — the window state at that week's last game.
+    Each rate is the macro mean over the window of (oracle_count / user_moves * 100), the
+    same per-game-then-mean aggregation the KPI cards use. per_week_games is the games
+    that ISO week (drives the volume bars). Weeks whose window has fewer than
+    MIN_GAMES_FOR_TIMELINE games are dropped (partial-window floor).
+
+    rows come from fetch_flaw_trend_rows: (played_at, user_color, ply_count, blunders,
+    mistakes, inaccuracies), oracle move-quality counts picked by color, played_at ASC.
+    """
+    b_rates: list[float] = []
+    m_rates: list[float] = []
+    i_rates: list[float] = []
+    per_week_games: dict[tuple[int, int], int] = {}
+    point_by_week: dict[tuple[int, int], FlawTrendPoint] = {}
+
+    for row in rows:
+        moves = _user_moves_from_ply_count(row.user_color, int(row.ply_count))
+        if moves <= 0:
             continue
-        date_label = played_at.strftime("%Y-%m-%d")
-        data_by_date[date_label] = FlawTrendPoint(
-            date=date_label,
-            rate=round(rate, 4),
-            game_count=window_total,
-            window_size=ROLLING_WINDOW_SIZE,
+        b_rates.append(int(row.blunders or 0) / moves * _PER_100)
+        m_rates.append(int(row.mistakes or 0) / moves * _PER_100)
+        i_rates.append(int(row.inaccuracies or 0) / moves * _PER_100)
+
+        iso = row.played_at.isocalendar()
+        week_key = (iso.year, iso.week)
+        per_week_games[week_key] = per_week_games.get(week_key, 0) + 1
+
+        window_b = b_rates[-FLAW_TREND_WINDOW:]
+        n = len(window_b)
+        if n < MIN_GAMES_FOR_TIMELINE:
+            continue
+        window_m = m_rates[-FLAW_TREND_WINDOW:]
+        window_i = i_rates[-FLAW_TREND_WINDOW:]
+        # Last-write-wins per ISO week -> the point reflects the week's final game,
+        # so per_week_games (accumulated above) is the full week count at emit time.
+        monday = datetime.date.fromisocalendar(iso.year, iso.week, 1)
+        point_by_week[week_key] = FlawTrendPoint(
+            date=monday.isoformat(),
+            blunder_rate=round(sum(window_b) / n, 4),
+            mistake_rate=round(sum(window_m) / n, 4),
+            inaccuracy_rate=round(sum(window_i) / n, 4),
+            games_in_window=n,
+            per_week_games=per_week_games[week_key],
         )
-    return [pt for pt in data_by_date.values() if pt.game_count >= MIN_GAMES_FOR_TIMELINE]
+    return [point_by_week[key] for key in sorted(point_by_week)]
 
 
 def _empty_stats(total_n: int) -> FlawStatsResponse:
     """Zero-valued stats for an empty analyzed set (never raises)."""
     zero_counts = SeverityCounts(inaccuracy=0, mistake=0, blunder=0)
+    zero_rates: dict[FlawSeverity, float] = {tier: 0.0 for tier in _SEVERITY_TIERS}
     return FlawStatsResponse(
         per_severity_counts=zero_counts,
-        rates=_compute_rates(zero_counts, 0, 0),
+        rates=_build_rates(zero_counts, 0, zero_rates),
         tag_distribution=_build_tag_distribution(
             mistake_count=0,
             blunder_count=0,
@@ -661,6 +719,7 @@ def _empty_stats(total_n: int) -> FlawStatsResponse:
             phase_endgame=0,
         ),
         trend=[],
+        trend_window=FLAW_TREND_WINDOW,
         analyzed_pct=0.0,
         analyzed_n=0,
         total_n=total_n,
@@ -690,7 +749,8 @@ async def get_flaw_stats(
     2. fetch_stats_aggregates — single game_flaws scan: M+B counts + tag distribution
        aggregates (COUNT(*) FILTER). Inaccuracy stays the cheap aggregate (D-03).
     3. fetch_stats_trend — game_flaws GROUP BY game for the rolling trend.
-    4. fetch_total_user_moves — game_positions aggregate for per-100 rate denominator.
+    4. fetch_stats_per_game_rates — per-game player M/B counts + oracle inaccuracy;
+       the macro per-100 rates (mean of per-game rates) match the bullet's player_rate.
 
     analyzed_n / total_n derive from the eval-coverage subquery — NOT from game_flaws
     row counts (Pitfall 6). An analyzed game with zero M+B flaws counts toward
@@ -747,11 +807,13 @@ async def get_flaw_stats(
             session, user_id, analyzed_subq, **_filter_kwargs
         )
 
-        trend_data = await library_repository.fetch_stats_trend(
-            session, user_id, analyzed_subq, **_filter_kwargs
+        # Trend reads the games-table oracle columns directly (no analyzed_subq /
+        # game_flaws) — its own oracle-present gate defines "analyzed" for the chart.
+        trend_rows = await library_repository.fetch_flaw_trend_rows(
+            session, user_id, **_filter_kwargs
         )
 
-        total_user_moves = await library_repository.fetch_total_user_moves(
+        per_game_rows = await library_repository.fetch_stats_per_game_rates(
             session, user_id, analyzed_subq, **_filter_kwargs
         )
 
@@ -760,16 +822,19 @@ async def get_flaw_stats(
         sentry_sdk.capture_exception(exc)
         raise
 
-    # Inaccuracy stays the cheap aggregate (D-03) — not from game_flaws.
-    # Currently reported as 0 since the oracle columns (white_/black_inaccuracies)
-    # use different thresholds (lichess) and the kernel aggregate would require
-    # a full game_positions scan per game. D-03 accepted this; the stats panel
-    # severity_counts inaccuracy field reflects M+B-only scope of game_flaws.
-    counts = SeverityCounts(inaccuracy=0, mistake=mistake_count, blunder=blunder_count)
+    # Macro per-100 rates (mean of per-game rates) so the card matches the
+    # you-vs-opponent bullet's player_rate and the §5 benchmark band. Inaccuracy comes
+    # from the per-game oracle columns (games.white_/black_inaccuracies) — game_flaws
+    # never stores inaccuracies (D-03), so it has no bullet counterpart and stands alone.
+    per_100_macro = _macro_per_100_rates(per_game_rows)
+    inaccuracy_count = sum(int(r.player_inaccuracy or 0) for r in per_game_rows)
+    counts = SeverityCounts(
+        inaccuracy=inaccuracy_count, mistake=mistake_count, blunder=blunder_count
+    )
 
     return FlawStatsResponse(
         per_severity_counts=counts,
-        rates=_compute_rates(counts, analyzed_n, total_user_moves),
+        rates=_build_rates(counts, analyzed_n, per_100_macro),
         tag_distribution=_build_tag_distribution(
             mistake_count=mistake_count,
             blunder_count=blunder_count,
@@ -784,7 +849,8 @@ async def get_flaw_stats(
             phase_middlegame=phase_middlegame,
             phase_endgame=phase_endgame,
         ),
-        trend=_compute_trend(trend_data),
+        trend=_compute_flaw_trend(trend_rows),
+        trend_window=FLAW_TREND_WINDOW,
         analyzed_pct=analyzed_n / total_n if total_n > 0 else 0.0,
         analyzed_n=analyzed_n,
         total_n=total_n,

@@ -192,13 +192,17 @@ class SeverityRates(BaseModel):
     """Per-severity rates normalized two ways over the filtered analyzed-only set.
 
     per_game        = severity_count / analyzed_n (flaws per analyzed game).
-    per_100_moves   = severity_count / total_user_moves * 100 (W2: the denominator
-                      is the count of the USER's plies across the analyzed set, not
-                      the count of severity events nor both colors' plies).
+    per_100_moves   = MACRO mean of per-game (severity_count / user_moves * 100), each
+                      game weighted equally. This matches the you-vs-opponent bullet's
+                      player_rate for mistake/blunder exactly (same per-game-then-mean
+                      aggregation, same floor/ceil(ply_count/2) denominator) so the card
+                      and the comparison tooltip agree, and the card sits consistently
+                      under the §5 benchmark band.
 
-    Both dicts are keyed by FlawSeverity (inaccuracy/mistake/blunder). The
-    inaccuracy figures come from count_game_severities (all three tiers), never
-    from the M+B FlawRecord set.
+    Both dicts are keyed by FlawSeverity (inaccuracy/mistake/blunder). Mistake/blunder
+    come from game_flaws (kernel thresholds). Inaccuracy comes from the per-game oracle
+    columns (games.white_/black_inaccuracies) — game_flaws never stores inaccuracies
+    (D-03) — so it has no bullet/benchmark counterpart and stands alone.
     """
 
     per_game: dict[FlawSeverity, float]
@@ -238,17 +242,21 @@ class TagDistribution(BaseModel):
 
 
 class FlawTrendPoint(BaseModel):
-    """One rolling-GAME-window trend datapoint (D3, W5).
+    """One ISO-week flaw-trend datapoint (oracle-sourced, per-100-moves macro).
 
-    `date` is a LABEL only: the played_at date of the LAST (most recent) game in
-    the trailing window — NOT a calendar bucket boundary. `rate` is the mistakes+
-    blunders per game over the window.
+    `date` is the Monday of the ISO week (a label for an ordinal axis, not a calendar
+    bucket boundary). blunder/mistake/inaccuracy_rate are the MACRO mean over a trailing
+    FLAW_TREND_WINDOW-game window of (oracle_count / user_moves * 100), from the
+    games-table oracle columns (NOT game_flaws). games_in_window is the window size
+    (<= FLAW_TREND_WINDOW); per_week_games is the games played that ISO week (volume bars).
     """
 
     date: str
-    rate: float
-    game_count: int
-    window_size: int
+    blunder_rate: float
+    mistake_rate: float
+    inaccuracy_rate: float
+    games_in_window: int
+    per_week_games: int
 
 
 class FlawStatsResponse(BaseModel):
@@ -256,13 +264,15 @@ class FlawStatsResponse(BaseModel):
 
     Stats over the filtered analyzed-only set. analyzed_pct / analyzed_n / total_n
     state the explicit >=90%-coverage denominator so the panel never implies clean
-    games where evals are merely absent (criterion 4).
+    games where evals are merely absent (criterion 4). trend_window is the rolling
+    window size (games) used for the trend chart.
     """
 
     per_severity_counts: SeverityCounts
     rates: SeverityRates
     tag_distribution: TagDistribution
     trend: list[FlawTrendPoint]
+    trend_window: int
     analyzed_pct: float
     analyzed_n: int
     total_n: int
