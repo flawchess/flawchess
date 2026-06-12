@@ -1,4 +1,6 @@
+import { Cpu } from 'lucide-react';
 import { LoadError } from '@/components/ui/load-error';
+import { InfoPopover } from '@/components/ui/info-popover';
 import { FlawStatsBand } from './FlawStatsBand';
 import { FlawTrendChart } from './FlawTrendChart';
 import { FlawComparisonGrid } from './FlawComparisonGrid';
@@ -6,46 +8,40 @@ import type { FlawStatsResponse } from '@/types/library';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-/** Round a percentage fraction to a whole number string (e.g. 0.312 → "31"). */
-function formatAnalyzedPct(pct: number): string {
-  return String(Math.round(pct));
-}
-
 // ─── Denominator pill ─────────────────────────────────────────────────────────
 
+/** Popover copy explaining why only a subset of games is analyzed. */
+const ANALYSIS_COVERAGE_COPY =
+  'Full game Stockfish analysis is currently available only for games imported from Lichess that already have computer analysis enabled. Native full game analysis on FlawChess is coming soon.';
+
 interface FlawDenominatorPillProps {
-  analyzedPct: number;
+  /** Games with engine analysis in the current filter (the "x" in "x of y"). */
   analyzedN: number;
+  /** Total games in the current filter (the "y" in "x of y"). */
+  totalN: number;
 }
 
 /**
- * Analyzed-coverage pill ("📊 31% analyzed · N = 124"). Rendered by the page
- * beside the "Flaw Statistics" section heading (Phase 115 UAT — the panel no
- * longer owns its own header row).
+ * Analyzed-coverage pill ("🖥 124 of 400 Games"). Rendered by the page beside
+ * the "Flaw Statistics" section heading (Phase 115 UAT — the panel no longer
+ * owns its own header row). The info popover explains why coverage is partial
+ * (Stockfish analysis is currently Lichess-only).
  */
-export function FlawDenominatorPill({ analyzedPct, analyzedN }: FlawDenominatorPillProps) {
+export function FlawDenominatorPill({ analyzedN, totalN }: FlawDenominatorPillProps) {
   return (
     <div
-      className="ml-auto inline-flex items-center gap-1 rounded-full border border-border px-3 py-1 text-sm font-bold shrink-0"
+      className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-sm font-bold shrink-0"
       style={{ background: 'oklch(1 0 0 / 4%)' }}
       data-testid="flaw-stats-denominator"
     >
-      {analyzedN === 0 ? (
-        <span className="text-muted-foreground">No analyzed games in the current filter</span>
-      ) : (
-        <>
-          <span className="text-muted-foreground">📊</span>
-          <span style={{ color: 'var(--brand-brown-highlight)', fontWeight: 700 }}>
-            {formatAnalyzedPct(analyzedPct)}%
-          </span>
-          <span className="text-muted-foreground">analyzed · N =</span>
-          <span style={{ color: 'var(--brand-brown-highlight)', fontWeight: 700 }}>
-            {analyzedN}
-          </span>
-        </>
-      )}
+      <Cpu className="h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" />
+      <span style={{ color: 'var(--brand-brown-highlight)', fontWeight: 700 }}>{analyzedN}</span>
+      <span className="text-muted-foreground">of</span>
+      <span style={{ color: 'var(--brand-brown-highlight)', fontWeight: 700 }}>{totalN}</span>
+      <span className="text-muted-foreground">Games</span>
+      <InfoPopover ariaLabel="About game analysis coverage" testId="flaw-stats-denominator-info">
+        {ANALYSIS_COVERAGE_COPY}
+      </InfoPopover>
     </div>
   );
 }
@@ -117,9 +113,8 @@ export function FlawStatsPanel({
       {!isError && !isLoading && stats !== undefined && (() => {
         const analyzedEmpty = stats.analyzed_n === 0;
 
-        // Window size from first trend point (all points share the same window_size).
-        const firstPoint = stats.trend[0];
-        const windowSize = firstPoint !== undefined ? firstPoint.window_size : 20;
+        // Rolling window size (games) for the trend chart subheading.
+        const windowSize = stats.trend_window;
 
         return (
           <>
@@ -129,7 +124,7 @@ export function FlawStatsPanel({
               analyzedEmpty={analyzedEmpty}
             />
 
-            {/* Zone 2: Blunders/game trend — comparison-free (FLAWUI-05) */}
+            {/* Zone 2: Flaws / 100 moves trend — 3 severity lines, comparison-free */}
             <FlawTrendChart
               trend={analyzedEmpty ? [] : stats.trend}
               windowSize={windowSize}

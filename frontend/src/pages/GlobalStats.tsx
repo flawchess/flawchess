@@ -7,6 +7,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS } from '@/components/filters/FilterPanel';
+import { usePulseOnChange, ModifiedDot } from '@/components/filters/FilterModifiedDot';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { useGlobalStats, useRatingHistory } from '@/hooks/useStats';
 import { useLibraryFlawStats } from '@/hooks/useLibrary';
@@ -90,20 +91,27 @@ export function GlobalStatsPage() {
     [filters],
   );
 
+  const filterPulsing = usePulseOnChange(filters);
+  const filterDotNode = (
+    <ModifiedDot
+      active={isFiltersModified}
+      pulsing={filterPulsing}
+      testId="filters-modified-dot-mobile"
+    />
+  );
+
   const content = isLoading ? (
     <div className="text-muted-foreground">Loading...</div>
   ) : (
     <div className="space-y-8">
-      {/* ── Flaw Statistics: Blunders & Mistakes (top of page, UAT) ── */}
+      {/* ── Flaw Statistics (top of page, UAT) ── */}
       <section data-testid="flaw-stats-section">
         <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-lg font-semibold text-foreground mt-2">
-            Flaw Statistics: Blunders &amp; Mistakes
-          </h2>
+          <h2 className="text-lg font-semibold text-foreground mt-2">Flaw Stats</h2>
           {flawStatsData !== undefined && (
             <FlawDenominatorPill
-              analyzedPct={flawStatsData.analyzed_pct}
               analyzedN={flawStatsData.analyzed_n}
+              totalN={flawStatsData.total_n}
             />
           )}
         </div>
@@ -211,28 +219,18 @@ export function GlobalStatsPage() {
         <div className="md:hidden flex flex-col gap-4 min-w-0">
           <EvalCoverageHeader />
           {/* Sticky filter button (top right) */}
-          <div className="sticky top-0 z-20 flex justify-end pb-2">
-            <Tooltip content="Open filters" side="left">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="relative h-11 w-11 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80"
-                onClick={() => setMobileFiltersOpen(true)}
-                data-testid="btn-open-filter-drawer"
-                aria-label="Open filters"
-              >
-                <SlidersHorizontal className="h-4 w-4" />
-                {isFiltersModified && (
-                  <span
-                    className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-                    data-testid="filters-modified-dot-mobile"
-                    aria-hidden="true"
-                  >
-                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-brand-brown" />
-                  </span>
-                )}
-              </Button>
-            </Tooltip>
+          <div className="sticky top-0 z-20 flex justify-end gap-2 py-2 bg-background/80 backdrop-blur-sm">
+            <Button
+              variant="brand-outline"
+              className="relative"
+              onClick={() => handleMobileFiltersOpenChange(true)}
+              aria-label="Open filters"
+              data-testid="btn-filters"
+            >
+              <SlidersHorizontal className="mr-2 h-4 w-4" />
+              Filters
+              {filterDotNode}
+            </Button>
           </div>
 
           {/* Filter drawer — staged Apply-only */}

@@ -150,25 +150,32 @@ export interface TagDistribution {
 }
 
 /**
- * One rolling-game-window trend datapoint (mirrors backend FlawTrendPoint).
- * `date` is the played_at date of the LAST game in the trailing window (label only, not a bucket).
+ * One ISO-week flaw-trend datapoint (mirrors backend FlawTrendPoint).
+ *
+ * `date` is the Monday of the ISO week (label for an ordinal axis, not a calendar bucket).
+ * blunder/mistake/inaccuracy_rate are per-100-moves MACRO rates over a trailing
+ * trend_window-game window, from the games-table oracle columns. games_in_window is the
+ * window size; per_week_games is the games played that ISO week (volume bars).
  */
 export interface FlawTrendPoint {
   date: string;
-  rate: number;
-  game_count: number;
-  window_size: number;
+  blunder_rate: number;
+  mistake_rate: number;
+  inaccuracy_rate: number;
+  games_in_window: number;
+  per_week_games: number;
 }
 
 /**
  * Response for GET /api/library/flaw-stats (mirrors backend FlawStatsResponse).
- * Stats over the filtered analyzed-only set.
+ * Stats over the filtered analyzed-only set. trend_window = rolling window size (games).
  */
 export interface FlawStatsResponse {
   per_severity_counts: SeverityCountsData;
   rates: SeverityRates;
   tag_distribution: TagDistribution;
   trend: FlawTrendPoint[];
+  trend_window: number;
   analyzed_pct: number;
   analyzed_n: number;
   total_n: number;

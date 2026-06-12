@@ -609,30 +609,30 @@ Only `mixed` clears the ≥30-joined-user floor at the combined ≥10-game + ≥
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 4,644 | −0.1pp | 1.1pp | −1.9pp | −0.5pp | +0.0pp | +0.4pp | +1.7pp |
+| 4,644 | −0.1pp | 1.1pp | −1.898pp | −0.477pp | +0.019pp | +0.364pp | +1.703pp |
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 813 | +0.0pp | 1.2pp | −1.9pp | −0.5pp | +0.1pp | +0.6pp | +2.0pp |
-| 1200 | 1,091 | +0.0pp | 1.2pp | −2.0pp | −0.4pp | +0.1pp | +0.4pp | +1.8pp |
-| 1600 | 1,139 | −0.1pp | 1.1pp | −2.0pp | −0.5pp | +0.0pp | +0.4pp | +1.8pp |
-| 2000 | 1,015 | −0.2pp | 1.0pp | −1.9pp | −0.6pp | +0.0pp | +0.2pp | +1.4pp |
-| 2400 | 586 | −0.1pp | 0.8pp | −1.4pp | −0.4pp | +0.0pp | +0.2pp | +1.1pp |
+| 800 | 813 | +0.0pp | 1.2pp | −1.876pp | −0.482pp | +0.089pp | +0.558pp | +2.009pp |
+| 1200 | 1,091 | +0.0pp | 1.2pp | −1.991pp | −0.360pp | +0.073pp | +0.446pp | +1.825pp |
+| 1600 | 1,139 | −0.1pp | 1.1pp | −2.016pp | −0.490pp | +0.021pp | +0.376pp | +1.810pp |
+| 2000 | 1,015 | −0.2pp | 1.0pp | −1.859pp | −0.580pp | −0.029pp | +0.248pp | +1.398pp |
+| 2400 | 586 | −0.1pp | 0.8pp | −1.444pp | −0.416pp | −0.024pp | +0.198pp | +1.091pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| bullet | 1,246 | +0.1pp | 1.0pp | −1.5pp | −0.2pp | +0.0pp | +0.3pp | +1.7pp |
-| blitz | 1,311 | −0.1pp | 1.0pp | −1.8pp | −0.4pp | +0.0pp | +0.3pp | +1.6pp |
-| rapid | 1,376 | −0.2pp | 1.1pp | −2.1pp | −0.7pp | +0.0pp | +0.4pp | +1.7pp |
-| classical | 711 | +0.0pp | 1.2pp | −2.3pp | −0.7pp | +0.1pp | +0.7pp | +1.9pp |
+| bullet | 1,246 | +0.1pp | 1.0pp | −1.486pp | −0.178pp | +0.016pp | +0.271pp | +1.747pp |
+| blitz | 1,311 | −0.1pp | 1.0pp | −1.824pp | −0.399pp | +0.024pp | +0.259pp | +1.574pp |
+| rapid | 1,376 | −0.2pp | 1.1pp | −2.066pp | −0.700pp | −0.009pp | +0.361pp | +1.656pp |
+| classical | 711 | +0.0pp | 1.2pp | −2.255pp | −0.678pp | +0.118pp | +0.683pp | +1.940pp |
 
 **Collapse verdicts:** TC max |d| = **0.20** (bullet vs rapid) → **review**. ELO max |d| = **0.17** (800 vs 2000) → **collapse**.
 
-**Recommendation:** TC review (d=0.20) is driven by bullet (mean +0.1pp) vs rapid (−0.2pp) — modest; ELO collapses (d=0.17) with the familiar ramp (mean +0.0pp at 800 → −0.2pp at 2000). Viability 99.5%. Pooled Q1/Q3 = [−0.5pp, +0.4pp] (widened ~0.1pp vs the pre-mate-ladder basis), median +0.0pp — symmetric across the cohort. Use pooled global zone for Phase 115.
+**Recommendation:** TC review (d=0.20) is driven by bullet (mean +0.1pp) vs rapid (−0.2pp) — modest; ELO collapses (d=0.17) with the familiar ramp (mean +0.0pp at 800 → −0.2pp at 2000). Viability 99.5%. Pooled Q1/Q3 = [−0.477pp, +0.364pp] (widened ~0.1pp vs the pre-mate-ladder basis), median +0.0pp — symmetric across the cohort. Use pooled global zone for Phase 115.
 
 ---
 
@@ -642,30 +642,37 @@ Only `mixed` clears the ≥30-joined-user floor at the combined ≥10-game + ≥
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 4,644 | +0.0pp | 0.3pp | −0.4pp | −0.1pp | +0.0pp | +0.0pp | +0.4pp |
+| 4,644 | +0.0pp | 0.3pp | −0.360pp | −0.081pp | −0.002pp | +0.028pp | +0.403pp |
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 813 | +0.0pp | 0.2pp | −0.2pp | +0.0pp | +0.0pp | +0.0pp | +0.3pp |
-| 1200 | 1,091 | +0.0pp | 0.2pp | −0.3pp | +0.0pp | +0.0pp | +0.0pp | +0.3pp |
-| 1600 | 1,139 | +0.0pp | 0.3pp | −0.3pp | −0.1pp | +0.0pp | +0.0pp | +0.4pp |
-| 2000 | 1,015 | +0.0pp | 0.3pp | −0.5pp | −0.1pp | +0.0pp | +0.0pp | +0.6pp |
-| 2400 | 586 | +0.0pp | 0.3pp | −0.5pp | −0.2pp | +0.0pp | +0.1pp | +0.5pp |
+| 800 | 813 | +0.0pp | 0.2pp | −0.222pp | −0.047pp | +0.000pp | +0.018pp | +0.270pp |
+| 1200 | 1,091 | +0.0pp | 0.2pp | −0.258pp | −0.043pp | +0.000pp | +0.014pp | +0.264pp |
+| 1600 | 1,139 | +0.0pp | 0.3pp | −0.325pp | −0.076pp | −0.005pp | +0.023pp | +0.395pp |
+| 2000 | 1,015 | +0.0pp | 0.3pp | −0.471pp | −0.140pp | −0.016pp | +0.049pp | +0.648pp |
+| 2400 | 586 | +0.0pp | 0.3pp | −0.471pp | −0.151pp | −0.015pp | +0.067pp | +0.537pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| bullet | 1,246 | +0.0pp | 0.2pp | −0.3pp | +0.0pp | +0.0pp | +0.0pp | +0.3pp |
-| blitz | 1,311 | +0.0pp | 0.3pp | −0.4pp | −0.1pp | +0.0pp | +0.0pp | +0.5pp |
-| rapid | 1,376 | +0.0pp | 0.3pp | −0.3pp | −0.1pp | +0.0pp | +0.0pp | +0.4pp |
-| classical | 711 | +0.0pp | 0.3pp | −0.3pp | −0.1pp | +0.0pp | +0.0pp | +0.4pp |
+| bullet | 1,246 | +0.0pp | 0.2pp | −0.328pp | −0.043pp | +0.000pp | +0.032pp | +0.306pp |
+| blitz | 1,311 | +0.0pp | 0.3pp | −0.412pp | −0.102pp | −0.007pp | +0.048pp | +0.511pp |
+| rapid | 1,376 | +0.0pp | 0.3pp | −0.347pp | −0.095pp | −0.011pp | +0.022pp | +0.434pp |
+| classical | 711 | +0.0pp | 0.3pp | −0.348pp | −0.070pp | +0.000pp | +0.000pp | +0.396pp |
 
 **Collapse verdicts:** TC max |d| = **0.03** (bullet vs blitz) → **collapse**. ELO max |d| = **0.08** (800 vs 2400) → **collapse**.
 
-**Recommendation:** Both axes collapse. Viability 71.4% (3,319/4,649) — ~29% of users have no low-clock events over ≥20 analyzed games; below the 80% rare-numerator threshold: thin numerator — Phase 115 must verify CI-width adequacy against the materialized opponent-flaw data (FLAWCMP-04). Pooled Q1/Q3 = [−0.1pp, +0.0pp]. Use global pooled zone; render N/A for zero-event users.
+**Recommendation:** Both axes collapse. Viability 71.4% (3,319/4,649) — ~29% of users have no low-clock events over ≥20 analyzed games; below the 80% rare-numerator threshold: thin numerator — Phase 115 must verify CI-width adequacy against the materialized opponent-flaw data (FLAWCMP-04). Pooled Q1/Q3 = [−0.081pp, +0.028pp]. Use global pooled zone; render N/A for zero-event users.
+
+> **Why low-clock is right-skewed (not a bug).** The pooled delta has Fisher skewness ≈ **+2.5** (and **+2.0** for the §5.13 low-clock+miss combo). These are the only two strongly skewed metrics in §5 — equally rare but *situational* tags (lucky +0.3, reversed −0.2, squandered +0.1) are near-symmetric, so this is specific to the low-clock family, not a generic rare-count effect. Three structural causes, all expected:
+> 1. **No measurement bias.** Tempo is classified identically for both colours (`clock_after < 5% of base_time` in `_classify_tempo`); cohort-wide player vs opponent low-clock counts differ by only ~7% (75,422 vs 70,439) while *total* flaws are balanced (ratio 0.99), so the mean delta is ≈0 (+0.000pp).
+> 2. **Rare + bursty.** Low-clock is the rarest, burstiest tempo class. It fires only in the terminal time-scramble and clusters (several flaws in one losing scramble), unlike the common, smooth hasty/unrushed classes whose differences are near-symmetric.
+> 3. **Repeated-measures asymmetry.** The paired estimator averages over the cohort user's *many* games (amplifying their persistent time-management trait) while each opponent appears in only *one* of those games (their trait averages out). Stable-trait × rare × bursty yields a heavy right tail of chronic-time-trouble users: per-user delta tracks the user's own low-clock burden (bottom→top decile player/opponent event ratio climbs 0.42 → 2.41), the bulk sits slightly negative (median −0.002pp), and the mean is pinned near zero by rating-matching.
+>
+> **Implication for Phase 115:** the Q1/Q3 box is mildly left-leaning but the tail is right, so a symmetric neutral zone understates the chronic-time-trouble cohort. Combined with the 71.4% viability (D-06), keep the global pooled zone and render N/A for zero-event users.
 
 ---
 
@@ -675,30 +682,30 @@ Only `mixed` clears the ≥30-joined-user floor at the combined ≥10-game + ≥
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 4,644 | +0.0pp | 0.7pp | −1.1pp | −0.3pp | +0.0pp | +0.2pp | +1.1pp |
+| 4,644 | +0.0pp | 0.7pp | −1.133pp | −0.277pp | −0.013pp | +0.177pp | +1.064pp |
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 813 | −0.1pp | 0.8pp | −1.3pp | −0.4pp | +0.0pp | +0.2pp | +1.1pp |
-| 1200 | 1,091 | +0.0pp | 0.9pp | −1.4pp | −0.3pp | +0.0pp | +0.2pp | +1.3pp |
-| 1600 | 1,139 | −0.1pp | 0.7pp | −1.3pp | −0.3pp | +0.0pp | +0.2pp | +1.1pp |
-| 2000 | 1,015 | +0.0pp | 0.5pp | −1.0pp | −0.3pp | +0.0pp | +0.1pp | +0.9pp |
-| 2400 | 586 | +0.0pp | 0.4pp | −0.7pp | −0.2pp | +0.0pp | +0.1pp | +0.7pp |
+| 800 | 813 | −0.1pp | 0.8pp | −1.274pp | −0.358pp | −0.017pp | +0.220pp | +1.135pp |
+| 1200 | 1,091 | +0.0pp | 0.9pp | −1.437pp | −0.267pp | −0.007pp | +0.219pp | +1.309pp |
+| 1600 | 1,139 | −0.1pp | 0.7pp | −1.284pp | −0.338pp | −0.012pp | +0.170pp | +1.104pp |
+| 2000 | 1,015 | +0.0pp | 0.5pp | −0.950pp | −0.252pp | −0.015pp | +0.144pp | +0.898pp |
+| 2400 | 586 | +0.0pp | 0.4pp | −0.715pp | −0.206pp | −0.012pp | +0.129pp | +0.660pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| bullet | 1,246 | +0.0pp | 0.5pp | −0.6pp | −0.1pp | +0.0pp | +0.1pp | +0.7pp |
-| blitz | 1,311 | +0.0pp | 0.4pp | −0.6pp | −0.2pp | +0.0pp | +0.1pp | +0.7pp |
-| rapid | 1,376 | −0.1pp | 0.8pp | −1.3pp | −0.5pp | +0.0pp | +0.2pp | +1.1pp |
-| classical | 711 | −0.1pp | 1.3pp | −2.3pp | −0.8pp | −0.1pp | +0.6pp | +2.0pp |
+| bullet | 1,246 | +0.0pp | 0.5pp | −0.645pp | −0.116pp | −0.003pp | +0.083pp | +0.707pp |
+| blitz | 1,311 | +0.0pp | 0.4pp | −0.638pp | −0.174pp | −0.006pp | +0.123pp | +0.686pp |
+| rapid | 1,376 | −0.1pp | 0.8pp | −1.319pp | −0.461pp | −0.048pp | +0.235pp | +1.140pp |
+| classical | 711 | −0.1pp | 1.3pp | −2.268pp | −0.776pp | −0.135pp | +0.559pp | +1.990pp |
 
 **Collapse verdicts:** TC max |d| = **0.19** (bullet vs classical) → **collapse**. ELO max |d| = **0.06** (1600 vs 2400) → **collapse**.
 
-**Recommendation:** Both axes now collapse — TC d=0.19 slipped under the 0.20 boundary it sat on in the previous basis (the only verdict-word change from the mate-ladder backfill). Classical still has the widest spread (SD 1.3pp). Viability 98.4%. Pooled Q1/Q3 = [−0.3pp, +0.2pp]. Use global pooled zone.
+**Recommendation:** Both axes now collapse — TC d=0.19 slipped under the 0.20 boundary it sat on in the previous basis (the only verdict-word change from the mate-ladder backfill). Classical still has the widest spread (SD 1.3pp). Viability 98.4%. Pooled Q1/Q3 = [−0.277pp, +0.177pp]. Use global pooled zone.
 
 ---
 
@@ -708,30 +715,30 @@ Only `mixed` clears the ≥30-joined-user floor at the combined ≥10-game + ≥
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 4,644 | +0.0pp | 1.0pp | −1.6pp | −0.4pp | +0.0pp | +0.4pp | +1.6pp |
+| 4,644 | +0.0pp | 1.0pp | −1.613pp | −0.376pp | +0.017pp | +0.359pp | +1.555pp |
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 813 | +0.1pp | 1.0pp | −1.6pp | −0.3pp | +0.1pp | +0.5pp | +1.8pp |
-| 1200 | 1,091 | +0.1pp | 1.0pp | −1.7pp | −0.3pp | +0.0pp | +0.4pp | +1.8pp |
-| 1600 | 1,139 | +0.0pp | 1.0pp | −1.6pp | −0.4pp | +0.0pp | +0.4pp | +1.6pp |
-| 2000 | 1,015 | −0.1pp | 0.9pp | −1.6pp | −0.5pp | +0.0pp | +0.2pp | +1.2pp |
-| 2400 | 586 | −0.1pp | 0.7pp | −1.1pp | −0.4pp | +0.0pp | +0.3pp | +1.0pp |
+| 800 | 813 | +0.1pp | 1.0pp | −1.622pp | −0.328pp | +0.068pp | +0.511pp | +1.807pp |
+| 1200 | 1,091 | +0.1pp | 1.0pp | −1.702pp | −0.317pp | +0.031pp | +0.412pp | +1.824pp |
+| 1600 | 1,139 | +0.0pp | 1.0pp | −1.634pp | −0.402pp | +0.017pp | +0.386pp | +1.647pp |
+| 2000 | 1,015 | −0.1pp | 0.9pp | −1.639pp | −0.481pp | −0.020pp | +0.239pp | +1.230pp |
+| 2400 | 586 | −0.1pp | 0.7pp | −1.112pp | −0.355pp | +0.000pp | +0.252pp | +0.960pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| bullet | 1,246 | +0.1pp | 0.8pp | −1.3pp | −0.2pp | +0.0pp | +0.3pp | +1.5pp |
-| blitz | 1,311 | −0.1pp | 0.9pp | −1.6pp | −0.4pp | +0.0pp | +0.3pp | +1.4pp |
-| rapid | 1,376 | −0.1pp | 0.9pp | −1.6pp | −0.5pp | +0.0pp | +0.4pp | +1.4pp |
-| classical | 711 | +0.1pp | 1.2pp | −1.8pp | −0.6pp | +0.0pp | +0.8pp | +2.3pp |
+| bullet | 1,246 | +0.1pp | 0.8pp | −1.347pp | −0.170pp | +0.013pp | +0.251pp | +1.531pp |
+| blitz | 1,311 | −0.1pp | 0.9pp | −1.642pp | −0.392pp | +0.020pp | +0.266pp | +1.372pp |
+| rapid | 1,376 | −0.1pp | 0.9pp | −1.620pp | −0.473pp | +0.006pp | +0.351pp | +1.377pp |
+| classical | 711 | +0.1pp | 1.2pp | −1.842pp | −0.592pp | +0.038pp | +0.793pp | +2.331pp |
 
 **Collapse verdicts:** TC max |d| = **0.21** (blitz vs classical) → **review**. ELO max |d| = **0.21** (800 vs 2000) → **review**.
 
-**Recommendation:** Both axes review at the boundary (TC d=0.21, ELO d=0.21). The ELO mean drifts +0.1pp (800) → −0.1pp (2000), mirroring the flaw-rate ramp; classical's wider upper tail (p75 +0.8pp) drives the TC effect. Viability 99.3%. Pooled Q1/Q3 = [−0.4pp, +0.4pp]. Use pooled zone for Phase 115; both effects are modest.
+**Recommendation:** Both axes review at the boundary (TC d=0.21, ELO d=0.21). The ELO mean drifts +0.1pp (800) → −0.1pp (2000), mirroring the flaw-rate ramp; classical's wider upper tail (p75 +0.8pp) drives the TC effect. Viability 99.3%. Pooled Q1/Q3 = [−0.376pp, +0.359pp]. Use pooled zone for Phase 115; both effects are modest.
 
 ---
 
@@ -741,30 +748,30 @@ Only `mixed` clears the ≥30-joined-user floor at the combined ≥10-game + ≥
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 4,644 | +0.0pp | 0.4pp | −0.7pp | −0.1pp | +0.0pp | +0.1pp | +0.7pp |
+| 4,644 | +0.0pp | 0.4pp | −0.694pp | −0.148pp | +0.000pp | +0.131pp | +0.685pp |
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 813 | +0.0pp | 0.6pp | −1.0pp | −0.2pp | +0.0pp | +0.2pp | +0.9pp |
-| 1200 | 1,091 | +0.0pp | 0.5pp | −0.9pp | −0.2pp | +0.0pp | +0.2pp | +0.7pp |
-| 1600 | 1,139 | +0.0pp | 0.4pp | −0.7pp | −0.2pp | +0.0pp | +0.1pp | +0.7pp |
-| 2000 | 1,015 | +0.0pp | 0.3pp | −0.5pp | −0.1pp | +0.0pp | +0.1pp | +0.5pp |
-| 2400 | 586 | +0.0pp | 0.2pp | −0.4pp | −0.1pp | +0.0pp | +0.1pp | +0.3pp |
+| 800 | 813 | +0.0pp | 0.6pp | −0.967pp | −0.245pp | +0.011pp | +0.244pp | +0.871pp |
+| 1200 | 1,091 | +0.0pp | 0.5pp | −0.860pp | −0.173pp | +0.004pp | +0.151pp | +0.744pp |
+| 1600 | 1,139 | +0.0pp | 0.4pp | −0.660pp | −0.157pp | +0.000pp | +0.130pp | +0.712pp |
+| 2000 | 1,015 | +0.0pp | 0.3pp | −0.515pp | −0.107pp | −0.001pp | +0.099pp | +0.491pp |
+| 2400 | 586 | +0.0pp | 0.2pp | −0.372pp | −0.106pp | +0.000pp | +0.071pp | +0.306pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| bullet | 1,246 | +0.0pp | 0.4pp | −0.6pp | −0.1pp | +0.0pp | +0.1pp | +0.7pp |
-| blitz | 1,311 | +0.0pp | 0.4pp | −0.6pp | −0.1pp | +0.0pp | +0.1pp | +0.6pp |
-| rapid | 1,376 | +0.0pp | 0.4pp | −0.7pp | −0.2pp | +0.0pp | +0.1pp | +0.7pp |
-| classical | 711 | +0.0pp | 0.6pp | −1.1pp | −0.3pp | +0.0pp | +0.3pp | +0.9pp |
+| bullet | 1,246 | +0.0pp | 0.4pp | −0.568pp | −0.089pp | +0.000pp | +0.077pp | +0.685pp |
+| blitz | 1,311 | +0.0pp | 0.4pp | −0.591pp | −0.114pp | +0.000pp | +0.095pp | +0.556pp |
+| rapid | 1,376 | +0.0pp | 0.4pp | −0.747pp | −0.168pp | +0.002pp | +0.139pp | +0.663pp |
+| classical | 711 | +0.0pp | 0.6pp | −1.072pp | −0.340pp | −0.007pp | +0.288pp | +0.864pp |
 
 **Collapse verdicts:** TC max |d| = **0.11** (bullet vs classical) → **collapse**. ELO max |d| = **0.03** (1200 vs 2000) → **collapse**.
 
-**Recommendation:** Both axes collapse. SD shrinks monotonically with ELO (0.6pp at 800 → 0.2pp at 2400) — higher-rated players show more consistent opening-phase deltas. Viability 98.8%. Pooled Q1/Q3 = [−0.1pp, +0.1pp]. Use global pooled zone.
+**Recommendation:** Both axes collapse. SD shrinks monotonically with ELO (0.6pp at 800 → 0.2pp at 2400) — higher-rated players show more consistent opening-phase deltas. Viability 98.8%. Pooled Q1/Q3 = [−0.148pp, +0.131pp]. Use global pooled zone.
 
 ---
 
@@ -774,30 +781,30 @@ Only `mixed` clears the ≥30-joined-user floor at the combined ≥10-game + ≥
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 4,644 | +0.0pp | 0.7pp | −1.2pp | −0.3pp | +0.0pp | +0.2pp | +1.0pp |
+| 4,644 | +0.0pp | 0.7pp | −1.163pp | −0.270pp | +0.013pp | +0.226pp | +1.015pp |
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 813 | +0.0pp | 0.6pp | −1.1pp | −0.2pp | +0.0pp | +0.3pp | +1.0pp |
-| 1200 | 1,091 | +0.0pp | 0.7pp | −1.2pp | −0.2pp | +0.0pp | +0.3pp | +1.1pp |
-| 1600 | 1,139 | +0.0pp | 0.7pp | −1.2pp | −0.3pp | +0.0pp | +0.2pp | +1.1pp |
-| 2000 | 1,015 | −0.1pp | 0.7pp | −1.3pp | −0.4pp | +0.0pp | +0.2pp | +0.9pp |
-| 2400 | 586 | +0.0pp | 0.5pp | −0.8pp | −0.2pp | +0.0pp | +0.2pp | +0.8pp |
+| 800 | 813 | +0.0pp | 0.6pp | −1.074pp | −0.243pp | +0.038pp | +0.299pp | +1.018pp |
+| 1200 | 1,091 | +0.0pp | 0.7pp | −1.188pp | −0.199pp | +0.033pp | +0.261pp | +1.092pp |
+| 1600 | 1,139 | +0.0pp | 0.7pp | −1.245pp | −0.305pp | +0.011pp | +0.209pp | +1.111pp |
+| 2000 | 1,015 | −0.1pp | 0.7pp | −1.296pp | −0.360pp | −0.017pp | +0.167pp | +0.947pp |
+| 2400 | 586 | +0.0pp | 0.5pp | −0.821pp | −0.237pp | +0.001pp | +0.173pp | +0.754pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| bullet | 1,246 | +0.0pp | 0.6pp | −0.9pp | −0.1pp | +0.0pp | +0.2pp | +1.1pp |
-| blitz | 1,311 | +0.0pp | 0.6pp | −1.1pp | −0.3pp | +0.0pp | +0.2pp | +1.0pp |
-| rapid | 1,376 | −0.1pp | 0.7pp | −1.3pp | −0.4pp | +0.0pp | +0.2pp | +0.9pp |
-| classical | 711 | +0.0pp | 0.8pp | −1.4pp | −0.3pp | +0.1pp | +0.4pp | +1.2pp |
+| bullet | 1,246 | +0.0pp | 0.6pp | −0.938pp | −0.123pp | +0.008pp | +0.153pp | +1.081pp |
+| blitz | 1,311 | +0.0pp | 0.6pp | −1.086pp | −0.266pp | +0.010pp | +0.180pp | +0.979pp |
+| rapid | 1,376 | −0.1pp | 0.7pp | −1.270pp | −0.401pp | +0.009pp | +0.216pp | +0.929pp |
+| classical | 711 | +0.0pp | 0.8pp | −1.376pp | −0.331pp | +0.060pp | +0.413pp | +1.206pp |
 
 **Collapse verdicts:** TC max |d| = **0.20** (bullet vs rapid) → **review**. ELO max |d| = **0.18** (800 vs 2000) → **collapse**.
 
-**Recommendation:** TC review at the d=0.20 boundary (bullet vs rapid); ELO collapses (d=0.18). Viability 99.4%. Pooled Q1/Q3 = [−0.3pp, +0.2pp], median +0.0pp. Use global pooled zone; the TC effect is modest.
+**Recommendation:** TC review at the d=0.20 boundary (bullet vs rapid); ELO collapses (d=0.18). Viability 99.4%. Pooled Q1/Q3 = [−0.270pp, +0.226pp], median +0.0pp. Use global pooled zone; the TC effect is modest.
 
 ---
 
@@ -807,30 +814,30 @@ Only `mixed` clears the ≥30-joined-user floor at the combined ≥10-game + ≥
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 4,644 | +0.0pp | 0.3pp | −0.5pp | −0.1pp | +0.0pp | +0.1pp | +0.5pp |
+| 4,644 | +0.0pp | 0.3pp | −0.531pp | −0.121pp | +0.004pp | +0.104pp | +0.473pp |
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 813 | +0.0pp | 0.2pp | −0.4pp | −0.1pp | +0.0pp | +0.1pp | +0.4pp |
-| 1200 | 1,091 | +0.0pp | 0.3pp | −0.5pp | −0.1pp | +0.0pp | +0.1pp | +0.5pp |
-| 1600 | 1,139 | +0.0pp | 0.3pp | −0.5pp | −0.1pp | +0.0pp | +0.1pp | +0.5pp |
-| 2000 | 1,015 | −0.1pp | 0.3pp | −0.7pp | −0.2pp | +0.0pp | +0.1pp | +0.5pp |
-| 2400 | 586 | −0.1pp | 0.3pp | −0.6pp | −0.2pp | +0.0pp | +0.1pp | +0.4pp |
+| 800 | 813 | +0.0pp | 0.2pp | −0.389pp | −0.082pp | +0.022pp | +0.111pp | +0.423pp |
+| 1200 | 1,091 | +0.0pp | 0.3pp | −0.477pp | −0.074pp | +0.019pp | +0.115pp | +0.471pp |
+| 1600 | 1,139 | +0.0pp | 0.3pp | −0.532pp | −0.136pp | +0.005pp | +0.106pp | +0.538pp |
+| 2000 | 1,015 | −0.1pp | 0.3pp | −0.677pp | −0.166pp | −0.007pp | +0.090pp | +0.462pp |
+| 2400 | 586 | −0.1pp | 0.3pp | −0.592pp | −0.186pp | −0.024pp | +0.067pp | +0.375pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| bullet | 1,246 | +0.0pp | 0.3pp | −0.4pp | −0.1pp | +0.0pp | +0.1pp | +0.4pp |
-| blitz | 1,311 | +0.0pp | 0.3pp | −0.5pp | −0.1pp | +0.0pp | +0.1pp | +0.4pp |
-| rapid | 1,376 | +0.0pp | 0.3pp | −0.6pp | −0.2pp | +0.0pp | +0.1pp | +0.5pp |
-| classical | 711 | +0.0pp | 0.3pp | −0.6pp | −0.1pp | +0.1pp | +0.2pp | +0.5pp |
+| bullet | 1,246 | +0.0pp | 0.3pp | −0.388pp | −0.052pp | +0.000pp | +0.062pp | +0.430pp |
+| blitz | 1,311 | +0.0pp | 0.3pp | −0.517pp | −0.129pp | +0.000pp | +0.074pp | +0.407pp |
+| rapid | 1,376 | +0.0pp | 0.3pp | −0.606pp | −0.193pp | +0.005pp | +0.111pp | +0.490pp |
+| classical | 711 | +0.0pp | 0.3pp | −0.563pp | −0.138pp | +0.058pp | +0.196pp | +0.537pp |
 
 **Collapse verdicts:** TC max |d| = **0.16** (blitz vs classical) → **collapse**. ELO max |d| = **0.28** (800 vs 2400) → **review**.
 
-**Recommendation:** TC collapses (d=0.16); ELO review at d=0.28 remains the largest ELO effect among the phase metrics. Viability 98.5%, up from 97.5% on the previous basis — the mate ladder recovers thrown-mate flaws, which land disproportionately in this phase. Pooled Q1/Q3 = [−0.1pp, +0.1pp]. Use pooled zone for Phase 115; a per-ELO refinement is worth revisiting alongside blunders.
+**Recommendation:** TC collapses (d=0.16); ELO review at d=0.28 remains the largest ELO effect among the phase metrics. Viability 98.5%, up from 97.5% on the previous basis — the mate ladder recovers thrown-mate flaws, which land disproportionately in this phase. Pooled Q1/Q3 = [−0.121pp, +0.104pp]. Use pooled zone for Phase 115; a per-ELO refinement is worth revisiting alongside blunders.
 
 ---
 
@@ -840,30 +847,30 @@ Only `mixed` clears the ≥30-joined-user floor at the combined ≥10-game + ≥
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 4,644 | +0.0pp | 0.3pp | −0.5pp | −0.1pp | +0.0pp | +0.1pp | +0.5pp |
+| 4,644 | +0.0pp | 0.3pp | −0.513pp | −0.111pp | +0.001pp | +0.107pp | +0.473pp |
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 813 | +0.0pp | 0.4pp | −0.6pp | −0.1pp | +0.0pp | +0.2pp | +0.5pp |
-| 1200 | 1,091 | +0.0pp | 0.3pp | −0.5pp | −0.1pp | +0.0pp | +0.1pp | +0.5pp |
-| 1600 | 1,139 | +0.0pp | 0.3pp | −0.5pp | −0.1pp | +0.0pp | +0.1pp | +0.5pp |
-| 2000 | 1,015 | +0.0pp | 0.3pp | −0.5pp | −0.1pp | +0.0pp | +0.1pp | +0.4pp |
-| 2400 | 586 | +0.0pp | 0.2pp | −0.4pp | −0.1pp | +0.0pp | +0.1pp | +0.3pp |
+| 800 | 813 | +0.0pp | 0.4pp | −0.575pp | −0.108pp | +0.015pp | +0.173pp | +0.536pp |
+| 1200 | 1,091 | +0.0pp | 0.3pp | −0.521pp | −0.113pp | +0.002pp | +0.121pp | +0.486pp |
+| 1600 | 1,139 | +0.0pp | 0.3pp | −0.543pp | −0.127pp | +0.000pp | +0.085pp | +0.487pp |
+| 2000 | 1,015 | +0.0pp | 0.3pp | −0.495pp | −0.112pp | −0.002pp | +0.090pp | +0.409pp |
+| 2400 | 586 | +0.0pp | 0.2pp | −0.417pp | −0.094pp | +0.004pp | +0.082pp | +0.327pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| bullet | 1,246 | +0.0pp | 0.3pp | −0.5pp | −0.1pp | +0.0pp | +0.1pp | +0.5pp |
-| blitz | 1,311 | +0.0pp | 0.3pp | −0.5pp | −0.1pp | +0.0pp | +0.1pp | +0.4pp |
-| rapid | 1,376 | +0.0pp | 0.3pp | −0.5pp | −0.1pp | +0.0pp | +0.1pp | +0.4pp |
-| classical | 711 | +0.0pp | 0.4pp | −0.7pp | −0.1pp | +0.0pp | +0.2pp | +0.6pp |
+| bullet | 1,246 | +0.0pp | 0.3pp | −0.476pp | −0.065pp | +0.002pp | +0.078pp | +0.486pp |
+| blitz | 1,311 | +0.0pp | 0.3pp | −0.469pp | −0.097pp | +0.000pp | +0.081pp | +0.411pp |
+| rapid | 1,376 | +0.0pp | 0.3pp | −0.531pp | −0.137pp | −0.001pp | +0.114pp | +0.446pp |
+| classical | 711 | +0.0pp | 0.4pp | −0.654pp | −0.149pp | +0.011pp | +0.189pp | +0.574pp |
 
 **Collapse verdicts:** TC max |d| = **0.09** (blitz vs classical) → **collapse**. ELO max |d| = **0.11** (800 vs 2000) → **collapse**.
 
-**Recommendation:** Both axes collapse (TC d=0.09, ELO d=0.11). Viability 99.2%. Pooled Q1/Q3 = [−0.1pp, +0.1pp], median +0.0pp. Use global pooled zone.
+**Recommendation:** Both axes collapse (TC d=0.09, ELO d=0.11). Viability 99.2%. Pooled Q1/Q3 = [−0.111pp, +0.107pp], median +0.0pp. Use global pooled zone.
 
 ---
 
@@ -873,26 +880,26 @@ Only `mixed` clears the ≥30-joined-user floor at the combined ≥10-game + ≥
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 4,644 | +0.0pp | 0.3pp | −0.4pp | −0.1pp | +0.0pp | +0.1pp | +0.4pp |
+| 4,644 | +0.0pp | 0.3pp | −0.402pp | −0.091pp | −0.001pp | +0.089pp | +0.407pp |
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 813 | +0.0pp | 0.3pp | −0.5pp | −0.1pp | +0.0pp | +0.1pp | +0.5pp |
-| 1200 | 1,091 | +0.0pp | 0.3pp | −0.5pp | −0.1pp | +0.0pp | +0.1pp | +0.4pp |
-| 1600 | 1,139 | +0.0pp | 0.2pp | −0.4pp | −0.1pp | +0.0pp | +0.1pp | +0.4pp |
-| 2000 | 1,015 | +0.0pp | 0.2pp | −0.3pp | −0.1pp | +0.0pp | +0.1pp | +0.4pp |
-| 2400 | 586 | +0.0pp | 0.2pp | −0.3pp | −0.1pp | +0.0pp | +0.1pp | +0.3pp |
+| 800 | 813 | +0.0pp | 0.3pp | −0.498pp | −0.123pp | −0.009pp | +0.103pp | +0.517pp |
+| 1200 | 1,091 | +0.0pp | 0.3pp | −0.452pp | −0.095pp | +0.000pp | +0.102pp | +0.420pp |
+| 1600 | 1,139 | +0.0pp | 0.2pp | −0.378pp | −0.085pp | +0.000pp | +0.097pp | +0.419pp |
+| 2000 | 1,015 | +0.0pp | 0.2pp | −0.342pp | −0.077pp | +0.000pp | +0.087pp | +0.369pp |
+| 2400 | 586 | +0.0pp | 0.2pp | −0.298pp | −0.081pp | −0.005pp | +0.050pp | +0.270pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| bullet | 1,246 | +0.0pp | 0.2pp | −0.4pp | −0.1pp | +0.0pp | +0.1pp | +0.4pp |
-| blitz | 1,311 | +0.0pp | 0.2pp | −0.4pp | −0.1pp | +0.0pp | +0.1pp | +0.4pp |
-| rapid | 1,376 | +0.0pp | 0.2pp | −0.4pp | −0.1pp | +0.0pp | +0.1pp | +0.4pp |
-| classical | 711 | +0.0pp | 0.3pp | −0.5pp | −0.2pp | +0.0pp | +0.2pp | +0.5pp |
+| bullet | 1,246 | +0.0pp | 0.2pp | −0.421pp | −0.056pp | +0.000pp | +0.053pp | +0.359pp |
+| blitz | 1,311 | +0.0pp | 0.2pp | −0.355pp | −0.076pp | +0.000pp | +0.076pp | +0.371pp |
+| rapid | 1,376 | +0.0pp | 0.2pp | −0.367pp | −0.103pp | −0.006pp | +0.097pp | +0.428pp |
+| classical | 711 | +0.0pp | 0.3pp | −0.474pp | −0.159pp | +0.004pp | +0.156pp | +0.470pp |
 
 **Collapse verdicts:** TC max |d| = **0.07** (bullet vs classical) → **collapse**. ELO max |d| = **0.08** (1600 vs 2400) → **collapse**.
 
@@ -906,30 +913,30 @@ Only `mixed` clears the ≥30-joined-user floor at the combined ≥10-game + ≥
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 4,644 | +0.0pp | 0.1pp | −0.2pp | +0.0pp | +0.0pp | +0.0pp | +0.2pp |
+| 4,644 | +0.0pp | 0.1pp | −0.202pp | −0.040pp | +0.000pp | +0.041pp | +0.198pp |
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 813 | +0.0pp | 0.2pp | −0.3pp | −0.1pp | +0.0pp | +0.1pp | +0.2pp |
-| 1200 | 1,091 | +0.0pp | 0.1pp | −0.2pp | +0.0pp | +0.0pp | +0.1pp | +0.2pp |
-| 1600 | 1,139 | +0.0pp | 0.1pp | −0.2pp | +0.0pp | +0.0pp | +0.0pp | +0.2pp |
-| 2000 | 1,015 | +0.0pp | 0.1pp | −0.2pp | +0.0pp | +0.0pp | +0.0pp | +0.1pp |
-| 2400 | 586 | +0.0pp | 0.1pp | −0.1pp | +0.0pp | +0.0pp | +0.0pp | +0.1pp |
+| 800 | 813 | +0.0pp | 0.2pp | −0.288pp | −0.064pp | +0.000pp | +0.061pp | +0.246pp |
+| 1200 | 1,091 | +0.0pp | 0.1pp | −0.232pp | −0.047pp | +0.002pp | +0.057pp | +0.246pp |
+| 1600 | 1,139 | +0.0pp | 0.1pp | −0.185pp | −0.038pp | +0.000pp | +0.040pp | +0.185pp |
+| 2000 | 1,015 | +0.0pp | 0.1pp | −0.156pp | −0.034pp | +0.000pp | +0.030pp | +0.147pp |
+| 2400 | 586 | +0.0pp | 0.1pp | −0.124pp | −0.031pp | +0.000pp | +0.019pp | +0.106pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| bullet | 1,246 | +0.0pp | 0.1pp | −0.2pp | +0.0pp | +0.0pp | +0.0pp | +0.2pp |
-| blitz | 1,311 | +0.0pp | 0.1pp | −0.2pp | +0.0pp | +0.0pp | +0.0pp | +0.2pp |
-| rapid | 1,376 | +0.0pp | 0.1pp | −0.2pp | +0.0pp | +0.0pp | +0.0pp | +0.2pp |
-| classical | 711 | +0.0pp | 0.2pp | −0.2pp | −0.1pp | +0.0pp | +0.1pp | +0.3pp |
+| bullet | 1,246 | +0.0pp | 0.1pp | −0.195pp | −0.029pp | +0.000pp | +0.024pp | +0.187pp |
+| blitz | 1,311 | +0.0pp | 0.1pp | −0.196pp | −0.038pp | +0.000pp | +0.031pp | +0.195pp |
+| rapid | 1,376 | +0.0pp | 0.1pp | −0.210pp | −0.050pp | +0.000pp | +0.044pp | +0.181pp |
+| classical | 711 | +0.0pp | 0.2pp | −0.216pp | −0.053pp | +0.011pp | +0.079pp | +0.253pp |
 
 **Collapse verdicts:** TC max |d| = **0.13** (bullet vs classical) → **collapse**. ELO max |d| = **0.10** (1200 vs 2400) → **collapse**.
 
-**Recommendation:** Both axes collapse. SD shrinks monotonically with ELO (0.2pp at 800 → 0.1pp at 2400). Viability 92.9% — ~7% of users have no reversed-advantage events. Pooled Q1/Q3 = [+0.0pp, +0.0pp], near-degenerate around zero. Use global pooled zone.
+**Recommendation:** Both axes collapse. SD shrinks monotonically with ELO (0.2pp at 800 → 0.1pp at 2400). Viability 92.9% — ~7% of users have no reversed-advantage events. Pooled Q1/Q3 = [−0.040pp, +0.041pp], near-degenerate around zero. Use global pooled zone.
 
 ---
 
@@ -939,30 +946,30 @@ Only `mixed` clears the ≥30-joined-user floor at the combined ≥10-game + ≥
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 4,644 | +0.0pp | 0.2pp | −0.3pp | −0.1pp | +0.0pp | +0.1pp | +0.4pp |
+| 4,644 | +0.0pp | 0.2pp | −0.347pp | −0.073pp | +0.000pp | +0.076pp | +0.350pp |
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 813 | +0.0pp | 0.3pp | −0.4pp | −0.1pp | +0.0pp | +0.1pp | +0.4pp |
-| 1200 | 1,091 | +0.0pp | 0.2pp | −0.4pp | −0.1pp | +0.0pp | +0.1pp | +0.4pp |
-| 1600 | 1,139 | +0.0pp | 0.2pp | −0.3pp | −0.1pp | +0.0pp | +0.1pp | +0.3pp |
-| 2000 | 1,015 | +0.0pp | 0.2pp | −0.3pp | −0.1pp | +0.0pp | +0.1pp | +0.3pp |
-| 2400 | 586 | +0.0pp | 0.2pp | −0.3pp | −0.1pp | +0.0pp | +0.1pp | +0.3pp |
+| 800 | 813 | +0.0pp | 0.3pp | −0.424pp | −0.101pp | −0.002pp | +0.095pp | +0.447pp |
+| 1200 | 1,091 | +0.0pp | 0.2pp | −0.384pp | −0.087pp | +0.000pp | +0.094pp | +0.378pp |
+| 1600 | 1,139 | +0.0pp | 0.2pp | −0.313pp | −0.056pp | +0.000pp | +0.076pp | +0.313pp |
+| 2000 | 1,015 | +0.0pp | 0.2pp | −0.315pp | −0.074pp | −0.003pp | +0.059pp | +0.260pp |
+| 2400 | 586 | +0.0pp | 0.2pp | −0.258pp | −0.051pp | +0.004pp | +0.060pp | +0.275pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| bullet | 1,246 | +0.0pp | 0.2pp | −0.4pp | +0.0pp | +0.0pp | +0.0pp | +0.4pp |
-| blitz | 1,311 | +0.0pp | 0.2pp | −0.3pp | −0.1pp | +0.0pp | +0.1pp | +0.3pp |
-| rapid | 1,376 | +0.0pp | 0.2pp | −0.3pp | −0.1pp | +0.0pp | +0.1pp | +0.3pp |
-| classical | 711 | +0.0pp | 0.3pp | −0.4pp | −0.1pp | +0.0pp | +0.1pp | +0.4pp |
+| bullet | 1,246 | +0.0pp | 0.2pp | −0.350pp | −0.045pp | +0.000pp | +0.045pp | +0.368pp |
+| blitz | 1,311 | +0.0pp | 0.2pp | −0.326pp | −0.067pp | +0.000pp | +0.064pp | +0.274pp |
+| rapid | 1,376 | +0.0pp | 0.2pp | −0.330pp | −0.080pp | −0.003pp | +0.083pp | +0.315pp |
+| classical | 711 | +0.0pp | 0.3pp | −0.382pp | −0.112pp | +0.006pp | +0.147pp | +0.436pp |
 
 **Collapse verdicts:** TC max |d| = **0.12** (blitz vs classical) → **collapse**. ELO max |d| = **0.09** (2000 vs 2400) → **collapse**.
 
-**Recommendation:** Both axes collapse. SD shrinks with ELO (0.3pp at 800 → 0.2pp at 2400). Under ELO-matched pairing this reads partly as "how often the situation arose", not purely conversion skill — disclose via the Phase 115 tooltip (D-03). Viability 95.7%. Pooled Q1/Q3 = [−0.1pp, +0.1pp]. Use global pooled zone.
+**Recommendation:** Both axes collapse. SD shrinks with ELO (0.3pp at 800 → 0.2pp at 2400). Under ELO-matched pairing this reads partly as "how often the situation arose", not purely conversion skill — disclose via the Phase 115 tooltip (D-03). Viability 95.7%. Pooled Q1/Q3 = [−0.073pp, +0.076pp]. Use global pooled zone.
 
 ---
 
@@ -972,26 +979,26 @@ Only `mixed` clears the ≥30-joined-user floor at the combined ≥10-game + ≥
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 4,644 | +0.0pp | 0.2pp | −0.4pp | −0.1pp | +0.0pp | +0.1pp | +0.3pp |
+| 4,644 | +0.0pp | 0.2pp | −0.371pp | −0.085pp | −0.001pp | +0.061pp | +0.350pp |
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 813 | +0.0pp | 0.3pp | −0.5pp | −0.1pp | +0.0pp | +0.1pp | +0.5pp |
-| 1200 | 1,091 | +0.0pp | 0.3pp | −0.5pp | −0.1pp | +0.0pp | +0.1pp | +0.4pp |
-| 1600 | 1,139 | +0.0pp | 0.2pp | −0.4pp | −0.1pp | +0.0pp | +0.0pp | +0.4pp |
-| 2000 | 1,015 | +0.0pp | 0.2pp | −0.3pp | −0.1pp | +0.0pp | +0.1pp | +0.3pp |
-| 2400 | 586 | +0.0pp | 0.1pp | −0.2pp | −0.1pp | +0.0pp | +0.1pp | +0.2pp |
+| 800 | 813 | +0.0pp | 0.3pp | −0.497pp | −0.125pp | −0.004pp | +0.084pp | +0.456pp |
+| 1200 | 1,091 | +0.0pp | 0.3pp | −0.505pp | −0.095pp | −0.001pp | +0.070pp | +0.413pp |
+| 1600 | 1,139 | +0.0pp | 0.2pp | −0.353pp | −0.096pp | −0.003pp | +0.048pp | +0.357pp |
+| 2000 | 1,015 | +0.0pp | 0.2pp | −0.264pp | −0.065pp | +0.000pp | +0.054pp | +0.255pp |
+| 2400 | 586 | +0.0pp | 0.1pp | −0.216pp | −0.058pp | +0.000pp | +0.056pp | +0.223pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| bullet | 1,246 | +0.0pp | 0.2pp | −0.2pp | +0.0pp | +0.0pp | +0.0pp | +0.2pp |
-| blitz | 1,311 | +0.0pp | 0.1pp | −0.2pp | +0.0pp | +0.0pp | +0.0pp | +0.2pp |
-| rapid | 1,376 | +0.0pp | 0.2pp | −0.4pp | −0.1pp | +0.0pp | +0.1pp | +0.4pp |
-| classical | 711 | +0.0pp | 0.4pp | −0.8pp | −0.2pp | +0.0pp | +0.2pp | +0.6pp |
+| bullet | 1,246 | +0.0pp | 0.2pp | −0.230pp | −0.036pp | +0.000pp | +0.027pp | +0.225pp |
+| blitz | 1,311 | +0.0pp | 0.1pp | −0.225pp | −0.048pp | +0.000pp | +0.047pp | +0.248pp |
+| rapid | 1,376 | +0.0pp | 0.2pp | −0.413pp | −0.125pp | −0.010pp | +0.087pp | +0.397pp |
+| classical | 711 | +0.0pp | 0.4pp | −0.755pp | −0.222pp | −0.026pp | +0.170pp | +0.645pp |
 
 **Collapse verdicts:** TC max |d| = **0.12** (blitz vs classical) → **collapse**. ELO max |d| = **0.06** (800 vs 2400) → **collapse**.
 
@@ -1005,30 +1012,30 @@ Only `mixed` clears the ≥30-joined-user floor at the combined ≥10-game + ≥
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 4,644 | +0.0pp | 0.1pp | −0.1pp | +0.0pp | +0.0pp | +0.0pp | +0.2pp |
+| 4,644 | +0.0pp | 0.1pp | −0.141pp | −0.024pp | +0.000pp | +0.012pp | +0.154pp |
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 813 | +0.0pp | 0.1pp | −0.1pp | +0.0pp | +0.0pp | +0.0pp | +0.1pp |
-| 1200 | 1,091 | +0.0pp | 0.1pp | −0.1pp | +0.0pp | +0.0pp | +0.0pp | +0.1pp |
-| 1600 | 1,139 | +0.0pp | 0.1pp | −0.1pp | +0.0pp | +0.0pp | +0.0pp | +0.1pp |
-| 2000 | 1,015 | +0.0pp | 0.1pp | −0.2pp | +0.0pp | +0.0pp | +0.0pp | +0.2pp |
-| 2400 | 586 | +0.0pp | 0.1pp | −0.2pp | +0.0pp | +0.0pp | +0.0pp | +0.2pp |
+| 800 | 813 | +0.0pp | 0.1pp | −0.110pp | −0.017pp | +0.000pp | +0.008pp | +0.126pp |
+| 1200 | 1,091 | +0.0pp | 0.1pp | −0.113pp | −0.014pp | +0.000pp | +0.006pp | +0.110pp |
+| 1600 | 1,139 | +0.0pp | 0.1pp | −0.125pp | −0.023pp | +0.000pp | +0.006pp | +0.145pp |
+| 2000 | 1,015 | +0.0pp | 0.1pp | −0.167pp | −0.036pp | +0.000pp | +0.019pp | +0.226pp |
+| 2400 | 586 | +0.0pp | 0.1pp | −0.166pp | −0.044pp | −0.001pp | +0.029pp | +0.194pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| bullet | 1,246 | +0.0pp | 0.1pp | −0.2pp | +0.0pp | +0.0pp | +0.0pp | +0.1pp |
-| blitz | 1,311 | +0.0pp | 0.1pp | −0.1pp | +0.0pp | +0.0pp | +0.0pp | +0.2pp |
-| rapid | 1,376 | +0.0pp | 0.1pp | −0.1pp | +0.0pp | +0.0pp | +0.0pp | +0.1pp |
-| classical | 711 | +0.0pp | 0.1pp | −0.1pp | +0.0pp | +0.0pp | +0.0pp | +0.1pp |
+| bullet | 1,246 | +0.0pp | 0.1pp | −0.161pp | −0.016pp | +0.000pp | +0.015pp | +0.150pp |
+| blitz | 1,311 | +0.0pp | 0.1pp | −0.148pp | −0.030pp | +0.000pp | +0.026pp | +0.205pp |
+| rapid | 1,376 | +0.0pp | 0.1pp | −0.126pp | −0.029pp | +0.000pp | +0.007pp | +0.138pp |
+| classical | 711 | +0.0pp | 0.1pp | −0.101pp | −0.017pp | +0.000pp | +0.000pp | +0.102pp |
 
 **Collapse verdicts:** TC max |d| = **0.08** (blitz vs classical) → **collapse**. ELO max |d| = **0.06** (2000 vs 2400) → **collapse**.
 
-**Recommendation:** Both axes collapse. Viability 58.2% (2,704/4,649) — the rarest combo (median 1 event/user), well below the 80% threshold: thin numerator — Phase 115 must verify CI-width adequacy against the materialized opponent-flaw data (FLAWCMP-04). Pooled Q1/Q3 = [+0.0pp, +0.0pp], the narrowest of all 15 metrics. Treat as an optional advanced metric with an explicit "insufficient data" fallback.
+**Recommendation:** Both axes collapse. Viability 58.2% (2,704/4,649) — the rarest combo (median 1 event/user), well below the 80% threshold: thin numerator — Phase 115 must verify CI-width adequacy against the materialized opponent-flaw data (FLAWCMP-04). Pooled Q1/Q3 = [−0.024pp, +0.012pp], the narrowest of all 15 metrics. Treat as an optional advanced metric with an explicit "insufficient data" fallback.
 
 ---
 
@@ -1038,30 +1045,30 @@ Only `mixed` clears the ≥30-joined-user floor at the combined ≥10-game + ≥
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 4,644 | +0.0pp | 0.6pp | −1.0pp | −0.2pp | +0.0pp | +0.2pp | +0.9pp |
+| 4,644 | +0.0pp | 0.6pp | −0.991pp | −0.227pp | +0.007pp | +0.202pp | +0.920pp |
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 813 | +0.0pp | 0.6pp | −0.9pp | −0.2pp | +0.0pp | +0.2pp | +1.1pp |
-| 1200 | 1,091 | +0.0pp | 0.6pp | −1.1pp | −0.2pp | +0.0pp | +0.2pp | +1.0pp |
-| 1600 | 1,139 | +0.0pp | 0.6pp | −1.0pp | −0.2pp | +0.0pp | +0.2pp | +1.0pp |
-| 2000 | 1,015 | +0.0pp | 0.6pp | −1.0pp | −0.2pp | +0.0pp | +0.2pp | +0.8pp |
-| 2400 | 586 | +0.0pp | 0.5pp | −0.8pp | −0.2pp | +0.0pp | +0.2pp | +0.8pp |
+| 800 | 813 | +0.0pp | 0.6pp | −0.949pp | −0.249pp | +0.013pp | +0.226pp | +1.061pp |
+| 1200 | 1,091 | +0.0pp | 0.6pp | −1.090pp | −0.215pp | +0.011pp | +0.219pp | +1.008pp |
+| 1600 | 1,139 | +0.0pp | 0.6pp | −1.004pp | −0.229pp | +0.012pp | +0.199pp | +0.961pp |
+| 2000 | 1,015 | +0.0pp | 0.6pp | −1.029pp | −0.249pp | −0.005pp | +0.184pp | +0.809pp |
+| 2400 | 586 | +0.0pp | 0.5pp | −0.828pp | −0.182pp | +0.004pp | +0.154pp | +0.785pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| bullet | 1,246 | +0.0pp | 0.5pp | −0.8pp | −0.1pp | +0.0pp | +0.1pp | +1.0pp |
-| blitz | 1,311 | +0.0pp | 0.5pp | −0.9pp | −0.2pp | +0.0pp | +0.1pp | +0.8pp |
-| rapid | 1,376 | +0.0pp | 0.6pp | −1.1pp | −0.3pp | +0.0pp | +0.2pp | +0.9pp |
-| classical | 711 | +0.0pp | 0.7pp | −1.3pp | −0.4pp | +0.0pp | +0.4pp | +1.1pp |
+| bullet | 1,246 | +0.0pp | 0.5pp | −0.840pp | −0.110pp | +0.003pp | +0.130pp | +1.004pp |
+| blitz | 1,311 | +0.0pp | 0.5pp | −0.944pp | −0.210pp | +0.006pp | +0.147pp | +0.797pp |
+| rapid | 1,376 | +0.0pp | 0.6pp | −1.067pp | −0.291pp | +0.008pp | +0.217pp | +0.907pp |
+| classical | 711 | +0.0pp | 0.7pp | −1.312pp | −0.400pp | +0.037pp | +0.380pp | +1.050pp |
 
 **Collapse verdicts:** TC max |d| = **0.12** (bullet vs rapid) → **collapse**. ELO max |d| = **0.10** (800 vs 2000) → **collapse**.
 
-**Recommendation:** Both axes collapse. TC and ELO distributions are near-identical across buckets. Viability 99.4%. Pooled Q1/Q3 = [−0.2pp, +0.2pp], median +0.0pp. Use global pooled zone.
+**Recommendation:** Both axes collapse. TC and ELO distributions are near-identical across buckets. Viability 99.4%. Pooled Q1/Q3 = [−0.227pp, +0.202pp], median +0.0pp. Use global pooled zone.
 
 ---
 
@@ -1071,30 +1078,30 @@ Only `mixed` clears the ≥30-joined-user floor at the combined ≥10-game + ≥
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 4,644 | +0.0pp | 0.7pp | −1.3pp | −0.3pp | +0.0pp | +0.2pp | +1.1pp |
+| 4,644 | +0.0pp | 0.7pp | −1.283pp | −0.314pp | +0.013pp | +0.246pp | +1.081pp |
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 813 | +0.0pp | 0.8pp | −1.3pp | −0.3pp | +0.1pp | +0.4pp | +1.2pp |
-| 1200 | 1,091 | +0.0pp | 0.7pp | −1.4pp | −0.2pp | +0.1pp | +0.4pp | +1.2pp |
-| 1600 | 1,139 | −0.1pp | 0.7pp | −1.4pp | −0.3pp | +0.0pp | +0.2pp | +1.2pp |
-| 2000 | 1,015 | −0.1pp | 0.6pp | −1.2pp | −0.4pp | +0.0pp | +0.2pp | +0.9pp |
-| 2400 | 586 | −0.1pp | 0.5pp | −0.9pp | −0.3pp | +0.0pp | +0.1pp | +0.7pp |
+| 800 | 813 | +0.0pp | 0.8pp | −1.290pp | −0.290pp | +0.069pp | +0.418pp | +1.225pp |
+| 1200 | 1,091 | +0.0pp | 0.7pp | −1.355pp | −0.235pp | +0.054pp | +0.354pp | +1.185pp |
+| 1600 | 1,139 | −0.1pp | 0.7pp | −1.426pp | −0.333pp | +0.016pp | +0.247pp | +1.184pp |
+| 2000 | 1,015 | −0.1pp | 0.6pp | −1.207pp | −0.368pp | −0.023pp | +0.154pp | +0.900pp |
+| 2400 | 586 | −0.1pp | 0.5pp | −0.856pp | −0.302pp | −0.030pp | +0.120pp | +0.659pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| bullet | 1,246 | +0.0pp | 0.6pp | −1.0pp | −0.1pp | +0.0pp | +0.2pp | +1.1pp |
-| blitz | 1,311 | +0.0pp | 0.7pp | −1.2pp | −0.3pp | +0.0pp | +0.2pp | +1.0pp |
-| rapid | 1,376 | −0.1pp | 0.8pp | −1.4pp | −0.5pp | +0.0pp | +0.2pp | +1.0pp |
-| classical | 711 | +0.0pp | 0.8pp | −1.3pp | −0.4pp | +0.1pp | +0.5pp | +1.4pp |
+| bullet | 1,246 | +0.0pp | 0.6pp | −1.025pp | −0.127pp | +0.014pp | +0.183pp | +1.107pp |
+| blitz | 1,311 | +0.0pp | 0.7pp | −1.220pp | −0.304pp | +0.007pp | +0.180pp | +0.975pp |
+| rapid | 1,376 | −0.1pp | 0.8pp | −1.412pp | −0.489pp | −0.002pp | +0.234pp | +1.031pp |
+| classical | 711 | +0.0pp | 0.8pp | −1.311pp | −0.405pp | +0.080pp | +0.488pp | +1.362pp |
 
 **Collapse verdicts:** TC max |d| = **0.21** (bullet vs rapid) → **review**. ELO max |d| = **0.19** (800 vs 2000) → **collapse**.
 
-**Recommendation:** TC review at d=0.21 (bullet vs rapid); ELO collapses (d=0.19) but shows the clearest mean ramp of the severity metrics (+0.0pp at 800/1200 → −0.1pp at 1600+) — higher-rated players blunder proportionally less relative to opponents. Viability 99.5%. Pooled Q1/Q3 = [−0.3pp, +0.2pp]. Use pooled zone for Phase 115; flag for potential per-ELO refinement alongside endgame-phase.
+**Recommendation:** TC review at d=0.21 (bullet vs rapid); ELO collapses (d=0.19) but shows the clearest mean ramp of the severity metrics (+0.0pp at 800/1200 → −0.1pp at 1600+) — higher-rated players blunder proportionally less relative to opponents. Viability 99.5%. Pooled Q1/Q3 = [−0.314pp, +0.246pp]. Use pooled zone for Phase 115; flag for potential per-ELO refinement alongside endgame-phase.
 
 ---
 

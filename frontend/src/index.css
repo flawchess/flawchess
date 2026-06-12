@@ -154,6 +154,16 @@
     @apply bg-background text-foreground;
     overflow-x: hidden;
     }
+  /* Recharts marks its wrapper/surface and interactive shapes (sectors, bars,
+     dots) focusable, so tapping a chart element on mobile draws the browser's
+     default focus outline (a white box). Suppress it across every chart — these
+     elements aren't keyboard-navigable controls, so there's no a11y regression. */
+  .recharts-wrapper:focus,
+  .recharts-wrapper *:focus,
+  .recharts-surface:focus,
+  .recharts-surface *:focus {
+    outline: none;
+    }
   html {
     @apply font-sans;
     }

@@ -560,10 +560,9 @@ async def fetch_stats_aggregates(
     )
 
 
-async def fetch_stats_trend(
+async def fetch_flaw_trend_rows(
     session: AsyncSession,
     user_id: int,
-    analyzed_game_ids_subq: Subquery,
     *,
     time_control: Sequence[str] | None,
     platform: Sequence[str] | None,
@@ -575,14 +574,20 @@ async def fetch_stats_trend(
     opponent_gap_min: int | None,
     opponent_gap_max: int | None,
     color: str | None,
-) -> list[tuple[datetime.datetime | None, int]]:
-    """Per-game M+B flaw count for trend computation, ordered by played_at ASC.
+) -> list[Any]:
+    """Per-game oracle blunder/mistake/inaccuracy counts + ply_count for the trend chart.
 
-    Returns list of (played_at, mb_count) tuples — one entry per analyzed+filtered
-    game, including games with zero M+B flaws (LEFT JOIN semantics via subquery).
-    Ordered oldest-first for rolling-window accumulation in _compute_trend.
+    Reads the games-table oracle columns (white_/black_blunders/mistakes/inaccuracies,
+    picked by user_color) directly — NOT game_flaws. _compute_flaw_trend turns these
+    into per-100-move MACRO rates over a trailing FLAW_TREND_WINDOW-game window, bucketed
+    by ISO week. One row per filtered game that has oracle move-quality data
+    (oracle-present gate) and a usable played_at + ply_count, ordered played_at ASC.
 
-    The trend is computed over the same analyzed+filtered set as fetch_stats_aggregates.
+    The oracle columns are populated from lichess analysis (NULL for chess.com /
+    unanalyzed games), so the oracle-present gate is what defines "analyzed" here —
+    there is no game_positions eval-coverage join. This is a deliberate divergence from
+    the KPI cards (kernel game_flaws for M+B): the trend is an oracle-sourced shape over
+    time, so its blunder/mistake lines will not tie out exactly with the KPI cards.
     """
     base_filtered_subq = _filtered_games_base(
         user_id,
@@ -597,54 +602,40 @@ async def fetch_stats_trend(
         opponent_gap_max=opponent_gap_max,
         color=color,
     ).subquery("filtered_t")
-    filtered_analyzed_game_ids = (
-        select(base_filtered_subq.c.id)
-        .where(base_filtered_subq.c.id.in_(select(analyzed_game_ids_subq.c.game_id)))
-        .subquery("fa_ids")
-    )
 
-    # Games in the analyzed+filtered set (may have 0 game_flaws rows)
-    games_subq = (
-        select(Game.id, Game.played_at)
-        .where(
-            Game.user_id == user_id,
-            Game.id.in_(select(filtered_analyzed_game_ids.c.id)),
-        )
-        .subquery("analyzed_games")
-    )
-
-    # Flaw counts per game (0 for games with no flaws in game_flaws)
-    # D-04: Game JOIN required so Game.user_color is in scope for player_only_gate.
-    # After Phase 113 game_flaws contains both sides; this gate ensures the per-game
-    # M+B trend counts only player flaws (no opponent inflation — R5).
-    flaw_counts_subq = (
-        select(
-            GameFlaw.game_id,
-            func.count().label("mb_count"),
-        )
-        .join(Game, Game.id == GameFlaw.game_id)
-        .where(
-            GameFlaw.user_id == user_id,
-            GameFlaw.game_id.in_(select(filtered_analyzed_game_ids.c.id)),
-            player_only_gate(GameFlaw.ply, Game.user_color),  # D-04 player gate (R5)
-        )
-        .group_by(GameFlaw.game_id)
-        .subquery("flaw_counts")
-    )
+    is_white = Game.user_color == "white"
+    blunders = case((is_white, Game.white_blunders), else_=Game.black_blunders)
+    mistakes = case((is_white, Game.white_mistakes), else_=Game.black_mistakes)
+    inaccuracies = case((is_white, Game.white_inaccuracies), else_=Game.black_inaccuracies)
 
     stmt = (
         select(
-            games_subq.c.played_at,
-            func.coalesce(flaw_counts_subq.c.mb_count, 0).label("mb_count"),
+            Game.played_at,
+            Game.user_color,
+            Game.ply_count,
+            blunders.label("blunders"),
+            mistakes.label("mistakes"),
+            inaccuracies.label("inaccuracies"),
         )
-        .outerjoin(flaw_counts_subq, flaw_counts_subq.c.game_id == games_subq.c.id)
-        .order_by(games_subq.c.played_at.asc().nulls_last())
+        .where(
+            Game.user_id == user_id,
+            Game.id.in_(select(base_filtered_subq.c.id)),
+            Game.played_at.isnot(None),
+            Game.ply_count.isnot(None),
+            Game.ply_count > 0,
+            # Oracle-present gate: the user's-color move-quality columns are non-null.
+            or_(
+                (Game.user_color == "white") & Game.white_blunders.isnot(None),
+                (Game.user_color == "black") & Game.black_blunders.isnot(None),
+            ),
+        )
+        .order_by(Game.played_at.asc())
     )
     rows = (await session.execute(stmt)).all()
-    return [(row[0], row[1]) for row in rows]
+    return list(rows)
 
 
-async def fetch_total_user_moves(
+async def fetch_stats_per_game_rates(
     session: AsyncSession,
     user_id: int,
     analyzed_game_ids_subq: Subquery,
@@ -659,16 +650,24 @@ async def fetch_total_user_moves(
     opponent_gap_min: int | None,
     opponent_gap_max: int | None,
     color: str | None,
-) -> int:
-    """Count the user's plies across all analyzed+filtered games (per-100 rate denominator).
+) -> list[Any]:
+    """Per-game player M/B counts + oracle inaccuracy for the macro per-100 stats rates.
 
-    A ply N is the user's when mover parity matches game.user_color:
-    - White moves at even plies (N % 2 == 0)
-    - Black moves at odd plies  (N % 2 != 0)
-    Ply 0 (initial position, no move) is excluded.
+    One row per analyzed+filtered game: (user_moves, player_mistake, player_blunder,
+    player_inaccuracy). The service averages count/user_moves*100 across games (MACRO,
+    each game weighted equally) so the card's blunder/mistake per-100 equal the
+    you-vs-opponent bullet's player_rate EXACTLY — same anchor, same player_only_gate,
+    same floor/ceil(ply_count/2) denominator as fetch_flaw_comparison.
 
-    This mirrors _count_user_moves() semantics from library_service.py, computed
-    in one SQL aggregate over game_positions JOIN games (no per-game kernel loop).
+    Inaccuracy comes from the oracle columns (games.white_/black_inaccuracies, D-03):
+    game_flaws never stores inaccuracies, so inaccuracy has no game_flaws/bullet
+    counterpart and stands alone (NULL oracle -> 0, mirroring _build_game_flaw_card).
+    Today those columns are lichess-only (NULL for chess.com / unanalyzed); they
+    self-populate once chess.com full-game Stockfish analysis lands.
+
+    LEFT JOIN game_flaws so zero-flaw analyzed games still contribute a 0-rate row.
+    Anchor excludes ply_count NULL/0 (divide-by-zero guard, Pitfall 2). Use
+    func.count(GameFlaw.ply) NOT func.count() so absent LEFT-JOIN rows count as 0.
     """
     base_filtered_subq = _filtered_games_base(
         user_id,
@@ -682,34 +681,62 @@ async def fetch_total_user_moves(
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
         color=color,
-    ).subquery("filtered_u")
-    filtered_analyzed_ids = (
-        select(base_filtered_subq.c.id)
-        .where(base_filtered_subq.c.id.in_(select(analyzed_game_ids_subq.c.game_id)))
-        .subquery("fa_ids2")
-    )
+    ).subquery("filtered_pgr")
 
-    # Count positions where ply >= 1 AND mover matches game.user_color.
-    # Even ply → white mover; odd ply → black mover (matches kernel _run_all_moves_pass).
-    # SQLAlchemy 2.x case(): positional *whens as individual (condition, value) tuples.
-    user_ply = case(
-        ((GamePosition.ply % 2 == 0) & (Game.user_color == "white"), 1),
-        ((GamePosition.ply % 2 != 0) & (Game.user_color == "black"), 1),
-        else_=0,
+    # Anchor: analyzed+filtered games with valid ply_count. user_moves and the oracle
+    # inaccuracy pick are Game-only expressions, carried into the GROUP BY below.
+    anchor_subq = (
+        select(
+            Game.id.label("game_id"),
+            Game.user_color,
+            case(
+                (Game.user_color == "white", func.floor(Game.ply_count / 2.0)),
+                else_=func.ceil(Game.ply_count / 2.0),
+            ).label("user_moves"),
+            case(
+                (Game.user_color == "white", Game.white_inaccuracies),
+                else_=Game.black_inaccuracies,
+            ).label("player_inaccuracy"),
+        )
+        .where(
+            Game.user_id == user_id,
+            Game.id.in_(select(base_filtered_subq.c.id)),
+            Game.id.in_(select(analyzed_game_ids_subq.c.game_id)),
+            Game.ply_count.isnot(None),
+            Game.ply_count > 0,
+        )
+        .subquery("anchor_pgr")
     )
 
     stmt = (
-        select(func.sum(user_ply))
-        .select_from(GamePosition)
-        .join(Game, Game.id == GamePosition.game_id)
-        .where(
-            GamePosition.user_id == user_id,
-            GamePosition.game_id.in_(select(filtered_analyzed_ids.c.id)),
-            GamePosition.ply >= 1,
+        select(
+            anchor_subq.c.user_moves,
+            anchor_subq.c.player_inaccuracy,
+            func.count(GameFlaw.ply)
+            .filter(
+                player_only_gate(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.severity == _SEVERITY_INT["mistake"],
+            )
+            .label("player_mistake"),
+            func.count(GameFlaw.ply)
+            .filter(
+                player_only_gate(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.severity == _SEVERITY_INT["blunder"],
+            )
+            .label("player_blunder"),
+        )
+        .outerjoin(
+            GameFlaw,
+            (GameFlaw.game_id == anchor_subq.c.game_id) & (GameFlaw.user_id == user_id),
+        )
+        .group_by(
+            anchor_subq.c.game_id,
+            anchor_subq.c.user_moves,
+            anchor_subq.c.player_inaccuracy,
         )
     )
-    result = (await session.execute(stmt)).scalar_one_or_none()
-    return int(result) if result is not None else 0
+    rows = (await session.execute(stmt)).all()
+    return list(rows)
 
 
 def _filtered_games_base(
@@ -845,7 +872,7 @@ async def count_filtered_and_analyzed(
     opponent_type: str,
     from_date: datetime.date | None,
     to_date: datetime.date | None,
-    flaw_severity: Sequence[str] | None,
+    flaw_severity: Sequence[str] | None = None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
     color: str | None = None,
@@ -853,16 +880,23 @@ async def count_filtered_and_analyzed(
     """Return (total_n, analyzed_n) over the filtered Games-surface set (LIBG-09).
 
     total_n   = count of games matching the filter set.
-    analyzed_n = subset whose per-game eval coverage (plies with eval_cp OR
-                 eval_mate non-null / total plies) >= EVAL_COVERAGE_MIN — the
-                  identical gate the kernel applies per game, so analyzed_n here
-                 equals the number of games the kernel would NOT report as
-                 GameNotAnalyzed. A fully-analyzed game (only its final ply null)
-                 scores (N-1)/N >= 0.90; an all-null chess.com game scores 0.0.
+    analyzed_n = subset with full-game move-quality analysis (Game.is_analyzed,
+                 i.e. white_blunders IS NOT NULL — currently Lichess games with
+                 computer analysis enabled). The cheap is_analyzed column check
+                 replaces the old per-ply eval-coverage subquery: coarser, but it
+                 matches the product's notion of "analyzed" (move-quality columns
+                 present) and is far cheaper.
 
-    Both are user-scoped. The panel uses analyzed_n / total_n as the explicit
-    "% analyzed" denominator so it never implies clean games where evals are
-    merely absent (criterion 4).
+    flaw_severity defaults to None so the COVERAGE badge (get_flaw_stats) gets a
+    true "x of y" denominator: when it is None the base spans the whole filtered
+    game set, so total_n counts unanalyzed games too and analyzed_n <= total_n.
+    Passing a flaw_severity (the you-vs-opponent comparison gate does) restricts
+    BOTH counts to games with a matching flaw via the base EXISTS, so analyzed_n
+    there matches the set the comparison bullets aggregate over. With a flaw
+    EXISTS on the base, total_n necessarily equals analyzed_n (every flawed game
+    is analyzed) — which is why the badge caller must NOT pass flaw_severity.
+
+    Both are user-scoped.
     """
     base = _filtered_games_base(
         user_id,
@@ -882,9 +916,8 @@ async def count_filtered_and_analyzed(
     if total_n == 0:
         return 0, 0
 
-    analyzed_subq = _analyzed_game_ids_subquery(user_id)
     analyzed_stmt = select(func.count()).select_from(
-        select(base_subq.c.id).where(base_subq.c.id.in_(select(analyzed_subq.c.game_id))).subquery()
+        select(Game.id).where(Game.id.in_(select(base_subq.c.id)), Game.is_analyzed).subquery()
     )
     analyzed_n = (await session.execute(analyzed_stmt)).scalar_one()
     return total_n, analyzed_n

@@ -1,6 +1,6 @@
 ---
 name: db-report
-description: Generate a database storage and performance report for FlawChess. Use this skill when the user asks about database size, storage usage, table sizes, index sizes, game counts, position counts, slow queries, query performance, cache hit ratio, sequential scans, index usage, dead tuples, or wants a DB health/status overview. Trigger on phrases like "db report", "database report", "how big is the database", "storage usage", "index sizes", "table sizes", "slow queries", "query performance", "db performance", "db health", or any question about DB metrics. Supports both production and local dev databases. Writes a timestamped markdown report to reports/db-stats/db-report-{env}-YYYY-MM-DD.md.
+description: Generate a database storage and performance report for FlawChess. Use this skill when the user asks about database size, storage usage, table sizes, index sizes, game counts, position counts, slow queries, query performance, cache hit ratio, sequential scans, index usage, dead tuples, data integrity / sanity checks (e.g. do the games blunder/mistake count columns match game_flaws), or wants a DB health/status overview. Trigger on phrases like "db report", "database report", "how big is the database", "storage usage", "index sizes", "table sizes", "slow queries", "query performance", "db performance", "db health", "data integrity", "sanity check", or any question about DB metrics. Supports both production and local dev databases. Writes a timestamped markdown report to reports/db-stats/db-report-{env}-YYYY-MM-DD.md.
 ---
 
 # DB Report
@@ -24,7 +24,7 @@ Both accept a single `sql` parameter. Run one SQL statement per call (no semicol
 
 ## Report scope
 
-The report has three sections. By default, run **all** sections and write the output to `reports/db-stats/db-report-{env}-YYYY-MM-DD.md` (UTC date, where `{env}` is `prod` or `local`). If the user only asks for storage/sizes, run Section 1 only. If the user only asks for performance/slow queries, run Section 2 only — in that case, append to today's report rather than overwriting prior sections.
+The report has four sections (Users, Storage, Performance, Sanity Checks). By default, run **all** sections and write the output to `reports/db-stats/db-report-{env}-YYYY-MM-DD.md` (UTC date, where `{env}` is `prod` or `local`). If the user only asks for storage/sizes, run Section 1 only. If the user only asks for performance/slow queries, run Section 2 only. If the user only asks for data integrity / sanity checks, run Section 3 only. When running a subset, append to today's report rather than overwriting prior sections.
 
 When writing the report, always include at the top:
 - Target DB (prod/local) and snapshot timestamp (ISO UTC)
@@ -165,6 +165,141 @@ If pg_stat_statements has never been reset (check `stats_reset` from `pg_stat_da
 
 ---
 
+## Section 3: Sanity Checks
+
+Data-integrity checks. Run both unless the user asks for one.
+
+- **Check A — Flaw counts: `games` oracle columns vs `game_flaws`.** Are the per-color move-quality count columns on `games` (`white/black_mistakes`, `white/black_blunders`) consistent with the derived `game_flaws` table?
+- **Check B — Eval coverage vs oracle-column presence.** Are there games with ≥90% per-ply eval coverage (`game_positions`) whose `games` oracle columns are NULL? This guards the **Flaws Timeline** feature, which reads the precomputed `games` oracle columns directly (`fetch_flaw_trend_rows`, no `game_positions` join) and gates on "oracle present". A game that is "analyzed" by eval coverage but has NULL oracle columns is silently dropped from the Timeline.
+
+---
+
+### Check A — Flaw counts: `games` oracle columns vs `game_flaws`
+
+#### Background (read before interpreting results)
+
+- `games.{white,black}_{mistakes,blunders}` come **directly from the lichess analysis API** and are per-color counts for the whole game. They are **NULL for chess.com** (chess.com supplies game-level *accuracy*, not M/B counts) and NULL for lichess games lichess never analyzed.
+- `game_flaws` is an **independently derived** materialization (one row per mistake/blunder, both players, severity 1=mistake / 2=blunder), classified from move evals using lila-mirrored ES thresholds (see `app/services/flaws_service.py`). It is only populated for **lichess games that lichess analyzed**; chess.com games have **zero** `game_flaws` rows even though their evals are completed.
+- Because the two are independent classifiers (lichess win% vs our Option-B ES thresholds), small per-game disagreement is **expected, not a bug** — aggregate totals should agree within ~1%. The mate-ladder path is known to drift (see `MATE_LADDER_*` in `flaws_service.py`).
+
+Two things we want to know:
+1. **Do the counts match?** For lichess games with counts present, does `white_mistakes + black_mistakes` equal the `game_flaws` mistake count (severity 1), and likewise for blunders (severity 2)?
+2. **Are the count columns NULL when they should have a value?** I.e. a lichess game that has `game_flaws` rows (so it *was* analyzed) but whose count columns are all NULL — that is a genuine data gap.
+
+Both checks are **scoped to `platform = 'lichess'`**. chess.com is excluded by design (NULL counts + no flaw rows is the correct state there).
+
+### Query 9 — Flaw count integrity summary
+```sql
+WITH gf AS (
+  SELECT game_id,
+         count(*) FILTER (WHERE severity = 1) AS gf_mistakes,
+         count(*) FILTER (WHERE severity = 2) AS gf_blunders
+  FROM game_flaws GROUP BY game_id
+)
+SELECT
+  count(*) FILTER (WHERE gf.game_id IS NOT NULL) AS lichess_games_with_flaws,
+  count(*) FILTER (WHERE gf.game_id IS NOT NULL
+                     AND g.white_mistakes IS NULL AND g.black_mistakes IS NULL
+                     AND g.white_blunders IS NULL AND g.black_blunders IS NULL) AS flaws_but_all_counts_null,
+  count(*) FILTER (WHERE (g.white_mistakes IS NOT NULL OR g.white_blunders IS NOT NULL)
+                     AND coalesce(g.white_mistakes,0)+coalesce(g.black_mistakes,0) = coalesce(gf.gf_mistakes,0)
+                     AND coalesce(g.white_blunders,0)+coalesce(g.black_blunders,0) = coalesce(gf.gf_blunders,0)) AS exact_match,
+  count(*) FILTER (WHERE (g.white_mistakes IS NOT NULL OR g.white_blunders IS NOT NULL)
+                     AND coalesce(g.white_mistakes,0)+coalesce(g.black_mistakes,0) <> coalesce(gf.gf_mistakes,0)) AS mistake_mismatch,
+  count(*) FILTER (WHERE (g.white_mistakes IS NOT NULL OR g.white_blunders IS NOT NULL)
+                     AND coalesce(g.white_blunders,0)+coalesce(g.black_blunders,0) <> coalesce(gf.gf_blunders,0)) AS blunder_mismatch
+FROM games g
+LEFT JOIN gf ON gf.game_id = g.id
+WHERE g.platform = 'lichess';
+```
+
+### Query 10 — Mismatch direction & aggregate totals (diagnostic; run only if Query 9 shows mismatches)
+```sql
+WITH gf AS (
+  SELECT game_id,
+         count(*) FILTER (WHERE severity = 1) AS gf_mistakes,
+         count(*) FILTER (WHERE severity = 2) AS gf_blunders
+  FROM game_flaws GROUP BY game_id
+)
+SELECT
+  count(*) FILTER (WHERE coalesce(g.white_mistakes,0)+coalesce(g.black_mistakes,0) > coalesce(gf.gf_mistakes,0)) AS mistakes_gf_under,
+  count(*) FILTER (WHERE coalesce(g.white_mistakes,0)+coalesce(g.black_mistakes,0) < coalesce(gf.gf_mistakes,0)) AS mistakes_gf_over,
+  count(*) FILTER (WHERE coalesce(g.white_blunders,0)+coalesce(g.black_blunders,0) > coalesce(gf.gf_blunders,0)) AS blunders_gf_under,
+  count(*) FILTER (WHERE coalesce(g.white_blunders,0)+coalesce(g.black_blunders,0) < coalesce(gf.gf_blunders,0)) AS blunders_gf_over,
+  sum(coalesce(g.white_mistakes,0)+coalesce(g.black_mistakes,0)) AS total_lichess_mistakes,
+  sum(coalesce(gf.gf_mistakes,0)) AS total_gf_mistakes,
+  sum(coalesce(g.white_blunders,0)+coalesce(g.black_blunders,0)) AS total_lichess_blunders,
+  sum(coalesce(gf.gf_blunders,0)) AS total_gf_blunders
+FROM games g
+LEFT JOIN gf ON gf.game_id = g.id
+WHERE g.platform = 'lichess'
+  AND (g.white_mistakes IS NOT NULL OR g.white_blunders IS NOT NULL);
+```
+
+#### Check A output format
+
+1. **NULL-count gap** — report `flaws_but_all_counts_null`. This is the headline integrity number: it **should be 0**. Any non-zero value means lichess games have derived flaws but the source count columns were never populated — a real bug to investigate.
+2. **Count match rate** — `exact_match / lichess_games_with_flaws` as a percentage, plus the raw `mistake_mismatch` / `blunder_mismatch` counts. A match rate above ~97% is healthy given the two classifiers are independent.
+3. **Mismatch diagnosis** (only if mismatches exist) — from Query 10, report whether `game_flaws` over- or under-counts relative to lichess, and the aggregate totals (these should agree within ~1%). Frame per-game drift as expected classifier disagreement unless the **aggregate** totals diverge by more than a few percent or the NULL-count gap is non-zero.
+
+Verdict line (Check A): **PASS** if `flaws_but_all_counts_null = 0` and aggregate totals agree within ~1%; **INVESTIGATE** otherwise.
+
+> Reference (prod snapshot 2026-06-12): `flaws_but_all_counts_null = 0`, match rate 98.4% (38,355 / 38,964), aggregate totals within ~1% (mistakes 112,838 vs 111,939; blunders 177,472 vs 177,206). Verdict: PASS.
+
+---
+
+### Check B — Eval coverage vs oracle-column presence (Flaws Timeline gate)
+
+#### Background (read before interpreting results)
+
+- The **Flaws Timeline** chart (`fetch_flaw_trend_rows` → `_compute_flaw_trend`) is built **only** from the precomputed `games` oracle columns (`white/black_blunders/mistakes/inaccuracies`, picked by `user_color`) plus `ply_count`/`played_at`. It does **not** join `game_positions`. Its "analyzed" gate is **oracle-present** (the user's-color `*_blunders IS NOT NULL`).
+- A different, older notion of "analyzed" is **eval coverage**: ≥`EVAL_COVERAGE_MIN` (0.90, `flaws_service.py`) of a game's plies carry an `eval_cp`/`eval_mate` in `game_positions`. The two can diverge because they come from different sources: oracle columns are **lichess judgment annotations** (lichess-only); per-ply evals are **lichess %eval OR Stockfish backfill**.
+- **Gotcha:** `games.evals_completed_at` being non-NULL does **not** imply ≥90% full-ply coverage — it tracks **endgame-span entry-ply** evaluation only. chess.com games typically have sparse evals (entry plies) and so usually do **not** clear the 0.90 gate; the ≥90%-coverage set is effectively the fully-analyzed lichess games, which already have oracle columns. So this check is expected to find **few or zero** rows. Any chess.com games appearing in `ge90_but_oracle_null` would be the interesting case — fully eval-covered yet invisible to the Timeline.
+
+This check answers: **are there games with ≥90% eval coverage whose oracle columns are NULL** (i.e. analyzed-by-coverage but dropped from the Timeline)?
+
+#### Query 11 — Eval-coverage ≥90% vs oracle-null, by platform
+> Heavier query: aggregates all of `game_positions` (tens of millions of rows). Expect a few seconds. Run it last.
+```sql
+WITH cov AS (
+  SELECT game_id, user_id,
+         sum(CASE WHEN eval_cp IS NOT NULL OR eval_mate IS NOT NULL THEN 1 ELSE 0 END)::float
+           / count(*) AS coverage
+  FROM game_positions
+  GROUP BY game_id, user_id
+)
+SELECT
+  g.platform,
+  count(*) AS games_ge90_coverage,
+  count(*) FILTER (
+    WHERE (g.user_color = 'white'
+             AND (g.white_blunders IS NULL OR g.white_mistakes IS NULL OR g.white_inaccuracies IS NULL))
+       OR (g.user_color = 'black'
+             AND (g.black_blunders IS NULL OR g.black_mistakes IS NULL OR g.black_inaccuracies IS NULL))
+  ) AS ge90_but_oracle_null,
+  count(*) FILTER (
+    WHERE (g.user_color = 'white' AND g.white_blunders IS NOT NULL)
+       OR (g.user_color = 'black' AND g.black_blunders IS NOT NULL)
+  ) AS ge90_oracle_present
+FROM cov
+JOIN games g ON g.id = cov.game_id AND g.user_id = cov.user_id
+WHERE cov.coverage >= 0.90
+GROUP BY g.platform
+ORDER BY games_ge90_coverage DESC;
+```
+
+#### Check B output format
+
+Report `ge90_but_oracle_null` per platform (the headline number for this check), alongside `games_ge90_coverage`.
+
+- **0 rows / `ge90_but_oracle_null = 0`** — PASS. The Timeline's oracle-present gate loses no eval-covered games.
+- **Non-zero, lichess only** — usually benign edge cases (lichess game with %eval present but judgment annotations missing). Note the count; investigate only if large.
+- **Non-zero on chess.com** — INVESTIGATE. It means full-game Stockfish coverage landed (chess.com games clearing 0.90) while oracle columns stayed NULL, so those games are analyzed yet silently excluded from the Flaws Timeline. This is the signal to revisit the Timeline's gate (or to backfill chess.com oracle columns).
+
+Verdict line (Check B): **PASS** if `ge90_but_oracle_null = 0` (or only a small lichess remainder); **INVESTIGATE** if chess.com appears or the lichess count is material.
+
+---
+
 ## Report file layout
 
 Write to `reports/db-stats/db-report-{env}-YYYY-MM-DD.md` using today's UTC date, where `{env}` is `prod` or `local`. Separate files per environment so a local snapshot never clobbers a prod snapshot taken the same day. Layout:
@@ -174,7 +309,7 @@ Write to `reports/db-stats/db-report-{env}-YYYY-MM-DD.md` using today's UTC date
 
 - **DB**: prod / local
 - **Snapshot taken**: <ISO UTC timestamp>
-- **Sections run**: users / storage / performance
+- **Sections run**: users / storage / performance / sanity
 
 ## 0. Users Overview
 ...
@@ -183,6 +318,9 @@ Write to `reports/db-stats/db-report-{env}-YYYY-MM-DD.md` using today's UTC date
 ...
 
 ## 2. Performance Analysis
+...
+
+## 3. Sanity Checks
 ...
 
 ## Summary

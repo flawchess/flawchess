@@ -102,8 +102,18 @@ async def _seed_game(
 
 
 async def _seed_analyzed(session: AsyncSession, *, game: "Game") -> None:  # type: ignore[name-defined]
-    """Seed game_positions with evals so the game is considered analyzed (>=90% coverage)."""
+    """Mark the game analyzed: full per-ply eval coverage AND move-quality columns.
+
+    count_filtered_and_analyzed (the comparison gate) keys analyzed_n off the cheap
+    Game.is_analyzed detector (white_blunders IS NOT NULL); analyzed_game_ids /
+    aggregates use per-ply eval coverage. A real Lichess analyzed game satisfies
+    both, so seed both here.
+    """
     from app.models.game_position import GamePosition
+
+    # Cheap analyzed detector: move-quality counts present (0 = analyzed, no blunders).
+    if game.white_blunders is None:
+        game.white_blunders = 0
 
     ply_count = game.ply_count or 40
     # Seed positions for all plies so coverage = 100%

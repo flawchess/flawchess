@@ -35,7 +35,7 @@ const SEVERITY_CELLS: SeverityCellConfig[] = [
   {
     testId: 'stat-cell-inaccuracies',
     color: SEV_INACCURACY,
-    labelBase: 'Inaccuracies',
+    labelBase: 'Inacc.',
   },
 ];
 

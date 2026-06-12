@@ -13,6 +13,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import REAL
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -154,3 +155,23 @@ class Game(Base):
     positions: Mapped[list["GamePosition"]] = relationship(  # ty: ignore[unresolved-reference]
         back_populates="game", cascade="all, delete-orphan"
     )
+
+    @hybrid_property
+    def is_analyzed(self) -> bool:
+        """True when this game has full-game move-quality analysis.
+
+        Cheap detector: `white_blunders` is populated only when the import
+        pipeline ingested per-color move-quality counts — currently Lichess
+        games that already have computer analysis enabled (chess.com supplies
+        only game-level accuracy, and unanalyzed games supply neither). Used as
+        the analyzed/total denominator for the flaw-stats coverage badge, and as
+        the analyzed-game gate for the you-vs-opponent comparison. This is a
+        coarser signal than per-ply eval coverage but matches the product
+        reality ("analysis = Lichess move-quality columns present").
+        """
+        return self.white_blunders is not None
+
+    @is_analyzed.inplace.expression
+    @classmethod
+    def _is_analyzed_expression(cls) -> sa.ColumnElement[bool]:
+        return cls.white_blunders.isnot(None)
