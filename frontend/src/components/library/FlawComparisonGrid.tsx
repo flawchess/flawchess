@@ -99,6 +99,7 @@ function FlawBulletRow({ bullet }: FlawBulletRowProps) {
           ciLow={bullet.ci_low ?? undefined}
           ciHigh={bullet.ci_high ?? undefined}
           invertColors
+          barColor="neutral"
         />
       )}
     </div>
