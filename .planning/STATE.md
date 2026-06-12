@@ -6,7 +6,7 @@ status: planning
 last_updated: "2026-06-12T15:51:09.875Z"
 last_activity: 2026-06-12
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,16 +17,18 @@ progress:
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 0 of 3 (roadmap created, ready to plan Phase 116)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-12 — Milestone v1.26 started
+Status: Ready to plan
+Last activity: 2026-06-12 — Roadmap created: 3 phases (116–118), 16/16 requirements mapped
+
+Progress: [░░░░░░░░░░] 0%
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-06-12 after v1.25 milestone)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report.
-Current focus: No active milestone. v1.25 reworked the Library flaw-stats panel into a you-vs-opponent comparison — both-mover `game_flaws` materialization (query-time `is_opponent_expr` split, Phase 113), benchmark §5 flaw-delta delta-IQR zones with Cohen's-d collapse verdicts (Phase 114), an inserted `move_count`→exact `ply_count` swap (Phase 114.1, SEED-041 §9), and a unified per-100-moves paired-delta endpoint feeding a family-grouped 15-bullet `MiniBulletChart` grid (Phase 115). Deferred to v2: tactic-motif comparison families (SEED-039), analyzed-game coverage raising (SEED-012). Start the next milestone with `/gsd-new-milestone` (leading candidates: SEED-037 Train — spaced-repetition blunder drills over the `game_flaws` archive; the SEED-036 remainder LIBG-04/05; or SEED-039 tactic-motif flaw tags which extend the v1.25 comparison backbone).
+Current focus: v1.26 Full-Game Eval Pipeline — Phase 116 (All-Ply Engine Core) next. Extends the existing eval_drain.py + engine.py to analyze every non-book ply at 1M-node Lichess-parity budget, then adds a tiered priority queue (Phase 117), then demand UX + auto-enqueue (Phase 118). SEED-012 is the source; all decisions locked (D-1..D-8, 2026-06-12). Throughput measured: 5.83 positions/s on 6 SCHED_IDLE workers = 8.4k games/day
 
 ## Milestone Progress
 
