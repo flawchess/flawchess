@@ -191,6 +191,7 @@ Carried forward from v1.11 close (still relevant):
 
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
 - **Bitboard storage for partial-position queries** (database) — 12 BIGINT bitboard columns on game_positions
+- **Bookmark WDL stats ignore recency filter** (frontend) — Openings→Stats bookmark WDL bar/count/score frozen at full history (time-series D-19 path); needs date-filtered totals + warm-up rolling chart + "—"/"No matching games" empty state
 
 ### Blockers/Concerns
 
