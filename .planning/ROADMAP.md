@@ -41,6 +41,11 @@
     - [x] 116-02-PLAN.md — run_full_eval_drain coroutine: all-ply collector, ply≤20 dedup, preserve/overwrite write, completion marker, yield gate, lifespan wiring (EVAL-01, EVAL-03, EVAL-05, QUEUE-07)
     - [x] 116-03-PLAN.md — QUEUE-07 memory accounting: measure per-worker RSS at 1M nodes, document 4g budget, correct stale pool-size comments, gate pool→8 (QUEUE-07)
 - [ ] **Phase 117: Priority Queue + Flaw Integration** - Tiered priority queue replacing LIFO pick + round-robin fairness + tier-1 fan-out + idle drain + lease/report contract + PV capture + flaw flow-through + guest exclusion
+  - **Plans:** 3 plans — EXECUTED + verified (14/14 must-haves; status `human_needed` = 2 prod-soak items only). Not yet deployed/merged to main.
+  - Plans:
+    - [x] 117-01-PLAN.md — Migration + schema: best_move/pv columns, lichess_evals_at + full_pv_completed_at, eval_jobs queue/lease table, D-117-10 backfill (EVAL-04, EVAL-06, QUEUE-01, QUEUE-06)
+    - [x] 117-02-PLAN.md — Tiered SKIP-LOCKED queue service: round-robin + TC-weighted pick, lease/report, tier-3 derived, guest exclusion, superuser tier-1 trigger (QUEUE-01/02/03/05/06/08)
+    - [x] 117-03-PLAN.md — Drain integration: evaluate_nodes_with_pv, best_move threading + WR-02 repoint to lichess_evals_at, classify+oracle hook, queue-lease pick, tier-1 fan-out (EVAL-04, EVAL-06, QUEUE-03)
 - [ ] **Phase 118: Demand UX + Auto-Enqueue** - Automatic window enqueue on import/activity + explicit "analyze more" affordance + coverage indicators + in-flight status
 
 <details>
@@ -389,12 +394,16 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
   7. Guest accounts (`users.is_guest`) are excluded from every tier — no guest game is ever enqueued or drained; full-game analysis requires a real account (inactive-guest games are cleanup candidates, so analyzing them wastes compute)
 
 **Proposed amendment to Success Criterion #5** (2026-06-13, pending `/gsd-discuss-phase 117`): split PV persistence into two artifacts instead of one, so we get an "engine's best move per position" step-through display nearly for free.
+
   - **`best_move` (PV[0]) for *every* evaluated position** — enables showing the engine's preferred move when stepping through any game ply. It is a position property (keyed on the pre-move `full_hash`), so the existing opening-region dedup-transplant (`eval_drain._fetch_dedup_evals`, `ply ≤ DEDUP_MAX_PLY=20`, WR-02 gate) carries it for free alongside `eval_cp`; `ply > 20` stored per-row. Storage ≈ +80 MB (int2-encoded `from·64+to+promo`) to +240 MB (UCI text) on the 44.4M-row `game_positions` (~+1–4% of the 5.5 GB data; prod db-report 2026-06-12). **Zero extra engine compute** (PV falls out of the search that already produces `eval_cp`). Display-only → fetched by `game_id` (already indexed), no new index.
   - **Full PV string only for plies adjacent to a flaw** (the original #5 intent, for SEED-039 motif continuations). REJECT full-PV-for-all: ≈ 5 GB, roughly doubles `game_positions` data and bloats the import/replay bulk-fetch hot path (the heaviest query class per db-report).
   - Pipeline delta: capture `info["pv"][0]` from the existing search; thread `best_move` through `_fetch_dedup_evals` (return `(eval_cp, eval_mate, best_move)`) and the write path. Open sub-questions: int2 encoding vs UCI text; opening plies show book-region best moves too (no gap); top-1 only (MultiPV is a separate, more expensive search — out of scope).
 
-**Plans**: TBD
-**Open for phase planning**: (1) time-control prioritization within tiers (the SEED-012 amendment's "longer TC first" ordering is a starting point, not locked); (2) the Criterion #5 PV split above (best_move-for-all vs full-PV-near-flaws) — both to be settled during `/gsd-discuss-phase 117`
+**Plans**: 3 plans (3 waves)
+
+- [x] 117-01-PLAN.md — Migration + schema: 4 nullable columns (best_move, pv, lichess_evals_at, full_pv_completed_at), eval_jobs queue/lease table + indexes, D-117-10 backfill, ORM models (wave 1)
+- [x] 117-02-PLAN.md — Tiered priority queue service: SKIP-LOCKED claim (tier-1>2>3, round-robin, TC-weighted), lease/report contract, tier-3 derived pick, guest exclusion, tier-1 enqueue + superuser admin trigger (wave 2)
+- [x] 117-03-PLAN.md — Drain integration: evaluate_nodes_with_pv (best_move + flaw PV, zero extra compute), WR-02 repoint to lichess_evals_at, classify_game_flaws hook + oracle counts, completion markers, queue lease wiring, tier-1 fan-out (wave 3)
 
 ### Phase 118: Demand UX + Auto-Enqueue
 

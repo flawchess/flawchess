@@ -59,7 +59,8 @@ from app.repositories.game_flaws_repository import bulk_insert_game_flaws, flaw_
 from app.repositories.game_repository import users_with_zero_pending
 from app.services import engine as engine_service
 from app.services import percentile_compute_registry
-from app.services.flaws_service import classify_game_flaws
+from app.services.eval_queue_service import WORKER_ID_SERVER_POOL, claim_eval_job
+from app.services.flaws_service import classify_game_flaws, count_game_severities
 from app.services.user_benchmark_percentiles_service import compute_stage_b
 from app.services.zobrist import PlyData
 
@@ -108,6 +109,7 @@ class _FullPlyEvalTarget:
         the drain can skip engine calls for plies whose result would be
         discarded by the D-116-04 preservation gate anyway (WR-01), and so the
         write path's belt-and-braces preservation check needs no row re-scan.
+    best_move: Phase 117 EVAL-04 — populated from engine result or dedup transplant.
     """
 
     game_id: int
@@ -116,6 +118,7 @@ class _FullPlyEvalTarget:
     board: chess.Board
     eval_cp: int | None
     eval_mate: int | None
+    best_move: str | None = None
 
 
 def _collect_full_ply_targets(
@@ -169,42 +172,51 @@ def _collect_full_ply_targets(
 async def _fetch_dedup_evals(
     session: AsyncSession,
     full_hashes: Sequence[int],
-) -> dict[int, tuple[int | None, int | None]]:
-    """Batch-fetch parity evals for opening-region hashes (EVAL-03, D-116-02).
+) -> dict[int, tuple[int | None, int | None, str | None]]:
+    """Batch-fetch parity evals + best_move for opening-region hashes (EVAL-03, D-116-02).
 
     Marker gate: source games must have full_evals_completed_at IS NOT NULL
     (parity by construction). Do NOT use evals_completed_at here — that gate
     includes depth-15 source rows (Pitfall 4, RESEARCH.md).
 
-    Engine-source-only gate (WR-02): source games must NOT be is_analyzed
-    (white_blunders IS NULL). Lichess %eval values are post-move evals — a row
+    Engine-source-only gate (WR-02, D-117-07 repointed): source games must have
+    lichess_evals_at IS NULL. Lichess %eval values are post-move evals — a row
     at ply k stores the eval of the position AFTER its move (zobrist.py:182),
     while the row's full_hash is the position BEFORE the move. Engine-written
     rows (this drain) evaluate the pre-push position, so only those are
     position-keyed by construction and safe to transplant cross-game by
-    full_hash. Preserved lichess rows in drain-completed is_analyzed games
-    would attach "eval after the SOURCE game's move" to a target game that may
-    have played a different move from that position.
+    full_hash. Previously gated on white_blunders IS NULL (changed by D-117-07:
+    after oracle counts are filled for engine games, white_blunders IS NOT NULL
+    for engine games too — using it would wrongly exclude engine-written sources).
 
-    Returns {full_hash: (eval_cp, eval_mate)} for hashes with at least one hit.
+    Also returns best_move (D-117-01): transplant alongside eval_cp so
+    dedup'd opening-region plies carry the engine's best-move suggestion.
+
+    Returns {full_hash: (eval_cp, eval_mate, best_move)} for hashes with at
+    least one hit.
     """
     if not full_hashes:
         return {}
     result = await session.execute(
-        select(GamePosition.full_hash, GamePosition.eval_cp, GamePosition.eval_mate)
+        select(
+            GamePosition.full_hash,
+            GamePosition.eval_cp,
+            GamePosition.eval_mate,
+            GamePosition.best_move,
+        )
         .join(Game, GamePosition.game_id == Game.id)
         .where(
             GamePosition.full_hash.in_(full_hashes),
             GamePosition.ply <= _DEDUP_MAX_PLY,
             Game.full_evals_completed_at.isnot(None),
-            # WR-02: engine-written sources only — see docstring.
-            Game.white_blunders.is_(None),
+            # WR-02 repointed (D-117-07): lichess_evals_at IS NULL = engine-written source.
+            Game.lichess_evals_at.is_(None),
             sa.or_(GamePosition.eval_cp.isnot(None), GamePosition.eval_mate.isnot(None)),
         )
         .distinct(GamePosition.full_hash)
         .limit(len(full_hashes))
     )
-    return {row[0]: (row[1], row[2]) for row in result.all()}
+    return {row[0]: (row[1], row[2], row[3]) for row in result.all()}
 
 
 async def _any_active_import_or_entry_ply_pending(session: AsyncSession) -> bool:
@@ -230,36 +242,41 @@ async def _any_active_import_or_entry_ply_pending(session: AsyncSession) -> bool
 
 def _resolve_full_eval(
     target: _FullPlyEvalTarget,
-    dedup_map: dict[int, tuple[int | None, int | None]],
-    engine_result_map: dict[int, tuple[int | None, int | None]],
-) -> tuple[int | None, int | None]:
-    """Resolve the eval to write for one ply (pure; WR-04).
+    dedup_map: dict[int, tuple[int | None, int | None, str | None]],
+    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
+) -> tuple[int | None, int | None, str | None, str | None]:
+    """Resolve the eval + best_move + pv_string to write for one ply (pure; WR-04).
 
     Priority: dedup hit (EVAL-03, opening region only) > engine result >
-    (None, None) hole (D-116-07).
+    (None, None, None, None) hole (D-116-07).
+
+    Dedup transplants (eval_cp, eval_mate, best_move) from the source row.
+    pv_string is always None for dedup'd positions (the per-flaw PV is only
+    written at flaw-adjacent plies N+1, not here — D-117-02).
     """
     if target.ply <= _DEDUP_MAX_PLY and target.full_hash in dedup_map:
-        return dedup_map[target.full_hash]
-    return engine_result_map.get(target.ply, (None, None))
+        eval_cp, eval_mate, best_move = dedup_map[target.full_hash]
+        return eval_cp, eval_mate, best_move, None
+    return engine_result_map.get(target.ply, (None, None, None, None))
 
 
 async def _apply_full_eval_results(
     session: AsyncSession,
     targets: Sequence[_FullPlyEvalTarget],
-    dedup_map: dict[int, tuple[int | None, int | None]],
-    engine_result_map: dict[int, tuple[int | None, int | None]],
+    dedup_map: dict[int, tuple[int | None, int | None, str | None]],
+    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
     is_analyzed: bool,
 ) -> int:
-    """Write resolved full-ply evals to GamePosition rows (WR-04 extraction).
+    """Write resolved full-ply evals + best_move to GamePosition rows (WR-04 extraction).
 
     Mirrors _apply_eval_results for the entry-ply drain: UPDATEs run
     sequentially against the caller-owned session (CLAUDE.md hard rule:
     AsyncSession is not safe under asyncio.gather); the caller commits.
 
-    D-116-04 is_analyzed gate:
+    D-116-04 is_analyzed gate (repointed to lichess_evals_at by D-117-07):
     - is_analyzed=True: lichess %evals present; preserve existing non-NULL
-      rows (T-78-17). Belt-and-braces — covered plies are already filtered
-      out before the gather (WR-01).
+      eval_cp/eval_mate rows (T-78-17). best_move is always written since it is
+      a new column — lichess games never had best_move set.
     - is_analyzed=False: legacy depth-15 evals; overwrite all (D-116-03).
 
     Returns the number of failed (NULL-hole) plies. Sentry reporting is the
@@ -269,7 +286,12 @@ async def _apply_full_eval_results(
     """
     failed_ply_count = 0
     for target in targets:
-        eval_cp, eval_mate = _resolve_full_eval(target, dedup_map, engine_result_map)
+        eval_cp, eval_mate, best_move, _pv_string = _resolve_full_eval(
+            target, dedup_map, engine_result_map
+        )
+        # _pv_string intentionally discarded here: pv is written ONLY at flaw-adjacent
+        # plies (ply = flaw_ply + 1) in _classify_and_fill_oracle below (D-117-02).
+        # Do NOT add a general pv write here — that would overwrite flaw-PV selectivity.
 
         if eval_cp is None and eval_mate is None:
             # D-116-07: engine failure — leave NULL hole; counted for the
@@ -277,16 +299,27 @@ async def _apply_full_eval_results(
             failed_ply_count += 1
             continue
 
-        # D-116-04 preservation (see docstring). The target carries the row's
-        # original eval values, so no gp_rows re-scan.
+        # D-116-04 preservation (repointed by D-117-07: is_analyzed = lichess_evals_at IS NOT NULL).
+        # Preserve lichess %evals for is_analyzed games (T-78-17). Belt-and-braces — covered
+        # plies are already filtered out before the gather (WR-01). best_move is always written
+        # (new column, not part of the lichess eval set).
         if is_analyzed and (target.eval_cp is not None or target.eval_mate is not None):
+            # Preserve lichess evals; only write best_move if we have it.
+            if best_move is not None:
+                stmt = update(GamePosition).where(
+                    GamePosition.game_id == target.game_id,
+                    GamePosition.ply == target.ply,
+                )
+                await session.execute(stmt.values(best_move=best_move))
             continue
 
         stmt = update(GamePosition).where(
             GamePosition.game_id == target.game_id,
             GamePosition.ply == target.ply,
         )
-        await session.execute(stmt.values(eval_cp=eval_cp, eval_mate=eval_mate))
+        await session.execute(
+            stmt.values(eval_cp=eval_cp, eval_mate=eval_mate, best_move=best_move)
+        )
     return failed_ply_count
 
 
@@ -304,6 +337,186 @@ async def _mark_full_evals_completed(session: AsyncSession, game_id: int) -> Non
         .values(full_evals_completed_at=now_ts)
     )
     await session.execute(stmt)
+
+
+async def _mark_full_pv_completed(session: AsyncSession, game_id: int) -> None:
+    """Mark one game's best_move/PV as written (D-117-12 second completion dimension).
+
+    Mirrors _mark_full_evals_completed. Set after best_move is written for all
+    plies and flaw PVs are written at flaw-adjacent positions.
+    """
+    now_ts = datetime.now(timezone.utc)
+    games_table = Game.__table__
+    stmt = (
+        update(games_table)  # ty: ignore[invalid-argument-type]
+        .where(games_table.c.id == game_id)
+        .values(full_pv_completed_at=now_ts)
+    )
+    await session.execute(stmt)
+
+
+async def _classify_and_fill_oracle(
+    session: AsyncSession,
+    game_id: int,
+    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
+) -> None:
+    """Classify game_flaws and fill oracle count columns for one engine-analyzed game (EVAL-06).
+
+    Runs inside the Step 4 write session (same transaction as _apply_full_eval_results)
+    so flaw rows, oracle counts, and flaw PVs commit atomically with the evals (T-117-11).
+
+    Steps:
+    1. Load game + ordered positions from the write session.
+    2. classify_game_flaws — emits FlawRecord for M+B across both players.
+    3. bulk_insert_game_flaws (ON CONFLICT DO NOTHING, idempotent).
+    4. count_game_severities × 2 (white then black) to get inaccuracy counts.
+    5. UPDATE games oracle columns (white/black inaccuracies/mistakes/blunders).
+    6. For each FlawRecord at ply N, write game_positions.pv at ply N+1 (D-117-02,
+       Pitfall 4 off-by-one: pv belongs to the position AFTER the flaw was played).
+
+    Errors in bulk_insert_game_flaws and the oracle-count UPDATE are intentionally
+    NOT caught here — they must propagate to the caller so the write-session
+    transaction is aborted and the completion markers (_mark_full_evals_completed /
+    _mark_full_pv_completed) are NOT committed.  Only the per-flaw PV writes are
+    individually fault-tolerant (a single bad PV row must not abort the whole game).
+
+    T-108-04 still applies at the drain-tick level: _full_drain_tick wraps the entire
+    write phase in its own exception boundary so one bad game never aborts the drain.
+    """
+    game_result = await session.execute(select(Game).where(Game.id == game_id))
+    game = game_result.scalar_one_or_none()
+    if game is None:
+        return
+
+    positions_result = await session.execute(
+        select(GamePosition)
+        .where(
+            GamePosition.game_id == game.id,
+            GamePosition.user_id == game.user_id,
+        )
+        .order_by(GamePosition.ply)
+    )
+    positions = list(positions_result.scalars().all())
+
+    flaw_result = classify_game_flaws(game, positions)
+    if "reason" in flaw_result:
+        # GameNotAnalyzed: insufficient eval coverage — skip.
+        return
+
+    flaw_list = flaw_result  # list[FlawRecord]
+
+    # Insert M+B flaw rows (ON CONFLICT DO NOTHING — idempotent).
+    # Bug fix (WR-01): DB errors here MUST propagate — a failure at this point
+    # means no flaw rows were inserted; catching it would let the caller commit
+    # the completion markers and permanently mark the game done with no flaws.
+    rows = [
+        flaw_record_to_row(user_id=game.user_id, game_id=game.id, flaw=flaw) for flaw in flaw_list
+    ]
+    await bulk_insert_game_flaws(session, rows)
+
+    # Oracle count columns: count_game_severities reads only game.user_color.
+    # Call twice with a swapped-color view (no DB I/O in count_game_severities —
+    # it's pure Python over already-loaded positions).
+    counts_white = count_game_severities(
+        _GameColorView(game, "white"),  # ty: ignore[invalid-argument-type]  # reads only user_color
+        positions,
+    )
+    counts_black = count_game_severities(
+        _GameColorView(game, "black"),  # ty: ignore[invalid-argument-type]  # reads only user_color
+        positions,
+    )
+
+    # Use "reason" key as the TypedDict discriminator (isinstance on TypedDict raises TypeError).
+    if "reason" in counts_white or "reason" in counts_black:
+        # Shouldn't happen (same coverage gate as classify_game_flaws), but be defensive.
+        return
+
+    games_table = Game.__table__
+    # Bug fix (WR-01): DB errors here MUST propagate — if the oracle-count UPDATE
+    # fails the game must be retried, not silently marked complete with NULL counts.
+    await session.execute(
+        update(games_table)  # ty: ignore[invalid-argument-type]
+        .where(games_table.c.id == game_id)
+        .values(
+            white_inaccuracies=counts_white["inaccuracy"],
+            white_mistakes=counts_white["mistake"],
+            white_blunders=counts_white["blunder"],
+            black_inaccuracies=counts_black["inaccuracy"],
+            black_mistakes=counts_black["mistake"],
+            black_blunders=counts_black["blunder"],
+        )
+    )
+
+    # Flaw PV write: for each FlawRecord at ply N, write pv at ply N+1.
+    # The pv_string for ply N+1 comes from the engine_result_map entry at ply N+1
+    # (the board AFTER the flawed move — D-117-02 / Pitfall 4).
+    # PV writes are individually fault-tolerant: a single bad pv row (e.g. oversized
+    # string) must NOT abort flaw rows + oracle counts already written above.
+    for flaw in flaw_list:
+        flaw_ply: int = flaw["ply"]
+        pv_ply = flaw_ply + 1
+        engine_entry = engine_result_map.get(pv_ply)
+        if engine_entry is None:
+            continue
+        _cp, _mt, _bm, pv_string = engine_entry
+        if pv_string is None:
+            continue
+        try:
+            await session.execute(
+                update(GamePosition)
+                .where(
+                    GamePosition.game_id == game_id,
+                    GamePosition.ply == pv_ply,
+                )
+                .values(pv=pv_string)
+            )
+        except Exception as exc:
+            # T-108-04 / WR-01: a single bad PV row must not abort the whole game.
+            # Flaw rows and oracle counts are already written above (not rolled back
+            # here — this try/except is inside the write_session transaction; the
+            # session is invalidated on asyncpg-level errors, which will propagate
+            # through the outer commit). Capture for visibility.
+            sentry_sdk.set_context(
+                "classify_oracle",
+                {"game_id": game_id, "pv_ply": pv_ply},
+            )
+            sentry_sdk.set_tag("source", "full_eval_drain")
+            sentry_sdk.capture_exception(exc)
+
+
+# Minimal duck-typed view so count_game_severities can be called with a
+# synthetic user_color without mutating the ORM Game object.
+class _GameColorView:
+    """Provides the user_color attribute for count_game_severities (D-117-08).
+
+    count_game_severities reads only game.user_color; this thin wrapper avoids
+    mutating the ORM object and avoids deepcopy overhead. Named with a leading
+    underscore — internal to eval_drain, not exported.
+    """
+
+    def __init__(self, game: Game, user_color: str) -> None:
+        self._game = game
+        self.user_color = user_color
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._game, name)
+
+
+# Module-level set for per-user flaw completion signals (D-117-11).
+# Phase 118 wires real cache invalidation against this set. For Phase 117,
+# it is a lightweight append-only set that future cache middleware can poll.
+_recently_flaw_completed_users: set[int] = set()
+
+
+def _signal_flaw_completion(user_id: int) -> None:
+    """Mark a user as having newly-completed flaw analysis (D-117-11 hook).
+
+    Phase 117: no-op beyond a set insert. Phase 118 will wire cache
+    invalidation here (debounced per-user asyncio.Task pattern).
+    The set is intentionally not bounded — at 8.4k games/day and ~few hundred
+    users, it stays small in practice.
+    """
+    _recently_flaw_completed_users.add(user_id)
 
 
 # ---------------------------------------------------------------------------
@@ -889,22 +1102,22 @@ async def run_eval_drain() -> None:
 
 
 async def _full_drain_tick() -> bool:
-    """Run ONE full-drain tick: yield gate, pick, collect, dedup, gather, write.
+    """Run ONE full-drain tick: yield gate, queue claim, collect, dedup, gather, write.
 
     Returns True when a game was processed and marked complete; False when the
     tick did nothing (yield gate active, or no pending non-guest game) or the
     all-fail circuit breaker tripped (WR-05 — game stays pending for retry).
 
     Extracted from run_full_eval_drain (WR-07) so tests can drive exactly one
-    tick deterministically — no wall-clock sleeps, no loop cancellation, no
-    dependence on other tests' committed rows beyond the single LIFO pick.
+    tick deterministically — no wall-clock sleeps, no loop cancellation.
 
     Session discipline (CLAUDE.md hard rule: AsyncSession not safe for concurrent use):
       Step 0: yield gate — short read tx, close.
-      Step 1: pick ONE game (LIFO id-DESC) — short read tx, close.
+      Step 1: claim_eval_job — tier-1 > tier-2 > tier-3 derived (queue service owns sessions).
       Step 2: load PGN + game_positions rows — short read tx, close.
-      Step 3: asyncio.gather(evaluate_nodes) with NO session open.
-      Step 4: write session (open LATE): ~60 UPDATEs + full marker + commit, close.
+      Step 3: asyncio.gather(evaluate_nodes_with_pv) with NO session open.
+      Step 4: write session (open LATE): UPDATEs + classify + oracle + markers + commit, close.
+      Step 5: _signal_flaw_completion — lightweight hook (no session, Phase 117 stub).
     """
     # Step 0: yield gate (D-116-11).
     # Short read session to check active import or entry-ply backlog.
@@ -913,40 +1126,31 @@ async def _full_drain_tick() -> bool:
     if should_yield:
         return False
 
-    # Step 1: pick ONE game (LIFO id-DESC, D-116-09/D-116-10).
-    # Guest filter (D-116-10): join to users, exclude is_guest.
-    # Short read session, then close.
-    from app.models.user import User
-
-    async with async_session_maker() as pick_session:
-        pick_result = await pick_session.execute(
-            select(
-                Game.id,
-                Game.pgn,
-                Game.white_blunders.isnot(None).label("is_analyzed"),
-                Game.user_id,
-            )
-            .join(User, Game.user_id == User.id)
-            .where(
-                Game.full_evals_completed_at.is_(None),
-                User.is_guest == False,  # noqa: E712 — SQLAlchemy requires == not is
-            )
-            .order_by(Game.id.desc())
-            .limit(1)
-        )
-        row = pick_result.one_or_none()
-
-    if row is None:
+    # Step 1: claim ONE game via the tiered priority queue (Phase 117 QUEUE-01/02/05).
+    # Replaces the LIFO id-DESC interim pick (D-116-09). claim_eval_job owns its
+    # sessions internally and commits before returning — the SKIP LOCKED lease is
+    # released on that commit (Pitfall 1 in RESEARCH §Common Pitfalls).
+    claimed = await claim_eval_job(worker_id=WORKER_ID_SERVER_POOL)
+    if claimed is None:
         return False
 
-    game_id: int = row[0]
-    pgn_text: str = row[1]
-    is_analyzed: bool = row[2]
+    game_id: int = claimed.game_id
+    user_id: int = claimed.user_id
+    tier: int = claimed.tier
+    is_analyzed: bool = claimed.is_analyzed
+    job_id: int | None = claimed.job_id
 
-    # Step 2: load game_positions rows for this game.
+    # Step 2: load PGN + game_positions rows for this game.
     # Build targets via _collect_full_ply_targets; partition dedup candidates.
     # Short read session, then close.
     async with async_session_maker() as load_session:
+        pgn_result = await load_session.execute(select(Game.pgn).where(Game.id == game_id))
+        pgn_text_scalar = pgn_result.scalar_one_or_none()
+        if pgn_text_scalar is None:
+            # Game deleted between claim and load — nothing to do.
+            return False
+        pgn_text: str = pgn_text_scalar
+
         pos_result = await load_session.execute(
             select(
                 GamePosition.ply,
@@ -960,11 +1164,9 @@ async def _full_drain_tick() -> bool:
         # Collect one target per non-terminal ply (EVAL-01).
         targets = _collect_full_ply_targets(game_id, pgn_text, gp_rows)
 
-        # WR-01: for is_analyzed games, plies whose row already carries
-        # a non-NULL lichess %eval are preserved at write time anyway
-        # (D-116-04 / T-78-17) — evaluating them is pure waste (a fully
-        # analyzed game would burn ~60+ 1M-node calls whose results are
-        # all discarded). Filter them out BEFORE dedup + gather.
+        # WR-01: for is_analyzed (lichess %eval) games, plies whose row already
+        # carries a non-NULL eval are preserved at write time (D-116-04 / T-78-17).
+        # Filtering here avoids burning 1M-node calls whose results are discarded.
         if is_analyzed:
             targets = [t for t in targets if t.eval_cp is None and t.eval_mate is None]
 
@@ -976,13 +1178,18 @@ async def _full_drain_tick() -> bool:
     # Step 3: asyncio.gather — NO session open.
     # CLAUDE.md hard rule: gather must never run inside an AsyncSession scope.
     # Targets with a dedup hit skip the engine call (EVAL-03).
+    # Phase 117 EVAL-04: use evaluate_nodes_with_pv to capture best_move + PV string.
+    # Tier-1 (QUEUE-03): fan ALL of one game's plies across the pool simultaneously.
+    # Tiers 2/3: same gather — the distinction is how the game was claimed, not how it's analyzed.
     engine_targets = [t for t in targets if t.ply > _DEDUP_MAX_PLY or t.full_hash not in dedup_map]
     if engine_targets:
-        engine_results: Sequence[tuple[int | None, int | None]] = await asyncio.gather(
-            *(engine_service.evaluate_nodes(t.board) for t in engine_targets)
+        engine_results_raw: Sequence[
+            tuple[int | None, int | None, str | None, str | None]
+        ] = await asyncio.gather(
+            *(engine_service.evaluate_nodes_with_pv(t.board) for t in engine_targets)
         )
     else:
-        engine_results = []
+        engine_results_raw = []
 
     # WR-05 circuit breaker: when EVERY engine call for the game failed, the
     # cause is overwhelmingly an engine-pool problem (e.g. all workers
@@ -991,7 +1198,7 @@ async def _full_drain_tick() -> bool:
     # silent loss of full-eval coverage across the whole backlog at maximum
     # loop speed. Leave the game pending (re-picked next tick) and report ONE
     # Sentry event. Per-position holes remain mark-and-continue per D-116-07.
-    if engine_targets and all(cp is None and mt is None for cp, mt in engine_results):
+    if engine_targets and all(cp is None and mt is None for cp, mt, _bm, _pv in engine_results_raw):
         sentry_sdk.set_context(
             "eval", {"game_id": game_id, "failed_ply_count": len(engine_targets)}
         )
@@ -1001,14 +1208,14 @@ async def _full_drain_tick() -> bool:
         )
         return False
 
-    # Build a ply -> (eval_cp, eval_mate) resolution map.
-    # Dedup hits take priority; then engine results; unresolved = (None, None).
-    engine_result_map: dict[int, tuple[int | None, int | None]] = {}
-    for t, res in zip(engine_targets, engine_results, strict=True):
+    # Build a ply -> (eval_cp, eval_mate, best_move, pv_string) map from engine results.
+    # Dedup hits take priority at write time via _resolve_full_eval.
+    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]] = {}
+    for t, res in zip(engine_targets, engine_results_raw, strict=True):
         engine_result_map[t.ply] = res
 
     # Step 4: write session — open LATE, after gather completes.
-    # Per-ply resolution + UPDATEs live in _apply_full_eval_results (WR-04).
+    # All UPDATEs, classify hook, oracle counts, markers, and job report in one transaction.
     async with async_session_maker() as write_session:
         failed_ply_count = await _apply_full_eval_results(
             write_session, targets, dedup_map, engine_result_map, is_analyzed
@@ -1020,10 +1227,41 @@ async def _full_drain_tick() -> bool:
             )
             sentry_sdk.set_tag("source", "full_eval_drain")
             sentry_sdk.capture_message("full-drain engine returned None tuple", level="warning")
-        # D-116-07: mark complete even with partial NULL holes (the all-fail
+
+        # EVAL-06 / D-117-08: classify game_flaws + fill oracle columns + write flaw PVs.
+        # Runs AFTER _apply_full_eval_results so eval_cp is visible for classification.
+        # Runs BEFORE the completion markers so evals + flaws commit atomically (T-117-11).
+        await _classify_and_fill_oracle(write_session, game_id, engine_result_map)
+
+        # D-116-07: mark eval-complete even with partial NULL holes (the all-fail
         # case is intercepted by the circuit breaker above).
         await _mark_full_evals_completed(write_session, game_id)
+
+        # D-117-12: mark best_move/PV-complete in the same transaction.
+        await _mark_full_pv_completed(write_session, game_id)
+
+        # QUEUE-06: report the leased job as complete (tier-3 has no job row — job_id is None).
+        if job_id is not None:
+            from app.models.eval_jobs import EvalJob
+
+            jobs_table = EvalJob.__table__
+            now_ts = datetime.now(timezone.utc)
+            await write_session.execute(
+                update(jobs_table)  # ty: ignore[invalid-argument-type]
+                .where(
+                    jobs_table.c.id == job_id,
+                    jobs_table.c.status == "leased",
+                )
+                .values(status="completed", completed_at=now_ts)
+            )
+
         await write_session.commit()
+
+    # Step 5: per-user cache-completion signal (D-117-11 — no-op stub in Phase 117).
+    # Runs AFTER commit so the signal never fires for a partially-committed game.
+    _signal_flaw_completion(user_id)
+    _ = tier  # tier is available for Phase 118 tier-aware cache logic
+
     return True
 
 

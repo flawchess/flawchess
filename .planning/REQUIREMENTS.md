@@ -11,20 +11,20 @@ numbers referenced below are measured on prod, not estimated.
 - [x] **EVAL-01**: Every ply of a queued game gets `eval_cp`/`eval_mate` persisted in `game_positions` (terminal game-over positions excluded). No book-skip: the ply≤20 dedup (EVAL-03) makes the heavily-shared opening region cheap, eval charts get no opening gap, and the collector needs no openings-table dependency. Cost ceiling if dedup never hits: ~+26% vs the book-skip plan (~6.3k games/day floor)
 - [x] **EVAL-02**: Full-game analysis searches at the Lichess-parity budget — 1,000,000 nodes, NNUE, multiPV=1, Hash=32MB, Threads=1 per worker (the existing depth-15 entry-ply convention is replaced for games analyzed by this pipeline)
 - [x] **EVAL-03**: Before each engine call on plies ≤ 20, an indexed `full_hash` lookup reuses any existing server eval instead of recomputing
-- [ ] **EVAL-04**: The engine PV is persisted for flaw-adjacent plies and discarded elsewhere. Specifically: the PV of the position *after* each flawed move is the refutation line SEED-039's tactic-motif classifier consumes — storing it now means the future tagger needs no second engine pass
+- [x] **EVAL-04**: `best_move` (PV[0], UCI) is persisted for *every* evaluated position (enables an engine-best-move step-through display and "better move you missed"); the *full* engine PV (UCI, ~12-ply cap) is persisted only at the position *after* each flawed move — the refutation line SEED-039's tactic-motif classifier consumes, so the future tagger needs no second engine pass. Opening-region `best_move` rides the ply≤20 `full_hash` dedup transplant. Pre-117-analyzed games (engine + lichess) are backfilled demand-driven on re-touch, not mass re-enqueued. (Amended 2026-06-13 — D-117-01/02/12)
 - [x] **EVAL-05**: Each game carries a full-analysis completion marker distinct from the existing entry-ply `evals_completed_at` semantics, so coverage stats and gates can tell the two apart
-- [ ] **EVAL-06**: When the background drain finishes a game's full analysis, the game flows through `classify_game_flaws` automatically — `game_flaws` rows and summary counts appear without user action. Import itself stays fast: the hot import lane and its quick entry-ply eval pass are untouched; full evals and flaws arrive progressively after import
+- [x] **EVAL-06**: When the background drain finishes a game's full analysis, the game flows through `classify_game_flaws` automatically — `game_flaws` rows and summary counts appear without user action. Import itself stays fast: the hot import lane and its quick entry-ply eval pass are untouched; full evals and flaws arrive progressively after import
 
 ### Priority Queue (QUEUE)
 
-- [ ] **QUEUE-01**: Analysis work drains from a tiered priority queue: explicit user requests > automatic recent windows > idle backlog
-- [ ] **QUEUE-02**: Within a tier, users are served round-robin (one game each, cycle); within a user, most-recent game first
-- [ ] **QUEUE-03**: A tier-1 explicit request fans one game's positions across the entire worker pool (~10s wall-clock per game, measured)
+- [x] **QUEUE-01**: Analysis work drains from a tiered priority queue: explicit user requests > automatic recent windows > idle backlog
+- [x] **QUEUE-02**: Within a tier, users are served round-robin (one game each, cycle); within a user, games are ordered time-control-weighted (classical > rapid > blitz > bullet) then most-recent-first (amended 2026-06-13 — D-117-04)
+- [x] **QUEUE-03**: A tier-1 explicit request fans one game's positions across the entire worker pool (~10s wall-clock per game, measured)
 - [ ] **QUEUE-04**: Import completion and user activity automatically enqueue the user's ~200 most recent unanalyzed games (tier 2)
-- [ ] **QUEUE-05**: Idle workers drain the backlog (tier 3) so cores never sit idle; full-DB coverage accrues over time
-- [ ] **QUEUE-06**: Workers interact with the queue through a lease/report contract (claim job → post evals), so a future browser/external worker is an additive change (SEED-012 D-8)
+- [x] **QUEUE-05**: Idle workers drain the backlog (tier 3) so cores never sit idle; full-DB coverage accrues over time
+- [x] **QUEUE-06**: Workers interact with the queue through a lease/report contract (claim job → post evals), so a future browser/external worker is an additive change (SEED-012 D-8)
 - [x] **QUEUE-07**: Worker pool memory is explicitly bounded and accounted against the backend container's 4g limit before `STOCKFISH_POOL_SIZE` is raised; the drain coexists with the import-time eval pass without competing during active imports
-- [ ] **QUEUE-08**: Guest accounts (`users.is_guest`) are excluded from all analysis tiers (automatic, explicit, backlog) — full-game analysis requires a real account; guest-facing UX presents account promotion as the unlock. Rationale: inactive-guest games are cleanup candidates, so analyzing them is wasted compute
+- [x] **QUEUE-08**: Guest accounts (`users.is_guest`) are excluded from all analysis tiers (automatic, explicit, backlog) — full-game analysis requires a real account; guest-facing UX presents account promotion as the unlock. Rationale: inactive-guest games are cleanup candidates, so analyzing them is wasted compute
 
 ### Demand UX (EVUX)
 
@@ -53,17 +53,17 @@ numbers referenced below are measured on prod, not estimated.
 | EVAL-01 | Phase 116 | Complete |
 | EVAL-02 | Phase 116 | Complete |
 | EVAL-03 | Phase 116 | Complete |
-| EVAL-04 | Phase 117 | Pending |
+| EVAL-04 | Phase 117 | Complete |
 | EVAL-05 | Phase 116 | Complete |
-| EVAL-06 | Phase 117 | Pending |
-| QUEUE-01 | Phase 117 | Pending |
-| QUEUE-02 | Phase 117 | Pending |
-| QUEUE-03 | Phase 117 | Pending |
+| EVAL-06 | Phase 117 | Complete |
+| QUEUE-01 | Phase 117 | Complete |
+| QUEUE-02 | Phase 117 | Complete |
+| QUEUE-03 | Phase 117 | Complete |
 | QUEUE-04 | Phase 118 | Pending |
-| QUEUE-05 | Phase 117 | Pending |
-| QUEUE-06 | Phase 117 | Pending |
+| QUEUE-05 | Phase 117 | Complete |
+| QUEUE-06 | Phase 117 | Complete |
 | QUEUE-07 | Phase 116 | Complete |
-| QUEUE-08 | Phase 117 | Pending |
+| QUEUE-08 | Phase 117 | Complete |
 | EVUX-01 | Phase 118 | Pending |
 | EVUX-02 | Phase 118 | Pending |
 | EVUX-03 | Phase 118 | Pending |

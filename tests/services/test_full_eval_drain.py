@@ -1,13 +1,20 @@
-"""Integration tests for run_full_eval_drain (Phase 116 EVAL-01/03/05/QUEUE-07).
+"""Integration tests for run_full_eval_drain (Phase 116 EVAL-01/03/05/QUEUE-07,
+Phase 117 EVAL-04/EVAL-06/D-117-07/QUEUE-03).
 
 Tests cover:
 - EVAL-01: all non-terminal plies collected; terminal position excluded
 - EVAL-01: PGN parse failure returns empty list
 - EVAL-03: dedup returns hit for known parity hash (full_evals_completed_at gated)
 - EVAL-03: dedup ignores depth-15 source (no full_evals_completed_at marker)
+- EVAL-04: best_move populated on every evaluated non-dedup'd ply after drain tick
+- EVAL-04: dedup_best_move transplanted via dedup for opening-region plies (D-117-01)
+- EVAL-04: flaw_pv written ONLY at ply N+1 for FlawRecord at ply N (D-117-02)
 - EVAL-05: full_evals_completed_at set after drain tick
 - EVAL-05: marker set even when engine returns (None, None) holes
-- QUEUE-07: asyncio.gather is NOT inside an async-with session scope (AST scan)
+- EVAL-06: classify_hook — game_flaws rows exist after full eval completes
+- EVAL-06: oracle_counts — white/black oracle columns filled and match game_flaws
+- D-117-07: wr02_repointed — lichess_evals_at gates dedup source, not white_blunders
+- QUEUE-03: gather_outside_session — asyncio.gather NOT inside an AsyncSession scope (AST scan)
 - QUEUE-07: yield gate is True when an active ImportJob exists
 - QUEUE-07: yield gate is True when a game has evals_completed_at IS NULL
 
@@ -29,12 +36,14 @@ from unittest.mock import AsyncMock
 import chess
 import pytest
 import pytest_asyncio
+import sqlalchemy as sa
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 # ─── Module-level test constants ──────────────────────────────────────────────
 
 _TEST_USER_ID: int = 99200  # unique to this module to avoid FK conflicts
+_TEST_USER_ID_117: int = 99201  # separate range for Phase 117 tests to avoid FK conflicts
 # A short PGN ending in checkmate (Scholar's mate in 4 moves = 8 half-moves).
 # The final position IS checkmate; the iterator should never visit it.
 _CHECKMATE_PGN: str = "1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6?? 4. Qxf7# 1-0"
@@ -42,6 +51,10 @@ _CHECKMATE_PGN: str = "1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6?? 4. Qxf7# 1-0"
 _SIMPLE_PGN: str = "1. e4 e5 2. Nf3 Nc6 3. Bc4 *"
 # A minimal PGN with only 2 moves (4 half-moves).
 _TWO_MOVE_PGN: str = "1. e4 e5 *"
+# A 6-half-move PGN (3 moves each, 6 non-terminal positions).
+# Used for oracle/classify/flaw-PV tests where coverage >= 90% is required and
+# we need enough plies for the blunder-eval-sequence (plies 0..5).
+_SIX_PLY_PGN: str = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 *"
 
 
 # ─── Session-scoped fixtures ──────────────────────────────────────────────────
@@ -67,7 +80,8 @@ async def full_drain_test_user(
 
     async with full_drain_session_maker() as session:
         result = await session.execute(select(User).where(User.id == _TEST_USER_ID))
-        if result.scalar_one_or_none() is None:
+        # .unique() required: User → OAuthAccount lazy="joined" collection load.
+        if result.unique().scalar_one_or_none() is None:
             session.add(
                 User(
                     id=_TEST_USER_ID,
@@ -77,6 +91,31 @@ async def full_drain_test_user(
             )
             await session.commit()
     return _TEST_USER_ID
+
+
+@pytest_asyncio.fixture(scope="session", autouse=False)
+async def full_drain_test_user_117(
+    full_drain_session_maker: async_sessionmaker[AsyncSession],
+) -> int:
+    """Ensure test user _TEST_USER_ID_117 exists in the test DB. Returns user_id."""
+    from app.models.user import User
+
+    async with full_drain_session_maker() as session:
+        result = await session.execute(select(User).where(User.id == _TEST_USER_ID_117))
+        # User → OAuthAccount is lazy="joined" (a collection eager-load), so the
+        # entity result must be de-duplicated with .unique() before scalar access.
+        # Without it, SQLAlchemy raises once cross-file mapper configuration emits
+        # the joined collection load (errors only when run alongside other suites).
+        if result.unique().scalar_one_or_none() is None:
+            session.add(
+                User(
+                    id=_TEST_USER_ID_117,
+                    email=f"full-drain-test-{_TEST_USER_ID_117}@example.com",
+                    hashed_password="fakehash",
+                )
+            )
+            await session.commit()
+    return _TEST_USER_ID_117
 
 
 # ─── DB helpers ───────────────────────────────────────────────────────────────
@@ -90,6 +129,7 @@ async def _insert_game(
     evals_completed_at: datetime | None = None,
     full_evals_completed_at: datetime | None = None,
     white_blunders: int | None = None,
+    lichess_evals_at: datetime | None = None,
 ) -> int:
     """Insert a Game row and commit. Returns the game_id."""
     from app.models.game import Game
@@ -107,6 +147,7 @@ async def _insert_game(
             evals_completed_at=evals_completed_at,
             full_evals_completed_at=full_evals_completed_at,
             white_blunders=white_blunders,
+            lichess_evals_at=lichess_evals_at,
         )
         session.add(g)
         await session.flush()
@@ -124,7 +165,8 @@ async def _insert_game_positions(
     """Insert GamePosition rows for a game and commit.
 
     Each dict in rows: {"ply": int, "full_hash": int, "eval_cp": int|None,
-    "eval_mate": int|None}.
+    "eval_mate": int|None, "best_move": str|None (optional), "pv": str|None (optional),
+    "move_san": str|None (optional)}.
     """
     from app.models.game_position import GamePosition
 
@@ -138,11 +180,13 @@ async def _insert_game_positions(
                     full_hash=r["full_hash"],
                     white_hash=0,
                     black_hash=0,
-                    move_san=None,
+                    move_san=r.get("move_san"),
                     phase=0,
                     endgame_class=None,
                     eval_cp=r.get("eval_cp"),
                     eval_mate=r.get("eval_mate"),
+                    best_move=r.get("best_move"),
+                    pv=r.get("pv"),
                 )
             )
         await session.commit()
@@ -285,7 +329,8 @@ class TestDedupHitsParity:
                 f"Parity source (full_evals_completed_at set, ply {5} <= {_DEDUP_MAX_PLY}) "
                 "must be returned by _fetch_dedup_evals (EVAL-03)."
             )
-            assert result[target_hash] == (42, None)
+            # D-117-01: return tuple is (eval_cp, eval_mate, best_move).
+            assert result[target_hash] == (42, None, None)
         finally:
             await _delete_games(full_drain_session_maker, [source_game_id])
 
@@ -329,9 +374,16 @@ class TestDedupHitsParity:
         full_drain_test_user: int,
         full_drain_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
-        """A drain-completed is_analyzed game (white_blunders set) must NOT be a dedup
-        source (WR-02): its preserved rows are lichess post-move evals, which are not
-        position-keyed by full_hash — only engine-written rows are safe to transplant."""
+        """A lichess-analyzed game (lichess_evals_at IS NOT NULL) must NOT be a dedup
+        source (WR-02 repointed to D-117-07): its preserved rows are lichess post-move
+        evals, which are not position-keyed by full_hash — only engine-written rows
+        (lichess_evals_at IS NULL) are safe to transplant.
+
+        D-117-07: the WR-02 gate was repointed from white_blunders IS NULL onto
+        lichess_evals_at IS NULL. After oracle counts are filled for engine games,
+        white_blunders IS NOT NULL for engine games too — using white_blunders would
+        wrongly exclude engine-written sources.
+        """
         from app.services.eval_drain import _fetch_dedup_evals
 
         now = datetime.now(timezone.utc)
@@ -340,7 +392,7 @@ class TestDedupHitsParity:
             full_drain_test_user,
             evals_completed_at=now,
             full_evals_completed_at=now,
-            white_blunders=1,  # is_analyzed marker
+            lichess_evals_at=now,  # D-117-07: this is what marks a lichess-analyzed source
         )
         target_hash = 0xDEAD_BEEF_0003
         await _insert_game_positions(
@@ -354,9 +406,9 @@ class TestDedupHitsParity:
                 result = await _fetch_dedup_evals(session, [target_hash])
 
             assert target_hash not in result, (
-                "is_analyzed source (white_blunders IS NOT NULL) must NOT be returned "
-                "by _fetch_dedup_evals — lichess post-move evals are not position-keyed "
-                "by full_hash (WR-02)."
+                "lichess-analyzed source (lichess_evals_at IS NOT NULL) must NOT be "
+                "returned by _fetch_dedup_evals — lichess post-move evals are not "
+                "position-keyed by full_hash (WR-02, D-117-07 repoint)."
             )
         finally:
             await _delete_games(full_drain_session_maker, [analyzed_game_id])
@@ -380,18 +432,27 @@ class TestDedupHitsParity:
 def _patch_drain_for_tick_tests(
     monkeypatch: pytest.MonkeyPatch,
     session_maker: async_sessionmaker[AsyncSession],
+    game_id: int,
+    user_id: int,
+    *,
+    is_analyzed: bool = False,
+    tier: int = 3,
+    job_id: int | None = None,
 ) -> Any:
     """Shared monkeypatching for direct _full_drain_tick tests (WR-07).
 
-    Routes drain sessions to the test DB, suppresses Sentry, and forces the
-    yield gate to False — the gate would otherwise depend on whether OTHER
-    tests in the same worker left committed games with evals_completed_at
-    IS NULL (the ordering-dependent flake the tick refactor eliminates).
-    The gate itself is covered by TestYieldGate.
+    Routes drain sessions to the test DB, suppresses Sentry, forces the
+    yield gate to False, and mocks claim_eval_job to return a deterministic
+    ClaimedJob for the given game_id/user_id.
+
+    Phase 117: _full_drain_tick now calls claim_eval_job (which uses
+    eval_queue_service.async_session_maker internally). We mock claim_eval_job
+    directly in the drain module namespace so it doesn't open any sessions.
 
     Returns the drain module.
     """
     import app.services.eval_drain as drain_module
+    from app.services.eval_queue_service import ClaimedJob
 
     monkeypatch.setattr(drain_module, "async_session_maker", session_maker)
     monkeypatch.setattr(drain_module.sentry_sdk, "capture_exception", lambda *a, **kw: None)
@@ -403,15 +464,25 @@ def _patch_drain_for_tick_tests(
         "_any_active_import_or_entry_ply_pending",
         AsyncMock(return_value=False),
     )
+    # Mock claim_eval_job to return a ClaimedJob for the seeded game without
+    # opening a DB session (avoids dependency on eval_queue_service sessions).
+    claimed = ClaimedJob(
+        game_id=game_id,
+        user_id=user_id,
+        tier=tier,
+        is_analyzed=is_analyzed,
+        job_id=job_id,
+    )
+    monkeypatch.setattr(drain_module, "claim_eval_job", AsyncMock(return_value=claimed))
     return drain_module
 
 
 class TestMarkerWrite:
     """EVAL-05: full_evals_completed_at is set after a drain tick.
 
-    WR-07: tests call _full_drain_tick() directly — deterministic, scoped to
-    one LIFO pick (the just-inserted game has the highest id), no wall-clock
-    sleeps or loop cancellation.
+    WR-07: tests call _full_drain_tick() directly — deterministic, no wall-clock
+    sleeps or loop cancellation. Phase 117: claim_eval_job is mocked directly in
+    the drain module so the tick can run without touching eval_queue_service sessions.
     """
 
     async def test_marker_set_after_drain(
@@ -423,12 +494,6 @@ class TestMarkerWrite:
         """After one drain tick on a seeded game, full_evals_completed_at IS NOT NULL."""
         from app.models.game import Game
 
-        drain_module = _patch_drain_for_tick_tests(monkeypatch, full_drain_session_maker)
-
-        # Engine returns a valid eval so the write path exercises the UPDATE.
-        mock_evaluate = AsyncMock(return_value=(50, None))
-        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes", mock_evaluate)
-
         # Insert a non-guest game with evals_completed_at set (not in entry-ply queue)
         # and full_evals_completed_at NULL (pending for the full drain).
         now = datetime.now(timezone.utc)
@@ -439,6 +504,15 @@ class TestMarkerWrite:
             evals_completed_at=now,
             full_evals_completed_at=None,
         )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user
+        )
+
+        # Engine returns a valid eval (4-tuple: eval_cp, eval_mate, best_move, pv_string).
+        mock_evaluate = AsyncMock(return_value=(50, None, "e2e4", "e2e4 e7e5"))
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+
         # Insert a game_position row so the drain has at least one target.
         await _insert_game_positions(
             full_drain_session_maker,
@@ -469,20 +543,14 @@ class TestMarkerWrite:
         full_drain_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """When evaluate_nodes fails for SOME plies, the marker is still set, the
-        successful eval is written, and the failed ply remains NULL (D-116-07).
+        """When evaluate_nodes_with_pv fails for SOME plies, the marker is still set,
+        the successful eval is written, and the failed ply remains NULL (D-116-07).
 
         WR-05: this must be a PARTIAL failure — an all-fail game now trips the
         circuit breaker and stays pending (see test_all_fail_keeps_game_pending).
         """
         from app.models.game import Game
         from app.models.game_position import GamePosition
-
-        drain_module = _patch_drain_for_tick_tests(monkeypatch, full_drain_session_maker)
-
-        # Engine succeeds for the first target (ply 0), fails for the second (ply 1).
-        mock_evaluate = AsyncMock(side_effect=[(50, None), (None, None)])
-        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes", mock_evaluate)
 
         now = datetime.now(timezone.utc)
         game_id = await _insert_game(
@@ -492,6 +560,17 @@ class TestMarkerWrite:
             evals_completed_at=now,
             full_evals_completed_at=None,
         )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user
+        )
+
+        # Engine succeeds for the first target (ply 0), fails for the second (ply 1).
+        mock_evaluate = AsyncMock(
+            side_effect=[(50, None, "e2e4", "e2e4 e7e5"), (None, None, None, None)]
+        )
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+
         await _insert_game_positions(
             full_drain_session_maker,
             full_drain_test_user,
@@ -543,12 +622,6 @@ class TestMarkerWrite:
         would permanently burn the backlog with all-NULL holes."""
         from app.models.game import Game
 
-        drain_module = _patch_drain_for_tick_tests(monkeypatch, full_drain_session_maker)
-
-        # Engine always returns (None, None) — simulated dead pool.
-        mock_evaluate = AsyncMock(return_value=(None, None))
-        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes", mock_evaluate)
-
         now = datetime.now(timezone.utc)
         game_id = await _insert_game(
             full_drain_session_maker,
@@ -557,6 +630,15 @@ class TestMarkerWrite:
             evals_completed_at=now,
             full_evals_completed_at=None,
         )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user
+        )
+
+        # Engine always returns all-None 4-tuple — simulated dead pool.
+        mock_evaluate = AsyncMock(return_value=(None, None, None, None))
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+
         await _insert_game_positions(
             full_drain_session_maker,
             full_drain_test_user,
@@ -691,6 +773,536 @@ class TestYieldGate:
             assert result is True, (
                 "Yield gate must return True when a Game with evals_completed_at IS NULL "
                 "exists (entry-ply drain backlog, D-116-11)."
+            )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+
+# ─── D-117-07: WR-02 repoint (lichess_evals_at gates dedup) ───────────────────
+
+
+class TestWr02Repointed:
+    """D-117-07: _fetch_dedup_evals gates on lichess_evals_at IS NULL, not white_blunders.
+
+    After oracle counts are filled for engine games, white_blunders IS NOT NULL for
+    engine games too — using white_blunders would wrongly exclude engine sources.
+    The WR-02 gate was repointed onto lichess_evals_at (the reliable discriminator).
+    """
+
+    async def test_wr02_engine_source_included(
+        self,
+        full_drain_test_user: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Engine-written game (lichess_evals_at IS NULL, white_blunders IS NOT NULL)
+        must be usable as a dedup source after oracle counts are filled."""
+        from app.services.eval_drain import _fetch_dedup_evals
+
+        now = datetime.now(timezone.utc)
+        engine_game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user,
+            evals_completed_at=now,
+            full_evals_completed_at=now,
+            white_blunders=2,  # oracle counts filled — but lichess_evals_at is NULL
+            # lichess_evals_at=None is the default — engine-written source
+        )
+        target_hash = 0xDEAD_BEEF_0010
+        await _insert_game_positions(
+            full_drain_session_maker,
+            full_drain_test_user,
+            engine_game_id,
+            [{"ply": 3, "full_hash": target_hash, "eval_cp": 99, "eval_mate": None}],
+        )
+        try:
+            async with full_drain_session_maker() as session:
+                result = await _fetch_dedup_evals(session, [target_hash])
+
+            assert target_hash in result, (
+                "Engine-written source (lichess_evals_at IS NULL) must be usable as dedup "
+                "even when white_blunders IS NOT NULL (D-117-07 — WR-02 repointed)."
+            )
+        finally:
+            await _delete_games(full_drain_session_maker, [engine_game_id])
+
+    async def test_wr02_lichess_source_excluded(
+        self,
+        full_drain_test_user: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Lichess-analyzed game (lichess_evals_at IS NOT NULL, white_blunders IS NULL)
+        must NOT be usable as a dedup source."""
+        from app.services.eval_drain import _fetch_dedup_evals
+
+        now = datetime.now(timezone.utc)
+        lichess_game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user,
+            evals_completed_at=now,
+            full_evals_completed_at=now,
+            lichess_evals_at=now,  # lichess-analyzed — not safe for transplant
+            # white_blunders=None (no oracle counts yet)
+        )
+        target_hash = 0xDEAD_BEEF_0011
+        await _insert_game_positions(
+            full_drain_session_maker,
+            full_drain_test_user,
+            lichess_game_id,
+            [{"ply": 3, "full_hash": target_hash, "eval_cp": 55, "eval_mate": None}],
+        )
+        try:
+            async with full_drain_session_maker() as session:
+                result = await _fetch_dedup_evals(session, [target_hash])
+
+            assert target_hash not in result, (
+                "Lichess-analyzed source (lichess_evals_at IS NOT NULL) must NOT be "
+                "usable as a dedup source even when white_blunders IS NULL (D-117-07)."
+            )
+        finally:
+            await _delete_games(full_drain_session_maker, [lichess_game_id])
+
+
+# ─── EVAL-04: best_move populated after drain tick ────────────────────────────
+
+
+class TestBestMove:
+    """EVAL-04: best_move is written for every evaluated non-dedup'd ply."""
+
+    async def test_best_move_written_after_tick(
+        self,
+        full_drain_test_user_117: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """best_move is populated in game_positions.best_move for every ply the
+        engine evaluated (non-dedup'd) after a drain tick (EVAL-04 / D-117-01).
+
+        _THREE_MOVE_PGN = "1. e4 e5 2. Nf3 Nc6 *" has 4 half-moves → 4 non-terminal
+        positions (plies 0..3). Each ply gets a distinct best_move from the mock.
+        """
+        from app.models.game_position import GamePosition
+
+        now = datetime.now(timezone.utc)
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_117,
+            pgn=_SIX_PLY_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=None,
+        )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_117
+        )
+
+        # Per-ply best_move for 4 positions (plies 0..3); use unique hashes.
+        best_moves = ["e2e4", "e7e5", "g1f3", "b8c6"]
+        mock_evaluate = AsyncMock(
+            side_effect=[(cp, None, bm, bm) for cp, bm in zip([20, 15, 25, 10], best_moves)]
+        )
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+
+        gp_rows = [
+            {"ply": i, "full_hash": 0xBEEF_0020 + i, "eval_cp": None, "eval_mate": None}
+            for i in range(4)
+        ]
+        await _insert_game_positions(
+            full_drain_session_maker, full_drain_test_user_117, game_id, gp_rows
+        )
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is True, "Tick must report a processed game"
+
+            async with full_drain_session_maker() as verify:
+                rows = await verify.execute(
+                    select(GamePosition.ply, GamePosition.best_move)
+                    .where(GamePosition.game_id == game_id)
+                    .order_by(GamePosition.ply)
+                )
+                bm_by_ply = {r[0]: r[1] for r in rows.all()}
+
+            assert bm_by_ply.get(0) == "e2e4", f"ply 0 best_move mismatch: {bm_by_ply.get(0)}"
+            assert bm_by_ply.get(1) == "e7e5", f"ply 1 best_move mismatch: {bm_by_ply.get(1)}"
+            assert bm_by_ply.get(2) == "g1f3", f"ply 2 best_move mismatch: {bm_by_ply.get(2)}"
+            assert bm_by_ply.get(3) == "b8c6", f"ply 3 best_move mismatch: {bm_by_ply.get(3)}"
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_dedup_best_move_transplanted(
+        self,
+        full_drain_test_user_117: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """best_move is transplanted from a dedup source for opening-region plies
+        (ply <= DEDUP_MAX_PLY) without an engine call (EVAL-04 / D-117-01).
+
+        Setup: a parity-source game has a position at ply 2 with full_hash X and
+        best_move "g1f3". The target game has a position at the same hash (ply 2,
+        dedup-eligible) and a position at a different hash (ply 4, engine-evaluated).
+
+        PGN: _SIMPLE_PGN = "1. e4 e5 2. Nf3 Nc6 3. Bc4 *" (5 half-moves, plies 0..4).
+        We use ply 2 for dedup and ply 4 for engine-evaluated (both within PGN range).
+        """
+        from app.models.game_position import GamePosition
+        from app.services.eval_drain import _DEDUP_MAX_PLY
+
+        now = datetime.now(timezone.utc)
+        dedup_hash = 0xBEEF_DED0_0001  # unique dedup source hash (ply 2 in source)
+
+        # Parity source: full_evals_completed_at set, lichess_evals_at NULL.
+        source_game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_117,
+            evals_completed_at=now,
+            full_evals_completed_at=now,
+        )
+        await _insert_game_positions(
+            full_drain_session_maker,
+            full_drain_test_user_117,
+            source_game_id,
+            [
+                {
+                    "ply": 2,  # within DEDUP_MAX_PLY
+                    "full_hash": dedup_hash,
+                    "eval_cp": 30,
+                    "eval_mate": None,
+                    "best_move": "g1f3",  # the transplanted best_move
+                }
+            ],
+        )
+
+        # Target game using _SIMPLE_PGN (plies 0..4 in PGN).
+        target_game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_117,
+            pgn=_SIMPLE_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=None,
+        )
+        # ply 2 (dedup-eligible, same hash as source) and ply 4 (engine-evaluated).
+        await _insert_game_positions(
+            full_drain_session_maker,
+            full_drain_test_user_117,
+            target_game_id,
+            [
+                {
+                    "ply": 2,
+                    "full_hash": dedup_hash,  # will be dedup'd from source
+                    "eval_cp": None,
+                    "eval_mate": None,
+                },
+                {
+                    "ply": 4,
+                    "full_hash": 0xBEEF_DED0_0002,  # unique → engine-evaluated
+                    "eval_cp": None,
+                    "eval_mate": None,
+                },
+            ],
+        )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch, full_drain_session_maker, target_game_id, full_drain_test_user_117
+        )
+
+        # Engine is only called for the non-dedup ply (ply 4 — not in dedup_map).
+        mock_evaluate = AsyncMock(return_value=(40, None, "d2d4", "d2d4"))
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+
+        assert 2 <= _DEDUP_MAX_PLY, f"ply 2 must be within DEDUP_MAX_PLY={_DEDUP_MAX_PLY}"
+
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is True, "Tick must report a processed game"
+
+            async with full_drain_session_maker() as verify:
+                rows = await verify.execute(
+                    select(GamePosition.ply, GamePosition.best_move)
+                    .where(GamePosition.game_id == target_game_id)
+                    .order_by(GamePosition.ply)
+                )
+                bm_by_ply = {r[0]: r[1] for r in rows.all()}
+
+            # Dedup'd ply 2: best_move transplanted from source (not engine-called).
+            assert bm_by_ply.get(2) == "g1f3", (
+                f"Dedup'd ply 2 must carry transplanted best_move 'g1f3', got {bm_by_ply.get(2)!r}"
+            )
+            # Engine-evaluated ply 4: best_move from engine.
+            assert bm_by_ply.get(4) == "d2d4", (
+                f"Engine-evaluated ply 4 must carry best_move 'd2d4', got {bm_by_ply.get(4)!r}"
+            )
+        finally:
+            await _delete_games(full_drain_session_maker, [source_game_id, target_game_id])
+
+
+# ─── EVAL-04: flaw PV written at ply N+1 (D-117-02) ──────────────────────────
+
+
+def _blunder_eval_sequence() -> list[tuple[int, None, str, str]]:
+    """Return an engine eval sequence that causes exactly ONE blunder (white, ply 2).
+
+    Plies 0..5 for _SIX_PLY_PGN = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 *":
+
+      ply 0: eval_cp = 20    (balanced, white to move)
+      ply 1: eval_cp = 30    (stable; black to move — tiny drop for black, below threshold)
+      ply 2: eval_cp = -500  (WHITE BLUNDER: black winning after 2.Nf3; white to move)
+      ply 3: eval_cp = -480  (still black winning; black to move — tiny drop for black)
+      ply 4: eval_cp = 60    (white recovers; white to move — positive for white)
+      ply 5: eval_cp = 30    (stable continuation)
+
+    Exact ES analysis (LICHESS_K = 0.00368208):
+      n=1 (black): ES_black(20) ≈ 0.498, ES_black(30) ≈ 0.473 → drop ≈ 0.025 < INACCURACY_DROP
+      n=2 (white): ES_white(30) ≈ 0.527, ES_white(-500) ≈ 0.163 → drop ≈ 0.364 >> BLUNDER_DROP
+      n=3 (black): ES_black(-500) ≈ 0.837, ES_black(-480) ≈ 0.829 → drop ≈ 0.008 < threshold
+      n=4 (white): ES_white(-480) ≈ 0.171, ES_white(60) ≈ 0.555 → drop = negative (improvement)
+      n=5 (black): ES_black(60) ≈ 0.445, ES_black(30) ≈ 0.473 → drop = negative (improvement)
+
+    Result: exactly one blunder (white at ply 2). PV must be written at ply 3, nowhere else.
+    """
+    return [
+        (20, None, "e2e4", "e2e4 e7e5"),  # ply 0 — balanced
+        (30, None, "e7e5", "e7e5 g1f3"),  # ply 1 — stable (black, tiny drop)
+        (-500, None, "g1f3", "g1f3 g8f6 d2d4"),  # ply 2 — white BLUNDER position
+        (-480, None, "g8f6", "g8f6 f1c4 d7d5"),  # ply 3 — still black winning (PV here)
+        (60, None, "f1c4", "f1c4 f8c5"),  # ply 4 — white recovers slightly
+        (30, None, "f8c5", "f8c5"),  # ply 5 — stable
+    ]
+
+
+class TestFlawPv:
+    """EVAL-04 / D-117-02: game_positions.pv is written ONLY at ply N+1 for a flaw at ply N.
+
+    Pitfall 4: the PV belongs to the position AFTER the flawed move (the refutation
+    line starts from the resulting position), NOT to the flaw position itself.
+    """
+
+    async def test_flaw_pv_written_at_ply_n_plus_one(
+        self,
+        full_drain_test_user_117: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """After a drain tick on a game with a clear blunder at ply 2 (white's move),
+        game_positions.pv is set at ply 3 (ply N+1) and NULL at all other plies.
+
+        classify_game_flaws emits a FlawRecord for ply 2 (n=2, mover=white).
+        The PV for ply 3 (the refutation board) comes from engine_result_map[3].
+        Plies 0,1,2,4,5 must have pv=NULL (pv only written at the flaw-adjacent ply).
+        """
+        from app.models.game_position import GamePosition
+
+        now = datetime.now(timezone.utc)
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_117,
+            pgn=_SIX_PLY_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=None,
+        )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_117
+        )
+
+        eval_sequence = _blunder_eval_sequence()
+        mock_evaluate = AsyncMock(side_effect=eval_sequence)
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+
+        gp_rows = [
+            {"ply": i, "full_hash": 0xBEEF_F1A0 + i, "eval_cp": None, "eval_mate": None}
+            for i in range(6)
+        ]
+        await _insert_game_positions(
+            full_drain_session_maker, full_drain_test_user_117, game_id, gp_rows
+        )
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is True, "Tick must report a processed game"
+
+            async with full_drain_session_maker() as verify:
+                rows = await verify.execute(
+                    select(GamePosition.ply, GamePosition.pv)
+                    .where(GamePosition.game_id == game_id)
+                    .order_by(GamePosition.ply)
+                )
+                pv_by_ply = {r[0]: r[1] for r in rows.all()}
+
+            # ply 3 must have the PV from engine_result_map[3] (D-117-02 / Pitfall 4).
+            assert pv_by_ply.get(3) is not None, (
+                "game_positions.pv at ply 3 (N+1 for blunder at ply 2) must be set "
+                "— D-117-02 flaw PV write."
+            )
+            # All other plies must NOT have a PV set (pv is only written at flaw N+1).
+            for ply in [0, 1, 2, 4, 5]:
+                assert pv_by_ply.get(ply) is None, (
+                    f"game_positions.pv at ply {ply} must be NULL — pv is only written "
+                    "at the ply AFTER a flaw (D-117-02 / Pitfall 4)."
+                )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+
+# ─── EVAL-06: classify hook + oracle counts ───────────────────────────────────
+
+
+class TestClassifyHook:
+    """EVAL-06: classify_game_flaws runs automatically after full eval completes.
+
+    After a drain tick, game_flaws rows must exist for any game with sufficient
+    eval coverage and at least one mistake/blunder.
+    """
+
+    async def test_classify_hook_inserts_game_flaws(
+        self,
+        full_drain_test_user_117: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """After a drain tick with a blunder at ply 2, game_flaws rows exist
+        for the game (EVAL-06 / _classify_and_fill_oracle hook)."""
+        from app.models.game_flaw import GameFlaw
+
+        now = datetime.now(timezone.utc)
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_117,
+            pgn=_SIX_PLY_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=None,
+        )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_117
+        )
+
+        eval_sequence = _blunder_eval_sequence()
+        mock_evaluate = AsyncMock(side_effect=eval_sequence)
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+
+        gp_rows = [
+            {"ply": i, "full_hash": 0xBEEF_B00C + i, "eval_cp": None, "eval_mate": None}
+            for i in range(6)
+        ]
+        await _insert_game_positions(
+            full_drain_session_maker, full_drain_test_user_117, game_id, gp_rows
+        )
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is True, "Tick must report a processed game"
+
+            async with full_drain_session_maker() as verify:
+                flaw_count = await verify.scalar(
+                    select(sa.func.count()).select_from(GameFlaw).where(GameFlaw.game_id == game_id)
+                )
+
+            assert flaw_count is not None and flaw_count > 0, (
+                f"game_flaws must have rows after drain tick for game {game_id} "
+                "— _classify_and_fill_oracle EVAL-06 hook must have run."
+            )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+
+class TestOracleCounts:
+    """EVAL-06 / D-117-08: oracle count columns are filled after full eval and match game_flaws."""
+
+    async def test_oracle_counts_filled_and_match_game_flaws(
+        self,
+        full_drain_test_user_117: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """After a drain tick, white/black inaccuracy/mistake/blunder columns on games
+        are filled (D-117-08) and the blunder counts match the game_flaws rows.
+
+        _blunder_eval_sequence creates one blunder at ply 2 (white's move). So:
+          white_blunders = 1, white_mistakes = 0, white_inaccuracies = ? (via count_game_severities)
+          black_blunders = 0, black_mistakes = 0, black_inaccuracies = ?
+        The test verifies white_blunders >= 1 and black_blunders == 0 to avoid
+        over-specifying the inaccuracy count (depends on exact sigmoid thresholds).
+        It also verifies that sum(game_flaws severity=blunder for white) == white_blunders.
+        """
+        from app.models.game import Game
+        from app.models.game_flaw import GameFlaw
+
+        now = datetime.now(timezone.utc)
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_117,
+            pgn=_SIX_PLY_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=None,
+        )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_117
+        )
+
+        eval_sequence = _blunder_eval_sequence()
+        mock_evaluate = AsyncMock(side_effect=eval_sequence)
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+
+        gp_rows = [
+            {"ply": i, "full_hash": 0xBEEF_0AC0 + i, "eval_cp": None, "eval_mate": None}
+            for i in range(6)
+        ]
+        await _insert_game_positions(
+            full_drain_session_maker, full_drain_test_user_117, game_id, gp_rows
+        )
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is True, "Tick must report a processed game"
+
+            async with full_drain_session_maker() as verify:
+                game_row = await verify.execute(
+                    select(
+                        Game.white_blunders,
+                        Game.white_mistakes,
+                        Game.white_inaccuracies,
+                        Game.black_blunders,
+                        Game.black_mistakes,
+                        Game.black_inaccuracies,
+                    ).where(Game.id == game_id)
+                )
+                oracle = game_row.one_or_none()
+
+                # White blunder rows in game_flaws: white plays at even plies (ply % 2 == 0).
+                # ply 2 is white's blunder in the blunder-eval sequence.
+                _SEVERITY_BLUNDER = 2
+                white_blunder_rows = await verify.scalar(
+                    select(sa.func.count())
+                    .select_from(GameFlaw)
+                    .where(
+                        GameFlaw.game_id == game_id,
+                        GameFlaw.severity == _SEVERITY_BLUNDER,
+                        GameFlaw.ply % 2 == 0,  # white plays at even plies
+                    )
+                )
+
+            assert oracle is not None, "Game row must exist after drain tick"
+            white_blunders, white_mistakes, white_inaccuracies = oracle[0], oracle[1], oracle[2]
+            black_blunders, black_mistakes, black_inaccuracies = oracle[3], oracle[4], oracle[5]
+
+            # Oracle counts must be filled (not NULL).
+            assert white_blunders is not None, "white_blunders must be set after drain (D-117-08)"
+            assert white_mistakes is not None, "white_mistakes must be set after drain (D-117-08)"
+            assert white_inaccuracies is not None, "white_inaccuracies must be set after drain"
+            assert black_blunders is not None, "black_blunders must be set after drain (D-117-08)"
+            assert black_mistakes is not None, "black_mistakes must be set after drain (D-117-08)"
+            assert black_inaccuracies is not None, "black_inaccuracies must be set after drain"
+
+            # The blunder sequence has exactly one clear blunder for white at ply 2.
+            assert white_blunders >= 1, (
+                f"white_blunders must be >= 1 for the blunder-sequence game, got {white_blunders}"
+            )
+            assert black_blunders == 0, (
+                f"black_blunders must be 0 (no black blunders in eval sequence), got {black_blunders}"
+            )
+
+            # Oracle blunder count must match game_flaws blunder rows for white (D-117-08).
+            assert white_blunders == white_blunder_rows, (
+                f"white_blunders ({white_blunders}) must equal game_flaws blunder rows "
+                f"for white ({white_blunder_rows}) — D-117-08 oracle consistency."
             )
         finally:
             await _delete_games(full_drain_session_maker, [game_id])

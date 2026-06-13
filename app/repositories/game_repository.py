@@ -41,6 +41,8 @@ POSITION_COPY_COLUMNS: tuple[str, ...] = (
     "phase",
     "eval_cp",
     "eval_mate",
+    "best_move",
+    "pv",
     "endgame_class",
 )
 

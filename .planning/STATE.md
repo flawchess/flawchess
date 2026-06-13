@@ -2,27 +2,28 @@
 gsd_state_version: 1.0
 milestone: v1.26
 milestone_name: Full-Game Eval Pipeline
-status: discussing
-last_updated: "2026-06-13T07:29:00.000Z"
-last_activity: 2026-06-13 -- Phase 116 verified (passed) & shipped; opening Phase 117 discussion
+status: executed
+last_updated: "2026-06-13T10:20:00.000Z"
+last_activity: 2026-06-13 -- Phase 117 executed + verified (14/14; human-UAT deferred); ready to squash-merge to main
 progress:
   total_phases: 7
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
-  percent: 14
+  completed_phases: 2
+  total_plans: 6
+  completed_plans: 6
+  percent: 29
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 117 (priority-queue-flaw-integration) — DISCUSSING
-Plan: —
-Status: Phase 116 (all-ply-engine-core) COMPLETE — verified passed (10/10 must-haves, 2026-06-12) and shipped via PR #187. Now opening Phase 117 discussion.
-Last activity: 2026-06-13 -- Phase 116 verified & shipped; opening Phase 117 discussion (prev: quick task 260613-bst bookmark WDL recency filter)
+Phase: 117 (priority-queue-flaw-integration) — EXECUTED + VERIFIED (human-UAT deferred)
+Plan: 3 of 3 executed
+Status: All 3 plans executed on branch gsd/phase-117 (32 commits). Verifier 14/14 must-haves (status human_needed = 2 prod-soak items: tier-1 ~10s wall-clock + cache-stub no-op confirm). Code review: 1 blocker + 3 warnings ALL fixed; test-isolation defect (lazy=joined .unique()) fixed. Gates green: ruff + ty clean, full SERIAL suite 2586 passed/10 skipped, frontend untouched. NOT yet merged/deployed. Next: squash-merge gsd/phase-117 → main, then /gsd-secure-phase 117, then deploy + prod-soak the 2 human items.
+Security: SECURED — 13/13 threats closed (threats_open: 0), ASVS L1 (117-SECURITY.md).
+Last activity: 2026-06-13 -- Phase 117 executed + verified + secured; ready to squash-merge to main
 
-Progress: [█░░░░░░░░░] 14% (1 of 7 phases)
+Progress: [██░░░░░░░░] 29% (2 of 7 phases executed)
 
 ## Project Reference
 
@@ -342,6 +343,9 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 | Phase 116-all-ply-engine-core P01 | 16min | 3 tasks | 6 files |
 | Phase 116-all-ply-engine-core P02 | 35 | 3 tasks | 3 files |
 | Phase 116-all-ply-engine-core P03 | 25min | 3 tasks | 3 files |
+| Phase 117-priority-queue-flaw-integration P01 | 12m | 3 tasks | 6 files |
+| Phase 117-priority-queue-flaw-integration P02 | 9 | - tasks | - files |
+| Phase 117-priority-queue-flaw-integration P03 | 40 | 3 tasks | 7 files |
 
 ## Decisions
 
@@ -384,3 +388,7 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 - [Phase ?]: Phase 116 Plan 03
 - [Phase ?]: .planning/phases/116-all-ply-engine-core/116-03-SUMMARY.md
 - [Phase ?]: .planning/phases/116-all-ply-engine-core/116-03-SUMMARY.md
+- [Phase ?]: 117-02: SKIP LOCKED tiered queue with LEASE_TTL_SECONDS=120; tier-3 derived pick (no eval_jobs pre-population); is_analyzed from lichess_evals_at (D-117-07)
+- [Phase ?]: D-117-07: WR-02 gate repointed from white_blunders IS NULL to lichess_evals_at IS NULL — lichess_evals_at precisely marks engine-written vs lichess-%eval-written rows
+- [Phase ?]: D-117-02: Flaw PV written at ply N+1 (position after the flawed move); flaw PV at ply N would describe the position before the mistake
+- [Phase ?]: evaluate_nodes_with_pv returns 4-tuple (eval_cp, eval_mate, best_move, pv_string) from one 1M-node search — drain has both PV artifacts without a second engine call (EVAL-04)
