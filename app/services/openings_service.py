@@ -258,6 +258,27 @@ async def analyze(
     )
 
 
+def _in_window(
+    played_at: datetime.datetime,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
+) -> bool:
+    """Return True when played_at falls within [from_date, to_date] (inclusive on both ends).
+
+    When from_date or to_date is None, that bound is treated as open:
+    None lower bound means "from the beginning of time", None upper bound
+    means "to the end of time". Both None means always in-window (open range).
+    Compares on date only — played_at.date() strips the time component so
+    "end of day to_date" semantics match the D-10 repository convention.
+    """
+    game_date = played_at.date()
+    if from_date is not None and game_date < from_date:
+        return False
+    if to_date is not None and game_date > to_date:
+        return False
+    return True
+
+
 async def get_time_series(
     session: AsyncSession,
     user_id: int,
@@ -271,13 +292,17 @@ async def get_time_series(
     have been played). Partial windows (games 1 to ROLLING_WINDOW_SIZE-1) are
     included from the start.
 
-    D-19: no date filtering on the time-series path — the rolling-window chart
-    always covers the full game history so that context games before the window
-    anchor the rolling averages correctly.
+    D-19 amendment (2026-06-13): when from_date/to_date are set, emitted
+    TimeSeriesPoints and WDL totals cover only in-window games; the rolling
+    average is still warmed from pre-window games (full chronological history
+    is loaded so trailing averages anchor correctly). When from_date/to_date
+    are None, behavior is unchanged — the chart covers the full game history.
     """
     series: list[BookmarkTimeSeries] = []
     for bkm in request.bookmarks:
         hash_column = HASH_COLUMN_MAP[bkm.match_side]
+        # Do NOT pass from_date/to_date to the repo — keep loading the full
+        # chronological history so pre-window games warm the rolling average.
         rows = await query_time_series(
             session,
             user_id,
@@ -304,27 +329,32 @@ async def get_time_series(
             outcome = derive_user_result(result, user_color)
             results_so_far.append(outcome)
 
-            if outcome == "win":
-                total_wins += 1
-            elif outcome == "draw":
-                total_draws += 1
-            else:
-                total_losses += 1
-            last_played_at = played_at  # rows ordered ASC; final assignment wins
-
-            # Rolling window: trailing ROLLING_WINDOW_SIZE results
+            # Rolling window: trailing ROLLING_WINDOW_SIZE results (warm-up).
+            # Computed for every game regardless of window — pre-window games
+            # contribute to the rolling average even when not emitted.
             window = results_so_far[-ROLLING_WINDOW_SIZE:]
             window_wins = window.count("win")
             window_draws = window.count("draw")
             window_total = len(window)
             score = (window_wins + 0.5 * window_draws) / window_total if window_total > 0 else 0.0
 
-            data_by_date[played_at.strftime("%Y-%m-%d")] = TimeSeriesPoint(
+            point = TimeSeriesPoint(
                 date=played_at.strftime("%Y-%m-%d"),
                 score=round(score, 4),
                 game_count=window_total,
                 window_size=ROLLING_WINDOW_SIZE,
             )
+
+            # D-19 amendment: gate emission and totals on the date window.
+            if _in_window(played_at, request.from_date, request.to_date):
+                if outcome == "win":
+                    total_wins += 1
+                elif outcome == "draw":
+                    total_draws += 1
+                else:
+                    total_losses += 1
+                last_played_at = played_at  # rows ordered ASC; final assignment wins
+                data_by_date[played_at.strftime("%Y-%m-%d")] = point
 
         # Drop early points with too few games in the rolling window.
         data = [pt for pt in data_by_date.values() if pt.game_count >= MIN_GAMES_FOR_TIMELINE]

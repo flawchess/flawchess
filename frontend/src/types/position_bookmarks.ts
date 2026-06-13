@@ -44,13 +44,18 @@ export interface TimeSeriesBookmarkParam {
 
 export interface TimeSeriesRequest {
   bookmarks: TimeSeriesBookmarkParam[];
-  // Optional global filters (no date filter — D-19: time-series covers full history)
+  // Optional global filters (D-19 amendment 2026-06-13: date bounds now accepted;
+  // the time-series path date-filters emitted points + WDL totals while warming
+  // the rolling average from pre-window games)
   time_control?: ('bullet' | 'blitz' | 'rapid' | 'classical')[] | null;
   platform?: ('chess.com' | 'lichess')[] | null;
   rated?: boolean | null;
   opponent_type?: 'human' | 'bot' | 'both';
   opponent_gap_min?: number;
   opponent_gap_max?: number;
+  // Resolved date bounds for windowed emission (ISO YYYY-MM-DD strings)
+  from_date?: string;
+  to_date?: string;
 }
 
 export interface TimeSeriesPoint {

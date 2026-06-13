@@ -348,3 +348,44 @@ describe('OpeningStatsCard — score bullet row (260507-t4r)', () => {
     expect(hiddenSm).not.toBeNull();
   });
 });
+
+describe('OpeningStatsCard — zero-match empty state (260613-bst)', () => {
+  // When the recency filter yields no matching games, the WDL bar is replaced
+  // with "No matching games" and the games count shows "—" (em dash).
+  it('shows "No matching games" and "—" for games count when total === 0', () => {
+    const opening = makeOpening({
+      wins: 0,
+      draws: 0,
+      losses: 0,
+      total: 0,
+      win_pct: 0,
+      draw_pct: 0,
+      loss_pct: 0,
+    });
+    renderCard({ opening, idx: 15 });
+
+    // Empty state marker instead of WDL bar
+    const empty = document.querySelector('[data-testid="opening-stats-card-15-empty"]');
+    expect(empty).not.toBeNull();
+    expect(empty?.textContent).toContain('No matching games');
+
+    // WDL chart is not rendered
+    const wdl = document.querySelector('[data-testid="opening-stats-card-15-wdl"]');
+    expect(wdl).toBeNull();
+
+    // Games count shows em dash, not "0"
+    const gamesBtn = document.querySelector(
+      '[data-testid="opening-stats-card-15-games"]',
+    ) as HTMLButtonElement | null;
+    expect(gamesBtn).not.toBeNull();
+    expect(gamesBtn?.textContent).toContain('—');
+    expect(gamesBtn?.textContent).not.toContain('0 ');
+  });
+
+  it('still renders the Moves link when total === 0', () => {
+    const opening = makeOpening({ wins: 0, draws: 0, losses: 0, total: 0 });
+    renderCard({ opening, idx: 16 });
+    const movesBtn = document.querySelector('[data-testid="opening-stats-card-16-moves"]');
+    expect(movesBtn).not.toBeNull();
+  });
+});
