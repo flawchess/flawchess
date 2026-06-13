@@ -24,6 +24,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 - **Bookmark WDL stats respect the recency filter** — the WDL bar, game count, and Score % on the Openings Stats bookmark card now reflect only in-window games when a recency or date filter is active (they previously showed frozen full-history numbers). A zero-match window shows "No matching games" and "—" instead. The rolling time-series chart line is filtered to the window while still being warmed up from pre-window games. (quick task 260613-bst)
 - **Engine worker recovery after a crash** — when a Stockfish worker process died, the automatic restart could abort and leave that worker slot permanently broken until the next backend restart. The restart path now handles the dead process cleanly. (Phase 116, FLAWCHESS-59)
+- **Refutation lines now captured for lichess-analyzed games** — the full-game analyzer skips re-evaluating positions lichess already scored, but that also skipped capturing the best-play line after each mistake/blunder (lichess provides the evaluation, not the line), so analyzed lichess games were getting no refutation line at all. The analyzer now evaluates exactly the positions right after each flaw to capture the line, without overwriting lichess's own evaluations. (Phase 117, D-117-13)
 
 ## [v1.25] Flaw-Stats Opponent Comparison — 2026-06-12
 
