@@ -388,8 +388,13 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
   6. Once a game's positions are fully evaluated, `classify_game_flaws` runs automatically and `game_flaws` rows appear for that game without any user action (import itself stays fast — the hot lane and its quick entry-ply pass are untouched; full evals + flaws arrive progressively after import)
   7. Guest accounts (`users.is_guest`) are excluded from every tier — no guest game is ever enqueued or drained; full-game analysis requires a real account (inactive-guest games are cleanup candidates, so analyzing them wastes compute)
 
+**Proposed amendment to Success Criterion #5** (2026-06-13, pending `/gsd-discuss-phase 117`): split PV persistence into two artifacts instead of one, so we get an "engine's best move per position" step-through display nearly for free.
+  - **`best_move` (PV[0]) for *every* evaluated position** — enables showing the engine's preferred move when stepping through any game ply. It is a position property (keyed on the pre-move `full_hash`), so the existing opening-region dedup-transplant (`eval_drain._fetch_dedup_evals`, `ply ≤ DEDUP_MAX_PLY=20`, WR-02 gate) carries it for free alongside `eval_cp`; `ply > 20` stored per-row. Storage ≈ +80 MB (int2-encoded `from·64+to+promo`) to +240 MB (UCI text) on the 44.4M-row `game_positions` (~+1–4% of the 5.5 GB data; prod db-report 2026-06-12). **Zero extra engine compute** (PV falls out of the search that already produces `eval_cp`). Display-only → fetched by `game_id` (already indexed), no new index.
+  - **Full PV string only for plies adjacent to a flaw** (the original #5 intent, for SEED-039 motif continuations). REJECT full-PV-for-all: ≈ 5 GB, roughly doubles `game_positions` data and bloats the import/replay bulk-fetch hot path (the heaviest query class per db-report).
+  - Pipeline delta: capture `info["pv"][0]` from the existing search; thread `best_move` through `_fetch_dedup_evals` (return `(eval_cp, eval_mate, best_move)`) and the write path. Open sub-questions: int2 encoding vs UCI text; opening plies show book-region best moves too (no gap); top-1 only (MultiPV is a separate, more expensive search — out of scope).
+
 **Plans**: TBD
-**Open for phase planning**: time-control prioritization within tiers (the SEED-012 amendment's "longer TC first" ordering is a starting point, not locked — discuss during `/gsd-discuss-phase 117`)
+**Open for phase planning**: (1) time-control prioritization within tiers (the SEED-012 amendment's "longer TC first" ordering is a starting point, not locked); (2) the Criterion #5 PV split above (best_move-for-all vs full-PV-near-flaws) — both to be settled during `/gsd-discuss-phase 117`
 
 ### Phase 118: Demand UX + Auto-Enqueue
 
