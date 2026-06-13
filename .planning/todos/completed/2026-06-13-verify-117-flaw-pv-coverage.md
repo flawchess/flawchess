@@ -66,6 +66,36 @@ built**. No live feature is affected today. This must be resolved (or confirmed 
 **before SEED-039 ships**. Natural place to fold it in: the SEED-043 revisit, or a
 pre-SEED-039 verify pass.
 
+## Resolution (2026-06-13)
+
+**Verdict: real bug (dominant) + a negligible benign tail.** Confirmed against prod
+(read-only MCP). The "~32%" was a blend of two cleanly-separated populations:
+
+| platform | analyzed | games | flaws | pvs | coverage |
+|---|---|---|---|---|---|
+| chess.com | no | 435 | 25 | 24 | ~96% |
+| lichess | no | 130 | 3 | 3 | 100% |
+| lichess | **yes** | 15 | **126+** | **0** | **0%** |
+
+- **Engine-evaluated path (~98%):** the single chess.com miss was an engine NULL-hole
+  (eval_cp/mate both NULL at ply 89) — expected D-116-07 mark-and-continue. Benign.
+- **Analyzed lichess games (the entire gap, 0%):** every flaw-adjacent position carries a
+  lichess %eval but no `best_move`/`pv`. Root cause: the `is_analyzed` eval-preservation
+  filter in `_full_drain_tick` (`eval_drain.py`) drops every ply with an existing %eval
+  *before* the engine gather, so `flaw_ply + 1` was never engine-evaluated, and lichess
+  supplies %eval but no PV. **No off-by-one and no bug in the write loop itself.**
+- The opening-dedup hypothesis (#2) contributed **nothing** in the sample (0 dedup-attributed
+  misses; 0 terminal flaws among the lichess set).
+
+**Fix (D-117-13):** `_flaw_adjacent_plies()` pre-classifies the game from the stored %evals
+and the filter + opening dedup exempt `{flaw_ply + 1}` so the engine evaluates exactly those
+positions for PV capture, while `_apply_full_eval_results` still preserves the lichess %eval
+(D-116-04). Cost bounded to ~1 engine call per flaw. Regression test
+`test_flaw_pv_written_for_analyzed_lichess_game` added; full backend suite green. CHANGELOG +
+117-CONTEXT D-117-13 updated. Residual documented tail: non-analyzed opening-flaw dedup, and
+a write-time-filled NULL hole materializing a flaw not seen at load-time classify — both
+negligible per the prod sample.
+
 ## Context / how this came up
 
 Found while monitoring the Phase 117 prod deploy. Otherwise the deploy is healthy:

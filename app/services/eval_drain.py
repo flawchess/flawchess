@@ -484,6 +484,46 @@ async def _classify_and_fill_oracle(
             sentry_sdk.capture_exception(exc)
 
 
+async def _flaw_adjacent_plies(session: AsyncSession, game_id: int) -> set[int]:
+    """Pre-classify an is_analyzed game's flaws to find plies needing engine PV capture (D-117-13).
+
+    Analyzed lichess games carry a lichess %eval on (nearly) every ply, so the
+    is_analyzed target filter in _full_drain_tick would otherwise drop every
+    flaw-adjacent ply before the engine gather — and lichess supplies %eval but
+    NO principal variation. The observed result (prod sanity check ~1 h after the
+    Phase 117 deploy) was 0% flaw-PV coverage for analyzed lichess games: every
+    flaw's refutation line (the SEED-039 input) was missing.
+
+    Fix: classify flaws up front from the already-stored %evals — the SAME inputs
+    the write-time classify in _classify_and_fill_oracle uses — and return the set
+    of {flaw_ply + 1} plies. The caller exempts these from the eval-preservation
+    filter and from the opening dedup so the engine evaluates exactly those
+    positions for PV capture, while the write path still preserves the lichess
+    %eval (D-116-04). Covers BOTH players' flaws (classify_game_flaws is two-sided
+    per D-06), matching the write-time PV loop.
+
+    Returns an empty set when the game is missing or classification reports
+    insufficient coverage (GameNotAnalyzed) — the caller then falls back to the
+    prior filter behavior (no extra engine calls). Engine-source (non-analyzed)
+    games never call this: their evals aren't computed at load time, and they
+    already get full-game PV coverage from the unfiltered engine pass.
+    """
+    game = (await session.execute(select(Game).where(Game.id == game_id))).scalar_one_or_none()
+    if game is None:
+        return set()
+    positions_result = await session.execute(
+        select(GamePosition)
+        .where(GamePosition.game_id == game_id, GamePosition.user_id == game.user_id)
+        .order_by(GamePosition.ply)
+    )
+    positions = list(positions_result.scalars().all())
+    flaw_result = classify_game_flaws(game, positions)
+    if "reason" in flaw_result:
+        # GameNotAnalyzed: insufficient eval coverage — fall back to prior filter.
+        return set()
+    return {flaw["ply"] + 1 for flaw in flaw_result}
+
+
 # Minimal duck-typed view so count_game_severities can be called with a
 # synthetic user_color without mutating the ORM Game object.
 class _GameColorView:
@@ -1167,11 +1207,29 @@ async def _full_drain_tick() -> bool:
         # WR-01: for is_analyzed (lichess %eval) games, plies whose row already
         # carries a non-NULL eval are preserved at write time (D-116-04 / T-78-17).
         # Filtering here avoids burning 1M-node calls whose results are discarded.
+        #
+        # D-117-13 EXCEPTION: flaw-adjacent plies (flaw_ply + 1) must still be
+        # engine-evaluated to capture the refutation PV. Lichess supplies %eval but
+        # NO PV, so without this exemption every flaw in an analyzed lichess game
+        # got 0 PV (verified in prod post-Phase-117). Pre-classify from the stored
+        # %evals to find {flaw_ply + 1}, then exempt those plies from the filter.
+        flaw_adjacent_plies: set[int] = set()
         if is_analyzed:
-            targets = [t for t in targets if t.eval_cp is None and t.eval_mate is None]
+            flaw_adjacent_plies = await _flaw_adjacent_plies(load_session, game_id)
+            targets = [
+                t
+                for t in targets
+                if (t.eval_cp is None and t.eval_mate is None) or t.ply in flaw_adjacent_plies
+            ]
 
-        # Partition opening-region hashes for dedup (EVAL-03).
-        dedup_hashes = [t.full_hash for t in targets if t.ply <= _DEDUP_MAX_PLY]
+        # Partition opening-region hashes for dedup (EVAL-03). Flaw-adjacent plies
+        # are excluded so they always get a real engine eval + PV instead of an
+        # eval-only dedup transplant (which carries no pv_string — D-117-13).
+        dedup_hashes = [
+            t.full_hash
+            for t in targets
+            if t.ply <= _DEDUP_MAX_PLY and t.ply not in flaw_adjacent_plies
+        ]
         dedup_map = await _fetch_dedup_evals(load_session, dedup_hashes)
     # load_session is now closed.
 
@@ -1181,7 +1239,13 @@ async def _full_drain_tick() -> bool:
     # Phase 117 EVAL-04: use evaluate_nodes_with_pv to capture best_move + PV string.
     # Tier-1 (QUEUE-03): fan ALL of one game's plies across the pool simultaneously.
     # Tiers 2/3: same gather — the distinction is how the game was claimed, not how it's analyzed.
-    engine_targets = [t for t in targets if t.ply > _DEDUP_MAX_PLY or t.full_hash not in dedup_map]
+    # D-117-13: flaw-adjacent plies always go to the engine (PV capture), even if a
+    # sibling target with the same full_hash seeded the dedup map.
+    engine_targets = [
+        t
+        for t in targets
+        if t.ply in flaw_adjacent_plies or t.ply > _DEDUP_MAX_PLY or t.full_hash not in dedup_map
+    ]
     if engine_targets:
         engine_results_raw: Sequence[
             tuple[int | None, int | None, str | None, str | None]

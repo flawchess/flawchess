@@ -1141,6 +1141,103 @@ class TestFlawPv:
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
 
+    async def test_flaw_pv_written_for_analyzed_lichess_game(
+        self,
+        full_drain_test_user_117: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """D-117-13: analyzed lichess games still get a flaw PV even though every ply
+        already carries a lichess %eval.
+
+        Regression guard for the prod-observed 0% flaw-PV coverage on analyzed
+        lichess games: the is_analyzed eval-preservation filter dropped every
+        flaw-adjacent ply before the engine gather, so the refutation PV was never
+        captured (lichess supplies %eval but no PV). The D-117-13 fix pre-classifies
+        flaws and exempts {flaw_ply + 1} from the filter.
+
+        Setup: all 6 plies carry a pre-existing %eval encoding a white blunder at
+        ply 2. Only ply 3 (flaw_ply + 1) should be engine-evaluated (for the PV);
+        the other five plies are preserved without an engine call. Before the fix,
+        the engine was called 0 times and pv at ply 3 stayed NULL.
+        """
+        from app.models.game_position import GamePosition
+
+        now = datetime.now(timezone.utc)
+        # Analyzed lichess game: lichess_evals_at set; claim reports is_analyzed=True.
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_117,
+            pgn=_SIX_PLY_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=None,
+            lichess_evals_at=now,
+        )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch,
+            full_drain_session_maker,
+            game_id,
+            full_drain_test_user_117,
+            is_analyzed=True,
+        )
+
+        # Only ply 3 (flaw_ply + 1) should reach the engine — one PV result.
+        mock_evaluate = AsyncMock(return_value=(-480, None, "g8f6", "g8f6 f1c4 d7d5"))
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+
+        # Pre-existing lichess %evals on EVERY ply, encoding a white blunder at ply 2
+        # (30 cp -> -500 cp). Without D-117-13 the is_analyzed filter would drop all
+        # six plies (each has an eval) and no PV would ever be captured.
+        cp_by_ply = [20, 30, -500, -480, 60, 30]
+        gp_rows = [
+            {
+                "ply": i,
+                "full_hash": 0xABCDE000 + i,
+                "eval_cp": cp_by_ply[i],
+                "eval_mate": None,
+            }
+            for i in range(6)
+        ]
+        await _insert_game_positions(
+            full_drain_session_maker, full_drain_test_user_117, game_id, gp_rows
+        )
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is True, "Tick must report a processed game"
+
+            # Exactly one engine call: the flaw-adjacent ply 3 (D-117-13). The other
+            # five plies are preserved without burning a 1M-node eval.
+            assert mock_evaluate.await_count == 1, (
+                "Only the flaw-adjacent ply (flaw_ply + 1) should be engine-evaluated "
+                f"for an analyzed game — got {mock_evaluate.await_count} engine calls."
+            )
+
+            async with full_drain_session_maker() as verify:
+                rows = await verify.execute(
+                    select(GamePosition.ply, GamePosition.pv, GamePosition.eval_cp)
+                    .where(GamePosition.game_id == game_id)
+                    .order_by(GamePosition.ply)
+                )
+                by_ply = {r[0]: (r[1], r[2]) for r in rows.all()}
+
+            assert by_ply.get(3, (None, None))[0] is not None, (
+                "game_positions.pv at ply 3 must be set for an analyzed lichess game "
+                "— D-117-13 flaw-PV fix (lichess provides %eval but no PV)."
+            )
+            # Preserved lichess %evals are untouched (D-116-04 still holds).
+            assert by_ply.get(3, (None, None))[1] == -480, (
+                "The lichess %eval at the flaw-adjacent ply must be preserved, not "
+                "overwritten by the engine eval (D-116-04)."
+            )
+            for ply in [0, 1, 2, 4, 5]:
+                assert by_ply.get(ply, (None, None))[0] is None, (
+                    f"game_positions.pv at ply {ply} must be NULL — pv is only written "
+                    "at the ply AFTER a flaw (D-117-02 / Pitfall 4)."
+                )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
 
 # ─── EVAL-06: classify hook + oracle counts ───────────────────────────────────
 

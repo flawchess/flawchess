@@ -132,6 +132,24 @@ Requirements: EVAL-04, EVAL-06, QUEUE-01, QUEUE-02, QUEUE-03, QUEUE-05, QUEUE-06
   - Phase 118 coverage indicators should reflect PV/best_move availability SEPARATELY from
     eval availability (a game can be eval-complete but best_move-missing).
 
+### Post-deploy fix: flaw-PV capture for analyzed lichess games
+- **D-117-13 — Exempt flaw-adjacent plies from the is_analyzed eval filter.** A prod sanity
+  check ~1 h after the 117 deploy found analyzed lichess games getting **0% flaw-PV
+  coverage** (129 flaws → 0 PVs; engine-path games were ~98%). Root cause: the WR-01
+  `is_analyzed` filter in `_full_drain_tick` drops every ply that already carries a lichess
+  %eval *before* the engine gather, so flaw-adjacent plies (`flaw_ply + 1`) were never
+  engine-evaluated — and lichess supplies %eval but no PV, so the SEED-039 refutation line
+  was never captured. Fix: `_flaw_adjacent_plies()` pre-classifies the game from the stored
+  %evals (same inputs as the write-time classify) and the filter + opening-dedup exempt
+  `{flaw_ply + 1}` so the engine evaluates exactly those positions for PV capture, while
+  `_apply_full_eval_results` still preserves the lichess %eval (D-116-04). Cost is bounded
+  to ~1 engine call per flaw (not the whole game). Engine-source games are unaffected
+  (filter only runs for `is_analyzed`). Known residual tail (documented, not fixed):
+  flaws in non-analyzed games whose `flaw_ply + 1` is an opening ply absorbed by `full_hash`
+  dedup, and the rare case where a write-time-filled NULL %eval hole materializes a new flaw
+  not seen at load-time classify — both negligible per the prod sample. Resolves the
+  `2026-06-13-verify-117-flaw-pv-coverage` todo. Folds into the SEED-043 / pre-SEED-039 work.
+
 ### Claude's Discretion
 - Final column types/encodings: `best_move` recommended `varchar(5)` UCI; `pv` a `Text`
   UCI string (or per-flaw rows). `lichess_evals_at` timestamp vs boolean.
