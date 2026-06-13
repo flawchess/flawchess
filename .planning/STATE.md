@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.26
 milestone_name: Full-Game Eval Pipeline
-status: verifying
-last_updated: "2026-06-12T19:49:11.009Z"
-last_activity: 2026-06-12 -- Phase 116 execution started
+status: discussing
+last_updated: "2026-06-13T07:29:00.000Z"
+last_activity: 2026-06-13 -- Phase 116 verified (passed) & shipped; opening Phase 117 discussion
 progress:
   total_phases: 7
   completed_phases: 1
@@ -17,12 +17,12 @@ progress:
 
 ## Current Position
 
-Phase: 116 (all-ply-engine-core) — EXECUTING
-Plan: 3 of 3
-Status: Phase complete — ready for verification
-Last activity: 2026-06-13 -- Completed quick task 260613-bst: bookmark WDL stats respect recency/date filter in Openings Stats tab
+Phase: 117 (priority-queue-flaw-integration) — DISCUSSING
+Plan: —
+Status: Phase 116 (all-ply-engine-core) COMPLETE — verified passed (10/10 must-haves, 2026-06-12) and shipped via PR #187. Now opening Phase 117 discussion.
+Last activity: 2026-06-13 -- Phase 116 verified & shipped; opening Phase 117 discussion (prev: quick task 260613-bst bookmark WDL recency filter)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█░░░░░░░░░] 14% (1 of 7 phases)
 
 ## Project Reference
 
