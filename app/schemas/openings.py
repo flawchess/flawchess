@@ -152,8 +152,14 @@ class TimeSeriesBookmarkParam(BaseModel):
 class TimeSeriesRequest(BaseModel):
     """Request body for POST /openings/time-series.
 
-    The time-series endpoint does not filter by date (no from_date/to_date
-    fields) — the rolling-window chart always covers the full game history.
+    The time-series endpoint accepts optional from_date/to_date bounds
+    (D-19 amendment, 2026-06-13). When present, only TimeSeriesPoints whose
+    played_at falls within [from_date, to_date] are emitted, and WDL totals
+    count only in-window games. The rolling average is still warmed from games
+    before the window start — full chronological history is loaded so trailing
+    averages anchor correctly (warm-up preserved). When from_date/to_date are
+    omitted, behavior is unchanged: the chart covers the full game history.
+
     Other game filters (time_control, platform, rated, opponent_type,
     opponent_gap) still apply to narrow which games contribute to the series.
     """
@@ -167,6 +173,20 @@ class TimeSeriesRequest(BaseModel):
     opponent_type: Literal["human", "bot", "both"] = "human"
     opponent_gap_min: int | None = None
     opponent_gap_max: int | None = None
+    # D-19 amendment (2026-06-13): resolved date bounds for windowed emission.
+    # The recency PRESET stays removed (D-19); only resolved date bounds are added.
+    from_date: datetime.date | None = None
+    to_date: datetime.date | None = None
+
+    @model_validator(mode="after")
+    def _check_date_range(self) -> "TimeSeriesRequest":
+        if (
+            self.from_date is not None
+            and self.to_date is not None
+            and self.from_date > self.to_date
+        ):
+            raise ValueError("from_date must be <= to_date")
+        return self
 
 
 class TimeSeriesPoint(BaseModel):
@@ -187,9 +207,9 @@ class BookmarkTimeSeries(BaseModel):
     total_draws: int
     total_losses: int
     total_games: int
-    # MAX(games.played_at) across all games visiting this bookmark's target_hash
-    # (no date filter — D-19). Drives the bookmark card score-confidence
-    # popover's "Last played: <relative>" line.
+    # MAX(games.played_at) across in-window games visiting this bookmark's
+    # target_hash (D-19 amendment: date-windowed when from_date/to_date are set).
+    # Drives the bookmark card score-confidence popover's "Last played: <relative>" line.
     last_played_at: datetime.datetime | None = None
 
 

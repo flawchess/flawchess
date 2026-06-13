@@ -2,27 +2,30 @@
 gsd_state_version: 1.0
 milestone: v1.26
 milestone_name: Full-Game Eval Pipeline
-status: verifying
-last_updated: "2026-06-12T19:49:11.009Z"
-last_activity: 2026-06-12 -- Phase 116 execution started
+status: executed
+last_updated: "2026-06-13T10:20:00.000Z"
+last_activity: 2026-06-13 -- Phase 117 executed + verified (14/14; human-UAT deferred); ready to squash-merge to main
 progress:
   total_phases: 7
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
-  percent: 14
+  completed_phases: 2
+  total_plans: 6
+  completed_plans: 6
+  percent: 29
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 116 (all-ply-engine-core) — EXECUTING
-Plan: 3 of 3
-Status: Phase complete — ready for verification
-Last activity: 2026-06-12 -- Phase 116 execution started
+Phase: 117 (priority-queue-flaw-integration) — MERGED TO MAIN, ready to deploy
+Plan: 3 of 3 executed
+Status: Squash-merged to main as `112af95a` (feat(117): priority queue + flaw integration); phase branch deleted; main is 5 commits ahead of origin/main (UNPUSHED — deploy via bin/deploy.sh / /deploy promotes main → production). Verified 14/14 must-haves, secured 13/13 threats (ASVS L1), code-review findings fixed. Gates green: ruff + ty clean, full SERIAL suite 2586 passed/10 skipped, frontend untouched.
+DEPLOY-NEXT: run /deploy (or bin/deploy.sh) to ship 116+117 to prod. Migration 20260613_120000_phase_117_queue_pv auto-runs on container start (4 nullable cols + eval_jobs + ~598k-row lichess_evals_at backfill).
+PROD-SOAK (2 deferred human-UAT items, check after deploy): (1) tier-1 ~10s wall-clock fan-out on the live pool (QUEUE-03); (2) confirm _signal_flaw_completion cache stub logs cleanly (D-117-11; real wiring is Phase 118).
+Security: SECURED — 13/13 threats closed (threats_open: 0), ASVS L1 (117-SECURITY.md).
+Last activity: 2026-06-13 -- Phase 117 squash-merged to main (112af95a); ready to deploy
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██░░░░░░░░] 29% (2 of 7 phases executed)
 
 ## Project Reference
 
@@ -300,6 +303,7 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 | 260610-sha | Prod DB query & index tuning — implemented SEED-041 items 1-8 (item 9 `move_count`→`ply_count` deliberately left as a phase, per user "no new phase"). **3 Alembic migrations** off head `f8a2d1c9b345`: (1) `b7c1d9e2f3a4` batch-1 — `full_hash SET STATISTICS 2000` + `game_positions` autovacuum insert tuning (both already live on prod since 2026-06-10; ride here for dev/test parity, idempotent), CONCURRENTLY swap `ix_games_user_id`→`(user_id, played_at DESC)`, add partial `ix_games_user_evals_pending (user_id) WHERE evals_completed_at IS NULL`; (2) `c8d2e0f3a4b5` composite FK — build `uq_games_id_user_id` CONCURRENTLY, replace the two single-col FKs on `game_positions` with `(game_id,user_id)→games(id,user_id)` via NOT VALID+VALIDATE (real FK name `fk_game_positions_user_id` — SEED's assumed name was wrong, verified vs live DB); (3) `d9e3f1a4b5c6` `games SET (toast_tuple_target=256)`. **Query**: `query_top_openings_sql_wdl()` rewritten to a MATERIALIZED CTE that fences the user's games so the planner picks a hash join over ~187k nested-loop probes (plan-flip is prod-only, correctness covered by 34 tests). **Model**: `Game` index decls + `base_time_seconds` SMALLINT-safety comment (item 8); `GamePosition` composite `ForeignKeyConstraint` + explicit `PrimaryKeyConstraint(user_id,game_id,ply)` fixing PK-order drift (item 7). **Manual prod ops still required**: `VACUUM FULL games` (item 6, applies toast knob to existing rows; ~1-2 min ACCESS EXCLUSIVE — VACUUM can't live in a migration). All migrations round-trip up/down on dev. Gates GREEN: ruff format/check + ty clean, pytest 2491 passed/10 skipped, frontend lint + vitest 880/880 (no frontend files changed). Commits `9eab6170`+`44002345`+`8823c3db`+`de16dc4f` on `main`; not pushed. **Verify**: `pg_stat_statements` deltas + re-run `/db-report` (prod) ~1 week after deploy. | 2026-06-10 | de16dc4f | [260610-sha-prod-db-query-index-tuning-seed-041-item](./quick/260610-sha-prod-db-query-index-tuning-seed-041-item/) |
 | 260610-vru | Library card layout polish: Games card move count on its own line below the time control; Flaw card shows clock + move time ("mm:ss (Move Ns)") instead of TC/moves, drops termination text, header shows opponent only; Games tab 2-column grid (analyzed games span both columns, unanalyzed span one, smaller card); Flaws tab shows a big "no engine analysis" message (Lichess-analyzed games only, FlawChess engine analysis coming soon) styled like the Endgames processing state. Backend: added clock_seconds + move_seconds to FlawListItem (reuses existing game_positions joins, no migration). | 2026-06-10 | 25491801 | [260610-vru-library-card-layout-polish-games-card-mo](./quick/260610-vru-library-card-layout-polish-games-card-mo/) |
 | 260611-fast | Fix missing game_flaws for lichess-analyzed imports (hot-lane Stage 5c now runs _classify_and_insert_flaws for covered games; cold drain never picked them) + invalidate library-* query caches on import completion and delete-all-games. Backfilled dev user 28 (3350 rows). | 2026-06-11 | 13bdd381 | — |
+| 260613-bst | Bookmark WDL stats respect recency/date filter in Openings → Stats. WDL bar, "N Games" count, and Score % were sourced from the date-filter-free time-series path (D-19) so they stayed frozen at full history while the Games tab emptied out. Fix: `TimeSeriesRequest` gains `from_date`/`to_date`; `get_time_series` now date-windows emitted points + WDL totals + `last_played_at` while computing the rolling average over full history (warm-up from pre-window games preserved — boundary point keeps `game_count==ROLLING_WINDOW_SIZE`). Frontend spreads `dateRangeToWireParams(resolveDateRange(...))` into the request; `OpeningStatsCard` shows "No matching games" + "—" when `total===0` (both mobile/desktop via shared constants). D-19 amended in 92-CONTEXT.md. Gates GREEN: ruff format/check + ty clean, pytest 2556 passed/10 skipped, frontend lint + knip clean, vitest 905. On `main`; not pushed. | 2026-06-13 | 8f942e4e | [260613-bst-bookmark-wdl-stats-respect-recency-date-](./quick/260613-bst-bookmark-wdl-stats-respect-recency-date-/) |
 
 ## Performance Metrics
 
@@ -341,6 +345,9 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 | Phase 116-all-ply-engine-core P01 | 16min | 3 tasks | 6 files |
 | Phase 116-all-ply-engine-core P02 | 35 | 3 tasks | 3 files |
 | Phase 116-all-ply-engine-core P03 | 25min | 3 tasks | 3 files |
+| Phase 117-priority-queue-flaw-integration P01 | 12m | 3 tasks | 6 files |
+| Phase 117-priority-queue-flaw-integration P02 | 9 | - tasks | - files |
+| Phase 117-priority-queue-flaw-integration P03 | 40 | 3 tasks | 7 files |
 
 ## Decisions
 
@@ -383,3 +390,7 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 - [Phase ?]: Phase 116 Plan 03
 - [Phase ?]: .planning/phases/116-all-ply-engine-core/116-03-SUMMARY.md
 - [Phase ?]: .planning/phases/116-all-ply-engine-core/116-03-SUMMARY.md
+- [Phase ?]: 117-02: SKIP LOCKED tiered queue with LEASE_TTL_SECONDS=120; tier-3 derived pick (no eval_jobs pre-population); is_analyzed from lichess_evals_at (D-117-07)
+- [Phase ?]: D-117-07: WR-02 gate repointed from white_blunders IS NULL to lichess_evals_at IS NULL — lichess_evals_at precisely marks engine-written vs lichess-%eval-written rows
+- [Phase ?]: D-117-02: Flaw PV written at ply N+1 (position after the flawed move); flaw PV at ply N would describe the position before the mistake
+- [Phase ?]: evaluate_nodes_with_pv returns 4-tuple (eval_cp, eval_mate, best_move, pv_string) from one 1M-node search — drain has both PV artifacts without a second engine call (EVAL-04)

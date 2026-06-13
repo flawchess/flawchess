@@ -5,14 +5,15 @@ Phase 62: impersonation + user search. Per CLAUDE.md, 403/404s raised by
 in try/except + sentry_sdk.capture_exception (would fragment Sentry issues).
 """
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
+from app.models.game import Game
 from app.models.user import User
-from app.schemas.admin import ImpersonateResponse, UserSearchResult
+from app.schemas.admin import EnqueueTier1Response, ImpersonateResponse, UserSearchResult
 from app.services import admin_service
 from app.users import current_superuser, get_impersonation_jwt_strategy
 
@@ -80,3 +81,47 @@ async def impersonate_user(
         target_email=target.email,
         target_id=target.id,
     )
+
+
+@router.post("/eval/enqueue-tier1/{game_id}", response_model=EnqueueTier1Response)
+async def admin_enqueue_tier1(
+    game_id: int,
+    _admin: Annotated[User, Depends(current_superuser)],
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+) -> EnqueueTier1Response:
+    """Enqueue a tier-1 eval job for one game (admin/internal use only).
+
+    Phase 117 D-117-05 / QUEUE-03: internal trigger to exercise the ~10s fan-out
+    on the prod engine pool. NOT the user-facing 'analyze this game' endpoint
+    (Phase 118).
+
+    404s when the game does not exist — an EXPECTED condition per the admin router
+    header note, so it is NOT wrapped in Sentry capture.
+
+    Returns 'skipped_guest' when the game belongs to a guest user (QUEUE-08).
+    Returns 'already_queued' when the game already has an active eval job.
+    Returns 'enqueued' when the tier-1 row was inserted.
+    """
+    from app.services.eval_queue_service import enqueue_tier1_game
+
+    game = await session.get(Game, game_id)
+    if game is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game not found")
+
+    inserted = await enqueue_tier1_game(game_id=game_id, user_id=game.user_id)
+
+    # Determine the status label for the response.
+    # enqueue_tier1_game returns False for guests OR when already queued.
+    # We need to distinguish them for the caller; check is_guest on the game's user.
+    enqueue_status: Literal["enqueued", "skipped_guest", "already_queued"]
+    if inserted:
+        enqueue_status = "enqueued"
+    else:
+        # Look up the user's is_guest flag to distinguish guest vs already_queued.
+        user = await session.get(User, game.user_id)
+        if user is not None and user.is_guest:
+            enqueue_status = "skipped_guest"
+        else:
+            enqueue_status = "already_queued"
+
+    return EnqueueTier1Response(status=enqueue_status, game_id=game_id)

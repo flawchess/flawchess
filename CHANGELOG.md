@@ -22,6 +22,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Fixed
 
+- **Bookmark WDL stats respect the recency filter** — the WDL bar, game count, and Score % on the Openings Stats bookmark card now reflect only in-window games when a recency or date filter is active (they previously showed frozen full-history numbers). A zero-match window shows "No matching games" and "—" instead. The rolling time-series chart line is filtered to the window while still being warmed up from pre-window games. (quick task 260613-bst)
 - **Engine worker recovery after a crash** — when a Stockfish worker process died, the automatic restart could abort and leave that worker slot permanently broken until the next backend restart. The restart path now handles the dead process cleanly. (Phase 116, FLAWCHESS-59)
 
 ## [v1.25] Flaw-Stats Opponent Comparison — 2026-06-12

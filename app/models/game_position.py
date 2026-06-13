@@ -8,6 +8,7 @@ from sqlalchemy import (
     PrimaryKeyConstraint,
     SmallInteger,
     String,
+    Text,
     text,
 )
 from sqlalchemy.dialects.postgresql import REAL
@@ -169,6 +170,17 @@ class GamePosition(Base):
     # Engine analysis: per-move eval from lichess %eval PGN annotations (NULL for chess.com and unanalyzed games)
     eval_cp: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
     eval_mate: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+
+    # D-117-01 + D-117-03: PV[0] UCI best move for every evaluated position.
+    # 4 chars normal (e.g. "e2e4") / 5 chars promotion (e.g. "e7e8q").
+    # Written by the full-ply drain alongside eval_cp/eval_mate (zero extra engine cost).
+    # Transplanted via full_hash dedup in the opening region (ply <= DEDUP_MAX_PLY),
+    # exactly like eval_cp — safe because best_move is a property of the pre-move position.
+    best_move: Mapped[Optional[str]] = mapped_column(String(5), nullable=True)
+    # D-117-02: ~12-ply UCI refutation line (space-joined), stored only at the position
+    # AFTER each flawed move (ply = flaw_ply + 1). This is the SEED-039 refutation line
+    # consumed by the tactic-motif classifier. NULL for non-flaw positions.
+    pv: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Endgame class: SmallInteger IntEnum (1-6), NULL for non-endgame positions.
     # 1=rook, 2=minor_piece, 3=pawn, 4=queen, 5=mixed, 6=pawnless.

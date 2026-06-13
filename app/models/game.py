@@ -158,6 +158,20 @@ class Game(Base):
     full_evals_completed_at: Mapped[datetime.datetime | None] = mapped_column(
         sa.DateTime(timezone=True), nullable=True
     )
+    # D-117-06: provenance — set ONLY at import when lichess %evals are ingested;
+    # NULL = engine-written, transplant-safe for WR-02 (repointed from white_blunders
+    # by D-117-07). This is the "these evals are lichess post-move %evals" durable signal,
+    # decoupled from the oracle count columns so engine-filled games don't blur it.
+    lichess_evals_at: Mapped[datetime.datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+    # D-117-12: PV/best_move completion dimension, parallel to full_evals_completed_at.
+    # A game can be eval-complete but PV-missing (pre-117-analyzed games lack best_move).
+    # Set after best_move is written for all plies in a game. NULL = PV not yet captured.
+    # The ix_games_full_pv_pending partial index (WHERE NULL) lives in the migration.
+    full_pv_completed_at: Mapped[datetime.datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
 
     positions: Mapped[list["GamePosition"]] = relationship(  # ty: ignore[unresolved-reference]
         back_populates="game", cascade="all, delete-orphan"
@@ -165,16 +179,17 @@ class Game(Base):
 
     @hybrid_property
     def is_analyzed(self) -> bool:
-        """True when this game has full-game move-quality analysis.
+        """True when this game has full-game move-quality analysis (flaw counts populated).
 
-        Cheap detector: `white_blunders` is populated only when the import
-        pipeline ingested per-color move-quality counts — currently Lichess
-        games that already have computer analysis enabled (chess.com supplies
-        only game-level accuracy, and unanalyzed games supply neither). Used as
-        the analyzed/total denominator for the flaw-stats coverage badge, and as
-        the analyzed-game gate for the you-vs-opponent comparison. This is a
-        coarser signal than per-ply eval coverage but matches the product
-        reality ("analysis = Lichess move-quality columns present").
+        Cheap detector: `white_blunders` is non-NULL when per-color move-quality counts
+        are present — either ingested from Lichess at import time (lichess_evals_at IS NOT
+        NULL) or computed by the full-ply eval drain (Phase 117+, D-117-09). Chess.com
+        games without per-game analysis return False. Used as the analyzed/total
+        denominator for the flaw-stats coverage badge and the you-vs-opponent comparison.
+
+        Note (D-117-09): after Phase 117 this property returns True for engine-analyzed
+        games as well as Lichess games with computer analysis — it is no longer
+        Lichess-only.
         """
         return self.white_blunders is not None
 

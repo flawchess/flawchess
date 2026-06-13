@@ -42,6 +42,7 @@ import {
 } from '@/hooks/usePositionBookmarks';
 import { useMostPlayedOpenings, useBookmarkPhaseEntryMetrics } from '@/hooks/useStats';
 import { rangeToQueryParams } from '@/lib/opponentStrength';
+import { resolveDateRange, dateRangeToWireParams } from '@/lib/recency';
 import { ChessBoard } from '@/components/board/ChessBoard';
 import { MoveList } from '@/components/board/MoveList';
 import { BoardControls } from '@/components/board/BoardControls';
@@ -353,7 +354,9 @@ export function OpeningsPage() {
       rated: debouncedFilters.rated,
       opponent_type: debouncedFilters.opponentType,
       ...rangeToQueryParams(debouncedFilters.opponentStrength),
-      // D-19: recency field removed from TimeSeriesRequest — time-series covers full history.
+      // D-19 amendment: recency now flows as resolved date bounds (from_date/to_date)
+      // so the bookmark card WDL bar, game count, and Score % respond to the filter.
+      ...dateRangeToWireParams(resolveDateRange(debouncedFilters)),
     };
   }, [chartBookmarks, debouncedFilters]);
 

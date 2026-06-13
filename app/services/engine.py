@@ -13,10 +13,12 @@ scheduling (the relevant `os.sched_setscheduler` API is Linux-only).
 
 Two APIs:
     Module-level (live FastAPI traffic, prod imports):
-        start_engine()          -- call from FastAPI lifespan startup.
-        stop_engine()           -- call from lifespan shutdown.
-        evaluate(board)         -- async; returns (eval_cp, eval_mate); depth-15.
-        evaluate_nodes(board)   -- async; returns (eval_cp, eval_mate); 1M nodes (EVAL-02).
+        start_engine()              -- call from FastAPI lifespan startup.
+        stop_engine()               -- call from lifespan shutdown.
+        evaluate(board)             -- async; returns (eval_cp, eval_mate); depth-15.
+        evaluate_nodes(board)       -- async; returns (eval_cp, eval_mate); 1M nodes (EVAL-02).
+        evaluate_nodes_with_pv(board) -- async; returns (eval_cp, eval_mate, best_move, pv_string);
+                                        zero extra search cost (EVAL-04, Phase 117).
 
         With STOCKFISH_POOL_SIZE=1 (the dev/CI default) this behaves exactly
         like the original singleton. Set STOCKFISH_POOL_SIZE=2+ on prod to get
@@ -91,6 +93,10 @@ _TIMEOUT_S: float = 2.0
 # of node-budget calls on prod. 5.0s = ~4x prod p90 (spike 002).
 _NODES_BUDGET: int = 1_000_000  # EVAL-02: Lichess fishnet parity (D-6 SEED-012)
 _NODES_TIMEOUT_S: float = 5.0  # 4x prod p90 (1.277s, spike 002)
+# Phase 117 EVAL-04 / D-117-02: PV cap for flaw refutation lines.
+# SEED-039 motif-line depth: tier-1/2 need 1-2 plies; tier-3 needs ~3 plies.
+# Cap at 12 for margin. At 12 moves: max 12×5 + 11 = 71 chars — fits Text easily.
+PV_CAP_PLIES: int = 12
 #
 # NOTE (2026-05-29): eval_cp is NOT reproducible across machines/runs, and the
 # eval-derived percentiles (achievable_score_gap, score_gap_conv/parity/recovery)
@@ -235,6 +241,51 @@ async def evaluate_nodes(board: chess.Board) -> tuple[int | None, int | None]:
     if _pool is None:
         return None, None
     return await _pool.evaluate_nodes(board)
+
+
+async def evaluate_nodes_with_pv(
+    board: chess.Board,
+) -> tuple[int | None, int | None, str | None, str | None]:
+    """Evaluate position at 1M nodes, returning eval + PV data.
+
+    EVAL-04 / Phase 117: PV capture at zero extra engine cost — the PV falls
+    out of the same 1M-node search as evaluate_nodes (info=Info.ALL default).
+
+    Returns (eval_cp, eval_mate, best_move_uci, pv_uci_string):
+        eval_cp / eval_mate: same sign convention as evaluate_nodes (white perspective).
+        best_move_uci: info["pv"][0].uci() when PV present, else None (D-117-01).
+        pv_uci_string: space-joined UCI, capped at PV_CAP_PLIES (D-117-02); None when
+            PV absent.
+
+    Returns (None, None, None, None) on engine failure — D-09 semantics preserved.
+    """
+    if _pool is None:
+        return None, None, None, None
+    return await _pool.evaluate_nodes_with_pv(board)
+
+
+def _pv_to_best_move(info: chess.engine.InfoDict) -> str | None:
+    """Extract the best move UCI string from an InfoDict (EVAL-04 / D-117-01).
+
+    Returns info["pv"][0].uci() when the PV is present and non-empty, else None.
+    Mirrors the _score_to_cp_mate info.get(...) guard style.
+    """
+    pv = info.get("pv")
+    if not pv:
+        return None
+    return pv[0].uci()
+
+
+def _pv_to_uci_string(info: chess.engine.InfoDict, cap: int = PV_CAP_PLIES) -> str | None:
+    """Build a space-joined UCI PV string from an InfoDict (EVAL-04 / D-117-02).
+
+    Caps at `cap` plies (default PV_CAP_PLIES=12 for the flaw refutation line).
+    Returns None when the PV is absent or empty.
+    """
+    pv = info.get("pv")
+    if not pv:
+        return None
+    return " ".join(m.uci() for m in pv[:cap])
 
 
 def _score_to_cp_mate(
@@ -396,3 +447,61 @@ class EnginePool:
         Scalar InfoDict returned directly, handled by _score_to_cp_mate() unchanged.
         """
         return await self._analyse(board, chess.engine.Limit(nodes=_NODES_BUDGET), _NODES_TIMEOUT_S)
+
+    async def _analyse_with_pv(
+        self,
+        board: chess.Board,
+        limit: chess.engine.Limit,
+        timeout: float,
+    ) -> chess.engine.InfoDict | None:
+        """Shared worker-acquisition / analyse / failure-restart path returning raw InfoDict.
+
+        Parallel to _analyse but returns the InfoDict instead of applying _score_to_cp_mate,
+        so callers can extract both eval and PV from a single search (EVAL-04).
+        Returns None on timeout / crash / missing protocol (mirrors _analyse failure path).
+        """
+        if not self._started:
+            return None
+        idx = await self._available.get()
+        try:
+            protocol = self._protocols[idx]
+            if protocol is None:
+                return None
+            try:
+                info = await asyncio.wait_for(
+                    protocol.analyse(board, limit),
+                    timeout=timeout,
+                )
+            except (
+                asyncio.TimeoutError,
+                chess.engine.EngineError,
+                chess.engine.EngineTerminatedError,
+            ):
+                await self._restart_worker(idx)
+                return None
+            return info
+        finally:
+            self._available.put_nowait(idx)
+
+    async def evaluate_nodes_with_pv(
+        self,
+        board: chess.Board,
+    ) -> tuple[int | None, int | None, str | None, str | None]:
+        """Evaluate at 1M nodes, returning (eval_cp, eval_mate, best_move_uci, pv_uci_string).
+
+        EVAL-04 / Phase 117: PV falls out of the SAME 1M-node search as evaluate_nodes —
+        zero extra engine compute. Reuses _NODES_BUDGET and _NODES_TIMEOUT_S.
+
+        best_move_uci: info["pv"][0].uci() when PV present, else None (D-117-01).
+        pv_uci_string: space-joined UCI capped at PV_CAP_PLIES (D-117-02).
+        Returns (None, None, None, None) on engine failure (D-09 failure semantics).
+        """
+        info = await self._analyse_with_pv(
+            board, chess.engine.Limit(nodes=_NODES_BUDGET), _NODES_TIMEOUT_S
+        )
+        if info is None:
+            return None, None, None, None
+        eval_cp, eval_mate = _score_to_cp_mate(info)
+        best_move = _pv_to_best_move(info)
+        pv_string = _pv_to_uci_string(info)
+        return eval_cp, eval_mate, best_move, pv_string

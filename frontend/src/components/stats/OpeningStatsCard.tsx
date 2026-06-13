@@ -155,13 +155,24 @@ export function OpeningStatsCard({
     loss_pct: opening.loss_pct,
   };
 
-  const wdlLine = (
-    <WDLChartRow
-      data={wdlData}
-      showSegmentCounts={false}
-      testId={`${cardTestId}-wdl`}
-    />
-  );
+  // When the recency filter yields no matching games, show an empty state instead
+  // of the WDL bar and game count. The Moves link stays to allow navigation.
+  // guard on total === 0 (bookmark-only in practice; Most Played rows never hit zero).
+  const wdlLine =
+    opening.total === 0 ? (
+      <div
+        className="text-sm text-muted-foreground py-1"
+        data-testid={`${cardTestId}-empty`}
+      >
+        No matching games
+      </div>
+    ) : (
+      <WDLChartRow
+        data={wdlData}
+        showSegmentCounts={false}
+        testId={`${cardTestId}-wdl`}
+      />
+    );
 
   // Score + eval rows. On mobile: label stacks above the bullet chart for each
   // metric (per-metric flex-col wrapper, label first in DOM). On desktop (sm+):
@@ -274,7 +285,7 @@ export function OpeningStatsCard({
           onClick={() => onOpenGames(opening, color)}
         >
           <Swords className="h-3.5 w-3.5" />
-          <span className="tabular-nums">{opening.total}</span>
+          <span className="tabular-nums">{opening.total === 0 ? '—' : opening.total}</span>
           <span>Games</span>
         </button>
       </Tooltip>

@@ -9,13 +9,17 @@ Key mechanics under test:
   the trailing ROLLING_WINDOW_SIZE entries to compute the chess score
   (W + 0.5·D) / N.
 - data_by_date keeps only the LAST game's rolling window per calendar day.
-- The time-series endpoint does NOT filter by date (D-19: recency removed from
-  TimeSeriesRequest). Rolling windows are always computed over the full game history.
+- Date-windowed emission (D-19 amendment): when from_date/to_date are given,
+  only points whose played_at is inside the window are emitted, and WDL totals
+  count only in-window games. The rolling average is warmed from games before
+  the window start (warm-up preserved).
 
 Coverage:
-- TestTimeSeriesRequestSchema: TimeSeriesRequest has no recency field (D-19)
+- TestTimeSeriesRequestSchema: TimeSeriesRequest has no recency field (D-19);
+  exposes from_date and to_date (D-19 amendment)
 - TestRollingWindow: single game, two same-day games, multi-day sequence, empty position
 - TestMultipleBookmarks: two bookmarks produce two BookmarkTimeSeries
+- TestDateWindowedTimeSeries: from_date/to_date windowing + warm-up preservation
 """
 
 import datetime
@@ -29,22 +33,78 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.game import Game
 from app.models.game_position import GamePosition
 from app.schemas.openings import TimeSeriesBookmarkParam, TimeSeriesRequest
-from app.services.openings_service import MIN_GAMES_FOR_TIMELINE, get_time_series
+from app.services.openings_service import (
+    MIN_GAMES_FOR_TIMELINE,
+    ROLLING_WINDOW_SIZE,
+    get_time_series,
+)
 
 # ---------------------------------------------------------------------------
 # TestTimeSeriesRequestSchema — D-19: recency field removed from TimeSeriesRequest
+# D-19 amendment: from_date/to_date added for date-windowed totals + emission
 # ---------------------------------------------------------------------------
 
 
 class TestTimeSeriesRequestSchema:
-    """Verify TimeSeriesRequest no longer exposes a recency field (D-19 pre-work)."""
+    """Verify TimeSeriesRequest exposes from_date/to_date but NOT recency (D-19 + amendment)."""
 
     def test_no_recency_field_in_schema(self) -> None:
         """TimeSeriesRequest model fields must not include 'recency' (D-19)."""
         assert "recency" not in TimeSeriesRequest.model_fields, (
             "TimeSeriesRequest must not have a 'recency' field — D-19 removes it "
-            "so the time-series endpoint is date-filter-free."
+            "so the time-series endpoint uses resolved date bounds, not preset labels."
         )
+
+    def test_from_date_field_exists(self) -> None:
+        """TimeSeriesRequest must expose from_date (D-19 amendment)."""
+        assert "from_date" in TimeSeriesRequest.model_fields, (
+            "TimeSeriesRequest must have a 'from_date' field (D-19 amendment: "
+            "totals + emitted points are now date-windowed while the rolling "
+            "average is warmed from pre-window games)."
+        )
+
+    def test_to_date_field_exists(self) -> None:
+        """TimeSeriesRequest must expose to_date (D-19 amendment)."""
+        assert "to_date" in TimeSeriesRequest.model_fields, (
+            "TimeSeriesRequest must have a 'to_date' field (D-19 amendment)."
+        )
+
+    def test_from_date_defaults_to_none(self) -> None:
+        """from_date defaults to None (open lower bound = full history behavior)."""
+        req = TimeSeriesRequest(
+            bookmarks=[
+                TimeSeriesBookmarkParam(
+                    bookmark_id=1, target_hash=1, match_side="full", color="white"
+                )
+            ]
+        )
+        assert req.from_date is None
+
+    def test_to_date_defaults_to_none(self) -> None:
+        """to_date defaults to None (open upper bound = full history behavior)."""
+        req = TimeSeriesRequest(
+            bookmarks=[
+                TimeSeriesBookmarkParam(
+                    bookmark_id=1, target_hash=1, match_side="full", color="white"
+                )
+            ]
+        )
+        assert req.to_date is None
+
+    def test_date_range_validation_rejects_inverted_range(self) -> None:
+        """from_date > to_date must raise ValidationError."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError, match="from_date must be <= to_date"):
+            TimeSeriesRequest(
+                bookmarks=[
+                    TimeSeriesBookmarkParam(
+                        bookmark_id=1, target_hash=1, match_side="full", color="white"
+                    )
+                ],
+                from_date=datetime.date(2026, 6, 1),
+                to_date=datetime.date(2026, 5, 1),
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -53,8 +113,9 @@ class TestTimeSeriesRequestSchema:
 
 _USER_ROLLING = 901
 _USER_MULTI = 903
+_USER_DATE_WINDOW = 905
 
-_ALL_TEST_USER_IDS = [_USER_ROLLING, _USER_MULTI]
+_ALL_TEST_USER_IDS = [_USER_ROLLING, _USER_MULTI, _USER_DATE_WINDOW]
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -130,12 +191,10 @@ def _make_request(
     target_hash: int,
     color: Literal["white", "black"] = "white",
     match_side: Literal["white", "black", "full"] = "full",
+    from_date: datetime.date | None = None,
+    to_date: datetime.date | None = None,
 ) -> TimeSeriesRequest:
-    """Build a minimal TimeSeriesRequest for one bookmark.
-
-    No recency parameter — D-19 removed recency from TimeSeriesRequest.
-    The time-series endpoint is date-filter-free.
-    """
+    """Build a minimal TimeSeriesRequest for one bookmark."""
     return TimeSeriesRequest(
         bookmarks=[
             TimeSeriesBookmarkParam(
@@ -145,6 +204,8 @@ def _make_request(
                 color=color,
             )
         ],
+        from_date=from_date,
+        to_date=to_date,
     )
 
 
@@ -444,3 +505,309 @@ class TestMultipleBookmarks:
 
         assert len(series_emp.data) == 0
         assert series_emp.total_games == 0
+
+
+# ---------------------------------------------------------------------------
+# TestDateWindowedTimeSeries — D-19 amendment: from_date/to_date windowing
+# ---------------------------------------------------------------------------
+
+
+class TestDateWindowedTimeSeries:
+    """Verify date-windowed totals + warm-up rolling emission (D-19 amendment).
+
+    Key invariants tested:
+    - Totals (total_wins/draws/losses/total_games) count only in-window games.
+    - Emitted TimeSeriesPoint.date values all fall within [from_date, to_date].
+    - Rolling average is warmed from pre-window games (warm-up preserved):
+      the first emitted point at/after from_date reports game_count ==
+      ROLLING_WINDOW_SIZE when exactly ROLLING_WINDOW_SIZE games were played
+      before the window start.
+    - A zero-match window yields total_games==0, empty data, last_played_at=None.
+    """
+
+    @pytest.mark.asyncio
+    async def test_windowed_totals_exclude_out_of_window_games(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Totals from a date-windowed request only count in-window games.
+
+        Setup: 3 wins before the window, 2 losses inside the window.
+        Expected: total_games=2, total_wins=0, total_losses=2.
+        Full-history call returns total_games=5 to prove the totals differ.
+        """
+        uid = _USER_DATE_WINDOW
+        fh = 9_500_001
+
+        # 3 wins before the window (January 2026)
+        for day in range(1, 4):
+            await _seed_game_with_position(
+                db_session,
+                user_id=uid,
+                result="1-0",
+                user_color="white",
+                played_at=datetime.datetime(2026, 1, day, tzinfo=datetime.timezone.utc),
+                full_hash=fh,
+            )
+
+        # 2 losses inside the window (March 2026)
+        for day in range(1, 3):
+            await _seed_game_with_position(
+                db_session,
+                user_id=uid,
+                result="0-1",
+                user_color="white",
+                played_at=datetime.datetime(2026, 3, day, tzinfo=datetime.timezone.utc),
+                full_hash=fh,
+            )
+
+        window_from = datetime.date(2026, 2, 1)
+        window_to = datetime.date(2026, 3, 31)
+
+        windowed = await get_time_series(
+            db_session,
+            uid,
+            _make_request(
+                bookmark_id=40,
+                target_hash=fh,
+                color="white",
+                from_date=window_from,
+                to_date=window_to,
+            ),
+        )
+        bts = windowed.series[0]
+
+        # Only the 2 in-window losses are counted in totals
+        assert bts.total_games == 2
+        assert bts.total_wins == 0
+        assert bts.total_losses == 2
+        assert bts.total_draws == 0
+
+        # Full-history call gives different (higher) total
+        full = await get_time_series(
+            db_session,
+            uid,
+            _make_request(bookmark_id=40, target_hash=fh, color="white"),
+        )
+        assert full.series[0].total_games == 5
+
+    @pytest.mark.asyncio
+    async def test_emitted_points_fall_inside_window(self, db_session: AsyncSession) -> None:
+        """Every emitted TimeSeriesPoint.date is within [from_date, to_date].
+
+        Setup: enough games spread across January + February + March that
+        the unfiltered series would span all three months. The windowed request
+        covers February only — all emitted points must be in February.
+        """
+        uid = _USER_DATE_WINDOW
+        fh = 9_500_002
+        n = MIN_GAMES_FOR_TIMELINE
+
+        # Seed n games in January (pre-window)
+        for day in range(1, n + 1):
+            await _seed_game_with_position(
+                db_session,
+                user_id=uid,
+                result="1-0",
+                user_color="white",
+                played_at=datetime.datetime(2026, 1, day, tzinfo=datetime.timezone.utc),
+                full_hash=fh,
+            )
+
+        # Seed n games in February (in-window)
+        for day in range(1, n + 1):
+            await _seed_game_with_position(
+                db_session,
+                user_id=uid,
+                result="1-0",
+                user_color="white",
+                played_at=datetime.datetime(2026, 2, day, tzinfo=datetime.timezone.utc),
+                full_hash=fh,
+            )
+
+        # Seed n games in March (post-window)
+        for day in range(1, n + 1):
+            await _seed_game_with_position(
+                db_session,
+                user_id=uid,
+                result="1-0",
+                user_color="white",
+                played_at=datetime.datetime(2026, 3, day, tzinfo=datetime.timezone.utc),
+                full_hash=fh,
+            )
+
+        window_from = datetime.date(2026, 2, 1)
+        window_to = datetime.date(2026, 2, 28)
+
+        response = await get_time_series(
+            db_session,
+            uid,
+            _make_request(
+                bookmark_id=41,
+                target_hash=fh,
+                color="white",
+                from_date=window_from,
+                to_date=window_to,
+            ),
+        )
+        bts = response.series[0]
+
+        # Must have at least one emitted point (February games are in-window)
+        assert len(bts.data) > 0
+
+        # Every emitted point's date must be within the window
+        for pt in bts.data:
+            pt_date = datetime.date.fromisoformat(pt.date)
+            assert pt_date >= window_from, f"Point {pt.date} is before from_date {window_from}"
+            assert pt_date <= window_to, f"Point {pt.date} is after to_date {window_to}"
+
+    @pytest.mark.asyncio
+    async def test_warm_up_preserved_at_window_boundary(self, db_session: AsyncSession) -> None:
+        """First emitted point at window start reports game_count == ROLLING_WINDOW_SIZE.
+
+        Setup:
+        - Seed exactly ROLLING_WINDOW_SIZE wins before the window (Jan + Feb 2025,
+          multiple games per day spaced 30 minutes apart to fit within month bounds).
+        - Seed 1 win on the window start day (Mar 1 2026).
+        - from_date = Mar 1 2026.
+
+        The service processes all rows chronologically. When it reaches the Mar
+        game, results_so_far has ROLLING_WINDOW_SIZE+1 entries, so the trailing
+        slice is ROLLING_WINDOW_SIZE. The Mar point's game_count must be
+        ROLLING_WINDOW_SIZE (not 1 as it would be with a reset).
+
+        This also proves the trailing average reflects pre-window games: if the
+        rolling accumulator were reset at the window boundary, game_count would be 1.
+        """
+        uid = _USER_DATE_WINDOW
+        fh = 9_500_003
+        warmup_games = ROLLING_WINDOW_SIZE  # 50 pre-window games
+
+        # Seed ROLLING_WINDOW_SIZE wins before the window.
+        # Use 2025 so they are well before the 2026 window.
+        # Spread across multiple days (up to 28 games in Feb, the rest in Jan)
+        # using hour offsets so each game has a distinct timestamp (and thus
+        # distinct played_at for correct ordering).
+        jan_games = min(warmup_games, 28)  # fill February first to avoid month-overflow
+        feb_games = warmup_games - jan_games
+        game_index = 0
+        for i in range(jan_games):
+            # Jan 1–28, hour 0–23 cycling, minute ticks for uniqueness
+            await _seed_game_with_position(
+                db_session,
+                user_id=uid,
+                result="1-0",
+                user_color="white",
+                played_at=datetime.datetime(
+                    2025,
+                    1,
+                    (i % 28) + 1,
+                    i % 24,
+                    game_index % 60,
+                    tzinfo=datetime.timezone.utc,
+                ),
+                full_hash=fh,
+            )
+            game_index += 1
+        for i in range(feb_games):
+            await _seed_game_with_position(
+                db_session,
+                user_id=uid,
+                result="1-0",
+                user_color="white",
+                played_at=datetime.datetime(
+                    2025,
+                    2,
+                    (i % 28) + 1,
+                    i % 24,
+                    game_index % 60,
+                    tzinfo=datetime.timezone.utc,
+                ),
+                full_hash=fh,
+            )
+            game_index += 1
+
+        # One win on Mar 1 2026 (in-window)
+        await _seed_game_with_position(
+            db_session,
+            user_id=uid,
+            result="1-0",
+            user_color="white",
+            played_at=datetime.datetime(2026, 3, 1, tzinfo=datetime.timezone.utc),
+            full_hash=fh,
+        )
+
+        window_from = datetime.date(2026, 3, 1)
+        window_to = datetime.date(2026, 3, 31)
+
+        response = await get_time_series(
+            db_session,
+            uid,
+            _make_request(
+                bookmark_id=42,
+                target_hash=fh,
+                color="white",
+                from_date=window_from,
+                to_date=window_to,
+            ),
+        )
+        bts = response.series[0]
+
+        # The March game is the only emitted point
+        assert len(bts.data) == 1
+        pt = bts.data[0]
+        assert pt.date == "2026-03-01"
+
+        # Warm-up preserved: game_count == ROLLING_WINDOW_SIZE (not 1)
+        assert pt.game_count == ROLLING_WINDOW_SIZE, (
+            f"Expected game_count={ROLLING_WINDOW_SIZE} (warm-up from pre-window games), "
+            f"got {pt.game_count}. A reset-to-1 would indicate warm-up was not preserved."
+        )
+
+        # Totals count only the 1 in-window game
+        assert bts.total_games == 1
+        assert bts.total_wins == 1
+
+    @pytest.mark.asyncio
+    async def test_zero_match_window_returns_empty(self, db_session: AsyncSession) -> None:
+        """A from_date/to_date window with no matching games returns empty results.
+
+        total_games == 0, data == [], last_played_at is None.
+        """
+        uid = _USER_DATE_WINDOW
+        fh = 9_500_004
+        n = MIN_GAMES_FOR_TIMELINE
+
+        # Seed n games in January
+        for day in range(1, n + 1):
+            await _seed_game_with_position(
+                db_session,
+                user_id=uid,
+                result="1-0",
+                user_color="white",
+                played_at=datetime.datetime(2026, 1, day, tzinfo=datetime.timezone.utc),
+                full_hash=fh,
+            )
+
+        # Request a window in June — no games there
+        window_from = datetime.date(2026, 6, 1)
+        window_to = datetime.date(2026, 6, 30)
+
+        response = await get_time_series(
+            db_session,
+            uid,
+            _make_request(
+                bookmark_id=43,
+                target_hash=fh,
+                color="white",
+                from_date=window_from,
+                to_date=window_to,
+            ),
+        )
+        bts = response.series[0]
+
+        assert bts.total_games == 0
+        assert bts.total_wins == 0
+        assert bts.total_draws == 0
+        assert bts.total_losses == 0
+        assert bts.data == []
+        assert bts.last_played_at is None
