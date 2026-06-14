@@ -1,6 +1,6 @@
 ---
 id: SEED-046
-status: dormant
+status: promoted (→ Phase 119, v1.26, 2026-06-14)
 planted: 2026-06-14
 planted_during: v1.26 Full-Game Eval Pipeline (during Phase 118 execution)
 trigger_when: after Phase 118 ships and the strict-recency tier-3 drain is observed in prod, or when users report no analysis progress after returning from an absence
