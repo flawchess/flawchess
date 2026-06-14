@@ -54,7 +54,7 @@
 - [x] **Phase 117.2: Wipe Eval-Only Engine Residue (INSERTED, SEED-044 follow-up)** - Data-only migration: NULLs `eval_cp`/`eval_mate`/`best_move`/`pv` for 3,497 engine games (3 users) carrying dense evals from a pre-Phase-117 eval-only pass with no `best_move`/flaw classification/`full_evals_completed_at` marker. They showed in the Library as analyzed-with-no-flaws (≥90%-coverage "analyzed" gate); the wipe drops them from the analyzed set until the tier-3 drain re-materializes them properly. Gated on `lichess_evals_at IS NULL` — lichess never touched.
   - **Plans:** 1 data migration (no PLAN.md; committed follow-up) — DEPLOYED to prod 2026-06-14 via release #191 (`8359935b`). Verified: residue 3497→0; lichess_total 39876 unchanged, lichess_flawed_no_marker 9655 unchanged (guards held).
 - [ ] **Phase 118: Demand UX + Auto-Enqueue** - Automatic window enqueue on import/activity + explicit "analyze more" affordance + coverage indicators + in-flight status
-- [ ] **Phase 119: Eval-drain coverage (SEED-045, SEED-046)** - Bounded-retry hole-filling (don't stamp full_evals_completed_at while non-terminal/non-mate holes remain; cap at MAX_EVAL_ATTEMPTS) + recency-weighted tier-3 lottery (replace winner-take-all last_activity ordering with Efraimidis–Spirakis user-weighted sampling + PV-backfill residual tier)
+- [x] **Phase 119: Eval-drain coverage (SEED-045, SEED-046)** - Bounded-retry hole-filling (don't stamp full_evals_completed_at while non-terminal/non-mate holes remain; cap at MAX_EVAL_ATTEMPTS) + recency-weighted tier-3 lottery (replace winner-take-all last_activity ordering with Efraimidis–Spirakis user-weighted sampling + PV-backfill residual tier) (completed 2026-06-14)
 
 <details>
 <summary>✅ v1.25 Flaw-Stats Opponent Comparison (Phases 113–115, incl. 114.1) — SHIPPED 2026-06-12</summary>
@@ -526,7 +526,7 @@ Plans:
 | 117.1. Flaw-Eval Convention Fix (INSERTED, SEED-044) | 2/2 | Complete (deployed #190) | 2026-06-14 |
 | 117.2. Wipe Eval-Only Engine Residue (INSERTED, SEED-044) | 1/1 | Complete (deployed #191) | 2026-06-14 |
 | 118. Demand UX + Auto-Enqueue | 3/3 | Complete (verified; not yet deployed) | 2026-06-14 |
-| **119. Eval-drain coverage (SEED-045, SEED-046)** | **0/3** | **Planned** | **-** |
+| 119. Eval-drain coverage (SEED-045, SEED-046) | 3/3 | Complete | 2026-06-14 |
 
 ## Backlog
 

@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.26
 milestone_name: Full-Game Eval Pipeline
 status: verifying
-last_updated: "2026-06-14T15:13:25.503Z"
+last_updated: "2026-06-14T16:21:45.884Z"
 last_activity: 2026-06-14
 progress:
   total_phases: 9
@@ -17,8 +17,8 @@ progress:
 
 ## Current Position
 
-Phase: 119 (eval-drain-coverage-bounded-retry-hole-filling-recency-weigh) — EXECUTING
-Plan: 3 of 3
+Phase: 999.1
+Plan: Not started
 Status: Phase complete — ready for verification
 NEXT: Phase 118 (Demand UX + Auto-Enqueue) — only remaining v1.26 phase; discussion captured (118-CONTEXT.md + 118-DISCUSSION-LOG.md, parallel session 2026-06-14), not yet planned/executed.
 PROD-SOAK (deferred items, check during 118 / over coming days): (1) tier-1 ~10s wall-clock fan-out on the live pool (QUEUE-03); (2) confirm _signal_flaw_completion cache stub logs cleanly (D-117-11; real wiring is Phase 118); (3) re-verify the ~32% flaw-PV coverage TODO once the residue re-eval catches up (multi-day background drain; see 117.1-POST-DEPLOY.md). No auto-enqueue yet (Phase 118), so user 99's residue re-eval was intentionally NOT prioritized.
