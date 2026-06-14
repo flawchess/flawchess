@@ -8,6 +8,14 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Changed
+
+- **Eval-chart tooltip is more readable** — the floating tooltip on game eval charts is now less transparent so it stays legible over the eval bar.
+
+### Fixed
+
+- **Eval chart no longer crashes the Library on touch devices** — scrubbing a game's eval chart on some Android / hybrid-pointer devices could throw "Maximum update depth exceeded" and blank the page. The chart slider no longer ties its value to the hover position (a sticky hover could pin it into an update loop), and touch devices are now detected more reliably so the chart's hover scrub stays off on touch. (FLAWCHESS-5F, FLAWCHESS-5Y)
+
 ## [v1.26] Full-Game Eval Pipeline — 2026-06-14
 
 Turned eval coverage from "endgame-entry plies only" into a **full-game background analysis pipeline**: every move of your imported games is now evaluated by Stockfish at lichess-comparable strength (1M nodes per move), drained by a tiered priority queue that puts your explicit "Analyze" requests first and an idle backlog last, with the results flowing automatically into the Library's flaw surfaces. Includes an on-demand analyze affordance with live coverage badges, a post-move eval-convention fix that corrected flaw stats for chess.com games, honest hole-aware coverage tracking, and an optional off-box headless eval worker for extra compute. Phases 116–120 (incl. inserted 117.1 / 117.2).

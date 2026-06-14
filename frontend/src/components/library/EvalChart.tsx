@@ -194,21 +194,39 @@ const SLIDER_THUMB_PX = 16;
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * True when the primary pointer is coarse (touch). Pointer capability — not the
- * usual width-based useIsMobile — is the right axis here: the chart's hover scrub
- * and the slider's focus/blur tooltip gating are mouse interaction models that
- * break on touch regardless of viewport width (a tap "hovers" the chart and then
+ * True when the device has a touch pointer. Pointer capability — not the usual
+ * width-based useIsMobile — is the right axis here: the chart's hover scrub and
+ * the slider's focus/blur tooltip gating are mouse interaction models that break
+ * on touch regardless of viewport width (a tap "hovers" the chart and then
  * sticks, and iOS Safari never focuses a range input on touch).
+ *
+ * Bug fix (FLAWCHESS-5F / 5Y): `(pointer: coarse)` alone reports *fine* on
+ * Android desktop-site / hybrid-pointer devices, so the chart stayed hover-
+ * interactive on touch; a finger tap set a sticky `hoverPly` that pinned the
+ * slider's controlled value and triggered "Maximum update depth exceeded". We
+ * also check `(any-pointer: coarse)` and `navigator.maxTouchPoints` so any device
+ * with a touchscreen reliably makes the chart inert (touch scrub via the overlay).
  */
+function detectCoarsePointer(): boolean {
+  if (typeof window === 'undefined') return false;
+  const coarsePrimary = window.matchMedia('(pointer: coarse)').matches;
+  const coarseAny = window.matchMedia('(any-pointer: coarse)').matches;
+  const hasTouchPoints = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
+  return coarsePrimary || coarseAny || hasTouchPoints;
+}
+
 function useIsCoarsePointer(): boolean {
-  const [isCoarse, setIsCoarse] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches,
-  );
+  const [isCoarse, setIsCoarse] = useState(detectCoarsePointer);
   useEffect(() => {
-    const mq = window.matchMedia('(pointer: coarse)');
-    const update = (): void => setIsCoarse(mq.matches);
-    mq.addEventListener('change', update);
-    return () => mq.removeEventListener('change', update);
+    const primary = window.matchMedia('(pointer: coarse)');
+    const any = window.matchMedia('(any-pointer: coarse)');
+    const update = (): void => setIsCoarse(detectCoarsePointer());
+    primary.addEventListener('change', update);
+    any.addEventListener('change', update);
+    return () => {
+      primary.removeEventListener('change', update);
+      any.removeEventListener('change', update);
+    };
   }, []);
   return isCoarse;
 }
@@ -562,16 +580,12 @@ export function EvalChart({
   };
   const handleMouseLeave = () => setHoverPly(null);
 
-  // Slider handler: explicit user scrub sets sliderPly. It MUST also clear any
-  // lingering hoverPly. The input is controlled to `activePly` (= hoverPly ??
-  // sliderPly), so while hoverPly is non-null the value is pinned to it and the
-  // thumb can't move: every onChange re-renders with the same pinned value, the
-  // DOM re-fires change, and React aborts the setState↔re-render fight with
-  // "Maximum update depth exceeded" (FLAWCHESS-5F). hoverPly only goes sticky when
-  // mouse-leave never fires — a tap on the chart surface on a touch device the
-  // (pointer: coarse) guard misclassified as fine (Android desktop-site mode,
-  // hybrid pointers). Clearing it here frees the controlled value regardless of how
-  // the pointer was detected, so the slider always tracks the drag.
+  // Slider handler: explicit user scrub sets sliderPly and clears any lingering
+  // hoverPly so the crosshair/tooltip immediately track the thumb. Clearing hover
+  // here is now a UX nicety, not a correctness crutch: the input is controlled to
+  // sliderPly (not activePly), so a sticky hoverPly can no longer pin the value
+  // (the FLAWCHESS-5F / 5Y "Maximum update depth exceeded" loop — see the `value`
+  // prop and useIsCoarsePointer comments for the full fix).
   const handleSliderEngage = (): void => {
     if (hoverPly != null) setHoverPly(null);
   };
@@ -856,7 +870,7 @@ export function EvalChart({
             }, ${hoverDriven ? '-50%' : '0'})`,
           }}
         >
-          <ChartTooltipBox className="bg-background/55 backdrop-blur-[2px] whitespace-nowrap">
+          <ChartTooltipBox className="bg-background/85 backdrop-blur-[2px] whitespace-nowrap">
             <div className="flex items-center gap-1 text-muted-foreground">
               <span>{moveLabel}</span>
               <span>&middot;</span>
@@ -930,7 +944,14 @@ export function EvalChart({
           min={sliderMin}
           max={sliderMax}
           step={1}
-          value={activePly}
+          // Controlled to sliderPly, NOT activePly (= hoverPly ?? sliderPly).
+          // Bug fix (FLAWCHESS-5F / 5Y): binding the value to a derived hoverPly
+          // let a sticky hover pin the input so it could never move, fighting
+          // onChange into "Maximum update depth exceeded". Decoupling makes that
+          // structurally impossible on every device. The crosshair, tooltip, and
+          // active dot still follow activePly during mouse hover; only the thumb
+          // parks at the committed sliderPly instead of sweeping with the cursor.
+          value={sliderPly}
           onChange={handleSliderChange}
           // Free any sticky hover the instant the slider is grabbed, before the
           // first onChange — otherwise the controlled value stays pinned to hoverPly
