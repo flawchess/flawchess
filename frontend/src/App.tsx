@@ -31,6 +31,7 @@ import { PrivacyPage } from '@/pages/Privacy';
 // Throwaway prototype for GM-coach review of the Train (spaced-repetition) UX.
 // Unlinked public route — not in any nav. Safe to delete (see SEED-037).
 import { TrainSketchPage } from '@/pages/TrainSketch/TrainSketchPage';
+import { WelcomePage } from '@/pages/Welcome';
 import { useImportPolling, useActiveJobs } from '@/hooks/useImport';
 import { useUserFlag, setUserFlag } from '@/hooks/useUserFlag';
 import { useReadiness } from '@/hooks/useReadiness';
@@ -608,6 +609,7 @@ function AppRoutes() {
           <Route path="/overview" element={<Navigate to="/library/stats" replace />} />
           <Route path="/rating" element={<Navigate to="/library/stats" replace />} />
           <Route path="/global-stats" element={<Navigate to="/library/stats" replace />} />
+          <Route path="/welcome" element={<WelcomePage />} />
           <Route path="/openings/*" element={<ImportRequiredRoute><OpeningsPage /></ImportRequiredRoute>} />
           <Route path="/endgames/*" element={<ImportRequiredRoute><EndgamesPage /></ImportRequiredRoute>} />
           <Route path="/admin" element={<SuperuserRoute><AdminPage /></SuperuserRoute>} />
