@@ -308,6 +308,19 @@ def _score_to_cp_mate(
     return eval_cp, eval_mate
 
 
+async def get_stockfish_version() -> str:
+    """Read Stockfish version string via UCI handshake.
+
+    Returns e.g. 'Stockfish 18'. Called once by the remote worker CLI at
+    startup to populate sf_version in SubmitRequest (Phase 120 D-5).
+    Opens and immediately quits a single UCI connection; does not use EnginePool.
+    """
+    transport, protocol = await chess.engine.popen_uci(_STOCKFISH_PATH, **_engine_popen_kwargs())
+    version = str(protocol.id.get("name", "unknown"))
+    await protocol.quit()
+    return version
+
+
 class EnginePool:
     """Parallel Stockfish workers for batch evaluation jobs.
 

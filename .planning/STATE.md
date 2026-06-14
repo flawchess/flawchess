@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.26
 milestone_name: Full-Game Eval Pipeline
 status: verifying
-last_updated: "2026-06-14T16:21:45.884Z"
+last_updated: "2026-06-14T18:34:39.329Z"
 last_activity: 2026-06-14
 progress:
-  total_phases: 9
-  completed_phases: 5
-  total_plans: 14
-  completed_plans: 14
-  percent: 56
+  total_phases: 10
+  completed_phases: 6
+  total_plans: 18
+  completed_plans: 18
+  percent: 60
 ---
 
 # Project State: FlawChess
@@ -25,7 +25,7 @@ PROD-SOAK (deferred items, check during 118 / over coming days): (1) tier-1 ~10s
 Security: SECURED — 13/13 threats closed (threats_open: 0), ASVS L1 (117-SECURITY.md).
 Last activity: 2026-06-14
 
-Progress: [█████████░] 86%
+Progress: [█████████░] 94%
 
 ## Project Reference
 
@@ -354,6 +354,9 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 | Phase 118-demand-ux-auto-enqueue P02 | 9 | 2 tasks | 5 files |
 | Phase 119 P03 | 35m | 2 tasks | 16 files |
 | Phase 119-eval-drain-coverage P02 | 45 | 2 tasks | 5 files |
+| Phase 120 P01 | 15min | 2 tasks | 3 files |
+| Phase 120 P04 | 8 | 2 tasks | 2 files |
+| Phase 120 P03 | 10min | 1 tasks | 1 files |
 
 ## Decisions
 
@@ -404,3 +407,9 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 - [Phase ?]: D-119-02-01: ES lottery weights the USER not the game (prevents backlog-size bias)
 - [Phase ?]: D-119-02-02: RECENCY_HALF_LIFE_DAYS=1.0, WEIGHT_FLOOR=0.005 — returning user gets ~65-70% share; retune live
 - [Phase ?]: D-119-02-03: EXISTS-based DISTINCT over ix_games_needs_engine_full_evals (4ms dev, sub-100ms prod, no skip-scan needed)
+- [Phase ?]: test
+- [Phase ?]: Phase 120-01 key decision
+- [Phase ?]: Phase 120-01 key decision
+- [Phase ?]: D-7: ES weighted-random within-user game pick -ln(random())/game_weight replaces deterministic Step-2 ORDER BY; residual fallback gets same spread
+- [Phase ?]: CAST(:param AS float8) required in sa.text queries for asyncpg compatibility — :param::float8 causes PostgresSyntaxError
+- [Phase ?]: asyncio.gather fan-out in _eval_positions: EnginePool workers are independent UCI processes, no shared AsyncSession

@@ -73,6 +73,16 @@ class Settings(BaseSettings):
     # hundreds-of-thousands-game backlog). Prod opts in explicitly via its .env.
     EVAL_AUTO_DRAIN_ENABLED: bool = False
 
+    # Operator token for the remote eval worker (Phase 120 SEED-048).
+    # Empty string = endpoints return 403 (disabled in dev/CI).
+    # Prod sets a strong random secret in .env.
+    EVAL_OPERATOR_TOKEN: str = ""
+
+    # Expected Stockfish version string (Phase 120 D-5 version gate).
+    # e.g. "Stockfish 18". Empty = any version accepted (dev/CI).
+    # Prod sets to the version installed on the server.
+    EXPECTED_SF_VERSION: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

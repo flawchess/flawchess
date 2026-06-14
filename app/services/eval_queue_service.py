@@ -88,6 +88,35 @@ RECENCY_HALF_LIFE_DAYS: float = 1.0
 # (SEED-046 / RESEARCH-NOTES τ/floor recommendation)
 WEIGHT_FLOOR: float = 0.005
 
+# ─── D-7: game-level weighted-random pick constants ───────────────────────────
+# Applied in Step 2 and the residual fallback of _claim_tier3_derived (see D-7
+# in SEED-048-headless-remote-eval-worker for rationale).
+
+# Per-TC-bucket weight multiplier for game priority. Higher multiplier → game
+# appears more often in ES draws. Ordering mirrors the deterministic TC priority
+# from QUEUE-02 (classical first, other last) so priority intent is preserved
+# while spreading picks across games within the same TC bucket.
+GAME_TC_WEIGHTS: dict[str, float] = {
+    "classical": 8.0,
+    "rapid": 4.0,
+    "blitz": 2.0,
+    "bullet": 1.0,
+    "other": 0.5,  # deprioritized, catches NULL/unknown buckets via ELSE branch
+}
+
+# Game-level recency half-life (days). τ½ = 30d → a game played today has
+# recency term ≈ 1.0; a game from 6 months ago has ≈ 0.015. Combined with
+# GAME_TC_WEIGHTS the most-recent classical game dominates, but older games
+# still receive non-zero probability (spread). PROD TUNING: lower to 7–14d for
+# tighter recency preference; raise to 90d for broader spread across old games.
+GAME_RECENCY_HALF_LIFE_DAYS: float = 30.0
+
+# Anti-starvation floor for the game weight. Ensures every game has a positive
+# ES key denominator (guards div-by-zero when exp term → 0 for very old games
+# or games with NULL played_at coalesced to epoch-0). Mirrors WEIGHT_FLOOR
+# rationale for the user lottery. Keep small to preserve TC + recency signal.
+GAME_WEIGHT_FLOOR: float = 0.01
+
 
 # ─── Return type ──────────────────────────────────────────────────────────────
 
@@ -228,13 +257,28 @@ async def _claim_tier3_derived(
       / ln(2) converted to seconds. weight is always > 0 (guards div-by-zero in the
       ES key). Pick user ORDER BY -ln(random()) / weight LIMIT 1.
 
-    Step 2 — BEST GAME FOR PICKED USER:
-      Within the chosen user, pick the best needs-engine game by TC bucket
-      (classical > rapid > blitz > bullet > other) then played_at DESC NULLS LAST.
+    Step 2 — WEIGHTED GAME PICK FOR PICKED USER (D-7):
+      Within the chosen user, pick a needs-engine game via the same ES
+      weighted-random key used in Step 1 — ORDER BY -ln(random()) / game_weight
+      where game_weight = tc_multiplier * (exp(-Δt_played / τ_game) + GAME_WEIGHT_FLOOR).
+      tc_multiplier comes from GAME_TC_WEIGHTS (classical=8 > rapid=4 > blitz=2 >
+      bullet=1 > other=0.5), τ_game derives from GAME_RECENCY_HALF_LIFE_DAYS, and
+      Δt_played is seconds since played_at (NULL coalesced to epoch-0 so a game
+      without a played_at date collapses to floor weight, matching the previous
+      NULLS LAST deprioritization intent). This replaces the old deterministic
+      ORDER BY tc_case, played_at DESC LIMIT 1 (D-7: three workers landing on
+      the same user now usually pick different games, cutting avoidable wasted
+      eval cycles; D-4 residual-duplicate acceptance still stands).
+      Both callers benefit: the in-process server pool and the 120-02 HTTP lease
+      endpoint both reach this via claim_eval_job / direct call — no caller change
+      needed.
 
     RESIDUAL FALLBACK (when no needs-engine candidate exists anywhere):
       Pick a PV-backfill-only game (full_evals_completed_at IS NULL AND
-      lichess_evals_at IS NOT NULL AND is_guest=false) by TC then played_at.
+      lichess_evals_at IS NOT NULL AND is_guest=false) via the same ES game_weight
+      formula and ORDER BY -ln(random()) / game_weight LIMIT 1 (D-7: same
+      collision shape as Step 2 under contention; symmetry preferred over a
+      "left deterministic because rare" carve-out).
       Returns is_lichess_eval_game=True for this path only.
 
     This replaces the old D-118-04 last_activity DESC winner-take-all ordering and
@@ -249,15 +293,29 @@ async def _claim_tier3_derived(
 
     Note: plain SELECT with no locking — two concurrent workers can pick the same game
     (double-claim). Duplicate work is idempotent (ON CONFLICT DO NOTHING for flaws,
-    idempotent oracle UPDATE) but wastes engine calls. Add FOR UPDATE SKIP LOCKED
-    (backed by a transient eval_jobs row) when multi-worker is introduced.
+    idempotent oracle UPDATE) but wastes engine calls. D-7 only REDUCES collisions;
+    the ephemeral TTL-lease escalation (D-4 "later") remains the deferred zero-
+    collision endgame. Add FOR UPDATE SKIP LOCKED when multi-worker leasing is added.
 
-    Security: τ_seconds, floor_val bound as :params — no f-string inside sa.text.
+    Security: τ_seconds, floor_val, game τ and multipliers bound as :params —
+    no f-string inside any sa.text call. The TC-bucket CASE keys are static SQL
+    literals, not interpolated (mirror of Step-1 "never f-string-interpolated"
+    comment; same principle applied to game pick and residual fallback).
     """
     # Convert half-life (days) to the decay constant τ in seconds.
     # τ = τ½ / ln2; weight = exp(-Δt_seconds / τ_seconds) + floor
     tau_seconds: float = RECENCY_HALF_LIFE_DAYS / math.log(2) * 86400.0
     floor_val: float = WEIGHT_FLOOR
+
+    # Game-level ES constants (D-7). τ_game converts GAME_RECENCY_HALF_LIFE_DAYS
+    # to seconds exactly as the user τ above. All values bound as :params below.
+    tau_game_seconds: float = GAME_RECENCY_HALF_LIFE_DAYS / math.log(2) * 86400.0
+    game_floor: float = GAME_WEIGHT_FLOOR
+    tc_classical: float = GAME_TC_WEIGHTS["classical"]
+    tc_rapid: float = GAME_TC_WEIGHTS["rapid"]
+    tc_blitz: float = GAME_TC_WEIGHTS["blitz"]
+    tc_bullet: float = GAME_TC_WEIGHTS["bullet"]
+    tc_other: float = GAME_TC_WEIGHTS["other"]
 
     # Step 1: ES weighted user pick over needs-engine games.
     # ix_games_needs_engine_full_evals (119-01 migration) covers
@@ -291,25 +349,49 @@ async def _claim_tier3_derived(
 
     if user_row is not None:
         picked_user_id: int = user_row[0]
-        # Step 2: best needs-engine game for the picked user (TC → played_at order).
+        # Step 2: ES weighted game pick for the picked user (D-7).
+        # game_weight = tc_multiplier * (exp(-Δt_played / τ_game) + game_floor)
+        # tc_multiplier is a CASE expression over g.time_control_bucket with keys
+        # as static SQL literals (not interpolated). All numeric values bound as
+        # :params — never f-string-interpolated into the sa.text string (security;
+        # same rule as Step 1 user pick above).
+        # COALESCE played_at to epoch-0 so a game with NULL played_at collapses to
+        # floor weight, matching the previous NULLS LAST deprioritization intent.
         game_result = await session.execute(
-            select(Game.id)
-            .where(
-                Game.user_id == picked_user_id,
-                Game.full_evals_completed_at.is_(None),
-                Game.lichess_evals_at.is_(None),
-            )
-            .order_by(
-                sa.case(
-                    (Game.time_control_bucket == "classical", 0),
-                    (Game.time_control_bucket == "rapid", 1),
-                    (Game.time_control_bucket == "blitz", 2),
-                    (Game.time_control_bucket == "bullet", 3),
-                    else_=4,
-                ).asc(),
-                Game.played_at.desc().nullslast(),
-            )
-            .limit(1)
+            sa.text("""
+                SELECT g.id
+                FROM games g
+                WHERE g.user_id = :picked_user
+                  AND g.full_evals_completed_at IS NULL
+                  AND g.lichess_evals_at IS NULL
+                ORDER BY
+                    -ln(random()) / (
+                        CASE g.time_control_bucket
+                            WHEN 'classical' THEN CAST(:tc_classical AS float8)
+                            WHEN 'rapid'     THEN CAST(:tc_rapid AS float8)
+                            WHEN 'blitz'     THEN CAST(:tc_blitz AS float8)
+                            WHEN 'bullet'    THEN CAST(:tc_bullet AS float8)
+                            ELSE CAST(:tc_other AS float8)
+                        END
+                        * (
+                            exp(
+                                -EXTRACT(EPOCH FROM (now() - COALESCE(g.played_at, '1970-01-01'::timestamptz)))
+                                / CAST(:tau_game AS float8)
+                            ) + CAST(:game_floor AS float8)
+                        )
+                    )
+                LIMIT 1
+            """),
+            {
+                "picked_user": picked_user_id,
+                "tc_classical": tc_classical,
+                "tc_rapid": tc_rapid,
+                "tc_blitz": tc_blitz,
+                "tc_bullet": tc_bullet,
+                "tc_other": tc_other,
+                "tau_game": tau_game_seconds,
+                "game_floor": game_floor,
+            },
         )
         game_row = game_result.scalar_one_or_none()
         if game_row is not None:
@@ -318,25 +400,46 @@ async def _claim_tier3_derived(
 
     # Residual fallback: no needs-engine candidate → try PV-backfill-only games.
     # Only path that returns is_lichess_eval_game=True.
+    # D-7: same ES game_weight spread applied here for symmetry — the residual
+    # path has the identical collision shape and a remote worker can sit on it
+    # for long stretches once the needs-engine backlog drains.
+    # All numeric values bound as :params — never f-string-interpolated (same
+    # security rule as Step 1 and Step 2 above).
     fallback_result = await session.execute(
-        select(Game.id, Game.user_id)
-        .join(User, Game.user_id == User.id)
-        .where(
-            Game.full_evals_completed_at.is_(None),
-            Game.lichess_evals_at.isnot(None),
-            User.is_guest == False,  # noqa: E712 — SQLAlchemy requires == not is
-        )
-        .order_by(
-            sa.case(
-                (Game.time_control_bucket == "classical", 0),
-                (Game.time_control_bucket == "rapid", 1),
-                (Game.time_control_bucket == "blitz", 2),
-                (Game.time_control_bucket == "bullet", 3),
-                else_=4,
-            ).asc(),
-            Game.played_at.desc().nullslast(),
-        )
-        .limit(1)
+        sa.text("""
+            SELECT g.id, g.user_id
+            FROM games g
+            JOIN users u ON u.id = g.user_id
+            WHERE g.full_evals_completed_at IS NULL
+              AND g.lichess_evals_at IS NOT NULL
+              AND u.is_guest = false
+            ORDER BY
+                -ln(random()) / (
+                    CASE g.time_control_bucket
+                        WHEN 'classical' THEN CAST(:tc_classical AS float8)
+                        WHEN 'rapid'     THEN CAST(:tc_rapid AS float8)
+                        WHEN 'blitz'     THEN CAST(:tc_blitz AS float8)
+                        WHEN 'bullet'    THEN CAST(:tc_bullet AS float8)
+                        ELSE CAST(:tc_other AS float8)
+                    END
+                    * (
+                        exp(
+                            -EXTRACT(EPOCH FROM (now() - COALESCE(g.played_at, '1970-01-01'::timestamptz)))
+                            / CAST(:tau_game AS float8)
+                        ) + CAST(:game_floor AS float8)
+                    )
+                )
+            LIMIT 1
+        """),
+        {
+            "tc_classical": tc_classical,
+            "tc_rapid": tc_rapid,
+            "tc_blitz": tc_blitz,
+            "tc_bullet": tc_bullet,
+            "tc_other": tc_other,
+            "tau_game": tau_game_seconds,
+            "game_floor": game_floor,
+        },
     )
     fallback_row = fallback_result.one_or_none()
     if fallback_row is None:

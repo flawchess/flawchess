@@ -112,6 +112,47 @@ cd frontend && npm run lint   # Frontend lint
 
 The CI pipeline runs these in order: ruff (lint) → [ty](https://github.com/astral-sh/ty) (type check) → pytest (tests). All three must pass.
 
+## Remote eval worker
+
+`scripts/remote_eval_worker.py` adds off-box CPU to the Stockfish eval pipeline. It runs on a trusted machine you control (your laptop, a spare box, a cloud VM) and drains the same tier-3 eval queue the production server works through. The loop is: lease one game from the API over HTTPS, evaluate all of its positions locally with Stockfish, then batch-submit the results. The server owns the storage convention (post-move shift, completion stamping) — the worker is a dumb position→eval function and submits engine results unchanged.
+
+### Prerequisites
+
+- Stockfish installed locally (`bin/install_stockfish.sh`, same as dev setup).
+- The server must have `EVAL_OPERATOR_TOKEN` set in its `.env`. Both endpoints fail closed: an unset token returns 403, a wrong token 401. Optionally set `EXPECTED_SF_VERSION` on the server to reject submissions from a mismatched engine build.
+- The worker authenticates with the **same** token. Set `EVAL_OPERATOR_TOKEN` in the worker machine's `.env` (the worker loads it via app settings, same as the backend) — no need to pass it on the command line. `--token` is available to override it for a one-off run.
+
+### Start
+
+With the token in `.env` and `--base-url` defaulting to production, the worker needs no flags:
+
+```bash
+# Connectivity smoke test — lease + evaluate, never submit:
+uv run python scripts/remote_eval_worker.py --dry-run --once
+
+# Process one game, then exit:
+uv run python scripts/remote_eval_worker.py --once
+
+# Continuous drain (default — 4 parallel Stockfish processes):
+uv run python scripts/remote_eval_worker.py
+
+# Use 8 parallel engine processes (e.g. on an 8-core box):
+uv run python scripts/remote_eval_worker.py --workers 8
+
+# Point at a local/staging server instead of production:
+uv run python scripts/remote_eval_worker.py --base-url http://localhost:8000 --once
+```
+
+Flags: `--base-url URL` (default `https://flawchess.com`), `--token TOKEN` (optional override; otherwise read from `EVAL_OPERATOR_TOKEN` in the environment / `.env`), `--workers N` (parallel engine processes, default 4 — set to roughly the core count of the worker machine), `--idle-sleep SECONDS` (poll delay when the queue is empty, default 5), `--dry-run` (evaluate but never submit), `--once` (one cycle then exit; the default loops forever).
+
+### Stop
+
+It's a foreground process — press `Ctrl-C`. The worker shuts the engine pool down cleanly on interrupt. For an unattended long-running drain, wrap it yourself (`tmux`/`screen`, `nohup … &`, or a systemd unit); there is no built-in daemon mode. The continuous loop is resilient: a transient network error, a 5xx, or a bad position is logged to Sentry, then the worker backs off `--idle-sleep` and retries rather than dying.
+
+### Monitoring throughput
+
+The worker logs each cycle with a UTC timestamp (`Leased game_id=… (N positions)` → `Submitted game_id=…`), so per-game timing is visible in stdout. For aggregate throughput across *all* drain sources (the server pool plus any workers), query the server: every completed game is stamped with `full_evals_completed_at`, so `count(*)` over that column in a time window gives games/minute directly.
+
 ## Backups & Recovery
 
 The production VM is backed up by Hetzner's **automatic daily whole-server backup** feature with a 7-day rolling retention. Snapshots are managed by Hetzner and stored off the VM — a full disk loss can be recovered from the previous day's snapshot via the Hetzner Cloud Console.

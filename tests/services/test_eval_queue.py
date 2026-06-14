@@ -950,3 +950,218 @@ class TestTier3Lottery:
             )
         finally:
             await _delete_games(queue_session_maker, [game_id])
+
+
+# ─── D-7: weighted-random within-user game pick spread tests ──────────────────
+
+
+class TestTier3GamePickSpread:
+    """D-7 (SEED-048): _claim_tier3_derived Step-2 uses ES weighted-random game pick.
+
+    Verifies that the within-user game pick is no longer deterministic: multiple
+    workers landing on the same user will usually get different games, cutting
+    avoidable wasted eval cycles without changing the priority intent (classical
+    > rapid > blitz > bullet > other, more-recent game preferred).
+
+    All tests use tier2_test_users fixtures (tier3_a user) and insert/delete
+    games per-test to avoid pollution of other tests.
+    """
+
+    async def test_game_pick_spread(
+        self,
+        tier2_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Step-2 game pick spreads across multiple games for a multi-game user.
+
+        Seed ~10 needs-engine games for one user. Over ~300 draws the returned
+        game_id must cover >= 3 distinct seeded games. The old deterministic
+        implementation would return exactly 1 distinct game_id every draw, so
+        this assertion can only pass with the weighted-random change.
+        """
+        import app.services.eval_queue_service as svc
+        from app.models.user import User
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+
+        user_id = tier2_test_users["tier3_a"]
+        now = datetime.now(timezone.utc)
+
+        # Set user as recently active so Step 1 reliably picks them.
+        async with queue_session_maker() as session:
+            await session.execute(
+                sa_update(User).where(User.id == user_id).values(last_activity=now)
+            )
+            await session.commit()
+
+        # Seed 10 games with varied TC and played_at to give spread a fair chance.
+        # Use valid enum values (bullet/blitz/rapid/classical) plus None for the
+        # "other/unknown" bucket (time_control_bucket is nullable in the Game model).
+        tc_buckets: list[str | None] = [
+            "classical",
+            "rapid",
+            "blitz",
+            "bullet",
+            None,
+            "classical",
+            "rapid",
+            "blitz",
+            "bullet",
+            None,
+        ]
+        game_ids: list[int] = []
+        try:
+            for i, tc in enumerate(tc_buckets):
+                gid = await _insert_game(
+                    queue_session_maker,
+                    user_id,
+                    time_control_bucket=tc,
+                    played_at=now - timedelta(days=i * 7),
+                    full_evals_completed_at=None,
+                    lichess_evals_at=None,
+                )
+                game_ids.append(gid)
+
+            seeded_set = set(game_ids)
+            from app.services.eval_queue_service import _claim_tier3_derived
+
+            n_draws = 300
+            seen_ids: set[int] = set()
+            async with queue_session_maker() as session:
+                for _ in range(n_draws):
+                    result = await _claim_tier3_derived(session)
+                    if result is not None and result[0] in seeded_set:
+                        seen_ids.add(result[0])
+
+            assert len(seen_ids) >= 3, (
+                f"Step-2 weighted-random game pick must spread across >= 3 of 10 seeded "
+                f"games over {n_draws} draws; got only {len(seen_ids)} distinct game(s). "
+                f"This assertion cannot pass with a deterministic LIMIT 1 pick."
+            )
+        finally:
+            await _delete_games(queue_session_maker, game_ids)
+
+    async def test_weighting_bias_preserved(
+        self,
+        tier2_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Priority intent (classical + recent > other/bullet + oldest) survives the spread.
+
+        Seed exactly two games: one top-priority (classical, played recently) and
+        one bottom-priority (other, played long ago). Over ~400 draws the top-priority
+        game must be picked strictly more often than the bottom-priority game, proving
+        that the ES spread did not flatten the weighting signal.
+        """
+        import app.services.eval_queue_service as svc
+        from app.models.user import User
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+
+        user_id = tier2_test_users["tier3_a"]
+        now = datetime.now(timezone.utc)
+
+        async with queue_session_maker() as session:
+            await session.execute(
+                sa_update(User).where(User.id == user_id).values(last_activity=now)
+            )
+            await session.commit()
+
+        try:
+            # Top priority: classical + most recent
+            top_game = await _insert_game(
+                queue_session_maker,
+                user_id,
+                time_control_bucket="classical",
+                played_at=now - timedelta(hours=1),
+                full_evals_completed_at=None,
+                lichess_evals_at=None,
+            )
+            # Bottom priority: NULL TC (ELSE branch = tc_other weight) + very old.
+            # time_control_bucket=None maps to the ELSE clause in the CASE expression,
+            # which uses CAST(:tc_other AS float8) — the lowest weight multiplier.
+            bottom_game = await _insert_game(
+                queue_session_maker,
+                user_id,
+                time_control_bucket=None,
+                played_at=now - timedelta(days=365),
+                full_evals_completed_at=None,
+                lichess_evals_at=None,
+            )
+
+            from app.services.eval_queue_service import _claim_tier3_derived
+
+            n_draws = 400
+            count_top = 0
+            count_bottom = 0
+            async with queue_session_maker() as session:
+                for _ in range(n_draws):
+                    result = await _claim_tier3_derived(session)
+                    if result is not None:
+                        if result[0] == top_game:
+                            count_top += 1
+                        elif result[0] == bottom_game:
+                            count_bottom += 1
+
+            total = count_top + count_bottom
+            assert total > 0, "Expected some draws to return one of the seeded games"
+            assert count_top > count_bottom, (
+                f"Top-priority game (classical, recent) must be picked more often than "
+                f"bottom-priority game (other, oldest); "
+                f"top={count_top}, bottom={count_bottom} of {total} relevant picks. "
+                f"Weighting bias must survive the ES spread."
+            )
+        finally:
+            await _delete_games(queue_session_maker, [top_game, bottom_game])
+
+    async def test_single_game_regression(
+        self,
+        tier2_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A user with exactly one needs-engine game always gets that game back.
+
+        The ES formula -ln(random()) / game_weight is undefined for weight=0, but
+        GAME_WEIGHT_FLOOR guarantees weight > 0. For a single-game user there is
+        only one candidate, so the ORDER BY picks it every draw regardless of the
+        random component — regression safety for this degenerate case.
+        """
+        import app.services.eval_queue_service as svc
+        from app.models.user import User
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+
+        user_id = tier2_test_users["tier3_a"]
+        now = datetime.now(timezone.utc)
+
+        async with queue_session_maker() as session:
+            await session.execute(
+                sa_update(User).where(User.id == user_id).values(last_activity=now)
+            )
+            await session.commit()
+
+        sole_game = await _insert_game(
+            queue_session_maker,
+            user_id,
+            time_control_bucket="blitz",
+            played_at=now - timedelta(days=1),
+            full_evals_completed_at=None,
+            lichess_evals_at=None,
+        )
+
+        from app.services.eval_queue_service import _claim_tier3_derived
+
+        try:
+            async with queue_session_maker() as session:
+                for i in range(50):
+                    result = await _claim_tier3_derived(session)
+                    if result is not None and result[1] == user_id:
+                        assert result[0] == sole_game, (
+                            f"Draw {i}: single-game user must always return sole_game "
+                            f"{sole_game}; got {result[0]}"
+                        )
+        finally:
+            await _delete_games(queue_session_maker, [sole_game])
