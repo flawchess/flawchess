@@ -104,10 +104,8 @@ export function WelcomePage() {
       <div className="space-y-3">
         <h1 className="text-2xl font-bold">Welcome to FlawChess</h1>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          FlawChess works fully as a guest: import your chess.com and lichess games, explore
-          win/draw/loss rates by position, dig into endgame analytics, and review time
-          management stats. If your lichess games already carry Stockfish evals, those come
-          along for free.
+          All of FlawChess is free, for guests and signed-up users alike. Most of it works
+          without an account at all.
         </p>
         <p className="text-sm text-muted-foreground leading-relaxed">
           One capability is reserved for signed-up accounts: FlawChess's own deep Stockfish
