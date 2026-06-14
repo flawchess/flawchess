@@ -134,6 +134,17 @@ export function TagChip({ tag, gameId, count, onHover, onActivate, definition = 
     if (closeTimeout.current) clearTimeout(closeTimeout.current);
   };
 
+  // Clear any pending open/close timer on unmount. Without this, a hover-armed
+  // setTimeout could fire setOpen() after the component (and, in tests, the
+  // jsdom window) was torn down — surfacing as a "window is not defined"
+  // unhandled error that failed CI non-deterministically.
+  React.useEffect(() => {
+    return () => {
+      if (openTimeout.current) clearTimeout(openTimeout.current);
+      if (closeTimeout.current) clearTimeout(closeTimeout.current);
+    };
+  }, []);
+
   const chip = (
     <span
       className={cn(
