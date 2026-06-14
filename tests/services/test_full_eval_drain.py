@@ -2289,7 +2289,7 @@ class TestSeed049GameEndingPly:
                 (25, None, "d1h5", "d1h5"),  # ply 2 → row 1's post-move eval
                 (10, None, "b8c6", "b8c6"),  # ply 3 → row 2's post-move eval
                 (30, None, "f1c4", "f1c4"),  # ply 4 → row 3's post-move eval
-                (5, None, "g8f6", "g8f6"),   # ply 5 → row 4's post-move eval
+                (5, None, "g8f6", "g8f6"),  # ply 5 → row 4's post-move eval
                 (80, None, "d1f7", "d1f7"),  # ply 6 (Qxf7# move) — best_move; eval for row 5
                 # No terminal call: is_game_over() board skipped in _collect_full_ply_targets
                 # → pos_eval[7] absent → row 6's post-move eval = (None, None) by design
@@ -2322,8 +2322,9 @@ class TestSeed049GameEndingPly:
 
                 # Check that ply 6's eval is still NULL (the legitimate game-ending NULL).
                 ply6 = await verify.execute(
-                    select(GamePosition.eval_cp, GamePosition.eval_mate)
-                    .where(GamePosition.game_id == game_id, GamePosition.ply == 6)
+                    select(GamePosition.eval_cp, GamePosition.eval_mate).where(
+                        GamePosition.game_id == game_id, GamePosition.ply == 6
+                    )
                 )
                 ply6_row = ply6.one_or_none()
 
@@ -2332,9 +2333,7 @@ class TestSeed049GameEndingPly:
                 "full_evals_completed_at must be stamped on first tick for a checkmate game "
                 "— SEED-049: game-ending ply excluded from failed_ply_count"
             )
-            assert g[1] == 0, (
-                f"full_eval_attempts must stay 0 (no retries needed), got {g[1]}"
-            )
+            assert g[1] == 0, f"full_eval_attempts must stay 0 (no retries needed), got {g[1]}"
 
             # The game-ending move's row must still have NULL eval (it's legitimately empty).
             assert ply6_row is not None, "ply 6 game_positions row must exist"
@@ -2393,9 +2392,9 @@ class TestSeed049GameEndingPly:
         # Post-move: row 1 = pos_eval[2] = terminal result (None) → genuine hole.
         mock_evaluate = AsyncMock(
             side_effect=[
-                (99, None, "e2e4", "e2e4"),   # ply 0 (best_move; eval unused for row 0 here)
-                (50, None, "e7e5", "e7e5"),   # ply 1 → row 0 post-move eval
-                (None, None, None, None),     # terminal → row 1 hole (non-game-ending board)
+                (99, None, "e2e4", "e2e4"),  # ply 0 (best_move; eval unused for row 0 here)
+                (50, None, "e7e5", "e7e5"),  # ply 1 → row 0 post-move eval
+                (None, None, None, None),  # terminal → row 1 hole (non-game-ending board)
             ]
         )
         monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
