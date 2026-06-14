@@ -121,6 +121,23 @@ The CI pipeline runs these in order: ruff (lint) → [ty](https://github.com/ast
 - Stockfish installed locally (`bin/install_stockfish.sh`).
 - Server and worker share an `EVAL_OPERATOR_TOKEN` in their `.env`. Endpoints fail closed: unset token → 403, wrong token → 401. Optionally set `EXPECTED_SF_VERSION` on the server to reject mismatched engine builds. Use `--token` to override the worker's `.env` value for a one-off run.
 
+The worker is a standalone HTTP client plus a local Stockfish driver: it talks to the server over HTTPS and never opens a database connection, so **no Docker is required** to run it. A repo checkout with `uv sync` (the worker imports `app.*`) plus a Stockfish binary is all you need.
+
+### Running on Windows
+
+The worker runs natively on Windows — the only Linux-specific code path (`SCHED_IDLE` scheduling) is guarded and skipped on non-Linux hosts. Two setup steps differ from Linux/macOS:
+
+1. **Stockfish binary.** `bin/install_stockfish.sh` is a bash script that fetches the Linux build, so it won't run on Windows. Download the Windows Stockfish release manually (match the version the server pins via `EXPECTED_SF_VERSION`, or submits are rejected by the D-5 version gate) and point the worker at it with `STOCKFISH_PATH` in `.env`:
+
+   ```
+   STOCKFISH_PATH=C:\path\to\stockfish.exe
+   ```
+
+   The engine resolver checks `STOCKFISH_PATH` first, then falls back to `stockfish` on `PATH`.
+2. **`.env`.** Only `EVAL_OPERATOR_TOKEN` is required (every other setting has a default, and the worker needs no database). Pass `--token` instead if you'd rather not write a `.env`.
+
+Then run the same commands as below via `uv run python scripts/remote_eval_worker.py …`.
+
 ### Start
 
 With the token in `.env` and `--base-url` defaulting to production, the worker needs no flags:
