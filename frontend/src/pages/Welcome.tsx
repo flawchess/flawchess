@@ -19,7 +19,7 @@ interface ValueRow {
 
 const VALUE_ROWS: ValueRow[] = [
   {
-    feature: 'Opening explorer / WDL by position',
+    feature: 'Opening explorer by position',
     guestHas: true,
     signedUpHas: true,
   },
@@ -29,12 +29,12 @@ const VALUE_ROWS: ValueRow[] = [
     signedUpHas: true,
   },
   {
-    feature: "lichess games' built-in move evals (freebie)",
+    feature: 'Import full game analyses (Lichess only)',
     guestHas: true,
     signedUpHas: true,
   },
   {
-    feature: 'FlawChess deep Stockfish analysis (per-game blunder / mistake / flaw detection)',
+    feature: 'FlawChess deep Stockfish analysis (per-game blunder / mistake / inaccuracy detection)',
     guestHas: false,
     signedUpHas: true,
     highlight: true,
@@ -109,8 +109,8 @@ export function WelcomePage() {
         </p>
         <p className="text-sm text-muted-foreground leading-relaxed">
           One capability is reserved for signed-up accounts: FlawChess's own deep Stockfish
-          analysis that detects blunders, mistakes, and flaws in your games. Here is the full
-          picture before you dive in.
+          analysis that detects blunders, mistakes, and inaccuracies in your games. Here is the
+          full picture before you dive in.
         </p>
       </div>
 
