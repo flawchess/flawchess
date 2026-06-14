@@ -15,6 +15,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Fixed
 
 - **Eval chart no longer crashes the Library on touch devices** — scrubbing a game's eval chart on some Android / hybrid-pointer devices could throw "Maximum update depth exceeded" and blank the page. The chart slider no longer ties its value to the hover position (a sticky hover could pin it into an update loop), and touch devices are now detected more reliably so the chart's hover scrub stays off on touch. (FLAWCHESS-5F, FLAWCHESS-5Y)
+- **Cycling through a tag's flaws can now be dismissed** — after clicking/tapping a flaw tag or severity badge to step through its markers, clicking or tapping anywhere outside the eval chart and flaw chips now clears the highlight and undims the other markers (previously they stayed dimmed with no way to reset).
 
 ## [v1.26] Full-Game Eval Pipeline — 2026-06-14
 

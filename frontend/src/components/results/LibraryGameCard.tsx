@@ -368,6 +368,39 @@ export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
   };
   const commandedPly = cycle ? (pliesForRef(cycle.ref)[cycle.pos] ?? null) : null;
 
+  // End an active click-to-cycle highlight when the user clicks/taps anywhere that
+  // isn't this card's eval chart or its flaw chips/badges. `cycle` is a LOCKED
+  // highlight — it intentionally survives the pointer leaving the chip (touch has no
+  // mouse-leave to clear it, see the highlightedPlies derivation), so without this an
+  // outside tap dismissed the eval-chart tooltip but left every non-matching flaw
+  // marker dimmed with no way to undim them. Protected regions are scoped to THIS
+  // game so the chips (which advance the cycle — pointerdown fires before their click
+  // handler, so they must not clear) and chart scrub stay live, while a tap on any
+  // neutral area (elsewhere in this card, another card, or the page) clears the lock.
+  useEffect(() => {
+    if (cycle == null) return;
+    // Listen for BOTH pointerdown (desktop click) and touchstart: on mobile the
+    // touch-originated pointerdown does not reliably reach document, so we mirror
+    // EvalChart's own outside-touch dismissal (which uses touchstart) to undim on
+    // tap. Idempotent, so the duplicate fire on devices that emit both is harmless.
+    const handleOutside = (e: Event): void => {
+      const target = e.target;
+      const isProtected =
+        target instanceof Element &&
+        (target.closest(`[data-testid="eval-chart-${game.game_id}"]`) != null ||
+          target.closest(`[data-testid="flaw-controls-${game.game_id}"]`) != null);
+      if (isProtected) return;
+      setCycle(null);
+      setHighlight(null);
+    };
+    document.addEventListener('pointerdown', handleOutside);
+    document.addEventListener('touchstart', handleOutside);
+    return () => {
+      document.removeEventListener('pointerdown', handleOutside);
+      document.removeEventListener('touchstart', handleOutside);
+    };
+  }, [cycle, game.game_id]);
+
   const activePly =
     hoverPly != null && perPly ? Math.min(Math.max(hoverPly, 0), perPly.length - 1) : null;
   const hoverEntry = activePly != null ? perPly?.[activePly] : undefined;
@@ -502,7 +535,10 @@ export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
   // When "no_engine_analysis": severity_counts is null; never read it (T-107-11 mitigated).
   const flawContent =
     game.analysis_state === 'analyzed' ? (
-      <>
+      // display:contents wrapper (layout-neutral) marking the cycle-driving controls
+      // so the outside-pointer handler can keep the locked highlight alive while the
+      // user clicks chips/badges, yet undim when they click anywhere else.
+      <div data-testid={`flaw-controls-${game.game_id}`} className="contents">
         {/* Severity count row — flex-wrap so the badges wrap gracefully inside the
             1/3-width desktop column instead of overflowing. */}
         <div
@@ -550,7 +586,7 @@ export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
             <TagLegend tags={game.chips} gameId={game.game_id} label="Tags" />
           </div>
         )}
-      </>
+      </div>
     ) : (
       <NoAnalysisState
         gameId={game.game_id}
