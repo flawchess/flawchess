@@ -1973,10 +1973,16 @@ class TestResweepHoledGames:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """resweep_holed_games() clears full_evals_completed_at on the game with a
-        non-terminal hole, leaves the terminal-only game untouched, and returns 1.
+        genuine mid-game hole, leaves game-ending-ply and terminal-only games untouched.
 
-        Game A: stamped complete, non-terminal hole at ply 1, terminal at ply 2.
-        Game B: stamped complete, only the terminal ply (ply 2) has NULL evals.
+        SEED-049 update: the hole definition is now ply < max_ply - 1 (not ply < max_ply).
+        A NULL at ply = max_ply - 1 (the game-ending move ply) is no longer a hole.
+
+        Game A: 4 rows (plies 0..3). Genuine mid-game hole at ply 1 (< max_ply - 1 = 2).
+            → IS swept (real hole).
+        Game B: 3 rows (plies 0..2). Only ply 1 = max_ply - 1 = 1 and ply 2 = max_ply
+            are NULL. Under SEED-049 ply 1 is the game-ending-move ply → NOT a hole.
+            → NOT swept.
         Expected: count=1 (only game A swept); game B's marker untouched.
         """
         from app.models.game import Game
@@ -1986,11 +1992,12 @@ class TestResweepHoledGames:
 
         now = datetime.now(timezone.utc)
 
-        # Game A: has a non-terminal hole (ply 1 is NOT the max ply = 2).
+        # Game A: genuine mid-game hole at ply 1. max_ply = 3, so max_ply - 1 = 2.
+        # ply 1 < max_ply - 1 = 2 → TRUE → it IS a hole → swept.
         game_a_id = await _insert_game(
             full_drain_session_maker,
             full_drain_test_user_119,
-            pgn=_TWO_MOVE_PGN,
+            pgn=_SIMPLE_PGN,
             evals_completed_at=now,
             full_evals_completed_at=now,  # already stamped
             full_pv_completed_at=now,
@@ -2002,14 +2009,16 @@ class TestResweepHoledGames:
             game_a_id,
             [
                 {"ply": 0, "full_hash": 0xF119_A001, "eval_cp": 50, "eval_mate": None},
-                # ply 1 is a hole (NULL evals) and ply 2 is max ply → ply 1 < max → non-terminal
+                # ply 1 is a genuine mid-game hole (1 < max_ply - 1 = 2 → TRUE)
                 {"ply": 1, "full_hash": 0xF119_A002, "eval_cp": None, "eval_mate": None},
-                # ply 2 = terminal game-over ply (max ply for this game); NULL → NOT a hole
-                {"ply": 2, "full_hash": 0xF119_A003, "eval_cp": None, "eval_mate": None},
+                {"ply": 2, "full_hash": 0xF119_A003, "eval_cp": 30, "eval_mate": None},
+                # ply 3 = max_ply (terminal game-over ply); NULL → excluded
+                {"ply": 3, "full_hash": 0xF119_A004, "eval_cp": None, "eval_mate": None},
             ],
         )
 
-        # Game B: only the terminal ply is NULL — NOT a hole.
+        # Game B: only the game-ending-move ply (ply 1 = max_ply - 1 = 1) is NULL.
+        # SEED-049: ply = max_ply - 1 is the game-ending move → NOT a hole → NOT swept.
         game_b_id = await _insert_game(
             full_drain_session_maker,
             full_drain_test_user_119,
@@ -2024,8 +2033,9 @@ class TestResweepHoledGames:
             game_b_id,
             [
                 {"ply": 0, "full_hash": 0xF119_B001, "eval_cp": 50, "eval_mate": None},
-                {"ply": 1, "full_hash": 0xF119_B002, "eval_cp": 30, "eval_mate": None},
-                # ply 2 = max ply (terminal); NULL → excluded by ply < max_ply predicate
+                # ply 1 = max_ply - 1 = 1: game-ending-move ply NULL (SEED-049 false hole)
+                {"ply": 1, "full_hash": 0xF119_B002, "eval_cp": None, "eval_mate": None},
+                # ply 2 = max_ply (terminal); NULL → excluded by ply < max_ply - 1
                 {"ply": 2, "full_hash": 0xF119_B003, "eval_cp": None, "eval_mate": None},
             ],
         )
@@ -2035,7 +2045,7 @@ class TestResweepHoledGames:
 
             count = await resweep_holed_games()
             assert count == 1, (
-                f"resweep_holed_games must return 1 (only game A has a non-terminal hole), "
+                f"resweep_holed_games must return 1 (only game A has a genuine mid-game hole), "
                 f"got {count}"
             )
 
@@ -2059,7 +2069,10 @@ class TestResweepHoledGames:
             assert a[1] is None, "Game A: full_pv_completed_at must be cleared by sweep"
             assert a[2] == 0, f"Game A: full_eval_attempts must be reset to 0, got {a[2]}"
 
-            assert b is not None, "Game B: full_evals_completed_at must stay set (terminal-only)"
+            assert b is not None, (
+                "Game B: full_evals_completed_at must stay set — SEED-049 excludes the "
+                "game-ending-move ply (max_ply - 1) from the hole definition"
+            )
         finally:
             await _delete_games(full_drain_session_maker, [game_a_id, game_b_id])
 
@@ -2076,10 +2089,12 @@ class TestResweepHoledGames:
         monkeypatch.setattr(drain_module, "async_session_maker", full_drain_session_maker)
 
         now = datetime.now(timezone.utc)
+        # Use a 4-row game so the hole at ply 1 is a genuine mid-game hole
+        # (1 < max_ply - 1 = 3 - 1 = 2 → TRUE). SEED-049 requires ply < max_ply - 1.
         game_id = await _insert_game(
             full_drain_session_maker,
             full_drain_test_user_119,
-            pgn=_TWO_MOVE_PGN,
+            pgn=_SIMPLE_PGN,
             evals_completed_at=now,
             full_evals_completed_at=now,  # stamped
             full_pv_completed_at=now,
@@ -2091,9 +2106,11 @@ class TestResweepHoledGames:
             game_id,
             [
                 {"ply": 0, "full_hash": 0xF119_C001, "eval_cp": 50, "eval_mate": None},
-                # ply 1 is a non-terminal hole (max ply = 2)
+                # ply 1 is a genuine mid-game hole (1 < max_ply - 1 = 2 → TRUE)
                 {"ply": 1, "full_hash": 0xF119_C002, "eval_cp": None, "eval_mate": None},
-                {"ply": 2, "full_hash": 0xF119_C003, "eval_cp": None, "eval_mate": None},
+                {"ply": 2, "full_hash": 0xF119_C003, "eval_cp": 30, "eval_mate": None},
+                # ply 3 = max_ply (terminal); NULL → excluded by ply < max_ply - 1
+                {"ply": 3, "full_hash": 0xF119_C004, "eval_cp": None, "eval_mate": None},
             ],
         )
 
@@ -2127,10 +2144,12 @@ class TestResweepHoledGames:
         monkeypatch.setattr(drain_module, "async_session_maker", full_drain_session_maker)
 
         now = datetime.now(timezone.utc)
+        # Use a 4-row game so the hole at ply 1 is a genuine mid-game hole
+        # (1 < max_ply - 1 = 3 - 1 = 2 → TRUE). SEED-049 requires ply < max_ply - 1.
         game_id = await _insert_game(
             full_drain_session_maker,
             full_drain_test_user_119,
-            pgn=_TWO_MOVE_PGN,
+            pgn=_SIMPLE_PGN,
             evals_completed_at=now,
             full_evals_completed_at=now,
             full_pv_completed_at=now,
@@ -2142,8 +2161,11 @@ class TestResweepHoledGames:
             game_id,
             [
                 {"ply": 0, "full_hash": 0xF119_D001, "eval_cp": 50, "eval_mate": None},
+                # ply 1 is a genuine mid-game hole (1 < max_ply - 1 = 2 → TRUE)
                 {"ply": 1, "full_hash": 0xF119_D002, "eval_cp": None, "eval_mate": None},
-                {"ply": 2, "full_hash": 0xF119_D003, "eval_cp": None, "eval_mate": None},
+                {"ply": 2, "full_hash": 0xF119_D003, "eval_cp": 30, "eval_mate": None},
+                # ply 3 = max_ply (terminal); NULL → excluded by ply < max_ply - 1
+                {"ply": 3, "full_hash": 0xF119_D004, "eval_cp": None, "eval_mate": None},
             ],
         )
 
