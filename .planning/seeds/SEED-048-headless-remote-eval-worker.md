@@ -1,6 +1,7 @@
 ---
 id: SEED-048
-status: dormant
+status: promoted
+promoted_to: Phase 120 (2026-06-14)
 planted: 2026-06-14
 planted_during: /gsd-explore session on running Stockfish eval jobs off-box to help the server drain tier-3
 trigger_when: Phase 119 (tier-3 drain rework — bounded retry, recency lottery, in_flight removal) has landed and settled, AND the eval-pipeline owner wants to add off-box eval capacity. Promote via /gsd-new-milestone or a focused /gsd-plan-phase.
@@ -100,6 +101,21 @@ The queue was deliberately built pluggable (SEED-012 D-8):
   store. No untrusted writer is introduced, so SEED-012's D-4 "no eval validation" non-goal
   still holds — nothing here needs a redundancy/agreement trust layer. That layer is only owed
   if/when untrusted public browsers (trust class 3) land.
+- **D-7 — Weighted-random within-user game pick to cut multi-worker collisions (added 2026-06-14).**
+  Refines D-4. `_claim_tier3_derived` already randomizes the *user* pick (Efraimidis–Spirakis
+  recency lottery), but Step 2 (the game pick within the chosen user) is **deterministic**
+  (`ORDER BY tc_bucket, played_at DESC LIMIT 1`). With server-pool + 2 remote workers, whenever
+  two workers land on the same (recency-hot) user they evaluate the *identical* top game — a
+  guaranteed collision for the whole ~10s eval window (no tier-3 lease / no in_flight after Phase
+  119). Fix: replace Step 2's deterministic `LIMIT 1` with the same ES trick at game level —
+  `ORDER BY -ln(random()) / game_weight LIMIT 1`, where `game_weight` still favors classical >
+  rapid > blitz > bullet > other and recent `played_at` (so priority intent is preserved, picks
+  are just spread). Drops per-cycle same-user collision probability from ~100% to ~`(workers
+  choose 2)/N` over the user's N pending games. Stateless, no schema, benefits the in-process
+  server pool too (shared function). Still accept residual duplicates (D-4 stands); the ephemeral
+  TTL-lease escalation (D-4 "later") remains the principled zero-collision endgame if waste ever
+  proves material. Deterministic modulo-sharding across the 3 known workers was considered and
+  rejected for v1 (needs offline-fallback + shard threading into the in-process pool).
 
 ## Sequencing
 

@@ -54,7 +54,7 @@
 - [x] **Phase 117.2: Wipe Eval-Only Engine Residue (INSERTED, SEED-044 follow-up)** - Data-only migration: NULLs `eval_cp`/`eval_mate`/`best_move`/`pv` for 3,497 engine games (3 users) carrying dense evals from a pre-Phase-117 eval-only pass with no `best_move`/flaw classification/`full_evals_completed_at` marker. They showed in the Library as analyzed-with-no-flaws (≥90%-coverage "analyzed" gate); the wipe drops them from the analyzed set until the tier-3 drain re-materializes them properly. Gated on `lichess_evals_at IS NULL` — lichess never touched.
   - **Plans:** 1 data migration (no PLAN.md; committed follow-up) — DEPLOYED to prod 2026-06-14 via release #191 (`8359935b`). Verified: residue 3497→0; lichess_total 39876 unchanged, lichess_flawed_no_marker 9655 unchanged (guards held).
 - [ ] **Phase 118: Demand UX + Auto-Enqueue** - Automatic window enqueue on import/activity + explicit "analyze more" affordance + coverage indicators + in-flight status
-- [ ] **Phase 119: Eval-drain coverage (SEED-045, SEED-046)** - Bounded-retry hole-filling (don't stamp full_evals_completed_at while non-terminal/non-mate holes remain; cap at MAX_EVAL_ATTEMPTS) + recency-weighted tier-3 lottery (replace winner-take-all last_activity ordering with Efraimidis–Spirakis user-weighted sampling + PV-backfill residual tier)
+- [x] **Phase 119: Eval-drain coverage (SEED-045, SEED-046)** - Bounded-retry hole-filling (don't stamp full_evals_completed_at while non-terminal/non-mate holes remain; cap at MAX_EVAL_ATTEMPTS) + recency-weighted tier-3 lottery (replace winner-take-all last_activity ordering with Efraimidis–Spirakis user-weighted sampling + PV-backfill residual tier) (completed 2026-06-14)
 
 <details>
 <summary>✅ v1.25 Flaw-Stats Opponent Comparison (Phases 113–115, incl. 114.1) — SHIPPED 2026-06-12</summary>
@@ -526,7 +526,7 @@ Plans:
 | 117.1. Flaw-Eval Convention Fix (INSERTED, SEED-044) | 2/2 | Complete (deployed #190) | 2026-06-14 |
 | 117.2. Wipe Eval-Only Engine Residue (INSERTED, SEED-044) | 1/1 | Complete (deployed #191) | 2026-06-14 |
 | 118. Demand UX + Auto-Enqueue | 3/3 | Complete (verified; not yet deployed) | 2026-06-14 |
-| **119. Eval-drain coverage (SEED-045, SEED-046)** | **0/3** | **Planned** | **-** |
+| 119. Eval-drain coverage (SEED-045, SEED-046) | 3/3 | Complete | 2026-06-14 |
 
 ## Backlog
 
@@ -574,3 +574,20 @@ Plans:
 *Phase 999.7 (LLM Endgame-Insights Statistical-Reasoning Rework) promoted to active Phase 102 (v1.23) on 2026-06-01 via `/gsd-explore`; shipped 2026-06-03.*
 
 *Phase 103 (Endgame report LLM prompt refinements) shipped 2026-06-03 as an unplanned follow-on under v1.23 — see the collapsed v1.23 block above and [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md).*
+
+### Phase 120: Headless remote trusted-operator eval worker (SEED-048)
+
+**Goal:** Add off-box CPU to the tier-3 eval drain via a headless Python CLI worker that leases eval jobs from prod over HTTPS, runs the existing `EnginePool` natively, and posts evals back. Scope: (1) an HTTP endpoint to lease one game → its unanalyzed `(ply, FEN)` positions; (2) an HTTP endpoint to submit a game's batched evals, with the server applying the SEED-044 storage convention (post-move shift, terminal donor) + stamping `full_evals_completed_at`; (3) operator-token auth on both endpoints; (4) the worker CLI (lease → eval all FENs via `EnginePool` → batch submit). Server-side SF-version-mismatch rejection (D-5). Accept idempotent duplicate tier-3 work for v1 (D-4); strict tier-3 leasing deferred. Trusted-operator write scope only (D-6) — no untrusted-writer trust layer. Weighted-random within-user game pick to cut multi-worker collisions (D-7). See [.planning/seeds/SEED-048-headless-remote-eval-worker.md](seeds/SEED-048-headless-remote-eval-worker.md) for the full locked decisions (D-1..D-7).
+**Requirements**: D-1, D-2, D-3, D-4, D-5, D-6, D-7 (SEED-048 locked decisions)
+**Depends on:** Phase 119 (tier-3 drain rework — must have landed and settled per SEED-048 sequencing)
+**Plans:** 4/4 plans complete
+Plans:
+**Wave 1**
+
+- [x] 120-01-PLAN.md — Foundations: EVAL_OPERATOR_TOKEN + EXPECTED_SF_VERSION settings, eval_remote Pydantic schemas, get_stockfish_version() helper
+- [x] 120-04-PLAN.md — Weighted-random within-user tier-3 game pick (D-7): ES key -ln(random())/game_weight in _claim_tier3_derived to cut multi-worker collisions
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 120-02-PLAN.md — Lease + submit endpoints with operator-token auth, SF-version gate, SEED-044 server-side write path, integration tests
+- [x] 120-03-PLAN.md — Headless remote_eval_worker CLI (lease → EnginePool eval → batch submit)
