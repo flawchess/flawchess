@@ -198,7 +198,7 @@ Ran against `flawchess-prod-db`. "Analyzed" = full eval present, proxied by `whi
 
 ## Q-009: Weighted-lottery tier-3 drain — partial-index perf for the DISTINCT-users candidate scan
 
-**Asked:** 2026-06-14 (during `/gsd-explore` on replacing the winner-take-all tier-3 ordering — see [SEED-046](../seeds/SEED-046-tier3-weighted-lottery-drain.md))
+**Asked:** 2026-06-14 (during `/gsd-explore` on replacing the winner-take-all tier-3 ordering — see [SEED-046](../seeds/closed/SEED-046-tier3-weighted-lottery-drain.md))
 
 **Context:** SEED-046 replaces the strict `users.last_activity DESC` top key in `_claim_tier3_derived` (`app/services/eval_queue_service.py:185-241`) with a recency-weighted lottery over **users**. Each claim (~every 10s) the drain must pick a user weighted by recency from the set of users with genuine engine backlog, then pick that user's best game. The candidate-user set is:
 
