@@ -32,6 +32,14 @@ numbers referenced below are measured on prod, not estimated.
 - [ ] **EVUX-02**: User can see their analysis coverage (% of games analyzed / N of M) on eval-dependent surfaces, with a CTA when coverage is low
 - [ ] **EVUX-03**: User sees in-flight analysis state (queued/analyzing) for their games without refreshing blindly
 
+### Eval Convention Fix (EVALFIX) — Phase 117.1 (INSERTED, SEED-044)
+
+- [x] **EVALFIX-01**: `game_positions.eval_cp`/`eval_mate` store the eval of the position AFTER the move at every row, for both engine-drained and lichess `%eval` games — a single post-move convention with no per-source branch in `classify_game_flaws`. (Root cause: the engine drain stored the pre-push position's eval = eval BEFORE the move, while the classifier assumed post-move — off-by-one for every chess.com game.)
+- [x] **EVALFIX-02**: The drain evaluates the terminal position so the last move of every game has an "after" eval and is flaw-assessable (no unassessable game-ending blunders); `best_move`/`pv` remain keyed to the decision ply (the move-played row), not shifted
+- [x] **EVALFIX-03**: The opening-region dedup transplant (`eval_drain._fetch_dedup_evals`/`_resolve_full_eval`) recovers a position's eval correctly under post-move storage via a one-ply shift on the donor read; the `best_move` transplant is unchanged; the `eval_drain.py:182-191` convention comment is rewritten to document post-move + the shift
+- [x] **EVALFIX-04**: A migration NULLs `eval_cp`/`eval_mate`/`best_move`/`pv` and clears `full_evals_completed_at`/`full_pv_completed_at` for engine games (`lichess_evals_at IS NULL`), deletes their `game_flaws`, and TRUNCATEs the `eval_jobs` queue/lease table (clean slate — clears stale leases/jobs so games re-enqueue cleanly under the new convention); the background drain re-materializes everything
+- [x] **EVALFIX-05**: Regression fixtures (engine games 1420780, 1073118; lichess game 640092) produce coherent mistake/blunder detection through the unified post-move path; flaw-PV coverage is re-verified after re-eval (the off-by-one is the suspected cause of the ~32% flaw-PV coverage TODO)
+
 ## Future Requirements (deferred)
 
 - Browser WASM workers leasing from the same queue (SEED-012 client path, phase 2 of D-8)
@@ -64,6 +72,11 @@ numbers referenced below are measured on prod, not estimated.
 | QUEUE-06 | Phase 117 | Complete |
 | QUEUE-07 | Phase 116 | Complete |
 | QUEUE-08 | Phase 117 | Complete |
+| EVALFIX-01 | Phase 117.1 | Complete |
+| EVALFIX-02 | Phase 117.1 | Complete |
+| EVALFIX-03 | Phase 117.1 | Complete |
+| EVALFIX-04 | Phase 117.1 | Complete |
+| EVALFIX-05 | Phase 117.1 | Complete |
 | EVUX-01 | Phase 118 | Pending |
 | EVUX-02 | Phase 118 | Pending |
 | EVUX-03 | Phase 118 | Pending |

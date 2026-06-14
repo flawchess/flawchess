@@ -1784,3 +1784,103 @@ class TestOpponentLuckyTag:
             f"Player end-of-game blunder where player did not lose should carry 'lucky'. "
             f"Tags: {white_flaw_at_8['tags']}"
         )
+
+
+class TestSeed044PostMoveConvention:
+    """SEED-044 regression: engine-game flaws are detected only under the POST-MOVE
+    eval convention. Before the fix the engine drain stored eval_cp for the PRE-PUSH
+    position (eval BEFORE the move), so this classifier — which assumes eval AFTER the
+    move — was off-by-one for every chess.com game and missed (or misattributed) real
+    blunders. These fixtures encode the documented prod game 1420780 swing and assert
+    the convention outcome (correct sequence detects the blunder; the pre-push-shifted
+    sequence does not put a blunder at the true decision ply).
+    """
+
+    # Prod fixture 1420780 (chess.com engine, user 99), seed proof table:
+    #   1.e4 e5 2.Nf3 Nc6 3.Bc4 Nf6 4.b3 Bc5 5.Bb2 d6 6.Ng5 O-O 7.O-O Ng4 8.h3?? Bxf2+
+    # h3 is white's 8th move = ply 14 (0-indexed; white plays even plies). After h3,
+    # ...Bxf2+ wins material/initiative for black. AS-IS (pre-push read as post-move):
+    # 0 flaws. SHIFTED +1 (true post-move): the h3 blunder surfaces.
+    _FIXTURE_PGN_1420780 = (
+        "1. e4 e5 2. Nf3 Nc6 3. Bc4 Nf6 4. b3 Bc5 5. Bb2 d6 "
+        "6. Ng5 O-O 7. O-O Ng4 8. h3 Bxf2+ 9. Rxf2 *"
+    )
+    _BLUNDER_PLY_1420780 = 14  # h3, white's 8th move (even ply -> white mover)
+
+    def _post_move_eval_by_ply(self) -> list[int]:
+        """The eval AFTER each move (post-move convention) for the 1420780 fixture.
+
+        Roughly level through the opening, then a decisive swing against white the
+        instant h3 (ply 14) is played: positions[13] (after ...Ng4) ~ level; positions[14]
+        (after h3) ~ black winning. The exact prod centipawns are not reconstructable
+        from the seed, so we encode the documented swing magnitude that reproduces it.
+        """
+        evals = [25, 20, 30, 18, 28, 15, 22, 12, 26, 10, 24, 8, 20, 15]  # plies 0..13 (level)
+        evals += [-650, -640, -600]  # ply 14 (after h3??), 15 (after Bxf2+), 16 (after Rxf2)
+        return evals
+
+    def test_post_move_sequence_detects_engine_blunder(self) -> None:
+        """Under the correct POST-MOVE storage, the h3 blunder at ply 14 is detected."""
+        game = _make_game(pgn=self._FIXTURE_PGN_1420780, user_color="white")
+        evals = self._post_move_eval_by_ply()
+        positions = [_make_pos(i, eval_cp=cp) for i, cp in enumerate(evals)]
+        positions.append(_make_pos(len(evals)))  # final ply: no eval
+
+        result = classify_game_flaws(game, positions)
+        assert isinstance(result, list), f"Expected analyzed list, got {result!r}"
+
+        blunder_at_14 = next((f for f in result if f["ply"] == self._BLUNDER_PLY_1420780), None)
+        assert blunder_at_14 is not None, (
+            "Post-move convention must detect the h3 blunder at ply 14 (SEED-044). "
+            f"Got flaws: {[(f['side'], f['ply'], f['severity']) for f in result]}"
+        )
+        assert blunder_at_14["side"] == "white"
+        assert blunder_at_14["severity"] in ("mistake", "blunder")
+        assert blunder_at_14["es_before"] > blunder_at_14["es_after"]
+
+    def test_pre_push_sequence_misses_blunder_at_decision_ply(self) -> None:
+        """The OLD pre-push storage (eval BEFORE the move) read by this post-move
+        classifier puts no flaw at the true decision ply 14 — the off-by-one bug.
+
+        Pre-push storage shifts every eval one row LATER relative to post-move
+        (row k holds the eval of the position BEFORE move k). Simulate by shifting
+        the post-move sequence right by one ply, then assert ply 14 is NOT flagged
+        (the swing now lands at the adjacent ply, mis-attributing the blunder).
+        """
+        game = _make_game(pgn=self._FIXTURE_PGN_1420780, user_color="white")
+        post_move = self._post_move_eval_by_ply()
+        # Pre-push = eval of the position BEFORE move k = post-move eval of k-1.
+        pre_push = [post_move[0]] + post_move[:-1]
+        positions = [_make_pos(i, eval_cp=cp) for i, cp in enumerate(pre_push)]
+        positions.append(_make_pos(len(pre_push)))
+
+        result = classify_game_flaws(game, positions)
+        assert isinstance(result, list)
+        blunder_at_14 = next((f for f in result if f["ply"] == self._BLUNDER_PLY_1420780), None)
+        assert blunder_at_14 is None, (
+            "Pre-push storage (the SEED-044 bug) must NOT place a flaw at the true "
+            "decision ply 14 — that off-by-one is exactly what shipped wrong engine-"
+            f"game flaw stats. Got flaws: {[(f['side'], f['ply']) for f in result]}"
+        )
+
+    def test_lichess_coherent_sequence_unchanged(self) -> None:
+        """Guard against over-correction: a coherent post-move sequence (as lichess
+        %eval always supplied) classifies normally and is never shifted. Represents
+        fixture 640092 (lichess), which must keep its coherent flaw set — the fix
+        touches only how the ENGINE drain WRITES, never how post-move evals are read.
+        """
+        # One clear white blunder at ply 4; everything else level. 9 eval'd plies +
+        # 1 trailing null = 10 positions → 0.90 coverage (meets EVAL_COVERAGE_MIN).
+        pgn = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. d3 Nf6 5. O-O *"
+        game = _make_game(pgn=pgn, user_color="white")
+        evals = [20, 25, 18, 22, -520, -500, 15, 10, 12]  # ply 4 (white) is the blunder
+        positions = [_make_pos(i, eval_cp=cp) for i, cp in enumerate(evals)]
+        positions.append(_make_pos(len(evals)))
+
+        result = classify_game_flaws(game, positions)
+        assert isinstance(result, list)
+        white_blunders = [f for f in result if f["side"] == "white" and f["severity"] == "blunder"]
+        assert any(f["ply"] == 4 for f in white_blunders), (
+            "A coherent post-move (lichess-style) sequence must classify normally; "
+            f"expected a white blunder at ply 4. Got: {[(f['side'], f['ply'], f['severity']) for f in result]}"
+        )

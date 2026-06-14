@@ -96,6 +96,16 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="Process at most this many games (useful for smoke tests).",
     )
+    parser.add_argument(
+        "--full-evald-only",
+        action="store_true",
+        dest="full_evald_only",
+        help=(
+            "Only scan games with full_evals_completed_at set. Targets the flaw-eligible "
+            "set directly instead of loading every game's positions (the coverage gate "
+            "skips the rest). Use for prod backfills to avoid reading all positions."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -105,6 +115,7 @@ async def run_backfill(
     user_id: int | None,
     dry_run: bool,
     limit: int | None,
+    full_evald_only: bool = False,
     session_maker: async_sessionmaker[AsyncSession] | None = None,
 ) -> None:
     """Run the game_flaws backfill.
@@ -114,6 +125,9 @@ async def run_backfill(
         user_id: Scope backfill to this user's games (None = all users).
         dry_run: If True, classify and count but do NOT write or commit.
         limit: Maximum number of games to process (None = no limit).
+        full_evald_only: If True, scan only games with full_evals_completed_at
+            set — the flaw-eligible set. Avoids loading positions for the ~95%
+            of games that lack full-game evals (prod-load-friendly).
         session_maker: Injectable session factory for testing. When None,
             a real engine is created from db_url_for_target(db).
     """
@@ -130,6 +144,8 @@ async def run_backfill(
     _log(f"Backfill target: {target_label}")
     _log(f"Mode: {'--dry-run (no writes)' if dry_run else 'write'}")
     _log(f"Batch size: {BACKFILL_GAMES_PER_BATCH} games per commit")
+    if full_evald_only:
+        _log("Scope: full-eval'd games only (full_evals_completed_at IS NOT NULL)")
     if limit:
         _log(f"Limit: {limit} games")
 
@@ -143,6 +159,10 @@ async def run_backfill(
         stmt = select(Game.id, Game.user_id)
         if user_id is not None:
             stmt = stmt.where(Game.user_id == user_id)
+        if full_evald_only:
+            # Restrict to flaw-eligible games (full-game evals present). The
+            # classify coverage gate still skips any below EVAL_COVERAGE_MIN.
+            stmt = stmt.where(Game.full_evals_completed_at.isnot(None))
         # Order deterministically for resumability and progress logging
         stmt = stmt.order_by(Game.id)
         if limit is not None:

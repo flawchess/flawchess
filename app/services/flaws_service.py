@@ -305,6 +305,13 @@ def _run_all_moves_pass(
         ES_before = _ply_to_es(positions[N-1], mover)  # board before mover plays move N
         ES_after  = _ply_to_es(positions[N],   mover)  # board after mover plays move N
 
+    This post-move convention is now uniform across ALL sources (SEED-044): lichess
+    `%eval` rows always stored it this way (zobrist.py), and the engine full-eval
+    drain now stores it too (eval_drain._post_move_eval). Previously the engine
+    drain stored the PRE-PUSH eval (eval BEFORE the move), making this classifier
+    off-by-one for every chess.com game — a single real blunder surfaced as a
+    spurious adjacent pair or as nothing. No per-source branch is needed here.
+
     Severity routing mirrors lila's Advice dispatch: cp->cp transitions use the
     ES-drop thresholds (CpAdvice); any transition touching a mate eval uses the
     mate ladder (MateAdvice) — under Option B both endpoints of a mate stretch

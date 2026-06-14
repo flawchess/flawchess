@@ -46,6 +46,11 @@
     - [x] 117-01-PLAN.md — Migration + schema: best_move/pv columns, lichess_evals_at + full_pv_completed_at, eval_jobs queue/lease table, D-117-10 backfill (EVAL-04, EVAL-06, QUEUE-01, QUEUE-06)
     - [x] 117-02-PLAN.md — Tiered SKIP-LOCKED queue service: round-robin + TC-weighted pick, lease/report, tier-3 derived, guest exclusion, superuser tier-1 trigger (QUEUE-01/02/03/05/06/08)
     - [x] 117-03-PLAN.md — Drain integration: evaluate_nodes_with_pv, best_move threading + WR-02 repoint to lichess_evals_at, classify+oracle hook, queue-lease pick, tier-1 fan-out (EVAL-04, EVAL-06, QUEUE-03)
+- [ ] **Phase 117.1: Flaw-Eval Convention Fix (INSERTED, SEED-044)** - HIGH-priority off-by-one: engine drain stores `eval_cp` pre-move, classifier assumes post-move → wrong flaw stats for all chess.com (engine-evaluated) games. Standardize on post-move storage everywhere + dedup one-ply-shift rework + clean-slate re-eval
+  - **Plans:** 2 plans — EXECUTED + full local gate green (backend 2591 pass, frontend 905 pass)
+  - Plans:
+    - [x] 117.1-01-PLAN.md — Post-move write convention (`_post_move_eval` single shift site) + terminal eval donor + dedup one-ply self-join + classifier comment cleanup + drain/regression tests (EVALFIX-01/02/03/05)
+    - [x] 117.1-02-PLAN.md — Clean-slate data migration: NULL engine eval/best_move/pv, clear markers, delete engine `game_flaws`, TRUNCATE `eval_jobs`; preserve all lichess data; no-op downgrade + migration test (EVALFIX-04/05)
 - [ ] **Phase 118: Demand UX + Auto-Enqueue** - Automatic window enqueue on import/activity + explicit "analyze more" affordance + coverage indicators + in-flight status
 
 <details>
@@ -405,6 +410,23 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 - [x] 117-02-PLAN.md — Tiered priority queue service: SKIP-LOCKED claim (tier-1>2>3, round-robin, TC-weighted), lease/report contract, tier-3 derived pick, guest exclusion, tier-1 enqueue + superuser admin trigger (wave 2)
 - [x] 117-03-PLAN.md — Drain integration: evaluate_nodes_with_pv (best_move + flaw PV, zero extra compute), WR-02 repoint to lichess_evals_at, classify_game_flaws hook + oracle counts, completion markers, queue lease wiring, tier-1 fan-out (wave 3)
 
+### Phase 117.1: Flaw-Eval Convention Fix (INSERTED, SEED-044)
+
+**Goal**: A single eval-storage convention (post-move) holds across all sources, so `classify_game_flaws` produces correct flaw stats for chess.com (engine-evaluated) games — not just lichess `%eval` games. Today the engine drain stores `eval_cp` as the eval of the pre-push position (eval BEFORE the move) while the classifier assumes eval AFTER the move; the result is missing or misattributed flaws for the majority of the dataset (every chess.com game). The fix canonicalizes storage to post-move, reworks the opening-region dedup transplant to recover position evals correctly under the new convention, and re-evaluates affected games from a clean slate.
+**Depends on**: Phase 117
+**Requirements**: EVALFIX-01, EVALFIX-02, EVALFIX-03, EVALFIX-04, EVALFIX-05
+**Success Criteria** (what must be TRUE):
+
+  1. `game_positions.eval_cp`/`eval_mate` store the eval of the position AFTER the move at every row, for both engine-drained and lichess games — one convention, no per-source branch in the classifier
+  2. The drain evaluates the terminal position so the last move of every game has an "after" eval and is flaw-assessable; `best_move`/`pv` stay keyed to the decision ply (the move-played row)
+  3. The opening-region dedup transplant recovers a position's eval correctly under post-move storage (one-ply shift on the donor read); `best_move` transplant is unchanged and the lines 182-191 convention comment is rewritten to document post-move
+  4. A migration NULLs `eval_cp`/`eval_mate`/`best_move`/`pv` and clears `full_evals_completed_at`/`full_pv_completed_at` for engine games (`lichess_evals_at IS NULL`) and deletes their `game_flaws` — clean slate; the background drain re-materializes them under the new convention
+  5. Regression fixtures (engine games 1420780, 1073118; lichess game 640092) all produce coherent mistake/blunder detection through the unified post-move path; flaw-PV coverage is re-verified after re-eval (the off-by-one is the suspected cause of the ~32% coverage TODO)
+
+**Plans**: 2 plans
+- [ ] 117.1-01-PLAN.md — Post-move write convention + terminal eval + dedup one-ply shift; classifier comment cleanup; drain/dedup tests + 3 regression fixtures (wave 1)
+- [ ] 117.1-02-PLAN.md — Clean-slate data migration (NULL engine eval/flaw data, truncate eval_jobs, preserve lichess) + migration test (wave 1)
+
 ### Phase 118: Demand UX + Auto-Enqueue
 
 **Goal**: Users' recent games are automatically queued for analysis on import completion and on activity, with a visible explicit "analyze more" affordance showing real-time progress, coverage indicators on eval-dependent surfaces, and live in-flight status — all without requiring the user to initiate or monitor analysis manually
@@ -457,6 +479,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 115. You-vs-Opponent Comparison API + Bullet-Grid UI | 2/2 | Complete | 2026-06-11 |
 | **116. All-Ply Engine Core** | **0/TBD** | **Not started** | **-** |
 | **117. Priority Queue + Flaw Integration** | **0/TBD** | **Not started** | **-** |
+| **117.1. Flaw-Eval Convention Fix (INSERTED, SEED-044)** | **2/2** | **Executed (local gate green; pending deploy)** | **-** |
 | **118. Demand UX + Auto-Enqueue** | **0/TBD** | **Not started** | **-** |
 
 ## Backlog
