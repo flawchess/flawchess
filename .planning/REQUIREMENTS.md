@@ -20,7 +20,7 @@ numbers referenced below are measured on prod, not estimated.
 - [x] **QUEUE-01**: Analysis work drains from a tiered priority queue: explicit user requests > automatic recent windows > idle backlog
 - [x] **QUEUE-02**: Within a tier, users are served round-robin (one game each, cycle); within a user, games are ordered time-control-weighted (classical > rapid > blitz > bullet) then most-recent-first (amended 2026-06-13 — D-117-04)
 - [x] **QUEUE-03**: A tier-1 explicit request fans one game's positions across the entire worker pool (~10s wall-clock per game, measured)
-- [ ] **QUEUE-04**: Import completion and user activity automatically enqueue the user's ~200 most recent unanalyzed games (tier 2)
+- [x] **QUEUE-04**: Import completion and user activity automatically enqueue the user's ~200 most recent unanalyzed games (tier 2)
 - [x] **QUEUE-05**: Idle workers drain the backlog (tier 3) so cores never sit idle; full-DB coverage accrues over time
 - [x] **QUEUE-06**: Workers interact with the queue through a lease/report contract (claim job → post evals), so a future browser/external worker is an additive change (SEED-012 D-8)
 - [x] **QUEUE-07**: Worker pool memory is explicitly bounded and accounted against the backend container's 4g limit before `STOCKFISH_POOL_SIZE` is raised; the drain coexists with the import-time eval pass without competing during active imports
@@ -28,9 +28,9 @@ numbers referenced below are measured on prod, not estimated.
 
 ### Demand UX (EVUX)
 
-- [ ] **EVUX-01**: User can trigger "analyze more games" explicitly and see progress (reusing the import-job mental model)
-- [ ] **EVUX-02**: User can see their analysis coverage (% of games analyzed / N of M) on eval-dependent surfaces, with a CTA when coverage is low
-- [ ] **EVUX-03**: User sees in-flight analysis state (queued/analyzing) for their games without refreshing blindly
+- [x] **EVUX-01**: User can trigger "analyze more games" explicitly and see progress (reusing the import-job mental model)
+- [x] **EVUX-02**: User can see their analysis coverage (% of games analyzed / N of M) on eval-dependent surfaces, with a CTA when coverage is low
+- [x] **EVUX-03**: User sees in-flight analysis state (queued/analyzing) for their games without refreshing blindly
 
 ### Eval Convention Fix (EVALFIX) — Phase 117.1 (INSERTED, SEED-044)
 
@@ -67,7 +67,7 @@ numbers referenced below are measured on prod, not estimated.
 | QUEUE-01 | Phase 117 | Complete |
 | QUEUE-02 | Phase 117 | Complete |
 | QUEUE-03 | Phase 117 | Complete |
-| QUEUE-04 | Phase 118 | Pending |
+| QUEUE-04 | Phase 118 | Complete |
 | QUEUE-05 | Phase 117 | Complete |
 | QUEUE-06 | Phase 117 | Complete |
 | QUEUE-07 | Phase 116 | Complete |
@@ -77,6 +77,6 @@ numbers referenced below are measured on prod, not estimated.
 | EVALFIX-03 | Phase 117.1 | Complete |
 | EVALFIX-04 | Phase 117.1 | Complete |
 | EVALFIX-05 | Phase 117.1 | Complete |
-| EVUX-01 | Phase 118 | Pending |
-| EVUX-02 | Phase 118 | Pending |
-| EVUX-03 | Phase 118 | Pending |
+| EVUX-01 | Phase 118 | Complete |
+| EVUX-02 | Phase 118 | Complete |
+| EVUX-03 | Phase 118 | Complete |

@@ -267,9 +267,10 @@ async def _fetch_dedup_evals(
         .where(
             nxt.full_hash.in_(full_hashes),
             nxt.ply <= _DEDUP_MAX_PLY,
-            Game.full_evals_completed_at.isnot(None),
-            # WR-02 repointed (D-117-07): lichess_evals_at IS NULL = engine-written source.
-            Game.lichess_evals_at.is_(None),
+            # full_evals_completed_at IS NOT NULL AND lichess_evals_at IS NULL — engine-written
+            # source only (WR-02 / D-117-07; transplanting requires our 1M-node best_move,
+            # which lichess sources lack).
+            Game.has_engine_full_evals,
             # cur.eval_cp/eval_mate = the post-move eval of cur = the eval OF nxt's position.
             sa.or_(cur.eval_cp.isnot(None), cur.eval_mate.isnot(None)),
         )

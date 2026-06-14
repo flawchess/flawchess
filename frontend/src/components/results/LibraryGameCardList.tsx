@@ -1,5 +1,6 @@
 import { LibraryGameCard } from '@/components/results/LibraryGameCard';
 import { Pagination } from '@/components/results/Pagination';
+import { EvalCoverageBadge } from '@/components/library/EvalCoverageBadge';
 import type { GameFlawCard } from '@/types/library';
 
 // Page size matches the API default (limit=20 per UI-SPEC §Pagination).
@@ -12,6 +13,16 @@ interface LibraryGameCardListProps {
   offset: number;
   limit: number;
   onPageChange: (offset: number) => void;
+  /** Whether the current user is a guest — passed to EvalCoverageBadge for CTA gating. */
+  isGuest: boolean;
+  /** Games with engine analysis — passed to EvalCoverageBadge. */
+  analyzedN: number;
+  /** Total games in scope — passed to EvalCoverageBadge. */
+  totalN: number;
+  /** In-flight eval job count — passed to EvalCoverageBadge. */
+  inFlightCount: number;
+  /** Whether the eval-coverage query failed — passed to EvalCoverageBadge. */
+  isCoverageError: boolean;
 }
 
 /**
@@ -31,6 +42,11 @@ export function LibraryGameCardList({
   offset,
   limit,
   onPageChange,
+  isGuest,
+  analyzedN,
+  totalN,
+  inFlightCount,
+  isCoverageError,
 }: LibraryGameCardListProps) {
   // Derive pagination state; use PAGE_SIZE as the canonical page size constant.
   const pageSize = limit > 0 ? limit : PAGE_SIZE;
@@ -50,10 +66,19 @@ export function LibraryGameCardList({
 
   return (
     <section aria-label="Game results" data-testid="library-game-card-list" className="space-y-3">
-      {/* Matched-count row — simplified per UI-SPEC §Copywriting */}
-      <p className="text-sm text-muted-foreground">
-        {matchedCount} of {total} games
-      </p>
+      {/* Matched-count row with coverage badge top-right */}
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          {matchedCount} of {total} games
+        </p>
+        <EvalCoverageBadge
+          analyzedN={analyzedN}
+          totalN={totalN}
+          inFlightCount={inFlightCount}
+          isGuest={isGuest}
+          isCoverageError={isCoverageError}
+        />
+      </div>
 
       {/* Card stack — 2-column grid on md+; analyzed cards span full width, unanalyzed half-width.
           Wrapping div per card carries the span class so LibraryGameCard stays layout-agnostic. */}

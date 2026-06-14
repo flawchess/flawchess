@@ -37,6 +37,25 @@ vi.mock('react-chessboard', () => ({
   Chessboard: vi.fn(() => null),
 }));
 
+// Mock useUserProfile — LibraryGameCard now calls it for guest/analyze gating (Phase 118).
+vi.mock('@/hooks/useUserProfile', () => ({
+  useUserProfile: () => ({ data: { is_guest: false }, isLoading: false }),
+}));
+
+// Mock useEnqueueGame — NoAnalysisState (rendered via LibraryGameCard) uses tier-1 mutation.
+vi.mock('@/hooks/useEnqueueGame', () => ({
+  useTier1Enqueue: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+
+// Mock react-router-dom navigate — NoAnalysisState uses useNavigate for guest CTA.
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
+  return {
+    ...actual,
+    useNavigate: () => vi.fn(),
+  };
+});
+
 import { FlawCard } from '../FlawCard';
 import type { FlawListItem, GameFlawCard } from '@/types/library';
 import { useLibraryGame } from '@/hooks/useLibrary';

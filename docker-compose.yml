@@ -70,6 +70,9 @@ services:
       # makes pool size = vCPU count safe; default 4 matches the prod box.
       # Override via .env (STOCKFISH_POOL_SIZE) on hosts with different CPU.
       STOCKFISH_POOL_SIZE: ${STOCKFISH_POOL_SIZE:-4}
+      # Code default is False (safe for dev/CI). Prod opts the tier-3 idle
+      # backlog drain back on here; override via .env if ever needed.
+      EVAL_AUTO_DRAIN_ENABLED: ${EVAL_AUTO_DRAIN_ENABLED:-true}
     expose:
       - "8000"
     # memswap_limit = mem_limit disables swap for the backend cgroup, so a

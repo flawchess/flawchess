@@ -193,6 +193,13 @@ export interface EvalCoverageResponse {
   pending_count: number;
   total_count: number;
   pct_complete: number;  // 0–100, rounded
+  analyzed_count: number;   // games where is_analyzed = true (white_blunders IS NOT NULL)
+  in_flight_count: number;  // eval_jobs pending|leased for this user (D-118-12)
+}
+
+export interface EnqueueTier1Response {
+  status: 'enqueued' | 'skipped_guest' | 'already_queued';
+  game_id: number;
 }
 
 export interface ReadinessResponse {

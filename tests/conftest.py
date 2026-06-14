@@ -382,6 +382,7 @@ def override_get_async_session(test_engine):
     import app.core.database as db_module
     import app.middleware.last_activity as activity_module
     import app.repositories.llm_log_repository as llm_log_repo_module
+    import app.services.eval_queue_service as eval_queue_module
     import app.users as users_module
     from app.core.database import get_async_session
     from app.main import app as fastapi_app
@@ -390,15 +391,20 @@ def override_get_async_session(test_engine):
 
     # Patch async_session_maker everywhere it's imported, so non-DI code
     # (e.g. UserManager.on_after_login, LastActivityMiddleware, create_llm_log's
-    # D-02 own-session write path) also uses the test DB.
+    # D-02 own-session write path, enqueue_tier1_game) also uses the test DB.
     original_db_session_maker = db_module.async_session_maker
     original_users_session_maker = users_module.async_session_maker
     original_activity_session_maker = activity_module.async_session_maker
     original_llm_log_repo_session_maker = llm_log_repo_module.async_session_maker
+    # Phase 118: enqueue_tier1_game opens its own session via async_session_maker
+    # captured at module import time.  Patch the service module binding so enqueue
+    # calls during router tests hit the test DB.
+    original_eval_queue_session_maker = eval_queue_module.async_session_maker
     db_module.async_session_maker = test_session_maker
     users_module.async_session_maker = test_session_maker
     activity_module.async_session_maker = test_session_maker
     llm_log_repo_module.async_session_maker = test_session_maker
+    eval_queue_module.async_session_maker = test_session_maker
 
     async def _test_session_generator():
         async with test_session_maker() as session:
@@ -412,6 +418,7 @@ def override_get_async_session(test_engine):
     users_module.async_session_maker = original_users_session_maker
     activity_module.async_session_maker = original_activity_session_maker
     llm_log_repo_module.async_session_maker = original_llm_log_repo_session_maker
+    eval_queue_module.async_session_maker = original_eval_queue_session_maker
 
 
 @pytest.fixture(scope="session", autouse=True)

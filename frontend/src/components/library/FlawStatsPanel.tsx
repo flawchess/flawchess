@@ -1,47 +1,10 @@
-import { Cpu } from 'lucide-react';
 import { LoadError } from '@/components/ui/load-error';
-import { InfoPopover } from '@/components/ui/info-popover';
 import { FlawStatsBand } from './FlawStatsBand';
 import { FlawTrendChart } from './FlawTrendChart';
 import { FlawComparisonGrid } from './FlawComparisonGrid';
-import { ANALYSIS_COVERAGE_COPY } from './analysisCoverageCopy';
 import type { FlawStatsResponse } from '@/types/library';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
-
-// ─── Denominator pill ─────────────────────────────────────────────────────────
-
-interface FlawDenominatorPillProps {
-  /** Games with engine analysis in the current filter (the "x" in "x of y"). */
-  analyzedN: number;
-  /** Total games in the current filter (the "y" in "x of y"). */
-  totalN: number;
-}
-
-/**
- * Analyzed-coverage pill ("🖥 124 of 400 Games"). Rendered by the page beside
- * the "Flaw Statistics" section heading (Phase 115 UAT — the panel no longer
- * owns its own header row). The info popover explains why coverage is partial
- * (Stockfish analysis is currently Lichess-only).
- */
-export function FlawDenominatorPill({ analyzedN, totalN }: FlawDenominatorPillProps) {
-  return (
-    <div
-      className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-sm font-bold shrink-0"
-      style={{ background: 'oklch(1 0 0 / 4%)' }}
-      data-testid="flaw-stats-denominator"
-    >
-      <Cpu className="h-4 w-4 shrink-0" aria-hidden="true" />
-      <span style={{ color: 'white', fontWeight: 700 }}>{analyzedN}</span>
-      <span className="text-muted-foreground">of</span>
-      <span style={{ color: 'white', fontWeight: 700 }}>{totalN}</span>
-      <span className="text-muted-foreground">Games</span>
-      <InfoPopover ariaLabel="About game analysis coverage" testId="flaw-stats-denominator-info">
-        {ANALYSIS_COVERAGE_COPY}
-      </InfoPopover>
-    </div>
-  );
-}
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
@@ -63,7 +26,7 @@ interface FlawStatsPanelProps {
  *
  * Composes FlawStatsBand (Zone 1) + FlawTrendChart (Zone 2) + FlawComparisonGrid
  * (Zone 3). The Band is fixed to per-100-moves (Phase 115 D-02). The section
- * heading and the analyzed-coverage pill (FlawDenominatorPill) are rendered by
+ * heading and the analyzed-coverage pill (EvalCoverageBadge) are rendered by
  * the host page (GlobalStats) — this panel is body content only (Phase 115 UAT).
  *
  * Zone 3 (FlawComparisonGrid) self-fetches and handles its own loading/error/gate

@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { SlidersHorizontal, Tags, X } from 'lucide-react';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
@@ -17,6 +18,7 @@ import { FilterActions } from '@/components/filters/FilterActions';
 import { usePulseOnChange, ModifiedDot } from '@/components/filters/FilterModifiedDot';
 import { FlawCard } from '@/components/library/FlawCard';
 import { NoEngineAnalysisFlawsState } from '@/components/library/NoEngineAnalysisFlawsState';
+import { EvalCoverageBadge } from '@/components/library/EvalCoverageBadge';
 import { Pagination } from '@/components/results/Pagination';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import {
@@ -26,6 +28,7 @@ import {
 } from '@/hooks/useFlawFilterStore';
 import { useLibraryFlaws, useLibraryFlawStats } from '@/hooks/useLibrary';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { useEvalCoverage } from '@/hooks/useEvalCoverage';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
 import type { FlawTag } from '@/types/library';
@@ -217,6 +220,32 @@ export function FlawsTab() {
   // user who DOES have analyzed games (CLAUDE.md empty-state rule).
   const { data: statsData } = useLibraryFlawStats(UNFILTERED_PROBE_FILTERS, NO_FLAW_FILTER);
 
+  // Eval coverage — drives NoEngineAnalysisFlawsState in-flight + CTA props
+  // and the EvalCoverageBadge in the match-count row.
+  // trackFullAnalysis: keep polling while the background drain works through the
+  // backlog so the "N of M analyzed" badge ticks up live (Phase 118 removed the
+  // tier-2 auto-enqueue, so background work has no in-flight rows to poll on).
+  const { inFlightCount, analyzedCount, totalCount, isError: isCoverageError } = useEvalCoverage({
+    trackFullAnalysis: true,
+  });
+  const isGuest = profile?.is_guest ?? false;
+
+  // Bug fix (118 UAT): the flaw views don't poll, so once analysis finishes they
+  // stay frozen on stale data (empty state or partial list) until a reload. Force
+  // one refetch when in-flight jobs drain to zero (the >0 → 0 transition), mirroring
+  // GamesTab. eval-coverage self-polls, so the transition is always observed.
+  const queryClient = useQueryClient();
+  const prevInFlightRef = useRef(inFlightCount);
+  useEffect(() => {
+    const prev = prevInFlightRef.current;
+    prevInFlightRef.current = inFlightCount;
+    if (prev > 0 && inFlightCount === 0) {
+      void queryClient.invalidateQueries({ queryKey: ['library-flaws'] });
+      void queryClient.invalidateQueries({ queryKey: ['library-flaw-stats'] });
+      void queryClient.invalidateQueries({ queryKey: ['library-flaw-comparison'] });
+    }
+  }, [inFlightCount, queryClient]);
+
   // ── Derived state ────────────────────────────────────────────────────────────
   const totalGames = totalImported;
   const matchedCount = flawsData?.matched_count ?? 0;
@@ -305,14 +334,28 @@ export function FlawsTab() {
       {!flawsError && (
         <section aria-label="Flaw results" data-testid="flaw-list">
           {flawsData != null && (
-            <p className="text-sm text-muted-foreground mb-4">
-              {matchedCount} flaw{matchedCount === 1 ? '' : 's'} matched
-            </p>
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <p className="text-sm text-muted-foreground">
+                {matchedCount} flaw{matchedCount === 1 ? '' : 's'} matched
+              </p>
+              <EvalCoverageBadge
+                analyzedN={analyzedCount}
+                totalN={totalCount}
+                inFlightCount={inFlightCount}
+                isGuest={isGuest}
+                isCoverageError={isCoverageError}
+              />
+            </div>
           )}
 
           {noMatchedFlaws &&
             (noAnalyzedGames ? (
-              <NoEngineAnalysisFlawsState />
+              <NoEngineAnalysisFlawsState
+                isGuest={isGuest}
+                inFlightCount={inFlightCount}
+                analyzedCount={analyzedCount}
+                totalCount={totalCount}
+              />
             ) : (
               <EmptyState
                 title="No flaws matched"

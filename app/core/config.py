@@ -65,6 +65,14 @@ class Settings(BaseSettings):
     GEMINI_THINKING_BUDGET: int = 0
     GEMINI_INCLUDE_THOUGHTS: bool = True
 
+    # Automatic background full-eval toggle (Phase 117). When False, the tier-3
+    # idle-backlog derived pick is suppressed — the only automatic eval source as of
+    # Phase 118, which removed the tier-2 auto-window enqueue. Tier-1 (explicit,
+    # on-demand single-game request) is UNAFFECTED — on-demand analysis still works.
+    # Default False (safe for dev/CI so a local backend doesn't pin every core on the
+    # hundreds-of-thousands-game backlog). Prod opts in explicitly via its .env.
+    EVAL_AUTO_DRAIN_ENABLED: bool = False
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

@@ -8,6 +8,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from app.schemas.imports import EnqueueTier1Response  # noqa: F401 — re-export for admin endpoint backwards-compat
+
 
 class ImpersonateResponse(BaseModel):
     """Response for POST /admin/impersonate/{user_id}."""
@@ -37,14 +39,3 @@ class UserSearchResult(BaseModel):
     lichess_username: str | None
     is_guest: bool
     last_login: datetime | None
-
-
-class EnqueueTier1Response(BaseModel):
-    """Response for POST /admin/eval/enqueue-tier1/{game_id}.
-
-    Phase 117 D-117-05: internal/admin trigger for QUEUE-03 fan-out verification.
-    NOT the user-facing endpoint (Phase 118).
-    """
-
-    status: Literal["enqueued", "skipped_guest", "already_queued"]
-    game_id: int

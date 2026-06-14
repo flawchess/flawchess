@@ -197,3 +197,50 @@ class Game(Base):
     @classmethod
     def _is_analyzed_expression(cls) -> sa.ColumnElement[bool]:
         return cls.white_blunders.isnot(None)
+
+    @hybrid_property
+    def has_engine_full_evals(self) -> bool:
+        """True when all-ply evals were written by OUR engine, not ingested from Lichess.
+
+        `full_evals_completed_at` marks all-ply eval completion from ANY source, so it is
+        also set for Lichess games imported with %evals (D-116-05 + the Phase 116 migration
+        backfill that mirrored `evals_completed_at`). `lichess_evals_at IS NULL` is the
+        provenance gate (D-117-07): NULL = engine-written. This is the canonical predicate
+        for "games analyzed by our Stockfish" — distinct from `is_analyzed`, which is also
+        True for Lichess freebies. Eval and PV are written in the same drain pass, so this
+        does not separately gate `full_pv_completed_at`.
+        """
+        return self.full_evals_completed_at is not None and self.lichess_evals_at is None
+
+    @has_engine_full_evals.inplace.expression
+    @classmethod
+    def _has_engine_full_evals_expression(cls) -> sa.ColumnElement[bool]:
+        return sa.and_(
+            cls.full_evals_completed_at.isnot(None),
+            cls.lichess_evals_at.is_(None),
+        )
+
+    @hybrid_property
+    def needs_engine_full_evals(self) -> bool:
+        """True when this game still needs OUR engine to run full-game analysis.
+
+        Predicate: no engine full-eval yet (`full_evals_completed_at IS NULL`) AND not a
+        Lichess %eval game (`lichess_evals_at IS NULL`). Lichess games imported with
+        %evals are excluded — they only need PV backfill, not a fresh engine pass. This
+        is NOT the negation of `has_engine_full_evals`: the two predicates leave Lichess
+        %eval games (and partially-evaled Lichess games) in neither set, so both are
+        named separately.
+
+        Has no caller as of Phase 118 (the tier-2 auto-enqueue that used it was removed).
+        Retained for the planned per-user "analyze my games" enqueue mode, which needs
+        exactly this "games of mine still needing an engine pass" set.
+        """
+        return self.full_evals_completed_at is None and self.lichess_evals_at is None
+
+    @needs_engine_full_evals.inplace.expression
+    @classmethod
+    def _needs_engine_full_evals_expression(cls) -> sa.ColumnElement[bool]:
+        return sa.and_(
+            cls.full_evals_completed_at.is_(None),
+            cls.lichess_evals_at.is_(None),
+        )

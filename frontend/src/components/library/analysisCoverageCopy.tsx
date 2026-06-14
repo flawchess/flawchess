@@ -1,23 +1,17 @@
 /**
- * Shared "no engine analysis" copy, kept in a component-free module so it can be
- * imported by both the badge tooltips and the full-width empty state without
- * tripping react-refresh's only-export-components rule.
+ * Shared constants for game analysis coverage UX (Phase 118).
  *
- * Used verbatim across three surfaces:
- * - per-game NoAnalysisState pill tooltip,
- * - FlawDenominatorPill coverage-badge tooltip (FlawStatsPanel),
- * - full-width Flaws-tab empty state (NoEngineAnalysisFlawsState).
+ * Exported as a component-free module so it can be imported by both badge
+ * tooltips and full-width empty states without tripping react-refresh's
+ * only-export-components rule.
  */
-export const ANALYSIS_COVERAGE_PARAGRAPHS: readonly string[] = [
-  'Flaw analysis requires full Stockfish game analysis. Full Stockfish analysis is currently available only for games imported from Lichess that have been analyzed already.',
-  'FlawChess currently performs only partial Stockfish analysis of game phase transitions. Full analysis of chess.com games on FlawChess is coming soon.',
-];
 
-/** The same copy as a popover body (two stacked paragraphs) for the badge tooltips. */
-export const ANALYSIS_COVERAGE_COPY = (
-  <div className="space-y-2">
-    {ANALYSIS_COVERAGE_PARAGRAPHS.map((para) => (
-      <p key={para}>{para}</p>
-    ))}
-  </div>
-);
+/** Coverage ratio below which the guest sign-up CTA appears (D-118-09). */
+export const LOW_COVERAGE_THRESHOLD = 0.8;
+
+/** Popover body copy for the EvalCoverageBadge info popover. */
+export const ANALYSIS_COVERAGE_INFO_COPY =
+  'Full Stockfish analysis lets FlawChess classify blunders, mistakes, and inaccuracies. ' +
+  'We analyze your most recent games automatically in the background, and staying active ' +
+  'on FlawChess keeps your games near the front of the queue. ' +
+  'To analyze one game right away, use the "Analyze" button on its card.';
