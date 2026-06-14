@@ -2,40 +2,40 @@
 gsd_state_version: 1.0
 milestone: v1.26
 milestone_name: Full-Game Eval Pipeline
-status: verifying
-last_updated: "2026-06-14T18:34:39.329Z"
+status: milestone_complete
+last_updated: "2026-06-14T20:30:00.000Z"
 last_activity: 2026-06-14
 progress:
-  total_phases: 10
-  completed_phases: 6
+  total_phases: 7
+  completed_phases: 7
   total_plans: 18
   completed_plans: 18
-  percent: 60
+  percent: 100
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 999.1
-Plan: Not started
-Status: Phase complete — ready for verification
-NEXT: Phase 118 (Demand UX + Auto-Enqueue) — only remaining v1.26 phase; discussion captured (118-CONTEXT.md + 118-DISCUSSION-LOG.md, parallel session 2026-06-14), not yet planned/executed.
-PROD-SOAK (deferred items, check during 118 / over coming days): (1) tier-1 ~10s wall-clock fan-out on the live pool (QUEUE-03); (2) confirm _signal_flaw_completion cache stub logs cleanly (D-117-11; real wiring is Phase 118); (3) re-verify the ~32% flaw-PV coverage TODO once the residue re-eval catches up (multi-day background drain; see 117.1-POST-DEPLOY.md). No auto-enqueue yet (Phase 118), so user 99's residue re-eval was intentionally NOT prioritized.
+Phase: None active — v1.26 shipped
+Plan: —
+Status: **v1.26 Full-Game Eval Pipeline complete** (archived 2026-06-14; tag v1.26). 7 phases (116, 117, 117.1, 117.2, 118, 119, 120), 18 plans. Production code tree matches `main`.
+NEXT: `/gsd-new-milestone` — leading candidates: SEED-039 tactic-motif tags over the captured PVs, SEED-037 Train drills, or the SEED-036 remainder (Analysis viewer + best-move endpoint).
+PROD-SOAK (carried, check over coming days): (1) tier-1 ~10s wall-clock fan-out on the live pool (QUEUE-03); (2) re-verify the ~32% flaw-PV coverage TODO once the residue re-eval catches up (multi-day background drain; see 117.1-POST-DEPLOY.md); (3) τ/floor tier-3 lottery tuning against prod `last_activity` distributions (SEED-046 timing caveat).
 Security: SECURED — 13/13 threats closed (threats_open: 0), ASVS L1 (117-SECURITY.md).
-Last activity: 2026-06-14 - Completed quick task 260614-tgs: SEED-049 exclude the game-ending ply from the eval hole definition
+Last activity: 2026-06-14 - Archived v1.26 milestone (MILESTONES.md + milestones/v1.26-ROADMAP.md + v1.26-REQUIREMENTS.md; ROADMAP collapsed; PROJECT.md evolved; CHANGELOG promoted; tag v1.26).
 
-Progress: [█████████░] 94%
+Progress: [██████████] 100%
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-12 after v1.25 milestone)
+See: .planning/PROJECT.md (updated 2026-06-14 after v1.26 milestone)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report.
-Current focus: v1.26 Full-Game Eval Pipeline — Phase 116 (All-Ply Engine Core) next. Extends the existing eval_drain.py + engine.py to analyze every non-book ply at 1M-node Lichess-parity budget, then adds a tiered priority queue (Phase 117), then demand UX + auto-enqueue (Phase 118). SEED-012 is the source; all decisions locked (D-1..D-8, 2026-06-12). Throughput measured: 5.83 positions/s on 6 SCHED_IDLE workers = 8.4k games/day
+Current focus: No active milestone. v1.26 Full-Game Eval Pipeline shipped 2026-06-14 — full-game Stockfish analysis runs as a background tiered-queue drain (prod `EVAL_AUTO_DRAIN_ENABLED=true`) with an optional off-box headless worker. Next is `/gsd-new-milestone`.
 
 ## Milestone Progress
 
-Twenty-five milestones complete (v1.0–v1.25). v1.25 Flaw-Stats Opponent Comparison shipped 2026-06-12 — 4 phases (113, 114, 114.1, 115), 8 plans, released via PR #185 (`78c19514`); archived to milestones/v1.25-ROADMAP.md, tagged v1.25. v1.24 Library Page shipped 2026-06-09 — 9 phases (104–112), 37 plans. v1.23 LLM Endgame-Insights Statistical-Reasoning Rework shipped 2026-06-03 — 2 phases (102, 103). v1.22 Maintenance (Test Isolation & Frontend Major Upgrades) shipped 2026-05-31 — 2 phases (100, 101).
+Twenty-six milestones complete (v1.0–v1.26). v1.26 Full-Game Eval Pipeline shipped 2026-06-14 — 7 phases (116, 117, 117.1, 117.2, 118, 119, 120), 18 plans, +12,555/−494 lines over 3 days, released across PRs #187/#188/#190/#191 through #195; archived to milestones/v1.26-ROADMAP.md, tagged v1.26. Full-game Stockfish analysis at 1M-node Lichess parity, tiered SKIP-LOCKED priority queue with lease/report contract, post-move eval convention fix (SEED-044), demand UX, hole-aware coverage + recency-weighted tier-3 lottery (SEED-045/046), and an off-box headless eval worker (SEED-048). v1.25 Flaw-Stats Opponent Comparison shipped 2026-06-12 — 4 phases (113, 114, 114.1, 115), 8 plans, released via PR #185 (`78c19514`); archived to milestones/v1.25-ROADMAP.md, tagged v1.25. v1.24 Library Page shipped 2026-06-09 — 9 phases (104–112), 37 plans. v1.23 LLM Endgame-Insights Statistical-Reasoning Rework shipped 2026-06-03 — 2 phases (102, 103). v1.22 Maintenance (Test Isolation & Frontend Major Upgrades) shipped 2026-05-31 — 2 phases (100, 101).
 
 Twenty-two milestones complete (v1.0–v1.21). v1.21 Time-Control-Aware Endgame Metrics shipped 2026-05-31 — 4 phases (97, 98, 99, 99.1), 15 plans, PRs #160/#163/#164/#167/#168; archived to milestones/v1.21-ROADMAP.md, tagged v1.21. v1.20 Import Pipeline Hardening Follow-Up and Readiness shipped 2026-05-29 — 2 phases (95 asyncpg COPY, 96 Import Readiness Gate), 5 plans, PRs #148/#149/#151; regrouped post-hoc from standalone phases on 2026-05-30, tagged at `dcd22fef`. v1.19 Endgame Percentiles shipped 2026-05-27 — 6 phases (93, 94, 94.1, 94.2, 94.3, 94.4), ~45 plans, delivered via PR #145 + earlier per-phase PRs. 26/26 PCTL/TPCTL/PRPCR requirements satisfied. v1.18 Import Pipeline Hardening shipped 2026-05-22 (3 phases, 17 plans, PRs #130/#137/#138 + hotfix #139 + container-budget hotfix #144). v1.17 Endgame Stats Card Redesign shipped 2026-05-19 — 13 phases (84, 85, 85.1, 86, 87, 87.1, 87.2, 87.4, 87.5, 87.6, 88, 88.3, 88.4), ~54 plans, 203 commits over 8 days, delivered via PRs #89–#117 (plus production-branch OOM hotfix #99/#100/#101). the Polish phase (#89) dropped from scope at close; the percentile-composite phase (#87.3) superseded by 87.4→87.6. v1.16 Stockfish Eval Analyses shipped 2026-05-11 (5 phases, 24 plans, PRs #80/#82/#85/#86/#88).
 
@@ -56,6 +56,18 @@ Twenty-two milestones complete (v1.0–v1.21). v1.21 Time-Control-Aware Endgame 
 ## Accumulated Context
 
 ### Deferred Items
+
+Acknowledged and deferred at **v1.26 milestone close on 2026-06-14** (user directed completion of a milestone fully deployed to prod — production code tree matches `main`; open-artifact audit: 27 items, none blocking the release):
+
+| Category | Item | Disposition |
+|----------|------|-------------|
+| quick_task | 15 incomplete (`unknown`/`missing` status): 260531-jga, 260601-og7, 260603-o8m/pgv/q85, 260604-t54, 260606-glq/hfy/io6, 260608-w23, 260610-vru, 260611-rqu, 260612-bdr, 260613-bst, 260614-tgs | Resolved in fact — shipped (each appears in CHANGELOG + git log; 260613-bst bookmark recency + 260614-tgs SEED-049 landed this milestone); only the frontmatter status is unset (known false-positive pattern). Not v1.26 blockers. |
+| verification | Phase 117 VERIFICATION.md (`human_needed`) | Carried — human verification on a feature now live in prod (deployed #190, SECURED 13/13 threats); user directed milestone completion. |
+| uat | Phase 119 UAT.md (`passed`, 0 pending scenarios) | Not a gap — UAT passed; the audit flag is a frontmatter artifact. |
+| todos | 5 pending (bitboard storage, phase-70 amendments, benchmark-rebuild/-skill-v2, rerun-benchmarks) + more | Carried — long-range ideas + per-phase backfill tasks, not v1.26-scoped. |
+| seeds | SEED-012, SEED-037, SEED-039 (dormant, explicitly Out-of-Scope for v1.26); SEED-042, SEED-043 (dormant) | Carried — SEED-039 (tactic-motif, consumes v1.26's captured PVs) + SEED-037 (Train) are leading next-milestone candidates; SEED-012 (client coverage) owns broader reach; SEED-042/043 dormant. |
+
+PROD-SOAK carried (see Current Position): tier-1 fan-out wall-clock check (QUEUE-03); flaw-PV ~32% coverage re-verify after residue re-eval; τ/floor tier-3 lottery prod-tuning (SEED-046).
 
 Acknowledged and deferred at **v1.25 milestone close on 2026-06-12** (user directed completion of a feature already deployed to prod; open-artifact audit: 26 items, none blocking the release):
 

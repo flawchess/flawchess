@@ -28,33 +28,26 @@
 - ✅ **v1.23 LLM Endgame-Insights Statistical-Reasoning Rework** — Phases 102, 103 (shipped 2026-06-03) — see [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md)
 - ✅ **v1.24 Library Page** — Phases 104–112 (shipped 2026-06-09) — see [milestones/v1.24-ROADMAP.md](milestones/v1.24-ROADMAP.md)
 - ✅ **v1.25 Flaw-Stats Opponent Comparison** — Phases 113–115 (incl. 114.1) (shipped 2026-06-12) — see [milestones/v1.25-ROADMAP.md](milestones/v1.25-ROADMAP.md)
-- **v1.26 Full-Game Eval Pipeline** — Phases 116–119 (in progress)
+- ✅ **v1.26 Full-Game Eval Pipeline** — Phases 116–120 (incl. 117.1, 117.2) (shipped 2026-06-14) — see [milestones/v1.26-ROADMAP.md](milestones/v1.26-ROADMAP.md)
 
 ## Phases
 
-### v1.26 Full-Game Eval Pipeline (Phases 116–119)
+<details>
+<summary>✅ v1.26 Full-Game Eval Pipeline (Phases 116–120, incl. 117.1, 117.2) — SHIPPED 2026-06-14</summary>
 
-- [ ] **Phase 116: All-Ply Engine Core** - Search-budget upgrade + all-ply target collector + dedup + completion marker + memory bounds
-  - **Plans:** 3 plans
-  - Plans:
-    - [x] 116-01-PLAN.md — Schema + engine API: full_evals_completed_at column, dedup index, verified backfill migration, evaluate_nodes() 1M-node call (EVAL-02, EVAL-05, EVAL-03)
-    - [x] 116-02-PLAN.md — run_full_eval_drain coroutine: all-ply collector, ply≤20 dedup, preserve/overwrite write, completion marker, yield gate, lifespan wiring (EVAL-01, EVAL-03, EVAL-05, QUEUE-07)
-    - [x] 116-03-PLAN.md — QUEUE-07 memory accounting: measure per-worker RSS at 1M nodes, document 4g budget, correct stale pool-size comments, gate pool→8 (QUEUE-07)
-- [x] **Phase 117: Priority Queue + Flaw Integration** - Tiered priority queue replacing LIFO pick + round-robin fairness + tier-1 fan-out + idle drain + lease/report contract + PV capture + flaw flow-through + guest exclusion
-  - **Plans:** 3 plans — EXECUTED + verified (14/14 must-haves). DEPLOYED to prod 2026-06-14 via release #190 (`e97bcf54`).
-  - Plans:
-    - [x] 117-01-PLAN.md — Migration + schema: best_move/pv columns, lichess_evals_at + full_pv_completed_at, eval_jobs queue/lease table, D-117-10 backfill (EVAL-04, EVAL-06, QUEUE-01, QUEUE-06)
-    - [x] 117-02-PLAN.md — Tiered SKIP-LOCKED queue service: round-robin + TC-weighted pick, lease/report, tier-3 derived, guest exclusion, superuser tier-1 trigger (QUEUE-01/02/03/05/06/08)
-    - [x] 117-03-PLAN.md — Drain integration: evaluate_nodes_with_pv, best_move threading + WR-02 repoint to lichess_evals_at, classify+oracle hook, queue-lease pick, tier-1 fan-out (EVAL-04, EVAL-06, QUEUE-03)
-- [x] **Phase 117.1: Flaw-Eval Convention Fix (INSERTED, SEED-044)** - HIGH-priority off-by-one: engine drain stores `eval_cp` pre-move, classifier assumes post-move → wrong flaw stats for all chess.com (engine-evaluated) games. Standardize on post-move storage everywhere + dedup one-ply-shift rework + clean-slate re-eval
-  - **Plans:** 2 plans — EXECUTED + full local gate green. DEPLOYED to prod 2026-06-14 via release #190 (`e97bcf54`).
-  - Plans:
-    - [x] 117.1-01-PLAN.md — Post-move write convention (`_post_move_eval` single shift site) + terminal eval donor + dedup one-ply self-join + classifier comment cleanup + drain/regression tests (EVALFIX-01/02/03/05)
-    - [x] 117.1-02-PLAN.md — Clean-slate data migration: NULL engine eval/best_move/pv, clear markers, delete engine `game_flaws`, TRUNCATE `eval_jobs`; preserve all lichess data; no-op downgrade + migration test (EVALFIX-04/05)
-- [x] **Phase 117.2: Wipe Eval-Only Engine Residue (INSERTED, SEED-044 follow-up)** - Data-only migration: NULLs `eval_cp`/`eval_mate`/`best_move`/`pv` for 3,497 engine games (3 users) carrying dense evals from a pre-Phase-117 eval-only pass with no `best_move`/flaw classification/`full_evals_completed_at` marker. They showed in the Library as analyzed-with-no-flaws (≥90%-coverage "analyzed" gate); the wipe drops them from the analyzed set until the tier-3 drain re-materializes them properly. Gated on `lichess_evals_at IS NULL` — lichess never touched.
-  - **Plans:** 1 data migration (no PLAN.md; committed follow-up) — DEPLOYED to prod 2026-06-14 via release #191 (`8359935b`). Verified: residue 3497→0; lichess_total 39876 unchanged, lichess_flawed_no_marker 9655 unchanged (guards held).
-- [ ] **Phase 118: Demand UX + Auto-Enqueue** - Automatic window enqueue on import/activity + explicit "analyze more" affordance + coverage indicators + in-flight status
-- [x] **Phase 119: Eval-drain coverage (SEED-045, SEED-046)** - Bounded-retry hole-filling (don't stamp full_evals_completed_at while non-terminal/non-mate holes remain; cap at MAX_EVAL_ATTEMPTS) + recency-weighted tier-3 lottery (replace winner-take-all last_activity ordering with Efraimidis–Spirakis user-weighted sampling + PV-backfill residual tier) (completed 2026-06-14)
+Turned eval coverage from "endgame-entry plies only" into a full-game background analysis pipeline: every move evaluated by Stockfish at Lichess-parity strength (1M nodes/move), drained by a tiered priority queue (explicit > recent windows > idle backlog), results flowing automatically into the Library's flaw surfaces. Server-first v1 of SEED-012. Two correctness phases (117.1, 117.2) were inserted from SEED-044 for a pre/post-move eval off-by-one; Phase 119 (SEED-045/046) hardened drain coverage; Phase 120 (SEED-048) added an off-box headless eval worker.
+
+- [x] Phase 116: All-Ply Engine Core (3/3 plans) — 1M-node all-ply drain + ply≤20 dedup + completion marker + memory bounds — completed 2026-06-14 (deployed #190)
+- [x] Phase 117: Priority Queue + Flaw Integration (3/3 plans) — SKIP-LOCKED tiered queue + lease/report + tier-1 fan-out + best_move/PV + flaw flow-through + guest exclusion — completed 2026-06-14 (deployed #190)
+- [x] Phase 117.1: Flaw-Eval Convention Fix (INSERTED, SEED-044) (2/2 plans) — post-move convention everywhere + dedup one-ply-shift + clean-slate re-eval — completed 2026-06-14 (deployed #190)
+- [x] Phase 117.2: Wipe Eval-Only Engine Residue (INSERTED, SEED-044) (1/1 data migration) — NULLed 3,497 eval-only-residue engine games; lichess untouched — completed 2026-06-14 (deployed #191)
+- [x] Phase 118: Demand UX + Auto-Enqueue (3/3 plans) — on-demand analyze affordances + coverage badges + in-flight status + guest promotion — completed 2026-06-14
+- [x] Phase 119: Eval-drain coverage (SEED-045, SEED-046) (3/3 plans) — bounded-retry hole-filling + recency-weighted tier-3 lottery + lichess-leak fix + honest pulsing badge — completed 2026-06-14
+- [x] Phase 120: Headless remote trusted-operator eval worker (SEED-048) (4/4 plans) — operator-token lease/submit endpoints + headless CLI worker + SF-version gate — completed 2026-06-14
+
+See [milestones/v1.26-ROADMAP.md](milestones/v1.26-ROADMAP.md) for full details.
+
+</details>
 
 <details>
 <summary>✅ v1.25 Flaw-Stats Opponent Comparison (Phases 113–115, incl. 114.1) — SHIPPED 2026-06-12</summary>
@@ -370,123 +363,6 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 
 </details>
 
-## Phase Details
-
-### Phase 116: All-Ply Engine Core
-
-**Goal**: The eval drain analyzes every ply of queued games at Lichess-parity depth, storing results directly in `game_positions.eval_cp/eval_mate` with dedup and a distinct full-analysis completion marker, and the worker pool's memory footprint is explicitly bounded before the pool size is raised
-**Depends on**: Nothing (extends existing `eval_drain.py` + `engine.py`)
-**Requirements**: EVAL-01, EVAL-02, EVAL-03, EVAL-05, QUEUE-07
-**Success Criteria** (what must be TRUE):
-
-  1. A queued game's `game_positions` rows have `eval_cp`/`eval_mate` populated on every ply (terminal game-over positions excluded — no book-skip, so eval charts have no opening gap), and plies ≤ 20 skip the engine call when a matching `full_hash` already has a server eval (the dedup that makes the shared opening region cheap)
-  2. The search budget is exactly 1,000,000 nodes, NNUE, multiPV=1 per worker call (Lichess fishnet parity), replacing the former depth-15 convention for games processed by this pipeline
-  3. A game that completes full-ply analysis carries a completion marker that is distinct from `evals_completed_at` (the existing entry-ply marker), so coverage queries can report each tier independently
-  4. The combined memory footprint of `STOCKFISH_POOL_SIZE` workers at the new budget, an active import, and Postgres fits inside the backend container's 4g limit with documented headroom
-
-**Plans**: TBD
-
-### Phase 117: Priority Queue + Flaw Integration
-
-**Goal**: A tiered priority queue replaces the current LIFO id-DESC game pick, serving explicit requests first, then automatic windows, then idle backlog, with round-robin per-user fairness, tier-1 fan-out across the full worker pool, and newly analyzed games flowing automatically into `game_flaws`
-**Depends on**: Phase 116
-**Requirements**: EVAL-04, EVAL-06, QUEUE-01, QUEUE-02, QUEUE-03, QUEUE-05, QUEUE-06, QUEUE-08
-**Success Criteria** (what must be TRUE):
-
-  1. The drain selects the next game via a tiered pick: any tier-1 job takes precedence over tier-2, which takes precedence over the tier-3 idle backlog; within a tier, the next game comes from the user who has waited longest (round-robin); within a user, the most recent unanalyzed game goes first
-  2. A tier-1 single-game request fans all of that game's positions across the entire worker pool and completes in approximately 10 seconds wall-clock on an otherwise-idle pool (Lichess game-review UX reference)
-  3. Idle workers pick from the tier-3 backlog so no core sits unused when tier-1 and tier-2 queues are empty; full-DB coverage accrues over time
-  4. Workers interact with the queue through a lease-then-report contract (claim job → evaluate positions → post evals), such that adding a second worker type (e.g. browser-based) requires no queue redesign
-  5. The PV string is persisted in `game_positions` for plies adjacent to a flaw (so SEED-039 needs no second engine pass), and discarded for all other plies
-  6. Once a game's positions are fully evaluated, `classify_game_flaws` runs automatically and `game_flaws` rows appear for that game without any user action (import itself stays fast — the hot lane and its quick entry-ply pass are untouched; full evals + flaws arrive progressively after import)
-  7. Guest accounts (`users.is_guest`) are excluded from every tier — no guest game is ever enqueued or drained; full-game analysis requires a real account (inactive-guest games are cleanup candidates, so analyzing them wastes compute)
-
-**Proposed amendment to Success Criterion #5** (2026-06-13, pending `/gsd-discuss-phase 117`): split PV persistence into two artifacts instead of one, so we get an "engine's best move per position" step-through display nearly for free.
-
-  - **`best_move` (PV[0]) for *every* evaluated position** — enables showing the engine's preferred move when stepping through any game ply. It is a position property (keyed on the pre-move `full_hash`), so the existing opening-region dedup-transplant (`eval_drain._fetch_dedup_evals`, `ply ≤ DEDUP_MAX_PLY=20`, WR-02 gate) carries it for free alongside `eval_cp`; `ply > 20` stored per-row. Storage ≈ +80 MB (int2-encoded `from·64+to+promo`) to +240 MB (UCI text) on the 44.4M-row `game_positions` (~+1–4% of the 5.5 GB data; prod db-report 2026-06-12). **Zero extra engine compute** (PV falls out of the search that already produces `eval_cp`). Display-only → fetched by `game_id` (already indexed), no new index.
-  - **Full PV string only for plies adjacent to a flaw** (the original #5 intent, for SEED-039 motif continuations). REJECT full-PV-for-all: ≈ 5 GB, roughly doubles `game_positions` data and bloats the import/replay bulk-fetch hot path (the heaviest query class per db-report).
-  - Pipeline delta: capture `info["pv"][0]` from the existing search; thread `best_move` through `_fetch_dedup_evals` (return `(eval_cp, eval_mate, best_move)`) and the write path. Open sub-questions: int2 encoding vs UCI text; opening plies show book-region best moves too (no gap); top-1 only (MultiPV is a separate, more expensive search — out of scope).
-
-**Plans**: 3 plans (3 waves)
-
-- [x] 117-01-PLAN.md — Migration + schema: 4 nullable columns (best_move, pv, lichess_evals_at, full_pv_completed_at), eval_jobs queue/lease table + indexes, D-117-10 backfill, ORM models (wave 1)
-- [x] 117-02-PLAN.md — Tiered priority queue service: SKIP-LOCKED claim (tier-1>2>3, round-robin, TC-weighted), lease/report contract, tier-3 derived pick, guest exclusion, tier-1 enqueue + superuser admin trigger (wave 2)
-- [x] 117-03-PLAN.md — Drain integration: evaluate_nodes_with_pv (best_move + flaw PV, zero extra compute), WR-02 repoint to lichess_evals_at, classify_game_flaws hook + oracle counts, completion markers, queue lease wiring, tier-1 fan-out (wave 3)
-
-### Phase 117.1: Flaw-Eval Convention Fix (INSERTED, SEED-044)
-
-**Goal**: A single eval-storage convention (post-move) holds across all sources, so `classify_game_flaws` produces correct flaw stats for chess.com (engine-evaluated) games — not just lichess `%eval` games. Today the engine drain stores `eval_cp` as the eval of the pre-push position (eval BEFORE the move) while the classifier assumes eval AFTER the move; the result is missing or misattributed flaws for the majority of the dataset (every chess.com game). The fix canonicalizes storage to post-move, reworks the opening-region dedup transplant to recover position evals correctly under the new convention, and re-evaluates affected games from a clean slate.
-**Depends on**: Phase 117
-**Requirements**: EVALFIX-01, EVALFIX-02, EVALFIX-03, EVALFIX-04, EVALFIX-05
-**Success Criteria** (what must be TRUE):
-
-  1. `game_positions.eval_cp`/`eval_mate` store the eval of the position AFTER the move at every row, for both engine-drained and lichess games — one convention, no per-source branch in the classifier
-  2. The drain evaluates the terminal position so the last move of every game has an "after" eval and is flaw-assessable; `best_move`/`pv` stay keyed to the decision ply (the move-played row)
-  3. The opening-region dedup transplant recovers a position's eval correctly under post-move storage (one-ply shift on the donor read); `best_move` transplant is unchanged and the lines 182-191 convention comment is rewritten to document post-move
-  4. A migration NULLs `eval_cp`/`eval_mate`/`best_move`/`pv` and clears `full_evals_completed_at`/`full_pv_completed_at` for engine games (`lichess_evals_at IS NULL`) and deletes their `game_flaws` — clean slate; the background drain re-materializes them under the new convention
-  5. Regression fixtures (engine games 1420780, 1073118; lichess game 640092) all produce coherent mistake/blunder detection through the unified post-move path; flaw-PV coverage is re-verified after re-eval (the off-by-one is the suspected cause of the ~32% coverage TODO)
-
-**Plans**: 2 plans
-
-- [ ] 117.1-01-PLAN.md — Post-move write convention + terminal eval + dedup one-ply shift; classifier comment cleanup; drain/dedup tests + 3 regression fixtures (wave 1)
-- [ ] 117.1-02-PLAN.md — Clean-slate data migration (NULL engine eval/flaw data, truncate eval_jobs, preserve lichess) + migration test (wave 1)
-
-### Phase 118: Demand UX + Auto-Enqueue
-
-**Goal**: Users' recent games are automatically queued for analysis on import completion and on activity, with a visible explicit "analyze more" affordance showing real-time progress, coverage indicators on eval-dependent surfaces, and live in-flight status — all without requiring the user to initiate or monitor analysis manually
-**Depends on**: Phase 117
-**Requirements**: QUEUE-04, EVUX-01, EVUX-02, EVUX-03
-**Success Criteria** (what must be TRUE):
-
-  1. After a game import completes (or on first activity), the user's most recent ~200 unanalyzed games are automatically enqueued at tier 2 without any user action, and Library flaw features light up progressively as analysis finishes
-  2. A user can explicitly trigger "analyze more games" and see a progress indicator (games analyzed / games queued) that updates without a full page refresh — reusing the import-job mental model
-  3. Eval-dependent surfaces (Library Flaw-Stats panel, comparison grid) display "based on N of M analyzed games" and a CTA to analyze more when coverage is below a useful threshold, rather than silently showing data over a small analyzed subset
-  4. A user can see whether their games are currently queued or being analyzed (in-flight status) without refreshing the page blindly
-  5. Guest users see account promotion presented as the unlock for full-game analysis (QUEUE-08's UX face) instead of analyze affordances that would silently do nothing
-
-**Plans**: 3 plans
-**Wave 1**
-
-- [x] 118-01-PLAN.md — Backend foundation: enqueue_tier2_window + coverage/in-flight repo counts (is_analyzed fix) + EvalCoverageResponse extension + ix_eval_jobs_user_active migration + tier-3 ORDER BY refinement + the two auto-enqueue triggers
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 118-02-PLAN.md — API surface: POST /imports/eval/tier1/{game_id}, POST /imports/eval/tier2 (disabled-until-drained gate), extended GET /imports/eval-coverage
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 118-03-PLAN.md — Frontend: useEvalCoverage + useEnqueueGame mutations, real "N of M analyzed" coverage copy + CTA, per-game/bulk analyze affordances, in-flight states, guest promotion across the Library flaw surfaces
-
-**UI hint**: yes
-
-### Phase 119: Eval-drain coverage: bounded-retry hole-filling + recency-weighted tier-3 lottery (SEED-045, SEED-046)
-
-**Goal:** A user-triggered or background "Analyze" pass means every position of a game is actually evaluated (no silent mid-game eval holes), the idle drain shares engine time across users by recency so a returning user sees their coverage badge tick briskly within minutes, the drain stops wasting full engine passes re-analyzing lichess %eval games, and the coverage badge gives an honest progress signal (pulsing CPU icon) instead of a structurally-blind in-flight count.
-**Requirements**: SEED-045 (bounded-retry hole-filling), SEED-046 (recency-weighted tier-3 lottery + leak fix), UX badge-pulse + in_flight_count removal + dead-index drop
-**Depends on:** Phase 118
-**Plans:** 3/3 plans complete
-**Scope (from seeds):**
-
-  - **SEED-045 — bounded-retry hole-filling:** `eval_drain.py::_mark_full_evals_completed` stamps `full_evals_completed_at` unconditionally (D-116-07), so a game can be marked "fully analyzed" with genuine mid-game eval holes. Stop stamping while non-terminal, non-mate holes remain; re-pick up to `MAX_EVAL_ATTEMPTS` (~3) via a new `games.full_eval_attempts` SmallInteger; after the cap, stamp anyway + one aggregated Sentry event. Hole = `eval_cp IS NULL AND eval_mate IS NULL AND ply is not the terminal game-over ply`. Backfill decision for already-stamped-with-holes games (extend `scripts/backfill_eval.py` or a re-enqueue sweep).
-  - **SEED-046 — recency-weighted tier-3 lottery:** replace `_claim_tier3_derived`'s winner-take-all `last_activity DESC` top key with an Efraimidis–Spirakis user-weighted lottery (`ORDER BY -ln(random()) / weight LIMIT 1` over distinct `needs_engine_full_evals` users; weight = `exp(-Δt/τ)` + floor), then pick that user's best game by the existing secondary order. PV-backfill-only games become a residual fallback tier. One partial-index migration; verify DISTINCT-users + ES pick stays sub-100ms at prod scale.
-  - **Timing caveat:** SEED-046's own trigger asks to tune τ/floor against prod `last_activity` distributions *after* Phase 118 ships. Keep τ/floor as tunable constants and include a prod-tuning task rather than hardcoding.
-  - **Additional UX requirement + in-flight-count cleanup (not seed-derived):**
-    1. **Pulse the badge CPU icon.** `EvalCoverageBadge` CPU icon (`frontend/src/components/library/EvalCoverageBadge.tsx:81`) pulses (`animate-pulse`) while `analyzedN < totalN` and goes static at 100%, signalling progress. Sibling surfaces already pulse (`EvalCoverageHeader.tsx:23`, `EvalCpuPlaceholder.tsx:22`); this badge is the only one that doesn't. **Decision locked (2026-06-14):** gate on `analyzedN < totalN`, NOT on `inFlightCount` — see cleanup below.
-    2. **Remove the `in_flight_count` plumbing end-to-end.** Verified in code: Phase 118 removed tier-2 auto-enqueue, and tier-3 is a derived pick with `job_id=None` (no `eval_jobs` row, `eval_queue_service.py:18-20,299`). So `count_in_flight_evals` (= `eval_jobs` pending|leased) can only ever count **tier-1 explicit** jobs — already signalled by the per-card pulsating "Analyze" button — and is structurally blind to the dominant tier-3 backlog drain. It was therefore never an honest "progress" indicator for the common case. Remove: the badge's "· K in progress" text + `hasInFlight` gating of the guest sign-up CTA (a no-op for guests, who never have in-flight jobs); `EvalCoverageResponse.in_flight_count` (`app/schemas/imports.py:71`) + its computation in `GET /imports/eval-coverage` (`app/routers/imports.py`); `game_repository.count_in_flight_evals`; `useEvalCoverage`'s `inFlightCount`; and the related tests.
-    3. **Drop the now-dead `ix_eval_jobs_user_active` partial index** (Phase 118-added solely to make `count_in_flight_evals` cheap; claim paths use `uq_eval_jobs_game_active`). Confirm no other reader, then a drop migration.
-    Per-card "Analyze" pulse remains the precise per-game in-flight signal. **Scope note:** this turns the FE one-liner into a small backend + FE + migration cleanup — still "small," but no longer trivial.
-
-Plans:
-
-**Wave 1** *(119-01 and 119-03 run in parallel — no file overlap)*
-
-- [x] 119-01-PLAN.md — SEED-045 bounded-retry hole-filling: hole-aware completion gate + MAX_EVAL_ATTEMPTS re-pick + aggregated Sentry; phase-wide migration (games.full_eval_attempts + SEED-046 partial index + drop ix_eval_jobs_user_active); re-enqueue sweep for already-stamped-with-holes games
-- [x] 119-03-PLAN.md — UX + cleanup: pulse the EvalCoverageBadge CPU icon on analyzedN<totalN; remove in_flight_count end-to-end (schema/router/repo/hook/badge/callers/tests); repoint tier-1 completion refresh to analyzedCount; the ix_eval_jobs_user_active drop (in 119-01) loses its reader here
-
-**Wave 2** *(blocked on 119-01 — shares eval_drain.py and consumes the 119-01 migration's partial index)*
-
-- [x] 119-02-PLAN.md — SEED-046 recency-weighted tier-3 lottery: rewrite _claim_tier3_derived as an Efraimidis–Spirakis user lottery over needs-engine games (τ/floor tunable constants) + PV-backfill residual tier + the lichess-%eval leak fix (replace WHERE clause, drop dead D-118-04 tiebreaker) + is_analyzed→is_lichess_eval_game rename + EXPLAIN perf verification
-
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -574,20 +450,3 @@ Plans:
 *Phase 999.7 (LLM Endgame-Insights Statistical-Reasoning Rework) promoted to active Phase 102 (v1.23) on 2026-06-01 via `/gsd-explore`; shipped 2026-06-03.*
 
 *Phase 103 (Endgame report LLM prompt refinements) shipped 2026-06-03 as an unplanned follow-on under v1.23 — see the collapsed v1.23 block above and [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md).*
-
-### Phase 120: Headless remote trusted-operator eval worker (SEED-048)
-
-**Goal:** Add off-box CPU to the tier-3 eval drain via a headless Python CLI worker that leases eval jobs from prod over HTTPS, runs the existing `EnginePool` natively, and posts evals back. Scope: (1) an HTTP endpoint to lease one game → its unanalyzed `(ply, FEN)` positions; (2) an HTTP endpoint to submit a game's batched evals, with the server applying the SEED-044 storage convention (post-move shift, terminal donor) + stamping `full_evals_completed_at`; (3) operator-token auth on both endpoints; (4) the worker CLI (lease → eval all FENs via `EnginePool` → batch submit). Server-side SF-version-mismatch rejection (D-5). Accept idempotent duplicate tier-3 work for v1 (D-4); strict tier-3 leasing deferred. Trusted-operator write scope only (D-6) — no untrusted-writer trust layer. Weighted-random within-user game pick to cut multi-worker collisions (D-7). See [.planning/seeds/SEED-048-headless-remote-eval-worker.md](seeds/SEED-048-headless-remote-eval-worker.md) for the full locked decisions (D-1..D-7).
-**Requirements**: D-1, D-2, D-3, D-4, D-5, D-6, D-7 (SEED-048 locked decisions)
-**Depends on:** Phase 119 (tier-3 drain rework — must have landed and settled per SEED-048 sequencing)
-**Plans:** 4/4 plans complete
-Plans:
-**Wave 1**
-
-- [x] 120-01-PLAN.md — Foundations: EVAL_OPERATOR_TOKEN + EXPECTED_SF_VERSION settings, eval_remote Pydantic schemas, get_stockfish_version() helper
-- [x] 120-04-PLAN.md — Weighted-random within-user tier-3 game pick (D-7): ES key -ln(random())/game_weight in _claim_tier3_derived to cut multi-worker collisions
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 120-02-PLAN.md — Lease + submit endpoints with operator-token auth, SF-version gate, SEED-044 server-side write path, integration tests
-- [x] 120-03-PLAN.md — Headless remote_eval_worker CLI (lease → EnginePool eval → batch submit)

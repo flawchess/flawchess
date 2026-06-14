@@ -2,7 +2,47 @@
 
 *A living document updated after each milestone. Lessons feed forward into future planning.*
 
-> Note: v1.18, v1.19, v1.20, and v1.23 closes did not add retrospective sections (only the ROADMAP archives + MILESTONES entries were written). Not backfilled here to avoid reconstructing reflections after the fact; their facts live in the corresponding `milestones/v1.XX-ROADMAP.md` and `MILESTONES.md`.
+> Note: v1.18, v1.19, v1.20, v1.23, and v1.25 closes did not add retrospective sections (only the ROADMAP archives + MILESTONES entries were written). Not backfilled here to avoid reconstructing reflections after the fact; their facts live in the corresponding `milestones/v1.XX-ROADMAP.md` and `MILESTONES.md`.
+
+## Milestone: v1.26 — Full-Game Eval Pipeline
+
+**Shipped:** 2026-06-14
+**Phases:** 7 (116, 117, 117.1, 117.2, 118, 119, 120) | **Plans:** 18
+
+### What Was Built
+
+Eval coverage went from "endgame-entry plies only" to a full-game background analysis pipeline: an all-ply Stockfish drain at the 1M-node / NNUE / multiPV=1 Lichess-parity budget (ply≤20 `full_hash` dedup transplant, distinct `full_evals_completed_at` marker, 4g-bounded pool); a PostgreSQL SKIP-LOCKED tiered priority queue (explicit > recent windows > idle backlog) with round-robin per-user fairness, a lease/report contract, and tier-1 ~10s fan-out; `best_move` for every position + full PV adjacent to flaws; automatic `classify_game_flaws` flow-through; guest exclusion; explicit on-demand "Analyze" UX with honest coverage badges; hole-aware coverage with a recency-weighted tier-3 lottery; and an off-box headless trusted-operator eval worker.
+
+### What Worked
+
+- **Locking SEED-012's queue decisions (D-1..D-8) and the spike throughput numbers before planning** meant Phase 116/117 planning argued over implementation, not feasibility. The "measured, not estimated" discipline (5.83 pos/s, 8.4k games/day, 0.98s/position) paid off.
+- **The lease/report contract was the right abstraction.** Designed in Phase 117 to keep a future browser worker additive, it let Phase 120's off-box headless worker land as a pure add — no queue redesign — proving the shape early.
+- **Inserting correctness phases (117.1, 117.2) immediately when the off-by-one surfaced** rather than patching around it. Standardizing on one post-move convention everywhere removed a whole class of per-source branching from the classifier.
+- **Clean-slate re-eval gated on `lichess_evals_at IS NULL`** made the data migrations safe to reason about: lichess data was provably never touched across 117.1/117.2.
+
+### What Was Inefficient
+
+- **Phase 118's tier-2 auto-enqueue was built and then dropped in Phase 119** in favour of an explicit on-demand model — the in-flight count turned out to be a structurally dishonest progress signal once tier-3 became a derived pick. The auto-enqueue design could have been pressure-tested for "is this an honest UX signal?" before implementation.
+- **The pre/post-move eval off-by-one (SEED-044) shipped to prod in Phase 117 before being caught**, forcing a clean-slate re-eval. A convention-level regression fixture comparing engine vs lichess flaw detection on the same game would have caught it at the unit level.
+- **Coverage-honesty bugs came in a trickle** (SEED-045 holes, SEED-046 lichess leak, SEED-049 game-ending ply) — each a separate fix. They share a root theme ("what counts as a real, fillable eval hole?") that a single up-front spec of the hole definition might have consolidated.
+
+### Patterns Established
+
+- **Tiered SKIP-LOCKED queue with lease/report** as the canonical background-work pattern (pluggable workers, round-robin fairness, derived idle tier).
+- **One storage convention across sources, no per-source classifier branch** — the eval-storage lesson generalizes: normalize at the write path, not the read path.
+- **`EVAL_AUTO_DRAIN_ENABLED`-style env gating** for background compute so dev/CI never pins cores on a backlog while prod opts in.
+- **Efraimidis–Spirakis weighted-random sampling** for fair-but-recency-biased work selection (tunable τ/floor kept as constants for prod tuning).
+
+### Key Lessons
+
+- A background pipeline's **progress signal must be honest for the dominant path**, not the convenient-to-measure one. The in-flight count measured tier-1 (rare) and was blind to tier-3 (common) — remove a signal that lies rather than ship it.
+- **Eval-convention bugs are silent and dataset-wide.** An off-by-one in storage mis-scored every chess.com game with no error — cross-source equivalence fixtures are cheap insurance.
+- **Define "done/complete" precisely before stamping it.** The hole-filling saga was really three refinements of "when is a game fully analyzed?"; pin that predicate first.
+
+### Cost Observations
+
+- 18 plans across 7 phases in 3 days; +12,555/−494 lines, 20 `feat` commits.
+- Two phases (117.1, 117.2) and one quick task (SEED-049) were unplanned correctness work — ~30% of the phase count was reactive, all tracing to the single SEED-044 convention bug and its coverage follow-ons.
 
 ## Milestone: v1.24 — Library Page
 
