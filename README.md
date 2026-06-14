@@ -125,16 +125,26 @@ The worker is a standalone HTTP client plus a local Stockfish driver: it talks t
 
 ### Running on Windows
 
-The worker runs natively on Windows — the only Linux-specific code path (`SCHED_IDLE` scheduling) is guarded and skipped on non-Linux hosts. Two setup steps differ from Linux/macOS:
+The worker runs natively on Windows — the only Linux-specific code path (`SCHED_IDLE` scheduling) is guarded and skipped on non-Linux hosts. No WSL or Docker needed.
 
-1. **Stockfish binary.** `bin/install_stockfish.sh` is a bash script that fetches the Linux build, so it won't run on Windows. Download the Windows Stockfish release manually (match the version the server pins via `EXPECTED_SF_VERSION`, or submits are rejected by the D-5 version gate) and point the worker at it with `STOCKFISH_PATH` in `.env`:
+1. **Get the repo.** It's public, so no GitHub account is required. Either clone over HTTPS:
+
+   ```
+   git clone https://github.com/flawchess/flawchess.git
+   ```
+
+   or download the ZIP from the GitHub web UI ("Code → Download ZIP") and extract it — the worker needs the source tree, not git history. Then install [uv](https://docs.astral.sh/uv/) and run `uv sync` in the repo root (the worker imports `app.*`, so the full dependency set is installed).
+
+These two setup steps then differ from Linux/macOS:
+
+2. **Stockfish binary.** `bin/install_stockfish.sh` is a bash script that fetches the Linux build, so it won't run on Windows. Download the Windows Stockfish release manually (match the version the server pins via `EXPECTED_SF_VERSION`, or submits are rejected by the D-5 version gate) and point the worker at it with `STOCKFISH_PATH` in `.env`:
 
    ```
    STOCKFISH_PATH=C:\path\to\stockfish.exe
    ```
 
    The engine resolver checks `STOCKFISH_PATH` first, then falls back to `stockfish` on `PATH`.
-2. **`.env`.** Only `EVAL_OPERATOR_TOKEN` is required (every other setting has a default, and the worker needs no database). Pass `--token` instead if you'd rather not write a `.env`.
+3. **`.env`.** Only `EVAL_OPERATOR_TOKEN` is required (every other setting has a default, and the worker needs no database). Pass `--token` instead if you'd rather not write a `.env`.
 
 Then run the same commands as below via `uv run python scripts/remote_eval_worker.py …`.
 
