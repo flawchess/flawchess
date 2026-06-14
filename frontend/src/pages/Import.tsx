@@ -292,7 +292,6 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
       {profile?.is_guest && (
         <Alert variant="info" icon={DoorOpen} data-testid="import-guest-promo-info" className="mb-4">
           <p className="text-sm">
-            You're playing as a guest.{' '}
             <button
               onClick={() => { logoutForPromotion(); window.location.href = '/login?tab=register'; }}
               className="font-medium underline underline-offset-2"
