@@ -30,6 +30,11 @@ GAMES_INDEX_NAME: str = "ix_games_full_evals_pending"
 GP_INDEX_NAME: str = "ix_gp_full_hash_opening"
 TARGET_REVISION: str = "head"
 BASE_REVISION: str = "07994baf3b15"  # down_revision of our migration
+# The Phase 116 migration itself (where the full_evals_completed_at backfill runs).
+# Backfill-result assertions target this revision, NOT head — a later migration
+# (Phase 117.1 / SEED-044 clean-slate) legitimately clears the marker for engine
+# games, which would otherwise undo the backfill before the assertion at head.
+PHASE_116_REVISION: str = "20260612120000"
 
 # Minimal PGN to satisfy NOT NULL constraint on games.pgn
 MINIMAL_PGN: str = "1. e4 e5 *"
@@ -290,14 +295,18 @@ async def test_backfill_marks_fully_covered_game(test_engine) -> None:
         test_engine, test_user_id, game_id, ply=2, eval_cp=None, eval_mate=None, move_san=None
     )
 
-    # Upgrade — triggers backfill
-    await _run_upgrade(TARGET_REVISION)
+    # Upgrade to the Phase 116 migration — triggers the backfill. Assert here, NOT at
+    # head: the Phase 117.1 clean-slate migration (SEED-044) clears the marker for
+    # engine games (lichess_evals_at IS NULL), which this fixture is.
+    await _run_upgrade(PHASE_116_REVISION)
 
     ts = await _get_full_evals_completed_at(test_engine, test_user_id, game_id)
     assert ts is not None, (
         "Expected full_evals_completed_at to be set for game with all evals covered"
     )
 
+    # Restore schema to head for subsequent tests/teardown.
+    await _run_upgrade(TARGET_REVISION)
     await _cleanup(test_engine, test_user_id)
 
 

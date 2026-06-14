@@ -50,6 +50,7 @@ import sqlalchemy as sa
 from sqlalchemy import bindparam, select, update
 from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.core.database import async_session_maker
 from app.models.game import Game
@@ -110,6 +111,13 @@ class _FullPlyEvalTarget:
         discarded by the D-116-04 preservation gate anyway (WR-01), and so the
         write path's belt-and-braces preservation check needs no row re-scan.
     best_move: Phase 117 EVAL-04 — populated from engine result or dedup transplant.
+    is_terminal: SEED-044 — True for the post-game terminal-position target. Under
+        the post-move convention the eval stored at the LAST played move's row is
+        the eval of the position AFTER that move (the terminal position), so the
+        terminal board is evaluated as an eval-only donor. A terminal target has
+        NO game_positions row of its own (no move was played from it): it is never
+        written, never dedup'd, and contributes only its position eval as the
+        pos_eval[k+1] donor for the last real row.
     """
 
     game_id: int
@@ -119,20 +127,33 @@ class _FullPlyEvalTarget:
     eval_cp: int | None
     eval_mate: int | None
     best_move: str | None = None
+    is_terminal: bool = False
 
 
 def _collect_full_ply_targets(
     game_id: int,
     pgn_text: str,
     game_positions_rows: Sequence[tuple[int, int, int | None, int | None]],
+    include_terminal: bool = False,
 ) -> list[_FullPlyEvalTarget]:
-    """Collect one target per non-terminal ply (EVAL-01).
+    """Collect one target per ply, with an optional terminal eval-donor (EVAL-01, SEED-044).
 
     game_positions_rows: (ply, full_hash, eval_cp, eval_mate) loaded from DB.
 
-    Terminal exclusion: mainline iterator yields positions BEFORE each push.
-    The post-last-move board (game-over) is never visited — no is_game_over()
-    guard needed during the walk. Simply skip adding a snapshot after the loop.
+    Per-ply targets snapshot the PRE-PUSH board (the position BEFORE the move at
+    that ply), so the engine's eval is the eval OF that position and its best_move
+    is the best move FROM it — both position-/decision-keyed. The POST-MOVE storage
+    shift (eval stored at row k = eval of the position AFTER move k) is applied
+    later, at write time, in `_post_move_eval`.
+
+    include_terminal (SEED-044): when True, append ONE extra terminal target for
+    the post-game board (the position after the final push). Under the post-move
+    convention the last played move's stored eval is the eval of that terminal
+    position, so it must be evaluated. The terminal target has `is_terminal=True`,
+    `ply = <number of plies played>` (one past the last real row), and no DB row of
+    its own — it is an eval-only donor (never written, never dedup'd). Engine games
+    pass include_terminal=True; lichess `%eval` games pass False (their evals are
+    preserved, never shifted, so no terminal donor is needed).
 
     Returns [] on PGN parse failure or None game.
     """
@@ -150,7 +171,9 @@ def _collect_full_ply_targets(
 
     board = game.board()
     targets: list[_FullPlyEvalTarget] = []
+    ply_count = 0
     for ply, node in enumerate(game.mainline()):
+        ply_count = ply + 1
         meta = ply_meta.get(ply)
         if meta is not None:
             fh, cp, mt = meta
@@ -165,7 +188,28 @@ def _collect_full_ply_targets(
                 )
             )
         board.push(node.move)
-    # board is now the terminal position — NOT added.
+    # board is now the terminal position. Under post-move storage it is the
+    # after-eval donor for the last played move (SEED-044). full_hash is 0 (unused:
+    # terminal targets are excluded from dedup and never written by full_hash).
+    #
+    # Skip a GAME-OVER terminal (checkmate/stalemate/insufficient material): the
+    # engine cannot search a finished position (evaluate_nodes_with_pv would error
+    # or return a degenerate result), and a mating/stalemating final move is the
+    # best move, never a flaw to assess. Games that ended by resignation/timeout
+    # leave a normal (not game-over) final board, so the last move IS assessable
+    # (a pre-resignation blunder gets its after-eval).
+    if include_terminal and ply_count > 0 and not board.is_game_over():
+        targets.append(
+            _FullPlyEvalTarget(
+                game_id=game_id,
+                ply=ply_count,
+                full_hash=0,
+                board=board.copy(),
+                eval_cp=None,
+                eval_mate=None,
+                is_terminal=True,
+            )
+        )
     return targets
 
 
@@ -173,47 +217,63 @@ async def _fetch_dedup_evals(
     session: AsyncSession,
     full_hashes: Sequence[int],
 ) -> dict[int, tuple[int | None, int | None, str | None]]:
-    """Batch-fetch parity evals + best_move for opening-region hashes (EVAL-03, D-116-02).
+    """Batch-fetch a position's OWN eval + best_move for opening-region hashes (EVAL-03, D-116-02).
 
-    Marker gate: source games must have full_evals_completed_at IS NOT NULL
-    (parity by construction). Do NOT use evals_completed_at here — that gate
-    includes depth-15 source rows (Pitfall 4, RESEARCH.md).
+    Returns, for each requested position hash Q, the eval OF position Q and the
+    engine's best move FROM Q — i.e. position-/decision-keyed values, NOT the
+    post-move stored convention. The post-move +1 shift that turns these into the
+    written rows happens later in `_post_move_eval`. Keeping the dedup map
+    position-keyed lets the same shift apply uniformly to engine results and
+    dedup transplants.
 
-    Engine-source-only gate (WR-02, D-117-07 repointed): source games must have
-    lichess_evals_at IS NULL. Lichess %eval values are post-move evals — a row
-    at ply k stores the eval of the position AFTER its move (zobrist.py:182),
-    while the row's full_hash is the position BEFORE the move. Engine-written
-    rows (this drain) evaluate the pre-push position, so only those are
-    position-keyed by construction and safe to transplant cross-game by
-    full_hash. Previously gated on white_blunders IS NULL (changed by D-117-07:
-    after oracle counts are filled for engine games, white_blunders IS NOT NULL
-    for engine games too — using it would wrongly exclude engine-written sources).
+    Post-move convention recovery (SEED-044): every source row now stores the
+    POST-MOVE eval — row k holds the eval of the position AFTER move k, i.e. the
+    eval of `full_hash[k+1]`, for ALL sources (engine and lichess `%eval` alike;
+    zobrist.py stores lichess the same way). So a position's OWN eval is NOT in
+    its own row — it is in the row whose move REACHED it (one ply earlier). We
+    recover it with a one-ply self-join: for a requested position Q, read
+    `cur.eval_cp` from the donor row `cur` whose successor `nxt` has
+    `nxt.full_hash == Q` (`nxt.ply == cur.ply + 1`). `cur.eval_cp` is the eval
+    AFTER cur's move = the eval OF Q. The best move FROM Q stays decision-keyed,
+    so it is read directly from `nxt.best_move` (the row whose full_hash IS Q).
 
-    Also returns best_move (D-117-01): transplant alongside eval_cp so
-    dedup'd opening-region plies carry the engine's best-move suggestion.
+    Gates (unchanged): full_evals_completed_at IS NOT NULL (parity by
+    construction; NOT evals_completed_at, which includes depth-15 rows — Pitfall
+    4) and lichess_evals_at IS NULL (engine-written source only — WR-02 /
+    D-117-07; transplanting requires our 1M-node best_move, which lichess sources
+    lack). The opening-region gate is on the requested position `nxt.ply`.
+
+    First-ply edge: the initial position (ply 0) has no predecessor move that
+    reaches it, so it is never recoverable here and simply falls through to a
+    fresh engine eval. That is harmless — under post-move storage no row ever
+    stores the initial position's eval (row k stores the eval AFTER move k).
 
     Returns {full_hash: (eval_cp, eval_mate, best_move)} for hashes with at
     least one hit.
     """
     if not full_hashes:
         return {}
+    cur = aliased(GamePosition)
+    nxt = aliased(GamePosition)
     result = await session.execute(
         select(
-            GamePosition.full_hash,
-            GamePosition.eval_cp,
-            GamePosition.eval_mate,
-            GamePosition.best_move,
+            nxt.full_hash,
+            cur.eval_cp,
+            cur.eval_mate,
+            nxt.best_move,
         )
-        .join(Game, GamePosition.game_id == Game.id)
+        .join(nxt, sa.and_(nxt.game_id == cur.game_id, nxt.ply == cur.ply + 1))
+        .join(Game, cur.game_id == Game.id)
         .where(
-            GamePosition.full_hash.in_(full_hashes),
-            GamePosition.ply <= _DEDUP_MAX_PLY,
+            nxt.full_hash.in_(full_hashes),
+            nxt.ply <= _DEDUP_MAX_PLY,
             Game.full_evals_completed_at.isnot(None),
             # WR-02 repointed (D-117-07): lichess_evals_at IS NULL = engine-written source.
             Game.lichess_evals_at.is_(None),
-            sa.or_(GamePosition.eval_cp.isnot(None), GamePosition.eval_mate.isnot(None)),
+            # cur.eval_cp/eval_mate = the post-move eval of cur = the eval OF nxt's position.
+            sa.or_(cur.eval_cp.isnot(None), cur.eval_mate.isnot(None)),
         )
-        .distinct(GamePosition.full_hash)
+        .distinct(nxt.full_hash)
         .limit(len(full_hashes))
     )
     return {row[0]: (row[1], row[2], row[3]) for row in result.all()}
@@ -245,19 +305,39 @@ def _resolve_full_eval(
     dedup_map: dict[int, tuple[int | None, int | None, str | None]],
     engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
 ) -> tuple[int | None, int | None, str | None, str | None]:
-    """Resolve the eval + best_move + pv_string to write for one ply (pure; WR-04).
+    """Resolve a target's POSITION-keyed eval + decision best_move/pv (pure; WR-04).
+
+    Returns (eval_cp, eval_mate, best_move, pv_string) where eval_cp/eval_mate are
+    the eval OF this target's own position (the engine evaluated the pre-push
+    board, or the dedup map supplies the same position-keyed value) and
+    best_move/pv are the engine's best move + PV FROM this position. This function
+    does NOT apply the post-move storage shift — that is done at write time in
+    `_post_move_eval` (SEED-044), so the same +1 lives in exactly one place.
 
     Priority: dedup hit (EVAL-03, opening region only) > engine result >
-    (None, None, None, None) hole (D-116-07).
-
-    Dedup transplants (eval_cp, eval_mate, best_move) from the source row.
-    pv_string is always None for dedup'd positions (the per-flaw PV is only
-    written at flaw-adjacent plies N+1, not here — D-117-02).
+    (None, None, None, None) hole (D-116-07). pv_string is always None for dedup'd
+    positions (the per-flaw PV is only written at flaw-adjacent plies N+1 — D-117-02).
     """
-    if target.ply <= _DEDUP_MAX_PLY and target.full_hash in dedup_map:
+    if not target.is_terminal and target.ply <= _DEDUP_MAX_PLY and target.full_hash in dedup_map:
         eval_cp, eval_mate, best_move = dedup_map[target.full_hash]
         return eval_cp, eval_mate, best_move, None
     return engine_result_map.get(target.ply, (None, None, None, None))
+
+
+def _post_move_eval(
+    pos_eval: dict[int, tuple[int | None, int | None]],
+    ply: int,
+) -> tuple[int | None, int | None]:
+    """Post-move storage shift — the SINGLE site of the +1 (SEED-044).
+
+    Under the post-move convention the eval stored at row `ply` is the eval of
+    the position AFTER the move at `ply`, i.e. the eval of the NEXT position
+    (`ply + 1`). `pos_eval` is the position-keyed eval map (eval OF each ply's
+    position, including the terminal ply that follows the last move). For the
+    last real row, `ply + 1` is the terminal position. A missing next-ply eval
+    (engine hole at ply+1, or no terminal donor) yields a (None, None) NULL hole.
+    """
+    return pos_eval.get(ply + 1, (None, None))
 
 
 async def _apply_full_eval_results(
@@ -267,59 +347,91 @@ async def _apply_full_eval_results(
     engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
     is_analyzed: bool,
 ) -> int:
-    """Write resolved full-ply evals + best_move to GamePosition rows (WR-04 extraction).
+    """Write POST-MOVE evals + best_move to GamePosition rows (WR-04; SEED-044).
 
-    Mirrors _apply_eval_results for the entry-ply drain: UPDATEs run
-    sequentially against the caller-owned session (CLAUDE.md hard rule:
-    AsyncSession is not safe under asyncio.gather); the caller commits.
+    UPDATEs run sequentially against the caller-owned session (CLAUDE.md hard
+    rule: AsyncSession is not safe under asyncio.gather); the caller commits.
 
-    D-116-04 is_analyzed gate (repointed to lichess_evals_at by D-117-07):
-    - is_analyzed=True: lichess %evals present; preserve existing non-NULL
-      eval_cp/eval_mate rows (T-78-17). best_move is always written since it is
-      a new column — lichess games never had best_move set.
-    - is_analyzed=False: legacy depth-15 evals; overwrite all (D-116-03).
+    Convention (SEED-044): a row stores the eval of the position AFTER its move
+    (post-move), matching lichess `%eval` and the flaw classifier. We resolve a
+    position-keyed eval for every target (incl. the terminal eval-donor), then
+    write row k's eval from `pos_eval[k + 1]` via `_post_move_eval` — the single
+    +1 shift site. best_move stays decision-ply-keyed (best move FROM row k's
+    position), so it is NOT shifted.
 
-    Returns the number of failed (NULL-hole) plies. Sentry reporting is the
-    caller's responsibility — ONE aggregated event per game, never per ply
-    (WR-05: a full game can have 60-600 plies; per-ply messages would flood
-    Sentry whenever the engine pool degrades).
+    is_analyzed gate (lichess_evals_at IS NOT NULL):
+    - is_analyzed=True: lichess %evals are already post-move and authoritative —
+      NEVER shifted or overwritten. Only best_move (engine-supplied; lichess lacks
+      it) is written, at the flaw-adjacent plies that reached the write phase
+      (WR-01 / D-117-13). SEED-044: un-annotated lichess plies are left NULL rather
+      than filled with a pre-push engine eval (which mixed conventions in-game).
+    - is_analyzed=False: engine games get the full post-move eval written.
+
+    Returns the number of failed (NULL-hole) engine-game plies. Sentry reporting
+    is the caller's responsibility — ONE aggregated event per game, never per ply
+    (WR-05).
     """
-    failed_ply_count = 0
+    # Position-keyed resolve for every target (incl. the terminal eval-donor),
+    # then the post-move +1 shift at write time (SEED-044).
+    pos_eval: dict[int, tuple[int | None, int | None]] = {}
+    best_move_by_ply: dict[int, str | None] = {}
     for target in targets:
         eval_cp, eval_mate, best_move, _pv_string = _resolve_full_eval(
             target, dedup_map, engine_result_map
         )
         # _pv_string intentionally discarded here: pv is written ONLY at flaw-adjacent
         # plies (ply = flaw_ply + 1) in _classify_and_fill_oracle below (D-117-02).
-        # Do NOT add a general pv write here — that would overwrite flaw-PV selectivity.
+        pos_eval[target.ply] = (eval_cp, eval_mate)
+        if not target.is_terminal:
+            best_move_by_ply[target.ply] = best_move
 
-        if eval_cp is None and eval_mate is None:
-            # D-116-07: engine failure — leave NULL hole; counted for the
-            # caller's per-game aggregated Sentry event (WR-05).
-            failed_ply_count += 1
+    failed_ply_count = 0
+    for target in targets:
+        if target.is_terminal:
+            # Eval-only donor: its eval already lives in pos_eval as the last
+            # real row's after-eval. It has no game_positions row to write.
             continue
 
-        # D-116-04 preservation (repointed by D-117-07: is_analyzed = lichess_evals_at IS NOT NULL).
-        # Preserve lichess %evals for is_analyzed games (T-78-17). Belt-and-braces — covered
-        # plies are already filtered out before the gather (WR-01). best_move is always written
-        # (new column, not part of the lichess eval set).
-        if is_analyzed and (target.eval_cp is not None or target.eval_mate is not None):
-            # Preserve lichess evals; only write best_move if we have it.
+        ply = target.ply
+        best_move = best_move_by_ply.get(ply)
+
+        if is_analyzed:
+            # Preserve lichess %evals (post-move, authoritative); write best_move only.
             if best_move is not None:
-                stmt = update(GamePosition).where(
-                    GamePosition.game_id == target.game_id,
-                    GamePosition.ply == target.ply,
+                await session.execute(
+                    update(GamePosition)
+                    .where(
+                        GamePosition.game_id == target.game_id,
+                        GamePosition.ply == ply,
+                    )
+                    .values(best_move=best_move)
                 )
-                await session.execute(stmt.values(best_move=best_move))
             continue
 
-        stmt = update(GamePosition).where(
-            GamePosition.game_id == target.game_id,
-            GamePosition.ply == target.ply,
-        )
-        await session.execute(
-            stmt.values(eval_cp=eval_cp, eval_mate=eval_mate, best_move=best_move)
-        )
+        # Engine game: store the POST-MOVE eval (eval of the position AFTER this
+        # move = pos_eval[ply + 1]); best_move stays decision-ply-keyed. best_move is
+        # written whenever available, INDEPENDENT of the eval — an engine hole at the
+        # after-position (ply + 1) must not drop this row's own best_move (SEED-044).
+        eval_cp, eval_mate = _post_move_eval(pos_eval, ply)
+        values: dict[str, int | str | None] = {}
+        if best_move is not None:
+            values["best_move"] = best_move
+        if eval_cp is None and eval_mate is None:
+            # D-116-07: engine hole at the after-position — leave the eval NULL; counted
+            # for the caller's per-game aggregated Sentry event (WR-05).
+            failed_ply_count += 1
+        else:
+            values["eval_cp"] = eval_cp
+            values["eval_mate"] = eval_mate
+        if values:
+            await session.execute(
+                update(GamePosition)
+                .where(
+                    GamePosition.game_id == target.game_id,
+                    GamePosition.ply == ply,
+                )
+                .values(**values)
+            )
     return failed_ply_count
 
 
@@ -1201,8 +1313,13 @@ async def _full_drain_tick() -> bool:
         )
         gp_rows = [(r[0], r[1], r[2], r[3]) for r in pos_result.all()]
 
-        # Collect one target per non-terminal ply (EVAL-01).
-        targets = _collect_full_ply_targets(game_id, pgn_text, gp_rows)
+        # Collect one target per ply (EVAL-01). Engine games also get a terminal
+        # eval-donor (SEED-044): under post-move storage the last move's stored
+        # eval is the eval of the post-game position. Lichess games preserve their
+        # %evals (never shifted), so they need no terminal donor.
+        targets = _collect_full_ply_targets(
+            game_id, pgn_text, gp_rows, include_terminal=not is_analyzed
+        )
 
         # WR-01: for is_analyzed (lichess %eval) games, plies whose row already
         # carries a non-NULL eval are preserved at write time (D-116-04 / T-78-17).
@@ -1228,7 +1345,7 @@ async def _full_drain_tick() -> bool:
         dedup_hashes = [
             t.full_hash
             for t in targets
-            if t.ply <= _DEDUP_MAX_PLY and t.ply not in flaw_adjacent_plies
+            if t.ply <= _DEDUP_MAX_PLY and t.ply not in flaw_adjacent_plies and not t.is_terminal
         ]
         dedup_map = await _fetch_dedup_evals(load_session, dedup_hashes)
     # load_session is now closed.
@@ -1241,10 +1358,15 @@ async def _full_drain_tick() -> bool:
     # Tiers 2/3: same gather — the distinction is how the game was claimed, not how it's analyzed.
     # D-117-13: flaw-adjacent plies always go to the engine (PV capture), even if a
     # sibling target with the same full_hash seeded the dedup map.
+    # The terminal eval-donor (SEED-044) is always engine-evaluated: it has no
+    # full_hash in the dedup map and supplies the last move's after-eval.
     engine_targets = [
         t
         for t in targets
-        if t.ply in flaw_adjacent_plies or t.ply > _DEDUP_MAX_PLY or t.full_hash not in dedup_map
+        if t.is_terminal
+        or t.ply in flaw_adjacent_plies
+        or t.ply > _DEDUP_MAX_PLY
+        or t.full_hash not in dedup_map
     ]
     if engine_targets:
         engine_results_raw: Sequence[

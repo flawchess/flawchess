@@ -1,6 +1,8 @@
 ---
 id: SEED-044
-status: dormant
+status: processed
+processed: 2026-06-14
+processed_by: Phase 117.1 — Flaw-Eval Convention Fix (post-move storage everywhere + dedup one-ply shift + clean-slate migration)
 planted: 2026-06-13
 planted_during: v1.26 Full-Game Eval Pipeline (Phase 117)
 trigger_when: before next deploy / first flaw-pipeline or eval-pipeline phase — HIGH priority bug, ships wrong flaw stats for all chess.com users

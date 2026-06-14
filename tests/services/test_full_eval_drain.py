@@ -301,8 +301,14 @@ class TestDedupHitsParity:
         full_drain_test_user: int,
         full_drain_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
-        """A game_position row at ply<=20 whose game has full_evals_completed_at IS NOT NULL
-        should be returned by _fetch_dedup_evals."""
+        """SEED-044 post-move self-join: a position's OWN eval is recovered from the
+        PRIOR row's post-move eval, and its best_move from the position's own row.
+
+        Donor game (full_evals_completed_at set):
+          ply 4: eval_cp=42  -> post-move eval of ply 4 = eval of the position REACHED = ply 5's position
+          ply 5: full_hash=Q, best_move="g1f3" -> best move FROM Q (decision-keyed)
+        So _fetch_dedup_evals([Q]) recovers (eval OF Q=42, None, best_move FROM Q="g1f3").
+        """
         from app.services.eval_drain import _DEDUP_MAX_PLY, _fetch_dedup_evals
 
         # Insert a parity-source game (full_evals_completed_at set).
@@ -315,11 +321,23 @@ class TestDedupHitsParity:
         )
         # A unique hash to avoid collisions with other test data.
         target_hash = 0xDEAD_BEEF_0001
+        predecessor_hash = 0xDEAD_BEEF_00FF
         await _insert_game_positions(
             full_drain_session_maker,
             full_drain_test_user,
             source_game_id,
-            [{"ply": 5, "full_hash": target_hash, "eval_cp": 42, "eval_mate": None}],
+            [
+                # cur (ply 4): post-move eval = eval of the position reached (Q at ply 5).
+                {"ply": 4, "full_hash": predecessor_hash, "eval_cp": 42, "eval_mate": None},
+                # nxt (ply 5): the requested position Q; carries best_move FROM Q.
+                {
+                    "ply": 5,
+                    "full_hash": target_hash,
+                    "eval_cp": 99,
+                    "eval_mate": None,
+                    "best_move": "g1f3",
+                },
+            ],
         )
         try:
             async with full_drain_session_maker() as session:
@@ -327,10 +345,10 @@ class TestDedupHitsParity:
 
             assert target_hash in result, (
                 f"Parity source (full_evals_completed_at set, ply {5} <= {_DEDUP_MAX_PLY}) "
-                "must be returned by _fetch_dedup_evals (EVAL-03)."
+                "must be recovered by the post-move self-join (EVAL-03 / SEED-044)."
             )
-            # D-117-01: return tuple is (eval_cp, eval_mate, best_move).
-            assert result[target_hash] == (42, None, None)
+            # (eval OF Q from prior row, eval_mate, best_move FROM Q from Q's own row).
+            assert result[target_hash] == (42, None, "g1f3")
         finally:
             await _delete_games(full_drain_session_maker, [source_game_id])
 
@@ -352,11 +370,16 @@ class TestDedupHitsParity:
             full_evals_completed_at=None,
         )
         target_hash = 0xDEAD_BEEF_0002
+        # Insert the predecessor too, so the self-join WOULD match if not for the
+        # full_evals_completed_at gate (SEED-044 — the gate is what must exclude it).
         await _insert_game_positions(
             full_drain_session_maker,
             full_drain_test_user,
             depth15_game_id,
-            [{"ply": 5, "full_hash": target_hash, "eval_cp": 100, "eval_mate": None}],
+            [
+                {"ply": 4, "full_hash": 0xDEAD_BEEF_02FF, "eval_cp": 100, "eval_mate": None},
+                {"ply": 5, "full_hash": target_hash, "eval_cp": 80, "eval_mate": None},
+            ],
         )
         try:
             async with full_drain_session_maker() as session:
@@ -395,11 +418,16 @@ class TestDedupHitsParity:
             lichess_evals_at=now,  # D-117-07: this is what marks a lichess-analyzed source
         )
         target_hash = 0xDEAD_BEEF_0003
+        # Insert the predecessor too, so the self-join WOULD match if not for the
+        # lichess_evals_at gate (SEED-044 — the gate is what must exclude it).
         await _insert_game_positions(
             full_drain_session_maker,
             full_drain_test_user,
             analyzed_game_id,
-            [{"ply": 5, "full_hash": target_hash, "eval_cp": 77, "eval_mate": None}],
+            [
+                {"ply": 4, "full_hash": 0xDEAD_BEEF_03FF, "eval_cp": 77, "eval_mate": None},
+                {"ply": 5, "full_hash": target_hash, "eval_cp": 70, "eval_mate": None},
+            ],
         )
         try:
             async with full_drain_session_maker() as session:
@@ -546,6 +574,12 @@ class TestMarkerWrite:
         """When evaluate_nodes_with_pv fails for SOME plies, the marker is still set,
         the successful eval is written, and the failed ply remains NULL (D-116-07).
 
+        SEED-044 post-move: a row stores the eval of the NEXT position. For
+        _TWO_MOVE_PGN ("1. e4 e5 *", plies 0,1, terminal ply 2) the engine is called
+        for ply 0, ply 1, and the terminal. Row 0 stores pos_eval[1] (engine ply-1
+        result); row 1 stores pos_eval[2] (the TERMINAL result). So failing the
+        terminal call makes row 1 the NULL hole while row 0 is written.
+
         WR-05: this must be a PARTIAL failure — an all-fail game now trips the
         circuit breaker and stays pending (see test_all_fail_keeps_game_pending).
         """
@@ -556,7 +590,7 @@ class TestMarkerWrite:
         game_id = await _insert_game(
             full_drain_session_maker,
             full_drain_test_user,
-            pgn=_SIMPLE_PGN,
+            pgn=_TWO_MOVE_PGN,
             evals_completed_at=now,
             full_evals_completed_at=None,
         )
@@ -565,9 +599,16 @@ class TestMarkerWrite:
             monkeypatch, full_drain_session_maker, game_id, full_drain_test_user
         )
 
-        # Engine succeeds for the first target (ply 0), fails for the second (ply 1).
+        # Engine calls (in order): ply 0, ply 1, terminal. Post-move:
+        #   row 0 = pos_eval[1] = ply-1 result (50)  -> written
+        #   row 1 = pos_eval[2] = terminal result (None)  -> NULL hole
+        # ply-0 result's eval is unused for storage (no row before move 0).
         mock_evaluate = AsyncMock(
-            side_effect=[(50, None, "e2e4", "e2e4 e7e5"), (None, None, None, None)]
+            side_effect=[
+                (99, None, "e2e4", "e2e4 e7e5"),  # ply 0 (eval unused; supplies row 0 best_move)
+                (50, None, "e7e5", "e7e5"),  # ply 1 -> row 0 eval
+                (None, None, None, None),  # terminal -> row 1 hole
+            ]
         )
         monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
 
@@ -602,11 +643,12 @@ class TestMarkerWrite:
                 "— D-116-07: mark complete with holes."
             )
             assert evals_by_ply.get(0) == (50, None), (
-                "Successful eval for ply 0 must be written alongside the hole at ply 1."
+                "Row 0 stores the post-move eval (ply-1 engine result = 50) alongside "
+                "the terminal-driven hole at row 1."
             )
             assert evals_by_ply.get(1) == (None, None), (
-                "game_position.eval_cp/eval_mate must remain NULL when engine returned "
-                "(None, None) — NULL holes stay NULL (D-116-07)."
+                "game_position.eval_cp/eval_mate must remain NULL when the after-position "
+                "(terminal) engine eval returned (None, None) — NULL holes stay NULL (D-116-07)."
             )
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
@@ -808,11 +850,16 @@ class TestWr02Repointed:
             # lichess_evals_at=None is the default — engine-written source
         )
         target_hash = 0xDEAD_BEEF_0010
+        # Predecessor (ply 2) holds the post-move eval of the requested position
+        # (ply 3) — the SEED-044 self-join recovers it.
         await _insert_game_positions(
             full_drain_session_maker,
             full_drain_test_user,
             engine_game_id,
-            [{"ply": 3, "full_hash": target_hash, "eval_cp": 99, "eval_mate": None}],
+            [
+                {"ply": 2, "full_hash": 0xDEAD_BEEF_10FF, "eval_cp": 99, "eval_mate": None},
+                {"ply": 3, "full_hash": target_hash, "eval_cp": 88, "eval_mate": None},
+            ],
         )
         try:
             async with full_drain_session_maker() as session:
@@ -844,11 +891,16 @@ class TestWr02Repointed:
             # white_blunders=None (no oracle counts yet)
         )
         target_hash = 0xDEAD_BEEF_0011
+        # Predecessor present so the self-join WOULD match if not for the
+        # lichess_evals_at gate (SEED-044 — the gate is what must exclude it).
         await _insert_game_positions(
             full_drain_session_maker,
             full_drain_test_user,
             lichess_game_id,
-            [{"ply": 3, "full_hash": target_hash, "eval_cp": 55, "eval_mate": None}],
+            [
+                {"ply": 2, "full_hash": 0xDEAD_BEEF_11FF, "eval_cp": 55, "eval_mate": None},
+                {"ply": 3, "full_hash": target_hash, "eval_cp": 44, "eval_mate": None},
+            ],
         )
         try:
             async with full_drain_session_maker() as session:
@@ -895,10 +947,16 @@ class TestBestMove:
             monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_117
         )
 
-        # Per-ply best_move for 4 positions (plies 0..3); use unique hashes.
+        # Per-ply best_move for 4 positions (plies 0..3); use unique hashes. best_move
+        # stays decision-ply-keyed under post-move (SEED-044), so each row keeps its own
+        # engine best_move. A trailing terminal call is added (engine games evaluate the
+        # post-game position as the last row's after-eval donor); its best_move is unused.
         best_moves = ["e2e4", "e7e5", "g1f3", "b8c6"]
         mock_evaluate = AsyncMock(
-            side_effect=[(cp, None, bm, bm) for cp, bm in zip([20, 15, 25, 10], best_moves)]
+            side_effect=[
+                *[(cp, None, bm, bm) for cp, bm in zip([20, 15, 25, 10], best_moves)],
+                (5, None, "h2h3", "h2h3"),  # terminal eval-donor call (best_move ignored)
+            ]
         )
         monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
 
@@ -962,13 +1020,18 @@ class TestBestMove:
             full_drain_test_user_117,
             source_game_id,
             [
+                # SEED-044 self-join: the predecessor row (ply 1) holds the post-move
+                # eval of the dedup position (ply 2); the dedup position's own row
+                # carries the best_move FROM it. _fetch_dedup_evals recovers
+                # (eval=30 from ply 1, best_move="g1f3" from ply 2).
+                {"ply": 1, "full_hash": 0xBEEF_DED0_00FF, "eval_cp": 30, "eval_mate": None},
                 {
-                    "ply": 2,  # within DEDUP_MAX_PLY
+                    "ply": 2,  # within DEDUP_MAX_PLY — the dedup'd position
                     "full_hash": dedup_hash,
-                    "eval_cp": 30,
+                    "eval_cp": 31,
                     "eval_mate": None,
-                    "best_move": "g1f3",  # the transplanted best_move
-                }
+                    "best_move": "g1f3",  # the transplanted best_move (FROM this position)
+                },
             ],
         )
 
@@ -1039,33 +1102,47 @@ class TestBestMove:
 
 
 def _blunder_eval_sequence() -> list[tuple[int, None, str, str]]:
-    """Return an engine eval sequence that causes exactly ONE blunder (white, ply 2).
+    """Return an engine eval sequence whose POST-MOVE written rows cause exactly ONE
+    blunder (white, ply 2) for _SIX_PLY_PGN = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 *".
 
-    Plies 0..5 for _SIX_PLY_PGN = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 *":
+    SEED-044 post-move convention: the drain stores at row k the eval of the position
+    AFTER move k = the engine eval of the NEXT position (`_post_move_eval`). The engine
+    is called per pre-push position (plies 0..5) PLUS the terminal position (ply 6),
+    in that order. So row k's stored eval = engine_result[k + 1]. To reproduce the
+    desired WRITTEN eval-by-ply [20, 30, -500, -480, 60, 30] at rows 0..5, the engine
+    sequence is that list shifted right by one: a leading ply-0 entry (its eval is the
+    eval of the start position, never stored — it only supplies row 0's best_move),
+    then the six desired values at engine calls 1..6 (the last being the terminal).
 
-      ply 0: eval_cp = 20    (balanced, white to move)
-      ply 1: eval_cp = 30    (stable; black to move — tiny drop for black, below threshold)
-      ply 2: eval_cp = -500  (WHITE BLUNDER: black winning after 2.Nf3; white to move)
-      ply 3: eval_cp = -480  (still black winning; black to move — tiny drop for black)
-      ply 4: eval_cp = 60    (white recovers; white to move — positive for white)
-      ply 5: eval_cp = 30    (stable continuation)
+    Stored (post-move) eval-by-ply after the tick — same as the historic pre-shift
+    sequence, so the ES analysis is unchanged:
+      row 0: 20   row 1: 30   row 2: -500 (WHITE BLUNDER)   row 3: -480   row 4: 60   row 5: 30
 
-    Exact ES analysis (LICHESS_K = 0.00368208):
+    Exact ES analysis (LICHESS_K = 0.00368208), over the STORED rows:
       n=1 (black): ES_black(20) ≈ 0.498, ES_black(30) ≈ 0.473 → drop ≈ 0.025 < INACCURACY_DROP
       n=2 (white): ES_white(30) ≈ 0.527, ES_white(-500) ≈ 0.163 → drop ≈ 0.364 >> BLUNDER_DROP
       n=3 (black): ES_black(-500) ≈ 0.837, ES_black(-480) ≈ 0.829 → drop ≈ 0.008 < threshold
       n=4 (white): ES_white(-480) ≈ 0.171, ES_white(60) ≈ 0.555 → drop = negative (improvement)
       n=5 (black): ES_black(60) ≈ 0.445, ES_black(30) ≈ 0.473 → drop = negative (improvement)
 
-    Result: exactly one blunder (white at ply 2). PV must be written at ply 3, nowhere else.
+    Result: exactly one blunder (white at ply 2). PV must be written at ply 3 (the
+    refutation board = engine_result_map[3]), nowhere else.
     """
     return [
-        (20, None, "e2e4", "e2e4 e7e5"),  # ply 0 — balanced
-        (30, None, "e7e5", "e7e5 g1f3"),  # ply 1 — stable (black, tiny drop)
-        (-500, None, "g1f3", "g1f3 g8f6 d2d4"),  # ply 2 — white BLUNDER position
-        (-480, None, "g8f6", "g8f6 f1c4 d7d5"),  # ply 3 — still black winning (PV here)
-        (60, None, "f1c4", "f1c4 f8c5"),  # ply 4 — white recovers slightly
-        (30, None, "f8c5", "f8c5"),  # ply 5 — stable
+        # engine call ply 0 — eval unused for storage (no row before move 0); supplies
+        # row 0's best_move. The remaining six entries become the stored rows 0..5.
+        (20, None, "e2e4", "e2e4 e7e5"),
+        (20, None, "e2e4", "e2e4 e7e5"),  # → row 0 = 20 (balanced)
+        (30, None, "e7e5", "e7e5 g1f3"),  # → row 1 = 30 (stable; black tiny drop)
+        (
+            -500,
+            None,
+            "g1f3",
+            "g1f3 g8f6 d2d4",
+        ),  # → row 2 = -500 (white BLUNDER; PV from here at ply 3)
+        (-480, None, "g8f6", "g8f6 f1c4 d7d5"),  # → row 3 = -480 (still black winning)
+        (60, None, "f1c4", "f1c4 f8c5"),  # → row 4 = 60 (white recovers)
+        (30, None, "f8c5", "f8c5"),  # terminal call → row 5 = 30 (stable)
     ]
 
 
