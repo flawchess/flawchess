@@ -179,7 +179,7 @@ export function GamesTab() {
   // trackFullAnalysis: keep polling while the background drain works through the
   // backlog so the "N of M analyzed" badge ticks up live (no tier-2 in-flight rows
   // exist for background work — Phase 118 removed the auto-enqueue).
-  const { inFlightCount, analyzedCount, totalCount, isError: isCoverageError } = useEvalCoverage({
+  const { analyzedCount, totalCount, isError: isCoverageError } = useEvalCoverage({
     trackFullAnalysis: true,
   });
 
@@ -192,27 +192,34 @@ export function GamesTab() {
     flawFilter,
     offset,
     PAGE_SIZE,
-    // Poll the games list while analysis is in-flight so cards flip from
+    // Poll the games list while full analysis is incomplete so cards flip from
     // "Analyzing…" to the analyzed view within a few seconds, no page reload.
-    inFlightCount > 0 ? EVAL_COVERAGE_POLL_INTERVAL_MS : 0,
+    // Repointed from inFlightCount > 0 to analyzedCount < totalCount in Phase
+    // 119-03: tier-3 derived picks have no eval_jobs rows, so inFlightCount was
+    // blind to the dominant backlog drain (119-RESEARCH-NOTES.md).
+    analyzedCount < totalCount ? EVAL_COVERAGE_POLL_INTERVAL_MS : 0,
   );
 
-  // Bug fix (118 UAT): the games-list poll above is gated on inFlightCount > 0,
-  // so it stops the instant the last eval job completes. But that final
-  // completion can land *after* the previous poll, leaving a card stranded on
-  // "Analyzing…" forever (the per-game pill only clears once analysis_state
-  // flips to 'analyzed', which needs one more refetch). Force exactly one final
-  // refetch on the >0 → 0 transition. eval-coverage self-polls to observe the
-  // transition, so we always see it even though library-games has stopped.
+  // Refresh the games list when a tier-1 (or any) analysis completes — the
+  // per-game pill only clears once analysis_state flips to 'analyzed', which
+  // needs one more refetch after analyzedCount rises. Fire invalidateQueries on
+  // the analyzedCount increase (prev < current) so a finished analysis flips the
+  // card without a reload. Repointed from inFlightCount >0→0 transition in Phase
+  // 119-03 (same rationale: inFlightCount was blind to tier-3 backlog).
   const queryClient = useQueryClient();
-  const prevInFlightRef = useRef(inFlightCount);
+  // Seed to null (not analyzedCount, which is the hook default 0 before the
+  // eval-coverage fetch resolves). Skipping the first observed transition stops
+  // a spurious invalidation on initial load for returning users who already have
+  // analyzed games (prev=0 < first non-zero N would otherwise fire). The refresh
+  // then only fires on a genuine increase after mount.
+  const prevAnalyzedRef = useRef<number | null>(null);
   useEffect(() => {
-    const prev = prevInFlightRef.current;
-    prevInFlightRef.current = inFlightCount;
-    if (prev > 0 && inFlightCount === 0) {
+    const prev = prevAnalyzedRef.current;
+    prevAnalyzedRef.current = analyzedCount;
+    if (prev !== null && analyzedCount > prev) {
       void queryClient.invalidateQueries({ queryKey: ['library-games'] });
     }
-  }, [inFlightCount, queryClient]);
+  }, [analyzedCount, queryClient]);
 
   const { data: profile } = useUserProfile();
   const isGuest = profile?.is_guest ?? false;
@@ -311,7 +318,6 @@ export function GamesTab() {
           isGuest={isGuest}
           analyzedN={analyzedCount}
           totalN={totalCount}
-          inFlightCount={inFlightCount}
           isCoverageError={isCoverageError}
         />
       )}

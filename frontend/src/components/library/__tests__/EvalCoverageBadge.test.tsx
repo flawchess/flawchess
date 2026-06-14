@@ -1,14 +1,18 @@
 // @vitest-environment jsdom
 /**
- * EvalCoverageBadge tests (Phase 118-03 UAT fixes).
+ * EvalCoverageBadge tests (Phase 118-03 UAT fixes, updated Phase 119-03).
  *
  * Covers the states:
  * 1. Normal: "N of M analyzed" count render
- * 2. In-flight: "· K in progress" appended, no CTA button
- * 3. Low-coverage non-guest: NO button (background auto-enqueue handles it)
- * 4. Low-coverage guest: sees sign-up CTA (btn-coverage-signup)
- * 5. High-coverage: CTA hidden
- * 6. InfoPopover trigger rendered
+ * 2. Incomplete: CPU icon has animate-pulse class (analyzedN < totalN)
+ * 3. Complete: CPU icon does NOT have animate-pulse class (analyzedN === totalN)
+ * 4. Low-coverage non-guest: NO button (background auto-enqueue handles it)
+ * 5. Low-coverage guest: sees sign-up CTA (btn-coverage-signup)
+ * 6. High-coverage guest: CTA hidden
+ * 7. InfoPopover trigger rendered
+ *
+ * Note: "· K in progress" text and the inFlightCount prop were removed in
+ * Phase 119-03. The CPU icon pulse is now the sole "analysis running" signal.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -31,11 +35,10 @@ function makeWrapper(): ({ children }: { children: ReactNode }) => ReactNode {
   };
 }
 
-// Default props for convenience
+// Default props for convenience (incomplete: 5 of 10)
 const defaultProps = {
   analyzedN: 5,
   totalN: 10,
-  inFlightCount: 0,
   isGuest: false,
   isCoverageError: false,
 };
@@ -57,18 +60,38 @@ describe('EvalCoverageBadge', () => {
     expect(badge.textContent).toContain('analyzed');
   });
 
-  it('shows "in progress" text when inFlightCount > 0', () => {
-    render(<EvalCoverageBadge {...defaultProps} inFlightCount={3} />, { wrapper: makeWrapper() });
+  it('CPU icon has animate-pulse when analyzedN < totalN (analysis incomplete)', () => {
+    render(<EvalCoverageBadge {...defaultProps} analyzedN={5} totalN={10} />, {
+      wrapper: makeWrapper(),
+    });
     const badge = screen.getByTestId('eval-coverage-badge');
-    expect(badge.textContent).toContain('in progress');
-    // No CTA when in-flight
-    expect(screen.queryByTestId('btn-coverage-signup')).toBeNull();
+    // The Cpu svg is the first SVG inside the badge. Use getAttribute('class')
+    // because SVGAnimatedString (jsdom) is not a plain string — .className would be [].
+    const cpuIcon = badge.querySelector('svg');
+    expect(cpuIcon).not.toBeNull();
+    expect(cpuIcon!.getAttribute('class')).toContain('animate-pulse');
+  });
+
+  it('CPU icon does NOT have animate-pulse when analyzedN === totalN (complete)', () => {
+    render(<EvalCoverageBadge {...defaultProps} analyzedN={10} totalN={10} />, {
+      wrapper: makeWrapper(),
+    });
+    const badge = screen.getByTestId('eval-coverage-badge');
+    const cpuIcon = badge.querySelector('svg');
+    expect(cpuIcon).not.toBeNull();
+    expect(cpuIcon!.getAttribute('class')).not.toContain('animate-pulse');
+  });
+
+  it('does not render "in progress" text', () => {
+    render(<EvalCoverageBadge {...defaultProps} />, { wrapper: makeWrapper() });
+    const badge = screen.getByTestId('eval-coverage-badge');
+    expect(badge.textContent).not.toContain('in progress');
   });
 
   it('shows NO button for non-guest below threshold (auto-enqueue handles it)', () => {
     // 5/10 = 50% < 80% LOW_COVERAGE_THRESHOLD, but non-guests get no button —
     // recent games are analyzed automatically in the background.
-    render(<EvalCoverageBadge {...defaultProps} analyzedN={5} totalN={10} inFlightCount={0} />, {
+    render(<EvalCoverageBadge {...defaultProps} analyzedN={5} totalN={10} />, {
       wrapper: makeWrapper(),
     });
     expect(screen.queryByTestId('btn-coverage-signup')).toBeNull();

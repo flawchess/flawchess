@@ -5,12 +5,6 @@ import { Button } from '@/components/ui/button';
 interface NoEngineAnalysisFlawsStateProps {
   /** Whether the current user is a guest (show sign-up CTA). */
   isGuest: boolean;
-  /** Count of eval jobs currently in-flight for this user. */
-  inFlightCount: number;
-  /** Number of games already analyzed (for progress display when in-flight). */
-  analyzedCount: number;
-  /** Total games imported (for progress display when in-flight). */
-  totalCount: number;
 }
 
 /**
@@ -19,17 +13,19 @@ interface NoEngineAnalysisFlawsStateProps {
  *
  * Branches:
  * - Guest: sign-up CTA linking to /login?tab=register (D-118-13).
- * - Non-guest, in-flight: "Analyzing your games…" + "N of M analyzed" progress text.
- * - Non-guest, idle: passive explainer — analysis runs automatically in the
+ * - Non-guest: passive explainer — analysis runs automatically in the
  *   background; points to the per-game "Analyze" button on the Games tab
  *   for immediate single-game analysis. No bulk button (auto-enqueue covers it).
+ *   The EvalCoverageBadge CPU icon (pulsing while analyzedN < totalN) and the
+ *   per-card NoAnalysisState button are the real-time progress signals; this
+ *   state provides context for why the flaw list is empty.
+ *
+ * The "Analyzing your games…" in-flight branch was removed in Phase 119-03:
+ * inFlightCount was structurally blind to the dominant tier-3 backlog drain
+ * (tier-3 derived picks have no eval_jobs rows). The pulsing EvalCoverageBadge
+ * now covers the "analysis is running" signal for all tiers.
  */
-export function NoEngineAnalysisFlawsState({
-  isGuest,
-  inFlightCount,
-  analyzedCount,
-  totalCount,
-}: NoEngineAnalysisFlawsStateProps) {
+export function NoEngineAnalysisFlawsState({ isGuest }: NoEngineAnalysisFlawsStateProps) {
   const navigate = useNavigate();
 
   return (
@@ -57,13 +53,6 @@ export function NoEngineAnalysisFlawsState({
             Sign up free
           </Button>
         </>
-      ) : inFlightCount > 0 ? (
-        <>
-          <h2 className="text-xl font-semibold text-foreground">Analyzing your games…</h2>
-          <p className="text-sm text-muted-foreground max-w-sm">
-            {analyzedCount} of {totalCount} analyzed
-          </p>
-        </>
       ) : (
         <>
           <h2 className="text-xl font-semibold text-foreground">
@@ -74,7 +63,7 @@ export function NoEngineAnalysisFlawsState({
             and staying active keeps your games near the front of the queue. Check back
             shortly to see blunders, mistakes, and inaccuracies classified by phase and
             time pressure. To analyze one game right away, open it on the Games tab and use
-            the "Analyze" button.
+            the &ldquo;Analyze&rdquo; button.
           </p>
           <Button
             variant="brand-outline"

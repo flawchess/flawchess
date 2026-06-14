@@ -464,7 +464,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 **Goal:** A user-triggered or background "Analyze" pass means every position of a game is actually evaluated (no silent mid-game eval holes), the idle drain shares engine time across users by recency so a returning user sees their coverage badge tick briskly within minutes, the drain stops wasting full engine passes re-analyzing lichess %eval games, and the coverage badge gives an honest progress signal (pulsing CPU icon) instead of a structurally-blind in-flight count.
 **Requirements**: SEED-045 (bounded-retry hole-filling), SEED-046 (recency-weighted tier-3 lottery + leak fix), UX badge-pulse + in_flight_count removal + dead-index drop
 **Depends on:** Phase 118
-**Plans:** 3 plans (2 waves)
+**Plans:** 3/3 plans complete
 **Scope (from seeds):**
 
   - **SEED-045 — bounded-retry hole-filling:** `eval_drain.py::_mark_full_evals_completed` stamps `full_evals_completed_at` unconditionally (D-116-07), so a game can be marked "fully analyzed" with genuine mid-game eval holes. Stop stamping while non-terminal, non-mate holes remain; re-pick up to `MAX_EVAL_ATTEMPTS` (~3) via a new `games.full_eval_attempts` SmallInteger; after the cap, stamp anyway + one aggregated Sentry event. Hole = `eval_cp IS NULL AND eval_mate IS NULL AND ply is not the terminal game-over ply`. Backfill decision for already-stamped-with-holes games (extend `scripts/backfill_eval.py` or a re-enqueue sweep).
@@ -480,12 +480,12 @@ Plans:
 
 **Wave 1** *(119-01 and 119-03 run in parallel — no file overlap)*
 
-- [ ] 119-01-PLAN.md — SEED-045 bounded-retry hole-filling: hole-aware completion gate + MAX_EVAL_ATTEMPTS re-pick + aggregated Sentry; phase-wide migration (games.full_eval_attempts + SEED-046 partial index + drop ix_eval_jobs_user_active); re-enqueue sweep for already-stamped-with-holes games
-- [ ] 119-03-PLAN.md — UX + cleanup: pulse the EvalCoverageBadge CPU icon on analyzedN<totalN; remove in_flight_count end-to-end (schema/router/repo/hook/badge/callers/tests); repoint tier-1 completion refresh to analyzedCount; the ix_eval_jobs_user_active drop (in 119-01) loses its reader here
+- [x] 119-01-PLAN.md — SEED-045 bounded-retry hole-filling: hole-aware completion gate + MAX_EVAL_ATTEMPTS re-pick + aggregated Sentry; phase-wide migration (games.full_eval_attempts + SEED-046 partial index + drop ix_eval_jobs_user_active); re-enqueue sweep for already-stamped-with-holes games
+- [x] 119-03-PLAN.md — UX + cleanup: pulse the EvalCoverageBadge CPU icon on analyzedN<totalN; remove in_flight_count end-to-end (schema/router/repo/hook/badge/callers/tests); repoint tier-1 completion refresh to analyzedCount; the ix_eval_jobs_user_active drop (in 119-01) loses its reader here
 
 **Wave 2** *(blocked on 119-01 — shares eval_drain.py and consumes the 119-01 migration's partial index)*
 
-- [ ] 119-02-PLAN.md — SEED-046 recency-weighted tier-3 lottery: rewrite _claim_tier3_derived as an Efraimidis–Spirakis user lottery over needs-engine games (τ/floor tunable constants) + PV-backfill residual tier + the lichess-%eval leak fix (replace WHERE clause, drop dead D-118-04 tiebreaker) + is_analyzed→is_lichess_eval_game rename + EXPLAIN perf verification
+- [x] 119-02-PLAN.md — SEED-046 recency-weighted tier-3 lottery: rewrite _claim_tier3_derived as an Efraimidis–Spirakis user lottery over needs-engine games (τ/floor tunable constants) + PV-backfill residual tier + the lichess-%eval leak fix (replace WHERE clause, drop dead D-118-04 tiebreaker) + is_analyzed→is_lichess_eval_game rename + EXPLAIN perf verification
 
 ## Progress
 

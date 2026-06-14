@@ -3,29 +3,29 @@ gsd_state_version: 1.0
 milestone: v1.26
 milestone_name: Full-Game Eval Pipeline
 status: verifying
-last_updated: "2026-06-14T08:43:29.121Z"
-last_activity: 2026-06-14 -- Phase 118 execution started
+last_updated: "2026-06-14T15:13:25.503Z"
+last_activity: 2026-06-14
 progress:
-  total_phases: 8
-  completed_phases: 4
-  total_plans: 11
-  completed_plans: 11
-  percent: 50
+  total_phases: 9
+  completed_phases: 5
+  total_plans: 14
+  completed_plans: 14
+  percent: 56
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 118 (demand-ux-auto-enqueue) — EXECUTING
+Phase: 119 (eval-drain-coverage-bounded-retry-hole-filling-recency-weigh) — EXECUTING
 Plan: 3 of 3
 Status: Phase complete — ready for verification
 NEXT: Phase 118 (Demand UX + Auto-Enqueue) — only remaining v1.26 phase; discussion captured (118-CONTEXT.md + 118-DISCUSSION-LOG.md, parallel session 2026-06-14), not yet planned/executed.
 PROD-SOAK (deferred items, check during 118 / over coming days): (1) tier-1 ~10s wall-clock fan-out on the live pool (QUEUE-03); (2) confirm _signal_flaw_completion cache stub logs cleanly (D-117-11; real wiring is Phase 118); (3) re-verify the ~32% flaw-PV coverage TODO once the residue re-eval catches up (multi-day background drain; see 117.1-POST-DEPLOY.md). No auto-enqueue yet (Phase 118), so user 99's residue re-eval was intentionally NOT prioritized.
 Security: SECURED — 13/13 threats closed (threats_open: 0), ASVS L1 (117-SECURITY.md).
-Last activity: 2026-06-14 -- Phase 118 execution started
+Last activity: 2026-06-14
 
-Progress: [████████░░] 80% (4 of 5 phases deployed; Phase 118 remaining)
+Progress: [█████████░] 86%
 
 ## Project Reference
 
@@ -351,6 +351,8 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 | Phase 117-priority-queue-flaw-integration P03 | 40 | 3 tasks | 7 files |
 | Phase 118 P01 | 14 | - tasks | - files |
 | Phase 118-demand-ux-auto-enqueue P02 | 9 | 2 tasks | 5 files |
+| Phase 119 P03 | 35m | 2 tasks | 16 files |
+| Phase 119-eval-drain-coverage P02 | 45 | 2 tasks | 5 files |
 
 ## Decisions
 
@@ -397,3 +399,7 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 - [Phase ?]: D-117-07: WR-02 gate repointed from white_blunders IS NULL to lichess_evals_at IS NULL — lichess_evals_at precisely marks engine-written vs lichess-%eval-written rows
 - [Phase ?]: D-117-02: Flaw PV written at ply N+1 (position after the flawed move); flaw PV at ply N would describe the position before the mistake
 - [Phase ?]: evaluate_nodes_with_pv returns 4-tuple (eval_cp, eval_mate, best_move, pv_string) from one 1M-node search — drain has both PV artifacts without a second engine call (EVAL-04)
+- [Phase ?]: Phase 119-03: pulsing badge gated on analyzedN < totalN; inFlightCount removed end-to-end; GamesTab/FlawsTab repointed to analyzedCount-increase invalidation
+- [Phase ?]: D-119-02-01: ES lottery weights the USER not the game (prevents backlog-size bias)
+- [Phase ?]: D-119-02-02: RECENCY_HALF_LIFE_DAYS=1.0, WEIGHT_FLOOR=0.005 — returning user gets ~65-70% share; retune live
+- [Phase ?]: D-119-02-03: EXISTS-based DISTINCT over ix_games_needs_engine_full_evals (4ms dev, sub-100ms prod, no skip-scan needed)

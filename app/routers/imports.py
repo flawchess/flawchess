@@ -267,9 +267,11 @@ async def get_eval_coverage(
 ) -> EvalCoverageResponse:
     """Return Stockfish eval coverage for the authenticated user.
 
-    Returns pending_count, total_count, pct_complete (0-100), analyzed_count, and
-    in_flight_count. Returns pct_complete=100 when the user has no games (avoids
-    division-by-zero). D-118-12 extension: analyzed_count and in_flight_count added.
+    Returns pending_count, total_count, pct_complete (0-100), and analyzed_count.
+    Returns pct_complete=100 when the user has no games (avoids division-by-zero).
+    D-118-12 extension: analyzed_count added. in_flight_count removed in Phase
+    119-03 (tier-3 derived picks have no eval_jobs rows — structurally blind to
+    the dominant backlog drain; see 119-RESEARCH-NOTES.md).
 
     Locked by D-01: dedicated endpoint, NOT extending GET /imports/active.
     Locked by D-04: response keys pending_count, total_count, pct_complete unchanged.
@@ -277,19 +279,17 @@ async def get_eval_coverage(
     total = await game_repository.count_games_for_user(session, user.id)
     if total == 0:
         return EvalCoverageResponse(
-            pending_count=0, total_count=0, pct_complete=100, analyzed_count=0, in_flight_count=0
+            pending_count=0, total_count=0, pct_complete=100, analyzed_count=0
         )
     pending = await game_repository.count_pending_evals(session, user.id)
     pct = round(100 * (total - pending) / total)
-    # D-118-12: sequential awaits on the same session (never asyncio.gather — CLAUDE.md)
+    # Sequential awaits on the same session (never asyncio.gather — CLAUDE.md)
     analyzed = await game_repository.count_is_analyzed_games(session, user.id)
-    in_flight = await game_repository.count_in_flight_evals(session, user.id)
     return EvalCoverageResponse(
         pending_count=pending,
         total_count=total,
         pct_complete=pct,
         analyzed_count=analyzed,
-        in_flight_count=in_flight,
     )
 
 

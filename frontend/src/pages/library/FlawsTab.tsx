@@ -220,31 +220,38 @@ export function FlawsTab() {
   // user who DOES have analyzed games (CLAUDE.md empty-state rule).
   const { data: statsData } = useLibraryFlawStats(UNFILTERED_PROBE_FILTERS, NO_FLAW_FILTER);
 
-  // Eval coverage — drives NoEngineAnalysisFlawsState in-flight + CTA props
-  // and the EvalCoverageBadge in the match-count row.
+  // Eval coverage — drives NoEngineAnalysisFlawsState CTA props and the
+  // EvalCoverageBadge in the match-count row.
   // trackFullAnalysis: keep polling while the background drain works through the
   // backlog so the "N of M analyzed" badge ticks up live (Phase 118 removed the
   // tier-2 auto-enqueue, so background work has no in-flight rows to poll on).
-  const { inFlightCount, analyzedCount, totalCount, isError: isCoverageError } = useEvalCoverage({
+  const { analyzedCount, totalCount, isError: isCoverageError } = useEvalCoverage({
     trackFullAnalysis: true,
   });
   const isGuest = profile?.is_guest ?? false;
 
-  // Bug fix (118 UAT): the flaw views don't poll, so once analysis finishes they
-  // stay frozen on stale data (empty state or partial list) until a reload. Force
-  // one refetch when in-flight jobs drain to zero (the >0 → 0 transition), mirroring
-  // GamesTab. eval-coverage self-polls, so the transition is always observed.
+  // The flaw views don't poll, so once analysis finishes they stay frozen on
+  // stale data (empty state or partial list) until a reload. Fire invalidateQueries
+  // when analyzedCount increases (prev < current) so a finished analysis flips
+  // the flaw list without a reload. Repointed from inFlightCount >0→0 transition
+  // in Phase 119-03: tier-3 derived picks have no eval_jobs rows, so inFlightCount
+  // was blind to the dominant backlog drain (119-RESEARCH-NOTES.md).
   const queryClient = useQueryClient();
-  const prevInFlightRef = useRef(inFlightCount);
+  // Seed to null (not analyzedCount, which is the hook default 0 before the
+  // eval-coverage fetch resolves). Skipping the first observed transition stops
+  // a spurious invalidation on initial load for returning users who already have
+  // analyzed games (prev=0 < first non-zero N would otherwise fire). The refresh
+  // then only fires on a genuine increase after mount.
+  const prevAnalyzedRef = useRef<number | null>(null);
   useEffect(() => {
-    const prev = prevInFlightRef.current;
-    prevInFlightRef.current = inFlightCount;
-    if (prev > 0 && inFlightCount === 0) {
+    const prev = prevAnalyzedRef.current;
+    prevAnalyzedRef.current = analyzedCount;
+    if (prev !== null && analyzedCount > prev) {
       void queryClient.invalidateQueries({ queryKey: ['library-flaws'] });
       void queryClient.invalidateQueries({ queryKey: ['library-flaw-stats'] });
       void queryClient.invalidateQueries({ queryKey: ['library-flaw-comparison'] });
     }
-  }, [inFlightCount, queryClient]);
+  }, [analyzedCount, queryClient]);
 
   // ── Derived state ────────────────────────────────────────────────────────────
   const totalGames = totalImported;
@@ -341,7 +348,6 @@ export function FlawsTab() {
               <EvalCoverageBadge
                 analyzedN={analyzedCount}
                 totalN={totalCount}
-                inFlightCount={inFlightCount}
                 isGuest={isGuest}
                 isCoverageError={isCoverageError}
               />
@@ -352,9 +358,6 @@ export function FlawsTab() {
             (noAnalyzedGames ? (
               <NoEngineAnalysisFlawsState
                 isGuest={isGuest}
-                inFlightCount={inFlightCount}
-                analyzedCount={analyzedCount}
-                totalCount={totalCount}
               />
             ) : (
               <EmptyState

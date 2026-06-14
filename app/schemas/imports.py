@@ -59,16 +59,17 @@ class EnqueueTier1Response(BaseModel):
 class EvalCoverageResponse(BaseModel):
     """Response for GET /imports/eval-coverage (D-118-12 extension).
 
-    Extended in Phase 118 with analyzed_count and in_flight_count. Existing
-    fields (pending_count, total_count, pct_complete) are unchanged for backward
-    compatibility with Endgames/Openings/GlobalStats readiness gates.
+    Extended in Phase 118 with analyzed_count. Existing fields (pending_count,
+    total_count, pct_complete) are unchanged for backward compatibility with
+    Endgames/Openings/GlobalStats readiness gates. in_flight_count removed in
+    Phase 119-03: tier-3 derived picks have no eval_jobs rows, so the count was
+    structurally blind to the dominant backlog drain and never an honest signal.
     """
 
     pending_count: int
     total_count: int
     pct_complete: int  # 0-100, rounded
     analyzed_count: int  # white_blunders IS NOT NULL (is_analyzed — flaw-surface denominator)
-    in_flight_count: int  # eval_jobs pending|leased for this user (D-118-12)
 
 
 class ReadinessResponse(BaseModel):

@@ -33,18 +33,21 @@ interface UseEvalCoverageOptions {
  * header bar and per-metric caveats do not flash on initial page load.
  *
  * Poll-stop conditions:
- * - Always poll while entry-ply evals are pending (pct_complete < 100) or an
- *   explicit single-game (tier-1) job is in flight (in_flight_count > 0).
+ * - Always poll while entry-ply evals are pending (pct_complete < 100).
  * - total_count === 0 (new user / pre-import): keep polling so the header appears
  *   once an in-flight import starts landing rows (backend short-circuits pct=100).
- * - Readiness consumers (trackFullAnalysis = false): stop once entry-ply evals are
- *   done and nothing is in flight.
+ * - Readiness consumers (trackFullAnalysis = false): stop once entry-ply evals done.
  * - Badge consumers (trackFullAnalysis = true): additionally keep polling while
  *   full analysis is incomplete (analyzed_count < total_count), backing off once
  *   progress stalls so stuck games don't poll forever.
  *
  * All consumers on the same page share one in-flight request via the shared
  * queryKey ['imports', 'eval-coverage'] — TanStack Query deduplicates them.
+ *
+ * NOTE: in_flight_count removed in Phase 119-03 (tier-3 derived picks have no
+ * eval_jobs rows, so the count was structurally blind to the dominant backlog
+ * drain). The trackFullAnalysis branch (analyzed_count < total_count) is now
+ * the sole driver of badge-surface polling.
  *
  * NOTE: Auto-reload on eval completion was removed in Phase 96 Plan 03
  * (Constraint 4 / SC-5). Reactive reveal via useReadiness tier2 flag replaces the
@@ -70,10 +73,8 @@ export function useEvalCoverage(options?: UseEvalCoverageOptions) {
       // Pre-data / new user (no games yet): keep polling.
       if (!data || data.total_count === 0) return EVAL_COVERAGE_POLL_INTERVAL_MS;
 
-      // Entry-ply evals still running, or an explicit single-game (tier-1) job in
-      // flight → always poll. Reset the background-stall tracker.
-      const inFlight = data.in_flight_count ?? 0;
-      if (data.pct_complete < 100 || inFlight > 0) {
+      // Entry-ply evals still running → always poll. Reset the background-stall tracker.
+      if (data.pct_complete < 100) {
         stallRef.current = { lastAnalyzed: data.analyzed_count, stalls: 0, lastUpdatedAt: 0 };
         return EVAL_COVERAGE_POLL_INTERVAL_MS;
       }
@@ -108,6 +109,5 @@ export function useEvalCoverage(options?: UseEvalCoverageOptions) {
     isLoading: query.isLoading,
     isError: query.isError,
     analyzedCount: data?.analyzed_count ?? 0,
-    inFlightCount: data?.in_flight_count ?? 0,
   };
 }

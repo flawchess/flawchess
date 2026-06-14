@@ -307,6 +307,13 @@ SEED-039 (cook.py reimplementation). Promote via `/gsd-new-milestone` when prior
 
 ## Cross-References
 
+- **[[SEED-048-headless-remote-eval-worker]]** — spins out the **trusted off-box operator**
+  rung of D-8's pluggable-worker model (a middle tier between the in-process `server-pool` and
+  the untrusted public browser, which D-8 jumped straight past). A headless Python CLI on a
+  machine the operator controls leases per-game jobs and runs the native `EnginePool` — native
+  Stockfish (no WASM/COOP-COEP/calibration concern), trusted so it may write the shared tier-3
+  store, so D-4's "no validation" non-goal still holds. The untrusted-browser trust layer stays
+  here in SEED-012.
 - **SEED-040** (flaw-stats opponent comparison) — the feature whose eval-coverage need
   surfaced this amendment; SEED-040 consumes the coverage this pipeline produces.
 - **SEED-036** (Library milestone, split from SEED-010) — explicitly defers tactical-pattern filters until "Stockfish eval coverage or a client-side eval pipeline makes those reliable." This seed *is* that pipeline.

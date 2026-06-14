@@ -17,7 +17,6 @@ import { EvalCoverageBadge } from '@/components/library/EvalCoverageBadge';
 import { GlobalStatsCharts } from '@/components/stats/GlobalStatsCharts';
 import { EvalCoverageHeader } from '@/components/EvalCoverageHeader';
 import { RatingChart } from '@/components/stats/RatingChart';
-import { useEvalCoverage } from '@/hooks/useEvalCoverage';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import type { FilterState } from '@/components/filters/FilterPanel';
 
@@ -51,8 +50,13 @@ export function GlobalStatsPage() {
     isError: flawStatsError,
   } = useLibraryFlawStats(filters, DEFAULT_FLAW_FILTER);
 
-  // ── Eval coverage — drives EvalCoverageBadge in-flight badge + CTA ─────────
-  const { inFlightCount, isError: isCoverageError } = useEvalCoverage();
+  // ── EvalCoverageBadge error state ───────────────────────────────────────────
+  // The badge's numbers come from useLibraryFlawStats (analyzed_n / total_n), so
+  // its error signal must come from the SAME query (flawStatsError) — not a
+  // separate useEvalCoverage() call. Decoupling them let the badge render a
+  // full-width "failed to load" error while valid numbers were available, or
+  // mask a real failure. This page does not consume analyzedCount/totalCount
+  // from useEvalCoverage(), so the hook is dropped here entirely.
   const { data: profile } = useUserProfile();
   const isGuest = profile?.is_guest ?? false;
 
@@ -120,9 +124,8 @@ export function GlobalStatsPage() {
             <EvalCoverageBadge
               analyzedN={flawStatsData.analyzed_n}
               totalN={flawStatsData.total_n}
-              inFlightCount={inFlightCount}
               isGuest={isGuest}
-              isCoverageError={isCoverageError}
+              isCoverageError={flawStatsError}
             />
           )}
         </div>

@@ -194,7 +194,7 @@ export interface EvalCoverageResponse {
   total_count: number;
   pct_complete: number;  // 0–100, rounded
   analyzed_count: number;   // games where is_analyzed = true (white_blunders IS NOT NULL)
-  in_flight_count: number;  // eval_jobs pending|leased for this user (D-118-12)
+  // in_flight_count removed in Phase 119-03 (tier-3 derived picks have no eval_jobs rows)
 }
 
 export interface EnqueueTier1Response {

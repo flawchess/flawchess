@@ -19,8 +19,6 @@ interface LibraryGameCardListProps {
   analyzedN: number;
   /** Total games in scope — passed to EvalCoverageBadge. */
   totalN: number;
-  /** In-flight eval job count — passed to EvalCoverageBadge. */
-  inFlightCount: number;
   /** Whether the eval-coverage query failed — passed to EvalCoverageBadge. */
   isCoverageError: boolean;
 }
@@ -45,7 +43,6 @@ export function LibraryGameCardList({
   isGuest,
   analyzedN,
   totalN,
-  inFlightCount,
   isCoverageError,
 }: LibraryGameCardListProps) {
   // Derive pagination state; use PAGE_SIZE as the canonical page size constant.
@@ -74,7 +71,6 @@ export function LibraryGameCardList({
         <EvalCoverageBadge
           analyzedN={analyzedN}
           totalN={totalN}
-          inFlightCount={inFlightCount}
           isGuest={isGuest}
           isCoverageError={isCoverageError}
         />

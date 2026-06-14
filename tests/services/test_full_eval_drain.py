@@ -128,6 +128,8 @@ async def _insert_game(
     *,
     evals_completed_at: datetime | None = None,
     full_evals_completed_at: datetime | None = None,
+    full_pv_completed_at: datetime | None = None,
+    full_eval_attempts: int = 0,
     white_blunders: int | None = None,
     lichess_evals_at: datetime | None = None,
 ) -> int:
@@ -146,6 +148,8 @@ async def _insert_game(
             is_computer_game=False,
             evals_completed_at=evals_completed_at,
             full_evals_completed_at=full_evals_completed_at,
+            full_pv_completed_at=full_pv_completed_at,
+            full_eval_attempts=full_eval_attempts,
             white_blunders=white_blunders,
             lichess_evals_at=lichess_evals_at,
         )
@@ -463,7 +467,7 @@ def _patch_drain_for_tick_tests(
     game_id: int,
     user_id: int,
     *,
-    is_analyzed: bool = False,
+    is_lichess_eval_game: bool = False,
     tier: int = 3,
     job_id: int | None = None,
 ) -> Any:
@@ -494,11 +498,12 @@ def _patch_drain_for_tick_tests(
     )
     # Mock claim_eval_job to return a ClaimedJob for the seeded game without
     # opening a DB session (avoids dependency on eval_queue_service sessions).
+    # is_analyzed renamed to is_lichess_eval_game (see ClaimedJob docstring).
     claimed = ClaimedJob(
         game_id=game_id,
         user_id=user_id,
         tier=tier,
-        is_analyzed=is_analyzed,
+        is_lichess_eval_game=is_lichess_eval_game,
         job_id=job_id,
     )
     monkeypatch.setattr(drain_module, "claim_eval_job", AsyncMock(return_value=claimed))
@@ -519,7 +524,12 @@ class TestMarkerWrite:
         full_drain_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """After one drain tick on a seeded game, full_evals_completed_at IS NOT NULL."""
+        """After one drain tick on a seeded game with no holes, full_evals_completed_at IS NOT NULL.
+
+        Phase 119 SEED-045: the marker is only stamped when failed_ply_count == 0.
+        Uses _TWO_MOVE_PGN with rows for both plies; all engine calls succeed so
+        no post-move holes remain after the tick.
+        """
         from app.models.game import Game
 
         # Insert a non-guest game with evals_completed_at set (not in entry-ply queue)
@@ -528,7 +538,7 @@ class TestMarkerWrite:
         game_id = await _insert_game(
             full_drain_session_maker,
             full_drain_test_user,
-            pgn=_SIMPLE_PGN,
+            pgn=_TWO_MOVE_PGN,
             evals_completed_at=now,
             full_evals_completed_at=None,
         )
@@ -537,16 +547,26 @@ class TestMarkerWrite:
             monkeypatch, full_drain_session_maker, game_id, full_drain_test_user
         )
 
-        # Engine returns a valid eval (4-tuple: eval_cp, eval_mate, best_move, pv_string).
-        mock_evaluate = AsyncMock(return_value=(50, None, "e2e4", "e2e4 e7e5"))
+        # Engine returns valid evals for ply 0, ply 1, and terminal (ply 2).
+        # Post-move: row 0 = pos_eval[1] (50), row 1 = pos_eval[2] (30) — no holes.
+        mock_evaluate = AsyncMock(
+            side_effect=[
+                (99, None, "e2e4", "e2e4 e7e5"),  # ply 0 (best_move; eval unused for row)
+                (50, None, "e7e5", "e7e5"),  # ply 1 → row 0 post-move eval
+                (30, None, "g1f3", "g1f3"),  # terminal → row 1 post-move eval (no hole)
+            ]
+        )
         monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
 
-        # Insert a game_position row so the drain has at least one target.
+        # Insert game_position rows for both plies — needed so each has a post-move donor.
         await _insert_game_positions(
             full_drain_session_maker,
             full_drain_test_user,
             game_id,
-            [{"ply": 0, "full_hash": 0xABCD_EF01, "eval_cp": None, "eval_mate": None}],
+            [
+                {"ply": 0, "full_hash": 0xABCD_EF01, "eval_cp": None, "eval_mate": None},
+                {"ply": 1, "full_hash": 0xABCD_EF02, "eval_cp": None, "eval_mate": None},
+            ],
         )
         try:
             processed = await drain_module._full_drain_tick()
@@ -565,26 +585,29 @@ class TestMarkerWrite:
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
 
-    async def test_marker_set_with_holes(
+    async def test_marker_withheld_with_holes_under_cap(
         self,
         full_drain_test_user: int,
         full_drain_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """When evaluate_nodes_with_pv fails for SOME plies, the marker is still set,
-        the successful eval is written, and the failed ply remains NULL (D-116-07).
+        """Phase 119 SEED-045: when evaluate_nodes_with_pv fails for SOME plies and
+        full_eval_attempts + 1 < MAX_EVAL_ATTEMPTS, the marker is NOT set and
+        full_eval_attempts is incremented. The partial eval IS written.
 
         SEED-044 post-move: a row stores the eval of the NEXT position. For
-        _TWO_MOVE_PGN ("1. e4 e5 *", plies 0,1, terminal ply 2) the engine is called
-        for ply 0, ply 1, and the terminal. Row 0 stores pos_eval[1] (engine ply-1
-        result); row 1 stores pos_eval[2] (the TERMINAL result). So failing the
-        terminal call makes row 1 the NULL hole while row 0 is written.
+        _TWO_MOVE_PGN ("1. e4 e5 *", plies 0,1, terminal ply 2):
+          row 0 = pos_eval[1] = ply-1 result (50)  → written
+          row 1 = pos_eval[2] = terminal result (None) → NULL hole (non-terminal row!)
 
-        WR-05: this must be a PARTIAL failure — an all-fail game now trips the
-        circuit breaker and stays pending (see test_all_fail_keeps_game_pending).
+        WR-05: this must be a PARTIAL failure — an all-fail game trips the circuit
+        breaker and stays pending (see test_all_fail_keeps_game_pending).
+        Under Phase 119 (SEED-045): partial failure no longer stamps complete;
+        full_eval_attempts increments and the game stays pending for retry.
         """
         from app.models.game import Game
         from app.models.game_position import GamePosition
+        from app.services.eval_drain import MAX_EVAL_ATTEMPTS
 
         now = datetime.now(timezone.utc)
         game_id = await _insert_game(
@@ -593,6 +616,7 @@ class TestMarkerWrite:
             pgn=_TWO_MOVE_PGN,
             evals_completed_at=now,
             full_evals_completed_at=None,
+            full_eval_attempts=0,  # explicitly under cap
         )
 
         drain_module = _patch_drain_for_tick_tests(
@@ -600,14 +624,13 @@ class TestMarkerWrite:
         )
 
         # Engine calls (in order): ply 0, ply 1, terminal. Post-move:
-        #   row 0 = pos_eval[1] = ply-1 result (50)  -> written
-        #   row 1 = pos_eval[2] = terminal result (None)  -> NULL hole
-        # ply-0 result's eval is unused for storage (no row before move 0).
+        #   row 0 = pos_eval[1] = ply-1 result (50)  → written (no hole)
+        #   row 1 = pos_eval[2] = terminal result (None)  → NULL hole
         mock_evaluate = AsyncMock(
             side_effect=[
-                (99, None, "e2e4", "e2e4 e7e5"),  # ply 0 (eval unused; supplies row 0 best_move)
-                (50, None, "e7e5", "e7e5"),  # ply 1 -> row 0 eval
-                (None, None, None, None),  # terminal -> row 1 hole
+                (99, None, "e2e4", "e2e4 e7e5"),  # ply 0 (best_move; eval unused for row)
+                (50, None, "e7e5", "e7e5"),  # ply 1 → row 0 post-move eval
+                (None, None, None, None),  # terminal → row 1 hole
             ]
         )
         monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
@@ -622,14 +645,20 @@ class TestMarkerWrite:
             ],
         )
         try:
+            assert MAX_EVAL_ATTEMPTS > 1, "test requires MAX_EVAL_ATTEMPTS > 1 for under-cap path"
             processed = await drain_module._full_drain_tick()
-            assert processed is True, "Partial failure must still process the game"
+            assert processed is False, (
+                "Phase 119: partial failure under cap must NOT report processed "
+                "(game stays pending for retry) — SEED-045"
+            )
 
             async with full_drain_session_maker() as verify_session:
                 game_row = await verify_session.execute(
-                    select(Game.full_evals_completed_at).where(Game.id == game_id)
+                    select(Game.full_evals_completed_at, Game.full_eval_attempts).where(
+                        Game.id == game_id
+                    )
                 )
-                marker = game_row.scalar_one_or_none()
+                g = game_row.one_or_none()
 
                 pos_rows = await verify_session.execute(
                     select(GamePosition.ply, GamePosition.eval_cp, GamePosition.eval_mate)
@@ -638,17 +667,18 @@ class TestMarkerWrite:
                 )
                 evals_by_ply = {r[0]: (r[1], r[2]) for r in pos_rows.all()}
 
-            assert marker is not None, (
-                "full_evals_completed_at must be set when only SOME plies failed "
-                "— D-116-07: mark complete with holes."
+            assert g is not None
+            assert g[0] is None, (
+                "full_evals_completed_at must stay NULL when a hole remains (under cap) — SEED-045"
+            )
+            assert g[1] == 1, (
+                f"full_eval_attempts must be incremented to 1 after a hole tick, got {g[1]}"
             )
             assert evals_by_ply.get(0) == (50, None), (
-                "Row 0 stores the post-move eval (ply-1 engine result = 50) alongside "
-                "the terminal-driven hole at row 1."
+                "Row 0 stores the post-move eval (ply-1 engine result = 50) — partial evals written"
             )
             assert evals_by_ply.get(1) == (None, None), (
-                "game_position.eval_cp/eval_mate must remain NULL when the after-position "
-                "(terminal) engine eval returned (None, None) — NULL holes stay NULL (D-116-07)."
+                "game_position.eval_cp/eval_mate must remain NULL for the terminal-driven hole"
             )
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
@@ -929,8 +959,11 @@ class TestBestMove:
         """best_move is populated in game_positions.best_move for every ply the
         engine evaluated (non-dedup'd) after a drain tick (EVAL-04 / D-117-01).
 
-        _THREE_MOVE_PGN = "1. e4 e5 2. Nf3 Nc6 *" has 4 half-moves → 4 non-terminal
-        positions (plies 0..3). Each ply gets a distinct best_move from the mock.
+        _SIX_PLY_PGN = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 *" has 6 half-moves → 6
+        non-terminal positions (plies 0..5). All 6 plies have DB rows so each row
+        gets a valid post-move eval (no holes), ensuring the tick completes and the
+        marker is stamped (Phase 119 SEED-045: stamp only when no holes remain).
+        Each ply gets a distinct best_move from the mock.
         """
         from app.models.game_position import GamePosition
 
@@ -947,22 +980,23 @@ class TestBestMove:
             monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_117
         )
 
-        # Per-ply best_move for 4 positions (plies 0..3); use unique hashes. best_move
-        # stays decision-ply-keyed under post-move (SEED-044), so each row keeps its own
-        # engine best_move. A trailing terminal call is added (engine games evaluate the
-        # post-game position as the last row's after-eval donor); its best_move is unused.
-        best_moves = ["e2e4", "e7e5", "g1f3", "b8c6"]
+        # Per-ply best_move for all 6 positions (plies 0..5) + terminal call.
+        # best_move stays decision-ply-keyed under post-move (SEED-044).
+        # The terminal call (ply 6) provides the post-move eval for row 5; its
+        # best_move is unused. All evals succeed so no holes → stamp on first tick.
+        best_moves = ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5"]
         mock_evaluate = AsyncMock(
             side_effect=[
-                *[(cp, None, bm, bm) for cp, bm in zip([20, 15, 25, 10], best_moves)],
+                *[(cp, None, bm, bm) for cp, bm in zip([20, 15, 25, 10, 30, 5], best_moves)],
                 (5, None, "h2h3", "h2h3"),  # terminal eval-donor call (best_move ignored)
             ]
         )
         monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
 
+        # Provide rows for all 6 plies so each row has a post-move eval donor.
         gp_rows = [
             {"ply": i, "full_hash": 0xBEEF_0020 + i, "eval_cp": None, "eval_mate": None}
-            for i in range(4)
+            for i in range(6)
         ]
         await _insert_game_positions(
             full_drain_session_maker, full_drain_test_user_117, game_id, gp_rows
@@ -1043,7 +1077,11 @@ class TestBestMove:
             evals_completed_at=now,
             full_evals_completed_at=None,
         )
-        # ply 2 (dedup-eligible, same hash as source) and ply 4 (engine-evaluated).
+        # ply 2 (dedup-eligible), ply 3 (engine-eval donor for row 2's post-move),
+        # ply 4 (engine-evaluated for best_move assertion).
+        # Phase 119 SEED-045: rows 2 and 4 each need their post-move eval donor in
+        # pos_eval (i.e. rows for ply 3 and ply 5, or the terminal at ply 5 suffices
+        # for row 4). Row 2's post-move eval needs pos_eval[3], so ply 3 must be a target.
         await _insert_game_positions(
             full_drain_session_maker,
             full_drain_test_user_117,
@@ -1052,6 +1090,12 @@ class TestBestMove:
                 {
                     "ply": 2,
                     "full_hash": dedup_hash,  # will be dedup'd from source
+                    "eval_cp": None,
+                    "eval_mate": None,
+                },
+                {
+                    "ply": 3,
+                    "full_hash": 0xBEEF_DED0_0003,  # engine-evaluated (donor for row 2)
                     "eval_cp": None,
                     "eval_mate": None,
                 },
@@ -1068,7 +1112,8 @@ class TestBestMove:
             monkeypatch, full_drain_session_maker, target_game_id, full_drain_test_user_117
         )
 
-        # Engine is only called for the non-dedup ply (ply 4 — not in dedup_map).
+        # Engine is called for ply 3, ply 4 (non-dedup'd), and the terminal (ply 5).
+        # Ply 2 is dedup'd → no engine call for it.
         mock_evaluate = AsyncMock(return_value=(40, None, "d2d4", "d2d4"))
         monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
 
@@ -1228,7 +1273,7 @@ class TestFlawPv:
         already carries a lichess %eval.
 
         Regression guard for the prod-observed 0% flaw-PV coverage on analyzed
-        lichess games: the is_analyzed eval-preservation filter dropped every
+        lichess games: the is_lichess_eval_game eval-preservation filter dropped every
         flaw-adjacent ply before the engine gather, so the refutation PV was never
         captured (lichess supplies %eval but no PV). The D-117-13 fix pre-classifies
         flaws and exempts {flaw_ply + 1} from the filter.
@@ -1241,7 +1286,7 @@ class TestFlawPv:
         from app.models.game_position import GamePosition
 
         now = datetime.now(timezone.utc)
-        # Analyzed lichess game: lichess_evals_at set; claim reports is_analyzed=True.
+        # Analyzed lichess game: lichess_evals_at set; claim reports is_lichess_eval_game=True.
         game_id = await _insert_game(
             full_drain_session_maker,
             full_drain_test_user_117,
@@ -1256,7 +1301,7 @@ class TestFlawPv:
             full_drain_session_maker,
             game_id,
             full_drain_test_user_117,
-            is_analyzed=True,
+            is_lichess_eval_game=True,
         )
 
         # Only ply 3 (flaw_ply + 1) should reach the engine — one PV result.
@@ -1264,8 +1309,8 @@ class TestFlawPv:
         monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
 
         # Pre-existing lichess %evals on EVERY ply, encoding a white blunder at ply 2
-        # (30 cp -> -500 cp). Without D-117-13 the is_analyzed filter would drop all
-        # six plies (each has an eval) and no PV would ever be captured.
+        # (30 cp -> -500 cp). Without D-117-13 the is_lichess_eval_game filter would
+        # drop all six plies (each has an eval) and no PV would ever be captured.
         cp_by_ply = [20, 30, -500, -480, 60, 30]
         gp_rows = [
             {
@@ -1478,5 +1523,649 @@ class TestOracleCounts:
                 f"white_blunders ({white_blunders}) must equal game_flaws blunder rows "
                 f"for white ({white_blunder_rows}) — D-117-08 oracle consistency."
             )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+
+# ─── Phase 119 SEED-045: hole-aware completion gate + bounded re-pick ──────────
+
+# Shared user ID for Phase 119 tests (distinct range to avoid FK conflicts).
+_TEST_USER_ID_119: int = 99202
+
+
+@pytest_asyncio.fixture(scope="session", autouse=False)
+async def full_drain_test_user_119(
+    full_drain_session_maker: async_sessionmaker[AsyncSession],
+) -> int:
+    """Ensure test user _TEST_USER_ID_119 exists in the test DB. Returns user_id."""
+    from app.models.user import User
+
+    async with full_drain_session_maker() as session:
+        result = await session.execute(select(User).where(User.id == _TEST_USER_ID_119))
+        if result.unique().scalar_one_or_none() is None:
+            session.add(
+                User(
+                    id=_TEST_USER_ID_119,
+                    email=f"full-drain-test-{_TEST_USER_ID_119}@example.com",
+                    hashed_password="fakehash",
+                )
+            )
+            await session.commit()
+    return _TEST_USER_ID_119
+
+
+class TestHoleAwareCompletionGate:
+    """Phase 119 SEED-045: full_evals_completed_at is withheld while genuine
+    non-terminal holes remain, up to MAX_EVAL_ATTEMPTS; the cap stamps anyway
+    with one aggregated Sentry event.
+
+    A "hole" = non-terminal ply with eval_cp IS NULL AND eval_mate IS NULL after
+    the tick. Terminal plies and mate-scored plies are NOT holes.
+    """
+
+    async def test_no_holes_stamps_complete_first_tick(
+        self,
+        full_drain_test_user_119: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A game where every non-terminal ply resolves with eval_cp OR eval_mate set
+        → full_evals_completed_at IS stamped on the first tick; full_eval_attempts stays 0;
+        no cap Sentry event.
+        """
+        from app.models.game import Game
+
+        now = datetime.now(timezone.utc)
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_119,
+            pgn=_TWO_MOVE_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=None,
+            full_eval_attempts=0,
+        )
+
+        capture_calls: list[Any] = []
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_119
+        )
+        monkeypatch.setattr(
+            drain_module.sentry_sdk,
+            "capture_message",
+            lambda *a, **kw: capture_calls.append(a),
+        )
+
+        # All engine calls succeed — no holes after the tick.
+        mock_evaluate = AsyncMock(
+            side_effect=[
+                (99, None, "e2e4", "e2e4 e7e5"),  # ply 0
+                (50, None, "e7e5", "e7e5"),  # ply 1 → row 0 eval
+                (30, None, "g1f3", "g1f3"),  # terminal → row 1 eval
+            ]
+        )
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+
+        await _insert_game_positions(
+            full_drain_session_maker,
+            full_drain_test_user_119,
+            game_id,
+            [
+                {"ply": 0, "full_hash": 0xF119_0001, "eval_cp": None, "eval_mate": None},
+                {"ply": 1, "full_hash": 0xF119_0002, "eval_cp": None, "eval_mate": None},
+            ],
+        )
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is True, "Tick must report processed when no holes remain"
+
+            async with full_drain_session_maker() as verify:
+                row = await verify.execute(
+                    select(Game.full_evals_completed_at, Game.full_eval_attempts).where(
+                        Game.id == game_id
+                    )
+                )
+                game_row = row.one_or_none()
+
+            assert game_row is not None
+            assert game_row[0] is not None, (
+                "full_evals_completed_at must be stamped when no holes remain (first tick)"
+            )
+            assert game_row[1] == 0, (
+                f"full_eval_attempts must stay 0 when game completes without holes, got {game_row[1]}"
+            )
+            # No cap Sentry event must have fired.
+            cap_events = [a for a in capture_calls if "MAX_EVAL_ATTEMPTS" in str(a)]
+            assert len(cap_events) == 0, (
+                f"No cap Sentry event should fire when no holes remain, got {cap_events}"
+            )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_mate_scored_is_not_a_hole(
+        self,
+        full_drain_test_user_119: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A non-terminal ply with eval_cp NULL but eval_mate SET is NOT a hole
+        → game is stamped complete on the first tick.
+
+        The _apply_full_eval_results function counts failed_ply_count only when
+        BOTH eval_cp IS NULL AND eval_mate IS NULL for a non-terminal row. A mate
+        score clears the hole condition.
+        """
+        from app.models.game import Game
+
+        # _TWO_MOVE_PGN: plies 0 and 1 (non-terminal), terminal = ply 2.
+        # Engine gives a mate score for ply 1's after-position (terminal). Row 1 gets
+        # eval_mate set (not NULL) → not a hole.
+        now = datetime.now(timezone.utc)
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_119,
+            pgn=_TWO_MOVE_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=None,
+            full_eval_attempts=0,
+        )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_119
+        )
+
+        # Terminal call returns a mate score; row 1 gets eval_mate=1 (not a hole).
+        mock_evaluate = AsyncMock(
+            side_effect=[
+                (99, None, "e2e4", "e2e4"),  # ply 0 best_move (eval unused)
+                (50, None, "e7e5", "e7e5"),  # ply 1 → row 0 eval
+                (None, 1, "g1f3", "g1f3"),  # terminal → row 1 = mate score (NOT a hole)
+            ]
+        )
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+
+        await _insert_game_positions(
+            full_drain_session_maker,
+            full_drain_test_user_119,
+            game_id,
+            [
+                {"ply": 0, "full_hash": 0xF119_0010, "eval_cp": None, "eval_mate": None},
+                {"ply": 1, "full_hash": 0xF119_0011, "eval_cp": None, "eval_mate": None},
+            ],
+        )
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is True, "Tick must report processed (mate score is not a hole)"
+
+            async with full_drain_session_maker() as verify:
+                marker = await verify.scalar(
+                    select(Game.full_evals_completed_at).where(Game.id == game_id)
+                )
+            assert marker is not None, (
+                "full_evals_completed_at must be stamped when only mate-scored plies exist "
+                "(eval_mate set → not a hole)"
+            )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_transient_hole_withholds_stamp_increments_attempts(
+        self,
+        full_drain_test_user_119: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Tick 1 leaves a non-terminal hole → game NOT stamped, full_eval_attempts becomes 1.
+        Tick 2 the hole fills → stamped complete (full_eval_attempts still 1).
+
+        Uses _TWO_MOVE_PGN: plies 0, 1, terminal.
+        Post-move: row 1 = terminal engine result.
+        Tick 1: terminal returns None → row 1 stays NULL (hole) → NOT stamped, attempts → 1.
+        Tick 2: terminal returns a real eval → row 1 filled → stamped.
+        """
+        from app.models.game import Game
+
+        now = datetime.now(timezone.utc)
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_119,
+            pgn=_TWO_MOVE_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=None,
+            full_eval_attempts=0,
+        )
+
+        await _insert_game_positions(
+            full_drain_session_maker,
+            full_drain_test_user_119,
+            game_id,
+            [
+                {"ply": 0, "full_hash": 0xF119_0020, "eval_cp": None, "eval_mate": None},
+                {"ply": 1, "full_hash": 0xF119_0021, "eval_cp": None, "eval_mate": None},
+            ],
+        )
+
+        # ── Tick 1: terminal fails → row 1 becomes a hole ──
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_119
+        )
+        mock_tick1 = AsyncMock(
+            side_effect=[
+                (99, None, "e2e4", "e2e4"),  # ply 0 (best_move; eval unused)
+                (50, None, "e7e5", "e7e5"),  # ply 1 → row 0 eval
+                (None, None, None, None),  # terminal → row 1 hole
+            ]
+        )
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_tick1)
+
+        try:
+            processed1 = await drain_module._full_drain_tick()
+            assert processed1 is False, "Tick 1 must NOT report processed (hole present, under cap)"
+
+            async with full_drain_session_maker() as verify:
+                row = await verify.execute(
+                    select(Game.full_evals_completed_at, Game.full_eval_attempts).where(
+                        Game.id == game_id
+                    )
+                )
+                g1 = row.one_or_none()
+            assert g1 is not None
+            assert g1[0] is None, "full_evals_completed_at must stay NULL after tick 1 hole"
+            assert g1[1] == 1, f"full_eval_attempts must be 1 after tick 1 hole, got {g1[1]}"
+
+            # ── Tick 2: terminal succeeds → hole fills → stamp ──
+            mock_tick2 = AsyncMock(
+                side_effect=[
+                    (99, None, "e2e4", "e2e4"),
+                    (50, None, "e7e5", "e7e5"),
+                    (30, None, "g1f3", "g1f3"),  # terminal now succeeds
+                ]
+            )
+            monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_tick2)
+
+            processed2 = await drain_module._full_drain_tick()
+            assert processed2 is True, "Tick 2 must report processed (hole filled)"
+
+            async with full_drain_session_maker() as verify:
+                row = await verify.execute(
+                    select(Game.full_evals_completed_at, Game.full_eval_attempts).where(
+                        Game.id == game_id
+                    )
+                )
+                g2 = row.one_or_none()
+            assert g2 is not None
+            assert g2[0] is not None, "full_evals_completed_at must be stamped after tick 2 fills"
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_cap_reached_stamps_and_emits_sentry(
+        self,
+        full_drain_test_user_119: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """After full_eval_attempts reaches MAX_EVAL_ATTEMPTS with a persistent hole,
+        the game IS stamped complete AND exactly one aggregated Sentry event fires.
+
+        Seed game with full_eval_attempts = MAX_EVAL_ATTEMPTS - 1 so the NEXT tick
+        is the cap tick (attempts + 1 >= MAX_EVAL_ATTEMPTS).
+        """
+        from app.models.game import Game
+        from app.services.eval_drain import MAX_EVAL_ATTEMPTS
+
+        now = datetime.now(timezone.utc)
+        # Pre-seed with attempts = MAX_EVAL_ATTEMPTS - 1 so ONE more tick caps it.
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_119,
+            pgn=_TWO_MOVE_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=None,
+            full_eval_attempts=MAX_EVAL_ATTEMPTS - 1,
+        )
+
+        await _insert_game_positions(
+            full_drain_session_maker,
+            full_drain_test_user_119,
+            game_id,
+            [
+                {"ply": 0, "full_hash": 0xF119_0030, "eval_cp": None, "eval_mate": None},
+                {"ply": 1, "full_hash": 0xF119_0031, "eval_cp": None, "eval_mate": None},
+            ],
+        )
+
+        set_context_calls: list[tuple[str, Any]] = []
+        capture_message_calls: list[str] = []
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_119
+        )
+        monkeypatch.setattr(
+            drain_module.sentry_sdk,
+            "set_context",
+            lambda name, ctx: set_context_calls.append((name, ctx)),
+        )
+        monkeypatch.setattr(
+            drain_module.sentry_sdk,
+            "capture_message",
+            lambda msg, **kw: capture_message_calls.append(msg),
+        )
+
+        # Hole persists: terminal still returns None.
+        mock_evaluate = AsyncMock(
+            side_effect=[
+                (99, None, "e2e4", "e2e4"),
+                (50, None, "e7e5", "e7e5"),
+                (None, None, None, None),  # hole persists
+            ]
+        )
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is True, "Cap tick must report processed (stamp happens at cap)"
+
+            async with full_drain_session_maker() as verify:
+                row = await verify.execute(
+                    select(Game.full_evals_completed_at, Game.full_eval_attempts).where(
+                        Game.id == game_id
+                    )
+                )
+                g = row.one_or_none()
+
+            assert g is not None
+            assert g[0] is not None, (
+                "full_evals_completed_at must be stamped at cap even with residual holes"
+            )
+
+            # Exactly ONE aggregated Sentry capture_message call for the cap event.
+            cap_events = [m for m in capture_message_calls if "MAX_EVAL_ATTEMPTS" in m]
+            assert len(cap_events) == 1, (
+                f"Exactly one cap Sentry event expected at MAX_EVAL_ATTEMPTS, "
+                f"got {len(cap_events)}: {cap_events}"
+            )
+
+            # set_context must carry game_id and hole_count (NOT interpolated in message).
+            eval_ctx = next(
+                (ctx for name, ctx in set_context_calls if name == "eval" and "hole_count" in ctx),
+                None,
+            )
+            assert eval_ctx is not None, (
+                "sentry_sdk.set_context('eval', {...}) with 'hole_count' must be called "
+                "at the cap event — variables in context, not in message string"
+            )
+            assert eval_ctx.get("game_id") == game_id, (
+                f"set_context must carry game_id={game_id}, got {eval_ctx}"
+            )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_all_fail_does_not_increment_attempts(
+        self,
+        full_drain_test_user_119: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """WR-05 all-fail circuit breaker stays on the existing path and does NOT
+        increment full_eval_attempts — pool outages must not exhaust the hole budget.
+
+        When ALL engine calls fail (simulated dead pool), the existing circuit breaker
+        returns False without ever opening the write session. full_eval_attempts stays 0.
+        """
+        from app.models.game import Game
+
+        now = datetime.now(timezone.utc)
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_119,
+            pgn=_SIMPLE_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=None,
+            full_eval_attempts=0,
+        )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_119
+        )
+        # Dead pool — every call returns all-None.
+        mock_evaluate = AsyncMock(return_value=(None, None, None, None))
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+
+        await _insert_game_positions(
+            full_drain_session_maker,
+            full_drain_test_user_119,
+            game_id,
+            [{"ply": 0, "full_hash": 0xF119_0040, "eval_cp": None, "eval_mate": None}],
+        )
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is False, "All-fail circuit breaker must return False (WR-05)"
+
+            async with full_drain_session_maker() as verify:
+                row = await verify.execute(
+                    select(Game.full_evals_completed_at, Game.full_eval_attempts).where(
+                        Game.id == game_id
+                    )
+                )
+                g = row.one_or_none()
+
+            assert g is not None
+            assert g[0] is None, "full_evals_completed_at must stay NULL (all-fail circuit breaker)"
+            assert g[1] == 0, f"full_eval_attempts must NOT be incremented by all-fail, got {g[1]}"
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+
+# ─── Phase 119 SEED-045: resweep_holed_games ──────────────────────────────────
+
+
+class TestResweepHoledGames:
+    """Phase 119 SEED-045: resweep_holed_games clears completion markers on already-stamped
+    engine games that carry non-terminal holes, leaving terminal-only games untouched.
+
+    Test fixture setup: games stamped with full_evals_completed_at; game_positions rows
+    with NULL evals placed at non-terminal (should sweep) or terminal-only (should not sweep)
+    plies.
+    """
+
+    async def test_sweeps_non_terminal_hole_only(
+        self,
+        full_drain_test_user_119: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """resweep_holed_games() clears full_evals_completed_at on the game with a
+        non-terminal hole, leaves the terminal-only game untouched, and returns 1.
+
+        Game A: stamped complete, non-terminal hole at ply 1, terminal at ply 2.
+        Game B: stamped complete, only the terminal ply (ply 2) has NULL evals.
+        Expected: count=1 (only game A swept); game B's marker untouched.
+        """
+        from app.models.game import Game
+        import app.services.eval_drain as drain_module
+
+        monkeypatch.setattr(drain_module, "async_session_maker", full_drain_session_maker)
+
+        now = datetime.now(timezone.utc)
+
+        # Game A: has a non-terminal hole (ply 1 is NOT the max ply = 2).
+        game_a_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_119,
+            pgn=_TWO_MOVE_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=now,  # already stamped
+            full_pv_completed_at=now,
+            full_eval_attempts=2,
+        )
+        await _insert_game_positions(
+            full_drain_session_maker,
+            full_drain_test_user_119,
+            game_a_id,
+            [
+                {"ply": 0, "full_hash": 0xF119_A001, "eval_cp": 50, "eval_mate": None},
+                # ply 1 is a hole (NULL evals) and ply 2 is max ply → ply 1 < max → non-terminal
+                {"ply": 1, "full_hash": 0xF119_A002, "eval_cp": None, "eval_mate": None},
+                # ply 2 = terminal game-over ply (max ply for this game); NULL → NOT a hole
+                {"ply": 2, "full_hash": 0xF119_A003, "eval_cp": None, "eval_mate": None},
+            ],
+        )
+
+        # Game B: only the terminal ply is NULL — NOT a hole.
+        game_b_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_119,
+            pgn=_TWO_MOVE_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=now,  # already stamped
+            full_pv_completed_at=now,
+        )
+        await _insert_game_positions(
+            full_drain_session_maker,
+            full_drain_test_user_119,
+            game_b_id,
+            [
+                {"ply": 0, "full_hash": 0xF119_B001, "eval_cp": 50, "eval_mate": None},
+                {"ply": 1, "full_hash": 0xF119_B002, "eval_cp": 30, "eval_mate": None},
+                # ply 2 = max ply (terminal); NULL → excluded by ply < max_ply predicate
+                {"ply": 2, "full_hash": 0xF119_B003, "eval_cp": None, "eval_mate": None},
+            ],
+        )
+
+        try:
+            from app.services.eval_drain import resweep_holed_games
+
+            count = await resweep_holed_games()
+            assert count == 1, (
+                f"resweep_holed_games must return 1 (only game A has a non-terminal hole), "
+                f"got {count}"
+            )
+
+            async with full_drain_session_maker() as verify:
+                row_a = await verify.execute(
+                    select(
+                        Game.full_evals_completed_at,
+                        Game.full_pv_completed_at,
+                        Game.full_eval_attempts,
+                    ).where(Game.id == game_a_id)
+                )
+                a = row_a.one_or_none()
+
+                row_b = await verify.execute(
+                    select(Game.full_evals_completed_at).where(Game.id == game_b_id)
+                )
+                b = row_b.scalar_one_or_none()
+
+            assert a is not None
+            assert a[0] is None, "Game A: full_evals_completed_at must be cleared by sweep"
+            assert a[1] is None, "Game A: full_pv_completed_at must be cleared by sweep"
+            assert a[2] == 0, f"Game A: full_eval_attempts must be reset to 0, got {a[2]}"
+
+            assert b is not None, "Game B: full_evals_completed_at must stay set (terminal-only)"
+        finally:
+            await _delete_games(full_drain_session_maker, [game_a_id, game_b_id])
+
+    async def test_dry_run_counts_but_does_not_update(
+        self,
+        full_drain_test_user_119: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """dry_run=True returns the candidate count without updating full_evals_completed_at."""
+        from app.models.game import Game
+        import app.services.eval_drain as drain_module
+
+        monkeypatch.setattr(drain_module, "async_session_maker", full_drain_session_maker)
+
+        now = datetime.now(timezone.utc)
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_119,
+            pgn=_TWO_MOVE_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=now,  # stamped
+            full_pv_completed_at=now,
+            full_eval_attempts=1,
+        )
+        await _insert_game_positions(
+            full_drain_session_maker,
+            full_drain_test_user_119,
+            game_id,
+            [
+                {"ply": 0, "full_hash": 0xF119_C001, "eval_cp": 50, "eval_mate": None},
+                # ply 1 is a non-terminal hole (max ply = 2)
+                {"ply": 1, "full_hash": 0xF119_C002, "eval_cp": None, "eval_mate": None},
+                {"ply": 2, "full_hash": 0xF119_C003, "eval_cp": None, "eval_mate": None},
+            ],
+        )
+
+        try:
+            from app.services.eval_drain import resweep_holed_games
+
+            count = await resweep_holed_games(dry_run=True)
+            assert count >= 1, f"dry_run must return count >= 1 (at least game {game_id})"
+
+            # Verify nothing changed.
+            async with full_drain_session_maker() as verify:
+                marker = await verify.scalar(
+                    select(Game.full_evals_completed_at).where(Game.id == game_id)
+                )
+            assert marker is not None, (
+                "dry_run=True must NOT clear full_evals_completed_at — count only"
+            )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_swept_game_has_attempts_reset(
+        self,
+        full_drain_test_user_119: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A swept game has full_eval_attempts reset to 0 and full_evals_completed_at NULL."""
+        from app.models.game import Game
+        import app.services.eval_drain as drain_module
+
+        monkeypatch.setattr(drain_module, "async_session_maker", full_drain_session_maker)
+
+        now = datetime.now(timezone.utc)
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_119,
+            pgn=_TWO_MOVE_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=now,
+            full_pv_completed_at=now,
+            full_eval_attempts=3,  # pre-existing attempts (would have hit cap)
+        )
+        await _insert_game_positions(
+            full_drain_session_maker,
+            full_drain_test_user_119,
+            game_id,
+            [
+                {"ply": 0, "full_hash": 0xF119_D001, "eval_cp": 50, "eval_mate": None},
+                {"ply": 1, "full_hash": 0xF119_D002, "eval_cp": None, "eval_mate": None},
+                {"ply": 2, "full_hash": 0xF119_D003, "eval_cp": None, "eval_mate": None},
+            ],
+        )
+
+        try:
+            from app.services.eval_drain import resweep_holed_games
+
+            count = await resweep_holed_games()
+            assert count >= 1, f"At least game {game_id} must be swept"
+
+            async with full_drain_session_maker() as verify:
+                row = await verify.execute(
+                    select(
+                        Game.full_evals_completed_at,
+                        Game.full_pv_completed_at,
+                        Game.full_eval_attempts,
+                    ).where(Game.id == game_id)
+                )
+                g = row.one_or_none()
+
+            assert g is not None
+            assert g[0] is None, "Swept game: full_evals_completed_at must be NULL"
+            assert g[1] is None, "Swept game: full_pv_completed_at must be NULL"
+            assert g[2] == 0, f"Swept game: full_eval_attempts must be reset to 0, got {g[2]}"
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
