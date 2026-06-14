@@ -90,3 +90,74 @@ FROM users WHERE is_guest IS FALSE;
 SELECT count(*), count(DISTINCT user_id) FROM games
 WHERE full_evals_completed_at IS NULL AND lichess_evals_at IS NULL;
 ```
+
+## Live prod bug to fix in this phase: tier-3 leaks lichess %eval games (D-118-04 dead tiebreaker)
+
+Diagnosed 2026-06-14 from a prod observation (user 28, just-logged-in): the coverage
+badge ("N of M analyzed") appeared frozen while the games table showed a game completing
+every ~1-2s. Root cause is a Phase 118 selection bug, not a badge bug.
+
+**The bug.** `_claim_tier3_derived` (`app/services/eval_queue_service.py:204-233`) selects on
+`full_evals_completed_at IS NULL` **only** — it does NOT exclude lichess %eval games. D-118-04
+tried to *deprioritize* them via `Game.lichess_evals_at.isnot(None).asc()` (line 230), but that
+is the **last** `ORDER BY` key and `Game.played_at.desc()` (line 226) breaks the tie first.
+`played_at` is effectively unique per game, so the lichess tiebreaker almost never fires. Net
+effect: lichess games get picked by recency like any other, and the drain runs a **full engine
+pass** on games that `Game.needs_engine_full_evals` (`app/models/game.py:223`) says to skip.
+Measured on user 28: 260 of 295 full-eval'd games already had lichess %evals; ~18 of the last 25
+completions were lichess re-analysis → ~70% of throughput wasted, none of it advancing
+user-visible coverage.
+
+**Why the badge looked stuck.** Badge counts `is_analyzed` = `white_blunders IS NOT NULL`, which
+lichess games already satisfy at import. Re-analyzing them sets `full_evals_completed_at` (visible
+in the table) but not new `white_blunders`, so `analyzed_count` plateaus. The frontend stall
+detector (`useEvalCoverage.ts:13`, `MAX_STALL_POLLS=5` → 15s of no `analyzed_count` delta) then
+halts polling → frozen badge until manual reload. For user 28 the badge poll is governed solely by
+this branch (entry-ply done → `pct_complete=100`; tier-3 creates no `eval_jobs` rows → `in_flight_count=0`).
+
+**Fix (already the planned end-state).** The SEED-046 candidate pool above
+(`full_evals_completed_at IS NULL AND lichess_evals_at IS NULL`) is exactly `needs_engine_full_evals`
+and already excludes lichess games. So this is a correctness requirement for the lottery rewrite,
+not new scope. **Planner must ensure the new weighted-lottery selection REPLACES
+`_claim_tier3_derived`'s WHERE clause (and drops the dead line-230 tiebreaker), not layers on top of
+the existing `full_evals_completed_at IS NULL`-only predicate.** Update the D-118-04 ordering tests
+in `tests/services/test_eval_queue.py` accordingly.
+
+**Side effects of the fix (both desirable, verify in UAT):**
+- Badge self-unfreezes: once only never-analyzed games are picked, every tier-3 tick advances
+  `analyzed_count`, so the stall detector only trips on genuinely-stuck games (its intent). No
+  frontend change needed, but confirm the badge ticks live for a returning user with backlog.
+- PV/best_move backfill for lichess games is dropped. **Confirmed moot today**: `best_move`/`pv`
+  have zero consumers (no router/schema/frontend reads them — grep 2026-06-14). D-118-04's
+  "PV-backfill-only" rationale for keeping lichess games in tier-3 can be retired. If a
+  PV-consuming feature ships later, it needs a dedicated lightweight PV-only pass, not a full
+  engine re-eval — do NOT re-add lichess games to the full-eval tier to get PVs.
+
+### Do NOT re-key the coverage badge on `full_evals_completed_at`
+
+Tempting simplification to reject: the badge's analyzed count uses `Game.is_analyzed`
+(`white_blunders IS NOT NULL`, source-agnostic — lichess %eval freebies count), NOT
+`full_evals_completed_at`. Keep it that way. Two reasons: (1) post-migration lichess imports
+don't stamp `full_evals_completed_at` (only the engine drain writes it), so it already
+undercounts today — user 28: 688 `is_analyzed` vs 295 `full_evals_completed_at`. (2) Once this
+phase excludes lichess games from the drain (above), those games will *never* get
+`full_evals_completed_at`, so a badge keyed on it could never reach `total_count` — permanently
+stuck short with no mechanism to close the gap. The drain backlog predicate
+(`needs_engine_full_evals`) and the user-facing coverage predicate (`is_analyzed`) are
+deliberately different axes; don't collapse them.
+
+### Opportunistic cleanup: rename the `is_analyzed` local in the queue/drain (name collision)
+
+Low-risk readability fix, do it while touching `eval_queue_service.py` / `eval_drain.py` for the
+lottery (NOT a separate phase). There are two unrelated things both named `is_analyzed`:
+
+- `Game.is_analyzed` — hybrid property, `white_blunders IS NOT NULL` (flaw analysis present, any source).
+- a local var in `eval_queue_service.py` (lines ~86, 177-182, 208, 240-241, 269-298) and
+  `eval_drain.py` (lines ~349, 363-369, 399, 601-604, 1293, 1322-1408) meaning
+  `lichess_evals_at IS NOT NULL` (i.e. "this is a lichess %eval game", D-117-07) — used to gate
+  eval-preservation (don't overwrite authoritative lichess post-move %evals).
+
+The collision makes the drain hard to read (same name, opposite-ish meaning). Rename the local
+(and the `ClaimedJob.is_analyzed` field) to something like `is_lichess_eval_game` /
+`has_lichess_evals`. Pure rename, no behavior change. Skip if it bloats the lottery diff — flag
+as a follow-up rather than forcing it in.
