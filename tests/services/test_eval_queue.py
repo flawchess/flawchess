@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 import pytest_asyncio
 from sqlalchemy import delete, select, update
+from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 # ─── Module-level test constants ──────────────────────────────────────────────
@@ -32,6 +33,23 @@ _TEST_GUEST_USER_ID: int = 99203
 
 # Minimal PGN for games (no real analysis needed — queue tests are DB-level only).
 _SIMPLE_PGN: str = "1. e4 e5 *"
+
+
+# ─── Auto-drain flag ──────────────────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _enable_auto_drain(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default EVAL_AUTO_DRAIN_ENABLED=True for every test in this module so the
+    positive-path enqueue/claim tests are independent of the ambient .env (dev sets
+    it False, which would make those tests hit the early-return — phase-117 commit
+    5f36f85e added the gate without re-pinning the positive paths). Negative-path
+    tests override it back to False inside their own body, which runs after this
+    fixture, so this default does not mask them.
+    """
+    import app.services.eval_queue_service as svc
+
+    monkeypatch.setattr(svc.settings, "EVAL_AUTO_DRAIN_ENABLED", True)
 
 
 # ─── Session-scoped fixtures ──────────────────────────────────────────────────
@@ -388,6 +406,30 @@ class TestTier3Derived:
         finally:
             await _delete_games(queue_session_maker, [game_id])
 
+    async def test_tier3_disabled_returns_none(
+        self,
+        queue_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """With EVAL_AUTO_DRAIN_ENABLED=False, the same tier-3 candidate that
+        would otherwise be picked yields None — the idle backlog drain is off."""
+        import app.services.eval_queue_service as svc
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+        monkeypatch.setattr(svc.settings, "EVAL_AUTO_DRAIN_ENABLED", False)
+
+        user_a = queue_test_users["user_a"]
+
+        # Identical setup to test_tier3_derived: a pure tier-3 candidate.
+        game_id = await _insert_game(queue_session_maker, user_a, full_evals_completed_at=None)
+
+        try:
+            claimed = await svc.claim_eval_job()
+            assert claimed is None, f"Tier-3 drain disabled must return None; got {claimed!r}"
+        finally:
+            await _delete_games(queue_session_maker, [game_id])
+
 
 # ─── QUEUE-06: lease expiry / requeue ────────────────────────────────────────
 
@@ -513,3 +555,156 @@ class TestGuestExclusion:
             )
         finally:
             await _delete_games(queue_session_maker, [guest_game_id])
+
+
+# ─── D-118-04: tier-3 ordering test fixtures ─────────────────────────────────
+
+# Unique user IDs for queue-ordering tests — range 99210–99219 reserved.
+_TEST_USER_TIER2_ID: int = 99210
+_TEST_GUEST_TIER2_ID: int = 99211
+_TEST_USER_TIER3_A_ID: int = 99212
+_TEST_USER_TIER3_B_ID: int = 99213
+
+
+@pytest_asyncio.fixture(scope="session", autouse=False)
+async def tier2_test_users(
+    queue_session_maker: async_sessionmaker[AsyncSession],
+) -> dict[str, int]:
+    """Ensure tier-2/tier-3 ordering test users exist. Returns mapping role -> user_id."""
+    from app.models.user import User
+
+    users = [
+        User(
+            id=_TEST_USER_TIER2_ID,
+            email=f"tier2-test-{_TEST_USER_TIER2_ID}@example.com",
+            hashed_password="fakehash",
+            is_guest=False,
+        ),
+        User(
+            id=_TEST_GUEST_TIER2_ID,
+            email=f"tier2-guest-{_TEST_GUEST_TIER2_ID}@example.com",
+            hashed_password="fakehash",
+            is_guest=True,
+        ),
+        User(
+            id=_TEST_USER_TIER3_A_ID,
+            email=f"tier3-a-{_TEST_USER_TIER3_A_ID}@example.com",
+            hashed_password="fakehash",
+            is_guest=False,
+        ),
+        User(
+            id=_TEST_USER_TIER3_B_ID,
+            email=f"tier3-b-{_TEST_USER_TIER3_B_ID}@example.com",
+            hashed_password="fakehash",
+            is_guest=False,
+        ),
+    ]
+
+    async with queue_session_maker() as session:
+        for u in users:
+            existing = await session.execute(select(User).where(User.id == u.id))
+            if existing.unique().scalar_one_or_none() is None:
+                session.add(u)
+        await session.commit()
+
+    return {
+        "user": _TEST_USER_TIER2_ID,
+        "guest": _TEST_GUEST_TIER2_ID,
+        "tier3_a": _TEST_USER_TIER3_A_ID,
+        "tier3_b": _TEST_USER_TIER3_B_ID,
+    }
+
+
+class TestTier3Ordering:
+    """D-118-04: _claim_tier3_derived ordering — active users first, needs-eval first."""
+
+    async def test_tier3_ordering(
+        self,
+        tier2_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """_claim_tier3_derived returns games for the more-recently-active user first
+        (users.last_activity DESC NULLS LAST)."""
+        import app.services.eval_queue_service as svc
+        from app.models.user import User
+        from datetime import datetime, timezone, timedelta
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+
+        user_a = tier2_test_users["tier3_a"]
+        user_b = tier2_test_users["tier3_b"]
+
+        now = datetime.now(timezone.utc)
+        # user_a is more recently active
+        async with queue_session_maker() as session:
+            await session.execute(
+                sa_update(User).where(User.id == user_a).values(last_activity=now)
+            )
+            await session.execute(
+                sa_update(User)
+                .where(User.id == user_b)
+                .values(last_activity=now - timedelta(hours=2))
+            )
+            await session.commit()
+
+        game_a = await _insert_game(
+            queue_session_maker, user_a, full_evals_completed_at=None, lichess_evals_at=None
+        )
+        game_b = await _insert_game(
+            queue_session_maker, user_b, full_evals_completed_at=None, lichess_evals_at=None
+        )
+
+        try:
+            claimed = await svc.claim_eval_job()
+            assert claimed is not None, "Expected a claimed tier-3 job; got None"
+            assert claimed.game_id == game_a, (
+                f"More-recently-active user_a's game {game_a} must be claimed first; "
+                f"got game_id={claimed.game_id}"
+            )
+        finally:
+            await _delete_games(queue_session_maker, [game_a, game_b])
+
+    async def test_tier3_pv_ordering(
+        self,
+        tier2_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """For equal-priority games, the one with lichess_evals_at IS NULL (needs full eval)
+        is claimed before a lichess-eval game (lichess_evals_at IS NOT NULL).
+        Both have full_evals_completed_at IS NULL so both are tier-3 candidates."""
+        import app.services.eval_queue_service as svc
+        from datetime import datetime, timezone
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+
+        user_id = tier2_test_users["tier3_a"]
+        now = datetime.now(timezone.utc)
+
+        # needs-eval: no lichess evals at all
+        needs_eval_game = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_evals_completed_at=None,
+            lichess_evals_at=None,
+            played_at=now,
+        )
+        # PV-only: has lichess evals but no full engine evals yet
+        pv_only_game = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_evals_completed_at=None,
+            lichess_evals_at=now,
+            played_at=now,
+        )
+
+        try:
+            claimed = await svc.claim_eval_job()
+            assert claimed is not None, "Expected a claimed tier-3 job; got None"
+            assert claimed.game_id == needs_eval_game, (
+                f"Game needing full eval {needs_eval_game} must be claimed before "
+                f"PV-only game {pv_only_game}; got game_id={claimed.game_id}"
+            )
+        finally:
+            await _delete_games(queue_session_maker, [needs_eval_game, pv_only_game])

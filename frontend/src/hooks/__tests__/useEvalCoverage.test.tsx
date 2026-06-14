@@ -156,6 +156,102 @@ describe('useEvalCoverage', () => {
     expect(result.current.totalCount).toBe(0);
   });
 
+  it('returns analyzedCount and inFlightCount from the response (defaulting to 0 when absent)', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: {
+        pending_count: 2,
+        total_count: 10,
+        pct_complete: 80,
+        analyzed_count: 7,
+        in_flight_count: 3,
+      },
+    });
+
+    const { result } = renderHook(() => useEvalCoverage(), { wrapper: makeWrapper() });
+
+    // Flush the initial fetch via advanceTimersByTime(0) which flushes pending microtasks
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(result.current.analyzedCount).toBe(7);
+    expect(result.current.inFlightCount).toBe(3);
+  });
+
+  it('defaults analyzedCount and inFlightCount to 0 when fields are absent', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: { pending_count: 0, total_count: 10, pct_complete: 100 },
+    });
+
+    const { result } = renderHook(() => useEvalCoverage(), { wrapper: makeWrapper() });
+
+    // Before fetch resolves: defaults
+    expect(result.current.analyzedCount).toBe(0);
+    expect(result.current.inFlightCount).toBe(0);
+  });
+
+  it('keeps polling when pct_complete=100 but in_flight_count > 0 (D-118-12: analysis in-flight)', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: {
+        pending_count: 0,
+        total_count: 10,
+        pct_complete: 100,
+        analyzed_count: 5,
+        in_flight_count: 3,
+      },
+    });
+
+    renderHook(() => useEvalCoverage(), { wrapper: makeWrapper() });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const callCountAfterFirst = vi.mocked(apiClient.get).mock.calls.length;
+    expect(callCountAfterFirst).toBe(1);
+
+    // Advance 3s — should still poll because in_flight_count > 0
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_000);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(vi.mocked(apiClient.get).mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('stops polling when pct_complete=100 AND in_flight_count=0 AND total_count>0', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: {
+        pending_count: 0,
+        total_count: 10,
+        pct_complete: 100,
+        analyzed_count: 10,
+        in_flight_count: 0,
+      },
+    });
+
+    renderHook(() => useEvalCoverage(), { wrapper: makeWrapper() });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const callCountAfterFirst = vi.mocked(apiClient.get).mock.calls.length;
+    expect(callCountAfterFirst).toBe(1);
+
+    // Advance 30s — should NOT trigger more polls
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(vi.mocked(apiClient.get).mock.calls.length).toBe(1);
+  });
+
   it('does NOT call window.location.reload after a pending→done transition (Phase 96 Constraint 4)', async () => {
     // Simulate: first fetch returns pending=50%, then resolves to 100%.
     // Auto-reload was removed in Phase 96 Plan 03; reactive reveal via
@@ -179,5 +275,109 @@ describe('useEvalCoverage', () => {
     await act(async () => { await Promise.resolve(); });
 
     expect(reloadSpy).not.toHaveBeenCalled();
+  });
+
+  // ── trackFullAnalysis: live background-progress counter ────────────────────
+
+  it('trackFullAnalysis: keeps polling while analyzed_count < total_count and rising', async () => {
+    // pct=100, in_flight=0 (default would stop), but full analysis is incomplete and
+    // the background drain keeps analyzing more games each poll → keep polling.
+    let analyzed = 5;
+    vi.mocked(apiClient.get).mockImplementation(() => {
+      const data = {
+        pending_count: 0,
+        total_count: 10,
+        pct_complete: 100,
+        analyzed_count: analyzed,
+        in_flight_count: 0,
+      };
+      analyzed += 1; // background drain makes progress every poll
+      return Promise.resolve({ data });
+    });
+
+    renderHook(() => useEvalCoverage({ trackFullAnalysis: true }), { wrapper: makeWrapper() });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    for (let i = 0; i < 3; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+
+    expect(vi.mocked(apiClient.get).mock.calls.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('trackFullAnalysis: stops after the stall backstop when no new games analyze', async () => {
+    // Incomplete (5 of 10) but the count never moves → a stuck game. Must back off
+    // after the stall window instead of polling forever.
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: {
+        pending_count: 0,
+        total_count: 10,
+        pct_complete: 100,
+        analyzed_count: 5,
+        in_flight_count: 0,
+      },
+    });
+
+    renderHook(() => useEvalCoverage({ trackFullAnalysis: true }), { wrapper: makeWrapper() });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // Advance well past the stall backstop (MAX_STALL_POLLS = 5).
+    for (let i = 0; i < 8; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+    const countAfterStall = vi.mocked(apiClient.get).mock.calls.length;
+    expect(countAfterStall).toBeLessThanOrEqual(7); // 1 initial + ≤5 stall polls + slack
+
+    // Further time advances must not poll again (polling has stopped).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(vi.mocked(apiClient.get).mock.calls.length).toBe(countAfterStall);
+  });
+
+  it('trackFullAnalysis: stops immediately when fully analyzed', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: {
+        pending_count: 0,
+        total_count: 10,
+        pct_complete: 100,
+        analyzed_count: 10,
+        in_flight_count: 0,
+      },
+    });
+
+    renderHook(() => useEvalCoverage({ trackFullAnalysis: true }), { wrapper: makeWrapper() });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(vi.mocked(apiClient.get).mock.calls.length).toBe(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(vi.mocked(apiClient.get).mock.calls.length).toBe(1);
   });
 });

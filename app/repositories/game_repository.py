@@ -92,6 +92,39 @@ async def count_pending_evals(session: AsyncSession, user_id: int) -> int:
     return result.scalar_one()
 
 
+async def count_is_analyzed_games(session: AsyncSession, user_id: int) -> int:
+    """Return count of games with flaw analysis present for the given user.
+
+    D-118-10 correctness fix: uses Game.is_analyzed (white_blunders IS NOT NULL),
+    NOT evals_completed_at. The entry-ply marker (evals_completed_at) is set for
+    endgame-entry evals; it does NOT indicate full flaw analysis. Lichess games with
+    imported %evals count as analyzed when flaw counts are populated.
+    """
+    result = await session.execute(
+        select(func.count()).select_from(Game).where(Game.user_id == user_id, Game.is_analyzed)
+    )
+    return result.scalar_one()
+
+
+async def count_in_flight_evals(session: AsyncSession, user_id: int) -> int:
+    """Return count of all eval_jobs in-flight (pending or leased) for the given user.
+
+    D-118-12: aggregate in-flight count across all tiers; drives the coverage badge
+    "N in progress" indicator. Indexed by ix_eval_jobs_user_active partial index.
+    """
+    from app.models.eval_jobs import EvalJob
+
+    result = await session.execute(
+        select(func.count())
+        .select_from(EvalJob)
+        .where(
+            EvalJob.user_id == user_id,
+            EvalJob.status.in_(["pending", "leased"]),
+        )
+    )
+    return result.scalar_one()
+
+
 async def users_with_zero_pending(
     session: AsyncSession,
     user_ids: Sequence[int],

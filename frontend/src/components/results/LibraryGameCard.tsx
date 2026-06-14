@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Chess } from 'chess.js';
 import { BookOpen, Calendar, Clock, Equal, ExternalLink, Hash, Minus, Plus } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -22,6 +22,7 @@ import { NoAnalysisState } from '@/components/library/NoAnalysisState';
 import { gamePlatformUrl } from '@/lib/platformLinks';
 import { plysToFullMoves } from '@/lib/chess';
 import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
+import { useUserProfile } from '@/hooks/useUserProfile';
 import type { GameFlawCard, FlawSeverity, FlawTag } from '@/types/library';
 import type { UserResult } from '@/types/api';
 
@@ -189,6 +190,24 @@ export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
   // that position and (on M/B plies) marks the moved piece. At rest the board
   // shows result_fen, as before.
   const [hoverPly, setHoverPly] = useState<number | null>(null);
+
+  // Localized in-flight state for tier-1 analyze button (D-118-11 — only the
+  // clicked game shows "Analyzing…", not a global spinner across all cards).
+  const [isInFlight, setIsInFlight] = useState(false);
+
+  // Guest check for analyze affordance gating (D-118-13).
+  const { data: profile } = useUserProfile();
+  const isGuest = profile?.is_guest ?? false;
+  const isAnalyzed = game.analysis_state === 'analyzed';
+
+  // Clear local in-flight state when the games list refetches and the game flips
+  // to analyzed — prevents the card staying stuck in "Analyzing…" after the eval
+  // completes and the query refreshes (D-118-11: localized in-flight state).
+  useEffect(() => {
+    if (isAnalyzed && isInFlight) {
+      setIsInFlight(false);
+    }
+  }, [isAnalyzed, isInFlight]);
 
   // Clicked-flaw focus pulse (Flaws subtab). Seeded from the prop at mount (the
   // card only mounts once the game has loaded). It is an attention cue, not a
@@ -533,7 +552,13 @@ export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
         )}
       </>
     ) : (
-      <NoAnalysisState gameId={game.game_id} />
+      <NoAnalysisState
+        gameId={game.game_id}
+        isGuest={isGuest}
+        isAnalyzed={isAnalyzed}
+        isInFlight={isInFlight}
+        onInFlightChange={setIsInFlight}
+      />
     );
 
   return (
@@ -651,7 +676,13 @@ export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
                 heightClass="h-[116px]"
               />
             ) : (
-              <NoAnalysisState gameId={game.game_id} />
+              <NoAnalysisState
+                gameId={game.game_id}
+                isGuest={isGuest}
+                isAnalyzed={isAnalyzed}
+                isInFlight={isInFlight}
+                onInFlightChange={setIsInFlight}
+              />
             )}
           </div>
         )}

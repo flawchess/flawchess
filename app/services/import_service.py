@@ -535,6 +535,11 @@ async def _complete_import_job(job: JobState, job_id: str) -> None:
         )
         sentry_sdk.capture_exception(exc)
 
+    # NOTE: newly-imported games (full_evals_completed_at IS NULL) are picked up by the
+    # tier-3 idle drain, which prioritizes recently-active users — so a just-imported
+    # (hence active) user's games are analyzed first without any explicit enqueue. The
+    # tier-2 auto-enqueue that used to fire here was removed in Phase 118.
+
 
 async def run_import(job_id: str) -> None:
     """Background import orchestrator — launched via asyncio.create_task.

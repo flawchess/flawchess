@@ -40,17 +40,19 @@
     - [x] 116-01-PLAN.md — Schema + engine API: full_evals_completed_at column, dedup index, verified backfill migration, evaluate_nodes() 1M-node call (EVAL-02, EVAL-05, EVAL-03)
     - [x] 116-02-PLAN.md — run_full_eval_drain coroutine: all-ply collector, ply≤20 dedup, preserve/overwrite write, completion marker, yield gate, lifespan wiring (EVAL-01, EVAL-03, EVAL-05, QUEUE-07)
     - [x] 116-03-PLAN.md — QUEUE-07 memory accounting: measure per-worker RSS at 1M nodes, document 4g budget, correct stale pool-size comments, gate pool→8 (QUEUE-07)
-- [ ] **Phase 117: Priority Queue + Flaw Integration** - Tiered priority queue replacing LIFO pick + round-robin fairness + tier-1 fan-out + idle drain + lease/report contract + PV capture + flaw flow-through + guest exclusion
-  - **Plans:** 3 plans — EXECUTED + verified (14/14 must-haves; status `human_needed` = 2 prod-soak items only). Not yet deployed/merged to main.
+- [x] **Phase 117: Priority Queue + Flaw Integration** - Tiered priority queue replacing LIFO pick + round-robin fairness + tier-1 fan-out + idle drain + lease/report contract + PV capture + flaw flow-through + guest exclusion
+  - **Plans:** 3 plans — EXECUTED + verified (14/14 must-haves). DEPLOYED to prod 2026-06-14 via release #190 (`e97bcf54`).
   - Plans:
     - [x] 117-01-PLAN.md — Migration + schema: best_move/pv columns, lichess_evals_at + full_pv_completed_at, eval_jobs queue/lease table, D-117-10 backfill (EVAL-04, EVAL-06, QUEUE-01, QUEUE-06)
     - [x] 117-02-PLAN.md — Tiered SKIP-LOCKED queue service: round-robin + TC-weighted pick, lease/report, tier-3 derived, guest exclusion, superuser tier-1 trigger (QUEUE-01/02/03/05/06/08)
     - [x] 117-03-PLAN.md — Drain integration: evaluate_nodes_with_pv, best_move threading + WR-02 repoint to lichess_evals_at, classify+oracle hook, queue-lease pick, tier-1 fan-out (EVAL-04, EVAL-06, QUEUE-03)
-- [ ] **Phase 117.1: Flaw-Eval Convention Fix (INSERTED, SEED-044)** - HIGH-priority off-by-one: engine drain stores `eval_cp` pre-move, classifier assumes post-move → wrong flaw stats for all chess.com (engine-evaluated) games. Standardize on post-move storage everywhere + dedup one-ply-shift rework + clean-slate re-eval
-  - **Plans:** 2 plans — EXECUTED + full local gate green (backend 2591 pass, frontend 905 pass)
+- [x] **Phase 117.1: Flaw-Eval Convention Fix (INSERTED, SEED-044)** - HIGH-priority off-by-one: engine drain stores `eval_cp` pre-move, classifier assumes post-move → wrong flaw stats for all chess.com (engine-evaluated) games. Standardize on post-move storage everywhere + dedup one-ply-shift rework + clean-slate re-eval
+  - **Plans:** 2 plans — EXECUTED + full local gate green. DEPLOYED to prod 2026-06-14 via release #190 (`e97bcf54`).
   - Plans:
     - [x] 117.1-01-PLAN.md — Post-move write convention (`_post_move_eval` single shift site) + terminal eval donor + dedup one-ply self-join + classifier comment cleanup + drain/regression tests (EVALFIX-01/02/03/05)
     - [x] 117.1-02-PLAN.md — Clean-slate data migration: NULL engine eval/best_move/pv, clear markers, delete engine `game_flaws`, TRUNCATE `eval_jobs`; preserve all lichess data; no-op downgrade + migration test (EVALFIX-04/05)
+- [x] **Phase 117.2: Wipe Eval-Only Engine Residue (INSERTED, SEED-044 follow-up)** - Data-only migration: NULLs `eval_cp`/`eval_mate`/`best_move`/`pv` for 3,497 engine games (3 users) carrying dense evals from a pre-Phase-117 eval-only pass with no `best_move`/flaw classification/`full_evals_completed_at` marker. They showed in the Library as analyzed-with-no-flaws (≥90%-coverage "analyzed" gate); the wipe drops them from the analyzed set until the tier-3 drain re-materializes them properly. Gated on `lichess_evals_at IS NULL` — lichess never touched.
+  - **Plans:** 1 data migration (no PLAN.md; committed follow-up) — DEPLOYED to prod 2026-06-14 via release #191 (`8359935b`). Verified: residue 3497→0; lichess_total 39876 unchanged, lichess_flawed_no_marker 9655 unchanged (guards held).
 - [ ] **Phase 118: Demand UX + Auto-Enqueue** - Automatic window enqueue on import/activity + explicit "analyze more" affordance + coverage indicators + in-flight status
 
 <details>
@@ -424,6 +426,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
   5. Regression fixtures (engine games 1420780, 1073118; lichess game 640092) all produce coherent mistake/blunder detection through the unified post-move path; flaw-PV coverage is re-verified after re-eval (the off-by-one is the suspected cause of the ~32% coverage TODO)
 
 **Plans**: 2 plans
+
 - [ ] 117.1-01-PLAN.md — Post-move write convention + terminal eval + dedup one-ply shift; classifier comment cleanup; drain/dedup tests + 3 regression fixtures (wave 1)
 - [ ] 117.1-02-PLAN.md — Clean-slate data migration (NULL engine eval/flaw data, truncate eval_jobs, preserve lichess) + migration test (wave 1)
 
@@ -440,7 +443,19 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
   4. A user can see whether their games are currently queued or being analyzed (in-flight status) without refreshing the page blindly
   5. Guest users see account promotion presented as the unlock for full-game analysis (QUEUE-08's UX face) instead of analyze affordances that would silently do nothing
 
-**Plans**: TBD
+**Plans**: 3 plans
+**Wave 1**
+
+- [x] 118-01-PLAN.md — Backend foundation: enqueue_tier2_window + coverage/in-flight repo counts (is_analyzed fix) + EvalCoverageResponse extension + ix_eval_jobs_user_active migration + tier-3 ORDER BY refinement + the two auto-enqueue triggers
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 118-02-PLAN.md — API surface: POST /imports/eval/tier1/{game_id}, POST /imports/eval/tier2 (disabled-until-drained gate), extended GET /imports/eval-coverage
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 118-03-PLAN.md — Frontend: useEvalCoverage + useEnqueueGame mutations, real "N of M analyzed" coverage copy + CTA, per-game/bulk analyze affordances, in-flight states, guest promotion across the Library flaw surfaces
+
 **UI hint**: yes
 
 ## Progress
@@ -477,9 +492,10 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 114. Benchmark Flaw-Delta Zone Computation | 1/1 | Complete | 2026-06-10 |
 | 114.1. Replace move_count with exact ply_count (INSERTED) | 2/2 | Complete | 2026-06-10 |
 | 115. You-vs-Opponent Comparison API + Bullet-Grid UI | 2/2 | Complete | 2026-06-11 |
-| **116. All-Ply Engine Core** | **0/TBD** | **Not started** | **-** |
-| **117. Priority Queue + Flaw Integration** | **0/TBD** | **Not started** | **-** |
-| **117.1. Flaw-Eval Convention Fix (INSERTED, SEED-044)** | **2/2** | **Executed (local gate green; pending deploy)** | **-** |
+| 116. All-Ply Engine Core | 3/3 | Complete (deployed #190) | 2026-06-14 |
+| 117. Priority Queue + Flaw Integration | 3/3 | Complete (deployed #190) | 2026-06-14 |
+| 117.1. Flaw-Eval Convention Fix (INSERTED, SEED-044) | 2/2 | Complete (deployed #190) | 2026-06-14 |
+| 117.2. Wipe Eval-Only Engine Residue (INSERTED, SEED-044) | 1/1 | Complete (deployed #191) | 2026-06-14 |
 | **118. Demand UX + Auto-Enqueue** | **0/TBD** | **Not started** | **-** |
 
 ## Backlog

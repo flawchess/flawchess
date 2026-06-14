@@ -2,11 +2,18 @@
 
 Three-tier pick:
   Tier 1 (TIER_EXPLICIT)      — explicit user request
-  Tier 2 (TIER_AUTO_WINDOW)   — automatic recency window
+  Tier 2 (TIER_AUTO_WINDOW)   — automatic recency window (no active enqueue source
+                                as of Phase 118 — see note below; lane retained)
   Tier 3 (TIER_IDLE_BACKLOG)  — idle backlog (derived pick, no eval_jobs row)
 
 Tier-1 and tier-2 use SELECT FOR UPDATE OF … SKIP LOCKED against the eval_jobs
 table for a lock-safe, serialized claim contract (QUEUE-06 / SEED-012 D-8).
+
+Phase 118 removed the tier-2 auto-enqueue (`enqueue_tier2_window`): the tier-3 idle
+drain already prioritizes recently-active users (last_activity DESC) and covers the
+whole backlog, so an explicit auto-window added no scheduling value. The tier-2 lane
+(constant, generic claim handling, eval_jobs.tier column) is intentionally retained
+for a future per-user "analyze my games" vs "help drain for everybody" mode.
 
 Tier-3 is a *derived* pick directly over games WHERE full_evals_completed_at IS
 NULL AND NOT guest — no rows are pre-populated in eval_jobs for the backlog.
@@ -37,6 +44,7 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import async_session_maker
 from app.models.eval_jobs import EvalJob, TIER_EXPLICIT, TIER_AUTO_WINDOW, TIER_IDLE_BACKLOG  # noqa: F401 — re-export constants for callers
 from app.models.game import Game
@@ -205,6 +213,9 @@ async def _claim_tier3_derived(
             User.is_guest == False,  # noqa: E712 — SQLAlchemy requires == not is
         )
         .order_by(
+            # D-118-04: active users first (users.last_activity DESC NULLS LAST).
+            # User join already present at line above — no new join needed.
+            User.last_activity.desc().nullslast(),
             sa.case(
                 (Game.time_control_bucket == "classical", 0),
                 (Game.time_control_bucket == "rapid", 1),
@@ -213,6 +224,10 @@ async def _claim_tier3_derived(
                 else_=4,
             ).asc(),
             Game.played_at.desc().nullslast(),
+            # D-118-04: games needing full eval (lichess_evals_at IS NULL) before
+            # PV-backfill-only games (lichess_evals_at IS NOT NULL). False < True
+            # in ascending order, so NULL-games (False) come first.
+            Game.lichess_evals_at.isnot(None).asc(),
         )
         .limit(1)
     )
@@ -260,7 +275,14 @@ async def claim_eval_job(
             job_id=job_id,
         )
 
-    # No tier-1/2 row — fall through to tier-3 derived pick.
+    # No tier-1/2 row — fall through to tier-3 derived pick (idle backlog),
+    # unless automatic eval is disabled via EVAL_AUTO_DRAIN_ENABLED (e.g. dev, to
+    # avoid pinning every local core on the hundreds-of-thousands-game backlog).
+    # Tier-1 explicit jobs above are never gated; tier-2 has no enqueue source
+    # (Phase 118) so only the tier-3 idle drain below is gated by this flag.
+    if not settings.EVAL_AUTO_DRAIN_ENABLED:
+        return None
+
     async with async_session_maker() as session:
         derived = await _claim_tier3_derived(session)
         # No write needed for tier-3; session auto-closes.

@@ -2,30 +2,30 @@
 gsd_state_version: 1.0
 milestone: v1.26
 milestone_name: Full-Game Eval Pipeline
-status: executed
-last_updated: "2026-06-13T10:20:00.000Z"
-last_activity: 2026-06-13 -- Phase 117 executed + verified (14/14; human-UAT deferred); ready to squash-merge to main
+status: verifying
+last_updated: "2026-06-14T08:43:29.121Z"
+last_activity: 2026-06-14 -- Phase 118 execution started
 progress:
-  total_phases: 7
-  completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
-  percent: 29
+  total_phases: 8
+  completed_phases: 4
+  total_plans: 11
+  completed_plans: 11
+  percent: 50
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 117 (priority-queue-flaw-integration) — MERGED TO MAIN, ready to deploy
-Plan: 3 of 3 executed
-Status: Squash-merged to main as `112af95a` (feat(117): priority queue + flaw integration); phase branch deleted; main is 5 commits ahead of origin/main (UNPUSHED — deploy via bin/deploy.sh / /deploy promotes main → production). Verified 14/14 must-haves, secured 13/13 threats (ASVS L1), code-review findings fixed. Gates green: ruff + ty clean, full SERIAL suite 2586 passed/10 skipped, frontend untouched.
-DEPLOY-NEXT: run /deploy (or bin/deploy.sh) to ship 116+117 to prod. Migration 20260613_120000_phase_117_queue_pv auto-runs on container start (4 nullable cols + eval_jobs + ~598k-row lichess_evals_at backfill).
-PROD-SOAK (2 deferred human-UAT items, check after deploy): (1) tier-1 ~10s wall-clock fan-out on the live pool (QUEUE-03); (2) confirm _signal_flaw_completion cache stub logs cleanly (D-117-11; real wiring is Phase 118).
+Phase: 118 (demand-ux-auto-enqueue) — EXECUTING
+Plan: 3 of 3
+Status: Phase complete — ready for verification
+NEXT: Phase 118 (Demand UX + Auto-Enqueue) — only remaining v1.26 phase; discussion captured (118-CONTEXT.md + 118-DISCUSSION-LOG.md, parallel session 2026-06-14), not yet planned/executed.
+PROD-SOAK (deferred items, check during 118 / over coming days): (1) tier-1 ~10s wall-clock fan-out on the live pool (QUEUE-03); (2) confirm _signal_flaw_completion cache stub logs cleanly (D-117-11; real wiring is Phase 118); (3) re-verify the ~32% flaw-PV coverage TODO once the residue re-eval catches up (multi-day background drain; see 117.1-POST-DEPLOY.md). No auto-enqueue yet (Phase 118), so user 99's residue re-eval was intentionally NOT prioritized.
 Security: SECURED — 13/13 threats closed (threats_open: 0), ASVS L1 (117-SECURITY.md).
-Last activity: 2026-06-13 -- Phase 117 squash-merged to main (112af95a); ready to deploy
+Last activity: 2026-06-14 -- Phase 118 execution started
 
-Progress: [██░░░░░░░░] 29% (2 of 7 phases executed)
+Progress: [████████░░] 80% (4 of 5 phases deployed; Phase 118 remaining)
 
 ## Project Reference
 
@@ -348,6 +348,8 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 | Phase 117-priority-queue-flaw-integration P01 | 12m | 3 tasks | 6 files |
 | Phase 117-priority-queue-flaw-integration P02 | 9 | - tasks | - files |
 | Phase 117-priority-queue-flaw-integration P03 | 40 | 3 tasks | 7 files |
+| Phase 118 P01 | 14 | - tasks | - files |
+| Phase 118-demand-ux-auto-enqueue P02 | 9 | 2 tasks | 5 files |
 
 ## Decisions
 

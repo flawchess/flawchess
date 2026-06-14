@@ -46,12 +46,17 @@ function buildLibraryParams(
  *
  * Query key: ['library-games', params, offset, limit]
  * Both offset and limit are part of the key so page changes trigger a new fetch.
+ *
+ * @param refetchIntervalMs - when > 0, re-polls at this interval so per-game
+ *   analysis_state transitions (no_engine_analysis → analyzed) are picked up
+ *   automatically without a page reload. Pass 0 or omit when idle.
  */
 export function useLibraryGames(
   filters: FilterState,
   flawFilter: FlawFilterState,
   offset: number,
   limit: number,
+  refetchIntervalMs: number = 0,
 ) {
   // Bug fix: the default flaw filter (severity = blunder+mistake, no tags) used
   // to be sent to GET /library/games, where the backend's severity EXISTS
@@ -70,6 +75,7 @@ export function useLibraryGames(
     queryFn: () => libraryApi.getGames({ ...params, offset, limit }),
     staleTime: LIBRARY_STALE_TIME,
     refetchOnWindowFocus: false,
+    refetchInterval: refetchIntervalMs > 0 ? refetchIntervalMs : false,
   });
 }
 

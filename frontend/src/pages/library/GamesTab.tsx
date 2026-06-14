@@ -1,4 +1,5 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { SlidersHorizontal, Tags, X } from 'lucide-react';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
@@ -24,6 +25,7 @@ import {
 } from '@/hooks/useFlawFilterStore';
 import { useLibraryGames } from '@/hooks/useLibrary';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { useEvalCoverage, EVAL_COVERAGE_POLL_INTERVAL_MS } from '@/hooks/useEvalCoverage';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
 
@@ -172,13 +174,48 @@ export function GamesTab() {
   }, [pendingFlawFilter, setFlawFilter]);
 
   // ── Data queries ─────────────────────────────────────────────────────────────
+
+  // Poll eval-coverage so the badge and games list update when analysis completes.
+  // trackFullAnalysis: keep polling while the background drain works through the
+  // backlog so the "N of M analyzed" badge ticks up live (no tier-2 in-flight rows
+  // exist for background work — Phase 118 removed the auto-enqueue).
+  const { inFlightCount, analyzedCount, totalCount, isError: isCoverageError } = useEvalCoverage({
+    trackFullAnalysis: true,
+  });
+
   const {
     data: gamesData,
     isLoading: gamesLoading,
     isError: gamesError,
-  } = useLibraryGames(appliedFilters, flawFilter, offset, PAGE_SIZE);
+  } = useLibraryGames(
+    appliedFilters,
+    flawFilter,
+    offset,
+    PAGE_SIZE,
+    // Poll the games list while analysis is in-flight so cards flip from
+    // "Analyzing…" to the analyzed view within a few seconds, no page reload.
+    inFlightCount > 0 ? EVAL_COVERAGE_POLL_INTERVAL_MS : 0,
+  );
+
+  // Bug fix (118 UAT): the games-list poll above is gated on inFlightCount > 0,
+  // so it stops the instant the last eval job completes. But that final
+  // completion can land *after* the previous poll, leaving a card stranded on
+  // "Analyzing…" forever (the per-game pill only clears once analysis_state
+  // flips to 'analyzed', which needs one more refetch). Force exactly one final
+  // refetch on the >0 → 0 transition. eval-coverage self-polls to observe the
+  // transition, so we always see it even though library-games has stopped.
+  const queryClient = useQueryClient();
+  const prevInFlightRef = useRef(inFlightCount);
+  useEffect(() => {
+    const prev = prevInFlightRef.current;
+    prevInFlightRef.current = inFlightCount;
+    if (prev > 0 && inFlightCount === 0) {
+      void queryClient.invalidateQueries({ queryKey: ['library-games'] });
+    }
+  }, [inFlightCount, queryClient]);
 
   const { data: profile } = useUserProfile();
+  const isGuest = profile?.is_guest ?? false;
   const totalImported =
     profile != null ? profile.chess_com_game_count + profile.lichess_game_count : 0;
 
@@ -271,6 +308,11 @@ export function GamesTab() {
           offset={offset}
           limit={PAGE_SIZE}
           onPageChange={setOffset}
+          isGuest={isGuest}
+          analyzedN={analyzedCount}
+          totalN={totalCount}
+          inFlightCount={inFlightCount}
+          isCoverageError={isCoverageError}
         />
       )}
     </div>

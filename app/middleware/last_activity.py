@@ -87,6 +87,11 @@ class LastActivityMiddleware:
                 )
                 await session.commit()
             _last_updated[user_id] = now
+            # NOTE: last_activity is the tier-3 idle-drain priority key — claim_eval_job
+            # orders the backlog by users.last_activity DESC, so keeping it fresh here is
+            # what nudges an active user's games to the front of the background eval queue.
+            # The tier-2 auto-enqueue that used to fire here was removed in Phase 118
+            # (tier-3 ordering already covers "active users first").
         except Exception:
             # Never let activity tracking break a request
             logger.debug("Failed to update last_activity for user %s", user_id, exc_info=True)

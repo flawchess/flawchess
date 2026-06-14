@@ -12,10 +12,13 @@ import { useFilterStore } from '@/hooks/useFilterStore';
 import { useGlobalStats, useRatingHistory } from '@/hooks/useStats';
 import { useLibraryFlawStats } from '@/hooks/useLibrary';
 import { DEFAULT_FLAW_FILTER } from '@/hooks/useFlawFilterStore';
-import { FlawStatsPanel, FlawDenominatorPill } from '@/components/library/FlawStatsPanel';
+import { FlawStatsPanel } from '@/components/library/FlawStatsPanel';
+import { EvalCoverageBadge } from '@/components/library/EvalCoverageBadge';
 import { GlobalStatsCharts } from '@/components/stats/GlobalStatsCharts';
 import { EvalCoverageHeader } from '@/components/EvalCoverageHeader';
 import { RatingChart } from '@/components/stats/RatingChart';
+import { useEvalCoverage } from '@/hooks/useEvalCoverage';
+import { useUserProfile } from '@/hooks/useUserProfile';
 import type { FilterState } from '@/components/filters/FilterPanel';
 
 export function GlobalStatsPage() {
@@ -47,6 +50,11 @@ export function GlobalStatsPage() {
     isLoading: flawStatsLoading,
     isError: flawStatsError,
   } = useLibraryFlawStats(filters, DEFAULT_FLAW_FILTER);
+
+  // ── Eval coverage — drives EvalCoverageBadge in-flight badge + CTA ─────────
+  const { inFlightCount, isError: isCoverageError } = useEvalCoverage();
+  const { data: profile } = useUserProfile();
+  const isGuest = profile?.is_guest ?? false;
 
   // ── Mobile collapsible state ───────────────────────────────────────────────
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
@@ -106,12 +114,15 @@ export function GlobalStatsPage() {
     <div className="space-y-8">
       {/* ── Flaw Statistics (top of page, UAT) ── */}
       <section data-testid="flaw-stats-section">
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-foreground mt-2">Flaw Stats</h2>
           {flawStatsData !== undefined && (
-            <FlawDenominatorPill
+            <EvalCoverageBadge
               analyzedN={flawStatsData.analyzed_n}
               totalN={flawStatsData.total_n}
+              inFlightCount={inFlightCount}
+              isGuest={isGuest}
+              isCoverageError={isCoverageError}
             />
           )}
         </div>

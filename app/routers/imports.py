@@ -11,6 +11,7 @@ from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
+from app.models.game import Game
 from app.models.import_job import ImportJob
 from app.models.user import User
 from app.models.user_benchmark_percentile import UserBenchmarkPercentile
@@ -24,6 +25,7 @@ from app.repositories import (
 )
 from app.schemas.imports import (
     DeleteGamesResponse,
+    EnqueueTier1Response,
     EvalCoverageResponse,
     ImportRequest,
     ImportStartedResponse,
@@ -35,6 +37,7 @@ from app.services import (
     percentile_compute_registry,
     user_benchmark_percentiles_service,
 )
+from app.services.eval_queue_service import enqueue_tier1_game
 from app.users import current_active_user
 
 router = APIRouter(prefix="/imports", tags=["imports"])
@@ -264,18 +267,60 @@ async def get_eval_coverage(
 ) -> EvalCoverageResponse:
     """Return Stockfish eval coverage for the authenticated user.
 
-    Returns pending_count, total_count, and pct_complete (0-100).
-    Returns pct_complete=100 when the user has no games (avoids division-by-zero).
+    Returns pending_count, total_count, pct_complete (0-100), analyzed_count, and
+    in_flight_count. Returns pct_complete=100 when the user has no games (avoids
+    division-by-zero). D-118-12 extension: analyzed_count and in_flight_count added.
 
     Locked by D-01: dedicated endpoint, NOT extending GET /imports/active.
-    Locked by D-04: response keys are pending_count, total_count, pct_complete.
+    Locked by D-04: response keys pending_count, total_count, pct_complete unchanged.
     """
     total = await game_repository.count_games_for_user(session, user.id)
     if total == 0:
-        return EvalCoverageResponse(pending_count=0, total_count=0, pct_complete=100)
+        return EvalCoverageResponse(
+            pending_count=0, total_count=0, pct_complete=100, analyzed_count=0, in_flight_count=0
+        )
     pending = await game_repository.count_pending_evals(session, user.id)
     pct = round(100 * (total - pending) / total)
-    return EvalCoverageResponse(pending_count=pending, total_count=total, pct_complete=pct)
+    # D-118-12: sequential awaits on the same session (never asyncio.gather — CLAUDE.md)
+    analyzed = await game_repository.count_is_analyzed_games(session, user.id)
+    in_flight = await game_repository.count_in_flight_evals(session, user.id)
+    return EvalCoverageResponse(
+        pending_count=pending,
+        total_count=total,
+        pct_complete=pct,
+        analyzed_count=analyzed,
+        in_flight_count=in_flight,
+    )
+
+
+@router.post("/eval/tier1/{game_id}", response_model=EnqueueTier1Response)
+async def enqueue_tier1(
+    game_id: int,
+    user: Annotated[User, Depends(current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+) -> EnqueueTier1Response:
+    """Enqueue a single game for tier-1 (explicit-request) Stockfish eval.
+
+    IDOR guard (T-118-06, ASVS V4): returns 404 when the game does not exist OR
+    belongs to a different user. Never 403 — avoids confirming id existence to
+    unauthorised callers (library.py pattern). game_id typed int: FastAPI rejects
+    non-integers with 422 (T-118-10).
+
+    Guest users return skipped_guest (QUEUE-08 defense-in-depth — the service also
+    no-ops for guests, so the check here ensures the status label is correct even if
+    the guest guard in the service is ever relaxed).
+    """
+    # IDOR guard — verifies ownership before any service call
+    game = await session.get(Game, game_id)
+    if game is None or game.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    if user.is_guest:
+        return EnqueueTier1Response(status="skipped_guest", game_id=game_id)
+
+    inserted = await enqueue_tier1_game(game_id=game_id, user_id=user.id)
+    status = "enqueued" if inserted else "already_queued"
+    return EnqueueTier1Response(status=status, game_id=game_id)
 
 
 @router.get("/{job_id}", response_model=ImportStatusResponse)
