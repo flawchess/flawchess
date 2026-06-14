@@ -1,4 +1,5 @@
 import { Navigate, useNavigate } from 'react-router-dom';
+import { isWelcomeDismissed } from '@/lib/welcomeDismissal';
 import { Link } from 'react-router-dom';
 import * as Sentry from '@sentry/react';
 import { useQuery } from '@tanstack/react-query';
@@ -617,10 +618,14 @@ export function HomePage() {
         </div>
       );
     }
-    // New users (0 games on both platforms) land on /import for onboarding.
     // Returning users with imported games land on their games library.
+    // First-time guests (0 games, welcome not dismissed) see the Welcome explainer.
+    // Dismissed guests and non-guests with 0 games go straight to /library/import.
     const hasGames =
       (profile?.chess_com_game_count ?? 0) + (profile?.lichess_game_count ?? 0) > 0;
+    if (!hasGames && profile?.is_guest && !isWelcomeDismissed()) {
+      return <Navigate to="/welcome" replace />;
+    }
     return <Navigate to={hasGames ? '/library/games' : '/library/import'} replace />;
   }
 

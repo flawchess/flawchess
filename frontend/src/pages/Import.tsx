@@ -291,22 +291,16 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
       <EvalCoverageHeader />
       {profile?.is_guest && (
         <Alert variant="info" icon={DoorOpen} data-testid="import-guest-promo-info" className="mb-4">
-          <div>
-              <p className="font-medium">Welcome to FlawChess! If you like it here, consider{' '}
-                <button
-                  onClick={() => { logoutForPromotion(); window.location.href = '/login?tab=register'; }}
-                  className="font-medium underline underline-offset-2"
-                  data-testid="import-guest-promo-link"
-                >
-                  signing up free
-                </button>{' '}
-                for these advantages:
-              </p>
-              <ul className="mt-1 list-disc pl-4 space-y-0.5">
-                <li>Access your games from any device</li>
-                <li>Prevent losing your imported games after 30 days of inactivity</li>
-              </ul>
-          </div>
+          <p className="text-sm">
+            <button
+              onClick={() => { logoutForPromotion(); window.location.href = '/login?tab=register'; }}
+              className="font-medium underline underline-offset-2"
+              data-testid="import-guest-promo-link"
+            >
+              Sign up free
+            </button>{' '}
+            to use FlawChess on any device and unlock deep Stockfish analysis of your games.
+          </p>
         </Alert>
       )}
 
