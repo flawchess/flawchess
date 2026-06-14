@@ -28,11 +28,11 @@
 - ✅ **v1.23 LLM Endgame-Insights Statistical-Reasoning Rework** — Phases 102, 103 (shipped 2026-06-03) — see [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md)
 - ✅ **v1.24 Library Page** — Phases 104–112 (shipped 2026-06-09) — see [milestones/v1.24-ROADMAP.md](milestones/v1.24-ROADMAP.md)
 - ✅ **v1.25 Flaw-Stats Opponent Comparison** — Phases 113–115 (incl. 114.1) (shipped 2026-06-12) — see [milestones/v1.25-ROADMAP.md](milestones/v1.25-ROADMAP.md)
-- **v1.26 Full-Game Eval Pipeline** — Phases 116–118 (in progress)
+- **v1.26 Full-Game Eval Pipeline** — Phases 116–119 (in progress)
 
 ## Phases
 
-### v1.26 Full-Game Eval Pipeline (Phases 116–118)
+### v1.26 Full-Game Eval Pipeline (Phases 116–119)
 
 - [ ] **Phase 116: All-Ply Engine Core** - Search-budget upgrade + all-ply target collector + dedup + completion marker + memory bounds
   - **Plans:** 3 plans
@@ -54,6 +54,7 @@
 - [x] **Phase 117.2: Wipe Eval-Only Engine Residue (INSERTED, SEED-044 follow-up)** - Data-only migration: NULLs `eval_cp`/`eval_mate`/`best_move`/`pv` for 3,497 engine games (3 users) carrying dense evals from a pre-Phase-117 eval-only pass with no `best_move`/flaw classification/`full_evals_completed_at` marker. They showed in the Library as analyzed-with-no-flaws (≥90%-coverage "analyzed" gate); the wipe drops them from the analyzed set until the tier-3 drain re-materializes them properly. Gated on `lichess_evals_at IS NULL` — lichess never touched.
   - **Plans:** 1 data migration (no PLAN.md; committed follow-up) — DEPLOYED to prod 2026-06-14 via release #191 (`8359935b`). Verified: residue 3497→0; lichess_total 39876 unchanged, lichess_flawed_no_marker 9655 unchanged (guards held).
 - [ ] **Phase 118: Demand UX + Auto-Enqueue** - Automatic window enqueue on import/activity + explicit "analyze more" affordance + coverage indicators + in-flight status
+- [ ] **Phase 119: Eval-drain coverage (SEED-045, SEED-046)** - Bounded-retry hole-filling (don't stamp full_evals_completed_at while non-terminal/non-mate holes remain; cap at MAX_EVAL_ATTEMPTS) + recency-weighted tier-3 lottery (replace winner-take-all last_activity ordering with Efraimidis–Spirakis user-weighted sampling + PV-backfill residual tier)
 
 <details>
 <summary>✅ v1.25 Flaw-Stats Opponent Comparison (Phases 113–115, incl. 114.1) — SHIPPED 2026-06-12</summary>
@@ -458,6 +459,34 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 
 **UI hint**: yes
 
+### Phase 119: Eval-drain coverage: bounded-retry hole-filling + recency-weighted tier-3 lottery (SEED-045, SEED-046)
+
+**Goal:** A user-triggered or background "Analyze" pass means every position of a game is actually evaluated (no silent mid-game eval holes), the idle drain shares engine time across users by recency so a returning user sees their coverage badge tick briskly within minutes, the drain stops wasting full engine passes re-analyzing lichess %eval games, and the coverage badge gives an honest progress signal (pulsing CPU icon) instead of a structurally-blind in-flight count.
+**Requirements**: SEED-045 (bounded-retry hole-filling), SEED-046 (recency-weighted tier-3 lottery + leak fix), UX badge-pulse + in_flight_count removal + dead-index drop
+**Depends on:** Phase 118
+**Plans:** 3/3 plans complete
+**Scope (from seeds):**
+
+  - **SEED-045 — bounded-retry hole-filling:** `eval_drain.py::_mark_full_evals_completed` stamps `full_evals_completed_at` unconditionally (D-116-07), so a game can be marked "fully analyzed" with genuine mid-game eval holes. Stop stamping while non-terminal, non-mate holes remain; re-pick up to `MAX_EVAL_ATTEMPTS` (~3) via a new `games.full_eval_attempts` SmallInteger; after the cap, stamp anyway + one aggregated Sentry event. Hole = `eval_cp IS NULL AND eval_mate IS NULL AND ply is not the terminal game-over ply`. Backfill decision for already-stamped-with-holes games (extend `scripts/backfill_eval.py` or a re-enqueue sweep).
+  - **SEED-046 — recency-weighted tier-3 lottery:** replace `_claim_tier3_derived`'s winner-take-all `last_activity DESC` top key with an Efraimidis–Spirakis user-weighted lottery (`ORDER BY -ln(random()) / weight LIMIT 1` over distinct `needs_engine_full_evals` users; weight = `exp(-Δt/τ)` + floor), then pick that user's best game by the existing secondary order. PV-backfill-only games become a residual fallback tier. One partial-index migration; verify DISTINCT-users + ES pick stays sub-100ms at prod scale.
+  - **Timing caveat:** SEED-046's own trigger asks to tune τ/floor against prod `last_activity` distributions *after* Phase 118 ships. Keep τ/floor as tunable constants and include a prod-tuning task rather than hardcoding.
+  - **Additional UX requirement + in-flight-count cleanup (not seed-derived):**
+    1. **Pulse the badge CPU icon.** `EvalCoverageBadge` CPU icon (`frontend/src/components/library/EvalCoverageBadge.tsx:81`) pulses (`animate-pulse`) while `analyzedN < totalN` and goes static at 100%, signalling progress. Sibling surfaces already pulse (`EvalCoverageHeader.tsx:23`, `EvalCpuPlaceholder.tsx:22`); this badge is the only one that doesn't. **Decision locked (2026-06-14):** gate on `analyzedN < totalN`, NOT on `inFlightCount` — see cleanup below.
+    2. **Remove the `in_flight_count` plumbing end-to-end.** Verified in code: Phase 118 removed tier-2 auto-enqueue, and tier-3 is a derived pick with `job_id=None` (no `eval_jobs` row, `eval_queue_service.py:18-20,299`). So `count_in_flight_evals` (= `eval_jobs` pending|leased) can only ever count **tier-1 explicit** jobs — already signalled by the per-card pulsating "Analyze" button — and is structurally blind to the dominant tier-3 backlog drain. It was therefore never an honest "progress" indicator for the common case. Remove: the badge's "· K in progress" text + `hasInFlight` gating of the guest sign-up CTA (a no-op for guests, who never have in-flight jobs); `EvalCoverageResponse.in_flight_count` (`app/schemas/imports.py:71`) + its computation in `GET /imports/eval-coverage` (`app/routers/imports.py`); `game_repository.count_in_flight_evals`; `useEvalCoverage`'s `inFlightCount`; and the related tests.
+    3. **Drop the now-dead `ix_eval_jobs_user_active` partial index** (Phase 118-added solely to make `count_in_flight_evals` cheap; claim paths use `uq_eval_jobs_game_active`). Confirm no other reader, then a drop migration.
+    Per-card "Analyze" pulse remains the precise per-game in-flight signal. **Scope note:** this turns the FE one-liner into a small backend + FE + migration cleanup — still "small," but no longer trivial.
+
+Plans:
+
+**Wave 1** *(119-01 and 119-03 run in parallel — no file overlap)*
+
+- [x] 119-01-PLAN.md — SEED-045 bounded-retry hole-filling: hole-aware completion gate + MAX_EVAL_ATTEMPTS re-pick + aggregated Sentry; phase-wide migration (games.full_eval_attempts + SEED-046 partial index + drop ix_eval_jobs_user_active); re-enqueue sweep for already-stamped-with-holes games
+- [x] 119-03-PLAN.md — UX + cleanup: pulse the EvalCoverageBadge CPU icon on analyzedN<totalN; remove in_flight_count end-to-end (schema/router/repo/hook/badge/callers/tests); repoint tier-1 completion refresh to analyzedCount; the ix_eval_jobs_user_active drop (in 119-01) loses its reader here
+
+**Wave 2** *(blocked on 119-01 — shares eval_drain.py and consumes the 119-01 migration's partial index)*
+
+- [x] 119-02-PLAN.md — SEED-046 recency-weighted tier-3 lottery: rewrite _claim_tier3_derived as an Efraimidis–Spirakis user lottery over needs-engine games (τ/floor tunable constants) + PV-backfill residual tier + the lichess-%eval leak fix (replace WHERE clause, drop dead D-118-04 tiebreaker) + is_analyzed→is_lichess_eval_game rename + EXPLAIN perf verification
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -496,7 +525,8 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 117. Priority Queue + Flaw Integration | 3/3 | Complete (deployed #190) | 2026-06-14 |
 | 117.1. Flaw-Eval Convention Fix (INSERTED, SEED-044) | 2/2 | Complete (deployed #190) | 2026-06-14 |
 | 117.2. Wipe Eval-Only Engine Residue (INSERTED, SEED-044) | 1/1 | Complete (deployed #191) | 2026-06-14 |
-| **118. Demand UX + Auto-Enqueue** | **0/TBD** | **Not started** | **-** |
+| 118. Demand UX + Auto-Enqueue | 3/3 | Complete (verified; not yet deployed) | 2026-06-14 |
+| **119. Eval-drain coverage (SEED-045, SEED-046)** | **0/3** | **Planned** | **-** |
 
 ## Backlog
 

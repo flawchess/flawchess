@@ -156,14 +156,13 @@ describe('useEvalCoverage', () => {
     expect(result.current.totalCount).toBe(0);
   });
 
-  it('returns analyzedCount and inFlightCount from the response (defaulting to 0 when absent)', async () => {
+  it('returns analyzedCount from the response (defaulting to 0 when absent)', async () => {
     vi.mocked(apiClient.get).mockResolvedValue({
       data: {
         pending_count: 2,
         total_count: 10,
         pct_complete: 80,
         analyzed_count: 7,
-        in_flight_count: 3,
       },
     });
 
@@ -175,10 +174,11 @@ describe('useEvalCoverage', () => {
     });
 
     expect(result.current.analyzedCount).toBe(7);
-    expect(result.current.inFlightCount).toBe(3);
+    // inFlightCount is removed — verify it is no longer in the return value
+    expect('inFlightCount' in result.current).toBe(false);
   });
 
-  it('defaults analyzedCount and inFlightCount to 0 when fields are absent', async () => {
+  it('defaults analyzedCount to 0 when field is absent', async () => {
     vi.mocked(apiClient.get).mockResolvedValue({
       data: { pending_count: 0, total_count: 10, pct_complete: 100 },
     });
@@ -187,69 +187,6 @@ describe('useEvalCoverage', () => {
 
     // Before fetch resolves: defaults
     expect(result.current.analyzedCount).toBe(0);
-    expect(result.current.inFlightCount).toBe(0);
-  });
-
-  it('keeps polling when pct_complete=100 but in_flight_count > 0 (D-118-12: analysis in-flight)', async () => {
-    vi.mocked(apiClient.get).mockResolvedValue({
-      data: {
-        pending_count: 0,
-        total_count: 10,
-        pct_complete: 100,
-        analyzed_count: 5,
-        in_flight_count: 3,
-      },
-    });
-
-    renderHook(() => useEvalCoverage(), { wrapper: makeWrapper() });
-
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    const callCountAfterFirst = vi.mocked(apiClient.get).mock.calls.length;
-    expect(callCountAfterFirst).toBe(1);
-
-    // Advance 3s — should still poll because in_flight_count > 0
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(3_000);
-    });
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    expect(vi.mocked(apiClient.get).mock.calls.length).toBeGreaterThanOrEqual(2);
-  });
-
-  it('stops polling when pct_complete=100 AND in_flight_count=0 AND total_count>0', async () => {
-    vi.mocked(apiClient.get).mockResolvedValue({
-      data: {
-        pending_count: 0,
-        total_count: 10,
-        pct_complete: 100,
-        analyzed_count: 10,
-        in_flight_count: 0,
-      },
-    });
-
-    renderHook(() => useEvalCoverage(), { wrapper: makeWrapper() });
-
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    const callCountAfterFirst = vi.mocked(apiClient.get).mock.calls.length;
-    expect(callCountAfterFirst).toBe(1);
-
-    // Advance 30s — should NOT trigger more polls
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(30_000);
-    });
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    expect(vi.mocked(apiClient.get).mock.calls.length).toBe(1);
   });
 
   it('does NOT call window.location.reload after a pending→done transition (Phase 96 Constraint 4)', async () => {
@@ -280,7 +217,7 @@ describe('useEvalCoverage', () => {
   // ── trackFullAnalysis: live background-progress counter ────────────────────
 
   it('trackFullAnalysis: keeps polling while analyzed_count < total_count and rising', async () => {
-    // pct=100, in_flight=0 (default would stop), but full analysis is incomplete and
+    // pct=100 (default would stop), but full analysis is incomplete and
     // the background drain keeps analyzing more games each poll → keep polling.
     let analyzed = 5;
     vi.mocked(apiClient.get).mockImplementation(() => {
@@ -289,7 +226,6 @@ describe('useEvalCoverage', () => {
         total_count: 10,
         pct_complete: 100,
         analyzed_count: analyzed,
-        in_flight_count: 0,
       };
       analyzed += 1; // background drain makes progress every poll
       return Promise.resolve({ data });
@@ -322,7 +258,6 @@ describe('useEvalCoverage', () => {
         total_count: 10,
         pct_complete: 100,
         analyzed_count: 5,
-        in_flight_count: 0,
       },
     });
 
@@ -361,7 +296,6 @@ describe('useEvalCoverage', () => {
         total_count: 10,
         pct_complete: 100,
         analyzed_count: 10,
-        in_flight_count: 0,
       },
     });
 

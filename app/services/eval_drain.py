@@ -86,6 +86,22 @@ _RETRIABLE_DB_OUTAGE_ERRORS: tuple[type[BaseException], ...] = (
 _DRAIN_BATCH_SIZE = 10  # D-11 (LIFO id-DESC pick size)
 _DRAIN_IDLE_SLEEP_SECONDS = 5  # D-13 (poll interval when queue empty)
 
+# Phase 119 WR-04: chunk the resweep_holed_games re-arm UPDATE so the documented
+# unbounded "sweep all" prod path can't re-arm the entire holed backlog (~558k
+# games) in one IN(...) statement/transaction — that would materialize the full
+# id list as bind params (risking the parameter limit) and flip every game back
+# into the tier-3 candidate pool simultaneously. Each chunk commits independently;
+# the small-N path (count <= this size) is a single statement + single commit,
+# behaviorally identical to the pre-batching code.
+_RESWEEP_UPDATE_CHUNK_SIZE = 1000
+
+# Phase 119 SEED-045: max drain ticks that may leave a non-terminal hole before
+# the game is stamped complete anyway (with one aggregated Sentry warning).
+# D-116-07 intent: a deterministically-unevaluable ply cannot loop forever.
+# Pool outages (all-fail circuit breaker WR-05) do NOT consume attempts, so a
+# transient outage cannot exhaust the budget and silently drop coverage.
+MAX_EVAL_ATTEMPTS: int = 3
+
 # Phase 116 EVAL-03 / D-116-02: dedup only in the opening region.
 # WR-08: aliased from the model constant (single source of truth) so this
 # boundary can never drift from the ply <= N predicate of the
@@ -346,7 +362,7 @@ async def _apply_full_eval_results(
     targets: Sequence[_FullPlyEvalTarget],
     dedup_map: dict[int, tuple[int | None, int | None, str | None]],
     engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
-    is_analyzed: bool,
+    is_lichess_eval_game: bool,
 ) -> int:
     """Write POST-MOVE evals + best_move to GamePosition rows (WR-04; SEED-044).
 
@@ -360,13 +376,14 @@ async def _apply_full_eval_results(
     +1 shift site. best_move stays decision-ply-keyed (best move FROM row k's
     position), so it is NOT shifted.
 
-    is_analyzed gate (lichess_evals_at IS NOT NULL):
-    - is_analyzed=True: lichess %evals are already post-move and authoritative —
-      NEVER shifted or overwritten. Only best_move (engine-supplied; lichess lacks
-      it) is written, at the flaw-adjacent plies that reached the write phase
-      (WR-01 / D-117-13). SEED-044: un-annotated lichess plies are left NULL rather
-      than filled with a pre-push engine eval (which mixed conventions in-game).
-    - is_analyzed=False: engine games get the full post-move eval written.
+    is_lichess_eval_game gate (lichess_evals_at IS NOT NULL, D-117-07):
+    - is_lichess_eval_game=True: lichess %evals are already post-move and
+      authoritative — NEVER shifted or overwritten. Only best_move
+      (engine-supplied; lichess lacks it) is written, at the flaw-adjacent plies
+      that reached the write phase (WR-01 / D-117-13). SEED-044: un-annotated
+      lichess plies are left NULL rather than filled with a pre-push engine eval
+      (which mixed conventions in-game).
+    - is_lichess_eval_game=False: engine games get the full post-move eval written.
 
     Returns the number of failed (NULL-hole) engine-game plies. Sentry reporting
     is the caller's responsibility — ONE aggregated event per game, never per ply
@@ -396,7 +413,7 @@ async def _apply_full_eval_results(
         ply = target.ply
         best_move = best_move_by_ply.get(ply)
 
-        if is_analyzed:
+        if is_lichess_eval_game:
             # Preserve lichess %evals (post-move, authoritative); write best_move only.
             if best_move is not None:
                 await session.execute(
@@ -437,10 +454,12 @@ async def _apply_full_eval_results(
 
 
 async def _mark_full_evals_completed(session: AsyncSession, game_id: int) -> None:
-    """Mark one game as fully analyzed (EVAL-05, D-116-07).
+    """Mark one game as fully analyzed (EVAL-05, Phase 119 SEED-045).
 
-    Sets full_evals_completed_at unconditionally — even when some plies are NULL
-    holes (engine failure). One UPDATE per game (single tick), not batch.
+    Called only when no non-terminal holes remain (failed_ply_count == 0) OR when
+    full_eval_attempts reaches MAX_EVAL_ATTEMPTS (cap path). D-116-07 invariant
+    preserved: a deterministically-unevaluable ply cannot loop forever — the cap
+    stamps anyway after MAX_EVAL_ATTEMPTS ticks. One UPDATE per game (single tick).
     """
     now_ts = datetime.now(timezone.utc)
     games_table = Game.__table__
@@ -598,12 +617,12 @@ async def _classify_and_fill_oracle(
 
 
 async def _flaw_adjacent_plies(session: AsyncSession, game_id: int) -> set[int]:
-    """Pre-classify an is_analyzed game's flaws to find plies needing engine PV capture (D-117-13).
+    """Pre-classify a lichess-eval game's flaws to find plies needing engine PV capture (D-117-13).
 
-    Analyzed lichess games carry a lichess %eval on (nearly) every ply, so the
-    is_analyzed target filter in _full_drain_tick would otherwise drop every
-    flaw-adjacent ply before the engine gather — and lichess supplies %eval but
-    NO principal variation. The observed result (prod sanity check ~1 h after the
+    Lichess-eval games (is_lichess_eval_game=True) carry a lichess %eval on
+    (nearly) every ply, so the is_lichess_eval_game target filter in
+    _full_drain_tick would otherwise drop every flaw-adjacent ply before the
+    engine gather — and lichess supplies %eval but NO principal variation. The observed result (prod sanity check ~1 h after the
     Phase 117 deploy) was 0% flaw-PV coverage for analyzed lichess games: every
     flaw's refutation line (the SEED-039 input) was missing.
 
@@ -1290,19 +1309,24 @@ async def _full_drain_tick() -> bool:
     game_id: int = claimed.game_id
     user_id: int = claimed.user_id
     tier: int = claimed.tier
-    is_analyzed: bool = claimed.is_analyzed
+    is_lichess_eval_game: bool = claimed.is_lichess_eval_game
     job_id: int | None = claimed.job_id
 
     # Step 2: load PGN + game_positions rows for this game.
     # Build targets via _collect_full_ply_targets; partition dedup candidates.
+    # Also load full_eval_attempts (SEED-045: threaded here to avoid an extra
+    # round-trip inside the write session).
     # Short read session, then close.
     async with async_session_maker() as load_session:
-        pgn_result = await load_session.execute(select(Game.pgn).where(Game.id == game_id))
-        pgn_text_scalar = pgn_result.scalar_one_or_none()
-        if pgn_text_scalar is None:
+        pgn_result = await load_session.execute(
+            select(Game.pgn, Game.full_eval_attempts).where(Game.id == game_id)
+        )
+        pgn_row = pgn_result.one_or_none()
+        if pgn_row is None:
             # Game deleted between claim and load — nothing to do.
             return False
-        pgn_text: str = pgn_text_scalar
+        pgn_text: str = pgn_row[0]
+        current_attempts: int = pgn_row[1]
 
         pos_result = await load_session.execute(
             select(
@@ -1319,12 +1343,13 @@ async def _full_drain_tick() -> bool:
         # eval is the eval of the post-game position. Lichess games preserve their
         # %evals (never shifted), so they need no terminal donor.
         targets = _collect_full_ply_targets(
-            game_id, pgn_text, gp_rows, include_terminal=not is_analyzed
+            game_id, pgn_text, gp_rows, include_terminal=not is_lichess_eval_game
         )
 
-        # WR-01: for is_analyzed (lichess %eval) games, plies whose row already
-        # carries a non-NULL eval are preserved at write time (D-116-04 / T-78-17).
-        # Filtering here avoids burning 1M-node calls whose results are discarded.
+        # WR-01: for is_lichess_eval_game (lichess %eval) games, plies whose row
+        # already carries a non-NULL eval are preserved at write time (D-116-04 /
+        # T-78-17). Filtering here avoids burning 1M-node calls whose results are
+        # discarded.
         #
         # D-117-13 EXCEPTION: flaw-adjacent plies (flaw_ply + 1) must still be
         # engine-evaluated to capture the refutation PV. Lichess supplies %eval but
@@ -1332,7 +1357,7 @@ async def _full_drain_tick() -> bool:
         # got 0 PV (verified in prod post-Phase-117). Pre-classify from the stored
         # %evals to find {flaw_ply + 1}, then exempt those plies from the filter.
         flaw_adjacent_plies: set[int] = set()
-        if is_analyzed:
+        if is_lichess_eval_game:
             flaw_adjacent_plies = await _flaw_adjacent_plies(load_session, game_id)
             targets = [
                 t
@@ -1403,46 +1428,95 @@ async def _full_drain_tick() -> bool:
 
     # Step 4: write session — open LATE, after gather completes.
     # All UPDATEs, classify hook, oracle counts, markers, and job report in one transaction.
+    #
+    # Phase 119 SEED-045 hole-aware completion logic:
+    #   failed_ply_count from _apply_full_eval_results = count of non-terminal engine-game
+    #   plies where BOTH eval_cp IS NULL AND eval_mate IS NULL after the tick (holes).
+    #   Mate-scored plies (eval_mate IS NOT NULL) and terminal donors are NOT counted.
+    #
+    # Decision tree (applied inside the write session so all UPDATEs commit atomically):
+    #   A. failed_ply_count == 0 → no holes: stamp both markers, classify, report job.
+    #      full_eval_attempts unchanged.
+    #   B. failed_ply_count > 0 AND current_attempts + 1 < MAX_EVAL_ATTEMPTS → under cap:
+    #      Do NOT stamp full_evals_completed_at / full_pv_completed_at. Still run classify
+    #      so partial flaws materialize (and evals that DID resolve are already written by
+    #      _apply_full_eval_results). Increment full_eval_attempts, commit, return False so
+    #      the game is re-picked next tick. Do NOT report the job complete (tier-1/2 lease
+    #      sweep re-queues it; tier-3 has no job_id so it is naturally re-derived).
+    #   C. failed_ply_count > 0 AND current_attempts + 1 >= MAX_EVAL_ATTEMPTS → cap:
+    #      Stamp complete anyway (preserves D-116-07 no-infinite-loop invariant), classify,
+    #      report job, emit ONE aggregated Sentry warning. Never emit the cap event unless
+    #      holes actually persist — this replaces the former per-tick Sentry call at the
+    #      failed_ply_count > 0 branch (which would have fired even on retried games).
     async with async_session_maker() as write_session:
         failed_ply_count = await _apply_full_eval_results(
-            write_session, targets, dedup_map, engine_result_map, is_analyzed
+            write_session, targets, dedup_map, engine_result_map, is_lichess_eval_game
         )
-        if failed_ply_count:
-            # WR-05: ONE aggregated Sentry event per game (never per ply).
-            sentry_sdk.set_context(
-                "eval", {"game_id": game_id, "failed_ply_count": failed_ply_count}
-            )
-            sentry_sdk.set_tag("source", "full_eval_drain")
-            sentry_sdk.capture_message("full-drain engine returned None tuple", level="warning")
 
         # EVAL-06 / D-117-08: classify game_flaws + fill oracle columns + write flaw PVs.
         # Runs AFTER _apply_full_eval_results so eval_cp is visible for classification.
         # Runs BEFORE the completion markers so evals + flaws commit atomically (T-117-11).
+        # Always runs — partial flaws should materialize even when holes remain.
         await _classify_and_fill_oracle(write_session, game_id, engine_result_map)
 
-        # D-116-07: mark eval-complete even with partial NULL holes (the all-fail
-        # case is intercepted by the circuit breaker above).
-        await _mark_full_evals_completed(write_session, game_id)
+        new_attempts = current_attempts + 1
+        games_table = Game.__table__
 
-        # D-117-12: mark best_move/PV-complete in the same transaction.
-        await _mark_full_pv_completed(write_session, game_id)
+        if failed_ply_count == 0:
+            # Path A: no holes — stamp complete and report job.
+            await _mark_full_evals_completed(write_session, game_id)
+            await _mark_full_pv_completed(write_session, game_id)
+            stamp_complete = True
 
-        # QUEUE-06: report the leased job as complete (tier-3 has no job row — job_id is None).
-        if job_id is not None:
-            from app.models.eval_jobs import EvalJob
-
-            jobs_table = EvalJob.__table__
-            now_ts = datetime.now(timezone.utc)
+        elif new_attempts < MAX_EVAL_ATTEMPTS:
+            # Path B: holes remain, under cap — increment attempts, leave pending.
+            # Do NOT stamp full_evals_completed_at or full_pv_completed_at.
             await write_session.execute(
-                update(jobs_table)  # ty: ignore[invalid-argument-type]
-                .where(
-                    jobs_table.c.id == job_id,
-                    jobs_table.c.status == "leased",
-                )
-                .values(status="completed", completed_at=now_ts)
+                update(games_table)  # ty: ignore[invalid-argument-type]
+                .where(games_table.c.id == game_id)
+                .values(full_eval_attempts=new_attempts)
             )
+            stamp_complete = False
+
+        else:
+            # Path C: holes remain AND cap reached — stamp anyway (D-116-07 no-loop
+            # invariant) + ONE aggregated Sentry event (T-119-03: variables via
+            # set_context, never interpolated into the message string per CLAUDE.md).
+            await _mark_full_evals_completed(write_session, game_id)
+            await _mark_full_pv_completed(write_session, game_id)
+            sentry_sdk.set_context(
+                "eval",
+                {"game_id": game_id, "hole_count": failed_ply_count, "attempts": new_attempts},
+            )
+            sentry_sdk.set_tag("source", "full_eval_drain")
+            sentry_sdk.capture_message(
+                "full-drain: stamping complete after MAX_EVAL_ATTEMPTS with residual holes",
+                level="warning",
+            )
+            stamp_complete = True
+
+        if stamp_complete:
+            # QUEUE-06: report the leased job as complete (tier-3 has no job row — job_id
+            # is None, so this block is skipped for tier-3 and the game is re-derived next tick).
+            if job_id is not None:
+                from app.models.eval_jobs import EvalJob
+
+                jobs_table_jobs = EvalJob.__table__
+                now_ts = datetime.now(timezone.utc)
+                await write_session.execute(
+                    update(jobs_table_jobs)  # ty: ignore[invalid-argument-type]
+                    .where(
+                        jobs_table_jobs.c.id == job_id,
+                        jobs_table_jobs.c.status == "leased",
+                    )
+                    .values(status="completed", completed_at=now_ts)
+                )
 
         await write_session.commit()
+
+    if not stamp_complete:
+        # Path B: game is left pending — not a processed game by the WR-07 contract.
+        return False
 
     # Step 5: per-user cache-completion signal (D-117-11 — no-op stub in Phase 117).
     # Runs AFTER commit so the signal never fires for a partially-committed game.
@@ -1490,3 +1564,128 @@ async def run_full_eval_drain() -> None:
             sentry_sdk.set_tag("source", "full_eval_drain")
             sentry_sdk.capture_exception()
             await asyncio.sleep(_DRAIN_IDLE_SLEEP_SECONDS)
+
+
+async def resweep_holed_games(
+    limit: int | None = None,
+    dry_run: bool = False,
+) -> int:
+    """Re-arm already-stamped engine games that still carry non-terminal holes (SEED-045).
+
+    Before Phase 119, the drain stamped full_evals_completed_at unconditionally (D-116-07),
+    so games with transient mid-game engine holes were permanently marked "fully analyzed"
+    with gaps. This sweep finds those games and clears their completion markers so the
+    bounded-retry drain re-picks them with a fresh MAX_EVAL_ATTEMPTS budget.
+
+    A "hole" is a non-terminal, non-mate ply:
+        eval_cp IS NULL AND eval_mate IS NULL AND ply < MAX(ply) for that game.
+    The MAX(ply) exclusion skips the terminal game-over ply (which has no DB row
+    of its own in most games but may appear as the last row in some PGNs).
+
+    Scope: engine games only (lichess_evals_at IS NULL). Lichess %eval games are already
+    excluded from the full-drain and need no re-arming.
+
+    Args:
+        limit: cap the candidate scan at this many games (None = all).
+        dry_run: count candidates without performing the UPDATE. Useful for prod inspection
+            before running for real.
+
+    Returns:
+        Count of games swept (cleared) or that would be swept (dry_run=True).
+
+    Prod one-liner:
+        uv run python -c "
+        import asyncio
+        from app.services.eval_drain import resweep_holed_games
+        count = asyncio.run(resweep_holed_games(dry_run=True))
+        print(f'Would sweep {count} games')
+        "
+    """
+    from app.models.game_position import GamePosition
+
+    games_table = Game.__table__
+    gp_table = GamePosition.__table__
+
+    # Sub-query: find game_ids of engine games whose full_evals_completed_at IS NOT NULL
+    # AND that have at least one non-terminal, non-mate hole.
+    # "Non-terminal" = ply < MAX(ply) for that game (excludes the last game-over ply).
+    # "Non-mate" = eval_mate IS NULL (mate-scored plies are not holes).
+    max_ply_per_game = (
+        sa.select(GamePosition.game_id, sa.func.max(GamePosition.ply).label("max_ply"))
+        .group_by(GamePosition.game_id)
+        .subquery("max_ply_per_game")
+    )
+
+    holed_game_ids_q = (
+        sa.select(gp_table.c.game_id)
+        .distinct()
+        .join(
+            games_table,
+            sa.and_(
+                gp_table.c.game_id == games_table.c.id,
+                games_table.c.full_evals_completed_at.isnot(None),
+                games_table.c.lichess_evals_at.is_(None),  # engine games only
+            ),
+        )
+        .join(
+            max_ply_per_game,
+            gp_table.c.game_id == max_ply_per_game.c.game_id,
+        )
+        .where(
+            gp_table.c.eval_cp.is_(None),
+            gp_table.c.eval_mate.is_(None),
+            gp_table.c.ply < max_ply_per_game.c.max_ply,  # exclude terminal ply
+        )
+    )
+    if limit is not None:
+        holed_game_ids_q = holed_game_ids_q.limit(limit)
+
+    async with async_session_maker() as session:
+        # Initialize before the try so the except handler can report game_count
+        # without a fragile `dir()` scope probe (WR-03). If session.execute raises
+        # before the assignment below, game_count is correctly 0.
+        game_ids: list[int] = []
+        try:
+            result = await session.execute(holed_game_ids_q)
+            game_ids = [row[0] for row in result.all()]
+            count = len(game_ids)
+
+            if dry_run or count == 0:
+                logger.info(
+                    "resweep_holed_games: %s=%d games%s",
+                    "would sweep" if dry_run else "swept",
+                    count,
+                    " (dry run)" if dry_run else "",
+                )
+                return count
+
+            # Clear the completion markers and reset the attempt counter.
+            # Clearing full_evals_completed_at makes needs_engine_full_evals True again
+            # → tier-3 re-picks the game. The ix_games_needs_engine_full_evals partial
+            # index (SEED-046, migration 20260614150000) covers this predicate.
+            #
+            # WR-04: chunk the UPDATE in _RESWEEP_UPDATE_CHUNK_SIZE batches so the
+            # unbounded prod path can't re-arm the whole holed backlog in one
+            # statement/transaction (bind-param blowup + simultaneous re-queue).
+            # For count <= chunk size this is one statement + one commit, identical
+            # to the pre-batching behavior.
+            for chunk_start in range(0, count, _RESWEEP_UPDATE_CHUNK_SIZE):
+                chunk_ids = game_ids[chunk_start : chunk_start + _RESWEEP_UPDATE_CHUNK_SIZE]
+                await session.execute(
+                    update(games_table)  # ty: ignore[invalid-argument-type]
+                    .where(games_table.c.id.in_(chunk_ids))
+                    .values(
+                        full_evals_completed_at=None,
+                        full_pv_completed_at=None,
+                        full_eval_attempts=0,
+                    )
+                )
+                await session.commit()
+            logger.info("resweep_holed_games: swept %d games", count)
+            return count
+
+        except Exception as exc:
+            sentry_sdk.set_context("resweep", {"game_count": len(game_ids)})
+            sentry_sdk.set_tag("source", "resweep_holed_games")
+            sentry_sdk.capture_exception(exc)
+            raise

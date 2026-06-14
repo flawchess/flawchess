@@ -615,20 +615,29 @@ async def tier2_test_users(
     }
 
 
-class TestTier3Ordering:
-    """D-118-04: _claim_tier3_derived ordering — active users first, needs-eval first."""
+class TestTier3Lottery:
+    """SEED-046: _claim_tier3_derived recency-weighted ES lottery.
 
-    async def test_tier3_ordering(
+    Replaces the old D-118-04 deterministic 'active user first' ordering with a
+    probabilistic weighted lottery. Tests assert distribution properties, not
+    strict ordering.
+    """
+
+    async def test_tier3_recency_weighting(
         self,
         tier2_test_users: dict[str, int],
         queue_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """_claim_tier3_derived returns games for the more-recently-active user first
-        (users.last_activity DESC NULLS LAST)."""
+        """A recently-active user wins the lottery in a strong majority of draws.
+
+        user_a: last_activity = now (weight ≈ 1.0)
+        user_b: last_activity = now - 30d (weight ≈ floor, ~0.005)
+        Over N=400 draws, user_a must win >65% (strong majority with >floor dominance).
+        The lottery is probabilistic — assert a distribution, not strict ordering.
+        """
         import app.services.eval_queue_service as svc
         from app.models.user import User
-        from datetime import datetime, timezone, timedelta
 
         monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
 
@@ -636,7 +645,7 @@ class TestTier3Ordering:
         user_b = tier2_test_users["tier3_b"]
 
         now = datetime.now(timezone.utc)
-        # user_a is more recently active
+        # user_a is very recently active; user_b is 30d stale (≈floor weight)
         async with queue_session_maker() as session:
             await session.execute(
                 sa_update(User).where(User.id == user_a).values(last_activity=now)
@@ -644,7 +653,7 @@ class TestTier3Ordering:
             await session.execute(
                 sa_update(User)
                 .where(User.id == user_b)
-                .values(last_activity=now - timedelta(hours=2))
+                .values(last_activity=now - timedelta(days=30))
             )
             await session.commit()
 
@@ -655,42 +664,192 @@ class TestTier3Ordering:
             queue_session_maker, user_b, full_evals_completed_at=None, lichess_evals_at=None
         )
 
+        # Ensure no other non-guest users with engine-backlog games bleed into this test.
+        # We monkeypatch _claim_tier3_derived directly to count per-user selection.
+        # But first isolate: use the raw function under test directly.
+        from app.services.eval_queue_service import _claim_tier3_derived
+
+        n_draws = 400
+        count_a = 0
+        count_b = 0
         try:
-            claimed = await svc.claim_eval_job()
-            assert claimed is not None, "Expected a claimed tier-3 job; got None"
-            assert claimed.game_id == game_a, (
-                f"More-recently-active user_a's game {game_a} must be claimed first; "
-                f"got game_id={claimed.game_id}"
+            async with queue_session_maker() as session:
+                for _ in range(n_draws):
+                    result = await _claim_tier3_derived(session)
+                    if result is not None:
+                        picked_game_id = result[0]
+                        if picked_game_id == game_a:
+                            count_a += 1
+                        elif picked_game_id == game_b:
+                            count_b += 1
+
+            total = count_a + count_b
+            assert total > 0, "Expected at least some draws to return a game"
+            share_a = count_a / total
+            assert share_a > 0.65, (
+                f"Recently-active user_a should win >65% of draws; "
+                f"got {share_a:.1%} ({count_a}/{total})"
             )
         finally:
             await _delete_games(queue_session_maker, [game_a, game_b])
 
-    async def test_tier3_pv_ordering(
+    async def test_tier3_near_uniform_when_stale(
         self,
         tier2_test_users: dict[str, int],
         queue_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """For equal-priority games, the one with lichess_evals_at IS NULL (needs full eval)
-        is claimed before a lichess-eval game (lichess_evals_at IS NOT NULL).
-        Both have full_evals_completed_at IS NULL so both are tier-3 candidates."""
+        """When both users are equally stale (floor-dominated), neither is starved.
+
+        Both users with last_activity=now-60d have near-floor weight → floor-dominated
+        → near-uniform distribution. Over N=400 draws, neither user should have <20%
+        share (with 2 users, uniform = 50%; 20% is a generous tolerance for floor noise).
+        """
         import app.services.eval_queue_service as svc
-        from datetime import datetime, timezone
+        from app.models.user import User
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+
+        user_a = tier2_test_users["tier3_a"]
+        user_b = tier2_test_users["tier3_b"]
+
+        now = datetime.now(timezone.utc)
+        async with queue_session_maker() as session:
+            await session.execute(
+                sa_update(User)
+                .where(User.id == user_a)
+                .values(last_activity=now - timedelta(days=60))
+            )
+            await session.execute(
+                sa_update(User)
+                .where(User.id == user_b)
+                .values(last_activity=now - timedelta(days=60))
+            )
+            await session.commit()
+
+        game_a = await _insert_game(
+            queue_session_maker, user_a, full_evals_completed_at=None, lichess_evals_at=None
+        )
+        game_b = await _insert_game(
+            queue_session_maker, user_b, full_evals_completed_at=None, lichess_evals_at=None
+        )
+
+        from app.services.eval_queue_service import _claim_tier3_derived
+
+        n_draws = 400
+        count_a = 0
+        count_b = 0
+        try:
+            async with queue_session_maker() as session:
+                for _ in range(n_draws):
+                    result = await _claim_tier3_derived(session)
+                    if result is not None:
+                        picked_game_id = result[0]
+                        if picked_game_id == game_a:
+                            count_a += 1
+                        elif picked_game_id == game_b:
+                            count_b += 1
+
+            total = count_a + count_b
+            assert total > 0, "Expected some draws"
+            share_a = count_a / total
+            share_b = count_b / total
+            assert share_a > 0.20, (
+                f"user_a should not be starved when both stale; got {share_a:.1%}"
+            )
+            assert share_b > 0.20, (
+                f"user_b should not be starved when both stale; got {share_b:.1%}"
+            )
+        finally:
+            await _delete_games(queue_session_maker, [game_a, game_b])
+
+    async def test_tier3_never_picks_lichess_while_engine_candidate_exists(
+        self,
+        tier2_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The leak fix: with a needs-engine game and a lichess-eval game for the same
+        user (both full_evals_completed_at IS NULL), the primary lottery NEVER picks the
+        lichess-eval game while the needs-engine game exists.
+
+        Replaces the old test_tier3_pv_ordering single-pick assertion with a
+        'never picks lichess while engine candidate exists' assertion.
+        """
+        import app.services.eval_queue_service as svc
+        from app.models.user import User
 
         monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
 
         user_id = tier2_test_users["tier3_a"]
         now = datetime.now(timezone.utc)
 
-        # needs-eval: no lichess evals at all
-        needs_eval_game = await _insert_game(
+        # Set user as recently active to ensure they participate in the lottery.
+        async with queue_session_maker() as session:
+            await session.execute(
+                sa_update(User).where(User.id == user_id).values(last_activity=now)
+            )
+            await session.commit()
+
+        # needs-engine game: lichess_evals_at IS NULL → should be the primary candidate
+        needs_engine_game = await _insert_game(
             queue_session_maker,
             user_id,
             full_evals_completed_at=None,
             lichess_evals_at=None,
             played_at=now,
         )
-        # PV-only: has lichess evals but no full engine evals yet
+        # lichess-eval game: lichess_evals_at IS NOT NULL → excluded from primary lottery
+        lichess_game = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_evals_completed_at=None,
+            lichess_evals_at=now,
+            played_at=now,
+        )
+
+        from app.services.eval_queue_service import _claim_tier3_derived
+
+        try:
+            async with queue_session_maker() as session:
+                for i in range(20):
+                    result = await _claim_tier3_derived(session)
+                    assert result is not None, f"Draw {i}: expected a result, got None"
+                    picked_game_id = result[0]
+                    assert picked_game_id == needs_engine_game, (
+                        f"Draw {i}: primary lottery must NEVER pick the lichess-eval "
+                        f"game {lichess_game} while needs-engine game {needs_engine_game} "
+                        f"exists; got {picked_game_id}"
+                    )
+        finally:
+            await _delete_games(queue_session_maker, [needs_engine_game, lichess_game])
+
+    async def test_tier3_residual_fallback(
+        self,
+        tier2_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Residual fallback: when NO needs-engine game exists, the residual tier
+        returns a PV-backfill-only lichess game (lichess_evals_at IS NOT NULL).
+
+        is_lichess_eval_game must be True for such a residual pick.
+        """
+        import app.services.eval_queue_service as svc
+        from app.models.user import User
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+
+        user_id = tier2_test_users["tier3_a"]
+        now = datetime.now(timezone.utc)
+
+        async with queue_session_maker() as session:
+            await session.execute(
+                sa_update(User).where(User.id == user_id).values(last_activity=now)
+            )
+            await session.commit()
+
+        # Only a PV-backfill-only game — no needs-engine candidate anywhere.
         pv_only_game = await _insert_game(
             queue_session_maker,
             user_id,
@@ -699,12 +858,95 @@ class TestTier3Ordering:
             played_at=now,
         )
 
+        from app.services.eval_queue_service import _claim_tier3_derived
+
         try:
-            claimed = await svc.claim_eval_job()
-            assert claimed is not None, "Expected a claimed tier-3 job; got None"
-            assert claimed.game_id == needs_eval_game, (
-                f"Game needing full eval {needs_eval_game} must be claimed before "
-                f"PV-only game {pv_only_game}; got game_id={claimed.game_id}"
+            async with queue_session_maker() as session:
+                result = await _claim_tier3_derived(session)
+            assert result is not None, "Residual fallback must return the PV-only game"
+            picked_game_id, picked_user_id, is_lichess_eval_game = result
+            assert picked_game_id == pv_only_game, (
+                f"Residual fallback must return pv_only_game {pv_only_game}; got {picked_game_id}"
+            )
+            assert is_lichess_eval_game is True, (
+                "Residual pick of a lichess-eval game must set is_lichess_eval_game=True"
             )
         finally:
-            await _delete_games(queue_session_maker, [needs_eval_game, pv_only_game])
+            await _delete_games(queue_session_maker, [pv_only_game])
+
+    async def test_tier3_guest_excluded_from_lottery(
+        self,
+        tier2_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A guest user with a backlog is never selected by the lottery (QUEUE-08)."""
+        import app.services.eval_queue_service as svc
+        from app.models.user import User
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+
+        guest_id = tier2_test_users["guest"]
+        now = datetime.now(timezone.utc)
+
+        # Set guest as recently active (so they would win if the guest check is absent).
+        async with queue_session_maker() as session:
+            await session.execute(
+                sa_update(User).where(User.id == guest_id).values(last_activity=now)
+            )
+            await session.commit()
+
+        guest_game = await _insert_game(
+            queue_session_maker,
+            guest_id,
+            full_evals_completed_at=None,
+            lichess_evals_at=None,
+        )
+
+        from app.services.eval_queue_service import _claim_tier3_derived
+
+        try:
+            async with queue_session_maker() as session:
+                for i in range(10):
+                    result = await _claim_tier3_derived(session)
+                    if result is not None:
+                        assert result[0] != guest_game, (
+                            f"Draw {i}: guest game {guest_game} must never be picked by lottery"
+                        )
+        finally:
+            await _delete_games(queue_session_maker, [guest_game])
+
+    async def test_tier3_claimed_job_has_is_lichess_eval_game(
+        self,
+        tier2_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """ClaimedJob from a primary lottery pick has is_lichess_eval_game=False.
+        The field was renamed from is_analyzed (opportunistic D cleanup).
+        """
+        import app.services.eval_queue_service as svc
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+
+        user_id = tier2_test_users["tier3_a"]
+
+        game_id = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_evals_completed_at=None,
+            lichess_evals_at=None,
+        )
+
+        try:
+            claimed = await svc.claim_eval_job()
+            assert claimed is not None, "Expected a tier-3 pick"
+            # The renamed field must exist and be False for a needs-engine game.
+            assert hasattr(claimed, "is_lichess_eval_game"), (
+                "ClaimedJob must have is_lichess_eval_game field (renamed from is_analyzed)"
+            )
+            assert claimed.is_lichess_eval_game is False, (
+                "Primary lottery pick of needs-engine game must have is_lichess_eval_game=False"
+            )
+        finally:
+            await _delete_games(queue_session_maker, [game_id])

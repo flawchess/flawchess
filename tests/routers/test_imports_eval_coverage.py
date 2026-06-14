@@ -3,13 +3,12 @@
 Covers:
 - T-91-14: Unauthenticated access returns 401
 - T-91-15: Cross-user data scoping (User A's pending count not visible to User B)
-- Response shape: pending_count, total_count, pct_complete, analyzed_count, in_flight_count
-- Zero-games edge case: pct_complete=100, analyzed_count=0, in_flight_count=0
+- Response shape: pending_count, total_count, pct_complete, analyzed_count
+- Zero-games edge case: pct_complete=100, analyzed_count=0
 - All-complete case: pending_count=0, pct_complete=100
 - Partial case: correct pending count and rounded pct (D-04 backward-compat regression)
 - D-118-10 analyzed_count: white_blunders IS NOT NULL — lichess-eval games included;
   entry-ply-only games (evals_completed_at SET, white_blunders NULL) excluded
-- D-118-12 in_flight_count: eval_jobs pending|leased rows for the user
 
 Uses httpx AsyncClient with ASGITransport. Game rows are seeded directly via
 committed DB sessions (not the rollback-scoped db_session fixture) because HTTP
@@ -28,7 +27,6 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.main import app
-from app.models.eval_jobs import EvalJob, TIER_EXPLICIT
 from app.models.game import Game
 
 EVAL_COVERAGE_ENDPOINT = "/api/imports/eval-coverage"
@@ -215,15 +213,6 @@ async def _seed_games_for_user(
         return [int(g.id) for g in games]  # type: ignore[arg-type]
 
 
-async def _seed_eval_job(test_engine, user_id: int, game_id: int) -> None:
-    """Insert a pending eval_jobs row for a game."""
-    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
-    async with session_maker() as session:
-        job = EvalJob(tier=TIER_EXPLICIT, user_id=user_id, game_id=game_id, status="pending")
-        session.add(job)
-        await session.commit()
-
-
 async def _delete_games_for_user(test_engine, user_id: int) -> None:
     """Delete all seeded games (cascade-deletes eval_jobs) for cleanup."""
     from sqlalchemy import delete
@@ -274,7 +263,7 @@ async def test_eval_coverage_requires_auth() -> None:
 
 @pytest.mark.asyncio
 async def test_eval_coverage_zero_games(user_a_client: tuple[int, str]) -> None:
-    """User with no games returns pct_complete=100, analyzed_count=0, in_flight_count=0."""
+    """User with no games returns pct_complete=100, analyzed_count=0."""
     _user_id, token = user_a_client
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -289,7 +278,7 @@ async def test_eval_coverage_zero_games(user_a_client: tuple[int, str]) -> None:
     assert body["total_count"] == 0
     assert body["pct_complete"] == 100
     assert body["analyzed_count"] == 0
-    assert body["in_flight_count"] == 0
+    assert "in_flight_count" not in body
 
 
 @pytest.mark.asyncio
@@ -340,9 +329,9 @@ async def test_eval_coverage_partial(user_a_client: tuple[int, str], test_engine
     assert body["pending_count"] == PARTIAL_PENDING_COUNT
     assert body["total_count"] == PARTIAL_TOTAL_COUNT
     assert body["pct_complete"] == PARTIAL_EXPECTED_PCT
-    # D-118-12 extension present
+    # D-118-12 extension present; in_flight_count removed in Phase 119-03
     assert "analyzed_count" in body
-    assert "in_flight_count" in body
+    assert "in_flight_count" not in body
 
 
 @pytest.mark.asyncio
@@ -372,7 +361,7 @@ async def test_eval_coverage_scoped_to_user(
     assert body["total_count"] == 0
     assert body["pct_complete"] == 100
     assert body["analyzed_count"] == 0
-    assert body["in_flight_count"] == 0
+    assert "in_flight_count" not in body
 
 
 # ---------------------------------------------------------------------------
@@ -427,55 +416,3 @@ async def test_analyzed_count_uses_is_analyzed_not_entry_ply(
         "analyzed_count equals the naive entry-ply count — D-118-10 bug: "
         "should use white_blunders IS NOT NULL, not evals_completed_at IS NOT NULL"
     )
-
-
-# ---------------------------------------------------------------------------
-# Tests — D-118-12 in_flight_count semantics
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_in_flight_count(user_a_client: tuple[int, str], test_engine) -> None:
-    """in_flight_count equals the number of pending|leased eval_jobs for the user."""
-    user_id, token = user_a_client
-    headers = {"Authorization": f"Bearer {token}"}
-
-    # Seed 2 unanalyzed games and make 1 in-flight
-    games = [_make_unanalyzed_game(user_id) for _ in range(2)]
-    game_ids = await _seed_games_for_user(test_engine, user_id, games)
-    # Seed one pending eval_job for game 0
-    await _seed_eval_job(test_engine, user_id, game_ids[0])
-
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        response = await client.get(EVAL_COVERAGE_ENDPOINT, headers=headers)
-
-    assert response.status_code == 200
-    body = response.json()
-    # Exactly 1 pending eval_jobs row seeded (the last_activity trigger may add
-    # more via create_task — assert at least 1 to avoid flakiness)
-    assert body["in_flight_count"] >= 1
-
-
-@pytest.mark.asyncio
-async def test_in_flight_count_zero_when_no_jobs(
-    user_a_client: tuple[int, str], test_engine
-) -> None:
-    """in_flight_count is 0 when no eval_jobs are pending/leased for the user."""
-    user_id, token = user_a_client
-    headers = {"Authorization": f"Bearer {token}"}
-
-    # Seed analyzed games only (not pending → no auto-enqueue trigger)
-    games = [_make_analyzed_engine_game(user_id) for _ in range(3)]
-    await _seed_games_for_user(test_engine, user_id, games)
-
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        response = await client.get(EVAL_COVERAGE_ENDPOINT, headers=headers)
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["in_flight_count"] == 0
-    assert body["analyzed_count"] == 3

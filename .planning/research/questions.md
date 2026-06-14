@@ -194,3 +194,29 @@ Ran against `flawchess-prod-db`. "Analyzed" = full eval present, proxied by `whi
 
 **Implication:** set the automatic window at 200 (or even 500) games; UX copy can promise same-day/next-day analysis for newly active users.
 
+---
+
+## Q-009: Weighted-lottery tier-3 drain — partial-index perf for the DISTINCT-users candidate scan
+
+**Asked:** 2026-06-14 (during `/gsd-explore` on replacing the winner-take-all tier-3 ordering — see [SEED-046](../seeds/SEED-046-tier3-weighted-lottery-drain.md))
+
+**Context:** SEED-046 replaces the strict `users.last_activity DESC` top key in `_claim_tier3_derived` (`app/services/eval_queue_service.py:185-241`) with a recency-weighted lottery over **users**. Each claim (~every 10s) the drain must pick a user weighted by recency from the set of users with genuine engine backlog, then pick that user's best game. The candidate-user set is:
+
+```sql
+SELECT DISTINCT user_id FROM games
+WHERE full_evals_completed_at IS NULL AND lichess_evals_at IS NULL
+```
+
+(the `needs_engine_full_evals` predicate, `app/models/game.py:223-238`). The weighted pick then applies Efraimidis–Spirakis ordering: `ORDER BY -ln(random()) / weight LIMIT 1` over those distinct users (joined to `users.last_activity`).
+
+On a large `games` table (~598k rows prod, 93% lacking evals per Q-008), `SELECT DISTINCT user_id` over a non-covering predicate is a scan. Run every claim, that could become the drain's hot cost.
+
+**How to answer:**
+1. Add a candidate **partial index**: `CREATE INDEX ... ON games (user_id) WHERE full_evals_completed_at IS NULL AND lichess_evals_at IS NULL` (index-only DISTINCT scan). Confirm via `EXPLAIN ANALYZE` against `flawchess-prod-db` (tunnel) that the DISTINCT-users + ES pick stays sub-100ms per claim at prod scale.
+2. Confirm the candidate-user count is bounded by user count (hundreds), not game count — so the ES sort is small once the DISTINCT is cheap.
+3. Decide whether a periodic materialized "users-with-engine-backlog" snapshot (refreshed every N claims) is worth it, or whether the partial index alone suffices (likely the latter at current scale).
+
+**Why deferred:** Pins the migration + query shape before the SEED-046 phase is scoped. Not needed until SEED-046 is promoted (which is itself gated on Phase 118 shipping and the strict-recency drain being observed in prod).
+
+**Resolved:** _(open)_
+

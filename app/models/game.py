@@ -66,6 +66,9 @@ class Game(Base):
             "user_id",
             postgresql_where=sa.text("evals_completed_at IS NULL"),
         ),
+        # Phase 119 SEED-046: partial index for the recency-weighted lottery candidate pool.
+        # Predicate matches needs_engine_full_evals exactly. Created in migration
+        # 20260614150000 (migration-only, following ix_eval_jobs_user_active Phase 118 precedent).
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -171,6 +174,13 @@ class Game(Base):
     # The ix_games_full_pv_pending partial index (WHERE NULL) lives in the migration.
     full_pv_completed_at: Mapped[datetime.datetime | None] = mapped_column(
         sa.DateTime(timezone=True), nullable=True
+    )
+    # Phase 119 SEED-045: per-game counter of full-drain ticks that left a non-terminal
+    # hole (eval_cp IS NULL AND eval_mate IS NULL on a non-terminal ply). The drain
+    # withholds full_evals_completed_at until holes fill or this counter reaches
+    # MAX_EVAL_ATTEMPTS (eval_drain.py). Server default '0' backfills existing rows.
+    full_eval_attempts: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, server_default="0"
     )
 
     positions: Mapped[list["GamePosition"]] = relationship(  # ty: ignore[unresolved-reference]

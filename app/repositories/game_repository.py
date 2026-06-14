@@ -106,25 +106,6 @@ async def count_is_analyzed_games(session: AsyncSession, user_id: int) -> int:
     return result.scalar_one()
 
 
-async def count_in_flight_evals(session: AsyncSession, user_id: int) -> int:
-    """Return count of all eval_jobs in-flight (pending or leased) for the given user.
-
-    D-118-12: aggregate in-flight count across all tiers; drives the coverage badge
-    "N in progress" indicator. Indexed by ix_eval_jobs_user_active partial index.
-    """
-    from app.models.eval_jobs import EvalJob
-
-    result = await session.execute(
-        select(func.count())
-        .select_from(EvalJob)
-        .where(
-            EvalJob.user_id == user_id,
-            EvalJob.status.in_(["pending", "leased"]),
-        )
-    )
-    return result.scalar_one()
-
-
 async def users_with_zero_pending(
     session: AsyncSession,
     user_ids: Sequence[int],
