@@ -19,7 +19,7 @@ interface ValueRow {
 
 const VALUE_ROWS: ValueRow[] = [
   {
-    feature: 'Opening explorer by position',
+    feature: 'Opening explorer and statistics',
     guestHas: true,
     signedUpHas: true,
   },
