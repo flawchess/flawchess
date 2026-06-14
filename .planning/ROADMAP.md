@@ -574,3 +574,14 @@ Plans:
 *Phase 999.7 (LLM Endgame-Insights Statistical-Reasoning Rework) promoted to active Phase 102 (v1.23) on 2026-06-01 via `/gsd-explore`; shipped 2026-06-03.*
 
 *Phase 103 (Endgame report LLM prompt refinements) shipped 2026-06-03 as an unplanned follow-on under v1.23 — see the collapsed v1.23 block above and [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md).*
+
+### Phase 120: Headless remote trusted-operator eval worker (SEED-048)
+
+**Goal:** Add off-box CPU to the tier-3 eval drain via a headless Python CLI worker that leases eval jobs from prod over HTTPS, runs the existing `EnginePool` natively, and posts evals back. Scope: (1) an HTTP endpoint to lease one game → its unanalyzed `(ply, FEN)` positions; (2) an HTTP endpoint to submit a game's batched evals, with the server applying the SEED-044 storage convention (post-move shift, terminal donor) + stamping `full_evals_completed_at`; (3) operator-token auth on both endpoints; (4) the worker CLI (lease → eval all FENs via `EnginePool` → batch submit). Server-side SF-version-mismatch rejection (D-5). Accept idempotent duplicate tier-3 work for v1 (D-4); strict tier-3 leasing deferred. Trusted-operator write scope only (D-6) — no untrusted-writer trust layer. See [.planning/seeds/SEED-048-headless-remote-eval-worker.md](seeds/SEED-048-headless-remote-eval-worker.md) for the full locked decisions (D-1..D-6).
+**Requirements**: TBD
+**Depends on:** Phase 119 (tier-3 drain rework — must have landed and settled per SEED-048 sequencing)
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 120 to break down)

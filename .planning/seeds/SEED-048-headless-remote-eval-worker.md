@@ -1,6 +1,7 @@
 ---
 id: SEED-048
-status: dormant
+status: promoted
+promoted_to: Phase 120 (2026-06-14)
 planted: 2026-06-14
 planted_during: /gsd-explore session on running Stockfish eval jobs off-box to help the server drain tier-3
 trigger_when: Phase 119 (tier-3 drain rework — bounded retry, recency lottery, in_flight removal) has landed and settled, AND the eval-pipeline owner wants to add off-box eval capacity. Promote via /gsd-new-milestone or a focused /gsd-plan-phase.

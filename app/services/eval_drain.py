@@ -49,7 +49,7 @@ import sentry_sdk
 import sqlalchemy as sa
 from sqlalchemy import bindparam, select, update
 from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 
 from app.core.database import async_session_maker
@@ -1569,6 +1569,7 @@ async def run_full_eval_drain() -> None:
 async def resweep_holed_games(
     limit: int | None = None,
     dry_run: bool = False,
+    session_maker: async_sessionmaker[AsyncSession] | None = None,
 ) -> int:
     """Re-arm already-stamped engine games that still carry non-terminal holes (SEED-045).
 
@@ -1589,20 +1590,20 @@ async def resweep_holed_games(
         limit: cap the candidate scan at this many games (None = all).
         dry_run: count candidates without performing the UPDATE. Useful for prod inspection
             before running for real.
+        session_maker: optional sessionmaker override (e.g. a prod-tunnel-bound maker from
+            scripts/resweep_holed_games.py --db prod). Defaults to the app's
+            async_session_maker (bound to DATABASE_URL — the dev DB locally).
 
     Returns:
         Count of games swept (cleared) or that would be swept (dry_run=True).
 
-    Prod one-liner:
-        uv run python -c "
-        import asyncio
-        from app.services.eval_drain import resweep_holed_games
-        count = asyncio.run(resweep_holed_games(dry_run=True))
-        print(f'Would sweep {count} games')
-        "
+    Prod usage (via the SSH tunnel from bin/prod_db_tunnel.sh):
+        uv run python scripts/resweep_holed_games.py --db prod --dry-run   # count only
+        uv run python scripts/resweep_holed_games.py --db prod             # sweep
     """
     from app.models.game_position import GamePosition
 
+    maker = session_maker or async_session_maker
     games_table = Game.__table__
     gp_table = GamePosition.__table__
 
@@ -1640,7 +1641,7 @@ async def resweep_holed_games(
     if limit is not None:
         holed_game_ids_q = holed_game_ids_q.limit(limit)
 
-    async with async_session_maker() as session:
+    async with maker() as session:
         # Initialize before the try so the except handler can report game_count
         # without a fragile `dir()` scope probe (WR-03). If session.execute raises
         # before the assignment below, game_count is correctly 0.
