@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v1.26] Full-Game Eval Pipeline — 2026-06-14
+
+Turned eval coverage from "endgame-entry plies only" into a **full-game background analysis pipeline**: every move of your imported games is now evaluated by Stockfish at lichess-comparable strength (1M nodes per move), drained by a tiered priority queue that puts your explicit "Analyze" requests first and an idle backlog last, with the results flowing automatically into the Library's flaw surfaces. Includes an on-demand analyze affordance with live coverage badges, a post-move eval-convention fix that corrected flaw stats for chess.com games, honest hole-aware coverage tracking, and an optional off-box headless eval worker for extra compute. Phases 116–120 (incl. inserted 117.1 / 117.2).
+
 ### Added
 
 - **Full-game engine analysis (background)** — a new background analyzer evaluates every move of your imported games with Stockfish at lichess-comparable strength (1M nodes per move), beyond the endgame-entry evaluations added in earlier releases. It runs only when no import or endgame-eval work is pending, reuses evaluations for shared opening positions across games, and never overwrites lichess's own analysis. Newest games are analyzed first. (Phase 116)
@@ -759,7 +763,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.25...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.26...HEAD
+[v1.26]: https://github.com/flawchess/flawchess/compare/v1.25...v1.26
 [v1.25]: https://github.com/flawchess/flawchess/compare/v1.24...v1.25
 [v1.24]: https://github.com/flawchess/flawchess/compare/v1.23...v1.24
 [v1.23]: https://github.com/flawchess/flawchess/compare/v1.22...v1.23
