@@ -1,9 +1,10 @@
 ---
 phase: 118-demand-ux-auto-enqueue
 verified: 2026-06-14T12:30:00Z
-status: human_needed
+status: verified
 score: 5/5
 overrides_applied: 0
+human_verification_completed: 2026-06-14
 human_verification:
   - test: "As a signed-in non-guest with some unanalyzed games, open Library → Flaws and confirm the EvalCoverageBadge shows real 'N of M analyzed' (not 'coming soon') in the match-count row of both the Games and Flaws subtabs."
     expected: "Badge renders with real analyzed count; no 'coming soon' text anywhere in the Library."
@@ -30,7 +31,7 @@ human_verification:
 **Phase Goal:** Users' recent games are automatically queued for analysis on import completion and on activity, with a visible explicit "analyze more" affordance showing real-time progress, coverage indicators on eval-dependent surfaces, and live in-flight status — all without requiring the user to initiate or monitor analysis manually.
 
 **Verified:** 2026-06-14T12:30:00Z
-**Status:** human_needed (all automated checks passed; 6 human UAT items require browser verification)
+**Status:** verified (all automated checks passed; 6 human UAT items completed in-browser on 2026-06-14)
 **Re-verification:** No — initial verification
 
 ---
@@ -57,7 +58,10 @@ not match the shipped code:
   drop. Full suite is green: 2606 passed, 10 skipped.
 
 The coverage-badge / per-game-Analyze / guest-CTA findings (Observable Truths
-#3–#5) remain accurate. The 6 human UAT items are still outstanding.
+#3–#5) remain accurate. The 6 human UAT items were completed in-browser on
+2026-06-14 and passed (UAT item #2's "tier-2 window drains" wording is moot
+post-drop; the in-flight badge + re-enable behaviour was verified against the
+tier-3 idle drain). Phase status: **verified**.
 
 ---
 
