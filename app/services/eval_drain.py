@@ -109,6 +109,12 @@ MAX_EVAL_ATTEMPTS: int = 3
 # stop dedup lookups from using the index.
 _DEDUP_MAX_PLY: int = DEDUP_MAX_PLY
 
+# SEED-049: under post-move storage, the game-ending move row (ply = max_ply - 1) stores
+# the eval of the terminal game-over position, which is legitimately unevaluable. This
+# offset defines "the game-ending move sits 1 ply before the maximum stored ply", used
+# in the resweep predicate to exclude it from the hole definition (ply < max_ply - 1).
+_GAME_ENDING_PLY_OFFSET: int = 1
+
 
 # ---------------------------------------------------------------------------
 # Phase 116 full-ply drain: dataclass + helpers
@@ -144,6 +150,11 @@ class _FullPlyEvalTarget:
     eval_mate: int | None
     best_move: str | None = None
     is_terminal: bool = False
+    ends_game: bool = False
+    """SEED-049 — True for the single real (non-terminal) row whose move ENDS the game
+    (resulting position is_game_over()). Under post-move storage its after-eval is the
+    game-over terminal, which is deliberately unevaluable and never gets a donor, so its
+    NULL post-move eval is legitimate — never counted as a hole."""
 
 
 def _collect_full_ply_targets(
@@ -226,6 +237,17 @@ def _collect_full_ply_targets(
                 is_terminal=True,
             )
         )
+    elif include_terminal and ply_count > 0 and board.is_game_over():
+        # SEED-049: the final board is game-over (checkmate/stalemate/insufficient
+        # material), which means the last real move was the game-ending move. Its
+        # post-move eval is the unevaluable terminal position — legitimately NULL,
+        # not a hole. Mark ends_game=True on the last real target (ply = ply_count - 1)
+        # so _apply_full_eval_results skips it in the failed_ply_count counter.
+        game_ending_ply = ply_count - 1
+        for target in reversed(targets):
+            if target.ply == game_ending_ply:
+                target.ends_game = True
+                break
     return targets
 
 
@@ -435,9 +457,17 @@ async def _apply_full_eval_results(
         if best_move is not None:
             values["best_move"] = best_move
         if eval_cp is None and eval_mate is None:
-            # D-116-07: engine hole at the after-position — leave the eval NULL; counted
-            # for the caller's per-game aggregated Sentry event (WR-05).
-            failed_ply_count += 1
+            if target.ends_game:
+                # SEED-049: the after-position is the game-over terminal — deliberately
+                # unevaluable (no legal moves; engine skip in _collect_full_ply_targets
+                # already omits the terminal donor when is_game_over()). This NULL is
+                # legitimate, not a transient Stockfish timeout. Do NOT count it as a
+                # hole; the row is written normally (eval stays NULL, best_move if set).
+                pass
+            else:
+                # D-116-07: engine hole at the after-position — leave the eval NULL;
+                # counted for the caller's per-game aggregated Sentry event (WR-05).
+                failed_ply_count += 1
         else:
             values["eval_cp"] = eval_cp
             values["eval_mate"] = eval_mate
@@ -1578,10 +1608,18 @@ async def resweep_holed_games(
     with gaps. This sweep finds those games and clears their completion markers so the
     bounded-retry drain re-picks them with a fresh MAX_EVAL_ATTEMPTS budget.
 
-    A "hole" is a non-terminal, non-mate ply:
-        eval_cp IS NULL AND eval_mate IS NULL AND ply < MAX(ply) for that game.
-    The MAX(ply) exclusion skips the terminal game-over ply (which has no DB row
-    of its own in most games but may appear as the last row in some PGNs).
+    A "hole" is a non-terminal, non-game-ending-move, non-mate ply:
+        eval_cp IS NULL AND eval_mate IS NULL AND ply < MAX(ply) - 1 for that game.
+    The MAX(ply) exclusion skips the terminal game-over ply (which has no DB row of its
+    own in most games but may appear as the last row in some PGNs). The additional
+    `- 1` (SEED-049) further excludes the game-ending move ply (ply = max_ply - 1):
+    under post-move storage, that row stores the eval of the game-over terminal
+    position, which is legitimately unevaluable (no legal moves; the engine skips it in
+    _collect_full_ply_targets). Resignation/timeout endings whose last move has a real
+    eval are unaffected — their last move is not NULL. Only the genuinely unevaluable
+    terminal-move NULLs (checkmate, stalemate, insufficient material) are excluded.
+    The 2 genuine mid-game holes observed in prod are at ply < max_ply - 1, so this
+    exclusion is precise and safe.
 
     Scope: engine games only (lichess_evals_at IS NULL). Lichess %eval games are already
     excluded from the full-drain and need no re-arming.
@@ -1608,8 +1646,11 @@ async def resweep_holed_games(
     gp_table = GamePosition.__table__
 
     # Sub-query: find game_ids of engine games whose full_evals_completed_at IS NOT NULL
-    # AND that have at least one non-terminal, non-mate hole.
+    # AND that have at least one genuine (non-terminal, non-game-ending-move, non-mate) hole.
     # "Non-terminal" = ply < MAX(ply) for that game (excludes the last game-over ply).
+    # "Non-game-ending-move" = ply < MAX(ply) - _GAME_ENDING_PLY_OFFSET (SEED-049:
+    #     excludes the move that ended the game; under post-move storage its after-eval is
+    #     the unevaluable terminal position — legitimately NULL, not a transient hole).
     # "Non-mate" = eval_mate IS NULL (mate-scored plies are not holes).
     max_ply_per_game = (
         sa.select(GamePosition.game_id, sa.func.max(GamePosition.ply).label("max_ply"))
@@ -1635,7 +1676,9 @@ async def resweep_holed_games(
         .where(
             gp_table.c.eval_cp.is_(None),
             gp_table.c.eval_mate.is_(None),
-            gp_table.c.ply < max_ply_per_game.c.max_ply,  # exclude terminal ply
+            # SEED-049: ply < max_ply - 1 excludes both the terminal ply AND the
+            # game-ending move ply (whose NULL after-eval is legitimately unevaluable).
+            gp_table.c.ply < max_ply_per_game.c.max_ply - _GAME_ENDING_PLY_OFFSET,
         )
     )
     if limit is not None:

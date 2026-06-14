@@ -1,6 +1,8 @@
 ---
 id: SEED-049
-status: planted
+status: implemented
+implemented: 2026-06-14
+implemented_via: quick task 260614-tgs (see .planning/quick/260614-tgs-seed-049-exclude-the-game-ending-ply-fro/)
 planted: 2026-06-14
 planted_during: prod investigation of SEED-045 (Phase 119) eval-drain holes — diagnosing why the stamped-with-holes count kept drifting up after the bounded-retry fix shipped
 trigger_when: next eval-pipeline / eval-drain / analysis-coverage phase, or immediately if the tier-3 drain churn on re-armed games becomes a concern. Promote via /gsd-plan-phase.

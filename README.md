@@ -114,13 +114,39 @@ The CI pipeline runs these in order: ruff (lint) → [ty](https://github.com/ast
 
 ## Remote eval worker
 
-`scripts/remote_eval_worker.py` adds off-box CPU to the Stockfish eval pipeline. It runs on a trusted machine you control (your laptop, a spare box, a cloud VM) and drains the same tier-3 eval queue the production server works through. The loop is: lease one game from the API over HTTPS, evaluate all of its positions locally with Stockfish, then batch-submit the results. The server owns the storage convention (post-move shift, completion stamping) — the worker is a dumb position→eval function and submits engine results unchanged.
+`scripts/remote_eval_worker.py` adds off-box CPU to the Stockfish eval pipeline. Run it on any trusted machine to drain the same tier-3 eval queue as the production server: lease a game over HTTPS, evaluate its positions locally with Stockfish, batch-submit the results unchanged (the server owns the storage convention).
 
 ### Prerequisites
 
-- Stockfish installed locally (`bin/install_stockfish.sh`, same as dev setup).
-- The server must have `EVAL_OPERATOR_TOKEN` set in its `.env`. Both endpoints fail closed: an unset token returns 403, a wrong token 401. Optionally set `EXPECTED_SF_VERSION` on the server to reject submissions from a mismatched engine build.
-- The worker authenticates with the **same** token. Set `EVAL_OPERATOR_TOKEN` in the worker machine's `.env` (the worker loads it via app settings, same as the backend) — no need to pass it on the command line. `--token` is available to override it for a one-off run.
+- Stockfish installed locally (`bin/install_stockfish.sh`).
+- Server and worker share an `EVAL_OPERATOR_TOKEN` in their `.env`. Endpoints fail closed: unset token → 403, wrong token → 401. Optionally set `EXPECTED_SF_VERSION` on the server to reject mismatched engine builds. Use `--token` to override the worker's `.env` value for a one-off run.
+
+The worker is a standalone HTTP client plus a local Stockfish driver: it talks to the server over HTTPS and never opens a database connection, so **no Docker is required** to run it. A repo checkout with `uv sync` (the worker imports `app.*`) plus a Stockfish binary is all you need.
+
+### Running on Windows
+
+The worker runs natively on Windows — the only Linux-specific code path (`SCHED_IDLE` scheduling) is guarded and skipped on non-Linux hosts. No WSL or Docker needed.
+
+1. **Get the repo.** It's public, so no GitHub account is required. Either clone over HTTPS:
+
+   ```
+   git clone https://github.com/flawchess/flawchess.git
+   ```
+
+   or download the ZIP from the GitHub web UI ("Code → Download ZIP") and extract it — the worker needs the source tree, not git history. Then install [uv](https://docs.astral.sh/uv/) and run `uv sync` in the repo root (the worker imports `app.*`, so the full dependency set is installed).
+
+These two setup steps then differ from Linux/macOS:
+
+2. **Stockfish binary.** `bin/install_stockfish.sh` is a bash script that fetches the Linux build, so it won't run on Windows. Download the Windows Stockfish release manually (match the version the server pins via `EXPECTED_SF_VERSION`, or submits are rejected by the D-5 version gate) and point the worker at it with `STOCKFISH_PATH` in `.env`:
+
+   ```
+   STOCKFISH_PATH=C:\path\to\stockfish.exe
+   ```
+
+   The engine resolver checks `STOCKFISH_PATH` first, then falls back to `stockfish` on `PATH`.
+3. **`.env`.** Only `EVAL_OPERATOR_TOKEN` is required (every other setting has a default, and the worker needs no database). Pass `--token` instead if you'd rather not write a `.env`.
+
+Then run the same commands as below via `uv run python scripts/remote_eval_worker.py …`.
 
 ### Start
 
@@ -136,14 +162,11 @@ uv run python scripts/remote_eval_worker.py --once
 # Continuous drain (default — 4 parallel Stockfish processes):
 uv run python scripts/remote_eval_worker.py
 
-# Use 8 parallel engine processes (e.g. on an 8-core box):
-uv run python scripts/remote_eval_worker.py --workers 8
-
-# Point at a local/staging server instead of production:
-uv run python scripts/remote_eval_worker.py --base-url http://localhost:8000 --once
+# 8 engine processes, pointed at a staging server:
+uv run python scripts/remote_eval_worker.py --workers 8 --base-url http://localhost:8000
 ```
 
-Flags: `--base-url URL` (default `https://flawchess.com`), `--token TOKEN` (optional override; otherwise read from `EVAL_OPERATOR_TOKEN` in the environment / `.env`), `--workers N` (parallel engine processes, default 4 — set to roughly the core count of the worker machine), `--idle-sleep SECONDS` (poll delay when the queue is empty, default 5), `--dry-run` (evaluate but never submit), `--once` (one cycle then exit; the default loops forever).
+Flags: `--base-url` (default `https://flawchess.com`), `--token` (override `.env`), `--workers N` (default 4, ≈ core count), `--idle-sleep SECONDS` (empty-queue poll delay, default 5), `--dry-run` (never submit), `--once` (one cycle then exit).
 
 ### Stop
 
