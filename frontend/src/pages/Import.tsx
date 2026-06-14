@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import * as Sentry from '@sentry/react';
-import { X } from 'lucide-react';
+import { X, DoorOpen } from 'lucide-react';
 import { Alert } from '@/components/ui/alert';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import {
@@ -18,6 +18,7 @@ import { Label } from '@/components/ui/label';
 import { useImportTrigger, useImportPolling } from '@/hooks/useImport';
 import { EvalCoverageHeader } from '@/components/EvalCoverageHeader';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { useAuth } from '@/hooks/useAuth';
 import { useQueryClient } from '@tanstack/react-query';
 import { useReadiness } from '@/hooks/useReadiness';
 import { apiClient } from '@/api/client';
@@ -171,6 +172,7 @@ function ExploreButton({ label, ready, hint, testId, onGo }: {
 }
 
 export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: ImportPageProps) {
+  const { logoutForPromotion } = useAuth();
   const { data: profile, isLoading: profileLoading } = useUserProfile();
   const trigger = useImportTrigger();
   const queryClient = useQueryClient();
@@ -287,6 +289,22 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
   return (
     <main data-testid="import-page" className="mx-auto w-full max-w-2xl px-4 py-6 md:px-6 space-y-8">
       <EvalCoverageHeader />
+      {profile?.is_guest && (
+        <Alert variant="info" icon={DoorOpen} data-testid="import-guest-promo-info" className="mb-4">
+          <p className="text-sm">
+            You're playing as a guest.{' '}
+            <button
+              onClick={() => { logoutForPromotion(); window.location.href = '/login?tab=register'; }}
+              className="font-medium underline underline-offset-2"
+              data-testid="import-guest-promo-link"
+            >
+              Sign up free
+            </button>{' '}
+            to use FlawChess on any device and unlock deep Stockfish analysis of your games.
+          </p>
+        </Alert>
+      )}
+
       {profileLoading ? (
         <p className="text-sm text-muted-foreground">Loading profile...</p>
       ) : (
