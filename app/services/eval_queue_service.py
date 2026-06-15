@@ -530,6 +530,32 @@ async def report_job_complete(job_id: int) -> None:
         await session.commit()
 
 
+async def release_job(job_id: int) -> None:
+    """Release a single leased eval_job back to 'pending' so it can be re-claimed.
+
+    Used by the remote lease handler when it claims a tier-1/tier-2 job it cannot
+    process itself (Phase 121: lichess-eval games are deferred to the server pool,
+    which does the flaw-refutation PV backfill — D-4 / D-117-13). Without this the
+    row would sit 'leased' for the full LEASE_TTL_SECONDS before the stale-lease
+    sweep frees it, stalling the very click-to-pickup latency Phase 121 improves.
+
+    Short session; guarded WHERE status='leased' so it is a no-op if the lease was
+    already swept/completed/re-claimed (cannot disturb an unrelated job state).
+    """
+    async with async_session_maker() as session:
+        jobs_table = EvalJob.__table__
+        stmt = (
+            update(jobs_table)  # ty: ignore[invalid-argument-type]
+            .where(
+                jobs_table.c.id == job_id,
+                jobs_table.c.status == "leased",
+            )
+            .values(status="pending", leased_by=None, lease_expiry=None)
+        )
+        await session.execute(stmt)
+        await session.commit()
+
+
 async def requeue_expired_leases() -> int:
     """Reset expired leased rows to 'pending'. Returns count requeued.
 

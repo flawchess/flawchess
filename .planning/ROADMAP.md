@@ -29,8 +29,29 @@
 - ✅ **v1.24 Library Page** — Phases 104–112 (shipped 2026-06-09) — see [milestones/v1.24-ROADMAP.md](milestones/v1.24-ROADMAP.md)
 - ✅ **v1.25 Flaw-Stats Opponent Comparison** — Phases 113–115 (incl. 114.1) (shipped 2026-06-12) — see [milestones/v1.25-ROADMAP.md](milestones/v1.25-ROADMAP.md)
 - ✅ **v1.26 Full-Game Eval Pipeline** — Phases 116–120 (incl. 117.1, 117.2) (shipped 2026-06-14) — see [milestones/v1.26-ROADMAP.md](milestones/v1.26-ROADMAP.md)
+- 🚧 **Active (post-v1.26, milestone TBD)** — Phase 121: Remote-worker tier-1 claiming (SEED-048)
 
 ## Phases
+
+> 🚧 **Active work (post-v1.26, milestone TBD):** Phase 121 — added as a standalone phase; it will be grouped into a milestone at ship time (per the standalone-then-regroup pattern, e.g. v1.20), or run `/gsd-new-milestone` first to formalize one.
+
+### Phase 121: Remote-worker tier-1 claiming (SEED-048)
+
+**Goal**: A remote eval worker can claim tier-1 (single-game "analyze") requests, not just the tier-3 idle backlog — so when the server pool is mid-game on another job, a second (idle) machine can pick up a freshly-enqueued single-game analysis and shorten click-to-pickup latency. First-come-first-served: the server's in-process drain still usually wins tier-1 when it is idle (no network hop, no poll interval), so this deliberately targets the **server-busy overflow** case. Biasing tier-1 to the faster box and interruptible tier-3 are explicit deferred follow-ons.
+**Depends on**: Phase 120 (remote eval worker lease/submit contract + headless CLI worker)
+**Source**: SEED-048 (FCFS scope; decisions locked 2026-06-15 explore session) · **Plans**: 1 plan
+
+Plans:
+
+- [x] 121-01-PLAN.md — wire lease→claim_eval_job (tier-1/2/3), thread opaque job_id lease→submit with status='leased' stamp guard, drop worker idle_sleep 5s→1s
+
+Scope (3 changes, no DB migration):
+
+1. `POST /api/eval/remote/lease` calls `claim_eval_job` (tier-1 > tier-2 > tier-3, lease_expiry + SKIP LOCKED, stale-lease sweep) instead of `_claim_tier3_derived`; tier-3 still falls through as the derived path, unchanged.
+2. Thread an opaque `job_id` through the lease→submit round-trip: the lease response carries the claimed `eval_jobs.id` (`None` for tier-3), submit echoes it, and the submit handler stamps `eval_jobs.status='completed', completed_at=now()` when present. Tier-3 keeps `job_id=None` and behaves exactly as today.
+3. Drop the worker idle poll `idle_sleep` 5s → ~1s so an idle remote worker notices a freshly-enqueued tier-1 quickly (only the empty-queue/204 path sleeps; the busy path is already a tight loop).
+
+Files: `app/routers/eval_remote.py` (lease/submit handlers), `app/services/eval_queue_service.py` (`claim_eval_job` already implements the tiered claim + lease sweep), `scripts/remote_eval_worker.py` (idle_sleep default + echo job token on submit), lease/submit Pydantic schemas (opaque job-token field). Needs a soak to confirm no tier-1/tier-3 double-claim and that submit correctly stamps `eval_jobs`.
 
 <details>
 <summary>✅ v1.26 Full-Game Eval Pipeline (Phases 116–120, incl. 117.1, 117.2) — SHIPPED 2026-06-14</summary>
@@ -410,7 +431,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 3/3 plans complete
+**Plans:** 1/1 plans complete
 
 Plans:
 

@@ -1,6 +1,7 @@
 """Endpoints for the remote eval worker protocol (Phase 120 SEED-048).
 
-POST /eval/remote/lease  — claim one tier-3 game and return its (ply, FEN) positions.
+POST /eval/remote/lease  — claim the next eval game (tier-1 > tier-2 > tier-3) and
+                           return its (ply, FEN) positions (Phase 121 SEED-048).
 POST /eval/remote/submit — apply a batch of engine evals server-side via the SEED-044
                            write path, enforcing D-5 SF-version gate and SEED-045
                            bounded-retry stamping.
@@ -51,7 +52,12 @@ from app.services.eval_drain import (
     _mark_full_pv_completed,
     _signal_flaw_completion,
 )
-from app.services.eval_queue_service import _claim_tier3_derived
+from app.models.eval_jobs import EvalJob
+from app.services.eval_queue_service import claim_eval_job, release_job
+
+# Worker identity for the remote eval worker — distinct from WORKER_ID_SERVER_POOL
+# ("server-pool") so the eval_jobs.leased_by column is traceable per worker type.
+_WORKER_ID_REMOTE: str = "remote-worker"
 
 router = APIRouter(prefix="/eval/remote", tags=["eval-remote"])
 
@@ -269,6 +275,23 @@ async def _apply_submit(
             )
             stamp_complete = True
 
+        # Stamp eval_jobs for tier-1/tier-2 claims when all plies resolved (Path A/C).
+        # The WHERE status='leased' guard makes a late submit (lease expired + re-claimed,
+        # or job already completed) a safe no-op — never corrupts an unrelated job.
+        # Path B (holes remain, stamp_complete=False) is deliberately NOT stamped:
+        # the eval_jobs row stays 'leased' until the sweep requeues it after the TTL.
+        if body.job_id is not None and stamp_complete:
+            jobs_table = EvalJob.__table__
+            now_ts = datetime.now(timezone.utc)
+            await write_session.execute(
+                update(jobs_table)  # ty: ignore[invalid-argument-type]
+                .where(
+                    jobs_table.c.id == body.job_id,
+                    jobs_table.c.status == "leased",  # idempotency / late-submit guard
+                )
+                .values(status="completed", completed_at=now_ts)
+            )
+
         await write_session.commit()
 
     # Signal after commit so the hook never fires for a partially-committed game.
@@ -291,28 +314,44 @@ async def _apply_submit(
 async def lease_eval_game(
     _auth: Annotated[None, Depends(require_operator_token)],
 ) -> Response | LeaseResponse:
-    """Claim one tier-3 game and return its unanalyzed (ply, FEN) positions.
+    """Claim the next eval game (tier-1 > tier-2 > tier-3) and return its FEN positions.
 
     Returns 204 when no eligible game is in the queue, or when the claimed game
     is a lichess-eval game (PV-backfill path deferred to v2 per D-4/v1 scope).
 
-    Calls _claim_tier3_derived() directly — bypasses EVAL_AUTO_DRAIN_ENABLED gate
-    (pitfall 2: that gate is for the background idle loop, not explicit requests).
+    Delegates to claim_eval_job which implements tier-1 > tier-2 > tier-3 priority
+    with SKIP LOCKED and stale-lease sweep. claim_eval_job opens its own sessions
+    internally — do NOT wrap this call in a session context (Pitfall 1).
+
+    The EVAL_AUTO_DRAIN_ENABLED gate inside claim_eval_job applies only to tier-3
+    (idle backlog). Tier-1/tier-2 picks are never gated — a freshly-enqueued
+    explicit request must always be claimable by the remote worker.
+
+    The lease response carries job_id = eval_jobs.id for tier-1/tier-2 claims,
+    and job_id=None for tier-3 derived picks (no eval_jobs row exists).
 
     The terminal eval-donor (is_terminal=True) is always included (pitfall 3):
     without it, the last played ply's eval_cp stays NULL after submit.
     """
-    async with async_session_maker() as read_session:
-        claim = await _claim_tier3_derived(read_session)
-    # read_session closed
+    # claim_eval_job owns its sessions — no caller session context needed.
+    claim = await claim_eval_job(worker_id=_WORKER_ID_REMOTE)
 
     if claim is None:
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-    game_id, user_id, is_lichess_eval_game = claim
+    game_id = claim.game_id
+    user_id = claim.user_id
+    is_lichess_eval_game = claim.is_lichess_eval_game
 
     # D-4 / v1 scope: lichess PV-backfill games (is_lichess_eval_game=True) deferred.
+    # WR-01 (Phase 121): claim_eval_job leased the eval_jobs row before we discovered
+    # it's a lichess game we don't process. Release it back to 'pending' so the server
+    # pool (which DOES do the flaw-PV backfill) can claim it immediately, instead of
+    # leaving it stranded 'leased' for the full lease TTL. Tier-3 derived picks have
+    # job_id=None and own no eval_jobs row, so the guard skips them.
     if is_lichess_eval_game:
+        if claim.job_id is not None:
+            await release_job(claim.job_id)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     # Load PGN + game_positions in a second short read session.
@@ -352,6 +391,7 @@ async def lease_eval_game(
         is_lichess_eval_game=False,
         positions=positions,
         leased_at=datetime.now(timezone.utc),
+        job_id=claim.job_id,
     )
 
 

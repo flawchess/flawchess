@@ -13,13 +13,14 @@ Covers:
   post-move ply in DB (server applies the +1 shift; pitfall 1 / D-2).
 - test_submit_stamps_full_evals_completed_at: complete submit → marker non-NULL.
 - test_submit_idempotent: same payload twice → 200 both times, no error.
+- TestTier1Claiming: tier-1 claim returns job_id; submit stamps eval_jobs; late submit
+  guard; tier-3 submit with job_id=None does NOT touch eval_jobs; DEFAULT_IDLE_SLEEP=1.0.
 
 Session patching: monkeypatch app.routers.eval_remote.async_session_maker to route
 the router's own sessions to the per-run test DB (eval_drain / eval_queue_service
 session makers are already patched by conftest's session-scoped override_get_async_session).
-_claim_tier3_derived is monkeypatched directly in the eval_remote router namespace
-for tests that need to control which game is leased without relying on the
-recency-weighted lottery.
+claim_eval_job is monkeypatched directly in the eval_remote router namespace for tests
+that need to control which game is leased without relying on the recency-weighted lottery.
 """
 
 from __future__ import annotations
@@ -37,6 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import settings
 from app.main import app
+from app.services.eval_queue_service import ClaimedJob
 
 # ─── URL constants (no magic numbers) ─────────────────────────────────────────
 
@@ -279,10 +281,10 @@ async def test_lease_no_pending_games(
     monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
     _patch_router_session(monkeypatch, eval_worker_session_maker)
 
-    # Patch _claim_tier3_derived to return None (empty queue).
+    # Patch claim_eval_job to return None (empty queue).
     import app.routers.eval_remote as eval_remote_module
 
-    monkeypatch.setattr(eval_remote_module, "_claim_tier3_derived", AsyncMock(return_value=None))
+    monkeypatch.setattr(eval_remote_module, "claim_eval_job", AsyncMock(return_value=None))
 
     async with _make_client() as client:
         response = await client.post(_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN})
@@ -317,13 +319,21 @@ async def test_lease_returns_positions(
         ],
     )
 
-    # Patch _claim_tier3_derived to return our seeded game.
+    # Patch claim_eval_job to return our seeded game as a tier-3 ClaimedJob.
     import app.routers.eval_remote as eval_remote_module
 
     monkeypatch.setattr(
         eval_remote_module,
-        "_claim_tier3_derived",
-        AsyncMock(return_value=(game_id, user_id, False)),
+        "claim_eval_job",
+        AsyncMock(
+            return_value=ClaimedJob(
+                game_id=game_id,
+                user_id=user_id,
+                tier=3,
+                is_lichess_eval_game=False,
+                job_id=None,
+            )
+        ),
     )
 
     try:
@@ -337,6 +347,8 @@ async def test_lease_returns_positions(
         assert body["game_id"] == game_id
         assert body["user_id"] == user_id
         assert body["is_lichess_eval_game"] is False
+        # Tier-3 claim: job_id must be None (no eval_jobs row for derived picks).
+        assert body["job_id"] is None
 
         positions = body["positions"]
         assert len(positions) > 0, "positions must be non-empty"
@@ -609,3 +621,413 @@ async def test_submit_idempotent(
         )
     finally:
         await _delete_games(eval_worker_session_maker, [game_id])
+
+
+# ─── Tier-1 claiming: helpers ─────────────────────────────────────────────────
+
+
+async def _get_eval_job(
+    session_maker: async_sessionmaker[AsyncSession],
+    job_id: int,
+) -> dict[str, Any] | None:
+    """Fetch an eval_jobs row by id. Returns a dict with status/completed_at or None."""
+    from app.models.eval_jobs import EvalJob
+
+    async with session_maker() as session:
+        result = await session.execute(select(EvalJob).where(EvalJob.id == job_id))
+        row = result.scalar_one_or_none()
+        if row is None:
+            return None
+        return {
+            "id": row.id,
+            "status": row.status,
+            "completed_at": row.completed_at,
+            "leased_by": row.leased_by,
+        }
+
+
+async def _seed_eval_job(
+    session_maker: async_sessionmaker[AsyncSession],
+    game_id: int,
+    user_id: int,
+    *,
+    status: str = "leased",
+) -> int:
+    """Insert an eval_jobs row with the given status. Returns the new job_id."""
+    from app.models.eval_jobs import EvalJob, TIER_EXPLICIT
+
+    async with session_maker() as session:
+        job = EvalJob(
+            tier=TIER_EXPLICIT,
+            user_id=user_id,
+            game_id=game_id,
+            status=status,
+        )
+        session.add(job)
+        await session.flush()
+        job_id = int(job.id)  # type: ignore[arg-type]
+        await session.commit()
+    return job_id
+
+
+# ─── Tier-1 claiming: tests ───────────────────────────────────────────────────
+
+
+class TestTier1Claiming:
+    """Tier-1 claim path: job_id round-trip, eval_jobs stamp, late-submit guard.
+
+    Tests R1, R3, R4, R5, R6 from the Phase 121 validation matrix.
+    """
+
+    @pytest.mark.asyncio
+    async def test_tier1_lease_returns_job_id(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """R1: a tier-1 claim returns job_id equal to the leased eval_jobs.id.
+
+        Mocks claim_eval_job to return a ClaimedJob with tier=1 and a non-None
+        job_id. Asserts the lease response body carries that exact job_id.
+        """
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(eval_worker_session_maker, user_id)
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            game_id,
+            [
+                {"ply": ply, "full_hash": 5000 + ply, "eval_cp": None, "eval_mate": None}
+                for ply in range(4)
+            ],
+        )
+
+        seeded_job_id = 42  # opaque token — arbitrary non-None int for the mock
+
+        import app.routers.eval_remote as eval_remote_module
+
+        monkeypatch.setattr(
+            eval_remote_module,
+            "claim_eval_job",
+            AsyncMock(
+                return_value=ClaimedJob(
+                    game_id=game_id,
+                    user_id=user_id,
+                    tier=1,
+                    is_lichess_eval_game=False,
+                    job_id=seeded_job_id,
+                )
+            ),
+        )
+
+        try:
+            async with _make_client() as client:
+                response = await client.post(_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN})
+
+            assert response.status_code == 200, (
+                f"Expected 200, got {response.status_code}: {response.text}"
+            )
+            body = response.json()
+            assert body["game_id"] == game_id
+            # R1 key assertion: job_id echoed from ClaimedJob.job_id.
+            assert body["job_id"] == seeded_job_id, (
+                f"Expected job_id={seeded_job_id}, got {body.get('job_id')}"
+            )
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_submit_with_job_id_stamps_eval_jobs(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """R3: submit WITH job_id stamps eval_jobs.status='completed' with completed_at set.
+
+        Seeds a game, an eval_jobs row (status='leased'), and game_positions.
+        Submits a complete payload with job_id. Queries the eval_jobs row back and
+        asserts status='completed' and completed_at IS NOT NULL.
+        """
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(eval_worker_session_maker, user_id)
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            game_id,
+            [
+                {"ply": ply, "full_hash": 6000 + ply, "eval_cp": None, "eval_mate": None}
+                for ply in range(4)
+            ],
+        )
+
+        # Seed an eval_jobs row with status='leased' to simulate a claimed tier-1 job.
+        job_id = await _seed_eval_job(eval_worker_session_maker, game_id, user_id, status="leased")
+
+        evals = [
+            {"ply": p, "eval_cp": 10 + p, "eval_mate": None, "best_move": None, "pv": None}
+            for p in range(5)
+        ]
+        payload = {
+            "game_id": game_id,
+            "sf_version": "Stockfish 18",
+            "evals": evals,
+            "job_id": job_id,
+        }
+
+        try:
+            async with _make_client() as client:
+                response = await client.post(
+                    _SUBMIT_URL,
+                    json=payload,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert response.status_code == 200, (
+                f"Expected 200, got {response.status_code}: {response.text}"
+            )
+            body = response.json()
+            assert body["stamp_complete"] is True, f"stamp_complete should be True: {body}"
+
+            # R3 key assertion: eval_jobs row is now 'completed' with completed_at set.
+            job_row = await _get_eval_job(eval_worker_session_maker, job_id)
+            assert job_row is not None, f"eval_jobs row {job_id} must exist"
+            assert job_row["status"] == "completed", (
+                f"eval_jobs status should be 'completed', got {job_row['status']!r}"
+            )
+            assert job_row["completed_at"] is not None, (
+                "eval_jobs.completed_at must be set after stamping"
+            )
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_submit_without_job_id_does_not_touch_eval_jobs(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """R4: submit with job_id=None (tier-3 path) leaves eval_jobs row untouched.
+
+        Seeds a separate eval_jobs row (status='leased') unrelated to the game being
+        submitted. Submits with job_id=None. Verifies the seeded row is unchanged.
+        """
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+
+        # Game that will be submitted.
+        game_id = await _insert_game(eval_worker_session_maker, user_id)
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            game_id,
+            [
+                {"ply": ply, "full_hash": 7000 + ply, "eval_cp": None, "eval_mate": None}
+                for ply in range(4)
+            ],
+        )
+
+        # A second game/job to verify eval_jobs is not touched.
+        sentinel_game_id = await _insert_game(eval_worker_session_maker, user_id)
+        sentinel_job_id = await _seed_eval_job(
+            eval_worker_session_maker, sentinel_game_id, user_id, status="leased"
+        )
+
+        evals = [
+            {"ply": p, "eval_cp": 10 + p, "eval_mate": None, "best_move": None, "pv": None}
+            for p in range(5)
+        ]
+        # job_id=None → tier-3 path, no eval_jobs write expected.
+        payload = {
+            "game_id": game_id,
+            "sf_version": "Stockfish 18",
+            "evals": evals,
+            "job_id": None,
+        }
+
+        try:
+            async with _make_client() as client:
+                response = await client.post(
+                    _SUBMIT_URL,
+                    json=payload,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert response.status_code == 200, (
+                f"Expected 200, got {response.status_code}: {response.text}"
+            )
+
+            # R4 key assertion: sentinel eval_jobs row is still 'leased', not completed.
+            sentinel_row = await _get_eval_job(eval_worker_session_maker, sentinel_job_id)
+            assert sentinel_row is not None
+            assert sentinel_row["status"] == "leased", (
+                f"Sentinel eval_jobs status must remain 'leased' after tier-3 submit "
+                f"(job_id=None); got {sentinel_row['status']!r}"
+            )
+            assert sentinel_row["completed_at"] is None, (
+                "Sentinel eval_jobs.completed_at must stay NULL after tier-3 submit"
+            )
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id, sentinel_game_id])
+
+    @pytest.mark.asyncio
+    async def test_late_submit_does_not_corrupt_eval_jobs(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """R5: late-submit guard — submitting against a non-'leased' job is a no-op.
+
+        Seeds an eval_jobs row with status='completed' (simulates a race where the
+        lease expired and another worker already completed the job). Submits with
+        that job_id. Asserts the row is unchanged (WHERE status='leased' makes the
+        UPDATE miss). Proves T-121-01 blast-radius bound.
+        """
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(eval_worker_session_maker, user_id)
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            game_id,
+            [
+                {"ply": ply, "full_hash": 8000 + ply, "eval_cp": None, "eval_mate": None}
+                for ply in range(4)
+            ],
+        )
+
+        # Seed an eval_jobs row with status='completed' — not 'leased'.
+        # The WHERE status='leased' guard must make the stamp UPDATE a no-op.
+        job_id = await _seed_eval_job(
+            eval_worker_session_maker, game_id, user_id, status="completed"
+        )
+
+        evals = [
+            {"ply": p, "eval_cp": 10 + p, "eval_mate": None, "best_move": None, "pv": None}
+            for p in range(5)
+        ]
+        payload = {
+            "game_id": game_id,
+            "sf_version": "Stockfish 18",
+            "evals": evals,
+            "job_id": job_id,
+        }
+
+        # Record state before submit.
+        job_before = await _get_eval_job(eval_worker_session_maker, job_id)
+        assert job_before is not None
+        assert job_before["status"] == "completed"
+
+        try:
+            async with _make_client() as client:
+                response = await client.post(
+                    _SUBMIT_URL,
+                    json=payload,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert response.status_code == 200, (
+                f"Expected 200, got {response.status_code}: {response.text}"
+            )
+
+            # R5 key assertion: the non-'leased' row is unchanged.
+            job_after = await _get_eval_job(eval_worker_session_maker, job_id)
+            assert job_after is not None
+            assert job_after["status"] == "completed", (
+                f"Status must remain 'completed' after a late submit; got {job_after['status']!r}"
+            )
+            # completed_at should be unchanged (was None when status='completed' with no
+            # prior stamp — stays None because the UPDATE was a no-op).
+            assert job_after["completed_at"] == job_before["completed_at"], (
+                "completed_at must be unchanged after a late submit no-op"
+            )
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_lichess_eval_game_claim_releases_lease(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """WR-01: a deferred lichess-eval tier-1 claim releases its eval_jobs lease.
+
+        claim_eval_job leases the eval_jobs row before the handler discovers it's a
+        lichess-eval game it defers (D-4). Without the release fix the row would sit
+        'leased' for the full lease TTL, stalling the server pool (which DOES do the
+        flaw-PV backfill). Asserts the lease returns 204 AND the row is reset to
+        'pending' with leased_by cleared so the server can claim it immediately.
+        """
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(eval_worker_session_maker, user_id)
+
+        # A real 'leased' eval_jobs row — the state claim_eval_job would have left.
+        job_id = await _seed_eval_job(eval_worker_session_maker, game_id, user_id, status="leased")
+
+        import app.routers.eval_remote as eval_remote_module
+
+        monkeypatch.setattr(
+            eval_remote_module,
+            "claim_eval_job",
+            AsyncMock(
+                return_value=ClaimedJob(
+                    game_id=game_id,
+                    user_id=user_id,
+                    tier=1,
+                    is_lichess_eval_game=True,
+                    job_id=job_id,
+                )
+            ),
+        )
+
+        try:
+            async with _make_client() as client:
+                response = await client.post(_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN})
+
+            assert response.status_code == 204, (
+                f"Lichess-eval game must be deferred with 204, got {response.status_code}"
+            )
+
+            # WR-01 key assertion: lease released back to 'pending', not stranded 'leased'.
+            job_row = await _get_eval_job(eval_worker_session_maker, job_id)
+            assert job_row is not None, f"eval_jobs row {job_id} must still exist"
+            assert job_row["status"] == "pending", (
+                f"Deferred lichess claim must release lease to 'pending'; got {job_row['status']!r}"
+            )
+            assert job_row["leased_by"] is None, (
+                "leased_by must be cleared when the lease is released"
+            )
+            assert job_row["completed_at"] is None, (
+                "A released (not completed) job must keep completed_at NULL"
+            )
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    def test_default_idle_sleep_is_one_second(self) -> None:
+        """R6: DEFAULT_IDLE_SLEEP constant must be 1.0 (lowered from 5.0 in Phase 121).
+
+        Only the empty-queue / 204 path sleeps; the busy path is a tight loop.
+        This constant directly controls idle-pickup latency for tier-1 jobs.
+        """
+        import scripts.remote_eval_worker as remote_eval_worker
+
+        assert remote_eval_worker.DEFAULT_IDLE_SLEEP == 1.0, (
+            f"DEFAULT_IDLE_SLEEP must be 1.0, got {remote_eval_worker.DEFAULT_IDLE_SLEEP}"
+        )

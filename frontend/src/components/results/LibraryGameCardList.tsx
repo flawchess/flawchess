@@ -21,6 +21,10 @@ interface LibraryGameCardListProps {
   totalN: number;
   /** Whether the eval-coverage query failed — passed to EvalCoverageBadge. */
   isCoverageError: boolean;
+  /** Game ids with a tier-1 analyze request in flight (lifted to GamesTab). */
+  inFlightIds: ReadonlySet<number>;
+  /** Report a card's in-flight transition up to GamesTab (drives list polling). */
+  onInFlightChange: (gameId: number, inFlight: boolean) => void;
 }
 
 /**
@@ -44,6 +48,8 @@ export function LibraryGameCardList({
   analyzedN,
   totalN,
   isCoverageError,
+  inFlightIds,
+  onInFlightChange,
 }: LibraryGameCardListProps) {
   // Derive pagination state; use PAGE_SIZE as the canonical page size constant.
   const pageSize = limit > 0 ? limit : PAGE_SIZE;
@@ -85,7 +91,11 @@ export function LibraryGameCardList({
               key={game.game_id}
               className={game.analysis_state === 'analyzed' ? 'md:col-span-2' : 'md:col-span-1'}
             >
-              <LibraryGameCard game={game} />
+              <LibraryGameCard
+                game={game}
+                isInFlight={inFlightIds.has(game.game_id)}
+                onInFlightChange={onInFlightChange}
+              />
             </div>
           ))}
         </div>
