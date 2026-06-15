@@ -33,6 +33,13 @@ import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
 
 const PAGE_SIZE = 20;
 
+// Safety backstop for a user-initiated tier-1 analyze: if the job fails or never
+// lands, drop the game from the in-flight set after this long so the card reverts
+// to the Analyze button (and we stop polling) instead of pulsing "Analyzing…"
+// forever. A single game evals in ~20s; queued behind a backlog it can take longer,
+// so the timeout is generous.
+const ANALYZE_INFLIGHT_TIMEOUT_MS = 120_000;
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 /**
@@ -183,6 +190,54 @@ export function GamesTab() {
     trackFullAnalysis: true,
   });
 
+  // Tier-1 "Analyzing…" state lifted out of the cards (Option A). Owning the set
+  // here lets us keep the games-list poll alive until an on-demand analyze lands —
+  // the global eval-coverage poll backs off after a stall (~15s) which is shorter
+  // than a single-game eval (~20s), so a card relying on it alone could pulse
+  // forever (the eval-coverage hook has no per-job in-flight signal since Phase
+  // 119-03 removed in_flight_count). A per-game timeout backstops failed/lost jobs.
+  const [inFlightIds, setInFlightIds] = useState<ReadonlySet<number>>(() => new Set());
+  const inFlightTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+
+  const handleInFlightChange = useCallback((gameId: number, inFlight: boolean) => {
+    const timers = inFlightTimers.current;
+    const existing = timers.get(gameId);
+    if (existing !== undefined) {
+      clearTimeout(existing);
+      timers.delete(gameId);
+    }
+    setInFlightIds((prev) => {
+      if (prev.has(gameId) === inFlight) return prev;
+      const next = new Set(prev);
+      if (inFlight) next.add(gameId);
+      else next.delete(gameId);
+      return next;
+    });
+    if (inFlight) {
+      timers.set(
+        gameId,
+        setTimeout(() => {
+          timers.delete(gameId);
+          setInFlightIds((prev) => {
+            if (!prev.has(gameId)) return prev;
+            const next = new Set(prev);
+            next.delete(gameId);
+            return next;
+          });
+        }, ANALYZE_INFLIGHT_TIMEOUT_MS),
+      );
+    }
+  }, []);
+
+  // Clear any pending in-flight timers on unmount.
+  useEffect(() => {
+    const timers = inFlightTimers.current;
+    return () => {
+      for (const t of timers.values()) clearTimeout(t);
+      timers.clear();
+    };
+  }, []);
+
   const {
     data: gamesData,
     isLoading: gamesLoading,
@@ -196,8 +251,10 @@ export function GamesTab() {
     // "Analyzing…" to the analyzed view within a few seconds, no page reload.
     // Repointed from inFlightCount > 0 to analyzedCount < totalCount in Phase
     // 119-03: tier-3 derived picks have no eval_jobs rows, so inFlightCount was
-    // blind to the dominant backlog drain (119-RESEARCH-NOTES.md).
-    analyzedCount < totalCount ? EVAL_COVERAGE_POLL_INTERVAL_MS : 0,
+    // blind to the dominant backlog drain (119-RESEARCH-NOTES.md). Also poll while
+    // any on-demand analyze is in flight (Option A) so its card flips reliably even
+    // when the eval-coverage poll has already backed off.
+    analyzedCount < totalCount || inFlightIds.size > 0 ? EVAL_COVERAGE_POLL_INTERVAL_MS : 0,
   );
 
   // Refresh the games list when a tier-1 (or any) analysis completes — the
@@ -319,6 +376,8 @@ export function GamesTab() {
           analyzedN={analyzedCount}
           totalN={totalCount}
           isCoverageError={isCoverageError}
+          inFlightIds={inFlightIds}
+          onInFlightChange={handleInFlightChange}
         />
       )}
     </div>

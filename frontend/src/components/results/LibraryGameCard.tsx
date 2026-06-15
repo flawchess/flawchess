@@ -38,6 +38,16 @@ interface LibraryGameCardProps {
    * tag/severity or scrubs the chart (see `yieldFocus`). Omitted on the Games subtab.
    */
   focusPly?: number | null;
+  /**
+   * Controlled tier-1 "Analyzing…" state. When `onInFlightChange` is provided the
+   * card is controlled: the parent owns the in-flight set (the Games subtab lifts it
+   * to GamesTab so it can keep the games-list poll alive until the eval lands — the
+   * global eval-coverage poll backs off after a stall and cannot be relied on for an
+   * on-demand analyze, see GamesTab). When omitted the card manages in-flight locally
+   * (the FlawCard modal, which has no parent list to coordinate).
+   */
+  isInFlight?: boolean;
+  onInFlightChange?: (gameId: number, inFlight: boolean) => void;
 }
 
 const MOBILE_BOARD_SIZE = 130;
@@ -185,29 +195,43 @@ function formatTimeControl(tcStr: string): string {
  * rendered as React children or href (auto-escaped). platform_url uses
  * target="_blank" rel="noopener noreferrer" to prevent reverse-tabnabbing (T-107-10).
  */
-export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
+export function LibraryGameCard({
+  game,
+  focusPly,
+  isInFlight: isInFlightProp,
+  onInFlightChange,
+}: LibraryGameCardProps) {
   // Live miniboard: hovering the eval chart sets the ply; the board scrubs to
   // that position and (on M/B plies) marks the moved piece. At rest the board
   // shows result_fen, as before.
   const [hoverPly, setHoverPly] = useState<number | null>(null);
 
-  // Localized in-flight state for tier-1 analyze button (D-118-11 — only the
-  // clicked game shows "Analyzing…", not a global spinner across all cards).
-  const [isInFlight, setIsInFlight] = useState(false);
+  // In-flight state for the tier-1 analyze button (D-118-11 — only the clicked game
+  // shows "Analyzing…", not a global spinner across all cards). Controlled when the
+  // parent passes onInFlightChange (Games subtab); otherwise managed locally
+  // (FlawCard modal). See LibraryGameCardProps.isInFlight.
+  const isControlled = onInFlightChange !== undefined;
+  const [localInFlight, setLocalInFlight] = useState(false);
+  const isInFlight = isControlled ? (isInFlightProp ?? false) : localInFlight;
+  const setInFlight = (next: boolean): void => {
+    if (isControlled) onInFlightChange(game.game_id, next);
+    else setLocalInFlight(next);
+  };
 
   // Guest check for analyze affordance gating (D-118-13).
   const { data: profile } = useUserProfile();
   const isGuest = profile?.is_guest ?? false;
   const isAnalyzed = game.analysis_state === 'analyzed';
 
-  // Clear local in-flight state when the games list refetches and the game flips
-  // to analyzed — prevents the card staying stuck in "Analyzing…" after the eval
-  // completes and the query refreshes (D-118-11: localized in-flight state).
+  // Clear in-flight state when the games list refetches and the game flips to
+  // analyzed — prevents the card staying stuck in "Analyzing…" after the eval
+  // completes and the query refreshes (D-118-11).
   useEffect(() => {
     if (isAnalyzed && isInFlight) {
-      setIsInFlight(false);
+      if (isControlled) onInFlightChange(game.game_id, false);
+      else setLocalInFlight(false);
     }
-  }, [isAnalyzed, isInFlight]);
+  }, [isAnalyzed, isInFlight, isControlled, onInFlightChange, game.game_id]);
 
   // Clicked-flaw focus pulse (Flaws subtab). Seeded from the prop at mount (the
   // card only mounts once the game has loaded). It is an attention cue, not a
@@ -593,7 +617,7 @@ export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
         isGuest={isGuest}
         isAnalyzed={isAnalyzed}
         isInFlight={isInFlight}
-        onInFlightChange={setIsInFlight}
+        onInFlightChange={setInFlight}
       />
     );
 
@@ -717,7 +741,7 @@ export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
                 isGuest={isGuest}
                 isAnalyzed={isAnalyzed}
                 isInFlight={isInFlight}
-                onInFlightChange={setIsInFlight}
+                onInFlightChange={setInFlight}
               />
             )}
           </div>
