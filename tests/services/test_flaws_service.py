@@ -484,23 +484,45 @@ class TestEvalCoverageGate:
         assert _compute_eval_coverage([]) == 0.0
 
     def test_full_coverage_minus_final_ply(self) -> None:
-        """81-row game with only the final row's eval null returns >=0.90.
+        """81-row fully-analyzed game returns 1.0 (terminal position excluded).
 
-        An 81-position game (plies 0-80) where only ply 80 has null eval
-        has coverage 80/81 ≈ 0.988 — well above 0.90.
+        An 81-position game (plies 0-80) where only ply 80 has null eval has
+        coverage 80/(81-1) = 80/80 = 1.0 — the terminal position is excluded from
+        the denominator, so a fully-analyzed game scores 1.0 regardless of length.
         """
         positions = [_make_pos(i, eval_cp=50) for i in range(80)]
         positions.append(_make_pos(80))  # final ply: no eval
         coverage = _compute_eval_coverage(positions)
-        assert coverage == pytest.approx(80 / 81, abs=1e-9)
+        assert coverage == pytest.approx(1.0, abs=1e-9)
         assert coverage >= EVAL_COVERAGE_MIN
 
     def test_below_threshold_returns_low_coverage(self) -> None:
-        """A game with only 50% eval coverage returns 0.50 (below threshold)."""
+        """A genuinely sparse game (5 of 10 positions eval'd) stays below threshold.
+
+        5 eval'd of 10 positions = 5/(10-1) ≈ 0.556 — still well below 0.90, proving
+        the terminal-position fix does not over-correct sparse games into "analyzed".
+        """
         positions = [_make_pos(i, eval_cp=50 if i % 2 == 0 else None) for i in range(10)]
         coverage = _compute_eval_coverage(positions)
-        assert coverage == pytest.approx(0.5, abs=1e-9)
+        assert coverage == pytest.approx(5 / 9, abs=1e-9)
         assert coverage < EVAL_COVERAGE_MIN
+
+    def test_single_position_returns_zero(self) -> None:
+        """A single-position list has no movable ply, returns 0.0 (denominator guard)."""
+        assert _compute_eval_coverage([_make_pos(0)]) == 0.0
+
+    def test_short_fully_analyzed_game_clears_gate(self) -> None:
+        """Regression (260615-rb1): a 7-ply fully-analyzed game clears the gate.
+
+        7 movable positions all eval'd + 1 terminal null position (8 total, a 7-ply
+        game) = 7/(8-1) = 1.0. Before the fix this was 7/8 = 0.875 < 0.90, which
+        misclassified short fully-analyzed games as GameNotAnalyzed.
+        """
+        positions = [_make_pos(i, eval_cp=20) for i in range(7)]
+        positions.append(_make_pos(7))  # terminal ply: no eval
+        coverage = _compute_eval_coverage(positions)
+        assert coverage == pytest.approx(1.0, abs=1e-9)
+        assert coverage >= EVAL_COVERAGE_MIN
 
 
 class TestFenRecompute:
@@ -632,11 +654,26 @@ class TestClassifyGameFlaws:
     def test_coverage_gate_below_threshold_returns_not_analyzed(self) -> None:
         """A game with < 90% eval coverage returns GameNotAnalyzed."""
         game = _make_game(pgn=_SHORT_PGN, user_color="white")
-        # 10 positions, only 5 with eval = 50% coverage < 90%
+        # 10 positions, only 5 with eval = 5/(10-1) ≈ 0.556 coverage < 90%
         positions = [_make_pos(i, eval_cp=20 if i < 5 else None) for i in range(10)]
         result = classify_game_flaws(game, positions)
         assert isinstance(result, dict)
         assert result["reason"] == "no_engine_analysis"
+
+    def test_short_fully_analyzed_game_not_marked_unanalyzed(self) -> None:
+        """Regression (260615-rb1): a short fully-analyzed game is NOT GameNotAnalyzed.
+
+        _SHORT_PGN is "1. e4 e5 *" (a 2-ply game): 2 movable positions both eval'd +
+        1 terminal null = coverage 2/(3-1) = 1.0 >= EVAL_COVERAGE_MIN. Before the fix
+        this scored 2/3 = 0.667 and was wrongly returned as GameNotAnalyzed, leaving
+        oracle columns NULL and the "Analyze" pill stuck.
+        """
+        game = _make_game(pgn=_SHORT_PGN, user_color="white")
+        positions = [_make_pos(0, eval_cp=20), _make_pos(1, eval_cp=20), _make_pos(2)]
+        result = classify_game_flaws(game, positions)
+        assert isinstance(result, list), (
+            "Short fully-analyzed game must return list, not GameNotAnalyzed"
+        )
 
     # -----------------------------------------------------------------------
     # Flaw emission: only mistakes/blunders, not inaccuracies

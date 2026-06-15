@@ -17,7 +17,7 @@ import datetime
 from collections.abc import Sequence
 from typing import Any, Literal
 
-from sqlalchemy import Float, Select, Subquery, case, exists, func, or_, select, true
+from sqlalchemy import Float, Select, Subquery, and_, case, exists, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
@@ -894,24 +894,35 @@ async def query_filtered_games(
 
 
 def _analyzed_game_ids_subquery(user_id: int) -> Subquery:
-    """Per-game coverage aggregate -> game_ids whose >=90% of plies carry an eval.
+    """Per-game coverage aggregate -> game_ids whose >=90% of MOVABLE plies carry an eval.
 
     Replicates flaws_service._compute_eval_coverage in SQL:
         SUM(CASE WHEN eval_cp OR eval_mate non-null THEN 1 ELSE 0 END)::float
-        / COUNT(*)  >=  EVAL_COVERAGE_MIN
+        / (COUNT(*) - 1)  >=  EVAL_COVERAGE_MIN   -- HAVING COUNT(*) > 1
     grouped by game_id. EVAL_COVERAGE_MIN is the imported kernel constant (no 0.90
-    literal). User-scoped via the game_positions.user_id == :user_id predicate.
+    literal). User-scoped via the game_positions.user_id == :user_id predicate, which
+    matches flaws_repository.fetch_game_positions_ordered, so this COUNT(*) covers the
+    exact same per-game position set as the Python kernel's len(positions).
+
+    BUG FIX (quick-task 260615-rb1): the denominator was COUNT(*), which counted the
+    structurally-unevaluable terminal position (the board after the last move, no
+    move annotated) against coverage and capped short fully-analyzed games below the
+    threshold. The denominator is now (COUNT(*) - 1) to mirror the kernel's
+    len(positions) - 1, with a HAVING COUNT(*) > 1 guard to exclude the <=1-position
+    case (no movable ply, no div-by-zero, no spurious pass). Both gates MUST agree:
+    a 7-ply fully-analyzed game is "analyzed" by both.
     """
     has_eval = case(
         (or_(GamePosition.eval_cp.isnot(None), GamePosition.eval_mate.isnot(None)), 1),
         else_=0,
     )
-    coverage = func.cast(func.sum(has_eval), Float) / func.count()
+    movable_count = func.count() - 1
+    coverage = func.cast(func.sum(has_eval), Float) / movable_count
     return (
         select(GamePosition.game_id.label("game_id"))
         .where(GamePosition.user_id == user_id)
         .group_by(GamePosition.game_id)
-        .having(coverage >= EVAL_COVERAGE_MIN)
+        .having(and_(func.count() > 1, coverage >= EVAL_COVERAGE_MIN))
         .subquery("analyzed")
     )
 
