@@ -92,6 +92,35 @@ async def count_pending_evals(session: AsyncSession, user_id: int) -> int:
     return result.scalar_one()
 
 
+async def count_analyzable_games(session: AsyncSession, user_id: int) -> int:
+    """Return the count of games that can still reach the 'analyzed' state.
+
+    Badge denominator for GET /imports/eval-coverage. Excludes permanently
+    unanalyzable games so "X of X games analyzed" is actually reachable.
+
+    Predicate: ``is_analyzed OR full_evals_completed_at IS NULL``. A game with
+    full_evals_completed_at SET but NOT is_analyzed has already been through the
+    full-eval drain's classify step and produced no flaw counts (white_blunders
+    stays NULL) — it is degenerate-length (zero moves, or so short that eval
+    coverage can't reach EVAL_COVERAGE_MIN), so classify_game_flaws returns
+    GameNotAnalyzed and it can never become is_analyzed. Counting these in the
+    denominator made analyzed_count < total_count permanently (the stall the
+    frontend useEvalCoverage MAX_STALL_POLLS backstop was tolerating).
+
+    Games still mid-drain keep full_evals_completed_at NULL, so they remain in
+    the denominator as not-yet-analyzed and the badge still climbs during import.
+    """
+    result = await session.execute(
+        select(func.count())
+        .select_from(Game)
+        .where(
+            Game.user_id == user_id,
+            sa.or_(Game.is_analyzed, Game.full_evals_completed_at.is_(None)),
+        )
+    )
+    return result.scalar_one()
+
+
 async def count_is_analyzed_games(session: AsyncSession, user_id: int) -> int:
     """Return count of games with flaw analysis present for the given user.
 

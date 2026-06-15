@@ -177,6 +177,35 @@ def _make_unanalyzed_game(user_id: int) -> Game:
     )
 
 
+def _make_unanalyzable_game(user_id: int) -> Game:
+    """Permanently-unanalyzable game: full_evals_completed_at SET but white_blunders NULL.
+
+    Models a zero-move / ultra-short game post-drain: the full-eval drain finished
+    (full_evals_completed_at SET) and entry-ply evals are marked done
+    (evals_completed_at SET), but classify_game_flaws returned GameNotAnalyzed so
+    white_blunders stayed NULL. NOT is_analyzed and NOT analyzable → must be
+    excluded from total_count so "X of X analyzed" is reachable.
+    """
+    return Game(
+        user_id=user_id,
+        platform="chess.com",
+        platform_game_id=str(uuid.uuid4()),
+        platform_url="https://chess.com/game/test",
+        pgn="1-0",
+        result="1-0",
+        user_color="white",
+        time_control_str="600+0",
+        time_control_bucket="blitz",
+        time_control_seconds=600,
+        rated=True,
+        is_computer_game=False,
+        evals_completed_at=_NOW,
+        full_evals_completed_at=_NOW,
+        white_blunders=None,
+        black_blunders=None,
+    )
+
+
 async def _register_and_login(email: str, password: str = "testpassword123") -> tuple[int, str]:
     """Register a user via HTTP and return (user_id, auth_token)."""
     async with httpx.AsyncClient(
@@ -416,3 +445,79 @@ async def test_analyzed_count_uses_is_analyzed_not_entry_ply(
         "analyzed_count equals the naive entry-ply count — D-118-10 bug: "
         "should use white_blunders IS NOT NULL, not evals_completed_at IS NOT NULL"
     )
+
+
+# ---------------------------------------------------------------------------
+# Tests — total_count excludes permanently-unanalyzable games (260615-wjz)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_total_count_excludes_unanalyzable_games(
+    user_a_client: tuple[int, str], test_engine
+) -> None:
+    """total_count drops permanently-unanalyzable games but keeps in-flight ones.
+
+    Seed: 2 analyzed + 3 unanalyzable (full_evals SET, white_blunders NULL) +
+    1 in-flight (all NULL). The unanalyzable games can never reach is_analyzed,
+    so the badge denominator must exclude them; the in-flight game is still
+    mid-drain (full_evals NULL) and must remain counted.
+    """
+    user_id, token = user_a_client
+    headers = {"Authorization": f"Bearer {token}"}
+
+    analyzed_count = 2
+    unanalyzable_count = 3
+    in_flight_count = 1
+    games: list[Game] = (
+        [_make_analyzed_engine_game(user_id) for _ in range(analyzed_count)]
+        + [_make_unanalyzable_game(user_id) for _ in range(unanalyzable_count)]
+        + [_make_unanalyzed_game(user_id) for _ in range(in_flight_count)]
+    )
+    await _seed_games_for_user(test_engine, user_id, games)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(EVAL_COVERAGE_ENDPOINT, headers=headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    # 2 analyzed + 1 in-flight are analyzable; the 3 unanalyzable are excluded.
+    assert body["total_count"] == analyzed_count + in_flight_count
+    assert body["analyzed_count"] == analyzed_count
+    # The in-flight game is the only pending entry-ply eval.
+    assert body["pending_count"] == in_flight_count
+
+
+@pytest.mark.asyncio
+async def test_x_of_x_reachable_when_drain_done(
+    user_a_client: tuple[int, str], test_engine
+) -> None:
+    """Once the drain finishes, analyzed_count == total_count (badge reaches X of X).
+
+    With only analyzed + permanently-unanalyzable games (no in-flight work), the
+    denominator collapses to exactly the analyzed set, so the badge reads "X of X"
+    and pct_complete is 100 — the bug this task fixes.
+    """
+    user_id, token = user_a_client
+    headers = {"Authorization": f"Bearer {token}"}
+
+    analyzed_count = 4
+    unanalyzable_count = 9  # matches the prod user-28 case
+    games: list[Game] = [_make_analyzed_engine_game(user_id) for _ in range(analyzed_count)] + [
+        _make_unanalyzable_game(user_id) for _ in range(unanalyzable_count)
+    ]
+    await _seed_games_for_user(test_engine, user_id, games)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(EVAL_COVERAGE_ENDPOINT, headers=headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_count"] == analyzed_count
+    assert body["analyzed_count"] == analyzed_count
+    assert body["pending_count"] == 0
+    assert body["pct_complete"] == 100
