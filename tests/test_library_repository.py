@@ -1148,3 +1148,97 @@ class TestStatsAggregatesPlayerOnly:
     # rebuild — the trend chart now reads the games-table oracle columns
     # (white_/black_blunders/mistakes/inaccuracies) via fetch_flaw_trend_rows, which are
     # inherently player-only by color selection, so no game_flaws player-gating applies.
+
+
+# ---------------------------------------------------------------------------
+# TestFetchPageActiveEvalStatus (-k active_eval_status)
+# ---------------------------------------------------------------------------
+
+
+class TestFetchPageActiveEvalStatus:
+    """fetch_page_active_eval_status: batch active eval-job status per game."""
+
+    @pytest.mark.asyncio
+    async def test_pending_job_returns_pending(self, db_session: AsyncSession) -> None:
+        """A game with a 'pending' eval_jobs row yields active_eval_status == 'pending'."""
+        from app.models.eval_jobs import EvalJob
+        from app.repositories.library_repository import fetch_page_active_eval_status
+
+        game = await _seed_game(db_session)
+        job = EvalJob(tier=1, user_id=game.user_id, game_id=game.id, status="pending")
+        db_session.add(job)
+        await db_session.flush()
+
+        result = await fetch_page_active_eval_status(db_session, game.user_id, [game.id])
+        assert result.get(game.id) == "pending"
+
+    @pytest.mark.asyncio
+    async def test_leased_job_returns_leased(self, db_session: AsyncSession) -> None:
+        """A game with a 'leased' eval_jobs row yields active_eval_status == 'leased'."""
+        from app.models.eval_jobs import EvalJob
+        from app.repositories.library_repository import fetch_page_active_eval_status
+
+        game = await _seed_game(db_session)
+        job = EvalJob(tier=1, user_id=game.user_id, game_id=game.id, status="leased")
+        db_session.add(job)
+        await db_session.flush()
+
+        result = await fetch_page_active_eval_status(db_session, game.user_id, [game.id])
+        assert result.get(game.id) == "leased"
+
+    @pytest.mark.asyncio
+    async def test_no_active_job_absent_from_result(self, db_session: AsyncSession) -> None:
+        """A game with no eval_jobs row is absent from the result dict."""
+        from app.repositories.library_repository import fetch_page_active_eval_status
+
+        game = await _seed_game(db_session)
+
+        result = await fetch_page_active_eval_status(db_session, game.user_id, [game.id])
+        assert game.id not in result
+
+    @pytest.mark.asyncio
+    async def test_completed_job_absent_from_result(self, db_session: AsyncSession) -> None:
+        """A game with only a 'completed' eval_jobs row is absent (not active)."""
+        from app.models.eval_jobs import EvalJob
+        from app.repositories.library_repository import fetch_page_active_eval_status
+
+        game = await _seed_game(db_session)
+        job = EvalJob(tier=1, user_id=game.user_id, game_id=game.id, status="completed")
+        db_session.add(job)
+        await db_session.flush()
+
+        result = await fetch_page_active_eval_status(db_session, game.user_id, [game.id])
+        assert game.id not in result
+
+    @pytest.mark.asyncio
+    async def test_empty_game_ids_returns_empty_dict(self, db_session: AsyncSession) -> None:
+        """Empty game_ids list returns empty dict immediately (early-return guard)."""
+        from app.repositories.library_repository import fetch_page_active_eval_status
+
+        result = await fetch_page_active_eval_status(db_session, 99999, [])
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_multiple_games_mixed_status(self, db_session: AsyncSession) -> None:
+        """Batch result correctly maps multiple games with different statuses."""
+        from app.models.eval_jobs import EvalJob
+        from app.repositories.library_repository import fetch_page_active_eval_status
+
+        game_pending = await _seed_game(db_session)
+        game_leased = await _seed_game(db_session)
+        game_no_job = await _seed_game(db_session)
+
+        db_session.add(
+            EvalJob(tier=1, user_id=game_pending.user_id, game_id=game_pending.id, status="pending")
+        )
+        db_session.add(
+            EvalJob(tier=1, user_id=game_leased.user_id, game_id=game_leased.id, status="leased")
+        )
+        await db_session.flush()
+
+        game_ids = [game_pending.id, game_leased.id, game_no_job.id]
+        result = await fetch_page_active_eval_status(db_session, 99999, game_ids)
+
+        assert result.get(game_pending.id) == "pending"
+        assert result.get(game_leased.id) == "leased"
+        assert game_no_job.id not in result

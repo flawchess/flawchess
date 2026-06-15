@@ -79,6 +79,9 @@ export interface GameFlawCard {
   // ply i, so replaying moves[0..i] yields the position at eval_series[i].
   // Null for unanalyzed games. Drives the live miniboard on eval-chart hover.
   moves: string[] | null;
+  // Active eval-job state for the on-demand analyze pill; null when no active job
+  // (unanalyzed-and-unqueued, or already analyzed).
+  active_eval_status: 'pending' | 'leased' | null;
 }
 
 /** One ply's white-perspective ES datapoint (mirrors backend EvalPoint). */

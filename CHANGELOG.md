@@ -12,6 +12,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 - **Guest welcome page** — first-time guests now see a short Welcome page before importing that honestly lays out what works without an account (opening explorer and statistics, endgame and time-management analytics, importing Lichess full-game analyses) versus what signing up unlocks (FlawChess's own deep Stockfish blunder/mistake/inaccuracy detection, cross-device access, and data durability). A "Don't show this again" option skips it on future visits, and the Import page keeps a short "Sign up free" prompt for guests. (SEED-047)
 
+### Added
+
+- **Tighter analyze feedback: Pending / Analyzing pill** — clicking "Analyze" on a game card now shows a pulsing "Pending…" pill immediately (no wait for a server response). Once a worker leases the job the pill transitions to "Analyzing…". A failed or rejected enqueue rolls back to the "Analyze" button. (260615-q1x)
+
 ### Changed
 
 - **Eval-chart tooltip is more readable** — the floating tooltip on game eval charts is now less transparent so it stays legible over the eval bar.

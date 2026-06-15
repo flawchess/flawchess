@@ -300,6 +300,7 @@ def _build_card(
     flaw_rows: list[GameFlaw],
     is_analyzed: bool,
     positions: list[GamePosition],
+    active_eval_status: Literal["pending", "leased"] | None = None,
 ) -> GameFlawCard:
     """Build one GameFlawCard from pre-fetched game_flaws rows (D-02 migration).
 
@@ -391,6 +392,7 @@ def _build_card(
         flaw_markers=flaw_marker_data,
         phase_transitions=phase_transition_data,
         moves=moves_data,
+        active_eval_status=active_eval_status,
     )
 
 
@@ -424,6 +426,10 @@ async def get_library_game(
         game_id, []
     )
 
+    # Fetch active eval-job status for the pending→leased pill transition.
+    # Sequential call on the same AsyncSession (no asyncio.gather per CLAUDE.md).
+    active_map = await library_repository.fetch_page_active_eval_status(session, user_id, game_ids)
+
     positions: list[GamePosition]
     if is_analyzed:
         positions = (
@@ -432,7 +438,7 @@ async def get_library_game(
     else:
         positions = []
 
-    return _build_card(game, flaw_rows, is_analyzed, positions)
+    return _build_card(game, flaw_rows, is_analyzed, positions, active_map.get(game_id))
 
 
 async def get_library_games(
@@ -507,12 +513,19 @@ async def get_library_games(
             session, user_id, analyzed_game_ids
         )
 
+        # Batch-fetch active eval-job status (pending|leased) for the page.
+        # Sequential call on the same AsyncSession (no asyncio.gather per CLAUDE.md).
+        active_status_map = await library_repository.fetch_page_active_eval_status(
+            session, user_id, page_game_ids
+        )
+
         cards = [
             _build_card(
                 game,
                 page_flaws.get(game.id, []),
                 game.id in analyzed_set,
                 page_positions.get(game.id, []),
+                active_status_map.get(game.id),
             )
             for game in games
         ]
