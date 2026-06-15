@@ -29,11 +29,11 @@
 - ✅ **v1.24 Library Page** — Phases 104–112 (shipped 2026-06-09) — see [milestones/v1.24-ROADMAP.md](milestones/v1.24-ROADMAP.md)
 - ✅ **v1.25 Flaw-Stats Opponent Comparison** — Phases 113–115 (incl. 114.1) (shipped 2026-06-12) — see [milestones/v1.25-ROADMAP.md](milestones/v1.25-ROADMAP.md)
 - ✅ **v1.26 Full-Game Eval Pipeline** — Phases 116–120 (incl. 117.1, 117.2) (shipped 2026-06-14) — see [milestones/v1.26-ROADMAP.md](milestones/v1.26-ROADMAP.md)
-- 🚧 **Active (post-v1.26, milestone TBD)** — Phase 121: Remote-worker tier-1 claiming (SEED-048)
+- 🚧 **Active (post-v1.26, milestone TBD)** — Phase 121: Remote-worker tier-1 claiming (SEED-048), Phase 122: In-app feedback button (SEED-049)
 
 ## Phases
 
-> 🚧 **Active work (post-v1.26, milestone TBD):** Phase 121 — added as a standalone phase; it will be grouped into a milestone at ship time (per the standalone-then-regroup pattern, e.g. v1.20), or run `/gsd-new-milestone` first to formalize one.
+> 🚧 **Active work (post-v1.26, milestone TBD):** Phases 121–122 — added as standalone phases; they will be grouped into a milestone at ship time (per the standalone-then-regroup pattern, e.g. v1.20), or run `/gsd-new-milestone` first to formalize one.
 
 ### Phase 121: Remote-worker tier-1 claiming (SEED-048)
 
@@ -52,6 +52,22 @@ Scope (3 changes, no DB migration):
 3. Drop the worker idle poll `idle_sleep` 5s → ~1s so an idle remote worker notices a freshly-enqueued tier-1 quickly (only the empty-queue/204 path sleeps; the busy path is already a tight loop).
 
 Files: `app/routers/eval_remote.py` (lease/submit handlers), `app/services/eval_queue_service.py` (`claim_eval_job` already implements the tiered claim + lease sweep), `scripts/remote_eval_worker.py` (idle_sleep default + echo job token on submit), lease/submit Pydantic schemas (opaque job-token field). Needs a soak to confirm no tier-1/tier-3 double-claim and that submit correctly stamps `eval_jobs`.
+
+### Phase 122: In-app feedback button (SEED-049)
+
+**Goal**: A low-friction in-app feedback channel so users (guests included) can submit likes / dislikes / suggestions tied to the exact page they were on. A global floating button (bottom-right, auto-hides on scroll-down, yields to open drawers/modals, iOS safe-area aware) opens a modal with required freeform text + an optional coarse sentiment rating. Submissions persist to a new `feedback` table and also fire a Sentry signal (tagged with username / ELO bucket / platform) so feedback pings the team instead of rotting in a table nobody reads.
+**Depends on**: none (standalone; can ship independently of Phase 121)
+**Source**: SEED-049 (decisions locked 2026-06-15 explore session) · **Plans**: 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 122 to break down)
+
+Scope (per [SEED-049](seeds/SEED-049-in-app-feedback-button.md)):
+
+1. **Backend**: new `app/models/feedback.py` + Alembic migration (`user_id` FK with `ondelete`, page URL, freeform text, optional sentiment, `created_at`); thin `routers/` endpoint → service → repository per the layering rules. Light per-user rate-limit + max text length as an abuse guard. Sentry capture via `sentry_sdk` with `source="feedback"` + username / ELO-bucket / platform tags (username/platform/ELO derived from the user record, not denormalized).
+2. **Frontend**: global floating feedback button (auto-hide on scroll-down / show on scroll-up, yields to open overlays, `env(safe-area-inset-bottom)`, ≥44×44pt tap target, mini/secondary styling) + submit modal (required text, optional thumbs/3-point sentiment). Wire page URL from the router. Honor browser-automation rules (`data-testid`, `aria-label`, semantic `<button>`/`<form>`), theme colors from `theme.ts`, primary submit = `variant="default"`. Add bottom scroll padding to long containers.
+3. **Optional de-risk**: a quick `/gsd-sketch` of the floating-button placement (mobile drawer-overlap is the real design risk) before planning.
 
 <details>
 <summary>✅ v1.26 Full-Game Eval Pipeline (Phases 116–120, incl. 117.1, 117.2) — SHIPPED 2026-06-14</summary>
