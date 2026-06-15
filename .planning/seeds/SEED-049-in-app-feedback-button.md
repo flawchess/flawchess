@@ -20,9 +20,23 @@ submission arrives with rich cohort context for free.
 
 ## Design Decisions (locked in this explore session)
 
-- **Trigger surface: global floating button**, persistent bottom-right on every page (not buried
-  in nav/footer — discoverability drives volume). The captured URL genuinely varies by what the
-  user was looking at. **Watch-out:** must not overlap the mobile filter/bookmark drawers.
+- **Trigger surface: global floating button that auto-hides on scroll**, bottom-right on every
+  page (not buried in nav/footer — discoverability drives volume). The captured URL genuinely
+  varies by what the user was looking at. Mobile behavior, locked:
+  - **Hide-on-scroll-down, show-on-scroll-up** so it never permanently covers a chart or list on
+    dense pages. This is the key concession that makes a persistent button acceptable on mobile.
+  - **Yields to open overlays** — when a filter/bookmark drawer, modal, or bottom sheet is open,
+    the button hides (or sits behind it), never floats on top. Those drawers and the button want
+    the same bottom-right corner; this resolves the collision.
+  - **Respect iOS safe area** via `env(safe-area-inset-bottom)` so it clears the home indicator in
+    installed PWA mode (no browser chrome to absorb it).
+  - **Tap target ≥ 44×44pt** even if the visible icon is smaller; **mini/secondary styling**, not
+    a full high-contrast primary FAB (feedback is a low-frequency action, not the page's main one).
+  - Add **bottom scroll padding** to long containers so the last row never hides under the button.
+  - **Considered alternative (rejected for v1):** a feedback entry buried in the nav/user menu is
+    the more idiomatic mobile pattern for a low-frequency action and sidesteps the drawer collision
+    entirely, but gets far less volume. Early on we want volume over tidiness, so the auto-hiding
+    floating button wins. Revisit if the button proves noisy in practice.
 - **Form: required freeform text + optional sentiment rating.** Required text guarantees real
   signal; optional rating keeps completion high while giving a coarse trend over time. Lean
   thumbs-up/down or a 3-point sentiment over 1–5 stars (star scales invite "what does 3 mean?"
