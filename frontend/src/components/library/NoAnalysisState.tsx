@@ -13,10 +13,22 @@ interface NoAnalysisStateProps {
   isInFlight?: boolean;
   /**
    * Callback to set the local in-flight state in the parent card.
-   * Called with true when tier-1 enqueue is submitted, enabling the "Analyzing…" pulse
-   * on THIS card only (D-118-11 — localized, not driven by aggregate inFlightCount).
+   * Called with true optimistically on click (before server confirm), enabling the
+   * pulsing pill on THIS card only (D-118-11 — localized, not a global spinner).
+   * Called with false on enqueue error to roll back the optimistic state.
    */
   onInFlightChange?: (inFlight: boolean) => void;
+  /**
+   * Active eval-job status from the library-games payload (260615-q1x).
+   * 'pending'  → queued but not yet leased by a worker.
+   * 'leased'   → actively being evaluated by a worker.
+   * null       → no active job (unqueued or already analyzed).
+   *
+   * The pill shows "Analyzing…" when leased, "Pending…" otherwise
+   * (optimistic in-flight OR pending). This rides the existing library-games
+   * poll so no new endpoint is needed.
+   */
+  activeEvalStatus?: 'pending' | 'leased' | null;
 }
 
 /**
@@ -25,11 +37,15 @@ interface NoAnalysisStateProps {
  * Branches (D-118-07/11/13):
  * - isGuest: "Sign up to unlock analysis" link to /login?tab=register.
  * - isAnalyzed: returns null (no affordance needed — caller only renders for unanalyzed games).
- * - !isAnalyzed && isInFlight: pulsing "Analyzing…" text (localized to this game).
- * - !isAnalyzed && !isInFlight: "Analyze" button (tier-1 enqueue).
+ * - !isAnalyzed && (isInFlight || activeEvalStatus): pulsing pill ("Pending…" or "Analyzing…").
+ * - !isAnalyzed && !isInFlight && !activeEvalStatus: "Analyze" button (tier-1 enqueue).
  *
  * The in-flight state is localized — only the specific card the user clicked shows
- * the "Analyzing…" state, never a global spinner across the archive.
+ * the pulsing state, never a global spinner across the archive.
+ *
+ * Pill label (260615-q1x):
+ * - "Analyzing…" when activeEvalStatus === 'leased' (worker actively running).
+ * - "Pending…"   when isInFlight (optimistic) or activeEvalStatus === 'pending'.
  */
 export function NoAnalysisState({
   gameId,
@@ -37,6 +53,7 @@ export function NoAnalysisState({
   isAnalyzed,
   isInFlight = false,
   onInFlightChange,
+  activeEvalStatus,
 }: NoAnalysisStateProps) {
   const navigate = useNavigate();
   const tier1Mutation = useTier1Enqueue(gameId);
@@ -60,16 +77,27 @@ export function NoAnalysisState({
     );
   }
 
-  if (isInFlight) {
+  // Show the pulsing pill when: optimistic click is in-flight OR the server-side
+  // job is already active (pending or leased from the library-games payload).
+  const showPill = isInFlight || activeEvalStatus === 'pending' || activeEvalStatus === 'leased';
+
+  if (showPill) {
+    // "Analyzing…" once a worker has leased the job; "Pending…" while queued/optimistic.
+    const isLeased = activeEvalStatus === 'leased';
+    const label = isLeased ? 'Analyzing…' : 'Pending…';
+    const ariaLabel = isLeased
+      ? 'Analysis is actively running for this game'
+      : 'Analysis is pending for this game';
+
     return (
       <span
         className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-sm font-bold text-muted-foreground animate-pulse"
         style={{ background: 'oklch(1 0 0 / 4%)' }}
         data-testid={`analyzing-${gameId}`}
-        aria-label="Analysis in progress for this game"
+        aria-label={ariaLabel}
       >
         <Cpu className="h-4 w-4 shrink-0" aria-hidden="true" />
-        Analyzing…
+        {label}
       </span>
     );
   }
@@ -81,10 +109,11 @@ export function NoAnalysisState({
       data-testid={`btn-analyze-game-${gameId}`}
       aria-label="Analyze this game with Stockfish"
       onClick={() => {
+        // Optimistic: show the Pending… pill immediately (before server confirm).
+        // onError rolls it back to the Analyze button if the enqueue fails.
+        onInFlightChange?.(true);
         tier1Mutation.mutate(undefined, {
-          onSuccess: () => {
-            onInFlightChange?.(true);
-          },
+          onError: () => onInFlightChange?.(false),
         });
       }}
       disabled={tier1Mutation.isPending}

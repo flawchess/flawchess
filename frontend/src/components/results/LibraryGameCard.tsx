@@ -618,6 +618,7 @@ export function LibraryGameCard({
         isAnalyzed={isAnalyzed}
         isInFlight={isInFlight}
         onInFlightChange={setInFlight}
+        activeEvalStatus={game.active_eval_status}
       />
     );
 
@@ -742,6 +743,7 @@ export function LibraryGameCard({
                 isAnalyzed={isAnalyzed}
                 isInFlight={isInFlight}
                 onInFlightChange={setInFlight}
+                activeEvalStatus={game.active_eval_status}
               />
             )}
           </div>
