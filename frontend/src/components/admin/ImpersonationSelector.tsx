@@ -47,7 +47,12 @@ export function ImpersonationSelector() {
   async function handleSelect(userId: number) {
     setOpen(false);
     await impersonate(userId);
-    navigate('/openings');
+    // Route to the Library: LibraryPage redirects /library -> /library/games, or
+    // /library/import when the impersonated user has no games. impersonate() clears
+    // the query cache, so the profile refetches for the new user before that redirect
+    // evaluates. (Previously landed on the Openings explorer, which is empty/locked
+    // for users with no imported games.)
+    navigate('/library');
   }
 
   return (
