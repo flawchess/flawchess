@@ -1122,9 +1122,7 @@ class TestActiveEvalStatus:
         )
         assert resp.matched_count == 1
         card = resp.games[0]
-        assert card.active_eval_status is None, (
-            f"Expected None, got {card.active_eval_status!r}"
-        )
+        assert card.active_eval_status is None, f"Expected None, got {card.active_eval_status!r}"
 
     @pytest.mark.asyncio
     async def test_pending_job_surfaces_on_single_game(self, db_session: object) -> None:

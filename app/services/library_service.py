@@ -428,9 +428,7 @@ async def get_library_game(
 
     # Fetch active eval-job status for the pending→leased pill transition.
     # Sequential call on the same AsyncSession (no asyncio.gather per CLAUDE.md).
-    active_map = await library_repository.fetch_page_active_eval_status(
-        session, user_id, game_ids
-    )
+    active_map = await library_repository.fetch_page_active_eval_status(session, user_id, game_ids)
 
     positions: list[GamePosition]
     if is_analyzed:
