@@ -320,7 +320,7 @@ export function FlawsTab() {
   // ── Main content ─────────────────────────────────────────────────────────────
 
   const mainContent = (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 pb-20">
       {/* Error state — MANDATORY isError branch (CLAUDE.md) */}
       {flawsError && <LoadError resource="flaws" />}
 

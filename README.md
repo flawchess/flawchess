@@ -133,20 +133,21 @@ The worker runs natively on Windows — the only Linux-specific code path (`SCHE
    git clone https://github.com/flawchess/flawchess.git
    ```
 
-   or download the ZIP from the GitHub web UI ("Code → Download ZIP") and extract it — the worker needs the source tree, not git history. Then install [uv](https://docs.astral.sh/uv/) and run `uv sync` in the repo root (the worker imports `app.*`, so the full dependency set is installed).
+   or download the ZIP from the GitHub web UI ("Code → Download ZIP") and extract it — the worker needs the source tree, not git history. 
+
+2. Install [uv](https://docs.astral.sh/uv/).
 
 These two setup steps then differ from Linux/macOS:
 
-2. **Stockfish binary.** `bin/install_stockfish.sh` is a bash script that fetches the Linux build, so it won't run on Windows. Download the Windows Stockfish release manually (match the version the server pins via `EXPECTED_SF_VERSION`, or submits are rejected by the D-5 version gate) and point the worker at it with `STOCKFISH_PATH` in `.env`:
+3. **Stockfish binary.** `bin/install_stockfish.sh` is a bash script that fetches the Linux build, so it won't run on Windows. Download Windows Stockfish 18 point the worker at it with `STOCKFISH_PATH` in `.env` (note the forward slash and the absence of the .exe extension:
 
    ```
-   STOCKFISH_PATH=C:\path\to\stockfish.exe
+   STOCKFISH_PATH="C:/path/to/stockfish-windows-x86-64-avx2"
    ```
+   
+4. **`.env`.** Only `EVAL_OPERATOR_TOKEN` is required (every other setting has a default, and the worker needs no database). Pass `--token` instead if you'd rather not write a `.env`.
 
-   The engine resolver checks `STOCKFISH_PATH` first, then falls back to `stockfish` on `PATH`.
-3. **`.env`.** Only `EVAL_OPERATOR_TOKEN` is required (every other setting has a default, and the worker needs no database). Pass `--token` instead if you'd rather not write a `.env`.
-
-Then run the same commands as below via `uv run python scripts/remote_eval_worker.py …`.
+Then run the same commands as below via `uv run python scripts/remote_eval_worker.py --workers 8`.
 
 ### Start
 
@@ -159,8 +160,8 @@ uv run python scripts/remote_eval_worker.py --dry-run --once
 # Process one game, then exit:
 uv run python scripts/remote_eval_worker.py --once
 
-# Continuous drain (default — 4 parallel Stockfish processes):
-uv run python scripts/remote_eval_worker.py
+# Continuous drain (default — 8 parallel Stockfish processes):
+uv run python scripts/remote_eval_worker.py --workers 8
 
 # 8 engine processes, pointed at a staging server:
 uv run python scripts/remote_eval_worker.py --workers 8 --base-url http://localhost:8000

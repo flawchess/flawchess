@@ -16,6 +16,7 @@ import type { EndgameGamesResponse, EndgameOverviewResponse } from '@/types/endg
 import type { GameFlawCard, LibraryGamesResponse, FlawStatsResponse, LibraryFlawsResponse, FlawComparisonResponse } from '@/types/library';
 import type { OpponentStrengthRange } from '@/types/api';
 import { rangeToQueryParams } from '@/lib/opponentStrength';
+import type { FeedbackRequest, FeedbackResponse } from '@/types/feedback';
 
 /**
  * Central Axios instance.
@@ -215,6 +216,13 @@ export const endgameApi = {
         limit: params.limit ?? 20,
       },
     }).then(r => r.data),
+};
+
+// ─── Feedback API ─────────────────────────────────────────────────────────────
+
+export const feedbackApi = {
+  submit: (data: FeedbackRequest) =>
+    apiClient.post<FeedbackResponse>('/feedback', data).then(r => r.data),
 };
 
 // ─── Library API ──────────────────────────────────────────────────────────────

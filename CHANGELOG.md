@@ -10,6 +10,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Added
 
+- **In-app feedback button** — a floating "Send feedback" button appears on every authenticated page (bottom-right, mini/secondary weight, 44px touch target). It hides when scrolling down or when any drawer/modal is open, and respects iOS safe-area in installed PWA mode. Clicking it opens a modal with a required freeform text field and an optional 3-point sentiment control (Negative/Suggestion/Positive, toggle-off). Submissions are stored in the database and also push a Sentry signal tagged with ELO bucket and platform for team visibility. (Phase 122, SEED-049)
+
 - **Guest welcome page** — first-time guests now see a short Welcome page before importing that honestly lays out what works without an account (opening explorer and statistics, endgame and time-management analytics, importing Lichess full-game analyses) versus what signing up unlocks (FlawChess's own deep Stockfish blunder/mistake/inaccuracy detection, cross-device access, and data durability). A "Don't show this again" option skips it on future visits, and the Import page keeps a short "Sign up free" prompt for guests. (SEED-047)
 
 ### Added

@@ -809,7 +809,7 @@ export function EndgamesPage() {
 
   return (
     <div data-testid="endgames-page" className="flex min-h-0 flex-1 flex-col bg-background">
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 md:py-6 md:px-6">
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 pb-20 md:py-6 md:pb-6 md:px-6">
 
         {/* Desktop: full-width subnav above the sidebar strip + content (Phase 111 —
             matches the Library page; the subnav spans both the strip and content

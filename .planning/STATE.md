@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.26
 milestone_name: milestone
 status: verifying
-last_updated: "2026-06-15T05:11:49.691Z"
-last_activity: 2026-06-15
+last_updated: "2026-06-15T19:50:09.689Z"
+last_activity: 2026-06-15 -- Phase 122 execution started
 progress:
-  total_phases: 7
-  completed_phases: 7
-  total_plans: 19
-  completed_plans: 19
+  total_phases: 8
+  completed_phases: 8
+  total_plans: 21
+  completed_plans: 21
   percent: 100
 ---
 
@@ -17,13 +17,13 @@ progress:
 
 ## Current Position
 
-Phase: 121
-Plan: Not started
-Status: Phase complete — ready for verification/merge
+Phase: 122 (in-app-feedback-button-seed-049) — EXECUTING
+Plan: 2 of 2
+Status: Phase complete — ready for verification
 NEXT: `/gsd-new-milestone` to formalize the next milestone — leading candidates: SEED-039 tactic-motif tags over the captured PVs, SEED-037 Train drills, or the SEED-036 remainder (Analysis viewer + best-move endpoint).
 PROD-SOAK (carried, check over coming days): (1) tier-1 ~10s wall-clock fan-out on the live pool (QUEUE-03); (2) re-verify the ~32% flaw-PV coverage TODO once the residue re-eval catches up (multi-day background drain; see 117.1-POST-DEPLOY.md); (3) τ/floor tier-3 lottery tuning against prod `last_activity` distributions (SEED-046 timing caveat).
 Security: SECURED — 13/13 threats closed (threats_open: 0), ASVS L1 (117-SECURITY.md).
-Last activity: 2026-06-15
+Last activity: 2026-06-15 -- Phase 122 execution started
 
 Progress: [██████████] 100%
 
@@ -376,6 +376,8 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 | Phase 120 P04 | 8 | 2 tasks | 2 files |
 | Phase 120 P03 | 10min | 1 tasks | 1 files |
 | Phase 121 P01 | 12 | 3 tasks | 4 files |
+| Phase 122-in-app-feedback-button-seed-049 P01 | 11 | 3 tasks | 11 files |
+| Phase 122 P02 | 29 | 3 tasks | 14 files |
 
 ## Decisions
 
@@ -432,3 +434,4 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 - [Phase ?]: D-7: ES weighted-random within-user game pick -ln(random())/game_weight replaces deterministic Step-2 ORDER BY; residual fallback gets same spread
 - [Phase ?]: CAST(:param AS float8) required in sa.text queries for asyncpg compatibility — :param::float8 causes PostgresSyntaxError
 - [Phase ?]: asyncio.gather fan-out in _eval_positions: EnginePool workers are independent UCI processes, no shared AsyncSession
+- [Phase ?]: No per-drawer wiring needed; radix data-slot selectors cover all surfaces

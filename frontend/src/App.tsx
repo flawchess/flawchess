@@ -18,6 +18,7 @@ import {
 import { apiClient } from '@/api/client';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { InstallPromptBanner } from '@/components/install/InstallPromptBanner';
+import { FeedbackButton } from '@/components/feedback/FeedbackButton';
 import { ImpersonationPill } from '@/components/admin/ImpersonationPill';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { AuthPage } from '@/pages/Auth';
@@ -457,6 +458,7 @@ function ProtectedLayout() {
       <MobileBottomBar onMoreClick={() => setMoreOpen(true)} />
       <MobileMoreDrawer open={moreOpen} onOpenChange={setMoreOpen} />
       <InstallPromptBanner />
+      <FeedbackButton />
     </>
   );
 }
