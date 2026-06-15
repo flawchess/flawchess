@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 
+from app.models.eval_jobs import EvalJob
 from app.models.game import Game
 from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
@@ -480,6 +481,48 @@ async def fetch_page_analyzed_set(
     stmt = select(analyzed_subq.c.game_id).where(analyzed_subq.c.game_id.in_(game_ids))
     rows = (await session.execute(stmt)).scalars().all()
     return frozenset(rows)
+
+
+async def fetch_page_active_eval_status(
+    session: AsyncSession,
+    user_id: int,
+    game_ids: Sequence[int],
+) -> dict[int, Literal["pending", "leased"]]:
+    """Batch-fetch the active eval-job status (pending|leased) for a page of games.
+
+    Returns a dict mapping game_id -> "pending" | "leased" for games that have an
+    active eval_jobs row. Games with no active job (or only completed/failed rows)
+    are absent from the result.
+
+    The partial unique index uq_eval_jobs_game_active guarantees at most one active
+    (pending or leased) row per game, so the result dict has at most one entry per
+    game_id. Mirrors the shape/early-return of fetch_page_analyzed_set.
+
+    Security: game_ids come from the already user-scoped query_filtered_games /
+    owner-checked get_library_game — no cross-user game_ids reach this query
+    (T-q1x-01 mitigated). The IN-filter restricts to the two active statuses so
+    no completed/failed job leaks.
+
+    Args:
+        session: AsyncSession for DB access.
+        user_id: The authenticated user's ID (used for scoping via game_ids).
+        game_ids: Page-level game IDs already scoped to the authenticated user.
+
+    Returns:
+        dict mapping game_id to its active eval-job status. Empty when no active jobs.
+    """
+    if not game_ids:
+        return {}
+    stmt = select(EvalJob.game_id, EvalJob.status).where(
+        EvalJob.game_id.in_(game_ids),
+        EvalJob.status.in_(("pending", "leased")),
+    )
+    rows = (await session.execute(stmt)).all()
+    # The IN-filter guarantees only "pending" or "leased" values; cast to the Literal.
+    result: dict[int, Literal["pending", "leased"]] = {}
+    for game_id, status in rows:
+        result[game_id] = status  # IN-filter guarantees only "pending" | "leased"
+    return result
 
 
 async def fetch_stats_aggregates(

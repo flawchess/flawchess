@@ -1002,3 +1002,176 @@ class TestGetLibraryGame:
 
         result = await get_library_game(session, user_id=99983, game_id=999999999)
         assert result is None, f"Expected None for non-existent game_id, got {result}"
+
+
+# ---------------------------------------------------------------------------
+# TestActiveEvalStatus — active_eval_status field on GameFlawCard (260615-q1x)
+# ---------------------------------------------------------------------------
+
+
+class TestActiveEvalStatus:
+    """GameFlawCard.active_eval_status reflects the active eval-job state per game.
+
+    Covers pending / leased / absent cases for both get_library_games and
+    get_library_game. Tests seed EvalJob rows directly and assert the field
+    on the returned card(s). T-q1x-01 IDOR mitigation: game_ids are already
+    user-scoped by the time they reach fetch_page_active_eval_status.
+    """
+
+    @pytest.mark.asyncio
+    async def test_pending_job_surfaces_on_games_list(self, db_session: object) -> None:
+        """get_library_games: a pending eval_jobs row → card.active_eval_status == 'pending'."""
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.eval_jobs import EvalJob
+        from app.models.game import Game as GameModel
+        from app.services.library_service import get_library_games
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99984)
+
+        game_obj = await _seed_db_game(session, user_id=99984, user_color="white", analyzed=False)
+        game = cast(GameModel, game_obj)
+        job = EvalJob(tier=1, user_id=99984, game_id=game.id, status="pending")
+        session.add(job)
+        await session.flush()
+
+        resp = await get_library_games(
+            session,
+            user_id=99984,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            flaw_severity=None,
+            offset=0,
+            limit=20,
+        )
+        assert resp.matched_count == 1
+        card = resp.games[0]
+        assert card.active_eval_status == "pending", (
+            f"Expected 'pending', got {card.active_eval_status!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_leased_job_surfaces_on_games_list(self, db_session: object) -> None:
+        """get_library_games: a leased eval_jobs row → card.active_eval_status == 'leased'."""
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.eval_jobs import EvalJob
+        from app.models.game import Game as GameModel
+        from app.services.library_service import get_library_games
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99985)
+
+        game_obj = await _seed_db_game(session, user_id=99985, user_color="white", analyzed=False)
+        game = cast(GameModel, game_obj)
+        job = EvalJob(tier=1, user_id=99985, game_id=game.id, status="leased")
+        session.add(job)
+        await session.flush()
+
+        resp = await get_library_games(
+            session,
+            user_id=99985,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            flaw_severity=None,
+            offset=0,
+            limit=20,
+        )
+        assert resp.matched_count == 1
+        card = resp.games[0]
+        assert card.active_eval_status == "leased", (
+            f"Expected 'leased', got {card.active_eval_status!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_active_job_returns_none_on_games_list(self, db_session: object) -> None:
+        """get_library_games: no active eval_jobs row → card.active_eval_status is None."""
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.services.library_service import get_library_games
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99986)
+
+        await _seed_db_game(session, user_id=99986, user_color="white", analyzed=False)
+
+        resp = await get_library_games(
+            session,
+            user_id=99986,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            flaw_severity=None,
+            offset=0,
+            limit=20,
+        )
+        assert resp.matched_count == 1
+        card = resp.games[0]
+        assert card.active_eval_status is None, (
+            f"Expected None, got {card.active_eval_status!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_pending_job_surfaces_on_single_game(self, db_session: object) -> None:
+        """get_library_game: a pending eval_jobs row → card.active_eval_status == 'pending'."""
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.eval_jobs import EvalJob
+        from app.models.game import Game as GameModel
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99987)
+
+        game_obj = await _seed_db_game(session, user_id=99987, user_color="white", analyzed=False)
+        game = cast(GameModel, game_obj)
+        job = EvalJob(tier=1, user_id=99987, game_id=game.id, status="pending")
+        session.add(job)
+        await session.flush()
+
+        card = await get_library_game(session, user_id=99987, game_id=game.id)
+        assert card is not None
+        assert card.active_eval_status == "pending", (
+            f"Expected 'pending', got {card.active_eval_status!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_completed_job_not_exposed(self, db_session: object) -> None:
+        """A completed eval_jobs row does not surface as active_eval_status."""
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.eval_jobs import EvalJob
+        from app.models.game import Game as GameModel
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99988)
+
+        game_obj = await _seed_db_game(session, user_id=99988, user_color="white", analyzed=False)
+        game = cast(GameModel, game_obj)
+        job = EvalJob(tier=1, user_id=99988, game_id=game.id, status="completed")
+        session.add(job)
+        await session.flush()
+
+        card = await get_library_game(session, user_id=99988, game_id=game.id)
+        assert card is not None
+        assert card.active_eval_status is None, (
+            f"Completed job must not surface as active, got {card.active_eval_status!r}"
+        )
