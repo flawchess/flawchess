@@ -1,13 +1,16 @@
 // @vitest-environment jsdom
 /**
- * NoAnalysisState tests (Phase 118-03).
+ * NoAnalysisState tests (Phase 118-03, updated 260615-q1x).
  *
- * Tests the four branches:
+ * Tests the five branches:
  * 1. Guest → sign-up CTA with btn-signup-for-analysis
- * 2. Not-analyzed, not in-flight → "Analyze" button with btn-analyze-game-{gameId}
- *    fires the tier-1 mutation on click
- * 3. Not-analyzed, in-flight → pulsing "Analyzing…" span with analyzing-{gameId}
- * 4. Already analyzed → returns null (no DOM)
+ * 2. Not-analyzed, not in-flight, no active job → "Analyze" button with btn-analyze-game-{gameId}
+ *    fires the tier-1 mutation on click; onInFlightChange(true) called optimistically before mutate
+ * 3. Not-analyzed, optimistic in-flight (isInFlight=true) → pulsing "Pending…" span
+ * 4. Not-analyzed, activeEvalStatus="leased" → pulsing "Analyzing…" span (worker running)
+ * 5. Already analyzed → returns null (no DOM)
+ *
+ * 260615-q1x: three-state pill: Analyze button → Pending… (optimistic/pending) → Analyzing… (leased)
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -73,25 +76,68 @@ describe('NoAnalysisState', () => {
     expect(btn).toBeDefined();
   });
 
-  it('not-analyzed, not in-flight: clicking analyze button fires tier-1 mutation', () => {
+  it('not-analyzed, not in-flight: clicking analyze button fires tier-1 mutation optimistically', () => {
+    const onInFlightChange = vi.fn();
     render(
-      <NoAnalysisState gameId={7} isGuest={false} isAnalyzed={false} isInFlight={false} />,
+      <NoAnalysisState
+        gameId={7}
+        isGuest={false}
+        isAnalyzed={false}
+        isInFlight={false}
+        onInFlightChange={onInFlightChange}
+      />,
       { wrapper: makeWrapper() },
     );
     fireEvent.click(screen.getByTestId('btn-analyze-game-7'));
+    // onInFlightChange(true) is called BEFORE mutate (optimistic update).
+    expect(onInFlightChange).toHaveBeenCalledWith(true);
     expect(mockMutate).toHaveBeenCalled();
   });
 
-  it('not-analyzed, in-flight: renders pulsing Analyzing… span with analyzing-{gameId}', () => {
+  it('not-analyzed, in-flight (optimistic): renders pulsing Pending… span with analyzing-{gameId}', () => {
+    // isInFlight=true with no activeEvalStatus → "Pending…" (optimistic state)
     render(
       <NoAnalysisState gameId={99} isGuest={false} isAnalyzed={false} isInFlight={true} />,
       { wrapper: makeWrapper() },
     );
     const span = screen.getByTestId('analyzing-99');
     expect(span).toBeDefined();
-    expect(span.textContent).toContain('Analyzing');
-    // No analyze button when in-flight
+    expect(span.textContent).toContain('Pending');
+    // No analyze button when pill is showing
     expect(screen.queryByTestId('btn-analyze-game-99')).toBeNull();
+  });
+
+  it('not-analyzed, activeEvalStatus="pending": renders pulsing Pending… span', () => {
+    render(
+      <NoAnalysisState
+        gameId={55}
+        isGuest={false}
+        isAnalyzed={false}
+        activeEvalStatus="pending"
+      />,
+      { wrapper: makeWrapper() },
+    );
+    const span = screen.getByTestId('analyzing-55');
+    expect(span).toBeDefined();
+    expect(span.textContent).toContain('Pending');
+    expect(screen.queryByTestId('btn-analyze-game-55')).toBeNull();
+  });
+
+  it('not-analyzed, activeEvalStatus="leased": renders pulsing Analyzing… span', () => {
+    // activeEvalStatus="leased" → worker is actively running → "Analyzing…"
+    render(
+      <NoAnalysisState
+        gameId={77}
+        isGuest={false}
+        isAnalyzed={false}
+        activeEvalStatus="leased"
+      />,
+      { wrapper: makeWrapper() },
+    );
+    const span = screen.getByTestId('analyzing-77');
+    expect(span).toBeDefined();
+    expect(span.textContent).toContain('Analyzing');
+    expect(screen.queryByTestId('btn-analyze-game-77')).toBeNull();
   });
 
   it('analyzed: returns null — no DOM node rendered', () => {
