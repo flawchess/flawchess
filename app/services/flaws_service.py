@@ -66,9 +66,11 @@ MATE_CP_EQUIVALENT: int = 1000
 MATE_LADDER_DECIDED_CP: int = 999  # |cp| beyond this: game already decided -> inaccuracy
 MATE_LADDER_LOPSIDED_CP: int = 700  # |cp| beyond this: heavily lopsided -> mistake
 
-# Eval coverage gate: fraction of plies with non-null eval required for "analyzed".
-# The final ply always has null eval (zobrist.py: no move annotated), so a fully-
-# analyzed 80-ply game scores 80/81 ≈ 98.8% — comfortably above this threshold.
+# Eval coverage gate: fraction of MOVABLE plies with non-null eval required for
+# "analyzed". The terminal position (after the last move) always has null eval
+# (zobrist.py: no move annotated), so it is excluded from the denominator. A fully-
+# analyzed N-ply game thus scores N/N = 100% regardless of length — short games are
+# no longer penalized (see _compute_eval_coverage for the bug this corrected).
 EVAL_COVERAGE_MIN: float = 0.90
 
 # Impact ladder thresholds (flaw-tag-definitions.md §Impact).
@@ -253,16 +255,27 @@ def _classify_severity(drop: float) -> FlawSeverity | None:
 
 
 def _compute_eval_coverage(positions: list[GamePosition]) -> float:
-    """Fraction of positions with non-null eval_cp or eval_mate (0.0–1.0).
+    """Fraction of MOVABLE positions with non-null eval_cp or eval_mate (0.0–1.0).
 
-    The final position always has null eval (no move annotation), which is expected
-    and counts against coverage — but for a fully-analyzed game the fraction is
-    (N-1)/N which is well above the 0.90 threshold. No special case needed.
+    The denominator excludes the single structurally-unevaluable terminal position
+    (the board after the last move): it never carries an eval because no move is
+    annotated from it (zobrist.py). For an N-ply game there are N+1 positions and at
+    most N can carry an eval, so a fully-analyzed game scores N/N = 1.0 at any length.
+
+    BUG FIX (quick-task 260615-rb1): the denominator was previously len(positions),
+    which counted the unevaluable terminal position against coverage. A fully-analyzed
+    7-ply game (8 positions) capped at 7/8 = 0.875 < EVAL_COVERAGE_MIN (0.90), so short
+    games were misclassified as GameNotAnalyzed, the oracle (move-quality) columns were
+    never written, and the frontend "Analyze" pill never resolved. Dividing by the
+    movable-position count (len(positions) - 1) fixes this without over-correcting:
+    genuinely sparse games still fall below the threshold.
     """
-    if not positions:
+    # A list with <= 1 position has no movable position (no move was played), so
+    # coverage is undefined; return 0.0 (also guards the denominator against zero).
+    if len(positions) <= 1:
         return 0.0
     n_with_eval = sum(1 for p in positions if p.eval_cp is not None or p.eval_mate is not None)
-    return n_with_eval / len(positions)
+    return n_with_eval / (len(positions) - 1)
 
 
 def _recompute_fen_map(pgn: str) -> dict[int, str]:
