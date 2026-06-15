@@ -67,7 +67,7 @@ Plans:
 
 - [x] 122-02-PLAN.md — Frontend: useScrollDirection + useOverlayOpen hooks, floating FeedbackButton, FeedbackModal (required text + optional 3-point sentiment), mount + bottom scroll padding
 
-Scope (per [SEED-049](seeds/SEED-049-in-app-feedback-button.md)):
+Scope (per [SEED-049](seeds/closed/SEED-049-in-app-feedback-button.md)):
 
 1. **Backend**: new `app/models/feedback.py` + Alembic migration (`user_id` FK with `ondelete`, page URL, freeform text, optional sentiment, `created_at`); thin `routers/` endpoint → service → repository per the layering rules. Light per-user rate-limit + max text length as an abuse guard. Sentry capture via `sentry_sdk` with `source="feedback"` + username / ELO-bucket / platform tags (username/platform/ELO derived from the user record, not denormalized).
 2. **Frontend**: global floating feedback button (auto-hide on scroll-down / show on scroll-up, yields to open overlays, `env(safe-area-inset-bottom)`, ≥44×44pt tap target, mini/secondary styling) + submit modal (required text, optional thumbs/3-point sentiment). Wire page URL from the router. Honor browser-automation rules (`data-testid`, `aria-label`, semantic `<button>`/`<form>`), theme colors from `theme.ts`, primary submit = `variant="default"`. Add bottom scroll padding to long containers.

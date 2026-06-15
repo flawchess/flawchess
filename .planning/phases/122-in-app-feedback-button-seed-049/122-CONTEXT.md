@@ -2,7 +2,7 @@
 
 **Gathered:** 2026-06-15
 **Status:** Ready for planning
-**Source:** Synthesized from [SEED-049](../../seeds/SEED-049-in-app-feedback-button.md) (decisions locked 2026-06-15 explore session)
+**Source:** Synthesized from [SEED-049](../../seeds/closed/SEED-049-in-app-feedback-button.md) (decisions locked 2026-06-15 explore session)
 
 <domain>
 ## Phase Boundary
