@@ -425,6 +425,34 @@ class TestAnalyzedDenominator:
         assert chesscom.id not in ids
 
     @pytest.mark.asyncio
+    async def test_short_fully_analyzed_game_is_analyzed(self, db_session: AsyncSession) -> None:
+        """Regression (260615-rb1): the SQL gate passes a short fully-analyzed game.
+
+        7 movable positions with eval_cp set + 1 terminal null (8 total, a 7-ply game)
+        = 7/(8-1) = 1.0 >= EVAL_COVERAGE_MIN. Before the fix the SQL denominator was
+        COUNT(*) = 8, giving 7/8 = 0.875 < 0.90, so the short fully-analyzed game was
+        excluded — drifting from the Python kernel, which is the bug this corrects.
+        This mirrors test_short_fully_analyzed_game_clears_gate in test_flaws_service.
+        """
+        short = await _seed_game(db_session, user_id=99999, user_color="white", white_blunders=0)
+        for ply in range(7):
+            await _seed_position(db_session, game=short, ply=ply, eval_cp=20)
+        await _seed_position(db_session, game=short, ply=7, eval_cp=None)  # terminal null
+
+        ids = await analyzed_game_ids(
+            db_session,
+            user_id=99999,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            flaw_severity=None,
+        )
+        assert short.id in ids, "short fully-analyzed game must pass the SQL eval-coverage gate"
+
+    @pytest.mark.asyncio
     async def test_total_n_spans_all_platforms(self, db_session: AsyncSession) -> None:
         """total_n counts chess.com games too; only the analyzed lichess game is analyzed_n.
 
