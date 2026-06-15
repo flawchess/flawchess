@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 from app.core.config import settings
 from app.middleware.last_activity import LastActivityMiddleware
-from app.routers import openings, position_bookmarks, imports, auth
+from app.routers import openings, position_bookmarks, imports, auth, feedback
 from app.routers.admin import router as admin_router
 from app.routers.endgames import router as endgames_router
 from app.routers.insights import router as insights_router
@@ -148,6 +148,7 @@ app.include_router(users_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
 app.include_router(library_router, prefix="/api")
 app.include_router(eval_remote_router, prefix="/api")
+app.include_router(feedback.router, prefix="/api")
 
 
 @app.get("/", include_in_schema=False)

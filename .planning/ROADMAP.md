@@ -57,11 +57,15 @@ Files: `app/routers/eval_remote.py` (lease/submit handlers), `app/services/eval_
 
 **Goal**: A low-friction in-app feedback channel so users (guests included) can submit likes / dislikes / suggestions tied to the exact page they were on. A global floating button (bottom-right, auto-hides on scroll-down, yields to open drawers/modals, iOS safe-area aware) opens a modal with required freeform text + an optional coarse sentiment rating. Submissions persist to a new `feedback` table and also fire a Sentry signal (tagged with username / ELO bucket / platform) so feedback pings the team instead of rotting in a table nobody reads.
 **Depends on**: none (standalone; can ship independently of Phase 121)
-**Source**: SEED-049 (decisions locked 2026-06-15 explore session) · **Plans**: 0 plans
-
+**Source**: SEED-049 (decisions locked 2026-06-15 explore session) · **Plans**: 2 plans
 Plans:
+**Wave 1**
 
-- [ ] TBD (run /gsd-plan-phase 122 to break down)
+- [x] 122-01-PLAN.md — Backend: feedback table + migration, schemas, rate-limit, repository, Sentry/ELO service, thin POST /api/feedback router
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 122-02-PLAN.md — Frontend: useScrollDirection + useOverlayOpen hooks, floating FeedbackButton, FeedbackModal (required text + optional 3-point sentiment), mount + bottom scroll padding
 
 Scope (per [SEED-049](seeds/SEED-049-in-app-feedback-button.md)):
 

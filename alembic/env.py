@@ -17,6 +17,7 @@ from app.models.user import User  # noqa: F401
 from app.models.opening import Opening  # noqa: F401
 from app.models.llm_log import LlmLog  # noqa: F401
 from app.models.benchmark_cohort_cdf import BenchmarkCohortCdf  # noqa: F401
+from app.models.feedback import Feedback  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -73,6 +74,18 @@ _AUTOGEN_INDEX_IGNORELIST = {
     "ix_llm_logs_endpoint_created_at",
     "ix_llm_logs_model_created_at",
     "ix_llm_logs_user_id_created_at",
+    # Partial indexes created by Phase 91/116/117/119 migrations — not reflected in ORM
+    # declarations (SQLAlchemy can't represent partial indexes in the ORM, only in migrations).
+    # Autogenerate sees them as "removed" because the ORM has no knowledge of them, but they
+    # must not be dropped. Phase 122 migration correctly excludes them (see note in upgrade()).
+    "ix_games_evals_pending",
+    "ix_games_full_evals_pending",
+    "ix_games_full_pv_pending",
+    "ix_games_needs_engine_full_evals",
+    # ix_eval_jobs_user_id is created by index=True on EvalJob.user_id but autogenerate
+    # detects it as missing in the DB due to the eval_jobs table being created by a prior
+    # migration that didn't reflect this ORM-level index. Let alembic manage it separately.
+    "ix_eval_jobs_user_id",
 }
 
 

@@ -345,7 +345,7 @@ export function GamesTab() {
   // ── Main content ─────────────────────────────────────────────────────────────
 
   const mainContent = (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-8 pb-20">
       {gamesError && <LoadError resource="games" />}
 
       {noGamesImported && (
