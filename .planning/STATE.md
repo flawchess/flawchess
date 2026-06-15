@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.26
-milestone_name: Full-Game Eval Pipeline
-status: milestone_complete
-last_updated: "2026-06-14T20:30:00.000Z"
-last_activity: 2026-06-14
+milestone_name: milestone
+status: verifying
+last_updated: "2026-06-15T05:11:49.691Z"
+last_activity: 2026-06-15
 progress:
   total_phases: 7
   completed_phases: 7
-  total_plans: 18
-  completed_plans: 18
+  total_plans: 19
+  completed_plans: 19
   percent: 100
 ---
 
@@ -17,13 +17,13 @@ progress:
 
 ## Current Position
 
-Phase: None active — v1.26 shipped
-Plan: —
-Status: **v1.26 Full-Game Eval Pipeline complete** (archived 2026-06-14; tag v1.26). 7 phases (116, 117, 117.1, 117.2, 118, 119, 120), 18 plans. Production code tree matches `main`.
-NEXT: `/gsd-new-milestone` — leading candidates: SEED-039 tactic-motif tags over the captured PVs, SEED-037 Train drills, or the SEED-036 remainder (Analysis viewer + best-move endpoint).
+Phase: 121
+Plan: Not started
+Status: Phase complete — ready for verification/merge
+NEXT: `/gsd-new-milestone` to formalize the next milestone — leading candidates: SEED-039 tactic-motif tags over the captured PVs, SEED-037 Train drills, or the SEED-036 remainder (Analysis viewer + best-move endpoint).
 PROD-SOAK (carried, check over coming days): (1) tier-1 ~10s wall-clock fan-out on the live pool (QUEUE-03); (2) re-verify the ~32% flaw-PV coverage TODO once the residue re-eval catches up (multi-day background drain; see 117.1-POST-DEPLOY.md); (3) τ/floor tier-3 lottery tuning against prod `last_activity` distributions (SEED-046 timing caveat).
 Security: SECURED — 13/13 threats closed (threats_open: 0), ASVS L1 (117-SECURITY.md).
-Last activity: 2026-06-14 - Completed quick task 260614-vy4: Guest Welcome page (SEED-047) — frontend-only /welcome explainer before Import for first-time guests, honest guest-vs-signup value split, localStorage dismissal flag, Home routing gate.
+Last activity: 2026-06-15
 
 Progress: [██████████] 100%
 
@@ -176,6 +176,7 @@ Carried forward from v1.11 close (still relevant):
 
 ### Roadmap Evolution
 
+- 2026-06-15: **Phase 121 added (standalone, post-v1.26, milestone TBD) — Remote-worker tier-1 claiming (SEED-048 follow-on).** Phase 120's remote eval worker leases work via `POST /api/eval/remote/lease`, which calls `_claim_tier3_derived` directly, so the worker only drains the tier-3 idle backlog — it never sees tier-1 (explicit single-game "analyze") requests, and the remote submit path never writes `eval_jobs.status`. This phase lets a remote worker claim tier-1 as **overflow** so a busy server no longer blocks click-to-pickup: (1) `lease` calls `claim_eval_job` (tier-1 > tier-2 > tier-3, lease_expiry + SKIP LOCKED + stale-lease sweep) instead of `_claim_tier3_derived`, tier-3 unchanged; (2) thread an opaque `job_id` through lease→submit so submit stamps `eval_jobs.status='completed', completed_at=now()` (tier-3 keeps `job_id=None`); (3) drop the worker idle poll 5s→~1s. FCFS — the server's in-process drain still usually wins tier-1 when idle, so this helps the **server-busy** case only; biasing tier-1 to the faster box and interruptible tier-3 are deferred follow-ons. No DB migration. Files: `app/routers/eval_remote.py`, `app/services/eval_queue_service.py`, `scripts/remote_eval_worker.py`, lease/submit schemas. Source: `.planning/seeds/SEED-048-remote-worker-tier1-claiming.md`. Next: `/gsd-plan-phase 121` (or `/gsd-discuss-phase 121` first). Note: added outside a named milestone (v1.26 frontmatter status unchanged); group at ship time or run `/gsd-new-milestone` to formalize.
 - 2026-06-14: **Phase 120 added — Headless remote trusted-operator eval worker (SEED-048).** A headless Python CLI worker on a trusted off-box machine leases eval jobs from prod over HTTPS, runs the existing `EnginePool` natively (1M nodes, NNUE, multiPV=1), and posts evals back — adding off-box CPU to the tier-3 drain without touching the prod core budget. The "trusted-operator rung" of SEED-012 D-8's pluggable-worker model (trust class 1: operator token → may write shared tier-3). v1 delta is small: (1) lease-game endpoint → game's unanalyzed `(ply, FEN)` positions; (2) batched submit-evals endpoint → server applies SEED-044 convention (post-move shift, terminal donor) + stamps `full_evals_completed_at`; (3) operator-token auth on both; (4) the ~100-line worker CLI. Locked decisions D-1..D-6: headless native SF (not browser, D-1); worker is a dumb FEN→eval fn, server owns ALL storage convention (D-2); per-game lease, single batched submit (D-3); accept idempotent duplicate tier-3 work for v1, strict leasing deferred (D-4); SF-version pinning + server-side mismatch rejection (D-5); trusted-only write scope, no untrusted-writer trust layer (D-6). Deferred: strict tier-3 leasing, worker heartbeat/lease-extension, macOS background scheduling (Linux SCHED_IDLE preexec doesn't port — build if cheap), browser trust classes 2-3 (stay in SEED-012). **Sequencing gate met:** Phase 119 (tier-3 drain rework) is complete. Source: `.planning/seeds/SEED-048-headless-remote-eval-worker.md`. Next: `/gsd-plan-phase 120`.
 - 2026-06-14: **Phase 119 added to v1.26 — Eval-drain coverage (SEED-045 + SEED-046, combined).** Two small eval-drain fixes surfaced during Phase 118 execution: (SEED-045) bounded-retry hole-filling — `_mark_full_evals_completed` stamps `full_evals_completed_at` unconditionally (D-116-07), so games can be marked "fully analyzed" with genuine mid-game eval holes; stop stamping while non-terminal/non-mate holes remain, re-pick up to `MAX_EVAL_ATTEMPTS` (~3) via new `games.full_eval_attempts`, then stamp anyway + aggregated Sentry; plus a backfill decision for already-stamped-with-holes games. (SEED-046) recency-weighted tier-3 lottery — replace `_claim_tier3_derived`'s winner-take-all `last_activity DESC` with an Efraimidis–Spirakis user-weighted lottery (`-ln(random())/weight LIMIT 1`, weight = `exp(-Δt/τ)`+floor) over distinct `needs_engine_full_evals` users, then pick that user's best game; PV-backfill-only games become a residual fallback tier; one partial-index migration, verify sub-100ms at prod scale. **Caveat:** SEED-046's trigger asks to tune τ/floor against prod `last_activity` distributions after Phase 118 ships — user chose to plan now anyway; keep τ/floor tunable + add a prod-tuning task. Next: `/gsd-plan-phase 119`.
 - 2026-06-10: **Phase 114.1 inserted after Phase 114 (URGENT) — Replace `move_count` with exact `ply_count`** (SEED-041 item 9). `games.move_count` is the full-move count (`ceil(plies/2)`), so it pins the half-move total only to ±1, blocking an exact per-game user-move denominator without a 190M-row `game_positions` scan. Alembic `add → backfill → enforce` migration (add `ply_count INT`, backfill `max(ply)` per game on dev + prod, then drop `move_count`); import path writes `len(nodes)` in `zobrist.py`; API exposes `ply_count` with display deriving full-moves as `(ply_count+1)//2` so the "N Moves" label is unchanged; update all readers + benchmark `chapter5.py` follow-on. Independent of SEED-041 items 1-8 (already on `main`). Source: `.planning/seeds/SEED-041-prod-db-query-and-index-tuning.md` §9. Next: `/gsd-discuss-phase 114.1` → `/gsd-plan-phase 114.1`.
@@ -371,6 +372,7 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 | Phase 120 P01 | 15min | 2 tasks | 3 files |
 | Phase 120 P04 | 8 | 2 tasks | 2 files |
 | Phase 120 P03 | 10min | 1 tasks | 1 files |
+| Phase 121 P01 | 12 | 3 tasks | 4 files |
 
 ## Decisions
 

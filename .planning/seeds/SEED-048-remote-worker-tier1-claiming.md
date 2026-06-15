@@ -1,6 +1,6 @@
 ---
 id: SEED-048
-status: dormant
+status: promoted (Phase 121, 2026-06-15)
 planted: 2026-06-15
 planted_during: Phase 120 remote eval worker (deployed; dev-machine worker running)
 trigger_when: when you want a single-game "analyze" click to be picked up by a remote eval worker (not just the server pool) so a second machine shortens click-to-pickup latency when the server is busy

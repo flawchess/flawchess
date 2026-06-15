@@ -22,6 +22,9 @@ class LeaseResponse(BaseModel):
     is_lichess_eval_game: bool
     positions: list[LeasePosition]
     leased_at: datetime
+    # Opaque eval_jobs.id token; None for tier-3 derived picks (no eval_jobs row).
+    # The worker echoes this back on submit so the server can stamp eval_jobs.
+    job_id: int | None = None
 
 
 class SubmitEval(BaseModel):
@@ -36,6 +39,10 @@ class SubmitRequest(BaseModel):
     game_id: int
     sf_version: str  # e.g. "Stockfish 18" — for D-5 version gate
     evals: list[SubmitEval] = Field(max_length=MAX_SUBMIT_EVALS)
+    # Opaque eval_jobs.id token echoed from the lease response; None for tier-3
+    # or for an old worker that doesn't include the field. When present, the
+    # submit handler stamps eval_jobs.status='completed' (guarded by WHERE status='leased').
+    job_id: int | None = None
 
 
 class SubmitResponse(BaseModel):

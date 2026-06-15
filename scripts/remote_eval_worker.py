@@ -1,7 +1,9 @@
 """Headless remote eval worker for the trusted operator eval pipeline (Phase 120 SEED-048).
 
-Runs on a trusted off-box machine. Loops: lease a tier-3 game from the FlawChess API,
-evaluate all its FENs locally via EnginePool, and batch-submit the results. The server
+Runs on a trusted off-box machine. Loops: lease the next eval game (tier-1 > tier-2 >
+tier-3) from the FlawChess API, evaluate all its FENs locally via EnginePool, and
+batch-submit the results — tier-1/tier-2 claims echo a job token so the server stamps
+the eval_jobs row complete on submit (Phase 121 SEED-048). The server
 owns the SEED-044 storage convention (post-move shift, ply keying) — this worker passes
 engine results through UNCHANGED (D-2 / pitfall 1: no client-side post-move shift).
 
@@ -51,7 +53,10 @@ from app.services.engine import EnginePool, get_stockfish_version  # noqa: E402
 
 DEFAULT_BASE_URL: str = "https://flawchess.com"
 DEFAULT_WORKERS: int = 4
-DEFAULT_IDLE_SLEEP: float = 5.0
+# Lowered from 5.0 to 1.0 (Phase 121): only the empty-queue / 204 path sleeps,
+# so this affects only idle-pickup latency for a freshly-enqueued tier-1 job.
+# The busy path (a game was leased) is already a tight loop — unchanged.
+DEFAULT_IDLE_SLEEP: float = 1.0
 HTTP_TIMEOUT_S: float = 30.0
 
 
@@ -157,6 +162,10 @@ async def _run_cycle(
     data = lease_resp.json()
     game_id = data["game_id"]
     positions = data["positions"]
+    # Opaque job token from the lease response (eval_jobs.id for tier-1/2, None for tier-3).
+    # The worker stores and echoes it without interpreting it; the server uses it to stamp
+    # eval_jobs.status='completed' when the submit is clean and no holes remain.
+    job_id = data.get("job_id")
 
     _log(f"Leased game_id={game_id} ({len(positions)} positions). Evaluating...")
     evals = await _eval_positions(pool, positions)
@@ -171,6 +180,7 @@ async def _run_cycle(
             "game_id": game_id,
             "sf_version": sf_version,
             "evals": evals,
+            "job_id": job_id,
         },
     )
     submit_resp.raise_for_status()
@@ -234,8 +244,8 @@ def parse_args() -> argparse.Namespace:
     """Parse and validate CLI arguments."""
     parser = argparse.ArgumentParser(
         description=(
-            "Headless remote eval worker: lease tier-3 game → eval via EnginePool → "
-            "batch submit (Phase 120 SEED-048)."
+            "Headless remote eval worker: lease next game (tier-1 > tier-2 > tier-3) → "
+            "eval via EnginePool → batch submit (Phase 121 SEED-048)."
         )
     )
     parser.add_argument(
