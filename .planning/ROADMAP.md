@@ -96,7 +96,7 @@ Scope (the delta is small — reuses the SEED-048 worker + SEED-044 storage conv
 4. **Worker CLI: depth-15 mode** + the between-full-ply-games priority check (D-1).
 5. **D-5 backlog-depth gate** — bounded existence probe (`… LIMIT 1 OFFSET 299`) at lease time; invite workers only when backlog ≥ threshold (starting knob: 300 games / 50-game batches); tail (≲300 games) falls back to the server pool for free.
 
-Open/deferred (not v1): entry-ply lease TTL sizing; routing `run_eval_drain` through the same lease so the server pool can't double-evaluate leased games (v1 vs fast-follow TBD); backlog-gate threshold tuning against real server-pool throughput once live; macOS background-scheduling caveat (SEED-048) unchanged. See [seeds/SEED-051-remote-worker-entry-ply-fresh-import-drain.md](seeds/SEED-051-remote-worker-entry-ply-fresh-import-drain.md).
+Open/deferred (not v1): entry-ply lease TTL sizing; routing `run_eval_drain` through the same lease so the server pool can't double-evaluate leased games (v1 vs fast-follow TBD); backlog-gate threshold tuning against real server-pool throughput once live; macOS background-scheduling caveat (SEED-048) unchanged. See [seeds/SEED-051-remote-worker-entry-ply-fresh-import-drain.md](seeds/closed/SEED-051-remote-worker-entry-ply-fresh-import-drain.md).
 
 <details>
 <summary>✅ v1.26 Full-Game Eval Pipeline (Phases 116–120, incl. 117.1, 117.2) — SHIPPED 2026-06-14</summary>
