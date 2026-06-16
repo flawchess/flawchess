@@ -110,18 +110,33 @@ parallel, so first-import latency drops by roughly the worker fan-out factor.
   reason (backlog grows → workers help → shrinks → back off; self-correcting). Mechanics:
   - **Gate on game count, not position count.** Positions need a PGN parse to derive — too
     expensive for a gate. Games are a cheap indexed `WHERE evals_completed_at IS NULL` proxy
-    (~2-3 positions each). Threshold ≈ **300 games** (≈600-900 positions) as a starting knob.
+    (~2-3 positions each). Threshold = **300 games** (≈600-900 positions) as the starting knob.
+  - **Threshold is set by the D-1 pivot latency, NOT by amortization.** The threshold's real job
+    is "is there more backlog than the server pool can clear within one worker-pivot window?"
+    Below that line a worker can't arrive in time to help: D-1 means a busy worker takes up to
+    ~20s to pivot off its current full-ply game, while the server pool is draining entry-ply
+    locally the whole time. A ~100-game backlog (~250 positions) is cleared by the server in well
+    under 20s, so inviting workers there just wastes a lease (worker pivots in to find the games
+    already drained — idempotent but pure waste). So set threshold ≈ `server_entry_ply_throughput
+    × pivot_latency`, i.e. roughly what the server clears in ~20s under import contention — a few
+    hundred games, hence 300. Going *lower* (e.g. 100) only trips useless leases on marginal
+    imports the server already clears fast; it does NOT help big imports, which blow past any
+    threshold in this range anyway. **Measure the true value once the worker is live**; 300 is the
+    starting guess.
   - **Probe, don't `COUNT`.** Only "is backlog ≥ threshold?" matters, so use a bounded existence
     probe — `SELECT 1 FROM games WHERE evals_completed_at IS NULL ORDER BY id DESC LIMIT 1 OFFSET
-    <threshold-1>` — constant-ish cost regardless of true depth, vs a full `COUNT(*)` over a large
-    gated set on every lease request.
-  - **Batch targets ~100 positions; claim unit stays the game.** Claim ~35-50 games via the D-3
-    SKIP-LOCKED lease to yield ≈100 positions, ship those FENs.
+    299` — constant-ish cost regardless of true depth, vs a full `COUNT(*)` over a large gated set
+    on every lease request.
+  - **Batch = 50 games (~125 positions); claim unit stays the game.** Claim 50 games via the D-3
+    SKIP-LOCKED lease (≈125 positions at 2-3/game), derive and ship those FENs. 50 games is a few
+    seconds of fanned-across-cores work per worker — comfortably above the round-trip amortization
+    floor and granular enough that the tail doesn't lump. Batch size is tuned for amortization +
+    tail granularity, independent of the threshold (which is tuned for pivot latency, above).
   - **The tail falls out for free.** A big import keeps the backlog well above threshold until its
     last stretch, then drops below → workers stop being invited → the final ≲300 games are mopped
     up by the server pool alone. Exactly right: the tail (where per-position worker tax stops
-    paying off) is handled locally with zero special-casing. The `300` is a tuning knob; the
-    mechanism (existence-probe gate + game-count + ~100-position batches) is the decision.
+    paying off) is handled locally with zero special-casing. The `300`/`50` are tuning knobs; the
+    mechanism (existence-probe gate + game-count + 50-game/~125-position batches) is the decision.
 
 ## What Already Exists (the delta is small)
 
