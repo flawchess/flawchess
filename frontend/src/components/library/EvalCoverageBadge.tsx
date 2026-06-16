@@ -92,9 +92,10 @@ export function EvalCoverageBadge({
         </InfoPopover>
       </div>
 
-      {/* Guest sign-up CTA — guests are excluded from the auto-enqueue queue, so
-          the sign-up prompt is their only path to analysis. Non-guests get no
-          button: recent games are analyzed automatically in the background. */}
+      {/* Guest sign-up CTA — guests can analyze one game at a time via the card
+          "Analyze" button; signing up unlocks automatic ALL-games background
+          analysis with no per-game clicking. Non-guests get no button here:
+          recent games are analyzed automatically in the background. */}
       {isGuest && isBelowThreshold && (
         <Button
           variant="brand-outline"
@@ -103,7 +104,7 @@ export function EvalCoverageBadge({
           aria-label="Sign up to unlock full-game analysis"
           onClick={() => navigate('/login?tab=register')}
         >
-          Sign up to analyze
+          Sign up to analyze all games
         </Button>
       )}
     </div>

@@ -1,12 +1,9 @@
 import { Cpu } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useTier1Enqueue } from '@/hooks/useEnqueueGame';
 
 interface NoAnalysisStateProps {
   gameId: number;
-  /** Whether the current user is a guest — show sign-up CTA instead of analyze button. */
-  isGuest: boolean;
   /** Whether this game already has engine analysis (analyzed via lichess or FlawChess). */
   isAnalyzed: boolean;
   /** Whether analysis of THIS game is currently in-flight (tier-1 just clicked). */
@@ -35,10 +32,13 @@ interface NoAnalysisStateProps {
  * Per-game "No Analysis" affordance rendered when a game has no engine analysis.
  *
  * Branches (D-118-07/11/13):
- * - isGuest: "Sign up to unlock analysis" link to /login?tab=register.
  * - isAnalyzed: returns null (no affordance needed — caller only renders for unanalyzed games).
  * - !isAnalyzed && (isInFlight || activeEvalStatus): pulsing pill ("Pending…" or "Analyzing…").
  * - !isAnalyzed && !isInFlight && !activeEvalStatus: "Analyze" button (tier-1 enqueue).
+ *
+ * Guests see the same "Analyze" button as authenticated users (QUEUE-08 guest gate
+ * opened for tier-1). The coverage badge CTA promotes signup for automatic all-games
+ * analysis as a separate, higher-level prompt.
  *
  * The in-flight state is localized — only the specific card the user clicked shows
  * the pulsing state, never a global spinner across the archive.
@@ -49,33 +49,16 @@ interface NoAnalysisStateProps {
  */
 export function NoAnalysisState({
   gameId,
-  isGuest,
   isAnalyzed,
   isInFlight = false,
   onInFlightChange,
   activeEvalStatus,
 }: NoAnalysisStateProps) {
-  const navigate = useNavigate();
   const tier1Mutation = useTier1Enqueue(gameId);
 
   // Belt-and-suspenders: caller only renders this for no_engine_analysis games,
   // but return null when already analyzed (e.g. lichess-eval games, D-118-07).
   if (isAnalyzed) return null;
-
-  if (isGuest) {
-    return (
-      <Button
-        variant="brand-outline"
-        size="sm"
-        data-testid="btn-signup-for-analysis"
-        aria-label="Sign up to unlock game analysis"
-        onClick={() => navigate('/login?tab=register')}
-      >
-        <Cpu className="h-4 w-4 shrink-0 mr-1.5" aria-hidden="true" />
-        Sign up to unlock analysis
-      </Button>
-    );
-  }
 
   // Show the pulsing pill when: optimistic click is in-flight OR the server-side
   // job is already active (pending or leased from the library-games payload).
