@@ -30,9 +30,11 @@ interface EvalCoverageBadgeProps {
  * wrapper so the count stays left and the badge sits right.
  *
  * CTA logic:
- * - Guest, coverage < LOW_COVERAGE_THRESHOLD: "Sign up to analyze" link →
- *   /login?tab=register (guests are excluded from the background queue, so the
- *   sign-up prompt is their only path to analysis — D-118-13).
+ * - Guest, coverage < LOW_COVERAGE_THRESHOLD: "Sign up to analyze all games"
+ *   link → /login?tab=register. Guests can analyze games one at a time on demand
+ *   (each card's "Analyze" button, tier-1; see quick task 260616-ey1), but they
+ *   stay excluded from the background queue, so signing up is the only way to get
+ *   the whole library analyzed automatically — that is what this CTA sells.
  * - Non-guest: no button. Recent games are analyzed automatically in the
  *   background (activity-based auto-enqueue); the badge plus its InfoPopover
  *   tell that story, and per-game analysis lives on each card's "Analyze" button.
