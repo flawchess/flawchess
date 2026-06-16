@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import * as Sentry from '@sentry/react';
 import { X, DoorOpen } from 'lucide-react';
 import { Alert } from '@/components/ui/alert';
@@ -25,7 +25,13 @@ import { apiClient } from '@/api/client';
 import { useNavigate } from 'react-router-dom';
 
 
-const GAME_COUNT_REFRESH_INTERVAL_MS = 5000;
+// Refresh cadence for the eval-coverage ("Quick Scan") banner and readiness
+// queries while an import is active. Matched to the eval-coverage self-poll (3s)
+// so the banner's rescue invalidation fires at the same cadence — the self-poll
+// can briefly stop when pct_complete momentarily hits 100 (helper workers keep
+// evals in lockstep), and this is the backstop that resumes it. Lowered from 5s
+// (quick 260616-rm6) to halve the worst-case Quick Scan stall window.
+const GAME_COUNT_REFRESH_INTERVAL_MS = 3000;
 const MIN_GAMES_FOR_RELIABLE_STATS = 1000;
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -54,13 +60,25 @@ export interface ImportPageProps {
   onJobDismissed: (jobId: string) => void;
 }
 
-function ImportProgressBar({ jobId, onDismiss, platformFilter }: { jobId: string; onDismiss: (jobId: string) => void; platformFilter?: 'chess.com' | 'lichess' }) {
+function ImportProgressBar({ jobId, onDismiss, platformFilter, onProgress }: { jobId: string; onDismiss: (jobId: string) => void; platformFilter?: 'chess.com' | 'lichess'; onProgress?: (platform: string, gamesImported: number) => void }) {
   const { data } = useImportPolling(jobId);
   const queryClient = useQueryClient();
 
   const isDone = data?.status === 'completed';
   const isError = data?.status === 'failed';
   const isActive = !!data && !isDone && !isError;
+
+  // Report live games_imported up to the page so the per-platform header count
+  // climbs in lockstep with "saved" during an active import, instead of lagging
+  // behind the 5-minute-staleTime userProfile COUNT(*). Runs before the
+  // platformFilter early-return below; the parent dedupes by max-seen value.
+  const importedCount = data?.games_imported;
+  const platform = data?.platform;
+  useEffect(() => {
+    if (isActive && platform != null && importedCount != null) {
+      onProgress?.(platform, importedCount);
+    }
+  }, [isActive, platform, importedCount, onProgress]);
 
   // Periodically refresh game counts while import is active.
   // Also invalidates the Stockfish eval-coverage query — its own 3s poll in
@@ -201,6 +219,21 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
   // Track jobId→platform for active imports — disables sync button while running
   const [jobPlatforms, setJobPlatforms] = useState<Map<string, string>>(new Map());
 
+  // Live per-platform games_imported reported by the active progress bars. Drives
+  // the header "N games" count so it tracks "saved" during an import instead of
+  // lagging the slower userProfile COUNT(*). Keyed by platform; stores max-seen.
+  const [liveImported, setLiveImported] = useState<Record<string, number>>({});
+  const handleProgress = useCallback((platform: string, gamesImported: number) => {
+    setLiveImported((prev) =>
+      (prev[platform] ?? 0) >= gamesImported ? prev : { ...prev, [platform]: gamesImported },
+    );
+  }, []);
+  // Prefer the live import-job count while it exceeds the (slower) profile COUNT.
+  // Math.max keeps incremental syncs correct: the full library count dominates a
+  // small new-games delta, while a first import shows the live-climbing counter.
+  const chessComGameCount = profile ? Math.max(profile.chess_com_game_count, liveImported['chess.com'] ?? 0) : 0;
+  const lichessGameCount = profile ? Math.max(profile.lichess_game_count, liveImported['lichess'] ?? 0) : 0;
+
   // Sync usernames from profile only on first load, not on every refetch
   if (profile && !initialized) {
     setInitialized(true);
@@ -320,7 +353,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
                   <Label htmlFor="chess-com-username" className="text-sm font-medium">chess.com</Label>
                   {profile && (
                     <span className="text-xs text-muted-foreground basis-full sm:basis-auto" data-testid="import-game-count-chess-com">
-                      {profile.chess_com_game_count} games
+                      {chessComGameCount} games
                       {formatLastSync(profile.chess_com_last_sync_at) && (
                         <> ({formatLastSync(profile.chess_com_last_sync_at)})</>
                       )}
@@ -352,7 +385,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
               <p className="text-sm text-destructive" data-testid="import-error-chess-com">{chessComError}</p>
             )}
             {activeJobIds.map((id) => (
-              <ImportProgressBar key={id} jobId={id} onDismiss={handleDismiss} platformFilter="chess.com" />
+              <ImportProgressBar key={id} jobId={id} onDismiss={handleDismiss} platformFilter="chess.com" onProgress={handleProgress} />
             ))}
           </div>
 
@@ -368,7 +401,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
                   <Label htmlFor="lichess-username" className="text-sm font-medium">lichess</Label>
                   {profile && (
                     <span className="text-xs text-muted-foreground basis-full sm:basis-auto" data-testid="import-game-count-lichess">
-                      {profile.lichess_game_count} games
+                      {lichessGameCount} games
                       {formatLastSync(profile.lichess_last_sync_at) && (
                         <> ({formatLastSync(profile.lichess_last_sync_at)})</>
                       )}
@@ -400,7 +433,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
               <p className="text-sm text-destructive" data-testid="import-error-lichess">{lichessError}</p>
             )}
             {activeJobIds.map((id) => (
-              <ImportProgressBar key={id} jobId={id} onDismiss={handleDismiss} platformFilter="lichess" />
+              <ImportProgressBar key={id} jobId={id} onDismiss={handleDismiss} platformFilter="lichess" onProgress={handleProgress} />
             ))}
           </div>
         </div>
