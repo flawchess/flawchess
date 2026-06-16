@@ -1086,19 +1086,77 @@ def _split_into_contiguous_islands(pds: Sequence[PlyData]) -> list[list[PlyData]
     return islands
 
 
+async def _batch_update_entry_eval_rows(
+    session: AsyncSession,
+    rows: list[tuple[int, int, int | None, int | None, int | None]],
+) -> None:
+    """Emit ONE batched UPDATE for entry-ply / cold-drain eval rows (SEED-052).
+
+    Each row carries (game_id, ply, eval_cp, eval_mate, endgame_class). Mirrors the
+    full-ply batched-write helpers (_batch_update_eval_rows) but for the entry-ply
+    lane (_apply_eval_results), which differs in three ways:
+    - rows span MULTIPLE games in a drain batch, so game_id lives in the VALUES tuple
+      (not a single :game_id param) and the WHERE matches on v.game_id;
+    - only eval_cp/eval_mate are written (no best_move);
+    - the optional endgame_class disambiguation is preserved per-row via
+      (v.endgame_class IS NULL OR game_positions.endgame_class = v.endgame_class) —
+      exactly the pre-batch semantics where the endgame_class predicate was only added
+      when target.endgame_class was not None (defensive: current schema has at most one
+      row per (game_id, ply)).
+
+    Uses CAST() instead of :: cast syntax: asyncpg rewrites named params to $N before
+    the server parses the SQL, so `::` adjacent to a $N placeholder is a syntax error.
+    CAST() is the portable equivalent.
+
+    Guard: empty input is a no-op (no zero-row VALUES UPDATE is emitted).
+    Sequential execute on caller-owned session — no asyncio.gather (CLAUDE.md).
+    """
+    if not rows:
+        return
+    params: dict[str, int | None] = {}
+    values_parts: list[str] = []
+    for i, (game_id, ply, eval_cp, eval_mate, endgame_class) in enumerate(rows):
+        params[f"gid_{i}"] = game_id
+        params[f"ply_{i}"] = ply
+        params[f"ecp_{i}"] = eval_cp
+        params[f"emt_{i}"] = eval_mate
+        params[f"ec_{i}"] = endgame_class
+        values_parts.append(
+            f"(CAST(:gid_{i} AS integer),"
+            f" CAST(:ply_{i} AS smallint),"
+            f" CAST(:ecp_{i} AS smallint),"
+            f" CAST(:emt_{i} AS smallint),"
+            f" CAST(:ec_{i} AS smallint))"
+        )
+    values_sql = ", ".join(values_parts)
+    sql = sa.text(
+        f"UPDATE game_positions"  # noqa: S608 — no user input; params are bound
+        f" SET eval_cp = v.eval_cp, eval_mate = v.eval_mate"
+        f" FROM (VALUES {values_sql}) AS v(game_id, ply, eval_cp, eval_mate, endgame_class)"
+        f" WHERE game_positions.game_id = v.game_id"
+        f" AND game_positions.ply = v.ply"
+        f" AND (v.endgame_class IS NULL OR game_positions.endgame_class = v.endgame_class)"
+    )
+    await session.execute(sql, params)
+
+
 async def _apply_eval_results(
     session: AsyncSession,
     eval_targets: Sequence[_EvalTarget],
     eval_results: Sequence[tuple[int | None, int | None]],
 ) -> tuple[int, int]:
-    """Apply engine eval results to GamePosition rows via per-row UPDATE.
+    """Apply engine eval results to GamePosition rows via one batched UPDATE.
 
     Phase 91: lifted from import_service.py for the cold-drain lane.
     The originals in import_service.py are removed in Plan 91-03.
 
-    UPDATEs run sequentially against the shared session (CLAUDE.md hard
-    rule: AsyncSession is not safe under asyncio.gather). The session is
-    owned by the caller and the UPDATEs land in its transaction.
+    SEED-052: the per-row update(GamePosition) loop became a single batched
+    UPDATE … FROM (VALUES …) round-trip (mirrors the full-ply lane's 260616-jq1 /
+    FLAWCHESS-6B fix). One Python pass classifies rows (counting + Sentry on the
+    (None, None) skips, collecting write-rows); _batch_update_entry_eval_rows then
+    emits the single UPDATE. The batched UPDATE runs sequentially against the
+    shared, caller-owned session (CLAUDE.md hard rule: AsyncSession is not safe
+    under asyncio.gather) and lands in its transaction.
 
     When engine returns (None, None), the row is skipped (eval_cp/eval_mate
     stays NULL permanently per D-09). The game is still marked
@@ -1109,6 +1167,7 @@ async def _apply_eval_results(
     """
     eval_calls_made = 0
     eval_calls_failed = 0
+    write_rows: list[tuple[int, int, int | None, int | None, int | None]] = []
     for target, (eval_cp, eval_mate) in zip(eval_targets, eval_results, strict=True):
         eval_calls_made += 1
         if eval_cp is None and eval_mate is None:
@@ -1124,17 +1183,13 @@ async def _apply_eval_results(
             sentry_sdk.capture_message("cold-drain engine returned None tuple", level="warning")
             continue
 
-        # Build the WHERE clause for this eval kind. Endgame span entries
-        # filter by endgame_class to disambiguate when the same ply could
-        # in principle belong to multiple class spans (defensive — current
-        # schema has at most one row per (game_id, ply)).
-        stmt = update(GamePosition).where(
-            GamePosition.game_id == target.game_id,
-            GamePosition.ply == target.ply,
-        )
-        if target.endgame_class is not None:
-            stmt = stmt.where(GamePosition.endgame_class == target.endgame_class)
-        await session.execute(stmt.values(eval_cp=eval_cp, eval_mate=eval_mate))
+        # Endgame span entries carry endgame_class to disambiguate when the same
+        # ply could in principle belong to multiple class spans; middlegame entries
+        # carry None (no predicate). The per-row WHERE semantics are preserved inside
+        # _batch_update_entry_eval_rows via the (v.endgame_class IS NULL OR …) clause.
+        write_rows.append((target.game_id, target.ply, eval_cp, eval_mate, target.endgame_class))
+
+    await _batch_update_entry_eval_rows(session, write_rows)
     return eval_calls_made, eval_calls_failed
 
 
