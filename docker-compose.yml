@@ -22,6 +22,20 @@ services:
       - "-c"
       - "effective_cache_size=8GB"
       - "-c"
+      # WAL/checkpoint tuning. The default max_wal_size=1GB is far too small for
+      # bulk imports: a dual 20k-game import generates ~540 MB of WAL every
+      # ~12-15s, firing volume-triggered checkpoints every ~15s instead of on the
+      # 300s checkpoint_timeout. Each flush takes 50-99s and overlaps the next, so
+      # the continuous fsync I/O throttles import writes (observed as the import
+      # "pausing" during the 2026-06-16 stress test). 8GB lets checkpoints pace on
+      # the timer; much of the WAL is self-inflicted full-page-writes from the
+      # frequent checkpoints, so generation drops once they space out. WAL lives
+      # in pg_wal on the 160 GB NVMe — 8GB is comfortable. wal_compression shrinks
+      # full-page images at a small CPU cost, cutting WAL volume further.
+      - "max_wal_size=8GB"
+      - "-c"
+      - "wal_compression=on"
+      - "-c"
       # Cap at 30 to match the application pool (10 + 10 per uvicorn process,
       # see app/core/database.py) plus headroom for psql, migrations, and
       # monitoring. The Postgres default of 100 was the upstream cause of the
