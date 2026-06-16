@@ -395,6 +395,89 @@ def _post_move_eval(
     return pos_eval.get(ply + 1, (None, None))
 
 
+async def _batch_update_best_move_rows(
+    session: AsyncSession,
+    game_id: int,
+    bm_rows: list[tuple[int, str]],
+) -> None:
+    """Emit ONE batched UPDATE for best_move-only rows (FLAWCHESS-6B).
+
+    Used by _apply_full_eval_results for:
+    - lichess-eval game plies (best_move only; evals preserved untouched)
+    - engine-game plies that have a best_move but a NULL post-move eval (hole rows
+      where best_move is still available — written independently of eval, per SEED-044)
+
+    Uses CAST() instead of :: cast syntax: asyncpg's named-param rewrite (`$N`)
+    occurs before the server parses the SQL, so `::` adjacent to a `$N` placeholder
+    raises a syntax error. CAST() is the portable equivalent.
+
+    Guard: empty input is a no-op (no zero-row VALUES UPDATE is emitted).
+    Sequential execute on caller-owned session — no asyncio.gather (CLAUDE.md).
+    """
+    if not bm_rows:
+        return
+    params: dict[str, int | str] = {"game_id": game_id}
+    values_parts: list[str] = []
+    for i, (ply, bm) in enumerate(bm_rows):
+        params[f"ply_{i}"] = ply
+        params[f"bm_{i}"] = bm
+        values_parts.append(f"(CAST(:ply_{i} AS smallint), CAST(:bm_{i} AS varchar))")
+    values_sql = ", ".join(values_parts)
+    sql = sa.text(
+        f"UPDATE game_positions"  # noqa: S608 — no user input; params are bound
+        f" SET best_move = v.best_move"
+        f" FROM (VALUES {values_sql}) AS v(ply, best_move)"
+        f" WHERE game_positions.game_id = :game_id"
+        f" AND game_positions.ply = v.ply"
+    )
+    await session.execute(sql, params)
+
+
+async def _batch_update_eval_rows(
+    session: AsyncSession,
+    game_id: int,
+    eval_rows: list[tuple[int, int | None, int | None, str | None]],
+) -> None:
+    """Emit ONE batched UPDATE for eval-bearing engine rows (FLAWCHESS-6B).
+
+    Each row carries (ply, eval_cp, eval_mate, best_move). All four columns are
+    written together: eval_cp and eval_mate are always non-NULL (at least one is
+    set); best_move may be NULL (overwriting a NULL with NULL is safe — the value
+    was determined from the same target in the same pass, so no in-flight
+    best_move is ever discarded by this write).
+
+    Uses CAST() instead of :: cast syntax for asyncpg compatibility (same reason
+    as _batch_update_best_move_rows).
+
+    Guard: empty input is a no-op (no zero-row VALUES UPDATE is emitted).
+    Sequential execute on caller-owned session — no asyncio.gather (CLAUDE.md).
+    """
+    if not eval_rows:
+        return
+    params: dict[str, int | str | None] = {"game_id": game_id}
+    values_parts: list[str] = []
+    for i, (ply, eval_cp, eval_mate, bm) in enumerate(eval_rows):
+        params[f"ply_{i}"] = ply
+        params[f"ecp_{i}"] = eval_cp
+        params[f"emt_{i}"] = eval_mate
+        params[f"bm_{i}"] = bm
+        values_parts.append(
+            f"(CAST(:ply_{i} AS smallint),"
+            f" CAST(:ecp_{i} AS smallint),"
+            f" CAST(:emt_{i} AS smallint),"
+            f" CAST(:bm_{i} AS varchar))"
+        )
+    values_sql = ", ".join(values_parts)
+    sql = sa.text(
+        f"UPDATE game_positions"  # noqa: S608 — no user input; params are bound
+        f" SET eval_cp = v.eval_cp, eval_mate = v.eval_mate, best_move = v.best_move"
+        f" FROM (VALUES {values_sql}) AS v(ply, eval_cp, eval_mate, best_move)"
+        f" WHERE game_positions.game_id = :game_id"
+        f" AND game_positions.ply = v.ply"
+    )
+    await session.execute(sql, params)
+
+
 async def _apply_full_eval_results(
     session: AsyncSession,
     targets: Sequence[_FullPlyEvalTarget],
@@ -404,8 +487,10 @@ async def _apply_full_eval_results(
 ) -> int:
     """Write POST-MOVE evals + best_move to GamePosition rows (WR-04; SEED-044).
 
-    UPDATEs run sequentially against the caller-owned session (CLAUDE.md hard
-    rule: AsyncSession is not safe under asyncio.gather); the caller commits.
+    Batched single-round-trip writes replace the former per-row UPDATE loop
+    (FLAWCHESS-6B N+1 fix). UPDATEs run sequentially against the caller-owned
+    session (CLAUDE.md hard rule: AsyncSession is not safe under asyncio.gather);
+    the caller commits.
 
     Convention (SEED-044): a row stores the eval of the position AFTER its move
     (post-move), matching lichess `%eval` and the flaw classifier. We resolve a
@@ -441,7 +526,16 @@ async def _apply_full_eval_results(
         if not target.is_terminal:
             best_move_by_ply[target.ply] = best_move
 
+    # Collect write-rows in one pass; emit batched UPDATEs after the loop.
+    # Two groups (FLAWCHESS-6B):
+    #   bm_only_rows  — lichess plies (best_move-only) + engine hole-rows w/ best_move
+    #   eval_rows     — engine plies with a resolved eval (eval_cp/eval_mate + best_move)
+    # failed_ply_count is accumulated in the same pass (pure Python; no DB I/O here).
+    game_id = next((t.game_id for t in targets if not t.is_terminal), 0)
+    bm_only_rows: list[tuple[int, str]] = []
+    eval_rows: list[tuple[int, int | None, int | None, str | None]] = []
     failed_ply_count = 0
+
     for target in targets:
         if target.is_terminal:
             # Eval-only donor: its eval already lives in pos_eval as the last
@@ -454,14 +548,7 @@ async def _apply_full_eval_results(
         if is_lichess_eval_game:
             # Preserve lichess %evals (post-move, authoritative); write best_move only.
             if best_move is not None:
-                await session.execute(
-                    update(GamePosition)
-                    .where(
-                        GamePosition.game_id == target.game_id,
-                        GamePosition.ply == ply,
-                    )
-                    .values(best_move=best_move)
-                )
+                bm_only_rows.append((ply, best_move))
             continue
 
         # Engine game: store the POST-MOVE eval (eval of the position AFTER this
@@ -469,9 +556,7 @@ async def _apply_full_eval_results(
         # written whenever available, INDEPENDENT of the eval — an engine hole at the
         # after-position (ply + 1) must not drop this row's own best_move (SEED-044).
         eval_cp, eval_mate = _post_move_eval(pos_eval, ply)
-        values: dict[str, int | str | None] = {}
-        if best_move is not None:
-            values["best_move"] = best_move
+
         if eval_cp is None and eval_mate is None:
             if target.ends_game:
                 # SEED-049: the after-position is the game-over terminal — deliberately
@@ -479,23 +564,25 @@ async def _apply_full_eval_results(
                 # already omits the terminal donor when is_game_over()). This NULL is
                 # legitimate, not a transient Stockfish timeout. Do NOT count it as a
                 # hole; the row is written normally (eval stays NULL, best_move if set).
-                pass
+                if best_move is not None:
+                    bm_only_rows.append((ply, best_move))
             else:
                 # D-116-07: engine hole at the after-position — leave the eval NULL;
                 # counted for the caller's per-game aggregated Sentry event (WR-05).
                 failed_ply_count += 1
+                if best_move is not None:
+                    bm_only_rows.append((ply, best_move))
         else:
-            values["eval_cp"] = eval_cp
-            values["eval_mate"] = eval_mate
-        if values:
-            await session.execute(
-                update(GamePosition)
-                .where(
-                    GamePosition.game_id == target.game_id,
-                    GamePosition.ply == ply,
-                )
-                .values(**values)
-            )
+            # Eval resolved: include best_move in the eval group (may be None — writing
+            # NULL over NULL is safe; both values come from the same target pass so no
+            # in-flight best_move is discarded).
+            eval_rows.append((ply, eval_cp, eval_mate, best_move))
+
+    # Emit batched UPDATEs — O(1) round-trips per game (FLAWCHESS-6B).
+    # Empty lists are guarded inside each helper (no zero-row VALUES statement).
+    await _batch_update_best_move_rows(session, game_id, bm_only_rows)
+    await _batch_update_eval_rows(session, game_id, eval_rows)
+
     return failed_ply_count
 
 
