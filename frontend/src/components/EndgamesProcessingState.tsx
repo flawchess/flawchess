@@ -22,7 +22,7 @@ export function EndgamesProcessingState({ pendingCount, totalCount }: EndgamesPr
       <Cpu className="h-8 w-8 text-amber-600 animate-pulse" aria-hidden="true" />
       <h2 className="text-xl font-semibold text-foreground">Analyzing endgames</h2>
       <p className="text-sm text-muted-foreground">
-        Stockfish:{' '}
+        Quick Scan:{' '}
         <strong>{analysedCount.toLocaleString()}</strong>
         {' / '}
         <strong>{totalCount.toLocaleString()}</strong>
