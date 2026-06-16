@@ -98,7 +98,7 @@ async def admin_enqueue_tier1(
     404s when the game does not exist — an EXPECTED condition per the admin router
     header note, so it is NOT wrapped in Sentry capture.
 
-    Returns 'skipped_guest' when the game belongs to a guest user (QUEUE-08).
+    Guests now enqueue normally (QUEUE-08 guest gate opened for tier-1).
     Returns 'already_queued' when the game already has an active eval job.
     Returns 'enqueued' when the tier-1 row was inserted.
     """
@@ -110,18 +110,7 @@ async def admin_enqueue_tier1(
 
     inserted = await enqueue_tier1_game(game_id=game_id, user_id=game.user_id)
 
-    # Determine the status label for the response.
-    # enqueue_tier1_game returns False for guests OR when already queued.
-    # We need to distinguish them for the caller; check is_guest on the game's user.
     enqueue_status: Literal["enqueued", "skipped_guest", "already_queued"]
-    if inserted:
-        enqueue_status = "enqueued"
-    else:
-        # Look up the user's is_guest flag to distinguish guest vs already_queued.
-        user = await session.get(User, game.user_id)
-        if user is not None and user.is_guest:
-            enqueue_status = "skipped_guest"
-        else:
-            enqueue_status = "already_queued"
+    enqueue_status = "enqueued" if inserted else "already_queued"
 
     return EnqueueTier1Response(status=enqueue_status, game_id=game_id)
