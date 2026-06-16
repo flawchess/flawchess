@@ -730,3 +730,144 @@ class TestSingleWalkTargetCollection:
         knight = board.piece_at(chess_lib.G1)
         assert knight is not None
         assert knight.piece_type == chess_lib.KNIGHT
+
+
+# ─── SEED-052: batched entry-ply eval write regression ────────────────────────
+
+
+async def _insert_entry_positions(
+    session_maker: async_sessionmaker[AsyncSession],
+    user_id: int,
+    game_id: int,
+    rows: list[dict[str, Any]],
+) -> None:
+    """Insert GamePosition rows for a game and commit (SEED-052 test helper).
+
+    Each dict: {"ply": int, "endgame_class": int|None}. eval_cp/eval_mate start
+    NULL so the test can assert the batched UPDATE wrote them.
+    """
+    from app.models.game_position import GamePosition
+
+    async with session_maker() as session:
+        for r in rows:
+            session.add(
+                GamePosition(
+                    user_id=user_id,
+                    game_id=game_id,
+                    ply=r["ply"],
+                    full_hash=r["ply"],  # any non-null int; uniqueness not required here
+                    white_hash=0,
+                    black_hash=0,
+                    phase=0,
+                    endgame_class=r.get("endgame_class"),
+                    eval_cp=None,
+                    eval_mate=None,
+                )
+            )
+        await session.commit()
+
+
+class TestBatchedEntryEvalWrite:
+    """SEED-052: _apply_eval_results batches the per-row UPDATE into one round-trip.
+
+    Mirrors the full-ply lane's 260616-jq1 / FLAWCHESS-6B fix on the entry-ply lane.
+    Asserts the batched write spans multiple games, honors the optional endgame_class
+    disambiguation, preserves the (None, None) skip + counts, and never clobbers a row
+    whose endgame_class does not match the target.
+    """
+
+    async def test_batched_write_multi_game_multi_class(
+        self,
+        drain_test_session_maker: async_sessionmaker[AsyncSession],
+        drain_test_user: int,
+    ) -> None:
+        import chess
+
+        from app.models.game_position import GamePosition
+        from app.services.eval_drain import _apply_eval_results, _EvalTarget
+
+        user_id = drain_test_user
+        game_ids = await _insert_and_commit_pending_games(drain_test_session_maker, user_id, n=2)
+        g1, g2 = game_ids[0], game_ids[1]
+
+        # g1: a middlegame entry (endgame_class=None) at ply 6, plus a failure ply 8.
+        # g2: an endgame span entry (endgame_class=3) at ply 40, plus a row whose
+        #     actual endgame_class is 5 that a class=2 target must NOT overwrite.
+        await _insert_entry_positions(
+            drain_test_session_maker,
+            user_id,
+            g1,
+            [{"ply": 6, "endgame_class": None}, {"ply": 8, "endgame_class": None}],
+        )
+        await _insert_entry_positions(
+            drain_test_session_maker,
+            user_id,
+            g2,
+            [{"ply": 40, "endgame_class": 3}, {"ply": 42, "endgame_class": 5}],
+        )
+
+        board = chess.Board()
+        targets = [
+            _EvalTarget(
+                game_id=g1,
+                ply=6,
+                eval_kind="middlegame_entry",
+                endgame_class=None,
+                board=board,
+            ),
+            _EvalTarget(
+                game_id=g1,
+                ply=8,
+                eval_kind="middlegame_entry",
+                endgame_class=None,
+                board=board,
+            ),
+            _EvalTarget(
+                game_id=g2,
+                ply=40,
+                eval_kind="endgame_span_entry",
+                endgame_class=3,
+                board=board,
+            ),
+            _EvalTarget(
+                game_id=g2,
+                ply=42,
+                eval_kind="endgame_span_entry",
+                endgame_class=2,
+                board=board,  # mismatch vs row's actual class 5
+            ),
+        ]
+        results: list[tuple[int | None, int | None]] = [
+            (55, None),  # g1 ply 6 — eval_cp
+            (None, None),  # g1 ply 8 — engine failure (skip + Sentry)
+            (None, 4),  # g2 ply 40 — eval_mate
+            (-30, None),  # g2 ply 42 — class mismatch, must NOT land
+        ]
+
+        try:
+            async with drain_test_session_maker() as session:
+                made, failed = await _apply_eval_results(session, targets, results)
+                await session.commit()
+
+            assert made == 4
+            assert failed == 1
+
+            async with drain_test_session_maker() as session:
+                got = (
+                    await session.execute(
+                        select(
+                            GamePosition.game_id,
+                            GamePosition.ply,
+                            GamePosition.eval_cp,
+                            GamePosition.eval_mate,
+                        ).where(GamePosition.game_id.in_([g1, g2]))
+                    )
+                ).all()
+            by_key = {(r[0], r[1]): (r[2], r[3]) for r in got}
+
+            assert by_key[(g1, 6)] == (55, None)  # eval_cp written
+            assert by_key[(g1, 8)] == (None, None)  # (None, None) skip — stays NULL
+            assert by_key[(g2, 40)] == (None, 4)  # eval_mate written, class=3 matched
+            assert by_key[(g2, 42)] == (None, None)  # class mismatch — untouched
+        finally:
+            await _delete_games_by_ids(drain_test_session_maker, game_ids)
