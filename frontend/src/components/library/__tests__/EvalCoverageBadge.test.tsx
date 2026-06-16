@@ -22,6 +22,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { EvalCoverageBadge } from '../EvalCoverageBadge';
 
+// The guest sign-up CTA calls useAuth().logoutForPromotion() before navigating
+// (a guest JWT would otherwise bounce off /login). Mock useAuth so the badge can
+// render without a full AuthProvider.
+vi.mock('@/hooks/useAuth', () => ({
+  useAuth: () => ({ logoutForPromotion: vi.fn() }),
+}));
+
 // ── Wrapper ───────────────────────────────────────────────────────────────────
 
 function makeWrapper(): ({ children }: { children: ReactNode }) => ReactNode {

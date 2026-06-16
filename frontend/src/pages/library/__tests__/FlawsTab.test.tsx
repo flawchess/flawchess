@@ -64,6 +64,12 @@ vi.mock('@/hooks/useUserProfile', () => ({
   }),
 }));
 
+// EvalCoverageBadge (rendered by FlawsTab) now calls useAuth().logoutForPromotion()
+// for the guest sign-up CTA; mock it so the tab renders without an AuthProvider.
+vi.mock('@/hooks/useAuth', () => ({
+  useAuth: () => ({ logoutForPromotion: vi.fn() }),
+}));
+
 // ── Controlled useLibraryFlaws mock ───────────────────────────────────────────
 
 type MockFlawsResult = {

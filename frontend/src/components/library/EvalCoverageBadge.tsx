@@ -1,6 +1,6 @@
 import { Cpu } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/hooks/useAuth';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { Button } from '@/components/ui/button';
 import { LOW_COVERAGE_THRESHOLD, ANALYSIS_COVERAGE_INFO_COPY } from '@/components/library/analysisCoverageCopy';
@@ -51,7 +51,7 @@ export function EvalCoverageBadge({
   isGuest,
   isCoverageError,
 }: EvalCoverageBadgeProps) {
-  const navigate = useNavigate();
+  const { logoutForPromotion } = useAuth();
 
   if (isCoverageError) {
     return (
@@ -104,7 +104,14 @@ export function EvalCoverageBadge({
           size="sm"
           data-testid="btn-coverage-signup"
           aria-label="Sign up to unlock full-game analysis"
-          onClick={() => navigate('/login?tab=register')}
+          // A guest holds a guest JWT, so AuthPage treats them as authenticated
+          // and bounces them off /login. Drop the guest token first (keeping
+          // guest_token for account promotion) and do a full-page nav, matching
+          // the working Welcome.tsx / Import.tsx sign-up path.
+          onClick={() => {
+            logoutForPromotion();
+            window.location.href = '/login?tab=register';
+          }}
         >
           Sign up to analyze all games
         </Button>
