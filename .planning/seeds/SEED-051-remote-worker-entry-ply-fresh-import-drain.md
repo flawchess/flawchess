@@ -100,6 +100,29 @@ parallel, so first-import latency drops by roughly the worker fan-out factor.
   price of *non-redundant* fan-out. (A truly zero-schema pure-predicate version exists but was
   explicitly rejected for this reason.)
 
+- **D-5 — Invite workers by *backlog depth at lease time*, not import size (added 2026-06-16).**
+  Import size is unknowable mid-stream (games stream in async), so don't gate on it. Instead, the
+  entry-ply lease endpoint checks the live backlog when a worker asks for work and only hands out
+  a batch if the backlog is deep enough to be worth the lease/round-trip tax; otherwise it returns
+  empty and the worker falls back to full-ply tier-3 (or sleeps). This one runtime signal subsumes
+  every case a per-import threshold couldn't: streaming imports (threshold crosses as games land),
+  **concurrent** imports (aggregate into one backlog), and the server pool falling behind for any
+  reason (backlog grows → workers help → shrinks → back off; self-correcting). Mechanics:
+  - **Gate on game count, not position count.** Positions need a PGN parse to derive — too
+    expensive for a gate. Games are a cheap indexed `WHERE evals_completed_at IS NULL` proxy
+    (~2-3 positions each). Threshold ≈ **300 games** (≈600-900 positions) as a starting knob.
+  - **Probe, don't `COUNT`.** Only "is backlog ≥ threshold?" matters, so use a bounded existence
+    probe — `SELECT 1 FROM games WHERE evals_completed_at IS NULL ORDER BY id DESC LIMIT 1 OFFSET
+    <threshold-1>` — constant-ish cost regardless of true depth, vs a full `COUNT(*)` over a large
+    gated set on every lease request.
+  - **Batch targets ~100 positions; claim unit stays the game.** Claim ~35-50 games via the D-3
+    SKIP-LOCKED lease to yield ≈100 positions, ship those FENs.
+  - **The tail falls out for free.** A big import keeps the backlog well above threshold until its
+    last stretch, then drops below → workers stop being invited → the final ≲300 games are mopped
+    up by the server pool alone. Exactly right: the tail (where per-position worker tax stops
+    paying off) is handled locally with zero special-casing. The `300` is a tuning knob; the
+    mechanism (existence-probe gate + game-count + ~100-position batches) is the decision.
+
 ## What Already Exists (the delta is small)
 
 - **SEED-048 / Phase 120** built the trusted-operator lease/submit protocol + headless worker
@@ -119,8 +142,8 @@ parallel, so first-import latency drops by roughly the worker fan-out factor.
    SEED-044 convention, classify flaws, stamp `evals_completed_at` per fully-covered game, clear
    the lease.
 4. Worker CLI: add a **depth-15 mode** + the between-full-ply-games priority check (D-1).
-5. (Likely) a per-import game-count threshold gating worker fan-out so incremental syncs stay
-   server-pool-only.
+5. The D-5 backlog-depth gate (existence probe) in the lease endpoint, so incremental syncs stay
+   server-pool-only and workers are invited only when backlog ≥ threshold.
 
 ## Open / Deferred (not v1)
 
@@ -131,7 +154,8 @@ parallel, so first-import latency drops by roughly the worker fan-out factor.
   v1 or a fast-follow; without it the server pool could redundantly re-evaluate leased games
   (idempotent, so correctness-safe, just wasted CPU — same tradeoff as SEED-048 D-4 but avoidable
   here since the lease already exists).
-- **Per-import fan-out threshold tuning** — the exact game-count above which workers are invited.
+- **Backlog-gate threshold tuning** — the exact game-count (D-5 starting knob = 300) above which
+  workers are invited; revisit against real server-pool throughput once the worker is live.
 - **macOS background scheduling** caveat from SEED-048 applies unchanged (depth-15 spawns at
   default priority on the MacBook worker).
 
