@@ -440,11 +440,14 @@ async def _batch_update_eval_rows(
 ) -> None:
     """Emit ONE batched UPDATE for eval-bearing engine rows (FLAWCHESS-6B).
 
-    Each row carries (ply, eval_cp, eval_mate, best_move). All four columns are
-    written together: eval_cp and eval_mate are always non-NULL (at least one is
-    set); best_move may be NULL (overwriting a NULL with NULL is safe — the value
-    was determined from the same target in the same pass, so no in-flight
-    best_move is ever discarded by this write).
+    Each row carries (ply, eval_cp, eval_mate, best_move). eval_cp/eval_mate are
+    always non-NULL (at least one is set) and overwrite unconditionally. best_move
+    may be NULL: it is sourced from THIS ply's resolution while the eval is the
+    post-move eval of ply+1 (a different resolution), so an eval-bearing row can
+    legitimately carry best_move=None. We must NOT clobber a previously-written
+    best_move in that case (re-submit / retry path), so best_move is written via
+    COALESCE(v.best_move, existing) — exactly matching the pre-batch semantics
+    where best_move was only ever written when present (FLAWCHESS-6B).
 
     Uses CAST() instead of :: cast syntax for asyncpg compatibility (same reason
     as _batch_update_best_move_rows).
@@ -470,7 +473,8 @@ async def _batch_update_eval_rows(
     values_sql = ", ".join(values_parts)
     sql = sa.text(
         f"UPDATE game_positions"  # noqa: S608 — no user input; params are bound
-        f" SET eval_cp = v.eval_cp, eval_mate = v.eval_mate, best_move = v.best_move"
+        f" SET eval_cp = v.eval_cp, eval_mate = v.eval_mate,"
+        f" best_move = COALESCE(v.best_move, game_positions.best_move)"
         f" FROM (VALUES {values_sql}) AS v(ply, eval_cp, eval_mate, best_move)"
         f" WHERE game_positions.game_id = :game_id"
         f" AND game_positions.ply = v.ply"

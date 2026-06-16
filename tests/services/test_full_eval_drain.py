@@ -2682,3 +2682,92 @@ class TestBatchedWriteRegression:
             )
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_eval_row_does_not_clobber_existing_best_move(
+        self,
+        full_drain_test_user_jq1: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """COALESCE no-clobber guard (FLAWCHESS-6B).
+
+        best_move is sourced from THIS ply's resolution while the row's eval is the
+        POST-MOVE eval of ply+1 (a different resolution), so an eval-bearing row can
+        legitimately carry best_move=None. On a re-submit / retry the row may already
+        hold a best_move from a prior pass; the batched eval UPDATE must preserve it,
+        exactly as the pre-batch per-row code did (it only wrote best_move when
+        present). Without the COALESCE guard the batch would null it out.
+        """
+        from app.models.game_position import GamePosition
+        from app.services import eval_drain
+
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_jq1,
+            pgn=_TWO_MOVE_PGN,
+        )
+        # Pre-seed ply 0 with an existing best_move (as if a prior eval pass wrote it).
+        await _insert_game_positions(
+            full_drain_session_maker,
+            full_drain_test_user_jq1,
+            game_id,
+            [
+                {
+                    "ply": 0,
+                    "full_hash": 0xC0FFEE00,
+                    "eval_cp": None,
+                    "eval_mate": None,
+                    "best_move": "e2e4",
+                }
+            ],
+        )
+
+        # Target at ply 0 (non-terminal) + a terminal donor at ply 1. The donor's
+        # eval becomes row 0's post-move eval (pos_eval[1]), making row 0 eval-bearing
+        # while engine_result_map[0] supplies NO best_move for ply 0.
+        board = chess.Board()
+        targets = [
+            eval_drain._FullPlyEvalTarget(
+                game_id=game_id,
+                ply=0,
+                full_hash=0xC0FFEE00,
+                board=board,
+                eval_cp=None,
+                eval_mate=None,
+            ),
+            eval_drain._FullPlyEvalTarget(
+                game_id=game_id,
+                ply=1,
+                full_hash=0,
+                board=board,
+                eval_cp=None,
+                eval_mate=None,
+                is_terminal=True,
+            ),
+        ]
+        engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]] = {
+            0: (10, None, None, None),  # ply 0: no best_move
+            1: (50, None, None, None),  # ply 1 donor → row 0 post-move eval = 50
+        }
+        try:
+            async with full_drain_session_maker() as session:
+                failed = await eval_drain._apply_full_eval_results(
+                    session, targets, {}, engine_result_map, False
+                )
+                await session.commit()
+            assert failed == 0, "row 0 has a resolved post-move eval — not a hole"
+
+            async with full_drain_session_maker() as verify:
+                row = (
+                    await verify.execute(
+                        select(GamePosition.eval_cp, GamePosition.best_move).where(
+                            GamePosition.game_id == game_id, GamePosition.ply == 0
+                        )
+                    )
+                ).one()
+            assert row[0] == 50, f"ply 0 post-move eval_cp must be 50, got {row[0]}"
+            assert row[1] == "e2e4", (
+                "existing best_move must be preserved when the eval-bearing batched "
+                "UPDATE carries best_move=None (COALESCE no-clobber, FLAWCHESS-6B)"
+            )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
