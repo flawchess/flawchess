@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.26
-milestone_name: milestone
-status: Phase 123 shipped to prod (release #203) — UAT done
-last_updated: "2026-06-16T06:07:32.307Z"
-last_activity: 2026-06-16 -- Phase 123 shipped to prod (release #203), UAT confirmed on 5,132-game import
+milestone: v1.27
+milestone_name: Remote Eval Worker Fan-Out & In-App Feedback
+status: v1.27 milestone closed — Phases 121–123 grouped, archived, released
+last_updated: "2026-06-16T22:30:00.000Z"
+last_activity: 2026-06-16 -- v1.27 milestone closed (Phases 121–123 grouped from standalone-shipped, archived, tagged v1.27)
 progress:
-  total_phases: 9
-  completed_phases: 9
-  total_plans: 24
-  completed_plans: 24
+  total_phases: 3
+  completed_phases: 3
+  total_plans: 6
+  completed_plans: 6
   percent: 100
 ---
 
@@ -17,10 +17,9 @@ progress:
 
 ## Current Position
 
-Phase: 123 (remote-worker-fan-out-for-entry-ply-import-time-eval-on-big-) — ✅ SHIPPED TO PROD (release #203, 2026-06-16), UAT done
-Plan: 3 of 3 (complete)
-No open phases. Phases 121, 122, 123 are all shipped to prod but not yet grouped into a named milestone. Phase 123 UAT confirmed on a real 5,132-game first import (user 28): entry-ply drain split server-pool (2,573) / worker `ws80` (1,800), 100% evals_completed_at, zero stuck leases, CR-01 livelock fix verified live; mixed-fleet backward compat holds (un-upgraded `remote-worker` fallback drains full-ply only).
-NEXT: `/gsd-new-milestone` to formalize the next milestone (and fold the standalone shipped phases 121/122/123 into it) — leading candidates: SEED-039 tactic-motif tags over the captured PVs, SEED-037 Train drills, or the SEED-036 remainder (Analysis viewer + best-move endpoint).
+Milestone v1.27 Remote Eval Worker Fan-Out & In-App Feedback — ✅ CLOSED 2026-06-16. Phases 121, 122, 123 (6 plans) grouped from standalone-shipped, archived to milestones/v1.27-ROADMAP.md, tagged v1.27, GitHub release cut. Phase 123 UAT confirmed on a real 5,132-game first import (user 28): entry-ply drain split server-pool (2,573) / worker `ws80` (1,800), 100% evals_completed_at, zero stuck leases, CR-01 livelock fix verified live; mixed-fleet backward compat holds (un-upgraded `remote-worker` fallback drains full-ply only).
+No open phases.
+NEXT: `/gsd-new-milestone` to start the next milestone — leading candidates: SEED-039 tactic-motif tags over the captured PVs, SEED-037 Train drills, or the SEED-036 remainder (Analysis viewer + best-move endpoint).
 PROD-SOAK (carried, check over coming days): (1) tier-1 ~10s wall-clock fan-out on the live pool (QUEUE-03); (2) re-verify the ~32% flaw-PV coverage TODO once the residue re-eval catches up (multi-day background drain; see 117.1-POST-DEPLOY.md); (3) τ/floor tier-3 lottery tuning against prod `last_activity` distributions (SEED-046 timing caveat).
 Security: SECURED — 13/13 threats closed (threats_open: 0), ASVS L1 (117-SECURITY.md).
 Last activity: 2026-06-16 — Completed quick task 260616-rm6: fixed the Import-page counter lag (surfaced by the 2026-06-16 prod stress test). The per-platform "N games" header now reads max(profile COUNT, live import-job games_imported) via a new ImportProgressBar onProgress callback, so it climbs in lockstep with "X fetched, Y saved" instead of trailing the slower userProfile query; GAME_COUNT_REFRESH_INTERVAL_MS 5s→3s tightens the "Quick Scan" eval-coverage refresh. Frontend-only; commit 3aed3be4. Previously: 260616-pjh stamped lichess_evals_at provenance at import time (new Stage 5d in import_service._flush_batch) so re-imported Lichess games with computer analysis are no longer wastefully re-queued for Stockfish
@@ -31,9 +30,11 @@ Progress: [██████████] 100%
 
 See: .planning/PROJECT.md (updated 2026-06-14 after v1.26 milestone)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report.
-Current focus: No active milestone. v1.26 Full-Game Eval Pipeline shipped 2026-06-14 — full-game Stockfish analysis runs as a background tiered-queue drain (prod `EVAL_AUTO_DRAIN_ENABLED=true`) with an optional off-box headless worker. Next is `/gsd-new-milestone`.
+Current focus: No active milestone. v1.27 Remote Eval Worker Fan-Out & In-App Feedback closed 2026-06-16 — remote workers now claim tier-1 single-game jobs and fan out entry-ply import-time eval on big first imports, plus an in-app feedback button. Next is `/gsd-new-milestone`.
 
 ## Milestone Progress
+
+Twenty-seven milestones complete (v1.0–v1.27). v1.27 Remote Eval Worker Fan-Out & In-App Feedback shipped 2026-06-16 — 3 phases (121, 122, 123), 6 plans, +2,847/−308 lines, grouped post-hoc from standalone-shipped phases (releases #199/#202/#203); archived to milestones/v1.27-ROADMAP.md, tagged v1.27. Remote-worker tier-1 claiming (SEED-048), in-app feedback button + Sentry signal (SEED-049), and remote-worker entry-ply fresh-import drain via a three-rung priority ladder (SEED-051).
 
 Twenty-six milestones complete (v1.0–v1.26). v1.26 Full-Game Eval Pipeline shipped 2026-06-14 — 7 phases (116, 117, 117.1, 117.2, 118, 119, 120), 18 plans, +12,555/−494 lines over 3 days, released across PRs #187/#188/#190/#191 through #195; archived to milestones/v1.26-ROADMAP.md, tagged v1.26. Full-game Stockfish analysis at 1M-node Lichess parity, tiered SKIP-LOCKED priority queue with lease/report contract, post-move eval convention fix (SEED-044), demand UX, hole-aware coverage + recency-weighted tier-3 lottery (SEED-045/046), and an off-box headless eval worker (SEED-048). v1.25 Flaw-Stats Opponent Comparison shipped 2026-06-12 — 4 phases (113, 114, 114.1, 115), 8 plans, released via PR #185 (`78c19514`); archived to milestones/v1.25-ROADMAP.md, tagged v1.25. v1.24 Library Page shipped 2026-06-09 — 9 phases (104–112), 37 plans. v1.23 LLM Endgame-Insights Statistical-Reasoning Rework shipped 2026-06-03 — 2 phases (102, 103). v1.22 Maintenance (Test Isolation & Frontend Major Upgrades) shipped 2026-05-31 — 2 phases (100, 101).
 

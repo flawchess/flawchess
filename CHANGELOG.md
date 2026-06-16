@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v1.27] Remote Eval Worker Fan-Out & In-App Feedback — 2026-06-16
+
+Scaled off-box eval compute beyond the idle backlog and added a low-friction feedback channel. Trusted remote workers can now claim explicit single-game "Analyze" jobs (server-busy overflow) and fan out import-time (entry-ply) evaluation on big first imports, so a brand-new user sees flaws and endgame stats sooner. A floating in-app feedback button (guests included) ties submissions to the page the user was on and pings the team via Sentry. Bundles the post-v1.26 stabilization work (guest welcome page, analyze-pill UX, import-counter/WAL ops fixes). Phases 121–123.
+
 ### Added
 
 - **Faster import-time eval on large imports** — trusted off-box workers can now help drain the import-time (entry-ply) evaluation backlog in parallel batches (up to 50 games per lease), so endgame and time-management stats become available sooner after importing a large game history. Falls back to the in-process server pool near the tail of an import. (Phase 123, SEED-051)
@@ -15,8 +19,6 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - **In-app feedback button** — a floating "Send feedback" button appears on every authenticated page (bottom-right, mini/secondary weight, 44px touch target). It hides when scrolling down or when any drawer/modal is open, and respects iOS safe-area in installed PWA mode. Clicking it opens a modal with a required freeform text field and an optional 3-point sentiment control (Negative/Suggestion/Positive, toggle-off). Submissions are stored in the database and also push a Sentry signal tagged with ELO bucket and platform for team visibility. (Phase 122, SEED-049)
 
 - **Guest welcome page** — first-time guests now see a short Welcome page before importing that honestly lays out what works without an account (opening explorer and statistics, endgame and time-management analytics, importing Lichess full-game analyses) versus what signing up unlocks (FlawChess's own deep Stockfish blunder/mistake/inaccuracy detection, cross-device access, and data durability). A "Don't show this again" option skips it on future visits, and the Import page keeps a short "Sign up free" prompt for guests. (SEED-047)
-
-### Added
 
 - **Tighter analyze feedback: Pending / Analyzing pill** — clicking "Analyze" on a game card now shows a pulsing "Pending…" pill immediately (no wait for a server response). Once a worker leases the job the pill transitions to "Analyzing…". A failed or rejected enqueue rolls back to the "Analyze" button. (260615-q1x)
 
@@ -794,7 +796,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.26...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.27...HEAD
+[v1.27]: https://github.com/flawchess/flawchess/compare/v1.26...v1.27
 [v1.26]: https://github.com/flawchess/flawchess/compare/v1.25...v1.26
 [v1.25]: https://github.com/flawchess/flawchess/compare/v1.24...v1.25
 [v1.24]: https://github.com/flawchess/flawchess/compare/v1.23...v1.24

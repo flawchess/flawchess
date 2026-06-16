@@ -1,5 +1,24 @@
 # Milestones: FlawChess
 
+## v1.27 Remote Eval Worker Fan-Out & In-App Feedback (Shipped: 2026-06-16)
+
+**Phases completed:** 3 phases (121, 122, 123), 6 plans. Grouped at close per the standalone-then-regroup pattern (cf. v1.20) — each phase shipped to prod standalone and soaked before grouping; released to production across PRs #199 (121), #202 (122), #203 (123) plus follow-on ops/quick-task releases through #208. Production code tree matches `main` at close.
+**Stats:** 55 code files changed (`app` + `frontend/src` + `scripts`), +2,847 / −308 lines (`v1.26..main`); 9 `feat(...)` commits; phases completed 2026-06-14 → 2026-06-16 since v1.26. Two Alembic migrations (122 `feedback` table; 123 `games.entry_eval_lease_expiry` / `entry_eval_leased_by` lease columns).
+**Milestone goal:** Scale off-box eval compute beyond the idle tier-3 backlog and add a low-friction feedback channel. Two phases extend the v1.26 remote-eval-worker contract (SEED-048 / Phase 120); the third adds in-app feedback. Built from three independent seeds (SEED-048/049/051).
+
+**Key accomplishments:**
+
+- **Remote-worker tier-1 claiming** (Phase 121, SEED-048) — a remote eval worker can claim **tier-1 single-game "analyze" jobs**, not just the tier-3 idle backlog, so when the server pool is mid-game a second idle machine shortens click-to-pickup latency. FCFS overflow (the server in-process drain still wins tier-1 when idle); an opaque `job_id` is threaded lease→submit (carrying `eval_jobs.id`, `None` for tier-3) with a `status='leased'` stamp guard, and the worker idle poll dropped 5s→1s. No DB migration. Prod soak: no tier-1/tier-3 double-claim; submit correctly stamps `eval_jobs`. VERIFICATION passed.
+- **In-app feedback button** (Phase 122, SEED-049) — a low-friction channel (guests included) tying submissions to the exact page. New `feedback` table + thin `POST /api/feedback` (service → repository, per-user rate-limit + max-length guard), a **floating auto-hiding button** (hides on scroll-down / open overlays, `env(safe-area-inset-bottom)`, ≥44px tap target) + modal (required text + optional 3-point sentiment), and a **Sentry signal** tagged `source="feedback"` + username / ELO-bucket / platform so feedback pings the team. All 5 human-gated UAT items confirmed on prod (iOS safe-area, overlay-yield, live Sentry tags, bottom-bar clearance, keyboard-dismiss draft retention).
+- **Remote-worker entry-ply fresh-import drain** (Phase 123, SEED-051) — extends the headless worker pool to also drain **entry-ply (import-time, depth-15) eval** in parallel on **big first imports**, cutting first-import latency by ~the worker fan-out factor via a **three-rung priority ladder** (tier-1 > entry-ply fresh-import drain > tier-3, checked between full-ply games, no preemption). One nullable `games` lease column + `SKIP LOCKED` LIFO claim (queue predicate unchanged), batched `/entry-lease` + `/entry-submit` endpoints (server derives targets; worker stays a dumb Stockfish-over-HTTP node), and a **D-5 backlog-depth gate** (`LIMIT 1 OFFSET 299`) so incremental syncs stay server-pool-only and only big imports pay the lease tax. Verified on a real **5,132-game first import** (user 28): drain split server-pool 2,573 / worker `ws80` 1,800 at identical 3.7 evals/game density, 100% `evals_completed_at`, zero stuck/expired-unstamped leases; CR-01 zero-target lease livelock fixed live; mixed-fleet backward compat held (un-upgraded workers drain full-ply only). UAT 2/2 pass.
+
+**Scope notes:** grouped post-hoc at close — the three phases shipped standalone (releases #199/#202/#203) across 2026-06-15…06-16. Seed-driven, so no milestone REQUIREMENTS.md (cf. v1.20). The CHANGELOG v1.27 section also bundles the post-v1.26 stabilization work that shipped in the same window: guest welcome page (SEED-047), analyze Pending/Analyzing pill (260615-q1x), guest on-demand analyze (260616-ey1), and import-counter / WAL / lichess-provenance / N+1 ops fixes (FLAWCHESS-6G, 260616-rm6/pjh, ops).
+
+**Deferred (owned by seeds):** biasing tier-1 to the faster box + interruptible tier-3 (SEED-048 follow-ons); entry-ply lease TTL sizing, routing `run_eval_drain` through the same lease, backlog-gate threshold tuning against live throughput (SEED-051 open items); macOS background-scheduling caveat for off-box workers (SEED-048).
+
+See `.planning/milestones/v1.27-ROADMAP.md`.
+
+
 ## v1.26 Full-Game Eval Pipeline (Shipped: 2026-06-14)
 
 **Phases completed:** 7 phases (116, 117, 117.1 INSERTED, 117.2 INSERTED, 118, 119, 120), 18 plans (+ the 117.2 data migration and the SEED-049 quick task). All landed on `main` via local squash-merge / gated commits; released to production across PRs #187/#188/#190/#191 and follow-on releases through #195. Production code tree matches `main` at close.
