@@ -35,12 +35,26 @@ parallel, so first-import latency drops by roughly the worker fan-out factor.
 
 ## Locked Decisions (2026-06-16)
 
-- **D-1 — Hard-priority "entry-ply" top tier, checked between full-ply games.** The worker
-  checks for entry-ply work before claiming its next full-ply game. Full-ply games run 3-20s
-  each, so worst-case wait before a worker pivots to a fresh import is one full-ply game (~20s),
-  which is acceptable. **No preemption** of an in-flight full-ply game, **no reserved/idle
-  capacity** — just a priority check at the natural between-games boundary. (Reserved capacity
-  and true preemption were both considered and rejected as unnecessary given the ~20s ceiling.)
+- **D-1 — Three-rung priority ladder; entry-ply is SECOND, below tier-1 (refined 2026-06-16).**
+  The worker's between-games claim follows a strict priority order:
+  1. **Tier-1 explicit single-game analysis** (full-ply, 1M nodes) — absolute top, unchanged.
+  2. **Entry-ply fresh-import drain** (depth-15, batched) — this seed's new tier.
+  3. **Tier-3 idle backlog** full-ply (deprecated tier-2 alongside) — bottom.
+
+  Entry-ply sits *below* tier-1, not at the top, because tier-1 is the strongest attention
+  signal (a user actively waiting on one specific game) and is tiny/bursty (one game per click),
+  so keeping it first delays a big import by at most one game (~3-20s) per click — negligible —
+  while the reverse (tier-1 starving for minutes behind a 1000-game import) is a bad,
+  asymmetric downside. Two safety properties fall out: **entry-ply can't starve tier-1** (tier-1
+  is claimed first), and **imports can't starve tier-1** (same reason). The only cost: entry-ply's
+  worst-case pivot latency is "one in-flight full-ply game + any queued tier-1 game" instead of
+  just one full-ply game — still bounded and small since tier-1 is single-game and rare.
+
+  The check happens **between full-ply games** at the natural claim boundary. **No preemption**
+  of an in-flight game (entry-ply batches are seconds of work — a between-games check is enough;
+  preempting to save 1-2s isn't worth the partial-work complexity), and **no reserved/idle
+  capacity**. (Both preemption and reserved capacity were considered and rejected given the
+  bounded ~20s pivot ceiling.)
 
 - **D-2 — Server ships FENs; worker stays a dumb Stockfish-over-HTTP node.** The batched lease
   returns a flat list of `{game_id, ply, fen}` spanning several fresh-import games. The server
