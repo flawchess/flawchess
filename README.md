@@ -158,35 +158,6 @@ Besides Linux and MacOS, the worker runs natively on Windows as well. No WSL or 
    uv run python scripts/remote_eval_worker.py --workers 4
    ```
 
-
-### Start
-
-With the token in `.env` and `--base-url` defaulting to production, the worker needs no flags:
-
-```bash
-# Connectivity smoke test — lease + evaluate, never submit:
-uv run python scripts/remote_eval_worker.py --dry-run --once
-
-# Process one game, then exit:
-uv run python scripts/remote_eval_worker.py --once
-
-# Continuous drain (default — 8 parallel Stockfish processes):
-uv run python scripts/remote_eval_worker.py --workers 8
-
-# 8 engine processes, pointed at a staging server:
-uv run python scripts/remote_eval_worker.py --workers 8 --base-url http://localhost:8000
-```
-
-Flags: `--base-url` (default `https://flawchess.com`), `--token` (override `.env`), `--workers N` (default 4, ≈ core count), `--idle-sleep SECONDS` (empty-queue poll delay, default 5), `--dry-run` (never submit), `--once` (one cycle then exit).
-
-### Stop
-
-It's a foreground process — press `Ctrl-C`. The worker shuts the engine pool down cleanly on interrupt. For an unattended long-running drain, wrap it yourself (`tmux`/`screen`, `nohup … &`, or a systemd unit); there is no built-in daemon mode. The continuous loop is resilient: a transient network error, a 5xx, or a bad position is logged to Sentry, then the worker backs off `--idle-sleep` and retries rather than dying.
-
-### Monitoring throughput
-
-The worker logs each cycle with a UTC timestamp (`Leased game_id=… (N positions)` → `Submitted game_id=…`), so per-game timing is visible in stdout. For aggregate throughput across *all* drain sources (the server pool plus any workers), query the server: every completed game is stamped with `full_evals_completed_at`, so `count(*)` over that column in a time window gives games/minute directly.
-
 ## Backups & Recovery
 
 The production VM is backed up by Hetzner's **automatic daily whole-server backup** feature with a 7-day rolling retention. Snapshots are managed by Hetzner and stored off the VM — a full disk loss can be recovered from the previous day's snapshot via the Hetzner Cloud Console.
