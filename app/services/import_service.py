@@ -816,8 +816,58 @@ async def _flush_batch(
         # commit atomically with the batch.
         await _classify_and_insert_flaws(session, covered_ids)
 
+    # Stage 5d (quick 260616-pjh): stamp lichess_evals_at provenance at import.
+    await _stamp_lichess_evals_at(session, rows_result.new_game_ids)
+
     # WR-05: caller owns the commit (single transaction per batch).
     return len(rows_result.new_game_ids)
+
+
+async def _stamp_lichess_evals_at(
+    session: Any,
+    new_game_ids: Sequence[int],
+) -> None:
+    """Stamp ``lichess_evals_at`` for freshly imported lichess-analyzed games.
+
+    Bug fix: the column was introduced in Phase 117 with only a one-time backfill
+    (``white_blunders IS NOT NULL``) — no live import path ever set it. So lichess
+    games re-imported after that migration arrived WITH lichess computer analysis
+    yet got ``lichess_evals_at = NULL``, which made them match
+    ``needs_engine_full_evals`` (``full_evals_completed_at IS NULL AND
+    lichess_evals_at IS NULL``) and get wastefully re-queued for our Stockfish drain
+    despite already carrying per-ply %evals (observed: 5,152 of one user's lichess
+    games after a delete+reimport).
+
+    Mirrors the Phase 117 migration's condition. The ``platform = 'lichess'`` guard
+    future-proofs the case where engine-filled oracle counts blur the white_blunders
+    signal (Phase 117 note / CLAUDE.md); at import time white_blunders can only be
+    lichess-sourced (our engine has not run on a freshly imported game). The
+    ``lichess_evals_at IS NULL`` guard keeps this idempotent on re-runs.
+
+    Caller owns the transaction (WR-05): this issues the UPDATE but does not commit.
+
+    Uses the Table-level bindparam executemany pattern (id = :b_id, one param row per
+    game) — NOT id.in_([...]) — so the compiled SQL text is invariant across batches.
+    Inlining game ids would regrow SQLAlchemy's compile cache and asyncpg's prepared-
+    statement LRU per batch, the FLAWCHESS-56 / Phase 90 OOM regression. The static
+    platform / white_blunders / lichess_evals_at predicates are constant across rows,
+    so the statement stays a single prepared form. Pinned by
+    test_stage5_sql_text_invariant_across_batches.
+    """
+    if not new_game_ids:
+        return
+    games_table = Game.__table__
+    stmt = (
+        update(games_table)  # ty: ignore[invalid-argument-type]
+        .where(
+            games_table.c.id == bindparam("b_id"),
+            games_table.c.platform == "lichess",
+            games_table.c.white_blunders.isnot(None),
+            games_table.c.lichess_evals_at.is_(None),
+        )
+        .values(lichess_evals_at=datetime.now(timezone.utc))
+    )
+    await session.execute(stmt, [{"b_id": gid} for gid in new_game_ids])
 
 
 async def _collect_position_rows(

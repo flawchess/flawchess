@@ -22,12 +22,15 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- **Large imports no longer stutter** — tuned PostgreSQL WAL/checkpoint settings (`max_wal_size=8GB`, `wal_compression=on`) so a big dual-platform import no longer triggers a checkpoint I/O storm that periodically paused import progress. (ops)
+
 - **Guests can analyze individual games on demand** — the per-game "Analyze" button is now available to guest users for their own games (tier-1 explicit enqueue). Automatic full-library background analysis remains a signup benefit. (260616-ey1)
 
 - **Eval-chart tooltip is more readable** — the floating tooltip on game eval charts is now less transparent so it stays legible over the eval bar.
 
 ### Fixed
 
+- **Re-imported Lichess games keep their analysis provenance** — Lichess games that arrive with Lichess's own computer analysis are now tagged as such at import time, so they are no longer needlessly re-queued for FlawChess's Stockfish analysis after a re-import. Previously this provenance was only set by a one-time migration, so deleting and re-importing a library could send thousands of already-analyzed Lichess games back through the engine, wasting capacity. (260616-pjh)
 - **Guest "Sign up to analyze all games" button now reaches the sign-up page** — clicking it previously bounced guests straight back to the Library, because a guest's session token made the login page treat them as already signed in. The button now drops the guest session first (preserving imported games and bookmarks for promotion) before opening the registration page. (260616-ey1)
 - **Eval chart no longer crashes the Library on touch devices** — scrubbing a game's eval chart on some Android / hybrid-pointer devices could throw "Maximum update depth exceeded" and blank the page. The chart slider no longer ties its value to the hover position (a sticky hover could pin it into an update loop), and touch devices are now detected more reliably so the chart's hover scrub stays off on touch. (FLAWCHESS-5F, FLAWCHESS-5Y)
 - **Cycling through a tag's flaws can now be dismissed** — after clicking/tapping a flaw tag or severity badge to step through its markers, clicking or tapping anywhere outside the eval chart and flaw chips now clears the highlight and undims the other markers (previously they stayed dimmed with no way to reset).

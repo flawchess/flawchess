@@ -22,7 +22,7 @@ export function EvalCoverageHeader() {
     >
       <Cpu className="h-4 w-4 shrink-0 text-amber-700 animate-pulse" aria-hidden="true" />
       <span className="truncate">
-        Stockfish: <strong>{analysedCount.toLocaleString()}</strong>
+        Quick Scan: <strong>{analysedCount.toLocaleString()}</strong>
         {' / '}
         <strong>{totalCount.toLocaleString()}</strong> games
       </span>
