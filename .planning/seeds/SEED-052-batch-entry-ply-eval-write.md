@@ -1,6 +1,8 @@
 ---
 id: SEED-052
-status: dormant
+status: implemented
+resolved: 2026-06-16
+resolved_by: quick task 260616-kzb
 planted: 2026-06-16
 planted_during: Phase 123 (remote-worker-fan-out-for-entry-ply-import-time-eval)
 trigger_when: when touching the eval-drain write path, doing an N+1 / DB round-trip perf pass, or if Sentry flags an N+1 on /api/eval/remote/entry-submit
