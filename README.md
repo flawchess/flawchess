@@ -114,7 +114,7 @@ The CI pipeline runs these in order: ruff (lint) → [ty](https://github.com/ast
 
 ## Remote Stockfish Worker
 
-`scripts/remote_eval_worker.py` adds a worker to help out the FlawChess server to analyze chess games with the Stockfish engine. 
+If you want to help out, here's how you can add a Stockfish worker to support the FlawChess server and speed up game analysis. 
 
 ### Prerequisites
 
