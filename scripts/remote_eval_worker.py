@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import secrets
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -58,6 +59,11 @@ DEFAULT_WORKERS: int = 4
 # The busy path (a game was leased) is already a tight loop — unchanged.
 DEFAULT_IDLE_SLEEP: float = 1.0
 HTTP_TIMEOUT_S: float = 30.0
+# D-10 (Phase 123 SEED-051): worker IDs must fit VARCHAR(16) on games.entry_eval_leased_by.
+# Random default is ~8 base36 chars; operator override is validated < 10 chars.
+WORKER_ID_MAX_LEN: int = 9  # exclusive upper bound: len < 10
+_WORKER_ID_ALPHABET: str = "0123456789abcdefghijklmnopqrstuvwxyz"
+_WORKER_ID_DEFAULT_LEN: int = 8
 
 
 # ─── Logging helper ───────────────────────────────────────────────────────────
@@ -67,6 +73,21 @@ def _log(msg: str = "") -> None:
     """Print a message prefixed with a UTC timestamp (second precision)."""
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{ts}] {msg}")
+
+
+# ─── Worker-ID helper ────────────────────────────────────────────────────────
+
+
+def _generate_worker_id() -> str:
+    """Generate a random ~8-char base36 worker ID for D-10 / SEED-051.
+
+    Uses secrets.randbelow for each character to ensure cryptographic randomness.
+    Result is guaranteed < 10 chars, fitting VARCHAR(16) with headroom (D-09).
+    """
+    return "".join(
+        _WORKER_ID_ALPHABET[secrets.randbelow(len(_WORKER_ID_ALPHABET))]
+        for _ in range(_WORKER_ID_DEFAULT_LEN)
+    )
 
 
 # ─── Eval helper ─────────────────────────────────────────────────────────────
@@ -94,6 +115,36 @@ async def _eval_positions(
             "eval_mate": r[1],
             "best_move": r[2],
             "pv": r[3],
+        }
+        for pos, r in zip(positions, results)
+    ]
+
+
+async def _eval_entry_positions(
+    pool: EnginePool,
+    positions: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Evaluate entry-ply positions at depth-15 via EnginePool fan-out.
+
+    CRITICAL: uses pool.evaluate (depth-15), NOT pool.evaluate_nodes_with_pv
+    (the 1M-node full-ply mode). Mixing modes makes entry-ply 10x slower
+    and uses the wrong eval budget (D-2 / RESEARCH Anti-pattern).
+
+    Entry-ply carries no best_move/pv — depth-15 returns only (cp, mate).
+    The server owns the SEED-044 storage convention; the worker passes
+    eval_cp/eval_mate through UNCHANGED (D-2 / pitfall 1).
+
+    Each position dict contains: game_id, ply, fen.
+    Each output dict contains:  game_id, ply, eval_cp, eval_mate.
+    """
+    boards: list[chess.Board] = [chess.Board(str(pos["fen"])) for pos in positions]
+    results = await asyncio.gather(*(pool.evaluate(b) for b in boards))
+    return [
+        {
+            "game_id": pos["game_id"],
+            "ply": pos["ply"],
+            "eval_cp": r[0],
+            "eval_mate": r[1],
         }
         for pos, r in zip(positions, results)
     ]
@@ -146,18 +197,60 @@ async def _run_cycle(
     dry_run: bool,
     loop: bool,
 ) -> bool:
-    """Run one lease → eval → submit cycle. Returns True when the loop should stop.
+    """Run one D-06 ladder cycle. Returns True when the loop should stop.
+
+    D-06 three-rung ladder (Phase 123 SEED-051):
+      1. POST /lease?scope=explicit (tier-1/2 only)
+         200 → eval full-ply, submit to /submit, done.
+         204 → fall to rung 2.
+      2. POST /entry-lease (entry-ply, gated by D-5 backlog probe server-side)
+         200 → eval at depth-15, submit to /entry-submit, done.
+         204 → fall to rung 3.
+      3. POST /lease?scope=idle (tier-3 only)
+         200 → eval full-ply, submit to /submit, done.
+         204 → queue fully empty; sleep idle_sleep.
+
+    Busy paths (tier-1, entry-ply) stay at 1-2 calls. Only the fully-idle path
+    makes all 3 round-trips. Entry-ply is always-on (D-08); the server D-5 gate
+    makes it cost nothing when there's no big import.
 
     Returns True only in non-loop mode after a completed cycle (or an idle 204);
     in loop mode it always returns False so _run_loop keeps draining.
     """
-    lease_resp = await client.post("/api/eval/remote/lease")
+    # ── Rung 1: explicit tier-1/2 ────────────────────────────────────────────
+    lease_resp = await client.post("/api/eval/remote/lease", params={"scope": "explicit"})
 
-    if lease_resp.status_code == 204:
+    if lease_resp.status_code != 204:
+        # Got a tier-1/2 game — eval and submit as before.
+        return await _handle_full_ply_response(client, pool, sf_version, dry_run, loop, lease_resp)
+
+    # ── Rung 2: entry-ply (gated by D-5 backlog probe server-side) ───────────
+    entry_resp = await client.post("/api/eval/remote/entry-lease")
+
+    if entry_resp.status_code != 204:
+        # Got entry-ply positions — eval at depth-15, submit to /entry-submit.
+        return await _handle_entry_ply_response(client, pool, sf_version, dry_run, loop, entry_resp)
+
+    # ── Rung 3: idle tier-3 ───────────────────────────────────────────────────
+    idle_resp = await client.post("/api/eval/remote/lease", params={"scope": "idle"})
+
+    if idle_resp.status_code == 204:
         _log("Queue empty (204). Sleeping...")
         await asyncio.sleep(idle_sleep)
         return not loop
 
+    return await _handle_full_ply_response(client, pool, sf_version, dry_run, loop, idle_resp)
+
+
+async def _handle_full_ply_response(
+    client: httpx.AsyncClient,
+    pool: EnginePool,
+    sf_version: str,
+    dry_run: bool,
+    loop: bool,
+    lease_resp: httpx.Response,
+) -> bool:
+    """Handle a 200 response from /lease (full-ply path). Eval and submit."""
     lease_resp.raise_for_status()
     data = lease_resp.json()
     game_id = data["game_id"]
@@ -189,7 +282,42 @@ async def _run_cycle(
         f"Submitted game_id={game_id}: stamp_complete={result.get('stamp_complete')}, "
         f"failed_ply_count={result.get('failed_ply_count')}"
     )
+    return not loop
 
+
+async def _handle_entry_ply_response(
+    client: httpx.AsyncClient,
+    pool: EnginePool,
+    sf_version: str,
+    dry_run: bool,
+    loop: bool,
+    entry_resp: httpx.Response,
+) -> bool:
+    """Handle a 200 response from /entry-lease (depth-15 entry-ply path)."""
+    entry_resp.raise_for_status()
+    data = entry_resp.json()
+    positions = data["positions"]
+
+    _log(f"Leased {len(positions)} entry-ply position(s). Evaluating at depth-15...")
+    evals = await _eval_entry_positions(pool, positions)
+
+    if dry_run:
+        _log(f"--dry-run: evaluated {len(evals)} entry-ply positions; skipping submit.")
+        return not loop
+
+    submit_resp = await client.post(
+        "/api/eval/remote/entry-submit",
+        json={
+            "sf_version": sf_version,
+            "evals": evals,
+        },
+    )
+    submit_resp.raise_for_status()
+    result = submit_resp.json()
+    _log(
+        f"Entry-submit complete: game_ids={result.get('game_ids')}, "
+        f"stamped_count={result.get('stamped_count')}"
+    )
     return not loop
 
 
@@ -199,12 +327,16 @@ async def _run_cycle(
 async def run_worker(
     base_url: str,
     token: str,
+    worker_id: str,
     workers: int,
     idle_sleep: float,
     dry_run: bool,
     loop: bool,
 ) -> None:
     """Start an EnginePool, read the SF version, then run the lease/eval/submit loop.
+
+    worker_id is sent on every request via X-Worker-Id (D-10 / SEED-051) so that
+    eval_jobs.leased_by and games.entry_eval_leased_by are per-worker in prod.
 
     Handles KeyboardInterrupt gracefully — logs the interruption and ensures the
     pool is stopped via the finally block.
@@ -219,7 +351,8 @@ async def run_worker(
 
         async with httpx.AsyncClient(
             base_url=base_url,
-            headers={"X-Operator-Token": token},
+            # D-10: X-Worker-Id set once alongside X-Operator-Token — no per-call change.
+            headers={"X-Operator-Token": token, "X-Worker-Id": worker_id},
             timeout=HTTP_TIMEOUT_S,
         ) as client:
             await _run_loop(
@@ -292,11 +425,26 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Process one game (or one idle cycle) then exit. Default loops forever.",
     )
+    parser.add_argument(
+        "--worker-id",
+        default=None,
+        dest="worker_id",
+        metavar="ID",
+        help=(
+            "Distinctive worker identity written to leased_by / entry_eval_leased_by columns "
+            "for prod observability (D-10 / SEED-051). Must be < 10 chars (fits VARCHAR(16)). "
+            "Default: random ~8-char base36 generated at startup."
+        ),
+    )
     args = parser.parse_args()
     if args.workers < 1:
         parser.error(f"--workers must be >= 1, got {args.workers}")
     if args.idle_sleep <= 0:
         parser.error(f"--idle-sleep must be > 0, got {args.idle_sleep}")
+    if args.worker_id is not None and len(args.worker_id) >= 10:
+        parser.error(
+            f"--worker-id must be < 10 chars, got {len(args.worker_id)} ({args.worker_id!r})"
+        )
     return args
 
 
@@ -328,12 +476,20 @@ async def main() -> None:
         sentry_sdk.set_context("worker", {"source": "remote_eval_worker"})
         sentry_sdk.set_tag("source", "remote_eval_worker")
 
+    # D-10 (Phase 123 SEED-051): generate a random worker ID at startup when none given.
+    # The ID is sent via X-Worker-Id so prod can distinguish workers in leased_by columns.
+    worker_id: str = args.worker_id if args.worker_id is not None else _generate_worker_id()
+
     # Log startup info — NEVER log the token value (T-120-01).
-    _log(f"Starting remote eval worker: base_url={args.base_url} workers={args.workers}")
+    _log(
+        f"Starting remote eval worker: base_url={args.base_url} "
+        f"workers={args.workers} worker_id={worker_id}"
+    )
 
     await run_worker(
         base_url=args.base_url,
         token=token,
+        worker_id=worker_id,
         workers=args.workers,
         idle_sleep=args.idle_sleep,
         dry_run=args.dry_run,

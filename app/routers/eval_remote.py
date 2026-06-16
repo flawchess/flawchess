@@ -1,53 +1,76 @@
 """Endpoints for the remote eval worker protocol (Phase 120 SEED-048).
 
-POST /eval/remote/lease  — claim the next eval game (tier-1 > tier-2 > tier-3) and
-                           return its (ply, FEN) positions (Phase 121 SEED-048).
-POST /eval/remote/submit — apply a batch of engine evals server-side via the SEED-044
-                           write path, enforcing D-5 SF-version gate and SEED-045
-                           bounded-retry stamping.
+POST /eval/remote/lease        — claim the next eval game (tier-1 > tier-2 > tier-3) and
+                                 return its (ply, FEN) positions (Phase 121 SEED-048).
+                                 Optional scope param (Phase 123 D-05): absent = bundled;
+                                 scope=explicit = tier-1/2 only; scope=idle = tier-3 only.
+POST /eval/remote/submit       — apply a batch of engine evals server-side via the SEED-044
+                                 write path, enforcing D-5 SF-version gate and SEED-045
+                                 bounded-retry stamping.
+POST /eval/remote/entry-lease  — (Phase 123 SEED-051 D-07) claim a batch of pending
+                                 entry-ply (import-time) games. D-5 backlog existence probe
+                                 gates this endpoint; returns 204 when backlog < threshold.
+POST /eval/remote/entry-submit — (Phase 123 SEED-051 D-07) apply depth-15 entry-ply evals
+                                 via the no-shift SEED-044 write path (_apply_eval_results).
 
-Both endpoints require the X-Operator-Token header (T-120-01 operator auth gate).
+All endpoints require the X-Operator-Token header (T-120-01 operator auth gate).
 403 when the token is not configured on the server (fail-closed); 401 when it does
 not match. Token comparison is constant-time (hmac.compare_digest — no timing oracle).
 
 Expected / non-exception status codes (do NOT Sentry-capture):
   403 — token not configured
   401 — wrong token
-  204 — empty queue (lease) or lichess game deferred (lease)
-  422 — SF version mismatch (submit)
+  204 — empty queue (lease) or lichess game deferred (lease) or shallow backlog (entry-lease)
+  422 — SF version mismatch (submit / entry-submit)
   404 — game not found (submit)
 
 The server owns ALL storage convention (D-2): workers are dumb FEN→eval functions.
 The submit endpoint calls _apply_full_eval_results with the worker's ply-keyed evals;
 the SEED-044 +1 post-move shift is applied there, not by the worker.
+The entry-submit endpoint calls _apply_eval_results (no shift) — entry-ply targets are
+already position-keyed at the correct row; do NOT use _apply_full_eval_results.
 """
 
 import hmac
 import io
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Literal
 
 import chess
 import chess.pgn
 import sentry_sdk
 import sqlalchemy as sa
-from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from sqlalchemy import select, update
 from app.core.config import settings
 from app.core.database import async_session_maker
 from app.models.game import Game
 from app.models.game_position import GamePosition
 from app.schemas.eval_remote import (
+    EntryLeasePosition,
+    EntryLeaseResponse,
+    EntrySubmitRequest,
+    EntrySubmitResponse,
     LeasePosition,
     LeaseResponse,
     SubmitRequest,
     SubmitResponse,
 )
 from app.services.eval_drain import (
+    ENTRY_LEASE_BACKLOG_THRESHOLD,
+    ENTRY_LEASE_BATCH_SIZE,
+    ENTRY_LEASE_TTL_SECONDS,
     MAX_EVAL_ATTEMPTS,
+    _EvalTarget,
+    _apply_eval_results,
     _apply_full_eval_results,
+    _claim_entry_eval_games,
     _classify_and_fill_oracle,
+    _classify_and_insert_flaws,
+    _collect_eval_targets_from_db,
     _collect_full_ply_targets,
+    _load_pgns_for_games,
+    _mark_evals_completed,
     _mark_full_evals_completed,
     _mark_full_pv_completed,
     _signal_flaw_completion,
@@ -306,6 +329,30 @@ async def _apply_submit(
 
 
 # ---------------------------------------------------------------------------
+# Worker-id advisory dependency (D-10)
+# ---------------------------------------------------------------------------
+
+
+async def worker_id_label(
+    x_worker_id: Annotated[str | None, Header(alias="X-Worker-Id")] = None,
+) -> str:
+    """Extract the advisory worker identity from X-Worker-Id header (D-10).
+
+    Used for both eval_jobs.leased_by (full-ply) and games.entry_eval_leased_by.
+    Advisory ONLY — never used for authz or ownership (T-123-03).
+    Absent header (old workers) → fall back to _WORKER_ID_REMOTE ("remote-worker").
+    """
+    label = x_worker_id or _WORKER_ID_REMOTE
+    # WR-01 (Phase 123): games.entry_eval_leased_by is VARCHAR(16). An X-Worker-Id
+    # header longer than 16 chars would overflow the column on entry-lease, raising a
+    # PostgreSQL StringDataRightTruncation → unhandled 500 (the worker's own < 10-char
+    # validation is not authoritative server-side). Truncate here so a long header can
+    # never surface as a 500. The full-ply path's eval_jobs.leased_by is VARCHAR(100),
+    # so truncating to 16 is safe for both write sites.
+    return label[:16]
+
+
+# ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 
@@ -313,6 +360,8 @@ async def _apply_submit(
 @router.post("/lease", response_model=None)
 async def lease_eval_game(
     _auth: Annotated[None, Depends(require_operator_token)],
+    worker_id: Annotated[str, Depends(worker_id_label)],
+    scope: Annotated[Literal["explicit", "idle"] | None, Query()] = None,
 ) -> Response | LeaseResponse:
     """Claim the next eval game (tier-1 > tier-2 > tier-3) and return its FEN positions.
 
@@ -322,6 +371,11 @@ async def lease_eval_game(
     Delegates to claim_eval_job which implements tier-1 > tier-2 > tier-3 priority
     with SKIP LOCKED and stale-lease sweep. claim_eval_job opens its own sessions
     internally — do NOT wrap this call in a session context (Pitfall 1).
+
+    D-05 scope param (Phase 123):
+      absent   → today's bundled tier-1>2>3 (backward-compat for un-updated workers).
+      explicit → tier-1/2 only.
+      idle     → tier-3 only.
 
     The EVAL_AUTO_DRAIN_ENABLED gate inside claim_eval_job applies only to tier-3
     (idle backlog). Tier-1/tier-2 picks are never gated — a freshly-enqueued
@@ -334,7 +388,7 @@ async def lease_eval_game(
     without it, the last played ply's eval_cp stays NULL after submit.
     """
     # claim_eval_job owns its sessions — no caller session context needed.
-    claim = await claim_eval_job(worker_id=_WORKER_ID_REMOTE)
+    claim = await claim_eval_job(worker_id=worker_id, scope=scope)
 
     if claim is None:
         return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -422,4 +476,220 @@ async def submit_eval(
     return await _apply_submit(
         game_id=body.game_id,
         body=body,
+    )
+
+
+@router.post("/entry-lease", response_model=None)
+async def entry_lease_eval_games(
+    _auth: Annotated[None, Depends(require_operator_token)],
+    worker_id: Annotated[str, Depends(worker_id_label)],
+) -> Response | EntryLeaseResponse:
+    """Claim a batch of pending entry-ply (import-time) games and return their FENs.
+
+    D-5 backlog existence probe runs FIRST (D-02: remote-lease-only; server pool
+    always drains regardless of backlog depth). If backlog < ENTRY_LEASE_BACKLOG_THRESHOLD
+    → 204 (worker falls to scope=idle). OFFSET = THRESHOLD-1 (0-indexed; Pitfall 6).
+
+    The server derives {game_id, ply, fen}[] via _collect_eval_targets_from_db +
+    target.board.fen() so the worker stays a dumb depth-15 FEN→eval node (D-2).
+
+    Claim commits before returning — the lease is durable before the worker begins
+    evaluation. Entry-submit stamps evals_completed_at (permanent lease release).
+    """
+    # ── D-5 backlog existence probe FIRST ────────────────────────────────────
+    # OFFSET = THRESHOLD - 1 (Pitfall 6: 300th row is at offset 299, 0-indexed).
+    # Bind as :param — never f-string (project Security rule / T-123-02).
+    async with async_session_maker() as probe_session:
+        # WR-03 (Phase 123): the probe predicate MUST match _claim_entry_eval_games'
+        # claim predicate (NULL or expired lease). Counting leased rows here would let
+        # the probe pass while the claim returns [] (all available rows leased by other
+        # workers), wasting a claim transaction per cycle near the tail. Keeping the two
+        # predicates in lock-step prevents that drift.
+        probe = await probe_session.execute(
+            sa.text("""
+                SELECT 1 FROM games
+                WHERE evals_completed_at IS NULL
+                  AND (entry_eval_lease_expiry IS NULL OR entry_eval_lease_expiry < now())
+                ORDER BY id DESC
+                LIMIT 1 OFFSET :offset
+            """),
+            {"offset": ENTRY_LEASE_BACKLOG_THRESHOLD - 1},
+        )
+        backlog_deep_enough = probe.scalar_one_or_none() is not None
+    # probe_session closed
+
+    if not backlog_deep_enough:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    # ── Claim a batch of pending games ────────────────────────────────────────
+    async with async_session_maker() as claim_session:
+        game_ids = await _claim_entry_eval_games(
+            claim_session, worker_id, ENTRY_LEASE_BATCH_SIZE, ENTRY_LEASE_TTL_SECONDS
+        )
+        await claim_session.commit()
+    # claim_session committed — lease is durable before FEN derivation
+
+    if not game_ids:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    # ── Derive {game_id, ply, fen}[] server-side (D-2) ───────────────────────
+    # Worker never parses PGN; server ships FENs from the canonical derivation path.
+    game_pgn_rows = await _load_pgns_for_games(game_ids)
+    pgn_map = {gid: pgn for gid, pgn in game_pgn_rows}
+
+    async with async_session_maker() as read_session:
+        eval_targets = await _collect_eval_targets_from_db(read_session, game_ids, pgn_map)
+    # read_session closed
+
+    positions: list[EntryLeasePosition] = [
+        EntryLeasePosition(
+            game_id=t.game_id,
+            ply=t.ply,
+            fen=t.board.fen(),  # pre-push board snapshot at the target ply
+        )
+        for t in eval_targets
+    ]
+
+    return EntryLeaseResponse(
+        positions=positions,
+        leased_at=datetime.now(timezone.utc),
+    )
+
+
+@router.post("/entry-submit", response_model=EntrySubmitResponse)
+async def entry_submit_eval(
+    body: EntrySubmitRequest,
+    _auth: Annotated[None, Depends(require_operator_token)],
+    worker_id: Annotated[str, Depends(worker_id_label)],
+) -> EntrySubmitResponse:
+    """Apply depth-15 entry-ply evals via the no-shift SEED-044 write path.
+
+    CRITICAL: uses _apply_eval_results (no +1 shift), NOT _apply_full_eval_results.
+    Entry-ply targets are already position-keyed at the correct row; applying the
+    full-ply +1 shift would corrupt the midgame/endgame-span-entry evals (Pitfall 1).
+
+    The server re-derives _EvalTarget objects from each game_id so ply/endgame_class
+    stay server-controlled (T-123-04). The worker payload can only set eval_cp/eval_mate
+    for the plies the server originally chose. Idempotent (ON CONFLICT DO NOTHING for
+    flaws, re-stamp is harmless).
+    """
+    # D-5 SF-version gate FIRST (T-123-07) — copy from /submit, check before DB access.
+    if settings.EXPECTED_SF_VERSION and body.sf_version != settings.EXPECTED_SF_VERSION:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Stockfish version mismatch",
+        )
+
+    # Group submitted evals by game_id for per-game re-derivation.
+    evals_by_game: dict[int, dict[int, tuple[int | None, int | None]]] = {}
+    for e in body.evals:
+        evals_by_game.setdefault(e.game_id, {})[e.ply] = (e.eval_cp, e.eval_mate)
+
+    # CR-01 (Phase 123): stamp the FULL set of games leased to THIS worker that are
+    # still pending — NOT just the games that came back with evals. A leased game can
+    # yield zero eval targets at drain time (e.g. an unreachable target ply silently
+    # dropped by _snapshot_boards), so it never appears in body.evals. If we only
+    # stamped submitted games, those zero-target games would stay pending, get
+    # re-leased every TTL cycle, and livelock forever. The in-process server pool
+    # avoids this by stamping every claimed game regardless of target count (D-09 /
+    # R-02); this mirrors that invariant. Lease ownership (entry_eval_leased_by ==
+    # worker_id) is the same advisory worker identity the worker sent on /entry-lease.
+    async with async_session_maker() as guard_session:
+        leased_game_ids: list[int] = list(
+            (
+                await guard_session.execute(
+                    select(Game.id).where(
+                        Game.entry_eval_leased_by == worker_id,
+                        Game.evals_completed_at.is_(None),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    # guard_session closed
+    leased_set = set(leased_game_ids)
+
+    # WR-02 (Phase 123): only classify/apply evals for games this worker actually
+    # holds a live lease on. A buggy or out-of-sync worker could submit a stale or
+    # wrong game_id; without this filter the server would re-derive, classify, and
+    # stamp an unrelated game. The operator is trusted (not an authz hole), but the
+    # submit body does not prove a game was ever leased, so we ignore non-leased ids.
+    game_ids_submitted = [gid for gid in evals_by_game if gid in leased_set]
+
+    if not leased_game_ids:
+        return EntrySubmitResponse(game_ids=[], stamped_count=0)
+
+    # ── Re-derive _EvalTargets server-side (server controls ply/endgame_class) ──
+    # Only for the games whose evals we will actually apply (lease-owned + submitted).
+    eval_targets: list[_EvalTarget] = []
+    eval_results: list[tuple[int | None, int | None]] = []
+    if game_ids_submitted:
+        game_pgn_rows = await _load_pgns_for_games(game_ids_submitted)
+        pgn_map = {gid: pgn for gid, pgn in game_pgn_rows}
+
+        async with async_session_maker() as read_session:
+            eval_targets = await _collect_eval_targets_from_db(
+                read_session, game_ids_submitted, pgn_map
+            )
+        # read_session closed
+
+        # Zip the worker's submitted evals onto the re-derived targets by (game_id, ply).
+        # Targets without a matching submitted eval get (None, None) → skipped in
+        # _apply_eval_results.
+        for t in eval_targets:
+            game_evals = evals_by_game.get(t.game_id, {})
+            eval_results.append(game_evals.get(t.ply, (None, None)))
+
+    # ── Write phase (ONE session): apply → classify → stamp ──────────────────
+    stamped_count = 0
+    try:
+        async with async_session_maker() as write_session:
+            # _apply_eval_results: NO +1 shift — entry-ply positions are already at the
+            # correct row (Pitfall 1: do NOT use _apply_full_eval_results here).
+            if eval_targets:
+                await _apply_eval_results(write_session, eval_targets, eval_results)
+
+            # Classify game_flaws AFTER _apply_eval_results (eval_cp must be visible)
+            # and BEFORE _mark_evals_completed (atomicity guard). Only games we applied
+            # evals for need (re-)classification.
+            if game_ids_submitted:
+                await _classify_and_insert_flaws(write_session, game_ids_submitted)
+
+            # CR-01: stamp evals_completed_at = now() for the FULL leased set (permanent
+            # lease release per D-01) — including zero-target games that never appeared
+            # in body.evals. The queue predicate (evals_completed_at IS NULL) stops
+            # matching immediately, breaking the re-lease livelock.
+            await _mark_evals_completed(write_session, leased_game_ids)
+            stamped_count = len(leased_game_ids)
+            await write_session.commit()
+    except Exception as exc:
+        # Capture non-trivial exceptions (Sentry rule: never embed variables in message).
+        # IN-01: report the actual lease owner, not a static "entry-submit" literal.
+        sentry_sdk.set_context(
+            "entry_submit",
+            {"game_ids": leased_game_ids, "worker_id": worker_id},
+        )
+        sentry_sdk.set_tag("source", "remote_eval_worker")
+        sentry_sdk.capture_exception(exc)
+        # WR-04 (Phase 123): best-effort release the leases so the games are reclaimable
+        # immediately, rather than stalling for the full TTL. The full-ply path releases
+        # explicitly via release_job for the same reason; mirror that "release now, don't
+        # wait for TTL" design here. Done in its own session so the failed write_session
+        # rollback does not swallow the release.
+        try:
+            async with async_session_maker() as rel_session:
+                await rel_session.execute(
+                    update(Game.__table__)  # ty: ignore[invalid-argument-type]
+                    .where(Game.__table__.c.id.in_(leased_game_ids))
+                    .values(entry_eval_lease_expiry=None, entry_eval_leased_by=None)
+                )
+                await rel_session.commit()
+        except Exception as rel_exc:
+            sentry_sdk.capture_exception(rel_exc)
+        raise
+
+    return EntrySubmitResponse(
+        game_ids=leased_game_ids,
+        stamped_count=stamped_count,
     )

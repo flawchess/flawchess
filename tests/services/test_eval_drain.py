@@ -30,11 +30,14 @@ import ast
 import asyncio
 import inspect
 import uuid
+from datetime import timedelta, timezone
+from datetime import datetime as dt
 from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
+import sqlalchemy as sa
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -351,11 +354,23 @@ class TestIdempotentOnSimulatedCrash:
             # Restore original _mark_evals_completed for the re-pick check
             monkeypatch.setattr(drain_module, "_mark_evals_completed", original_mark)
 
-            # (c) The SAME 3 games are re-pickable (re-picked on next tick)
+            # (c) The SAME 3 games are re-pickable after their lease expires (TTL reclaim).
+            # D-01 (Phase 123 SEED-051): _pick_pending_game_ids now commits a lease before
+            # drain work, so games are NOT instantly re-pickable on crash — they're reclaimable
+            # after entry_eval_lease_expiry < now().  Simulate expiry by back-dating leases.
+            past_ts = dt.now(timezone.utc) - timedelta(minutes=5)
+            async with drain_test_session_maker() as s:
+                await s.execute(
+                    sa.text("UPDATE games SET entry_eval_lease_expiry = :ts WHERE id = ANY(:ids)"),
+                    {"ts": past_ts, "ids": game_ids},
+                )
+                await s.commit()
+
             picked_again = await _pick_pending_game_ids(limit=_DRAIN_BATCH_SIZE)
             for gid in game_ids:
                 assert gid in picked_again, (
-                    f"Game {gid} not re-picked after simulated crash — idempotency violated"
+                    f"Game {gid} not re-picked after lease expiry (simulated crash + TTL reclaim "
+                    f"— T-91-09 / D-01 invariant violated)"
                 )
         finally:
             await _delete_games_by_ids(drain_test_session_maker, game_ids)

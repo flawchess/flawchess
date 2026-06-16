@@ -10,6 +10,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Added
 
+- **Faster import-time eval on large imports** — trusted off-box workers can now help drain the import-time (entry-ply) evaluation backlog in parallel batches (up to 50 games per lease), so endgame and time-management stats become available sooner after importing a large game history. Falls back to the in-process server pool near the tail of an import. (Phase 123, SEED-051)
+
 - **In-app feedback button** — a floating "Send feedback" button appears on every authenticated page (bottom-right, mini/secondary weight, 44px touch target). It hides when scrolling down or when any drawer/modal is open, and respects iOS safe-area in installed PWA mode. Clicking it opens a modal with a required freeform text field and an optional 3-point sentiment control (Negative/Suggestion/Positive, toggle-off). Submissions are stored in the database and also push a Sentry signal tagged with ELO bucket and platform for team visibility. (Phase 122, SEED-049)
 
 - **Guest welcome page** — first-time guests now see a short Welcome page before importing that honestly lays out what works without an account (opening explorer and statistics, endgame and time-management analytics, importing Lichess full-game analyses) versus what signing up unlocks (FlawChess's own deep Stockfish blunder/mistake/inaccuracy detection, cross-device access, and data durability). A "Don't show this again" option skips it on future visits, and the Import page keeps a short "Sign up free" prompt for guests. (SEED-047)
@@ -27,6 +29,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - **Eval chart no longer crashes the Library on touch devices** — scrubbing a game's eval chart on some Android / hybrid-pointer devices could throw "Maximum update depth exceeded" and blank the page. The chart slider no longer ties its value to the hover position (a sticky hover could pin it into an update loop), and touch devices are now detected more reliably so the chart's hover scrub stays off on touch. (FLAWCHESS-5F, FLAWCHESS-5Y)
 - **Cycling through a tag's flaws can now be dismissed** — after clicking/tapping a flaw tag or severity badge to step through its markers, clicking or tapping anywhere outside the eval chart and flaw chips now clears the highlight and undims the other markers (previously they stayed dimmed with no way to reset).
 - **Short fully-analyzed games now count as analyzed** — short games that had actually been fully analyzed were incorrectly still showing the "Analyze" pill and had empty move-quality (blunder/mistake/inaccuracy) columns. The eval-coverage check was counting the final, unevaluable position against the game, so the shortest games fell just under the threshold; they now pass. (260615-rb1)
+- **Analysis progress badge can now reach "X of X"** — games that can never be analyzed (those with no moves, e.g. resigned or abandoned before move 1, and games too short for engine coverage) are no longer counted in the badge's total, so the "N of M games analyzed" indicator now finishes at M of M instead of stalling one or more short of the total. (260615-wjz)
 
 ## [v1.26] Full-Game Eval Pipeline — 2026-06-14
 

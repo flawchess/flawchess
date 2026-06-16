@@ -455,6 +455,7 @@ async def _claim_tier3_derived(
 
 async def claim_eval_job(
     worker_id: str = WORKER_ID_SERVER_POOL,
+    scope: Literal["explicit", "idle"] | None = None,
 ) -> ClaimedJob | None:
     """Claim the next eval job — tier-1 > tier-2 > tier-3 (derived).
 
@@ -462,8 +463,30 @@ async def claim_eval_job(
     The SKIP LOCKED lock is released immediately on commit — never held
     across the engine gather (Pitfall 1 in RESEARCH §Common Pitfalls).
 
+    D-05 scope param (Phase 123 SEED-051):
+      None     → today's bundled tier-1>2>3 behavior (backward-compat for un-updated workers).
+      "explicit" → tier-1/2 only (_claim_queued_job); return None if empty (skip tier-3).
+      "idle"   → tier-3 only (_claim_tier3_derived, still gated by EVAL_AUTO_DRAIN_ENABLED).
+
     Returns ClaimedJob or None when there is nothing to process.
     """
+    # scope="idle" → skip tier-1/2 entirely; go straight to tier-3.
+    if scope == "idle":
+        if not settings.EVAL_AUTO_DRAIN_ENABLED:
+            return None
+        async with async_session_maker() as session:
+            derived = await _claim_tier3_derived(session)
+        if derived is None:
+            return None
+        game_id_idle, user_id_idle, is_lichess_eval_game_idle = derived
+        return ClaimedJob(
+            game_id=game_id_idle,
+            user_id=user_id_idle,
+            tier=TIER_IDLE_BACKLOG,
+            is_lichess_eval_game=is_lichess_eval_game_idle,
+            job_id=None,
+        )
+
     async with async_session_maker() as session:
         # Sweep expired leases first so they re-enter the queue.
         await _sweep_expired_leases(session)
@@ -484,7 +507,11 @@ async def claim_eval_job(
             job_id=job_id,
         )
 
-    # No tier-1/2 row — fall through to tier-3 derived pick (idle backlog),
+    # scope="explicit" → tier-1/2 only; do NOT fall through to tier-3.
+    if scope == "explicit":
+        return None
+
+    # scope is None → bundled flow: fall through to tier-3 derived pick (idle backlog),
     # unless automatic eval is disabled via EVAL_AUTO_DRAIN_ENABLED (e.g. dev, to
     # avoid pinning every local core on the hundreds-of-thousands-game backlog).
     # Tier-1 explicit jobs above are never gated; tier-2 has no enqueue source
