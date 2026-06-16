@@ -2535,3 +2535,239 @@ class TestSeed049GameEndingPly:
             )
         finally:
             await _delete_games(full_drain_session_maker, [game_e_id, game_f_id])
+
+
+# ─── 260616-jq1: batched write regression (multi-flaw, multi-eval) ────────────
+
+# Shared user ID for the batched-write regression tests.
+_TEST_USER_ID_JQ1: int = 99210
+
+
+@pytest_asyncio.fixture(scope="session", autouse=False)
+async def full_drain_test_user_jq1(
+    full_drain_session_maker: async_sessionmaker[AsyncSession],
+) -> int:
+    """Ensure test user _TEST_USER_ID_JQ1 exists in the test DB. Returns user_id."""
+    from app.models.user import User
+
+    async with full_drain_session_maker() as session:
+        result = await session.execute(select(User).where(User.id == _TEST_USER_ID_JQ1))
+        if result.unique().scalar_one_or_none() is None:
+            session.add(
+                User(
+                    id=_TEST_USER_ID_JQ1,
+                    email=f"full-drain-test-{_TEST_USER_ID_JQ1}@example.com",
+                    hashed_password="fakehash",
+                )
+            )
+            await session.commit()
+    return _TEST_USER_ID_JQ1
+
+
+def _two_blunder_eval_sequence() -> list[tuple[int, None, str, str]]:
+    """Engine eval sequence that produces TWO blunders for _SIX_PLY_PGN.
+
+    Stored (post-move) eval-by-ply after the tick (row k = engine_call[k+1]):
+      row 0: 20  row 1: 30  row 2: -500  row 3: 100  row 4: 60  row 5: 30
+
+    ES analysis (LICHESS_K = 0.00368208):
+      ply 2 (white): ES_white(30) ≈ 0.527, ES_white(-500) ≈ 0.163 → drop ≈ 0.364 >> BLUNDER_DROP
+      ply 3 (black): ES_black(-500) ≈ 0.837, ES_black(100) ≈ 0.421 → drop ≈ 0.416 >> BLUNDER_DROP
+
+    PV must be written at ply 3 (refutation after white blunder at ply 2)
+    and ply 4 (refutation after black blunder at ply 3).
+    """
+    return [
+        # engine_call[0] (ply 0) — best_move only; eval never stored (no pre-ply-0 row)
+        (20, None, "e2e4", "e2e4 e7e5"),
+        # engine_call[1] (ply 1) → row 0 stored eval = 20
+        (20, None, "e7e5", "e7e5 g1f3"),
+        # engine_call[2] (ply 2) → row 1 stored eval = 30
+        (30, None, "g1f3", "g1f3 b8c6"),
+        # engine_call[3] (ply 3) → row 2 stored eval = -500 (WHITE BLUNDER; PV at ply 3)
+        (-500, None, "g8f6", "g8f6 d2d4 d7d5"),
+        # engine_call[4] (ply 4) → row 3 stored eval = 100 (BLACK BLUNDER; PV at ply 4)
+        (100, None, "f1c4", "f1c4 f8c5 d2d4"),
+        # engine_call[5] (ply 5) → row 4 stored eval = 60
+        (60, None, "f8c5", "f8c5 d2d4"),
+        # engine_call[6] (terminal) → row 5 stored eval = 30
+        (30, None, "h2h3", "h2h3"),
+    ]
+
+
+class TestBatchedWriteRegression:
+    """260616-jq1 regression: batched eval + flaw-PV writes with multiple rows.
+
+    The single-flaw tests in TestFlawPv exercise the VALUES clause with one row;
+    these tests exercise it with MULTIPLE rows to confirm the multi-row batch path.
+    """
+
+    async def test_two_flaw_pvs_written_at_correct_plies(
+        self,
+        full_drain_test_user_jq1: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """After a drain tick on a game with TWO blunders (one white, one black),
+        game_positions.pv is set at BOTH N+1 plies (ply 3 and ply 4) and NULL at
+        all other plies.
+
+        This exercises the multi-row VALUES clause in the batched flaw-PV UPDATE
+        (FLAWCHESS-6B) — the existing single-flaw test covers one VALUES row only.
+
+        _SIX_PLY_PGN = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 *" (plies 0..5).
+        Two blunders from _two_blunder_eval_sequence:
+          - White blunder at ply 2 → PV at ply 3
+          - Black blunder at ply 3 → PV at ply 4
+        """
+        from app.models.game_position import GamePosition
+
+        now = datetime.now(timezone.utc)
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_jq1,
+            pgn=_SIX_PLY_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=None,
+        )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_jq1
+        )
+
+        eval_sequence = _two_blunder_eval_sequence()
+        mock_evaluate = AsyncMock(side_effect=eval_sequence)
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+
+        gp_rows = [
+            {"ply": i, "full_hash": 0xBEEF_6B00 + i, "eval_cp": None, "eval_mate": None}
+            for i in range(6)
+        ]
+        await _insert_game_positions(
+            full_drain_session_maker, full_drain_test_user_jq1, game_id, gp_rows
+        )
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is True, "Tick must report a processed game"
+
+            async with full_drain_session_maker() as verify:
+                rows = await verify.execute(
+                    select(GamePosition.ply, GamePosition.pv, GamePosition.eval_cp)
+                    .where(GamePosition.game_id == game_id)
+                    .order_by(GamePosition.ply)
+                )
+                by_ply = {r[0]: (r[1], r[2]) for r in rows.all()}
+
+            # Both flaw-adjacent plies must carry a PV (batched VALUES with 2 rows).
+            assert by_ply.get(3, (None, None))[0] is not None, (
+                "ply 3 (N+1 for white blunder at ply 2) must have pv set — "
+                "multi-row batched PV VALUES clause (FLAWCHESS-6B regression)"
+            )
+            assert by_ply.get(4, (None, None))[0] is not None, (
+                "ply 4 (N+1 for black blunder at ply 3) must have pv set — "
+                "multi-row batched PV VALUES clause (FLAWCHESS-6B regression)"
+            )
+            # Non-flaw plies must NOT have a PV.
+            for ply in [0, 1, 2, 5]:
+                assert by_ply.get(ply, (None, None))[0] is None, (
+                    f"ply {ply} must have pv=NULL — pv only written at flaw N+1 (D-117-02)"
+                )
+            # Sanity: eval_cp rows populated by the batched eval write (Task 1 batch).
+            # Row 2 = -500 (white blunder), row 3 = 100 (black blunder).
+            assert by_ply.get(2, (None, None))[1] == -500, (
+                f"ply 2 eval_cp must be -500 (white blunder), got {by_ply.get(2, (None, None))[1]}"
+            )
+            assert by_ply.get(3, (None, None))[1] == 100, (
+                f"ply 3 eval_cp must be 100 (black blunder), got {by_ply.get(3, (None, None))[1]}"
+            )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_eval_row_does_not_clobber_existing_best_move(
+        self,
+        full_drain_test_user_jq1: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """COALESCE no-clobber guard (FLAWCHESS-6B).
+
+        best_move is sourced from THIS ply's resolution while the row's eval is the
+        POST-MOVE eval of ply+1 (a different resolution), so an eval-bearing row can
+        legitimately carry best_move=None. On a re-submit / retry the row may already
+        hold a best_move from a prior pass; the batched eval UPDATE must preserve it,
+        exactly as the pre-batch per-row code did (it only wrote best_move when
+        present). Without the COALESCE guard the batch would null it out.
+        """
+        from app.models.game_position import GamePosition
+        from app.services import eval_drain
+
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_jq1,
+            pgn=_TWO_MOVE_PGN,
+        )
+        # Pre-seed ply 0 with an existing best_move (as if a prior eval pass wrote it).
+        await _insert_game_positions(
+            full_drain_session_maker,
+            full_drain_test_user_jq1,
+            game_id,
+            [
+                {
+                    "ply": 0,
+                    "full_hash": 0xC0FFEE00,
+                    "eval_cp": None,
+                    "eval_mate": None,
+                    "best_move": "e2e4",
+                }
+            ],
+        )
+
+        # Target at ply 0 (non-terminal) + a terminal donor at ply 1. The donor's
+        # eval becomes row 0's post-move eval (pos_eval[1]), making row 0 eval-bearing
+        # while engine_result_map[0] supplies NO best_move for ply 0.
+        board = chess.Board()
+        targets = [
+            eval_drain._FullPlyEvalTarget(
+                game_id=game_id,
+                ply=0,
+                full_hash=0xC0FFEE00,
+                board=board,
+                eval_cp=None,
+                eval_mate=None,
+            ),
+            eval_drain._FullPlyEvalTarget(
+                game_id=game_id,
+                ply=1,
+                full_hash=0,
+                board=board,
+                eval_cp=None,
+                eval_mate=None,
+                is_terminal=True,
+            ),
+        ]
+        engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]] = {
+            0: (10, None, None, None),  # ply 0: no best_move
+            1: (50, None, None, None),  # ply 1 donor → row 0 post-move eval = 50
+        }
+        try:
+            async with full_drain_session_maker() as session:
+                failed = await eval_drain._apply_full_eval_results(
+                    session, targets, {}, engine_result_map, False
+                )
+                await session.commit()
+            assert failed == 0, "row 0 has a resolved post-move eval — not a hole"
+
+            async with full_drain_session_maker() as verify:
+                row = (
+                    await verify.execute(
+                        select(GamePosition.eval_cp, GamePosition.best_move).where(
+                            GamePosition.game_id == game_id, GamePosition.ply == 0
+                        )
+                    )
+                ).one()
+            assert row[0] == 50, f"ply 0 post-move eval_cp must be 50, got {row[0]}"
+            assert row[1] == "e2e4", (
+                "existing best_move must be preserved when the eval-bearing batched "
+                "UPDATE carries best_move=None (COALESCE no-clobber, FLAWCHESS-6B)"
+            )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])

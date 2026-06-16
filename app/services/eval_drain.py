@@ -395,6 +395,93 @@ def _post_move_eval(
     return pos_eval.get(ply + 1, (None, None))
 
 
+async def _batch_update_best_move_rows(
+    session: AsyncSession,
+    game_id: int,
+    bm_rows: list[tuple[int, str]],
+) -> None:
+    """Emit ONE batched UPDATE for best_move-only rows (FLAWCHESS-6B).
+
+    Used by _apply_full_eval_results for:
+    - lichess-eval game plies (best_move only; evals preserved untouched)
+    - engine-game plies that have a best_move but a NULL post-move eval (hole rows
+      where best_move is still available — written independently of eval, per SEED-044)
+
+    Uses CAST() instead of :: cast syntax: asyncpg's named-param rewrite (`$N`)
+    occurs before the server parses the SQL, so `::` adjacent to a `$N` placeholder
+    raises a syntax error. CAST() is the portable equivalent.
+
+    Guard: empty input is a no-op (no zero-row VALUES UPDATE is emitted).
+    Sequential execute on caller-owned session — no asyncio.gather (CLAUDE.md).
+    """
+    if not bm_rows:
+        return
+    params: dict[str, int | str] = {"game_id": game_id}
+    values_parts: list[str] = []
+    for i, (ply, bm) in enumerate(bm_rows):
+        params[f"ply_{i}"] = ply
+        params[f"bm_{i}"] = bm
+        values_parts.append(f"(CAST(:ply_{i} AS smallint), CAST(:bm_{i} AS varchar))")
+    values_sql = ", ".join(values_parts)
+    sql = sa.text(
+        f"UPDATE game_positions"  # noqa: S608 — no user input; params are bound
+        f" SET best_move = v.best_move"
+        f" FROM (VALUES {values_sql}) AS v(ply, best_move)"
+        f" WHERE game_positions.game_id = :game_id"
+        f" AND game_positions.ply = v.ply"
+    )
+    await session.execute(sql, params)
+
+
+async def _batch_update_eval_rows(
+    session: AsyncSession,
+    game_id: int,
+    eval_rows: list[tuple[int, int | None, int | None, str | None]],
+) -> None:
+    """Emit ONE batched UPDATE for eval-bearing engine rows (FLAWCHESS-6B).
+
+    Each row carries (ply, eval_cp, eval_mate, best_move). eval_cp/eval_mate are
+    always non-NULL (at least one is set) and overwrite unconditionally. best_move
+    may be NULL: it is sourced from THIS ply's resolution while the eval is the
+    post-move eval of ply+1 (a different resolution), so an eval-bearing row can
+    legitimately carry best_move=None. We must NOT clobber a previously-written
+    best_move in that case (re-submit / retry path), so best_move is written via
+    COALESCE(v.best_move, existing) — exactly matching the pre-batch semantics
+    where best_move was only ever written when present (FLAWCHESS-6B).
+
+    Uses CAST() instead of :: cast syntax for asyncpg compatibility (same reason
+    as _batch_update_best_move_rows).
+
+    Guard: empty input is a no-op (no zero-row VALUES UPDATE is emitted).
+    Sequential execute on caller-owned session — no asyncio.gather (CLAUDE.md).
+    """
+    if not eval_rows:
+        return
+    params: dict[str, int | str | None] = {"game_id": game_id}
+    values_parts: list[str] = []
+    for i, (ply, eval_cp, eval_mate, bm) in enumerate(eval_rows):
+        params[f"ply_{i}"] = ply
+        params[f"ecp_{i}"] = eval_cp
+        params[f"emt_{i}"] = eval_mate
+        params[f"bm_{i}"] = bm
+        values_parts.append(
+            f"(CAST(:ply_{i} AS smallint),"
+            f" CAST(:ecp_{i} AS smallint),"
+            f" CAST(:emt_{i} AS smallint),"
+            f" CAST(:bm_{i} AS varchar))"
+        )
+    values_sql = ", ".join(values_parts)
+    sql = sa.text(
+        f"UPDATE game_positions"  # noqa: S608 — no user input; params are bound
+        f" SET eval_cp = v.eval_cp, eval_mate = v.eval_mate,"
+        f" best_move = COALESCE(v.best_move, game_positions.best_move)"
+        f" FROM (VALUES {values_sql}) AS v(ply, eval_cp, eval_mate, best_move)"
+        f" WHERE game_positions.game_id = :game_id"
+        f" AND game_positions.ply = v.ply"
+    )
+    await session.execute(sql, params)
+
+
 async def _apply_full_eval_results(
     session: AsyncSession,
     targets: Sequence[_FullPlyEvalTarget],
@@ -404,8 +491,10 @@ async def _apply_full_eval_results(
 ) -> int:
     """Write POST-MOVE evals + best_move to GamePosition rows (WR-04; SEED-044).
 
-    UPDATEs run sequentially against the caller-owned session (CLAUDE.md hard
-    rule: AsyncSession is not safe under asyncio.gather); the caller commits.
+    Batched single-round-trip writes replace the former per-row UPDATE loop
+    (FLAWCHESS-6B N+1 fix). UPDATEs run sequentially against the caller-owned
+    session (CLAUDE.md hard rule: AsyncSession is not safe under asyncio.gather);
+    the caller commits.
 
     Convention (SEED-044): a row stores the eval of the position AFTER its move
     (post-move), matching lichess `%eval` and the flaw classifier. We resolve a
@@ -441,7 +530,16 @@ async def _apply_full_eval_results(
         if not target.is_terminal:
             best_move_by_ply[target.ply] = best_move
 
+    # Collect write-rows in one pass; emit batched UPDATEs after the loop.
+    # Two groups (FLAWCHESS-6B):
+    #   bm_only_rows  — lichess plies (best_move-only) + engine hole-rows w/ best_move
+    #   eval_rows     — engine plies with a resolved eval (eval_cp/eval_mate + best_move)
+    # failed_ply_count is accumulated in the same pass (pure Python; no DB I/O here).
+    game_id = next((t.game_id for t in targets if not t.is_terminal), 0)
+    bm_only_rows: list[tuple[int, str]] = []
+    eval_rows: list[tuple[int, int | None, int | None, str | None]] = []
     failed_ply_count = 0
+
     for target in targets:
         if target.is_terminal:
             # Eval-only donor: its eval already lives in pos_eval as the last
@@ -454,14 +552,7 @@ async def _apply_full_eval_results(
         if is_lichess_eval_game:
             # Preserve lichess %evals (post-move, authoritative); write best_move only.
             if best_move is not None:
-                await session.execute(
-                    update(GamePosition)
-                    .where(
-                        GamePosition.game_id == target.game_id,
-                        GamePosition.ply == ply,
-                    )
-                    .values(best_move=best_move)
-                )
+                bm_only_rows.append((ply, best_move))
             continue
 
         # Engine game: store the POST-MOVE eval (eval of the position AFTER this
@@ -469,9 +560,7 @@ async def _apply_full_eval_results(
         # written whenever available, INDEPENDENT of the eval — an engine hole at the
         # after-position (ply + 1) must not drop this row's own best_move (SEED-044).
         eval_cp, eval_mate = _post_move_eval(pos_eval, ply)
-        values: dict[str, int | str | None] = {}
-        if best_move is not None:
-            values["best_move"] = best_move
+
         if eval_cp is None and eval_mate is None:
             if target.ends_game:
                 # SEED-049: the after-position is the game-over terminal — deliberately
@@ -479,23 +568,25 @@ async def _apply_full_eval_results(
                 # already omits the terminal donor when is_game_over()). This NULL is
                 # legitimate, not a transient Stockfish timeout. Do NOT count it as a
                 # hole; the row is written normally (eval stays NULL, best_move if set).
-                pass
+                if best_move is not None:
+                    bm_only_rows.append((ply, best_move))
             else:
                 # D-116-07: engine hole at the after-position — leave the eval NULL;
                 # counted for the caller's per-game aggregated Sentry event (WR-05).
                 failed_ply_count += 1
+                if best_move is not None:
+                    bm_only_rows.append((ply, best_move))
         else:
-            values["eval_cp"] = eval_cp
-            values["eval_mate"] = eval_mate
-        if values:
-            await session.execute(
-                update(GamePosition)
-                .where(
-                    GamePosition.game_id == target.game_id,
-                    GamePosition.ply == ply,
-                )
-                .values(**values)
-            )
+            # Eval resolved: include best_move in the eval group (may be None — writing
+            # NULL over NULL is safe; both values come from the same target pass so no
+            # in-flight best_move is discarded).
+            eval_rows.append((ply, eval_cp, eval_mate, best_move))
+
+    # Emit batched UPDATEs — O(1) round-trips per game (FLAWCHESS-6B).
+    # Empty lists are guarded inside each helper (no zero-row VALUES statement).
+    await _batch_update_best_move_rows(session, game_id, bm_only_rows)
+    await _batch_update_eval_rows(session, game_id, eval_rows)
+
     return failed_ply_count
 
 
@@ -628,35 +719,58 @@ async def _classify_and_fill_oracle(
     # Flaw PV write: for each FlawRecord at ply N, write pv at ply N+1.
     # The pv_string for ply N+1 comes from the engine_result_map entry at ply N+1
     # (the board AFTER the flawed move — D-117-02 / Pitfall 4).
-    # PV writes are individually fault-tolerant: a single bad pv row (e.g. oversized
-    # string) must NOT abort flaw rows + oracle counts already written above.
+    #
+    # FLAWCHESS-6B (Fixes FLAWCHESS-6B): replace the per-flaw UPDATE loop with a
+    # pre-filter-then-single-batched-UPDATE pattern.
+    #
+    # Fault tolerance rationale: the pre-filter below collects surviving (pv_ply,
+    # pv_string) pairs up front; any skipped row is Sentry-captured but does not
+    # abort the rest. Batching trades per-row isolation for one round-trip — this
+    # is acceptable because pv is unbounded Text (PostgreSQL won't reject it at
+    # the column level), so the realistic failure mode in the old per-row code was
+    # a DB connection error that would have invalidated the whole session anyway,
+    # not a single bad row. The surviving rows still commit atomically with the
+    # flaw rows and oracle counts above (T-117-11). If the single batched execute
+    # fails, flaw rows + oracle counts are NOT rolled back — that propagation path
+    # is unchanged (both the old try/except and this new block are intentionally
+    # inside the write_session transaction; asyncpg-level errors invalidate the
+    # whole session regardless).
+    pv_pairs: list[tuple[int, str]] = []
     for flaw in flaw_list:
-        flaw_ply: int = flaw["ply"]
-        pv_ply = flaw_ply + 1
+        flaw_ply_val: int = flaw["ply"]
+        pv_ply = flaw_ply_val + 1
         engine_entry = engine_result_map.get(pv_ply)
         if engine_entry is None:
             continue
         _cp, _mt, _bm, pv_string = engine_entry
         if pv_string is None:
             continue
+        pv_pairs.append((pv_ply, pv_string))
+
+    if pv_pairs:
+        params_pv: dict[str, int | str] = {"game_id": game_id}
+        pv_values_parts: list[str] = []
+        for i, (pv_ply, pv_string) in enumerate(pv_pairs):
+            params_pv[f"ply_{i}"] = pv_ply
+            params_pv[f"pv_{i}"] = pv_string
+            pv_values_parts.append(f"(CAST(:ply_{i} AS smallint), CAST(:pv_{i} AS text))")
+        pv_values_sql = ", ".join(pv_values_parts)
+        pv_sql = sa.text(
+            f"UPDATE game_positions"  # noqa: S608 — no user input; params are bound
+            f" SET pv = v.pv"
+            f" FROM (VALUES {pv_values_sql}) AS v(ply, pv)"
+            f" WHERE game_positions.game_id = :game_id"
+            f" AND game_positions.ply = v.ply"
+        )
         try:
-            await session.execute(
-                update(GamePosition)
-                .where(
-                    GamePosition.game_id == game_id,
-                    GamePosition.ply == pv_ply,
-                )
-                .values(pv=pv_string)
-            )
+            await session.execute(pv_sql, params_pv)
         except Exception as exc:
-            # T-108-04 / WR-01: a single bad PV row must not abort the whole game.
-            # Flaw rows and oracle counts are already written above (not rolled back
-            # here — this try/except is inside the write_session transaction; the
-            # session is invalidated on asyncpg-level errors, which will propagate
-            # through the outer commit). Capture for visibility.
+            # T-108-04 / WR-01: PV write failure must not abort flaw rows + oracle
+            # counts already written above. Capture for visibility without embedding
+            # variables in the message string (CLAUDE.md Sentry grouping rule).
             sentry_sdk.set_context(
                 "classify_oracle",
-                {"game_id": game_id, "pv_ply": pv_ply},
+                {"game_id": game_id},
             )
             sentry_sdk.set_tag("source", "full_eval_drain")
             sentry_sdk.capture_exception(exc)
@@ -972,19 +1086,77 @@ def _split_into_contiguous_islands(pds: Sequence[PlyData]) -> list[list[PlyData]
     return islands
 
 
+async def _batch_update_entry_eval_rows(
+    session: AsyncSession,
+    rows: list[tuple[int, int, int | None, int | None, int | None]],
+) -> None:
+    """Emit ONE batched UPDATE for entry-ply / cold-drain eval rows (SEED-052).
+
+    Each row carries (game_id, ply, eval_cp, eval_mate, endgame_class). Mirrors the
+    full-ply batched-write helpers (_batch_update_eval_rows) but for the entry-ply
+    lane (_apply_eval_results), which differs in three ways:
+    - rows span MULTIPLE games in a drain batch, so game_id lives in the VALUES tuple
+      (not a single :game_id param) and the WHERE matches on v.game_id;
+    - only eval_cp/eval_mate are written (no best_move);
+    - the optional endgame_class disambiguation is preserved per-row via
+      (v.endgame_class IS NULL OR game_positions.endgame_class = v.endgame_class) —
+      exactly the pre-batch semantics where the endgame_class predicate was only added
+      when target.endgame_class was not None (defensive: current schema has at most one
+      row per (game_id, ply)).
+
+    Uses CAST() instead of :: cast syntax: asyncpg rewrites named params to $N before
+    the server parses the SQL, so `::` adjacent to a $N placeholder is a syntax error.
+    CAST() is the portable equivalent.
+
+    Guard: empty input is a no-op (no zero-row VALUES UPDATE is emitted).
+    Sequential execute on caller-owned session — no asyncio.gather (CLAUDE.md).
+    """
+    if not rows:
+        return
+    params: dict[str, int | None] = {}
+    values_parts: list[str] = []
+    for i, (game_id, ply, eval_cp, eval_mate, endgame_class) in enumerate(rows):
+        params[f"gid_{i}"] = game_id
+        params[f"ply_{i}"] = ply
+        params[f"ecp_{i}"] = eval_cp
+        params[f"emt_{i}"] = eval_mate
+        params[f"ec_{i}"] = endgame_class
+        values_parts.append(
+            f"(CAST(:gid_{i} AS integer),"
+            f" CAST(:ply_{i} AS smallint),"
+            f" CAST(:ecp_{i} AS smallint),"
+            f" CAST(:emt_{i} AS smallint),"
+            f" CAST(:ec_{i} AS smallint))"
+        )
+    values_sql = ", ".join(values_parts)
+    sql = sa.text(
+        f"UPDATE game_positions"  # noqa: S608 — no user input; params are bound
+        f" SET eval_cp = v.eval_cp, eval_mate = v.eval_mate"
+        f" FROM (VALUES {values_sql}) AS v(game_id, ply, eval_cp, eval_mate, endgame_class)"
+        f" WHERE game_positions.game_id = v.game_id"
+        f" AND game_positions.ply = v.ply"
+        f" AND (v.endgame_class IS NULL OR game_positions.endgame_class = v.endgame_class)"
+    )
+    await session.execute(sql, params)
+
+
 async def _apply_eval_results(
     session: AsyncSession,
     eval_targets: Sequence[_EvalTarget],
     eval_results: Sequence[tuple[int | None, int | None]],
 ) -> tuple[int, int]:
-    """Apply engine eval results to GamePosition rows via per-row UPDATE.
+    """Apply engine eval results to GamePosition rows via one batched UPDATE.
 
     Phase 91: lifted from import_service.py for the cold-drain lane.
     The originals in import_service.py are removed in Plan 91-03.
 
-    UPDATEs run sequentially against the shared session (CLAUDE.md hard
-    rule: AsyncSession is not safe under asyncio.gather). The session is
-    owned by the caller and the UPDATEs land in its transaction.
+    SEED-052: the per-row update(GamePosition) loop became a single batched
+    UPDATE … FROM (VALUES …) round-trip (mirrors the full-ply lane's 260616-jq1 /
+    FLAWCHESS-6B fix). One Python pass classifies rows (counting + Sentry on the
+    (None, None) skips, collecting write-rows); _batch_update_entry_eval_rows then
+    emits the single UPDATE. The batched UPDATE runs sequentially against the
+    shared, caller-owned session (CLAUDE.md hard rule: AsyncSession is not safe
+    under asyncio.gather) and lands in its transaction.
 
     When engine returns (None, None), the row is skipped (eval_cp/eval_mate
     stays NULL permanently per D-09). The game is still marked
@@ -995,6 +1167,7 @@ async def _apply_eval_results(
     """
     eval_calls_made = 0
     eval_calls_failed = 0
+    write_rows: list[tuple[int, int, int | None, int | None, int | None]] = []
     for target, (eval_cp, eval_mate) in zip(eval_targets, eval_results, strict=True):
         eval_calls_made += 1
         if eval_cp is None and eval_mate is None:
@@ -1010,17 +1183,13 @@ async def _apply_eval_results(
             sentry_sdk.capture_message("cold-drain engine returned None tuple", level="warning")
             continue
 
-        # Build the WHERE clause for this eval kind. Endgame span entries
-        # filter by endgame_class to disambiguate when the same ply could
-        # in principle belong to multiple class spans (defensive — current
-        # schema has at most one row per (game_id, ply)).
-        stmt = update(GamePosition).where(
-            GamePosition.game_id == target.game_id,
-            GamePosition.ply == target.ply,
-        )
-        if target.endgame_class is not None:
-            stmt = stmt.where(GamePosition.endgame_class == target.endgame_class)
-        await session.execute(stmt.values(eval_cp=eval_cp, eval_mate=eval_mate))
+        # Endgame span entries carry endgame_class to disambiguate when the same
+        # ply could in principle belong to multiple class spans; middlegame entries
+        # carry None (no predicate). The per-row WHERE semantics are preserved inside
+        # _batch_update_entry_eval_rows via the (v.endgame_class IS NULL OR …) clause.
+        write_rows.append((target.game_id, target.ply, eval_cp, eval_mate, target.endgame_class))
+
+    await _batch_update_entry_eval_rows(session, write_rows)
     return eval_calls_made, eval_calls_failed
 
 
