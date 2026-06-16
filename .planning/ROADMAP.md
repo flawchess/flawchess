@@ -29,17 +29,18 @@
 - ✅ **v1.24 Library Page** — Phases 104–112 (shipped 2026-06-09) — see [milestones/v1.24-ROADMAP.md](milestones/v1.24-ROADMAP.md)
 - ✅ **v1.25 Flaw-Stats Opponent Comparison** — Phases 113–115 (incl. 114.1) (shipped 2026-06-12) — see [milestones/v1.25-ROADMAP.md](milestones/v1.25-ROADMAP.md)
 - ✅ **v1.26 Full-Game Eval Pipeline** — Phases 116–120 (incl. 117.1, 117.2) (shipped 2026-06-14) — see [milestones/v1.26-ROADMAP.md](milestones/v1.26-ROADMAP.md)
-- 🚧 **Active (post-v1.26, milestone TBD)** — Phase 121: Remote-worker tier-1 claiming (SEED-048), Phase 122: In-app feedback button (SEED-049), Phase 123: Remote-worker entry-ply fresh-import drain (SEED-051)
+- 🚧 **Active (post-v1.26, milestone TBD)** — shipped but not yet grouped into a named milestone: Phase 121 (Remote-worker tier-1 claiming, SEED-048, release #199), Phase 122 (In-app feedback button, SEED-049, release #202). Open: Phase 123 (Remote-worker entry-ply fresh-import drain, SEED-051) — not yet planned.
 
 ## Phases
 
-> 🚧 **Active work (post-v1.26, milestone TBD):** Phases 121–123 — added as standalone phases; they will be grouped into a milestone at ship time (per the standalone-then-regroup pattern, e.g. v1.20), or run `/gsd-new-milestone` first to formalize one.
+> 🚧 **Active work (post-v1.26, milestone TBD):** Phases 121–122 have **shipped to prod** (releases #199, #202 on 2026-06-15) but are not yet grouped into a named milestone; Phase 123 is the only open phase (not yet planned). Group the shipped phases at the next milestone close (per the standalone-then-regroup pattern, e.g. v1.20), or run `/gsd-new-milestone` to formalize one.
 
-### Phase 121: Remote-worker tier-1 claiming (SEED-048)
+### Phase 121: Remote-worker tier-1 claiming (SEED-048) ✅ SHIPPED
 
+**Status**: ✅ Implemented, tested, and live in prod — shipped 2026-06-15 (release #199). Soak confirmed no tier-1/tier-3 double-claim and correct `eval_jobs` stamping. Awaiting milestone grouping only.
 **Goal**: A remote eval worker can claim tier-1 (single-game "analyze") requests, not just the tier-3 idle backlog — so when the server pool is mid-game on another job, a second (idle) machine can pick up a freshly-enqueued single-game analysis and shorten click-to-pickup latency. First-come-first-served: the server's in-process drain still usually wins tier-1 when it is idle (no network hop, no poll interval), so this deliberately targets the **server-busy overflow** case. Biasing tier-1 to the faster box and interruptible tier-3 are explicit deferred follow-ons.
 **Depends on**: Phase 120 (remote eval worker lease/submit contract + headless CLI worker)
-**Source**: SEED-048 (FCFS scope; decisions locked 2026-06-15 explore session) · **Plans**: 1 plan
+**Source**: SEED-048 (FCFS scope; decisions locked 2026-06-15 explore session) · **Plans**: 1 plan (complete)
 
 Plans:
 
@@ -51,13 +52,14 @@ Scope (3 changes, no DB migration):
 2. Thread an opaque `job_id` through the lease→submit round-trip: the lease response carries the claimed `eval_jobs.id` (`None` for tier-3), submit echoes it, and the submit handler stamps `eval_jobs.status='completed', completed_at=now()` when present. Tier-3 keeps `job_id=None` and behaves exactly as today.
 3. Drop the worker idle poll `idle_sleep` 5s → ~1s so an idle remote worker notices a freshly-enqueued tier-1 quickly (only the empty-queue/204 path sleeps; the busy path is already a tight loop).
 
-Files: `app/routers/eval_remote.py` (lease/submit handlers), `app/services/eval_queue_service.py` (`claim_eval_job` already implements the tiered claim + lease sweep), `scripts/remote_eval_worker.py` (idle_sleep default + echo job token on submit), lease/submit Pydantic schemas (opaque job-token field). Needs a soak to confirm no tier-1/tier-3 double-claim and that submit correctly stamps `eval_jobs`.
+Files: `app/routers/eval_remote.py` (lease/submit handlers), `app/services/eval_queue_service.py` (`claim_eval_job` already implements the tiered claim + lease sweep), `scripts/remote_eval_worker.py` (idle_sleep default + echo job token on submit), lease/submit Pydantic schemas (opaque job-token field). Prod soak passed: no tier-1/tier-3 double-claim observed, submit correctly stamps `eval_jobs`.
 
-### Phase 122: In-app feedback button (SEED-049)
+### Phase 122: In-app feedback button (SEED-049) ✅ SHIPPED
 
+**Status**: ✅ Implemented, tested, and live in prod — shipped 2026-06-15 (release #202); all 5 human-gated UAT items confirmed on prod. Awaiting milestone grouping only.
 **Goal**: A low-friction in-app feedback channel so users (guests included) can submit likes / dislikes / suggestions tied to the exact page they were on. A global floating button (bottom-right, auto-hides on scroll-down, yields to open drawers/modals, iOS safe-area aware) opens a modal with required freeform text + an optional coarse sentiment rating. Submissions persist to a new `feedback` table and also fire a Sentry signal (tagged with username / ELO bucket / platform) so feedback pings the team instead of rotting in a table nobody reads.
 **Depends on**: none (standalone; can ship independently of Phase 121)
-**Source**: SEED-049 (decisions locked 2026-06-15 explore session) · **Plans**: 2 plans
+**Source**: SEED-049 (decisions locked 2026-06-15 explore session) · **Plans**: 2 plans (complete)
 Plans:
 **Wave 1**
 
@@ -76,7 +78,7 @@ Scope (per [SEED-049](seeds/closed/SEED-049-in-app-feedback-button.md)):
 ### Phase 123: Remote-worker fan-out for entry-ply (import-time) eval on big first imports (SEED-051)
 
 **Goal**: Extend the headless remote eval worker pool (SEED-048 / Phase 120) — which today only drains full-ply tier-1/3 — to also drain **entry-ply** (import-time, depth-15) eval in parallel on **big first imports**, cutting first-import latency (time until a brand-new user sees flaws / phase-transition evals populate) by roughly the worker fan-out factor. The worker gains a second, higher-priority work type via a three-rung priority ladder: tier-1 single-game (top) > entry-ply fresh-import drain (new, batched depth-15) > tier-3 idle backlog (bottom), checked between full-ply games (no preemption, no reserved capacity). Incremental syncs stay server-pool-only via a runtime backlog-depth gate, so the lease/round-trip tax is only paid when it pays off.
-**Depends on**: Phase 120 (remote worker lease/submit protocol + headless CLI) — sequence after SEED-048 has landed and settled in prod; relatedly after Phase 121 (tier-1 claiming)
+**Depends on**: Phase 120 (remote worker lease/submit protocol + headless CLI) — ✅ live in prod (and Phase 121 tier-1 claiming shipped #199), so the dependency is satisfied; planning now gates only on big-first-import latency being a current priority
 **Source**: SEED-051 (decisions D-1…D-5 locked 2026-06-16) · **Plans**: TBD (run `/gsd-plan-phase 123`)
 
 Plans:
