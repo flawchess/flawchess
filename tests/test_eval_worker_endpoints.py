@@ -26,13 +26,14 @@ that need to control which game is leased without relying on the recency-weighte
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 import pytest_asyncio
+import sqlalchemy as sa
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -44,6 +45,8 @@ from app.services.eval_queue_service import ClaimedJob
 
 _LEASE_URL = "/api/eval/remote/lease"
 _SUBMIT_URL = "/api/eval/remote/submit"
+_ENTRY_LEASE_URL = "/api/eval/remote/entry-lease"
+_ENTRY_SUBMIT_URL = "/api/eval/remote/entry-submit"
 
 # ─── Test data constants ───────────────────────────────────────────────────────
 
@@ -94,16 +97,27 @@ async def eval_worker_test_user(
 # ─── DB helpers ───────────────────────────────────────────────────────────────
 
 
+_EVALS_NOW: datetime = datetime.now(timezone.utc)
+"""Default evals_completed_at value — module-load-time now(), matching legacy behavior."""
+
+
 async def _insert_game(
     session_maker: async_sessionmaker[AsyncSession],
     user_id: int,
     pgn: str = _TWO_MOVE_PGN,
     *,
+    evals_completed_at: datetime | None = _EVALS_NOW,
     full_evals_completed_at: datetime | None = None,
     lichess_evals_at: datetime | None = None,
     full_eval_attempts: int = 0,
 ) -> int:
-    """Insert a Game row and commit. Returns game_id."""
+    """Insert a Game row and commit. Returns game_id.
+
+    By default evals_completed_at is set to now() so the game is NOT in the
+    entry-ply pending queue (preserves pre-Phase-123 test behavior).
+    Pass evals_completed_at=None to insert a pending entry-ply game
+    (evals_completed_at IS NULL = unclaimed by the entry-eval drain).
+    """
     from app.models.game import Game
 
     async with session_maker() as session:
@@ -116,7 +130,7 @@ async def _insert_game(
             user_color="white",
             rated=True,
             is_computer_game=False,
-            evals_completed_at=datetime.now(timezone.utc),
+            evals_completed_at=evals_completed_at,
             full_evals_completed_at=full_evals_completed_at,
             lichess_evals_at=lichess_evals_at,
             full_eval_attempts=full_eval_attempts,
@@ -136,7 +150,11 @@ async def _insert_game_positions(
 ) -> None:
     """Insert GamePosition rows for a game and commit.
 
-    Each dict: {"ply": int, "full_hash": int, "eval_cp": int|None, "eval_mate": int|None}.
+    Each dict: {"ply": int, "full_hash": int, "eval_cp": int|None, "eval_mate": int|None,
+                "phase": int (optional, default 0)}.
+
+    For entry-ply target collection, at least one row needs phase=1 (midgame) to produce
+    a middlegame_entry target. Pass phase=1 in the row dict when needed.
     """
     from app.models.game_position import GamePosition
 
@@ -151,7 +169,7 @@ async def _insert_game_positions(
                     white_hash=0,
                     black_hash=0,
                     move_san=r.get("move_san"),
-                    phase=0,
+                    phase=r.get("phase", 0),
                     endgame_class=None,
                     eval_cp=r.get("eval_cp"),
                     eval_mate=r.get("eval_mate"),
@@ -200,6 +218,30 @@ async def _get_game_full_evals_completed_at(
         return result.scalar_one_or_none()
 
 
+async def _get_game_evals_completed_at(
+    session_maker: async_sessionmaker[AsyncSession],
+    game_id: int,
+) -> datetime | None:
+    """Fetch Game.evals_completed_at (entry-ply completion stamp)."""
+    from app.models.game import Game
+
+    async with session_maker() as session:
+        result = await session.execute(select(Game.evals_completed_at).where(Game.id == game_id))
+        return result.scalar_one_or_none()
+
+
+async def _get_game_entry_eval_leased_by(
+    session_maker: async_sessionmaker[AsyncSession],
+    game_id: int,
+) -> str | None:
+    """Fetch Game.entry_eval_leased_by."""
+    from app.models.game import Game
+
+    async with session_maker() as session:
+        result = await session.execute(select(Game.entry_eval_leased_by).where(Game.id == game_id))
+        return result.scalar_one_or_none()
+
+
 async def _delete_games(
     session_maker: async_sessionmaker[AsyncSession],
     game_ids: list[int],
@@ -223,10 +265,18 @@ def _patch_router_session(
     monkeypatch: pytest.MonkeyPatch,
     session_maker: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Patch app.routers.eval_remote.async_session_maker to route to the test DB."""
+    """Patch session makers for the eval remote router and the eval drain service.
+
+    The router's own sessions (probe, claim, read) use async_session_maker imported
+    into the router module. The entry-ply endpoints also call _load_pgns_for_games and
+    _collect_eval_targets_from_db which open sessions via eval_drain.async_session_maker,
+    so that module binding must also be redirected to the test DB.
+    """
     import app.routers.eval_remote as eval_remote_module
+    import app.services.eval_drain as eval_drain_module
 
     monkeypatch.setattr(eval_remote_module, "async_session_maker", session_maker)
+    monkeypatch.setattr(eval_drain_module, "async_session_maker", session_maker)
 
 
 # ─── Lease: auth tests ────────────────────────────────────────────────────────
@@ -1031,3 +1081,969 @@ class TestTier1Claiming:
         assert remote_eval_worker.DEFAULT_IDLE_SLEEP == 1.0, (
             f"DEFAULT_IDLE_SLEEP must be 1.0, got {remote_eval_worker.DEFAULT_IDLE_SLEEP}"
         )
+
+
+# ─── Phase 123 lease-claim tests ─────────────────────────────────────────────
+# SEED-051 D-3/D-4: _claim_entry_eval_games SKIP-LOCKED LIFO correctness.
+# Tests: partition (disjoint), LIFO ordering, TTL reclaim + future-lease exclusion,
+# leased_by population.  All four drive the helper directly (no HTTP needed).
+
+
+@pytest.mark.asyncio
+async def test_lease_partition(
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """Two sequential claims with different worker IDs return disjoint game ID sets.
+
+    Inserts ENTRY_LEASE_BATCH_SIZE + 5 pending games (evals_completed_at=None) so
+    both claims get a non-empty result, then asserts no overlap.  Sequential calls
+    suffice because the first claim stamps entry_eval_lease_expiry in the future,
+    making those rows invisible to the second claim's predicate — same partition
+    guarantee as concurrent SKIP LOCKED.
+
+    SEED-051 D-3 / validation matrix row 123-02-02.
+    """
+    from app.services.eval_drain import ENTRY_LEASE_BATCH_SIZE, _claim_entry_eval_games
+
+    n_games = ENTRY_LEASE_BATCH_SIZE + 5
+    game_ids: list[int] = []
+    for _ in range(n_games):
+        gid = await _insert_game(
+            eval_worker_session_maker, eval_worker_test_user, evals_completed_at=None
+        )
+        game_ids.append(gid)
+
+    try:
+        async with eval_worker_session_maker() as session:
+            first_batch = await _claim_entry_eval_games(
+                session, "worker-A", ENTRY_LEASE_BATCH_SIZE, 60
+            )
+            await session.commit()
+
+        async with eval_worker_session_maker() as session:
+            second_batch = await _claim_entry_eval_games(
+                session, "worker-B", ENTRY_LEASE_BATCH_SIZE, 60
+            )
+            await session.commit()
+
+        assert len(first_batch) > 0, "first claim must return at least one game"
+        assert len(second_batch) > 0, "second claim must return at least one game"
+        overlap = set(first_batch) & set(second_batch)
+        assert overlap == set(), (
+            f"Claims must be disjoint (SKIP LOCKED partition), but overlap={overlap}"
+        )
+    finally:
+        await _delete_games(eval_worker_session_maker, game_ids)
+
+
+@pytest.mark.asyncio
+async def test_lease_lifo(
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """The claim returns the highest IDs first (LIFO: newest import first, ORDER BY id DESC).
+
+    Inserts 5 pending games sequentially (auto-increment IDs are monotonically
+    increasing), then claims 3 of them.  The returned IDs must be the 3 largest
+    (most recently inserted), confirming ORDER BY id DESC.
+
+    SEED-051 D-3 (LIFO ordering) / RESEARCH §Architecture Diagram.
+    """
+    from app.services.eval_drain import _claim_entry_eval_games
+
+    game_ids: list[int] = []
+    for _ in range(5):
+        gid = await _insert_game(
+            eval_worker_session_maker, eval_worker_test_user, evals_completed_at=None
+        )
+        game_ids.append(gid)
+
+    try:
+        async with eval_worker_session_maker() as session:
+            claimed = await _claim_entry_eval_games(session, "worker-lifo", 3, 60)
+            await session.commit()
+
+        assert len(claimed) == 3, f"Expected 3 claimed games, got {len(claimed)}"
+        # The 3 highest IDs from the 5 inserted must be the ones claimed.
+        top3 = sorted(game_ids)[-3:]
+        assert sorted(claimed) == sorted(top3), (
+            f"LIFO claim must return the 3 newest games (ids {top3}), got {sorted(claimed)}"
+        )
+    finally:
+        await _delete_games(eval_worker_session_maker, game_ids)
+
+
+@pytest.mark.asyncio
+async def test_lease_reclaim(
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """Past-expiry lease is reclaimable; future-expiry lease is NOT returned.
+
+    1. Insert two pending games.
+    2. Manually set game A's lease to the past (expired) and game B's to the future.
+    3. Assert only game A is returned by a new claim (TTL reclaim); game B is skipped.
+
+    SEED-051 D-4 (TTL reclaim) / PATTERNS.md lease_reclaim shape.
+    """
+    from app.services.eval_drain import _claim_entry_eval_games
+
+    # Expired lease: entry_eval_lease_expiry 10 minutes in the past.
+    game_expired = await _insert_game(
+        eval_worker_session_maker, eval_worker_test_user, evals_completed_at=None
+    )
+    # Active (future) lease: entry_eval_lease_expiry 60 seconds from now.
+    game_active = await _insert_game(
+        eval_worker_session_maker, eval_worker_test_user, evals_completed_at=None
+    )
+
+    try:
+        now = datetime.now(timezone.utc)
+        async with eval_worker_session_maker() as session:
+            await session.execute(
+                sa.text("""
+                    UPDATE games
+                    SET entry_eval_lease_expiry = :past_ts,
+                        entry_eval_leased_by = 'old-worker'
+                    WHERE id = :gid
+                """),
+                {"past_ts": now - timedelta(minutes=10), "gid": game_expired},
+            )
+            await session.execute(
+                sa.text("""
+                    UPDATE games
+                    SET entry_eval_lease_expiry = :future_ts,
+                        entry_eval_leased_by = 'active-worker'
+                    WHERE id = :gid
+                """),
+                {"future_ts": now + timedelta(seconds=60), "gid": game_active},
+            )
+            await session.commit()
+
+        async with eval_worker_session_maker() as session:
+            claimed = await _claim_entry_eval_games(session, "reclaimer", 10, 30)
+            await session.commit()
+
+        assert game_expired in claimed, f"Expired lease (game {game_expired}) must be reclaimable"
+        assert game_active not in claimed, (
+            f"Active future lease (game {game_active}) must NOT be reclaimable"
+        )
+    finally:
+        await _delete_games(eval_worker_session_maker, [game_expired, game_active])
+
+
+@pytest.mark.asyncio
+async def test_leased_by_set(
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """After a claim, the leased games' entry_eval_leased_by equals the worker_id passed.
+
+    SEED-051 D-9 / CONTEXT D-09 (observability column).
+    """
+    from app.services.eval_drain import _claim_entry_eval_games
+
+    game_id = await _insert_game(
+        eval_worker_session_maker, eval_worker_test_user, evals_completed_at=None
+    )
+    worker_id = "tst-worker"
+
+    try:
+        async with eval_worker_session_maker() as session:
+            claimed = await _claim_entry_eval_games(session, worker_id, 10, 30)
+            await session.commit()
+
+        assert game_id in claimed, f"Game {game_id} must appear in the claimed set"
+
+        async with eval_worker_session_maker() as session:
+            from app.models.game import Game
+
+            result = await session.execute(
+                select(Game.entry_eval_leased_by).where(Game.id == game_id)
+            )
+            leased_by = result.scalar_one()
+
+        assert leased_by == worker_id, (
+            f"entry_eval_leased_by must equal worker_id '{worker_id}', got {leased_by!r}"
+        )
+    finally:
+        await _delete_games(eval_worker_session_maker, [game_id])
+
+
+# ─── Phase 123 entry-lease HTTP endpoint tests ────────────────────────────────
+# Tests for POST /eval/remote/entry-lease and /entry-submit (SEED-051 D-07).
+
+
+@pytest.mark.asyncio
+async def test_entry_lease_auth_missing_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Missing operator token → 403 (fail-closed, T-123-01 / T-123-auth)."""
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", "")
+    async with _make_client() as client:
+        response = await client.post(_ENTRY_LEASE_URL)
+    assert response.status_code == 403, f"Expected 403, got {response.status_code}: {response.text}"
+
+
+@pytest.mark.asyncio
+async def test_entry_lease_auth_wrong_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Wrong operator token → 401 (T-123-auth)."""
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    async with _make_client() as client:
+        response = await client.post(_ENTRY_LEASE_URL, headers={"X-Operator-Token": "wrong-token"})
+    assert response.status_code == 401, f"Expected 401, got {response.status_code}: {response.text}"
+
+
+@pytest.mark.asyncio
+async def test_entry_lease_gate_below_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """Backlog exactly THRESHOLD-1 pending games → 204 (D-5 gate, Pitfall 6).
+
+    The existence probe fires at OFFSET = THRESHOLD - 1 (0-indexed). With exactly
+    THRESHOLD-1 games, the probe returns no row → 204 (too shallow for remote workers).
+    """
+    from app.services.eval_drain import ENTRY_LEASE_BACKLOG_THRESHOLD
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    # Insert exactly THRESHOLD-1 pending games.
+    n_games = ENTRY_LEASE_BACKLOG_THRESHOLD - 1
+    game_ids: list[int] = []
+    for _ in range(n_games):
+        gid = await _insert_game(
+            eval_worker_session_maker, eval_worker_test_user, evals_completed_at=None
+        )
+        game_ids.append(gid)
+
+    try:
+        async with _make_client() as client:
+            response = await client.post(
+                _ENTRY_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN}
+            )
+        assert response.status_code == 204, (
+            f"Expected 204 (backlog below threshold), got {response.status_code}: {response.text}"
+        )
+    finally:
+        await _delete_games(eval_worker_session_maker, game_ids)
+
+
+@pytest.mark.asyncio
+async def test_entry_lease_gate_at_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """Backlog exactly THRESHOLD pending games → 200 (D-5 gate boundary, Pitfall 6).
+
+    The 300th row is at OFFSET 299 (0-indexed). With exactly THRESHOLD games,
+    the probe finds a row → gate passes → workers get a batch.
+    """
+    from app.services.eval_drain import ENTRY_LEASE_BACKLOG_THRESHOLD
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    # Insert exactly THRESHOLD pending games.
+    n_games = ENTRY_LEASE_BACKLOG_THRESHOLD
+    game_ids: list[int] = []
+    for _ in range(n_games):
+        gid = await _insert_game(
+            eval_worker_session_maker, eval_worker_test_user, evals_completed_at=None
+        )
+        game_ids.append(gid)
+
+    try:
+        async with _make_client() as client:
+            response = await client.post(
+                _ENTRY_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN}
+            )
+        # 200 = gate passed (batch leased); 204 would mean gate blocked (off-by-one bug).
+        assert response.status_code == 200, (
+            f"Expected 200 (backlog at threshold), got {response.status_code}: {response.text}"
+        )
+        body = response.json()
+        assert "positions" in body, f"Response must have 'positions' key: {body}"
+        # The response may have 0 positions if games have no entry targets (no game_positions).
+        # The key assertion is that the gate passed (200), not that positions is non-empty.
+    finally:
+        await _delete_games(eval_worker_session_maker, game_ids)
+
+
+@pytest.mark.asyncio
+async def test_entry_lease_returns_positions(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """With ≥ threshold pending games (with game_positions), entry-lease returns positions.
+
+    Seeds THRESHOLD pending games + game_positions rows to produce real entry targets.
+    Asserts the response has non-empty positions with {game_id, ply, fen} structure.
+    """
+    from app.services.eval_drain import ENTRY_LEASE_BACKLOG_THRESHOLD
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    user_id = eval_worker_test_user
+    game_ids: list[int] = []
+
+    # Pad to reach threshold first (these get lower IDs, so LIFO skips them in first batch).
+    for _ in range(ENTRY_LEASE_BACKLOG_THRESHOLD - 1):
+        gid = await _insert_game(eval_worker_session_maker, user_id, evals_completed_at=None)
+        game_ids.append(gid)
+
+    # Insert our game with game_positions LAST so it gets the highest ID and
+    # is picked first by the LIFO (id DESC) claim.
+    game_with_positions = await _insert_game(
+        eval_worker_session_maker, user_id, evals_completed_at=None
+    )
+    game_ids.append(game_with_positions)
+    # phase=1 (midgame) on ply 0 produces a middlegame_entry target for _collect_target_specs.
+    await _insert_game_positions(
+        eval_worker_session_maker,
+        user_id,
+        game_with_positions,
+        [
+            {"ply": ply, "full_hash": 9000 + ply, "phase": 1, "eval_cp": None, "eval_mate": None}
+            for ply in range(4)
+        ],
+    )
+
+    try:
+        async with _make_client() as client:
+            response = await client.post(
+                _ENTRY_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN}
+            )
+        assert response.status_code == 200, (
+            f"Expected 200, got {response.status_code}: {response.text}"
+        )
+        body = response.json()
+        assert "positions" in body
+        assert "leased_at" in body
+        positions = body["positions"]
+        assert len(positions) > 0, "positions must be non-empty (game has game_positions rows)"
+        for pos in positions:
+            assert "game_id" in pos and isinstance(pos["game_id"], int)
+            assert "ply" in pos and isinstance(pos["ply"], int) and pos["ply"] >= 0
+            assert "fen" in pos and pos["fen"], f"position at ply {pos['ply']} has empty FEN"
+            # Entry-ply schema: NO is_terminal field (unlike full-ply LeasePosition)
+            assert "is_terminal" not in pos, (
+                "Entry-ply positions must not have is_terminal (depth-15, no best_move/pv)"
+            )
+    finally:
+        await _delete_games(eval_worker_session_maker, game_ids)
+
+
+@pytest.mark.asyncio
+async def test_entry_submit_auth_missing_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Missing operator token → 403 (T-123-01)."""
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", "")
+    payload = {"sf_version": "Stockfish 18", "evals": []}
+    async with _make_client() as client:
+        response = await client.post(_ENTRY_SUBMIT_URL, json=payload)
+    assert response.status_code == 403, f"Expected 403, got {response.status_code}: {response.text}"
+
+
+@pytest.mark.asyncio
+async def test_entry_submit_sf_version_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """EXPECTED_SF_VERSION set, wrong version in body → 422 (T-123-07)."""
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "Stockfish 18")
+    payload = {"sf_version": "Stockfish 17", "evals": []}
+    async with _make_client() as client:
+        response = await client.post(
+            _ENTRY_SUBMIT_URL,
+            json=payload,
+            headers={"X-Operator-Token": _TEST_TOKEN},
+        )
+    assert response.status_code == 422, f"Expected 422, got {response.status_code}: {response.text}"
+
+
+@pytest.mark.asyncio
+async def test_entry_submit_no_shift(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """Entry-submit writes eval at the EXACT submitted ply — NO +1 post-move shift.
+
+    The inverse of test_submit_applies_post_move_shift (which verifies the +1 shift
+    for full-ply /submit). Entry-ply uses _apply_eval_results (no shift); the worker
+    submits at ply N and the server must store at row ply=N (Pitfall 1).
+
+    For _TWO_MOVE_PGN "1. e4 e5 *": ply 0 is the middlegame entry (first half-move).
+    Submit eval_cp=77 at ply=0 → row ply=0 must store eval_cp=77 (not shifted to ply=-1).
+    """
+    from app.services.eval_drain import ENTRY_LEASE_BACKLOG_THRESHOLD
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    user_id = eval_worker_test_user
+
+    # Insert padding FIRST (lowest IDs) so the LIFO claim picks our game last.
+    # The game with positions is inserted LAST to get the highest ID — LIFO picks it first.
+    pad_ids: list[int] = []
+    for _ in range(ENTRY_LEASE_BACKLOG_THRESHOLD - 1):
+        gid = await _insert_game(eval_worker_session_maker, user_id, evals_completed_at=None)
+        pad_ids.append(gid)
+
+    # Game with game_positions inserted LAST (highest ID → LIFO picks it in first batch).
+    game_id = await _insert_game(eval_worker_session_maker, user_id, evals_completed_at=None)
+    await _insert_game_positions(
+        eval_worker_session_maker,
+        user_id,
+        game_id,
+        [
+            {"ply": ply, "full_hash": 10000 + ply, "phase": 1, "eval_cp": None, "eval_mate": None}
+            for ply in range(4)
+        ],
+    )
+
+    # First lease to discover what plies the server assigned.
+    async with _make_client() as client:
+        lease_resp = await client.post(_ENTRY_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN})
+    assert lease_resp.status_code == 200, (
+        f"Expected 200 on entry-lease, got {lease_resp.status_code}: {lease_resp.text}"
+    )
+    positions = lease_resp.json()["positions"]
+    # Find the position for our game.
+    our_positions = [p for p in positions if p["game_id"] == game_id]
+    assert our_positions, (
+        f"Game {game_id} must appear in the leased positions. All positions: {positions}"
+    )
+
+    # Submit an eval for the first assigned ply of our game.
+    target_ply = our_positions[0]["ply"]
+    eval_cp_value = 77
+    payload = {
+        "sf_version": "Stockfish 18",
+        "evals": [
+            {"game_id": game_id, "ply": target_ply, "eval_cp": eval_cp_value, "eval_mate": None}
+        ],
+    }
+
+    try:
+        async with _make_client() as client:
+            resp = await client.post(
+                _ENTRY_SUBMIT_URL,
+                json=payload,
+                headers={"X-Operator-Token": _TEST_TOKEN},
+            )
+        assert resp.status_code == 200, (
+            f"Expected 200 on entry-submit, got {resp.status_code}: {resp.text}"
+        )
+
+        # No-shift assertion: eval must be at the EXACT submitted ply (not shifted).
+        row = await _get_game_position(eval_worker_session_maker, game_id, ply=target_ply)
+        assert row is not None, f"game_positions row at ply={target_ply} must exist"
+        assert row["eval_cp"] == eval_cp_value, (
+            f"Entry-ply must write eval_cp={eval_cp_value} at ply={target_ply} (no +1 shift). "
+            f"Got eval_cp={row['eval_cp']}. "
+            "If the value landed at a different ply, the +1 shift was accidentally applied."
+        )
+    finally:
+        await _delete_games(eval_worker_session_maker, [game_id, *pad_ids])
+
+
+@pytest.mark.asyncio
+async def test_entry_submit_stamps_evals_completed_at(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """After entry-submit, evals_completed_at IS NOT NULL for the submitted game.
+
+    The completion stamp is the permanent lease release (D-01): once stamped,
+    the game exits the queue (evals_completed_at IS NULL predicate no longer matches).
+    """
+    from app.services.eval_drain import ENTRY_LEASE_BACKLOG_THRESHOLD
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    user_id = eval_worker_test_user
+    # Padding inserted FIRST (lower IDs); game with positions LAST (highest ID → LIFO).
+    pad_ids: list[int] = []
+    for _ in range(ENTRY_LEASE_BACKLOG_THRESHOLD - 1):
+        gid = await _insert_game(eval_worker_session_maker, user_id, evals_completed_at=None)
+        pad_ids.append(gid)
+
+    game_id = await _insert_game(eval_worker_session_maker, user_id, evals_completed_at=None)
+    await _insert_game_positions(
+        eval_worker_session_maker,
+        user_id,
+        game_id,
+        [
+            {"ply": ply, "full_hash": 11000 + ply, "phase": 1, "eval_cp": None, "eval_mate": None}
+            for ply in range(4)
+        ],
+    )
+
+    # Lease to get the assigned plies.
+    async with _make_client() as client:
+        lease_resp = await client.post(_ENTRY_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN})
+    assert lease_resp.status_code == 200
+    our_positions = [p for p in lease_resp.json()["positions"] if p["game_id"] == game_id]
+
+    evals = [
+        {"game_id": game_id, "ply": p["ply"], "eval_cp": 50, "eval_mate": None}
+        for p in our_positions
+    ]
+    payload = {"sf_version": "Stockfish 18", "evals": evals}
+
+    try:
+        async with _make_client() as client:
+            resp = await client.post(
+                _ENTRY_SUBMIT_URL,
+                json=payload,
+                headers={"X-Operator-Token": _TEST_TOKEN},
+            )
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        body = resp.json()
+        assert game_id in body["game_ids"], f"game_id must be in game_ids: {body}"
+        assert body["stamped_count"] >= 1, f"stamped_count must be ≥1: {body}"
+
+        # Key assertion: evals_completed_at is now set.
+        completed_at = await _get_game_evals_completed_at(eval_worker_session_maker, game_id)
+        assert completed_at is not None, (
+            "evals_completed_at must be stamped after entry-submit "
+            "(permanent lease release per D-01)"
+        )
+    finally:
+        await _delete_games(eval_worker_session_maker, [game_id, *pad_ids])
+
+
+@pytest.mark.asyncio
+async def test_entry_submit_stamps_full_leased_set_including_zero_target_games(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """CR-01 regression: a leased game that yields ZERO eval targets is still stamped.
+
+    Before the fix, entry-submit stamped evals_completed_at ONLY for games present in
+    the worker's submission body. A leased game with no derivable targets (e.g. an
+    unreachable target ply, or — as here — a game with no game_positions rows) never
+    appeared in body.evals, so it was never stamped and got re-leased every TTL cycle
+    forever (re-lease livelock). The fix stamps the FULL set of games leased to this
+    worker, mirroring the in-process server pool's "no permanent retry" invariant.
+
+    Setup: BACKLOG_THRESHOLD-1 padding games with NO game_positions (zero targets) plus
+    one game WITH positions. The LIFO claim leases a batch spanning padding games. We
+    submit ONLY the target game's evals, then assert that a leased zero-target padding
+    game also ends up stamped evals_completed_at.
+    """
+    from app.services.eval_drain import ENTRY_LEASE_BACKLOG_THRESHOLD
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    user_id = eval_worker_test_user
+    # Padding games have NO game_positions → zero eval targets at drain time.
+    pad_ids: list[int] = []
+    for _ in range(ENTRY_LEASE_BACKLOG_THRESHOLD - 1):
+        gid = await _insert_game(eval_worker_session_maker, user_id, evals_completed_at=None)
+        pad_ids.append(gid)
+
+    # Highest ID → LIFO picks it first; it carries the only real eval targets.
+    game_id = await _insert_game(eval_worker_session_maker, user_id, evals_completed_at=None)
+    await _insert_game_positions(
+        eval_worker_session_maker,
+        user_id,
+        game_id,
+        [
+            {"ply": ply, "full_hash": 13000 + ply, "phase": 1, "eval_cp": None, "eval_mate": None}
+            for ply in range(4)
+        ],
+    )
+
+    async with _make_client() as client:
+        lease_resp = await client.post(_ENTRY_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN})
+    assert lease_resp.status_code == 200, lease_resp.text
+
+    # Find a padding game that was actually leased to this (default) worker but produced
+    # no positions in the lease response — that is the zero-target game CR-01 is about.
+    leased_position_game_ids = {p["game_id"] for p in lease_resp.json()["positions"]}
+    leased_zero_target_pad_id: int | None = None
+    for pid in pad_ids:
+        leased_by = await _get_game_entry_eval_leased_by(eval_worker_session_maker, pid)
+        if leased_by is not None and pid not in leased_position_game_ids:
+            leased_zero_target_pad_id = pid
+            break
+    assert leased_zero_target_pad_id is not None, (
+        "Expected at least one padding game to be leased with zero target positions "
+        "(LIFO claims a batch wider than the single game-with-positions)."
+    )
+
+    # Submit ONLY the target game's evals — the zero-target padding game is absent.
+    our_positions = [p for p in lease_resp.json()["positions"] if p["game_id"] == game_id]
+    evals = [
+        {"game_id": game_id, "ply": p["ply"], "eval_cp": 42, "eval_mate": None}
+        for p in our_positions
+    ]
+    payload = {"sf_version": "Stockfish 18", "evals": evals}
+
+    try:
+        async with _make_client() as client:
+            resp = await client.post(
+                _ENTRY_SUBMIT_URL,
+                json=payload,
+                headers={"X-Operator-Token": _TEST_TOKEN},
+            )
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+
+        # CR-01 key assertion: the leased zero-target padding game (never submitted) is
+        # stamped complete, so it cannot be re-leased — the livelock is broken.
+        pad_completed_at = await _get_game_evals_completed_at(
+            eval_worker_session_maker, leased_zero_target_pad_id
+        )
+        assert pad_completed_at is not None, (
+            "A zero-target game leased to this worker must be stamped evals_completed_at "
+            "on entry-submit even though it never appeared in the submission body "
+            "(CR-01: full-leased-set stamping prevents the re-lease livelock)."
+        )
+    finally:
+        await _delete_games(eval_worker_session_maker, [game_id, *pad_ids])
+
+
+@pytest.mark.asyncio
+async def test_entry_submit_idempotent(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """Double entry-submit is safe: no error, no duplicate flaws.
+
+    ON CONFLICT DO NOTHING for flaws; re-stamping evals_completed_at is a no-op.
+    """
+    from app.services.eval_drain import ENTRY_LEASE_BACKLOG_THRESHOLD
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    user_id = eval_worker_test_user
+    # Padding inserted FIRST (lower IDs); game with positions LAST (highest ID → LIFO).
+    pad_ids: list[int] = []
+    for _ in range(ENTRY_LEASE_BACKLOG_THRESHOLD - 1):
+        gid = await _insert_game(eval_worker_session_maker, user_id, evals_completed_at=None)
+        pad_ids.append(gid)
+
+    game_id = await _insert_game(eval_worker_session_maker, user_id, evals_completed_at=None)
+    await _insert_game_positions(
+        eval_worker_session_maker,
+        user_id,
+        game_id,
+        [
+            {"ply": ply, "full_hash": 12000 + ply, "phase": 1, "eval_cp": None, "eval_mate": None}
+            for ply in range(4)
+        ],
+    )
+
+    # Lease to get assigned plies.
+    async with _make_client() as client:
+        lease_resp = await client.post(_ENTRY_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN})
+    assert lease_resp.status_code == 200
+    our_positions = [p for p in lease_resp.json()["positions"] if p["game_id"] == game_id]
+
+    evals = [
+        {"game_id": game_id, "ply": p["ply"], "eval_cp": 42, "eval_mate": None}
+        for p in our_positions
+    ]
+    payload = {"sf_version": "Stockfish 18", "evals": evals}
+
+    try:
+        async with _make_client() as client:
+            resp1 = await client.post(
+                _ENTRY_SUBMIT_URL,
+                json=payload,
+                headers={"X-Operator-Token": _TEST_TOKEN},
+            )
+            resp2 = await client.post(
+                _ENTRY_SUBMIT_URL,
+                json=payload,
+                headers={"X-Operator-Token": _TEST_TOKEN},
+            )
+        assert resp1.status_code == 200, (
+            f"First submit: expected 200, got {resp1.status_code}: {resp1.text}"
+        )
+        assert resp2.status_code == 200, (
+            f"Second submit: expected 200, got {resp2.status_code}: {resp2.text}"
+        )
+    finally:
+        await _delete_games(eval_worker_session_maker, [game_id, *pad_ids])
+
+
+# ─── Phase 123 scope param tests ─────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_scope_explicit_returns_only_tier1_2(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """scope=explicit → claim_eval_job returns tier-1/2 only; tier-3 is NOT attempted.
+
+    Mocks claim_eval_job to verify it was called with scope='explicit'.
+    When claim returns None (no tier-1/2 work) → /lease returns 204.
+    """
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    import app.routers.eval_remote as eval_remote_module
+
+    mock_claim = AsyncMock(return_value=None)
+    monkeypatch.setattr(eval_remote_module, "claim_eval_job", mock_claim)
+
+    async with _make_client() as client:
+        response = await client.post(
+            _LEASE_URL,
+            params={"scope": "explicit"},
+            headers={"X-Operator-Token": _TEST_TOKEN},
+        )
+
+    assert response.status_code == 204, (
+        f"scope=explicit with no tier-1/2 work must return 204, got {response.status_code}"
+    )
+    # Key assertion: claim_eval_job was called with scope="explicit".
+    mock_claim.assert_called_once()
+    _, call_kwargs = mock_claim.call_args
+    assert call_kwargs.get("scope") == "explicit", (
+        f"claim_eval_job must receive scope='explicit', got {call_kwargs!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_scope_idle_skips_tier1_2(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """scope=idle → claim_eval_job receives scope='idle' and skips tier-1/2."""
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    import app.routers.eval_remote as eval_remote_module
+
+    mock_claim = AsyncMock(return_value=None)
+    monkeypatch.setattr(eval_remote_module, "claim_eval_job", mock_claim)
+
+    async with _make_client() as client:
+        response = await client.post(
+            _LEASE_URL,
+            params={"scope": "idle"},
+            headers={"X-Operator-Token": _TEST_TOKEN},
+        )
+
+    assert response.status_code == 204
+    mock_claim.assert_called_once()
+    _, call_kwargs = mock_claim.call_args
+    assert call_kwargs.get("scope") == "idle", (
+        f"claim_eval_job must receive scope='idle', got {call_kwargs!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_scope_absent_is_bundled(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    """Absent scope → claim_eval_job is called with scope=None (bundled behavior, D-05).
+
+    Backward-compat: an un-updated worker that sends no scope must get the exact
+    pre-phase behavior (tier-1>2>3 bundled).
+    """
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    import app.routers.eval_remote as eval_remote_module
+
+    mock_claim = AsyncMock(return_value=None)
+    monkeypatch.setattr(eval_remote_module, "claim_eval_job", mock_claim)
+
+    async with _make_client() as client:
+        response = await client.post(
+            _LEASE_URL,
+            headers={"X-Operator-Token": _TEST_TOKEN},
+            # No scope param.
+        )
+
+    assert response.status_code == 204
+    mock_claim.assert_called_once()
+    _, call_kwargs = mock_claim.call_args
+    assert call_kwargs.get("scope") is None, (
+        f"claim_eval_job must receive scope=None when absent, got {call_kwargs!r}"
+    )
+
+
+# ─── Phase 123 X-Worker-Id header tests ──────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_worker_id_header_populates_leased_by_on_entry_lease(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """X-Worker-Id header on /entry-lease populates games.entry_eval_leased_by.
+
+    Sends X-Worker-Id: box1 on the /entry-lease call. After the claim, asserts
+    that the leased games carry entry_eval_leased_by='box1'.
+    """
+    from app.services.eval_drain import ENTRY_LEASE_BACKLOG_THRESHOLD
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    user_id = eval_worker_test_user
+    game_ids: list[int] = []
+    for _ in range(ENTRY_LEASE_BACKLOG_THRESHOLD):
+        gid = await _insert_game(eval_worker_session_maker, user_id, evals_completed_at=None)
+        game_ids.append(gid)
+
+    try:
+        async with _make_client() as client:
+            response = await client.post(
+                _ENTRY_LEASE_URL,
+                headers={"X-Operator-Token": _TEST_TOKEN, "X-Worker-Id": "box1"},
+            )
+        assert response.status_code == 200, (
+            f"Expected 200, got {response.status_code}: {response.text}"
+        )
+
+        # The claim stamped entry_eval_leased_by='box1' on the leased games.
+        # Read back from DB to verify — games without entry targets still get the lease.
+        found_any = False
+        for gid in game_ids:
+            leased_by = await _get_game_entry_eval_leased_by(eval_worker_session_maker, gid)
+            if leased_by is not None:
+                assert leased_by == "box1", (
+                    f"Game {gid}: entry_eval_leased_by must be 'box1', got {leased_by!r}"
+                )
+                found_any = True
+        assert found_any, "At least one game must have been leased with entry_eval_leased_by='box1'"
+    finally:
+        await _delete_games(eval_worker_session_maker, game_ids)
+
+
+@pytest.mark.asyncio
+async def test_worker_id_absent_falls_back_to_remote_worker_on_entry_lease(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """Absent X-Worker-Id header → entry_eval_leased_by = 'remote-worker' (D-10 fallback)."""
+    from app.services.eval_drain import ENTRY_LEASE_BACKLOG_THRESHOLD
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    user_id = eval_worker_test_user
+    game_ids: list[int] = []
+    for _ in range(ENTRY_LEASE_BACKLOG_THRESHOLD):
+        gid = await _insert_game(eval_worker_session_maker, user_id, evals_completed_at=None)
+        game_ids.append(gid)
+
+    try:
+        async with _make_client() as client:
+            response = await client.post(
+                _ENTRY_LEASE_URL,
+                headers={"X-Operator-Token": _TEST_TOKEN},
+                # No X-Worker-Id header.
+            )
+        assert response.status_code == 200, (
+            f"Expected 200, got {response.status_code}: {response.text}"
+        )
+        found_any = False
+        for gid in game_ids:
+            leased_by = await _get_game_entry_eval_leased_by(eval_worker_session_maker, gid)
+            if leased_by is not None:
+                assert leased_by == "remote-worker", (
+                    f"Game {gid}: absent X-Worker-Id must fall back to 'remote-worker', "
+                    f"got {leased_by!r}"
+                )
+                found_any = True
+        assert found_any, (
+            "At least one game must have been leased with entry_eval_leased_by='remote-worker'"
+        )
+    finally:
+        await _delete_games(eval_worker_session_maker, game_ids)
+
+
+@pytest.mark.asyncio
+async def test_worker_id_header_populates_leased_by_on_full_lease(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """X-Worker-Id on /lease is passed to claim_eval_job as the worker_id label (D-10).
+
+    Asserts claim_eval_job is called with worker_id='mybox' when the header is set.
+    """
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    import app.routers.eval_remote as eval_remote_module
+
+    mock_claim = AsyncMock(return_value=None)
+    monkeypatch.setattr(eval_remote_module, "claim_eval_job", mock_claim)
+
+    async with _make_client() as client:
+        response = await client.post(
+            _LEASE_URL,
+            headers={"X-Operator-Token": _TEST_TOKEN, "X-Worker-Id": "mybox"},
+        )
+
+    assert response.status_code == 204
+    mock_claim.assert_called_once()
+    _, call_kwargs = mock_claim.call_args
+    assert call_kwargs.get("worker_id") == "mybox", (
+        f"claim_eval_job must receive worker_id='mybox', got {call_kwargs!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_worker_id_absent_falls_back_to_remote_worker_on_full_lease(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    """Absent X-Worker-Id on /lease → claim_eval_job receives worker_id='remote-worker'."""
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+
+    import app.routers.eval_remote as eval_remote_module
+
+    mock_claim = AsyncMock(return_value=None)
+    monkeypatch.setattr(eval_remote_module, "claim_eval_job", mock_claim)
+
+    async with _make_client() as client:
+        response = await client.post(
+            _LEASE_URL,
+            headers={"X-Operator-Token": _TEST_TOKEN},
+            # No X-Worker-Id.
+        )
+
+    assert response.status_code == 204
+    mock_claim.assert_called_once()
+    _, call_kwargs = mock_claim.call_args
+    assert call_kwargs.get("worker_id") == "remote-worker", (
+        f"Absent X-Worker-Id must fall back to 'remote-worker', got {call_kwargs!r}"
+    )

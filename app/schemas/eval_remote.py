@@ -49,3 +49,37 @@ class SubmitResponse(BaseModel):
     game_id: int
     stamp_complete: bool
     failed_ply_count: int
+
+
+# ─── Phase 123 SEED-051: entry-ply (import-time) batched schemas (D-07) ──────
+# Entry-ply is a BATCH across games, so every position carries its game_id.
+# Entry-ply uses depth-15 → returns only eval_cp/eval_mate (no best_move/pv).
+# Reuses MAX_SUBMIT_EVALS cap (DoS guard — T-123-05): 50 games × ~3 plies ≈ 150 < 1024.
+
+
+class EntryLeasePosition(BaseModel):
+    game_id: int
+    ply: int = Field(ge=0)
+    fen: str  # board.fen() — full FEN including turn, castling, en passant
+
+
+class EntryLeaseResponse(BaseModel):
+    positions: list[EntryLeasePosition]
+    leased_at: datetime
+
+
+class EntrySubmitEval(BaseModel):
+    game_id: int
+    ply: int = Field(ge=0)
+    eval_cp: int | None
+    eval_mate: int | None
+
+
+class EntrySubmitRequest(BaseModel):
+    sf_version: str  # e.g. "Stockfish 18" — for SF-version gate (T-123-07)
+    evals: list[EntrySubmitEval] = Field(max_length=MAX_SUBMIT_EVALS)
+
+
+class EntrySubmitResponse(BaseModel):
+    game_ids: list[int]
+    stamped_count: int

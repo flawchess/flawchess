@@ -79,11 +79,13 @@ Scope (per [SEED-049](seeds/closed/SEED-049-in-app-feedback-button.md)):
 
 **Goal**: Extend the headless remote eval worker pool (SEED-048 / Phase 120) — which today only drains full-ply tier-1/3 — to also drain **entry-ply** (import-time, depth-15) eval in parallel on **big first imports**, cutting first-import latency (time until a brand-new user sees flaws / phase-transition evals populate) by roughly the worker fan-out factor. The worker gains a second, higher-priority work type via a three-rung priority ladder: tier-1 single-game (top) > entry-ply fresh-import drain (new, batched depth-15) > tier-3 idle backlog (bottom), checked between full-ply games (no preemption, no reserved capacity). Incremental syncs stay server-pool-only via a runtime backlog-depth gate, so the lease/round-trip tax is only paid when it pays off.
 **Depends on**: Phase 120 (remote worker lease/submit protocol + headless CLI) — ✅ live in prod (and Phase 121 tier-1 claiming shipped #199), so the dependency is satisfied; planning now gates only on big-first-import latency being a current priority
-**Source**: SEED-051 (decisions D-1…D-5 locked 2026-06-16) · **Plans**: TBD (run `/gsd-plan-phase 123`)
+**Source**: SEED-051 (decisions D-1…D-5 locked 2026-06-16) · **Plans**: 3 plans (planned 2026-06-16)
 
 Plans:
 
-- [ ] TBD (run `/gsd-plan-phase 123` to break down)
+- [x] 123-01-PLAN.md — Foundation: lease columns migration + shared SKIP-LOCKED LIFO claim helper + tuning constants + D-01 server-side lease
+- [x] 123-02-PLAN.md — Batched /entry-lease + /entry-submit endpoints, scope param, D-5 backlog gate, X-Worker-Id (operator-token auth)
+- [x] 123-03-PLAN.md — Worker CLI: D-06 ladder + depth-15 entry-ply path + distinctive --worker-id
 
 Scope (the delta is small — reuses the SEED-048 worker + SEED-044 storage convention):
 

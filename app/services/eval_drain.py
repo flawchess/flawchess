@@ -115,6 +115,22 @@ _DEDUP_MAX_PLY: int = DEDUP_MAX_PLY
 # in the resweep predicate to exclude it from the hole definition (ply < max_ply - 1).
 _GAME_ENDING_PLY_OFFSET: int = 1
 
+# ─── Phase 123 SEED-051: entry-ply remote-fan-out lease constants (D-03/D-04/D-05) ───
+
+# D-04: short TTL — entry-ply batches are only seconds of work (50 games × 2-3 plies
+# × ~90ms ÷ N cores). Must be well under the 120s full-ply LEASE_TTL_SECONDS.
+# RESEARCH Pitfall 3 recommends 15–30s; 20s is the midpoint with comfortable margin.
+ENTRY_LEASE_TTL_SECONDS: int = 20
+
+# D-5 starting knob: how many games to hand to one remote worker per batch.
+# Tune once the worker is live and throughput is measured.
+ENTRY_LEASE_BATCH_SIZE: int = 50
+
+# D-5 starting knob: minimum backlog depth before /entry-lease invites remote workers.
+# The existence probe uses OFFSET = THRESHOLD - 1 (Pitfall 6: 0-indexed OFFSET).
+# Below this depth the server pool handles the tail solo (D-02).
+ENTRY_LEASE_BACKLOG_THRESHOLD: int = 300
+
 
 # ---------------------------------------------------------------------------
 # Phase 116 full-ply drain: dataclass + helpers
@@ -1013,21 +1029,67 @@ async def _apply_eval_results(
 # ---------------------------------------------------------------------------
 
 
-async def _pick_pending_game_ids(limit: int) -> list[int]:
-    """Open a short session, pick up to *limit* pending game IDs in LIFO order, close.
+async def _claim_entry_eval_games(
+    session: AsyncSession, worker_id: str, batch_size: int, ttl_seconds: int
+) -> list[int]:
+    """Atomically claim up to batch_size pending entry-ply games (LIFO id DESC) and
+    stamp their lease. Returns the list of claimed game IDs.
 
-    D-11: LIFO by id DESC so the most recently imported games are evaluated first.
-    Uses the partial index ix_games_evals_pending (WHERE evals_completed_at IS NULL)
-    for an instant index scan.
+    Shared by _pick_pending_game_ids (server pool, D-01) and /entry-lease (remote
+    workers, D-05/D-07). This is the ONE canonical claim — do not write a second copy.
+
+    SEED-051 D-3 shape: UPDATE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED) RETURNING.
+    Mirrors _claim_queued_job (eval_queue_service.py) in both bound-param discipline
+    (every value bound as :param, never f-string-interpolated — project Security rule)
+    and TTL idiom (:ttl || ' seconds')::interval / str(ttl_seconds).
+
+    Lease ends naturally: _mark_evals_completed stamps evals_completed_at = now() which
+    removes the game from the predicate permanently. A crashed claimer's batch is
+    reclaimed when entry_eval_lease_expiry < now() (TTL reclaim, D-04).
+    """
+    result = await session.execute(
+        sa.text("""
+            UPDATE games
+            SET entry_eval_lease_expiry = now() + (:ttl || ' seconds')::interval,
+                entry_eval_leased_by = :worker_id
+            WHERE id IN (
+                SELECT id FROM games
+                WHERE evals_completed_at IS NULL
+                  AND (entry_eval_lease_expiry IS NULL OR entry_eval_lease_expiry < now())
+                ORDER BY id DESC
+                LIMIT :batch
+                FOR UPDATE SKIP LOCKED
+            )
+            RETURNING id
+        """),
+        {"ttl": str(ttl_seconds), "worker_id": worker_id, "batch": batch_size},
+    )
+    return [row[0] for row in result.all()]
+
+
+async def _pick_pending_game_ids(limit: int) -> list[int]:
+    """Open a short read-then-commit session, claim up to *limit* pending game IDs,
+    stamp their entry-eval lease, and close.
+
+    D-01 (Phase 123 SEED-051): now a lease claim via _claim_entry_eval_games so the
+    server pool and remote workers strictly partition the same import (no double-eval).
+    D-11: LIFO by id DESC (newest import first) — unchanged.
+
+    The lease is committed before drain work begins so it is durable before the engine
+    gather runs (mirror of claim_eval_job's commit-then-release discipline in
+    eval_queue_service.py). The lease ends naturally when _mark_evals_completed stamps
+    evals_completed_at; a crash is reclaimed by ENTRY_LEASE_TTL_SECONDS expiry.
+
+    Note: UPDATE … RETURNING does not guarantee row order, so we sort DESC to preserve
+    the D-11 LIFO contract for callers (the set of claimed games is correct by SKIP LOCKED;
+    only the list ordering needs an explicit sort here).
     """
     async with async_session_maker() as session:
-        result = await session.execute(
-            select(Game.id)
-            .where(Game.evals_completed_at.is_(None))
-            .order_by(Game.id.desc())
-            .limit(limit)
+        game_ids = await _claim_entry_eval_games(
+            session, WORKER_ID_SERVER_POOL, limit, ENTRY_LEASE_TTL_SECONDS
         )
-        return list(result.scalars().all())
+        await session.commit()
+    return sorted(game_ids, reverse=True)
 
 
 async def _load_pgns_for_games(game_ids: Sequence[int]) -> list[tuple[int, str]]:

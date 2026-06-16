@@ -182,6 +182,18 @@ class Game(Base):
     full_eval_attempts: Mapped[int] = mapped_column(
         SmallInteger, nullable=False, server_default="0"
     )
+    # Phase 123 SEED-051 D-3/D-9: entry-ply (import-time) lease for remote-worker fan-out.
+    # Both are NULL = unclaimed (correct default; no backfill needed).
+    # ix_games_evals_pending (WHERE evals_completed_at IS NULL) backs the claim + D-5 probe.
+    # Partial indexes for these columns live in the migration only (per ix_games_evals_pending
+    # convention above — declared in migration, not in __table_args__).
+    entry_eval_lease_expiry: Mapped[datetime.datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+    entry_eval_leased_by: Mapped[str | None] = mapped_column(
+        sa.String(16),
+        nullable=True,  # D-09: worker-id label; VARCHAR(16) not TEXT
+    )
 
     positions: Mapped[list["GamePosition"]] = relationship(  # ty: ignore[unresolved-reference]
         back_populates="game", cascade="all, delete-orphan"

@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.26
 milestone_name: milestone
-status: verifying
-last_updated: "2026-06-15T19:50:09.689Z"
-last_activity: 2026-06-16 -- Phases 121 & 122 shipped to prod (#199/#202); Phase 123 added (SEED-051), not yet planned
+status: Phase complete — ready for verification
+last_updated: "2026-06-16T06:07:32.307Z"
+last_activity: 2026-06-16 -- Phase 123 execution started
 progress:
-  total_phases: 8
-  completed_phases: 8
-  total_plans: 21
-  completed_plans: 21
+  total_phases: 9
+  completed_phases: 9
+  total_plans: 24
+  completed_plans: 24
   percent: 100
 ---
 
@@ -17,12 +17,13 @@ progress:
 
 ## Current Position
 
-Phase: 121 & 122 — ✅ SHIPPED to prod (releases #199, #202, 2026-06-15); 122 UAT confirmed on prod. Not yet grouped into a named milestone.
+Phase: 123 (remote-worker-fan-out-for-entry-ply-import-time-eval-on-big-) — EXECUTING
+Plan: 3 of 3
 Open phase: 123 (remote-worker entry-ply fresh-import drain, SEED-051) — added 2026-06-16, not yet planned. Its Phase 120 dependency (remote worker lease/submit protocol) is live in prod, so the SEED-051 trigger gate is satisfied; gate planning on whether big-first-import latency is a current priority.
 NEXT: `/gsd-new-milestone` to formalize the next milestone (and fold the standalone shipped phases 121/122 into it) — leading candidates: Phase 123 (SEED-051), SEED-039 tactic-motif tags over the captured PVs, SEED-037 Train drills, or the SEED-036 remainder (Analysis viewer + best-move endpoint).
 PROD-SOAK (carried, check over coming days): (1) tier-1 ~10s wall-clock fan-out on the live pool (QUEUE-03); (2) re-verify the ~32% flaw-PV coverage TODO once the residue re-eval catches up (multi-day background drain; see 117.1-POST-DEPLOY.md); (3) τ/floor tier-3 lottery tuning against prod `last_activity` distributions (SEED-046 timing caveat).
 Security: SECURED — 13/13 threats closed (threats_open: 0), ASVS L1 (117-SECURITY.md).
-Last activity: 2026-06-15 -- Phase 122 execution started
+Last activity: 2026-06-16 -- Phase 123 execution started
 
 Progress: [██████████] 100%
 
@@ -379,6 +380,8 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 | Phase 121 P01 | 12 | 3 tasks | 4 files |
 | Phase 122-in-app-feedback-button-seed-049 P01 | 11 | 3 tasks | 11 files |
 | Phase 122 P02 | 29 | 3 tasks | 14 files |
+| Phase 123 P02 | 20 | - tasks | - files |
+| Phase 123 P03 | 6 | 3 tasks | 2 files |
 
 ## Decisions
 
@@ -436,3 +439,7 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 - [Phase ?]: CAST(:param AS float8) required in sa.text queries for asyncpg compatibility — :param::float8 causes PostgresSyntaxError
 - [Phase ?]: asyncio.gather fan-out in _eval_positions: EnginePool workers are independent UCI processes, no shared AsyncSession
 - [Phase ?]: No per-drawer wiring needed; radix data-slot selectors cover all surfaces
+- [Phase ?]: D-02: D-5 backlog gate is remote-lease-only; server pool does not run this probe
+- [Phase ?]: D-05: scope=None is backward-compat bundled flow; explicit/idle select single tiers for zero-coordination rollout
+- [Phase ?]: D-07: entry-lease derives FENs server-side; worker never parses PGN; server re-derives EvalTargets in entry-submit
+- [Phase ?]: D-10: X-Worker-Id is advisory only, never used for authz; absent header falls back to remote-worker
