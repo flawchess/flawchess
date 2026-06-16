@@ -112,70 +112,51 @@ cd frontend && npm run lint   # Frontend lint
 
 The CI pipeline runs these in order: ruff (lint) → [ty](https://github.com/astral-sh/ty) (type check) → pytest (tests). All three must pass.
 
-## Remote eval worker
+## Remote Stockfish Worker
 
-`scripts/remote_eval_worker.py` adds off-box CPU to the Stockfish eval pipeline. Run it on any trusted machine to drain the same tier-3 eval queue as the production server: lease a game over HTTPS, evaluate its positions locally with Stockfish, batch-submit the results unchanged (the server owns the storage convention).
+If you want to help out, here's how you can add a Stockfish worker to support the FlawChess server and speed up game analysis. 
 
 ### Prerequisites
 
-- Stockfish installed locally (`bin/install_stockfish.sh`).
-- Server and worker share an `EVAL_OPERATOR_TOKEN` in their `.env`. Endpoints fail closed: unset token → 403, wrong token → 401. Optionally set `EXPECTED_SF_VERSION` on the server to reject mismatched engine builds. Use `--token` to override the worker's `.env` value for a one-off run.
+- You need the `EVAL_OPERATOR_TOKEN` from the server owner.
 
-The worker is a standalone HTTP client plus a local Stockfish driver: it talks to the server over HTTPS and never opens a database connection, so **no Docker is required** to run it. A repo checkout with `uv sync` (the worker imports `app.*`) plus a Stockfish binary is all you need.
+### Setup
 
-### Running on Windows
-
-The worker runs natively on Windows — the only Linux-specific code path (`SCHED_IDLE` scheduling) is guarded and skipped on non-Linux hosts. No WSL or Docker needed.
-
-1. **Get the repo.** It's public, so no GitHub account is required. Either clone over HTTPS:
-
+1. Get the [repo](https://github.com/flawchess/flawchess) from Github. It's public, so no GitHub account is required. Either clone over HTTPS:
    ```
    git clone https://github.com/flawchess/flawchess.git
    ```
+   or [download the ZIP](https://github.com/flawchess/flawchess/archive/refs/heads/main.zip) from the GitHub web UI ("Code → Download ZIP") and extract it.
 
-   or download the ZIP from the GitHub web UI ("Code → Download ZIP") and extract it — the worker needs the source tree, not git history. 
+2. From inside the flawchess folder, install Stockfish 18 with `bin/install_stockfish.sh` (Linux/MacOS only. For Windows, see below).
 
-2. Install [uv](https://docs.astral.sh/uv/).
+3. Install the [uv](https://docs.astral.sh/uv/) python package manager.
 
-These two setup steps then differ from Linux/macOS:
+4. Inside the flawchess directory, copy `.env.example` to `.env` and set your token on the `EVAL_OPERATOR_TOKEN=` line: `EVAL_OPERATOR_TOKEN=**********`
 
-3. **Stockfish binary.** `bin/install_stockfish.sh` is a bash script that fetches the Linux build, so it won't run on Windows. Download Windows Stockfish 18 point the worker at it with `STOCKFISH_PATH` in `.env` (note the forward slash and the absence of the .exe extension:
+5. Run this from within the flawchess directory: 
+   ```
+   uv run python scripts/remote_eval_worker.py --workers 4
+   ```
+   You can increase the number of workers up to 2x your CPU core count, but the default is 4.
 
+6. Keep it running as long as you want and end it with `Ctrl-C` or by closing the terminal.
+
+### Running on Windows
+
+Besides Linux and MacOS, the worker runs natively on Windows as well. No WSL or Docker needed.
+
+- Instead of running `bin/install_stockfish.sh`, download and extract the [Windows Stockfish 18 release](https://stockfishchess.org/download/). 
+
+- Uncomment and set the `STOCKFISH_PATH` line in `.env` (note the forward slashes and the absence of the .exe extension):
    ```
    STOCKFISH_PATH="C:/path/to/stockfish-windows-x86-64-avx2"
    ```
-   
-4. **`.env`.** Only `EVAL_OPERATOR_TOKEN` is required (every other setting has a default, and the worker needs no database). Pass `--token` instead if you'd rather not write a `.env`.
 
-Then run the same commands as below via `uv run python scripts/remote_eval_worker.py --workers 8`.
-
-### Start
-
-With the token in `.env` and `--base-url` defaulting to production, the worker needs no flags:
-
-```bash
-# Connectivity smoke test — lease + evaluate, never submit:
-uv run python scripts/remote_eval_worker.py --dry-run --once
-
-# Process one game, then exit:
-uv run python scripts/remote_eval_worker.py --once
-
-# Continuous drain (default — 8 parallel Stockfish processes):
-uv run python scripts/remote_eval_worker.py --workers 8
-
-# 8 engine processes, pointed at a staging server:
-uv run python scripts/remote_eval_worker.py --workers 8 --base-url http://localhost:8000
-```
-
-Flags: `--base-url` (default `https://flawchess.com`), `--token` (override `.env`), `--workers N` (default 4, ≈ core count), `--idle-sleep SECONDS` (empty-queue poll delay, default 5), `--dry-run` (never submit), `--once` (one cycle then exit).
-
-### Stop
-
-It's a foreground process — press `Ctrl-C`. The worker shuts the engine pool down cleanly on interrupt. For an unattended long-running drain, wrap it yourself (`tmux`/`screen`, `nohup … &`, or a systemd unit); there is no built-in daemon mode. The continuous loop is resilient: a transient network error, a 5xx, or a bad position is logged to Sentry, then the worker backs off `--idle-sleep` and retries rather than dying.
-
-### Monitoring throughput
-
-The worker logs each cycle with a UTC timestamp (`Leased game_id=… (N positions)` → `Submitted game_id=…`), so per-game timing is visible in stdout. For aggregate throughput across *all* drain sources (the server pool plus any workers), query the server: every completed game is stamped with `full_evals_completed_at`, so `count(*)` over that column in a time window gives games/minute directly.
+- Run the same command from within the flawchess directory as above: 
+   ```
+   uv run python scripts/remote_eval_worker.py --workers 4
+   ```
 
 ## Backups & Recovery
 
