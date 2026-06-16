@@ -1387,18 +1387,26 @@ async def _classify_and_insert_flaws(
     games_result = await session.execute(select(Game).where(Game.id.in_(game_ids)))
     games = games_result.scalars().all()
 
+    # N+1 fix (FLAWCHESS-6G): load ALL positions for the batch in ONE query instead of
+    # one SELECT per game inside the loop (Sentry flagged the per-game query as N+1 on
+    # /api/eval/remote/entry-submit). Group by game_id in Python. The composite FK
+    # (game_id, user_id) -> games(id, user_id) guarantees a position's user_id matches
+    # its owning game, so filtering on game_id alone preserves the T-108-05 user-scope
+    # guard. ORDER BY game_id, ply keeps each game's positions in ply-ASC order, which
+    # classify_game_flaws requires.
+    positions_by_game: dict[int, list[GamePosition]] = defaultdict(list)
+    if games:
+        positions_result = await session.execute(
+            select(GamePosition)
+            .where(GamePosition.game_id.in_([game.id for game in games]))
+            .order_by(GamePosition.game_id, GamePosition.ply)
+        )
+        for pos in positions_result.scalars().all():
+            positions_by_game[pos.game_id].append(pos)
+
     for game in games:
         try:
-            # Load positions ordered by ply, scoped to game.user_id (T-108-05 guard)
-            positions_result = await session.execute(
-                select(GamePosition)
-                .where(
-                    GamePosition.game_id == game.id,
-                    GamePosition.user_id == game.user_id,
-                )
-                .order_by(GamePosition.ply)
-            )
-            positions = list(positions_result.scalars().all())
+            positions = positions_by_game.get(game.id, [])
 
             result = classify_game_flaws(game, positions)
             if "reason" in result:
