@@ -216,8 +216,8 @@ describe('Endgames readiness gate', () => {
     const processingState = screen.getByTestId('endgames-processing-state');
     expect(processingState.textContent).toContain('300');
     expect(processingState.textContent).toContain('500');
-    // The Stockfish subtext pattern
-    expect(processingState.textContent).toMatch(/Stockfish.*300.*\/.*500.*games/);
+    // The "Quick Scan" subtext pattern (banner reframed from "Stockfish")
+    expect(processingState.textContent).toMatch(/Quick Scan.*300.*\/.*500.*games/);
   });
 
   it('shows 0 analysed when totalCount is 0', () => {
@@ -230,6 +230,6 @@ describe('Endgames readiness gate', () => {
 
     const processingState = screen.getByTestId('endgames-processing-state');
     // Both should show 0
-    expect(processingState.textContent).toMatch(/Stockfish.*0.*\/.*0.*games/);
+    expect(processingState.textContent).toMatch(/Quick Scan.*0.*\/.*0.*games/);
   });
 });
