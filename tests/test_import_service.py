@@ -2945,6 +2945,124 @@ class TestFlushBatchStage5RealDb:
             )
 
 
+class TestStampLichessEvalsAtRealDb:
+    """DB-backed regression test for Stage 5d lichess_evals_at provenance stamping.
+
+    Pins the quick-260616-pjh fix: the import path must stamp lichess_evals_at for
+    freshly imported lichess games that arrived with lichess computer analysis
+    (white_blunders IS NOT NULL), and must NOT touch chess.com games, lichess games
+    without analysis, or games that already carry a lichess_evals_at value. Without
+    the stamp those games match needs_engine_full_evals and get wastefully re-queued
+    for our Stockfish drain despite already having per-ply %evals.
+    """
+
+    async def _seed_game(
+        self,
+        session,
+        user_id: int,
+        tag: str,
+        *,
+        platform: str,
+        white_blunders: int | None,
+        lichess_evals_at: datetime | None = None,
+    ) -> int:
+        from app.models.game import Game
+        from tests.conftest import ensure_test_user
+
+        await ensure_test_user(session, user_id)
+        g = Game(
+            user_id=user_id,
+            platform=platform,
+            platform_game_id=f"stamp-lichess-{user_id}-{tag}",
+            pgn="1. e4 *",
+            result="1-0",
+            user_color="white",
+            rated=True,
+            is_computer_game=False,
+            white_blunders=white_blunders,
+            lichess_evals_at=lichess_evals_at,
+        )
+        session.add(g)
+        await session.flush()
+        return g.id
+
+    @pytest.mark.asyncio
+    async def test_stamps_only_lichess_analyzed_games(self, db_session):
+        """lichess + analyzed (incl. white_blunders=0) stamped; others left NULL."""
+        from sqlalchemy import select
+
+        from app.models.game import Game
+        from app.services.import_service import _stamp_lichess_evals_at
+
+        uid = 9503
+        # (a) lichess + analyzed → stamped
+        lichess_analyzed = await self._seed_game(
+            db_session, uid, "li-analyzed", platform="lichess", white_blunders=2
+        )
+        # (b) lichess + white_blunders=0 → stamped (0 is falsy but NOT None)
+        lichess_zero = await self._seed_game(
+            db_session, uid, "li-zero", platform="lichess", white_blunders=0
+        )
+        # (c) lichess + no analysis → left NULL
+        lichess_unanalyzed = await self._seed_game(
+            db_session, uid, "li-unanalyzed", platform="lichess", white_blunders=None
+        )
+        # (d) chess.com + analysis present → left NULL (platform guard)
+        chesscom_analyzed = await self._seed_game(
+            db_session, uid, "cc-analyzed", platform="chess.com", white_blunders=3
+        )
+
+        ids = [lichess_analyzed, lichess_zero, lichess_unanalyzed, chesscom_analyzed]
+        await _stamp_lichess_evals_at(db_session, ids)
+        await db_session.flush()
+
+        rows = dict(
+            (
+                await db_session.execute(
+                    select(Game.id, Game.lichess_evals_at).where(Game.id.in_(ids))
+                )
+            ).all()
+        )
+        assert rows[lichess_analyzed] is not None
+        assert rows[lichess_zero] is not None
+        assert rows[lichess_unanalyzed] is None
+        assert rows[chesscom_analyzed] is None
+
+    @pytest.mark.asyncio
+    async def test_does_not_overwrite_existing_timestamp(self, db_session):
+        """An already-set lichess_evals_at is preserved (idempotent re-run)."""
+        from sqlalchemy import select
+
+        from app.models.game import Game
+        from app.services.import_service import _stamp_lichess_evals_at
+
+        preset = datetime(2020, 1, 1, tzinfo=timezone.utc)
+        gid = await self._seed_game(
+            db_session,
+            9504,
+            "li-preset",
+            platform="lichess",
+            white_blunders=1,
+            lichess_evals_at=preset,
+        )
+
+        await _stamp_lichess_evals_at(db_session, [gid])
+        await db_session.flush()
+
+        result = (
+            await db_session.execute(select(Game.lichess_evals_at).where(Game.id == gid))
+        ).scalar_one()
+        # Compare instants (DB column may be tz-naive UTC); the value must be unchanged.
+        assert result.replace(tzinfo=timezone.utc) == preset
+
+    @pytest.mark.asyncio
+    async def test_empty_ids_is_noop(self, db_session):
+        """Empty new_game_ids issues no UPDATE and does not raise."""
+        from app.services.import_service import _stamp_lichess_evals_at
+
+        await _stamp_lichess_evals_at(db_session, [])
+
+
 class TestRecordFailureWithRetryDbOutage:
     """Regression tests for the broadened DB-outage classifier in
     _record_failure_with_retry.
