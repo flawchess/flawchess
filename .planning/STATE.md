@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.26
 milestone_name: milestone
-status: Phase complete — ready for verification
+status: Phase 123 shipped to prod (release #203) — UAT done
 last_updated: "2026-06-16T06:07:32.307Z"
-last_activity: 2026-06-16 -- Phase 123 execution started
+last_activity: 2026-06-16 -- Phase 123 shipped to prod (release #203), UAT confirmed on 5,132-game import
 progress:
   total_phases: 9
   completed_phases: 9
@@ -17,10 +17,10 @@ progress:
 
 ## Current Position
 
-Phase: 123 (remote-worker-fan-out-for-entry-ply-import-time-eval-on-big-) — EXECUTING
-Plan: 3 of 3
-Open phase: 123 (remote-worker entry-ply fresh-import drain, SEED-051) — added 2026-06-16, not yet planned. Its Phase 120 dependency (remote worker lease/submit protocol) is live in prod, so the SEED-051 trigger gate is satisfied; gate planning on whether big-first-import latency is a current priority.
-NEXT: `/gsd-new-milestone` to formalize the next milestone (and fold the standalone shipped phases 121/122 into it) — leading candidates: Phase 123 (SEED-051), SEED-039 tactic-motif tags over the captured PVs, SEED-037 Train drills, or the SEED-036 remainder (Analysis viewer + best-move endpoint).
+Phase: 123 (remote-worker-fan-out-for-entry-ply-import-time-eval-on-big-) — ✅ SHIPPED TO PROD (release #203, 2026-06-16), UAT done
+Plan: 3 of 3 (complete)
+No open phases. Phases 121, 122, 123 are all shipped to prod but not yet grouped into a named milestone. Phase 123 UAT confirmed on a real 5,132-game first import (user 28): entry-ply drain split server-pool (2,573) / worker `ws80` (1,800), 100% evals_completed_at, zero stuck leases, CR-01 livelock fix verified live; mixed-fleet backward compat holds (un-upgraded `remote-worker` fallback drains full-ply only).
+NEXT: `/gsd-new-milestone` to formalize the next milestone (and fold the standalone shipped phases 121/122/123 into it) — leading candidates: SEED-039 tactic-motif tags over the captured PVs, SEED-037 Train drills, or the SEED-036 remainder (Analysis viewer + best-move endpoint).
 PROD-SOAK (carried, check over coming days): (1) tier-1 ~10s wall-clock fan-out on the live pool (QUEUE-03); (2) re-verify the ~32% flaw-PV coverage TODO once the residue re-eval catches up (multi-day background drain; see 117.1-POST-DEPLOY.md); (3) τ/floor tier-3 lottery tuning against prod `last_activity` distributions (SEED-046 timing caveat).
 Security: SECURED — 13/13 threats closed (threats_open: 0), ASVS L1 (117-SECURITY.md).
 Last activity: 2026-06-16 -- Phase 123 execution started
