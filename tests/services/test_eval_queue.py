@@ -551,9 +551,7 @@ class TestGuestExclusion:
                 )
 
             # (b) Tier-1 explicit enqueue must succeed for a guest's own game.
-            inserted = await svc.enqueue_tier1_game(
-                game_id=guest_game_id, user_id=guest_user_id
-            )
+            inserted = await svc.enqueue_tier1_game(game_id=guest_game_id, user_id=guest_user_id)
             assert inserted is True, (
                 "enqueue_tier1_game must return True for a guest's own game (QUEUE-08 opened)"
             )
@@ -568,9 +566,7 @@ class TestGuestExclusion:
                 f"Exactly one tier-1 eval_jobs row must exist for guest game "
                 f"{guest_game_id}; found {len(jobs)}"
             )
-            assert jobs[0].tier == 1, (
-                f"Enqueued job must have tier=1; got tier={jobs[0].tier}"
-            )
+            assert jobs[0].tier == 1, f"Enqueued job must have tier=1; got tier={jobs[0].tier}"
 
             # (c) The worker must be able to drain the guest's explicit tier-1 job.
             async with queue_session_maker() as session:
@@ -583,8 +579,7 @@ class TestGuestExclusion:
             )
             _job_id, claimed_game_id, _user_id, _tier, _is_lichess = claimed_row
             assert claimed_game_id == guest_game_id, (
-                f"Worker must claim guest game {guest_game_id}; "
-                f"got game_id={claimed_game_id}"
+                f"Worker must claim guest game {guest_game_id}; got game_id={claimed_game_id}"
             )
         finally:
             await _delete_games(queue_session_maker, [guest_game_id])
