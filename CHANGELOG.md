@@ -22,6 +22,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- **Guests can analyze individual games on demand** — the per-game "Analyze" button is now available to guest users for their own games (tier-1 explicit enqueue). Automatic full-library background analysis remains a signup benefit. (260616-ey1)
+
 - **Eval-chart tooltip is more readable** — the floating tooltip on game eval charts is now less transparent so it stays legible over the eval bar.
 
 ### Fixed

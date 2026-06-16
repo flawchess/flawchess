@@ -4,7 +4,8 @@ Covers:
 - test_tier1_enqueue: authenticated non-guest user enqueues an owned game → 200,
   status "enqueued" (or "already_queued" on second call), eval_jobs row exists.
 - test_tier1_idor: game owned by another user → 404, no row inserted (T-118-06).
-- test_tier1_guest: guest user returns status "skipped_guest", 200.
+- test_tier1_guest: guest enqueues their own game → 200 "enqueued"; guest on
+  another user's game → 404 (T-ey1-01 IDOR guard preserved for guests).
 - test_tier1_second_call: calling twice on the same game returns "already_queued".
 - test_tier1_noninteger_game_id: non-integer path param → FastAPI 422 (T-118-10).
 - test_tier1_requires_auth: no token → 401.
@@ -21,7 +22,7 @@ from collections.abc import AsyncGenerator
 import httpx
 import pytest
 import pytest_asyncio
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.main import app
@@ -128,6 +129,38 @@ async def other_user_client(test_engine) -> AsyncGenerator[tuple[int, str], None
     """Register a second non-guest user for IDOR tests."""
     email = f"tier1_other_{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
+    yield user_id, token
+    await _delete_games_and_jobs(test_engine, user_id)
+
+
+async def _create_guest(test_engine) -> tuple[int, str]:
+    """Create a guest session via POST /api/auth/guest/create and return (user_id, token).
+
+    The guest/create endpoint does not return user_id in the response. We look it
+    up from the User table using the most-recently-created guest row to avoid a
+    separate /me endpoint call that would require a different auth route.
+    """
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.post("/api/auth/guest/create")
+    assert resp.status_code == 201, f"guest/create failed: {resp.text}"
+    token = str(resp.json()["access_token"])
+
+    # Fetch the newly-created guest's id from the DB.
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        row = await session.execute(
+            text("SELECT id FROM users WHERE is_guest = true ORDER BY created_at DESC LIMIT 1")
+        )
+        user_id = int(row.scalar_one())
+    return user_id, token
+
+
+@pytest_asyncio.fixture
+async def guest_client(test_engine) -> AsyncGenerator[tuple[int, str], None]:
+    """Create a guest user and return (user_id, token). Cleanup on teardown."""
+    user_id, token = await _create_guest(test_engine)
     yield user_id, token
     await _delete_games_and_jobs(test_engine, user_id)
 
@@ -254,3 +287,51 @@ async def test_tier1_missing_game(user_client: tuple[int, str]) -> None:
         response = await client.post(f"{TIER1_BASE}/{nonexistent_game_id}", headers=headers)
 
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_tier1_guest(
+    guest_client: tuple[int, str],
+    user_client: tuple[int, str],
+    test_engine,
+) -> None:
+    """T-ey1-01: guest enqueues their OWN game → 200 "enqueued", row exists.
+    Guest accessing another user's game → 404, no row inserted (IDOR guard preserved).
+    """
+    guest_id, guest_token = guest_client
+    owner_id, _owner_token = user_client
+    guest_headers = {"Authorization": f"Bearer {guest_token}"}
+
+    # Seed a game owned by the guest.
+    guest_game = _make_game(guest_id)
+    guest_game_id = await _seed_game(test_engine, guest_game)
+
+    # Seed a game owned by a different (non-guest) user.
+    other_game = _make_game(owner_id)
+    other_game_id = await _seed_game(test_engine, other_game)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        # Guest enqueuing their own game must succeed.
+        own_resp = await client.post(f"{TIER1_BASE}/{guest_game_id}", headers=guest_headers)
+        # Guest accessing another user's game must 404 (IDOR guard).
+        other_resp = await client.post(f"{TIER1_BASE}/{other_game_id}", headers=guest_headers)
+
+    assert own_resp.status_code == 200
+    own_body = own_resp.json()
+    assert own_body["status"] == "enqueued", (
+        f"Guest's own game must be enqueued; got status={own_body['status']!r}"
+    )
+    assert own_body["game_id"] == guest_game_id
+
+    # Tier-1 eval_jobs row must exist for the guest game.
+    job_count = await _count_eval_jobs_for_game(test_engine, guest_game_id)
+    assert job_count >= 1, "A tier-1 eval_jobs row must exist after guest enqueue"
+
+    # IDOR: guest must not be able to enqueue another user's game.
+    assert other_resp.status_code == 404
+    other_job_count = await _count_eval_jobs_for_game(test_engine, other_game_id)
+    assert other_job_count == 0, (
+        "No eval_jobs row must be inserted for the other user's game (IDOR guard)"
+    )

@@ -1,16 +1,17 @@
 // @vitest-environment jsdom
 /**
- * NoAnalysisState tests (Phase 118-03, updated 260615-q1x).
+ * NoAnalysisState tests (Phase 118-03, updated 260615-q1x, 260616-ey1).
  *
- * Tests the five branches:
- * 1. Guest → sign-up CTA with btn-signup-for-analysis
- * 2. Not-analyzed, not in-flight, no active job → "Analyze" button with btn-analyze-game-{gameId}
+ * Tests the four branches (isGuest prop removed in 260616-ey1 — guests now get
+ * the Analyze button just like authenticated users):
+ * 1. Not-analyzed, not in-flight, no active job → "Analyze" button with btn-analyze-game-{gameId}
  *    fires the tier-1 mutation on click; onInFlightChange(true) called optimistically before mutate
- * 3. Not-analyzed, optimistic in-flight (isInFlight=true) → pulsing "Pending…" span
- * 4. Not-analyzed, activeEvalStatus="leased" → pulsing "Analyzing…" span (worker running)
- * 5. Already analyzed → returns null (no DOM)
+ * 2. Not-analyzed, optimistic in-flight (isInFlight=true) → pulsing "Pending…" span
+ * 3. Not-analyzed, activeEvalStatus="leased" → pulsing "Analyzing…" span (worker running)
+ * 4. Already analyzed → returns null (no DOM)
  *
  * 260615-q1x: three-state pill: Analyze button → Pending… (optimistic/pending) → Analyzing… (leased)
+ * 260616-ey1: remove guest sign-up CTA; guests see Analyze button for their own games (QUEUE-08).
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -49,27 +50,9 @@ afterEach(() => {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('NoAnalysisState', () => {
-  it('guest: renders sign-up CTA with data-testid="btn-signup-for-analysis"', () => {
-    render(
-      <NoAnalysisState gameId={42} isGuest={true} isAnalyzed={false} />,
-      { wrapper: makeWrapper() },
-    );
-    const btn = screen.getByTestId('btn-signup-for-analysis');
-    expect(btn).toBeDefined();
-    expect(btn.getAttribute('aria-label')).toContain('Sign up');
-  });
-
-  it('guest: does not render analyze button', () => {
-    render(
-      <NoAnalysisState gameId={42} isGuest={true} isAnalyzed={false} />,
-      { wrapper: makeWrapper() },
-    );
-    expect(screen.queryByTestId('btn-analyze-game-42')).toBeNull();
-  });
-
   it('not-analyzed, not in-flight: renders btn-analyze-game-{gameId}', () => {
     render(
-      <NoAnalysisState gameId={7} isGuest={false} isAnalyzed={false} isInFlight={false} />,
+      <NoAnalysisState gameId={7} isAnalyzed={false} isInFlight={false} />,
       { wrapper: makeWrapper() },
     );
     const btn = screen.getByTestId('btn-analyze-game-7');
@@ -81,7 +64,6 @@ describe('NoAnalysisState', () => {
     render(
       <NoAnalysisState
         gameId={7}
-        isGuest={false}
         isAnalyzed={false}
         isInFlight={false}
         onInFlightChange={onInFlightChange}
@@ -97,7 +79,7 @@ describe('NoAnalysisState', () => {
   it('not-analyzed, in-flight (optimistic): renders pulsing Pending… span with analyzing-{gameId}', () => {
     // isInFlight=true with no activeEvalStatus → "Pending…" (optimistic state)
     render(
-      <NoAnalysisState gameId={99} isGuest={false} isAnalyzed={false} isInFlight={true} />,
+      <NoAnalysisState gameId={99} isAnalyzed={false} isInFlight={true} />,
       { wrapper: makeWrapper() },
     );
     const span = screen.getByTestId('analyzing-99');
@@ -111,7 +93,6 @@ describe('NoAnalysisState', () => {
     render(
       <NoAnalysisState
         gameId={55}
-        isGuest={false}
         isAnalyzed={false}
         activeEvalStatus="pending"
       />,
@@ -128,7 +109,6 @@ describe('NoAnalysisState', () => {
     render(
       <NoAnalysisState
         gameId={77}
-        isGuest={false}
         isAnalyzed={false}
         activeEvalStatus="leased"
       />,
@@ -142,7 +122,7 @@ describe('NoAnalysisState', () => {
 
   it('analyzed: returns null — no DOM node rendered', () => {
     const { container } = render(
-      <NoAnalysisState gameId={5} isGuest={false} isAnalyzed={true} />,
+      <NoAnalysisState gameId={5} isAnalyzed={true} />,
       { wrapper: makeWrapper() },
     );
     // Null render → empty container

@@ -29,11 +29,11 @@
 - ✅ **v1.24 Library Page** — Phases 104–112 (shipped 2026-06-09) — see [milestones/v1.24-ROADMAP.md](milestones/v1.24-ROADMAP.md)
 - ✅ **v1.25 Flaw-Stats Opponent Comparison** — Phases 113–115 (incl. 114.1) (shipped 2026-06-12) — see [milestones/v1.25-ROADMAP.md](milestones/v1.25-ROADMAP.md)
 - ✅ **v1.26 Full-Game Eval Pipeline** — Phases 116–120 (incl. 117.1, 117.2) (shipped 2026-06-14) — see [milestones/v1.26-ROADMAP.md](milestones/v1.26-ROADMAP.md)
-- 🚧 **Active (post-v1.26, milestone TBD)** — shipped but not yet grouped into a named milestone: Phase 121 (Remote-worker tier-1 claiming, SEED-048, release #199), Phase 122 (In-app feedback button, SEED-049, release #202). Open: Phase 123 (Remote-worker entry-ply fresh-import drain, SEED-051) — not yet planned.
+- 🚧 **Active (post-v1.26, milestone TBD)** — shipped but not yet grouped into a named milestone: Phase 121 (Remote-worker tier-1 claiming, SEED-048, release #199), Phase 122 (In-app feedback button, SEED-049, release #202), Phase 123 (Remote-worker entry-ply fresh-import drain, SEED-051, release #203). No open phases.
 
 ## Phases
 
-> 🚧 **Active work (post-v1.26, milestone TBD):** Phases 121–122 have **shipped to prod** (releases #199, #202 on 2026-06-15) but are not yet grouped into a named milestone; Phase 123 is the only open phase (not yet planned). Group the shipped phases at the next milestone close (per the standalone-then-regroup pattern, e.g. v1.20), or run `/gsd-new-milestone` to formalize one.
+> 🚧 **Active work (post-v1.26, milestone TBD):** Phases 121–123 have **shipped to prod** (releases #199, #202 on 2026-06-15; #203 on 2026-06-16) but are not yet grouped into a named milestone. No open phases remain. Group the shipped phases at the next milestone close (per the standalone-then-regroup pattern, e.g. v1.20), or run `/gsd-new-milestone` to formalize one.
 
 ### Phase 121: Remote-worker tier-1 claiming (SEED-048) ✅ SHIPPED
 
@@ -75,8 +75,9 @@ Scope (per [SEED-049](seeds/closed/SEED-049-in-app-feedback-button.md)):
 2. **Frontend**: global floating feedback button (auto-hide on scroll-down / show on scroll-up, yields to open overlays, `env(safe-area-inset-bottom)`, ≥44×44pt tap target, mini/secondary styling) + submit modal (required text, optional thumbs/3-point sentiment). Wire page URL from the router. Honor browser-automation rules (`data-testid`, `aria-label`, semantic `<button>`/`<form>`), theme colors from `theme.ts`, primary submit = `variant="default"`. Add bottom scroll padding to long containers.
 3. **Optional de-risk**: a quick `/gsd-sketch` of the floating-button placement (mobile drawer-overlap is the real design risk) before planning.
 
-### Phase 123: Remote-worker fan-out for entry-ply (import-time) eval on big first imports (SEED-051)
+### Phase 123: Remote-worker fan-out for entry-ply (import-time) eval on big first imports (SEED-051) ✅ SHIPPED
 
+**Status**: ✅ Implemented, tested, and live in prod — shipped 2026-06-16 (release #203). UAT done, confirmed on a real 5,132-game first import (user 28): entry-ply drain split server-pool (2,573) / worker `ws80` (1,800) with identical 3.7 evals/game density, 100% `evals_completed_at` with zero stuck or expired-unstamped leases, and code-review BLOCKER CR-01 (zero-target lease livelock) verified fixed live (9 zero-target leased games stamped, not re-leased). Mixed-fleet backward compat holds: un-upgraded workers still drain full-ply under the `remote-worker` fallback and never touch entry-ply. Awaiting milestone grouping only.
 **Goal**: Extend the headless remote eval worker pool (SEED-048 / Phase 120) — which today only drains full-ply tier-1/3 — to also drain **entry-ply** (import-time, depth-15) eval in parallel on **big first imports**, cutting first-import latency (time until a brand-new user sees flaws / phase-transition evals populate) by roughly the worker fan-out factor. The worker gains a second, higher-priority work type via a three-rung priority ladder: tier-1 single-game (top) > entry-ply fresh-import drain (new, batched depth-15) > tier-3 idle backlog (bottom), checked between full-ply games (no preemption, no reserved capacity). Incremental syncs stay server-pool-only via a runtime backlog-depth gate, so the lease/round-trip tax is only paid when it pays off.
 **Depends on**: Phase 120 (remote worker lease/submit protocol + headless CLI) — ✅ live in prod (and Phase 121 tier-1 claiming shipped #199), so the dependency is satisfied; planning now gates only on big-first-import latency being a current priority
 **Source**: SEED-051 (decisions D-1…D-5 locked 2026-06-16) · **Plans**: 3 plans (planned 2026-06-16)

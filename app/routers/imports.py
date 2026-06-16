@@ -313,17 +313,14 @@ async def enqueue_tier1(
     unauthorised callers (library.py pattern). game_id typed int: FastAPI rejects
     non-integers with 422 (T-118-10).
 
-    Guest users return skipped_guest (QUEUE-08 defense-in-depth — the service also
-    no-ops for guests, so the check here ensures the status label is correct even if
-    the guest guard in the service is ever relaxed).
+    Tier-1 is an explicit per-game request available to guests for their OWN games
+    (QUEUE-08 guest gate opened for tier-1 only). Automatic tier-3 background
+    analysis remains gated to authenticated users.
     """
     # IDOR guard — verifies ownership before any service call
     game = await session.get(Game, game_id)
     if game is None or game.user_id != user.id:
         raise HTTPException(status_code=404, detail="Game not found")
-
-    if user.is_guest:
-        return EnqueueTier1Response(status="skipped_guest", game_id=game_id)
 
     inserted = await enqueue_tier1_game(game_id=game_id, user_id=user.id)
     status = "enqueued" if inserted else "already_queued"

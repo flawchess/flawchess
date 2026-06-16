@@ -185,7 +185,8 @@ async def _claim_queued_job(
       - Within a user: classical > rapid > blitz > bullet > other (D-117-04)
       - Within a TC bucket: most-recent game first (played_at DESC)
 
-    Guest exclusion: JOIN users + NOT is_guest filter (QUEUE-08).
+    Guest exclusion: JOIN users + NOT is_guest filter (QUEUE-08); guests are
+    excluded EXCEPT for their own explicit tier-1 jobs (OR ej.tier = 1).
     """
     result = await session.execute(
         sa.text("""
@@ -195,7 +196,7 @@ async def _claim_queued_job(
                 JOIN games g ON g.id = ej.game_id
                 JOIN users u ON u.id = ej.user_id
                 WHERE ej.status = 'pending'
-                  AND u.is_guest = false
+                  AND (u.is_guest = false OR ej.tier = 1)
                 ORDER BY
                     ej.tier ASC,
                     (SELECT MIN(j2.created_at) FROM eval_jobs j2
@@ -327,7 +328,7 @@ async def _claim_tier3_derived(
         sa.text("""
             SELECT u.id
             FROM users u
-            WHERE u.is_guest = false
+            WHERE u.is_guest = false  -- intentional: guests excluded from automatic bulk analysis; only tier-1 explicit is opened (QUEUE-08)
               AND EXISTS (
                 SELECT 1 FROM games g
                 WHERE g.user_id = u.id
@@ -412,7 +413,7 @@ async def _claim_tier3_derived(
             JOIN users u ON u.id = g.user_id
             WHERE g.full_evals_completed_at IS NULL
               AND g.lichess_evals_at IS NOT NULL
-              AND u.is_guest = false
+              AND u.is_guest = false  -- intentional: guests excluded from automatic bulk analysis; only tier-1 explicit is opened (QUEUE-08)
             ORDER BY
                 -ln(random()) / (
                     CASE g.time_control_bucket
@@ -602,20 +603,21 @@ async def enqueue_tier1_game(game_id: int, user_id: int) -> bool:
     (uq_eval_jobs_game_active, status IN ('pending','leased')). A game already
     in any active status is silently skipped.
 
-    QUEUE-08: refuses to enqueue a guest's game (no-op, no Sentry — guests
-    simply never enter the queue; not a bug, just a classification).
+    Tier-1 is an explicit per-game request that a guest may make for their own
+    game (QUEUE-08 guest gate opened for tier-1). Only a missing user row
+    (deleted between game load and this call) returns False — no Sentry, not a bug.
 
-    Returns False for a guest game or when the game is already queued.
+    Returns False only when the user row is missing or the game is already queued.
     """
     async with async_session_maker() as session:
-        # Guest guard (QUEUE-08): look up the user's is_guest flag.
+        # Look up the user's is_guest flag.
         user_result = await session.execute(select(User.is_guest).where(User.id == user_id))
         is_guest = user_result.scalar_one_or_none()
         # Bug fix: scalar_one_or_none() returns None when the user row is missing
         # (deleted between game load and this lookup). `if is_guest:` evaluates
         # `if None:` → False, letting execution reach the FK insert and raising
         # an unhandled IntegrityError / 500.  Treat missing user as non-enqueue.
-        if is_guest is None or is_guest:
+        if is_guest is None:
             return False
 
         stmt = (

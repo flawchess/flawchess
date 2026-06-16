@@ -6,7 +6,7 @@ Tests cover:
 - QUEUE-02 / tc_ordering:    classical picked before bullet within the same user
 - QUEUE-05 / tier3_derived:  game with no eval_jobs row is returned by claim_eval_job
 - QUEUE-06 / lease_expiry:   expired lease requeued to pending, claimable again
-- QUEUE-08 / guest_exclusion: guest game never claimed; enqueue_tier1_game no-ops
+- QUEUE-08 / guest_exclusion: guest tier-1 enqueue allowed + worker drain; tier-3 still excluded
 
 Session patching mirrors test_full_eval_drain.py: monkeypatch
 app.services.eval_queue_service.async_session_maker to the test DB session maker.
@@ -506,7 +506,13 @@ class TestLeaseExpiry:
 
 
 class TestGuestExclusion:
-    """QUEUE-08: guest games are never claimed; enqueue_tier1_game no-ops for guests."""
+    """QUEUE-08: tier-1 explicit guest enqueue is allowed; tier-3 bulk stays guest-excluded.
+
+    A guest may enqueue their own game for on-demand tier-1 analysis via
+    enqueue_tier1_game, and the worker can drain that job via _claim_queued_job
+    (OR ej.tier = 1). Automatic tier-3 bulk/idle analysis remains gated to
+    authenticated users — both _claim_tier3_derived filters are unchanged.
+    """
 
     async def test_guest_exclusion(
         self,
@@ -514,11 +520,17 @@ class TestGuestExclusion:
         queue_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """A guest user's game must never be claimed from tier-3 derived pick,
-        and enqueue_tier1_game must return False for a guest game (QUEUE-08).
+        """(a) Tier-3 derived pick must never return a guest's game (unchanged).
+        (b) enqueue_tier1_game must return True for a guest's own game (QUEUE-08 opened).
+        (c) The resulting tier-1 job must be claimable by the worker via _claim_queued_job.
         """
         import app.services.eval_queue_service as svc
         from app.models.eval_jobs import EvalJob
+        from app.services.eval_queue_service import (
+            LEASE_TTL_SECONDS,
+            WORKER_ID_SERVER_POOL,
+            _claim_queued_job,
+        )
 
         monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
 
@@ -530,7 +542,7 @@ class TestGuestExclusion:
         )
 
         try:
-            # Tier-3 derived pick must not return the guest's game.
+            # (a) Tier-3 derived pick must not return the guest's game.
             claimed = await svc.claim_eval_job()
             if claimed is not None:
                 assert claimed.game_id != guest_game_id, (
@@ -538,20 +550,36 @@ class TestGuestExclusion:
                     f"got game_id={claimed.game_id}"
                 )
 
-            # enqueue_tier1_game must return False for a guest game.
+            # (b) Tier-1 explicit enqueue must succeed for a guest's own game.
             inserted = await svc.enqueue_tier1_game(game_id=guest_game_id, user_id=guest_user_id)
-            assert inserted is False, (
-                "enqueue_tier1_game must return False for a guest user's game (QUEUE-08)"
+            assert inserted is True, (
+                "enqueue_tier1_game must return True for a guest's own game (QUEUE-08 opened)"
             )
 
-            # No eval_jobs row should exist for the guest game.
+            # A tier-1 eval_jobs row must now exist for the guest game.
             async with queue_session_maker() as session:
                 result = await session.execute(
                     select(EvalJob).where(EvalJob.game_id == guest_game_id)
                 )
                 jobs = result.scalars().all()
-            assert len(jobs) == 0, (
-                f"No eval_jobs rows should exist for guest game {guest_game_id}; found {len(jobs)}"
+            assert len(jobs) == 1, (
+                f"Exactly one tier-1 eval_jobs row must exist for guest game "
+                f"{guest_game_id}; found {len(jobs)}"
+            )
+            assert jobs[0].tier == 1, f"Enqueued job must have tier=1; got tier={jobs[0].tier}"
+
+            # (c) The worker must be able to drain the guest's explicit tier-1 job.
+            async with queue_session_maker() as session:
+                claimed_row = await _claim_queued_job(
+                    session, WORKER_ID_SERVER_POOL, LEASE_TTL_SECONDS
+                )
+            assert claimed_row is not None, (
+                "Worker must be able to claim the guest's tier-1 eval job "
+                "via _claim_queued_job (OR ej.tier = 1 path)"
+            )
+            _job_id, claimed_game_id, _user_id, _tier, _is_lichess = claimed_row
+            assert claimed_game_id == guest_game_id, (
+                f"Worker must claim guest game {guest_game_id}; got game_id={claimed_game_id}"
             )
         finally:
             await _delete_games(queue_session_maker, [guest_game_id])

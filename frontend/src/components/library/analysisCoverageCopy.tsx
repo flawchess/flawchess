@@ -12,6 +12,5 @@ export const LOW_COVERAGE_THRESHOLD = 0.8;
 /** Popover body copy for the EvalCoverageBadge info popover. */
 export const ANALYSIS_COVERAGE_INFO_COPY =
   'Full Stockfish analysis lets FlawChess classify blunders, mistakes, and inaccuracies. ' +
-  'We analyze your most recent games automatically in the background, and staying active ' +
-  'on FlawChess keeps your games near the front of the queue. ' +
-  'To analyze one game right away, use the "Analyze" button on its card.';
+  'To analyze a single game right away, use the "Analyze" button on its card. ' +
+  'Signing up unlocks automatic background analysis of all your games — no per-game clicking needed.';

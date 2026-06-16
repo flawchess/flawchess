@@ -22,7 +22,6 @@ import { NoAnalysisState } from '@/components/library/NoAnalysisState';
 import { gamePlatformUrl } from '@/lib/platformLinks';
 import { plysToFullMoves } from '@/lib/chess';
 import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
-import { useUserProfile } from '@/hooks/useUserProfile';
 import type { GameFlawCard, FlawSeverity, FlawTag } from '@/types/library';
 import type { UserResult } from '@/types/api';
 
@@ -218,9 +217,6 @@ export function LibraryGameCard({
     else setLocalInFlight(next);
   };
 
-  // Guest check for analyze affordance gating (D-118-13).
-  const { data: profile } = useUserProfile();
-  const isGuest = profile?.is_guest ?? false;
   const isAnalyzed = game.analysis_state === 'analyzed';
 
   // Clear in-flight state when the games list refetches and the game flips to
@@ -614,7 +610,6 @@ export function LibraryGameCard({
     ) : (
       <NoAnalysisState
         gameId={game.game_id}
-        isGuest={isGuest}
         isAnalyzed={isAnalyzed}
         isInFlight={isInFlight}
         onInFlightChange={setInFlight}
@@ -739,7 +734,6 @@ export function LibraryGameCard({
             ) : (
               <NoAnalysisState
                 gameId={game.game_id}
-                isGuest={isGuest}
                 isAnalyzed={isAnalyzed}
                 isInFlight={isInFlight}
                 onInFlightChange={setInFlight}
