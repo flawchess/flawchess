@@ -715,35 +715,58 @@ async def _classify_and_fill_oracle(
     # Flaw PV write: for each FlawRecord at ply N, write pv at ply N+1.
     # The pv_string for ply N+1 comes from the engine_result_map entry at ply N+1
     # (the board AFTER the flawed move — D-117-02 / Pitfall 4).
-    # PV writes are individually fault-tolerant: a single bad pv row (e.g. oversized
-    # string) must NOT abort flaw rows + oracle counts already written above.
+    #
+    # FLAWCHESS-6B (Fixes FLAWCHESS-6B): replace the per-flaw UPDATE loop with a
+    # pre-filter-then-single-batched-UPDATE pattern.
+    #
+    # Fault tolerance rationale: the pre-filter below collects surviving (pv_ply,
+    # pv_string) pairs up front; any skipped row is Sentry-captured but does not
+    # abort the rest. Batching trades per-row isolation for one round-trip — this
+    # is acceptable because pv is unbounded Text (PostgreSQL won't reject it at
+    # the column level), so the realistic failure mode in the old per-row code was
+    # a DB connection error that would have invalidated the whole session anyway,
+    # not a single bad row. The surviving rows still commit atomically with the
+    # flaw rows and oracle counts above (T-117-11). If the single batched execute
+    # fails, flaw rows + oracle counts are NOT rolled back — that propagation path
+    # is unchanged (both the old try/except and this new block are intentionally
+    # inside the write_session transaction; asyncpg-level errors invalidate the
+    # whole session regardless).
+    pv_pairs: list[tuple[int, str]] = []
     for flaw in flaw_list:
-        flaw_ply: int = flaw["ply"]
-        pv_ply = flaw_ply + 1
+        flaw_ply_val: int = flaw["ply"]
+        pv_ply = flaw_ply_val + 1
         engine_entry = engine_result_map.get(pv_ply)
         if engine_entry is None:
             continue
         _cp, _mt, _bm, pv_string = engine_entry
         if pv_string is None:
             continue
+        pv_pairs.append((pv_ply, pv_string))
+
+    if pv_pairs:
+        params_pv: dict[str, int | str] = {"game_id": game_id}
+        pv_values_parts: list[str] = []
+        for i, (pv_ply, pv_string) in enumerate(pv_pairs):
+            params_pv[f"ply_{i}"] = pv_ply
+            params_pv[f"pv_{i}"] = pv_string
+            pv_values_parts.append(f"(CAST(:ply_{i} AS smallint), CAST(:pv_{i} AS text))")
+        pv_values_sql = ", ".join(pv_values_parts)
+        pv_sql = sa.text(
+            f"UPDATE game_positions"  # noqa: S608 — no user input; params are bound
+            f" SET pv = v.pv"
+            f" FROM (VALUES {pv_values_sql}) AS v(ply, pv)"
+            f" WHERE game_positions.game_id = :game_id"
+            f" AND game_positions.ply = v.ply"
+        )
         try:
-            await session.execute(
-                update(GamePosition)
-                .where(
-                    GamePosition.game_id == game_id,
-                    GamePosition.ply == pv_ply,
-                )
-                .values(pv=pv_string)
-            )
+            await session.execute(pv_sql, params_pv)
         except Exception as exc:
-            # T-108-04 / WR-01: a single bad PV row must not abort the whole game.
-            # Flaw rows and oracle counts are already written above (not rolled back
-            # here — this try/except is inside the write_session transaction; the
-            # session is invalidated on asyncpg-level errors, which will propagate
-            # through the outer commit). Capture for visibility.
+            # T-108-04 / WR-01: PV write failure must not abort flaw rows + oracle
+            # counts already written above. Capture for visibility without embedding
+            # variables in the message string (CLAUDE.md Sentry grouping rule).
             sentry_sdk.set_context(
                 "classify_oracle",
-                {"game_id": game_id, "pv_ply": pv_ply},
+                {"game_id": game_id},
             )
             sentry_sdk.set_tag("source", "full_eval_drain")
             sentry_sdk.capture_exception(exc)
