@@ -220,3 +220,35 @@ On a large `games` table (~598k rows prod, 93% lacking evals per Q-008), `SELECT
 
 **Resolved:** _(open)_
 
+
+## Q-010: Tactic-motif priority order — which motif wins when a refutation line contains several?
+
+**Asked:** 2026-06-17 (during `/gsd-explore` on tactic tagging, SEED-039)
+
+**Context:** SEED-039 stores **one** `tactic_motif` per flaw (single nullable enum, not a bitmask or join table — decided 2026-06-17). The seed's original tiebreak ("largest ES swing") does **not** work: all motifs detected in a *single* refutation line share the same ES swing (one move's eval drop), so it can't discriminate within a flaw. A fixed **priority order** is needed instead, and that order *is* the card's semantics ("you allowed a fork" vs "you allowed a pin" for the same position).
+
+**How to answer:**
+1. Propose a priority order over the MVP motif set (Tier-1 + mate/back-rank): provisional starting point `mate > back-rank > fork > skewer > pin > hanging-piece > double-check`, i.e. most-decisive / most-teachable first.
+2. Validate against real co-occurrence: once the detector exists, sample flaws where >1 motif fires on the refutation line (`game_positions.pv` at `flaw_ply+1`) and check the chosen primary reads correctly as a coaching label.
+3. Decide whether "mate" should always dominate (a refutation that mates is a mate regardless of the geometric motif that delivers it) or whether the geometric motif (fork/back-rank) is the more useful teaching label.
+
+**Why deferred:** Needs the detector implemented to sample real multi-motif lines. The order can ship provisional and be tuned once co-occurrence frequencies are observed.
+
+**Resolved:** _(open)_
+
+---
+
+## Q-011: Cook-heuristic reimplementation — validation set and accuracy bar (no AGPL copying)
+
+**Asked:** 2026-06-17 (during `/gsd-explore` on tactic tagging, SEED-039)
+
+**Context:** SEED-039 reimplements `ornicar/lichess-puzzler` `tagger/cook.py` heuristics in our own code (AGPL-3.0 source must NOT be copied; heuristics/ideas aren't copyrightable). The detector reads `game_positions.pv` at `flaw_ply+1` (the refutation line, post-move-shift keyed — verified in prod game 975197) and names the motif. We need a way to validate the reimplemented detectors are correct *before* shipping tags to users, without a copyright-tainted golden set.
+
+**How to answer:**
+1. Build a small hand-labeled fixture set of refutation lines per MVP motif (fork, pin, skewer, hanging-piece, back-rank/mate, double-check) drawn from our **own** prod flaws (`game_flaws` + `game_positions.pv`) — label by inspection, not by running cook.py.
+2. Define an accuracy bar per motif (precision-first: a wrong tag is worse than a missing tag, since the product compares *rates* — false positives bias the you-vs-opponent comparison). Consider tagging only when confidence is high and leaving NULL otherwise.
+3. Decide whether to cross-check a sample against the live lichess puzzle tagger output (running their service on the same FENs is fine — using their *output* as a reference label is not a copyright issue; copying their *source* is). Confirm this distinction is acceptable.
+
+**Why deferred:** Detector-implementation concern; pins the test strategy before the detector phase is planned. Not load-bearing until SEED-039 is promoted to a milestone.
+
+**Resolved:** _(open)_

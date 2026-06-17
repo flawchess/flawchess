@@ -29,74 +29,24 @@
 - ✅ **v1.24 Library Page** — Phases 104–112 (shipped 2026-06-09) — see [milestones/v1.24-ROADMAP.md](milestones/v1.24-ROADMAP.md)
 - ✅ **v1.25 Flaw-Stats Opponent Comparison** — Phases 113–115 (incl. 114.1) (shipped 2026-06-12) — see [milestones/v1.25-ROADMAP.md](milestones/v1.25-ROADMAP.md)
 - ✅ **v1.26 Full-Game Eval Pipeline** — Phases 116–120 (incl. 117.1, 117.2) (shipped 2026-06-14) — see [milestones/v1.26-ROADMAP.md](milestones/v1.26-ROADMAP.md)
-- 🚧 **Active (post-v1.26, milestone TBD)** — shipped but not yet grouped into a named milestone: Phase 121 (Remote-worker tier-1 claiming, SEED-048, release #199), Phase 122 (In-app feedback button, SEED-049, release #202), Phase 123 (Remote-worker entry-ply fresh-import drain, SEED-051, release #203). No open phases.
+- ✅ **v1.27 Remote Eval Worker Fan-Out & In-App Feedback** — Phases 121–123 (shipped 2026-06-16; releases #199, #202, #203) — see [milestones/v1.27-ROADMAP.md](milestones/v1.27-ROADMAP.md)
 
 ## Phases
 
-> 🚧 **Active work (post-v1.26, milestone TBD):** Phases 121–123 have **shipped to prod** (releases #199, #202 on 2026-06-15; #203 on 2026-06-16) but are not yet grouped into a named milestone. No open phases remain. Group the shipped phases at the next milestone close (per the standalone-then-regroup pattern, e.g. v1.20), or run `/gsd-new-milestone` to formalize one.
+> No active phases. The most recent shipped milestone is **v1.27 Remote Eval Worker Fan-Out & In-App Feedback** (Phases 121–123, shipped 2026-06-16). Start the next one with `/gsd-new-milestone` or promote a backlog item with `/gsd-review-backlog`.
 
-### Phase 121: Remote-worker tier-1 claiming (SEED-048) ✅ SHIPPED
+<details>
+<summary>✅ v1.27 Remote Eval Worker Fan-Out & In-App Feedback (Phases 121–123) — SHIPPED 2026-06-16</summary>
 
-**Status**: ✅ Implemented, tested, and live in prod — shipped 2026-06-15 (release #199). Soak confirmed no tier-1/tier-3 double-claim and correct `eval_jobs` stamping. Awaiting milestone grouping only.
-**Goal**: A remote eval worker can claim tier-1 (single-game "analyze") requests, not just the tier-3 idle backlog — so when the server pool is mid-game on another job, a second (idle) machine can pick up a freshly-enqueued single-game analysis and shorten click-to-pickup latency. First-come-first-served: the server's in-process drain still usually wins tier-1 when it is idle (no network hop, no poll interval), so this deliberately targets the **server-busy overflow** case. Biasing tier-1 to the faster box and interruptible tier-3 are explicit deferred follow-ons.
-**Depends on**: Phase 120 (remote eval worker lease/submit contract + headless CLI worker)
-**Source**: SEED-048 (FCFS scope; decisions locked 2026-06-15 explore session) · **Plans**: 1 plan (complete)
+Three independent seeds grouped at close per the standalone-then-regroup pattern (cf. v1.20); each phase shipped to prod standalone (releases #199, #202, #203) and soaked before grouping. Two phases extend the v1.26 remote-eval-worker contract (SEED-048 / Phase 120) so off-box compute helps beyond the idle tier-3 backlog; the third adds an in-app feedback channel.
 
-Plans:
+- [x] Phase 121: Remote-worker tier-1 claiming (SEED-048) (1/1 plan) — remote workers can claim tier-1 single-game "analyze" jobs (server-busy overflow, FCFS), opaque job-token threaded lease→submit with `status='leased'` stamp guard, idle_sleep 5s→1s — completed 2026-06-15 (release #199)
+- [x] Phase 122: In-app feedback button (SEED-049) (2/2 plans) — `feedback` table + thin POST /api/feedback, Sentry signal tagged with ELO bucket/platform, floating auto-hiding button (yields to overlays, iOS safe-area) + modal (required text + optional 3-point sentiment) — completed 2026-06-15 (release #202); UAT 5/5 pass
+- [x] Phase 123: Remote-worker entry-ply fresh-import drain (SEED-051) (3/3 plans) — three-rung worker ladder (tier-1 > entry-ply > tier-3), batched depth-15 entry-lease/entry-submit endpoints, one nullable `games` lease column + SKIP-LOCKED LIFO claim, D-5 backlog-depth gate, CR-01 zero-target livelock fix — completed 2026-06-16 (release #203); UAT 2/2 pass, verified on a real 5,132-game first import
 
-- [x] 121-01-PLAN.md — wire lease→claim_eval_job (tier-1/2/3), thread opaque job_id lease→submit with status='leased' stamp guard, drop worker idle_sleep 5s→1s
+See [milestones/v1.27-ROADMAP.md](milestones/v1.27-ROADMAP.md) for full details.
 
-Scope (3 changes, no DB migration):
-
-1. `POST /api/eval/remote/lease` calls `claim_eval_job` (tier-1 > tier-2 > tier-3, lease_expiry + SKIP LOCKED, stale-lease sweep) instead of `_claim_tier3_derived`; tier-3 still falls through as the derived path, unchanged.
-2. Thread an opaque `job_id` through the lease→submit round-trip: the lease response carries the claimed `eval_jobs.id` (`None` for tier-3), submit echoes it, and the submit handler stamps `eval_jobs.status='completed', completed_at=now()` when present. Tier-3 keeps `job_id=None` and behaves exactly as today.
-3. Drop the worker idle poll `idle_sleep` 5s → ~1s so an idle remote worker notices a freshly-enqueued tier-1 quickly (only the empty-queue/204 path sleeps; the busy path is already a tight loop).
-
-Files: `app/routers/eval_remote.py` (lease/submit handlers), `app/services/eval_queue_service.py` (`claim_eval_job` already implements the tiered claim + lease sweep), `scripts/remote_eval_worker.py` (idle_sleep default + echo job token on submit), lease/submit Pydantic schemas (opaque job-token field). Prod soak passed: no tier-1/tier-3 double-claim observed, submit correctly stamps `eval_jobs`.
-
-### Phase 122: In-app feedback button (SEED-049) ✅ SHIPPED
-
-**Status**: ✅ Implemented, tested, and live in prod — shipped 2026-06-15 (release #202); all 5 human-gated UAT items confirmed on prod. Awaiting milestone grouping only.
-**Goal**: A low-friction in-app feedback channel so users (guests included) can submit likes / dislikes / suggestions tied to the exact page they were on. A global floating button (bottom-right, auto-hides on scroll-down, yields to open drawers/modals, iOS safe-area aware) opens a modal with required freeform text + an optional coarse sentiment rating. Submissions persist to a new `feedback` table and also fire a Sentry signal (tagged with username / ELO bucket / platform) so feedback pings the team instead of rotting in a table nobody reads.
-**Depends on**: none (standalone; can ship independently of Phase 121)
-**Source**: SEED-049 (decisions locked 2026-06-15 explore session) · **Plans**: 2 plans (complete)
-Plans:
-**Wave 1**
-
-- [x] 122-01-PLAN.md — Backend: feedback table + migration, schemas, rate-limit, repository, Sentry/ELO service, thin POST /api/feedback router
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 122-02-PLAN.md — Frontend: useScrollDirection + useOverlayOpen hooks, floating FeedbackButton, FeedbackModal (required text + optional 3-point sentiment), mount + bottom scroll padding
-
-Scope (per [SEED-049](seeds/closed/SEED-049-in-app-feedback-button.md)):
-
-1. **Backend**: new `app/models/feedback.py` + Alembic migration (`user_id` FK with `ondelete`, page URL, freeform text, optional sentiment, `created_at`); thin `routers/` endpoint → service → repository per the layering rules. Light per-user rate-limit + max text length as an abuse guard. Sentry capture via `sentry_sdk` with `source="feedback"` + username / ELO-bucket / platform tags (username/platform/ELO derived from the user record, not denormalized).
-2. **Frontend**: global floating feedback button (auto-hide on scroll-down / show on scroll-up, yields to open overlays, `env(safe-area-inset-bottom)`, ≥44×44pt tap target, mini/secondary styling) + submit modal (required text, optional thumbs/3-point sentiment). Wire page URL from the router. Honor browser-automation rules (`data-testid`, `aria-label`, semantic `<button>`/`<form>`), theme colors from `theme.ts`, primary submit = `variant="default"`. Add bottom scroll padding to long containers.
-3. **Optional de-risk**: a quick `/gsd-sketch` of the floating-button placement (mobile drawer-overlap is the real design risk) before planning.
-
-### Phase 123: Remote-worker fan-out for entry-ply (import-time) eval on big first imports (SEED-051) ✅ SHIPPED
-
-**Status**: ✅ Implemented, tested, and live in prod — shipped 2026-06-16 (release #203). UAT done, confirmed on a real 5,132-game first import (user 28): entry-ply drain split server-pool (2,573) / worker `ws80` (1,800) with identical 3.7 evals/game density, 100% `evals_completed_at` with zero stuck or expired-unstamped leases, and code-review BLOCKER CR-01 (zero-target lease livelock) verified fixed live (9 zero-target leased games stamped, not re-leased). Mixed-fleet backward compat holds: un-upgraded workers still drain full-ply under the `remote-worker` fallback and never touch entry-ply. Awaiting milestone grouping only.
-**Goal**: Extend the headless remote eval worker pool (SEED-048 / Phase 120) — which today only drains full-ply tier-1/3 — to also drain **entry-ply** (import-time, depth-15) eval in parallel on **big first imports**, cutting first-import latency (time until a brand-new user sees flaws / phase-transition evals populate) by roughly the worker fan-out factor. The worker gains a second, higher-priority work type via a three-rung priority ladder: tier-1 single-game (top) > entry-ply fresh-import drain (new, batched depth-15) > tier-3 idle backlog (bottom), checked between full-ply games (no preemption, no reserved capacity). Incremental syncs stay server-pool-only via a runtime backlog-depth gate, so the lease/round-trip tax is only paid when it pays off.
-**Depends on**: Phase 120 (remote worker lease/submit protocol + headless CLI) — ✅ live in prod (and Phase 121 tier-1 claiming shipped #199), so the dependency is satisfied; planning now gates only on big-first-import latency being a current priority
-**Source**: SEED-051 (decisions D-1…D-5 locked 2026-06-16) · **Plans**: 3 plans (planned 2026-06-16)
-
-Plans:
-
-- [x] 123-01-PLAN.md — Foundation: lease columns migration + shared SKIP-LOCKED LIFO claim helper + tuning constants + D-01 server-side lease
-- [x] 123-02-PLAN.md — Batched /entry-lease + /entry-submit endpoints, scope param, D-5 backlog gate, X-Worker-Id (operator-token auth)
-- [x] 123-03-PLAN.md — Worker CLI: D-06 ladder + depth-15 entry-ply path + distinctive --worker-id
-
-Scope (the delta is small — reuses the SEED-048 worker + SEED-044 storage convention):
-
-1. **One nullable lease column on `games`** + migration (D-3) — `entry_eval_lease_expiry` (optionally `entry_eval_leased_by`); the queue stays the existing predicate `games.evals_completed_at IS NULL`, claimed via a `SKIP LOCKED` LIFO (id DESC) lease. No new table, no per-position storage.
-2. **Batched entry-ply lease endpoint** — claim N fresh games, server derives target plies (reuse `_collect_eval_targets` / phase-transition selection), return a flat `{game_id, ply, fen}[]`. Worker stays a dumb Stockfish-over-HTTP node (D-2).
-3. **Batched entry-ply submit endpoint** — accept `{game_id, ply, eval_cp, eval_mate}[]`, apply SEED-044 convention, classify flaws, stamp `evals_completed_at` per fully-covered game, clear the lease.
-4. **Worker CLI: depth-15 mode** + the between-full-ply-games priority check (D-1).
-5. **D-5 backlog-depth gate** — bounded existence probe (`… LIMIT 1 OFFSET 299`) at lease time; invite workers only when backlog ≥ threshold (starting knob: 300 games / 50-game batches); tail (≲300 games) falls back to the server pool for free.
-
-Open/deferred (not v1): entry-ply lease TTL sizing; routing `run_eval_drain` through the same lease so the server pool can't double-evaluate leased games (v1 vs fast-follow TBD); backlog-gate threshold tuning against real server-pool throughput once live; macOS background-scheduling caveat (SEED-048) unchanged. See [seeds/SEED-051-remote-worker-entry-ply-fresh-import-drain.md](seeds/closed/SEED-051-remote-worker-entry-ply-fresh-import-drain.md).
+</details>
 
 <details>
 <summary>✅ v1.26 Full-Game Eval Pipeline (Phases 116–120, incl. 117.1, 117.2) — SHIPPED 2026-06-14</summary>
@@ -469,6 +419,10 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 117.2. Wipe Eval-Only Engine Residue (INSERTED, SEED-044) | 1/1 | Complete (deployed #191) | 2026-06-14 |
 | 118. Demand UX + Auto-Enqueue | 3/3 | Complete (verified; not yet deployed) | 2026-06-14 |
 | 119. Eval-drain coverage (SEED-045, SEED-046) | 3/3 | Complete | 2026-06-14 |
+| 120. Headless remote trusted-operator eval worker | 4/4 | Complete | 2026-06-14 |
+| 121. Remote-worker tier-1 claiming (SEED-048) | 1/1 | Complete (release #199) | 2026-06-15 |
+| 122. In-app feedback button (SEED-049) | 2/2 | Complete (release #202; UAT 5/5) | 2026-06-15 |
+| 123. Remote-worker entry-ply fresh-import drain (SEED-051) | 3/3 | Complete (release #203; UAT 2/2) | 2026-06-16 |
 
 ## Backlog
 

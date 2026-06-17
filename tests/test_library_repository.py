@@ -16,6 +16,7 @@ invariant is tested in `tests/test_flaw_predicate.py`.
 Reuses _seed_game / _seed_position helpers patterned on tests/test_flaws_repository.py.
 """
 
+import datetime
 import uuid
 
 import pytest
@@ -60,11 +61,15 @@ async def _seed_game(
     user_color: str = "white",
     white_blunders: int | None = None,
     platform: str = "lichess",
+    full_evals_completed_at: datetime.datetime | None = None,
 ) -> Game:
     """Insert a Game row and flush to obtain an ID.
 
     white_blunders drives Game.is_analyzed (the cheap analyzed detector): pass a
     non-None value to mark the game as having full move-quality analysis.
+    full_evals_completed_at drives the _analyzed_game_ids_subquery gate (replaced the
+    old per-ply eval-coverage recompute in quick-task 260617-pu4): pass a non-None
+    datetime to mark the game as fully evaluated by the drain.
     """
     game = Game(
         user_id=user_id,
@@ -82,6 +87,7 @@ async def _seed_game(
         rated=True,
         is_computer_game=False,
         white_blunders=white_blunders,
+        full_evals_completed_at=full_evals_completed_at,
     )
     session.add(game)
     await session.flush()
@@ -380,22 +386,24 @@ class TestAnalyzedDenominator:
         """One analyzed game + one unanalyzed game: total_n==2, analyzed_n==1.
 
         count_filtered_and_analyzed keys analyzed_n off Game.is_analyzed (the
-        cheap white_blunders detector); analyzed_game_ids still uses the per-ply
-        eval-coverage gate. The seeded "analyzed" game satisfies BOTH (it carries
-        move-quality counts AND >=90% eval coverage), mirroring a real Lichess
-        game with computer analysis.
+        cheap white_blunders detector); analyzed_game_ids uses the authoritative
+        full_evals_completed_at column (reversal of per-ply coverage recompute,
+        quick-task 260617-pu4). The seeded "analyzed" game satisfies BOTH (it
+        carries move-quality counts AND full_evals_completed_at IS NOT NULL),
+        mirroring a real Lichess game with Stockfish eval drain completed.
         """
-        # Analyzed game: move-quality counts present (is_analyzed) AND >=90% eval
-        # coverage (9/10 plies, final ply null — the realistic shape).
-        analyzed = await _seed_game(db_session, user_id=99999, user_color="white", white_blunders=1)
-        for ply in range(9):
-            await _seed_position(db_session, game=analyzed, ply=ply, eval_cp=0)
-        await _seed_position(db_session, game=analyzed, ply=9, eval_cp=None)  # final null
+        # Analyzed game: move-quality counts (is_analyzed) AND full_evals_completed_at set.
+        _now = datetime.datetime.now(tz=datetime.timezone.utc)
+        analyzed = await _seed_game(
+            db_session,
+            user_id=99999,
+            user_color="white",
+            white_blunders=1,
+            full_evals_completed_at=_now,
+        )
 
-        # chess.com-style game: no move-quality counts, all-null eval -> NOT analyzed.
+        # chess.com-style game: no move-quality counts, full_evals_completed_at NULL -> NOT analyzed.
         chesscom = await _seed_game(db_session, user_id=99999, user_color="white")
-        for ply in range(10):
-            await _seed_position(db_session, game=chesscom, ply=ply, eval_cp=None)
 
         total_n, analyzed_n = await count_filtered_and_analyzed(
             db_session,
@@ -426,18 +434,23 @@ class TestAnalyzedDenominator:
 
     @pytest.mark.asyncio
     async def test_short_fully_analyzed_game_is_analyzed(self, db_session: AsyncSession) -> None:
-        """Regression (260615-rb1): the SQL gate passes a short fully-analyzed game.
+        """Regression (260615-rb1 / 260617-pu4): a short fully-analyzed game is counted.
 
-        7 movable positions with eval_cp set + 1 terminal null (8 total, a 7-ply game)
-        = 7/(8-1) = 1.0 >= EVAL_COVERAGE_MIN. Before the fix the SQL denominator was
-        COUNT(*) = 8, giving 7/8 = 0.875 < 0.90, so the short fully-analyzed game was
-        excluded — drifting from the Python kernel, which is the bug this corrects.
-        This mirrors test_short_fully_analyzed_game_clears_gate in test_flaws_service.
+        The old per-ply coverage recompute excluded short games: 7 movable plies /
+        (COUNT(*)-1 = 7) = 1.0 passes, but the predecessor bug (COUNT(*) = 8 denominator)
+        gave 7/8 = 0.875 < 0.90. Both are superseded: the gate is now the authoritative
+        games.full_evals_completed_at column (quick-task 260617-pu4), set by the eval
+        drain only when the kernel is satisfied. A game with full_evals_completed_at IS
+        NOT NULL is analyzed regardless of raw position counts or ply length.
         """
-        short = await _seed_game(db_session, user_id=99999, user_color="white", white_blunders=0)
-        for ply in range(7):
-            await _seed_position(db_session, game=short, ply=ply, eval_cp=20)
-        await _seed_position(db_session, game=short, ply=7, eval_cp=None)  # terminal null
+        _now = datetime.datetime.now(tz=datetime.timezone.utc)
+        short = await _seed_game(
+            db_session,
+            user_id=99999,
+            user_color="white",
+            white_blunders=0,
+            full_evals_completed_at=_now,
+        )
 
         ids = await analyzed_game_ids(
             db_session,
@@ -450,7 +463,9 @@ class TestAnalyzedDenominator:
             to_date=None,
             flaw_severity=None,
         )
-        assert short.id in ids, "short fully-analyzed game must pass the SQL eval-coverage gate"
+        assert short.id in ids, (
+            "short fully-analyzed game must pass the full_evals_completed_at gate"
+        )
 
     @pytest.mark.asyncio
     async def test_total_n_spans_all_platforms(self, db_session: AsyncSession) -> None:
@@ -1042,13 +1057,11 @@ class TestStatsAggregatesPlayerOnly:
         user_id: int,
         user_color: str,
     ) -> Game:
-        """Seed a game with enough eval-covered positions to pass the >=90% coverage gate."""
-        game = await _seed_game(session, user_id=user_id, user_color=user_color)
-        # Seed 10 positions with eval on first 9 (9/10 = 0.90 >= EVAL_COVERAGE_MIN)
-        for ply in range(9):
-            await _seed_position(session, game=game, ply=ply, eval_cp=0)
-        await _seed_position(session, game=game, ply=9, eval_cp=None)  # final null
-        return game
+        """Seed a game that passes the full_evals_completed_at analyzed gate."""
+        _now = datetime.datetime.now(tz=datetime.timezone.utc)
+        return await _seed_game(
+            session, user_id=user_id, user_color=user_color, full_evals_completed_at=_now
+        )
 
     @pytest.mark.asyncio
     async def test_stats_aggregates_gated_equals_player_only_baseline(

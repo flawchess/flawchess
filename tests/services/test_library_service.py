@@ -447,12 +447,14 @@ async def _seed_db_game(
     yields 5 user moves for a white user. The white/black oracle move-quality columns
     feed the stats-panel inaccuracy rate (D-03) and the per-100 macro trend chart.
 
-    analyzed (default True) marks the game as having full move-quality analysis via
-    the cheap Game.is_analyzed detector (white_blunders IS NOT NULL) — count_
-    filtered_and_analyzed counts these toward analyzed_n. When analyzed and no
-    explicit white_blunders is given, white_blunders defaults to 0 (analyzed, zero
-    blunders); 0 and NULL are equivalent for the oracle trend. Pass analyzed=False
-    to seed a deliberately unanalyzed (e.g. chess.com) game.
+    analyzed (default True) marks the game as having full move-quality analysis:
+    - Game.is_analyzed (white_blunders IS NOT NULL) — count_filtered_and_analyzed
+      counts these toward analyzed_n. When analyzed and no explicit white_blunders
+      is given, white_blunders defaults to 0 (analyzed, zero blunders); 0 and NULL
+      are equivalent for the oracle trend.
+    - full_evals_completed_at IS NOT NULL — _analyzed_game_ids_subquery gate
+      (replaced per-ply eval-coverage recompute in quick-task 260617-pu4).
+    Pass analyzed=False to seed a deliberately unanalyzed (e.g. chess.com) game.
     """
     import datetime as _dt
     import uuid
@@ -463,6 +465,8 @@ async def _seed_db_game(
 
     if analyzed and white_blunders is None:
         white_blunders = 0
+
+    full_evals_completed_at = _dt.datetime.now(tz=_dt.timezone.utc) if analyzed else None
 
     sess = cast(AsyncSession, session)
     game = GameModel(
@@ -488,6 +492,7 @@ async def _seed_db_game(
         white_inaccuracies=white_inaccuracies,
         black_inaccuracies=black_inaccuracies,
         played_at=played_at or _dt.datetime(2026, 1, 1, tzinfo=_dt.timezone.utc),
+        full_evals_completed_at=full_evals_completed_at,
     )
     sess.add(game)
     await sess.flush()
@@ -749,7 +754,8 @@ class TestFlawStats:
                 white_mistakes=0,
                 white_inaccuracies=2,
             )
-            # Positions only to clear the analyzed_n>0 gate (trend itself reads oracle).
+            # full_evals_completed_at is set by _seed_db_game (analyzed=True default);
+            # positions no longer needed for the analyzed gate (260617-pu4 reversal).
             for ply in range(10):
                 await _seed_db_pos(session, game=game, ply=ply, eval_cp=0)
 
