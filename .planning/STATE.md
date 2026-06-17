@@ -2,25 +2,29 @@
 gsd_state_version: 1.0
 milestone: v1.28
 milestone_name: Tactic Tagging
-status: planning
-last_updated: "2026-06-17T19:00:00.000Z"
+current_phase: 124
+current_phase_name: Schema + Tactic Detector
+status: verifying
+stopped_at: Completed 123.1-02-PLAN.md
+last_updated: "2026-06-17T20:56:51.710Z"
 last_activity: 2026-06-17
+last_activity_desc: Phase 123.1 complete, transitioned to Phase 124
 progress:
-  total_phases: 3
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 8
+  completed_phases: 1
+  total_plans: 2
+  completed_plans: 2
+  percent: 13
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: Phase 124 — Schema + Tactic Detector (not yet started)
-Plan: —
-Status: Roadmap created, ready for planning
-Last activity: 2026-06-17 — Roadmap created (Phases 124–126)
+Phase: 124 — Schema + Tactic Detector
+Plan: Not started
+Status: Phase complete — ready for verification
+Last activity: 2026-06-17 — Phase 123.1 complete, transitioned to Phase 124
 
 ## Project Reference
 
@@ -173,6 +177,7 @@ Carried forward from v1.11 close (still relevant):
 
 ### Roadmap Evolution
 
+- 2026-06-17: **Phase 123.1 inserted (standalone, post-v1.27, milestone TBD) — Opening-eval dedup cache table (SEED-053).** Replaces the full-eval drain's per-game cross-user dedup lookup (`_fetch_dedup_evals`, `eval_drain.py:270`) — the #1 total-server-time query in prod (db-report 2026-06-17: 8.4 s avg, 10,655 calls, ~24.7 h cumulative) — with a position-keyed `opening_position_eval(full_hash PK, eval_cp, eval_mate, best_move)` cache (~1.06M rows / ~80MB, resident). Root cause is low-ply fan-out under post-move storage (the eval lives on the predecessor row → forced self-join; common opening hashes match up to 622k rows): EXPLAIN on prod = 16.4 s self-join vs 7.8 s LATERAL-LIMIT-1 (2× structural ceiling) vs ~1–5 ms PK lookup. Locked decisions (D-123.1-01…07): **01** position-keyed cache table, no FK/no invalidation (values are position-intrinsic + immutable). **02** reject the materialized view (REFRESH = growing full recompute + staleness erodes hit-rate during the active drain) and pg_ivm (triggers on bulk-COPY'd game_positions). **03** seed from prod our-engine data only, NOT the benchmark DB (lichess provenance + no best_move/pv columns). **04** write only freshly-computed opening engine *misses*, one batched `INSERT … ON CONFLICT DO NOTHING` in the existing Step-4 write txn (not all 21 → avoids speculative-insertion dead tuples; not dedup transplants → already cached). **05** `_fetch_dedup_evals` keeps its signature + ALL read-side guards; only the backing query changes; eval/flaw/pv output identical. **06** backfill is a standalone idempotent `scripts/backfill_opening_eval_cache.py --db dev|prod`, not the migration. **07** SEED-054 (opening-flaw pv gap, ~3.5%/5,570 engine-game flaws) is OUT OF SCOPE — pre-existing, inherited unchanged, tactic-tagging concern. Why now: tier-3 backlog at design time = 245,225 engine + 21,488 lichess-pv games pending (far from steady state, so the lookup is a live bottleneck). 2 plans (01 schema+model+backfill, 02 read/write swap+tests). Planned in a worktree off main (`gsd/phase-123.1-opening-eval-cache`) to keep it independent of the in-flight Phase 124 branch; lands on main before Phase 124 executes. Source: `.planning/seeds/SEED-053-opening-eval-dedup-cache-table.md`, `.planning/phases/123.1-opening-eval-cache/123.1-CONTEXT.md`. Next: `/gsd-execute-phase 123.1`. Note: added outside a named milestone; group at ship time.
 - 2026-06-16: **Phase 123 added (standalone, post-v1.26, milestone TBD) — Remote-worker entry-ply fresh-import drain (SEED-051).** Extends the headless remote eval worker (SEED-048 / Phase 120) — today drains full-ply tier-1/3 only — to also drain **entry-ply** (import-time, depth-15) eval in parallel on **big first imports**, cutting first-import latency (time-to-first-flaws for a brand-new user) by ~the worker fan-out factor. Locked decisions (D-1…D-5, 2026-06-16): **D-1** three-rung priority ladder — tier-1 single-game (top) > entry-ply fresh-import drain (new) > tier-3 idle backlog (bottom), checked **between full-ply games**, no preemption, no reserved capacity (entry-ply can't starve tier-1; ~20s bounded pivot ceiling). **D-2** server ships FENs, worker stays a dumb Stockfish-over-HTTP node — batched lease returns flat `{game_id, ply, fen}[]`; server owns target derivation (`_collect_eval_targets`) + all SEED-044 storage convention + `evals_completed_at` stamp. **D-3** no new table — ONE nullable lease column on `games` (`entry_eval_lease_expiry`), queue stays the `evals_completed_at IS NULL` predicate, claimed via `SKIP LOCKED` LIFO (id DESC). **D-4** do NOT reuse tier-3's lottery/no-lease model — fresh import is a tiny sharply-LIFO hot set where N claimers must partition (lottery → ~N× redundant evals); the lease is the price of non-redundant fan-out. **D-5** invite workers by **backlog depth at lease time**, not import size (unknowable mid-stream) — bounded existence probe (`… LIMIT 1 OFFSET 299`), gate on game count (threshold ≈ what the server clears in one ~20s pivot window; starting knob **300 games**), **50-game batches** (~125 positions); tail (≲300 games) falls back to the server pool for free. v1 work: lease column + migration, batched lease + submit endpoints, worker depth-15 mode + between-games priority check, the D-5 gate. Open/deferred: entry-ply lease TTL sizing; routing `run_eval_drain` through the same lease (v1 vs fast-follow TBD); threshold tuning against real throughput once live; macOS background-scheduling caveat unchanged. Depends on Phase 120 (lease/submit protocol), now ✅ live in prod (and Phase 121 shipped #199), so the SEED-048-settled trigger gate is satisfied — planning now gates only on whether big-first-import latency is a current priority. Source: `.planning/seeds/SEED-051-remote-worker-entry-ply-fresh-import-drain.md`. Next: `/gsd-plan-phase 123` (or `/gsd-discuss-phase 123` first). Note: added outside a named milestone; group at ship time or run `/gsd-new-milestone` to formalize.
 - 2026-06-15: **Phase 122 added (standalone, post-v1.26, milestone TBD) — In-app feedback button (SEED-049).** A low-friction in-app feedback channel: a global floating button (bottom-right, auto-hides on scroll-down / shows on scroll-up, yields to open drawers/modals, `env(safe-area-inset-bottom)` safe-area aware, ≥44×44pt tap target, mini/secondary styling) opens a modal with required freeform text + an optional coarse sentiment rating. Captured context = `user_id` (guests included — they have device-bound `user_id`s and are the highest-value bounce cohort), page URL, text, optional rating, timestamp; username/platform/ELO derived from the user record (not denormalized). Dual sink: a new `feedback` table (durable, queryable via prod MCP — `user_id` FK + `ondelete`, appropriate types, `created_at`) and Sentry as the *push* signal (`source="feedback"` + username / ELO-bucket / platform tags). Thin `routers/` endpoint → service → repository per layering rules; light per-user rate-limit + max text length as an abuse guard. Frontend honors browser-automation rules (`data-testid`, `aria-label`, semantic `<button>`/`<form>`), theme colors from `theme.ts`, primary submit = `variant="default"`; long containers get bottom scroll padding. Standalone (independent of Phase 121). Source: `.planning/seeds/SEED-049-in-app-feedback-button.md`. Next: `/gsd-plan-phase 122` (optionally `/gsd-sketch` the floating-button placement first — mobile drawer-overlap is the real design risk). Note: added outside a named milestone; group at ship time or run `/gsd-new-milestone` to formalize.
 - 2026-06-15: **Phase 121 added (standalone, post-v1.26, milestone TBD) — Remote-worker tier-1 claiming (SEED-048 follow-on).** Phase 120's remote eval worker leases work via `POST /api/eval/remote/lease`, which calls `_claim_tier3_derived` directly, so the worker only drains the tier-3 idle backlog — it never sees tier-1 (explicit single-game "analyze") requests, and the remote submit path never writes `eval_jobs.status`. This phase lets a remote worker claim tier-1 as **overflow** so a busy server no longer blocks click-to-pickup: (1) `lease` calls `claim_eval_job` (tier-1 > tier-2 > tier-3, lease_expiry + SKIP LOCKED + stale-lease sweep) instead of `_claim_tier3_derived`, tier-3 unchanged; (2) thread an opaque `job_id` through lease→submit so submit stamps `eval_jobs.status='completed', completed_at=now()` (tier-3 keeps `job_id=None`); (3) drop the worker idle poll 5s→~1s. FCFS — the server's in-process drain still usually wins tier-1 when idle, so this helps the **server-busy** case only; biasing tier-1 to the faster box and interruptible tier-3 are deferred follow-ons. No DB migration. Files: `app/routers/eval_remote.py`, `app/services/eval_queue_service.py`, `scripts/remote_eval_worker.py`, lease/submit schemas. Source: `.planning/seeds/SEED-048-remote-worker-tier1-claiming.md`. Next: `/gsd-plan-phase 121` (or `/gsd-discuss-phase 121` first). Note: added outside a named milestone (v1.26 frontmatter status unchanged); group at ship time or run `/gsd-new-milestone` to formalize.
@@ -385,6 +390,8 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 | Phase 122 P02 | 29 | 3 tasks | 14 files |
 | Phase 123 P02 | 20 | - tasks | - files |
 | Phase 123 P03 | 6 | 3 tasks | 2 files |
+| Phase 123.1 P01 | 15 minutes | 2 tasks | 4 files |
+| Phase 123.1 P02 | 25m | 3 tasks | 2 files |
 
 ## Decisions
 
@@ -446,3 +453,13 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 - [Phase ?]: D-05: scope=None is backward-compat bundled flow; explicit/idle select single tiers for zero-coordination rollout
 - [Phase ?]: D-07: entry-lease derives FENs server-side; worker never parses PGN; server re-derives EvalTargets in entry-submit
 - [Phase ?]: D-10: X-Worker-Id is advisory only, never used for authz; absent header falls back to remote-worker
+- [Phase ?]: full_hash BIGINT PK no FK no cascade — position-intrinsic immutable cache (D-123.1-01)
+- [Phase ?]: Backfill is standalone script not migration — avoids 1M-row op on test template (D-123.1-06)
+- [Phase ?]: Cache-backed dedup read path (SEED-053)
+- [Phase ?]: Cache write path on drain tick (SEED-053)
+
+## Session
+
+**Last session:** 2026-06-17T20:49:53.460Z
+**Stopped at:** Completed 123.1-02-PLAN.md
+**Resume file:** None

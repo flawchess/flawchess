@@ -34,6 +34,10 @@
 
 ## Phases
 
+### Standalone (post-v1.27, milestone TBD)
+
+- [x] **Phase 123.1: Opening-eval dedup cache table (SEED-053)** (INSERTED) — replace the drain's cross-user `DISTINCT ON (full_hash)` self-join with a position-keyed `opening_position_eval` cache table (~1.06M rows / ~80MB, resident); cuts the per-game dedup lookup from ~8.4 s avg to sub-ms, accelerating the ~245k-game tier-3 drain backlog. Drop-in for `_fetch_dedup_evals`, no dedup-semantics change. Also accelerates v1.28 (Phase 125 backfill needs full-eval'd games). (completed 2026-06-17)
+
 ### v1.28 Tactic Tagging
 
 - [ ] **Phase 124: Schema + Tactic Detector** — Alembic migration for `tactic_motif`/`tactic_piece` columns + the pure-CPU cook-heuristic reimplementation + hand-labeled fixture validation
@@ -42,16 +46,33 @@
 
 ## Phase Details
 
+### Phase 123.1: Opening-eval dedup cache table (SEED-053) (INSERTED)
+
+**Goal**: The full-eval drain's opening-region eval/best_move dedup lookup is served by a position-keyed cache table instead of the cross-user self-join — sub-millisecond per lookup, no change to dedup semantics
+**Depends on**: Nothing (standalone infra; pure drop-in for `_fetch_dedup_evals`)
+**Requirements**: SEED-053 (no formal REQ IDs — infra optimization)
+**Success Criteria** (what must be TRUE):
+
+  1. A new Alembic migration adds `opening_position_eval(full_hash BIGINT PK, eval_cp SmallInteger, eval_mate SmallInteger, best_move VARCHAR(5))`; the dev DB migrates cleanly; a standalone idempotent backfill script populates it from existing our-engine opening evals (`DISTINCT ON (full_hash)` where `ply <= DEDUP_MAX_PLY` and the `has_engine_full_evals` predicate)
+  2. The drain's opening-region write path upserts only freshly-computed engine misses into the cache (`INSERT … ON CONFLICT (full_hash) DO NOTHING`, batched in the existing write transaction); a freshly drained opening position appears in the cache
+  3. `_fetch_dedup_evals` reads from `opening_position_eval` (`full_hash = ANY(:hashes)`) instead of the self-join, preserving every existing read-side guard (`ply <= DEDUP_MAX_PLY`, not flaw-adjacent, not terminal); a regression test asserts identical dedup results to the legacy self-join for the same fixture
+  4. eval/flaw/pv output is unchanged (no behavioral diff in the drain); the lookup's measured time drops from seconds to low-ms on prod-like data
+  5. The cache is seeded from prod our-engine data only; benchmark-DB seeding and a materialized view are explicitly rejected (provenance / no best_move-pv / refresh cost) and documented (per SEED-053 + 123.1-CONTEXT)
+
+**Plans**: 2 plans
+
 ### Phase 124: Schema + Tactic Detector
 
 **Goal**: The system can detect and store a tactic motif for any flawed move that has a stored refutation PV
 **Depends on**: Nothing (first phase of this milestone — builds on v1.27 infrastructure)
 **Requirements**: TACSCH-01, TACSCH-02, TACDET-01, TACDET-02, TACDET-03, TACDET-04
 **Success Criteria** (what must be TRUE):
+
   1. A new Alembic migration adds nullable `tactic_motif` (SmallInteger enum) and `tactic_piece` (SmallInteger) columns to `game_flaws`; the dev DB migrates cleanly
   2. Given a stored `game_positions.pv` at `flaw_ply + 1`, the detector returns at most one motif name from the implemented MVP set (finalized during phase discussion) with a fixed priority order when multiple motifs fire
   3. The detector leaves `tactic_motif = NULL` when confidence is low rather than guessing; a hand-labeled per-motif fixture set passes with precision-first accuracy
   4. Motif detection runs inside `classify_game_flaws` (eval-drain flow-through) and `backfill_flaws.py` (recompute path) for both the player's and the opponent's flaws, with no new engine invocation
+
 **Plans**: TBD
 
 ### Phase 125: Backfill Tactic Motifs
@@ -60,9 +81,11 @@
 **Depends on**: Phase 124 (schema + validated detector)
 **Requirements**: TACSCH-03
 **Success Criteria** (what must be TRUE):
+
   1. Running `backfill_flaws.py` over the ~131k self-eval'd games (`full_evals_completed_at IS NOT NULL`) populates `tactic_motif` and `tactic_piece` for every flaw row where the detector fires (NULL rows reflect genuine low-confidence, not skipped positions)
   2. Lichess-eval-only flaws (~13.6k games with no `full_evals_completed_at`) keep `tactic_motif = NULL` — no bespoke job type, no separate backfill; coverage fills in via the existing tier-3 idle fleet
   3. Backfill is idempotent: re-running it produces the same result without duplicating or corrupting existing rows
+
 **Plans**: TBD
 
 ### Phase 126: Comparison Stats + Frontend
@@ -71,10 +94,12 @@
 **Depends on**: Phase 125 (populated `tactic_motif` rows)
 **Requirements**: TACCMP-01, TACCMP-02, TACCMP-03, TACUI-01, TACUI-02, TACUI-03
 **Success Criteria** (what must be TRUE):
+
   1. `GET /api/library/tactic-comparison` returns per-motif rates (normalized per game or per 100 blunders) for player vs opponents, with significance verdict via the project's existing Wilson-based chess-score utility, honoring all game filters (time control, platform, rated, opponent type, recency, color) and severity
   2. Each flaw card in the Library shows its `allowed` motif as a family-colored chip with a definition popover, consistent with the shipped flaw-tag chip pattern
   3. The you-vs-opponent motif comparison surface (MiniBulletChart grid: measure + CI + benchmark zone where available, per-motif tooltips) renders on the Library page with a section-level sample gate below which the comparison is withheld
   4. All chips, comparison bullets, and interactive elements render correctly on mobile at 375px with `data-testid` and ARIA labels matching the project's browser-automation rules
+
 **Plans**: TBD
 **UI hint**: yes
 
@@ -122,6 +147,7 @@
 | 121. Remote-worker tier-1 claiming (SEED-048) | 1/1 | Complete (release #199) | 2026-06-15 |
 | 122. In-app feedback button (SEED-049) | 2/2 | Complete (release #202; UAT 5/5) | 2026-06-15 |
 | 123. Remote-worker entry-ply fresh-import drain (SEED-051) | 3/3 | Complete (release #203; UAT 2/2) | 2026-06-16 |
+| 123.1. Opening-eval dedup cache table (SEED-053) (INSERTED) | 2/2 | Complete    | 2026-06-17 |
 | 124. Schema + Tactic Detector | 0/TBD | Not started | - |
 | 125. Backfill Tactic Motifs | 0/TBD | Not started | - |
 | 126. Comparison Stats + Frontend | 0/TBD | Not started | - |
@@ -132,7 +158,7 @@
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 1/1 plans complete
+**Plans:** 2/2 plans complete
 
 Plans:
 

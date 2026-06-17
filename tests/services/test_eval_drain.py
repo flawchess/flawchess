@@ -871,3 +871,325 @@ class TestBatchedEntryEvalWrite:
             assert by_key[(g2, 42)] == (None, None)  # class mismatch — untouched
         finally:
             await _delete_games_by_ids(drain_test_session_maker, game_ids)
+
+
+# ─── SEED-053: opening-eval cache read/write tests ────────────────────────────
+
+# Unique hash values used across the three cache tests (avoid collisions with
+# other test helpers that use ply=0 or small integers as full_hash).
+_CACHE_HASH_A: int = 9_900_000_001  # shared by two fixture games — will be cached once
+_CACHE_HASH_B: int = 9_900_000_002  # standalone opening position
+_CACHE_HASH_C: int = 9_900_000_003  # flaw-adjacent ply in the fixture — excluded from dedup
+_CACHE_HASH_TERMINAL: int = 9_900_000_004  # terminal donor hash — must NOT be cached
+_CACHE_HASH_DEEP: int = 9_900_000_005  # ply > DEDUP_MAX_PLY — must NOT be cached
+_CACHE_HASH_MISS: int = 9_900_000_099  # a hash that is NOT in the cache
+
+
+async def _seed_opening_eval_cache(
+    session_maker: async_sessionmaker[AsyncSession],
+    rows: list[tuple[int, int | None, int | None, str | None]],
+) -> None:
+    """Insert rows into opening_position_eval and commit.
+
+    Each tuple: (full_hash, eval_cp, eval_mate, best_move).
+    Uses INSERT … ON CONFLICT (full_hash) DO NOTHING so the helper is safe to
+    call multiple times with overlapping hashes.
+    """
+    import sqlalchemy as sa_local
+
+    async with session_maker() as session:
+        for fh, cp, mate, bm in rows:
+            await session.execute(
+                sa_local.text(
+                    "INSERT INTO opening_position_eval (full_hash, eval_cp, eval_mate, best_move)"
+                    " VALUES (:fh, :cp, :mate, :bm)"
+                    " ON CONFLICT (full_hash) DO NOTHING"
+                ),
+                {"fh": fh, "cp": cp, "mate": mate, "bm": bm},
+            )
+        await session.commit()
+
+
+async def _delete_opening_eval_rows(
+    session_maker: async_sessionmaker[AsyncSession],
+    hashes: list[int],
+) -> None:
+    """Delete opening_position_eval rows by full_hash and commit (test cleanup)."""
+    import sqlalchemy as sa_local
+
+    async with session_maker() as session:
+        await session.execute(
+            sa_local.text("DELETE FROM opening_position_eval WHERE full_hash = ANY(:hashes)"),
+            {"hashes": hashes},
+        )
+        await session.commit()
+
+
+class TestOpeningEvalCacheRead:
+    """SEED-053 / D-123.1-05: _fetch_dedup_evals reads the opening_position_eval cache.
+
+    Read-equivalence test: seed opening_position_eval directly, call _fetch_dedup_evals,
+    assert the result matches the expected (eval_cp, eval_mate, best_move) values.
+    The test also verifies that a hash NOT in the cache is absent from the result
+    (equivalent to the former self-join returning no donor row for that hash).
+    """
+
+    async def test_cache_backed_fetch_dedup_evals(
+        self,
+        drain_test_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """_fetch_dedup_evals returns cache contents for present hashes; absent hashes omitted."""
+        from app.services.eval_drain import _fetch_dedup_evals
+
+        # Seed: hash A has a cp eval + best_move; hash B has a mate-only eval.
+        seed_rows: list[tuple[int, int | None, int | None, str | None]] = [
+            (_CACHE_HASH_A, 42, None, "e2e4"),
+            (_CACHE_HASH_B, None, 3, "d1h5"),
+        ]
+        cleanup_hashes = [_CACHE_HASH_A, _CACHE_HASH_B]
+        await _seed_opening_eval_cache(drain_test_session_maker, seed_rows)
+        try:
+            # Request hash A, hash B, and a hash that is not in the cache (_CACHE_HASH_MISS).
+            request_hashes = [_CACHE_HASH_A, _CACHE_HASH_B, _CACHE_HASH_MISS]
+            async with drain_test_session_maker() as session:
+                result = await _fetch_dedup_evals(session, request_hashes)
+
+            # Hash A and B should be in the result; the miss hash must NOT be present.
+            assert _CACHE_HASH_A in result, "cached hash A must be returned"
+            assert _CACHE_HASH_B in result, "cached hash B must be returned"
+            assert _CACHE_HASH_MISS not in result, "uncached hash must be absent"
+
+            # Values must match what was seeded.
+            assert result[_CACHE_HASH_A] == (42, None, "e2e4"), (
+                f"hash A: expected (42, None, 'e2e4'), got {result[_CACHE_HASH_A]}"
+            )
+            assert result[_CACHE_HASH_B] == (None, 3, "d1h5"), (
+                f"hash B: expected (None, 3, 'd1h5'), got {result[_CACHE_HASH_B]}"
+            )
+        finally:
+            await _delete_opening_eval_rows(drain_test_session_maker, cleanup_hashes)
+
+    async def test_empty_hash_list_returns_empty_dict(
+        self,
+        drain_test_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Empty input must short-circuit and return {} without hitting the DB."""
+        from app.services.eval_drain import _fetch_dedup_evals
+
+        async with drain_test_session_maker() as session:
+            result = await _fetch_dedup_evals(session, [])
+        assert result == {}, f"expected empty dict, got {result}"
+
+
+class TestOpeningEvalCacheWrite:
+    """SEED-053 / D-123.1-04: _upsert_opening_cache fills the cache from engine results.
+
+    Write-population test: construct engine_targets and engine_result_map representing
+    a mix of cacheable positions, excluded positions (terminal, deep ply, null eval),
+    and verify the correct subset lands in opening_position_eval.
+
+    Idempotency test: calling _upsert_opening_cache a second time (or pre-seeding the
+    table with a conflicting value for the same hash) leaves the original row unchanged.
+    """
+
+    async def _make_engine_targets_and_results(
+        self,
+    ) -> tuple[
+        list[Any],
+        dict[int, tuple[int | None, int | None, str | None, str | None]],
+    ]:
+        """Build a small set of _FullPlyEvalTarget instances and a matching engine_result_map.
+
+        Targets:
+          - ply=2, hash=_CACHE_HASH_A: cacheable (ply<=DEDUP_MAX_PLY, not terminal, real eval)
+          - ply=4, hash=_CACHE_HASH_B: cacheable, mate-only eval
+          - ply=6, hash=_CACHE_HASH_C: null eval (engine failure) — must NOT be cached
+          - ply=99, hash=_CACHE_HASH_DEEP: ply > DEDUP_MAX_PLY — must NOT be cached
+          - ply=0, hash=_CACHE_HASH_TERMINAL, is_terminal=True — must NOT be cached
+
+        Returns (engine_targets, engine_result_map).
+        """
+        import chess
+
+        from app.models.game_position import DEDUP_MAX_PLY
+        from app.services.eval_drain import _FullPlyEvalTarget
+
+        board = chess.Board()
+
+        # ply=2, cp eval + best_move
+        t_a = _FullPlyEvalTarget(
+            game_id=99999,
+            ply=2,
+            full_hash=_CACHE_HASH_A,
+            board=board,
+            eval_cp=None,
+            eval_mate=None,
+        )
+        # ply=4, mate-only eval
+        t_b = _FullPlyEvalTarget(
+            game_id=99999,
+            ply=4,
+            full_hash=_CACHE_HASH_B,
+            board=board,
+            eval_cp=None,
+            eval_mate=None,
+        )
+        # ply=6, null eval (engine failure) — engine returns (None, None, None, None)
+        t_null = _FullPlyEvalTarget(
+            game_id=99999,
+            ply=6,
+            full_hash=_CACHE_HASH_C,
+            board=board,
+            eval_cp=None,
+            eval_mate=None,
+        )
+        # ply > DEDUP_MAX_PLY — must be excluded even with a real eval
+        deep_ply = DEDUP_MAX_PLY + 1
+        t_deep = _FullPlyEvalTarget(
+            game_id=99999,
+            ply=deep_ply,
+            full_hash=_CACHE_HASH_DEEP,
+            board=board,
+            eval_cp=None,
+            eval_mate=None,
+        )
+        # Terminal donor — must be excluded
+        t_terminal = _FullPlyEvalTarget(
+            game_id=99999,
+            ply=0,
+            full_hash=_CACHE_HASH_TERMINAL,
+            board=board,
+            eval_cp=None,
+            eval_mate=None,
+            is_terminal=True,
+        )
+
+        engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]] = {
+            2: (77, None, "e2e4", None),  # hash A: cp eval
+            4: (None, 2, "d1h5", None),  # hash B: mate eval
+            6: (None, None, None, None),  # null eval — excluded
+            deep_ply: (50, None, "a2a4", None),  # deep — excluded
+            0: (0, None, None, None),  # terminal — excluded (is_terminal=True)
+        }
+        return [t_a, t_b, t_null, t_deep, t_terminal], engine_result_map
+
+    async def test_write_population_includes_and_excludes(
+        self,
+        drain_test_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Freshly-computed opening misses land in the cache; excluded targets do not."""
+        from app.services.eval_drain import _upsert_opening_cache
+
+        engine_targets, engine_result_map = await self._make_engine_targets_and_results()
+        cleanup_hashes = [
+            _CACHE_HASH_A,
+            _CACHE_HASH_B,
+            _CACHE_HASH_C,
+            _CACHE_HASH_DEEP,
+            _CACHE_HASH_TERMINAL,
+        ]
+        # Ensure no stale rows from a prior run.
+        await _delete_opening_eval_rows(drain_test_session_maker, cleanup_hashes)
+
+        try:
+            async with drain_test_session_maker() as session:
+                await _upsert_opening_cache(session, engine_targets, engine_result_map)
+                await session.commit()
+
+            # Verify inclusions — hash A and B must now be in the cache.
+            async with drain_test_session_maker() as session:
+                from app.models.opening_position_eval import OpeningPositionEval
+
+                rows = (
+                    await session.execute(
+                        select(
+                            OpeningPositionEval.full_hash,
+                            OpeningPositionEval.eval_cp,
+                            OpeningPositionEval.eval_mate,
+                            OpeningPositionEval.best_move,
+                        ).where(OpeningPositionEval.full_hash.in_(cleanup_hashes))
+                    )
+                ).all()
+            cached = {r[0]: (r[1], r[2], r[3]) for r in rows}
+
+            # Included: fresh engine opening misses
+            assert _CACHE_HASH_A in cached, "hash A (ply=2, cp eval) must be cached"
+            assert cached[_CACHE_HASH_A] == (77, None, "e2e4"), (
+                f"hash A values wrong: {cached[_CACHE_HASH_A]}"
+            )
+            assert _CACHE_HASH_B in cached, "hash B (ply=4, mate eval) must be cached"
+            assert cached[_CACHE_HASH_B] == (None, 2, "d1h5"), (
+                f"hash B values wrong: {cached[_CACHE_HASH_B]}"
+            )
+
+            # Excluded: null eval, deep ply, terminal donor
+            assert _CACHE_HASH_C not in cached, "null-eval hash must NOT be cached"
+            assert _CACHE_HASH_DEEP not in cached, "deep-ply hash must NOT be cached"
+            assert _CACHE_HASH_TERMINAL not in cached, "terminal donor must NOT be cached"
+
+        finally:
+            await _delete_opening_eval_rows(drain_test_session_maker, cleanup_hashes)
+
+    async def test_idempotency_first_write_wins(
+        self,
+        drain_test_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """ON CONFLICT DO NOTHING: a second upsert leaves the original cached row unchanged."""
+        from app.services.eval_drain import _upsert_opening_cache
+        from app.models.opening_position_eval import OpeningPositionEval
+        import chess
+
+        from app.services.eval_drain import _FullPlyEvalTarget
+
+        board = chess.Board()
+        # Pre-seed hash A with the original value.
+        original_value: tuple[int, None, str] = (42, None, "e2e4")
+        await _seed_opening_eval_cache(
+            drain_test_session_maker,
+            [(_CACHE_HASH_A, original_value[0], original_value[1], original_value[2])],
+        )
+
+        # Now run _upsert_opening_cache with a DIFFERENT value for the same hash.
+        conflicting_cp = 99
+        conflicting_bm = "a2a4"
+        t_conflict = _FullPlyEvalTarget(
+            game_id=99999,
+            ply=2,
+            full_hash=_CACHE_HASH_A,
+            board=board,
+            eval_cp=None,
+            eval_mate=None,
+        )
+        conflict_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]] = {
+            2: (conflicting_cp, None, conflicting_bm, None),
+        }
+
+        try:
+            async with drain_test_session_maker() as session:
+                await _upsert_opening_cache(session, [t_conflict], conflict_result_map)
+                await session.commit()
+
+            # Original value must be unchanged.
+            async with drain_test_session_maker() as session:
+                row = (
+                    await session.execute(
+                        select(
+                            OpeningPositionEval.eval_cp,
+                            OpeningPositionEval.eval_mate,
+                            OpeningPositionEval.best_move,
+                        ).where(OpeningPositionEval.full_hash == _CACHE_HASH_A)
+                    )
+                ).one_or_none()
+
+            assert row is not None, "cache row must still exist after conflict"
+            assert row[0] == original_value[0], (
+                f"eval_cp changed: expected {original_value[0]}, got {row[0]}"
+            )
+            assert row[1] == original_value[1], (
+                f"eval_mate changed: expected {original_value[1]}, got {row[1]}"
+            )
+            assert row[2] == original_value[2], (
+                f"best_move changed: expected {original_value[2]!r}, got {row[2]!r}"
+            )
+        finally:
+            await _delete_opening_eval_rows(drain_test_session_maker, [_CACHE_HASH_A])
