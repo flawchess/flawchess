@@ -1,30 +1,26 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.27
-milestone_name: Remote Eval Worker Fan-Out & In-App Feedback
-status: v1.27 milestone closed — Phases 121–123 grouped, archived, released
-last_updated: "2026-06-16T22:30:00.000Z"
-last_activity: 2026-06-16 -- v1.27 milestone closed (Phases 121–123 grouped from standalone-shipped, archived, tagged v1.27)
+milestone: v1.28
+milestone_name: Tactic Tagging
+status: planning
+last_updated: "2026-06-17T18:03:26.291Z"
+last_activity: 2026-06-17
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 6
-  completed_plans: 6
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Milestone v1.27 Remote Eval Worker Fan-Out & In-App Feedback — ✅ CLOSED 2026-06-16. Phases 121, 122, 123 (6 plans) grouped from standalone-shipped, archived to milestones/v1.27-ROADMAP.md, tagged v1.27, GitHub release cut. Phase 123 UAT confirmed on a real 5,132-game first import (user 28): entry-ply drain split server-pool (2,573) / worker `ws80` (1,800), 100% evals_completed_at, zero stuck leases, CR-01 livelock fix verified live; mixed-fleet backward compat holds (un-upgraded `remote-worker` fallback drains full-ply only).
-No open phases.
-NEXT: `/gsd-new-milestone` to start the next milestone — leading candidates: SEED-039 tactic-motif tags over the captured PVs, SEED-037 Train drills, or the SEED-036 remainder (Analysis viewer + best-move endpoint).
-PROD-SOAK (carried, check over coming days): (1) tier-1 ~10s wall-clock fan-out on the live pool (QUEUE-03); (2) re-verify the ~32% flaw-PV coverage TODO once the residue re-eval catches up (multi-day background drain; see 117.1-POST-DEPLOY.md); (3) τ/floor tier-3 lottery tuning against prod `last_activity` distributions (SEED-046 timing caveat).
-Security: SECURED — 13/13 threats closed (threats_open: 0), ASVS L1 (117-SECURITY.md).
-Last activity: 2026-06-17 — Completed quick task 260617-pu4: made `games.full_evals_completed_at` the authoritative analyzed-gate for the Library/Games flaw-stats surface, replacing the per-call eval-coverage recompute in `_analyzed_game_ids_subquery`. Surfaced by today's prod DB-report — `fetch_stats_aggregates` hit 135s avg / 49-min max under the 2-day eval-drain because the helper full-scanned the user's entire `game_positions` partition to recompute the ≥90% coverage gate on every call; EXPLAIN proved the plan itself healthy (~1.05s warm), so the tail was drain I/O contention on cold pages. The coverage is already materialized in the column, so the helper is now an indexed `full_evals_completed_at IS NOT NULL` lookup (column kept named `game_id`, all 5 consumers unchanged) — strictly cheaper and MORE correct (rescues short fully-analyzed games the (COUNT-1) recompute over-excluded, ~0.17% divergence). Reverses D-03/Pitfall 6 (documented in code); dead imports removed; 6 test files migrated (not deleted); no migration. Gates GREEN (ty 0 errors, pytest -n auto 2713 passed/10 skipped). Commits 0821b538 + 7c651438; on `main`, not pushed.
-
-Progress: [██████████] 100%
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-06-17 — Milestone v1.28 started
 
 ## Project Reference
 

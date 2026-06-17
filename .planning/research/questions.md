@@ -252,3 +252,32 @@ On a large `games` table (~598k rows prod, 93% lacking evals per Q-008), `SELECT
 **Why deferred:** Detector-implementation concern; pins the test strategy before the detector phase is planned. Not load-bearing until SEED-039 is promoted to a milestone.
 
 **Resolved:** _(open)_
+
+---
+
+## Q-012: Per-motif `tactic_piece` semantic — which piece does the column record for each motif?
+
+**Asked:** 2026-06-17 (during `/gsd-new-milestone v1.28` scoping on tactic tagging, SEED-039)
+
+**Context:** v1.28 adds a nullable `tactic_piece` (python-chess PieceType 1–6) column on
+`game_flaws` alongside `tactic_motif` ("capture broadly, store now, surface later" — decided
+2026-06-17, see `.planning/notes/tactic-tagging-architecture.md`). "Piece" is **not one concept
+across motifs**, so the column needs a defined per-motif semantic. Provisional mapping:
+
+- `fork` → the forking/attacking piece (highest-value signal).
+- `hanging-piece` → the **victim** (the piece you hung), not the capturer.
+- `pin` / `skewer` → the line piece delivering it (B/R/Q only).
+- `back-rank` / `mate` → the mating piece.
+- `double-check` → likely NULL (two checkers; ambiguous).
+
+**How to answer:**
+1. Once the detector exists, sample real refutation lines per motif and confirm the recorded
+   piece reads correctly as a coaching label.
+2. Settle the multi-piece / ambiguous cases (`double-check`; any motif where the natural piece
+   is unclear) — record NULL rather than guessing, consistent with the precision-first stance.
+3. Lock the mapping before any `backfill_flaws.py` populate run so a re-run isn't needed.
+
+**Why deferred:** Detector-implementation concern; confirm against real output before backfill.
+Provisional mapping above is enough to scope the column.
+
+**Resolved:** _(open)_
