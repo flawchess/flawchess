@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v1.28
 milestone_name: Tactic Tagging
 status: planning
-last_updated: "2026-06-17T18:03:26.291Z"
+last_updated: "2026-06-17T19:00:00.000Z"
 last_activity: 2026-06-17
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,16 +17,16 @@ progress:
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Phase 124 — Schema + Tactic Detector (not yet started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-17 — Milestone v1.28 started
+Status: Roadmap created, ready for planning
+Last activity: 2026-06-17 — Roadmap created (Phases 124–126)
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-06-14 after v1.26 milestone)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report.
-Current focus: No active milestone. v1.27 Remote Eval Worker Fan-Out & In-App Feedback closed 2026-06-16 — remote workers now claim tier-1 single-game jobs and fan out entry-ply import-time eval on big first imports, plus an in-app feedback button. Next is `/gsd-new-milestone`.
+Current focus: v1.28 Tactic Tagging — SEED-039. Label why a flawed move was bad in tactical terms by naming the motif in the stored refutation PV, then compare tactic rates against opponents. Three phases: 124 (schema + detector), 125 (backfill ~131k games), 126 (comparison stats + frontend chip/grid). Start with `/gsd-plan-phase 124`.
 
 ## Milestone Progress
 

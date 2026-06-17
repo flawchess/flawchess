@@ -75,24 +75,24 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TACDET-01 | TBD | Pending |
-| TACDET-02 | TBD | Pending |
-| TACDET-03 | TBD | Pending |
-| TACDET-04 | TBD | Pending |
-| TACSCH-01 | TBD | Pending |
-| TACSCH-02 | TBD | Pending |
-| TACSCH-03 | TBD | Pending |
-| TACCMP-01 | TBD | Pending |
-| TACCMP-02 | TBD | Pending |
-| TACCMP-03 | TBD | Pending |
-| TACUI-01 | TBD | Pending |
-| TACUI-02 | TBD | Pending |
-| TACUI-03 | TBD | Pending |
+| TACDET-01 | Phase 124 | Pending |
+| TACDET-02 | Phase 124 | Pending |
+| TACDET-03 | Phase 124 | Pending |
+| TACDET-04 | Phase 124 | Pending |
+| TACSCH-01 | Phase 124 | Pending |
+| TACSCH-02 | Phase 124 | Pending |
+| TACSCH-03 | Phase 125 | Pending |
+| TACCMP-01 | Phase 126 | Pending |
+| TACCMP-02 | Phase 126 | Pending |
+| TACCMP-03 | Phase 126 | Pending |
+| TACUI-01 | Phase 126 | Pending |
+| TACUI-02 | Phase 126 | Pending |
+| TACUI-03 | Phase 126 | Pending |
 
 **Coverage:**
 - v1 requirements: 13 total
-- Mapped to phases: 0 (roadmap pending)
-- Unmapped: 13 ⚠️ (filled by roadmapper)
+- Mapped to phases: 13 ✓
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-06-17*
