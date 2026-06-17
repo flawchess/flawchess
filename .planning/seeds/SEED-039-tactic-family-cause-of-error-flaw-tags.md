@@ -3,11 +3,45 @@ id: SEED-039
 status: dormant
 planted: 2026-06-07
 planted_during: v1.24 (Library Page), Phase 109 shipped
+enriched: 2026-06-17 (/gsd-explore — de-staled post-v1.27, decisions locked)
 trigger_when: when extending the flaw-tag taxonomy with a cause-of-error / "tactic" family, or when building motif-level blunder explanations
 scope: medium
 ---
 
 # SEED-039: Tactic family — cause-of-error flaw tags
+
+> **⚠️ 2026-06-17 UPDATE (read first — this seed predates v1.27 and several core
+> premises below are now STALE).** A `/gsd-explore` session verified the current state
+> against prod. The full decision record is
+> `.planning/notes/tactic-tagging-architecture.md`. Corrections:
+>
+> 1. **PV now EXISTS** (the seed's central premise "there is no `pv`/`bestmove` column
+>    anywhere, the new Stockfish work is capturing a PV per flaw" is FALSE). v1.27's remote
+>    eval worker stores `game_positions.best_move` for every ply and `game_positions.pv`
+>    **at the flaw plies, keyed `flaw_ply + 1`** (SEED-044 post-move shift) — i.e. the
+>    refutation line is already captured exactly where the detector needs it. **No new
+>    engine pass.** The detector is **pure CPU** reading stored `pv`.
+> 2. **Opponent-flaw materialization is ALREADY DONE.** Verified in prod (game 975197):
+>    `game_flaws` already stores both colors' flaws under the importing user. `is_opponent`
+>    is derivable (`ply parity vs games.user_color`) — a convenience column, not a
+>    re-classification. The "drop the player-only filter" work the seed describes is moot.
+> 3. **PV is captured for BOTH colors' flaws** — the seed's worry that opponent tags need a
+>    separate both-color PV pass does NOT apply.
+> 4. **Coverage:** ~131k self-eval'd games are taggable today; ~13.6k lichess-eval games get
+>    `tactic_motif = NULL` until full-eval'd via the **existing tier-3 idle fleet** (no
+>    bespoke PV-gap job type needed). 479k no-eval games are irrelevant (no flaws).
+>
+> **Locked decisions (2026-06-17):**
+> - **Single `tactic_motif`** (nullable SmallInteger enum), at most one per flaw. NOT a
+>   bitmask, NOT a join table.
+> - **Tiebreak = fixed PRIORITY ORDER, not "largest ES swing"** (which can't discriminate
+>   within one refutation line — all its motifs share the same ES swing). See Q-010.
+> - **Milestone scope = full you-vs-opponent (A+B)**: detector + `tactic_motif` +
+>   `is_opponent` (derived) + Wilson you-vs-opponent comparison + frontend. Smaller than this
+>   seed implies, because (2)+(3) are already done. Real work = the detector (Q-011) +
+>   schema + stats + frontend.
+> - Open detector questions tracked as **Q-010** (priority order) and **Q-011** (cook
+>   reimplementation validation) in `.planning/research/questions.md`.
 
 Add a future **tactic family** to the flaw-tag taxonomy that labels *why* a
 move was bad in tactical terms — the orthogonal "what went wrong" axis that the
