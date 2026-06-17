@@ -224,6 +224,21 @@ async def _delete_import_jobs(
         await session.commit()
 
 
+async def _delete_opening_eval_rows(
+    session_maker: async_sessionmaker[AsyncSession],
+    hashes: list[int],
+) -> None:
+    """Delete opening_position_eval rows by full_hash and commit (test cleanup)."""
+    if not hashes:
+        return
+    async with session_maker() as session:
+        await session.execute(
+            sa.text("DELETE FROM opening_position_eval WHERE full_hash = ANY(:hashes)"),
+            {"hashes": hashes},
+        )
+        await session.commit()
+
+
 # ─── EVAL-01: all-ply collector ───────────────────────────────────────────────
 
 
@@ -312,8 +327,17 @@ class TestDedupHitsParity:
           ply 4: eval_cp=42  -> post-move eval of ply 4 = eval of the position REACHED = ply 5's position
           ply 5: full_hash=Q, best_move="g1f3" -> best move FROM Q (decision-keyed)
         So _fetch_dedup_evals([Q]) recovers (eval OF Q=42, None, best_move FROM Q="g1f3").
+
+        SEED-053: the gate now lives in OPENING_CACHE_BACKFILL_SQL. We populate the
+        cache with that SQL first so _fetch_dedup_evals exercises the cache read path
+        against rows that genuinely passed the gate.
         """
-        from app.services.eval_drain import _DEDUP_MAX_PLY, _fetch_dedup_evals
+        from app.models.game_position import DEDUP_MAX_PLY
+        from app.services.eval_drain import (
+            OPENING_CACHE_BACKFILL_SQL,
+            _DEDUP_MAX_PLY,
+            _fetch_dedup_evals,
+        )
 
         # Insert a parity-source game (full_evals_completed_at set).
         now = datetime.now(timezone.utc)
@@ -343,6 +367,12 @@ class TestDedupHitsParity:
                 },
             ],
         )
+        # Pre-clean any stale cache row (defensive for reruns), then populate via
+        # the shared gate SQL so the test exercises the gate at its enforcement site.
+        await _delete_opening_eval_rows(full_drain_session_maker, [target_hash, predecessor_hash])
+        async with full_drain_session_maker() as session:
+            await session.execute(OPENING_CACHE_BACKFILL_SQL, {"dedup_max_ply": DEDUP_MAX_PLY})
+            await session.commit()
         try:
             async with full_drain_session_maker() as session:
                 result = await _fetch_dedup_evals(session, [target_hash])
@@ -355,6 +385,9 @@ class TestDedupHitsParity:
             assert result[target_hash] == (42, None, "g1f3")
         finally:
             await _delete_games(full_drain_session_maker, [source_game_id])
+            await _delete_opening_eval_rows(
+                full_drain_session_maker, [target_hash, predecessor_hash]
+            )
 
     async def test_dedup_excludes_depth15_source(
         self,
@@ -362,8 +395,14 @@ class TestDedupHitsParity:
         full_drain_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
         """A game_position row at ply<=20 whose game has only evals_completed_at (no full marker)
-        must NOT be returned by _fetch_dedup_evals (Pitfall 4, D-116-02)."""
-        from app.services.eval_drain import _fetch_dedup_evals
+        must NOT be returned by _fetch_dedup_evals (Pitfall 4, D-116-02).
+
+        SEED-053: after running OPENING_CACHE_BACKFILL_SQL the target_hash must still be
+        absent from the cache — the gate (full_evals_completed_at IS NOT NULL) must
+        exclude depth-15 sources at populate time.
+        """
+        from app.models.game_position import DEDUP_MAX_PLY
+        from app.services.eval_drain import OPENING_CACHE_BACKFILL_SQL, _fetch_dedup_evals
 
         # Insert a depth-15 source game (evals_completed_at set, full_evals_completed_at NULL).
         now = datetime.now(timezone.utc)
@@ -374,17 +413,23 @@ class TestDedupHitsParity:
             full_evals_completed_at=None,
         )
         target_hash = 0xDEAD_BEEF_0002
-        # Insert the predecessor too, so the self-join WOULD match if not for the
+        predecessor_hash = 0xDEAD_BEEF_02FF
+        # Insert the predecessor too, so the backfill SQL WOULD match if not for the
         # full_evals_completed_at gate (SEED-044 — the gate is what must exclude it).
         await _insert_game_positions(
             full_drain_session_maker,
             full_drain_test_user,
             depth15_game_id,
             [
-                {"ply": 4, "full_hash": 0xDEAD_BEEF_02FF, "eval_cp": 100, "eval_mate": None},
+                {"ply": 4, "full_hash": predecessor_hash, "eval_cp": 100, "eval_mate": None},
                 {"ply": 5, "full_hash": target_hash, "eval_cp": 80, "eval_mate": None},
             ],
         )
+        # Pre-clean any stale cache rows, then run the gate SQL.
+        await _delete_opening_eval_rows(full_drain_session_maker, [target_hash, predecessor_hash])
+        async with full_drain_session_maker() as session:
+            await session.execute(OPENING_CACHE_BACKFILL_SQL, {"dedup_max_ply": DEDUP_MAX_PLY})
+            await session.commit()
         try:
             async with full_drain_session_maker() as session:
                 result = await _fetch_dedup_evals(session, [target_hash])
@@ -395,6 +440,9 @@ class TestDedupHitsParity:
             )
         finally:
             await _delete_games(full_drain_session_maker, [depth15_game_id])
+            await _delete_opening_eval_rows(
+                full_drain_session_maker, [target_hash, predecessor_hash]
+            )
 
     async def test_dedup_excludes_analyzed_source(
         self,
@@ -410,8 +458,13 @@ class TestDedupHitsParity:
         lichess_evals_at IS NULL. After oracle counts are filled for engine games,
         white_blunders IS NOT NULL for engine games too — using white_blunders would
         wrongly exclude engine-written sources.
+
+        SEED-053: after running OPENING_CACHE_BACKFILL_SQL the target_hash must still
+        be absent — the gate (lichess_evals_at IS NULL) must exclude analyzed sources
+        at populate time.
         """
-        from app.services.eval_drain import _fetch_dedup_evals
+        from app.models.game_position import DEDUP_MAX_PLY
+        from app.services.eval_drain import OPENING_CACHE_BACKFILL_SQL, _fetch_dedup_evals
 
         now = datetime.now(timezone.utc)
         analyzed_game_id = await _insert_game(
@@ -422,17 +475,23 @@ class TestDedupHitsParity:
             lichess_evals_at=now,  # D-117-07: this is what marks a lichess-analyzed source
         )
         target_hash = 0xDEAD_BEEF_0003
-        # Insert the predecessor too, so the self-join WOULD match if not for the
+        predecessor_hash = 0xDEAD_BEEF_03FF
+        # Insert the predecessor too, so the backfill SQL WOULD match if not for the
         # lichess_evals_at gate (SEED-044 — the gate is what must exclude it).
         await _insert_game_positions(
             full_drain_session_maker,
             full_drain_test_user,
             analyzed_game_id,
             [
-                {"ply": 4, "full_hash": 0xDEAD_BEEF_03FF, "eval_cp": 77, "eval_mate": None},
+                {"ply": 4, "full_hash": predecessor_hash, "eval_cp": 77, "eval_mate": None},
                 {"ply": 5, "full_hash": target_hash, "eval_cp": 70, "eval_mate": None},
             ],
         )
+        # Pre-clean any stale cache rows, then run the gate SQL.
+        await _delete_opening_eval_rows(full_drain_session_maker, [target_hash, predecessor_hash])
+        async with full_drain_session_maker() as session:
+            await session.execute(OPENING_CACHE_BACKFILL_SQL, {"dedup_max_ply": DEDUP_MAX_PLY})
+            await session.commit()
         try:
             async with full_drain_session_maker() as session:
                 result = await _fetch_dedup_evals(session, [target_hash])
@@ -444,6 +503,9 @@ class TestDedupHitsParity:
             )
         finally:
             await _delete_games(full_drain_session_maker, [analyzed_game_id])
+            await _delete_opening_eval_rows(
+                full_drain_session_maker, [target_hash, predecessor_hash]
+            )
 
     async def test_dedup_empty_input_returns_empty(
         self,
@@ -867,8 +929,13 @@ class TestWr02Repointed:
         full_drain_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
         """Engine-written game (lichess_evals_at IS NULL, white_blunders IS NOT NULL)
-        must be usable as a dedup source after oracle counts are filled."""
-        from app.services.eval_drain import _fetch_dedup_evals
+        must be usable as a dedup source after oracle counts are filled.
+
+        SEED-053: populate the cache via OPENING_CACHE_BACKFILL_SQL first so the
+        inclusion assertion exercises the gate at its enforcement site.
+        """
+        from app.models.game_position import DEDUP_MAX_PLY
+        from app.services.eval_drain import OPENING_CACHE_BACKFILL_SQL, _fetch_dedup_evals
 
         now = datetime.now(timezone.utc)
         engine_game_id = await _insert_game(
@@ -880,17 +947,23 @@ class TestWr02Repointed:
             # lichess_evals_at=None is the default — engine-written source
         )
         target_hash = 0xDEAD_BEEF_0010
+        predecessor_hash = 0xDEAD_BEEF_10FF
         # Predecessor (ply 2) holds the post-move eval of the requested position
-        # (ply 3) — the SEED-044 self-join recovers it.
+        # (ply 3) — the SEED-044 self-join / backfill SQL recovers it.
         await _insert_game_positions(
             full_drain_session_maker,
             full_drain_test_user,
             engine_game_id,
             [
-                {"ply": 2, "full_hash": 0xDEAD_BEEF_10FF, "eval_cp": 99, "eval_mate": None},
+                {"ply": 2, "full_hash": predecessor_hash, "eval_cp": 99, "eval_mate": None},
                 {"ply": 3, "full_hash": target_hash, "eval_cp": 88, "eval_mate": None},
             ],
         )
+        # Pre-clean any stale cache rows, then populate via the gate SQL.
+        await _delete_opening_eval_rows(full_drain_session_maker, [target_hash, predecessor_hash])
+        async with full_drain_session_maker() as session:
+            await session.execute(OPENING_CACHE_BACKFILL_SQL, {"dedup_max_ply": DEDUP_MAX_PLY})
+            await session.commit()
         try:
             async with full_drain_session_maker() as session:
                 result = await _fetch_dedup_evals(session, [target_hash])
@@ -901,6 +974,9 @@ class TestWr02Repointed:
             )
         finally:
             await _delete_games(full_drain_session_maker, [engine_game_id])
+            await _delete_opening_eval_rows(
+                full_drain_session_maker, [target_hash, predecessor_hash]
+            )
 
     async def test_wr02_lichess_source_excluded(
         self,
@@ -908,8 +984,14 @@ class TestWr02Repointed:
         full_drain_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
         """Lichess-analyzed game (lichess_evals_at IS NOT NULL, white_blunders IS NULL)
-        must NOT be usable as a dedup source."""
-        from app.services.eval_drain import _fetch_dedup_evals
+        must NOT be usable as a dedup source.
+
+        SEED-053: after running OPENING_CACHE_BACKFILL_SQL the target_hash must still
+        be absent — the gate (lichess_evals_at IS NULL) must exclude lichess sources
+        at populate time, making the exclusion assertion genuine (not vacuously true).
+        """
+        from app.models.game_position import DEDUP_MAX_PLY
+        from app.services.eval_drain import OPENING_CACHE_BACKFILL_SQL, _fetch_dedup_evals
 
         now = datetime.now(timezone.utc)
         lichess_game_id = await _insert_game(
@@ -921,17 +1003,23 @@ class TestWr02Repointed:
             # white_blunders=None (no oracle counts yet)
         )
         target_hash = 0xDEAD_BEEF_0011
-        # Predecessor present so the self-join WOULD match if not for the
+        predecessor_hash = 0xDEAD_BEEF_11FF
+        # Predecessor present so the backfill SQL WOULD match if not for the
         # lichess_evals_at gate (SEED-044 — the gate is what must exclude it).
         await _insert_game_positions(
             full_drain_session_maker,
             full_drain_test_user,
             lichess_game_id,
             [
-                {"ply": 2, "full_hash": 0xDEAD_BEEF_11FF, "eval_cp": 55, "eval_mate": None},
+                {"ply": 2, "full_hash": predecessor_hash, "eval_cp": 55, "eval_mate": None},
                 {"ply": 3, "full_hash": target_hash, "eval_cp": 44, "eval_mate": None},
             ],
         )
+        # Pre-clean any stale cache rows, then run the gate SQL.
+        await _delete_opening_eval_rows(full_drain_session_maker, [target_hash, predecessor_hash])
+        async with full_drain_session_maker() as session:
+            await session.execute(OPENING_CACHE_BACKFILL_SQL, {"dedup_max_ply": DEDUP_MAX_PLY})
+            await session.commit()
         try:
             async with full_drain_session_maker() as session:
                 result = await _fetch_dedup_evals(session, [target_hash])
@@ -942,6 +1030,9 @@ class TestWr02Repointed:
             )
         finally:
             await _delete_games(full_drain_session_maker, [lichess_game_id])
+            await _delete_opening_eval_rows(
+                full_drain_session_maker, [target_hash, predecessor_hash]
+            )
 
 
 # ─── EVAL-04: best_move populated after drain tick ────────────────────────────
@@ -1035,12 +1126,16 @@ class TestBestMove:
 
         PGN: _SIMPLE_PGN = "1. e4 e5 2. Nf3 Nc6 3. Bc4 *" (5 half-moves, plies 0..4).
         We use ply 2 for dedup and ply 4 for engine-evaluated (both within PGN range).
+
+        SEED-053: populate the cache via OPENING_CACHE_BACKFILL_SQL before the tick
+        so the dedup hit comes from the cache (its new enforcement site).
         """
-        from app.models.game_position import GamePosition
-        from app.services.eval_drain import _DEDUP_MAX_PLY
+        from app.models.game_position import DEDUP_MAX_PLY, GamePosition
+        from app.services.eval_drain import OPENING_CACHE_BACKFILL_SQL, _DEDUP_MAX_PLY
 
         now = datetime.now(timezone.utc)
         dedup_hash = 0xBEEF_DED0_0001  # unique dedup source hash (ply 2 in source)
+        dedup_predecessor_hash = 0xBEEF_DED0_00FF
 
         # Parity source: full_evals_completed_at set, lichess_evals_at NULL.
         source_game_id = await _insert_game(
@@ -1056,9 +1151,9 @@ class TestBestMove:
             [
                 # SEED-044 self-join: the predecessor row (ply 1) holds the post-move
                 # eval of the dedup position (ply 2); the dedup position's own row
-                # carries the best_move FROM it. _fetch_dedup_evals recovers
+                # carries the best_move FROM it. The backfill SQL recovers
                 # (eval=30 from ply 1, best_move="g1f3" from ply 2).
-                {"ply": 1, "full_hash": 0xBEEF_DED0_00FF, "eval_cp": 30, "eval_mate": None},
+                {"ply": 1, "full_hash": dedup_predecessor_hash, "eval_cp": 30, "eval_mate": None},
                 {
                     "ply": 2,  # within DEDUP_MAX_PLY — the dedup'd position
                     "full_hash": dedup_hash,
@@ -1089,7 +1184,7 @@ class TestBestMove:
             [
                 {
                     "ply": 2,
-                    "full_hash": dedup_hash,  # will be dedup'd from source
+                    "full_hash": dedup_hash,  # will be dedup'd from cache
                     "eval_cp": None,
                     "eval_mate": None,
                 },
@@ -1107,6 +1202,15 @@ class TestBestMove:
                 },
             ],
         )
+
+        # Pre-clean any stale cache rows, then populate via the gate SQL so the
+        # drain tick's _fetch_dedup_evals hits the cache at ply 2.
+        await _delete_opening_eval_rows(
+            full_drain_session_maker, [dedup_hash, dedup_predecessor_hash]
+        )
+        async with full_drain_session_maker() as session:
+            await session.execute(OPENING_CACHE_BACKFILL_SQL, {"dedup_max_ply": DEDUP_MAX_PLY})
+            await session.commit()
 
         drain_module = _patch_drain_for_tick_tests(
             monkeypatch, full_drain_session_maker, target_game_id, full_drain_test_user_117
@@ -1131,7 +1235,7 @@ class TestBestMove:
                 )
                 bm_by_ply = {r[0]: r[1] for r in rows.all()}
 
-            # Dedup'd ply 2: best_move transplanted from source (not engine-called).
+            # Dedup'd ply 2: best_move transplanted from cache (not engine-called).
             assert bm_by_ply.get(2) == "g1f3", (
                 f"Dedup'd ply 2 must carry transplanted best_move 'g1f3', got {bm_by_ply.get(2)!r}"
             )
@@ -1141,6 +1245,9 @@ class TestBestMove:
             )
         finally:
             await _delete_games(full_drain_session_maker, [source_game_id, target_game_id])
+            await _delete_opening_eval_rows(
+                full_drain_session_maker, [dedup_hash, dedup_predecessor_hash]
+            )
 
 
 # ─── EVAL-04: flaw PV written at ply N+1 (D-117-02) ──────────────────────────

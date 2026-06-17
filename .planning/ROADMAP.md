@@ -30,10 +30,176 @@
 - ✅ **v1.25 Flaw-Stats Opponent Comparison** — Phases 113–115 (incl. 114.1) (shipped 2026-06-12) — see [milestones/v1.25-ROADMAP.md](milestones/v1.25-ROADMAP.md)
 - ✅ **v1.26 Full-Game Eval Pipeline** — Phases 116–120 (incl. 117.1, 117.2) (shipped 2026-06-14) — see [milestones/v1.26-ROADMAP.md](milestones/v1.26-ROADMAP.md)
 - ✅ **v1.27 Remote Eval Worker Fan-Out & In-App Feedback** — Phases 121–123 (shipped 2026-06-16; releases #199, #202, #203) — see [milestones/v1.27-ROADMAP.md](milestones/v1.27-ROADMAP.md)
+- 🔄 **v1.28 Tactic Tagging** — Phases 124–126 (in progress)
 
 ## Phases
 
-> No active phases. The most recent shipped milestone is **v1.27 Remote Eval Worker Fan-Out & In-App Feedback** (Phases 121–123, shipped 2026-06-16). Start the next one with `/gsd-new-milestone` or promote a backlog item with `/gsd-review-backlog`.
+### Standalone (post-v1.27, milestone TBD)
+
+- [x] **Phase 123.1: Opening-eval dedup cache table (SEED-053)** (INSERTED) — replace the drain's cross-user `DISTINCT ON (full_hash)` self-join with a position-keyed `opening_position_eval` cache table (~1.06M rows / ~80MB, resident); cuts the per-game dedup lookup from ~8.4 s avg to sub-ms, accelerating the ~245k-game tier-3 drain backlog. Drop-in for `_fetch_dedup_evals`, no dedup-semantics change. Also accelerates v1.28 (Phase 125 backfill needs full-eval'd games). (completed 2026-06-17)
+
+### v1.28 Tactic Tagging
+
+- [ ] **Phase 124: Schema + Tactic Detector** — Alembic migration for `tactic_motif`/`tactic_piece` columns + the pure-CPU cook-heuristic reimplementation + hand-labeled fixture validation
+- [ ] **Phase 125: Backfill Tactic Motifs** — run `backfill_flaws.py` over ~131k self-eval'd games; lichess-eval-only games stay NULL until full-eval'd via the existing tier-3 idle fleet
+- [ ] **Phase 126: Comparison Stats + Frontend** — `GET /api/library/tactic-comparison` endpoint + motif chips on flaw cards + MiniBulletChart you-vs-opponent motif grid
+
+## Phase Details
+
+### Phase 123.1: Opening-eval dedup cache table (SEED-053) (INSERTED)
+
+**Goal**: The full-eval drain's opening-region eval/best_move dedup lookup is served by a position-keyed cache table instead of the cross-user self-join — sub-millisecond per lookup, no change to dedup semantics
+**Depends on**: Nothing (standalone infra; pure drop-in for `_fetch_dedup_evals`)
+**Requirements**: SEED-053 (no formal REQ IDs — infra optimization)
+**Success Criteria** (what must be TRUE):
+
+  1. A new Alembic migration adds `opening_position_eval(full_hash BIGINT PK, eval_cp SmallInteger, eval_mate SmallInteger, best_move VARCHAR(5))`; the dev DB migrates cleanly; a standalone idempotent backfill script populates it from existing our-engine opening evals (`DISTINCT ON (full_hash)` where `ply <= DEDUP_MAX_PLY` and the `has_engine_full_evals` predicate)
+  2. The drain's opening-region write path upserts only freshly-computed engine misses into the cache (`INSERT … ON CONFLICT (full_hash) DO NOTHING`, batched in the existing write transaction); a freshly drained opening position appears in the cache
+  3. `_fetch_dedup_evals` reads from `opening_position_eval` (`full_hash = ANY(:hashes)`) instead of the self-join, preserving every existing read-side guard (`ply <= DEDUP_MAX_PLY`, not flaw-adjacent, not terminal); a regression test asserts identical dedup results to the legacy self-join for the same fixture
+  4. eval/flaw/pv output is unchanged (no behavioral diff in the drain); the lookup's measured time drops from seconds to low-ms on prod-like data
+  5. The cache is seeded from prod our-engine data only; benchmark-DB seeding and a materialized view are explicitly rejected (provenance / no best_move-pv / refresh cost) and documented (per SEED-053 + 123.1-CONTEXT)
+
+**Plans**: 2 plans
+
+### Phase 124: Schema + Tactic Detector
+
+**Goal**: The system can detect and store a tactic motif for any flawed move that has a stored refutation PV
+**Depends on**: Nothing (first phase of this milestone — builds on v1.27 infrastructure)
+**Requirements**: TACSCH-01, TACSCH-02, TACDET-01, TACDET-02, TACDET-03, TACDET-04
+**Success Criteria** (what must be TRUE):
+
+  1. A new Alembic migration adds nullable `tactic_motif` (SmallInteger enum) and `tactic_piece` (SmallInteger) columns to `game_flaws`; the dev DB migrates cleanly
+  2. Given a stored `game_positions.pv` at `flaw_ply + 1`, the detector returns at most one motif name from the implemented MVP set (finalized during phase discussion) with a fixed priority order when multiple motifs fire
+  3. The detector leaves `tactic_motif = NULL` when confidence is low rather than guessing; a hand-labeled per-motif fixture set passes with precision-first accuracy
+  4. Motif detection runs inside `classify_game_flaws` (eval-drain flow-through) and `backfill_flaws.py` (recompute path) for both the player's and the opponent's flaws, with no new engine invocation
+
+**Plans**: TBD
+
+### Phase 125: Backfill Tactic Motifs
+
+**Goal**: All existing self-eval'd game flaws carry their tactic motif and piece tags; coverage is honest and verifiable
+**Depends on**: Phase 124 (schema + validated detector)
+**Requirements**: TACSCH-03
+**Success Criteria** (what must be TRUE):
+
+  1. Running `backfill_flaws.py` over the ~131k self-eval'd games (`full_evals_completed_at IS NOT NULL`) populates `tactic_motif` and `tactic_piece` for every flaw row where the detector fires (NULL rows reflect genuine low-confidence, not skipped positions)
+  2. Lichess-eval-only flaws (~13.6k games with no `full_evals_completed_at`) keep `tactic_motif = NULL` — no bespoke job type, no separate backfill; coverage fills in via the existing tier-3 idle fleet
+  3. Backfill is idempotent: re-running it produces the same result without duplicating or corrupting existing rows
+
+**Plans**: TBD
+
+### Phase 126: Comparison Stats + Frontend
+
+**Goal**: Players can see which tactic motifs they allow more or less than their opponents, with significance gating and mobile parity
+**Depends on**: Phase 125 (populated `tactic_motif` rows)
+**Requirements**: TACCMP-01, TACCMP-02, TACCMP-03, TACUI-01, TACUI-02, TACUI-03
+**Success Criteria** (what must be TRUE):
+
+  1. `GET /api/library/tactic-comparison` returns per-motif rates (normalized per game or per 100 blunders) for player vs opponents, with significance verdict via the project's existing Wilson-based chess-score utility, honoring all game filters (time control, platform, rated, opponent type, recency, color) and severity
+  2. Each flaw card in the Library shows its `allowed` motif as a family-colored chip with a definition popover, consistent with the shipped flaw-tag chip pattern
+  3. The you-vs-opponent motif comparison surface (MiniBulletChart grid: measure + CI + benchmark zone where available, per-motif tooltips) renders on the Library page with a section-level sample gate below which the comparison is withheld
+  4. All chips, comparison bullets, and interactive elements render correctly on mobile at 375px with `data-testid` and ARIA labels matching the project's browser-automation rules
+
+**Plans**: TBD
+**UI hint**: yes
+
+## Progress
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 1-10. v1.0 phases | 36/36 | Complete | 2024-03-15 |
+| 11-16. v1.1 phases | 14/14 | Complete | 2024-03-18 |
+| 17-19. v1.2 phases | 5/5 | Complete | 2024-03-21 |
+| 20-23. v1.3 phases | 10/10 | Complete | 2026-03-22 |
+| 24. Web Analytics | 2/2 | Complete | 2026-03-22 |
+| 26-33. v1.5 phases | 18/19 | Complete (28-03 deferred) | 2026-03-28 |
+| 34-39. v1.6 phases | 11/11 | Complete | 2026-03-30 |
+| 40-43. v1.7 phases | 11/11 | Complete | 2026-04-03 |
+| 44-47. v1.8 phases | N/A | Complete | 2026-04-06 |
+| 49-51. v1.9 phases | 7/7 | Complete | 2026-04-10 |
+| 48, 52-62. v1.10 phases | 28/28 | Complete | 2026-04-19 |
+| 63-68. v1.11 phases | 23/23 | Complete (Phase 67 descoped) | 2026-04-24 |
+| 69. Benchmark DB Infra & Ingestion | 6/6 | Complete (follow-on phases → SEED-006) | 2026-04-26 |
+| 70-71.1. v1.13 phases | 14/14 | Complete (Phases 72/73/74 descoped) | 2026-04-27 |
+| 75-77. v1.14 phases | 16/16 | Complete (INSIGHT-UI-04 descoped) | 2026-04-29 |
+| 78-79. v1.15 phases | 10/10 | Complete (VAL-01 / PHASE-VAL-01 rescinded) | 2026-05-03 |
+| 80-83. v1.16 phases | 24/24 | Complete | 2026-05-11 |
+| 84-88.4. v1.17 phases | ~54/~54 | Complete (89 dropped, 87.3 superseded) | 2026-05-19 |
+| 90-92. v1.18 phases | 17/17 | Complete | 2026-05-22 |
+| 93. Global Percentile Benchmark Artifact | 2/2 | Complete | 2026-05-22 |
+| 94. Backend & Frontend Percentile Annotations | 3/3 | Complete | 2026-05-23 |
+| 95-96. v1.20 phases | 5/5 | Complete | 2026-05-29 |
+| 97-99.1. v1.21 phases | 15/15 | Complete (99.1 INSERTED) | 2026-05-31 |
+| 100-101. v1.22 phases | 3/3 | Complete | 2026-05-31 |
+| 102-103. v1.23 phases | 3/3 | Complete (103 unplanned follow-on) | 2026-06-03 |
+| 104-112. v1.24 phases | 37/37 | Complete (111 shipped direct, no plan artifacts) | 2026-06-09 |
+| 113. Opponent-Flaw Materialization | 3/3 | Complete | 2026-06-10 |
+| 114. Benchmark Flaw-Delta Zone Computation | 1/1 | Complete | 2026-06-10 |
+| 114.1. Replace move_count with exact ply_count (INSERTED) | 2/2 | Complete | 2026-06-10 |
+| 115. You-vs-Opponent Comparison API + Bullet-Grid UI | 2/2 | Complete | 2026-06-11 |
+| 116. All-Ply Engine Core | 3/3 | Complete (deployed #190) | 2026-06-14 |
+| 117. Priority Queue + Flaw Integration | 3/3 | Complete (deployed #190) | 2026-06-14 |
+| 117.1. Flaw-Eval Convention Fix (INSERTED, SEED-044) | 2/2 | Complete (deployed #190) | 2026-06-14 |
+| 117.2. Wipe Eval-Only Engine Residue (INSERTED, SEED-044) | 1/1 | Complete (deployed #191) | 2026-06-14 |
+| 118. Demand UX + Auto-Enqueue | 3/3 | Complete (verified; not yet deployed) | 2026-06-14 |
+| 119. Eval-drain coverage (SEED-045, SEED-046) | 3/3 | Complete | 2026-06-14 |
+| 120. Headless remote trusted-operator eval worker | 4/4 | Complete | 2026-06-14 |
+| 121. Remote-worker tier-1 claiming (SEED-048) | 1/1 | Complete (release #199) | 2026-06-15 |
+| 122. In-app feedback button (SEED-049) | 2/2 | Complete (release #202; UAT 5/5) | 2026-06-15 |
+| 123. Remote-worker entry-ply fresh-import drain (SEED-051) | 3/3 | Complete (release #203; UAT 2/2) | 2026-06-16 |
+| 123.1. Opening-eval dedup cache table (SEED-053) (INSERTED) | 2/2 | Complete    | 2026-06-17 |
+| 124. Schema + Tactic Detector | 0/TBD | Not started | - |
+| 125. Backfill Tactic Motifs | 0/TBD | Not started | - |
+| 126. Comparison Stats + Frontend | 0/TBD | Not started | - |
+
+## Backlog
+
+### Phase 999.1: Password Reset (BACKLOG)
+
+**Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
+**Requirements:** TBD
+**Plans:** 2/2 plans complete
+
+Plans:
+
+- [ ] TBD (promote with /gsd:review-backlog when ready)
+
+### Phase 999.4: Position-Based Most Played Openings via game_positions (BACKLOG)
+
+**Goal:** Redesign "Most Played Openings" to count how many games *passed through* each opening position (via `game_positions` Zobrist hash matching) instead of counting final opening name classifications from chess.com/lichess. Currently "1. e4" shows ~75 games (only games *classified* as "King's Pawn Game") while obscure specific lines rank higher. Position-based counting would show all ~2000+ games that played 1. e4, consistent with FlawChess's core Zobrist hash architecture. Requires JOIN from `openings` reference table to `game_positions` on FEN or precomputed hash, then `COUNT(DISTINCT game_id)`.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (promote with /gsd:review-backlog when ready)
+
+### Phase 999.5: Hybrid Stockfish Eval for Conversion/Recovery (BACKLOG)
+
+**Goal:** Use Stockfish eval (`eval_cp`) as the advantage/disadvantage signal for conversion/recovery classification when available, falling back to material imbalance + 4-ply persistence for games without eval. Stockfish eval is the gold standard (no persistence filter needed since eval handles transient trades natively). Currently only ~15% of Lichess games have eval data and chess.com has 0%, but this improves automatically as more games get server-analyzed. Validated in `docs/endgame-conversion-recovery-analysis.md`: persistence closes 50-70% of the gap to Stockfish for pawn/mixed endgames, but a hybrid approach would eliminate the remaining 5-8pp offset for eval-available games.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (promote with /gsd:review-backlog when ready)
+
+### Phase 999.6: Opening Risk & Drawishness (BACKLOG)
+
+**Goal:** Risk and drawishness metrics per position in the move explorer.
+**Requirements:** TBD
+**Plans:** 0 plans
+**Context:** Moved from v1.10 Advanced Analytics — v1.10 is an endgame-focused milestone and opening risk metrics are a better fit for the upcoming Opening Insights milestone (discovering weaknesses in most-played opening lines). Re-evaluate scope at that time.
+
+Plans:
+
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+*Phase 999.7 (LLM Endgame-Insights Statistical-Reasoning Rework) promoted to active Phase 102 (v1.23) on 2026-06-01 via `/gsd-explore`; shipped 2026-06-03.*
+
+*Phase 103 (Endgame report LLM prompt refinements) shipped 2026-06-03 as an unplanned follow-on under v1.23 — see the collapsed v1.23 block above and [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md).*
+
+---
 
 <details>
 <summary>✅ v1.27 Remote Eval Worker Fan-Out & In-App Feedback (Phases 121–123) — SHIPPED 2026-06-16</summary>
@@ -378,95 +544,3 @@ See [milestones/v1.14-ROADMAP.md](milestones/v1.14-ROADMAP.md) for full details.
 See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 
 </details>
-
-## Progress
-
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 1-10. v1.0 phases | 36/36 | Complete | 2024-03-15 |
-| 11-16. v1.1 phases | 14/14 | Complete | 2024-03-18 |
-| 17-19. v1.2 phases | 5/5 | Complete | 2024-03-21 |
-| 20-23. v1.3 phases | 10/10 | Complete | 2026-03-22 |
-| 24. Web Analytics | 2/2 | Complete | 2026-03-22 |
-| 26-33. v1.5 phases | 18/19 | Complete (28-03 deferred) | 2026-03-28 |
-| 34-39. v1.6 phases | 11/11 | Complete | 2026-03-30 |
-| 40-43. v1.7 phases | 11/11 | Complete | 2026-04-03 |
-| 44-47. v1.8 phases | N/A | Complete | 2026-04-06 |
-| 49-51. v1.9 phases | 7/7 | Complete | 2026-04-10 |
-| 48, 52-62. v1.10 phases | 28/28 | Complete | 2026-04-19 |
-| 63-68. v1.11 phases | 23/23 | Complete (Phase 67 descoped) | 2026-04-24 |
-| 69. Benchmark DB Infra & Ingestion | 6/6 | Complete (follow-on phases → SEED-006) | 2026-04-26 |
-| 70-71.1. v1.13 phases | 14/14 | Complete (Phases 72/73/74 descoped) | 2026-04-27 |
-| 75-77. v1.14 phases | 16/16 | Complete (INSIGHT-UI-04 descoped) | 2026-04-29 |
-| 78-79. v1.15 phases | 10/10 | Complete (VAL-01 / PHASE-VAL-01 rescinded) | 2026-05-03 |
-| 80-83. v1.16 phases | 24/24 | Complete | 2026-05-11 |
-| 84-88.4. v1.17 phases | ~54/~54 | Complete (89 dropped, 87.3 superseded) | 2026-05-19 |
-| 90-92. v1.18 phases | 17/17 | Complete | 2026-05-22 |
-| 93. Global Percentile Benchmark Artifact | 2/2 | Complete | 2026-05-22 |
-| 94. Backend & Frontend Percentile Annotations | 3/3 | Complete | 2026-05-23 |
-| 95-96. v1.20 phases | 5/5 | Complete | 2026-05-29 |
-| 97-99.1. v1.21 phases | 15/15 | Complete (99.1 INSERTED) | 2026-05-31 |
-| 100-101. v1.22 phases | 3/3 | Complete | 2026-05-31 |
-| 102-103. v1.23 phases | 3/3 | Complete (103 unplanned follow-on) | 2026-06-03 |
-| 104-112. v1.24 phases | 37/37 | Complete (111 shipped direct, no plan artifacts) | 2026-06-09 |
-| 113. Opponent-Flaw Materialization | 3/3 | Complete | 2026-06-10 |
-| 114. Benchmark Flaw-Delta Zone Computation | 1/1 | Complete | 2026-06-10 |
-| 114.1. Replace move_count with exact ply_count (INSERTED) | 2/2 | Complete | 2026-06-10 |
-| 115. You-vs-Opponent Comparison API + Bullet-Grid UI | 2/2 | Complete | 2026-06-11 |
-| 116. All-Ply Engine Core | 3/3 | Complete (deployed #190) | 2026-06-14 |
-| 117. Priority Queue + Flaw Integration | 3/3 | Complete (deployed #190) | 2026-06-14 |
-| 117.1. Flaw-Eval Convention Fix (INSERTED, SEED-044) | 2/2 | Complete (deployed #190) | 2026-06-14 |
-| 117.2. Wipe Eval-Only Engine Residue (INSERTED, SEED-044) | 1/1 | Complete (deployed #191) | 2026-06-14 |
-| 118. Demand UX + Auto-Enqueue | 3/3 | Complete (verified; not yet deployed) | 2026-06-14 |
-| 119. Eval-drain coverage (SEED-045, SEED-046) | 3/3 | Complete | 2026-06-14 |
-| 120. Headless remote trusted-operator eval worker | 4/4 | Complete | 2026-06-14 |
-| 121. Remote-worker tier-1 claiming (SEED-048) | 1/1 | Complete (release #199) | 2026-06-15 |
-| 122. In-app feedback button (SEED-049) | 2/2 | Complete (release #202; UAT 5/5) | 2026-06-15 |
-| 123. Remote-worker entry-ply fresh-import drain (SEED-051) | 3/3 | Complete (release #203; UAT 2/2) | 2026-06-16 |
-
-## Backlog
-
-### Phase 999.1: Password Reset (BACKLOG)
-
-**Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
-**Requirements:** TBD
-**Plans:** 1/1 plans complete
-
-Plans:
-
-- [ ] TBD (promote with /gsd:review-backlog when ready)
-
-### Phase 999.4: Position-Based Most Played Openings via game_positions (BACKLOG)
-
-**Goal:** Redesign "Most Played Openings" to count how many games *passed through* each opening position (via `game_positions` Zobrist hash matching) instead of counting final opening name classifications from chess.com/lichess. Currently "1. e4" shows ~75 games (only games *classified* as "King's Pawn Game") while obscure specific lines rank higher. Position-based counting would show all ~2000+ games that played 1. e4, consistent with FlawChess's core Zobrist hash architecture. Requires JOIN from `openings` reference table to `game_positions` on FEN or precomputed hash, then `COUNT(DISTINCT game_id)`.
-**Requirements:** TBD
-**Plans:** 0 plans
-
-Plans:
-
-- [ ] TBD (promote with /gsd:review-backlog when ready)
-
-### Phase 999.5: Hybrid Stockfish Eval for Conversion/Recovery (BACKLOG)
-
-**Goal:** Use Stockfish eval (`eval_cp`) as the advantage/disadvantage signal for conversion/recovery classification when available, falling back to material imbalance + 4-ply persistence for games without eval. Stockfish eval is the gold standard (no persistence filter needed since eval handles transient trades natively). Currently only ~15% of Lichess games have eval data and chess.com has 0%, but this improves automatically as more games get server-analyzed. Validated in `docs/endgame-conversion-recovery-analysis.md`: persistence closes 50-70% of the gap to Stockfish for pawn/mixed endgames, but a hybrid approach would eliminate the remaining 5-8pp offset for eval-available games.
-**Requirements:** TBD
-**Plans:** 0 plans
-
-Plans:
-
-- [ ] TBD (promote with /gsd:review-backlog when ready)
-
-### Phase 999.6: Opening Risk & Drawishness (BACKLOG)
-
-**Goal:** Risk and drawishness metrics per position in the move explorer.
-**Requirements:** TBD
-**Plans:** 0 plans
-**Context:** Moved from v1.10 Advanced Analytics — v1.10 is an endgame-focused milestone and opening risk metrics are a better fit for the upcoming Opening Insights milestone (discovering weaknesses in most-played opening lines). Re-evaluate scope at that time.
-
-Plans:
-
-- [ ] TBD (promote with /gsd-review-backlog when ready)
-
-*Phase 999.7 (LLM Endgame-Insights Statistical-Reasoning Rework) promoted to active Phase 102 (v1.23) on 2026-06-01 via `/gsd-explore`; shipped 2026-06-03.*
-
-*Phase 103 (Endgame report LLM prompt refinements) shipped 2026-06-03 as an unplanned follow-on under v1.23 — see the collapsed v1.23 block above and [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md).*

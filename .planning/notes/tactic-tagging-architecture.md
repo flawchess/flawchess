@@ -92,6 +92,39 @@ infra that already exists.
   already done. Real remaining work: the **detector** (reimplement cook heuristics +
   validate, Q-011), the schema column + priority order, the comparison stats, the frontend.
 
+## Locked decisions (2026-06-17 follow-up — piece-type capture)
+
+Raised during `/gsd-new-milestone v1.28` scoping: should we also record the *piece* involved
+in a tactic (e.g. distinguish knight-fork vs queen-fork)? **Decision: capture broadly, store
+now, surface later.**
+
+- **New column `tactic_piece`** (nullable SmallInteger, python-chess PieceType 1–6, or NULL) on
+  `game_flaws`, alongside `tactic_motif`. Populated for every motif where a piece is
+  identifiable, with a **per-motif semantic** (the genuine design subtlety — "piece" is not one
+  concept across motifs):
+  - `fork` → the **forking/attacking** piece (highest value; classic amateur signal,
+    e.g. "you allow knight forks 2× more than your opponents").
+  - `hanging-piece` → the **victim** (the piece *you* hung that the refutation captures), NOT
+    the capturer — the victim type is the coaching signal ("you hang knights").
+  - `pin` / `skewer` → the **line piece** delivering it (B/R/Q only; a knight can't pin/skewer).
+  - `back-rank` / `mate` → the **mating** piece.
+  - `double-check` → likely NULL (two checkers, ambiguous) — final call deferred to detector
+    design (Q-012).
+- **Cost rationale:** the detector already identifies the relevant piece while detecting the
+  motif (a fork detector must find the double-attacker), so capturing its type is ~free at
+  detect time. The column is cheap; the detector is pure-CPU and re-runnable via
+  `backfill_flaws.py`, so even broad capture is low-stakes.
+- **UI scope held to v1:** the v1.28 frontend comparison stays **motif-level**. A piece-level
+  you-vs-opponent breakdown is deferred — `motif × piece_type` is ~6×6 cells and per-user
+  samples are thin (Q-007: bimodal, median ~6 analyzed games), so most piece-level cells would
+  fall below the Wilson sample floor. Capture the data now; surface piece-level drill-down in a
+  later milestone only where samples support it.
+
+## Open questions (added 2026-06-17)
+
+- **Q-012** — the per-motif `tactic_piece` semantic (and the `double-check` / multi-piece
+  edge cases): confirm the mapping above against real detector output before backfill.
+
 ## Open questions (see .planning/research/questions.md)
 
 - **Q-010** — the motif priority order (card semantics).

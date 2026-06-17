@@ -47,15 +47,15 @@ import chess
 import chess.pgn
 import sentry_sdk
 import sqlalchemy as sa
-from sqlalchemy import bindparam, select, update
+from sqlalchemy import TextClause, bindparam, select, text, update
 from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from sqlalchemy.orm import aliased
 
 from app.core.database import async_session_maker
 from app.models.game import Game
 from app.models.game_position import DEDUP_MAX_PLY, GamePosition
 from app.models.import_job import ImportJob
+from app.models.opening_position_eval import OpeningPositionEval
 from app.repositories.game_flaws_repository import bulk_insert_game_flaws, flaw_record_to_row
 from app.repositories.game_repository import users_with_zero_pending
 from app.services import engine as engine_service
@@ -114,6 +114,44 @@ _DEDUP_MAX_PLY: int = DEDUP_MAX_PLY
 # offset defines "the game-ending move sits 1 ply before the maximum stored ply", used
 # in the resweep predicate to exclude it from the hole definition (ply < max_ply - 1).
 _GAME_ENDING_PLY_OFFSET: int = 1
+
+# ─── Phase 123.1 SEED-053: opening eval cache population gate (single source of truth) ───
+
+# OPENING_CACHE_BACKFILL_SQL is the canonical INSERT…SELECT that populates
+# opening_position_eval from our-engine game_positions evals.  It is the single
+# source of the cache-population gate, shared by:
+#   - scripts/backfill_opening_eval_cache.py  (one-time idempotent backfill), and
+#   - tests/services/test_full_eval_drain.py  (gate-equivalence tests for
+#     _fetch_dedup_evals — run this SQL before calling _fetch_dedup_evals so the
+#     gate is exercised at its actual enforcement site).
+#
+# Gate predicates:
+#   full_evals_completed_at IS NOT NULL — our-engine evals only (D-123.1-03)
+#   lichess_evals_at IS NULL            — exclude lichess %eval sources (WR-02 / D-117-07)
+#   eval_cp IS NOT NULL OR eval_mate IS NOT NULL — donor row must have an eval
+#   nxt.ply <= :dedup_max_ply           — opening region only (D-116-02 / EVAL-03)
+# Idempotent: ON CONFLICT (full_hash) DO NOTHING.
+OPENING_CACHE_BACKFILL_SQL: TextClause = text(
+    """
+    INSERT INTO opening_position_eval (full_hash, eval_cp, eval_mate, best_move)
+    SELECT DISTINCT ON (nxt.full_hash)
+           nxt.full_hash,
+           cur.eval_cp,
+           cur.eval_mate,
+           nxt.best_move
+    FROM   game_positions cur
+    JOIN   game_positions nxt
+           ON  nxt.game_id = cur.game_id
+           AND nxt.ply     = cur.ply + 1
+    JOIN   games g
+           ON  g.id = cur.game_id
+    WHERE  nxt.ply <= :dedup_max_ply
+      AND  g.full_evals_completed_at IS NOT NULL
+      AND  g.lichess_evals_at IS NULL
+      AND  (cur.eval_cp IS NOT NULL OR cur.eval_mate IS NOT NULL)
+    ON CONFLICT (full_hash) DO NOTHING
+    """
+)
 
 # ─── Phase 123 SEED-051: entry-ply remote-fan-out lease constants (D-03/D-04/D-05) ───
 
@@ -273,63 +311,28 @@ async def _fetch_dedup_evals(
 ) -> dict[int, tuple[int | None, int | None, str | None]]:
     """Batch-fetch a position's OWN eval + best_move for opening-region hashes (EVAL-03, D-116-02).
 
-    Returns, for each requested position hash Q, the eval OF position Q and the
-    engine's best move FROM Q — i.e. position-/decision-keyed values, NOT the
-    post-move stored convention. The post-move +1 shift that turns these into the
-    written rows happens later in `_post_move_eval`. Keeping the dedup map
-    position-keyed lets the same shift apply uniformly to engine results and
-    dedup transplants.
+    SEED-053 / D-123.1-05: reads the position-keyed opening_position_eval cache instead
+    of the former self-join on game_positions. The cache is a hash-unique relation keyed by
+    full_hash, so the lookup collapses to a PK index scan (~1-5 ms) versus the ~8.4 s
+    DISTINCT-ON self-join (see CONTEXT.md for EXPLAIN evidence). Column semantics are
+    identical to the self-join result: eval_cp/eval_mate are the eval OF the requested
+    position and best_move is the engine's decision FROM it.
 
-    Post-move convention recovery (SEED-044): every source row now stores the
-    POST-MOVE eval — row k holds the eval of the position AFTER move k, i.e. the
-    eval of `full_hash[k+1]`, for ALL sources (engine and lichess `%eval` alike;
-    zobrist.py stores lichess the same way). So a position's OWN eval is NOT in
-    its own row — it is in the row whose move REACHED it (one ply earlier). We
-    recover it with a one-ply self-join: for a requested position Q, read
-    `cur.eval_cp` from the donor row `cur` whose successor `nxt` has
-    `nxt.full_hash == Q` (`nxt.ply == cur.ply + 1`). `cur.eval_cp` is the eval
-    AFTER cur's move = the eval OF Q. The best move FROM Q stays decision-keyed,
-    so it is read directly from `nxt.best_move` (the row whose full_hash IS Q).
+    Read-side guards (ply <= DEDUP_MAX_PLY, not in flaw_adjacent_plies, not is_terminal)
+    remain entirely in the caller at ~line 1640 — UNCHANGED. This function only changes
+    which table backs the lookup.
 
-    Gates (unchanged): full_evals_completed_at IS NOT NULL (parity by
-    construction; NOT evals_completed_at, which includes depth-15 rows — Pitfall
-    4) and lichess_evals_at IS NULL (engine-written source only — WR-02 /
-    D-117-07; transplanting requires our 1M-node best_move, which lichess sources
-    lack). The opening-region gate is on the requested position `nxt.ply`.
-
-    First-ply edge: the initial position (ply 0) has no predecessor move that
-    reaches it, so it is never recoverable here and simply falls through to a
-    fresh engine eval. That is harmless — under post-move storage no row ever
-    stores the initial position's eval (row k stores the eval AFTER move k).
-
-    Returns {full_hash: (eval_cp, eval_mate, best_move)} for hashes with at
-    least one hit.
+    Returns {full_hash: (eval_cp, eval_mate, best_move)} for hashes present in the cache.
     """
     if not full_hashes:
         return {}
-    cur = aliased(GamePosition)
-    nxt = aliased(GamePosition)
     result = await session.execute(
         select(
-            nxt.full_hash,
-            cur.eval_cp,
-            cur.eval_mate,
-            nxt.best_move,
-        )
-        .join(nxt, sa.and_(nxt.game_id == cur.game_id, nxt.ply == cur.ply + 1))
-        .join(Game, cur.game_id == Game.id)
-        .where(
-            nxt.full_hash.in_(full_hashes),
-            nxt.ply <= _DEDUP_MAX_PLY,
-            # full_evals_completed_at IS NOT NULL AND lichess_evals_at IS NULL — engine-written
-            # source only (WR-02 / D-117-07; transplanting requires our 1M-node best_move,
-            # which lichess sources lack).
-            Game.has_engine_full_evals,
-            # cur.eval_cp/eval_mate = the post-move eval of cur = the eval OF nxt's position.
-            sa.or_(cur.eval_cp.isnot(None), cur.eval_mate.isnot(None)),
-        )
-        .distinct(nxt.full_hash)
-        .limit(len(full_hashes))
+            OpeningPositionEval.full_hash,
+            OpeningPositionEval.eval_cp,
+            OpeningPositionEval.eval_mate,
+            OpeningPositionEval.best_move,
+        ).where(OpeningPositionEval.full_hash.in_(full_hashes))
     )
     return {row[0]: (row[1], row[2], row[3]) for row in result.all()}
 
@@ -1542,6 +1545,65 @@ async def run_eval_drain() -> None:
             await asyncio.sleep(_DRAIN_IDLE_SLEEP_SECONDS)
 
 
+async def _upsert_opening_cache(
+    session: AsyncSession,
+    engine_targets: list[_FullPlyEvalTarget],
+    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
+) -> None:
+    """Batch-insert freshly-computed opening-region engine evals into the dedup cache (D-123.1-04).
+
+    Populates opening_position_eval with results from this tick's engine evaluations,
+    restricted to the opening region (ply <= _DEDUP_MAX_PLY), non-terminal targets, and
+    rows that have a real eval (at least one of eval_cp/eval_mate is non-NULL).
+
+    Excludes:
+    - Dedup transplants (already in the cache; only engine_targets are passed in)
+    - Terminal donors (is_terminal=True; no game_positions row, eval is post-move only)
+    - Null-eval holes (engine failure — nothing to cache)
+
+    Uses ON CONFLICT (full_hash) DO NOTHING (first-write-wins per D-123.1-04). Insert
+    volume is self-limiting: as the cache fills, fewer misses reach here each tick.
+
+    The INSERT is inside the existing Step-4 write transaction. If it fails the whole txn
+    rolls back and the game is re-picked next tick — acceptable, as the eval writes have
+    not committed either. No outer try/except is added (we do not swallow cache errors).
+
+    Uses CAST() instead of :: cast syntax for asyncpg compatibility (same reason as
+    _batch_update_eval_rows).
+
+    Guard: empty cache_rows is a no-op — no SQL emitted.
+    """
+    cache_rows = [
+        (t.full_hash, cp, mate, bm)
+        for t in engine_targets
+        if t.ply <= _DEDUP_MAX_PLY and not t.is_terminal
+        for cp, mate, bm, _pv in (engine_result_map.get(t.ply, (None, None, None, None)),)
+        if cp is not None or mate is not None
+    ]
+    if not cache_rows:
+        return
+    params: dict[str, int | str | None] = {}
+    values_parts: list[str] = []
+    for i, (fh, cp, mate, bm) in enumerate(cache_rows):
+        params[f"fh_{i}"] = fh
+        params[f"cp_{i}"] = cp
+        params[f"mt_{i}"] = mate
+        params[f"bm_{i}"] = bm
+        values_parts.append(
+            f"(CAST(:fh_{i} AS bigint),"
+            f" CAST(:cp_{i} AS smallint),"
+            f" CAST(:mt_{i} AS smallint),"
+            f" CAST(:bm_{i} AS varchar))"
+        )
+    values_sql = ", ".join(values_parts)
+    sql = sa.text(
+        f"INSERT INTO opening_position_eval (full_hash, eval_cp, eval_mate, best_move)"  # noqa: S608
+        f" VALUES {values_sql}"
+        f" ON CONFLICT (full_hash) DO NOTHING"
+    )
+    await session.execute(sql, params)
+
+
 async def _full_drain_tick() -> bool:
     """Run ONE full-drain tick: yield gate, queue claim, collect, dedup, gather, write.
 
@@ -1727,6 +1789,11 @@ async def _full_drain_tick() -> bool:
         # Runs BEFORE the completion markers so evals + flaws commit atomically (T-117-11).
         # Always runs — partial flaws should materialize even when holes remain.
         await _classify_and_fill_oracle(write_session, game_id, engine_result_map)
+
+        # SEED-053 / D-123.1-04: fill the opening-eval cache with freshly-computed misses.
+        # Runs inside the same write txn — cache write + eval write commit atomically.
+        # Skipped for lichess-eval games (no engine_targets generated for them).
+        await _upsert_opening_cache(write_session, engine_targets, engine_result_map)
 
         new_attempts = current_attempts + 1
         games_table = Game.__table__
