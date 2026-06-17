@@ -17,7 +17,7 @@ import datetime
 from collections.abc import Sequence
 from typing import Any, Literal
 
-from sqlalchemy import Float, Select, Subquery, and_, case, exists, func, or_, select, true
+from sqlalchemy import Select, Subquery, case, exists, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
@@ -34,7 +34,6 @@ from app.repositories.game_flaws_repository import (
 from app.repositories.query_utils import apply_game_filters, is_opponent_expr, player_only_gate
 from app.schemas.library import FlawListItem
 from app.services.flaws_service import (
-    EVAL_COVERAGE_MIN,
     FlawSeverity,
     FlawTag,
 )
@@ -469,11 +468,13 @@ async def fetch_page_analyzed_set(
     user_id: int,
     game_ids: Sequence[int],
 ) -> frozenset[int]:
-    """Return the subset of game_ids that pass the >=90% eval-coverage gate.
+    """Return the subset of game_ids where full_evals_completed_at IS NOT NULL.
 
     Used in _build_card to determine analysis_state for each page game without
     a per-game position load. Replaces the per-game count_game_severities
-    analysis_state check after D-02 migration.
+    analysis_state check after D-02 migration. The gate is now the authoritative
+    games.full_evals_completed_at column (reversal of the old per-ply coverage
+    recompute — see _analyzed_game_ids_subquery docstring).
     """
     if not game_ids:
         return frozenset()
@@ -550,8 +551,14 @@ async def fetch_stats_aggregates(
        phase_opening, phase_middlegame, phase_endgame)
 
     All counts are over the analyzed+filtered game set.
-    User-scoped (T-108-08). The analyzed_game_ids_subq is the eval-coverage
-    gate (Pitfall 6 — D-03: analyzed_n stays on the coverage subquery).
+    User-scoped (T-108-08). The analyzed_game_ids_subq is now the authoritative
+    games.full_evals_completed_at column (reversal of D-03's coverage-subquery
+    decision, quick-task 260617-pu4): the old per-ply coverage recompute
+    full-scanned the user's game_positions partition on every call, producing
+    pathological tail latency (135s avg / 49-min max under an eval-drain in prod).
+    full_evals_completed_at is the same formula already materialized by the drain
+    and is MORE correct because it rescues short fully-analyzed games that the live
+    recompute over-excluded (~0.17% divergence, all in the short-game direction).
     """
     base_filtered_subq = _filtered_games_base(
         user_id,
@@ -894,35 +901,27 @@ async def query_filtered_games(
 
 
 def _analyzed_game_ids_subquery(user_id: int) -> Subquery:
-    """Per-game coverage aggregate -> game_ids whose >=90% of MOVABLE plies carry an eval.
+    """Indexed games-table lookup: game_ids where full_evals_completed_at IS NOT NULL.
 
-    Replicates flaws_service._compute_eval_coverage in SQL:
-        SUM(CASE WHEN eval_cp OR eval_mate non-null THEN 1 ELSE 0 END)::float
-        / (COUNT(*) - 1)  >=  EVAL_COVERAGE_MIN   -- HAVING COUNT(*) > 1
-    grouped by game_id. EVAL_COVERAGE_MIN is the imported kernel constant (no 0.90
-    literal). User-scoped via the game_positions.user_id == :user_id predicate, which
-    matches flaws_repository.fetch_game_positions_ordered, so this COUNT(*) covers the
-    exact same per-game position set as the Python kernel's len(positions).
+    REVERSAL (quick-task 260617-pu4): the previous implementation was a per-game
+    coverage aggregate over game_positions (SUM(has_eval) / (COUNT(*)-1) >=
+    EVAL_COVERAGE_MIN, grouped by game_id). That GROUP BY / HAVING full-scanned the
+    user's entire game_positions partition on every call — 409k rows for the largest
+    prod user — causing 135s avg / 49-min max fetch_stats_aggregates latency under an
+    eval-drain (prod finding 2026-06-17).
 
-    BUG FIX (quick-task 260615-rb1): the denominator was COUNT(*), which counted the
-    structurally-unevaluable terminal position (the board after the last move, no
-    move annotated) against coverage and capped short fully-analyzed games below the
-    threshold. The denominator is now (COUNT(*) - 1) to mirror the kernel's
-    len(positions) - 1, with a HAVING COUNT(*) > 1 guard to exclude the <=1-position
-    case (no movable ply, no div-by-zero, no spurious pass). Both gates MUST agree:
-    a 7-ply fully-analyzed game is "analyzed" by both.
+    That coverage formula was already materialized by the eval-drain into
+    games.full_evals_completed_at, so we can replace the cold-page partition scan with
+    a single indexed games lookup. This is strictly cheaper (PK index, no aggregate)
+    and also MORE correct: the per-ply recompute (COUNT(*)-1 denominator introduced in
+    260615-rb1) still over-excluded short fully-analyzed games whose terminal position
+    had no eval, causing ~0.17% divergence. full_evals_completed_at is set by the drain
+    only when the kernel itself is satisfied, so it is the definitive source of truth.
+    The (COUNT-1) denominator narrative in 260615-rb1 no longer applies to this path.
     """
-    has_eval = case(
-        (or_(GamePosition.eval_cp.isnot(None), GamePosition.eval_mate.isnot(None)), 1),
-        else_=0,
-    )
-    movable_count = func.count() - 1
-    coverage = func.cast(func.sum(has_eval), Float) / movable_count
     return (
-        select(GamePosition.game_id.label("game_id"))
-        .where(GamePosition.user_id == user_id)
-        .group_by(GamePosition.game_id)
-        .having(and_(func.count() > 1, coverage >= EVAL_COVERAGE_MIN))
+        select(Game.id.label("game_id"))
+        .where(Game.user_id == user_id, Game.full_evals_completed_at.isnot(None))
         .subquery("analyzed")
     )
 

@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Changed
+
+- **Flaw stats faster and more accurate on large game libraries** — the analyzed-game gate now uses the pre-materialized `full_evals_completed_at` column instead of recomputing eval coverage across all positions on every request. This eliminates a full-partition scan that caused 135s average / 49-minute max latency under an eval drain on large accounts. Fully-analyzed short games are now correctly counted as analyzed. (260617-pu4)
+
 ## [v1.27] Remote Eval Worker Fan-Out & In-App Feedback — 2026-06-16
 
 Scaled off-box eval compute beyond the idle backlog and added a low-friction feedback channel. Trusted remote workers can now claim explicit single-game "Analyze" jobs (server-busy overflow) and fan out import-time (entry-ply) evaluation on big first imports, so a brand-new user sees flaws and endgame stats sooner. A floating in-app feedback button (guests included) ties submissions to the page the user was on and pings the team via Sentry. Bundles the post-v1.26 stabilization work (guest welcome page, analyze-pill UX, import-counter/WAL ops fixes). Phases 121–123.

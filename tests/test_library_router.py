@@ -315,8 +315,14 @@ async def _seed_game_committed(
     result: str = "1-0",
     user_color: str = "white",
     platform: str = "lichess",
+    full_evals_completed_at: datetime.datetime | None = None,
 ) -> int:
-    """Insert and commit a Game row, returning its ID."""
+    """Insert and commit a Game row, returning its ID.
+
+    full_evals_completed_at drives the _analyzed_game_ids_subquery gate (quick-task
+    260617-pu4): pass a non-None datetime to mark the game as fully eval-drained and
+    thus "analyzed" by fetch_page_analyzed_set / analysis_state.
+    """
     from app.models.game import Game
 
     async with session_maker() as session:
@@ -336,6 +342,7 @@ async def _seed_game_committed(
             rated=True,
             is_computer_game=False,
             played_at=played_at,
+            full_evals_completed_at=full_evals_completed_at,
         )
         session.add(game)
         await session.commit()
@@ -1088,13 +1095,16 @@ async def eval_series_test_state(test_engine: Any) -> dict[str, Any]:
     headers_a, user_a_id = await _register_and_login(f"eval_a_{suffix}@example.com")
     headers_b, user_b_id = await _register_and_login(f"eval_b_{suffix}@example.com")
 
-    # User A: analyzed game (white user) with >90% eval coverage
+    _now = datetime.datetime.now(tz=datetime.timezone.utc)
+
+    # User A: analyzed game (white user) — full_evals_completed_at marks it analyzed.
     game_analyzed = await _seed_game_committed(
         session_maker,
         user_id=user_a_id,
         played_at=datetime.datetime(2026, 4, 1, tzinfo=datetime.timezone.utc),
         result="0-1",
         user_color="white",
+        full_evals_completed_at=_now,
     )
     positions = _make_analyzed_positions(n_plies=10)
     await _seed_positions_committed(
@@ -1104,7 +1114,7 @@ async def eval_series_test_state(test_engine: Any) -> dict[str, Any]:
         positions=positions,
     )
 
-    # User A: unanalyzed game — no positions at all (0% eval coverage)
+    # User A: unanalyzed game — full_evals_completed_at NULL (not analyzed)
     game_unanalyzed = await _seed_game_committed(
         session_maker,
         user_id=user_a_id,
@@ -1113,7 +1123,7 @@ async def eval_series_test_state(test_engine: Any) -> dict[str, Any]:
         user_color="white",
     )
 
-    # User B: analyzed positions for a different game (IDOR target)
+    # User B: analyzed game for IDOR target — mark as analyzed too.
     # We seed positions under user_b_id; the IDOR test confirms user_a_id's
     # fetch_page_eval_positions call does NOT return these rows.
     game_b_analyzed = await _seed_game_committed(
@@ -1122,6 +1132,7 @@ async def eval_series_test_state(test_engine: Any) -> dict[str, Any]:
         played_at=datetime.datetime(2026, 4, 1, tzinfo=datetime.timezone.utc),
         result="1-0",
         user_color="black",
+        full_evals_completed_at=_now,
     )
     await _seed_positions_committed(
         session_maker,
@@ -1462,13 +1473,16 @@ async def game_by_id_test_state(test_engine: Any) -> dict[str, Any]:
     headers_a, user_a_id = await _register_and_login(f"gbid_a_{suffix}@example.com")
     headers_b, user_b_id = await _register_and_login(f"gbid_b_{suffix}@example.com")
 
-    # User A: analyzed game with >=90% eval coverage (10 positions, 9 with eval)
+    _now = datetime.datetime.now(tz=datetime.timezone.utc)
+
+    # User A: analyzed game — full_evals_completed_at marks it analyzed.
     game_a = await _seed_game_committed(
         session_maker,
         user_id=user_a_id,
         played_at=datetime.datetime(2026, 5, 1, tzinfo=datetime.timezone.utc),
         result="1-0",
         user_color="white",
+        full_evals_completed_at=_now,
     )
     await _seed_positions_committed(
         session_maker,

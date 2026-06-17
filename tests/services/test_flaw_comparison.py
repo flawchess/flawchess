@@ -102,38 +102,22 @@ async def _seed_game(
 
 
 async def _seed_analyzed(session: AsyncSession, *, game: "Game") -> None:  # type: ignore[name-defined]
-    """Mark the game analyzed: full per-ply eval coverage AND move-quality columns.
+    """Mark the game analyzed via both gates.
 
     count_filtered_and_analyzed (the comparison gate) keys analyzed_n off the cheap
-    Game.is_analyzed detector (white_blunders IS NOT NULL); analyzed_game_ids /
-    aggregates use per-ply eval coverage. A real Lichess analyzed game satisfies
+    Game.is_analyzed detector (white_blunders IS NOT NULL); _analyzed_game_ids_subquery
+    uses the authoritative full_evals_completed_at column (quick-task 260617-pu4,
+    replaces per-ply eval-coverage recompute). A real Lichess analyzed game satisfies
     both, so seed both here.
     """
-    from app.models.game_position import GamePosition
+    import datetime
 
     # Cheap analyzed detector: move-quality counts present (0 = analyzed, no blunders).
     if game.white_blunders is None:
         game.white_blunders = 0
 
-    ply_count = game.ply_count or 40
-    # Seed positions for all plies so coverage = 100%
-    for ply in range(ply_count):
-        pos = GamePosition(
-            game_id=game.id,
-            user_id=game.user_id,
-            ply=ply,
-            full_hash=hash(f"{game.id}-{ply}"),
-            white_hash=hash(f"w-{game.id}-{ply}"),
-            black_hash=hash(f"b-{game.id}-{ply}"),
-            eval_cp=10,  # non-null -> coverage = 100%
-            eval_mate=None,
-            phase=1,
-            piece_count=20,
-            material_count=1000,
-            material_signature="KR_KR",
-            material_imbalance=0,
-        )
-        session.add(pos)
+    # Authoritative analyzed gate: full_evals_completed_at IS NOT NULL.
+    game.full_evals_completed_at = datetime.datetime.now(tz=datetime.timezone.utc)
     await session.flush()
 
 
