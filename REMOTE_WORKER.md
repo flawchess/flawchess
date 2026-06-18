@@ -1,45 +1,59 @@
 # Remote Stockfish Worker
 
-If you want to help out, here's how you can add a Stockfish worker to support the FlawChess server and speed up game analysis. This is a standalone setup: it does **not** require Docker, PostgreSQL, Node.js, or anything else from the [full development setup](README.md#getting-started). All you need is the repo, Stockfish, and the `uv` Python package manager.
+Want to help out? You can run a small program on your computer that helps the FlawChess server analyze games faster. It runs Stockfish (the chess engine) in the background and quietly does analysis work whenever the server needs it.
 
-## Prerequisites
+You don't need to be a programmer to set this up. You also don't need Docker, a database, or the full FlawChess developer setup. Just the files, Stockfish, and one helper tool called `uv`. The steps below walk you through it.
 
-- You need the `EVAL_OPERATOR_TOKEN` from the server owner.
+## What you'll need first
 
-## Setup
+- Ask the server owner for your `EVAL_OPERATOR_TOKEN`. This is a secret code that lets your computer connect. You'll paste it in later.
 
-1. Get the [repo](https://github.com/flawchess/flawchess) from Github. It's public, so no GitHub account is required. Either clone over HTTPS:
+## Setup (Linux and macOS)
+
+1. **Download the files.** Go to the [FlawChess repository](https://github.com/flawchess/flawchess) on GitHub, click the green **Code** button, and choose **Download ZIP**. Unzip it somewhere easy to find, like your Desktop. (No GitHub account needed.)
+
+   *If you're comfortable with git, you can clone the repo instead:*
    ```
    git clone https://github.com/flawchess/flawchess.git
    ```
-   or [download the ZIP](https://github.com/flawchess/flawchess/archive/refs/heads/main.zip) from the GitHub web UI ("Code → Download ZIP") and extract it.
 
-2. From inside the flawchess folder, install Stockfish 18 with `bin/install_stockfish.sh` (Linux/MacOS only. For Windows, see below).
+2. **Open a terminal** and go into the folder you just unzipped. For example:
+   ```
+   cd ~/Desktop/flawchess
+   ```
 
-3. Install the [uv](https://docs.astral.sh/uv/) python package manager.
+3. **Install Stockfish.** Run this once:
+   ```
+   bin/install_stockfish.sh
+   ```
 
-4. Inside the flawchess directory, copy `.env.example` to `.env` and set your token on the `EVAL_OPERATOR_TOKEN=` line: `EVAL_OPERATOR_TOKEN=**********`
+4. **Install `uv`** (a tool that runs the worker). Follow the one-line install instructions at [the uv website](https://docs.astral.sh/uv/).
 
-5. Run this from within the flawchess directory: 
+5. **Add your token.** In the flawchess folder, make a copy of the file `.env.example` and name the copy `.env`. Open `.env` in any text editor, find the line that starts with `EVAL_OPERATOR_TOKEN=`, and paste your token right after the `=`, like this:
+   ```
+   EVAL_OPERATOR_TOKEN=your-token-here
+   ```
+
+6. **Start the worker.** Back in the terminal, run:
    ```
    uv run python scripts/remote_eval_worker.py --workers 4
    ```
-   You can increase the number of workers up to 2x your CPU core count, but the default is 4.
+   `--workers 4` means it uses 4 CPU cores. 4 is a good default. If your computer is powerful and you want it to do more, you can go up to twice your number of CPU cores.
 
-6. Keep it running as long as you want and end it with `Ctrl-C` or by closing the terminal.
+7. **Leave it running** as long as you like. To stop it, press `Ctrl-C` in the terminal or just close the window.
 
-## Running on Windows
+## Setup (Windows)
 
-Besides Linux and MacOS, the worker runs natively on Windows as well. No WSL or Docker needed.
+The worker runs on Windows too. No extra tools like WSL or Docker needed. The steps are the same as above, with two differences:
 
-- Instead of running `bin/install_stockfish.sh`, download and extract the [Windows Stockfish 18 release](https://stockfishchess.org/download/). 
+- **Instead of step 3** (`bin/install_stockfish.sh`), download the [Windows version of Stockfish](https://stockfishchess.org/download/) and unzip it somewhere on your computer.
 
-- Uncomment and set the `STOCKFISH_PATH` line in `.env` (note the forward slashes and the absence of the .exe extension):
+- **After step 5**, also open your `.env` file and find the line starting with `STOCKFISH_PATH`. Remove the `#` at the start of the line (if there is one) and set it to where you put Stockfish. Use forward slashes `/` and leave off the `.exe` at the end:
    ```
    STOCKFISH_PATH="C:/path/to/stockfish-windows-x86-64-avx2"
    ```
 
-- Run the same command from within the flawchess directory as above: 
-   ```
-   uv run python scripts/remote_eval_worker.py --workers 4
-   ```
+Then start the worker exactly like step 6 above:
+```
+uv run python scripts/remote_eval_worker.py --workers 4
+```
