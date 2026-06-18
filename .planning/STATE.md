@@ -4,11 +4,10 @@ milestone: v1.28
 milestone_name: Tactic Tagging
 current_phase: 125
 current_phase_name: Backfill Tactic Motifs
-status: executing
+status: Phase 124 shipped — squash-merged to main (76b9f32a)
 stopped_at: Completed 124-01-PLAN.md
-last_updated: "2026-06-18T00:34:06.120Z"
+last_updated: "2026-06-18T01:55:27.884Z"
 last_activity: 2026-06-18
-last_activity_desc: Phase 124 complete, transitioned to Phase 125
 progress:
   total_phases: 8
   completed_phases: 2
@@ -23,8 +22,8 @@ progress:
 
 Phase: 125 — Backfill Tactic Motifs
 Plan: Not started
-Status: Ready to execute
-Last activity: 2026-06-18 — Phase 124 complete, transitioned to Phase 125
+Status: Phase 124 shipped — squash-merged to main (76b9f32a)
+Last activity: 2026-06-18
 
 ## Project Reference
 
