@@ -33,16 +33,33 @@ backfill for already-stored lichess games.
   dedup-transplanted plies are absent from `engine_result_map` → pv stays NULL there
   (acceptable per seed).
 
-**`scripts/backfill_best_move_pv.py`** (new, ~370 lines)
-- Lichess-only (`games.lichess_evals_at IS NOT NULL`), positions at a flaw ply or flaw+1
-  (`EXISTS game_flaws … gf.ply = gp.ply OR gf.ply = gp.ply - 1`), idempotent on
-  `best_move IS NULL` (subsumes the SEED-043 never-reprocessed cohort AND this keying gap).
+**`scripts/backfill_best_move_pv.py`** (new, ~400 lines)
+- Covers BOTH holes (widened after review): lichess flaw plies (best_move + pv NULL) AND
+  engine-analyzed games' flaw plies (best_move already set, pv NULL — the `pv[flaw_ply]`
+  keying gap, ~26.5k on dev). Predicate: `best_move IS NULL OR pv IS NULL`, positions at a
+  flaw ply or flaw+1 (`EXISTS game_flaws … gf.ply = gp.ply OR gf.ply = gp.ply - 1`),
+  idempotent (filled rows leave the predicate). Subsumes SEED-043 + the lichess keying gap
+  + the engine-game pv gap in one pass.
+- **Per-row `need_bm`/`need_pv` flags** (selected as booleans, not the pv text) so the writer
+  fills ONLY the originally-NULL column — an engine game's existing `best_move` is never
+  clobbered by a fresh (non-deterministic) search; only its missing pv is filled. Verified on
+  dev: 5 engine-game positions → `written_best_move=0, written_pv=5`, best_move + eval_cp
+  unchanged, pv lines start with the existing best_move.
+- **No guest filter** (decided against during review): the flaw-row `EXISTS` already bounds
+  scope to already-analyzed games (flaw rows only exist post-drain), so the engine compute was
+  already spent; a guest who ran on-demand "Analyze" on a lichess game hit the same broken
+  arrow and should get the fix too. Filtering guests would be unnecessary and slightly wrong.
 - Reuses `_batch_update_best_move_rows` / `_batch_update_pv_rows` from `eval_drain` →
-  identical keying. Writes best_move + pv ONLY, never `eval_cp` (lichess `%eval` preserved).
+  identical keying. Writes best_move + pv ONLY, never `eval_cp` (lichess `%eval` / prior engine
+  eval preserved).
 - Mirrors `backfill_eval.py` plumbing: `--db dev|benchmark|prod`, `--dry-run`, `--limit`,
-  `--user-id`, `--workers`, `--timeout`; server-side cursor streaming, ~100-games-per-commit
-  batches, local `EnginePool`. Runs from Adrian's machine over the prod tunnel → zero prod
-  compute; never touches `full_evals_completed_at` (no analyzed-gate / stats regression).
+  `--user-id` (documented w/ example), `--workers`, `--timeout`; server-side cursor streaming,
+  ~100-games-per-commit batches, local `EnginePool`. Runs from Adrian's machine over the prod
+  tunnel → zero prod compute; never touches `full_evals_completed_at` (no analyzed-gate / stats
+  regression).
+- **Efficiency note:** the selection query is engine-bound overall, but `EXPLAIN` shows it
+  seq-scans `game_positions` (predicate non-selective) rather than driving from the ~40k flaw
+  rows. Acceptable for a one-time run; a flaw-driven rewrite is a possible future optimization.
 
 **`tests/services/test_full_eval_drain.py`** — updated 3 tests (`TestFlawPv` ×2,
 `TestBatchedWriteRegression`) to assert pv at flaw_ply + flaw_ply+1 and the lichess engine
@@ -53,10 +70,12 @@ now evaluates both flaw plies (2 calls, was 1), incl. a new best_move assertion 
   under `scripts/` are pre-existing in `seed_openings.py` / `seed_cohort_cdf.py`, outside the
   CI `app/ tests/` scope, untouched here).
 - `uv run pytest -n auto`: **2774 passed, 15 skipped**.
-- Backfill smoke on dev: `--dry-run` → 117,761 target positions; `--limit 4 --workers 2`
-  wrote 4 rows. DB spot-check (game 296338): best_move + pv set at flaw plies 30, 36 AND
-  flaw+1 plies 31, 37; `eval_cp` (lichess %eval) preserved on all. Re-run is a no-op (NULL
-  filter). No frontend change (arrow already reads `best_move[flaw_ply]`).
+- Backfill smoke on dev (final widened scope): `--dry-run` → 70,494 target positions.
+  Lichess path (`--limit 4`): best_move + pv set at flaw plies 30/36 AND flaw+1 plies 31/37
+  (game 296338), `eval_cp` %eval preserved. Engine-game pv-only path (`--user-id 2 --limit 5`):
+  `written_best_move=0, written_pv=5`, best_move + eval_cp unchanged on game 157929 plies
+  8/13/26, pv lines start with the existing best_move. Re-run is a no-op (predicate filter).
+  No frontend change (arrow already reads `best_move[flaw_ply]`).
 
 ## Follow-ups (out of scope here)
 - **Deploy** `bin/deploy.sh` (backend only; stale remote worker stays compatible — server
