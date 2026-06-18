@@ -64,3 +64,12 @@ class GameFlaw(Base):
     # Dropped in Phase 112 (D-07): es_before, es_after, move_san — now sourced from
     # a game_positions join in query_flaws (D-08, library_repository.py).
     fen: Mapped[str] = mapped_column(String, nullable=False)
+
+    # Tactic family (Phase 124 — D-01): all nullable SmallInteger.
+    # tactic_motif: TacticMotifInt enum (1-24); NULL = no detector fired.
+    # tactic_piece: python-chess PieceType (1=PAWN,2=KNIGHT,3=BISHOP,4=ROOK,5=QUEEN,6=KING)
+    #               per-motif semantic per D-12; NULL for ambiguous cases.
+    # tactic_confidence: winner-confidence 0-100; NULL when tactic_motif is NULL.
+    tactic_motif: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    tactic_piece: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    tactic_confidence: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)

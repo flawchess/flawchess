@@ -28,6 +28,7 @@ from app.models.game_position import GamePosition
 from app.services.eval_utils import eval_cp_to_expected_score
 from app.services.normalization import parse_base_and_increment
 from app.services.openings_service import derive_user_result
+from app.services.tactic_detector import detect_tactic_motif
 
 # ---------------------------------------------------------------------------
 # Named constants — no magic numbers (CLAUDE.md)
@@ -127,6 +128,13 @@ class FlawRecord(TypedDict):
     es_before: float  # mover-POV ES before the flaw
     es_after: float  # mover-POV ES after the flaw
     move_san: str | None  # SAN from positions[N].move_san
+    # Tactic family (Phase 124 — D-01, D-12): all optional, wired in plan 04.
+    # tactic_motif_int: TacticMotifInt value; None = no detector fired.
+    # tactic_piece: python-chess PieceType (1-6) per D-12 semantics; None = ambiguous.
+    # tactic_confidence: winner-confidence 0-100; None when tactic_motif_int is None.
+    tactic_motif_int: int | None
+    tactic_piece: int | None
+    tactic_confidence: int | None
 
 
 class GameNotAnalyzed(TypedDict):
@@ -348,6 +356,42 @@ def _run_all_moves_pass(
     return all_moves
 
 
+def _detect_tactic_for_flaw(
+    n: int,
+    fen_map: dict[int, str],
+    positions: list[GamePosition],
+) -> tuple[int | None, int | None, int | None]:
+    """Detect tactic motif for the flaw at ply N using the stored refutation PV.
+
+    Returns (tactic_motif_int, tactic_piece, tactic_confidence).
+    All three are None when pv is absent, fen is missing, or SAN is malformed.
+
+    Guards implemented:
+    - Pitfall 1: `n + 1 < len(positions)` before indexing positions[n+1].pv
+    - Pitfall 6: try/except (ValueError, chess.IllegalMoveError) for SAN parse
+    """
+    fen_before_flaw = fen_map.get(n, "")
+    pv: str | None = positions[n + 1].pv if n + 1 < len(positions) else None
+    move_san_of_flaw: str | None = positions[n].move_san
+
+    if not (fen_before_flaw and pv and move_san_of_flaw):
+        return None, None, None
+
+    # fen_map stores board.board_fen() (piece-placement only, no side-to-move).
+    # chess.Board() defaults to white to move, so we must set the side explicitly
+    # from ply parity: even = white mover, odd = black mover.
+    board_before = chess.Board(fen_before_flaw)
+    board_before.turn = chess.WHITE if n % 2 == 0 else chess.BLACK
+    try:
+        flaw_move = board_before.parse_san(move_san_of_flaw)
+        board_after_flaw = board_before.copy()
+        board_after_flaw.push(flaw_move)
+        return detect_tactic_motif(board_after_flaw, pv)
+    except (ValueError, chess.IllegalMoveError):
+        # Malformed move_san or FEN — leave all three as None (Pitfall 6)
+        return None, None, None
+
+
 def _build_flaw_record(
     n: int,
     mover: Literal["white", "black"],
@@ -365,6 +409,9 @@ def _build_flaw_record(
     # rendered the miniboard one ply too early (decision point off by one move).
     # This makes the miniboard show the decision point and lets the frontend
     # resolve move_san → arrow squares.
+    tactic_motif_int, tactic_piece, tactic_confidence = _detect_tactic_for_flaw(
+        n, fen_map, positions
+    )
     return FlawRecord(
         ply=n,
         fen=fen_map.get(n, ""),
@@ -374,6 +421,9 @@ def _build_flaw_record(
         es_before=es_before,
         es_after=es_after,
         move_san=positions[n].move_san,
+        tactic_motif_int=tactic_motif_int,
+        tactic_piece=tactic_piece,
+        tactic_confidence=tactic_confidence,
     )
 
 

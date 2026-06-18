@@ -120,6 +120,60 @@ now, surface later.**
   fall below the Wilson sample floor. Capture the data now; surface piece-level drill-down in a
   later milestone only where samples support it.
 
+## Locked decisions (2026-06-17 follow-up — motif set & severity gate)
+
+Decided after reading the **real** `cook.py` source (full inventory cross-checked against the
+seed's tiering — the tiering held up). The stored PV is a **single best line capped at 12
+plies** (`PV_CAP_PLIES=12` in `app/services/engine.py`), keyed at `flaw_ply+1`. 12 plies is
+deep enough for every cook detector including full mate lines; PV depth is **not** a
+constraint. It is a single PV (no MultiPV), which matches cook's `puzzle.mainline` design — no
+methodological mismatch.
+
+- **Motif set = "everything reliable"** — Core 8 (`fork`, `hanging-piece`, `pin`, `skewer`,
+  `double-check`, `discovered-attack`, `back-rank-mate`, generic `mate`) **plus all tier-3**
+  (`deflection`, `intermezzo`, `x-ray`, `interference`/`self-interference`, `clearance`,
+  `attraction`, `capturing-defender`, `sacrifice`). This is the full set of genuine
+  cause-of-error motifs cook detects.
+  - **Named mate types captured fine-grained, NOT collapsed** (reversed 2026-06-17 follow-up):
+    store the specific mate (`smothered` / `anastasia` / `hook` / `arabian` / `boden` /
+    `double-bishop` / `dovetail` / `back-rank` / generic `mate`). Rationale is the asymmetry:
+    coarsening at query time is free (`WHERE tactic_motif IN (MATE_MOTIFS)`), but refining a
+    collapsed `mate` requires a full re-detect + column rewrite over 131k+ games. Capture cost
+    is ~zero — the named-mate detectors are separate functions that each fire, so the detector
+    already knows which matched. Same "capture broadly, store now, surface later" logic as
+    `tactic_piece`. **Discipline:** v1 *surfaces* the coarse "mate" grouping; the specific
+    subtype is stored-but-unsurfaced until each named-mate detector is validated (Q-011). The
+    single-column rule holds — a smothered mate stores as `smothered-mate`, not the `fork` that
+    a delivering knight might also satisfy.
+  - **Excluded (NOT cause-of-error):** move-type descriptors (`advanced-pawn`, `quiet-move`,
+    `defensive-move`, `collinear-move`, `en-passant`, `castling`, `promotion`,
+    `under-promotion`), attack-theme positional tags (`attacking-f2f7`, `kingside-attack`,
+    `queenside-attack`, `exposed-king`), puzzle metadata (`crushing`/`advantage`/`equality`,
+    `oneMove`/`short`/`long`/`veryLong`), endgame-type tags (already classified). `overloading`
+    is a stub (`return False`) in cook — not available.
+- **Severity gate = mistakes + blunders** (not blunders-only). A missed/allowed fork can be
+  only mistake-sized; gating to blunders would drop real tactical causes. Make it a tunable
+  threshold constant, not a hardcoded assumption (per seed §5).
+- **Scope consequence:** the tier-3 motifs carry the **largest Q-011 validation burden** (the
+  3+-ply heuristics are the fragile ones). Plan the detector phase precision-first and be
+  willing to leave `tactic_motif = NULL` on low-confidence tier-3 lines rather than mis-tag
+  (false positives bias the you-vs-opponent rate comparison).
+
+- **Winner-confidence column** (locked 2026-06-17 follow-up): add nullable
+  `tactic_confidence` (SmallInteger 0–100) on `game_flaws`, storing the confidence of the
+  **priority-winning** `tactic_motif`. Purpose: let us raise the per-motif precision bar at
+  query time (`AND tactic_confidence >= :t`, effectively tag→NULL) and sweep thresholds in SQL
+  without re-running the backfill.
+  - **Known limitation (accepted):** this thresholds *the winner only*. It CANNOT re-rank —
+    "drop forks below 0.8 so the also-detected pin wins instead" needs all motifs stored
+    (rejected: keeps the single-column decision + clean GROUP BY). Winner-confidence tunes the
+    precision bar, not the ranking.
+  - **cook is boolean** — there is no free confidence. Core motifs (`fork`, `pin`, `skewer`,
+    `double-check`, mates) are effectively binary → store a fixed high value (e.g. 100). The
+    column is genuinely graded only for the **tier-3 fuzzy heuristics**; that is where the
+    per-motif scoring function must be defined (Q-011). Expect `tactic_confidence` to be ~100
+    for most rows and variable only on tier-3.
+
 ## Open questions (added 2026-06-17)
 
 - **Q-012** — the per-motif `tactic_piece` semantic (and the `double-check` / multi-piece

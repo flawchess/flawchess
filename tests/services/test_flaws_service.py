@@ -168,6 +168,9 @@ class TestTypeContract:
             "es_before": 0.65,
             "es_after": 0.40,
             "move_san": "Qxf7",
+            "tactic_motif_int": None,
+            "tactic_piece": None,
+            "tactic_confidence": None,
         }
         assert record["ply"] == 10
         assert record["severity"] == "blunder"
@@ -1921,3 +1924,187 @@ class TestSeed044PostMoveConvention:
             "A coherent post-move (lichess-style) sequence must classify normally; "
             f"expected a white blunder at ply 4. Got: {[(f['side'], f['ply'], f['severity']) for f in result]}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Phase 124 tests: tactic detection integration (TACDET-04)
+# ---------------------------------------------------------------------------
+
+
+def _make_pos_with_pv(
+    ply: int,
+    eval_cp: int | None = None,
+    eval_mate: int | None = None,
+    move_san: str | None = None,
+    pv: str | None = None,
+    clock_seconds: float | None = None,
+    phase: int = 1,
+) -> GamePosition:
+    """Build a GamePosition with pv and move_san set for tactic integration tests.
+
+    Extends the base _make_pos helper with the pv field (stored at flaw_ply+1
+    for full-eval positions). All other columns that the service reads are
+    populated with safe defaults.
+    """
+    pos = _make_pos(
+        ply=ply,
+        eval_cp=eval_cp,
+        eval_mate=eval_mate,
+        clock_seconds=clock_seconds,
+        phase=phase,
+        move_san=move_san,
+    )
+    pos.pv = pv
+    return pos
+
+
+class TestTacticIntegration:
+    """Phase 124 (TACDET-04): detect_tactic_motif runs inside _build_flaw_record.
+
+    Tests verify:
+    1. Both-color population: tactic_motif_int is non-None for BOTH a white flaw
+       AND a black flaw in the same game (Phase 113 both-color coverage).
+    2. None-PV guard: a flaw whose positions[n+1].pv is None yields a FlawRecord
+       with tactic_motif_int=None and no exception raised.
+    3. Malformed move_san guard: a flaw with an invalid move_san leaves tactic
+       fields None without raising.
+
+    PGN: '1. e4 e5 2. Bc4 d5 3. f3 Bg4 *'  (6 half-moves)
+
+    FEN reference (from _recompute_fen_map replay):
+      ply 4: 'rnbqkbnr/ppp2ppp/8/3pp3/2B1P3/8/PPPP1PPP/RNBQK1NR'  (after 2...d5, white to move)
+      ply 5: 'rnbqkbnr/ppp2ppp/8/3pp3/2B1P3/5P2/PPPP2PP/RNBQK1NR'  (after 3.f3, black to move)
+      ply 6: 'rn1qkbnr/ppp2ppp/8/3pp3/2B1P1b1/5P2/PPPP2PP/RNBQK1NR' (after 3...Bg4, white to move)
+
+    White blunder at ply 4 (even=white mover): 3. f3??  leaves Bc4 hanging for d5xc4.
+    Black blunder at ply 5 (odd=black mover): 3...Bg4?? leaves Bg4 hanging for f3xg4.
+    """
+
+    _PGN = "1. e4 e5 2. Bc4 d5 3. f3 Bg4 *"
+
+    def _build_both_color_positions(self) -> list[GamePosition]:
+        """12 positions (plies 0-11) with white blunder at ply 4 and black blunder at ply 5.
+
+        pv is set at positions[5] (for white's blunder at ply 4) and positions[6]
+        (for black's blunder at ply 5). The hanging-piece detector reliably fires
+        for both because each blunder leaves a non-pawn undefended piece.
+
+        Coverage: 11/(12-1) = 11/11 = 1.0 >= EVAL_COVERAGE_MIN.
+        """
+        positions = [_make_pos_with_pv(i, eval_cp=20) for i in range(12)]
+
+        # White blunder at ply 4 (even=white mover):
+        # es_before(white) = es(positions[3], white) ≈ eval_cp_to_es(200, white) ≈ 0.685
+        # es_after(white)  = es(positions[4], white) ≈ eval_cp_to_es(-500, white) ≈ 0.160
+        # drop ≈ 0.525 >= BLUNDER_DROP -> blunder for white ✓
+        positions[3] = _make_pos_with_pv(3, eval_cp=200, move_san="d5")
+        positions[4] = _make_pos_with_pv(4, eval_cp=-500, move_san="f3")
+        # PV at ply 5: d5xc4 -- black captures the hanging Bc4 (hanging-piece)
+        positions[5] = _make_pos_with_pv(5, eval_cp=300, move_san="Bg4", pv="d5c4")
+
+        # Black blunder at ply 5 (odd=black mover):
+        # es_before(black) = 1 - es(positions[4], white) ≈ 1 - 0.160 = 0.840
+        # es_after(black)  = 1 - es(positions[5], white) ≈ 1 - 0.730 = 0.270
+        # drop ≈ 0.570 >= BLUNDER_DROP -> blunder for black ✓
+        # PV at ply 6: f3xg4 -- white captures the hanging Bg4 (hanging-piece)
+        positions[6] = _make_pos_with_pv(6, eval_cp=20, pv="f3g4")
+
+        # Final terminal position has no eval
+        positions[11] = _make_pos_with_pv(11)
+
+        return positions
+
+    def test_both_color_detection(self) -> None:
+        """Both-color coverage: white AND black flaws both have tactic_motif_int populated.
+
+        Proves that the Phase 113 both-color all-moves pass flows through to
+        tactic detection: _build_flaw_record runs detect_tactic_motif for every
+        FlawRecord regardless of color, so both sides' flaws carry a non-None motif.
+        """
+        game = _make_game(pgn=self._PGN, user_color="white", result="0-1")
+        positions = self._build_both_color_positions()
+
+        result = classify_game_flaws(game, positions)
+        assert isinstance(result, list)
+
+        white_flaws = [f for f in result if f["side"] == "white"]
+        black_flaws = [f for f in result if f["side"] == "black"]
+
+        assert len(white_flaws) >= 1, (
+            f"Expected at least one white FlawRecord. Got: {[(f['side'], f['ply']) for f in result]}"
+        )
+        assert len(black_flaws) >= 1, (
+            f"Expected at least one black FlawRecord. Got: {[(f['side'], f['ply']) for f in result]}"
+        )
+
+        # Both sides must have tactic_motif_int populated (non-None)
+        white_with_motif = [f for f in white_flaws if f["tactic_motif_int"] is not None]
+        black_with_motif = [f for f in black_flaws if f["tactic_motif_int"] is not None]
+
+        assert len(white_with_motif) >= 1, (
+            "WHITE flaw must have tactic_motif_int populated (both-color detection). "
+            f"White flaws: {[(f['ply'], f['tactic_motif_int']) for f in white_flaws]}"
+        )
+        assert len(black_with_motif) >= 1, (
+            "BLACK flaw must have tactic_motif_int populated (both-color detection). "
+            f"Black flaws: {[(f['ply'], f['tactic_motif_int']) for f in black_flaws]}"
+        )
+
+    def test_none_pv_leaves_tactic_fields_none(self) -> None:
+        """Flaw with pv=None in positions[n+1] yields tactic_motif_int=None, no exception.
+
+        This represents a lichess-eval-only flaw (no full_evals_completed_at): the
+        pv column is NULL for that position. The detector must leave all three tactic
+        fields None without raising (T-124-07 guard).
+        """
+        game = _make_game(pgn=self._PGN, user_color="white", result="1-0")
+        positions = self._build_both_color_positions()
+        # Remove the PV from positions[5] — white's blunder at ply 4 loses its refutation
+        positions[5] = _make_pos_with_pv(5, eval_cp=300, move_san="Bg4", pv=None)
+
+        result = classify_game_flaws(game, positions)
+        assert isinstance(result, list)
+
+        # White's flaw at ply 4 must have tactic_motif_int=None (no pv available)
+        white_ply4 = next((f for f in result if f["side"] == "white" and f["ply"] == 4), None)
+        assert white_ply4 is not None, (
+            f"Expected a white FlawRecord at ply 4. Got: {[(f['side'], f['ply']) for f in result]}"
+        )
+        assert white_ply4["tactic_motif_int"] is None, (
+            "pv=None must leave tactic_motif_int=None (lichess-eval-only flaw guard)"
+        )
+        assert white_ply4["tactic_piece"] is None
+        assert white_ply4["tactic_confidence"] is None
+
+    def test_malformed_move_san_leaves_tactic_fields_none(self) -> None:
+        """Flaw with malformed move_san leaves tactic fields None without raising.
+
+        The try/except (ValueError, chess.IllegalMoveError) guard in
+        _detect_tactic_for_flaw ensures parse failures do not propagate. The
+        FlawRecord is still emitted (severity/tags unaffected); only the three
+        tactic fields stay None (T-124-07).
+
+        Guard path: pv and fen_before are both set (truthy) so the early-exit
+        guard does not fire; the exception happens inside board.parse_san(move_san).
+        """
+        game = _make_game(pgn=self._PGN, user_color="white", result="1-0")
+        positions = self._build_both_color_positions()
+        # positions[5].pv = "d5c4" is already set (from _build_both_color_positions).
+        # Replace positions[4].move_san with a nonsense string that parse_san rejects.
+        # The guard checks positions[n+1].pv where n=4 → positions[5].pv is "d5c4" (truthy),
+        # so the code enters the try block and parse_san("INVALID!!!") raises IllegalMoveError.
+        positions[4] = _make_pos_with_pv(4, eval_cp=-500, move_san="INVALID!!!")
+
+        result = classify_game_flaws(game, positions)
+        assert isinstance(result, list)
+
+        white_ply4 = next((f for f in result if f["side"] == "white" and f["ply"] == 4), None)
+        assert white_ply4 is not None, (
+            f"Expected a white FlawRecord at ply 4. Got: {[(f['side'], f['ply']) for f in result]}"
+        )
+        # All three tactic fields must be None due to malformed move_san
+        assert white_ply4["tactic_motif_int"] is None, (
+            "Malformed move_san must leave tactic_motif_int=None (no exception raised)"
+        )
+        assert white_ply4["tactic_piece"] is None
+        assert white_ply4["tactic_confidence"] is None

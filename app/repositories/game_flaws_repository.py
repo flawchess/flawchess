@@ -113,6 +113,11 @@ def flaw_record_to_row(
         # The FlawRecord TypedDict still carries them for internal kernel use; they are
         # intentionally not persisted here (Pitfall 6 in 112-CONTEXT.md).
         "fen": flaw["fen"],
+        # Tactic family (Phase 124 — D-01): use .get() so older construction paths
+        # that omit these keys map to None rather than KeyError.
+        "tactic_motif": flaw.get("tactic_motif_int"),
+        "tactic_piece": flaw.get("tactic_piece"),
+        "tactic_confidence": flaw.get("tactic_confidence"),
     }
 
 

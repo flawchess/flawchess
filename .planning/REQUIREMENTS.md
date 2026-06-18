@@ -13,17 +13,17 @@ Requirements for the v1.28 milestone. Each maps to exactly one roadmap phase.
 
 The motif detection engine. Pure CPU — reads the already-stored refutation line; no new Stockfish pass.
 
-- [ ] **TACDET-01**: The system detects a tactic-motif set by naming the pattern in the stored refutation line (`game_positions.pv` at `flaw_ply + 1`), reimplementing `ornicar/lichess-puzzler` `cook.py` heuristics in original code (no AGPL source copied). **The exact motif set is finalized during phase discussion** — provisional MVP starting point: `fork`, `pin`, `skewer`, `hanging-piece`, `back-rank` / `mate`, `double-check` (the cheap, reliable Tier-1 + mate/back-rank set per the architecture note).
-- [ ] **TACDET-02**: A flawed move is tagged with at most one `allowed` motif, chosen by a fixed motif **priority order** when the refutation line contains several (the order defines the card's wording; Q-010).
-- [ ] **TACDET-03**: The detector is **precision-first** — it tags only when confidence is high and leaves `tactic_motif` NULL otherwise (a false tag biases the you-vs-opponent rate comparison), validated against a hand-labeled per-motif fixture set drawn from our own prod flaws (Q-011).
-- [ ] **TACDET-04**: Motif detection runs inside the single classify path — `classify_game_flaws` (eval-drain) and `backfill_flaws.py` (recompute) — for both the player's and the opponent's flaws, with no second engine evaluation.
+- [x] **TACDET-01**: The system detects a tactic-motif set by naming the pattern in the stored refutation line (`game_positions.pv` at `flaw_ply + 1`), reimplementing `ornicar/lichess-puzzler` `cook.py` heuristics in original code (no AGPL source copied). **The exact motif set is finalized during phase discussion** — provisional MVP starting point: `fork`, `pin`, `skewer`, `hanging-piece`, `back-rank` / `mate`, `double-check` (the cheap, reliable Tier-1 + mate/back-rank set per the architecture note).
+- [x] **TACDET-02**: A flawed move is tagged with at most one `allowed` motif, chosen by a fixed motif **priority order** when the refutation line contains several (the order defines the card's wording; Q-010).
+- [x] **TACDET-03**: The detector is **precision-first** — it tags only when confidence is high and leaves `tactic_motif` NULL otherwise (a false tag biases the you-vs-opponent rate comparison), validated against a hand-labeled per-motif fixture set drawn from our own prod flaws (Q-011).
+- [x] **TACDET-04**: Motif detection runs inside the single classify path — `classify_game_flaws` (eval-drain) and `backfill_flaws.py` (recompute) — for both the player's and the opponent's flaws, with no second engine evaluation.
 
 ### Storage
 
 The materialized columns on `game_flaws`.
 
-- [ ] **TACSCH-01**: `game_flaws` gains a nullable `tactic_motif` SmallInteger enum column (at most one motif per flaw; not a bitmask, not a join table), written at classify time (migration).
-- [ ] **TACSCH-02**: `game_flaws` gains a nullable `tactic_piece` SmallInteger column (python-chess PieceType) captured broadly with a per-motif semantic (fork=attacker, hanging=victim, pin/skewer=line piece, mate=mating piece; ambiguous cases NULL; Q-012). Stored now; piece-level UI deferred.
+- [x] **TACSCH-01**: `game_flaws` gains a nullable `tactic_motif` SmallInteger enum column (at most one motif per flaw; not a bitmask, not a join table), written at classify time (migration).
+- [x] **TACSCH-02**: `game_flaws` gains a nullable `tactic_piece` SmallInteger column (python-chess PieceType) captured broadly with a per-motif semantic (fork=attacker, hanging=victim, pin/skewer=line piece, mate=mating piece; ambiguous cases NULL; Q-012). Stored now; piece-level UI deferred.
 - [ ] **TACSCH-03**: Existing `game_flaws` rows are backfilled with motif + piece for all self-eval'd games (those with `full_evals_completed_at` set, ~131k); lichess-eval-only games (no full eval, ~13.6k) keep `tactic_motif = NULL` until full-eval'd via the existing tier-3 idle fleet (no bespoke tooling).
 
 ### Comparison Stats
@@ -75,12 +75,12 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TACDET-01 | Phase 124 | Pending |
-| TACDET-02 | Phase 124 | Pending |
-| TACDET-03 | Phase 124 | Pending |
-| TACDET-04 | Phase 124 | Pending |
-| TACSCH-01 | Phase 124 | Pending |
-| TACSCH-02 | Phase 124 | Pending |
+| TACDET-01 | Phase 124 | Complete |
+| TACDET-02 | Phase 124 | Complete |
+| TACDET-03 | Phase 124 | Complete |
+| TACDET-04 | Phase 124 | Complete |
+| TACSCH-01 | Phase 124 | Complete |
+| TACSCH-02 | Phase 124 | Complete |
 | TACSCH-03 | Phase 125 | Pending |
 | TACCMP-01 | Phase 126 | Pending |
 | TACCMP-02 | Phase 126 | Pending |
@@ -90,6 +90,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | TACUI-03 | Phase 126 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 13 total
 - Mapped to phases: 13 ✓
 - Unmapped: 0 ✓

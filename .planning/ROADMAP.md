@@ -40,7 +40,7 @@
 
 ### v1.28 Tactic Tagging
 
-- [ ] **Phase 124: Schema + Tactic Detector** — Alembic migration for `tactic_motif`/`tactic_piece` columns + the pure-CPU cook-heuristic reimplementation + hand-labeled fixture validation
+- [x] **Phase 124: Schema + Tactic Detector** — Alembic migration for `tactic_motif`/`tactic_piece` columns + the pure-CPU cook-heuristic reimplementation + hand-labeled fixture validation (completed 2026-06-18)
 - [ ] **Phase 125: Backfill Tactic Motifs** — run `backfill_flaws.py` over ~131k self-eval'd games; lichess-eval-only games stay NULL until full-eval'd via the existing tier-3 idle fleet
 - [ ] **Phase 126: Comparison Stats + Frontend** — `GET /api/library/tactic-comparison` endpoint + motif chips on flaw cards + MiniBulletChart you-vs-opponent motif grid
 
@@ -73,7 +73,24 @@
   3. The detector leaves `tactic_motif = NULL` when confidence is low rather than guessing; a hand-labeled per-motif fixture set passes with precision-first accuracy
   4. Motif detection runs inside `classify_game_flaws` (eval-drain flow-through) and `backfill_flaws.py` (recompute path) for both the player's and the opponent's flaws, with no new engine invocation
 
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+**Wave 1**
+
+- [x] 124-01-PLAN.md — Schema foundation: Alembic migration (3 nullable cols) + ORM columns + TacticMotifInt/Literal/dicts encoding shell + FlawRecord/flaw_record_to_row plumbing
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 124-02-PLAN.md — Detector module: PV parser + Core 8 + named-mate + tier-3 detectors + D-07 priority dispatcher (tactic_piece D-12, confidence D-11)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 124-03-PLAN.md — Hand-labeled fixtures from own prod flaws + precision harness enforcing D-10 bars (Core ≥90%, tier-3/named-mate ≥95%)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 124-04-PLAN.md — Wire detect_tactic_motif into _build_flaw_record for both colors (flows to classify + backfill, no new engine call)
 
 ### Phase 125: Backfill Tactic Motifs
 
@@ -147,8 +164,8 @@
 | 121. Remote-worker tier-1 claiming (SEED-048) | 1/1 | Complete (release #199) | 2026-06-15 |
 | 122. In-app feedback button (SEED-049) | 2/2 | Complete (release #202; UAT 5/5) | 2026-06-15 |
 | 123. Remote-worker entry-ply fresh-import drain (SEED-051) | 3/3 | Complete (release #203; UAT 2/2) | 2026-06-16 |
-| 123.1. Opening-eval dedup cache table (SEED-053) (INSERTED) | 2/2 | Complete    | 2026-06-17 |
-| 124. Schema + Tactic Detector | 0/TBD | Not started | - |
+| 123.1. Opening-eval dedup cache table (SEED-053) (INSERTED) | 2/2 | Complete | 2026-06-17 |
+| 124. Schema + Tactic Detector | 4/4 | Complete    | 2026-06-18 |
 | 125. Backfill Tactic Motifs | 0/TBD | Not started | - |
 | 126. Comparison Stats + Frontend | 0/TBD | Not started | - |
 
@@ -158,7 +175,7 @@
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 2/2 plans complete
+**Plans:** 4/4 plans complete
 
 Plans:
 

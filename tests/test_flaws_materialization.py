@@ -213,6 +213,9 @@ class TestFlawRecordToRow:
             es_before=es_before,
             es_after=es_after,
             move_san="e4",
+            tactic_motif_int=None,
+            tactic_piece=None,
+            tactic_confidence=None,
         )
 
     def test_severity_blunder_maps_to_2(self) -> None:
@@ -383,6 +386,9 @@ class TestBulkInsertGameFlaws:
             "es_before": 0.90,
             "es_after": 0.20,
             "move_san": "e4",
+            "tactic_motif_int": None,
+            "tactic_piece": None,
+            "tactic_confidence": None,
         }
         row = flaw_record_to_row(user_id=game.user_id, game_id=game.id, flaw=flaw)
         await bulk_insert_game_flaws(db_session, [row])
@@ -422,6 +428,9 @@ class TestBulkInsertGameFlaws:
             "es_before": 0.55,
             "es_after": 0.44,
             "move_san": "e4",
+            "tactic_motif_int": None,
+            "tactic_piece": None,
+            "tactic_confidence": None,
         }
         row = flaw_record_to_row(user_id=game.user_id, game_id=game.id, flaw=flaw)
         await bulk_insert_game_flaws(db_session, [row])

@@ -174,6 +174,9 @@ class TestFlawRecordToRow:
             "es_before": 0.75,  # still in TypedDict (kernel-internal)
             "es_after": 0.20,  # still in TypedDict (kernel-internal)
             "move_san": "Nxd4",  # still in TypedDict (kernel-internal)
+            "tactic_motif_int": None,
+            "tactic_piece": None,
+            "tactic_confidence": None,
         }
 
         row = flaw_record_to_row(user_id=1, game_id=42, flaw=flaw)

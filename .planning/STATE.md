@@ -2,29 +2,29 @@
 gsd_state_version: 1.0
 milestone: v1.28
 milestone_name: Tactic Tagging
-current_phase: 124
-current_phase_name: Schema + Tactic Detector
-status: verifying
-stopped_at: Completed 123.1-02-PLAN.md
-last_updated: "2026-06-17T20:56:51.710Z"
-last_activity: 2026-06-17
-last_activity_desc: Phase 123.1 complete, transitioned to Phase 124
+current_phase: 125
+current_phase_name: Backfill Tactic Motifs
+status: executing
+stopped_at: Completed 124-01-PLAN.md
+last_updated: "2026-06-18T00:34:06.120Z"
+last_activity: 2026-06-18
+last_activity_desc: Phase 124 complete, transitioned to Phase 125
 progress:
   total_phases: 8
-  completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
-  percent: 13
+  completed_phases: 2
+  total_plans: 6
+  completed_plans: 6
+  percent: 25
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 124 — Schema + Tactic Detector
+Phase: 125 — Backfill Tactic Motifs
 Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-06-17 — Phase 123.1 complete, transitioned to Phase 124
+Status: Ready to execute
+Last activity: 2026-06-18 — Phase 124 complete, transitioned to Phase 125
 
 ## Project Reference
 
@@ -392,6 +392,9 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 | Phase 123 P03 | 6 | 3 tasks | 2 files |
 | Phase 123.1 P01 | 15 minutes | 2 tasks | 4 files |
 | Phase 123.1 P02 | 25m | 3 tasks | 2 files |
+| Phase 124 P01 | 12m | 3 tasks | 7 files |
+| Phase 124 P02 | 6 minutes | 3 tasks | 1 files |
+| Phase 124 P04 | 30 | - tasks | - files |
 
 ## Decisions
 
@@ -457,9 +460,13 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 - [Phase ?]: Backfill is standalone script not migration — avoids 1M-row op on test template (D-123.1-06)
 - [Phase ?]: Cache-backed dedup read path (SEED-053)
 - [Phase ?]: Cache write path on drain tick (SEED-053)
+- [Phase ?]: D-01: Three nullable SmallInteger tactic columns (motif/piece/confidence) added to game_flaws, all NULL on existing rows (TACSCH-01/02)
+- [Phase ?]: D-02: TacticMotifInt IntEnum encoding follows EndgameClassInt precedent — single enum, _INT_TO_MOTIF/_MOTIF_TO_INT dicts, 24 members 1..24
+- [Phase ?]: Set board_before.turn from ply parity after chess.Board(piece_placement_fen)
+- [Phase ?]: Extracted _detect_tactic_for_flaw helper from _build_flaw_record to maintain nesting limits
 
 ## Session
 
-**Last session:** 2026-06-17T20:49:53.460Z
-**Stopped at:** Completed 123.1-02-PLAN.md
+**Last session:** 2026-06-18T00:18:21.573Z
+**Stopped at:** Completed 124-01-PLAN.md
 **Resume file:** None
