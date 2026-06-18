@@ -51,6 +51,11 @@ Usage:
     # Smoke on dev:
     uv run python scripts/backfill_best_move_pv.py --db dev --limit 50 --workers 4
 
+    # Scope to a single user (--user-id) — handy to size/verify one account before
+    # the full prod pass (e.g. user 13):
+    uv run python scripts/backfill_best_move_pv.py --db prod --user-id 13 --dry-run
+    uv run python scripts/backfill_best_move_pv.py --db prod --user-id 13 --workers 10
+
     # Full prod backfill from the local machine (zero prod compute):
     bin/prod_db_tunnel.sh
     uv run python scripts/backfill_best_move_pv.py --db prod --workers 10
@@ -419,7 +424,10 @@ def parse_args() -> argparse.Namespace:
         default=None,
         dest="user_id",
         metavar="N",
-        help="Limit backfill to a single user ID. Default: all users.",
+        help=(
+            "Limit backfill to a single user ID (e.g. --user-id 13). Default: all "
+            "users. Useful to size/verify one account before the full prod pass."
+        ),
     )
     parser.add_argument(
         "--dry-run",
