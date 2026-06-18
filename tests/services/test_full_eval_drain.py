@@ -1299,24 +1299,27 @@ def _blunder_eval_sequence() -> list[tuple[int, None, str, str]]:
 
 
 class TestFlawPv:
-    """EVAL-04 / D-117-02: game_positions.pv is written ONLY at ply N+1 for a flaw at ply N.
+    """EVAL-04 / D-117-02 / SEED-054: game_positions.pv is written at BOTH ply N and ply N+1
+    for a flaw at ply N.
 
-    Pitfall 4: the PV belongs to the position AFTER the flawed move (the refutation
-    line starts from the resulting position), NOT to the flaw position itself.
+    - ply N+1: the refutation line from the position AFTER the flawed move (Pitfall 4,
+      the SEED-039 tactic-motif input).
+    - ply N: the ideal-continuation line from the pre-blunder decision board (SEED-054).
     """
 
-    async def test_flaw_pv_written_at_ply_n_plus_one(
+    async def test_flaw_pv_written_at_flaw_ply_and_ply_n_plus_one(
         self,
         full_drain_test_user_117: int,
         full_drain_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """After a drain tick on a game with a clear blunder at ply 2 (white's move),
-        game_positions.pv is set at ply 3 (ply N+1) and NULL at all other plies.
+        game_positions.pv is set at BOTH ply 2 (flaw_ply) and ply 3 (ply N+1), NULL elsewhere.
 
         classify_game_flaws emits a FlawRecord for ply 2 (n=2, mover=white).
-        The PV for ply 3 (the refutation board) comes from engine_result_map[3].
-        Plies 0,1,2,4,5 must have pv=NULL (pv only written at the flaw-adjacent ply).
+        The PV for ply 2 (the decision board) comes from engine_result_map[2]; the PV
+        for ply 3 (the refutation board) comes from engine_result_map[3] (SEED-054).
+        Plies 0,1,4,5 must have pv=NULL (pv only written at flaw plies).
         """
         from app.models.game_position import GamePosition
 
@@ -1361,11 +1364,17 @@ class TestFlawPv:
                 "game_positions.pv at ply 3 (N+1 for blunder at ply 2) must be set "
                 "— D-117-02 flaw PV write."
             )
-            # All other plies must NOT have a PV set (pv is only written at flaw N+1).
-            for ply in [0, 1, 2, 4, 5]:
+            # ply 2 (flaw_ply) must have the ideal-continuation PV from
+            # engine_result_map[2] (SEED-054 Part 2).
+            assert pv_by_ply.get(2) is not None, (
+                "game_positions.pv at ply 2 (flaw_ply) must be set — SEED-054 "
+                "ideal-continuation PV write."
+            )
+            # All other plies must NOT have a PV set (pv is only written at flaw plies).
+            for ply in [0, 1, 4, 5]:
                 assert pv_by_ply.get(ply) is None, (
                     f"game_positions.pv at ply {ply} must be NULL — pv is only written "
-                    "at the ply AFTER a flaw (D-117-02 / Pitfall 4)."
+                    "at flaw plies (ply N and ply N+1; D-117-02 / SEED-054)."
                 )
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
@@ -1376,19 +1385,21 @@ class TestFlawPv:
         full_drain_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """D-117-13: analyzed lichess games still get a flaw PV even though every ply
-        already carries a lichess %eval.
+        """D-117-13 / SEED-054: analyzed lichess games get a flaw PV + best_move at BOTH
+        flaw plies even though every ply already carries a lichess %eval.
 
         Regression guard for the prod-observed 0% flaw-PV coverage on analyzed
         lichess games: the is_lichess_eval_game eval-preservation filter dropped every
-        flaw-adjacent ply before the engine gather, so the refutation PV was never
-        captured (lichess supplies %eval but no PV). The D-117-13 fix pre-classifies
-        flaws and exempts {flaw_ply + 1} from the filter.
+        flaw ply before the engine gather, so neither the refutation PV nor the
+        better-alternative best_move was captured (lichess supplies %eval but no PV and
+        no best_move). The D-117-13 / SEED-054 fix pre-classifies flaws and exempts
+        {flaw_ply, flaw_ply + 1} from the filter.
 
         Setup: all 6 plies carry a pre-existing %eval encoding a white blunder at
-        ply 2. Only ply 3 (flaw_ply + 1) should be engine-evaluated (for the PV);
-        the other five plies are preserved without an engine call. Before the fix,
-        the engine was called 0 times and pv at ply 3 stayed NULL.
+        ply 2. Both ply 2 (flaw_ply) and ply 3 (flaw_ply + 1) should be
+        engine-evaluated (for best_move + PV); the other four plies are preserved
+        without an engine call. Before the fix, the engine was called 0 times (D-117)
+        or only at ply 3 (post-D-117-13, pre-SEED-054) and pv at ply 2 stayed NULL.
         """
         from app.models.game_position import GamePosition
 
@@ -1411,7 +1422,8 @@ class TestFlawPv:
             is_lichess_eval_game=True,
         )
 
-        # Only ply 3 (flaw_ply + 1) should reach the engine — one PV result.
+        # Both ply 2 (flaw_ply) and ply 3 (flaw_ply + 1) should reach the engine
+        # (SEED-054). Same mock result for each — only the keying matters here.
         mock_evaluate = AsyncMock(return_value=(-480, None, "g8f6", "g8f6 f1c4 d7d5"))
         monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
 
@@ -1435,34 +1447,52 @@ class TestFlawPv:
             processed = await drain_module._full_drain_tick()
             assert processed is True, "Tick must report a processed game"
 
-            # Exactly one engine call: the flaw-adjacent ply 3 (D-117-13). The other
-            # five plies are preserved without burning a 1M-node eval.
-            assert mock_evaluate.await_count == 1, (
-                "Only the flaw-adjacent ply (flaw_ply + 1) should be engine-evaluated "
+            # Exactly two engine calls: flaw plies 2 and 3 (D-117-13 / SEED-054). The
+            # other four plies are preserved without burning a 1M-node eval.
+            assert mock_evaluate.await_count == 2, (
+                "Both flaw plies (flaw_ply and flaw_ply + 1) should be engine-evaluated "
                 f"for an analyzed game — got {mock_evaluate.await_count} engine calls."
             )
 
             async with full_drain_session_maker() as verify:
                 rows = await verify.execute(
-                    select(GamePosition.ply, GamePosition.pv, GamePosition.eval_cp)
+                    select(
+                        GamePosition.ply,
+                        GamePosition.pv,
+                        GamePosition.eval_cp,
+                        GamePosition.best_move,
+                    )
                     .where(GamePosition.game_id == game_id)
                     .order_by(GamePosition.ply)
                 )
-                by_ply = {r[0]: (r[1], r[2]) for r in rows.all()}
+                by_ply = {r[0]: (r[1], r[2], r[3]) for r in rows.all()}
 
-            assert by_ply.get(3, (None, None))[0] is not None, (
+            assert by_ply.get(3, (None, None, None))[0] is not None, (
                 "game_positions.pv at ply 3 must be set for an analyzed lichess game "
                 "— D-117-13 flaw-PV fix (lichess provides %eval but no PV)."
             )
-            # Preserved lichess %evals are untouched (D-116-04 still holds).
-            assert by_ply.get(3, (None, None))[1] == -480, (
-                "The lichess %eval at the flaw-adjacent ply must be preserved, not "
+            # SEED-054: pv + best_move at flaw_ply (ply 2) — the better-alternative arrow.
+            assert by_ply.get(2, (None, None, None))[0] is not None, (
+                "game_positions.pv at ply 2 (flaw_ply) must be set for an analyzed "
+                "lichess game — SEED-054 ideal-continuation PV."
+            )
+            assert by_ply.get(2, (None, None, None))[2] == "g8f6", (
+                "game_positions.best_move at ply 2 (flaw_ply) must be set for an "
+                "analyzed lichess game — SEED-054 better-alternative arrow."
+            )
+            # Preserved lichess %evals are untouched at both flaw plies (D-116-04).
+            assert by_ply.get(3, (None, None, None))[1] == -480, (
+                "The lichess %eval at flaw_ply + 1 must be preserved, not "
                 "overwritten by the engine eval (D-116-04)."
             )
-            for ply in [0, 1, 2, 4, 5]:
-                assert by_ply.get(ply, (None, None))[0] is None, (
+            assert by_ply.get(2, (None, None, None))[1] == -500, (
+                "The lichess %eval at flaw_ply must be preserved, not overwritten "
+                "by the engine eval (D-116-04 / SEED-054)."
+            )
+            for ply in [0, 1, 4, 5]:
+                assert by_ply.get(ply, (None, None, None))[0] is None, (
                     f"game_positions.pv at ply {ply} must be NULL — pv is only written "
-                    "at the ply AFTER a flaw (D-117-02 / Pitfall 4)."
+                    "at flaw plies (ply N and ply N+1; D-117-02 / SEED-054)."
                 )
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
@@ -2716,16 +2746,16 @@ class TestBatchedWriteRegression:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """After a drain tick on a game with TWO blunders (one white, one black),
-        game_positions.pv is set at BOTH N+1 plies (ply 3 and ply 4) and NULL at
-        all other plies.
+        game_positions.pv is set at flaw plies 2, 3 AND 4 (SEED-054) and NULL elsewhere.
 
         This exercises the multi-row VALUES clause in the batched flaw-PV UPDATE
         (FLAWCHESS-6B) — the existing single-flaw test covers one VALUES row only.
 
         _SIX_PLY_PGN = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 *" (plies 0..5).
         Two blunders from _two_blunder_eval_sequence:
-          - White blunder at ply 2 → PV at ply 3
-          - Black blunder at ply 3 → PV at ply 4
+          - White blunder at ply 2 → PV at ply 2 (decision, SEED-054) and ply 3 (refutation)
+          - Black blunder at ply 3 → PV at ply 3 (decision, SEED-054) and ply 4 (refutation)
+        Union of written plies = {2, 3, 4}; plies 0, 1, 5 stay NULL.
         """
         from app.models.game_position import GamePosition
 
@@ -2765,19 +2795,24 @@ class TestBatchedWriteRegression:
                 )
                 by_ply = {r[0]: (r[1], r[2]) for r in rows.all()}
 
-            # Both flaw-adjacent plies must carry a PV (batched VALUES with 2 rows).
+            # Flaw plies 2, 3, 4 must carry a PV (batched VALUES with multiple rows).
+            assert by_ply.get(2, (None, None))[0] is not None, (
+                "ply 2 (decision board for white blunder at ply 2) must have pv set — "
+                "SEED-054 ideal-continuation PV"
+            )
             assert by_ply.get(3, (None, None))[0] is not None, (
-                "ply 3 (N+1 for white blunder at ply 2) must have pv set — "
-                "multi-row batched PV VALUES clause (FLAWCHESS-6B regression)"
+                "ply 3 (N+1 for white blunder at ply 2; decision for black blunder at "
+                "ply 3) must have pv set — multi-row batched PV VALUES (FLAWCHESS-6B)"
             )
             assert by_ply.get(4, (None, None))[0] is not None, (
                 "ply 4 (N+1 for black blunder at ply 3) must have pv set — "
                 "multi-row batched PV VALUES clause (FLAWCHESS-6B regression)"
             )
             # Non-flaw plies must NOT have a PV.
-            for ply in [0, 1, 2, 5]:
+            for ply in [0, 1, 5]:
                 assert by_ply.get(ply, (None, None))[0] is None, (
-                    f"ply {ply} must have pv=NULL — pv only written at flaw N+1 (D-117-02)"
+                    f"ply {ply} must have pv=NULL — pv only written at flaw plies "
+                    "(ply N and ply N+1; D-117-02 / SEED-054)"
                 )
             # Sanity: eval_cp rows populated by the batched eval write (Task 1 batch).
             # Row 2 = -500 (white blunder), row 3 = 100 (black blunder).

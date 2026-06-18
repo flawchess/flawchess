@@ -318,7 +318,7 @@ async def _fetch_dedup_evals(
     identical to the self-join result: eval_cp/eval_mate are the eval OF the requested
     position and best_move is the engine's decision FROM it.
 
-    Read-side guards (ply <= DEDUP_MAX_PLY, not in flaw_adjacent_plies, not is_terminal)
+    Read-side guards (ply <= DEDUP_MAX_PLY, not in flaw_engine_plies, not is_terminal)
     remain entirely in the caller at ~line 1640 — UNCHANGED. This function only changes
     which table backs the lookup.
 
@@ -430,6 +430,46 @@ async def _batch_update_best_move_rows(
         f"UPDATE game_positions"  # noqa: S608 — no user input; params are bound
         f" SET best_move = v.best_move"
         f" FROM (VALUES {values_sql}) AS v(ply, best_move)"
+        f" WHERE game_positions.game_id = :game_id"
+        f" AND game_positions.ply = v.ply"
+    )
+    await session.execute(sql, params)
+
+
+async def _batch_update_pv_rows(
+    session: AsyncSession,
+    game_id: int,
+    pv_rows: list[tuple[int, str]],
+) -> None:
+    """Emit ONE batched UPDATE writing pv (principal variation) for the given plies.
+
+    Shared by the live drain (_classify_and_fill_oracle) and the SEED-054 backfill
+    (scripts/backfill_best_move_pv.py) so the (game_id, ply) keying is identical by
+    construction. pv is unbounded Text (PostgreSQL won't reject it at the column
+    level).
+
+    Does NOT catch exceptions — callers decide fault tolerance. The drain wraps the
+    call in its own try/except so a PV write failure never aborts the flaw rows +
+    oracle counts already written in the same transaction (T-108-04 / WR-01).
+
+    Uses CAST() rather than :: cast syntax for asyncpg compatibility (same reason
+    as _batch_update_best_move_rows). Guard: empty input is a no-op (no zero-row
+    VALUES UPDATE). Sequential execute on caller-owned session — no asyncio.gather
+    (CLAUDE.md).
+    """
+    if not pv_rows:
+        return
+    params: dict[str, int | str] = {"game_id": game_id}
+    values_parts: list[str] = []
+    for i, (ply, pv) in enumerate(pv_rows):
+        params[f"ply_{i}"] = ply
+        params[f"pv_{i}"] = pv
+        values_parts.append(f"(CAST(:ply_{i} AS smallint), CAST(:pv_{i} AS text))")
+    values_sql = ", ".join(values_parts)
+    sql = sa.text(
+        f"UPDATE game_positions"  # noqa: S608 — no user input; params are bound
+        f" SET pv = v.pv"
+        f" FROM (VALUES {values_sql}) AS v(ply, pv)"
         f" WHERE game_positions.game_id = :game_id"
         f" AND game_positions.ply = v.ply"
     )
@@ -719,54 +759,46 @@ async def _classify_and_fill_oracle(
         )
     )
 
-    # Flaw PV write: for each FlawRecord at ply N, write pv at ply N+1.
-    # The pv_string for ply N+1 comes from the engine_result_map entry at ply N+1
-    # (the board AFTER the flawed move — D-117-02 / Pitfall 4).
+    # Flaw PV write (D-117-02 / SEED-054): for each FlawRecord at ply N, write pv at
+    # BOTH ply N and ply N+1:
+    #   - ply N    = the ideal-continuation line from the pre-blunder decision board
+    #                (latent until a frontend surface renders it — SEED-054 Part 2).
+    #   - ply N+1  = the refutation line from the post-blunder board (D-117-02, the
+    #                SEED-039 tactic-motif input).
+    # Each pv_string comes from engine_result_map at its OWN ply. For lichess games
+    # ply N is engine-evaluated thanks to _flaw_engine_plies (SEED-054 Part 1); for
+    # chess.com every ply already ran. Opening dedup-transplanted plies are absent
+    # from engine_result_map → pv stays NULL there (acceptable per SEED-054). Deduped
+    # by ply: consecutive flaws can make one flaw's ply N collide with another's N+1.
     #
-    # FLAWCHESS-6B (Fixes FLAWCHESS-6B): replace the per-flaw UPDATE loop with a
-    # pre-filter-then-single-batched-UPDATE pattern.
+    # FLAWCHESS-6B: collect surviving (ply, pv_string) pairs, then ONE batched UPDATE
+    # via _batch_update_pv_rows.
     #
-    # Fault tolerance rationale: the pre-filter below collects surviving (pv_ply,
-    # pv_string) pairs up front; any skipped row is Sentry-captured but does not
-    # abort the rest. Batching trades per-row isolation for one round-trip — this
-    # is acceptable because pv is unbounded Text (PostgreSQL won't reject it at
-    # the column level), so the realistic failure mode in the old per-row code was
-    # a DB connection error that would have invalidated the whole session anyway,
-    # not a single bad row. The surviving rows still commit atomically with the
-    # flaw rows and oracle counts above (T-117-11). If the single batched execute
-    # fails, flaw rows + oracle counts are NOT rolled back — that propagation path
-    # is unchanged (both the old try/except and this new block are intentionally
-    # inside the write_session transaction; asyncpg-level errors invalidate the
-    # whole session regardless).
-    pv_pairs: list[tuple[int, str]] = []
+    # Fault tolerance rationale: batching trades per-row isolation for one round-trip —
+    # acceptable because pv is unbounded Text (PostgreSQL won't reject it at the column
+    # level), so the realistic failure mode is a DB connection error that would have
+    # invalidated the whole session anyway, not a single bad row. The surviving rows
+    # commit atomically with the flaw rows and oracle counts above (T-117-11). If the
+    # batched execute fails, flaw rows + oracle counts are NOT rolled back — both the
+    # old code and this block are inside the write_session transaction; asyncpg-level
+    # errors invalidate the whole session regardless.
+    flaw_pv_by_ply: dict[int, str] = {}
     for flaw in flaw_list:
         flaw_ply_val: int = flaw["ply"]
-        pv_ply = flaw_ply_val + 1
-        engine_entry = engine_result_map.get(pv_ply)
-        if engine_entry is None:
-            continue
-        _cp, _mt, _bm, pv_string = engine_entry
-        if pv_string is None:
-            continue
-        pv_pairs.append((pv_ply, pv_string))
+        for cand_ply in (flaw_ply_val, flaw_ply_val + 1):
+            if cand_ply in flaw_pv_by_ply:
+                continue
+            engine_entry = engine_result_map.get(cand_ply)
+            if engine_entry is None:
+                continue
+            _cp, _mt, _bm, pv_string = engine_entry
+            if pv_string is None:
+                continue
+            flaw_pv_by_ply[cand_ply] = pv_string
 
-    if pv_pairs:
-        params_pv: dict[str, int | str] = {"game_id": game_id}
-        pv_values_parts: list[str] = []
-        for i, (pv_ply, pv_string) in enumerate(pv_pairs):
-            params_pv[f"ply_{i}"] = pv_ply
-            params_pv[f"pv_{i}"] = pv_string
-            pv_values_parts.append(f"(CAST(:ply_{i} AS smallint), CAST(:pv_{i} AS text))")
-        pv_values_sql = ", ".join(pv_values_parts)
-        pv_sql = sa.text(
-            f"UPDATE game_positions"  # noqa: S608 — no user input; params are bound
-            f" SET pv = v.pv"
-            f" FROM (VALUES {pv_values_sql}) AS v(ply, pv)"
-            f" WHERE game_positions.game_id = :game_id"
-            f" AND game_positions.ply = v.ply"
-        )
+    if flaw_pv_by_ply:
         try:
-            await session.execute(pv_sql, params_pv)
+            await _batch_update_pv_rows(session, game_id, list(flaw_pv_by_ply.items()))
         except Exception as exc:
             # T-108-04 / WR-01: PV write failure must not abort flaw rows + oracle
             # counts already written above. Capture for visibility without embedding
@@ -779,23 +811,32 @@ async def _classify_and_fill_oracle(
             sentry_sdk.capture_exception(exc)
 
 
-async def _flaw_adjacent_plies(session: AsyncSession, game_id: int) -> set[int]:
-    """Pre-classify a lichess-eval game's flaws to find plies needing engine PV capture (D-117-13).
+async def _flaw_engine_plies(session: AsyncSession, game_id: int) -> set[int]:
+    """Pre-classify a lichess-eval game's flaws to find plies needing an engine pass (D-117-13 / SEED-054).
 
     Lichess-eval games (is_lichess_eval_game=True) carry a lichess %eval on
     (nearly) every ply, so the is_lichess_eval_game target filter in
-    _full_drain_tick would otherwise drop every flaw-adjacent ply before the
-    engine gather — and lichess supplies %eval but NO principal variation. The observed result (prod sanity check ~1 h after the
-    Phase 117 deploy) was 0% flaw-PV coverage for analyzed lichess games: every
-    flaw's refutation line (the SEED-039 input) was missing.
+    _full_drain_tick would otherwise drop every flaw ply before the engine
+    gather — and lichess supplies %eval but NO principal variation and NO
+    best_move. The observed result (prod sanity check ~1 h after the Phase 117
+    deploy) was 0% flaw-PV coverage for analyzed lichess games: every flaw's
+    refutation line (the SEED-039 input) was missing.
 
     Fix: classify flaws up front from the already-stored %evals — the SAME inputs
     the write-time classify in _classify_and_fill_oracle uses — and return the set
-    of {flaw_ply + 1} plies. The caller exempts these from the eval-preservation
-    filter and from the opening dedup so the engine evaluates exactly those
-    positions for PV capture, while the write path still preserves the lichess
+    of {flaw_ply, flaw_ply + 1} plies. The caller exempts these from the
+    eval-preservation filter and from the opening dedup so the engine evaluates
+    exactly those positions, while the write path still preserves the lichess
     %eval (D-116-04). Covers BOTH players' flaws (classify_game_flaws is two-sided
     per D-06), matching the write-time PV loop.
+
+    Two plies per flaw (SEED-054):
+    - flaw_ply: the pre-blunder decision board → best_move (the better alternative
+      the Flaw/Library arrow renders, read at game_positions[flaw_ply].best_move) +
+      the ideal-continuation pv at the decision ply. This was NULL for lichess
+      games before SEED-054 because the engine only ran at flaw_ply + 1.
+    - flaw_ply + 1: the post-blunder board → the refutation pv (D-117-02, the
+      SEED-039 tactic-motif input).
 
     Returns an empty set when the game is missing or classification reports
     insufficient coverage (GameNotAnalyzed) — the caller then falls back to the
@@ -816,7 +857,11 @@ async def _flaw_adjacent_plies(session: AsyncSession, game_id: int) -> set[int]:
     if "reason" in flaw_result:
         # GameNotAnalyzed: insufficient eval coverage — fall back to prior filter.
         return set()
-    return {flaw["ply"] + 1 for flaw in flaw_result}
+    plies: set[int] = set()
+    for flaw in flaw_result:
+        plies.add(flaw["ply"])
+        plies.add(flaw["ply"] + 1)
+    return plies
 
 
 # Minimal duck-typed view so count_game_severities can be called with a
@@ -1682,27 +1727,29 @@ async def _full_drain_tick() -> bool:
         # T-78-17). Filtering here avoids burning 1M-node calls whose results are
         # discarded.
         #
-        # D-117-13 EXCEPTION: flaw-adjacent plies (flaw_ply + 1) must still be
-        # engine-evaluated to capture the refutation PV. Lichess supplies %eval but
-        # NO PV, so without this exemption every flaw in an analyzed lichess game
-        # got 0 PV (verified in prod post-Phase-117). Pre-classify from the stored
-        # %evals to find {flaw_ply + 1}, then exempt those plies from the filter.
-        flaw_adjacent_plies: set[int] = set()
+        # D-117-13 / SEED-054 EXCEPTION: flaw plies (flaw_ply AND flaw_ply + 1) must
+        # still be engine-evaluated. flaw_ply + 1 captures the refutation PV; flaw_ply
+        # captures the better-alternative best_move + ideal-continuation PV. Lichess
+        # supplies %eval but NO PV and NO best_move, so without this exemption every
+        # flaw in an analyzed lichess game got 0 PV (verified in prod post-Phase-117)
+        # and a NULL best_move arrow (SEED-054). Pre-classify from the stored %evals
+        # to find {flaw_ply, flaw_ply + 1}, then exempt those plies from the filter.
+        flaw_engine_plies: set[int] = set()
         if is_lichess_eval_game:
-            flaw_adjacent_plies = await _flaw_adjacent_plies(load_session, game_id)
+            flaw_engine_plies = await _flaw_engine_plies(load_session, game_id)
             targets = [
                 t
                 for t in targets
-                if (t.eval_cp is None and t.eval_mate is None) or t.ply in flaw_adjacent_plies
+                if (t.eval_cp is None and t.eval_mate is None) or t.ply in flaw_engine_plies
             ]
 
-        # Partition opening-region hashes for dedup (EVAL-03). Flaw-adjacent plies
-        # are excluded so they always get a real engine eval + PV instead of an
-        # eval-only dedup transplant (which carries no pv_string — D-117-13).
+        # Partition opening-region hashes for dedup (EVAL-03). Flaw plies are
+        # excluded so they always get a real engine eval + best_move + PV instead of
+        # an eval-only dedup transplant (which carries no pv_string — D-117-13).
         dedup_hashes = [
             t.full_hash
             for t in targets
-            if t.ply <= _DEDUP_MAX_PLY and t.ply not in flaw_adjacent_plies and not t.is_terminal
+            if t.ply <= _DEDUP_MAX_PLY and t.ply not in flaw_engine_plies and not t.is_terminal
         ]
         dedup_map = await _fetch_dedup_evals(load_session, dedup_hashes)
     # load_session is now closed.
@@ -1713,15 +1760,16 @@ async def _full_drain_tick() -> bool:
     # Phase 117 EVAL-04: use evaluate_nodes_with_pv to capture best_move + PV string.
     # Tier-1 (QUEUE-03): fan ALL of one game's plies across the pool simultaneously.
     # Tiers 2/3: same gather — the distinction is how the game was claimed, not how it's analyzed.
-    # D-117-13: flaw-adjacent plies always go to the engine (PV capture), even if a
-    # sibling target with the same full_hash seeded the dedup map.
+    # D-117-13 / SEED-054: flaw plies (flaw_ply and flaw_ply + 1) always go to the
+    # engine (best_move + PV capture), even if a sibling target with the same
+    # full_hash seeded the dedup map.
     # The terminal eval-donor (SEED-044) is always engine-evaluated: it has no
     # full_hash in the dedup map and supplies the last move's after-eval.
     engine_targets = [
         t
         for t in targets
         if t.is_terminal
-        or t.ply in flaw_adjacent_plies
+        or t.ply in flaw_engine_plies
         or t.ply > _DEDUP_MAX_PLY
         or t.full_hash not in dedup_map
     ]
