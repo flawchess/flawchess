@@ -670,7 +670,17 @@ async def _classify_and_fill_oracle(
     )
     positions = list(positions_result.scalars().all())
 
-    flaw_result = classify_game_flaws(game, positions)
+    # Live tactic tagging (260618-aiq): the freshly-computed PVs in
+    # engine_result_map are NOT yet written to game_positions at this point (the
+    # batched PV UPDATE below runs after classify). _detect_tactic_for_flaw reads
+    # the PV at flaw_ply+1, so without this override every live classify would see
+    # pv=NULL and tag tactic_motif=NULL until a later backfill_flaws.py run. Pass
+    # the in-memory PVs (ply -> pv_string) so the drain tags tactics on the fly.
+    pv_by_ply: dict[int, str] = {
+        ply: entry[3] for ply, entry in engine_result_map.items() if entry[3] is not None
+    }
+
+    flaw_result = classify_game_flaws(game, positions, pv_by_ply=pv_by_ply)
     if "reason" in flaw_result:
         # GameNotAnalyzed: insufficient eval coverage — skip.
         return

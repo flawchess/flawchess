@@ -2,28 +2,29 @@
 gsd_state_version: 1.0
 milestone: v1.28
 milestone_name: Tactic Tagging
-current_phase: 125
-current_phase_name: Backfill Tactic Motifs
-status: Phase 124 shipped — squash-merged to main (76b9f32a)
-stopped_at: Completed 124-01-PLAN.md
-last_updated: "2026-06-18T01:55:27.884Z"
+current_phase: 126
+current_phase_name: Comparison Stats + Frontend
+status: executing
+stopped_at: Phase 125 context gathered
+last_updated: "2026-06-18T05:18:25.386Z"
 last_activity: 2026-06-18
+last_activity_desc: Phase 125 complete, transitioned to Phase 126
 progress:
   total_phases: 8
-  completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
-  percent: 25
+  completed_phases: 3
+  total_plans: 9
+  completed_plans: 9
+  percent: 38
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 125 — Backfill Tactic Motifs
+Phase: 126 — Comparison Stats + Frontend
 Plan: Not started
-Status: Phase 124 shipped — squash-merged to main (76b9f32a)
-Last activity: 2026-06-18
+Status: Ready to execute
+Last activity: 2026-06-18 — Completed quick task 260618-aiq: live tactic tagging in the in-process eval drain
 
 ## Project Reference
 
@@ -333,6 +334,7 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 | 260616-jq1 | Batch the two per-row `UPDATE game_positions` loops in the remote eval write path into single round-trips, fixing Sentry FLAWCHESS-6B (`performance_n_plus_one_db_queries` on `POST /api/eval/remote/submit`). `_apply_full_eval_results` (the ~40-80/game N+1) now collects write-rows + `failed_ply_count` in one pure-Python pass, then emits two grouped batched `UPDATE … FROM (VALUES …)` calls via `sa.text().bindparams()` (best_move-only group; eval-bearing group) — `O(1)` round-trips/game. `_classify_and_fill_oracle` flaw-PV loop (the exact query Sentry flagged) replaced by pre-filter + ONE batched PV UPDATE. asyncpg compat: `CAST(:p AS type)` instead of `::type` (named-param rewrite breaks `::` adjacent to `$N`). Fault tolerance preserved (pre-filter skips bad pv rows; Sentry capture keeps game_id in `set_context`, never the message). Orchestrator follow-up fix `273403e3`: the eval-group write nulled an existing `best_move` when an eval-bearing row carried `best_move=None` (best_move is THIS ply's resolution, eval is ply+1's — independent), reachable on re-submit; restored pre-batch no-clobber semantics with `COALESCE(v.best_move, game_positions.best_move)` + a mutation-checked regression test. SEED-044 invariants (post-move +1 shift, `ends_game` NULL exemption, terminal-donor skip) and `failed_ply_count` unchanged. Worktree base_mismatch on cleanup (branched off pre-PLAN HEAD) recovered by cherry-pick onto main (no file overlap). Gates GREEN: ruff format/check + ty (0 errors), pytest -n auto 48 passed (test_full_eval_drain + test_eval_drain) + 11 passed remote-eval router. On `main`; not pushed. | 2026-06-16 | 273403e3 | [260616-jq1-batch-the-two-per-row-update-loops-in-th](./quick/260616-jq1-batch-the-two-per-row-update-loops-in-th/) |
 | 260616-kzb | Batch the entry-ply / cold-drain eval write (SEED-052), the last per-row `update(GamePosition)` loop in `app/services/eval_drain.py`. `_apply_eval_results` now collects surviving write-rows in one Python pass (preserving the `(None, None)` skip + per-row Sentry warning and the `(eval_calls_made, eval_calls_failed)` return), then emits ONE batched `UPDATE … FROM (VALUES …)` via new sibling helper `_batch_update_entry_eval_rows`. Unlike the full-ply lane's per-game helpers (260616-jq1), this lane's targets span MULTIPLE games per drain batch, so `game_id` lives in the VALUES tuple and the WHERE matches `v.game_id`; only `eval_cp`/`eval_mate` are written (no best_move); the optional `endgame_class` disambiguation is preserved via `(v.endgame_class IS NULL OR game_positions.endgame_class = v.endgame_class)`. asyncpg compat: `CAST(:p AS integer\|smallint)`. Regression test exercises two games, a middlegame-entry (class NULL) row, an endgame-span-entry (class 3) row, a `(None,None)` failure, and a deliberate class-mismatch row that must NOT be overwritten; asserts counts `(made=4, failed=1)`. No CHANGELOG (internal perf/consistency, no behavior change). SEED-052 marked `status: implemented`. Gates GREEN: ruff format/check + ty (0 errors), full backend `pytest -n auto` 2710 passed/10 skipped. On `main`; not pushed. | 2026-06-16 | 3d11dbb0 | [260616-kzb-implement-seed-052-batch-entry-ply-eval-](./quick/260616-kzb-implement-seed-052-batch-entry-ply-eval-/) |
 | 260617-pu4 | Make `games.full_evals_completed_at` the authoritative analyzed-gate for the Library/Games flaw-stats surface, dropping the per-call eval-coverage recompute. Surfaced by today's prod DB-report: `fetch_stats_aggregates` showed 135s avg / 49-min max under the 2-day eval-drain because `_analyzed_game_ids_subquery` full-scanned the user's entire `game_positions` partition (409k rows for the largest user) to recompute the ≥90% coverage gate on every call; EXPLAIN proved the plan healthy (~1.05s warm), so the tail was drain I/O contention on cold pages. The coverage is already materialized in `games.full_evals_completed_at`, so the helper now returns `select(Game.id).where(user_id, full_evals_completed_at IS NOT NULL)` (column kept named `game_id`; all 5 consumers — fetch_page_analyzed_set, fetch_stats_aggregates, fetch_stats_per_game_rates, analyzed_game_ids, fetch_flaw_comparison — unchanged). Strictly cheaper (indexed lookup, no aggregate) AND more correct: the (COUNT-1) recompute over-excluded short fully-analyzed games whose terminal ply lacks an eval (~0.17% divergence, all short-game direction). Reverses D-03 / Pitfall 6 (documented in helper docstring + `fetch_stats_aggregates` comment). Dead imports removed (Float, and_, EVAL_COVERAGE_MIN). 6 test files migrated (not deleted) to the column gate; `fetch_flaw_trend_rows` untouched (already oracle-gated). No migration. Gates GREEN: ruff format/check + ty (0 errors), pytest -n auto 2713 passed/10 skipped. On `main`; not pushed. | 2026-06-17 | 0821b538 | [260617-pu4-make-full-evals-completed-at-the-authori](./quick/260617-pu4-make-full-evals-completed-at-the-authori/) |
+| 260618-aiq | Fix the in-process eval drain to tag tactic motifs LIVE. `_classify_and_fill_oracle` ran `classify_game_flaws` (reads `positions[ply+1].pv`) BEFORE writing freshly-computed PVs to `game_positions`, so live classify saw pv=NULL and wrote tactic_motif=NULL until a later backfill. Thread an optional `pv_by_ply` override through `classify_game_flaws`→`_build_flaw_record`→`_detect_tactic_for_flaw`; the drain passes its in-memory engine PVs. Backfill path unchanged when pv_by_ply is None. Verified live on dev: 9 games drained post-fix → 37/53 M+B flaws tagged (0 before). Found during Phase 125 verification; not part of Phase 125 scope. | 2026-06-18 | 8d970c3e | [260618-aiq-fix-in-process-eval-drain-to-tag-tactic-](./quick/260618-aiq-fix-in-process-eval-drain-to-tag-tactic-/) |
 
 ## Performance Metrics
 
@@ -394,6 +396,7 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 | Phase 124 P01 | 12m | 3 tasks | 7 files |
 | Phase 124 P02 | 6 minutes | 3 tasks | 1 files |
 | Phase 124 P04 | 30 | - tasks | - files |
+| Phase 125-backfill-tactic-motifs P03 | 2min | 1 tasks | 1 files |
 
 ## Decisions
 
@@ -463,9 +466,10 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 - [Phase ?]: D-02: TacticMotifInt IntEnum encoding follows EndgameClassInt precedent — single enum, _INT_TO_MOTIF/_MOTIF_TO_INT dicts, 24 members 1..24
 - [Phase ?]: Set board_before.turn from ply parity after chess.Board(piece_placement_fen)
 - [Phase ?]: Extracted _detect_tactic_for_flaw helper from _build_flaw_record to maintain nesting limits
+- [Phase ?]: Prod execution deferred outside Phase 125 gate (D-01); runbook has all steps
 
 ## Session
 
-**Last session:** 2026-06-18T00:18:21.573Z
-**Stopped at:** Completed 124-01-PLAN.md
-**Resume file:** None
+**Last session:** 2026-06-18T05:09:16.103Z
+**Stopped at:** Phase 125 context gathered
+**Resume file:** .planning/phases/125-backfill-tactic-motifs/125-CONTEXT.md

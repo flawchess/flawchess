@@ -24,7 +24,7 @@ The materialized columns on `game_flaws`.
 
 - [x] **TACSCH-01**: `game_flaws` gains a nullable `tactic_motif` SmallInteger enum column (at most one motif per flaw; not a bitmask, not a join table), written at classify time (migration).
 - [x] **TACSCH-02**: `game_flaws` gains a nullable `tactic_piece` SmallInteger column (python-chess PieceType) captured broadly with a per-motif semantic (fork=attacker, hanging=victim, pin/skewer=line piece, mate=mating piece; ambiguous cases NULL; Q-012). Stored now; piece-level UI deferred.
-- [ ] **TACSCH-03**: Existing `game_flaws` rows are backfilled with motif + piece for all self-eval'd games (those with `full_evals_completed_at` set, ~131k); lichess-eval-only games (no full eval, ~13.6k) keep `tactic_motif = NULL` until full-eval'd via the existing tier-3 idle fleet (no bespoke tooling).
+- [x] **TACSCH-03**: Existing `game_flaws` rows are backfilled with motif + piece for all self-eval'd games (those with `full_evals_completed_at` set, ~131k); lichess-eval-only games (no full eval, ~13.6k) keep `tactic_motif = NULL` until full-eval'd via the existing tier-3 idle fleet (no bespoke tooling).
 
 ### Comparison Stats
 
@@ -81,7 +81,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | TACDET-04 | Phase 124 | Complete |
 | TACSCH-01 | Phase 124 | Complete |
 | TACSCH-02 | Phase 124 | Complete |
-| TACSCH-03 | Phase 125 | Pending |
+| TACSCH-03 | Phase 125 | Complete |
 | TACCMP-01 | Phase 126 | Pending |
 | TACCMP-02 | Phase 126 | Pending |
 | TACCMP-03 | Phase 126 | Pending |

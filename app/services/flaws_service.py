@@ -17,6 +17,7 @@ GameNotAnalyzed. See the 2026-06-05 amendment in 105-01-PLAN.md.
 from __future__ import annotations
 
 import io
+from collections.abc import Mapping
 from typing import Literal, TypedDict
 
 import chess
@@ -360,18 +361,30 @@ def _detect_tactic_for_flaw(
     n: int,
     fen_map: dict[int, str],
     positions: list[GamePosition],
+    pv_by_ply: Mapping[int, str] | None = None,
 ) -> tuple[int | None, int | None, int | None]:
-    """Detect tactic motif for the flaw at ply N using the stored refutation PV.
+    """Detect tactic motif for the flaw at ply N using the refutation PV.
 
     Returns (tactic_motif_int, tactic_piece, tactic_confidence).
     All three are None when pv is absent, fen is missing, or SAN is malformed.
+
+    PV source (260618-aiq): the refutation PV for the flaw at ply N lives at ply
+    N+1. The in-process eval drain has just-computed PVs in memory that are NOT yet
+    written to game_positions at classify time, so it passes them via `pv_by_ply`
+    (ply -> pv_string). The backfill path passes pv_by_ply=None and falls back to
+    `positions[n+1].pv` (PVs already persisted by a prior drain), preserving the
+    original behavior exactly.
 
     Guards implemented:
     - Pitfall 1: `n + 1 < len(positions)` before indexing positions[n+1].pv
     - Pitfall 6: try/except (ValueError, chess.IllegalMoveError) for SAN parse
     """
     fen_before_flaw = fen_map.get(n, "")
-    pv: str | None = positions[n + 1].pv if n + 1 < len(positions) else None
+    pv: str | None = None
+    if pv_by_ply is not None:
+        pv = pv_by_ply.get(n + 1)
+    if pv is None and n + 1 < len(positions):
+        pv = positions[n + 1].pv
     move_san_of_flaw: str | None = positions[n].move_san
 
     if not (fen_before_flaw and pv and move_san_of_flaw):
@@ -400,6 +413,7 @@ def _build_flaw_record(
     es_after: float,
     fen_map: dict[int, str],
     positions: list[GamePosition],
+    pv_by_ply: Mapping[int, str] | None = None,
 ) -> FlawRecord:
     """Build a single FlawRecord for the mover's mistake/blunder at ply N."""
     # `n` is the 0-indexed half-move of the flawed move (positions[n].move_san is
@@ -410,7 +424,7 @@ def _build_flaw_record(
     # This makes the miniboard show the decision point and lets the frontend
     # resolve move_san → arrow squares.
     tactic_motif_int, tactic_piece, tactic_confidence = _detect_tactic_for_flaw(
-        n, fen_map, positions
+        n, fen_map, positions, pv_by_ply
     )
     return FlawRecord(
         ply=n,
@@ -665,6 +679,7 @@ def _resolve_increment(game: Game) -> float:
 def classify_game_flaws(
     game: Game,
     positions: list[GamePosition],
+    pv_by_ply: Mapping[int, str] | None = None,
 ) -> GameFlawsResult:
     """Derive all user flaws from stored per-ply evals.
 
@@ -673,6 +688,11 @@ def classify_game_flaws(
               increment_seconds, pgn.
         positions: All GamePosition rows for this game, ordered by ply ASC.
             Load via flaws_repository.fetch_game_positions_ordered.
+        pv_by_ply: optional {ply -> pv_string} override for tactic detection
+            (260618-aiq). The in-process eval drain passes freshly-computed PVs
+            here because they are not yet written to game_positions at classify
+            time; without it the live drain would tag every flaw NULL. The
+            backfill path omits it and reads PVs from positions[n+1].pv.
 
     Returns:
         list[FlawRecord] for analyzed games — one entry per user mistake or
@@ -713,7 +733,9 @@ def classify_game_flaws(
         if severity not in ("mistake", "blunder"):
             # Inaccuracies are count-only per the 2026-06-05 amendment
             continue
-        flaw = _build_flaw_record(n, mover, severity, es_before, es_after, fen_map, positions)
+        flaw = _build_flaw_record(
+            n, mover, severity, es_before, es_after, fen_map, positions, pv_by_ply
+        )
         # Per-mover subject_result drives the lucky tag correctly for both sides (D-05).
         subject_result = derive_user_result(game.result, mover)
         flaw["tags"] = _build_tags(

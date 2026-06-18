@@ -46,6 +46,7 @@ from app.services.flaws_service import (
     _run_all_moves_pass,
     classify_game_flaws,
 )
+from app.services.tactic_detector import TACTIC_CONFIDENCE_HIGH, TacticMotifInt
 
 
 def _make_pos(
@@ -2108,3 +2109,44 @@ class TestTacticIntegration:
         )
         assert white_ply4["tactic_piece"] is None
         assert white_ply4["tactic_confidence"] is None
+
+    def test_pv_by_ply_override_tags_when_positions_pv_is_none(self) -> None:
+        """260618-aiq: pv_by_ply override tags flaws even when positions[n+1].pv is NULL.
+
+        This is the in-process eval-drain scenario: at classify time the freshly
+        computed PVs are NOT yet written to game_positions, so positions[n+1].pv is
+        None. The drain passes the PVs via pv_by_ply instead. Without the override
+        the flaws must stay NULL (control); with it the hanging-piece detector fires
+        for both the white blunder (ply 4) and the black blunder (ply 5).
+        """
+        game = _make_game(pgn=self._PGN, user_color="white", result="0-1")
+        positions = self._build_both_color_positions()
+        # Drain state: refutation PVs are NOT in game_positions yet.
+        positions[5] = _make_pos_with_pv(5, eval_cp=300, move_san="Bg4", pv=None)
+        positions[6] = _make_pos_with_pv(6, eval_cp=20, pv=None)
+
+        # Control: no override + no stored pv -> tactic fields stay None.
+        control = classify_game_flaws(game, positions)
+        assert isinstance(control, list)
+        control_white = next(f for f in control if f["side"] == "white" and f["ply"] == 4)
+        control_black = next(f for f in control if f["side"] == "black" and f["ply"] == 5)
+        assert control_white["tactic_motif_int"] is None
+        assert control_black["tactic_motif_int"] is None
+
+        # Override: drain supplies the in-memory PVs keyed by ply (refutation at n+1).
+        pv_by_ply = {5: "d5c4", 6: "f3g4"}
+        tagged = classify_game_flaws(game, positions, pv_by_ply=pv_by_ply)
+        assert isinstance(tagged, list)
+        tagged_white = next(f for f in tagged if f["side"] == "white" and f["ply"] == 4)
+        tagged_black = next(f for f in tagged if f["side"] == "black" and f["ply"] == 5)
+
+        assert tagged_white["tactic_motif_int"] == TacticMotifInt.HANGING_PIECE, (
+            "White ply-4 blunder must tag hanging-piece via pv_by_ply override, "
+            f"got {tagged_white['tactic_motif_int']}"
+        )
+        assert tagged_white["tactic_confidence"] == TACTIC_CONFIDENCE_HIGH
+        assert tagged_black["tactic_motif_int"] == TacticMotifInt.HANGING_PIECE, (
+            "Black ply-5 blunder must tag hanging-piece via pv_by_ply override, "
+            f"got {tagged_black['tactic_motif_int']}"
+        )
+        assert tagged_black["tactic_confidence"] == TACTIC_CONFIDENCE_HIGH

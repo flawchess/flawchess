@@ -12,6 +12,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 - **Tactic cause-of-error tagging (foundation)** — mistakes and blunders are now tagged with the tactical motif that caused them (fork, pin, skewer, discovered attack, back-rank and named mates, plus tier-3 motifs like deflection and x-ray), detected from the engine refutation line already stored at analysis time, so there is no extra analysis cost. Tags are computed for both players and stored precision-first (low-confidence motifs are suppressed rather than mis-tagged). This is internal groundwork; the tags are not surfaced in the UI yet. (Phase 124)
 
+- **Tactic tags applied to existing analyzed games** — backfilled the tactic motif on all already-analyzed games, and wired the live evaluation drain to tag motifs as games are analyzed going forward (previously the drain stored the refutation line but left the tag empty until a manual backfill). Coverage is precision-first: a tag is empty only when there genuinely is no refutation line or no motif fires, never because a game was skipped. (Phase 125, 260618-aiq)
+
 ### Changed
 
 - **Flaw stats faster and more accurate on large game libraries** — the analyzed-game gate now uses the pre-materialized `full_evals_completed_at` column instead of recomputing eval coverage across all positions on every request. This eliminates a full-partition scan that caused 135s average / 49-minute max latency under an eval drain on large accounts. Fully-analyzed short games are now correctly counted as analyzed. (260617-pu4)

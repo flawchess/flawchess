@@ -41,7 +41,7 @@
 ### v1.28 Tactic Tagging
 
 - [x] **Phase 124: Schema + Tactic Detector** — Alembic migration for `tactic_motif`/`tactic_piece` columns + the pure-CPU cook-heuristic reimplementation + hand-labeled fixture validation (completed 2026-06-18)
-- [ ] **Phase 125: Backfill Tactic Motifs** — run `backfill_flaws.py` over ~131k self-eval'd games; lichess-eval-only games stay NULL until full-eval'd via the existing tier-3 idle fleet
+- [x] **Phase 125: Backfill Tactic Motifs** — run `backfill_flaws.py` over ~131k self-eval'd games; lichess-eval-only games stay NULL until full-eval'd via the existing tier-3 idle fleet (completed 2026-06-18)
 - [ ] **Phase 126: Comparison Stats + Frontend** — `GET /api/library/tactic-comparison` endpoint + motif chips on flaw cards + MiniBulletChart you-vs-opponent motif grid
 
 ## Phase Details
@@ -103,7 +103,13 @@ Plans:
   2. Lichess-eval-only flaws (~13.6k games with no `full_evals_completed_at`) keep `tactic_motif = NULL` — no bespoke job type, no separate backfill; coverage fills in via the existing tier-3 idle fleet
   3. Backfill is idempotent: re-running it produces the same result without duplicating or corrupting existing rows
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+- [x] 125-01-PLAN.md — Wave 0: extend test_backfill_flaws.py to assert tactic columns + build read-only coverage_report_tactic_motifs.py (D-04)
+- [x] 125-02-PLAN.md — run dev backfill (D-02), prove honest coverage (SC#1/D-04), idempotency (SC#3/D-05), D-06 blast-radius
+- [x] 125-03-PLAN.md — deferred prod runbook (D-01, documentation only)
+
+**Note**: ROADMAP SC#1 (prod ~131k) is met-on-dev / prod-pending — Phase 125 completes on dev; prod execution is deferred (D-01).
 
 ### Phase 126: Comparison Stats + Frontend
 
@@ -166,7 +172,7 @@ Plans:
 | 123. Remote-worker entry-ply fresh-import drain (SEED-051) | 3/3 | Complete (release #203; UAT 2/2) | 2026-06-16 |
 | 123.1. Opening-eval dedup cache table (SEED-053) (INSERTED) | 2/2 | Complete | 2026-06-17 |
 | 124. Schema + Tactic Detector | 4/4 | Complete    | 2026-06-18 |
-| 125. Backfill Tactic Motifs | 0/TBD | Not started | - |
+| 125. Backfill Tactic Motifs | 3/3 | Complete    | 2026-06-18 |
 | 126. Comparison Stats + Frontend | 0/TBD | Not started | - |
 
 ## Backlog
@@ -175,7 +181,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 4/4 plans complete
+**Plans:** 3/3 plans complete
 
 Plans:
 
