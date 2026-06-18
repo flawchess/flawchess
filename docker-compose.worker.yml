@@ -1,0 +1,23 @@
+# Optional Docker setup for the remote Stockfish eval worker.
+# See REMOTE_WORKER.md ("Advanced: Run in Docker") for usage.
+#
+# Reads EVAL_OPERATOR_TOKEN (required) and optional REMOTE_WORKER_COUNT / SENTRY_DSN
+# from a .env file in this directory.
+#
+#   docker compose -f docker-compose.worker.yml up -d --build
+#   docker compose -f docker-compose.worker.yml logs -f
+#   docker compose -f docker-compose.worker.yml down
+services:
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      # Passed into the container; pydantic-settings reads it from the OS env.
+      EVAL_OPERATOR_TOKEN: ${EVAL_OPERATOR_TOKEN:?set EVAL_OPERATOR_TOKEN in .env}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+    # ${REMOTE_WORKER_COUNT:-4} is substituted host-side at compose-parse time, so it
+    # reaches the worker as a CLI flag. Default 4 if unset. The worker defaults
+    # --base-url to https://flawchess.com, so no URL flag is needed.
+    command: python scripts/remote_eval_worker.py --workers ${REMOTE_WORKER_COUNT:-4}
+    restart: unless-stopped

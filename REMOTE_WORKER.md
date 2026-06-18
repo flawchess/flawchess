@@ -57,3 +57,33 @@ Then start the worker exactly like step 6 above:
 ```
 uv run python scripts/remote_eval_worker.py --workers 4
 ```
+
+## Advanced: Run in Docker
+
+If you already use Docker, you can run the worker in a container instead of installing `uv` and Stockfish yourself. This needs **Docker** and **Docker Compose** installed, plus the repository files (see step 1 above). It is an alternative to the steps above, not an addition: pick one.
+
+1. **Add your token.** In the flawchess folder, create a file named `.env` (same as step 5 above) and add your token. You can also set how many CPU cores to use here:
+   ```
+   EVAL_OPERATOR_TOKEN=your-token-here
+   REMOTE_WORKER_COUNT=4
+   ```
+   `REMOTE_WORKER_COUNT` is optional and defaults to `4` if you leave it out.
+
+2. **Start the worker:**
+   ```
+   docker compose -f docker-compose.worker.yml up -d --build
+   ```
+   The first build downloads dependencies and Stockfish. On Apple Silicon Macs it compiles Stockfish from source, which takes a few minutes the first time; later builds are cached. On regular (Intel/AMD) machines it uses a prebuilt Stockfish and is fast.
+
+3. **Watch it work:**
+   ```
+   docker compose -f docker-compose.worker.yml logs -f
+   ```
+   Press `Ctrl-C` to stop watching (the worker keeps running in the background).
+
+4. **Stop the worker:**
+   ```
+   docker compose -f docker-compose.worker.yml down
+   ```
+
+The container restarts automatically if it crashes or your computer reboots, so it keeps helping until you run the stop command above.
