@@ -1,6 +1,7 @@
 ---
 id: SEED-054
-status: ready
+status: implemented
+implemented_by: 260618-rmk (drain fix Parts 1+2 + scripts/backfill_best_move_pv.py); prod backfill run still pending (manual, post-deploy)
 planted: 2026-06-18
 planted_during: v1.28 Tactic Tagging
 trigger_when: ready now — implement next session via /gsd-quick (drain fix parts 1+2), then run the local in-place prod backfill once the fix is deployed
