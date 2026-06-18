@@ -2,7 +2,7 @@
 
 Want to help out? You can run a small program on your computer that helps the FlawChess server analyze games faster. It runs Stockfish (the chess engine) in the background and quietly does analysis work whenever the server needs it.
 
-You don't need to be a programmer to set this up. You also don't need Docker, a database, or the full FlawChess developer setup. Just the files, Stockfish, and one helper tool called `uv`. The steps below walk you through it.
+You don't need to be a programmer to set this up, and you don't need a database or the full FlawChess developer setup. The main path below uses just the files, Stockfish, and one helper tool called `uv`. Prefer Docker? There's a container-based alternative at the end (["Advanced: Run in Docker"](#advanced-run-in-docker)).
 
 ## What you'll need first
 
