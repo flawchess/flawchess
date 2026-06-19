@@ -10,9 +10,15 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Added
 
+- **Tactic motif comparison in the Library (beta)** — flaw cards now show the tactic that caused each mistake or blunder as a family-colored chip with a plain-English definition popover. The filter panel gains a "Tactic motif" section to narrow flaws by family (fork, pin/skewer, discovery, mate, hanging, combinations), and a new "Tactic Motifs" comparison section shows how often you allow each motif versus your opponents per game, ranked by significance and gated on a minimum number of analyzed games. Beta-gated, with full mobile parity at narrow widths. Backed by a new `GET /api/library/tactic-comparison` endpoint that honors all game filters. (Phase 126)
+
+- **Engine best-move arrow on Library miniboards** — when a game has engine analysis, the Library Game-card and Flaw-card miniboards now show the engine's best move as a translucent blue arrow. On the Game card it updates as you scrub the eval chart (the suggested move from whatever position you're viewing); on the Flaw card it sits next to the red move-played arrow, showing what should have been played at the decision point. Hidden for games with only imported Lichess evals (no stored best move). (260618-oqw)
+
 - **Tactic cause-of-error tagging (foundation)** — mistakes and blunders are now tagged with the tactical motif that caused them (fork, pin, skewer, discovered attack, back-rank and named mates, plus tier-3 motifs like deflection and x-ray), detected from the engine refutation line already stored at analysis time, so there is no extra analysis cost. Tags are computed for both players and stored precision-first (low-confidence motifs are suppressed rather than mis-tagged). This is internal groundwork; the tags are not surfaced in the UI yet. (Phase 124)
 
 - **Tactic tags applied to existing analyzed games** — backfilled the tactic motif on all already-analyzed games, and wired the live evaluation drain to tag motifs as games are analyzed going forward (previously the drain stored the refutation line but left the tag empty until a manual backfill). Coverage is precision-first: a tag is empty only when there genuinely is no refutation line or no motif fires, never because a game was skipped. (Phase 125, 260618-aiq)
+
+- **`backfill_full_evals.py` script** — operator tool to queue full-game analysis for a single user's not-yet-analyzed games at top priority. It enlists every game still missing full evals as a tier-1 eval job; the running drain worker then evaluates each game and tags flaws, tactic motifs, and blunder/mistake/inaccuracy counts automatically. Idempotent and safe to re-run; supports dev/benchmark/prod targets with `--dry-run` and `--limit`.
 
 ### Changed
 
@@ -21,6 +27,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Fixed
 
 - **"Better move" arrow now shows on Lichess-analyzed games** — the blue arrow that points out the move you should have played instead of a blunder was silently missing on games imported with Lichess's own analysis. The engine now also evaluates the position you moved from (not just the position after), so the better alternative is captured and the arrow renders. A one-time backfill fills this in for already-analyzed Lichess games. (SEED-054, 260618-rmk)
+
+- **Opening a game from a Flaw card lands on the flawed move** — the eval-chart slider now opens parked on the flaw's ply, so the board and crosshair start on the flawed move instead of resting at the end of the game. Replaces the previous marker "pulse" attention cue, which had broken.
 
 ## [v1.27] Remote Eval Worker Fan-Out & In-App Feedback — 2026-06-16
 

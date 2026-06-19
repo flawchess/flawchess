@@ -17,6 +17,54 @@ afterEach(() => {
 });
 
 describe('FlawFilterControl', () => {
+  describe('tactic motif family (Phase 126)', () => {
+    it('hides the tactic section by default (showTacticFilter unset)', () => {
+      render(<FlawFilterControl {...defaultProps} />);
+      expect(screen.queryByTestId('filter-flaw-family-tactic')).toBeNull();
+    });
+
+    it('renders all six family buttons when showTacticFilter is set', () => {
+      render(<FlawFilterControl {...defaultProps} showTacticFilter />);
+      expect(screen.getByTestId('filter-flaw-family-tactic')).toBeTruthy();
+      for (const fam of ['fork', 'pin_skewer', 'discovery', 'mate', 'hanging', 'combinations']) {
+        expect(screen.getByTestId(`filter-flaw-tactic-${fam}`)).toBeTruthy();
+      }
+    });
+
+    it('all families are off (aria-pressed=false) by default', () => {
+      render(<FlawFilterControl {...defaultProps} showTacticFilter tacticFamilies={[]} />);
+      expect(screen.getByTestId('filter-flaw-tactic-fork').getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('clicking an inactive family adds it via onTacticFamiliesChange', () => {
+      const onTacticFamiliesChange = vi.fn();
+      render(
+        <FlawFilterControl
+          {...defaultProps}
+          showTacticFilter
+          tacticFamilies={[]}
+          onTacticFamiliesChange={onTacticFamiliesChange}
+        />,
+      );
+      fireEvent.click(screen.getByTestId('filter-flaw-tactic-fork'));
+      expect(onTacticFamiliesChange).toHaveBeenCalledWith(['fork']);
+    });
+
+    it('clicking an active family removes it', () => {
+      const onTacticFamiliesChange = vi.fn();
+      render(
+        <FlawFilterControl
+          {...defaultProps}
+          showTacticFilter
+          tacticFamilies={['fork', 'mate']}
+          onTacticFamiliesChange={onTacticFamiliesChange}
+        />,
+      );
+      fireEvent.click(screen.getByTestId('filter-flaw-tactic-fork'));
+      expect(onTacticFamiliesChange).toHaveBeenCalledWith(['mate']);
+    });
+  });
+
   describe('severity buttons', () => {
     it('renders both severity buttons', () => {
       render(<FlawFilterControl {...defaultProps} />);

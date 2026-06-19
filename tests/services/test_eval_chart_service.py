@@ -25,6 +25,7 @@ def _make_pos(
     clock_seconds: float | None = None,
     phase: int = 1,
     move_san: str | None = None,
+    best_move: str | None = None,
 ) -> GamePosition:
     """Build a GamePosition with eval/clock fields for pure unit testing (no DB flush).
 
@@ -39,6 +40,7 @@ def _make_pos(
     pos.clock_seconds = clock_seconds
     pos.phase = phase
     pos.move_san = move_san
+    pos.best_move = best_move
     pos.full_hash = 0
     pos.white_hash = 0
     pos.black_hash = 0
@@ -168,6 +170,17 @@ class TestClockAndMoveTime:
         eval_series, _, _ = _build_eval_series(game, positions)
         assert eval_series[0].clock_seconds == 597.0
         assert eval_series[1].clock_seconds == 595.0
+
+    def test_best_move_passthrough(self) -> None:
+        """EvalPoint carries the position's best_move (UCI) for the board arrow (quick-260618-oqw)."""
+        positions = [
+            _make_pos(0, eval_cp=10, best_move="e2e4"),
+            _make_pos(1, eval_cp=10, best_move=None),
+        ]
+        game = _make_game()
+        eval_series, _, _ = _build_eval_series(game, positions)
+        assert eval_series[0].best_move == "e2e4"
+        assert eval_series[1].best_move is None
 
     def test_move_seconds_first_move_uses_base_time(self) -> None:
         """First move of each color: time spent = base_time − clock + increment."""

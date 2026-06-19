@@ -7,7 +7,7 @@ import {
   ExternalLink,
   Loader2,
 } from 'lucide-react';
-import { SEV_BLUNDER, SEV_MISTAKE, SEV_INACCURACY } from '@/lib/theme';
+import { SEV_BLUNDER, SEV_MISTAKE, SEV_INACCURACY, BEST_MOVE_ARROW } from '@/lib/theme';
 import { Card, CardHeader } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { LoadError } from '@/components/ui/load-error';
@@ -18,10 +18,12 @@ import { LibraryGameCard } from '@/components/results/LibraryGameCard';
 import { SeverityBadge } from '@/components/library/SeverityBadge';
 import { TagChip, TagLegend } from '@/components/library/TagChip';
 import { flawPlyUrl } from '@/lib/platformLinks';
-import { sanToSquares } from '@/lib/sanToSquares';
+import { sanToSquares, uciToSquares } from '@/lib/sanToSquares';
 import { formatMoveNotation } from '@/lib/openingInsights';
 import { formatFlawEvalParts } from '@/lib/formatFlawEval';
 import { useLibraryGame } from '@/hooks/useLibrary';
+import { useUserProfile } from '@/hooks/useUserProfile';
+import { TacticMotifChip } from '@/components/library/TacticMotifChip';
 import type { FlawListItem, FlawSeverity } from '@/types/library';
 
 // Standalone component per D-05 (sibling to LibraryGameCard — do NOT import from it).
@@ -81,6 +83,7 @@ function formatClock(clockSec: number): string {
 export function FlawCard({ flaw }: { flaw: FlawListItem }) {
   const [open, setOpen] = useState(false);
   const { data, isLoading, isError } = useLibraryGame(open ? flaw.game_id : null);
+  const { data: userProfile } = useUserProfile();
 
   const flipped = flaw.user_color === 'black';
   const severityColor = SEVERITY_COLOR[flaw.severity];
@@ -91,6 +94,20 @@ export function FlawCard({ flaw }: { flaw: FlawListItem }) {
   const moveSquares = flaw.move_san
     ? sanToSquares(`${flaw.fen} ${sideToMove} - - 0 1`, flaw.move_san)
     : null;
+
+  // Engine best move FROM the pre-flaw position (UCI) — blue arrow next to the
+  // red flaw-move arrow. Skip if it coincides with the played move (avoids a
+  // duplicate arrow / React key collision; a genuine flaw rarely matches).
+  const bestMoveSquares = uciToSquares(flaw.best_move);
+  const showBestMove =
+    bestMoveSquares != null &&
+    !(moveSquares && moveSquares.from === bestMoveSquares.from && moveSquares.to === bestMoveSquares.to);
+  const boardArrows = [
+    ...(moveSquares ? [{ from: moveSquares.from, to: moveSquares.to, color: SEV_BLUNDER }] : []),
+    ...(showBestMove
+      ? [{ from: bestMoveSquares.from, to: bestMoveSquares.to, color: BEST_MOVE_ARROW }]
+      : []),
+  ];
 
   // Move notation — shared primitive (D-04, no local helper).
   const moveNotation = flaw.move_san
@@ -223,11 +240,7 @@ export function FlawCard({ flaw }: { flaw: FlawListItem }) {
           fen={flaw.fen}
           flipped={flipped}
           size={DESKTOP_BOARD_SIZE}
-          arrows={
-            moveSquares
-              ? [{ from: moveSquares.from, to: moveSquares.to, color: SEV_BLUNDER }]
-              : undefined
-          }
+          arrows={boardArrows.length > 0 ? boardArrows : undefined}
         />
 
         {/* Column 2 — move/eval, metadata, action */}
@@ -246,10 +259,10 @@ export function FlawCard({ flaw }: { flaw: FlawListItem }) {
           {metadata}
         </div>
 
-        {/* Tags row — severity badge, family-colored tag chips, and a single "Tags"
-            legend. Always rendered (every flaw has a severity). basis-full makes it a
-            full-width wrapping row below board+content with the severity badge, chips,
-            and "Tags" legend all inline. */}
+        {/* Tags row — all inline on one wrapping row (basis-full): severity badge,
+            then the tactic-motif chip, then the family-colored flaw-tag chips, and
+            finally a single brown Tags-icon legend explaining every tag listed except
+            severity (Phase 126 UAT). Always rendered (every flaw has a severity). */}
         <div className="flex flex-wrap items-center gap-1.5 basis-full">
           {/* Severity badge — singular, count-less (one flaw per card). */}
           <SeverityBadge
@@ -259,16 +272,27 @@ export function FlawCard({ flaw }: { flaw: FlawListItem }) {
             showCount={false}
           />
 
-          {flaw.tags.length > 0 && (
-            // display:contents so the chips + legend flow inline with the severity
-            // badge on the single wrapping row.
-            <div className="contents">
-              {flaw.tags.map((tag) => (
-                <TagChip key={tag} tag={tag} gameId={flaw.game_id} definition={false} />
-              ))}
-              <TagLegend tags={flaw.tags} gameId={flaw.game_id} label="Tags" />
-            </div>
+          {/* Tactic motif chip first — beta-gated (D-01), only rendered when a motif is
+              present (backend nulls sub-threshold motifs at query time, D-09). */}
+          {userProfile?.beta_enabled && flaw.tactic_motif != null && (
+            <TacticMotifChip motif={flaw.tactic_motif} flawId={flaw.game_id} />
           )}
+
+          {/* Other flaw-tag chips. */}
+          {flaw.tags.map((tag) => (
+            <TagChip key={tag} tag={tag} gameId={flaw.game_id} definition={false} />
+          ))}
+
+          {/* Single brown Tags-icon legend explaining the tactic + flaw tags above
+              (not severity). Renders null when there is nothing to explain. */}
+          <TagLegend
+            variant="icon"
+            tags={flaw.tags}
+            tacticMotifs={
+              userProfile?.beta_enabled && flaw.tactic_motif != null ? [flaw.tactic_motif] : []
+            }
+            gameId={flaw.game_id}
+          />
         </div>
       </div>
 
@@ -301,9 +325,9 @@ export function FlawCard({ flaw }: { flaw: FlawListItem }) {
               modal width instead. */}
           {data && (
             <div className="min-w-0">
-              {/* focusPly: pulse the clicked flaw's marker on the modal's eval chart
-                  so the eye lands on it on open (yields to hover — see LibraryGameCard). */}
-              <LibraryGameCard game={data} focusPly={flaw.ply} />
+              {/* initialPly: open the modal's eval-chart slider parked on the clicked
+                  flaw's ply so the board and crosshair land on the flawed move. */}
+              <LibraryGameCard game={data} initialPly={flaw.ply} />
             </div>
           )}
         </DialogContent>

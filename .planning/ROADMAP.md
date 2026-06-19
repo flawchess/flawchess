@@ -123,7 +123,19 @@ Plans:
   3. The you-vs-opponent motif comparison surface (MiniBulletChart grid: measure + CI + benchmark zone where available, per-motif tooltips) renders on the Library page with a section-level sample gate below which the comparison is withheld
   4. All chips, comparison bullets, and interactive elements render correctly on mobile at 375px with `data-testid` and ARIA labels matching the project's browser-automation rules
 
-**Plans**: TBD
+**Plans**: 3 plans
+**Wave 1**
+
+- [x] 126-01-PLAN.md — Backend: `/tactic-comparison` endpoint + service/repo + `tactic_families` filter on `apply_game_filters()` + confidence-gated `tactic_motif`/`tactic_confidence` on flaw rows (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 126-02-PLAN.md — Frontend chip + filter: TAC_* theme constants, family taxonomy meta, `TacticMotifChip` on both flaw surfaces, beta-gated motif filter in FilterPanel (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 126-03-PLAN.md — Frontend grid: `getTacticComparison` API + `useTacticComparison` hook + `TacticComparisonGrid` on the Library page (wave 3)
+
 **UI hint**: yes
 
 ## Progress
@@ -173,7 +185,7 @@ Plans:
 | 123.1. Opening-eval dedup cache table (SEED-053) (INSERTED) | 2/2 | Complete | 2026-06-17 |
 | 124. Schema + Tactic Detector | 4/4 | Complete    | 2026-06-18 |
 | 125. Backfill Tactic Motifs | 3/3 | Complete    | 2026-06-18 |
-| 126. Comparison Stats + Frontend | 0/TBD | Not started | - |
+| 126. Comparison Stats + Frontend | 3/3 | Complete   | 2026-06-18 |
 
 ## Backlog
 

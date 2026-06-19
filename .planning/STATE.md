@@ -3,28 +3,28 @@ gsd_state_version: 1.0
 milestone: v1.28
 milestone_name: Tactic Tagging
 current_phase: 126
-current_phase_name: Comparison Stats + Frontend
-status: executing
-stopped_at: Phase 125 context gathered
-last_updated: "2026-06-18T05:18:25.386Z"
+current_phase_name: comparison-stats-frontend
+status: verifying
+stopped_at: Phase 126 UI-SPEC approved
+last_updated: "2026-06-18T09:04:25.447Z"
 last_activity: 2026-06-18
-last_activity_desc: Phase 125 complete, transitioned to Phase 126
+last_activity_desc: Phase 126 execution started
 progress:
   total_phases: 8
-  completed_phases: 3
-  total_plans: 9
-  completed_plans: 9
-  percent: 38
+  completed_phases: 4
+  total_plans: 12
+  completed_plans: 12
+  percent: 50
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 126 — Comparison Stats + Frontend
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-06-18 — Completed quick task 260618-rmk: SEED-054 store engine best_move/pv at flaw_ply (better-alternative arrow now renders on lichess games) + idempotent prod-targeting backfill script
+Phase: 126 (comparison-stats-frontend) — EXECUTING
+Plan: 3 of 3
+Status: Phase complete — ready for verification
+Last activity: 2026-06-19 — Completed quick task 260619-g7r: all tactic-motif colors blue, pin/skewer icon → lucide MoveUp, tactic comparison tooltips now explain the tactic (Phase 126 still in progress)
 
 ## Project Reference
 
@@ -336,6 +336,11 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 | 260617-pu4 | Make `games.full_evals_completed_at` the authoritative analyzed-gate for the Library/Games flaw-stats surface, dropping the per-call eval-coverage recompute. Surfaced by today's prod DB-report: `fetch_stats_aggregates` showed 135s avg / 49-min max under the 2-day eval-drain because `_analyzed_game_ids_subquery` full-scanned the user's entire `game_positions` partition (409k rows for the largest user) to recompute the ≥90% coverage gate on every call; EXPLAIN proved the plan healthy (~1.05s warm), so the tail was drain I/O contention on cold pages. The coverage is already materialized in `games.full_evals_completed_at`, so the helper now returns `select(Game.id).where(user_id, full_evals_completed_at IS NOT NULL)` (column kept named `game_id`; all 5 consumers — fetch_page_analyzed_set, fetch_stats_aggregates, fetch_stats_per_game_rates, analyzed_game_ids, fetch_flaw_comparison — unchanged). Strictly cheaper (indexed lookup, no aggregate) AND more correct: the (COUNT-1) recompute over-excluded short fully-analyzed games whose terminal ply lacks an eval (~0.17% divergence, all short-game direction). Reverses D-03 / Pitfall 6 (documented in helper docstring + `fetch_stats_aggregates` comment). Dead imports removed (Float, and_, EVAL_COVERAGE_MIN). 6 test files migrated (not deleted) to the column gate; `fetch_flaw_trend_rows` untouched (already oracle-gated). No migration. Gates GREEN: ruff format/check + ty (0 errors), pytest -n auto 2713 passed/10 skipped. On `main`; not pushed. | 2026-06-17 | 0821b538 | [260617-pu4-make-full-evals-completed-at-the-authori](./quick/260617-pu4-make-full-evals-completed-at-the-authori/) |
 | 260618-aiq | Fix the in-process eval drain to tag tactic motifs LIVE. `_classify_and_fill_oracle` ran `classify_game_flaws` (reads `positions[ply+1].pv`) BEFORE writing freshly-computed PVs to `game_positions`, so live classify saw pv=NULL and wrote tactic_motif=NULL until a later backfill. Thread an optional `pv_by_ply` override through `classify_game_flaws`→`_build_flaw_record`→`_detect_tactic_for_flaw`; the drain passes its in-memory engine PVs. Backfill path unchanged when pv_by_ply is None. Verified live on dev: 9 games drained post-fix → 37/53 M+B flaws tagged (0 before). Found during Phase 125 verification; not part of Phase 125 scope. | 2026-06-18 | 8d970c3e | [260618-aiq-fix-in-process-eval-drain-to-tag-tactic-](./quick/260618-aiq-fix-in-process-eval-drain-to-tag-tactic-/) |
 | 260618-rmk | Implement SEED-054: store engine `best_move` + `pv` at `flaw_ply` (the better-alternative the blue arrow renders), not only at `flaw_ply + 1` (the opponent's reply). For lichess-eval games the drain only ever engine-evaluated `flaw_ply + 1`, so `best_move[flaw_ply]` was NULL on every flaw and the arrow silently didn't render. **Part 1:** `_flaw_adjacent_plies`→`_flaw_engine_plies`, now returns `{flaw_ply, flaw_ply + 1}`; the lichess eval-preservation filter + opening-dedup exclusion + engine-target selection are all set-membership tests, so adding `flaw_ply` makes the engine evaluate the pre-blunder board → `_apply_full_eval_results`' lichess branch writes `best_move` there (lichess `%eval` preserved). **Refactor:** extracted `_batch_update_pv_rows` from the inline pv UPDATE (mirrors `_batch_update_best_move_rows`) — shared write helper so drain/backfill `(game_id, ply)` keying is identical by construction (no context dataclass per CLAUDE.md). **Part 2:** flaw-pv loop now writes pv at both `flaw_ply` (ideal continuation, latent — nothing renders it yet) and `flaw_ply + 1` (refutation, SEED-039 input), deduped by ply; chess.com already has the engine result at `flaw_ply`, opening dedup-transplanted plies stay NULL (acceptable). **Backfill** `scripts/backfill_best_move_pv.py` (new): lichess-only (`lichess_evals_at IS NOT NULL`), positions at flaw ply or flaw+1 (`EXISTS game_flaws … gf.ply = gp.ply OR gp.ply - 1`), idempotent on `best_move IS NULL` (subsumes SEED-043 never-reprocessed cohort + this keying gap), reuses the drain write helpers, writes best_move/pv only never `eval_cp`, never touches completion markers (no analyzed-gate/stats regression), local-machine prod-targeting via tunnel (zero prod compute), ~100-games/commit, larger local pool. Updated 3 drain tests (pv at both flaw plies; lichess now 2 engine calls not 1; best_move@flaw_ply assertion). Server-side only — stale remote worker stays compatible. Smoke on dev: dry-run 117,761 targets; `--limit 4` wrote 4 rows; DB spot-check confirmed best_move+pv at flaw & flaw+1 plies with `eval_cp` preserved. Gates GREEN: ruff format/check + ty (0 errors, `app/ tests/` scope), pytest -n auto **2774 passed/15 skipped**; no frontend change. On `main`; not pushed. **DEPLOY FOLLOW-UP (manual):** `bin/deploy.sh`, then run the prod backfill (`bin/prod_db_tunnel.sh` + `--db prod --workers <cores>`, size with `--dry-run` first); close SEED-043 lichess option (a) as superseded. | 2026-06-18 | e02107bb | [260618-rmk-implement-seed-054-fix-best-move-pv-at-f](./quick/260618-rmk-implement-seed-054-fix-best-move-pv-at-f/) |
+| 260618-oqw | Show the engine's best move as a translucent blue arrow on the Library Game-card and Flaw-card miniboards when `best_move` is available. Surfaced `game_positions.best_move` (UCI) through the library API: added `best_move` to `EvalPoint` (populated in `_build_eval_series`) and `FlawListItem` (from the PositionAt ply=N join) — no SQL/migration change, the ORM column already existed. Frontend: new `uciToSquares()` helper + `BEST_MOVE_ARROW` theme color; `LibraryGameCard` derives the arrow per scrubbed ply — the move that SHOULD have been played to reach the position (pairs with the yellow last-move highlight, not the opponent's best reply): displayed board `perPly[activePly]` is game-ply `activePly+1`, the move reaching it was from game-ply `activePly`, so the arrow is `eval_series[ply==activePly].best_move` — passed to both mobile + desktop miniboards; `FlawCard` draws it at the pre-flaw decision point beside the red flaw-move arrow. Null for lichess-eval-only games (no PV) → "if available" gate. Gates GREEN: ruff/ty, pytest 2792 passed, tsc/lint/knip clean, vitest 985 passed. | 2026-06-18 | a71783f9 | [260618-oqw-if-best-move-is-available-show-it-as-a-b](./quick/260618-oqw-if-best-move-is-available-show-it-as-a-b/) |
+| 260619-evf | Phase 126 UAT for the tactic-motif feature: reorganized the Library `LibraryGameCard` flaw block into three labeled lines — (1) severity badges (unchanged), (2) beta-gated tactic-motif chips, (3) the other flaw-tag families. Each chip line now ends with its own brown `Tag`-icon popover that explains ONLY that line's tags, replacing the single combined `<span>Tags</span> + HelpCircle` legend (removed from the game card). `InfoPopover` gained an optional `icon` prop (default `HelpCircle`) so the trigger can be a brown `Tag` glyph (already brown via `text-brand-brown-light/70`). `TagLegend` gained `variant` (`'label'`\|`'icon'`, default `'label'`) + a `testId` override; the `'icon'` variant renders a label-less brown Tag-icon popover, while `FlawCard` (single-flaw card) keeps its existing `label="Tags"` legend (out of scope — the 3-line split only fits the multi-flaw game card). Two legends per card with distinct testids (`tag-legend-tactic-*` / `tag-legend-*`). Frontend-only. Gates GREEN: `tsc -b` / lint / knip clean, vitest 985 passed. On `gsd/phase-126-comparison-stats-frontend`; not pushed. | 2026-06-19 | e9eea600 | [260619-evf-phase-126-uat-reorganize-game-card-tags-](./quick/260619-evf-phase-126-uat-reorganize-game-card-tags-/) |
+| 260619-dvf | Phase 126 UAT for the tactic-motif feature. (1) theme.ts: all six `FAM_*` (+`_BG`) flaw-family color constants now resolve to a single neutral light grey (= `EVAL_CHART_AREA_WHITE_AHEAD`, `oklch(0.78 0 0)`) via new `FAM_NEUTRAL`/`FAM_NEUTRAL_BG` — names kept, only the `TAC_*` tactic families keep hue (user chose "everywhere": also greys the you-vs-opponent Flaw Comparison grid + Flaws filter panel). (2) `EvalChart` gains a `betaEnabled` prop; the active marker's `tactic_motif` is listed FIRST in the tooltip (above flaw tags), styled like the other tag rows; wired from both `LibraryGameCard` call sites via `userProfile?.beta_enabled`. (3) `LibraryGameCard`: tactic-motif chip row now renders BEFORE the flaw-tag chip row. (4) `TagLegend` gains a `tacticMotifs` prop; tactic rows render FIRST in the Tags popover (family icon + `TACTIC_MOTIF_DEFINITIONS`), wired from `LibraryGameCard` + `FlawCard`, beta-gated by callers. Frontend-only. Gates GREEN: `tsc -b` / lint / knip clean, vitest 985 passed. On `gsd/phase-126-comparison-stats-frontend`; not pushed. | 2026-06-19 | 02fb6191 | [260619-dvf-phase-126-uat-tactic-tag-colors-eval-cha](./quick/260619-dvf-phase-126-uat-tactic-tag-colors-eval-cha/) |
+| 260619-fk1 | Phase 126 UAT for the tactic-motif feature — make tactic-motif chips behave exactly like flaw-tag chips on the Library Games card. (1) The eval-chart tooltip already rendered the active marker's `tactic_motif` gated on `betaEnabled`, but only the MOBILE `EvalChart` call site in `LibraryGameCard` passed the prop, so the motif line was silently off on DESKTOP — added `betaEnabled={userProfile?.beta_enabled ?? false}` to the desktop call site. (2) Removed the per-chip definition popover from `TacticMotifChip` (dropped the Radix popover, open/close timers, and now-unused `useIsMobile`); definitions are surfaced once via the shared `TagLegend`, matching the flaw-tag chips (`definition={false}`). (3) Hover parity: `TacticMotifChip` gained optional `onHover`; the card wires it to `setHighlightYieldingFocus({ kind: 'motif', motif })` so hovering emphasizes matching eval-chart markers and dims the rest. (4) Click-to-cycle parity: gained optional `onActivate` → `handleActivate({ kind: 'motif', motif })`; extended the `FlawRef` union with `{ kind: 'motif'; motif: string }`, `sameFlawRef`, and a `motifPlies` map (mirroring `tagPlies`) so the existing cycle/highlight machinery resolves a motif's flaw plies. On `FlawCard` (no callbacks) the chip is now a plain decorative span, matching the sibling `TagChip`s. Frontend-only. Gates GREEN: `tsc -b` / lint / knip clean, vitest 987 passed. On `gsd/phase-126-comparison-stats-frontend`; not pushed. | 2026-06-19 | 84d61fd3 | [260619-fk1-phase-126-uat-tactic-tags-in-eval-chart-](./quick/260619-fk1-phase-126-uat-tactic-tags-in-eval-chart-/) |
+| 260619-g7r | Phase 126 UAT for the tactic-motif feature (frontend-only). (1) `theme.ts`: collapsed all six `TAC_*` family color constants (and `_BG` variants) to a single blue `TAC_BLUE` (the indigo `oklch(0.68 0.16 240)` previously used only for pin/skewer), mirroring the existing `FAM_NEUTRAL` grey-collapse; per-family constant names kept so every `TAC_*` consumer (chips, comparison grid, Flaws filter) renders the one blue. (2) `tacticComparisonMeta.ts`: swapped the `pin_skewer` family icon from `Minus` to lucide `MoveUp`. (3) Added a `definition` field to `TacticFamilyDef` with one-line explanations for all six families; `TacticBulletPopover` in `TacticComparisonGrid.tsx` now renders family-colored icon + bold label + definition as its first paragraph (matching the flaw-tag `FlawBulletPopover` format), replacing the prior "tactic flaws allowed per game" label line. Gates GREEN: `tsc -b` / lint / knip clean, vitest library+lib 334 passed. On `gsd/phase-126-comparison-stats-frontend`; not pushed. | 2026-06-19 | b6b06f31 | [260619-g7r-phase-126-uat-blue-tactic-colors-lucide-](./quick/260619-g7r-phase-126-uat-blue-tactic-colors-lucide-/) |
 
 ## Performance Metrics
 
@@ -398,6 +403,8 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 | Phase 124 P02 | 6 minutes | 3 tasks | 1 files |
 | Phase 124 P04 | 30 | - tasks | - files |
 | Phase 125-backfill-tactic-motifs P03 | 2min | 1 tasks | 1 files |
+| Phase 126 P01 | 14 | 3 tasks | 7 files |
+| Phase 126 P03 | 10m | 2 tasks | 5 files |
 
 ## Decisions
 
@@ -468,9 +475,12 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 - [Phase ?]: Set board_before.turn from ply parity after chess.Board(piece_placement_fen)
 - [Phase ?]: Extracted _detect_tactic_for_flaw helper from _build_flaw_record to maintain nesting limits
 - [Phase ?]: Prod execution deferred outside Phase 125 gate (D-01); runbook has all steps
+- [Phase ?]: Beta gate uses inner-component split (TacticComparisonGridInner) to keep hook call post-conditional per React hooks rules
+- [Phase ?]: API-returned tactic bullets rendered in server-side order (no client re-sort); backend ranks by significant gap then volume
 
 ## Session
 
-**Last session:** 2026-06-18T05:09:16.103Z
-**Stopped at:** Phase 125 context gathered
-**Resume file:** .planning/phases/125-backfill-tactic-motifs/125-CONTEXT.md
+**Last session:** 2026-06-18T09:04:15.843Z
+**Stopped at:** Phase 126 UI-SPEC approved
+**Resume file:** .planning/phases/126-comparison-stats-frontend/126-UI-SPEC.md
+| 170 | Flaw-card: open game on flawed ply, remove broken datapoint pulse | 2026-06-19 | fe4910d4 | — |

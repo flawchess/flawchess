@@ -31,7 +31,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.game import Game
 from app.models.game_flaw import GameFlaw
 from app.repositories import library_repository
-from app.repositories.library_repository import _TEMPO_INT_TO_TAG
+from app.repositories.library_repository import (
+    FAMILY_TO_MOTIF_INTS,
+    _TACTIC_CHIP_CONFIDENCE_MIN,
+    _TEMPO_INT_TO_TAG,
+)
+from app.services.tactic_detector import _INT_TO_MOTIF as _TACTIC_INT_TO_MOTIF
 from app.schemas.library import (
     FlawBullet,
     FlawComparisonResponse,
@@ -41,6 +46,8 @@ from app.schemas.library import (
     LibraryFlawsResponse,
     LibraryGamesResponse,
     SeverityRates,
+    TacticBullet,
+    TacticComparisonResponse,
     TagDistribution,
 )
 from app.services.flaw_delta_zones import FLAW_DELTA_ZONES
@@ -76,6 +83,7 @@ _USER_FRAMED_TAGS: frozenset[FlawTag] = frozenset({"miss", "lucky"})
 def _build_eval_series(
     game: Game,
     positions: list[GamePosition],
+    tactic_by_ply: dict[int, tuple[str, int]] | None = None,
 ) -> tuple[list[EvalPoint], list[FlawMarker], PhaseTransitions]:
     """Compute white-perspective ES line, flaw markers, and phase transitions.
 
@@ -87,6 +95,10 @@ def _build_eval_series(
     Args:
         game: Game row with user_color, result, base_time_seconds, increment_seconds.
         positions: All GamePosition rows for this game, ordered by ply ASC.
+        tactic_by_ply: Optional dict mapping ply → (motif_str, confidence) for tactic
+                       chip data on FlawMarkers. Sourced from game_flaws rows (Phase 126,
+                       TACUI-01 single-game card). None = no tactic chip data (default,
+                       preserves backward compatibility).
 
     Returns:
         (eval_series, flaw_markers, phase_transitions) tuple where:
@@ -139,6 +151,8 @@ def _build_eval_series(
                 eval_mate=pos.eval_mate,
                 clock_seconds=clock,
                 move_seconds=move_seconds,
+                # Engine best move FROM this position (NULL for lichess-eval-only games).
+                best_move=pos.best_move,
             )
         )
 
@@ -185,6 +199,13 @@ def _build_eval_series(
                 )
         else:
             tags = []  # inaccuracy — no tags (D-03)
+        # Phase 126 (TACUI-01): tactic chip fields from pre-fetched game_flaws data.
+        tac_motif: str | None = None
+        tac_conf: int | None = None
+        if tactic_by_ply is not None:
+            tac_entry = tactic_by_ply.get(pos.ply)
+            if tac_entry is not None:
+                tac_motif, tac_conf = tac_entry
         flaw_markers.append(
             FlawMarker(
                 ply=pos.ply,
@@ -192,6 +213,8 @@ def _build_eval_series(
                 tags=tags,
                 is_user=is_user,
                 move_san=pos.move_san,
+                tactic_motif=tac_motif,
+                tactic_confidence=tac_conf,
             )
         )
 
@@ -351,8 +374,20 @@ def _build_card(
         analysis_state = "analyzed"
         # Phase 109 (LIBG-10): populate eval chart fields for analyzed games.
         if positions:
+            # Phase 126 (TACUI-01): build tactic_by_ply dict from flaw_rows for chips.
+            # Only include flaws meeting the chip confidence gate (gated same as query_flaws).
+            tactic_by_ply: dict[int, tuple[str, int]] = {}
+            for fr in flaw_rows:
+                if (
+                    fr.tactic_motif is not None
+                    and fr.tactic_confidence is not None
+                    and fr.tactic_confidence >= _TACTIC_CHIP_CONFIDENCE_MIN
+                ):
+                    motif_str = _TACTIC_INT_TO_MOTIF.get(fr.tactic_motif)
+                    if motif_str is not None:
+                        tactic_by_ply[fr.ply] = (motif_str, fr.tactic_confidence)
             eval_series_val, flaw_marker_val, phase_transition_val = _build_eval_series(
-                game, positions
+                game, positions, tactic_by_ply=tactic_by_ply if tactic_by_ply else None
             )
             eval_series_data = eval_series_val
             flaw_marker_data = flaw_marker_val
@@ -892,6 +927,7 @@ async def get_library_flaws(
     from_date: datetime.date | None,
     to_date: datetime.date | None,
     color: str | None,
+    tactic_families: list[str] | None = None,
     offset: int,
     limit: int,
 ) -> LibraryFlawsResponse:
@@ -930,6 +966,7 @@ async def get_library_flaws(
             from_date=from_date,
             to_date=to_date,
             color=color,
+            tactic_families=tactic_families,
             offset=offset,
             limit=limit,
         )
@@ -1152,5 +1189,185 @@ async def get_flaw_comparison(
 
     except Exception as exc:  # noqa: BLE001 — capture before re-raise for Sentry
         sentry_sdk.set_context("flaw_comparison", {"user_id": user_id})
+        sentry_sdk.capture_exception(exc)
+        raise
+
+
+# ---------------------------------------------------------------------------
+# Phase 126 — Tactic comparison (TACCMP-01/02/03)
+# ---------------------------------------------------------------------------
+
+# Named constant — no magic number (CLAUDE.md no-magic-numbers rule).
+# Mirrors FLAW_COMPARISON_GATE: same minimum analyzed-game floor so the section
+# gate is consistent with the flaw comparison section (D-03).
+TACTIC_COMPARISON_GATE: int = 20
+
+# Confidence threshold for chip display (D-09). Re-exported from library_repository
+# where it gates the query_flaws row build; named here so callers import from the
+# service layer (MIN_TACTIC_CHIP_CONFIDENCE is the public constant name per PATTERNS).
+MIN_TACTIC_CHIP_CONFIDENCE: int = _TACTIC_CHIP_CONFIDENCE_MIN
+
+
+def _compute_tactic_bullets(rows: list[Any]) -> list[TacticBullet]:
+    """Aggregate per-game rows into ranked TacticBullet objects (up to 6 families).
+
+    Each row has: game_id, player_{family}, opp_{family} for all 6 families.
+    For each family: collect per-game deltas (player_rate - opp_rate) in events/game,
+    plus per-game player and opp rates. Zero-event family: delta=None (D-11 pattern).
+
+    Ranking: significant rows (ci_low > 0 or ci_high < 0) first by |delta| desc,
+    then non-significant rows by max(you_events, opp_events) desc. Cap at 6.
+    """
+    families = list(FAMILY_TO_MOTIF_INTS.keys())
+
+    # Per-family accumulators: list of per-game rates and total event counts.
+    you_rates_by_fam: dict[str, list[float]] = {f: [] for f in families}
+    opp_rates_by_fam: dict[str, list[float]] = {f: [] for f in families}
+    deltas_by_fam: dict[str, list[float]] = {f: [] for f in families}
+    you_totals: dict[str, int] = {f: 0 for f in families}
+    opp_totals: dict[str, int] = {f: 0 for f in families}
+
+    for row in rows:
+        for fam in families:
+            you_count = int(getattr(row, f"player_{fam}", 0) or 0)
+            opp_count = int(getattr(row, f"opp_{fam}", 0) or 0)
+            you_totals[fam] += you_count
+            opp_totals[fam] += opp_count
+            # Per-game rate: events per game (not per 100 moves — D-04 per-game normalization).
+            you_rate = float(you_count)
+            opp_rate = float(opp_count)
+            you_rates_by_fam[fam].append(you_rate)
+            opp_rates_by_fam[fam].append(opp_rate)
+            deltas_by_fam[fam].append(you_rate - opp_rate)
+
+    bullets: list[TacticBullet] = []
+    for fam in families:
+        y_total = you_totals[fam]
+        o_total = opp_totals[fam]
+        if y_total == 0 and o_total == 0:
+            # Zero-event family: delta=None (mirrors FlawBullet zero-event pattern, D-11).
+            bullets.append(
+                TacticBullet(
+                    family=fam,
+                    you_rate=None,
+                    opp_rate=None,
+                    delta=None,
+                    ci_low=None,
+                    ci_high=None,
+                    p_value=None,
+                    you_events=0,
+                    opp_events=0,
+                )
+            )
+        else:
+            deltas = deltas_by_fam[fam]
+            mean, ci_low, ci_high = _compute_mean_ci(deltas)
+            you_vals = you_rates_by_fam[fam]
+            opp_vals = opp_rates_by_fam[fam]
+            you_rate_mean = sum(you_vals) / len(you_vals) if you_vals else 0.0
+            opp_rate_mean = sum(opp_vals) / len(opp_vals) if opp_vals else 0.0
+            bullets.append(
+                TacticBullet(
+                    family=fam,
+                    you_rate=you_rate_mean,
+                    opp_rate=opp_rate_mean,
+                    delta=mean,
+                    ci_low=ci_low,
+                    ci_high=ci_high,
+                    p_value=_two_sided_p(deltas),
+                    you_events=y_total,
+                    opp_events=o_total,
+                )
+            )
+
+    # Rank: significant gap first (ci_low > 0 OR ci_high < 0) by |delta| desc,
+    # then non-significant by max(you_events, opp_events) desc.
+    def _sort_key(b: TacticBullet) -> tuple[int, float, int]:
+        is_sig = b.ci_low is not None and b.ci_high is not None and (b.ci_low > 0 or b.ci_high < 0)
+        abs_delta = abs(b.delta) if b.delta is not None else 0.0
+        volume = max(b.you_events, b.opp_events)
+        # Sort key: (0=sig first, -|delta|, -volume) — lower tuple = better rank
+        return (0 if is_sig else 1, -abs_delta, -volume)
+
+    bullets.sort(key=_sort_key)
+    return bullets[:6]
+
+
+async def get_tactic_comparison(
+    session: AsyncSession,
+    user_id: int,
+    *,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
+    flaw_severity: Sequence[str] | None,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
+    color: str | None = None,
+    tactic_families: Sequence[str] | None = None,
+) -> TacticComparisonResponse:
+    """Per-family tactic motif you-vs-opponent comparison (Phase 126, TACCMP-01/02/03).
+
+    Pipeline:
+    1. count_filtered_and_analyzed — early gate: if analyzed_n < TACTIC_COMPARISON_GATE,
+       return below_gate=True immediately (avoids the expensive per-game query).
+    2. fetch_tactic_comparison — per-game LEFT JOIN aggregation: 12 COUNT FILTER columns.
+    3. _compute_tactic_bullets — mean + Wald-z CI per family, ranked by significance.
+
+    IDOR guard (T-126-01): user_id is from current_active_user, never a request param.
+    """
+    try:
+        _filter_kwargs: dict[str, Any] = dict(
+            time_control=time_control,
+            platform=platform,
+            rated=rated,
+            opponent_type=opponent_type,
+            from_date=from_date,
+            to_date=to_date,
+            flaw_severity=flaw_severity,
+            opponent_gap_min=opponent_gap_min,
+            opponent_gap_max=opponent_gap_max,
+            color=color,
+            # Thread the tactic-family filter into BOTH the gate count and the
+            # per-game fetch so analyzed_n matches the set the bullets aggregate
+            # over (WR-02; mirrors get_flaw_comparison threading flaw_severity).
+            tactic_families=tactic_families,
+        )
+
+        _total_n, analyzed_n = await library_repository.count_filtered_and_analyzed(
+            session,
+            user_id=user_id,
+            **_filter_kwargs,
+        )
+
+        if analyzed_n < TACTIC_COMPARISON_GATE:
+            return TacticComparisonResponse(
+                bullets=[],
+                analyzed_n=analyzed_n,
+                analyzed_gate=TACTIC_COMPARISON_GATE,
+                below_gate=True,
+            )
+
+        analyzed_subq = library_repository._analyzed_game_ids_subquery(user_id)
+        rows = await library_repository.fetch_tactic_comparison(
+            session,
+            user_id,
+            analyzed_subq,
+            tactic_confidence_min=MIN_TACTIC_CHIP_CONFIDENCE,
+            **_filter_kwargs,  # includes tactic_families
+        )
+        bullets = _compute_tactic_bullets(rows)
+        return TacticComparisonResponse(
+            bullets=bullets,
+            analyzed_n=analyzed_n,
+            analyzed_gate=TACTIC_COMPARISON_GATE,
+            below_gate=False,
+        )
+
+    except Exception as exc:  # noqa: BLE001 — capture before re-raise for Sentry
+        sentry_sdk.set_context("tactic_comparison", {"user_id": user_id})
         sentry_sdk.capture_exception(exc)
         raise

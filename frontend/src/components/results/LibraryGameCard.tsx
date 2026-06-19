@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Chess } from 'chess.js';
 import { BookOpen, Calendar, Clock, Equal, ExternalLink, Hash, Minus, Plus } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -10,7 +10,9 @@ import {
   WDL_BORDER_DRAW,
   WDL_BORDER_LOSS,
   WDL_BORDER_WIN,
+  BEST_MOVE_ARROW,
 } from '@/lib/theme';
+import { uciToSquares } from '@/lib/sanToSquares';
 import { Card, CardHeader } from '@/components/ui/card';
 import { Tooltip } from '@/components/ui/tooltip';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
@@ -18,10 +20,12 @@ import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { EvalChart } from '@/components/library/EvalChart';
 import { SeverityBadge } from '@/components/library/SeverityBadge';
 import { TagChip, TagLegend } from '@/components/library/TagChip';
+import { TacticMotifChip } from '@/components/library/TacticMotifChip';
 import { NoAnalysisState } from '@/components/library/NoAnalysisState';
 import { gamePlatformUrl } from '@/lib/platformLinks';
 import { plysToFullMoves } from '@/lib/chess';
 import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
+import { useUserProfile } from '@/hooks/useUserProfile';
 import type { GameFlawCard, FlawSeverity, FlawTag } from '@/types/library';
 import type { UserResult } from '@/types/api';
 
@@ -31,12 +35,12 @@ import type { UserResult } from '@/types/api';
 interface LibraryGameCardProps {
   game: GameFlawCard;
   /**
-   * When the card is opened from the Flaws subtab, the ply of the clicked flaw. Its
-   * eval-chart marker gets a "ping" ring so the eye lands on it on open. The pulse
-   * yields to the hover-driven highlight systems the first time the user hovers a
-   * tag/severity or scrubs the chart (see `yieldFocus`). Omitted on the Games subtab.
+   * When the card is opened from the Flaws subtab, the ply of the clicked flaw. The
+   * eval-chart scrub slider opens parked on this ply (instead of the last eval'd ply)
+   * so the board and crosshair land on the flawed move on open. Omitted on the Games
+   * subtab, where the slider defaults to the last eval'd ply.
    */
-  focusPly?: number | null;
+  initialPly?: number | null;
   /**
    * Controlled tier-1 "Analyzing…" state. When `onInFlightChange` is provided the
    * card is controlled: the parent owns the in-flight set (the Games subtab lifts it
@@ -132,13 +136,18 @@ function plyPhase(
   return 'middlegame';
 }
 
-// A flaw chip/badge the user can hover (highlight) or click (cycle): either a tag
-// chip or a severity badge. Shared by the hover-highlight and click-to-cycle paths.
-type FlawRef = { kind: 'tag'; tag: FlawTag } | { kind: 'severity'; severity: FlawSeverity };
+// A flaw chip/badge the user can hover (highlight) or click (cycle): a flaw-tag
+// chip, a tactic-motif chip, or a severity badge. Shared by the hover-highlight
+// and click-to-cycle paths.
+type FlawRef =
+  | { kind: 'tag'; tag: FlawTag }
+  | { kind: 'severity'; severity: FlawSeverity }
+  | { kind: 'motif'; motif: string };
 
 function sameFlawRef(a: FlawRef, b: FlawRef): boolean {
   if (a.kind === 'tag' && b.kind === 'tag') return a.tag === b.tag;
   if (a.kind === 'severity' && b.kind === 'severity') return a.severity === b.severity;
+  if (a.kind === 'motif' && b.kind === 'motif') return a.motif === b.motif;
   return false;
 }
 
@@ -196,7 +205,7 @@ function formatTimeControl(tcStr: string): string {
  */
 export function LibraryGameCard({
   game,
-  focusPly,
+  initialPly,
   isInFlight: isInFlightProp,
   onInFlightChange,
 }: LibraryGameCardProps) {
@@ -229,13 +238,6 @@ export function LibraryGameCard({
     }
   }, [isAnalyzed, isInFlight, isControlled, onInFlightChange, game.game_id]);
 
-  // Clicked-flaw focus pulse (Flaws subtab). Seeded from the prop at mount (the
-  // card only mounts once the game has loaded). It is an attention cue, not a
-  // persistent mode: it yields the first time the user reaches for the hover-driven
-  // highlight tools — hovering a tag/severity or scrubbing the chart — so the focus
-  // pulse and the enlarge/dim highlight are never on screen at the same time.
-  const [focusedPly, setFocusedPly] = useState<number | null>(focusPly ?? null);
-  const yieldFocus = () => setFocusedPly(null);
   const perPly = useMemo(() => buildPerPly(game.moves), [game.moves]);
   // All flaw severities (blunder/mistake/inaccuracy) get a corner dot on the
   // hover miniboard, colored by severity. One marker per ply (a ply is a single
@@ -278,6 +280,21 @@ export function LibraryGameCard({
     return m;
   }, [game.flaw_markers]);
 
+  // Per-tactic-motif ascending list of the user's marker plies, for click-to-cycle
+  // on the tactic-motif chips (Phase 126 UAT). Scoped to is_user markers carrying a
+  // tactic_motif, mirroring tagPlies.
+  const motifPlies = useMemo(() => {
+    const m = new Map<string, number[]>();
+    for (const fm of game.flaw_markers ?? []) {
+      if (!fm.is_user || fm.tactic_motif == null) continue;
+      const arr = m.get(fm.tactic_motif);
+      if (arr) arr.push(fm.ply);
+      else m.set(fm.tactic_motif, [fm.ply]);
+    }
+    for (const arr of m.values()) arr.sort((a, b) => a - b);
+    return m;
+  }, [game.flaw_markers]);
+
   // Per-severity ascending list of the user's marker plies (B/M/I), for click-to-
   // cycle on the severity count badges. Inaccuracies are included — the chart
   // reveals them while their badge drives the highlight.
@@ -297,27 +314,6 @@ export function LibraryGameCard({
   // column emphasizes the matching markers on this card's eval chart. Inaccuracy is
   // included — its markers are off-chart by default and get revealed on its hover.
   const [highlight, setHighlight] = useState<FlawRef | null>(null);
-  // Hovering a tag/severity (non-null highlight) or scrubbing the chart is the user
-  // reaching for the category-highlight tools, so the focus pulse steps aside.
-  const setHighlightYieldingFocus = (next: FlawRef | null) => {
-    if (next) yieldFocus();
-    setHighlight(next);
-  };
-  // EvalChart now reports a non-null resting ply at mount (its slider default). We
-  // must NOT yield focus on that initial report — the focus ping must survive until
-  // the user actually scrubs. Skip yieldFocus on the very first call (mount report);
-  // every subsequent call is a real user-driven scrub or hover.
-  const evalChartMountedRef = useRef(false);
-  const handleHoverPlyChange = (ply: number | null) => {
-    if (ply != null) {
-      if (evalChartMountedRef.current) {
-        yieldFocus(); // user-driven scrub: clear the focus ping
-      } else {
-        evalChartMountedRef.current = true; // first call is the mount report — skip focus-yield
-      }
-    }
-    setHoverPly(ply);
-  };
   // Click-to-cycle state, declared here so the highlight derivation below can keep a
   // clicked tag/severity's markers lit. `cycle` holds the active ref + index;
   // `commandSeq` is the chart-scrub nonce (see handleActivate).
@@ -333,14 +329,28 @@ export function LibraryGameCard({
     const set = new Set<number>();
     for (const fm of game.flaw_markers ?? []) {
       if (!fm.is_user) continue;
-      const matches =
-        ref.kind === 'severity'
-          ? fm.severity === ref.severity
-          : fm.tags.includes(ref.tag); // inaccuracies have no tags → never match a tag hover
+      let matches: boolean;
+      if (ref.kind === 'severity') matches = fm.severity === ref.severity;
+      else if (ref.kind === 'tag')
+        matches = fm.tags.includes(ref.tag); // inaccuracies have no tags → never match a tag hover
+      else matches = fm.tactic_motif === ref.motif;
       if (matches) set.add(fm.ply);
     }
     return set;
   }, [highlight, cycle, game.flaw_markers]);
+
+  const { data: userProfile } = useUserProfile();
+
+  // Tactic motifs: collect unique non-null motifs from user flaw markers so the
+  // chip row can show one chip per distinct motif in the game (beta-gated, D-01/D-10).
+  const tacticMotifs = useMemo(() => {
+    if (!userProfile?.beta_enabled) return [];
+    const seen = new Set<string>();
+    for (const fm of game.flaw_markers ?? []) {
+      if (fm.is_user && fm.tactic_motif != null) seen.add(fm.tactic_motif);
+    }
+    return Array.from(seen);
+  }, [userProfile?.beta_enabled, game.flaw_markers]);
 
   // Persistent (not hover) white outline: user markers matching the active flaw-tag
   // filter under the SAME predicate used to select games (OR within family, AND
@@ -375,8 +385,11 @@ export function LibraryGameCard({
   // `commandSeq` are declared above (the highlight derivation reads `cycle`). The
   // nonce re-fires the chart command on re-click or a single-ply tag; clicking a
   // different tag restarts at 0.
-  const pliesForRef = (ref: FlawRef): number[] =>
-    (ref.kind === 'tag' ? tagPlies.get(ref.tag) : severityPlies.get(ref.severity)) ?? [];
+  const pliesForRef = (ref: FlawRef): number[] => {
+    if (ref.kind === 'tag') return tagPlies.get(ref.tag) ?? [];
+    if (ref.kind === 'severity') return severityPlies.get(ref.severity) ?? [];
+    return motifPlies.get(ref.motif) ?? [];
+  };
   const handleActivate = (ref: FlawRef) => {
     const plies = pliesForRef(ref);
     if (plies.length === 0) return;
@@ -384,7 +397,7 @@ export function LibraryGameCard({
     setCycle({ ref, pos });
     setCommandSeq((s) => s + 1);
     // Also emphasize this ref's markers (dim others) so the click reads as a focus.
-    setHighlightYieldingFocus(ref);
+    setHighlight(ref);
   };
   const commandedPly = cycle ? (pliesForRef(cycle.ref)[cycle.pos] ?? null) : null;
 
@@ -433,6 +446,27 @@ export function LibraryGameCard({
   // Highlight the scrubbed move's from/to squares (only while hovering — at rest
   // the board shows the final position with no single "last move" to mark).
   const lastMove = hoverEntry ? { from: hoverEntry.from, to: hoverEntry.to } : undefined;
+
+  // Engine best move that SHOULD have been played to reach the scrubbed position,
+  // as a blue arrow that updates while scrubbing. It pairs with the yellow last-move
+  // highlight: both originate from the position BEFORE the played move, so the user
+  // sees "what I played (yellow) vs what was best (blue)" — not the opponent's best
+  // reply. The scrubbed board perPly[activePly] is game-ply activePly+1, and the move
+  // that reached it was played from game-ply activePly, so the best alternative is the
+  // best_move stored on the eval-series point at ply==activePly. Null for
+  // lichess-eval-only games (no PV) and at rest.
+  const bestMoveByPly = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const pt of game.eval_series ?? []) {
+      if (pt.best_move) m.set(pt.ply, pt.best_move);
+    }
+    return m;
+  }, [game.eval_series]);
+  const bestMoveSquares =
+    activePly != null ? uciToSquares(bestMoveByPly.get(activePly) ?? null) : null;
+  const boardArrows = bestMoveSquares
+    ? [{ from: bestMoveSquares.from, to: bestMoveSquares.to, color: BEST_MOVE_ARROW }]
+    : undefined;
 
   const whiteName = game.white_username ?? '?';
   const blackName = game.black_username ?? '?';
@@ -579,17 +613,45 @@ export function LibraryGameCard({
                 count={count}
                 gameId={game.game_id}
                 onHover={(active) =>
-                  setHighlightYieldingFocus(active ? { kind: 'severity', severity: sev } : null)
+                  setHighlight(active ? { kind: 'severity', severity: sev } : null)
                 }
                 onActivate={() => handleActivate({ kind: 'severity', severity: sev })}
               />
             );
           })}
         </div>
-        {/* Tag chip row — flex-wrap allowed. Definitions live in the single
-            <TagLegend> "Tags" popover, rendered inline after the last chip (not on a
-            separate line), not per-chip overlays, so the eval chart is never covered
-            (definition={false}). Hover still highlights the chart markers via onHover. */}
+        {/* Line 2 — tactic motif chips, beta-gated (D-01/D-10). One chip per unique
+            motif found in the user's flaw markers (backend nulls sub-threshold motifs).
+            The trailing brown Tag-icon legend explains ONLY the tactic tags on this
+            line (Phase 126 UAT). */}
+        {userProfile?.beta_enabled && tacticMotifs.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {tacticMotifs.map((motif) => (
+              <TacticMotifChip
+                key={motif}
+                motif={motif}
+                flawId={game.game_id}
+                onHover={(active) =>
+                  setHighlight(active ? { kind: 'motif', motif } : null)
+                }
+                onActivate={() => handleActivate({ kind: 'motif', motif })}
+              />
+            ))}
+            <TagLegend
+              variant="icon"
+              tags={[]}
+              tacticMotifs={tacticMotifs}
+              gameId={game.game_id}
+              testId={`tag-legend-tactic-${game.game_id}`}
+            />
+          </div>
+        )}
+
+        {/* Line 3 — flaw tag chips (all other families), flex-wrap allowed.
+            Definitions live in the trailing brown Tag-icon legend, which explains
+            ONLY these flaw tags (Phase 126 UAT) — not per-chip overlays, so the eval
+            chart is never covered (definition={false}). Hover still highlights the
+            chart markers via onHover. */}
         {game.chips.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
             {game.chips.map((tag) => (
@@ -599,11 +661,11 @@ export function LibraryGameCard({
                 gameId={game.game_id}
                 count={tagCounts.get(tag)}
                 definition={false}
-                onHover={(active) => setHighlightYieldingFocus(active ? { kind: 'tag', tag } : null)}
+                onHover={(active) => setHighlight(active ? { kind: 'tag', tag } : null)}
                 onActivate={() => handleActivate({ kind: 'tag', tag })}
               />
             ))}
-            <TagLegend tags={game.chips} gameId={game.game_id} label="Tags" />
+            <TagLegend variant="icon" tags={game.chips} tacticMotifs={[]} gameId={game.game_id} />
           </div>
         )}
       </div>
@@ -637,6 +699,7 @@ export function LibraryGameCard({
               fen={boardFen}
               flipped={game.user_color === 'black'}
               size={MOBILE_BOARD_SIZE}
+              arrows={boardArrows}
               cornerDot={cornerDot}
               lastMove={lastMove}
             />
@@ -658,12 +721,13 @@ export function LibraryGameCard({
               phaseTransitions={game.phase_transitions}
               moves={game.moves ?? []}
               flipped={game.user_color === 'black'}
-              onHoverPlyChange={handleHoverPlyChange}
+              onHoverPlyChange={setHoverPly}
               highlightedPlies={highlightedPlies}
               outlinedPlies={outlinedPlies}
-              focusedPly={focusedPly}
+              initialPly={initialPly}
               commandedPly={commandedPly}
               commandSeq={commandSeq}
+              betaEnabled={userProfile?.beta_enabled ?? false}
               // Chart + 16px slider row = MOBILE_BOARD_SIZE (130px), so the eval
               // block matches the miniboard height. Literal arbitrary value so
               // Tailwind's JIT scanner emits the class.
@@ -695,6 +759,7 @@ export function LibraryGameCard({
               fen={boardFen}
               flipped={game.user_color === 'black'}
               size={DESKTOP_BOARD_SIZE}
+              arrows={boardArrows}
               cornerDot={cornerDot}
               lastMove={lastMove}
             />
@@ -721,12 +786,13 @@ export function LibraryGameCard({
                 phaseTransitions={game.phase_transitions}
                 moves={game.moves ?? []}
                 flipped={game.user_color === 'black'}
-                onHoverPlyChange={handleHoverPlyChange}
+                onHoverPlyChange={setHoverPly}
                 highlightedPlies={highlightedPlies}
                 outlinedPlies={outlinedPlies}
-                focusedPly={focusedPly}
+                initialPly={initialPly}
                 commandedPly={commandedPly}
                 commandSeq={commandSeq}
+                betaEnabled={userProfile?.beta_enabled ?? false}
                 // Chart + 16px slider row = DESKTOP_BOARD_SIZE (132px), so the eval
                 // block matches the miniboard column height exactly.
                 heightClass="h-[116px]"

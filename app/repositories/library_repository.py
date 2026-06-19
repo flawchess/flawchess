@@ -39,6 +39,63 @@ from app.services.flaws_service import (
 )
 from app.services.normalization import parse_base_and_increment
 from app.services.openings_service import derive_user_result
+from app.services.tactic_detector import TacticMotifInt, _INT_TO_MOTIF as _TACTIC_INT_TO_MOTIF
+
+# ---------------------------------------------------------------------------
+# Phase 126 — Tactic chip confidence threshold (TACUI-01, D-09).
+# Imported by library_service so the same value gates the comparison repo fn
+# (MIN_TACTIC_CHIP_CONFIDENCE in service imports this constant).
+# Defined here because query_flaws uses it at the repository layer when building
+# FlawListItem rows without going through the service layer.
+# ---------------------------------------------------------------------------
+_TACTIC_CHIP_CONFIDENCE_MIN: int = 70  # 0-100 scale matching tactic_confidence column
+
+# ---------------------------------------------------------------------------
+# Phase 126 — tactic motif family → int mapping (D-08 canonical 6 families).
+# Maps each family key to the TacticMotifInt values belonging to that family.
+# All 24 motif ints appear exactly once across all families.
+# Imported by apply_game_filters() (query_utils.py) via lazy import to avoid
+# a query_utils→library_repository circular import.
+# ---------------------------------------------------------------------------
+
+FAMILY_TO_MOTIF_INTS: dict[str, list[int]] = {
+    "fork": [
+        int(TacticMotifInt.FORK),
+    ],
+    "pin_skewer": [
+        int(TacticMotifInt.PIN),
+        int(TacticMotifInt.SKEWER),
+        int(TacticMotifInt.X_RAY),
+    ],
+    "discovery": [
+        int(TacticMotifInt.DISCOVERED_ATTACK),
+        int(TacticMotifInt.DOUBLE_CHECK),
+    ],
+    "mate": [
+        int(TacticMotifInt.BACK_RANK_MATE),
+        int(TacticMotifInt.MATE),
+        int(TacticMotifInt.SMOTHERED_MATE),
+        int(TacticMotifInt.ANASTASIA_MATE),
+        int(TacticMotifInt.HOOK_MATE),
+        int(TacticMotifInt.ARABIAN_MATE),
+        int(TacticMotifInt.BODEN_MATE),
+        int(TacticMotifInt.DOUBLE_BISHOP_MATE),
+        int(TacticMotifInt.DOVETAIL_MATE),
+    ],
+    "hanging": [
+        int(TacticMotifInt.HANGING_PIECE),
+    ],
+    "combinations": [
+        int(TacticMotifInt.DEFLECTION),
+        int(TacticMotifInt.ATTRACTION),
+        int(TacticMotifInt.INTERMEZZO),
+        int(TacticMotifInt.INTERFERENCE),
+        int(TacticMotifInt.SELF_INTERFERENCE),
+        int(TacticMotifInt.CLEARANCE),
+        int(TacticMotifInt.CAPTURING_DEFENDER),
+        int(TacticMotifInt.SACRIFICE),
+    ],
+}
 
 # ---------------------------------------------------------------------------
 # Inverse encoding maps — reconstruct tags from game_flaws integer columns
@@ -62,6 +119,7 @@ _PHASE_INT_TO_TAG: dict[int, Literal["opening", "middlegame", "endgame"]] = {  #
 def build_flaw_filter_clauses(
     severity: Sequence[FlawSeverity],
     tags: Sequence[FlawTag],
+    tactic_families: Sequence[str] = (),
 ) -> list[ColumnElement[bool]]:
     """Return WHERE clauses filtering game_flaws rows (SEED-038 family-aware logic).
 
@@ -128,6 +186,20 @@ def build_flaw_filter_clauses(
     phase_tags = [t for t in tags if t in {"opening", "middlegame", "endgame"}]
     if phase_tags:
         clauses.append(GameFlaw.phase.in_([_PHASE_INT[t] for t in phase_tags]))
+
+    # Tactic-motif family (Phase 126, Flaws-tab Tags panel): OR within the selected
+    # families (each family expands to its motif ints via FAMILY_TO_MOTIF_INTS).
+    # Flaw-level predicate, gated on the same confidence threshold as the displayed
+    # chip so the filter matches what the cards actually show (D-09). Empty = no
+    # filter. Only query_flaws passes this; the Games EXISTS (flaw_exists_from_table)
+    # deliberately omits it so tactic stays a flaw-level (not game-level) filter.
+    if tactic_families:
+        motif_ints = [m for fam in tactic_families for m in FAMILY_TO_MOTIF_INTS.get(fam, [])]
+        if motif_ints:
+            clauses.append(
+                GameFlaw.tactic_motif.in_(motif_ints)
+                & (GameFlaw.tactic_confidence >= _TACTIC_CHIP_CONFIDENCE_MIN)
+            )
 
     return clauses
 
@@ -256,6 +328,7 @@ async def query_flaws(
     from_date: datetime.date | None,
     to_date: datetime.date | None,
     color: str | None,
+    tactic_families: Sequence[str] | None = None,
     offset: int,
     limit: int,
 ) -> tuple[list[FlawListItem], int]:
@@ -287,7 +360,7 @@ async def query_flaws(
     Returns:
         (flaws, matched_count) where matched_count is the total before pagination.
     """
-    flaw_clauses = build_flaw_filter_clauses(severity, tags)
+    flaw_clauses = build_flaw_filter_clauses(severity, tags, tactic_families or ())
 
     # Three aliases for game_positions (Phase 112, D-08; extended 260610-vru):
     # PositionAt:        ply=N   → move_san + eval-after + clock_seconds (mover's remaining clock)
@@ -391,6 +464,25 @@ async def query_flaws(
             user_color=game.user_color,
             clock_seconds=pos_at.clock_seconds if pos_at else None,
             move_seconds=_compute_move_seconds(pos_at, pos_two_before, game.time_control_str),
+            # Engine best move FROM the pre-flaw position at ply=N (NULL for
+            # lichess-eval-only games without a captured PV).
+            best_move=pos_at.best_move if pos_at else None,
+            # Phase 126 (TACUI-01): tactic chip fields, gated by confidence threshold.
+            # Low-confidence motifs surface as None so no chip renders (D-09).
+            tactic_motif=(
+                _TACTIC_INT_TO_MOTIF.get(flaw.tactic_motif)
+                if flaw.tactic_motif is not None
+                and flaw.tactic_confidence is not None
+                and flaw.tactic_confidence >= _TACTIC_CHIP_CONFIDENCE_MIN
+                else None
+            ),
+            tactic_confidence=(
+                flaw.tactic_confidence
+                if flaw.tactic_motif is not None
+                and flaw.tactic_confidence is not None
+                and flaw.tactic_confidence >= _TACTIC_CHIP_CONFIDENCE_MIN
+                else None
+            ),
         )
         for flaw, game, pos_at, pos_before, pos_two_before in rows
     ]
@@ -813,6 +905,7 @@ def _filtered_games_base(
     opponent_gap_min: int | None,
     opponent_gap_max: int | None,
     color: str | None = None,
+    tactic_families: Sequence[str] | None = None,
 ) -> Select[tuple[int]]:
     """Build the filtered `SELECT Game.id` base shared by the archive + stats paths.
 
@@ -821,6 +914,9 @@ def _filtered_games_base(
     count_filtered_and_analyzed, and analyzed_game_ids stay in lockstep on what
     "the filtered set" means. user_id is threaded into both the base WHERE and
     the EXISTS scope (T-106-02AC / T-106-03AC).
+
+    Phase 126 (D-06): tactic_families narrows to games containing a tactic flaw
+    in one of the selected families (routed through apply_game_filters).
     """
     base_stmt: Select[tuple[int]] = select(Game.id).where(Game.user_id == user_id)
     return apply_game_filters(
@@ -835,6 +931,7 @@ def _filtered_games_base(
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
         flaw_severity=flaw_severity,
+        tactic_families=tactic_families,
         user_id=user_id,
     )
 
@@ -940,6 +1037,7 @@ async def count_filtered_and_analyzed(
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
     color: str | None = None,
+    tactic_families: Sequence[str] | None = None,
 ) -> tuple[int, int]:
     """Return (total_n, analyzed_n) over the filtered Games-surface set (LIBG-09).
 
@@ -974,6 +1072,7 @@ async def count_filtered_and_analyzed(
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
         color=color,
+        tactic_families=tactic_families,
     )
     base_subq = base.subquery("filtered")
     total_n = (await session.execute(select(func.count()).select_from(base_subq))).scalar_one()
@@ -1317,6 +1416,105 @@ async def fetch_flaw_comparison(
             (GameFlaw.game_id == anchor_subq.c.game_id) & (GameFlaw.user_id == user_id),
         )
         .group_by(anchor_subq.c.game_id, anchor_subq.c.user_moves, anchor_subq.c.user_color)
+    )
+    rows = (await session.execute(stmt)).all()
+    return list(rows)
+
+
+async def fetch_tactic_comparison(
+    session: AsyncSession,
+    user_id: int,
+    analyzed_game_ids_subq: Subquery,
+    *,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
+    flaw_severity: Sequence[str] | None,
+    opponent_gap_min: int | None,
+    opponent_gap_max: int | None,
+    color: str | None,
+    tactic_families: Sequence[str] | None = None,
+    tactic_confidence_min: int = _TACTIC_CHIP_CONFIDENCE_MIN,
+) -> list[Any]:
+    """Per-game player/opp counts for all 6 tactic families over the analyzed+filtered set.
+
+    LEFT JOIN anchor: analyzed+filtered games list → LEFT JOIN game_flaws (tactic_motif
+    IS NOT NULL AND tactic_confidence >= tactic_confidence_min) so games with zero
+    qualifying tactic flaws contribute a zero-count row.
+
+    Returns one row per game_id with 12 COUNT columns (6 families × player/opp).
+    Python aggregates mean + CI per family in the service layer.
+
+    Uses is_opponent_expr from query_utils — never inline ply % 2 (CONTEXT D-01, Pitfall 3).
+    """
+    base_filtered_subq = _filtered_games_base(
+        user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
+        flaw_severity=flaw_severity,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
+        color=color,
+        tactic_families=tactic_families,
+    ).subquery("filtered_tc")
+
+    # Anchor: analyzed+filtered games with valid ply_count (Pitfall 2 — divide-by-zero guard)
+    anchor_subq = (
+        select(
+            Game.id.label("game_id"),
+            Game.user_color,
+        )
+        .where(
+            Game.user_id == user_id,
+            Game.id.in_(select(base_filtered_subq.c.id)),
+            Game.id.in_(select(analyzed_game_ids_subq.c.game_id)),
+            Game.ply_count.isnot(None),
+            Game.ply_count > 0,
+        )
+        .subquery("anchor_tc")
+    )
+
+    # Build 12 COUNT columns (6 families × player/opp).
+    # tactic_motif IS NOT NULL AND tactic_confidence >= threshold gates the LEFT JOIN
+    # so only qualifying (confident enough) tactic events are counted.
+    # func.count(GameFlaw.ply) (not func.count()) ensures NULL ply from LEFT JOIN miss = 0.
+    # is_opponent_expr — never inline ply % 2 (CONTEXT D-01, Pitfall 3).
+    count_cols = []
+    for family, motif_ints in FAMILY_TO_MOTIF_INTS.items():
+        count_cols.append(
+            func.count(GameFlaw.ply)
+            .filter(
+                ~is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.tactic_motif.in_(motif_ints),
+            )
+            .label(f"player_{family}")
+        )
+        count_cols.append(
+            func.count(GameFlaw.ply)
+            .filter(
+                is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
+                GameFlaw.tactic_motif.in_(motif_ints),
+            )
+            .label(f"opp_{family}")
+        )
+
+    stmt = (
+        select(anchor_subq.c.game_id, *count_cols)
+        .outerjoin(
+            GameFlaw,
+            (GameFlaw.game_id == anchor_subq.c.game_id)
+            & (GameFlaw.user_id == user_id)
+            & GameFlaw.tactic_motif.isnot(None)
+            & (GameFlaw.tactic_confidence >= tactic_confidence_min),
+        )
+        .group_by(anchor_subq.c.game_id, anchor_subq.c.user_color)
     )
     rows = (await session.execute(stmt)).all()
     return list(rows)

@@ -42,6 +42,11 @@ vi.mock('@/hooks/useUserProfile', () => ({
   useUserProfile: () => ({ data: { is_guest: false }, isLoading: false }),
 }));
 
+// Mock useAuth — FlawCard now calls useAuth for beta-gated tactic chip (Phase 126).
+vi.mock('@/hooks/useAuth', () => ({
+  useAuth: () => ({ user: null }),
+}));
+
 // Mock useEnqueueGame — NoAnalysisState (rendered via LibraryGameCard) uses tier-1 mutation.
 vi.mock('@/hooks/useEnqueueGame', () => ({
   useTier1Enqueue: () => ({ mutate: vi.fn(), isPending: false }),
@@ -59,6 +64,7 @@ vi.mock('react-router-dom', async () => {
 import { FlawCard } from '../FlawCard';
 import type { FlawListItem, GameFlawCard } from '@/types/library';
 import { useLibraryGame } from '@/hooks/useLibrary';
+import { BEST_MOVE_ARROW } from '@/lib/theme';
 
 // ── jsdom stubs ───────────────────────────────────────────────────────────────
 
@@ -130,6 +136,7 @@ function makeFlaw(overrides: Partial<FlawListItem> = {}): FlawListItem {
     user_color: 'white',
     clock_seconds: 125,
     move_seconds: 8.4,
+    best_move: null,
     ...overrides,
   };
 }
@@ -246,6 +253,25 @@ describe('FlawCard', () => {
       // LazyMiniBoard renders a div with explicit width/height style=132px
       const boardContainers = document.querySelectorAll('[style*="width: 132px"]');
       expect(boardContainers.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Best-move arrow (quick-260618-oqw)', () => {
+    it('draws a blue best-move arrow when best_move (UCI) is set', () => {
+      render(<FlawCard flaw={makeFlaw({ best_move: 'g1f3' })} />);
+      const overlay = document.querySelector('[data-testid="mini-board-arrow-overlay"]');
+      expect(overlay).not.toBeNull();
+      const bluePaths = overlay!.querySelectorAll(`path[fill="${BEST_MOVE_ARROW}"]`);
+      expect(bluePaths.length).toBe(1);
+    });
+
+    it('draws no best-move arrow when best_move is null', () => {
+      // fixture fen has no legal "Nxd4", so the flaw-move arrow is absent too →
+      // the overlay should render zero arrows (it returns null when empty).
+      render(<FlawCard flaw={makeFlaw({ best_move: null })} />);
+      const overlay = document.querySelector('[data-testid="mini-board-arrow-overlay"]');
+      const bluePaths = overlay?.querySelectorAll(`path[fill="${BEST_MOVE_ARROW}"]`) ?? [];
+      expect(bluePaths.length).toBe(0);
     });
   });
 

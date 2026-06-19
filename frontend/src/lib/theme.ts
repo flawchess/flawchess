@@ -59,27 +59,49 @@ export const EVAL_MARKER_FILTER_OUTLINE = 'oklch(1 0 0)';
 // scrub slider's `bg-foreground` thumb, so cursor and knob read as one control.
 export const EVAL_CHART_CURSOR = 'oklch(0.985 0 0)';
 
-// Tag families (flaw chip color-by-family, Phase 107)
-export const FAM_TEMPO = 'oklch(0.70 0.17 290)';
-export const FAM_TEMPO_BG = 'oklch(0.70 0.17 290 / 0.15)';
-// FAM_TEMPO_LOW_CLOCK / FAM_TEMPO_HASTY / FAM_TEMPO_UNRUSHED / FAM_TEMPO_UNMEASURED
-// were used by FlawTagDistribution (deleted Phase 115 D-02). Removed to keep knip clean.
-export const FAM_OPPORTUNITY = 'oklch(0.72 0.12 200)';
-export const FAM_OPPORTUNITY_BG = 'oklch(0.72 0.12 200 / 0.15)';
-export const FAM_IMPACT = 'oklch(0.66 0.18 330)';
-export const FAM_IMPACT_BG = 'oklch(0.66 0.18 330 / 0.15)';
-// Three additional families surfaced in the Flaw-Stats you-vs-opponent comparison
-// grid and (Phase, Quick 260612-fow) the Flaws tag-filter panel: Severity, Phase,
-// Combos. Hues chosen to stay clear of the red/green/blue semantic zone colors
-// (25 / 145 / 260) so a family tint never reads as a danger/success verdict.
-// FAM_PHASE is teal (not gold) so it never collides with the yellow inaccuracy
-// severity in the tag-filter palette.
-export const FAM_SEVERITY = 'oklch(0.70 0.16 55)'; // amber
-export const FAM_SEVERITY_BG = 'oklch(0.70 0.16 55 / 0.15)';
-export const FAM_PHASE = 'oklch(0.72 0.13 170)'; // teal
-export const FAM_PHASE_BG = 'oklch(0.72 0.13 170 / 0.15)';
-export const FAM_COMBO = 'oklch(0.68 0.14 350)'; // rose
-export const FAM_COMBO_BG = 'oklch(0.68 0.14 350 / 0.15)';
+// Tag families (flaw chip color-by-family, Phase 107).
+// Phase 126 UAT: every flaw family now renders in a single neutral light grey
+// (the same grey as the white-ahead eval-chart area) so only the new tactic-motif
+// families (TAC_* below) carry distinct hue and stand out. The per-family constant
+// names are kept (each family still has its own constant) — only the values changed
+// to grey. This applies everywhere FAM_* is consumed: the tag chips, the Tags/eval
+// tooltips, the you-vs-opponent Flaw Comparison grid, and the Flaws filter panel.
+const FAM_NEUTRAL = EVAL_CHART_AREA_WHITE_AHEAD; // 'oklch(0.78 0 0)'
+const FAM_NEUTRAL_BG = 'oklch(0.78 0 0 / 0.15)';
+export const FAM_TEMPO = FAM_NEUTRAL;
+export const FAM_TEMPO_BG = FAM_NEUTRAL_BG;
+export const FAM_OPPORTUNITY = FAM_NEUTRAL;
+export const FAM_OPPORTUNITY_BG = FAM_NEUTRAL_BG;
+export const FAM_IMPACT = FAM_NEUTRAL;
+export const FAM_IMPACT_BG = FAM_NEUTRAL_BG;
+export const FAM_SEVERITY = FAM_NEUTRAL;
+export const FAM_SEVERITY_BG = FAM_NEUTRAL_BG;
+export const FAM_PHASE = FAM_NEUTRAL;
+export const FAM_PHASE_BG = FAM_NEUTRAL_BG;
+export const FAM_COMBO = FAM_NEUTRAL;
+export const FAM_COMBO_BG = FAM_NEUTRAL_BG;
+
+// Tactic motif family colors (Phase 126).
+// Phase 126 UAT: every tactic family now renders in a single blue (the indigo
+// previously used only for pin/skewer) so the tactic families read as one
+// consistent group. The per-family constant names are kept (each family still
+// has its own constant) — only the values changed to blue. This applies
+// everywhere TAC_* is consumed: the tactic-motif chips, the Tactic Motifs
+// you-vs-opponent comparison grid, and the Flaws filter panel.
+const TAC_BLUE = 'oklch(0.68 0.16 240)'; // indigo
+const TAC_BLUE_BG = 'oklch(0.68 0.16 240 / 0.15)';
+export const TAC_FORK = TAC_BLUE;
+export const TAC_FORK_BG = TAC_BLUE_BG;
+export const TAC_PIN_SKEWER = TAC_BLUE;
+export const TAC_PIN_SKEWER_BG = TAC_BLUE_BG;
+export const TAC_DISCOVERY = TAC_BLUE;
+export const TAC_DISCOVERY_BG = TAC_BLUE_BG;
+export const TAC_MATE = TAC_BLUE;
+export const TAC_MATE_BG = TAC_BLUE_BG;
+export const TAC_HANGING = TAC_BLUE;
+export const TAC_HANGING_BG = TAC_BLUE_BG;
+export const TAC_COMBINATIONS = TAC_BLUE;
+export const TAC_COMBINATIONS_BG = TAC_BLUE_BG;
 
 // D-05 active-filter ring — applied to TagChip when its tag matches an active
 // useFlawFilterStore filter. Ring only: no fill, bold, or size change. The ring
@@ -203,6 +225,12 @@ export const BULLET_BAR_NEUTRAL = 'oklch(0.85 0 0)';
 // equality `arrow.color === DARK_BLUE` to choose the low-emphasis opacity
 // branch, so DARK_BLUE in arrowColor.ts re-exports this exact string.
 export const ARROW_NEUTRAL = '#6B7280';  // Tailwind gray-500 / matches WDL_BORDER_DRAW
+
+// Engine best-move arrow on the Library miniboards (Game + Flaw cards). Blue with
+// built-in alpha so it reads as a translucent "engine suggestion" pointer — visually
+// secondary to the red flaw-move arrow it sits beside on the Flaw card, and a calm
+// overlay on the scrubbed Game-card board. rgba (not oklch) so the alpha is explicit.
+export const BEST_MOVE_ARROW = 'rgba(59, 130, 246, 0.6)';  // Tailwind blue-500 @ 60%
 
 // Endgame ELO Timeline volume bars (Phase 57.1; rebuilt Phase 87.5).
 // Muted gray with alpha so the

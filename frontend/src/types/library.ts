@@ -92,6 +92,7 @@ export interface EvalPoint {
   eval_mate: number | null; // signed, white-perspective
   clock_seconds: number | null; // mover's remaining clock after this move; null = no %clk
   move_seconds: number | null;  // time spent on this move (1dp); null when prior clock unknown
+  best_move: string | null;     // engine best move FROM this position (UCI); null when no PV captured
 }
 
 /**
@@ -104,6 +105,10 @@ export interface FlawMarker {
   tags: FlawTag[];    // empty for inaccuracies
   is_user: boolean;
   move_san: string | null; // SAN of the flawed move — tooltip move label (null on final position)
+  /** Tactic motif string from the backend (Phase 126, TACUI-01). Null for inaccuracies or below confidence threshold. */
+  tactic_motif: string | null;
+  /** Tactic confidence score 0-100 (Phase 126). Null when no motif assigned. */
+  tactic_confidence: number | null;
 }
 
 /** First ply of middlegame and endgame phases (at most two phase lines). */
@@ -226,6 +231,12 @@ export interface FlawListItem {
   clock_seconds: number | null;
   /** Time spent on the flawed move (1dp); null when prior clock unknown. Plan 260610-vru. */
   move_seconds: number | null;
+  /** Tactic motif string for this flaw (Phase 126, TACUI-01). Null when below confidence threshold. */
+  tactic_motif: string | null;
+  /** Tactic confidence score 0-100 (Phase 126). Null when no motif assigned. */
+  tactic_confidence: number | null;
+  /** Engine best move FROM the pre-flaw position (UCI); null when no PV captured. */
+  best_move: string | null;
 }
 
 /** Response for GET /api/library/flaws — paginated per-flaw list (mirrors LibraryFlawsResponse). */
@@ -263,6 +274,45 @@ export interface FlawBullet {
   zone_hi: number;
   domain: number;
   has_zone: boolean;
+}
+
+// ─── Tactic comparison (GET /api/library/tactic-comparison) ───────────────────
+
+/**
+ * Per-family data for one tactic-motif family row (Phase 126, mirrors backend TacticBullet).
+ *
+ * sign convention: positive delta = you allow MORE tactic motifs than opponents = bad.
+ * delta and CI fields are null when both you_events and opp_events are zero.
+ */
+export interface TacticBullet {
+  family: string;              // family key e.g. "fork", "pin_skewer"
+  you_rate: number | null;     // mean tactic allowances per game (player side); null = zero events
+  opp_rate: number | null;     // mean tactic allowances per game (opponent side); null = zero events
+  delta: number | null;        // you_rate - opp_rate; null = both sides zero events
+  ci_low: number | null;       // 95% CI lower bound on delta
+  ci_high: number | null;      // 95% CI upper bound on delta
+  p_value: number | null;      // two-sided p vs H0: delta === 0; null = zero events
+  you_events: number;          // raw event count (player side)
+  opp_events: number;          // raw event count (opponent side)
+  zone_lo: number;             // benchmark Q1 or 0.0 when unavailable
+  zone_hi: number;             // benchmark Q3 or 0.0 when unavailable
+  has_zone: boolean;           // false until tactic benchmark pipeline ships
+}
+
+/**
+ * Response for GET /api/library/tactic-comparison (Phase 126, mirrors backend TacticComparisonResponse).
+ *
+ * bullets: ordered by rank (largest significant gap first, volume fallback), up to 6 family rows;
+ *          empty list when below_gate=true.
+ * analyzed_n: analyzed game count after filters.
+ * analyzed_gate: minimum required (mirrors FLAW_COMPARISON_GATE).
+ * below_gate: true when analyzed_n < analyzed_gate.
+ */
+export interface TacticComparisonResponse {
+  bullets: TacticBullet[];
+  analyzed_n: number;
+  analyzed_gate: number;
+  below_gate: boolean;
 }
 
 /**

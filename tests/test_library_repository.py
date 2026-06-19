@@ -104,6 +104,7 @@ async def _seed_position(
     clock_seconds: float | None = None,
     phase: int = 1,
     move_san: str | None = None,
+    best_move: str | None = None,
 ) -> GamePosition:
     """Insert a GamePosition row and flush."""
     pos = GamePosition(
@@ -118,6 +119,7 @@ async def _seed_position(
         phase=phase,
         eval_cp=eval_cp,
         eval_mate=eval_mate,
+        best_move=best_move,
         piece_count=2,
         material_count=1000,
         material_signature="KP_KP",
@@ -972,7 +974,11 @@ class TestFlawsEndpointSchema:
         # Seed positions for the flaw
         await _seed_position(db_session, game=game, ply=0, eval_cp=0, move_san=None)
         await _seed_position(db_session, game=game, ply=1, eval_cp=150, move_san="d4")
-        await _seed_position(db_session, game=game, ply=2, eval_cp=-100, move_san="Nf3")
+        # best_move at ply=2 (the flaw's pre-move position) is the engine's
+        # recommended move FROM the decision point — surfaced as FlawListItem.best_move.
+        await _seed_position(
+            db_session, game=game, ply=2, eval_cp=-100, move_san="Nf3", best_move="e2e4"
+        )
 
         await bulk_insert_game_flaws(
             db_session,
@@ -1016,6 +1022,8 @@ class TestFlawsEndpointSchema:
         assert our_flaw.move_san is not None, "move_san must be join-sourced and non-None"
         assert our_flaw.eval_cp_after is not None, "eval_cp_after must be set from game_positions"
         assert our_flaw.eval_cp_before is not None, "eval_cp_before must be set from game_positions"
+        # best_move surfaces from the PositionAt (ply=N) join (quick-260618-oqw).
+        assert our_flaw.best_move == "e2e4", "best_move must come from game_positions at ply=N"
 
         # Ratings (sourced from Game; Game was seeded without explicit ratings → None is valid)
         # Check the attribute exists on the model

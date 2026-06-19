@@ -25,6 +25,7 @@ from app.schemas.library import (
     GameFlawCard,
     LibraryFlawsResponse,
     LibraryGamesResponse,
+    TacticComparisonResponse,
 )
 from app.services import library_service
 from app.users import current_active_user
@@ -208,6 +209,50 @@ async def get_flaw_comparison(
     )
 
 
+@router.get("/tactic-comparison", response_model=TacticComparisonResponse)
+async def get_tactic_comparison(
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+    severity: list[SeverityFilter] | None = Query(default=None),
+    time_control: list[str] | None = Query(default=None),
+    platform: list[str] | None = Query(default=None),
+    from_date: datetime.date | None = Query(default=None),
+    to_date: datetime.date | None = Query(default=None),
+    rated: bool | None = Query(default=None),
+    opponent_type: str = Query(default="human"),
+    opponent_gap_min: int | None = Query(default=None),
+    opponent_gap_max: int | None = Query(default=None),
+    color: str | None = Query(default=None),
+    tactic_families: list[str] | None = Query(default=None),
+) -> TacticComparisonResponse:
+    """Per-family tactic motif you-vs-opponent comparison (Phase 126, TACCMP-01/02/03).
+
+    user_id taken exclusively from the authenticated user — never from a
+    request parameter (IDOR prevention, T-126-01).
+    Returns below_gate=True with empty bullets when analyzed_n < TACTIC_COMPARISON_GATE.
+    tactic_families: optional multi-select to narrow to specific motif families
+    (e.g. "fork", "pin_skewer"); unknown keys are silently ignored (T-126-02).
+    Backend is NOT beta-gated per D-01a — frontend gating enforces beta rollout.
+    """
+    if from_date is not None and to_date is not None and from_date > to_date:
+        raise HTTPException(status_code=422, detail="from_date must be <= to_date")
+    return await library_service.get_tactic_comparison(
+        session,
+        user_id=user.id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
+        flaw_severity=list(severity) if severity else None,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
+        color=color,
+        tactic_families=tactic_families,
+    )
+
+
 @router.get("/flaws", response_model=LibraryFlawsResponse)
 async def get_library_flaws(
     session: Annotated[AsyncSession, Depends(get_async_session)],
@@ -221,6 +266,7 @@ async def get_library_flaws(
     rated: bool | None = Query(default=None),
     opponent_type: str = Query(default="human"),
     color: str | None = Query(default=None),
+    tactic_family: list[str] | None = Query(default=None),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
 ) -> LibraryFlawsResponse:
@@ -254,6 +300,7 @@ async def get_library_flaws(
         from_date=from_date,
         to_date=to_date,
         color=color,
+        tactic_families=list(tactic_family) if tactic_family else None,
         offset=offset,
         limit=limit,
     )

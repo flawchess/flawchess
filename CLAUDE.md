@@ -129,6 +129,7 @@ The hook runs `ruff format --check`, `ruff check`, and `ty check` on every `git 
 - **`select_benchmark_users.py`** — Streams a Lichess monthly PGN dump (`.pgn.zst`) and populates `benchmark_selected_users` with per-(rating bucket, TC bucket) username pools
 - **`import_benchmark_users.py`** — Orchestrates Lichess game import for the selected benchmark users, checkpointing per (user, TC) into `benchmark_ingest_checkpoints`
 - **`backfill_eval.py`** — Backfills Stockfish `eval_cp` / `eval_mate` into endgame span-entry rows; supports `--db dev|benchmark|prod` (prod requires `prod_db_tunnel.sh`)
+- **`backfill_full_evals.py`** — Enlists a user's games (`full_evals_completed_at IS NULL`) as tier-1 `eval_jobs` so the running drain worker processes full-game eval + flaw/tactic tagging + oracle counts with priority. Idempotent. Requires `--db dev|benchmark|prod` and `--user-id`; supports `--dry-run` / `--limit`
 - **`gen_endgame_zones_ts.py`** — Regenerates `frontend/src/generated/endgameZones.ts` from `app/services/endgame_zones.py`. CI fails on drift, so re-run after editing the Python registry
 
 ## Database Access (MCP)

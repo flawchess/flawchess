@@ -2,6 +2,7 @@ import { LoadError } from '@/components/ui/load-error';
 import { FlawStatsBand } from './FlawStatsBand';
 import { FlawTrendChart } from './FlawTrendChart';
 import { FlawComparisonGrid } from './FlawComparisonGrid';
+import { TacticComparisonGrid } from './TacticComparisonGrid';
 import type { FlawStatsResponse } from '@/types/library';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
@@ -93,6 +94,11 @@ export function FlawStatsPanel({
             {/* Zone 3: Flaw comparison grid — self-fetches, handles own gate/loading/error */}
             <div className="mt-6">
               <FlawComparisonGrid filters={filters} flawFilter={flawFilter} />
+            </div>
+
+            {/* Zone 3 (continued): Tactic comparison grid — beta-gated, self-fetches */}
+            <div className="mt-6">
+              <TacticComparisonGrid filters={filters} flawFilter={flawFilter} />
             </div>
           </>
         );

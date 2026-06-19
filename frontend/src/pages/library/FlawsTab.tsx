@@ -31,6 +31,7 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { useEvalCoverage } from '@/hooks/useEvalCoverage';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
+import type { TacticFamily } from '@/lib/tacticComparisonMeta';
 import type { FlawTag } from '@/types/library';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -41,7 +42,7 @@ const PAGE_SIZE = 20;
 // no date/TC/platform restriction, both opponent types, no flaw filter. Module
 // level so the TanStack query key stays stable across renders.
 const UNFILTERED_PROBE_FILTERS: FilterState = { ...DEFAULT_FILTERS, opponentType: 'both' };
-const NO_FLAW_FILTER: FlawFilterState = { severity: [], tags: [] };
+const NO_FLAW_FILTER: FlawFilterState = { severity: [], tags: [], tacticFamilies: [] };
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -86,10 +87,11 @@ export function FlawsTab() {
 
     const urlTags = initialSearchParams.current.getAll('tag') as FlawTag[];
     const urlSeverity = initialSearchParams.current.getAll('severity') as ('blunder' | 'mistake')[];
+    const urlTactic = initialSearchParams.current.getAll('tactic') as TacticFamily[];
 
-    if (urlTags.length > 0 || urlSeverity.length > 0) {
+    if (urlTags.length > 0 || urlSeverity.length > 0 || urlTactic.length > 0) {
       // Empty severity in the URL = both shown (the default narrowing-off state).
-      setFlawFilter({ tags: urlTags, severity: urlSeverity });
+      setFlawFilter({ tags: urlTags, severity: urlSeverity, tacticFamilies: urlTactic });
     }
   }, [setFlawFilter]);
 
@@ -100,6 +102,7 @@ export function FlawsTab() {
     if (flawFilter.severity.length < 2) {
       flawFilter.severity.forEach((s) => params.append('severity', s));
     }
+    (flawFilter.tacticFamilies ?? []).forEach((f) => params.append('tactic', f));
     setSearchParams(params, { replace: true });
   }, [flawFilter, setSearchParams]);
 
@@ -286,10 +289,15 @@ export function FlawsTab() {
       <FlawFilterControl
         severity={pendingFlawFilter.severity}
         tags={pendingFlawFilter.tags}
+        tacticFamilies={pendingFlawFilter.tacticFamilies}
         onSeverityChange={(severity) =>
           setPendingFlawFilter((prev) => ({ ...prev, severity }))
         }
         onTagChange={(tags) => setPendingFlawFilter((prev) => ({ ...prev, tags }))}
+        onTacticFamiliesChange={(tacticFamilies) =>
+          setPendingFlawFilter((prev) => ({ ...prev, tacticFamilies }))
+        }
+        showTacticFilter
       />
       <FilterActions
         resetTestId="btn-tags-reset"
@@ -496,10 +504,15 @@ export function FlawsTab() {
               <FlawFilterControl
                 severity={pendingFlawFilter.severity}
                 tags={pendingFlawFilter.tags}
+                tacticFamilies={pendingFlawFilter.tacticFamilies}
                 onSeverityChange={(severity) =>
                   setPendingFlawFilter((prev) => ({ ...prev, severity }))
                 }
                 onTagChange={(tags) => setPendingFlawFilter((prev) => ({ ...prev, tags }))}
+                onTacticFamiliesChange={(tacticFamilies) =>
+                  setPendingFlawFilter((prev) => ({ ...prev, tacticFamilies }))
+                }
+                showTacticFilter
               />
               <FilterActions
                 resetTestId="btn-tags-reset"

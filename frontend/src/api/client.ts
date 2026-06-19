@@ -13,7 +13,7 @@ import type {
   BookmarkPhaseEntryResponse,
 } from '@/types/stats';
 import type { EndgameGamesResponse, EndgameOverviewResponse } from '@/types/endgames';
-import type { GameFlawCard, LibraryGamesResponse, FlawStatsResponse, LibraryFlawsResponse, FlawComparisonResponse } from '@/types/library';
+import type { GameFlawCard, LibraryGamesResponse, FlawStatsResponse, LibraryFlawsResponse, FlawComparisonResponse, TacticComparisonResponse } from '@/types/library';
 import type { OpponentStrengthRange } from '@/types/api';
 import { rangeToQueryParams } from '@/lib/opponentStrength';
 import type { FeedbackRequest, FeedbackResponse } from '@/types/feedback';
@@ -290,6 +290,28 @@ export const libraryApi = {
       },
     }).then(r => r.data),
 
+  getTacticComparison: (params: {
+    time_control?: string[] | null;
+    platform?: string[] | null;
+    from_date?: string | null;
+    to_date?: string | null;
+    rated?: boolean | null;
+    opponent_type?: string;
+    opponent_strength?: OpponentStrengthRange;
+    color?: string | null;
+    severity?: ('blunder' | 'mistake')[];
+    tactic_families?: string[];
+  }) =>
+    apiClient.get<TacticComparisonResponse>('/library/tactic-comparison', {
+      params: {
+        ...buildFilterParams(params),
+        ...(params.severity && params.severity.length > 0 ? { severity: params.severity } : {}),
+        ...(params.tactic_families && params.tactic_families.length > 0
+          ? { tactic_families: params.tactic_families }
+          : {}),
+      },
+    }).then(r => r.data),
+
   getFlaws: (params: {
     time_control?: string[] | null;
     platform?: string[] | null;
@@ -303,6 +325,8 @@ export const libraryApi = {
     // (paramsSerializer indexes:null on apiClient ensures no bracket notation)
     severity?: ('blunder' | 'mistake')[];
     tag?: string[];
+    // Phase 126: flaw-level tactic motif family filter, repeated as tactic_family=fork&...
+    tactic_family?: string[];
     offset?: number;
     limit?: number;
   }) =>
@@ -311,6 +335,9 @@ export const libraryApi = {
         ...buildFilterParams(params),
         ...(params.severity && params.severity.length > 0 ? { severity: params.severity } : {}),
         ...(params.tag && params.tag.length > 0 ? { tag: params.tag } : {}),
+        ...(params.tactic_family && params.tactic_family.length > 0
+          ? { tactic_family: params.tactic_family }
+          : {}),
         offset: params.offset ?? 0,
         limit: params.limit ?? 20,
       },

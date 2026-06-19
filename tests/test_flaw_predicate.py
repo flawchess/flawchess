@@ -190,6 +190,27 @@ class TestBuildFlawFilterClausesUnit:
         # severity (1) + tempo family (1) + opportunity family (1) + impact family (1) = 4
         assert len(clauses) == 4
 
+    def test_empty_tactic_families_produces_no_clause(self) -> None:
+        """Phase 126: empty tactic_families → no tactic clause (off by default)."""
+        clauses = build_flaw_filter_clauses([], [], [])
+        assert clauses == [], "no tactic families selected must add no filter"
+
+    def test_tactic_families_produce_one_combined_clause(self) -> None:
+        """Phase 126: selected tactic families OR within a single flaw-level clause."""
+        clauses = build_flaw_filter_clauses([], [], ["fork", "pin_skewer"])
+        assert len(clauses) == 1, "tactic families share one OR-within clause"
+
+    def test_tactic_families_are_distinct_from_tag_families(self) -> None:
+        """Phase 126: tactic family is its own family — AND-ed across with tags/severity."""
+        clauses = build_flaw_filter_clauses(["blunder"], ["miss"], ["mate"])
+        # severity (1) + opportunity family (1) + tactic family (1) = 3
+        assert len(clauses) == 3
+
+    def test_unknown_tactic_family_adds_no_clause(self) -> None:
+        """Phase 126: an unknown family key expands to no motif ints → no clause."""
+        clauses = build_flaw_filter_clauses([], [], ["not-a-family"])
+        assert clauses == [], "unknown family keys must be dropped, not raise"
+
     def test_severity_uses_set_membership(self) -> None:
         """["mistake"] matches mistakes only — distinct from ["mistake", "blunder"]."""
         clauses_both = build_flaw_filter_clauses(["mistake", "blunder"], [])

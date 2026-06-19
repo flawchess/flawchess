@@ -85,6 +85,7 @@ def apply_game_filters(
     opponent_gap_max: int | None = None,
     flaw_severity: Sequence[str] | None = None,
     flaw_tags: Sequence[str] | None = None,
+    tactic_families: Sequence[str] | None = None,
     user_id: int | None = None,
 ) -> Any:
     """Apply standard game filter WHERE clauses to a SELECT statement.
@@ -117,6 +118,13 @@ def apply_game_filters(
                          OR within family, AND across families. Phase tags are ignored.
                          None (default) leaves the statement unchanged.
                          Requires user_id when either flaw_severity or flaw_tags is set.
+        tactic_families: When set (e.g. ["fork", "pin_skewer"]), restrict to games
+                         containing >=1 flaw whose tactic_motif int is in the union of
+                         FAMILY_TO_MOTIF_INTS values for the selected families. Unknown
+                         family keys yield no ints (no-op), never raw SQL (T-126-02).
+                         None (default) leaves the statement unchanged. Uses lazy import
+                         of FAMILY_TO_MOTIF_INTS from library_repository to avoid a
+                         circular import (Phase 126 D-06).
         user_id: The authenticated user's id — required when flaw_severity or
                          flaw_tags is set, to scope the EXISTS subquery's game_flaws read
                          (T-108-07). Ignored otherwise.
@@ -190,4 +198,31 @@ def apply_game_filters(
         # one of flaw_severity / flaw_tags is non-empty, so exists_pred is always
         # a real EXISTS predicate here (not true()).
         stmt = stmt.where(exists_pred)
+    if tactic_families:
+        # Lazy import avoids a query_utils → library_repository circular import
+        # (same pattern as the flaw_exists_from_table lazy import above).
+        from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
+        from app.models.game_flaw import GameFlaw as _GameFlaw
+
+        # Expand selected family keys to their motif int sets; unknown keys are
+        # silently dropped (yield no ints) — never raw SQL (T-126-02).
+        motif_ints = [m for fam in tactic_families for m in FAMILY_TO_MOTIF_INTS.get(fam, [])]
+        if motif_ints:
+            # Use a correlated EXISTS (same pattern as flaw_exists_from_table) so
+            # apply_game_filters remains applicable to any Game-based SELECT without
+            # adding a JOIN to the outer statement.
+            from sqlalchemy import exists as _exists, select as _select
+
+            tactic_exists = _exists(
+                _select(_GameFlaw.ply).where(
+                    _GameFlaw.game_id == Game.id,
+                    # Scope the EXISTS to the authenticated user, matching
+                    # flaw_exists_from_table's defense-in-depth (T-108-07). Game PK
+                    # uniqueness makes the outer user_id filter sufficient, but the
+                    # explicit scope keeps the correlated EXISTS pattern uniform.
+                    _GameFlaw.user_id == user_id,
+                    _GameFlaw.tactic_motif.in_(motif_ints),
+                )
+            )
+            stmt = stmt.where(tactic_exists)
     return stmt

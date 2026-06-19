@@ -26,6 +26,19 @@ export function sanToSquares(fen: string, san: string): MoveSquares | null {
 }
 
 /**
+ * Convert a UCI move string ("e2e4", "e7e8q") into its from/to squares.
+ *
+ * UCI already encodes the squares positionally (chars 0-1 = from, 2-3 = to, an
+ * optional 5th char = promotion piece), so unlike `sanToSquares` this needs no
+ * board context. Returns `null` for malformed input (shorter than 4 chars) so
+ * callers can fall back to "no arrow".
+ */
+export function uciToSquares(uci: string | null): MoveSquares | null {
+  if (!uci || uci.length < 4) return null;
+  return { from: uci.slice(0, 2), to: uci.slice(2, 4) };
+}
+
+/**
  * Apply `san` to `fen` and return the resulting full FEN, or `null` if the move
  * is illegal or the FEN is malformed. Render-time safe — never throws. Used by
  * OpeningFindingCard to also show the troll-opening watermark when the

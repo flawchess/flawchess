@@ -30,6 +30,8 @@ import {
   SEV_MISTAKE_BG,
 } from '@/lib/theme';
 import type { FlawTag } from '@/types/library';
+import type { TacticFamily } from '@/lib/tacticComparisonMeta';
+import { TACTIC_COMPARISON_FAMILIES, TACTIC_FAMILY_COLORS } from '@/lib/tacticComparisonMeta';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -38,6 +40,15 @@ export interface FlawFilterControlProps {
   tags: FlawTag[];
   onSeverityChange: (next: ('blunder' | 'mistake')[]) => void;
   onTagChange: (next: FlawTag[]) => void;
+  /**
+   * Tactic-motif family filter (Phase 126). Only relevant when `showTacticFilter`
+   * is true (the Flaws tab). The flaw-tags panel is shared with the Games tab, where
+   * tactic filtering is a no-op, so the section is gated off by default.
+   */
+  tacticFamilies?: TacticFamily[];
+  onTacticFamiliesChange?: (next: TacticFamily[]) => void;
+  /** Render the tactic-motif family section. Default false (Flaws tab passes true). */
+  showTacticFilter?: boolean;
 }
 
 // ─── Tag → glyph (lucide icons, rendered at h-3 w-3) ──────────────────────────
@@ -216,8 +227,11 @@ function SeverityFilterButton({ config, selected, onToggle }: SeverityFilterButt
 export function FlawFilterControl({
   severity,
   tags,
+  tacticFamilies = [],
   onSeverityChange,
   onTagChange,
+  onTacticFamiliesChange,
+  showTacticFilter = false,
 }: FlawFilterControlProps) {
   // Severity toggles narrow like the tag families: empty = both shown, one = that
   // tier only, both = both shown (same as empty). Deselecting the last severity is
@@ -232,6 +246,15 @@ export function FlawFilterControl({
   const handleTagToggle = (tag: FlawTag): void => {
     const next = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
     onTagChange(next);
+  };
+
+  // Tactic-motif families behave exactly like the tag families: off by default,
+  // applied only when ≥1 is selected (Phase 126).
+  const handleTacticFamilyToggle = (fam: TacticFamily): void => {
+    const next = tacticFamilies.includes(fam)
+      ? tacticFamilies.filter((f) => f !== fam)
+      : [...tacticFamilies, fam];
+    onTacticFamiliesChange?.(next);
   };
 
   return (
@@ -277,6 +300,43 @@ export function FlawFilterControl({
           </div>
         </div>
       ))}
+
+      {/* ── Tactic motif family (Phase 126) — opt-in, off by default. Gated to
+          the Flaws tab (showTacticFilter); shared Games-tab panel hides it. ──── */}
+      {showTacticFilter && (
+      <div className="flex flex-col gap-2">
+        <p className="text-sm text-muted-foreground">Tactic motif</p>
+        <div
+          role="group"
+          aria-label="Tactic motif filters"
+          data-testid="filter-flaw-family-tactic"
+          className="flex flex-wrap gap-2"
+        >
+          {TACTIC_COMPARISON_FAMILIES.map(({ family, name }) => {
+            const { color, bg } = TACTIC_FAMILY_COLORS[family];
+            const selected = tacticFamilies.includes(family);
+            return (
+              <button
+                key={family}
+                type="button"
+                data-testid={`filter-flaw-tactic-${family}`}
+                aria-pressed={selected}
+                aria-label={`Filter flaws by tactic motif: ${name}`}
+                className={cn(
+                  'inline-flex items-center gap-1 h-11 sm:h-7 rounded-full px-3 py-0.5 text-sm border transition-colors',
+                  !selected
+                    && 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',
+                )}
+                style={selected ? { color, borderColor: color, backgroundColor: bg } : undefined}
+                onClick={() => handleTacticFamilyToggle(family)}
+              >
+                {name}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      )}
 
       {/* ── Filter Logic explainer ─────────────────────────────────────── */}
       <div className="flex items-center gap-1.5 text-sm text-muted-foreground">

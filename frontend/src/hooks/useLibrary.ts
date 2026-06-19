@@ -6,6 +6,7 @@ import type { FlawTag } from '@/types/library';
 import { isFlawFilterNonDefault } from '@/hooks/useFlawFilterStore';
 import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
 import type { GameFlawCard } from '@/types/library';
+import type { TacticFamily } from '@/lib/tacticComparisonMeta';
 
 // Library queries are similar in cost to endgame queries (GROUP BY on FlawRecords).
 // 5 minutes staleTime + no refetch-on-focus prevents redundant DB load
@@ -121,6 +122,35 @@ export function useLibraryFlawComparison(
 }
 
 /**
+ * Fetch the 6-family tactic-motif comparison for the current filter + flaw filter.
+ *
+ * Self-fetch for TacticComparisonGrid (Phase 126). Mirrors useLibraryFlawComparison
+ * exactly but adds the tactic_families dimension to the query key so filter changes
+ * trigger a re-fetch.
+ *
+ * Query key: ['library-tactic-comparison', params, tacticFamilies]
+ * Do NOT add a manual Sentry.captureException — TanStack Query errors are captured
+ * globally (CLAUDE.md).
+ */
+export function useTacticComparison(
+  filters: FilterState,
+  flawFilter: FlawFilterState,
+  tacticFamilies: TacticFamily[],
+) {
+  const params = buildLibraryParams(filters, flawFilter.severity, flawFilter.tags);
+  return useQuery({
+    queryKey: ['library-tactic-comparison', params, tacticFamilies],
+    queryFn: () =>
+      libraryApi.getTacticComparison({
+        ...params,
+        tactic_families: tacticFamilies.length > 0 ? tacticFamilies : undefined,
+      }),
+    staleTime: LIBRARY_STALE_TIME,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/**
  * Fetch a single game by id for the "View game" modal.
  *
  * Query key: ['library-game', gameId]
@@ -150,9 +180,13 @@ export function useLibraryFlaws(
   limit: number,
 ) {
   const params = buildLibraryParams(filters, flawFilter.severity, flawFilter.tags);
+  // Phase 126: tactic-motif family filter is a flaw-level Tags-panel filter (off by
+  // default; applied only when ≥1 family is selected), so it lives on flawFilter, not
+  // the game-metadata FilterState. Sent to /library/flaws as repeated tactic_family.
+  const tacticFamily = flawFilter.tacticFamilies.length > 0 ? flawFilter.tacticFamilies : undefined;
   return useQuery({
-    queryKey: ['library-flaws', params, offset, limit],
-    queryFn: () => libraryApi.getFlaws({ ...params, offset, limit }),
+    queryKey: ['library-flaws', params, tacticFamily, offset, limit],
+    queryFn: () => libraryApi.getFlaws({ ...params, tactic_family: tacticFamily, offset, limit }),
     staleTime: LIBRARY_STALE_TIME,
     refetchOnWindowFocus: false,
   });

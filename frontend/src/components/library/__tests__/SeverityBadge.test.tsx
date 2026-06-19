@@ -76,5 +76,19 @@ describe('SeverityBadge', () => {
       fireEvent.mouseLeave(badge);
       expect(onHover).toHaveBeenCalledWith(false);
     });
+
+    it('applies the hover-lift class when interactive', () => {
+      render(<SeverityBadge severity="blunder" count={1} gameId={7} onHover={() => {}} />);
+      const badge = screen.getByTestId('severity-blunder-7');
+      expect(badge.className).toContain('hover:-translate-y-px');
+    });
+  });
+
+  describe('decorative default (Flaws card — no callbacks)', () => {
+    it('has no hover-lift class when no callbacks are passed', () => {
+      render(<SeverityBadge severity="blunder" count={1} gameId={8} showCount={false} />);
+      const badge = screen.getByTestId('severity-blunder-8');
+      expect(badge.className).not.toContain('hover:-translate-y-px');
+    });
   });
 });

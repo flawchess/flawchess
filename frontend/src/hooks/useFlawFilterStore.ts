@@ -1,5 +1,6 @@
 import { useSyncExternalStore, useCallback } from 'react';
 import type { FlawTag } from '@/types/library';
+import type { TacticFamily } from '@/lib/tacticComparisonMeta';
 
 // ─── State shape ─────────────────────────────────────────────────────────────
 
@@ -12,11 +13,18 @@ export interface FlawFilterState {
   severity: ('blunder' | 'mistake')[];
   /** Tag predicates (AND across families, OR within family). Default: empty (no filter). */
   tags: FlawTag[];
+  /**
+   * Tactic-motif families to NARROW to (Phase 126). Off by default (empty = no
+   * filter, like the tag families); selecting one or more families restricts the
+   * flaw list to flaws whose detected motif is in those families.
+   */
+  tacticFamilies: TacticFamily[];
 }
 
 export const DEFAULT_FLAW_FILTER: FlawFilterState = {
   severity: [],
   tags: [],
+  tacticFamilies: [],
 };
 
 /**
@@ -28,7 +36,13 @@ export const DEFAULT_FLAW_FILTER: FlawFilterState = {
  * across call sites.
  */
 export function isFlawFilterNonDefault(filter: FlawFilterState): boolean {
-  return filter.tags.length > 0 || filter.severity.length === 1;
+  return (
+    filter.tags.length > 0 ||
+    filter.severity.length === 1 ||
+    // Optional-chained: defensive against partial filter objects (e.g. older
+    // persisted/mocked state predating the tacticFamilies field).
+    (filter.tacticFamilies?.length ?? 0) > 0
+  );
 }
 
 // ─── Module-level shared state ───────────────────────────────────────────────

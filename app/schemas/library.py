@@ -40,6 +40,9 @@ class EvalPoint(BaseModel):
         float | None
     )  # mover's remaining clock AFTER this move; null = no %clk (chess.com)
     move_seconds: float | None  # time spent on this move (1dp); null when prior clock unknown
+    # Engine's best move FROM the position at this ply (UCI, e.g. "e2e4" / "e7e8q").
+    # None for lichess-eval-only games (no PV captured) and the final position.
+    best_move: str | None = None
 
 
 class FlawMarker(BaseModel):
@@ -47,6 +50,8 @@ class FlawMarker(BaseModel):
 
     is_user=True → filled circle (player); is_user=False → hollow circle (opponent).
     tags is empty for inaccuracies (D-03).
+    Phase 126 (TACUI-01): tactic_motif/tactic_confidence surfaced for the chip;
+    None when below MIN_TACTIC_CHIP_CONFIDENCE or when tactic_motif is NULL in DB.
     """
 
     ply: int
@@ -54,6 +59,8 @@ class FlawMarker(BaseModel):
     tags: list[FlawTag]  # empty for inaccuracies (D-03)
     is_user: bool  # True = filled dot (player), False = hollow dot (opponent)
     move_san: str | None  # SAN of the flawed move (positions[ply].move_san) — tooltip move label
+    tactic_motif: str | None = None  # motif name string, or None when below confidence gate
+    tactic_confidence: int | None = None  # raw confidence int (0-100), or None when gated
 
 
 class PhaseTransitions(BaseModel):
@@ -158,6 +165,15 @@ class FlawListItem(BaseModel):
     # move_seconds: time spent on the flawed move (1dp); null when prior clock unknown.
     clock_seconds: float | None
     move_seconds: float | None
+    # Engine's best move FROM the pre-flaw decision position at ply=N (UCI, e.g.
+    # "e2e4"). None for lichess-eval-only games (no PV captured). The Flaws-tab
+    # miniboard draws it as a blue arrow next to the (red) flaw-move arrow.
+    best_move: str | None = None
+    # Tactic chip fields (Phase 126, TACUI-01).
+    # tactic_motif: motif name string (e.g. "fork"), or None when below confidence gate.
+    # tactic_confidence: raw confidence int (0-100), or None when tactic_motif is gated.
+    tactic_motif: str | None = None
+    tactic_confidence: int | None = None
 
 
 class LibraryFlawsResponse(BaseModel):
@@ -323,4 +339,48 @@ class FlawComparisonResponse(BaseModel):
     bullets: list[FlawBullet]
     analyzed_n: int
     analyzed_gate: int = 20  # exposed so frontend can render "X of 20" without hardcoding
+    below_gate: bool
+
+
+# ---------------------------------------------------------------------------
+# Phase 126 — Tactic comparison schemas (TACCMP-01/02/03)
+# ---------------------------------------------------------------------------
+
+
+class TacticBullet(BaseModel):
+    """Per-family data for one tactic-motif family row (Phase 126, TACCMP-01).
+
+    Rates are mean tactic allowances per game (not per 100 moves).
+    Sign convention: positive delta = you allow MORE than opponents = bad
+    (mirrors FlawBullet sign convention).
+    has_zone: False until a tactic benchmark pipeline ships (out of scope Phase 126).
+    """
+
+    family: str  # family key e.g. "fork", "pin_skewer"
+    you_rate: float | None  # mean tactic allowances per game (player side); None = zero events
+    opp_rate: float | None  # mean tactic allowances per game (opponent side); None = zero events
+    delta: float | None  # you_rate - opp_rate; None = both sides zero events
+    ci_low: float | None  # 95% CI lower bound on delta
+    ci_high: float | None  # 95% CI upper bound on delta
+    p_value: float | None  # two-sided p vs H0: delta == 0; None = zero events
+    you_events: int  # raw event count (player side)
+    opp_events: int  # raw event count (opponent side)
+    zone_lo: float = 0.0  # benchmark Q1 or 0.0 when unavailable
+    zone_hi: float = 0.0  # benchmark Q3 or 0.0 when unavailable
+    has_zone: bool = False  # False until tactic benchmark pipeline ships
+
+
+class TacticComparisonResponse(BaseModel):
+    """Response for GET /api/library/tactic-comparison (Phase 126, TACCMP-01/02/03).
+
+    bullets: ordered by rank (largest significant gap first, volume fallback),
+             up to 6 family rows; empty list when below_gate=True.
+    analyzed_n: analyzed game count after filters.
+    analyzed_gate: minimum required (mirrors TACTIC_COMPARISON_GATE = 20).
+    below_gate: True when analyzed_n < analyzed_gate.
+    """
+
+    bullets: list[TacticBullet]
+    analyzed_n: int
+    analyzed_gate: int
     below_gate: bool

@@ -30,17 +30,17 @@ The materialized columns on `game_flaws`.
 
 The you-vs-opponent aggregation.
 
-- [ ] **TACCMP-01**: A backend endpoint returns the player's tactic-motif frequencies vs their opponents' as comparable **rates** (normalized per game / per 100 blunders, not raw counts), with the player/opponent split derived at query time via the existing `is_opponent_expr(ply, games.user_color)` helper (no `is_opponent` column).
-- [ ] **TACCMP-02**: Each motif comparison carries a significance verdict computed with the project's existing Wilson-based chess-score significance utility (no parallel test invented), with a section-level sample gate below which the comparison is withheld.
-- [ ] **TACCMP-03**: The comparison honors all existing game filters (time control, platform, rated, opponent type, recency, color) and severity, consistent with the other Library flaw surfaces.
+- [x] **TACCMP-01**: A backend endpoint returns the player's tactic-motif frequencies vs their opponents' as comparable **rates** (normalized per game / per 100 blunders, not raw counts), with the player/opponent split derived at query time via the existing `is_opponent_expr(ply, games.user_color)` helper (no `is_opponent` column).
+- [x] **TACCMP-02**: Each motif comparison carries a significance verdict computed with the project's existing Wilson-based chess-score significance utility (no parallel test invented), with a section-level sample gate below which the comparison is withheld.
+- [x] **TACCMP-03**: The comparison honors all existing game filters (time control, platform, rated, opponent type, recency, color) and severity, consistent with the other Library flaw surfaces.
 
 ### Frontend
 
 The user-facing surface. Motif-level only in v1.28 (piece-level deferred).
 
-- [ ] **TACUI-01**: Each flaw card displays its `allowed` motif as a family-colored chip with a definition popover, consistent with the shipped flaw-tag taxonomy chip pattern.
-- [ ] **TACUI-02**: A you-vs-opponent **motif** comparison surface (reusing the v1.25 `MiniBulletChart` grid pattern: measure + CI + benchmark zone where available) with per-motif tooltips disclosing definition, sign convention, and the filter interaction.
-- [ ] **TACUI-03**: The motif chips and comparison surface render correctly on mobile (responsive at 375px) with `data-testid` + ARIA parity, matching the project's browser-automation rules.
+- [x] **TACUI-01**: Each flaw card displays its `allowed` motif as a family-colored chip with a definition popover, consistent with the shipped flaw-tag taxonomy chip pattern.
+- [x] **TACUI-02**: A you-vs-opponent **motif** comparison surface (reusing the v1.25 `MiniBulletChart` grid pattern: measure + CI + benchmark zone where available) with per-motif tooltips disclosing definition, sign convention, and the filter interaction.
+- [x] **TACUI-03**: The motif chips and comparison surface render correctly on mobile (responsive at 375px) with `data-testid` + ARIA parity, matching the project's browser-automation rules.
 
 ## v2 Requirements
 
@@ -82,12 +82,12 @@ Which phases cover which requirements. Populated during roadmap creation.
 | TACSCH-01 | Phase 124 | Complete |
 | TACSCH-02 | Phase 124 | Complete |
 | TACSCH-03 | Phase 125 | Complete |
-| TACCMP-01 | Phase 126 | Pending |
-| TACCMP-02 | Phase 126 | Pending |
-| TACCMP-03 | Phase 126 | Pending |
-| TACUI-01 | Phase 126 | Pending |
-| TACUI-02 | Phase 126 | Pending |
-| TACUI-03 | Phase 126 | Pending |
+| TACCMP-01 | Phase 126 | Complete |
+| TACCMP-02 | Phase 126 | Complete |
+| TACCMP-03 | Phase 126 | Complete |
+| TACUI-01 | Phase 126 | Complete |
+| TACUI-02 | Phase 126 | Complete |
+| TACUI-03 | Phase 126 | Complete |
 
 **Coverage:**
 
