@@ -24,7 +24,7 @@ progress:
 Phase: 128 — Missed-Opportunity Tagging
 Plan: Not started
 Status: Ready to execute
-Last activity: 2026-06-19 — Completed quick task 260619-phr: SEED-057 pin gate parity + depth-index fix (pin CC0 precision 0.413→0.440)
+Last activity: 2026-06-19 — Shipped Phase 127 (detector hardening + tactic-tagger validation harness) to main via local squash-merge (commit 1e1bcd9f)
 
 ## Project Reference
 
