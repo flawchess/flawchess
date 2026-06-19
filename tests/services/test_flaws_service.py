@@ -172,6 +172,7 @@ class TestTypeContract:
             "tactic_motif_int": None,
             "tactic_piece": None,
             "tactic_confidence": None,
+            "tactic_depth": None,
         }
         assert record["ply"] == 10
         assert record["severity"] == "blunder"

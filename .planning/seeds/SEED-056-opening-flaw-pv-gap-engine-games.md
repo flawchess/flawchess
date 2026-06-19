@@ -1,13 +1,23 @@
 ---
-id: SEED-054
+id: SEED-056
 status: dormant
 planted: 2026-06-17
+renumbered: 2026-06-19 (was SEED-054 — collided with SEED-054-best-move-pv-at-flaw-ply, now closed)
 planted_during: v1.28 Tactic Tagging
 trigger_when: before claiming full tactic-tag coverage in v1.28 (or whenever opening-region flaw tagging coverage matters) — engine games silently drop the refutation pv on ~3.5% of opening-region flaws, so those flaws are registered but un-taggable
 scope: small
 ---
 
-# SEED-054: Opening-region flaws in engine games lose their refutation `pv`
+# SEED-056: Opening-region flaws in engine games lose their refutation `pv`
+
+> **Not the same as the closed SEED-054.** This was originally filed as SEED-054 and
+> collided with `SEED-054-best-move-pv-at-flaw-ply.md`. That sibling shipped in commit
+> `e02107bb` (made the drain engine-eval `flaw_ply` for **lichess** games so the
+> "better alternative" blue arrow gets a `best_move`) and is now closed. **This seed is
+> a distinct, still-open gap**: it concerns **fresh engine games** losing the refutation
+> `pv` via opening-region dedup, which `e02107bb` did not touch (`flaw_engine_plies` is
+> still populated only for `is_lichess_eval_game` — `eval_drain.py:1748`). Verified
+> still-open in code 2026-06-19.
 
 ## Why This Matters
 

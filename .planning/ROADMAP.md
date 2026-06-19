@@ -43,7 +43,7 @@
 - [x] **Phase 124: Schema + Tactic Detector** — Alembic migration for `tactic_motif`/`tactic_piece` columns + the pure-CPU cook-heuristic reimplementation + hand-labeled fixture validation (completed 2026-06-18)
 - [x] **Phase 125: Backfill Tactic Motifs** — run `backfill_flaws.py` over ~131k self-eval'd games; lichess-eval-only games stay NULL until full-eval'd via the existing tier-3 idle fleet (completed 2026-06-18)
 - [ ] **Phase 126: Comparison Stats + Frontend** — `GET /api/library/tactic-comparison` endpoint + motif chips on flaw cards + MiniBulletChart you-vs-opponent motif grid
-- [ ] **Phase 127: Detector Hardening & Validation** — return motif depth from all detectors + store `*_tactic_depth`; lichess CC0 puzzle validation harness (precision AND recall); fix deep-scan/loose-pin false positives. De-risks 128/129.
+- [x] **Phase 127: Detector Hardening & Validation** — return motif depth from all detectors + store `*_tactic_depth`; lichess CC0 puzzle validation harness (precision AND recall); fix deep-scan/loose-pin false positives. De-risks 128/129. (completed 2026-06-19)
 - [ ] **Phase 128: Missed-Opportunity Tagging** — rename existing tactic cols to `allowed_*`, add `missed_*` set; second detector pass on the `flaw_ply` PV (SEED-054); backend filter + schema; mover-relative columns, `is_opponent_expr` narration (no `tactic_pov` column)
 - [ ] **Phase 129: Tactic Filter UI** — composed motif × pov (missed/allowed) × depth-slider filter + display across flaw surfaces, desktop + mobile
 
@@ -154,7 +154,19 @@ Plans:
   4. No vendoring or porting of AGPL `cook.py` — only the CC0 puzzle *data* is used; this is recorded in the test/harness docstring
   5. The self-labeled fixture circularity is documented and superseded: the precision/recall numbers in CI come from the independent puzzle set, not detector-bucketed fixtures
 
-**Plans**: TBD (discuss-phase)
+**Plans**: 4 plans
+**Wave 1**
+
+- [x] 127-01-PLAN.md — 4-tuple detector contract + depth + relevance gate + min-depth dispatch + tactic_depth column/migration (Wave 1)
+- [x] 127-02-PLAN.md — harness infra: selector + committed CC0 fixture + motif→theme map + excluded tagger dir + pyproject ignore + CI step (Wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 127-03-PLAN.md — measure precision/recall + depth-vs-Rating correlation, set floors from measured numbers, suppress sub-floor tier-3, supersede circular fixtures (Wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 127-04-PLAN.md — dev re-backfill validation (tactic_depth populated, fork/pin FP drop) + deferred prod runbook (Wave 3)
 
 ### Phase 128: Missed-Opportunity Tagging
 
@@ -233,7 +245,7 @@ Plans:
 | 124. Schema + Tactic Detector | 4/4 | Complete    | 2026-06-18 |
 | 125. Backfill Tactic Motifs | 3/3 | Complete    | 2026-06-18 |
 | 126. Comparison Stats + Frontend | 3/3 | Complete   | 2026-06-18 |
-| 127. Detector Hardening & Validation | 0/? | Planned | — |
+| 127. Detector Hardening & Validation | 4/4 | Complete    | 2026-06-19 |
 | 128. Missed-Opportunity Tagging | 0/? | Planned | — |
 | 129. Tactic Filter UI | 0/? | Planned | — |
 
@@ -243,7 +255,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 3/3 plans complete
+**Plans:** 4/4 plans complete
 
 Plans:
 

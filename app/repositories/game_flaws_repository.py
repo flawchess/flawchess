@@ -118,6 +118,8 @@ def flaw_record_to_row(
         "tactic_motif": flaw.get("tactic_motif_int"),
         "tactic_piece": flaw.get("tactic_piece"),
         "tactic_confidence": flaw.get("tactic_confidence"),
+        # tactic_depth: raw half-move ply index from flaw_ply+1 (Phase 127 — D-04).
+        "tactic_depth": flaw.get("tactic_depth"),
     }
 
 

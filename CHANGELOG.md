@@ -26,6 +26,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Fixed
 
+- **More accurate pin tactic tags** — fixed a parity bug in the pin relevance gate that left it unable to confirm pov's exploiting capture for the common case, and reordered the gate so incidental pins are pruned before the capture check accepts them. Pin tag precision on the CC0 puzzle fixture rose from 0.413 to 0.440 (false positives 478 → 428) with recall unchanged. Also put the pin's stored difficulty depth on the same move-index scale as every other motif (it was a board index, off by one). (SEED-057, 260619-phr)
+
 - **"Better move" arrow now shows on Lichess-analyzed games** — the blue arrow that points out the move you should have played instead of a blunder was silently missing on games imported with Lichess's own analysis. The engine now also evaluates the position you moved from (not just the position after), so the better alternative is captured and the arrow renders. A one-time backfill fills this in for already-analyzed Lichess games. (SEED-054, 260618-rmk)
 
 - **Opening a game from a Flaw card lands on the flawed move** — the eval-chart slider now opens parked on the flaw's ply, so the board and crosshair start on the flawed move instead of resting at the end of the game. Replaces the previous marker "pulse" attention cue, which had broken.

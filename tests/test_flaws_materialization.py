@@ -216,6 +216,7 @@ class TestFlawRecordToRow:
             tactic_motif_int=None,
             tactic_piece=None,
             tactic_confidence=None,
+            tactic_depth=None,
         )
 
     def test_severity_blunder_maps_to_2(self) -> None:
@@ -389,6 +390,7 @@ class TestBulkInsertGameFlaws:
             "tactic_motif_int": None,
             "tactic_piece": None,
             "tactic_confidence": None,
+            "tactic_depth": None,
         }
         row = flaw_record_to_row(user_id=game.user_id, game_id=game.id, flaw=flaw)
         await bulk_insert_game_flaws(db_session, [row])
@@ -431,6 +433,7 @@ class TestBulkInsertGameFlaws:
             "tactic_motif_int": None,
             "tactic_piece": None,
             "tactic_confidence": None,
+            "tactic_depth": None,
         }
         row = flaw_record_to_row(user_id=game.user_id, game_id=game.id, flaw=flaw)
         await bulk_insert_game_flaws(db_session, [row])

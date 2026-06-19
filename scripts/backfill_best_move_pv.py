@@ -199,8 +199,12 @@ def _build_target_stmt(
     fresh (non-deterministic) search. Selecting the booleans (not pv itself) avoids
     streaming the large pv text for rows that already have it.
 
-    Ordered by (game_id, ply) so rows for one game are contiguous → the streaming
-    reader can batch by game and replay each PGN exactly once.
+    Ordered recency-first: Game.played_at DESC (NULLS LAST for undated games), then
+    (game_id, ply) as tiebreakers. Recent games are backfilled before older ones so
+    the most-likely-to-be-viewed Library games get their best_move/pv arrows soonest
+    during a long run. Because played_at is a game-level column, all rows of one game
+    share the same played_at, so adding game_id/ply tiebreakers keeps each game's rows
+    contiguous → the streaming reader can batch by game and replay each PGN exactly once.
     """
     flaw_match = exists(
         select(GameFlaw.ply).where(
@@ -227,7 +231,13 @@ def _build_target_stmt(
     if user_id is not None:
         stmt = stmt.where(GamePosition.user_id == user_id)
 
-    stmt = stmt.order_by(GamePosition.game_id, GamePosition.ply)
+    # Recency-first (see docstring): most recently played games first, undated last,
+    # with (game_id, ply) tiebreakers preserving per-game row contiguity for batching.
+    stmt = stmt.order_by(
+        Game.played_at.desc().nulls_last(),
+        GamePosition.game_id,
+        GamePosition.ply,
+    )
 
     if limit is not None:
         stmt = stmt.limit(limit)
@@ -242,9 +252,10 @@ async def _stream_game_batches(
 ) -> AsyncIterator[list[Any]]:
     """Stream rows from a server-side cursor, yielding game-batched lists.
 
-    ORDER BY (game_id, ply) keeps each game's rows contiguous, so we flush a batch
-    as soon as we cross `games_per_batch` distinct game_ids. Postgres holds the
-    cursor; only one batch is alive in Python at a time (mirrors backfill_eval).
+    The recency-first ORDER BY (played_at DESC, game_id, ply) keeps each game's rows
+    contiguous (all rows of a game share its played_at), so we flush a batch as soon
+    as we cross `games_per_batch` distinct game_ids. Postgres holds the cursor; only
+    one batch is alive in Python at a time (mirrors backfill_eval).
     """
     async with session_maker() as read_session:
         result = await read_session.stream(stmt)

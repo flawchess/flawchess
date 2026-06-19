@@ -2,28 +2,29 @@
 gsd_state_version: 1.0
 milestone: v1.28
 milestone_name: Tactic Tagging
-current_phase: 126
-current_phase_name: comparison-stats-frontend
-status: Phase 126 integrated to main (local squash-merge)
-stopped_at: Phase 126 UI-SPEC approved
-last_updated: "2026-06-19T11:30:38.797Z"
+current_phase: 128
+current_phase_name: Missed-Opportunity Tagging
+status: executing
+stopped_at: Phase 127 context gathered
+last_updated: "2026-06-19T15:16:51.776Z"
 last_activity: 2026-06-19
+last_activity_desc: Phase 127 complete, transitioned to Phase 128
 progress:
-  total_phases: 8
-  completed_phases: 4
-  total_plans: 12
-  completed_plans: 12
-  percent: 50
+  total_phases: 11
+  completed_phases: 5
+  total_plans: 16
+  completed_plans: 16
+  percent: 45
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 126 (comparison-stats-frontend) — EXECUTING
-Plan: 3 of 3
-Status: Phase 126 integrated to main (local squash-merge)
-Last activity: 2026-06-19
+Phase: 128 — Missed-Opportunity Tagging
+Plan: Not started
+Status: Ready to execute
+Last activity: 2026-06-19 — Completed quick task 260619-phr: SEED-057 pin gate parity + depth-index fix (pin CC0 precision 0.413→0.440)
 
 ## Project Reference
 
@@ -340,6 +341,7 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 | 260619-dvf | Phase 126 UAT for the tactic-motif feature. (1) theme.ts: all six `FAM_*` (+`_BG`) flaw-family color constants now resolve to a single neutral light grey (= `EVAL_CHART_AREA_WHITE_AHEAD`, `oklch(0.78 0 0)`) via new `FAM_NEUTRAL`/`FAM_NEUTRAL_BG` — names kept, only the `TAC_*` tactic families keep hue (user chose "everywhere": also greys the you-vs-opponent Flaw Comparison grid + Flaws filter panel). (2) `EvalChart` gains a `betaEnabled` prop; the active marker's `tactic_motif` is listed FIRST in the tooltip (above flaw tags), styled like the other tag rows; wired from both `LibraryGameCard` call sites via `userProfile?.beta_enabled`. (3) `LibraryGameCard`: tactic-motif chip row now renders BEFORE the flaw-tag chip row. (4) `TagLegend` gains a `tacticMotifs` prop; tactic rows render FIRST in the Tags popover (family icon + `TACTIC_MOTIF_DEFINITIONS`), wired from `LibraryGameCard` + `FlawCard`, beta-gated by callers. Frontend-only. Gates GREEN: `tsc -b` / lint / knip clean, vitest 985 passed. On `gsd/phase-126-comparison-stats-frontend`; not pushed. | 2026-06-19 | 02fb6191 | [260619-dvf-phase-126-uat-tactic-tag-colors-eval-cha](./quick/260619-dvf-phase-126-uat-tactic-tag-colors-eval-cha/) |
 | 260619-fk1 | Phase 126 UAT for the tactic-motif feature — make tactic-motif chips behave exactly like flaw-tag chips on the Library Games card. (1) The eval-chart tooltip already rendered the active marker's `tactic_motif` gated on `betaEnabled`, but only the MOBILE `EvalChart` call site in `LibraryGameCard` passed the prop, so the motif line was silently off on DESKTOP — added `betaEnabled={userProfile?.beta_enabled ?? false}` to the desktop call site. (2) Removed the per-chip definition popover from `TacticMotifChip` (dropped the Radix popover, open/close timers, and now-unused `useIsMobile`); definitions are surfaced once via the shared `TagLegend`, matching the flaw-tag chips (`definition={false}`). (3) Hover parity: `TacticMotifChip` gained optional `onHover`; the card wires it to `setHighlightYieldingFocus({ kind: 'motif', motif })` so hovering emphasizes matching eval-chart markers and dims the rest. (4) Click-to-cycle parity: gained optional `onActivate` → `handleActivate({ kind: 'motif', motif })`; extended the `FlawRef` union with `{ kind: 'motif'; motif: string }`, `sameFlawRef`, and a `motifPlies` map (mirroring `tagPlies`) so the existing cycle/highlight machinery resolves a motif's flaw plies. On `FlawCard` (no callbacks) the chip is now a plain decorative span, matching the sibling `TagChip`s. Frontend-only. Gates GREEN: `tsc -b` / lint / knip clean, vitest 987 passed. On `gsd/phase-126-comparison-stats-frontend`; not pushed. | 2026-06-19 | 84d61fd3 | [260619-fk1-phase-126-uat-tactic-tags-in-eval-chart-](./quick/260619-fk1-phase-126-uat-tactic-tags-in-eval-chart-/) |
 | 260619-g7r | Phase 126 UAT for the tactic-motif feature (frontend-only). (1) `theme.ts`: collapsed all six `TAC_*` family color constants (and `_BG` variants) to a single blue `TAC_BLUE` (the indigo `oklch(0.68 0.16 240)` previously used only for pin/skewer), mirroring the existing `FAM_NEUTRAL` grey-collapse; per-family constant names kept so every `TAC_*` consumer (chips, comparison grid, Flaws filter) renders the one blue. (2) `tacticComparisonMeta.ts`: swapped the `pin_skewer` family icon from `Minus` to lucide `MoveUp`. (3) Added a `definition` field to `TacticFamilyDef` with one-line explanations for all six families; `TacticBulletPopover` in `TacticComparisonGrid.tsx` now renders family-colored icon + bold label + definition as its first paragraph (matching the flaw-tag `FlawBulletPopover` format), replacing the prior "tactic flaws allowed per game" label line. Gates GREEN: `tsc -b` / lint / knip clean, vitest library+lib 334 passed. On `gsd/phase-126-comparison-stats-frontend`; not pushed. | 2026-06-19 | b6b06f31 | [260619-g7r-phase-126-uat-blue-tactic-colors-lucide-](./quick/260619-g7r-phase-126-uat-blue-tactic-colors-lucide-/) |
+| 260619-phr | Implement SEED-057 — pin tactic-tag gate fixes in `tactic_detector.py`. (1) WR-01 parity: `_pin_wins_material` Check 1 started its capture scan at `pin_board_idx + 1`, iterating the OPPONENT's moves for even-`k` pins (common case, incl. start position) since pov moves sit at even indices — fixed to `pin_board_idx + (pin_board_idx % 2)`. KEY FINDING: Check 1 is an accept-path, not a prune-path (the gate's only reject is the replacement guard), so the parity fix ALONE regressed pin precision 0.413→0.393; the real fix also REORDERS the gate so the replacement-guard reject runs before the direct-capture accept. (2) IN-01 depth: `detect_pin` returned board index `k` as depth; now returns `max(0, k-1)` (move index, matching the other 23 motifs). Re-set `PRECISION_FLOOR["pin"]` 0.35→0.40 and the docstring measurement from the new CC0 numbers. Net on CC0 TRAIN: pin precision 0.413→0.440, FP 478→428, TP/recall flat; train→test delta ~0. Harness + 51 fast detector guards pass; ruff/ty clean. Dev re-backfill deferred (DB-heavy; harness is the authoritative D-09 signal). On `gsd/phase-127-detector-hardening-validation`. | 2026-06-19 | dce3f168 | [260619-phr-implement-seed-057-pin-gate-parity-depth](./quick/260619-phr-implement-seed-057-pin-gate-parity-depth/) |
 
 ## Performance Metrics
 
@@ -404,6 +406,9 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 | Phase 125-backfill-tactic-motifs P03 | 2min | 1 tasks | 1 files |
 | Phase 126 P01 | 14 | 3 tasks | 7 files |
 | Phase 126 P03 | 10m | 2 tasks | 5 files |
+| Phase 127 P01 | 180 | 2 tasks | 8 files |
+| Phase 127 P02 | 10m | 2 tasks | 7 files |
+| Phase 127 P03 | 45 | 2 tasks | 3 files |
 
 ## Decisions
 
@@ -476,10 +481,13 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 - [Phase ?]: Prod execution deferred outside Phase 125 gate (D-01); runbook has all steps
 - [Phase ?]: Beta gate uses inner-component split (TacticComparisonGridInner) to keep hook call post-conditional per React hooks rules
 - [Phase ?]: API-returned tactic bullets rendered in server-side order (no client re-sort); backend ranks by significant gap then volume
+- [Phase ?]: Fork D-01 gate: end-of-PV material non-loss (allows equal-material forks at intermediate depths)
+- [Phase ?]: Dispatcher sort key (tier, rank, depth): priority order within tier, depth only as tiebreaker
+- [Phase ?]: Pin relevance: replacement-guard only; no material check
 
 ## Session
 
-**Last session:** 2026-06-18T09:04:15.843Z
-**Stopped at:** Phase 126 UI-SPEC approved
-**Resume file:** .planning/phases/126-comparison-stats-frontend/126-UI-SPEC.md
+**Last session:** 2026-06-19T14:51:55.025Z
+**Stopped at:** Phase 127 context gathered
+**Resume file:** .planning/phases/127-detector-hardening-validation/127-CONTEXT.md
 | 170 | Flaw-card: open game on flawed ply, remove broken datapoint pulse | 2026-06-19 | fe4910d4 | — |

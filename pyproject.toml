@@ -39,7 +39,10 @@ asyncio_default_test_loop_scope = "session"
 # Benchmark numeric-regression tests hit the heavy benchmark DB (port 5433) and
 # are slow by design; excluded from normal runs. Run on demand with an explicit
 # path (overrides this ignore): uv run pytest tests/scripts/benchmarks
-addopts = "--ignore=tests/scripts/benchmarks"
+# Tagger precision/recall harness runs hundreds of puzzles through the detector
+# and is slow by design; excluded from normal runs. Run on demand or in CI with
+# an explicit path (overrides this ignore): uv run pytest tests/scripts/tagger
+addopts = "--ignore=tests/scripts/benchmarks --ignore=tests/scripts/tagger"
 
 [tool.ruff]
 line-length = 100

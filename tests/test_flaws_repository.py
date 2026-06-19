@@ -177,6 +177,7 @@ class TestFlawRecordToRow:
             "tactic_motif_int": None,
             "tactic_piece": None,
             "tactic_confidence": None,
+            "tactic_depth": None,
         }
 
         row = flaw_record_to_row(user_id=1, game_id=42, flaw=flaw)

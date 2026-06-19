@@ -133,9 +133,12 @@ class FlawRecord(TypedDict):
     # tactic_motif_int: TacticMotifInt value; None = no detector fired.
     # tactic_piece: python-chess PieceType (1-6) per D-12 semantics; None = ambiguous.
     # tactic_confidence: winner-confidence 0-100; None when tactic_motif_int is None.
+    # tactic_depth: raw half-move ply index from flaw_ply+1 (Phase 127 — D-04); None when
+    #               tactic_motif_int is None.
     tactic_motif_int: int | None
     tactic_piece: int | None
     tactic_confidence: int | None
+    tactic_depth: int | None
 
 
 class GameNotAnalyzed(TypedDict):
@@ -362,11 +365,11 @@ def _detect_tactic_for_flaw(
     fen_map: dict[int, str],
     positions: list[GamePosition],
     pv_by_ply: Mapping[int, str] | None = None,
-) -> tuple[int | None, int | None, int | None]:
+) -> tuple[int | None, int | None, int | None, int | None]:
     """Detect tactic motif for the flaw at ply N using the refutation PV.
 
-    Returns (tactic_motif_int, tactic_piece, tactic_confidence).
-    All three are None when pv is absent, fen is missing, or SAN is malformed.
+    Returns (tactic_motif_int, tactic_piece, tactic_confidence, tactic_depth).
+    All four are None when pv is absent, fen is missing, or SAN is malformed.
 
     PV source (260618-aiq): the refutation PV for the flaw at ply N lives at ply
     N+1. The in-process eval drain has just-computed PVs in memory that are NOT yet
@@ -388,7 +391,7 @@ def _detect_tactic_for_flaw(
     move_san_of_flaw: str | None = positions[n].move_san
 
     if not (fen_before_flaw and pv and move_san_of_flaw):
-        return None, None, None
+        return None, None, None, None
 
     # fen_map stores board.board_fen() (piece-placement only, no side-to-move).
     # chess.Board() defaults to white to move, so we must set the side explicitly
@@ -401,8 +404,8 @@ def _detect_tactic_for_flaw(
         board_after_flaw.push(flaw_move)
         return detect_tactic_motif(board_after_flaw, pv)
     except (ValueError, chess.IllegalMoveError):
-        # Malformed move_san or FEN — leave all three as None (Pitfall 6)
-        return None, None, None
+        # Malformed move_san or FEN — leave all four as None (Pitfall 6)
+        return None, None, None, None
 
 
 def _build_flaw_record(
@@ -423,7 +426,7 @@ def _build_flaw_record(
     # rendered the miniboard one ply too early (decision point off by one move).
     # This makes the miniboard show the decision point and lets the frontend
     # resolve move_san → arrow squares.
-    tactic_motif_int, tactic_piece, tactic_confidence = _detect_tactic_for_flaw(
+    tactic_motif_int, tactic_piece, tactic_confidence, tactic_depth = _detect_tactic_for_flaw(
         n, fen_map, positions, pv_by_ply
     )
     return FlawRecord(
@@ -438,6 +441,7 @@ def _build_flaw_record(
         tactic_motif_int=tactic_motif_int,
         tactic_piece=tactic_piece,
         tactic_confidence=tactic_confidence,
+        tactic_depth=tactic_depth,
     )
 
 

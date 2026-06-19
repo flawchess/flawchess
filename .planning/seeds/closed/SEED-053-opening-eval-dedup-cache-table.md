@@ -99,7 +99,7 @@ CREATE TABLE opening_position_eval (
 - **No flaw filtering at population time.** "Flaw" is a property of a move-in-a-game, not
   a position; the same opening hash is a blunder in one game and the top move in another.
   Caching its eval/best_move is correct for every game. The pv concern is entirely
-  read-side (see [[SEED-054-opening-flaw-pv-gap-engine-games]]) and pre-exists this work.
+  read-side (see [[SEED-056-opening-flaw-pv-gap-engine-games]]) and pre-exists this work.
 
 ## When to Surface
 
@@ -125,7 +125,7 @@ existing, well-guarded lookup. The backfill is a one-time ~minutes-long INSERT.
   partial index, post-move storage convention notes.
 - `app/models/game.py:223` — `has_engine_full_evals` hybrid (the provenance gate).
 - `reports/db-stats/db-report-prod-2026-06-17.md` §2 — the original measurement.
-- [[SEED-054-opening-flaw-pv-gap-engine-games]] — read-side pv gap, surfaces together.
+- [[SEED-056-opening-flaw-pv-gap-engine-games]] — read-side pv gap, surfaces together.
 - [[SEED-043-lichess-best-move-pv-backfill]] — related provenance/coverage decision.
 
 ## Notes

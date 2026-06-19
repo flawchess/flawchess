@@ -70,6 +70,9 @@ class GameFlaw(Base):
     # tactic_piece: python-chess PieceType (1=PAWN,2=KNIGHT,3=BISHOP,4=ROOK,5=QUEEN,6=KING)
     #               per-motif semantic per D-12; NULL for ambiguous cases.
     # tactic_confidence: winner-confidence 0-100; NULL when tactic_motif is NULL.
+    # tactic_depth: raw half-move ply index from flaw_ply+1 when the tactic motif fires
+    #               (Phase 127 — D-04); NULL when tactic_motif is NULL.
     tactic_motif: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
     tactic_piece: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
     tactic_confidence: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    tactic_depth: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)

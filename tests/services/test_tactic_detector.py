@@ -14,6 +14,26 @@ FIXTURE FORMAT (Claude's discretion per RESEARCH §Fixture format): each positiv
 SAN-reparse failure mode (RESEARCH Pitfall 6) and is exactly what detect_tactic_motif
 consumes. Hard-negatives are `(fen_after_flaw, pv_uci)` and must return None.
 
+CIRCULAR FIXTURE WARNING (D-12 / SC#5 — Phase 127):
+  These fixtures are detector-bucketed (circular): positions were labelled by running
+  the same detector under test, then confirmed by inspection. This means the precision
+  bars here measure the detector's self-consistency, NOT its agreement with an
+  independent ground truth. The bars are vacuous in a strict sense — a regressed
+  detector that consistently mis-classifies will still appear to pass if its errors
+  are stable across runs.
+
+  The AUTHORITATIVE precision/recall numbers for the Phase 127 detector now come from
+  the independent lichess CC0 puzzle harness at:
+      tests/scripts/tagger/test_detector_precision.py
+  That harness scores against 4368 stratified CC0 puzzles (database.lichess.org)
+  with per-motif floors set from measured numbers (D-09). It is the CI precision gate.
+
+  These tests REMAIN as fast per-commit signature/regression guards (they run in the
+  default pytest suite and catch signature changes, PV-parsing errors, and obvious
+  mis-classifications) but their precision bars are NO LONGER the authoritative trust
+  source (D-12). Do not lower these bars to pass a regressed detector; investigate the
+  regression in the CC0 harness instead.
+
 D-10 TIERED PRECISION BARS (precision-first; recall NOT gated):
   Core 8     >= CORE_PRECISION_BAR  (0.90)
   tier-3 + named-mate >= TIER3_PRECISION_BAR (0.95)
@@ -1166,11 +1186,18 @@ def _run_fixtures(
 
     Returns [(predicted_motif_or_None, expected_motif), ...]. Maps the detector's
     int output back to a motif string via _INT_TO_MOTIF for comparison.
+
+    Phase 127: detect_tactic_motif now returns a 4-tuple (motif_int, piece, confidence, depth).
     """
     results: list[tuple[TacticMotif | None, TacticMotif]] = []
     for fen, pv, expected in fixtures:
         board = chess.Board(fen)
-        motif_int, _piece, _conf = detect_tactic_motif(board, pv)
+        motif_int, _piece, _conf, _depth = detect_tactic_motif(board, pv)
+        # Depth assertion: when a motif fires, depth must be a non-negative int (SC#1).
+        if motif_int is not None:
+            assert _depth is not None and _depth >= 0, (
+                f"motif {_INT_TO_MOTIF.get(motif_int)} fired but depth is {_depth!r} on {fen}"
+            )
         predicted = _INT_TO_MOTIF[motif_int] if motif_int is not None else None
         results.append((predicted, expected))
     return results
@@ -1201,7 +1228,7 @@ def _compute_precision(
     # Hard-negatives: any prediction of `motif` here is a false positive.
     for fen, pv in _HARD_NEGATIVES:
         board = chess.Board(fen)
-        motif_int, _piece, _conf = detect_tactic_motif(board, pv)
+        motif_int, _piece, _conf, _depth = detect_tactic_motif(board, pv)
         if motif_int is not None and _INT_TO_MOTIF[motif_int] == motif:
             fp += 1
     denom = tp + fp
@@ -1264,9 +1291,9 @@ class TestHardNegatives:
         assert len(_HARD_NEGATIVES) >= 20
         for fen, pv in _HARD_NEGATIVES:
             board = chess.Board(fen)
-            motif_int, piece, conf = detect_tactic_motif(board, pv)
+            motif_int, piece, conf, depth = detect_tactic_motif(board, pv)
             assert motif_int is None, f"over-fire {_INT_TO_MOTIF.get(motif_int)} on {fen}"
-            assert piece is None and conf is None
+            assert piece is None and conf is None and depth is None
 
 
 # ---------------------------------------------------------------------------
@@ -1325,7 +1352,7 @@ def test_suppressed_motifs_documented_and_storable(
     # If we have a prod fixture, prove it actually stores (non-None int).
     if fixtures:
         fen, pv, _ = fixtures[0]
-        motif_int, _piece, _conf = detect_tactic_motif(chess.Board(fen), pv)
+        motif_int, _piece, _conf, _depth = detect_tactic_motif(chess.Board(fen), pv)
         assert motif_int is not None
 
 
@@ -1347,7 +1374,7 @@ class TestPriorityOrder:
         if _MATE_PLUS_FORK is None:
             pytest.skip("no mate-plus-fork fixture available in prod sample")
         fen, pv = _MATE_PLUS_FORK
-        motif_int, _piece, _conf = detect_tactic_motif(chess.Board(fen), pv)
+        motif_int, _piece, _conf, _depth = detect_tactic_motif(chess.Board(fen), pv)
         assert motif_int is not None
         assert _INT_TO_MOTIF[motif_int] in MATE_MOTIFS
 
