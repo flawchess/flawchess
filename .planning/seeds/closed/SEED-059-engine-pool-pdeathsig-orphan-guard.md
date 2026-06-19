@@ -1,6 +1,8 @@
 ---
 id: SEED-059
-status: dormant
+status: resolved
+resolved: 2026-06-19
+resolved_by: quick task 260619-uk7 (commit c17f5e01)
 planted: 2026-06-19
 planted_during: v1.28 Tactic Tagging
 trigger_when: whenever orphaned Stockfish (`sf`) processes are observed after a worker/script exit — most likely on a bare-metal remote worker or a maintenance script that's ctrl-c'd. Low urgency (Docker path is already safe), but cheap to close.
