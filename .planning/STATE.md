@@ -4,11 +4,10 @@ milestone: v1.28
 milestone_name: Tactic Tagging
 current_phase: 126
 current_phase_name: comparison-stats-frontend
-status: verifying
+status: Phase 126 integrated to main (local squash-merge)
 stopped_at: Phase 126 UI-SPEC approved
-last_updated: "2026-06-18T09:04:25.447Z"
-last_activity: 2026-06-18
-last_activity_desc: Phase 126 execution started
+last_updated: "2026-06-19T11:30:38.797Z"
+last_activity: 2026-06-19
 progress:
   total_phases: 8
   completed_phases: 4
@@ -23,8 +22,8 @@ progress:
 
 Phase: 126 (comparison-stats-frontend) — EXECUTING
 Plan: 3 of 3
-Status: Phase complete — ready for verification
-Last activity: 2026-06-19 — Completed quick task 260619-g7r: all tactic-motif colors blue, pin/skewer icon → lucide MoveUp, tactic comparison tooltips now explain the tactic (Phase 126 still in progress)
+Status: Phase 126 integrated to main (local squash-merge)
+Last activity: 2026-06-19
 
 ## Project Reference
 
