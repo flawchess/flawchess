@@ -163,6 +163,28 @@ def _sched_idle_preexec() -> None:
         os.sched_setscheduler(0, os.SCHED_IDLE, os.sched_param(0))
     except OSError:
         pass
+    # PR_SET_PDEATHSIG (SEED-059): ask the kernel to SIGKILL this child the
+    # instant its parent dies by any means — mashed ctrl-c (a 2nd SIGINT lands
+    # mid-`EnginePool.stop()` and aborts the graceful UCI quit loop), `kill -9`,
+    # or a hard interpreter crash. The best-effort `protocol.quit()` in
+    # EnginePool.stop() covers the normal exit; this is the kernel-level floor
+    # under it so no orphaned `sf` engines leak (~180-320 MB RSS each) and
+    # accumulate on a memory-tight workstation. `sf` is stateless, so a hard
+    # SIGKILL on parent death loses nothing vs. the graceful quit. The setting
+    # survives the execve into the sf binary (no setuid here, so credentials
+    # don't change). INVARIANT: PR_SET_PDEATHSIG fires on the spawning *thread's*
+    # death, not the process's — safe because both the scripts and uvicorn spawn
+    # engines from their main asyncio thread, which dies with the process. If
+    # engine spawning ever moves to a thread that can exit while the process
+    # lives, this would mis-fire and kill live engines. Errors swallowed for the
+    # same reason as SCHED_IDLE above (a seccomp host may block prctl).
+    try:
+        import ctypes
+        import signal
+
+        ctypes.CDLL("libc.so.6", use_errno=True).prctl(1, signal.SIGKILL)  # PR_SET_PDEATHSIG=1
+    except Exception:
+        pass
 
 
 def _engine_popen_kwargs() -> dict[str, Any]:
