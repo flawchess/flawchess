@@ -59,8 +59,11 @@ export function LoginForm() {
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
     try {
+      // Pass the current origin so the backend builds a redirect_uri matching the host
+      // the user is on (localhost vs an HTTPS dev tunnel like Tailscale).
+      const origin = encodeURIComponent(window.location.origin);
       const response = await apiClient.get<{ authorization_url: string }>(
-        '/auth/google/authorize',
+        `/auth/google/authorize?origin=${origin}`,
       );
       window.location.href = response.data.authorization_url;
     } catch (err) {

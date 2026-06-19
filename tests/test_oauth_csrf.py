@@ -16,10 +16,12 @@ NOTE: The callback tests do NOT require Google credentials — they exercise the
 
 import httpx
 import pytest
+from fastapi import HTTPException
 from fastapi_users.jwt import generate_jwt
 
 from app.core.config import settings
 from app.main import app
+from app.routers.auth import _resolve_oauth_bases
 
 _CSRF_COOKIE = "flawchess_oauth_csrf"
 _OAUTH_STATE_AUDIENCE = "fastapi-users:oauth-state"
@@ -34,6 +36,50 @@ def make_state_jwt(csrftoken: str, lifetime_seconds: int = 600) -> str:
     """Build a valid OAuth state JWT embedding the given CSRF token."""
     state_data = {"csrftoken": csrftoken, "aud": _OAUTH_STATE_AUDIENCE}
     return generate_jwt(state_data, settings.SECRET_KEY, lifetime_seconds=lifetime_seconds)
+
+
+# ---------------------------------------------------------------------------
+# Per-origin redirect base resolution (allowlist boundary)
+# ---------------------------------------------------------------------------
+
+
+class TestResolveOAuthBases:
+    def test_none_origin_uses_configured_defaults(self):
+        """No origin → the proven localhost/prod split (BACKEND_URL, FRONTEND_URL)."""
+        assert _resolve_oauth_bases(None) == (settings.BACKEND_URL, settings.FRONTEND_URL)
+
+    def test_frontend_url_origin_uses_configured_defaults(self):
+        """Origin == FRONTEND_URL → same split (covers localhost dev and prod)."""
+        assert _resolve_oauth_bases(settings.FRONTEND_URL) == (
+            settings.BACKEND_URL,
+            settings.FRONTEND_URL,
+        )
+
+    def test_allowlisted_tunnel_origin_is_same_origin(self, monkeypatch):
+        """An allowlisted tunnel origin resolves both bases to the origin itself."""
+        tunnel = "https://ai-slim.tailb91388.ts.net"
+        monkeypatch.setattr(settings, "OAUTH_TUNNEL_ORIGINS", f"{tunnel},https://other.ts.net")
+        assert _resolve_oauth_bases(tunnel) == (tunnel, tunnel)
+
+    def test_unknown_origin_is_rejected(self, monkeypatch):
+        """A non-allowlisted origin raises 400 (OAuth open-redirect guard)."""
+        monkeypatch.setattr(settings, "OAUTH_TUNNEL_ORIGINS", "")
+        with pytest.raises(HTTPException) as exc_info:
+            _resolve_oauth_bases("https://evil.example")
+        assert exc_info.value.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_authorize_rejects_unknown_origin(self, monkeypatch):
+        """GET /auth/google/authorize?origin=<evil> returns 400 before any Google call."""
+        monkeypatch.setattr(settings, "OAUTH_TUNNEL_ORIGINS", "")
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/auth/google/authorize", params={"origin": "https://evil.example"}
+            )
+        assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+        assert "OAuth origin not allowed" in resp.text
 
 
 # ---------------------------------------------------------------------------

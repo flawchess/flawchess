@@ -69,6 +69,31 @@ _PROMOTE_CALLBACK_ROUTE_NAME = "google-oauth-promote-callback"
 _OAUTH_PROMOTE_STATE_AUDIENCE = "fastapi-users:oauth-promote-state"
 
 
+def _oauth_tunnel_origins() -> set[str]:
+    """Parse the comma-separated OAUTH_TUNNEL_ORIGINS allowlist into a set."""
+    return {o.strip() for o in settings.OAUTH_TUNNEL_ORIGINS.split(",") if o.strip()}
+
+
+def _resolve_oauth_bases(origin: str | None) -> tuple[str, str]:
+    """Resolve ``(backend_base, frontend_base)`` for the OAuth round-trip.
+
+    The Google ``redirect_uri`` and the final SPA redirect must match the origin the
+    user actually came from, so plain ``http://localhost:5173`` and an HTTPS dev tunnel
+    (Tailscale) both work without a single static BACKEND_URL serving two hosts.
+
+    - Default / localhost dev / prod (origin omitted or == FRONTEND_URL): keep the proven
+      split — API on BACKEND_URL, SPA on FRONTEND_URL.
+    - Same-origin tunnels (allowlisted): SPA and /api share one HTTPS host, so both bases
+      are the origin itself.
+    - Anything else: 400, to prevent an OAuth open-redirect via a forged origin.
+    """
+    if not origin or origin == settings.FRONTEND_URL:
+        return settings.BACKEND_URL, settings.FRONTEND_URL
+    if origin in _oauth_tunnel_origins():
+        return origin, origin
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OAuth origin not allowed")
+
+
 @router.get("/auth/google/available", tags=["auth"], response_model=GoogleOAuthAvailableResponse)
 async def google_oauth_available() -> GoogleOAuthAvailableResponse:
     """Return whether Google OAuth is configured on this server."""
@@ -77,10 +102,17 @@ async def google_oauth_available() -> GoogleOAuthAvailableResponse:
 
 
 @router.get("/auth/google/authorize", tags=["auth"], response_model=GoogleOAuthAuthorizeResponse)
-async def google_authorize(request: Request, response: Response) -> GoogleOAuthAuthorizeResponse:
-    """Return the Google OAuth authorization URL for the frontend to redirect to."""
+async def google_authorize(
+    request: Request, response: Response, origin: str | None = None
+) -> GoogleOAuthAuthorizeResponse:
+    """Return the Google OAuth authorization URL for the frontend to redirect to.
+
+    ``origin`` is the SPA's ``window.location.origin``; it selects the redirect base so
+    login works from both localhost and an allowlisted HTTPS dev tunnel (Tailscale).
+    """
+    backend_base, _frontend_base = _resolve_oauth_bases(origin)
     csrf_token = secrets.token_urlsafe(32)
-    state_data = {"csrftoken": csrf_token, "aud": _OAUTH_STATE_AUDIENCE}
+    state_data = {"csrftoken": csrf_token, "origin": origin, "aud": _OAUTH_STATE_AUDIENCE}
     state = generate_jwt(
         state_data,
         settings.SECRET_KEY,
@@ -101,8 +133,9 @@ async def google_authorize(request: Request, response: Response) -> GoogleOAuthA
     )
 
     # Build callback URL explicitly — request.url_for() picks up the Vite proxy host (port 5173)
-    # which doesn't match Google's authorized redirect URI (port 8000)
-    redirect_url = f"{settings.BACKEND_URL}/api/auth/google/callback"
+    # which doesn't match Google's authorized redirect URI. backend_base is resolved from the
+    # request origin (localhost vs tunnel) so the redirect_uri matches a registered Google entry.
+    redirect_url = f"{backend_base}/api/auth/google/callback"
     authorization_url = await google_oauth_client.get_authorization_url(
         redirect_url,
         state,
@@ -151,8 +184,12 @@ async def google_callback(
             detail="Invalid CSRF token",
         )
 
+    # Re-resolve the origin from the (signed) state so the token-exchange redirect_uri and the
+    # final SPA redirect match the authorize step. Re-validates the origin against the allowlist.
+    backend_base, frontend_base = _resolve_oauth_bases(state_data.get("origin"))
+
     # Exchange code for token using the same redirect_uri as the authorize step
-    redirect_url = f"{settings.BACKEND_URL}/api/auth/google/callback"
+    redirect_url = f"{backend_base}/api/auth/google/callback"
     token = await google_oauth_client.get_access_token(code, redirect_url)
 
     # Decode id_token from Google (avoids People API dependency).
@@ -213,7 +250,7 @@ async def google_callback(
     access_token = await strategy.write_token(user)  # ty: ignore[unresolved-attribute]  # FastAPI-Users generic typing not resolved by ty beta
 
     # Redirect to frontend callback page with token in fragment
-    frontend_redirect = f"{settings.FRONTEND_URL}/auth/callback#token={access_token}"
+    frontend_redirect = f"{frontend_base}/auth/callback#token={access_token}"
     return RedirectResponse(url=frontend_redirect, status_code=status.HTTP_302_FOUND)
 
 
@@ -258,20 +295,26 @@ async def refresh_guest_token(
 async def google_authorize_promote(
     response: Response,
     user: Annotated[User, Depends(current_active_user)],
+    origin: str | None = None,
 ) -> GoogleOAuthAuthorizeResponse:
     """Return the Google OAuth authorization URL for a guest user to promote their account.
 
     Only accessible by authenticated guest users. Embeds the guest's user ID and a CSRF
     token in a signed state JWT so the callback can recover the guest identity after the
     browser redirect round-trip (during which the Authorization header is not sent).
+
+    ``origin`` (the SPA's ``window.location.origin``) selects the redirect base so promotion
+    works from both localhost and an allowlisted HTTPS dev tunnel (Tailscale).
     """
     if not user.is_guest:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a guest user")
 
+    backend_base, _frontend_base = _resolve_oauth_bases(origin)
     csrf_token = secrets.token_urlsafe(32)
     state_data = {
         "csrftoken": csrf_token,
         "guest_user_id": user.id,
+        "origin": origin,
         "aud": _OAUTH_PROMOTE_STATE_AUDIENCE,
     }
     state = generate_jwt(state_data, settings.SECRET_KEY, lifetime_seconds=600)
@@ -286,7 +329,7 @@ async def google_authorize_promote(
         samesite="lax",
     )
 
-    redirect_url = f"{settings.BACKEND_URL}/api/auth/google/callback-promote"
+    redirect_url = f"{backend_base}/api/auth/google/callback-promote"
     authorization_url = await google_oauth_client.get_authorization_url(
         redirect_url,
         state,
@@ -352,8 +395,12 @@ async def google_callback_promote(
             detail="Invalid guest user",
         )
 
+    # Re-resolve the origin from the (signed) state so the redirect_uri and final SPA redirect
+    # match the authorize step. Re-validates the origin against the allowlist.
+    backend_base, frontend_base = _resolve_oauth_bases(state_data.get("origin"))
+
     # Exchange authorization code for tokens using the promote-specific redirect URI
-    redirect_url = f"{settings.BACKEND_URL}/api/auth/google/callback-promote"
+    redirect_url = f"{backend_base}/api/auth/google/callback-promote"
     token = await google_oauth_client.get_access_token(code, redirect_url)
 
     # Decode id_token to extract Google account_id (sub) and email
@@ -392,7 +439,7 @@ async def google_callback_promote(
         )
     except UserAlreadyExists:
         return RedirectResponse(
-            url=f"{settings.FRONTEND_URL}/auth/callback#error=EMAIL_ALREADY_REGISTERED",
+            url=f"{frontend_base}/auth/callback#error=EMAIL_ALREADY_REGISTERED",
             status_code=status.HTTP_302_FOUND,
         )
     except Exception:
@@ -411,7 +458,7 @@ async def google_callback_promote(
 
     # Redirect to frontend with token and promoted flag in fragment
     return RedirectResponse(
-        url=f"{settings.FRONTEND_URL}/auth/callback#token={jwt_token}&promoted=1",
+        url=f"{frontend_base}/auth/callback#token={jwt_token}&promoted=1",
         status_code=status.HTTP_302_FOUND,
     )
 
