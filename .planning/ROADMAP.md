@@ -30,7 +30,7 @@
 - ✅ **v1.25 Flaw-Stats Opponent Comparison** — Phases 113–115 (incl. 114.1) (shipped 2026-06-12) — see [milestones/v1.25-ROADMAP.md](milestones/v1.25-ROADMAP.md)
 - ✅ **v1.26 Full-Game Eval Pipeline** — Phases 116–120 (incl. 117.1, 117.2) (shipped 2026-06-14) — see [milestones/v1.26-ROADMAP.md](milestones/v1.26-ROADMAP.md)
 - ✅ **v1.27 Remote Eval Worker Fan-Out & In-App Feedback** — Phases 121–123 (shipped 2026-06-16; releases #199, #202, #203) — see [milestones/v1.27-ROADMAP.md](milestones/v1.27-ROADMAP.md)
-- 🔄 **v1.28 Tactic Tagging** — Phases 124–126 (in progress)
+- 🔄 **v1.28 Tactic Tagging** — Phases 124–129 (in progress)
 
 ## Phases
 
@@ -43,6 +43,9 @@
 - [x] **Phase 124: Schema + Tactic Detector** — Alembic migration for `tactic_motif`/`tactic_piece` columns + the pure-CPU cook-heuristic reimplementation + hand-labeled fixture validation (completed 2026-06-18)
 - [x] **Phase 125: Backfill Tactic Motifs** — run `backfill_flaws.py` over ~131k self-eval'd games; lichess-eval-only games stay NULL until full-eval'd via the existing tier-3 idle fleet (completed 2026-06-18)
 - [ ] **Phase 126: Comparison Stats + Frontend** — `GET /api/library/tactic-comparison` endpoint + motif chips on flaw cards + MiniBulletChart you-vs-opponent motif grid
+- [ ] **Phase 127: Detector Hardening & Validation** — return motif depth from all detectors + store `*_tactic_depth`; lichess CC0 puzzle validation harness (precision AND recall); fix deep-scan/loose-pin false positives. De-risks 128/129.
+- [ ] **Phase 128: Missed-Opportunity Tagging** — rename existing tactic cols to `allowed_*`, add `missed_*` set; second detector pass on the `flaw_ply` PV (SEED-054); backend filter + schema; mover-relative columns, `is_opponent_expr` narration (no `tactic_pov` column)
+- [ ] **Phase 129: Tactic Filter UI** — composed motif × pov (missed/allowed) × depth-slider filter + display across flaw surfaces, desktop + mobile
 
 ## Phase Details
 
@@ -138,6 +141,50 @@ Plans:
 
 **UI hint**: yes
 
+### Phase 127: Detector Hardening & Validation
+
+**Goal**: Tactic tags are trustworthy — false positives are measured against independent ground truth and the worst offenders are fixed, and every tag carries the depth at which the motif occurs
+**Depends on**: Phase 124 (detector + schema). Independent of Phase 126.
+**Requirements**: (to be assigned during discuss-phase)
+**Success Criteria** (what must be TRUE):
+
+  1. Every detector returns the ply at which the motif fires; a new nullable `*_tactic_depth` SmallInteger is stored on `game_flaws` (populated on next drain/backfill; NULL on pre-existing rows is honest)
+  2. A read-only validation harness scores the detector against the lichess CC0 puzzle database (FEN + solution Moves + Themes), reporting **precision AND recall** per motif, mapping our motifs to lichess theme names and explicitly listing motifs with no lichess equivalent (unvalidated, same status as today's query-suppressed set)
+  3. The deep-scan / loose-pin false positives are fixed: `detect_fork` and `detect_pin` no longer attribute an incidental motif buried in a non-forcing continuation to the flaw (e.g. depth-bounded or relevance-gated), validated by the harness precision delta
+  4. No vendoring or porting of AGPL `cook.py` — only the CC0 puzzle *data* is used; this is recorded in the test/harness docstring
+  5. The self-labeled fixture circularity is documented and superseded: the precision/recall numbers in CI come from the independent puzzle set, not detector-bucketed fixtures
+
+**Plans**: TBD (discuss-phase)
+
+### Phase 128: Missed-Opportunity Tagging
+
+**Goal**: A flaw can carry both the tactic the flaw-maker *missed* (the line they should have played) and the tactic they *allowed* (the refutation), distinguished without a perspective column
+**Depends on**: Phase 127 (hardened detector + depth). SEED-054 `flaw_ply` PV coverage.
+**Requirements**: (to be assigned during discuss-phase)
+**Success Criteria** (what must be TRUE):
+
+  1. The existing tactic columns are renamed to `allowed_tactic_motif`/`allowed_tactic_piece`/`allowed_tactic_confidence` (data preserved) and `allowed_tactic_depth` is added; a new `missed_tactic_*` set is added (motif/piece/confidence/depth)
+  2. The detector runs a second pass on the `flaw_ply` PV with `pov = the mover`, populating `missed_*`; a flaw may have neither, one, or both column sets filled
+  3. No `tactic_pov` column exists — orientation is the column source and user-perspective is derived via `is_opponent_expr(ply, user_color)`; narration follows the column-set × is_opponent matrix
+  4. The inline-columns-vs-child-table decision is made and recorded during discuss-phase (lean inline, per the design note)
+  5. Backend filtering and the comparison/flaw schemas expose both orientations; backfill is idempotent and gated on SEED-054 PV availability (lichess-only coverage fills in over time)
+
+**Plans**: TBD (discuss-phase)
+
+### Phase 129: Tactic Filter UI
+
+**Goal**: Players can filter and read tactics along three axes — which motif, missed vs allowed, and difficulty (depth) — on both desktop and mobile
+**Depends on**: Phase 128 (missed/allowed columns), Phase 127 (depth)
+**Requirements**: (to be assigned during discuss-phase)
+**Success Criteria** (what must be TRUE):
+
+  1. A depth (difficulty) slider filters flaws by `*_tactic_depth`; sensible default and beginner/advanced ranges; unit (half-moves vs "your moves deep") decided during discuss-phase
+  2. A missed/allowed toggle switches the tactic view, defaulting to **missed** (the trainable, puzzle-shaped orientation); narration uses `is_opponent_expr`
+  3. The motif × pov × depth filter composes cleanly with the existing Library filters and the tactic-comparison grid
+  4. All controls and chips render correctly on mobile at 375px with `data-testid` and ARIA labels per the browser-automation rules
+
+**Plans**: TBD (discuss-phase)
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -186,6 +233,9 @@ Plans:
 | 124. Schema + Tactic Detector | 4/4 | Complete    | 2026-06-18 |
 | 125. Backfill Tactic Motifs | 3/3 | Complete    | 2026-06-18 |
 | 126. Comparison Stats + Frontend | 3/3 | Complete   | 2026-06-18 |
+| 127. Detector Hardening & Validation | 0/? | Planned | — |
+| 128. Missed-Opportunity Tagging | 0/? | Planned | — |
+| 129. Tactic Filter UI | 0/? | Planned | — |
 
 ## Backlog
 
