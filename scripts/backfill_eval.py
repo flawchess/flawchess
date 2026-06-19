@@ -75,13 +75,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.core.config import db_url_for_target, settings  # noqa: E402
 from app.models.game import Game  # noqa: E402
 from app.models.game_position import GamePosition  # noqa: E402
-from app.repositories.endgame_repository import ENDGAME_PIECE_COUNT_THRESHOLD  # noqa: E402
 from app.services import engine as _engine_module  # noqa: E402
 from app.services.engine import EnginePool  # noqa: E402
-from app.services.position_classifier import (  # noqa: E402
-    MIDGAME_MAJORS_AND_MINORS_THRESHOLD,
-    MIDGAME_MIXEDNESS_THRESHOLD,
-)
 
 # D-09: COMMIT every 500 evals — at 10 workers × ~70ms/eval that's ~3.5s of work
 # per chunk. Each chunk now collapses to one batched UPDATE … FROM (VALUES …)
@@ -102,12 +97,6 @@ EVAL_GAMES_PER_BATCH = 5_000
 # Default to single-worker mode = byte-identical legacy behavior. CLI --workers
 # overrides; a 16 vCPU workstation can comfortably run 10–12.
 DEFAULT_WORKERS = 1
-
-# Phase 79 PHASE-FILL-01: chunk size (in game_id units) for phase-column UPDATE pass.
-# Phase assignment is now per-game (Lichess Divider semantics — monotonic),
-# so chunking is by game_id range, not row id. 10_000 games keeps lock duration
-# bounded while amortizing transaction overhead.
-PHASE_BACKFILL_CHUNK_SIZE = 10_000
 
 
 def _log(msg: str = "") -> None:
@@ -612,95 +601,11 @@ async def run_backfill(
         async_engine = None  # type: ignore[assignment]  # not created here; nothing to dispose
         session_maker = _session_maker
 
-    # Phase 79 PHASE-FILL-01: per-game phase backfill matching Lichess Divider.scala.
-    # Phase is monotonic across the game's ply timeline (opening → middlegame → endgame,
-    # never backwards), so it must be computed at game level — a per-row CASE would
-    # let phase oscillate on positions where pieces re-occupy the back rank.
-    # Chunked by game_id range to bound lock duration. Idempotent on re-run because
-    # the affected_games CTE only includes games where at least one ply has phase IS NULL.
-    # Threshold constants are interpolated from position_classifier.py so SQL and Python
-    # share one source of truth (D-79-01).
-    phase_update_sql = text(
-        f"""
-        WITH affected_games AS (
-            SELECT DISTINCT game_id
-            FROM game_positions
-            WHERE phase IS NULL
-              AND game_id BETWEEN :lo AND :hi
-        ),
-        per_game AS (
-            SELECT
-                gp.game_id,
-                MIN(gp.ply) FILTER (
-                    WHERE gp.piece_count <= {MIDGAME_MAJORS_AND_MINORS_THRESHOLD}
-                       OR gp.backrank_sparse
-                       OR gp.mixedness > {MIDGAME_MIXEDNESS_THRESHOLD}
-                ) AS mid_ply_raw,
-                MIN(gp.ply) FILTER (
-                    WHERE gp.piece_count <= {ENDGAME_PIECE_COUNT_THRESHOLD}
-                ) AS end_ply
-            FROM game_positions gp
-            JOIN affected_games ag ON gp.game_id = ag.game_id
-            GROUP BY gp.game_id
-        ),
-        adjusted AS (
-            SELECT
-                game_id,
-                CASE
-                    WHEN end_ply IS NOT NULL AND mid_ply_raw >= end_ply THEN NULL
-                    ELSE mid_ply_raw
-                END AS mid_ply,
-                end_ply
-            FROM per_game
-        )
-        UPDATE game_positions gp
-        SET phase = CASE
-            WHEN a.end_ply IS NOT NULL AND gp.ply >= a.end_ply THEN 2
-            WHEN a.mid_ply IS NOT NULL AND gp.ply >= a.mid_ply THEN 1
-            ELSE 0
-        END
-        FROM adjusted a
-        WHERE gp.game_id = a.game_id
-          AND gp.phase IS NULL
-        """
-    )
-
-    async with session_maker() as phase_session:
-        bounds_row = (
-            await phase_session.execute(
-                text(
-                    "SELECT COALESCE(MIN(game_id), 0), COALESCE(MAX(game_id), 0) "
-                    "FROM game_positions WHERE phase IS NULL"
-                )
-            )
-        ).one()
-        lo_total, hi_total = bounds_row
-        if hi_total > 0:
-            _log(
-                f"Phase-column backfill: game_id range [{lo_total}, {hi_total}], "
-                f"chunk size {PHASE_BACKFILL_CHUNK_SIZE} games"
-            )
-            if dry_run:
-                null_count = (
-                    await phase_session.execute(
-                        text("SELECT COUNT(*) FROM game_positions WHERE phase IS NULL")
-                    )
-                ).scalar_one()
-                _log(f"--dry-run: would update {null_count} rows with NULL phase")
-            else:
-                cursor = lo_total
-                updated_total = 0
-                while cursor <= hi_total:
-                    chunk_hi = cursor + PHASE_BACKFILL_CHUNK_SIZE - 1
-                    result = await phase_session.execute(
-                        phase_update_sql, {"lo": cursor, "hi": chunk_hi}
-                    )
-                    updated_total += result.rowcount or 0  # ty: ignore[unresolved-attribute]  # CursorResult from DML execute
-                    await phase_session.commit()
-                    cursor = chunk_hi + 1
-                _log(f"Phase-column backfill complete: {updated_total} rows updated")
-        else:
-            _log("Phase-column backfill: zero rows with NULL phase (no-op)")
+    # SEED-055: the PHASE-FILL-01 phase backfill that once lived here computed
+    # `phase` from the piece_count / backrank_sparse / mixedness columns, which
+    # have now been dropped. `phase` is populated by the import path going forward
+    # (zobrist.assign_game_phases) and was already backfilled across all
+    # environments, so this driver no longer touches `phase`.
 
     # Phase 78: endgame span-entry eval pass.
     # Phase 79 PHASE-FILL-02: middlegame entry eval pass.

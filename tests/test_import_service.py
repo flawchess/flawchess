@@ -41,13 +41,6 @@ def _make_mock_processing_result(
                 "clock_seconds": None,
                 "eval_cp": None,
                 "eval_mate": None,
-                "material_count": 7800,
-                "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
-                "material_imbalance": 0,
-                "has_opposite_color_bishops": False,
-                "piece_count": 14,
-                "backrank_sparse": False,
-                "mixedness": 0,
                 "endgame_class": None,
                 "phase": 0,
             },
@@ -60,13 +53,6 @@ def _make_mock_processing_result(
                 "clock_seconds": None,
                 "eval_cp": None,
                 "eval_mate": None,
-                "material_count": 7800,
-                "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
-                "material_imbalance": 0,
-                "has_opposite_color_bishops": False,
-                "piece_count": 14,
-                "backrank_sparse": False,
-                "mixedness": 0,
                 "endgame_class": None,
                 "phase": 0,
             },
@@ -526,13 +512,6 @@ class TestRunImport:
                     "clock_seconds": None,
                     "eval_cp": None,
                     "eval_mate": None,
-                    "material_count": 7800,
-                    "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
-                    "material_imbalance": 0,
-                    "has_opposite_color_bishops": False,
-                    "piece_count": 14,
-                    "backrank_sparse": False,
-                    "mixedness": 0,
                     "endgame_class": None,
                     "phase": 0,
                 },
@@ -545,13 +524,6 @@ class TestRunImport:
                     "clock_seconds": None,
                     "eval_cp": None,
                     "eval_mate": None,
-                    "material_count": 7800,
-                    "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
-                    "material_imbalance": 0,
-                    "has_opposite_color_bishops": False,
-                    "piece_count": 14,
-                    "backrank_sparse": False,
-                    "mixedness": 0,
                     "endgame_class": None,
                     "phase": 0,
                 },
@@ -564,13 +536,6 @@ class TestRunImport:
                     "clock_seconds": None,
                     "eval_cp": None,
                     "eval_mate": None,
-                    "material_count": 7800,
-                    "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
-                    "material_imbalance": 0,
-                    "has_opposite_color_bishops": False,
-                    "piece_count": 14,
-                    "backrank_sparse": False,
-                    "mixedness": 0,
                     "endgame_class": None,
                     "phase": 0,
                 },
@@ -740,207 +705,6 @@ class TestRunImport:
             if hasattr(call.args[0], "is_update") and call.args[0].is_update
         ]
         assert len(update_calls) >= 1, "Expected at least one UPDATE call for ply_count"
-
-    @pytest.mark.asyncio
-    async def test_position_rows_include_material_count(self):
-        """After importing a game, all position_rows dicts have a non-null material_count field."""
-        job_id = create_job(user_id=1, platform="chess.com", username="alice")
-
-        # Use a real PGN so process_game_pgn runs on actual board states
-        pgn = "1. e4 e5 *"
-
-        async def _yield_one_game(*args, **kwargs):
-            yield {
-                "platform": "chess.com",
-                "platform_game_id": "game-mc-1",
-                "pgn": pgn,
-                "user_id": 1,
-            }
-
-        mock_session = _make_mock_session()
-        result_mock = MagicMock()
-        result_mock.fetchall.return_value = [(999, "game-mc-1")]
-        mock_session.execute.return_value = result_mock
-
-        mock_maker = _mock_session_maker(mock_session)
-        captured_positions: list[dict] = []
-
-        async def _capture(session, position_rows):
-            captured_positions.extend(position_rows)
-
-        with (
-            patch("app.services.import_service.async_session_maker", mock_maker),
-            patch(
-                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
-                new=AsyncMock(return_value=None),
-            ),
-            patch(
-                "app.services.import_service.import_job_repository.create_import_job",
-                new=AsyncMock(),
-            ),
-            patch(
-                "app.services.import_service.import_job_repository.update_import_job",
-                new=AsyncMock(),
-            ),
-            patch(
-                "app.services.import_service.chesscom_client.fetch_chesscom_games",
-                side_effect=_yield_one_game,
-            ),
-            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
-            patch(
-                "app.services.import_service.game_repository.bulk_insert_games",
-                new=AsyncMock(return_value=[999]),
-            ),
-            patch(
-                "app.services.import_service.game_repository.bulk_insert_positions",
-                new=AsyncMock(side_effect=_capture),
-            ),
-        ):
-            mock_http_ctx = AsyncMock()
-            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
-            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
-            mock_client_cls.return_value = mock_http_ctx
-
-            await run_import(job_id)
-
-        assert len(captured_positions) > 0, "Expected at least one position row"
-        for row in captured_positions:
-            assert "material_count" in row, f"Missing material_count in row: {row}"
-            assert row["material_count"] is not None, "material_count should not be None"
-            assert isinstance(row["material_count"], int), "material_count should be int"
-
-    @pytest.mark.asyncio
-    async def test_position_rows_include_material_signature(self):
-        """After importing a game, all position_rows dicts have a non-null material_signature field."""
-        job_id = create_job(user_id=1, platform="chess.com", username="alice")
-
-        pgn = "1. e4 e5 *"
-
-        async def _yield_one_game(*args, **kwargs):
-            yield {
-                "platform": "chess.com",
-                "platform_game_id": "game-ms-1",
-                "pgn": pgn,
-                "user_id": 1,
-            }
-
-        mock_session = _make_mock_session()
-        result_mock = MagicMock()
-        result_mock.fetchall.return_value = [(999, "game-ms-1")]
-        mock_session.execute.return_value = result_mock
-
-        mock_maker = _mock_session_maker(mock_session)
-        captured_positions: list[dict] = []
-
-        async def _capture(session, position_rows):
-            captured_positions.extend(position_rows)
-
-        with (
-            patch("app.services.import_service.async_session_maker", mock_maker),
-            patch(
-                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
-                new=AsyncMock(return_value=None),
-            ),
-            patch(
-                "app.services.import_service.import_job_repository.create_import_job",
-                new=AsyncMock(),
-            ),
-            patch(
-                "app.services.import_service.import_job_repository.update_import_job",
-                new=AsyncMock(),
-            ),
-            patch(
-                "app.services.import_service.chesscom_client.fetch_chesscom_games",
-                side_effect=_yield_one_game,
-            ),
-            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
-            patch(
-                "app.services.import_service.game_repository.bulk_insert_games",
-                new=AsyncMock(return_value=[999]),
-            ),
-            patch(
-                "app.services.import_service.game_repository.bulk_insert_positions",
-                new=AsyncMock(side_effect=_capture),
-            ),
-        ):
-            mock_http_ctx = AsyncMock()
-            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
-            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
-            mock_client_cls.return_value = mock_http_ctx
-
-            await run_import(job_id)
-
-        assert len(captured_positions) > 0, "Expected at least one position row"
-        for row in captured_positions:
-            assert "material_signature" in row, f"Missing material_signature in row: {row}"
-            assert row["material_signature"] is not None, "material_signature should not be None"
-
-    @pytest.mark.asyncio
-    async def test_starting_position_has_full_material(self):
-        """The starting position (ply 0) has full material count and signature."""
-        job_id = create_job(user_id=1, platform="chess.com", username="alice")
-
-        pgn = "1. e4 e5 *"
-
-        async def _yield_one_game(*args, **kwargs):
-            yield {
-                "platform": "chess.com",
-                "platform_game_id": "game-sp-1",
-                "pgn": pgn,
-                "user_id": 1,
-            }
-
-        mock_session = _make_mock_session()
-        result_mock = MagicMock()
-        result_mock.fetchall.return_value = [(999, "game-sp-1")]
-        mock_session.execute.return_value = result_mock
-
-        mock_maker = _mock_session_maker(mock_session)
-        captured_positions: list[dict] = []
-
-        async def _capture(session, position_rows):
-            captured_positions.extend(position_rows)
-
-        with (
-            patch("app.services.import_service.async_session_maker", mock_maker),
-            patch(
-                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
-                new=AsyncMock(return_value=None),
-            ),
-            patch(
-                "app.services.import_service.import_job_repository.create_import_job",
-                new=AsyncMock(),
-            ),
-            patch(
-                "app.services.import_service.import_job_repository.update_import_job",
-                new=AsyncMock(),
-            ),
-            patch(
-                "app.services.import_service.chesscom_client.fetch_chesscom_games",
-                side_effect=_yield_one_game,
-            ),
-            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
-            patch(
-                "app.services.import_service.game_repository.bulk_insert_games",
-                new=AsyncMock(return_value=[999]),
-            ),
-            patch(
-                "app.services.import_service.game_repository.bulk_insert_positions",
-                new=AsyncMock(side_effect=_capture),
-            ),
-        ):
-            mock_http_ctx = AsyncMock()
-            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
-            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
-            mock_client_cls.return_value = mock_http_ctx
-
-            await run_import(job_id)
-
-        assert len(captured_positions) > 0
-        ply0 = captured_positions[0]
-        assert ply0["ply"] == 0
-        assert ply0["material_count"] == 7800  # full starting material
-        assert ply0["material_signature"] == "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP"
 
     @pytest.mark.asyncio
     async def test_classification_failure_degrades_gracefully(self):
@@ -1385,13 +1149,6 @@ class TestFlushBatchStage5:
                     "clock_seconds": None,
                     "eval_cp": None,
                     "eval_mate": None,
-                    "material_count": 7800,
-                    "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
-                    "material_imbalance": 0,
-                    "has_opposite_color_bishops": False,
-                    "piece_count": 14,
-                    "backrank_sparse": False,
-                    "mixedness": 0,
                     "endgame_class": None,
                     "phase": 0,
                 }

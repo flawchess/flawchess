@@ -940,13 +940,6 @@ async def _collect_position_rows(
                 "clock_seconds": ply_data["clock_seconds"],
                 "eval_cp": ply_data["eval_cp"],
                 "eval_mate": ply_data["eval_mate"],
-                "material_count": ply_data["material_count"],
-                "material_signature": ply_data["material_signature"],
-                "material_imbalance": ply_data["material_imbalance"],
-                "has_opposite_color_bishops": ply_data["has_opposite_color_bishops"],
-                "piece_count": ply_data["piece_count"],
-                "backrank_sparse": ply_data["backrank_sparse"],
-                "mixedness": ply_data["mixedness"],
                 "endgame_class": ply_data["endgame_class"],
                 "phase": ply_data["phase"],
             }

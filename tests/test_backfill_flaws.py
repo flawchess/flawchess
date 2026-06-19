@@ -166,13 +166,6 @@ async def committed_analyzed_game(
                 full_hash=ply,
                 white_hash=ply,
                 black_hash=ply,
-                material_count=1000,
-                material_signature="KP_KP",
-                material_imbalance=0,
-                has_opposite_color_bishops=False,
-                piece_count=20,
-                backrank_sparse=False,
-                mixedness=100,
                 endgame_class=None,
                 move_san=None,
             )
@@ -486,13 +479,6 @@ async def committed_tactic_game(
                 full_hash=ply + 1000,  # offset from Phase 108 fixture to avoid collisions
                 white_hash=ply + 1000,
                 black_hash=ply + 1000,
-                material_count=200,
-                material_signature="K_KR",
-                material_imbalance=-5,
-                has_opposite_color_bishops=False,
-                piece_count=4,
-                backrank_sparse=True,
-                mixedness=10,
                 endgame_class=1,  # rook endgame
                 move_san=move_sans[ply],
                 pv=pvs[ply],

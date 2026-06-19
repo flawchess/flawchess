@@ -103,13 +103,6 @@ def _make_pos(
     pos.full_hash = 0
     pos.white_hash = 0
     pos.black_hash = 0
-    pos.material_count = 1000
-    pos.material_signature = "KP_KP"
-    pos.material_imbalance = 0
-    pos.has_opposite_color_bishops = False
-    pos.piece_count = 2
-    pos.backrank_sparse = False
-    pos.mixedness = 100
     pos.endgame_class = None
     return pos
 
@@ -352,10 +345,6 @@ class TestNoEngineAnalysis:
                 phase=1,
                 eval_cp=None,
                 eval_mate=None,
-                piece_count=2,
-                material_count=1000,
-                material_signature="KP_KP",
-                material_imbalance=0,
                 endgame_class=None,
             )
             session.add(pos)
@@ -527,10 +516,6 @@ async def _seed_db_pos(
         phase=phase,
         eval_cp=eval_cp,
         eval_mate=None,
-        piece_count=2,
-        material_count=1000,
-        material_signature="KP_KP",
-        material_imbalance=0,
         endgame_class=None,
     )
     sess.add(pos)

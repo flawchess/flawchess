@@ -392,10 +392,6 @@ def test_process_game_pgn_classification_matches_classify_position():
     assert result is not None
     ply0 = result["plies"][0]
     expected = classify_position(chess.Board())
-    assert ply0["material_count"] == expected.material_count
-    assert ply0["material_signature"] == expected.material_signature
-    assert ply0["material_imbalance"] == expected.material_imbalance
-    assert ply0["has_opposite_color_bishops"] == expected.has_opposite_color_bishops
     assert ply0["piece_count"] == expected.piece_count
     assert ply0["backrank_sparse"] == expected.backrank_sparse
     assert ply0["mixedness"] == expected.mixedness

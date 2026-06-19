@@ -44,10 +44,8 @@ class PlyData(TypedDict):
     clock_seconds: float | None
     eval_cp: int | None
     eval_mate: int | None
-    material_count: int
-    material_signature: str
-    material_imbalance: int
-    has_opposite_color_bishops: bool
+    # piece_count / backrank_sparse / mixedness are kept in-memory only — they feed
+    # assign_game_phases() to derive `phase` but are no longer persisted (SEED-055).
     piece_count: int
     backrank_sparse: bool
     mixedness: int
@@ -216,10 +214,6 @@ def process_game_pgn(pgn_text: str) -> GameProcessingResult | None:
                 clock_seconds=clock_seconds,
                 eval_cp=eval_cp,
                 eval_mate=eval_mate,
-                material_count=classification.material_count,
-                material_signature=classification.material_signature,
-                material_imbalance=classification.material_imbalance,
-                has_opposite_color_bishops=classification.has_opposite_color_bishops,
                 piece_count=classification.piece_count,
                 backrank_sparse=classification.backrank_sparse,
                 mixedness=classification.mixedness,
@@ -246,10 +240,6 @@ def process_game_pgn(pgn_text: str) -> GameProcessingResult | None:
             clock_seconds=None,
             eval_cp=None,
             eval_mate=None,
-            material_count=classification.material_count,
-            material_signature=classification.material_signature,
-            material_imbalance=classification.material_imbalance,
-            has_opposite_color_bishops=classification.has_opposite_color_bishops,
             piece_count=classification.piece_count,
             backrank_sparse=classification.backrank_sparse,
             mixedness=classification.mixedness,

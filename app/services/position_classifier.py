@@ -3,13 +3,14 @@
 Provides a pure function that accepts a ``chess.Board`` and returns a
 ``PositionClassification`` dataclass containing:
 
-- ``material_count`` — total centipawns both sides (white + black, including pawns)
 - ``material_signature`` — canonical string (white pieces _ black pieces)
-- ``material_imbalance`` — signed centipawns (white minus black)
-- ``has_opposite_color_bishops`` — True if each side has exactly 1 bishop on different square colors
 - ``piece_count`` — count of major+minor pieces (Q+R+B+N) for both sides combined, excluding kings and pawns
 - ``backrank_sparse`` — True when < 4 pieces on either side's back rank (Lichess middlegame detection)
 - ``mixedness`` — Lichess Divider.scala mixedness score (0..~400)
+
+These four values are computed in-memory to derive ``endgame_class`` (from
+``material_signature``) and ``phase`` (from the other three); none of the four
+is persisted to ``game_positions`` (SEED-055 dropped the columns).
 
 Game phase is NOT a per-position attribute under Lichess Divider semantics —
 it requires the full game ply timeline so the assignment is monotonic
@@ -35,18 +36,6 @@ from app.repositories.endgame_repository import ENDGAME_PIECE_COUNT_THRESHOLD
 # ---------------------------------------------------------------------------
 # Named constants (no magic numbers in conditionals per CLAUDE.md)
 # ---------------------------------------------------------------------------
-
-# Centipawn piece values for material_count and imbalance computation
-# (includes pawns — material_count is total material on both sides)
-
-# Centipawn piece values for material imbalance and signature ordering
-_MATERIAL_VALUE_CP: dict[int, int] = {
-    chess.PAWN: 100,
-    chess.KNIGHT: 300,
-    chess.BISHOP: 300,
-    chess.ROOK: 500,
-    chess.QUEEN: 900,
-}
 
 # Piece order within a side's signature string (descending value, standard notation)
 _SIGNATURE_ORDER: list[int] = [
@@ -102,10 +91,7 @@ class PositionClassification:
     All fields are read-only (frozen dataclass).
     """
 
-    material_count: int  # total centipawns both sides (white + black, including pawns)
     material_signature: str  # canonical piece string, white_black format
-    material_imbalance: int  # white_material - black_material in centipawns
-    has_opposite_color_bishops: bool
     piece_count: int  # count of Q+R+B+N for both sides combined (excludes kings and pawns)
     backrank_sparse: bool  # True when < 4 pieces on either side's back rank
     mixedness: int  # Lichess mixedness score (0..~400)
@@ -114,19 +100,6 @@ class PositionClassification:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-
-def _compute_material_count(board: chess.Board) -> int:
-    """Return total material in centipawns for both sides combined (including pawns).
-
-    Starting position: each side has 8P+2N+2B+2R+Q = 800+600+600+1000+900 = 3900,
-    so the combined starting count is 7800.
-
-    This raw value is stored in the DB. Game phase labels (opening/middlegame/endgame)
-    are derived at query time from material_count + ply, allowing threshold tuning
-    without data migration.
-    """
-    return _side_material(board, chess.WHITE) + _side_material(board, chess.BLACK)
 
 
 def _side_string(board: chess.Board, color: chess.Color) -> str:
@@ -143,18 +116,6 @@ def _side_string(board: chess.Board, color: chess.Color) -> str:
     return "".join(parts)
 
 
-def _side_material(board: chess.Board, color: chess.Color) -> int:
-    """Return total centipawn material for *color* (excludes king).
-
-    Uses ``_MATERIAL_VALUE_CP`` for piece values.
-    """
-    total = 0
-    for piece_type, value in _MATERIAL_VALUE_CP.items():
-        count = len(board.pieces(piece_type, color))
-        total += count * value
-    return total
-
-
 def _compute_material_signature(board: chess.Board) -> str:
     """Return the material signature for *board*.
 
@@ -165,15 +126,6 @@ def _compute_material_signature(board: chess.Board) -> str:
     (e.g. filter by played_as color to know which half is "your" pieces).
     """
     return f"{_side_string(board, chess.WHITE)}_{_side_string(board, chess.BLACK)}"
-
-
-def _compute_material_imbalance(board: chess.Board) -> int:
-    """Return signed material imbalance in centipawns.
-
-    Positive: white has more material.
-    Negative: black has more material.
-    """
-    return _side_material(board, chess.WHITE) - _side_material(board, chess.BLACK)
 
 
 def _compute_piece_count(board: chess.Board) -> int:
@@ -193,30 +145,6 @@ def _compute_piece_count(board: chess.Board) -> int:
         total += len(board.pieces(piece_type, chess.WHITE))
         total += len(board.pieces(piece_type, chess.BLACK))
     return total
-
-
-def _compute_opposite_color_bishops(board: chess.Board) -> bool:
-    """Return True if each side has exactly one bishop on different square colors.
-
-    Uses ``chess.BB_DARK_SQUARES`` to determine which squares are dark.
-    Bishops on light squares occupy squares NOT in BB_DARK_SQUARES.
-    """
-    white_bishops = list(board.pieces(chess.BISHOP, chess.WHITE))
-    black_bishops = list(board.pieces(chess.BISHOP, chess.BLACK))
-
-    # Both sides must have exactly one bishop
-    if len(white_bishops) != 1 or len(black_bishops) != 1:
-        return False
-
-    white_sq = white_bishops[0]
-    black_sq = black_bishops[0]
-
-    # Determine bishop colors using dark-square bitboard
-    white_on_dark = bool(chess.BB_DARK_SQUARES & chess.BB_SQUARES[white_sq])
-    black_on_dark = bool(chess.BB_DARK_SQUARES & chess.BB_SQUARES[black_sq])
-
-    # Opposite colors: one is on dark, the other on light
-    return white_on_dark != black_on_dark
 
 
 def _compute_backrank_sparse(board: chess.Board) -> bool:
@@ -333,29 +261,23 @@ def classify_position(board: chess.Board) -> PositionClassification:
         board: Any ``chess.Board`` instance.
 
     Returns:
-        A frozen ``PositionClassification`` dataclass with seven fields:
-        ``material_count``, ``material_signature``, ``material_imbalance``,
-        ``has_opposite_color_bishops``, ``piece_count``,
-        ``backrank_sparse``, and ``mixedness``.
+        A frozen ``PositionClassification`` dataclass with four fields:
+        ``material_signature``, ``piece_count``, ``backrank_sparse``, and
+        ``mixedness``. These feed ``endgame_class`` (from ``material_signature``)
+        and ``phase`` (from the other three) at import time; none is persisted.
 
         Game phase (opening/middlegame/endgame) is NOT included — under
         Lichess Divider semantics it requires the full game's ply timeline.
         Pass per-ply ``(piece_count, backrank_sparse, mixedness)`` tuples to
         ``assign_game_phases()`` to derive monotonic phase values.
     """
-    material_count = _compute_material_count(board)
     material_signature = _compute_material_signature(board)
-    material_imbalance = _compute_material_imbalance(board)
-    has_opposite_color_bishops = _compute_opposite_color_bishops(board)
     piece_count = _compute_piece_count(board)
     backrank_sparse = _compute_backrank_sparse(board)
     mixedness = _compute_mixedness(board)
 
     return PositionClassification(
-        material_count=material_count,
         material_signature=material_signature,
-        material_imbalance=material_imbalance,
-        has_opposite_color_bishops=has_opposite_color_bishops,
         piece_count=piece_count,
         backrank_sparse=backrank_sparse,
         mixedness=mixedness,

@@ -506,13 +506,6 @@ def _make_ply_data(
         "full_hash": 0,
         "move_san": None,
         "clock_seconds": None,
-        "material_count": 0,
-        "material_signature": "",
-        "material_imbalance": 0,
-        "has_opposite_color_bishops": False,
-        "piece_count": 0,
-        "backrank_sparse": False,
-        "mixedness": 0,
     }
 
 

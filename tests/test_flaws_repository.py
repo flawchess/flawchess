@@ -82,10 +82,6 @@ async def _seed_position(
         phase=phase,
         eval_cp=eval_cp,
         eval_mate=eval_mate,
-        piece_count=2,
-        material_count=1000,
-        material_signature="KP_KP",
-        material_imbalance=0,
         endgame_class=None,
     )
     session.add(pos)

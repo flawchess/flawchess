@@ -74,13 +74,6 @@ def _make_pos(
     pos.full_hash = 0
     pos.white_hash = 0
     pos.black_hash = 0
-    pos.material_count = 1000
-    pos.material_signature = "KP_KP"
-    pos.material_imbalance = 0
-    pos.has_opposite_color_bishops = False
-    pos.piece_count = 2
-    pos.backrank_sparse = False
-    pos.mixedness = 100
     pos.endgame_class = None
     return pos
 

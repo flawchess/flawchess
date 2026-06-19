@@ -403,10 +403,6 @@ async def _seed_portfolio(user_id: int) -> None:
                             full_hash=STARTING_POSITION_HASH + 10_000 + idx * 100 + offset,
                             white_hash=STARTING_POSITION_HASH + 20_000 + idx * 100 + offset,
                             black_hash=STARTING_POSITION_HASH + 30_000 + idx * 100 + offset,
-                            piece_count=2,
-                            material_count=1000,
-                            material_signature=sig,
-                            material_imbalance=imbalance,
                             endgame_class=class_int,
                             clock_seconds=clock_series[offset],
                         )
