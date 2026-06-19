@@ -1291,3 +1291,111 @@ class TestFetchPageActiveEvalStatus:
         assert result.get(game_pending.id) == "pending"
         assert result.get(game_leased.id) == "leased"
         assert game_no_job.id not in result
+
+
+# ---------------------------------------------------------------------------
+# Phase 128 Plan 03 (Task 2 TDD) — orientation tests for filter + chip read
+# ---------------------------------------------------------------------------
+
+
+def _compile_flaw_filter_sql(tactic_families: list[str], orientation: str | None = None) -> str:
+    """Compile build_flaw_filter_clauses with optional orientation to SQL text."""
+    from sqlalchemy import select
+    from sqlalchemy.dialects import postgresql
+
+    from app.repositories.library_repository import build_flaw_filter_clauses
+
+    kwargs: dict = dict(
+        severity=[],
+        tags=[],
+        tactic_families=tactic_families,
+    )
+    if orientation is not None:
+        kwargs["orientation"] = orientation
+    clauses = build_flaw_filter_clauses(**kwargs)  # type: ignore[arg-type]
+    if not clauses:
+        return ""
+    from sqlalchemy import and_
+
+    from app.models.game_flaw import GameFlaw
+
+    stmt = select(GameFlaw.ply).where(and_(*clauses))
+    return str(
+        stmt.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": False},
+        )
+    )
+
+
+class TestTacticOrientationBuildFlawFilterClauses:
+    """build_flaw_filter_clauses orientation param selects the correct column (D-09).
+
+    Phase 128 Task 2 TDD RED: these tests expect an orientation parameter on
+    build_flaw_filter_clauses that does not exist yet — they will fail with a
+    TypeError until the GREEN implementation lands.
+    """
+
+    def test_default_orientation_references_allowed_column(self) -> None:
+        """orientation unspecified (default) → clause references allowed_tactic_motif."""
+        sql = _compile_flaw_filter_sql(["fork"])
+        assert "allowed_tactic_motif" in sql, (
+            f"Default orientation must reference allowed_tactic_motif; got: {sql}"
+        )
+        assert "missed_tactic_motif" not in sql, (
+            f"Default orientation must NOT reference missed_tactic_motif; got: {sql}"
+        )
+
+    def test_allowed_orientation_references_allowed_column(self) -> None:
+        """orientation='allowed' → clause references allowed_tactic_motif."""
+        sql = _compile_flaw_filter_sql(["fork"], orientation="allowed")
+        assert "allowed_tactic_motif" in sql, (
+            f"orientation='allowed' must reference allowed_tactic_motif; got: {sql}"
+        )
+        assert "missed_tactic_motif" not in sql, (
+            f"orientation='allowed' must NOT reference missed_tactic_motif; got: {sql}"
+        )
+
+    def test_missed_orientation_references_missed_column(self) -> None:
+        """orientation='missed' → clause references missed_tactic_motif.
+
+        The FAMILY_TO_MOTIF_INTS expansion is identical (D-09); only the column
+        switches.
+        """
+        sql = _compile_flaw_filter_sql(["fork"], orientation="missed")
+        assert "missed_tactic_motif" in sql, (
+            f"orientation='missed' must reference missed_tactic_motif; got: {sql}"
+        )
+        assert "allowed_tactic_motif" not in sql, (
+            f"orientation='missed' must NOT reference allowed_tactic_motif; got: {sql}"
+        )
+
+    def test_also_gates_on_matched_confidence_column(self) -> None:
+        """Confidence gate uses the same orientation's confidence column (not cross-pollinated)."""
+        sql_allowed = _compile_flaw_filter_sql(["fork"], orientation="allowed")
+        assert "allowed_tactic_confidence" in sql_allowed, (
+            f"allowed orientation must gate on allowed_tactic_confidence; got: {sql_allowed}"
+        )
+        assert "missed_tactic_confidence" not in sql_allowed
+
+        sql_missed = _compile_flaw_filter_sql(["fork"], orientation="missed")
+        assert "missed_tactic_confidence" in sql_missed, (
+            f"missed orientation must gate on missed_tactic_confidence; got: {sql_missed}"
+        )
+        assert "allowed_tactic_confidence" not in sql_missed
+
+    def test_family_to_motif_ints_defined_once_not_duplicated(self) -> None:
+        """FAMILY_TO_MOTIF_INTS has a single definition (not per-orientation duplicate)."""
+        import subprocess
+
+        result = subprocess.run(
+            ["grep", "-c", "FAMILY_TO_MOTIF_INTS", "app/repositories/library_repository.py"],
+            capture_output=True,
+            text=True,
+        )
+        count = int(result.stdout.strip())
+        # Expect 1 definition + 2+ usages in query logic. Specifically ≤ 5 occurrences total.
+        # The important thing: FAMILY_TO_MOTIF_INTS should NOT appear N times as separate
+        # per-orientation dicts. The exact count is flexible; just verify it's not doubled.
+        assert count >= 2, "FAMILY_TO_MOTIF_INTS must appear at least twice (def + usage)"
+        assert count <= 8, f"FAMILY_TO_MOTIF_INTS appears {count} times — possible duplication"

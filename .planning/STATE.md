@@ -2,29 +2,29 @@
 gsd_state_version: 1.0
 milestone: v1.28
 milestone_name: Tactic Tagging
-current_phase: 128
-current_phase_name: Missed-Opportunity Tagging
+current_phase: 129
+current_phase_name: Tactic Filter UI
 status: executing
-stopped_at: Phase 127 context gathered
-last_updated: "2026-06-19T15:16:51.776Z"
+stopped_at: Phase 128 context gathered
+last_updated: "2026-06-19T19:52:48.601Z"
 last_activity: 2026-06-19
-last_activity_desc: Phase 127 complete, transitioned to Phase 128
+last_activity_desc: Phase 128 complete, transitioned to Phase 129
 progress:
   total_phases: 11
-  completed_phases: 5
-  total_plans: 16
-  completed_plans: 16
-  percent: 45
+  completed_phases: 6
+  total_plans: 20
+  completed_plans: 20
+  percent: 55
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 128 — Missed-Opportunity Tagging
+Phase: 129 — Tactic Filter UI
 Plan: Not started
 Status: Ready to execute
-Last activity: 2026-06-19 — Shipped Phase 127 (detector hardening + tactic-tagger validation harness) to main via local squash-merge (commit 1e1bcd9f)
+Last activity: 2026-06-19 — Phase 128 complete, transitioned to Phase 129
 
 ## Project Reference
 
@@ -409,6 +409,8 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 | Phase 127 P01 | 180 | 2 tasks | 8 files |
 | Phase 127 P02 | 10m | 2 tasks | 7 files |
 | Phase 127 P03 | 45 | 2 tasks | 3 files |
+| Phase 128 P01 | 35m | 2 tasks | 11 files |
+| Phase 128 P03 | 145m | 3 tasks | 13 files |
 
 ## Decisions
 
@@ -484,10 +486,11 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 - [Phase ?]: Fork D-01 gate: end-of-PV material non-loss (allows equal-material forks at intermediate depths)
 - [Phase ?]: Dispatcher sort key (tier, rank, depth): priority order within tier, depth only as tiebreaker
 - [Phase ?]: Pin relevance: replacement-guard only; no material check
+- [Phase ?]: TacticOrientation closed enum, D-08 default allowed
 
 ## Session
 
-**Last session:** 2026-06-19T14:51:55.025Z
-**Stopped at:** Phase 127 context gathered
-**Resume file:** .planning/phases/127-detector-hardening-validation/127-CONTEXT.md
+**Last session:** 2026-06-19T18:59:08.182Z
+**Stopped at:** Phase 128 context gathered
+**Resume file:** .planning/phases/128-missed-opportunity-tagging/128-CONTEXT.md
 | 170 | Flaw-card: open game on flawed ply, remove broken datapoint pulse | 2026-06-19 | fe4910d4 | — |

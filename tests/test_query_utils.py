@@ -7,6 +7,10 @@ so that to_date is inclusive (covers the whole day).
 These tests are INTENTIONALLY written before the signature change (TDD RED):
 they call apply_game_filters with from_date= / to_date= keyword args that
 do not yet exist, so they will fail with a TypeError until Task 2 lands.
+
+Phase 128 Plan 03 (Task 2 TDD RED): orientation dimension tests for apply_game_filters.
+Tests assert that orientation="missed" produces EXISTS referencing missed_tactic_motif
+and orientation="allowed" (default) references allowed_tactic_motif.
 """
 
 import datetime
@@ -127,3 +131,110 @@ def test_apply_game_filters_date_range() -> None:
     assert expected_upper in params.values(), (
         f"Expected upper bound {expected_upper} (to_date + 1 day) in params: {params}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 128 Plan 03 (Task 2 TDD) — orientation dimension tests (D-09)
+# ---------------------------------------------------------------------------
+
+
+class TestTacticOrientationFilter:
+    """orientation param in apply_game_filters selects the correct column set.
+
+    Phase 128 D-09: orientation selects the matching column pair at both filter
+    sites. Unknown-family keys still yield no ints (no-op). Orientation is a
+    closed Literal enum — never raw column-name interpolation (T-128-05).
+    """
+
+    _BASE_FAMILIES = ["fork"]  # single known family to get a non-empty motif int set
+
+    def _stmt_sql(self, orientation: str | None = None) -> str:
+        """Return compiled SQL for apply_game_filters with tactic_families=[fork]."""
+        stmt = select(Game.id).where(Game.user_id == 1)
+        kwargs: dict = dict(
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            user_id=1,
+            tactic_families=self._BASE_FAMILIES,
+        )
+        if orientation is not None:
+            kwargs["orientation"] = orientation
+        stmt = apply_game_filters(stmt, **kwargs)
+        from sqlalchemy.dialects import postgresql
+
+        return str(
+            stmt.compile(
+                dialect=postgresql.dialect(),
+                compile_kwargs={"literal_binds": False},
+            )
+        )
+
+    def test_default_orientation_references_allowed_column(self) -> None:
+        """orientation unspecified (default) → EXISTS uses allowed_tactic_motif.
+
+        Preserves current Library behavior (D-08): callers that omit orientation
+        see the same behavior as before.
+        """
+        sql = self._stmt_sql()
+        assert "allowed_tactic_motif" in sql, (
+            f"Default orientation must reference allowed_tactic_motif; got: {sql}"
+        )
+        assert "missed_tactic_motif" not in sql, (
+            f"Default orientation must NOT reference missed_tactic_motif; got: {sql}"
+        )
+
+    def test_allowed_orientation_references_allowed_column(self) -> None:
+        """orientation='allowed' → EXISTS uses allowed_tactic_motif."""
+        sql = self._stmt_sql(orientation="allowed")
+        assert "allowed_tactic_motif" in sql, (
+            f"orientation='allowed' must reference allowed_tactic_motif; got: {sql}"
+        )
+        assert "missed_tactic_motif" not in sql, (
+            f"orientation='allowed' must NOT reference missed_tactic_motif; got: {sql}"
+        )
+
+    def test_missed_orientation_references_missed_column(self) -> None:
+        """orientation='missed' → EXISTS uses missed_tactic_motif.
+
+        The same FAMILY_TO_MOTIF_INTS expansion and EXISTS structure is used;
+        only the column name changes (D-09).
+        """
+        sql = self._stmt_sql(orientation="missed")
+        assert "missed_tactic_motif" in sql, (
+            f"orientation='missed' must reference missed_tactic_motif; got: {sql}"
+        )
+        assert "allowed_tactic_motif" not in sql, (
+            f"orientation='missed' must NOT reference allowed_tactic_motif; got: {sql}"
+        )
+
+    def test_unknown_family_is_noop_for_both_orientations(self) -> None:
+        """Unknown family keys → no EXISTS clause added (no-op, T-126-02 preserved)."""
+        for orientation in ("allowed", "missed"):
+            stmt = select(Game.id).where(Game.user_id == 1)
+            stmt = apply_game_filters(
+                stmt,
+                time_control=None,
+                platform=None,
+                rated=None,
+                opponent_type="all",
+                from_date=None,
+                to_date=None,
+                user_id=1,
+                tactic_families=["not_a_real_family"],
+                orientation=orientation,  # type: ignore[arg-type]
+            )
+            from sqlalchemy.dialects import postgresql
+
+            sql = str(
+                stmt.compile(
+                    dialect=postgresql.dialect(),
+                    compile_kwargs={"literal_binds": False},
+                )
+            )
+            assert "tactic_motif" not in sql, (
+                f"Unknown family with orientation={orientation!r} must produce no tactic EXISTS clause; got: {sql}"
+            )

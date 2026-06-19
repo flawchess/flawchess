@@ -6,10 +6,12 @@ Tests that run_backfill (from scripts/backfill_flaws.py):
   (c) Re-running is idempotent (same row set, no PK duplicates)
 
 Phase 125 Plan 01 adds TestBackfillTacticColumns (Nyquist Wave 0):
-  (d) After run_backfill, the blunder row has tactic_motif IS NOT NULL when a
+  (d) After run_backfill, the blunder row has allowed_tactic_motif IS NOT NULL when a
       PV is present at flaw_ply+1 and the detector fires (PV-fires path).
   (e) The no-PV control (existing committed_analyzed_game fixture) produces
-      tactic_motif IS NULL for all rows (no-PV NULL bucket = honest).
+      allowed_tactic_motif IS NULL for all rows (no-PV NULL bucket = honest).
+
+Phase 128 Plan 01: renamed tactic_* → allowed_tactic_* columns (D-02).
 
 Uses session-maker injection against the per-run test DB so run_backfill
 never touches a real --db target. The game must have committed data (not
@@ -411,7 +413,8 @@ async def committed_tactic_game(
     - eval_cp triggers a blunder at ply 1 from black's perspective.
 
     run_backfill with this game must produce a GameFlaw row at ply 1 with
-    tactic_motif IS NOT NULL (hanging-piece detector fires on the PV).
+    allowed_tactic_motif IS NOT NULL (hanging-piece detector fires on the PV).
+    Phase 128: renamed tactic_* → allowed_tactic_* (D-02).
 
     Yields (game, blunder_ply). Teardown: deletes committed data.
     """
@@ -513,7 +516,8 @@ class TestBackfillTacticColumns:
     - PV-fires path (Test B): a game seeded with positions[blunder_ply+1].pv AND
       move_san at blunder_ply produces a GameFlaw row with tactic_motif IS NOT NULL.
     - No-PV NULL path (Test A): the existing committed_analyzed_game fixture
-      (move_san=None, no pv) produces tactic_motif IS NULL for all rows.
+      (move_san=None, no pv) produces allowed_tactic_motif IS NULL for all rows.
+    Phase 128: renamed tactic_* → allowed_tactic_* (D-02).
     """
 
     @pytest.mark.asyncio
@@ -522,11 +526,11 @@ class TestBackfillTacticColumns:
         session_factory: async_sessionmaker[AsyncSession],
         committed_analyzed_game: tuple[Game, int, int],
     ) -> None:
-        """No-PV NULL bucket: no pv seeded → every GameFlaw row has tactic_motif IS NULL.
+        """No-PV NULL bucket: no pv seeded → every GameFlaw row has allowed_tactic_motif IS NULL.
 
         The existing committed_analyzed_game fixture has move_san=None and pv=None on
         all positions. The _detect_tactic_for_flaw guard (pv is None → short-circuit)
-        must leave tactic_motif, tactic_piece, and tactic_confidence all NULL.
+        must leave allowed_tactic_motif, allowed_tactic_piece, and allowed_tactic_confidence all NULL.
         This confirms the no-PV NULL bucket is honest, not an error.
         """
         from scripts.backfill_flaws import run_backfill
@@ -552,14 +556,15 @@ class TestBackfillTacticColumns:
 
         assert len(stored) >= 1, "Expected at least one flaw row"
         for row in stored:
-            assert row.tactic_motif is None, (
-                f"Expected tactic_motif IS NULL (no pv), got {row.tactic_motif} at ply {row.ply}"
+            # Phase 128: renamed tactic_* → allowed_tactic_* (D-02).
+            assert row.allowed_tactic_motif is None, (
+                f"Expected allowed_tactic_motif IS NULL (no pv), got {row.allowed_tactic_motif} at ply {row.ply}"
             )
-            assert row.tactic_piece is None, (
-                f"Expected tactic_piece IS NULL (no pv), got {row.tactic_piece} at ply {row.ply}"
+            assert row.allowed_tactic_piece is None, (
+                f"Expected allowed_tactic_piece IS NULL (no pv), got {row.allowed_tactic_piece} at ply {row.ply}"
             )
-            assert row.tactic_confidence is None, (
-                f"Expected tactic_confidence IS NULL (no pv), got {row.tactic_confidence} at ply {row.ply}"
+            assert row.allowed_tactic_confidence is None, (
+                f"Expected allowed_tactic_confidence IS NULL (no pv), got {row.allowed_tactic_confidence} at ply {row.ply}"
             )
 
     @pytest.mark.asyncio
@@ -568,16 +573,18 @@ class TestBackfillTacticColumns:
         session_factory: async_sessionmaker[AsyncSession],
         committed_tactic_game: tuple[Game, int],
     ) -> None:
-        """PV-fires path: pv + move_san seeded → blunder row has tactic_motif IS NOT NULL.
+        """PV-fires path: pv + move_san seeded → blunder row has allowed_tactic_motif IS NOT NULL.
 
         The committed_tactic_game fixture seeds a hanging-piece blunder at ply 1:
         black plays Re4?? (rook to e4, hanging to white's king on f4).
         positions[2].pv = the D-09 prod-confirmed refutation PV (f4e4 ...).
-        After run_backfill, the GameFlaw at ply 1 must carry a non-NULL tactic_motif
-        and tactic_confidence, confirming the detect path was exercised.
+        After run_backfill, the GameFlaw at ply 1 must carry a non-NULL allowed_tactic_motif
+        and allowed_tactic_confidence, confirming the detect path was exercised.
 
-        The control: flaw rows at other plies (if any) keep tactic_motif NULL if
+        The control: flaw rows at other plies (if any) keep allowed_tactic_motif NULL if
         their pv is absent, which preserves the honest NULL semantics.
+
+        Phase 128: renamed tactic_* → allowed_tactic_* (D-02).
         """
         from scripts.backfill_flaws import run_backfill
 
@@ -613,12 +620,13 @@ class TestBackfillTacticColumns:
         # Strong assertion (WR-01): pin the exact motif + confidence the known
         # hanging-piece fixture must produce, so a detector regression that fires
         # the WRONG motif fails loudly instead of passing on a bare not-None check.
-        assert blunder_row.tactic_motif == TacticMotifInt.HANGING_PIECE, (
-            f"Expected tactic_motif == HANGING_PIECE ({TacticMotifInt.HANGING_PIECE}) "
-            f"at ply {blunder_ply} (PV-fires path), got {blunder_row.tactic_motif}. "
+        # Phase 128: renamed tactic_* → allowed_tactic_* (D-02).
+        assert blunder_row.allowed_tactic_motif == TacticMotifInt.HANGING_PIECE, (
+            f"Expected allowed_tactic_motif == HANGING_PIECE ({TacticMotifInt.HANGING_PIECE}) "
+            f"at ply {blunder_ply} (PV-fires path), got {blunder_row.allowed_tactic_motif}. "
             f"Verify positions[{blunder_ply + 1}].pv and move_san at ply {blunder_ply}."
         )
-        assert blunder_row.tactic_confidence == TACTIC_CONFIDENCE_HIGH, (
-            f"Expected tactic_confidence == {TACTIC_CONFIDENCE_HIGH} at ply "
-            f"{blunder_ply}, got {blunder_row.tactic_confidence}."
+        assert blunder_row.allowed_tactic_confidence == TACTIC_CONFIDENCE_HIGH, (
+            f"Expected allowed_tactic_confidence == {TACTIC_CONFIDENCE_HIGH} at ply "
+            f"{blunder_ply}, got {blunder_row.allowed_tactic_confidence}."
         )

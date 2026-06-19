@@ -40,6 +40,7 @@ from app.services.flaws_service import (
     _classify_severity,
     _classify_tempo,
     _compute_eval_coverage,
+    _detect_tactic_for_flaw,
     _move_time,
     _ply_to_es,
     _recompute_fen_map,
@@ -159,7 +160,7 @@ class TestTypeContract:
     """Verify that FlawRecord and GameNotAnalyzed are importable and accept full literals."""
 
     def test_flaw_record_accepts_full_literal(self) -> None:
-        """A fully-constructed FlawRecord literal round-trips all 8 fields."""
+        """A fully-constructed FlawRecord literal round-trips all fields."""
         record: FlawRecord = {
             "ply": 10,
             "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR",
@@ -169,10 +170,15 @@ class TestTypeContract:
             "es_before": 0.65,
             "es_after": 0.40,
             "move_san": "Qxf7",
-            "tactic_motif_int": None,
-            "tactic_piece": None,
-            "tactic_confidence": None,
-            "tactic_depth": None,
+            # Phase 128: renamed tactic_* → allowed_tactic_*; added missed_tactic_* (D-01/D-02).
+            "allowed_tactic_motif_int": None,
+            "allowed_tactic_piece": None,
+            "allowed_tactic_confidence": None,
+            "allowed_tactic_depth": None,
+            "missed_tactic_motif_int": None,
+            "missed_tactic_piece": None,
+            "missed_tactic_confidence": None,
+            "missed_tactic_depth": None,
         }
         assert record["ply"] == 10
         assert record["severity"] == "blunder"
@@ -1964,12 +1970,14 @@ class TestTacticIntegration:
     """Phase 124 (TACDET-04): detect_tactic_motif runs inside _build_flaw_record.
 
     Tests verify:
-    1. Both-color population: tactic_motif_int is non-None for BOTH a white flaw
+    1. Both-color population: allowed_tactic_motif_int is non-None for BOTH a white flaw
        AND a black flaw in the same game (Phase 113 both-color coverage).
     2. None-PV guard: a flaw whose positions[n+1].pv is None yields a FlawRecord
-       with tactic_motif_int=None and no exception raised.
+       with allowed_tactic_motif_int=None and no exception raised.
     3. Malformed move_san guard: a flaw with an invalid move_san leaves tactic
        fields None without raising.
+
+    Phase 128: renamed tactic_* → allowed_tactic_* in FlawRecord (D-02).
 
     PGN: '1. e4 e5 2. Bc4 d5 3. f3 Bg4 *'  (6 half-moves)
 
@@ -2039,25 +2047,27 @@ class TestTacticIntegration:
             f"Expected at least one black FlawRecord. Got: {[(f['side'], f['ply']) for f in result]}"
         )
 
-        # Both sides must have tactic_motif_int populated (non-None)
-        white_with_motif = [f for f in white_flaws if f["tactic_motif_int"] is not None]
-        black_with_motif = [f for f in black_flaws if f["tactic_motif_int"] is not None]
+        # Both sides must have allowed_tactic_motif_int populated (non-None)
+        # Phase 128: renamed tactic_motif_int → allowed_tactic_motif_int (D-02).
+        white_with_motif = [f for f in white_flaws if f["allowed_tactic_motif_int"] is not None]
+        black_with_motif = [f for f in black_flaws if f["allowed_tactic_motif_int"] is not None]
 
         assert len(white_with_motif) >= 1, (
-            "WHITE flaw must have tactic_motif_int populated (both-color detection). "
-            f"White flaws: {[(f['ply'], f['tactic_motif_int']) for f in white_flaws]}"
+            "WHITE flaw must have allowed_tactic_motif_int populated (both-color detection). "
+            f"White flaws: {[(f['ply'], f['allowed_tactic_motif_int']) for f in white_flaws]}"
         )
         assert len(black_with_motif) >= 1, (
-            "BLACK flaw must have tactic_motif_int populated (both-color detection). "
-            f"Black flaws: {[(f['ply'], f['tactic_motif_int']) for f in black_flaws]}"
+            "BLACK flaw must have allowed_tactic_motif_int populated (both-color detection). "
+            f"Black flaws: {[(f['ply'], f['allowed_tactic_motif_int']) for f in black_flaws]}"
         )
 
     def test_none_pv_leaves_tactic_fields_none(self) -> None:
-        """Flaw with pv=None in positions[n+1] yields tactic_motif_int=None, no exception.
+        """Flaw with pv=None in positions[n+1] yields allowed_tactic_motif_int=None, no exception.
 
         This represents a lichess-eval-only flaw (no full_evals_completed_at): the
         pv column is NULL for that position. The detector must leave all three tactic
         fields None without raising (T-124-07 guard).
+        Phase 128: renamed tactic_* → allowed_tactic_* in FlawRecord (D-02).
         """
         game = _make_game(pgn=self._PGN, user_color="white", result="1-0")
         positions = self._build_both_color_positions()
@@ -2067,16 +2077,16 @@ class TestTacticIntegration:
         result = classify_game_flaws(game, positions)
         assert isinstance(result, list)
 
-        # White's flaw at ply 4 must have tactic_motif_int=None (no pv available)
+        # White's flaw at ply 4 must have allowed_tactic_motif_int=None (no pv available)
         white_ply4 = next((f for f in result if f["side"] == "white" and f["ply"] == 4), None)
         assert white_ply4 is not None, (
             f"Expected a white FlawRecord at ply 4. Got: {[(f['side'], f['ply']) for f in result]}"
         )
-        assert white_ply4["tactic_motif_int"] is None, (
-            "pv=None must leave tactic_motif_int=None (lichess-eval-only flaw guard)"
+        assert white_ply4["allowed_tactic_motif_int"] is None, (
+            "pv=None must leave allowed_tactic_motif_int=None (lichess-eval-only flaw guard)"
         )
-        assert white_ply4["tactic_piece"] is None
-        assert white_ply4["tactic_confidence"] is None
+        assert white_ply4["allowed_tactic_piece"] is None
+        assert white_ply4["allowed_tactic_confidence"] is None
 
     def test_malformed_move_san_leaves_tactic_fields_none(self) -> None:
         """Flaw with malformed move_san leaves tactic fields None without raising.
@@ -2105,11 +2115,12 @@ class TestTacticIntegration:
             f"Expected a white FlawRecord at ply 4. Got: {[(f['side'], f['ply']) for f in result]}"
         )
         # All three tactic fields must be None due to malformed move_san
-        assert white_ply4["tactic_motif_int"] is None, (
-            "Malformed move_san must leave tactic_motif_int=None (no exception raised)"
+        # Phase 128: renamed tactic_* → allowed_tactic_* in FlawRecord (D-02).
+        assert white_ply4["allowed_tactic_motif_int"] is None, (
+            "Malformed move_san must leave allowed_tactic_motif_int=None (no exception raised)"
         )
-        assert white_ply4["tactic_piece"] is None
-        assert white_ply4["tactic_confidence"] is None
+        assert white_ply4["allowed_tactic_piece"] is None
+        assert white_ply4["allowed_tactic_confidence"] is None
 
     def test_pv_by_ply_override_tags_when_positions_pv_is_none(self) -> None:
         """260618-aiq: pv_by_ply override tags flaws even when positions[n+1].pv is NULL.
@@ -2131,8 +2142,9 @@ class TestTacticIntegration:
         assert isinstance(control, list)
         control_white = next(f for f in control if f["side"] == "white" and f["ply"] == 4)
         control_black = next(f for f in control if f["side"] == "black" and f["ply"] == 5)
-        assert control_white["tactic_motif_int"] is None
-        assert control_black["tactic_motif_int"] is None
+        # Phase 128: renamed tactic_* → allowed_tactic_* in FlawRecord (D-02).
+        assert control_white["allowed_tactic_motif_int"] is None
+        assert control_black["allowed_tactic_motif_int"] is None
 
         # Override: drain supplies the in-memory PVs keyed by ply (refutation at n+1).
         pv_by_ply = {5: "d5c4", 6: "f3g4"}
@@ -2141,13 +2153,296 @@ class TestTacticIntegration:
         tagged_white = next(f for f in tagged if f["side"] == "white" and f["ply"] == 4)
         tagged_black = next(f for f in tagged if f["side"] == "black" and f["ply"] == 5)
 
-        assert tagged_white["tactic_motif_int"] == TacticMotifInt.HANGING_PIECE, (
+        assert tagged_white["allowed_tactic_motif_int"] == TacticMotifInt.HANGING_PIECE, (
             "White ply-4 blunder must tag hanging-piece via pv_by_ply override, "
-            f"got {tagged_white['tactic_motif_int']}"
+            f"got {tagged_white['allowed_tactic_motif_int']}"
         )
-        assert tagged_white["tactic_confidence"] == TACTIC_CONFIDENCE_HIGH
-        assert tagged_black["tactic_motif_int"] == TacticMotifInt.HANGING_PIECE, (
+        assert tagged_white["allowed_tactic_confidence"] == TACTIC_CONFIDENCE_HIGH
+        assert tagged_black["allowed_tactic_motif_int"] == TacticMotifInt.HANGING_PIECE, (
             "Black ply-5 blunder must tag hanging-piece via pv_by_ply override, "
-            f"got {tagged_black['tactic_motif_int']}"
+            f"got {tagged_black['allowed_tactic_motif_int']}"
         )
-        assert tagged_black["tactic_confidence"] == TACTIC_CONFIDENCE_HIGH
+        assert tagged_black["allowed_tactic_confidence"] == TACTIC_CONFIDENCE_HIGH
+
+
+# ---------------------------------------------------------------------------
+# Phase 128 tests: orientation-parametrized _detect_tactic_for_flaw (Plan 02)
+# ---------------------------------------------------------------------------
+
+# PGN reference (same as TestTacticIntegration):
+#   '1. e4 e5 2. Bc4 d5 3. f3 Bg4 *'  (6 half-moves)
+#
+# FEN reference (board.board_fen() piece-placement only):
+#   fen_map[4]: 'rnbqkbnr/ppp2ppp/8/3pp3/2B1P3/8/PPPP1PPP/RNBQK1NR'  (after 2...d5, white to move)
+#   fen_map[5]: 'rnbqkbnr/ppp2ppp/8/3pp3/2B1P3/5P2/PPPP2PP/RNBQK1NR'  (after 3.f3, black to move)
+#   fen_map[6]: 'rn1qkbnr/ppp2ppp/8/3pp3/2B1P1b1/5P2/PPPP2PP/RNBQK1NR' (after 3...Bg4, white to move)
+#
+# Missed-pass fixture (Plan 02, D-03):
+#   At ply 5 (black flaw = 3...Bg4??), board_before has fen_map[5], turn=BLACK.
+#   White's Bc4 on c4 is undefended (white has no defender of c4 after 3.f3).
+#   Black's missed-pass PV at flaw_ply=5 is 'd5c4' (dxc4, capturing the hanging Bc4).
+#   detect_tactic_motif(board_before, 'd5c4') fires HANGING_PIECE (non-pawn, undefended).
+#
+# Allowed-pass fixture (unchanged orientation):
+#   At ply 4 (white flaw = 3.f3??), board_after_flaw has fen_map[5] (same FEN), turn=BLACK.
+#   Allowed-pass PV at flaw_ply+1=5 is 'd5c4' (refutation PV that punishes white).
+#   detect_tactic_motif(board_after_flaw, 'd5c4') fires HANGING_PIECE with pov=BLACK.
+
+_FEN_MAP_128 = {
+    4: "rnbqkbnr/ppp2ppp/8/3pp3/2B1P3/8/PPPP1PPP/RNBQK1NR",
+    5: "rnbqkbnr/ppp2ppp/8/3pp3/2B1P3/5P2/PPPP2PP/RNBQK1NR",
+    6: "rn1qkbnr/ppp2ppp/8/3pp3/2B1P1b1/5P2/PPPP2PP/RNBQK1NR",
+}
+
+
+def _make_positions_128() -> list[GamePosition]:
+    """12 positions for Plan 02 orientation tests.
+
+    White blunder at ply 4 (even=white mover): 3.f3?? allows dxc4 (hanging Bc4).
+    Black blunder at ply 5 (odd=black mover): 3...Bg4?? misses dxc4 (hanging Bc4).
+    """
+    positions = [_make_pos_with_pv(i, eval_cp=20) for i in range(12)]
+    positions[3] = _make_pos_with_pv(3, eval_cp=200, move_san="d5")
+    positions[4] = _make_pos_with_pv(4, eval_cp=-500, move_san="f3")
+    # Allowed-pass PV at ply 5 (refutation of white's flaw at ply 4): d5xc4
+    positions[5] = _make_pos_with_pv(5, eval_cp=300, move_san="Bg4", pv="d5c4")
+    # Allowed-pass PV at ply 6 (refutation of black's flaw at ply 5): f3xg4
+    positions[6] = _make_pos_with_pv(6, eval_cp=20, pv="f3g4")
+    positions[11] = _make_pos_with_pv(11)
+    return positions
+
+
+class TestDetectTacticForFlawOrientation:
+    """Phase 128 Plan 02 (D-03/D-06): _detect_tactic_for_flaw orientation parameter.
+
+    Tests verify:
+    (a) orientation='allowed' is unchanged: identical to today's behavior on an
+        existing fixture (allowed PV at flaw_ply+1 with board_after_flaw).
+    (b) orientation='missed' fires on a constructed board_before + flaw_ply PV
+        where the mover had a hanging piece available (dxc4 capturing Bc4).
+    (c) orientation='missed' returns all-None when the flaw_ply PV is absent.
+    """
+
+    def test_allowed_orientation_unchanged(self) -> None:
+        """(a) orientation='allowed' is byte-identical to today's behavior.
+
+        White flaw at ply 4 (3.f3??): allowed-pass PV is 'd5c4' (at ply 5),
+        board_after_flaw has fen_map[5] turn=BLACK, detector fires HANGING_PIECE.
+        """
+        positions = _make_positions_128()
+        motif_int, piece, confidence, depth = _detect_tactic_for_flaw(
+            n=4,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            orientation="allowed",
+        )
+        assert motif_int == TacticMotifInt.HANGING_PIECE, (
+            f"allowed orientation must fire HANGING_PIECE, got {motif_int}"
+        )
+        assert confidence == TACTIC_CONFIDENCE_HIGH
+        assert depth == 0
+
+    def test_missed_orientation_fires_hanging_piece(self) -> None:
+        """(b) orientation='missed' fires on board_before + flaw_ply PV.
+
+        Black flaw at ply 5 (3...Bg4??): missed-pass PV is 'd5c4' (at ply 5),
+        board_before has fen_map[5] turn=BLACK, detector fires HANGING_PIECE
+        (white's undefended Bc4 available for dxc4).
+        """
+        positions = _make_positions_128()
+        # Missed-pass PV at flaw_ply=5: d5c4 (black should have taken the hanging bishop)
+        pv_by_ply = {5: "d5c4"}
+        motif_int, piece, confidence, depth = _detect_tactic_for_flaw(
+            n=5,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            pv_by_ply=pv_by_ply,
+            orientation="missed",
+        )
+        assert motif_int == TacticMotifInt.HANGING_PIECE, (
+            f"missed orientation must fire HANGING_PIECE for dxc4 (capturing hanging Bc4), "
+            f"got {motif_int}"
+        )
+        assert confidence == TACTIC_CONFIDENCE_HIGH
+        assert depth == 0
+
+    def test_missed_orientation_returns_none_when_flaw_ply_pv_absent(self) -> None:
+        """(c) orientation='missed' returns all-None when the flaw_ply PV is absent.
+
+        No pv_by_ply entry for ply 5, and positions[5].pv is None.
+        The result must be (None, None, None, None) without raising.
+        """
+        positions = _make_positions_128()
+        # Ensure positions[5].pv is None (no stored PV)
+        positions[5] = _make_pos_with_pv(5, eval_cp=300, move_san="Bg4", pv=None)
+        # No pv_by_ply override
+        motif_int, piece, confidence, depth = _detect_tactic_for_flaw(
+            n=5,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            pv_by_ply=None,
+            orientation="missed",
+        )
+        assert motif_int is None
+        assert piece is None
+        assert confidence is None
+        assert depth is None
+
+
+# ---------------------------------------------------------------------------
+# Phase 128 Plan 02 Task 2: _build_flaw_record calls both passes (D-06)
+# ---------------------------------------------------------------------------
+
+
+class TestBuildFlawRecordBothOrientations:
+    """Phase 128 Plan 02 Task 2 (D-06): _build_flaw_record calls both passes.
+
+    Tests verify the neither/one/both matrix for the four cases from the plan:
+    (1) Both PVs present: both allowed_* and missed_* 4-tuples are non-None.
+    (2) Only flaw_ply+1 PV (allowed PV): allowed_* set, missed_* all None.
+    (3) Only flaw_ply PV (missed PV): missed_* set, allowed_* all None.
+    (4) Neither PV: both 4-tuples all None.
+
+    Uses classify_game_flaws (the integration path) with pv_by_ply to control
+    which PVs are available. Both PVs 'd5c4' fire HANGING_PIECE:
+    - Allowed at ply 4 (white flaw): board_after_flaw(fen5, turn=BLACK), PV at ply 5
+    - Missed at ply 5 (black flaw): board_before(fen5, turn=BLACK), PV at ply 5
+
+    For the tests below we focus on the black flaw at ply 5 (3...Bg4??):
+    - Allowed PV at ply 6: 'f3g4' (f3xg4, white captures hanging Bg4)
+    - Missed PV at ply 5: 'd5c4' (dxc4, black should have captured hanging Bc4)
+
+    PGN reference: '1. e4 e5 2. Bc4 d5 3. f3 Bg4 *' (TestTacticIntegration)
+    """
+
+    _PGN = "1. e4 e5 2. Bc4 d5 3. f3 Bg4 *"
+
+    def _make_positions_for_black_flaw(
+        self,
+        allowed_pv: str | None = "f3g4",
+        missed_pv: str | None = "d5c4",
+    ) -> tuple[list[GamePosition], dict[int, str]]:
+        """Build positions for black's flaw at ply 5, with controllable PVs.
+
+        Returns (positions, pv_by_ply) where pv_by_ply carries both PVs unless
+        one/both are set to None.
+
+        Allowed PV for the black flaw at ply 5 is at ply 6: 'f3g4'.
+        Missed PV for the black flaw at ply 5 is at ply 5: 'd5c4'.
+        """
+        positions = [_make_pos_with_pv(i, eval_cp=20) for i in range(12)]
+        # Black blunder at ply 5 (odd=black mover): Bg4?? misses dxc4
+        positions[4] = _make_pos_with_pv(4, eval_cp=-500, move_san="f3")
+        # eval_cp at ply 4: white badly down (after playing f3?? but before black blunders)
+        # es_before(black@5) = 1 - es(pos[4], white) ≈ 1 - 0.160 = 0.840
+        # es_after(black@5)  = 1 - es(pos[5], white) ≈ 1 - 0.730 = 0.270
+        # drop ≈ 0.570 >= BLUNDER_DROP -> black blunder
+        positions[5] = _make_pos_with_pv(5, eval_cp=300, move_san="Bg4", pv=None)
+        positions[6] = _make_pos_with_pv(6, eval_cp=20, pv=None)
+        positions[11] = _make_pos_with_pv(11)
+
+        pv_by_ply: dict[int, str] = {}
+        if allowed_pv is not None:
+            pv_by_ply[6] = allowed_pv  # allowed PV for black flaw: at flaw_ply+1=6
+        if missed_pv is not None:
+            pv_by_ply[5] = missed_pv  # missed PV for black flaw: at flaw_ply=5
+
+        return positions, pv_by_ply
+
+    def _get_black_ply5_flaw(self, result: list[FlawRecord]) -> FlawRecord:
+        """Return the black FlawRecord at ply 5, or fail if not found."""
+        flaw = next((f for f in result if f["side"] == "black" and f["ply"] == 5), None)
+        assert flaw is not None, (
+            f"Expected a black FlawRecord at ply 5. Got: {[(f['side'], f['ply']) for f in result]}"
+        )
+        return flaw
+
+    def test_both_pvs_present_fills_both_orientations(self) -> None:
+        """(1) Both PVs present: both allowed_* and missed_* are non-None.
+
+        pv_by_ply[6]='f3g4' (allowed) + pv_by_ply[5]='d5c4' (missed).
+        Both fire HANGING_PIECE for the black flaw at ply 5.
+        """
+        game = _make_game(pgn=self._PGN, user_color="white", result="0-1")
+        positions, pv_by_ply = self._make_positions_for_black_flaw(
+            allowed_pv="f3g4", missed_pv="d5c4"
+        )
+        result = classify_game_flaws(game, positions, pv_by_ply=pv_by_ply)
+        assert isinstance(result, list)
+        flaw = self._get_black_ply5_flaw(result)
+
+        assert flaw["allowed_tactic_motif_int"] is not None, (
+            "Both PVs present: allowed_tactic_motif_int must be non-None"
+        )
+        assert flaw["missed_tactic_motif_int"] is not None, (
+            "Both PVs present: missed_tactic_motif_int must be non-None"
+        )
+
+    def test_allowed_pv_only_sets_allowed_clears_missed(self) -> None:
+        """(2) Only flaw_ply+1 PV (allowed PV): allowed_* set, missed_* all None.
+
+        pv_by_ply[6]='f3g4' (allowed only). No missed PV. Black flaw at ply 5
+        should have allowed_tactic_motif_int set and all missed_* as None.
+        """
+        game = _make_game(pgn=self._PGN, user_color="white", result="0-1")
+        positions, pv_by_ply = self._make_positions_for_black_flaw(
+            allowed_pv="f3g4", missed_pv=None
+        )
+        result = classify_game_flaws(game, positions, pv_by_ply=pv_by_ply)
+        assert isinstance(result, list)
+        flaw = self._get_black_ply5_flaw(result)
+
+        assert flaw["allowed_tactic_motif_int"] is not None, (
+            "Allowed-only: allowed_tactic_motif_int must be non-None"
+        )
+        assert flaw["missed_tactic_motif_int"] is None, (
+            "Allowed-only: missed_tactic_motif_int must be None (no missed PV)"
+        )
+        assert flaw["missed_tactic_piece"] is None
+        assert flaw["missed_tactic_confidence"] is None
+        assert flaw["missed_tactic_depth"] is None
+
+    def test_missed_pv_only_sets_missed_clears_allowed(self) -> None:
+        """(3) Only flaw_ply PV (missed PV): missed_* set, allowed_* all None.
+
+        pv_by_ply[5]='d5c4' (missed only). No allowed PV. Black flaw at ply 5
+        should have missed_tactic_motif_int set and all allowed_* as None.
+        """
+        game = _make_game(pgn=self._PGN, user_color="white", result="0-1")
+        positions, pv_by_ply = self._make_positions_for_black_flaw(
+            allowed_pv=None, missed_pv="d5c4"
+        )
+        result = classify_game_flaws(game, positions, pv_by_ply=pv_by_ply)
+        assert isinstance(result, list)
+        flaw = self._get_black_ply5_flaw(result)
+
+        assert flaw["missed_tactic_motif_int"] is not None, (
+            "Missed-only: missed_tactic_motif_int must be non-None"
+        )
+        assert flaw["allowed_tactic_motif_int"] is None, (
+            "Missed-only: allowed_tactic_motif_int must be None (no allowed PV)"
+        )
+        assert flaw["allowed_tactic_piece"] is None
+        assert flaw["allowed_tactic_confidence"] is None
+        assert flaw["allowed_tactic_depth"] is None
+
+    def test_neither_pv_leaves_both_orientations_none(self) -> None:
+        """(4) Neither PV: both 4-tuples all None.
+
+        No pv_by_ply entries and no stored PVs. The FlawRecord is still emitted
+        (severity/tags unaffected); all 8 tactic fields stay None.
+        """
+        game = _make_game(pgn=self._PGN, user_color="white", result="0-1")
+        positions, pv_by_ply = self._make_positions_for_black_flaw(allowed_pv=None, missed_pv=None)
+        result = classify_game_flaws(game, positions, pv_by_ply=pv_by_ply)
+        assert isinstance(result, list)
+        flaw = self._get_black_ply5_flaw(result)
+
+        assert flaw["allowed_tactic_motif_int"] is None
+        assert flaw["allowed_tactic_piece"] is None
+        assert flaw["allowed_tactic_confidence"] is None
+        assert flaw["allowed_tactic_depth"] is None
+        assert flaw["missed_tactic_motif_int"] is None
+        assert flaw["missed_tactic_piece"] is None
+        assert flaw["missed_tactic_confidence"] is None
+        assert flaw["missed_tactic_depth"] is None

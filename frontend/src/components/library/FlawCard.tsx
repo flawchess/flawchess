@@ -273,9 +273,10 @@ export function FlawCard({ flaw }: { flaw: FlawListItem }) {
           />
 
           {/* Tactic motif chip first — beta-gated (D-01), only rendered when a motif is
-              present (backend nulls sub-threshold motifs at query time, D-09). */}
-          {userProfile?.beta_enabled && flaw.tactic_motif != null && (
-            <TacticMotifChip motif={flaw.tactic_motif} flawId={flaw.game_id} />
+              present (backend nulls sub-threshold motifs at query time, D-09).
+              Phase 128 D-07: uses allowed_tactic_motif (Phase 129 wires orientation toggle). */}
+          {userProfile?.beta_enabled && flaw.allowed_tactic_motif != null && (
+            <TacticMotifChip motif={flaw.allowed_tactic_motif} flawId={flaw.game_id} />
           )}
 
           {/* Other flaw-tag chips. */}
@@ -289,7 +290,9 @@ export function FlawCard({ flaw }: { flaw: FlawListItem }) {
             variant="icon"
             tags={flaw.tags}
             tacticMotifs={
-              userProfile?.beta_enabled && flaw.tactic_motif != null ? [flaw.tactic_motif] : []
+              userProfile?.beta_enabled && flaw.allowed_tactic_motif != null
+                ? [flaw.allowed_tactic_motif]
+                : []
             }
             gameId={flaw.game_id}
           />

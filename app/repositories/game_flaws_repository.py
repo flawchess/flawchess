@@ -113,13 +113,19 @@ def flaw_record_to_row(
         # The FlawRecord TypedDict still carries them for internal kernel use; they are
         # intentionally not persisted here (Pitfall 6 in 112-CONTEXT.md).
         "fen": flaw["fen"],
-        # Tactic family (Phase 124 — D-01): use .get() so older construction paths
-        # that omit these keys map to None rather than KeyError.
-        "tactic_motif": flaw.get("tactic_motif_int"),
-        "tactic_piece": flaw.get("tactic_piece"),
-        "tactic_confidence": flaw.get("tactic_confidence"),
-        # tactic_depth: raw half-move ply index from flaw_ply+1 (Phase 127 — D-04).
-        "tactic_depth": flaw.get("tactic_depth"),
+        # Tactic family — both orientations (Phase 124/128 — D-01/D-02/D-06).
+        # Use .get() so older construction paths that omit keys map to None (not KeyError).
+        # Note the int→motif key-name shift: FlawRecord uses _int suffix for motif int values
+        # to distinguish from the DB column name (which stores the raw int directly).
+        "allowed_tactic_motif": flaw.get("allowed_tactic_motif_int"),
+        "allowed_tactic_piece": flaw.get("allowed_tactic_piece"),
+        "allowed_tactic_confidence": flaw.get("allowed_tactic_confidence"),
+        "allowed_tactic_depth": flaw.get("allowed_tactic_depth"),
+        # missed_* are None until the Phase 128 Plan 02 detector second pass runs.
+        "missed_tactic_motif": flaw.get("missed_tactic_motif_int"),
+        "missed_tactic_piece": flaw.get("missed_tactic_piece"),
+        "missed_tactic_confidence": flaw.get("missed_tactic_confidence"),
+        "missed_tactic_depth": flaw.get("missed_tactic_depth"),
     }
 
 

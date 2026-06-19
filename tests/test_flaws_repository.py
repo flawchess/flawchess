@@ -18,6 +18,7 @@ from app.models.game import Game
 from app.models.game_position import GamePosition
 from app.repositories.flaws_repository import fetch_game_positions_ordered
 from app.repositories.game_flaws_repository import flaw_record_to_row
+from app.services.flaws_service import FlawRecord
 
 
 # ---------------------------------------------------------------------------
@@ -174,10 +175,15 @@ class TestFlawRecordToRow:
             "es_before": 0.75,  # still in TypedDict (kernel-internal)
             "es_after": 0.20,  # still in TypedDict (kernel-internal)
             "move_san": "Nxd4",  # still in TypedDict (kernel-internal)
-            "tactic_motif_int": None,
-            "tactic_piece": None,
-            "tactic_confidence": None,
-            "tactic_depth": None,
+            # Phase 128: renamed tactic_* → allowed_tactic_* (D-02); added missed_tactic_* (D-01).
+            "allowed_tactic_motif_int": None,
+            "allowed_tactic_piece": None,
+            "allowed_tactic_confidence": None,
+            "allowed_tactic_depth": None,
+            "missed_tactic_motif_int": None,
+            "missed_tactic_piece": None,
+            "missed_tactic_confidence": None,
+            "missed_tactic_depth": None,
         }
 
         row = flaw_record_to_row(user_id=1, game_id=42, flaw=flaw)
@@ -201,3 +207,133 @@ class TestFlawRecordToRow:
         assert row["user_id"] == 1
         assert row["game_id"] == 42
         assert row["ply"] == 4
+
+
+class TestFlawRecordToRowTacticMapping:
+    """Phase 128 D-06: flaw_record_to_row must write all 8 tactic columns.
+
+    Verifies that the write-path row dict carries all 8 DB-column keys with
+    correct mappings from the renamed/new FlawRecord keys:
+      - allowed_tactic_motif  ← allowed_tactic_motif_int  (int→column name shift)
+      - allowed_tactic_piece  ← allowed_tactic_piece
+      - allowed_tactic_confidence ← allowed_tactic_confidence
+      - allowed_tactic_depth  ← allowed_tactic_depth
+      - missed_tactic_motif   ← missed_tactic_motif_int   (int→column name shift)
+      - missed_tactic_piece   ← missed_tactic_piece
+      - missed_tactic_confidence ← missed_tactic_confidence
+      - missed_tactic_depth   ← missed_tactic_depth
+    """
+
+    def _make_flaw_with_tactics(
+        self,
+        allowed_motif: int | None = 3,
+        allowed_piece: int | None = 4,
+        allowed_confidence: int | None = 85,
+        allowed_depth: int | None = 2,
+        missed_motif: int | None = 1,
+        missed_piece: int | None = 2,
+        missed_confidence: int | None = 90,
+        missed_depth: int | None = 1,
+    ) -> FlawRecord:
+        return FlawRecord(
+            ply=6,
+            fen="rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR",
+            side="white",
+            severity="blunder",
+            tags=["middlegame"],
+            es_before=0.70,
+            es_after=0.25,
+            move_san="e4",
+            allowed_tactic_motif_int=allowed_motif,
+            allowed_tactic_piece=allowed_piece,
+            allowed_tactic_confidence=allowed_confidence,
+            allowed_tactic_depth=allowed_depth,
+            missed_tactic_motif_int=missed_motif,
+            missed_tactic_piece=missed_piece,
+            missed_tactic_confidence=missed_confidence,
+            missed_tactic_depth=missed_depth,
+        )
+
+    def test_all_8_tactic_keys_present_in_row(self) -> None:
+        """flaw_record_to_row output must contain all 8 tactic DB-column keys."""
+        flaw = self._make_flaw_with_tactics()
+        row = flaw_record_to_row(user_id=1, game_id=42, flaw=flaw)
+
+        expected_tactic_keys = {
+            "allowed_tactic_motif",
+            "allowed_tactic_piece",
+            "allowed_tactic_confidence",
+            "allowed_tactic_depth",
+            "missed_tactic_motif",
+            "missed_tactic_piece",
+            "missed_tactic_confidence",
+            "missed_tactic_depth",
+        }
+        missing = expected_tactic_keys - row.keys()
+        assert not missing, f"flaw_record_to_row row dict is missing tactic keys: {missing}"
+
+    def test_allowed_tactic_values_mapped_correctly(self) -> None:
+        """allowed_* keys in row dict carry the FlawRecord allowed_* values."""
+        flaw = self._make_flaw_with_tactics(
+            allowed_motif=3, allowed_piece=4, allowed_confidence=85, allowed_depth=2
+        )
+        row = flaw_record_to_row(user_id=1, game_id=42, flaw=flaw)
+
+        assert row["allowed_tactic_motif"] == 3
+        assert row["allowed_tactic_piece"] == 4
+        assert row["allowed_tactic_confidence"] == 85
+        assert row["allowed_tactic_depth"] == 2
+
+    def test_missed_tactic_values_mapped_correctly(self) -> None:
+        """missed_* keys in row dict carry the FlawRecord missed_* values."""
+        flaw = self._make_flaw_with_tactics(
+            missed_motif=1, missed_piece=2, missed_confidence=90, missed_depth=1
+        )
+        row = flaw_record_to_row(user_id=1, game_id=42, flaw=flaw)
+
+        assert row["missed_tactic_motif"] == 1
+        assert row["missed_tactic_piece"] == 2
+        assert row["missed_tactic_confidence"] == 90
+        assert row["missed_tactic_depth"] == 1
+
+    def test_null_tactic_values_map_to_none(self) -> None:
+        """NULL (None) tactic values in FlawRecord map to None in the row dict."""
+        flaw = self._make_flaw_with_tactics(
+            allowed_motif=None,
+            allowed_piece=None,
+            allowed_confidence=None,
+            allowed_depth=None,
+            missed_motif=None,
+            missed_piece=None,
+            missed_confidence=None,
+            missed_depth=None,
+        )
+        row = flaw_record_to_row(user_id=1, game_id=42, flaw=flaw)
+
+        for key in [
+            "allowed_tactic_motif",
+            "allowed_tactic_piece",
+            "allowed_tactic_confidence",
+            "allowed_tactic_depth",
+            "missed_tactic_motif",
+            "missed_tactic_piece",
+            "missed_tactic_confidence",
+            "missed_tactic_depth",
+        ]:
+            assert row[key] is None, f"Expected row['{key}'] to be None for null tactic"
+
+    def test_old_tactic_keys_no_longer_in_row(self) -> None:
+        """The renamed tactic_* keys must not appear in the row dict (Phase 128 D-02).
+
+        Verifies that the pre-Phase-128 tactic_motif / tactic_piece / tactic_confidence /
+        tactic_depth DB column names are gone from the write path — writing them would
+        cause an insert failure since the columns were renamed in migration b6e2978df54f.
+        """
+        flaw = self._make_flaw_with_tactics()
+        row = flaw_record_to_row(user_id=1, game_id=42, flaw=flaw)
+
+        for old_key in ["tactic_motif", "tactic_piece", "tactic_confidence", "tactic_depth"]:
+            assert old_key not in row, (
+                f"flaw_record_to_row must not write old DB column '{old_key}' "
+                f"(renamed to allowed_* in Phase 128 migration b6e2978df54f)"
+            )

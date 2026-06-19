@@ -69,8 +69,9 @@ interface EvalChartProps {
   moves: string[];
   /**
    * Beta gate for the tactic-motif feature (Phase 126). When true and the active
-   * marker carries a `tactic_motif`, the tooltip lists it first (above the flaw
-   * tags). Mirrors the chip beta-gate in LibraryGameCard/FlawCard. Default false.
+   * marker carries an `allowed_tactic_motif`, the tooltip lists it first (above the
+   * flaw tags). Phase 128 D-07 rename. Mirrors chip beta-gate in LibraryGameCard/FlawCard.
+   * Default false.
    */
   betaEnabled?: boolean;
   /**
@@ -634,9 +635,10 @@ export function EvalChart({
   const tooltipTags = activeMarker ? activeMarker.tags.filter((t) => !PHASE_TAGS.has(t)) : [];
   // Tactic motif for the active marker (Phase 126 UAT) — listed first in the
   // tooltip, above the flaw tags. Beta-gated and only when a known family maps.
+  // Phase 128 D-07: uses allowed_tactic_motif (Phase 129 will wire orientation toggle).
   const tooltipTacticFamily =
-    betaEnabled && activeMarker?.tactic_motif != null
-      ? TACTIC_FAMILY_FOR_MOTIF[activeMarker.tactic_motif]
+    betaEnabled && activeMarker?.allowed_tactic_motif != null
+      ? TACTIC_FAMILY_FOR_MOTIF[activeMarker.allowed_tactic_motif]
       : undefined;
 
   // Active datapoint position as a fraction of the eval'd ply range. Plies in
@@ -877,8 +879,8 @@ export function EvalChart({
                 </div>
                 {(tooltipTacticFamily != null || tooltipTags.length > 0) && (
                   <ul className="flex flex-col gap-0.5 text-muted-foreground">
-                    {/* Tactic motif listed first (Phase 126 UAT). */}
-                    {tooltipTacticFamily != null && activeMarker.tactic_motif != null && (
+                    {/* Tactic motif listed first (Phase 126 UAT). Phase 128: allowed_tactic_motif. */}
+                    {tooltipTacticFamily != null && activeMarker.allowed_tactic_motif != null && (
                       <li
                         className="flex items-center gap-1.5"
                         style={{ color: TACTIC_FAMILY_COLORS[tooltipTacticFamily].color }}
@@ -888,7 +890,7 @@ export function EvalChart({
                           // Icon inherits the row color via currentColor.
                           return <TacticIcon className="h-3 w-3 shrink-0" />;
                         })()}
-                        {activeMarker.tactic_motif}
+                        {activeMarker.allowed_tactic_motif}
                       </li>
                     )}
                     {tooltipTags.map((t) => {

@@ -213,10 +213,15 @@ class TestFlawRecordToRow:
             es_before=es_before,
             es_after=es_after,
             move_san="e4",
-            tactic_motif_int=None,
-            tactic_piece=None,
-            tactic_confidence=None,
-            tactic_depth=None,
+            # Phase 128: renamed tactic_* → allowed_tactic_*; added missed_tactic_* (D-01/D-02).
+            allowed_tactic_motif_int=None,
+            allowed_tactic_piece=None,
+            allowed_tactic_confidence=None,
+            allowed_tactic_depth=None,
+            missed_tactic_motif_int=None,
+            missed_tactic_piece=None,
+            missed_tactic_confidence=None,
+            missed_tactic_depth=None,
         )
 
     def test_severity_blunder_maps_to_2(self) -> None:
@@ -387,10 +392,15 @@ class TestBulkInsertGameFlaws:
             "es_before": 0.90,
             "es_after": 0.20,
             "move_san": "e4",
-            "tactic_motif_int": None,
-            "tactic_piece": None,
-            "tactic_confidence": None,
-            "tactic_depth": None,
+            # Phase 128: renamed tactic_* → allowed_tactic_*; added missed_tactic_* (D-01/D-02).
+            "allowed_tactic_motif_int": None,
+            "allowed_tactic_piece": None,
+            "allowed_tactic_confidence": None,
+            "allowed_tactic_depth": None,
+            "missed_tactic_motif_int": None,
+            "missed_tactic_piece": None,
+            "missed_tactic_confidence": None,
+            "missed_tactic_depth": None,
         }
         row = flaw_record_to_row(user_id=game.user_id, game_id=game.id, flaw=flaw)
         await bulk_insert_game_flaws(db_session, [row])
@@ -430,10 +440,15 @@ class TestBulkInsertGameFlaws:
             "es_before": 0.55,
             "es_after": 0.44,
             "move_san": "e4",
-            "tactic_motif_int": None,
-            "tactic_piece": None,
-            "tactic_confidence": None,
-            "tactic_depth": None,
+            # Phase 128: renamed tactic_* → allowed_tactic_*; added missed_tactic_* (D-01/D-02).
+            "allowed_tactic_motif_int": None,
+            "allowed_tactic_piece": None,
+            "allowed_tactic_confidence": None,
+            "allowed_tactic_depth": None,
+            "missed_tactic_motif_int": None,
+            "missed_tactic_piece": None,
+            "missed_tactic_confidence": None,
+            "missed_tactic_depth": None,
         }
         row = flaw_record_to_row(user_id=game.user_id, game_id=game.id, flaw=flaw)
         await bulk_insert_game_flaws(db_session, [row])

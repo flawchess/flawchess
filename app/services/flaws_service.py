@@ -129,16 +129,30 @@ class FlawRecord(TypedDict):
     es_before: float  # mover-POV ES before the flaw
     es_after: float  # mover-POV ES after the flaw
     move_san: str | None  # SAN from positions[N].move_san
-    # Tactic family (Phase 124 — D-01, D-12): all optional, wired in plan 04.
-    # tactic_motif_int: TacticMotifInt value; None = no detector fired.
-    # tactic_piece: python-chess PieceType (1-6) per D-12 semantics; None = ambiguous.
-    # tactic_confidence: winner-confidence 0-100; None when tactic_motif_int is None.
-    # tactic_depth: raw half-move ply index from flaw_ply+1 (Phase 127 — D-04); None when
-    #               tactic_motif_int is None.
-    tactic_motif_int: int | None
-    tactic_piece: int | None
-    tactic_confidence: int | None
-    tactic_depth: int | None
+    # Tactic family — two orientation sets, all optional (Phase 124/128 — D-01).
+    #
+    # allowed_* — the refutation from the flaw_ply+1 PV (punishing the flaw-maker).
+    #   allowed_tactic_motif_int: TacticMotifInt value; None = no detector fired.
+    #   allowed_tactic_piece: python-chess PieceType (1-6) per D-12 semantics; None = ambiguous.
+    #   allowed_tactic_confidence: winner-confidence 0-100; None when motif is None.
+    #   allowed_tactic_depth: loop index within the flaw_ply+1 PV when motif fires (Phase 127 D-04);
+    #                         None when motif is None.
+    allowed_tactic_motif_int: int | None
+    allowed_tactic_piece: int | None
+    allowed_tactic_confidence: int | None
+    allowed_tactic_depth: int | None
+    #
+    # missed_* — the "instead-of" tag from the flaw_ply PV (best move the flaw-maker missed).
+    #   missed_tactic_motif_int: TacticMotifInt value; None = no detector fired or no flaw_ply PV.
+    #   missed_tactic_piece: python-chess PieceType (1-6); None = ambiguous or no motif.
+    #   missed_tactic_confidence: winner-confidence 0-100; None when motif is None.
+    #   missed_tactic_depth: loop index within the flaw_ply PV when motif fires (Phase 128 D-05);
+    #                        None when motif is None. One ply earlier than allowed_tactic_depth's PV.
+    #   All four are None until the Phase 128 missed-pass detector runs (Plan 02).
+    missed_tactic_motif_int: int | None
+    missed_tactic_piece: int | None
+    missed_tactic_confidence: int | None
+    missed_tactic_depth: int | None
 
 
 class GameNotAnalyzed(TypedDict):
@@ -365,32 +379,40 @@ def _detect_tactic_for_flaw(
     fen_map: dict[int, str],
     positions: list[GamePosition],
     pv_by_ply: Mapping[int, str] | None = None,
+    orientation: Literal["allowed", "missed"] = "allowed",
 ) -> tuple[int | None, int | None, int | None, int | None]:
-    """Detect tactic motif for the flaw at ply N using the refutation PV.
+    """Detect tactic motif for the flaw at ply N.
 
     Returns (tactic_motif_int, tactic_piece, tactic_confidence, tactic_depth).
-    All four are None when pv is absent, fen is missing, or SAN is malformed.
+    All four are None when pv is absent, fen is missing, or (allowed only) SAN
+    is malformed.
 
-    PV source (260618-aiq): the refutation PV for the flaw at ply N lives at ply
-    N+1. The in-process eval drain has just-computed PVs in memory that are NOT yet
-    written to game_positions at classify time, so it passes them via `pv_by_ply`
-    (ply -> pv_string). The backfill path passes pv_by_ply=None and falls back to
-    `positions[n+1].pv` (PVs already persisted by a prior drain), preserving the
-    original behavior exactly.
+    orientation='allowed' (default):
+        Detects the tactic the opponent exploits in the refutation of the flaw.
+        PV source: pv_by_ply.get(n + 1) (live drain) or positions[n + 1].pv
+        (backfill). Board: board_after_flaw (flaw move pushed). pov = refuting
+        side (board_after_flaw.turn).
+
+    orientation='missed':
+        Detects the tactic the mover could have used but missed (the "instead-of"
+        line). PV source: pv_by_ply.get(n) (live drain) or positions[n].pv
+        (backfill). Board: board_before (no flaw move pushed). pov = board_before.turn
+        = the mover (D-03, D-06).
+
+    PV source rationale (260618-aiq): the in-process eval drain has just-computed PVs
+    in memory that are NOT yet written to game_positions at classify time, so it passes
+    them via `pv_by_ply` (ply -> pv_string). The backfill path passes pv_by_ply=None
+    and falls back to the persisted pv column, preserving the original behavior exactly.
 
     Guards implemented:
-    - Pitfall 1: `n + 1 < len(positions)` before indexing positions[n+1].pv
-    - Pitfall 6: try/except (ValueError, chess.IllegalMoveError) for SAN parse
+    - Pitfall 1: `n + 1 < len(positions)` before indexing positions[n+1].pv (allowed)
+    - Pitfall 1b: `0 <= n < len(positions)` before indexing positions[n].pv (missed)
+    - Pitfall 6: try/except (ValueError, chess.IllegalMoveError) for SAN parse (allowed)
+    - T-128-03: missed pass reuses the existing try/except guard in detect_tactic_motif
+      (malformed PV never raises out of the detector)
     """
     fen_before_flaw = fen_map.get(n, "")
-    pv: str | None = None
-    if pv_by_ply is not None:
-        pv = pv_by_ply.get(n + 1)
-    if pv is None and n + 1 < len(positions):
-        pv = positions[n + 1].pv
-    move_san_of_flaw: str | None = positions[n].move_san
-
-    if not (fen_before_flaw and pv and move_san_of_flaw):
+    if not fen_before_flaw:
         return None, None, None, None
 
     # fen_map stores board.board_fen() (piece-placement only, no side-to-move).
@@ -398,11 +420,36 @@ def _detect_tactic_for_flaw(
     # from ply parity: even = white mover, odd = black mover.
     board_before = chess.Board(fen_before_flaw)
     board_before.turn = chess.WHITE if n % 2 == 0 else chess.BLACK
+
+    if orientation == "missed":
+        # Missed pass: board_before + flaw_ply PV; pov = the mover (board_before.turn).
+        # No flaw move is pushed — the mover is evaluated on the decision position (D-03).
+        pv: str | None = None
+        if pv_by_ply is not None:
+            pv = pv_by_ply.get(n)
+        if pv is None and 0 <= n < len(positions):
+            pv = positions[n].pv
+        if not pv:
+            return None, None, None, None
+        return detect_tactic_motif(board_before, pv)
+
+    # orientation == "allowed" (default):
+    # Allowed pass: board_after_flaw + refutation PV (flaw_ply+1); pov = refuting side.
+    pv_allowed: str | None = None
+    if pv_by_ply is not None:
+        pv_allowed = pv_by_ply.get(n + 1)
+    if pv_allowed is None and n + 1 < len(positions):
+        pv_allowed = positions[n + 1].pv
+    move_san_of_flaw: str | None = positions[n].move_san
+
+    if not (pv_allowed and move_san_of_flaw):
+        return None, None, None, None
+
     try:
         flaw_move = board_before.parse_san(move_san_of_flaw)
         board_after_flaw = board_before.copy()
         board_after_flaw.push(flaw_move)
-        return detect_tactic_motif(board_after_flaw, pv)
+        return detect_tactic_motif(board_after_flaw, pv_allowed)
     except (ValueError, chess.IllegalMoveError):
         # Malformed move_san or FEN — leave all four as None (Pitfall 6)
         return None, None, None, None
@@ -426,8 +473,16 @@ def _build_flaw_record(
     # rendered the miniboard one ply too early (decision point off by one move).
     # This makes the miniboard show the decision point and lets the frontend
     # resolve move_san → arrow squares.
-    tactic_motif_int, tactic_piece, tactic_confidence, tactic_depth = _detect_tactic_for_flaw(
-        n, fen_map, positions, pv_by_ply
+    # allowed_* pass: detect tactic from flaw_ply+1 PV (the refutation of the flaw).
+    # pov = the refuting side (board_after_flaw.turn), per D-03.
+    allowed_motif_int, allowed_piece, allowed_confidence, allowed_depth = _detect_tactic_for_flaw(
+        n, fen_map, positions, pv_by_ply, orientation="allowed"
+    )
+    # missed_* pass: detect tactic from flaw_ply PV (the "instead-of" line).
+    # pov = board_before.turn = the mover (the flaw-maker, who should have played this line).
+    # Reuses the same dispatcher + relevance gate unchanged (D-04).
+    missed_motif_int, missed_piece, missed_confidence, missed_depth = _detect_tactic_for_flaw(
+        n, fen_map, positions, pv_by_ply, orientation="missed"
     )
     return FlawRecord(
         ply=n,
@@ -438,10 +493,14 @@ def _build_flaw_record(
         es_before=es_before,
         es_after=es_after,
         move_san=positions[n].move_san,
-        tactic_motif_int=tactic_motif_int,
-        tactic_piece=tactic_piece,
-        tactic_confidence=tactic_confidence,
-        tactic_depth=tactic_depth,
+        allowed_tactic_motif_int=allowed_motif_int,
+        allowed_tactic_piece=allowed_piece,
+        allowed_tactic_confidence=allowed_confidence,
+        allowed_tactic_depth=allowed_depth,
+        missed_tactic_motif_int=missed_motif_int,
+        missed_tactic_piece=missed_piece,
+        missed_tactic_confidence=missed_confidence,
+        missed_tactic_depth=missed_depth,
     )
 
 

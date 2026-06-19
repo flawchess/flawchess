@@ -20,6 +20,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 - **`backfill_full_evals.py` script** — operator tool to queue full-game analysis for a single user's not-yet-analyzed games at top priority. It enlists every game still missing full evals as a tier-1 eval job; the running drain worker then evaluates each game and tags flaws, tactic motifs, and blunder/mistake/inaccuracy counts automatically. Idempotent and safe to re-run; supports dev/benchmark/prod targets with `--dry-run` and `--limit`.
 
+- **Missed-vs-allowed tactic tagging (foundation)** — a flawed move can now carry two tactic motifs: the one the player *allowed* (the opponent's refutation) and the one they *missed* (the stronger tactic they should have played instead). Both are tagged from engine lines already stored at analysis time, so there is no extra analysis cost, and a flaw may have neither, one, or both filled depending on line availability. The Library's flaw filter and comparison endpoint can now select either orientation (defaulting to "allowed"), with both surfaced on the flaw schemas; the UI toggle to read missed vs allowed lands in a follow-up phase. (Phase 128, SEED-054)
+
 ### Changed
 
 - **Flaw stats faster and more accurate on large game libraries** — the analyzed-game gate now uses the pre-materialized `full_evals_completed_at` column instead of recomputing eval coverage across all positions on every request. This eliminates a full-partition scan that caused 135s average / 49-minute max latency under an eval drain on large accounts. Fully-analyzed short games are now correctly counted as analyzed. (260617-pu4)

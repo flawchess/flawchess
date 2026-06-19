@@ -281,15 +281,15 @@ export function LibraryGameCard({
   }, [game.flaw_markers]);
 
   // Per-tactic-motif ascending list of the user's marker plies, for click-to-cycle
-  // on the tactic-motif chips (Phase 126 UAT). Scoped to is_user markers carrying a
-  // tactic_motif, mirroring tagPlies.
+  // on the tactic-motif chips (Phase 126 UAT). Scoped to is_user markers carrying an
+  // allowed_tactic_motif (Phase 128 D-07 rename; Phase 129 will wire orientation toggle).
   const motifPlies = useMemo(() => {
     const m = new Map<string, number[]>();
     for (const fm of game.flaw_markers ?? []) {
-      if (!fm.is_user || fm.tactic_motif == null) continue;
-      const arr = m.get(fm.tactic_motif);
+      if (!fm.is_user || fm.allowed_tactic_motif == null) continue;
+      const arr = m.get(fm.allowed_tactic_motif);
       if (arr) arr.push(fm.ply);
-      else m.set(fm.tactic_motif, [fm.ply]);
+      else m.set(fm.allowed_tactic_motif, [fm.ply]);
     }
     for (const arr of m.values()) arr.sort((a, b) => a - b);
     return m;
@@ -333,7 +333,7 @@ export function LibraryGameCard({
       if (ref.kind === 'severity') matches = fm.severity === ref.severity;
       else if (ref.kind === 'tag')
         matches = fm.tags.includes(ref.tag); // inaccuracies have no tags → never match a tag hover
-      else matches = fm.tactic_motif === ref.motif;
+      else matches = fm.allowed_tactic_motif === ref.motif;
       if (matches) set.add(fm.ply);
     }
     return set;
@@ -343,11 +343,12 @@ export function LibraryGameCard({
 
   // Tactic motifs: collect unique non-null motifs from user flaw markers so the
   // chip row can show one chip per distinct motif in the game (beta-gated, D-01/D-10).
+  // Phase 128 D-07: uses allowed_tactic_motif (Phase 129 will wire orientation toggle).
   const tacticMotifs = useMemo(() => {
     if (!userProfile?.beta_enabled) return [];
     const seen = new Set<string>();
     for (const fm of game.flaw_markers ?? []) {
-      if (fm.is_user && fm.tactic_motif != null) seen.add(fm.tactic_motif);
+      if (fm.is_user && fm.allowed_tactic_motif != null) seen.add(fm.allowed_tactic_motif);
     }
     return Array.from(seen);
   }, [userProfile?.beta_enabled, game.flaw_markers]);

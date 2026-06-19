@@ -44,7 +44,7 @@
 - [x] **Phase 125: Backfill Tactic Motifs** — run `backfill_flaws.py` over ~131k self-eval'd games; lichess-eval-only games stay NULL until full-eval'd via the existing tier-3 idle fleet (completed 2026-06-18)
 - [ ] **Phase 126: Comparison Stats + Frontend** — `GET /api/library/tactic-comparison` endpoint + motif chips on flaw cards + MiniBulletChart you-vs-opponent motif grid
 - [x] **Phase 127: Detector Hardening & Validation** — return motif depth from all detectors + store `*_tactic_depth`; lichess CC0 puzzle validation harness (precision AND recall); fix deep-scan/loose-pin false positives. De-risks 128/129. (completed 2026-06-19)
-- [ ] **Phase 128: Missed-Opportunity Tagging** — rename existing tactic cols to `allowed_*`, add `missed_*` set; second detector pass on the `flaw_ply` PV (SEED-054); backend filter + schema; mover-relative columns, `is_opponent_expr` narration (no `tactic_pov` column)
+- [x] **Phase 128: Missed-Opportunity Tagging** — rename existing tactic cols to `allowed_*`, add `missed_*` set; second detector pass on the `flaw_ply` PV (SEED-054); backend filter + schema; mover-relative columns, `is_opponent_expr` narration (no `tactic_pov` column) (completed 2026-06-19)
 - [ ] **Phase 129: Tactic Filter UI** — composed motif × pov (missed/allowed) × depth-slider filter + display across flaw surfaces, desktop + mobile
 
 ## Phase Details
@@ -181,7 +181,21 @@ Plans:
   4. The inline-columns-vs-child-table decision is made and recorded during discuss-phase (lean inline, per the design note)
   5. Backend filtering and the comparison/flaw schemas expose both orientations; backfill is idempotent and gated on SEED-054 PV availability (lichess-only coverage fills in over time)
 
-**Plans**: TBD (discuss-phase)
+**Plans**: 4 plans
+
+Plans:
+**Wave 1**
+
+- [x] 128-01-PLAN.md — Storage contract: rename tactic_* → allowed_tactic_* + add missed_tactic_* (data-preserving Alembic rename+add) + FlawRecord/write-path mapping (D-01, D-02, D-06)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [x] 128-02-PLAN.md — Detector second pass: orientation-parametrized _detect_tactic_for_flaw, missed pass on flaw_ply PV (pov=mover), both 4-tuples in _build_flaw_record (D-03, D-04, D-05, D-06)
+- [x] 128-03-PLAN.md — Orientation-aware filter + schema contract: orientation enum at both filter sites (default allowed), full tactic_* → allowed_* rename ripple, both column sets on flaw/comparison schemas (D-07, D-08, D-09, D-10)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [x] 128-04-PLAN.md — Dev backfill (missed_* + allowed_tactic_depth fill, honest coverage, idempotency) + deferred folded 127/128 prod runbook (D-11, D-12, D-13)
 
 ### Phase 129: Tactic Filter UI
 
@@ -246,7 +260,7 @@ Plans:
 | 125. Backfill Tactic Motifs | 3/3 | Complete    | 2026-06-18 |
 | 126. Comparison Stats + Frontend | 3/3 | Complete   | 2026-06-18 |
 | 127. Detector Hardening & Validation | 4/4 | Complete    | 2026-06-19 |
-| 128. Missed-Opportunity Tagging | 0/? | Planned | — |
+| 128. Missed-Opportunity Tagging | 4/4 | Complete    | 2026-06-19 |
 | 129. Tactic Filter UI | 0/? | Planned | — |
 
 ## Backlog

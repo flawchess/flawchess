@@ -50,8 +50,11 @@ class FlawMarker(BaseModel):
 
     is_user=True → filled circle (player); is_user=False → hollow circle (opponent).
     tags is empty for inaccuracies (D-03).
-    Phase 126 (TACUI-01): tactic_motif/tactic_confidence surfaced for the chip;
-    None when below MIN_TACTIC_CHIP_CONFIDENCE or when tactic_motif is NULL in DB.
+    Phase 126 (TACUI-01): tactic chip fields surfaced; None when below
+    MIN_TACTIC_CHIP_CONFIDENCE or when tactic column is NULL in DB.
+    Phase 128 (D-07/D-10): both orientation column sets exposed orientation-labeled.
+    The narration matrix (allowed×is_opponent, missed×is_opponent) is a Phase 129
+    concern; 128 just keeps the schema labeled so 129 can apply it.
     """
 
     ply: int
@@ -59,8 +62,12 @@ class FlawMarker(BaseModel):
     tags: list[FlawTag]  # empty for inaccuracies (D-03)
     is_user: bool  # True = filled dot (player), False = hollow dot (opponent)
     move_san: str | None  # SAN of the flawed move (positions[ply].move_san) — tooltip move label
-    tactic_motif: str | None = None  # motif name string, or None when below confidence gate
-    tactic_confidence: int | None = None  # raw confidence int (0-100), or None when gated
+    # allowed_* fields: tactic allowed to the flaw-maker's opponent (refutation PV)
+    allowed_tactic_motif: str | None = None  # motif name string, or None when below confidence gate
+    allowed_tactic_confidence: int | None = None  # raw confidence int (0-100), or None when gated
+    # missed_* fields: tactic the flaw-maker missed (the "instead-of" PV, flaw_ply PV)
+    missed_tactic_motif: str | None = None  # motif name string, or None when below confidence gate
+    missed_tactic_confidence: int | None = None  # raw confidence int (0-100), or None when gated
 
 
 class PhaseTransitions(BaseModel):
@@ -169,11 +176,16 @@ class FlawListItem(BaseModel):
     # "e2e4"). None for lichess-eval-only games (no PV captured). The Flaws-tab
     # miniboard draws it as a blue arrow next to the (red) flaw-move arrow.
     best_move: str | None = None
-    # Tactic chip fields (Phase 126, TACUI-01).
-    # tactic_motif: motif name string (e.g. "fork"), or None when below confidence gate.
-    # tactic_confidence: raw confidence int (0-100), or None when tactic_motif is gated.
-    tactic_motif: str | None = None
-    tactic_confidence: int | None = None
+    # Tactic chip fields (Phase 126, TACUI-01; Phase 128 D-07 — both orientation column sets).
+    # allowed_*: tactic allowed to flaw-maker's opponent (refutation PV, flaw_ply+1).
+    # missed_*:  tactic the flaw-maker missed (the "instead-of" PV, flaw_ply).
+    # Each pair is None when below _TACTIC_CHIP_CONFIDENCE_MIN or when the DB column is NULL.
+    # Phase 129 applies the narration matrix (orientation × is_opponent_expr) to select
+    # which fields to surface in the chip and comparison; 128 just exposes both labeled.
+    allowed_tactic_motif: str | None = None
+    allowed_tactic_confidence: int | None = None
+    missed_tactic_motif: str | None = None
+    missed_tactic_confidence: int | None = None
 
 
 class LibraryFlawsResponse(BaseModel):

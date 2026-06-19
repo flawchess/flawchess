@@ -91,6 +91,7 @@ async def _seed_flaw(
 ) -> None:
     from app.repositories.game_flaws_repository import bulk_insert_game_flaws
 
+    # Phase 128: tactic_motif/tactic_confidence renamed to allowed_tactic_motif/allowed_tactic_confidence (D-02).
     await bulk_insert_game_flaws(
         session,
         [
@@ -106,8 +107,8 @@ async def _seed_flaw(
                 "is_reversed": False,
                 "is_squandered": False,
                 "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR",
-                "tactic_motif": tactic_motif,
-                "tactic_confidence": tactic_confidence,
+                "allowed_tactic_motif": tactic_motif,
+                "allowed_tactic_confidence": tactic_confidence,
             }
         ],
     )
@@ -347,10 +348,11 @@ async def test_confidence_gate_chip_field(db_session: AsyncSession) -> None:
     # Find the low-confidence flaw (ply=2)
     low_conf_flaw = next((f for f in flaws if f.ply == 2), None)
     assert low_conf_flaw is not None
-    assert low_conf_flaw.tactic_motif is None  # below threshold → None
+    # Phase 128 D-07: tactic_motif renamed to allowed_tactic_motif on FlawListItem schema.
+    assert low_conf_flaw.allowed_tactic_motif is None  # below threshold → None
 
     # Find the high-confidence flaw (ply=4)
     high_conf_flaw = next((f for f in flaws if f.ply == 4), None)
     assert high_conf_flaw is not None
-    assert high_conf_flaw.tactic_motif == "pin"  # at/above threshold → string
-    assert high_conf_flaw.tactic_confidence == high_confidence
+    assert high_conf_flaw.allowed_tactic_motif == "pin"  # at/above threshold → string
+    assert high_conf_flaw.allowed_tactic_confidence == high_confidence

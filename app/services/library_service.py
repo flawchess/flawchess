@@ -33,6 +33,7 @@ from app.models.game_flaw import GameFlaw
 from app.repositories import library_repository
 from app.repositories.library_repository import (
     FAMILY_TO_MOTIF_INTS,
+    TacticOrientation,
     _TACTIC_CHIP_CONFIDENCE_MIN,
     _TEMPO_INT_TO_TAG,
 )
@@ -83,7 +84,7 @@ _USER_FRAMED_TAGS: frozenset[FlawTag] = frozenset({"miss", "lucky"})
 def _build_eval_series(
     game: Game,
     positions: list[GamePosition],
-    tactic_by_ply: dict[int, tuple[str, int]] | None = None,
+    tactic_by_ply: dict[int, tuple[str | None, int | None, str | None, int | None]] | None = None,
 ) -> tuple[list[EvalPoint], list[FlawMarker], PhaseTransitions]:
     """Compute white-perspective ES line, flaw markers, and phase transitions.
 
@@ -95,10 +96,13 @@ def _build_eval_series(
     Args:
         game: Game row with user_color, result, base_time_seconds, increment_seconds.
         positions: All GamePosition rows for this game, ordered by ply ASC.
-        tactic_by_ply: Optional dict mapping ply → (motif_str, confidence) for tactic
-                       chip data on FlawMarkers. Sourced from game_flaws rows (Phase 126,
-                       TACUI-01 single-game card). None = no tactic chip data (default,
-                       preserves backward compatibility).
+        tactic_by_ply: Optional dict mapping ply → (allowed_motif, allowed_conf,
+                       missed_motif, missed_conf) for tactic chip data on FlawMarkers.
+                       Sourced from game_flaws rows (Phase 126, TACUI-01 single-game
+                       card; Phase 128 D-07 extends to both orientation column sets).
+                       None = no tactic chip data (default, preserves backward compat).
+                       Each motif/conf pair is None when below _TACTIC_CHIP_CONFIDENCE_MIN
+                       or when the DB column is NULL.
 
     Returns:
         (eval_series, flaw_markers, phase_transitions) tuple where:
@@ -200,12 +204,15 @@ def _build_eval_series(
         else:
             tags = []  # inaccuracy — no tags (D-03)
         # Phase 126 (TACUI-01): tactic chip fields from pre-fetched game_flaws data.
-        tac_motif: str | None = None
-        tac_conf: int | None = None
+        # Phase 128 D-07: both orientation column sets on FlawMarker (orientation-labeled).
+        tac_allowed_motif: str | None = None
+        tac_allowed_conf: int | None = None
+        tac_missed_motif: str | None = None
+        tac_missed_conf: int | None = None
         if tactic_by_ply is not None:
             tac_entry = tactic_by_ply.get(pos.ply)
             if tac_entry is not None:
-                tac_motif, tac_conf = tac_entry
+                tac_allowed_motif, tac_allowed_conf, tac_missed_motif, tac_missed_conf = tac_entry
         flaw_markers.append(
             FlawMarker(
                 ply=pos.ply,
@@ -213,8 +220,10 @@ def _build_eval_series(
                 tags=tags,
                 is_user=is_user,
                 move_san=pos.move_san,
-                tactic_motif=tac_motif,
-                tactic_confidence=tac_conf,
+                allowed_tactic_motif=tac_allowed_motif,
+                allowed_tactic_confidence=tac_allowed_conf,
+                missed_tactic_motif=tac_missed_motif,
+                missed_tactic_confidence=tac_missed_conf,
             )
         )
 
@@ -375,17 +384,42 @@ def _build_card(
         # Phase 109 (LIBG-10): populate eval chart fields for analyzed games.
         if positions:
             # Phase 126 (TACUI-01): build tactic_by_ply dict from flaw_rows for chips.
-            # Only include flaws meeting the chip confidence gate (gated same as query_flaws).
-            tactic_by_ply: dict[int, tuple[str, int]] = {}
+            # Phase 128 D-07: extended to 4-tuple (allowed_motif, allowed_conf,
+            # missed_motif, missed_conf) so FlawMarker carries both orientation column
+            # sets. Each pair is None when below _TACTIC_CHIP_CONFIDENCE_MIN or NULL.
+            tactic_by_ply: dict[int, tuple[str | None, int | None, str | None, int | None]] = {}
             for fr in flaw_rows:
+                allowed_motif_str: str | None = None
+                allowed_conf_val: int | None = None
                 if (
-                    fr.tactic_motif is not None
-                    and fr.tactic_confidence is not None
-                    and fr.tactic_confidence >= _TACTIC_CHIP_CONFIDENCE_MIN
+                    fr.allowed_tactic_motif is not None
+                    and fr.allowed_tactic_confidence is not None
+                    and fr.allowed_tactic_confidence >= _TACTIC_CHIP_CONFIDENCE_MIN
                 ):
-                    motif_str = _TACTIC_INT_TO_MOTIF.get(fr.tactic_motif)
-                    if motif_str is not None:
-                        tactic_by_ply[fr.ply] = (motif_str, fr.tactic_confidence)
+                    allowed_motif_str = _TACTIC_INT_TO_MOTIF.get(fr.allowed_tactic_motif)
+                    if allowed_motif_str is not None:
+                        allowed_conf_val = fr.allowed_tactic_confidence
+                    else:
+                        allowed_motif_str = None
+                missed_motif_str: str | None = None
+                missed_conf_val: int | None = None
+                if (
+                    fr.missed_tactic_motif is not None
+                    and fr.missed_tactic_confidence is not None
+                    and fr.missed_tactic_confidence >= _TACTIC_CHIP_CONFIDENCE_MIN
+                ):
+                    missed_motif_str = _TACTIC_INT_TO_MOTIF.get(fr.missed_tactic_motif)
+                    if missed_motif_str is not None:
+                        missed_conf_val = fr.missed_tactic_confidence
+                    else:
+                        missed_motif_str = None
+                if allowed_motif_str is not None or missed_motif_str is not None:
+                    tactic_by_ply[fr.ply] = (
+                        allowed_motif_str,
+                        allowed_conf_val,
+                        missed_motif_str,
+                        missed_conf_val,
+                    )
             eval_series_val, flaw_marker_val, phase_transition_val = _build_eval_series(
                 game, positions, tactic_by_ply=tactic_by_ply if tactic_by_ply else None
             )
@@ -1308,6 +1342,7 @@ async def get_tactic_comparison(
     opponent_gap_max: int | None = None,
     color: str | None = None,
     tactic_families: Sequence[str] | None = None,
+    orientation: TacticOrientation = "allowed",
 ) -> TacticComparisonResponse:
     """Per-family tactic motif you-vs-opponent comparison (Phase 126, TACCMP-01/02/03).
 
@@ -1316,6 +1351,9 @@ async def get_tactic_comparison(
        return below_gate=True immediately (avoids the expensive per-game query).
     2. fetch_tactic_comparison — per-game LEFT JOIN aggregation: 12 COUNT FILTER columns.
     3. _compute_tactic_bullets — mean + Wald-z CI per family, ranked by significance.
+
+    Phase 128 D-09: orientation param selects the column set (allowed/missed) for
+    the comparison. Default "allowed" preserves current Library behavior (D-08).
 
     IDOR guard (T-126-01): user_id is from current_active_user, never a request param.
     """
@@ -1357,6 +1395,7 @@ async def get_tactic_comparison(
             user_id,
             analyzed_subq,
             tactic_confidence_min=MIN_TACTIC_CHIP_CONFIDENCE,
+            orientation=orientation,
             **_filter_kwargs,  # includes tactic_families
         )
         bullets = _compute_tactic_bullets(rows)

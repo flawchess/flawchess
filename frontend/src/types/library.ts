@@ -98,6 +98,8 @@ export interface EvalPoint {
 /**
  * One flaw dot for the eval chart (both colors, B/M/I).
  * is_user=true → filled circle (player); is_user=false → hollow circle (opponent).
+ * Phase 128 D-07: both orientation column sets exposed orientation-labeled.
+ * Phase 129 wires the UI toggle to select which orientation to surface in chips.
  */
 export interface FlawMarker {
   ply: number;
@@ -105,10 +107,14 @@ export interface FlawMarker {
   tags: FlawTag[];    // empty for inaccuracies
   is_user: boolean;
   move_san: string | null; // SAN of the flawed move — tooltip move label (null on final position)
-  /** Tactic motif string from the backend (Phase 126, TACUI-01). Null for inaccuracies or below confidence threshold. */
-  tactic_motif: string | null;
-  /** Tactic confidence score 0-100 (Phase 126). Null when no motif assigned. */
-  tactic_confidence: number | null;
+  /** Tactic allowed to flaw-maker's opponent (refutation PV). Null below confidence gate or when DB column is NULL. */
+  allowed_tactic_motif: string | null;
+  /** Confidence for allowed_tactic_motif (0-100). Null when no motif assigned. */
+  allowed_tactic_confidence: number | null;
+  /** Tactic the flaw-maker missed (the "instead-of" PV). Null below confidence gate or when DB column is NULL. */
+  missed_tactic_motif: string | null;
+  /** Confidence for missed_tactic_motif (0-100). Null when no motif assigned. */
+  missed_tactic_confidence: number | null;
 }
 
 /** First ply of middlegame and endgame phases (at most two phase lines). */
@@ -231,10 +237,14 @@ export interface FlawListItem {
   clock_seconds: number | null;
   /** Time spent on the flawed move (1dp); null when prior clock unknown. Plan 260610-vru. */
   move_seconds: number | null;
-  /** Tactic motif string for this flaw (Phase 126, TACUI-01). Null when below confidence threshold. */
-  tactic_motif: string | null;
-  /** Tactic confidence score 0-100 (Phase 126). Null when no motif assigned. */
-  tactic_confidence: number | null;
+  /** Tactic allowed to flaw-maker's opponent (refutation PV, flaw_ply+1). Null below confidence gate. Phase 128 D-07. */
+  allowed_tactic_motif: string | null;
+  /** Confidence for allowed_tactic_motif (0-100). Null when no motif assigned. */
+  allowed_tactic_confidence: number | null;
+  /** Tactic the flaw-maker missed (the "instead-of" PV, flaw_ply). Null below confidence gate. Phase 128 D-07. */
+  missed_tactic_motif: string | null;
+  /** Confidence for missed_tactic_motif (0-100). Null when no motif assigned. */
+  missed_tactic_confidence: number | null;
   /** Engine best move FROM the pre-flaw position (UCI); null when no PV captured. */
   best_move: string | null;
 }

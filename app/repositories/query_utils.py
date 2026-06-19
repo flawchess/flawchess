@@ -2,7 +2,7 @@
 
 import datetime
 from collections.abc import Sequence
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from sqlalchemy import case
 from sqlalchemy.sql.elements import ColumnElement
@@ -87,6 +87,7 @@ def apply_game_filters(
     flaw_tags: Sequence[str] | None = None,
     tactic_families: Sequence[str] | None = None,
     user_id: int | None = None,
+    orientation: Literal["missed", "allowed"] = "allowed",
 ) -> Any:
     """Apply standard game filter WHERE clauses to a SELECT statement.
 
@@ -119,15 +120,21 @@ def apply_game_filters(
                          None (default) leaves the statement unchanged.
                          Requires user_id when either flaw_severity or flaw_tags is set.
         tactic_families: When set (e.g. ["fork", "pin_skewer"]), restrict to games
-                         containing >=1 flaw whose tactic_motif int is in the union of
-                         FAMILY_TO_MOTIF_INTS values for the selected families. Unknown
-                         family keys yield no ints (no-op), never raw SQL (T-126-02).
-                         None (default) leaves the statement unchanged. Uses lazy import
-                         of FAMILY_TO_MOTIF_INTS from library_repository to avoid a
-                         circular import (Phase 126 D-06).
+                         containing >=1 flaw whose tactic motif int (in the orientation's
+                         column) is in the union of FAMILY_TO_MOTIF_INTS values for the
+                         selected families. Unknown family keys yield no ints (no-op),
+                         never raw SQL (T-126-02). None (default) leaves the statement
+                         unchanged. Uses lazy import of FAMILY_TO_MOTIF_INTS from
+                         library_repository to avoid a circular import (Phase 126 D-06).
         user_id: The authenticated user's id — required when flaw_severity or
                          flaw_tags is set, to scope the EXISTS subquery's game_flaws read
                          (T-108-07). Ignored otherwise.
+        orientation: Which tactic column set to query (Phase 128 D-09).
+                         "allowed" (default) → allowed_tactic_motif (current behavior,
+                         preserves existing Library query behavior, D-08).
+                         "missed"  → missed_tactic_motif. FAMILY_TO_MOTIF_INTS is reused
+                         unchanged for both orientations. Orientation is a closed
+                         Literal enum — never raw column-name interpolation (T-128-05).
 
     Notes:
         When either gap bound is set, games with missing white/black ratings
@@ -201,7 +208,7 @@ def apply_game_filters(
     if tactic_families:
         # Lazy import avoids a query_utils → library_repository circular import
         # (same pattern as the flaw_exists_from_table lazy import above).
-        from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
+        from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS, _tactic_cols
         from app.models.game_flaw import GameFlaw as _GameFlaw
 
         # Expand selected family keys to their motif int sets; unknown keys are
@@ -213,6 +220,9 @@ def apply_game_filters(
             # adding a JOIN to the outer statement.
             from sqlalchemy import exists as _exists, select as _select
 
+            # Phase 128 D-09: orientation selects the matching column pair.
+            # _tactic_cols resolves to ORM attributes (closed enum branch, T-128-05).
+            motif_col, _conf_col = _tactic_cols(orientation)
             tactic_exists = _exists(
                 _select(_GameFlaw.ply).where(
                     _GameFlaw.game_id == Game.id,
@@ -221,7 +231,7 @@ def apply_game_filters(
                     # uniqueness makes the outer user_id filter sufficient, but the
                     # explicit scope keeps the correlated EXISTS pattern uniform.
                     _GameFlaw.user_id == user_id,
-                    _GameFlaw.tactic_motif.in_(motif_ints),
+                    motif_col.in_(motif_ints),
                 )
             )
             stmt = stmt.where(tactic_exists)
