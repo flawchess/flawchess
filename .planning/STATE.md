@@ -4,11 +4,10 @@ milestone: v1.28
 milestone_name: Tactic Tagging
 current_phase: 129
 current_phase_name: Tactic Filter UI
-status: executing
+status: Phase 128 shipped — squash-merged to main (02a9aca8)
 stopped_at: Phase 128 context gathered
-last_updated: "2026-06-19T19:52:48.601Z"
+last_updated: "2026-06-19T19:58:17.655Z"
 last_activity: 2026-06-19
-last_activity_desc: Phase 128 complete, transitioned to Phase 129
 progress:
   total_phases: 11
   completed_phases: 6
@@ -23,8 +22,8 @@ progress:
 
 Phase: 129 — Tactic Filter UI
 Plan: Not started
-Status: Ready to execute
-Last activity: 2026-06-19 — Phase 128 complete, transitioned to Phase 129
+Status: Phase 128 shipped — squash-merged to main (02a9aca8)
+Last activity: 2026-06-19
 
 ## Project Reference
 
