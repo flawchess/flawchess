@@ -5,10 +5,10 @@ milestone_name: Tactic Tagging
 current_phase: 129
 current_phase_name: Tactic Filter UI
 status: ready_to_plan
-stopped_at: Phase 128.1 complete, ready to plan Phase 129
-last_updated: "2026-06-20T04:02:49.165Z"
+stopped_at: Phase 128.1 shipped (squash-merged to main), ready to plan Phase 129
+last_updated: "2026-06-20T06:12:00.000Z"
 last_activity: 2026-06-20
-last_activity_desc: Phase 128.1 complete, transitioned to Phase 129
+last_activity_desc: Phase 128.1 shipped — squash-merged to main, ready to plan Phase 129
 progress:
   total_phases: 12
   completed_phases: 7
