@@ -2,19 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.28
 milestone_name: Tactic Tagging
-current_phase: 999.1
-current_phase_name: BACKLOG
-status: milestone-phases-complete
+status: Phase 129 shipped — squash-merged to main (98126b3a)
 stopped_at: Phase 129 verified complete (UAT 2/2 passed, G-01 resolved live) — all active v1.28 phases (124–129) done; milestone ready to ship
-last_updated: "2026-06-20T15:05:00.000Z"
+last_updated: "2026-06-20T13:01:39.793Z"
 last_activity: 2026-06-20
-last_activity_desc: Phase 129 verified (UAT 2/2 passed); v1.28 active phases complete
 progress:
   total_phases: 12
   completed_phases: 8
   total_plans: 27
   completed_plans: 27
   percent: 67
+current_phase: 999.1
+current_phase_name: BACKLOG
 ---
 
 # Project State: FlawChess
@@ -23,8 +22,8 @@ progress:
 
 Milestone: v1.28 Tactic Tagging — all active phases (124, 125, 126, 127, 128, 128.1, 129) COMPLETE
 Phase 129 (tactic-filter-ui): VERIFIED — UAT 2/2 passed, G-01 resolved live, VERIFICATION human-verified
-Status: Milestone ready to ship/close. Only the 999.x backlog (e.g. 999.1 Password Reset) remains, out of active scope.
-Last activity: 2026-06-20 — Phase 129 verified (UAT 2/2 passed); v1.28 active phases complete
+Status: Phase 129 shipped — squash-merged to main (98126b3a)
+Last activity: 2026-06-20
 
 ## Project Reference
 
