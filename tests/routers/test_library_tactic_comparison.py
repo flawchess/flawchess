@@ -13,6 +13,7 @@ import uuid
 
 import httpx
 import pytest
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.main import app
@@ -44,31 +45,53 @@ async def _register_and_login(email: str, password: str = "testpass123!") -> tup
     return user_id, token
 
 
-async def _seed_games(test_engine, user_id: int, count: int = 1) -> None:
-    """Insert game rows for the given user via a committed session."""
+async def _seed_games(test_engine, user_id: int, count: int = 1) -> list[int]:
+    """Insert game rows for the given user via a committed session. Returns game IDs.
+
+    The seeded games default to full_evals_completed_at IS NULL AND
+    lichess_evals_at IS NULL, which makes them needs-engine candidates in the
+    GLOBAL tier-3 eval lottery (_claim_tier3_derived). Leaving them in the shared
+    per-run test DB pollutes the eval_queue lottery tests, which assume their own
+    inserted game is the only eligible candidate — caller MUST delete via
+    _delete_games in a finally (see test_eval_queue.py for the same discipline).
+    """
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    game_ids: list[int] = []
     async with session_maker() as session:
         async with session.begin():
             for _ in range(count):
-                session.add(
-                    Game(
-                        user_id=user_id,
-                        platform="lichess",
-                        platform_game_id=str(uuid.uuid4()),
-                        platform_url="https://lichess.org/test",
-                        pgn="1. e4 e5 *",
-                        result="1-0",
-                        user_color="white",
-                        time_control_str="600+0",
-                        time_control_bucket="blitz",
-                        time_control_seconds=600,
-                        base_time_seconds=600,
-                        increment_seconds=0.0,
-                        rated=True,
-                        is_computer_game=False,
-                        ply_count=40,
-                    )
+                game = Game(
+                    user_id=user_id,
+                    platform="lichess",
+                    platform_game_id=str(uuid.uuid4()),
+                    platform_url="https://lichess.org/test",
+                    pgn="1. e4 e5 *",
+                    result="1-0",
+                    user_color="white",
+                    time_control_str="600+0",
+                    time_control_bucket="blitz",
+                    time_control_seconds=600,
+                    base_time_seconds=600,
+                    increment_seconds=0.0,
+                    rated=True,
+                    is_computer_game=False,
+                    ply_count=40,
                 )
+                session.add(game)
+                await session.flush()
+                game_ids.append(game.id)
+    return game_ids
+
+
+async def _delete_games(test_engine, game_ids: list[int]) -> None:
+    """Delete the given games (committed cleanup) so they don't leak into the
+    global tier-3 eval lottery shared by other test files."""
+    if not game_ids:
+        return
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        async with session.begin():
+            await session.execute(delete(Game).where(Game.id.in_(game_ids)))
 
 
 # ---------------------------------------------------------------------------
@@ -136,25 +159,28 @@ async def test_tactic_families_filter(test_engine) -> None:
     user_id, token = await _register_and_login(email)
 
     # Seed a few games so we get a real (below-gate but valid) response
-    await _seed_games(test_engine, user_id, count=3)
+    game_ids = await _seed_games(test_engine, user_id, count=3)
 
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        resp_filtered = await client.get(
-            ENDPOINT,
-            params={"tactic_families": ["fork", "mate"]},
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        resp_unfiltered = await client.get(
-            ENDPOINT,
-            headers={"Authorization": f"Bearer {token}"},
-        )
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp_filtered = await client.get(
+                ENDPOINT,
+                params={"tactic_families": ["fork", "mate"]},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            resp_unfiltered = await client.get(
+                ENDPOINT,
+                headers={"Authorization": f"Bearer {token}"},
+            )
 
-    assert resp_filtered.status_code == 200
-    assert resp_unfiltered.status_code == 200
-    # Both responses must have the required keys
-    for body in [resp_filtered.json(), resp_unfiltered.json()]:
-        assert "bullets" in body
-        assert "analyzed_n" in body
-        assert "below_gate" in body
+        assert resp_filtered.status_code == 200
+        assert resp_unfiltered.status_code == 200
+        # Both responses must have the required keys
+        for body in [resp_filtered.json(), resp_unfiltered.json()]:
+            assert "bullets" in body
+            assert "analyzed_n" in body
+            assert "below_gate" in body
+    finally:
+        await _delete_games(test_engine, game_ids)
