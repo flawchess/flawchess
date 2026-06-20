@@ -45,7 +45,9 @@ from tests.scripts.tagger.precision_floors import SUPPRESSED_MOTIFS
 
 # Dispatch tier + intra-tier priority order, mirroring detect_tactic_motif's
 # registries (Tier 1 mates dominate -> 2 geometric -> 3 fuzzy -> 4 hanging-piece
-# catch-all). Rows within a tier are listed in detector priority-rank order.
+# catch-all -> 5 move-type). Rows within a tier are listed in detector priority-rank
+# order (the rank comments on _GEOMETRIC_REGISTRY / _MOVE_TYPE_REGISTRY in
+# tactic_detector.py — keep this in sync when a registry rank changes).
 _TIER_ORDER: list[tuple[int, list[str]]] = [
     (
         1,
@@ -60,7 +62,20 @@ _TIER_ORDER: list[tuple[int, list[str]]] = [
             "mate",
         ],
     ),
-    (2, ["fork", "skewer", "pin", "discovered-attack", "double-check"]),
+    # Tier 2 in _GEOMETRIC_REGISTRY rank order (Phase 128.1-01 added discovered-check
+    # rank 4 and trapped-piece rank 6).
+    (
+        2,
+        [
+            "fork",
+            "skewer",
+            "pin",
+            "double-check",
+            "discovered-check",
+            "discovered-attack",
+            "trapped-piece",
+        ],
+    ),
     (
         3,
         [
@@ -75,6 +90,8 @@ _TIER_ORDER: list[tuple[int, list[str]]] = [
         ],
     ),
     (4, ["hanging-piece"]),
+    # Tier 5 move-type family in _MOVE_TYPE_REGISTRY rank order (Phase 128.1-02).
+    (5, ["under-promotion", "promotion", "en-passant"]),
 ]
 
 _REPORT_DIR = Path(__file__).resolve().parents[1] / "reports" / "tactic-tagger"
@@ -114,6 +131,11 @@ GOALS: dict[str, GoalSpec] = {
     "clearance": {"precision": 0.70, "recall": None},
     "interference": {"precision": 0.80, "recall": None},
     "hanging-piece": {"precision": 0.90, "recall": None},
+    # Phase 128.1-01 new Tier-2 real-geometry motifs (aspirational, precision-first)
+    # discovered-check: TRAIN 0.880 — goal is to hold or exceed the current value
+    "discovered-check": {"precision": 0.85, "recall": None},
+    # trapped-piece: SUPPRESSED (only-FP in harness) — exclude from GOALS; its
+    # precision is driven by the D-06 strict gate, not a detector-tuning loop.
 }
 
 
@@ -234,8 +256,9 @@ def _build_report(
     lines.append("|---|---|")
     lines.append(
         "| **T** | Dispatch tier: 1 mates (short-circuit, always win) → 2 geometric → "
-        "3 fuzzy/graded → 4 hanging-piece catch-all. Rows within a tier are in detector "
-        "priority-rank order. |"
+        "3 fuzzy/graded → 4 hanging-piece catch-all → 5 move-type "
+        "(en-passant/promotion/under-promotion, lowest tier — fires only when no real "
+        "tactic does). Rows within a tier are in detector priority-rank order. |"
     )
     lines.append(
         "| **P(train) / P(test)** | Precision = TP / (TP + FP) on each set. `NaN` = the "

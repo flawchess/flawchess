@@ -94,10 +94,17 @@ class TacticMotifInt(IntEnum):
     BODEN_MATE = 22
     DOUBLE_BISHOP_MATE = 23
     DOVETAIL_MATE = 24
+    # Phase 128.1-01: new Tier-2 motifs (append-only; preserve existing 1-24).
+    DISCOVERED_CHECK = 25
+    TRAPPED_PIECE = 26
+    # Phase 128.1-02: move-type family (Tier 5, lowest — real tactics always win, D-03/D-04).
+    EN_PASSANT = 27
+    PROMOTION = 28
+    UNDER_PROMOTION = 29
 
 
 # ---------------------------------------------------------------------------
-# Literal type alias — all 24 motif strings.
+# Literal type alias — all 29 motif strings.
 # ---------------------------------------------------------------------------
 
 TacticMotif = Literal[
@@ -125,6 +132,13 @@ TacticMotif = Literal[
     "boden-mate",
     "double-bishop-mate",
     "dovetail-mate",
+    # Phase 128.1-01
+    "discovered-check",
+    "trapped-piece",
+    # Phase 128.1-02: move-type family
+    "en-passant",
+    "promotion",
+    "under-promotion",
 ]
 
 # ---------------------------------------------------------------------------
@@ -156,6 +170,13 @@ _INT_TO_MOTIF: dict[int, TacticMotif] = {
     22: "boden-mate",
     23: "double-bishop-mate",
     24: "dovetail-mate",
+    # Phase 128.1-01: append-only; existing 1-24 never reordered (T-128.1-02)
+    25: "discovered-check",
+    26: "trapped-piece",
+    # Phase 128.1-02: move-type family (T-128.1-05: append-only, no migration)
+    27: "en-passant",
+    28: "promotion",
+    29: "under-promotion",
 }
 
 _MOTIF_TO_INT: dict[TacticMotif, int] = {v: k for k, v in _INT_TO_MOTIF.items()}
@@ -177,6 +198,19 @@ MATE_MOTIFS: frozenset[TacticMotif] = frozenset(
         "boden-mate",
         "double-bishop-mate",
         "dovetail-mate",
+    }
+)
+
+# Move-type family (D-02): en-passant, promotion, and under-promotion are grouped here
+# because they are detected from the SHAPE of the refuting move, not from board geometry.
+# They are detected + stored for lichess-theme parity; whether/how to surface them as
+# chips is a Phase 129 decision (D-09). discovered-check and trapped-piece are NOT in
+# this set — they are real tactical geometry.
+MOVE_TYPE_MOTIFS: frozenset[TacticMotif] = frozenset(
+    {
+        "en-passant",
+        "promotion",
+        "under-promotion",
     }
 )
 
@@ -529,6 +563,46 @@ def detect_double_check(
     return False, None, None
 
 
+def detect_discovered_check(
+    boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
+) -> tuple[bool, int | None, int | None]:
+    """Discovered check: pov's first move gives a discovered check (the checking piece
+    is NOT the piece that moved).
+
+    Returns (fired, unveiled_checker_piece_type, depth) where depth = 0 (discovered
+    check always fires on the first pov move).
+    tactic_piece = the piece that delivers the discovered check (D-12).
+
+    D-03 split rationale: this is Sub-case 1 lifted out of detect_discovered_attack so
+    that a discovering move that gives check tags as 'discovered-check' (int 25), not
+    'discovered-attack' (int 6).  The more-specific subtype wins — the same pattern used
+    by named-mate subtypes that short-circuit before generic mate.  discovered-check is
+    ranked above discovered-attack in _GEOMETRIC_REGISTRY (lower list index = higher
+    priority) so the dispatcher returns discovered-check when both would fire on the
+    same PV at depth 0.
+    """
+    if len(moves) < 1 or len(boards) < 2:
+        return False, None, None
+
+    board_after_first = boards[1]
+    if not board_after_first.is_check():
+        return False, None, None
+
+    first_dest = moves[0].to_square
+    checkers_set = board_after_first.checkers()
+    if first_dest in checkers_set:
+        # The piece that just moved is itself the checker — direct check, not discovered
+        return False, None, None
+
+    # The moved piece is NOT in the checker set: it's a discovered check.
+    for checker_sq in checkers_set:
+        checker = board_after_first.piece_at(checker_sq)
+        if checker is not None and checker.color == pov:
+            return True, checker.piece_type, 0  # depth 0: always the first pov move
+
+    return False, None, None
+
+
 def detect_discovered_attack(
     boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
 ) -> tuple[bool, int | None, int | None]:
@@ -536,26 +610,19 @@ def detect_discovered_attack(
 
     Returns (fired, unveiled_attacker_piece_type, depth) on detection.
     tactic_piece = the unveiled attacking piece (D-12).
-    depth = 0 for discovered check on first move; k for sub-case 2 captures.
+    depth = k (half-moves from flaw_ply+1) for sub-case 2 captures.
 
     Relevance gate (D-01): sub-case 2 captures fire only if pov gained material vs
     the starting position at the capture board (eliminates Case-B incidentals).
+
+    D-03 note: Sub-case 1 (the first move gives a discovered check) was split out into
+    detect_discovered_check (int 25) — that detector now owns discovering moves that
+    give check.  This function handles only Sub-case 2 (discovered capture deeper in
+    the PV).  The registry placement ensures discovered-check ranks above
+    discovered-attack so the more-specific subtype always wins.
     """
     if len(moves) < 1 or len(boards) < 2:
         return False, None, None
-
-    # Sub-case 1: discovered check — first move puts opponent in check
-    # but the checking piece is NOT the piece that just moved
-    board_after_first = boards[1]
-    if board_after_first.is_check():
-        first_dest = moves[0].to_square
-        checkers_set = board_after_first.checkers()
-        if first_dest not in checkers_set:
-            # The piece that just moved is not the checker — it's a discovered check
-            for checker_sq in checkers_set:
-                checker = board_after_first.piece_at(checker_sq)
-                if checker is not None and checker.color == pov:
-                    return True, checker.piece_type, 0  # depth 0: first pov move
 
     # Sub-case 2: discovered capture further in the line
     material_at_start = _material_diff(boards[0], pov)
@@ -577,6 +644,128 @@ def detect_discovered_attack(
         unveiled = board_before.piece_at(move.from_square)
         if unveiled is not None and unveiled.color == pov:
             return True, unveiled.piece_type, k
+
+    return False, None, None
+
+
+def _escape_squares_all_lose_material(board: chess.Board, victim_sq: int, pov: chess.Color) -> bool:
+    """Return True if EVERY legal escape square for the piece at victim_sq loses
+    material for the escaping side.
+
+    D-06 strict precision gate: an escape is SAFE if pov has no attacker on the
+    destination, or if pov's cheapest attacker is worth AT LEAST as much as the
+    victim (pov doesn't gain from capturing).  An escape is UNSAFE only when the
+    victim lands on a square where pov can capture it profitably: pov's cheapest
+    attacker value is strictly less than the victim's value.
+
+    We intentionally do not model full SEE recapture chains: that would require
+    detecting the "same-piece double-duty" problem (a pov piece that attacks both
+    the victim and an escape square cannot do both simultaneously). The simpler rule
+    "pov can take the victim with a strictly cheaper piece" is precise enough for
+    this motif and avoids false positives from queen-guarded escape squares where
+    the queen is the same piece that's already attacking the victim.
+
+    D-06 also requires a non-empty escape set: a pinned piece has no legal escapes
+    but is not "trapped" in the material-loss sense — return False in that case.
+
+    Helper extracted from detect_trapped_piece to keep nesting depth <= 3 (CLAUDE.md).
+    """
+    victim_piece = board.piece_at(victim_sq)
+    if victim_piece is None:
+        return False
+
+    victim_val = _piece_value(victim_piece.piece_type)
+
+    # Build the set of legal destination squares for the victim piece.
+    escape_squares: list[int] = []
+    for move in board.legal_moves:
+        if move.from_square == victim_sq:
+            escape_squares.append(move.to_square)
+
+    if not escape_squares:
+        # Pinned or no legal moves: not the same as trapped. Return False per D-06.
+        return False
+
+    for dest_sq in escape_squares:
+        # Simulate the escape move to refresh X-ray / discovered attackers.
+        board_copy = board.copy()
+        board_copy.push(chess.Move(victim_sq, dest_sq))
+
+        # A) Safe square: pov has no attacker on the destination after the escape.
+        pov_attackers = list(board_copy.attackers(pov, dest_sq))
+        if not pov_attackers:
+            return False
+
+        # B) Destination is under pov attack.  The escape is safe if the cheapest
+        # pov attacker is worth AT LEAST as much as the victim — pov breaks even or
+        # loses from taking, so the escape is effective for the victim.
+        pov_attacker_vals: list[int] = []
+        for atk_sq in pov_attackers:
+            atk_piece = board_copy.piece_at(atk_sq)
+            if atk_piece is not None:
+                pov_attacker_vals.append(_piece_value(atk_piece.piece_type))
+        pov_attacker_vals.sort()
+        if not pov_attacker_vals:
+            return False  # race condition guard
+
+        cheapest_pov_attacker = pov_attacker_vals[0]
+        if victim_val <= cheapest_pov_attacker:
+            # Pov's cheapest attacker is as expensive or more — not profitable for pov.
+            # This is a safe escape square for the victim.
+            return False
+        # Else: pov can profitably take (cheapest_pov_attacker < victim_val) → unsafe.
+
+    # Every escape square has a pov attacker strictly cheaper than the victim
+    # → pov wins material from any escape → piece is trapped (D-06 strict gate).
+    return True
+
+
+def detect_trapped_piece(
+    boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
+) -> tuple[bool, int | None, int | None]:
+    """Trapped piece: an opponent non-pawn piece is under attack by pov AND every
+    legal escape move lands the piece on a square where pov wins material.
+
+    D-06 strict precision gate: fire only when the escape set is non-empty (not
+    pinned/stalemate) AND all escapes lose material for the escapee.
+    D-07 distinction from hanging-piece: a hanging piece is capturable for free right
+    now (no escape needed); a trapped piece HAS moves but all moves lose material.
+    The dispatcher already resolves any co-fire by tier (Tier 2 < Tier 4) per D-03.
+
+    Returns (fired, victim_piece_type, depth) where depth is the board index at which
+    the trapped piece is detected (0 = after pov's first move).
+    """
+    if len(moves) < 1 or len(boards) < 2:
+        return False, None, None
+
+    for i in range(0, len(moves), 2):  # pov's turns at even indices
+        board_after = boards[i + 1]
+        opp = not pov
+
+        for sq in chess.SQUARES:
+            piece = board_after.piece_at(sq)
+            if piece is None or piece.color != opp:
+                continue
+            if piece.piece_type == chess.PAWN:
+                # Exclude pawns (mirror hanging-piece; pawn value makes FP-prone)
+                continue
+
+            # D-06 gate step 1: the piece must currently be under pov attack
+            if not board_after.attackers(pov, sq):
+                continue
+
+            # D-07 gate: exclude pieces capturable for free right now (hanging).
+            # A free capture does not require the piece to move — that is hanging-piece,
+            # not trapped-piece (D-07 definition).
+            if _is_hanging(board_after, sq, opp):
+                continue
+
+            # D-06 gate step 2: every legal escape must lose material
+            # Set board turn to opp so legal_moves generates the victim's moves
+            board_opp_turn = board_after.copy()
+            board_opp_turn.turn = opp
+            if _escape_squares_all_lose_material(board_opp_turn, sq, pov):
+                return True, piece.piece_type, i
 
     return False, None, None
 
@@ -1307,6 +1496,76 @@ def detect_sacrifice(
 
 
 # ---------------------------------------------------------------------------
+# Phase 128.1-02: Move-type detectors (Tier 5 — the new lowest tier, D-03/D-04)
+# ---------------------------------------------------------------------------
+# Move-type motifs fire ONLY when no real tactic fires — real tactics always win (D-04).
+# The move-type tier has a strictly greater tier number (5) than hanging-piece (4), so
+# any real tactic candidate beats any move-type candidate in the dispatcher sort.
+#
+# Detection is purely on the shape of moves[0] (the refuting move); no material gate
+# is applied (en-passant captures and pawn promotions are trivially identifiable from
+# the move structure).  These are expected to populate sparsely in practice — the ONLY
+# PVs where move-type fires are those where nothing else in tiers 1-4 fired (D-02).
+
+
+def detect_en_passant(
+    boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
+) -> tuple[bool, int | None, int | None]:
+    """En-passant: the first refuting move is an en-passant capture.
+
+    Returns (fired, chess.PAWN, depth=0). Confidence: TACTIC_CONFIDENCE_HIGH
+    (~100% by construction — the move shape is unambiguous).
+    """
+    if not moves:
+        return False, None, None
+    if boards[0].is_en_passant(moves[0]):
+        return True, chess.PAWN, 0
+    return False, None, None
+
+
+def detect_promotion(
+    boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
+) -> tuple[bool, int | None, int | None]:
+    """Promotion (queen): the first refuting move promotes a pawn to a QUEEN.
+
+    D-01 dominance: a non-queen promotion fires detect_under_promotion and NOT this
+    function — because detect_under_promotion fires only when moves[0].promotion is not
+    None AND != chess.QUEEN, which is mutually exclusive with this function's condition
+    (moves[0].promotion == chess.QUEEN). The Tier-5 dispatch loop calls all three
+    move-type detectors unconditionally; only one can fire for any given move. The
+    registry rank provides a secondary defense but is not the primary enforcement
+    mechanism; the detection conditions are fully disjoint.
+
+    Returns (fired, chess.PAWN, depth=0). Confidence: TACTIC_CONFIDENCE_HIGH.
+    """
+    if not moves:
+        return False, None, None
+    if moves[0].promotion == chess.QUEEN:
+        return True, chess.PAWN, 0
+    return False, None, None
+
+
+def detect_under_promotion(
+    boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
+) -> tuple[bool, int | None, int | None]:
+    """Under-promotion: the first refuting move promotes a pawn to a NON-queen piece.
+
+    D-01 dominance: under-promotion DOMINATES promotion. This detector is ranked BEFORE
+    detect_promotion in _MOVE_TYPE_REGISTRY (lower rank index = higher priority), so
+    when moves[0] is a non-queen promotion, under-promotion is returned, NEVER promotion.
+
+    Returns (fired, chess.PAWN, depth=0). Confidence: TACTIC_CONFIDENCE_HIGH.
+    """
+    if not moves:
+        return False, None, None
+    promo = moves[0].promotion
+    # Fires only for non-queen promotions (knight=2, bishop=3, rook=4).
+    if promo is not None and promo != chess.QUEEN:
+        return True, chess.PAWN, 0
+    return False, None, None
+
+
+# ---------------------------------------------------------------------------
 # D-07 priority dispatcher — detect_tactic_motif
 # ---------------------------------------------------------------------------
 
@@ -1341,20 +1600,30 @@ _NAMED_MATE_DETECTOR_FNS: dict[TacticMotif, _BoolPieceFn] = {
 }
 
 # Tier 2: geometric material-winners (D-07, provisional D-08 intra-tier order)
+# Intra-tier rank = enumerate index (lower = higher priority per _sort_key).
+# discovered-check (rank 3) is placed ABOVE discovered-attack (rank 4) so a
+# discovering move that gives check tags as discovered-check, not discovered-attack
+# (D-03 dominance).  trapped-piece (rank 5) sits after the discovery motifs;
+# D-03 tier-level dominance over hanging-piece (Tier 4) is satisfied by tier number
+# alone — no intra-tier constraint on trapped-piece (D-05).
 _GEOMETRIC_REGISTRY: list[tuple[TacticMotif, int]] = [
-    ("fork", TacticMotifInt.FORK),
-    ("skewer", TacticMotifInt.SKEWER),
-    ("pin", TacticMotifInt.PIN),
-    ("discovered-attack", TacticMotifInt.DISCOVERED_ATTACK),
-    ("double-check", TacticMotifInt.DOUBLE_CHECK),
+    ("fork", TacticMotifInt.FORK),  # rank 0
+    ("skewer", TacticMotifInt.SKEWER),  # rank 1
+    ("pin", TacticMotifInt.PIN),  # rank 2
+    ("double-check", TacticMotifInt.DOUBLE_CHECK),  # rank 3 — check motifs together
+    ("discovered-check", TacticMotifInt.DISCOVERED_CHECK),  # rank 4 — D-03: above discovered-attack
+    ("discovered-attack", TacticMotifInt.DISCOVERED_ATTACK),  # rank 5
+    ("trapped-piece", TacticMotifInt.TRAPPED_PIECE),  # rank 6 — D-05 discretion
 ]
 
 _GEOMETRIC_DETECTOR_FNS: dict[TacticMotif, _BoolPieceFn] = {
     "fork": detect_fork,
     "skewer": detect_skewer,
     "pin": detect_pin,
-    "discovered-attack": detect_discovered_attack,
     "double-check": detect_double_check,
+    "discovered-check": detect_discovered_check,
+    "discovered-attack": detect_discovered_attack,
+    "trapped-piece": detect_trapped_piece,
 }
 
 # Tier 3: fuzzy detectors (D-07 order, provisional D-08)
@@ -1380,6 +1649,29 @@ _TIER3_DETECTOR_FNS: dict[TacticMotif, _Tier3Fn] = {
     "clearance": detect_clearance,
     "capturing-defender": detect_capturing_defender,
     "sacrifice": detect_sacrifice,
+}
+
+# Tier 5: move-type family (D-03/D-04 — new LOWEST tier below hanging-piece Tier 4).
+# Real tactics (tiers 1-4) always win. Move-type only fires on the residual positions
+# where no real motif fired. This is EXPECTED and NOT a bug — sparse population is
+# the correct behavior (D-02 posture: move-type is the lowest-priority catch for
+# positions whose refuting move happens to be a special move type).
+#
+# Intra-tier order: under-promotion (rank 0) before promotion (rank 1) so that a
+# non-queen promotion is NEVER tagged as "promotion" (D-01 under-promotion dominance).
+# en-passant is rank 2 (independent; no dominance relationship with promotions).
+TIER_MOVE_TYPE = 5  # strictly greater than Tier 4 (hanging-piece) — D-04 real-tactic-wins
+
+_MOVE_TYPE_REGISTRY: list[tuple[TacticMotif, int]] = [
+    ("under-promotion", TacticMotifInt.UNDER_PROMOTION),  # rank 0 — D-01: dominates promotion
+    ("promotion", TacticMotifInt.PROMOTION),  # rank 1
+    ("en-passant", TacticMotifInt.EN_PASSANT),  # rank 2
+]
+
+_MOVE_TYPE_DETECTOR_FNS: dict[TacticMotif, _BoolPieceFn] = {
+    "under-promotion": detect_under_promotion,
+    "promotion": detect_promotion,
+    "en-passant": detect_en_passant,
 }
 
 
@@ -1486,6 +1778,19 @@ def detect_tactic_motif(
                 int(TacticMotifInt.HANGING_PIECE),
             )
         )
+
+    # Tier 5: move-type family (D-03/D-04 — lowest tier; real tactics in tiers 1-4 always win).
+    # Move-type fires only on the RESIDUAL positions where no real motif fired. Sparse
+    # population is expected and correct — NOT a bug (see MOVE_TYPE_MOTIFS and D-02 posture).
+    # Under-promotion (rank 0) is ranked before promotion (rank 1) so that a non-queen
+    # promotion can NEVER be tagged as "promotion" (D-01 dominance).
+    for rank, (motif_str, motif_int) in enumerate(_MOVE_TYPE_REGISTRY):
+        fn = _MOVE_TYPE_DETECTOR_FNS[motif_str]
+        fired, piece, depth = fn(boards, moves, pov)
+        if fired:
+            candidates.append(
+                (TIER_MOVE_TYPE, rank, piece, TACTIC_CONFIDENCE_HIGH, depth, int(motif_int))
+            )
 
     if not candidates:
         return None, None, None, None

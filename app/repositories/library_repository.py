@@ -60,7 +60,11 @@ _TACTIC_CHIP_CONFIDENCE_MIN: int = 70  # 0-100 scale matching tactic_confidence 
 # ---------------------------------------------------------------------------
 # Phase 126 — tactic motif family → int mapping (D-08 canonical 6 families).
 # Maps each family key to the TacticMotifInt values belonging to that family.
-# All 24 motif ints appear exactly once across all families.
+# All 24 motif ints (1-24) appear exactly once across all families.
+# Motifs 25 (discovered-check) and 26 (trapped-piece) are Tier-2 real-geometry motifs
+# not yet assigned to a chip family — deferred to a future phase (Phase 129 directional).
+# Motifs 27 (en-passant), 28 (promotion), and 29 (under-promotion) are the MOVE_TYPE_MOTIFS
+# family; chip surfacing is a Phase 129 decision (D-09). None of 25-29 appear here.
 # Imported by apply_game_filters() (query_utils.py) via lazy import to avoid
 # a query_utils→library_repository circular import.
 # ---------------------------------------------------------------------------

@@ -49,7 +49,9 @@ MOTIF_TO_THEMES: dict[str, tuple[str, ...]] = {
     "pin": ("pin",),
     "skewer": ("skewer",),
     "double-check": ("doubleCheck",),
+    "discovered-check": ("discoveredCheck",),
     "discovered-attack": ("discoveredAttack",),
+    "trapped-piece": ("trappedPiece",),
     # --- Mate motifs ---
     # 'mate' is the catch-all; mateInN provide finer-grained coverage.
     "back-rank-mate": ("backRankMate",),
@@ -71,6 +73,11 @@ MOTIF_TO_THEMES: dict[str, tuple[str, ...]] = {
     # capturingDefender confirmed in HuggingFace README.
     "capturing-defender": ("capturingDefender",),
     "sacrifice": ("sacrifice",),
+    # --- Move-type family (Phase 128.1-02, D-02) ---
+    # Detected + stored for lichess parity; chip-surfacing is Phase 129 (D-09).
+    "en-passant": ("enPassant",),
+    "promotion": ("promotion",),
+    "under-promotion": ("underPromotion",),
 }
 
 # ---------------------------------------------------------------------------

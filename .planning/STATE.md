@@ -4,16 +4,17 @@ milestone: v1.28
 milestone_name: Tactic Tagging
 current_phase: 129
 current_phase_name: Tactic Filter UI
-status: Phase 128 shipped — squash-merged to main (02a9aca8)
-stopped_at: Phase 128 context gathered
-last_updated: "2026-06-19T19:58:17.655Z"
-last_activity: 2026-06-19
+status: ready_to_plan
+stopped_at: Phase 128.1 complete, ready to plan Phase 129
+last_updated: "2026-06-20T04:02:49.165Z"
+last_activity: 2026-06-20
+last_activity_desc: Phase 128.1 complete, transitioned to Phase 129
 progress:
-  total_phases: 11
-  completed_phases: 6
-  total_plans: 20
-  completed_plans: 20
-  percent: 55
+  total_phases: 12
+  completed_phases: 7
+  total_plans: 22
+  completed_plans: 22
+  percent: 58
 ---
 
 # Project State: FlawChess
@@ -22,14 +23,14 @@ progress:
 
 Phase: 129 — Tactic Filter UI
 Plan: Not started
-Status: Phase 128 shipped — squash-merged to main (02a9aca8)
-Last activity: 2026-06-19 - Completed quick task 260619-uq6: dropped 7 write-only intermediate columns from game_positions (SEED-055)
+Status: Ready to plan
+Last activity: 2026-06-20 — Phase 128.1 complete, transitioned to Phase 129
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-06-14 after v1.26 milestone)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report.
-Current focus: v1.28 Tactic Tagging — SEED-039. Label why a flawed move was bad in tactical terms by naming the motif in the stored refutation PV, then compare tactic rates against opponents. Three phases: 124 (schema + detector), 125 (backfill ~131k games), 126 (comparison stats + frontend chip/grid). Start with `/gsd-plan-phase 124`.
+Current focus: v1.28 Tactic Tagging — Phase 129 Tactic Filter UI. Surface the tactic-motif chips (incl. the Phase 128/128.1 motifs 1-29) as a filter/grid in the Library. Next: `/gsd-plan-phase 129`.
 
 ## Milestone Progress
 
@@ -207,6 +208,7 @@ Carried forward from v1.11 close (still relevant):
 - Phase 94.3 inserted after Phase 94.2: Per-TC percentile chips on Time Pressure cards (SEED-025) — extends 94.2 pooled-per-user contract by TC; 12 new metrics; no schema change
 - Phase 94.4 inserted after Phase 94.3: Peer-relative percentile chip refinement (SEED-026 v2): pivot from global-pool to per-(metric, ELO anchor, TC) cohort CDFs via 50-Elo sliding windows (K=200), per-(user, TC) rating anchor with ChessGoals Table 2 chess.com→Lichess conversion, chip UX shrink to pill, tooltip cohort framing, rescue Conversion/Recovery/Endgame Score Gap chips dropped in v1. (URGENT)
 - Phase 97 inserted: Inserted Phase 97 (Endgame Metrics by Time Control, standalone UX); renumbered prior LLM Statistical-Reasoning Rework 97 → 98 (v1.20).
+- Phase 128.1 inserted after Phase 128: Add tactic motifs for lichess-theme coverage (SEED-058) (URGENT)
 
 ### Pending Todos
 
@@ -412,6 +414,8 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 | Phase 127 P03 | 45 | 2 tasks | 3 files |
 | Phase 128 P01 | 35m | 2 tasks | 11 files |
 | Phase 128 P03 | 145m | 3 tasks | 13 files |
+| Phase 128.1 P01 | 180 | 2 tasks | 5 files |
+| Phase 128.1 P02 | 15m | 3 tasks | 6 files |
 
 ## Decisions
 
@@ -488,10 +492,13 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 - [Phase ?]: Dispatcher sort key (tier, rank, depth): priority order within tier, depth only as tiebreaker
 - [Phase ?]: Pin relevance: replacement-guard only; no material check
 - [Phase ?]: TacticOrientation closed enum, D-08 default allowed
+- [Phase ?]: MOVE_TYPE_MOTIFS frozenset groups move-type family; Tier 5 lowest dispatch ensures real tactics win (D-04)
+- [Phase ?]: D-08 approach (i) for under-promotion: no % floor, structural validation via fast-guard fixtures
+- [Phase ?]: trapped-piece → SUPPRESSED_MOTIFS (only-FP); en-passant → SUPPRESSED (NaN); discovered-check floor 0.80; promotion floor 0.60
 
 ## Session
 
-**Last session:** 2026-06-19T18:59:08.182Z
-**Stopped at:** Phase 128 context gathered
-**Resume file:** .planning/phases/128-missed-opportunity-tagging/128-CONTEXT.md
+**Last session:** 2026-06-19T22:44:15.848Z
+**Stopped at:** Phase 128.1 context gathered
+**Resume file:** .planning/phases/128.1-add-tactic-motifs-for-lichess-theme-coverage-discovered-chec/128.1-CONTEXT.md
 | 170 | Flaw-card: open game on flawed ply, remove broken datapoint pulse | 2026-06-19 | fe4910d4 | — |

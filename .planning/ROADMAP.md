@@ -45,6 +45,7 @@
 - [ ] **Phase 126: Comparison Stats + Frontend** — `GET /api/library/tactic-comparison` endpoint + motif chips on flaw cards + MiniBulletChart you-vs-opponent motif grid
 - [x] **Phase 127: Detector Hardening & Validation** — return motif depth from all detectors + store `*_tactic_depth`; lichess CC0 puzzle validation harness (precision AND recall); fix deep-scan/loose-pin false positives. De-risks 128/129. (completed 2026-06-19)
 - [x] **Phase 128: Missed-Opportunity Tagging** — rename existing tactic cols to `allowed_*`, add `missed_*` set; second detector pass on the `flaw_ply` PV (SEED-054); backend filter + schema; mover-relative columns, `is_opponent_expr` narration (no `tactic_pov` column) (completed 2026-06-19)
+- [x] **Phase 128.1: Add tactic motifs for lichess-theme coverage** (INSERTED) — close lichess `puzzleTheme.xml` gaps: split `discovered-check` out of discovered-attack, new `trapped-piece` detector, trivial `en-passant` + `promotion`/`under-promotion` tags; new precision floors baselined on TRAIN (SEED-058) (completed 2026-06-20)
 - [ ] **Phase 129: Tactic Filter UI** — composed motif × pov (missed/allowed) × depth-slider filter + display across flaw surfaces, desktop + mobile
 
 ## Phase Details
@@ -196,6 +197,19 @@ Plans:
 **Wave 3** *(blocked on Wave 2)*
 
 - [x] 128-04-PLAN.md — Dev backfill (missed_* + allowed_tactic_depth fill, honest coverage, idempotency) + deferred folded 127/128 prod runbook (D-11, D-12, D-13)
+
+### Phase 128.1: Add tactic motifs for lichess-theme coverage (discovered-check, trapped-piece, en-passant, promotion) (INSERTED)
+
+**Goal:** Close lichess `puzzleTheme.xml` coverage gaps in `detect_tactic_motif` by adding four deterministically-detectable motifs — split `discovered-check` out of `discovered-attack` (near-free, logic already exists), a new `trapped-piece` detector (escape-square enumeration), and trivial `en-passant` + `promotion`/`under-promotion` tags. Each motif follows the 5-step recipe (Literal + IntEnum, detector, `motif_theme_map.py` entry, dispatch placement, precision floor baselined from a fresh TRAIN harness run; never lower an existing floor). Product call needed on whether to surface promotion/under-promotion as chips (move-type vs true motif).
+**Requirements**: TBD (assign during discuss-phase)
+**Depends on:** Phase 128
+**Source:** SEED-058
+**Plans:** 2/2 plans complete
+
+Plans:
+
+- [x] 128.1-01-PLAN.md — discovered-check (split from discovered-attack) + trapped-piece: two Tier-2 real-geometry motifs (ints 25-26), detectors, theme-map, dispatch ranks
+- [x] 128.1-02-PLAN.md — en-passant/promotion/under-promotion move-type trio (ints 27-29) at a new lowest tier + MOVE_TYPE_MOTIFS frozenset, then the full 5-motif fresh-TRAIN precision-floor baseline
 
 ### Phase 129: Tactic Filter UI
 
