@@ -962,6 +962,8 @@ async def get_library_flaws(
     to_date: datetime.date | None,
     color: str | None,
     tactic_families: list[str] | None = None,
+    tactic_orientation: TacticOrientation = "either",
+    max_tactic_depth: int | None = None,
     offset: int,
     limit: int,
 ) -> LibraryFlawsResponse:
@@ -1001,6 +1003,8 @@ async def get_library_flaws(
             to_date=to_date,
             color=color,
             tactic_families=tactic_families,
+            orientation=tactic_orientation,
+            max_tactic_depth=max_tactic_depth,
             offset=offset,
             limit=limit,
         )
@@ -1242,15 +1246,24 @@ TACTIC_COMPARISON_GATE: int = 20
 MIN_TACTIC_CHIP_CONFIDENCE: int = _TACTIC_CHIP_CONFIDENCE_MIN
 
 
-def _compute_tactic_bullets(rows: list[Any]) -> list[TacticBullet]:
-    """Aggregate per-game rows into ranked TacticBullet objects (up to 6 families).
+def _compute_tactic_bullets(
+    rows: list[Any],
+    orientation: Literal["missed", "allowed"],
+) -> list[TacticBullet]:
+    """Aggregate per-game rows into TacticBullet objects for one orientation.
 
-    Each row has: game_id, player_{family}, opp_{family} for all 6 families.
+    Phase 129 Plan 01 (D-13): accepts orientation param so get_tactic_comparison
+    can call this twice (once per orientation) and tag each bullet with its
+    orientation. The top-6 family cap is removed here — family selection is
+    performed by the caller (get_tactic_comparison, D-14).
+
+    Each row has: game_id, player_{family}, opp_{family} for all 10 families
+    (Plan 04 G-01: taxonomy expanded from 6 to 10 families).
     For each family: collect per-game deltas (player_rate - opp_rate) in events/game,
     plus per-game player and opp rates. Zero-event family: delta=None (D-11 pattern).
 
-    Ranking: significant rows (ci_low > 0 or ci_high < 0) first by |delta| desc,
-    then non-significant rows by max(you_events, opp_events) desc. Cap at 6.
+    Returns all 10 family bullets (not capped), tagged with orientation.
+    Caller ranks and selects top-6 families by Missed you_rate (D-14).
     """
     families = list(FAMILY_TO_MOTIF_INTS.keys())
 
@@ -1283,6 +1296,7 @@ def _compute_tactic_bullets(rows: list[Any]) -> list[TacticBullet]:
             bullets.append(
                 TacticBullet(
                     family=fam,
+                    orientation=orientation,
                     you_rate=None,
                     opp_rate=None,
                     delta=None,
@@ -1303,6 +1317,7 @@ def _compute_tactic_bullets(rows: list[Any]) -> list[TacticBullet]:
             bullets.append(
                 TacticBullet(
                     family=fam,
+                    orientation=orientation,
                     you_rate=you_rate_mean,
                     opp_rate=opp_rate_mean,
                     delta=mean,
@@ -1314,8 +1329,11 @@ def _compute_tactic_bullets(rows: list[Any]) -> list[TacticBullet]:
                 )
             )
 
-    # Rank: significant gap first (ci_low > 0 OR ci_high < 0) by |delta| desc,
-    # then non-significant by max(you_events, opp_events) desc.
+    # Phase 129 D-14: top-6 family selection happens at get_tactic_comparison (caller).
+    # Return all families (no [:6] cap); the caller is the authoritative rank, ordering by
+    # Missed you_rate descending. The intra-list _sort_key sort below is NOT the final order —
+    # it only seeds the position tie-break the caller's _missed_rank_key uses for families with
+    # equal you_rate (sig-first, then |delta|, then volume).
     def _sort_key(b: TacticBullet) -> tuple[int, float, int]:
         is_sig = b.ci_low is not None and b.ci_high is not None and (b.ci_low > 0 or b.ci_high < 0)
         abs_delta = abs(b.delta) if b.delta is not None else 0.0
@@ -1324,7 +1342,8 @@ def _compute_tactic_bullets(rows: list[Any]) -> list[TacticBullet]:
         return (0 if is_sig else 1, -abs_delta, -volume)
 
     bullets.sort(key=_sort_key)
-    return bullets[:6]
+    # Return all families (no [:6] cap); caller applies top-6 family selection (D-14).
+    return bullets
 
 
 async def get_tactic_comparison(
@@ -1342,18 +1361,24 @@ async def get_tactic_comparison(
     opponent_gap_max: int | None = None,
     color: str | None = None,
     tactic_families: Sequence[str] | None = None,
-    orientation: TacticOrientation = "allowed",
 ) -> TacticComparisonResponse:
-    """Per-family tactic motif you-vs-opponent comparison (Phase 126, TACCMP-01/02/03).
+    """Per-family tactic motif you-vs-opponent comparison (Phase 126/129).
+
+    Phase 129 Plan 01 (D-13/D-14): returns dual-orientation bullets (up to 12:
+    6 families × 2 orientations). The orientation param was removed (D-09:
+    the comparison grid always shows both orientations simultaneously).
+
+    Ordering contract (D-14): top-6 families by Missed bullet you_rate descending
+    appear first (both their missed + allowed bullets), followed by overflow families.
+    The frontend renders server order — no client re-sort needed.
 
     Pipeline:
     1. count_filtered_and_analyzed — early gate: if analyzed_n < TACTIC_COMPARISON_GATE,
-       return below_gate=True immediately (avoids the expensive per-game query).
-    2. fetch_tactic_comparison — per-game LEFT JOIN aggregation: 12 COUNT FILTER columns.
-    3. _compute_tactic_bullets — mean + Wald-z CI per family, ranked by significance.
-
-    Phase 128 D-09: orientation param selects the column set (allowed/missed) for
-    the comparison. Default "allowed" preserves current Library behavior (D-08).
+       return below_gate=True immediately.
+    2. fetch_tactic_comparison — per-game LEFT JOIN aggregation; called TWICE (once per
+       orientation). Two fetches are post-gate acceptable cost (A3 from RESEARCH).
+    3. _compute_tactic_bullets — mean + Wald-z CI per family per orientation.
+    4. Top-6 family selection by Missed you_rate desc; both bullets per family emitted.
 
     IDOR guard (T-126-01): user_id is from current_active_user, never a request param.
     """
@@ -1390,15 +1415,65 @@ async def get_tactic_comparison(
             )
 
         analyzed_subq = library_repository._analyzed_game_ids_subquery(user_id)
-        rows = await library_repository.fetch_tactic_comparison(
+
+        # Phase 129 D-13 (A3): fetch per-orientation — two post-gate queries, acceptable cost.
+        # Each fetch returns 10 family rows for one orientation.
+        missed_rows = await library_repository.fetch_tactic_comparison(
             session,
             user_id,
             analyzed_subq,
             tactic_confidence_min=MIN_TACTIC_CHIP_CONFIDENCE,
-            orientation=orientation,
-            **_filter_kwargs,  # includes tactic_families
+            orientation="missed",
+            **_filter_kwargs,
         )
-        bullets = _compute_tactic_bullets(rows)
+        allowed_rows = await library_repository.fetch_tactic_comparison(
+            session,
+            user_id,
+            analyzed_subq,
+            tactic_confidence_min=MIN_TACTIC_CHIP_CONFIDENCE,
+            orientation="allowed",
+            **_filter_kwargs,
+        )
+
+        missed_bullets = _compute_tactic_bullets(missed_rows, "missed")
+        allowed_bullets = _compute_tactic_bullets(allowed_rows, "allowed")
+
+        # Phase 129 D-14: select top-6 families by Missed you_rate descending.
+        # Build a {family: missed_bullet} map for ranking; missed_bullets are sorted by
+        # _compute_tactic_bullets's _sort_key (sig first, |delta|, volume) as tie-break.
+        missed_by_family: dict[str, TacticBullet] = {b.family: b for b in missed_bullets}
+        allowed_by_family: dict[str, TacticBullet] = {b.family: b for b in allowed_bullets}
+
+        # Rank families by Missed you_rate descending, tie-break by the _sort_key order
+        # embedded in missed_bullets (already sorted by the helper).
+        def _missed_rank_key(fam: str) -> tuple[float, int]:
+            mb = missed_by_family.get(fam)
+            # Primary: Missed you_rate desc (negate for ascending sort).
+            # Tie-break: position in missed_bullets (lower index = higher _sort_key rank).
+            you_rate = mb.you_rate if (mb and mb.you_rate is not None) else 0.0
+            pos = next(
+                (i for i, b in enumerate(missed_bullets) if b.family == fam), len(missed_bullets)
+            )
+            return (-you_rate, pos)
+
+        all_families = list(FAMILY_TO_MOTIF_INTS.keys())
+        ranked_families = sorted(all_families, key=_missed_rank_key)
+        overflow_families = ranked_families[6:]
+
+        # Emit bullets: top-6 first (missed then allowed per family), then overflow.
+        # Server order is the contract; the frontend renders it without re-sorting (D-14).
+        bullets: list[TacticBullet] = []
+        for fam in ranked_families[:6]:
+            if fam in missed_by_family:
+                bullets.append(missed_by_family[fam])
+            if fam in allowed_by_family:
+                bullets.append(allowed_by_family[fam])
+        for fam in overflow_families:
+            if fam in missed_by_family:
+                bullets.append(missed_by_family[fam])
+            if fam in allowed_by_family:
+                bullets.append(allowed_by_family[fam])
+
         return TacticComparisonResponse(
             bullets=bullets,
             analyzed_n=analyzed_n,

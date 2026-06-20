@@ -7,6 +7,7 @@ import { isFlawFilterNonDefault } from '@/hooks/useFlawFilterStore';
 import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
 import type { GameFlawCard } from '@/types/library';
 import type { TacticFamily } from '@/lib/tacticComparisonMeta';
+import { depthToQueryParam } from '@/lib/tacticDepth';
 
 // Library queries are similar in cost to endgame queries (GROUP BY on FlawRecords).
 // 5 minutes staleTime + no refetch-on-focus prevents redundant DB load
@@ -170,8 +171,10 @@ export function useLibraryGame(gameId: number | null): ReturnType<typeof useQuer
 /**
  * Fetch the paginated per-flaw list for the current filter + flaw filter.
  *
- * Query key: ['library-flaws', params, offset, limit]
+ * Query key: ['library-flaws', params, tacticFamily, tacticOrientation, depthParam, offset, limit]
  * Both offset and limit are part of the key so page changes trigger a new fetch.
+ * Phase 129: tactic_orientation + max_tactic_depth appended to key so changing either
+ * triggers a refetch (pitfall 4 prevention).
  */
 export function useLibraryFlaws(
   filters: FilterState,
@@ -184,9 +187,20 @@ export function useLibraryFlaws(
   // default; applied only when ≥1 family is selected), so it lives on flawFilter, not
   // the game-metadata FilterState. Sent to /library/flaws as repeated tactic_family.
   const tacticFamily = flawFilter.tacticFamilies.length > 0 ? flawFilter.tacticFamilies : undefined;
+  // Phase 129: orientation (omit when 'either'); depth (half-ply value or undefined when no cap).
+  const tacticOrientation = flawFilter.tacticOrientation ?? 'either';
+  const depthParam = depthToQueryParam(flawFilter.tacticDepthMax ?? null);
   return useQuery({
-    queryKey: ['library-flaws', params, tacticFamily, offset, limit],
-    queryFn: () => libraryApi.getFlaws({ ...params, tactic_family: tacticFamily, offset, limit }),
+    queryKey: ['library-flaws', params, tacticFamily, tacticOrientation, depthParam, offset, limit],
+    queryFn: () =>
+      libraryApi.getFlaws({
+        ...params,
+        tactic_family: tacticFamily,
+        tactic_orientation: tacticOrientation,
+        ...depthParam,
+        offset,
+        limit,
+      }),
     staleTime: LIBRARY_STALE_TIME,
     refetchOnWindowFocus: false,
   });

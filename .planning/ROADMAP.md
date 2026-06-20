@@ -46,7 +46,7 @@
 - [x] **Phase 127: Detector Hardening & Validation** — return motif depth from all detectors + store `*_tactic_depth`; lichess CC0 puzzle validation harness (precision AND recall); fix deep-scan/loose-pin false positives. De-risks 128/129. (completed 2026-06-19)
 - [x] **Phase 128: Missed-Opportunity Tagging** — rename existing tactic cols to `allowed_*`, add `missed_*` set; second detector pass on the `flaw_ply` PV (SEED-054); backend filter + schema; mover-relative columns, `is_opponent_expr` narration (no `tactic_pov` column) (completed 2026-06-19)
 - [x] **Phase 128.1: Add tactic motifs for lichess-theme coverage** (INSERTED) — close lichess `puzzleTheme.xml` gaps: split `discovered-check` out of discovered-attack, new `trapped-piece` detector, trivial `en-passant` + `promotion`/`under-promotion` tags; new precision floors baselined on TRAIN (SEED-058) (completed 2026-06-20)
-- [ ] **Phase 129: Tactic Filter UI** — composed motif × pov (missed/allowed) × depth-slider filter + display across flaw surfaces, desktop + mobile
+- [x] **Phase 129: Tactic Filter UI** — composed motif × pov (missed/allowed) × depth-slider filter + display across flaw surfaces, desktop + mobile (completed 2026-06-20)
 
 ## Phase Details
 
@@ -215,15 +215,31 @@ Plans:
 
 **Goal**: Players can filter and read tactics along three axes — which motif, missed vs allowed, and difficulty (depth) — on both desktop and mobile
 **Depends on**: Phase 128 (missed/allowed columns), Phase 127 (depth)
-**Requirements**: (to be assigned during discuss-phase)
+**Requirements**: TACUI-04, TACUI-05, TACUI-06, TACUI-07, TACUI-08
 **Success Criteria** (what must be TRUE):
 
-  1. A depth (difficulty) slider filters flaws by `*_tactic_depth`; sensible default and beginner/advanced ranges; unit (half-moves vs "your moves deep") decided during discuss-phase
-  2. A missed/allowed toggle switches the tactic view, defaulting to **missed** (the trainable, puzzle-shaped orientation); narration uses `is_opponent_expr`
-  3. The motif × pov × depth filter composes cleanly with the existing Library filters and the tactic-comparison grid
+  1. A depth (difficulty) slider filters flaws by `*_tactic_depth`; always-on, default = Intermediate (Beginner/Advanced presets + custom slider); API param in half-moves (1:1 with the column), "moves deep" labels in the frontend (D-03)
+  2. An Either/Missed/Allowed orientation toggle switches the tactic view, **defaulting to Either** (amended 2026-06-20 per D-07 — reverses the original "defaulting to missed"; the user directed Either as the neutral default); narration is the chip label + shared `TagLegend`
+  3. The motif × orientation × depth filter composes cleanly with the existing Library filters; the tactic-comparison grid shows two bullets per family (Missed/Allowed), ranked top-6 by Missed with a "More Tactics" accordion, independent of the Flaws-tab filters
   4. All controls and chips render correctly on mobile at 375px with `data-testid` and ARIA labels per the browser-automation rules
 
-**Plans**: TBD (discuss-phase)
+**Plans**: 5 plans (3 original + 2 gap-closure for UAT G-01)
+**Wave 1**
+
+- [x] 129-01-PLAN.md — Backend: depth filter param + 3-value orientation ("either" OR-across-columns) at both filter sites + mate exemption; dual-orientation tactic-comparison endpoint ranked top-6 by Missed (TACUI-04, TACUI-05)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 129-02-PLAN.md — Frontend filters: tacticDepth lib + TacticDepthFilter control + Either/Missed/Allowed toggle + store/query threading + orientation-prefixed dual chips, desktop + mobile (TACUI-06, TACUI-07)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 129-03-PLAN.md — Frontend grid: two-bullet family cards + top-6-by-Missed + "More Tactics" accordion (TACUI-08)
+
+**Gap closure (UAT G-01 — "More Tactics" accordion unreachable: 6 families always = all families, overflow always empty; fix via tactic-family taxonomy redesign to 10 families)**
+
+- [x] 129-04-PLAN.md — Backend taxonomy: rewrite `FAMILY_TO_MOTIF_INTS` to the authoritative 10 families (split pin_skewer→skewer/pin/x_ray, discovery→double_check/discovered_attack, add discovered_check/trapped_piece, drop combinations); update consumers + tests; no migration (TACUI-05, TACUI-08)
+- [x] 129-05-PLAN.md — Frontend taxonomy hub: mirror the 10 backend keys in `tacticComparisonMeta.ts` + `theme.ts` per-family tokens + filter chips + motif defs + tests + `tsc -b`; accordion now renders 4 overflow families, closing G-01 (TACUI-05, TACUI-06, TACUI-07, TACUI-08)
 
 ## Progress
 
@@ -275,7 +291,7 @@ Plans:
 | 126. Comparison Stats + Frontend | 3/3 | Complete   | 2026-06-18 |
 | 127. Detector Hardening & Validation | 4/4 | Complete    | 2026-06-19 |
 | 128. Missed-Opportunity Tagging | 4/4 | Complete    | 2026-06-19 |
-| 129. Tactic Filter UI | 0/? | Planned | — |
+| 129. Tactic Filter UI | 5/5 | Complete    | 2026-06-20 |
 
 ## Backlog
 
@@ -283,7 +299,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 4/4 plans complete
+**Plans:** 5/5 plans complete
 
 Plans:
 

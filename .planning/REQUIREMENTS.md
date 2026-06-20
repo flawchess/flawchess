@@ -41,6 +41,11 @@ The user-facing surface. Motif-level only in v1.28 (piece-level deferred).
 - [x] **TACUI-01**: Each flaw card displays its `allowed` motif as a family-colored chip with a definition popover, consistent with the shipped flaw-tag taxonomy chip pattern.
 - [x] **TACUI-02**: A you-vs-opponent **motif** comparison surface (reusing the v1.25 `MiniBulletChart` grid pattern: measure + CI + benchmark zone where available) with per-motif tooltips disclosing definition, sign convention, and the filter interaction.
 - [x] **TACUI-03**: The motif chips and comparison surface render correctly on mobile (responsive at 375px) with `data-testid` + ARIA parity, matching the project's browser-automation rules.
+- [x] **TACUI-04** (Phase 129): A depth filter param (`max_tactic_depth`, half-moves) and a 3-value `Literal["either","missed","allowed"]` orientation are supported at both flaw filter sites (`apply_game_filters`, `build_flaw_filter_clauses`); "either" = OR across both column sets; forced mates are exempt from the depth bound. (D-04/D-05/D-08)
+- [x] **TACUI-05** (Phase 129): The tactic-comparison endpoint returns both a missed and an allowed rate (bullet) per family, with families ranked top-6 by the Missed orientation's `you_rate`; the router exposes no orientation param (grid shows both). (D-13/D-14)
+- [x] **TACUI-06** (Phase 129): The Flaws-tab filter offers a Tactic Difficulty depth control (Beginner/Intermediate/Advanced presets + single-handle slider, always-on Intermediate default) and an Either/Missed/Allowed orientation toggle (Either default), desktop + mobile, with depth/orientation in the flaw-list query key. (D-01/D-02/D-03/D-06/D-07)
+- [x] **TACUI-07** (Phase 129): Flaw chips carry a `missed:`/`allowed:` text prefix (family color unchanged); both render under Either when present, one under Missed/Allowed; narration is the chip label + shared `TagLegend` (no per-chip popover). (D-10/D-11/D-12)
+- [x] **TACUI-08** (Phase 129): The comparison grid renders two bullet charts per family card (Missed/Allowed), with the top-6-by-Missed families in the main grid and the rest in a collapsible "More Tactics" accordion; the grid has no orientation toggle and is independent of the Flaws-tab filters. (D-09/D-13/D-14)
 
 ## v2 Requirements
 
@@ -88,13 +93,18 @@ Which phases cover which requirements. Populated during roadmap creation.
 | TACUI-01 | Phase 126 | Complete |
 | TACUI-02 | Phase 126 | Complete |
 | TACUI-03 | Phase 126 | Complete |
+| TACUI-04 | Phase 129 | Complete |
+| TACUI-05 | Phase 129 | Complete |
+| TACUI-06 | Phase 129 | Complete |
+| TACUI-07 | Phase 129 | Complete |
+| TACUI-08 | Phase 129 | Complete |
 
 **Coverage:**
 
-- v1 requirements: 13 total
-- Mapped to phases: 13 ✓
+- v1 requirements: 18 total
+- Mapped to phases: 18 ✓
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-06-17*
-*Last updated: 2026-06-17 after v1.28 milestone definition*
+*Last updated: 2026-06-20 — added TACUI-04..08 for Phase 129 planning*

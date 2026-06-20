@@ -56,6 +56,12 @@ FlawTagFilter = Literal[
     "endgame",
 ]
 
+# Orientation filter for GET /library/flaws (Phase 129, TACUI-06/D-07). "either"
+# is OR across both missed_* and allowed_* tactic columns; "missed"/"allowed"
+# select a single orientation. Mirrors TacticOrientation in library_repository.
+# FastAPI 422-rejects any value outside this Literal at the HTTP boundary.
+TacticOrientationFilter = Literal["either", "missed", "allowed"]
+
 
 @router.get("/games", response_model=LibraryGamesResponse)
 async def get_library_games(
@@ -225,13 +231,17 @@ async def get_tactic_comparison(
     color: str | None = Query(default=None),
     tactic_families: list[str] | None = Query(default=None),
 ) -> TacticComparisonResponse:
-    """Per-family tactic motif you-vs-opponent comparison (Phase 126, TACCMP-01/02/03).
+    """Per-family tactic motif you-vs-opponent comparison (Phase 126/129).
+
+    Phase 129 (D-13/D-14, taxonomy redesign): returns up to 20 orientation-tagged bullets
+    (10 families x 2 orientations); top-6 families by Missed you_rate appear first, then overflow.
+    No orientation query param — grid always shows both orientations (D-09).
 
     user_id taken exclusively from the authenticated user — never from a
     request parameter (IDOR prevention, T-126-01).
     Returns below_gate=True with empty bullets when analyzed_n < TACTIC_COMPARISON_GATE.
     tactic_families: optional multi-select to narrow to specific motif families
-    (e.g. "fork", "pin_skewer"); unknown keys are silently ignored (T-126-02).
+    (e.g. "fork", "skewer"); unknown/dropped keys are silently ignored (T-126-02).
     Backend is NOT beta-gated per D-01a — frontend gating enforces beta rollout.
     """
     if from_date is not None and to_date is not None and from_date > to_date:
@@ -267,6 +277,8 @@ async def get_library_flaws(
     opponent_type: str = Query(default="human"),
     color: str | None = Query(default=None),
     tactic_family: list[str] | None = Query(default=None),
+    tactic_orientation: TacticOrientationFilter = Query(default="either"),
+    max_tactic_depth: int | None = Query(default=None, ge=1),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
 ) -> LibraryFlawsResponse:
@@ -301,6 +313,8 @@ async def get_library_flaws(
         to_date=to_date,
         color=color,
         tactic_families=list(tactic_family) if tactic_family else None,
+        tactic_orientation=tactic_orientation,
+        max_tactic_depth=max_tactic_depth,
         offset=offset,
         limit=limit,
     )

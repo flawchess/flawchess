@@ -38,8 +38,9 @@ vi.mock('react-chessboard', () => ({
 }));
 
 // Mock useUserProfile — LibraryGameCard now calls it for guest/analyze gating (Phase 118).
+// beta_enabled=true so tactic chips render in orientation tests (Phase 129).
 vi.mock('@/hooks/useUserProfile', () => ({
-  useUserProfile: () => ({ data: { is_guest: false }, isLoading: false }),
+  useUserProfile: () => ({ data: { is_guest: false, beta_enabled: true }, isLoading: false }),
 }));
 
 // Mock useAuth — FlawCard now calls useAuth for beta-gated tactic chip (Phase 126).
@@ -137,6 +138,11 @@ function makeFlaw(overrides: Partial<FlawListItem> = {}): FlawListItem {
     clock_seconds: 125,
     move_seconds: 8.4,
     best_move: null,
+    // Phase 128/129 tactic motif fields — null by default
+    allowed_tactic_motif: null,
+    allowed_tactic_confidence: null,
+    missed_tactic_motif: null,
+    missed_tactic_confidence: null,
     ...overrides,
   };
 }
@@ -379,6 +385,102 @@ describe('FlawCard', () => {
       });
       // LibraryGameCard renders the white + black username
       expect(screen.getByTestId('flaw-game-modal').textContent).toContain('Alice');
+    });
+  });
+
+  describe('Phase 129 D-11: orientation-prefixed dual-chip matrix (TACUI-07)', () => {
+    const BOTH_MOTIFS = {
+      missed_tactic_motif: 'fork',
+      missed_tactic_confidence: 90,
+      allowed_tactic_motif: 'pin',
+      allowed_tactic_confidence: 85,
+    };
+    const MISSED_ONLY = {
+      missed_tactic_motif: 'fork',
+      missed_tactic_confidence: 90,
+      allowed_tactic_motif: null,
+      allowed_tactic_confidence: null,
+    };
+    const ALLOWED_ONLY = {
+      missed_tactic_motif: null,
+      missed_tactic_confidence: null,
+      allowed_tactic_motif: 'pin',
+      allowed_tactic_confidence: 85,
+    };
+
+    it('Either + both motifs: renders missed chip AND allowed chip', () => {
+      render(
+        <FlawCard flaw={makeFlaw(BOTH_MOTIFS)} tacticOrientation="either" />,
+      );
+      // missed chip: chip-tactic-missed-fork-42
+      expect(screen.getByTestId('chip-tactic-missed-fork-42')).toBeTruthy();
+      // allowed chip: chip-tactic-allowed-pin-42
+      expect(screen.getByTestId('chip-tactic-allowed-pin-42')).toBeTruthy();
+    });
+
+    it('Either + missed only: renders missed chip only', () => {
+      render(
+        <FlawCard flaw={makeFlaw(MISSED_ONLY)} tacticOrientation="either" />,
+      );
+      expect(screen.getByTestId('chip-tactic-missed-fork-42')).toBeTruthy();
+      // No allowed chip (null allowed_tactic_motif)
+      expect(screen.queryByTestId('chip-tactic-allowed-pin-42')).toBeNull();
+    });
+
+    it('Either + allowed only: renders allowed chip only', () => {
+      render(
+        <FlawCard flaw={makeFlaw(ALLOWED_ONLY)} tacticOrientation="either" />,
+      );
+      expect(screen.getByTestId('chip-tactic-allowed-pin-42')).toBeTruthy();
+      // No missed chip
+      expect(screen.queryByTestId('chip-tactic-missed-fork-42')).toBeNull();
+    });
+
+    it('Missed filter + both motifs: renders missed chip only', () => {
+      render(
+        <FlawCard flaw={makeFlaw(BOTH_MOTIFS)} tacticOrientation="missed" />,
+      );
+      expect(screen.getByTestId('chip-tactic-missed-fork-42')).toBeTruthy();
+      // allowed chip suppressed
+      expect(screen.queryByTestId('chip-tactic-allowed-pin-42')).toBeNull();
+    });
+
+    it('Missed filter + missed only: renders missed chip', () => {
+      render(
+        <FlawCard flaw={makeFlaw(MISSED_ONLY)} tacticOrientation="missed" />,
+      );
+      expect(screen.getByTestId('chip-tactic-missed-fork-42')).toBeTruthy();
+    });
+
+    it('Missed filter + allowed only (missed is null): renders no chip', () => {
+      render(
+        <FlawCard flaw={makeFlaw(ALLOWED_ONLY)} tacticOrientation="missed" />,
+      );
+      expect(screen.queryByTestId(/chip-tactic-/)).toBeNull();
+    });
+
+    it('Allowed filter + both motifs: renders allowed chip only', () => {
+      render(
+        <FlawCard flaw={makeFlaw(BOTH_MOTIFS)} tacticOrientation="allowed" />,
+      );
+      expect(screen.getByTestId('chip-tactic-allowed-pin-42')).toBeTruthy();
+      // missed chip suppressed
+      expect(screen.queryByTestId('chip-tactic-missed-fork-42')).toBeNull();
+    });
+
+    it('Allowed filter + allowed only: renders allowed chip', () => {
+      render(
+        <FlawCard flaw={makeFlaw(ALLOWED_ONLY)} tacticOrientation="allowed" />,
+      );
+      expect(screen.getByTestId('chip-tactic-allowed-pin-42')).toBeTruthy();
+    });
+
+    it('no per-chip Popover rendered (D-12 narration = chip label + TagLegend)', () => {
+      const { container } = render(
+        <FlawCard flaw={makeFlaw(BOTH_MOTIFS)} tacticOrientation="either" />,
+      );
+      // No Radix dialog in the chip row
+      expect(container.querySelector('[role="dialog"]')).toBeNull();
     });
   });
 });

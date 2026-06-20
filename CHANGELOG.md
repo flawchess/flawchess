@@ -26,7 +26,11 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 - **En-passant, promotion, and under-promotion tactic motifs** — three move-type motifs (ints 27-29) are now detected and stored for lichess-theme parity. They form a new lowest dispatch tier (Tier 5) below hanging-piece, so a real tactic always wins when both fire. Under-promotion dominates promotion: a non-queen promotion tags as `under-promotion` and never as `promotion`. These are stored for coverage and future chip-surfacing; they do not appear in the default motif chip set. (Phase 128.1)
 
+- **Tactic difficulty and missed-vs-allowed filters in the Library** — the Flaws filter panel gains a "Tactic Difficulty" slider (1 to 5 moves deep, defaulting to intermediate) so you can focus on tactics of a given depth, plus an Either / Missed / Allowed toggle to read whether you want the tactic you *allowed* (the opponent's refutation) or the stronger one you *missed*. Flaw cards reflect the chosen orientation, and the "Tactic Motifs" comparison section now shows two rows per family (missed and allowed). Both controls have full mobile-drawer parity. This surfaces the missed-vs-allowed UI toggle that Phase 128 set up. (Phase 129)
+
 ### Changed
+
+- **Tactic families regrouped into a clearer 10-family taxonomy** — the tactic motif filter and comparison now group motifs into fork, skewer, pin, x-ray, double check, discovered check, discovered attack, trapped piece, hanging, and mate, replacing the previous coarser grouping. Families beyond the top six fold into a "More Tactics" accordion. The catch-all "combinations" group was dropped; old `?tactic=` URLs referencing retired family names are inert rather than erroring. (Phase 129)
 
 - **Flaw stats faster and more accurate on large game libraries** — the analyzed-game gate now uses the pre-materialized `full_evals_completed_at` column instead of recomputing eval coverage across all positions on every request. This eliminates a full-partition scan that caused 135s average / 49-minute max latency under an eval drain on large accounts. Fully-analyzed short games are now correctly counted as analyzed. (260617-pu4)
 

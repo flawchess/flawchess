@@ -1,30 +1,55 @@
 /**
- * Shared metadata for the 6 tactic-motif family comparison bullets (Phase 126).
+ * Shared metadata for the 10 tactic-motif family comparison bullets (Phase 126, updated Phase 129).
  *
  * Single source of truth consumed by TacticComparisonGrid (family cards + rows),
  * TacticMotifChip (family color + icon), and the FilterPanel tactic-motif filter.
  *
- * Mirrors flawComparisonMeta.ts in structure. The six families collapse the 24
- * TacticMotif strings (D-08). The family taxonomy must remain consistent with the
- * backend FAMILY_TO_MOTIF_INTS mapping in library_repository.py.
+ * Mirrors flawComparisonMeta.ts in structure. The 10 families map the TacticMotif
+ * strings (D-08, Phase 129 plan 04 taxonomy redesign). The family taxonomy must
+ * remain consistent with the backend FAMILY_TO_MOTIF_INTS mapping in
+ * library_repository.py — the keys here are the cross-stack contract (string-for-string).
+ *
+ * Phase 129 plan 04 removed the combinations family; those motif strings (sacrifice,
+ * deflection, attraction, intermezzo, interference, self-interference, clearance,
+ * capturing-defender) now belong to no family. Old ?tactic=pin_skewer / discovery /
+ * combinations URL params are inert (backend .get(fam, []) no-op; union excludes them).
  */
 
 import type { ComponentType, CSSProperties } from 'react';
-import { GitFork, MoveUp, Zap, Crown, AlertTriangle, Swords } from 'lucide-react';
+import {
+  GitFork,
+  Minus,
+  MapPin,
+  ScanLine,
+  ChevronsUp,
+  Eye,
+  Search,
+  Footprints,
+  AlertTriangle,
+  Crown,
+} from 'lucide-react';
 
 import {
   TAC_FORK,
   TAC_FORK_BG,
-  TAC_PIN_SKEWER,
-  TAC_PIN_SKEWER_BG,
-  TAC_DISCOVERY,
-  TAC_DISCOVERY_BG,
-  TAC_MATE,
-  TAC_MATE_BG,
+  TAC_SKEWER,
+  TAC_SKEWER_BG,
+  TAC_PIN,
+  TAC_PIN_BG,
+  TAC_X_RAY,
+  TAC_X_RAY_BG,
+  TAC_DOUBLE_CHECK,
+  TAC_DOUBLE_CHECK_BG,
+  TAC_DISCOVERED_CHECK,
+  TAC_DISCOVERED_CHECK_BG,
+  TAC_DISCOVERED_ATTACK,
+  TAC_DISCOVERED_ATTACK_BG,
+  TAC_TRAPPED_PIECE,
+  TAC_TRAPPED_PIECE_BG,
   TAC_HANGING,
   TAC_HANGING_BG,
-  TAC_COMBINATIONS,
-  TAC_COMBINATIONS_BG,
+  TAC_MATE,
+  TAC_MATE_BG,
   ZONE_DANGER,
   ZONE_NEUTRAL,
   ZONE_SUCCESS,
@@ -45,13 +70,23 @@ export type TacticIcon = ComponentType<{
 
 // ─── Families ─────────────────────────────────────────────────────────────────
 
+/**
+ * The 10 tactic family keys — cross-stack contract with backend FAMILY_TO_MOTIF_INTS.
+ * These strings must equal the backend dict keys string-for-string (plan 129-04).
+ * Display order: fork → skewer → pin → x_ray → double_check → discovered_check
+ *   → discovered_attack → trapped_piece → hanging → mate.
+ */
 export type TacticFamily =
   | 'fork'
-  | 'pin_skewer'
-  | 'discovery'
-  | 'mate'
+  | 'skewer'
+  | 'pin'
+  | 'x_ray'
+  | 'double_check'
+  | 'discovered_check'
+  | 'discovered_attack'
+  | 'trapped_piece'
   | 'hanging'
-  | 'combinations';
+  | 'mate';
 
 export interface TacticFamilyColors {
   /** Icon + chip foreground color. */
@@ -62,20 +97,28 @@ export interface TacticFamilyColors {
 
 export const TACTIC_FAMILY_COLORS: Record<TacticFamily, TacticFamilyColors> = {
   fork: { color: TAC_FORK, bg: TAC_FORK_BG },
-  pin_skewer: { color: TAC_PIN_SKEWER, bg: TAC_PIN_SKEWER_BG },
-  discovery: { color: TAC_DISCOVERY, bg: TAC_DISCOVERY_BG },
-  mate: { color: TAC_MATE, bg: TAC_MATE_BG },
+  skewer: { color: TAC_SKEWER, bg: TAC_SKEWER_BG },
+  pin: { color: TAC_PIN, bg: TAC_PIN_BG },
+  x_ray: { color: TAC_X_RAY, bg: TAC_X_RAY_BG },
+  double_check: { color: TAC_DOUBLE_CHECK, bg: TAC_DOUBLE_CHECK_BG },
+  discovered_check: { color: TAC_DISCOVERED_CHECK, bg: TAC_DISCOVERED_CHECK_BG },
+  discovered_attack: { color: TAC_DISCOVERED_ATTACK, bg: TAC_DISCOVERED_ATTACK_BG },
+  trapped_piece: { color: TAC_TRAPPED_PIECE, bg: TAC_TRAPPED_PIECE_BG },
   hanging: { color: TAC_HANGING, bg: TAC_HANGING_BG },
-  combinations: { color: TAC_COMBINATIONS, bg: TAC_COMBINATIONS_BG },
+  mate: { color: TAC_MATE, bg: TAC_MATE_BG },
 };
 
 export const TACTIC_FAMILY_ICON: Record<TacticFamily, TacticIcon> = {
   fork: GitFork,
-  pin_skewer: MoveUp,
-  discovery: Zap,
-  mate: Crown,
+  skewer: Minus,
+  pin: MapPin,
+  x_ray: ScanLine,
+  double_check: ChevronsUp,
+  discovered_check: Eye,
+  discovered_attack: Search,
+  trapped_piece: Footprints,
   hanging: AlertTriangle,
-  combinations: Swords,
+  mate: Crown,
 };
 
 // ─── Family definitions ───────────────────────────────────────────────────────
@@ -91,9 +134,9 @@ export interface TacticFamilyDef {
 }
 
 /**
- * The six tactic families in display order. The motifs arrays collectively cover
- * all 24 TacticMotif strings exactly once (D-08). Must match backend
- * FAMILY_TO_MOTIF_INTS in library_repository.py.
+ * The 10 tactic families in display order. The motifs arrays mirror the backend
+ * FAMILY_TO_MOTIF_INTS mapping in library_repository.py (plan 129-04 contract).
+ * Dropped combinations motif strings (sacrifice, deflection, etc.) belong to no family.
  */
 export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
   {
@@ -103,17 +146,52 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     motifs: ['fork'],
   },
   {
-    name: 'Pin / Skewer',
-    family: 'pin_skewer',
-    definition:
-      'A piece is stuck in front of (pin) or behind (skewer) a more valuable piece along the same line.',
-    motifs: ['pin', 'skewer', 'x-ray'],
+    name: 'Skewer',
+    family: 'skewer',
+    definition: 'A valuable piece is forced to move, leaving a less valuable piece behind it undefended.',
+    motifs: ['skewer'],
   },
   {
-    name: 'Discovery',
-    family: 'discovery',
-    definition: 'Moving one piece uncovers an attack from the piece behind it, sometimes with check.',
-    motifs: ['discovered-attack', 'double-check'],
+    name: 'Pin',
+    family: 'pin',
+    definition: 'A piece cannot move without exposing a more valuable piece behind it to capture.',
+    motifs: ['pin'],
+  },
+  {
+    name: 'X-ray',
+    family: 'x_ray',
+    definition: 'A piece exerts indirect pressure through an enemy piece, threatening the square or piece behind it.',
+    motifs: ['x-ray'],
+  },
+  {
+    name: 'Double check',
+    family: 'double_check',
+    definition: 'The king is placed in check by two pieces simultaneously, leaving only a king move as the reply.',
+    motifs: ['double-check'],
+  },
+  {
+    name: 'Discovered check',
+    family: 'discovered_check',
+    definition: 'Moving one piece uncovers a check delivered by the piece behind it, not the piece that moved.',
+    motifs: ['discovered-check'],
+  },
+  {
+    name: 'Discovered attack',
+    family: 'discovered_attack',
+    definition: 'Moving one piece uncovers an attack from the piece behind it.',
+    motifs: ['discovered-attack'],
+  },
+  {
+    name: 'Trapped piece',
+    family: 'trapped_piece',
+    definition: 'A piece has no safe square to move to and will be lost regardless of where it goes.',
+    motifs: ['trapped-piece'],
+  },
+  {
+    name: 'Hanging piece',
+    family: 'hanging',
+    definition: 'An undefended piece that can be captured for free.',
+    motifs: ['hanging-piece'],
   },
   {
     name: 'Mate patterns',
@@ -131,33 +209,13 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
       'mate',
     ],
   },
-  {
-    name: 'Hanging piece',
-    family: 'hanging',
-    definition: 'An undefended piece that can be captured for free.',
-    motifs: ['hanging-piece'],
-  },
-  {
-    name: 'Combinations',
-    family: 'combinations',
-    definition:
-      'Forcing sequences like sacrifices, deflections, and decoys that win material or deliver mate.',
-    motifs: [
-      'sacrifice',
-      'deflection',
-      'attraction',
-      'intermezzo',
-      'interference',
-      'self-interference',
-      'clearance',
-      'capturing-defender',
-    ],
-  },
 ];
 
 /**
  * Derived mapping from motif string to its TacticFamily key.
  * Built by flattening TACTIC_COMPARISON_FAMILIES — no manual duplication.
+ * Dropped combinations motif strings (sacrifice, deflection, etc.) map to no family;
+ * consumers already guard `family == null`.
  */
 export const TACTIC_FAMILY_FOR_MOTIF: Record<string, TacticFamily> = Object.fromEntries(
   TACTIC_COMPARISON_FAMILIES.flatMap(({ family, motifs }) =>

@@ -362,13 +362,17 @@ class FlawComparisonResponse(BaseModel):
 class TacticBullet(BaseModel):
     """Per-family data for one tactic-motif family row (Phase 126, TACCMP-01).
 
+    Phase 129 Plan 01 (D-13): orientation field added (option A) so the frontend
+    can render two bullets per family card — one missed, one allowed.
+
     Rates are mean tactic allowances per game (not per 100 moves).
     Sign convention: positive delta = you allow MORE than opponents = bad
     (mirrors FlawBullet sign convention).
     has_zone: False until a tactic benchmark pipeline ships (out of scope Phase 126).
     """
 
-    family: str  # family key e.g. "fork", "pin_skewer"
+    family: str  # family key e.g. "fork", "skewer" (10-family taxonomy, plan 129-04)
+    orientation: Literal["missed", "allowed"]  # Phase 129 D-13 (option A schema lock)
     you_rate: float | None  # mean tactic allowances per game (player side); None = zero events
     opp_rate: float | None  # mean tactic allowances per game (opponent side); None = zero events
     delta: float | None  # you_rate - opp_rate; None = both sides zero events
@@ -385,8 +389,14 @@ class TacticBullet(BaseModel):
 class TacticComparisonResponse(BaseModel):
     """Response for GET /api/library/tactic-comparison (Phase 126, TACCMP-01/02/03).
 
-    bullets: ordered by rank (largest significant gap first, volume fallback),
-             up to 6 family rows; empty list when below_gate=True.
+    Phase 129 (D-13/D-14, taxonomy redesign): bullets now carries up to 20 orientation-tagged
+    entries (10 families x 2 orientations). Ordering contract:
+      - Top-6 families by Missed bullet you_rate descending appear first (both
+        their missed + allowed bullets before any overflow families).
+      - Overflow families follow, also paired (missed then allowed per family).
+    The frontend renders server order — no client re-sort needed.
+
+    bullets: ordered per D-14 contract; empty list when below_gate=True.
     analyzed_n: analyzed game count after filters.
     analyzed_gate: minimum required (mirrors TACTIC_COMPARISON_GATE = 20).
     below_gate: True when analyzed_n < analyzed_gate.

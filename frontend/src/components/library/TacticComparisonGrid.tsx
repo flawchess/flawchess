@@ -1,14 +1,21 @@
 /**
  * TacticComparisonGrid — beta-gated you-vs-opponent tactic-motif comparison,
- * laid out as one Card per API-returned family (Phase 126 TACUI-02).
+ * laid out as one Card per family with two bullet rows (Phase 129 TACUI-08).
  *
- * Layout: single column on mobile, 3 columns on desktop (lg). Up to 6 family
- * cards, ranked server-side by largest significant gap (Wilson-gated), volume
- * fallback. Cards are rendered in the order returned by the API (no client
- * re-sort).
+ * Layout: single column on mobile, 3 columns on desktop (lg). Server returns
+ * up to 12 bullets (6 families × 2 orientations). Top-6 families by Missed
+ * you_rate (server-side) render in the main grid; any remaining families render
+ * inside a collapsible "More Tactics" accordion (cloned from Endgame Statistics
+ * Concepts in Endgames.tsx). Cards are rendered in server order (no client re-sort).
+ *
+ * Per-family card anatomy:
+ *   [CardHeader] Family name (font-medium, existing style unchanged)
+ *   [CardBody]
+ *     [TacticBulletRow] "Missed {Family}" — orientation=missed bullet
+ *     [TacticBulletRow] "Allowed {Family}" — orientation=allowed bullet
  *
  * Per-row anatomy (mirrors FlawBulletRow):
- *   [FamilyIcon]  [Family label]  …  [±delta zone-colored?]  [InfoPopover trigger]
+ *   "Missed {Family}" label (text-sm text-muted-foreground Regular 400) — delta — InfoPopover
  *   [MiniBulletChart — delta bar + CI whiskers + zone band where available]
  *
  * Zone degradation: when has_zone=false (no tactic benchmark pipeline yet),
@@ -16,6 +23,7 @@
  * and CI whiskers; no "no benchmark" label needed.
  *
  * Beta gate: returns null immediately for non-beta users (D-01).
+ * Grid is independent of the Flaws-tab orientation/depth filters (D-09).
  *
  * States (in priority order):
  *   isLoading  → pulse skeleton (data-testid="tactic-comparison-loading")
@@ -36,6 +44,12 @@ import { LoadError } from '@/components/ui/load-error';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useTacticComparison } from '@/hooks/useLibrary';
+import {
+  Accordion,
+  AccordionItem,
+  AccordionTrigger,
+  AccordionContent,
+} from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
 import {
   TACTIC_COMPARISON_FAMILIES,
@@ -50,6 +64,9 @@ import type { FilterState } from '@/components/filters/FilterPanel';
 import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
 
 const HOVER_OPEN_DELAY_MS = 100;
+
+/** Max families shown in the main grid before overflow goes into "More Tactics". */
+const MAX_MAIN_GRID_FAMILIES = 6;
 
 // ─── Signed delta helper ──────────────────────────────────────────────────────
 
@@ -184,9 +201,13 @@ function TacticBulletPopover({
 
 interface TacticBulletRowProps {
   bullet: TacticBullet;
+  /** Row label override ("Missed Fork" / "Allowed Fork"). When omitted, shows family name. */
+  rowLabel?: string;
+  /** data-testid for the row container. */
+  rowTestId?: string;
 }
 
-function TacticBulletRow({ bullet }: TacticBulletRowProps) {
+function TacticBulletRow({ bullet, rowLabel, rowTestId }: TacticBulletRowProps) {
   const family = bullet.family as TacticFamily;
   const familyDef = TACTIC_COMPARISON_FAMILIES.find((f) => f.family === family);
   const familyName = familyDef?.name ?? bullet.family;
@@ -203,12 +224,24 @@ function TacticBulletRow({ bullet }: TacticBulletRowProps) {
       ? tacticDeltaZoneColor(bullet.delta, bullet.zone_lo, bullet.zone_hi)
       : undefined;
 
+  // When a row label override is provided (two-bullet card mode), the family
+  // icon appears only on the header (CardHeader), not repeated per row.
+  const showIcon = !rowLabel;
+  const displayLabel = rowLabel ?? familyName;
+
   return (
-    <div className="flex flex-col gap-1" data-testid={`tactic-bullet-row-${bullet.family}`}>
+    <div
+      className="flex flex-col gap-1"
+      data-testid={rowTestId ?? `tactic-bullet-row-${bullet.family}`}
+    >
       {/* Label + delta + popover trigger row */}
       <div className="flex items-center gap-1.5">
-        {Icon && <Icon className="h-3.5 w-3.5 shrink-0" style={{ color }} aria-hidden="true" />}
-        <span className="text-sm font-medium truncate">{familyName}</span>
+        {showIcon && Icon && (
+          <Icon className="h-3.5 w-3.5 shrink-0" style={{ color }} aria-hidden="true" />
+        )}
+        {/* Row label: text-sm text-muted-foreground Regular 400 (per UI-SPEC — do NOT
+            extend the existing font-medium on the CardHeader family label to these rows). */}
+        <span className="text-sm text-muted-foreground truncate">{displayLabel}</span>
         <span
           className={cn(
             'ml-auto text-sm font-bold tabular-nums shrink-0',
@@ -247,6 +280,83 @@ function TacticBulletRow({ bullet }: TacticBulletRowProps) {
   );
 }
 
+// ─── Family grouping ──────────────────────────────────────────────────────────
+
+/**
+ * Groups bullets by family, preserving server order of first appearance.
+ * Each family maps to { missed?: TacticBullet; allowed?: TacticBullet }.
+ * No client re-sort — backend's top-6-by-Missed ranking is the canonical order (D-14).
+ */
+function groupBulletsByFamily(
+  bullets: TacticBullet[],
+): { family: string; missed?: TacticBullet; allowed?: TacticBullet }[] {
+  const order: string[] = [];
+  const map = new Map<string, { missed?: TacticBullet; allowed?: TacticBullet }>();
+
+  for (const bullet of bullets) {
+    if (!map.has(bullet.family)) {
+      order.push(bullet.family);
+      map.set(bullet.family, {});
+    }
+    const entry = map.get(bullet.family)!;
+    if (bullet.orientation === 'missed') {
+      entry.missed = bullet;
+    } else {
+      entry.allowed = bullet;
+    }
+  }
+
+  return order.map((family) => ({ family, ...map.get(family) }));
+}
+
+// ─── FamilyCard renderer ──────────────────────────────────────────────────────
+
+interface FamilyCardProps {
+  family: string;
+  missed?: TacticBullet;
+  allowed?: TacticBullet;
+}
+
+/**
+ * One Card per tactic family with two TacticBulletRows: "Missed {Family}" then
+ * "Allowed {Family}". The card's header shows the family name with its existing
+ * font-medium style. Row labels use text-sm text-muted-foreground Regular 400
+ * (per UI-SPEC — do NOT extend font-medium to bullet row labels).
+ */
+function FamilyCard({ family, missed, allowed }: FamilyCardProps) {
+  const familyDef = TACTIC_COMPARISON_FAMILIES.find((f) => f.family === family);
+  const familyName = familyDef?.name ?? family;
+  const Icon = TACTIC_FAMILY_ICON[family as TacticFamily];
+  const color = TACTIC_FAMILY_COLORS[family as TacticFamily]?.color;
+
+  return (
+    <Card data-testid={`tactic-family-card-${family}`}>
+      <CardHeader data-testid={`tactic-family-header-${family}`}>
+        <span className="inline-flex items-center gap-1.5">
+          {Icon && <Icon className="h-4 w-4 shrink-0" style={{ color }} aria-hidden="true" />}
+          {familyName}
+        </span>
+      </CardHeader>
+      <CardBody className="space-y-3">
+        {missed && (
+          <TacticBulletRow
+            bullet={missed}
+            rowLabel={`Missed ${familyName}`}
+            rowTestId={`tactic-grid-missed-${family}`}
+          />
+        )}
+        {allowed && (
+          <TacticBulletRow
+            bullet={allowed}
+            rowLabel={`Allowed ${familyName}`}
+            rowTestId={`tactic-grid-allowed-${family}`}
+          />
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
 // ─── Grid body ────────────────────────────────────────────────────────────────
 
 interface GridBodyProps {
@@ -254,27 +364,51 @@ interface GridBodyProps {
 }
 
 /**
- * Renders the API-returned bullets in order (server already ranked + capped at 6).
- * No client-side re-sort — the backend's significant-gap-first / volume-fallback
- * ordering is the canonical presentation order.
+ * Groups the API-returned bullets by family (preserving server order) and renders:
+ * - First up-to-6 families in the main grid (data-testid="tactic-comparison-grid").
+ * - Any remaining families inside a "More Tactics" accordion (data-testid="tactic-grid-more-tactics").
+ *
+ * No client-side re-sort — the backend's top-6-by-Missed-you_rate ordering is canonical (D-14).
+ * No orientation toggle — the grid always shows both orientations per family (D-09).
  */
 function GridBody({ data }: GridBodyProps) {
+  const grouped = groupBulletsByFamily(data.bullets);
+  const mainFamilies = grouped.slice(0, MAX_MAIN_GRID_FAMILIES);
+  const overflowFamilies = grouped.slice(MAX_MAIN_GRID_FAMILIES);
+
   return (
-    <div data-testid="tactic-comparison-grid" className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      {data.bullets.map((bullet) => (
-        <Card
-          key={bullet.family}
-          data-testid={`tactic-family-card-${bullet.family}`}
-        >
-          <CardHeader data-testid={`tactic-family-header-${bullet.family}`}>
-            {TACTIC_COMPARISON_FAMILIES.find((f) => f.family === bullet.family)?.name ??
-              bullet.family}
-          </CardHeader>
-          <CardBody className="space-y-3">
-            <TacticBulletRow bullet={bullet} />
-          </CardBody>
-        </Card>
-      ))}
+    <div>
+      <div data-testid="tactic-comparison-grid" className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {mainFamilies.map(({ family, missed, allowed }) => (
+          <FamilyCard key={family} family={family} missed={missed} allowed={allowed} />
+        ))}
+      </div>
+
+      {/* More Tactics accordion — only rendered when there are overflow families (D-14).
+          Cloned verbatim from Endgames.tsx:390-397 (Endgame Statistics Concepts pattern). */}
+      {overflowFamilies.length > 0 && (
+        <Accordion type="single" collapsible className="mt-4">
+          <AccordionItem
+            value="more-tactics"
+            className="charcoal-texture rounded-md overflow-hidden border-none"
+            data-testid="tactic-grid-more-tactics"
+          >
+            <AccordionTrigger band>
+              <span className="flex items-center gap-2 flex-1">
+                <h3 className="text-base font-semibold text-foreground">More Tactics</h3>
+              </span>
+            </AccordionTrigger>
+            <AccordionContent className="p-4">
+              {/* Same FamilyCard renderer as top-6 — no compact variant (CONTEXT discretion). */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                {overflowFamilies.map(({ family, missed, allowed }) => (
+                  <FamilyCard key={family} family={family} missed={missed} allowed={allowed} />
+                ))}
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      )}
     </div>
   );
 }
@@ -340,11 +474,12 @@ interface TacticComparisonGridProps {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 /**
- * Beta-gated family-card grid for the 6-family tactic-motif comparison.
+ * Beta-gated family-card grid for the tactic-motif comparison (TACUI-08).
  *
- * Self-fetches via useTacticComparison; handles all states internally.
- * The parent (FlawStatsPanel Zone 3) renders this directly after FlawComparisonGrid —
- * no extra beta guard needed at the call site (grid self-gates on beta_enabled).
+ * Self-fetches via useTacticComparison (no orientation arg — grid always shows
+ * both orientations regardless of the Flaws-tab toggle, D-09). Handles all states
+ * internally. The parent (FlawStatsPanel Zone 3) renders this directly after
+ * FlawComparisonGrid — no extra beta guard needed at the call site (grid self-gates).
  *
  * Grid is single-column at 375px (TACUI-03), 3-column on desktop.
  */
@@ -370,6 +505,7 @@ function TacticComparisonGridInner({ filters, flawFilter }: TacticComparisonGrid
   // The comparison grid always shows every family (its purpose is to compare across
   // families), so it is NOT narrowed by the Flaws-tab tactic-motif filter — pass no
   // family narrowing. Game-metadata filters + severity still apply via filters/flawFilter.
+  // No orientation arg — grid always shows both orientations (D-09).
   const { isLoading, isError, data } = useTacticComparison(filters, flawFilter, []);
 
   if (isLoading) return <LoadingSkeleton />;

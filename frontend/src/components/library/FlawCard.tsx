@@ -24,7 +24,7 @@ import { formatFlawEvalParts } from '@/lib/formatFlawEval';
 import { useLibraryGame } from '@/hooks/useLibrary';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { TacticMotifChip } from '@/components/library/TacticMotifChip';
-import type { FlawListItem, FlawSeverity } from '@/types/library';
+import type { FlawListItem, FlawSeverity, TacticOrientation } from '@/types/library';
 
 // Standalone component per D-05 (sibling to LibraryGameCard — do NOT import from it).
 // formatDate copied verbatim from LibraryGameCard (same display requirements; D-05 forbids shared import).
@@ -80,7 +80,19 @@ function formatClock(clockSec: number): string {
  * or href (auto-escaped). platform link uses target=_blank + rel=noopener
  * noreferrer (T-112-06 reverse-tabnabbing guard).
  */
-export function FlawCard({ flaw }: { flaw: FlawListItem }) {
+/**
+ * Props for FlawCard.
+ *
+ * Phase 129 TACUI-07 (D-10/D-11): tacticOrientation controls which chip(s) render.
+ * Default 'either' = show both when both exist (backward-compatible).
+ */
+export interface FlawCardProps {
+  flaw: FlawListItem;
+  /** Phase 129 orientation filter — controls which tactic chip(s) render (D-11). */
+  tacticOrientation?: TacticOrientation;
+}
+
+export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) {
   const [open, setOpen] = useState(false);
   const { data, isLoading, isError } = useLibraryGame(open ? flaw.game_id : null);
   const { data: userProfile } = useUserProfile();
@@ -272,12 +284,26 @@ export function FlawCard({ flaw }: { flaw: FlawListItem }) {
             showCount={false}
           />
 
-          {/* Tactic motif chip first — beta-gated (D-01), only rendered when a motif is
-              present (backend nulls sub-threshold motifs at query time, D-09).
-              Phase 128 D-07: uses allowed_tactic_motif (Phase 129 wires orientation toggle). */}
-          {userProfile?.beta_enabled && flaw.allowed_tactic_motif != null && (
-            <TacticMotifChip motif={flaw.allowed_tactic_motif} flawId={flaw.game_id} />
-          )}
+          {/* Tactic motif chips — Phase 129 TACUI-07 D-10/D-11 dual-chip matrix.
+              Beta-gated (D-01). Orientation controls which chip(s) render:
+              'either' = both when non-null; 'missed' = missed chip only; 'allowed' = allowed chip only.
+              Each chip carries the orientation prefix in its label/aria/testid. */}
+          {userProfile?.beta_enabled && tacticOrientation !== 'allowed' &&
+            flaw.missed_tactic_motif != null && (
+              <TacticMotifChip
+                motif={flaw.missed_tactic_motif}
+                flawId={flaw.game_id}
+                orientation="missed"
+              />
+            )}
+          {userProfile?.beta_enabled && tacticOrientation !== 'missed' &&
+            flaw.allowed_tactic_motif != null && (
+              <TacticMotifChip
+                motif={flaw.allowed_tactic_motif}
+                flawId={flaw.game_id}
+                orientation="allowed"
+              />
+            )}
 
           {/* Other flaw-tag chips. */}
           {flaw.tags.map((tag) => (
@@ -285,15 +311,21 @@ export function FlawCard({ flaw }: { flaw: FlawListItem }) {
           ))}
 
           {/* Single brown Tags-icon legend explaining the tactic + flaw tags above
-              (not severity). Renders null when there is nothing to explain. */}
+              (not severity). Feeds orientation-prefixed motif list matching the chips above. */}
           <TagLegend
             variant="icon"
             tags={flaw.tags}
-            tacticMotifs={
-              userProfile?.beta_enabled && flaw.allowed_tactic_motif != null
-                ? [flaw.allowed_tactic_motif]
-                : []
-            }
+            tacticMotifs={(() => {
+              if (!userProfile?.beta_enabled) return [];
+              const motifs: string[] = [];
+              if (tacticOrientation !== 'allowed' && flaw.missed_tactic_motif != null) {
+                motifs.push(flaw.missed_tactic_motif);
+              }
+              if (tacticOrientation !== 'missed' && flaw.allowed_tactic_motif != null) {
+                motifs.push(flaw.allowed_tactic_motif);
+              }
+              return motifs;
+            })()}
             gameId={flaw.game_id}
           />
         </div>

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * TacticMotifChip vitest suite — Phase 126 TACUI-01 + Phase 126 UAT:
+ * TacticMotifChip vitest suite — Phase 126 TACUI-01 + Phase 126 UAT + Phase 129 TACUI-07:
  *
  * 1. Renders the motif text and family-colored style
  * 2. Has the chip data-testid "chip-tactic-{motif}-{flawId}"
@@ -8,6 +8,8 @@
  * 4. UAT: the per-chip definition popover was removed; definitions live in the
  *    shared <TagLegend>. The chip is a highlight/cycle control on the Games card
  *    (onHover/onActivate) and a plain decorative span on FlawCard (no callbacks).
+ * 5. Phase 129: orientation prop adds "missed:"/"allowed:" prefix in label/aria/testid.
+ *    Without orientation prop: unchanged output (backward compatible).
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -63,8 +65,10 @@ describe('TacticMotifChip', () => {
 
   describe('data-testid stability', () => {
     it('has data-testid="chip-tactic-{motif}-{flawId}"', () => {
-      renderChip('sacrifice', 99);
-      expect(screen.getByTestId('chip-tactic-sacrifice-99')).toBeTruthy();
+      // Use 'skewer' — a mapped motif in the 10-family taxonomy (plan 129-05)
+      // 'sacrifice' was in the dropped combinations family and renders null now.
+      renderChip('skewer', 99);
+      expect(screen.getByTestId('chip-tactic-skewer-99')).toBeTruthy();
     });
 
     it('data-testid includes flawId for uniqueness', () => {
@@ -162,6 +166,63 @@ describe('TacticMotifChip', () => {
       const { container } = render(<TacticMotifChip motif="not-a-real-motif" flawId={1} />);
       // Unknown motif has no family mapping — renders nothing
       expect(container.firstChild).toBeNull();
+    });
+  });
+
+  describe('Phase 129: orientation prefix (TACUI-07)', () => {
+    it('with orientation="missed": label is "missed: fork"', () => {
+      render(<TacticMotifChip motif="fork" flawId={42} orientation="missed" />);
+      const chip = screen.getByTestId('chip-tactic-missed-fork-42');
+      expect(chip.textContent).toContain('missed: fork');
+    });
+
+    it('with orientation="allowed": label is "allowed: fork"', () => {
+      render(<TacticMotifChip motif="fork" flawId={42} orientation="allowed" />);
+      const chip = screen.getByTestId('chip-tactic-allowed-fork-42');
+      expect(chip.textContent).toContain('allowed: fork');
+    });
+
+    it('with orientation="missed": testid is chip-tactic-missed-{motif}-{flawId}', () => {
+      render(<TacticMotifChip motif="pin" flawId={10} orientation="missed" />);
+      expect(screen.getByTestId('chip-tactic-missed-pin-10')).toBeTruthy();
+    });
+
+    it('with orientation="allowed": testid is chip-tactic-allowed-{motif}-{flawId}', () => {
+      render(<TacticMotifChip motif="fork" flawId={7} orientation="allowed" />);
+      expect(screen.getByTestId('chip-tactic-allowed-fork-7')).toBeTruthy();
+    });
+
+    it('with orientation="missed": aria-label uses space (not colon): "Tactic: missed {motif} — {def}"', () => {
+      render(<TacticMotifChip motif="fork" flawId={1} orientation="missed" />);
+      const chip = screen.getByTestId('chip-tactic-missed-fork-1');
+      const label = chip.getAttribute('aria-label') ?? '';
+      expect(label).toMatch(/^Tactic: missed fork — /);
+    });
+
+    it('with orientation="allowed": aria-label starts with "Tactic: allowed {motif} — "', () => {
+      render(<TacticMotifChip motif="fork" flawId={2} orientation="allowed" />);
+      const chip = screen.getByTestId('chip-tactic-allowed-fork-2');
+      const label = chip.getAttribute('aria-label') ?? '';
+      expect(label).toMatch(/^Tactic: allowed fork — /);
+    });
+
+    it('without orientation prop: label/aria/testid unchanged (backward compatible)', () => {
+      render(<TacticMotifChip motif="fork" flawId={99} />);
+      const chip = screen.getByTestId('chip-tactic-fork-99');
+      // Original testid format (no orientation prefix)
+      expect(chip.textContent).toContain('fork');
+      expect(chip.textContent).not.toContain('missed:');
+      expect(chip.textContent).not.toContain('allowed:');
+      const label = chip.getAttribute('aria-label') ?? '';
+      expect(label).toMatch(/^Tactic: fork — /);
+    });
+
+    it('does NOT render a Popover (D-12 narration = chip label + TagLegend, no popover)', () => {
+      const { container } = render(
+        <TacticMotifChip motif="fork" flawId={42} orientation="missed" />,
+      );
+      // No [role="dialog"] or [data-radix-popper-content-wrapper]
+      expect(container.querySelector('[role="dialog"]')).toBeNull();
     });
   });
 });

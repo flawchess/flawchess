@@ -2,35 +2,35 @@
 gsd_state_version: 1.0
 milestone: v1.28
 milestone_name: Tactic Tagging
-current_phase: 129
-current_phase_name: Tactic Filter UI
-status: ready_to_plan
-stopped_at: Phase 128.1 shipped (squash-merged to main), ready to plan Phase 129
-last_updated: "2026-06-20T06:12:00.000Z"
+current_phase: 999.1
+current_phase_name: BACKLOG
+status: milestone-phases-complete
+stopped_at: Phase 129 verified complete (UAT 2/2 passed, G-01 resolved live) — all active v1.28 phases (124–129) done; milestone ready to ship
+last_updated: "2026-06-20T15:05:00.000Z"
 last_activity: 2026-06-20
-last_activity_desc: Phase 128.1 shipped — squash-merged to main, ready to plan Phase 129
+last_activity_desc: Phase 129 verified (UAT 2/2 passed); v1.28 active phases complete
 progress:
   total_phases: 12
-  completed_phases: 7
-  total_plans: 22
-  completed_plans: 22
-  percent: 58
+  completed_phases: 8
+  total_plans: 27
+  completed_plans: 27
+  percent: 67
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 129 — Tactic Filter UI
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-06-20 — Phase 128.1 complete, transitioned to Phase 129
+Milestone: v1.28 Tactic Tagging — all active phases (124, 125, 126, 127, 128, 128.1, 129) COMPLETE
+Phase 129 (tactic-filter-ui): VERIFIED — UAT 2/2 passed, G-01 resolved live, VERIFICATION human-verified
+Status: Milestone ready to ship/close. Only the 999.x backlog (e.g. 999.1 Password Reset) remains, out of active scope.
+Last activity: 2026-06-20 — Phase 129 verified (UAT 2/2 passed); v1.28 active phases complete
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-06-14 after v1.26 milestone)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report.
-Current focus: v1.28 Tactic Tagging — Phase 129 Tactic Filter UI. Surface the tactic-motif chips (incl. the Phase 128/128.1 motifs 1-29) as a filter/grid in the Library. Next: `/gsd-plan-phase 129`.
+Current focus: v1.28 Tactic Tagging is feature-complete (Phases 124–129 done). Next: `/gsd-complete-milestone v1.28` to archive + tag, then ship to prod.
 
 ## Milestone Progress
 
@@ -416,6 +416,11 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 | Phase 128 P03 | 145m | 3 tasks | 13 files |
 | Phase 128.1 P01 | 180 | 2 tasks | 5 files |
 | Phase 128.1 P02 | 15m | 3 tasks | 6 files |
+| Phase 129-tactic-filter-ui P01 | 15 | 3 tasks | 9 files |
+| Phase 129 P02 | 17m | 4 tasks | 12 files |
+| Phase 129-tactic-filter-ui P03 | 7 | - tasks | - files |
+| Phase 129 P04 | 7 | 3 tasks | 7 files |
+| Phase 129 P05 | 18 | 3 tasks | 7 files |
 
 ## Decisions
 
@@ -495,10 +500,20 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 - [Phase ?]: MOVE_TYPE_MOTIFS frozenset groups move-type family; Tier 5 lowest dispatch ensures real tactics win (D-04)
 - [Phase ?]: D-08 approach (i) for under-promotion: no % floor, structural validation via fast-guard fixtures
 - [Phase ?]: trapped-piece → SUPPRESSED_MOTIFS (only-FP); en-passant → SUPPRESSED (NaN); discovered-check floor 0.80; promotion floor 0.60
+- [Phase ?]: .planning/phases/129-tactic-filter-ui/129-01-SUMMARY.md
+- [Phase ?]: max_tactic_depth is in half-moves (raw column value); UI converts to moves deep in plan 02
+- [Phase ?]: TacticComparisonResponse.bullets: top-6 by Missed you_rate desc; both bullets per family; overflow follows
+- [Phase ?]: D-03 locked: TacticDepthValue.maxMoves in half-plies, slider in full moves, bridged by sliderToMax/maxToSlider
+- [Phase ?]: D-11 dual-chip matrix: tacticOrientation !== 'allowed' gates missed chip, !== 'missed' gates allowed chip on FlawCard
+- [Phase ?]: D-02 isFlawFilterNonDefault: Either+Intermediate are defaults; badge never lights at depth slider defaults
+- [Phase ?]: FamilyCard renderer shared by top-6 grid + More Tactics accordion
+- [Phase ?]: groupBulletsByFamily preserves server order via insertion-order Map (no client re-sort, D-14)
+- [Phase ?]: 10-family FAMILY_TO_MOTIF_INTS taxonomy: fork, skewer, pin, x_ray, double_check, discovered_check, discovered_attack, trapped_piece, hanging, mate — the cross-stack contract for plan 129-05
+- [Phase ?]: combinations family dropped (ints 9-17 belong to no family); no DB migration required — families are query-time groupings
 
 ## Session
 
-**Last session:** 2026-06-19T22:44:15.848Z
-**Stopped at:** Phase 128.1 context gathered
-**Resume file:** .planning/phases/128.1-add-tactic-motifs-for-lichess-theme-coverage-discovered-chec/128.1-CONTEXT.md
+**Last session:** 2026-06-20T12:08:05.814Z
+**Stopped at:** Completed 129-04-PLAN.md (tactic family taxonomy redesign)
+**Resume file:** None
 | 170 | Flaw-card: open game on flawed ply, remove broken datapoint pulse | 2026-06-19 | fe4910d4 | — |

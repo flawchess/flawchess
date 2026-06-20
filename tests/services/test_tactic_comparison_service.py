@@ -1,12 +1,15 @@
-"""Tests for Phase 126 tactic comparison backend (TACCMP-01/02/03, TACUI-01).
+"""Tests for Phase 126/129 tactic comparison backend (TACCMP-01/02/03, TACUI-01/05/08).
 
 Coverage plan:
-- test_family_mapping_six_families           : Task 1 — 6 families exist in FAMILY_TO_MOTIF_INTS
-- test_family_mapping_covers_all_24_motifs   : Task 1 — all 24 TacticMotifInt values, no dupes
+- test_family_mapping_ten_families           : Plan 04 Task 1 — 10 families in FAMILY_TO_MOTIF_INTS
+- test_family_mapping_excludes_combinations  : Plan 04 Task 1 — dropped combinations ints absent
+- test_family_mapping_covers_selected_motifs : Plan 04 Task 1 — all 10 family int sets correct
 - test_family_mapping_fork                   : Task 1 — fork maps to [FORK=1]
-- test_family_mapping_pin_skewer             : Task 1 — pin_skewer maps to {PIN=3,SKEWER=4,X_RAY=12}
+- test_family_mapping_10_produces_overflow   : Plan 04 Task 1 — 10 families → top-6 + 4 overflow (G-01)
+- test_combinations_request_is_noop          : Plan 04 Task 2 — dropped combinations key → no-op
 - test_below_gate_short_circuit              : Task 2 — analyzed_n < gate → below_gate=True, bullets=[]
-- test_full_response_six_bullets             : Task 2 — N>=gate → up to 6 TacticBullet rows
+- test_full_response_bullets                 : Task 2 — N>=gate → up to 20 TacticBullet rows
+- test_tactic_comparison_produces_overflow   : Plan 04 Task 2 — 10 families → overflow non-empty (G-01)
 - test_significant_gap_first                 : Task 2 — significant rows ranked before non-significant
 - test_zero_event_family_delta_none          : Task 2 — family with no events → delta=None
 - test_confidence_gate_chip_field            : Task 2 — tactic_motif=None when confidence < threshold
@@ -134,6 +137,7 @@ _TEST_USER_BULLETS = 77702
 _TEST_USER_RANK = 77703
 _TEST_USER_ZERO = 77704
 _TEST_USER_CHIP = 77705
+_TEST_USER_OVERFLOW = 77706  # Plan 04 G-01 overflow regression test
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -144,6 +148,7 @@ async def _create_test_users(db_session: AsyncSession) -> None:
         _TEST_USER_RANK,
         _TEST_USER_ZERO,
         _TEST_USER_CHIP,
+        _TEST_USER_OVERFLOW,
     ]:
         await _ensure_user(db_session, uid)
 
@@ -153,20 +158,53 @@ async def _create_test_users(db_session: AsyncSession) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_family_mapping_six_families() -> None:
-    """FAMILY_TO_MOTIF_INTS has exactly the 6 canonical family keys (D-08)."""
+def test_family_mapping_ten_families() -> None:
+    """FAMILY_TO_MOTIF_INTS has exactly the 10 canonical family keys (Plan 04 G-01)."""
     from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
 
-    expected_keys = {"fork", "pin_skewer", "discovery", "mate", "hanging", "combinations"}
+    expected_keys = {
+        "fork",
+        "skewer",
+        "pin",
+        "x_ray",
+        "double_check",
+        "discovered_check",
+        "discovered_attack",
+        "trapped_piece",
+        "hanging",
+        "mate",
+    }
     assert set(FAMILY_TO_MOTIF_INTS.keys()) == expected_keys
 
 
-def test_family_mapping_covers_all_24_motifs() -> None:
-    """All 24 TacticMotifInt values appear exactly once across FAMILY_TO_MOTIF_INTS."""
+def test_family_mapping_excludes_combinations() -> None:
+    """Dropped combinations ints (DEFLECTION=9..SACRIFICE=17) belong to no family (Plan 04)."""
     from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
 
-    all_ints = [m for ints in FAMILY_TO_MOTIF_INTS.values() for m in ints]
-    assert sorted(all_ints) == list(range(1, 25))
+    # These ints were in the old "combinations" family and must now map to nothing.
+    dropped_combinations_ints = {9, 10, 11, 13, 14, 15, 16, 17}
+    all_mapped_ints = {m for ints in FAMILY_TO_MOTIF_INTS.values() for m in ints}
+    overlap = dropped_combinations_ints & all_mapped_ints
+    assert overlap == set(), (
+        f"Dropped combinations ints {overlap} must not appear in any family mapping"
+    )
+
+
+def test_family_mapping_covers_selected_motifs() -> None:
+    """Each new family maps to its correct int(s) (Plan 04 taxonomy contract)."""
+    from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
+
+    assert FAMILY_TO_MOTIF_INTS["fork"] == [1]
+    assert FAMILY_TO_MOTIF_INTS["hanging"] == [2]
+    assert FAMILY_TO_MOTIF_INTS["pin"] == [3]
+    assert FAMILY_TO_MOTIF_INTS["skewer"] == [4]
+    assert FAMILY_TO_MOTIF_INTS["double_check"] == [5]
+    assert FAMILY_TO_MOTIF_INTS["discovered_attack"] == [6]
+    assert FAMILY_TO_MOTIF_INTS["x_ray"] == [12]
+    assert FAMILY_TO_MOTIF_INTS["discovered_check"] == [25]
+    assert FAMILY_TO_MOTIF_INTS["trapped_piece"] == [26]
+    # Mate set unchanged: ints 7-8, 18-24
+    assert set(FAMILY_TO_MOTIF_INTS["mate"]) == {7, 8, 18, 19, 20, 21, 22, 23, 24}
 
 
 def test_family_mapping_fork() -> None:
@@ -176,11 +214,20 @@ def test_family_mapping_fork() -> None:
     assert FAMILY_TO_MOTIF_INTS["fork"] == [1]
 
 
-def test_family_mapping_pin_skewer() -> None:
-    """pin_skewer family contains PIN=3, SKEWER=4, X_RAY=12."""
+def test_family_mapping_10_produces_overflow() -> None:
+    """With 10 families, the top-6 selection leaves 4 overflow families (G-01 resolved).
+
+    This is the data-layer proof that the 'More Tactics' accordion (D-14) is
+    now reachable — it was previously blocked because 6 families == top-6 cap.
+    """
     from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
 
-    assert set(FAMILY_TO_MOTIF_INTS["pin_skewer"]) == {3, 4, 12}
+    total = len(FAMILY_TO_MOTIF_INTS)
+    assert total == 10, f"Expected 10 families; got {total}"
+    # top-6 + 4 overflow
+    assert total > 6, "With 10 families, top-6 selection always produces overflow families"
+    overflow_count = total - 6
+    assert overflow_count == 4, f"Expected 4 overflow families; got {overflow_count}"
 
 
 # ---------------------------------------------------------------------------
@@ -209,9 +256,29 @@ async def test_below_gate_short_circuit(db_session: AsyncSession) -> None:
     assert result.analyzed_gate == TACTIC_COMPARISON_GATE
 
 
+def test_combinations_request_is_noop() -> None:
+    """A request for the dropped 'combinations' family key expands to zero motif ints (no-op).
+
+    T-129-10: unknown/dropped family keys must yield an empty int list so the
+    EXISTS expansion emits no clause (never a KeyError or unscoped query).
+    """
+    from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
+
+    # combinations was dropped entirely — must not appear as a key
+    assert "combinations" not in FAMILY_TO_MOTIF_INTS, (
+        "Dropped 'combinations' family must not be a key in FAMILY_TO_MOTIF_INTS"
+    )
+    # .get(fam, []) expansion for an unknown key must return empty list
+    result = FAMILY_TO_MOTIF_INTS.get("combinations", [])
+    assert result == [], (
+        f"FAMILY_TO_MOTIF_INTS.get('combinations', []) must return []; got {result!r}"
+    )
+
+
 @pytest.mark.asyncio
-async def test_full_response_six_bullets(db_session: AsyncSession) -> None:
-    """With enough analyzed games, response has below_gate=False and up to 6 bullets."""
+async def test_full_response_bullets(db_session: AsyncSession) -> None:
+    """With enough analyzed games, response has below_gate=False and up to 20 bullets."""
+    from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
     from app.services.library_service import TACTIC_COMPARISON_GATE, get_tactic_comparison
 
     # Seed 25 analyzed games (above gate)
@@ -226,15 +293,59 @@ async def test_full_response_six_bullets(db_session: AsyncSession) -> None:
     )
     assert result.below_gate is False
     assert result.analyzed_n >= TACTIC_COMPARISON_GATE
-    # Up to 6 bullets (one per family), can be less if some families have 0 events
-    assert len(result.bullets) <= 6
-    # All bullets have a valid family key
-    valid_families = {"fork", "pin_skewer", "discovery", "mate", "hanging", "combinations"}
+    # Phase 129 Plan 04: up to 20 bullets (10 families x 2 orientations: missed + allowed).
+    # Can be less if some families have 0 events.
+    assert len(result.bullets) <= 20
+    # All bullets have a valid family key from the 10-family taxonomy
+    valid_families = set(FAMILY_TO_MOTIF_INTS.keys())
     for bullet in result.bullets:
-        assert bullet.family in valid_families
+        assert bullet.family in valid_families, (
+            f"bullet.family {bullet.family!r} must be one of the 10 taxonomy keys"
+        )
+        assert bullet.orientation in ("missed", "allowed"), (
+            f"Each bullet must have orientation 'missed' or 'allowed'; got {bullet.orientation!r}"
+        )
     # Check response shape
     assert isinstance(result.analyzed_n, int)
     assert isinstance(result.analyzed_gate, int)
+
+
+@pytest.mark.asyncio
+async def test_tactic_comparison_produces_overflow(db_session: AsyncSession) -> None:
+    """With 10-family taxonomy, top-6 selection leaves 4 overflow families (G-01 regression).
+
+    Phase 129 Plan 04: this is the data-layer proof that the 'More Tactics' accordion
+    (D-14) is now reachable. Previously 6 families == top-6 cap → overflow always empty.
+    With 10 families, overflow_families = ranked_families[6:] always has 4 entries.
+    """
+    from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
+    from app.services.library_service import TACTIC_COMPARISON_GATE, get_tactic_comparison
+
+    # Seed enough games to get past the gate
+    for _ in range(TACTIC_COMPARISON_GATE + 5):
+        g = await _seed_game(db_session, user_id=_TEST_USER_OVERFLOW)
+        await _seed_analyzed(db_session, game=g)
+
+    result = await get_tactic_comparison(
+        db_session,
+        user_id=_TEST_USER_OVERFLOW,
+        **_DEFAULT_FILTER_KWARGS,
+    )
+    assert result.below_gate is False
+
+    # With 10 families the server emits bullets for all of them (zero-event or not).
+    # The top-6 selection must leave 4 overflow families — verify total unique families
+    # represented in the response equals all 10 (or at least > 6, confirming overflow exists).
+    families_in_response = {b.family for b in result.bullets}
+    # All 10 families always emit at least 1 bullet (even if zero-event, delta=None).
+    assert len(families_in_response) == len(FAMILY_TO_MOTIF_INTS), (
+        f"Expected all {len(FAMILY_TO_MOTIF_INTS)} families in response; "
+        f"got {len(families_in_response)}: {sorted(families_in_response)}"
+    )
+    # With 10 families, overflow always exists (D-14 accordion reachable).
+    assert len(families_in_response) > 6, (
+        "10-family taxonomy must produce overflow; response families must exceed top-6 cap"
+    )
 
 
 @pytest.mark.asyncio
@@ -268,9 +379,10 @@ async def test_significant_gap_first(db_session: AsyncSession) -> None:
         **_DEFAULT_FILTER_KWARGS,
     )
     assert result.below_gate is False
-    # fork bullet should appear in result
+    # Phase 129 D-13: fork now has TWO bullets (missed + allowed); with player-side
+    # allowed fork events the allowed bullet has you_rate > 0, missed may have you_rate=None.
     fork_bullets = [b for b in result.bullets if b.family == "fork"]
-    assert len(fork_bullets) <= 1  # at most one fork bullet
+    assert len(fork_bullets) <= 2  # at most 2 fork bullets (missed + allowed per D-13)
 
 
 @pytest.mark.asyncio

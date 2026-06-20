@@ -29,6 +29,13 @@ export type FlawSeverity = 'inaccuracy' | 'mistake' | 'blunder';
 /** Tempo-family tags — subset of FlawTag (backend TempoTag literal). */
 export type TempoTag = 'low-clock' | 'hasty' | 'unrushed';
 
+/**
+ * Tactic orientation filter (Phase 129 TACUI-06, D-06/D-07).
+ * Mirrors backend TacticOrientation Literal["either","missed","allowed"].
+ * 'either' = OR across both missed+allowed column sets (the default).
+ */
+export type TacticOrientation = 'either' | 'missed' | 'allowed';
+
 /** Analysis state of a game (whether engine evals are present). */
 export type AnalysisState = 'analyzed' | 'no_engine_analysis';
 
@@ -293,9 +300,12 @@ export interface FlawBullet {
  *
  * sign convention: positive delta = you allow MORE tactic motifs than opponents = bad.
  * delta and CI fields are null when both you_events and opp_events are zero.
+ *
+ * Phase 129: orientation field added to mirror backend schema option A
+ * (TacticBullet.orientation: Literal["missed","allowed"]).
  */
 export interface TacticBullet {
-  family: string;              // family key e.g. "fork", "pin_skewer"
+  family: string;              // family key e.g. "fork", "skewer" (10-family taxonomy, plan 129-04/05)
   you_rate: number | null;     // mean tactic allowances per game (player side); null = zero events
   opp_rate: number | null;     // mean tactic allowances per game (opponent side); null = zero events
   delta: number | null;        // you_rate - opp_rate; null = both sides zero events
@@ -307,15 +317,17 @@ export interface TacticBullet {
   zone_lo: number;             // benchmark Q1 or 0.0 when unavailable
   zone_hi: number;             // benchmark Q3 or 0.0 when unavailable
   has_zone: boolean;           // false until tactic benchmark pipeline ships
+  /** Phase 129: orientation tag per bullet (plan 01 schema option A). */
+  orientation: 'missed' | 'allowed';
 }
 
 /**
  * Response for GET /api/library/tactic-comparison (Phase 126, mirrors backend TacticComparisonResponse).
  *
- * bullets: ordered by rank (largest significant gap first, volume fallback), up to 6 family rows;
- *          empty list when below_gate=true.
+ * bullets: up to 20 entries (10 families × missed/allowed), top-6 families by Missed you_rate
+ *          first then overflow; empty list when below_gate=true.
  * analyzed_n: analyzed game count after filters.
- * analyzed_gate: minimum required (mirrors FLAW_COMPARISON_GATE).
+ * analyzed_gate: minimum required (mirrors TACTIC_COMPARISON_GATE).
  * below_gate: true when analyzed_n < analyzed_gate.
  */
 export interface TacticComparisonResponse {

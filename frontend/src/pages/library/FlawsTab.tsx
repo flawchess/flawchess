@@ -32,7 +32,8 @@ import { useEvalCoverage } from '@/hooks/useEvalCoverage';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
 import type { TacticFamily } from '@/lib/tacticComparisonMeta';
-import type { FlawTag } from '@/types/library';
+import type { FlawTag, TacticOrientation } from '@/types/library';
+import type { TacticDepthValue } from '@/lib/tacticDepth';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -42,7 +43,7 @@ const PAGE_SIZE = 20;
 // no date/TC/platform restriction, both opponent types, no flaw filter. Module
 // level so the TanStack query key stays stable across renders.
 const UNFILTERED_PROBE_FILTERS: FilterState = { ...DEFAULT_FILTERS, opponentType: 'both' };
-const NO_FLAW_FILTER: FlawFilterState = { severity: [], tags: [], tacticFamilies: [] };
+const NO_FLAW_FILTER: FlawFilterState = { ...DEFAULT_FLAW_FILTER, severity: [], tags: [], tacticFamilies: [] };
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -91,7 +92,8 @@ export function FlawsTab() {
 
     if (urlTags.length > 0 || urlSeverity.length > 0 || urlTactic.length > 0) {
       // Empty severity in the URL = both shown (the default narrowing-off state).
-      setFlawFilter({ tags: urlTags, severity: urlSeverity, tacticFamilies: urlTactic });
+      // Preserve defaults for fields not present in the URL (Phase 129 additions).
+      setFlawFilter((prev) => ({ ...prev, tags: urlTags, severity: urlSeverity, tacticFamilies: urlTactic }));
     }
   }, [setFlawFilter]);
 
@@ -298,6 +300,14 @@ export function FlawsTab() {
           setPendingFlawFilter((prev) => ({ ...prev, tacticFamilies }))
         }
         showTacticFilter
+        orientation={pendingFlawFilter.tacticOrientation}
+        onOrientationChange={(tacticOrientation: TacticOrientation) =>
+          setPendingFlawFilter((prev) => ({ ...prev, tacticOrientation }))
+        }
+        tacticDepth={{ preset: pendingFlawFilter.tacticDepthPreset, maxMoves: pendingFlawFilter.tacticDepthMax }}
+        onTacticDepthChange={(next: TacticDepthValue) =>
+          setPendingFlawFilter((prev) => ({ ...prev, tacticDepthPreset: next.preset, tacticDepthMax: next.maxMoves }))
+        }
       />
       <FilterActions
         resetTestId="btn-tags-reset"
@@ -380,7 +390,11 @@ export function FlawsTab() {
               data-testid="flaw-grid"
             >
               {flaws.map((flaw) => (
-                <FlawCard key={`${flaw.game_id}-${flaw.ply}`} flaw={flaw} />
+                <FlawCard
+                  key={`${flaw.game_id}-${flaw.ply}`}
+                  flaw={flaw}
+                  tacticOrientation={flawFilter.tacticOrientation}
+                />
               ))}
             </div>
           )}
@@ -513,6 +527,14 @@ export function FlawsTab() {
                   setPendingFlawFilter((prev) => ({ ...prev, tacticFamilies }))
                 }
                 showTacticFilter
+                orientation={pendingFlawFilter.tacticOrientation}
+                onOrientationChange={(tacticOrientation: TacticOrientation) =>
+                  setPendingFlawFilter((prev) => ({ ...prev, tacticOrientation }))
+                }
+                tacticDepth={{ preset: pendingFlawFilter.tacticDepthPreset, maxMoves: pendingFlawFilter.tacticDepthMax }}
+                onTacticDepthChange={(next: TacticDepthValue) =>
+                  setPendingFlawFilter((prev) => ({ ...prev, tacticDepthPreset: next.preset, tacticDepthMax: next.maxMoves }))
+                }
               />
               <FilterActions
                 resetTestId="btn-tags-reset"

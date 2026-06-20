@@ -26,6 +26,14 @@ interface TacticMotifChipProps {
    */
   flawId: number;
   /**
+   * Phase 129 TACUI-07 (D-10): optional orientation prefix for the chip label.
+   * When set: visible label = "{orientation}: {motif}"; aria-label uses a space
+   * (not colon) between orientation and motif; testid includes orientation.
+   * When unset: unchanged behavior (backward-compatible — existing callers pass nothing).
+   * PROHIBITED: no Popover import — D-12 narration is chip label + shared TagLegend.
+   */
+  orientation?: 'missed' | 'allowed';
+  /**
    * Optional hover callback (Games card only). Fires true on pointer enter, false
    * on leave — lets the parent highlight this motif's eval-chart markers. Mirrors
    * TagChip.onHover; omitted call sites (FlawCard) get a plain decorative chip.
@@ -53,11 +61,23 @@ interface TacticMotifChipProps {
  * Colors come from TACTIC_FAMILY_COLORS (theme.ts TAC_* constants) — no hardcoded oklch
  * in this file. Icon from TACTIC_FAMILY_ICON.
  */
-export function TacticMotifChip({ motif, flawId, onHover, onActivate }: TacticMotifChipProps) {
+export function TacticMotifChip({ motif, flawId, orientation, onHover, onActivate }: TacticMotifChipProps) {
   const family = TACTIC_FAMILY_FOR_MOTIF[motif];
   const colors = family != null ? TACTIC_FAMILY_COLORS[family] : null;
   const Icon = family != null ? TACTIC_FAMILY_ICON[family] : null;
   const definition = TACTIC_MOTIF_DEFINITIONS[motif] ?? motif;
+
+  // Phase 129 TACUI-07 (D-10): orientation-prefixed label/aria/testid.
+  // Visible label uses colon ("missed: fork"); aria-label uses space ("Tactic: missed fork — def").
+  const visibleLabel = orientation != null ? `${orientation}: ${motif}` : motif;
+  const ariaLabel =
+    orientation != null
+      ? `Tactic: ${orientation} ${motif} — ${definition}`
+      : `Tactic: ${motif} — ${definition}`;
+  const testId =
+    orientation != null
+      ? `chip-tactic-${orientation}-${motif}-${flawId}`
+      : `chip-tactic-${motif}-${flawId}`;
 
   // Brighten the chip while it is hovered or focused (tap-focus on mobile).
   const [highlighted, setHighlighted] = React.useState(false);
@@ -88,8 +108,8 @@ export function TacticMotifChip({ motif, flawId, onHover, onActivate }: TacticMo
       }}
       role={interactive ? 'button' : undefined}
       tabIndex={interactive ? 0 : undefined}
-      aria-label={`Tactic: ${motif} — ${definition}`}
-      data-testid={`chip-tactic-${motif}-${flawId}`}
+      aria-label={ariaLabel}
+      data-testid={testId}
       onMouseEnter={
         interactive
           ? () => {
@@ -121,7 +141,7 @@ export function TacticMotifChip({ motif, flawId, onHover, onActivate }: TacticMo
       }
     >
       <Icon className="h-3 w-3 shrink-0" />
-      {motif}
+      {visibleLabel}
     </span>
   );
 }

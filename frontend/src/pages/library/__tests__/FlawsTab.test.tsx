@@ -7,12 +7,25 @@
  * 3. Flaw list renders rows from mocked useLibraryFlaws
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { Mock } from 'vitest';
+
+// Stub ResizeObserver — required by Radix UI ToggleGroup (added Phase 129 TACUI-06).
+// [Rule 1 - Bug] FlawFilterControl now renders ToggleGroup (via showTacticFilter);
+// the Radix use-size hook calls ResizeObserver which jsdom doesn't provide.
+beforeAll(() => {
+  if (typeof window.ResizeObserver === 'undefined') {
+    window.ResizeObserver = class ResizeObserver {
+      observe = vi.fn();
+      unobserve = vi.fn();
+      disconnect = vi.fn();
+    };
+  }
+});
 
 // ── Mock heavy dependencies ───────────────────────────────────────────────────
 
@@ -134,11 +147,21 @@ vi.mock('@/hooks/useLibrary', () => ({
 
 // We need a controllable store: the real store is module-level and persists
 // between tests. Instead, mock the entire module with React state.
-let mockStoreState = { severity: ['blunder', 'mistake'] as ('blunder' | 'mistake')[], tags: [] as string[] };
-const mockSetFlawFilter = vi.fn((updater: typeof mockStoreState | ((prev: typeof mockStoreState) => typeof mockStoreState)) => {
-  const next = typeof updater === 'function' ? updater(mockStoreState) : updater;
-  mockStoreState = next;
-});
+// Phase 129: include tacticOrientation / tacticDepthPreset / tacticDepthMax defaults.
+let mockStoreState = {
+  severity: ['blunder', 'mistake'] as ('blunder' | 'mistake')[],
+  tags: [] as string[],
+  tacticFamilies: [] as string[],
+  tacticOrientation: 'either' as const,
+  tacticDepthPreset: 'intermediate' as const,
+  tacticDepthMax: 6 as number | null,
+};
+const mockSetFlawFilter = vi.fn(
+  (updater: typeof mockStoreState | ((prev: typeof mockStoreState) => typeof mockStoreState)) => {
+    const next = typeof updater === 'function' ? updater(mockStoreState) : updater;
+    mockStoreState = next;
+  },
+);
 
 vi.mock('@/hooks/useFlawFilterStore', async () => {
   const actual =
@@ -174,7 +197,14 @@ function renderFlawsTab(initialPath = '/library/flaws') {
 // ── Setup / teardown ──────────────────────────────────────────────────────────
 
 beforeEach(() => {
-  mockStoreState = { severity: ['blunder', 'mistake'], tags: [] };
+  mockStoreState = {
+    severity: ['blunder', 'mistake'],
+    tags: [],
+    tacticFamilies: [],
+    tacticOrientation: 'either',
+    tacticDepthPreset: 'intermediate',
+    tacticDepthMax: 6,
+  };
   vi.clearAllMocks();
   mockFlawsResult = {
     data: { flaws: [], matched_count: 0, offset: 0, limit: 20 },
@@ -435,7 +465,15 @@ describe('FlawsTab', () => {
       // Even with a restrictive flaw filter applied, the analyzed_n probe must
       // run unfiltered — otherwise a zero-match filter set yields analyzed_n=0
       // and falsely shows the no-engine-analysis message.
-      mockStoreState = { severity: ['blunder'], tags: ['miss'] };
+      // Phase 129: include all FlawFilterState fields so FlawsTab doesn't crash.
+      mockStoreState = {
+        severity: ['blunder'],
+        tags: ['miss'],
+        tacticFamilies: [],
+        tacticOrientation: 'either',
+        tacticDepthPreset: 'intermediate',
+        tacticDepthMax: 6,
+      };
       renderFlawsTab();
       expect(capturedStatsArgs).toBeTruthy();
       const [probeFilters, probeFlawFilter] = capturedStatsArgs! as [
@@ -480,8 +518,16 @@ describe('FlawsTab', () => {
     });
 
     it('reflects store state with tags in the FlawFilterControl (tag button selected)', () => {
-      // Set store to have a tag pre-selected (simulating deep-link result)
-      mockStoreState = { severity: ['blunder', 'mistake'], tags: ['miss'] };
+      // Set store to have a tag pre-selected (simulating deep-link result).
+      // Phase 129: include all FlawFilterState fields so FlawsTab doesn't crash.
+      mockStoreState = {
+        severity: ['blunder', 'mistake'],
+        tags: ['miss'],
+        tacticFamilies: [],
+        tacticOrientation: 'either',
+        tacticDepthPreset: 'intermediate',
+        tacticDepthMax: 6,
+      };
       renderFlawsTab('/library/flaws');
 
       // The "miss" tag button should appear as aria-pressed=true in the FlawFilterControl.

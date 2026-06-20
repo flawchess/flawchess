@@ -327,6 +327,10 @@ export const libraryApi = {
     tag?: string[];
     // Phase 126: flaw-level tactic motif family filter, repeated as tactic_family=fork&...
     tactic_family?: string[];
+    // Phase 129: orientation filter ('either'|'missed'|'allowed'); omit when 'either'.
+    tactic_orientation?: string;
+    // Phase 129: max tactic depth in half-plies (1:1 with DB column); omit when null.
+    max_tactic_depth?: number;
     offset?: number;
     limit?: number;
   }) =>
@@ -338,6 +342,12 @@ export const libraryApi = {
         ...(params.tactic_family && params.tactic_family.length > 0
           ? { tactic_family: params.tactic_family }
           : {}),
+        // Phase 129: orientation — omit when 'either' (default, no param needed)
+        ...(params.tactic_orientation && params.tactic_orientation !== 'either'
+          ? { tactic_orientation: params.tactic_orientation }
+          : {}),
+        // Phase 129: depth — omit when null (Advanced/no cap)
+        ...(params.max_tactic_depth != null ? { max_tactic_depth: params.max_tactic_depth } : {}),
         offset: params.offset ?? 0,
         limit: params.limit ?? 20,
       },

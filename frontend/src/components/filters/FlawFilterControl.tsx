@@ -13,6 +13,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { BlunderIcon, MistakeIcon } from '@/components/icons/SeverityGlyphIcon';
 import type { FlawIcon } from '@/lib/flawComparisonMeta';
 import {
@@ -29,9 +30,11 @@ import {
   SEV_MISTAKE,
   SEV_MISTAKE_BG,
 } from '@/lib/theme';
-import type { FlawTag } from '@/types/library';
+import type { FlawTag, TacticOrientation } from '@/types/library';
 import type { TacticFamily } from '@/lib/tacticComparisonMeta';
 import { TACTIC_COMPARISON_FAMILIES, TACTIC_FAMILY_COLORS } from '@/lib/tacticComparisonMeta';
+import { TacticDepthFilter, DEFAULT_TACTIC_DEPTH_VALUE } from '@/components/filters/TacticDepthFilter';
+import type { TacticDepthValue } from '@/lib/tacticDepth';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -49,6 +52,18 @@ export interface FlawFilterControlProps {
   onTacticFamiliesChange?: (next: TacticFamily[]) => void;
   /** Render the tactic-motif family section. Default false (Flaws tab passes true). */
   showTacticFilter?: boolean;
+  /**
+   * Phase 129 TACUI-06 (D-06/D-07): orientation filter.
+   * Default 'either'. Rendered above TacticDepthFilter when showTacticFilter=true.
+   */
+  orientation?: TacticOrientation;
+  onOrientationChange?: (next: TacticOrientation) => void;
+  /**
+   * Phase 129 TACUI-06 (D-01/D-02/D-03): tactic depth value.
+   * Default Intermediate. Rendered above Tactic Motif when showTacticFilter=true.
+   */
+  tacticDepth?: TacticDepthValue;
+  onTacticDepthChange?: (next: TacticDepthValue) => void;
 }
 
 // ─── Tag → glyph (lucide icons, rendered at h-3 w-3) ──────────────────────────
@@ -232,6 +247,10 @@ export function FlawFilterControl({
   onTagChange,
   onTacticFamiliesChange,
   showTacticFilter = false,
+  orientation = 'either',
+  onOrientationChange,
+  tacticDepth = DEFAULT_TACTIC_DEPTH_VALUE,
+  onTacticDepthChange,
 }: FlawFilterControlProps) {
   // Severity toggles narrow like the tag families: empty = both shown, one = that
   // tier only, both = both shown (same as empty). Deselecting the last severity is
@@ -300,6 +319,57 @@ export function FlawFilterControl({
           </div>
         </div>
       ))}
+
+      {/* ── Orientation toggle (Phase 129 TACUI-06, D-06/D-07) ────────────── */}
+      {showTacticFilter && (
+        <div>
+          <p className="mb-1 text-sm text-muted-foreground">Orientation</p>
+          <ToggleGroup
+            type="single"
+            value={orientation}
+            onValueChange={(v) => {
+              // D-06: deselect guard — empty string means user tapped the active item;
+              // preserve current value (same guard as "Played as").
+              if (!v) return;
+              onOrientationChange?.(v as TacticOrientation);
+            }}
+            variant="outline"
+            size="sm"
+            data-testid="filter-tactic-orientation"
+            className="w-full"
+          >
+            <ToggleGroupItem
+              value="either"
+              data-testid="filter-tactic-orientation-either"
+              className="min-h-11 sm:min-h-0 flex-1 text-sm"
+            >
+              Either
+            </ToggleGroupItem>
+            <ToggleGroupItem
+              value="missed"
+              data-testid="filter-tactic-orientation-missed"
+              className="min-h-11 sm:min-h-0 flex-1 text-sm"
+            >
+              Missed
+            </ToggleGroupItem>
+            <ToggleGroupItem
+              value="allowed"
+              data-testid="filter-tactic-orientation-allowed"
+              className="min-h-11 sm:min-h-0 flex-1 text-sm"
+            >
+              Allowed
+            </ToggleGroupItem>
+          </ToggleGroup>
+        </div>
+      )}
+
+      {/* ── Tactic depth filter (Phase 129 TACUI-06, D-01/D-02/D-03) ──────── */}
+      {showTacticFilter && (
+        <TacticDepthFilter
+          value={tacticDepth}
+          onChange={onTacticDepthChange ?? (() => undefined)}
+        />
+      )}
 
       {/* ── Tactic motif family (Phase 126) — opt-in, off by default. Gated to
           the Flaws tab (showTacticFilter); shared Games-tab panel hides it. ──── */}

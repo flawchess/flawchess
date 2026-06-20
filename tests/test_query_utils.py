@@ -238,3 +238,124 @@ class TestTacticOrientationFilter:
             assert "tactic_motif" not in sql, (
                 f"Unknown family with orientation={orientation!r} must produce no tactic EXISTS clause; got: {sql}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Phase 129 Plan 01 (Task 1 TDD RED) — depth + either tests for apply_game_filters
+# ---------------------------------------------------------------------------
+
+
+class TestTacticDepthAndEitherFilter:
+    """max_tactic_depth + orientation='either' in apply_game_filters.
+
+    Phase 129 D-05/D-08: depth bound on the active orientation's depth column;
+    'either' = OR across both missed_* and allowed_* column sets.
+    These tests target apply_game_filters (Games-EXISTS site, no confidence gate).
+    """
+
+    def _stmt_sql(
+        self,
+        orientation: str = "allowed",
+        max_tactic_depth: int | None = None,
+    ) -> str:
+        """Compile apply_game_filters with tactic_families=['fork'] to SQL text."""
+        stmt = select(Game.id).where(Game.user_id == 1)
+        kwargs: dict = dict(
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            user_id=1,
+            tactic_families=["fork"],
+            orientation=orientation,
+        )
+        if max_tactic_depth is not None:
+            kwargs["max_tactic_depth"] = max_tactic_depth
+        stmt = apply_game_filters(stmt, **kwargs)
+        from sqlalchemy.dialects import postgresql
+
+        return str(
+            stmt.compile(
+                dialect=postgresql.dialect(),
+                compile_kwargs={"literal_binds": False},
+            )
+        )
+
+    def test_either_references_both_columns(self) -> None:
+        """orientation='either' → EXISTS clause references BOTH missed and allowed motif columns."""
+        sql = self._stmt_sql(orientation="either")
+        assert "missed_tactic_motif" in sql, (
+            f"either orientation must reference missed_tactic_motif; got: {sql}"
+        )
+        assert "allowed_tactic_motif" in sql, (
+            f"either orientation must reference allowed_tactic_motif; got: {sql}"
+        )
+
+    def test_depth_none_omits_depth_column(self) -> None:
+        """max_tactic_depth=None → no depth column in the clause."""
+        sql = self._stmt_sql(orientation="allowed", max_tactic_depth=None)
+        # No depth predicate when no bound is set
+        assert "allowed_tactic_depth" not in sql, (
+            f"max_tactic_depth=None must NOT add allowed_tactic_depth predicate; got: {sql}"
+        )
+
+    def test_depth_bound_references_depth_column(self) -> None:
+        """max_tactic_depth=3 → clause includes the orientation's depth column."""
+        sql = self._stmt_sql(orientation="allowed", max_tactic_depth=3)
+        assert "allowed_tactic_depth" in sql, (
+            f"max_tactic_depth=3 must add allowed_tactic_depth predicate; got: {sql}"
+        )
+        assert "missed_tactic_depth" not in sql, (
+            f"allowed orientation must NOT reference missed_tactic_depth; got: {sql}"
+        )
+
+    def test_missed_depth_bound_references_missed_depth_column(self) -> None:
+        """orientation='missed' + max_tactic_depth=3 → missed_tactic_depth predicate."""
+        sql = self._stmt_sql(orientation="missed", max_tactic_depth=3)
+        assert "missed_tactic_depth" in sql, (
+            f"missed orientation + depth bound must add missed_tactic_depth predicate; got: {sql}"
+        )
+        assert "allowed_tactic_depth" not in sql, (
+            f"missed orientation must NOT reference allowed_tactic_depth; got: {sql}"
+        )
+
+    def test_mate_exemption_present_when_depth_set(self) -> None:
+        """When depth is bounded, the mate motif int(s) appear in the clause (exemption escape)."""
+        # The mate exemption is: depth_col <= max OR motif_col IN (mate_ints).
+        # Since the mate family is not in tactic_families=['fork'], the mate ints appear
+        # only in the depth-exemption OR — not in the primary motif filter.
+        sql = self._stmt_sql(orientation="allowed", max_tactic_depth=3)
+        # Mate ints from FAMILY_TO_MOTIF_INTS['mate'] (e.g. BACK_RANK_MATE=10, MATE=11, ...)
+        # should appear in the SQL as part of the depth exemption OR.
+        assert "allowed_tactic_depth" in sql  # depth predicate is present
+        # The clause must also include OR motif_col.in_(mate_ints) so mates are exempt.
+        # We check the motif column appears more than once (primary filter + exemption).
+        motif_occurrences = sql.count("allowed_tactic_motif")
+        assert motif_occurrences >= 2, (
+            f"Mate exemption requires allowed_tactic_motif to appear at least twice "
+            f"(primary filter + depth exemption OR); got {motif_occurrences} in: {sql}"
+        )
+
+    def test_either_depth_references_both_depth_columns(self) -> None:
+        """orientation='either' + max_tactic_depth → both missed and allowed depth columns."""
+        sql = self._stmt_sql(orientation="either", max_tactic_depth=3)
+        assert "missed_tactic_depth" in sql, (
+            f"either + depth must reference missed_tactic_depth; got: {sql}"
+        )
+        assert "allowed_tactic_depth" in sql, (
+            f"either + depth must reference allowed_tactic_depth; got: {sql}"
+        )
+
+    def test_no_confidence_gate_in_exists_site(self) -> None:
+        """Games-EXISTS site (apply_game_filters) must NOT add a confidence predicate.
+
+        Preserve the intentional asymmetry (Pitfall 3): confidence is gated only
+        in build_flaw_filter_clauses (Flaws list), NOT in the Games-EXISTS.
+        """
+        for orientation in ("allowed", "missed", "either"):
+            sql = self._stmt_sql(orientation=orientation)
+            assert "tactic_confidence" not in sql, (
+                f"apply_game_filters orientation={orientation!r} must NOT gate on confidence; got: {sql}"
+            )

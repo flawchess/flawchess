@@ -87,7 +87,8 @@ def apply_game_filters(
     flaw_tags: Sequence[str] | None = None,
     tactic_families: Sequence[str] | None = None,
     user_id: int | None = None,
-    orientation: Literal["missed", "allowed"] = "allowed",
+    orientation: Literal["either", "missed", "allowed"] = "allowed",
+    max_tactic_depth: int | None = None,
 ) -> Any:
     """Apply standard game filter WHERE clauses to a SELECT statement.
 
@@ -119,7 +120,7 @@ def apply_game_filters(
                          OR within family, AND across families. Phase tags are ignored.
                          None (default) leaves the statement unchanged.
                          Requires user_id when either flaw_severity or flaw_tags is set.
-        tactic_families: When set (e.g. ["fork", "pin_skewer"]), restrict to games
+        tactic_families: When set (e.g. ["fork", "skewer"]), restrict to games
                          containing >=1 flaw whose tactic motif int (in the orientation's
                          column) is in the union of FAMILY_TO_MOTIF_INTS values for the
                          selected families. Unknown family keys yield no ints (no-op),
@@ -129,12 +130,18 @@ def apply_game_filters(
         user_id: The authenticated user's id — required when flaw_severity or
                          flaw_tags is set, to scope the EXISTS subquery's game_flaws read
                          (T-108-07). Ignored otherwise.
-        orientation: Which tactic column set to query (Phase 128 D-09).
+        orientation: Which tactic column set to query (Phase 128/129).
                          "allowed" (default) → allowed_tactic_motif (current behavior,
                          preserves existing Library query behavior, D-08).
-                         "missed"  → missed_tactic_motif. FAMILY_TO_MOTIF_INTS is reused
-                         unchanged for both orientations. Orientation is a closed
-                         Literal enum — never raw column-name interpolation (T-128-05).
+                         "missed"  → missed_tactic_motif.
+                         "either"  → OR across both column sets (Phase 129 D-08).
+                         FAMILY_TO_MOTIF_INTS is reused unchanged for all orientations.
+                         Orientation is a closed Literal enum — never raw column-name
+                         interpolation (T-128-05/T-129-01).
+        max_tactic_depth: When set, restricts to flaws whose active orientation's
+                         depth column is <= max_tactic_depth (Phase 129 D-05). Forced
+                         mates are exempt regardless of depth (D-04). None = no bound.
+                         Note: this site does NOT gate on confidence (Pitfall 3 preserved).
 
     Notes:
         When either gap bound is set, games with missing white/black ratings
@@ -208,7 +215,11 @@ def apply_game_filters(
     if tactic_families:
         # Lazy import avoids a query_utils → library_repository circular import
         # (same pattern as the flaw_exists_from_table lazy import above).
-        from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS, _tactic_cols
+        from app.repositories.library_repository import (
+            FAMILY_TO_MOTIF_INTS,
+            _depth_ok,
+            _tactic_orientation_pairs,
+        )
         from app.models.game_flaw import GameFlaw as _GameFlaw
 
         # Expand selected family keys to their motif int sets; unknown keys are
@@ -218,11 +229,18 @@ def apply_game_filters(
             # Use a correlated EXISTS (same pattern as flaw_exists_from_table) so
             # apply_game_filters remains applicable to any Game-based SELECT without
             # adding a JOIN to the outer statement.
-            from sqlalchemy import exists as _exists, select as _select
+            from sqlalchemy import exists as _exists, or_ as _or_, select as _select
 
-            # Phase 128 D-09: orientation selects the matching column pair.
-            # _tactic_cols resolves to ORM attributes (closed enum branch, T-128-05).
-            motif_col, _conf_col = _tactic_cols(orientation)
+            # Phase 128 D-09 / Phase 129 D-05/D-08: _tactic_orientation_pairs resolves
+            # to ORM attribute triples (closed enum branch, T-128-05/T-129-01).
+            # Each branch: motif.in_(ints) & depth_ok (no confidence gate — Pitfall 3).
+            # "either" → 2 pairs → OR; missed/allowed → 1 pair.
+            pair_branches = []
+            for motif_col, _conf_col, depth_col in _tactic_orientation_pairs(orientation):
+                branch = motif_col.in_(motif_ints) & _depth_ok(
+                    depth_col, motif_col, max_tactic_depth
+                )
+                pair_branches.append(branch)
             tactic_exists = _exists(
                 _select(_GameFlaw.ply).where(
                     _GameFlaw.game_id == Game.id,
@@ -231,7 +249,7 @@ def apply_game_filters(
                     # uniqueness makes the outer user_id filter sufficient, but the
                     # explicit scope keeps the correlated EXISTS pattern uniform.
                     _GameFlaw.user_id == user_id,
-                    motif_col.in_(motif_ints),
+                    _or_(*pair_branches),
                 )
             )
             stmt = stmt.where(tactic_exists)

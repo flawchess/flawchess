@@ -1390,8 +1390,128 @@ class TestTacticOrientationBuildFlawFilterClauses:
             text=True,
         )
         count = int(result.stdout.strip())
-        # Expect 1 definition + 2+ usages in query logic. Specifically ≤ 5 occurrences total.
+        # Expect 1 definition + comment references + usages in query logic.
         # The important thing: FAMILY_TO_MOTIF_INTS should NOT appear N times as separate
         # per-orientation dicts. The exact count is flexible; just verify it's not doubled.
+        # Phase 129 Plan 01 raised the upper bound from 8 to 15 (added _depth_ok +
+        # _tactic_orientation_pairs helpers with docstring + code references — not duplication).
         assert count >= 2, "FAMILY_TO_MOTIF_INTS must appear at least twice (def + usage)"
-        assert count <= 8, f"FAMILY_TO_MOTIF_INTS appears {count} times — possible duplication"
+        assert count <= 15, f"FAMILY_TO_MOTIF_INTS appears {count} times — possible duplication"
+
+
+# ---------------------------------------------------------------------------
+# Phase 129 Plan 01 (Task 1 TDD RED) — depth + either tests for build_flaw_filter_clauses
+# ---------------------------------------------------------------------------
+
+
+def _compile_flaw_filter_sql_129(
+    tactic_families: list[str],
+    orientation: str = "allowed",
+    max_tactic_depth: int | None = None,
+) -> str:
+    """Compile build_flaw_filter_clauses with orientation + depth to SQL text."""
+    from sqlalchemy import and_, select
+    from sqlalchemy.dialects import postgresql
+
+    from app.models.game_flaw import GameFlaw
+    from app.repositories.library_repository import build_flaw_filter_clauses
+
+    kwargs: dict = dict(
+        severity=[],
+        tags=[],
+        tactic_families=tactic_families,
+        orientation=orientation,
+    )
+    if max_tactic_depth is not None:
+        kwargs["max_tactic_depth"] = max_tactic_depth
+    clauses = build_flaw_filter_clauses(**kwargs)  # type: ignore[arg-type]
+    if not clauses:
+        return ""
+    stmt = select(GameFlaw.ply).where(and_(*clauses))
+    return str(
+        stmt.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": False},
+        )
+    )
+
+
+class TestTacticDepthAndEitherBuildFlawFilterClauses:
+    """build_flaw_filter_clauses depth + either tests (Phase 129 D-05/D-08).
+
+    Phase 129 Task 1 TDD RED: these tests expect max_tactic_depth kwarg and
+    orientation='either' support that do not yet exist. They will fail with
+    TypeError or assertion errors until the GREEN implementation lands.
+    """
+
+    def test_either_references_both_motif_columns(self) -> None:
+        """orientation='either' → clause includes BOTH missed and allowed motif columns."""
+        sql = _compile_flaw_filter_sql_129(["fork"], orientation="either")
+        assert "missed_tactic_motif" in sql, (
+            f"either orientation must reference missed_tactic_motif; got: {sql}"
+        )
+        assert "allowed_tactic_motif" in sql, (
+            f"either orientation must reference allowed_tactic_motif; got: {sql}"
+        )
+
+    def test_either_gates_on_both_confidence_columns(self) -> None:
+        """orientation='either' → confidence gate appears on both column sets."""
+        sql = _compile_flaw_filter_sql_129(["fork"], orientation="either")
+        assert "missed_tactic_confidence" in sql, (
+            f"either orientation must gate on missed_tactic_confidence; got: {sql}"
+        )
+        assert "allowed_tactic_confidence" in sql, (
+            f"either orientation must gate on allowed_tactic_confidence; got: {sql}"
+        )
+
+    def test_depth_none_omits_depth_column(self) -> None:
+        """max_tactic_depth=None → no depth column in the clause."""
+        sql = _compile_flaw_filter_sql_129(["fork"], orientation="allowed", max_tactic_depth=None)
+        assert "allowed_tactic_depth" not in sql, (
+            f"max_tactic_depth=None must NOT add allowed_tactic_depth predicate; got: {sql}"
+        )
+
+    def test_depth_bound_references_depth_column(self) -> None:
+        """max_tactic_depth=3 → allowed_tactic_depth predicate added."""
+        sql = _compile_flaw_filter_sql_129(["fork"], orientation="allowed", max_tactic_depth=3)
+        assert "allowed_tactic_depth" in sql, (
+            f"max_tactic_depth=3 must add allowed_tactic_depth predicate; got: {sql}"
+        )
+
+    def test_missed_depth_bound_references_missed_depth_column(self) -> None:
+        """orientation='missed' + max_tactic_depth → missed_tactic_depth predicate."""
+        sql = _compile_flaw_filter_sql_129(["fork"], orientation="missed", max_tactic_depth=3)
+        assert "missed_tactic_depth" in sql, (
+            f"missed + depth must add missed_tactic_depth predicate; got: {sql}"
+        )
+        assert "allowed_tactic_depth" not in sql, (
+            f"missed orientation must NOT reference allowed_tactic_depth; got: {sql}"
+        )
+
+    def test_mate_exemption_present_when_depth_set(self) -> None:
+        """Mate motif ints appear in depth exemption OR when depth is bounded."""
+        sql = _compile_flaw_filter_sql_129(["fork"], orientation="allowed", max_tactic_depth=3)
+        assert "allowed_tactic_depth" in sql
+        # Depth exemption: allowed_tactic_depth <= N OR allowed_tactic_motif IN (mate_ints)
+        motif_occurrences = sql.count("allowed_tactic_motif")
+        assert motif_occurrences >= 2, (
+            f"Mate exemption requires allowed_tactic_motif >= 2 times "
+            f"(primary filter + depth exemption); got {motif_occurrences} in: {sql}"
+        )
+
+    def test_either_depth_references_both_depth_columns(self) -> None:
+        """orientation='either' + max_tactic_depth → both depth columns."""
+        sql = _compile_flaw_filter_sql_129(["fork"], orientation="either", max_tactic_depth=3)
+        assert "missed_tactic_depth" in sql, (
+            f"either + depth must reference missed_tactic_depth; got: {sql}"
+        )
+        assert "allowed_tactic_depth" in sql, (
+            f"either + depth must reference allowed_tactic_depth; got: {sql}"
+        )
+
+    def test_confidence_gate_preserved_on_either(self) -> None:
+        """Flaws-list site DOES gate confidence (Pitfall 3) even for 'either'."""
+        sql = _compile_flaw_filter_sql_129(["fork"], orientation="either")
+        assert "tactic_confidence" in sql, (
+            f"build_flaw_filter_clauses must gate confidence for either; got: {sql}"
+        )

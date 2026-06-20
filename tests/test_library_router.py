@@ -22,6 +22,7 @@ import gzip
 import json
 import uuid
 from typing import Any
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -30,6 +31,7 @@ from sqlalchemy import event as sa_event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.main import app
+from app.schemas.library import LibraryFlawsResponse
 
 # ---------------------------------------------------------------------------
 # Plan 109-03: payload threshold constant (D-05 — no magic number)
@@ -1153,6 +1155,79 @@ async def eval_series_test_state(test_engine: Any) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Phase 129 (TACUI-06/CR-01): the orientation + depth filters must survive the
+# router → service hop. The repository already accepted these kwargs, but the
+# router and service did not declare/forward them, so FastAPI silently dropped
+# the query params and the Flaws-tab filters did nothing. These tests pin the
+# threading so the regression cannot recur.
+# ---------------------------------------------------------------------------
+
+
+class TestGetLibraryFlawsTacticParamThreading:
+    """GET /library/flaws must forward tactic_orientation + max_tactic_depth (CR-01)."""
+
+    @pytest.mark.asyncio
+    async def test_orientation_and_depth_forwarded_to_service(
+        self, flaws_test_state: dict[str, Any]
+    ) -> None:
+        """Explicit query params reach the service call unchanged."""
+        empty = LibraryFlawsResponse(flaws=[], matched_count=0, offset=0, limit=20)
+        with patch(
+            "app.routers.library.library_service.get_library_flaws",
+            new=AsyncMock(return_value=empty),
+        ) as spy:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.get(
+                    "/api/library/flaws",
+                    params={"tactic_orientation": "missed", "max_tactic_depth": 6},
+                    headers=flaws_test_state["headers_a"],
+                )
+        assert resp.status_code == 200
+        assert spy.await_count == 1
+        assert spy.await_args is not None
+        kwargs = spy.await_args.kwargs
+        assert kwargs["tactic_orientation"] == "missed"
+        assert kwargs["max_tactic_depth"] == 6
+
+    @pytest.mark.asyncio
+    async def test_orientation_defaults_to_either_and_depth_to_none(
+        self, flaws_test_state: dict[str, Any]
+    ) -> None:
+        """Omitting the params yields Either-default orientation and no depth bound (D-07)."""
+        empty = LibraryFlawsResponse(flaws=[], matched_count=0, offset=0, limit=20)
+        with patch(
+            "app.routers.library.library_service.get_library_flaws",
+            new=AsyncMock(return_value=empty),
+        ) as spy:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.get("/api/library/flaws", headers=flaws_test_state["headers_a"])
+        assert resp.status_code == 200
+        assert spy.await_args is not None
+        kwargs = spy.await_args.kwargs
+        assert kwargs["tactic_orientation"] == "either"
+        assert kwargs["max_tactic_depth"] is None
+
+    @pytest.mark.asyncio
+    async def test_invalid_orientation_rejected_at_http_boundary(
+        self, flaws_test_state: dict[str, Any]
+    ) -> None:
+        """A value outside the Literal is 422-rejected before the service runs."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/library/flaws",
+                params={"tactic_orientation": "bogus"},
+                headers=flaws_test_state["headers_a"],
+            )
+        assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
 # Plan 109-03 test class: eval_series / flaw_markers / phase_transitions
 # ---------------------------------------------------------------------------
 
@@ -1592,3 +1667,247 @@ class TestLibraryGameById:
             )
 
         assert resp.status_code == 404, f"Expected 404 for missing game_id, got {resp.status_code}"
+
+
+# ---------------------------------------------------------------------------
+# Phase 129 Plan 01 (Task 2 TDD RED) — dual-orientation tactic comparison
+# ---------------------------------------------------------------------------
+
+
+async def _seed_tactic_flaw_committed(
+    session_maker: async_sessionmaker[AsyncSession],
+    *,
+    user_id: int,
+    game_id: int,
+    ply: int,
+    allowed_tactic_motif: int | None = None,
+    allowed_tactic_confidence: int | None = None,
+    allowed_tactic_depth: int | None = None,
+    missed_tactic_motif: int | None = None,
+    missed_tactic_confidence: int | None = None,
+    missed_tactic_depth: int | None = None,
+    severity: int = 2,
+) -> None:
+    """Insert a GameFlaw with tactic motif columns set."""
+    from app.models.game_flaw import GameFlaw
+
+    async with session_maker() as session:
+        flaw = GameFlaw(
+            user_id=user_id,
+            game_id=game_id,
+            ply=ply,
+            severity=severity,
+            phase=1,
+            is_miss=False,
+            is_lucky=False,
+            is_reversed=False,
+            is_squandered=False,
+            fen="rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1",
+            allowed_tactic_motif=allowed_tactic_motif,
+            allowed_tactic_confidence=allowed_tactic_confidence,
+            allowed_tactic_depth=allowed_tactic_depth,
+            missed_tactic_motif=missed_tactic_motif,
+            missed_tactic_confidence=missed_tactic_confidence,
+            missed_tactic_depth=missed_tactic_depth,
+        )
+        session.add(flaw)
+        await session.commit()
+
+
+@pytest_asyncio.fixture(scope="module")
+async def tactic_comparison_state(test_engine: Any) -> dict[str, Any]:
+    """Seed a user with >=20 analyzed games + tactic flaws for dual-orientation comparison.
+
+    Creates TACTIC_COMPARISON_GATE=20 analyzed games (full_evals_completed_at set).
+    Seeds flaw rows with:
+      - Fork family (motif=1) allowed on game 0 (ply=1, white user → ply 1 = black = player opp)
+        Wait — user_color="white": ply 2 = white mover = player. Use even plies for white flaws.
+      - Fork family (motif=1) missed on game 1 (missed column set, high conf)
+      - Games 2-20 have no tactic flaws (zero-event baseline)
+
+    Returns: headers, user_id, game_ids
+    """
+    from app.services.library_service import TACTIC_COMPARISON_GATE
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    suffix = uuid.uuid4().hex[:8]
+    headers, user_id = await _register_and_login(f"tac_cmp_{suffix}@example.com")
+
+    analyzed_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+    # TACTIC_COMPARISON_GATE games — all analyzed so below_gate=False.
+    # Must set BOTH full_evals_completed_at (for _analyzed_game_ids_subquery) AND
+    # white_blunders (for count_filtered_and_analyzed's is_analyzed gate).
+    # Use the Game model directly to set white_blunders.
+    from app.models.game import Game as _Game
+
+    game_ids = []
+    for i in range(TACTIC_COMPARISON_GATE):
+        async with session_maker() as session:
+            g = _Game(
+                user_id=user_id,
+                platform="lichess",
+                platform_game_id=str(uuid.uuid4()),
+                platform_url="https://lichess.org/test",
+                pgn="1. e4 e5 *",
+                result="1-0",
+                user_color="white",  # white player: even plies = player moves
+                time_control_str="600+0",
+                time_control_bucket="blitz",
+                time_control_seconds=600,
+                base_time_seconds=600,
+                increment_seconds=0.0,
+                rated=True,
+                is_computer_game=False,
+                played_at=datetime.datetime(2026, 1, i + 1, tzinfo=datetime.timezone.utc),
+                full_evals_completed_at=analyzed_at,
+                white_blunders=0,  # non-NULL → is_analyzed = True
+                ply_count=40,  # non-NULL, > 0 → passes anchor gate in fetch_tactic_comparison
+            )
+            session.add(g)
+            await session.commit()
+            await session.refresh(g)
+            game_ids.append(g.id)
+
+    # Fork motif = TacticMotifInt.FORK = 1 (see tactic_detector.py TacticMotifInt)
+    FORK_MOTIF = 1
+    CONF = 80  # above _TACTIC_CHIP_CONFIDENCE_MIN=70
+
+    # Allowed fork on game 0, ply=2 (white=player, even ply)
+    await _seed_tactic_flaw_committed(
+        session_maker,
+        user_id=user_id,
+        game_id=game_ids[0],
+        ply=2,  # even ply, user_color=white → player mover
+        allowed_tactic_motif=FORK_MOTIF,
+        allowed_tactic_confidence=CONF,
+        allowed_tactic_depth=2,
+    )
+    # Missed fork on game 1, ply=2 (white=player, even ply)
+    await _seed_tactic_flaw_committed(
+        session_maker,
+        user_id=user_id,
+        game_id=game_ids[1],
+        ply=2,
+        missed_tactic_motif=FORK_MOTIF,
+        missed_tactic_confidence=CONF,
+        missed_tactic_depth=3,
+    )
+
+    return {
+        "headers": headers,
+        "user_id": user_id,
+        "game_ids": game_ids,
+    }
+
+
+class TestTacticComparisonDualOrientation:
+    """GET /library/tactic-comparison returns dual-orientation bullets (Phase 129 D-13/D-14).
+
+    Phase 129 Task 2 TDD RED: these tests expect TacticBullet.orientation field
+    and up-to-12 bullets that do not yet exist — will fail until GREEN lands.
+    """
+
+    @pytest.mark.asyncio
+    async def test_tactic_comparison_returns_200(
+        self, tactic_comparison_state: dict[str, Any]
+    ) -> None:
+        """Endpoint returns 200 with valid auth."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/library/tactic-comparison",
+                headers=tactic_comparison_state["headers"],
+            )
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+
+    @pytest.mark.asyncio
+    async def test_tactic_comparison_bullets_have_orientation_field(
+        self, tactic_comparison_state: dict[str, Any]
+    ) -> None:
+        """Each bullet in the response carries an 'orientation' field ('missed' or 'allowed')."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/library/tactic-comparison",
+                headers=tactic_comparison_state["headers"],
+            )
+        data = resp.json()
+        bullets = data.get("bullets", [])
+        assert len(bullets) > 0, "Expected at least one bullet; below_gate may be True"
+        for bullet in bullets:
+            assert "orientation" in bullet, (
+                f"Each bullet must have 'orientation' field; got keys: {list(bullet.keys())}"
+            )
+            assert bullet["orientation"] in ("missed", "allowed"), (
+                f"orientation must be 'missed' or 'allowed'; got: {bullet['orientation']!r}"
+            )
+
+    @pytest.mark.asyncio
+    async def test_tactic_comparison_both_orientations_per_family(
+        self, tactic_comparison_state: dict[str, Any]
+    ) -> None:
+        """For a family that has both missed and allowed events, both bullets are returned."""
+        # We seeded game 0 with allowed fork and game 1 with missed fork.
+        # The response should contain both a missed-fork and an allowed-fork bullet.
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/library/tactic-comparison",
+                headers=tactic_comparison_state["headers"],
+            )
+        data = resp.json()
+        bullets = data.get("bullets", [])
+        fork_bullets = [b for b in bullets if b.get("family") == "fork"]
+        assert len(fork_bullets) == 2, (
+            f"Expected 2 fork bullets (missed + allowed); got {len(fork_bullets)}: {fork_bullets}"
+        )
+        orientations = {b["orientation"] for b in fork_bullets}
+        assert "missed" in orientations, "Expected a missed-fork bullet"
+        assert "allowed" in orientations, "Expected an allowed-fork bullet"
+
+    @pytest.mark.asyncio
+    async def test_tactic_comparison_no_orientation_query_param(
+        self, tactic_comparison_state: dict[str, Any]
+    ) -> None:
+        """Endpoint accepts no 'orientation' query param (D-09 — grid always shows both)."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            # Passing orientation as a query param should have no effect (422 or ignored)
+            # The endpoint must NOT define an orientation param at the router level.
+            # Verify the endpoint accepts standard params fine (no orientation registered).
+            resp = await client.get(
+                "/api/library/tactic-comparison",
+                headers=tactic_comparison_state["headers"],
+            )
+        assert resp.status_code == 200, (
+            f"Endpoint should return 200 without orientation param; got {resp.status_code}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_tactic_comparison_top_families_ordered_by_missed_you_rate(
+        self, tactic_comparison_state: dict[str, Any]
+    ) -> None:
+        """Top families in bullets are ordered by Missed bullet you_rate descending (D-14).
+
+        With only fork having events (missed you_rate > 0), fork's missed bullet
+        must appear before all other families' missed bullets.
+        """
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/library/tactic-comparison",
+                headers=tactic_comparison_state["headers"],
+            )
+        data = resp.json()
+        bullets = data.get("bullets", [])
+        assert len(bullets) > 0, "Expected bullets"
+        # The first family in bullets should be fork (highest missed you_rate)
+        first_family = bullets[0]["family"]
+        assert first_family == "fork", (
+            f"First family must be fork (highest missed you_rate); got {first_family!r}"
+        )

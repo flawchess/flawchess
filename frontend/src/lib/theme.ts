@@ -81,27 +81,35 @@ export const FAM_PHASE_BG = FAM_NEUTRAL_BG;
 export const FAM_COMBO = FAM_NEUTRAL;
 export const FAM_COMBO_BG = FAM_NEUTRAL_BG;
 
-// Tactic motif family colors (Phase 126).
-// Phase 126 UAT: every tactic family now renders in a single blue (the indigo
-// previously used only for pin/skewer) so the tactic families read as one
-// consistent group. The per-family constant names are kept (each family still
-// has its own constant) — only the values changed to blue. This applies
-// everywhere TAC_* is consumed: the tactic-motif chips, the Tactic Motifs
-// you-vs-opponent comparison grid, and the Flaws filter panel.
+// Tactic motif family colors (Phase 126, updated Phase 129).
+// Phase 126 UAT: every tactic family renders in a single blue (indigo) so all
+// tactic families read as one consistent group. The per-family constant names
+// exist only so consumers key by family name — the values all alias the shared
+// TAC_BLUE. Do not introduce distinct hues; the single-blue convention is
+// intentional. Phase 129: rekey to the 10-family taxonomy (plan 129-04 contract).
+// Cross-stack contract: TAC_* names match the backend FAMILY_TO_MOTIF_INTS keys.
 const TAC_BLUE = 'oklch(0.68 0.16 240)'; // indigo
 const TAC_BLUE_BG = 'oklch(0.68 0.16 240 / 0.15)';
 export const TAC_FORK = TAC_BLUE;
 export const TAC_FORK_BG = TAC_BLUE_BG;
-export const TAC_PIN_SKEWER = TAC_BLUE;
-export const TAC_PIN_SKEWER_BG = TAC_BLUE_BG;
-export const TAC_DISCOVERY = TAC_BLUE;
-export const TAC_DISCOVERY_BG = TAC_BLUE_BG;
-export const TAC_MATE = TAC_BLUE;
-export const TAC_MATE_BG = TAC_BLUE_BG;
+export const TAC_SKEWER = TAC_BLUE;
+export const TAC_SKEWER_BG = TAC_BLUE_BG;
+export const TAC_PIN = TAC_BLUE;
+export const TAC_PIN_BG = TAC_BLUE_BG;
+export const TAC_X_RAY = TAC_BLUE;
+export const TAC_X_RAY_BG = TAC_BLUE_BG;
+export const TAC_DOUBLE_CHECK = TAC_BLUE;
+export const TAC_DOUBLE_CHECK_BG = TAC_BLUE_BG;
+export const TAC_DISCOVERED_CHECK = TAC_BLUE;
+export const TAC_DISCOVERED_CHECK_BG = TAC_BLUE_BG;
+export const TAC_DISCOVERED_ATTACK = TAC_BLUE;
+export const TAC_DISCOVERED_ATTACK_BG = TAC_BLUE_BG;
+export const TAC_TRAPPED_PIECE = TAC_BLUE;
+export const TAC_TRAPPED_PIECE_BG = TAC_BLUE_BG;
 export const TAC_HANGING = TAC_BLUE;
 export const TAC_HANGING_BG = TAC_BLUE_BG;
-export const TAC_COMBINATIONS = TAC_BLUE;
-export const TAC_COMBINATIONS_BG = TAC_BLUE_BG;
+export const TAC_MATE = TAC_BLUE;
+export const TAC_MATE_BG = TAC_BLUE_BG;
 
 // D-05 active-filter ring — applied to TagChip when its tag matches an active
 // useFlawFilterStore filter. Ring only: no fill, bold, or size change. The ring

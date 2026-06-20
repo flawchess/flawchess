@@ -43,10 +43,12 @@ from app.services.tactic_detector import TacticMotifInt, _INT_TO_MOTIF as _TACTI
 
 # ---------------------------------------------------------------------------
 # Phase 128 Plan 03 (D-07/D-09) — tactic orientation closed enum.
+# Phase 129 Plan 01 (D-08) — widened to 3-value Literal; "either" is OR across
+# both missed_* and allowed_* column sets.
 # Imported by query_utils (lazy import) and library_service so both filter
 # sites and the service layer share the same type alias.
 # ---------------------------------------------------------------------------
-TacticOrientation = Literal["missed", "allowed"]
+TacticOrientation = Literal["either", "missed", "allowed"]
 
 # ---------------------------------------------------------------------------
 # Phase 126 — Tactic chip confidence threshold (TACUI-01, D-09).
@@ -58,13 +60,30 @@ TacticOrientation = Literal["missed", "allowed"]
 _TACTIC_CHIP_CONFIDENCE_MIN: int = 70  # 0-100 scale matching tactic_confidence column
 
 # ---------------------------------------------------------------------------
-# Phase 126 — tactic motif family → int mapping (D-08 canonical 6 families).
+# Phase 129 Plan 04 — tactic motif family → int mapping (10-family taxonomy, G-01).
 # Maps each family key to the TacticMotifInt values belonging to that family.
-# All 24 motif ints (1-24) appear exactly once across all families.
-# Motifs 25 (discovered-check) and 26 (trapped-piece) are Tier-2 real-geometry motifs
-# not yet assigned to a chip family — deferred to a future phase (Phase 129 directional).
-# Motifs 27 (en-passant), 28 (promotion), and 29 (under-promotion) are the MOVE_TYPE_MOTIFS
-# family; chip surfacing is a Phase 129 decision (D-09). None of 25-29 appear here.
+# These 10 keys are the cross-stack contract mirrored string-for-string by the
+# frontend TacticFamily union (plan 129-05).
+#
+# Taxonomy decisions (129-UAT RESOLVED DECISIONS):
+# - Each Tier-2 real-geometry motif is its own standalone family (no more merged
+#   pin_skewer or discovery buckets).
+# - The old "combinations" family (DEFLECTION..SACRIFICE, ints 9-17) is dropped
+#   entirely — those motif ints belong to no family and are excluded from every
+#   family chip/grid/EXISTS expansion. Existing game_flaws rows that carry those
+#   ints are unaffected in the DB; they simply stop appearing on family surfaces.
+# - The "x_ray" family is standalone (previously merged with pin/skewer).
+# - "discovered_check" (int 25) and "trapped_piece" (int 26) are now first-class
+#   families. The trapped_piece detector is currently suppressed in the tagger,
+#   so that chip will typically be empty — tracked separately, not a bug.
+# - "mate" int set is UNCHANGED (ints 7-8, 18-24); _depth_ok reads this key.
+# - Move-type motifs (EN_PASSANT=27, PROMOTION=28, UNDER_PROMOTION=29) are never
+#   present here (chip surfacing is out of scope, per D-09).
+#
+# No DB migration and no data backfill required: game_flaws stores raw motif INTs
+# (SmallInteger); families are a query-time grouping only. Re-mapping family→ints
+# re-groups existing rows automatically.
+#
 # Imported by apply_game_filters() (query_utils.py) via lazy import to avoid
 # a query_utils→library_repository circular import.
 # ---------------------------------------------------------------------------
@@ -73,14 +92,29 @@ FAMILY_TO_MOTIF_INTS: dict[str, list[int]] = {
     "fork": [
         int(TacticMotifInt.FORK),
     ],
-    "pin_skewer": [
-        int(TacticMotifInt.PIN),
+    "skewer": [
         int(TacticMotifInt.SKEWER),
+    ],
+    "pin": [
+        int(TacticMotifInt.PIN),
+    ],
+    "x_ray": [
         int(TacticMotifInt.X_RAY),
     ],
-    "discovery": [
-        int(TacticMotifInt.DISCOVERED_ATTACK),
+    "double_check": [
         int(TacticMotifInt.DOUBLE_CHECK),
+    ],
+    "discovered_check": [
+        int(TacticMotifInt.DISCOVERED_CHECK),
+    ],
+    "discovered_attack": [
+        int(TacticMotifInt.DISCOVERED_ATTACK),
+    ],
+    "trapped_piece": [
+        int(TacticMotifInt.TRAPPED_PIECE),
+    ],
+    "hanging": [
+        int(TacticMotifInt.HANGING_PIECE),
     ],
     "mate": [
         int(TacticMotifInt.BACK_RANK_MATE),
@@ -92,19 +126,6 @@ FAMILY_TO_MOTIF_INTS: dict[str, list[int]] = {
         int(TacticMotifInt.BODEN_MATE),
         int(TacticMotifInt.DOUBLE_BISHOP_MATE),
         int(TacticMotifInt.DOVETAIL_MATE),
-    ],
-    "hanging": [
-        int(TacticMotifInt.HANGING_PIECE),
-    ],
-    "combinations": [
-        int(TacticMotifInt.DEFLECTION),
-        int(TacticMotifInt.ATTRACTION),
-        int(TacticMotifInt.INTERMEZZO),
-        int(TacticMotifInt.INTERFERENCE),
-        int(TacticMotifInt.SELF_INTERFERENCE),
-        int(TacticMotifInt.CLEARANCE),
-        int(TacticMotifInt.CAPTURING_DEFENDER),
-        int(TacticMotifInt.SACRIFICE),
     ],
 }
 
@@ -129,10 +150,63 @@ def _tactic_cols(
 
     Callers pass the result directly to SQLAlchemy filter expressions so the
     column selection is a pure Python branch, never string interpolation.
+    Used by fetch_tactic_comparison which iterates over a single orientation.
     """
     if orientation == "missed":
         return GameFlaw.missed_tactic_motif, GameFlaw.missed_tactic_confidence
     return GameFlaw.allowed_tactic_motif, GameFlaw.allowed_tactic_confidence
+
+
+def _tactic_orientation_pairs(
+    orientation: TacticOrientation,
+) -> list[tuple[Any, Any, Any]]:
+    """Return list of (motif_col, conf_col, depth_col) triples for *orientation*.
+
+    Phase 129 Plan 01 (D-05/D-08): shared resolver for depth-aware + either-aware
+    filter sites. Returns:
+      "missed"  → [(missed_tactic_motif, missed_tactic_confidence, missed_tactic_depth)]
+      "allowed" → [(allowed_tactic_motif, allowed_tactic_confidence, allowed_tactic_depth)]
+      "either"  → both pairs (missed first, then allowed)
+
+    Column selection is a pure Python branch; caller input is a closed Literal
+    enum — never string interpolation (T-128-05 / T-129-01).
+    """
+    missed = (
+        GameFlaw.missed_tactic_motif,
+        GameFlaw.missed_tactic_confidence,
+        GameFlaw.missed_tactic_depth,
+    )
+    allowed = (
+        GameFlaw.allowed_tactic_motif,
+        GameFlaw.allowed_tactic_confidence,
+        GameFlaw.allowed_tactic_depth,
+    )
+    if orientation == "missed":
+        return [missed]
+    if orientation == "allowed":
+        return [allowed]
+    # "either" — OR across both column sets (D-08)
+    return [missed, allowed]
+
+
+def _depth_ok(
+    depth_col: Any,
+    motif_col: Any,
+    max_tactic_depth: int | None,
+) -> Any:
+    """Return a SQLAlchemy boolean clause for the depth filter with mate exemption.
+
+    Phase 129 Plan 01 (D-04/D-05): when max_tactic_depth is None, returns a
+    literal-true clause (no bound). Otherwise returns:
+        (depth_col <= max_tactic_depth) | motif_col.in_(FAMILY_TO_MOTIF_INTS["mate"])
+
+    The mate exemption ensures forced mates always pass regardless of depth slider
+    (D-04). Reuses FAMILY_TO_MOTIF_INTS["mate"] — no new constant (plan prohibition).
+    """
+    if max_tactic_depth is None:
+        return true()
+    mate_ints = FAMILY_TO_MOTIF_INTS["mate"]
+    return (depth_col <= max_tactic_depth) | motif_col.in_(mate_ints)
 
 
 # ---------------------------------------------------------------------------
@@ -159,6 +233,7 @@ def build_flaw_filter_clauses(
     tags: Sequence[FlawTag],
     tactic_families: Sequence[str] = (),
     orientation: TacticOrientation = "allowed",
+    max_tactic_depth: int | None = None,
 ) -> list[ColumnElement[bool]]:
     """Return WHERE clauses filtering game_flaws rows (SEED-038 family-aware logic).
 
@@ -180,12 +255,16 @@ def build_flaw_filter_clauses(
               filter. Includes the phase family (opening/middlegame/endgame).
         tactic_families: Tactic motif families to filter on. Empty = no tactic
                   filter. Expands via FAMILY_TO_MOTIF_INTS; unknown keys = no-op.
-        orientation: Which tactic column set to filter on (Phase 128 D-09).
+        orientation: Which tactic column set to filter on (Phase 128/129).
                   "allowed" (default) → allowed_tactic_motif + allowed_tactic_confidence.
                   "missed"  → missed_tactic_motif  + missed_tactic_confidence.
+                  "either"  → OR across both column sets (Phase 129 D-08).
                   FAMILY_TO_MOTIF_INTS and _TACTIC_CHIP_CONFIDENCE_MIN are reused
-                  unchanged for both orientations (D-09). Orientation is a closed
-                  Literal enum — never raw column-name interpolation (T-128-05).
+                  unchanged for all orientations. Orientation is a closed
+                  Literal enum — never raw column-name interpolation (T-128-05/T-129-01).
+        max_tactic_depth: When set, restricts to flaws whose active orientation's
+                  depth column is <= max_tactic_depth (Phase 129 D-05). Forced
+                  mates are exempt regardless of depth (D-04). None = no bound.
 
     Returns:
         A list of SQLAlchemy column expressions. Empty list = no flaw filter
@@ -240,12 +319,22 @@ def build_flaw_filter_clauses(
     # chip so the filter matches what the cards actually show (D-09). Empty = no
     # filter. Only query_flaws passes this; the Games EXISTS (flaw_exists_from_table)
     # deliberately omits it so tactic stays a flaw-level (not game-level) filter.
-    # Phase 128 D-09: orientation selects the matching column pair (_tactic_cols).
+    # Phase 128 D-09: orientation selects the matching column pair.
+    # Phase 129 D-05/D-08: max_tactic_depth bound + "either" OR across both column sets.
     if tactic_families:
         motif_ints = [m for fam in tactic_families for m in FAMILY_TO_MOTIF_INTS.get(fam, [])]
         if motif_ints:
-            motif_col, conf_col = _tactic_cols(orientation)
-            clauses.append(motif_col.in_(motif_ints) & (conf_col >= _TACTIC_CHIP_CONFIDENCE_MIN))
+            # _tactic_orientation_pairs returns 1 triple for missed/allowed, 2 for either.
+            # Each branch: motif.in_(ints) & confidence_gate & depth_ok (D-05).
+            pair_branches = []
+            for motif_col, conf_col, depth_col in _tactic_orientation_pairs(orientation):
+                branch = (
+                    motif_col.in_(motif_ints)
+                    & (conf_col >= _TACTIC_CHIP_CONFIDENCE_MIN)
+                    & _depth_ok(depth_col, motif_col, max_tactic_depth)
+                )
+                pair_branches.append(branch)
+            clauses.append(or_(*pair_branches))
 
     return clauses
 
@@ -376,6 +465,7 @@ async def query_flaws(
     color: str | None,
     tactic_families: Sequence[str] | None = None,
     orientation: TacticOrientation = "allowed",
+    max_tactic_depth: int | None = None,
     offset: int = 0,
     limit: int = 20,
 ) -> tuple[list[FlawListItem], int]:
@@ -407,7 +497,9 @@ async def query_flaws(
     Returns:
         (flaws, matched_count) where matched_count is the total before pagination.
     """
-    flaw_clauses = build_flaw_filter_clauses(severity, tags, tactic_families or (), orientation)
+    flaw_clauses = build_flaw_filter_clauses(
+        severity, tags, tactic_families or (), orientation, max_tactic_depth
+    )
 
     # Three aliases for game_positions (Phase 112, D-08; extended 260610-vru):
     # PositionAt:        ply=N   → move_san + eval-after + clock_seconds (mover's remaining clock)
@@ -1504,7 +1596,7 @@ async def fetch_tactic_comparison(
     tactic_confidence_min: int = _TACTIC_CHIP_CONFIDENCE_MIN,
     orientation: TacticOrientation = "allowed",
 ) -> list[Any]:
-    """Per-game player/opp counts for all 6 tactic families over the analyzed+filtered set.
+    """Per-game player/opp counts for all 10 tactic families over the analyzed+filtered set.
 
     LEFT JOIN anchor: analyzed+filtered games list → LEFT JOIN game_flaws (orientation
     tactic_motif IS NOT NULL AND tactic_confidence >= tactic_confidence_min) so games with
@@ -1512,7 +1604,7 @@ async def fetch_tactic_comparison(
     Phase 128 D-09: orientation selects the column set (allowed/missed) for both the
     LEFT JOIN gate and the COUNT FILTER predicates.
 
-    Returns one row per game_id with 12 COUNT columns (6 families × player/opp).
+    Returns one row per game_id with 20 COUNT columns (10 families × player/opp).
     Python aggregates mean + CI per family in the service layer.
 
     Uses is_opponent_expr from query_utils — never inline ply % 2 (CONTEXT D-01, Pitfall 3).
@@ -1548,7 +1640,7 @@ async def fetch_tactic_comparison(
         .subquery("anchor_tc")
     )
 
-    # Build 12 COUNT columns (6 families × player/opp).
+    # Build 20 COUNT columns (10 families × player/opp).
     # orientation_tactic_motif IS NOT NULL AND orientation_tactic_confidence >= threshold
     # gates the LEFT JOIN so only qualifying (confident enough) tactic events are counted.
     # Phase 128 D-09: _tactic_cols resolves the column pair from orientation (closed enum).

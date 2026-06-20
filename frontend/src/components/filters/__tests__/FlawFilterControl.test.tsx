@@ -1,8 +1,21 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { FlawFilterControl } from '../FlawFilterControl';
 import type { FlawTag } from '@/types/library';
+
+// Stub ResizeObserver — required by Radix UI ToggleGroup (added Phase 129 TACUI-06).
+// [Rule 1 - Bug] The ToggleGroup uses @radix-ui/react-use-size which calls ResizeObserver;
+// jsdom doesn't provide it, so tests with showTacticFilter=true crash without this stub.
+beforeAll(() => {
+  if (typeof window.ResizeObserver === 'undefined') {
+    window.ResizeObserver = class ResizeObserver {
+      observe = vi.fn();
+      unobserve = vi.fn();
+      disconnect = vi.fn();
+    };
+  }
+});
 
 const defaultProps = {
   severity: ['blunder', 'mistake'] as ('blunder' | 'mistake')[],
@@ -23,10 +36,13 @@ describe('FlawFilterControl', () => {
       expect(screen.queryByTestId('filter-flaw-family-tactic')).toBeNull();
     });
 
-    it('renders all six family buttons when showTacticFilter is set', () => {
+    it('renders all ten family buttons when showTacticFilter is set', () => {
       render(<FlawFilterControl {...defaultProps} showTacticFilter />);
       expect(screen.getByTestId('filter-flaw-family-tactic')).toBeTruthy();
-      for (const fam of ['fork', 'pin_skewer', 'discovery', 'mate', 'hanging', 'combinations']) {
+      for (const fam of [
+        'fork', 'skewer', 'pin', 'x_ray', 'double_check', 'discovered_check',
+        'discovered_attack', 'trapped_piece', 'hanging', 'mate',
+      ]) {
         expect(screen.getByTestId(`filter-flaw-tactic-${fam}`)).toBeTruthy();
       }
     });

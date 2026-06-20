@@ -197,7 +197,7 @@ class TestBuildFlawFilterClausesUnit:
 
     def test_tactic_families_produce_one_combined_clause(self) -> None:
         """Phase 126: selected tactic families OR within a single flaw-level clause."""
-        clauses = build_flaw_filter_clauses([], [], ["fork", "pin_skewer"])
+        clauses = build_flaw_filter_clauses([], [], ["fork", "pin"])
         assert len(clauses) == 1, "tactic families share one OR-within clause"
 
     def test_tactic_families_are_distinct_from_tag_families(self) -> None:
