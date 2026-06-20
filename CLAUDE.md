@@ -182,6 +182,10 @@ router = APIRouter(tags=["openings"])
 - **Foreign key constraints are mandatory.** Every column referencing another table's primary key must use `ForeignKey()` with an explicit `ondelete` policy (typically `CASCADE` for user-owned data). Never use bare integer columns as implicit references — PostgreSQL must enforce referential integrity.
 - **Unique constraints for natural keys.** Add `UniqueConstraint` for any business-level uniqueness (e.g., one import job per user+platform combo, one game per user+platform+platform_game_id).
 - **Use appropriate column types.** E.g. don't use BIGINT where SmallInteger suffices. 
+- **Enumerated columns: choose by row count × churn, not by habit.** Avoid native PostgreSQL `ENUM` types as the default — adding a value is awkward (`ALTER TYPE ADD VALUE` can't run in a transaction), removing/renaming/reordering requires recreating the type and rewriting every dependent column, and Alembic autogenerate ignores enum changes entirely. Pick per column:
+  - **High-cardinality tables** (`game_positions` at one row per half-move, `game_flaws`, anything with hundreds of millions of rows): use `SMALLINT`. The 2-vs-4-byte difference and index size matter at that scale. Back it with a Python `IntEnum` so the mapping is self-documenting in code, and add a `CHECK (col IN (...))` so the DB still enforces the domain.
+  - **Low-volume domain/config columns** (status, platform, time-control bucket, endgame class, etc.): prefer `TEXT` + `CHECK` constraint over native `ENUM` — same readability and DB-level integrity, but evolving the set is a plain `DROP CONSTRAINT` / `ADD CONSTRAINT` migration. If the column carries metadata (display name, sort order) or you want it joinable, use a small lookup table + FK instead (which also satisfies the FK rule above).
+  - Keep it consistent: don't introduce a new native `ENUM` without a specific reason, and when touching an existing enum/smallint column, align it with this heuristic rather than perpetuating the ad-hoc mix.
 
 ### Import Pipeline
 
