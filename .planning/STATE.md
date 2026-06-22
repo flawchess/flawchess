@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.28
 milestone_name: Tactic Tagging
-status: Phase 129 shipped — squash-merged to main (98126b3a)
+status: Phase 130 shipped — squash-merged to main (c31a33cf)
 stopped_at: Phase 129 verified complete (UAT 2/2 passed, G-01 resolved live) — all active v1.28 phases (124–129) done; milestone ready to ship
-last_updated: "2026-06-20T13:01:39.793Z"
-last_activity: 2026-06-20
+last_updated: "2026-06-22T13:57:46.099Z"
+last_activity: 2026-06-22
 progress:
   total_phases: 12
   completed_phases: 8
@@ -22,8 +22,8 @@ current_phase_name: BACKLOG
 
 Milestone: v1.28 Tactic Tagging — all active phases (124, 125, 126, 127, 128, 128.1, 129) COMPLETE
 Phase 129 (tactic-filter-ui): VERIFIED — UAT 2/2 passed, G-01 resolved live, VERIFICATION human-verified
-Status: Phase 129 shipped — squash-merged to main (98126b3a)
-Last activity: 2026-06-22 — Completed quick task 260622-fdh: redesigned LibraryGameCard desktop layout (board-left 200px / stacked-right; date to header; tactic chips relocated to right column; mobile untouched). Prior: 2026-06-21 — Completed quick task 260621-sm8 (+ follow-up a134374e): tactic filter per-slot suppression + made depth/orientation independently meaningful (Flaws + Games tabs). One shared `tactic_slot_visible` predicate nulls non-matching tactic slots at both serialization sites (`query_flaws` + Games `_build_card`/eval-series); `build_flaw_filter_clauses` refactored so depth+orientation filter rows even with no family selected; default depth preset flipped to High (full range) so the out-of-box view shows everything. Follow-up 1 (a134374e) fixed two more gaps: the "View game" modal (`GET /library/games/{id}`) now threads the tactic params through to `_build_card` (was showing all tactics regardless of filter), and `useLibraryGames` no longer gates depth/orientation behind a selected family. Follow-up 2 (3ca0e55e) fixed the Games-tab ROW filter: the tactic EXISTS in `apply_game_filters` (query_utils.py) was still gated on `if tactic_families:`, so the Games count stayed "5130 of 5138" regardless of depth — now gated on `_tactic_controls_active`, with the vestigial `"allowed"` default orientation flipped to `"either"` across `apply_game_filters`/`_filtered_games_base`/`count_filtered_and_analyzed` to avoid collateral filtering of non-tactic callers. Phase 130.
+Status: Phase 130 shipped — squash-merged to main (c31a33cf)
+Last activity: 2026-06-22
 
 ## Project Reference
 
