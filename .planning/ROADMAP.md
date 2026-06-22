@@ -376,6 +376,30 @@ Plans:
 
 - [x] 131-05-PLAN.md — Final held-out TEST gate + full report regen + dev re-backfill (Wave 4)
 
+### Phase 132: Tier-3 tactic precision hardening via cook.py predicate alignment
+
+**Goal:** Raise per-motif precision toward >0.9 on the held-out TEST split (recall ungated, precision-first) for the Tier-3 tactic motifs by faithfully reimplementing ornicar/lichess-puzzler's `cook.py` relational predicates — replacing the current loose `met >= N` voting detectors with cook's exact AND-chain predicates, the same methodology that lifted Tier-2 in Phase 131. In-scope motifs: `deflection` (today 0.21 TEST, the single biggest FP source at 991 FP), `clearance` (0.37), `attraction` (0.06), `intermezzo` (0.10), `x-ray` (0.03), `capturing-defender` (0.24). `interference` already ships at 0.99 — lock it against regression, no detector work. Any motif still <0.9 at full cook fidelity is suppressed via the existing `tactic_confidence` query-suppression lever, not shipped (mirrors Phase 131 D-02/D-11). Existence proof the ceiling is reachable: `interference` is itself a Tier-3 motif already at 0.99 via a faithful relational port. Phase 131 already inverted dispatch to shallowest-tactic-wins, so **no dispatch rework here — this phase is detector-internal predicate alignment only.** Tactic tagging is **not yet deployed to prod**, so unlike Phase 131 there are no live-wrong-tags to fix and no prod re-backfill runbook.
+**Requirements**: none mapped — traceability via CONTEXT.md decisions (to be gathered in discuss-phase)
+**Depends on:** Phase 131
+**Plans:** 0 plans
+
+**Open scope questions (resolve in discuss-phase):**
+- **`sacrifice`** is a material-diff *co-tag* (cook `sacrifice`, lines 184–191), not a geometric motif, and never fires for us today. Include it in the full-port-then-suppress sweep (likely ends suppressed) or exclude as out-of-scope-by-nature?
+- **`x-ray` depth risk:** TP-depth 8.0 vs `PV_CAP_PLIES=12`. Cook runs on a *curated puzzle solution*; we run on a *raw Stockfish PV* that can diverge from cook's clean relational chains deep in the line. x-ray may plateau below 0.9 regardless of port fidelity — full-port-then-suppress handles it honestly, but flag the wasted-effort risk and consider deferring.
+- **Dev re-backfill:** not in prod → no prod re-backfill, no live-wrong-tags urgency (cf. Phase 131 D-12). Decide whether a dev re-backfill is still worth running as real-data validation, or skip it (the CC0 puzzle fixture harness remains the authoritative precision signal either way).
+- **Harness scoring under shallowest-wins:** confirm whether `scripts/tactic_tagger_report.py` measures each motif's standalone firing or the post-dispatch winner. Tier-3 motifs are deep (depth 2.3–8.0) and only win dispatch when nothing shallower fires (Phase 131 D-05/D-07), which caps recall/volume (~1.8% of all tags) — acceptable under precision-first, but it bounds the ROI ceiling and should be stated explicitly.
+
+**Canonical refs (read before planning):**
+- `.planning/notes/tactic-tagger-cook-alignment.md` — cook↔ours index convention + per-motif pseudocode reference.
+- `/home/aimfeld/Projects/Python/lichess-puzzler/tagger/cook.py` + `util.py` — the AGPL oracle. Reimplement from prose/pseudocode, copy **no source** (Phase 131 D-10).
+- `.planning/phases/131-tactic-precision-hardening-cook-alignment/131-CONTEXT.md` — the proven playbook (full-port-then-suppress, TEST+ΔP gate, AGPL boundary, shallowest-wins dispatch).
+- `app/services/tactic_detector.py` — `detect_deflection` (loose "3 of 5"), `detect_attraction`, `detect_intermezzo`, `detect_x_ray`, `detect_clearance`, `detect_capturing_defender`, `detect_sacrifice`, `_TIER3_REGISTRY`.
+- `scripts/tactic_tagger_report.py --check-goals` — raise GOALS to 0.9 for in-scope Tier-3 motifs; `/tactic-tagger-report` for the full table.
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 132 to break down)
+
 ---
 
 <details>
