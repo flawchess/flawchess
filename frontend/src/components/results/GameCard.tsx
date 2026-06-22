@@ -43,6 +43,7 @@ function formatDate(dateStr: string | null): string {
 }
 
 const SECONDS_PER_DAY = 86400;
+const SECONDS_PER_MINUTE = 60;
 
 function formatTimeControl(tcStr: string): string {
   // PGN daily/correspondence format: "1/{seconds_per_move}" (e.g. "1/259200" = 3 days/move).
@@ -55,12 +56,18 @@ function formatTimeControl(tcStr: string): string {
   }
   if (tcStr.includes('+')) {
     const [baseSec, inc] = tcStr.split('+');
-    const baseMin = Math.floor(Number(baseSec) / 60);
-    return `${baseMin}+${inc}`;
+    const baseSecNum = Number(baseSec);
+    // Hyperbullet (<1min base) rounded to "0" min, rendering e.g. "Bullet 0".
+    // Show the base in seconds instead: "30s" (with increment, "15s+1").
+    if (baseSecNum < SECONDS_PER_MINUTE) {
+      return Number(inc) > 0 ? `${baseSecNum}s+${inc}` : `${baseSecNum}s`;
+    }
+    return `${Math.floor(baseSecNum / SECONDS_PER_MINUTE)}+${inc}`;
   }
-  // No increment — just convert seconds to minutes
-  const baseMin = Math.floor(Number(tcStr) / 60);
-  return String(baseMin);
+  // No increment — sub-minute shows seconds, otherwise convert to minutes.
+  const baseSec = Number(tcStr);
+  if (baseSec < SECONDS_PER_MINUTE) return `${baseSec}s`;
+  return String(Math.floor(baseSec / SECONDS_PER_MINUTE));
 }
 
 export function GameCard({ game }: GameCardProps) {
