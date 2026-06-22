@@ -1,9 +1,8 @@
 ---
 title: Flaw attribution-tag definitions (tooltip-ready)
-date: 2026-06-08 (impact thresholds recalibrated 2026-06-09)
-context: precise, tooltip-usable definitions for every severity tier + attribution tag.
-source: app/services/flaws_service.py. Severity/tempo/opportunity/phase thresholds verified against source. Impact thresholds (`reversed`/`squandered`) recalibrated to round-eval anchors on 2026-06-09 (see Impact section); the flaws_service.py constant + test + tooltip update is a pending /gsd-quick, so code still holds the prior values (70/30, 85/60) until it lands.
-related: flaw-tag-naming.md (the authoritative naming taxonomy this builds on)
+date: 2026-06-20
+context: precise, tooltip-usable definitions for every severity tier + attribution tag. Documents the current live state.
+source: app/services/flaws_service.py (all thresholds and tag names verified against source).
 ---
 
 # Flaw attribution-tag definitions
@@ -44,7 +43,8 @@ swing when the position is already one-sided.
 At most one tempo tag per flaw. Thresholds are relative to the game's base time when
 known (a 5s move is hasty in classical but normal in bullet); absolute fallbacks
 apply when base time is unknown. **No tempo tag is shown when clock data is unavailable**
-(e.g. chess.com games without per-move clocks) — its absence is not `unrushed`.
+(e.g. chess.com games without per-move clocks) — its absence is not `unrushed`. See
+[Structural rule: tempo is optional](#structural-rule-tempo-is-optional) below.
 
 The trio is a two-level decision: *low on clock?* → `low-clock` (forced). Otherwise, *did
 you move fast?* → `hasty` (self-inflicted haste) vs `unrushed` (took your time, still
@@ -55,6 +55,8 @@ erred). Three non-overlapping signals, each a different actionable story.
 | Tempo  | `low-clock` | You were short on time when you blundered or made the mistake: your remaining clock was under 5% of the base time (or under 30s when base time is unknown). |
 | Tempo  | `hasty`     | You had a comfortable clock but still moved fast: the move took under 1% of the base time (or under 5s when base time is unknown). |
 | Tempo  | `unrushed`  | You had time and didn't rush, yet the move was still a blunder or mistake. |
+
+Priority when more than one could apply: `low-clock` > `hasty` > `unrushed`.
 
 ## Opportunity — how the blunder or mistake related to the opponent's play
 
@@ -82,17 +84,6 @@ By construction every `squandered` (and every `reversed`) is also at least a `bl
 the smallest qualifying squandered swing is 75% → 59%, a 16-point drop, just past the
 15-point blunder floor. Impact tags never fire on a sub-blunder move.
 
-**Recalibrated 2026-06-09 (pending implementation).** The impact thresholds were loosened
-from their original values (`reversed` 70/30, `squandered` 85/60) to round-eval anchors
-(`reversed` 68/32 ≈ ±2.0, `squandered` 75/59 ≈ +3.0/+1.0). Rationale: the planned
-[[SEED-040-flaw-stats-opponent-comparison]] you-vs-opponent surface computes
-`reversed`/`squandered` as a **Wilson difference-of-proportions** with a benchmark IQR
-zone, which needs a denser event count than a single population baseline. Benchmark-DB
-measurement: the change ~3× the squandered rate (per-user share with ≥10 instances
-34% → 68%) while keeping `reversed` roughly flat (+21%, already healthy) — the
-`squandered` *entry* is the load-bearing lever. Tags stay meaningful (still a
-blunder-sized throw of a winning game), but "overwhelming" becomes "winning, near-decisive."
-
 | Family | Name            | Definition |
 |--------|-----------------|------------|
 | Impact | `reversed`      | You turned a winning game into a losing one: your Expected Score before the move was at least 68% (clearly winning, eval roughly +2.0 or better) and dropped to 32% or below (clearly losing, roughly −2.0). |
@@ -109,13 +100,27 @@ middlegame when the phase is unknown).
 | Phase  | `middlegame`   | The blunder or mistake occurred in the middlegame. |
 | Phase  | `endgame`      | The blunder or mistake occurred in the endgame phase of the game. |
 
+## Structural rule: tempo is optional
+
+A flaw carries **at most one** tempo tag, and **none at all** when clock data is
+unavailable. There is no fallback tag for missing clock data — "no time excuse"
+(`unrushed`) and "we couldn't measure it" (no tag) are distinct.
+
+Implications for code and UI:
+
+- `_classify_tempo` returns `None` on missing clock/move-time instead of a fallback tag.
+- `TempoTag` is `Literal["low-clock", "hasty", "unrushed"]`.
+- The schema shape `tempo: dict[TempoTag, int]` sums to **≤** the mistake+blunder count.
+- The Flaw-Stats panel's tempo stacked bar must show an **unmeasured remainder**
+  (`total_mb_flaws − sum(tempo counts)`) so the segments still sum honestly — never
+  normalize the three measured segments to 100%.
+
 ## Threshold reference (source of truth)
 
-All values are from `app/services/flaws_service.py`, except the impact rows marked `*`,
-which are the recalibrated 2026-06-09 targets pending implementation (the code still holds
-the prior values). Expected-Score and clock-fraction values are shown as percentages to
-match the rest of the doc; the Python constants store them as `0–1` fractions (e.g.
-85% → `0.85`). The `*_ABS_SECONDS` values are literal seconds.
+All values are from `app/services/flaws_service.py`. Expected-Score and clock-fraction
+values are shown as percentages to match the rest of the doc; the Python constants store
+them as `0–1` fractions (e.g. 75% → `0.7511`). The `*_ABS_SECONDS` values are literal
+seconds.
 
 | Constant | Value | Drives |
 |----------|-------|--------|
@@ -126,16 +131,14 @@ match the rest of the doc; the Python constants store them as `0–1` fractions 
 | `TIME_PRESSURE_CLOCK_ABS_SECONDS` | 30s | `low-clock` (fallback) |
 | `HASTY_MOVE_FRACTION` | 1% | `hasty` (relative) |
 | `HASTY_MOVE_ABS_SECONDS` | 5s | `hasty` (fallback) |
-| `WINNING_LINE_ES` | 68%* | `reversed` entry (clearly winning before, ≈ +2.0) |
-| `LOSING_LINE_ES` | 32%* | `reversed` exit (clearly losing after, ≈ −2.0) |
-| `FROM_WINNING_ES` | 75%* | `squandered` entry (winning, near-decisive before, ≈ +3.0) |
-| `SQUANDERED_EXIT_ES` | 59%* | `squandered` exit (back to a slight edge, ≈ +1.0) |
+| `WINNING_LINE_ES` | 67.62% (`0.6762`) | `reversed` entry (clearly winning before, ≈ +2.0) |
+| `LOSING_LINE_ES` | 32.38% (`0.3238`) | `reversed` exit (clearly losing after, ≈ −2.0) |
+| `FROM_WINNING_ES` | 75.11% (`0.7511`) | `squandered` entry (winning, near-decisive before, ≈ +3.0) |
+| `SQUANDERED_EXIT_ES` | 59.10% (`0.5910`) | `squandered` exit (back to a slight edge, ≈ +1.0) |
 
-`*` Recalibrated target values (2026-06-09, round-eval anchors). The flaws_service.py
-constants still hold the prior values (`WINNING_LINE_ES` 70%, `LOSING_LINE_ES` 30%,
-`FROM_WINNING_ES` 85%, `SQUANDERED_EXIT_ES` 60%) until the implementation /gsd-quick lands.
-The exact stored fractions are the sigmoid of the round eval: ES(+2.0)=0.6762,
-ES(−2.0)=0.3238, ES(+3.0)=0.7511, ES(+1.0)=0.5910.
+The four impact-ladder fractions are the sigmoid of the round eval they anchor to:
+ES(+2.0)=0.6762, ES(−2.0)=0.3238, ES(+3.0)=0.7511, ES(+1.0)=0.5910.
 
-Tags are computed **on the fly** and not persisted, so there is no DB column behind any of
-them.
+Tags are computed **on the fly** and not persisted on the user's own flaws, so there is no
+DB column behind any of them (the opponent-materialization path stores encoded equivalents
+separately).

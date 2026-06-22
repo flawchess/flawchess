@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -147,14 +147,14 @@ vi.mock('@/hooks/useLibrary', () => ({
 
 // We need a controllable store: the real store is module-level and persists
 // between tests. Instead, mock the entire module with React state.
-// Phase 129: include tacticOrientation / tacticDepthPreset / tacticDepthMax defaults.
+// Phase 129 / Quick 260620-l5k: include tacticOrientation + depth range defaults.
 let mockStoreState = {
   severity: ['blunder', 'mistake'] as ('blunder' | 'mistake')[],
   tags: [] as string[],
   tacticFamilies: [] as string[],
   tacticOrientation: 'either' as const,
-  tacticDepthPreset: 'intermediate' as const,
-  tacticDepthMax: 6 as number | null,
+  tacticDepthMin: 0,
+  tacticDepthMax: 5,
 };
 const mockSetFlawFilter = vi.fn(
   (updater: typeof mockStoreState | ((prev: typeof mockStoreState) => typeof mockStoreState)) => {
@@ -202,8 +202,8 @@ beforeEach(() => {
     tags: [],
     tacticFamilies: [],
     tacticOrientation: 'either',
-    tacticDepthPreset: 'intermediate',
-    tacticDepthMax: 6,
+    tacticDepthMin: 0,
+    tacticDepthMax: 5,
   };
   vi.clearAllMocks();
   mockFlawsResult = {
@@ -471,8 +471,8 @@ describe('FlawsTab', () => {
         tags: ['miss'],
         tacticFamilies: [],
         tacticOrientation: 'either',
-        tacticDepthPreset: 'intermediate',
-        tacticDepthMax: 6,
+        tacticDepthMin: 0,
+        tacticDepthMax: 5,
       };
       renderFlawsTab();
       expect(capturedStatsArgs).toBeTruthy();
@@ -525,10 +525,16 @@ describe('FlawsTab', () => {
         tags: ['miss'],
         tacticFamilies: [],
         tacticOrientation: 'either',
-        tacticDepthPreset: 'intermediate',
-        tacticDepthMax: 6,
+        tacticDepthMin: 0,
+        tacticDepthMax: 5,
       };
       renderFlawsTab('/library/flaws');
+
+      // The "miss" tag is a Context tag — expand the Context section in all mounted
+      // FlawFilterControl instances (desktop sidebar + mobile drawer = 2) before asserting.
+      screen.getAllByTestId('filter-flaw-context-toggle').forEach((toggle) => {
+        fireEvent.click(toggle);
+      });
 
       // The "miss" tag button should appear as aria-pressed=true in the FlawFilterControl.
       // The Clear affordance is now in FilterActions (Reset button), not in FlawFilterControl.

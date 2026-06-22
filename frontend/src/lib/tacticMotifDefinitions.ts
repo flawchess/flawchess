@@ -27,6 +27,9 @@ export const TACTIC_MOTIF_DEFINITIONS: Record<string, string> = {
   'double-bishop-mate': 'Two bishops on adjacent diagonals deliver checkmate while the king is cut off.',
   'dovetail-mate': 'A queen delivers checkmate to a king whose only escape squares are blocked by its own pieces in a dovetail pattern.',
   mate: 'A checkmate pattern that does not fit a specific named category.',
+  // Synthetic family-level key used only by the filter-panel legend (Quick 260620-onv):
+  // groups every named-mate motif under one "checkmate" row instead of listing them.
+  checkmate: 'The opponent\'s king is attacked and has no legal move to escape capture.',
   'hanging-piece': 'An undefended piece can be captured for free.',
   // The `combinations` family was dropped in Phase 129, so these 8 motifs no longer map to a
   // family and never render a chip. Retained only as the raw-string fallback source for any

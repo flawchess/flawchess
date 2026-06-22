@@ -7,7 +7,14 @@ import {
   ExternalLink,
   Loader2,
 } from 'lucide-react';
-import { SEV_BLUNDER, SEV_MISTAKE, SEV_INACCURACY, BEST_MOVE_ARROW } from '@/lib/theme';
+import {
+  SEV_BLUNDER,
+  SEV_MISTAKE,
+  SEV_INACCURACY,
+  BEST_MOVE_ARROW,
+  TAC_MISSED_LABEL,
+  TAC_ALLOWED_LABEL,
+} from '@/lib/theme';
 import { Card, CardHeader } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { LoadError } from '@/components/ui/load-error';
@@ -19,9 +26,12 @@ import { SeverityBadge } from '@/components/library/SeverityBadge';
 import { TagChip, TagLegend } from '@/components/library/TagChip';
 import { flawPlyUrl } from '@/lib/platformLinks';
 import { sanToSquares, uciToSquares } from '@/lib/sanToSquares';
+import { toDisplayDepthForOrientation } from '@/lib/tacticDepth';
 import { formatMoveNotation } from '@/lib/openingInsights';
 import { formatFlawEvalParts } from '@/lib/formatFlawEval';
 import { useLibraryGame } from '@/hooks/useLibrary';
+import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
+import { useMiniBoardSize } from '@/hooks/useMiniBoardSize';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { TacticMotifChip } from '@/components/library/TacticMotifChip';
 import type { FlawListItem, FlawSeverity, TacticOrientation } from '@/types/library';
@@ -29,8 +39,12 @@ import type { FlawListItem, FlawSeverity, TacticOrientation } from '@/types/libr
 // Standalone component per D-05 (sibling to LibraryGameCard — do NOT import from it).
 // formatDate copied verbatim from LibraryGameCard (same display requirements; D-05 forbids shared import).
 
-// Board size — matches LibraryGameCard's DESKTOP_BOARD_SIZE.
-const DESKTOP_BOARD_SIZE = 132;
+// Board sizes. Desktop is enlarged (Quick 260622): the flaw grid is now 2-up
+// (more width per card), and the board spans the full card-body height with the
+// metadata + tags stacked beside it on the right. Mobile keeps the smaller base
+// (resolved to 40% viewport by useMiniBoardSize).
+const DESKTOP_BOARD_SIZE = 200;
+const MOBILE_BOARD_SIZE = 132;
 
 // Severity → accent color mapping (left-spine and board arrow color)
 const SEVERITY_COLOR: Record<FlawSeverity, string> = {
@@ -94,8 +108,16 @@ export interface FlawCardProps {
 
 export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) {
   const [open, setOpen] = useState(false);
-  const { data, isLoading, isError } = useLibraryGame(open ? flaw.game_id : null);
+  // Quick 260621-sm8: forward the active tactic filter into the "View game" modal
+  // so the opened game nulls non-matching tactic slots the same way the flaw list
+  // does — otherwise the modal showed tactics outside the depth/orientation/family
+  // filter (e.g. a depth-12 tactic under a depth 1-2 filter).
+  const [flawFilter] = useFlawFilterStore();
+  const { data, isLoading, isError } = useLibraryGame(open ? flaw.game_id : null, flawFilter);
   const { data: userProfile } = useUserProfile();
+  // Mobile (<sm) miniboard spans 40% of the viewport width; sm+ keeps the fixed
+  // size. The desktop body uses the literal DESKTOP_BOARD_SIZE instead (sm+ only).
+  const mobileBoardSize = useMiniBoardSize(MOBILE_BOARD_SIZE);
 
   const flipped = flaw.user_color === 'black';
   const severityColor = SEVERITY_COLOR[flaw.severity];
@@ -114,10 +136,40 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
   const showBestMove =
     bestMoveSquares != null &&
     !(moveSquares && moveSquares.from === bestMoveSquares.from && moveSquares.to === bestMoveSquares.to);
+  // Tactic-depth badges (1-based display): the allowed tactic sits at the end of
+  // the flaw-move arrow; the missed tactic at the end of the blue best-move arrow.
+  // Allowed is decision-anchored (+1 vs missed) because the opponent's refutation
+  // line starts one ply after the shared pre-flaw decision board (Quick 260621-qz9).
+  const allowedDepthLabel =
+    flaw.allowed_tactic_depth != null
+      ? String(toDisplayDepthForOrientation(flaw.allowed_tactic_depth, 'allowed'))
+      : undefined;
+  const missedDepthLabel =
+    flaw.missed_tactic_depth != null
+      ? String(toDisplayDepthForOrientation(flaw.missed_tactic_depth, 'missed'))
+      : undefined;
   const boardArrows = [
-    ...(moveSquares ? [{ from: moveSquares.from, to: moveSquares.to, color: SEV_BLUNDER }] : []),
+    ...(moveSquares
+      ? [
+          {
+            from: moveSquares.from,
+            to: moveSquares.to,
+            color: severityColor,
+            label: allowedDepthLabel,
+            labelColor: TAC_ALLOWED_LABEL,
+          },
+        ]
+      : []),
     ...(showBestMove
-      ? [{ from: bestMoveSquares.from, to: bestMoveSquares.to, color: BEST_MOVE_ARROW }]
+      ? [
+          {
+            from: bestMoveSquares.from,
+            to: bestMoveSquares.to,
+            color: BEST_MOVE_ARROW,
+            label: missedDepthLabel,
+            labelColor: TAC_MISSED_LABEL,
+          },
+        ]
       : []),
   ];
 
@@ -225,7 +277,7 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
     </span>
   );
 
-  // Shared game-info block:
+  // Shared game-info block (mobile body):
   //   line 1: clock/move-time (when available)
   //   line 2: date
   // No TC or move count (replaced by clock context); no termination text.
@@ -233,6 +285,112 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
     <div className="flex flex-col gap-1 text-sm text-muted-foreground">
       {clockMoveItem}
       {dateItem}
+    </div>
+  );
+
+  // Move notation + user-POV eval swing — stacked on two lines (mobile body, beside
+  // the board). "<move>" / "<Cpu icon><before> to <after>".
+  const moveEvalBlock = (
+    <div className="flex flex-col gap-0.5 text-sm">
+      <span className="text-foreground font-medium">{moveNotation}</span>
+      <span className="inline-flex items-center gap-1 text-muted-foreground">
+        <Cpu className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        {evalBefore} to {evalAfter}
+      </span>
+    </div>
+  );
+
+  // Desktop right-column metadata — four lines stacked above the badges (Quick 260622):
+  //   line 1: move
+  //   line 2: engine eval drop
+  //   line 3: clock & move-time
+  //   line 4: date
+  const desktopMeta = (
+    <div className="flex flex-col gap-1 text-sm text-muted-foreground">
+      {/* line 1: move */}
+      <span className="text-foreground font-medium">{moveNotation}</span>
+      {/* line 2: engine eval drop */}
+      <span className="inline-flex items-center gap-1">
+        <Cpu className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        {evalBefore} to {evalAfter}
+      </span>
+      {/* line 3: clock & move-time (omitted when both clock and move-time are null) */}
+      {clockMoveItem}
+      {/* line 4: date */}
+      {dateItem}
+    </div>
+  );
+
+  // Tactic motifs explained by the legend — orientation-prefixed list matching the
+  // chips above (beta-gated; [] when off). Reused for the legend prop and the row-2
+  // render guard so the legend appears next to the context tags only when there's
+  // something to explain.
+  const legendMotifs = (() => {
+    if (!userProfile?.beta_enabled) return [];
+    const motifs: string[] = [];
+    if (tacticOrientation !== 'allowed' && flaw.missed_tactic_motif != null) {
+      motifs.push(flaw.missed_tactic_motif);
+    }
+    if (tacticOrientation !== 'missed' && flaw.allowed_tactic_motif != null) {
+      motifs.push(flaw.allowed_tactic_motif);
+    }
+    return motifs;
+  })();
+
+  // Tags row — severity badge, then the tactic-motif chip(s), then a second
+  // (basis-full) line carrying the family-colored context flaw-tag chips followed by a
+  // single brown Tags-icon legend explaining every tag listed except severity
+  // (Phase 126 UAT). Shared by the mobile (full-width row) and desktop
+  // (right-of-board column) bodies. Always rendered (every flaw has a severity).
+  const tagsRow = (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {/* Severity badge — singular, count-less (one flaw per card). */}
+      <SeverityBadge
+        severity={flaw.severity}
+        count={1}
+        gameId={flaw.game_id}
+        showCount={false}
+      />
+
+      {/* Tactic motif chips — Phase 129 TACUI-07 D-10/D-11 dual-chip matrix.
+          Beta-gated (D-01). Orientation controls which chip(s) render:
+          'either' = both when non-null; 'missed' = missed chip only; 'allowed' = allowed chip only.
+          Each chip carries the orientation prefix in its label/aria/testid. */}
+      {userProfile?.beta_enabled && tacticOrientation !== 'allowed' &&
+        flaw.missed_tactic_motif != null && (
+          <TacticMotifChip
+            motif={flaw.missed_tactic_motif}
+            flawId={flaw.game_id}
+            orientation="missed"
+          />
+        )}
+      {userProfile?.beta_enabled && tacticOrientation !== 'missed' &&
+        flaw.allowed_tactic_motif != null && (
+          <TacticMotifChip
+            motif={flaw.allowed_tactic_motif}
+            flawId={flaw.game_id}
+            orientation="allowed"
+          />
+        )}
+
+      {/* Context flaw-tag chips + the shared Tags-icon legend — basis-full forces them
+          onto their own line below the severity + tactic chips (context tags always start
+          on a new row). The single legend explains both the tactic motifs (row 1) and the
+          context tags, and sits at the very end after the context tags. Rendered whenever
+          there are context tags or motifs to explain. */}
+      {(flaw.tags.length > 0 || legendMotifs.length > 0) && (
+        <div className="flex flex-wrap items-center gap-1.5 basis-full">
+          {flaw.tags.map((tag) => (
+            <TagChip key={tag} tag={tag} gameId={flaw.game_id} definition={false} />
+          ))}
+          <TagLegend
+            variant="icon"
+            tags={flaw.tags}
+            tacticMotifs={legendMotifs}
+            gameId={flaw.game_id}
+          />
+        </div>
+      )}
     </div>
   );
 
@@ -244,90 +402,38 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
       data-testid={`flaw-card-${flaw.game_id}-${flaw.ply}`}
     >
       {header}
-      {/* Board + content sit in a row; the tags row carries basis-full so it always
-          wraps onto its own full-width row below board+content (at every width). */}
-      <div className="flex flex-wrap gap-3 items-start p-3">
-        {/* Column 1 — 132px miniboard showing the position BEFORE the flaw with the flaw-move arrow */}
+
+      {/* Mobile body: board + move/eval/metadata in a row, tags wrap onto a full-width
+          row below (basis-full). */}
+      <div className="flex flex-wrap gap-3 items-start p-3 sm:hidden">
         <LazyMiniBoard
           fen={flaw.fen}
           flipped={flipped}
-          size={DESKTOP_BOARD_SIZE}
+          size={mobileBoardSize}
           arrows={boardArrows.length > 0 ? boardArrows : undefined}
         />
-
-        {/* Column 2 — move/eval, metadata, action */}
         <div className="flex flex-col gap-1.5 min-w-0 flex-1">
-          {/* Move notation on its own line, eval swing on the line below:
-              "<move>" / "<Cpu icon><before> to <after>" */}
-          <div className="flex flex-col gap-0.5 text-sm">
-            <span className="text-foreground font-medium">{moveNotation}</span>
-            <span className="inline-flex items-center gap-1 text-muted-foreground">
-              <Cpu className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              {evalBefore} to {evalAfter}
-            </span>
-          </div>
-
-          {/* Metadata block */}
+          {moveEvalBlock}
           {metadata}
         </div>
+        <div className="basis-full">{tagsRow}</div>
+      </div>
 
-        {/* Tags row — all inline on one wrapping row (basis-full): severity badge,
-            then the tactic-motif chip, then the family-colored flaw-tag chips, and
-            finally a single brown Tags-icon legend explaining every tag listed except
-            severity (Phase 126 UAT). Always rendered (every flaw has a severity). */}
-        <div className="flex flex-wrap items-center gap-1.5 basis-full">
-          {/* Severity badge — singular, count-less (one flaw per card). */}
-          <SeverityBadge
-            severity={flaw.severity}
-            count={1}
-            gameId={flaw.game_id}
-            showCount={false}
+      {/* Desktop body (Quick 260622): the enlarged board on the left spans the full
+          card-body height; the right column stacks the two-line metadata on top of the
+          severity + tactic/context tags. */}
+      <div className="hidden sm:flex gap-3 items-start p-3">
+        <div className="shrink-0">
+          <LazyMiniBoard
+            fen={flaw.fen}
+            flipped={flipped}
+            size={DESKTOP_BOARD_SIZE}
+            arrows={boardArrows.length > 0 ? boardArrows : undefined}
           />
-
-          {/* Tactic motif chips — Phase 129 TACUI-07 D-10/D-11 dual-chip matrix.
-              Beta-gated (D-01). Orientation controls which chip(s) render:
-              'either' = both when non-null; 'missed' = missed chip only; 'allowed' = allowed chip only.
-              Each chip carries the orientation prefix in its label/aria/testid. */}
-          {userProfile?.beta_enabled && tacticOrientation !== 'allowed' &&
-            flaw.missed_tactic_motif != null && (
-              <TacticMotifChip
-                motif={flaw.missed_tactic_motif}
-                flawId={flaw.game_id}
-                orientation="missed"
-              />
-            )}
-          {userProfile?.beta_enabled && tacticOrientation !== 'missed' &&
-            flaw.allowed_tactic_motif != null && (
-              <TacticMotifChip
-                motif={flaw.allowed_tactic_motif}
-                flawId={flaw.game_id}
-                orientation="allowed"
-              />
-            )}
-
-          {/* Other flaw-tag chips. */}
-          {flaw.tags.map((tag) => (
-            <TagChip key={tag} tag={tag} gameId={flaw.game_id} definition={false} />
-          ))}
-
-          {/* Single brown Tags-icon legend explaining the tactic + flaw tags above
-              (not severity). Feeds orientation-prefixed motif list matching the chips above. */}
-          <TagLegend
-            variant="icon"
-            tags={flaw.tags}
-            tacticMotifs={(() => {
-              if (!userProfile?.beta_enabled) return [];
-              const motifs: string[] = [];
-              if (tacticOrientation !== 'allowed' && flaw.missed_tactic_motif != null) {
-                motifs.push(flaw.missed_tactic_motif);
-              }
-              if (tacticOrientation !== 'missed' && flaw.allowed_tactic_motif != null) {
-                motifs.push(flaw.allowed_tactic_motif);
-              }
-              return motifs;
-            })()}
-            gameId={flaw.game_id}
-          />
+        </div>
+        <div className="flex-1 min-w-0 flex flex-col gap-2">
+          {desktopMeta}
+          {tagsRow}
         </div>
       </div>
 

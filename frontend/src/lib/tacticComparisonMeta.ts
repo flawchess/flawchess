@@ -18,7 +18,7 @@
 import type { ComponentType, CSSProperties } from 'react';
 import {
   GitFork,
-  Minus,
+  MoveUp,
   MapPin,
   ScanLine,
   ChevronsUp,
@@ -54,6 +54,7 @@ import {
   ZONE_NEUTRAL,
   ZONE_SUCCESS,
 } from '@/lib/theme';
+import { TACTIC_MOTIF_DEFINITIONS } from '@/lib/tacticMotifDefinitions';
 import type { TacticBullet } from '@/types/library';
 
 // Re-export TacticBullet for consumers that import from this module.
@@ -73,8 +74,9 @@ export type TacticIcon = ComponentType<{
 /**
  * The 10 tactic family keys — cross-stack contract with backend FAMILY_TO_MOTIF_INTS.
  * These strings must equal the backend dict keys string-for-string (plan 129-04).
- * Display order: fork → skewer → pin → x_ray → double_check → discovered_check
- *   → discovered_attack → trapped_piece → hanging → mate.
+ * Filter display order (mechanism-grouped, Quick 260620-onv):
+ *   Piece Attacks: fork → pin → skewer → x_ray → hanging → trapped_piece
+ *   Checkmate, Checks & Discoveries: mate → double_check → discovered_check → discovered_attack
  */
 export type TacticFamily =
   | 'fork'
@@ -110,7 +112,7 @@ export const TACTIC_FAMILY_COLORS: Record<TacticFamily, TacticFamilyColors> = {
 
 export const TACTIC_FAMILY_ICON: Record<TacticFamily, TacticIcon> = {
   fork: GitFork,
-  skewer: Minus,
+  skewer: MoveUp,
   pin: MapPin,
   x_ray: ScanLine,
   double_check: ChevronsUp,
@@ -121,12 +123,36 @@ export const TACTIC_FAMILY_ICON: Record<TacticFamily, TacticIcon> = {
   mate: Crown,
 };
 
+// ─── Mechanism groups (filter panel, Quick 260620-onv) ─────────────────────────
+
+/**
+ * The two mechanism-based sections of the tactic-motif filter. Display order
+ * matters; chip order within a group follows TACTIC_COMPARISON_FAMILIES array order.
+ */
+export type TacticGroupKey = 'piece_attacks' | 'discoveries';
+
+export interface TacticGroupDef {
+  key: TacticGroupKey;
+  /** Title-Case section label shown above the group's chips. */
+  label: string;
+}
+
+/** Ordered groups rendered top-to-bottom in the filter panel. */
+export const TACTIC_GROUPS: TacticGroupDef[] = [
+  { key: 'piece_attacks', label: 'Piece Attacks' },
+  { key: 'discoveries', label: 'Checkmate, Checks & Discoveries' },
+];
+
 // ─── Family definitions ───────────────────────────────────────────────────────
 
 export interface TacticFamilyDef {
-  /** Card-header title / filter label. */
+  /** Card-header title / comparison-tooltip label (Title Case, e.g. "Hanging piece"). */
   name: string;
   family: TacticFamily;
+  /** Mechanism group this family belongs to (filter panel sectioning). */
+  group: TacticGroupKey;
+  /** Kebab-case label shown on the filter chip (e.g. "hanging-piece"). */
+  chipLabel: string;
   /** One-line explanation for the comparison tooltip's first paragraph. */
   definition: string;
   /** All motif strings that belong to this family (must match FAMILY_TO_MOTIF_INTS). */
@@ -134,68 +160,73 @@ export interface TacticFamilyDef {
 }
 
 /**
- * The 10 tactic families in display order. The motifs arrays mirror the backend
- * FAMILY_TO_MOTIF_INTS mapping in library_repository.py (plan 129-04 contract).
- * Dropped combinations motif strings (sacrifice, deflection, etc.) belong to no family.
+ * The 10 tactic families in filter display order (mechanism-grouped, Quick 260620-onv).
+ * Array order doubles as the chip order within each group — the filter panel groups
+ * these by `group` preserving this order. The comparison grid resolves families by
+ * `.find(f => f.family === ...)` and renders in server order, so it is unaffected by
+ * this ordering. The motifs arrays mirror the backend FAMILY_TO_MOTIF_INTS mapping in
+ * library_repository.py (plan 129-04 contract). Dropped combinations motif strings
+ * (sacrifice, deflection, etc.) belong to no family.
  */
 export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
+  // ── Piece Attacks ──
   {
     name: 'Fork',
     family: 'fork',
+    group: 'piece_attacks',
+    chipLabel: 'fork',
     definition: 'A single piece attacks two or more enemy pieces at the same time.',
     motifs: ['fork'],
   },
   {
-    name: 'Skewer',
-    family: 'skewer',
-    definition: 'A valuable piece is forced to move, leaving a less valuable piece behind it undefended.',
-    motifs: ['skewer'],
-  },
-  {
     name: 'Pin',
     family: 'pin',
+    group: 'piece_attacks',
+    chipLabel: 'pin',
     definition: 'A piece cannot move without exposing a more valuable piece behind it to capture.',
     motifs: ['pin'],
   },
   {
+    name: 'Skewer',
+    family: 'skewer',
+    group: 'piece_attacks',
+    chipLabel: 'skewer',
+    definition: 'A valuable piece is forced to move, leaving a less valuable piece behind it undefended.',
+    motifs: ['skewer'],
+  },
+  {
     name: 'X-ray',
     family: 'x_ray',
+    group: 'piece_attacks',
+    chipLabel: 'x-ray',
     definition: 'A piece exerts indirect pressure through an enemy piece, threatening the square or piece behind it.',
     motifs: ['x-ray'],
   },
   {
-    name: 'Double check',
-    family: 'double_check',
-    definition: 'The king is placed in check by two pieces simultaneously, leaving only a king move as the reply.',
-    motifs: ['double-check'],
-  },
-  {
-    name: 'Discovered check',
-    family: 'discovered_check',
-    definition: 'Moving one piece uncovers a check delivered by the piece behind it, not the piece that moved.',
-    motifs: ['discovered-check'],
-  },
-  {
-    name: 'Discovered attack',
-    family: 'discovered_attack',
-    definition: 'Moving one piece uncovers an attack from the piece behind it.',
-    motifs: ['discovered-attack'],
-  },
-  {
-    name: 'Trapped piece',
-    family: 'trapped_piece',
-    definition: 'A piece has no safe square to move to and will be lost regardless of where it goes.',
-    motifs: ['trapped-piece'],
-  },
-  {
     name: 'Hanging piece',
     family: 'hanging',
+    group: 'piece_attacks',
+    chipLabel: 'hanging-piece',
     definition: 'An undefended piece that can be captured for free.',
     motifs: ['hanging-piece'],
   },
   {
-    name: 'Mate patterns',
+    name: 'Trapped piece',
+    family: 'trapped_piece',
+    group: 'piece_attacks',
+    chipLabel: 'trapped-piece',
+    definition: 'A piece has no safe square to move to and will be lost regardless of where it goes.',
+    motifs: ['trapped-piece'],
+  },
+  // ── Checkmate, Checks & Discoveries ──
+  // Mate leads the group (chip "checkmate"); the legend shows a single "checkmate"
+  // row rather than the nine named-mate motifs (Quick 260620-onv follow-up). Then
+  // the checks (double-check, discovered-check), then the pure discovery.
+  {
+    name: 'Checkmate',
     family: 'mate',
+    group: 'discoveries',
+    chipLabel: 'checkmate',
     definition: 'Recurring checkmate configurations such as back-rank, smothered, and corner mates.',
     motifs: [
       'back-rank-mate',
@@ -209,19 +240,70 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
       'mate',
     ],
   },
+  {
+    name: 'Double check',
+    family: 'double_check',
+    group: 'discoveries',
+    chipLabel: 'double-check',
+    definition: 'The king is placed in check by two pieces simultaneously, leaving only a king move as the reply.',
+    motifs: ['double-check'],
+  },
+  {
+    name: 'Discovered check',
+    family: 'discovered_check',
+    group: 'discoveries',
+    chipLabel: 'discovered-check',
+    definition: 'Moving one piece uncovers a check delivered by the piece behind it, not the piece that moved.',
+    motifs: ['discovered-check'],
+  },
+  {
+    name: 'Discovered attack',
+    family: 'discovered_attack',
+    group: 'discoveries',
+    chipLabel: 'discovered-attack',
+    definition: 'Moving one piece uncovers an attack from the piece behind it.',
+    motifs: ['discovered-attack'],
+  },
 ];
 
 /**
  * Derived mapping from motif string to its TacticFamily key.
  * Built by flattening TACTIC_COMPARISON_FAMILIES — no manual duplication.
+ * Each family's `chipLabel` is also registered as a resolvable key so the
+ * filter-panel legend (keyed on chipLabel) resolves icon/color — this is what
+ * lets the synthetic "checkmate" label map to the `mate` family even though it
+ * is not a backend motif string (Quick 260620-onv). For single-motif families
+ * chipLabel already equals the motif, so the extra key is a harmless no-op.
  * Dropped combinations motif strings (sacrifice, deflection, etc.) map to no family;
  * consumers already guard `family == null`.
  */
 export const TACTIC_FAMILY_FOR_MOTIF: Record<string, TacticFamily> = Object.fromEntries(
-  TACTIC_COMPARISON_FAMILIES.flatMap(({ family, motifs }) =>
-    motifs.map((motif) => [motif, family]),
+  TACTIC_COMPARISON_FAMILIES.flatMap(({ family, motifs, chipLabel }) =>
+    [...motifs, chipLabel].map((key) => [key, family]),
   ),
 );
+
+// ─── Motif display helpers (cards, chips, tooltips) ────────────────────────────
+
+/**
+ * Display label for a tactic motif. Every mate-family motif (back-rank-mate,
+ * smothered-mate, …, mate) collapses to a single "checkmate" label — the game and
+ * flaw cards do not distinguish named-mate subtypes (Quick 260620-onv). All other
+ * motifs render as their own kebab string.
+ */
+export function tacticMotifLabel(motif: string): string {
+  return TACTIC_FAMILY_FOR_MOTIF[motif] === 'mate' ? 'checkmate' : motif;
+}
+
+/**
+ * Definition paired with tacticMotifLabel: mate-family motifs share the generic
+ * "checkmate" copy so the collapsed "checkmate" label never shows a subtype-specific
+ * sentence. Falls back to the raw motif string when no definition exists.
+ */
+export function tacticMotifDefinition(motif: string): string {
+  const key = TACTIC_FAMILY_FOR_MOTIF[motif] === 'mate' ? 'checkmate' : motif;
+  return TACTIC_MOTIF_DEFINITIONS[key] ?? motif;
+}
 
 // ─── Stat helpers (shared by the grid + tooltips) ──────────────────────────────
 

@@ -65,9 +65,13 @@ class FlawMarker(BaseModel):
     # allowed_* fields: tactic allowed to the flaw-maker's opponent (refutation PV)
     allowed_tactic_motif: str | None = None  # motif name string, or None when below confidence gate
     allowed_tactic_confidence: int | None = None  # raw confidence int (0-100), or None when gated
+    # 0-based ply depth of the allowed tactic; None when its motif chip is hidden.
+    allowed_tactic_depth: int | None = None
     # missed_* fields: tactic the flaw-maker missed (the "instead-of" PV, flaw_ply PV)
     missed_tactic_motif: str | None = None  # motif name string, or None when below confidence gate
     missed_tactic_confidence: int | None = None  # raw confidence int (0-100), or None when gated
+    # 0-based ply depth of the missed tactic; None when its motif chip is hidden.
+    missed_tactic_depth: int | None = None
 
 
 class PhaseTransitions(BaseModel):
@@ -184,8 +188,13 @@ class FlawListItem(BaseModel):
     # which fields to surface in the chip and comparison; 128 just exposes both labeled.
     allowed_tactic_motif: str | None = None
     allowed_tactic_confidence: int | None = None
+    # 0-based ply depth of each tactic; None when the corresponding motif chip is
+    # hidden (gated identically to *_tactic_motif). Frontend renders depth+1 (1..12)
+    # as a badge on the matching miniboard arrow.
+    allowed_tactic_depth: int | None = None
     missed_tactic_motif: str | None = None
     missed_tactic_confidence: int | None = None
+    missed_tactic_depth: int | None = None
 
 
 class LibraryFlawsResponse(BaseModel):
@@ -249,7 +258,7 @@ class TagDistribution(BaseModel):
                             clock data carry no tempo tag. The Flaw-Stats panel must
                             show the unmeasured remainder (total M+B - sum(tempo))
                             rather than normalizing the three measured segments to 100%
-                            (per flaw-tag-naming.md §"Structural change").
+                            (per flaw-tag-definitions.md §"Structural rule: tempo is optional").
     phase_histogram       = count of flaws in each game phase (each flaw carries
                             exactly one phase tag).
     miss_rate             = miss M+B flaws / total M+B flaws; 0.0 when there are

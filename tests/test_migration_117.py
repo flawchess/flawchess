@@ -32,7 +32,13 @@ from alembic.config import Config as AlembicConfig
 from sqlalchemy import text
 
 # ─── Constants (CLAUDE.md: no magic numbers) ─────────────────────────────────
-TARGET_REVISION: str = "20260613120000"
+# Re-upgrade must restore the FULL schema (true head), not just Phase 117. The
+# downgrade below drops every migration from head down to BASE_REVISION on this
+# worker's shared per-run DB; re-upgrading only to the 117 revision would leave
+# later columns (e.g. games.entry_eval_lease_expiry, Phase 123) missing, breaking
+# every subsequent ORM games insert that lands on the same xdist worker (flaky
+# UndefinedColumnError). Use "head" to match test_migration_91/116.
+TARGET_REVISION: str = "head"
 BASE_REVISION: str = "20260612120000"  # down_revision of our migration (Phase 116 head)
 
 # Index names added by this migration

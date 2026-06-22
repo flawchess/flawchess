@@ -31,7 +31,7 @@ from sqlalchemy import event as sa_event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.main import app
-from app.schemas.library import LibraryFlawsResponse
+from app.schemas.library import LibraryFlawsResponse, LibraryGamesResponse
 
 # ---------------------------------------------------------------------------
 # Plan 109-03: payload threshold constant (D-05 — no magic number)
@@ -1181,7 +1181,11 @@ class TestGetLibraryFlawsTacticParamThreading:
             ) as client:
                 resp = await client.get(
                     "/api/library/flaws",
-                    params={"tactic_orientation": "missed", "max_tactic_depth": 6},
+                    params={
+                        "tactic_orientation": "missed",
+                        "min_tactic_depth": 0,
+                        "max_tactic_depth": 5,
+                    },
                     headers=flaws_test_state["headers_a"],
                 )
         assert resp.status_code == 200
@@ -1189,7 +1193,9 @@ class TestGetLibraryFlawsTacticParamThreading:
         assert spy.await_args is not None
         kwargs = spy.await_args.kwargs
         assert kwargs["tactic_orientation"] == "missed"
-        assert kwargs["max_tactic_depth"] == 6
+        # Quick 260620-l5k: depth is now a [min, max] range; 0 must be accepted (ge=0).
+        assert kwargs["min_tactic_depth"] == 0
+        assert kwargs["max_tactic_depth"] == 5
 
     @pytest.mark.asyncio
     async def test_orientation_defaults_to_either_and_depth_to_none(
@@ -1209,6 +1215,7 @@ class TestGetLibraryFlawsTacticParamThreading:
         assert spy.await_args is not None
         kwargs = spy.await_args.kwargs
         assert kwargs["tactic_orientation"] == "either"
+        assert kwargs["min_tactic_depth"] is None
         assert kwargs["max_tactic_depth"] is None
 
     @pytest.mark.asyncio
@@ -1221,6 +1228,79 @@ class TestGetLibraryFlawsTacticParamThreading:
         ) as client:
             resp = await client.get(
                 "/api/library/flaws",
+                params={"tactic_orientation": "bogus"},
+                headers=flaws_test_state["headers_a"],
+            )
+        assert resp.status_code == 422
+
+
+class TestGetLibraryGamesTacticParamThreading:
+    """GET /library/games must forward the tactic filter params (Quick 260620-pza)."""
+
+    @pytest.mark.asyncio
+    async def test_tactic_params_forwarded_to_service(
+        self, flaws_test_state: dict[str, Any]
+    ) -> None:
+        """Explicit tactic query params reach the service call unchanged."""
+        empty = LibraryGamesResponse(games=[], matched_count=0, offset=0, limit=20)
+        with patch(
+            "app.routers.library.library_service.get_library_games",
+            new=AsyncMock(return_value=empty),
+        ) as spy:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.get(
+                    "/api/library/games",
+                    params={
+                        "tactic_family": ["fork", "skewer"],
+                        "tactic_orientation": "missed",
+                        "min_tactic_depth": 0,
+                        "max_tactic_depth": 5,
+                    },
+                    headers=flaws_test_state["headers_a"],
+                )
+        assert resp.status_code == 200
+        assert spy.await_count == 1
+        assert spy.await_args is not None
+        kwargs = spy.await_args.kwargs
+        assert kwargs["tactic_families"] == ["fork", "skewer"]
+        assert kwargs["tactic_orientation"] == "missed"
+        assert kwargs["min_tactic_depth"] == 0
+        assert kwargs["max_tactic_depth"] == 5
+
+    @pytest.mark.asyncio
+    async def test_tactic_params_default_when_omitted(
+        self, flaws_test_state: dict[str, Any]
+    ) -> None:
+        """Omitting the params yields no family filter, Either orientation, no depth bound."""
+        empty = LibraryGamesResponse(games=[], matched_count=0, offset=0, limit=20)
+        with patch(
+            "app.routers.library.library_service.get_library_games",
+            new=AsyncMock(return_value=empty),
+        ) as spy:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.get("/api/library/games", headers=flaws_test_state["headers_a"])
+        assert resp.status_code == 200
+        assert spy.await_args is not None
+        kwargs = spy.await_args.kwargs
+        assert kwargs["tactic_families"] is None
+        assert kwargs["tactic_orientation"] == "either"
+        assert kwargs["min_tactic_depth"] is None
+        assert kwargs["max_tactic_depth"] is None
+
+    @pytest.mark.asyncio
+    async def test_invalid_orientation_rejected_at_http_boundary(
+        self, flaws_test_state: dict[str, Any]
+    ) -> None:
+        """A value outside the Literal is 422-rejected before the service runs."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/library/games",
                 params={"tactic_orientation": "bogus"},
                 headers=flaws_test_state["headers_a"],
             )

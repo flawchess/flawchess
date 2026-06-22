@@ -29,22 +29,36 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+/**
+ * Render FlawFilterControl and expand the Context section so family/tag testids are
+ * accessible. Use this helper in any test that needs Context tags or family groups.
+ */
+function renderExpanded(props: typeof defaultProps & Record<string, unknown> = defaultProps) {
+  render(<FlawFilterControl {...props} />);
+  fireEvent.click(screen.getByTestId('filter-flaw-context-toggle'));
+}
+
 describe('FlawFilterControl', () => {
   describe('tactic motif family (Phase 126)', () => {
     it('hides the tactic section by default (showTacticFilter unset)', () => {
       render(<FlawFilterControl {...defaultProps} />);
-      expect(screen.queryByTestId('filter-flaw-family-tactic')).toBeNull();
+      expect(screen.queryByTestId('filter-flaw-tactic-group-piece_attacks')).toBeNull();
     });
 
-    it('renders all ten family buttons when showTacticFilter is set', () => {
+    it('renders the two mechanism groups and all ten family buttons when showTacticFilter is set', () => {
       render(<FlawFilterControl {...defaultProps} showTacticFilter />);
-      expect(screen.getByTestId('filter-flaw-family-tactic')).toBeTruthy();
+      for (const key of ['piece_attacks', 'discoveries']) {
+        expect(screen.getByTestId(`filter-flaw-tactic-group-${key}`)).toBeTruthy();
+      }
       for (const fam of [
         'fork', 'skewer', 'pin', 'x_ray', 'double_check', 'discovered_check',
         'discovered_attack', 'trapped_piece', 'hanging', 'mate',
       ]) {
         expect(screen.getByTestId(`filter-flaw-tactic-${fam}`)).toBeTruthy();
       }
+      // Chips read kebab-case; mate chip relabeled "checkmate" (Quick 260620-onv).
+      expect(screen.getByTestId('filter-flaw-tactic-hanging').textContent).toBe('hanging-piece');
+      expect(screen.getByTestId('filter-flaw-tactic-mate').textContent).toBe('checkmate');
     });
 
     it('all families are off (aria-pressed=false) by default', () => {
@@ -81,20 +95,22 @@ describe('FlawFilterControl', () => {
     });
   });
 
+  // Severity moved inside the collapsed Context section (Quick 260620-mjh follow-up):
+  // it now lives on top of the tag families and is hidden until Context is expanded.
   describe('severity buttons', () => {
-    it('renders both severity buttons', () => {
+    it('hides severity buttons until Context is expanded', () => {
       render(<FlawFilterControl {...defaultProps} />);
+      expect(screen.queryByTestId('filter-flaw-severity-blunder')).toBeNull();
+    });
+
+    it('renders both severity buttons after expanding Context', () => {
+      renderExpanded();
       expect(screen.getByTestId('filter-flaw-severity-blunder')).toBeTruthy();
       expect(screen.getByTestId('filter-flaw-severity-mistake')).toBeTruthy();
     });
 
     it('severity buttons reflect active state via aria-pressed', () => {
-      render(
-        <FlawFilterControl
-          {...defaultProps}
-          severity={['blunder']}
-        />,
-      );
+      renderExpanded({ ...defaultProps, severity: ['blunder'] });
       const blunderBtn = screen.getByTestId('filter-flaw-severity-blunder');
       const mistakeBtn = screen.getByTestId('filter-flaw-severity-mistake');
       expect(blunderBtn.getAttribute('aria-pressed')).toBe('true');
@@ -103,33 +119,21 @@ describe('FlawFilterControl', () => {
 
     it('clicking an inactive severity button calls onSeverityChange', () => {
       const onSeverityChange = vi.fn();
-      render(
-        <FlawFilterControl
-          {...defaultProps}
-          severity={['blunder']}
-          onSeverityChange={onSeverityChange}
-        />,
-      );
+      renderExpanded({ ...defaultProps, severity: ['blunder'], onSeverityChange });
       fireEvent.click(screen.getByTestId('filter-flaw-severity-mistake'));
       expect(onSeverityChange).toHaveBeenCalledWith(['blunder', 'mistake']);
     });
 
     it('deselecting the last active severity yields [] (both shown — no guard)', () => {
       const onSeverityChange = vi.fn();
-      render(
-        <FlawFilterControl
-          {...defaultProps}
-          severity={['blunder']}
-          onSeverityChange={onSeverityChange}
-        />,
-      );
+      renderExpanded({ ...defaultProps, severity: ['blunder'], onSeverityChange });
       // Clicking the only active severity clears it — empty severity = both shown.
       fireEvent.click(screen.getByTestId('filter-flaw-severity-blunder'));
       expect(onSeverityChange).toHaveBeenCalledWith([]);
     });
 
     it('defaults render both severity buttons inactive (empty severity = both shown)', () => {
-      render(<FlawFilterControl {...defaultProps} severity={[]} />);
+      renderExpanded({ ...defaultProps, severity: [] });
       expect(
         screen.getByTestId('filter-flaw-severity-blunder').getAttribute('aria-pressed'),
       ).toBe('false');
@@ -140,16 +144,16 @@ describe('FlawFilterControl', () => {
   });
 
   describe('tag family groups', () => {
-    it('renders all 4 family groups (incl. Game Phase)', () => {
-      render(<FlawFilterControl {...defaultProps} />);
+    it('renders all 4 family groups (incl. Game Phase) after expanding Context', () => {
+      renderExpanded();
       expect(screen.getByTestId('filter-flaw-family-tempo')).toBeTruthy();
       expect(screen.getByTestId('filter-flaw-family-opportunity')).toBeTruthy();
       expect(screen.getByTestId('filter-flaw-family-impact')).toBeTruthy();
       expect(screen.getByTestId('filter-flaw-family-phase')).toBeTruthy();
     });
 
-    it('renders all 7 non-phase tag buttons', () => {
-      render(<FlawFilterControl {...defaultProps} />);
+    it('renders all 7 non-phase tag buttons after expanding Context', () => {
+      renderExpanded();
       const tagButtons = [
         'filter-flaw-tag-low-clock',
         'filter-flaw-tag-hasty',
@@ -164,8 +168,8 @@ describe('FlawFilterControl', () => {
       }
     });
 
-    it('renders the 3 phase tag buttons', () => {
-      render(<FlawFilterControl {...defaultProps} />);
+    it('renders the 3 phase tag buttons after expanding Context', () => {
+      renderExpanded();
       expect(screen.getByTestId('filter-flaw-tag-opening')).toBeTruthy();
       expect(screen.getByTestId('filter-flaw-tag-middlegame')).toBeTruthy();
       expect(screen.getByTestId('filter-flaw-tag-endgame')).toBeTruthy();
@@ -173,38 +177,34 @@ describe('FlawFilterControl', () => {
 
     it('toggling a phase tag calls onTagChange with the tag added', () => {
       const onTagChange = vi.fn();
-      render(<FlawFilterControl {...defaultProps} onTagChange={onTagChange} />);
+      renderExpanded({ ...defaultProps, onTagChange });
       fireEvent.click(screen.getByTestId('filter-flaw-tag-middlegame'));
       expect(onTagChange).toHaveBeenCalledWith(['middlegame']);
     });
 
     it('toggling an unselected tag calls onTagChange with the tag added', () => {
       const onTagChange = vi.fn();
-      render(<FlawFilterControl {...defaultProps} onTagChange={onTagChange} />);
+      renderExpanded({ ...defaultProps, onTagChange });
       fireEvent.click(screen.getByTestId('filter-flaw-tag-miss'));
       expect(onTagChange).toHaveBeenCalledWith(['miss']);
     });
 
     it('toggling a selected tag calls onTagChange with the tag removed', () => {
       const onTagChange = vi.fn();
-      render(
-        <FlawFilterControl
-          {...defaultProps}
-          tags={['miss', 'reversed'] as FlawTag[]}
-          onTagChange={onTagChange}
-        />,
-      );
+      renderExpanded({
+        ...defaultProps,
+        tags: ['miss', 'reversed'] as FlawTag[],
+        onTagChange,
+      });
       fireEvent.click(screen.getByTestId('filter-flaw-tag-miss'));
       expect(onTagChange).toHaveBeenCalledWith(['reversed']);
     });
 
     it('tag buttons have aria-pressed reflecting selection', () => {
-      render(
-        <FlawFilterControl
-          {...defaultProps}
-          tags={['reversed'] as FlawTag[]}
-        />,
-      );
+      renderExpanded({
+        ...defaultProps,
+        tags: ['reversed'] as FlawTag[],
+      });
       expect(screen.getByTestId('filter-flaw-tag-reversed').getAttribute('aria-pressed')).toBe('true');
       expect(screen.getByTestId('filter-flaw-tag-miss').getAttribute('aria-pressed')).toBe('false');
     });
@@ -212,7 +212,7 @@ describe('FlawFilterControl', () => {
 
   describe('canonical tag names', () => {
     it('renders the raw lowercase-with-dash tag name, not a title-cased label', () => {
-      render(<FlawFilterControl {...defaultProps} />);
+      renderExpanded();
       const lucky = screen.getByTestId('filter-flaw-tag-lucky');
       const lowClock = screen.getByTestId('filter-flaw-tag-low-clock');
       expect(lucky.textContent).toContain('lucky');
@@ -223,7 +223,7 @@ describe('FlawFilterControl', () => {
     });
 
     it('every non-phase tag button shows its canonical lowercase-with-dash name', () => {
-      render(<FlawFilterControl {...defaultProps} />);
+      renderExpanded();
       const canonical: FlawTag[] = [
         'low-clock', 'hasty', 'unrushed', 'miss', 'lucky', 'reversed', 'squandered',
       ];
@@ -260,7 +260,7 @@ describe('FlawFilterControl', () => {
 
   describe('accessibility', () => {
     it('family groups have correct role and aria-label', () => {
-      render(<FlawFilterControl {...defaultProps} />);
+      renderExpanded();
       const tempoGroup = screen.getByTestId('filter-flaw-family-tempo');
       expect(tempoGroup.getAttribute('role')).toBe('group');
       expect(tempoGroup.getAttribute('aria-label')).toBe('Timing tag filters');
@@ -273,10 +273,68 @@ describe('FlawFilterControl', () => {
     });
 
     it('tag buttons have aria-label', () => {
-      render(<FlawFilterControl {...defaultProps} />);
+      renderExpanded();
       const btn = screen.getByTestId('filter-flaw-tag-miss');
       expect(btn.getAttribute('aria-label')).toBe('Filter flaws by tag: miss');
     });
 
+  });
+
+  describe('context collapse (Quick 260620-mjh)', () => {
+    it('Context family groups are hidden by default', () => {
+      render(<FlawFilterControl {...defaultProps} />);
+      expect(screen.queryByTestId('filter-flaw-family-tempo')).toBeNull();
+    });
+
+    it('the toggle exists with aria-expanded="false" by default', () => {
+      render(<FlawFilterControl {...defaultProps} />);
+      const toggle = screen.getByTestId('filter-flaw-context-toggle');
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('aria-expanded becomes "true" after clicking the toggle', () => {
+      render(<FlawFilterControl {...defaultProps} />);
+      const toggle = screen.getByTestId('filter-flaw-context-toggle');
+      fireEvent.click(toggle);
+      expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('clicking the toggle reveals Context family groups', () => {
+      render(<FlawFilterControl {...defaultProps} />);
+      fireEvent.click(screen.getByTestId('filter-flaw-context-toggle'));
+      expect(screen.getByTestId('filter-flaw-family-tempo')).toBeTruthy();
+      expect(screen.getByTestId('filter-flaw-tag-miss')).toBeTruthy();
+    });
+
+    it('clicking the toggle twice hides family groups again', () => {
+      render(<FlawFilterControl {...defaultProps} />);
+      const toggle = screen.getByTestId('filter-flaw-context-toggle');
+      fireEvent.click(toggle);
+      fireEvent.click(toggle);
+      expect(screen.queryByTestId('filter-flaw-family-tempo')).toBeNull();
+    });
+
+    it('count badge shows "Context · 2" when 2 Context tags are selected', () => {
+      render(
+        <FlawFilterControl
+          {...defaultProps}
+          tags={['miss', 'opening'] as FlawTag[]}
+        />,
+      );
+      const toggle = screen.getByTestId('filter-flaw-context-toggle');
+      expect(toggle.textContent).toContain('Context · 2');
+    });
+
+    it('no count badge when no Context tags are selected', () => {
+      render(<FlawFilterControl {...defaultProps} tags={[] as FlawTag[]} />);
+      const toggle = screen.getByTestId('filter-flaw-context-toggle');
+      expect(toggle.textContent).toContain('Context');
+      expect(toggle.textContent).not.toContain('·');
+    });
+
+    it('Context toggle is present even when showTacticFilter is false (Games tab)', () => {
+      render(<FlawFilterControl {...defaultProps} />);
+      expect(screen.getByTestId('filter-flaw-context-toggle')).toBeTruthy();
+    });
   });
 });

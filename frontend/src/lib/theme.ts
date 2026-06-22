@@ -111,6 +111,29 @@ export const TAC_HANGING_BG = TAC_BLUE_BG;
 export const TAC_MATE = TAC_BLUE;
 export const TAC_MATE_BG = TAC_BLUE_BG;
 
+// Orientation-coded tactic chip colors (Games + Flaw card). Missed motifs render
+// in blue, Allowed motifs in a light red, so the two orientations read apart at a
+// glance independent of motif family. Blue is reserved for missed tactics; allowed
+// must never reuse it. Both stay light enough to keep the chip text/border legible
+// on the charcoal card. BG variants end in `/ 0.15)` so the shared HIGHLIGHT_BG
+// helper (alpha 0.15 → 0.3 on hover) still applies.
+export const TAC_MISSED = 'oklch(0.70 0.15 258)'; // light blue (matches TAC_ALLOWED lightness)
+export const TAC_MISSED_BG = 'oklch(0.70 0.15 258 / 0.15)';
+// Allowed motifs render in a light red whose lightness/chroma match TAC_MISSED so the
+// two orientations read as a matched pair (only the hue differs). Used by both the
+// TacticMotifChip and the eval chart tooltip so colors match across surfaces.
+export const TAC_ALLOWED = 'oklch(0.70 0.15 25)'; // light red
+export const TAC_ALLOWED_BG = 'oklch(0.70 0.15 25 / 0.15)';
+export const TAC_ALLOWED_BORDER = 'oklch(0.70 0.15 25 / 0.30)';
+
+// Lighter missed/allowed variants used only for the miniboard depth-number badges,
+// which sit on top of the blue best-move and red severity arrows. The chip-tier
+// lightness (0.70) reads muddy on the same-hue arrow, so the badge numbers are
+// raised to ~0.84 for contrast against the arrow fill (the black outline does the
+// rest). Hue/chroma match TAC_MISSED/TAC_ALLOWED so they stay the same colors.
+export const TAC_MISSED_LABEL = 'oklch(0.84 0.13 258)'; // lighter blue
+export const TAC_ALLOWED_LABEL = 'oklch(0.84 0.13 25)'; // lighter red
+
 // D-05 active-filter ring — applied to TagChip when its tag matches an active
 // useFlawFilterStore filter. Ring only: no fill, bold, or size change. The ring
 // color is applied inline (per-family) so only the Tailwind ring-width + offset
@@ -238,7 +261,7 @@ export const ARROW_NEUTRAL = '#6B7280';  // Tailwind gray-500 / matches WDL_BORD
 // built-in alpha so it reads as a translucent "engine suggestion" pointer — visually
 // secondary to the red flaw-move arrow it sits beside on the Flaw card, and a calm
 // overlay on the scrubbed Game-card board. rgba (not oklch) so the alpha is explicit.
-export const BEST_MOVE_ARROW = 'rgba(59, 130, 246, 0.6)';  // Tailwind blue-500 @ 60%
+export const BEST_MOVE_ARROW = 'rgba(59, 130, 246, 0.8)';  // Tailwind blue-500 @ 80%
 
 // Endgame ELO Timeline volume bars (Phase 57.1; rebuilt Phase 87.5).
 // Muted gray with alpha so the

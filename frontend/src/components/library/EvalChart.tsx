@@ -36,9 +36,10 @@ import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import { TAG_ICONS, getTagColor } from '@/lib/tagVisuals';
 import {
   TACTIC_FAMILY_FOR_MOTIF,
-  TACTIC_FAMILY_COLORS,
   TACTIC_FAMILY_ICON,
+  tacticMotifLabel,
 } from '@/lib/tacticComparisonMeta';
+import type { TacticFamily } from '@/lib/tacticComparisonMeta';
 import {
   EVAL_CHART_AREA_BLACK_AHEAD,
   EVAL_CHART_AREA_WHITE_AHEAD,
@@ -49,6 +50,8 @@ import {
   SEV_BLUNDER,
   SEV_INACCURACY,
   SEV_MISTAKE,
+  TAC_ALLOWED,
+  TAC_MISSED,
 } from '@/lib/theme';
 import type {
   EvalPoint,
@@ -615,6 +618,19 @@ export function EvalChart({
     if (!isTouch) sliderRef.current?.focus({ preventScroll: true });
   }, [commandSeq, commandedPly, isTouch]);
 
+  // Opened parked on a flaw ply (FlawCard modal via initialPly): the slider already
+  // sits on the flaw ply, but the tooltip is interaction-gated, so nothing shows on
+  // open. Surface it once on mount — focus on fine pointers for blur-to-dismiss; the
+  // outside-touch handler dismisses it on touch. Mirrors the commandedPly reveal.
+  // The Games subtab passes no initialPly, so this is a no-op there.
+  const didRevealInitialTooltip = useRef(false);
+  useEffect(() => {
+    if (initialPly == null || didRevealInitialTooltip.current) return;
+    didRevealInitialTooltip.current = true;
+    setSliderFocused(true);
+    if (!isTouch) sliderRef.current?.focus({ preventScroll: true });
+  }, [initialPly, isTouch]);
+
   // Tooltip content for activePly (original floating-tooltip content: move + eval,
   // clock + move time, M/B flaw detail — inaccuracy plies show eval only).
   const activeSan = moves[activePly] ?? null;
@@ -623,23 +639,28 @@ export function EvalChart({
   // The "Eval:" label is rendered as a Cpu icon in the tooltip (see below).
   const evalStr = activeSan?.endsWith('#') ? 'Checkmate' : formatEvalBare(activePoint);
   const moveLabel = formatMoveLabel(activePly, activeSan);
-  // Flaw marker at activePly, shown only when its dot is visible: M/B always,
-  // inaccuracy only when revealed (highlighted/cycled) — matching the dot renderer's
-  // reveal rule so a hidden inaccuracy dot never gets a flaw-detail line.
-  const activeMarkerAny = allMarkerMap.get(activePly);
-  const activeMarker =
-    activeMarkerAny != null &&
-    (activeMarkerAny.severity !== 'inaccuracy' || (highlightedPlies?.has(activePly) ?? false))
-      ? activeMarkerAny
-      : undefined;
+  // Flaw marker at activePly — all severities (blunder/mistake/inaccuracy) show their
+  // flaw-detail line in the tooltip whenever the scrub lands on a flaw ply.
+  const activeMarker = allMarkerMap.get(activePly);
   const tooltipTags = activeMarker ? activeMarker.tags.filter((t) => !PHASE_TAGS.has(t)) : [];
-  // Tactic motif for the active marker (Phase 126 UAT) — listed first in the
-  // tooltip, above the flaw tags. Beta-gated and only when a known family maps.
-  // Phase 128 D-07: uses allowed_tactic_motif (Phase 129 will wire orientation toggle).
-  const tooltipTacticFamily =
-    betaEnabled && activeMarker?.allowed_tactic_motif != null
-      ? TACTIC_FAMILY_FOR_MOTIF[activeMarker.allowed_tactic_motif]
-      : undefined;
+  // Tactic motifs for the active marker (Phase 126 UAT) — listed first in the tooltip,
+  // above the flaw tags. Beta-gated, family-mapped only. Both orientations are listed
+  // with a "missed:"/"allowed:" prefix so the tooltip matches the dual-orientation chips
+  // (allowed before missed, mirroring the LibraryGameCard chip row ordering).
+  const tooltipTactics: { orientation: 'missed' | 'allowed'; motif: string; family: TacticFamily }[] =
+    (() => {
+      if (!betaEnabled || activeMarker == null) return [];
+      const out: { orientation: 'missed' | 'allowed'; motif: string; family: TacticFamily }[] = [];
+      const add = (raw: string | null, orientation: 'missed' | 'allowed'): void => {
+        if (raw == null) return;
+        const family = TACTIC_FAMILY_FOR_MOTIF[raw];
+        if (family == null) return;
+        out.push({ orientation, motif: raw, family });
+      };
+      add(activeMarker.allowed_tactic_motif, 'allowed');
+      add(activeMarker.missed_tactic_motif, 'missed');
+      return out;
+    })();
 
   // Active datapoint position as a fraction of the eval'd ply range. Plies in
   // chartSeries are contiguous and recharts' point scale (zero padding, zero margins)
@@ -841,7 +862,7 @@ export function EvalChart({
             }, ${hoverDriven ? '-50%' : '0'})`,
           }}
         >
-          <ChartTooltipBox className="bg-background/85 backdrop-blur-[2px] whitespace-nowrap">
+          <ChartTooltipBox className="bg-background/70 backdrop-blur-[2px] whitespace-nowrap">
             <div className="flex items-center gap-1 text-muted-foreground">
               <span>{moveLabel}</span>
               <span>&middot;</span>
@@ -877,22 +898,29 @@ export function EvalChart({
                     {activeMarker.severity.charAt(0).toUpperCase() + activeMarker.severity.slice(1)}
                   </span>
                 </div>
-                {(tooltipTacticFamily != null || tooltipTags.length > 0) && (
+                {(tooltipTactics.length > 0 || tooltipTags.length > 0) && (
                   <ul className="flex flex-col gap-0.5 text-muted-foreground">
-                    {/* Tactic motif listed first (Phase 126 UAT). Phase 128: allowed_tactic_motif. */}
-                    {tooltipTacticFamily != null && activeMarker.allowed_tactic_motif != null && (
-                      <li
-                        className="flex items-center gap-1.5"
-                        style={{ color: TACTIC_FAMILY_COLORS[tooltipTacticFamily].color }}
-                      >
-                        {(() => {
-                          const TacticIcon = TACTIC_FAMILY_ICON[tooltipTacticFamily];
-                          // Icon inherits the row color via currentColor.
-                          return <TacticIcon className="h-3 w-3 shrink-0" />;
-                        })()}
-                        {activeMarker.allowed_tactic_motif}
-                      </li>
-                    )}
+                    {/* Tactic motifs listed first (Phase 126 UAT), each prefixed with its
+                        missed/allowed orientation to match the dual-orientation chips. */}
+                    {tooltipTactics.map(({ orientation, motif, family }) => {
+                      const TacticIcon = TACTIC_FAMILY_ICON[family];
+                      // Orientation drives the row color (missed = blue, allowed = light
+                      // red), matching the dual-orientation TacticMotifChip. Blue is
+                      // reserved for missed tactics, so allowed must not reuse it.
+                      const orientationColor =
+                        orientation === 'allowed' ? TAC_ALLOWED : TAC_MISSED;
+                      return (
+                        <li
+                          key={`${orientation}-${motif}`}
+                          className="flex items-center gap-1.5"
+                          style={{ color: orientationColor }}
+                        >
+                          {/* Icon inherits the row color via currentColor. */}
+                          <TacticIcon className="h-3 w-3 shrink-0" />
+                          {orientation}: {tacticMotifLabel(motif)}
+                        </li>
+                      );
+                    })}
                     {tooltipTags.map((t) => {
                       const TagIcon = TAG_ICONS[t];
                       return (

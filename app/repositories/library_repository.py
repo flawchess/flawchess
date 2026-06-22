@@ -17,7 +17,7 @@ import datetime
 from collections.abc import Sequence
 from typing import Any, Literal
 
-from sqlalchemy import Select, Subquery, case, exists, func, or_, select, true
+from sqlalchemy import Select, Subquery, and_, case, exists, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
@@ -58,6 +58,24 @@ TacticOrientation = Literal["either", "missed", "allowed"]
 # FlawListItem rows without going through the service layer.
 # ---------------------------------------------------------------------------
 _TACTIC_CHIP_CONFIDENCE_MIN: int = 70  # 0-100 scale matching tactic_confidence column
+
+# Domain constants for the tactic depth range (Quick 260621-sm8).
+# These mirror DEPTH_MIN / DEPTH_MAX in frontend/src/lib/tacticDepth.ts and are
+# used by _tactic_controls_active to detect the "full-range = no depth filter" state.
+_TACTIC_DEPTH_FULL_MIN: int = 0
+_TACTIC_DEPTH_FULL_MAX: int = 11
+
+# Decision-anchored depth offset for the ALLOWED orientation (Quick 260621-qz9).
+# missed_tactic_depth and allowed_tactic_depth both store the RAW 0-based detector
+# loop index within their own PV. The missed PV starts at the decision board
+# (flaw_ply); the allowed PV is the opponent's refutation, which starts one ply
+# LATER (flaw_ply+1). When both depths are measured from the shared pre-flaw
+# decision board (as the miniboards and the difficulty filter do), an allowed
+# tactic at raw depth d sits one ply deeper than a missed tactic at the same raw
+# d. So the allowed column is shifted by +1 at read time to put both orientations
+# on one decision-anchored difficulty scale. Mirrors ALLOWED_DECISION_DEPTH_OFFSET
+# in frontend/src/lib/tacticDepth.ts. No DB change / backfill (Option A).
+ALLOWED_DECISION_DEPTH_OFFSET: int = 1
 
 # ---------------------------------------------------------------------------
 # Phase 129 Plan 04 — tactic motif family → int mapping (10-family taxonomy, G-01).
@@ -159,14 +177,18 @@ def _tactic_cols(
 
 def _tactic_orientation_pairs(
     orientation: TacticOrientation,
-) -> list[tuple[Any, Any, Any]]:
-    """Return list of (motif_col, conf_col, depth_col) triples for *orientation*.
+) -> list[tuple[Any, Any, Any, int]]:
+    """Return list of (motif_col, conf_col, depth_col, depth_offset) tuples.
 
     Phase 129 Plan 01 (D-05/D-08): shared resolver for depth-aware + either-aware
     filter sites. Returns:
-      "missed"  → [(missed_tactic_motif, missed_tactic_confidence, missed_tactic_depth)]
-      "allowed" → [(allowed_tactic_motif, allowed_tactic_confidence, allowed_tactic_depth)]
-      "either"  → both pairs (missed first, then allowed)
+      "missed"  → [(missed_tactic_motif, missed_tactic_confidence, missed_tactic_depth, 0)]
+      "allowed" → [(allowed_tactic_motif, allowed_tactic_confidence, allowed_tactic_depth, +1)]
+      "either"  → both tuples (missed first, then allowed)
+
+    Quick 260621-qz9: each tuple carries the decision-anchored depth offset for its
+    orientation — 0 for missed, ALLOWED_DECISION_DEPTH_OFFSET for allowed — so the
+    depth-range filter compares both orientations on one decision-anchored scale.
 
     Column selection is a pure Python branch; caller input is a closed Literal
     enum — never string interpolation (T-128-05 / T-129-01).
@@ -175,11 +197,13 @@ def _tactic_orientation_pairs(
         GameFlaw.missed_tactic_motif,
         GameFlaw.missed_tactic_confidence,
         GameFlaw.missed_tactic_depth,
+        0,
     )
     allowed = (
         GameFlaw.allowed_tactic_motif,
         GameFlaw.allowed_tactic_confidence,
         GameFlaw.allowed_tactic_depth,
+        ALLOWED_DECISION_DEPTH_OFFSET,
     )
     if orientation == "missed":
         return [missed]
@@ -189,24 +213,143 @@ def _tactic_orientation_pairs(
     return [missed, allowed]
 
 
-def _depth_ok(
+def _depth_in_range(
     depth_col: Any,
-    motif_col: Any,
+    min_tactic_depth: int | None,
     max_tactic_depth: int | None,
+    depth_offset: int = 0,
 ) -> Any:
-    """Return a SQLAlchemy boolean clause for the depth filter with mate exemption.
+    """Return a SQLAlchemy boolean clause bounding *depth_col* to an inclusive range.
 
-    Phase 129 Plan 01 (D-04/D-05): when max_tactic_depth is None, returns a
-    literal-true clause (no bound). Otherwise returns:
-        (depth_col <= max_tactic_depth) | motif_col.in_(FAMILY_TO_MOTIF_INTS["mate"])
+    Quick 260620-l5k (Phase 130): the depth filter is now a two-handle RANGE in
+    depth units (0-based ply, 0..11) instead of a single max cap. Returns:
+        (depth_col + offset >= min_tactic_depth) AND (depth_col + offset <= max_tactic_depth)
+    with each bound optional (None on a side = unbounded that side; both None =
+    literal-true, no filter).
 
-    The mate exemption ensures forced mates always pass regardless of depth slider
-    (D-04). Reuses FAMILY_TO_MOTIF_INTS["mate"] — no new constant (plan prohibition).
+    Quick 260621-qz9: *depth_offset* is the per-orientation decision-anchored
+    shift (0 for missed, ALLOWED_DECISION_DEPTH_OFFSET for allowed). The allowed
+    column stores the raw 0-based index within the opponent's refutation PV, which
+    starts one ply after the shared decision board; adding the offset puts allowed
+    and missed depths on the same decision-anchored scale so a range filter treats
+    equal-difficulty tactics equally. The column is shifted (not the bounds) so the
+    expression reads naturally and a 0 offset compiles to the bare column.
+
+    The Phase 129 D-04 mate exemption was REMOVED here (Quick 260620-l5k, user
+    decision "bound mates too"): forced mates now obey the depth range like every
+    other tactic, so a narrow range no longer leaks deep mates.
     """
-    if max_tactic_depth is None:
+    anchored = depth_col + depth_offset if depth_offset else depth_col
+    bounds: list[Any] = []
+    if min_tactic_depth is not None:
+        bounds.append(anchored >= min_tactic_depth)
+    if max_tactic_depth is not None:
+        bounds.append(anchored <= max_tactic_depth)
+    if not bounds:
         return true()
-    mate_ints = FAMILY_TO_MOTIF_INTS["mate"]
-    return (depth_col <= max_tactic_depth) | motif_col.in_(mate_ints)
+    return and_(*bounds)
+
+
+def _tactic_controls_active(
+    tactic_families: Sequence[str],
+    tactic_orientation: TacticOrientation,
+    min_tactic_depth: int | None,
+    max_tactic_depth: int | None,
+) -> bool:
+    """Return True when at least one tactic control departs from the all-inclusive default.
+
+    "All-inclusive default" means: no families selected (no family filter), orientation
+    is "either" (both slots in scope), and the depth range covers the full domain
+    [_TACTIC_DEPTH_FULL_MIN, _TACTIC_DEPTH_FULL_MAX] (both bounds None or equal to the
+    full-range endpoints). When all three controls are at defaults the caller should add
+    NO tactic clause so non-tactic flaws are included.
+
+    Quick 260621-sm8: previously depth+orientation predicates were gated inside
+    `if tactic_families:`, making them silent no-ops when no family was selected.
+    This helper is the single gating predicate so orientation and depth are
+    independently meaningful.
+    """
+    families_active = len(tactic_families) > 0
+    orientation_active = tactic_orientation != "either"
+    min_active = min_tactic_depth is not None and min_tactic_depth != _TACTIC_DEPTH_FULL_MIN
+    max_active = max_tactic_depth is not None and max_tactic_depth != _TACTIC_DEPTH_FULL_MAX
+    depth_active = min_active or max_active
+    return families_active or orientation_active or depth_active
+
+
+def tactic_slot_visible(
+    motif: int | None,
+    confidence: int | None,
+    depth: int | None,
+    *,
+    orientation_kind: Literal["missed", "allowed"],
+    tactic_families: Sequence[str],
+    tactic_orientation: TacticOrientation,
+    min_tactic_depth: int | None,
+    max_tactic_depth: int | None,
+) -> bool:
+    """Return True iff this tactic slot should be DISPLAYED for the active filter.
+
+    A slot is visible when ALL of the following hold:
+    1. The slot's orientation_kind is in scope under tactic_orientation
+       (missed in scope when orientation is "either" or "missed";
+        allowed in scope when orientation is "either" or "allowed").
+    2. Confidence is not None and >= _TACTIC_CHIP_CONFIDENCE_MIN.
+    3. Motif family: no families selected OR the slot's motif int is in the
+       union of FAMILY_TO_MOTIF_INTS for the selected families.
+    4. Depth range: full range (= no depth filter) OR (depth + offset) is in
+       [min_tactic_depth, max_tactic_depth] (inclusive, using the same +1
+       decision-anchored offset as _depth_in_range for the allowed slot).
+
+    Used at BOTH serialization sites (_query_flaws and _build_card) so the
+    confidence/family/depth/offset logic is never duplicated. The SQL row
+    predicate in build_flaw_filter_clauses must agree with this Python predicate
+    on "slot matches" — both rely on the same FAMILY_TO_MOTIF_INTS,
+    _TACTIC_CHIP_CONFIDENCE_MIN, ALLOWED_DECISION_DEPTH_OFFSET, and _depth_in_range
+    semantics. If either is changed, update the other.
+
+    Args:
+        motif: The raw integer motif stored in the DB column (None = no tactic).
+        confidence: The raw integer confidence stored in the DB column (None = no tactic).
+        depth: The raw 0-based depth stored in the DB column (None = no tactic).
+        orientation_kind: "missed" or "allowed" — which slot is being tested.
+        tactic_families: Active family filter (empty = no family restriction).
+        tactic_orientation: Active orientation filter ("either", "missed", "allowed").
+        min_tactic_depth / max_tactic_depth: Inclusive depth-range bounds (None = unbounded).
+    """
+    # 1. Orientation scope: the slot must be in scope for the requested orientation.
+    if orientation_kind == "missed" and tactic_orientation == "allowed":
+        return False
+    if orientation_kind == "allowed" and tactic_orientation == "missed":
+        return False
+
+    # 2. Confidence gate (subsumes the existing confidence >= 70 gate).
+    if confidence is None or confidence < _TACTIC_CHIP_CONFIDENCE_MIN:
+        return False
+
+    # 3. Family match (skip when no families selected — all motifs pass).
+    if tactic_families:
+        if motif is None:
+            return False
+        allowed_ints = {m for fam in tactic_families for m in FAMILY_TO_MOTIF_INTS.get(fam, [])}
+        if motif not in allowed_ints:
+            return False
+
+    # 4. Depth range (skip when full range is in effect — all depths pass).
+    min_active = min_tactic_depth is not None and min_tactic_depth != _TACTIC_DEPTH_FULL_MIN
+    max_active = max_tactic_depth is not None and max_tactic_depth != _TACTIC_DEPTH_FULL_MAX
+    if min_active or max_active:
+        if depth is None:
+            return False
+        # Apply the same decision-anchored offset as _depth_in_range.
+        offset = ALLOWED_DECISION_DEPTH_OFFSET if orientation_kind == "allowed" else 0
+        anchored = depth + offset
+        if min_tactic_depth is not None and anchored < min_tactic_depth:
+            return False
+        if max_tactic_depth is not None and anchored > max_tactic_depth:
+            return False
+
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -232,7 +375,8 @@ def build_flaw_filter_clauses(
     severity: Sequence[FlawSeverity],
     tags: Sequence[FlawTag],
     tactic_families: Sequence[str] = (),
-    orientation: TacticOrientation = "allowed",
+    orientation: TacticOrientation = "either",
+    min_tactic_depth: int | None = None,
     max_tactic_depth: int | None = None,
 ) -> list[ColumnElement[bool]]:
     """Return WHERE clauses filtering game_flaws rows (SEED-038 family-aware logic).
@@ -256,15 +400,21 @@ def build_flaw_filter_clauses(
         tactic_families: Tactic motif families to filter on. Empty = no tactic
                   filter. Expands via FAMILY_TO_MOTIF_INTS; unknown keys = no-op.
         orientation: Which tactic column set to filter on (Phase 128/129).
-                  "allowed" (default) → allowed_tactic_motif + allowed_tactic_confidence.
+                  "either" (default) → OR across both column sets (Phase 129 D-08).
+                    When all controls are at defaults, "either" + empty families + full
+                    depth range produces _tactic_controls_active=False and NO clause.
                   "missed"  → missed_tactic_motif  + missed_tactic_confidence.
-                  "either"  → OR across both column sets (Phase 129 D-08).
+                  "allowed" → allowed_tactic_motif + allowed_tactic_confidence.
                   FAMILY_TO_MOTIF_INTS and _TACTIC_CHIP_CONFIDENCE_MIN are reused
                   unchanged for all orientations. Orientation is a closed
                   Literal enum — never raw column-name interpolation (T-128-05/T-129-01).
-        max_tactic_depth: When set, restricts to flaws whose active orientation's
-                  depth column is <= max_tactic_depth (Phase 129 D-05). Forced
-                  mates are exempt regardless of depth (D-04). None = no bound.
+                  Quick 260621-sm8: default changed from "allowed" to "either" so
+                  callers that pass no tactic params (e.g. flaw_exists_from_table)
+                  still emit no tactic clause.
+        min_tactic_depth / max_tactic_depth: Inclusive depth-range bounds (0-based
+                  ply) on the active orientation's depth column (Quick 260620-l5k /
+                  Phase 130). Each side optional; None = unbounded that side. Mates
+                  obey the range too (the Phase 129 D-04 exemption was removed).
 
     Returns:
         A list of SQLAlchemy column expressions. Empty list = no flaw filter
@@ -313,28 +463,49 @@ def build_flaw_filter_clauses(
     if phase_tags:
         clauses.append(GameFlaw.phase.in_([_PHASE_INT[t] for t in phase_tags]))
 
-    # Tactic-motif family (Phase 126, Flaws-tab Tags panel): OR within the selected
-    # families (each family expands to its motif ints via FAMILY_TO_MOTIF_INTS).
-    # Flaw-level predicate, gated on the same confidence threshold as the displayed
-    # chip so the filter matches what the cards actually show (D-09). Empty = no
-    # filter. Only query_flaws passes this; the Games EXISTS (flaw_exists_from_table)
-    # deliberately omits it so tactic stays a flaw-level (not game-level) filter.
-    # Phase 128 D-09: orientation selects the matching column pair.
-    # Phase 129 D-05/D-08: max_tactic_depth bound + "either" OR across both column sets.
-    if tactic_families:
-        motif_ints = [m for fam in tactic_families for m in FAMILY_TO_MOTIF_INTS.get(fam, [])]
-        if motif_ints:
-            # _tactic_orientation_pairs returns 1 triple for missed/allowed, 2 for either.
-            # Each branch: motif.in_(ints) & confidence_gate & depth_ok (D-05).
-            pair_branches = []
-            for motif_col, conf_col, depth_col in _tactic_orientation_pairs(orientation):
-                branch = (
-                    motif_col.in_(motif_ints)
-                    & (conf_col >= _TACTIC_CHIP_CONFIDENCE_MIN)
-                    & _depth_ok(depth_col, motif_col, max_tactic_depth)
-                )
-                pair_branches.append(branch)
-            clauses.append(or_(*pair_branches))
+    # Tactic filter (Quick 260621-sm8 refactor): depth and orientation are now
+    # independently meaningful even without a family selection.
+    #
+    # BUG FIXED (260621-sm8): previously depth+orientation predicates were nested
+    # inside `if tactic_families:`, making them silent no-ops when no family was
+    # selected. The filter claimed to restrict by depth/orientation but did nothing
+    # unless a family chip was also active.
+    #
+    # New logic: when ANY tactic control is active (family, orientation, or depth),
+    # emit an OR-of-in-scope-slots row clause. Each in-scope slot (per the
+    # orientation parameter) contributes: (family-match, if families selected) AND
+    # (confidence >= threshold) AND (depth-in-range, if depth not full-range).
+    # When all controls are at defaults (_tactic_controls_active returns False),
+    # no tactic clause is emitted so non-tactic flaws are included.
+    #
+    # The SQL predicate here and tactic_slot_visible (the Python display predicate
+    # used at serialization time) must agree: same FAMILY_TO_MOTIF_INTS, same
+    # _TACTIC_CHIP_CONFIDENCE_MIN, same _depth_in_range offset semantics.
+    # See tactic_slot_visible docstring for the authoritative slot-match definition.
+    # Resolve family strings to motif ints first — unknown family keys produce
+    # empty lists (they do not contribute to the filter and are silently dropped,
+    # per test_unknown_tactic_family_adds_no_clause).
+    motif_ints = [m for fam in tactic_families for m in FAMILY_TO_MOTIF_INTS.get(fam, [])]
+    # Pass resolved (known) families as the families parameter so unknown-only
+    # selections don't trigger a tactic clause when orientation and depth are
+    # also at defaults. If orientation or depth are active, the clause is still
+    # emitted (orientation/depth work independently — Quick 260621-sm8 fix).
+    resolved_families: Sequence[str] = [
+        fam for fam in tactic_families if fam in FAMILY_TO_MOTIF_INTS
+    ]
+    if _tactic_controls_active(resolved_families, orientation, min_tactic_depth, max_tactic_depth):
+        # _tactic_orientation_pairs returns 1 tuple for missed/allowed, 2 for either.
+        # Each branch: (family-match, if families) & confidence_gate & depth_ok (if active).
+        pair_branches = []
+        for motif_col, conf_col, depth_col, depth_offset in _tactic_orientation_pairs(orientation):
+            branch: ColumnElement[bool] = conf_col >= _TACTIC_CHIP_CONFIDENCE_MIN
+            if motif_ints:
+                branch = motif_col.in_(motif_ints) & branch
+            branch = branch & _depth_in_range(
+                depth_col, min_tactic_depth, max_tactic_depth, depth_offset
+            )
+            pair_branches.append(branch)
+        clauses.append(or_(*pair_branches))
 
     return clauses
 
@@ -343,6 +514,10 @@ def flaw_exists_from_table(
     user_id: int,
     severity: Sequence[FlawSeverity],
     tags: Sequence[FlawTag],
+    tactic_families: Sequence[str] = (),
+    orientation: TacticOrientation = "either",
+    min_tactic_depth: int | None = None,
+    max_tactic_depth: int | None = None,
 ) -> ColumnElement[bool]:
     """Correlated EXISTS: True iff the game has >=1 flaw row satisfying the filter.
 
@@ -350,17 +525,30 @@ def flaw_exists_from_table(
     D-02 migration). Scopes to the authenticated user and the outer Game.id so
     cross-user leaks are impossible (T-108-07).
 
-    Returns true() when both severity and tags are empty — no filter = match all
-    games. This mirrors the Phase 106 None sentinel: callers that pass no filter
-    see no restriction added to the statement.
+    Returns true() when no filter family is active (severity, tags, AND tactics
+    all empty/default) — no filter = match all games. This mirrors the Phase 106
+    None sentinel: callers that pass no filter see no restriction added.
+
+    All filter families (severity, context tags, AND tactic motif/orientation/depth)
+    are ANDed onto the SAME game_flaws row via build_flaw_filter_clauses. This is the
+    single-row AND semantics the Flaws list uses (query_flaws): a game matches only
+    when ONE flaw satisfies every selected condition together — e.g. a flaw that is
+    BOTH a depth-1-2 fork AND low-clock, not a fork flaw plus a separate low-clock
+    flaw (Quick 260621 Games-tab tactic+context AND fix).
 
     Args:
         user_id: The authenticated user's ID — always included in the EXISTS
                  WHERE clause to prevent cross-user information disclosure.
         severity: Subset of ["mistake", "blunder"]. Empty = no severity filter.
         tags: Selected FlawTag values. Empty = no tag filter.
+        tactic_families: Tactic motif families to filter on. Empty = no filter.
+        orientation: Which tactic column set to filter on ("either"/"missed"/"allowed").
+        min_tactic_depth / max_tactic_depth: Inclusive depth-range bounds on the
+                 active orientation's depth column. None = unbounded that side.
     """
-    clauses = build_flaw_filter_clauses(severity, tags)
+    clauses = build_flaw_filter_clauses(
+        severity, tags, tactic_families, orientation, min_tactic_depth, max_tactic_depth
+    )
     if not clauses:
         # No filter — match all games (caller decides whether to add to statement)
         return true()
@@ -464,7 +652,8 @@ async def query_flaws(
     to_date: datetime.date | None,
     color: str | None,
     tactic_families: Sequence[str] | None = None,
-    orientation: TacticOrientation = "allowed",
+    orientation: TacticOrientation = "either",
+    min_tactic_depth: int | None = None,
     max_tactic_depth: int | None = None,
     offset: int = 0,
     limit: int = 20,
@@ -498,7 +687,12 @@ async def query_flaws(
         (flaws, matched_count) where matched_count is the total before pagination.
     """
     flaw_clauses = build_flaw_filter_clauses(
-        severity, tags, tactic_families or (), orientation, max_tactic_depth
+        severity,
+        tags,
+        tactic_families or (),
+        orientation,
+        min_tactic_depth,
+        max_tactic_depth,
     )
 
     # Three aliases for game_positions (Phase 112, D-08; extended 260610-vru):
@@ -606,37 +800,97 @@ async def query_flaws(
             # Engine best move FROM the pre-flaw position at ply=N (NULL for
             # lichess-eval-only games without a captured PV).
             best_move=pos_at.best_move if pos_at else None,
-            # Phase 126 (TACUI-01): tactic chip fields, gated by confidence threshold.
-            # Phase 128 D-07: both orientation column sets exposed, orientation-labeled.
-            # Each pair is None when below _TACTIC_CHIP_CONFIDENCE_MIN or when the DB
-            # column is NULL. Phase 129 applies the narration matrix to select which
-            # fields to surface in the chip; 128 just exposes both.
+            # Quick 260621-sm8: tactic slot emission via the shared per-slot display
+            # predicate (tactic_slot_visible). A slot is non-null IFF it satisfies the
+            # full active filter (orientation ∩ confidence ∩ family ∩ depth-range).
+            # Previously this only gated on confidence >= threshold, so orientation and
+            # depth controls had no effect on which slots were emitted — violating the
+            # type contract that slots are null when their chip would be hidden.
+            # The tactic_slot_visible predicate must agree with the SQL row predicate in
+            # build_flaw_filter_clauses (same FAMILY_TO_MOTIF_INTS, same threshold, same
+            # depth offset semantics). See tactic_slot_visible docstring.
             allowed_tactic_motif=(
                 _TACTIC_INT_TO_MOTIF.get(flaw.allowed_tactic_motif)
-                if flaw.allowed_tactic_motif is not None
-                and flaw.allowed_tactic_confidence is not None
-                and flaw.allowed_tactic_confidence >= _TACTIC_CHIP_CONFIDENCE_MIN
+                if tactic_slot_visible(
+                    flaw.allowed_tactic_motif,
+                    flaw.allowed_tactic_confidence,
+                    flaw.allowed_tactic_depth,
+                    orientation_kind="allowed",
+                    tactic_families=tactic_families or (),
+                    tactic_orientation=orientation,
+                    min_tactic_depth=min_tactic_depth,
+                    max_tactic_depth=max_tactic_depth,
+                )
                 else None
             ),
             allowed_tactic_confidence=(
                 flaw.allowed_tactic_confidence
-                if flaw.allowed_tactic_motif is not None
-                and flaw.allowed_tactic_confidence is not None
-                and flaw.allowed_tactic_confidence >= _TACTIC_CHIP_CONFIDENCE_MIN
+                if tactic_slot_visible(
+                    flaw.allowed_tactic_motif,
+                    flaw.allowed_tactic_confidence,
+                    flaw.allowed_tactic_depth,
+                    orientation_kind="allowed",
+                    tactic_families=tactic_families or (),
+                    tactic_orientation=orientation,
+                    min_tactic_depth=min_tactic_depth,
+                    max_tactic_depth=max_tactic_depth,
+                )
+                else None
+            ),
+            allowed_tactic_depth=(
+                flaw.allowed_tactic_depth
+                if tactic_slot_visible(
+                    flaw.allowed_tactic_motif,
+                    flaw.allowed_tactic_confidence,
+                    flaw.allowed_tactic_depth,
+                    orientation_kind="allowed",
+                    tactic_families=tactic_families or (),
+                    tactic_orientation=orientation,
+                    min_tactic_depth=min_tactic_depth,
+                    max_tactic_depth=max_tactic_depth,
+                )
                 else None
             ),
             missed_tactic_motif=(
                 _TACTIC_INT_TO_MOTIF.get(flaw.missed_tactic_motif)
-                if flaw.missed_tactic_motif is not None
-                and flaw.missed_tactic_confidence is not None
-                and flaw.missed_tactic_confidence >= _TACTIC_CHIP_CONFIDENCE_MIN
+                if tactic_slot_visible(
+                    flaw.missed_tactic_motif,
+                    flaw.missed_tactic_confidence,
+                    flaw.missed_tactic_depth,
+                    orientation_kind="missed",
+                    tactic_families=tactic_families or (),
+                    tactic_orientation=orientation,
+                    min_tactic_depth=min_tactic_depth,
+                    max_tactic_depth=max_tactic_depth,
+                )
                 else None
             ),
             missed_tactic_confidence=(
                 flaw.missed_tactic_confidence
-                if flaw.missed_tactic_motif is not None
-                and flaw.missed_tactic_confidence is not None
-                and flaw.missed_tactic_confidence >= _TACTIC_CHIP_CONFIDENCE_MIN
+                if tactic_slot_visible(
+                    flaw.missed_tactic_motif,
+                    flaw.missed_tactic_confidence,
+                    flaw.missed_tactic_depth,
+                    orientation_kind="missed",
+                    tactic_families=tactic_families or (),
+                    tactic_orientation=orientation,
+                    min_tactic_depth=min_tactic_depth,
+                    max_tactic_depth=max_tactic_depth,
+                )
+                else None
+            ),
+            missed_tactic_depth=(
+                flaw.missed_tactic_depth
+                if tactic_slot_visible(
+                    flaw.missed_tactic_motif,
+                    flaw.missed_tactic_confidence,
+                    flaw.missed_tactic_depth,
+                    orientation_kind="missed",
+                    tactic_families=tactic_families or (),
+                    tactic_orientation=orientation,
+                    min_tactic_depth=min_tactic_depth,
+                    max_tactic_depth=max_tactic_depth,
+                )
                 else None
             ),
         )
@@ -1062,6 +1316,13 @@ def _filtered_games_base(
     opponent_gap_max: int | None,
     color: str | None = None,
     tactic_families: Sequence[str] | None = None,
+    # Quick 260621-sm8 follow-up: neutral default "either" (was "allowed"). The
+    # tactic EXISTS is now gated on _tactic_controls_active (orientation alone can
+    # activate it), so an "allowed" default would make count_filtered_and_analyzed
+    # wrongly filter the coverage/comparison denominators when no tactic filter is
+    # set. No caller relies on the old "allowed" default (all family-narrowing
+    # callers pass orientation explicitly).
+    tactic_orientation: TacticOrientation = "either",
 ) -> Select[tuple[int]]:
     """Build the filtered `SELECT Game.id` base shared by the archive + stats paths.
 
@@ -1073,6 +1334,11 @@ def _filtered_games_base(
 
     Phase 126 (D-06): tactic_families narrows to games containing a tactic flaw
     in one of the selected families (routed through apply_game_filters).
+
+    SEED-062: tactic_orientation selects which column set the tactic_families
+    narrowing matches on (default "allowed"). The tactic-comparison endpoint
+    passes "either" so the population includes games whose only family-X tactic
+    was missed-only, matching its dual-orientation grid.
     """
     base_stmt: Select[tuple[int]] = select(Game.id).where(Game.user_id == user_id)
     return apply_game_filters(
@@ -1088,6 +1354,7 @@ def _filtered_games_base(
         opponent_gap_max=opponent_gap_max,
         flaw_severity=flaw_severity,
         tactic_families=tactic_families,
+        orientation=tactic_orientation,
         user_id=user_id,
     )
 
@@ -1104,21 +1371,28 @@ async def query_filtered_games(
     to_date: datetime.date | None,
     flaw_severity: Sequence[str] | None,
     flaw_tags: Sequence[str] | None = None,
+    tactic_families: Sequence[str] | None = None,
+    tactic_orientation: TacticOrientation = "either",
+    min_tactic_depth: int | None = None,
+    max_tactic_depth: int | None = None,
     offset: int,
     limit: int,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
     color: str | None = None,
 ) -> tuple[list[Game], int]:
-    """Return paginated user Game objects, optionally flaw-severity/tag filtered.
+    """Return paginated user Game objects, optionally flaw-severity/tag/tactic filtered.
 
     Mirrors endgame_repository.query_endgame_games' paginated-archive shape, but
     drops the endgame-span subquery — the base select is simply the user's games,
     with the flaw EXISTS applied via apply_game_filters when severities and/or
     tags are supplied (LIBG-08, SEED-038). flaw_tags restricts to games with a
     single flaw satisfying ALL selected tag families (OR within family, AND
-    across families). When both flaw_severity and flaw_tags are None/empty the
-    query is a plain filtered archive (no EXISTS).
+    across families). tactic_families (Quick 260620-pza) restricts to games with
+    ≥1 flaw whose tactic motif (in the orientation's column, within the depth
+    range) is in the selected families — the same tactic EXISTS the Flaws tab
+    uses, just threaded to the Games tab. When all of flaw_severity / flaw_tags /
+    tactic_families are None/empty the query is a plain filtered archive (no EXISTS).
 
     Returns (page_games, matched_count) where matched_count reflects ALL matching
     games before offset/limit. Ordered played_at DESC nulls last. The user_id is
@@ -1138,6 +1412,10 @@ async def query_filtered_games(
         opponent_gap_max=opponent_gap_max,
         flaw_severity=flaw_severity,
         flaw_tags=flaw_tags,
+        tactic_families=tactic_families,
+        orientation=tactic_orientation,
+        min_tactic_depth=min_tactic_depth,
+        max_tactic_depth=max_tactic_depth,
         user_id=user_id,
     )
 
@@ -1194,6 +1472,10 @@ async def count_filtered_and_analyzed(
     opponent_gap_max: int | None = None,
     color: str | None = None,
     tactic_families: Sequence[str] | None = None,
+    # Quick 260621-sm8 follow-up: neutral default "either" (was "allowed") — see
+    # _filtered_games_base. Prevents the analyzed/coverage counts from being
+    # silently tactic-filtered when no tactic control is set.
+    tactic_filter_orientation: TacticOrientation = "either",
 ) -> tuple[int, int]:
     """Return (total_n, analyzed_n) over the filtered Games-surface set (LIBG-09).
 
@@ -1229,6 +1511,7 @@ async def count_filtered_and_analyzed(
         opponent_gap_max=opponent_gap_max,
         color=color,
         tactic_families=tactic_families,
+        tactic_orientation=tactic_filter_orientation,
     )
     base_subq = base.subquery("filtered")
     total_n = (await session.execute(select(func.count()).select_from(base_subq))).scalar_one()
@@ -1595,6 +1878,7 @@ async def fetch_tactic_comparison(
     tactic_families: Sequence[str] | None = None,
     tactic_confidence_min: int = _TACTIC_CHIP_CONFIDENCE_MIN,
     orientation: TacticOrientation = "allowed",
+    tactic_filter_orientation: TacticOrientation = "allowed",
 ) -> list[Any]:
     """Per-game player/opp counts for all 10 tactic families over the analyzed+filtered set.
 
@@ -1603,6 +1887,13 @@ async def fetch_tactic_comparison(
     zero qualifying tactic flaws contribute a zero-count row.
     Phase 128 D-09: orientation selects the column set (allowed/missed) for both the
     LEFT JOIN gate and the COUNT FILTER predicates.
+
+    SEED-062: orientation drives ONLY the COUNT column set; tactic_filter_orientation
+    drives the tactic_families narrowing of the base game population. The comparison
+    grid shows both orientations, so the service passes tactic_filter_orientation=
+    "either" for both the missed and allowed fetches — both bullet populations then
+    share one basis (games with a family-X tactic in either column) and match the
+    gate's analyzed_n denominator, instead of inheriting the "allowed"-only default.
 
     Returns one row per game_id with 20 COUNT columns (10 families × player/opp).
     Python aggregates mean + CI per family in the service layer.
@@ -1622,6 +1913,7 @@ async def fetch_tactic_comparison(
         opponent_gap_max=opponent_gap_max,
         color=color,
         tactic_families=tactic_families,
+        tactic_orientation=tactic_filter_orientation,
     ).subquery("filtered_tc")
 
     # Anchor: analyzed+filtered games with valid ply_count (Pitfall 2 — divide-by-zero guard)

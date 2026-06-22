@@ -43,9 +43,17 @@ describe('TacticMotifChip', () => {
     });
 
     it('renders a motif with a dash in its name', () => {
+      renderChip('discovered-check', 5);
+      const chip = screen.getByTestId('chip-tactic-discovered-check-5');
+      expect(chip.textContent).toContain('discovered-check');
+    });
+
+    it('collapses every mate-family motif to the "checkmate" label (Quick 260620-onv)', () => {
       renderChip('back-rank-mate', 5);
+      // testid keeps the raw motif (stable/unique); the visible label collapses.
       const chip = screen.getByTestId('chip-tactic-back-rank-mate-5');
-      expect(chip.textContent).toContain('back-rank-mate');
+      expect(chip.textContent).toContain('checkmate');
+      expect(chip.textContent).not.toContain('back-rank-mate');
     });
 
     it('applies family color via the style prop', () => {

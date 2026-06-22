@@ -173,18 +173,20 @@ class TestTacticOrientationFilter:
             )
         )
 
-    def test_default_orientation_references_allowed_column(self) -> None:
-        """orientation unspecified (default) → EXISTS uses allowed_tactic_motif.
+    def test_default_orientation_references_both_columns(self) -> None:
+        """orientation unspecified (default) → EXISTS uses BOTH column sets.
 
-        Preserves current Library behavior (D-08): callers that omit orientation
-        see the same behavior as before.
+        Quick 260621-sm8 follow-up: the neutral default is now "either" (was
+        "allowed"), matching build_flaw_filter_clauses. An "allowed" default would
+        make non-tactic callers (which omit orientation) wrongly filter once the
+        tactic EXISTS is gated on _tactic_controls_active.
         """
         sql = self._stmt_sql()
         assert "allowed_tactic_motif" in sql, (
             f"Default orientation must reference allowed_tactic_motif; got: {sql}"
         )
-        assert "missed_tactic_motif" not in sql, (
-            f"Default orientation must NOT reference missed_tactic_motif; got: {sql}"
+        assert "missed_tactic_motif" in sql, (
+            f"Default orientation (either) must reference missed_tactic_motif; got: {sql}"
         )
 
     def test_allowed_orientation_references_allowed_column(self) -> None:
@@ -250,12 +252,15 @@ class TestTacticDepthAndEitherFilter:
 
     Phase 129 D-05/D-08: depth bound on the active orientation's depth column;
     'either' = OR across both missed_* and allowed_* column sets.
-    These tests target apply_game_filters (Games-EXISTS site, no confidence gate).
+    These tests target apply_game_filters (Games-EXISTS site). The site now gates
+    on confidence too (SEED-061); these depth/either tests are confidence-agnostic
+    because the compiled fixture uses high-confidence rows.
     """
 
     def _stmt_sql(
         self,
         orientation: str = "allowed",
+        min_tactic_depth: int | None = None,
         max_tactic_depth: int | None = None,
     ) -> str:
         """Compile apply_game_filters with tactic_families=['fork'] to SQL text."""
@@ -271,6 +276,8 @@ class TestTacticDepthAndEitherFilter:
             tactic_families=["fork"],
             orientation=orientation,
         )
+        if min_tactic_depth is not None:
+            kwargs["min_tactic_depth"] = min_tactic_depth
         if max_tactic_depth is not None:
             kwargs["max_tactic_depth"] = max_tactic_depth
         stmt = apply_game_filters(stmt, **kwargs)
@@ -321,21 +328,48 @@ class TestTacticDepthAndEitherFilter:
             f"missed orientation must NOT reference allowed_tactic_depth; got: {sql}"
         )
 
-    def test_mate_exemption_present_when_depth_set(self) -> None:
-        """When depth is bounded, the mate motif int(s) appear in the clause (exemption escape)."""
-        # The mate exemption is: depth_col <= max OR motif_col IN (mate_ints).
-        # Since the mate family is not in tactic_families=['fork'], the mate ints appear
-        # only in the depth-exemption OR — not in the primary motif filter.
+    def test_mate_exemption_removed_when_depth_set(self) -> None:
+        """Quick 260620-l5k: mates obey the depth range — no exemption OR at the Games site.
+
+        The Phase 129 D-04 exemption was removed, so a bounded depth filter references
+        the motif column ONCE (primary family filter), with a plain range predicate.
+        """
         sql = self._stmt_sql(orientation="allowed", max_tactic_depth=3)
-        # Mate ints from FAMILY_TO_MOTIF_INTS['mate'] (e.g. BACK_RANK_MATE=10, MATE=11, ...)
-        # should appear in the SQL as part of the depth exemption OR.
-        assert "allowed_tactic_depth" in sql  # depth predicate is present
-        # The clause must also include OR motif_col.in_(mate_ints) so mates are exempt.
-        # We check the motif column appears more than once (primary filter + exemption).
-        motif_occurrences = sql.count("allowed_tactic_motif")
-        assert motif_occurrences >= 2, (
-            f"Mate exemption requires allowed_tactic_motif to appear at least twice "
-            f"(primary filter + depth exemption OR); got {motif_occurrences} in: {sql}"
+        # Quick 260621-qz9: allowed column is decision-anchored (+1), so the depth
+        # predicate compiles as "allowed_tactic_depth + <param> <=".
+        assert "allowed_tactic_depth +" in sql and "<=" in sql  # depth predicate is present
+        # The mate exemption was the ONLY OR in a single-orientation depth branch;
+        # removing it leaves a pure AND chain inside the EXISTS.
+        assert " OR " not in sql, (
+            f"Mate exemption removed → no OR in a single-orientation depth clause; got: {sql}"
+        )
+
+    def test_min_depth_bound_references_depth_column(self) -> None:
+        """Quick 260620-l5k: min_tactic_depth adds a >= lower-bound predicate.
+
+        Quick 260621-qz9: the allowed column carries the decision-anchored +1 offset,
+        so both bounds compile as "allowed_tactic_depth + <param>" comparisons.
+        """
+        sql = self._stmt_sql(orientation="allowed", min_tactic_depth=2, max_tactic_depth=5)
+        assert "allowed_tactic_depth +" in sql and ">=" in sql, (
+            f"min_tactic_depth=2 must add an offset 'allowed_tactic_depth + ... >='; got: {sql}"
+        )
+        assert "allowed_tactic_depth +" in sql and "<=" in sql, (
+            f"max_tactic_depth=5 must add an offset 'allowed_tactic_depth + ... <='; got: {sql}"
+        )
+
+    def test_allowed_depth_decision_anchored_missed_not(self) -> None:
+        """Quick 260621-qz9: the Games-EXISTS site offsets allowed depth by +1; missed bare."""
+        allowed_sql = self._stmt_sql(orientation="allowed", min_tactic_depth=2, max_tactic_depth=5)
+        assert "allowed_tactic_depth +" in allowed_sql, (
+            f"allowed orientation must offset the depth column (+1); got: {allowed_sql}"
+        )
+        missed_sql = self._stmt_sql(orientation="missed", min_tactic_depth=2, max_tactic_depth=5)
+        assert "missed_tactic_depth >=" in missed_sql, (
+            f"missed orientation must compare the bare column; got: {missed_sql}"
+        )
+        assert "missed_tactic_depth +" not in missed_sql, (
+            f"missed orientation must NOT offset the depth column; got: {missed_sql}"
         )
 
     def test_either_depth_references_both_depth_columns(self) -> None:
@@ -348,14 +382,16 @@ class TestTacticDepthAndEitherFilter:
             f"either + depth must reference allowed_tactic_depth; got: {sql}"
         )
 
-    def test_no_confidence_gate_in_exists_site(self) -> None:
-        """Games-EXISTS site (apply_game_filters) must NOT add a confidence predicate.
+    def test_confidence_gate_present_in_exists_site(self) -> None:
+        """Games-EXISTS site (apply_game_filters) MUST gate on confidence (SEED-061).
 
-        Preserve the intentional asymmetry (Pitfall 3): confidence is gated only
-        in build_flaw_filter_clauses (Flaws list), NOT in the Games-EXISTS.
+        Reverses the Phase 129 "Pitfall 3" asymmetry: confidence is now gated at
+        both the Games-EXISTS and the Flaws list (build_flaw_filter_clauses), so a
+        game cannot match a tactic-family filter on a below-threshold tactic that
+        would never render a chip.
         """
         for orientation in ("allowed", "missed", "either"):
             sql = self._stmt_sql(orientation=orientation)
-            assert "tactic_confidence" not in sql, (
-                f"apply_game_filters orientation={orientation!r} must NOT gate on confidence; got: {sql}"
+            assert "tactic_confidence" in sql, (
+                f"apply_game_filters orientation={orientation!r} must gate on confidence; got: {sql}"
             )

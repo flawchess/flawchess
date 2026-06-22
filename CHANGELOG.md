@@ -10,9 +10,15 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Added
 
+- **Tactic filters on the Library Games tab** — the Games tab's Tags panel now offers the same tactic-motif filters as the Flaws tab: pick one or more tactic families (fork, pin, skewer, …) to show only games containing at least one flaw with a selected tactic, plus the Missed/Allowed orientation toggle and the tactic-difficulty depth range. Tactic families combine with the existing severity and context-tag filters (a game must satisfy all). Full mobile-drawer parity. (Quick 260620-pza)
+
+- **Missed and allowed tactic chips on Library game cards** — game cards now surface both tactic orientations as separate chips: the tactic you *allowed* (the opponent's refutation) and the tactic you *missed* (the stronger move you should have played) render as distinct chips, e.g. "allowed: fork" and "missed: fork". Previously only the allowed tactic was shown. Beta-gated. (Quick 260620-pza)
+
 - **Tactic motif comparison in the Library (beta)** — flaw cards now show the tactic that caused each mistake or blunder as a family-colored chip with a plain-English definition popover. The filter panel gains a "Tactic motif" section to narrow flaws by family (fork, pin/skewer, discovery, mate, hanging, combinations), and a new "Tactic Motifs" comparison section shows how often you allow each motif versus your opponents per game, ranked by significance and gated on a minimum number of analyzed games. Beta-gated, with full mobile parity at narrow widths. Backed by a new `GET /api/library/tactic-comparison` endpoint that honors all game filters. (Phase 126)
 
 - **Engine best-move arrow on Library miniboards** — when a game has engine analysis, the Library Game-card and Flaw-card miniboards now show the engine's best move as a translucent blue arrow. On the Game card it updates as you scrub the eval chart (the suggested move from whatever position you're viewing); on the Flaw card it sits next to the red move-played arrow, showing what should have been played at the decision point. Hidden for games with only imported Lichess evals (no stored best move). (260618-oqw)
+
+- **Tactic depth shown on Library miniboards** — the Library Game-card and Flaw-card miniboards now label the tactic depth (1 to 12) right where it happens: the *missed* tactic's depth sits on the blue best-move arrow's target square, and the *allowed* tactic's depth sits at the end of the orange/red move-played arrow. Each badge only appears when that tactic is detected. (Phase 130, Quick 260621-mq4)
 
 - **Tactic cause-of-error tagging (foundation)** — mistakes and blunders are now tagged with the tactical motif that caused them (fork, pin, skewer, discovered attack, back-rank and named mates, plus tier-3 motifs like deflection and x-ray), detected from the engine refutation line already stored at analysis time, so there is no extra analysis cost. Tags are computed for both players and stored precision-first (low-confidence motifs are suppressed rather than mis-tagged). This is internal groundwork; the tags are not surfaced in the UI yet. (Phase 124)
 
@@ -30,11 +36,23 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- **Redesigned Library Game and Flaw cards on desktop** — both cards now use a board-left / stacked-right layout with a full-width metadata strip (including the game date) above the board, a larger miniboard, and a more compact eval chart, so the Flaw card visually matches the Game card. Miniboard tactic-depth numbers are now colored by orientation (missed vs allowed), and the tactic column layout stays a stable three columns under active filters. (Phase 130)
+
+- **Tactic Depth filter (renamed) with a depth range** — the Library Flaws filter's tactic control is now labeled "Tactic Depth" (was "Tactic Difficulty") and is a two-handle range slider measured in plies, numbered 1 to 12 (where 1 is an immediate tactic) instead of a single "1 to 5 moves deep" cap. Pick any depth window: Low 1–2, Medium 1–6, High the full range, or drag for a custom range. Forced mates now respect the range like every other tactic rather than always showing. (Phase 130, Quick 260621-mq4, 260621-qz9)
+
+- **Allowed-tactic depth is now decision-anchored, and depth presets renamed Low/Medium/High** — the depth shown for a tactic you *allowed* (the opponent's refutation) now counts from the same decision point as a tactic you *missed*, so the two are directly comparable: an allowed tactic reads one deeper than a missed tactic at the same engine depth, because the opponent must first make a move before the punishment lands. This affects both the miniboard depth badges and the depth filter. The presets are relabeled Beginner/Intermediate/Advanced → Low/Medium/High (default Medium), since depth is only a rough difficulty proxy. (Phase 130, Quick 260621-qz9)
+
 - **Tactic families regrouped into a clearer 10-family taxonomy** — the tactic motif filter and comparison now group motifs into fork, skewer, pin, x-ray, double check, discovered check, discovered attack, trapped piece, hanging, and mate, replacing the previous coarser grouping. Families beyond the top six fold into a "More Tactics" accordion. The catch-all "combinations" group was dropped; old `?tactic=` URLs referencing retired family names are inert rather than erroring. (Phase 129)
 
 - **Flaw stats faster and more accurate on large game libraries** — the analyzed-game gate now uses the pre-materialized `full_evals_completed_at` column instead of recomputing eval coverage across all positions on every request. This eliminates a full-partition scan that caused 135s average / 49-minute max latency under an eval drain on large accounts. Fully-analyzed short games are now correctly counted as analyzed. (260617-pu4)
 
 ### Fixed
+
+- **Opening-move tactics now tag on engine-analyzed games** — a mistake or blunder in the opening (first ~20 half-moves) of a non-Lichess game could be detected but left untagged, because the position right after it reused a cached eval that carries no refutation line. Those flaws are now given a refutation line via a small targeted re-analysis, so their tactic motif tags reliably. A one-time backfill (2026-06-18) repaired existing games; this closes the live gap so it no longer re-accumulates. (SEED-056)
+
+- **Tactic tags now stick when analyzing Lichess games** — clicking Analyze (or letting the background drain reach them) on Lichess games imported with Lichess's own analysis left every flaw untagged: the tactic motif was detected correctly but then silently discarded, so the cards and filters showed no tactics. The full-analysis pass now fully replaces the placeholder flaw rows written at import (which carry no tactics because they have no engine lines yet) instead of refusing to overwrite them. Re-analyzing an affected game now tags its tactics; a `backfill_flaws.py` run repairs already-analyzed games. (Phase 130)
+
+- **Tactic-chip and eval-tooltip polish on the Library cards** — selecting a tactic family as a filter now highlights the matching tactic chips on the Games and Flaws cards with the same active-filter ring the context-tag chips already use. The eval-chart flaw tooltip now lists tactic motifs with their missed/allowed prefix (matching the chips) instead of showing only the allowed motif. And opening a game from a Flaw card now shows the flaw tooltip immediately, not just parks the slider on the flaw ply. (Quick 260620-qyh)
 
 - **More accurate pin tactic tags** — fixed a parity bug in the pin relevance gate that left it unable to confirm pov's exploiting capture for the common case, and reordered the gate so incidental pins are pruned before the capture check accepts them. Pin tag precision on the CC0 puzzle fixture rose from 0.413 to 0.440 (false positives 478 → 428) with recall unchanged. Also put the pin's stored difficulty depth on the same move-index scale as every other motif (it was a board index, off by one). (SEED-057, 260619-phr)
 

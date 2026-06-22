@@ -544,7 +544,7 @@ def _classify_tempo(
 
     Returns one of {low-clock, hasty, unrushed}, or None when clock_after or
     move_time is unavailable (no misleading fallback — per the at-most-one rule in
-    flaw-tag-naming.md §"Structural change").
+    flaw-tag-definitions.md §"Structural rule: tempo is optional").
 
     Priority: low-clock > hasty > unrushed.
 

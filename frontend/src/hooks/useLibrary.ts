@@ -7,7 +7,7 @@ import { isFlawFilterNonDefault } from '@/hooks/useFlawFilterStore';
 import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
 import type { GameFlawCard } from '@/types/library';
 import type { TacticFamily } from '@/lib/tacticComparisonMeta';
-import { depthToQueryParam } from '@/lib/tacticDepth';
+import { depthToQueryParams } from '@/lib/tacticDepth';
 
 // Library queries are similar in cost to endgame queries (GROUP BY on FlawRecords).
 // 5 minutes staleTime + no refetch-on-focus prevents redundant DB load
@@ -72,9 +72,29 @@ export function useLibraryGames(
     isFiltering ? flawFilter.severity : [],
     isFiltering ? flawFilter.tags : [],
   );
+  // Quick 260620-pza / 260621-sm8: tactic filters on the Games tab (mirrors
+  // useLibraryFlaws). Depth + orientation are now independently meaningful, so they
+  // are ALWAYS sent — gating them behind a selected family meant a depth-only or
+  // orientation-only filter never reached the backend (the bug being fixed). The
+  // family group is sent only when ≥1 is selected. The backend treats the
+  // all-inclusive default (no family, either, full range) as a no-op.
+  // Optional-chained: defensive against partial filter objects (older persisted/mocked
+  // state predating the tacticFamilies field), matching isFlawFilterNonDefault.
+  const tacticFamily =
+    (flawFilter.tacticFamilies?.length ?? 0) > 0 ? flawFilter.tacticFamilies : undefined;
+  const tacticOrientation = flawFilter.tacticOrientation ?? 'either';
+  const depthParam = depthToQueryParams(flawFilter.tacticDepthMin, flawFilter.tacticDepthMax);
   return useQuery({
-    queryKey: ['library-games', params, offset, limit],
-    queryFn: () => libraryApi.getGames({ ...params, offset, limit }),
+    queryKey: ['library-games', params, tacticFamily, tacticOrientation, depthParam, offset, limit],
+    queryFn: () =>
+      libraryApi.getGames({
+        ...params,
+        tactic_family: tacticFamily,
+        tactic_orientation: tacticOrientation,
+        ...depthParam,
+        offset,
+        limit,
+      }),
     staleTime: LIBRARY_STALE_TIME,
     refetchOnWindowFocus: false,
     refetchInterval: refetchIntervalMs > 0 ? refetchIntervalMs : false,
@@ -154,14 +174,35 @@ export function useTacticComparison(
 /**
  * Fetch a single game by id for the "View game" modal.
  *
- * Query key: ['library-game', gameId]
+ * Query key: ['library-game', gameId, tacticFamily, tacticOrientation, depthParam]
  * Disabled when gameId is null — no fetch fires until the modal opens.
  * Returns the full GameFlawCard for rendering in LibraryGameCard.
+ *
+ * Quick 260621-sm8: when a flawFilter is supplied, the active tactic filter is
+ * forwarded so the modal nulls non-matching tactic slots per-slot, matching the
+ * Flaws/Games lists. orientation + depth are always sent (like useLibraryFlaws),
+ * family only when ≥1 is selected; the backend treats the all-inclusive default
+ * as a no-op, so a direct/unfiltered open is unchanged. The tactic params join
+ * the query key so changing the filter refetches the open modal.
  */
-export function useLibraryGame(gameId: number | null): ReturnType<typeof useQuery<GameFlawCard>> {
+export function useLibraryGame(
+  gameId: number | null,
+  flawFilter?: FlawFilterState,
+): ReturnType<typeof useQuery<GameFlawCard>> {
+  const tacticFamily =
+    flawFilter && flawFilter.tacticFamilies.length > 0 ? flawFilter.tacticFamilies : undefined;
+  const tacticOrientation = flawFilter ? (flawFilter.tacticOrientation ?? 'either') : undefined;
+  const depthParam = flawFilter
+    ? depthToQueryParams(flawFilter.tacticDepthMin, flawFilter.tacticDepthMax)
+    : undefined;
   return useQuery<GameFlawCard>({
-    queryKey: ['library-game', gameId],
-    queryFn: () => libraryApi.getGame(gameId!),
+    queryKey: ['library-game', gameId, tacticFamily, tacticOrientation, depthParam],
+    queryFn: () =>
+      libraryApi.getGame(gameId!, {
+        tactic_family: tacticFamily,
+        tactic_orientation: tacticOrientation,
+        ...depthParam,
+      }),
     enabled: gameId !== null,
     staleTime: LIBRARY_STALE_TIME,
     refetchOnWindowFocus: false,
@@ -187,9 +228,10 @@ export function useLibraryFlaws(
   // default; applied only when ≥1 family is selected), so it lives on flawFilter, not
   // the game-metadata FilterState. Sent to /library/flaws as repeated tactic_family.
   const tacticFamily = flawFilter.tacticFamilies.length > 0 ? flawFilter.tacticFamilies : undefined;
-  // Phase 129: orientation (omit when 'either'); depth (half-ply value or undefined when no cap).
+  // Phase 129: orientation (omit when 'either'). Quick 260620-l5k: depth is a
+  // [min, max] range in depth units — both bounds always sent.
   const tacticOrientation = flawFilter.tacticOrientation ?? 'either';
-  const depthParam = depthToQueryParam(flawFilter.tacticDepthMax ?? null);
+  const depthParam = depthToQueryParams(flawFilter.tacticDepthMin, flawFilter.tacticDepthMax);
   return useQuery({
     queryKey: ['library-flaws', params, tacticFamily, tacticOrientation, depthParam, offset, limit],
     queryFn: () =>

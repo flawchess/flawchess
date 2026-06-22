@@ -386,18 +386,20 @@ class TestImportJobRepository:
 # ─── D-118: coverage / in-flight count functions ─────────────────────────────
 
 
-class TestCountIsAnalyzedGames:
-    """D-118-10: count_is_analyzed_games uses white_blunders IS NOT NULL (is_analyzed).
+class TestCountFullyAnalyzedGames:
+    """count_fully_analyzed_games uses full_evals_completed_at IS NOT NULL.
 
-    Proves the correctness fix: evals_completed_at alone does NOT count a game as
-    analyzed — only flaw counts (white_blunders) determine analysis status.
+    This is the badge numerator and matches the per-game Library card definition
+    of "analyzed". It deliberately does NOT use white_blunders (is_analyzed):
+    a lichess game imported with bundled analysis has white_blunders set at import
+    but full_evals_completed_at NULL, so it must NOT count here (its card still
+    shows "Analyze" until FlawChess's own drain runs).
     """
 
     def _make_game_row(
         self,
         platform_game_id: str,
-        user_id: int = 42,
-        white_blunders: int | None = None,
+        user_id: int = 55,
     ) -> dict:
         return {
             "user_id": user_id,
@@ -420,69 +422,65 @@ class TestCountIsAnalyzedGames:
             "played_at": datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc),
         }
 
-    async def test_analyzed_count(self, db_session) -> None:
-        """count_is_analyzed_games returns the count of games where white_blunders IS NOT NULL.
+    async def test_fully_analyzed_count(self, db_session) -> None:
+        """count_fully_analyzed_games counts full_evals_completed_at IS NOT NULL only.
 
-        - A lichess-eval game with white_blunders set counts as analyzed.
-        - A game with evals_completed_at set but white_blunders NULL does NOT count
-          (D-118-10 correctness fix — evals_completed_at is NOT the analysis gate).
+        - id1: full_evals_completed_at SET (FlawChess analyzed) → counts.
+        - id2: full_evals_completed_at SET but white_blunders NULL (degenerate /
+          coverage-capped) → still counts (matches its card: no Analyze button).
+        - id3: white_blunders SET but full_evals_completed_at NULL (lichess bundled
+          analysis at import) → must NOT count.
+        - id4: plain unanalyzed → must NOT count.
         """
         import uuid
-        from app.repositories.game_repository import bulk_insert_games, count_is_analyzed_games
+        import sqlalchemy as sa
+        from sqlalchemy import select
+        from app.repositories.game_repository import bulk_insert_games, count_fully_analyzed_games
         from app.models.game import Game
 
-        user_id = 42
+        # User 55 is created by the autouse _create_test_users fixture; db_session is
+        # rollback-scoped, so we assert the delta to tolerate any template rows.
+        user_id = 55
         uid = uuid.uuid4().hex
+        before = await count_fully_analyzed_games(db_session, user_id)
 
-        # Insert via bulk_insert_games (no blunders field there — insert raw games)
-        rows = [
-            self._make_game_row(f"analyzed-{uid}-1"),  # will be set analyzed
-            self._make_game_row(f"analyzed-{uid}-2"),  # will be set analyzed (lichess)
-            self._make_game_row(f"not-analyzed-{uid}-3"),  # has evals_completed_at but no blunders
-            self._make_game_row(f"not-analyzed-{uid}-4"),  # plain unanalyzed
-        ]
+        rows = [self._make_game_row(f"fa-{uid}-{i}", user_id=user_id) for i in range(4)]
         ids = await bulk_insert_games(db_session, rows)
         assert len(ids) == 4, f"Expected 4 game IDs; got {len(ids)}"
         id1, id2, id3, id4 = ids
 
         now = datetime.datetime.now(tz=datetime.timezone.utc)
 
-        # Set white_blunders for id1 and id2 (analyzed)
         await db_session.execute(
-            __import__("sqlalchemy")
-            .update(Game)
-            .where(Game.id.in_([id1, id2]))
-            .values(white_blunders=2, black_blunders=1)
+            sa.update(Game)
+            .where(Game.id == id1)
+            .values(full_evals_completed_at=now, white_blunders=2, black_blunders=1)
         )
-        # Set evals_completed_at for id3 but NOT white_blunders (should NOT count)
+        # Degenerate: full-eval drain done, no flaw counts — still counts.
         await db_session.execute(
-            __import__("sqlalchemy")
-            .update(Game)
-            .where(Game.id == id3)
-            .values(evals_completed_at=now)
+            sa.update(Game).where(Game.id == id2).values(full_evals_completed_at=now)
+        )
+        # Lichess bundled analysis: white_blunders at import, no full-eval drain yet.
+        await db_session.execute(
+            sa.update(Game).where(Game.id == id3).values(white_blunders=1, black_blunders=0)
         )
         await db_session.commit()
 
-        count = await count_is_analyzed_games(db_session, user_id)
-        # Only id1 and id2 have white_blunders set — id3 and id4 must not count.
-        # count may include pre-existing analyzed games for user 42; we verify at
-        # least 2 are counted and the evals_completed_at-only game does not inflate.
-        assert count >= 2, f"Expected at least 2 analyzed games; got {count}"
+        count = await count_fully_analyzed_games(db_session, user_id)
+        assert count - before == 2, (
+            f"Expected exactly 2 newly fully-analyzed games (id1, id2); got delta "
+            f"{count - before}. id3 (lichess bundled analysis) and id4 (unanalyzed) "
+            "must not count."
+        )
 
-        # Direct verification: id3 has evals_completed_at but NOT white_blunders —
-        # must NOT be included in count_is_analyzed_games.
-        from sqlalchemy import select
-        from app.models.game import Game as G
-
-        analyzed_ids_result = await db_session.execute(
-            select(G.id).where(
-                G.user_id == user_id,
-                G.id.in_([id3, id4]),
-                G.white_blunders.isnot(None),
+        # Direct verification: id3/id4 have full_evals_completed_at NULL.
+        not_analyzed = await db_session.execute(
+            select(Game.id).where(
+                Game.id.in_([id3, id4]),
+                Game.full_evals_completed_at.isnot(None),
             )
         )
-        analyzed_ids = [r[0] for r in analyzed_ids_result.fetchall()]
-        assert len(analyzed_ids) == 0, (
-            f"Games {id3} (evals_completed_at set, no blunders) and {id4} "
-            f"(no evals at all) must not count as analyzed; found {analyzed_ids}"
+        assert not_analyzed.fetchall() == [], (
+            "id3 (white_blunders set, full_evals NULL) and id4 (unanalyzed) must "
+            "have full_evals_completed_at NULL"
         )

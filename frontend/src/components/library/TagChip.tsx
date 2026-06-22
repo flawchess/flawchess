@@ -8,8 +8,9 @@ import {
   TACTIC_FAMILY_FOR_MOTIF,
   TACTIC_FAMILY_COLORS,
   TACTIC_FAMILY_ICON,
+  tacticMotifLabel,
+  tacticMotifDefinition,
 } from '@/lib/tacticComparisonMeta';
-import { TACTIC_MOTIF_DEFINITIONS } from '@/lib/tacticMotifDefinitions';
 import type { FlawTag } from '@/types/library';
 import { TAG_DEFINITIONS } from '@/lib/tagDefinitions';
 import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
@@ -208,7 +209,8 @@ export function TagChip({ tag, gameId, count, onHover, onActivate, definition = 
       }
     >
       {count != null && count > 1 && <span className="font-bold">{count}</span>}
-      <Icon className="h-3 w-3 shrink-0" />
+      {/* Icon hidden on mobile to declutter the chips; shown from `sm` up. */}
+      <Icon className="h-3 w-3 shrink-0 hidden sm:block" />
       {tag}
     </span>
   );
@@ -258,7 +260,12 @@ interface TagLegendProps {
    * above the flaw tags. Caller is responsible for beta-gating (pass [] when off).
    */
   tacticMotifs?: string[];
-  gameId: number;
+  /**
+   * Owning game id — only used to derive the default testId. Optional: non-card
+   * call sites (e.g. the filter panel family-label legends) have no game context
+   * and pass an explicit `testId` instead.
+   */
+  gameId?: number;
   /** Visible label before the info icon (label variant only). Defaults to "Tags";
    *  the label doubles as the section heading on FlawCard. */
   label?: string;
@@ -274,6 +281,26 @@ interface TagLegendProps {
 }
 
 /**
+ * Keep the first motif for each resolved display label, preserving order, and drop
+ * any motif that maps to no tactic family. Collapses the named-mate subtypes
+ * (all → "checkmate") to a single legend row (Quick 260620-onv). The family filter
+ * matters because the backend stores family-less motifs (clearance, deflection,
+ * en-passant, …) — without it the legend icon would render with an empty popover
+ * when a card's only tactic motif belongs to no family (Quick 260620: empty tag
+ * tooltip icons).
+ */
+function dedupeByLabel(motifs: string[]): string[] {
+  const seen = new Set<string>();
+  return motifs.filter((motif) => {
+    if (TACTIC_FAMILY_FOR_MOTIF[motif] == null) return false;
+    const label = tacticMotifLabel(motif);
+    if (seen.has(label)) return false;
+    seen.add(label);
+    return true;
+  });
+}
+
+/**
  * Shared explanation popover for a card's tag chip row. Lists each tag/motif on the
  * card with its family-colored icon and definition; opt-in by click/hover on the
  * trigger — no overlay during normal use, so the eval chart is never covered.
@@ -284,17 +311,22 @@ interface TagLegendProps {
 export function TagLegend({
   tags,
   tacticMotifs = [],
-  gameId,
+  gameId = 0,
   label = 'Tags',
   variant = 'label',
   testId,
 }: TagLegendProps) {
-  if (tags.length === 0 && tacticMotifs.length === 0) return null;
+  // Drop family-less motifs up front so the icon isn't rendered for an otherwise-empty
+  // popover (a card whose only tactic motif maps to no family, e.g. clearance/deflection).
+  const visibleMotifs = dedupeByLabel(tacticMotifs);
+  if (tags.length === 0 && visibleMotifs.length === 0) return null;
   const resolvedTestId = testId ?? `tag-legend-${gameId}`;
   const definitions = (
         <div className="flex flex-col gap-1.5">
-          {/* Tactic motifs listed first (Phase 126 UAT). */}
-          {tacticMotifs.map((motif) => {
+          {/* Tactic motifs listed first (Phase 126 UAT). Mate-family motifs collapse
+              to a single "checkmate" row — dedupe by resolved label so two named
+              mates in one game don't print twice (Quick 260620-onv). */}
+          {visibleMotifs.map((motif) => {
             const family = TACTIC_FAMILY_FOR_MOTIF[motif];
             if (family == null) return null;
             const Icon = TACTIC_FAMILY_ICON[family];
@@ -304,9 +336,9 @@ export function TagLegend({
                 <Icon className="mt-0.5 h-3 w-3 shrink-0" style={{ color }} />
                 <span>
                   <span className="font-bold" style={{ color }}>
-                    {motif}
+                    {tacticMotifLabel(motif)}
                   </span>
-                  : {TACTIC_MOTIF_DEFINITIONS[motif] ?? motif}
+                  : {tacticMotifDefinition(motif)}
                 </span>
               </div>
             );

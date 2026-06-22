@@ -56,7 +56,11 @@ from app.models.game import Game
 from app.models.game_position import DEDUP_MAX_PLY, GamePosition
 from app.models.import_job import ImportJob
 from app.models.opening_position_eval import OpeningPositionEval
-from app.repositories.game_flaws_repository import bulk_insert_game_flaws, flaw_record_to_row
+from app.repositories.game_flaws_repository import (
+    bulk_insert_game_flaws,
+    delete_flaws_for_game,
+    flaw_record_to_row,
+)
 from app.repositories.game_repository import users_with_zero_pending
 from app.services import engine as engine_service
 from app.services import percentile_compute_registry
@@ -680,7 +684,9 @@ async def _classify_and_fill_oracle(
     Steps:
     1. Load game + ordered positions from the write session.
     2. classify_game_flaws — emits FlawRecord for M+B across both players.
-    3. bulk_insert_game_flaws (ON CONFLICT DO NOTHING, idempotent).
+    3. delete_flaws_for_game + bulk_insert_game_flaws — the full/oracle pass is
+       authoritative and fully REPLACES any entry-pass rows (see tactic-tagging
+       note below).
     4. count_game_severities × 2 (white then black) to get inaccuracy counts.
     5. UPDATE games oracle columns (white/black inaccuracies/mistakes/blunders).
     6. For each FlawRecord at ply N, write game_positions.pv at ply N+1 (D-117-02,
@@ -727,7 +733,20 @@ async def _classify_and_fill_oracle(
 
     flaw_list = flaw_result  # list[FlawRecord]
 
-    # Insert M+B flaw rows (ON CONFLICT DO NOTHING — idempotent).
+    # Delete-then-insert (not ON CONFLICT DO NOTHING): the full/oracle pass is
+    # authoritative and must REPLACE any rows written by the entry pass. Lichess
+    # "covered" games (full %eval at import) get flaw rows from
+    # _classify_and_insert_flaws (import_service.py / entry-submit) BEFORE this
+    # runs — those rows carry NULL tactic columns because the entry pass has no
+    # PVs. A plain ON CONFLICT DO NOTHING would silently drop these fresh
+    # tactic-bearing rows, so the live PVs above would never reach game_flaws
+    # (tactic_motif stayed NULL until a backfill_flaws.py run). Deleting first
+    # also lets our deeper Stockfish evals reclassify the flaw SET (lichess %eval
+    # can disagree on severity / which plies are flaws) instead of leaving stale
+    # entry-pass rows behind. Same write transaction → atomic with the evals.
+    await delete_flaws_for_game(session, game_id=game.id, user_id=game.user_id)
+
+    # Insert M+B flaw rows.
     # Bug fix (WR-01): DB errors here MUST propagate — a failure at this point
     # means no flaw rows were inserted; catching it would let the caller commit
     # the completion markers and permanently mark the game done with no flaws.
@@ -872,6 +891,141 @@ async def _flaw_engine_plies(session: AsyncSession, game_id: int) -> set[int]:
         plies.add(flaw["ply"])
         plies.add(flaw["ply"] + 1)
     return plies
+
+
+def _reconstruct_pos_eval(
+    targets: Sequence[_FullPlyEvalTarget],
+    dedup_map: dict[int, tuple[int | None, int | None, str | None]],
+    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
+) -> dict[int, tuple[int | None, int | None]]:
+    """Position-keyed eval map (eval OF each ply's position) assembled in-memory from
+    the just-completed gather + the dedup transplants (SEED-056).
+
+    Mirrors what _apply_full_eval_results will write, but with no DB round-trip, so the
+    drain can pre-classify an engine game's flaws BEFORE the write session. Opening
+    plies are mutually exclusive across the two maps by construction (engine_targets in
+    _full_drain_tick excludes any opening ply with a dedup hit), so source precedence
+    never matters here.
+    """
+    pos_eval: dict[int, tuple[int | None, int | None]] = {}
+    for t in targets:
+        engine_entry = engine_result_map.get(t.ply)
+        if engine_entry is not None:
+            pos_eval[t.ply] = (engine_entry[0], engine_entry[1])
+        elif not t.is_terminal and t.ply <= _DEDUP_MAX_PLY and t.full_hash in dedup_map:
+            cp, mate, _bm = dedup_map[t.full_hash]
+            pos_eval[t.ply] = (cp, mate)
+    return pos_eval
+
+
+async def _missing_flaw_pv_targets(
+    game_id: int,
+    targets: Sequence[_FullPlyEvalTarget],
+    dedup_map: dict[int, tuple[int | None, int | None, str | None]],
+    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
+) -> list[_FullPlyEvalTarget]:
+    """SEED-056: find engine-game flaw plies that took a pv-less opening dedup transplant.
+
+    The lichess path pre-classifies flaws from stored %evals up front (_flaw_engine_plies)
+    and exempts {flaw_ply, flaw_ply + 1} from dedup so they always get a real engine pass
+    (PV + best_move). Fresh engine games can't do that — they have no evals until AFTER
+    the gather — so an opening-region flaw ply whose full_hash matched a dedup donor gets
+    an eval-only transplant with NO pv. The flaw is registered but un-taggable (no
+    refutation line for the SEED-039 motif classifier), and the better-alternative PV at
+    flaw_ply is lost too.
+
+    Fix: once the gather is done we DO know every ply's eval (engine_result_map for
+    engine plies, dedup_map for transplanted ones). Reconstruct the post-move evals
+    in-memory, classify, and return the dedup-transplanted {flaw_ply, flaw_ply + 1}
+    targets that still lack a pv. The caller runs a tiny second engine gather on these
+    boards and merges the results back into engine_result_map before the write session,
+    so classify + the PV write pick the pv up exactly as for any engine-evaluated ply.
+
+    Returns [] when the game has no flaws, no eval coverage, or no pv-less opening flaw
+    plies — the common case (the prod gap is ~0.3% of opening-region engine-game flaws).
+    """
+    pos_eval = _reconstruct_pos_eval(targets, dedup_map, engine_result_map)
+    async with async_session_maker() as session:
+        game_result = await session.execute(select(Game).where(Game.id == game_id))
+        game = game_result.scalar_one_or_none()
+        if game is None:
+            return []
+        positions_result = await session.execute(
+            select(GamePosition)
+            .where(GamePosition.game_id == game_id, GamePosition.user_id == game.user_id)
+            .order_by(GamePosition.ply)
+        )
+        positions = list(positions_result.scalars().all())
+    # Overlay the reconstructed post-move evals (engine games have NULL evals in the DB
+    # until the write session runs). _post_move_eval is the single source of the +1 shift.
+    for pos in positions:
+        cp, mate = _post_move_eval(pos_eval, pos.ply)
+        pos.eval_cp = cp
+        pos.eval_mate = mate
+
+    flaw_result = classify_game_flaws(game, positions)
+    if "reason" in flaw_result:
+        return []
+
+    targets_by_ply = {t.ply: t for t in targets}
+    need: dict[int, _FullPlyEvalTarget] = {}
+    for flaw in flaw_result:
+        flaw_ply_val: int = flaw["ply"]
+        for cand_ply in (flaw_ply_val, flaw_ply_val + 1):
+            if cand_ply in need:
+                continue
+            engine_entry = engine_result_map.get(cand_ply)
+            if engine_entry is not None and engine_entry[3] is not None:
+                continue  # already engine-evaluated with a pv
+            target = targets_by_ply.get(cand_ply)
+            if target is None or target.is_terminal:
+                continue
+            # Only the opening dedup region is in scope: a transplanted ply has its eval
+            # but no pv. Engine-region flaw plies always get a real pass already, and an
+            # engine HOLE (eval failed) would just fail the re-pass too — out of scope.
+            if cand_ply <= _DEDUP_MAX_PLY and target.full_hash in dedup_map:
+                need[cand_ply] = target
+    return list(need.values())
+
+
+async def _fill_engine_game_flaw_pvs(
+    game_id: int,
+    targets: Sequence[_FullPlyEvalTarget],
+    dedup_map: dict[int, tuple[int | None, int | None, str | None]],
+    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
+    is_lichess_eval_game: bool,
+) -> None:
+    """SEED-056: targeted second engine pass for pv-less opening flaw plies (engine games).
+
+    Engine games can't pre-know their flaws (no evals until after the gather), so an
+    opening-region flaw ply that matched a dedup donor took an eval-only transplant with
+    NO pv — registered but un-taggable. This classifies from the in-memory gather results,
+    finds those pv-less flaw plies, runs ONE more gather over just their boards, and merges
+    the pv back into engine_result_map (mutated in place) so the write-session classify
+    (tactic tagging) and the pv write pick it up like any engine-evaluated ply.
+
+    No-op for lichess games (they pre-classify up front via _flaw_engine_plies) and when
+    there were no opening dedup hits (no possible gap). MUST be called with NO session open
+    — it runs asyncio.gather (CLAUDE.md hard rule).
+    """
+    if is_lichess_eval_game:
+        return
+    has_opening_dedup = any(
+        not t.is_terminal and t.ply <= _DEDUP_MAX_PLY and t.full_hash in dedup_map for t in targets
+    )
+    if not has_opening_dedup:
+        return
+    pv_gap_targets = await _missing_flaw_pv_targets(game_id, targets, dedup_map, engine_result_map)
+    if not pv_gap_targets:
+        return
+    pv_gap_results = await asyncio.gather(
+        *(engine_service.evaluate_nodes_with_pv(t.board) for t in pv_gap_targets)
+    )
+    for t, res in zip(pv_gap_targets, pv_gap_results, strict=True):
+        # Only merge a real pv — a failed re-pass (pv None) leaves the status quo (eval
+        # still served from the dedup transplant; pv stays NULL).
+        if res[3] is not None:
+            engine_result_map[t.ply] = res
 
 
 # Minimal duck-typed view so count_game_severities can be called with a
@@ -1810,6 +1964,13 @@ async def _full_drain_tick() -> bool:
     engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]] = {}
     for t, res in zip(engine_targets, engine_results_raw, strict=True):
         engine_result_map[t.ply] = res
+
+    # Step 3b (SEED-056): recover pv for engine-game opening flaw plies that took a
+    # pv-less dedup transplant. Runs another gather internally — still NO session open
+    # (CLAUDE.md hard rule). Mutates engine_result_map in place; no-op for lichess games.
+    await _fill_engine_game_flaw_pvs(
+        game_id, targets, dedup_map, engine_result_map, is_lichess_eval_game
+    )
 
     # Step 4: write session — open LATE, after gather completes.
     # All UPDATEs, classify hook, oracle counts, markers, and job report in one transaction.

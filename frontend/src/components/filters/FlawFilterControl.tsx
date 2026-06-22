@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   Clock,
   Zap,
@@ -9,12 +10,14 @@ import {
   BookOpen,
   Swords,
   Trophy,
+  ChevronDown,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { BlunderIcon, MistakeIcon } from '@/components/icons/SeverityGlyphIcon';
+import { TagLegend } from '@/components/library/TagChip';
 import type { FlawIcon } from '@/lib/flawComparisonMeta';
 import {
   FAM_TEMPO,
@@ -32,8 +35,14 @@ import {
 } from '@/lib/theme';
 import type { FlawTag, TacticOrientation } from '@/types/library';
 import type { TacticFamily } from '@/lib/tacticComparisonMeta';
-import { TACTIC_COMPARISON_FAMILIES, TACTIC_FAMILY_COLORS } from '@/lib/tacticComparisonMeta';
-import { TacticDepthFilter, DEFAULT_TACTIC_DEPTH_VALUE } from '@/components/filters/TacticDepthFilter';
+import {
+  TACTIC_COMPARISON_FAMILIES,
+  TACTIC_FAMILY_COLORS,
+  TACTIC_FAMILY_ICON,
+  TACTIC_GROUPS,
+} from '@/lib/tacticComparisonMeta';
+import { TacticDepthFilter } from '@/components/filters/TacticDepthFilter';
+import { DEFAULT_TACTIC_DEPTH_VALUE } from '@/lib/tacticDepth';
 import type { TacticDepthValue } from '@/lib/tacticDepth';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -145,6 +154,10 @@ const FAMILY_SECTIONS: FamilySection[] = [
   },
 ];
 
+// Flat set of all tags in the Context (FAMILY_SECTIONS) block — used for count badge.
+// Computed once at module level to avoid per-render allocations.
+const CONTEXT_TAGS = new Set<FlawTag>(FAMILY_SECTIONS.flatMap((s) => s.tags));
+
 // ─── Tag filter button ────────────────────────────────────────────────────────
 
 interface TagFilterButtonProps {
@@ -177,7 +190,8 @@ function TagFilterButton({ tag, selected, color, bg, onToggle }: TagFilterButton
       style={selected ? { color, borderColor: color, backgroundColor: bg } : undefined}
       onClick={() => onToggle(tag)}
     >
-      {Icon && <Icon className="h-3 w-3 shrink-0" />}
+      {/* Icon hidden on mobile to declutter the chips; shown from `sm` up. */}
+      {Icon && <Icon className="h-3 w-3 shrink-0 hidden sm:block" />}
       {tag}
     </button>
   );
@@ -224,13 +238,19 @@ function SeverityFilterButton({ config, selected, onToggle }: SeverityFilterButt
 /**
  * FlawFilterControl — severity × tag-family multi-select filter control.
  *
- * Renders:
- * - Two severity toggle buttons (Blunders / Mistakes) — empty = both shown
- * - Four family groups: Timing / Opportunity / Impact / Game Phase
+ * Renders (top to bottom):
+ * - Orientation toggle (showTacticFilter only)
+ * - Tactic Depth filter (showTacticFilter only)
+ * - Tactic Type family (showTacticFilter only)
+ * - Collapsed "Context" section (always) — "Severity" (Blunders / Mistakes) on top, then
+ *   Timing / Opportunity / Impact / Game Phase, behind a hand-rolled toggle
+ *   (Quick 260620-mjh). Shows count badge when tags selected.
+ * - Filter Logic explainer
  *
  * Tag buttons show the canonical lowercase-with-dash name (matching chips + panel).
- * Definitions live in the <TagLegend> "Tags" popover on the Games cards, not as
- * per-button hover tooltips here.
+ * Each family label carries a brown <TagLegend> Tags-icon popover that explains every
+ * tag (or tactic motif) in that family — same pattern as the Games/Flaws cards — so
+ * definitions are not repeated as per-button hover tooltips here.
  *
  * UI-SPEC: uses toggle-active CSS variables for severity; family FAM_* colors for tags.
  * All interactive elements have data-testid + ARIA per CLAUDE.md browser automation rules.
@@ -252,6 +272,8 @@ export function FlawFilterControl({
   tacticDepth = DEFAULT_TACTIC_DEPTH_VALUE,
   onTacticDepthChange,
 }: FlawFilterControlProps) {
+  const [contextOpen, setContextOpen] = useState(false);
+
   // Severity toggles narrow like the tag families: empty = both shown, one = that
   // tier only, both = both shown (same as empty). Deselecting the last severity is
   // allowed (yields []) — there is no at-least-one guard.
@@ -276,54 +298,26 @@ export function FlawFilterControl({
     onTacticFamiliesChange?.(next);
   };
 
+  // Count of currently selected tags that belong to the Context (FAMILY_SECTIONS) block.
+  // Drives the count badge on the collapsed Context toggle header.
+  const selectedContextCount = tags.filter((t) => CONTEXT_TAGS.has(t)).length;
+
   return (
     <div data-testid="flaw-filter-control" className="flex flex-col gap-3">
-      {/* ── Severity section ───────────────────────────────────────────── */}
-      <div className="flex flex-col gap-2">
-        <div className="flex gap-2 flex-wrap">
-          {SEVERITY_BUTTONS.map((config) => (
-            <SeverityFilterButton
-              key={config.sev}
-              config={config}
-              selected={severity.includes(config.sev)}
-              onToggle={handleSeverityToggle}
-            />
-          ))}
-        </div>
-      </div>
-
-      <div className="border-t border-border/40" />
-
-      {/* ── Tag family groups (Timing / Opportunity / Impact) ──────────── */}
-      {FAMILY_SECTIONS.map((section) => (
-        <div key={section.testid} className="flex flex-col gap-2">
-          <p className="text-sm text-muted-foreground">
-            {section.label}
-          </p>
-          <div
-            role="group"
-            aria-label={section.ariaLabel}
-            data-testid={section.testid}
-            className="flex flex-wrap gap-2"
-          >
-            {section.tags.map((tag) => (
-              <TagFilterButton
-                key={tag}
-                tag={tag}
-                selected={tags.includes(tag)}
-                color={section.color}
-                bg={section.bg}
-                onToggle={handleTagToggle}
-              />
-            ))}
-          </div>
-        </div>
-      ))}
+      {/* ── Tactic difficulty filter (Phase 129 TACUI-06, D-01/D-02/D-03) ──
+          Placed first so users size the difficulty band before narrowing by
+          orientation/type (Quick 260620-onv follow-up). ──── */}
+      {showTacticFilter && (
+        <TacticDepthFilter
+          value={tacticDepth}
+          onChange={onTacticDepthChange ?? (() => undefined)}
+        />
+      )}
 
       {/* ── Orientation toggle (Phase 129 TACUI-06, D-06/D-07) ────────────── */}
       {showTacticFilter && (
         <div>
-          <p className="mb-1 text-sm text-muted-foreground">Orientation</p>
+          <p className="mb-1 text-sm text-muted-foreground">Tactic Missed vs Allowed</p>
           <ToggleGroup
             type="single"
             value={orientation}
@@ -363,73 +357,154 @@ export function FlawFilterControl({
         </div>
       )}
 
-      {/* ── Tactic depth filter (Phase 129 TACUI-06, D-01/D-02/D-03) ──────── */}
-      {showTacticFilter && (
-        <TacticDepthFilter
-          value={tacticDepth}
-          onChange={onTacticDepthChange ?? (() => undefined)}
-        />
-      )}
-
-      {/* ── Tactic motif family (Phase 126) — opt-in, off by default. Gated to
-          the Flaws tab (showTacticFilter); shared Games-tab panel hides it. ──── */}
-      {showTacticFilter && (
-      <div className="flex flex-col gap-2">
-        <p className="text-sm text-muted-foreground">Tactic motif</p>
-        <div
-          role="group"
-          aria-label="Tactic motif filters"
-          data-testid="filter-flaw-family-tactic"
-          className="flex flex-wrap gap-2"
-        >
-          {TACTIC_COMPARISON_FAMILIES.map(({ family, name }) => {
-            const { color, bg } = TACTIC_FAMILY_COLORS[family];
-            const selected = tacticFamilies.includes(family);
-            return (
-              <button
-                key={family}
-                type="button"
-                data-testid={`filter-flaw-tactic-${family}`}
-                aria-pressed={selected}
-                aria-label={`Filter flaws by tactic motif: ${name}`}
-                className={cn(
-                  'inline-flex items-center gap-1 h-11 sm:h-7 rounded-full px-3 py-0.5 text-sm border transition-colors',
-                  !selected
-                    && 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',
-                )}
-                style={selected ? { color, borderColor: color, backgroundColor: bg } : undefined}
-                onClick={() => handleTacticFamilyToggle(family)}
+      {/* ── Tactic motif families (Phase 126; grouped into mechanism sections in
+          Quick 260620-onv) — opt-in, off by default. Gated to the Flaws tab
+          (showTacticFilter); shared Games-tab panel hides it. Three groups, each
+          with its own scoped Tags-icon legend; chips read kebab-case. ──── */}
+      {showTacticFilter
+        && TACTIC_GROUPS.map(({ key, label }) => {
+          const groupFamilies = TACTIC_COMPARISON_FAMILIES.filter((f) => f.group === key);
+          // Legend is family-level (one row per chip): key on chipLabel so the mate
+          // family shows a single "checkmate" row, not its nine named-mate motifs.
+          const groupMotifs = groupFamilies.map((f) => f.chipLabel);
+          return (
+            <div key={key} className="flex flex-col gap-2">
+              <div className="flex items-center gap-1.5">
+                <p className="text-sm text-muted-foreground" data-testid={`filter-flaw-tactic-group-${key}`}>
+                  {label}
+                </p>
+                <TagLegend
+                  variant="icon"
+                  tags={[]}
+                  tacticMotifs={groupMotifs}
+                  testId={`filter-flaw-tactic-group-${key}-legend`}
+                />
+              </div>
+              <div
+                role="group"
+                aria-label={`${label} filters`}
+                data-testid={`filter-flaw-tactic-group-${key}-chips`}
+                className="flex flex-wrap gap-2"
               >
-                {name}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-      )}
+                {groupFamilies.map(({ family, name, chipLabel }) => {
+                  const { color, bg } = TACTIC_FAMILY_COLORS[family];
+                  const Icon = TACTIC_FAMILY_ICON[family];
+                  const selected = tacticFamilies.includes(family);
+                  return (
+                    <button
+                      key={family}
+                      type="button"
+                      data-testid={`filter-flaw-tactic-${family}`}
+                      aria-pressed={selected}
+                      aria-label={`Filter flaws by tactic motif: ${name}`}
+                      className={cn(
+                        'inline-flex items-center gap-1 h-11 sm:h-7 rounded-full px-3 py-0.5 text-sm border transition-colors',
+                        !selected
+                          && 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',
+                      )}
+                      style={selected ? { color, borderColor: color, backgroundColor: bg } : undefined}
+                      onClick={() => handleTacticFamilyToggle(family)}
+                    >
+                      {/* Icon hidden on mobile to declutter the chips; shown from `sm` up. */}
+                      <Icon className="h-3.5 w-3.5 shrink-0 hidden sm:block" aria-hidden="true" />
+                      {chipLabel}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
 
-      {/* ── Filter Logic explainer ─────────────────────────────────────── */}
-      <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-        <span>Filter Logic</span>
-        <InfoPopover
-          ariaLabel="How tag filters combine"
-          testId="filter-flaw-logic-info"
-          side="top"
+      {/* ── Context tag families — collapsed by default (Quick 260620-mjh) ── */}
+      {/* Timing / Opportunity / Impact / Game Phase behind a "More" toggle.   */}
+      {/* Renders on both Games tab (showTacticFilter=false) and Flaws tab.    */}
+      <div className="pt-3 border-t border-border/40">
+        <button
+          type="button"
+          onClick={() => setContextOpen((v) => !v)}
+          aria-expanded={contextOpen}
+          aria-controls="flaw-filter-context-content"
+          data-testid="filter-flaw-context-toggle"
+          className="flex w-full items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
-          <p>
-            Tags in the same group are combined with <strong>OR</strong>; different
-            groups are combined with <strong>AND</strong>.
-          </p>
-          <p className="mt-1.5">
-            Example: picking <em>Hasty</em> and <em>Unrushed</em> (Timing) plus{' '}
-            <em>Miss</em> (Opportunity) keeps flaws that are{' '}
-            <em>(hasty or unrushed)</em> and a <em>miss</em>.
-          </p>
-          <p className="mt-1.5">
-            Applied to games, only games with at least one matching blunder or
-            mistake are included.
-          </p>
-        </InfoPopover>
+          <ChevronDown
+            className={cn('h-3.5 w-3.5 transition-transform', contextOpen && 'rotate-180')}
+          />
+          {selectedContextCount > 0 ? `Context · ${selectedContextCount}` : 'Context'}
+        </button>
+        {contextOpen && (
+          <div id="flaw-filter-context-content" className="mt-2 flex flex-col gap-3">
+            {/* ── Severity (Blunders / Mistakes) — empty = both shown ───────── */}
+            <div className="flex flex-col gap-2">
+              <p className="text-sm text-muted-foreground">Severity</p>
+              <div className="flex gap-2 flex-wrap">
+                {SEVERITY_BUTTONS.map((config) => (
+                  <SeverityFilterButton
+                    key={config.sev}
+                    config={config}
+                    selected={severity.includes(config.sev)}
+                    onToggle={handleSeverityToggle}
+                  />
+                ))}
+              </div>
+            </div>
+            {FAMILY_SECTIONS.map((section) => (
+              <div key={section.testid} className="flex flex-col gap-2">
+                <div className="flex items-center gap-1.5">
+                  <p className="text-sm text-muted-foreground">
+                    {section.label}
+                  </p>
+                  <TagLegend
+                    variant="icon"
+                    tags={section.tags}
+                    testId={`${section.testid}-legend`}
+                  />
+                </div>
+                <div
+                  role="group"
+                  aria-label={section.ariaLabel}
+                  data-testid={section.testid}
+                  className="flex flex-wrap gap-2"
+                >
+                  {section.tags.map((tag) => (
+                    <TagFilterButton
+                      key={tag}
+                      tag={tag}
+                      selected={tags.includes(tag)}
+                      color={section.color}
+                      bg={section.bg}
+                      onToggle={handleTagToggle}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+            {/* ── Filter Logic explainer ─────────────────────────────────── */}
+            <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <span>Filter Logic</span>
+              <InfoPopover
+                ariaLabel="How tag filters combine"
+                testId="filter-flaw-logic-info"
+                side="top"
+              >
+                <p>
+                  Tags in the same group are combined with <strong>OR</strong>;
+                  different groups are combined with <strong>AND</strong>.
+                </p>
+                <p className="mt-1.5">
+                  Example: picking <em>Hasty</em> and <em>Unrushed</em> (Timing)
+                  plus <em>Miss</em> (Opportunity) keeps flaws that are{' '}
+                  <em>(hasty or unrushed)</em> and a <em>miss</em>.
+                </p>
+                <p className="mt-1.5">
+                  Applied to games, only games with at least one matching blunder
+                  or mistake are included.
+                </p>
+              </InfoPopover>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

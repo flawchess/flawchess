@@ -241,6 +241,14 @@ export const libraryApi = {
     // (paramsSerializer indexes:null on apiClient ensures no bracket notation)
     severity?: ('blunder' | 'mistake')[];
     tag?: string[];
+    // Quick 260620-pza: tactic filters on the Games tab (mirrors getFlaws). The
+    // tactic family tag group is repeated as tactic_family=fork&...; orientation is
+    // omitted when 'either'; depth bounds are sent when present (the backend EXISTS
+    // ignores all three unless ≥1 tactic_family is selected).
+    tactic_family?: string[];
+    tactic_orientation?: string;
+    min_tactic_depth?: number;
+    max_tactic_depth?: number;
     offset?: number;
     limit?: number;
   }) =>
@@ -249,6 +257,14 @@ export const libraryApi = {
         ...buildFilterParams(params),
         ...(params.severity && params.severity.length > 0 ? { severity: params.severity } : {}),
         ...(params.tag && params.tag.length > 0 ? { tag: params.tag } : {}),
+        ...(params.tactic_family && params.tactic_family.length > 0
+          ? { tactic_family: params.tactic_family }
+          : {}),
+        ...(params.tactic_orientation && params.tactic_orientation !== 'either'
+          ? { tactic_orientation: params.tactic_orientation }
+          : {}),
+        ...(params.min_tactic_depth != null ? { min_tactic_depth: params.min_tactic_depth } : {}),
+        ...(params.max_tactic_depth != null ? { max_tactic_depth: params.max_tactic_depth } : {}),
         offset: params.offset ?? 0,
         limit: params.limit ?? 20,
       },
@@ -329,7 +345,8 @@ export const libraryApi = {
     tactic_family?: string[];
     // Phase 129: orientation filter ('either'|'missed'|'allowed'); omit when 'either'.
     tactic_orientation?: string;
-    // Phase 129: max tactic depth in half-plies (1:1 with DB column); omit when null.
+    // Quick 260620-l5k: inclusive tactic-depth range bounds (0-based ply, 0..11).
+    min_tactic_depth?: number;
     max_tactic_depth?: number;
     offset?: number;
     limit?: number;
@@ -346,13 +363,36 @@ export const libraryApi = {
         ...(params.tactic_orientation && params.tactic_orientation !== 'either'
           ? { tactic_orientation: params.tactic_orientation }
           : {}),
-        // Phase 129: depth — omit when null (Advanced/no cap)
+        // Quick 260620-l5k: depth range — both bounds sent when present (0 is valid).
+        ...(params.min_tactic_depth != null ? { min_tactic_depth: params.min_tactic_depth } : {}),
         ...(params.max_tactic_depth != null ? { max_tactic_depth: params.max_tactic_depth } : {}),
         offset: params.offset ?? 0,
         limit: params.limit ?? 20,
       },
     }).then(r => r.data),
 
-  getGame: (gameId: number) =>
-    apiClient.get<GameFlawCard>(`/library/games/${gameId}`).then(r => r.data),
+  // Quick 260621-sm8: the "View game" modal forwards the active tactic filter so
+  // the single-game view nulls non-matching tactic slots per-slot (same as the
+  // list). orientation omitted when 'either'; depth bounds sent when present.
+  getGame: (
+    gameId: number,
+    params?: {
+      tactic_family?: string[];
+      tactic_orientation?: string;
+      min_tactic_depth?: number;
+      max_tactic_depth?: number;
+    },
+  ) =>
+    apiClient.get<GameFlawCard>(`/library/games/${gameId}`, {
+      params: {
+        ...(params?.tactic_family && params.tactic_family.length > 0
+          ? { tactic_family: params.tactic_family }
+          : {}),
+        ...(params?.tactic_orientation && params.tactic_orientation !== 'either'
+          ? { tactic_orientation: params.tactic_orientation }
+          : {}),
+        ...(params?.min_tactic_depth != null ? { min_tactic_depth: params.min_tactic_depth } : {}),
+        ...(params?.max_tactic_depth != null ? { max_tactic_depth: params.max_tactic_depth } : {}),
+      },
+    }).then(r => r.data),
 };

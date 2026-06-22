@@ -40,6 +40,10 @@ _SEV_BLUNDER = 2
 _TEMPO_LOW_CLOCK = 0
 _TEMPO_HASTY = 1
 _TEMPO_UNRUSHED = 2
+# Tactic encoding — FORK motif int (TacticMotifInt.FORK) + a confidence above the
+# _TACTIC_CHIP_CONFIDENCE_MIN (70) gate so the row counts as a "fork" tactic slot.
+_MOTIF_FORK = 1
+_TACTIC_CONF_HIGH = 80
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -89,6 +93,9 @@ def _flaw_row(
     is_lucky: bool = False,
     is_reversed: bool = False,
     is_squandered: bool = False,
+    allowed_tactic_motif: int | None = None,
+    allowed_tactic_confidence: int | None = None,
+    allowed_tactic_depth: int | None = None,
 ) -> dict:  # type: ignore[type-arg]
     """Return a game_flaws insert dict with sensible defaults."""
     return {
@@ -102,6 +109,9 @@ def _flaw_row(
         "is_lucky": is_lucky,
         "is_reversed": is_reversed,
         "is_squandered": is_squandered,
+        "allowed_tactic_motif": allowed_tactic_motif,
+        "allowed_tactic_confidence": allowed_tactic_confidence,
+        "allowed_tactic_depth": allowed_tactic_depth,
         "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR",
     }
 
@@ -113,6 +123,7 @@ async def _games_matching_exists(
     severity: list[str],
     tags: list[str],
     candidate_game_ids: set[int],
+    tactic_families: list[str] | None = None,
 ) -> set[int]:
     """Return the subset of candidate_game_ids for which flaw_exists_from_table is True."""
     from app.services.flaws_service import FlawSeverity, FlawTag
@@ -123,6 +134,7 @@ async def _games_matching_exists(
         user_id=user_id,
         severity=cast(Sequence[FlawSeverity], severity),
         tags=cast(Sequence[FlawTag], tags),
+        tactic_families=tactic_families or [],
     )
     stmt = select(Game.id).where(
         Game.id.in_(candidate_game_ids),
@@ -389,6 +401,102 @@ class TestFlawExistsFromTable:
         assert game.id not in matched, (
             "split-flaw game must NOT match: no single flaw has both families "
             "(AND across families = single-flaw EXISTS, not per-game)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_single_flaw_tactic_and_context_match(self, db_session: AsyncSession) -> None:
+        """Quick 260621 fix: a SINGLE flaw that is BOTH a fork AND low-clock matches.
+
+        The Games-tab EXISTS (flaw_exists_from_table) ANDs the tactic family and the
+        context tag onto the same game_flaws row, so one flaw satisfying both
+        conditions matches the combined tactic+context filter.
+        """
+        game = await _seed_game(db_session)
+        # One flaw at ply 2: a high-confidence fork AND low-clock.
+        await bulk_insert_game_flaws(
+            db_session,
+            [
+                _flaw_row(
+                    user_id=77001,
+                    game_id=game.id,
+                    ply=2,
+                    tempo=_TEMPO_LOW_CLOCK,
+                    allowed_tactic_motif=_MOTIF_FORK,
+                    allowed_tactic_confidence=_TACTIC_CONF_HIGH,
+                    allowed_tactic_depth=0,
+                )
+            ],
+        )
+
+        matched = await _games_matching_exists(
+            db_session,
+            user_id=77001,
+            severity=[],
+            tags=["low-clock"],
+            tactic_families=["fork"],
+            candidate_game_ids={game.id},
+        )
+        assert game.id in matched, (
+            "a single flaw that is both a fork and low-clock must match the "
+            "combined tactic+context filter"
+        )
+
+    @pytest.mark.asyncio
+    async def test_split_tactic_and_context_flaws_do_not_match(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Quick 260621 fix (regression): tactic AND context is per-flaw, NOT per-game.
+
+        A game with:
+        - Flaw at ply 2: a high-confidence fork, but NOT low-clock
+        - Flaw at ply 6: low-clock, but NOT a fork
+
+        Must NOT match the filter "fork + low-clock". The previous Games-tab code
+        applied the tactic and context filters as two independent correlated EXISTS,
+        so this split-flaw game wrongly matched (a fork flaw plus a separate
+        low-clock flaw). The unified single-row EXISTS rejects it, matching the
+        Flaws tab.
+        """
+        game = await _seed_game(db_session)
+        # Ply 2: fork but no low-clock (no tempo tag).
+        await bulk_insert_game_flaws(
+            db_session,
+            [
+                _flaw_row(
+                    user_id=77001,
+                    game_id=game.id,
+                    ply=2,
+                    tempo=None,
+                    allowed_tactic_motif=_MOTIF_FORK,
+                    allowed_tactic_confidence=_TACTIC_CONF_HIGH,
+                    allowed_tactic_depth=0,
+                )
+            ],
+        )
+        # Ply 6: low-clock but no tactic (motif NULL).
+        await bulk_insert_game_flaws(
+            db_session,
+            [
+                _flaw_row(
+                    user_id=77001,
+                    game_id=game.id,
+                    ply=6,
+                    tempo=_TEMPO_LOW_CLOCK,
+                )
+            ],
+        )
+
+        matched = await _games_matching_exists(
+            db_session,
+            user_id=77001,
+            severity=[],
+            tags=["low-clock"],
+            tactic_families=["fork"],
+            candidate_game_ids={game.id},
+        )
+        assert game.id not in matched, (
+            "split-flaw game must NOT match: no single flaw is both a fork and "
+            "low-clock (tactic+context AND is single-flaw EXISTS, not per-game)"
         )
 
     @pytest.mark.asyncio

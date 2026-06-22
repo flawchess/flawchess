@@ -276,22 +276,25 @@ async def get_eval_coverage(
     Locked by D-01: dedicated endpoint, NOT extending GET /imports/active.
     Locked by D-04: response keys pending_count, total_count, pct_complete unchanged.
     """
-    # Badge denominator is the ANALYZABLE total, not every imported game. Games
-    # that finished the full-eval drain yet never reached is_analyzed (zero-move /
-    # ultra-short games — see count_analyzable_games) are permanently unanalyzable;
-    # counting them made analyzed_count < total_count forever ("X of X" unreachable).
-    total = await game_repository.count_analyzable_games(session, user.id)
+    # Badge = "analyzed of total games", matching the per-game Library cards.
+    # total_count is every imported game; analyzed_count is full_evals_completed_at
+    # IS NOT NULL (FlawChess's own full analysis — the same column the cards' Analyze
+    # button keys off). A lichess game imported with bundled %eval analysis sets
+    # white_blunders at import (is_analyzed=True) but NOT full_evals_completed_at, so
+    # it stays "not analyzed" here until our drain runs — the card and badge agree.
+    # X-of-X stays reachable: degenerate games get full_evals_completed_at stamped by
+    # the drain, so they count as analyzed (their cards show no Analyze button too).
+    total = await game_repository.count_games_for_user(session, user.id)
     if total == 0:
         return EvalCoverageResponse(
             pending_count=0, total_count=0, pct_complete=100, analyzed_count=0
         )
     pending = await game_repository.count_pending_evals(session, user.id)
-    # pending (evals_completed_at IS NULL) is a subset of the analyzable total, so
-    # this is non-negative in practice; max(..., 0) is defensive against the rare
-    # ordering edge where the full drain stamps a game before the entry-ply drain.
-    pct = round(100 * max(total - pending, 0) / total)
+    # pending (evals_completed_at IS NULL) is always a subset of all games, so
+    # total - pending is non-negative; pct tracks entry-ply readiness (unchanged).
+    pct = round(100 * (total - pending) / total)
     # Sequential awaits on the same session (never asyncio.gather — CLAUDE.md)
-    analyzed = await game_repository.count_is_analyzed_games(session, user.id)
+    analyzed = await game_repository.count_fully_analyzed_games(session, user.id)
     return EvalCoverageResponse(
         pending_count=pending,
         total_count=total,

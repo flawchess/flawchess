@@ -24,11 +24,24 @@ export const PRESET_RANGES: Record<OpponentStrengthPreset, OpponentStrengthRange
   weaker: { min: null, max: -STRONG_WEAK_THRESHOLD },
 };
 
+/** Short preset names shown on the chips (the Elo range goes in the summary). */
 export const PRESET_LABELS: Record<OpponentStrengthPreset, string> = {
   any: 'Any',
   stronger: 'Stronger',
   similar: 'Similar',
   weaker: 'Weaker',
+};
+
+/**
+ * Active-preset summary labels include the Elo-gap range, e.g. "Stronger: ≥+50".
+ * Derived from the threshold constants so the displayed bounds stay in sync.
+ * Uses the proper minus sign (U+2212) to match the slider/custom formatting.
+ */
+const PRESET_SUMMARY_LABELS: Record<OpponentStrengthPreset, string> = {
+  any: PRESET_LABELS.any,
+  stronger: `${PRESET_LABELS.stronger}: ≥+${STRONG_WEAK_THRESHOLD}`,
+  similar: `${PRESET_LABELS.similar}: ±${PRESET_THRESHOLD}`,
+  weaker: `${PRESET_LABELS.weaker}: ≤−${STRONG_WEAK_THRESHOLD}`,
 };
 
 export const PRESET_ORDER: OpponentStrengthPreset[] = ['any', 'stronger', 'similar', 'weaker'];
@@ -86,7 +99,7 @@ function formatBound(value: number, signed: boolean): string {
  */
 export function formatRangeSummary(range: OpponentStrengthRange): string {
   const preset = derivePreset(range);
-  if (preset) return PRESET_LABELS[preset];
+  if (preset) return PRESET_SUMMARY_LABELS[preset];
 
   const minLabel = range.min === null ? `≤${formatBound(SLIDER_MIN, false)}` : formatBound(range.min, true);
   const maxLabel = range.max === null ? `≥+${SLIDER_MAX}` : formatBound(range.max, true);

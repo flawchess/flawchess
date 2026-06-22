@@ -2,9 +2,12 @@
  * useFlawFilterStore unit tests — Phase 129 TACUI-06.
  *
  * Asserts that:
- * 1. DEFAULT_FLAW_FILTER includes tacticOrientation='either', tacticDepthPreset='intermediate'
+ * 1. DEFAULT_FLAW_FILTER includes tacticOrientation='either' + depth range {0, 11}
  * 2. isFlawFilterNonDefault returns false at the defaults
  * 3. Each off-default value flips isFlawFilterNonDefault to true
+ *
+ * Quick 260620-l5k (Phase 130): depth is now a [min, max] range in depth units;
+ * Quick 260621-sm8: default changed from Intermediate {0, 5} to High/full range {0, 11}.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -18,12 +21,9 @@ describe('DEFAULT_FLAW_FILTER', () => {
     expect(DEFAULT_FLAW_FILTER.tacticOrientation).toBe('either');
   });
 
-  it('includes tacticDepthPreset = intermediate', () => {
-    expect(DEFAULT_FLAW_FILTER.tacticDepthPreset).toBe('intermediate');
-  });
-
-  it('includes tacticDepthMax = DEPTH_PRESET_INTERMEDIATE_MAX (6)', () => {
-    expect(DEFAULT_FLAW_FILTER.tacticDepthMax).toBe(6);
+  it('includes the High/full depth range {0, 11} (Quick 260621-sm8)', () => {
+    expect(DEFAULT_FLAW_FILTER.tacticDepthMin).toBe(0);
+    expect(DEFAULT_FLAW_FILTER.tacticDepthMax).toBe(11);
   });
 
   it('includes empty severity', () => {
@@ -44,12 +44,13 @@ describe('isFlawFilterNonDefault', () => {
     expect(isFlawFilterNonDefault(DEFAULT_FLAW_FILTER)).toBe(false);
   });
 
-  it('returns false when tacticOrientation=either and tacticDepthPreset=intermediate', () => {
+  it('returns false when tacticOrientation=either and depth range is {0, 11}', () => {
     expect(
       isFlawFilterNonDefault({
         ...DEFAULT_FLAW_FILTER,
         tacticOrientation: 'either',
-        tacticDepthPreset: 'intermediate',
+        tacticDepthMin: 0,
+        tacticDepthMax: 11,
       }),
     ).toBe(false);
   });
@@ -66,22 +67,32 @@ describe('isFlawFilterNonDefault', () => {
     ).toBe(true);
   });
 
-  it('returns true when tacticDepthPreset = beginner', () => {
+  it('returns true for the Low range {0, 1}', () => {
     expect(
       isFlawFilterNonDefault({
         ...DEFAULT_FLAW_FILTER,
-        tacticDepthPreset: 'beginner',
-        tacticDepthMax: 2,
+        tacticDepthMin: 0,
+        tacticDepthMax: 1,
       }),
     ).toBe(true);
   });
 
-  it('returns true when tacticDepthPreset = advanced', () => {
+  it('returns true for the Medium range {0, 5}', () => {
     expect(
       isFlawFilterNonDefault({
         ...DEFAULT_FLAW_FILTER,
-        tacticDepthPreset: 'advanced',
-        tacticDepthMax: null,
+        tacticDepthMin: 0,
+        tacticDepthMax: 5,
+      }),
+    ).toBe(true);
+  });
+
+  it('returns true for a custom range with a non-zero min ({2, 11})', () => {
+    expect(
+      isFlawFilterNonDefault({
+        ...DEFAULT_FLAW_FILTER,
+        tacticDepthMin: 2,
+        tacticDepthMax: 11,
       }),
     ).toBe(true);
   });
@@ -104,15 +115,16 @@ describe('isFlawFilterNonDefault', () => {
     ).toBe(true);
   });
 
-  it('returns false even when tacticDepthMax differs from INTERMEDIATE_MAX but preset is intermediate', () => {
-    // CRITICAL (D-02): non-default = NOT Intermediate / NOT Either preset.
-    // The depth filter is always-on, so Intermediate with any maxMoves is still "default".
+  it('returns true when only the max differs from the default {0, 11} (custom {0, 10})', () => {
+    // Quick 260620-l5k: non-default is now driven by the actual range, not a
+    // preset label — a custom range narrows the result set and lights the dot.
+    // Quick 260621-sm8: default is now High {0, 11}, so Medium {0, 5} is non-default.
     expect(
       isFlawFilterNonDefault({
         ...DEFAULT_FLAW_FILTER,
-        tacticDepthPreset: 'intermediate',
-        tacticDepthMax: 4,
+        tacticDepthMin: 0,
+        tacticDepthMax: 10,
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 });

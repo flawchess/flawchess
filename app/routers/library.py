@@ -75,6 +75,10 @@ async def get_library_games(
     to_date: datetime.date | None = Query(default=None),
     rated: bool | None = Query(default=None),
     opponent_type: str = Query(default="human"),
+    tactic_family: list[str] | None = Query(default=None),
+    tactic_orientation: TacticOrientationFilter = Query(default="either"),
+    min_tactic_depth: int | None = Query(default=None, ge=0, le=11),
+    max_tactic_depth: int | None = Query(default=None, ge=0, le=11),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     opponent_gap_min: int | None = Query(default=None),
@@ -87,7 +91,10 @@ async def get_library_games(
     that severity (or worse) are returned. When `tag` is supplied, only games
     containing a SINGLE flaw satisfying ALL selected tag families are returned
     (OR within family, AND across families — single-flaw EXISTS semantics,
-    SEED-038). severity and tag combine (a game must satisfy both). Each card
+    SEED-038). When `tactic_family` is supplied (Quick 260620-pza), only games
+    with >=1 flaw whose tactic motif (in the orientation's column, within the
+    depth range) is in the selected families are returned — the same tactic
+    EXISTS the Flaws tab uses. severity, tag and tactic_family combine. Each card
     carries per-game B/M/I counts and curated chips; chess.com / unanalyzed-
     lichess games carry analysis_state="no_engine_analysis" with
     severity_counts=null (never 0/0/0). When `color` is supplied ("white" or
@@ -106,6 +113,10 @@ async def get_library_games(
         to_date=to_date,
         flaw_severity=list(severity) if severity else None,
         flaw_tags=list(tag) if tag else None,
+        tactic_families=list(tactic_family) if tactic_family else None,
+        tactic_orientation=tactic_orientation,
+        min_tactic_depth=min_tactic_depth,
+        max_tactic_depth=max_tactic_depth,
         offset=offset,
         limit=limit,
         opponent_gap_min=opponent_gap_min,
@@ -119,6 +130,10 @@ async def get_library_game(
     game_id: int,
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
+    tactic_family: list[str] | None = Query(default=None),
+    tactic_orientation: TacticOrientationFilter = Query(default="either"),
+    min_tactic_depth: int | None = Query(default=None, ge=0, le=11),
+    max_tactic_depth: int | None = Query(default=None, ge=0, le=11),
 ) -> GameFlawCard:
     """Return a single GameFlawCard for the authenticated user's game (SC-7).
 
@@ -126,8 +141,23 @@ async def get_library_game(
     the game belongs to a different user. Returns 404 (not 403) to avoid
     confirming whether the id exists for the requester. game_id is typed int
     so FastAPI rejects non-integer values with 422 (T-112-05).
+
+    Quick 260621-sm8: accepts the same tactic filter params as /games so the
+    "View game" modal (opened from a flaw card with an active filter) nulls
+    non-matching tactic slots per-slot, matching the list. Without these params
+    the modal showed every tactic regardless of the depth/orientation/family
+    filter the user had set (the bug being fixed). Defaults (no family, either,
+    no depth bounds) leave both slots populated, so direct opens are unchanged.
     """
-    card = await library_service.get_library_game(session, user_id=user.id, game_id=game_id)
+    card = await library_service.get_library_game(
+        session,
+        user_id=user.id,
+        game_id=game_id,
+        tactic_families=list(tactic_family) if tactic_family else None,
+        tactic_orientation=tactic_orientation,
+        min_tactic_depth=min_tactic_depth,
+        max_tactic_depth=max_tactic_depth,
+    )
     if card is None:
         raise HTTPException(status_code=404, detail="Game not found")
     return card
@@ -278,7 +308,8 @@ async def get_library_flaws(
     color: str | None = Query(default=None),
     tactic_family: list[str] | None = Query(default=None),
     tactic_orientation: TacticOrientationFilter = Query(default="either"),
-    max_tactic_depth: int | None = Query(default=None, ge=1),
+    min_tactic_depth: int | None = Query(default=None, ge=0, le=11),
+    max_tactic_depth: int | None = Query(default=None, ge=0, le=11),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
 ) -> LibraryFlawsResponse:
@@ -314,6 +345,7 @@ async def get_library_flaws(
         color=color,
         tactic_families=list(tactic_family) if tactic_family else None,
         tactic_orientation=tactic_orientation,
+        min_tactic_depth=min_tactic_depth,
         max_tactic_depth=max_tactic_depth,
         offset=offset,
         limit=limit,

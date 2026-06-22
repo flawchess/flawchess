@@ -36,6 +36,7 @@ from app.repositories.library_repository import (
     TacticOrientation,
     _TACTIC_CHIP_CONFIDENCE_MIN,
     _TEMPO_INT_TO_TAG,
+    tactic_slot_visible,
 )
 from app.services.tactic_detector import _INT_TO_MOTIF as _TACTIC_INT_TO_MOTIF
 from app.schemas.library import (
@@ -81,10 +82,15 @@ from app.services.openings_service import (
 _USER_FRAMED_TAGS: frozenset[FlawTag] = frozenset({"miss", "lucky"})
 
 
+# Per-ply tactic chip + depth payload for FlawMarkers (gated, both orientations):
+# (allowed_motif, allowed_conf, allowed_depth, missed_motif, missed_conf, missed_depth).
+_TacticByPlyEntry = tuple[str | None, int | None, int | None, str | None, int | None, int | None]
+
+
 def _build_eval_series(
     game: Game,
     positions: list[GamePosition],
-    tactic_by_ply: dict[int, tuple[str | None, int | None, str | None, int | None]] | None = None,
+    tactic_by_ply: dict[int, _TacticByPlyEntry] | None = None,
 ) -> tuple[list[EvalPoint], list[FlawMarker], PhaseTransitions]:
     """Compute white-perspective ES line, flaw markers, and phase transitions.
 
@@ -97,7 +103,8 @@ def _build_eval_series(
         game: Game row with user_color, result, base_time_seconds, increment_seconds.
         positions: All GamePosition rows for this game, ordered by ply ASC.
         tactic_by_ply: Optional dict mapping ply → (allowed_motif, allowed_conf,
-                       missed_motif, missed_conf) for tactic chip data on FlawMarkers.
+                       allowed_depth, missed_motif, missed_conf, missed_depth) for
+                       tactic chip + depth data on FlawMarkers.
                        Sourced from game_flaws rows (Phase 126, TACUI-01 single-game
                        card; Phase 128 D-07 extends to both orientation column sets).
                        None = no tactic chip data (default, preserves backward compat).
@@ -207,12 +214,21 @@ def _build_eval_series(
         # Phase 128 D-07: both orientation column sets on FlawMarker (orientation-labeled).
         tac_allowed_motif: str | None = None
         tac_allowed_conf: int | None = None
+        tac_allowed_depth: int | None = None
         tac_missed_motif: str | None = None
         tac_missed_conf: int | None = None
+        tac_missed_depth: int | None = None
         if tactic_by_ply is not None:
             tac_entry = tactic_by_ply.get(pos.ply)
             if tac_entry is not None:
-                tac_allowed_motif, tac_allowed_conf, tac_missed_motif, tac_missed_conf = tac_entry
+                (
+                    tac_allowed_motif,
+                    tac_allowed_conf,
+                    tac_allowed_depth,
+                    tac_missed_motif,
+                    tac_missed_conf,
+                    tac_missed_depth,
+                ) = tac_entry
         flaw_markers.append(
             FlawMarker(
                 ply=pos.ply,
@@ -222,8 +238,10 @@ def _build_eval_series(
                 move_san=pos.move_san,
                 allowed_tactic_motif=tac_allowed_motif,
                 allowed_tactic_confidence=tac_allowed_conf,
+                allowed_tactic_depth=tac_allowed_depth,
                 missed_tactic_motif=tac_missed_motif,
                 missed_tactic_confidence=tac_missed_conf,
+                missed_tactic_depth=tac_missed_depth,
             )
         )
 
@@ -333,6 +351,11 @@ def _build_card(
     is_analyzed: bool,
     positions: list[GamePosition],
     active_eval_status: Literal["pending", "leased"] | None = None,
+    *,
+    tactic_families: Sequence[str] = (),
+    tactic_orientation: TacticOrientation = "either",
+    min_tactic_depth: int | None = None,
+    max_tactic_depth: int | None = None,
 ) -> GameFlawCard:
     """Build one GameFlawCard from pre-fetched game_flaws rows (D-02 migration).
 
@@ -351,6 +374,12 @@ def _build_card(
     Phase 109 (LIBG-10): when is_analyzed and positions are provided, the three
     new eval chart fields (eval_series, flaw_markers, phase_transitions) are
     populated via _build_eval_series. Unanalyzed games always get None for these.
+
+    Quick 260621-sm8: tactic_families/tactic_orientation/min_tactic_depth/
+    max_tactic_depth are applied to null non-matching tactic slots in flaw_markers
+    via the shared tactic_slot_visible predicate (same predicate as query_flaws).
+    Defaults (no controls active) leave both slots populated, so the single-game
+    path (get_library_game, which passes no filter params) is unaffected.
     """
     severity_counts: SeverityCounts | None
     chips: list[FlawTag]
@@ -383,42 +412,61 @@ def _build_card(
         analysis_state = "analyzed"
         # Phase 109 (LIBG-10): populate eval chart fields for analyzed games.
         if positions:
-            # Phase 126 (TACUI-01): build tactic_by_ply dict from flaw_rows for chips.
-            # Phase 128 D-07: extended to 4-tuple (allowed_motif, allowed_conf,
-            # missed_motif, missed_conf) so FlawMarker carries both orientation column
-            # sets. Each pair is None when below _TACTIC_CHIP_CONFIDENCE_MIN or NULL.
-            tactic_by_ply: dict[int, tuple[str | None, int | None, str | None, int | None]] = {}
+            # Quick 260621-sm8: build tactic_by_ply via the shared per-slot predicate
+            # (tactic_slot_visible), identical to the predicate used by query_flaws.
+            # A slot is emitted non-null IFF it satisfies orientation ∩ confidence ∩
+            # family ∩ depth-range. Defaults (tactic_families=(), orientation="either",
+            # no depth bounds) leave both slots populated, so the single-game path is
+            # unaffected. Previously only the confidence threshold was checked, so
+            # orientation and depth controls had no effect on the Games tab (BUG).
+            tactic_by_ply: dict[int, _TacticByPlyEntry] = {}
             for fr in flaw_rows:
+                allowed_visible = tactic_slot_visible(
+                    fr.allowed_tactic_motif,
+                    fr.allowed_tactic_confidence,
+                    fr.allowed_tactic_depth,
+                    orientation_kind="allowed",
+                    tactic_families=tactic_families,
+                    tactic_orientation=tactic_orientation,
+                    min_tactic_depth=min_tactic_depth,
+                    max_tactic_depth=max_tactic_depth,
+                )
                 allowed_motif_str: str | None = None
                 allowed_conf_val: int | None = None
-                if (
-                    fr.allowed_tactic_motif is not None
-                    and fr.allowed_tactic_confidence is not None
-                    and fr.allowed_tactic_confidence >= _TACTIC_CHIP_CONFIDENCE_MIN
-                ):
+                allowed_depth_val: int | None = None
+                if allowed_visible and fr.allowed_tactic_motif is not None:
                     allowed_motif_str = _TACTIC_INT_TO_MOTIF.get(fr.allowed_tactic_motif)
                     if allowed_motif_str is not None:
                         allowed_conf_val = fr.allowed_tactic_confidence
-                    else:
-                        allowed_motif_str = None
+                        allowed_depth_val = fr.allowed_tactic_depth
+
+                missed_visible = tactic_slot_visible(
+                    fr.missed_tactic_motif,
+                    fr.missed_tactic_confidence,
+                    fr.missed_tactic_depth,
+                    orientation_kind="missed",
+                    tactic_families=tactic_families,
+                    tactic_orientation=tactic_orientation,
+                    min_tactic_depth=min_tactic_depth,
+                    max_tactic_depth=max_tactic_depth,
+                )
                 missed_motif_str: str | None = None
                 missed_conf_val: int | None = None
-                if (
-                    fr.missed_tactic_motif is not None
-                    and fr.missed_tactic_confidence is not None
-                    and fr.missed_tactic_confidence >= _TACTIC_CHIP_CONFIDENCE_MIN
-                ):
+                missed_depth_val: int | None = None
+                if missed_visible and fr.missed_tactic_motif is not None:
                     missed_motif_str = _TACTIC_INT_TO_MOTIF.get(fr.missed_tactic_motif)
                     if missed_motif_str is not None:
                         missed_conf_val = fr.missed_tactic_confidence
-                    else:
-                        missed_motif_str = None
+                        missed_depth_val = fr.missed_tactic_depth
+
                 if allowed_motif_str is not None or missed_motif_str is not None:
                     tactic_by_ply[fr.ply] = (
                         allowed_motif_str,
                         allowed_conf_val,
+                        allowed_depth_val,
                         missed_motif_str,
                         missed_conf_val,
+                        missed_depth_val,
                     )
             eval_series_val, flaw_marker_val, phase_transition_val = _build_eval_series(
                 game, positions, tactic_by_ply=tactic_by_ply if tactic_by_ply else None
@@ -469,6 +517,11 @@ async def get_library_game(
     session: AsyncSession,
     user_id: int,
     game_id: int,
+    *,
+    tactic_families: Sequence[str] | None = None,
+    tactic_orientation: TacticOrientation = "either",
+    min_tactic_depth: int | None = None,
+    max_tactic_depth: int | None = None,
 ) -> GameFlawCard | None:
     """Return a single GameFlawCard for a game owned by the authenticated user.
 
@@ -481,6 +534,10 @@ async def get_library_game(
     (fetch_page_analyzed_set, fetch_page_game_flaws, fetch_page_eval_positions),
     called with [game_id]. Queries run sequentially on the one AsyncSession
     (no asyncio.gather — CLAUDE.md §"Never use asyncio.gather on the same AsyncSession").
+
+    Quick 260621-sm8: the tactic filter params are threaded to _build_card so the
+    "View game" modal honors the active depth/orientation/family filter (per-slot
+    nulling), identical to the list path. Defaults leave both slots populated.
     """
     game = await session.get(Game, game_id)
     if game is None or game.user_id != user_id:
@@ -507,7 +564,17 @@ async def get_library_game(
     else:
         positions = []
 
-    return _build_card(game, flaw_rows, is_analyzed, positions, active_map.get(game_id))
+    return _build_card(
+        game,
+        flaw_rows,
+        is_analyzed,
+        positions,
+        active_map.get(game_id),
+        tactic_families=tactic_families or (),
+        tactic_orientation=tactic_orientation,
+        min_tactic_depth=min_tactic_depth,
+        max_tactic_depth=max_tactic_depth,
+    )
 
 
 async def get_library_games(
@@ -522,6 +589,10 @@ async def get_library_games(
     to_date: datetime.date | None,
     flaw_severity: list[str] | None,
     flaw_tags: list[str] | None = None,
+    tactic_families: list[str] | None = None,
+    tactic_orientation: Literal["either", "missed", "allowed"] = "either",
+    min_tactic_depth: int | None = None,
+    max_tactic_depth: int | None = None,
     offset: int,
     limit: int,
     opponent_gap_min: int | None = None,
@@ -550,6 +621,10 @@ async def get_library_games(
             to_date=to_date,
             flaw_severity=flaw_severity,
             flaw_tags=flaw_tags,
+            tactic_families=tactic_families,
+            tactic_orientation=tactic_orientation,
+            min_tactic_depth=min_tactic_depth,
+            max_tactic_depth=max_tactic_depth,
             offset=offset,
             limit=limit,
             opponent_gap_min=opponent_gap_min,
@@ -595,6 +670,10 @@ async def get_library_games(
                 game.id in analyzed_set,
                 page_positions.get(game.id, []),
                 active_status_map.get(game.id),
+                tactic_families=tactic_families or (),
+                tactic_orientation=tactic_orientation,
+                min_tactic_depth=min_tactic_depth,
+                max_tactic_depth=max_tactic_depth,
             )
             for game in games
         ]
@@ -689,7 +768,7 @@ def _build_tag_distribution(
     (from game_flaws — inaccuracy never stored per D-03). Tempo counts sum to
     <= total M+B because rows with NULL tempo carry no tempo tag (clock-less games).
     The unmeasured remainder (total - sum(tempo)) is preserved by NOT normalizing
-    to 100% (flaw-tag-naming.md §"Structural change").
+    to 100% (flaw-tag-definitions.md §"Structural rule: tempo is optional").
     """
     total_flaws = mistake_count + blunder_count
     miss_rate = is_miss / total_flaws if total_flaws > 0 else 0.0
@@ -963,6 +1042,7 @@ async def get_library_flaws(
     color: str | None,
     tactic_families: list[str] | None = None,
     tactic_orientation: TacticOrientation = "either",
+    min_tactic_depth: int | None = None,
     max_tactic_depth: int | None = None,
     offset: int,
     limit: int,
@@ -1004,6 +1084,7 @@ async def get_library_flaws(
             color=color,
             tactic_families=tactic_families,
             orientation=tactic_orientation,
+            min_tactic_depth=min_tactic_depth,
             max_tactic_depth=max_tactic_depth,
             offset=offset,
             limit=limit,
@@ -1398,6 +1479,12 @@ async def get_tactic_comparison(
             # per-game fetch so analyzed_n matches the set the bullets aggregate
             # over (WR-02; mirrors get_flaw_comparison threading flaw_severity).
             tactic_families=tactic_families,
+            # SEED-062: the grid shows BOTH orientations, so narrow the game
+            # population on "either" (not the apply_game_filters "allowed" default).
+            # Flows to the gate and both fetches via _filter_kwargs, keeping the
+            # analyzed_n denominator and both bullet populations on one basis and
+            # including games whose only family-X tactic was missed-only.
+            tactic_filter_orientation="either",
         )
 
         _total_n, analyzed_n = await library_repository.count_filtered_and_analyzed(

@@ -1,134 +1,162 @@
 /**
- * tacticDepth.ts — Phase 129 TACUI-06 (D-03).
+ * tacticDepth.ts — Quick 260620-l5k (Phase 130).
  *
- * UNIT SPLIT (D-03, LOCKED):
- *   Slider domain:  FULL MOVES  (1..DEPTH_SLIDER_MAX_MOVES)
- *   API/DB value:   HALF-PLIES  (1:1 with the game_flaws depth column)
+ * UNIT (LOCKED): the slider and the API/DB value are BOTH plain depth — the
+ * 0-based ply index into the winning line (`game_flaws.*_tactic_depth`). No
+ * full-move ↔ half-ply conversion anymore; the slider domain IS the DB domain.
  *
- * The two domains are bridged by sliderToMax / maxToSlider via HALF_PLIES_PER_MOVE.
- * Every summary string, slider tick label, and thumb aria-label reads in FULL MOVES.
- * The API param max_tactic_depth receives the HALF-PLY value unchanged.
- *
- * Clone of opponentStrength.ts adapted for a single-bound depth value.
+ * The filter is a two-handle RANGE [min, max] over depth 0..11 (the dev-DB max
+ * is 11). Mates obey the range like every other tactic (the Phase 129 D-04
+ * exemption was removed). Cloned in spirit from opponentStrength.ts.
  */
 
 // ─── Named constants (no magic numbers) ─────────────────────────────────────
 
-/** Half-plies: 1 full move = 2 half-plies (Beginner preset). */
-export const DEPTH_PRESET_BEGINNER_MAX = 2;
+/** Slider domain minimum (depth, 0-based ply). 0 is selectable on both handles. */
+export const DEPTH_MIN = 0;
 
-/** Half-plies: 3 full moves = 6 half-plies (Intermediate preset, always-on default). */
-export const DEPTH_PRESET_INTERMEDIATE_MAX = 6;
+/** Slider domain maximum. Dev-DB max tactic depth is 11. */
+export const DEPTH_MAX = 11;
 
-/** No cap — shows all tactic depths (Advanced preset). */
-export const DEPTH_PRESET_ADVANCED_MAX: null = null;
-
-/** Minimum slider position in full moves. */
-export const DEPTH_SLIDER_MIN_MOVES = 1;
+/** Step size in depth units. */
+export const DEPTH_STEP = 1;
 
 /**
- * Maximum slider position in full moves.
- * 5 full moves = 10 half-plies; Phase 127 data shows near-zero counts beyond ~8 half-plies.
- * Slider at this position is equivalent to Advanced (no cap, maxMoves=null).
+ * Display offset: internal/DB/API depth is 0-based (0 = immediate), but the UI
+ * shows it 1-based (1..12) everywhere a user sees a number — the filter summary
+ * and the depth badges on the library miniboards. Internal values, slider
+ * domain, presets, and API query params stay 0-based.
  */
-export const DEPTH_SLIDER_MAX_MOVES = 5;
+export const DEPTH_DISPLAY_OFFSET = 1;
 
-/** Step size in full moves (one move per step). */
-export const DEPTH_SLIDER_STEP = 1;
+/** Convert an internal 0-based depth to its user-facing 1-based number. */
+export function toDisplayDepth(depth: number): number {
+  return depth + DEPTH_DISPLAY_OFFSET;
+}
 
-/** Conversion factor: full-move (slider) to half-ply (API). */
-export const HALF_PLIES_PER_MOVE = 2;
+/**
+ * Decision-anchored depth offset for the ALLOWED orientation (Quick 260621-qz9).
+ *
+ * missed_tactic_depth and allowed_tactic_depth both store the raw 0-based detector
+ * loop index within their OWN principal variation. The missed PV starts at the
+ * decision board; the allowed PV is the opponent's refutation, which starts one
+ * ply LATER. On the miniboards both depth badges are anchored on the same pre-flaw
+ * decision board, so an allowed tactic at raw depth d sits one ply deeper than a
+ * missed tactic at the same raw d. Allowed display gets this extra +1 so both
+ * orientations read on one decision-anchored difficulty scale. Mirrors
+ * ALLOWED_DECISION_DEPTH_OFFSET in app/repositories/library_repository.py.
+ */
+export const ALLOWED_DECISION_DEPTH_OFFSET = 1;
 
-/** D-02: always-on depth filter; default preset is Intermediate. */
-export const DEPTH_DEFAULT_PRESET = 'intermediate' as const;
+/** Orientation of a tactic depth — missed (player's line) vs allowed (opponent's). */
+export type TacticDepthOrientation = 'missed' | 'allowed';
+
+/**
+ * Orientation-aware display depth: missed = raw + 1 (the plain offset); allowed =
+ * raw + 1 + 1 (decision-anchored, see ALLOWED_DECISION_DEPTH_OFFSET). Use this for
+ * the miniboard depth badges so allowed and missed are comparable on screen.
+ */
+export function toDisplayDepthForOrientation(
+  depth: number,
+  orientation: TacticDepthOrientation,
+): number {
+  const anchorOffset = orientation === 'allowed' ? ALLOWED_DECISION_DEPTH_OFFSET : 0;
+  return depth + DEPTH_DISPLAY_OFFSET + anchorOffset;
+}
+
+/** Always-on depth filter; default preset is High (full range — shows everything). */
+export const DEPTH_DEFAULT_PRESET = 'high' as const;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type TacticDepthPreset = 'beginner' | 'intermediate' | 'advanced';
+export type TacticDepthPreset = 'low' | 'medium' | 'high';
 
 /**
- * Depth value shape carried through the UI.
- * `maxMoves` is in HALF-PLIES (despite the name "Moves") — it is the API-boundary
- * value that matches the DB column exactly. null = no cap (Advanced).
+ * Depth range carried through the UI and sent to the API. Both bounds are
+ * inclusive depth values in [DEPTH_MIN, DEPTH_MAX]. min === max is valid
+ * (e.g. {0, 0} = depth-0 tactics only).
  */
 export interface TacticDepthValue {
-  preset: TacticDepthPreset;
-  /** Half-ply API/DB value. null = no cap (Advanced). Named "maxMoves" for continuity. */
-  maxMoves: number | null;
+  min: number;
+  max: number;
 }
+
+// ─── Presets ────────────────────────────────────────────────────────────────
+
+// Raw bounds stay in stored depth units (the 0-based detector index). They are
+// NOT shifted for the allowed +1 offset: that offset is applied per-orientation
+// inside the backend filter (and the on-screen display), so the preset domain
+// must remain the shared stored-unit scale to avoid double-counting the shift.
+export const PRESET_RANGES: Record<TacticDepthPreset, TacticDepthValue> = {
+  low: { min: 0, max: 1 },
+  medium: { min: 0, max: 5 },
+  high: { min: DEPTH_MIN, max: DEPTH_MAX },
+};
+
+/** Short preset names shown on the chips (the depth range goes in the summary). */
+export const PRESET_LABELS: Record<TacticDepthPreset, string> = {
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+};
+
+export const PRESET_ORDER: TacticDepthPreset[] = ['low', 'medium', 'high'];
+
+/** Default range = High / full range (0..11). */
+export const DEFAULT_TACTIC_DEPTH_VALUE: TacticDepthValue = PRESET_RANGES[DEPTH_DEFAULT_PRESET];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Derive which preset matches the given half-ply maxMoves value.
- * Returns null when no preset matches exactly (custom slider position).
+ * Derive which preset the {min, max} range matches exactly, or null when the
+ * range is custom (matches no preset).
  */
-export function derivePreset(maxMoves: number | null): TacticDepthPreset | null {
-  if (maxMoves === DEPTH_PRESET_BEGINNER_MAX) return 'beginner';
-  if (maxMoves === DEPTH_PRESET_INTERMEDIATE_MAX) return 'intermediate';
-  if (maxMoves === DEPTH_PRESET_ADVANCED_MAX) return 'advanced';
+export function derivePreset(min: number, max: number): TacticDepthPreset | null {
+  for (const preset of PRESET_ORDER) {
+    const r = PRESET_RANGES[preset];
+    if (r.min === min && r.max === max) return preset;
+  }
   return null;
 }
 
-/** Preset name to half-ply maxMoves value. Inverse of derivePreset for named presets. */
-export function presetToMax(preset: TacticDepthPreset): number | null {
-  switch (preset) {
-    case 'beginner':
-      return DEPTH_PRESET_BEGINNER_MAX;
-    case 'intermediate':
-      return DEPTH_PRESET_INTERMEDIATE_MAX;
-    case 'advanced':
-      return DEPTH_PRESET_ADVANCED_MAX;
-  }
+/** Inverse of derivePreset — preset name → range. */
+export function presetToRange(preset: TacticDepthPreset): TacticDepthValue {
+  return PRESET_RANGES[preset];
 }
 
 /**
- * Convert a full-move slider position to a half-ply maxMoves API value.
- * Slider at DEPTH_SLIDER_MAX_MOVES = Advanced (no cap = null).
+ * Convert a slider tuple [lo, hi] into a TacticDepthValue, clamping into the
+ * domain. Both bounds are literal depth values (no unbounded/null endpoints).
  */
-export function sliderToMax(sliderMoves: number): number | null {
-  if (sliderMoves >= DEPTH_SLIDER_MAX_MOVES) return null;
-  return sliderMoves * HALF_PLIES_PER_MOVE;
+export function sliderToRange(lo: number, hi: number): TacticDepthValue {
+  return {
+    min: Math.max(DEPTH_MIN, Math.min(lo, hi)),
+    max: Math.min(DEPTH_MAX, Math.max(lo, hi)),
+  };
 }
 
 /**
- * Convert a half-ply maxMoves API value to a full-move slider position.
- * null (no cap) maps to DEPTH_SLIDER_MAX_MOVES.
- */
-export function maxToSlider(maxMoves: number | null): number {
-  if (maxMoves === null) return DEPTH_SLIDER_MAX_MOVES;
-  return Math.ceil(maxMoves / HALF_PLIES_PER_MOVE);
-}
-
-/**
- * Summary text for the active depth value (reads in FULL MOVES per D-03).
- * Uses preset label when the maxMoves exactly matches a preset; Custom otherwise.
- * No em-dashes.
+ * Summary text for the active depth range. Always shows the range using the
+ * 1-based display numbers (e.g. `Intermediate: 1-6`); when it matches a preset,
+ * the preset name is prefixed. A custom range renders bare (`3-5`, or `4` when
+ * min === max). Internal values stay 0-based; only the display is offset.
  */
 export function formatDepthSummary(value: TacticDepthValue): string {
-  const detected = derivePreset(value.maxMoves);
-  switch (detected) {
-    case 'beginner':
-      return 'Beginner (1 move)';
-    case 'intermediate':
-      return 'Intermediate (≤ 3 moves deep)';
-    case 'advanced':
-      return 'Advanced (all)';
-    default: {
-      // Custom: convert half-plies to full moves for the display string.
-      const fullMoves =
-        value.maxMoves != null ? Math.ceil(value.maxMoves / HALF_PLIES_PER_MOVE) : DEPTH_SLIDER_MAX_MOVES;
-      return `Custom (≤ ${fullMoves} moves)`;
-    }
-  }
+  const lo = toDisplayDepth(value.min);
+  const hi = toDisplayDepth(value.max);
+  const range = value.min === value.max ? `${lo}` : `${lo}-${hi}`;
+  const preset = derivePreset(value.min, value.max);
+  return preset ? `${PRESET_LABELS[preset]}: ${range}` : range;
 }
 
 /**
- * Build the max_tactic_depth API query param.
- * Returns empty object when maxMoves is null (Advanced/no cap — omit the param).
- * Passes the half-ply value through unchanged to the API.
+ * Build the depth API query params. Both bounds are always sent — the range is
+ * always a concrete [min, max] in depth units, and the backend treats them as
+ * inclusive bounds (each side individually optional server-side).
  */
-export function depthToQueryParam(maxMoves: number | null): { max_tactic_depth?: number } {
-  if (maxMoves === null) return {};
-  return { max_tactic_depth: maxMoves };
+export function depthToQueryParams(
+  min: number,
+  max: number,
+): { min_tactic_depth: number; max_tactic_depth: number } {
+  return { min_tactic_depth: min, max_tactic_depth: max };
 }

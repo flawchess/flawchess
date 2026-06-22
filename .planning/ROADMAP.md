@@ -340,6 +340,17 @@ Plans:
 
 *Phase 103 (Endgame report LLM prompt refinements) shipped 2026-06-03 as an unplanned follow-on under v1.23 — see the collapsed v1.23 block above and [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md).*
 
+### Phase 130: Tactic tag improvements and fixes
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 129
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 130 to break down)
+
 ---
 
 <details>

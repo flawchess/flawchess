@@ -239,6 +239,17 @@ This project is managed with [GET SHIT DONE (GSD)](https://github.com/gsd-build/
 - **Plan → Execute: `/clear` before execution.** The executor reads `PLAN.md` and `RESEARCH.md` from `.planning/` — everything important is already distilled there. Clearing frees context for file reads, test output, and error traces, and improves signal-to-noise ratio.
 - **Small tasks (`/gsd:quick`, `/gsd:fast`): don't bother clearing** — the overhead isn't worth it for inline tasks.
 
+### GSD worktree isolation vs. phase branches
+
+Claude Code forks `isolation="worktree"` agent trees from `main`, but the `phase` branching strategy keeps phase branches ahead of `main`. So a worktree executor's base won't match the phase-branch HEAD and the spawn-time branch-check fail-closes with a base mismatch (seen on `/gsd-quick`; applies to `/gsd-phase` waves too). This is expected — **don't disable worktrees over it.** Recovery: the orphaned worktree auto-removes (it never committed), so just re-dispatch the executor **inline** (no `isolation="worktree"`) on the current branch. Worktree isolation still adds value for parallel phase waves, so `workflow.use_worktrees` stays enabled.
+
+### Seeds (`.planning/seeds/`)
+
+Forward-looking ideas captured via `/gsd-capture --seed`, surfaced at `/gsd-new-milestone`.
+
+- **Numbering spans both folders.** Active seeds live in `.planning/seeds/`; completed ones are moved to `.planning/seeds/closed/`. The next ID is `max(SEED-NNN across BOTH folders) + 1` — **never** count-based (the `plant-seed` workflow's `ls | wc -l` default undercounts and collides with closed IDs). Always compute the max over `.planning/seeds/ .planning/seeds/closed/` before assigning a number.
+- **Move to `closed/` when done.** When a seed's work is implemented (or it's abandoned), `git mv .planning/seeds/SEED-NNN-*.md .planning/seeds/closed/` so the active folder reflects only open ideas. The ID stays reserved (don't reuse it).
+
 ## User Context
 
 - Data scientist, 15 years web dev, Python expert, proficient with FastAPI

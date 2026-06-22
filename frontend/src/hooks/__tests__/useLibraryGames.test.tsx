@@ -91,4 +91,69 @@ describe('useLibraryGames flaw-filter params', () => {
     expect(params.severity).toEqual(['blunder', 'mistake']);
     expect(params.tag).toEqual(['miss']);
   });
+
+  // Quick 260620-pza: tactic filters threaded to the Games tab.
+  // Quick 260621-sm8: depth + orientation are independently meaningful, so they
+  // are always sent (the all-inclusive default is a backend no-op). Family is sent
+  // only when ≥1 is selected. Previously all three were gated behind family, so a
+  // depth-only/orientation-only filter never reached the backend (the bug).
+  it('sends orientation and depth (not family) at the default flaw filter', async () => {
+    renderHook(() => useLibraryGames(DEFAULT_FILTERS, { ...DEFAULT_FLAW_FILTER }, 0, 20), {
+      wrapper: makeWrapper(),
+    });
+
+    await waitFor(() => expect(vi.mocked(libraryApi.getGames)).toHaveBeenCalled());
+    const params = vi.mocked(libraryApi.getGames).mock.calls[0]![0];
+    expect(params.tactic_family).toBeUndefined();
+    expect(params.tactic_orientation).toBe('either');
+    // Default depth is the full High range; bounds are still sent (backend no-op).
+    expect(params.min_tactic_depth).toBe(DEFAULT_FLAW_FILTER.tacticDepthMin);
+    expect(params.max_tactic_depth).toBe(DEFAULT_FLAW_FILTER.tacticDepthMax);
+  });
+
+  it('sends a depth range with no family selected (depth-only filter)', async () => {
+    renderHook(
+      () =>
+        useLibraryGames(
+          DEFAULT_FILTERS,
+          { ...DEFAULT_FLAW_FILTER, tacticDepthMin: 1, tacticDepthMax: 2 },
+          0,
+          20,
+        ),
+      { wrapper: makeWrapper() },
+    );
+
+    await waitFor(() => expect(vi.mocked(libraryApi.getGames)).toHaveBeenCalled());
+    const params = vi.mocked(libraryApi.getGames).mock.calls[0]![0];
+    expect(params.tactic_family).toBeUndefined();
+    expect(params.tactic_orientation).toBe('either');
+    expect(params.min_tactic_depth).toBe(1);
+    expect(params.max_tactic_depth).toBe(2);
+  });
+
+  it('sends tactic family, orientation and depth when a family is selected', async () => {
+    renderHook(
+      () =>
+        useLibraryGames(
+          DEFAULT_FILTERS,
+          {
+            ...DEFAULT_FLAW_FILTER,
+            tacticFamilies: ['fork'],
+            tacticOrientation: 'missed',
+            tacticDepthMin: 0,
+            tacticDepthMax: 5,
+          },
+          0,
+          20,
+        ),
+      { wrapper: makeWrapper() },
+    );
+
+    await waitFor(() => expect(vi.mocked(libraryApi.getGames)).toHaveBeenCalled());
+    const params = vi.mocked(libraryApi.getGames).mock.calls[0]![0];
+    expect(params.tactic_family).toEqual(['fork']);
+    expect(params.tactic_orientation).toEqual('missed');
+    expect(params.min_tactic_depth).toBe(0);
+    expect(params.max_tactic_depth).toBe(5);
+  });
 });

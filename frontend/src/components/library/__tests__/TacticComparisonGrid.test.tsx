@@ -58,8 +58,8 @@ const DEFAULT_FLAW_FILTER: FlawFilterState = {
   tags: [],
   tacticFamilies: [],
   tacticOrientation: 'either',
-  tacticDepthPreset: 'intermediate',
-  tacticDepthMax: 6,
+  tacticDepthMin: 0,
+  tacticDepthMax: 5,
 };
 
 /** All 10 family keys in canonical TACTIC_COMPARISON_FAMILIES order (plan 129-05) */

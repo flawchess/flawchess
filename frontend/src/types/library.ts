@@ -118,10 +118,14 @@ export interface FlawMarker {
   allowed_tactic_motif: string | null;
   /** Confidence for allowed_tactic_motif (0-100). Null when no motif assigned. */
   allowed_tactic_confidence: number | null;
+  /** 0-based ply depth of the allowed tactic; null when its motif chip is hidden. Display as depth+1. */
+  allowed_tactic_depth: number | null;
   /** Tactic the flaw-maker missed (the "instead-of" PV). Null below confidence gate or when DB column is NULL. */
   missed_tactic_motif: string | null;
   /** Confidence for missed_tactic_motif (0-100). Null when no motif assigned. */
   missed_tactic_confidence: number | null;
+  /** 0-based ply depth of the missed tactic; null when its motif chip is hidden. Display as depth+1. */
+  missed_tactic_depth: number | null;
 }
 
 /** First ply of middlegame and endgame phases (at most two phase lines). */
@@ -248,10 +252,14 @@ export interface FlawListItem {
   allowed_tactic_motif: string | null;
   /** Confidence for allowed_tactic_motif (0-100). Null when no motif assigned. */
   allowed_tactic_confidence: number | null;
+  /** 0-based ply depth of the allowed tactic; null when its motif chip is hidden. Display as depth+1. */
+  allowed_tactic_depth: number | null;
   /** Tactic the flaw-maker missed (the "instead-of" PV, flaw_ply). Null below confidence gate. Phase 128 D-07. */
   missed_tactic_motif: string | null;
   /** Confidence for missed_tactic_motif (0-100). Null when no motif assigned. */
   missed_tactic_confidence: number | null;
+  /** 0-based ply depth of the missed tactic; null when its motif chip is hidden. Display as depth+1. */
+  missed_tactic_depth: number | null;
   /** Engine best move FROM the pre-flaw position (UCI); null when no PV captured. */
   best_move: string | null;
 }

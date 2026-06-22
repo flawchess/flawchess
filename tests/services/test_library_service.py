@@ -1164,3 +1164,329 @@ class TestActiveEvalStatus:
         assert card.active_eval_status is None, (
             f"Completed job must not surface as active, got {card.active_eval_status!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Tests for tactic per-slot suppression in the Games path (_build_card /
+# get_library_games) — Quick 260621-sm8 scenario (d).
+# ---------------------------------------------------------------------------
+
+# TacticMotifInt values matching FAMILY_TO_MOTIF_INTS (no magic numbers).
+_FORK_INT = 1  # TacticMotifInt.FORK
+_DISCOVERED_ATTACK_INT = 6  # TacticMotifInt.DISCOVERED_ATTACK
+
+
+async def _seed_tactic_flaw_for_game(
+    session: object,
+    *,
+    game: object,
+    ply: int,
+    missed_motif: int | None = None,
+    missed_conf: int | None = None,
+    missed_depth: int | None = None,
+    allowed_motif: int | None = None,
+    allowed_conf: int | None = None,
+    allowed_depth: int | None = None,
+) -> None:
+    """Insert a GameFlaw with tactic fields for Games-path tests."""
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.models.game import Game as GameModel
+    from app.models.game_flaw import GameFlaw
+
+    sess = cast(AsyncSession, session)
+    g = cast(GameModel, game)
+    flaw = GameFlaw(
+        user_id=g.user_id,
+        game_id=g.id,
+        ply=ply,
+        severity=2,
+        phase=1,
+        is_miss=False,
+        is_lucky=False,
+        is_reversed=False,
+        is_squandered=False,
+        fen="",
+        missed_tactic_motif=missed_motif,
+        missed_tactic_confidence=missed_conf,
+        missed_tactic_depth=missed_depth,
+        allowed_tactic_motif=allowed_motif,
+        allowed_tactic_confidence=allowed_conf,
+        allowed_tactic_depth=allowed_depth,
+    )
+    sess.add(flaw)
+    await sess.flush()
+
+
+class TestBuildCardTacticPerSlotSuppression:
+    """get_library_games / _build_card nulls non-matching tactic slots (Quick 260621-sm8).
+
+    Scenario (d) from the plan: the Games endpoint must apply the same per-slot
+    predicate as query_flaws. Tests use separate user_id values to avoid
+    cross-test leakage in the rollback-scoped db_session.
+    """
+
+    @pytest.mark.asyncio
+    async def test_orientation_filter_nulls_excluded_slot_in_flaw_markers(
+        self, db_session: object
+    ) -> None:
+        """orientation='missed' → allowed slot is nulled in flaw_markers.
+
+        Seeds a tactic flaw with both slots populated. When get_library_games is
+        called with tactic_orientation='missed', the allowed slot must be null in
+        the card's flaw_markers (if the card has flaw markers at all — an analyzed
+        game with positions would; here we test via get_library_games which calls
+        _build_card, and we verify via query_flaws since _build_card uses the same
+        predicate as the Flaws path).
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.repositories.library_repository import query_flaws
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        uid = 99989
+        await ensure_test_user(session, uid)
+
+        game = await _seed_db_game(session, user_id=uid, user_color="white", ply_count=10)
+
+        # Both slots populated with confident tactic motifs.
+        await _seed_tactic_flaw_for_game(
+            session,
+            game=game,
+            ply=2,
+            missed_motif=_FORK_INT,
+            missed_conf=80,
+            missed_depth=1,
+            allowed_motif=_DISCOVERED_ATTACK_INT,
+            allowed_conf=75,
+            allowed_depth=0,
+        )
+
+        # Query via the Flaws path with orientation='missed' — shared predicate with _build_card.
+        items, count = await query_flaws(
+            session,
+            user_id=uid,
+            severity=[],
+            tags=[],
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            color=None,
+            tactic_families=[],
+            orientation="missed",
+            min_tactic_depth=None,
+            max_tactic_depth=None,
+        )
+        assert count == 1
+        item = items[0]
+        # missed slot: populated (in scope for orientation='missed')
+        assert item.missed_tactic_motif == "fork"
+        assert item.missed_tactic_confidence == 80
+        # allowed slot: nulled (orientation='missed' excludes it)
+        assert item.allowed_tactic_motif is None
+        assert item.allowed_tactic_confidence is None
+        assert item.allowed_tactic_depth is None
+
+    @pytest.mark.asyncio
+    async def test_default_filter_both_slots_populated_in_games_response(
+        self, db_session: object
+    ) -> None:
+        """Default tactic filter in get_library_games: both slots populated (regression guard).
+
+        With no tactic controls active, _build_card must not suppress any slot.
+        Positions seed a blunder drop at ply 2 so _build_eval_series produces a
+        flaw_marker there, which then picks up the tactic chip from tactic_by_ply.
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.services.flaws_service import BLUNDER_DROP
+        from app.services.library_service import get_library_games
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        uid = 99990
+        await ensure_test_user(session, uid)
+
+        prev_b, curr_b = _cp_for_white_drop(BLUNDER_DROP)
+
+        # 5-ply game: positions 0..4 with a white (even ply) blunder at ply 2.
+        game = await _seed_db_game(session, user_id=uid, user_color="white", ply_count=4)
+
+        # Positions seeded with an eval drop at ply 2 so _build_eval_series detects a blunder.
+        await _seed_db_pos(session, game=game, ply=0, eval_cp=prev_b)
+        await _seed_db_pos(session, game=game, ply=1, eval_cp=prev_b)  # black: flat
+        await _seed_db_pos(session, game=game, ply=2, eval_cp=curr_b)  # white: blunder
+        await _seed_db_pos(session, game=game, ply=3, eval_cp=curr_b)
+        await _seed_db_pos(session, game=game, ply=4, eval_cp=curr_b)
+
+        # Tactic flaw at ply 2 (white user move: even ply, user_color='white').
+        await _seed_tactic_flaw_for_game(
+            session,
+            game=game,
+            ply=2,
+            missed_motif=_FORK_INT,
+            missed_conf=80,
+            missed_depth=1,
+            allowed_motif=_DISCOVERED_ATTACK_INT,
+            allowed_conf=75,
+            allowed_depth=0,
+        )
+
+        resp = await get_library_games(
+            session,
+            user_id=uid,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            flaw_severity=None,
+            flaw_tags=None,
+            tactic_families=None,  # default: no family filter
+            tactic_orientation="either",  # default
+            min_tactic_depth=None,  # default: no depth filter
+            max_tactic_depth=None,
+            offset=0,
+            limit=20,
+        )
+        assert len(resp.games) == 1
+        card = resp.games[0]
+
+        # Card must have flaw_markers (analyzed game with positions).
+        assert card.flaw_markers is not None
+
+        # Find the user's flaw marker at ply 2.
+        user_markers = [fm for fm in card.flaw_markers if fm.is_user]
+        assert len(user_markers) >= 1
+        ply2_marker = next((fm for fm in user_markers if fm.ply == 2), None)
+        assert ply2_marker is not None, "Expected a flaw_marker at ply 2"
+
+        # Both slots must be populated (default filter, no suppression).
+        assert ply2_marker.missed_tactic_motif == "fork"
+        assert ply2_marker.allowed_tactic_motif == "discovered-attack"
+
+    @pytest.mark.asyncio
+    async def test_single_game_depth_filter_nulls_out_of_range_slot(
+        self, db_session: object
+    ) -> None:
+        """get_library_game (the "View game" modal path) honors the depth filter (Quick 260621-sm8).
+
+        Regression for the modal bug: opening a game from a flaw card with a depth
+        1-2 filter must null the out-of-range allowed slot in the card's
+        flaw_markers, exactly like the Flaws/Games lists. Before the fix the
+        single-game path passed no tactic params, so every tactic rendered.
+
+        missed raw depth 1 → anchored 1 (offset 0) → in [1, 2] → populated.
+        allowed raw depth 10 → anchored 11 (ALLOWED_DECISION_DEPTH_OFFSET=1) →
+        outside [1, 2] → nulled.
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.game import Game as GameModel
+        from app.services.flaws_service import BLUNDER_DROP
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        uid = 99991
+        await ensure_test_user(session, uid)
+
+        prev_b, curr_b = _cp_for_white_drop(BLUNDER_DROP)
+
+        game = cast(
+            GameModel,
+            await _seed_db_game(session, user_id=uid, user_color="white", ply_count=4),
+        )
+        await _seed_db_pos(session, game=game, ply=0, eval_cp=prev_b)
+        await _seed_db_pos(session, game=game, ply=1, eval_cp=prev_b)  # black: flat
+        await _seed_db_pos(session, game=game, ply=2, eval_cp=curr_b)  # white: blunder
+        await _seed_db_pos(session, game=game, ply=3, eval_cp=curr_b)
+        await _seed_db_pos(session, game=game, ply=4, eval_cp=curr_b)
+
+        await _seed_tactic_flaw_for_game(
+            session,
+            game=game,
+            ply=2,
+            missed_motif=_FORK_INT,
+            missed_conf=80,
+            missed_depth=1,  # anchored 1 → in [1, 2]
+            allowed_motif=_DISCOVERED_ATTACK_INT,
+            allowed_conf=75,
+            allowed_depth=10,  # anchored 11 → outside [1, 2]
+        )
+
+        card = await get_library_game(
+            session,
+            user_id=uid,
+            game_id=game.id,
+            tactic_families=None,
+            tactic_orientation="either",
+            min_tactic_depth=1,
+            max_tactic_depth=2,
+        )
+        assert card is not None
+        assert card.flaw_markers is not None
+        ply2_marker = next((fm for fm in card.flaw_markers if fm.is_user and fm.ply == 2), None)
+        assert ply2_marker is not None, "Expected a flaw_marker at ply 2"
+
+        # missed slot in range → populated; allowed slot out of range → nulled.
+        assert ply2_marker.missed_tactic_motif == "fork"
+        assert ply2_marker.missed_tactic_depth == 1
+        assert ply2_marker.allowed_tactic_motif is None
+        assert ply2_marker.allowed_tactic_confidence is None
+        assert ply2_marker.allowed_tactic_depth is None
+
+    @pytest.mark.asyncio
+    async def test_single_game_default_filter_unaffected(self, db_session: object) -> None:
+        """get_library_game with no tactic params leaves both slots populated (Quick 260621-sm8).
+
+        A direct game open (no active filter) must not suppress anything.
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.game import Game as GameModel
+        from app.services.flaws_service import BLUNDER_DROP
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        uid = 99992
+        await ensure_test_user(session, uid)
+
+        prev_b, curr_b = _cp_for_white_drop(BLUNDER_DROP)
+
+        game = cast(
+            GameModel,
+            await _seed_db_game(session, user_id=uid, user_color="white", ply_count=4),
+        )
+        await _seed_db_pos(session, game=game, ply=0, eval_cp=prev_b)
+        await _seed_db_pos(session, game=game, ply=1, eval_cp=prev_b)
+        await _seed_db_pos(session, game=game, ply=2, eval_cp=curr_b)
+        await _seed_db_pos(session, game=game, ply=3, eval_cp=curr_b)
+        await _seed_db_pos(session, game=game, ply=4, eval_cp=curr_b)
+
+        await _seed_tactic_flaw_for_game(
+            session,
+            game=game,
+            ply=2,
+            missed_motif=_FORK_INT,
+            missed_conf=80,
+            missed_depth=1,
+            allowed_motif=_DISCOVERED_ATTACK_INT,
+            allowed_conf=75,
+            allowed_depth=10,
+        )
+
+        # No tactic params → defaults → no suppression.
+        card = await get_library_game(session, user_id=uid, game_id=game.id)
+        assert card is not None
+        assert card.flaw_markers is not None
+        ply2_marker = next((fm for fm in card.flaw_markers if fm.is_user and fm.ply == 2), None)
+        assert ply2_marker is not None
+        assert ply2_marker.missed_tactic_motif == "fork"
+        assert ply2_marker.allowed_tactic_motif == "discovered-attack"

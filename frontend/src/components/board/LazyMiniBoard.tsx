@@ -13,7 +13,7 @@ export function LazyMiniBoard({
   fen: string;
   flipped: boolean;
   size: number;
-  arrows?: ReadonlyArray<{ from: string; to: string; color: string }>;
+  arrows?: ReadonlyArray<{ from: string; to: string; color: string; label?: string }>;
   cornerDot?: { square: string; color: string };
   lastMove?: { from: string; to: string };
 }) {

@@ -304,9 +304,9 @@ export function FlawsTab() {
         onOrientationChange={(tacticOrientation: TacticOrientation) =>
           setPendingFlawFilter((prev) => ({ ...prev, tacticOrientation }))
         }
-        tacticDepth={{ preset: pendingFlawFilter.tacticDepthPreset, maxMoves: pendingFlawFilter.tacticDepthMax }}
+        tacticDepth={{ min: pendingFlawFilter.tacticDepthMin, max: pendingFlawFilter.tacticDepthMax }}
         onTacticDepthChange={(next: TacticDepthValue) =>
-          setPendingFlawFilter((prev) => ({ ...prev, tacticDepthPreset: next.preset, tacticDepthMax: next.maxMoves }))
+          setPendingFlawFilter((prev) => ({ ...prev, tacticDepthMin: next.min, tacticDepthMax: next.max }))
         }
       />
       <FilterActions
@@ -386,7 +386,7 @@ export function FlawsTab() {
 
           {matchedCount > 0 && (
             <div
-              className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
+              className="grid grid-cols-1 lg:grid-cols-2 gap-4"
               data-testid="flaw-grid"
             >
               {flaws.map((flaw) => (
@@ -531,9 +531,9 @@ export function FlawsTab() {
                 onOrientationChange={(tacticOrientation: TacticOrientation) =>
                   setPendingFlawFilter((prev) => ({ ...prev, tacticOrientation }))
                 }
-                tacticDepth={{ preset: pendingFlawFilter.tacticDepthPreset, maxMoves: pendingFlawFilter.tacticDepthMax }}
+                tacticDepth={{ min: pendingFlawFilter.tacticDepthMin, max: pendingFlawFilter.tacticDepthMax }}
                 onTacticDepthChange={(next: TacticDepthValue) =>
-                  setPendingFlawFilter((prev) => ({ ...prev, tacticDepthPreset: next.preset, tacticDepthMax: next.maxMoves }))
+                  setPendingFlawFilter((prev) => ({ ...prev, tacticDepthMin: next.min, tacticDepthMax: next.max }))
                 }
               />
               <FilterActions

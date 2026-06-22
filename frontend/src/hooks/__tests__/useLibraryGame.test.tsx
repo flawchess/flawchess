@@ -87,7 +87,37 @@ describe('useLibraryGame', () => {
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(vi.mocked(libraryApi.getGame)).toHaveBeenCalledWith(123);
+    // Quick 260621-sm8: getGame now takes (gameId, tacticParams?). With no
+    // flawFilter passed, the tactic params are all undefined (a backend no-op).
+    const call = vi.mocked(libraryApi.getGame).mock.calls[0]!;
+    expect(call[0]).toBe(123);
+    expect(call[1]?.tactic_family).toBeUndefined();
+    expect(call[1]?.tactic_orientation).toBeUndefined();
+  });
+
+  it('forwards the active tactic filter to getGame when supplied', async () => {
+    vi.mocked(libraryApi.getGame).mockResolvedValue(MOCK_CARD);
+
+    const { result } = renderHook(
+      () =>
+        useLibraryGame(123, {
+          severity: [],
+          tags: [],
+          tacticFamilies: ['fork'],
+          tacticOrientation: 'missed',
+          tacticDepthMin: 1,
+          tacticDepthMax: 2,
+        }),
+      { wrapper: makeWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const call = vi.mocked(libraryApi.getGame).mock.calls[0]!;
+    expect(call[0]).toBe(123);
+    expect(call[1]?.tactic_family).toEqual(['fork']);
+    expect(call[1]?.tactic_orientation).toBe('missed');
+    expect(call[1]?.min_tactic_depth).toBe(1);
+    expect(call[1]?.max_tactic_depth).toBe(2);
   });
 
   it('returns the game data on success', async () => {

@@ -18,6 +18,7 @@ Reuses _seed_game / _seed_position helpers patterned on tests/test_flaws_reposit
 
 import datetime
 import uuid
+from typing import Any
 
 import pytest
 import pytest_asyncio
@@ -133,10 +134,21 @@ async def _seed_game_flaw(
     game: Game,
     ply: int = 2,
     severity: int = 2,  # 2=blunder (see _SEVERITY_INT in game_flaws_repository)
+    allowed_tactic_motif: int | None = None,
+    allowed_tactic_confidence: int | None = None,
+    allowed_tactic_depth: int | None = None,
+    missed_tactic_motif: int | None = None,
+    missed_tactic_confidence: int | None = None,
+    missed_tactic_depth: int | None = None,
 ) -> None:
     """Insert a game_flaws row directly (bypasses classifier).
 
     D-02 migration: EXISTS filter now reads game_flaws rows, not positions.
+
+    Quick 260620-pza: optional tactic-motif columns (raw DB ints) so tests can
+    exercise the tactic EXISTS threaded into query_filtered_games. Since SEED-061
+    apply_game_filters gates the tactic EXISTS on confidence (>= _TACTIC_CHIP_CONFIDENCE_MIN),
+    matching the chip/flaw builders, so callers must set confidence to match.
     """
     await bulk_insert_game_flaws(
         session,
@@ -153,6 +165,12 @@ async def _seed_game_flaw(
                 "is_reversed": False,
                 "is_squandered": False,
                 "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR",
+                "allowed_tactic_motif": allowed_tactic_motif,
+                "allowed_tactic_confidence": allowed_tactic_confidence,
+                "allowed_tactic_depth": allowed_tactic_depth,
+                "missed_tactic_motif": missed_tactic_motif,
+                "missed_tactic_confidence": missed_tactic_confidence,
+                "missed_tactic_depth": missed_tactic_depth,
             }
         ],
     )
@@ -305,6 +323,374 @@ class TestQueryFilteredGames:
         assert game_a.id in flt_ids
         assert game_b.id not in flt_ids
         assert flt_count == len(flt_ids)
+
+    @pytest.mark.asyncio
+    async def test_tactic_family_filter_narrows_games(self, db_session: AsyncSession) -> None:
+        """Quick 260620-pza: tactic_families=["fork"] returns only games with a
+        fork-motif flaw (the tactic EXISTS threaded into query_filtered_games)."""
+        from app.services.tactic_detector import TacticMotifInt
+
+        user_id = 99999
+        # Game A: a blunder carrying an ALLOWED fork motif.
+        game_a = await _seed_game(db_session, user_id=user_id, user_color="white")
+        await _seed_game_flaw(
+            db_session,
+            game=game_a,
+            ply=2,
+            allowed_tactic_motif=int(TacticMotifInt.FORK),
+            allowed_tactic_confidence=90,
+            allowed_tactic_depth=0,
+        )
+        # Game B: a blunder with a DIFFERENT motif (skewer) — should be excluded.
+        game_b = await _seed_game(db_session, user_id=user_id, user_color="white")
+        await _seed_game_flaw(
+            db_session,
+            game=game_b,
+            ply=2,
+            allowed_tactic_motif=int(TacticMotifInt.SKEWER),
+            allowed_tactic_confidence=90,
+            allowed_tactic_depth=0,
+        )
+        # Game C: a flaw with no tactic motif — should be excluded.
+        game_c = await _seed_game(db_session, user_id=user_id, user_color="white")
+        await _seed_game_flaw(db_session, game=game_c, ply=2)
+
+        games, count = await query_filtered_games(
+            db_session,
+            user_id=user_id,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            flaw_severity=None,
+            tactic_families=["fork"],
+            offset=0,
+            limit=20,
+        )
+        ids = {g.id for g in games}
+        assert game_a.id in ids
+        assert game_b.id not in ids
+        assert game_c.id not in ids
+        assert count == len(ids)
+
+    @pytest.mark.asyncio
+    async def test_tactic_orientation_filter_narrows_games(self, db_session: AsyncSession) -> None:
+        """Quick 260620-pza: orientation='missed' matches only games whose fork is in
+        the MISSED column, not the ALLOWED column."""
+        from app.services.tactic_detector import TacticMotifInt
+
+        user_id = 99998
+        # Game with an ALLOWED fork only.
+        game_allowed = await _seed_game(db_session, user_id=user_id, user_color="white")
+        await _seed_game_flaw(
+            db_session,
+            game=game_allowed,
+            ply=2,
+            allowed_tactic_motif=int(TacticMotifInt.FORK),
+            allowed_tactic_confidence=90,
+            allowed_tactic_depth=0,
+        )
+        # Game with a MISSED fork only.
+        game_missed = await _seed_game(db_session, user_id=user_id, user_color="white")
+        await _seed_game_flaw(
+            db_session,
+            game=game_missed,
+            ply=2,
+            missed_tactic_motif=int(TacticMotifInt.FORK),
+            missed_tactic_confidence=90,
+            missed_tactic_depth=0,
+        )
+
+        games, _ = await query_filtered_games(
+            db_session,
+            user_id=user_id,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            flaw_severity=None,
+            tactic_families=["fork"],
+            tactic_orientation="missed",
+            offset=0,
+            limit=20,
+        )
+        ids = {g.id for g in games}
+        assert game_missed.id in ids
+        assert game_allowed.id not in ids
+
+    @pytest.mark.asyncio
+    async def test_depth_filter_narrows_games_without_family(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Quick 260621-sm8 follow-up: a depth range with NO family selected restricts games.
+
+        Regression for the "5130 of 5138 regardless of depth" bug — the Games-tab
+        tactic EXISTS was gated on a selected family, so a depth-only filter added
+        no row restriction. min/max_tactic_depth=1/2 must now exclude games whose
+        only tactic is out of range, and games with no tactic at all.
+        """
+        from app.services.tactic_detector import TacticMotifInt
+
+        user_id = 99998
+        # In range: missed fork at raw depth 1 (anchored 1, in [1, 2]).
+        game_in = await _seed_game(db_session, user_id=user_id, user_color="white")
+        await _seed_game_flaw(
+            db_session,
+            game=game_in,
+            ply=2,
+            missed_tactic_motif=int(TacticMotifInt.FORK),
+            missed_tactic_confidence=90,
+            missed_tactic_depth=1,
+        )
+        # Out of range: missed fork at raw depth 10 (anchored 10, outside [1, 2]).
+        game_out = await _seed_game(db_session, user_id=user_id, user_color="white")
+        await _seed_game_flaw(
+            db_session,
+            game=game_out,
+            ply=2,
+            missed_tactic_motif=int(TacticMotifInt.FORK),
+            missed_tactic_confidence=90,
+            missed_tactic_depth=10,
+        )
+        # No tactic at all → excluded once a tactic control is active.
+        game_none = await _seed_game(db_session, user_id=user_id, user_color="white")
+        await _seed_game_flaw(db_session, game=game_none, ply=2)
+
+        games, count = await query_filtered_games(
+            db_session,
+            user_id=user_id,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            flaw_severity=None,
+            tactic_families=None,  # NO family — depth alone must restrict
+            tactic_orientation="either",
+            min_tactic_depth=1,
+            max_tactic_depth=2,
+            offset=0,
+            limit=20,
+        )
+        ids = {g.id for g in games}
+        assert game_in.id in ids
+        assert game_out.id not in ids
+        assert game_none.id not in ids
+        assert count == len(ids) == 1
+
+    @pytest.mark.asyncio
+    async def test_orientation_filter_narrows_games_without_family(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Quick 260621-sm8 follow-up: orientation alone (no family) restricts games.
+
+        orientation='missed' with no family must return only games that have a
+        missed tactic, excluding allowed-only and non-tactic games.
+        """
+        from app.services.tactic_detector import TacticMotifInt
+
+        user_id = 99998
+        game_missed = await _seed_game(db_session, user_id=user_id, user_color="white")
+        await _seed_game_flaw(
+            db_session,
+            game=game_missed,
+            ply=2,
+            missed_tactic_motif=int(TacticMotifInt.FORK),
+            missed_tactic_confidence=90,
+            missed_tactic_depth=0,
+        )
+        game_allowed = await _seed_game(db_session, user_id=user_id, user_color="white")
+        await _seed_game_flaw(
+            db_session,
+            game=game_allowed,
+            ply=2,
+            allowed_tactic_motif=int(TacticMotifInt.FORK),
+            allowed_tactic_confidence=90,
+            allowed_tactic_depth=0,
+        )
+        game_none = await _seed_game(db_session, user_id=user_id, user_color="white")
+        await _seed_game_flaw(db_session, game=game_none, ply=2)
+
+        games, count = await query_filtered_games(
+            db_session,
+            user_id=user_id,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            flaw_severity=None,
+            tactic_families=None,  # NO family — orientation alone must restrict
+            tactic_orientation="missed",
+            offset=0,
+            limit=20,
+        )
+        ids = {g.id for g in games}
+        assert game_missed.id in ids
+        assert game_allowed.id not in ids
+        assert game_none.id not in ids
+        assert count == len(ids) == 1
+
+    @pytest.mark.asyncio
+    async def test_default_filter_returns_all_games(self, db_session: AsyncSession) -> None:
+        """Quick 260621-sm8 follow-up: default tactic state adds NO row restriction.
+
+        With no family, orientation='either', and the full depth range, non-tactic
+        games must still appear (regression guard that the EXISTS gate stays off at
+        the default — i.e. _tactic_controls_active is False).
+        """
+        user_id = 99998
+        game_tactic = await _seed_game(db_session, user_id=user_id, user_color="white")
+        from app.services.tactic_detector import TacticMotifInt
+
+        await _seed_game_flaw(
+            db_session,
+            game=game_tactic,
+            ply=2,
+            missed_tactic_motif=int(TacticMotifInt.FORK),
+            missed_tactic_confidence=90,
+            missed_tactic_depth=5,
+        )
+        game_none = await _seed_game(db_session, user_id=user_id, user_color="white")
+        await _seed_game_flaw(db_session, game=game_none, ply=2)
+
+        games, count = await query_filtered_games(
+            db_session,
+            user_id=user_id,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            flaw_severity=None,
+            tactic_families=None,
+            tactic_orientation="either",
+            min_tactic_depth=0,  # full range (DEPTH_MIN)
+            max_tactic_depth=11,  # full range (DEPTH_MAX)
+            offset=0,
+            limit=20,
+        )
+        ids = {g.id for g in games}
+        assert game_tactic.id in ids
+        assert game_none.id in ids, "non-tactic game must appear at the default filter"
+        assert count == len(ids) == 2
+
+    @pytest.mark.asyncio
+    async def test_tactic_filter_excludes_opponent_only_tactic(
+        self, db_session: AsyncSession
+    ) -> None:
+        """SEED-060: the Games-tab tactic filter must NOT flag a game whose only
+        family-X tactic belongs to the OPPONENT.
+
+        Since Phase 113, game_flaws holds both sides' flaws (player attributed via
+        ply parity vs user_color). For a white user, an ODD ply is the black mover =
+        opponent. A game with only an opponent fork must be excluded by the
+        player_only_gate, mirroring flaw_exists_from_table's behavior.
+        """
+        from app.services.tactic_detector import TacticMotifInt
+
+        user_id = 99998
+        # Game P: PLAYER fork (white user, even ply 2 = white mover = player) — included.
+        game_player = await _seed_game(db_session, user_id=user_id, user_color="white")
+        await _seed_game_flaw(
+            db_session,
+            game=game_player,
+            ply=2,
+            allowed_tactic_motif=int(TacticMotifInt.FORK),
+            allowed_tactic_confidence=90,
+            allowed_tactic_depth=0,
+        )
+        # Game O: OPPONENT-only fork (white user, odd ply 3 = black mover = opponent) — excluded.
+        game_opponent = await _seed_game(db_session, user_id=user_id, user_color="white")
+        await _seed_game_flaw(
+            db_session,
+            game=game_opponent,
+            ply=3,
+            allowed_tactic_motif=int(TacticMotifInt.FORK),
+            allowed_tactic_confidence=90,
+            allowed_tactic_depth=0,
+        )
+
+        games, _ = await query_filtered_games(
+            db_session,
+            user_id=user_id,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            flaw_severity=None,
+            tactic_families=["fork"],
+            offset=0,
+            limit=20,
+        )
+        ids = {g.id for g in games}
+        assert game_player.id in ids, "player's own fork must match the tactic filter"
+        assert game_opponent.id not in ids, (
+            "opponent-only fork must NOT flag the game (player_only_gate)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_tactic_filter_excludes_below_confidence_tactic(
+        self, db_session: AsyncSession
+    ) -> None:
+        """SEED-061: the Games-tab tactic filter must NOT flag a game whose only
+        family-X tactic is below the chip-display confidence threshold (70).
+
+        Chip display is gated at _TACTIC_CHIP_CONFIDENCE_MIN, so a game matched on a
+        sub-threshold fork would show no fork chip — a visible inconsistency. The
+        filter now gates on confidence to match build_flaw_filter_clauses.
+        """
+        from app.repositories.library_repository import _TACTIC_CHIP_CONFIDENCE_MIN
+        from app.services.tactic_detector import TacticMotifInt
+
+        user_id = 99999
+        # Game H: HIGH-confidence fork (>= threshold) — included.
+        game_high = await _seed_game(db_session, user_id=user_id, user_color="white")
+        await _seed_game_flaw(
+            db_session,
+            game=game_high,
+            ply=2,
+            allowed_tactic_motif=int(TacticMotifInt.FORK),
+            allowed_tactic_confidence=_TACTIC_CHIP_CONFIDENCE_MIN,
+            allowed_tactic_depth=0,
+        )
+        # Game L: LOW-confidence fork (below threshold) — excluded.
+        game_low = await _seed_game(db_session, user_id=user_id, user_color="white")
+        await _seed_game_flaw(
+            db_session,
+            game=game_low,
+            ply=2,
+            allowed_tactic_motif=int(TacticMotifInt.FORK),
+            allowed_tactic_confidence=_TACTIC_CHIP_CONFIDENCE_MIN - 1,
+            allowed_tactic_depth=0,
+        )
+
+        games, _ = await query_filtered_games(
+            db_session,
+            user_id=user_id,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            flaw_severity=None,
+            tactic_families=["fork"],
+            offset=0,
+            limit=20,
+        )
+        ids = {g.id for g in games}
+        assert game_high.id in ids, "fork at the chip-display threshold must match"
+        assert game_low.id not in ids, "sub-threshold fork must NOT flag the game (confidence gate)"
 
     @pytest.mark.asyncio
     async def test_pagination_and_matched_count(self, db_session: AsyncSession) -> None:
@@ -464,6 +850,63 @@ class TestAnalyzedDenominator:
         assert short.id in ids, (
             "short fully-analyzed game must pass the full_evals_completed_at gate"
         )
+
+    @pytest.mark.asyncio
+    async def test_tactic_filter_orientation_either_includes_missed_only_game(
+        self, db_session: AsyncSession
+    ) -> None:
+        """SEED-062: the tactic-comparison gate narrows the population on "either".
+
+        A game whose only fork is in the MISSED column must be in the population when
+        the gate uses tactic_filter_orientation="either" (the basis the dual-orientation
+        comparison grid renders over), but is excluded under the legacy "allowed"
+        default. This keeps the gate's analyzed_n and the per-orientation bullet
+        populations on one shared basis.
+        """
+        from app.services.tactic_detector import TacticMotifInt
+
+        user_id = 99999
+        _now = datetime.datetime.now(tz=datetime.timezone.utc)
+        # Analyzed game with a MISSED-only fork (white user, even ply 2 = player).
+        game = await _seed_game(
+            db_session,
+            user_id=user_id,
+            user_color="white",
+            white_blunders=1,
+            full_evals_completed_at=_now,
+        )
+        await _seed_game_flaw(
+            db_session,
+            game=game,
+            ply=2,
+            missed_tactic_motif=int(TacticMotifInt.FORK),
+            missed_tactic_confidence=90,
+            missed_tactic_depth=0,
+        )
+
+        # Explicit dict[str, Any] so the **spread satisfies each typed keyword param;
+        # an inferred union value type makes ty reject the spread (invalid-argument-type).
+        _kwargs: dict[str, Any] = dict(
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            tactic_families=["fork"],
+        )
+
+        # "allowed" default: missed-only fork is NOT in the allowed column → excluded.
+        _total_allowed, analyzed_allowed = await count_filtered_and_analyzed(
+            db_session, user_id=user_id, tactic_filter_orientation="allowed", **_kwargs
+        )
+        assert analyzed_allowed == 0, "missed-only fork must not match the allowed-column basis"
+
+        # "either" basis (the comparison endpoint): missed-only fork is included.
+        _total_either, analyzed_either = await count_filtered_and_analyzed(
+            db_session, user_id=user_id, tactic_filter_orientation="either", **_kwargs
+        )
+        assert analyzed_either == 1, "missed-only fork must match the either-column basis"
 
     @pytest.mark.asyncio
     async def test_total_n_spans_all_platforms(self, db_session: AsyncSession) -> None:
@@ -1332,14 +1775,19 @@ class TestTacticOrientationBuildFlawFilterClauses:
     TypeError until the GREEN implementation lands.
     """
 
-    def test_default_orientation_references_allowed_column(self) -> None:
-        """orientation unspecified (default) → clause references allowed_tactic_motif."""
+    def test_default_orientation_references_both_columns(self) -> None:
+        """orientation unspecified (default = 'either') → clause references both columns.
+
+        Quick 260621-sm8: default changed from 'allowed' to 'either' so callers
+        that don't pass an orientation param (e.g. flaw_exists_from_table) still
+        get the all-inclusive 'either' behaviour rather than orientation-filtering.
+        """
         sql = _compile_flaw_filter_sql(["fork"])
         assert "allowed_tactic_motif" in sql, (
             f"Default orientation must reference allowed_tactic_motif; got: {sql}"
         )
-        assert "missed_tactic_motif" not in sql, (
-            f"Default orientation must NOT reference missed_tactic_motif; got: {sql}"
+        assert "missed_tactic_motif" in sql, (
+            f"Default orientation must also reference missed_tactic_motif; got: {sql}"
         )
 
     def test_allowed_orientation_references_allowed_column(self) -> None:
@@ -1393,7 +1841,7 @@ class TestTacticOrientationBuildFlawFilterClauses:
         # Expect 1 definition + comment references + usages in query logic.
         # The important thing: FAMILY_TO_MOTIF_INTS should NOT appear N times as separate
         # per-orientation dicts. The exact count is flexible; just verify it's not doubled.
-        # Phase 129 Plan 01 raised the upper bound from 8 to 15 (added _depth_ok +
+        # Phase 129 Plan 01 raised the upper bound from 8 to 15 (added _depth_in_range +
         # _tactic_orientation_pairs helpers with docstring + code references — not duplication).
         assert count >= 2, "FAMILY_TO_MOTIF_INTS must appear at least twice (def + usage)"
         assert count <= 15, f"FAMILY_TO_MOTIF_INTS appears {count} times — possible duplication"
@@ -1407,6 +1855,7 @@ class TestTacticOrientationBuildFlawFilterClauses:
 def _compile_flaw_filter_sql_129(
     tactic_families: list[str],
     orientation: str = "allowed",
+    min_tactic_depth: int | None = None,
     max_tactic_depth: int | None = None,
 ) -> str:
     """Compile build_flaw_filter_clauses with orientation + depth to SQL text."""
@@ -1422,6 +1871,8 @@ def _compile_flaw_filter_sql_129(
         tactic_families=tactic_families,
         orientation=orientation,
     )
+    if min_tactic_depth is not None:
+        kwargs["min_tactic_depth"] = min_tactic_depth
     if max_tactic_depth is not None:
         kwargs["max_tactic_depth"] = max_tactic_depth
     clauses = build_flaw_filter_clauses(**kwargs)  # type: ignore[arg-type]
@@ -1488,15 +1939,60 @@ class TestTacticDepthAndEitherBuildFlawFilterClauses:
             f"missed orientation must NOT reference allowed_tactic_depth; got: {sql}"
         )
 
-    def test_mate_exemption_present_when_depth_set(self) -> None:
-        """Mate motif ints appear in depth exemption OR when depth is bounded."""
+    def test_mate_exemption_removed_when_depth_set(self) -> None:
+        """Quick 260620-l5k: mates now obey the range — NO depth-exemption OR.
+
+        The Phase 129 D-04 mate exemption was removed, so a bounded depth filter
+        references the motif column ONCE (the primary family filter) — not twice.
+        """
         sql = _compile_flaw_filter_sql_129(["fork"], orientation="allowed", max_tactic_depth=3)
-        assert "allowed_tactic_depth" in sql
-        # Depth exemption: allowed_tactic_depth <= N OR allowed_tactic_motif IN (mate_ints)
-        motif_occurrences = sql.count("allowed_tactic_motif")
-        assert motif_occurrences >= 2, (
-            f"Mate exemption requires allowed_tactic_motif >= 2 times "
-            f"(primary filter + depth exemption); got {motif_occurrences} in: {sql}"
+        # Quick 260621-qz9: the allowed column is decision-anchored (+1), so the
+        # upper bound now compiles as "allowed_tactic_depth + <param> <=".
+        assert "allowed_tactic_depth +" in sql and "<=" in sql
+        # The mate exemption was the ONLY OR in a single-orientation depth clause
+        # (depth <= N OR motif IN mate_ints). Its removal leaves a pure AND chain.
+        assert " OR " not in sql, (
+            f"Mate exemption removed → no OR in a single-orientation depth clause; got: {sql}"
+        )
+
+    def test_min_depth_bound_references_depth_column(self) -> None:
+        """Quick 260620-l5k: min_tactic_depth=2 → a >= lower-bound predicate is added.
+
+        Quick 260621-qz9: the allowed column carries the decision-anchored +1 offset,
+        so both bounds compile as "allowed_tactic_depth + <param>" comparisons.
+        """
+        sql = _compile_flaw_filter_sql_129(
+            ["fork"], orientation="allowed", min_tactic_depth=2, max_tactic_depth=5
+        )
+        assert "allowed_tactic_depth +" in sql and ">=" in sql, (
+            f"min_tactic_depth=2 must add an offset 'allowed_tactic_depth + ... >=' predicate; got: {sql}"
+        )
+        assert "allowed_tactic_depth +" in sql and "<=" in sql, (
+            f"max_tactic_depth=5 must add an offset 'allowed_tactic_depth + ... <=' predicate; got: {sql}"
+        )
+
+    def test_allowed_depth_is_decision_anchored_offset_missed_is_not(self) -> None:
+        """Quick 260621-qz9: allowed depth column is shifted +1; missed is bare.
+
+        The allowed_tactic PV (opponent refutation) starts one ply after the shared
+        decision board, so its raw 0-based index is compared as raw+1 to land on the
+        same decision-anchored scale as missed. Missed keeps the bare column.
+        """
+        allowed_sql = _compile_flaw_filter_sql_129(
+            ["fork"], orientation="allowed", min_tactic_depth=2, max_tactic_depth=5
+        )
+        assert "allowed_tactic_depth +" in allowed_sql, (
+            f"allowed orientation must offset the depth column (+1); got: {allowed_sql}"
+        )
+
+        missed_sql = _compile_flaw_filter_sql_129(
+            ["fork"], orientation="missed", min_tactic_depth=2, max_tactic_depth=5
+        )
+        assert "missed_tactic_depth >=" in missed_sql, (
+            f"missed orientation must compare the bare column (no offset); got: {missed_sql}"
+        )
+        assert "missed_tactic_depth +" not in missed_sql, (
+            f"missed orientation must NOT offset the depth column; got: {missed_sql}"
         )
 
     def test_either_depth_references_both_depth_columns(self) -> None:
