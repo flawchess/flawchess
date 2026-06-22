@@ -12,7 +12,6 @@ import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
 import {
   TACTIC_FAMILY_FOR_MOTIF,
   TACTIC_FAMILY_COLORS,
-  TACTIC_FAMILY_ICON,
   tacticMotifLabel,
   tacticMotifDefinition,
 } from '@/lib/tacticComparisonMeta';
@@ -52,7 +51,7 @@ interface TacticMotifChipProps {
   hidePrefix?: boolean;
   /**
    * Quick 260620-sep: per-motif occurrence count within the game. Rendered count-first
-   * (before the icon) only when > 1, matching TagChip and the severity count badges.
+   * (before the label) only when > 1, matching TagChip and the severity count badges.
    */
   count?: number;
   /**
@@ -81,7 +80,7 @@ interface TacticMotifChipProps {
  * rendering on `user?.beta_enabled && flaw.allowed_tactic_motif != null`. Phase 128 D-07.
  *
  * Colors come from TACTIC_FAMILY_COLORS (theme.ts TAC_* constants) — no hardcoded oklch
- * in this file. Icon from TACTIC_FAMILY_ICON.
+ * in this file.
  */
 export function TacticMotifChip({
   motif,
@@ -94,7 +93,6 @@ export function TacticMotifChip({
 }: TacticMotifChipProps) {
   const family = TACTIC_FAMILY_FOR_MOTIF[motif];
   const colors = family != null ? TACTIC_FAMILY_COLORS[family] : null;
-  const Icon = family != null ? TACTIC_FAMILY_ICON[family] : null;
   const definition = tacticMotifDefinition(motif);
   // Mate-family motifs (back-rank-mate, smothered-mate, …) collapse to "checkmate"
   // on the cards — subtypes are not distinguished (Quick 260620-onv).
@@ -136,7 +134,7 @@ export function TacticMotifChip({
   const interactive = Boolean(onHover || onActivate);
 
   // Unknown motif (no family mapping) — render nothing rather than a broken chip.
-  if (colors == null || Icon == null) return null;
+  if (colors == null) return null;
 
   // Orientation drives the chip color (Missed = blue, Allowed = light red) so the two
   // orientations read apart at a glance; fall back to the family color when no
@@ -206,8 +204,6 @@ export function TacticMotifChip({
     >
       {/* Count-first when repeated (Quick 260620-sep), matching TagChip + severity badges. */}
       {count != null && count > 1 && <span>{count}</span>}
-      {/* Icon hidden on mobile to declutter the chips; shown from `sm` up. */}
-      <Icon className="h-3 w-3 shrink-0 hidden sm:block" />
       {visibleLabel}
     </span>
   );

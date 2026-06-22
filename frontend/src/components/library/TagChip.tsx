@@ -100,7 +100,6 @@ interface TagChipProps {
 export function TagChip({ tag, gameId, count, onHover, onActivate, definition = true }: TagChipProps) {
   const family = getTagFamily(tag);
   const { color, bg } = TAG_FAMILY_COLORS[family];
-  const Icon = TAG_ICONS[tag];
 
   // D-05: subscribe to the flaw filter store internally so both LibraryGameCard
   // (Games tab) and FlawsTab (Flaws tab) get the ring without prop drilling.
@@ -209,8 +208,6 @@ export function TagChip({ tag, gameId, count, onHover, onActivate, definition = 
       }
     >
       {count != null && count > 1 && <span className="font-bold">{count}</span>}
-      {/* Icon hidden on mobile to declutter the chips; shown from `sm` up. */}
-      <Icon className="h-3 w-3 shrink-0 hidden sm:block" />
       {tag}
     </span>
   );
