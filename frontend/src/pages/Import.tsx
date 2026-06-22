@@ -180,7 +180,7 @@ function ExploreButton({ label, Icon, ready, hint, testId, onGo }: {
         data-testid={testId}
         onClick={onGo}
       >
-        <Icon className="mr-1.5 h-4 w-4" />
+        <Icon className="hidden h-4 w-4 sm:mr-1.5 sm:inline-block" />
         {label}
       </Button>
     );
@@ -189,7 +189,7 @@ function ExploreButton({ label, Icon, ready, hint, testId, onGo }: {
     <Tooltip content={hint}>
       <span className="inline-flex flex-1 cursor-not-allowed sm:flex-none" tabIndex={0}>
         <Button variant="brand-outline" className="w-full sm:w-auto" disabled data-testid={testId}>
-          <Icon className="mr-1.5 h-4 w-4" />
+          <Icon className="hidden h-4 w-4 sm:mr-1.5 sm:inline-block" />
           {label}
         </Button>
       </span>
