@@ -40,6 +40,7 @@ import {
   tacticMotifLabel,
 } from '@/lib/tacticComparisonMeta';
 import type { TacticFamily } from '@/lib/tacticComparisonMeta';
+import { toDisplayDepthForOrientation } from '@/lib/tacticDepth';
 import {
   EVAL_CHART_AREA_BLACK_AHEAD,
   EVAL_CHART_AREA_WHITE_AHEAD,
@@ -647,20 +648,33 @@ export function EvalChart({
   // above the flaw tags. Beta-gated, family-mapped only. Both orientations are listed
   // with a "missed:"/"allowed:" prefix so the tooltip matches the dual-orientation chips
   // (allowed before missed, mirroring the LibraryGameCard chip row ordering).
-  const tooltipTactics: { orientation: 'missed' | 'allowed'; motif: string; family: TacticFamily }[] =
-    (() => {
-      if (!betaEnabled || activeMarker == null) return [];
-      const out: { orientation: 'missed' | 'allowed'; motif: string; family: TacticFamily }[] = [];
-      const add = (raw: string | null, orientation: 'missed' | 'allowed'): void => {
-        if (raw == null) return;
-        const family = TACTIC_FAMILY_FOR_MOTIF[raw];
-        if (family == null) return;
-        out.push({ orientation, motif: raw, family });
-      };
-      add(activeMarker.allowed_tactic_motif, 'allowed');
-      add(activeMarker.missed_tactic_motif, 'missed');
-      return out;
-    })();
+  const tooltipTactics: {
+    orientation: 'missed' | 'allowed';
+    motif: string;
+    family: TacticFamily;
+    depth: number | null;
+  }[] = (() => {
+    if (!betaEnabled || activeMarker == null) return [];
+    const out: {
+      orientation: 'missed' | 'allowed';
+      motif: string;
+      family: TacticFamily;
+      depth: number | null;
+    }[] = [];
+    const add = (
+      raw: string | null,
+      orientation: 'missed' | 'allowed',
+      depth: number | null,
+    ): void => {
+      if (raw == null) return;
+      const family = TACTIC_FAMILY_FOR_MOTIF[raw];
+      if (family == null) return;
+      out.push({ orientation, motif: raw, family, depth });
+    };
+    add(activeMarker.allowed_tactic_motif, 'allowed', activeMarker.allowed_tactic_depth);
+    add(activeMarker.missed_tactic_motif, 'missed', activeMarker.missed_tactic_depth);
+    return out;
+  })();
 
   // Active datapoint position as a fraction of the eval'd ply range. Plies in
   // chartSeries are contiguous and recharts' point scale (zero padding, zero margins)
@@ -902,7 +916,7 @@ export function EvalChart({
                   <ul className="flex flex-col gap-0.5 text-muted-foreground">
                     {/* Tactic motifs listed first (Phase 126 UAT), each prefixed with its
                         missed/allowed orientation to match the dual-orientation chips. */}
-                    {tooltipTactics.map(({ orientation, motif, family }) => {
+                    {tooltipTactics.map(({ orientation, motif, family, depth }) => {
                       const TacticIcon = TACTIC_FAMILY_ICON[family];
                       // Orientation drives the row color (missed = blue, allowed = light
                       // red), matching the dual-orientation TacticMotifChip. Blue is
@@ -918,6 +932,8 @@ export function EvalChart({
                           {/* Icon inherits the row color via currentColor. */}
                           <TacticIcon className="h-3 w-3 shrink-0" />
                           {orientation}: {tacticMotifLabel(motif)}
+                          {depth != null &&
+                            ` (depth ${toDisplayDepthForOrientation(depth, orientation)})`}
                         </li>
                       );
                     })}
