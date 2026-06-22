@@ -351,6 +351,17 @@ Plans:
 
 - [ ] TBD (run /gsd-plan-phase 130 to break down)
 
+### Phase 131: Tactic precision hardening via cook.py predicate alignment (SEED-064)
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 130
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 131 to break down)
+
 ---
 
 <details>
