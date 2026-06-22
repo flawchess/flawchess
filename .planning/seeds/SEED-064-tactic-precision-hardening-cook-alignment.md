@@ -107,9 +107,20 @@ Required behavior:
 - **Mate first, via the Stockfish mate score — not `is_checkmate` at the PV end.** The PV is capped
   at ~12 plies (SEED lineage / D-117-02); a long forced mate is truncated and never shows checkmate,
   so a scan-the-end check would miss it. Gate the mate path on Stockfish's mate-in-x signal, then run
-  the named-mate detectors on the mating position.
+  the named-mate detectors on the mating position. (Mate outranks a shallower piece-win because being
+  mated is the more severe error.)
 - **Otherwise, walk the PV by ply and return the first firing tactic** (shallowest wins; early-exit).
   At equal depth, break ties by the existing tier/rank priority.
+- **No catch-all demotion — hanging-piece is a first-class winner.** When a hanging-piece (depth 0)
+  competes with a deeper geometric tactic (e.g. a fork at depth 2+), the **hanging-piece wins** because
+  it is the shallowest. Do NOT treat hanging-piece (or any catch-all) as a lower-priority fallback. The
+  detector's Tier-4 rank is a dispatch/precision-claiming artifact, NOT a statement of instructional
+  value. Rationale (resolves open-Q #4c): a piece you left or missed en prise is the **root cause** and
+  the most **fundamental skill** error; a deep fork is a downstream consequence. It also happens to be
+  our **highest-precision** detector (0.95 vs fork 0.40), so preferring it when it is the shallowest hit
+  aligns pedagogy and trust. The hanging-piece-vs-fork conflict only arises in the genuinely-free case
+  anyway (hanging-piece requires capturing an *undefended* piece at move 0 with the material-persistence
+  guard), so a surviving hanging-piece tag is a real won/missed piece.
 
 **Why it's in scope here (not a separate phase):** changing the winner per position changes the
 TP/FP mix the precision harness measures (depth-first makes hanging-piece win more, deeper forks win
@@ -163,8 +174,9 @@ over the current detector-outer collect-then-sort.
    cases.)
 4. Confirm the shallowest-tactic-wins resolution (see "Dispatch / Resolution Strategy"): (a) source the
    mate gate from the Stockfish mate-in-x score, not `is_checkmate` at the capped PV end; (b) at equal
-   depth, keep the existing tier/rank priority as the tiebreak; (c) does any non-mate motif ever deserve
-   to override a shallower different motif (i.e. are there exceptions to pure depth-first)?
+   depth, keep the existing tier/rank priority as the tiebreak. (c) **RESOLVED 2026-06-22:** no exceptions
+   to pure depth-first for non-mate tactics — the shallowest tactic always wins, hanging-piece included
+   (it is NOT demoted as a catch-all). Root-cause + fundamental-skill + highest-precision rationale above.
 
 ## Related
 
