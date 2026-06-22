@@ -2,11 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.28
 milestone_name: Tactic Tagging
-status: completed
+status: Phase 131 shipped — squash-merged to main (cook.py tactic precision hardening)
 stopped_at: Phase 131 Plan 05 complete — TEST gate + dev re-backfill; Phase 131 fully done
-last_updated: "2026-06-22T21:27:45.259Z"
-last_activity: 2026-06-22
-last_activity_desc: Phase 131 complete, transitioned to Phase 999.1
+last_updated: "2026-06-22T22:02:19.287Z"
+last_activity: 2026-06-23
 progress:
   total_phases: 14
   completed_phases: 9
@@ -23,8 +22,8 @@ current_phase_name: tactic-precision-hardening-cook-alignment
 
 Milestone: v1.28 Tactic Tagging — all active phases (124, 125, 126, 127, 128, 128.1, 129) COMPLETE
 Phase 129 (tactic-filter-ui): VERIFIED — UAT 2/2 passed, G-01 resolved live, VERIFICATION human-verified
-Status: Phase 131 COMPLETE (all 5 plans done — Plans 01-05)
-Last activity: 2026-06-22 — Phase 131 complete, transitioned to Phase 999.1
+Status: Phase 131 shipped — squash-merged to main (cook.py tactic precision hardening)
+Last activity: 2026-06-23
 
 ## Project Reference
 
