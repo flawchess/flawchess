@@ -353,14 +353,28 @@ Plans:
 
 ### Phase 131: Tactic precision hardening via cook.py predicate alignment (SEED-064)
 
-**Goal:** [To be planned]
-**Requirements**: TBD
+**Goal:** Raise per-motif tactic-tag precision toward >0.9 on the held-out TEST split (recall ungated) by faithfully reimplementing ornicar/lichess-puzzler's cook.py predicates for the in-scope Tier 1 (mate) + Tier 2 (geometric) motifs, inverting dispatch to shallowest-tactic-wins, and adding a missed-vs-played dest-square gate at the call site. Precision-first: a wrong visible chip erodes trust; a NULL chip costs nothing. Any motif still <0.9 at full cook fidelity is suppressed, not shipped.
+**Requirements**: none mapped — traceability via CONTEXT.md decisions D-01..D-12
 **Depends on:** Phase 130
-**Plans:** 0 plans
+**Plans:** 5/5 plans complete
 
 Plans:
+**Wave 1**
 
-- [ ] TBD (run /gsd-plan-phase 131 to break down)
+- [x] 131-01-PLAN.md — Foundation: shared-utility ports (ray-aware is_defended, is_in_bad_spot), depth-primary dispatch + mate gate, raise harness GOALS to 0.90, dispatch test (Wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 131-02-PLAN.md — Cook ports for the four worst geometrics: skewer, discovered-attack, fork, pin; ship/suppress on TEST (Wave 2)
+- [x] 131-04-PLAN.md — Workstream B: missed-vs-played dest-square gate at the call site + hand-built unit fixtures (Wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 131-03-PLAN.md — Cook ports for the mate motifs: back-rank own-blocker test, anastasia, hook; lock regression floors (Wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 131-05-PLAN.md — Final held-out TEST gate + full report regen + dev re-backfill (Wave 4)
 
 ---
 

@@ -2,18 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.28
 milestone_name: Tactic Tagging
-status: Phase 130 shipped — squash-merged to main (c31a33cf)
-stopped_at: Phase 129 verified complete (UAT 2/2 passed, G-01 resolved live) — all active v1.28 phases (124–129) done; milestone ready to ship
-last_updated: "2026-06-22T13:57:46.099Z"
+status: completed
+stopped_at: Phase 131 Plan 05 complete — TEST gate + dev re-backfill; Phase 131 fully done
+last_updated: "2026-06-22T21:27:45.259Z"
 last_activity: 2026-06-22
+last_activity_desc: Phase 131 complete, transitioned to Phase 999.1
 progress:
-  total_phases: 12
-  completed_phases: 8
-  total_plans: 27
-  completed_plans: 27
-  percent: 67
-current_phase: 999.1
-current_phase_name: BACKLOG
+  total_phases: 14
+  completed_phases: 9
+  total_plans: 32
+  completed_plans: 32
+  percent: 64
+current_phase: 131
+current_phase_name: tactic-precision-hardening-cook-alignment
 ---
 
 # Project State: FlawChess
@@ -22,8 +23,8 @@ current_phase_name: BACKLOG
 
 Milestone: v1.28 Tactic Tagging — all active phases (124, 125, 126, 127, 128, 128.1, 129) COMPLETE
 Phase 129 (tactic-filter-ui): VERIFIED — UAT 2/2 passed, G-01 resolved live, VERIFICATION human-verified
-Status: Phase 130 shipped — squash-merged to main (c31a33cf)
-Last activity: 2026-06-22
+Status: Phase 131 COMPLETE (all 5 plans done — Plans 01-05)
+Last activity: 2026-06-22 — Phase 131 complete, transitioned to Phase 999.1
 
 ## Project Reference
 
@@ -436,6 +437,7 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 | Phase 129-tactic-filter-ui P03 | 7 | - tasks | - files |
 | Phase 129 P04 | 7 | 3 tasks | 7 files |
 | Phase 129 P05 | 18 | 3 tasks | 7 files |
+| Phase 131 P05 | 37m | 2 tasks | 1 files |
 
 ## Decisions
 
@@ -526,10 +528,17 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 - [Phase ?]: 10-family FAMILY_TO_MOTIF_INTS taxonomy: fork, skewer, pin, x_ray, double_check, discovered_check, discovered_attack, trapped_piece, hanging, mate — the cross-stack contract for plan 129-05
 - [Phase ?]: combinations family dropped (ints 9-17 belong to no family); no DB migration required — families are query-time groupings
 
+- [Phase 131-01]: D-08 depth-primary dispatch: (depth_val, tier, rank) — shallowest tactic wins regardless of tier; Tier-3 at depth 0 beats Tier-2 at depth 2 but is query-suppressed
+- [Phase 131-01]: D-06 has_forced_mate: gates mate branch on Stockfish eval_mate>0 (not is_checkmate) since PV_CAP_PLIES=12 truncates forced mates
+- [Phase 131-01]: _VALUES_NO_KING excludes KING from _is_in_bad_spot lower-value comparator (king can't be captured; KING:99 in _PIECE_VALUES still correct for fork/skewer value comparisons)
+- [Phase 131-01]: D-11: GOALS raised to 0.90 precision for 7 in-scope motifs; gate live (exits non-zero); per-motif ports in plans 02/03 drive it to 0
+- [Phase ?]: D-11: TEST gate confirmed — Tier 1+2 shipped motifs >=0.90 on held-out TEST split; pin SUPPRESSED per D-02/D-11
+- [Phase ?]: D-12: dev re-backfill complete — 73,304 rows rewritten, 12,399 false tactic tags eliminated; prod deferred to runbook
+
 ## Session
 
-**Last session:** 2026-06-20T12:08:05.814Z
-**Stopped at:** Completed 129-04-PLAN.md (tactic family taxonomy redesign)
+**Last session:** 2026-06-22T20:56:19.685Z
+**Stopped at:** Phase 131 Plan 05 complete — TEST gate + dev re-backfill; Phase 131 fully done
 **Resume file:** None
 | 170 | Flaw-card: open game on flawed ply, remove broken datapoint pulse | 2026-06-19 | fe4910d4 | — |
 | 189 | Move severity into collapsed Context; relabel Orientation->Tactic Missed vs Allowed, Tactic motif->Tactic Type; label severity group | 2026-06-20 | 45b19cb1 | — |

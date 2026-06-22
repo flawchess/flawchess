@@ -113,6 +113,12 @@ FAMILY_TO_MOTIF_INTS: dict[str, list[int]] = {
     "skewer": [
         int(TacticMotifInt.SKEWER),
     ],
+    # pin: cook two-sub-test port achieved 0.819 TEST precision in Phase 131-02.
+    # Below the 0.90 ship bar (D-02/D-11); added to SUPPRESSED_MOTIFS in precision_floors.py.
+    # Kept in FAMILY_TO_MOTIF_INTS to preserve the 10-family G-01 contract (Plan 04).
+    # "Pin" chips will surface in family queries at 0.819 precision until a future phase
+    # achieves >0.90 TEST. The tactic_confidence lever cannot suppress confidence=100 Tier-2
+    # motifs; removing from this dict would require updating test_family_mapping_ten_families.
     "pin": [
         int(TacticMotifInt.PIN),
     ],

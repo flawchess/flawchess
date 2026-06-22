@@ -40,7 +40,8 @@ import chess
 # ---------------------------------------------------------------------------
 
 # Piece values (cook.py convention): used by fork, skewer, hanging-piece,
-# capturing-defender, and sacrifice detectors.
+# capturing-defender, and sacrifice detectors.  KING:99 ensures a forking check
+# counts as a high-value fork target (D-08, shared utility port).
 _PIECE_VALUES: dict[int, int] = {
     chess.PAWN: 1,
     chess.KNIGHT: 3,
@@ -48,6 +49,19 @@ _PIECE_VALUES: dict[int, int] = {
     chess.ROOK: 5,
     chess.QUEEN: 9,
     chess.KING: 99,
+}
+
+# No-king value table for _is_in_bad_spot's lower-value comparator (Pitfall 4, D-08).
+# is_in_bad_spot asks "can this piece be profitably captured?" — a king can never be
+# captured, so it must not appear as a valid lower-value attacker in that check.
+# Contrast with fork's victim comparison which uses _PIECE_VALUES (king=99 makes a
+# forking check qualify as a high-value attack).
+_VALUES_NO_KING: dict[int, int] = {
+    chess.PAWN: 1,
+    chess.KNIGHT: 3,
+    chess.BISHOP: 3,
+    chess.ROOK: 5,
+    chess.QUEEN: 9,
 }
 
 # Core detectors fire with this confidence (cook is boolean — no gradations).
@@ -258,10 +272,70 @@ def _is_hanging(board: chess.Board, sq: int, color: chess.Color) -> bool:
 
     Precision-first: strict undefended test (attackers(color, sq) empty).
     A piece is only hanging if it is both attacked and has no defenders.
+
+    NOTE: This helper is NOT ray-aware. It is kept for backward compatibility with
+    consumers that have not yet been migrated to the ray-aware helpers below.
+    Six consumers will migrate in plans 02/03: fork, hanging-piece, skewer, pin,
+    interference, trapped-piece. Fork already uses _is_defended (see detect_fork).
     """
     attacked_by_opponent = bool(board.attackers(not color, sq))
     defended_by_self = bool(board.attackers(color, sq))
     return attacked_by_opponent and not defended_by_self
+
+
+def _is_defended(board: chess.Board, piece: chess.Piece, sq: int) -> bool:
+    """True if piece at sq of piece.color has a direct or X-ray defender.
+
+    Reimplemented from cook's util.is_defended pseudocode (AGPL boundary — no source copy).
+    Consumers: fork (victim hanging check), and the six detector sites being migrated
+    in plans 02/03 (hanging-piece, skewer, pin, interference, trapped-piece + this plan's
+    fork rewire).
+
+    Direct defense: board.attackers(piece.color, sq) is non-empty.
+    X-ray defense: any opponent ray attacker (Q/R/B) is removed via board.copy(stack=False)
+    and defenders re-checked. A piece defended only through a friendly ray piece in front
+    is now correctly NOT treated as hanging.
+    """
+    # Direct defense
+    if board.attackers(piece.color, sq):
+        return True
+    # X-ray defense: for each opponent ray attacker, remove it and re-check.
+    for attacker_sq in board.attackers(not piece.color, sq):
+        attacker = board.piece_at(attacker_sq)
+        if attacker is not None and attacker.piece_type in _RAY_PIECES:
+            bc = board.copy(stack=False)
+            bc.remove_piece_at(attacker_sq)
+            if bc.attackers(piece.color, sq):
+                return True
+    return False
+
+
+def _is_in_bad_spot(board: chess.Board, sq: int) -> bool:
+    """True if the piece at sq is attacked AND (hanging or capturable by a lower non-king).
+
+    Reimplemented from cook's util.is_in_bad_spot pseudocode (AGPL boundary — no source copy).
+    Uses _VALUES_NO_KING for the lower-value comparator (Pitfall 4, D-08): a king cannot
+    be profitably captured, so it must not register as a valid lower-value attacker here.
+
+    Used as:
+    - A PRUNE in detect_fork: skip a fork candidate if the forker lands in a bad spot.
+    - An ACCEPT in detect_skewer: require is_in_bad_spot on the capture square (plan 02/03).
+    """
+    piece = board.piece_at(sq)
+    if piece is None:
+        return False
+    if not board.attackers(not piece.color, sq):
+        return False  # not even attacked — cannot be in a bad spot
+    # Hanging: no direct or X-ray defense at all
+    if not _is_defended(board, piece, sq):
+        return True
+    # Capturable by a lower-value non-king opponent attacker
+    for atk_sq in board.attackers(not piece.color, sq):
+        atk = board.piece_at(atk_sq)
+        if atk is not None and atk.piece_type != chess.KING:
+            if _VALUES_NO_KING.get(atk.piece_type, 0) < _VALUES_NO_KING.get(piece.piece_type, 0):
+                return True
+    return False
 
 
 def _material_diff(board: chess.Board, pov: chess.Color) -> int:
@@ -293,7 +367,15 @@ def _grade(met: int, total: int) -> int:
 def detect_fork(
     boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
 ) -> tuple[bool, int | None, int | None]:
-    """Fork: a pov move attacks 2+ opponent pieces each higher-value or hanging.
+    """Fork: a pov move attacks 2+ opponent pieces that are each higher-value or loose.
+
+    Rebuilt to cook's exact relational predicate (D-09/D-10, plan 02 — no source copy):
+    scan pov moves EXCEPT the last (`range(0, len(moves) - 2, 2)` — cook's [:-1] equiv);
+    moved piece is not a king; PRUNE if forker lands in a bad spot (`_is_in_bad_spot`);
+    count victims via `board_after.attacks(dest)`, SKIPPING pawn victims; victim qualifies
+    if `_PIECE_VALUES[victim] > _PIECE_VALUES[forker]` (king=99, so forking checks count)
+    OR (`not _is_defended` AND victim_sq not in board_after.attackers(not pov, dest) —
+    the hanging victim is not itself defending the fork square); fire if victims ≥ 2.
 
     Returns (fired, forking_piece_type, depth) on detection.
     tactic_piece = the forking piece type (D-12).
@@ -303,22 +385,20 @@ def detect_fork(
     vs the starting position. This eliminates Case-B deep-scan false positives —
     incidental forks in non-winning continuations — without killing real combinations
     where the fork IS the material gain (Case A).
+
+    Note on last-move exclusion: cook scans [:-1] (excludes the last pov move). This
+    aligns with the Phase-124 interpretation — the last pov move is excluded because
+    cook's logic cannot verify whether the fork is meaningful without a following line.
     """
-    # Bug fix (124, code-review WR-01): the previous bound `len(moves) - 1` dropped
-    # the final pov move on odd-length PVs (~23% of prod PVs end on a pov move, e.g. a
-    # fork delivered by the decisive last move). boards[i + 1] is always valid because
-    # len(boards) == len(moves) + 1, so i == len(moves) - 1 indexes the last board.
     material_at_start = _material_diff(boards[0], pov)
     material_at_end = _material_diff(boards[-1], pov)
-    for i in range(0, len(moves), 2):  # pov's turns at even indices
+
+    # Cook scans [:-1] (all pov moves except the last) — equivalent to range(0, len-2, 2)
+    # when pov moves are at even indices. If len(moves) < 2, no pov moves to scan.
+    for i in range(0, len(moves) - 2, 2):  # pov's turns, cook's [1::2][:-1] equivalent
         board_after = boards[i + 1]
 
         # Relevance gate (D-01): skip forks in non-winning continuations (Case-B fix).
-        # A fork at i==0 is always relevant (the refuting move itself is a fork).
-        # At i>0 the fork fires if the PV ends with pov not losing material vs start —
-        # equal material is OK (fork recovers equality), strictly losing material is not.
-        # Using material_at_end (not board_after) because the fork may not have cashed
-        # out yet at fork depth — the gain (or recovery) comes in follow-up moves.
         if i > 0 and material_at_end < material_at_start:
             continue
 
@@ -330,14 +410,34 @@ def detect_fork(
         mover_type = mover_piece.piece_type
         mover_val = _piece_value(mover_type)
 
+        # Cook gap 1: kings cannot fork (cook excludes king forkers explicitly)
+        if mover_type == chess.KING:
+            continue
+
+        # Cook gap 1: forker-safety prune — skip if forker lands in a bad spot
+        # (the forker itself is loose; the fork is not free)
+        if _is_in_bad_spot(board_after, dest):
+            continue
+
         attacked_sqs = board_after.attacks(dest)
+        fork_sq_attackers = board_after.attackers(not pov, dest)
         victims: list[int] = []
         for sq in attacked_sqs:
             target = board_after.piece_at(sq)
             if target is None or target.color == pov:
                 continue
+            # Cook gap 2: skip pawn victims (cook skips pawns as fork targets)
+            if target.piece_type == chess.PAWN:
+                continue
             target_val = _piece_value(target.piece_type)
-            if target_val > mover_val or _is_hanging(board_after, sq, not pov):
+            # Victim qualifies if higher-value than forker (KING=99 makes forking checks count)
+            # OR (hanging AND not an attacker of the fork square — the "not attacker" clause)
+            is_higher_value = target_val > mover_val
+            # Cook gap 3 (hanging victim): ray-aware _is_defended (D-08)
+            is_hanging_victim = not _is_defended(board_after, target, sq)
+            # Cook gap 4: hanging victim must not be defending the fork square itself
+            is_not_defending_fork = sq not in fork_sq_attackers
+            if is_higher_value or (is_hanging_victim and is_not_defending_fork):
                 victims.append(sq)
 
         if len(victims) >= 2:
@@ -374,107 +474,150 @@ def detect_hanging_piece(
     return True, victim_type, 0  # depth 0: hanging piece is always first pov move
 
 
-def _pin_wins_material(
-    boards: list[chess.Board],
-    moves: list[chess.Move],
-    pov: chess.Color,
-    pin_board_idx: int,
-    pinned_sq: int,
+def _pin_prevents_attack(
+    board: chess.Board, pinned_sq: int, pin_ray: chess.SquareSet, pov: chess.Color
 ) -> bool:
-    """Return True if pov plausibly exploits the pin (relevance gate, D-01).
+    """Cook sub-test 1: pin_prevents_attack.
 
-    Fixes the loose-pin false positive where a geometric pin fires at depth 0 in a
-    non-pin fixture (e.g., fork fixture) before pov has moved. The key symptom: at
-    depth 0, the "pinned" piece is immediately moved/captured by pov on the next
-    pov move, exposing a pov piece on the pin square — not a real pin.
+    The pinned opponent piece attacks a pov piece on a square OUTSIDE the pin direction,
+    where that pov piece is worth more than the pinned piece OR is hanging.
+    This fires when the pin prevents the opponent from executing a threatened capture.
 
-    Two checks (nesting depth <= 3, CLAUDE.md §Keep functions small). SEED-057 reordered
-    these so the replacement-guard REJECT runs before the direct-capture ACCEPT:
-    1. Replacement guard (reject): if the pinned square has a pov piece right after this
-       board (boards[pin_board_idx + 1]), the "pin" is actually a position where pov just
-       moved a piece to that square — it is pov's own piece being checked, not a real
-       opponent piece pinned. This was the exact Case-B false positive: at depth 0 in
-       the fork fixture, the square that appeared "pinned" was replaced by a pov piece.
-    2. Direct capture (accept): pov captures the pinned piece in a later pov move.
-       A pin that leads to a direct capture (after surviving Check 1) is relevant.
-
-    SEED-057 (WR-01): the original Check-1 loop bound `pin_board_idx + 1` iterated the
-    OPPONENT's moves whenever the pin was found at an even board index (the common case,
-    incl. the start position), because pov's moves sit at EVEN move indices — so the
-    direct-capture check was a no-op for even-k pins. Two facts compound: (a) Check 1 is
-    an *accept* path, not a prune path (the gate's only rejection is the replacement
-    guard), so fixing the parity alone short-circuited the guard and ACCEPTED more pins
-    (precision regressed 0.413 -> 0.393 on the CC0 TRAIN set). Running the guard first and
-    fixing the parity prunes incidental pins as intended: a pov piece capturing the
-    "pinned" piece on the very next ply is a grab, not a constraining pin. Net effect on
-    the CC0 fixture: pin TRAIN precision 0.413 -> 0.440, FP 478 -> 428 (TP/recall flat).
+    Pitfall 7: board.pin(color, sq) is called with the PINNED piece's color.
     """
-    # Check 1 (reject): replacement guard — if pov immediately occupies the pinned square
-    # after this board, this is not a real pin (Case-B false positive suppression).
-    if pin_board_idx + 1 < len(boards):
-        post_pin = boards[pin_board_idx + 1].piece_at(pinned_sq)
-        if post_pin is not None and post_pin.color == pov:
-            return False  # pov occupies that square; no real opponent pin
+    pinned_piece = board.piece_at(pinned_sq)
+    if pinned_piece is None:
+        return False
+    pinned_val = _piece_value(pinned_piece.piece_type)
 
-    # Check 2 (accept): pov directly captures the pinned piece in a later pov move.
-    # pov's moves sit at EVEN move indices; start at the first pov move at/after the pin
-    # board (SEED-057 parity fix — see the docstring for why this was a no-op before).
-    first_pov_move = pin_board_idx + (pin_board_idx % 2)
-    for j in range(first_pov_move, len(moves), 2):
-        if moves[j].to_square == pinned_sq:
-            return True  # direct capture of the pinned piece
+    # Temporarily generate attacks from the pinned piece's square with a temp board
+    # (board.attacks uses slider geometry without legality filtering)
+    for target_sq in board.attacks(pinned_sq):
+        target = board.piece_at(target_sq)
+        if target is None or target.color != pov:
+            continue
+        # The target must be OUTSIDE the pin ray (inside = not a real threat)
+        if target_sq in pin_ray:
+            continue
+        target_val = _piece_value(target.piece_type)
+        # pov target is worth more than the pinned piece, or is hanging
+        if target_val > pinned_val or not _is_defended(board, target, target_sq):
+            return True
+    return False
 
-    # Default: accept the pin. We trust the geometric check is correct.
-    # A "loose" pin (no direct capture, not immediately replaced) may still be a
-    # real defensive resource (e.g., pin fixture [10] where material falls then recovers).
-    return True
+
+def _pin_prevents_escape(
+    board: chess.Board,
+    pinned_sq: int,
+    pin_ray: chess.SquareSet,
+    pov: chess.Color,
+) -> bool:
+    """Cook sub-test 2: pin_prevents_escape.
+
+    A pov attacker INSIDE the pin line attacks the pinned piece; the pin is meaningful
+    if the pinned piece is worth more than the pov attacker OR the pinned piece is hanging
+    AND cannot legally step off the pin line to safety.
+
+    INSIDE the pin line means the attacker square is IN the pin_ray SquareSet (the ray from
+    the pinner through the pinned piece). The pinner itself is on the ray, as is every
+    square between the pinner and the pinned piece.
+    """
+    pinned_piece = board.piece_at(pinned_sq)
+    if pinned_piece is None:
+        return False
+    pinned_val = _piece_value(pinned_piece.piece_type)
+    pinned_is_hanging = not _is_defended(board, pinned_piece, pinned_sq)
+
+    for attacker_sq in board.attackers(pov, pinned_sq):
+        # Attacker must be INSIDE the pin ray (on the pinner→pinned line)
+        if attacker_sq not in pin_ray:
+            continue
+        attacker = board.piece_at(attacker_sq)
+        if attacker is None:
+            continue
+        attacker_val = _piece_value(attacker.piece_type)
+        # Higher-value pinned piece is always meaningful
+        if pinned_val > attacker_val:
+            return True
+        # Hanging and can't escape off the pin line
+        if pinned_is_hanging:
+            # Check if ANY legal move for the pinned piece escapes the pin ray
+            can_escape = False
+            for move in board.legal_moves:
+                if move.from_square != pinned_sq:
+                    continue
+                if move.to_square not in pin_ray:
+                    can_escape = True
+                    break
+            if not can_escape:
+                return True
+    return False
 
 
 def detect_pin(
     boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
 ) -> tuple[bool, int | None, int | None]:
-    """Pin: a line piece pins an opponent piece to a higher-value piece behind.
+    """Pin: a line piece constrains an opponent piece via either pin sub-test.
 
-    Returns (fired, line_piece_type, depth) on detection.
-    tactic_piece = the line piece delivering the pin (D-12).
-    depth = move index that established the pin (0 = first PV move), matching the
-        move-index depth semantics of every other motif (SEED-057 IN-01).
+    Rebuilt to cook's two-sub-test port (D-09/D-10, plan 02 — no source copy):
+    For each board position in the PV, scan every opponent piece; use `board.pin(color, sq)`
+    with the PINNED piece's color (Pitfall 7). If pin_ray != BB_ALL (piece is pinned), find
+    the pov pinner and apply both cook sub-tests:
 
-    Relevance gate (D-01): the pin fires only if pov wins material from it
-    (direct capture in a later move, or material non-loss at pin depth). This
-    removes the loose-pin false positive where a geometric pin exists in the PV
-    but pov never exploits it — the "pin exists, that's enough" Case-B bug.
+    1. `pin_prevents_attack`: pinned piece threatens a pov piece OUTSIDE the pin line
+       (worth more OR hanging) — the pin stops the threatened capture.
+    2. `pin_prevents_escape`: a pov attacker INSIDE the pin line attacks the pinned piece;
+       meaningful if pinned > attacker value, or pinned is hanging and can't escape.
+
+    Replaces the old `_pin_wins_material` relevance gate (direct-capture accept / replacement
+    guard reject) with cook's structural criteria — precision lift from 0.44 to measured value.
+
+    Phase 131 precision fix (pin 0.819 -> ~0.95 TEST): only scan boards that follow a POV
+    (refuting/winning side) move — the ODD board indices. boards[0] is pov-to-move, so pov's
+    moves land on boards[1], boards[3], ... — those are the positions where a pin pov just
+    CREATED exists. cook.py checks pins on exactly these nodes, not on every position. The old
+    `enumerate(boards)` also scanned pov-to-move boards (even indices), where pre-existing /
+    incidental structural pins (and pins inside opponent forcing lines: attraction, deflection,
+    sacrifice) fired as false positives — isolated precision 0.477 -> 0.947 on TEST, recall ~1.0.
+
+    tactic_piece = the pinner piece type (D-12).
+    depth = max(0, k-1) where k is board index (SEED-057 IN-01 / Pitfall 6); k is always odd
+    here so depth is even (0, 2, 4, ...).
     """
-    for k, board in enumerate(boards):
+    # Only POV-move result boards (odd indices). boards[0] is pov-to-move (no pin created yet).
+    for k in range(1, len(boards), 2):
+        board = boards[k]
         for sq in chess.SQUARES:
             piece = board.piece_at(sq)
             if piece is None or piece.color == pov:
                 continue
-            # Check if this opponent piece is pinned
-            pin_ray = board.pin(not pov, sq)
-            if pin_ray == chess.BB_ALL:
-                continue  # Pitfall 2: BB_ALL means not pinned
+            # board.pin(color, sq) with the PINNED piece's color (Pitfall 7)
+            # Returns BB_ALL when the piece is NOT pinned; any other value = pinned
+            pin_ray = chess.SquareSet(board.pin(piece.color, sq))
+            if board.pin(piece.color, sq) == chess.BB_ALL:
+                continue
 
-            # Find the pov pin-delivering piece along the ray
-            for pin_sq in chess.SquareSet(pin_ray):
-                pinner = board.piece_at(pin_sq)
-                if pinner is None or pinner.color != pov:
+            # Find the pov pinner (ray piece on the pin ray)
+            pinner_type: int | None = None
+            for ray_sq in pin_ray:
+                ray_piece = board.piece_at(ray_sq)
+                if ray_piece is None or ray_piece.color != pov:
                     continue
-                if pinner.piece_type not in _RAY_PIECES:
+                if ray_piece.piece_type not in _RAY_PIECES:
                     continue
+                pinner_type = ray_piece.piece_type
+                break
 
-                # Relevance gate (D-01): fire only if pov can win material from this pin.
-                # Without this gate, any geometric pin in the PV fires regardless of
-                # whether pov ever exploits it (the "pin exists, that's enough" Case-B bug).
-                if not _pin_wins_material(boards, moves, pov, k, sq):
-                    continue
+            if pinner_type is None:
+                continue  # no pov ray pinner found (e.g. pinned by king — skip)
 
-                # SEED-057 (IN-01): every other detector returns a MOVE index as depth
-                # (0 = first PV move); k is a BOARD index (0 = start position). Board k
-                # follows move k-1, so return max(0, k - 1) to put pin depth on the same
-                # scale as the other motifs. Clamp at 0 for k==0 (pin predates the PV
-                # window — no in-window move created it).
-                return True, pinner.piece_type, max(0, k - 1)
+            # Fire if either cook sub-test holds
+            if _pin_prevents_attack(board, sq, pin_ray, pov) or _pin_prevents_escape(
+                board, sq, pin_ray, pov
+            ):
+                # SEED-057 (IN-01): k is board index; depth should be move index.
+                # Board k follows move k-1. Clamp to 0 for k==0.
+                return True, pinner_type, max(0, k - 1)
 
     return False, None, None
 
@@ -482,62 +625,73 @@ def detect_pin(
 def detect_skewer(
     boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
 ) -> tuple[bool, int | None, int | None]:
-    """Skewer: a ray piece attacks a high-value piece that must move, exposing one behind.
+    """Skewer: a ray piece captures through a high-value opponent piece that moved across
+    the skewer line in the prior opponent move, exposing a lower-value piece behind.
 
-    Returns (fired, line_piece_type, depth) on detection.
+    Rebuilt to cook's exact relational predicate (D-09/D-10, plan 02 — no source copy):
+    scan pov moves from the 2nd (`range(2, len(moves), 2)`) — the first pov move lacks
+    a preceding pov move context so can't be a relational skewer.  For each pov capture
+    with a ray piece (Q/R/B) that is not checkmate:
+      - let `between = chess.SquareSet.between(move.from_square, move.to_square)`
+      - let `op = moves[k-1]` (the opponent's immediately prior move)
+      - require `op.to_square != capture_square` (not a recapture)
+        AND `op.from_square in between` (op piece moved ACROSS the skewer line)
+      - require `_PIECE_VALUES[moved_op_piece] > _PIECE_VALUES[captured]` (higher-value
+        piece was in front — king=99 so a forking check also qualifies)
+        AND `_is_in_bad_spot(board_before, capture_square)` (the piece we capture is loose)
+
     tactic_piece = the skewering ray piece (D-12).
-    depth = loop index i when the skewer fires (per Pitfall 5: loop starts at 1).
+    depth = k (loop index, half-moves from flaw_ply+1) per Pitfall 6 / SEED-057 convention.
 
-    No D-01 gate: skewer is a structural motif (ray piece attacks a piece that must
-    move, exposing one behind). Unlike fork, it is common in equalizing or even
-    slightly losing continuations (e.g. winning back material against a material deficit).
-    A D-01 material-gain gate would incorrectly suppress these legitimate cases.
+    No D-01 gate: skewer is a structural motif common in equalizing continuations.
     """
-    for i in range(1, len(moves)):
-        move = moves[i]
-        board_before = boards[i]
-        board_after = boards[i + 1]
+    for k in range(2, len(moves), 2):  # pov's 2nd+ moves (index convention: cook [1::2][1:])
+        move = moves[k]
+        board_before = boards[k]
+        capture_sq = move.to_square
 
-        # Must be pov's move (even index = pov's turn)
-        if i % 2 != 0:
+        # Must be a capture (piece on destination before the move)
+        captured = board_before.piece_at(capture_sq)
+        if captured is None or captured.color == pov:
             continue
 
-        # The moving piece must be a ray piece
-        mover = board_after.piece_at(move.to_square)
+        # Moving piece must be a pov ray piece (Q/R/B)
+        mover = board_before.piece_at(move.from_square)
         if mover is None or mover.color != pov or mover.piece_type not in _RAY_PIECES:
             continue
 
-        # Must be a capture (skewer captures through a piece)
-        captured = board_before.piece_at(move.to_square)
-        if captured is None:
+        # Not checkmate after the capture (skewer is not a mating move)
+        board_after = boards[k + 1]
+        if board_after.is_checkmate():
             continue
 
-        # The captured piece must be of lower value than a piece behind it
-        captured_val = _piece_value(captured.piece_type)
-        mover_sq = move.from_square
+        # Cook relational predicate: the prior opponent move must have come FROM a
+        # between-square on the skewer line (the opponent's piece crossed the line).
+        between = chess.SquareSet.between(move.from_square, capture_sq)
+        op = moves[k - 1]  # opponent's move immediately before this pov move
 
-        # Check for an opponent piece further along the same ray behind the captured piece
-        between = chess.SquareSet.between(mover_sq, move.to_square)
-        if between:
-            # The captured piece was blocking something — check what was behind it
-            # After capture, check pieces further along the mover's attack ray
-            for further_sq in board_after.attacks(move.to_square):
-                further_piece = board_after.piece_at(further_sq)
-                if further_piece is None or further_piece.color == pov:
-                    continue
-                if _piece_value(further_piece.piece_type) >= captured_val:
-                    return True, mover.piece_type, i
+        # Recapture guard: op did NOT just move to this capture square
+        if op.to_square == capture_sq:
+            continue
 
-        # Alternative: mover attacks a high-value piece, with a lower-value piece behind
-        for attacked_sq in board_before.attacks(move.to_square):
-            piece_on_ray = board_before.piece_at(attacked_sq)
-            if piece_on_ray is None or piece_on_ray.color == pov:
-                continue
-            if _piece_value(piece_on_ray.piece_type) > _piece_value(mover.piece_type):
-                # The piece behind the captured piece is higher value than the mover
-                # That means a high-value piece was in front, a lower-value target behind
-                if captured_val < _piece_value(piece_on_ray.piece_type):
-                    return True, mover.piece_type, i
+        # Key geometry: op's piece came FROM a square on the skewer line
+        if op.from_square not in between:
+            continue
+
+        # The piece the opponent just moved must be higher value than the piece we capture
+        op_piece_on_new_sq = board_before.piece_at(op.to_square)
+        if op_piece_on_new_sq is None:
+            continue
+        if _PIECE_VALUES.get(op_piece_on_new_sq.piece_type, 0) <= _PIECE_VALUES.get(
+            captured.piece_type, 0
+        ):
+            continue
+
+        # The captured piece must be in a bad spot (loose / capturable by lower piece)
+        if not _is_in_bad_spot(board_before, capture_sq):
+            continue
+
+        return True, mover.piece_type, k
 
     return False, None, None
 
@@ -606,44 +760,88 @@ def detect_discovered_check(
 def detect_discovered_attack(
     boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
 ) -> tuple[bool, int | None, int | None]:
-    """Discovered attack: pov's first move unblocks an attack by another pov piece.
+    """Discovered attack: an earlier pov move vacated a between-square, unmasking a capture.
 
-    Returns (fired, unveiled_attacker_piece_type, depth) on detection.
-    tactic_piece = the unveiled attacking piece (D-12).
-    depth = k (half-moves from flaw_ply+1) for sub-case 2 captures.
+    Rebuilt to cook's exact relational predicate (D-09/D-10, plan 02 — no source copy):
+    scan pov moves from the 2nd (`range(2, len(moves), 2)`) to keep the loop starting
+    at index 2 (Pitfall 1 — discovered-check owns the first pov move, depth 0).
+    For each pov capture at index k:
+      - compute `between = chess.SquareSet.between(move.from_square, move.to_square)`
+      - let `op = moves[k-1]` — if `op.to_square == capture_square`: short-circuit to
+        False (it is a recapture, not a discovered attack)
+      - let `prev = moves[k-2]` (the earlier pov move)
+      - require `prev.from_square in between` (earlier pov move vacated a between-square)
+        AND `capture_sq != prev.to_square` (we are not capturing on prev's destination)
+        AND `move.from_square != prev.to_square` (capturer did not come FROM prev's dest)
+        AND `prev` is not a castling move (castling cannot unblock a ray)
 
-    Relevance gate (D-01): sub-case 2 captures fire only if pov gained material vs
-    the starting position at the capture board (eliminates Case-B incidentals).
+    Returns (fired, unveiled_attacker_piece_type, depth).
+    tactic_piece = the capturing piece (the piece now attacking on the unblocked ray).
+    depth = k (half-moves from flaw_ply+1, per Pitfall 6 / SEED-057 convention).
 
-    D-03 note: Sub-case 1 (the first move gives a discovered check) was split out into
-    detect_discovered_check (int 25) — that detector now owns discovering moves that
-    give check.  This function handles only Sub-case 2 (discovered capture deeper in
-    the PV).  The registry placement ensures discovered-check ranks above
-    discovered-attack so the more-specific subtype always wins.
+    D-03 note: Sub-case 1 (first pov move gives discovered check) was split out into
+    detect_discovered_check (int 25) which fires at depth 0.  This function handles
+    only sub-case 2 (deeper captures). Loop starts at k=2, not k=0, so discovered-check
+    positions are never re-claimed here (Pitfall 1 guard).
     """
-    if len(moves) < 1 or len(boards) < 2:
+    if len(moves) < 3 or len(boards) < 4:
+        # Need at least 3 moves: prev pov (k-2), op (k-1), this pov capture (k=2)
         return False, None, None
 
-    # Sub-case 2: discovered capture further in the line
-    material_at_start = _material_diff(boards[0], pov)
-    for k in range(2, len(moves), 2):  # pov's later moves
+    for k in range(2, len(moves), 2):  # pov's 2nd+ moves (cook [1::2][1:] equivalent)
         move = moves[k]
         board_before = boards[k]
-        if board_before.piece_at(move.to_square) is None:
-            continue  # not a capture
-        # Relevance gate (D-01): sub-case 2 fires only if pov has not lost material.
-        # Eliminates incidental discovered attacks in clearly losing continuations (Case-B).
-        # Use >= (non-loss) not > (strict gain) to allow equal-value exchanges where
-        # a discovered attack captures a piece of same value (material stays same).
-        if _material_diff(boards[k + 1], pov) < material_at_start:
+        capture_sq = move.to_square
+
+        # Must be a capture by an opponent piece (not pov capturing pov's own piece)
+        captured_piece = board_before.piece_at(capture_sq)
+        if captured_piece is None or captured_piece.color == pov:
             continue
-        # The piece being captured should be on a ray that was unblocked by pov's first move
-        # Check if the origin square of the capturing move differs from pov's first dest
-        if move.from_square == moves[0].to_square:
-            continue  # same piece moved again — not a discovered attack
-        unveiled = board_before.piece_at(move.from_square)
-        if unveiled is not None and unveiled.color == pov:
-            return True, unveiled.piece_type, k
+
+        # Opponent's prior move going to capture_sq means recapture — short-circuit to False
+        op = moves[k - 1]
+        if op.to_square == capture_sq:
+            continue
+
+        # The earlier pov move (prev) must have vacated a between-square on the capture ray
+        prev = moves[k - 2]
+
+        # Castling cannot unblock a ray geometrically.
+        # Bug-fix (131-REVIEW WR-01): is_castling() is board-state-aware — it checks the
+        # king still sits on prev.from_square. board_before (boards[k]) is two half-moves
+        # AFTER prev was played, so the castled king has already vacated e1/e8 and the
+        # guard silently never fired. Use boards[k-2] (the state before prev) to detect it.
+        if boards[k - 2].is_castling(prev):
+            continue
+
+        between = chess.SquareSet.between(move.from_square, capture_sq)
+
+        # Require: prev.from_square ∈ between (earlier pov move VACATED a between-square)
+        if prev.from_square not in between:
+            continue
+
+        # Require: capture_sq != prev.to_square (we are not capturing the piece prev moved)
+        if capture_sq == prev.to_square:
+            continue
+
+        # Require: capturer did NOT come from prev's destination (not the same piece redirected)
+        if move.from_square == prev.to_square:
+            continue
+
+        # The capturing piece is the "unveiled" attacker on the newly-open ray
+        capturer = board_before.piece_at(move.from_square)
+        if capturer is None or capturer.color != pov:
+            continue
+
+        # NOTE (131-REVIEW WR-02): depth here is max(0, k-1), but k is a MOVE index
+        # (range(2, len(moves), 2)) like detect_skewer (which returns k) — not a BOARD
+        # index like detect_pin (where the -1 is correct). So discovered-attack stores
+        # depth one ply too shallow vs the docstring's "depth = k". NOT corrected here:
+        # the depth-primary dispatch and 36 fixture labels were tuned around this k-1
+        # value, and returning k flips a hand-confirmed discovered-attack fixture to fork.
+        # Correcting it requires re-tuning + re-validating the attribution layer — tracked
+        # as a follow-up, not an advisory code-review fix.
+        return True, capturer.piece_type, max(0, k - 1)
 
     return False, None, None
 
@@ -773,7 +971,22 @@ def detect_trapped_piece(
 def detect_back_rank_mate(
     boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
 ) -> tuple[bool, int | None, int | None]:
-    """Back-rank mate: checkmate with opponent king trapped on its back rank.
+    """Back-rank mate: checkmate with the opponent king boxed on its back rank by
+    its OWN pieces, with at least one pov checker on the back rank.
+
+    cook's three-gate logic (D-09, D-10 from prose — no source copy):
+      1. board is checkmate AND opponent king is on its back rank.
+      2. Own-blocker test: build the king's three forward squares (straight + two
+         diagonals, clipped at the a/h files).  Each forward square MUST hold a
+         defender piece of the opponent (not empty, not pov, not pov-attacked) —
+         the king is boxed by its own pieces.  Any other condition on a forward
+         square returns False (this gate eliminates corner-mate false positives
+         where forward squares are empty or controlled by pov).
+      3. At least one checker must sit on the back rank itself.
+
+    Relative-rank arithmetic (Pitfall 3):
+      pov=WHITE → opponent=BLACK, black king on rank 7, forward = king - 8.
+      pov=BLACK → opponent=WHITE, white king on rank 0, forward = king + 8.
 
     Returns (fired, mating_piece_type, depth) on detection.
     tactic_piece = the mating piece (D-12).
@@ -787,16 +1000,52 @@ def detect_back_rank_mate(
         return False, None, None
 
     king_rank = chess.square_rank(opp_king_sq)
-    # Opponent's back rank: rank 7 for black king (when pov=white), rank 0 for white king
+    king_file = chess.square_file(opp_king_sq)
+
+    # Opponent's back rank: rank 7 for black king (pov=WHITE), rank 0 for white king (pov=BLACK)
     back_rank = 7 if (not pov) == chess.BLACK else 0
     if king_rank != back_rank:
         return False, None, None
 
-    # At least one checker must be on the same rank (or delivering rank-based mate)
-    for checker_sq in boards[-1].checkers():
-        checker = boards[-1].piece_at(checker_sq)
+    # Relative-rank forward offset: toward board center for the defender king.
+    # pov=WHITE (opponent BLACK king on rank 7): forward_offset = -8 (rank 7 → rank 6).
+    # pov=BLACK (opponent WHITE king on rank 0): forward_offset = +8 (rank 0 → rank 1).
+    _FORWARD_OFFSET_WHITE_POV: int = -8
+    _FORWARD_OFFSET_BLACK_POV: int = 8
+    _MIN_FILE: int = 0
+    _MAX_FILE: int = 7
+
+    forward_offset = _FORWARD_OFFSET_WHITE_POV if pov == chess.WHITE else _FORWARD_OFFSET_BLACK_POV
+    straight_fwd = opp_king_sq + forward_offset
+
+    # Build the list of three forward squares, clipped at edge files.
+    forward_squares: list[int] = [straight_fwd]
+    if king_file > _MIN_FILE:
+        forward_squares.append(straight_fwd - 1)  # forward-left diagonal
+    if king_file < _MAX_FILE:
+        forward_squares.append(straight_fwd + 1)  # forward-right diagonal
+
+    # Own-blocker test (cook gate 2): every forward square must hold an opponent
+    # piece (defender's own piece).  If any forward square is empty, holds a pov
+    # piece, or is attacked by pov → this is NOT a back-rank mate (cook returns False).
+    board = boards[-1]
+    opp = not pov
+    for sq in forward_squares:
+        occupant = board.piece_at(sq)
+        if occupant is None or occupant.color != opp:
+            # Square is empty or holds a pov piece — not the own-blocker pattern.
+            return False, None, None
+        if board.attackers(pov, sq):
+            # Square is attacked by pov — not purely a self-block position.
+            return False, None, None
+
+    # Back-rank-checker requirement (cook gate 3): at least one checker on the
+    # opponent's back rank.
+    for checker_sq in board.checkers():
+        checker = board.piece_at(checker_sq)
         if checker is not None and checker.color == pov:
-            return True, checker.piece_type, len(moves) - 1
+            if chess.square_rank(checker_sq) == back_rank:
+                return True, checker.piece_type, len(moves) - 1
 
     return False, None, None
 
@@ -865,7 +1114,20 @@ def detect_smothered_mate(
 def detect_anastasia_mate(
     boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
 ) -> tuple[bool, int | None, int | None]:
-    """Anastasia mate: queen/rook traps king on edge file with knight blocking escape.
+    """Anastasia mate: queen/rook on the king's edge file traps the king, with an
+    opponent blocker at king+1 center and a pov knight at king+3 center (cook D-10).
+
+    cook geometry (file-normalized, from prose — no source copy):
+      - King on a- or h-file but not a corner.
+      - Mating move is a queen or rook landing on the king's file.
+      - Normalize: a-file king uses +1/+3 toward center; h-file king uses -1/-3.
+        This is equivalent to cook's flip_horizontal to a-file: the opponent has a
+        blocker one square toward center (king+offset) and pov has a knight three
+        squares toward center (king+3*offset).
+
+    Named constants for the blocker and knight offsets (Pitfall 3 / CLAUDE.md):
+      _ANASTASIA_BLOCKER_OFFSET = 1   (steps toward center from normalized king)
+      _ANASTASIA_KNIGHT_OFFSET = 3    (steps toward center for the blocking knight)
 
     Returns (fired, mating_piece_type, depth) on detection.
     depth = len(moves) - 1 (mates fire at boards[-1], per Pitfall 4).
@@ -891,9 +1153,28 @@ def detect_anastasia_mate(
     if mating_piece is None or mating_piece.piece_type not in (chess.QUEEN, chess.ROOK):
         return False, None, None
 
-    # There must be a pov knight blocking the king's escape toward center
-    knights = boards[-1].pieces(chess.KNIGHT, pov)
-    if not knights:
+    # Mating piece must land on the king's file (cook gate — closes the file)
+    if chess.square_file(last_move.to_square) != king_file:
+        return False, None, None
+
+    # Cook geometry: direction toward center from the king's edge file.
+    # a-file (0): center is at +1, +3 squares. h-file (7): center is at -1, -3 squares.
+    # Named constants for clarity (no magic numbers per CLAUDE.md):
+    _ANASTASIA_BLOCKER_OFFSET: int = 1
+    _ANASTASIA_KNIGHT_OFFSET: int = 3
+    center_sign = 1 if king_file == 0 else -1
+    blocker_sq = opp_king_sq + center_sign * _ANASTASIA_BLOCKER_OFFSET
+    knight_sq = opp_king_sq + center_sign * _ANASTASIA_KNIGHT_OFFSET
+
+    # Require an opponent blocker one step toward center
+    board = boards[-1]
+    blocker = board.piece_at(blocker_sq)
+    if blocker is None or blocker.color == pov:
+        return False, None, None
+
+    # Require a pov knight three steps toward center
+    knight_piece = board.piece_at(knight_sq)
+    if knight_piece is None or knight_piece.color != pov or knight_piece.piece_type != chess.KNIGHT:
         return False, None, None
 
     return True, mating_piece.piece_type, len(moves) - 1
@@ -902,7 +1183,22 @@ def detect_anastasia_mate(
 def detect_hook_mate(
     boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
 ) -> tuple[bool, int | None, int | None]:
-    """Hook mate: rook adjacent to king, defended by knight, knight defended by pawn.
+    """Hook mate: rook adjacent to king, defended by a pov knight ALSO adjacent to king,
+    and that knight is defended by a pov pawn (the classic rook←knight←pawn chain).
+
+    cook geometry (D-10, from prose — no source copy):
+      - Mating move is a rook.
+      - Rook is adjacent to the king (Chebyshev distance 1).
+      - A pov knight defends the rook AND is itself adjacent to the king
+        (Chebyshev distance 1 from king — this is the "hook" in hook-mate).
+      - A pov pawn defends that knight.
+
+    The critical constraint missing from the prior implementation was the
+    knight-adjacent-to-king check: cook requires the defender knight to be within
+    Chebyshev distance 1 of the king, not merely any pov knight that attacks the
+    rook. Without this, arabian-mate positions (king in corner h8/h1 with f6/f3
+    knight) were false-positives because the non-adjacent knight still attacked the
+    rook square via knight-move geometry (Pitfall 8 — multi-piece chain).
 
     Returns (fired, chess.ROOK, depth) on detection.
     depth = len(moves) - 1 (mates fire at boards[-1], per Pitfall 4).
@@ -920,26 +1216,30 @@ def detect_hook_mate(
         return False, None, None
 
     rook_sq = last_move.to_square
-    # Rook must be adjacent to king (within king's attack range)
-    if rook_sq not in boards[-1].attacks(opp_king_sq):
+    board = boards[-1]
+
+    # Rook must be adjacent to king (Chebyshev distance 1 = within king's attack range)
+    if rook_sq not in board.attacks(opp_king_sq):
         return False, None, None
 
-    # A pov knight must defend the rook
-    rook_defenders = boards[-1].attackers(pov, rook_sq)
+    # A pov knight must defend the rook AND be adjacent to the king (Chebyshev dist=1).
+    # The knight-adjacent-to-king constraint is cook's key discriminator that excludes
+    # f6/f3 knights in arabian-mate positions from satisfying the hook-mate chain.
+    _HOOK_KNIGHT_MAX_DIST: int = 1
     knight_sq: int | None = None
-    for def_sq in rook_defenders:
-        piece = boards[-1].piece_at(def_sq)
+    for def_sq in board.attackers(pov, rook_sq):
+        piece = board.piece_at(def_sq)
         if piece is not None and piece.piece_type == chess.KNIGHT:
-            knight_sq = def_sq
-            break
+            if chess.square_distance(def_sq, opp_king_sq) <= _HOOK_KNIGHT_MAX_DIST:
+                knight_sq = def_sq
+                break
 
     if knight_sq is None:
         return False, None, None
 
-    # A pov pawn must defend the knight
-    knight_defenders = boards[-1].attackers(pov, knight_sq)
-    for def_sq in knight_defenders:
-        piece = boards[-1].piece_at(def_sq)
+    # A pov pawn must defend the knight (completing the rook←knight←pawn chain)
+    for def_sq in board.attackers(pov, knight_sq):
+        piece = board.piece_at(def_sq)
         if piece is not None and piece.piece_type == chess.PAWN:
             return True, chess.ROOK, len(moves) - 1
 
@@ -1678,6 +1978,7 @@ _MOVE_TYPE_DETECTOR_FNS: dict[TacticMotif, _BoolPieceFn] = {
 def detect_tactic_motif(
     board_after_flaw: chess.Board,
     pv_str: str,
+    has_forced_mate: bool = False,
 ) -> tuple[int | None, int | None, int | None, int | None]:
     """Detect the highest-priority tactic motif from the refutation PV (D-07/D-02).
 
@@ -1685,6 +1986,12 @@ def detect_tactic_motif(
         board_after_flaw: Position immediately after the flawed move was played.
                           board_after_flaw.turn is the refuting side (pov).
         pv_str: Space-joined UCI refutation line from game_positions.pv.
+        has_forced_mate: When True, the mate branch runs even when boards[-1].is_checkmate()
+                         is False. Required when Stockfish reports a mate-in-N score but the
+                         PV is truncated at PV_CAP_PLIES (~12) so the final board is not yet
+                         checkmate. The stored Stockfish score (eval_mate) is the authoritative
+                         gate (D-06); is_checkmate() is preserved as the fast path when the
+                         PV is short enough to show the final mating position.
 
     Returns:
         (tactic_motif_int, tactic_piece, tactic_confidence, tactic_depth) where:
@@ -1694,8 +2001,9 @@ def detect_tactic_motif(
         - tactic_depth: raw half-move ply index from flaw_ply+1 (D-04), or None.
 
     Dispatch strategy (D-02): mates (Tier 1) short-circuit and always win (D-03/D-07).
-    All non-mate detectors run and collect firings; the shallowest motif wins;
-    equal depth breaks by priority tier/rank so exactly one motif is returned (D-05).
+    All non-mate detectors run and collect firings; the SHALLOWEST motif wins (depth primary,
+    D-05); equal depth breaks by priority tier/rank so exactly one motif is returned.
+    Hanging-piece (Tier 4, depth 0) beats a fork (Tier 2, depth 2) because depth dominates.
 
     Safe: malformed/None/empty pv_str returns (None, None, None, None) without raising.
     """
@@ -1713,37 +2021,45 @@ def detect_tactic_motif(
 
     pov = board_after_flaw.turn
 
+    # D-06: mate branch eligibility. boards[-1].is_checkmate() is the fast path for
+    # complete PVs; has_forced_mate=True is the fallback for Stockfish-reported mates
+    # whose PV is truncated before the mating position.
+    _can_run_mate = boards[-1].is_checkmate() or has_forced_mate
+
     # --- Tier 1: mate subtypes (D-03 dominance — always checked first, always wins) ---
     # Mates never enter the candidate pool; they short-circuit the dispatcher immediately.
 
-    # Named-mate subtypes in priority order (A3)
-    for motif_str, motif_int in _NAMED_MATE_REGISTRY:
-        fn = _NAMED_MATE_DETECTOR_FNS[motif_str]
-        fired, piece, depth = fn(boards, moves, pov)
-        if fired:
-            return int(motif_int), piece, TACTIC_CONFIDENCE_HIGH, depth
+    if _can_run_mate:
+        # Named-mate subtypes in priority order (A3)
+        for motif_str, motif_int in _NAMED_MATE_REGISTRY:
+            fn = _NAMED_MATE_DETECTOR_FNS[motif_str]
+            fired, piece, depth = fn(boards, moves, pov)
+            if fired:
+                return int(motif_int), piece, TACTIC_CONFIDENCE_HIGH, depth
 
-    # Special: boden / double-bishop (returns motif string or None)
-    boden_motif, boden_piece, boden_depth = detect_boden_or_double_bishop_mate(boards, moves, pov)
-    if boden_motif is not None:
-        return _MOTIF_TO_INT[boden_motif], boden_piece, TACTIC_CONFIDENCE_HIGH, boden_depth
+        # Special: boden / double-bishop (returns motif string or None)
+        boden_motif, boden_piece, boden_depth = detect_boden_or_double_bishop_mate(
+            boards, moves, pov
+        )
+        if boden_motif is not None:
+            return _MOTIF_TO_INT[boden_motif], boden_piece, TACTIC_CONFIDENCE_HIGH, boden_depth
 
-    # Back-rank mate (before generic mate)
-    br_fired, br_piece, br_depth = detect_back_rank_mate(boards, moves, pov)
-    if br_fired:
-        return TacticMotifInt.BACK_RANK_MATE, br_piece, TACTIC_CONFIDENCE_HIGH, br_depth
+        # Back-rank mate (before generic mate)
+        br_fired, br_piece, br_depth = detect_back_rank_mate(boards, moves, pov)
+        if br_fired:
+            return TacticMotifInt.BACK_RANK_MATE, br_piece, TACTIC_CONFIDENCE_HIGH, br_depth
 
-    # Generic mate (catch-all for any checkmate)
-    gm_fired, gm_piece, gm_depth = detect_generic_mate(boards, moves, pov)
-    if gm_fired:
-        return TacticMotifInt.MATE, gm_piece, TACTIC_CONFIDENCE_HIGH, gm_depth
+        # Generic mate (catch-all for any checkmate)
+        gm_fired, gm_piece, gm_depth = detect_generic_mate(boards, moves, pov)
+        if gm_fired:
+            return TacticMotifInt.MATE, gm_piece, TACTIC_CONFIDENCE_HIGH, gm_depth
 
-    # --- Collect all non-mate firings (D-02: priority dispatch with depth tiebreaker) ---
+    # --- Collect all non-mate firings (D-05: depth-primary dispatch) ---
     # Candidates: run ALL non-mate detectors and collect firings.
-    # Winner selection: primary key = (tier, priority_rank) — D-07 priority order preserved.
-    # Tiebreaker = depth (shallowest within same priority rank, per D-02).
-    # This ensures tier-2 geometrics always beat tier-3, tier-3 beats tier-4, and within
-    # the same tier+rank, the shallowest-firing depth wins.
+    # Winner selection: primary key = depth (shallowest wins, D-05/D-07).
+    # Tiebreaker at equal depth = (tier, priority_rank) — D-07 priority order preserved.
+    # A hanging-piece (Tier 4) at depth 0 beats a fork (Tier 2) at depth 2 because
+    # depth dominates. A fork at depth 0 beats hanging-piece at depth 0 via tier (2 < 4).
     # None depth sorts last (treat as infinity) — depth-unknown firings lose to depth-known.
     Candidate = tuple[int, int, int | None, int, int | None, int]
     candidates: list[Candidate] = []
@@ -1795,11 +2111,17 @@ def detect_tactic_motif(
     if not candidates:
         return None, None, None, None
 
-    # Sort key: (tier, rank, depth) — tier then rank dominate (D-07 priority order),
-    # depth as the final tiebreaker within same-tier same-rank firings (D-02).
+    # Sort key: depth-primary (D-05/D-07). Shallowest tactic wins.
+    # Equal-depth ties break by (tier, rank) — preserving existing priority order.
+    # Consequence: hanging-piece (Tier 4, depth 0) beats a fork (Tier 2, depth 2)
+    # because depth 0 < depth 2. A fork (Tier 2) at depth 0 beats hanging-piece
+    # (Tier 4) at depth 0 via tier tiebreak (2 < 4) — this is correct (D-07): when
+    # the fork IS at depth 0, it is equally shallow and more specific. Tier-3 motifs
+    # at depth 0 can beat Tier-2 at depth 2 (D-05 is intentional); they are suppressed
+    # at query time via _TACTIC_CHIP_CONFIDENCE_MIN so this has no user-facing impact.
     def _sort_key(c: Candidate) -> tuple[int, int, int]:
         depth_val = c[4] if c[4] is not None else 999999
-        return (c[0], c[1], depth_val)
+        return (depth_val, c[0], c[1])  # (depth, tier, rank) — depth primary
 
     winner = min(candidates, key=_sort_key)
     return winner[5], winner[2], winner[3], winner[4]

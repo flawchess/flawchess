@@ -374,6 +374,30 @@ def _run_all_moves_pass(
     return all_moves
 
 
+def _same_dest_as_best_line(board_before: chess.Board, flaw_san: str, pv: str) -> bool:
+    """True if the flaw move and best PV first move share the same destination square.
+
+    Wrong-recapture false-alarm guard (D-03 / Workstream B): when the player captured
+    the same piece the best line would capture — just with the wrong piece type — they
+    demonstrably SAW the target.  The missed-tactic tag must be suppressed in that case.
+
+    Dest-square equality is the only criterion (D-03 deferred: adding a captured-piece-
+    value check only if a unit fixture surfaces a false suppression).
+
+    Returns False on any parse error so the caller falls through to normal detection
+    (consistent with the existing guard posture, Security Domain V5).
+    """
+    try:
+        flaw_move = board_before.parse_san(flaw_san)
+        pv_moves = pv.split()
+        if not pv_moves:
+            return False
+        best_first_move = chess.Move.from_uci(pv_moves[0])
+        return flaw_move.to_square == best_first_move.to_square
+    except (ValueError, chess.IllegalMoveError):
+        return False  # malformed SAN or UCI → fall through to normal detection
+
+
 def _detect_tactic_for_flaw(
     n: int,
     fen_map: dict[int, str],
@@ -431,7 +455,21 @@ def _detect_tactic_for_flaw(
             pv = positions[n].pv
         if not pv:
             return None, None, None, None
-        return detect_tactic_motif(board_before, pv)
+        # D-03 / Workstream B dest-square gate: suppress when the flaw move and the best
+        # line's first move share the same destination.  This kills the wrong-recapture
+        # false alarm — the player captured the SAME piece with the wrong piece type, so
+        # they plainly SAW it; tagging it as "you missed a tactic" is misleading.
+        # Bug-fix: false "missed tactic" chips dominated by fork/pin/discovered-attack/
+        # skewer (thousands of rows) where the player simply recaptured with the wrong
+        # piece.  Guard is in _same_dest_as_best_line; parse errors fall through.
+        flaw_san_missed = positions[n].move_san if 0 <= n < len(positions) else None
+        if flaw_san_missed and _same_dest_as_best_line(board_before, flaw_san_missed, pv):
+            return None, None, None, None
+        # D-06: pov at flaw_ply is the mover (board_before.turn). eval_mate > 0 means
+        # the mover (pov) has a forced mate — allow the mate branch even when PV is truncated.
+        _mate_missed = positions[n].eval_mate if 0 <= n < len(positions) else None
+        has_forced_mate_missed = _mate_missed is not None and _mate_missed > 0
+        return detect_tactic_motif(board_before, pv, has_forced_mate=has_forced_mate_missed)
 
     # orientation == "allowed" (default):
     # Allowed pass: board_after_flaw + refutation PV (flaw_ply+1); pov = refuting side.
@@ -449,7 +487,14 @@ def _detect_tactic_for_flaw(
         flaw_move = board_before.parse_san(move_san_of_flaw)
         board_after_flaw = board_before.copy()
         board_after_flaw.push(flaw_move)
-        return detect_tactic_motif(board_after_flaw, pv_allowed)
+        # D-06: pov at flaw_ply+1 is the refuting side (board_after_flaw.turn). The
+        # refuting side has a forced mate when positions[n+1].eval_mate > 0, meaning
+        # the side to move on that board can force checkmate.
+        _mate_allowed = positions[n + 1].eval_mate if n + 1 < len(positions) else None
+        has_forced_mate_allowed = _mate_allowed is not None and _mate_allowed > 0
+        return detect_tactic_motif(
+            board_after_flaw, pv_allowed, has_forced_mate=has_forced_mate_allowed
+        )
     except (ValueError, chess.IllegalMoveError):
         # Malformed move_san or FEN — leave all four as None (Pitfall 6)
         return None, None, None, None

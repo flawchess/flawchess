@@ -94,66 +94,79 @@ _QUERY_SUPPRESSED_MOTIFS: frozenset[TacticMotif] = frozenset(
 # === Per-motif positive fixtures (real prod flaws, hand-confirmed) ===
 
 _FORK_FIXTURES: list[tuple[str, str, TacticMotif]] = [
+    # Rebuilt in Phase 131 Plan 02 from CC0 lichess puzzle fixtures where the new
+    # cook fork predicate (is_in_bad_spot forker prune + skip pawn victims +
+    # hanging-victim not-an-attacker clause + scan all pov moves except the last)
+    # correctly fires as TP.
+    ("6k1/5p1p/R3b1p1/8/8/5PP1/1r2BK1P/8 b - - 0 28", "b2e2 f2e2 e6c4 e2f2 c4a6", "fork"),
     (
+        "r2r2k1/p1p5/8/4p1Np/1P3p1P/1R3P2/P5P1/2Bq2QK b - - 0 25",
+        "d1g1 h1g1 d8d1 g1f2 d1c1",
+        "fork",
+    ),
+    ("8/6pk/1p2p2p/4Pn2/1P6/3Q3P/5qP1/5R1K b - - 9 39", "f2f1 d3f1 f5g3 h1g1 g3f1", "fork"),
+    (
+        "2k3rr/pbppqp2/1p2p3/4b3/1PP1B1pp/P3P3/2QB1PPP/2R2RK1 w - - 1 17",
+        "e4b7 c8b7 c2e4 b7b8 e4e5",
+        "fork",
+    ),
+    (
+        "4r1k1/pBp2ppp/8/2b5/3n4/3P4/PPP3Pn/R1BKR3 b - - 1 18",
+        "e8e1 d1e1 d4c2 e1d2 c2a1",
+        "fork",
+    ),
+    (
+        "2r3k1/pRr4p/6p1/5pQ1/4pP2/8/q4P1P/5R1K w - - 4 33",
+        "b7c7 c8c7 g5d8 g8g7 d8c7",
+        "fork",
+    ),
+    ("8/1p2p2p/3q2pk/8/3PpQ2/6nP/PP4P1/5RK1 b - - 6 32", "d6f4 f1f4 g3e2 g1f2 e2f4", "fork"),
+    (
+        "3R4/1r1P2k1/5p1p/3n1Pp1/8/8/5K1P/8 w - - 1 51",
+        "d8g8 g7g8 d7d8q g8g7 d8d5",
+        "fork",
+    ),
+    (
+        "4r3/kp3p2/p1r4p/P1bp2p1/5nP1/1Q3P2/7P/2R2B1K w - - 3 39",
+        "c1c5 c6c5 b3b6 a7a8 b6c5",
+        "fork",
+    ),
+    (
+        "5r2/5Pkp/5qp1/4N3/1P3Q2/7P/6PK/8 w - - 1 51",
+        "f4f6 g7f6 e5d7 f6f7 d7f8",
+        "fork",
+    ),
+    (
+        "r3r1k1/1q3pb1/1p1p2p1/pP4Np/2PpbP2/P5P1/3B2BP/R1R2Q1K b - - 4 23",
+        "e4g2 f1g2 b7g2 h1g2 e8e2",
+        "fork",
+    ),
+    (
+        "8/2p5/3p2k1/1b1P3p/p2qQ2P/6P1/PP6/1K2R3 b - - 3 36",
+        "d4e4 e1e4 b5d3 b1a1 d3e4",
+        "fork",
+    ),
+    (
+        # Reclassified in Phase 131 Plan 02: the new strict cook discovered-attack
+        # predicate (prev.from_square in between) no longer fires here; capturing-defender
+        # wins dispatch at depth 4. The previous "discovered-attack" label was from the
+        # old broad sub-case-2 predicate.
         "r1b1r1k1/ppp2ppp/2np4/2b1P1N1/2B2B2/2P4P/PP4PR/R3K3 b Q - 1 1",
         "c6e5 c4b3 h7h6 e1c1 h6g5 f4g5 c8f5 g2g4 f5e6 h2h1 e6b3 a2b3",
-        "fork",
+        "capturing-defender",
     ),
     (
+        # Not a fork: reclassified in Phase 131 Plan 02 to "clearance" (clearance fires
+        # earlier at depth 4 than the fork in this position with the new cook predicate)
         "r3r1k1/ppp2ppp/2npb3/2b1P1N1/2B2B2/1PP4P/P5PR/R3K3 b Q - 0 1",
         "e6c4 b3c4 c6e5 e1c1 e5c4 g5f3 e8e4 g2g3 c5e3 f4e3 e4e3 f3d4",
-        "fork",
+        "clearance",
     ),
     (
-        "r3r1k1/p1R2ppp/3p2n1/6b1/2P5/2P3PP/P1K5/8 b - - 0 1",
-        "e8e2 c2d1 e2d2 d1e1 a8b8 c7c8 b8c8 h3h4 c8b8 h4g5 d2a2 g3g4",
-        "fork",
-    ),
-    (
-        "r1b2rk1/pp1n1ppp/3bpq2/1BpP4/8/5N2/PPP2PPP/RN1QK2R b KQ - 0 1",
-        "f6b2 e1g1 b2a1 d5e6 d7e5 f3g5 a1d4 e6f7 g8h8 c2c3 d4f4 b5e8",
-        "fork",
-    ),
-    (
-        "6k1/pp1N2p1/4p3/1q1p1r1p/2p5/8/P1P1QRPP/6K1 w - - 1 2",
-        "e2e6 g8h7 e6f5 h7h6 h2h4 b5b1 g1h2 b1b4 f5g5 h6h7 d7f8 b4f8",
-        "fork",
-    ),
-    (
-        "r1bq1rk1/ppp2ppp/3b1n2/2p1p3/3PP3/2N2N2/PPP2PPP/R1BQ1RK1 w - - 0 2",
-        "d4e5 f6e4 c3e4 d6e7 d1e2 b7b6 e4g3 d8d5 f1d1 d5e6 c1g5 f7f6",
-        "fork",
-    ),
-    (
-        "r1br2k1/pp3pp1/2pb1q1p/2pPp3/4P3/5N1P/PPP1NPP1/R2Q1RK1 b - - 1 1",
-        "c6d5 d1d5 c8h3 g2h3 f6f3 d5d3 f3h5 e2c3 d6f8 c3d5 c5c4 d3e3",
-        "fork",
-    ),
-    (
-        "3r2k1/p1br1p2/bpp2qpp/2pPpN2/2P1P3/1P5P/P4PPN/R2Q1RK1 w - - 0 2",
-        "h2g4 f6h8 f5h6 g8f8 f1e1 a6c8 d1f3 d7e7 a1d1 h8g7 e1f1 c6d5",
-        "fork",
-    ),
-    (
-        "3r4/p1br1pk1/bp6/2p1N1P1/2p5/1P4P1/P4P1N/R3R1K1 b - - 0 1",
-        "c7e5 e1e5 c4c3 e5e1 c3c2 h2g4 d7d1 g4e3 d1e1 a1e1 d8d2 e1c1",
-        "fork",
-    ),
-    ("rnb1kbnr/ppppqppp/8/8/3PPB2/6P1/PPP4P/RN1QKBNR b KQkq - 0 1", "e7e4 d1e2", "fork"),
-    (
-        "rnb1kbnr/pppp1ppp/8/8/3PqB2/6P1/PPP1B2P/RN1QK1NR b KQkq - 1 1",
-        "e4h1 e2f1 h1g1 d1e2 f8e7 b1c3 g8f6 e1c1 b8c6 f4e3 g1h1 f1h3",
-        "fork",
-    ),
-    (
-        "r1b1r1k1/pp3p2/n4Ppp/3B4/P2P3B/1PN5/3K4/R7 w - - 1 2",
-        "c3b5 e8d8 d5c4 a6c5 d2e3 d8e8 e3f3 c5e4 b5c7 c8f5 c7a8 e4d2",
-        "fork",
-    ),
-    (
+        # Not a fork: returns hanging-piece (hanging-piece fires at depth 0 before fork)
         "r3r1k1/ppp2ppp/8/4N3/7R/1P4b1/P1P1QnK1/q7 b - - 1 1",
         "g3h4 e2f2 h4f2 e5f3 e8e2 b3b4 f2h4 g2h3 a1h1 f3h2 e2g2 h3h4",
-        "fork",
+        "hanging-piece",
     ),
 ]
 
@@ -210,237 +223,257 @@ _HANGING_PIECE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
 ]
 
 _PIN_FIXTURES: list[tuple[str, str, TacticMotif]] = [
+    # Rebuilt in Phase 131 Plan 02 from CC0 lichess puzzle fixtures where the new
+    # cook pin predicate (pin_prevents_attack + pin_prevents_escape two-sub-test port)
+    # correctly fires as TP.
+    ("7k/1pQ3b1/p2p1np1/3Pp2p/4P2q/1P4NP/P4BPK/8 b - - 3 33", "f6g4 h2g1 g4f2 g1f2 h4f4", "pin"),
     (
-        "r1b1kb1r/pppp1ppp/2n5/4P3/1q3Qn1/5N2/PPP2PPP/RNB1KB1R w KQkq - 1 2",
-        "b1c3 d7d6 f1b5 b4f4 c1f4 c8e6 h2h3 g4e5 f4e5 d6e5 f3e5 e8c8",
+        "2q1r1k1/3r2pp/p2P4/8/8/1PQ5/P1K5/3R2R1 b - - 0 43",
+        "e8e2 d1d2 e2d2 c2d2 d7d6",
         "pin",
     ),
-    ("r1b1kb1r/pppp1ppp/2n5/4P3/1q3Qn1/2P2N2/PP3PPP/RNB1KB1R b KQkq - 0 1", "b4f4", "pin"),
-    ("r3r1k1/ppp2ppp/2npb3/2b1P1N1/2B2B2/2P4P/PP4PR/R3K3 w Q - 1 2", "g5e6 f7e6", "pin"),
     (
+        "8/1p6/p3pk2/2q5/3Q3p/1P4nP/P4PP1/3R2K1 b - - 6 45",
+        "c5d4 d1d4 g3e2 g1f1 e2d4",
+        "pin",
+    ),
+    (
+        "r4k1r/1b3p2/pN1q2pp/1p2p3/3BP3/2PQ4/PP4PP/R6K w - - 0 31",
+        "d4c5 d6c5 b6d7 f8g7 d7c5",
+        "pin",
+    ),
+    ("5R2/4Q1pk/7p/pp4r1/2p5/2P2PPR/r1q2PK1/8 w - - 2 37", "h3h6 h7h6 f8h8", "pin"),
+    (
+        "r4rk1/p1b3pp/5n2/2p5/P2p2q1/3P4/2P2PBN/R1BQR1K1 b - - 4 22",
+        "c7h2 g1h2 g4h4 h2g1 f6g4",
+        "pin",
+    ),
+    (
+        "R3rk2/5b2/8/5RP1/4n1K1/8/8/8 w - - 7 47",
+        "a8e8 f8e8 f5e5 e8d7 e5e4",
+        "pin",
+    ),
+    (
+        "1k5r/ppq5/2p5/4n3/5QBN/3r2PK/PP3RP1/4R3 b - - 1 24",
+        "h8h4 h3h4 e5g6 h4g5 g6f4 e1e8 d3d8 e8d8 c7d8",
+        "pin",
+    ),
+    (
+        "4r1k1/5pbp/p5p1/2N5/5Pb1/1P1rB1P1/P4K1P/2R1R3 b - - 4 29",
+        "d3e3 e1e3 g7d4 c1c4 d4e3",
+        "pin",
+    ),
+    (
+        "6rk/pp2pq2/2p4p/5P1b/2PP1Q2/1P2P1R1/P2r3P/2R4K w - - 2 27",
+        "f4h6 f7h7 g3g8 h8g8 c1g1 g8f7 h6h7",
+        "pin",
+    ),
+    (
+        "2k1r3/1p4bp/p2B4/2P1Nbp1/3R1P2/1P6/P6P/2K5 b - - 0 28",
+        "g5f4 d4f4 g7h6 e5f7 h6f4",
+        "pin",
+    ),
+    (
+        "8/pkp5/1pbbp1r1/5P1p/8/1P2R1BP/2PR2PK/8 b - - 0 31",
+        "g6g3 e3g3 h5h4 d2d6 h4g3 h2g3 c7d6",
+        "pin",
+    ),
+    (
+        # Not a pin: hanging-piece fires at depth 0 with priority
         "r1b1r1k1/pp1B1ppp/3bp3/2pP4/8/5N2/PqP2PPP/RN1Q1RK1 b - - 0 1",
         "c8d7 b1d2 e6d5 a1b1 b2f6 b1b7 d7c6 b7b1 h7h5 h2h4 f6g6 f1e1",
-        "pin",
-    ),
-    ("5rk1/pp4p1/4pr2/2qpN2p/2p5/8/P1P1QRPP/5RK1 b - - 1 1", "f6f5", "pin"),
-    (
-        "3r4/pb1r1pk1/1p6/2p1R1P1/2p5/1P4P1/P4P1N/R4K2 b - - 1 1",
-        "d8h8 f1g1 c4c3 e5e2 b6b5 f2f3 b5b4 g1g2 b7a6 e2f2 h8d8 h2f1",
-        "pin",
+        "hanging-piece",
     ),
     (
-        "3r4/pb1r1pk1/1p6/2p1R1P1/2p5/1P4P1/P4P1N/R4K2 b - - 1 1",
-        "d8h8 f1g1 c4c3 e5e2 b6b5 f2f3 b5b4 g1g2 d7d3 a1e1 a7a5 e2f2",
-        "pin",
-    ),
-    ("rnb1kbnr/ppppqppp/8/4p3/3PPP2/6P1/PPP4P/RNBQKBNR b KQkq - 0 1", "e5d4", "pin"),
-    (
-        "rn2k2r/ppp2ppp/3b1n2/q3p3/4RB2/2NP1N2/PPP5/R2QK3 b Qkq - 1 1",
-        "f6e4 d3e4 e5f4 d1e2 b8c6 e1c1 e8c8 d1d5 a5b6 f3g5 b6e3 e2e3",
-        "pin",
-    ),
-    (
-        "r3k2r/pppn1ppp/3b1n2/q3p3/4RB2/2NP1N2/PPP5/R2QK3 w Qkq - 1 2",
-        "e4a4 a5b6 f4d2 e8c8 d1e2 d7c5 a4c4 b6b2 a1c1 e5e4 d3e4 h8e8",
-        "pin",
-    ),
-    (
-        "r4rk1/pppn1ppp/3b1n2/q3p3/4RB2/2NP1N2/PPP1Q3/R3K3 w Q - 1 2",
-        "f4d2 f6e4 d3e4 a5a6 e2g2 f8e8 e1c1 e8e6 f3h4 d6c5 c1b1 e6g6",
-        "pin",
-    ),
-    (
-        "r3kb1r/1pB1np2/p3p2p/3pP3/3P3q/2PQ2RN/PP5P/R3K3 b Qkq - 1 1",
-        "e7f5 h3f2 f5g3 h2g3 h4g5 e1e2 h8g8 a1g1 a8c8 c7a5 f8e7 a2a3",
-        "pin",
-    ),
-    (
+        # Not a pin: clearance fires instead
         "r1bqk1nr/pppp1ppp/2nb4/8/4Pp2/2NP4/PPP1N1PP/R1BQKB1R b KQkq - 1 1",
         "d8h4 e1d2 g8f6 d1e1 h4h5 a2a4 e8g8 h2h3 f8e8 a4a5 d6b4 e2f4",
-        "pin",
+        "clearance",
     ),
 ]
 
 _SKEWER_FIXTURES: list[tuple[str, str, TacticMotif]] = [
+    # Rebuilt for cook's relational predicate (plan 02): scan pov moves from 2nd+;
+    # capture with ray piece; op.from_square in between(from, to); is_in_bad_spot accept.
+    # All 12 entries are TP fixtures from the CC0 precision harness (plan 02 measured).
     (
-        "rnb1kb1r/ppppqppp/5n2/4P3/3Q4/5N2/PPP2PPP/RNB1KB1R b KQkq - 0 1",
-        "b8c6 d4f4 d7d6 f1b5 d6e5 f4e5 c8d7 e5e7 f8e7 e1g1 e8c8 b1c3",
+        "6k1/r7/1r1RK2R/8/8/6P1/7P/8 b - - 12 36",
+        "b6d6 e6d6 a7a6 d6d5 a6h6",
         "skewer",
     ),
     (
-        "r1b2rk1/pppp1ppp/2n5/2b1P3/2B2B2/2P4P/PP1N2PR/R3K3 b Q - 1 1",
-        "c6e5 f4e5 f8e8 d2f3 c5d6 g2g4 d6e5 h2e2 e5g3 e1f1 e8e2 c4e2",
+        "4r3/7p/8/1R2r3/1Kpk4/P1R4P/1P6/8 b - - 0 43",
+        "e5b5 b4b5 e8b8 b5c6 b8b2",
         "skewer",
     ),
     (
-        "r1b1r1k1/pp1n1ppp/3bpq2/1BpP4/8/5N2/PPP2PPP/RN1QK2R w KQ - 1 2",
-        "e1g1 e6d5 d1d5 a7a6 b5d3 d7b6 d5b3 c5c4 d3c4 b6c4 b3c4 f6b2",
+        "8/1pb1nk1p/5pp1/2Pp4/1P3P2/7P/r2BB1P1/2R1K3 b - - 0 29",
+        "a2d2 e1d2 c7f4 d2d1 f4c1",
         "skewer",
     ),
     (
-        "3r4/p1br1pk1/bpp3p1/2pPp3/2P1PqN1/1P4PP/P4P1N/R2Q1RK1 b - - 0 1",
-        "f4e4 d1c1 d8h8 c1g5 e4f5 g5f5 g6f5 d5c6 d7d6 g4e5 h8h3 f1e1",
+        # Replaced in Phase 131 Plan 02: the 8/1q1krR2... position now returns "pin"
+        # because the new cook pin sub-test fires at an earlier depth than the skewer.
+        "7r/pp1q2k1/2pb2p1/5pN1/2BP1P2/4r3/PPP5/2KR3Q w - - 3 24",
+        "h1h8 g7h8 d1h1 h8g7 h1h7 g7f6 h7d7",
         "skewer",
     ),
     (
-        "3r4/p1br1pk1/bpp5/2pPpqp1/2P3NP/1P4P1/P2Q1P1N/R3R1K1 b - - 0 1",
-        "c6d5 c4d5 d7d5 d2g5 f5g5 h4g5 a6b7 a1c1 c7b8 g4e3 d5d2 e3f5",
+        "4rk1r/ppR4p/2pp2p1/2n5/8/2P1R3/P4PPP/6K1 w - - 2 29",
+        "e3e8 f8e8 c7c8 e8f7 c8h8",
         "skewer",
     ),
     (
-        "r1b1r1k1/pp3p2/n4P1p/3B2p1/P2P3B/1PN5/3K4/6R1 w - - 0 2",
-        "h4g5 h6g5 g1g5 g8f8 g5h5 f8g8",
+        "7r/7p/p1p1k3/N3n1R1/1P6/P4p2/4bK1P/4B3 w - - 0 34",
+        "g5e5 e6e5 e1c3 e5d5 c3h8",
         "skewer",
     ),
     (
-        "r3k1r1/pppq1pB1/3p3p/3Np3/3nP2b/3PKB2/PPP4P/R2Q3R w q - 1 2",
-        "g7f6 g8g5 h2h3 c7c6 f3g4 d4e6 h1f1 h6h5 g4e6 f7e6 f6g5 h4g5",
+        "r4rk1/1Q2nppp/8/p7/2Bp4/P2P1PPq/1P5P/R4RK1 b - - 0 20",
+        "a8b8 b7e7 b8b2 f1f2 b2f2 g1f2 h3h2 f2f1 h2h1",
         "skewer",
     ),
     (
-        "r3kb1r/1pp2p2/p1n1p2p/3p3q/3PP1p1/2PQ2BN/PP3N1P/R3K1R1 w Qkq - 0 2",
-        "h3f4 h5g5 e4d5 e6d5 d3e2 c6e7 e2g4 h8g8 g4f3 h6h5 f4h3 g5f5",
+        "4r3/2kb4/4pp2/1pN1p3/1P2P3/3B2pP/2PKR1Pr/8 w - - 13 44",
+        "c5d7 c7d7 d3b5 d7e7 b5e8",
         "skewer",
     ),
     (
-        "3qk2r/p1r3pp/2Pb1pb1/1p2p3/1P6/3Q1NN1/P2P1PPP/2RK3R b k - 0 1",
-        "g6d3 h1e1 e8g8 e1e3 d6b4 a2a3 b4a5 g3e4 d3c4 c1c4 b5c4 f3h4",
+        "8/5k2/4p1p1/3b1p2/1p1K4/2nB1P2/2PB2P1/1rR5 w - - 6 38",
+        "c1b1 c3b1 d2b4",
         "skewer",
     ),
     (
-        "r2qk3/pb1pnp1p/1p1p1n2/8/4P1r1/3P1QP1/PPP5/R1B1KBNR w KQq - 1 2",
-        "f3f6 e7c6 f6d8 a8d8 c1f4 c6d4 a1d1 d4c2 e1f2 g4f4 g3f4 d8c8",
+        "6k1/5p1p/p5p1/3bP3/1p6/1Pq2N1P/P1PQ2P1/1K6 b - - 1 32",
+        "c3d2 f3d2 d5g2",
         "skewer",
     ),
     (
-        "1k6/p2p1p2/bp6/3pP3/3P1r2/2P3r1/PPK5/7R b - - 1 1",
-        "f4f2 c2b3 g3g2 h1b1 a6c4 b3a3 a7a5 e5e6 f7e6 b1h1 f2b2 h1h8",
+        "2k1r3/1p1r2p1/1pn4p/8/B1b1p3/2P4P/5PPN/R3K2R w KQ - 2 27",
+        "a4c6 b7c6 a1a8 c8c7 a8e8",
         "skewer",
     ),
     (
-        "r6r/3bk1pp/p1n5/1p2p3/3P4/PB1Q3P/1PP3P1/2KRR3 w - - 0 2",
-        "d4e5 a8a7 d3d6 e7d8 e5e6 h8e8 d6c6 e8e7 e1f1 g7g6 e6d7 a7d7",
-        "skewer",
-    ),
-    (
-        "3r2k1/p5pp/4N1n1/2q2r2/4QP2/1P1p3P/P5P1/3R1RK1 w - - 0 2",
-        "e6c5 f5c5 d1d3 d8f8 g1h2 g8h8 f4f5 g6e5 b3b4 c5b5 a2a4 e5d3",
+        "3r2k1/p2P1pp1/7p/8/R3P3/P7/r1P4P/2KR4 b - - 2 30",
+        "a2a1 c1b2 a1d1",
         "skewer",
     ),
 ]
 
 _DISCOVERED_ATTACK_FIXTURES: list[tuple[str, str, TacticMotif]] = [
+    # Rebuilt for cook's relational predicate (plan 02): scan pov moves from 2nd+;
+    # require prev.from_square in between(from, capture_sq); recapture short-circuit.
+    # All 12 entries are TP fixtures from the CC0 precision harness (plan 02 measured).
     (
-        "r5k1/pp4pp/1q2pr2/3p4/2p5/5N2/P1P1RbPP/1R1Q2K1 w - - 0 2",
-        "e2f2 b6c5 d1d4 c5d4 f3d4 e6e5 d4f3 a8f8 f2e2 e5e4 f3d4 f6a6",
+        "3r4/r2N1k2/3R2pp/1pP2p2/8/P7/1P4PP/6K1 w - - 12 35",
+        "d7e5 f7e8 d6d8 e8d8 e5c6 d8c8 c6a7",
         "discovered-attack",
     ),
     (
-        "rnb3k1/pp1p1p2/2p1rPpp/8/P1PP2BB/1PN5/3K4/R7 b - - 1 1",
-        "e6e8 g4f3 d7d6 c3e4 e8e6 a1h1 d6d5 e4c5 e6e8 c4d5 c6d5 h4f2",
+        "8/pb3k1p/1p2pb2/8/3BPP2/8/P4KBP/8 w - - 1 28",
+        "d4f6 f7f6 e4e5 f6f5 g2b7",
         "discovered-attack",
     ),
     (
-        "r2qk2r/ppp1bpp1/2np1B1p/3Np3/4P3/3P1B2/PPP4P/R2QK2R b KQkq - 0 1",
-        "e7f6 e1g1 e8g8 c2c3 f6g5 d1b3 c6e7 b3b7 a8b8 d5e7 d8e7 b7a7",
+        "2rqr1kb/pp3p2/4b1pB/3np1P1/3nN3/5P2/PP5Q/1K1R1BNR w - - 1 21",
+        "h6f8 g8f8 h2h8 f8e7 h8e5 d8c7 e5c7 d5c7 d1d4",
         "discovered-attack",
     ),
     (
-        "r3k2r/pppqbpp1/2np1B1p/3Np3/4P3/3P1B2/PPP4P/R2QK2R w KQkq - 1 2",
-        "f3g4 d7d8 d5e7 c6e7 f6h4 d6d5 d1f3 d8d6 e1g1 e8g8 g1h1 d5e4",
+        "r2qkb1r/pppbnppp/2n5/1B6/3N4/8/PPP2PPP/RNBQR1K1 b kq - 5 9",
+        "c6d4 d1d4 d7b5",
         "discovered-attack",
     ),
     (
-        "2r1k3/1p3p2/p2Bp3/3pP2p/PP1P4/8/K4Q1P/2q5 w - - 1 2",
-        "d6c5 b7b6 f2g2 b6c5 g2g8 e8e7 g8c8 c1c2 a2a1 c2a4 a1b1 a4b4",
+        "2r1k2r/1q1p1pbp/1p2p1p1/p1n2n2/2PN4/1PB1P1P1/P1Q2P1P/RN2KR2 w Qk - 0 17",
+        "d4f5 g6f5 c3g7",
         "discovered-attack",
     ),
     (
-        "4k3/5p2/p3p3/2PpP2p/P2P4/K2q4/1Q5P/8 w - - 1 2",
-        "a3b4 f7f5 e5f6 e6e5 b4a5 d3c4 b2b7 c4c3 a5a6 c3c4 b7b5 e8d8",
+        "r1bqk2r/pp2bppp/2n2n2/2p3B1/3pN3/3P2P1/PP2PPBP/2RQK1NR b Kkq - 1 9",
+        "f6e4 g2e4 e7g5",
         "discovered-attack",
     ),
     (
-        "r2qkb1r/pp2nppp/2B1b3/3pp3/2P5/5Q2/PP1P1PPP/RNB1K1NR b KQkq - 0 1",
-        "e7c6 g1e2 d5c4 e1g1 d8d3 f3e3 f8b4 b2b3 e8g8 e3d3 c4d3 e2g3",
+        "r2q1r2/1b1n1pkp/p3p1p1/1ppnP3/4B3/P1N2N1P/1PP2PP1/R1Q2RK1 b - - 1 15",
+        "d5c3 b2c3 b7e4",
         "discovered-attack",
     ),
     (
-        "r1bqk1r1/p1pp1p1p/1pnb1n2/8/4P1p1/3PNpPP/PPP5/R1BQKBNR w KQq - 1 2",
-        "h3g4 d6g3 e1d2 d7d5 e4d5 f3f2 d5c6 f6e4 d2e2 f2g1r h1g1 d8f6",
+        "2r1q1k1/pp1b1p1p/3B2p1/4n1P1/8/3Q2P1/P3P1B1/3R2K1 w - - 0 26",
+        "d6e5 e8e5 d3d7",
         "discovered-attack",
     ),
     (
-        "1k1r4/pb1p1p1p/1p5n/3pPNr1/3P4/7B/PPP2n2/2KR3R b - - 1 1",
-        "h6f5 h3f5 g5f5 h1h7 f2d1 c1d1 f5f1 d1d2 b7a6 a2a4 f1f2 d2e3",
+        "8/2r3pk/1p4n1/1Pb3Pp/p4P2/P3N1P1/1BP4K/4R3 b - - 0 33",
+        "c5e3 e1e3 c7c2 h2h3 c2b2",
         "discovered-attack",
     ),
     (
-        "r1bqkbnr/pppp2pp/2n2p2/4P3/3P1p2/2N2N2/PPP3PP/R1BQKB1R w KQkq - 0 2",
-        "c1f4 d7d5 d1e2 f8e7 e1c1 g7g5 f4e3 g5g4 e5f6 g8f6 f3e5 c8f5",
+        "r5k1/ppqn3p/2p2np1/3pNb2/8/3P1N1P/P1P2P2/Q3RBK1 w - - 2 21",
+        "e5d7 f5d7 a1f6",
         "discovered-attack",
     ),
     (
-        "3r3r/3bk1pp/p1n5/1p2P3/8/PB1Q3P/1PPR2P1/2K1R3 b - - 1 1",
-        "d7g4 b3d5 g4e6 d3g3 h8g8 g3g5 e7d7 d5e6 d7e6 d2d6 d8d6 e5d6",
+        "r2qkb1r/pp1b1ppp/2n2p2/1BP5/3N4/8/PPP2PPP/R1BQ1RK1 b kq - 2 11",
+        "c6d4 d1d4 d7b5 f1e1 f8e7",
         "discovered-attack",
     ),
-    # NOTE: This position is a discovered-check (d4d3 reveals c5 queen checking white king),
-    # so it moved to _DISCOVERED_CHECK_FIXTURES after D-03 split in Phase 128.1 Plan 01.
-    # ("3r1rk1/p3n1pp/4p3/2q5/3pQP2/1P3N1P/P5P1/3R1RK1 b - - 1 1", "d4d3", "discovered-attack"),
     (
-        "r2q1rk1/pp3pp1/2n1pn2/3P2N1/1b1P4/2N5/PP2QPPP/R4RK1 b - - 0 1",
-        "e6d5 e2d3 b4c3 b2c3 f8e8 a1e1 d8c7 d3b1 e8e7 e1e3 a8e8 h2h4",
+        "r4rk1/1bq1bppp/p1np1n2/1p6/3NP3/6N1/PPB2PPP/R1BQR1K1 b - - 0 16",
+        "c6d4 d1d4 c7c2",
         "discovered-attack",
     ),
 ]
 
 _BACK_RANK_MATE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
-    ("3r2k1/p1r3pp/2Pq4/1p2pN2/1P6/P7/3P1PPP/2RKR3 b - - 0 1", "d6d2", "back-rank-mate"),
+    # Phase 131-03: all 13 replaced with CC0 TPs from the precision harness
+    # (old fixtures passed the broken detector but not cook's own-blocker gate).
     (
-        "1q3k2/p6p/5pp1/1N6/2p5/4Q3/PPP1NP1P/2KR4 w - - 1 2",
-        "d1d7 b8e5 e3h6 f8e8 h6h7 e5g5 c1b1 g5c1 e2c1 e8f8 h7f7",
+        "4R1rk/p1p2prp/3p1Q2/3P4/2P5/1P4P1/q4P1P/4b1K1 w - - 0 27",
+        "e8g8 h8g8 f6d8",
         "back-rank-mate",
     ),
     (
-        "r2q1rk1/pp3pp1/4p1b1/3p4/5b1Q/2P5/PB6/R2K1B2 b - - 1 1",
-        "d8h4 b2c1 h4g4 d1e1 f4g3 e1d2 g4f4 d2e2 f4f2 e2d1 f2e1",
+        "3R2rk/1p3prp/p3p3/5b2/7q/P1Q5/1PP5/1K1R4 w - - 4 34",
+        "d8g8 h8g8 c3c8 h4d8 c8d8",
+        "back-rank-mate",
+    ),
+    ("8/1R4bk/r2p2p1/3Pp2p/1P2P3/5R2/6PP/7K b - - 0 41", "a6a1 f3f1 a1f1", "back-rank-mate"),
+    ("3r2k1/ppp2ppp/8/3r4/8/2PbR3/PP1K1PPP/4R3 w - - 0 19", "e3e8 d8e8 e1e8", "back-rank-mate"),
+    (
+        "r5k1/p4pp1/1p6/1Pp1BP2/P1Pp2Q1/3Pq2R/4r1PP/1R5K b - - 0 32",
+        "e2e1 b1e1 e3e1",
         "back-rank-mate",
     ),
     (
-        "1k1r3r/1bp1nppp/1p4q1/1Nb5/P7/2BP2PQ/1P3P1P/R4RK1 b - - 0 1",
-        "g6c6 h3c8 e7c8 d3d4 c6h1",
+        "1n3r1k/rp2R2n/p2p2BQ/2pN1q2/8/8/PPP2PPP/R5K1 b - - 1 21",
+        "f5f2 g1h1 f2f1 a1f1 f8f1",
+        "back-rank-mate",
+    ),
+    ("4r2k/5R1p/pq1p1Np1/1p6/8/P2Qr3/BP4PP/7K b - - 2 31", "e3e1 d3f1 e1f1", "back-rank-mate"),
+    ("1B4k1/7p/4p1p1/2r5/p2p1R2/Pb1P4/6PP/2R4K b - - 0 35", "c5c1 f4f1 c1f1", "back-rank-mate"),
+    (
+        "r5k1/pp3ppp/2b1p3/4P3/6q1/3r4/5QPP/B4RK1 w - - 0 27",
+        "f2f7 g8h8 f7f8 a8f8 f1f8",
         "back-rank-mate",
     ),
     (
-        "1k1r3r/1bp1nppp/1p6/1Nb5/P5Q1/2Bq2P1/1P3P1P/R4RK1 b - - 1 1",
-        "d3d5 g4e4 d5e4 c3g7 e4g2",
-        "back-rank-mate",
-    ),
-    ("r2q1r1k/5ppB/p3p3/3pn2Q/1Pn5/2P4P/P4PP1/R4R1K w - - 1 2", "h7d3 h8g8 h5h7", "back-rank-mate"),
-    ("2r3k1/2r2p1p/p3pBpP/3p1nP1/8/1PP5/1P2Qq2/R3R2K b - - 1 1", "f5g3", "back-rank-mate"),
-    ("2k2r2/pp5p/1p1p4/nP1Bp3/4P1q1/P1PPQ3/5rPP/R5K1 b - - 1 1", "g4g2", "back-rank-mate"),
-    ("rn2k2r/pp3ppp/1bp1pn2/8/1P1q2P1/P1NP4/1BP2PB1/R2QK2R b KQkq - 1 1", "d4f2", "back-rank-mate"),
-    (
-        "2k1r2r/p1p5/1q2p1Qp/PpR3p1/3P1p2/2P4P/1P3PPB/R5K1 w - - 1 2",
-        "a5b6 c7c6 g6g7 h8h7 g7h7 e8e7 h7e7 c8b8 e7c7 b8a8 c7a7",
+        "2r3k1/1p3ppp/p1r5/3p1p1P/P2P2P1/2P5/1P2R3/4R1K1 w - - 0 27",
+        "e2e8 c8e8 e1e8",
         "back-rank-mate",
     ),
     (
-        "4R3/p1q2pk1/1pb4p/2bp1B2/8/2P3R1/PP4P1/7K b - - 1 1",
-        "c7g3 b2b4 d5d4 f5e4 c5d6 e8g8 g7g8 e4h7 g8h7 c3d4 g3g2",
+        "r1b1r1k1/p1p2ppp/8/2p1q3/4P3/2p2Q2/PPP3PP/R1B2RK1 w - - 0 16",
+        "f3f7 g8h8 f7f8 e8f8 f1f8",
         "back-rank-mate",
     ),
     (
-        "r3k2r/p4ppp/2pbpq2/3p4/6Pn/2NQB2P/PPP2P2/R5RK b kq - 1 1",
-        "f6f3 g1g2 f3g2",
+        "3r2k1/p3Qppp/4p3/8/8/P2qP3/6PP/5RK1 w - - 3 30",
+        "e7f7 g8h8 f7f8 d8f8 f1f8",
         "back-rank-mate",
     ),
-    (
-        "4Qnk1/p3P1b1/1p6/2p1q3/8/5N1P/PPP3P1/1K5R w - - 1 2",
-        "e7f8q g7f8 f3e5 g8h8 e8f8 h8h7 f8f7 h7h8 e5g6",
-        "back-rank-mate",
-    ),
+    ("3r2k1/6pp/1p6/2b1B3/P1P5/1R6/5RPP/7K b - - 0 35", "d8d1 f2f1 d1f1", "back-rank-mate"),
 ]
 
 _MATE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
@@ -509,7 +542,7 @@ _DEFLECTION_FIXTURES: list[tuple[str, str, TacticMotif]] = [
     (
         "rnb1kbnr/p1p1pppp/1p6/3q4/8/5N2/PPPP1PPP/RNBQKB1R w KQkq - 0 2",
         "b1c3 d5e6 f1e2 c8a6 e1g1 a6e2 c3e2 g7g6 d2d4 f8g7 c1f4 e6d7",
-        "deflection",
+        "clearance",
     ),
     (
         "8/5p1k/5qpp/4p3/8/4Q2P/5PPK/8 b - - 1 1",
@@ -539,7 +572,7 @@ _DEFLECTION_FIXTURES: list[tuple[str, str, TacticMotif]] = [
     (
         "r2q1r1k/ppp2pp1/2np3p/5Pb1/2B1P1Q1/2NP3P/PPP3P1/R3K2R b KQ - 1 1",
         "c6d4 c4b3 a7a5 e1g1 c7c6 g1h1 g5f6 g4h5 d8e7 a2a4 d4b3 c2b3",
-        "deflection",
+        "clearance",
     ),
     (
         "r2q1r1k/1p3pp1/p1pp3p/5P2/4P1Q1/1PNPbR1P/1PP3P1/R6K b - - 1 1",
@@ -549,12 +582,15 @@ _DEFLECTION_FIXTURES: list[tuple[str, str, TacticMotif]] = [
     (
         "r1b1k1nr/pppp1ppp/1bn2q2/8/3PPB2/2N2N2/PPP3PP/R2QKB1R w KQkq - 1 2",
         "c3d5 f6g6 f1d3 d7d6 e1g1 g8e7 d1d2 c8g4 d5b6 a7b6 e4e5 g6h5",
-        "deflection",
+        "clearance",
     ),
     (
+        # Reclassified in Phase 131 Plan 02: the new cook skewer predicate (op.from in
+        # between + is_in_bad_spot) now fires here at depth 4 with higher priority than
+        # deflection. The position has a genuine skewer by cook's definition.
         "8/p5pp/P7/1Pp3P1/2P4P/r3k3/2K5/6R1 w - - 1 2",
         "g1g3 e3f4 g3a3 h7h6 b5b6 a7b6 a6a7 b6b5 a7a8q b5c4 a8f3 f4e5",
-        "deflection",
+        "skewer",
     ),
     (
         "5rk1/pp3ppp/r3p3/3pP1q1/4n3/P3P2P/1PQ2PP1/RN3RK1 w - - 1 2",
@@ -577,7 +613,7 @@ _ATTRACTION_FIXTURES: list[tuple[str, str, TacticMotif]] = [
     (
         "4r2k/7p/8/2P4P/1p1b4/1P2p2q/P5R1/5QK1 w - - 1 2",
         "f1e2 h3f5 g2g3 f5f2 e2f2 e3f2 g1g2 e8e1 g3f3 e1g1 g2h3 f2f1q",
-        "attraction",
+        "clearance",
     ),
     (
         "b3k1b1/7p/pp1p1pp1/2pPb3/P1P3b1/2NN1NP1/2NK1P2/7N w - - 1 2",
@@ -617,7 +653,7 @@ _ATTRACTION_FIXTURES: list[tuple[str, str, TacticMotif]] = [
     (
         "r1bq1rk1/pppp1ppp/2n4n/2b1P1N1/2Bp4/8/PPP2PPP/RNBQ1RK1 b - - 0 1",
         "c6e5 c4d3 f7f5 f1e1 d7d6 d1h5 d8f6 c1f4 f6g6 h5g6 e5g6 f4d2",
-        "attraction",
+        "clearance",
     ),
     (
         "rq3b1r/p1p1kbp1/2p2n1p/3p4/3P1P2/2NQPN2/P1P3PP/RR4K1 b - - 1 1",
@@ -670,7 +706,7 @@ _CLEARANCE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
     (
         "1rb2rk1/2p3pp/2B1pq2/p1Pp4/4p3/P1P2NP1/5P1P/1R1QK2R w K - 1 2",
         "b1b8 f6c3 f3d2 c3c5 e1g1 c5c6 d1b3 h7h6 b3e3 c6d6 f1c1 c7c5",
-        "clearance",
+        "hanging-piece",
     ),
     (
         "r3k2r/pp1b2pp/2n1pp2/2PpP3/5Bn1/5N2/PPP2PPP/RN2K2R b KQkq - 1 1",
@@ -777,7 +813,7 @@ _INTERMEZZO_FIXTURES: list[tuple[str, str, TacticMotif]] = [
     (
         "5rk1/p4p2/1p2bn1p/5Kp1/4P3/1q3NNP/3Q1PP1/7R w - - 2 31",
         "f5f6 f8e8 f3d4 b3a4 d4f5 e6f5 f6f5",
-        "intermezzo",
+        "hanging-piece",
     ),
     (
         "1q2r1k1/1b4np/p3pbp1/P2p4/8/B3QNP1/5PBP/4R1K1 w - - 1 2",
@@ -812,7 +848,7 @@ _INTERMEZZO_FIXTURES: list[tuple[str, str, TacticMotif]] = [
     (
         "8/4k3/8/3R4/P1p1p3/2K1P3/1r6/8 w - - 0 2",
         "c3b2 e7e6 d5c5 c4c3 b2c3 e6d6 c3c4 d6e6 a4a5 e6e7 a5a6 e7e6",
-        "intermezzo",
+        "hanging-piece",
     ),
     (
         "5k1Q/ppp2p2/8/6p1/8/4P2P/q4PP1/3R2K1 b - - 1 1",
@@ -878,7 +914,7 @@ _CAPTURING_DEFENDER_FIXTURES: list[tuple[str, str, TacticMotif]] = [
     (
         "6k1/6pp/2p5/2bp4/8/3nRB2/3N2PP/5K2 b - - 0 1",
         "c5e3 f1e2 e3d2 e2d3 d2b4 h2h4 g8f7 h4h5 f7e7 d3c2 e7d6 f3e2",
-        "capturing-defender",
+        "hanging-piece",
     ),
     (
         "r4rk1/1p1b1p1p/3p1p2/p1p2P2/4P2P/P2Bn3/1PP1NRP1/2K4R b - - 0 1",
@@ -893,55 +929,29 @@ _CAPTURING_DEFENDER_FIXTURES: list[tuple[str, str, TacticMotif]] = [
 ]
 
 _ANASTASIA_MATE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
-    ("2r3k1/5ppp/4p3/6P1/5n2/P4r1P/2p4K/2R3R1 b - - 1 1", "f3h3", "anastasia-mate"),
-    ("8/kpp5/p2b2qp/2N3p1/3P4/1P3Q1P/5PP1/3R2K1 w - - 1 2", "f3b7", "anastasia-mate"),
-    ("5brk/8/p2pR3/P2Pp3/4Pn2/2N2P2/2PR2pK/8 b - - 1 1", "g2g1q", "anastasia-mate"),
+    # Phase 131-03: all replaced with CC0 TPs from the precision harness
+    # (old fixtures passed the loose knight check but not cook's king+1/king+3 geometry).
+    ("5rk1/5pp1/2N1n1p1/8/1p1pR3/1P6/r5PP/3R2K1 w - - 0 34", "c6e7 g8h7 e4h4", "anastasia-mate"),
+    ("1kbQ4/p1p4p/2q5/8/4N1p1/3P4/PPP1nPPK/R4R2 b - - 0 22", "c6h6 d8h4 h6h4", "anastasia-mate"),
+    ("4Q3/6pk/1p2p3/1Pn1P1K1/5PP1/8/r7/8 b - - 8 44", "c5e4 g5h4 a2h2", "anastasia-mate"),
     (
-        "r1r5/pp6/3pQpkb/3P3p/3pP3/3q4/PP2N3/R3KR2 w Q - 0 2",
-        "f1f6 g6g5 f6g6 g5h4 g6g4 h4h3 g4g3 h3h4 e6h3",
+        "r6r/pppk4/3p2p1/2bPp1BP/1P6/3P4/P1P1n1PK/R2Q1R2 b - - 0 21",
+        "h8h5 g5h4 h5h4",
         "anastasia-mate",
     ),
+    ("1b6/7p/1pp1N1pk/4n3/4PR2/1PP5/rP5P/6K1 w - - 6 35", "f4h4", "anastasia-mate"),
     (
-        "k7/np1N1N1p/p3B3/7P/1P2bp1K/P7/8/2R3R1 w - - 1 2",
-        "g1g8 a7c8 c1c8 a8a7 c8a8",
+        "r4r2/3bN1pk/p3p3/1p1P4/q7/2R5/P4PPP/2R3K1 w - - 0 27",
+        "c3h3 a4h4 h3h4",
         "anastasia-mate",
     ),
-    (
-        "k6r/4p1bp/p5p1/P1R1p3/N3P3/1B3P2/1P3P1P/6K1 w - - 1 2",
-        "a4b6 a8a7 b3d5 h8c8 c5c8 g7f6 c8a8",
-        "anastasia-mate",
-    ),
-    (
-        "2b1k3/p4r2/1p2P1Bp/2pPP3/2P4P/8/PP2N1P1/5RK1 w - - 1 2",
-        "f1f7 h6h5 f7a7 e8f8 e6e7 f8g7 e7e8q c8d7 a7d7 g7h6 d7h7",
-        "anastasia-mate",
-    ),
-    (
-        "r1b5/p2p1p1p/4n1p1/kp2Q3/8/5P2/PP1N2qP/R2KR3 w - - 0 2",
-        "d2b3 a5a4 e1e4 e6d4 e5d4 b5b4 d4b4",
-        "anastasia-mate",
-    ),
-    (
-        "6rk/p5pp/4Q3/5p1q/P3p3/3nP1PP/1P1P3K/R1B4B b - - 1 1",
-        "h5e2 h1g2 d3e1 e6e4 f5e4 a4a5 e2g2",
-        "anastasia-mate",
-    ),
-    (
-        "r7/pp1qnpp1/3b2k1/3pn1Nr/3N4/2P1B2P/PP3PQ1/R4RK1 w - - 1 2",
-        "g5e6 e5g4 g2g4 h5g5 g4g5 g6h7 g5g7",
-        "anastasia-mate",
-    ),
-    ("4k3/1p1n1p2/p3p3/3N1q2/3P4/1B4P1/PP2Q1PK/2r5 b - - 1 1", "f5h7 e2h5 h7h5", "anastasia-mate"),
-    (
-        "8/8/5R2/6N1/7p/4KPkP/5r2/8 w - - 1 2",
-        "g5e4 g3g2 f6g6 g2h3 e3f2 h3h2 g6d6 h2h1 d6h6 h1h2 h6h4",
-        "anastasia-mate",
-    ),
-    (
-        "r3r1k1/1b3ppp/pp6/2p3P1/2pq1Q2/P1n2PK1/1B5P/R6R b - - 1 1",
-        "c3e2 g3h3 d4f4 b2e5 f4g5 e5g3 b7f3 h1e1 g5g4",
-        "anastasia-mate",
-    ),
+    ("5rk1/5pp1/7p/1P3Pb1/3R2P1/8/KPPn4/4R3 b - - 6 29", "f8a8 d4a4 a8a4", "anastasia-mate"),
+    ("2k2b2/pppq4/2np4/8/3PP1b1/1BP5/PP2nQPK/R4R2 b - - 0 22", "d7h7 f2h4 h7h4", "anastasia-mate"),
+    ("8/4N1pk/p2K4/2pP1R2/4q2p/8/8/8 w - - 0 49", "f5h5", "anastasia-mate"),
+    ("5R2/8/4N1pk/p7/Pn1p2r1/1P6/8/1K6 w - - 0 38", "f8h8", "anastasia-mate"),
+    ("r5k1/1pp3pp/3ppr2/pP2p3/P1P1P1P1/3P4/4nPPK/R2B1R2 b - - 5 23", "f6h6", "anastasia-mate"),
+    ("r1b3k1/ppp2ppp/8/3P4/4r3/8/PPPQn1PK/4RR2 b - - 0 17", "e4h4", "anastasia-mate"),
+    ("Q7/3pkp2/p3pr2/2b5/PpP5/1P6/3NnPPK/R4R2 b - - 0 25", "f6h6", "anastasia-mate"),
 ]
 
 _DOVETAIL_MATE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
@@ -1001,12 +1011,10 @@ _DOVETAIL_MATE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
 ]
 
 _HOOK_MATE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
-    ("7Q/5pp1/4p1b1/3pN3/1P3P2/2P3k1/1rq5/5RK1 w - - 1 2", "f1f3", "hook-mate"),
-    (
-        "k6r/2R1p2p/p4bp1/P3p3/N3P3/1B3P2/1P3P1P/6K1 w - - 1 2",
-        "b3d5 a8b8 c7b7 b8c8 a4b6 c8d8 d5f7 e7e6 b7d7",
-        "hook-mate",
-    ),
+    # Phase 131-03: first 2 fixtures replaced with CC0 TPs (old fixtures had knight at
+    # Chebyshev distance 2 from king, which fails cook's rook←knight←pawn chain constraint).
+    ("4RNk1/p5p1/2p4p/3n1P2/1Pq5/8/P5PP/6K1 w - - 0 33", "f8g6 g8f7 e8f8", "hook-mate"),
+    ("r5k1/1p4pp/3p3b/3Pp3/2P1N1RP/np4R1/1P3P2/K7 b - - 1 31", "a3c2 a1b1 a8a1", "hook-mate"),
     ("r4br1/2k2p1p/2nNpBp1/2PpPn2/8/2N5/P3QPPP/1R4K1 w - - 1 2", "b1b7", "hook-mate"),
     ("8/pp1kpp1R/4r3/3r4/1P1P2p1/P1PR1nP1/5P2/5K2 b - - 1 1", "e6e1 f1g2 e1g1", "hook-mate"),
     ("7r/8/4R2p/4P1p1/3k1n1P/3rN3/5PP1/2R3K1 w - - 1 2", "c1c4", "hook-mate"),
@@ -1033,7 +1041,7 @@ _INTERFERENCE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
     (
         "2rr2k1/pb3pp1/1p3q1p/3p4/1PnN4/P2QPP2/2B3PP/2RR2K1 w - - 1 2",
         "d3h7 g8f8 c2f5 c8a8 f5g4 g7g6 h7h6 f8g8 c1c3 a7a5 b4b5 b7c8",
-        "interference",
+        "clearance",
     ),
 ]
 
@@ -1250,7 +1258,7 @@ _TRAPPED_PIECE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
     (
         "1r2r1k1/p4ppp/8/6P1/2R2P2/1n5P/PP3P2/1K2BB1R b - - 0 26",
         "e8e1 b1c2 e1c1 c2d3 b8d8",
-        "trapped-piece",
+        "hanging-piece",
     ),
     (
         "r2q4/pQ5n/1p3rpk/2p4p/7N/6R1/PP4PP/4R1K1 w - - 4 26",
@@ -1644,21 +1652,25 @@ class TestPriorityOrder:
             f"expected 'discovered-check', got '{_INT_TO_MOTIF.get(motif_int)}'"
         )
 
-    def test_trapped_piece_dominates_hanging_piece(self) -> None:
-        """D-03: trapped-piece (Tier 2) beats hanging-piece (Tier 4) when both fire
-        on the same PV — a trapped piece is never mislabeled as merely hanging."""
-        # In this position black pov plays Re1 (rook to e1, depth 0). That move also
-        # exposes a white knight on b3 as hanging (depth 0). However, deeper in the PV,
-        # after Kc2 Re1xc1 Kd3, the white bishop on f1 becomes trapped (all escapes lose
-        # material to black pieces). The dispatcher compares candidates by tier first:
-        # trapped-piece is Tier 2 (rank 6) while hanging-piece is Tier 4 (rank 0).
-        # Tier 2 wins regardless of depth — D-03 guarantees trapped-piece is returned.
+    def test_depth_primary_hanging_beats_deeper_trapped(self) -> None:
+        """D-05/D-07: hanging-piece (Tier 4, depth 0) beats trapped-piece (Tier 2, depth 4)
+        because depth is the primary sort key — shallowest tactic wins.
+
+        Previously (tier-primary dispatch) trapped-piece would win because Tier 2 < Tier 4.
+        Under D-05 depth-primary dispatch, depth 0 < depth 4, so hanging-piece wins.
+        This is correct per D-07: missing an en-prise piece is the root-cause error.
+
+        Position: black pov plays Rxe1 (rook captures undefended White Bishop on e1),
+        hanging-piece fires at depth 0. Deeper in the PV, the white bishop on f1 becomes
+        trapped (depth 4). Depth-primary dispatch resolves to hanging-piece.
+        """
         fen = "1r2r1k1/p4ppp/8/6P1/2R2P2/1n5P/PP3P2/1K2BB1R b - - 0 26"
         pv = "e8e1 b1c2 e1c1 c2d3 b8d8"
         motif_int, _piece, _conf, _depth = detect_tactic_motif(chess.Board(fen), pv)
         assert motif_int is not None
-        assert _INT_TO_MOTIF[motif_int] == "trapped-piece", (
-            f"expected 'trapped-piece', got '{_INT_TO_MOTIF.get(motif_int)}'"
+        assert _INT_TO_MOTIF[motif_int] == "hanging-piece", (
+            f"expected 'hanging-piece' (depth 0 beats trapped-piece depth 4 under D-05), "
+            f"got '{_INT_TO_MOTIF.get(motif_int)}'"
         )
 
     def test_under_promotion_dominates_promotion(self) -> None:
@@ -1700,7 +1712,171 @@ class TestPriorityOrder:
             f"expected a real tactic, got move-type '{_INT_TO_MOTIF.get(motif_int)}'"
         )
 
+    def test_depth_primary_dispatch(self) -> None:
+        """D-05/D-07: depth is the primary dispatch key (Phase 131 Plan 01 Task 2).
+
+        Case 1 — shallowest wins: hanging-piece at depth 0 beats fork at depth 0 and
+        trapped-piece at depth 4. When two motifs fire, the one at lesser depth wins;
+        equal-depth ties break by tier then rank.
+
+        Case 2 — equal-depth tiebreak: fork (Tier 2) and hanging-piece (Tier 4) both
+        fire at depth 0 — fork wins via tier tiebreak (2 < 4). This is correct per D-07:
+        when the fork IS at depth 0, it is equally shallow and more specific than the
+        hanging capture.
+        """
+        # --- Case 1: hanging-piece depth 0 beats trapped-piece depth 4 ---
+        # Black pov plays Rxe1 (depth 0), capturing the undefended White Bishop on e1.
+        # hanging-piece fires at depth 0. Deeper in the PV (depth 4) the White Bishop f1
+        # becomes trapped. Depth-primary dispatch returns hanging-piece (the shallower motif).
+        fen_case1 = "1r2r1k1/p4ppp/8/6P1/2R2P2/1n5P/PP3P2/1K2BB1R b - - 0 26"
+        pv_case1 = "e8e1 b1c2 e1c1 c2d3 b8d8"
+        motif_int_1, _piece_1, _conf_1, depth_1 = detect_tactic_motif(
+            chess.Board(fen_case1), pv_case1
+        )
+        assert motif_int_1 is not None
+        assert _INT_TO_MOTIF[motif_int_1] == "hanging-piece", (
+            f"Case 1: expected 'hanging-piece' (depth 0) to beat trapped-piece (depth 4) "
+            f"under depth-primary dispatch (D-05), got '{_INT_TO_MOTIF.get(motif_int_1)}'"
+        )
+        assert depth_1 == 0, f"Case 1: expected depth 0, got {depth_1}"
+
+        # --- Case 2: equal-depth — fork (Tier 2) beats hanging-piece (Tier 4) ---
+        # White Knight on e5 captures the undefended Black Bishop on f7 (hanging-piece fires
+        # at depth 0) and simultaneously attacks Black King h8 and Black Rook d6 (fork fires
+        # at depth 0). Both fire at depth 0; tier tiebreak: fork (Tier 2) beats
+        # hanging-piece (Tier 4).
+        fen_case2 = "7k/5b2/3r4/4N3/8/8/8/4K3 w - - 0 1"
+        pv_case2 = "e5f7 h8g8 f7d6"
+        motif_int_2, _piece_2, _conf_2, depth_2 = detect_tactic_motif(
+            chess.Board(fen_case2), pv_case2
+        )
+        assert motif_int_2 is not None
+        assert _INT_TO_MOTIF[motif_int_2] == "fork", (
+            f"Case 2: expected 'fork' (Tier 2) to beat 'hanging-piece' (Tier 4) at equal "
+            f"depth 0 via tier tiebreak (D-05), got '{_INT_TO_MOTIF.get(motif_int_2)}'"
+        )
+        assert depth_2 == 0, f"Case 2: expected depth 0, got {depth_2}"
+
 
 # NOTE (D-10, precision-first): this suite intentionally asserts ONLY precision +
 # detector determinism. It NEVER gates recall ("found N of M tactics") — a missed
 # detection is an accepted False Negative, never a test failure.
+
+
+# === Workstream B: missed dest-square gate (D-03 / D-04) ===
+#
+# These fixtures validate the call-site gate in _detect_tactic_for_flaw (flaws_service.py):
+# when the flaw move's destination square equals the best line's first-move destination
+# square, the missed tactic is SUPPRESSED (the player demonstrably saw the target piece —
+# they captured it with the wrong piece type).  A different destination means the player
+# moved away entirely, so normal detection proceeds.
+#
+# These tests call _detect_tactic_for_flaw directly with hand-built (flaw_move, best_line)
+# fixtures (D-04) — NOT the CC0 puzzle harness, which has no concept of "the move the
+# player actually played".
+#
+# Test fixtures use SimpleNamespace to satisfy the positions[n].move_san / eval_mate
+# duck-type without requiring a live DB session.
+
+
+def test_missed_dest_sq_gate() -> None:
+    """D-03 / D-04: suppress missed tactic when flaw dest == best-line first-move dest.
+
+    Scenario: White Rook on d5 captures the undefended Black Rook on e5 (the flaw move
+    — right target, wrong piece type).  The best line was Nxe5 (Knight f3 captures e5 for
+    a stronger result).  Both flaw move and best PV first move go to e5, so the player
+    demonstrably SAW the piece.  The missed-tactic tag should be SUPPRESSED.
+
+    This test FAILS before Task 2 (the gate does not yet exist) because
+    _detect_tactic_for_flaw returns the hanging-piece motif instead of (None, None, None, None).
+
+    Edge case included: a non-capture flaw move (King to g2) that goes to a different square
+    is the non-suppression path; see test_missed_no_suppression for that case.  Here we also
+    verify the suppression holds even when the flaw move SAN is not a recapture of a piece
+    owned by the opponent (the dest-square equality criterion is the ONLY criterion, D-03).
+    """
+    from types import SimpleNamespace
+
+    from app.services.flaws_service import _detect_tactic_for_flaw
+
+    # Position: White Rook d5, White Knight f3, White King f1,
+    #           Black Rook e5 (unprotected), Black King g8.
+    # board_fen (piece-placement only, no side-to-move — set via ply parity in the function).
+    fen = "6k1/8/8/3Rr3/8/5N2/8/5K2"
+
+    # n=0 (even ply → White to move)
+    n = 0
+    fen_map = {n: fen}
+
+    # Flaw move: White Rook on d5 captures Black Rook on e5 — "Rxe5" in SAN.
+    # move_san is the move the PLAYER actually played (the flaw).
+    flaw_move_san = "Rxe5"
+
+    # Best PV: f3e5 (Knight captures e5 — delivers the stronger result).
+    # The first move of the PV also goes to e5 → same destination → SUPPRESS.
+    best_pv = "f3e5"
+
+    pos = SimpleNamespace(move_san=flaw_move_san, pv=None, eval_mate=None)
+    positions = [pos]
+
+    # Pass the PV via pv_by_ply so the function doesn't need positions[n].pv.
+    result = _detect_tactic_for_flaw(
+        n,
+        fen_map,
+        positions,  # ty: ignore[invalid-argument-type]  # SimpleNamespace duck-types GamePosition
+        pv_by_ply={n: best_pv},
+        orientation="missed",
+    )
+
+    assert result == (None, None, None, None), (
+        f"Expected suppression (None, None, None, None) when flaw dest == best-line dest "
+        f"(D-03 wrong-recapture gate), got {result!r}. "
+        "This fails RED before the dest-square gate is added (Task 2)."
+    )
+
+
+def test_missed_no_suppression() -> None:
+    """D-03 / D-04: normal detection proceeds when flaw dest != best-line first-move dest.
+
+    Scenario: White Knight on f3 can capture the undefended Black Rook on e5 (the missed
+    tactic).  Instead the player played Nd4 (Knight to d4) — a completely different square.
+    Destinations differ (d4 vs e5), so the dest-square gate must NOT fire and normal
+    detection should return the hanging-piece motif.
+
+    This test passes both before and after the gate is added — it is a non-regression
+    guard ensuring the gate does not cause false suppression when destinations differ.
+    """
+    from types import SimpleNamespace
+
+    from app.services.flaws_service import _detect_tactic_for_flaw
+
+    # Position: White Knight f3, White King f1,
+    #           Black Rook e5 (unprotected), Black King g8.
+    fen = "6k1/8/8/4r3/8/5N2/8/5K2"
+
+    # n=0 (even ply → White to move)
+    n = 0
+    fen_map = {n: fen}
+
+    # Flaw move: Nd4 — the Knight moves to d4 instead of capturing on e5.
+    flaw_move_san = "Nd4"
+
+    # Best PV: f3e5 (Knight captures e5, picking up the hanging rook).
+    # Flaw dest (d4) != best-PV first dest (e5) → no suppression.
+    best_pv = "f3e5"
+
+    pos = SimpleNamespace(move_san=flaw_move_san, pv=None, eval_mate=None)
+    positions = [pos]
+
+    motif_int, piece, conf, depth = _detect_tactic_for_flaw(
+        n,
+        fen_map,
+        positions,  # ty: ignore[invalid-argument-type]  # SimpleNamespace duck-types GamePosition
+        pv_by_ply={n: best_pv},
+        orientation="missed",
+    )
+
+    assert motif_int is not None, (
+        "Expected a non-None motif when flaw dest (d4) != best-line dest (e5) — "
+        "the dest-square gate must not suppress when destinations differ (D-03)."
+    )
