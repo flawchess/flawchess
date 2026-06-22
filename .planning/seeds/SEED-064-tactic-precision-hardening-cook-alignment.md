@@ -89,6 +89,34 @@ missed hanging-piece rows alone.
 played." Validate Workstream B with hand-built `(flaw_move, best_line)` unit fixtures + a prod
 spot-check, NOT the precision report. A green puzzle report does not prove these false alarms are gone.
 
+## Dispatch / Resolution Strategy — shallowest-tactic-wins (DECISION, in scope)
+
+The single tag per flaw should be the **first (shallowest-depth) tactic encountered along the
+refutation PV** — that's the immediate consequence of the blunder and the most attributable cause.
+We can **stop at the first tactic that fires** (early-exit; no need to scan the whole PV), **except**
+when Stockfish reports the line is **mate-in-x** — then we keep scanning to the mating position to
+name the specific mate pattern (smothered / back-rank / anastasia / hook / …).
+
+**This is a change, not the status quo.** The current dispatcher (`detect_tactic_motif`,
+`tactic_detector.py:1798-1804`) sorts candidates by `(tier, rank, depth)` — **depth is only a
+tertiary tiebreaker**, so tier/rank dominate (a Tier-2 fork at depth 6 currently beats a Tier-2
+skewer at depth 0, and any Tier-2 beats a depth-0 Tier-4 hanging-piece). The desired behavior makes
+**depth the primary key** for non-mate tactics, with tier/rank only breaking ties at equal depth.
+
+Required behavior:
+- **Mate first, via the Stockfish mate score — not `is_checkmate` at the PV end.** The PV is capped
+  at ~12 plies (SEED lineage / D-117-02); a long forced mate is truncated and never shows checkmate,
+  so a scan-the-end check would miss it. Gate the mate path on Stockfish's mate-in-x signal, then run
+  the named-mate detectors on the mating position.
+- **Otherwise, walk the PV by ply and return the first firing tactic** (shallowest wins; early-exit).
+  At equal depth, break ties by the existing tier/rank priority.
+
+**Why it's in scope here (not a separate phase):** changing the winner per position changes the
+TP/FP mix the precision harness measures (depth-first makes hanging-piece win more, deeper forks win
+less), so it must be decided *with* Workstream A — not bolted on afterward, or the precision numbers
+shift under us. Control-flow note: this favors a **ply-outer / detector-inner** walk with early-exit
+over the current detector-outer collect-then-sort.
+
 ## Out of Scope
 
 - **All Tier-3 tactics** (deflection, attraction, intermezzo, x-ray, interference, clearance,
@@ -133,6 +161,10 @@ spot-check, NOT the precision report. A green puzzle report does not prove these
 3. Confirm the Workstream B comparator: destination-square match only, or also require same captured-piece
    value? (Dest-square match cleanly covers the wrong-recapture case; revisit if unit fixtures surface edge
    cases.)
+4. Confirm the shallowest-tactic-wins resolution (see "Dispatch / Resolution Strategy"): (a) source the
+   mate gate from the Stockfish mate-in-x score, not `is_checkmate` at the capped PV end; (b) at equal
+   depth, keep the existing tier/rank priority as the tiebreak; (c) does any non-mate motif ever deserve
+   to override a shallower different motif (i.e. are there exceptions to pure depth-first)?
 
 ## Related
 
