@@ -267,17 +267,17 @@ describe('useEvalCoverage', () => {
       await Promise.resolve();
     });
 
-    // Advance well past the stall backstop (MAX_STALL_POLLS = 5).
-    for (let i = 0; i < 8; i++) {
+    // Advance well past the stall backstop (MAX_STALL_POLLS = 30 at the 1s interval).
+    for (let i = 0; i < 40; i++) {
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(3_000);
+        await vi.advanceTimersByTimeAsync(1_000);
       });
       await act(async () => {
         await Promise.resolve();
       });
     }
     const countAfterStall = vi.mocked(apiClient.get).mock.calls.length;
-    expect(countAfterStall).toBeLessThanOrEqual(7); // 1 initial + ≤5 stall polls + slack
+    expect(countAfterStall).toBeLessThanOrEqual(32); // 1 initial + ≤30 stall polls + slack
 
     // Further time advances must not poll again (polling has stopped).
     await act(async () => {

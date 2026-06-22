@@ -3,14 +3,24 @@ import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
 import type { EvalCoverageResponse } from '@/types/api';
 
-export const EVAL_COVERAGE_POLL_INTERVAL_MS = 3_000;
-const EVAL_COVERAGE_STALE_TIME_MS = 3_000;
+// Status poll (cheap eval-coverage count query). 1s for swift card flip / pill
+// clear on the on-demand "Analyze" path — this gates how fast GamesTab notices
+// analyzed_count rising and forces a games-list refetch.
+const EVAL_COVERAGE_POLL_INTERVAL_MS = 1_000;
+const EVAL_COVERAGE_STALE_TIME_MS = 1_000;
+
+// Games-list refetch interval (heavier paginated query). Kept slower than the
+// status poll: completion already triggers an immediate list invalidation in
+// GamesTab, so this only paces the background backlog-drain refresh.
+export const LIBRARY_GAMES_POLL_INTERVAL_MS = 3_000;
 
 // When tracking full-analysis progress (trackFullAnalysis), stop polling after this
 // many consecutive *fetches* with no newly-analyzed game. Without a backstop, a
 // permanently-stuck game (e.g. an engine outage that re-fails the same game, leaving
 // analyzed_count < total_count forever) would poll indefinitely on a focused tab.
-const MAX_STALL_POLLS = 5;
+// At the 1s poll interval, 30 keeps ~30s of wall-clock tolerance for backlog
+// drains that legitimately pause between games before backing off.
+const MAX_STALL_POLLS = 30;
 
 interface UseEvalCoverageOptions {
   /**
