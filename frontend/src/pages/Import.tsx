@@ -197,6 +197,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
   const navigate = useNavigate();
   const { tier1, tier2 } = useReadiness();
   const hasGames = profile != null && profile.chess_com_game_count + profile.lichess_game_count > 0;
+  const gamesHint = 'Import your games first to browse them.';
   const openingsHint = !hasGames
     ? 'Import your games first to explore openings.'
     : 'Openings will be ready once your import finishes.';
@@ -441,9 +442,16 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
 
       {/* Explore CTAs: always visible as primary (brand-brown) buttons. Each is
           enabled only when the user has games and its analysis tier is ready
-          (Openings at Tier 1, Endgames at Tier 2); otherwise it is disabled with
-          a hover tooltip explaining why. */}
+          (Games as soon as any games exist, Openings at Tier 1, Endgames at
+          Tier 2); otherwise it is disabled with a hover tooltip explaining why. */}
       <div className="flex items-center gap-3" data-testid="import-readiness-section">
+        <ExploreButton
+          label="Games"
+          ready={hasGames}
+          hint={gamesHint}
+          testId="btn-explore-games"
+          onGo={() => navigate('/library/games')}
+        />
         <ExploreButton
           label="Openings"
           ready={hasGames && tier1}
