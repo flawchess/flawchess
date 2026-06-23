@@ -37,18 +37,41 @@ DB target host:port mapping (CLAUDE.md):
     benchmark: localhost:5433  (Docker compose flawchess-benchmark)
     prod:      localhost:15432 (via bin/prod_db_tunnel.sh)
 
+Parallelism & where to run (RECOMMENDED: on the server, NOT a laptop over the tunnel):
+    --workers spreads detection across worker processes; the DB stays in the parent
+    (one connection), so it never multiplies the connection count. Once detection is
+    parallelized the job is DB-ROUND-TRIP-BOUND, not CPU-bound (measured: ~65% CPU at 8
+    workers on a local DB — a third of wall time was spent waiting on per-page round-trips).
+
+    => Run the prod backfill ON the prod server, where the DB is local (round-trip latency
+       ~0). ~6 workers is plenty; more buys little because detection is not the bottleneck.
+       Running from a laptop over the SSH tunnel pays WAN latency on every serial round-trip
+       and is markedly slower while the extra cores sit idle — avoid it for the full prod run.
+    => Prod is memory- and write-sensitive (OOM history; live checkpoint/autovacuum load):
+       run off-peak, never during a large import, and use --throttle-ms if it overlaps live
+       traffic. Remote Stockfish workers cover the analysis pool, so local CPU starvation
+       during the run is acceptable.
+
+    Scale reference (prod ~3.18M flaws, dev-extrapolated at ~950 flaws/s with 8 workers):
+    a full refresh is ~55 min and writes ~1M rows (~32% carry a tag; the rest recompute to
+    all-NULL and are skipped, no WAL). Numbers are approximate — re-measure after deploy.
+
 Usage:
     uv run python scripts/backfill_tactic_tags.py --db dev --dry-run
     uv run python scripts/backfill_tactic_tags.py --db dev --user-id 28
     uv run python scripts/backfill_tactic_tags.py --db dev --only-tagged
-    uv run python scripts/backfill_tactic_tags.py --db prod --user-id 28
+    # Full prod refresh (run ON the server, off-peak):
+    uv run python scripts/backfill_tactic_tags.py --db prod --workers 6 --throttle-ms 50
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import multiprocessing as mp
+import os
 import sys
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -152,6 +175,26 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="Process at most this many flaw rows (useful for smoke tests).",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help=(
+            "Parallel detection worker processes (default: CPU count). 1 = serial, no pool. "
+            "Workers do pure-CPU detection only; ALL DB access stays in the parent process "
+            "(one connection), so this never multiplies the DB connection count."
+        ),
+    )
+    parser.add_argument(
+        "--throttle-ms",
+        type=int,
+        default=0,
+        dest="throttle_ms",
+        help=(
+            "Sleep this many milliseconds after each page commit to cap the sustained UPDATE "
+            "rate on a live DB (parallelism concentrates writes — use on a busy prod, off-peak)."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -160,47 +203,72 @@ def _tactic_tuple(row: object) -> tuple[int | None, ...]:
     return tuple(getattr(row, col) for col in TACTIC_TAG_COLUMNS)
 
 
-def _positions_for_flaw(
-    user_id: int,
-    game_id: int,
-    ply: int,
-    pos_by_key: dict[tuple[int, int, int], _PosRow],
-) -> list[_PosRow]:
-    """Build the ply-indexed positions list the kernel expects for a single flaw.
+@dataclass(frozen=True)
+class _FlawWork:
+    """Picklable, DB-free unit of detection work handed to a pool worker.
 
-    Only indices `ply` and `ply + 1` carry real data; the rest are _EMPTY_POS so the
-    kernel's integer indexing and `ply + 1 < len(positions)` guard behave. Length is
-    ply + 2 so positions[ply + 1] is always valid.
+    Carries only what the detector kernel reads — the flaw's ply/fen and the two positions
+    it indexes (ply and ply+1) — plus the current tactic tuple so the worker can return the
+    no-op signal (None) without the parent re-reading anything. ORM rows and full position
+    lists never cross the process boundary: the IPC payload is a handful of scalars per flaw,
+    so spawn workers stay tiny and pickling stays cheap.
     """
-    positions = [_EMPTY_POS] * (ply + 2)
-    cur = pos_by_key.get((user_id, game_id, ply))
-    if cur is not None:
-        positions[ply] = cur
-    nxt = pos_by_key.get((user_id, game_id, ply + 1))
-    if nxt is not None:
-        positions[ply + 1] = nxt
-    return positions
+
+    user_id: int
+    game_id: int
+    ply: int
+    fen: str  # game_flaws.fen is NOT NULL (board_fen before the flaw)
+    cur: _PosRow | None  # position at ply (missed pass reads this)
+    nxt: _PosRow | None  # position at ply+1 (allowed pass reads this)
+    old_tuple: tuple[int | None, ...]
 
 
-def _recompute_tactic_tuple(
-    flaw: Row[Any],
-    pos_by_key: dict[tuple[int, int, int], _PosRow],
-) -> tuple[int | None, ...]:
-    """Recompute the 8 tactic values for one flaw using the shared kernel.
+def _worker_recompute(work: _FlawWork) -> tuple[int | None, ...] | None:
+    """Pure-CPU detection kernel (no DB) — runs inline or in a pool worker.
 
-    Returns (allowed_motif, allowed_piece, allowed_confidence, allowed_depth,
-             missed_motif, missed_piece, missed_confidence, missed_depth).
+    Rebuilds the sparse ply-indexed positions list the kernel expects (only `ply` and
+    `ply + 1` carry data; the rest are _EMPTY_POS so integer indexing and the
+    `ply + 1 < len(positions)` guard behave; length ply + 2 keeps positions[ply + 1] valid),
+    runs the allowed + missed passes, and returns the new 8-tuple — or None when it equals the
+    stored tuple (the no-op fast path that skips a needless WAL-writing UPDATE).
     """
-    ply = flaw.ply
+    ply = work.ply
     # _PosRow is a structural stand-in for GamePosition: the kernel only reads .move_san,
     # .pv, .eval_mate plus integer indexing / len(). Annotating list[Any] satisfies the
     # kernel's nominal list[GamePosition] param without loading full ORM rows we don't need.
-    positions: list[Any] = _positions_for_flaw(flaw.user_id, flaw.game_id, ply, pos_by_key)
+    positions: list[Any] = [_EMPTY_POS] * (ply + 2)
+    if work.cur is not None:
+        positions[ply] = work.cur
+    if work.nxt is not None:
+        positions[ply + 1] = work.nxt
     # fen_map only needs the flaw's own ply — the kernel reads fen_map.get(ply).
-    fen_map = {ply: flaw.fen}
+    fen_map = {ply: work.fen}
     allowed = _detect_tactic_for_flaw(ply, fen_map, positions, None, orientation="allowed")
     missed = _detect_tactic_for_flaw(ply, fen_map, positions, None, orientation="missed")
-    return (*allowed, *missed)
+    new_tuple = (*allowed, *missed)
+    return None if new_tuple == work.old_tuple else new_tuple
+
+
+def _make_works(
+    flaws: list[Row[Any]],
+    pos_by_key: dict[tuple[int, int, int], _PosRow],
+) -> list[_FlawWork]:
+    """Build picklable work units for a page, pre-extracting each flaw's two positions."""
+    works: list[_FlawWork] = []
+    for flaw in flaws:
+        ply = flaw.ply
+        works.append(
+            _FlawWork(
+                user_id=flaw.user_id,
+                game_id=flaw.game_id,
+                ply=ply,
+                fen=flaw.fen,
+                cur=pos_by_key.get((flaw.user_id, flaw.game_id, ply)),
+                nxt=pos_by_key.get((flaw.user_id, flaw.game_id, ply + 1)),
+                old_tuple=_tactic_tuple(flaw),
+            )
+        )
+    return works
 
 
 async def _fetch_flaw_page(
@@ -268,15 +336,19 @@ async def _load_positions_for_page(
     }
 
 
-def _build_updates(
+def _updates_from_results(
     flaws: list[Row[Any]],
-    pos_by_key: dict[tuple[int, int, int], _PosRow],
+    results: list[tuple[int | None, ...] | None],
 ) -> list[dict[str, object]]:
-    """Recompute tactic tags for each flaw; return bulk-update dicts for CHANGED rows only."""
+    """Turn per-flaw worker results into bulk-update dicts for CHANGED rows only.
+
+    `results` is positionally aligned with `flaws` — both the serial list comprehension and
+    ProcessPoolExecutor.map preserve input order. A None result is a no-op flaw, skipped so it
+    never writes WAL.
+    """
     updates: list[dict[str, object]] = []
-    for flaw in flaws:
-        new_tuple = _recompute_tactic_tuple(flaw, pos_by_key)
-        if new_tuple == _tactic_tuple(flaw):
+    for flaw, new_tuple in zip(flaws, results, strict=True):
+        if new_tuple is None:
             continue  # no-op — skip to avoid needless WAL
         # Full PK + the 8 tactic values: bulk_update_tactic_tags uses ORM bulk-update-by-PK,
         # which derives the WHERE from the PK keys and SETs the remaining columns.
@@ -297,6 +369,8 @@ async def run_backfill(
     only_tagged: bool,
     dry_run: bool,
     limit: int | None,
+    workers: int | None = None,
+    throttle_ms: int = 0,
     session_maker: async_sessionmaker[AsyncSession] | None = None,
 ) -> None:
     """Refresh the tactic-tag columns on existing game_flaws rows.
@@ -307,6 +381,9 @@ async def run_backfill(
         only_tagged: Only refresh flaws that already carry a tactic tag (see module docstring).
         dry_run: If True, recompute and count changed rows but do NOT write or commit.
         limit: Maximum number of flaw rows to process (None = no limit).
+        workers: Parallel detection worker processes (None = CPU count, 1 = serial). Workers
+            run pure-CPU detection only; DB access stays in the parent (one connection).
+        throttle_ms: Sleep after each page commit to cap the UPDATE rate on a live DB.
         session_maker: Injectable session factory for testing. When None, a real engine
             is created from db_url_for_target(db).
     """
@@ -318,11 +395,16 @@ async def run_backfill(
         engine = create_async_engine(url, pool_pre_ping=True)
         session_maker = async_sessionmaker(engine, expire_on_commit=False)
 
+    worker_count = max(1, workers if workers is not None else (os.cpu_count() or 1))
+
     target_label = f"user {user_id}" if user_id is not None else "all users"
     _log(f"Tactic-tag refresh target: {target_label}")
     _log(f"Mode: {'--dry-run (no writes)' if dry_run else 'write'}")
     _log(f"Scope: {'already-tagged flaws only' if only_tagged else 'all flaws'}")
     _log(f"Batch size: {FLAWS_PER_BATCH} flaw rows per commit")
+    _log(f"Detection workers: {worker_count}{' (serial)' if worker_count == 1 else ''}")
+    if throttle_ms:
+        _log(f"Throttle: {throttle_ms} ms/page after commit")
     if limit:
         _log(f"Limit: {limit} flaw rows")
 
@@ -331,53 +413,77 @@ async def run_backfill(
     after: tuple[int, int, int] | None = None
     page_num = 0
 
-    while True:
-        page_size = FLAWS_PER_BATCH
-        if limit is not None:
-            remaining = limit - total_examined
-            if remaining <= 0:
-                break
-            page_size = min(page_size, remaining)
+    # Pool of pure-CPU detection workers. "spawn" (not fork) keeps children from inheriting
+    # this process's asyncio loop and open DB connections — workers never touch the DB, so a
+    # fresh interpreter is the correct, safe choice. None = serial (no pool process spawned).
+    executor: ProcessPoolExecutor | None = None
+    if worker_count > 1:
+        executor = ProcessPoolExecutor(max_workers=worker_count, mp_context=mp.get_context("spawn"))
 
-        async with session_maker() as session:
-            flaws = await _fetch_flaw_page(
-                session,
-                user_id=user_id,
-                only_tagged=only_tagged,
-                after=after,
-                limit=page_size,
-            )
-            if not flaws:
-                break
+    try:
+        while True:
+            page_size = FLAWS_PER_BATCH
+            if limit is not None:
+                remaining = limit - total_examined
+                if remaining <= 0:
+                    break
+                page_size = min(page_size, remaining)
 
-            try:
-                pos_by_key = await _load_positions_for_page(session, flaws)
-                updates = _build_updates(flaws, pos_by_key)
-                if not dry_run:
-                    await bulk_update_tactic_tags(session, updates)
-                    await session.commit()
-            except Exception as exc:
-                # A page failure must not silently corrupt the run. IDs go to Sentry context,
-                # never the message, to preserve issue grouping (CLAUDE.md). Re-raise: a
-                # whole-page DB error is not recoverable mid-stream, unlike a per-game skip.
-                last = flaws[-1]
-                sentry_sdk.set_context(
-                    "tactic_tag_backfill",
-                    {"page": page_num, "last_game_id": last.game_id, "last_ply": last.ply},
+            async with session_maker() as session:
+                flaws = await _fetch_flaw_page(
+                    session,
+                    user_id=user_id,
+                    only_tagged=only_tagged,
+                    after=after,
+                    limit=page_size,
                 )
-                sentry_sdk.capture_exception(exc)
-                raise
+                if not flaws:
+                    break
 
-        page_num += 1
-        total_examined += len(flaws)
-        total_changed += len(updates)
-        last = flaws[-1]
-        after = (last.user_id, last.game_id, last.ply)
-        _log(
-            f"Page {page_num}: {len(flaws)} flaws examined, "
-            f"{len(updates)} {'would change' if dry_run else 'changed'} "
-            f"(running total examined: {total_examined})"
-        )
+                try:
+                    pos_by_key = await _load_positions_for_page(session, flaws)
+                    # Detection is pure CPU and DB-free: fan it out to the worker pool (or run
+                    # inline when serial). The DB stays here in the parent, one connection.
+                    works = _make_works(flaws, pos_by_key)
+                    if executor is None:
+                        results = [_worker_recompute(w) for w in works]
+                    else:
+                        # chunksize amortizes per-task IPC: a worker grabs a slice, not 1 flaw.
+                        chunksize = max(1, len(works) // (worker_count * 4))
+                        results = list(executor.map(_worker_recompute, works, chunksize=chunksize))
+                    updates = _updates_from_results(flaws, results)
+                    if not dry_run:
+                        await bulk_update_tactic_tags(session, updates)
+                        await session.commit()
+                except Exception as exc:
+                    # A page failure must not silently corrupt the run. IDs go to Sentry
+                    # context, never the message, to preserve issue grouping (CLAUDE.md).
+                    # Re-raise: a whole-page DB error is not recoverable mid-stream.
+                    last = flaws[-1]
+                    sentry_sdk.set_context(
+                        "tactic_tag_backfill",
+                        {"page": page_num, "last_game_id": last.game_id, "last_ply": last.ply},
+                    )
+                    sentry_sdk.capture_exception(exc)
+                    raise
+
+            page_num += 1
+            total_examined += len(flaws)
+            total_changed += len(updates)
+            last = flaws[-1]
+            after = (last.user_id, last.game_id, last.ply)
+            _log(
+                f"Page {page_num}: {len(flaws)} flaws examined, "
+                f"{len(updates)} {'would change' if dry_run else 'changed'} "
+                f"(running total examined: {total_examined})"
+            )
+            # Parallelism concentrates writes into a shorter window; pace pages to spare a
+            # live DB its checkpoint/autovacuum load. No-op when throttle_ms is 0 or dry-run.
+            if throttle_ms and not dry_run:
+                await asyncio.sleep(throttle_ms / 1000)
+    finally:
+        if executor is not None:
+            executor.shutdown(wait=True)
 
     _log("")
     _log("Tactic-tag refresh complete:")

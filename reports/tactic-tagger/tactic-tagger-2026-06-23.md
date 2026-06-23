@@ -1,6 +1,6 @@
 # FlawChess Tactic-Tagger Report
 
-**Generated:** 2026-06-23 12:10:52Z (UTC)
+**Generated:** 2026-06-23 13:12:14Z (UTC)
 **Detector:** `app/services/tactic_detector.py::detect_tactic_motif`
 **Fixtures:** `fixtures/tagger/detector_fixture_{train,test}.csv` (CC0 lichess puzzles, deterministic PuzzleId-hash split)
 **Train rows:** 18632 &nbsp;|&nbsp; **Test rows:** 8017
