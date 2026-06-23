@@ -1,5 +1,5 @@
 /**
- * TacticComparisonGrid — beta-gated you-vs-opponent tactic-motif comparison,
+ * TacticComparisonGrid — you-vs-opponent tactic-motif comparison,
  * laid out as one Card per family with two bullet rows (Phase 129 TACUI-08).
  *
  * Layout: single column on mobile, 3 columns on desktop (lg). Server returns
@@ -22,7 +22,6 @@
  * neutralMin/neutralMax collapse to 0/0 — the chart still shows the delta bar
  * and CI whiskers; no "no benchmark" label needed.
  *
- * Beta gate: returns null immediately for non-beta users (D-01).
  * Grid is independent of the Flaws-tab orientation/depth filters (D-09).
  *
  * States (in priority order):
@@ -42,7 +41,6 @@ import { Search } from 'lucide-react';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { LoadError } from '@/components/ui/load-error';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
-import { useUserProfile } from '@/hooks/useUserProfile';
 import { useTacticComparison } from '@/hooks/useLibrary';
 import {
   Accordion,
@@ -479,34 +477,16 @@ interface TacticComparisonGridProps {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 /**
- * Beta-gated family-card grid for the tactic-motif comparison (TACUI-08).
+ * Family-card grid for the tactic-motif comparison (TACUI-08).
  *
  * Self-fetches via useTacticComparison (no orientation arg — grid always shows
  * both orientations regardless of the Flaws-tab toggle, D-09). Handles all states
  * internally. The parent (FlawStatsPanel Zone 3) renders this directly after
- * FlawComparisonGrid — no extra beta guard needed at the call site (grid self-gates).
+ * FlawComparisonGrid.
  *
  * Grid is single-column at 375px (TACUI-03), 3-column on desktop.
  */
 export function TacticComparisonGrid({ filters, flawFilter }: TacticComparisonGridProps) {
-  const { data: userProfile } = useUserProfile();
-
-  // Beta gate (D-01): non-beta users see no tactic surfaces.
-  if (!userProfile?.beta_enabled) return null;
-
-  return (
-    <TacticComparisonGridInner
-      filters={filters}
-      flawFilter={flawFilter}
-    />
-  );
-}
-
-/**
- * Inner component (post-beta-gate). Separated so the hook is only called
- * when the user is confirmed beta-enabled (hook-after-conditional guard).
- */
-function TacticComparisonGridInner({ filters, flawFilter }: TacticComparisonGridProps) {
   // The comparison grid always shows every family (its purpose is to compare across
   // families), so it is NOT narrowed by the Flaws-tab tactic-motif filter — pass no
   // family narrowing. Game-metadata filters + severity still apply via filters/flawFilter.

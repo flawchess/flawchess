@@ -96,7 +96,7 @@ export function FlawStatsPanel({
               <FlawComparisonGrid filters={filters} flawFilter={flawFilter} />
             </div>
 
-            {/* Zone 3 (continued): Tactic comparison grid — beta-gated, self-fetches */}
+            {/* Zone 3 (continued): Tactic comparison grid — self-fetches */}
             <div className="mt-6">
               <TacticComparisonGrid filters={filters} flawFilter={flawFilter} />
             </div>

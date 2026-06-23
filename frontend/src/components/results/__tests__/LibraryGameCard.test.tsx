@@ -23,11 +23,6 @@ vi.mock('@/components/ui/tooltip', () => ({
   Tooltip: ({ children }: { children: ReactNode }) => children,
 }));
 
-// Mock useUserProfile — beta_enabled=true so tactic chips render.
-vi.mock('@/hooks/useUserProfile', () => ({
-  useUserProfile: () => ({ data: { is_guest: false, beta_enabled: true }, isLoading: false }),
-}));
-
 // Shared flaw filter store stub. Mutable (via vi.hoisted) so a test can activate a
 // context-tag filter (e.g. low-clock) and assert the tactic chips are gated by it.
 const filterStore = vi.hoisted(() => ({

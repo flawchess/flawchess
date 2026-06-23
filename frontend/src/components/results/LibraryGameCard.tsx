@@ -31,7 +31,6 @@ import { gamePlatformUrl, platformPlyUrl } from '@/lib/platformLinks';
 import { plysToFullMoves } from '@/lib/chess';
 import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
 import { useMiniBoardSize } from '@/hooks/useMiniBoardSize';
-import { useUserProfile } from '@/hooks/useUserProfile';
 import { formatTimeControl } from '@/lib/formatTimeControl';
 import type { GameFlawCard, FlawSeverity, FlawTag } from '@/types/library';
 import type { UserResult } from '@/types/api';
@@ -439,21 +438,18 @@ export function LibraryGameCard({
     return set;
   }, [highlight, cycle, game.flaw_markers, outlinedPlies]);
 
-  const { data: userProfile } = useUserProfile();
-  const betaEnabled = userProfile?.beta_enabled ?? false;
   // Mobile (<sm) miniboard spans 50% of the viewport width; sm+ keeps the fixed size.
   const mobileBoardSize = useMiniBoardSize(MOBILE_BOARD_SIZE);
 
   // Tactic motifs: collect unique (orientation, motif-label) pairs from user flaw
-  // markers so the chip row shows one chip per distinct orientation+label (beta-gated,
-  // D-01/D-10). Quick 260620-pza: BOTH orientations are surfaced — "missed: fork" and
+  // markers so the chip row shows one chip per distinct orientation+label
+  // (D-10). Quick 260620-pza: BOTH orientations are surfaced — "missed: fork" and
   // "allowed: fork" are separate chips. Deduping on the display label (not the raw
   // motif) collapses named-mate subtypes to a single "checkmate" chip per orientation
   // (Quick 260620-onv). The label doubles as the chip's motif prop and FlawRef key —
   // TACTIC_FAMILY_FOR_MOTIF resolves "checkmate" via its alias. Allowed chips are
   // listed before missed chips (stable grouping).
   const tacticMotifs = useMemo<{ motif: string; orientation: TacticChipOrientation }[]>(() => {
-    if (!userProfile?.beta_enabled) return [];
     const seen = new Set<string>();
     const out: { motif: string; orientation: TacticChipOrientation }[] = [];
     const collect = (raw: string | null, orientation: TacticChipOrientation): void => {
@@ -477,7 +473,7 @@ export function LibraryGameCard({
     for (const fm of markers) if (passesContext(fm)) collect(fm.allowed_tactic_motif, 'allowed');
     for (const fm of markers) if (passesContext(fm)) collect(fm.missed_tactic_motif, 'missed');
     return out;
-  }, [userProfile?.beta_enabled, game.flaw_markers, outlinedPlies]);
+  }, [game.flaw_markers, outlinedPlies]);
 
   // Click-to-cycle: clicking a tag chip advances through that tag's flaw plies,
   // commanding the eval chart to scrub to each and show its tooltip. `cycle`/
@@ -562,9 +558,7 @@ export function LibraryGameCard({
   // Board arrows: blue best-move arrow plus a colored played-move arrow for the
   // flawed move (red = blunder, orange = mistake, yellow = inaccuracy).
   const boardArrows = useMemo(() => {
-    // Depth badges are a beta-only surface — non-beta users see arrows without numbers.
-    const depths =
-      betaEnabled && activePly != null ? tacticDepthByPly.get(activePly) : undefined;
+    const depths = activePly != null ? tacticDepthByPly.get(activePly) : undefined;
     const arrows: { from: string; to: string; color: string; label?: string; labelColor?: string }[] =
       [];
     if (bestMoveSquares) {
@@ -586,7 +580,7 @@ export function LibraryGameCard({
       });
     }
     return arrows.length > 0 ? arrows : undefined;
-  }, [bestMoveSquares, hoverEntry, hoverSeverity, activePly, tacticDepthByPly, betaEnabled]);
+  }, [bestMoveSquares, hoverEntry, hoverSeverity, activePly, tacticDepthByPly]);
 
   const whiteName = game.white_username ?? '?';
   const blackName = game.black_username ?? '?';
@@ -792,16 +786,12 @@ export function LibraryGameCard({
       <TagLegend variant="icon" tags={game.chips} tacticMotifs={[]} gameId={game.game_id} />
     ) : null;
 
-  // Chip block. Quick 260620-sep follow-up: beta users get three stable, equal-width
-  // labeled columns — Missed | Allowed | Context — that span 1/3 each on wide viewports and
-  // stack vertically below md. The columns show even when a game has no tactic motifs (each
-  // empty column keeps its lane via the ChipColumn "—" placeholder) so every analyzed
-  // beta card reads with the same organized layout rather than collapsing to a sparse row.
-  // Tactic surfaces stay beta-gated (D-01/D-10); non-beta users fall back to a single
-  // flaw-chip row.
-  const showTacticColumns = userProfile?.beta_enabled ?? false;
-
-  const chipsBlock = showTacticColumns ? (
+  // Chip block. Quick 260620-sep follow-up: three stable, equal-width labeled columns —
+  // Missed | Allowed | Context — that span 1/3 each on wide viewports and stack vertically
+  // below md. The columns show even when a game has no tactic motifs (each empty column
+  // keeps its lane via the ChipColumn "—" placeholder) so every analyzed card reads with
+  // the same organized layout rather than collapsing to a sparse row.
+  const chipsBlock = (
     <div
       // Always three equal 1/3 lanes (Missed | Allowed | Context). Empty columns keep
       // their lane via the ChipColumn "—" placeholder so the layout never collapses to
@@ -851,15 +841,6 @@ export function LibraryGameCard({
         {contextChips}
       </ChipColumn>
     </div>
-  ) : (
-    // Non-beta or no tactics: just the flaw-tag chips on a single full-width row, with the
-    // context legend trailing inline (no column label to attach it to here).
-    contextChips && (
-      <div className="flex flex-wrap items-center gap-1.5">
-        {contextChips}
-        {contextLegend}
-      </div>
-    )
   );
 
   // Mobile flaw block (full-width, stacked): severity row + chips together. Desktop
@@ -935,7 +916,6 @@ export function LibraryGameCard({
               initialPly={initialPly}
               commandedPly={commandedPly}
               commandSeq={commandSeq}
-              betaEnabled={userProfile?.beta_enabled ?? false}
               // Chart + 16px slider row = MOBILE_BOARD_SIZE (130px), so the eval
               // block matches the miniboard height. Literal arbitrary value so
               // Tailwind's JIT scanner emits the class.
@@ -994,7 +974,6 @@ export function LibraryGameCard({
                     initialPly={initialPly}
                     commandedPly={commandedPly}
                     commandSeq={commandSeq}
-                    betaEnabled={userProfile?.beta_enabled ?? false}
                     // Chart + 16px slider row = 104px.
                     heightClass="h-[104px]"
                   />

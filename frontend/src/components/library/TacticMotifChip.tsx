@@ -77,7 +77,7 @@ interface TacticMotifChipProps {
  * chip is a highlight/cycle control (onHover dims non-matching eval-chart markers,
  * onActivate cycles the chart through this motif's flaw plies), matching TagChip.
  * On FlawCard (no callbacks) it is a plain decorative span. Parent must gate
- * rendering on `user?.beta_enabled && flaw.allowed_tactic_motif != null`. Phase 128 D-07.
+ * rendering on `flaw.allowed_tactic_motif != null`. Phase 128 D-07.
  *
  * Colors come from TACTIC_FAMILY_COLORS (theme.ts TAC_* constants) — no hardcoded oklch
  * in this file.

@@ -8,7 +8,6 @@
  * (c) zero-event bullet renders "No events" placeholder, NOT a MiniBulletChart
  * (d) isError → error copy rendered
  * (e) isLoading → loading skeleton testid
- * (f) non-beta user → renders null (D-01 beta gate)
  * Phase 129 (TACUI-08 / D-13/D-14):
  * (g) each family card has both tactic-grid-missed-{family} and tactic-grid-allowed-{family} rows
  * (h) first 6 families render in the main grid; remaining families inside tactic-grid-more-tactics
@@ -25,14 +24,8 @@ vi.mock('@/hooks/useLibrary', () => ({
   useTacticComparison: vi.fn(),
 }));
 
-// Beta gate reads beta_enabled from useUserProfile — mock it so tests control the flag.
-vi.mock('@/hooks/useUserProfile', () => ({
-  useUserProfile: vi.fn(),
-}));
-
 import { TacticComparisonGrid } from '../TacticComparisonGrid';
 import { useTacticComparison } from '@/hooks/useLibrary';
-import { useUserProfile } from '@/hooks/useUserProfile';
 import type { TacticComparisonResponse, TacticBullet } from '@/types/library';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
@@ -132,35 +125,10 @@ function renderGrid() {
   );
 }
 
-/** Mock useUserProfile with a beta_enabled value (the beta gate's real source). */
-function mockBeta(betaEnabled: boolean) {
-  vi.mocked(useUserProfile).mockReturnValue({
-    data: { beta_enabled: betaEnabled },
-    isLoading: false,
-  } as ReturnType<typeof useUserProfile>);
-}
-
 // ── Tests ─────────────────────────────────────────────────────────────────────
-
-describe('TacticComparisonGrid — beta gate (D-01)', () => {
-  it('non-beta user → renders null', () => {
-    mockBeta(false);
-    vi.mocked(useTacticComparison).mockReturnValue({
-      isLoading: false,
-      isError: false,
-      data: makeResponse(),
-    } as ReturnType<typeof useTacticComparison>);
-
-    const { container } = renderGrid();
-
-    // Nothing rendered for non-beta users
-    expect(container.firstChild).toBeNull();
-  });
-});
 
 describe('TacticComparisonGrid — below-gate CTA', () => {
   it('shows CTA testid when below_gate=true, not the grid', () => {
-    mockBeta(true);
     vi.mocked(useTacticComparison).mockReturnValue({
       isLoading: false,
       isError: false,
@@ -174,7 +142,6 @@ describe('TacticComparisonGrid — below-gate CTA', () => {
   });
 
   it('CTA text shows current analyzed_n and gate (e.g. "12 of 20")', () => {
-    mockBeta(true);
     vi.mocked(useTacticComparison).mockReturnValue({
       isLoading: false,
       isError: false,
@@ -191,7 +158,6 @@ describe('TacticComparisonGrid — below-gate CTA', () => {
 
 describe('TacticComparisonGrid — full grid (below_gate=false)', () => {
   it('renders grid testid when below_gate=false', () => {
-    mockBeta(true);
     vi.mocked(useTacticComparison).mockReturnValue({
       isLoading: false,
       isError: false,
@@ -205,7 +171,6 @@ describe('TacticComparisonGrid — full grid (below_gate=false)', () => {
   });
 
   it('renders exactly 6 family card testids in the main grid (top-6 of 10)', () => {
-    mockBeta(true);
     vi.mocked(useTacticComparison).mockReturnValue({
       isLoading: false,
       isError: false,
@@ -229,7 +194,6 @@ describe('TacticComparisonGrid — full grid (below_gate=false)', () => {
   });
 
   it('renders section heading "Tactic Motifs" and sub-heading', () => {
-    mockBeta(true);
     vi.mocked(useTacticComparison).mockReturnValue({
       isLoading: false,
       isError: false,
@@ -245,7 +209,6 @@ describe('TacticComparisonGrid — full grid (below_gate=false)', () => {
 
 describe('TacticComparisonGrid — two-bullet cards (D-13 / TACUI-08)', () => {
   it('each main-grid family card has both tactic-grid-missed-{family} and tactic-grid-allowed-{family} rows', () => {
-    mockBeta(true);
     vi.mocked(useTacticComparison).mockReturnValue({
       isLoading: false,
       isError: false,
@@ -269,7 +232,6 @@ describe('TacticComparisonGrid — two-bullet cards (D-13 / TACUI-08)', () => {
   });
 
   it('missed row label says "Missed {FamilyName}" and allowed row says "Allowed {FamilyName}"', () => {
-    mockBeta(true);
     vi.mocked(useTacticComparison).mockReturnValue({
       isLoading: false,
       isError: false,
@@ -285,7 +247,6 @@ describe('TacticComparisonGrid — two-bullet cards (D-13 / TACUI-08)', () => {
   });
 
   it('every main-grid bullet row has a tactic-bullet-popover-{family} with aria-label (TACUI-02)', () => {
-    mockBeta(true);
     vi.mocked(useTacticComparison).mockReturnValue({
       isLoading: false,
       isError: false,
@@ -308,7 +269,6 @@ describe('TacticComparisonGrid — two-bullet cards (D-13 / TACUI-08)', () => {
 
 describe('TacticComparisonGrid — More Tactics accordion (D-14 / TACUI-08)', () => {
   it('first 6 families render in the main grid; families 7-10 render inside tactic-grid-more-tactics (G-01)', () => {
-    mockBeta(true);
     // Real 10-family taxonomy: first 6 in main grid, last 4 overflow into the accordion
     const bullets = make10Bullets();
     vi.mocked(useTacticComparison).mockReturnValue({
@@ -343,7 +303,6 @@ describe('TacticComparisonGrid — More Tactics accordion (D-14 / TACUI-08)', ()
   });
 
   it('families render in server order — first family in response is first in grid (no client re-sort)', () => {
-    mockBeta(true);
     // Server returns: fork first (by Missed you_rate desc), then skewer, pin, etc.
     const bullets = makeDualBullets(['fork', 'skewer', 'pin', 'x_ray', 'double_check', 'discovered_check']);
     vi.mocked(useTacticComparison).mockReturnValue({
@@ -362,7 +321,6 @@ describe('TacticComparisonGrid — More Tactics accordion (D-14 / TACUI-08)', ()
   });
 
   it('≤6 families → no More Tactics accordion renders', () => {
-    mockBeta(true);
     vi.mocked(useTacticComparison).mockReturnValue({
       isLoading: false,
       isError: false,
@@ -375,7 +333,6 @@ describe('TacticComparisonGrid — More Tactics accordion (D-14 / TACUI-08)', ()
   });
 
   it('no orientation toggle present on the grid (D-09)', () => {
-    mockBeta(true);
     vi.mocked(useTacticComparison).mockReturnValue({
       isLoading: false,
       isError: false,
@@ -390,7 +347,6 @@ describe('TacticComparisonGrid — More Tactics accordion (D-14 / TACUI-08)', ()
 
 describe('TacticComparisonGrid — zero-event bullet', () => {
   it('zero-event bullet renders "No events" placeholder, NOT a MiniBulletChart', () => {
-    mockBeta(true);
     const bullets = makeDualBullets(['fork']);
     // Override the missed fork bullet to zero-event
     const forkMissedIdx = bullets.findIndex((b) => b.family === 'fork' && b.orientation === 'missed');
@@ -428,7 +384,6 @@ describe('TacticComparisonGrid — zero-event bullet', () => {
 
 describe('TacticComparisonGrid — error state', () => {
   it('isError → renders error copy', () => {
-    mockBeta(true);
     vi.mocked(useTacticComparison).mockReturnValue({
       isLoading: false,
       isError: true,
@@ -445,7 +400,6 @@ describe('TacticComparisonGrid — error state', () => {
 
 describe('TacticComparisonGrid — loading state', () => {
   it('isLoading → renders loading skeleton testid', () => {
-    mockBeta(true);
     vi.mocked(useTacticComparison).mockReturnValue({
       isLoading: true,
       isError: false,
