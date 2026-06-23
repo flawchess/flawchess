@@ -1,8 +1,9 @@
 # FlawChess DB Report — 2026-06-23
 
 - **DB**: prod
-- **Snapshot taken**: 2026-06-23T17:59:01Z
+- **Snapshot taken**: 2026-06-23T20:05:22Z (post-`VACUUM FULL game_positions`; supersedes the 17:59 pre-vacuum snapshot)
 - **Sections run**: users / storage / performance / sanity
+- **Note**: `pg_stat_statements` was reset at 2026-06-23T19:52:49Z, so query stats below cover only the ~12 min since. `pg_stat_database` (cache-hit ratio) was **not** reset — `stats_reset` = 2026-06-15, still 8-day cumulative.
 
 ## 0. Users Overview
 
@@ -34,7 +35,7 @@
 | chess.com | 102 | 435,366 |
 | lichess | 59 | 223,125 |
 
-**Activity note:** 158 total users, an even 79/79 registered-vs-guest split. Of the 10 most recent signups, 9 imported games (only guest 191 has zero). chess.com dominates (~2x lichess games). Recent signups are heavily chess.com-only.
+**Activity note:** 158 total users, an even 79/79 registered-vs-guest split. Of the 10 most recent signups, 9 imported games (only guest 191 has zero). chess.com dominates (~2x lichess games). Unchanged since the earlier snapshot.
 
 ## 1. Storage Report
 
@@ -42,18 +43,31 @@
 
 | metric | value |
 |---|---|
-| Database size | **15 GB** |
+| Database size | **11 GB** (was 15 GB pre-vacuum) |
 | Total games | 658,491 |
 | Total positions | 48,162,374 |
 | Avg positions/game | ~73 |
+
+### Storage delta vs 17:59 pre-vacuum snapshot
+
+A `VACUUM FULL game_positions` (320s) + `VACUUM ANALYZE` (170s) reclaimed bloat. **Row count is identical** (48.16M) — pure bloat reclaim, no data deleted.
+
+| object | before | after | Δ |
+|---|---|---|---|
+| **DB total** | 15 GB | **11 GB** | **−4 GB (−27%)** |
+| game_positions total | 12 GB | 8,376 MB | −3.6 GB |
+| ↳ data | 6,682 MB | 4,685 MB | −2.0 GB |
+| ↳ index | 5,815 MB | 3,691 MB | −2.1 GB |
+| games | 2,297 MB | 2,297 MB | unchanged (not vacuumed) |
+| game_flaws | 558 MB | 637 MB | +79 MB (ongoing writes) |
 
 ### Per-table breakdown (top consumers)
 
 | table | data | index | total |
 |---|---|---|---|
-| game_positions | 6,682 MB | 5,815 MB | **12 GB** |
+| game_positions | 4,685 MB | 3,691 MB | **8,376 MB** |
 | games | 1,791 MB | 506 MB | 2,297 MB |
-| game_flaws | 329 MB | 229 MB | 558 MB |
+| game_flaws | 384 MB | 253 MB | 637 MB |
 | opening_position_eval | 69 MB | 74 MB | 143 MB |
 | benchmark_cohort_cdf | 8 MB | 5 MB | 13 MB |
 | openings | 832 kB | 888 kB | 1,720 kB |
@@ -61,82 +75,43 @@
 
 (All other tables < 1 MB.)
 
-### Per-index breakdown (top consumers)
-
-| index | table | size |
-|---|---|---|
-| game_positions_pkey | game_positions | 2,342 MB |
-| ix_gp_user_endgame_game | game_positions | 1,104 MB |
-| ix_gp_user_full_hash_move_san | game_positions | 720 MB |
-| ix_game_positions_game_id | game_positions | 534 MB |
-| ix_gp_user_black_hash | game_positions | 408 MB |
-| ix_gp_user_white_hash | game_positions | 404 MB |
-| ix_gp_full_hash_opening | game_positions | 299 MB |
-| game_flaws_pkey | game_flaws | 160 MB |
-| uq_games_user_platform_game_id | games | 81 MB |
-| opening_position_eval_pkey | opening_position_eval | 74 MB |
-
-**Storage summary:** `game_positions` is 12 GB of the 15 GB total (~80%), split 6.7 GB data / 5.8 GB index. Its index footprint nearly equals its data — seven indexes on 48M rows. The 7 `game_positions` indexes together (~5.7 GB) are the single biggest lever on DB size; all are in active use (see index usage below), so none are droppable. `games` is the next at 2.3 GB.
+**Storage summary:** `game_positions` is now 8.4 GB of the 11 GB total (~76%), down from 12 GB. Its seven indexes shrank from 5.8 GB to 3.7 GB. `games` is unchanged at 2.3 GB and is now the largest un-reclaimed target — if more space is needed, a `VACUUM FULL games` would be the next lever (it carries ~28% dead-tuple-era bloat from the eval-backfill UPDATE churn).
 
 ## 2. Performance Analysis
 
-> `stats_reset` = 2026-06-15T16:24:13Z — cumulative stats span ~8 days.
+> `pg_stat_statements` reset 2026-06-23T19:52:49Z — the window below is only ~12 min and reflects light post-maintenance traffic plus the vacuum itself. Not representative of steady-state load; re-check after a full day.
 
 ### Buffer cache hit ratio
 
-**83.14%** — ⚠️ **investigate** (target >99%). This is well below healthy. With `shared_buffers=2GB` and a 12 GB `game_positions` table, the working set doesn't fit in cache, so the heavy eval-queue scans spill to disk reads. Sustained 83% on this workload is expected given the table:buffer ratio, but it's the clearest performance signal in this snapshot. See recommendations.
+**83.67%** — ⚠️ but **not a clean post-vacuum reading**. This counter lives in `pg_stat_database`, which was *not* reset (still cumulative since 2026-06-15), so it can't yet reflect the smaller table. To measure whether the 8.4 GB table improves cache residency, run `SELECT pg_stat_reset();` and re-check in a day. With `shared_buffers=2GB` the table still won't fully fit, but bloat removal should raise residency. **Do not raise `shared_buffers` above 2GB** (CLAUDE.md: amplifies checkpoint flush, revisits OOM history).
 
-### Slowest queries by avg time
+### Highest total time queries (post-reset window)
 
-Most high-avg entries are **one-off analytical/maintenance queries** (`calls = 1`: missing-PV audits, this report's own queries, a single user DELETE at 6.4s). The one recurring slow query that matters:
-
-| avg_ms | max_ms | calls | total_ms | query |
-|---|---|---|---|---|
-| 8,576 | 14,273 | 7 | 60,033 | `SELECT count(*) … game_positions JOIN games … need_bm/need_pv` (PV/best-move backfill coverage count) |
-
-The 25.6s / 15.7s / 10s entries are all single-call missing-PV region audits — diagnostics, not user-facing.
-
-### Highest total time queries (server-time dominators)
-
-| total_ms | calls | avg_ms | rows | query |
-|---|---|---|---|---|
-| 78,663,590 | 191,099 | 411.64 | 103,244 | eval-queue tier-2 pick: `games … full_evals_completed_at IS NULL AND lichess_evals_at IS NOT NULL AND NOT is_guest` |
-| 3,530,095 | 275,870 | 12.80 | 275,870 | eval-queue tier-3 lottery pick (per-user `-ln(random())/weight`) |
-| 691,196 | 466,970 | 1.48 | 275,870 | eval-queue tier-3 user eligibility `EXISTS` |
-| 337,195 | 390,070 | 0.86 | 504 | entry-eval pick `LIMIT 1 OFFSET` |
-| 281,649 | 427,594 | 0.66 | 30.8M | per-game ply eval fetch |
-
-**The dominant server cost is the eval-queue tier-2 pick: 78.7M ms (~21.8 hours of cumulative exec over 8 days), 191k calls at 412ms avg.** This single query is ~95% of total tracked query time. It's a polling query for the analysis worker queue. At 412ms × 191k calls it's both frequent and not cheap — the top optimization target.
-
-### Sequential scan analysis
-
-| table | seq_scan | idx_scan | verdict |
+| total_ms | calls | avg_ms | query |
 |---|---|---|---|
-| game_positions | 18,347 | 1.10B | OK — overwhelmingly index-driven; seq scans are bulk maintenance |
-| games | 228,243 | 8.59B | OK — index-dominated; seq scans likely the eval-queue counts |
-| users | 5,337,314 | 627,731 | tiny table (158 rows) — seq scan is correct/optimal |
-| eval_jobs | 1,850,510 | 7,972 | tiny table (94 rows) — seq scan is correct |
-| import_jobs | 92,868 | 2,204,641 | tiny table (266 rows) — fine |
-| oauth_account | 44,573 | 0 | tiny table (8 rows) — fine |
+| 380,348 | 1,347 | **282.37** | eval-queue tier-2 pick (`full_evals_completed_at IS NULL AND lichess_evals_at IS NOT NULL AND NOT is_guest`) |
+| 320,364 | 1 | 320,364 | `VACUUM FULL VERBOSE game_positions` (one-off maintenance) |
+| 169,540 | 1 | 169,540 | `VACUUM ANALYZE game_positions` (one-off maintenance) |
+| 3,237 | 3 | 1,079 | game_flaws fetch (analytics) |
 
-No problematic seq-scan patterns. The high seq_scan counts are all on tiny tables where PostgreSQL correctly prefers a scan.
+Excluding the two one-off VACUUMs, the **eval-queue tier-2 pick query again dominates** — and is the only recurring query of any weight (next recurring query is <80ms total).
 
-### Index usage — unused indexes (0 scans)
+### Tier-2 pick query: per-call improved post-vacuum
 
-All "keep" — required for FK/PK/auth integrity or recently added:
+| | pre-vacuum (8-day window) | post-vacuum (12-min window) | Δ |
+|---|---|---|---|
+| avg_ms | 411.64 | 282.37 | **−31%** |
+| max_ms | (n/a) | 523.24 | — |
 
-- `ix_users_email`, `oauth_account_pkey`, `ix_oauth_account_*` — **keep** (auth/OAuth flows).
-- `llm_logs_*` (5 indexes), `feedback_pkey`, `ix_feedback_user_id`, `bookmarks_pkey`, `benchmark_cohort_cdf_pkey` — **keep** (low-volume tables, integrity/PK).
-- `openings_pkey`, `ix_openings_eco_name`, `uq_openings_eco_name_pgn` — **keep** (openings table currently shows 0 live tuples in stats but is reference data).
-- `ix_games_full_pv_pending` (20 MB, 0 scans), `ix_eval_jobs_pick`, `ix_eval_jobs_leased` — **keep/monitor**: queue indexes that may only be hit in specific worker states. `ix_games_full_pv_pending` is the only sizeable one (20 MB) — worth confirming it's still referenced by the PV-backfill path before considering a drop.
+The compacted heap means fewer pages per scan, so VACUUM FULL cut the hot query's per-call time by ~third, not just disk size. It remains the top optimization target — a tight partial index on `(full_evals_completed_at) WHERE full_evals_completed_at IS NULL AND lichess_evals_at IS NOT NULL` should beat 282ms and cut the disk-read pressure behind the low cache-hit ratio.
 
-No index is both large and genuinely droppable. The big `game_positions` indexes are all heavily used (`ix_gp_user_endgame_game` 1.67M scans, `ix_gp_full_hash_opening` 241k scans, etc.).
+### Sequential scans / index usage / dead tuples
 
-### Dead tuples / autovacuum
-
-All healthy. Largest absolute dead-tuple count is `game_positions` at 825k dead / 48.2M live (1.7%). `games` 30.8k / 808k (3.8%). Autovacuum/autoanalyze ran today (2026-06-23) on all hot tables. No bloat concerns.
+Stats views (`pg_stat_user_tables`/`indexes`) accumulate independently of the pg_stat_statements reset; the 17:59 assessment still holds: no problematic seq-scan patterns (high counts only on tiny tables), no droppable indexes (all large `game_positions` indexes actively used), autovacuum current. The VACUUM FULL additionally reset `game_positions` dead tuples to ~0.
 
 ## 3. Sanity Checks
+
+Both checks re-run identically (data unchanged since 17:59; vacuum doesn't alter row contents).
 
 ### Check A — Flaw counts: `games` oracle columns vs `game_flaws`
 
@@ -148,23 +123,9 @@ All healthy. Largest absolute dead-tuple count is `game_positions` at 825k dead 
 | mistake mismatch | 1,331 |
 | blunder mismatch | 756 |
 
-Match rate ≈ **98.5%** (mismatches are a small fraction; the two classifiers are independent by design).
+Aggregate totals: mistakes 424,235 (oracle) vs 425,517 (game_flaws), +0.30%; blunders 641,037 vs 641,555, +0.08%.
 
-**Mismatch direction & aggregate totals:**
-
-| | game_flaws under | game_flaws over |
-|---|---|---|
-| mistakes | 212 | 1,119 |
-| blunders | 191 | 565 |
-
-| | lichess oracle | game_flaws | diff |
-|---|---|---|---|
-| total mistakes | 424,235 | 425,517 | +0.30% |
-| total blunders | 641,037 | 641,555 | +0.08% |
-
-Aggregate totals agree within **0.3%**. `game_flaws` slightly over-counts vs lichess (expected ES-threshold vs lichess-win% classifier drift).
-
-**Verdict (Check A): PASS** — NULL-count gap is 0, aggregate totals within ~0.3%.
+**Verdict (Check A): PASS** — NULL-count gap 0, aggregates within ~0.3%.
 
 ### Check B — Eval coverage ≥90% vs oracle-column presence (Flaws Timeline gate)
 
@@ -173,15 +134,13 @@ Aggregate totals agree within **0.3%**. `game_flaws` slightly over-counts vs lic
 | chess.com | 281,661 | **0** ✅ | 281,661 |
 | lichess | 139,078 | **0** ✅ | 139,078 |
 
-**Verdict (Check B): PASS** — zero eval-covered games with NULL oracle columns on either platform. The Flaws Timeline's oracle-present gate loses no analyzed games. (Notably chess.com now has 281k games at ≥90% coverage with oracle columns populated — full backfill is complete there.)
+**Verdict (Check B): PASS** — zero eval-covered games with NULL oracle columns on either platform.
 
 ## Summary
 
-- **DB size: 15 GB.** `game_positions` (48.2M rows) is ~80% of it — 6.7 GB data + 5.8 GB across 7 indexes. That table is the only thing that materially moves total size.
-- **Data integrity: clean.** Both sanity checks PASS. Flaw counts match within 0.3% aggregate, zero NULL-count gaps, and zero eval-covered-but-oracle-null games on either platform (chess.com oracle backfill is fully landed).
-- **⚠️ Cache hit ratio 83%** — the one real concern. The 12 GB `game_positions` table vastly exceeds `shared_buffers=2GB`, so heavy queue scans hit disk. **Do not raise `shared_buffers` above 2 GB** (CLAUDE.md: it amplifies checkpoint flush size and revisits the OOM history). Mitigate via the query below instead.
-- **⚠️ Eval-queue tier-2 pick query dominates server time** — 78.7M ms cumulative (~95% of all tracked query time), 191k calls at 412ms avg. This is the worker polling for tier-2 analysis candidates (`full_evals_completed_at IS NULL AND lichess_evals_at IS NOT NULL AND NOT is_guest`). Worth an `EXPLAIN ANALYZE` to confirm it has a covering partial index; at 412ms/call it's scanning more than it should. **Top optimization target.** This also explains much of the low cache-hit ratio (repeated large scans of `games`/`game_positions`).
-- **Indexes:** nothing droppable. All large `game_positions` indexes are actively used; the 0-scan indexes are all small auth/integrity/queue indexes worth keeping.
-- **Vacuum/bloat:** healthy, autovacuum current on all hot tables.
-
-**Recommended next step:** `EXPLAIN (ANALYZE, BUFFERS)` the tier-2 eval-queue pick query — if it's not served by a tight partial index on `(full_evals_completed_at) WHERE full_evals_completed_at IS NULL AND lichess_evals_at IS NOT NULL`, adding/tuning one would cut both the 412ms avg and the disk-read pressure dragging the cache-hit ratio down.
+- **DB shrank 15 GB → 11 GB (−27%)** via `VACUUM FULL game_positions` — pure bloat reclaim, row count unchanged. `game_positions` went 12 GB → 8.4 GB (data −2.0 GB, indexes −2.1 GB).
+- **`games` is now the largest un-reclaimed table** (2.3 GB, untouched). If more space is wanted, `VACUUM FULL games` is the next candidate — it churns heavily from eval-backfill UPDATEs.
+- **Data integrity: clean.** Both sanity checks PASS, unchanged.
+- **Hot query got faster:** the eval-queue tier-2 pick dropped 412ms → 282ms avg per call after the heap compaction. It's still the dominant query and still the top optimization target (wants a tight partial index).
+- **Cache-hit ratio (83.67%) is not yet a valid post-vacuum reading** — `pg_stat_database` wasn't reset. Run `SELECT pg_stat_reset();` and re-check in a day to see if the smaller table improves cache residency.
+- **Query stats window is only ~12 min** (pg_stat_statements reset at 19:52) — re-run this report after a day of normal traffic for a representative performance picture.
