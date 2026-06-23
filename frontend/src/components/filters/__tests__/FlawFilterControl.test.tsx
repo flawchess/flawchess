@@ -66,6 +66,7 @@ describe('FlawFilterControl', () => {
     // Advanced tier-3 group (Quick 260623-6pd) — collapsed by default.
     const ADVANCED_FAMILIES = [
       'x_ray', 'deflection', 'intermezzo', 'interference', 'clearance', 'capturing_defender',
+      'en_passant', 'under_promotion',
     ];
 
     it('Advanced families are hidden until the Advanced toggle is expanded', () => {

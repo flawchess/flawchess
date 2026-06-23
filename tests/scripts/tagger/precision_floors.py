@@ -146,21 +146,22 @@ Measurement notes:
     predicate (Phase 134 Plan 02) achieved P(train)=1.000 (565 TP, 0 FP) / P(test)=1.000
     (239 TP, 0 FP), deltaP=0.000 — clearing the D-EXP-03 ≥0.80 bar on both sets. Shipped
     phase 134: removed from SUPPRESSED_MOTIFS, PRECISION_FLOOR added below.
-  - en-passant (12 TRAIN labels): NaN (never fires at Tier 5). The 12 enPassant rows all
-    have a higher-priority real tactic (fork, pin, discovered-check, mate, etc.) that wins
-    the dispatch. Move-type only fires on the residual; the residual has 0 enPassant-labeled
-    rows → NaN. Added to SUPPRESSED_MOTIFS. The detector itself is structurally validated
-    by fast-guard fixtures in _EN_PASSANT_FIXTURES.
+  - en-passant (Quick 260623, Phase-134 expanded fixture — 1960 TRAIN / 845 TEST labels):
+    P(train)=P(test)=1.000 (~590 TP, 0 FP), R≈0.30. The old Phase-128.1-02 note ("NaN, 12
+    labels, never fires") described the thin pre-expansion fixture; the larger fixture leaves
+    enough residual rows where no higher-priority tactic wins the Tier-5 dispatch for the
+    detector to fire cleanly. Unsuppressed and shipped as an "Advanced" chip family. Floor
+    0.93. Still structurally validated by the _EN_PASSANT_FIXTURES fast-guard set.
   - promotion (176 TRAIN labels including underPromotion, 57 TEST): fires once (TP=1, FP=0,
     P=1.000 train). Like en-passant, most promotion rows have a higher-priority tactic.
     1 TP is very thin but the precision is 100% — floor set conservatively at 0.60 to allow
     for variance while still catching zero-precision regressions.
-  - under-promotion (4 TRAIN / 4 TEST labels): TP=0, FP=0, NaN. Both the 4 TRAIN and 4 TEST
-    underPromotion-labeled rows also carry arabian-mate (back-rank-mate / smothered-mate
-    territory), so Tier-1 mate pre-empts under-promotion in every case. D-08 approach (i)
-    chosen: NO percentage floor is assigned. Structural validation is provided by the
-    _UNDER_PROMOTION_FIXTURES fast-guard set (4 curated positions that DO return
-    "under-promotion" because no real tactic fires). The fast-guard test
+  - under-promotion (Quick 260623, Phase-134 expanded fixture — 780 TRAIN / 332 TEST labels):
+    P(train)=P(test)=1.000 (~91 TP, 0 FP), R≈0.12. The old Phase-128.1-02 note ("NaN, n=4,
+    Tier-1 mate pre-empts every case") described the thin pre-expansion fixture. On the larger
+    fixture it fires cleanly on the residual; thinner TP pool than en-passant, so the floor is
+    0.90 (slightly more conservative). Unsuppressed and shipped as an "Advanced" chip family.
+    Still structurally validated by the _UNDER_PROMOTION_FIXTURES fast-guard set, whose
     `test_positives_fire_expected_motif[under-promotion]` is the never-regress assertion.
   - pin (Phase 131-02 -> Phase 131 fix): the full cook two-sub-test port lifted TEST
     precision from 0.474 to 0.819 but stayed below the 0.90 ship bar, so 131-02 suppressed it.
@@ -206,13 +207,11 @@ SUPPRESSED_MOTIFS: frozenset[str] = frozenset(
         # anchored predicate achieved P(train)=1.000 / P(test)=1.000 (565 TP, 0 FP) on the
         # ~1065-row expanded fixture. Floor added below; FAMILY_TO_MOTIF_INTS + frontend chips
         # were already wired in Phase 129 (G-01 10-family contract).
-        # Phase 128.1-02 move-type family (measured 2026-06-20):
-        # These three never fire in the harness because every real-world en-passant /
-        # promotion / under-promotion puzzle also has a higher-priority real tactic that
-        # wins the dispatch at Tier 5.  Structural validation is via fast-guard fixtures;
-        # see the measurement notes in the module docstring above.
-        "en-passant",  # 0 TP, 0 FP — NaN, all shadowed by real tactics at TRAIN
-        "under-promotion",  # 0 TP, 0 FP — NaN, n=4 labels, all have Tier-1 mates (D-08 approach i)
+        # Quick 260623: en-passant and under-promotion are NO LONGER suppressed. On the
+        # Phase-134 expanded fixture they fire reliably at P(train)=P(test)=1.000 (the old
+        # Phase-128.1-02 "never fires / NaN" rationale described the thin 12/4-label fixture).
+        # Floors added below; FAMILY_TO_MOTIF_INTS + frontend "Advanced" chips wired in the
+        # same change. promotion (28) stays shipped-but-unmapped with its own floor below.
         # Phase 131 pin precision fix (measured 2026-06-22): pin is NO LONGER suppressed.
         # Restricting detect_pin to POV-move result boards (odd PV indices, the cook node set)
         # lifted it from 0.819 to 0.944 TEST / 0.934 TRAIN — clears the 0.90 ship bar. Floor
@@ -332,9 +331,14 @@ PRECISION_FLOOR: dict[str, float] = {
     # --- Tier 5 move-type (Phase 128.1-02, measured 2026-06-20) ---
     # promotion: TP=1, FP=0, P=1.000 train (TEST=NaN, never fires on held-out set).
     # Very thin (1 TP) but 100% precision. Floor set conservatively at 0.60 to catch
-    # zero-precision regressions while tolerating 1-sample variance. en-passant and
-    # under-promotion are in SUPPRESSED_MOTIFS (NaN / n=4 respectively — D-08).
+    # zero-precision regressions while tolerating 1-sample variance.
     "promotion": 0.60,  # train 1.000 (1 TP, 0 FP) — thin but structurally correct
+    # Quick 260623: en-passant and under-promotion unsuppressed. Both fire only at Tier 5
+    # (residual) but at P(train)=P(test)=1.000 on the Phase-134 expanded fixture. en-passant
+    # has the larger TP pool (R≈0.30 of n=1960); under-promotion is thinner (R≈0.12 of n=780),
+    # so its floor is set slightly more conservatively.
+    "en-passant": 0.93,  # train 1.000 / test 1.000 (~590 TP, 0 FP)
+    "under-promotion": 0.90,  # train 1.000 / test 1.000 (~91 TP, 0 FP; thinner pool)
     # --- Phase 133 unsuppressed motifs (measured 2026-06-23, phase 133 cook ports) ---
     # All five measured at TRAIN 1.000 / 0 FP; floors set at 0.93 (~7pp below, rounded to 0.05).
     "attraction": 0.93,  # train 1.000 / test ~1.000 (654 TP, 0 FP; phase 133 cook port)

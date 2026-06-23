@@ -1,6 +1,6 @@
 # FlawChess Tactic-Tagger Report
 
-**Generated:** 2026-06-23 15:33:35Z (UTC)
+**Generated:** 2026-06-23 16:12:28Z (UTC)
 **Detector:** `app/services/tactic_detector.py::detect_tactic_motif`
 **Fixtures:** `fixtures/tagger/detector_fixture_{train,test}.csv` (CC0 lichess puzzles, deterministic PuzzleId-hash split)
 **Train rows:** 18632 &nbsp;|&nbsp; **Test rows:** 8017
@@ -49,9 +49,9 @@ Scored with the same theme-intersection multi-label credit (D-10) as the CI harn
 | 3 | capturing-defender | 1.000 | 1.000 | +0.000 | 0.547 | 0.491 | 623 | 277 | shipped |
 | 3 | sacrifice | 1.000 | 1.000 | +0.000 | 0.126 | 0.127 | 3570 | 1549 | shipped |
 | 4 | hanging-piece | 1.000 | 1.000 | +0.000 | 0.736 | 0.725 | 857 | 374 | shipped |
-| 5 | under-promotion | 1.000 | 1.000 | +0.000 | 0.117 | 0.145 | 780 | 332 | suppressed |
+| 5 | under-promotion | 1.000 | 1.000 | +0.000 | 0.117 | 0.145 | 780 | 332 | shipped |
 | 5 | promotion | 1.000 | 1.000 | +0.000 | 0.047 | 0.047 | 3731 | 1630 | shipped |
-| 5 | en-passant | 1.000 | 1.000 | +0.000 | 0.301 | 0.286 | 1960 | 845 | suppressed |
+| 5 | en-passant | 1.000 | 1.000 | +0.000 | 0.301 | 0.286 | 1960 | 845 | shipped |
 
 ## Difficulty distribution per tactic (combined train+test)
 
@@ -81,9 +81,9 @@ Scored with the same theme-intersection multi-label credit (D-10) as the CI harn
 | 3 | capturing-defender | 900 | 597 / 1219 / 1610 / 1995 / 2975 | 2.5 | shipped |
 | 3 | sacrifice | 5119 | 399 / 1426 / 1750 / 2105 / 3171 | 2.5 | shipped |
 | 4 | hanging-piece | 1231 | 400 / 1179 / 1591 / 2002 / 3045 | 0.0 | shipped |
-| 5 | under-promotion | 1112 | 635 / 1610 / 2100 / 2360 / 3053 | 0.0 | suppressed |
+| 5 | under-promotion | 1112 | 635 / 1610 / 2100 / 2360 / 3053 | 0.0 | shipped |
 | 5 | promotion | 5361 | 400 / 1249 / 1676 / 2124 / 3171 | 0.0 | shipped |
-| 5 | en-passant | 2805 | 743 / 1580 / 1866 / 2169 / 3120 | 0.0 | suppressed |
+| 5 | en-passant | 2805 | 743 / 1580 / 1866 / 2169 / 3120 | 0.0 | shipped |
 
 **Overall fixture Rating (combined):** min 399 / Q1 1246 / Q2 1628 / Q3 2015 / max 3171.
 
@@ -91,7 +91,7 @@ Scored with the same theme-intersection multi-label credit (D-10) as the CI harn
 
 ## Summary & interpretation
 
-- **Coverage:** 25 shipped (floor-gated) motifs, 2 suppressed (0 never fire, 0 fire only false positives). Micro-averaged TRAIN precision across all firing motifs: **0.999** (15680 TP / 23 FP).
+- **Coverage:** 27 shipped (floor-gated) motifs, 0 suppressed (0 never fire, 0 fire only false positives). Micro-averaged TRAIN precision across all firing motifs: **0.999** (15680 TP / 23 FP).
 - **No overfit flagged:** every shipped motif holds train precision on the held-out test set within 0.10. Train gains are generalizing.
 - **Lowest-precision shipped motif (train):** `discovered-check` (0.964). **Biggest false-positive source:** `discovered-check` (12 FP) — over-fires relative to its base.
 - **Difficulty is deliberately flat across tactics.** The fixtures are stratified by Rating band per motif-theme (`scripts/select_tagger_fixtures.py`), so per-motif min/Q1/Q2/Q3/max cluster near the overall spread. These reflect the *sampled* difficulty, NOT the natural lichess-population difficulty of each tactic.

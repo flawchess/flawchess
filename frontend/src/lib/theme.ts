@@ -126,6 +126,11 @@ export const TAC_ATTRACTION = TAC_BLUE;
 export const TAC_ATTRACTION_BG = TAC_BLUE_BG;
 export const TAC_SACRIFICE = TAC_BLUE;
 export const TAC_SACRIFICE_BG = TAC_BLUE_BG;
+// Move-type families (Quick 260623): en-passant + under-promotion. Same single-blue convention.
+export const TAC_EN_PASSANT = TAC_BLUE;
+export const TAC_EN_PASSANT_BG = TAC_BLUE_BG;
+export const TAC_UNDER_PROMOTION = TAC_BLUE;
+export const TAC_UNDER_PROMOTION_BG = TAC_BLUE_BG;
 
 // Orientation-coded tactic chip colors (Games + Flaw card). Missed motifs render
 // in blue, Allowed motifs in a light red, so the two orientations read apart at a
