@@ -30,7 +30,7 @@
 - ✅ **v1.25 Flaw-Stats Opponent Comparison** — Phases 113–115 (incl. 114.1) (shipped 2026-06-12) — see [milestones/v1.25-ROADMAP.md](milestones/v1.25-ROADMAP.md)
 - ✅ **v1.26 Full-Game Eval Pipeline** — Phases 116–120 (incl. 117.1, 117.2) (shipped 2026-06-14) — see [milestones/v1.26-ROADMAP.md](milestones/v1.26-ROADMAP.md)
 - ✅ **v1.27 Remote Eval Worker Fan-Out & In-App Feedback** — Phases 121–123 (shipped 2026-06-16; releases #199, #202, #203) — see [milestones/v1.27-ROADMAP.md](milestones/v1.27-ROADMAP.md)
-- 🔄 **v1.28 Tactic Tagging** — Phases 124–129 (in progress)
+- 🔄 **v1.28 Tactic Tagging** — Phases 124–134 (incl. 128.1; Phase 130 was a placeholder superseded by 131–134). All phases complete; deployed to prod via release #214 (2026-06-23). Formal milestone close (tag + archive + CHANGELOG promotion) still pending.
 
 ## Phases
 
@@ -42,11 +42,16 @@
 
 - [x] **Phase 124: Schema + Tactic Detector** — Alembic migration for `tactic_motif`/`tactic_piece` columns + the pure-CPU cook-heuristic reimplementation + hand-labeled fixture validation (completed 2026-06-18)
 - [x] **Phase 125: Backfill Tactic Motifs** — run `backfill_flaws.py` over ~131k self-eval'd games; lichess-eval-only games stay NULL until full-eval'd via the existing tier-3 idle fleet (completed 2026-06-18)
-- [ ] **Phase 126: Comparison Stats + Frontend** — `GET /api/library/tactic-comparison` endpoint + motif chips on flaw cards + MiniBulletChart you-vs-opponent motif grid
+- [x] **Phase 126: Comparison Stats + Frontend** — `GET /api/library/tactic-comparison` endpoint + motif chips on flaw cards + MiniBulletChart you-vs-opponent motif grid (completed 2026-06-18)
 - [x] **Phase 127: Detector Hardening & Validation** — return motif depth from all detectors + store `*_tactic_depth`; lichess CC0 puzzle validation harness (precision AND recall); fix deep-scan/loose-pin false positives. De-risks 128/129. (completed 2026-06-19)
 - [x] **Phase 128: Missed-Opportunity Tagging** — rename existing tactic cols to `allowed_*`, add `missed_*` set; second detector pass on the `flaw_ply` PV (SEED-054); backend filter + schema; mover-relative columns, `is_opponent_expr` narration (no `tactic_pov` column) (completed 2026-06-19)
 - [x] **Phase 128.1: Add tactic motifs for lichess-theme coverage** (INSERTED) — close lichess `puzzleTheme.xml` gaps: split `discovered-check` out of discovered-attack, new `trapped-piece` detector, trivial `en-passant` + `promotion`/`under-promotion` tags; new precision floors baselined on TRAIN (SEED-058) (completed 2026-06-20)
 - [x] **Phase 129: Tactic Filter UI** — composed motif × pov (missed/allowed) × depth-slider filter + display across flaw surfaces, desktop + mobile (completed 2026-06-20)
+- [→] **Phase 130: Tactic tag improvements and fixes** — placeholder, never executed; superseded by the cook.py-alignment precision work in Phases 131–134
+- [x] **Phase 131: Tactic precision hardening via cook.py alignment (SEED-064)** — faithful cook.py predicate reimplementation for Tier 1 (mate) + Tier 2 (geometric) motifs, shallowest-tactic-wins dispatch, missed-vs-played dest-square gate; per-motif TEST precision toward >0.9, suppress-if-below (completed 2026-06-23)
+- [x] **Phase 132: Tier-3 tactic precision hardening via cook.py alignment** — cook AND-chain predicates for deflection/clearance/attraction/intermezzo/x-ray/capturing-defender, ship-or-suppress on TEST; interference locked at 0.99 (completed 2026-06-23)
+- [x] **Phase 133: Close suppressed-tactic gaps** — attraction off-by-one fix + unsuppress, sacrifice unsuppress, arabian/boden/dovetail mate-geometry ports (completed 2026-06-23)
+- [x] **Phase 134: trapped-piece fixture expansion (Option B) + cook reimplementation** — per-motif oversample cap, cook-faithful `detect_trapped_piece` (P 1.000 TEST), conditional unsuppress; shipped the trapped-piece tag (completed 2026-06-23)
 
 ## Phase Details
 
@@ -241,6 +246,34 @@ Plans:
 - [x] 129-04-PLAN.md — Backend taxonomy: rewrite `FAMILY_TO_MOTIF_INTS` to the authoritative 10 families (split pin_skewer→skewer/pin/x_ray, discovery→double_check/discovered_attack, add discovered_check/trapped_piece, drop combinations); update consumers + tests; no migration (TACUI-05, TACUI-08)
 - [x] 129-05-PLAN.md — Frontend taxonomy hub: mirror the 10 backend keys in `tacticComparisonMeta.ts` + `theme.ts` per-family tokens + filter chips + motif defs + tests + `tsc -b`; accordion now renders 4 overflow families, closing G-01 (TACUI-05, TACUI-06, TACUI-07, TACUI-08)
 
+### Phase 130: Tactic tag improvements and fixes (SUPERSEDED)
+
+A placeholder phase added after 129 to hold follow-up tactic fixes. Never planned or executed as its own phase — the actual precision/quality work landed as the cook.py-alignment Phases 131–134. The phase dir holds only a `.gitkeep`. Status: `[→]` superseded.
+
+### Phase 131: Tactic precision hardening via cook.py predicate alignment (SEED-064)
+
+**Goal**: Raise per-motif tactic-tag precision toward >0.9 on the held-out TEST split (recall ungated, precision-first) by faithfully reimplementing ornicar/lichess-puzzler's `cook.py` predicates for Tier 1 (mate) + Tier 2 (geometric) motifs, inverting dispatch to shallowest-tactic-wins, and adding a missed-vs-played dest-square gate at the call site. Any motif still <0.9 at full cook fidelity is suppressed, not shipped.
+**Depends on**: Phase 130
+**Plans**: 5/5 complete (Wave 1: shared-utility ports + depth-primary dispatch + mate gate; Wave 2: skewer/discovered-attack/fork/pin ports + missed-vs-played gate; Wave 3: mate ports back-rank/anastasia/hook + regression floors; Wave 4: held-out TEST gate + report regen + dev re-backfill). Completed 2026-06-23.
+
+### Phase 132: Tier-3 tactic precision hardening via cook.py predicate alignment
+
+**Goal**: Raise Tier-3 per-motif precision toward >0.9 on the held-out TEST split (precision-first) by replacing the loose `met >= N` voting detectors with cook's exact AND-chain predicates. In scope: deflection, clearance, attraction, intermezzo, x-ray, capturing-defender. `interference` already ships at 0.99 — locked against regression. Sub-floor motifs suppressed via `tactic_confidence`. No dispatch rework (131 already inverted to shallowest-wins). Not yet in prod at the time → no prod re-backfill.
+**Depends on**: Phase 131
+**Plans**: 5/5 complete (raise GOALS + baseline; deflection+clearance; capturing-defender+intermezzo; attraction+x-ray+sacrifice + lock interference; dev re-backfill + final TEST gate + reconcile floors). Completed 2026-06-23.
+
+### Phase 133: Close suppressed-tactic gaps (attraction fix, sacrifice unsuppress, mate geometry)
+
+**Goal**: Ship the floor-gateable motifs that 131/132 left suppressed, at ≥0.90 TEST precision. (1) attraction — fix an off-by-one in `_attraction_fires_at` cond-5 then unsuppress; (2) sacrifice — unsuppress only (already 1.000/1.000, no schema change / no co-tag per user decision); (3) arabian/boden/dovetail mate — port cook mate geometry. trapped-piece fixture expansion explicitly descoped to Phase 134 (blast-radius on committed floors).
+**Depends on**: Phase 132
+**Plans**: 2/2 complete (detector code fixes: attraction off-by-one + arabian/boden/dovetail ports; unsuppress 5 motifs + floors + family map + frontend chips + tests + report regen). Completed 2026-06-23.
+
+### Phase 134: trapped-piece fixture expansion (Option B) + cook-predicate reimplementation
+
+**Goal**: Close the trapped-piece gap Phase 133 deferred (was 0 TP / 153 FP, the single biggest FP source). (1) per-motif oversample cap (Option B) in `select_tagger_fixtures.py` so trapped-piece reaches ~1000 fixtures while well-covered motifs stay byte-identical; (2) reimplement `detect_trapped_piece` from cook's predicate; (3) conditional unsuppress only if precision clears ~≥0.80 TRAIN holding on TEST. Result: P(test)=1.000, R(test)=0.754, n=748/317 — shipped the trapped-piece tag.
+**Depends on**: Phase 133
+**Plans**: 3/3 complete (Option B per-motif cap + selector test + fixture regen; cook-faithful `detect_trapped_piece`; conditional unsuppress + pre-merge gate + CHANGELOG). Completed 2026-06-23.
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -292,6 +325,11 @@ Plans:
 | 127. Detector Hardening & Validation | 4/4 | Complete    | 2026-06-19 |
 | 128. Missed-Opportunity Tagging | 4/4 | Complete    | 2026-06-19 |
 | 129. Tactic Filter UI | 5/5 | Complete    | 2026-06-20 |
+| 130. Tactic tag improvements and fixes | 0/0 | Superseded by 131–134 | — |
+| 131. Tactic precision hardening (cook.py, SEED-064) | 5/5 | Complete | 2026-06-23 |
+| 132. Tier-3 tactic precision hardening (cook.py) | 5/5 | Complete | 2026-06-23 |
+| 133. Close suppressed-tactic gaps | 2/2 | Complete | 2026-06-23 |
+| 134. trapped-piece fixture expansion + cook reimpl | 3/3 | Complete | 2026-06-23 |
 
 ## Backlog
 
@@ -339,134 +377,6 @@ Plans:
 *Phase 999.7 (LLM Endgame-Insights Statistical-Reasoning Rework) promoted to active Phase 102 (v1.23) on 2026-06-01 via `/gsd-explore`; shipped 2026-06-03.*
 
 *Phase 103 (Endgame report LLM prompt refinements) shipped 2026-06-03 as an unplanned follow-on under v1.23 — see the collapsed v1.23 block above and [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md).*
-
-### Phase 130: Tactic tag improvements and fixes
-
-**Goal:** [To be planned]
-**Requirements**: TBD
-**Depends on:** Phase 129
-**Plans:** 0 plans
-
-Plans:
-
-- [ ] TBD (run /gsd-plan-phase 130 to break down)
-
-### Phase 131: Tactic precision hardening via cook.py predicate alignment (SEED-064)
-
-**Goal:** Raise per-motif tactic-tag precision toward >0.9 on the held-out TEST split (recall ungated) by faithfully reimplementing ornicar/lichess-puzzler's cook.py predicates for the in-scope Tier 1 (mate) + Tier 2 (geometric) motifs, inverting dispatch to shallowest-tactic-wins, and adding a missed-vs-played dest-square gate at the call site. Precision-first: a wrong visible chip erodes trust; a NULL chip costs nothing. Any motif still <0.9 at full cook fidelity is suppressed, not shipped.
-**Requirements**: none mapped — traceability via CONTEXT.md decisions D-01..D-12
-**Depends on:** Phase 130
-**Plans:** 5/5 plans complete
-
-Plans:
-**Wave 1**
-
-- [x] 131-01-PLAN.md — Foundation: shared-utility ports (ray-aware is_defended, is_in_bad_spot), depth-primary dispatch + mate gate, raise harness GOALS to 0.90, dispatch test (Wave 1)
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 131-02-PLAN.md — Cook ports for the four worst geometrics: skewer, discovered-attack, fork, pin; ship/suppress on TEST (Wave 2)
-- [x] 131-04-PLAN.md — Workstream B: missed-vs-played dest-square gate at the call site + hand-built unit fixtures (Wave 2)
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 131-03-PLAN.md — Cook ports for the mate motifs: back-rank own-blocker test, anastasia, hook; lock regression floors (Wave 3)
-
-**Wave 4** *(blocked on Wave 3 completion)*
-
-- [x] 131-05-PLAN.md — Final held-out TEST gate + full report regen + dev re-backfill (Wave 4)
-
-### Phase 132: Tier-3 tactic precision hardening via cook.py predicate alignment
-
-**Goal:** Raise per-motif precision toward >0.9 on the held-out TEST split (recall ungated, precision-first) for the Tier-3 tactic motifs by faithfully reimplementing ornicar/lichess-puzzler's `cook.py` relational predicates — replacing the current loose `met >= N` voting detectors with cook's exact AND-chain predicates, the same methodology that lifted Tier-2 in Phase 131. In-scope motifs: `deflection` (today 0.21 TEST, the single biggest FP source at 991 FP), `clearance` (0.37), `attraction` (0.06), `intermezzo` (0.10), `x-ray` (0.03), `capturing-defender` (0.24). `interference` already ships at 0.99 — lock it against regression, no detector work. Any motif still <0.9 at full cook fidelity is suppressed via the existing `tactic_confidence` query-suppression lever, not shipped (mirrors Phase 131 D-02/D-11). Existence proof the ceiling is reachable: `interference` is itself a Tier-3 motif already at 0.99 via a faithful relational port. Phase 131 already inverted dispatch to shallowest-tactic-wins, so **no dispatch rework here — this phase is detector-internal predicate alignment only.** Tactic tagging is **not yet deployed to prod**, so unlike Phase 131 there are no live-wrong-tags to fix and no prod re-backfill runbook.
-**Requirements**: none mapped — traceability via CONTEXT.md decisions (to be gathered in discuss-phase)
-**Depends on:** Phase 131
-**Plans:** 5/5 plans complete
-
-**Open scope questions (resolve in discuss-phase):**
-
-- **`sacrifice`** is a material-diff *co-tag* (cook `sacrifice`, lines 184–191), not a geometric motif, and never fires for us today. Include it in the full-port-then-suppress sweep (likely ends suppressed) or exclude as out-of-scope-by-nature?
-- **`x-ray` depth risk:** TP-depth 8.0 vs `PV_CAP_PLIES=12`. Cook runs on a *curated puzzle solution*; we run on a *raw Stockfish PV* that can diverge from cook's clean relational chains deep in the line. x-ray may plateau below 0.9 regardless of port fidelity — full-port-then-suppress handles it honestly, but flag the wasted-effort risk and consider deferring.
-- **Dev re-backfill:** not in prod → no prod re-backfill, no live-wrong-tags urgency (cf. Phase 131 D-12). Decide whether a dev re-backfill is still worth running as real-data validation, or skip it (the CC0 puzzle fixture harness remains the authoritative precision signal either way).
-- **Harness scoring under shallowest-wins:** confirm whether `scripts/tactic_tagger_report.py` measures each motif's standalone firing or the post-dispatch winner. Tier-3 motifs are deep (depth 2.3–8.0) and only win dispatch when nothing shallower fires (Phase 131 D-05/D-07), which caps recall/volume (~1.8% of all tags) — acceptable under precision-first, but it bounds the ROI ceiling and should be stated explicitly.
-
-**Canonical refs (read before planning):**
-
-- `.planning/notes/tactic-tagger-cook-alignment.md` — cook↔ours index convention + per-motif pseudocode reference.
-- `/home/aimfeld/Projects/Python/lichess-puzzler/tagger/cook.py` + `util.py` — the AGPL oracle. Reimplement from prose/pseudocode, copy **no source** (Phase 131 D-10).
-- `.planning/phases/131-tactic-precision-hardening-cook-alignment/131-CONTEXT.md` — the proven playbook (full-port-then-suppress, TEST+ΔP gate, AGPL boundary, shallowest-wins dispatch).
-- `app/services/tactic_detector.py` — `detect_deflection` (loose "3 of 5"), `detect_attraction`, `detect_intermezzo`, `detect_x_ray`, `detect_clearance`, `detect_capturing_defender`, `detect_sacrifice`, `_TIER3_REGISTRY`.
-- `scripts/tactic_tagger_report.py --check-goals` — raise GOALS to 0.9 for in-scope Tier-3 motifs; `/tactic-tagger-report` for the full table.
-
-Plans:
-**Wave 1**
-
-- [x] 132-01-PLAN.md — Raise GOALS to 0.90 for the six in-scope Tier-3 motifs + record post-dispatch baseline (Wave 1)
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 132-02-PLAN.md — Cook-align detect_deflection + detect_clearance (high ROI), measure TEST, ship-or-suppress (Wave 2)
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 132-03-PLAN.md — Cook-align detect_capturing_defender + detect_intermezzo, measure TEST, ship-or-suppress (Wave 3)
-
-**Wave 4** *(blocked on Wave 3 completion)*
-
-- [x] 132-04-PLAN.md — Cook-align detect_attraction + detect_x_ray (D-03 cutoff) + detect_sacrifice; lock interference (Wave 4)
-
-**Wave 5** *(blocked on Wave 4 completion)*
-
-- [x] 132-05-PLAN.md — Dev re-backfill (D-04) + final TEST-split gate + reconcile precision_floors (Wave 5, non-autonomous)
-
-### Phase 133: Close suppressed-tactic gaps (attraction fix, sacrifice unsuppress, mate geometry, trapped-piece fixtures)
-
-**Goal:** Ship the remaining floor-gateable suppressed motifs that 131/132 left behind, so they surface as chips at ≥0.90 TEST precision (recall ungated, precision-first — same posture as 131/132). In scope: (1) **attraction** — fix a one-line off-by-one (`boards[k+2]`→`boards[k+3]` in `_attraction_fires_at` cond-5) that makes the cook AND-chain never fire, then unsuppress (proven standalone 1.000 prec, ≈42% post-dispatch recall); (2) **sacrifice** — unsuppress only (already standalone 1.000 prec / 1.000 recall; surfaces 12.2% post-dispatch incl. 65% of greek gifts, single-winner, **no schema change / no co-tag** per user decision); (3) **arabian-mate / boden-mate / dovetail-mate** — port cook mate geometry (the 131-03 methodology) to turn never-fire / only-FP into shipped; (4) **trapped-piece** — oversample the `trappedPiece` theme in `scripts/select_tagger_fixtures.py` (n_gt=39 today is too small to gate), then re-judge the existing D-06 detector. Also correct the two factually-wrong docstrings in `precision_floors.py` (attraction "PV depth", sacrifice "never wins dispatch"). Mechanically, unsuppressing = remove from `SUPPRESSED_MOTIFS`, add `PRECISION_FLOOR`, add `FAMILY_TO_MOTIF_INTS` family, add frontend `TACTIC_GROUPS` entry, update the family-count test. Tactic tagging is **not yet in prod** → no prod re-backfill / no live-wrong-tags urgency; CC0 fixture harness is the authoritative gate. **No dispatch rework** (131 already inverted to shallowest-wins).
-**Requirements**: none mapped — traceability via CONTEXT.md decisions (to be gathered in discuss-phase)
-**Depends on:** Phase 132
-**Plans:** 2/2 plans complete
-
-**Canonical refs (read before planning):**
-
-- `.planning/notes/suppressed-tactic-gaps-investigation.md` — **this phase's root-cause record**: validated probe numbers for all four scope items, the attraction off-by-one fix, the sacrifice greek-gift result, the mechanical unsuppress path, and the user's locked decisions (sacrifice = unsuppress-only, no co-tag).
-- `.planning/notes/tactic-tagger-cook-alignment.md` — cook↔ours index convention + per-motif pseudocode.
-- `/home/aimfeld/Projects/Python/lichess-puzzler/tagger/cook.py` + `util.py` — AGPL oracle (`attraction` ~L369, `sacrifice` ~L184, mate helpers). Reimplement from prose, copy **no source** (131 D-10).
-- `.planning/phases/132-tier-3-tactic-precision-hardening-via-cook-py-predicate-alig/` — full-port-then-suppress playbook, TEST+ΔP gate, AGPL boundary.
-- `app/services/tactic_detector.py` — `_attraction_fires_at`, `detect_sacrifice`, `detect_arabian_mate`, `detect_boden_or_double_bishop_mate`, `detect_dovetail_mate`, `_NAMED_MATE_REGISTRY`.
-- `tests/scripts/tagger/precision_floors.py` (`SUPPRESSED_MOTIFS`, `PRECISION_FLOOR`), `app/repositories/library_repository.py` (`FAMILY_TO_MOTIF_INTS`), `scripts/select_tagger_fixtures.py`, `scripts/tactic_tagger_report.py --check-goals`.
-
-Plans:
-
-- [x] 133-01-PLAN.md — Detector code fixes: attraction off-by-one + cook geometry ports for arabian/boden/dovetail mate (Wave 1)
-- [x] 133-02-PLAN.md — Unsuppress 5 motifs + floors + family map + frontend chips + family-count tests + docstring corrections + report regen (Wave 2)
-
-**Descope (per 133-RESEARCH.md):** trapped-piece fixture expansion is OUT of scope. Raising `SAMPLES_PER_STRATUM` in `select_tagger_fixtures.py` reshuffles ALL motifs' fixtures and forces re-measuring every committed precision floor (blast radius). Deferred to a follow-on quick task (per-motif oversample cap, Option B). The phase goal mentioned trapped-piece; research found it does not fit this phase's blast budget.
-
-### Phase 134: trapped-piece fixture expansion (Option B) + cook-predicate reimplementation, conditional unsuppress
-
-**Goal:** Close the trapped-piece gap that Phase 133 formally deferred. trapped-piece today fires **0 TP / 153 FP** (P 0.000), is the single biggest false-positive source, and is held out of users only by the `_TACTIC_CHIP_CONFIDENCE_MIN` query-suppression lever; its CC0 fixture is too thin to gate (n_gt=39 → 28 train / 11 test). Make it good enough to unsuppress: (1) **per-motif oversample cap (Option B)** — replace the scalar `SAMPLES_PER_STRATUM` in `scripts/select_tagger_fixtures.py` with a per-motif override so `trapped-piece` reaches ~1000 (≈700 train / 300 test via the existing deterministic PuzzleId-hash split) while every well-covered motif's fixture rows stay byte-identical (their floors don't move); also top up the other thin motifs (`en-passant` n_gt=19, `under-promotion` n_gt=8, `promotion` n_gt=241) as far as the lichess DB allows — en-passant/under-promotion are intrinsically rare and will NOT reach 1000, which is acceptable (soft target). (2) **Reimplement `detect_trapped_piece`** from cook's described predicate (piece is trapped when its safe escape squares are exhausted / it sits in a bad spot with no out), copying **no source** (AGPL boundary, 131 D-10), iterating against the expanded fixture via `scripts/tactic_tagger_report.py --check-goals` / the `/loop`. (3) **Conditional unsuppress** — remove from `SUPPRESSED_MOTIFS` + add a `PRECISION_FLOOR` + family map + frontend chip **only if** precision clears a worthwhile floor (~≥0.80 TRAIN holding on TEST). If it cannot, leave it suppressed but commit the improved detector + expanded fixtures. Tactic tagging is **not yet in prod** → no prod re-backfill / no live-wrong-tags urgency; the CC0 fixture harness is the authoritative gate. **No dispatch rework** (131 already inverted to shallowest-wins).
-**Requirements**: none mapped — traceability via CONTEXT.md decisions (to be gathered in discuss-phase)
-**Depends on:** Phase 133
-**Plans:** 3 plans
-
-- [x] 134-01-PLAN.md — Option B per-motif oversample cap + selector unit test, regenerate fixtures (human download checkpoint), verify byte-identical isolation, re-measure only moved floors (Wave 1)
-- [x] 134-02-PLAN.md — Reimplement detect_trapped_piece from cook's capture-chain-anchored is_trapped predicate; add GOALS entry; measure post-dispatch precision on the expanded fixture (Wave 2) — P(train)=1.000 P(test)=1.000 ΔP=0.000 R(train)=0.755 R(test)=0.754 n=748/317
-- [x] 134-03-PLAN.md — Conditional unsuppress per D-EXP-03 (SHIP if ≥0.80 TRAIN holding on TEST, else stay SUPPRESSED) + pre-merge gate + CHANGELOG (Wave 3)
-
-**Locked decisions (from /gsd-explore 2026-06-23):**
-
-- **D-EXP-01 — Target is trapped-piece, not hanging-piece.** The original request named "hanging-piece," but hanging-piece already ships healthy (Tier 4, floor 0.90, P 0.915/0.889, R 0.69). trapped-piece is the actual gap Phase 133 deferred (`133-VERIFICATION.md`, ROADMAP Descope above). Do not touch hanging-piece.
-- **D-EXP-02 — Per-motif cap (Option B), not a global resample.** A global `SAMPLES_PER_STRATUM` bump reshuffles all fixtures and re-measures every floor; Option B isolates the change to the oversampled motifs. **Caveat:** isolation is near-total but NOT perfect — new `trappedPiece` puzzles are multi-label and nudge co-occurring motifs' GT counts slightly; verify which committed floors actually move and re-measure only those.
-- **D-EXP-03 — Unsuppress only if it clears a floor.** No forced ship. ~≥0.80 TRAIN holding on TEST is the bar; below it, keep suppressed with the improved detector + fixtures committed (still removes the FP source from the eventual ship surface and leaves a real test set).
-
-**Canonical refs (read before planning):**
-
-- `.planning/notes/tactic-tagger-cook-alignment.md` — cook↔ours index convention + per-motif pseudocode.
-- `/home/aimfeld/Projects/Python/lichess-puzzler/tagger/cook.py` + `util.py` — AGPL oracle (`trapped-piece` predicate). Reimplement from prose, copy **no source** (131 D-10).
-- `.planning/phases/133-close-suppressed-tactic-gaps-attraction-fix-sacrifice-unsupp/` — the unsuppress mechanical path (`SUPPRESSED_MOTIFS` → `PRECISION_FLOOR` + `FAMILY_TO_MOTIF_INTS` + frontend `TACTIC_GROUPS` + family-count test) and the full-port-then-suppress playbook.
-- `scripts/select_tagger_fixtures.py` — `SAMPLES_PER_STRATUM`, `MOTIF_TO_THEMES` (`trapped-piece` → `trappedPiece`), the deterministic PuzzleId-hash split; needs a fresh lichess `.csv.zst` download (~300 MB, not committed).
-- `app/services/tactic_detector.py` — `detect_trapped_piece` (current 0-TP detector), `_is_in_bad_spot`, `_is_defended`.
-- `tests/scripts/tagger/precision_floors.py` (`SUPPRESSED_MOTIFS`, `PRECISION_FLOOR`), `scripts/tactic_tagger_report.py --check-goals`, the `tactic-tagger-report` skill.
 
 ---
 
