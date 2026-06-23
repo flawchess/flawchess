@@ -254,6 +254,12 @@ fastapi_users = FastAPIUsers[User, int](get_user_manager, [auth_backend])
 
 current_active_user = fastapi_users.current_user(active=True)
 
+# Optional variant: resolves to the authenticated active user when a valid Bearer
+# token is present, or None when the request is anonymous (no 401). Used by the
+# guest-aware /auth/google/authorize endpoint so a guest signing in via the plain
+# OAuth flow is routed to in-place promotion instead of orphaning their account.
+current_active_user_optional = fastapi_users.current_user(active=True, optional=True)
+
 # Used by /admin/* endpoints (D-04/D-05 auth gate).
 # Note: when the caller holds an impersonation token, ClaimAwareJWTStrategy
 # returns the TARGET (non-superuser) user. The `superuser=True` dep then 403s,

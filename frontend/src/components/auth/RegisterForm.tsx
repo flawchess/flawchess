@@ -16,6 +16,7 @@ import {
   FormCardTitle,
 } from '@/components/ui/form-card';
 import { apiClient } from '@/api/client';
+import { getGoogleAuthorizationUrl } from '@/api/googleAuth';
 import type { GuestPromoteResponse } from '@/types/api';
 
 function GoogleIcon() {
@@ -132,30 +133,9 @@ export function RegisterForm() {
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
     try {
-      // Pass the current origin so the backend builds a redirect_uri matching the host
-      // the user is on (localhost vs an HTTPS dev tunnel like Tailscale).
-      const origin = encodeURIComponent(window.location.origin);
-      // If a guest token exists, use the promotion OAuth flow so the guest
-      // account is upgraded in-place and imported data is preserved.
-      const guestToken = localStorage.getItem(GUEST_TOKEN_KEY);
-      if (guestToken) {
-        try {
-          const res = await apiClient.get<{ authorization_url: string }>(
-            `/auth/google/authorize-promote?origin=${origin}`,
-            { headers: { Authorization: `Bearer ${guestToken}` } },
-          );
-          window.location.href = res.data.authorization_url;
-          return;
-        } catch {
-          // Guest token expired or invalid — fall through to regular Google sign-up
-          localStorage.removeItem(GUEST_TOKEN_KEY);
-        }
-      }
-
-      const response = await apiClient.get<{ authorization_url: string }>(
-        `/auth/google/authorize?origin=${origin}`,
-      );
-      window.location.href = response.data.authorization_url;
+      // Shared helper routes a saved guest session through in-place promotion so
+      // imported data is preserved (identical to the Login button — single source).
+      window.location.href = await getGoogleAuthorizationUrl();
     } catch (err) {
       Sentry.captureException(err, {
         tags: { source: 'auth' },

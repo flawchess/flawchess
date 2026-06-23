@@ -30,6 +30,7 @@ from app.users import (
     UserManager,
     auth_backend,
     current_active_user,
+    current_active_user_optional,
     fastapi_users,
     get_user_manager,
     google_oauth_client,
@@ -103,16 +104,40 @@ async def google_oauth_available() -> GoogleOAuthAvailableResponse:
 
 @router.get("/auth/google/authorize", tags=["auth"], response_model=GoogleOAuthAuthorizeResponse)
 async def google_authorize(
-    request: Request, response: Response, origin: str | None = None
+    request: Request,
+    response: Response,
+    user: Annotated[User | None, Depends(current_active_user_optional)],
+    origin: str | None = None,
 ) -> GoogleOAuthAuthorizeResponse:
     """Return the Google OAuth authorization URL for the frontend to redirect to.
 
     ``origin`` is the SPA's ``window.location.origin``; it selects the redirect base so
     login works from both localhost and an allowlisted HTTPS dev tunnel (Tailscale).
+
+    Server-side guest-promotion safety net: if the caller authenticates as a guest
+    (a guest Bearer token reaches this endpoint — e.g. the Login-tab Google button or
+    a logged-in guest), route the flow through in-place promotion exactly like
+    ``/auth/google/authorize-promote`` does — promote-audience state with ``guest_user_id``
+    and the ``callback-promote`` redirect. Without this, a guest who signs in via the
+    plain flow gets a brand-new account from stock FastAPI-Users ``oauth_callback`` (the
+    guest's ``guest_*@guest.local`` email never matches the Google email), orphaning their
+    imported games (prod users 198→199, 2026-06-23).
     """
     backend_base, _frontend_base = _resolve_oauth_bases(origin)
     csrf_token = secrets.token_urlsafe(32)
-    state_data = {"csrftoken": csrf_token, "origin": origin, "aud": _OAUTH_STATE_AUDIENCE}
+
+    promote_guest = user is not None and user.is_guest
+    if promote_guest:
+        state_data = {
+            "csrftoken": csrf_token,
+            "guest_user_id": user.id,
+            "origin": origin,
+            "aud": _OAUTH_PROMOTE_STATE_AUDIENCE,
+        }
+        callback_path = "callback-promote"
+    else:
+        state_data = {"csrftoken": csrf_token, "origin": origin, "aud": _OAUTH_STATE_AUDIENCE}
+        callback_path = "callback"
     state = generate_jwt(
         state_data,
         settings.SECRET_KEY,
@@ -135,7 +160,8 @@ async def google_authorize(
     # Build callback URL explicitly — request.url_for() picks up the Vite proxy host (port 5173)
     # which doesn't match Google's authorized redirect URI. backend_base is resolved from the
     # request origin (localhost vs tunnel) so the redirect_uri matches a registered Google entry.
-    redirect_url = f"{backend_base}/api/auth/google/callback"
+    # callback_path is "callback-promote" for guests (in-place promotion), else "callback".
+    redirect_url = f"{backend_base}/api/auth/google/{callback_path}"
     authorization_url = await google_oauth_client.get_authorization_url(
         redirect_url,
         state,
