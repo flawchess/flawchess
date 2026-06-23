@@ -68,6 +68,13 @@ const HOVER_OPEN_DELAY_MS = 100;
 /** Max families shown in the main grid before overflow goes into "More Tactics". */
 const MAX_MAIN_GRID_FAMILIES = 6;
 
+// Bullet-chart axis half-width for tactic deltas (events/game). Half of
+// MiniBulletChart's 0.40 default — that default targets pawn-scale endgame score
+// diffs, whereas you-minus-opponent tactic rates are small, so the wider axis
+// made typical bars look tiny. Outliers beyond ±this clamp to the edge (CI caps
+// gracefully open out), which is the intended trade for more readable bars.
+const TACTIC_BULLET_DOMAIN = 0.2;
+
 // ─── Signed delta helper ──────────────────────────────────────────────────────
 
 /** Signed 2-decimal string (e.g. +0.42, -1.00). */
@@ -211,8 +218,6 @@ function TacticBulletRow({ bullet, rowLabel, rowTestId }: TacticBulletRowProps) 
   const family = bullet.family as TacticFamily;
   const familyDef = TACTIC_COMPARISON_FAMILIES.find((f) => f.family === family);
   const familyName = familyDef?.name ?? bullet.family;
-  const familyColors = TACTIC_FAMILY_COLORS[family];
-  const color = familyColors?.color;
   const Icon = TACTIC_FAMILY_ICON[family];
 
   const isZeroEvent = bullet.delta === null;
@@ -237,7 +242,7 @@ function TacticBulletRow({ bullet, rowLabel, rowTestId }: TacticBulletRowProps) 
       {/* Label + delta + popover trigger row */}
       <div className="flex items-center gap-1.5">
         {showIcon && Icon && (
-          <Icon className="h-3.5 w-3.5 shrink-0" style={{ color }} aria-hidden="true" />
+          <Icon className="h-3.5 w-3.5 shrink-0 text-foreground" aria-hidden="true" />
         )}
         {/* Row label: text-sm text-muted-foreground Regular 400 (per UI-SPEC — do NOT
             extend the existing font-medium on the CardHeader family label to these rows). */}
@@ -270,6 +275,7 @@ function TacticBulletRow({ bullet, rowLabel, rowTestId }: TacticBulletRowProps) 
           neutralMin={bullet.has_zone ? bullet.zone_lo : 0}
           neutralMax={bullet.has_zone ? bullet.zone_hi : 0}
           center={0}
+          domain={TACTIC_BULLET_DOMAIN}
           ciLow={bullet.ci_low ?? undefined}
           ciHigh={bullet.ci_high ?? undefined}
           invertColors
@@ -327,13 +333,12 @@ function FamilyCard({ family, missed, allowed }: FamilyCardProps) {
   const familyDef = TACTIC_COMPARISON_FAMILIES.find((f) => f.family === family);
   const familyName = familyDef?.name ?? family;
   const Icon = TACTIC_FAMILY_ICON[family as TacticFamily];
-  const color = TACTIC_FAMILY_COLORS[family as TacticFamily]?.color;
 
   return (
     <Card data-testid={`tactic-family-card-${family}`}>
       <CardHeader data-testid={`tactic-family-header-${family}`}>
         <span className="inline-flex items-center gap-1.5">
-          {Icon && <Icon className="h-4 w-4 shrink-0" style={{ color }} aria-hidden="true" />}
+          {Icon && <Icon className="h-4 w-4 shrink-0 text-foreground" aria-hidden="true" />}
           {familyName}
         </span>
       </CardHeader>
