@@ -134,11 +134,10 @@ If it flakes again, **halt** — flaky tests in a release PR need human judgment
 ## CI: frontend lint / test / build failures
 
 ```bash
-cd frontend
-npm run lint            # eslint
-npm test -- --run       # vitest single-pass
-npm run build           # vite + tsc strict
-npm run knip            # dead code / unused deps
+npm --prefix frontend run lint     # eslint
+npm --prefix frontend test -- --run  # vitest single-pass
+npm --prefix frontend run build    # vite + tsc strict
+npm --prefix frontend run knip     # dead code / unused deps
 ```
 
 `knip` failures are usually leftover exports or unused deps from a removed feature. Delete them.

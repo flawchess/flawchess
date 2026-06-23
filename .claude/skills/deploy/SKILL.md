@@ -53,8 +53,10 @@ Then run the pre-PR gates locally so CI doesn't have to bounce them back:
 uv run ruff format app/ tests/
 uv run ruff check app/ tests/ --fix
 uv run ty check app/ tests/
-( cd frontend && npm run lint )
+npm --prefix frontend run lint
 ```
+
+Use `npm --prefix frontend ...` for every frontend command in this skill, never `cd frontend && ...`. The Bash tool's working directory persists across calls, so a bare `cd frontend` leaks into the next step (it once landed `bin/deploy.sh` in `frontend/` → "no such file or directory"). `--prefix` runs the npm script against `frontend/` without ever changing directory, so cwd can't leak even if the line is run on its own. If you ever do need a `cd`, wrap it in a subshell — `( cd frontend && ... )` — so the change is scoped to that one command.
 
 If any of these modify files, commit with a `chore(release):` or `style(release):` prefix and push to `main` before opening the release PR. Skip the test suites here — CI runs them and that's faster than running locally for a release-prep step.
 
