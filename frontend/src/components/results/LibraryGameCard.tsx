@@ -427,7 +427,7 @@ export function LibraryGameCard({
   }, [highlight, cycle, game.flaw_markers, outlinedPlies]);
 
   const { data: userProfile } = useUserProfile();
-  // Mobile (<sm) miniboard spans 40% of the viewport width; sm+ keeps the fixed size.
+  // Mobile (<sm) miniboard spans 50% of the viewport width; sm+ keeps the fixed size.
   const mobileBoardSize = useMiniBoardSize(MOBILE_BOARD_SIZE);
 
   // Tactic motifs: collect unique (orientation, motif-label) pairs from user flaw

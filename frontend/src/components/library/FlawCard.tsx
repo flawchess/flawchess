@@ -42,7 +42,7 @@ import type { FlawListItem, FlawSeverity, TacticOrientation } from '@/types/libr
 // Board sizes. Desktop is enlarged (Quick 260622): the flaw grid is now 2-up
 // (more width per card), and the board spans the full card-body height with the
 // metadata + tags stacked beside it on the right. Mobile keeps the smaller base
-// (resolved to 40% viewport by useMiniBoardSize).
+// (resolved to 50% viewport by useMiniBoardSize).
 const DESKTOP_BOARD_SIZE = 200;
 const MOBILE_BOARD_SIZE = 132;
 
@@ -264,8 +264,8 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
     </span>
   );
 
-  // Clock/move-time line: "<Clock icon> mm:ss · Move Ns" (matches the eval-chart tooltip).
-  // Renders the clock part only when clock_seconds is non-null; the "· Move Ns" part
+  // Clock/move-time line: "<Clock icon> mm:ss · Move Ns" on desktop, "· Ns" on mobile.
+  // Renders the clock part only when clock_seconds is non-null; the move-time part
   // only when move_seconds is non-null. When both are null the item is falsy and
   // omitted from the metadata block.
   const clockMoveItem = (flaw.clock_seconds != null || flaw.move_seconds != null) && (
@@ -273,7 +273,13 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
       <Clock className="h-3.5 w-3.5" />
       {flaw.clock_seconds != null && formatClock(flaw.clock_seconds)}
       {flaw.clock_seconds != null && flaw.move_seconds != null && <span>&middot;</span>}
-      {flaw.move_seconds != null && <span>Move {flaw.move_seconds.toFixed(1)}s</span>}
+      {flaw.move_seconds != null && (
+        <span>
+          {/* "Move" prefix on desktop only; mobile shows just the time. */}
+          <span className="hidden sm:inline">Move </span>
+          {flaw.move_seconds.toFixed(1)}s
+        </span>
+      )}
     </span>
   );
 
