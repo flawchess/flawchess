@@ -442,6 +442,28 @@ Plans:
 
 **Descope (per 133-RESEARCH.md):** trapped-piece fixture expansion is OUT of scope. Raising `SAMPLES_PER_STRATUM` in `select_tagger_fixtures.py` reshuffles ALL motifs' fixtures and forces re-measuring every committed precision floor (blast radius). Deferred to a follow-on quick task (per-motif oversample cap, Option B). The phase goal mentioned trapped-piece; research found it does not fit this phase's blast budget.
 
+### Phase 134: trapped-piece fixture expansion (Option B) + cook-predicate reimplementation, conditional unsuppress
+
+**Goal:** Close the trapped-piece gap that Phase 133 formally deferred. trapped-piece today fires **0 TP / 153 FP** (P 0.000), is the single biggest false-positive source, and is held out of users only by the `_TACTIC_CHIP_CONFIDENCE_MIN` query-suppression lever; its CC0 fixture is too thin to gate (n_gt=39 → 28 train / 11 test). Make it good enough to unsuppress: (1) **per-motif oversample cap (Option B)** — replace the scalar `SAMPLES_PER_STRATUM` in `scripts/select_tagger_fixtures.py` with a per-motif override so `trapped-piece` reaches ~1000 (≈700 train / 300 test via the existing deterministic PuzzleId-hash split) while every well-covered motif's fixture rows stay byte-identical (their floors don't move); also top up the other thin motifs (`en-passant` n_gt=19, `under-promotion` n_gt=8, `promotion` n_gt=241) as far as the lichess DB allows — en-passant/under-promotion are intrinsically rare and will NOT reach 1000, which is acceptable (soft target). (2) **Reimplement `detect_trapped_piece`** from cook's described predicate (piece is trapped when its safe escape squares are exhausted / it sits in a bad spot with no out), copying **no source** (AGPL boundary, 131 D-10), iterating against the expanded fixture via `scripts/tactic_tagger_report.py --check-goals` / the `/loop`. (3) **Conditional unsuppress** — remove from `SUPPRESSED_MOTIFS` + add a `PRECISION_FLOOR` + family map + frontend chip **only if** precision clears a worthwhile floor (~≥0.80 TRAIN holding on TEST). If it cannot, leave it suppressed but commit the improved detector + expanded fixtures. Tactic tagging is **not yet in prod** → no prod re-backfill / no live-wrong-tags urgency; the CC0 fixture harness is the authoritative gate. **No dispatch rework** (131 already inverted to shallowest-wins).
+**Requirements**: none mapped — traceability via CONTEXT.md decisions (to be gathered in discuss-phase)
+**Depends on:** Phase 133
+**Plans:** 0 plans
+
+**Locked decisions (from /gsd-explore 2026-06-23):**
+
+- **D-EXP-01 — Target is trapped-piece, not hanging-piece.** The original request named "hanging-piece," but hanging-piece already ships healthy (Tier 4, floor 0.90, P 0.915/0.889, R 0.69). trapped-piece is the actual gap Phase 133 deferred (`133-VERIFICATION.md`, ROADMAP Descope above). Do not touch hanging-piece.
+- **D-EXP-02 — Per-motif cap (Option B), not a global resample.** A global `SAMPLES_PER_STRATUM` bump reshuffles all fixtures and re-measures every floor; Option B isolates the change to the oversampled motifs. **Caveat:** isolation is near-total but NOT perfect — new `trappedPiece` puzzles are multi-label and nudge co-occurring motifs' GT counts slightly; verify which committed floors actually move and re-measure only those.
+- **D-EXP-03 — Unsuppress only if it clears a floor.** No forced ship. ~≥0.80 TRAIN holding on TEST is the bar; below it, keep suppressed with the improved detector + fixtures committed (still removes the FP source from the eventual ship surface and leaves a real test set).
+
+**Canonical refs (read before planning):**
+
+- `.planning/notes/tactic-tagger-cook-alignment.md` — cook↔ours index convention + per-motif pseudocode.
+- `/home/aimfeld/Projects/Python/lichess-puzzler/tagger/cook.py` + `util.py` — AGPL oracle (`trapped-piece` predicate). Reimplement from prose, copy **no source** (131 D-10).
+- `.planning/phases/133-close-suppressed-tactic-gaps-attraction-fix-sacrifice-unsupp/` — the unsuppress mechanical path (`SUPPRESSED_MOTIFS` → `PRECISION_FLOOR` + `FAMILY_TO_MOTIF_INTS` + frontend `TACTIC_GROUPS` + family-count test) and the full-port-then-suppress playbook.
+- `scripts/select_tagger_fixtures.py` — `SAMPLES_PER_STRATUM`, `MOTIF_TO_THEMES` (`trapped-piece` → `trappedPiece`), the deterministic PuzzleId-hash split; needs a fresh lichess `.csv.zst` download (~300 MB, not committed).
+- `app/services/tactic_detector.py` — `detect_trapped_piece` (current 0-TP detector), `_is_in_bad_spot`, `_is_defended`.
+- `tests/scripts/tagger/precision_floors.py` (`SUPPRESSED_MOTIFS`, `PRECISION_FLOOR`), `scripts/tactic_tagger_report.py --check-goals`, the `tactic-tagger-report` skill.
+
 ---
 
 <details>
