@@ -1,7 +1,8 @@
 /**
  * Shared metadata for the tactic-motif family comparison bullets (Phase 126, updated
  * Phase 129; tier-3 Advanced families added Quick 260623-6pd → 15 families; Phase 133
- * plan 133-02 added attraction + sacrifice → 17 families).
+ * plan 133-02 added attraction + sacrifice → 17 families; Quick 260623 added the move-type
+ * families en-passant + under-promotion → 19 families).
  *
  * Single source of truth consumed by TacticComparisonGrid (family cards + rows),
  * TacticMotifChip (family color + icon), and the FilterPanel tactic-motif filter.
@@ -26,17 +27,19 @@ import {
   ScanLine,
   ChevronsUp,
   Eye,
-  Search,
+  EyeDashed,
   Footprints,
-  AlertTriangle,
+  Crosshair,
   Crown,
   Magnet,
   Shuffle,
   Split,
   DoorOpen,
   ShieldOff,
-  Target,
+  Wind,
   Gift,
+  ArrowLeftRight,
+  ArrowDownFromLine,
 } from 'lucide-react';
 
 import {
@@ -74,6 +77,10 @@ import {
   TAC_ATTRACTION_BG,
   TAC_SACRIFICE,
   TAC_SACRIFICE_BG,
+  TAC_EN_PASSANT,
+  TAC_EN_PASSANT_BG,
+  TAC_UNDER_PROMOTION,
+  TAC_UNDER_PROMOTION_BG,
   ZONE_DANGER,
   ZONE_NEUTRAL,
   ZONE_SUCCESS,
@@ -96,7 +103,7 @@ export type TacticIcon = ComponentType<{
 // ─── Families ─────────────────────────────────────────────────────────────────
 
 /**
- * The 17 tactic family keys — cross-stack contract with backend FAMILY_TO_MOTIF_INTS.
+ * The 19 tactic family keys — cross-stack contract with backend FAMILY_TO_MOTIF_INTS.
  * These strings must equal the backend dict keys string-for-string (plan 129-04).
  * Filter display order (mechanism-grouped, Quick 260620-onv; Advanced added 260623-6pd):
  *   Piece Attacks: fork → pin → skewer → hanging → trapped_piece
@@ -122,7 +129,10 @@ export type TacticFamily =
   | 'capturing_defender'
   // Phase 133 (plan 133-02): attraction + sacrifice unsuppressed
   | 'attraction'
-  | 'sacrifice';
+  | 'sacrifice'
+  // Move-type families (Quick 260623): en-passant + under-promotion unsuppressed
+  | 'en_passant'
+  | 'under_promotion';
 
 export interface TacticFamilyColors {
   /** Icon + chip foreground color. */
@@ -150,6 +160,9 @@ export const TACTIC_FAMILY_COLORS: Record<TacticFamily, TacticFamilyColors> = {
   // Phase 133 (plan 133-02): attraction + sacrifice
   attraction: { color: TAC_ATTRACTION, bg: TAC_ATTRACTION_BG },
   sacrifice: { color: TAC_SACRIFICE, bg: TAC_SACRIFICE_BG },
+  // Move-type families (Quick 260623): en-passant + under-promotion
+  en_passant: { color: TAC_EN_PASSANT, bg: TAC_EN_PASSANT_BG },
+  under_promotion: { color: TAC_UNDER_PROMOTION, bg: TAC_UNDER_PROMOTION_BG },
 };
 
 export const TACTIC_FAMILY_ICON: Record<TacticFamily, TacticIcon> = {
@@ -159,18 +172,21 @@ export const TACTIC_FAMILY_ICON: Record<TacticFamily, TacticIcon> = {
   x_ray: ScanLine,
   double_check: ChevronsUp,
   discovered_check: Eye,
-  discovered_attack: Search,
+  discovered_attack: EyeDashed,
   trapped_piece: Footprints,
-  hanging: AlertTriangle,
+  hanging: Crosshair,
   mate: Crown,
-  deflection: Magnet,
+  deflection: Wind,
   intermezzo: Shuffle,
   interference: Split,
   clearance: DoorOpen,
   capturing_defender: ShieldOff,
   // Phase 133 (plan 133-02): attraction + sacrifice
-  attraction: Target,
+  attraction: Magnet,
   sacrifice: Gift,
+  // Move-type families (Quick 260623): en-passant + under-promotion
+  en_passant: ArrowLeftRight,
+  under_promotion: ArrowDownFromLine,
 };
 
 // ─── Mechanism groups (filter panel, Quick 260620-onv) ─────────────────────────
@@ -213,8 +229,9 @@ export interface TacticFamilyDef {
 }
 
 /**
- * The 17 tactic families in filter display order (mechanism-grouped, Quick 260620-onv;
- * tier-3 Advanced group added Quick 260623-6pd; attraction + sacrifice added Phase 133).
+ * The 19 tactic families in filter display order (mechanism-grouped, Quick 260620-onv;
+ * tier-3 Advanced group added Quick 260623-6pd; attraction + sacrifice added Phase 133;
+ * en-passant + under-promotion added Quick 260623).
  * Array order doubles as the chip order within each group — the filter panel groups
  * these by `group` preserving this order. The comparison grid resolves families by
  * `.find(f => f.family === ...)` and renders in server order, so it is unaffected by
@@ -376,6 +393,24 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     chipLabel: 'sacrifice',
     definition: 'A piece or pawn is given up deliberately to gain a positional or tactical advantage.',
     motifs: ['sacrifice'],
+  },
+  // Move-type families (Quick 260623): en-passant + under-promotion unsuppressed (P=1.000 on
+  // the Phase-134 fixture). Both fire only at Tier 5 (residual), so these chips are low-volume.
+  {
+    name: 'En passant',
+    family: 'en_passant',
+    group: 'advanced',
+    chipLabel: 'en-passant',
+    definition: 'A pawn captures an enemy pawn that has just advanced two squares, as if it had moved only one.',
+    motifs: ['en-passant'],
+  },
+  {
+    name: 'Under-promotion',
+    family: 'under_promotion',
+    group: 'advanced',
+    chipLabel: 'under-promotion',
+    definition: 'A pawn promotes to a knight, bishop, or rook instead of a queen to deliver a specific tactic.',
+    motifs: ['under-promotion'],
   },
 ];
 

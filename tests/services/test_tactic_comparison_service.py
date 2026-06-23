@@ -159,12 +159,13 @@ async def _create_test_users(db_session: AsyncSession) -> None:
 
 
 def test_family_mapping_ten_families() -> None:
-    """FAMILY_TO_MOTIF_INTS has the 10 canonical families + 7 tier-3 "Advanced" families = 17.
+    """FAMILY_TO_MOTIF_INTS has 10 canonical + 7 tier-3 + 2 move-type families = 19.
 
     Quick 260623-6pd surfaced the shipped Phase-132 tier-3 motifs (deflection, intermezzo,
     interference, clearance, capturing_defender) as filterable families, expanding the
-    taxonomy from 10 to 15. Phase 133 (plan 133-02) added attraction and sacrifice, raising
-    the count from 15 to 17.
+    taxonomy from 10 to 15. Phase 133 (plan 133-02) added attraction and sacrifice (15 → 17).
+    Quick 260623 added the move-type families en_passant + under_promotion (17 → 19) after
+    they unsuppressed at P=1.000 on the Phase-134 expanded fixture.
     """
     from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
 
@@ -188,6 +189,9 @@ def test_family_mapping_ten_families() -> None:
         # Phase 133 (plan 133-02): attraction + sacrifice unsuppressed
         "attraction",
         "sacrifice",
+        # Move-type families (Quick 260623): en-passant + under-promotion unsuppressed
+        "en_passant",
+        "under_promotion",
     }
     assert set(FAMILY_TO_MOTIF_INTS.keys()) == expected_keys
 
@@ -233,6 +237,9 @@ def test_family_mapping_covers_selected_motifs() -> None:
     # Phase 133 (plan 133-02): attraction + sacrifice unsuppressed
     assert FAMILY_TO_MOTIF_INTS["attraction"] == [10]
     assert FAMILY_TO_MOTIF_INTS["sacrifice"] == [17]
+    # Move-type families (Quick 260623): en-passant (27) + under-promotion (29)
+    assert FAMILY_TO_MOTIF_INTS["en_passant"] == [27]
+    assert FAMILY_TO_MOTIF_INTS["under_promotion"] == [29]
 
 
 def test_family_mapping_fork() -> None:
@@ -243,21 +250,22 @@ def test_family_mapping_fork() -> None:
 
 
 def test_family_mapping_produces_overflow() -> None:
-    """With 17 families, the top-6 selection leaves 11 overflow families (G-01 resolved).
+    """With 19 families, the top-6 selection leaves 13 overflow families (G-01 resolved).
 
     This is the data-layer proof that the 'More Tactics' accordion (D-14) is
     now reachable — it was previously blocked because 6 families == top-6 cap.
     Quick 260623-6pd expanded the taxonomy from 10 to 15 (tier-3 Advanced families);
-    Phase 133 (plan 133-02) added attraction + sacrifice, raising the count to 17.
+    Phase 133 (plan 133-02) added attraction + sacrifice (→ 17); Quick 260623 added the
+    move-type families en_passant + under_promotion (→ 19).
     """
     from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
 
     total = len(FAMILY_TO_MOTIF_INTS)
-    assert total == 17, f"Expected 17 families; got {total}"
-    # top-6 + 11 overflow
-    assert total > 6, "With 17 families, top-6 selection always produces overflow families"
+    assert total == 19, f"Expected 19 families; got {total}"
+    # top-6 + 13 overflow
+    assert total > 6, "With 19 families, top-6 selection always produces overflow families"
     overflow_count = total - 6
-    assert overflow_count == 11, f"Expected 11 overflow families; got {overflow_count}"
+    assert overflow_count == 13, f"Expected 13 overflow families; got {overflow_count}"
 
 
 # ---------------------------------------------------------------------------

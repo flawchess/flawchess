@@ -2,9 +2,9 @@
  * One-sentence definitions for each TacticMotif string (Phase 126).
  *
  * Keys match the TacticMotif Literal strings in app/services/tactic_detector.py.
- * The backend enum has 29 members; the 3 move-type motifs (en-passant, promotion,
- * under-promotion) are intentionally omitted here — chip surfacing for them is out of
- * scope (D-09). Used by TacticMotifChip popover bodies.
+ * The backend enum has 29 members; en-passant and under-promotion are surfaced as
+ * "Advanced" chip families (Quick 260623). Only promotion stays omitted — chip surfacing
+ * for it remains out of scope (D-09). Used by TacticMotifChip popover bodies.
  *
  * Copy guidelines: WHAT the motif is, no jargon, no em-dashes, no p-values.
  */
@@ -42,4 +42,7 @@ export const TACTIC_MOTIF_DEFINITIONS: Record<string, string> = {
   'self-interference': 'One of the opponent\'s own pieces blocks another, creating a weakness that can be exploited.',
   clearance: 'A piece vacates a square or line so another piece can use it more effectively.',
   'capturing-defender': 'The piece defending a key square or piece is captured to remove that protection.',
+  // Move-type families (Quick 260623): en-passant + under-promotion surfaced as Advanced chips.
+  'en-passant': 'A pawn captures an enemy pawn that has just advanced two squares, as if it had moved only one.',
+  'under-promotion': 'A pawn promotes to a knight, bishop, or rook instead of a queen to deliver a specific tactic.',
 };

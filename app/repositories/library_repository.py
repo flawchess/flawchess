@@ -95,8 +95,10 @@ ALLOWED_DECISION_DEPTH_OFFSET: int = 1
 #   families. The trapped_piece detector is currently suppressed in the tagger,
 #   so that chip will typically be empty — tracked separately, not a bug.
 # - "mate" int set is UNCHANGED (ints 7-8, 18-24); _depth_ok reads this key.
-# - Move-type motifs (EN_PASSANT=27, PROMOTION=28, UNDER_PROMOTION=29) are never
-#   present here (chip surfacing is out of scope, per D-09).
+# - Move-type motifs: en-passant (27) and under-promotion (29) are now first-class
+#   families (Quick 260623, unsuppressed at P=1.000 on the expanded fixture — they
+#   fire at TACTIC_CONFIDENCE_HIGH=100 so they pass the chip lever). promotion (28)
+#   stays unmapped (chip surfacing out of scope, per D-09).
 #
 # No DB migration and no data backfill required: game_flaws stores raw motif INTs
 # (SmallInteger); families are a query-time grouping only. Re-mapping family→ints
@@ -179,6 +181,16 @@ FAMILY_TO_MOTIF_INTS: dict[str, list[int]] = {
     ],
     "sacrifice": [
         int(TacticMotifInt.SACRIFICE),
+    ],
+    # Move-type families (Quick 260623): en-passant + under-promotion unsuppressed.
+    # Both fire only at Tier 5 (residual, when no real tactic wins) but at P=1.000 on
+    # the expanded fixture. Surfaced behind the "Advanced" filter group. promotion (28)
+    # stays unmapped (D-09). self-interference (14) remains the only unmapped tier-3 int.
+    "en_passant": [
+        int(TacticMotifInt.EN_PASSANT),
+    ],
+    "under_promotion": [
+        int(TacticMotifInt.UNDER_PROMOTION),
     ],
 }
 
