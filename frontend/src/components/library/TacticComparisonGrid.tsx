@@ -211,8 +211,6 @@ function TacticBulletRow({ bullet, rowLabel, rowTestId }: TacticBulletRowProps) 
   const family = bullet.family as TacticFamily;
   const familyDef = TACTIC_COMPARISON_FAMILIES.find((f) => f.family === family);
   const familyName = familyDef?.name ?? bullet.family;
-  const familyColors = TACTIC_FAMILY_COLORS[family];
-  const color = familyColors?.color;
   const Icon = TACTIC_FAMILY_ICON[family];
 
   const isZeroEvent = bullet.delta === null;
@@ -237,7 +235,7 @@ function TacticBulletRow({ bullet, rowLabel, rowTestId }: TacticBulletRowProps) 
       {/* Label + delta + popover trigger row */}
       <div className="flex items-center gap-1.5">
         {showIcon && Icon && (
-          <Icon className="h-3.5 w-3.5 shrink-0" style={{ color }} aria-hidden="true" />
+          <Icon className="h-3.5 w-3.5 shrink-0 text-foreground" aria-hidden="true" />
         )}
         {/* Row label: text-sm text-muted-foreground Regular 400 (per UI-SPEC — do NOT
             extend the existing font-medium on the CardHeader family label to these rows). */}
@@ -327,13 +325,12 @@ function FamilyCard({ family, missed, allowed }: FamilyCardProps) {
   const familyDef = TACTIC_COMPARISON_FAMILIES.find((f) => f.family === family);
   const familyName = familyDef?.name ?? family;
   const Icon = TACTIC_FAMILY_ICON[family as TacticFamily];
-  const color = TACTIC_FAMILY_COLORS[family as TacticFamily]?.color;
 
   return (
     <Card data-testid={`tactic-family-card-${family}`}>
       <CardHeader data-testid={`tactic-family-header-${family}`}>
         <span className="inline-flex items-center gap-1.5">
-          {Icon && <Icon className="h-4 w-4 shrink-0" style={{ color }} aria-hidden="true" />}
+          {Icon && <Icon className="h-4 w-4 shrink-0 text-foreground" aria-hidden="true" />}
           {familyName}
         </span>
       </CardHeader>
