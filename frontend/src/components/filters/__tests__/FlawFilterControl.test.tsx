@@ -1,9 +1,17 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeAll, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { FlawFilterControl } from '../FlawFilterControl';
 import type { FlawTag } from '@/types/library';
 import type { TacticFamily } from '@/lib/tacticComparisonMeta';
+
+// Tactic tagging is beta-gated (Quick 260623). Mock useUserProfile with a mutable flag:
+// beta=true keeps the tactic sections + collapsible Context for the existing suite;
+// flip to false in the gating block to assert the non-beta layout.
+let mockBetaEnabled = true;
+vi.mock('@/hooks/useUserProfile', () => ({
+  useUserProfile: () => ({ data: { is_guest: false, beta_enabled: mockBetaEnabled }, isLoading: false }),
+}));
 
 // Stub ResizeObserver — required by Radix UI ToggleGroup (added Phase 129 TACUI-06).
 // [Rule 1 - Bug] The ToggleGroup uses @radix-ui/react-use-size which calls ResizeObserver;
@@ -28,6 +36,7 @@ const defaultProps = {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  mockBetaEnabled = true;
 });
 
 /**
@@ -394,6 +403,29 @@ describe('FlawFilterControl', () => {
     it('Context toggle is present even when showTacticFilter is false (Games tab)', () => {
       render(<FlawFilterControl {...defaultProps} />);
       expect(screen.getByTestId('filter-flaw-context-toggle')).toBeTruthy();
+    });
+  });
+
+  // Tactic tagging is hidden for non-beta users (Quick 260623): no tactic sections,
+  // and the Context section renders inline (no collapsible toggle).
+  describe('beta gating (Quick 260623)', () => {
+    beforeEach(() => {
+      mockBetaEnabled = false;
+    });
+
+    it('hides all tactic sections even when showTacticFilter is set', () => {
+      render(<FlawFilterControl {...defaultProps} showTacticFilter />);
+      expect(screen.queryByTestId('filter-flaw-tactic-group-piece_attacks')).toBeNull();
+      expect(screen.queryByTestId('filter-flaw-advanced-toggle')).toBeNull();
+      expect(screen.queryByTestId('filter-tactic-orientation')).toBeNull();
+    });
+
+    it('renders the Context section inline with no collapsible toggle', () => {
+      render(<FlawFilterControl {...defaultProps} showTacticFilter />);
+      expect(screen.queryByTestId('filter-flaw-context-toggle')).toBeNull();
+      // Family groups + severity are visible without expanding anything.
+      expect(screen.getByTestId('filter-flaw-family-tempo')).toBeTruthy();
+      expect(screen.getByTestId('filter-flaw-severity-blunder')).toBeTruthy();
     });
   });
 });

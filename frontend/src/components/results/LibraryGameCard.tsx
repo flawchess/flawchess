@@ -427,6 +427,7 @@ export function LibraryGameCard({
   }, [highlight, cycle, game.flaw_markers, outlinedPlies]);
 
   const { data: userProfile } = useUserProfile();
+  const betaEnabled = userProfile?.beta_enabled ?? false;
   // Mobile (<sm) miniboard spans 50% of the viewport width; sm+ keeps the fixed size.
   const mobileBoardSize = useMiniBoardSize(MOBILE_BOARD_SIZE);
 
@@ -548,7 +549,9 @@ export function LibraryGameCard({
   // Board arrows: blue best-move arrow plus a colored played-move arrow for the
   // flawed move (red = blunder, orange = mistake, yellow = inaccuracy).
   const boardArrows = useMemo(() => {
-    const depths = activePly != null ? tacticDepthByPly.get(activePly) : undefined;
+    // Depth badges are a beta-only surface — non-beta users see arrows without numbers.
+    const depths =
+      betaEnabled && activePly != null ? tacticDepthByPly.get(activePly) : undefined;
     const arrows: { from: string; to: string; color: string; label?: string; labelColor?: string }[] =
       [];
     if (bestMoveSquares) {
@@ -570,7 +573,7 @@ export function LibraryGameCard({
       });
     }
     return arrows.length > 0 ? arrows : undefined;
-  }, [bestMoveSquares, hoverEntry, hoverSeverity, activePly, tacticDepthByPly]);
+  }, [bestMoveSquares, hoverEntry, hoverSeverity, activePly, tacticDepthByPly, betaEnabled]);
 
   const whiteName = game.white_username ?? '?';
   const blackName = game.black_username ?? '?';

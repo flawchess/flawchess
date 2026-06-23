@@ -115,6 +115,7 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
   const [flawFilter] = useFlawFilterStore();
   const { data, isLoading, isError } = useLibraryGame(open ? flaw.game_id : null, flawFilter);
   const { data: userProfile } = useUserProfile();
+  const betaEnabled = userProfile?.beta_enabled ?? false;
   // Mobile (<sm) miniboard spans 40% of the viewport width; sm+ keeps the fixed
   // size. The desktop body uses the literal DESKTOP_BOARD_SIZE instead (sm+ only).
   const mobileBoardSize = useMiniBoardSize(MOBILE_BOARD_SIZE);
@@ -140,12 +141,13 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
   // the flaw-move arrow; the missed tactic at the end of the blue best-move arrow.
   // Allowed is decision-anchored (+1 vs missed) because the opponent's refutation
   // line starts one ply after the shared pre-flaw decision board (Quick 260621-qz9).
+  // Depth badges are a beta-only surface — non-beta users see arrows without numbers.
   const allowedDepthLabel =
-    flaw.allowed_tactic_depth != null
+    betaEnabled && flaw.allowed_tactic_depth != null
       ? String(toDisplayDepthForOrientation(flaw.allowed_tactic_depth, 'allowed'))
       : undefined;
   const missedDepthLabel =
-    flaw.missed_tactic_depth != null
+    betaEnabled && flaw.missed_tactic_depth != null
       ? String(toDisplayDepthForOrientation(flaw.missed_tactic_depth, 'missed'))
       : undefined;
   const boardArrows = [
