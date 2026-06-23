@@ -63,6 +63,11 @@ from tests.scripts.tagger.motif_theme_map import MOTIF_TO_THEMES  # noqa: E402
 # Named constants (no magic numbers per CLAUDE.md)
 # ---------------------------------------------------------------------------
 
+# Default random seed for reproducible sampling.
+# Used as both the --seed argparse default and the base for per-motif re-seeds
+# (hash((DEFAULT_SEED, motif))) so each motif's draw is independent (Pitfall 1).
+DEFAULT_SEED: int = 42
+
 # Number of puzzles to sample per (motif, rating_band) stratum.
 # Override at the CLI with --samples-per-stratum. 200 -> ~15-17k rows total before
 # the train/test split (4x the original 50/stratum fixture).
@@ -93,7 +98,19 @@ _FIXTURE_TRAIN_PATH = _FIXTURE_DIR / "detector_fixture_train.csv"
 _FIXTURE_TEST_PATH = _FIXTURE_DIR / "detector_fixture_test.csv"
 
 # Fixture CSV column header (order matters for readers).
-_FIXTURE_HEADER: list[str] = ["PuzzleId", "FEN", "FirstMove", "PV", "Themes", "Rating"]
+# PreFlawFEN = the published pre-blunder FEN (cook's game.board()). FEN = board-after-flaw.
+# Storing the pre-flaw FEN lets the gate rebuild the detector board exactly as production does
+# (board_before + push(flaw_move)), so the flaw move sits on the board's move stack — which is
+# what production passes and what cook's recapture/first-move predicates need.
+_FIXTURE_HEADER: list[str] = [
+    "PuzzleId",
+    "FEN",
+    "PreFlawFEN",
+    "FirstMove",
+    "PV",
+    "Themes",
+    "Rating",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -224,6 +241,7 @@ def _stream_puzzle_csv(puzzle_path: Path) -> list[dict[str, str]]:
                     {
                         "PuzzleId": puzzle_id,
                         "FEN": board_after_fen,
+                        "PreFlawFEN": fen_raw,
                         "FirstMove": first_move,
                         "PV": pv_str,
                         "Themes": themes_raw,
@@ -248,9 +266,28 @@ def _stream_puzzle_csv(puzzle_path: Path) -> list[dict[str, str]]:
 # ---------------------------------------------------------------------------
 
 
+# Modulus to fold the SHA-1 per-motif digest into a 32-bit int random.seed accepts.
+_PER_MOTIF_SEED_MODULUS: int = 2**32
+
+
+def _per_motif_seed(seed: int, motif: str) -> int:
+    """Return a deterministic per-motif RNG seed from (base seed, motif).
+
+    Uses SHA-1 over "seed:motif" rather than Python's builtin hash(), because
+    hash() of a tuple containing a str is salted per-process (PYTHONHASHSEED),
+    which would make the fixtures non-reproducible across runs AND break the
+    Option-B isolation guarantee (each run would draw a different sample). This
+    mirrors the deterministic SHA-1 approach already used by _is_test_puzzle.
+    """
+    digest = hashlib.sha1(f"{seed}:{motif}".encode("utf-8")).hexdigest()
+    return int(digest, 16) % _PER_MOTIF_SEED_MODULUS
+
+
 def _stratified_sample(
     candidates: list[dict[str, str]],
     samples_per_stratum: int = SAMPLES_PER_STRATUM,
+    oversample_map: dict[str, int] | None = None,
+    seed: int = DEFAULT_SEED,
 ) -> list[dict[str, str]]:
     """Stratified-sample N puzzles per (motif, rating_band) from candidates.
 
@@ -258,12 +295,21 @@ def _stratified_sample(
     1. Build a pool per (motif, rating_band).
     2. If a pool has < MIN_STRATUM_SIZE entries, collapse that band into the
        motif-level pool (all rating bands combined for that motif).
-    3. Sample min(samples_per_stratum, pool_size) from each stratum.
+    3. Sample min(cap, pool_size) from each stratum, where cap is
+       oversample_map.get(motif, samples_per_stratum) (D-EXP-02 Option B).
     4. Deduplicate by PuzzleId (a puzzle may match multiple motifs but is
        included at most once per stratum it was sampled into).
 
+    Per-motif RNG re-seed (Pitfall 1 mitigation): before processing each motif
+    the RNG is re-seeded with hash((seed, motif)) so each motif's draw is
+    independent of every earlier motif's cap. This collapses the isolation
+    blast radius to ONLY the multi-label leakage (puzzles co-occurring in both
+    the target motif and an unaffected motif).
+
     Prints coverage counts per stratum for inspection.
     """
+    oversample_map = oversample_map or {}
+
     # pool: (motif, band) -> list of candidate dicts
     pool: dict[tuple[str, str], list[dict[str, str]]] = defaultdict(list)
 
@@ -283,6 +329,13 @@ def _stratified_sample(
 
     print(f"\nStratified coverage ({samples_per_stratum} per stratum, min {MIN_STRATUM_SIZE}):")
     for motif in sorted(MOTIF_TO_THEMES.keys()):
+        # Per-motif re-seed (Pitfall 1): isolates each motif's draw so raising
+        # one motif's cap does not change any other motif's selected PuzzleIds
+        # (except for multi-label co-occurrences, which are the intended residue).
+        # MUST be a deterministic hash (not builtin hash(), which is salted per
+        # process) so the draw is reproducible and the isolation holds run-to-run.
+        random.seed(_per_motif_seed(seed, motif))
+        cap = oversample_map.get(motif, samples_per_stratum)
         for band in all_bands:
             band_pool = pool.get((motif, band), [])
             if len(band_pool) < MIN_STRATUM_SIZE:
@@ -291,7 +344,7 @@ def _stratified_sample(
                 if not fallback_pool:
                     print(f"  {motif} / {band}: 0 puzzles — skipped (collapsed + no fallback)")
                     continue
-                n = min(samples_per_stratum, len(fallback_pool))
+                n = min(cap, len(fallback_pool))
                 sampled = random.sample(fallback_pool, n)
                 new = [r for r in sampled if r["PuzzleId"] not in selected_ids]
                 for r in new:
@@ -303,7 +356,7 @@ def _stratified_sample(
                     f"sampled {len(new)} new)"
                 )
             else:
-                n = min(samples_per_stratum, len(band_pool))
+                n = min(cap, len(band_pool))
                 sampled = random.sample(band_pool, n)
                 new = [r for r in sampled if r["PuzzleId"] not in selected_ids]
                 for r in new:
@@ -401,8 +454,19 @@ def main() -> None:
     parser.add_argument(
         "--seed",
         type=int,
-        default=42,
-        help="Random seed for reproducible sampling (default: 42)",
+        default=DEFAULT_SEED,
+        help=f"Random seed for reproducible sampling (default: {DEFAULT_SEED})",
+    )
+    parser.add_argument(
+        "--oversample-motifs",
+        nargs="*",
+        default=[],
+        metavar="MOTIF:N",
+        help=(
+            "Per-motif oversample caps as 'motif:N' pairs (D-EXP-02 Option B). "
+            "Raises the per-stratum sample cap for the named motif(s) only. "
+            "Example: --oversample-motifs trapped-piece:1000 en-passant:500"
+        ),
     )
     args = parser.parse_args()
 
@@ -410,12 +474,53 @@ def main() -> None:
         print("ERROR: --test-fraction must be in (0, 1).", file=sys.stderr)
         sys.exit(1)
 
+    # Parse --oversample-motifs tokens into a dict[str, int].
+    oversample_map: dict[str, int] = {}
+    for token in args.oversample_motifs or []:
+        parts = token.split(":")
+        if len(parts) != 2:
+            print(
+                f"ERROR: --oversample-motifs token {token!r} must be 'motif:N'.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        motif_key, cap_str = parts
+        if motif_key not in MOTIF_TO_THEMES:
+            print(
+                f"ERROR: --oversample-motifs motif {motif_key!r} is not a known "
+                f"MOTIF_TO_THEMES key. Known keys: {sorted(MOTIF_TO_THEMES)}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        try:
+            cap_val = int(cap_str)
+        except ValueError:
+            print(
+                f"ERROR: --oversample-motifs cap {cap_str!r} for motif {motif_key!r} "
+                f"is not a valid integer.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if cap_val <= 0:
+            print(
+                f"ERROR: --oversample-motifs cap for {motif_key!r} must be a positive "
+                f"integer, got {cap_val}.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        oversample_map[motif_key] = cap_val
+
     random.seed(args.seed)
 
     print(f"Streaming puzzles from: {args.puzzle_path}", flush=True)
     candidates = _stream_puzzle_csv(args.puzzle_path)
 
-    sampled = _stratified_sample(candidates, args.samples_per_stratum)
+    sampled = _stratified_sample(
+        candidates,
+        args.samples_per_stratum,
+        oversample_map=oversample_map,
+        seed=args.seed,
+    )
     if not sampled:
         print("ERROR: no puzzles matched any motif in MOTIF_TO_THEMES.", file=sys.stderr)
         sys.exit(1)

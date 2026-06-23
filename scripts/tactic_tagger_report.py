@@ -36,10 +36,9 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-import chess
 
 from app.services.tactic_detector import _INT_TO_MOTIF, detect_tactic_motif
-from tests.scripts.tagger.conftest import PuzzleRow, _load_split
+from tests.scripts.tagger.conftest import PuzzleRow, _load_split, build_detector_board
 from tests.scripts.tagger.motif_theme_map import MOTIF_TO_THEMES, UNVALIDATED_MOTIFS
 from tests.scripts.tagger.precision_floors import SUPPRESSED_MOTIFS
 
@@ -148,8 +147,11 @@ GOALS: dict[str, GoalSpec] = {
     # Phase 128.1-01 new Tier-2 real-geometry motifs (aspirational, precision-first)
     # discovered-check: TRAIN 0.880 — goal is to hold or exceed the current value
     "discovered-check": {"precision": 0.85, "recall": None},
-    # trapped-piece: SUPPRESSED (only-FP in harness) — exclude from GOALS; its
-    # precision is driven by the D-06 strict gate, not a detector-tuning loop.
+    # trapped-piece: Phase 134-02 cook predicate reimplementation. Aspirational
+    # precision target 0.80 (baseline P(train)=0.249 on expanded 1065-row fixture).
+    # Still SUPPRESSED (SUPPRESSED_MOTIFS in precision_floors.py); this GOALS entry
+    # drives --check-goals measurement only — Plan 03 ship/suppress decision uses it.
+    "trapped-piece": {"precision": 0.80, "recall": None},
 }
 
 
@@ -199,7 +201,9 @@ def _score(rows: list[PuzzleRow]) -> tuple[dict[str, MotifStats], list[tuple[int
     depth_rating_pairs: list[tuple[int, int]] = []
 
     for row in rows:
-        board = chess.Board(row["fen"])
+        # Build the board the SAME way production calls the detector (flaw move on the move
+        # stack), so the gate verifies cook's recapture/first-move predicates faithfully.
+        board = build_detector_board(row)
         motif_int, _piece, _confidence, depth = detect_tactic_motif(board, row["pv"])
         detected = _INT_TO_MOTIF.get(motif_int) if motif_int is not None else None
         puzzle_themes = set(row["themes"])

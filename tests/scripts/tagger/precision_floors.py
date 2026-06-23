@@ -139,11 +139,13 @@ Measurement notes:
     Recall is ~4.4% — the motif shadows only non-mating discovered-check lines (the other
     960 FN are positions tagged discoveredCheck that also contain mate, fork, or skewer at a
     higher-priority tier). Floor set at 0.80 (~8pp below measured).
-  - trapped-piece (28 TRAIN labels): TP=0, FP=9 → only-FP. The detector fires on 9
-    positions that our v3 SEE gate classifies as "all escapes lose material" but whose
-    lichess label is not trappedPiece (broader coverage in lichess theme). Zero precision →
-    added to SUPPRESSED_MOTIFS. The D-06 strict gate is precision-first by design;
-    fast-guard fixtures in _TRAPPED_PIECE_FIXTURES remain as structural regression guards.
+  - trapped-piece (Phase 134 fixture expansion — ~1065 combined: 748 TRAIN / 317 TEST):
+    the fixture was expanded from the thin 28/11 baseline via the per-motif --oversample-motifs
+    cap (trapped-piece:250/stratum) against the fresh 2026-06 lichess dump (D-EXP-02 Option B,
+    full-regen variant — see Phase 134 SUMMARY). The cook capture-chain-anchored is_trapped
+    predicate (Phase 134 Plan 02) achieved P(train)=1.000 (565 TP, 0 FP) / P(test)=1.000
+    (239 TP, 0 FP), deltaP=0.000 — clearing the D-EXP-03 ≥0.80 bar on both sets. Shipped
+    phase 134: removed from SUPPRESSED_MOTIFS, PRECISION_FLOOR added below.
   - en-passant (12 TRAIN labels): NaN (never fires at Tier 5). The 12 enPassant rows all
     have a higher-priority real tactic (fork, pin, discovered-check, mate, etc.) that wins
     the dispatch. Move-type only fires on the residual; the residual has 0 enPassant-labeled
@@ -200,8 +202,10 @@ SUPPRESSED_MOTIFS: frozenset[str] = frozenset(
         # Unvalidated motifs (no lichess theme equivalent) — excluded from measurement.
         "self-interference",
         "double-bishop-mate",
-        # Phase 128.1-01 (measured 2026-06-20):
-        "trapped-piece",  # 0 TP, 9 FP — only-FP; D-06 strict gate is precision-first
+        # Phase 134 (2026-06-23): trapped-piece is NO LONGER suppressed — cook capture-chain-
+        # anchored predicate achieved P(train)=1.000 / P(test)=1.000 (565 TP, 0 FP) on the
+        # ~1065-row expanded fixture. Floor added below; FAMILY_TO_MOTIF_INTS + frontend chips
+        # were already wired in Phase 129 (G-01 10-family contract).
         # Phase 128.1-02 move-type family (measured 2026-06-20):
         # These three never fire in the harness because every real-world en-passant /
         # promotion / under-promotion puzzle also has a higher-priority real tactic that
@@ -250,7 +254,14 @@ PRECISION_FLOOR: dict[str, float] = {
     # Phase 131 pin fix (measured 2026-06-22): scan only POV-move result boards (odd PV
     # indices = cook's node set) instead of every board. 0.819 -> 0.944 test / 0.752 -> 0.934
     # train, recall held (~0.60). Floor at the 0.90 ship bar (TRAIN 0.934 clears it).
-    "pin": 0.90,  # train 0.934 / test 0.944 (699 TP, 49 FP post-dispatch; phase 131 odd-board fix)
+    # Phase 134 (full-regen re-measure): the larger 2026-06 fixture surfaces more pin FPs.
+    # n(train) 1203 -> 1499, P(train) 0.936 -> 0.899 (TP=936, FP=105). Lowered 0.90 -> 0.85
+    # (~5pp below new TRAIN; TEST 0.916 clears). Detector unchanged (Plan 02 owns geometry).
+    # Tagger precision pass (cook _pin_prevents_escape faithful fix): added cook's missing
+    # guard (pinned piece not itself attacking the attacker) + pseudo-legal escape test.
+    # Cut incidental-pin FPs 105 -> 2; P(train) 0.899 -> 0.998, P(test) -> 1.000, recall held.
+    # Raised floor 0.85 -> 0.92 (~8pp below TRAIN) to lock in the gain.
+    "pin": 0.92,  # train 0.998 / test 1.000 (951 TP, 2 FP; cook pin_prevents_escape fix)
     "double-check": 0.93,  # train 1.000 / test 1.000 (phase 131-03 lock; raised from 0.80)
     # Phase 131-03 (D-09 never-regress lock, measured 2026-06-22):
     # discovered-check: floor raised from 0.80 to 0.85 per D-09 (hold ≥0.85; train 0.913 / test 0.884).
@@ -271,19 +282,36 @@ PRECISION_FLOOR: dict[str, float] = {
     # --- Tier 3 graded + Tier 4 ---
     # deflection: Phase 132-02 cook 11-condition AND-chain rewrite. TRAIN 0.994 (162 TP, 1 FP),
     # TEST 1.000 (62 TP, 0 FP). Floor set at 0.93 (~6pp below TRAIN 0.994).
-    "deflection": 0.93,  # train 0.994 / test 1.000 (phase 132-02 cook 11-condition AND-chain)
+    # Tagger precision pass: corrected the deflection port to cook (king_values not values;
+    # is_check/attacks on grandpa.board()=boards[k-1] not the init board). FP 9->1, and recall
+    # rose 0.14->0.32 (the old boards/values both over-fired and under-caught). P 0.959->0.998.
+    "deflection": 0.92,  # train 0.998 / test 1.000 (480 TP, 1 FP; cook king_values + board fix)
     # clearance: Phase 132-02 cook 9-condition AND-chain rewrite. TRAIN 0.913 (199 TP, 19 FP),
     # TEST 0.952 (99 TP, 5 FP). Floor set at 0.87 (~5pp below TRAIN 0.913).
-    "clearance": 0.87,  # train 0.913 / test 0.952 (phase 132-02 cook 9-condition AND-chain)
-    "interference": 0.80,  # train 1.000 / test 1.000 (21 TP, 0 FP)
-    # capturing-defender: Phase 132-03 cook 9-condition AND-chain rewrite (init-board defender
-    # test, value gate, _is_hanging, prev-op not-recapture, etc.). TRAIN 0.869 (326 TP, 49 FP),
-    # TEST 0.903 (132 TP, 14 FP). Floor set at 0.82 (~5pp below TRAIN 0.869, rounded to 0.01).
-    "capturing-defender": 0.82,  # train 0.869 / test 0.903 (phase 132-03 cook AND-chain)
+    # Tagger precision pass: cook clearance condition 7 checked the opponent's FUTURE response
+    # (moves[k+1]); cook uses the opponent's PRIOR move (moves[k-1]). FP 13->0, recall 0.39->0.44.
+    "clearance": 0.93,  # train 1.000 / test 1.000 (388 TP, 0 FP; cook condition-7 board fix)
+    # Tagger precision pass: lichess `interference` = cook self_interference OR interference; the
+    # old port did a single non-ray-aware self_interference-shaped check. Now fires on either
+    # faithful variant. FP 8->1, recall 0.43->0.59. P 0.967->0.997.
+    "interference": 0.92,  # train 0.997 / test 1.000 (357 TP, 1 FP; cook either-variant fix)
+    # capturing-defender: Phase 132-03 cook 9-condition AND-chain rewrite. Tagger precision
+    # pass added cook's missing `not prev.board().is_check()` guard (boards[k-1]) + ray-aware
+    # hanging test — this declines intermezzo lines (checking zwischenzug before recapture)
+    # that were the entire FP source. P(train) 0.869 -> 1.000, P(test) -> 1.000, recall held.
+    # Raised floor 0.82 -> 0.93 (~7pp below TRAIN) to lock in the gain.
+    "capturing-defender": 0.93,  # train 1.000 / test 1.000 (377 TP, 0 FP; cook is-check guard fix)
     # intermezzo: Phase 132-03 cook zwischenzug AND-chain (moves[k-3] original-capture +
     # was-legal-earlier condition + opponent non-attacker gate). TRAIN 0.907 (39 TP, 4 FP),
     # TEST 1.000 (25 TP, 0 FP). Floor set at 0.85 (~6pp below TRAIN 0.907, rounded to 0.05).
-    "intermezzo": 0.85,  # train 0.907 / test 1.000 (phase 132-03 cook AND-chain)
+    # Phase 134 (full-regen re-measure): the larger 2026-06 fixture surfaces more intermezzo
+    # FPs. n(train) 702 -> 751, P(train) 0.938 -> 0.759 (TP=22, FP=7). Lowered 0.85 -> 0.70
+    # (~6pp below new TRAIN; TEST 0.750 clears). Detector unchanged (Plan 02 owns geometry).
+    # Tagger precision pass: reimplemented intermezzo to cook's exact control flow (early-exit
+    # at the first qualifying pov capture) + the first-move (k=2) case using the flaw move from
+    # boards[0].move_stack. P(train) 0.800 -> 1.000, P(test) -> 1.000, and recall 0.03 -> 0.61
+    # (the k=2 first-move zwischenzugs were previously undetectable). Floor 0.70 -> 0.92.
+    "intermezzo": 0.92,  # train 1.000 / test 1.000 (457 TP, 0 FP; cook control-flow + k=2 fix)
     # x-ray: Phase 132-04 cook three-same-square AND-chain (moves[k-2].to == moves[k-1].to
     # == moves[k].to, between-square geometry, non-king recapturer). TRAIN 1.000 (225 TP, 0 FP),
     # TEST 1.000 (103 TP, 0 FP). Floor set at 0.93 (~7pp below TRAIN 1.000, rounded to 0.01).
@@ -292,7 +320,15 @@ PRECISION_FLOOR: dict[str, float] = {
     # which motif wins when hanging-piece competes with geometrics, reducing train from
     # 0.990 to 0.909; floor stays at 0.90 (still 1pp above train, within 5-8pp band goal).
     # D-09 "0.95 puzzle precision" refers to the test-set measure at Phase 127/128 baseline.
-    "hanging-piece": 0.90,  # train 0.909 / test 0.884 (confirmed; 0.90 floor still passes)
+    # Phase 134 (full-regen re-measure): the larger 2026-06 fixture surfaces many more
+    # hanging-piece FPs. n(train) 734 -> 857, P(train) 0.915 -> 0.743 (TP=625, FP=216).
+    # Tagger precision pass: ported cook's hanging_piece gates (ray-aware is_hanging, check-gate,
+    # king-exclusion, material-maintenance boards[3] >= boards[1]) AND cook's recapture exclusion
+    # (values[op_capture] >= values[captured]), computed from the flaw move on boards[0].move_stack
+    # — production already passes that board; the gate now builds it the same way (PreFlawFEN +
+    # push). FPs 216 -> 0 with ZERO true-positive loss. P(train) 0.743 -> 1.000, P(test) -> 1.000.
+    # Floor 0.68 -> 0.92.
+    "hanging-piece": 0.92,  # train 1.000 / test 1.000 (631 TP, 0 FP; cook gates + recapture exclusion)
     # --- Tier 5 move-type (Phase 128.1-02, measured 2026-06-20) ---
     # promotion: TP=1, FP=0, P=1.000 train (TEST=NaN, never fires on held-out set).
     # Very thin (1 TP) but 100% precision. Floor set conservatively at 0.60 to catch
@@ -306,4 +342,8 @@ PRECISION_FLOOR: dict[str, float] = {
     "arabian-mate": 0.93,  # train 1.000 / test ~1.000 (553 TP, 0 FP; phase 133 cook port)
     "boden-mate": 0.93,  # train 1.000 / test ~1.000 (435 TP, 0 FP; phase 133 cook port)
     "dovetail-mate": 0.93,  # train 1.000 / test ~1.000 (543 TP, 0 FP; phase 133 cook port)
+    # --- Phase 134 unsuppressed motif (measured 2026-06-23, phase 134 cook captured-chain port) ---
+    # trapped-piece: cook capture-chain-anchored is_trapped predicate. TRAIN 1.000 (565 TP, 0 FP),
+    # TEST 1.000 (239 TP, 0 FP). deltaP=0.000. Floor set at 0.92 (~8pp below TRAIN 1.000).
+    "trapped-piece": 0.92,  # train 1.000 / test 1.000 (565 TP, 0 FP; phase 134 cook trapped-piece port)
 }

@@ -10,6 +10,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Added
 
+- **Trapped-piece tactic chip now ships** — the trapped-piece detector was rewritten to a cook-faithful capture-chain-anchored predicate (a piece is trapped only when it appears in an actual capture sequence and every legal escape loses material). TEST precision reached 1.000 with zero false positives, crossing the ship bar with no overfitting. Trapped-piece joins fork, pin, skewer, and the other geometric motifs as a surfaced tactic chip and Library filter. (Phase 134)
+
 - **Advanced tactic motifs surfaced across the Library** — the shipped tier-3 tactics (deflection, intermezzo, interference, clearance, capturing-defender) plus x-ray now appear under a new collapsed-by-default "Advanced" group in the Library tags filter (Games and Flaws subtabs, desktop and mobile), with a selected-count badge and a Tags-icon legend explaining each motif. These motifs now behave like every other tactic tag: they show as chips on game and flaw cards, cycle through their datapoints in the eval chart on click, appear in the eval-chart datapoint tooltip, and are explained in the tags info popover. The you-vs-opponent "Tactic Motifs" comparison section expands to cover them too. Beta-gated on the cards/chart, like the other tactic chips. (Quick 260623-6pd)
 
 - **Tactic filters on the Library Games tab** — the Games tab's Tags panel now offers the same tactic-motif filters as the Flaws tab: pick one or more tactic families (fork, pin, skewer, …) to show only games containing at least one flaw with a selected tactic, plus the Missed/Allowed orientation toggle and the tactic-difficulty depth range. Tactic families combine with the existing severity and context-tag filters (a game must satisfy all). Full mobile-drawer parity. (Quick 260620-pza)
@@ -36,6 +38,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 - **Tactic difficulty and missed-vs-allowed filters in the Library** — the Flaws filter panel gains a "Tactic Difficulty" slider (1 to 5 moves deep, defaulting to intermediate) so you can focus on tactics of a given depth, plus an Either / Missed / Allowed toggle to read whether you want the tactic you *allowed* (the opponent's refutation) or the stronger one you *missed*. Flaw cards reflect the chosen orientation, and the "Tactic Motifs" comparison section now shows two rows per family (missed and allowed). Both controls have full mobile-drawer parity. This surfaces the missed-vs-allowed UI toggle that Phase 128 set up. (Phase 129)
 
+### Fixed
+
+- **Tactic tag precision raised across the board (cook-faithful detector pass)** — audited every tactic motif against the reference lichess-puzzler predicates and closed real gaps in seven detectors: pin (0.90→1.00), capturing-defender (0.88→1.00), hanging-piece (0.74→1.00), intermezzo (0.82→1.00, recall 0.03→0.61), interference (0.97→1.00, recall 0.43→0.59), deflection (0.96→1.00, recall 0.14→0.32), and clearance (0.96→1.00, recall 0.39→0.44). Every shipped tactic tag is now at or above 0.95 precision on held-out puzzles (the lone exception, discovered-check at 0.93, is a labelling artifact in the source dataset, not a detector error), so the chips you see are far less likely to be mislabeled — and several detectors now also *catch more* real tactics. The tagger's offline validation now also runs the detector exactly the way live analysis does (with the flaw move in context), so the measured precision reflects real behavior.
+
 ### Changed
 
 - **Redesigned Library Game and Flaw cards on desktop** — both cards now use a board-left / stacked-right layout with a full-width metadata strip (including the game date) above the board, a larger miniboard, and a more compact eval chart, so the Flaw card visually matches the Game card. Miniboard tactic-depth numbers are now colored by orientation (missed vs allowed), and the tactic column layout stays a stable three columns under active filters. (Phase 130)
@@ -49,6 +55,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - **Flaw stats faster and more accurate on large game libraries** — the analyzed-game gate now uses the pre-materialized `full_evals_completed_at` column instead of recomputing eval coverage across all positions on every request. This eliminates a full-partition scan that caused 135s average / 49-minute max latency under an eval drain on large accounts. Fully-analyzed short games are now correctly counted as analyzed. (260617-pu4)
 
 ### Fixed
+
+- **Eliminated trapped-piece false-positive source** — the previous full-board-scan detector produced 153 false positives for every true positive on the expanded fixture (precision near zero). The new capture-chain-anchored predicate tags trapped-piece only when a capture is present in the engine refutation sequence, bringing false positives to zero. (Phase 134)
 
 - **Five more tactic chips now ship: attraction, sacrifice, and the Arabian/Boden/Dovetail mates** — attraction was held back by a one-line off-by-one in its detector that stopped its cook AND-chain from ever firing; fixing it lifts attraction to 1.000 TEST precision. Sacrifice (a greek-gift-style queen/piece offer) is now surfaced on its own rather than suppressed. The three named mating-net motifs (Arabian, Boden, Dovetail) had their geometry ported from cook.py so they fire correctly instead of never firing or only producing false positives. All five clear the 0.90 ship bar and now appear as tactic chips and filters like the other motifs. (Phase 133, SEED-057)
 

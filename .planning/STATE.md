@@ -2,18 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.28
 milestone_name: Tactic Tagging
-status: Phase 133 shipped — squash-merged to main (42061d9d)
-stopped_at: Completed 133-02-PLAN.md
-last_updated: "2026-06-23T06:03:05.964Z"
+status: completed
+stopped_at: Completed 134-03-PLAN.md
+last_updated: "2026-06-23T10:18:46.734Z"
 last_activity: 2026-06-23
+last_activity_desc: Phase 134 marked complete
 progress:
-  total_phases: 16
-  completed_phases: 11
-  total_plans: 39
-  completed_plans: 39
-  percent: 69
-current_phase: 133
-current_phase_name: close-suppressed-tactic-gaps-attraction-fix-sacrifice-unsupp
+  total_phases: 17
+  completed_phases: 12
+  total_plans: 42
+  completed_plans: 42
+  percent: 71
+current_phase: 134
+current_phase_name: trapped-piece-fixture-expansion-option-b-cook-predicate-reim
 ---
 
 # Project State: FlawChess
@@ -22,8 +23,8 @@ current_phase_name: close-suppressed-tactic-gaps-attraction-fix-sacrifice-unsupp
 
 Milestone: v1.28 Tactic Tagging — all active phases (124, 125, 126, 127, 128, 128.1, 129) COMPLETE
 Phase 129 (tactic-filter-ui): VERIFIED — UAT 2/2 passed, G-01 resolved live, VERIFICATION human-verified
-Status: Phase 133 shipped — squash-merged to main (42061d9d)
-Last activity: 2026-06-23
+Status: Phase 134 complete
+Last activity: 2026-06-23 — Phase 134 marked complete
 
 ## Project Reference
 
@@ -442,6 +443,7 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 | Phase 132 P01 | 5m | 2 tasks | 2 files |
 | Phase 132 P03 | 2.5h | 3 tasks | 5 files |
 | Phase 132 P05 | 9 minutes | 2 tasks | 1 files |
+| Phase 134 P01 | ~110min | 2 tasks | 5 files |
 
 ## Decisions
 
@@ -550,11 +552,14 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 - [Phase 133-02]: 5 motifs unsuppressed: attraction/sacrifice/arabian-mate/boden-mate/dovetail-mate. PRECISION_FLOOR=0.93 for all. FAMILY_TO_MOTIF_INTS now 17 keys.
 - [Phase 133-02]: dovetail-mate moved to query-suppressed at fixture level: cook port strict queen-adjacent-to-king check makes TRAIN fixtures dispatch as 'mate'. Remains in PRECISION_FLOOR (1.000 on CC0 harness).
 - [Phase 133-02]: Partition test updated to use _VALIDATED_IDS (not first-fixture label): attraction now displaces other motifs via depth-primary dispatch.
+- [Phase 134-01]: D-EXP-02 byte-identity-vs-HEAD gate OVERRIDDEN (user-approved): fresh 2026-06 lichess dump shares 0 row identity with older-dump committed fixtures, so byte-identity is unattainable for any re-sample; chose full regen + full floor re-measure. Added --oversample-motifs per-motif cap (Option B) with a deterministic SHA-1 per-motif re-seed (builtin hash() is salted/non-reproducible — Rule-1 fix).
+- [Phase 134-01]: trapped-piece ground truth expanded 39 -> 1065 combined (748 train / 317 test) via trapped-piece:250/stratum. Stays SUPPRESSED with NO floor (P 0.249 on expanded fixture); detector rewrite = Plan 02, conditional unsuppress = Plan 03.
+- [Phase 134-01]: Floors lowered (lower-only) on the larger fixture: pin 0.90->0.85, intermezzo 0.85->0.70, hanging-piece 0.90->0.68; all other floors unchanged; gate green. No detector geometry changed.
 
 ## Session
 
-**Last session:** 2026-06-23T07:40:00.000Z
-**Stopped at:** Completed 133-02-PLAN.md
+**Last session:** 2026-06-23T10:12:24.866Z
+**Stopped at:** Completed 134-01-PLAN.md
 **Resume file:** None
 | 170 | Flaw-card: open game on flawed ply, remove broken datapoint pulse | 2026-06-19 | fe4910d4 | — |
 | 189 | Move severity into collapsed Context; relabel Orientation->Tactic Missed vs Allowed, Tactic motif->Tactic Type; label severity group | 2026-06-20 | 45b19cb1 | — |

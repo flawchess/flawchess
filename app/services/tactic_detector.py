@@ -465,15 +465,52 @@ def detect_hanging_piece(
 
     first_move = moves[0]
     board_before = boards[0]
+    to_square = first_move.to_square
 
-    # Must be a capture (piece on destination square before the move)
-    target = board_before.piece_at(first_move.to_square)
-    if target is None or target.piece_type == chess.PAWN:
+    # Must be a capture of a non-pawn, non-king piece. A king can never legally be
+    # captured (cook never sees one as the captured piece); excluding it guards against
+    # degenerate fixture PVs that "capture" onto the king's square.
+    target = board_before.piece_at(to_square)
+    is_capturable = target is not None and target.piece_type not in (chess.PAWN, chess.KING)
+    # cook gate: if the position before the capture is in check and we did not
+    # capture a non-pawn, hanging-piece does not apply (the move is forced defence).
+    if board_before.is_check() and not is_capturable:
+        return False, None, None
+    if not is_capturable:
         return False, None, None
 
-    # Target must be undefended (hanging) on the board before capture
-    if not _is_hanging(board_before, first_move.to_square, not pov):
+    # Target must be hanging on the board before capture. cook's util.is_hanging is
+    # ray-aware (`not is_defended`) — a piece defended only through a friendly ray is
+    # NOT hanging. Our prior non-ray-aware `_is_hanging` over-fired on such pieces.
+    if _is_defended(board_before, target, to_square):
         return False, None, None
+
+    # cook recapture exclusion: if the flaw move (the move that created boards[0], carried on
+    # its move stack) landed on our capture square AND captured a piece of value >= the piece
+    # we are now capturing, this is a recapture of an equal/greater trade, NOT a hanging piece.
+    # boards[0].move_stack carries the flaw move in production (board_after_flaw = board_before
+    # + push(flaw_move)) and in the gate (rebuilt the same way). A bare/stackless board (the
+    # "missed" pass) skips the exclusion. This is the dominant hanging-piece FP source.
+    if board_before.move_stack:
+        flaw_move = board_before.peek()
+        if flaw_move.to_square == to_square:
+            pre_flaw = board_before.copy()
+            pre_flaw.pop()
+            op_capture = pre_flaw.piece_at(to_square)
+            if op_capture is not None and _piece_value(op_capture.piece_type) >= _piece_value(
+                target.piece_type
+            ):
+                return False, None, None
+
+    # cook material-maintenance gate: a clean hanging-piece win KEEPS the material.
+    # Short solutions (no second pov move at boards[3]) fire unconditionally; otherwise
+    # require material after the second pov move >= material after the first, so we do
+    # not tag positions where the grabbed piece is given straight back (sac/attraction/
+    # trade lines — the dominant endgame false-positive source). boards[1] = after our
+    # first move (cook mainline[1]); boards[3] = after our second move (cook mainline[3]).
+    if len(boards) >= 4:
+        if _material_diff(boards[3], pov) < _material_diff(boards[1], pov):
+            return False, None, None
 
     victim_type = target.piece_type
     return True, victim_type, 0  # depth 0: hanging piece is always first pov move
@@ -544,18 +581,22 @@ def _pin_prevents_escape(
         # Higher-value pinned piece is always meaningful
         if pinned_val > attacker_val:
             return True
-        # Hanging and can't escape off the pin line
-        if pinned_is_hanging:
-            # Check if ANY legal move for the pinned piece escapes the pin ray
-            can_escape = False
-            for move in board.legal_moves:
-                if move.from_square != pinned_sq:
-                    continue
-                if move.to_square not in pin_ray:
-                    can_escape = True
-                    break
-            if not can_escape:
-                return True
+        # cook second branch: the pinned piece is hanging, does NOT itself defend by
+        # attacking the attacker (if it attacks the attacker back, capturing is a real
+        # defence so the pin is not trapping it), AND a pseudo-legal escape off the pin
+        # line EXISTS — meaning the pin is precisely what prevents that escape. The prior
+        # implementation omitted the "pinned not attacking attacker" guard, firing on
+        # incidental pins where the pinned piece attacked its own pinner (the dominant
+        # pin false-positive source, e.g. a pawn pinned by the queen it also attacks).
+        if (
+            pinned_is_hanging
+            and pinned_sq not in board.attackers(not pov, attacker_sq)
+            and any(
+                m.from_square == pinned_sq and m.to_square not in pin_ray
+                for m in board.pseudo_legal_moves
+            )
+        ):
+            return True
     return False
 
 
@@ -851,124 +892,141 @@ def detect_discovered_attack(
     return False, None, None
 
 
-def _escape_squares_all_lose_material(board: chess.Board, victim_sq: int, pov: chess.Color) -> bool:
-    """Return True if EVERY legal escape square for the piece at victim_sq loses
-    material for the escaping side.
+def _piece_is_trapped(board: chess.Board, sq: int, pov: chess.Color) -> bool:
+    """Return True if the opponent piece at sq is trapped on the given board.
 
-    D-06 strict precision gate: an escape is SAFE if pov has no attacker on the
-    destination, or if pov's cheapest attacker is worth AT LEAST as much as the
-    victim (pov doesn't gain from capturing).  An escape is UNSAFE only when the
-    victim lands on a square where pov can capture it profitably: pov's cheapest
-    attacker value is strictly less than the victim's value.
+    Reimplemented from cook's util.is_trapped prose (AGPL boundary — no source
+    copy from cook.py/util.py). Reuses _is_in_bad_spot and _piece_value (the
+    existing faithful cook ports at L318 and L270).
 
-    We intentionally do not model full SEE recapture chains: that would require
-    detecting the "same-piece double-duty" problem (a pov piece that attacks both
-    the victim and an escape square cannot do both simultaneously). The simpler rule
-    "pov can take the victim with a strictly cheaper piece" is precise enough for
-    this motif and avoids false positives from queen-guarded escape squares where
-    the queen is the same piece that's already attacking the victim.
+    All of the following must hold:
+    1. The board is NOT in check and the piece is NOT pinned (immobility from
+       check/pin is a different motif, excluded here).
+    2. The piece is not a pawn and not a king (only N/B/R/Q can be trapped).
+    3. The piece is currently in a bad spot (_is_in_bad_spot: attacked AND either
+       hanging or capturable by a strictly-lower-value non-king attacker).
+    4. For every legal move of that piece:
+       a. If the escape captures an opponent (pov) piece worth >= the trapped
+          piece's own value → NOT trapped (trade-up/equal escape).
+       b. Push the escape and check: if the piece is NOT in a bad spot on the
+          new square → NOT trapped (safe square found).
+    5. If no escape avoided a bad spot and none captured equal/greater → trapped.
 
-    D-06 also requires a non-empty escape set: a pinned piece has no legal escapes
-    but is not "trapped" in the material-loss sense — return False in that case.
+    Empty-escape-set choice (Open Q 2 / D-06): if the piece has no legal moves at
+    all (fully blocked, not technically pinned but no legal escapes), return False.
+    This is a deliberate precision-first deviation from cook (cook returns True for
+    immobile-attacked non-pawn/non-king). The CC0 fixture measurement showed no
+    recall cliff from this exclusion on the expanded ~1065-row fixture.
 
     Helper extracted from detect_trapped_piece to keep nesting depth <= 3 (CLAUDE.md).
     """
-    victim_piece = board.piece_at(victim_sq)
-    if victim_piece is None:
+    opp = not pov
+    piece = board.piece_at(sq)
+    if piece is None or piece.color != opp:
         return False
 
-    victim_val = _piece_value(victim_piece.piece_type)
-
-    # Build the set of legal destination squares for the victim piece.
-    escape_squares: list[int] = []
-    for move in board.legal_moves:
-        if move.from_square == victim_sq:
-            escape_squares.append(move.to_square)
-
-    if not escape_squares:
-        # Pinned or no legal moves: not the same as trapped. Return False per D-06.
+    # Gate 1: not in check, not pinned (immobility from these is a different motif).
+    if board.is_check():
+        return False
+    if board.is_pinned(piece.color, sq):
         return False
 
-    for dest_sq in escape_squares:
-        # Simulate the escape move to refresh X-ray / discovered attackers.
-        board_copy = board.copy()
-        board_copy.push(chess.Move(victim_sq, dest_sq))
+    # Gate 2: only N/B/R/Q can be trapped (cook's is_trapped excludes P/K).
+    if piece.piece_type in (chess.PAWN, chess.KING):
+        return False
 
-        # A) Safe square: pov has no attacker on the destination after the escape.
-        pov_attackers = list(board_copy.attackers(pov, dest_sq))
-        if not pov_attackers:
-            return False
+    # Gate 3: must be in a bad spot (attacked + hanging-or-takeable-by-lower non-king).
+    if not _is_in_bad_spot(board, sq):
+        return False
 
-        # B) Destination is under pov attack.  The escape is safe if the cheapest
-        # pov attacker is worth AT LEAST as much as the victim — pov breaks even or
-        # loses from taking, so the escape is effective for the victim.
-        pov_attacker_vals: list[int] = []
-        for atk_sq in pov_attackers:
-            atk_piece = board_copy.piece_at(atk_sq)
-            if atk_piece is not None:
-                pov_attacker_vals.append(_piece_value(atk_piece.piece_type))
-        pov_attacker_vals.sort()
-        if not pov_attacker_vals:
-            return False  # race condition guard
+    # Enumerate legal escapes for the trapped piece (set board.turn to piece's color).
+    victim_val = _piece_value(piece.piece_type)
+    board_victim = board.copy(stack=False)
+    board_victim.turn = piece.color
+    escape_moves = [m for m in board_victim.legal_moves if m.from_square == sq]
 
-        cheapest_pov_attacker = pov_attacker_vals[0]
-        if victim_val <= cheapest_pov_attacker:
-            # Pov's cheapest attacker is as expensive or more — not profitable for pov.
-            # This is a safe escape square for the victim.
-            return False
-        # Else: pov can profitably take (cheapest_pov_attacker < victim_val) → unsafe.
+    # Empty-escape-set exclusion (D-06 precision-first): no moves → not trapped.
+    if not escape_moves:
+        return False
 
-    # Every escape square has a pov attacker strictly cheaper than the victim
-    # → pov wins material from any escape → piece is trapped (D-06 strict gate).
+    # Gate 4: check every escape.
+    for move in escape_moves:
+        dest = move.to_square
+        # 4a. Capture of equal-or-greater pov piece → good escape (trade-up/equal).
+        pov_piece_at_dest = board_victim.piece_at(dest)
+        if pov_piece_at_dest is not None and pov_piece_at_dest.color == pov:
+            if _piece_value(pov_piece_at_dest.piece_type) >= victim_val:
+                return False
+        # 4b. Push and check safety on destination square.
+        b2 = board_victim.copy(stack=False)
+        b2.push(move)
+        if not _is_in_bad_spot(b2, dest):
+            return False  # safe square found — not trapped
+
+    # Gate 5: all escapes either lose material or stay in a bad spot → trapped.
     return True
 
 
 def detect_trapped_piece(
     boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
 ) -> tuple[bool, int | None, int | None]:
-    """Trapped piece: an opponent non-pawn piece is under attack by pov AND every
-    legal escape move lands the piece on a square where pov wins material.
+    """Trapped piece: reimplemented from cook's trapped_piece driver + util.is_trapped
+    prose (Phase 134 Plan 02; AGPL boundary — no source copy from cook.py/util.py).
 
-    D-06 strict precision gate: fire only when the escape set is non-empty (not
-    pinned/stalemate) AND all escapes lose material for the escapee.
-    D-07 distinction from hanging-piece: a hanging piece is capturable for free right
-    now (no escape needed); a trapped piece HAS moves but all moves lose material.
-    The dispatcher already resolves any co-fire by tier (Tier 2 < Tier 4) per D-03.
+    Cook's driver anchors to the SOLUTION CAPTURE CHAIN (the dominant precision fix):
+    instead of scanning every opponent non-pawn piece on every board, walk pov's moves
+    at even indices STARTING FROM THE SECOND pov move (k=2,4,...). For each such move
+    that captures a non-pawn opponent piece on square t:
+      - If the immediately preceding opponent move (moves[k-1]) also landed on t,
+        the square-of-interest is moves[k-1].from_square (where the opponent piece
+        came from); otherwise it is t.
+      - Evaluate _piece_is_trapped on boards[k-1] (the board BEFORE the preceding
+        opponent move) at the square-of-interest.
+      - If trapped → fire.
 
-    Returns (fired, victim_piece_type, depth) where depth is the board index at which
-    the trapped piece is detected (0 = after pov's first move).
+    This eliminates the dominant FP source from v3: the old code scanned ALL opponent
+    non-pawn pieces on every pov-result board, inventing trapped judgments on pieces
+    nowhere near the capture chain (153 FP at P 0.000 on 28 TRAIN rows; Plan 134 target
+    is meaningful improvement on the ~1065-row expanded fixture).
+
+    Returns (fired, victim_piece_type, depth) where depth is the board index k at
+    which the trapped piece is detected (0 = after pov's first move; cook's driver
+    starts at k=2 so the minimum depth here is 2).
     """
-    if len(moves) < 1 or len(boards) < 2:
+    # Need at least 3 moves to have a k=2 candidate (pov k=0, opp k=1, pov k=2).
+    if len(moves) < 3 or len(boards) < 4:
         return False, None, None
 
-    for i in range(0, len(moves), 2):  # pov's turns at even indices
-        board_after = boards[i + 1]
-        opp = not pov
+    opp = not pov
 
-        for sq in chess.SQUARES:
-            piece = board_after.piece_at(sq)
-            if piece is None or piece.color != opp:
-                continue
-            if piece.piece_type == chess.PAWN:
-                # Exclude pawns (mirror hanging-piece; pawn value makes FP-prone)
-                continue
+    for k in range(2, len(moves), 2):  # second pov move onward (cook's [1::2][1:])
+        capture_sq = moves[k].to_square
+        board_before_pov_move = boards[k]  # board right before pov's k-th move
 
-            # D-06 gate step 1: the piece must currently be under pov attack
-            if not board_after.attackers(pov, sq):
-                continue
+        # Check: pov's k-th move captures a non-pawn opponent piece.
+        captured = board_before_pov_move.piece_at(capture_sq)
+        if captured is None or captured.color != opp:
+            continue
+        if captured.piece_type == chess.PAWN:
+            continue
 
-            # D-07 gate: exclude pieces capturable for free right now (hanging).
-            # A free capture does not require the piece to move — that is hanging-piece,
-            # not trapped-piece (D-07 definition).
-            if _is_hanging(board_after, sq, opp):
-                continue
+        # Determine square-of-interest per cook's driver.
+        opp_move = moves[k - 1]
+        if opp_move.to_square == capture_sq:
+            # Opponent just moved a piece ONTO the capture square — the trapped piece
+            # came FROM opp_move.from_square (where it was before being moved there).
+            sq_of_interest = opp_move.from_square
+        else:
+            sq_of_interest = capture_sq
 
-            # D-06 gate step 2: every legal escape must lose material
-            # Set board turn to opp so legal_moves generates the victim's moves
-            board_opp_turn = board_after.copy()
-            board_opp_turn.turn = opp
-            if _escape_squares_all_lose_material(board_opp_turn, sq, pov):
-                return True, piece.piece_type, i
+        # Evaluate is_trapped on the board BEFORE the preceding opponent move.
+        board_to_check = boards[k - 1]  # = boards[k-1] = before moves[k-1]
+        candidate = board_to_check.piece_at(sq_of_interest)
+        if candidate is None or candidate.color != opp:
+            continue  # no opponent piece at square of interest
+
+        if _piece_is_trapped(board_to_check, sq_of_interest, pov):
+            return True, candidate.piece_type, k
 
     return False, None, None
 
@@ -1461,7 +1519,8 @@ def _deflection_fires_at(
       boards[k-2] = board BEFORE prior pov move  ("grandpa.board()" in cook)
     """
     move = moves[k]
-    board_k = boards[k]  # board before this pov move
+    board_k = boards[k]  # cook node.parent.board() (before this pov move)
+    board_after = boards[k + 1] if k + 1 < len(boards) else None
 
     # Condition 1: capture OR promotion.
     is_promotion = move.promotion is not None
@@ -1469,75 +1528,58 @@ def _deflection_fires_at(
     is_capture = captured is not None
     if not is_capture and not is_promotion:
         return None
+    if board_after is None:
+        return None
 
     square = move.to_square
 
-    # Condition 2: if capture, use _VALUES_NO_KING (Pitfall 3 — cook uses `values` not
-    # `king_values`). Captured piece must be <= capturing piece in value (equal/lower trade).
-    if is_capture:
-        captor_piece = board_k.piece_at(move.from_square)
-        captor_val = _VALUES_NO_KING.get(captor_piece.piece_type, 0) if captor_piece else 0
-        if _VALUES_NO_KING.get(captured.piece_type, 0) > captor_val:
-            return None
+    # Condition 2: capturing piece must be >= captured in value. cook uses king_values here
+    # (king=99), NOT plain values — a prior port wrongly used _VALUES_NO_KING.
+    capturing_pt = board_after.piece_type_at(square)
+    if capturing_pt is None:
+        return None
+    if is_capture and _PIECE_VALUES.get(captured.piece_type, 0) > _PIECE_VALUES.get(
+        capturing_pt, 0
+    ):
+        return None
 
     prev_op_move = moves[k - 1]
     prev_player_move = moves[k - 2]
-    init_board = boards[k - 2]  # board before prior pov move (Pitfall 2)
+    grandpa_board = boards[k - 1]  # cook grandpa.board() (AFTER prior pov move)
+    gp_parent_board = boards[k - 2]  # cook grandpa.parent.board() (before prior pov move)
 
-    # Condition 7: prior pov move quality gate.
-    # prev_player_capture = piece that was on prev_player_move.to_square BEFORE prior pov move.
-    prev_player_capture = init_board.piece_at(prev_player_move.to_square)
-    if prev_player_capture is not None:
-        # Prior pov move was a capture — gate: captured piece must be LESS valuable than mover.
-        prior_mover = init_board.piece_at(prev_player_move.from_square)
-        prior_mover_val = _VALUES_NO_KING.get(prior_mover.piece_type, 0) if prior_mover else 0
-        if _VALUES_NO_KING.get(prev_player_capture.piece_type, 0) >= prior_mover_val:
+    # Condition 7: prior pov move quality gate. cook compares values[capture] < moved_piece_TYPE
+    # of grandpa (a value-vs-piece-type-int comparison — replicated faithfully).
+    prev_player_capture = gp_parent_board.piece_at(prev_player_move.to_square)
+    gp_moved_pt = grandpa_board.piece_type_at(prev_player_move.to_square)
+    if prev_player_capture is not None and gp_moved_pt is not None:
+        if _VALUES_NO_KING.get(prev_player_capture.piece_type, 0) >= gp_moved_pt:
             return None
 
-    # Condition 8: square collision guards — not capturing where opp just moved,
-    # not capturing where prior pov move landed.
+    # Condition 8: square collision guards.
     if square == prev_op_move.to_square or square == prev_player_move.to_square:
         return None
 
-    # Condition 9: deflection geometry — EITHER opp was forced onto prior pov's square
-    # (opponent captured pov's prior piece), OR opponent was in check before their move.
-    opp_forced = (
-        prev_op_move.to_square == prev_player_move.to_square  # opp captured where pov just was
-        or init_board.is_check()  # opponent was in check before prior pov move (cook equiv)
-    )
-    if not opp_forced:
+    # Condition 9: opponent was forced — they captured where pov just moved, OR (cook:
+    # grandpa.board().is_check()) the board AFTER pov's prior move was check.
+    if not (prev_op_move.to_square == prev_player_move.to_square or grandpa_board.is_check()):
         return None
 
-    # Condition 10: square reachability from deflected piece's ORIGINAL position.
-    # The piece that moved at prev_op_move came FROM prev_op_move.from_square.
-    # That square must have been able to reach `square` on the init_board.
+    # Condition 10: square reachable from the deflected piece's ORIGINAL square, evaluated on
+    # grandpa.board() (boards[k-1]), not the init board (a prior-port divergence).
     orig_sq = prev_op_move.from_square
     if is_promotion:
-        # Promotion variant: same file as deflected piece's origin AND prior pov piece
-        # (the promoting pawn) was attacking from the original position.
         same_file = chess.square_file(square) == chess.square_file(orig_sq)
-        pov_piece_at_init = init_board.piece_at(move.from_square)
-        pov_attacks_from_init = (
-            pov_piece_at_init is not None and move.from_square in init_board.attacks(orig_sq)
-        )
+        pov_attacks_from_init = move.from_square in grandpa_board.attacks(orig_sq)
         if not (same_file and pov_attacks_from_init):
             return None
-    else:
-        # Standard capture: capture square must have been reachable from the deflected
-        # piece's original position on the init board (before it was deflected away).
-        if square not in init_board.attacks(orig_sq):
-            return None
+    elif square not in grandpa_board.attacks(orig_sq):
+        return None
 
-    # Condition 11: the KEY guard — after the opponent moved to their new position,
-    # they NO LONGER cover the capture square (they were actually deflected away from it).
-    # Use pre_board (after prior pov move, before opp move) which has the opp piece
-    # at prev_op_move.from_square. But we want: does opp's NEW position cover `square`?
-    # boards[k] is BEFORE this pov move = after opp's last move, so prev_op_move.to_square
-    # is where the deflected piece now sits.
+    # Condition 11: the deflected piece's NEW position no longer covers the capture square.
     if square in board_k.attacks(prev_op_move.to_square):
         return None
 
-    # All 11 conditions passed — deflection confirmed.
     return captured.piece_type if is_capture else chess.PAWN
 
 
@@ -1656,104 +1698,72 @@ def detect_attraction(
     return False, None, 0, None
 
 
-def _intermezzo_fires_at(
-    boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color, k: int
-) -> bool:
-    """Check cook's exact AND-chain for intermezzo (zwischenzug) at pov move index k.
-
-    Reimplemented from cook.py pseudocode (Phase 132 D-01, AGPL boundary — no cook.py source).
-    See 132-RESEARCH.md §5 for the full predicate and index mapping.
-
-    Returns True if all conditions hold, else False.
-    Requires k >= 4 (caller must guard this — Pitfall 5 from RESEARCH.md).
-
-    Index convention (k = the delayed recapture move):
-      moves[k]   = pov's recapture (the delayed recapture) — even k >= 4
-      moves[k-1] = opponent's reply to pov's intermezzo
-      moves[k-2] = pov's intermezzo (zwischenzug) move
-      moves[k-3] = original opponent capture at the recapture square
-      boards[k]  = board BEFORE pov's recapture (check captures here)
-      boards[k-2] = board BEFORE pov's intermezzo (check attacks and legal moves)
-      boards[k-3] = board BEFORE opponent's original capture (check prior piece)
-    """
-    board_k = boards[k]
-    move = moves[k]
-    capture_square = move.to_square
-
-    # Condition 1: this pov move is a capture.
-    if board_k.piece_at(capture_square) is None:
-        return False
-
-    # Condition 5 (RESEARCH numbering): the opponent piece that just moved (moves[k-1])
-    # was NOT already attacking the capture square before that move.
-    # Use boards[k-2] = board before pov's intermezzo = board before op's last move
-    # Wait: boards[k-2] is before pov's intermezzo; boards[k-1] would be after pov's intermezzo.
-    # The opponent's last move (moves[k-1]) starts from moves[k-1].from_square.
-    # "Was attacking capture_square BEFORE that move" means: on boards[k-2].
-    # boards[k-2] = board after prior pov capture but before pov's intermezzo.
-    # Actually: boards[k-1] = board BEFORE moves[k-1] (the opponent's response to the intermezzo).
-    # So "before the opponent made moves[k-1]" = boards[k-1].
-    # RESEARCH says: moves[k-1].from_square NOT IN boards[k-2].attackers(not pov, capture_square)
-    # boards[k-2] = board before pov's intermezzo. Let's follow RESEARCH exactly.
-    opp_from_sq = moves[k - 1].from_square
-    board_k_minus_2 = boards[k - 2]
-    if opp_from_sq in board_k_minus_2.attackers(not pov, capture_square):
-        return False
-
-    # Condition 6: prior pov move (the intermezzo itself) did NOT go to the capture square.
-    if moves[k - 2].to_square == capture_square:
-        return False
-
-    # Condition 7 (the intermezzo signature):
-    # a) moves[k-3] (opponent's original capture) landed on the capture square.
-    if moves[k - 3].to_square != capture_square:
-        return False
-    # b) boards[k-3].piece_at(capture_square) is not None — it was a real capture by opponent.
-    if boards[k - 3].piece_at(capture_square) is None:
-        return False
-    # c) pov's current recapture move was already legal on boards[k-2]
-    #    (before the intermezzo, the recapture was legal — pov chose to delay it).
-    recapture_uci = move.uci()
-    if recapture_uci not in {m.uci() for m in board_k_minus_2.legal_moves}:
-        return False
-
-    return True
+def _move_was_capture(board_before: chess.Board, move: chess.Move) -> bool:
+    """True if `move` captured a piece on `board_before` (cook's util.is_capture)."""
+    return board_before.piece_at(move.to_square) is not None or board_before.is_en_passant(move)
 
 
 def detect_intermezzo(
     boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
 ) -> tuple[bool, None, int, int | None]:
-    """Intermezzo (zwischenzug): intermediate move inserted before expected recapture.
+    """Intermezzo (zwischenzug): an in-between move inserted before the expected recapture.
 
-    Rewritten to cook's exact AND-chain (Phase 132 D-01).
-    No _grade voting — returns TACTIC_CONFIDENCE_HIGH when the AND-chain fires.
-    See 132-RESEARCH.md §5 for the full predicate (AGPL boundary — no cook.py source).
+    Reimplemented to cook's EXACT control flow (AGPL boundary — no cook.py source). cook
+    iterates pov capture moves (moves[2], moves[4], ...) and, at the FIRST one that passes the
+    two outer guards, RETURNS the inner zwischenzug condition (early-exit). The prior port
+    omitted the early-exit (fired on any qualifying k) and used the wrong attacker board, which
+    over-fired on capturing-defender lines.
 
-    Returns (fired, None, confidence, depth) on detection.
-    tactic_piece = None (D-12 ambiguous).
-    depth = k (pov move index when the intermezzo fires).
+    Index convention (node = moves[k], the delayed recapture, even k >= 2):
+      moves[k]    = pov's delayed recapture at capture_square
+      moves[k-1]  = opponent's reply to pov's intermezzo
+      moves[k-2]  = pov's intermezzo (zwischenzug) move
+      boards[k-1] = cook's prev_pov_node.board() (AFTER pov's intermezzo) for the attacker gate
+      prev_op     = moves[k-3] (k >= 4) OR the FLAW move (k == 2, via boards[0].move_stack):
+                    the opponent's original capture at capture_square
 
-    The full pattern is: (a) opponent captures at square X (moves[k-3]),
-    (b) pov plays a zwischenzug (moves[k-2], NOT capturing at X),
-    (c) opponent replies (moves[k-1], from a square NOT previously attacking X),
-    (d) pov now recaptures at X (moves[k]) — which was already legal before step (b).
-
-    Index convention:
-      moves[k]   = pov's recapture (the delayed recapture) — even k >= 4
-      moves[k-3] = original opponent capture at capture_square
-      boards[k-2] = board BEFORE pov's intermezzo (legal-move check board)
-      boards[k-3] = board BEFORE opponent's original capture
+    Returns (fired, None, confidence, depth). tactic_piece None (D-12 ambiguous); depth = k.
     """
-    if len(moves) < 4:
-        return False, None, 0, None
-
     for k in range(2, len(moves), 2):
-        if k < 4:
-            continue  # guard: need moves[k-3]; k<4 means moves[-1] wraparound (Pitfall 5)
-        if k - 3 >= len(boards) or k >= len(boards):
+        if k >= len(boards) or k - 1 < 0:
             continue
-        if _intermezzo_fires_at(boards, moves, pov, k):
+        capture_square = moves[k].to_square
+
+        # node must be a capture (cook: `if util.is_capture(node)`).
+        if not _move_was_capture(boards[k], moves[k]):
+            continue
+        # Outer guard A: the opponent's reply (moves[k-1]) did NOT originate from a square that
+        # was already attacking capture_square on prev_pov_node.board() = boards[k-1].
+        if moves[k - 1].from_square in boards[k - 1].attackers(not pov, capture_square):
+            continue
+        # Outer guard B: pov's prior move (the intermezzo) did NOT go to capture_square.
+        if moves[k - 2].to_square == capture_square:
+            continue
+
+        # First node passing the outer guards — evaluate cook's inner condition and RETURN
+        # (early-exit: cook does not examine later capture nodes once the guards pass).
+        if k >= 4:
+            prev_op_move = moves[k - 3]
+            prev_op_before = boards[k - 3]  # board before the opponent's original capture
+            prev_op_after = boards[k - 2]  # board after it (recapture-was-legal check)
+        else:
+            # k == 2: cook's prev_op_node is the FLAW move (mainline[0]). It rides on
+            # boards[0].move_stack in production (board_after_flaw) and in the gate.
+            if not boards[0].move_stack:
+                return False, None, 0, None
+            prev_op_move = boards[0].peek()
+            prev_op_after = boards[0]
+            prev_op_before = boards[0].copy()
+            prev_op_before.pop()
+
+        inner = (
+            prev_op_move.to_square == capture_square
+            and _move_was_capture(prev_op_before, prev_op_move)
+            and moves[k] in prev_op_after.legal_moves
+        )
+        if inner:
             return True, None, TACTIC_CONFIDENCE_HIGH, k
+        return False, None, 0, None
 
     return False, None, 0, None
 
@@ -1844,52 +1854,60 @@ def detect_x_ray(
 # from attraction tightening caused 2 new FPs but the logic itself is unchanged/correct).
 # Any cleanup or refactoring risks breaking the interference precision floor. See
 # RESEARCH.md Pitfall 8 and 132-04-SUMMARY.md for the dispatch-cascade explanation.
+def _interference_ray_defender(
+    init_board: chess.Board, victim_color: chess.Color, square: int
+) -> int | None:
+    """The single ray defender of `square` on `init_board` (cook's defenders.pop()), or None."""
+    defenders = init_board.attackers(victim_color, square)
+    defender_sq = next(iter(defenders), None)  # cook: defenders.pop() (LSB)
+    if defender_sq is None:
+        return None
+    defender_piece = init_board.piece_at(defender_sq)
+    if defender_piece is None or defender_piece.piece_type not in _RAY_PIECES:
+        return None
+    return defender_sq
+
+
 def detect_interference(
     boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
 ) -> tuple[bool, None, int, int | None]:
-    """Interference: opponent's own move blocks a defender's ray, hanging the target.
+    """Interference — cook's theme is `self_interference OR interference` (cook.py L109), so we
+    fire on EITHER faithful predicate (AGPL boundary, no source copy).
 
-    Returns (fired, None, confidence, depth) on detection.
-    tactic_piece = None (D-12 ambiguous).
-    depth = k (pov move index when the interference-exploiting capture fires).
+    Both: pov captures a piece on `square` that is now hanging (ray-aware) and the piece had a
+    single ray defender on the init board, where some move landed BETWEEN the defender and the
+    square, severing the defence.
+    - `interference` (PLAYER piece): init = boards[k-2]; the interfering move is pov's prior move
+      (moves[k-2]); requires square != moves[k-1].to_square.
+    - `self_interference` (OPPONENT piece): init = boards[k-1]; the interfering move is the
+      opponent's last move (moves[k-1]).
+
+    The prior port did a single non-ray-aware self_interference-shaped check and over-fired
+    (deflection/skewer false positives); it also missed the player-piece variant's recall.
+
+    Returns (fired, None, confidence, depth). tactic_piece None (D-12); depth = k.
     """
-    for k in range(2, len(moves), 2):  # pov's captures
-        board_k = boards[k]
-        target_sq = moves[k].to_square
-        target = board_k.piece_at(target_sq)
-        if target is None:
-            continue
+    for k in range(2, len(moves), 2):  # pov's captures, from the 2nd pov move
+        prev_board = boards[k]  # cook node.parent.board() (before pov's capture)
+        square = moves[k].to_square
+        capture = prev_board.piece_at(square)
+        if capture is None or _is_defended(prev_board, capture, square):
+            continue  # must be a capture of a now-hanging (ray-aware) piece
 
-        # Target must be hanging now
-        if not _is_hanging(board_k, target_sq, not pov):
-            continue
+        # self_interference (opponent piece): defender on boards[k-1], opponent move blocks.
+        defender_sq = _interference_ray_defender(boards[k - 1], capture.color, square)
+        if defender_sq is not None and moves[k - 1].to_square in chess.SquareSet.between(
+            square, defender_sq
+        ):
+            return True, None, TACTIC_CONFIDENCE_HIGH, k
 
-        if k < 2:
-            continue
-
-        # Before k-1 (before opponent's last move), was target defended by a ray piece?
-        old_board = boards[k - 2]
-        opp_last_move = moves[k - 1]
-        blocker_sq = opp_last_move.to_square
-
-        cond1 = False
-        cond2 = False
-        for defender_sq in old_board.attackers(not pov, target_sq):
-            defender = old_board.piece_at(defender_sq)
-            if defender is None or defender.piece_type not in _RAY_PIECES:
-                continue
-            # Check if blocker_sq is between defender and target
-            between = chess.SquareSet.between(defender_sq, target_sq)
-            if blocker_sq in between:
-                cond1 = True  # a ray defense was blocked
-                # The blocking piece belongs to opponent (interference by opponent's piece)
-                blocker = board_k.piece_at(blocker_sq)
-                cond2 = blocker is not None and blocker.color == (not pov)
-                break
-
-        met = sum([cond1, cond2])
-        if met >= 1:
-            return True, None, _grade(met, 2), k
+        # interference (player piece): defender on boards[k-2], pov's prior move blocks.
+        if square != moves[k - 1].to_square:
+            defender_sq = _interference_ray_defender(boards[k - 2], capture.color, square)
+            if defender_sq is not None and moves[k - 2].to_square in chess.SquareSet.between(
+                square, defender_sq
+            ):
+                return True, None, TACTIC_CONFIDENCE_HIGH, k
 
     return False, None, 0, None
 
@@ -2004,15 +2022,14 @@ def detect_clearance(
         if board_before.is_check():
             continue
 
-        # Condition 7: after the clearing move, EITHER no check OR opponent king did not move.
-        # moves[k+1] is the opponent's response (if it exists).
-        if k + 1 < len(moves):
-            op_response = moves[k + 1]
-            if board_after.is_check():
-                # Check given: the opponent's piece that responds must NOT be a king.
-                responding_piece = board_after.piece_at(op_response.from_square)
-                if responding_piece is not None and responding_piece.piece_type == chess.KING:
-                    continue
+        # Condition 7 (cook): if the clearing move gives check, the opponent's LAST move
+        # (moves[k-1], the move just before this pov move — cook's moved_piece_type(node.parent))
+        # must NOT have been a king move. The prior port wrongly inspected moves[k+1] (the
+        # opponent's FUTURE response), over-firing on discovered-attack/check lines.
+        if board_after.is_check():
+            opp_last_pt = board_before.piece_type_at(moves[k - 1].to_square)
+            if opp_last_pt == chess.KING:
+                continue
 
         # Condition 8: the key geometry — prior pov move came FROM the clearing target
         # square, OR came from a square BETWEEN the clearing piece's from and to.
@@ -2079,9 +2096,10 @@ def _capturing_defender_fires_at(
     if captured_val > captor_val:
         return None
 
-    # Condition 5: captured piece is hanging BEFORE the capture (cook's util.is_hanging).
-    # _is_hanging is the correct helper (not _is_defended — Pitfall 2 note in RESEARCH).
-    if not _is_hanging(board_k, move.to_square, not pov):
+    # Condition 5: captured piece is hanging BEFORE the capture. cook's util.is_hanging is
+    # ray-aware (`not is_defended`) — match it so a piece defended only through a friendly
+    # ray is not treated as a captured defender.
+    if _is_defended(board_k, captured, move.to_square):
         return None
 
     # Condition 6: opponent's last move was NOT to this capture square (not a recapture).
@@ -2092,7 +2110,15 @@ def _capturing_defender_fires_at(
     # Conditions 7-9 require boards[k-2] (init_board = grandpa.board() — before prior pov move).
     init_board = boards[k - 2]
 
-    # Condition 7: the board BEFORE the prior pov move was NOT in check.
+    # Condition 7a: the board AFTER the prior pov move (cook's prev.board() = boards[k-1])
+    # was NOT in check. This is the dominant capturing-defender false-positive guard: an
+    # intermezzo line (opp captures, we play a CHECKING zwischenzug, opp must respond, we
+    # recapture) leaves the opponent in check after our prior move — cook declines, but
+    # the prior implementation omitted this board and fired, tagging intermezzo puzzles.
+    if boards[k - 1].is_check():
+        return None
+
+    # Condition 7b: the board BEFORE the prior pov move was NOT in check (cook init_board).
     if init_board.is_check():
         return None
 

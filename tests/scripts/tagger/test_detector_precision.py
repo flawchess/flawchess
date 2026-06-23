@@ -55,11 +55,10 @@ import math
 import statistics
 from collections import defaultdict
 
-import chess
 import pytest
 
 from app.services.tactic_detector import _INT_TO_MOTIF, detect_tactic_motif
-from tests.scripts.tagger.conftest import PuzzleRow
+from tests.scripts.tagger.conftest import PuzzleRow, build_detector_board
 from tests.scripts.tagger.motif_theme_map import MOTIF_TO_THEMES, UNVALIDATED_MOTIFS
 from tests.scripts.tagger.precision_floors import PRECISION_FLOOR, SUPPRESSED_MOTIFS
 
@@ -88,7 +87,9 @@ def _compute_metrics(
     depth_rating_pairs: list[tuple[int, int]] = []
 
     for row in rows:
-        board = chess.Board(row["fen"])
+        # Build the board the SAME way production calls the detector (flaw move on the move
+        # stack), so the floor gate verifies the detector identically to production.
+        board = build_detector_board(row)
         motif_int, _piece, _confidence, depth = detect_tactic_motif(board, row["pv"])
         detected_motif = _INT_TO_MOTIF.get(motif_int) if motif_int is not None else None
 

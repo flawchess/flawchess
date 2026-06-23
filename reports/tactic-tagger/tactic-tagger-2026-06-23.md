@@ -1,9 +1,9 @@
 # FlawChess Tactic-Tagger Report
 
-**Generated:** 2026-06-23 05:32:40Z (UTC)
+**Generated:** 2026-06-23 12:10:52Z (UTC)
 **Detector:** `app/services/tactic_detector.py::detect_tactic_motif`
 **Fixtures:** `fixtures/tagger/detector_fixture_{train,test}.csv` (CC0 lichess puzzles, deterministic PuzzleId-hash split)
-**Train rows:** 11855 &nbsp;|&nbsp; **Test rows:** 5164
+**Train rows:** 18632 &nbsp;|&nbsp; **Test rows:** 8017
 
 Scored with the same theme-intersection multi-label credit (D-10) as the CI harness `tests/scripts/tagger/test_detector_precision.py`. **TRAIN** is the floor-gated optimization set (what the `/loop` improves); **TEST** is held out for honest validation. A large train-beats-test precision gap (ΔP) means overfitting.
 
@@ -25,77 +25,77 @@ Scored with the same theme-intersection multi-label credit (D-10) as the CI harn
 
 | T | Motif | P(train) | P(test) | ΔP | R(train) | R(test) | n(train) | n(test) | Status |
 |:--|:--|---:|---:|---:|---:|---:|---:|---:|:--|
-| 1 | smothered-mate | 1.000 | 1.000 | +0.000 | 1.000 | 1.000 | 468 | 233 | shipped |
-| 1 | anastasia-mate | 1.000 | 1.000 | +0.000 | 1.000 | 1.000 | 458 | 227 | shipped |
-| 1 | hook-mate | 1.000 | 1.000 | +0.000 | 1.000 | 1.000 | 568 | 247 | shipped |
-| 1 | arabian-mate | 1.000 | 1.000 | +0.000 | 1.000 | 1.000 | 553 | 241 | shipped |
-| 1 | dovetail-mate | 1.000 | 1.000 | +0.000 | 0.998 | 1.000 | 544 | 230 | shipped |
-| 1 | boden-mate | 1.000 | 1.000 | +0.000 | 0.995 | 1.000 | 437 | 168 | shipped |
-| 1 | back-rank-mate | 1.000 | 1.000 | +0.000 | 0.998 | 0.997 | 856 | 342 | shipped |
-| 1 | mate | 1.000 | 1.000 | +0.000 | 0.322 | 0.309 | 5727 | 2442 | shipped |
-| 2 | fork | 0.999 | 0.997 | -0.002 | 0.535 | 0.511 | 1557 | 628 | shipped |
-| 2 | skewer | 1.000 | 1.000 | +0.000 | 0.670 | 0.668 | 672 | 304 | shipped |
-| 2 | pin | 0.936 | 0.947 | +0.011 | 0.584 | 0.631 | 1203 | 536 | shipped |
-| 2 | double-check | 1.000 | 1.000 | +0.000 | 0.213 | 0.218 | 747 | 308 | shipped |
-| 2 | discovered-check | 0.913 | 0.884 | -0.030 | 0.095 | 0.096 | 1004 | 397 | shipped |
-| 2 | discovered-attack | 0.995 | 1.000 | +0.005 | 0.404 | 0.400 | 1004 | 457 | shipped |
-| 2 | trapped-piece | 0.000 | 0.000 | +0.000 | 0.000 | 0.000 | 28 | 11 | suppressed |
-| 3 | deflection | 1.000 | 1.000 | +0.000 | 0.107 | 0.124 | 1177 | 501 | shipped |
-| 3 | attraction | 1.000 | 1.000 | +0.000 | 0.408 | 0.428 | 1603 | 677 | shipped |
-| 3 | intermezzo | 0.938 | 1.000 | +0.062 | 0.021 | 0.034 | 702 | 324 | shipped |
-| 3 | x-ray | 1.000 | 1.000 | +0.000 | 0.340 | 0.369 | 642 | 274 | shipped |
-| 3 | interference | 0.988 | 0.992 | +0.004 | 0.423 | 0.498 | 596 | 257 | shipped |
-| 3 | clearance | 0.991 | 1.000 | +0.009 | 0.302 | 0.305 | 725 | 334 | shipped |
-| 3 | capturing-defender | 0.874 | 0.913 | +0.039 | 0.569 | 0.516 | 610 | 285 | shipped |
-| 3 | sacrifice | 1.000 | 1.000 | +0.000 | 0.075 | 0.078 | 3142 | 1377 | shipped |
-| 4 | hanging-piece | 0.915 | 0.889 | -0.026 | 0.688 | 0.706 | 734 | 306 | shipped |
-| 5 | under-promotion | NaN | NaN | — | 0.000 | 0.000 | 4 | 4 | suppressed |
-| 5 | promotion | 1.000 | 1.000 | +0.000 | 0.050 | 0.033 | 180 | 61 | shipped |
-| 5 | en-passant | NaN | NaN | — | 0.000 | 0.000 | 12 | 7 | suppressed |
+| 1 | smothered-mate | 1.000 | 1.000 | +0.000 | 1.000 | 1.000 | 474 | 242 | shipped |
+| 1 | anastasia-mate | 1.000 | 1.000 | +0.000 | 1.000 | 1.000 | 460 | 219 | shipped |
+| 1 | hook-mate | 1.000 | 1.000 | +0.000 | 1.000 | 1.000 | 602 | 213 | shipped |
+| 1 | arabian-mate | 1.000 | 1.000 | +0.000 | 1.000 | 1.000 | 537 | 251 | shipped |
+| 1 | dovetail-mate | 1.000 | 1.000 | +0.000 | 0.996 | 1.000 | 524 | 249 | shipped |
+| 1 | boden-mate | 1.000 | 1.000 | +0.000 | 0.993 | 1.000 | 444 | 161 | shipped |
+| 1 | back-rank-mate | 1.000 | 1.000 | +0.000 | 0.997 | 0.997 | 894 | 359 | shipped |
+| 1 | mate | 1.000 | 1.000 | +0.000 | 0.393 | 0.392 | 6474 | 2789 | shipped |
+| 2 | fork | 0.997 | 1.000 | +0.003 | 0.554 | 0.562 | 2076 | 888 | shipped |
+| 2 | skewer | 1.000 | 1.000 | +0.000 | 0.661 | 0.670 | 731 | 330 | shipped |
+| 2 | pin | 0.998 | 1.000 | +0.002 | 0.635 | 0.650 | 1499 | 631 | shipped |
+| 2 | double-check | 1.000 | 1.000 | +0.000 | 0.229 | 0.181 | 987 | 420 | shipped |
+| 2 | discovered-check | 0.964 | 0.926 | -0.038 | 0.162 | 0.161 | 1997 | 857 | shipped |
+| 2 | discovered-attack | 0.991 | 0.990 | -0.001 | 0.235 | 0.229 | 1888 | 839 | shipped |
+| 2 | trapped-piece | 1.000 | 1.000 | +0.000 | 0.769 | 0.789 | 748 | 317 | shipped |
+| 3 | deflection | 0.998 | 1.000 | +0.002 | 0.318 | 0.299 | 1504 | 632 | shipped |
+| 3 | attraction | 1.000 | 1.000 | +0.000 | 0.470 | 0.463 | 1819 | 830 | shipped |
+| 3 | intermezzo | 1.000 | 1.000 | +0.000 | 0.611 | 0.599 | 751 | 324 | shipped |
+| 3 | x-ray | 1.000 | 1.000 | +0.000 | 0.408 | 0.384 | 650 | 268 | shipped |
+| 3 | interference | 0.997 | 1.000 | +0.003 | 0.551 | 0.580 | 604 | 283 | shipped |
+| 3 | clearance | 1.000 | 1.000 | +0.000 | 0.444 | 0.441 | 873 | 354 | shipped |
+| 3 | capturing-defender | 1.000 | 1.000 | +0.000 | 0.547 | 0.491 | 623 | 277 | shipped |
+| 3 | sacrifice | 1.000 | 1.000 | +0.000 | 0.126 | 0.127 | 3570 | 1549 | shipped |
+| 4 | hanging-piece | 1.000 | 1.000 | +0.000 | 0.736 | 0.725 | 857 | 374 | shipped |
+| 5 | under-promotion | 1.000 | 1.000 | +0.000 | 0.117 | 0.145 | 780 | 332 | suppressed |
+| 5 | promotion | 1.000 | 1.000 | +0.000 | 0.047 | 0.047 | 3731 | 1630 | shipped |
+| 5 | en-passant | 1.000 | 1.000 | +0.000 | 0.301 | 0.286 | 1960 | 845 | suppressed |
 
 ## Difficulty distribution per tactic (combined train+test)
 
 | T | Motif | n_gt | min / Q1 / Q2 / Q3 / max | TP depth | Status |
 |:--|:--|---:|---|---:|:--|
-| 1 | smothered-mate | 701 | 598 / 1098 / 1377 / 1649 / 2557 | 1.9 | shipped |
-| 1 | anastasia-mate | 685 | 474 / 1039 / 1481 / 1715 / 2595 | 2.9 | shipped |
-| 1 | hook-mate | 815 | 505 / 1194 / 1592 / 1988 / 2786 | 2.3 | shipped |
-| 1 | arabian-mate | 794 | 400 / 1189 / 1558 / 1951 / 2762 | 2.9 | shipped |
-| 1 | dovetail-mate | 774 | 669 / 1191 / 1549 / 1937 / 2775 | 1.6 | shipped |
-| 1 | boden-mate | 605 | 399 / 974 / 1394 / 1683 / 2313 | 1.5 | shipped |
-| 1 | back-rank-mate | 1198 | 399 / 994 / 1357 / 1747 / 2680 | 3.3 | shipped |
-| 1 | mate | 8169 | 399 / 1104 / 1440 / 1786 / 2786 | 2.5 | shipped |
-| 2 | fork | 2185 | 403 / 1337 / 1682 / 2048 / 2897 | 0.9 | shipped |
-| 2 | skewer | 976 | 562 / 1210 / 1622 / 2005 / 3094 | 3.1 | shipped |
-| 2 | pin | 1739 | 572 / 1358 / 1724 / 2097 / 2978 | 0.9 | shipped |
-| 2 | double-check | 1055 | 481 / 1294 / 1623 / 2002 / 2890 | 1.0 | shipped |
-| 2 | discovered-check | 1401 | 481 / 1331 / 1712 / 2091 / 2890 | 0.0 | shipped |
-| 2 | discovered-attack | 1461 | 617 / 1281 / 1695 / 2072 / 3094 | 1.3 | shipped |
-| 2 | trapped-piece | 39 | 1048 / 1460 / 1685 / 2169 / 2751 | – | suppressed |
-| 3 | deflection | 1678 | 617 / 1298 / 1726 / 2098 / 2985 | 2.8 | shipped |
-| 3 | attraction | 2280 | 582 / 1421 / 1712 / 2062 / 2985 | 0.5 | shipped |
-| 3 | intermezzo | 1026 | 817 / 1274 / 1630 / 2010 / 3035 | 4.1 | shipped |
-| 3 | x-ray | 916 | 574 / 1258 / 1608 / 1966 / 2941 | 2.9 | shipped |
-| 3 | interference | 853 | 773 / 1223 / 1623 / 2011 / 3053 | 2.6 | shipped |
-| 3 | clearance | 1059 | 582 / 1296 / 1707 / 2072 / 3053 | 2.5 | shipped |
-| 3 | capturing-defender | 895 | 779 / 1224 / 1597 / 1990 / 2838 | 2.4 | shipped |
-| 3 | sacrifice | 4519 | 427 / 1406 / 1701 / 2059 / 3035 | 2.4 | shipped |
-| 4 | hanging-piece | 1040 | 404 / 1166 / 1566 / 1956 / 2913 | 0.0 | shipped |
-| 5 | under-promotion | 8 | 1754 / 2102 / 2200 / 2293 / 2671 | – | suppressed |
-| 5 | promotion | 241 | 670 / 1214 / 1651 / 2101 / 2842 | 0.0 | shipped |
-| 5 | en-passant | 19 | 1564 / 1834 / 2097 / 2366 / 2859 | – | suppressed |
+| 1 | smothered-mate | 716 | 617 / 1097 / 1364 / 1648 / 2557 | 2.0 | shipped |
+| 1 | anastasia-mate | 679 | 492 / 1064 / 1475 / 1712 / 2595 | 2.8 | shipped |
+| 1 | hook-mate | 815 | 508 / 1194 / 1580 / 1978 / 2786 | 2.3 | shipped |
+| 1 | arabian-mate | 788 | 443 / 1191 / 1585 / 1938 / 2762 | 2.8 | shipped |
+| 1 | dovetail-mate | 773 | 725 / 1188 / 1555 / 1951 / 2775 | 1.7 | shipped |
+| 1 | boden-mate | 605 | 399 / 992 / 1365 / 1683 / 2313 | 1.5 | shipped |
+| 1 | back-rank-mate | 1253 | 399 / 955 / 1350 / 1755 / 2680 | 3.2 | shipped |
+| 1 | mate | 9263 | 399 / 1100 / 1431 / 1770 / 2786 | 2.4 | shipped |
+| 2 | fork | 2964 | 542 / 1332 / 1714 / 2078 / 2968 | 0.9 | shipped |
+| 2 | skewer | 1061 | 565 / 1251 / 1625 / 2009 / 3094 | 3.2 | shipped |
+| 2 | pin | 2130 | 445 / 1395 / 1749 / 2105 / 2958 | 0.9 | shipped |
+| 2 | double-check | 1407 | 502 / 1305 / 1651 / 2022 / 2961 | 1.2 | shipped |
+| 2 | discovered-check | 2854 | 502 / 1347 / 1697 / 2060 / 3075 | 0.0 | shipped |
+| 2 | discovered-attack | 2727 | 571 / 1369 / 1710 / 2062 / 3094 | 1.3 | shipped |
+| 2 | trapped-piece | 1065 | 686 / 1210 / 1608 / 2010 / 3159 | 2.6 | shipped |
+| 3 | deflection | 2136 | 680 / 1387 / 1757 / 2117 / 3018 | 2.9 | shipped |
+| 3 | attraction | 2649 | 430 / 1436 / 1755 / 2099 / 3120 | 0.7 | shipped |
+| 3 | intermezzo | 1075 | 787 / 1296 / 1666 / 2068 / 3159 | 2.1 | shipped |
+| 3 | x-ray | 918 | 686 / 1258 / 1604 / 1970 / 2966 | 3.0 | shipped |
+| 3 | interference | 887 | 786 / 1219 / 1633 / 2029 / 3018 | 2.5 | shipped |
+| 3 | clearance | 1227 | 689 / 1332 / 1756 / 2108 / 3015 | 2.3 | shipped |
+| 3 | capturing-defender | 900 | 597 / 1219 / 1610 / 1995 / 2975 | 2.5 | shipped |
+| 3 | sacrifice | 5119 | 399 / 1426 / 1750 / 2105 / 3171 | 2.5 | shipped |
+| 4 | hanging-piece | 1231 | 400 / 1179 / 1591 / 2002 / 3045 | 0.0 | shipped |
+| 5 | under-promotion | 1112 | 635 / 1610 / 2100 / 2360 / 3053 | 0.0 | suppressed |
+| 5 | promotion | 5361 | 400 / 1249 / 1676 / 2124 / 3171 | 0.0 | shipped |
+| 5 | en-passant | 2805 | 743 / 1580 / 1866 / 2169 / 3120 | 0.0 | suppressed |
 
-**Overall fixture Rating (combined):** min 399 / Q1 1191 / Q2 1572 / Q3 1956 / max 3094.
+**Overall fixture Rating (combined):** min 399 / Q1 1246 / Q2 1628 / Q3 2015 / max 3171.
 
-**Depth-vs-Rating Pearson correlation** (combined correct detections, n=15710): 0.3007. Stored depth is the Phase 129 difficulty proxy, so this relationship is load-bearing.
+**Depth-vs-Rating Pearson correlation** (combined correct detections, n=22412): 0.2319. Stored depth is the Phase 129 difficulty proxy, so this relationship is load-bearing.
 
 ## Summary & interpretation
 
-- **Coverage:** 24 shipped (floor-gated) motifs, 3 suppressed (2 never fire, 1 fire only false positives). Micro-averaged TRAIN precision across all firing motifs: **0.972** (10951 TP / 316 FP).
+- **Coverage:** 25 shipped (floor-gated) motifs, 2 suppressed (0 never fire, 0 fire only false positives). Micro-averaged TRAIN precision across all firing motifs: **0.999** (15680 TP / 23 FP).
 - **No overfit flagged:** every shipped motif holds train precision on the held-out test set within 0.10. Train gains are generalizing.
-- **Lowest-precision shipped motif (train):** `capturing-defender` (0.874). **Biggest false-positive source:** `trapped-piece` (153 FP) — over-fires relative to its base.
+- **Lowest-precision shipped motif (train):** `discovered-check` (0.964). **Biggest false-positive source:** `discovered-check` (12 FP) — over-fires relative to its base.
 - **Difficulty is deliberately flat across tactics.** The fixtures are stratified by Rating band per motif-theme (`scripts/select_tagger_fixtures.py`), so per-motif min/Q1/Q2/Q3/max cluster near the overall spread. These reflect the *sampled* difficulty, NOT the natural lichess-population difficulty of each tactic.
-- **Depth tracks difficulty** (global Pearson r=0.301): within the TP set, immediate motifs sit shallow (hanging-piece ≈ 0, fork/double-check ≈ 1) while mating nets run deeper. Stored depth feeds the Phase 129 difficulty filter.
+- **Depth tracks difficulty** (global Pearson r=0.232): within the TP set, immediate motifs sit shallow (hanging-piece ≈ 0, fork/double-check ≈ 1) while mating nets run deeper. Stored depth feeds the Phase 129 difficulty filter.
 - **`mate` recall looks low by design.** Generic mate is the catch-all under the named-mate subtypes, which win the min-depth dispatch — those puzzles are tagged correctly under their specific motif, so they count as `mate` false negatives here.
 - **`pin` now ships at >0.93 precision.** Phase 131 restricted the pin scan to the boards that follow a winning-side move (the cook node set) instead of every PV board, removing the incidental pins that fired inside opponent forcing lines (0.819 -> 0.944 TEST).
 
