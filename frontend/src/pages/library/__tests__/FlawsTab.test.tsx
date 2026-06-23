@@ -70,11 +70,10 @@ vi.mock('@/components/filters/LibraryFilterPanel', () => ({
   LibraryFilterPanel: () => <div data-testid="stub-library-filter-panel" />,
 }));
 
-// Stub useUserProfile — beta_enabled=true so the tactic sections + collapsible Context
-// render (tactic tagging is beta-gated, Quick 260623).
+// Stub useUserProfile — FlawsTab reads is_guest (defaults to false here) for guest gating.
 vi.mock('@/hooks/useUserProfile', () => ({
   useUserProfile: () => ({
-    data: { chess_com_game_count: 5, lichess_game_count: 10, beta_enabled: true },
+    data: { chess_com_game_count: 5, lichess_game_count: 10 },
   }),
 }));
 

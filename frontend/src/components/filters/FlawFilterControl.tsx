@@ -44,7 +44,6 @@ import {
 import { TacticDepthFilter } from '@/components/filters/TacticDepthFilter';
 import { DEFAULT_TACTIC_DEPTH_VALUE } from '@/lib/tacticDepth';
 import type { TacticDepthValue } from '@/lib/tacticDepth';
-import { useUserProfile } from '@/hooks/useUserProfile';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -374,13 +373,9 @@ export function FlawFilterControl({
   // Advanced tactic group (tier-3 motifs) — collapsed by default (Quick 260623-6pd).
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
-  // Tactic tagging is a beta-only feature (Quick 260623). Non-beta users see only the
-  // Context section (severity + tag families), rendered inline without a collapsible.
-  const { data: userProfile } = useUserProfile();
-  const betaEnabled = userProfile?.beta_enabled ?? false;
-  // All tactic-specific sections (depth / orientation / motif families / advanced) are
-  // gated on both the tab opt-in AND beta access.
-  const showTactics = showTacticFilter && betaEnabled;
+  // Tactic-specific sections (depth / orientation / motif families / advanced) are
+  // gated on the tab opt-in: the Flaws tab passes showTacticFilter, the Games tab does not.
+  const showTactics = showTacticFilter;
 
   // Severity toggles narrow like the tag families: empty = both shown, one = that
   // tier only, both = both shown (same as empty). Deselecting the last severity is
@@ -530,30 +525,27 @@ export function FlawFilterControl({
       )}
 
       {/* ── Context tag families (Quick 260620-mjh / 260623) ──
-          Timing / Opportunity / Impact / Game Phase. For beta users it sits behind a
-          "Context" toggle below the tactic sections; non-beta users have no tactic
-          sections, so it renders inline (always open, no collapsible). Renders on both
-          the Games tab (showTacticFilter=false) and Flaws tab. ──── */}
-      <div className={cn(betaEnabled && 'pt-3 border-t border-border/40')}>
-        {betaEnabled && (
-          <button
-            type="button"
-            onClick={() => setContextOpen((v) => !v)}
-            aria-expanded={contextOpen}
-            aria-controls="flaw-filter-context-content"
-            data-testid="filter-flaw-context-toggle"
-            className="flex w-full items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ChevronDown
-              className={cn('h-3.5 w-3.5 transition-transform', contextOpen && 'rotate-180')}
-            />
-            {selectedContextCount > 0 ? `Context · ${selectedContextCount}` : 'Context'}
-          </button>
-        )}
-        {(contextOpen || !betaEnabled) && (
+          Timing / Opportunity / Impact / Game Phase. Sits behind a "Context" toggle
+          below the tactic sections. Renders on both the Games tab
+          (showTacticFilter=false) and Flaws tab. ──── */}
+      <div className="pt-3 border-t border-border/40">
+        <button
+          type="button"
+          onClick={() => setContextOpen((v) => !v)}
+          aria-expanded={contextOpen}
+          aria-controls="flaw-filter-context-content"
+          data-testid="filter-flaw-context-toggle"
+          className="flex w-full items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ChevronDown
+            className={cn('h-3.5 w-3.5 transition-transform', contextOpen && 'rotate-180')}
+          />
+          {selectedContextCount > 0 ? `Context · ${selectedContextCount}` : 'Context'}
+        </button>
+        {contextOpen && (
           <div
             id="flaw-filter-context-content"
-            className={cn('flex flex-col gap-3', betaEnabled && 'mt-2')}
+            className="flex flex-col gap-3 mt-2"
           >
             {/* ── Severity (Blunders / Mistakes) — empty = both shown ───────── */}
             <div className="flex flex-col gap-2">

@@ -37,16 +37,6 @@ vi.mock('react-chessboard', () => ({
   Chessboard: vi.fn(() => null),
 }));
 
-// Mock useUserProfile — LibraryGameCard now calls it for guest/analyze gating (Phase 118).
-// beta_enabled=true so tactic chips render in orientation tests (Phase 129).
-vi.mock('@/hooks/useUserProfile', () => ({
-  useUserProfile: () => ({ data: { is_guest: false, beta_enabled: true }, isLoading: false }),
-}));
-
-// Mock useAuth — FlawCard now calls useAuth for beta-gated tactic chip (Phase 126).
-vi.mock('@/hooks/useAuth', () => ({
-  useAuth: () => ({ user: null }),
-}));
 
 // Mock useEnqueueGame — NoAnalysisState (rendered via LibraryGameCard) uses tier-1 mutation.
 vi.mock('@/hooks/useEnqueueGame', () => ({

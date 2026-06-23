@@ -72,13 +72,6 @@ interface EvalChartProps {
   /** SAN mainline (moves[i] = move at ply i) — labels the tooltip for any ply. */
   moves: string[];
   /**
-   * Beta gate for the tactic-motif feature (Phase 126). When true and the active
-   * marker carries an `allowed_tactic_motif`, the tooltip lists it first (above the
-   * flaw tags). Phase 128 D-07 rename. Mirrors chip beta-gate in LibraryGameCard/FlawCard.
-   * Default false.
-   */
-  betaEnabled?: boolean;
-  /**
    * Tailwind height class for the chart area only — 'h-[116px]' (desktop) or
    * 'h-[114px]' (mobile). Chart height + the 16px (h-4) slider row should equal
    * the adjacent miniboard size so the eval block lines up with the board.
@@ -488,7 +481,6 @@ export function EvalChart({
   initialPly,
   commandedPly,
   commandSeq,
-  betaEnabled = false,
 }: EvalChartProps) {
   // The tooltip shows flaw detail whenever the marker's dot is visible: M/B always,
   // inaccuracy only when revealed (highlighted via its badge, or cycled to). The dot
@@ -645,7 +637,7 @@ export function EvalChart({
   const activeMarker = allMarkerMap.get(activePly);
   const tooltipTags = activeMarker ? activeMarker.tags.filter((t) => !PHASE_TAGS.has(t)) : [];
   // Tactic motifs for the active marker (Phase 126 UAT) — listed first in the tooltip,
-  // above the flaw tags. Beta-gated, family-mapped only. Both orientations are listed
+  // above the flaw tags. Family-mapped only. Both orientations are listed
   // with a "missed:"/"allowed:" prefix so the tooltip matches the dual-orientation chips
   // (allowed before missed, mirroring the LibraryGameCard chip row ordering).
   const tooltipTactics: {
@@ -654,7 +646,7 @@ export function EvalChart({
     family: TacticFamily;
     depth: number | null;
   }[] = (() => {
-    if (!betaEnabled || activeMarker == null) return [];
+    if (activeMarker == null) return [];
     const out: {
       orientation: 'missed' | 'allowed';
       motif: string;

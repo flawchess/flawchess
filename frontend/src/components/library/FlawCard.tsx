@@ -24,7 +24,7 @@ import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { LibraryGameCard } from '@/components/results/LibraryGameCard';
 import { SeverityBadge } from '@/components/library/SeverityBadge';
 import { TagChip, TagLegend } from '@/components/library/TagChip';
-import { flawPlyUrl } from '@/lib/platformLinks';
+import { platformPlyUrl } from '@/lib/platformLinks';
 import { sanToSquares, uciToSquares } from '@/lib/sanToSquares';
 import { toDisplayDepthForOrientation } from '@/lib/tacticDepth';
 import { formatMoveNotation } from '@/lib/openingInsights';
@@ -32,7 +32,6 @@ import { formatFlawEvalParts } from '@/lib/formatFlawEval';
 import { useLibraryGame } from '@/hooks/useLibrary';
 import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
 import { useMiniBoardSize } from '@/hooks/useMiniBoardSize';
-import { useUserProfile } from '@/hooks/useUserProfile';
 import { TacticMotifChip } from '@/components/library/TacticMotifChip';
 import type { FlawListItem, FlawSeverity, TacticOrientation } from '@/types/library';
 
@@ -114,8 +113,6 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
   // filter (e.g. a depth-12 tactic under a depth 1-2 filter).
   const [flawFilter] = useFlawFilterStore();
   const { data, isLoading, isError } = useLibraryGame(open ? flaw.game_id : null, flawFilter);
-  const { data: userProfile } = useUserProfile();
-  const betaEnabled = userProfile?.beta_enabled ?? false;
   // Mobile (<sm) miniboard spans 40% of the viewport width; sm+ keeps the fixed
   // size. The desktop body uses the literal DESKTOP_BOARD_SIZE instead (sm+ only).
   const mobileBoardSize = useMiniBoardSize(MOBILE_BOARD_SIZE);
@@ -141,13 +138,12 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
   // the flaw-move arrow; the missed tactic at the end of the blue best-move arrow.
   // Allowed is decision-anchored (+1 vs missed) because the opponent's refutation
   // line starts one ply after the shared pre-flaw decision board (Quick 260621-qz9).
-  // Depth badges are a beta-only surface — non-beta users see arrows without numbers.
   const allowedDepthLabel =
-    betaEnabled && flaw.allowed_tactic_depth != null
+    flaw.allowed_tactic_depth != null
       ? String(toDisplayDepthForOrientation(flaw.allowed_tactic_depth, 'allowed'))
       : undefined;
   const missedDepthLabel =
-    betaEnabled && flaw.missed_tactic_depth != null
+    flaw.missed_tactic_depth != null
       ? String(toDisplayDepthForOrientation(flaw.missed_tactic_depth, 'missed'))
       : undefined;
   const boardArrows = [
@@ -222,7 +218,7 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
   );
 
   // Platform icon + exact-ply deep link (D-12, T-112-06)
-  const flawUrl = flawPlyUrl(flaw.platform, flaw.platform_url, flaw.ply, flaw.user_color);
+  const flawUrl = platformPlyUrl(flaw.platform, flaw.platform_url, flaw.ply, flaw.user_color);
   const platformIconAndLink = (
     <span className="shrink-0 flex items-center gap-1.5 text-muted-foreground">
       <PlatformIcon platform={flaw.platform} className="h-4 w-4" />
@@ -330,11 +326,9 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
   );
 
   // Tactic motifs explained by the legend — orientation-prefixed list matching the
-  // chips above (beta-gated; [] when off). Reused for the legend prop and the row-2
-  // render guard so the legend appears next to the context tags only when there's
-  // something to explain.
+  // chips above. Reused for the legend prop and the row-2 render guard so the legend
+  // appears next to the context tags only when there's something to explain.
   const legendMotifs = (() => {
-    if (!userProfile?.beta_enabled) return [];
     const motifs: string[] = [];
     if (tacticOrientation !== 'allowed' && flaw.missed_tactic_motif != null) {
       motifs.push(flaw.missed_tactic_motif);
@@ -361,10 +355,10 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
       />
 
       {/* Tactic motif chips — Phase 129 TACUI-07 D-10/D-11 dual-chip matrix.
-          Beta-gated (D-01). Orientation controls which chip(s) render:
+          Orientation controls which chip(s) render:
           'either' = both when non-null; 'missed' = missed chip only; 'allowed' = allowed chip only.
           Each chip carries the orientation prefix in its label/aria/testid. */}
-      {userProfile?.beta_enabled && tacticOrientation !== 'allowed' &&
+      {tacticOrientation !== 'allowed' &&
         flaw.missed_tactic_motif != null && (
           <TacticMotifChip
             motif={flaw.missed_tactic_motif}
@@ -372,7 +366,7 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
             orientation="missed"
           />
         )}
-      {userProfile?.beta_enabled && tacticOrientation !== 'missed' &&
+      {tacticOrientation !== 'missed' &&
         flaw.allowed_tactic_motif != null && (
           <TacticMotifChip
             motif={flaw.allowed_tactic_motif}

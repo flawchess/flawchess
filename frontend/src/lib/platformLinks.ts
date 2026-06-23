@@ -1,12 +1,14 @@
 /**
- * Deep links to the flawed move's resulting position on the originating platform,
- * oriented to the user's side where the platform supports it.
+ * Deep links to the position resulting from the move at `ply` on the originating
+ * platform, oriented to the user's side where the platform supports it.
  *
- * `ply` is the flaw's 0-indexed half-move (FlawRecord.ply: the flawed move is the
- * (ply+1)-th half-move). Both platforms count half-moves from the start, where
- * "N" means the position AFTER N half-moves (N=0 is the starting position). To
- * land on the blunder itself — the position right after the flawed move, with that
- * move highlighted — we navigate to `ply + 1`.
+ * Used both for the Flaws card (deep-link to the flawed move's resulting position)
+ * and the Games card (deep-link to whatever move the eval-chart slider is parked on).
+ *
+ * `ply` is a 0-indexed half-move (the move at `ply` is the (ply+1)-th half-move).
+ * Both platforms count half-moves from the start, where "N" means the position
+ * AFTER N half-moves (N=0 is the starting position). To land on the position right
+ * after the move at `ply` — with that move highlighted — we navigate to `ply + 1`.
  *
  * - **lichess** — append a `/{color}` orientation suffix (lichess defaults to
  *   white's POV; `/black` flips the board) plus a `#{n}` ply fragment, e.g.
@@ -22,7 +24,7 @@
 // chess.com game URLs are https://www.chess.com/game/{live|daily}/{id}.
 const CHESS_COM_GAME_RE = /^(https?:\/\/(?:www\.)?chess\.com)\/game\/(live|daily)\/(\d+)/i;
 
-export function flawPlyUrl(
+export function platformPlyUrl(
   platform: string,
   platformUrl: string | null,
   ply: number,
@@ -31,7 +33,7 @@ export function flawPlyUrl(
   if (!platformUrl) return null;
   const p = platform.toLowerCase();
 
-  // Navigate to the position AFTER the flawed move so the board shows the blunder.
+  // Navigate to the position AFTER the move at `ply` so the board shows that move.
   const targetPly = ply + 1;
 
   if (p === 'lichess') {

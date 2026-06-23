@@ -1,60 +1,60 @@
 import { describe, expect, it } from 'vitest';
-import { flawPlyUrl, gamePlatformUrl, supportsPlyDeepLink } from '@/lib/platformLinks';
+import { platformPlyUrl, gamePlatformUrl, supportsPlyDeepLink } from '@/lib/platformLinks';
 
-describe('flawPlyUrl', () => {
+describe('platformPlyUrl', () => {
   // The link lands on the position AFTER the flawed move (the blunder), so the
   // 0-indexed flaw ply maps to ply + 1 half-moves on both platforms.
   it('appends the (ply + 1) fragment for lichess, white POV (no orientation suffix)', () => {
-    expect(flawPlyUrl('lichess', 'https://lichess.org/abcd1234', 41, 'white')).toBe(
+    expect(platformPlyUrl('lichess', 'https://lichess.org/abcd1234', 41, 'white')).toBe(
       'https://lichess.org/abcd1234#42',
     );
   });
 
   it('flips lichess to black POV via the /black suffix when the user played black', () => {
-    expect(flawPlyUrl('lichess', 'https://lichess.org/abcd1234', 41, 'black')).toBe(
+    expect(platformPlyUrl('lichess', 'https://lichess.org/abcd1234', 41, 'black')).toBe(
       'https://lichess.org/abcd1234/black#42',
     );
   });
 
   it('is case-insensitive on the platform name', () => {
-    expect(flawPlyUrl('Lichess', 'https://lichess.org/abcd1234', 7, 'white')).toBe(
+    expect(platformPlyUrl('Lichess', 'https://lichess.org/abcd1234', 7, 'white')).toBe(
       'https://lichess.org/abcd1234#8',
     );
   });
 
   it('rewrites chess.com live games to the analysis board (move = ply + 1)', () => {
-    expect(flawPlyUrl('chess.com', 'https://www.chess.com/game/live/123', 41, 'white')).toBe(
+    expect(platformPlyUrl('chess.com', 'https://www.chess.com/game/live/123', 41, 'white')).toBe(
       'https://www.chess.com/analysis/game/live/123?tab=details-tab&move=42',
     );
   });
 
   it('does not flip chess.com (no orientation param) when the user played black', () => {
-    expect(flawPlyUrl('chess.com', 'https://www.chess.com/game/live/123', 41, 'black')).toBe(
+    expect(platformPlyUrl('chess.com', 'https://www.chess.com/game/live/123', 41, 'black')).toBe(
       'https://www.chess.com/analysis/game/live/123?tab=details-tab&move=42',
     );
   });
 
   it('handles chess.com daily games', () => {
-    expect(flawPlyUrl('chess.com', 'https://www.chess.com/game/daily/555', 10, 'white')).toBe(
+    expect(platformPlyUrl('chess.com', 'https://www.chess.com/game/daily/555', 10, 'white')).toBe(
       'https://www.chess.com/analysis/game/daily/555?tab=details-tab&move=11',
     );
   });
 
   it('falls back to the plain URL for an unexpected chess.com URL shape', () => {
-    expect(flawPlyUrl('chess.com', 'https://www.chess.com/game/12345', 41, 'white')).toBe(
+    expect(platformPlyUrl('chess.com', 'https://www.chess.com/game/12345', 41, 'white')).toBe(
       'https://www.chess.com/game/12345',
     );
   });
 
   it('returns the plain URL for unknown platforms', () => {
-    expect(flawPlyUrl('unknown', 'https://example.com/game/9', 12, 'white')).toBe(
+    expect(platformPlyUrl('unknown', 'https://example.com/game/9', 12, 'white')).toBe(
       'https://example.com/game/9',
     );
   });
 
   it('returns null when no platform URL is available', () => {
-    expect(flawPlyUrl('lichess', null, 41, 'white')).toBeNull();
-    expect(flawPlyUrl('chess.com', null, 41, 'black')).toBeNull();
+    expect(platformPlyUrl('lichess', null, 41, 'white')).toBeNull();
+    expect(platformPlyUrl('chess.com', null, 41, 'black')).toBeNull();
   });
 });
 
