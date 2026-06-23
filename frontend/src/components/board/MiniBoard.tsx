@@ -10,7 +10,7 @@ import { squareToCoords, buildArrowPath } from './arrowGeometry';
 const MINI_SHAFT_WIDTH = 0.27;
 const MINI_HEAD_WIDTH = 0.75;
 const MINI_HEAD_LENGTH_RATIO = 0.7;
-const MINI_ARROW_OPACITY = 0.85;
+const MINI_ARROW_OPACITY = 0.65;
 const MINI_TIP_OVERSHOOT = 0.16;
 
 // Depth-label badge (tactic depth shown at an arrow's target square): a large
@@ -20,6 +20,9 @@ const MINI_TIP_OVERSHOOT = 0.16;
 const DEPTH_LABEL_FONT = 0.55;
 const DEPTH_LABEL_OUTLINE = 0.09;
 const DEPTH_LABEL_DEFAULT_FILL = 'white';
+// Inset from the square's top-right corner so the badge sits in the corner
+// (clear of the piece) rather than centered over it. Fraction of a square.
+const DEPTH_LABEL_CORNER_INSET = 0.08;
 
 interface MiniBoardArrow {
   from: string;
@@ -144,8 +147,10 @@ function MiniArrowOverlay({
       {arrows.map((a) => {
         if (!a.label) return null;
         const [tx, ty] = squareToCoords(a.to, flipped);
-        const cx = tx * sqSize;
-        const cy = ty * sqSize;
+        // Anchor the badge to the square's top-right corner (inset slightly) so
+        // it stays clear of the piece instead of covering it.
+        const cx = (tx + 0.5 - DEPTH_LABEL_CORNER_INSET) * sqSize;
+        const cy = (ty - 0.5 + DEPTH_LABEL_CORNER_INSET) * sqSize;
         return (
           <text
             key={`label-${a.from}-${a.to}`}
@@ -157,8 +162,8 @@ function MiniArrowOverlay({
             paintOrder="stroke"
             fontSize={DEPTH_LABEL_FONT * sqSize}
             fontWeight="700"
-            textAnchor="middle"
-            dominantBaseline="central"
+            textAnchor="end"
+            dominantBaseline="hanging"
           >
             {a.label}
           </text>
