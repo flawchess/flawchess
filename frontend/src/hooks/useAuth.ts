@@ -159,6 +159,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     queryClient.clear();
     // Keep guest_token so the same guest account is reused on next "Use as Guest"
     localStorage.removeItem('auth_token');
+    // Drop any stale promote intent so a later sign-in isn't wrongly routed through guest
+    // promotion (see getGoogleAuthorizationUrl).
+    sessionStorage.removeItem('promote_intent');
     setToken(null);
     setUser(null);
     window.location.href = '/';
@@ -169,8 +172,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('auth_token');
     setToken(null);
     setUser(null);
+    // Signal that the upcoming sign-up should promote the saved guest account in place.
+    // This is the ONLY thing that should drive guest promotion once auth_token is cleared:
+    // gating promotion on the mere presence of the persisted guest_token locked out a
+    // returning registered user whose stale guest_token collided with their account
+    // (2026-06-23). guest_token itself is preserved so the register flow can promote.
+    sessionStorage.setItem('promote_intent', '1');
     // No redirect — caller navigates to register page.
-    // guest_token is preserved so RegisterForm can promote the guest account.
   }, []);
 
   const value: AuthState = { user, token, isLoading, login, loginWithToken, refreshAuthToken, loginAsGuest, register, impersonate, logout, logoutForPromotion };

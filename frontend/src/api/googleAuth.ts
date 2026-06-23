@@ -1,28 +1,45 @@
 import { apiClient } from '@/api/client';
 
 const GUEST_TOKEN_KEY = 'guest_token';
+const PROMOTE_INTENT_KEY = 'promote_intent';
 
 /**
- * Resolve the Google OAuth authorization URL, preferring in-place guest promotion.
+ * Resolve the Google OAuth authorization URL.
  *
- * Shared by both the Login and Register Google buttons so the two can never drift
- * apart again — divergence between them (the Login button had no promote branch) is
- * exactly what orphaned a guest account in prod (users 198→199, 2026-06-23).
+ * Two flows:
+ *  - Plain `/auth/google/authorize`: normal sign-in / sign-up. The backend is itself
+ *    guest-aware: when the request carries an *active* guest's session token (apiClient
+ *    attaches the stored `auth_token` automatically), it promotes that guest in place. So a
+ *    logged-in guest who clicks "Sign in with Google" is upgraded without any special
+ *    frontend handling.
+ *  - Explicit `/auth/google/authorize-promote` (guest_token as Bearer): used ONLY when the
+ *    user deliberately chose to create an account from a guest session via the "save my
+ *    data" CTA. That CTA (`logoutForPromotion`) clears `auth_token` before sending the user
+ *    to the register tab, so the active-guest auto-promotion above no longer applies and the
+ *    persisted `guest_token` is the only remaining link to their imported data. A one-shot
+ *    `promote_intent` flag set by that CTA signals this case.
  *
- * If a `guest_token` is saved, route through `/auth/google/authorize-promote` (with the
- * token as a Bearer header) so the guest account and its imported games are upgraded in
- * place rather than replaced by a brand-new account. Falls back to the plain
- * `/auth/google/authorize` flow when no guest session exists or the saved token is
- * rejected. The backend's plain authorize endpoint is itself guest-aware, so this is
- * defense in depth, not the only safety net.
+ * Why gate on the intent flag instead of "a guest_token exists": `guest_token` is
+ * deliberately persisted across logout so "Use as Guest" can resume the same account. A
+ * returning *registered* user therefore commonly has a stale `guest_token` lingering in
+ * localStorage. Keying promotion off its mere presence routed their Google login through the
+ * promote flow, which collided with their existing account (UserAlreadyExists →
+ * EMAIL_ALREADY_REGISTERED) and locked them out — a regression that surfaced on mobile PWAs
+ * where guest mode had been used (2026-06-23). Gating on explicit intent fixes that:
+ * returning users always get the plain flow and sign straight into their account.
  */
 export async function getGoogleAuthorizationUrl(): Promise<string> {
-  // Pass the current origin so the backend builds a redirect_uri matching the host
-  // the user is on (localhost vs an HTTPS dev tunnel like Tailscale).
+  // Pass the current origin so the backend builds a redirect_uri matching the host the user
+  // is on (localhost vs an HTTPS dev tunnel like Tailscale).
   const origin = encodeURIComponent(window.location.origin);
   const guestToken = localStorage.getItem(GUEST_TOKEN_KEY);
+  const promoteIntent = sessionStorage.getItem(PROMOTE_INTENT_KEY) === '1';
 
-  if (guestToken) {
+  if (promoteIntent && guestToken) {
+    // Consume the one-shot intent up front: if the user abandons the OAuth round-trip and
+    // retries, falling back to the plain flow (the safe default) is preferable to stranding
+    // every later login on the promote path.
+    sessionStorage.removeItem(PROMOTE_INTENT_KEY);
     try {
       const res = await apiClient.get<{ authorization_url: string }>(
         `/auth/google/authorize-promote?origin=${origin}`,
