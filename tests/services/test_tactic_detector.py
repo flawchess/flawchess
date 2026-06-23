@@ -1446,13 +1446,16 @@ _EN_PASSANT_FIXTURES: list[tuple[str, str, TacticMotif]] = [
 ]
 
 _PROMOTION_FIXTURES: list[tuple[str, str, TacticMotif]] = [
-    # Queen promotions where no real tactic fires.
-    # From lichess TRAIN: ZUGdw (g2g1q, no real tactic pre-empts).
-    ("8/P7/2K5/8/3N4/8/4b1pk/8 b - - 2 66", "g2g1q d4e2 g1a7", "promotion"),
-    # Curated clean positions: no check, no fork, no other tactic
+    # Queen promotions where no real tactic fires (move-type is a strict residual fallback:
+    # if any tier 1-4 tactic fires, it wins — see the dispatcher's `if not candidates` guard).
+    # Curated clean positions: no check, no fork, no other tactic.
     ("8/6P1/8/8/8/8/8/k1K5 w - - 0 1", "g7g8q", "promotion"),
     ("8/3P4/8/8/8/8/8/k1K5 w - - 0 1", "d7d8q", "promotion"),
     ("6k1/6P1/6K1/8/8/8/8/8 w - - 0 1", "g7g8q", "promotion"),
+    # Quick 260623 whole-line scan: the queen promotion is the SECOND pov move (the first pov
+    # move pushes the pawn to the 7th, opponent shuffles its king, then the pawn promotes).
+    # detect_promotion must scan all solver moves, not just moves[0], to tag this.
+    ("8/8/6P1/8/8/8/k7/2K5 w - - 0 1", "g6g7 a2a3 g7g8q", "promotion"),
 ]
 
 _UNDER_PROMOTION_FIXTURES: list[tuple[str, str, TacticMotif]] = [

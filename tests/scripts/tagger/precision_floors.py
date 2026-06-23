@@ -263,10 +263,12 @@ PRECISION_FLOOR: dict[str, float] = {
     "pin": 0.92,  # train 0.998 / test 1.000 (951 TP, 2 FP; cook pin_prevents_escape fix)
     "double-check": 0.93,  # train 1.000 / test 1.000 (phase 131-03 lock; raised from 0.80)
     # Phase 131-03 (D-09 never-regress lock, measured 2026-06-22):
-    # discovered-check: floor raised from 0.80 to 0.85 per D-09 (hold ≥0.85; train 0.913 / test 0.884).
-    # The depth-primary dispatch (plan-01) shifted some DA sub-case-1 positions to discovered-check,
-    # keeping train above the new 0.85 floor.
-    "discovered-check": 0.85,  # train 0.913 / test 0.884 (D-09 lock ≥0.85; raised from 0.80)
+    # discovered-check: floor raised from 0.80 to 0.85 per D-09 (hold ≥0.85).
+    # Quick 260623 (whole-line scan): detect_discovered_check now scans EVERY pov move
+    # (cook.discovered_check `mainline[1::2]`), not just moves[0]. Recall 0.16 -> 0.337
+    # train / 0.314 -> 0.322 test; precision 0.953 train / 0.936 test (~1pp train dip, test
+    # up). Floor held at the D-09 ≥0.85 lock (TRAIN 0.953 clears comfortably).
+    "discovered-check": 0.85,  # train 0.953 / test 0.936 (D-09 lock ≥0.85; whole-line scan)
     # --- Tier 1 mates (confidence=100) ---
     "mate": 0.95,  # train 1.000 / test 1.000 (unchanged)
     "smothered-mate": 0.93,  # train 1.000 / test 1.000 (phase 131-03 lock; raised from 0.90)
@@ -328,17 +330,17 @@ PRECISION_FLOOR: dict[str, float] = {
     # push). FPs 216 -> 0 with ZERO true-positive loss. P(train) 0.743 -> 1.000, P(test) -> 1.000.
     # Floor 0.68 -> 0.92.
     "hanging-piece": 0.92,  # train 1.000 / test 1.000 (631 TP, 0 FP; cook gates + recapture exclusion)
-    # --- Tier 5 move-type (Phase 128.1-02, measured 2026-06-20) ---
-    # promotion: TP=1, FP=0, P=1.000 train (TEST=NaN, never fires on held-out set).
-    # Very thin (1 TP) but 100% precision. Floor set conservatively at 0.60 to catch
-    # zero-precision regressions while tolerating 1-sample variance.
-    "promotion": 0.60,  # train 1.000 (1 TP, 0 FP) — thin but structurally correct
-    # Quick 260623: en-passant and under-promotion unsuppressed. Both fire only at Tier 5
-    # (residual) but at P(train)=P(test)=1.000 on the Phase-134 expanded fixture. en-passant
-    # has the larger TP pool (R≈0.30 of n=1960); under-promotion is thinner (R≈0.12 of n=780),
-    # so its floor is set slightly more conservatively.
-    "en-passant": 0.93,  # train 1.000 / test 1.000 (~590 TP, 0 FP)
-    "under-promotion": 0.90,  # train 1.000 / test 1.000 (~91 TP, 0 FP; thinner pool)
+    # --- Tier 5 move-type (Phase 128.1-02; whole-line scan Quick 260623) ---
+    # Quick 260623: the three move-type detectors now scan EVERY pov move (cook's
+    # promotion/under_promotion/en_passant `mainline[1::2]`), not just moves[0], and the
+    # dispatcher gates Tier 5 behind `if not candidates` so move-type is a STRICT residual
+    # fallback (any real tactic in tiers 1-4 always wins). Precision stays 1.000 / 0 FP on
+    # both splits (move-type only wins on residual lines lichess also tags), and recall
+    # jumps: promotion 0.05 -> 0.487 train / 0.481 test, en-passant 0.30 -> 0.622 / 0.626,
+    # under-promotion 0.12 -> 0.324 / 0.349. Floors unchanged (all clear comfortably).
+    "promotion": 0.60,  # train 1.000 / test 1.000 (1816 TP, 0 FP; whole-line residual scan)
+    "en-passant": 0.93,  # train 1.000 / test 1.000 (1219 TP, 0 FP; whole-line residual scan)
+    "under-promotion": 0.90,  # train 1.000 / test 1.000 (253 TP, 0 FP; whole-line residual scan)
     # --- Phase 133 unsuppressed motifs (measured 2026-06-23, phase 133 cook ports) ---
     # All five measured at TRAIN 1.000 / 0 FP; floors set at 0.93 (~7pp below, rounded to 0.05).
     "attraction": 0.93,  # train 1.000 / test ~1.000 (654 TP, 0 FP; phase 133 cook port)

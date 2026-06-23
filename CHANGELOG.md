@@ -48,6 +48,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- **More tactic chips surface, with no loss of accuracy** — the promotion, en-passant, under-promotion, and discovered-check detectors now scan the whole refutation line instead of only its first move, so these tactics are recognized wherever they occur in the solution (matching how lichess labels them). Recall roughly tripled for promotion and quadrupled for en-passant, doubled for discovered-check, while precision held at or near 100%. The three move-type chips also became a strict last-resort fallback: a fork, skewer, or other genuine tactic now always wins the chip over a bare "promotion"/"en-passant" label, which incidentally recovered a few real-tactic tags that were previously mislabeled. (Quick 260623-r7a)
+
 - **Redesigned Library Game and Flaw cards on desktop** — both cards now use a board-left / stacked-right layout with a full-width metadata strip (including the game date) above the board, a larger miniboard, and a more compact eval chart, so the Flaw card visually matches the Game card. Miniboard tactic-depth numbers are now colored by orientation (missed vs allowed), and the tactic column layout stays a stable three columns under active filters. (Phase 130)
 
 - **Tactic Depth filter (renamed) with a depth range** — the Library Flaws filter's tactic control is now labeled "Tactic Depth" (was "Tactic Difficulty") and is a two-handle range slider measured in plies, numbered 1 to 12 (where 1 is an immediate tactic) instead of a single "1 to 5 moves deep" cap. Pick any depth window: Low 1–2, Medium 1–6, High the full range, or drag for a custom range. Forced mates now respect the range like every other tactic rather than always showing. (Phase 130, Quick 260621-mq4, 260621-qz9)

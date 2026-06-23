@@ -779,26 +779,29 @@ def detect_discovered_check(
     by named-mate subtypes that short-circuit before generic mate.  discovered-check is
     ranked above discovered-attack in _GEOMETRIC_REGISTRY (lower list index = higher
     priority) so the dispatcher returns discovered-check when both would fire on the
-    same PV at depth 0.
+    same PV at the same depth.
+
+    Cook-faithful scan (Quick 260623): cook.discovered_check scans EVERY pov move
+    (`mainline[1::2]`), not just the first — a discovered check can be delivered on a
+    later pov move. We scan the same set and return the FIRST discovered check as depth=k
+    so the depth-primary dispatcher keeps shallower tactics winning. The first-pov-move
+    case still returns depth 0 (unchanged behavior).
     """
-    if len(moves) < 1 or len(boards) < 2:
-        return False, None, None
+    for k in _solver_move_indices(len(moves)):
+        board_after = boards[k + 1]
+        if not board_after.is_check():
+            continue
 
-    board_after_first = boards[1]
-    if not board_after_first.is_check():
-        return False, None, None
+        checkers_set = board_after.checkers()
+        if moves[k].to_square in checkers_set:
+            # The piece that just moved is itself the checker — direct check, not discovered
+            continue
 
-    first_dest = moves[0].to_square
-    checkers_set = board_after_first.checkers()
-    if first_dest in checkers_set:
-        # The piece that just moved is itself the checker — direct check, not discovered
-        return False, None, None
-
-    # The moved piece is NOT in the checker set: it's a discovered check.
-    for checker_sq in checkers_set:
-        checker = board_after_first.piece_at(checker_sq)
-        if checker is not None and checker.color == pov:
-            return True, checker.piece_type, 0  # depth 0: always the first pov move
+        # The moved piece is NOT in the checker set: it's a discovered check.
+        for checker_sq in checkers_set:
+            checker = board_after.piece_at(checker_sq)
+            if checker is not None and checker.color == pov:
+                return True, checker.piece_type, k
 
     return False, None, None
 
@@ -2215,60 +2218,85 @@ def detect_sacrifice(
 # PVs where move-type fires are those where nothing else in tiers 1-4 fired (D-02).
 
 
+def _solver_move_indices(n_moves: int) -> range:
+    """Even move indices = the refuting (pov) side's own moves: moves[0], moves[2], ….
+
+    In our PV representation moves[0] is the first pov move (the published PV is
+    game_positions.pv = lichess Moves[1:]), so the even indices are lichess's
+    `mainline[1::2]` (every solver move). The move-type and discovered-check detectors
+    scan this set — NOT just moves[0] — to match cook.py's whole-line theme predicates.
+    """
+    return range(0, n_moves, 2)
+
+
 def detect_en_passant(
     boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
 ) -> tuple[bool, int | None, int | None]:
-    """En-passant: the first refuting move is an en-passant capture.
+    """En-passant: ANY pov (solver) move in the line is an en-passant capture.
 
-    Returns (fired, chess.PAWN, depth=0). Confidence: TACTIC_CONFIDENCE_HIGH
-    (~100% by construction — the move shape is unambiguous).
+    Cook-faithful (cook.en_passant scans `mainline[1::2]`): the en-passant capture can
+    occur on a later pov move, not just the first. Returns the index of the FIRST such
+    move as depth so the depth-primary dispatcher keeps shallower real tactics winning.
+
+    Returns (fired, chess.PAWN, depth=k). Confidence: TACTIC_CONFIDENCE_HIGH (~100% by
+    construction — the move shape is unambiguous; standalone P=1.000 on both fixtures).
     """
-    if not moves:
-        return False, None, None
-    if boards[0].is_en_passant(moves[0]):
-        return True, chess.PAWN, 0
+    for k in _solver_move_indices(len(moves)):
+        if boards[k].is_en_passant(moves[k]):
+            return True, chess.PAWN, k
     return False, None, None
 
 
 def detect_promotion(
     boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
 ) -> tuple[bool, int | None, int | None]:
-    """Promotion (queen): the first refuting move promotes a pawn to a QUEEN.
+    """Promotion (queen): ANY pov (solver) move in the line promotes a pawn to a QUEEN.
+
+    Cook-faithful (cook.promotion scans `mainline[1::2]` for any promotion): the queen
+    promotion can occur on a later pov move, not just the first. Returns the index of the
+    FIRST queen promotion as depth (depth-primary dispatch keeps real tactics winning).
 
     D-01 dominance: a non-queen promotion fires detect_under_promotion and NOT this
-    function — because detect_under_promotion fires only when moves[0].promotion is not
-    None AND != chess.QUEEN, which is mutually exclusive with this function's condition
-    (moves[0].promotion == chess.QUEEN). The Tier-5 dispatch loop calls all three
-    move-type detectors unconditionally; only one can fire for any given move. The
-    registry rank provides a secondary defense but is not the primary enforcement
-    mechanism; the detection conditions are fully disjoint.
+    function — under-promotion is ranked BEFORE promotion in _MOVE_TYPE_REGISTRY and its
+    condition (promotion not None AND != QUEEN) is disjoint from this one (== QUEEN). When
+    both detectors fire at the same depth on the same line, the equal-depth (tier, rank)
+    tiebreak hands the win to under-promotion.
 
-    Returns (fired, chess.PAWN, depth=0). Confidence: TACTIC_CONFIDENCE_HIGH.
+    Returns (fired, chess.PAWN, depth=k). Confidence: TACTIC_CONFIDENCE_HIGH.
     """
-    if not moves:
-        return False, None, None
-    if moves[0].promotion == chess.QUEEN:
-        return True, chess.PAWN, 0
+    for k in _solver_move_indices(len(moves)):
+        if moves[k].promotion == chess.QUEEN:
+            return True, chess.PAWN, k
     return False, None, None
 
 
 def detect_under_promotion(
     boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
 ) -> tuple[bool, int | None, int | None]:
-    """Under-promotion: the first refuting move promotes a pawn to a NON-queen piece.
+    """Under-promotion: a pov (solver) move promotes a pawn to a NON-queen piece.
 
-    D-01 dominance: under-promotion DOMINATES promotion. This detector is ranked BEFORE
-    detect_promotion in _MOVE_TYPE_REGISTRY (lower rank index = higher priority), so
-    when moves[0] is a non-queen promotion, under-promotion is returned, NEVER promotion.
+    Cook-faithful (cook.under_promotion scans `mainline[1::2]`): walk the pov moves; if a
+    pov move delivers checkmate, it counts as under-promotion ONLY when it is a KNIGHT
+    promotion (the lone "under" mate) and the scan STOPS there; otherwise any non-queen
+    promotion fires. Returns the index of the firing move as depth.
 
-    Returns (fired, chess.PAWN, depth=0). Confidence: TACTIC_CONFIDENCE_HIGH.
+    D-01 dominance: under-promotion DOMINATES promotion (ranked BEFORE detect_promotion in
+    _MOVE_TYPE_REGISTRY), so when a pov move is a non-queen promotion, under-promotion is
+    returned, NEVER promotion.
+
+    Returns (fired, chess.PAWN, depth=k). Confidence: TACTIC_CONFIDENCE_HIGH.
     """
-    if not moves:
-        return False, None, None
-    promo = moves[0].promotion
-    # Fires only for non-queen promotions (knight=2, bishop=3, rook=4).
-    if promo is not None and promo != chess.QUEEN:
-        return True, chess.PAWN, 0
+    for k in _solver_move_indices(len(moves)):
+        promo = moves[k].promotion
+        # cook checks checkmate FIRST: a mating pov move is under-promotion iff it's a
+        # knight promotion, and the scan terminates at that move either way.
+        if boards[k + 1].is_checkmate():
+            if promo == chess.KNIGHT:
+                return True, chess.PAWN, k
+            return False, None, None
+        # Non-mating non-queen promotion (knight=2, bishop=3, rook=4).
+        if promo is not None and promo != chess.QUEEN:
+            return True, chess.PAWN, k
     return False, None, None
 
 
@@ -2503,17 +2531,22 @@ def detect_tactic_motif(
         )
 
     # Tier 5: move-type family (D-03/D-04 — lowest tier; real tactics in tiers 1-4 always win).
-    # Move-type fires only on the RESIDUAL positions where no real motif fired. Sparse
-    # population is expected and correct — NOT a bug (see MOVE_TYPE_MOTIFS and D-02 posture).
+    # Move-type fires only on the RESIDUAL positions where NO real motif fired (the
+    # candidate pool from tiers 2-4 is empty; mates already short-circuited above). This is
+    # enforced structurally, not via the depth-primary tiebreak: the whole-line scan (Quick
+    # 260623) can place a promotion/en-passant at a shallow ply, and without this guard a
+    # depth-2 promotion would out-rank a depth-6 real tactic and steal a more-instructive
+    # chip. A move-type chip is a fallback, never a winner over a genuine tactic.
     # Under-promotion (rank 0) is ranked before promotion (rank 1) so that a non-queen
     # promotion can NEVER be tagged as "promotion" (D-01 dominance).
-    for rank, (motif_str, motif_int) in enumerate(_MOVE_TYPE_REGISTRY):
-        fn = _MOVE_TYPE_DETECTOR_FNS[motif_str]
-        fired, piece, depth = fn(boards, moves, pov)
-        if fired:
-            candidates.append(
-                (TIER_MOVE_TYPE, rank, piece, TACTIC_CONFIDENCE_HIGH, depth, int(motif_int))
-            )
+    if not candidates:
+        for rank, (motif_str, motif_int) in enumerate(_MOVE_TYPE_REGISTRY):
+            fn = _MOVE_TYPE_DETECTOR_FNS[motif_str]
+            fired, piece, depth = fn(boards, moves, pov)
+            if fired:
+                candidates.append(
+                    (TIER_MOVE_TYPE, rank, piece, TACTIC_CONFIDENCE_HIGH, depth, int(motif_int))
+                )
 
     if not candidates:
         return None, None, None, None
