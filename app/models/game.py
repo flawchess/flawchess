@@ -69,6 +69,17 @@ class Game(Base):
         # Phase 119 SEED-046: partial index for the recency-weighted lottery candidate pool.
         # Predicate matches needs_engine_full_evals exactly. Created in migration
         # 20260614150000 (migration-only, following ix_eval_jobs_user_active Phase 118 precedent).
+        # Partial index backing the tier-3 residual-fallback pick in
+        # eval_queue_service._claim_tier3_derived (PV-backfill-only games). Without it
+        # every remote-worker idle poll seq-scanned all of games (~300 ms, the dominant
+        # query by total time). Created in migration 20260623210000.
+        Index(
+            "ix_games_pv_backfill_pending",
+            "user_id",
+            postgresql_where=sa.text(
+                "full_evals_completed_at IS NULL AND lichess_evals_at IS NOT NULL"
+            ),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
