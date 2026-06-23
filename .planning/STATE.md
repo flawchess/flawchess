@@ -2,11 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.28
 milestone_name: Tactic Tagging
-status: executing
+status: Phase 133 shipped — squash-merged to main (42061d9d)
 stopped_at: Completed 133-02-PLAN.md
-last_updated: "2026-06-23T05:47:08.923Z"
+last_updated: "2026-06-23T06:03:05.964Z"
 last_activity: 2026-06-23
-last_activity_desc: Phase 133 complete, transitioned to Phase 999.1
 progress:
   total_phases: 16
   completed_phases: 11
@@ -23,8 +22,8 @@ current_phase_name: close-suppressed-tactic-gaps-attraction-fix-sacrifice-unsupp
 
 Milestone: v1.28 Tactic Tagging — all active phases (124, 125, 126, 127, 128, 128.1, 129) COMPLETE
 Phase 129 (tactic-filter-ui): VERIFIED — UAT 2/2 passed, G-01 resolved live, VERIFICATION human-verified
-Status: Executing Phase 133
-Last activity: 2026-06-23 — Phase 133 complete, transitioned to Phase 999.1
+Status: Phase 133 shipped — squash-merged to main (42061d9d)
+Last activity: 2026-06-23
 
 ## Project Reference
 
