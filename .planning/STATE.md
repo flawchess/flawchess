@@ -24,7 +24,7 @@ current_phase_name: trapped-piece-fixture-expansion-option-b-cook-predicate-reim
 Milestone: v1.28 Tactic Tagging — all active phases (124, 125, 126, 127, 128, 128.1, 129) COMPLETE
 Phase 129 (tactic-filter-ui): VERIFIED — UAT 2/2 passed, G-01 resolved live, VERIFICATION human-verified
 Status: Phase 134 complete
-Last activity: 2026-06-23 — Phase 134 marked complete
+Last activity: 2026-06-23 — Completed quick task 260623-tsu: removed the frontend beta gate for tactic tagging
 
 ## Project Reference
 
@@ -566,3 +566,4 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 | 170 | Flaw-card: open game on flawed ply, remove broken datapoint pulse | 2026-06-19 | fe4910d4 | — |
 | 189 | Move severity into collapsed Context; relabel Orientation->Tactic Missed vs Allowed, Tactic motif->Tactic Type; label severity group | 2026-06-20 | 45b19cb1 | — |
 | 190 | Games-card platform link deep-links to the eval-chart slider's ply (matching the Flaws card) | 2026-06-23 | e9f3d4b6 | — |
+| 260623-tsu | Remove the frontend beta gate (`userProfile.beta_enabled`) from tactic tagging across all six surfaces (LibraryGameCard, FlawCard, FlawFilterControl, EvalChart, TacticComparisonGrid, plus comment cleanup in TacticMotifChip/FlawStatsPanel) so the feature ships to all users. Card chips, eval-chart tooltips/depth badges, the Library tactic filters, and the you-vs-opponent Tactic Motifs comparison are now always shown; the three-column Missed/Allowed/Context layout replaces the non-beta single-row fallback. Dropped the `betaEnabled` prop from EvalChart and merged TacticComparisonGrid's inner/outer split. `beta_enabled` is retained on the profile type (API contract) but no longer read in the frontend. Updated/removed tests asserting non-beta hiding and now-dead beta mocks; added a CHANGELOG `### Changed` entry. Gate green: tsc -b 0 errors, lint 0 errors, knip clean, 1098 frontend tests pass. Backend untouched. | 2026-06-23 | 2cd0bc99 | [260623-tsu-remove-the-beta-gate-for-the-tactic-tagg](./quick/260623-tsu-remove-the-beta-gate-for-the-tactic-tagg/) |
