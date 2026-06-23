@@ -2,18 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.28
 milestone_name: Tactic Tagging
-status: Phase 131 shipped — squash-merged to main (cook.py tactic precision hardening)
-stopped_at: Phase 131 Plan 05 complete — TEST gate + dev re-backfill; Phase 131 fully done
-last_updated: "2026-06-22T22:02:19.287Z"
+status: executing
+stopped_at: Completed 132-05-PLAN.md
+last_updated: "2026-06-23T00:59:00.947Z"
 last_activity: 2026-06-23
+last_activity_desc: Phase 132 complete, transitioned to Phase 999.1
 progress:
-  total_phases: 14
-  completed_phases: 9
-  total_plans: 32
-  completed_plans: 32
-  percent: 64
-current_phase: 131
-current_phase_name: tactic-precision-hardening-cook-alignment
+  total_phases: 15
+  completed_phases: 10
+  total_plans: 37
+  completed_plans: 37
+  percent: 67
+current_phase: 132
+current_phase_name: tier-3-tactic-precision-hardening-via-cook-py-predicate-alig
 ---
 
 # Project State: FlawChess
@@ -22,8 +23,8 @@ current_phase_name: tactic-precision-hardening-cook-alignment
 
 Milestone: v1.28 Tactic Tagging — all active phases (124, 125, 126, 127, 128, 128.1, 129) COMPLETE
 Phase 129 (tactic-filter-ui): VERIFIED — UAT 2/2 passed, G-01 resolved live, VERIFICATION human-verified
-Status: Phase 131 shipped — squash-merged to main (cook.py tactic precision hardening)
-Last activity: 2026-06-23
+Status: Executing Phase 132 (Plans 01-04 complete; Plans 05+ pending)
+Last activity: 2026-06-23 — Completed quick task 260623-6pd: surfaced shipped tier-3 tactic motifs in an Advanced filter group + cards/eval-chart/legend
 
 ## Project Reference
 
@@ -361,6 +362,7 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 | 260621-qz9 | Fix the tactic-depth orientation asymmetry (Option A) and relabel the depth presets. `missed_tactic_depth` (player's own best line, flaw_ply PV) and `allowed_tactic_depth` (opponent refutation, flaw_ply+1 PV) both store the raw 0-based detector index within their OWN PV, but the miniboards anchor BOTH badges on the same pre-flaw decision board — so an allowed tactic at raw depth d sits one ply deeper than a missed tactic at the same d. Option A: keep the DB columns raw (no migration/backfill) and apply a +1 decision-anchored offset for the ALLOWED orientation at READ TIME only — in the backend depth-range filter (`_depth_in_range` via a per-orientation offset carried by `_tactic_orientation_pairs`, applied at both `build_flaw_filter_clauses` and `apply_game_filters`) and the frontend display (`toDisplayDepthForOrientation`: allowed = raw+2, missed = raw+1) used by FlawCard + LibraryGameCard. Also relabeled presets Beginner/Intermediate/Advanced → Low/Medium/High (default Medium) since depth is only a rough difficulty proxy. Named `ALLOWED_DECISION_DEPTH_OFFSET` in both stacks (no magic numbers). Full gate green: backend 2836 passed, ty unchanged (14 pre-existing, 0 new), frontend lint + 1079 tests + tsc build + knip. On `gsd/phase-130-tactic-tag-improvements-and-fixes`. | 2026-06-21 | 9754b127 | [260621-qz9-fix-tactic-depth-orientation-asymmetry-a](./quick/260621-qz9-fix-tactic-depth-orientation-asymmetry-a/) |
 | 260621-sm8 | Tactic filter per-slot suppression + made depth/orientation independently meaningful (Flaws + Games tabs). Root cause: tactic filters (family/orientation/depth) were row-level WHERE/EXISTS only AND trapped inside `if tactic_families:`, so depth and orientation were silent no-ops unless a family was selected; both response paths emitted BOTH tactic slots gated only by confidence≥70, never by the active filter (violating the `library.ts` contract that claims slots are nulled when their chip is hidden). Fix: one shared `tactic_slot_visible(...)` predicate in `library_repository.py`, imported (not duplicated) into `library_service.py`; refactored `build_flaw_filter_clauses` to lift depth+orientation out of the family block (gated by `_tactic_controls_active`; default-state adds no clause); nulls non-matching slots at BOTH sites (`query_flaws` + `_build_card`/eval-series for Games); allowed slot reuses `ALLOWED_DECISION_DEPTH_OFFSET`. Frontend: `DEPTH_DEFAULT_PRESET → 'high'` (full range → default shows everything incl. non-tactic flaws), `isFlawFilterNonDefault` treats full-range as neutral; `LibraryGameCard` hides empty Missed/Allowed columns (Context column unaffected). Deviation: default orientation in `build_flaw_filter_clauses` flipped `allowed`→`either` (old default broke once the family guard was removed). Full gate green: backend 2853 passed/15 skipped, ty app/ zero (tests/ 14 pre-existing, 0 new), frontend lint + 1079 tests + tsc -b. On `gsd/phase-130-tactic-tag-improvements-and-fixes`. | 2026-06-21 | 6a913c71 | [260621-sm8-tactic-filter-per-slot-suppression-make-](./quick/260621-sm8-tactic-filter-per-slot-suppression-make-/) |
 | 260622-fdh | Redesign LibraryGameCard desktop layout (board-left / stacked-right). Designed in /gsd-explore. Desktop `hidden sm:flex` body only (mobile untouched): board enlarged 132→200px in a board-only left column spanning the body height; game date moved into the full-width header; new desktop-only one-line metadata strip (opening · TC · moves · result); right column stacks meta strip → eval chart + severity badges → relocated Missed/Allowed/Context tactic chips (out of the old full-width Row 2, chart-edge alignment trick dropped). Shared `severityBadges`/`chipsBlock`/`metadata` fragments relocated, not redefined, so mobile is byte-for-byte unchanged. Gate green: frontend tsc -b clean, lint 0 errors, 1083 tests pass. On `gsd/phase-130-tactic-tag-improvements-and-fixes`. | 2026-06-22 | 7d3a3a62 | [260622-fdh-redesign-librarygamecard-desktop-layout-](./quick/260622-fdh-redesign-librarygamecard-desktop-layout-/) |
+| 260623-6pd | Surface the shipped Phase-132 tier-3 tactic motifs (deflection, intermezzo, interference, clearance, capturing-defender) + relocate x-ray into a new collapsed-by-default "Advanced" group in the Library tags filter (Games + Flaws subtabs, desktop + mobile). Registry-driven: 5 keys added to backend `FAMILY_TO_MOTIF_INTS` (filter + you-vs-opponent comparison grid, 10→15 families) and 5 families + the `advanced` group to frontend `tacticComparisonMeta.ts`/`theme.ts`, so the tier-3 chips light up everywhere automatically (game/flaw card chips, eval-chart click-to-cycle, eval-chart tooltip, tags-info legend). Extracted a shared `TacticFamilyGroup` component; Advanced toggle carries a `· N` selected-count badge + legend. No detector/data changes (cook-aligned tier-3 detectors already fire at confidence 100); attraction/self-interference/sacrifice stay suppressed. Gate green: ruff/ty clean, backend comparison-service 12 + library/tactic surface 236 pass; frontend tsc -b clean, lint 0 errors, knip clean, 1093 tests pass. | 2026-06-23 | 71648e9c | [260623-6pd-add-shipped-tier-3-tactic-tags-to-an-adv](./quick/260623-6pd-add-shipped-tier-3-tactic-tags-to-an-adv/) |
 
 ## Performance Metrics
 
@@ -438,6 +440,9 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 | Phase 129 P04 | 7 | 3 tasks | 7 files |
 | Phase 129 P05 | 18 | 3 tasks | 7 files |
 | Phase 131 P05 | 37m | 2 tasks | 1 files |
+| Phase 132 P01 | 5m | 2 tasks | 2 files |
+| Phase 132 P03 | 2.5h | 3 tasks | 5 files |
+| Phase 132 P05 | 9 minutes | 2 tasks | 1 files |
 
 ## Decisions
 
@@ -534,11 +539,20 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 - [Phase 131-01]: D-11: GOALS raised to 0.90 precision for 7 in-scope motifs; gate live (exits non-zero); per-motif ports in plans 02/03 drive it to 0
 - [Phase ?]: D-11: TEST gate confirmed — Tier 1+2 shipped motifs >=0.90 on held-out TEST split; pin SUPPRESSED per D-02/D-11
 - [Phase ?]: D-12: dev re-backfill complete — 73,304 rows rewritten, 12,399 false tactic tags eliminated; prod deferred to runbook
+- [Phase ?]: GOALS raised to 0.90 precision for six Tier-3 motifs per Phase 132 D-01; interference lock at 0.80; sacrifice deferred until any TP
+- [Phase ?]: capturing-defender rewritten to 9-condition cook AND-chain with init-board defender test; TEST precision 0.903; floor 0.82
+- [Phase ?]: intermezzo rewritten to 7-condition zwischenzug AND-chain with k>=4 guard; TEST precision 1.000; floor 0.85
+- [Phase 132-04]: attraction SUPPRESSED per D-03 PV-divergence cutoff — cook §4 4-move sequence (lure+capture+attack+follow-up) yields 0 TP on TRAIN after full port; cleared to suppressed
+- [Phase 132-04]: x-ray SHIPS cook §6 three-same-square AND-chain — P(train)=1.000/P(test)=1.000; floor 0.93 set; Pitfall-4 guard (three-same-square first) eliminates all FPs
+- [Phase 132-04]: sacrifice stays SUPPRESSED per D-02 co-tag structural dispatch-cap — cook §7 port achieves 1.000/1.000 when it wins dispatch but geometric motifs always pre-empt it (only 18% recall)
+- [Phase 132-04]: interference lock holds — P(test)=0.992 after all cook ports (above 0.99 plan target); mid-port 0.986 measurement was transient before sacrifice collision fixes; DO-NOT-EDIT guard added
+- [Phase ?]: Dev re-backfill validated: 26,195/73,318 changed via _detect_tactic_for_flaw kernel; deflection -96%, attraction 0, total tagged 29752->18619
+- [Phase ?]: Final TEST gate: all 7 Phase 132 in-scope motifs shipped or suppressed; interference 0.992 TEST lock holds (>=0.99 target); precision_floors.py reconciled
 
 ## Session
 
-**Last session:** 2026-06-22T20:56:19.685Z
-**Stopped at:** Phase 131 Plan 05 complete — TEST gate + dev re-backfill; Phase 131 fully done
+**Last session:** 2026-06-23T00:49:53.353Z
+**Stopped at:** Completed 132-05-PLAN.md
 **Resume file:** None
 | 170 | Flaw-card: open game on flawed ply, remove broken datapoint pulse | 2026-06-19 | fe4910d4 | — |
 | 189 | Move severity into collapsed Context; relabel Orientation->Tactic Missed vs Allowed, Tactic motif->Tactic Type; label severity group | 2026-06-20 | 45b19cb1 | — |

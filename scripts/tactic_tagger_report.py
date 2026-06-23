@@ -130,9 +130,19 @@ GOALS: dict[str, GoalSpec] = {
     "pin": {"precision": 0.90, "recall": 0.40},
     "discovered-attack": {"precision": 0.90, "recall": 0.30},
     "double-check": {"precision": 0.90, "recall": None},
-    # tier 3 / 4 — keep precision honest where they fire
-    "deflection": {"precision": 0.50, "recall": None},
-    "clearance": {"precision": 0.70, "recall": None},
+    # tier 3 — Tier-3 in-scope motifs raised to 0.90 precision per Phase 132 D-01
+    # (precision-first, recall explicitly ungated this phase). Six motifs targeted:
+    # deflection (was 0.50), clearance (was 0.70), and four previously absent from
+    # GOALS: capturing-defender, attraction, intermezzo, x-ray.
+    # interference is the regression lock (0.986 TEST after Phase 132-04) — DO NOT raise.
+    # attraction: SUPPRESSED (Phase 132-04, D-03 cutoff — 0 TP on TRAIN after cook port).
+    # sacrifice: SUPPRESSED (Phase 132-04 — structural co-tag issue, never wins dispatch).
+    # x-ray: SHIPPED (Phase 132-04 — 1.000 TRAIN / 1.000 TEST; goal satisfied and held).
+    "deflection": {"precision": 0.90, "recall": None},
+    "clearance": {"precision": 0.90, "recall": None},
+    "capturing-defender": {"precision": 0.90, "recall": None},
+    "intermezzo": {"precision": 0.90, "recall": None},
+    "x-ray": {"precision": 0.90, "recall": None},
     "interference": {"precision": 0.80, "recall": None},
     "hanging-piece": {"precision": 0.90, "recall": None},
     # Phase 128.1-01 new Tier-2 real-geometry motifs (aspirational, precision-first)

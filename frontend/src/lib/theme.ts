@@ -110,6 +110,17 @@ export const TAC_HANGING = TAC_BLUE;
 export const TAC_HANGING_BG = TAC_BLUE_BG;
 export const TAC_MATE = TAC_BLUE;
 export const TAC_MATE_BG = TAC_BLUE_BG;
+// Tier-3 "Advanced" families (Quick 260623-6pd). Same single-blue convention as above.
+export const TAC_DEFLECTION = TAC_BLUE;
+export const TAC_DEFLECTION_BG = TAC_BLUE_BG;
+export const TAC_INTERMEZZO = TAC_BLUE;
+export const TAC_INTERMEZZO_BG = TAC_BLUE_BG;
+export const TAC_INTERFERENCE = TAC_BLUE;
+export const TAC_INTERFERENCE_BG = TAC_BLUE_BG;
+export const TAC_CLEARANCE = TAC_BLUE;
+export const TAC_CLEARANCE_BG = TAC_BLUE_BG;
+export const TAC_CAPTURING_DEFENDER = TAC_BLUE;
+export const TAC_CAPTURING_DEFENDER_BG = TAC_BLUE_BG;
 
 // Orientation-coded tactic chip colors (Games + Flaw card). Missed motifs render
 // in blue, Allowed motifs in a light red, so the two orientations read apart at a

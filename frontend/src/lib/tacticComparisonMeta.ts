@@ -1,18 +1,20 @@
 /**
- * Shared metadata for the 10 tactic-motif family comparison bullets (Phase 126, updated Phase 129).
+ * Shared metadata for the tactic-motif family comparison bullets (Phase 126, updated
+ * Phase 129; tier-3 Advanced families added Quick 260623-6pd → 15 families).
  *
  * Single source of truth consumed by TacticComparisonGrid (family cards + rows),
  * TacticMotifChip (family color + icon), and the FilterPanel tactic-motif filter.
  *
- * Mirrors flawComparisonMeta.ts in structure. The 10 families map the TacticMotif
- * strings (D-08, Phase 129 plan 04 taxonomy redesign). The family taxonomy must
- * remain consistent with the backend FAMILY_TO_MOTIF_INTS mapping in
- * library_repository.py — the keys here are the cross-stack contract (string-for-string).
+ * Mirrors flawComparisonMeta.ts in structure. The families map the TacticMotif strings
+ * (D-08, Phase 129 plan 04 taxonomy redesign). The family taxonomy must remain
+ * consistent with the backend FAMILY_TO_MOTIF_INTS mapping in library_repository.py —
+ * the keys here are the cross-stack contract (string-for-string).
  *
- * Phase 129 plan 04 removed the combinations family; those motif strings (sacrifice,
- * deflection, attraction, intermezzo, interference, self-interference, clearance,
- * capturing-defender) now belong to no family. Old ?tactic=pin_skewer / discovery /
- * combinations URL params are inert (backend .get(fam, []) no-op; union excludes them).
+ * Quick 260623-6pd surfaced the shipped Phase-132 tier-3 motifs (x-ray, deflection,
+ * intermezzo, interference, clearance, capturing-defender) under an "Advanced" group.
+ * Still-suppressed combinations motifs (sacrifice, attraction, self-interference) belong
+ * to no family. Old ?tactic=pin_skewer / discovery / combinations URL params are inert
+ * (backend .get(fam, []) no-op; union excludes them).
  */
 
 import type { ComponentType, CSSProperties } from 'react';
@@ -27,6 +29,11 @@ import {
   Footprints,
   AlertTriangle,
   Crown,
+  Magnet,
+  Shuffle,
+  Split,
+  DoorOpen,
+  ShieldOff,
 } from 'lucide-react';
 
 import {
@@ -50,6 +57,16 @@ import {
   TAC_HANGING_BG,
   TAC_MATE,
   TAC_MATE_BG,
+  TAC_DEFLECTION,
+  TAC_DEFLECTION_BG,
+  TAC_INTERMEZZO,
+  TAC_INTERMEZZO_BG,
+  TAC_INTERFERENCE,
+  TAC_INTERFERENCE_BG,
+  TAC_CLEARANCE,
+  TAC_CLEARANCE_BG,
+  TAC_CAPTURING_DEFENDER,
+  TAC_CAPTURING_DEFENDER_BG,
   ZONE_DANGER,
   ZONE_NEUTRAL,
   ZONE_SUCCESS,
@@ -72,11 +89,12 @@ export type TacticIcon = ComponentType<{
 // ─── Families ─────────────────────────────────────────────────────────────────
 
 /**
- * The 10 tactic family keys — cross-stack contract with backend FAMILY_TO_MOTIF_INTS.
+ * The 15 tactic family keys — cross-stack contract with backend FAMILY_TO_MOTIF_INTS.
  * These strings must equal the backend dict keys string-for-string (plan 129-04).
- * Filter display order (mechanism-grouped, Quick 260620-onv):
- *   Piece Attacks: fork → pin → skewer → x_ray → hanging → trapped_piece
+ * Filter display order (mechanism-grouped, Quick 260620-onv; Advanced added 260623-6pd):
+ *   Piece Attacks: fork → pin → skewer → hanging → trapped_piece
  *   Checkmate, Checks & Discoveries: mate → double_check → discovered_check → discovered_attack
+ *   Advanced (tier-3): x_ray → deflection → intermezzo → interference → clearance → capturing_defender
  */
 export type TacticFamily =
   | 'fork'
@@ -88,7 +106,13 @@ export type TacticFamily =
   | 'discovered_attack'
   | 'trapped_piece'
   | 'hanging'
-  | 'mate';
+  | 'mate'
+  // Tier-3 "Advanced" families (Quick 260623-6pd)
+  | 'deflection'
+  | 'intermezzo'
+  | 'interference'
+  | 'clearance'
+  | 'capturing_defender';
 
 export interface TacticFamilyColors {
   /** Icon + chip foreground color. */
@@ -108,6 +132,11 @@ export const TACTIC_FAMILY_COLORS: Record<TacticFamily, TacticFamilyColors> = {
   trapped_piece: { color: TAC_TRAPPED_PIECE, bg: TAC_TRAPPED_PIECE_BG },
   hanging: { color: TAC_HANGING, bg: TAC_HANGING_BG },
   mate: { color: TAC_MATE, bg: TAC_MATE_BG },
+  deflection: { color: TAC_DEFLECTION, bg: TAC_DEFLECTION_BG },
+  intermezzo: { color: TAC_INTERMEZZO, bg: TAC_INTERMEZZO_BG },
+  interference: { color: TAC_INTERFERENCE, bg: TAC_INTERFERENCE_BG },
+  clearance: { color: TAC_CLEARANCE, bg: TAC_CLEARANCE_BG },
+  capturing_defender: { color: TAC_CAPTURING_DEFENDER, bg: TAC_CAPTURING_DEFENDER_BG },
 };
 
 export const TACTIC_FAMILY_ICON: Record<TacticFamily, TacticIcon> = {
@@ -121,15 +150,22 @@ export const TACTIC_FAMILY_ICON: Record<TacticFamily, TacticIcon> = {
   trapped_piece: Footprints,
   hanging: AlertTriangle,
   mate: Crown,
+  deflection: Magnet,
+  intermezzo: Shuffle,
+  interference: Split,
+  clearance: DoorOpen,
+  capturing_defender: ShieldOff,
 };
 
 // ─── Mechanism groups (filter panel, Quick 260620-onv) ─────────────────────────
 
 /**
- * The two mechanism-based sections of the tactic-motif filter. Display order
- * matters; chip order within a group follows TACTIC_COMPARISON_FAMILIES array order.
+ * The mechanism-based sections of the tactic-motif filter. Display order matters;
+ * chip order within a group follows TACTIC_COMPARISON_FAMILIES array order. The
+ * 'advanced' group (tier-3 motifs, Quick 260623-6pd) renders inside a collapsible,
+ * collapsed-by-default section below the others (FlawFilterControl).
  */
-export type TacticGroupKey = 'piece_attacks' | 'discoveries';
+export type TacticGroupKey = 'piece_attacks' | 'discoveries' | 'advanced';
 
 export interface TacticGroupDef {
   key: TacticGroupKey;
@@ -141,6 +177,7 @@ export interface TacticGroupDef {
 export const TACTIC_GROUPS: TacticGroupDef[] = [
   { key: 'piece_attacks', label: 'Piece Attacks' },
   { key: 'discoveries', label: 'Checkmate, Checks & Discoveries' },
+  { key: 'advanced', label: 'Advanced' },
 ];
 
 // ─── Family definitions ───────────────────────────────────────────────────────
@@ -160,7 +197,8 @@ export interface TacticFamilyDef {
 }
 
 /**
- * The 10 tactic families in filter display order (mechanism-grouped, Quick 260620-onv).
+ * The 15 tactic families in filter display order (mechanism-grouped, Quick 260620-onv;
+ * tier-3 Advanced group added Quick 260623-6pd).
  * Array order doubles as the chip order within each group — the filter panel groups
  * these by `group` preserving this order. The comparison grid resolves families by
  * `.find(f => f.family === ...)` and renders in server order, so it is unaffected by
@@ -193,14 +231,6 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     chipLabel: 'skewer',
     definition: 'A valuable piece is forced to move, leaving a less valuable piece behind it undefended.',
     motifs: ['skewer'],
-  },
-  {
-    name: 'X-ray',
-    family: 'x_ray',
-    group: 'piece_attacks',
-    chipLabel: 'x-ray',
-    definition: 'A piece exerts indirect pressure through an enemy piece, threatening the square or piece behind it.',
-    motifs: ['x-ray'],
   },
   {
     name: 'Hanging piece',
@@ -263,6 +293,57 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     chipLabel: 'discovered-attack',
     definition: 'Moving one piece uncovers an attack from the piece behind it.',
     motifs: ['discovered-attack'],
+  },
+  // ── Advanced (tier-3, Quick 260623-6pd) ──
+  // Shipped Phase-132 cook-aligned motifs surfaced behind the collapsible "Advanced"
+  // filter section. x-ray leads (geometric), then the lure/disruption motifs.
+  {
+    name: 'X-ray',
+    family: 'x_ray',
+    group: 'advanced',
+    chipLabel: 'x-ray',
+    definition: 'A piece exerts indirect pressure through an enemy piece, threatening the square or piece behind it.',
+    motifs: ['x-ray'],
+  },
+  {
+    name: 'Deflection',
+    family: 'deflection',
+    group: 'advanced',
+    chipLabel: 'deflection',
+    definition: 'An opponent\'s piece is lured or forced away from a critical square it was defending.',
+    motifs: ['deflection'],
+  },
+  {
+    name: 'Intermezzo',
+    family: 'intermezzo',
+    group: 'advanced',
+    chipLabel: 'intermezzo',
+    definition: 'An in-between move is played before completing an expected sequence, often gaining tempo.',
+    motifs: ['intermezzo'],
+  },
+  {
+    name: 'Interference',
+    family: 'interference',
+    group: 'advanced',
+    chipLabel: 'interference',
+    definition: 'A piece is placed on a square that disrupts the coordination between two of the opponent\'s pieces.',
+    motifs: ['interference'],
+  },
+  {
+    name: 'Clearance',
+    family: 'clearance',
+    group: 'advanced',
+    chipLabel: 'clearance',
+    definition: 'A piece vacates a square or line so another piece can use it more effectively.',
+    motifs: ['clearance'],
+  },
+  {
+    name: 'Capturing defender',
+    family: 'capturing_defender',
+    group: 'advanced',
+    chipLabel: 'capturing-defender',
+    definition: 'The piece defending a key square or piece is captured to remove that protection.',
+    motifs: ['capturing-defender'],
   },
 ];
 

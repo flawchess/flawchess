@@ -3,6 +3,7 @@ import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { FlawFilterControl } from '../FlawFilterControl';
 import type { FlawTag } from '@/types/library';
+import type { TacticFamily } from '@/lib/tacticComparisonMeta';
 
 // Stub ResizeObserver — required by Radix UI ToggleGroup (added Phase 129 TACUI-06).
 // [Rule 1 - Bug] The ToggleGroup uses @radix-ui/react-use-size which calls ResizeObserver;
@@ -45,13 +46,14 @@ describe('FlawFilterControl', () => {
       expect(screen.queryByTestId('filter-flaw-tactic-group-piece_attacks')).toBeNull();
     });
 
-    it('renders the two mechanism groups and all ten family buttons when showTacticFilter is set', () => {
+    it('renders the two always-on mechanism groups and their 9 family buttons when showTacticFilter is set', () => {
       render(<FlawFilterControl {...defaultProps} showTacticFilter />);
       for (const key of ['piece_attacks', 'discoveries']) {
         expect(screen.getByTestId(`filter-flaw-tactic-group-${key}`)).toBeTruthy();
       }
+      // x_ray + the 5 tier-3 families live in the collapsed Advanced group, not here.
       for (const fam of [
-        'fork', 'skewer', 'pin', 'x_ray', 'double_check', 'discovered_check',
+        'fork', 'skewer', 'pin', 'double_check', 'discovered_check',
         'discovered_attack', 'trapped_piece', 'hanging', 'mate',
       ]) {
         expect(screen.getByTestId(`filter-flaw-tactic-${fam}`)).toBeTruthy();
@@ -59,6 +61,62 @@ describe('FlawFilterControl', () => {
       // Chips read kebab-case; mate chip relabeled "checkmate" (Quick 260620-onv).
       expect(screen.getByTestId('filter-flaw-tactic-hanging').textContent).toBe('hanging-piece');
       expect(screen.getByTestId('filter-flaw-tactic-mate').textContent).toBe('checkmate');
+    });
+
+    // Advanced tier-3 group (Quick 260623-6pd) — collapsed by default.
+    const ADVANCED_FAMILIES = [
+      'x_ray', 'deflection', 'intermezzo', 'interference', 'clearance', 'capturing_defender',
+    ];
+
+    it('Advanced families are hidden until the Advanced toggle is expanded', () => {
+      render(<FlawFilterControl {...defaultProps} showTacticFilter />);
+      const toggle = screen.getByTestId('filter-flaw-advanced-toggle');
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      for (const fam of ADVANCED_FAMILIES) {
+        expect(screen.queryByTestId(`filter-flaw-tactic-${fam}`)).toBeNull();
+      }
+    });
+
+    it('clicking the Advanced toggle reveals x-ray + the 5 tier-3 family buttons', () => {
+      render(<FlawFilterControl {...defaultProps} showTacticFilter />);
+      fireEvent.click(screen.getByTestId('filter-flaw-advanced-toggle'));
+      for (const fam of ADVANCED_FAMILIES) {
+        expect(screen.getByTestId(`filter-flaw-tactic-${fam}`)).toBeTruthy();
+      }
+      // Chips read kebab-case (capturing_defender family → "capturing-defender" chip).
+      expect(screen.getByTestId('filter-flaw-tactic-capturing_defender').textContent)
+        .toBe('capturing-defender');
+    });
+
+    it('the Advanced toggle is absent on the Games tab (showTacticFilter unset)', () => {
+      render(<FlawFilterControl {...defaultProps} />);
+      expect(screen.queryByTestId('filter-flaw-advanced-toggle')).toBeNull();
+    });
+
+    it('Advanced toggle shows a "· N" badge counting selected tier-3 families', () => {
+      render(
+        <FlawFilterControl
+          {...defaultProps}
+          showTacticFilter
+          tacticFamilies={['deflection', 'clearance'] as TacticFamily[]}
+        />,
+      );
+      expect(screen.getByTestId('filter-flaw-advanced-toggle').textContent).toContain('Advanced · 2');
+    });
+
+    it('clicking a revealed Advanced family toggles it via onTacticFamiliesChange', () => {
+      const onTacticFamiliesChange = vi.fn();
+      render(
+        <FlawFilterControl
+          {...defaultProps}
+          showTacticFilter
+          tacticFamilies={[]}
+          onTacticFamiliesChange={onTacticFamiliesChange}
+        />,
+      );
+      fireEvent.click(screen.getByTestId('filter-flaw-advanced-toggle'));
+      fireEvent.click(screen.getByTestId('filter-flaw-tactic-deflection'));
+      expect(onTacticFamiliesChange).toHaveBeenCalledWith(['deflection']);
     });
 
     it('all families are off (aria-pressed=false) by default', () => {

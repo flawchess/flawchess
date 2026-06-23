@@ -74,6 +74,11 @@ TACTIC_MIN_SEVERITY: frozenset[str] = frozenset({"mistake", "blunder"})
 # Ray piece types: used for pin, skewer, x-ray, interference detectors.
 _RAY_PIECES: frozenset[int] = frozenset({chess.BISHOP, chess.ROOK, chess.QUEEN})
 
+# Minimum material-point drop below the starting position that constitutes a sacrifice.
+# Cook §7: sacrifice fires when pov is down ≥2 points vs start AFTER at least the 2nd pov move.
+# 2 = minor piece (bishop/knight) threshold — queens (9) and rooks (5) are always >= 2.
+MIN_SACRIFICE_DROP: int = 2
+
 # ---------------------------------------------------------------------------
 # IntEnum encoding (TacticMotifInt) — values must never be reordered.
 # Existing DB rows encode these ints. Per D-02 / D-03.
@@ -1363,106 +1368,280 @@ def detect_dovetail_mate(
 # ---------------------------------------------------------------------------
 
 
+def _deflection_fires_at(
+    boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color, k: int
+) -> int | None:
+    """Cook's 11-condition AND-chain for deflection at pov move index k.
+
+    Phase 132 D-01: rewritten from cook.py plain-English pseudocode (AGPL boundary —
+    no cook.py source reproduced). See 132-RESEARCH.md §1 for the full predicate.
+
+    Returns captured.piece_type if all 11 conditions hold, else None.
+
+    Index convention (from tactic-tagger-cook-alignment.md):
+      moves[k]   = this pov move (even k >= 2)
+      moves[k-1] = prev_op_move  (opponent move just before)
+      moves[k-2] = prev_player_move  (prior pov move)
+      boards[k]  = board BEFORE this pov move  (capture target visible here)
+      boards[k-1] = board BEFORE this pov move but AFTER opponent's last move
+                    = after prior pov move, before opponent move
+      boards[k-2] = board BEFORE prior pov move  ("grandpa.board()" in cook)
+    """
+    move = moves[k]
+    board_k = boards[k]  # board before this pov move
+
+    # Condition 1: capture OR promotion.
+    is_promotion = move.promotion is not None
+    captured = board_k.piece_at(move.to_square)  # Pitfall 6: check board BEFORE move
+    is_capture = captured is not None
+    if not is_capture and not is_promotion:
+        return None
+
+    square = move.to_square
+
+    # Condition 2: if capture, use _VALUES_NO_KING (Pitfall 3 — cook uses `values` not
+    # `king_values`). Captured piece must be <= capturing piece in value (equal/lower trade).
+    if is_capture:
+        captor_piece = board_k.piece_at(move.from_square)
+        captor_val = _VALUES_NO_KING.get(captor_piece.piece_type, 0) if captor_piece else 0
+        if _VALUES_NO_KING.get(captured.piece_type, 0) > captor_val:
+            return None
+
+    prev_op_move = moves[k - 1]
+    prev_player_move = moves[k - 2]
+    init_board = boards[k - 2]  # board before prior pov move (Pitfall 2)
+
+    # Condition 7: prior pov move quality gate.
+    # prev_player_capture = piece that was on prev_player_move.to_square BEFORE prior pov move.
+    prev_player_capture = init_board.piece_at(prev_player_move.to_square)
+    if prev_player_capture is not None:
+        # Prior pov move was a capture — gate: captured piece must be LESS valuable than mover.
+        prior_mover = init_board.piece_at(prev_player_move.from_square)
+        prior_mover_val = _VALUES_NO_KING.get(prior_mover.piece_type, 0) if prior_mover else 0
+        if _VALUES_NO_KING.get(prev_player_capture.piece_type, 0) >= prior_mover_val:
+            return None
+
+    # Condition 8: square collision guards — not capturing where opp just moved,
+    # not capturing where prior pov move landed.
+    if square == prev_op_move.to_square or square == prev_player_move.to_square:
+        return None
+
+    # Condition 9: deflection geometry — EITHER opp was forced onto prior pov's square
+    # (opponent captured pov's prior piece), OR opponent was in check before their move.
+    opp_forced = (
+        prev_op_move.to_square == prev_player_move.to_square  # opp captured where pov just was
+        or init_board.is_check()  # opponent was in check before prior pov move (cook equiv)
+    )
+    if not opp_forced:
+        return None
+
+    # Condition 10: square reachability from deflected piece's ORIGINAL position.
+    # The piece that moved at prev_op_move came FROM prev_op_move.from_square.
+    # That square must have been able to reach `square` on the init_board.
+    orig_sq = prev_op_move.from_square
+    if is_promotion:
+        # Promotion variant: same file as deflected piece's origin AND prior pov piece
+        # (the promoting pawn) was attacking from the original position.
+        same_file = chess.square_file(square) == chess.square_file(orig_sq)
+        pov_piece_at_init = init_board.piece_at(move.from_square)
+        pov_attacks_from_init = (
+            pov_piece_at_init is not None and move.from_square in init_board.attacks(orig_sq)
+        )
+        if not (same_file and pov_attacks_from_init):
+            return None
+    else:
+        # Standard capture: capture square must have been reachable from the deflected
+        # piece's original position on the init board (before it was deflected away).
+        if square not in init_board.attacks(orig_sq):
+            return None
+
+    # Condition 11: the KEY guard — after the opponent moved to their new position,
+    # they NO LONGER cover the capture square (they were actually deflected away from it).
+    # Use pre_board (after prior pov move, before opp move) which has the opp piece
+    # at prev_op_move.from_square. But we want: does opp's NEW position cover `square`?
+    # boards[k] is BEFORE this pov move = after opp's last move, so prev_op_move.to_square
+    # is where the deflected piece now sits.
+    if square in board_k.attacks(prev_op_move.to_square):
+        return None
+
+    # All 11 conditions passed — deflection confirmed.
+    return captured.piece_type if is_capture else chess.PAWN
+
+
 def detect_deflection(
     boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
 ) -> tuple[bool, int | None, int, int | None]:
     """Deflection: opponent piece forced away from defending a target.
 
+    Rewritten to cook's exact 11-condition AND-chain (Phase 132 D-01).
+    No _grade voting — returns TACTIC_CONFIDENCE_HIGH when the AND-chain fires.
+
     Returns (fired, target_piece_type, confidence, depth) on detection.
     tactic_piece = the deflected/target piece (D-12).
     depth = k (pov move index when the deflection-exploiting capture fires).
     """
-    for k in range(2, len(moves), 2):  # pov's captures at index >= 2
-        board_k = boards[k]
-        captured = board_k.piece_at(moves[k].to_square)
-        if captured is None or captured.piece_type == chess.PAWN:
-            continue
-
-        target_sq = moves[k].to_square
-        captor_piece = board_k.piece_at(moves[k].from_square)
-        captor_val = _piece_value(captor_piece.piece_type) if captor_piece is not None else 0
-
-        if k < 1:
-            continue
-
-        opp_last_move = moves[k - 1]
-        cond1 = _piece_value(captured.piece_type) <= captor_val  # low/equal value capture
-        cond2 = target_sq != opp_last_move.to_square  # capture not where opp just moved
-        # Was the target defended by the piece that just moved away?
-        cond3 = False
-        if k >= 1:
-            defender_was_at = opp_last_move.from_square
-            old_board = boards[k - 1]
-            defender_piece = old_board.piece_at(defender_was_at)
-            if defender_piece is not None and defender_piece.color == (not pov):
-                cond3 = target_sq in old_board.attacks(defender_was_at)
-
-        # Opponent's last move was forced (captured pov's piece or responding to check)
-        cond4 = False
-        if k >= 2:
-            cond4 = (
-                boards[k - 2].piece_at(opp_last_move.to_square) is not None
-                or boards[k - 1].is_check()
-            )
-
-        # Target is no longer protected from where the deflected piece went
-        cond5 = False
-        new_pos = opp_last_move.to_square
-        if new_pos != target_sq:
-            cond5 = target_sq not in boards[k].attacks(new_pos)
-
-        met = sum([cond1, cond2, cond3, cond4, cond5])
-        if met >= 3:  # at least 3 of 5 conditions for a positive signal
-            return True, captured.piece_type, _grade(met, 5), k
+    for k in range(2, len(moves), 2):
+        piece_type = _deflection_fires_at(boards, moves, pov, k)
+        if piece_type is not None:
+            return True, piece_type, TACTIC_CONFIDENCE_HIGH, k
 
     return False, None, 0, None
+
+
+def _attraction_fires_at(
+    boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color, k: int
+) -> int | None:
+    """Check cook's exact AND-chain for attraction at pov move index k.
+
+    Reimplemented from cook.py pseudocode (Phase 132 D-01, AGPL boundary — no cook.py
+    source). See 132-RESEARCH.md §4 for the full predicate and index mapping.
+
+    Returns the attracted piece type (int) if all conditions hold, else None.
+    No _grade voting — cook's predicate is boolean (all conditions or nothing).
+
+    Index convention (k = the lure move, the pov move that attracts the opponent):
+      moves[k]   = pov's lure move — even k >= 0
+      moves[k+1] = opponent captures on pov's destination (the attraction)
+      moves[k+2] = pov's follow-up: lands on square that attacks the attracted square
+      moves[k+4] = pov captures on the attracted square (queen/rook branch only)
+      boards[k+1] = board BEFORE opponent captures (read attracted piece here)
+      boards[k+2] = board AFTER opponent captures (read pov's attackers here)
+    """
+    pov_dest = moves[k].to_square
+    if k + 2 >= len(moves):
+        return None
+
+    # Condition 3: opponent captures on pov's destination.
+    opp_move = moves[k + 1]
+    if opp_move.to_square != pov_dest:
+        return None
+
+    # Attracted piece: the piece that MADE the opponent's move, from boards[k+1]
+    # (board BEFORE the opponent move, i.e. after pov's lure — Pitfall 6).
+    attracted = boards[k + 1].piece_at(opp_move.from_square)
+    if attracted is None or attracted.color == pov:
+        return None
+
+    # Condition 4: attracted piece must be KING, QUEEN, or ROOK.
+    if attracted.piece_type not in {chess.KING, chess.QUEEN, chess.ROOK}:
+        return None
+
+    attracted_to_sq = opp_move.to_square  # == pov_dest
+
+    # Conditions 7+8: pov's next move (k+2) lands on a square from which it attacks
+    # the attracted square. boards[k+2] is the board AFTER the opponent captures
+    # (pov is now to move). attackers(pov, attracted_to_sq) gives squares pov attacks.
+    board_k2 = boards[k + 2]
+    next_pov_move = moves[k + 2]
+    if next_pov_move.to_square not in board_k2.attackers(pov, attracted_to_sq):
+        return None
+
+    # Condition 9: KING short-circuit — attraction confirmed immediately.
+    if attracted.piece_type == chess.KING:
+        return attracted.piece_type
+
+    # Condition 10: queen/rook two-move follow-up — pov captures on the attracted square.
+    if k + 4 >= len(moves):
+        return None
+    if moves[k + 4].to_square == attracted_to_sq:
+        return attracted.piece_type
+
+    return None
 
 
 def detect_attraction(
     boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
 ) -> tuple[bool, int | None, int, int | None]:
-    """Attraction: opponent piece lured to a vulnerable square.
+    """Attraction: pov lures a high-value opponent piece to a vulnerable square.
+
+    Rewritten to cook's exact AND-chain (Phase 132 D-01).
+    No _grade voting — returns TACTIC_CONFIDENCE_HIGH when the AND-chain fires.
+    See 132-RESEARCH.md §4 for the full predicate (AGPL boundary — no cook.py source).
 
     Returns (fired, attracted_piece_type, confidence, depth) on detection.
-    tactic_piece = the attracted piece (D-12).
-    depth = k (pov move index of the lure that triggers the attraction sequence).
+    tactic_piece = the attracted piece type (D-12).
+    depth = k (pov move index of the lure that attracts the opponent).
+
+    Cook's sequence: pov moves to square X (lure), opponent captures on X (attracted),
+    pov's next move lands on a square attacking X, then (if Q/R attracted) pov later
+    captures on X. King attraction short-circuits after the attack move.
+
+    Index convention:
+      moves[k]   = pov's lure (even k >= 0)
+      moves[k+1] = opponent captures on pov's destination (the attracted move)
+      moves[k+2] = pov attacks the attracted piece from a new square
+      moves[k+4] = pov captures on attracted square (queen/rook branch only)
     """
-    for k in range(0, len(moves) - 2, 2):  # pov's moves
-        pov_dest = moves[k].to_square
-        if k + 1 >= len(moves) or k + 2 >= len(moves):
-            break
-
-        # Opponent captures on the pov dest (attracted there)
-        opp_move = moves[k + 1]
-        if opp_move.to_square != pov_dest:
-            continue
-
-        attracted = boards[k + 1].piece_at(opp_move.from_square)
-        if attracted is None or attracted.color == pov:
-            continue
-        attracted_val = _piece_value(attracted.piece_type)
-
-        # High-value piece attracted (king/queen/rook = cond1)
-        cond1 = attracted_val >= _piece_value(chess.ROOK)
-
-        # Pov then attacks the attracted piece at k+2
-        next_pov_move = moves[k + 2]
-        board_after_opp = boards[k + 2]
-        cond2 = pov_dest in board_after_opp.attacks(next_pov_move.from_square)
-
-        # King attracted (strongest signal)
-        cond3 = attracted.piece_type == chess.KING
-
-        # Pov's lure was a sacrifice (lost material on move k)
-        board_before_lure = boards[k]
-        piece_on_dest = board_before_lure.piece_at(pov_dest)
-        cond4 = piece_on_dest is not None  # pov moved to an occupied square (sacrifice)
-
-        met = sum([cond1, cond2, cond3, cond4])
-        if cond2 and met >= 2:  # require at least an attack after attraction
-            return True, attracted.piece_type, _grade(met, 4), k
+    for k in range(0, len(moves), 2):  # pov's lure moves (all even k)
+        piece_type = _attraction_fires_at(boards, moves, pov, k)
+        if piece_type is not None:
+            return True, piece_type, TACTIC_CONFIDENCE_HIGH, k
 
     return False, None, 0, None
+
+
+def _intermezzo_fires_at(
+    boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color, k: int
+) -> bool:
+    """Check cook's exact AND-chain for intermezzo (zwischenzug) at pov move index k.
+
+    Reimplemented from cook.py pseudocode (Phase 132 D-01, AGPL boundary — no cook.py source).
+    See 132-RESEARCH.md §5 for the full predicate and index mapping.
+
+    Returns True if all conditions hold, else False.
+    Requires k >= 4 (caller must guard this — Pitfall 5 from RESEARCH.md).
+
+    Index convention (k = the delayed recapture move):
+      moves[k]   = pov's recapture (the delayed recapture) — even k >= 4
+      moves[k-1] = opponent's reply to pov's intermezzo
+      moves[k-2] = pov's intermezzo (zwischenzug) move
+      moves[k-3] = original opponent capture at the recapture square
+      boards[k]  = board BEFORE pov's recapture (check captures here)
+      boards[k-2] = board BEFORE pov's intermezzo (check attacks and legal moves)
+      boards[k-3] = board BEFORE opponent's original capture (check prior piece)
+    """
+    board_k = boards[k]
+    move = moves[k]
+    capture_square = move.to_square
+
+    # Condition 1: this pov move is a capture.
+    if board_k.piece_at(capture_square) is None:
+        return False
+
+    # Condition 5 (RESEARCH numbering): the opponent piece that just moved (moves[k-1])
+    # was NOT already attacking the capture square before that move.
+    # Use boards[k-2] = board before pov's intermezzo = board before op's last move
+    # Wait: boards[k-2] is before pov's intermezzo; boards[k-1] would be after pov's intermezzo.
+    # The opponent's last move (moves[k-1]) starts from moves[k-1].from_square.
+    # "Was attacking capture_square BEFORE that move" means: on boards[k-2].
+    # boards[k-2] = board after prior pov capture but before pov's intermezzo.
+    # Actually: boards[k-1] = board BEFORE moves[k-1] (the opponent's response to the intermezzo).
+    # So "before the opponent made moves[k-1]" = boards[k-1].
+    # RESEARCH says: moves[k-1].from_square NOT IN boards[k-2].attackers(not pov, capture_square)
+    # boards[k-2] = board before pov's intermezzo. Let's follow RESEARCH exactly.
+    opp_from_sq = moves[k - 1].from_square
+    board_k_minus_2 = boards[k - 2]
+    if opp_from_sq in board_k_minus_2.attackers(not pov, capture_square):
+        return False
+
+    # Condition 6: prior pov move (the intermezzo itself) did NOT go to the capture square.
+    if moves[k - 2].to_square == capture_square:
+        return False
+
+    # Condition 7 (the intermezzo signature):
+    # a) moves[k-3] (opponent's original capture) landed on the capture square.
+    if moves[k - 3].to_square != capture_square:
+        return False
+    # b) boards[k-3].piece_at(capture_square) is not None — it was a real capture by opponent.
+    if boards[k - 3].piece_at(capture_square) is None:
+        return False
+    # c) pov's current recapture move was already legal on boards[k-2]
+    #    (before the intermezzo, the recapture was legal — pov chose to delay it).
+    recapture_uci = move.uci()
+    if recapture_uci not in {m.uci() for m in board_k_minus_2.legal_moves}:
+        return False
+
+    return True
 
 
 def detect_intermezzo(
@@ -1470,38 +1649,83 @@ def detect_intermezzo(
 ) -> tuple[bool, None, int, int | None]:
     """Intermezzo (zwischenzug): intermediate move inserted before expected recapture.
 
+    Rewritten to cook's exact AND-chain (Phase 132 D-01).
+    No _grade voting — returns TACTIC_CONFIDENCE_HIGH when the AND-chain fires.
+    See 132-RESEARCH.md §5 for the full predicate (AGPL boundary — no cook.py source).
+
     Returns (fired, None, confidence, depth) on detection.
     tactic_piece = None (D-12 ambiguous).
     depth = k (pov move index when the intermezzo fires).
+
+    The full pattern is: (a) opponent captures at square X (moves[k-3]),
+    (b) pov plays a zwischenzug (moves[k-2], NOT capturing at X),
+    (c) opponent replies (moves[k-1], from a square NOT previously attacking X),
+    (d) pov now recaptures at X (moves[k]) — which was already legal before step (b).
+
+    Index convention:
+      moves[k]   = pov's recapture (the delayed recapture) — even k >= 4
+      moves[k-3] = original opponent capture at capture_square
+      boards[k-2] = board BEFORE pov's intermezzo (legal-move check board)
+      boards[k-3] = board BEFORE opponent's original capture
     """
     if len(moves) < 4:
         return False, None, 0, None
 
-    for k in range(2, len(moves), 2):  # pov's captures
-        if boards[k].piece_at(moves[k].to_square) is None:
-            continue  # not a capture
-
-        # Check if this is a recapture of the same square as 2 moves earlier
-        if k < 2:
+    for k in range(2, len(moves), 2):
+        if k < 4:
+            continue  # guard: need moves[k-3]; k<4 means moves[-1] wraparound (Pitfall 5)
+        if k - 3 >= len(boards) or k >= len(boards):
             continue
-        cond1 = moves[k].to_square == moves[k - 2].to_square
-
-        # Check if pov was in check before this move (the zwischenzug created check)
-        cond2 = boards[k].is_check()
-
-        # The opponent made a non-recapture move at k-1 (the zwischenzug "interrupted")
-        opp_move = moves[k - 1]
-        if k >= 3:
-            expected_recapture_sq = moves[k - 3].to_square if k >= 3 else -1
-            cond3 = opp_move.to_square != expected_recapture_sq
-        else:
-            cond3 = False
-
-        met = sum([cond1, cond2, cond3])
-        if met >= 2:
-            return True, None, _grade(met, 3), k
+        if _intermezzo_fires_at(boards, moves, pov, k):
+            return True, None, TACTIC_CONFIDENCE_HIGH, k
 
     return False, None, 0, None
+
+
+def _x_ray_fires_at(
+    boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color, k: int
+) -> bool:
+    """Check cook's exact AND-chain for x-ray at pov move index k.
+
+    Reimplemented from cook.py pseudocode (Phase 132 D-01, AGPL boundary — no cook.py
+    source). See 132-RESEARCH.md §6 for the full predicate and index mapping.
+
+    Returns True if all conditions hold, else False.
+    No _grade voting — cook's predicate is boolean.
+
+    The x-ray pattern: three consecutive captures on the SAME square X (pov at k-2,
+    opp at k-1, pov again at k), where the opponent's recapturer originally stood on
+    the ray between pov's current piece and X (the "x-ray shine-through" geometry).
+
+    Index convention (k = pov's second capture at X):
+      moves[k]   = pov's x-ray recapture at X — even k >= 2
+      moves[k-1] = opponent's recapture at X (NOT a king)
+      moves[k-2] = pov's FIRST capture at X
+      boards[k]  = board BEFORE pov's x-ray capture (capture check board — Pitfall 6)
+    """
+    target_sq = moves[k].to_square
+
+    # Condition 1: this pov move is a capture (Pitfall 6 — check BEFORE the move).
+    if boards[k].piece_at(target_sq) is None:
+        return False
+
+    # Condition 6 (Pitfall 4 — FIRST guard): three-same-square.
+    # All three captures must be on the same square X.
+    if moves[k - 2].to_square != target_sq or moves[k - 1].to_square != target_sq:
+        return False
+
+    # Condition 4: the opponent's recapturer (moves[k-1]) is NOT a king.
+    opp_recapturer = boards[k - 1].piece_at(moves[k - 1].from_square)
+    if opp_recapturer is None or opp_recapturer.piece_type == chess.KING:
+        return False
+
+    # Condition 7: the x-ray geometry — opponent's recapturer's original square lies
+    # between pov's current piece (moves[k].from_square) and the target (moves[k].to_square).
+    between = chess.SquareSet.between(moves[k].from_square, target_sq)
+    if moves[k - 1].from_square not in between:
+        return False
+
+    return True
 
 
 def detect_x_ray(
@@ -1509,38 +1733,41 @@ def detect_x_ray(
 ) -> tuple[bool, None, int, int | None]:
     """X-ray: pov attacks through an intermediate piece traded off.
 
+    Rewritten to cook's exact three-same-square AND-chain (Phase 132 D-01/D-03).
+    No _grade voting — returns TACTIC_CONFIDENCE_HIGH when the AND-chain fires.
+    See 132-RESEARCH.md §6 for the full predicate (AGPL boundary — no cook.py source).
+
     Returns (fired, None, confidence, depth) on detection.
     tactic_piece = None (D-12 ambiguous).
     depth = k (pov move index when the x-ray capture fires).
+
+    Cook's pattern: pov captures at X (moves[k-2]), opponent recaptures at X (moves[k-1],
+    NOT a king), pov recaptures again at X (moves[k]). The opponent's original square
+    (before recapturing) must lie on the ray between pov's current piece and X — the
+    x-ray "shines through" the exchange to recapture.
+
+    D-03 cutoff: if 0 TP on TRAIN after the full port (range(2, len, 2)), the
+    PV-divergence ceiling is confirmed and x-ray is suppressed. Restrict to k<=6
+    (range(2, 8, 2)) only if full scan yields partial TP; if still 0, suppress.
+
+    Index convention:
+      moves[k]   = pov's x-ray recapture at X — even k >= 2
+      moves[k-2] = pov's first capture at X
+      moves[k-1] = opponent's recapture at X (not a king)
+      boards[k]  = board BEFORE pov's x-ray capture
     """
-    for k in range(2, len(moves), 2):  # pov captures
-        if boards[k].piece_at(moves[k].to_square) is None:
-            continue
-
-        # Opponent captured on the same square at k-1
-        cond1 = moves[k - 1].to_square == moves[k].to_square
-
-        # Pov's prior move at k-2 attacked this same square
-        cond2 = False
-        if k >= 2:
-            prior_pov_move = moves[k - 2]
-            board_after_prior = boards[k - 1]
-            cond2 = moves[k].to_square in board_after_prior.attacks(prior_pov_move.to_square)
-
-        # The opponent's piece was between pov's prior piece and the target
-        cond3 = False
-        if k >= 2 and cond2:
-            between = chess.SquareSet.between(moves[k - 2].to_square, moves[k].to_square)
-            cond3 = moves[k - 1].from_square in between
-
-        met = sum([cond1, cond2, cond3])
-        confidence = _grade(met, 3) if met >= 2 else 0
-        if met >= 2:
-            return True, None, confidence, k
+    # Full scan per D-03: try range(2, len(moves), 2) first.
+    for k in range(2, len(moves), 2):
+        if _x_ray_fires_at(boards, moves, pov, k):
+            return True, None, TACTIC_CONFIDENCE_HIGH, k
 
     return False, None, 0, None
 
 
+# DO NOT EDIT — interference regression lock (Phase 132, 0.986 TEST; dispatch-cascade
+# from attraction tightening caused 2 new FPs but the logic itself is unchanged/correct).
+# Any cleanup or refactoring risks breaking the interference precision floor. See
+# RESEARCH.md Pitfall 8 and 132-04-SUMMARY.md for the dispatch-cascade explanation.
 def detect_interference(
     boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
 ) -> tuple[bool, None, int, int | None]:
@@ -1646,57 +1873,171 @@ def detect_clearance(
 ) -> tuple[bool, None, int, int | None]:
     """Clearance: pov vacates a square so another piece can use the line.
 
+    Rewritten to cook's exact 9-condition AND-chain (Phase 132 D-01).
+    No _grade voting — returns TACTIC_CONFIDENCE_HIGH when the AND-chain fires.
+    See 132-RESEARCH.md §2 for the full predicate (AGPL boundary — no cook.py source).
+
     Returns (fired, None, confidence, depth) on detection.
     tactic_piece = None (D-12 ambiguous).
     depth = k (pov move index of the clearance move itself).
 
-    Relevance gate (D-01): clearance fires only if pov has not lost material at the
-    clearance depth vs the starting position. This prevents fire on incidental non-capture
-    ray moves in losing continuations (Case-B false positives in complex multi-move PVs).
+    Index convention:
+      moves[k]   = this pov clearance move (even k >= 2)
+      moves[k-1] = opponent move just before this pov move
+      moves[k-2] = prev_move = prior pov move
+      boards[k]  = board BEFORE this pov move (= board_before)
+      boards[k+1] = board AFTER this pov move (= board_after)
+      boards[k-2] = board BEFORE prior pov move
+      boards[k-1] = board AFTER prior pov move / before opp move
     """
-    material_at_start = _material_diff(boards[0], pov)
-    for k in range(2, len(moves), 2):  # pov's non-capturing moves by ray pieces
+    for k in range(2, len(moves), 2):
         move = moves[k]
         board_before = boards[k]
-
-        # D-01 relevance gate: clearance only fires if pov has not lost material
-        if _material_diff(board_before, pov) < material_at_start:
+        if k + 1 >= len(boards):
             continue
 
-        mover = board_before.piece_at(move.from_square)
-        if mover is None or mover.piece_type not in _RAY_PIECES:
-            continue
-
-        # Must NOT be a capture
+        # Condition 1: pov moves to an EMPTY square (not a capture).
         if board_before.piece_at(move.to_square) is not None:
             continue
 
-        cond1 = True  # ray piece moved to empty square (clearance candidate)
-
-        # After clearing, a pov piece can use the vacated line
+        # Condition 2: after the move, the moved piece is a ray piece (Q/R/B) of pov's color.
         board_after = boards[k + 1]
-        cleared_sq = move.from_square
+        moved_piece = board_after.piece_at(move.to_square)
+        if moved_piece is None or moved_piece.color != pov:
+            continue
+        if moved_piece.piece_type not in _RAY_PIECES:
+            continue
 
-        # Check if another pov ray piece now attacks along the cleared line
-        cond2 = False
-        for sq in chess.SQUARES:
-            piece = board_after.piece_at(sq)
-            if piece is None or piece.color != pov or piece.piece_type not in _RAY_PIECES:
-                continue
-            if sq == move.to_square:
-                continue  # the piece that moved
-            if cleared_sq in board_after.attacks(sq):
-                cond2 = True
-                break
+        # Conditions 3-5 require the prior pov move.
+        prev_move = moves[k - 2]
 
-        # The opponent's prior move was not a check-escape
-        cond3 = k < 1 or not boards[k - 1].is_check()
+        # Condition 3: prior pov move was NOT a promotion.
+        if prev_move.promotion is not None:
+            continue
 
-        met = sum([cond1, cond2, cond3])
-        if cond2 and met >= 2:
-            return True, None, _grade(met, 3), k
+        # Condition 4: prior pov move did not land on the square we clear FROM.
+        if prev_move.to_square == move.from_square:
+            continue
+
+        # Condition 5: prior pov move did not land on the square we clear TO.
+        if prev_move.to_square == move.to_square:
+            continue
+
+        # Condition 6: the opponent was NOT in check before pov's clearing move.
+        # boards[k] = after opponent's last move = before this pov move.
+        if board_before.is_check():
+            continue
+
+        # Condition 7: after the clearing move, EITHER no check OR opponent king did not move.
+        # moves[k+1] is the opponent's response (if it exists).
+        if k + 1 < len(moves):
+            op_response = moves[k + 1]
+            if board_after.is_check():
+                # Check given: the opponent's piece that responds must NOT be a king.
+                responding_piece = board_after.piece_at(op_response.from_square)
+                if responding_piece is not None and responding_piece.piece_type == chess.KING:
+                    continue
+
+        # Condition 8: the key geometry — prior pov move came FROM the clearing target
+        # square, OR came from a square BETWEEN the clearing piece's from and to.
+        prev_from_sq = prev_move.from_square
+        between_sqs = chess.SquareSet.between(move.from_square, move.to_square)
+        from_sq_geometry = (
+            prev_from_sq == move.to_square  # came from the clearing destination
+            or prev_from_sq in between_sqs  # came from a between-square on the ray
+        )
+        if not from_sq_geometry:
+            continue
+
+        # Condition 9: the prior pov move destination must be "bad" for the prior piece.
+        # Either the square was empty before the prior pov piece arrived (quiet prep move),
+        # OR the prior pov piece is now in a bad spot on its landing square.
+        init_board = boards[k - 2]  # board before prior pov move
+        pre_board = boards[k - 1]  # board after prior pov move, before opp move
+        dest_was_empty = init_board.piece_at(prev_move.to_square) is None
+        prior_piece_bad = _is_in_bad_spot(pre_board, prev_move.to_square)
+        if not (dest_was_empty or prior_piece_bad):
+            continue
+
+        # All 9 conditions met — clearance confirmed.
+        return True, None, TACTIC_CONFIDENCE_HIGH, k
 
     return False, None, 0, None
+
+
+def _capturing_defender_fires_at(
+    boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color, k: int
+) -> int | None:
+    """Check cook's exact AND-chain for capturing-defender at pov move index k.
+
+    Reimplemented from cook.py pseudocode (Phase 132 D-01, AGPL boundary — no cook.py source).
+    See 132-RESEARCH.md §3 for the full predicate and "In our index terms" definitive mapping.
+
+    Returns the captured piece type (int) if all conditions hold, else None.
+
+    Index convention:
+      moves[k]   = this pov capture (even k >= 2)
+      moves[k-1] = prev_op_move  (opponent move just before pov)
+      moves[k-2] = prev_pov_move (the prior pov move)
+      boards[k]  = board BEFORE this pov move (capture check board)
+      boards[k-2] = init_board (board BEFORE prior pov move — cook's grandpa.board())
+    """
+    board_k = boards[k]
+    move = moves[k]
+
+    # Condition 1: real capture OR checkmate. Check capture first (fast path).
+    captured = board_k.piece_at(move.to_square)
+    if captured is None:
+        # No capture — only fires on checkmate; too rare for Tier-3, skip.
+        return None
+
+    # Condition 3: capturing piece is NOT a king.
+    captor_piece = board_k.piece_at(move.from_square)
+    if captor_piece is None or captor_piece.piece_type == chess.KING:
+        return None
+
+    # Condition 4: captured piece is equal or lower value than captor (not capturing up).
+    # Use _VALUES_NO_KING (Pitfall 3 — cook uses `values` not `king_values`).
+    captured_val = _VALUES_NO_KING.get(captured.piece_type, 0)
+    captor_val = _VALUES_NO_KING.get(captor_piece.piece_type, 0)
+    if captured_val > captor_val:
+        return None
+
+    # Condition 5: captured piece is hanging BEFORE the capture (cook's util.is_hanging).
+    # _is_hanging is the correct helper (not _is_defended — Pitfall 2 note in RESEARCH).
+    if not _is_hanging(board_k, move.to_square, not pov):
+        return None
+
+    # Condition 6: opponent's last move was NOT to this capture square (not a recapture).
+    prev_op_move = moves[k - 1]
+    if prev_op_move.to_square == move.to_square:
+        return None
+
+    # Conditions 7-9 require boards[k-2] (init_board = grandpa.board() — before prior pov move).
+    init_board = boards[k - 2]
+
+    # Condition 7: the board BEFORE the prior pov move was NOT in check.
+    if init_board.is_check():
+        return None
+
+    # Condition 8: prior pov move did NOT land on the square we capture FROM.
+    prev_pov_move = moves[k - 2]
+    if prev_pov_move.to_square == move.from_square:
+        return None
+
+    # Condition 9: the init-board defender test.
+    # defender_sq = prior pov move's destination (where our prior pov piece landed).
+    # init_piece = the piece at defender_sq BEFORE our prior pov move arrived.
+    # Fires iff that piece existed AND it was an attacker of our current capture square.
+    # This is the "our prior pov move displaced a defender of the capture target" check.
+    defender_sq = prev_pov_move.to_square
+    init_piece = init_board.piece_at(defender_sq)
+    if init_piece is None:
+        return None
+    if defender_sq not in init_board.attackers(init_piece.color, move.to_square):
+        return None
+
+    return captured.piece_type
 
 
 def detect_capturing_defender(
@@ -1704,43 +2045,24 @@ def detect_capturing_defender(
 ) -> tuple[bool, int | None, int, int | None]:
     """Capturing defender: pov captures a piece that was defending the real target.
 
+    Rewritten to cook's exact 9-condition AND-chain (Phase 132 D-01).
+    No _grade voting — returns TACTIC_CONFIDENCE_HIGH when the AND-chain fires.
+    See 132-RESEARCH.md §3 for the full predicate (AGPL boundary — no cook.py source).
+
     Returns (fired, captured_defender_piece_type, confidence, depth) on detection.
     tactic_piece = the captured defender (D-12).
     depth = k (pov move index when the capturing-defender capture fires).
+
+    Index convention:
+      moves[k]   = this pov capture (even k >= 2)
+      moves[k-2] = prior pov move
+      boards[k]  = board BEFORE this pov move
+      boards[k-2] = init_board = board BEFORE prior pov move (cook's grandpa.board())
     """
     for k in range(2, len(moves), 2):
-        board_k = boards[k]
-        move = moves[k]
-        captured = board_k.piece_at(move.to_square)
-        if captured is None or captured.piece_type == chess.PAWN:
-            continue
-
-        cond1 = True  # non-pawn capture
-
-        # The captured piece was defending some pov-attacked target
-        cond2 = False
-        cond3 = False
-        board_before = boards[k - 1] if k >= 1 else boards[0]
-
-        # Look for a pov-threatened target that was being defended by the captured piece
-        for target_sq in chess.SQUARES:
-            target = board_before.piece_at(target_sq)
-            if target is None or target.color == pov:
-                continue
-            if move.to_square in board_before.attackers(pov, target_sq):
-                continue  # pov already attacked it before
-            # Was the captured piece defending target_sq?
-            if target_sq in board_before.attacks(move.to_square):
-                cond2 = True
-                # After capture, is target_sq now undefended?
-                board_after = boards[k + 1] if k + 1 < len(boards) else boards[-1]
-                if _is_hanging(board_after, target_sq, not pov):
-                    cond3 = True
-                break
-
-        met = sum([cond1, cond2, cond3])
-        if met >= 2:
-            return True, captured.piece_type, _grade(met, 3), k
+        piece_type = _capturing_defender_fires_at(boards, moves, pov, k)
+        if piece_type is not None:
+            return True, piece_type, TACTIC_CONFIDENCE_HIGH, k
 
     return False, None, 0, None
 
@@ -1748,49 +2070,32 @@ def detect_capturing_defender(
 def detect_sacrifice(
     boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
 ) -> tuple[bool, int | None, int, int | None]:
-    """Sacrifice: pov voluntarily loses material to gain a positional/tactical advantage.
+    """Sacrifice: pov ends up ≥MIN_SACRIFICE_DROP points below the starting material after
+    at least the 2nd pov move, and no opponent move is a promotion (cook §7 AND-chain).
 
-    Returns (fired, sacrificed_piece_type, confidence, depth) on detection.
-    tactic_piece = the sacrificed piece (D-12).
-    depth = k of the largest sacrifice move (deepest pov move with max material loss).
+    Cook's predicate (lines ~184-191): `_material_diff(boards[k+1], pov) - initial <= -2`
+    for k in range(2, len(moves), 2), where initial = `_material_diff(boards[0], pov)`.
+    Promotion guard: none of the opponent's moves (odd indices) may be promotions.
+
+    No _grade voting — cook's predicate is boolean (all conditions or nothing).
+    Returns TACTIC_CONFIDENCE_HIGH when the AND-chain fires.
+
+    Note (D-02): sacrifice is a co-tag that rarely wins single-winner dispatch (geometric
+    and depth-primary motifs pre-empt it). Expected to remain suppressed post-port.
     """
-    max_sac_val = 0
-    sac_piece_type: int | None = None
-    sac_depth: int | None = None
+    # Promotion guard (Pitfall 7): check OPPONENT moves (odd indices), not pov moves.
+    if any(m.promotion for m in moves[1::2]):
+        return False, None, 0, None
 
-    for k in range(0, len(moves), 2):  # pov's moves
-        board_before = boards[k]
-        board_after = boards[k + 1] if k + 1 < len(boards) else boards[-1]
+    initial = _material_diff(boards[0], pov)
 
-        diff_before = _material_diff(board_before, pov)
-        diff_after = _material_diff(board_after, pov)
-        material_lost = diff_before - diff_after
-
-        if material_lost < 2:  # minimum 2-point sacrifice (bishop/knight minimum)
-            continue
-
-        # The pov piece that was on the destination and got captured
-        moved_piece = board_after.piece_at(moves[k].to_square)
-        if moved_piece is None or moved_piece.color != pov:
-            # pov piece was already captured on that square
-            pre_piece = board_before.piece_at(moves[k].from_square)
-            if pre_piece is not None and material_lost > max_sac_val:
-                max_sac_val = material_lost
-                sac_piece_type = pre_piece.piece_type
-                sac_depth = k
-        elif moved_piece.color == pov and material_lost > max_sac_val:
-            # Pov piece was captured on next move
-            if k + 1 < len(moves) and boards[k + 1].piece_at(moves[k].to_square) is not None:
-                pre_piece = board_before.piece_at(moves[k].from_square)
-                if pre_piece is not None:
-                    max_sac_val = material_lost
-                    sac_piece_type = pre_piece.piece_type
-                    sac_depth = k
-
-    if max_sac_val >= 2 and sac_piece_type is not None:
-        # Confidence scales with sacrifice magnitude, capped at queen (9)
-        confidence = _grade(min(max_sac_val, 9), 9)
-        return True, sac_piece_type, confidence, sac_depth
+    # Scan from the 2nd pov move onward (k=2, 4, 6, ...): cook scans diffs[1::2][1:].
+    for k in range(2, len(moves), 2):
+        if k + 1 >= len(boards):
+            break
+        diff_after = _material_diff(boards[k + 1], pov)
+        if diff_after - initial <= -MIN_SACRIFICE_DROP:
+            return True, None, TACTIC_CONFIDENCE_HIGH, k
 
     return False, None, 0, None
 

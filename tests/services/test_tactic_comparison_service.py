@@ -159,7 +159,12 @@ async def _create_test_users(db_session: AsyncSession) -> None:
 
 
 def test_family_mapping_ten_families() -> None:
-    """FAMILY_TO_MOTIF_INTS has exactly the 10 canonical family keys (Plan 04 G-01)."""
+    """FAMILY_TO_MOTIF_INTS has the 10 canonical families + 5 tier-3 "Advanced" families.
+
+    Quick 260623-6pd surfaced the shipped Phase-132 tier-3 motifs (deflection, intermezzo,
+    interference, clearance, capturing_defender) as filterable families, expanding the
+    taxonomy from 10 to 15.
+    """
     from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
 
     expected_keys = {
@@ -173,20 +178,31 @@ def test_family_mapping_ten_families() -> None:
         "trapped_piece",
         "hanging",
         "mate",
+        # Tier-3 "Advanced" families (Quick 260623-6pd)
+        "deflection",
+        "intermezzo",
+        "interference",
+        "clearance",
+        "capturing_defender",
     }
     assert set(FAMILY_TO_MOTIF_INTS.keys()) == expected_keys
 
 
-def test_family_mapping_excludes_combinations() -> None:
-    """Dropped combinations ints (DEFLECTION=9..SACRIFICE=17) belong to no family (Plan 04)."""
+def test_family_mapping_excludes_suppressed_tier3() -> None:
+    """Still-suppressed tier-3 ints (attraction=10, self-interference=14, sacrifice=17)
+    belong to no family.
+
+    The other tier-3 ints (deflection=9, intermezzo=11, interference=13, clearance=15,
+    capturing_defender=16) were surfaced as "Advanced" families in Quick 260623-6pd and
+    ARE now mapped; only the suppressed three (0 TP / no chip data) stay unmapped.
+    """
     from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
 
-    # These ints were in the old "combinations" family and must now map to nothing.
-    dropped_combinations_ints = {9, 10, 11, 13, 14, 15, 16, 17}
+    suppressed_tier3_ints = {10, 14, 17}
     all_mapped_ints = {m for ints in FAMILY_TO_MOTIF_INTS.values() for m in ints}
-    overlap = dropped_combinations_ints & all_mapped_ints
+    overlap = suppressed_tier3_ints & all_mapped_ints
     assert overlap == set(), (
-        f"Dropped combinations ints {overlap} must not appear in any family mapping"
+        f"Suppressed tier-3 ints {overlap} must not appear in any family mapping"
     )
 
 
@@ -205,6 +221,12 @@ def test_family_mapping_covers_selected_motifs() -> None:
     assert FAMILY_TO_MOTIF_INTS["trapped_piece"] == [26]
     # Mate set unchanged: ints 7-8, 18-24
     assert set(FAMILY_TO_MOTIF_INTS["mate"]) == {7, 8, 18, 19, 20, 21, 22, 23, 24}
+    # Tier-3 "Advanced" families (Quick 260623-6pd)
+    assert FAMILY_TO_MOTIF_INTS["deflection"] == [9]
+    assert FAMILY_TO_MOTIF_INTS["intermezzo"] == [11]
+    assert FAMILY_TO_MOTIF_INTS["interference"] == [13]
+    assert FAMILY_TO_MOTIF_INTS["clearance"] == [15]
+    assert FAMILY_TO_MOTIF_INTS["capturing_defender"] == [16]
 
 
 def test_family_mapping_fork() -> None:
@@ -214,20 +236,21 @@ def test_family_mapping_fork() -> None:
     assert FAMILY_TO_MOTIF_INTS["fork"] == [1]
 
 
-def test_family_mapping_10_produces_overflow() -> None:
-    """With 10 families, the top-6 selection leaves 4 overflow families (G-01 resolved).
+def test_family_mapping_produces_overflow() -> None:
+    """With 15 families, the top-6 selection leaves 9 overflow families (G-01 resolved).
 
     This is the data-layer proof that the 'More Tactics' accordion (D-14) is
     now reachable — it was previously blocked because 6 families == top-6 cap.
+    Quick 260623-6pd expanded the taxonomy from 10 to 15 (tier-3 Advanced families).
     """
     from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
 
     total = len(FAMILY_TO_MOTIF_INTS)
-    assert total == 10, f"Expected 10 families; got {total}"
-    # top-6 + 4 overflow
-    assert total > 6, "With 10 families, top-6 selection always produces overflow families"
+    assert total == 15, f"Expected 15 families; got {total}"
+    # top-6 + 9 overflow
+    assert total > 6, "With 15 families, top-6 selection always produces overflow families"
     overflow_count = total - 6
-    assert overflow_count == 4, f"Expected 4 overflow families; got {overflow_count}"
+    assert overflow_count == 9, f"Expected 9 overflow families; got {overflow_count}"
 
 
 # ---------------------------------------------------------------------------
@@ -293,14 +316,14 @@ async def test_full_response_bullets(db_session: AsyncSession) -> None:
     )
     assert result.below_gate is False
     assert result.analyzed_n >= TACTIC_COMPARISON_GATE
-    # Phase 129 Plan 04: up to 20 bullets (10 families x 2 orientations: missed + allowed).
-    # Can be less if some families have 0 events.
-    assert len(result.bullets) <= 20
-    # All bullets have a valid family key from the 10-family taxonomy
+    # Up to 30 bullets (15 families x 2 orientations: missed + allowed) after Quick
+    # 260623-6pd added the tier-3 Advanced families. Can be less if some families have 0 events.
+    assert len(result.bullets) <= 2 * len(FAMILY_TO_MOTIF_INTS)
+    # All bullets have a valid family key from the taxonomy
     valid_families = set(FAMILY_TO_MOTIF_INTS.keys())
     for bullet in result.bullets:
         assert bullet.family in valid_families, (
-            f"bullet.family {bullet.family!r} must be one of the 10 taxonomy keys"
+            f"bullet.family {bullet.family!r} must be one of the taxonomy keys"
         )
         assert bullet.orientation in ("missed", "allowed"), (
             f"Each bullet must have orientation 'missed' or 'allowed'; got {bullet.orientation!r}"

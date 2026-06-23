@@ -59,6 +59,52 @@ ports for fork, skewer, discovered-attack, pin; TEST is the 5,164-row held-out s
   pin (131-02)          453   149   750    0.752   0.819    was SUPPRESSED — below 0.90 TEST
   pin (131 fix)         699    49   504    0.934   0.944    SHIPPED — odd-board scan (see below)
 
+Phase 132-02 measurement run (2026-06-23, same 11,855-row TRAIN / 5,164-row TEST fixture).
+Cook-aligned AND-chain rewrites for deflection (11 conditions) and clearance (9 conditions),
+replacing graded `_grade(met, total)` voting with exact relational AND-chains:
+
+  Motif                  TP    FP    FN   P(train) P(test)  Decision
+  -----------------------------------------------------------------------------------------
+  deflection            162     1  1015    0.994   1.000    SHIPPED — exceeds 0.90 TEST
+  clearance             199    19   526    0.913   0.952    SHIPPED — exceeds 0.90 TEST
+
+Phase 132-03 measurement run (2026-06-23, same 11,855-row TRAIN / 5,164-row TEST fixture).
+Cook-aligned AND-chain rewrites for capturing-defender (9 conditions, init-board defender
+test) and intermezzo (zwischenzug signature: moves[k-3] original-capture + was-legal-earlier),
+both replacing graded voting with exact relational AND-chains:
+
+  Motif                  TP    FP    FN   P(train) P(test)  Decision
+  -----------------------------------------------------------------------------------------
+  capturing-defender    326    49   284    0.869   0.903    SHIPPED — exceeds 0.90 TEST
+  intermezzo             39     4   663    0.907   1.000    SHIPPED — exceeds 0.90 TEST
+
+Phase 132-04 measurement run (2026-06-23, same 11,855-row TRAIN / 5,164-row TEST fixture).
+Cook AND-chain ports for attraction (§4 lure+capture+attack+follow-up), x-ray (§6 three-
+same-square guard + between-square geometry), and sacrifice (§7 material-diff predicate):
+
+  Motif                  TP    FP    FN   P(train) P(test)  Decision
+  -----------------------------------------------------------------------------------------
+  attraction              0     0  1603    NaN     NaN      SUPPRESSED — D-03 cutoff: 0 TP on TRAIN
+                                                             after full cook port. Lure+4-move
+                                                             sequence rarely survives Stockfish PV
+                                                             depth limit. Kept in SUPPRESSED_MOTIFS.
+  x-ray                 225     0   417    1.000   1.000    SHIPPED — exceeds 0.90 TEST. Cook three-
+                                                             same-square AND-chain (moves[k-2].to ==
+                                                             moves[k-1].to == moves[k].to + between-
+                                                             square geometry + non-king recapturer).
+                                                             Floor set at 0.93 (~7pp below TRAIN 1.000).
+  sacrifice               0     0  3142    NaN     NaN      SUPPRESSED — structural co-tag issue;
+                                                             material-diff predicate never wins single-
+                                                             winner dispatch (higher-priority motifs
+                                                             always pre-empt). D-02 endorses suppress.
+  interference          269     3   327    0.989   0.992    NO REGRESSION from interference logic
+  (post-attraction)                                          (detect_interference UNCHANGED). Prior
+  (post-sacrifice)                                           measurement (0.985 TRAIN / 0.986 TEST)
+                                                             was mid-port, before sacrifice fixture
+                                                             collision fixes. Final measurement after
+                                                             all cook ports: 0.989 TRAIN / 0.992 TEST.
+                                                             Floor 0.80 still holds with large headroom.
+
 Measurement notes:
   - discovered-check (1004 TRAIN labels, 397 TEST): fires at P=0.880 train / 0.833 test.
     Recall is ~4.4% — the motif shadows only non-mating discovered-check lines (the other
@@ -128,11 +174,13 @@ SUPPRESSED_MOTIFS: frozenset[str] = frozenset(
         "sacrifice",
         # Only-FP (0 TP, >0 FP): zero precision. Named mate (confidence=100, no lever):
         "dovetail-mate",  # 0 TP, 23 FP
-        # Only-FP tier-3, suppressed via _TACTIC_CHIP_CONFIDENCE_MIN=70:
-        "attraction",  # 0 TP, 10 FP
-        "intermezzo",  # 0 TP, 5 FP
-        "x-ray",  # 0 TP, 10 FP
-        "capturing-defender",  # 0 TP, 3 FP
+        # Phase 132-04: attraction cook AND-chain port → 0 TP on TRAIN (D-03 PV-divergence
+        # cutoff fires). The lure+capture+attack+follow-up 4-move sequence rarely survives
+        # the Stockfish PV depth limit. Changed from "only-FP" to "never fires" under the
+        # strict cook AND-chain. Suppressed via _TACTIC_CHIP_CONFIDENCE_MIN=70.
+        "attraction",
+        # x-ray: Phase 132-04 cook port → 1.000 TRAIN / 1.000 TEST — SHIPPED (removed from here)
+        # capturing-defender: Phase 132-03 cook port → 0.869 TRAIN / 0.903 TEST — SHIPPED (removed)
         # Unvalidated motifs (no lichess theme equivalent) — excluded from measurement.
         "self-interference",
         "double-bishop-mate",
@@ -160,11 +208,12 @@ SUPPRESSED_MOTIFS: frozenset[str] = frozenset(
 # regressions without being brittle to fixture variance. These are the never-regress
 # floors; aspirational improvement targets live in GOALS in scripts/tactic_tagger_report.py.
 #
-# NOTE: back-rank-mate (0.281), fork (0.437), pin (0.440), skewer (0.162),
-# discovered-attack (0.163), deflection (0.130) remain well below a "trustworthy" bar.
-# back-rank over-fires onto corner mates; the geometric detectors carry large FP pools.
-# pin's SEED-057 gate fix (parity + reject-before-accept ordering) lifted it 0.413 -> 0.440;
-# further gains require detector hardening (drive it via the GOALS loop), not a floor edit.
+# NOTE: pre-Phase-132 low floors (back-rank-mate 0.281, fork 0.437, pin 0.440, skewer 0.162,
+# discovered-attack 0.163, deflection 0.130) were raised by cook-aligned AND-chain rewrites in
+# Phase 131 and 132. back-rank over-fires onto corner mates; the geometric detectors carry
+# large FP pools. pin's SEED-057 gate fix lifted it 0.413 -> 0.440; Phase 131-02 cook port
+# raised it further to 0.934 TRAIN. Phase 132-02 raised deflection 0.130 -> 0.994 TRAIN and
+# clearance 0.348 -> 0.913 TRAIN.
 #
 # discovered-attack dropped from 0.193 to 0.163 because Phase 128.1-01 discovered-check
 # (Tier 2, rank 4) now correctly intercepts discovered-attack Sub-case 1 positions — those
@@ -201,13 +250,25 @@ PRECISION_FLOOR: dict[str, float] = {
     "anastasia-mate": 0.93,  # train 1.000 / test 1.000 (was 0.75; phase 131-03 cook port)
     "hook-mate": 0.93,  # train 1.000 / test 1.000 (was 0.80; phase 131-03 cook port)
     # --- Tier 3 graded + Tier 4 ---
-    # clearance: Tier-3 graded motif, query-suppressed in UI below confidence 70. The Phase 131
-    # pin odd-board fix shifted a couple of dispatch outcomes (positions pin no longer claims fall
-    # through to clearance), nudging TRAIN from ~0.35 to 0.348. Floor lowered 0.35 -> 0.30 (~5pp
-    # below TRAIN 0.348, TEST 0.371) per the documented "lower floor with a measurement" protocol.
-    "clearance": 0.30,  # train 0.348 / test 0.371 (low train n; query-suppressed below conf 70)
+    # deflection: Phase 132-02 cook 11-condition AND-chain rewrite. TRAIN 0.994 (162 TP, 1 FP),
+    # TEST 1.000 (62 TP, 0 FP). Floor set at 0.93 (~6pp below TRAIN 0.994).
+    "deflection": 0.93,  # train 0.994 / test 1.000 (phase 132-02 cook 11-condition AND-chain)
+    # clearance: Phase 132-02 cook 9-condition AND-chain rewrite. TRAIN 0.913 (199 TP, 19 FP),
+    # TEST 0.952 (99 TP, 5 FP). Floor set at 0.87 (~5pp below TRAIN 0.913).
+    "clearance": 0.87,  # train 0.913 / test 0.952 (phase 132-02 cook 9-condition AND-chain)
     "interference": 0.80,  # train 1.000 / test 1.000 (21 TP, 0 FP)
-    "deflection": 0.10,  # train 0.130 / test 0.141 — most FPs <70 confidence (query-suppressed)
+    # capturing-defender: Phase 132-03 cook 9-condition AND-chain rewrite (init-board defender
+    # test, value gate, _is_hanging, prev-op not-recapture, etc.). TRAIN 0.869 (326 TP, 49 FP),
+    # TEST 0.903 (132 TP, 14 FP). Floor set at 0.82 (~5pp below TRAIN 0.869, rounded to 0.01).
+    "capturing-defender": 0.82,  # train 0.869 / test 0.903 (phase 132-03 cook AND-chain)
+    # intermezzo: Phase 132-03 cook zwischenzug AND-chain (moves[k-3] original-capture +
+    # was-legal-earlier condition + opponent non-attacker gate). TRAIN 0.907 (39 TP, 4 FP),
+    # TEST 1.000 (25 TP, 0 FP). Floor set at 0.85 (~6pp below TRAIN 0.907, rounded to 0.05).
+    "intermezzo": 0.85,  # train 0.907 / test 1.000 (phase 132-03 cook AND-chain)
+    # x-ray: Phase 132-04 cook three-same-square AND-chain (moves[k-2].to == moves[k-1].to
+    # == moves[k].to, between-square geometry, non-king recapturer). TRAIN 1.000 (225 TP, 0 FP),
+    # TEST 1.000 (103 TP, 0 FP). Floor set at 0.93 (~7pp below TRAIN 1.000, rounded to 0.01).
+    "x-ray": 0.93,  # train 1.000 / test 1.000 (phase 132-04 cook three-same-square AND-chain)
     # Phase 131-03: hanging-piece floor confirmed. Depth-primary dispatch (plan-01) changed
     # which motif wins when hanging-piece competes with geometrics, reducing train from
     # 0.990 to 0.909; floor stays at 0.90 (still 1pp above train, within 5-8pp band goal).

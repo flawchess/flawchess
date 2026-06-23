@@ -34,7 +34,7 @@ import {
   SEV_MISTAKE_BG,
 } from '@/lib/theme';
 import type { FlawTag, TacticOrientation } from '@/types/library';
-import type { TacticFamily } from '@/lib/tacticComparisonMeta';
+import type { TacticFamily, TacticGroupKey } from '@/lib/tacticComparisonMeta';
 import {
   TACTIC_COMPARISON_FAMILIES,
   TACTIC_FAMILY_COLORS,
@@ -158,6 +158,15 @@ const FAMILY_SECTIONS: FamilySection[] = [
 // Computed once at module level to avoid per-render allocations.
 const CONTEXT_TAGS = new Set<FlawTag>(FAMILY_SECTIONS.flatMap((s) => s.tags));
 
+// Tier-3 "Advanced" tactic families (Quick 260623-6pd) — collapsed-by-default group.
+// Derived once from the registry: family keys (for the toggle count badge) and chip
+// labels (for the Tags-icon legend shown beside the toggle).
+const ADVANCED_TACTIC_FAMILIES = TACTIC_COMPARISON_FAMILIES.filter((f) => f.group === 'advanced');
+const ADVANCED_TACTIC_FAMILY_KEYS = new Set<TacticFamily>(
+  ADVANCED_TACTIC_FAMILIES.map((f) => f.family),
+);
+const ADVANCED_TACTIC_MOTIF_LABELS = ADVANCED_TACTIC_FAMILIES.map((f) => f.chipLabel);
+
 // ─── Tag filter button ────────────────────────────────────────────────────────
 
 interface TagFilterButtonProps {
@@ -233,6 +242,94 @@ function SeverityFilterButton({ config, selected, onToggle }: SeverityFilterButt
   );
 }
 
+// ─── Tactic family group ────────────────────────────────────────────────────────
+
+interface TacticFamilyGroupProps {
+  groupKey: TacticGroupKey;
+  /** Section label (also used for the chips' aria-label). */
+  label: string;
+  selectedFamilies: TacticFamily[];
+  onToggle: (family: TacticFamily) => void;
+  /**
+   * Render the section label + Tags-icon legend above the chips. Default true for the
+   * always-on groups; the collapsible Advanced group passes false because its toggle row
+   * already carries the label + legend (Quick 260623-6pd).
+   */
+  showHeader?: boolean;
+}
+
+/**
+ * One mechanism group of tactic-family filter pills: an optional section label + scoped
+ * Tags-icon legend, then a wrapped row of family toggle buttons. Shared by the always-on
+ * groups (Piece Attacks, Checkmate/Checks/Discoveries) and the collapsible Advanced group
+ * so the chip markup lives in one place.
+ */
+function TacticFamilyGroup({
+  groupKey,
+  label,
+  selectedFamilies,
+  onToggle,
+  showHeader = true,
+}: TacticFamilyGroupProps) {
+  const groupFamilies = TACTIC_COMPARISON_FAMILIES.filter((f) => f.group === groupKey);
+  // Legend is family-level (one row per chip): key on chipLabel so the mate family shows
+  // a single "checkmate" row, not its nine named-mate motifs.
+  const groupMotifs = groupFamilies.map((f) => f.chipLabel);
+  const chips = (
+    <div
+      role="group"
+      aria-label={`${label} filters`}
+      data-testid={`filter-flaw-tactic-group-${groupKey}-chips`}
+      className="flex flex-wrap gap-2"
+    >
+      {groupFamilies.map(({ family, name, chipLabel }) => {
+        const { color, bg } = TACTIC_FAMILY_COLORS[family];
+        const Icon = TACTIC_FAMILY_ICON[family];
+        const selected = selectedFamilies.includes(family);
+        return (
+          <button
+            key={family}
+            type="button"
+            data-testid={`filter-flaw-tactic-${family}`}
+            aria-pressed={selected}
+            aria-label={`Filter flaws by tactic motif: ${name}`}
+            className={cn(
+              'inline-flex items-center gap-1 h-11 sm:h-7 rounded-full px-3 py-0.5 text-sm border transition-colors',
+              !selected
+                && 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',
+            )}
+            style={selected ? { color, borderColor: color, backgroundColor: bg } : undefined}
+            onClick={() => onToggle(family)}
+          >
+            {/* Icon hidden on mobile to declutter the chips; shown from `sm` up. */}
+            <Icon className="h-3.5 w-3.5 shrink-0 hidden sm:block" aria-hidden="true" />
+            {chipLabel}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  if (!showHeader) return chips;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-1.5">
+        <p className="text-sm text-muted-foreground" data-testid={`filter-flaw-tactic-group-${groupKey}`}>
+          {label}
+        </p>
+        <TagLegend
+          variant="icon"
+          tags={[]}
+          tacticMotifs={groupMotifs}
+          testId={`filter-flaw-tactic-group-${groupKey}-legend`}
+        />
+      </div>
+      {chips}
+    </div>
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 /**
@@ -273,6 +370,8 @@ export function FlawFilterControl({
   onTacticDepthChange,
 }: FlawFilterControlProps) {
   const [contextOpen, setContextOpen] = useState(false);
+  // Advanced tactic group (tier-3 motifs) — collapsed by default (Quick 260623-6pd).
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   // Severity toggles narrow like the tag families: empty = both shown, one = that
   // tier only, both = both shown (same as empty). Deselecting the last severity is
@@ -301,6 +400,11 @@ export function FlawFilterControl({
   // Count of currently selected tags that belong to the Context (FAMILY_SECTIONS) block.
   // Drives the count badge on the collapsed Context toggle header.
   const selectedContextCount = tags.filter((t) => CONTEXT_TAGS.has(t)).length;
+
+  // Count of selected families in the Advanced (tier-3) group — drives the toggle badge.
+  const selectedAdvancedCount = tacticFamilies.filter((f) =>
+    ADVANCED_TACTIC_FAMILY_KEYS.has(f),
+  ).length;
 
   return (
     <div data-testid="flaw-filter-control" className="flex flex-col gap-3">
@@ -359,62 +463,62 @@ export function FlawFilterControl({
 
       {/* ── Tactic motif families (Phase 126; grouped into mechanism sections in
           Quick 260620-onv) — opt-in, off by default. Gated to the Flaws tab
-          (showTacticFilter); shared Games-tab panel hides it. Three groups, each
-          with its own scoped Tags-icon legend; chips read kebab-case. ──── */}
+          (showTacticFilter); shared Games-tab panel hides it. Always-on groups
+          (Piece Attacks, Checkmate/Checks/Discoveries) render here; the tier-3
+          Advanced group renders collapsed below (Quick 260623-6pd). Each group has
+          its own scoped Tags-icon legend; chips read kebab-case. ──── */}
       {showTacticFilter
-        && TACTIC_GROUPS.map(({ key, label }) => {
-          const groupFamilies = TACTIC_COMPARISON_FAMILIES.filter((f) => f.group === key);
-          // Legend is family-level (one row per chip): key on chipLabel so the mate
-          // family shows a single "checkmate" row, not its nine named-mate motifs.
-          const groupMotifs = groupFamilies.map((f) => f.chipLabel);
-          return (
-            <div key={key} className="flex flex-col gap-2">
-              <div className="flex items-center gap-1.5">
-                <p className="text-sm text-muted-foreground" data-testid={`filter-flaw-tactic-group-${key}`}>
-                  {label}
-                </p>
-                <TagLegend
-                  variant="icon"
-                  tags={[]}
-                  tacticMotifs={groupMotifs}
-                  testId={`filter-flaw-tactic-group-${key}-legend`}
-                />
-              </div>
-              <div
-                role="group"
-                aria-label={`${label} filters`}
-                data-testid={`filter-flaw-tactic-group-${key}-chips`}
-                className="flex flex-wrap gap-2"
-              >
-                {groupFamilies.map(({ family, name, chipLabel }) => {
-                  const { color, bg } = TACTIC_FAMILY_COLORS[family];
-                  const Icon = TACTIC_FAMILY_ICON[family];
-                  const selected = tacticFamilies.includes(family);
-                  return (
-                    <button
-                      key={family}
-                      type="button"
-                      data-testid={`filter-flaw-tactic-${family}`}
-                      aria-pressed={selected}
-                      aria-label={`Filter flaws by tactic motif: ${name}`}
-                      className={cn(
-                        'inline-flex items-center gap-1 h-11 sm:h-7 rounded-full px-3 py-0.5 text-sm border transition-colors',
-                        !selected
-                          && 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',
-                      )}
-                      style={selected ? { color, borderColor: color, backgroundColor: bg } : undefined}
-                      onClick={() => handleTacticFamilyToggle(family)}
-                    >
-                      {/* Icon hidden on mobile to declutter the chips; shown from `sm` up. */}
-                      <Icon className="h-3.5 w-3.5 shrink-0 hidden sm:block" aria-hidden="true" />
-                      {chipLabel}
-                    </button>
-                  );
-                })}
-              </div>
+        && TACTIC_GROUPS.filter((g) => g.key !== 'advanced').map(({ key, label }) => (
+          <TacticFamilyGroup
+            key={key}
+            groupKey={key}
+            label={label}
+            selectedFamilies={tacticFamilies}
+            onToggle={handleTacticFamilyToggle}
+          />
+        ))}
+
+      {/* ── Advanced tactic families (tier-3, Quick 260623-6pd) — collapsed by default ──
+          x-ray + the shipped Phase-132 motifs (deflection, intermezzo, interference,
+          clearance, capturing-defender) behind an "Advanced" toggle below the always-on
+          groups. The Tags-icon legend sits on the toggle row so the motif explanations
+          are reachable without expanding. Gated to the Flaws tab (showTacticFilter). ──── */}
+      {showTacticFilter && (
+        <div>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setAdvancedOpen((v) => !v)}
+              aria-expanded={advancedOpen}
+              aria-controls="flaw-filter-advanced-content"
+              data-testid="filter-flaw-advanced-toggle"
+              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <ChevronDown
+                className={cn('h-3.5 w-3.5 transition-transform', advancedOpen && 'rotate-180')}
+              />
+              {selectedAdvancedCount > 0 ? `Advanced · ${selectedAdvancedCount}` : 'Advanced'}
+            </button>
+            <TagLegend
+              variant="icon"
+              tags={[]}
+              tacticMotifs={ADVANCED_TACTIC_MOTIF_LABELS}
+              testId="filter-flaw-tactic-group-advanced-legend"
+            />
+          </div>
+          {advancedOpen && (
+            <div id="flaw-filter-advanced-content" className="mt-2">
+              <TacticFamilyGroup
+                groupKey="advanced"
+                label="Advanced"
+                selectedFamilies={tacticFamilies}
+                onToggle={handleTacticFamilyToggle}
+                showHeader={false}
+              />
             </div>
-          );
-        })}
+          )}
+        </div>
+      )}
 
       {/* ── Context tag families — collapsed by default (Quick 260620-mjh) ── */}
       {/* Timing / Opportunity / Impact / Game Phase behind a "More" toggle.   */}

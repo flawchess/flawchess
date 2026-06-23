@@ -151,6 +151,27 @@ FAMILY_TO_MOTIF_INTS: dict[str, list[int]] = {
         int(TacticMotifInt.DOUBLE_BISHOP_MATE),
         int(TacticMotifInt.DOVETAIL_MATE),
     ],
+    # Tier-3 "Advanced" families (Quick 260623-6pd). Phase 132 cook-aligned AND-chain
+    # rewrites lifted these motifs over the 0.90 TEST ship bar; their detectors fire at
+    # TACTIC_CONFIDENCE_HIGH (100) so they pass the _TACTIC_CHIP_CONFIDENCE_MIN lever.
+    # Surfaced here so they are filterable + counted in the comparison grid, mirroring the
+    # frontend "advanced" TACTIC_GROUPS section. Still-suppressed tier-3 (attraction=10,
+    # self-interference=14, sacrifice=17) map to no family — 0 TP, no chip data.
+    "deflection": [
+        int(TacticMotifInt.DEFLECTION),
+    ],
+    "intermezzo": [
+        int(TacticMotifInt.INTERMEZZO),
+    ],
+    "interference": [
+        int(TacticMotifInt.INTERFERENCE),
+    ],
+    "clearance": [
+        int(TacticMotifInt.CLEARANCE),
+    ],
+    "capturing_defender": [
+        int(TacticMotifInt.CAPTURING_DEFENDER),
+    ],
 }
 
 # ---------------------------------------------------------------------------
