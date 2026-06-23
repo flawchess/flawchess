@@ -565,3 +565,4 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 **Resume file:** None
 | 170 | Flaw-card: open game on flawed ply, remove broken datapoint pulse | 2026-06-19 | fe4910d4 | — |
 | 189 | Move severity into collapsed Context; relabel Orientation->Tactic Missed vs Allowed, Tactic motif->Tactic Type; label severity group | 2026-06-20 | 45b19cb1 | — |
+| 190 | Games-card platform link deep-links to the eval-chart slider's ply (matching the Flaws card) | 2026-06-23 | e9f3d4b6 | — |
