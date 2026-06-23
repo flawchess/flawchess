@@ -926,14 +926,21 @@ export function EvalChart({
                       return (
                         <li
                           key={`${orientation}-${motif}`}
-                          className="flex items-center gap-1.5"
+                          className="flex flex-col gap-0.5"
                           style={{ color: orientationColor }}
                         >
-                          {/* Icon inherits the row color via currentColor. */}
-                          <TacticIcon className="h-3 w-3 shrink-0" />
-                          {orientation}: {tacticMotifLabel(motif)}
-                          {depth != null &&
-                            ` (depth ${toDisplayDepthForOrientation(depth, orientation)})`}
+                          <span className="flex items-center gap-1.5">
+                            {/* Icon inherits the row color via currentColor. */}
+                            <TacticIcon className="h-3 w-3 shrink-0" />
+                            {orientation}: {tacticMotifLabel(motif)}
+                          </span>
+                          {/* Depth on its own line, indented to align under the motif
+                              text (icon width + gap = 12px + 6px). */}
+                          {depth != null && (
+                            <span className="pl-[18px]">
+                              depth {toDisplayDepthForOrientation(depth, orientation)}
+                            </span>
+                          )}
                         </li>
                       );
                     })}
