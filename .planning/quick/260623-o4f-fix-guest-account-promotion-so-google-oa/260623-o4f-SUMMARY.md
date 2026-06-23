@@ -3,7 +3,7 @@ quick_id: 260623-o4f
 title: Fix guest-account promotion so Google OAuth never orphans a guest
 status: complete
 date: 2026-06-23
-commit: TBD
+commit: f51e8fed
 ---
 
 # Quick Task 260623-o4f — Summary
