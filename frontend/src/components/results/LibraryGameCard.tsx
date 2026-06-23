@@ -27,7 +27,7 @@ import { TacticMotifGroup } from '@/components/library/TacticMotifGroup';
 import { ChipColumn } from '@/components/library/ChipColumn';
 import { tacticMotifLabel, TACTIC_FAMILY_FOR_MOTIF } from '@/lib/tacticComparisonMeta';
 import { NoAnalysisState } from '@/components/library/NoAnalysisState';
-import { gamePlatformUrl } from '@/lib/platformLinks';
+import { gamePlatformUrl, platformPlyUrl } from '@/lib/platformLinks';
 import { plysToFullMoves } from '@/lib/chess';
 import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
 import { useMiniBoardSize } from '@/hooks/useMiniBoardSize';
@@ -242,6 +242,19 @@ export function LibraryGameCard({
   }, [isAnalyzed, isInFlight, isControlled, onInFlightChange, game.game_id]);
 
   const perPly = useMemo(() => buildPerPly(game.moves), [game.moves]);
+  // Last eval'd ply = the eval-chart slider's max (and its default resting position
+  // on the Games subtab). The chart trims trailing eval-less plies (trimToEvalRange),
+  // so this is the last point with a non-null es. Used to decide whether the header
+  // platform link deep-links to the scrubbed move or just opens the game (below).
+  const lastEvalPly = useMemo<number | null>(() => {
+    const series = game.eval_series;
+    if (!series) return null;
+    for (let i = series.length - 1; i >= 0; i--) {
+      const p = series[i];
+      if (p && p.es != null) return p.ply;
+    }
+    return null;
+  }, [game.eval_series]);
   // All flaw severities (blunder/mistake/inaccuracy) get a corner dot on the
   // hover miniboard, colored by severity. One marker per ply (a ply is a single
   // half-move), so the map key never collides.
@@ -594,21 +607,30 @@ export function LibraryGameCard({
     </span>
   );
 
-  // Platform icon + external link — verbatim from GameCard.tsx (T-107-10 mitigated).
-  // lichess link opens from the user's side (board flipped for black); chess.com
-  // has no orientation URL param, so it is unchanged (see lib/platformLinks.ts).
-  const gameUrl = gamePlatformUrl(game.platform, game.platform_url, game.user_color);
+  // Platform link follows the eval-chart scrub (matching the Flaws card's per-move
+  // deep link): when the slider sits anywhere but the last eval'd ply, deep-link to
+  // that move's resulting position; at the end-of-game resting position, open the
+  // game itself. hoverPly is the chart's active scrub ply (slider or hover), reported
+  // even at rest; null until the chart mounts → game-level link.
+  // lichess links open from the user's side (board flipped for black); chess.com has
+  // no orientation URL param, so it is unchanged (see lib/platformLinks.ts). T-107-10.
+  const isScrubbedBack =
+    hoverPly != null && lastEvalPly != null && hoverPly !== lastEvalPly;
+  const gameUrl = isScrubbedBack
+    ? platformPlyUrl(game.platform, game.platform_url, hoverPly, game.user_color)
+    : gamePlatformUrl(game.platform, game.platform_url, game.user_color);
+  const linkLabel = isScrubbedBack ? 'Open at this move on platform' : 'Open game on platform';
   const platformIconAndLink = (
     <span className="ml-auto shrink-0 flex items-center gap-1.5 text-muted-foreground">
       <PlatformIcon platform={game.platform} className="h-4 w-4" />
       {gameUrl ? (
-        <Tooltip content="Open game on platform">
+        <Tooltip content={linkLabel}>
           <a
             href={gameUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
-            aria-label="Open game on platform"
+            aria-label={linkLabel}
             data-testid={`game-card-link-${game.game_id}`}
           >
             <ExternalLink className="h-4 w-4" />

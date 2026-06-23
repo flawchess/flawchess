@@ -24,7 +24,7 @@ import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { LibraryGameCard } from '@/components/results/LibraryGameCard';
 import { SeverityBadge } from '@/components/library/SeverityBadge';
 import { TagChip, TagLegend } from '@/components/library/TagChip';
-import { flawPlyUrl } from '@/lib/platformLinks';
+import { platformPlyUrl } from '@/lib/platformLinks';
 import { sanToSquares, uciToSquares } from '@/lib/sanToSquares';
 import { toDisplayDepthForOrientation } from '@/lib/tacticDepth';
 import { formatMoveNotation } from '@/lib/openingInsights';
@@ -222,7 +222,7 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
   );
 
   // Platform icon + exact-ply deep link (D-12, T-112-06)
-  const flawUrl = flawPlyUrl(flaw.platform, flaw.platform_url, flaw.ply, flaw.user_color);
+  const flawUrl = platformPlyUrl(flaw.platform, flaw.platform_url, flaw.ply, flaw.user_color);
   const platformIconAndLink = (
     <span className="shrink-0 flex items-center gap-1.5 text-muted-foreground">
       <PlatformIcon platform={flaw.platform} className="h-4 w-4" />
