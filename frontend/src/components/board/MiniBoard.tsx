@@ -10,13 +10,28 @@ import { squareToCoords, buildArrowPath } from './arrowGeometry';
 const MINI_SHAFT_WIDTH = 0.27;
 const MINI_HEAD_WIDTH = 0.75;
 const MINI_HEAD_LENGTH_RATIO = 0.7;
-const MINI_ARROW_OPACITY = 0.85;
+const MINI_ARROW_OPACITY = 0.65;
 const MINI_TIP_OVERSHOOT = 0.16;
+
+// Depth-label badge (tactic depth shown at an arrow's target square): a large
+// number with a black outline drawn on top of the arrowhead so it reads as the
+// labeled endpoint on any square color. Fill defaults to white but callers tint
+// it (light blue for missed tactics, light red for allowed). Fractions of a square.
+const DEPTH_LABEL_FONT = 0.55;
+const DEPTH_LABEL_OUTLINE = 0.09;
+const DEPTH_LABEL_DEFAULT_FILL = 'white';
+// Inset from the square's top-right corner so the badge sits in the corner
+// (clear of the piece) rather than centered over it. Fraction of a square.
+const DEPTH_LABEL_CORNER_INSET = 0.08;
 
 interface MiniBoardArrow {
   from: string;
   to: string;
   color: string;
+  /** Optional number rendered as a badge on the arrow's target square (e.g. tactic depth). */
+  label?: string;
+  /** Fill color for the depth-label badge (defaults to white). */
+  labelColor?: string;
 }
 
 /** A small severity dot pinned to the top-right corner of a square's piece. */
@@ -126,6 +141,32 @@ function MiniArrowOverlay({
             fill={a.color}
             opacity={MINI_ARROW_OPACITY}
           />
+        );
+      })}
+      {/* Depth-label badges drawn last so they sit on top of the arrowheads. */}
+      {arrows.map((a) => {
+        if (!a.label) return null;
+        const [tx, ty] = squareToCoords(a.to, flipped);
+        // Anchor the badge to the square's top-right corner (inset slightly) so
+        // it stays clear of the piece instead of covering it.
+        const cx = (tx + 0.5 - DEPTH_LABEL_CORNER_INSET) * sqSize;
+        const cy = (ty - 0.5 + DEPTH_LABEL_CORNER_INSET) * sqSize;
+        return (
+          <text
+            key={`label-${a.from}-${a.to}`}
+            x={cx}
+            y={cy}
+            fill={a.labelColor ?? DEPTH_LABEL_DEFAULT_FILL}
+            stroke="black"
+            strokeWidth={DEPTH_LABEL_OUTLINE * sqSize}
+            paintOrder="stroke"
+            fontSize={DEPTH_LABEL_FONT * sqSize}
+            fontWeight="700"
+            textAnchor="end"
+            dominantBaseline="hanging"
+          >
+            {a.label}
+          </text>
         );
       })}
     </svg>

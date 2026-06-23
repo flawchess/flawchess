@@ -1,8 +1,16 @@
 import * as React from 'react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
+import { Tags } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ACTIVE_FILTER_RING_CLASS } from '@/lib/theme';
 import { TAG_ICONS, getTagFamily, TAG_FAMILY_COLORS } from '@/lib/tagVisuals';
+import {
+  TACTIC_FAMILY_FOR_MOTIF,
+  TACTIC_FAMILY_COLORS,
+  TACTIC_FAMILY_ICON,
+  tacticMotifLabel,
+  tacticMotifDefinition,
+} from '@/lib/tacticComparisonMeta';
 import type { FlawTag } from '@/types/library';
 import { TAG_DEFINITIONS } from '@/lib/tagDefinitions';
 import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
@@ -92,7 +100,6 @@ interface TagChipProps {
 export function TagChip({ tag, gameId, count, onHover, onActivate, definition = true }: TagChipProps) {
   const family = getTagFamily(tag);
   const { color, bg } = TAG_FAMILY_COLORS[family];
-  const Icon = TAG_ICONS[tag];
 
   // D-05: subscribe to the flaw filter store internally so both LibraryGameCard
   // (Games tab) and FlawsTab (Flaws tab) get the ring without prop drilling.
@@ -201,7 +208,6 @@ export function TagChip({ tag, gameId, count, onHover, onActivate, definition = 
       }
     >
       {count != null && count > 1 && <span className="font-bold">{count}</span>}
-      <Icon className="h-3 w-3 shrink-0" />
       {tag}
     </span>
   );
@@ -246,25 +252,94 @@ export function TagChip({ tag, gameId, count, onHover, onActivate, definition = 
 interface TagLegendProps {
   /** The (unique) tags shown on this card; only these are explained. */
   tags: FlawTag[];
-  gameId: number;
-  /** Visible label before the info icon. Defaults to "Tags"; the label doubles as
-   *  the section heading on both the Games card and FlawCard. */
+  /**
+   * Tactic motif strings on this card (Phase 126 UAT). Listed first in the popover,
+   * above the flaw tags. Caller is responsible for beta-gating (pass [] when off).
+   */
+  tacticMotifs?: string[];
+  /**
+   * Owning game id — only used to derive the default testId. Optional: non-card
+   * call sites (e.g. the filter panel family-label legends) have no game context
+   * and pass an explicit `testId` instead.
+   */
+  gameId?: number;
+  /** Visible label before the info icon (label variant only). Defaults to "Tags";
+   *  the label doubles as the section heading on FlawCard. */
   label?: string;
+  /**
+   * Trigger style (Phase 126 UAT). 'label' (default) keeps the "Tags" + HelpCircle
+   * row used by FlawCard. 'icon' drops the text and renders a brown Tag-icon popover
+   * inline at the end of a chip line — the Games card uses one per line (tactics /
+   * other families) so each line explains only its own tags.
+   */
+  variant?: 'label' | 'icon';
+  /** testId override so multiple legends can coexist on one card. */
+  testId?: string;
 }
 
 /**
- * Single shared explanation line rendered below a card's tag chip row. Replaces
- * the per-chip hover/tap popovers on the Games card (which covered the eval chart);
- * one HelpCircle popover lists every tag on this card with its family-colored icon
- * and definition. Opt-in by click/hover on the icon — no overlay during normal use.
+ * Keep the first motif for each resolved display label, preserving order, and drop
+ * any motif that maps to no tactic family. Collapses the named-mate subtypes
+ * (all → "checkmate") to a single legend row (Quick 260620-onv). The family filter
+ * matters because the backend stores family-less motifs (clearance, deflection,
+ * en-passant, …) — without it the legend icon would render with an empty popover
+ * when a card's only tactic motif belongs to no family (Quick 260620: empty tag
+ * tooltip icons).
  */
-export function TagLegend({ tags, gameId, label = 'Tags' }: TagLegendProps) {
-  if (tags.length === 0) return null;
-  return (
-    <div className="flex items-center gap-1 text-sm text-muted-foreground">
-      <span>{label}</span>
-      <InfoPopover ariaLabel="Tag explanations" testId={`tag-legend-${gameId}`} side="bottom">
+function dedupeByLabel(motifs: string[]): string[] {
+  const seen = new Set<string>();
+  return motifs.filter((motif) => {
+    if (TACTIC_FAMILY_FOR_MOTIF[motif] == null) return false;
+    const label = tacticMotifLabel(motif);
+    if (seen.has(label)) return false;
+    seen.add(label);
+    return true;
+  });
+}
+
+/**
+ * Shared explanation popover for a card's tag chip row. Lists each tag/motif on the
+ * card with its family-colored icon and definition; opt-in by click/hover on the
+ * trigger — no overlay during normal use, so the eval chart is never covered.
+ *
+ * 'label' variant: "Tags" text + HelpCircle (FlawCard). 'icon' variant: a brown
+ * Tag-icon-only trigger inline at the end of a chip line (Games card, Phase 126 UAT).
+ */
+export function TagLegend({
+  tags,
+  tacticMotifs = [],
+  gameId = 0,
+  label = 'Tags',
+  variant = 'label',
+  testId,
+}: TagLegendProps) {
+  // Drop family-less motifs up front so the icon isn't rendered for an otherwise-empty
+  // popover (a card whose only tactic motif maps to no family, e.g. clearance/deflection).
+  const visibleMotifs = dedupeByLabel(tacticMotifs);
+  if (tags.length === 0 && visibleMotifs.length === 0) return null;
+  const resolvedTestId = testId ?? `tag-legend-${gameId}`;
+  const definitions = (
         <div className="flex flex-col gap-1.5">
+          {/* Tactic motifs listed first (Phase 126 UAT). Mate-family motifs collapse
+              to a single "checkmate" row — dedupe by resolved label so two named
+              mates in one game don't print twice (Quick 260620-onv). */}
+          {visibleMotifs.map((motif) => {
+            const family = TACTIC_FAMILY_FOR_MOTIF[motif];
+            if (family == null) return null;
+            const Icon = TACTIC_FAMILY_ICON[family];
+            const { color } = TACTIC_FAMILY_COLORS[family];
+            return (
+              <div key={`tactic-${motif}`} className="flex items-start gap-1.5">
+                <Icon className="mt-0.5 h-3 w-3 shrink-0" style={{ color }} />
+                <span>
+                  <span className="font-bold" style={{ color }}>
+                    {tacticMotifLabel(motif)}
+                  </span>
+                  : {tacticMotifDefinition(motif)}
+                </span>
+              </div>
+            );
+          })}
           {tags.map((tag) => {
             const Icon = TAG_ICONS[tag];
             const { color } = TAG_FAMILY_COLORS[getTagFamily(tag)];
@@ -281,6 +356,23 @@ export function TagLegend({ tags, gameId, label = 'Tags' }: TagLegendProps) {
             );
           })}
         </div>
+  );
+
+  // 'icon' variant (Games card): brown Tag-icon-only trigger, no "Tags" label, so
+  // each chip line can carry its own legend explaining only that line's tags.
+  if (variant === 'icon') {
+    return (
+      <InfoPopover ariaLabel="Tag explanations" testId={resolvedTestId} side="bottom" icon={Tags}>
+        {definitions}
+      </InfoPopover>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1 text-sm text-muted-foreground">
+      <span>{label}</span>
+      <InfoPopover ariaLabel="Tag explanations" testId={resolvedTestId} side="bottom">
+        {definitions}
       </InfoPopover>
     </div>
   );

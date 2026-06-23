@@ -7,8 +7,11 @@ Covers:
 - Zero-games edge case: pct_complete=100, analyzed_count=0
 - All-complete case: pending_count=0, pct_complete=100
 - Partial case: correct pending count and rounded pct (D-04 backward-compat regression)
-- D-118-10 analyzed_count: white_blunders IS NOT NULL — lichess-eval games included;
-  entry-ply-only games (evals_completed_at SET, white_blunders NULL) excluded
+- analyzed_count: full_evals_completed_at IS NOT NULL (FlawChess's own full analysis,
+  the same gate the Library cards use). Lichess games imported with bundled analysis
+  (white_blunders SET at import, full_evals_completed_at NULL) are NOT counted until
+  the drain runs — the badge agrees with the per-game cards. total_count is every
+  imported game.
 
 Uses httpx AsyncClient with ASGITransport. Game rows are seeded directly via
 committed DB sessions (not the rollback-scoped db_session fixture) because HTTP
@@ -39,23 +42,16 @@ PARTIAL_EXPECTED_PCT = 70  # round(100 * (10 - 3) / 10) = 70
 _NOW = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
 
 # Game category counts used for the analyzed_count distinction test
-_ANALYZED_ENGINE_COUNT = 2  # white_blunders IS NOT NULL, lichess_evals_at IS NULL
-_ANALYZED_LICHESS_COUNT = 1  # white_blunders IS NOT NULL, lichess_evals_at IS NOT NULL
-_ENTRY_PLY_ONLY_COUNT = 1  # evals_completed_at IS NOT NULL, white_blunders IS NULL
-_UNANALYZED_COUNT = 1  # all NULL
+_ANALYZED_ENGINE_COUNT = 2  # full_evals_completed_at SET → analyzed
+_ANALYZED_LICHESS_COUNT = 1  # white_blunders SET at import, full_evals NULL → NOT analyzed
+_ENTRY_PLY_ONLY_COUNT = 1  # evals_completed_at SET, full_evals NULL → NOT analyzed
+_UNANALYZED_COUNT = 1  # all NULL → NOT analyzed
 _TOTAL_COUNT = (
     _ANALYZED_ENGINE_COUNT + _ANALYZED_LICHESS_COUNT + _ENTRY_PLY_ONLY_COUNT + _UNANALYZED_COUNT
 )
-_EXPECTED_ANALYZED_COUNT = _ANALYZED_ENGINE_COUNT + _ANALYZED_LICHESS_COUNT  # = 3
-# entry-ply-only + unanalyzed → pending (evals_completed_at IS NULL)
-_EXPECTED_PENDING_COUNT = (
-    _ENTRY_PLY_ONLY_COUNT + _UNANALYZED_COUNT
-)  # = 2 (NOT evals_completed_at IS NULL count)
-
-# Clarification: count_pending_evals uses evals_completed_at IS NULL.
-# entry-ply-only has evals_completed_at SET → counted as non-pending.
-# So only _UNANALYZED_COUNT games are actually pending.
-_CORRECT_PENDING_COUNT = _UNANALYZED_COUNT  # = 1
+# analyzed_count = full_evals_completed_at IS NOT NULL → only the engine games.
+# The lichess-bundled-analysis game is excluded (the bug this fixes).
+_EXPECTED_ANALYZED_COUNT = _ANALYZED_ENGINE_COUNT  # = 2
 
 
 # ---------------------------------------------------------------------------
@@ -108,8 +104,12 @@ def _make_analyzed_engine_game(user_id: int) -> Game:
 
 
 def _make_analyzed_lichess_game(user_id: int) -> Game:
-    """Lichess game with imported %evals: white_blunders IS NOT NULL, lichess_evals_at IS NOT NULL.
-    Counts as is_analyzed (D-118-10) — lichess evals included.
+    """Lichess game with bundled analysis: white_blunders SET at import, full_evals NULL.
+
+    This is the bug case: lichess imports the analysis block (white_blunders) at
+    import time, but FlawChess's own full-eval drain has NOT run
+    (full_evals_completed_at IS NULL). The Library card still shows "Analyze", so
+    the badge must NOT count it as analyzed.
     """
     return Game(
         user_id=user_id,
@@ -178,13 +178,13 @@ def _make_unanalyzed_game(user_id: int) -> Game:
 
 
 def _make_unanalyzable_game(user_id: int) -> Game:
-    """Permanently-unanalyzable game: full_evals_completed_at SET but white_blunders NULL.
+    """Degenerate game post-drain: full_evals_completed_at SET but white_blunders NULL.
 
     Models a zero-move / ultra-short game post-drain: the full-eval drain finished
     (full_evals_completed_at SET) and entry-ply evals are marked done
     (evals_completed_at SET), but classify_game_flaws returned GameNotAnalyzed so
-    white_blunders stayed NULL. NOT is_analyzed and NOT analyzable → must be
-    excluded from total_count so "X of X analyzed" is reachable.
+    white_blunders stayed NULL. full_evals_completed_at IS NOT NULL → it counts as
+    analyzed (its card shows no "Analyze" button), so "X of X" stays reachable.
     """
     return Game(
         user_id=user_id,
@@ -394,25 +394,24 @@ async def test_eval_coverage_scoped_to_user(
 
 
 # ---------------------------------------------------------------------------
-# Tests — D-118-12 analyzed_count semantics (is_analyzed = white_blunders IS NOT NULL)
+# Tests — analyzed_count semantics (full_evals_completed_at IS NOT NULL)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_analyzed_count_uses_is_analyzed_not_entry_ply(
+async def test_analyzed_count_uses_full_evals_not_white_blunders(
     user_a_client: tuple[int, str], test_engine
 ) -> None:
-    """D-118-10 correctness: analyzed_count = white_blunders IS NOT NULL.
+    """analyzed_count = full_evals_completed_at IS NOT NULL (matches Library cards).
 
     A mix of 4 game categories:
-    - Engine-analyzed (white_blunders SET, lichess_evals_at NULL) → IS analyzed
-    - Lichess-eval analyzed (white_blunders SET, lichess_evals_at SET) → IS analyzed
-    - Entry-ply-only (evals_completed_at SET, white_blunders NULL) → NOT analyzed
+    - Engine-analyzed (full_evals_completed_at SET) → IS analyzed
+    - Lichess bundled analysis (white_blunders SET at import, full_evals NULL) → NOT
+      analyzed (the bug: this used to count as analyzed and inflate the badge)
+    - Entry-ply-only (evals_completed_at SET, full_evals NULL) → NOT analyzed
     - Unanalyzed (all NULL) → NOT analyzed
 
-    analyzed_count must equal the sum of the first two categories, NOT the
-    entry-ply-only count (which is what a naive evals_completed_at IS NOT NULL query
-    would return — the D-118-10 bug). This test proves the distinction.
+    total_count is every imported game; analyzed_count is only the engine category.
     """
     user_id, token = user_a_client
     headers = {"Authorization": f"Bearer {token}"}
@@ -433,45 +432,44 @@ async def test_analyzed_count_uses_is_analyzed_not_entry_ply(
     assert response.status_code == 200
     body = response.json()
 
+    # total_count is every imported game (not an "analyzable" subset).
     assert body["total_count"] == _TOTAL_COUNT
+    # Only the engine category has full_evals_completed_at SET.
     assert body["analyzed_count"] == _EXPECTED_ANALYZED_COUNT
 
-    # Prove the distinction: analyzed_count != entry-ply-only count.
-    # Entry-ply-only + analyzed-engine + analyzed-lichess all have evals_completed_at SET.
-    # A naive evals_completed_at IS NOT NULL query would return _TOTAL_COUNT - 1 = 4,
-    # not 3. The correct white_blunders gate returns 3.
-    entry_ply_naive_count = _ANALYZED_ENGINE_COUNT + _ANALYZED_LICHESS_COUNT + _ENTRY_PLY_ONLY_COUNT
-    assert body["analyzed_count"] != entry_ply_naive_count, (
-        "analyzed_count equals the naive entry-ply count — D-118-10 bug: "
-        "should use white_blunders IS NOT NULL, not evals_completed_at IS NOT NULL"
+    # Regression guard for the reported bug: the lichess-bundled-analysis game has
+    # white_blunders SET, so a white_blunders-gated count would include it and read
+    # "analyzed". full_evals_completed_at IS NOT NULL correctly excludes it.
+    white_blunders_naive_count = _ANALYZED_ENGINE_COUNT + _ANALYZED_LICHESS_COUNT
+    assert body["analyzed_count"] != white_blunders_naive_count, (
+        "analyzed_count counts the lichess bundled-analysis game — the bug: "
+        "should gate on full_evals_completed_at IS NOT NULL, not white_blunders"
     )
 
 
 # ---------------------------------------------------------------------------
-# Tests — total_count excludes permanently-unanalyzable games (260615-wjz)
+# Tests — total_count is every game; degenerate games count as analyzed
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_total_count_excludes_unanalyzable_games(
-    user_a_client: tuple[int, str], test_engine
-) -> None:
-    """total_count drops permanently-unanalyzable games but keeps in-flight ones.
+async def test_total_count_is_all_games(user_a_client: tuple[int, str], test_engine) -> None:
+    """total_count counts every imported game; degenerate games count as analyzed.
 
-    Seed: 2 analyzed + 3 unanalyzable (full_evals SET, white_blunders NULL) +
-    1 in-flight (all NULL). The unanalyzable games can never reach is_analyzed,
-    so the badge denominator must exclude them; the in-flight game is still
-    mid-drain (full_evals NULL) and must remain counted.
+    Seed: 2 analyzed + 3 degenerate (full_evals SET, white_blunders NULL) +
+    1 in-flight (all NULL). The degenerate games have full_evals_completed_at SET,
+    so they count as analyzed (their cards show no "Analyze" button); the in-flight
+    game is the only pending entry-ply eval.
     """
     user_id, token = user_a_client
     headers = {"Authorization": f"Bearer {token}"}
 
     analyzed_count = 2
-    unanalyzable_count = 3
+    degenerate_count = 3
     in_flight_count = 1
     games: list[Game] = (
         [_make_analyzed_engine_game(user_id) for _ in range(analyzed_count)]
-        + [_make_unanalyzable_game(user_id) for _ in range(unanalyzable_count)]
+        + [_make_unanalyzable_game(user_id) for _ in range(degenerate_count)]
         + [_make_unanalyzed_game(user_id) for _ in range(in_flight_count)]
     )
     await _seed_games_for_user(test_engine, user_id, games)
@@ -483,9 +481,10 @@ async def test_total_count_excludes_unanalyzable_games(
 
     assert response.status_code == 200
     body = response.json()
-    # 2 analyzed + 1 in-flight are analyzable; the 3 unanalyzable are excluded.
-    assert body["total_count"] == analyzed_count + in_flight_count
-    assert body["analyzed_count"] == analyzed_count
+    # Every game counts in the denominator.
+    assert body["total_count"] == analyzed_count + degenerate_count + in_flight_count
+    # Both the 2 analyzed and the 3 degenerate have full_evals_completed_at SET.
+    assert body["analyzed_count"] == analyzed_count + degenerate_count
     # The in-flight game is the only pending entry-ply eval.
     assert body["pending_count"] == in_flight_count
 
@@ -496,17 +495,18 @@ async def test_x_of_x_reachable_when_drain_done(
 ) -> None:
     """Once the drain finishes, analyzed_count == total_count (badge reaches X of X).
 
-    With only analyzed + permanently-unanalyzable games (no in-flight work), the
-    denominator collapses to exactly the analyzed set, so the badge reads "X of X"
-    and pct_complete is 100 — the bug this task fixes.
+    With only analyzed + degenerate games (no in-flight work), every game has
+    full_evals_completed_at SET, so analyzed_count == total_count, the badge reads
+    "X of X", and pct_complete is 100.
     """
     user_id, token = user_a_client
     headers = {"Authorization": f"Bearer {token}"}
 
     analyzed_count = 4
-    unanalyzable_count = 9  # matches the prod user-28 case
+    degenerate_count = 9  # matches the prod user-28 case
+    total = analyzed_count + degenerate_count
     games: list[Game] = [_make_analyzed_engine_game(user_id) for _ in range(analyzed_count)] + [
-        _make_unanalyzable_game(user_id) for _ in range(unanalyzable_count)
+        _make_unanalyzable_game(user_id) for _ in range(degenerate_count)
     ]
     await _seed_games_for_user(test_engine, user_id, games)
 
@@ -517,7 +517,7 @@ async def test_x_of_x_reachable_when_drain_done(
 
     assert response.status_code == 200
     body = response.json()
-    assert body["total_count"] == analyzed_count
-    assert body["analyzed_count"] == analyzed_count
+    assert body["total_count"] == total
+    assert body["analyzed_count"] == total
     assert body["pending_count"] == 0
     assert body["pct_complete"] == 100

@@ -64,3 +64,31 @@ class GameFlaw(Base):
     # Dropped in Phase 112 (D-07): es_before, es_after, move_san — now sourced from
     # a game_positions join in query_flaws (D-08, library_repository.py).
     fen: Mapped[str] = mapped_column(String, nullable=False)
+
+    # Tactic family (Phase 124 — D-01): all nullable SmallInteger.
+    # Two orientations, each a 4-tuple:
+    #   allowed_* — the refutation from the flaw_ply+1 PV (the move the *opponent* played
+    #               to punish the flaw); pov = board_after_flaw.turn (Phase 124/125/127 tags).
+    #   missed_*  — the "instead-of" tag from the flaw_ply PV (the engine's best continuation
+    #               for the flaw-maker at the decision position); pov = board_before.turn.
+    #               NULL on pre-Phase-128 rows until the missed-pass backfill runs (Phase 128 D-11).
+    #
+    # Per D-05: allowed_tactic_depth is the loop index within the flaw_ply+1 PV;
+    # missed_tactic_depth is the loop index within the flaw_ply PV (one ply earlier,
+    # at the decision position). Both are detector-loop indices within their own PV —
+    # neither is an absolute game ply. The Phase 129 depth slider must treat them
+    # consistently (same unit, different PV source).
+    #
+    # tactic_motif: TacticMotifInt enum (1-24); NULL = no detector fired.
+    # tactic_piece: python-chess PieceType (1=PAWN,2=KNIGHT,3=BISHOP,4=ROOK,5=QUEEN,6=KING)
+    #               per-motif semantic per D-12; NULL for ambiguous cases.
+    # tactic_confidence: winner-confidence 0-100; NULL when tactic_motif is NULL.
+    # tactic_depth: loop index within the PV when the motif fires; NULL when tactic_motif is NULL.
+    allowed_tactic_motif: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    allowed_tactic_piece: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    allowed_tactic_confidence: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    allowed_tactic_depth: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    missed_tactic_motif: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    missed_tactic_piece: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    missed_tactic_confidence: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    missed_tactic_depth: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)

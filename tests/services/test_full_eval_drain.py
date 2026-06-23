@@ -1497,6 +1497,116 @@ class TestFlawPv:
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
 
+    async def test_engine_game_flaw_pv_recovered_when_refutation_ply_dedups(
+        self,
+        full_drain_test_user_117: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """SEED-056: a fresh engine game whose flaw_ply + 1 took an opening dedup
+        transplant (eval only, NO pv) still gets its refutation pv via the second
+        engine pass — so the flaw is taggable instead of being silently un-classifiable.
+
+        Setup: engine game (lichess_evals_at NULL), _SIX_PLY_PGN, a white blunder at
+        ply 2. The refutation board (ply 3, flaw_ply + 1) is in the opening dedup region
+        and its full_hash matches a dedup donor, so the FIRST gather never engine-evaluates
+        it — pre-SEED-056 its pv stayed NULL (registered, un-taggable). After the fix the
+        drain pre-classifies, detects the pv-less flaw ply, and runs a targeted second
+        pass that writes the pv at ply 3.
+
+        Engine is mocked per-ply (keyed off the board) so dedup'ing ply 3 out of the first
+        gather doesn't desync a positional side_effect list. The dedup map is stubbed to
+        cover ONLY ply 3's hash; every other opening ply is engine-evaluated normally.
+        """
+        from app.models.game_position import GamePosition
+        from app.services.eval_drain import _DEDUP_MAX_PLY
+
+        ply3_hash = 0x5EED_0056_0003
+        # Stored (post-move) eval-by-ply [20, 30, -500, -480, 60, 30] → one white
+        # blunder at ply 2 (same construction as _blunder_eval_sequence). pos_eval is
+        # position-keyed: pos_eval[k] = eval OF the position at ply k; stored row k =
+        # pos_eval[k + 1] (_post_move_eval). pos_eval[3] = -500 is supplied by the dedup
+        # transplant, so ply 3 is the pv-less refutation ply this test exercises.
+        eval_by_ply = {0: 20, 1: 20, 2: 30, 3: -500, 4: -480, 5: 60, 6: 30}
+        ply3_pv = "g1f3 g8f6 d2d4"
+
+        def _eval_for_board(board: chess.Board) -> tuple[int, None, str, str]:
+            ply = 2 * (board.fullmove_number - 1) + (0 if board.turn == chess.WHITE else 1)
+            pv = ply3_pv if ply == 3 else f"e2e4 {ply}"
+            return (eval_by_ply[ply], None, pv.split()[0], pv)
+
+        assert 3 <= _DEDUP_MAX_PLY, f"ply 3 must be within DEDUP_MAX_PLY={_DEDUP_MAX_PLY}"
+
+        now = datetime.now(timezone.utc)
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_117,
+            pgn=_SIX_PLY_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=None,
+        )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_117
+        )
+
+        # Stub the dedup lookup to transplant ONLY ply 3 (eval -500, no pv — dedup never
+        # carries a pv). Every other opening ply falls through to a real engine call.
+        async def _fake_fetch_dedup_evals(
+            _session: Any, hashes: Any
+        ) -> dict[int, tuple[int | None, int | None, str | None]]:
+            return {ply3_hash: (-500, None, "g1f3")} if ply3_hash in hashes else {}
+
+        monkeypatch.setattr(drain_module, "_fetch_dedup_evals", _fake_fetch_dedup_evals)
+        mock_evaluate = AsyncMock(side_effect=_eval_for_board)
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+
+        gp_rows = [
+            {
+                "ply": i,
+                "full_hash": ply3_hash if i == 3 else 0x5EED_0056_0010 + i,
+                "eval_cp": None,
+                "eval_mate": None,
+            }
+            for i in range(6)
+        ]
+        await _insert_game_positions(
+            full_drain_session_maker, full_drain_test_user_117, game_id, gp_rows
+        )
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is True, "Tick must report a processed game"
+
+            async with full_drain_session_maker() as verify:
+                rows = await verify.execute(
+                    select(GamePosition.ply, GamePosition.pv, GamePosition.eval_cp)
+                    .where(GamePosition.game_id == game_id)
+                    .order_by(GamePosition.ply)
+                )
+                by_ply = {r[0]: (r[1], r[2]) for r in rows.all()}
+
+            # The dedup transplant drove classification: the blunder at ply 2 materialized
+            # from the transplanted eval at ply 3 (stored at row 2).
+            assert by_ply.get(2, (None, None))[1] == -500, (
+                "Row 2's stored eval must be the transplanted -500 (post-move eval of the "
+                "dedup'd ply 3) — the blunder must come from the dedup path."
+            )
+            # SEED-056 core assertion: the refutation pv at ply 3 was recovered by the
+            # second engine pass even though ply 3 was dedup-transplanted in the first.
+            assert by_ply.get(3, (None, None))[0] == ply3_pv, (
+                "game_positions.pv at ply 3 (flaw_ply + 1) must be recovered via the "
+                f"SEED-056 second pass, got {by_ply.get(3, (None, None))[0]!r}. Pre-fix a "
+                "dedup-transplanted refutation ply kept pv=NULL (registered, un-taggable)."
+            )
+            # flaw_ply (ply 2) was engine-evaluated in the first gather, so its pv is present
+            # via the normal path — guards against the fix only handling N+1.
+            assert by_ply.get(2, (None, None))[0] is not None, (
+                "game_positions.pv at ply 2 (flaw_ply) must be set (engine-evaluated, "
+                "not dedup'd) — SEED-054 ideal-continuation pv."
+            )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
 
 # ─── EVAL-06: classify hook + oracle counts ───────────────────────────────────
 
@@ -1554,6 +1664,119 @@ class TestClassifyHook:
             assert flaw_count is not None and flaw_count > 0, (
                 f"game_flaws must have rows after drain tick for game {game_id} "
                 "— _classify_and_fill_oracle EVAL-06 hook must have run."
+            )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_full_pass_replaces_entry_pass_flaw_rows(
+        self,
+        full_drain_test_user_117: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The full/oracle pass must REPLACE pre-existing entry-pass flaw rows.
+
+        Regression guard (tactic-tag bug): lichess "covered" games get flaw rows
+        from _classify_and_insert_flaws at import — with NULL tactic columns,
+        because the entry pass has no PVs. The full pass then re-classifies WITH
+        PVs (tactics detected) but used to call bulk_insert_game_flaws with
+        ON CONFLICT DO NOTHING, so the fresh tactic-bearing rows were silently
+        dropped and tactic_motif stayed NULL forever. The fix deletes the game's
+        flaw rows before re-inserting, so the authoritative full pass fully
+        replaces the entry-pass approximation.
+
+        Setup: a blunder at ply 2 (severity 2). Pre-seed two stale entry-pass
+        rows: ply 2 with the WRONG severity (1=mistake), and ply 0 which the full
+        pass does NOT classify as a flaw at all. After the tick: ply 2 must read
+        severity 2 (overwritten — DO NOTHING would have kept 1), and ply 0 must
+        be GONE (stale row removed by the delete).
+        """
+        from app.models.game_flaw import GameFlaw
+
+        now = datetime.now(timezone.utc)
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_117,
+            pgn=_SIX_PLY_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=None,
+        )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_117
+        )
+
+        eval_sequence = _blunder_eval_sequence()
+        mock_evaluate = AsyncMock(side_effect=eval_sequence)
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+
+        gp_rows = [
+            {"ply": i, "full_hash": 0xDEAD_B00C + i, "eval_cp": None, "eval_mate": None}
+            for i in range(6)
+        ]
+        await _insert_game_positions(
+            full_drain_session_maker, full_drain_test_user_117, game_id, gp_rows
+        )
+
+        # Pre-seed stale entry-pass rows BEFORE the tick.
+        async with full_drain_session_maker() as seed:
+            seed.add_all(
+                [
+                    # Real flaw ply, but stamped with the WRONG severity + NULL tactics
+                    # (mimics the no-PV entry pass).
+                    GameFlaw(
+                        user_id=full_drain_test_user_117,
+                        game_id=game_id,
+                        ply=2,
+                        severity=1,
+                        phase=0,
+                        is_miss=False,
+                        is_lucky=False,
+                        is_reversed=False,
+                        is_squandered=False,
+                        fen="stale",
+                    ),
+                    # Not a flaw per the full classify — must be deleted, not survive.
+                    GameFlaw(
+                        user_id=full_drain_test_user_117,
+                        game_id=game_id,
+                        ply=0,
+                        severity=2,
+                        phase=0,
+                        is_miss=False,
+                        is_lucky=False,
+                        is_reversed=False,
+                        is_squandered=False,
+                        fen="stale",
+                    ),
+                ]
+            )
+            await seed.commit()
+
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is True, "Tick must report a processed game"
+
+            async with full_drain_session_maker() as verify:
+                rows = await verify.execute(
+                    select(GameFlaw.ply, GameFlaw.severity, GameFlaw.fen)
+                    .where(GameFlaw.game_id == game_id)
+                    .order_by(GameFlaw.ply)
+                )
+                by_ply = {r[0]: (r[1], r[2]) for r in rows.all()}
+
+            assert 2 in by_ply, "The blunder at ply 2 must still have a flaw row."
+            assert by_ply[2][0] == 2, (
+                "ply 2 must be re-classified as a blunder (severity 2) by the full "
+                "pass — ON CONFLICT DO NOTHING would have kept the stale severity 1."
+            )
+            assert by_ply[2][1] != "stale", (
+                "ply 2 row must be the freshly inserted one (real fen), not the "
+                "stale entry-pass row — proves delete-then-insert ran."
+            )
+            assert 0 not in by_ply, (
+                "The stale ply-0 row (not a flaw per the full pass) must be deleted "
+                "— the full pass is authoritative and replaces entry-pass rows."
             )
         finally:
             await _delete_games(full_drain_session_maker, [game_id])

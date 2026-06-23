@@ -17,6 +17,7 @@ GameNotAnalyzed. See the 2026-06-05 amendment in 105-01-PLAN.md.
 from __future__ import annotations
 
 import io
+from collections.abc import Mapping
 from typing import Literal, TypedDict
 
 import chess
@@ -28,6 +29,7 @@ from app.models.game_position import GamePosition
 from app.services.eval_utils import eval_cp_to_expected_score
 from app.services.normalization import parse_base_and_increment
 from app.services.openings_service import derive_user_result
+from app.services.tactic_detector import detect_tactic_motif
 
 # ---------------------------------------------------------------------------
 # Named constants — no magic numbers (CLAUDE.md)
@@ -127,6 +129,30 @@ class FlawRecord(TypedDict):
     es_before: float  # mover-POV ES before the flaw
     es_after: float  # mover-POV ES after the flaw
     move_san: str | None  # SAN from positions[N].move_san
+    # Tactic family — two orientation sets, all optional (Phase 124/128 — D-01).
+    #
+    # allowed_* — the refutation from the flaw_ply+1 PV (punishing the flaw-maker).
+    #   allowed_tactic_motif_int: TacticMotifInt value; None = no detector fired.
+    #   allowed_tactic_piece: python-chess PieceType (1-6) per D-12 semantics; None = ambiguous.
+    #   allowed_tactic_confidence: winner-confidence 0-100; None when motif is None.
+    #   allowed_tactic_depth: loop index within the flaw_ply+1 PV when motif fires (Phase 127 D-04);
+    #                         None when motif is None.
+    allowed_tactic_motif_int: int | None
+    allowed_tactic_piece: int | None
+    allowed_tactic_confidence: int | None
+    allowed_tactic_depth: int | None
+    #
+    # missed_* — the "instead-of" tag from the flaw_ply PV (best move the flaw-maker missed).
+    #   missed_tactic_motif_int: TacticMotifInt value; None = no detector fired or no flaw_ply PV.
+    #   missed_tactic_piece: python-chess PieceType (1-6); None = ambiguous or no motif.
+    #   missed_tactic_confidence: winner-confidence 0-100; None when motif is None.
+    #   missed_tactic_depth: loop index within the flaw_ply PV when motif fires (Phase 128 D-05);
+    #                        None when motif is None. One ply earlier than allowed_tactic_depth's PV.
+    #   All four are None until the Phase 128 missed-pass detector runs (Plan 02).
+    missed_tactic_motif_int: int | None
+    missed_tactic_piece: int | None
+    missed_tactic_confidence: int | None
+    missed_tactic_depth: int | None
 
 
 class GameNotAnalyzed(TypedDict):
@@ -348,6 +374,132 @@ def _run_all_moves_pass(
     return all_moves
 
 
+def _same_dest_as_best_line(board_before: chess.Board, flaw_san: str, pv: str) -> bool:
+    """True if the flaw move and best PV first move share the same destination square.
+
+    Wrong-recapture false-alarm guard (D-03 / Workstream B): when the player captured
+    the same piece the best line would capture — just with the wrong piece type — they
+    demonstrably SAW the target.  The missed-tactic tag must be suppressed in that case.
+
+    Dest-square equality is the only criterion (D-03 deferred: adding a captured-piece-
+    value check only if a unit fixture surfaces a false suppression).
+
+    Returns False on any parse error so the caller falls through to normal detection
+    (consistent with the existing guard posture, Security Domain V5).
+    """
+    try:
+        flaw_move = board_before.parse_san(flaw_san)
+        pv_moves = pv.split()
+        if not pv_moves:
+            return False
+        best_first_move = chess.Move.from_uci(pv_moves[0])
+        return flaw_move.to_square == best_first_move.to_square
+    except (ValueError, chess.IllegalMoveError):
+        return False  # malformed SAN or UCI → fall through to normal detection
+
+
+def _detect_tactic_for_flaw(
+    n: int,
+    fen_map: dict[int, str],
+    positions: list[GamePosition],
+    pv_by_ply: Mapping[int, str] | None = None,
+    orientation: Literal["allowed", "missed"] = "allowed",
+) -> tuple[int | None, int | None, int | None, int | None]:
+    """Detect tactic motif for the flaw at ply N.
+
+    Returns (tactic_motif_int, tactic_piece, tactic_confidence, tactic_depth).
+    All four are None when pv is absent, fen is missing, or (allowed only) SAN
+    is malformed.
+
+    orientation='allowed' (default):
+        Detects the tactic the opponent exploits in the refutation of the flaw.
+        PV source: pv_by_ply.get(n + 1) (live drain) or positions[n + 1].pv
+        (backfill). Board: board_after_flaw (flaw move pushed). pov = refuting
+        side (board_after_flaw.turn).
+
+    orientation='missed':
+        Detects the tactic the mover could have used but missed (the "instead-of"
+        line). PV source: pv_by_ply.get(n) (live drain) or positions[n].pv
+        (backfill). Board: board_before (no flaw move pushed). pov = board_before.turn
+        = the mover (D-03, D-06).
+
+    PV source rationale (260618-aiq): the in-process eval drain has just-computed PVs
+    in memory that are NOT yet written to game_positions at classify time, so it passes
+    them via `pv_by_ply` (ply -> pv_string). The backfill path passes pv_by_ply=None
+    and falls back to the persisted pv column, preserving the original behavior exactly.
+
+    Guards implemented:
+    - Pitfall 1: `n + 1 < len(positions)` before indexing positions[n+1].pv (allowed)
+    - Pitfall 1b: `0 <= n < len(positions)` before indexing positions[n].pv (missed)
+    - Pitfall 6: try/except (ValueError, chess.IllegalMoveError) for SAN parse (allowed)
+    - T-128-03: missed pass reuses the existing try/except guard in detect_tactic_motif
+      (malformed PV never raises out of the detector)
+    """
+    fen_before_flaw = fen_map.get(n, "")
+    if not fen_before_flaw:
+        return None, None, None, None
+
+    # fen_map stores board.board_fen() (piece-placement only, no side-to-move).
+    # chess.Board() defaults to white to move, so we must set the side explicitly
+    # from ply parity: even = white mover, odd = black mover.
+    board_before = chess.Board(fen_before_flaw)
+    board_before.turn = chess.WHITE if n % 2 == 0 else chess.BLACK
+
+    if orientation == "missed":
+        # Missed pass: board_before + flaw_ply PV; pov = the mover (board_before.turn).
+        # No flaw move is pushed — the mover is evaluated on the decision position (D-03).
+        pv: str | None = None
+        if pv_by_ply is not None:
+            pv = pv_by_ply.get(n)
+        if pv is None and 0 <= n < len(positions):
+            pv = positions[n].pv
+        if not pv:
+            return None, None, None, None
+        # D-03 / Workstream B dest-square gate: suppress when the flaw move and the best
+        # line's first move share the same destination.  This kills the wrong-recapture
+        # false alarm — the player captured the SAME piece with the wrong piece type, so
+        # they plainly SAW it; tagging it as "you missed a tactic" is misleading.
+        # Bug-fix: false "missed tactic" chips dominated by fork/pin/discovered-attack/
+        # skewer (thousands of rows) where the player simply recaptured with the wrong
+        # piece.  Guard is in _same_dest_as_best_line; parse errors fall through.
+        flaw_san_missed = positions[n].move_san if 0 <= n < len(positions) else None
+        if flaw_san_missed and _same_dest_as_best_line(board_before, flaw_san_missed, pv):
+            return None, None, None, None
+        # D-06: pov at flaw_ply is the mover (board_before.turn). eval_mate > 0 means
+        # the mover (pov) has a forced mate — allow the mate branch even when PV is truncated.
+        _mate_missed = positions[n].eval_mate if 0 <= n < len(positions) else None
+        has_forced_mate_missed = _mate_missed is not None and _mate_missed > 0
+        return detect_tactic_motif(board_before, pv, has_forced_mate=has_forced_mate_missed)
+
+    # orientation == "allowed" (default):
+    # Allowed pass: board_after_flaw + refutation PV (flaw_ply+1); pov = refuting side.
+    pv_allowed: str | None = None
+    if pv_by_ply is not None:
+        pv_allowed = pv_by_ply.get(n + 1)
+    if pv_allowed is None and n + 1 < len(positions):
+        pv_allowed = positions[n + 1].pv
+    move_san_of_flaw: str | None = positions[n].move_san
+
+    if not (pv_allowed and move_san_of_flaw):
+        return None, None, None, None
+
+    try:
+        flaw_move = board_before.parse_san(move_san_of_flaw)
+        board_after_flaw = board_before.copy()
+        board_after_flaw.push(flaw_move)
+        # D-06: pov at flaw_ply+1 is the refuting side (board_after_flaw.turn). The
+        # refuting side has a forced mate when positions[n+1].eval_mate > 0, meaning
+        # the side to move on that board can force checkmate.
+        _mate_allowed = positions[n + 1].eval_mate if n + 1 < len(positions) else None
+        has_forced_mate_allowed = _mate_allowed is not None and _mate_allowed > 0
+        return detect_tactic_motif(
+            board_after_flaw, pv_allowed, has_forced_mate=has_forced_mate_allowed
+        )
+    except (ValueError, chess.IllegalMoveError):
+        # Malformed move_san or FEN — leave all four as None (Pitfall 6)
+        return None, None, None, None
+
+
 def _build_flaw_record(
     n: int,
     mover: Literal["white", "black"],
@@ -356,6 +508,7 @@ def _build_flaw_record(
     es_after: float,
     fen_map: dict[int, str],
     positions: list[GamePosition],
+    pv_by_ply: Mapping[int, str] | None = None,
 ) -> FlawRecord:
     """Build a single FlawRecord for the mover's mistake/blunder at ply N."""
     # `n` is the 0-indexed half-move of the flawed move (positions[n].move_san is
@@ -365,6 +518,17 @@ def _build_flaw_record(
     # rendered the miniboard one ply too early (decision point off by one move).
     # This makes the miniboard show the decision point and lets the frontend
     # resolve move_san → arrow squares.
+    # allowed_* pass: detect tactic from flaw_ply+1 PV (the refutation of the flaw).
+    # pov = the refuting side (board_after_flaw.turn), per D-03.
+    allowed_motif_int, allowed_piece, allowed_confidence, allowed_depth = _detect_tactic_for_flaw(
+        n, fen_map, positions, pv_by_ply, orientation="allowed"
+    )
+    # missed_* pass: detect tactic from flaw_ply PV (the "instead-of" line).
+    # pov = board_before.turn = the mover (the flaw-maker, who should have played this line).
+    # Reuses the same dispatcher + relevance gate unchanged (D-04).
+    missed_motif_int, missed_piece, missed_confidence, missed_depth = _detect_tactic_for_flaw(
+        n, fen_map, positions, pv_by_ply, orientation="missed"
+    )
     return FlawRecord(
         ply=n,
         fen=fen_map.get(n, ""),
@@ -374,6 +538,14 @@ def _build_flaw_record(
         es_before=es_before,
         es_after=es_after,
         move_san=positions[n].move_san,
+        allowed_tactic_motif_int=allowed_motif_int,
+        allowed_tactic_piece=allowed_piece,
+        allowed_tactic_confidence=allowed_confidence,
+        allowed_tactic_depth=allowed_depth,
+        missed_tactic_motif_int=missed_motif_int,
+        missed_tactic_piece=missed_piece,
+        missed_tactic_confidence=missed_confidence,
+        missed_tactic_depth=missed_depth,
     )
 
 
@@ -417,7 +589,7 @@ def _classify_tempo(
 
     Returns one of {low-clock, hasty, unrushed}, or None when clock_after or
     move_time is unavailable (no misleading fallback — per the at-most-one rule in
-    flaw-tag-naming.md §"Structural change").
+    flaw-tag-definitions.md §"Structural rule: tempo is optional").
 
     Priority: low-clock > hasty > unrushed.
 
@@ -615,6 +787,7 @@ def _resolve_increment(game: Game) -> float:
 def classify_game_flaws(
     game: Game,
     positions: list[GamePosition],
+    pv_by_ply: Mapping[int, str] | None = None,
 ) -> GameFlawsResult:
     """Derive all user flaws from stored per-ply evals.
 
@@ -623,6 +796,11 @@ def classify_game_flaws(
               increment_seconds, pgn.
         positions: All GamePosition rows for this game, ordered by ply ASC.
             Load via flaws_repository.fetch_game_positions_ordered.
+        pv_by_ply: optional {ply -> pv_string} override for tactic detection
+            (260618-aiq). The in-process eval drain passes freshly-computed PVs
+            here because they are not yet written to game_positions at classify
+            time; without it the live drain would tag every flaw NULL. The
+            backfill path omits it and reads PVs from positions[n+1].pv.
 
     Returns:
         list[FlawRecord] for analyzed games — one entry per user mistake or
@@ -663,7 +841,9 @@ def classify_game_flaws(
         if severity not in ("mistake", "blunder"):
             # Inaccuracies are count-only per the 2026-06-05 amendment
             continue
-        flaw = _build_flaw_record(n, mover, severity, es_before, es_after, fen_map, positions)
+        flaw = _build_flaw_record(
+            n, mover, severity, es_before, es_after, fen_map, positions, pv_by_ply
+        )
         # Per-mover subject_result drives the lucky tag correctly for both sides (D-05).
         subject_result = derive_user_result(game.result, mover)
         flaw["tags"] = _build_tags(

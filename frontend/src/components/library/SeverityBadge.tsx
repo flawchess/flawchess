@@ -119,6 +119,12 @@ export function SeverityBadge({
   // for as long as it has focus.
   const [highlighted, setHighlighted] = React.useState(false);
 
+  // The badge earns hover/tap affordances only when something is wired to it (Games
+  // card: onHover highlights the chart, onActivate cycles it). The Flaws card renders
+  // it with no callbacks — a plain decorative span (no lift, no brighten, no cursor),
+  // matching the sibling TagChips there.
+  const interactive = Boolean(onHover || onActivate);
+
   return (
     <span
       role={onActivate ? 'button' : undefined}
@@ -135,7 +141,8 @@ export function SeverityBadge({
           : undefined
       }
       className={cn(
-        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 whitespace-nowrap transition-all hover:-translate-y-px',
+        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 whitespace-nowrap',
+        interactive && 'transition-all hover:-translate-y-px',
         onActivate && 'cursor-pointer',
         isActive && ACTIVE_FILTER_RING_CLASS,
         className,
@@ -151,22 +158,38 @@ export function SeverityBadge({
       }}
       aria-label={showCount ? `${count} ${severity}s` : SEVERITY_LABELS_SINGULAR[severity]}
       data-testid={`severity-${severity}-${gameId}`}
-      onMouseEnter={() => {
-        onHover?.(true);
-        setHighlighted(true);
-      }}
-      onMouseLeave={() => {
-        onHover?.(false);
-        setHighlighted(false);
-      }}
-      onFocus={() => {
-        onHover?.(true);
-        setHighlighted(true);
-      }}
-      onBlur={() => {
-        onHover?.(false);
-        setHighlighted(false);
-      }}
+      onMouseEnter={
+        interactive
+          ? () => {
+              onHover?.(true);
+              setHighlighted(true);
+            }
+          : undefined
+      }
+      onMouseLeave={
+        interactive
+          ? () => {
+              onHover?.(false);
+              setHighlighted(false);
+            }
+          : undefined
+      }
+      onFocus={
+        interactive
+          ? () => {
+              onHover?.(true);
+              setHighlighted(true);
+            }
+          : undefined
+      }
+      onBlur={
+        interactive
+          ? () => {
+              onHover?.(false);
+              setHighlighted(false);
+            }
+          : undefined
+      }
     >
       {showCount && <span className="text-base font-bold">{count}</span>}
       <span className="text-sm font-bold">

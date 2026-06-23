@@ -38,8 +38,14 @@ vi.mock('react-chessboard', () => ({
 }));
 
 // Mock useUserProfile — LibraryGameCard now calls it for guest/analyze gating (Phase 118).
+// beta_enabled=true so tactic chips render in orientation tests (Phase 129).
 vi.mock('@/hooks/useUserProfile', () => ({
-  useUserProfile: () => ({ data: { is_guest: false }, isLoading: false }),
+  useUserProfile: () => ({ data: { is_guest: false, beta_enabled: true }, isLoading: false }),
+}));
+
+// Mock useAuth — FlawCard now calls useAuth for beta-gated tactic chip (Phase 126).
+vi.mock('@/hooks/useAuth', () => ({
+  useAuth: () => ({ user: null }),
 }));
 
 // Mock useEnqueueGame — NoAnalysisState (rendered via LibraryGameCard) uses tier-1 mutation.
@@ -59,6 +65,7 @@ vi.mock('react-router-dom', async () => {
 import { FlawCard } from '../FlawCard';
 import type { FlawListItem, GameFlawCard } from '@/types/library';
 import { useLibraryGame } from '@/hooks/useLibrary';
+import { BEST_MOVE_ARROW } from '@/lib/theme';
 
 // ── jsdom stubs ───────────────────────────────────────────────────────────────
 
@@ -130,6 +137,14 @@ function makeFlaw(overrides: Partial<FlawListItem> = {}): FlawListItem {
     user_color: 'white',
     clock_seconds: 125,
     move_seconds: 8.4,
+    best_move: null,
+    // Phase 128/129 tactic motif fields — null by default
+    allowed_tactic_motif: null,
+    allowed_tactic_confidence: null,
+    allowed_tactic_depth: null,
+    missed_tactic_motif: null,
+    missed_tactic_confidence: null,
+    missed_tactic_depth: null,
     ...overrides,
   };
 }
@@ -249,6 +264,42 @@ describe('FlawCard', () => {
     });
   });
 
+  describe('Best-move arrow (quick-260618-oqw)', () => {
+    it('draws a blue best-move arrow when best_move (UCI) is set', () => {
+      render(<FlawCard flaw={makeFlaw({ best_move: 'g1f3' })} />);
+      const overlay = document.querySelector('[data-testid="mini-board-arrow-overlay"]');
+      expect(overlay).not.toBeNull();
+      const bluePaths = overlay!.querySelectorAll(`path[fill="${BEST_MOVE_ARROW}"]`);
+      expect(bluePaths.length).toBe(1);
+    });
+
+    it('draws no best-move arrow when best_move is null', () => {
+      // fixture fen has no legal "Nxd4", so the flaw-move arrow is absent too →
+      // the overlay should render zero arrows (it returns null when empty).
+      render(<FlawCard flaw={makeFlaw({ best_move: null })} />);
+      const overlay = document.querySelector('[data-testid="mini-board-arrow-overlay"]');
+      const bluePaths = overlay?.querySelectorAll(`path[fill="${BEST_MOVE_ARROW}"]`) ?? [];
+      expect(bluePaths.length).toBe(0);
+    });
+  });
+
+  describe('Tactic-depth badge (quick-260621-mq4)', () => {
+    it('renders the missed-tactic depth (1-based) on the blue best-move arrow', () => {
+      // missed_tactic_depth 4 (0-based) → display "5" at the best-move arrow.
+      render(<FlawCard flaw={makeFlaw({ best_move: 'g1f3', missed_tactic_depth: 4 })} />);
+      const overlay = document.querySelector('[data-testid="mini-board-arrow-overlay"]');
+      expect(overlay).not.toBeNull();
+      const labels = Array.from(overlay!.querySelectorAll('text')).map((t) => t.textContent);
+      expect(labels).toContain('5');
+    });
+
+    it('renders no depth badge when the tactic depth is null', () => {
+      render(<FlawCard flaw={makeFlaw({ best_move: 'g1f3', missed_tactic_depth: null })} />);
+      const overlay = document.querySelector('[data-testid="mini-board-arrow-overlay"]');
+      expect(overlay!.querySelectorAll('text').length).toBe(0);
+    });
+  });
+
   describe('data-testid (CLAUDE.md browser-automation rules)', () => {
     it('root article has data-testid="flaw-card-{game_id}-{ply}"', () => {
       render(<FlawCard flaw={makeFlaw()} />);
@@ -353,6 +404,106 @@ describe('FlawCard', () => {
       });
       // LibraryGameCard renders the white + black username
       expect(screen.getByTestId('flaw-game-modal').textContent).toContain('Alice');
+    });
+  });
+
+  describe('Phase 129 D-11: orientation-prefixed dual-chip matrix (TACUI-07)', () => {
+    const BOTH_MOTIFS = {
+      missed_tactic_motif: 'fork',
+      missed_tactic_confidence: 90,
+      allowed_tactic_motif: 'pin',
+      allowed_tactic_confidence: 85,
+    };
+    const MISSED_ONLY = {
+      missed_tactic_motif: 'fork',
+      missed_tactic_confidence: 90,
+      allowed_tactic_motif: null,
+      allowed_tactic_confidence: null,
+    };
+    const ALLOWED_ONLY = {
+      missed_tactic_motif: null,
+      missed_tactic_confidence: null,
+      allowed_tactic_motif: 'pin',
+      allowed_tactic_confidence: 85,
+    };
+
+    // NOTE: the card renders the tags row in BOTH a mobile (sm:hidden) and a desktop
+    // (hidden sm:flex) body, so every chip testid appears twice in jsdom (which ignores
+    // CSS visibility). Use getAllByTestId / queryAllByTestId rather than the single-element
+    // getByTestId — same convention as LibraryGameCard.test.tsx.
+    it('Either + both motifs: renders missed chip AND allowed chip', () => {
+      render(
+        <FlawCard flaw={makeFlaw(BOTH_MOTIFS)} tacticOrientation="either" />,
+      );
+      // missed chip: chip-tactic-missed-fork-42
+      expect(screen.getAllByTestId('chip-tactic-missed-fork-42').length).toBeGreaterThan(0);
+      // allowed chip: chip-tactic-allowed-pin-42
+      expect(screen.getAllByTestId('chip-tactic-allowed-pin-42').length).toBeGreaterThan(0);
+    });
+
+    it('Either + missed only: renders missed chip only', () => {
+      render(
+        <FlawCard flaw={makeFlaw(MISSED_ONLY)} tacticOrientation="either" />,
+      );
+      expect(screen.getAllByTestId('chip-tactic-missed-fork-42').length).toBeGreaterThan(0);
+      // No allowed chip (null allowed_tactic_motif)
+      expect(screen.queryAllByTestId('chip-tactic-allowed-pin-42')).toHaveLength(0);
+    });
+
+    it('Either + allowed only: renders allowed chip only', () => {
+      render(
+        <FlawCard flaw={makeFlaw(ALLOWED_ONLY)} tacticOrientation="either" />,
+      );
+      expect(screen.getAllByTestId('chip-tactic-allowed-pin-42').length).toBeGreaterThan(0);
+      // No missed chip
+      expect(screen.queryAllByTestId('chip-tactic-missed-fork-42')).toHaveLength(0);
+    });
+
+    it('Missed filter + both motifs: renders missed chip only', () => {
+      render(
+        <FlawCard flaw={makeFlaw(BOTH_MOTIFS)} tacticOrientation="missed" />,
+      );
+      expect(screen.getAllByTestId('chip-tactic-missed-fork-42').length).toBeGreaterThan(0);
+      // allowed chip suppressed
+      expect(screen.queryAllByTestId('chip-tactic-allowed-pin-42')).toHaveLength(0);
+    });
+
+    it('Missed filter + missed only: renders missed chip', () => {
+      render(
+        <FlawCard flaw={makeFlaw(MISSED_ONLY)} tacticOrientation="missed" />,
+      );
+      expect(screen.getAllByTestId('chip-tactic-missed-fork-42').length).toBeGreaterThan(0);
+    });
+
+    it('Missed filter + allowed only (missed is null): renders no chip', () => {
+      render(
+        <FlawCard flaw={makeFlaw(ALLOWED_ONLY)} tacticOrientation="missed" />,
+      );
+      expect(screen.queryAllByTestId(/chip-tactic-/)).toHaveLength(0);
+    });
+
+    it('Allowed filter + both motifs: renders allowed chip only', () => {
+      render(
+        <FlawCard flaw={makeFlaw(BOTH_MOTIFS)} tacticOrientation="allowed" />,
+      );
+      expect(screen.getAllByTestId('chip-tactic-allowed-pin-42').length).toBeGreaterThan(0);
+      // missed chip suppressed
+      expect(screen.queryAllByTestId('chip-tactic-missed-fork-42')).toHaveLength(0);
+    });
+
+    it('Allowed filter + allowed only: renders allowed chip', () => {
+      render(
+        <FlawCard flaw={makeFlaw(ALLOWED_ONLY)} tacticOrientation="allowed" />,
+      );
+      expect(screen.getAllByTestId('chip-tactic-allowed-pin-42').length).toBeGreaterThan(0);
+    });
+
+    it('no per-chip Popover rendered (D-12 narration = chip label + TagLegend)', () => {
+      const { container } = render(
+        <FlawCard flaw={makeFlaw(BOTH_MOTIFS)} tacticOrientation="either" />,
+      );
+      // No Radix dialog in the chip row
+      expect(container.querySelector('[role="dialog"]')).toBeNull();
     });
   });
 });

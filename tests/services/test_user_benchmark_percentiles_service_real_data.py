@@ -261,8 +261,6 @@ async def _seed_canonical_slice_user(
                         full_hash=10_000_000 + idx * 100 + offset,
                         white_hash=20_000_000 + idx * 100 + offset,
                         black_hash=30_000_000 + idx * 100 + offset,
-                        material_signature="KR_KR",
-                        material_imbalance=0,
                         endgame_class=1,
                         eval_cp=eval_cp,
                         eval_mate=None,

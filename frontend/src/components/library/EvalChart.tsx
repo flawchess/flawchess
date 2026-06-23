@@ -35,6 +35,13 @@ import { ChartContainer } from '@/components/ui/chart';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import { TAG_ICONS, getTagColor } from '@/lib/tagVisuals';
 import {
+  TACTIC_FAMILY_FOR_MOTIF,
+  TACTIC_FAMILY_ICON,
+  tacticMotifLabel,
+} from '@/lib/tacticComparisonMeta';
+import type { TacticFamily } from '@/lib/tacticComparisonMeta';
+import { toDisplayDepthForOrientation } from '@/lib/tacticDepth';
+import {
   EVAL_CHART_AREA_BLACK_AHEAD,
   EVAL_CHART_AREA_WHITE_AHEAD,
   EVAL_CHART_CURSOR,
@@ -44,6 +51,8 @@ import {
   SEV_BLUNDER,
   SEV_INACCURACY,
   SEV_MISTAKE,
+  TAC_ALLOWED,
+  TAC_MISSED,
 } from '@/lib/theme';
 import type {
   EvalPoint,
@@ -62,6 +71,13 @@ interface EvalChartProps {
   phaseTransitions: PhaseTransitions;
   /** SAN mainline (moves[i] = move at ply i) — labels the tooltip for any ply. */
   moves: string[];
+  /**
+   * Beta gate for the tactic-motif feature (Phase 126). When true and the active
+   * marker carries an `allowed_tactic_motif`, the tooltip lists it first (above the
+   * flaw tags). Phase 128 D-07 rename. Mirrors chip beta-gate in LibraryGameCard/FlawCard.
+   * Default false.
+   */
+  betaEnabled?: boolean;
   /**
    * Tailwind height class for the chart area only — 'h-[116px]' (desktop) or
    * 'h-[114px]' (mobile). Chart height + the 16px (h-4) slider row should equal
@@ -98,14 +114,13 @@ interface EvalChartProps {
    */
   outlinedPlies?: ReadonlySet<number> | null;
   /**
-   * The single ply the card was opened to focus (the flaw clicked in the Flaws
-   * subtab). Its marker gets an expanding "ping" ring in its severity color so the
-   * eye lands on it the moment the modal opens. Purely additive — it does NOT dim
-   * or enlarge anything, so it never competes with `highlightedPlies`. The parent
-   * clears it (passes null) the first time the user hovers a tag/severity or scrubs
-   * the chart, handing the chart back to the hover-driven highlight systems.
+   * Resting slider position the chart opens on (the flaw clicked in the Flaws
+   * subtab). The scrub slider seeds here instead of the last eval'd ply, so the
+   * board and crosshair land on the flawed move the moment the modal opens. Clamped
+   * into the eval'd ply range. null/omitted (the Games subtab) → default to the last
+   * eval'd ply.
    */
-  focusedPly?: number | null;
+  initialPly?: number | null;
   /**
    * Imperative "scrub to this ply and show its tooltip" command, used by the
    * card's click-to-cycle-through-a-tag's-flaws interaction. `commandedPly` is the
@@ -166,12 +181,6 @@ const SQUARE_HALF_SIDE_FACTOR = 0.85;
 
 /** White-outline stroke width for filter-matched flaw markers. */
 const FLAW_MARKER_OUTLINE_WIDTH = 1.5;
-
-/** Focus "ping" ring: expands from the dot radius to this radius while fading out. */
-const FOCUS_PULSE_MAX_RADIUS = 13;
-/** Focus-ping stroke width and one-cycle duration (SVG SMIL). */
-const FOCUS_PULSE_STROKE_WIDTH = 2;
-const FOCUS_PULSE_DURATION = '1.4s';
 
 /** Inline glyph size (px) for MarkerGlyph in the tooltip flaw detail. */
 const GLYPH_BOX = 12;
@@ -301,42 +310,6 @@ function trimToEvalRange(series: EvalPoint[]): EvalPoint[] {
 }
 
 /**
- * Expanding-and-fading "ping" ring behind the focused flaw's marker — the same
- * attention affordance the app uses elsewhere (Tailwind `animate-ping`), expressed
- * as SVG SMIL since this lives inside the recharts surface. Drawn in the marker's
- * severity color. Self-contained (no extra deps) and additive: it sits behind the
- * normal dot and changes nothing about how the dot itself renders, so the hover
- * enlarge/dim and the filter outline are entirely unaffected.
- */
-function focusPulseElement(color: string, cx: number, cy: number, key: string): React.ReactElement {
-  return (
-    <circle
-      key={key}
-      cx={cx}
-      cy={cy}
-      r={FLAW_DOT_RADIUS}
-      fill="none"
-      stroke={color}
-      strokeWidth={FOCUS_PULSE_STROKE_WIDTH}
-      aria-hidden="true"
-    >
-      <animate
-        attributeName="r"
-        values={`${FLAW_DOT_RADIUS};${FOCUS_PULSE_MAX_RADIUS}`}
-        dur={FOCUS_PULSE_DURATION}
-        repeatCount="indefinite"
-      />
-      <animate
-        attributeName="opacity"
-        values="0.9;0"
-        dur={FOCUS_PULSE_DURATION}
-        repeatCount="indefinite"
-      />
-    </circle>
-  );
-}
-
-/**
  * The flaw-marker glyph: filled circle for the player (is_user), hollow square
  * for the opponent — color = severity (D-07). Shared by the chart dot renderer
  * and the tooltip so the two surfaces stay in sync. fill="none" is explicit
@@ -400,7 +373,6 @@ function buildDotRenderer(
   markerMap: Map<number, FlawMarker>,
   highlightedPlies?: ReadonlySet<number> | null,
   outlinedPlies?: ReadonlySet<number> | null,
-  focusedPly?: number | null,
 ) {
   // An empty set is treated as no-op so a tag/badge with no user markers never
   // dims the whole chart.
@@ -420,10 +392,8 @@ function buildDotRenderer(
       return <g key={`nodot-${payload.ply}`} />;
     }
     const matched = highlightActive && highlightedPlies!.has(payload.ply);
-    const focused = focusedPly != null && payload.ply === focusedPly;
-    // Inaccuracies stay hidden unless explicitly highlighted (their badge hover) or
-    // the card was opened focused on them (defensive — Flaws subtab is M/B only).
-    if (marker.severity === 'inaccuracy' && !matched && !focused) {
+    // Inaccuracies stay hidden unless explicitly highlighted (their badge hover).
+    if (marker.severity === 'inaccuracy' && !matched) {
       return <g key={`nodot-${payload.ply}`} />;
     }
     const color = severityColor(marker.severity);
@@ -433,7 +403,7 @@ function buildDotRenderer(
     const radius = matched ? FLAW_DOT_RADIUS * HIGHLIGHT_RADIUS_FACTOR : FLAW_DOT_RADIUS;
     const opacity = !highlightActive || matched ? 1 : DIMMED_MARKER_OPACITY;
     const outline = outlinedPlies != null && outlinedPlies.has(payload.ply);
-    const dot = flawDotElement(
+    return flawDotElement(
       marker.is_user,
       color,
       cx,
@@ -442,15 +412,6 @@ function buildDotRenderer(
       `dot-${payload.ply}`,
       opacity,
       outline,
-    );
-    // Focus ping: a separate, additive channel. Group the ping ring behind the
-    // (untouched) dot so the dot keeps its normal hover/filter rendering.
-    if (!focused) return dot;
-    return (
-      <g key={`focus-${payload.ply}`}>
-        {focusPulseElement(color, cx, cy, `pulse-${payload.ply}`)}
-        {dot}
-      </g>
     );
   };
 }
@@ -524,9 +485,10 @@ export function EvalChart({
   onHoverPlyChange,
   highlightedPlies,
   outlinedPlies,
-  focusedPly,
+  initialPly,
   commandedPly,
   commandSeq,
+  betaEnabled = false,
 }: EvalChartProps) {
   // The tooltip shows flaw detail whenever the marker's dot is visible: M/B always,
   // inaccuracy only when revealed (highlighted via its badge, or cycled to). The dot
@@ -534,7 +496,7 @@ export function EvalChart({
   // hide them otherwise; the tooltip applies the same visibility gate (below).
   const evalByPly = useMemo(() => new Map(evalSeries.map((p) => [p.ply, p])), [evalSeries]);
   const allMarkerMap = useMemo(() => new Map(flawMarkers.map((m) => [m.ply, m])), [flawMarkers]);
-  const dotRenderer = buildDotRenderer(allMarkerMap, highlightedPlies, outlinedPlies, focusedPly);
+  const dotRenderer = buildDotRenderer(allMarkerMap, highlightedPlies, outlinedPlies);
 
   // Chart data trimmed to the eval'd ply range so the fill spans the full width
   // (see trimToEvalRange). Fall back to the raw series if every ply lacks an eval.
@@ -549,21 +511,29 @@ export function EvalChart({
   const sliderMin = chartSeries[0]?.ply ?? 0;
   const sliderMax = chartSeries[chartSeries.length - 1]?.ply ?? 0;
 
+  // Resting slider position: the flaw ply the card was opened to (clamped into the
+  // eval'd range) when provided (Flaws subtab modal), else the last eval'd ply
+  // (locked decision 5 — Games subtab and explorer).
+  const restingPly =
+    initialPly != null ? Math.min(Math.max(initialPly, sliderMin), sliderMax) : sliderMax;
+
   // STATE MODEL: one active-ply source of truth.
   //   hoverPly — transient, chart-hover-only; null when not hovering.
   //   sliderPly — persistent; the last explicitly-set slider position.
   //   activePly — derived as hoverPly ?? sliderPly; drives crosshair, tooltip,
   //   slider thumb, and parent (hover sweeps the thumb along with it).
   //
-  // Initialize sliderPly to the last eval'd ply (locked decision 5).
-  const [sliderPly, setSliderPly] = useState<number>(sliderMax);
+  // Initialize sliderPly to the resting ply (initialPly when opened on a flaw, else
+  // the last eval'd ply — locked decision 5).
+  const [sliderPly, setSliderPly] = useState<number>(restingPly);
   const [hoverPly, setHoverPly] = useState<number | null>(null);
 
-  // Reset sliderPly when the series identity changes (e.g. data swap on a different game).
-  // useEffect runs after render — setState inside triggers a re-render with the new value.
+  // Reset sliderPly when the resting ply changes (a data swap moves sliderMax; opening
+  // a different flaw moves initialPly). useEffect runs after render — setState inside
+  // triggers a re-render with the new value.
   useEffect(() => {
-    setSliderPly(sliderMax);
-  }, [sliderMax]);
+    setSliderPly(restingPly);
+  }, [restingPly]);
 
   const activePly = hoverPly ?? sliderPly;
 
@@ -649,6 +619,19 @@ export function EvalChart({
     if (!isTouch) sliderRef.current?.focus({ preventScroll: true });
   }, [commandSeq, commandedPly, isTouch]);
 
+  // Opened parked on a flaw ply (FlawCard modal via initialPly): the slider already
+  // sits on the flaw ply, but the tooltip is interaction-gated, so nothing shows on
+  // open. Surface it once on mount — focus on fine pointers for blur-to-dismiss; the
+  // outside-touch handler dismisses it on touch. Mirrors the commandedPly reveal.
+  // The Games subtab passes no initialPly, so this is a no-op there.
+  const didRevealInitialTooltip = useRef(false);
+  useEffect(() => {
+    if (initialPly == null || didRevealInitialTooltip.current) return;
+    didRevealInitialTooltip.current = true;
+    setSliderFocused(true);
+    if (!isTouch) sliderRef.current?.focus({ preventScroll: true });
+  }, [initialPly, isTouch]);
+
   // Tooltip content for activePly (original floating-tooltip content: move + eval,
   // clock + move time, M/B flaw detail — inaccuracy plies show eval only).
   const activeSan = moves[activePly] ?? null;
@@ -657,18 +640,41 @@ export function EvalChart({
   // The "Eval:" label is rendered as a Cpu icon in the tooltip (see below).
   const evalStr = activeSan?.endsWith('#') ? 'Checkmate' : formatEvalBare(activePoint);
   const moveLabel = formatMoveLabel(activePly, activeSan);
-  // Flaw marker at activePly, shown only when its dot is visible: M/B always,
-  // inaccuracy only when revealed (highlighted/cycled) or focused — matching the dot
-  // renderer's reveal rule so a hidden inaccuracy dot never gets a flaw-detail line.
-  const activeMarkerAny = allMarkerMap.get(activePly);
-  const activeMarker =
-    activeMarkerAny != null &&
-    (activeMarkerAny.severity !== 'inaccuracy' ||
-      (highlightedPlies?.has(activePly) ?? false) ||
-      focusedPly === activePly)
-      ? activeMarkerAny
-      : undefined;
+  // Flaw marker at activePly — all severities (blunder/mistake/inaccuracy) show their
+  // flaw-detail line in the tooltip whenever the scrub lands on a flaw ply.
+  const activeMarker = allMarkerMap.get(activePly);
   const tooltipTags = activeMarker ? activeMarker.tags.filter((t) => !PHASE_TAGS.has(t)) : [];
+  // Tactic motifs for the active marker (Phase 126 UAT) — listed first in the tooltip,
+  // above the flaw tags. Beta-gated, family-mapped only. Both orientations are listed
+  // with a "missed:"/"allowed:" prefix so the tooltip matches the dual-orientation chips
+  // (allowed before missed, mirroring the LibraryGameCard chip row ordering).
+  const tooltipTactics: {
+    orientation: 'missed' | 'allowed';
+    motif: string;
+    family: TacticFamily;
+    depth: number | null;
+  }[] = (() => {
+    if (!betaEnabled || activeMarker == null) return [];
+    const out: {
+      orientation: 'missed' | 'allowed';
+      motif: string;
+      family: TacticFamily;
+      depth: number | null;
+    }[] = [];
+    const add = (
+      raw: string | null,
+      orientation: 'missed' | 'allowed',
+      depth: number | null,
+    ): void => {
+      if (raw == null) return;
+      const family = TACTIC_FAMILY_FOR_MOTIF[raw];
+      if (family == null) return;
+      out.push({ orientation, motif: raw, family, depth });
+    };
+    add(activeMarker.allowed_tactic_motif, 'allowed', activeMarker.allowed_tactic_depth);
+    add(activeMarker.missed_tactic_motif, 'missed', activeMarker.missed_tactic_depth);
+    return out;
+  })();
 
   // Active datapoint position as a fraction of the eval'd ply range. Plies in
   // chartSeries are contiguous and recharts' point scale (zero padding, zero margins)
@@ -870,7 +876,7 @@ export function EvalChart({
             }, ${hoverDriven ? '-50%' : '0'})`,
           }}
         >
-          <ChartTooltipBox className="bg-background/85 backdrop-blur-[2px] whitespace-nowrap">
+          <ChartTooltipBox className="bg-background/70 backdrop-blur-[2px] whitespace-nowrap">
             <div className="flex items-center gap-1 text-muted-foreground">
               <span>{moveLabel}</span>
               <span>&middot;</span>
@@ -906,8 +912,38 @@ export function EvalChart({
                     {activeMarker.severity.charAt(0).toUpperCase() + activeMarker.severity.slice(1)}
                   </span>
                 </div>
-                {tooltipTags.length > 0 && (
+                {(tooltipTactics.length > 0 || tooltipTags.length > 0) && (
                   <ul className="flex flex-col gap-0.5 text-muted-foreground">
+                    {/* Tactic motifs listed first (Phase 126 UAT), each prefixed with its
+                        missed/allowed orientation to match the dual-orientation chips. */}
+                    {tooltipTactics.map(({ orientation, motif, family, depth }) => {
+                      const TacticIcon = TACTIC_FAMILY_ICON[family];
+                      // Orientation drives the row color (missed = blue, allowed = light
+                      // red), matching the dual-orientation TacticMotifChip. Blue is
+                      // reserved for missed tactics, so allowed must not reuse it.
+                      const orientationColor =
+                        orientation === 'allowed' ? TAC_ALLOWED : TAC_MISSED;
+                      return (
+                        <li
+                          key={`${orientation}-${motif}`}
+                          className="flex flex-col gap-0.5"
+                          style={{ color: orientationColor }}
+                        >
+                          <span className="flex items-center gap-1.5">
+                            {/* Icon inherits the row color via currentColor. */}
+                            <TacticIcon className="h-3 w-3 shrink-0" />
+                            {orientation}: {tacticMotifLabel(motif)}
+                          </span>
+                          {/* Depth on its own line, indented to align under the motif
+                              text (icon width + gap = 12px + 6px). */}
+                          {depth != null && (
+                            <span className="pl-[18px]">
+                              depth {toDisplayDepthForOrientation(depth, orientation)}
+                            </span>
+                          )}
+                        </li>
+                      );
+                    })}
                     {tooltipTags.map((t) => {
                       const TagIcon = TAG_ICONS[t];
                       return (

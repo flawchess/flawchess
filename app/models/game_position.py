@@ -2,7 +2,6 @@ from typing import Optional
 
 from sqlalchemy import (
     BigInteger,
-    Boolean,
     ForeignKeyConstraint,
     Index,
     PrimaryKeyConstraint,
@@ -145,21 +144,11 @@ class GamePosition(Base):
     # REAL (4 bytes) instead of DOUBLE PRECISION (8 bytes)
     clock_seconds: Mapped[float | None] = mapped_column(REAL, nullable=True)
 
-    # Position metadata — computed by position_classifier.py, populated during import (Phase 27)
-    material_count: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
-    material_signature: Mapped[Optional[str]] = mapped_column(String(65), nullable=True)
-    material_imbalance: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
-    has_opposite_color_bishops: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
-
-    # Lichess piece-count for endgame classification: count of Q+R+B+N for both sides combined.
-    # Nullable because existing rows won't have it until the backfill migration.
-    piece_count: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
-
-    # Lichess middlegame detection columns (nullable — existing rows backfilled via reimport)
-    # True when < 4 pieces on either side's back rank
-    backrank_sparse: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
-    # Lichess mixedness score: measures how interleaved white/black pieces are (0-~400)
-    mixedness: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    # SEED-055: 7 write-only intermediate columns (material_count, material_signature,
+    # material_imbalance, has_opposite_color_bishops, piece_count, backrank_sparse,
+    # mixedness) were dropped — computed at import but never read by a serving query.
+    # The derived columns below (endgame_class, phase) are still computed in-memory at
+    # import time (position_classifier.py) from the same values, then persisted.
 
     # Lichess Divider.scala phase classification: 0=opening, 1=middlegame, 2=endgame.
     # Nullable column — populated by import-path code from import time forward; existing

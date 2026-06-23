@@ -42,16 +42,22 @@ vi.mock('@/components/filters/LibraryFilterPanel', () => ({
 // Stub FlawFilterControl — capture severity/tags for assertion. The flaw filter is
 // now hosted in its own separate sidebar panel (not inside LibraryFilterPanel).
 let capturedFlawFilter: { severity: string[]; tags: string[] } | null = null;
+// Quick 260620-pza: capture showTacticFilter to assert the Games tab now enables the
+// tactic-filter section (parity with the Flaws tab).
+let capturedShowTacticFilter: boolean | undefined;
 
 vi.mock('@/components/filters/FlawFilterControl', () => ({
   FlawFilterControl: ({
     severity,
     tags,
+    showTacticFilter,
   }: {
     severity: string[];
     tags: string[];
+    showTacticFilter?: boolean;
   }) => {
     capturedFlawFilter = { severity, tags };
+    capturedShowTacticFilter = showTacticFilter;
     return <div data-testid="stub-flaw-filter-control" data-flaw-filter={JSON.stringify({ severity, tags })} />;
   },
 }));
@@ -179,6 +185,15 @@ describe('GamesTab', () => {
       expect(capturedFlawFilter).toBeTruthy();
       expect(capturedFlawFilter?.severity).toEqual(['blunder']);
       expect(capturedFlawFilter?.tags).toEqual(['miss']);
+    });
+
+    it('enables the tactic-filter section on the Games tab (Quick 260620-pza)', () => {
+      capturedShowTacticFilter = undefined;
+      mockFlawFilterState = { severity: ['blunder'], tags: [] };
+      renderGamesTab();
+      // The Games tab now passes showTacticFilter, surfacing the tactic tag group
+      // (parity with the Flaws tab).
+      expect(capturedShowTacticFilter).toBe(true);
     });
 
     it('passes flawFilter to useLibraryGames (severity + tags)', () => {

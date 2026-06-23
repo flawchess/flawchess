@@ -31,13 +31,6 @@ POSITION_COPY_COLUMNS: tuple[str, ...] = (
     "black_hash",
     "move_san",
     "clock_seconds",
-    "material_count",
-    "material_signature",
-    "material_imbalance",
-    "has_opposite_color_bishops",
-    "piece_count",
-    "backrank_sparse",
-    "mixedness",
     "phase",
     "eval_cp",
     "eval_mate",
@@ -92,45 +85,30 @@ async def count_pending_evals(session: AsyncSession, user_id: int) -> int:
     return result.scalar_one()
 
 
-async def count_analyzable_games(session: AsyncSession, user_id: int) -> int:
-    """Return the count of games that can still reach the 'analyzed' state.
+async def count_fully_analyzed_games(session: AsyncSession, user_id: int) -> int:
+    """Return count of games FlawChess has fully analyzed (full_evals_completed_at SET).
 
-    Badge denominator for GET /imports/eval-coverage. Excludes permanently
-    unanalyzable games so "X of X games analyzed" is actually reachable.
+    Badge numerator for GET /imports/eval-coverage. This is the SAME definition the
+    per-game Library cards use for `analysis_state` ("analyzed" → no "Analyze"
+    button): ``full_evals_completed_at IS NOT NULL`` (see
+    library_repository._analyzed_game_ids_subquery). Keeping the badge and the cards
+    on one column is the point — otherwise they disagree.
 
-    Predicate: ``is_analyzed OR full_evals_completed_at IS NULL``. A game with
-    full_evals_completed_at SET but NOT is_analyzed has already been through the
-    full-eval drain's classify step and produced no flaw counts (white_blunders
-    stays NULL) — it is degenerate-length (zero moves, or so short that eval
-    coverage can't reach EVAL_COVERAGE_MIN), so classify_game_flaws returns
-    GameNotAnalyzed and it can never become is_analyzed. Counting these in the
-    denominator made analyzed_count < total_count permanently (the stall the
-    frontend useEvalCoverage MAX_STALL_POLLS backstop was tolerating).
+    Why NOT Game.is_analyzed (white_blunders IS NOT NULL): a lichess game imported
+    with an embedded `analysis` block gets white_blunders populated at import time
+    (normalization.py), so it satisfies is_analyzed instantly — before FlawChess's
+    own full-eval drain has touched it. The card still (correctly) shows "Analyze",
+    but the old is_analyzed-based badge counted it as analyzed, so the badge read
+    "X of X" while unanalyzed cards were plainly visible (the bug this fixes).
 
-    Games still mid-drain keep full_evals_completed_at NULL, so they remain in
-    the denominator as not-yet-analyzed and the badge still climbs during import.
+    X-of-X reachability is preserved: a permanently-degenerate game (too short /
+    coverage-capped) still gets full_evals_completed_at stamped by the drain, so it
+    counts here as analyzed — matching its card, which shows no "Analyze" button.
     """
     result = await session.execute(
         select(func.count())
         .select_from(Game)
-        .where(
-            Game.user_id == user_id,
-            sa.or_(Game.is_analyzed, Game.full_evals_completed_at.is_(None)),
-        )
-    )
-    return result.scalar_one()
-
-
-async def count_is_analyzed_games(session: AsyncSession, user_id: int) -> int:
-    """Return count of games with flaw analysis present for the given user.
-
-    D-118-10 correctness fix: uses Game.is_analyzed (white_blunders IS NOT NULL),
-    NOT evals_completed_at. The entry-ply marker (evals_completed_at) is set for
-    endgame-entry evals; it does NOT indicate full flaw analysis. Lichess games with
-    imported %evals count as analyzed when flaw counts are populated.
-    """
-    result = await session.execute(
-        select(func.count()).select_from(Game).where(Game.user_id == user_id, Game.is_analyzed)
+        .where(Game.user_id == user_id, Game.full_evals_completed_at.isnot(None))
     )
     return result.scalar_one()
 

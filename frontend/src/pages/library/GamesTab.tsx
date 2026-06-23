@@ -25,9 +25,12 @@ import {
 } from '@/hooks/useFlawFilterStore';
 import { useLibraryGames } from '@/hooks/useLibrary';
 import { useUserProfile } from '@/hooks/useUserProfile';
-import { useEvalCoverage, EVAL_COVERAGE_POLL_INTERVAL_MS } from '@/hooks/useEvalCoverage';
+import { useEvalCoverage, LIBRARY_GAMES_POLL_INTERVAL_MS } from '@/hooks/useEvalCoverage';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
+import type { TacticFamily } from '@/lib/tacticComparisonMeta';
+import type { TacticOrientation } from '@/types/library';
+import type { TacticDepthValue } from '@/lib/tacticDepth';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -254,7 +257,7 @@ export function GamesTab() {
     // blind to the dominant backlog drain (119-RESEARCH-NOTES.md). Also poll while
     // any on-demand analyze is in flight (Option A) so its card flips reliably even
     // when the eval-coverage poll has already backed off.
-    analyzedCount < totalCount || inFlightIds.size > 0 ? EVAL_COVERAGE_POLL_INTERVAL_MS : 0,
+    analyzedCount < totalCount || inFlightIds.size > 0 ? LIBRARY_GAMES_POLL_INTERVAL_MS : 0,
   );
 
   // Refresh the games list when a tier-1 (or any) analysis completes — the
@@ -311,10 +314,23 @@ export function GamesTab() {
       <FlawFilterControl
         severity={pendingFlawFilter.severity}
         tags={pendingFlawFilter.tags}
+        tacticFamilies={pendingFlawFilter.tacticFamilies}
         onSeverityChange={(severity) =>
           setPendingFlawFilter((prev) => ({ ...prev, severity }))
         }
         onTagChange={(tags) => setPendingFlawFilter((prev) => ({ ...prev, tags }))}
+        onTacticFamiliesChange={(tacticFamilies: TacticFamily[]) =>
+          setPendingFlawFilter((prev) => ({ ...prev, tacticFamilies }))
+        }
+        showTacticFilter
+        orientation={pendingFlawFilter.tacticOrientation}
+        onOrientationChange={(tacticOrientation: TacticOrientation) =>
+          setPendingFlawFilter((prev) => ({ ...prev, tacticOrientation }))
+        }
+        tacticDepth={{ min: pendingFlawFilter.tacticDepthMin, max: pendingFlawFilter.tacticDepthMax }}
+        onTacticDepthChange={(next: TacticDepthValue) =>
+          setPendingFlawFilter((prev) => ({ ...prev, tacticDepthMin: next.min, tacticDepthMax: next.max }))
+        }
       />
       <FilterActions
         resetTestId="btn-tags-reset"
@@ -485,10 +501,27 @@ export function GamesTab() {
               <FlawFilterControl
                 severity={pendingFlawFilter.severity}
                 tags={pendingFlawFilter.tags}
+                tacticFamilies={pendingFlawFilter.tacticFamilies}
                 onSeverityChange={(severity) =>
                   setPendingFlawFilter((prev) => ({ ...prev, severity }))
                 }
                 onTagChange={(tags) => setPendingFlawFilter((prev) => ({ ...prev, tags }))}
+                onTacticFamiliesChange={(tacticFamilies: TacticFamily[]) =>
+                  setPendingFlawFilter((prev) => ({ ...prev, tacticFamilies }))
+                }
+                showTacticFilter
+                orientation={pendingFlawFilter.tacticOrientation}
+                onOrientationChange={(tacticOrientation: TacticOrientation) =>
+                  setPendingFlawFilter((prev) => ({ ...prev, tacticOrientation }))
+                }
+                tacticDepth={{ min: pendingFlawFilter.tacticDepthMin, max: pendingFlawFilter.tacticDepthMax }}
+                onTacticDepthChange={(next: TacticDepthValue) =>
+                  setPendingFlawFilter((prev) => ({
+                    ...prev,
+                    tacticDepthMin: next.min,
+                    tacticDepthMax: next.max,
+                  }))
+                }
               />
               <FilterActions
                 resetTestId="btn-tags-reset"

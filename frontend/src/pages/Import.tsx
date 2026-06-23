@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import * as Sentry from '@sentry/react';
-import { X, DoorOpen } from 'lucide-react';
+import { X, DoorOpen, Swords, BookOpen, Trophy, type LucideIcon } from 'lucide-react';
 import { Alert } from '@/components/ui/alert';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import {
@@ -164,8 +164,9 @@ function ImportProgressBar({ jobId, onDismiss, platformFilter, onProgress }: { j
  * disabled button is wrapped in a span so the tooltip still opens on hover
  * (a disabled button has pointer-events-none and would swallow the hover).
  */
-function ExploreButton({ label, ready, hint, testId, onGo }: {
+function ExploreButton({ label, Icon, ready, hint, testId, onGo }: {
   label: string;
+  Icon: LucideIcon;
   ready: boolean;
   hint: string;
   testId: string;
@@ -173,7 +174,13 @@ function ExploreButton({ label, ready, hint, testId, onGo }: {
 }) {
   if (ready) {
     return (
-      <Button className="flex-1 sm:flex-none" data-testid={testId} onClick={onGo}>
+      <Button
+        variant="brand-outline"
+        className="flex-1 sm:flex-none"
+        data-testid={testId}
+        onClick={onGo}
+      >
+        <Icon className="hidden h-4 w-4 sm:mr-1.5 sm:inline-block" />
         {label}
       </Button>
     );
@@ -181,7 +188,8 @@ function ExploreButton({ label, ready, hint, testId, onGo }: {
   return (
     <Tooltip content={hint}>
       <span className="inline-flex flex-1 cursor-not-allowed sm:flex-none" tabIndex={0}>
-        <Button className="w-full sm:w-auto" disabled data-testid={testId}>
+        <Button variant="brand-outline" className="w-full sm:w-auto" disabled data-testid={testId}>
+          <Icon className="hidden h-4 w-4 sm:mr-1.5 sm:inline-block" />
           {label}
         </Button>
       </span>
@@ -197,6 +205,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
   const navigate = useNavigate();
   const { tier1, tier2 } = useReadiness();
   const hasGames = profile != null && profile.chess_com_game_count + profile.lichess_game_count > 0;
+  const gamesHint = 'Import your games first to browse them.';
   const openingsHint = !hasGames
     ? 'Import your games first to explore openings.'
     : 'Openings will be ready once your import finishes.';
@@ -441,11 +450,20 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
 
       {/* Explore CTAs: always visible as primary (brand-brown) buttons. Each is
           enabled only when the user has games and its analysis tier is ready
-          (Openings at Tier 1, Endgames at Tier 2); otherwise it is disabled with
-          a hover tooltip explaining why. */}
+          (Games as soon as any games exist, Openings at Tier 1, Endgames at
+          Tier 2); otherwise it is disabled with a hover tooltip explaining why. */}
       <div className="flex items-center gap-3" data-testid="import-readiness-section">
         <ExploreButton
+          label="Games"
+          Icon={Swords}
+          ready={hasGames}
+          hint={gamesHint}
+          testId="btn-explore-games"
+          onGo={() => navigate('/library/games')}
+        />
+        <ExploreButton
           label="Openings"
+          Icon={BookOpen}
           ready={hasGames && tier1}
           hint={openingsHint}
           testId="btn-explore-openings"
@@ -453,6 +471,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
         />
         <ExploreButton
           label="Endgames"
+          Icon={Trophy}
           ready={hasGames && tier2}
           hint={endgamesHint}
           testId="btn-explore-endgames"

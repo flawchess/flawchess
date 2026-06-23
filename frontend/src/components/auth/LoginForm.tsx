@@ -16,6 +16,7 @@ import {
   FormCardTitle,
 } from '@/components/ui/form-card';
 import { apiClient } from '@/api/client';
+import { getGoogleAuthorizationUrl } from '@/api/googleAuth';
 
 export function LoginForm() {
   const { login } = useAuth();
@@ -59,10 +60,9 @@ export function LoginForm() {
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
     try {
-      const response = await apiClient.get<{ authorization_url: string }>(
-        '/auth/google/authorize',
-      );
-      window.location.href = response.data.authorization_url;
+      // Shared helper preserves a saved guest session via in-place promotion (the Login
+      // button used to lack this, orphaning guest accounts).
+      window.location.href = await getGoogleAuthorizationUrl();
     } catch (err) {
       Sentry.captureException(err, {
         tags: { source: 'auth' },

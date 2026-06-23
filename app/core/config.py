@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     BACKEND_URL: str = "http://localhost:8000"
     # Frontend base URL — used to build OAuth redirect back to SPA
     FRONTEND_URL: str = "http://localhost:5173"
+    # Same-origin dev tunnels (Tailscale/ngrok) allowed to drive the Google OAuth
+    # round-trip, in addition to FRONTEND_URL. Comma-separated origins. For these
+    # the SPA and /api share one HTTPS host, so the OAuth redirect base == origin.
+    OAUTH_TUNNEL_ORIGINS: str = ""
     # "development" enables CORS for localhost:5173 and drops the Secure flag on auth cookies (so cookies work over plain HTTP in local dev)
     ENVIRONMENT: str = "production"
     SENTRY_DSN: str = ""  # Empty string = Sentry disabled (dev default)

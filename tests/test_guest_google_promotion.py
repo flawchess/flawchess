@@ -295,6 +295,115 @@ class TestAuthorizePromote:
 
 
 # ---------------------------------------------------------------------------
+# GET /auth/google/authorize — server-side guest-promotion safety net
+# ---------------------------------------------------------------------------
+
+
+class TestAuthorizeGuestPromotion:
+    """The plain /auth/google/authorize endpoint must route an authenticated guest
+    through in-place promotion (promote-audience state + callback-promote redirect),
+    so a guest signing in via ANY Google entry point is never orphaned."""
+
+    def setup_method(self) -> None:
+        from app.core.ip_rate_limiter import guest_create_limiter
+
+        guest_create_limiter._timestamps.clear()
+
+    def _decode_user_id_from_token(self, token: str) -> int:
+        payload_b64 = token.split(".")[1]
+        payload_b64 += "=" * (-len(payload_b64) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload_b64))
+        return int(claims["sub"])
+
+    @pytest.mark.asyncio
+    async def test_guest_authorize_routes_to_promotion(self):
+        """A guest Bearer token → callback-promote redirect_uri + promote-audience state with guest_user_id."""
+        from fastapi_users.jwt import decode_jwt
+
+        from app.core.config import settings
+        from app.routers.auth import _OAUTH_PROMOTE_STATE_AUDIENCE
+
+        fake_auth_url = "https://accounts.google.com/o/oauth2/v2/auth?fake=1"
+        mock = AsyncMock(return_value=fake_auth_url)
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            guest_resp = await client.post("/api/auth/guest/create")
+            assert guest_resp.status_code == 201
+            guest_token = guest_resp.json()["access_token"]
+            guest_user_id = self._decode_user_id_from_token(guest_token)
+
+            with patch("app.users.google_oauth_client.get_authorization_url", new=mock):
+                resp = await client.get(
+                    "/api/auth/google/authorize",
+                    headers={"Authorization": f"Bearer {guest_token}"},
+                )
+
+        assert resp.status_code == 200
+        # First positional arg is the redirect_url, second is the state JWT.
+        redirect_url, state = mock.call_args.args[0], mock.call_args.args[1]
+        assert redirect_url.endswith("/api/auth/google/callback-promote")
+
+        state_data = decode_jwt(state, settings.SECRET_KEY, [_OAUTH_PROMOTE_STATE_AUDIENCE])
+        assert state_data["guest_user_id"] == guest_user_id
+
+    @pytest.mark.asyncio
+    async def test_anonymous_authorize_uses_plain_flow(self):
+        """No auth → plain callback redirect_uri + plain oauth-state audience (unchanged behavior)."""
+        from fastapi_users.jwt import decode_jwt
+
+        from app.core.config import settings
+        from app.routers.auth import _OAUTH_STATE_AUDIENCE
+
+        fake_auth_url = "https://accounts.google.com/o/oauth2/v2/auth?fake=1"
+        mock = AsyncMock(return_value=fake_auth_url)
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with patch("app.users.google_oauth_client.get_authorization_url", new=mock):
+                resp = await client.get("/api/auth/google/authorize")
+
+        assert resp.status_code == 200
+        redirect_url, state = mock.call_args.args[0], mock.call_args.args[1]
+        assert redirect_url.endswith("/api/auth/google/callback")
+
+        state_data = decode_jwt(state, settings.SECRET_KEY, [_OAUTH_STATE_AUDIENCE])
+        assert "guest_user_id" not in state_data
+
+    @pytest.mark.asyncio
+    async def test_registered_user_authorize_uses_plain_flow(self):
+        """A non-guest registered user's token → plain flow (only guests get promoted)."""
+        from fastapi_users.jwt import decode_jwt
+
+        from app.core.config import settings
+        from app.routers.auth import _OAUTH_STATE_AUDIENCE
+
+        fake_auth_url = "https://accounts.google.com/o/oauth2/v2/auth?fake=1"
+        mock = AsyncMock(return_value=fake_auth_url)
+        email = unique_email("plainauth")
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            await register_user(client, email, "password123")
+            token = (await login_user(client, email, "password123")).json()["access_token"]
+
+            with patch("app.users.google_oauth_client.get_authorization_url", new=mock):
+                resp = await client.get(
+                    "/api/auth/google/authorize",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+
+        assert resp.status_code == 200
+        redirect_url, state = mock.call_args.args[0], mock.call_args.args[1]
+        assert redirect_url.endswith("/api/auth/google/callback")
+        state_data = decode_jwt(state, settings.SECRET_KEY, [_OAUTH_STATE_AUDIENCE])
+        assert "guest_user_id" not in state_data
+
+
+# ---------------------------------------------------------------------------
 # GET /auth/google/callback-promote integration tests
 # ---------------------------------------------------------------------------
 

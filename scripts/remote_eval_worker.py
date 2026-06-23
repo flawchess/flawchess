@@ -499,4 +499,10 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        # Ctrl-C (interactive) or SIGINT (Docker STOPSIGNAL) — run_worker's finally
+        # has already stopped the EnginePool. Swallow the re-raised interrupt so the
+        # worker exits 0 without dumping a traceback that reads as a crash.
+        pass

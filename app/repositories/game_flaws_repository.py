@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import delete
+from sqlalchemy import delete, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -113,6 +113,19 @@ def flaw_record_to_row(
         # The FlawRecord TypedDict still carries them for internal kernel use; they are
         # intentionally not persisted here (Pitfall 6 in 112-CONTEXT.md).
         "fen": flaw["fen"],
+        # Tactic family — both orientations (Phase 124/128 — D-01/D-02/D-06).
+        # Use .get() so older construction paths that omit keys map to None (not KeyError).
+        # Note the int→motif key-name shift: FlawRecord uses _int suffix for motif int values
+        # to distinguish from the DB column name (which stores the raw int directly).
+        "allowed_tactic_motif": flaw.get("allowed_tactic_motif_int"),
+        "allowed_tactic_piece": flaw.get("allowed_tactic_piece"),
+        "allowed_tactic_confidence": flaw.get("allowed_tactic_confidence"),
+        "allowed_tactic_depth": flaw.get("allowed_tactic_depth"),
+        # missed_* are None until the Phase 128 Plan 02 detector second pass runs.
+        "missed_tactic_motif": flaw.get("missed_tactic_motif_int"),
+        "missed_tactic_piece": flaw.get("missed_tactic_piece"),
+        "missed_tactic_confidence": flaw.get("missed_tactic_confidence"),
+        "missed_tactic_depth": flaw.get("missed_tactic_depth"),
     }
 
 
@@ -134,6 +147,42 @@ async def bulk_insert_game_flaws(
         return
     stmt = pg_insert(GameFlaw).values(rows).on_conflict_do_nothing()
     await session.execute(stmt)
+
+
+# The 8 tactic-tag columns refreshed in isolation by backfill_tactic_tags.py.
+# Kept as a tuple so the script and bulk_update_tactic_tags share one source of truth.
+TACTIC_TAG_COLUMNS: tuple[str, ...] = (
+    "allowed_tactic_motif",
+    "allowed_tactic_piece",
+    "allowed_tactic_confidence",
+    "allowed_tactic_depth",
+    "missed_tactic_motif",
+    "missed_tactic_piece",
+    "missed_tactic_confidence",
+    "missed_tactic_depth",
+)
+
+
+async def bulk_update_tactic_tags(
+    session: AsyncSession,
+    updates: list[dict[str, Any]],
+) -> None:
+    """Update ONLY the 8 tactic-tag columns for existing game_flaws rows.
+
+    Used by backfill_tactic_tags.py to refresh tactic tags after a detector change
+    without delete-and-reinsert (no FK churn, no recompute of severity/tempo/phase,
+    minimal WAL). All non-tactic columns are left untouched.
+
+    Each dict must carry the full PK (``user_id`` / ``game_id`` / ``ply``) plus the 8 tactic
+    column values keyed by their column names (see TACTIC_TAG_COLUMNS). SQLAlchemy's ORM
+    "bulk UPDATE by primary key" derives the WHERE clause from the PK keys and SETs the rest,
+    running the whole list as one executemany.
+
+    No-op on an empty list.
+    """
+    if not updates:
+        return
+    await session.execute(update(GameFlaw), updates)
 
 
 async def delete_flaws_for_game(

@@ -27,7 +27,6 @@ from app.models.game_position import GamePosition
 
 # Import the threshold constants and repository functions.
 from app.repositories.endgame_repository import (
-    ENDGAME_PIECE_COUNT_THRESHOLD,
     ENDGAME_PLY_THRESHOLD,
     query_endgame_bucket_rows,
     query_endgame_entry_rows,
@@ -101,10 +100,6 @@ async def _seed_game_position(
     *,
     game: Game,
     ply: int,
-    piece_count: int = 2,
-    material_count: int = 1000,
-    material_signature: str = "KR_KR",
-    material_imbalance: int = 0,
     endgame_class: int | None = 1,  # Default 1 (rook) matching default material_signature KR_KR
     eval_cp: int | None = None,
     eval_mate: int | None = None,
@@ -124,10 +119,6 @@ async def _seed_game_position(
         white_hash=hash(f"w-{game.id}-{ply}"),
         black_hash=hash(f"b-{game.id}-{ply}"),
         move_san=None,
-        piece_count=piece_count,
-        material_count=material_count,
-        material_signature=material_signature,
-        material_imbalance=material_imbalance,
         endgame_class=endgame_class,
         eval_cp=eval_cp,
         eval_mate=eval_mate,
@@ -169,8 +160,6 @@ class TestQueryEndgameEntryRows:
             db_session,
             game=game,
             ply=10,
-            piece_count=ENDGAME_PIECE_COUNT_THRESHOLD + 2,
-            material_signature="KQRB_KQRB",
             endgame_class=None,
         )
 
@@ -192,9 +181,7 @@ class TestQueryEndgameEntryRows:
         game = await _seed_game(db_session)
         # Seed exactly ENDGAME_PLY_THRESHOLD rook endgame positions
         for ply in range(30, 30 + ENDGAME_PLY_THRESHOLD):
-            await _seed_game_position(
-                db_session, game=game, ply=ply, material_signature="KR_KR", endgame_class=1
-            )
+            await _seed_game_position(db_session, game=game, ply=ply, endgame_class=1)
 
         rows = await query_endgame_entry_rows(
             db_session,
@@ -222,9 +209,7 @@ class TestQueryEndgameEntryRows:
         game = await _seed_game(db_session)
         # Seed only ENDGAME_PLY_THRESHOLD - 2 rook positions (below threshold)
         for ply in range(30, 30 + ENDGAME_PLY_THRESHOLD - 2):
-            await _seed_game_position(
-                db_session, game=game, ply=ply, material_signature="KR_KR", endgame_class=1
-            )
+            await _seed_game_position(db_session, game=game, ply=ply, endgame_class=1)
 
         rows = await query_endgame_entry_rows(
             db_session,
@@ -245,14 +230,10 @@ class TestQueryEndgameEntryRows:
         game = await _seed_game(db_session)
         # 7 rook endgame positions (endgame_class=1)
         for ply in range(20, 27):
-            await _seed_game_position(
-                db_session, game=game, ply=ply, material_signature="KR_KR", endgame_class=1
-            )
+            await _seed_game_position(db_session, game=game, ply=ply, endgame_class=1)
         # 6 pawn endgame positions (endgame_class=3)
         for ply in range(30, 36):
-            await _seed_game_position(
-                db_session, game=game, ply=ply, material_signature="KPP_KP", endgame_class=3
-            )
+            await _seed_game_position(db_session, game=game, ply=ply, endgame_class=3)
 
         rows = await query_endgame_entry_rows(
             db_session,
@@ -281,7 +262,6 @@ class TestQueryEndgameEntryRows:
             db_session,
             game=game,
             ply=20,
-            material_signature="KR_KR",
             endgame_class=1,
             eval_cp=200,
         )
@@ -290,7 +270,6 @@ class TestQueryEndgameEntryRows:
                 db_session,
                 game=game,
                 ply=ply,
-                material_signature="KR_KR",
                 endgame_class=1,
                 eval_cp=50,  # different from entry ply
             )
@@ -323,9 +302,7 @@ class TestQueryEndgameEntryRows:
 
         for game in [blitz_game, rapid_game]:
             for ply in range(30, 30 + ENDGAME_PLY_THRESHOLD):
-                await _seed_game_position(
-                    db_session, game=game, ply=ply, material_signature="KR_KR", endgame_class=1
-                )
+                await _seed_game_position(db_session, game=game, ply=ply, endgame_class=1)
 
         rows = await query_endgame_entry_rows(
             db_session,
@@ -350,9 +327,7 @@ class TestQueryEndgameEntryRows:
 
         for game in [chesscom_game, lichess_game]:
             for ply in range(30, 30 + ENDGAME_PLY_THRESHOLD):
-                await _seed_game_position(
-                    db_session, game=game, ply=ply, material_signature="KR_KR", endgame_class=1
-                )
+                await _seed_game_position(db_session, game=game, ply=ply, endgame_class=1)
 
         rows = await query_endgame_entry_rows(
             db_session,
@@ -386,7 +361,6 @@ class TestQueryEndgameEntryRowsNextSpanEval:
                 db_session,
                 game=game,
                 ply=ply,
-                material_signature="KR_KR",
                 endgame_class=1,
                 eval_cp=50,
             )
@@ -420,7 +394,6 @@ class TestQueryEndgameEntryRowsNextSpanEval:
             db_session,
             game=game,
             ply=20,
-            material_signature="KR_KR",
             endgame_class=1,
             eval_cp=150,
         )
@@ -429,7 +402,6 @@ class TestQueryEndgameEntryRowsNextSpanEval:
                 db_session,
                 game=game,
                 ply=ply,
-                material_signature="KR_KR",
                 endgame_class=1,
                 eval_cp=200,
             )
@@ -438,7 +410,6 @@ class TestQueryEndgameEntryRowsNextSpanEval:
             db_session,
             game=game,
             ply=40,
-            material_signature="KPP_KP",
             endgame_class=3,
             eval_cp=-75,
         )
@@ -447,7 +418,6 @@ class TestQueryEndgameEntryRowsNextSpanEval:
                 db_session,
                 game=game,
                 ply=ply,
-                material_signature="KPP_KP",
                 endgame_class=3,
                 eval_cp=-100,
             )
@@ -489,7 +459,6 @@ class TestQueryEndgameEntryRowsNextSpanEval:
                 db_session,
                 game=game,
                 ply=ply,
-                material_signature="KQ_KQ",
                 endgame_class=4,  # queen
                 eval_cp=50,
             )
@@ -523,7 +492,6 @@ class TestQueryEndgameEntryRowsNextSpanEval:
                 db_session,
                 game=game,
                 ply=ply,
-                material_signature="KR_KR",
                 endgame_class=1,
                 eval_cp=120,
             )
@@ -561,9 +529,7 @@ class TestQueryEndgameGames:
         """query_endgame_games returns Game objects for games with >= threshold rook plies."""
         game = await _seed_game(db_session)
         for ply in range(30, 30 + ENDGAME_PLY_THRESHOLD):
-            await _seed_game_position(
-                db_session, game=game, ply=ply, material_signature="KR_KR", endgame_class=1
-            )
+            await _seed_game_position(db_session, game=game, ply=ply, endgame_class=1)
 
         games, matched_count = await query_endgame_games(
             db_session,
@@ -589,9 +555,7 @@ class TestQueryEndgameGames:
         """Unknown endgame class (not rook/minor_piece/pawn/queen/mixed/pawnless) returns empty."""
         game = await _seed_game(db_session)
         for ply in range(30, 30 + ENDGAME_PLY_THRESHOLD):
-            await _seed_game_position(
-                db_session, game=game, ply=ply, material_signature="KR_KR", endgame_class=1
-            )
+            await _seed_game_position(db_session, game=game, ply=ply, endgame_class=1)
 
         games, matched_count = await query_endgame_games(
             db_session,
@@ -647,23 +611,17 @@ class TestQueryEndgameTimelineRows:
         # Game with rook endgame (class 1)
         game1 = await _seed_game(db_session, played_at=base_dt)
         for ply in range(30, 30 + ENDGAME_PLY_THRESHOLD):
-            await _seed_game_position(
-                db_session, game=game1, ply=ply, material_signature="KR_KR", endgame_class=1
-            )
+            await _seed_game_position(db_session, game=game1, ply=ply, endgame_class=1)
 
         # Game with pawn endgame (class 3)
         game3 = await _seed_game(db_session, played_at=base_dt + datetime.timedelta(days=1))
         for ply in range(30, 30 + ENDGAME_PLY_THRESHOLD):
-            await _seed_game_position(
-                db_session, game=game3, ply=ply, material_signature="KPP_KP", endgame_class=3
-            )
+            await _seed_game_position(db_session, game=game3, ply=ply, endgame_class=3)
 
         # Game with mixed endgame (class 5)
         game5 = await _seed_game(db_session, played_at=base_dt + datetime.timedelta(days=2))
         for ply in range(30, 30 + ENDGAME_PLY_THRESHOLD):
-            await _seed_game_position(
-                db_session, game=game5, ply=ply, material_signature="KRBP_KRP", endgame_class=5
-            )
+            await _seed_game_position(db_session, game=game5, ply=ply, endgame_class=5)
 
         endgame_rows, non_endgame_rows, per_type_rows = await query_endgame_timeline_rows(
             db_session,
@@ -704,9 +662,7 @@ class TestQueryEndgameTimelineRows:
             db_session, played_at=datetime.datetime(2024, 6, 1, tzinfo=datetime.timezone.utc)
         )
         for ply in range(30, 30 + ENDGAME_PLY_THRESHOLD):
-            await _seed_game_position(
-                db_session, game=game, ply=ply, material_signature="KR_KR", endgame_class=1
-            )
+            await _seed_game_position(db_session, game=game, ply=ply, endgame_class=1)
 
         _endgame_rows, _non_endgame_rows, per_type_rows = await query_endgame_timeline_rows(
             db_session,
@@ -739,9 +695,7 @@ class TestQueryEndgameTimelineRows:
         # Game that reaches rook endgame
         endgame_game = await _seed_game(db_session, played_at=base_dt)
         for ply in range(30, 30 + ENDGAME_PLY_THRESHOLD):
-            await _seed_game_position(
-                db_session, game=endgame_game, ply=ply, material_signature="KR_KR", endgame_class=1
-            )
+            await _seed_game_position(db_session, game=endgame_game, ply=ply, endgame_class=1)
 
         # Game that never reaches any endgame class (endgame_class=None for all positions)
         non_eg_game = await _seed_game(db_session, played_at=base_dt + datetime.timedelta(days=1))
@@ -809,9 +763,7 @@ class TestQueryEndgameBucketRows:
                 db_session,
                 game=game,
                 ply=ply,
-                material_signature="KR_KR",
                 endgame_class=1,
-                material_imbalance=0,
             )
 
         rows = await query_endgame_bucket_rows(
@@ -840,7 +792,6 @@ class TestQueryEndgameBucketRows:
                 db_session,
                 game=game,
                 ply=entry_ply + offset,
-                material_signature="KR_KR",
                 endgame_class=1,
                 eval_cp=150,  # conversion-qualifying from white POV
             )
@@ -874,7 +825,6 @@ class TestQueryEndgameBucketRows:
                 db_session,
                 game=game,
                 ply=entry_ply + offset,
-                material_signature="KR_KR",
                 endgame_class=1,
                 eval_cp=-150,  # white is behind → black (user) is ahead by 150 from white POV
             )
@@ -915,9 +865,7 @@ class TestQueryEndgameBucketRows:
                 db_session,
                 game=game_a,
                 ply=ply,
-                material_signature="KR_KR",
                 endgame_class=1,
-                material_imbalance=0,
             )
 
         # Game B: endgame only 2 plies — under the uniform 6-ply threshold.
@@ -928,9 +876,7 @@ class TestQueryEndgameBucketRows:
                 db_session,
                 game=game_b,
                 ply=ply,
-                material_signature="KR_KR",
                 endgame_class=1,
-                material_imbalance=0,
             )
 
         # Game C: never enters endgame (endgame_class=None)
@@ -939,8 +885,6 @@ class TestQueryEndgameBucketRows:
             db_session,
             game=game_c,
             ply=10,
-            piece_count=ENDGAME_PIECE_COUNT_THRESHOLD + 2,
-            material_signature="KQRB_KQRB",
             endgame_class=None,
         )
 
@@ -993,7 +937,6 @@ class TestQueryEndgameBucketRows:
                 db_session,
                 game=game_blitz,
                 ply=ply,
-                material_signature="KR_KR",
                 endgame_class=1,
             )
         game_bullet = await _seed_game(db_session, time_control_bucket="bullet")
@@ -1002,7 +945,6 @@ class TestQueryEndgameBucketRows:
                 db_session,
                 game=game_bullet,
                 ply=ply,
-                material_signature="KR_KR",
                 endgame_class=1,
             )
 
@@ -1033,9 +975,7 @@ class TestQueryEndgameBucketRows:
                 db_session,
                 game=game_a,
                 ply=ply,
-                material_signature="KR_KR",
                 endgame_class=1,
-                material_imbalance=0,
             )
 
         game_b = await _seed_game(db_session, result="1/2-1/2", user_color="white")
@@ -1044,9 +984,7 @@ class TestQueryEndgameBucketRows:
                 db_session,
                 game=game_b,
                 ply=ply,
-                material_signature="KR_KR",
                 endgame_class=1,
-                material_imbalance=0,
             )
 
         bucket_rows = await query_endgame_bucket_rows(

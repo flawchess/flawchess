@@ -2,7 +2,7 @@
 
 import datetime
 from collections.abc import Sequence
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from sqlalchemy import case
 from sqlalchemy.sql.elements import ColumnElement
@@ -85,7 +85,16 @@ def apply_game_filters(
     opponent_gap_max: int | None = None,
     flaw_severity: Sequence[str] | None = None,
     flaw_tags: Sequence[str] | None = None,
+    tactic_families: Sequence[str] | None = None,
     user_id: int | None = None,
+    # Quick 260621-sm8 follow-up: neutral default is "either" (was "allowed"). With
+    # the tactic EXISTS now gated on _tactic_controls_active (orientation alone can
+    # activate it), an "allowed" default would make every non-tactic caller
+    # (endgame/openings/stats, which pass no orientation) wrongly filter to games
+    # with an allowed tactic. "either" matches build_flaw_filter_clauses' default.
+    orientation: Literal["either", "missed", "allowed"] = "either",
+    min_tactic_depth: int | None = None,
+    max_tactic_depth: int | None = None,
 ) -> Any:
     """Apply standard game filter WHERE clauses to a SELECT statement.
 
@@ -117,9 +126,32 @@ def apply_game_filters(
                          OR within family, AND across families. Phase tags are ignored.
                          None (default) leaves the statement unchanged.
                          Requires user_id when either flaw_severity or flaw_tags is set.
+        tactic_families: When set (e.g. ["fork", "skewer"]), restrict to games
+                         containing >=1 flaw whose tactic motif int (in the orientation's
+                         column) is in the union of FAMILY_TO_MOTIF_INTS values for the
+                         selected families. Unknown family keys yield no ints (no-op),
+                         never raw SQL (T-126-02). None (default) leaves the statement
+                         unchanged. Uses lazy import of FAMILY_TO_MOTIF_INTS from
+                         library_repository to avoid a circular import (Phase 126 D-06).
         user_id: The authenticated user's id — required when flaw_severity or
                          flaw_tags is set, to scope the EXISTS subquery's game_flaws read
                          (T-108-07). Ignored otherwise.
+        orientation: Which tactic column set to query (Phase 128/129).
+                         "either" (default) → OR across both column sets — the neutral
+                         default (Quick 260621-sm8; was "allowed", changed so non-tactic
+                         callers don't accidentally filter once the tactic EXISTS is
+                         gated on _tactic_controls_active).
+                         "allowed" → allowed_tactic_motif only.
+                         "missed"  → missed_tactic_motif only.
+                         FAMILY_TO_MOTIF_INTS is reused unchanged for all orientations.
+                         Orientation is a closed Literal enum — never raw column-name
+                         interpolation (T-128-05/T-129-01).
+        min_tactic_depth / max_tactic_depth: Inclusive depth-range bounds (0-based
+                         ply) on the active orientation's depth column (Quick
+                         260620-l5k / Phase 130). Each side optional; None = unbounded
+                         that side. Mates obey the range too (the Phase 129 D-04
+                         exemption was removed). Note: this site does NOT gate on
+                         confidence (Pitfall 3 preserved).
 
     Notes:
         When either gap bound is set, games with missing white/black ratings
@@ -169,25 +201,56 @@ def apply_game_filters(
             stmt = stmt.where(gap >= opponent_gap_min)
         if opponent_gap_max is not None:
             stmt = stmt.where(gap <= opponent_gap_max)
-    if flaw_severity or flaw_tags:
+    # Flaw + tactic filters form ONE family: a single game_flaws row must satisfy
+    # ALL selected conditions (severity, context tags, AND tactic motif/orientation/
+    # depth) together. flaw_exists_from_table ANDs the whole build_flaw_filter_clauses
+    # list onto one row, the same single-row AND semantics the Flaws list uses
+    # (query_flaws).
+    #
+    # BUG FIXED (Quick 260621): previously this emitted TWO separate correlated
+    # EXISTS — one for severity/context tags, one for tactics — so a game matched
+    # when one flaw was a depth-1-2 fork and a DIFFERENT flaw was low-clock. The
+    # tactic and context filters were ANDed at the game level, not the flaw-row
+    # level, diverging from the Flaws tab. A single EXISTS over the full clause list
+    # restores the expected "one flaw is BOTH a fork AND low-clock" semantics.
+    #
+    # Lazy import avoids a query_utils <-> library_repository import cycle
+    # (mirrors endgame_repository's in-function import pattern).
+    from app.repositories.library_repository import (
+        FAMILY_TO_MOTIF_INTS,
+        _tactic_controls_active,
+        flaw_exists_from_table,
+    )
+    from app.services.flaws_service import FlawSeverity, FlawTag
+
+    # The tactic EXISTS must apply whenever ANY tactic control is active (family,
+    # orientation, OR depth) — mirroring build_flaw_filter_clauses for the Flaws
+    # list. resolved_families drop unknown keys (no-op, T-126-02), so an unknown-only
+    # selection with default orientation/depth does not trigger a filter.
+    families_seq: Sequence[str] = tactic_families or ()
+    resolved_families: Sequence[str] = [fam for fam in families_seq if fam in FAMILY_TO_MOTIF_INTS]
+    tactic_active = _tactic_controls_active(
+        resolved_families, orientation, min_tactic_depth, max_tactic_depth
+    )
+    if flaw_severity or flaw_tags or tactic_active:
         if user_id is None:
             # Message intentionally omits variable values to preserve Sentry grouping
             # (T-108-07: scoping requires an authenticated user_id).
-            raise ValueError(
-                "flaw_severity or flaw_tags filter requires user_id for EXISTS scoping"
-            )
-        # Lazy import avoids a query_utils <-> library_repository import cycle
-        # (mirrors endgame_repository's in-function import pattern).
-        from app.repositories.library_repository import flaw_exists_from_table
-        from app.services.flaws_service import FlawSeverity, FlawTag
-
+            raise ValueError("flaw/tactic filter requires user_id for EXISTS scoping")
         # Callers pass validated Literal values; cast narrows Sequence[str].
         severities = cast(Sequence[FlawSeverity], flaw_severity or [])
         tag_list = cast(Sequence[FlawTag], flaw_tags or [])
-        exists_pred = flaw_exists_from_table(user_id=user_id, severity=severities, tags=tag_list)
-        # flaw_exists_from_table returns true() when both lists are empty, which
-        # means no restriction is added — this path is only reached when at least
-        # one of flaw_severity / flaw_tags is non-empty, so exists_pred is always
-        # a real EXISTS predicate here (not true()).
+        exists_pred = flaw_exists_from_table(
+            user_id=user_id,
+            severity=severities,
+            tags=tag_list,
+            tactic_families=families_seq,
+            orientation=orientation,
+            min_tactic_depth=min_tactic_depth,
+            max_tactic_depth=max_tactic_depth,
+        )
+        # flaw_exists_from_table returns true() only when no clause is produced;
+        # this path is reached only when a filter is active, so exists_pred is a
+        # real EXISTS predicate here (not true()).
         stmt = stmt.where(exists_pred)
     return stmt

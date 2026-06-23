@@ -59,27 +59,101 @@ export const EVAL_MARKER_FILTER_OUTLINE = 'oklch(1 0 0)';
 // scrub slider's `bg-foreground` thumb, so cursor and knob read as one control.
 export const EVAL_CHART_CURSOR = 'oklch(0.985 0 0)';
 
-// Tag families (flaw chip color-by-family, Phase 107)
-export const FAM_TEMPO = 'oklch(0.70 0.17 290)';
-export const FAM_TEMPO_BG = 'oklch(0.70 0.17 290 / 0.15)';
-// FAM_TEMPO_LOW_CLOCK / FAM_TEMPO_HASTY / FAM_TEMPO_UNRUSHED / FAM_TEMPO_UNMEASURED
-// were used by FlawTagDistribution (deleted Phase 115 D-02). Removed to keep knip clean.
-export const FAM_OPPORTUNITY = 'oklch(0.72 0.12 200)';
-export const FAM_OPPORTUNITY_BG = 'oklch(0.72 0.12 200 / 0.15)';
-export const FAM_IMPACT = 'oklch(0.66 0.18 330)';
-export const FAM_IMPACT_BG = 'oklch(0.66 0.18 330 / 0.15)';
-// Three additional families surfaced in the Flaw-Stats you-vs-opponent comparison
-// grid and (Phase, Quick 260612-fow) the Flaws tag-filter panel: Severity, Phase,
-// Combos. Hues chosen to stay clear of the red/green/blue semantic zone colors
-// (25 / 145 / 260) so a family tint never reads as a danger/success verdict.
-// FAM_PHASE is teal (not gold) so it never collides with the yellow inaccuracy
-// severity in the tag-filter palette.
-export const FAM_SEVERITY = 'oklch(0.70 0.16 55)'; // amber
-export const FAM_SEVERITY_BG = 'oklch(0.70 0.16 55 / 0.15)';
-export const FAM_PHASE = 'oklch(0.72 0.13 170)'; // teal
-export const FAM_PHASE_BG = 'oklch(0.72 0.13 170 / 0.15)';
-export const FAM_COMBO = 'oklch(0.68 0.14 350)'; // rose
-export const FAM_COMBO_BG = 'oklch(0.68 0.14 350 / 0.15)';
+// Tag families (flaw chip color-by-family, Phase 107).
+// Phase 126 UAT: every flaw family now renders in a single neutral light grey
+// (the same grey as the white-ahead eval-chart area) so only the new tactic-motif
+// families (TAC_* below) carry distinct hue and stand out. The per-family constant
+// names are kept (each family still has its own constant) — only the values changed
+// to grey. This applies everywhere FAM_* is consumed: the tag chips, the Tags/eval
+// tooltips, the you-vs-opponent Flaw Comparison grid, and the Flaws filter panel.
+const FAM_NEUTRAL = EVAL_CHART_AREA_WHITE_AHEAD; // 'oklch(0.78 0 0)'
+const FAM_NEUTRAL_BG = 'oklch(0.78 0 0 / 0.15)';
+export const FAM_TEMPO = FAM_NEUTRAL;
+export const FAM_TEMPO_BG = FAM_NEUTRAL_BG;
+export const FAM_OPPORTUNITY = FAM_NEUTRAL;
+export const FAM_OPPORTUNITY_BG = FAM_NEUTRAL_BG;
+export const FAM_IMPACT = FAM_NEUTRAL;
+export const FAM_IMPACT_BG = FAM_NEUTRAL_BG;
+export const FAM_SEVERITY = FAM_NEUTRAL;
+export const FAM_SEVERITY_BG = FAM_NEUTRAL_BG;
+export const FAM_PHASE = FAM_NEUTRAL;
+export const FAM_PHASE_BG = FAM_NEUTRAL_BG;
+export const FAM_COMBO = FAM_NEUTRAL;
+export const FAM_COMBO_BG = FAM_NEUTRAL_BG;
+
+// Tactic motif family colors (Phase 126, updated Phase 129).
+// Phase 126 UAT: every tactic family renders in a single blue (indigo) so all
+// tactic families read as one consistent group. The per-family constant names
+// exist only so consumers key by family name — the values all alias the shared
+// TAC_BLUE. Do not introduce distinct hues; the single-blue convention is
+// intentional. Phase 129: rekey to the 10-family taxonomy (plan 129-04 contract).
+// Cross-stack contract: TAC_* names match the backend FAMILY_TO_MOTIF_INTS keys.
+const TAC_BLUE = 'oklch(0.68 0.16 240)'; // indigo
+const TAC_BLUE_BG = 'oklch(0.68 0.16 240 / 0.15)';
+export const TAC_FORK = TAC_BLUE;
+export const TAC_FORK_BG = TAC_BLUE_BG;
+export const TAC_SKEWER = TAC_BLUE;
+export const TAC_SKEWER_BG = TAC_BLUE_BG;
+export const TAC_PIN = TAC_BLUE;
+export const TAC_PIN_BG = TAC_BLUE_BG;
+export const TAC_X_RAY = TAC_BLUE;
+export const TAC_X_RAY_BG = TAC_BLUE_BG;
+export const TAC_DOUBLE_CHECK = TAC_BLUE;
+export const TAC_DOUBLE_CHECK_BG = TAC_BLUE_BG;
+export const TAC_DISCOVERED_CHECK = TAC_BLUE;
+export const TAC_DISCOVERED_CHECK_BG = TAC_BLUE_BG;
+export const TAC_DISCOVERED_ATTACK = TAC_BLUE;
+export const TAC_DISCOVERED_ATTACK_BG = TAC_BLUE_BG;
+export const TAC_TRAPPED_PIECE = TAC_BLUE;
+export const TAC_TRAPPED_PIECE_BG = TAC_BLUE_BG;
+export const TAC_HANGING = TAC_BLUE;
+export const TAC_HANGING_BG = TAC_BLUE_BG;
+export const TAC_MATE = TAC_BLUE;
+export const TAC_MATE_BG = TAC_BLUE_BG;
+// Tier-3 "Advanced" families (Quick 260623-6pd). Same single-blue convention as above.
+export const TAC_DEFLECTION = TAC_BLUE;
+export const TAC_DEFLECTION_BG = TAC_BLUE_BG;
+export const TAC_INTERMEZZO = TAC_BLUE;
+export const TAC_INTERMEZZO_BG = TAC_BLUE_BG;
+export const TAC_INTERFERENCE = TAC_BLUE;
+export const TAC_INTERFERENCE_BG = TAC_BLUE_BG;
+export const TAC_CLEARANCE = TAC_BLUE;
+export const TAC_CLEARANCE_BG = TAC_BLUE_BG;
+export const TAC_CAPTURING_DEFENDER = TAC_BLUE;
+export const TAC_CAPTURING_DEFENDER_BG = TAC_BLUE_BG;
+// Phase 133 (plan 133-02): attraction + sacrifice unsuppressed. Same single-blue convention.
+export const TAC_ATTRACTION = TAC_BLUE;
+export const TAC_ATTRACTION_BG = TAC_BLUE_BG;
+export const TAC_SACRIFICE = TAC_BLUE;
+export const TAC_SACRIFICE_BG = TAC_BLUE_BG;
+// Move-type families (Quick 260623): en-passant + under-promotion. Same single-blue convention.
+export const TAC_EN_PASSANT = TAC_BLUE;
+export const TAC_EN_PASSANT_BG = TAC_BLUE_BG;
+export const TAC_UNDER_PROMOTION = TAC_BLUE;
+export const TAC_UNDER_PROMOTION_BG = TAC_BLUE_BG;
+
+// Orientation-coded tactic chip colors (Games + Flaw card). Missed motifs render
+// in blue, Allowed motifs in a light red, so the two orientations read apart at a
+// glance independent of motif family. Blue is reserved for missed tactics; allowed
+// must never reuse it. Both stay light enough to keep the chip text/border legible
+// on the charcoal card. BG variants end in `/ 0.15)` so the shared HIGHLIGHT_BG
+// helper (alpha 0.15 → 0.3 on hover) still applies.
+export const TAC_MISSED = 'oklch(0.70 0.15 258)'; // light blue (matches TAC_ALLOWED lightness)
+export const TAC_MISSED_BG = 'oklch(0.70 0.15 258 / 0.15)';
+// Allowed motifs render in a light red whose lightness/chroma match TAC_MISSED so the
+// two orientations read as a matched pair (only the hue differs). Used by both the
+// TacticMotifChip and the eval chart tooltip so colors match across surfaces.
+export const TAC_ALLOWED = 'oklch(0.70 0.15 25)'; // light red
+export const TAC_ALLOWED_BG = 'oklch(0.70 0.15 25 / 0.15)';
+export const TAC_ALLOWED_BORDER = 'oklch(0.70 0.15 25 / 0.30)';
+
+// Lighter missed/allowed variants used only for the miniboard depth-number badges,
+// which sit on top of the blue best-move and red severity arrows. The chip-tier
+// lightness (0.70) reads muddy on the same-hue arrow, so the badge numbers are
+// raised to ~0.84 for contrast against the arrow fill (the black outline does the
+// rest). Hue/chroma match TAC_MISSED/TAC_ALLOWED so they stay the same colors.
+export const TAC_MISSED_LABEL = 'oklch(0.84 0.13 258)'; // lighter blue
+export const TAC_ALLOWED_LABEL = 'oklch(0.84 0.13 25)'; // lighter red
 
 // D-05 active-filter ring — applied to TagChip when its tag matches an active
 // useFlawFilterStore filter. Ring only: no fill, bold, or size change. The ring
@@ -203,6 +277,12 @@ export const BULLET_BAR_NEUTRAL = 'oklch(0.85 0 0)';
 // equality `arrow.color === DARK_BLUE` to choose the low-emphasis opacity
 // branch, so DARK_BLUE in arrowColor.ts re-exports this exact string.
 export const ARROW_NEUTRAL = '#6B7280';  // Tailwind gray-500 / matches WDL_BORDER_DRAW
+
+// Engine best-move arrow on the Library miniboards (Game + Flaw cards). Blue with
+// built-in alpha so it reads as a translucent "engine suggestion" pointer — visually
+// secondary to the red flaw-move arrow it sits beside on the Flaw card, and a calm
+// overlay on the scrubbed Game-card board. rgba (not oklch) so the alpha is explicit.
+export const BEST_MOVE_ARROW = 'rgba(59, 130, 246, 0.8)';  // Tailwind blue-500 @ 80%
 
 // Endgame ELO Timeline volume bars (Phase 57.1; rebuilt Phase 87.5).
 // Muted gray with alpha so the

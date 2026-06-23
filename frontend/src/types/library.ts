@@ -29,6 +29,13 @@ export type FlawSeverity = 'inaccuracy' | 'mistake' | 'blunder';
 /** Tempo-family tags — subset of FlawTag (backend TempoTag literal). */
 export type TempoTag = 'low-clock' | 'hasty' | 'unrushed';
 
+/**
+ * Tactic orientation filter (Phase 129 TACUI-06, D-06/D-07).
+ * Mirrors backend TacticOrientation Literal["either","missed","allowed"].
+ * 'either' = OR across both missed+allowed column sets (the default).
+ */
+export type TacticOrientation = 'either' | 'missed' | 'allowed';
+
 /** Analysis state of a game (whether engine evals are present). */
 export type AnalysisState = 'analyzed' | 'no_engine_analysis';
 
@@ -92,11 +99,14 @@ export interface EvalPoint {
   eval_mate: number | null; // signed, white-perspective
   clock_seconds: number | null; // mover's remaining clock after this move; null = no %clk
   move_seconds: number | null;  // time spent on this move (1dp); null when prior clock unknown
+  best_move: string | null;     // engine best move FROM this position (UCI); null when no PV captured
 }
 
 /**
  * One flaw dot for the eval chart (both colors, B/M/I).
  * is_user=true → filled circle (player); is_user=false → hollow circle (opponent).
+ * Phase 128 D-07: both orientation column sets exposed orientation-labeled.
+ * Phase 129 wires the UI toggle to select which orientation to surface in chips.
  */
 export interface FlawMarker {
   ply: number;
@@ -104,6 +114,18 @@ export interface FlawMarker {
   tags: FlawTag[];    // empty for inaccuracies
   is_user: boolean;
   move_san: string | null; // SAN of the flawed move — tooltip move label (null on final position)
+  /** Tactic allowed to flaw-maker's opponent (refutation PV). Null below confidence gate or when DB column is NULL. */
+  allowed_tactic_motif: string | null;
+  /** Confidence for allowed_tactic_motif (0-100). Null when no motif assigned. */
+  allowed_tactic_confidence: number | null;
+  /** 0-based ply depth of the allowed tactic; null when its motif chip is hidden. Display as depth+1. */
+  allowed_tactic_depth: number | null;
+  /** Tactic the flaw-maker missed (the "instead-of" PV). Null below confidence gate or when DB column is NULL. */
+  missed_tactic_motif: string | null;
+  /** Confidence for missed_tactic_motif (0-100). Null when no motif assigned. */
+  missed_tactic_confidence: number | null;
+  /** 0-based ply depth of the missed tactic; null when its motif chip is hidden. Display as depth+1. */
+  missed_tactic_depth: number | null;
 }
 
 /** First ply of middlegame and endgame phases (at most two phase lines). */
@@ -226,6 +248,20 @@ export interface FlawListItem {
   clock_seconds: number | null;
   /** Time spent on the flawed move (1dp); null when prior clock unknown. Plan 260610-vru. */
   move_seconds: number | null;
+  /** Tactic allowed to flaw-maker's opponent (refutation PV, flaw_ply+1). Null below confidence gate. Phase 128 D-07. */
+  allowed_tactic_motif: string | null;
+  /** Confidence for allowed_tactic_motif (0-100). Null when no motif assigned. */
+  allowed_tactic_confidence: number | null;
+  /** 0-based ply depth of the allowed tactic; null when its motif chip is hidden. Display as depth+1. */
+  allowed_tactic_depth: number | null;
+  /** Tactic the flaw-maker missed (the "instead-of" PV, flaw_ply). Null below confidence gate. Phase 128 D-07. */
+  missed_tactic_motif: string | null;
+  /** Confidence for missed_tactic_motif (0-100). Null when no motif assigned. */
+  missed_tactic_confidence: number | null;
+  /** 0-based ply depth of the missed tactic; null when its motif chip is hidden. Display as depth+1. */
+  missed_tactic_depth: number | null;
+  /** Engine best move FROM the pre-flaw position (UCI); null when no PV captured. */
+  best_move: string | null;
 }
 
 /** Response for GET /api/library/flaws — paginated per-flaw list (mirrors LibraryFlawsResponse). */
@@ -263,6 +299,50 @@ export interface FlawBullet {
   zone_hi: number;
   domain: number;
   has_zone: boolean;
+}
+
+// ─── Tactic comparison (GET /api/library/tactic-comparison) ───────────────────
+
+/**
+ * Per-family data for one tactic-motif family row (Phase 126, mirrors backend TacticBullet).
+ *
+ * sign convention: positive delta = you allow MORE tactic motifs than opponents = bad.
+ * delta and CI fields are null when both you_events and opp_events are zero.
+ *
+ * Phase 129: orientation field added to mirror backend schema option A
+ * (TacticBullet.orientation: Literal["missed","allowed"]).
+ */
+export interface TacticBullet {
+  family: string;              // family key e.g. "fork", "skewer" (10-family taxonomy, plan 129-04/05)
+  you_rate: number | null;     // mean tactic allowances per game (player side); null = zero events
+  opp_rate: number | null;     // mean tactic allowances per game (opponent side); null = zero events
+  delta: number | null;        // you_rate - opp_rate; null = both sides zero events
+  ci_low: number | null;       // 95% CI lower bound on delta
+  ci_high: number | null;      // 95% CI upper bound on delta
+  p_value: number | null;      // two-sided p vs H0: delta === 0; null = zero events
+  you_events: number;          // raw event count (player side)
+  opp_events: number;          // raw event count (opponent side)
+  zone_lo: number;             // benchmark Q1 or 0.0 when unavailable
+  zone_hi: number;             // benchmark Q3 or 0.0 when unavailable
+  has_zone: boolean;           // false until tactic benchmark pipeline ships
+  /** Phase 129: orientation tag per bullet (plan 01 schema option A). */
+  orientation: 'missed' | 'allowed';
+}
+
+/**
+ * Response for GET /api/library/tactic-comparison (Phase 126, mirrors backend TacticComparisonResponse).
+ *
+ * bullets: up to 20 entries (10 families × missed/allowed), top-6 families by Missed you_rate
+ *          first then overflow; empty list when below_gate=true.
+ * analyzed_n: analyzed game count after filters.
+ * analyzed_gate: minimum required (mirrors TACTIC_COMPARISON_GATE).
+ * below_gate: true when analyzed_n < analyzed_gate.
+ */
+export interface TacticComparisonResponse {
+  bullets: TacticBullet[];
+  analyzed_n: number;
+  analyzed_gate: number;
+  below_gate: boolean;
 }
 
 /**

@@ -13,34 +13,39 @@ Requirements for the v1.28 milestone. Each maps to exactly one roadmap phase.
 
 The motif detection engine. Pure CPU — reads the already-stored refutation line; no new Stockfish pass.
 
-- [ ] **TACDET-01**: The system detects a tactic-motif set by naming the pattern in the stored refutation line (`game_positions.pv` at `flaw_ply + 1`), reimplementing `ornicar/lichess-puzzler` `cook.py` heuristics in original code (no AGPL source copied). **The exact motif set is finalized during phase discussion** — provisional MVP starting point: `fork`, `pin`, `skewer`, `hanging-piece`, `back-rank` / `mate`, `double-check` (the cheap, reliable Tier-1 + mate/back-rank set per the architecture note).
-- [ ] **TACDET-02**: A flawed move is tagged with at most one `allowed` motif, chosen by a fixed motif **priority order** when the refutation line contains several (the order defines the card's wording; Q-010).
-- [ ] **TACDET-03**: The detector is **precision-first** — it tags only when confidence is high and leaves `tactic_motif` NULL otherwise (a false tag biases the you-vs-opponent rate comparison), validated against a hand-labeled per-motif fixture set drawn from our own prod flaws (Q-011).
-- [ ] **TACDET-04**: Motif detection runs inside the single classify path — `classify_game_flaws` (eval-drain) and `backfill_flaws.py` (recompute) — for both the player's and the opponent's flaws, with no second engine evaluation.
+- [x] **TACDET-01**: The system detects a tactic-motif set by naming the pattern in the stored refutation line (`game_positions.pv` at `flaw_ply + 1`), reimplementing `ornicar/lichess-puzzler` `cook.py` heuristics in original code (no AGPL source copied). **The exact motif set is finalized during phase discussion** — provisional MVP starting point: `fork`, `pin`, `skewer`, `hanging-piece`, `back-rank` / `mate`, `double-check` (the cheap, reliable Tier-1 + mate/back-rank set per the architecture note).
+- [x] **TACDET-02**: A flawed move is tagged with at most one `allowed` motif, chosen by a fixed motif **priority order** when the refutation line contains several (the order defines the card's wording; Q-010).
+- [x] **TACDET-03**: The detector is **precision-first** — it tags only when confidence is high and leaves `tactic_motif` NULL otherwise (a false tag biases the you-vs-opponent rate comparison), validated against a hand-labeled per-motif fixture set drawn from our own prod flaws (Q-011).
+- [x] **TACDET-04**: Motif detection runs inside the single classify path — `classify_game_flaws` (eval-drain) and `backfill_flaws.py` (recompute) — for both the player's and the opponent's flaws, with no second engine evaluation.
 
 ### Storage
 
 The materialized columns on `game_flaws`.
 
-- [ ] **TACSCH-01**: `game_flaws` gains a nullable `tactic_motif` SmallInteger enum column (at most one motif per flaw; not a bitmask, not a join table), written at classify time (migration).
-- [ ] **TACSCH-02**: `game_flaws` gains a nullable `tactic_piece` SmallInteger column (python-chess PieceType) captured broadly with a per-motif semantic (fork=attacker, hanging=victim, pin/skewer=line piece, mate=mating piece; ambiguous cases NULL; Q-012). Stored now; piece-level UI deferred.
-- [ ] **TACSCH-03**: Existing `game_flaws` rows are backfilled with motif + piece for all self-eval'd games (those with `full_evals_completed_at` set, ~131k); lichess-eval-only games (no full eval, ~13.6k) keep `tactic_motif = NULL` until full-eval'd via the existing tier-3 idle fleet (no bespoke tooling).
+- [x] **TACSCH-01**: `game_flaws` gains a nullable `tactic_motif` SmallInteger enum column (at most one motif per flaw; not a bitmask, not a join table), written at classify time (migration).
+- [x] **TACSCH-02**: `game_flaws` gains a nullable `tactic_piece` SmallInteger column (python-chess PieceType) captured broadly with a per-motif semantic (fork=attacker, hanging=victim, pin/skewer=line piece, mate=mating piece; ambiguous cases NULL; Q-012). Stored now; piece-level UI deferred.
+- [x] **TACSCH-03**: Existing `game_flaws` rows are backfilled with motif + piece for all self-eval'd games (those with `full_evals_completed_at` set, ~131k); lichess-eval-only games (no full eval, ~13.6k) keep `tactic_motif = NULL` until full-eval'd via the existing tier-3 idle fleet (no bespoke tooling).
 
 ### Comparison Stats
 
 The you-vs-opponent aggregation.
 
-- [ ] **TACCMP-01**: A backend endpoint returns the player's tactic-motif frequencies vs their opponents' as comparable **rates** (normalized per game / per 100 blunders, not raw counts), with the player/opponent split derived at query time via the existing `is_opponent_expr(ply, games.user_color)` helper (no `is_opponent` column).
-- [ ] **TACCMP-02**: Each motif comparison carries a significance verdict computed with the project's existing Wilson-based chess-score significance utility (no parallel test invented), with a section-level sample gate below which the comparison is withheld.
-- [ ] **TACCMP-03**: The comparison honors all existing game filters (time control, platform, rated, opponent type, recency, color) and severity, consistent with the other Library flaw surfaces.
+- [x] **TACCMP-01**: A backend endpoint returns the player's tactic-motif frequencies vs their opponents' as comparable **rates** (normalized per game / per 100 blunders, not raw counts), with the player/opponent split derived at query time via the existing `is_opponent_expr(ply, games.user_color)` helper (no `is_opponent` column).
+- [x] **TACCMP-02**: Each motif comparison carries a significance verdict computed with the project's existing Wilson-based chess-score significance utility (no parallel test invented), with a section-level sample gate below which the comparison is withheld.
+- [x] **TACCMP-03**: The comparison honors all existing game filters (time control, platform, rated, opponent type, recency, color) and severity, consistent with the other Library flaw surfaces.
 
 ### Frontend
 
 The user-facing surface. Motif-level only in v1.28 (piece-level deferred).
 
-- [ ] **TACUI-01**: Each flaw card displays its `allowed` motif as a family-colored chip with a definition popover, consistent with the shipped flaw-tag taxonomy chip pattern.
-- [ ] **TACUI-02**: A you-vs-opponent **motif** comparison surface (reusing the v1.25 `MiniBulletChart` grid pattern: measure + CI + benchmark zone where available) with per-motif tooltips disclosing definition, sign convention, and the filter interaction.
-- [ ] **TACUI-03**: The motif chips and comparison surface render correctly on mobile (responsive at 375px) with `data-testid` + ARIA parity, matching the project's browser-automation rules.
+- [x] **TACUI-01**: Each flaw card displays its `allowed` motif as a family-colored chip with a definition popover, consistent with the shipped flaw-tag taxonomy chip pattern.
+- [x] **TACUI-02**: A you-vs-opponent **motif** comparison surface (reusing the v1.25 `MiniBulletChart` grid pattern: measure + CI + benchmark zone where available) with per-motif tooltips disclosing definition, sign convention, and the filter interaction.
+- [x] **TACUI-03**: The motif chips and comparison surface render correctly on mobile (responsive at 375px) with `data-testid` + ARIA parity, matching the project's browser-automation rules.
+- [x] **TACUI-04** (Phase 129): A depth filter param (`max_tactic_depth`, half-moves) and a 3-value `Literal["either","missed","allowed"]` orientation are supported at both flaw filter sites (`apply_game_filters`, `build_flaw_filter_clauses`); "either" = OR across both column sets; forced mates are exempt from the depth bound. (D-04/D-05/D-08)
+- [x] **TACUI-05** (Phase 129): The tactic-comparison endpoint returns both a missed and an allowed rate (bullet) per family, with families ranked top-6 by the Missed orientation's `you_rate`; the router exposes no orientation param (grid shows both). (D-13/D-14)
+- [x] **TACUI-06** (Phase 129): The Flaws-tab filter offers a Tactic Difficulty depth control (Beginner/Intermediate/Advanced presets + single-handle slider, always-on Intermediate default) and an Either/Missed/Allowed orientation toggle (Either default), desktop + mobile, with depth/orientation in the flaw-list query key. (D-01/D-02/D-03/D-06/D-07)
+- [x] **TACUI-07** (Phase 129): Flaw chips carry a `missed:`/`allowed:` text prefix (family color unchanged); both render under Either when present, one under Missed/Allowed; narration is the chip label + shared `TagLegend` (no per-chip popover). (D-10/D-11/D-12)
+- [x] **TACUI-08** (Phase 129): The comparison grid renders two bullet charts per family card (Missed/Allowed), with the top-6-by-Missed families in the main grid and the rest in a collapsible "More Tactics" accordion; the grid has no orientation toggle and is independent of the Flaws-tab filters. (D-09/D-13/D-14)
 
 ## v2 Requirements
 
@@ -75,25 +80,31 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TACDET-01 | Phase 124 | Pending |
-| TACDET-02 | Phase 124 | Pending |
-| TACDET-03 | Phase 124 | Pending |
-| TACDET-04 | Phase 124 | Pending |
-| TACSCH-01 | Phase 124 | Pending |
-| TACSCH-02 | Phase 124 | Pending |
-| TACSCH-03 | Phase 125 | Pending |
-| TACCMP-01 | Phase 126 | Pending |
-| TACCMP-02 | Phase 126 | Pending |
-| TACCMP-03 | Phase 126 | Pending |
-| TACUI-01 | Phase 126 | Pending |
-| TACUI-02 | Phase 126 | Pending |
-| TACUI-03 | Phase 126 | Pending |
+| TACDET-01 | Phase 124 | Complete |
+| TACDET-02 | Phase 124 | Complete |
+| TACDET-03 | Phase 124 | Complete |
+| TACDET-04 | Phase 124 | Complete |
+| TACSCH-01 | Phase 124 | Complete |
+| TACSCH-02 | Phase 124 | Complete |
+| TACSCH-03 | Phase 125 | Complete |
+| TACCMP-01 | Phase 126 | Complete |
+| TACCMP-02 | Phase 126 | Complete |
+| TACCMP-03 | Phase 126 | Complete |
+| TACUI-01 | Phase 126 | Complete |
+| TACUI-02 | Phase 126 | Complete |
+| TACUI-03 | Phase 126 | Complete |
+| TACUI-04 | Phase 129 | Complete |
+| TACUI-05 | Phase 129 | Complete |
+| TACUI-06 | Phase 129 | Complete |
+| TACUI-07 | Phase 129 | Complete |
+| TACUI-08 | Phase 129 | Complete |
 
 **Coverage:**
-- v1 requirements: 13 total
-- Mapped to phases: 13 ✓
+
+- v1 requirements: 18 total
+- Mapped to phases: 18 ✓
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-06-17*
-*Last updated: 2026-06-17 after v1.28 milestone definition*
+*Last updated: 2026-06-20 — added TACUI-04..08 for Phase 129 planning*

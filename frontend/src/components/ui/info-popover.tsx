@@ -1,6 +1,7 @@
 import * as React from "react"
 import { Popover as PopoverPrimitive } from "radix-ui"
 import { HelpCircle } from "lucide-react"
+import type { LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface InfoPopoverProps {
@@ -8,9 +9,11 @@ interface InfoPopoverProps {
   ariaLabel: string
   testId: string
   side?: "top" | "bottom" | "left" | "right"
+  /** Trigger glyph. Defaults to HelpCircle; pass e.g. Tag for the tag legends. */
+  icon?: LucideIcon
 }
 
-function InfoPopover({ children, ariaLabel, testId, side = "top" }: InfoPopoverProps) {
+function InfoPopover({ children, ariaLabel, testId, side = "top", icon: Icon = HelpCircle }: InfoPopoverProps) {
   const [open, setOpen] = React.useState(false)
   const hoverTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -36,7 +39,7 @@ function InfoPopover({ children, ariaLabel, testId, side = "top" }: InfoPopoverP
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
         >
-          <HelpCircle className="h-4 w-4" />
+          <Icon className="h-4 w-4" />
         </span>
       </PopoverPrimitive.Trigger>
       <PopoverPrimitive.Portal>

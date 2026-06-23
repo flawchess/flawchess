@@ -1,0 +1,87 @@
+# Dockerfile for the standalone remote Stockfish eval worker
+# (scripts/remote_eval_worker.py). Unlike the backend Dockerfile this image runs
+# NO database and NO migrations — the worker is a pure HTTP client against the
+# FlawChess API. It only needs the app dependency tree (its imports reach into
+# app.*) plus a Stockfish binary.
+#
+# Stockfish is arch-conditional:
+#   - amd64: the pinned, SHA-256-verified sf_18 prebuilt avx2 release (same binary
+#     as the backend image and bin/install_stockfish.sh).
+#   - arm64: sf_18 has NO prebuilt Linux arm64 release, so we compile it from the
+#     pinned, SHA-256-verified source tarball (ARCH=armv8-dotprod — every Apple
+#     Silicon M1+ supports dotprod). `make build` embeds the NNUE net, so the
+#     resulting binary is self-contained.
+#
+# Keep STOCKFISH_TAG / amd64 asset+SHA in sync with ./Dockerfile and
+# bin/install_stockfish.sh when bumping versions.
+
+# ─── Python deps + project (identical to ./Dockerfile builder stage) ──────────
+FROM python:3.13-slim@sha256:d168b8d9eb761f4d3fe305ebd04aeb7e7f2de0297cec5fb2f8f6403244621664 AS builder
+COPY --from=ghcr.io/astral-sh/uv:0.10.9@sha256:10902f58a1606787602f303954cea099626a4adb02acbac4c69920fe9d278f82 /uv /uvx /bin/
+
+WORKDIR /app
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --locked --no-dev --no-install-project
+
+COPY . /app
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-dev
+
+# ─── Stockfish (arch-conditional: prebuilt on amd64, from-source on arm64) ─────
+FROM python:3.13-slim@sha256:d168b8d9eb761f4d3fe305ebd04aeb7e7f2de0297cec5fb2f8f6403244621664 AS stockfish
+
+# TARGETARCH is provided automatically by BuildKit ("amd64" / "arm64").
+ARG TARGETARCH
+ARG STOCKFISH_TAG=sf_18
+# amd64 prebuilt release (matches ./Dockerfile and bin/install_stockfish.sh).
+ARG STOCKFISH_AMD64_ASSET=stockfish-ubuntu-x86-64-avx2
+ARG STOCKFISH_AMD64_SHA256=536c0c2c0cf06450df0bfb5e876ef0d3119950703a8f143627f990c7b5417964
+# arm64 source tarball (GitHub release archive for the sf_18 tag).
+ARG STOCKFISH_SRC_SHA256=22a195567e3493e7c9ca8bf8fa2339f4ffc876384849ac8a417ff4b919607e7b
+
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends wget ca-certificates; \
+    if [ "$TARGETARCH" = "amd64" ]; then \
+        wget -q "https://github.com/official-stockfish/Stockfish/releases/download/${STOCKFISH_TAG}/${STOCKFISH_AMD64_ASSET}.tar" -O /tmp/stockfish.tar; \
+        echo "${STOCKFISH_AMD64_SHA256}  /tmp/stockfish.tar" | sha256sum -c -; \
+        tar -xf /tmp/stockfish.tar -C /tmp; \
+        mv "/tmp/stockfish/${STOCKFISH_AMD64_ASSET}" /usr/local/bin/stockfish; \
+    elif [ "$TARGETARCH" = "arm64" ]; then \
+        apt-get install -y --no-install-recommends build-essential; \
+        wget -q "https://github.com/official-stockfish/Stockfish/archive/refs/tags/${STOCKFISH_TAG}.tar.gz" -O /tmp/stockfish-src.tar.gz; \
+        echo "${STOCKFISH_SRC_SHA256}  /tmp/stockfish-src.tar.gz" | sha256sum -c -; \
+        tar -xzf /tmp/stockfish-src.tar.gz -C /tmp; \
+        make -C "/tmp/Stockfish-${STOCKFISH_TAG}/src" -j build ARCH=armv8-dotprod; \
+        mv "/tmp/Stockfish-${STOCKFISH_TAG}/src/stockfish" /usr/local/bin/stockfish; \
+    else \
+        echo "Unsupported TARGETARCH: ${TARGETARCH} (need amd64 or arm64)" >&2; \
+        exit 1; \
+    fi; \
+    chmod +x /usr/local/bin/stockfish; \
+    rm -rf /tmp/* /var/lib/apt/lists/*
+
+# ─── Runtime (no build tools, no DB, no migrations entrypoint) ────────────────
+FROM python:3.13-slim@sha256:d168b8d9eb761f4d3fe305ebd04aeb7e7f2de0297cec5fb2f8f6403244621664 AS runtime
+WORKDIR /app
+COPY --from=builder /app /app
+COPY --from=stockfish /usr/local/bin/stockfish /usr/local/bin/stockfish
+ENV PATH="/app/.venv/bin:$PATH"
+ENV STOCKFISH_PATH=/usr/local/bin/stockfish
+# Stream the worker's print() logs to `docker logs` in real time. Without this,
+# Python block-buffers stdout when it isn't a TTY (the Docker case), so log lines
+# never appear until the buffer fills or the process exits.
+ENV PYTHONUNBUFFERED=1
+
+# Stop the container with SIGINT, which the worker already handles as
+# KeyboardInterrupt for a clean EnginePool shutdown + exit 0. `docker stop`
+# defaults to SIGTERM, which the worker (running as PID 1) ignores — Docker then
+# waits out its grace period and SIGKILLs it (exit 137) on every down/restart.
+STOPSIGNAL SIGINT
+
+# Default to the continuous loop against the production API. docker-compose.worker.yml
+# overrides this to inject --workers ${REMOTE_WORKER_COUNT}.
+CMD ["python", "scripts/remote_eval_worker.py"]

@@ -108,8 +108,6 @@ async def _seed_position(
     ply: int,
     full_hash: int,
     endgame_class: int | None = None,
-    material_signature: str | None = None,
-    material_imbalance: int | None = None,
 ) -> GamePosition:
     pos = GamePosition(
         game_id=game_id,
@@ -118,10 +116,6 @@ async def _seed_position(
         full_hash=full_hash,
         white_hash=full_hash + 1,
         black_hash=full_hash + 2,
-        piece_count=2 if endgame_class else None,
-        material_count=1000 if endgame_class else None,
-        material_signature=material_signature,
-        material_imbalance=material_imbalance,
         endgame_class=endgame_class,
     )
     session.add(pos)
@@ -483,8 +477,6 @@ class TestEndgameClassTransition:
                 ply=base_ply + offset,
                 full_hash=100_000 + offset,
                 endgame_class=1,
-                material_signature="KR_KR",
-                material_imbalance=0,
             )
         # Pawn span (endgame_class=3)
         for offset in range(ENDGAME_PLY_THRESHOLD):
@@ -495,8 +487,6 @@ class TestEndgameClassTransition:
                 ply=base_ply + ENDGAME_PLY_THRESHOLD + offset,
                 full_hash=200_000 + offset,
                 endgame_class=3,
-                material_signature="KPP_KP",
-                material_imbalance=100,
             )
         await db_session.commit()
 

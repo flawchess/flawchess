@@ -64,17 +64,6 @@ async def _seed_game_with_endgame(
     from app.models.game_position import GamePosition
     from app.repositories.endgame_repository import ENDGAME_PLY_THRESHOLD
 
-    # Material signatures by class int (for labelling only; endgame_class column is what matters)
-    sig_map = {
-        1: "KR_KR",
-        2: "KB_KN",
-        3: "KPP_KP",
-        4: "KQ_KQ",
-        5: "KRBP_KRP",
-        6: "K_K",
-    }
-    sig = sig_map.get(endgame_class_int, "KR_KR")
-
     game = Game(
         user_id=user_id,
         platform="chess.com",
@@ -102,10 +91,6 @@ async def _seed_game_with_endgame(
             white_hash=hash(f"w-{game.id}-{ply}"),
             black_hash=hash(f"b-{game.id}-{ply}"),
             move_san=None,
-            piece_count=2,
-            material_count=1000,
-            material_signature=sig,
-            material_imbalance=0,
             endgame_class=endgame_class_int,
         )
         session.add(pos)

@@ -5,6 +5,14 @@ Tests that run_backfill (from scripts/backfill_flaws.py):
   (b) A real run materializes the expected rows for an analyzed game
   (c) Re-running is idempotent (same row set, no PK duplicates)
 
+Phase 125 Plan 01 adds TestBackfillTacticColumns (Nyquist Wave 0):
+  (d) After run_backfill, the blunder row has allowed_tactic_motif IS NOT NULL when a
+      PV is present at flaw_ply+1 and the detector fires (PV-fires path).
+  (e) The no-PV control (existing committed_analyzed_game fixture) produces
+      allowed_tactic_motif IS NULL for all rows (no-PV NULL bucket = honest).
+
+Phase 128 Plan 01: renamed tactic_* → allowed_tactic_* columns (D-02).
+
 Uses session-maker injection against the per-run test DB so run_backfill
 never touches a real --db target. The game must have committed data (not
 just a rollback-scoped db_session) since run_backfill opens its own sessions
@@ -26,6 +34,7 @@ from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
 from app.models.user import User
 from app.services.flaws_service import classify_game_flaws
+from app.services.tactic_detector import TACTIC_CONFIDENCE_HIGH, TacticMotifInt
 
 # A real PGN that classify_game_flaws can replay for FEN computation.
 # 10 half-moves = plies 0-9; ply 9 is the final position (no eval).
@@ -43,6 +52,42 @@ _CP_MISTAKE_AFTER = -50
 
 # Shared test user ID — unique enough to avoid FK conflicts with other test files
 _TEST_USER_ID = 108060
+
+# ---------------------------------------------------------------------------
+# Phase 125 tactic-column test constants
+# ---------------------------------------------------------------------------
+
+# Separate user ID for the tactic test so its committed data never interferes
+# with the Phase 108 fixture.
+_TACTIC_TEST_USER_ID = 125010
+
+# FEN-header PGN for the tactic fixture:
+#   - White king on e3, black rook on e2.
+#   - ply 0 (white, even): Kf4 — white king moves to f4.
+#   - ply 1 (black, odd): Re4?? — black rook moves to e4 (hanging piece BLUNDER).
+# FEN at ply 0 (fen_map[0]): 8/6p1/5k2/2p5/8/P1P1K3/1P2r3/8
+# FEN at ply 1 (fen_map[1], fen_before_flaw): 8/6p1/5k2/2p5/5K2/P1P5/1P2r3/8
+# FEN at ply 2 (fen_after_flaw): 8/6p1/5k2/2p5/4rK2/P1P5/1P6/8
+# White king captures on e4 = refutation confirming hanging-piece (D-09 prod fixture).
+_TACTIC_PGN = '[FEN "8/6p1/5k2/2p5/8/P1P1K3/1P2r3/8 w - - 0 1"]\n\n1. Kf4 Re4 *'
+
+# Blunder ply for the tactic game (black's Re4?? is at ply 1).
+_TACTIC_BLUNDER_PLY = 1
+
+# eval_cp values for the tactic game:
+#   positions[0]: black winning (−500) → es_before_for_black ≈ 0.86
+#   positions[1]: white winning (+200) → es_after_for_black  ≈ 0.32
+#   drop ≈ 0.54 ≥ BLUNDER_DROP (0.15) — classifies as blunder ✓
+#   positions[2]: None (final position, no eval).
+_TACTIC_CP_BEFORE_BLUNDER = -500  # eval at positions[0], black winning
+_TACTIC_CP_AFTER_BLUNDER = 200  # eval at positions[1], white winning after Re4??
+
+# Refutation PV at flaw_ply+1 = positions[2].pv:
+# Kxe4 captures the hanging rook.  This PV is a D-09 prod-confirmed fixture
+# from tests/services/test_tactic_detector.py (_HANGING_PIECE_FIXTURES entry 3):
+#   FEN after Re4??: 8/6p1/5k2/2p5/4rK2/P1P5/1P6/8 w - - 0 2
+#   PV: f4e4 f6e6 c3c4 ... → hanging-piece fires (motif=2, confidence=100).
+_TACTIC_REFUTATION_PV = "f4e4 f6e6 c3c4 e6f6 b2b3 f6e6 e4f4 e6f6 a3a4 f6e6 f4g5 e6e5"
 
 
 # ---------------------------------------------------------------------------
@@ -121,13 +166,6 @@ async def committed_analyzed_game(
                 full_hash=ply,
                 white_hash=ply,
                 black_hash=ply,
-                material_count=1000,
-                material_signature="KP_KP",
-                material_imbalance=0,
-                has_opposite_color_bishops=False,
-                piece_count=20,
-                backrank_sparse=False,
-                mixedness=100,
                 endgame_class=None,
                 move_san=None,
             )
@@ -346,4 +384,235 @@ class TestBackfillRealRun:
         assert count_after_first > 0, "Expected rows after first run"
         assert count_after_first == count_after_second, (
             f"Re-run not idempotent: first={count_after_first}, second={count_after_second}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Phase 125 Plan 01: TestBackfillTacticColumns (Nyquist Wave 0 gap closure)
+# ---------------------------------------------------------------------------
+
+
+@pytest_asyncio.fixture
+async def committed_tactic_game(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> AsyncGenerator[tuple[Game, int], None]:
+    """Seed a committed game with a hanging-piece blunder PV for tactic detection.
+
+    The fixture creates:
+    - A 3-position game (plies 0-2) whose PGN starts from a custom FEN.
+    - positions[0].move_san = 'Kf4' (white's move, ply 0).
+    - positions[1].move_san = 'Re4' (black's blunder, ply 1 = _TACTIC_BLUNDER_PLY).
+    - positions[2].pv = _TACTIC_REFUTATION_PV (the refutation at flaw_ply+1).
+    - eval_cp triggers a blunder at ply 1 from black's perspective.
+
+    run_backfill with this game must produce a GameFlaw row at ply 1 with
+    allowed_tactic_motif IS NOT NULL (hanging-piece detector fires on the PV).
+    Phase 128: renamed tactic_* → allowed_tactic_* (D-02).
+
+    Yields (game, blunder_ply). Teardown: deletes committed data.
+    """
+    user_id = _TACTIC_TEST_USER_ID
+    async with session_factory() as session:
+        existing = (
+            (await session.execute(select(User).where(User.id == user_id)))
+            .unique()
+            .scalar_one_or_none()
+        )
+        if existing is None:
+            session.add(
+                User(
+                    id=user_id,
+                    email=f"test-backfill-tactic-{user_id}@example.com",
+                    hashed_password="x",
+                )
+            )
+            await session.flush()
+
+        game = Game(
+            user_id=user_id,
+            platform="lichess",
+            platform_game_id=str(uuid.uuid4()),
+            platform_url="https://lichess.org/tactic-test",
+            pgn=_TACTIC_PGN,
+            result="0-1",
+            user_color="white",
+            time_control_str="600+0",
+            time_control_bucket="blitz",
+            time_control_seconds=600,
+            base_time_seconds=600,
+            increment_seconds=0.0,
+            rated=True,
+            is_computer_game=False,
+        )
+        session.add(game)
+        await session.flush()
+        game_id = game.id
+
+        # 3 positions: plies 0-2.
+        # Ply 2 is the final position (no move_san, no eval, but carries the PV
+        # that the tactic detector reads as positions[blunder_ply + 1].pv).
+        cp_values: list[int | None] = [
+            _TACTIC_CP_BEFORE_BLUNDER,  # ply 0: before white's Kf4, black winning
+            _TACTIC_CP_AFTER_BLUNDER,  # ply 1: after black's Re4??, white winning
+            None,  # ply 2: final position, no eval
+        ]
+        move_sans: list[str | None] = [
+            "Kf4",  # ply 0: white's move
+            "Re4",  # ply 1: black's blunder (flaw move)
+            None,  # ply 2: final position (no move played from here)
+        ]
+        pvs: list[str | None] = [
+            None,  # ply 0: no PV
+            None,  # ply 1: no PV (PV is at flaw_ply+1 = ply 2)
+            _TACTIC_REFUTATION_PV,  # ply 2: PV at flaw_ply+1, consumed by detector
+        ]
+
+        for ply in range(3):
+            pos = GamePosition(
+                user_id=user_id,
+                game_id=game_id,
+                ply=ply,
+                eval_cp=cp_values[ply],
+                eval_mate=None,
+                clock_seconds=None,
+                phase=1,  # middlegame
+                full_hash=ply + 1000,  # offset from Phase 108 fixture to avoid collisions
+                white_hash=ply + 1000,
+                black_hash=ply + 1000,
+                endgame_class=1,  # rook endgame
+                move_san=move_sans[ply],
+                pv=pvs[ply],
+            )
+            session.add(pos)
+
+        await session.commit()
+
+    yield game, _TACTIC_BLUNDER_PLY
+
+    # Teardown: delete committed data to avoid test pollution.
+    async with session_factory() as session:
+        await session.execute(delete(Game).where(Game.id == game_id))
+        await session.commit()
+
+
+class TestBackfillTacticColumns:
+    """Phase 125 Nyquist Wave 0: verify tactic columns are written by run_backfill.
+
+    Two paths:
+    - PV-fires path (Test B): a game seeded with positions[blunder_ply+1].pv AND
+      move_san at blunder_ply produces a GameFlaw row with tactic_motif IS NOT NULL.
+    - No-PV NULL path (Test A): the existing committed_analyzed_game fixture
+      (move_san=None, no pv) produces allowed_tactic_motif IS NULL for all rows.
+    Phase 128: renamed tactic_* → allowed_tactic_* (D-02).
+    """
+
+    @pytest.mark.asyncio
+    async def test_tactic_motif_is_null_when_no_pv(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        committed_analyzed_game: tuple[Game, int, int],
+    ) -> None:
+        """No-PV NULL bucket: no pv seeded → every GameFlaw row has allowed_tactic_motif IS NULL.
+
+        The existing committed_analyzed_game fixture has move_san=None and pv=None on
+        all positions. The _detect_tactic_for_flaw guard (pv is None → short-circuit)
+        must leave allowed_tactic_motif, allowed_tactic_piece, and allowed_tactic_confidence all NULL.
+        This confirms the no-PV NULL bucket is honest, not an error.
+        """
+        from scripts.backfill_flaws import run_backfill
+
+        game, _blunder_ply, _mistake_ply = committed_analyzed_game
+
+        await run_backfill(
+            db="dev",
+            user_id=game.user_id,
+            dry_run=False,
+            limit=None,
+            session_maker=session_factory,
+        )
+
+        async with session_factory() as session:
+            result = await session.execute(
+                select(GameFlaw).where(
+                    GameFlaw.game_id == game.id,
+                    GameFlaw.user_id == game.user_id,
+                )
+            )
+            stored = result.scalars().all()
+
+        assert len(stored) >= 1, "Expected at least one flaw row"
+        for row in stored:
+            # Phase 128: renamed tactic_* → allowed_tactic_* (D-02).
+            assert row.allowed_tactic_motif is None, (
+                f"Expected allowed_tactic_motif IS NULL (no pv), got {row.allowed_tactic_motif} at ply {row.ply}"
+            )
+            assert row.allowed_tactic_piece is None, (
+                f"Expected allowed_tactic_piece IS NULL (no pv), got {row.allowed_tactic_piece} at ply {row.ply}"
+            )
+            assert row.allowed_tactic_confidence is None, (
+                f"Expected allowed_tactic_confidence IS NULL (no pv), got {row.allowed_tactic_confidence} at ply {row.ply}"
+            )
+
+    @pytest.mark.asyncio
+    async def test_tactic_motif_is_not_null_when_pv_fires(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        committed_tactic_game: tuple[Game, int],
+    ) -> None:
+        """PV-fires path: pv + move_san seeded → blunder row has allowed_tactic_motif IS NOT NULL.
+
+        The committed_tactic_game fixture seeds a hanging-piece blunder at ply 1:
+        black plays Re4?? (rook to e4, hanging to white's king on f4).
+        positions[2].pv = the D-09 prod-confirmed refutation PV (f4e4 ...).
+        After run_backfill, the GameFlaw at ply 1 must carry a non-NULL allowed_tactic_motif
+        and allowed_tactic_confidence, confirming the detect path was exercised.
+
+        The control: flaw rows at other plies (if any) keep allowed_tactic_motif NULL if
+        their pv is absent, which preserves the honest NULL semantics.
+
+        Phase 128: renamed tactic_* → allowed_tactic_* (D-02).
+        """
+        from scripts.backfill_flaws import run_backfill
+
+        game, blunder_ply = committed_tactic_game
+
+        await run_backfill(
+            db="dev",
+            user_id=game.user_id,
+            dry_run=False,
+            limit=None,
+            session_maker=session_factory,
+        )
+
+        async with session_factory() as session:
+            result = await session.execute(
+                select(GameFlaw).where(
+                    GameFlaw.game_id == game.id,
+                    GameFlaw.user_id == game.user_id,
+                )
+            )
+            stored = result.scalars().all()
+
+        assert len(stored) >= 1, "Expected at least one flaw row (blunder at ply 1)"
+
+        # Find the blunder row at the tactic blunder ply.
+        blunder_rows = [r for r in stored if r.ply == blunder_ply]
+        assert len(blunder_rows) == 1, (
+            f"Expected exactly one flaw row at ply {blunder_ply}, "
+            f"got {len(blunder_rows)}. All rows: {[(r.ply, r.severity) for r in stored]}"
+        )
+        blunder_row = blunder_rows[0]
+
+        # Strong assertion (WR-01): pin the exact motif + confidence the known
+        # hanging-piece fixture must produce, so a detector regression that fires
+        # the WRONG motif fails loudly instead of passing on a bare not-None check.
+        # Phase 128: renamed tactic_* → allowed_tactic_* (D-02).
+        assert blunder_row.allowed_tactic_motif == TacticMotifInt.HANGING_PIECE, (
+            f"Expected allowed_tactic_motif == HANGING_PIECE ({TacticMotifInt.HANGING_PIECE}) "
+            f"at ply {blunder_ply} (PV-fires path), got {blunder_row.allowed_tactic_motif}. "
+            f"Verify positions[{blunder_ply + 1}].pv and move_san at ply {blunder_ply}."
+        )
+        assert blunder_row.allowed_tactic_confidence == TACTIC_CONFIDENCE_HIGH, (
+            f"Expected allowed_tactic_confidence == {TACTIC_CONFIDENCE_HIGH} at ply "
+            f"{blunder_ply}, got {blunder_row.allowed_tactic_confidence}."
         )
