@@ -1,6 +1,7 @@
 /**
  * Shared metadata for the tactic-motif family comparison bullets (Phase 126, updated
- * Phase 129; tier-3 Advanced families added Quick 260623-6pd → 15 families).
+ * Phase 129; tier-3 Advanced families added Quick 260623-6pd → 15 families; Phase 133
+ * plan 133-02 added attraction + sacrifice → 17 families).
  *
  * Single source of truth consumed by TacticComparisonGrid (family cards + rows),
  * TacticMotifChip (family color + icon), and the FilterPanel tactic-motif filter.
@@ -12,9 +13,9 @@
  *
  * Quick 260623-6pd surfaced the shipped Phase-132 tier-3 motifs (x-ray, deflection,
  * intermezzo, interference, clearance, capturing-defender) under an "Advanced" group.
- * Still-suppressed combinations motifs (sacrifice, attraction, self-interference) belong
- * to no family. Old ?tactic=pin_skewer / discovery / combinations URL params are inert
- * (backend .get(fam, []) no-op; union excludes them).
+ * Phase 133 (plan 133-02) added attraction and sacrifice as Advanced families.
+ * Only self-interference belongs to no family. Old ?tactic=pin_skewer / discovery /
+ * combinations URL params are inert (backend .get(fam, []) no-op; union excludes them).
  */
 
 import type { ComponentType, CSSProperties } from 'react';
@@ -34,6 +35,8 @@ import {
   Split,
   DoorOpen,
   ShieldOff,
+  Target,
+  Gift,
 } from 'lucide-react';
 
 import {
@@ -67,6 +70,10 @@ import {
   TAC_CLEARANCE_BG,
   TAC_CAPTURING_DEFENDER,
   TAC_CAPTURING_DEFENDER_BG,
+  TAC_ATTRACTION,
+  TAC_ATTRACTION_BG,
+  TAC_SACRIFICE,
+  TAC_SACRIFICE_BG,
   ZONE_DANGER,
   ZONE_NEUTRAL,
   ZONE_SUCCESS,
@@ -89,12 +96,12 @@ export type TacticIcon = ComponentType<{
 // ─── Families ─────────────────────────────────────────────────────────────────
 
 /**
- * The 15 tactic family keys — cross-stack contract with backend FAMILY_TO_MOTIF_INTS.
+ * The 17 tactic family keys — cross-stack contract with backend FAMILY_TO_MOTIF_INTS.
  * These strings must equal the backend dict keys string-for-string (plan 129-04).
  * Filter display order (mechanism-grouped, Quick 260620-onv; Advanced added 260623-6pd):
  *   Piece Attacks: fork → pin → skewer → hanging → trapped_piece
  *   Checkmate, Checks & Discoveries: mate → double_check → discovered_check → discovered_attack
- *   Advanced (tier-3): x_ray → deflection → intermezzo → interference → clearance → capturing_defender
+ *   Advanced (tier-3): x_ray → deflection → intermezzo → interference → clearance → capturing_defender → attraction → sacrifice
  */
 export type TacticFamily =
   | 'fork'
@@ -112,7 +119,10 @@ export type TacticFamily =
   | 'intermezzo'
   | 'interference'
   | 'clearance'
-  | 'capturing_defender';
+  | 'capturing_defender'
+  // Phase 133 (plan 133-02): attraction + sacrifice unsuppressed
+  | 'attraction'
+  | 'sacrifice';
 
 export interface TacticFamilyColors {
   /** Icon + chip foreground color. */
@@ -137,6 +147,9 @@ export const TACTIC_FAMILY_COLORS: Record<TacticFamily, TacticFamilyColors> = {
   interference: { color: TAC_INTERFERENCE, bg: TAC_INTERFERENCE_BG },
   clearance: { color: TAC_CLEARANCE, bg: TAC_CLEARANCE_BG },
   capturing_defender: { color: TAC_CAPTURING_DEFENDER, bg: TAC_CAPTURING_DEFENDER_BG },
+  // Phase 133 (plan 133-02): attraction + sacrifice
+  attraction: { color: TAC_ATTRACTION, bg: TAC_ATTRACTION_BG },
+  sacrifice: { color: TAC_SACRIFICE, bg: TAC_SACRIFICE_BG },
 };
 
 export const TACTIC_FAMILY_ICON: Record<TacticFamily, TacticIcon> = {
@@ -155,6 +168,9 @@ export const TACTIC_FAMILY_ICON: Record<TacticFamily, TacticIcon> = {
   interference: Split,
   clearance: DoorOpen,
   capturing_defender: ShieldOff,
+  // Phase 133 (plan 133-02): attraction + sacrifice
+  attraction: Target,
+  sacrifice: Gift,
 };
 
 // ─── Mechanism groups (filter panel, Quick 260620-onv) ─────────────────────────
@@ -197,14 +213,13 @@ export interface TacticFamilyDef {
 }
 
 /**
- * The 15 tactic families in filter display order (mechanism-grouped, Quick 260620-onv;
- * tier-3 Advanced group added Quick 260623-6pd).
+ * The 17 tactic families in filter display order (mechanism-grouped, Quick 260620-onv;
+ * tier-3 Advanced group added Quick 260623-6pd; attraction + sacrifice added Phase 133).
  * Array order doubles as the chip order within each group — the filter panel groups
  * these by `group` preserving this order. The comparison grid resolves families by
  * `.find(f => f.family === ...)` and renders in server order, so it is unaffected by
  * this ordering. The motifs arrays mirror the backend FAMILY_TO_MOTIF_INTS mapping in
- * library_repository.py (plan 129-04 contract). Dropped combinations motif strings
- * (sacrifice, deflection, etc.) belong to no family.
+ * library_repository.py (plan 129-04 contract). Only self-interference belongs to no family.
  */
 export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
   // ── Piece Attacks ──
@@ -345,6 +360,23 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     definition: 'The piece defending a key square or piece is captured to remove that protection.',
     motifs: ['capturing-defender'],
   },
+  // Phase 133 (plan 133-02): attraction + sacrifice unsuppressed, added as Advanced families.
+  {
+    name: 'Attraction',
+    family: 'attraction',
+    group: 'advanced',
+    chipLabel: 'attraction',
+    definition: "An opponent's piece is drawn onto a square where it becomes vulnerable to a follow-up tactic.",
+    motifs: ['attraction'],
+  },
+  {
+    name: 'Sacrifice',
+    family: 'sacrifice',
+    group: 'advanced',
+    chipLabel: 'sacrifice',
+    definition: 'A piece or pawn is given up deliberately to gain a positional or tactical advantage.',
+    motifs: ['sacrifice'],
+  },
 ];
 
 /**
@@ -355,8 +387,7 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
  * lets the synthetic "checkmate" label map to the `mate` family even though it
  * is not a backend motif string (Quick 260620-onv). For single-motif families
  * chipLabel already equals the motif, so the extra key is a harmless no-op.
- * Dropped combinations motif strings (sacrifice, deflection, etc.) map to no family;
- * consumers already guard `family == null`.
+ * Only self-interference maps to no family; consumers already guard `family == null`.
  */
 export const TACTIC_FAMILY_FOR_MOTIF: Record<string, TacticFamily> = Object.fromEntries(
   TACTIC_COMPARISON_FAMILIES.flatMap(({ family, motifs, chipLabel }) =>

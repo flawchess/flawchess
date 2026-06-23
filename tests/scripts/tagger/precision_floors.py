@@ -85,18 +85,22 @@ same-square guard + between-square geometry), and sacrifice (§7 material-diff p
   Motif                  TP    FP    FN   P(train) P(test)  Decision
   -----------------------------------------------------------------------------------------
   attraction              0     0  1603    NaN     NaN      SUPPRESSED — D-03 cutoff: 0 TP on TRAIN
-                                                             after full cook port. Lure+4-move
-                                                             sequence rarely survives Stockfish PV
-                                                             depth limit. Kept in SUPPRESSED_MOTIFS.
+                                                             after Phase 132 cook port. An off-by-one
+                                                             in cond-5 (attacker board was boards[k+2],
+                                                             should be boards[k+3]) produced 0 TP.
+                                                             Fixed in Phase 133; see Phase 133 block.
   x-ray                 225     0   417    1.000   1.000    SHIPPED — exceeds 0.90 TEST. Cook three-
                                                              same-square AND-chain (moves[k-2].to ==
                                                              moves[k-1].to == moves[k].to + between-
                                                              square geometry + non-king recapturer).
                                                              Floor set at 0.93 (~7pp below TRAIN 1.000).
-  sacrifice               0     0  3142    NaN     NaN      SUPPRESSED — structural co-tag issue;
-                                                             material-diff predicate never wins single-
-                                                             winner dispatch (higher-priority motifs
-                                                             always pre-empt). D-02 endorses suppress.
+  sacrifice               0     0  3142    NaN     NaN      SUPPRESSED — 0 TP in Phase 132 because
+                                                             the detector is standalone-precision 1.000
+                                                             but its recall is limited by dispatch order:
+                                                             higher-priority mates, fork, and pin
+                                                             shadow it in ~92% of positions. Fixed in
+                                                             Phase 133 via unsuppress-only (no co-tag
+                                                             needed); see Phase 133 block.
   interference          269     3   327    0.989   0.992    NO REGRESSION from interference logic
   (post-attraction)                                          (detect_interference UNCHANGED). Prior
   (post-sacrifice)                                           measurement (0.985 TRAIN / 0.986 TEST)
@@ -104,6 +108,31 @@ same-square guard + between-square geometry), and sacrifice (§7 material-diff p
                                                              collision fixes. Final measurement after
                                                              all cook ports: 0.989 TRAIN / 0.992 TEST.
                                                              Floor 0.80 still holds with large headroom.
+
+Phase 133 measurement run (2026-06-23, same 11,855-row TRAIN / 5,164-row TEST fixture).
+Detector fixes for attraction (boards[k+3] off-by-one), arabian-mate (cook attacker-of-
+rook-sq knight geometry), boden-mate (cook near-king bishop-only attacker loop), and
+dovetail-mate (cook diagonal-adjacency + escape-square loop, both bugs A and B). Sacrifice
+is unsuppress-only (standalone precision already 1.000; unsuppressed without code change):
+
+  Motif                  TP    FP    FN   P(train) P(test)  Decision
+  -----------------------------------------------------------------------------------------
+  attraction            654     0   949    1.000   ~1.000   SHIPPED — off-by-one fixed (phase 133-01).
+                                                             Floor set at 0.93 (~7pp below TRAIN 1.000).
+  arabian-mate          553     0     0    1.000   ~1.000   SHIPPED — cook attacker-of-rook-sq + (2,2)
+                                                             knight geometry (phase 133-01).
+                                                             Floor set at 0.93 (~7pp below TRAIN 1.000).
+  boden-mate            435     0     2    1.000   ~1.000   SHIPPED — cook near-king bishop-only
+                                                             attacker loop (phase 133-01).
+                                                             Floor set at 0.93 (~7pp below TRAIN 1.000).
+  dovetail-mate         543     0     1    1.000   ~1.000   SHIPPED — cook diagonal-adjacency + escape-
+                                                             square loop (phase 133-01).
+                                                             Floor set at 0.93 (~7pp below TRAIN 1.000).
+  sacrifice             236     0  2906    1.000   ~1.000   SHIPPED — unsuppress-only (phase 133-02).
+                                                             Standalone precision 1.000 / recall 0.075
+                                                             post-dispatch (shadowed by higher-priority
+                                                             mates/fork/pin in ~92% of positions).
+                                                             Floor set at 0.93 (~7pp below TRAIN 1.000).
 
 Measurement notes:
   - discovered-check (1004 TRAIN labels, 397 TEST): fires at P=0.880 train / 0.833 test.
@@ -168,19 +197,6 @@ from __future__ import annotations
 #     tier-3 here are suppressed at query time by _TACTIC_CHIP_CONFIDENCE_MIN.
 SUPPRESSED_MOTIFS: frozenset[str] = frozenset(
     {
-        # Never fires (0 TP, 0 FP): NaN precision — no gate needed. (TRAIN, 11855 rows)
-        "arabian-mate",
-        "boden-mate",
-        "sacrifice",
-        # Only-FP (0 TP, >0 FP): zero precision. Named mate (confidence=100, no lever):
-        "dovetail-mate",  # 0 TP, 23 FP
-        # Phase 132-04: attraction cook AND-chain port → 0 TP on TRAIN (D-03 PV-divergence
-        # cutoff fires). The lure+capture+attack+follow-up 4-move sequence rarely survives
-        # the Stockfish PV depth limit. Changed from "only-FP" to "never fires" under the
-        # strict cook AND-chain. Suppressed via _TACTIC_CHIP_CONFIDENCE_MIN=70.
-        "attraction",
-        # x-ray: Phase 132-04 cook port → 1.000 TRAIN / 1.000 TEST — SHIPPED (removed from here)
-        # capturing-defender: Phase 132-03 cook port → 0.869 TRAIN / 0.903 TEST — SHIPPED (removed)
         # Unvalidated motifs (no lichess theme equivalent) — excluded from measurement.
         "self-interference",
         "double-bishop-mate",
@@ -197,6 +213,9 @@ SUPPRESSED_MOTIFS: frozenset[str] = frozenset(
         # Restricting detect_pin to POV-move result boards (odd PV indices, the cook node set)
         # lifted it from 0.819 to 0.944 TEST / 0.934 TRAIN — clears the 0.90 ship bar. Floor
         # added below; FAMILY_TO_MOTIF_INTS already carries pin (G-01 10-family contract).
+        # Phase 133 (measured 2026-06-23): attraction, sacrifice, arabian-mate, boden-mate,
+        # and dovetail-mate are NO LONGER suppressed — see Phase 133 measurement block above.
+        # Floors added below; FAMILY_TO_MOTIF_INTS + frontend chips added in plan 133-02.
     }
 )
 
@@ -280,4 +299,11 @@ PRECISION_FLOOR: dict[str, float] = {
     # zero-precision regressions while tolerating 1-sample variance. en-passant and
     # under-promotion are in SUPPRESSED_MOTIFS (NaN / n=4 respectively — D-08).
     "promotion": 0.60,  # train 1.000 (1 TP, 0 FP) — thin but structurally correct
+    # --- Phase 133 unsuppressed motifs (measured 2026-06-23, phase 133 cook ports) ---
+    # All five measured at TRAIN 1.000 / 0 FP; floors set at 0.93 (~7pp below, rounded to 0.05).
+    "attraction": 0.93,  # train 1.000 / test ~1.000 (654 TP, 0 FP; phase 133 cook port)
+    "sacrifice": 0.93,  # train 1.000 / test ~1.000 (236 TP, 0 FP; phase 133 unsuppress-only)
+    "arabian-mate": 0.93,  # train 1.000 / test ~1.000 (553 TP, 0 FP; phase 133 cook port)
+    "boden-mate": 0.93,  # train 1.000 / test ~1.000 (435 TP, 0 FP; phase 133 cook port)
+    "dovetail-mate": 0.93,  # train 1.000 / test ~1.000 (543 TP, 0 FP; phase 133 cook port)
 }

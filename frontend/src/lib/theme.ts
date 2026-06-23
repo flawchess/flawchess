@@ -121,6 +121,11 @@ export const TAC_CLEARANCE = TAC_BLUE;
 export const TAC_CLEARANCE_BG = TAC_BLUE_BG;
 export const TAC_CAPTURING_DEFENDER = TAC_BLUE;
 export const TAC_CAPTURING_DEFENDER_BG = TAC_BLUE_BG;
+// Phase 133 (plan 133-02): attraction + sacrifice unsuppressed. Same single-blue convention.
+export const TAC_ATTRACTION = TAC_BLUE;
+export const TAC_ATTRACTION_BG = TAC_BLUE_BG;
+export const TAC_SACRIFICE = TAC_BLUE;
+export const TAC_SACRIFICE_BG = TAC_BLUE_BG;
 
 // Orientation-coded tactic chip colors (Games + Flaw card). Missed motifs render
 // in blue, Allowed motifs in a light red, so the two orientations read apart at a

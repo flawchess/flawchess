@@ -159,11 +159,12 @@ async def _create_test_users(db_session: AsyncSession) -> None:
 
 
 def test_family_mapping_ten_families() -> None:
-    """FAMILY_TO_MOTIF_INTS has the 10 canonical families + 5 tier-3 "Advanced" families.
+    """FAMILY_TO_MOTIF_INTS has the 10 canonical families + 7 tier-3 "Advanced" families = 17.
 
     Quick 260623-6pd surfaced the shipped Phase-132 tier-3 motifs (deflection, intermezzo,
     interference, clearance, capturing_defender) as filterable families, expanding the
-    taxonomy from 10 to 15.
+    taxonomy from 10 to 15. Phase 133 (plan 133-02) added attraction and sacrifice, raising
+    the count from 15 to 17.
     """
     from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
 
@@ -184,25 +185,27 @@ def test_family_mapping_ten_families() -> None:
         "interference",
         "clearance",
         "capturing_defender",
+        # Phase 133 (plan 133-02): attraction + sacrifice unsuppressed
+        "attraction",
+        "sacrifice",
     }
     assert set(FAMILY_TO_MOTIF_INTS.keys()) == expected_keys
 
 
 def test_family_mapping_excludes_suppressed_tier3() -> None:
-    """Still-suppressed tier-3 ints (attraction=10, self-interference=14, sacrifice=17)
-    belong to no family.
+    """Only self-interference (14) remains unmapped among the tier-3 ints.
 
-    The other tier-3 ints (deflection=9, intermezzo=11, interference=13, clearance=15,
-    capturing_defender=16) were surfaced as "Advanced" families in Quick 260623-6pd and
-    ARE now mapped; only the suppressed three (0 TP / no chip data) stay unmapped.
+    attraction (10) and sacrifice (17) were unsuppressed in Phase 133 (plan 133-02) and are
+    now mapped as "Advanced" families. self-interference (14) still has no lichess theme
+    equivalent and 0 TP — it stays unmapped.
     """
     from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
 
-    suppressed_tier3_ints = {10, 14, 17}
+    suppressed_tier3_ints = {14}
     all_mapped_ints = {m for ints in FAMILY_TO_MOTIF_INTS.values() for m in ints}
     overlap = suppressed_tier3_ints & all_mapped_ints
     assert overlap == set(), (
-        f"Suppressed tier-3 ints {overlap} must not appear in any family mapping"
+        f"Still-suppressed tier-3 ints {overlap} must not appear in any family mapping"
     )
 
 
@@ -227,6 +230,9 @@ def test_family_mapping_covers_selected_motifs() -> None:
     assert FAMILY_TO_MOTIF_INTS["interference"] == [13]
     assert FAMILY_TO_MOTIF_INTS["clearance"] == [15]
     assert FAMILY_TO_MOTIF_INTS["capturing_defender"] == [16]
+    # Phase 133 (plan 133-02): attraction + sacrifice unsuppressed
+    assert FAMILY_TO_MOTIF_INTS["attraction"] == [10]
+    assert FAMILY_TO_MOTIF_INTS["sacrifice"] == [17]
 
 
 def test_family_mapping_fork() -> None:
@@ -237,20 +243,21 @@ def test_family_mapping_fork() -> None:
 
 
 def test_family_mapping_produces_overflow() -> None:
-    """With 15 families, the top-6 selection leaves 9 overflow families (G-01 resolved).
+    """With 17 families, the top-6 selection leaves 11 overflow families (G-01 resolved).
 
     This is the data-layer proof that the 'More Tactics' accordion (D-14) is
     now reachable — it was previously blocked because 6 families == top-6 cap.
-    Quick 260623-6pd expanded the taxonomy from 10 to 15 (tier-3 Advanced families).
+    Quick 260623-6pd expanded the taxonomy from 10 to 15 (tier-3 Advanced families);
+    Phase 133 (plan 133-02) added attraction + sacrifice, raising the count to 17.
     """
     from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
 
     total = len(FAMILY_TO_MOTIF_INTS)
-    assert total == 15, f"Expected 15 families; got {total}"
-    # top-6 + 9 overflow
-    assert total > 6, "With 15 families, top-6 selection always produces overflow families"
+    assert total == 17, f"Expected 17 families; got {total}"
+    # top-6 + 11 overflow
+    assert total > 6, "With 17 families, top-6 selection always produces overflow families"
     overflow_count = total - 6
-    assert overflow_count == 9, f"Expected 9 overflow families; got {overflow_count}"
+    assert overflow_count == 11, f"Expected 11 overflow families; got {overflow_count}"
 
 
 # ---------------------------------------------------------------------------

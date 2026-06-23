@@ -2,18 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.28
 milestone_name: Tactic Tagging
-status: Phase 132 shipped — squash-merged to main (d57b5bf6)
-stopped_at: Completed 132-05-PLAN.md
-last_updated: "2026-06-23T03:51:38.354Z"
+status: executing
+stopped_at: Completed 133-02-PLAN.md
+last_updated: "2026-06-23T05:47:08.923Z"
 last_activity: 2026-06-23
+last_activity_desc: Phase 133 complete, transitioned to Phase 999.1
 progress:
-  total_phases: 15
-  completed_phases: 10
-  total_plans: 37
-  completed_plans: 37
-  percent: 67
-current_phase: 132
-current_phase_name: tier-3-tactic-precision-hardening-via-cook-py-predicate-alig
+  total_phases: 16
+  completed_phases: 11
+  total_plans: 39
+  completed_plans: 39
+  percent: 69
+current_phase: 133
+current_phase_name: close-suppressed-tactic-gaps-attraction-fix-sacrifice-unsupp
 ---
 
 # Project State: FlawChess
@@ -22,8 +23,8 @@ current_phase_name: tier-3-tactic-precision-hardening-via-cook-py-predicate-alig
 
 Milestone: v1.28 Tactic Tagging — all active phases (124, 125, 126, 127, 128, 128.1, 129) COMPLETE
 Phase 129 (tactic-filter-ui): VERIFIED — UAT 2/2 passed, G-01 resolved live, VERIFICATION human-verified
-Status: Phase 132 shipped — squash-merged to main (d57b5bf6)
-Last activity: 2026-06-23
+Status: Executing Phase 133
+Last activity: 2026-06-23 — Phase 133 complete, transitioned to Phase 999.1
 
 ## Project Reference
 
@@ -547,11 +548,14 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 - [Phase 132-04]: interference lock holds — P(test)=0.992 after all cook ports (above 0.99 plan target); mid-port 0.986 measurement was transient before sacrifice collision fixes; DO-NOT-EDIT guard added
 - [Phase ?]: Dev re-backfill validated: 26,195/73,318 changed via _detect_tactic_for_flaw kernel; deflection -96%, attraction 0, total tagged 29752->18619
 - [Phase ?]: Final TEST gate: all 7 Phase 132 in-scope motifs shipped or suppressed; interference 0.992 TEST lock holds (>=0.99 target); precision_floors.py reconciled
+- [Phase 133-02]: 5 motifs unsuppressed: attraction/sacrifice/arabian-mate/boden-mate/dovetail-mate. PRECISION_FLOOR=0.93 for all. FAMILY_TO_MOTIF_INTS now 17 keys.
+- [Phase 133-02]: dovetail-mate moved to query-suppressed at fixture level: cook port strict queen-adjacent-to-king check makes TRAIN fixtures dispatch as 'mate'. Remains in PRECISION_FLOOR (1.000 on CC0 harness).
+- [Phase 133-02]: Partition test updated to use _VALIDATED_IDS (not first-fixture label): attraction now displaces other motifs via depth-primary dispatch.
 
 ## Session
 
-**Last session:** 2026-06-23T00:49:53.353Z
-**Stopped at:** Completed 132-05-PLAN.md
+**Last session:** 2026-06-23T07:40:00.000Z
+**Stopped at:** Completed 133-02-PLAN.md
 **Resume file:** None
 | 170 | Flaw-card: open game on flawed ply, remove broken datapoint pulse | 2026-06-19 | fe4910d4 | — |
 | 189 | Move severity into collapsed Context; relabel Orientation->Tactic Missed vs Allowed, Tactic motif->Tactic Type; label severity group | 2026-06-20 | 45b19cb1 | — |

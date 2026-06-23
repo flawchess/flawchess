@@ -1256,6 +1256,13 @@ def detect_arabian_mate(
 ) -> tuple[bool, int | None, int | None]:
     """Arabian mate: king in corner, rook adjacent, knight covers remaining escape squares.
 
+    Cook-faithful geometry (Phase 133 cook arabian-mate port): a pov knight attacks
+    the rook's landing square AND is exactly (rank_diff==2, file_diff==2) from the
+    king. Previously our code checked BB_KNIGHT_ATTACKS[king_sq] (hypothetical knight
+    on the king's square), which missed the canonical f6 knight in the h8-king / g8-rook
+    pattern (f6 is not in BB_KNIGHT_ATTACKS[h8]). Cook instead iterates actual pov
+    attackers of the rook square and checks the (2,2) rank/file distance from the king.
+
     Returns (fired, chess.ROOK, depth) on detection.
     depth = len(moves) - 1 (mates fire at boards[-1], per Pitfall 4).
     """
@@ -1278,16 +1285,22 @@ def detect_arabian_mate(
         return False, None, None
 
     rook_sq = last_move.to_square
-    # Rook must be adjacent to king
+    # Rook must be adjacent to king (distance == 1)
     if rook_sq not in boards[-1].attacks(opp_king_sq):
         return False, None, None
 
-    # A pov knight must be within knight's-move distance of the king
-    knights = boards[-1].pieces(chess.KNIGHT, pov)
-    for knight_sq in knights:
-        knight_attacks = chess.SquareSet(chess.BB_KNIGHT_ATTACKS[opp_king_sq])
-        if knight_sq in knight_attacks:
-            return True, chess.ROOK, len(moves) - 1
+    # Cook's knight check: iterate pov attackers of the rook square; for each,
+    # if it is a knight at exactly (rank_diff==2, file_diff==2) from the king,
+    # the arabian-mate pattern is confirmed. This is different from checking
+    # BB_KNIGHT_ATTACKS[king_sq] (which checks a hypothetical knight ON the king's
+    # square, not the actual pov knight's proximity to the king).
+    for knight_sq in boards[-1].attackers(pov, rook_sq):
+        piece = boards[-1].piece_at(knight_sq)
+        if piece is not None and piece.piece_type == chess.KNIGHT:
+            r_diff = abs(chess.square_rank(knight_sq) - chess.square_rank(opp_king_sq))
+            f_diff = abs(chess.square_file(knight_sq) - chess.square_file(opp_king_sq))
+            if r_diff == 2 and f_diff == 2:
+                return True, chess.ROOK, len(moves) - 1
 
     return False, None, None
 
@@ -1296,6 +1309,13 @@ def detect_boden_or_double_bishop_mate(
     boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
 ) -> tuple[TacticMotif | None, int | None, int | None]:
     """Boden or double-bishop mate: two bishops deliver checkmate.
+
+    Cook-faithful check (Phase 133 cook boden-mate port): for every square within
+    distance < 2 from the opponent king (king + its 8 neighbours), ALL pov attackers
+    of that square must be bishops. Previously our code required both bishops to
+    directly attack the king's square, which failed the canonical boden pattern
+    (e.g. king=c1, bishop=a3 attacks c1, bishop=g6 does NOT attack c1 — only one
+    direct check, so the old filter returned None).
 
     Boden: bishops on opposite sides of king's file.
     Double-bishop: bishops on same side.
@@ -1309,16 +1329,25 @@ def detect_boden_or_double_bishop_mate(
     if opp_king_sq is None:
         return None, None, None
 
-    # Find pov bishops that attack the king
+    # Must have at least two pov bishops on the board
     pov_bishops = list(boards[-1].pieces(chess.BISHOP, pov))
-    attacking_bishops = [sq for sq in pov_bishops if opp_king_sq in boards[-1].attacks(sq)]
-
-    if len(attacking_bishops) < 2:
+    if len(pov_bishops) < 2:
         return None, None, None
 
+    # Cook's check: for all squares within distance < 2 from the king (king + 8
+    # adjacent squares), every pov attacker of each such square must be a bishop.
+    # A non-bishop pov attacker (e.g. queen, rook) means this is not a pure
+    # bishop-mate pattern.
+    for sq in chess.SQUARES:
+        if chess.square_distance(sq, opp_king_sq) < 2:
+            for attacker_sq in boards[-1].attackers(pov, sq):
+                piece = boards[-1].piece_at(attacker_sq)
+                if piece is None or piece.piece_type != chess.BISHOP:
+                    return None, None, None
+
     king_file = chess.square_file(opp_king_sq)
-    b1_file = chess.square_file(attacking_bishops[0])
-    b2_file = chess.square_file(attacking_bishops[1])
+    b1_file = chess.square_file(pov_bishops[0])
+    b2_file = chess.square_file(pov_bishops[1])
     depth = len(moves) - 1
 
     # Boden: bishops on opposite sides of king's file
@@ -1331,7 +1360,15 @@ def detect_boden_or_double_bishop_mate(
 def detect_dovetail_mate(
     boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
 ) -> tuple[bool, int | None, int | None]:
-    """Dovetail (cozio) mate: queen delivers checkmate; king not on edge; all escapes queen-controlled.
+    """Dovetail (cozio) mate: queen diagonally adjacent to king; each escape square
+    is either unattacked or queen-covered-and-empty; king not on edge.
+
+    Cook-faithful predicate (Phase 133 cook dovetail-mate port, fixes inverted adjacency):
+    Bug A — previous code REJECTED when queen was adjacent to king (inverted condition).
+             Cook REQUIRES the queen to be diagonally adjacent (distance==1).
+    Bug B — previous code had no same-file/same-rank guard. FP example: king=f6,
+             queen=h6 (same rank, distance 2) — our code accepted it, cook rejects it.
+    The escape-square loop (cook cond 4) was also missing entirely.
 
     Returns (fired, chess.QUEEN, depth) on detection.
     depth = len(moves) - 1 (mates fire at boards[-1], per Pitfall 4).
@@ -1354,10 +1391,46 @@ def detect_dovetail_mate(
     if king_file in (0, 7) or king_rank in (0, 7):
         return False, None, None
 
-    # Queen must not be adjacent to king (it attacks from distance)
     queen_sq = last_move.to_square
-    if queen_sq in boards[-1].attacks(opp_king_sq):
+
+    # Queen must NOT be on the same file or rank as the king — dovetail adjacency
+    # is diagonal only. Rejects the FP example (king=f6, queen=h6, same rank).
+    if chess.square_file(queen_sq) == chess.square_file(opp_king_sq) or chess.square_rank(
+        queen_sq
+    ) == chess.square_rank(opp_king_sq):
         return False, None, None
+
+    # Queen must be diagonally adjacent to the king (distance == 1).
+    if chess.square_distance(queen_sq, opp_king_sq) > 1:
+        return False, None, None
+
+    # Cook's escape-square loop (cond 4): for each king-adjacent square (except the
+    # queen's own square), verify the position fits the dovetail pattern. The
+    # is_checkmate() guard at top already confirms this is a legal checkmate; this
+    # loop checks whether the PATTERN is specifically dovetail (queen creates the
+    # characteristic "dovetail wing" by diagonally pinning the king's escape squares).
+    #
+    # Two cases that break the dovetail pattern:
+    #   A. attackers == [queen_sq] AND piece_at(sq) is not None:
+    #      Queen is the only pov attacker but the square is occupied. Dovetail
+    #      requires the queen-covered adjacent squares to be empty (king moves into
+    #      queen check) — a piece there disrupts the dovetail geometry.
+    #   B. any other pov attacker(s) exist (not just the queen):
+    #      Non-queen pov pieces covering an adjacent square means other pieces are
+    #      doing the work — not a pure dovetail pattern.
+    #
+    # If no pov pieces cover an adjacent square, the square is blocked by some other
+    # constraint (e.g. opponent's own pieces, board edge effects captured by is_checkmate)
+    # and the dovetail pattern may still hold — continue the loop.
+    for sq in chess.SQUARES:
+        if chess.square_distance(sq, opp_king_sq) != 1 or sq == queen_sq:
+            continue
+        attackers = list(boards[-1].attackers(pov, sq))
+        if attackers == [queen_sq]:
+            if boards[-1].piece_at(sq) is not None:
+                return False, None, None
+        elif attackers:
+            return False, None, None
 
     return True, chess.QUEEN, len(moves) - 1
 
@@ -1505,7 +1578,8 @@ def _attraction_fires_at(
       moves[k+2] = pov's follow-up: lands on square that attacks the attracted square
       moves[k+4] = pov captures on the attracted square (queen/rook branch only)
       boards[k+1] = board BEFORE opponent captures (read attracted piece here)
-      boards[k+2] = board AFTER opponent captures (read pov's attackers here)
+      boards[k+3] = board AFTER pov's follow-up (read pov's attackers here)
+      off-by-one: boards[k+2] should be boards[k+3]; fixed in Phase 133.
     """
     pov_dest = moves[k].to_square
     if k + 2 >= len(moves):
@@ -1529,11 +1603,13 @@ def _attraction_fires_at(
     attracted_to_sq = opp_move.to_square  # == pov_dest
 
     # Conditions 7+8: pov's next move (k+2) lands on a square from which it attacks
-    # the attracted square. boards[k+2] is the board AFTER the opponent captures
-    # (pov is now to move). attackers(pov, attracted_to_sq) gives squares pov attacks.
-    board_k2 = boards[k + 2]
+    # the attracted square. boards[k+3] is the board AFTER pov's follow-up move
+    # (pov's piece has now arrived on its destination, so it appears in attackers).
+    # Phase 133: fixed off-by-one — was boards[k+2] (before pov's follow-up, so pov's
+    # piece was still on origin and never in attackers); now boards[k+3] (after follow-up).
+    board_k3 = boards[k + 3]
     next_pov_move = moves[k + 2]
-    if next_pov_move.to_square not in board_k2.attackers(pov, attracted_to_sq):
+    if next_pov_move.to_square not in board_k3.attackers(pov, attracted_to_sq):
         return None
 
     # Condition 9: KING short-circuit — attraction confirmed immediately.

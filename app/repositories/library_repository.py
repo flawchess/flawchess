@@ -155,8 +155,8 @@ FAMILY_TO_MOTIF_INTS: dict[str, list[int]] = {
     # rewrites lifted these motifs over the 0.90 TEST ship bar; their detectors fire at
     # TACTIC_CONFIDENCE_HIGH (100) so they pass the _TACTIC_CHIP_CONFIDENCE_MIN lever.
     # Surfaced here so they are filterable + counted in the comparison grid, mirroring the
-    # frontend "advanced" TACTIC_GROUPS section. Still-suppressed tier-3 (attraction=10,
-    # self-interference=14, sacrifice=17) map to no family — 0 TP, no chip data.
+    # frontend "advanced" TACTIC_GROUPS section. Phase 133 added attraction (10) and
+    # sacrifice (17) as families; only self-interference (14) remains unmapped.
     "deflection": [
         int(TacticMotifInt.DEFLECTION),
     ],
@@ -171,6 +171,14 @@ FAMILY_TO_MOTIF_INTS: dict[str, list[int]] = {
     ],
     "capturing_defender": [
         int(TacticMotifInt.CAPTURING_DEFENDER),
+    ],
+    # Phase 133 (plan 133-02): attraction and sacrifice unsuppressed and given families.
+    # self-interference (14) remains unmapped (no lichess theme equivalent, 0 TP).
+    "attraction": [
+        int(TacticMotifInt.ATTRACTION),
+    ],
+    "sacrifice": [
+        int(TacticMotifInt.SACRIFICE),
     ],
 }
 
