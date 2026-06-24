@@ -600,8 +600,19 @@ export function OpeningsPage() {
       <FilterPanel
         filters={localFilters}
         onChange={setLocalFilters}
-        onApply={handleDesktopFiltersApply}
         visibleFilters={['timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency']}
+        hideReset
+      />
+    </div>
+  );
+
+  // Pinned filter-panel footer — Reset/Apply stays visible below the scrolling
+  // filters (mirrors the mobile drawer's pinned footer).
+  const desktopFilterPanelFooter = (
+    <div className="px-3 pb-3">
+      <FilterActions
+        onReset={() => setLocalFilters(resetFilterState(localFilters))}
+        onApply={handleDesktopFiltersApply}
       />
     </div>
   );
@@ -826,6 +837,7 @@ export function OpeningsPage() {
               label: 'Filters',
               icon: <SlidersHorizontal className="h-5 w-5" />,
               content: desktopFilterPanelContent,
+              footer: desktopFilterPanelFooter,
               notificationDot: showFiltersHint ? (
                 <span className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5" data-testid="filters-notification-dot">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />

@@ -298,6 +298,7 @@ export function GamesTab() {
   // ── Sidebar panel config (SidebarLayout) ────────────────────────────────────
 
   // Game-metadata panel — staged: edits update pending only; Apply commits.
+  // hideActions: the Reset/Apply row is pinned as the panel footer below.
   const gameFilterPanelContent = (
     <div className="p-4">
       <LibraryFilterPanel
@@ -305,6 +306,17 @@ export function GamesTab() {
         onChange={setPendingFilters}
         onApply={handleDesktopFiltersApply}
         showFlawFilter={false}
+        hideActions
+      />
+    </div>
+  );
+
+  // Pinned game-filter footer — stays visible below the scrolling filters.
+  const gameFilterPanelFooter = (
+    <div className="px-4 pb-4">
+      <FilterActions
+        onReset={() => setPendingFilters(resetFilterState(pendingFilters))}
+        onApply={handleDesktopFiltersApply}
       />
     </div>
   );
@@ -333,6 +345,12 @@ export function GamesTab() {
           setPendingFlawFilter((prev) => ({ ...prev, tacticDepthMin: next.min, tacticDepthMax: next.max }))
         }
       />
+    </div>
+  );
+
+  // Pinned tags footer — stays visible below the scrolling tag filters.
+  const tagsFilterPanelFooter = (
+    <div className="px-4 pb-4">
       <FilterActions
         resetTestId="btn-tags-reset"
         applyTestId="btn-tags-apply"
@@ -348,6 +366,7 @@ export function GamesTab() {
       label: 'Filters',
       icon: <SlidersHorizontal className="h-4 w-4" />,
       content: gameFilterPanelContent,
+      footer: gameFilterPanelFooter,
       notificationDot: gameDotNode,
     },
     {
@@ -355,6 +374,7 @@ export function GamesTab() {
       label: 'Tags',
       icon: <Tags className="h-4 w-4" />,
       content: tagsFilterPanelContent,
+      footer: tagsFilterPanelFooter,
       notificationDot: flawDotNode,
     },
   ];
