@@ -1,6 +1,7 @@
 ---
 id: SEED-065
-status: dormant
+status: promoted
+promoted_to: Phase 135 (v1.28) on 2026-06-24
 planted: 2026-06-24
 planted_during: v1.28 Tactic Tagging
 trigger_when: ready to promote to a phase in the CURRENT milestone (user intends to convert this seed into a phase next). Depends on tactic tags being trustworthy enough to walk through line-by-line — coordinate with SEED-064 (tactic precision hardening); a low-precision tag walked move-by-move is worse than a chip.
