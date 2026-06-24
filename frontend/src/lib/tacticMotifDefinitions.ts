@@ -2,9 +2,10 @@
  * One-sentence definitions for each TacticMotif string (Phase 126).
  *
  * Keys match the TacticMotif Literal strings in app/services/tactic_detector.py.
- * The backend enum has 29 members; en-passant and under-promotion are surfaced as
- * "Advanced" chip families (Quick 260623). Only promotion stays omitted — chip surfacing
- * for it remains out of scope (D-09). Used by TacticMotifChip popover bodies.
+ * The backend enum has 29 members; en-passant, under-promotion, and promotion are
+ * surfaced as "Advanced" chip families (promotion added when D-09 was reversed —
+ * perfect-precision residual motif, sibling of under-promotion). Only self-interference
+ * (14) stays family-less. Used by TacticMotifChip popover bodies.
  *
  * Copy guidelines: WHAT the motif is, no jargon, no em-dashes, no p-values.
  */
@@ -45,4 +46,5 @@ export const TACTIC_MOTIF_DEFINITIONS: Record<string, string> = {
   // Move-type families (Quick 260623): en-passant + under-promotion surfaced as Advanced chips.
   'en-passant': 'A pawn captures an enemy pawn that has just advanced two squares, as if it had moved only one.',
   'under-promotion': 'A pawn promotes to a knight, bishop, or rook instead of a queen to deliver a specific tactic.',
+  promotion: 'A pawn reaches the back rank and promotes to a queen, often deciding the game.',
 };

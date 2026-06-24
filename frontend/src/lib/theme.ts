@@ -131,6 +131,10 @@ export const TAC_EN_PASSANT = TAC_BLUE;
 export const TAC_EN_PASSANT_BG = TAC_BLUE_BG;
 export const TAC_UNDER_PROMOTION = TAC_BLUE;
 export const TAC_UNDER_PROMOTION_BG = TAC_BLUE_BG;
+// Quick: promotion (28) surfaced (was D-09-hidden; perfect-precision residual, sibling of
+// under-promotion). Same single-blue convention.
+export const TAC_PROMOTION = TAC_BLUE;
+export const TAC_PROMOTION_BG = TAC_BLUE_BG;
 
 // Orientation-coded tactic chip colors (Games + Flaw card). Missed motifs render
 // in blue, Allowed motifs in a light red, so the two orientations read apart at a
