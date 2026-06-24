@@ -1,13 +1,12 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useLocation, useSearchParams, Navigate, Link } from 'react-router-dom';
-import { SlidersHorizontal, X, BarChart2Icon, SwordsIcon, Lightbulb, Cpu } from 'lucide-react';
+import { SlidersHorizontal, BarChart2Icon, SwordsIcon, Lightbulb, Cpu } from 'lucide-react';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
 import { LoadError } from '@/components/ui/load-error';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
-import { Tooltip } from '@/components/ui/tooltip';
+import { MobileFilterDrawer } from '@/components/filters/MobileFilterDrawer';
 import {
   Select,
   SelectContent,
@@ -17,7 +16,8 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { InfoPopover } from '@/components/ui/info-popover';
-import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS } from '@/components/filters/FilterPanel';
+import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS, resetFilterState } from '@/components/filters/FilterPanel';
+import { FilterActions } from '@/components/filters/FilterActions';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { EndgameOverallPerformanceSection } from '@/components/charts/EndgameOverallPerformanceSection';
 import { EndgameScoreOverTimeChart } from '@/components/charts/EndgameScoreOverTimeChart';
@@ -928,29 +928,28 @@ export function EndgamesPage() {
             </div>
 
             {/* Filter drawer */}
-            <Drawer open={mobileFiltersOpen} onOpenChange={handleMobileFiltersOpenChange} direction="right">
-              <DrawerContent className="!w-full sm:!w-3/4 !bottom-auto !rounded-bl-xl max-h-[85vh]" data-testid="drawer-filter-sidebar">
-                <DrawerHeader className="flex flex-row items-center justify-between">
-                  <DrawerTitle>Filters</DrawerTitle>
-                  <Tooltip content="Close filters">
-                    <DrawerClose asChild>
-                      <Button variant="ghost" size="icon" aria-label="Close filters" data-testid="btn-close-filter-drawer">
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </DrawerClose>
-                  </Tooltip>
-                </DrawerHeader>
-                <div className="overflow-y-auto flex-1 p-4 space-y-4">
-                  {/* 'playedAs' omitted — see desktop panel note (no-op for endgame queries). */}
-                  <FilterPanel
-                    filters={pendingFilters}
-                    onChange={setPendingFilters}
-                    onApply={handleMobileFiltersApply}
-                    visibleFilters={['timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency']}
-                  />
-                </div>
-              </DrawerContent>
-            </Drawer>
+            <MobileFilterDrawer
+              open={mobileFiltersOpen}
+              onOpenChange={handleMobileFiltersOpenChange}
+              title="Filters"
+              contentTestId="drawer-filter-sidebar"
+              closeTestId="btn-close-filter-drawer"
+              bodyClassName="space-y-4"
+              footer={
+                <FilterActions
+                  onReset={() => setPendingFilters(resetFilterState(pendingFilters))}
+                  onApply={handleMobileFiltersApply}
+                />
+              }
+            >
+              {/* 'playedAs' omitted — see desktop panel note (no-op for endgame queries). */}
+              <FilterPanel
+                filters={pendingFilters}
+                onChange={setPendingFilters}
+                visibleFilters={['timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency']}
+                hideReset
+              />
+            </MobileFilterDrawer>
 
             <TabsContent value="stats" className="mt-4">
               {statisticsContent}

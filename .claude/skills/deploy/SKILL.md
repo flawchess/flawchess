@@ -34,6 +34,7 @@ Run these in parallel and report any blockers before doing anything else:
 git status --porcelain                        # working tree must be clean
 git rev-parse --abbrev-ref HEAD               # should be main
 git fetch origin main production --quiet      # sync refs
+git rev-list --left-right --count main...origin/main  # local-ahead<TAB>origin-ahead — MUST be 0<TAB>0
 git log --oneline origin/production..origin/main  # what's about to ship
 ls -la .prod.env                              # required by bin/deploy.sh (scp'd to server)
 ```
@@ -42,6 +43,7 @@ Blockers and how to resolve:
 
 - **Dirty working tree** — stop and ask the user. Don't stash or commit on their behalf (might destroy in-progress work).
 - **Not on `main`** — switch (`git checkout main && git pull --ff-only`) only if the working tree is clean; otherwise stop.
+- **Local `main` ahead of `origin/main`** (left count > 0) — STOP and resolve before anything else. **The release PR is cut from `origin/main`, so any unpushed local commit is silently excluded from the release** (this shipped a release missing a mobile-auth fix on 2026-06-23: the fix was a local-only commit, the PR built from `origin/main` didn't include it, and it never reached production). Push the local commits first (`git push origin main`, running the relevant gates), then re-run preflight. Only skip the push if the user explicitly says a local commit should NOT ship — then confirm exactly which commits are intended for the release.
 - **`main` behind `origin/main`** — `git pull --ff-only origin main` (resolve autonomously).
 - **`main` and `origin/main` diverged** (non-fast-forward) — see `references/ci-fixes.md` § *Git: divergence and merge conflicts*. Resolve autonomously when the fix is mechanical (rebase clean, conflict only in lockfiles or CHANGELOG); stop and report otherwise.
 - **Nothing to deploy** (`origin/production..origin/main` is empty) — tell the user, stop. Don't open an empty PR.

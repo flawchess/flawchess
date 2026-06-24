@@ -14,6 +14,8 @@ export interface SidebarPanelConfig {
   content: ReactNode;
   /** Extra content rendered next to the panel heading (e.g. info popover) */
   headerExtra?: ReactNode;
+  /** Optional row pinned to the bottom of the panel while the content scrolls. */
+  footer?: ReactNode;
   notificationDot?: ReactNode;
 }
 
@@ -145,16 +147,18 @@ export function SidebarLayout({ panels, activePanel, onActivePanelChange, sideCo
     >
       <div
         ref={panelRef}
-        className="sticky top-0 flex flex-col bg-background/80 backdrop-blur-md border border-border rounded-r-md overflow-y-auto max-h-[calc(100vh-6rem)] pointer-events-auto"
+        className="sticky top-0 flex flex-col bg-background border border-border rounded-r-md overflow-hidden max-h-[calc((100vh-6rem)*0.75)] pointer-events-auto"
         data-testid="sidebar-panel"
       >
-        <div className="px-3 pt-3 pb-1 flex items-center gap-1">
+        <div className="px-3 pt-3 pb-1 flex items-center gap-1 shrink-0">
           <h3 className="text-sm font-semibold" data-testid={`sidebar-panel-${activePanelConfig.id}`}>
             {activePanelConfig.label}
           </h3>
           {activePanelConfig.headerExtra}
         </div>
-        {activePanelConfig.content}
+        {/* Scrollable content area — header above and footer below stay pinned. */}
+        <div className="overflow-y-auto flex-1 min-h-0">{activePanelConfig.content}</div>
+        {activePanelConfig.footer && <div className="shrink-0">{activePanelConfig.footer}</div>}
       </div>
     </div>
   );

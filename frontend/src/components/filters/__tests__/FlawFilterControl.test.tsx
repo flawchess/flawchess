@@ -46,15 +46,15 @@ describe('FlawFilterControl', () => {
       expect(screen.queryByTestId('filter-flaw-tactic-group-piece_attacks')).toBeNull();
     });
 
-    it('renders the two always-on mechanism groups and their 9 family buttons when showTacticFilter is set', () => {
+    it('renders the two always-on mechanism groups and their 8 family buttons when showTacticFilter is set', () => {
       render(<FlawFilterControl {...defaultProps} showTacticFilter />);
       for (const key of ['piece_attacks', 'discoveries']) {
         expect(screen.getByTestId(`filter-flaw-tactic-group-${key}`)).toBeTruthy();
       }
-      // x_ray + the 5 tier-3 families live in the collapsed Advanced group, not here.
+      // trapped_piece + x_ray + the tier-3 families live in the collapsed Advanced group, not here.
       for (const fam of [
         'fork', 'skewer', 'pin', 'double_check', 'discovered_check',
-        'discovered_attack', 'trapped_piece', 'hanging', 'mate',
+        'discovered_attack', 'hanging', 'mate',
       ]) {
         expect(screen.getByTestId(`filter-flaw-tactic-${fam}`)).toBeTruthy();
       }
@@ -65,8 +65,8 @@ describe('FlawFilterControl', () => {
 
     // Advanced tier-3 group (Quick 260623-6pd) — collapsed by default.
     const ADVANCED_FAMILIES = [
-      'x_ray', 'deflection', 'intermezzo', 'interference', 'clearance', 'capturing_defender',
-      'en_passant', 'under_promotion',
+      'trapped_piece', 'x_ray', 'deflection', 'intermezzo', 'interference', 'clearance',
+      'capturing_defender', 'en_passant', 'under_promotion',
     ];
 
     it('Advanced families are hidden until the Advanced toggle is expanded', () => {

@@ -106,9 +106,9 @@ export type TacticIcon = ComponentType<{
  * The 19 tactic family keys — cross-stack contract with backend FAMILY_TO_MOTIF_INTS.
  * These strings must equal the backend dict keys string-for-string (plan 129-04).
  * Filter display order (mechanism-grouped, Quick 260620-onv; Advanced added 260623-6pd):
- *   Piece Attacks: fork → pin → skewer → hanging → trapped_piece
+ *   Piece Attacks: fork → pin → skewer → hanging
  *   Checkmate, Checks & Discoveries: mate → double_check → discovered_check → discovered_attack
- *   Advanced (tier-3): x_ray → deflection → intermezzo → interference → clearance → capturing_defender → attraction → sacrifice
+ *   Advanced (tier-3): trapped_piece → x_ray → deflection → intermezzo → interference → clearance → capturing_defender → attraction → sacrifice
  */
 export type TacticFamily =
   | 'fork'
@@ -272,14 +272,6 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     definition: 'An undefended piece that can be captured for free.',
     motifs: ['hanging-piece'],
   },
-  {
-    name: 'Trapped piece',
-    family: 'trapped_piece',
-    group: 'piece_attacks',
-    chipLabel: 'trapped-piece',
-    definition: 'A piece has no safe square to move to and will be lost regardless of where it goes.',
-    motifs: ['trapped-piece'],
-  },
   // ── Checkmate, Checks & Discoveries ──
   // Mate leads the group (chip "checkmate"); the legend shows a single "checkmate"
   // row rather than the nine named-mate motifs (Quick 260620-onv follow-up). Then
@@ -328,7 +320,15 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
   },
   // ── Advanced (tier-3, Quick 260623-6pd) ──
   // Shipped Phase-132 cook-aligned motifs surfaced behind the collapsible "Advanced"
-  // filter section. x-ray leads (geometric), then the lure/disruption motifs.
+  // filter section. trapped-piece leads, then x-ray (geometric), then the lure/disruption motifs.
+  {
+    name: 'Trapped piece',
+    family: 'trapped_piece',
+    group: 'advanced',
+    chipLabel: 'trapped-piece',
+    definition: 'A piece has no safe square to move to and will be lost regardless of where it goes.',
+    motifs: ['trapped-piece'],
+  },
   {
     name: 'X-ray',
     family: 'x_ray',
