@@ -1,16 +1,17 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { SlidersHorizontal, Tags, X } from 'lucide-react';
+import { SlidersHorizontal, Tags } from 'lucide-react';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
 import { Button } from '@/components/ui/button';
 import { LoadError } from '@/components/ui/load-error';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
+import { MobileFilterDrawer } from '@/components/filters/MobileFilterDrawer';
 import {
   DEFAULT_FILTERS,
   areFiltersEqual,
   FILTER_DOT_FIELDS,
+  resetFilterState,
 } from '@/components/filters/FilterPanel';
 import { LibraryFilterPanel } from '@/components/filters/LibraryFilterPanel';
 import { FlawFilterControl } from '@/components/filters/FlawFilterControl';
@@ -441,97 +442,70 @@ export function GamesTab() {
         </div>
 
         {/* Game-filters drawer */}
-        <Drawer
+        <MobileFilterDrawer
           open={mobileFiltersOpen}
           onOpenChange={handleMobileFiltersOpenChange}
-          direction="right"
+          title="Filters"
+          contentTestId="drawer-filter-sidebar"
+          closeTestId="btn-close-filter-drawer"
+          footer={
+            <FilterActions
+              onReset={() => setPendingFilters(resetFilterState(pendingFilters))}
+              onApply={handleMobileFiltersApply}
+            />
+          }
         >
-          <DrawerContent
-            className="!w-full sm:!w-3/4 !bottom-auto !rounded-bl-xl max-h-[85vh]"
-            data-testid="drawer-filter-sidebar"
-          >
-            <DrawerHeader className="flex flex-row items-center justify-between">
-              <DrawerTitle>Filters</DrawerTitle>
-              <DrawerClose asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Close filters"
-                  data-testid="btn-close-filter-drawer"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </DrawerClose>
-            </DrawerHeader>
-            <div className="overflow-y-auto flex-1 p-4">
-              <LibraryFilterPanel
-                filters={pendingFilters}
-                onChange={setPendingFilters}
-                onApply={handleMobileFiltersApply}
-                showFlawFilter={false}
-              />
-            </div>
-          </DrawerContent>
-        </Drawer>
+          <LibraryFilterPanel
+            filters={pendingFilters}
+            onChange={setPendingFilters}
+            onApply={handleMobileFiltersApply}
+            showFlawFilter={false}
+            hideActions
+          />
+        </MobileFilterDrawer>
 
         {/* Tags (flaw-filter) drawer — staged Apply-only */}
-        <Drawer
+        <MobileFilterDrawer
           open={mobileFlawFiltersOpen}
           onOpenChange={handleMobileFlawFiltersOpenChange}
-          direction="right"
+          title="Tags"
+          contentTestId="drawer-flaw-filter-sidebar"
+          closeTestId="btn-close-flaw-filter-drawer"
+          footer={
+            <FilterActions
+              resetTestId="btn-tags-reset"
+              applyTestId="btn-tags-apply"
+              onReset={() => setPendingFlawFilter(DEFAULT_FLAW_FILTER)}
+              onApply={handleMobileTagsApply}
+            />
+          }
         >
-          <DrawerContent
-            className="!w-full sm:!w-3/4 !bottom-auto !rounded-bl-xl max-h-[85vh]"
-            data-testid="drawer-flaw-filter-sidebar"
-          >
-            <DrawerHeader className="flex flex-row items-center justify-between">
-              <DrawerTitle>Tags</DrawerTitle>
-              <DrawerClose asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Close tags"
-                  data-testid="btn-close-flaw-filter-drawer"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </DrawerClose>
-            </DrawerHeader>
-            <div className="overflow-y-auto flex-1 p-4 space-y-3">
-              <FlawFilterControl
-                severity={pendingFlawFilter.severity}
-                tags={pendingFlawFilter.tags}
-                tacticFamilies={pendingFlawFilter.tacticFamilies}
-                onSeverityChange={(severity) =>
-                  setPendingFlawFilter((prev) => ({ ...prev, severity }))
-                }
-                onTagChange={(tags) => setPendingFlawFilter((prev) => ({ ...prev, tags }))}
-                onTacticFamiliesChange={(tacticFamilies: TacticFamily[]) =>
-                  setPendingFlawFilter((prev) => ({ ...prev, tacticFamilies }))
-                }
-                showTacticFilter
-                orientation={pendingFlawFilter.tacticOrientation}
-                onOrientationChange={(tacticOrientation: TacticOrientation) =>
-                  setPendingFlawFilter((prev) => ({ ...prev, tacticOrientation }))
-                }
-                tacticDepth={{ min: pendingFlawFilter.tacticDepthMin, max: pendingFlawFilter.tacticDepthMax }}
-                onTacticDepthChange={(next: TacticDepthValue) =>
-                  setPendingFlawFilter((prev) => ({
-                    ...prev,
-                    tacticDepthMin: next.min,
-                    tacticDepthMax: next.max,
-                  }))
-                }
-              />
-              <FilterActions
-                resetTestId="btn-tags-reset"
-                applyTestId="btn-tags-apply"
-                onReset={() => setPendingFlawFilter(DEFAULT_FLAW_FILTER)}
-                onApply={handleMobileTagsApply}
-              />
-            </div>
-          </DrawerContent>
-        </Drawer>
+          <FlawFilterControl
+            severity={pendingFlawFilter.severity}
+            tags={pendingFlawFilter.tags}
+            tacticFamilies={pendingFlawFilter.tacticFamilies}
+            onSeverityChange={(severity) =>
+              setPendingFlawFilter((prev) => ({ ...prev, severity }))
+            }
+            onTagChange={(tags) => setPendingFlawFilter((prev) => ({ ...prev, tags }))}
+            onTacticFamiliesChange={(tacticFamilies: TacticFamily[]) =>
+              setPendingFlawFilter((prev) => ({ ...prev, tacticFamilies }))
+            }
+            showTacticFilter
+            orientation={pendingFlawFilter.tacticOrientation}
+            onOrientationChange={(tacticOrientation: TacticOrientation) =>
+              setPendingFlawFilter((prev) => ({ ...prev, tacticOrientation }))
+            }
+            tacticDepth={{ min: pendingFlawFilter.tacticDepthMin, max: pendingFlawFilter.tacticDepthMax }}
+            onTacticDepthChange={(next: TacticDepthValue) =>
+              setPendingFlawFilter((prev) => ({
+                ...prev,
+                tacticDepthMin: next.min,
+                tacticDepthMax: next.max,
+              }))
+            }
+          />
+        </MobileFilterDrawer>
 
         {/* Stacked main content (mobile).
             Isolate into its own stacking context (relative z-0) so a card's

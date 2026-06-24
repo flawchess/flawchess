@@ -1,4 +1,4 @@
-import { FilterPanel, DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
+import { FilterPanel, resetFilterState } from '@/components/filters/FilterPanel';
 import { FlawFilterControl } from '@/components/filters/FlawFilterControl';
 import { FilterActions } from '@/components/filters/FilterActions';
 import type { FilterState } from '@/components/filters/FilterPanel';
@@ -43,6 +43,12 @@ interface LibraryFilterPanelProps {
    * Default true so existing callers (Games subtab) keep the combined layout.
    */
   showFlawFilter?: boolean;
+  /**
+   * When true, omit the Reset/Apply footer — the caller renders it as a pinned
+   * footer outside the scroll area (mobile drawer). Default false keeps the inline
+   * footer for the desktop sidebar.
+   */
+  hideActions?: boolean;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -67,10 +73,11 @@ export function LibraryFilterPanel({
   flawFilter,
   onFlawFilterChange,
   showFlawFilter = true,
+  hideActions = false,
 }: LibraryFilterPanelProps) {
   // Reset game-metadata filters only — flaw filter has its own Reset in the Tags panel.
   const handleReset = () => {
-    onChange({ ...DEFAULT_FILTERS, color: filters.color, customRange: null });
+    onChange(resetFilterState(filters));
   };
 
   // Only render the flaw control when requested AND its handlers are supplied. The
@@ -104,11 +111,14 @@ export function LibraryFilterPanel({
         hideReset
       />
 
-      {/* Reset + Apply footer — Reset clears game-metadata FilterState only (D-01) */}
-      <FilterActions
-        onReset={handleReset}
-        onApply={onApply}
-      />
+      {/* Reset + Apply footer — Reset clears game-metadata FilterState only (D-01).
+          Omitted when hideActions (mobile drawer renders a pinned footer instead). */}
+      {!hideActions && (
+        <FilterActions
+          onReset={handleReset}
+          onApply={onApply}
+        />
+      )}
     </div>
   );
 }

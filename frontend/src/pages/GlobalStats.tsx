@@ -1,12 +1,12 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { SlidersHorizontal, X } from 'lucide-react';
+import { SlidersHorizontal } from 'lucide-react';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
 import { Button } from '@/components/ui/button';
-import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
-import { Tooltip } from '@/components/ui/tooltip';
+import { MobileFilterDrawer } from '@/components/filters/MobileFilterDrawer';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
-import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS } from '@/components/filters/FilterPanel';
+import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS, resetFilterState } from '@/components/filters/FilterPanel';
+import { FilterActions } from '@/components/filters/FilterActions';
 import { usePulseOnChange, ModifiedDot } from '@/components/filters/FilterModifiedDot';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { useGlobalStats, useRatingHistory } from '@/hooks/useStats';
@@ -248,23 +248,22 @@ export function GlobalStatsPage() {
           </div>
 
           {/* Filter drawer — staged Apply-only */}
-          <Drawer open={mobileFiltersOpen} onOpenChange={handleMobileFiltersOpenChange} direction="right">
-            <DrawerContent className="!w-full sm:!w-3/4 !bottom-auto !rounded-bl-xl max-h-[85vh]" data-testid="drawer-filter-sidebar">
-              <DrawerHeader className="flex flex-row items-center justify-between">
-                <DrawerTitle>Filters</DrawerTitle>
-                <Tooltip content="Close filters">
-                  <DrawerClose asChild>
-                    <Button variant="ghost" size="icon" aria-label="Close filters" data-testid="btn-close-filter-drawer">
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </DrawerClose>
-                </Tooltip>
-              </DrawerHeader>
-              <div className="overflow-y-auto flex-1 p-4 space-y-4">
-                <FilterPanel filters={pendingFilters} onChange={setPendingFilters} onApply={handleMobileFiltersApply} visibleFilters={['playedAs', 'timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency']} />
-              </div>
-            </DrawerContent>
-          </Drawer>
+          <MobileFilterDrawer
+            open={mobileFiltersOpen}
+            onOpenChange={handleMobileFiltersOpenChange}
+            title="Filters"
+            contentTestId="drawer-filter-sidebar"
+            closeTestId="btn-close-filter-drawer"
+            bodyClassName="space-y-4"
+            footer={
+              <FilterActions
+                onReset={() => setPendingFilters(resetFilterState(pendingFilters))}
+                onApply={handleMobileFiltersApply}
+              />
+            }
+          >
+            <FilterPanel filters={pendingFilters} onChange={setPendingFilters} visibleFilters={['playedAs', 'timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency']} hideReset />
+          </MobileFilterDrawer>
 
           {content}
         </div>

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useRevealOnOpen } from '@/hooks/useRevealOnOpen';
 import {
   Clock,
   Zap,
@@ -372,6 +373,10 @@ export function FlawFilterControl({
   const [contextOpen, setContextOpen] = useState(false);
   // Advanced tactic group (tier-3 motifs) — collapsed by default (Quick 260623-6pd).
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  // Smoothly reveal a section's content (and the headers below it) when it expands
+  // inside the scrolling mobile filter drawer.
+  const { ref: advancedRef, reveal: revealAdvanced } = useRevealOnOpen<HTMLDivElement>();
+  const { ref: contextRef, reveal: revealContext } = useRevealOnOpen<HTMLDivElement>();
 
   // Tactic-specific sections (depth / orientation / motif families / advanced) are
   // gated on the tab opt-in: the Flaws tab passes showTacticFilter, the Games tab does not.
@@ -488,11 +493,15 @@ export function FlawFilterControl({
           groups. The Tags-icon legend sits on the toggle row so the motif explanations
           are reachable without expanding. Gated to the Flaws tab (showTacticFilter). ──── */}
       {showTactics && (
-        <div>
+        <div ref={advancedRef}>
           <div className="flex items-center gap-1.5">
             <button
               type="button"
-              onClick={() => setAdvancedOpen((v) => !v)}
+              onClick={() => {
+                const next = !advancedOpen;
+                setAdvancedOpen(next);
+                revealAdvanced(next);
+              }}
               aria-expanded={advancedOpen}
               aria-controls="flaw-filter-advanced-content"
               data-testid="filter-flaw-advanced-toggle"
@@ -528,10 +537,14 @@ export function FlawFilterControl({
           Timing / Opportunity / Impact / Game Phase. Sits behind a "Context" toggle
           below the tactic sections. Renders on both the Games tab
           (showTacticFilter=false) and Flaws tab. ──── */}
-      <div className="pt-3 border-t border-border/40">
+      <div ref={contextRef} className="pt-3 border-t border-border/40">
         <button
           type="button"
-          onClick={() => setContextOpen((v) => !v)}
+          onClick={() => {
+            const next = !contextOpen;
+            setContextOpen(next);
+            revealContext(next);
+          }}
           aria-expanded={contextOpen}
           aria-controls="flaw-filter-context-content"
           data-testid="filter-flaw-context-toggle"

@@ -14,6 +14,7 @@ import { Chess } from 'chess.js';
 import { useQuery } from '@tanstack/react-query';
 import { Save, Sparkles, ArrowRightLeft, Swords, BarChart2, Lightbulb, SlidersHorizontal, BookMarked, X } from 'lucide-react';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
+import { MobileFilterDrawer } from '@/components/filters/MobileFilterDrawer';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
@@ -46,7 +47,8 @@ import { resolveDateRange, dateRangeToWireParams } from '@/lib/recency';
 import { ChessBoard } from '@/components/board/ChessBoard';
 import { MoveList } from '@/components/board/MoveList';
 import { BoardControls } from '@/components/board/BoardControls';
-import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS } from '@/components/filters/FilterPanel';
+import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS, resetFilterState } from '@/components/filters/FilterPanel';
+import { FilterActions } from '@/components/filters/FilterActions';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { PositionBookmarkList } from '@/components/position-bookmarks/PositionBookmarkList';
 import { SuggestionsModal } from '@/components/position-bookmarks/SuggestionsModal';
@@ -1132,57 +1134,56 @@ export function OpeningsPage() {
           )}
 
           {/* Filter sidebar (D-04, D-05, D-06, D-10, D-12) */}
-          <Drawer open={sidebar.filterSidebarOpen} onOpenChange={handleFilterSidebarOpenChange} direction="right">
-            <DrawerContent className="!w-full sm:!w-3/4 !bottom-auto !rounded-bl-xl max-h-[85vh]" data-testid="drawer-filter-sidebar">
-              <DrawerHeader className="flex flex-row items-center justify-between">
-                <DrawerTitle>Filters</DrawerTitle>
-                <Tooltip content="Close filters">
-                  <DrawerClose asChild>
-                    <Button variant="ghost" size="icon" aria-label="Close filters" data-testid="btn-close-filter-sidebar">
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </DrawerClose>
-                </Tooltip>
-              </DrawerHeader>
-              <div className="overflow-y-auto flex-1 p-4 space-y-4">
-                {/* Piece filter — spans full drawer width. Played-as is intentionally NOT here:
-                    it's always accessible via btn-toggle-played-as in the sticky mobile header. */}
-                <div>
-                  <div className="mb-1 flex items-center gap-1">
-                    <p className="text-sm text-muted-foreground">Piece filter</p>
-                    <InfoPopover ariaLabel="Piece filter info" testId="piece-filter-info-sidebar" side="top">
-                      Use the option "Mine" to find games with a specific formation (e.g. the London System) regardless of the opponent's moves. "Mine" matches only your pieces, "Opponent" only theirs, and "Both" requires an exact match of all pieces. The Moves tab always uses "Both".
-                    </InfoPopover>
-                  </div>
-                  <ToggleGroup
-                    type="single"
-                    value={localFilters.matchSide}
-                    onValueChange={(v) => {
-                      if (!v) return;
-                      setLocalFilters(prev => ({ ...prev, matchSide: v as MatchSide }));
-                    }}
-                    variant="outline"
-                    size="sm"
-                    data-testid="filter-piece-filter-sidebar"
-                    className="w-full"
-                  >
-                    <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine-sidebar" className="flex-1 min-h-11 text-sm">Mine</ToggleGroupItem>
-                    <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent-sidebar" className="flex-1 min-h-11 text-sm">Opponent</ToggleGroupItem>
-                    <ToggleGroupItem value="both" data-testid="filter-piece-filter-both-sidebar" className="flex-1 min-h-11 text-sm">Both</ToggleGroupItem>
-                  </ToggleGroup>
-                </div>
-
-                {/* Remaining filters — 'playedAs' omitted (Openings uses the dedicated
-                    white/black color button above, no "either" option). */}
-                <FilterPanel
-                  filters={localFilters}
-                  onChange={setLocalFilters}
-                  onApply={handleMobileFiltersApply}
-                  visibleFilters={['timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency']}
-                />
+          <MobileFilterDrawer
+            open={sidebar.filterSidebarOpen}
+            onOpenChange={handleFilterSidebarOpenChange}
+            title="Filters"
+            contentTestId="drawer-filter-sidebar"
+            closeTestId="btn-close-filter-sidebar"
+            bodyClassName="space-y-4"
+            footer={
+              <FilterActions
+                onReset={() => setLocalFilters(resetFilterState(localFilters))}
+                onApply={handleMobileFiltersApply}
+              />
+            }
+          >
+            {/* Piece filter — spans full drawer width. Played-as is intentionally NOT here:
+                it's always accessible via btn-toggle-played-as in the sticky mobile header. */}
+            <div>
+              <div className="mb-1 flex items-center gap-1">
+                <p className="text-sm text-muted-foreground">Piece filter</p>
+                <InfoPopover ariaLabel="Piece filter info" testId="piece-filter-info-sidebar" side="top">
+                  Use the option "Mine" to find games with a specific formation (e.g. the London System) regardless of the opponent's moves. "Mine" matches only your pieces, "Opponent" only theirs, and "Both" requires an exact match of all pieces. The Moves tab always uses "Both".
+                </InfoPopover>
               </div>
-            </DrawerContent>
-          </Drawer>
+              <ToggleGroup
+                type="single"
+                value={localFilters.matchSide}
+                onValueChange={(v) => {
+                  if (!v) return;
+                  setLocalFilters(prev => ({ ...prev, matchSide: v as MatchSide }));
+                }}
+                variant="outline"
+                size="sm"
+                data-testid="filter-piece-filter-sidebar"
+                className="w-full"
+              >
+                <ToggleGroupItem value="mine" data-testid="filter-piece-filter-mine-sidebar" className="flex-1 min-h-11 text-sm">Mine</ToggleGroupItem>
+                <ToggleGroupItem value="opponent" data-testid="filter-piece-filter-opponent-sidebar" className="flex-1 min-h-11 text-sm">Opponent</ToggleGroupItem>
+                <ToggleGroupItem value="both" data-testid="filter-piece-filter-both-sidebar" className="flex-1 min-h-11 text-sm">Both</ToggleGroupItem>
+              </ToggleGroup>
+            </div>
+
+            {/* Remaining filters — 'playedAs' omitted (Openings uses the dedicated
+                white/black color button above, no "either" option). */}
+            <FilterPanel
+              filters={localFilters}
+              onChange={setLocalFilters}
+              visibleFilters={['timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency']}
+              hideReset
+            />
+          </MobileFilterDrawer>
 
           {/* Bookmark sidebar (D-04, D-05, D-06, D-13, D-14) */}
           <Drawer open={sidebar.bookmarkSidebarOpen} onOpenChange={handleBookmarkSidebarOpenChange} direction="right">

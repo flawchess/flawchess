@@ -19,6 +19,7 @@ import { OpponentStrengthFilter } from './OpponentStrengthFilter';
 import { CustomRangePopover, formatCustomRangeLabel } from './CustomRangePopover';
 import { CustomRangeDrawer } from './CustomRangeDrawer';
 import { FilterActions } from './FilterActions';
+import { useRevealOnOpen } from '@/hooks/useRevealOnOpen';
 
 // ─── Mobile breakpoint detection ──────────────────────────────────────────────
 // Same threshold as ScoreChart.tsx (768px = Tailwind `md`).
@@ -69,6 +70,17 @@ export const DEFAULT_FILTERS: FilterState = {
   color: 'white',
   playedAs: 'either',
 };
+
+/**
+ * Reset a FilterState to defaults, preserving the current `color` (Played-as piece
+ * color is not part of the filter query — see FILTER_DOT_FIELDS) and clearing any
+ * custom date range. Single source of truth for the Reset behavior shared by
+ * FilterPanel's own footer, LibraryFilterPanel, and every mobile filter-drawer
+ * footer (Stats / Openings / Endgames / Library tabs).
+ */
+export function resetFilterState(current: FilterState): FilterState {
+  return { ...DEFAULT_FILTERS, color: current.color, customRange: null };
+}
 
 /**
  * FilterState keys used to compute the "modified filters" dot across all three pages
@@ -224,6 +236,9 @@ export function FilterPanel({
   const isMobile = useIsMobile();
 
   const [moreOpen, setMoreOpen] = useState(false);
+  // Reveal the "More" section's content (and any rows below it) when it expands
+  // inside the scrolling mobile filter drawer.
+  const { ref: moreRef, reveal: revealMore } = useRevealOnOpen<HTMLDivElement>();
 
   const toggleTimeControl = (tc: TimeControl) => {
     const current = filters.timeControls ?? TIME_CONTROLS;
@@ -464,10 +479,14 @@ export function FilterPanel({
 
       {/* More: Opponent Type + Rated */}
       {showMoreSection && (
-        <div className="pt-3 border-t border-border/40">
+        <div ref={moreRef} className="pt-3 border-t border-border/40">
           <button
             type="button"
-            onClick={() => setMoreOpen((v) => !v)}
+            onClick={() => {
+              const next = !moreOpen;
+              setMoreOpen(next);
+              revealMore(next);
+            }}
             aria-expanded={moreOpen}
             data-testid="filter-more-toggle"
             className="flex w-full items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
@@ -539,7 +558,7 @@ export function FilterPanel({
       {!hideReset && (
         onApply != null ? (
           <FilterActions
-            onReset={() => onChange({ ...DEFAULT_FILTERS, color: filters.color, customRange: null })}
+            onReset={() => onChange(resetFilterState(filters))}
             onApply={onApply}
           />
         ) : (
@@ -551,7 +570,7 @@ export function FilterPanel({
               className="w-full min-h-11 sm:min-h-0"
               data-testid="btn-reset-filters"
               onClick={() => {
-                onChange({ ...DEFAULT_FILTERS, color: filters.color, customRange: null });
+                onChange(resetFilterState(filters));
               }}
             >
               Reset Filters
