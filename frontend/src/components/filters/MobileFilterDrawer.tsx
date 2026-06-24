@@ -18,6 +18,8 @@ interface MobileFilterDrawerProps {
   onOpenChange: (open: boolean) => void;
   /** Drawer heading, e.g. "Filters" or "Tags". */
   title: string;
+  /** Optional element rendered next to the title (e.g. an info popover). */
+  titleAccessory?: ReactNode;
   /** data-testid for the DrawerContent container. */
   contentTestId: string;
   /** data-testid for the close (X) button. */
@@ -52,6 +54,7 @@ export function MobileFilterDrawer({
   open,
   onOpenChange,
   title,
+  titleAccessory,
   contentTestId,
   closeTestId,
   closeLabel,
@@ -65,7 +68,10 @@ export function MobileFilterDrawer({
     <Drawer open={open} onOpenChange={onOpenChange} direction="right">
       <DrawerContent className={DRAWER_CONTENT_CLASS} data-testid={contentTestId}>
         <DrawerHeader className="flex flex-row items-center justify-between">
-          <DrawerTitle>{title}</DrawerTitle>
+          <DrawerTitle className={titleAccessory ? 'flex items-center gap-1' : undefined}>
+            {title}
+            {titleAccessory}
+          </DrawerTitle>
           <Tooltip content={label}>
             <DrawerClose asChild>
               <Button variant="ghost" size="icon" aria-label={label} data-testid={closeTestId}>
