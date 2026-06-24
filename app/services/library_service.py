@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.game import Game
 from app.models.game_flaw import GameFlaw
 from app.repositories import library_repository
+from app.repositories.game_flaws_repository import _SEVERITY_INT
 from app.repositories.library_repository import (
     FAMILY_TO_MOTIF_INTS,
     TacticOrientation,
@@ -352,6 +353,7 @@ def _build_card(
     positions: list[GamePosition],
     active_eval_status: Literal["pending", "leased"] | None = None,
     *,
+    flaw_severity: Sequence[str] = (),
     tactic_families: Sequence[str] = (),
     tactic_orientation: TacticOrientation = "either",
     min_tactic_depth: int | None = None,
@@ -380,6 +382,13 @@ def _build_card(
     via the shared tactic_slot_visible predicate (same predicate as query_flaws).
     Defaults (no controls active) leave both slots populated, so the single-game
     path (get_library_game, which passes no filter params) is unaffected.
+
+    Bug fix (severity tactic leak): flaw_severity narrows which flaws contribute
+    tactic chips, mirroring the single-row AND game-selection predicate
+    (build_flaw_filter_clauses: GameFlaw.severity.in_(...)). Without this, a
+    "blunders only" filter still surfaced tactic chips from mistake-severity flaws
+    (and vice versa) because tactic_slot_visible never gated on severity. Empty =
+    no narrowing (single-game path unaffected).
     """
     severity_counts: SeverityCounts | None
     chips: list[FlawTag]
@@ -419,8 +428,14 @@ def _build_card(
             # no depth bounds) leave both slots populated, so the single-game path is
             # unaffected. Previously only the confidence threshold was checked, so
             # orientation and depth controls had no effect on the Games tab (BUG).
+            # Severity gate: when the severity filter narrows the set, only flaws of
+            # the selected tier contribute tactic chips — matching the single-row AND
+            # game-selection predicate (build_flaw_filter_clauses). Empty = no gate.
+            severity_ints = {_SEVERITY_INT[s] for s in flaw_severity} if flaw_severity else None
             tactic_by_ply: dict[int, _TacticByPlyEntry] = {}
             for fr in flaw_rows:
+                if severity_ints is not None and fr.severity not in severity_ints:
+                    continue
                 allowed_visible = tactic_slot_visible(
                     fr.allowed_tactic_motif,
                     fr.allowed_tactic_confidence,
@@ -518,6 +533,7 @@ async def get_library_game(
     user_id: int,
     game_id: int,
     *,
+    flaw_severity: Sequence[str] | None = None,
     tactic_families: Sequence[str] | None = None,
     tactic_orientation: TacticOrientation = "either",
     min_tactic_depth: int | None = None,
@@ -538,6 +554,9 @@ async def get_library_game(
     Quick 260621-sm8: the tactic filter params are threaded to _build_card so the
     "View game" modal honors the active depth/orientation/family filter (per-slot
     nulling), identical to the list path. Defaults leave both slots populated.
+    flaw_severity is threaded for the same reason: opening a game under a
+    "blunders only" / "mistakes only" filter must gate the modal's tactic chips by
+    severity too, matching the list (severity tactic-leak fix). None = no narrowing.
     """
     game = await session.get(Game, game_id)
     if game is None or game.user_id != user_id:
@@ -570,6 +589,7 @@ async def get_library_game(
         is_analyzed,
         positions,
         active_map.get(game_id),
+        flaw_severity=flaw_severity or (),
         tactic_families=tactic_families or (),
         tactic_orientation=tactic_orientation,
         min_tactic_depth=min_tactic_depth,
@@ -670,6 +690,7 @@ async def get_library_games(
                 game.id in analyzed_set,
                 page_positions.get(game.id, []),
                 active_status_map.get(game.id),
+                flaw_severity=flaw_severity or (),
                 tactic_families=tactic_families or (),
                 tactic_orientation=tactic_orientation,
                 min_tactic_depth=min_tactic_depth,

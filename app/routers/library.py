@@ -130,6 +130,7 @@ async def get_library_game(
     game_id: int,
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
+    severity: list[SeverityFilter] | None = Query(default=None),
     tactic_family: list[str] | None = Query(default=None),
     tactic_orientation: TacticOrientationFilter = Query(default="either"),
     min_tactic_depth: int | None = Query(default=None, ge=0, le=11),
@@ -148,11 +149,16 @@ async def get_library_game(
     the modal showed every tactic regardless of the depth/orientation/family
     filter the user had set (the bug being fixed). Defaults (no family, either,
     no depth bounds) leave both slots populated, so direct opens are unchanged.
+
+    severity is accepted for the same reason: a game opened under a "blunders
+    only" / "mistakes only" filter must gate the modal's tactic chips by severity
+    too, matching the list (severity tactic-leak fix). None = no narrowing.
     """
     card = await library_service.get_library_game(
         session,
         user_id=user.id,
         game_id=game_id,
+        flaw_severity=list(severity) if severity else None,
         tactic_families=list(tactic_family) if tactic_family else None,
         tactic_orientation=tactic_orientation,
         min_tactic_depth=min_tactic_depth,

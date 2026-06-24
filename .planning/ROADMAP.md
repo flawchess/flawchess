@@ -30,7 +30,7 @@
 - ✅ **v1.25 Flaw-Stats Opponent Comparison** — Phases 113–115 (incl. 114.1) (shipped 2026-06-12) — see [milestones/v1.25-ROADMAP.md](milestones/v1.25-ROADMAP.md)
 - ✅ **v1.26 Full-Game Eval Pipeline** — Phases 116–120 (incl. 117.1, 117.2) (shipped 2026-06-14) — see [milestones/v1.26-ROADMAP.md](milestones/v1.26-ROADMAP.md)
 - ✅ **v1.27 Remote Eval Worker Fan-Out & In-App Feedback** — Phases 121–123 (shipped 2026-06-16; releases #199, #202, #203) — see [milestones/v1.27-ROADMAP.md](milestones/v1.27-ROADMAP.md)
-- 🔄 **v1.28 Tactic Tagging** — Phases 124–134 (incl. 128.1; Phase 130 was a placeholder superseded by 131–134). All phases complete; deployed to prod via release #214 (2026-06-23). Formal milestone close (tag + archive + CHANGELOG promotion) still pending.
+- 🔄 **v1.28 Tactic Tagging** — Phases 124–135 (incl. 128.1; Phase 130 was a placeholder superseded by 131–134). Phases 124–134 complete and deployed to prod via release #214 (2026-06-23); Phase 135 (Tactic Line Explorer, SEED-065) added 2026-06-24, not yet planned. Formal milestone close (tag + archive + CHANGELOG promotion) deferred until 135 ships.
 
 ## Phases
 
@@ -52,6 +52,7 @@
 - [x] **Phase 132: Tier-3 tactic precision hardening via cook.py alignment** — cook AND-chain predicates for deflection/clearance/attraction/intermezzo/x-ray/capturing-defender, ship-or-suppress on TEST; interference locked at 0.99 (completed 2026-06-23)
 - [x] **Phase 133: Close suppressed-tactic gaps** — attraction off-by-one fix + unsuppress, sacrifice unsuppress, arabian/boden/dovetail mate-geometry ports (completed 2026-06-23)
 - [x] **Phase 134: trapped-piece fixture expansion (Option B) + cook reimplementation** — per-motif oversample cap, cook-faithful `detect_trapped_piece` (P 1.000 TEST), conditional unsuppress; shipped the trapped-piece tag (completed 2026-06-23)
+- [ ] **Phase 135: Tactic Line Explorer — walkable PV stepper for tagged flaws (SEED-065)** — full-screen Dialog stepping through the missed (engine PV) and allowed (opponent punishment) lines on a large board + SAN ladder; depth counter to the punchline; `Explore` entry points on flaw/game cards (tagged-only); new `tactic-lines` endpoint surfacing `game_positions.pv`
 
 ## Phase Details
 
@@ -274,6 +275,17 @@ A placeholder phase added after 129 to hold follow-up tactic fixes. Never planne
 **Depends on**: Phase 133
 **Plans**: 3/3 complete (Option B per-motif cap + selector test + fixture regen; cook-faithful `detect_trapped_piece`; conditional unsuppress + pre-merge gate + CHANGELOG). Completed 2026-06-23.
 
+### Phase 135: Tactic Line Explorer — walkable PV stepper for tagged flaws (SEED-065)
+
+**Goal:** Turn each tagged flaw into a walkable lesson. A full-screen Dialog opens a large board + linear SAN ladder + `BoardControls` preloaded with the stored Stockfish PV, so the user steps through both the *missed* line (the engine PV they should have played) and the *allowed* line (the punishment the opponent could have played). A depth counter ticks down to the tactic punchline (depth-0 move highlighted), then a few payoff plies show the material/mate landing. Entry points: an `Explore` secondary button on the flaw card (only when tagged) and on the game card (targets the eval chart's selected flaw, disabled when not a tagged flaw). Sources the two PVs from `game_positions.pv` (n for missed, n+1 for allowed) via a new `tactic-lines` endpoint; reuses `tacticDepth.ts` for the allowed +1 offset so labels match the miniboard. See [seeds/SEED-065-tactic-line-explorer.md](seeds/SEED-065-tactic-line-explorer.md).
+**Requirements**: TBD
+**Depends on:** Phase 134 (tactic-tag precision hardening — walking a low-precision tag move-by-move is worse than a chip; gate Explore on trustworthy tags)
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 135 to break down)
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -330,6 +342,7 @@ A placeholder phase added after 129 to hold follow-up tactic fixes. Never planne
 | 132. Tier-3 tactic precision hardening (cook.py) | 5/5 | Complete | 2026-06-23 |
 | 133. Close suppressed-tactic gaps | 2/2 | Complete | 2026-06-23 |
 | 134. trapped-piece fixture expansion + cook reimpl | 3/3 | Complete | 2026-06-23 |
+| 135. Tactic Line Explorer (SEED-065) | 0/0 | Not planned | — |
 
 ## Backlog
 
@@ -377,8 +390,6 @@ Plans:
 *Phase 999.7 (LLM Endgame-Insights Statistical-Reasoning Rework) promoted to active Phase 102 (v1.23) on 2026-06-01 via `/gsd-explore`; shipped 2026-06-03.*
 
 *Phase 103 (Endgame report LLM prompt refinements) shipped 2026-06-03 as an unplanned follow-on under v1.23 — see the collapsed v1.23 block above and [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md).*
-
----
 
 <details>
 <summary>✅ v1.27 Remote Eval Worker Fan-Out & In-App Feedback (Phases 121–123) — SHIPPED 2026-06-16</summary>

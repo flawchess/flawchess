@@ -184,11 +184,18 @@ export function useTacticComparison(
  * family only when ≥1 is selected; the backend treats the all-inclusive default
  * as a no-op, so a direct/unfiltered open is unchanged. The tactic params join
  * the query key so changing the filter refetches the open modal.
+ *
+ * Severity tactic-leak fix: severity is forwarded only when it narrows (exactly one
+ * tier selected — matching isFlawFilterNonDefault), so opening a game under
+ * "blunders only" / "mistakes only" gates the modal's tactic chips by severity too.
+ * Empty or both-selected = no narrowing, so it is omitted (a direct open is unchanged).
  */
 export function useLibraryGame(
   gameId: number | null,
   flawFilter?: FlawFilterState,
 ): ReturnType<typeof useQuery<GameFlawCard>> {
+  const severity =
+    flawFilter && flawFilter.severity.length === 1 ? flawFilter.severity : undefined;
   const tacticFamily =
     flawFilter && flawFilter.tacticFamilies.length > 0 ? flawFilter.tacticFamilies : undefined;
   const tacticOrientation = flawFilter ? (flawFilter.tacticOrientation ?? 'either') : undefined;
@@ -196,9 +203,10 @@ export function useLibraryGame(
     ? depthToQueryParams(flawFilter.tacticDepthMin, flawFilter.tacticDepthMax)
     : undefined;
   return useQuery<GameFlawCard>({
-    queryKey: ['library-game', gameId, tacticFamily, tacticOrientation, depthParam],
+    queryKey: ['library-game', gameId, severity, tacticFamily, tacticOrientation, depthParam],
     queryFn: () =>
       libraryApi.getGame(gameId!, {
+        severity,
         tactic_family: tacticFamily,
         tactic_orientation: tacticOrientation,
         ...depthParam,
