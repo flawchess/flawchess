@@ -608,8 +608,21 @@ export function OpeningsPage() {
 
   const desktopBookmarkPanelContent = (
     <div className="p-3">
-      {/* Suggest (secondary, left) + Save (primary, right) — mirrors the mobile drawer footer */}
-      <div className="flex items-center gap-2 mb-2">
+      <PositionBookmarkList
+        bookmarks={bookmarks}
+        onReorder={handleReorder}
+        onLoad={handleLoadBookmarkFromDesktopSidebar}
+        chartEnabledMap={chartEnabledMap}
+        onChartEnabledChange={handleChartEnabledChange}
+      />
+    </div>
+  );
+
+  // Pinned panel footer — Suggest (secondary, left) + Save (primary, right),
+  // mirroring the mobile drawer footer. Stays visible below the scrolling list.
+  const desktopBookmarkPanelFooter = (
+    <div className="border-t border-border/40 p-3">
+      <div className="flex items-center gap-2">
         <Button
           size="lg"
           variant="brand-outline"
@@ -630,13 +643,6 @@ export function OpeningsPage() {
           Save
         </Button>
       </div>
-      <PositionBookmarkList
-        bookmarks={bookmarks}
-        onReorder={handleReorder}
-        onLoad={handleLoadBookmarkFromDesktopSidebar}
-        chartEnabledMap={chartEnabledMap}
-        onChartEnabledChange={handleChartEnabledChange}
-      />
     </div>
   );
 
@@ -843,6 +849,7 @@ export function OpeningsPage() {
               label: 'Bookmarks',
               icon: <BookMarked className="h-5 w-5" />,
               content: desktopBookmarkPanelContent,
+              footer: desktopBookmarkPanelFooter,
               headerExtra: (
                 <InfoPopover ariaLabel="Opening bookmarks info" testId="position-bookmarks-info" side="top">
                   <div className="space-y-2">
