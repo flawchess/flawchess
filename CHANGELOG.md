@@ -44,6 +44,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Fixed
 
+- **Library severity filter now narrows tactic chips on game cards** — with "Blunders only" (or "Mistakes only") active in the Games tab Tags panel, game cards still showed tactic chips coming from flaws of the *other* severity. Severity was applied only when selecting which games appear, never to the per-card tactic badges. Tactic chips on the card (and in the "View game" modal) are now gated by the active severity tier, matching how the family/orientation/depth filters and the Flaws tab already behave.
+
 - **Eval-queue background polling no longer scans the whole games table** — the remote analysis workers poll for work roughly once a second, and the tier-3 residual-fallback pick had no matching index, so every poll ran a full sequential scan over all games (~300 ms, churning ~1.8 GB through the database cache each second, usually to find nothing). Added a partial index (`ix_games_pv_backfill_pending`) so the lookup becomes a near-instant index scan. Cuts the single largest source of database load and should noticeably improve cache efficiency for all queries.
 
 - **Google sign-in no longer orphans a guest account** — signing in with Google from the Login tab (or as a logged-in guest) used to create a brand-new account and silently abandon the guest session, losing its already-imported games. Guest sign-in now upgrades the existing guest account in place from any Google entry point: both Google buttons share one guest-aware code path, and the backend `/auth/google/authorize` endpoint promotes any guest whose session reaches it, so the games imported as a guest carry over to the registered account. (Quick 260623-o4f)

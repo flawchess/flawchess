@@ -1181,6 +1181,7 @@ async def _seed_tactic_flaw_for_game(
     *,
     game: object,
     ply: int,
+    severity: int = 2,
     missed_motif: int | None = None,
     missed_conf: int | None = None,
     missed_depth: int | None = None,
@@ -1200,7 +1201,7 @@ async def _seed_tactic_flaw_for_game(
         user_id=g.user_id,
         game_id=g.id,
         ply=ply,
-        severity=2,
+        severity=severity,
         phase=1,
         is_miss=False,
         is_lucky=False,
@@ -1490,3 +1491,175 @@ class TestBuildCardTacticPerSlotSuppression:
         assert ply2_marker is not None
         assert ply2_marker.missed_tactic_motif == "fork"
         assert ply2_marker.allowed_tactic_motif == "discovered-attack"
+
+    @pytest.mark.asyncio
+    async def test_severity_filter_gates_tactic_slots_in_games_response(
+        self, db_session: object
+    ) -> None:
+        """Severity filter narrows which flaws contribute tactic chips on the card.
+
+        Regression for the reported bug: with "blunders only" active, tactic badges
+        from mistake-severity flaws still rendered on the game card (and vice versa),
+        because tactic_slot_visible never gated on severity. The fix threads
+        flaw_severity into _build_card and skips non-matching-severity flaws when
+        building tactic_by_ply — mirroring the single-row AND game-selection predicate
+        (build_flaw_filter_clauses: GameFlaw.severity.in_(...)).
+
+        Game has a white blunder at ply 2 and a white mistake at ply 4, each with a
+        tactic. With flaw_severity=["blunder"] the game is selected (it has a blunder),
+        but only the blunder's tactic slots survive; the mistake's are nulled. With
+        flaw_severity=["mistake"] the opposite holds.
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.schemas.library import FlawMarker
+        from app.services.flaws_service import BLUNDER_DROP, MISTAKE_DROP
+        from app.services.library_service import get_library_games
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        uid = 99993
+        await ensure_test_user(session, uid)
+
+        _, curr_b = _cp_for_white_drop(BLUNDER_DROP)
+        _, curr_m = _cp_for_white_drop(MISTAKE_DROP)
+
+        # White (even ply) blunders at ply 2, recovers, then makes a mistake at ply 4.
+        game = await _seed_db_game(session, user_id=uid, user_color="white", ply_count=4)
+        await _seed_db_pos(session, game=game, ply=0, eval_cp=0)
+        await _seed_db_pos(session, game=game, ply=1, eval_cp=0)
+        await _seed_db_pos(session, game=game, ply=2, eval_cp=curr_b)  # white blunder
+        await _seed_db_pos(session, game=game, ply=3, eval_cp=0)  # recover
+        await _seed_db_pos(session, game=game, ply=4, eval_cp=curr_m)  # white mistake
+
+        # Blunder flaw (severity=2) with a tactic at ply 2.
+        await _seed_tactic_flaw_for_game(
+            session,
+            game=game,
+            ply=2,
+            severity=2,
+            missed_motif=_FORK_INT,
+            missed_conf=80,
+            missed_depth=1,
+        )
+        # Mistake flaw (severity=1) with a tactic at ply 4.
+        await _seed_tactic_flaw_for_game(
+            session,
+            game=game,
+            ply=4,
+            severity=1,
+            missed_motif=_FORK_INT,
+            missed_conf=80,
+            missed_depth=1,
+        )
+
+        async def _markers_for_severity(severity: list[str]) -> dict[int, FlawMarker]:
+            resp = await get_library_games(
+                session,
+                user_id=uid,
+                time_control=None,
+                platform=None,
+                rated=None,
+                opponent_type="all",
+                from_date=None,
+                to_date=None,
+                flaw_severity=severity,
+                flaw_tags=None,
+                tactic_families=None,
+                tactic_orientation="either",
+                min_tactic_depth=None,
+                max_tactic_depth=None,
+                offset=0,
+                limit=20,
+            )
+            assert len(resp.games) == 1
+            assert resp.games[0].flaw_markers is not None
+            return {fm.ply: fm for fm in resp.games[0].flaw_markers if fm.is_user}
+
+        # Sanity: the two user markers carry the expected severities (drops classified right).
+        markers = await _markers_for_severity(["blunder"])
+        assert markers[2].severity == "blunder"
+        assert markers[4].severity == "mistake"
+
+        # "Blunders only": blunder ply keeps its tactic; mistake ply is gated out.
+        assert markers[2].missed_tactic_motif == "fork"
+        assert markers[4].missed_tactic_motif is None
+
+        # "Mistakes only": the reverse — mistake ply keeps its tactic, blunder ply gated.
+        markers = await _markers_for_severity(["mistake"])
+        assert markers[4].missed_tactic_motif == "fork"
+        assert markers[2].missed_tactic_motif is None
+
+        # Both tiers selected (= no narrowing): both tactics survive.
+        markers = await _markers_for_severity(["blunder", "mistake"])
+        assert markers[2].missed_tactic_motif == "fork"
+        assert markers[4].missed_tactic_motif == "fork"
+
+    @pytest.mark.asyncio
+    async def test_single_game_severity_filter_gates_tactic_slots(self, db_session: object) -> None:
+        """get_library_game (the "View game" modal path) honors the severity filter.
+
+        Opening a game from a card under "blunders only" must gate the modal's tactic
+        chips by severity too, matching the list. With flaw_severity=["blunder"] the
+        mistake ply's tactic slots are nulled while the blunder ply's survive.
+        Without flaw_severity (a direct open) both survive.
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.game import Game as GameModel
+        from app.services.flaws_service import BLUNDER_DROP, MISTAKE_DROP
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        uid = 99994
+        await ensure_test_user(session, uid)
+
+        _, curr_b = _cp_for_white_drop(BLUNDER_DROP)
+        _, curr_m = _cp_for_white_drop(MISTAKE_DROP)
+
+        game = cast(
+            GameModel,
+            await _seed_db_game(session, user_id=uid, user_color="white", ply_count=4),
+        )
+        await _seed_db_pos(session, game=game, ply=0, eval_cp=0)
+        await _seed_db_pos(session, game=game, ply=1, eval_cp=0)
+        await _seed_db_pos(session, game=game, ply=2, eval_cp=curr_b)  # white blunder
+        await _seed_db_pos(session, game=game, ply=3, eval_cp=0)  # recover
+        await _seed_db_pos(session, game=game, ply=4, eval_cp=curr_m)  # white mistake
+        await _seed_tactic_flaw_for_game(
+            session,
+            game=game,
+            ply=2,
+            severity=2,
+            missed_motif=_FORK_INT,
+            missed_conf=80,
+            missed_depth=1,
+        )
+        await _seed_tactic_flaw_for_game(
+            session,
+            game=game,
+            ply=4,
+            severity=1,
+            missed_motif=_FORK_INT,
+            missed_conf=80,
+            missed_depth=1,
+        )
+
+        # "Blunders only" → mistake ply's tactic gated out.
+        card = await get_library_game(
+            session, user_id=uid, game_id=game.id, flaw_severity=["blunder"]
+        )
+        assert card is not None
+        assert card.flaw_markers is not None
+        by_ply = {fm.ply: fm for fm in card.flaw_markers if fm.is_user}
+        assert by_ply[2].missed_tactic_motif == "fork"
+        assert by_ply[4].missed_tactic_motif is None
+
+        # Direct open (no severity) → both survive.
+        card = await get_library_game(session, user_id=uid, game_id=game.id)
+        assert card is not None
+        assert card.flaw_markers is not None
+        by_ply = {fm.ply: fm for fm in card.flaw_markers if fm.is_user}
+        assert by_ply[2].missed_tactic_motif == "fork"
+        assert by_ply[4].missed_tactic_motif == "fork"

@@ -377,6 +377,7 @@ export const libraryApi = {
   getGame: (
     gameId: number,
     params?: {
+      severity?: string[];
       tactic_family?: string[];
       tactic_orientation?: string;
       min_tactic_depth?: number;
@@ -385,6 +386,7 @@ export const libraryApi = {
   ) =>
     apiClient.get<GameFlawCard>(`/library/games/${gameId}`, {
       params: {
+        ...(params?.severity && params.severity.length > 0 ? { severity: params.severity } : {}),
         ...(params?.tactic_family && params.tactic_family.length > 0
           ? { tactic_family: params.tactic_family }
           : {}),
