@@ -15,7 +15,6 @@ import {
   TAC_ALLOWED_LABEL,
 } from '@/lib/theme';
 import { uciToSquares } from '@/lib/sanToSquares';
-import { toDisplayDepthForOrientation } from '@/lib/tacticDepth';
 import { Card, CardHeader } from '@/components/ui/card';
 import { Tooltip } from '@/components/ui/tooltip';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
@@ -25,7 +24,7 @@ import { SeverityBadge } from '@/components/library/SeverityBadge';
 import { TagChip, TagLegend } from '@/components/library/TagChip';
 import { TacticMotifGroup } from '@/components/library/TacticMotifGroup';
 import { ChipColumn } from '@/components/library/ChipColumn';
-import { tacticMotifLabel, TACTIC_FAMILY_FOR_MOTIF } from '@/lib/tacticComparisonMeta';
+import { tacticMotifLabel, TACTIC_FAMILY_FOR_MOTIF, tacticDepthBadge } from '@/lib/tacticComparisonMeta';
 import { NoAnalysisState } from '@/components/library/NoAnalysisState';
 import { gamePlatformUrl, platformPlyUrl } from '@/lib/platformLinks';
 import { plysToFullMoves } from '@/lib/chess';
@@ -272,15 +271,13 @@ export function LibraryGameCard({
   const tacticDepthByPly = useMemo(() => {
     const m = new Map<number, { missed?: string; allowed?: string }>();
     for (const fm of game.flaw_markers ?? []) {
-      const missed =
-        fm.missed_tactic_depth != null
-          ? String(toDisplayDepthForOrientation(fm.missed_tactic_depth, 'missed'))
-          : undefined;
-      const allowed =
-        fm.allowed_tactic_depth != null
-          ? String(toDisplayDepthForOrientation(fm.allowed_tactic_depth, 'allowed'))
-          : undefined;
-      if (missed != null || allowed != null) m.set(fm.ply, { missed, allowed });
+      // tacticDepthBadge returns null for family-less motifs (promotion (28),
+      // self-interference (14)), so their depth never leaks onto the board as a
+      // bare number with no chip to explain it (D-09).
+      const missed = tacticDepthBadge(fm.missed_tactic_motif, fm.missed_tactic_depth, 'missed');
+      const allowed = tacticDepthBadge(fm.allowed_tactic_motif, fm.allowed_tactic_depth, 'allowed');
+      if (missed != null || allowed != null)
+        m.set(fm.ply, { missed: missed ?? undefined, allowed: allowed ?? undefined });
     }
     return m;
   }, [game.flaw_markers]);

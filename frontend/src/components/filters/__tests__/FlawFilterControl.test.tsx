@@ -154,22 +154,17 @@ describe('FlawFilterControl', () => {
     });
   });
 
-  // Severity moved inside the collapsed Context section (Quick 260620-mjh follow-up):
-  // it now lives on top of the tag families and is hidden until Context is expanded.
+  // Severity is pinned to the top of the panel, above Tactic Depth (Quick 260624):
+  // it is always visible, no longer inside the collapsed Context section.
   describe('severity buttons', () => {
-    it('hides severity buttons until Context is expanded', () => {
+    it('renders both severity buttons without expanding Context', () => {
       render(<FlawFilterControl {...defaultProps} />);
-      expect(screen.queryByTestId('filter-flaw-severity-blunder')).toBeNull();
-    });
-
-    it('renders both severity buttons after expanding Context', () => {
-      renderExpanded();
       expect(screen.getByTestId('filter-flaw-severity-blunder')).toBeTruthy();
       expect(screen.getByTestId('filter-flaw-severity-mistake')).toBeTruthy();
     });
 
     it('severity buttons reflect active state via aria-pressed', () => {
-      renderExpanded({ ...defaultProps, severity: ['blunder'] });
+      render(<FlawFilterControl {...defaultProps} severity={['blunder']} />);
       const blunderBtn = screen.getByTestId('filter-flaw-severity-blunder');
       const mistakeBtn = screen.getByTestId('filter-flaw-severity-mistake');
       expect(blunderBtn.getAttribute('aria-pressed')).toBe('true');
@@ -178,21 +173,25 @@ describe('FlawFilterControl', () => {
 
     it('clicking an inactive severity button calls onSeverityChange', () => {
       const onSeverityChange = vi.fn();
-      renderExpanded({ ...defaultProps, severity: ['blunder'], onSeverityChange });
+      render(
+        <FlawFilterControl {...defaultProps} severity={['blunder']} onSeverityChange={onSeverityChange} />,
+      );
       fireEvent.click(screen.getByTestId('filter-flaw-severity-mistake'));
       expect(onSeverityChange).toHaveBeenCalledWith(['blunder', 'mistake']);
     });
 
     it('deselecting the last active severity yields [] (both shown — no guard)', () => {
       const onSeverityChange = vi.fn();
-      renderExpanded({ ...defaultProps, severity: ['blunder'], onSeverityChange });
+      render(
+        <FlawFilterControl {...defaultProps} severity={['blunder']} onSeverityChange={onSeverityChange} />,
+      );
       // Clicking the only active severity clears it — empty severity = both shown.
       fireEvent.click(screen.getByTestId('filter-flaw-severity-blunder'));
       expect(onSeverityChange).toHaveBeenCalledWith([]);
     });
 
     it('defaults render both severity buttons inactive (empty severity = both shown)', () => {
-      renderExpanded({ ...defaultProps, severity: [] });
+      render(<FlawFilterControl {...defaultProps} severity={[]} />);
       expect(
         screen.getByTestId('filter-flaw-severity-blunder').getAttribute('aria-pressed'),
       ).toBe('false');

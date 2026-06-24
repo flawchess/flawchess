@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 
-import { tacticMotifLabel, tacticMotifDefinition } from '@/lib/tacticComparisonMeta';
+import {
+  tacticMotifLabel,
+  tacticMotifDefinition,
+  tacticDepthBadge,
+  TACTIC_FAMILY_FOR_MOTIF,
+} from '@/lib/tacticComparisonMeta';
 import { TACTIC_MOTIF_DEFINITIONS } from '@/lib/tacticMotifDefinitions';
 
 // The nine mate-family motif strings stored on flaws (app/services/tactic_detector.py).
@@ -53,5 +58,39 @@ describe('tacticMotifDefinition', () => {
 
   it('returns the motif-specific definition for non-mate motifs', () => {
     expect(tacticMotifDefinition('fork')).toBe(TACTIC_MOTIF_DEFINITIONS.fork);
+  });
+});
+
+describe('family mapping coverage', () => {
+  it('maps promotion (28) to a family now that D-09 is reversed', () => {
+    expect(TACTIC_FAMILY_FOR_MOTIF.promotion).toBe('promotion');
+    // It must also carry a chip definition so the popover body is not the raw string.
+    expect(TACTIC_MOTIF_DEFINITIONS.promotion).toBeTruthy();
+  });
+
+  it('keeps self-interference (14) family-less', () => {
+    expect(TACTIC_FAMILY_FOR_MOTIF['self-interference']).toBeUndefined();
+  });
+});
+
+describe('tacticDepthBadge', () => {
+  // Regression for the leak where a family-less motif's depth still rendered on the
+  // miniboard as a bare number with no chip. The badge shows only when the motif
+  // resolves to a visible family ("show the depth iff there is a chip").
+  it('returns the orientation-aware display depth for a mapped motif', () => {
+    // missed = raw + 1; allowed = raw + 1 + 1 (decision-anchored offset).
+    expect(tacticDepthBadge('fork', 0, 'missed')).toBe('1');
+    expect(tacticDepthBadge('fork', 0, 'allowed')).toBe('2');
+    expect(tacticDepthBadge('promotion', 5, 'allowed')).toBe('7');
+  });
+
+  it('returns null for a family-less motif even when depth is present', () => {
+    expect(tacticDepthBadge('self-interference', 8, 'allowed')).toBeNull();
+    expect(tacticDepthBadge('not-a-motif', 3, 'missed')).toBeNull();
+  });
+
+  it('returns null when the motif or depth is null', () => {
+    expect(tacticDepthBadge(null, 5, 'allowed')).toBeNull();
+    expect(tacticDepthBadge('fork', null, 'missed')).toBeNull();
   });
 });

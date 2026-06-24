@@ -337,12 +337,12 @@ function TacticFamilyGroup({
  * FlawFilterControl — severity × tag-family multi-select filter control.
  *
  * Renders (top to bottom):
+ * - Severity (Blunders / Mistakes) — always on top of the panel (Quick 260624)
  * - Orientation toggle (showTacticFilter only)
  * - Tactic Depth filter (showTacticFilter only)
  * - Tactic Type family (showTacticFilter only)
- * - Collapsed "Context" section (always) — "Severity" (Blunders / Mistakes) on top, then
- *   Timing / Opportunity / Impact / Game Phase, behind a hand-rolled toggle
- *   (Quick 260620-mjh). Shows count badge when tags selected.
+ * - Collapsed "Context" section (always) — Timing / Opportunity / Impact / Game Phase,
+ *   behind a hand-rolled toggle (Quick 260620-mjh). Shows count badge when tags selected.
  * - Filter Logic explainer
  *
  * Tag buttons show the canonical lowercase-with-dash name (matching chips + panel).
@@ -417,6 +417,23 @@ export function FlawFilterControl({
 
   return (
     <div data-testid="flaw-filter-control" className="flex flex-col gap-3">
+      {/* ── Severity (Blunders / Mistakes) — empty = both shown ──────────────
+          Pinned to the top of the panel, above Tactic Depth, on both tabs
+          (Quick 260624). Was previously inside the Context collapsible. ──── */}
+      <div className="flex flex-col gap-2">
+        <p className="text-sm text-muted-foreground">Severity</p>
+        <div className="flex gap-2 flex-wrap">
+          {SEVERITY_BUTTONS.map((config) => (
+            <SeverityFilterButton
+              key={config.sev}
+              config={config}
+              selected={severity.includes(config.sev)}
+              onToggle={handleSeverityToggle}
+            />
+          ))}
+        </div>
+      </div>
+
       {/* ── Tactic difficulty filter (Phase 129 TACUI-06, D-01/D-02/D-03) ──
           Placed first so users size the difficulty band before narrowing by
           orientation/type (Quick 260620-onv follow-up). ──── */}
@@ -560,20 +577,6 @@ export function FlawFilterControl({
             id="flaw-filter-context-content"
             className="flex flex-col gap-3 mt-2"
           >
-            {/* ── Severity (Blunders / Mistakes) — empty = both shown ───────── */}
-            <div className="flex flex-col gap-2">
-              <p className="text-sm text-muted-foreground">Severity</p>
-              <div className="flex gap-2 flex-wrap">
-                {SEVERITY_BUTTONS.map((config) => (
-                  <SeverityFilterButton
-                    key={config.sev}
-                    config={config}
-                    selected={severity.includes(config.sev)}
-                    onToggle={handleSeverityToggle}
-                  />
-                ))}
-              </div>
-            </div>
             {FAMILY_SECTIONS.map((section) => (
               <div key={section.testid} className="flex flex-col gap-2">
                 <div className="flex items-center gap-1.5">

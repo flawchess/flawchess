@@ -40,6 +40,7 @@ import {
   Gift,
   ArrowLeftRight,
   ArrowDownFromLine,
+  ArrowUpFromLine,
 } from 'lucide-react';
 
 import {
@@ -81,11 +82,14 @@ import {
   TAC_EN_PASSANT_BG,
   TAC_UNDER_PROMOTION,
   TAC_UNDER_PROMOTION_BG,
+  TAC_PROMOTION,
+  TAC_PROMOTION_BG,
   ZONE_DANGER,
   ZONE_NEUTRAL,
   ZONE_SUCCESS,
 } from '@/lib/theme';
 import { TACTIC_MOTIF_DEFINITIONS } from '@/lib/tacticMotifDefinitions';
+import { toDisplayDepthForOrientation, type TacticDepthOrientation } from '@/lib/tacticDepth';
 import type { TacticBullet } from '@/types/library';
 
 // Re-export TacticBullet for consumers that import from this module.
@@ -132,7 +136,9 @@ export type TacticFamily =
   | 'sacrifice'
   // Move-type families (Quick 260623): en-passant + under-promotion unsuppressed
   | 'en_passant'
-  | 'under_promotion';
+  | 'under_promotion'
+  // promotion (28) surfaced (was hidden under D-09; perfect-precision residual motif)
+  | 'promotion';
 
 export interface TacticFamilyColors {
   /** Icon + chip foreground color. */
@@ -163,6 +169,7 @@ export const TACTIC_FAMILY_COLORS: Record<TacticFamily, TacticFamilyColors> = {
   // Move-type families (Quick 260623): en-passant + under-promotion
   en_passant: { color: TAC_EN_PASSANT, bg: TAC_EN_PASSANT_BG },
   under_promotion: { color: TAC_UNDER_PROMOTION, bg: TAC_UNDER_PROMOTION_BG },
+  promotion: { color: TAC_PROMOTION, bg: TAC_PROMOTION_BG },
 };
 
 export const TACTIC_FAMILY_ICON: Record<TacticFamily, TacticIcon> = {
@@ -187,6 +194,7 @@ export const TACTIC_FAMILY_ICON: Record<TacticFamily, TacticIcon> = {
   // Move-type families (Quick 260623): en-passant + under-promotion
   en_passant: ArrowLeftRight,
   under_promotion: ArrowDownFromLine,
+  promotion: ArrowUpFromLine,
 };
 
 // ─── Mechanism groups (filter panel, Quick 260620-onv) ─────────────────────────
@@ -236,7 +244,8 @@ export interface TacticFamilyDef {
  * these by `group` preserving this order. The comparison grid resolves families by
  * `.find(f => f.family === ...)` and renders in server order, so it is unaffected by
  * this ordering. The motifs arrays mirror the backend FAMILY_TO_MOTIF_INTS mapping in
- * library_repository.py (plan 129-04 contract). Only self-interference belongs to no family.
+ * library_repository.py (plan 129-04 contract). Only self-interference belongs to no family
+ * (promotion was added here when D-09 was reversed).
  */
 export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
   // ── Piece Attacks ──
@@ -412,6 +421,18 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     definition: 'A pawn promotes to a knight, bishop, or rook instead of a queen to deliver a specific tactic.',
     motifs: ['under-promotion'],
   },
+  // promotion (28): surfaced (was D-09-hidden). Perfect-precision residual move-type
+  // motif — fires only when the winning line queens a pawn and no sharper tactic applies.
+  // Sibling of under-promotion; the "allowed" orientation ("you let the opponent queen")
+  // is an instructive endgame mistake.
+  {
+    name: 'Promotion',
+    family: 'promotion',
+    group: 'advanced',
+    chipLabel: 'promotion',
+    definition: 'A pawn reaches the back rank and promotes to a queen, often deciding the game.',
+    motifs: ['promotion'],
+  },
 ];
 
 /**
@@ -422,7 +443,7 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
  * lets the synthetic "checkmate" label map to the `mate` family even though it
  * is not a backend motif string (Quick 260620-onv). For single-motif families
  * chipLabel already equals the motif, so the extra key is a harmless no-op.
- * Only self-interference maps to no family; consumers already guard `family == null`.
+ * Only self-interference maps to no family now; consumers already guard `family == null`.
  */
 export const TACTIC_FAMILY_FOR_MOTIF: Record<string, TacticFamily> = Object.fromEntries(
   TACTIC_COMPARISON_FAMILIES.flatMap(({ family, motifs, chipLabel }) =>
@@ -450,6 +471,25 @@ export function tacticMotifLabel(motif: string): string {
 export function tacticMotifDefinition(motif: string): string {
   const key = TACTIC_FAMILY_FOR_MOTIF[motif] === 'mate' ? 'checkmate' : motif;
   return TACTIC_MOTIF_DEFINITIONS[key] ?? motif;
+}
+
+/**
+ * Orientation-aware display depth for a miniboard depth badge, or null when the
+ * badge must be hidden. A badge shows only when the motif also surfaces a chip —
+ * i.e. its motif resolves to a visible family. Family-less motifs (promotion (28),
+ * self-interference (14)) are intentionally unmapped everywhere (D-09); without this
+ * guard their depth leaked onto the board as a bare number with no chip or tooltip
+ * to explain it. Mirrors the TACTIC_FAMILY_FOR_MOTIF guard the chip set and eval-chart
+ * tooltip already apply.
+ */
+export function tacticDepthBadge(
+  motif: string | null,
+  depth: number | null,
+  orientation: TacticDepthOrientation,
+): string | null {
+  if (motif == null || depth == null) return null;
+  if (TACTIC_FAMILY_FOR_MOTIF[tacticMotifLabel(motif)] == null) return null;
+  return String(toDisplayDepthForOrientation(depth, orientation));
 }
 
 // ─── Stat helpers (shared by the grid + tooltips) ──────────────────────────────

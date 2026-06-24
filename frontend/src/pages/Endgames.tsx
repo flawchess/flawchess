@@ -859,8 +859,18 @@ export function EndgamesPage() {
                     <FilterPanel
                       filters={pendingFilters}
                       onChange={setPendingFilters}
-                      onApply={handleDesktopFiltersApply}
                       visibleFilters={['timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency']}
+                      hideReset
+                    />
+                  </div>
+                ),
+                // Reset/Apply pinned to the panel bottom, below the scrolling filters
+                // (mirrors the mobile drawer's pinned footer).
+                footer: (
+                  <div className="px-3 pb-3">
+                    <FilterActions
+                      onReset={() => setPendingFilters(resetFilterState(pendingFilters))}
+                      onApply={handleDesktopFiltersApply}
                     />
                   </div>
                 ),
