@@ -164,7 +164,7 @@ export function HomePageContent() {
               <div className="absolute left-1/2 top-1/2 h-10 w-72 -translate-x-1/2 -translate-y-1/2 bg-[radial-gradient(ellipse_at_center,rgba(205,127,50,0.35),transparent_70%)] blur-md" />
             </div>
             <p className="mt-4 text-base leading-relaxed text-muted-foreground">
-              Free analysis across your chess.com and lichess games, with AI-narrated insights. Find leaks in your openings, endgames, and time management.
+              Find and fix the flaws in your game. Free full-game analysis of every chess.com and lichess game: tactics, openings, endgames, and time management.
             </p>
             <div className="mt-8 flex flex-row items-center justify-center gap-3">
               <Button
