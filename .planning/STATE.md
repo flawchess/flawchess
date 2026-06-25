@@ -62,7 +62,7 @@ Acknowledged and deferred at **v1.28 milestone close on 2026-06-25** (user direc
 
 | Category | Item | Disposition |
 |----------|------|-------------|
-| uat | Phase 135 `135-UAT.md` (`testing`, 2 pending manual scenarios — desktop depth-counter walk + mobile Drawer/D-01/D-02) | Carried — manual browser checks on a feature implemented + code-verified (135-VERIFICATION.md, 3 SUMMARYs) and shipping at close; not a functional gap. Verify on prod after `/deploy`. |
+| uat | Phase 135 `135-UAT.md` (~~`testing`, 2 pending manual scenarios~~ → **RESOLVED**: `passed` 2/2) | Resolved — user manually verified both scenarios (desktop depth-counter walk + mobile Drawer/D-01/D-02) on prod 2026-06-25; UAT marked `passed`. |
 | uat | Phase 126 `126-UAT.md` (`passed`, 0 pending scenarios) | Not a gap — UAT passed; the audit flag is a frontmatter artifact. |
 | debug | `entry-submit-n-plus-1` (`fixed_awaiting_deploy`), `insights-diskfull-shm` (`awaiting_human_verify`) | Carried — infra debug sessions unrelated to tactic tagging; the n+1 fix rides this release, the shm/DiskFull hypothesis is documented in CLAUDE.md + memory. |
 | quick_task | 19 incomplete (`unknown`/`missing` status): 260531-jga, 260601-og7, 260603-o8m/pgv/q85, 260604-t54, 260606-glq/hfy/io6, 260608-w23, 260610-vru, 260611-rqu, 260612-bdr, 260613-bst, 260614-tgs/vy4, 260615-q1x/rb1, 260616-jq1 | Resolved in fact — shipped (each appears in CHANGELOG + git log); only the frontmatter status is unset (known false-positive pattern, see `project_stale_gsd_sdk_audit_bug`). Not v1.28 blockers. |
