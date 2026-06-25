@@ -286,8 +286,14 @@ describe('FlawCard', () => {
 
   describe('Tactic-depth badge (quick-260621-mq4)', () => {
     it('renders the missed-tactic depth (1-based) on the blue best-move arrow', () => {
-      // missed_tactic_depth 4 (0-based) → display "5" at the best-move arrow.
-      render(<FlawCard flaw={makeFlaw({ best_move: 'g1f3', missed_tactic_depth: 4 })} />);
+      // missed_tactic_depth 4 (0-based) → display "5" at the best-move arrow. The motif is
+      // set too: the detector always writes motif + depth together, and the depth badge is
+      // family-guarded (Quick 260625-qbj), so a depth never renders without its motif/chip.
+      render(
+        <FlawCard
+          flaw={makeFlaw({ best_move: 'g1f3', missed_tactic_motif: 'fork', missed_tactic_depth: 4 })}
+        />,
+      );
       const overlay = document.querySelector('[data-testid="mini-board-arrow-overlay"]');
       expect(overlay).not.toBeNull();
       const labels = Array.from(overlay!.querySelectorAll('text')).map((t) => t.textContent);

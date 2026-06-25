@@ -89,8 +89,16 @@ import {
   ZONE_SUCCESS,
 } from '@/lib/theme';
 import { TACTIC_MOTIF_DEFINITIONS } from '@/lib/tacticMotifDefinitions';
-import { toDisplayDepthForOrientation, type TacticDepthOrientation } from '@/lib/tacticDepth';
+import {
+  toDisplayDepthForOrientation,
+  ALLOWED_DECISION_DEPTH_OFFSET,
+  DEPTH_MIN,
+  DEPTH_MAX,
+  DEFAULT_TACTIC_DEPTH_VALUE,
+  type TacticDepthOrientation,
+} from '@/lib/tacticDepth';
 import type { TacticBullet } from '@/types/library';
+import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
 
 // Re-export TacticBullet for consumers that import from this module.
 export type { TacticBullet };
@@ -474,22 +482,108 @@ export function tacticMotifDefinition(motif: string): string {
 }
 
 /**
- * Orientation-aware display depth for a miniboard depth badge, or null when the
- * badge must be hidden. A badge shows only when the motif also surfaces a chip —
- * i.e. its motif resolves to a visible family. Family-less motifs (promotion (28),
- * self-interference (14)) are intentionally unmapped everywhere (D-09); without this
- * guard their depth leaked onto the board as a bare number with no chip or tooltip
- * to explain it. Mirrors the TACTIC_FAMILY_FOR_MOTIF guard the chip set and eval-chart
- * tooltip already apply.
+ * Bundled visibility decision for one tactic slot (Quick 260625-qbj). When non-null,
+ * BOTH the motif chip and the depth badge are allowed to render; when null, NEITHER
+ * may. This is the single source of truth that makes a depth number physically unable
+ * to leak onto a board without its paired chip — the chip and the depth read from the
+ * same object instead of two parallel derivations that can drift.
+ */
+export interface VisibleTactic {
+  /** Raw motif string (the chip's `motif` prop → family color/icon). */
+  motif: string;
+  /** Display label (mate-family motifs collapse to "checkmate"). */
+  motifLabel: string;
+  /**
+   * Orientation-aware 1-based depth string for the board badge, or null when the slot
+   * carries no depth — the chip still shows, just without a board number.
+   */
+  depthLabel: string | null;
+}
+
+/**
+ * Decide whether a tactic slot's live FILTER predicate passes, mirroring the backend
+ * `tactic_slot_visible` (app/repositories/library_repository.py) axis-for-axis:
+ * orientation scope, family narrowing, and the decision-anchored depth range (full-range
+ * short-circuit; the +1 ALLOWED_DECISION_DEPTH_OFFSET applied to the allowed slot). Only
+ * the TacticLineExplorer needs this — its API returns BOTH raw lines un-nulled so it must
+ * re-filter client-side; the Games/Flaws card surfaces receive server-nulled slots. The
+ * confidence gate is intentionally omitted here: the tactic-lines API only returns
+ * already-confident tactics (the backend nulls sub-threshold slots, D-09).
+ *
+ * If this and the backend predicate ever drift, resolveVisibleTactic.test.ts fails.
+ */
+function slotPassesFilter(
+  orientation: TacticDepthOrientation,
+  motif: string,
+  depth: number | null,
+  filter: FlawFilterState,
+): boolean {
+  // 1. Orientation scope.
+  const orientationFilter = filter.tacticOrientation ?? 'either';
+  if (orientationFilter !== 'either' && orientationFilter !== orientation) return false;
+
+  // 2. Family narrowing (skip when no families selected — all motifs pass).
+  const families = filter.tacticFamilies ?? [];
+  if (families.length > 0) {
+    const family = TACTIC_FAMILY_FOR_MOTIF[motif];
+    if (family == null || !families.includes(family)) return false;
+  }
+
+  // 3. Decision-anchored depth range — skip entirely on the full range, else compare
+  //    (depth + allowed-offset) against the inclusive [min, max] bounds.
+  const depthMin = filter.tacticDepthMin ?? DEFAULT_TACTIC_DEPTH_VALUE.min;
+  const depthMax = filter.tacticDepthMax ?? DEFAULT_TACTIC_DEPTH_VALUE.max;
+  const rangeActive = depthMin !== DEPTH_MIN || depthMax !== DEPTH_MAX;
+  if (rangeActive) {
+    if (depth == null) return false;
+    const anchored = depth + (orientation === 'allowed' ? ALLOWED_DECISION_DEPTH_OFFSET : 0);
+    if (anchored < depthMin || anchored > depthMax) return false;
+  }
+  return true;
+}
+
+/**
+ * The single predicate deciding whether a tactic slot is shown, returning the paired
+ * chip + depth-badge data (or null when hidden). Replaces the former separate
+ * `tacticDepthBadge` / `tacticOrientationPasses` / inline depth-label derivations so the
+ * chip and the depth number can never diverge (Quick 260625-qbj).
+ *
+ * Always applies the family guard: family-less motifs (promotion (28), self-interference
+ * (14)) surface no chip (TacticMotifChip returns null), so their depth must never paint as
+ * a bare number (D-09). When `filter` is supplied (TacticLineExplorer only), additionally
+ * applies the live filter via `slotPassesFilter` so the explorer matches the
+ * server-filtered Games/Flaws surfaces. Card surfaces pass no filter — their slots are
+ * already nulled server-side, so only the family guard runs.
+ */
+export function resolveVisibleTactic(
+  orientation: TacticDepthOrientation,
+  motif: string | null,
+  depth: number | null,
+  filter?: FlawFilterState,
+): VisibleTactic | null {
+  if (motif == null) return null;
+  const label = tacticMotifLabel(motif);
+  if (TACTIC_FAMILY_FOR_MOTIF[label] == null) return null;
+  if (filter != null && !slotPassesFilter(orientation, motif, depth, filter)) return null;
+  return {
+    motif,
+    motifLabel: label,
+    depthLabel: depth != null ? String(toDisplayDepthForOrientation(depth, orientation)) : null,
+  };
+}
+
+/**
+ * Orientation-aware display depth for a miniboard depth badge, or null when the badge
+ * must be hidden. Thin delegate over `resolveVisibleTactic` (no live filter) so the
+ * family guard and depth formatting live in exactly one place. A badge shows only when
+ * the motif also surfaces a chip — i.e. its motif resolves to a visible family.
  */
 export function tacticDepthBadge(
   motif: string | null,
   depth: number | null,
   orientation: TacticDepthOrientation,
 ): string | null {
-  if (motif == null || depth == null) return null;
-  if (TACTIC_FAMILY_FOR_MOTIF[tacticMotifLabel(motif)] == null) return null;
-  return String(toDisplayDepthForOrientation(depth, orientation));
+  return resolveVisibleTactic(orientation, motif, depth)?.depthLabel ?? null;
 }
 
 // ─── Stat helpers (shared by the grid + tooltips) ──────────────────────────────

@@ -37,7 +37,7 @@ import { SeverityBadge } from '@/components/library/SeverityBadge';
 import { TagChip, TagLegend } from '@/components/library/TagChip';
 import { platformPlyUrl } from '@/lib/platformLinks';
 import { sanToSquares, uciToSquares } from '@/lib/sanToSquares';
-import { toDisplayDepthForOrientation } from '@/lib/tacticDepth';
+import { tacticDepthBadge } from '@/lib/tacticComparisonMeta';
 import { formatMoveNotation } from '@/lib/openingInsights';
 import { formatFlawEvalParts } from '@/lib/formatFlawEval';
 import { useLibraryGame } from '@/hooks/useLibrary';
@@ -175,14 +175,13 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
   // the flaw-move arrow; the missed tactic at the end of the blue best-move arrow.
   // Allowed is decision-anchored (+1 vs missed) because the opponent's refutation
   // line starts one ply after the shared pre-flaw decision board (Quick 260621-qz9).
+  // Shared resolver (Quick 260625-qbj): the family guard ensures a family-less motif
+  // (promotion, self-interference) — whose chip self-nullifies — never paints a bare
+  // depth number with no chip to explain it.
   const allowedDepthLabel =
-    flaw.allowed_tactic_depth != null
-      ? String(toDisplayDepthForOrientation(flaw.allowed_tactic_depth, 'allowed'))
-      : undefined;
+    tacticDepthBadge(flaw.allowed_tactic_motif, flaw.allowed_tactic_depth, 'allowed') ?? undefined;
   const missedDepthLabel =
-    flaw.missed_tactic_depth != null
-      ? String(toDisplayDepthForOrientation(flaw.missed_tactic_depth, 'missed'))
-      : undefined;
+    tacticDepthBadge(flaw.missed_tactic_motif, flaw.missed_tactic_depth, 'missed') ?? undefined;
   const boardArrows = [
     ...(moveSquares
       ? [
