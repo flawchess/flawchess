@@ -30,263 +30,11 @@
 - ✅ **v1.25 Flaw-Stats Opponent Comparison** — Phases 113–115 (incl. 114.1) (shipped 2026-06-12) — see [milestones/v1.25-ROADMAP.md](milestones/v1.25-ROADMAP.md)
 - ✅ **v1.26 Full-Game Eval Pipeline** — Phases 116–120 (incl. 117.1, 117.2) (shipped 2026-06-14) — see [milestones/v1.26-ROADMAP.md](milestones/v1.26-ROADMAP.md)
 - ✅ **v1.27 Remote Eval Worker Fan-Out & In-App Feedback** — Phases 121–123 (shipped 2026-06-16; releases #199, #202, #203) — see [milestones/v1.27-ROADMAP.md](milestones/v1.27-ROADMAP.md)
-- 🔄 **v1.28 Tactic Tagging** — Phases 124–135 (incl. 128.1; Phase 130 was a placeholder superseded by 131–134). Phases 124–134 complete and deployed to prod via release #214 (2026-06-23); Phase 135 (Tactic Line Explorer, SEED-065) added 2026-06-24, planned 2026-06-24 (3 plans). Formal milestone close (tag + archive + CHANGELOG promotion) deferred until 135 ships.
+- ✅ **v1.28 Tactic Tagging** — Phases 124–135 (incl. 123.1, 128.1; Phase 130 superseded by 131–134) (shipped 2026-06-25) — see [milestones/v1.28-ROADMAP.md](milestones/v1.28-ROADMAP.md)
 
 ## Phases
 
-### Standalone (post-v1.27, milestone TBD)
-
-- [x] **Phase 123.1: Opening-eval dedup cache table (SEED-053)** (INSERTED) — replace the drain's cross-user `DISTINCT ON (full_hash)` self-join with a position-keyed `opening_position_eval` cache table (~1.06M rows / ~80MB, resident); cuts the per-game dedup lookup from ~8.4 s avg to sub-ms, accelerating the ~245k-game tier-3 drain backlog. Drop-in for `_fetch_dedup_evals`, no dedup-semantics change. Also accelerates v1.28 (Phase 125 backfill needs full-eval'd games). (completed 2026-06-17)
-
-### v1.28 Tactic Tagging
-
-- [x] **Phase 124: Schema + Tactic Detector** — Alembic migration for `tactic_motif`/`tactic_piece` columns + the pure-CPU cook-heuristic reimplementation + hand-labeled fixture validation (completed 2026-06-18)
-- [x] **Phase 125: Backfill Tactic Motifs** — run `backfill_flaws.py` over ~131k self-eval'd games; lichess-eval-only games stay NULL until full-eval'd via the existing tier-3 idle fleet (completed 2026-06-18)
-- [x] **Phase 126: Comparison Stats + Frontend** — `GET /api/library/tactic-comparison` endpoint + motif chips on flaw cards + MiniBulletChart you-vs-opponent motif grid (completed 2026-06-18)
-- [x] **Phase 127: Detector Hardening & Validation** — return motif depth from all detectors + store `*_tactic_depth`; lichess CC0 puzzle validation harness (precision AND recall); fix deep-scan/loose-pin false positives. De-risks 128/129. (completed 2026-06-19)
-- [x] **Phase 128: Missed-Opportunity Tagging** — rename existing tactic cols to `allowed_*`, add `missed_*` set; second detector pass on the `flaw_ply` PV (SEED-054); backend filter + schema; mover-relative columns, `is_opponent_expr` narration (no `tactic_pov` column) (completed 2026-06-19)
-- [x] **Phase 128.1: Add tactic motifs for lichess-theme coverage** (INSERTED) — close lichess `puzzleTheme.xml` gaps: split `discovered-check` out of discovered-attack, new `trapped-piece` detector, trivial `en-passant` + `promotion`/`under-promotion` tags; new precision floors baselined on TRAIN (SEED-058) (completed 2026-06-20)
-- [x] **Phase 129: Tactic Filter UI** — composed motif × pov (missed/allowed) × depth-slider filter + display across flaw surfaces, desktop + mobile (completed 2026-06-20)
-- [→] **Phase 130: Tactic tag improvements and fixes** — placeholder, never executed; superseded by the cook.py-alignment precision work in Phases 131–134
-- [x] **Phase 131: Tactic precision hardening via cook.py alignment (SEED-064)** — faithful cook.py predicate reimplementation for Tier 1 (mate) + Tier 2 (geometric) motifs, shallowest-tactic-wins dispatch, missed-vs-played dest-square gate; per-motif TEST precision toward >0.9, suppress-if-below (completed 2026-06-23)
-- [x] **Phase 132: Tier-3 tactic precision hardening via cook.py alignment** — cook AND-chain predicates for deflection/clearance/attraction/intermezzo/x-ray/capturing-defender, ship-or-suppress on TEST; interference locked at 0.99 (completed 2026-06-23)
-- [x] **Phase 133: Close suppressed-tactic gaps** — attraction off-by-one fix + unsuppress, sacrifice unsuppress, arabian/boden/dovetail mate-geometry ports (completed 2026-06-23)
-- [x] **Phase 134: trapped-piece fixture expansion (Option B) + cook reimplementation** — per-motif oversample cap, cook-faithful `detect_trapped_piece` (P 1.000 TEST), conditional unsuppress; shipped the trapped-piece tag (completed 2026-06-23)
-- [ ] **Phase 135: Tactic Line Explorer — walkable PV stepper for tagged flaws (SEED-065)** — full-screen Dialog stepping through the missed (engine PV) and allowed (opponent punishment) lines on a large board + SAN ladder; depth counter to the punchline; `Explore` entry points on flaw/game cards (tagged-only); new `tactic-lines` endpoint surfacing `game_positions.pv`
-
-## Phase Details
-
-### Phase 123.1: Opening-eval dedup cache table (SEED-053) (INSERTED)
-
-**Goal**: The full-eval drain's opening-region eval/best_move dedup lookup is served by a position-keyed cache table instead of the cross-user self-join — sub-millisecond per lookup, no change to dedup semantics
-**Depends on**: Nothing (standalone infra; pure drop-in for `_fetch_dedup_evals`)
-**Requirements**: SEED-053 (no formal REQ IDs — infra optimization)
-**Success Criteria** (what must be TRUE):
-
-  1. A new Alembic migration adds `opening_position_eval(full_hash BIGINT PK, eval_cp SmallInteger, eval_mate SmallInteger, best_move VARCHAR(5))`; the dev DB migrates cleanly; a standalone idempotent backfill script populates it from existing our-engine opening evals (`DISTINCT ON (full_hash)` where `ply <= DEDUP_MAX_PLY` and the `has_engine_full_evals` predicate)
-  2. The drain's opening-region write path upserts only freshly-computed engine misses into the cache (`INSERT … ON CONFLICT (full_hash) DO NOTHING`, batched in the existing write transaction); a freshly drained opening position appears in the cache
-  3. `_fetch_dedup_evals` reads from `opening_position_eval` (`full_hash = ANY(:hashes)`) instead of the self-join, preserving every existing read-side guard (`ply <= DEDUP_MAX_PLY`, not flaw-adjacent, not terminal); a regression test asserts identical dedup results to the legacy self-join for the same fixture
-  4. eval/flaw/pv output is unchanged (no behavioral diff in the drain); the lookup's measured time drops from seconds to low-ms on prod-like data
-  5. The cache is seeded from prod our-engine data only; benchmark-DB seeding and a materialized view are explicitly rejected (provenance / no best_move-pv / refresh cost) and documented (per SEED-053 + 123.1-CONTEXT)
-
-**Plans**: 2 plans
-
-### Phase 124: Schema + Tactic Detector
-
-**Goal**: The system can detect and store a tactic motif for any flawed move that has a stored refutation PV
-**Depends on**: Nothing (first phase of this milestone — builds on v1.27 infrastructure)
-**Requirements**: TACSCH-01, TACSCH-02, TACDET-01, TACDET-02, TACDET-03, TACDET-04
-**Success Criteria** (what must be TRUE):
-
-  1. A new Alembic migration adds nullable `tactic_motif` (SmallInteger enum) and `tactic_piece` (SmallInteger) columns to `game_flaws`; the dev DB migrates cleanly
-  2. Given a stored `game_positions.pv` at `flaw_ply + 1`, the detector returns at most one motif name from the implemented MVP set (finalized during phase discussion) with a fixed priority order when multiple motifs fire
-  3. The detector leaves `tactic_motif = NULL` when confidence is low rather than guessing; a hand-labeled per-motif fixture set passes with precision-first accuracy
-  4. Motif detection runs inside `classify_game_flaws` (eval-drain flow-through) and `backfill_flaws.py` (recompute path) for both the player's and the opponent's flaws, with no new engine invocation
-
-**Plans**: 4 plans
-
-Plans:
-**Wave 1**
-
-- [x] 124-01-PLAN.md — Schema foundation: Alembic migration (3 nullable cols) + ORM columns + TacticMotifInt/Literal/dicts encoding shell + FlawRecord/flaw_record_to_row plumbing
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 124-02-PLAN.md — Detector module: PV parser + Core 8 + named-mate + tier-3 detectors + D-07 priority dispatcher (tactic_piece D-12, confidence D-11)
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 124-03-PLAN.md — Hand-labeled fixtures from own prod flaws + precision harness enforcing D-10 bars (Core ≥90%, tier-3/named-mate ≥95%)
-
-**Wave 4** *(blocked on Wave 3 completion)*
-
-- [x] 124-04-PLAN.md — Wire detect_tactic_motif into _build_flaw_record for both colors (flows to classify + backfill, no new engine call)
-
-### Phase 125: Backfill Tactic Motifs
-
-**Goal**: All existing self-eval'd game flaws carry their tactic motif and piece tags; coverage is honest and verifiable
-**Depends on**: Phase 124 (schema + validated detector)
-**Requirements**: TACSCH-03
-**Success Criteria** (what must be TRUE):
-
-  1. Running `backfill_flaws.py` over the ~131k self-eval'd games (`full_evals_completed_at IS NOT NULL`) populates `tactic_motif` and `tactic_piece` for every flaw row where the detector fires (NULL rows reflect genuine low-confidence, not skipped positions)
-  2. Lichess-eval-only flaws (~13.6k games with no `full_evals_completed_at`) keep `tactic_motif = NULL` — no bespoke job type, no separate backfill; coverage fills in via the existing tier-3 idle fleet
-  3. Backfill is idempotent: re-running it produces the same result without duplicating or corrupting existing rows
-
-**Plans**: 3 plans
-
-- [x] 125-01-PLAN.md — Wave 0: extend test_backfill_flaws.py to assert tactic columns + build read-only coverage_report_tactic_motifs.py (D-04)
-- [x] 125-02-PLAN.md — run dev backfill (D-02), prove honest coverage (SC#1/D-04), idempotency (SC#3/D-05), D-06 blast-radius
-- [x] 125-03-PLAN.md — deferred prod runbook (D-01, documentation only)
-
-**Note**: ROADMAP SC#1 (prod ~131k) is met-on-dev / prod-pending — Phase 125 completes on dev; prod execution is deferred (D-01).
-
-### Phase 126: Comparison Stats + Frontend
-
-**Goal**: Players can see which tactic motifs they allow more or less than their opponents, with significance gating and mobile parity
-**Depends on**: Phase 125 (populated `tactic_motif` rows)
-**Requirements**: TACCMP-01, TACCMP-02, TACCMP-03, TACUI-01, TACUI-02, TACUI-03
-**Success Criteria** (what must be TRUE):
-
-  1. `GET /api/library/tactic-comparison` returns per-motif rates (normalized per game or per 100 blunders) for player vs opponents, with significance verdict via the project's existing Wilson-based chess-score utility, honoring all game filters (time control, platform, rated, opponent type, recency, color) and severity
-  2. Each flaw card in the Library shows its `allowed` motif as a family-colored chip with a definition popover, consistent with the shipped flaw-tag chip pattern
-  3. The you-vs-opponent motif comparison surface (MiniBulletChart grid: measure + CI + benchmark zone where available, per-motif tooltips) renders on the Library page with a section-level sample gate below which the comparison is withheld
-  4. All chips, comparison bullets, and interactive elements render correctly on mobile at 375px with `data-testid` and ARIA labels matching the project's browser-automation rules
-
-**Plans**: 3 plans
-**Wave 1**
-
-- [x] 126-01-PLAN.md — Backend: `/tactic-comparison` endpoint + service/repo + `tactic_families` filter on `apply_game_filters()` + confidence-gated `tactic_motif`/`tactic_confidence` on flaw rows (wave 1)
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 126-02-PLAN.md — Frontend chip + filter: TAC_* theme constants, family taxonomy meta, `TacticMotifChip` on both flaw surfaces, beta-gated motif filter in FilterPanel (wave 2)
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 126-03-PLAN.md — Frontend grid: `getTacticComparison` API + `useTacticComparison` hook + `TacticComparisonGrid` on the Library page (wave 3)
-
-**UI hint**: yes
-
-### Phase 127: Detector Hardening & Validation
-
-**Goal**: Tactic tags are trustworthy — false positives are measured against independent ground truth and the worst offenders are fixed, and every tag carries the depth at which the motif occurs
-**Depends on**: Phase 124 (detector + schema). Independent of Phase 126.
-**Requirements**: (to be assigned during discuss-phase)
-**Success Criteria** (what must be TRUE):
-
-  1. Every detector returns the ply at which the motif fires; a new nullable `*_tactic_depth` SmallInteger is stored on `game_flaws` (populated on next drain/backfill; NULL on pre-existing rows is honest)
-  2. A read-only validation harness scores the detector against the lichess CC0 puzzle database (FEN + solution Moves + Themes), reporting **precision AND recall** per motif, mapping our motifs to lichess theme names and explicitly listing motifs with no lichess equivalent (unvalidated, same status as today's query-suppressed set)
-  3. The deep-scan / loose-pin false positives are fixed: `detect_fork` and `detect_pin` no longer attribute an incidental motif buried in a non-forcing continuation to the flaw (e.g. depth-bounded or relevance-gated), validated by the harness precision delta
-  4. No vendoring or porting of AGPL `cook.py` — only the CC0 puzzle *data* is used; this is recorded in the test/harness docstring
-  5. The self-labeled fixture circularity is documented and superseded: the precision/recall numbers in CI come from the independent puzzle set, not detector-bucketed fixtures
-
-**Plans**: 4 plans
-**Wave 1**
-
-- [x] 127-01-PLAN.md — 4-tuple detector contract + depth + relevance gate + min-depth dispatch + tactic_depth column/migration (Wave 1)
-- [x] 127-02-PLAN.md — harness infra: selector + committed CC0 fixture + motif→theme map + excluded tagger dir + pyproject ignore + CI step (Wave 1)
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 127-03-PLAN.md — measure precision/recall + depth-vs-Rating correlation, set floors from measured numbers, suppress sub-floor tier-3, supersede circular fixtures (Wave 2)
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 127-04-PLAN.md — dev re-backfill validation (tactic_depth populated, fork/pin FP drop) + deferred prod runbook (Wave 3)
-
-### Phase 128: Missed-Opportunity Tagging
-
-**Goal**: A flaw can carry both the tactic the flaw-maker *missed* (the line they should have played) and the tactic they *allowed* (the refutation), distinguished without a perspective column
-**Depends on**: Phase 127 (hardened detector + depth). SEED-054 `flaw_ply` PV coverage.
-**Requirements**: (to be assigned during discuss-phase)
-**Success Criteria** (what must be TRUE):
-
-  1. The existing tactic columns are renamed to `allowed_tactic_motif`/`allowed_tactic_piece`/`allowed_tactic_confidence` (data preserved) and `allowed_tactic_depth` is added; a new `missed_tactic_*` set is added (motif/piece/confidence/depth)
-  2. The detector runs a second pass on the `flaw_ply` PV with `pov = the mover`, populating `missed_*`; a flaw may have neither, one, or both column sets filled
-  3. No `tactic_pov` column exists — orientation is the column source and user-perspective is derived via `is_opponent_expr(ply, user_color)`; narration follows the column-set × is_opponent matrix
-  4. The inline-columns-vs-child-table decision is made and recorded during discuss-phase (lean inline, per the design note)
-  5. Backend filtering and the comparison/flaw schemas expose both orientations; backfill is idempotent and gated on SEED-054 PV availability (lichess-only coverage fills in over time)
-
-**Plans**: 4 plans
-
-Plans:
-**Wave 1**
-
-- [x] 128-01-PLAN.md — Storage contract: rename tactic_* → allowed_tactic_* + add missed_tactic_* (data-preserving Alembic rename+add) + FlawRecord/write-path mapping (D-01, D-02, D-06)
-
-**Wave 2** *(blocked on Wave 1)*
-
-- [x] 128-02-PLAN.md — Detector second pass: orientation-parametrized _detect_tactic_for_flaw, missed pass on flaw_ply PV (pov=mover), both 4-tuples in _build_flaw_record (D-03, D-04, D-05, D-06)
-- [x] 128-03-PLAN.md — Orientation-aware filter + schema contract: orientation enum at both filter sites (default allowed), full tactic_* → allowed_* rename ripple, both column sets on flaw/comparison schemas (D-07, D-08, D-09, D-10)
-
-**Wave 3** *(blocked on Wave 2)*
-
-- [x] 128-04-PLAN.md — Dev backfill (missed_* + allowed_tactic_depth fill, honest coverage, idempotency) + deferred folded 127/128 prod runbook (D-11, D-12, D-13)
-
-### Phase 128.1: Add tactic motifs for lichess-theme coverage (discovered-check, trapped-piece, en-passant, promotion) (INSERTED)
-
-**Goal:** Close lichess `puzzleTheme.xml` coverage gaps in `detect_tactic_motif` by adding four deterministically-detectable motifs — split `discovered-check` out of `discovered-attack` (near-free, logic already exists), a new `trapped-piece` detector (escape-square enumeration), and trivial `en-passant` + `promotion`/`under-promotion` tags. Each motif follows the 5-step recipe (Literal + IntEnum, detector, `motif_theme_map.py` entry, dispatch placement, precision floor baselined from a fresh TRAIN harness run; never lower an existing floor). Product call needed on whether to surface promotion/under-promotion as chips (move-type vs true motif).
-**Requirements**: TBD (assign during discuss-phase)
-**Depends on:** Phase 128
-**Source:** SEED-058
-**Plans:** 2/2 plans complete
-
-Plans:
-
-- [x] 128.1-01-PLAN.md — discovered-check (split from discovered-attack) + trapped-piece: two Tier-2 real-geometry motifs (ints 25-26), detectors, theme-map, dispatch ranks
-- [x] 128.1-02-PLAN.md — en-passant/promotion/under-promotion move-type trio (ints 27-29) at a new lowest tier + MOVE_TYPE_MOTIFS frozenset, then the full 5-motif fresh-TRAIN precision-floor baseline
-
-### Phase 129: Tactic Filter UI
-
-**Goal**: Players can filter and read tactics along three axes — which motif, missed vs allowed, and difficulty (depth) — on both desktop and mobile
-**Depends on**: Phase 128 (missed/allowed columns), Phase 127 (depth)
-**Requirements**: TACUI-04, TACUI-05, TACUI-06, TACUI-07, TACUI-08
-**Success Criteria** (what must be TRUE):
-
-  1. A depth (difficulty) slider filters flaws by `*_tactic_depth`; always-on, default = Intermediate (Beginner/Advanced presets + custom slider); API param in half-moves (1:1 with the column), "moves deep" labels in the frontend (D-03)
-  2. An Either/Missed/Allowed orientation toggle switches the tactic view, **defaulting to Either** (amended 2026-06-20 per D-07 — reverses the original "defaulting to missed"; the user directed Either as the neutral default); narration is the chip label + shared `TagLegend`
-  3. The motif × orientation × depth filter composes cleanly with the existing Library filters; the tactic-comparison grid shows two bullets per family (Missed/Allowed), ranked top-6 by Missed with a "More Tactics" accordion, independent of the Flaws-tab filters
-  4. All controls and chips render correctly on mobile at 375px with `data-testid` and ARIA labels per the browser-automation rules
-
-**Plans**: 5 plans (3 original + 2 gap-closure for UAT G-01)
-**Wave 1**
-
-- [x] 129-01-PLAN.md — Backend: depth filter param + 3-value orientation ("either" OR-across-columns) at both filter sites + mate exemption; dual-orientation tactic-comparison endpoint ranked top-6 by Missed (TACUI-04, TACUI-05)
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 129-02-PLAN.md — Frontend filters: tacticDepth lib + TacticDepthFilter control + Either/Missed/Allowed toggle + store/query threading + orientation-prefixed dual chips, desktop + mobile (TACUI-06, TACUI-07)
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 129-03-PLAN.md — Frontend grid: two-bullet family cards + top-6-by-Missed + "More Tactics" accordion (TACUI-08)
-
-**Gap closure (UAT G-01 — "More Tactics" accordion unreachable: 6 families always = all families, overflow always empty; fix via tactic-family taxonomy redesign to 10 families)**
-
-- [x] 129-04-PLAN.md — Backend taxonomy: rewrite `FAMILY_TO_MOTIF_INTS` to the authoritative 10 families (split pin_skewer→skewer/pin/x_ray, discovery→double_check/discovered_attack, add discovered_check/trapped_piece, drop combinations); update consumers + tests; no migration (TACUI-05, TACUI-08)
-- [x] 129-05-PLAN.md — Frontend taxonomy hub: mirror the 10 backend keys in `tacticComparisonMeta.ts` + `theme.ts` per-family tokens + filter chips + motif defs + tests + `tsc -b`; accordion now renders 4 overflow families, closing G-01 (TACUI-05, TACUI-06, TACUI-07, TACUI-08)
-
-### Phase 130: Tactic tag improvements and fixes (SUPERSEDED)
-
-A placeholder phase added after 129 to hold follow-up tactic fixes. Never planned or executed as its own phase — the actual precision/quality work landed as the cook.py-alignment Phases 131–134. The phase dir holds only a `.gitkeep`. Status: `[→]` superseded.
-
-### Phase 131: Tactic precision hardening via cook.py predicate alignment (SEED-064)
-
-**Goal**: Raise per-motif tactic-tag precision toward >0.9 on the held-out TEST split (recall ungated, precision-first) by faithfully reimplementing ornicar/lichess-puzzler's `cook.py` predicates for Tier 1 (mate) + Tier 2 (geometric) motifs, inverting dispatch to shallowest-tactic-wins, and adding a missed-vs-played dest-square gate at the call site. Any motif still <0.9 at full cook fidelity is suppressed, not shipped.
-**Depends on**: Phase 130
-**Plans**: 5/5 complete (Wave 1: shared-utility ports + depth-primary dispatch + mate gate; Wave 2: skewer/discovered-attack/fork/pin ports + missed-vs-played gate; Wave 3: mate ports back-rank/anastasia/hook + regression floors; Wave 4: held-out TEST gate + report regen + dev re-backfill). Completed 2026-06-23.
-
-### Phase 132: Tier-3 tactic precision hardening via cook.py predicate alignment
-
-**Goal**: Raise Tier-3 per-motif precision toward >0.9 on the held-out TEST split (precision-first) by replacing the loose `met >= N` voting detectors with cook's exact AND-chain predicates. In scope: deflection, clearance, attraction, intermezzo, x-ray, capturing-defender. `interference` already ships at 0.99 — locked against regression. Sub-floor motifs suppressed via `tactic_confidence`. No dispatch rework (131 already inverted to shallowest-wins). Not yet in prod at the time → no prod re-backfill.
-**Depends on**: Phase 131
-**Plans**: 5/5 complete (raise GOALS + baseline; deflection+clearance; capturing-defender+intermezzo; attraction+x-ray+sacrifice + lock interference; dev re-backfill + final TEST gate + reconcile floors). Completed 2026-06-23.
-
-### Phase 133: Close suppressed-tactic gaps (attraction fix, sacrifice unsuppress, mate geometry)
-
-**Goal**: Ship the floor-gateable motifs that 131/132 left suppressed, at ≥0.90 TEST precision. (1) attraction — fix an off-by-one in `_attraction_fires_at` cond-5 then unsuppress; (2) sacrifice — unsuppress only (already 1.000/1.000, no schema change / no co-tag per user decision); (3) arabian/boden/dovetail mate — port cook mate geometry. trapped-piece fixture expansion explicitly descoped to Phase 134 (blast-radius on committed floors).
-**Depends on**: Phase 132
-**Plans**: 2/2 complete (detector code fixes: attraction off-by-one + arabian/boden/dovetail ports; unsuppress 5 motifs + floors + family map + frontend chips + tests + report regen). Completed 2026-06-23.
-
-### Phase 134: trapped-piece fixture expansion (Option B) + cook-predicate reimplementation
-
-**Goal**: Close the trapped-piece gap Phase 133 deferred (was 0 TP / 153 FP, the single biggest FP source). (1) per-motif oversample cap (Option B) in `select_tagger_fixtures.py` so trapped-piece reaches ~1000 fixtures while well-covered motifs stay byte-identical; (2) reimplement `detect_trapped_piece` from cook's predicate; (3) conditional unsuppress only if precision clears ~≥0.80 TRAIN holding on TEST. Result: P(test)=1.000, R(test)=0.754, n=748/317 — shipped the trapped-piece tag.
-**Depends on**: Phase 133
-**Plans**: 3/3 complete (Option B per-motif cap + selector test + fixture regen; cook-faithful `detect_trapped_piece`; conditional unsuppress + pre-merge gate + CHANGELOG). Completed 2026-06-23.
-
-### Phase 135: Tactic Line Explorer — walkable PV stepper for tagged flaws (SEED-065)
-
-**Goal:** Turn each tagged flaw into a walkable lesson. A full-screen Dialog opens a large board + linear SAN ladder + `BoardControls` preloaded with the stored Stockfish PV, so the user steps through both the *missed* line (the engine PV they should have played) and the *allowed* line (the punishment the opponent could have played). A depth counter ticks down to the tactic punchline (depth-0 move highlighted), then a few payoff plies show the material/mate landing. Entry points: an `Explore` secondary button on the flaw card (only when tagged) and on the game card (targets the eval chart's selected flaw, disabled when not a tagged flaw). Sources the two PVs from `game_positions.pv` (n for missed, n+1 for allowed) via a new `tactic-lines` endpoint; reuses `tacticDepth.ts` for the allowed +1 offset so labels match the miniboard. See [seeds/SEED-065-tactic-line-explorer.md](seeds/closed/SEED-065-tactic-line-explorer.md).
-**Requirements**: TBD
-**Depends on:** Phase 134 (tactic-tag precision hardening — walking a low-precision tag move-by-move is worse than a chip; gate Explore on trustworthy tags)
-**Plans:** 3 plans
-
-Plans:
-
-- [x] 135-01-PLAN.md — Backend tactic-lines endpoint + schema + repository (server-side UCI→SAN, n/n+1 anchoring, IDOR 404) [Wave 1]
-- [x] 135-02-PLAN.md — Frontend primitives: ChessBoard id prop + arrow depth labels + useTacticLine PV stepper hook [Wave 1]
-- [x] 135-03-PLAN.md — TacticLineExplorer (Dialog/Drawer) + SanLadder + data layer + entry points (FlawCard D-04, LibraryGameCard D-03/D-02/D-01) [Wave 2]
+_No active milestone in flight. v1.28 Tactic Tagging shipped 2026-06-25 — see the collapsed block below and [milestones/v1.28-ROADMAP.md](milestones/v1.28-ROADMAP.md). Start the next milestone with `/gsd-new-milestone`._
 
 ## Progress
 
@@ -392,6 +140,26 @@ Plans:
 *Phase 999.7 (LLM Endgame-Insights Statistical-Reasoning Rework) promoted to active Phase 102 (v1.23) on 2026-06-01 via `/gsd-explore`; shipped 2026-06-03.*
 
 *Phase 103 (Endgame report LLM prompt refinements) shipped 2026-06-03 as an unplanned follow-on under v1.23 — see the collapsed v1.23 block above and [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md).*
+
+<details>
+<summary>✅ v1.28 Tactic Tagging (Phases 124–135, incl. 123.1, 128.1; 130 superseded by 131–134) — SHIPPED 2026-06-25</summary>
+
+Added a "cause of error" tactic axis to the flaw taxonomy: name the tactical motif behind every mistake/blunder from the already-stored refutation line (no new engine pass), then compare the player's tactic rates against their opponents'. Detector heuristics reimplemented from ornicar/lichess-puzzler `cook.py` in original code (no AGPL copied); per-motif precision driven to ≥0.95 on a held-out CC0 puzzle TEST split. Standalone Phase 123.1 (SEED-053 opening-eval dedup cache) grouped in at close as a v1.28 enabler. Phases 124–134 deployed via release #214 (2026-06-23); Phase 135 ships with this milestone close.
+
+- [x] Phase 123.1: Opening-eval dedup cache table (SEED-053) (INSERTED) — position-keyed `opening_position_eval` cache replacing the cross-user self-join; per-game opening-eval lookup ~8.4 s → sub-ms — completed 2026-06-17
+- [x] Phase 124: Schema + Tactic Detector (4/4 plans) — `tactic_motif`/`tactic_piece` columns + cook-heuristic detector + hand-labeled fixture validation — completed 2026-06-18
+- [x] Phase 125: Backfill Tactic Motifs (3/3 plans) — backfill over ~131k self-eval'd games; lichess-eval-only stays NULL until full-eval'd via the tier-3 idle fleet — completed 2026-06-18
+- [x] Phase 126: Comparison Stats + Frontend (3/3 plans) — `/api/library/tactic-comparison` + motif chips + you-vs-opponent MiniBulletChart grid — completed 2026-06-18
+- [x] Phase 127: Detector Hardening & Validation (4/4 plans) — `*_tactic_depth` columns + CC0 puzzle precision/recall harness + fork/pin FP fixes — completed 2026-06-19
+- [x] Phase 128: Missed-Opportunity Tagging (4/4 plans, incl. 128.1) — `allowed_*`/`missed_*` columns, second-pass detection, discovered-check/trapped-piece/en-passant/promotion motifs (128.1, SEED-058) — completed 2026-06-19/20
+- [x] Phase 129: Tactic Filter UI (5/5 plans) — motif × orientation × depth filter, 10-family taxonomy, two-bullet comparison grid + "More Tactics" accordion — completed 2026-06-20
+- [→] Phase 130: placeholder — superseded by the cook.py-alignment precision work in Phases 131–134
+- [x] Phases 131–134: Tactic precision hardening via cook.py alignment (SEED-064) (15 plans) — faithful predicate reimplementation across Tier 1/2/3 + named mates + trapped-piece fixture expansion; every shipped motif ≥0.95 TEST precision — completed 2026-06-23
+- [x] Phase 135: Tactic Line Explorer (SEED-065) (3/3 plans) — walkable PV stepper (desktop dialog / mobile drawer) with depth-to-punchline counter + flaw/game-card entry points — completed 2026-06-25
+
+See [milestones/v1.28-ROADMAP.md](milestones/v1.28-ROADMAP.md) for full details.
+
+</details>
 
 <details>
 <summary>✅ v1.27 Remote Eval Worker Fan-Out & In-App Feedback (Phases 121–123) — SHIPPED 2026-06-16</summary>

@@ -16,7 +16,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
-import { Scale, Filter, TrophyIcon, Timer, Compass, Loader2, UserPlus, DoorOpen } from 'lucide-react';
+import { Search, Scale, Filter, TrophyIcon, Timer, Compass, Loader2, UserPlus, DoorOpen } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 // Feature sections — the first entry is rendered in the hero (desktop right column +
@@ -30,6 +30,19 @@ const FEATURES: {
   screenshot: { src: string; alt: string };
   imagePosition: 'left' | 'right';
 }[] = [
+  {
+    slug: 'game-analysis',
+    icon: Search,
+    heading: 'Game and Tactic Analysis',
+    desc: [
+        'Run Stockfish over your entire chess.com and lichess history.',
+        'Understand, replay, and learn from your blunders: mistakes are tagged with the tactic behind them (fork, pin, skewer, and 20+ motifs).',
+        'Track your blunder rate over time, and see how often you fall for each tactic versus your opponents.',
+        'Filter your whole game history by tactic, depth, and severity.',
+    ],
+    screenshot: { src: '/screenshots/game-card.png', alt: 'Library game card showing Stockfish eval chart, board with best-move and move-played arrows, and missed/allowed tactic chips (fork, pin)' },
+    imagePosition: 'right',
+  },
   {
     slug: 'opening-explorer',
     icon: Compass,
@@ -151,7 +164,7 @@ export function HomePageContent() {
               <div className="absolute left-1/2 top-1/2 h-10 w-72 -translate-x-1/2 -translate-y-1/2 bg-[radial-gradient(ellipse_at_center,rgba(205,127,50,0.35),transparent_70%)] blur-md" />
             </div>
             <p className="mt-4 text-base leading-relaxed text-muted-foreground">
-              Free analysis across your chess.com and lichess games, with AI-narrated insights. Find leaks in your openings, endgames, and time management.
+              Find and fix the flaws in your game. Free full-game analysis of every chess.com and lichess game: tactics, openings, endgames, and time management.
             </p>
             <div className="mt-8 flex flex-row items-center justify-center gap-3">
               <Button

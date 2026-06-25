@@ -8,6 +8,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v1.28] Tactic Tagging — 2026-06-25
+
 ### Added
 
 - **Tactic Line Explorer** — clicking "Explore" on a tagged flaw (one with a missed or allowed tactic motif) opens a walkable board that steps through the engine's principal variation. Both the move you should have played (missed tactic, blue arrows) and the opponent's refutation (allowed tactic, colored arrows) can be walked move by move from the decision position. A depth readout shows your distance from the punchline move. On desktop the explorer opens as a dialog; on mobile as a right-side drawer (with a close button) that places the board and move list side by side. On the Flaws tab each card now has Explore and Game buttons (instead of a header link); on the Games tab the Game modal gains an Explore button below the eval chart, enabled when the slider is parked on a tagged flaw. (Phase 135)
@@ -57,6 +59,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - **Tactic tag precision raised across the board (cook-faithful detector pass)** — audited every tactic motif against the reference lichess-puzzler predicates and closed real gaps in seven detectors: pin (0.90→1.00), capturing-defender (0.88→1.00), hanging-piece (0.74→1.00), intermezzo (0.82→1.00, recall 0.03→0.61), interference (0.97→1.00, recall 0.43→0.59), deflection (0.96→1.00, recall 0.14→0.32), and clearance (0.96→1.00, recall 0.39→0.44). Every shipped tactic tag is now at or above 0.95 precision on held-out puzzles (the lone exception, discovered-check at 0.93, is a labelling artifact in the source dataset, not a detector error), so the chips you see are far less likely to be mislabeled — and several detectors now also *catch more* real tactics. The tagger's offline validation now also runs the detector exactly the way live analysis does (with the flaw move in context), so the measured precision reflects real behavior.
 
 ### Changed
+
+- **Homepage hero is now "Game and Tactic Analysis"** — the landing page leads with free Stockfish analysis of your entire chess.com and lichess history and the tactic tagging of every blunder and mistake (fork, pin, skewer, and more). The previous hero (Opening Explorer & Insights) and the other features each move down one slot, and the page title / meta description / PWA description were refreshed to match. (Quick 260625-tbg)
 
 - **Tactic tagging is now available to all users** — the tactic-motif feature (cards chips, eval-chart tooltips and depth badges, the Library tactic filters, and the you-vs-opponent "Tactic Motifs" comparison) is no longer beta-gated. Every analyzed game now shows the three-column Missed / Allowed / Context card layout and the full tactic filter set, regardless of beta access. (Quick 260623-tsu)
 
@@ -886,7 +890,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.27...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.28...HEAD
+[v1.28]: https://github.com/flawchess/flawchess/compare/v1.27...v1.28
 [v1.27]: https://github.com/flawchess/flawchess/compare/v1.26...v1.27
 [v1.26]: https://github.com/flawchess/flawchess/compare/v1.25...v1.26
 [v1.25]: https://github.com/flawchess/flawchess/compare/v1.24...v1.25

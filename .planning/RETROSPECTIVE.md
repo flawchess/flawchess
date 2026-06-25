@@ -2,7 +2,40 @@
 
 *A living document updated after each milestone. Lessons feed forward into future planning.*
 
-> Note: v1.18, v1.19, v1.20, v1.23, and v1.25 closes did not add retrospective sections (only the ROADMAP archives + MILESTONES entries were written). Not backfilled here to avoid reconstructing reflections after the fact; their facts live in the corresponding `milestones/v1.XX-ROADMAP.md` and `MILESTONES.md`.
+> Note: v1.18, v1.19, v1.20, v1.23, v1.25, and v1.27 closes did not add retrospective sections (only the ROADMAP archives + MILESTONES entries were written). Not backfilled here to avoid reconstructing reflections after the fact; their facts live in the corresponding `milestones/v1.XX-ROADMAP.md` and `MILESTONES.md`.
+
+## Milestone: v1.28 — Tactic Tagging
+
+**Shipped:** 2026-06-25
+**Phases:** 14 (123.1, 124–135 incl. 128.1; 130 superseded by 131–134) | **Plans:** 45
+
+### What Was Built
+A "cause of error" tactic axis on the flaw taxonomy: a cook.py-faithful, pure-CPU motif detector (original code, no AGPL) reading the already-stored refutation PV for both colors; `tactic_motif`/`tactic_piece` + `allowed_*`/`missed_*` + `*_tactic_depth` columns; a Wilson-gated you-vs-opponent comparison endpoint; a full Library tactic UI (chips, 10-family taxonomy, depth-range + Either/Missed/Allowed filters, two-bullet grid); and the Tactic Line Explorer walkable PV stepper. Plus the standalone `opening_position_eval` dedup cache (123.1) that enabled the Phase 125 backfill.
+
+### What Worked
+- **Reusing v1.27 substrate.** The refutation PV was already stored for both colors and `game_flaws` already materialized both sides' flaws, so the whole detector was pure-CPU — no new engine pass, no OOM exposure. The milestone was much smaller in risk than SEED-039 first implied.
+- **Independent CC0 ground truth as the ship gate.** Scoring against an external lichess-puzzle TEST split (not detector-bucketed self-labels) made precision honest and non-gameable, and turned "is this motif good enough?" into a mechanical per-motif floor check.
+- **cook.py predicate alignment as a repeatable recipe.** Once the first few detectors were ported faithfully (AND-chains, shallowest-tactic-wins dispatch, missed-vs-played dest-square gate), the same pattern lifted motif after motif from ~0.2–0.5 to ~1.000 precision.
+- **Ship-or-suppress discipline.** Sub-floor motifs were suppressed via `tactic_confidence` rather than shipped, so the visible chips stayed trustworthy throughout.
+
+### What Was Inefficient
+- **Phase 130 churn.** A placeholder phase added after 129, never executed as its own unit; the real precision work landed as 131–134. The number now reads as superseded noise in the roadmap.
+- **Fixture regeneration coupling.** Discovering that a fresh lichess dump shares zero row-identity with the older committed fixtures (so byte-identity gates were unattainable) cost a detour; the per-motif oversample cap + deterministic SHA-1 re-seed was the eventual fix (Phase 134).
+- **Detector context faithfulness took several passes.** Getting the offline harness to build the board exactly as production does (flaw move pushed onto the stack) was the unlock that pushed pin/capturing-defender/hanging-piece to ~1.000 — found late rather than designed in.
+
+### Patterns Established
+- **External-ground-truth precision gates** for any heuristic classifier (`fixtures/tagger/*.csv` + per-motif floors in `precision_floors.py`, `--check-goals` loop mode).
+- **Orientation-by-column-source** (`allowed_*` / `missed_*`) with user-perspective derived via `is_opponent_expr` — no perspective column, mirroring the v1.25 `is_opponent` voiding.
+- **Standalone-then-regroup** applied again (123.1 folded into v1.28 at close, cf. v1.20/v1.27).
+
+### Key Lessons
+- When a feature can ride existing stored data, the real cost is *validation*, not compute — budget the milestone around the precision harness, not the detector code.
+- A clean-room reimplementation of an AGPL algorithm + using only its CC0 *output* as reference labels is a safe, effective pattern for a hosted service.
+- The offline validation harness must exercise the detector exactly as production calls it, or measured precision lies.
+
+### Cost Observations
+- Long milestone (9 days, 154 commits inflated by squash + forward-port + committed fixtures); the bulk of effort was the 131–134 precision sweep, not the initial detector or the UI.
+- Phases 124–134 deployed mid-milestone (release #214) and soaked before the formal close; Phase 135 + close + deploy ran as one wrap-up session.
 
 ## Milestone: v1.26 — Full-Game Eval Pipeline
 
