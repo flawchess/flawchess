@@ -33,7 +33,7 @@ const FEATURES: {
   {
     slug: 'game-analysis',
     icon: Search,
-    heading: 'Free Full-Game Analysis',
+    heading: 'Game and Tactic Analysis',
     desc: [
         'Run Stockfish over your entire chess.com and lichess history — completely free.',
         'Every blunder and mistake is tagged with the tactic behind it (fork, pin, skewer, and 20+ motifs): the one you missed and the one you allowed, with the engine\'s best line.',

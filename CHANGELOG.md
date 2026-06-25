@@ -58,7 +58,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
-- **Homepage hero is now "Free Full-Game Analysis"** — the landing page leads with free Stockfish analysis of your entire chess.com and lichess history and the tactic tagging of every blunder and mistake (fork, pin, skewer, and more). The previous hero (Opening Explorer & Insights) and the other features each move down one slot, and the page title / meta description / PWA description were refreshed to match. (Quick 260625-tbg)
+- **Homepage hero is now "Game and Tactic Analysis"** — the landing page leads with free Stockfish analysis of your entire chess.com and lichess history and the tactic tagging of every blunder and mistake (fork, pin, skewer, and more). The previous hero (Opening Explorer & Insights) and the other features each move down one slot, and the page title / meta description / PWA description were refreshed to match. (Quick 260625-tbg)
 
 - **Tactic tagging is now available to all users** — the tactic-motif feature (cards chips, eval-chart tooltips and depth badges, the Library tactic filters, and the you-vs-opponent "Tactic Motifs" comparison) is no longer beta-gated. Every analyzed game now shows the three-column Missed / Allowed / Context card layout and the full tactic filter set, regardless of beta access. (Quick 260623-tsu)
 
