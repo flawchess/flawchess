@@ -17,6 +17,7 @@ import datetime
 from collections.abc import Sequence
 from typing import Any, Literal
 
+import chess
 from sqlalchemy import Select, Subquery, and_, case, exists, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -32,14 +33,18 @@ from app.repositories.game_flaws_repository import (
     _TEMPO_INT,
 )
 from app.repositories.query_utils import apply_game_filters, is_opponent_expr, player_only_gate
-from app.schemas.library import FlawListItem
+from app.schemas.library import FlawListItem, TacticLinesResponse
 from app.services.flaws_service import (
     FlawSeverity,
     FlawTag,
 )
 from app.services.normalization import parse_base_and_increment
 from app.services.openings_service import derive_user_result
-from app.services.tactic_detector import TacticMotifInt, _INT_TO_MOTIF as _TACTIC_INT_TO_MOTIF
+from app.services.tactic_detector import (
+    TacticMotifInt,
+    _INT_TO_MOTIF as _TACTIC_INT_TO_MOTIF,
+    _parse_pv,
+)
 
 # ---------------------------------------------------------------------------
 # Phase 128 Plan 03 (D-07/D-09) — tactic orientation closed enum.
@@ -2023,3 +2028,160 @@ async def fetch_tactic_comparison(
     )
     rows = (await session.execute(stmt)).all()
     return list(rows)
+
+
+# ---------------------------------------------------------------------------
+# Phase 135 — Tactic Line Explorer: PV→SAN helpers + fetch_tactic_lines()
+# ---------------------------------------------------------------------------
+
+
+def _pv_to_san_list(board: chess.Board, pv: str | None) -> list[str] | None:
+    """Convert a space-joined UCI PV string to a SAN list.
+
+    Walks each UCI move from `board`, returning SAN for each position visited.
+    Returns None when pv is falsy (NULL/empty) or unparseable.
+    ValueError from _parse_pv (bad UCI) is an expected/graceful case — do NOT
+    capture_exception (CLAUDE.md: skip expected exceptions; T-135-04 accept).
+    """
+    if not pv:
+        return None
+    try:
+        boards, moves = _parse_pv(board, pv)
+    except ValueError:
+        return None
+    return [boards[i].san(moves[i]) for i in range(len(moves))]
+
+
+async def fetch_tactic_lines(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    game_id: int,
+    ply: int,
+) -> TacticLinesResponse | None:
+    """Fetch and convert the PV walk data for the TacticLineExplorer (Phase 135).
+
+    Returns None when there is no game_flaws row for (user_id, game_id, ply) —
+    the caller raises 404. The IDOR guard is enforced here: game_flaws.user_id
+    must match user_id (T-135-01).
+
+    Queries game_flaws for the flaw metadata (FEN, tactic depths, motifs) then
+    game_positions at ply and ply+1 for the two PV strings. Sequential awaits —
+    NEVER asyncio.gather on one AsyncSession (CLAUDE.md constraint).
+
+    PV anchoring (Research Finding 2):
+    - Missed PV: from board_before (decision board, no flaw move pushed).
+    - Allowed PV: from board_after_flaw (flaw move pushed), then prepend the
+      flaw move SAN so allowed_moves[0] is the red error move (Pitfall 3).
+
+    FEN returned as a full FEN (with side-to-move from ply parity) so chess.js
+    can initialize the board without client-side ply arithmetic (Pitfall 2).
+
+    Raw 0-based depths are returned as-is; the +1 display offset and the
+    ALLOWED_DECISION_DEPTH_OFFSET are applied client-side via
+    toDisplayDepthForOrientation() in frontend/src/lib/tacticDepth.ts
+    (Research Finding 2).
+    """
+    # 1. Fetch the flaw row (IDOR check: user_id must match).
+    flaw_q = await session.execute(
+        select(GameFlaw).where(
+            GameFlaw.user_id == user_id,
+            GameFlaw.game_id == game_id,
+            GameFlaw.ply == ply,
+        )
+    )
+    flaw = flaw_q.scalar_one_or_none()
+    if flaw is None:
+        return None  # caller raises 404
+
+    # 2. Fetch game_positions at ply-1, ply and ply+1 — sequential, not asyncio.gather.
+    # ply-1 is needed for the missed (decision-position) eval: game_positions.eval_cp is
+    # the POST-MOVE eval (eval of the position AFTER that ply's move, see eval_drain.py),
+    # so the decision position's own eval is stored on the PREVIOUS row (ply-1).
+    pos_q = await session.execute(
+        select(GamePosition).where(
+            GamePosition.user_id == user_id,
+            GamePosition.game_id == game_id,
+            GamePosition.ply.in_([ply - 1, ply, ply + 1]),
+        )
+    )
+    positions: dict[int, GamePosition] = {p.ply: p for p in pos_q.scalars().all()}
+
+    pos_prev = positions.get(ply - 1)
+    pos_n = positions.get(ply)
+    pos_n1 = positions.get(ply + 1)
+
+    # 3. Reconstruct the decision board from board_fen() + ply parity.
+    # game_flaws.fen stores board_fen() (piece-placement only, no side-to-move).
+    # Same logic as _detect_tactic_for_flaw in flaws_service.py:445-446.
+    board_before = chess.Board(flaw.fen)
+    board_before.turn = chess.WHITE if ply % 2 == 0 else chess.BLACK
+
+    # 4. Convert missed PV from decision board (board_before, no flaw move pushed).
+    # Full PV (no truncation, Phase 135 UAT) — show every move the engine returned.
+    missed_pv = pos_n.pv if pos_n is not None else None
+    missed_sans = _pv_to_san_list(board_before.copy(), missed_pv)
+
+    # 5. Build allowed PV: push flaw move to get board_after_flaw, convert pos[n+1].pv,
+    #    then prepend the flaw move SAN so allowed_moves[0] is the red error move.
+    allowed_sans: list[str] | None = None
+    flaw_move_san: str | None = pos_n.move_san if pos_n is not None else None
+    if flaw_move_san is not None and pos_n is not None:
+        try:
+            flaw_move = board_before.parse_san(flaw_move_san)
+            board_after_flaw = board_before.copy()
+            board_after_flaw.push(flaw_move)
+            allowed_pv = pos_n1.pv if pos_n1 is not None else None
+            allowed_raw = _pv_to_san_list(board_after_flaw, allowed_pv)
+            if allowed_raw is not None:
+                allowed_sans = [flaw_move_san] + allowed_raw
+        except (ValueError, chess.InvalidMoveError):
+            # parse_san failed on a stored move_san — graceful fallback, no Sentry capture
+            allowed_sans = None
+
+    # 6. Full FEN for the decision position (with side-to-move for chess.js).
+    position_fen = board_before.fen()
+
+    # 7. Motif strings from the _INT_TO_MOTIF lookup (None when motif int is None).
+    missed_motif_int = flaw.missed_tactic_motif
+    allowed_motif_int = flaw.allowed_tactic_motif
+    missed_motif: str | None = (
+        str(_TACTIC_INT_TO_MOTIF[missed_motif_int]) if missed_motif_int is not None else None
+    )
+    allowed_motif: str | None = (
+        str(_TACTIC_INT_TO_MOTIF[allowed_motif_int]) if allowed_motif_int is not None else None
+    )
+
+    # allowed_moves prepends the flaw move at index 0 (the red error move), so the
+    # opponent-refutation punchline sits one index DEEPER in allowed_moves than its
+    # raw detector depth. Shift +1 so the SAN ladder highlights the refutation move
+    # (at flaw_ply+1), not the flaw move itself (Phase 135 UAT). missed_moves has no
+    # prepend, so missed_tactic_ply_index stays equal to the raw depth.
+    allowed_ply_index: int | None = (
+        flaw.allowed_tactic_depth + 1 if flaw.allowed_tactic_depth is not None else None
+    )
+
+    return TacticLinesResponse(
+        missed_moves=missed_sans,
+        missed_depth=flaw.missed_tactic_depth,
+        missed_tactic_ply_index=flaw.missed_tactic_depth,
+        missed_motif=missed_motif,
+        # Decision-position eval (board_before, ply 0 of the missed line): the eval of
+        # the position the flaw move was played FROM. eval_cp is post-move, so that eval
+        # lives on ply-1's row. None when ply == 0 (no prior row / game start).
+        missed_eval_cp=pos_prev.eval_cp if pos_prev is not None else None,
+        missed_eval_mate=pos_prev.eval_mate if pos_prev is not None else None,
+        allowed_moves=allowed_sans,
+        allowed_depth=flaw.allowed_tactic_depth,
+        allowed_tactic_ply_index=allowed_ply_index,
+        allowed_motif=allowed_motif,
+        # Post-flaw eval (board after the flaw move, ply 1 of the allowed line): the
+        # post-move eval of the flaw move itself, stored on ply n's row.
+        allowed_eval_cp=pos_n.eval_cp if pos_n is not None else None,
+        allowed_eval_mate=pos_n.eval_mate if pos_n is not None else None,
+        position_fen=position_fen,
+        flaw_move_san=flaw_move_san,
+        best_move_uci=pos_n.best_move if pos_n is not None else None,
+        flaw_ply=ply,
+        flaw_severity=_SEVERITY_INT_TO_TAG[flaw.severity],
+    )

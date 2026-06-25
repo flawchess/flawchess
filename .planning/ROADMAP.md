@@ -30,7 +30,7 @@
 - ✅ **v1.25 Flaw-Stats Opponent Comparison** — Phases 113–115 (incl. 114.1) (shipped 2026-06-12) — see [milestones/v1.25-ROADMAP.md](milestones/v1.25-ROADMAP.md)
 - ✅ **v1.26 Full-Game Eval Pipeline** — Phases 116–120 (incl. 117.1, 117.2) (shipped 2026-06-14) — see [milestones/v1.26-ROADMAP.md](milestones/v1.26-ROADMAP.md)
 - ✅ **v1.27 Remote Eval Worker Fan-Out & In-App Feedback** — Phases 121–123 (shipped 2026-06-16; releases #199, #202, #203) — see [milestones/v1.27-ROADMAP.md](milestones/v1.27-ROADMAP.md)
-- 🔄 **v1.28 Tactic Tagging** — Phases 124–135 (incl. 128.1; Phase 130 was a placeholder superseded by 131–134). Phases 124–134 complete and deployed to prod via release #214 (2026-06-23); Phase 135 (Tactic Line Explorer, SEED-065) added 2026-06-24, not yet planned. Formal milestone close (tag + archive + CHANGELOG promotion) deferred until 135 ships.
+- 🔄 **v1.28 Tactic Tagging** — Phases 124–135 (incl. 128.1; Phase 130 was a placeholder superseded by 131–134). Phases 124–134 complete and deployed to prod via release #214 (2026-06-23); Phase 135 (Tactic Line Explorer, SEED-065) added 2026-06-24, planned 2026-06-24 (3 plans). Formal milestone close (tag + archive + CHANGELOG promotion) deferred until 135 ships.
 
 ## Phases
 
@@ -280,11 +280,13 @@ A placeholder phase added after 129 to hold follow-up tactic fixes. Never planne
 **Goal:** Turn each tagged flaw into a walkable lesson. A full-screen Dialog opens a large board + linear SAN ladder + `BoardControls` preloaded with the stored Stockfish PV, so the user steps through both the *missed* line (the engine PV they should have played) and the *allowed* line (the punishment the opponent could have played). A depth counter ticks down to the tactic punchline (depth-0 move highlighted), then a few payoff plies show the material/mate landing. Entry points: an `Explore` secondary button on the flaw card (only when tagged) and on the game card (targets the eval chart's selected flaw, disabled when not a tagged flaw). Sources the two PVs from `game_positions.pv` (n for missed, n+1 for allowed) via a new `tactic-lines` endpoint; reuses `tacticDepth.ts` for the allowed +1 offset so labels match the miniboard. See [seeds/SEED-065-tactic-line-explorer.md](seeds/SEED-065-tactic-line-explorer.md).
 **Requirements**: TBD
 **Depends on:** Phase 134 (tactic-tag precision hardening — walking a low-precision tag move-by-move is worse than a chip; gate Explore on trustworthy tags)
-**Plans:** 0 plans
+**Plans:** 3 plans
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 135 to break down)
+- [x] 135-01-PLAN.md — Backend tactic-lines endpoint + schema + repository (server-side UCI→SAN, n/n+1 anchoring, IDOR 404) [Wave 1]
+- [x] 135-02-PLAN.md — Frontend primitives: ChessBoard id prop + arrow depth labels + useTacticLine PV stepper hook [Wave 1]
+- [x] 135-03-PLAN.md — TacticLineExplorer (Dialog/Drawer) + SanLadder + data layer + entry points (FlawCard D-04, LibraryGameCard D-03/D-02/D-01) [Wave 2]
 
 ## Progress
 
@@ -342,7 +344,7 @@ Plans:
 | 132. Tier-3 tactic precision hardening (cook.py) | 5/5 | Complete | 2026-06-23 |
 | 133. Close suppressed-tactic gaps | 2/2 | Complete | 2026-06-23 |
 | 134. trapped-piece fixture expansion + cook reimpl | 3/3 | Complete | 2026-06-23 |
-| 135. Tactic Line Explorer (SEED-065) | 0/0 | Not planned | — |
+| 135. Tactic Line Explorer (SEED-065) | 3/3 | Complete   | 2026-06-24 |
 
 ## Backlog
 

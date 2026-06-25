@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { Chess } from 'chess.js';
-import { BookOpen, Calendar, Clock, Equal, ExternalLink, Hash, Minus, Plus } from 'lucide-react';
+import { BookOpen, Calendar, Clock, Equal, ExternalLink, Hash, Minus, Plus, Search } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -31,7 +32,9 @@ import { plysToFullMoves } from '@/lib/chess';
 import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
 import { useMiniBoardSize } from '@/hooks/useMiniBoardSize';
 import { formatTimeControl } from '@/lib/formatTimeControl';
-import type { GameFlawCard, FlawSeverity, FlawTag } from '@/types/library';
+import { Button } from '@/components/ui/button';
+import { TacticLineExplorer } from '@/components/library/TacticLineExplorer';
+import type { GameFlawCard, FlawSeverity, FlawTag, FlawMarker } from '@/types/library';
 import type { UserResult } from '@/types/api';
 
 // Standalone component per D-05 — do NOT import from or modify GameCard.tsx.
@@ -59,7 +62,7 @@ interface LibraryGameCardProps {
 }
 
 const MOBILE_BOARD_SIZE = 130;
-const DESKTOP_BOARD_SIZE = 210;
+const DESKTOP_BOARD_SIZE = 225;
 
 // Severity arrow colors (red/orange/yellow) for the flawed-move arrow on the hover miniboard.
 const FLAW_ARROW_COLOR: Record<FlawSeverity, string> = {
@@ -215,6 +218,10 @@ export function LibraryGameCard({
   // shows result_fen, as before.
   const [hoverPly, setHoverPly] = useState<number | null>(null);
 
+  // D-03 Explore button (Phase 135): open state for the TacticLineExplorer stacked
+  // over this modal. On close (D-01) the explorer closes only; this modal stays.
+  const [exploreOpen, setExploreOpen] = useState(false);
+
   // In-flight state for the tier-1 analyze button (D-118-11 — only the clicked game
   // shows "Analyzing…", not a global spinner across all cards). Controlled when the
   // parent passes onInFlightChange (Games subtab); otherwise managed locally
@@ -263,6 +270,24 @@ export function LibraryGameCard({
     }
     return m;
   }, [game.flaw_markers]);
+
+  // D-03 Explore button (Phase 135): full FlawMarker by ply for the Explore button.
+  // Needed to check is_user + tactic motifs for the D-02 disabled state.
+  const flawMarkerByPly = useMemo(() => {
+    const m = new Map<number, FlawMarker>();
+    for (const fm of game.flaw_markers ?? []) {
+      m.set(fm.ply, fm);
+    }
+    return m;
+  }, [game.flaw_markers]);
+
+  // The flaw_marker at the currently parked eval-chart ply (hoverPly).
+  // isTaggedFlaw: the selected ply belongs to the user AND has at least one tactic motif.
+  const selectedFlaw = hoverPly != null ? (flawMarkerByPly.get(hoverPly) ?? null) : null;
+  const isTaggedFlaw =
+    selectedFlaw != null &&
+    selectedFlaw.is_user &&
+    (selectedFlaw.missed_tactic_motif != null || selectedFlaw.allowed_tactic_motif != null);
 
   // Per-ply tactic-depth badges (1-based display). missed → blue best-move arrow,
   // allowed → colored flaw-move arrow. Null when the tactic's motif chip is hidden.
@@ -638,14 +663,14 @@ export function LibraryGameCard({
   // the two inner blocks rather than on the header element.
   const header = (
     <CardHeader as="h4" size="compact" className="rounded-t-md">
-      <span className="hidden sm:flex sm:items-center sm:gap-0 sm:min-w-0 sm:flex-1 text-foreground">
+      <span className="hidden md:flex md:items-center md:gap-0 md:min-w-0 md:flex-1 text-foreground">
         <span className="truncate min-w-0">
           ■ {whiteName} {whiteRating}
           <span className="mx-1.5 text-muted-foreground font-normal">vs</span>□ {blackName}{' '}
           {blackRating}
         </span>
       </span>
-      <div className="flex sm:hidden min-w-0 flex-1 flex-col text-foreground">
+      <div className="flex md:hidden min-w-0 flex-1 flex-col text-foreground">
         <span className="truncate">■ {whiteName} {whiteRating}</span>
         <span className="truncate">□ {blackName} {blackRating}</span>
       </div>
@@ -788,7 +813,10 @@ export function LibraryGameCard({
   // below md. The columns show even when a game has no tactic motifs (each empty column
   // keeps its lane via the ChipColumn "—" placeholder) so every analyzed card reads with
   // the same organized layout rather than collapsing to a sparse row.
-  const chipsBlock = (
+  // Chips grid. `missedFooter` (Quick 260625) is pinned below the chips in the Missed
+  // column — the desktop instance passes the Explore button there (in the Missed lane,
+  // not a row under all three columns); the mobile instance passes nothing.
+  const renderChipsBlock = (missedFooter?: ReactNode) => (
     <div
       // Always three equal 1/3 lanes (Missed | Allowed | Context). Empty columns keep
       // their lane via the ChipColumn "—" placeholder so the layout never collapses to
@@ -826,6 +854,7 @@ export function LibraryGameCard({
                 testId={`tag-legend-tactic-${orientation}-${game.game_id}`}
               />
             }
+            footer={orientation === 'missed' ? missedFooter : undefined}
           />
         );
       })}
@@ -841,8 +870,8 @@ export function LibraryGameCard({
   );
 
   // Mobile flaw block (full-width, stacked): severity row + chips together. Desktop
-  // composes the same `severityBadges` / `chipsBlock` pieces differently (severity beside
-  // the chart, chips on a full-width row below). The display:contents wrapper marks the
+  // composes the same `severityBadges` / `renderChipsBlock()` pieces differently (severity
+  // beside the chart, chips on a full-width row below). The display:contents wrapper marks the
   // cycle-driving controls so the outside-pointer handler keeps the locked highlight alive
   // while the user clicks chips/badges, yet undims when they click anywhere else.
   const flawContent =
@@ -854,7 +883,7 @@ export function LibraryGameCard({
         >
           {severityBadges}
         </div>
-        {chipsBlock}
+        {renderChipsBlock()}
       </div>
     ) : (
       <NoAnalysisState
@@ -865,6 +894,45 @@ export function LibraryGameCard({
         activeEvalStatus={game.active_eval_status}
       />
     );
+
+  // D-03 Explore button (Phase 135) — desktop. Quick 260625: pinned below the Missed
+  // column's chips (passed as that column's `footer`) instead of a row under all three
+  // columns. Always rendered; disabled+tooltip when the parked ply is not a tagged user
+  // flaw (D-02). `mt-3` gives clear separation from the chips above it. `fullWidth` makes
+  // it span the whole Missed column (analyzed games); the non-analyzed fallback (no Missed
+  // column) keeps auto width in the right column.
+  const renderDesktopExploreButton = (fullWidth: boolean) => (
+    <div className={cn('mt-3', fullWidth && 'w-full')}>
+      {isTaggedFlaw ? (
+        <Button
+          variant="brand-outline"
+          // Default Button size (h-8) to match the import-page quicklink buttons.
+          className={fullWidth ? 'w-full' : undefined}
+          data-testid="game-card-btn-explore"
+          aria-label="Explore tactic line for selected flaw"
+          onClick={() => setExploreOpen(true)}
+        >
+          <Search className="h-4 w-4 mr-1" />
+          Explore
+        </Button>
+      ) : (
+        <Tooltip content="Park the slider on a tactic flaw to explore it" side="top">
+          <span className={fullWidth ? 'block w-full' : 'inline-block'}>
+            <Button
+              variant="brand-outline"
+              className={fullWidth ? 'w-full' : undefined}
+              data-testid="game-card-btn-explore"
+              aria-label="Explore tactic line for selected flaw"
+              disabled
+            >
+              <Search className="h-4 w-4 mr-1" />
+              Explore
+            </Button>
+          </span>
+        </Tooltip>
+      )}
+    </div>
+  );
 
   return (
     // The docked readout and slider live inside the card, so overflowVisible and
@@ -878,8 +946,10 @@ export function LibraryGameCard({
       {/* Banded header (desktop single-line, mobile two-line) */}
       {header}
 
-      {/* Mobile body: board+info row, eval chart block, flaw block */}
-      <div className="flex flex-col gap-2 sm:hidden px-4 py-4">
+      {/* Mobile body: board+info row, eval chart block, flaw block. Switches to the
+          desktop two-column body at md (768px) — Quick 260625, one breakpoint later than
+          the previous sm so tablets keep the stacked layout. */}
+      <div className="flex flex-col gap-2 md:hidden px-4 py-4">
         <div className="flex gap-3 items-start">
           {boardFen && (
             <LazyMiniBoard
@@ -923,6 +993,40 @@ export function LibraryGameCard({
         <div className="flex flex-col gap-2">
           {flawContent}
         </div>
+        {/* D-03 Explore button (Phase 135) — mobile, below eval chart. Always visible;
+            disabled+tooltip when the parked ply is not a tagged user flaw (D-02). */}
+        {/* Mobile: no separate Game button on the card (the card IS the game),
+            so the Explore button spans the full card width. */}
+        <div className="md:hidden">
+          {isTaggedFlaw ? (
+            <Button
+              variant="brand-outline"
+              // Default Button size (h-8) to match the import-page quicklink buttons.
+              className="w-full"
+              data-testid="game-card-btn-explore"
+              aria-label="Explore tactic line for selected flaw"
+              onClick={() => setExploreOpen(true)}
+            >
+              <Search className="h-4 w-4 mr-1" />
+              Explore
+            </Button>
+          ) : (
+            <Tooltip content="Park the slider on a tactic flaw to explore it" side="top">
+              <span className="block w-full">
+                <Button
+                  variant="brand-outline"
+                  className="w-full"
+                  data-testid="game-card-btn-explore"
+                  aria-label="Explore tactic line for selected flaw"
+                  disabled
+                >
+                  <Search className="h-4 w-4 mr-1" />
+                  Explore
+                </Button>
+              </span>
+            </Tooltip>
+          )}
+        </div>
       </div>
 
       {/* Desktop body (Quick 260622-fdh): full-width metadata strip on top, then a
@@ -930,7 +1034,7 @@ export function LibraryGameCard({
           stacking eval chart + severity badges + tactic chips. The date lives in the
           strip (opening · TC · moves · date · result). Mobile keeps the simpler stacked
           body above. */}
-      <div className="hidden sm:flex sm:flex-col sm:gap-2 px-4 py-4">
+      <div className="hidden md:flex md:flex-col md:gap-2 px-4 py-4">
         {/* Full-width metadata strip spanning the whole card, above the board. */}
         {desktopMetaStrip}
         {/* Board + right-column row. */}
@@ -948,8 +1052,9 @@ export function LibraryGameCard({
             )}
           </div>
           {/* RIGHT column: eval chart + severity badges, then tactic chips. flex-1 so it
-              fills the remaining width. */}
-          <div className="flex-1 min-w-0 flex flex-col gap-2">
+              fills the remaining width. gap-1 (not gap-2) tightens the space between the
+              chart's slider row and the Missed/Allowed/Context chips below it. */}
+          <div className="flex-1 min-w-0 flex flex-col gap-1">
             {/* Row 1: eval chart + severity badges side-by-side. */}
             {game.analysis_state === 'analyzed' ? (
             <div className="flex gap-3 items-start">
@@ -1008,15 +1113,33 @@ export function LibraryGameCard({
           )}
           {/* Row 2: tactic chips (analyzed games with chips only). Chips now occupy the right
               column width instead of full card width; wrapping is expected and acceptable.
+              The desktop Explore button is pinned below the Missed column (Quick 260625),
+              passed as that column's footer rather than a row under all three columns.
               Marked as flaw-controls for the outside-pointer highlight guard. */}
-          {game.analysis_state === 'analyzed' && chipsBlock && (
+          {game.analysis_state === 'analyzed' ? (
             <div className="flex flex-col gap-1.5" data-testid={`flaw-controls-${game.game_id}`}>
-              {chipsBlock}
+              {renderChipsBlock(renderDesktopExploreButton(true))}
             </div>
+          ) : (
+            // Non-analyzed games have no Missed column, so the (disabled) Explore button
+            // keeps its own row below the NoAnalysisState placeholder (auto width).
+            renderDesktopExploreButton(false)
           )}
           </div>
         </div>
       </div>
+
+      {/* D-01 TacticLineExplorer — stacks over the Game modal (renders as Dialog/Drawer
+          internally; its own z-index sits above the game Dialog). Opened from the Explore
+          button; closing only dismisses the explorer, leaving the game modal open. */}
+      {isTaggedFlaw && hoverPly != null && (
+        <TacticLineExplorer
+          open={exploreOpen}
+          onOpenChange={setExploreOpen}
+          gameId={game.game_id}
+          ply={hoverPly}
+        />
+      )}
     </Card>
   );
 }

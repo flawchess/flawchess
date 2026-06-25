@@ -151,6 +151,11 @@ export const TAC_ALLOWED = 'oklch(0.70 0.15 25)'; // light red
 export const TAC_ALLOWED_BG = 'oklch(0.70 0.15 25 / 0.15)';
 export const TAC_ALLOWED_BORDER = 'oklch(0.70 0.15 25 / 0.30)';
 
+// Phase 135 UAT: the active tag in the Missed/Allowed switch (TacticLineExplorer)
+// gets a solid white border so the selected line reads at a glance against its
+// colored fill — replaces the old ghost-button toggle.
+export const TAC_SWITCH_ACTIVE_BORDER = 'white';
+
 // Lighter missed/allowed variants used only for the miniboard depth-number badges,
 // which sit on top of the blue best-move and red severity arrows. The chip-tier
 // lightness (0.70) reads muddy on the same-hue arrow, so the badge numbers are
@@ -287,6 +292,10 @@ export const ARROW_NEUTRAL = '#6B7280';  // Tailwind gray-500 / matches WDL_BORD
 // secondary to the red flaw-move arrow it sits beside on the Flaw card, and a calm
 // overlay on the scrubbed Game-card board. rgba (not oklch) so the alpha is explicit.
 export const BEST_MOVE_ARROW = 'rgba(59, 130, 246, 0.8)';  // Tailwind blue-500 @ 80%
+
+// Tactic Line Explorer payoff-ply arrows (Phase 135). Lighter alpha than BEST_MOVE_ARROW
+// so payoff arrows visually recede behind the punchline arrow (same blue, less prominent).
+export const PAYOFF_MOVE_ARROW = 'rgba(59, 130, 246, 0.5)';  // Tailwind blue-500 @ 50%
 
 // Endgame ELO Timeline volume bars (Phase 57.1; rebuilt Phase 87.5).
 // Muted gray with alpha so the

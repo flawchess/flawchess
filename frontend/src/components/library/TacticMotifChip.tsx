@@ -7,6 +7,7 @@ import {
   TAC_ALLOWED,
   TAC_ALLOWED_BG,
   TAC_ALLOWED_BORDER,
+  TAC_SWITCH_ACTIVE_BORDER,
 } from '@/lib/theme';
 import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
 import {
@@ -19,6 +20,12 @@ import {
 // Same highlight-bg helper as TagChip: bump the translucent alpha from 0.15 to 0.3
 // on hover/focus so the chip clearly reads as highlighted.
 const HIGHLIGHT_BG = (bg: string): string => bg.replace('/ 0.15)', '/ 0.3)');
+
+// Phase 135 UAT (mobile): cap the visible "{orientation}: {motif}" badge label so it
+// never exceeds this many characters (including the ellipsis), e.g.
+// "allowed: hanging-piece" → "allowed: hangin…". The full text stays in aria-label and
+// the native title tooltip. Only applies to the orientation-prefixed badge form.
+const MAX_PREFIXED_LABEL_CHARS = 16;
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -66,6 +73,23 @@ interface TacticMotifChipProps {
    * plies. Mirrors TagChip.onActivate; omitted call sites are unaffected.
    */
   onActivate?: () => void;
+  /**
+   * Phase 135 UAT: when the chip acts as an option in the Missed/Allowed switch
+   * (TacticLineExplorer), pass the selected state. The active tag renders a solid
+   * white border and exposes `aria-pressed`; inactive tags keep their colored border.
+   */
+  selected?: boolean;
+  /**
+   * Optional data-testid override. The switch tags use stable `tactic-toggle-*` ids
+   * so browser automation can target them independent of the motif label.
+   */
+  testId?: string;
+  /**
+   * Quick 260625: opt out of the mobile `MAX_PREFIXED_LABEL_CHARS` truncation of the
+   * "{orientation}: {motif}" label. The TacticLineExplorer desktop badges have room for
+   * the full text, so they pass `noTruncate`; mobile keeps abbreviating.
+   */
+  noTruncate?: boolean;
 }
 
 /**
@@ -90,6 +114,9 @@ export function TacticMotifChip({
   count,
   onHover,
   onActivate,
+  selected,
+  testId: testIdOverride,
+  noTruncate,
 }: TacticMotifChipProps) {
   const family = TACTIC_FAMILY_FOR_MOTIF[motif];
   const colors = family != null ? TACTIC_FAMILY_COLORS[family] : null;
@@ -102,15 +129,25 @@ export function TacticMotifChip({
   // Visible label uses colon ("missed: fork"); aria-label uses space ("Tactic: missed fork — def").
   // Quick 260620-sep: hidePrefix drops the visible "{orientation}: " when the chip sits in
   // an orientation-grouped row (the group label conveys orientation) — aria/testid keep it.
-  const visibleLabel = orientation != null && !hidePrefix ? `${orientation}: ${label}` : label;
+  const prefixedLabel = orientation != null && !hidePrefix ? `${orientation}: ${label}` : label;
+  // Truncate the prefixed badge form to keep it compact on mobile (Phase 135 UAT).
+  const isLabelTruncated =
+    orientation != null &&
+    !hidePrefix &&
+    !noTruncate &&
+    prefixedLabel.length > MAX_PREFIXED_LABEL_CHARS;
+  const visibleLabel = isLabelTruncated
+    ? `${prefixedLabel.slice(0, MAX_PREFIXED_LABEL_CHARS - 1)}…`
+    : prefixedLabel;
   const ariaLabel =
     orientation != null
       ? `Tactic: ${orientation} ${label} — ${definition}`
       : `Tactic: ${label} — ${definition}`;
   const testId =
-    orientation != null
+    testIdOverride ??
+    (orientation != null
       ? `chip-tactic-${orientation}-${motif}-${flawId}`
-      : `chip-tactic-${motif}-${flawId}`;
+      : `chip-tactic-${motif}-${flawId}`);
 
   // Brighten the chip while it is hovered or focused (tap-focus on mobile).
   const [highlighted, setHighlighted] = React.useState(false);
@@ -163,7 +200,8 @@ export function TacticMotifChip({
       style={{
         color,
         backgroundColor: highlighted ? HIGHLIGHT_BG(bg) : bg,
-        borderColor: border,
+        // Selected switch tag → solid white border (Phase 135 UAT); else colored border.
+        borderColor: selected ? TAC_SWITCH_ACTIVE_BORDER : border,
         filter: highlighted ? 'brightness(1.2)' : undefined,
         // Ring color matches the family color for active-filter emphasis (TagChip parity).
         ...(isActive ? { '--tw-ring-color': color } as React.CSSProperties : {}),
@@ -171,6 +209,10 @@ export function TacticMotifChip({
       role={interactive ? 'button' : undefined}
       tabIndex={interactive ? 0 : undefined}
       aria-label={ariaLabel}
+      // Native tooltip restores the full label when the visible text is truncated.
+      title={isLabelTruncated ? prefixedLabel : undefined}
+      // aria-pressed only when used as a switch tag (selected prop provided).
+      aria-pressed={selected}
       data-testid={testId}
       onMouseEnter={
         interactive
