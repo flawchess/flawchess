@@ -2,11 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.28
 milestone_name: Tactic Tagging
-status: executing
+status: Phase 135 shipped — squash-merged to main (3827e667)
 stopped_at: Phase 135 Plan 03 complete
-last_updated: "2026-06-25T00:10:00.000Z"
+last_updated: "2026-06-25T13:53:07.649Z"
 last_activity: 2026-06-25
-last_activity_desc: Phase 135 Plan 03 (TacticLineExplorer entry-points) complete
 progress:
   total_phases: 18
   completed_phases: 12
@@ -23,8 +22,8 @@ current_phase_name: trapped-piece-fixture-expansion-option-b-cook-predicate-reim
 
 Milestone: v1.28 Tactic Tagging — all active phases (124, 125, 126, 127, 128, 128.1, 129) COMPLETE
 Phase 129 (tactic-filter-ui): VERIFIED — UAT 2/2 passed, G-01 resolved live, VERIFICATION human-verified
-Status: Phase 135 Plans 01+02+03 all complete — Tactic Line Explorer fully shipped
-Last activity: 2026-06-25 — Completed quick task 260625-dhl: Phase 135 desktop UAT — desktop tactic explorer now uses the shared horizontal move list (single-column stacked, board-sized `sm:max-w-md` modal, 3-line `h-24` list below controls, full-text missed/allowed badges via `noTruncate`); retired the vertical `SanLadder`
+Status: Phase 135 shipped — squash-merged to main (3827e667)
+Last activity: 2026-06-25
 
 ## Project Reference
 
