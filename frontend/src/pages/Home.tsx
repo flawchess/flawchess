@@ -38,6 +38,7 @@ const FEATURES: {
         'Run Stockfish over your entire chess.com and lichess history — completely free.',
         'Every blunder and mistake is tagged with the tactic that caused it: fork, pin, skewer, and 20+ motifs.',
         'See both the tactic you missed and the one you allowed, with the engine\'s best line.',
+        'Track your blunder rate over time, and see how often you fall for each tactic versus your opponents.',
         'Filter your whole game history by tactic, depth, and severity.',
     ],
     screenshot: { src: '/screenshots/game-card.png', alt: 'Library game card showing Stockfish eval chart, board with best-move and move-played arrows, and missed/allowed tactic chips (fork, pin)' },
