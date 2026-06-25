@@ -1,5 +1,25 @@
 # Milestones: FlawChess
 
+## v1.28 Tactic Tagging (Shipped: 2026-06-25)
+
+**Phases completed:** 14 phases (123.1, 124–135 incl. 128.1; 130 superseded by 131–134), 45 plans, 51 tasks. Phase 123.1 (standalone SEED-053 enabler) grouped in at close per the standalone-then-regroup pattern (cf. v1.20/v1.27).
+**Stats:** ~531 files changed `v1.27..main`, net additions dominated by the committed CC0 puzzle + tagger fixtures; 154 commits (inflated by squash + forward-port); phases completed 2026-06-17 → 2026-06-25 since v1.27. Alembic migrations: tactic columns on `game_flaws` (124), `*_tactic_depth` (127), `allowed_*`/`missed_*` rename+add (128), `opening_position_eval` cache table (123.1). Phases 124–134 deployed via release #214 (2026-06-23); Phase 135 ships with this milestone close.
+**Milestone goal:** Add a "cause of error" tactic axis to the flaw taxonomy — name the tactical motif behind every mistake/blunder from the already-stored refutation line (no new engine pass), then let players compare their tactic rates against their opponents'.
+
+**Key accomplishments:**
+
+- **Tactic-motif detector** (Phase 124) — cook.py-faithful heuristics reimplemented in original code (no AGPL copied), pure-CPU off the stored `game_positions.pv`, both colors, precision-first (NULL on low confidence). New nullable `tactic_motif`/`tactic_piece` columns on `game_flaws`, written inside the single classify path.
+- **Precision hardened to ship-grade** (Phases 127, 131–134, SEED-064) — per-motif precision raised to ≥0.95 on a held-out CC0 lichess-puzzle TEST split for every shipped motif (fork/skewer/pin/back-rank/named-mates/tier-3/trapped-piece all ~1.000); a self-contained validation harness replaced the circular self-labeled fixtures; sub-floor motifs suppressed rather than mis-tagged.
+- **Missed-vs-allowed dual orientation** (Phase 128, SEED-054) — `allowed_*` (the refutation) and `missed_*` (the stronger line) tagged via a second PV pass, distinguished without a perspective column through `is_opponent_expr`.
+- **You-vs-opponent comparison** (Phase 126) — `GET /api/library/tactic-comparison` per-motif rates with the project's Wilson chess-score significance gating, honoring all game filters.
+- **Full Library tactic UI** (Phases 126, 129) — family-colored chips with definition popovers, a 10-family taxonomy, depth-range filter, Either/Missed/Allowed toggle, two-bullet comparison grid + "More Tactics" accordion; later de-beta'd to all users and made the homepage hero.
+- **Tactic Line Explorer** (Phase 135, SEED-065) — walkable PV stepper (desktop dialog / mobile drawer) stepping the missed and allowed lines on a large board + SAN ladder with a depth-to-punchline counter, entry points on flaw + game cards.
+- **`opening_position_eval` cache table** (Phase 123.1, SEED-053) — position-keyed dedup cache replacing the cross-user self-join, cutting the per-game opening-eval lookup from ~8.4 s to sub-ms.
+
+**Known deferred items at close:** see STATE.md → Deferred Items (Phase 135's 2 manual UAT scenarios on a now-shipping feature + standing cross-milestone backlog noise).
+
+---
+
 ## v1.27 Remote Eval Worker Fan-Out & In-App Feedback (Shipped: 2026-06-16)
 
 **Phases completed:** 3 phases (121, 122, 123), 6 plans. Grouped at close per the standalone-then-regroup pattern (cf. v1.20) — each phase shipped to prod standalone and soaked before grouping; released to production across PRs #199 (121), #202 (122), #203 (123) plus follow-on ops/quick-task releases through #208. Production code tree matches `main` at close.
@@ -17,7 +37,6 @@
 **Deferred (owned by seeds):** biasing tier-1 to the faster box + interruptible tier-3 (SEED-048 follow-ons); entry-ply lease TTL sizing, routing `run_eval_drain` through the same lease, backlog-gate threshold tuning against live throughput (SEED-051 open items); macOS background-scheduling caveat for off-box workers (SEED-048).
 
 See `.planning/milestones/v1.27-ROADMAP.md`.
-
 
 ## v1.26 Full-Game Eval Pipeline (Shipped: 2026-06-14)
 
@@ -42,7 +61,6 @@ See `.planning/milestones/v1.27-ROADMAP.md`.
 
 See `.planning/milestones/v1.26-ROADMAP.md` and `.planning/milestones/v1.26-REQUIREMENTS.md` (22/22 in-scope requirements complete; Phases 119/120 seed-driven; SEED-039/037/012 deferred to v2).
 
-
 ## v1.25 Flaw-Stats Opponent Comparison (Shipped: 2026-06-12)
 
 **Phases completed:** 4 phases (113, 114, 114.1 INSERTED, 115), 8 plans. All landed on `main` via local squash-merge / gated commits; released to production 2026-06-12 via PR #185 (`78c19514`).
@@ -61,7 +79,6 @@ See `.planning/milestones/v1.26-ROADMAP.md` and `.planning/milestones/v1.26-REQU
 **Known deferred items at close:** see STATE.md Deferred Items (open-artifact audit at close: 26 items — 13 quick tasks all shipped [false-positive `unknown` status], Phase 115's 2 manual UAT scenarios + human-needed verification on a feature now live in prod, 5 long-range todos, 4 dormant seeds incl. SEED-040's delivered scope; none block the release).
 
 See `.planning/milestones/v1.25-ROADMAP.md` and `.planning/milestones/v1.25-REQUIREMENTS.md` (18/18 active requirements complete; FLAWX-03 + FLAWCMP-02 voided; FLAWTAC / FLAWCOV deferred to v2).
-
 
 ## v1.24 Library Page (Shipped: 2026-06-09)
 

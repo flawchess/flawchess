@@ -8,6 +8,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v1.28] Tactic Tagging — 2026-06-25
+
 ### Added
 
 - **Tactic Line Explorer** — clicking "Explore" on a tagged flaw (one with a missed or allowed tactic motif) opens a walkable board that steps through the engine's principal variation. Both the move you should have played (missed tactic, blue arrows) and the opponent's refutation (allowed tactic, colored arrows) can be walked move by move from the decision position. A depth readout shows your distance from the punchline move. On desktop the explorer opens as a dialog; on mobile as a right-side drawer (with a close button) that places the board and move list side by side. On the Flaws tab each card now has Explore and Game buttons (instead of a header link); on the Games tab the Game modal gains an Explore button below the eval chart, enabled when the slider is parked on a tagged flaw. (Phase 135)
@@ -888,7 +890,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.27...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.28...HEAD
+[v1.28]: https://github.com/flawchess/flawchess/compare/v1.27...v1.28
 [v1.27]: https://github.com/flawchess/flawchess/compare/v1.26...v1.27
 [v1.26]: https://github.com/flawchess/flawchess/compare/v1.25...v1.26
 [v1.25]: https://github.com/flawchess/flawchess/compare/v1.24...v1.25
