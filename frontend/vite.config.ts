@@ -53,7 +53,7 @@ export default defineConfig({
       manifest: {
         name: 'FlawChess',
         short_name: 'FlawChess',
-        description: 'Free chess analysis across your chess.com and lichess games. Find leaks in your openings, endgames, and time management.',
+        description: 'Free Stockfish analysis of your entire chess.com and lichess history. Every blunder and mistake is tagged with the tactic behind it — fork, pin, skewer, and more. Plus opening, endgame, and time-management insights.',
         theme_color: '#0a0a0a',
         background_color: '#0a0a0a',
         display: 'standalone',

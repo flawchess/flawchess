@@ -16,7 +16,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
-import { Scale, Filter, TrophyIcon, Timer, Compass, Loader2, UserPlus, DoorOpen } from 'lucide-react';
+import { Search, Scale, Filter, TrophyIcon, Timer, Compass, Loader2, UserPlus, DoorOpen } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 // Feature sections — the first entry is rendered in the hero (desktop right column +
@@ -30,6 +30,19 @@ const FEATURES: {
   screenshot: { src: string; alt: string };
   imagePosition: 'left' | 'right';
 }[] = [
+  {
+    slug: 'game-analysis',
+    icon: Search,
+    heading: 'Free Full-Game Analysis',
+    desc: [
+        'Run Stockfish over your entire chess.com and lichess history — completely free.',
+        'Every blunder and mistake is tagged with the tactic that caused it: fork, pin, skewer, and 20+ motifs.',
+        'See both the tactic you missed and the one you allowed, with the engine\'s best line.',
+        'Filter your whole game history by tactic, depth, and severity.',
+    ],
+    screenshot: { src: '/screenshots/game-card.png', alt: 'Library game card showing Stockfish eval chart, board with best-move and move-played arrows, and missed/allowed tactic chips (fork, pin)' },
+    imagePosition: 'right',
+  },
   {
     slug: 'opening-explorer',
     icon: Compass,

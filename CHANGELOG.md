@@ -58,6 +58,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- **Homepage hero is now "Free Full-Game Analysis"** — the landing page leads with free Stockfish analysis of your entire chess.com and lichess history and the tactic tagging of every blunder and mistake (fork, pin, skewer, and more). The previous hero (Opening Explorer & Insights) and the other features each move down one slot, and the page title / meta description / PWA description were refreshed to match. (Quick 260625-tbg)
+
 - **Tactic tagging is now available to all users** — the tactic-motif feature (cards chips, eval-chart tooltips and depth badges, the Library tactic filters, and the you-vs-opponent "Tactic Motifs" comparison) is no longer beta-gated. Every analyzed game now shows the three-column Missed / Allowed / Context card layout and the full tactic filter set, regardless of beta access. (Quick 260623-tsu)
 
 - **More tactic chips surface, with no loss of accuracy** — the promotion, en-passant, under-promotion, and discovered-check detectors now scan the whole refutation line instead of only its first move, so these tactics are recognized wherever they occur in the solution (matching how lichess labels them). Recall roughly tripled for promotion and quadrupled for en-passant, doubled for discovered-check, while precision held at or near 100%. The three move-type chips also became a strict last-resort fallback: a fork, skewer, or other genuine tactic now always wins the chip over a bare "promotion"/"en-passant" label, which incidentally recovered a few real-tactic tags that were previously mislabeled. (Quick 260623-r7a)
