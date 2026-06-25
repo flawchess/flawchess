@@ -36,7 +36,7 @@ const FEATURES: {
     heading: 'Game and Tactic Analysis',
     desc: [
         'Run Stockfish over your entire chess.com and lichess history — completely free.',
-        'Understand your blunders and learn from them: each mistake is tagged with the tactic behind it (fork, pin, skewer, and 20+ motifs).',
+        'Understand your blunders and learn from them: most mistakes are tagged with the tactic behind them (fork, pin, skewer, and 20+ motifs).',
         'Track your blunder rate over time, and see how often you fall for each tactic versus your opponents.',
         'Filter your whole game history by tactic, depth, and severity.',
     ],
