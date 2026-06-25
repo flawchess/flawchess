@@ -361,3 +361,42 @@ export interface FlawComparisonResponse {
   analyzed_gate: number;
   below_gate: boolean;
 }
+
+// ─── Tactic Lines (GET /api/library/flaws/{game_id}/{ply}/tactic-lines) ────────
+
+/**
+ * PV walk data for the TacticLineExplorer (Phase 135).
+ * Mirrors backend TacticLinesResponse Pydantic model field-for-field.
+ *
+ * missed_moves: SAN from the decision position (flaw_ply PV). Null when PV is NULL.
+ * allowed_moves: SAN starting with the flaw move (prepended) then opponent PV.
+ *                Null when game_positions[ply+1].pv is NULL.
+ * position_fen: full FEN (with side-to-move from ply parity) for chess.js root board.
+ * flaw_ply: real game ply of the flaw (for move-number labeling in SAN ladder).
+ */
+export interface TacticLinesResponse {
+  missed_moves: string[] | null;
+  missed_depth: number | null;
+  missed_tactic_ply_index: number | null;
+  missed_motif: string | null;
+  /** Engine eval of the missed-line root (decision position, from game_positions[ply-1] since eval is post-move), white-POV. */
+  missed_eval_cp: number | null;
+  missed_eval_mate: number | null;
+  allowed_moves: string[] | null;
+  allowed_depth: number | null;
+  allowed_tactic_ply_index: number | null;
+  allowed_motif: string | null;
+  /** Engine eval of the allowed-line root (after the flaw move, from game_positions[ply] post-move eval), white-POV. */
+  allowed_eval_cp: number | null;
+  allowed_eval_mate: number | null;
+  /** Full FEN (with side-to-move) for chess.js root board initialization. */
+  position_fen: string;
+  /** SAN of the move played (the flaw move). Null on final position. */
+  flaw_move_san: string | null;
+  /** Engine best move from the pre-flaw position (UCI). Null when no PV captured. */
+  best_move_uci: string | null;
+  /** Real game ply of the flaw (for move-number anchoring in the SAN ladder). */
+  flaw_ply: number;
+  /** Severity of the flaw move ("mistake" | "blunder") — drives the SAN-ladder glyph. */
+  flaw_severity: FlawSeverity;
+}

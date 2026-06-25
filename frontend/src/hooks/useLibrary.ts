@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { libraryApi } from '@/api/client';
 import { resolveDateRange, dateRangeToWireParams } from '@/lib/recency';
 import type { FilterState } from '@/components/filters/FilterPanel';
-import type { FlawTag } from '@/types/library';
+import type { FlawTag, TacticLinesResponse } from '@/types/library';
 import { isFlawFilterNonDefault } from '@/hooks/useFlawFilterStore';
 import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
 import type { GameFlawCard } from '@/types/library';
@@ -212,6 +212,28 @@ export function useLibraryGame(
         ...depthParam,
       }),
     enabled: gameId !== null,
+    staleTime: LIBRARY_STALE_TIME,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/**
+ * Lazy-fetch the tactic PV walk for a specific flaw (game_id + ply).
+ *
+ * Query key: ['tactic-lines', gameId, ply]
+ * Enabled only when `enabled` is true AND gameId/ply are non-null — gates the
+ * network request until the TacticLineExplorer opens (lazy fetch on open).
+ * Phase 135, Plan 03 — consumed by TacticLineExplorer.
+ */
+export function useTacticLines(
+  gameId: number | null,
+  ply: number | null,
+  enabled: boolean,
+): ReturnType<typeof useQuery<TacticLinesResponse>> {
+  return useQuery<TacticLinesResponse>({
+    queryKey: ['tactic-lines', gameId, ply],
+    queryFn: () => libraryApi.getTacticLines(gameId!, ply!),
+    enabled: enabled && gameId != null && ply != null,
     staleTime: LIBRARY_STALE_TIME,
     refetchOnWindowFocus: false,
   });

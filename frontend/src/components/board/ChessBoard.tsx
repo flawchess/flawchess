@@ -11,7 +11,7 @@ import {
 import { HIGHLIGHT_PULSE_DURATION_MS, HIGHLIGHT_PULSE_ITERATIONS } from '../../lib/highlightPulse';
 import { squareToCoords, buildArrowPath } from './arrowGeometry';
 
-interface BoardArrow {
+export interface BoardArrow {
   startSquare: string;
   endSquare: string;
   color: string;
@@ -27,6 +27,17 @@ interface BoardArrow {
    * move on arrival. (Quick-task 260427-j41.)
    */
   isHighlightPulse?: boolean;
+  /**
+   * Optional depth-badge label rendered as an SVG <text> on the arrow's target
+   * square (e.g. the tactic depth number). Mirrors MiniBoard.tsx badge geometry.
+   * When omitted the arrow renders exactly as before (no badge).
+   */
+  label?: string;
+  /**
+   * Fill color for the depth-label badge. Caller should pass a theme.ts constant
+   * (e.g. TAC_MISSED_LABEL, TAC_ALLOWED_LABEL). Defaults to white.
+   */
+  labelColor?: string;
 }
 
 interface ChessBoardProps {
@@ -37,6 +48,12 @@ interface ChessBoardProps {
   lastMove?: { from: string; to: string } | null;
   /** Arrows to render on the board */
   arrows?: BoardArrow[];
+  /**
+   * Board id for square testid generation. Defaults to 'chessboard'.
+   * Pass a distinct id (e.g. 'tactic-explorer-board') when two boards coexist
+   * in the DOM so their square testids do not collide (Pitfall 6 — Phase 135).
+   */
+  id?: string;
 }
 
 // Coordinate labels use the opposite square's color for contrast
@@ -74,6 +91,14 @@ const ARROW_TIP_OVERSHOOT = 0.15;
 // Constants live in lib/highlightPulse.ts so the MoveExplorer row-pulse
 // stays driven by the same timing.
 const ARROW_PULSE_CLASS = 'animate-arrow-pulse';
+
+// Depth-label badge geometry (mirrors MiniBoard.tsx — keep in sync if changed there).
+// Fractions of one square's pixel size.
+const DEPTH_LABEL_FONT = 0.55;
+const DEPTH_LABEL_OUTLINE = 0.09;
+const DEPTH_LABEL_DEFAULT_FILL = 'white';
+// Inset from the square's top-right corner so the badge stays clear of the piece.
+const DEPTH_LABEL_CORNER_INSET = 0.08;
 
 // Render priority: hovered arrow always on top; otherwise green > red > blue
 // > grey (low-data). Within each tier, thicker arrows are drawn first so thin
@@ -159,11 +184,37 @@ function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; b
           />
         );
       })}
+      {/* Depth-label badges drawn last so they sit on top of the arrowheads.
+          Mirrors MiniBoard.tsx badge geometry. Only rendered when label is set. */}
+      {sortedArrows.map((arrow) => {
+        if (!arrow.label) return null;
+        const [tx, ty] = squareToCoords(arrow.endSquare, flipped);
+        // Anchor to top-right corner (inset) so the badge stays clear of the piece.
+        const bx = (tx + 0.5 - DEPTH_LABEL_CORNER_INSET) * sqSize;
+        const by = (ty - 0.5 + DEPTH_LABEL_CORNER_INSET) * sqSize;
+        return (
+          <text
+            key={`label-${arrow.startSquare}-${arrow.endSquare}`}
+            x={bx}
+            y={by}
+            fill={arrow.labelColor ?? DEPTH_LABEL_DEFAULT_FILL}
+            stroke="black"
+            strokeWidth={DEPTH_LABEL_OUTLINE * sqSize}
+            paintOrder="stroke"
+            fontSize={DEPTH_LABEL_FONT * sqSize}
+            fontWeight="700"
+            textAnchor="end"
+            dominantBaseline="hanging"
+          >
+            {arrow.label}
+          </text>
+        );
+      })}
     </svg>
   );
 }
 
-export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, arrows = [] }: ChessBoardProps) {
+export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, arrows = [], id }: ChessBoardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Start at 0 so we don't mount react-chessboard until the container has measured.
   // Mounting with a non-zero width inside a display:none parent (e.g. the hidden
@@ -301,7 +352,7 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, a
       lightSquareStyle,
       darkSquareNotationStyle: DARK_SQUARE_NOTATION,
       lightSquareNotationStyle: LIGHT_SQUARE_NOTATION,
-      id: 'chessboard',
+      id: id ?? 'chessboard',
       // react-chessboard v5 animation state machine causes black screen on mobile
       // when position prop updates — disable animations on touch devices only
       showAnimations,
@@ -313,7 +364,7 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, a
       onSquareClick: handleSquareClick,
       onPieceDrop: handlePieceDrop,
     }),
-    [position, flipped, boardStyle, showAnimations, squareStyles, squareRenderer, handleSquareClick, handlePieceDrop],
+    [position, flipped, boardStyle, showAnimations, squareStyles, squareRenderer, handleSquareClick, handlePieceDrop, id],
   );
 
   return (

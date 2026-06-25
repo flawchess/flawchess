@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
 from app.models.user import User
+from app.repositories import library_repository
 from app.schemas.library import (
     FlawComparisonResponse,
     FlawStatsResponse,
@@ -26,6 +27,7 @@ from app.schemas.library import (
     LibraryFlawsResponse,
     LibraryGamesResponse,
     TacticComparisonResponse,
+    TacticLinesResponse,
 )
 from app.services import library_service
 from app.users import current_active_user
@@ -356,3 +358,33 @@ async def get_library_flaws(
         offset=offset,
         limit=limit,
     )
+
+
+@router.get("/flaws/{game_id}/{ply}/tactic-lines", response_model=TacticLinesResponse)
+async def get_tactic_lines(
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+    game_id: int,
+    ply: int,
+) -> TacticLinesResponse:
+    """PV walk for the TacticLineExplorer (Phase 135, Plan 01).
+
+    Returns both orientations' SAN move lists, raw 0-based depths, motif strings,
+    and the full decision-position FEN for chess.js board initialization.
+
+    IDOR guard (T-135-01): returns 404 (not 403) when the flaw does not exist OR
+    belongs to a different user — never confirms whether the id exists for the
+    requester (mirrors get_library_game / T-112-01).
+
+    game_id and ply are typed int so FastAPI auto-422-rejects non-integer values
+    before the handler runs (T-135-02 / T-112-05 pattern).
+
+    user.id is taken ONLY from the current_active_user JWT dependency — never
+    from a request parameter (IDOR prevention).
+    """
+    result = await library_repository.fetch_tactic_lines(
+        session, user_id=user.id, game_id=game_id, ply=ply
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="Flaw not found")
+    return result

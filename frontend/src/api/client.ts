@@ -13,7 +13,7 @@ import type {
   BookmarkPhaseEntryResponse,
 } from '@/types/stats';
 import type { EndgameGamesResponse, EndgameOverviewResponse } from '@/types/endgames';
-import type { GameFlawCard, LibraryGamesResponse, FlawStatsResponse, LibraryFlawsResponse, FlawComparisonResponse, TacticComparisonResponse } from '@/types/library';
+import type { GameFlawCard, LibraryGamesResponse, FlawStatsResponse, LibraryFlawsResponse, FlawComparisonResponse, TacticComparisonResponse, TacticLinesResponse } from '@/types/library';
 import type { OpponentStrengthRange } from '@/types/api';
 import { rangeToQueryParams } from '@/lib/opponentStrength';
 import type { FeedbackRequest, FeedbackResponse } from '@/types/feedback';
@@ -374,6 +374,11 @@ export const libraryApi = {
   // Quick 260621-sm8: the "View game" modal forwards the active tactic filter so
   // the single-game view nulls non-matching tactic slots per-slot (same as the
   // list). orientation omitted when 'either'; depth bounds sent when present.
+  getTacticLines: (gameId: number, ply: number) =>
+    apiClient
+      .get<TacticLinesResponse>(`/library/flaws/${gameId}/${ply}/tactic-lines`)
+      .then(r => r.data),
+
   getGame: (
     gameId: number,
     params?: {

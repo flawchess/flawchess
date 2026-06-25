@@ -2,17 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.28
 milestone_name: Tactic Tagging
-status: completed
-stopped_at: Completed 134-03-PLAN.md
-last_updated: "2026-06-23T10:18:46.734Z"
-last_activity: 2026-06-23
-last_activity_desc: Phase 134 marked complete
+status: Phase 135 shipped — squash-merged to main (3827e667)
+stopped_at: Phase 135 Plan 03 complete
+last_updated: "2026-06-25T13:53:07.649Z"
+last_activity: 2026-06-25
 progress:
-  total_phases: 17
+  total_phases: 18
   completed_phases: 12
-  total_plans: 42
-  completed_plans: 42
-  percent: 71
+  total_plans: 45
+  completed_plans: 44
+  percent: 67
 current_phase: 134
 current_phase_name: trapped-piece-fixture-expansion-option-b-cook-predicate-reim
 ---
@@ -23,8 +22,8 @@ current_phase_name: trapped-piece-fixture-expansion-option-b-cook-predicate-reim
 
 Milestone: v1.28 Tactic Tagging — all active phases (124, 125, 126, 127, 128, 128.1, 129) COMPLETE
 Phase 129 (tactic-filter-ui): VERIFIED — UAT 2/2 passed, G-01 resolved live, VERIFICATION human-verified
-Status: Phase 134 complete
-Last activity: 2026-06-23 — Completed quick task 260623-tsu: removed the frontend beta gate for tactic tagging
+Status: Phase 135 shipped — squash-merged to main (3827e667)
+Last activity: 2026-06-25
 
 ## Project Reference
 
@@ -296,6 +295,7 @@ Carried forward from v1.11 close (still relevant):
 | 260615-rb1 | Fix eval-coverage denominator bug: short games (<=8 plies) never cleared the 90% gate (terminal position counted against them), leaving oracle columns NULL and the "Analyze" pill stuck | 2026-06-15 | 831bae38 | [260615-rb1-fix-eval-coverage-denominator-bug-for-sh](./quick/260615-rb1-fix-eval-coverage-denominator-bug-for-sh/) |
 | 260615-wjz | Exclude permanently-unanalyzable games (zero-move / too-short) from the eval-coverage badge total so "X of X games analyzed" is reachable | 2026-06-15 | 74cc0636 | [260615-wjz-fix-eval-coverage-badge-denominator](./quick/260615-wjz-fix-eval-coverage-badge-denominator/) |
 | 260616-pjh | Stamp lichess_evals_at provenance at import time (new Stage 5d in `_flush_batch` / `_stamp_lichess_evals_at`) for newly imported Lichess games with computer analysis (`platform='lichess' AND white_blunders IS NOT NULL`), so re-imported Lichess games are no longer wastefully re-queued for Stockfish. The column was previously set only by the one-time Phase 117 migration backfill; no live import path set it (5,152 of user 95's games stuck after a delete+reimport). Bindparam-executemany (not `id.in_`) keeps SQL text invariant per the FLAWCHESS-56 OOM guard. DB-backed regression tests (incl. `white_blunders=0`, idempotency). Serial gate green (CI-equivalent). | 2026-06-16 | c635f3d4 | [260616-pjh-stamp-lichess-evals-at-at-import-time-fo](./quick/260616-pjh-stamp-lichess-evals-at-at-import-time-fo/) |
+| 260625-isp | Phase 135 mobile UAT: full-width board + shared horizontal move list (replaces vertical SAN ladder on mobile; new `HorizontalMoveList` shared with Openings `MoveList`; keeps punchline color + severity glyph; `h-24` fits 3 lines). Desktop unchanged (keeps `SanLadder`). Gates: tsc/lint/knip clean, vitest 1136/1136. Commit `28427264` on the phase-135 branch. | 2026-06-25 | 28427264 | [260625-isp-phase-135-mobile-uat-full-width-board-sh](./quick/260625-isp-phase-135-mobile-uat-full-width-board-sh/) |
 | 260616-rm6 | Fix Import-page counter lag surfaced by the 2026-06-16 prod stress test. Corrected diagnosis: the counters ARE invalidated (every 5s) — the real cause was three indicators on three cadences/sources (2s import poll, 5s userProfile COUNT(*), 3s eval-coverage self-poll). `ImportProgressBar` now reports live `games_imported` up via an `onProgress` callback; `ImportPage` displays `max(profile.*_game_count, liveImported[platform] ?? 0)` so the per-platform "N games" header climbs in lockstep with "saved" on a first import (incremental syncs keep the full library COUNT). `GAME_COUNT_REFRESH_INTERVAL_MS` 5000→3000 to match the eval-coverage self-poll and halve the worst-case "Quick Scan" stall window. Frontend-only (user-chosen scope; backend COUNT(*) visibility deferred). Gates: lint/tsc/knip clean, vitest 951/951. Commit `3aed3be4`. | 2026-06-16 | 3aed3be4 | [260616-rm6-fix-the-quick-scan-and-platform-count-co](./quick/260616-rm6-fix-the-quick-scan-and-platform-count-co/) |
 
 ---
@@ -447,6 +447,8 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 | Phase 132 P03 | 2.5h | 3 tasks | 5 files |
 | Phase 132 P05 | 9 minutes | 2 tasks | 1 files |
 | Phase 134 P01 | ~110min | 2 tasks | 5 files |
+| Phase 135 P02 | 1740 | - tasks | - files |
+| Phase 135 P03 | ~90min | 3 tasks | 11 files |
 
 ## Decisions
 
@@ -558,13 +560,17 @@ Last activity: 2026-06-15 — Completed quick task 260615-rb1: fixed the eval-co
 - [Phase 134-01]: D-EXP-02 byte-identity-vs-HEAD gate OVERRIDDEN (user-approved): fresh 2026-06 lichess dump shares 0 row identity with older-dump committed fixtures, so byte-identity is unattainable for any re-sample; chose full regen + full floor re-measure. Added --oversample-motifs per-motif cap (Option B) with a deterministic SHA-1 per-motif re-seed (builtin hash() is salted/non-reproducible — Rule-1 fix).
 - [Phase 134-01]: trapped-piece ground truth expanded 39 -> 1065 combined (748 train / 317 test) via trapped-piece:250/stratum. Stays SUPPRESSED with NO floor (P 0.249 on expanded fixture); detector rewrite = Plan 02, conditional unsuppress = Plan 03.
 - [Phase 134-01]: Floors lowered (lower-only) on the larger fixture: pin 0.90->0.85, intermezzo 0.85->0.70, hanging-piece 0.90->0.68; all other floors unchanged; gate green. No detector geometry changed.
+- [Phase ?]: useTacticLine uses TacticDepthOrientation (not TacticOrientation) — 'either' is invalid for toDisplayDepthForOrientation
+- [Phase ?]: BoardArrow interface exported from ChessBoard.tsx for Plan 03 TacticLineExplorer consumption
 
 ## Session
 
-**Last session:** 2026-06-23T10:12:24.866Z
-**Stopped at:** Completed 134-01-PLAN.md
-**Resume file:** None
+**Last session:** 2026-06-24T21:42:36.785Z
+**Stopped at:** Phase 135 UI-SPEC approved
+**Resume file:** .planning/phases/135-tactic-line-explorer-walkable-pv-stepper-for-tagged-flaws-se/135-UI-SPEC.md
 | 170 | Flaw-card: open game on flawed ply, remove broken datapoint pulse | 2026-06-19 | fe4910d4 | — |
 | 189 | Move severity into collapsed Context; relabel Orientation->Tactic Missed vs Allowed, Tactic motif->Tactic Type; label severity group | 2026-06-20 | 45b19cb1 | — |
 | 190 | Games-card platform link deep-links to the eval-chart slider's ply (matching the Flaws card) | 2026-06-23 | e9f3d4b6 | — |
 | 260623-tsu | Remove the frontend beta gate (`userProfile.beta_enabled`) from tactic tagging across all six surfaces (LibraryGameCard, FlawCard, FlawFilterControl, EvalChart, TacticComparisonGrid, plus comment cleanup in TacticMotifChip/FlawStatsPanel) so the feature ships to all users. Card chips, eval-chart tooltips/depth badges, the Library tactic filters, and the you-vs-opponent Tactic Motifs comparison are now always shown; the three-column Missed/Allowed/Context layout replaces the non-beta single-row fallback. Dropped the `betaEnabled` prop from EvalChart and merged TacticComparisonGrid's inner/outer split. `beta_enabled` is retained on the profile type (API contract) but no longer read in the frontend. Updated/removed tests asserting non-beta hiding and now-dead beta mocks; added a CHANGELOG `### Changed` entry. Gate green: tsc -b 0 errors, lint 0 errors, knip clean, 1098 frontend tests pass. Backend untouched. | 2026-06-23 | 2cd0bc99 | [260623-tsu-remove-the-beta-gate-for-the-tactic-tagg](./quick/260623-tsu-remove-the-beta-gate-for-the-tactic-tagg/) |
+| 260625-grv | Phase 135 (Tactic Line Explorer) mobile UAT polish: (1) mobile drawer opens from the right with a top-right close (X) button, mirroring the filter drawers (`!w-full sm:!w-3/4 !bottom-auto !rounded-bl-xl`); (2) board shrunk to a 58% column so the SAN move list always fits beside it (was stacked below); (3) `TacticMotifChip` orientation-prefixed labels truncated to 16 chars (`"allowed: hanging-piece"` → `"allowed: hangin…"`), full text kept in aria-label + title. Frontend-only. Gate green: lint 0 errors, tsc -b clean, affected component tests 78 pass. | 2026-06-25 | 5b2167a4 | [260625-grv-uat-phase-135-mobile-right-side-drawer-w](./quick/260625-grv-uat-phase-135-mobile-right-side-drawer-w/) |
+| 260625-dhl | Phase 135 (Tactic Line Explorer) desktop UAT: bring the desktop modal in line with mobile. Replaced the two-column board / vertical `SanLadder` split with a single-column stacked layout (header → board → `BoardControls` → horizontal `HorizontalMoveList`), shared with mobile in one return branch. Dialog narrowed `sm:max-w-4xl` → `sm:max-w-md` to fit the chessboard, keeping `max-h-[90vh]` so it grows taller for the 3-line move list below the controls (`MOBILE_MOVE_LIST_HEIGHT` → `MOVE_LIST_HEIGHT`, `h-24`); board is `w-full aspect-square` on both surfaces. `TacticMotifChip` gained a `noTruncate` prop; the explorer passes `noTruncate={!isMobile}` so missed/allowed badges show full text on desktop (mobile keeps the 16-char abbreviation). Removed now-dead `SanLadder.tsx` + its stale `moveNumberLabel.ts` comment; stubbed `Element.prototype.scrollIntoView` in the test (jsdom gap now hit on the desktop path). Frontend-only. Gate green: tsc -b clean, lint 0 errors, knip clean, 1137 tests pass. | 2026-06-25 | a1ae6d4a | [260625-dhl-tactic-explorer-desktop-horiz-move-list](./quick/260625-dhl-tactic-explorer-desktop-horiz-move-list/) |

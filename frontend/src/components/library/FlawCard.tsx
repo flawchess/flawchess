@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Swords,
+  Search,
   Calendar,
   Clock,
   Cpu,
   ExternalLink,
   Loader2,
+  X,
 } from 'lucide-react';
 import {
   SEV_BLUNDER,
@@ -16,12 +18,21 @@ import {
   TAC_ALLOWED_LABEL,
 } from '@/lib/theme';
 import { Card, CardHeader } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import {
+  Drawer,
+  DrawerContent,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerClose,
+} from '@/components/ui/drawer';
 import { LoadError } from '@/components/ui/load-error';
 import { Tooltip } from '@/components/ui/tooltip';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { LibraryGameCard } from '@/components/results/LibraryGameCard';
+import { TacticLineExplorer } from '@/components/library/TacticLineExplorer';
 import { SeverityBadge } from '@/components/library/SeverityBadge';
 import { TagChip, TagLegend } from '@/components/library/TagChip';
 import { platformPlyUrl } from '@/lib/platformLinks';
@@ -44,6 +55,27 @@ import type { FlawListItem, FlawSeverity, TacticOrientation } from '@/types/libr
 // (resolved to 50% viewport by useMiniBoardSize).
 const DESKTOP_BOARD_SIZE = 200;
 const MOBILE_BOARD_SIZE = 132;
+
+// Matches Tailwind `md`; mirrors the local useIsMobile pattern in
+// TacticLineExplorer (no shared hook exists — each component clones it).
+const MOBILE_BREAKPOINT_PX = 768;
+
+/** True when the viewport is below the mobile breakpoint. Guards against a
+ *  missing `matchMedia` (e.g. jsdom without a stub) by defaulting to desktop. */
+function useIsMobile(): boolean {
+  const query = `(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`;
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia?.(query).matches === true,
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia(query);
+    const update = () => setIsMobile(mq.matches);
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, [query]);
+  return isMobile;
+}
 
 // Severity → accent color mapping (left-spine and board arrow color)
 const SEVERITY_COLOR: Record<FlawSeverity, string> = {
@@ -107,6 +139,11 @@ export interface FlawCardProps {
 
 export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) {
   const [open, setOpen] = useState(false);
+  const [exploreOpen, setExploreOpen] = useState(false);
+  const isMobile = useIsMobile();
+  // Phase 135 D-04: flaw is "tagged" when it has at least one tactic motif.
+  const isTagged =
+    flaw.missed_tactic_motif != null || flaw.allowed_tactic_motif != null;
   // Quick 260621-sm8: forward the active tactic filter into the "View game" modal
   // so the opened game nulls non-matching tactic slots the same way the flaw list
   // does — otherwise the modal showed tactics outside the depth/orientation/family
@@ -201,26 +238,46 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
   // Square glyph: white square = white-piece side, black square = black-piece side.
   const opponentGlyph = flaw.user_color === 'white' ? '□' : '■';
 
-  // "View game" trigger — opens the Dialog modal with the full LibraryGameCard.
-  // Lives in the header (right-aligned) as a text link (semantically a button
-  // since it opens a modal rather than navigating).
-  const viewGameButton = (
-    <button
-      type="button"
-      className="ml-auto shrink-0 inline-flex items-center gap-1 text-sm text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
-      data-testid={`flaw-card-view-game-${flaw.game_id}-${flaw.ply}`}
-      aria-label={`View full game for ${whiteName} vs ${blackName}`}
-      onClick={() => setOpen(true)}
-    >
-      <Swords className="h-3.5 w-3.5" />
-      Game
-    </button>
+  // D-04 button row (Phase 135): dedicated Explore + Game buttons.
+  // Both surfaces get the same row so either can open the explorer (CLAUDE.md mobile
+  // parity rule). Padding/placement differ per surface: mobile wraps it as a full-width
+  // card-level row below the body; desktop nests it inside the right column under the
+  // context tags (Quick 260625), so the shared row stays padding-free here.
+  const buttonRow = (
+    <div className="flex gap-2">
+      {isTagged && (
+        <Button
+          variant="brand-outline"
+          // Default Button size (h-8) to match the import-page Games/Openings/Endgames
+          // quicklink buttons (Quick 260625).
+          // Each button spans ~50% of the row: half each when both are present, and
+          // still ~50% (capped by max-w) when Explore appears alone (Quick 250626).
+          className="flex-1 max-w-[50%]"
+          data-testid="flaw-btn-explore"
+          aria-label="Explore tactic line"
+          onClick={() => setExploreOpen(true)}
+        >
+          <Search className="h-4 w-4 mr-1" />
+          Explore
+        </Button>
+      )}
+      <Button
+        variant="brand-outline"
+        className="flex-1 max-w-[50%]"
+        data-testid="flaw-btn-game"
+        aria-label={`View full game for ${whiteName} vs ${blackName}`}
+        onClick={() => setOpen(true)}
+      >
+        <Swords className="h-4 w-4 mr-1" />
+        Game
+      </Button>
+    </div>
   );
 
   // Platform icon + exact-ply deep link (D-12, T-112-06)
   const flawUrl = platformPlyUrl(flaw.platform, flaw.platform_url, flaw.ply, flaw.user_color);
   const platformIconAndLink = (
-    <span className="shrink-0 flex items-center gap-1.5 text-muted-foreground">
+    <span className="ml-auto shrink-0 flex items-center gap-1.5 text-muted-foreground">
       <PlatformIcon platform={flaw.platform} className="h-4 w-4" />
       {flawUrl ? (
         <Tooltip content="Open at this move on platform">
@@ -243,13 +300,13 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
   // rounded-t-md because the card uses overflowVisible (needed for any future
   // tooltip children that escape the card border).
   // Shows only the opponent: "vs <glyph><name> <rating>" on both desktop and mobile.
+  // Phase 135 D-04: viewGameButton removed from header; now lives in buttonRow below.
   const header = (
     <CardHeader as="h4" size="compact" className="rounded-t-md">
       <span className="truncate text-foreground min-w-0">
         <span className="text-muted-foreground font-normal">vs </span>
         {opponentGlyph} {opponentName} {opponentRating}
       </span>
-      {viewGameButton}
       {platformIconAndLink}
     </CardHeader>
   );
@@ -396,6 +453,74 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
     </div>
   );
 
+  // Shared game-view body (loading / error / lazily-fetched card). min-w-0 lets
+  // the embedded recharts EvalChart track the container width instead of
+  // overflowing horizontally on mobile.
+  const gameBody = (
+    <>
+      {isLoading && (
+        <div className="flex justify-center p-8">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      )}
+      {isError && <LoadError resource="game" variant="centered" />}
+      {data && (
+        <div className="min-w-0">
+          {/* initialPly: park the eval-chart slider on the clicked flaw's ply so
+              the board and crosshair land on the flawed move. */}
+          <LibraryGameCard game={data} initialPly={flaw.ply} />
+        </div>
+      )}
+    </>
+  );
+
+  const gameCloseLabel = 'Close game view';
+  const gameView = isMobile ? (
+    // Mobile: right-side drawer (full width on phones, 3/4 on small tablets),
+    // mirroring TacticLineExplorer's mobile surface.
+    <Drawer open={open} onOpenChange={(v) => !v && setOpen(false)} direction="right">
+      <DrawerContent
+        data-testid="flaw-game-modal"
+        className="!w-full sm:!w-3/4 !bottom-auto !rounded-bl-xl max-h-[95vh] overflow-y-auto no-scrollbar"
+        aria-label="View full game"
+      >
+        <DrawerHeader className="flex flex-row items-center justify-between">
+          <DrawerTitle className="text-base font-semibold">Full game view</DrawerTitle>
+          <Tooltip content={gameCloseLabel}>
+            <DrawerClose asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={gameCloseLabel}
+                data-testid="flaw-game-close"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </DrawerClose>
+          </Tooltip>
+        </DrawerHeader>
+        <div className="px-4 pb-4">{gameBody}</div>
+      </DrawerContent>
+    </Drawer>
+  ) : (
+    <Dialog open={open} onOpenChange={(v) => !v && setOpen(false)}>
+      <DialogContent
+        // no-scrollbar: the EvalChart tooltip (allowEscapeViewBox y=true) renders
+        // downward and overhangs the chart. When the modal is content-height (the
+        // common single-card case) that overhang spills past the scroll container,
+        // making overflow-y-auto flash a scrollbar (and reflow). Hiding the bar keeps
+        // wheel/touch scroll for genuinely tall cards while killing the flicker.
+        // sm:p-6: more breathing room around the card on desktop.
+        className="no-scrollbar sm:max-w-4xl overflow-y-auto max-h-[90vh] sm:p-6"
+        data-testid="flaw-game-modal"
+        aria-label="View full game"
+      >
+        <DialogTitle className="sr-only">Full game view</DialogTitle>
+        {gameBody}
+      </DialogContent>
+    </Dialog>
+  );
+
   return (
     <Card
       as="article"
@@ -420,6 +545,8 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
         </div>
         <div className="basis-full">{tagsRow}</div>
       </div>
+      {/* D-04 button row (mobile, sm:hidden) — full-width row below the card body */}
+      <div className="sm:hidden px-3 pb-3">{buttonRow}</div>
 
       {/* Desktop body (Quick 260622): the enlarged board on the left spans the full
           card-body height; the right column stacks the two-line metadata on top of the
@@ -436,45 +563,28 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
         <div className="flex-1 min-w-0 flex flex-col gap-2">
           {desktopMeta}
           {tagsRow}
+          {/* D-04 button row (desktop): a new line below the context tags inside the
+              right column, not below the board (Quick 260625). */}
+          {buttonRow}
         </div>
       </div>
 
-      {/* View-game Dialog modal — fetches lazily on open via useLibraryGame */}
-      <Dialog open={open} onOpenChange={(v) => !v && setOpen(false)}>
-        <DialogContent
-          // no-scrollbar: the EvalChart tooltip (allowEscapeViewBox y=true) renders
-          // downward and overhangs the chart. When the modal is content-height (the
-          // common single-card case) that overhang spills past the scroll container,
-          // making overflow-y-auto flash a scrollbar (and reflow). Hiding the bar keeps
-          // wheel/touch scroll for genuinely tall cards while killing the flicker.
-          // sm:p-6: more breathing room around the card on desktop.
-          // max-w-[calc(100%-1rem)]: near-full-width on mobile (0.5rem side gutters,
-          // overriding DialogContent's default 1rem) so the wide game card has room.
-          className="no-scrollbar max-w-[calc(100%-1rem)] sm:max-w-4xl overflow-y-auto max-h-[90vh] sm:p-6"
-          data-testid="flaw-game-modal"
-          aria-label="View full game"
-        >
-          <DialogTitle className="sr-only">Full game view</DialogTitle>
-          {isLoading && (
-            <div className="flex justify-center p-8">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          )}
-          {isError && <LoadError resource="game" variant="centered" />}
-          {/* min-w-0: DialogContent is a CSS grid, whose items default to
-              min-width:auto and won't shrink below the card's intrinsic width. The
-              embedded recharts EvalChart then overflows the modal (horizontal scroll
-              on mobile). Constraining the grid item lets the w-full chart track the
-              modal width instead. */}
-          {data && (
-            <div className="min-w-0">
-              {/* initialPly: open the modal's eval-chart slider parked on the clicked
-                  flaw's ply so the board and crosshair land on the flawed move. */}
-              <LibraryGameCard game={data} initialPly={flaw.ply} />
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      {/* View-game surface — fetches lazily on open via useLibraryGame.
+          Desktop: centered Dialog. Mobile: right-side Drawer (Phase 135 UAT),
+          mirroring the TacticLineExplorer mobile pattern. */}
+      {gameView}
+
+      {/* D-04 TacticLineExplorer — opened by the Explore button on tagged flaws.
+          Renders as Dialog (desktop) or Drawer (mobile) internally per D-05.
+          D-01: stacks over the Game modal; closing only dismisses the explorer. */}
+      {isTagged && (
+        <TacticLineExplorer
+          open={exploreOpen}
+          onOpenChange={setExploreOpen}
+          gameId={flaw.game_id}
+          ply={flaw.ply}
+        />
+      )}
     </Card>
   );
 }

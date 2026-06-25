@@ -638,8 +638,8 @@ export function EvalChart({
   const tooltipTags = activeMarker ? activeMarker.tags.filter((t) => !PHASE_TAGS.has(t)) : [];
   // Tactic motifs for the active marker (Phase 126 UAT) — listed first in the tooltip,
   // above the flaw tags. Family-mapped only. Both orientations are listed
-  // with a "missed:"/"allowed:" prefix so the tooltip matches the dual-orientation chips
-  // (allowed before missed, mirroring the LibraryGameCard chip row ordering).
+  // with a "missed:"/"allowed:" prefix. Missed is always listed before Allowed
+  // (Phase 135 UAT).
   const tooltipTactics: {
     orientation: 'missed' | 'allowed';
     motif: string;
@@ -663,8 +663,8 @@ export function EvalChart({
       if (family == null) return;
       out.push({ orientation, motif: raw, family, depth });
     };
-    add(activeMarker.allowed_tactic_motif, 'allowed', activeMarker.allowed_tactic_depth);
     add(activeMarker.missed_tactic_motif, 'missed', activeMarker.missed_tactic_depth);
+    add(activeMarker.allowed_tactic_motif, 'allowed', activeMarker.allowed_tactic_depth);
     return out;
   })();
 
@@ -728,6 +728,11 @@ export function EvalChart({
       // Suppress the UA focus outline recharts shows when its surface / tabIndex=-1
       // takes focus on click. Tooltip z-lift hack removed (tooltip is gone).
       className="w-full [&_:focus]:outline-none [&_:focus-visible]:outline-none"
+      // data-vaul-no-drag: when the chart is inside a Vaul Drawer (mobile game
+      // view), horizontal drags on the scrub slider / touch-scrub overlay were
+      // being read as drawer swipes, wobbling the drawer. This tells Vaul to
+      // ignore drags originating anywhere in the chart. Inert outside a drawer.
+      data-vaul-no-drag
       ref={rootRef}
     >
       {/* Chart area — relative so the self-positioned tooltip anchors to it. */}

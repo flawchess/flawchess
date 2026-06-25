@@ -23,12 +23,14 @@ vi.mock('@/components/ui/tooltip', () => ({
   Tooltip: ({ children }: { children: ReactNode }) => children,
 }));
 
-// Mock useLibraryGame — controlled per test
+// Mock useLibraryGame + useTacticLines — controlled per test.
+// TacticLineExplorer (rendered by FlawCard on tagged flaws) calls useTacticLines.
 vi.mock('@/hooks/useLibrary', async () => {
   const actual = await vi.importActual<typeof import('@/hooks/useLibrary')>('@/hooks/useLibrary');
   return {
     ...actual,
     useLibraryGame: vi.fn(),
+    useTacticLines: vi.fn().mockReturnValue({ isLoading: false, isError: false, data: undefined }),
   };
 });
 
@@ -58,6 +60,15 @@ import { useLibraryGame } from '@/hooks/useLibrary';
 import { BEST_MOVE_ARROW } from '@/lib/theme';
 
 // ── jsdom stubs ───────────────────────────────────────────────────────────────
+
+// Stub ResizeObserver — ChessBoard uses it for container-width tracking;
+// jsdom doesn't implement it. TacticLineExplorer renders ChessBoard.
+class MockResizeObserver {
+  observe = vi.fn();
+  unobserve = vi.fn();
+  disconnect = vi.fn();
+}
+vi.stubGlobal('ResizeObserver', MockResizeObserver);
 
 // Stub IntersectionObserver as a class (jsdom doesn't have it) — LazyMiniBoard uses it.
 // Fire isIntersecting=true immediately so the board renders in tests.
@@ -340,8 +351,11 @@ describe('FlawCard', () => {
       } as ReturnType<typeof useLibraryGame>);
 
       render(<FlawCard flaw={makeFlaw()} />);
-      const btn = screen.getByTestId('flaw-card-view-game-42-2');
-      expect(btn).toBeDefined();
+      // D-04: buttonRow renders in both mobile (sm:hidden) and desktop (hidden sm:block)
+      // wrappers; jsdom ignores CSS so both buttons are in the DOM. Use [0].
+      const btns = screen.getAllByTestId('flaw-btn-game');
+      expect(btns.length).toBeGreaterThan(0);
+      const btn = btns[0]!;
       expect(btn.getAttribute('aria-label')).toContain('Alice');
       expect(btn.getAttribute('aria-label')).toContain('Bob');
     });
@@ -354,12 +368,46 @@ describe('FlawCard', () => {
       } as ReturnType<typeof useLibraryGame>);
 
       render(<FlawCard flaw={makeFlaw()} />);
-      const btn = screen.getByTestId('flaw-card-view-game-42-2');
-      fireEvent.click(btn);
+      fireEvent.click(screen.getAllByTestId('flaw-btn-game')[0]!);
 
       await waitFor(() => {
         expect(screen.getByTestId('flaw-game-modal')).toBeDefined();
       });
+    });
+
+    it('opens the game in a right-side drawer with a close button on mobile (Phase 135 UAT)', async () => {
+      // Re-mock matchMedia to mobile for this test (global beforeAll sets desktop).
+      const original = window.matchMedia;
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        value: vi.fn().mockImplementation((query: string) => ({
+          matches: true, // (max-width: 767px) → mobile
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        })),
+      });
+
+      vi.mocked(useLibraryGame).mockReturnValue({
+        isLoading: true,
+        isError: false,
+        data: undefined,
+      } as ReturnType<typeof useLibraryGame>);
+
+      render(<FlawCard flaw={makeFlaw()} />);
+      fireEvent.click(screen.getAllByTestId('flaw-btn-game')[0]!);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('flaw-game-modal')).toBeDefined();
+        expect(screen.getByTestId('flaw-game-close')).toBeDefined();
+      });
+
+      // Restore the desktop matchMedia mock for subsequent tests.
+      Object.defineProperty(window, 'matchMedia', { writable: true, value: original });
     });
 
     it('modal shows LoadError when isError is true (CLAUDE.md isError pattern)', async () => {
@@ -370,7 +418,7 @@ describe('FlawCard', () => {
       } as ReturnType<typeof useLibraryGame>);
 
       render(<FlawCard flaw={makeFlaw()} />);
-      fireEvent.click(screen.getByTestId('flaw-card-view-game-42-2'));
+      fireEvent.click(screen.getAllByTestId('flaw-btn-game')[0]!);
 
       await waitFor(() => {
         expect(screen.getByTestId('flaw-game-modal')).toBeDefined();
@@ -387,7 +435,7 @@ describe('FlawCard', () => {
       } as ReturnType<typeof useLibraryGame>);
 
       render(<FlawCard flaw={makeFlaw()} />);
-      fireEvent.click(screen.getByTestId('flaw-card-view-game-42-2'));
+      fireEvent.click(screen.getAllByTestId('flaw-btn-game')[0]!);
 
       await waitFor(() => {
         expect(screen.getByTestId('flaw-game-modal')).toBeDefined();
@@ -494,6 +542,38 @@ describe('FlawCard', () => {
       );
       // No Radix dialog in the chip row
       expect(container.querySelector('[role="dialog"]')).toBeNull();
+    });
+  });
+
+  describe('Phase 135 D-04: Explore + Game button row', () => {
+    // NOTE: buttonRow is rendered in BOTH mobile (sm:hidden) and desktop (hidden sm:block)
+    // wrappers, so testids appear twice in jsdom. Use queryAllByTestId to check presence.
+
+    it('tagged flaw (missed_tactic_motif set): renders flaw-btn-explore AND flaw-btn-game', () => {
+      render(
+        <FlawCard flaw={makeFlaw({ missed_tactic_motif: 'fork', missed_tactic_confidence: 90 })} />,
+      );
+      // Both button rows render (mobile + desktop = 2 each)
+      expect(screen.getAllByTestId('flaw-btn-explore').length).toBeGreaterThan(0);
+      expect(screen.getAllByTestId('flaw-btn-game').length).toBeGreaterThan(0);
+    });
+
+    it('tagged flaw (allowed_tactic_motif set): renders flaw-btn-explore AND flaw-btn-game', () => {
+      render(
+        <FlawCard flaw={makeFlaw({ allowed_tactic_motif: 'pin', allowed_tactic_confidence: 85 })} />,
+      );
+      expect(screen.getAllByTestId('flaw-btn-explore').length).toBeGreaterThan(0);
+      expect(screen.getAllByTestId('flaw-btn-game').length).toBeGreaterThan(0);
+    });
+
+    it('untagged flaw (no motifs): renders flaw-btn-game only, no flaw-btn-explore', () => {
+      render(
+        <FlawCard flaw={makeFlaw()} /* default: all motif fields null */ />,
+      );
+      // Game button always visible
+      expect(screen.getAllByTestId('flaw-btn-game').length).toBeGreaterThan(0);
+      // Explore button must be absent for untagged flaws
+      expect(screen.queryAllByTestId('flaw-btn-explore').length).toBe(0);
     });
   });
 });

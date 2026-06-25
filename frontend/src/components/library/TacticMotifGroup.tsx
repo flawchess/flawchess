@@ -24,6 +24,9 @@ interface TacticMotifGroupProps {
   /** Optional legend tooltip icon, pinned to the right of the group label so each
    *  orientation explains only its own motifs (Quick 260620: per-column legends). */
   legend?: React.ReactNode;
+  /** Optional node rendered below the chips inside this column lane (Quick 260625: the
+   *  desktop game-card Explore button is pinned under the Missed column). */
+  footer?: React.ReactNode;
 }
 
 /**
@@ -41,6 +44,7 @@ export function TacticMotifGroup({
   onChipHover,
   onChipActivate,
   legend,
+  footer,
 }: TacticMotifGroupProps) {
   const [expanded, setExpanded] = React.useState(false);
 
@@ -56,6 +60,7 @@ export function TacticMotifGroup({
       testId={`tactic-group-${orientation}-${gameId}`}
       isEmpty={motifs.length === 0}
       labelTrailing={legend}
+      footer={footer}
     >
       {visible.map(({ motif, count }) => (
         <TacticMotifChip

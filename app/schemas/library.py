@@ -415,3 +415,59 @@ class TacticComparisonResponse(BaseModel):
     analyzed_n: int
     analyzed_gate: int
     below_gate: bool
+
+
+# ---------------------------------------------------------------------------
+# Phase 135 — Tactic Line Explorer schema
+# ---------------------------------------------------------------------------
+
+
+class TacticLinesResponse(BaseModel):
+    """PV walk data for the TacticLineExplorer (Phase 135, Plan 01).
+
+    Both orientations' SAN move lists, raw 0-based depths, motif strings, and
+    the decision-position FEN for chess.js board initialization.
+
+    missed_moves: SAN from the decision position (flaw_ply PV). None when
+                  game_positions[ply].pv is NULL or unparseable.
+    allowed_moves: SAN starting with the flaw move itself (prepended, index 0)
+                   then the opponent's refutation PV from game_positions[ply+1].pv.
+                   None when game_positions[ply+1].pv is NULL.
+    position_fen: full FEN (piece placement + side-to-move from ply parity) for
+                  chess.js root board initialization.
+    missed_tactic_ply_index: same as missed_depth (no prepend); the SAN ladder
+                  uses this to highlight the tactic punchline move.
+    allowed_tactic_ply_index: allowed_depth + 1 — allowed_moves prepends the flaw
+                  move at index 0, so the refutation punchline lands one index
+                  deeper (at flaw_ply+1). The SAN ladder highlights that move.
+
+    Never exposes internal Zobrist hashes (CLAUDE.md V5 / T-135-03).
+    """
+
+    # Missed line: SAN from the decision position (flaw_ply PV).
+    missed_moves: list[str] | None = None
+    missed_depth: int | None = None  # raw 0-based detector-loop index (DB value)
+    missed_tactic_ply_index: int | None = None  # same as missed_depth; for SAN ladder highlight
+    missed_motif: str | None = None  # TacticMotif name string or None
+    # Engine eval of the missed-line root (decision position), white-POV. eval_cp is
+    # post-move, so the decision position's eval lives on game_positions[ply-1].
+    missed_eval_cp: int | None = None
+    missed_eval_mate: int | None = None
+
+    # Allowed line: SAN starting with the flaw move (prepended) then opponent PV.
+    allowed_moves: list[str] | None = None
+    allowed_depth: int | None = None  # raw 0-based detector-loop index (DB value)
+    allowed_tactic_ply_index: int | None = None  # allowed_depth + 1 (flaw prepended)
+    allowed_motif: str | None = None  # TacticMotif name string or None
+    # Engine eval of the allowed-line root (position after the flaw move), white-POV.
+    # That post-flaw position's eval is the post-move eval of the flaw move itself,
+    # stored on game_positions[ply].
+    allowed_eval_cp: int | None = None
+    allowed_eval_mate: int | None = None
+
+    # Decision-position metadata
+    position_fen: str  # full FEN (with side-to-move) from game_flaws.fen + ply parity
+    flaw_move_san: str | None = None  # move played (game_positions[n].move_san)
+    best_move_uci: str | None = None  # engine best move (game_positions[n].best_move)
+    flaw_ply: int  # real game ply of the flaw (for move-number labeling in SAN ladder)
+    flaw_severity: FlawSeverity  # "mistake" | "blunder" — drives the SAN-ladder flaw-move glyph
