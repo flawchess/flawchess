@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
 import { Chess } from 'chess.js';
 import { BookOpen, Calendar, Clock, Equal, ExternalLink, Hash, Minus, Plus, Search } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -813,10 +812,8 @@ export function LibraryGameCard({
   // below md. The columns show even when a game has no tactic motifs (each empty column
   // keeps its lane via the ChipColumn "—" placeholder) so every analyzed card reads with
   // the same organized layout rather than collapsing to a sparse row.
-  // Chips grid. `missedFooter` (Quick 260625) is pinned below the chips in the Missed
-  // column — the desktop instance passes the Explore button there (in the Missed lane,
-  // not a row under all three columns); the mobile instance passes nothing.
-  const renderChipsBlock = (missedFooter?: ReactNode) => (
+  // Chips grid (Missed | Allowed | Context lanes).
+  const renderChipsBlock = () => (
     <div
       // Always three equal 1/3 lanes (Missed | Allowed | Context). Empty columns keep
       // their lane via the ChipColumn "—" placeholder so the layout never collapses to
@@ -854,7 +851,6 @@ export function LibraryGameCard({
                 testId={`tag-legend-tactic-${orientation}-${game.game_id}`}
               />
             }
-            footer={orientation === 'missed' ? missedFooter : undefined}
           />
         );
       })}
@@ -895,19 +891,17 @@ export function LibraryGameCard({
       />
     );
 
-  // D-03 Explore button (Phase 135) — desktop. Quick 260625: pinned below the Missed
-  // column's chips (passed as that column's `footer`) instead of a row under all three
-  // columns. Always rendered; disabled+tooltip when the parked ply is not a tagged user
-  // flaw (D-02). `mt-3` gives clear separation from the chips above it. `fullWidth` makes
-  // it span the whole Missed column (analyzed games); the non-analyzed fallback (no Missed
-  // column) keeps auto width in the right column.
-  const renderDesktopExploreButton = (fullWidth: boolean) => (
-    <div className={cn('mt-3', fullWidth && 'w-full')}>
+  // D-03 Explore button (Phase 135) — desktop. Quick 260625-2: pinned as its own row
+  // below the board + right-column row, spanning the whole card width (instead of below
+  // the Missed column's chips). Always rendered; disabled+tooltip when the parked ply is
+  // not a tagged user flaw (D-02).
+  const renderDesktopExploreButton = () => (
+    <div className="w-full">
       {isTaggedFlaw ? (
         <Button
           variant="brand-outline"
           // Default Button size (h-8) to match the import-page quicklink buttons.
-          className={fullWidth ? 'w-full' : undefined}
+          className="w-full"
           data-testid="game-card-btn-explore"
           aria-label="Explore tactic line for selected flaw"
           onClick={() => setExploreOpen(true)}
@@ -917,10 +911,10 @@ export function LibraryGameCard({
         </Button>
       ) : (
         <Tooltip content="Park the slider on a tactic flaw to explore it" side="top">
-          <span className={fullWidth ? 'block w-full' : 'inline-block'}>
+          <span className="block w-full">
             <Button
               variant="brand-outline"
-              className={fullWidth ? 'w-full' : undefined}
+              className="w-full"
               data-testid="game-card-btn-explore"
               aria-label="Explore tactic line for selected flaw"
               disabled
@@ -1113,20 +1107,17 @@ export function LibraryGameCard({
           )}
           {/* Row 2: tactic chips (analyzed games with chips only). Chips now occupy the right
               column width instead of full card width; wrapping is expected and acceptable.
-              The desktop Explore button is pinned below the Missed column (Quick 260625),
-              passed as that column's footer rather than a row under all three columns.
               Marked as flaw-controls for the outside-pointer highlight guard. */}
-          {game.analysis_state === 'analyzed' ? (
+          {game.analysis_state === 'analyzed' && (
             <div className="flex flex-col gap-1.5" data-testid={`flaw-controls-${game.game_id}`}>
-              {renderChipsBlock(renderDesktopExploreButton(true))}
+              {renderChipsBlock()}
             </div>
-          ) : (
-            // Non-analyzed games have no Missed column, so the (disabled) Explore button
-            // keeps its own row below the NoAnalysisState placeholder (auto width).
-            renderDesktopExploreButton(false)
           )}
           </div>
         </div>
+        {/* D-03 Explore button (Quick 260625-2): own full-width row below the board +
+            right-column row, spanning the whole card. */}
+        {renderDesktopExploreButton()}
       </div>
 
       {/* D-01 TacticLineExplorer — stacks over the Game modal (renders as Dialog/Drawer
