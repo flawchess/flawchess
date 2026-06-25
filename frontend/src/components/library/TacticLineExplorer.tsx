@@ -34,9 +34,7 @@ import { moveLabel } from '@/lib/moveNumberLabel';
 import { useTacticLines } from '@/hooks/useLibrary';
 import { useTacticLine } from '@/hooks/useTacticLine';
 import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
-import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
-import { TACTIC_FAMILY_FOR_MOTIF } from '@/lib/tacticComparisonMeta';
-import { DEFAULT_TACTIC_DEPTH_VALUE } from '@/lib/tacticDepth';
+import { resolveVisibleTactic } from '@/lib/tacticComparisonMeta';
 import { uciToSquares, sanToSquares } from '@/lib/sanToSquares';
 import {
   BEST_MOVE_ARROW,
@@ -46,7 +44,6 @@ import {
   TAC_MISSED_LABEL,
   TAC_ALLOWED_LABEL,
 } from '@/lib/theme';
-import { toDisplayDepthForOrientation } from '@/lib/tacticDepth';
 import { formatFlawEvalPart, mateAtPly } from '@/lib/formatFlawEval';
 import type { TacticDepthOrientation } from '@/lib/tacticDepth';
 import type { BoardArrow } from '@/components/board/ChessBoard';
@@ -98,35 +95,6 @@ function useIsMobile(): boolean {
  */
 function isBlackToMove(fen: string): boolean {
   return fen.split(' ')[1] === 'b';
-}
-
-/**
- * Whether a tactic orientation passes the active flaw filter (Phase 135 UAT). Mirrors
- * how the Games/Flaws tabs gate each orientation's chip — orientation axis, tactic-family
- * narrowing, and the raw 0-based depth range. So the explore modal hides a missed/allowed
- * tag+line when it is filtered out in the list. Fields are optional-chained defensively
- * (older persisted/mocked filter objects may omit newer fields).
- */
-function tacticOrientationPasses(
-  orientation: TacticDepthOrientation,
-  motif: string | null,
-  depthRaw: number | null,
-  filter: FlawFilterState,
-): boolean {
-  const orientationFilter = filter.tacticOrientation ?? 'either';
-  if (orientationFilter !== 'either' && orientationFilter !== orientation) return false;
-
-  const families = filter.tacticFamilies ?? [];
-  if (families.length > 0) {
-    const family = motif != null ? TACTIC_FAMILY_FOR_MOTIF[motif] : undefined;
-    if (family == null || !families.includes(family)) return false;
-  }
-
-  const depthMin = filter.tacticDepthMin ?? DEFAULT_TACTIC_DEPTH_VALUE.min;
-  const depthMax = filter.tacticDepthMax ?? DEFAULT_TACTIC_DEPTH_VALUE.max;
-  if (depthRaw != null && (depthRaw < depthMin || depthRaw > depthMax)) return false;
-
-  return true;
 }
 
 // ─── Arrow builders ───────────────────────────────────────────────────────────
@@ -262,14 +230,25 @@ function ExplorerBody({
   // would still report hasMissed=true and default to the flaw_ply PV instead of the
   // flaw_ply+1 refutation line (Phase 135 UAT).
   const [flawFilter] = useFlawFilterStore();
-  const hasMissed =
-    data?.missed_motif != null &&
-    data.missed_moves != null &&
-    tacticOrientationPasses('missed', data.missed_motif, data.missed_depth, flawFilter);
-  const hasAllowed =
-    data?.allowed_motif != null &&
-    data.allowed_moves != null &&
-    tacticOrientationPasses('allowed', data.allowed_motif, data.allowed_depth, flawFilter);
+  // Single source of truth (Quick 260625-qbj): the chip AND the depth badge both read
+  // from these resolved objects, so a depth number can never leak onto the board for a
+  // filtered-out tactic. The API returns BOTH raw lines un-nulled, so resolveVisibleTactic
+  // re-applies the live filter (mirroring the backend tactic_slot_visible the Games/Flaws
+  // surfaces already enforce server-side).
+  const missedVisible = resolveVisibleTactic(
+    'missed',
+    data?.missed_motif ?? null,
+    data?.missed_depth ?? null,
+    flawFilter,
+  );
+  const allowedVisible = resolveVisibleTactic(
+    'allowed',
+    data?.allowed_motif ?? null,
+    data?.allowed_depth ?? null,
+    flawFilter,
+  );
+  const hasMissed = missedVisible != null && data?.missed_moves != null;
+  const hasAllowed = allowedVisible != null && data?.allowed_moves != null;
   const showToggle = hasMissed && hasAllowed;
 
   // Default the board to the flaw-maker's perspective (Phase 135 UAT): orient so the
@@ -330,15 +309,10 @@ function ExplorerBody({
     orientation: resolvedOrientation,
   });
 
-  // Depth labels for root-position arrows.
-  const missedDepthLabel =
-    data?.missed_depth != null
-      ? String(toDisplayDepthForOrientation(data.missed_depth, 'missed'))
-      : undefined;
-  const allowedDepthLabel =
-    data?.allowed_depth != null
-      ? String(toDisplayDepthForOrientation(data.allowed_depth, 'allowed'))
-      : undefined;
+  // Depth labels for root-position arrows — derived from the SAME resolved object as the
+  // chip (gated by has*), so the depth number is shown if and only if its badge is.
+  const missedDepthLabel = hasMissed ? (missedVisible?.depthLabel ?? undefined) : undefined;
+  const allowedDepthLabel = hasAllowed ? (allowedVisible?.depthLabel ?? undefined) : undefined;
 
   // Build arrows for the current ply.
   const currentArrows: BoardArrow[] =
