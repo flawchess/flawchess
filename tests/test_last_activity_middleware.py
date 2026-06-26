@@ -397,15 +397,11 @@ class TestUserActivityRecording:
         return f"{prefix}_{uuid.uuid4().hex[:8]}@example.com"
 
     @classmethod
-    async def _register_and_login(
-        cls, client: httpx.AsyncClient, email: str
-    ) -> tuple[int, str]:
+    async def _register_and_login(cls, client: httpx.AsyncClient, email: str) -> tuple[int, str]:
         return await register_and_login(client, email, cls._DEFAULT_PASSWORD)
 
     @staticmethod
-    async def _get_activity_rows(
-        test_engine, user_id: int, activity_date
-    ) -> list[UserActivity]:
+    async def _get_activity_rows(test_engine, user_id: int, activity_date) -> list[UserActivity]:
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
         async with session_maker() as session:
             result = await session.execute(
@@ -482,7 +478,9 @@ class TestUserActivityRecording:
         rows = await self._get_activity_rows(test_engine, user_id, today)
 
         assert len(rows) == 1, f"Expected exactly one row (unique key held), got {len(rows)}"
-        assert rows[0].activity_count == 2, f"Expected count 2 after ON CONFLICT, got {rows[0].activity_count}"
+        assert rows[0].activity_count == 2, (
+            f"Expected count 2 after ON CONFLICT, got {rows[0].activity_count}"
+        )
 
     @pytest.mark.asyncio
     async def test_impersonated_request_records_no_activity_row(self, test_engine):
@@ -549,6 +547,4 @@ class TestUserActivityRecording:
 
         today = datetime.now(timezone.utc).date()
         rows = await self._get_activity_rows(test_engine, user_id, today)
-        assert len(rows) == 0, (
-            f"401 response must not produce a user_activity row, got {len(rows)}"
-        )
+        assert len(rows) == 0, f"401 response must not produce a user_activity row, got {len(rows)}"

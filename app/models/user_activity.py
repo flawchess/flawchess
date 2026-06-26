@@ -19,9 +19,7 @@ class UserActivity(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     # No standalone user_id index — the UniqueConstraint(user_id, activity_date)
     # already provides a leading-user_id B-tree index.
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     activity_date: Mapped[datetime.date] = mapped_column(Date, nullable=False)
     # Counts distinct active hours for the day (1-24). The middleware write is
     # throttled to once per hour per user, so ON CONFLICT increments here track
