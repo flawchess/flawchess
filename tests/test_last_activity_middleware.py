@@ -8,6 +8,7 @@ Covers:
 - Integration: impersonation tokens skip last_activity writes (D-07, phase 62)
 """
 
+import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -480,6 +481,40 @@ class TestUserActivityRecording:
         assert len(rows) == 1, f"Expected exactly one row (unique key held), got {len(rows)}"
         assert rows[0].activity_count == 2, (
             f"Expected count 2 after ON CONFLICT, got {rows[0].activity_count}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_concurrent_requests_increment_count_once(self, test_engine):
+        """A burst of concurrent same-user requests increments activity_count by 1, not N.
+
+        Regression for the async check-then-act race: the throttle slot is claimed
+        synchronously between the gate read and the first `await`, so concurrent
+        in-flight requests (the frontend fires several parallel authenticated
+        queries per page load) can't all pass the gate and each increment. Before
+        the fix, count == CONCURRENCY; after, count == 1.
+        """
+        CONCURRENCY = 8
+        email = self._unique_email("ua_race")
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            user_id, token = await self._register_and_login(client, email)
+            # Empty cache so every request is eligible to write — the in-memory
+            # slot-claim is the only thing that must collapse them to a single bump.
+            _last_updated.pop(user_id, None)
+
+            headers = {"Authorization": f"Bearer {token}"}
+            responses = await asyncio.gather(
+                *(client.get("/api/users/me/profile", headers=headers) for _ in range(CONCURRENCY))
+            )
+            assert all(r.status_code == 200 for r in responses)
+
+        today = datetime.now(timezone.utc).date()
+        rows = await self._get_activity_rows(test_engine, user_id, today)
+
+        assert len(rows) == 1, f"Expected exactly one row, got {len(rows)}"
+        assert rows[0].activity_count == 1, (
+            f"Concurrent burst must increment once, got {rows[0].activity_count}"
         )
 
     @pytest.mark.asyncio

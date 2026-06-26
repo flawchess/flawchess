@@ -82,6 +82,18 @@ class LastActivityMiddleware:
             if last is not None and (now - last) < _ACTIVITY_THROTTLE:
                 return
 
+            # Claim the throttle slot BEFORE the first `await` below. The gate read
+            # and this write must be adjacent with no await between them: the DB
+            # writes are await points, so without claiming the slot first, a burst
+            # of concurrent same-user requests (the frontend fires several parallel
+            # authenticated queries per page load) would all read the stale cache,
+            # all pass the gate, and all increment activity_count — inflating it far
+            # past the intended "distinct active hours" (1-24) at each hour boundary.
+            # Trade-off: if the write below fails, this user is throttled until the
+            # next hour. Acceptable for best-effort activity tracking — losing an
+            # occasional increment beats over-counting.
+            _last_updated[user_id] = now
+
             # Single UPDATE, no SELECT — the DB does the work
             async with async_session_maker() as session:
                 await session.execute(
@@ -101,7 +113,6 @@ class LastActivityMiddleware:
                 )
                 await session.execute(activity_stmt)
                 await session.commit()
-            _last_updated[user_id] = now
             # NOTE: last_activity is the tier-3 idle-drain priority key — claim_eval_job
             # orders the backlog by users.last_activity DESC, so keeping it fresh here is
             # what nudges an active user's games to the front of the background eval queue.
