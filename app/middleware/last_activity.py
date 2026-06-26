@@ -18,12 +18,14 @@ from typing import Any
 
 from fastapi_users.jwt import decode_jwt
 from sqlalchemy import update as sa_update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from starlette.requests import Request
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.core.config import settings
 from app.core.database import async_session_maker
 from app.models.user import User
+from app.models.user_activity import UserActivity
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +87,19 @@ class LastActivityMiddleware:
                 await session.execute(
                     sa_update(User).where(User.id == user_id).values(last_activity=now)
                 )
+                # Daily activity upsert: activity_date uses the UTC `now` already in
+                # scope, so the day boundary is intentionally UTC. Because this write
+                # is hour-throttled per user upstream, activity_count ends up meaning
+                # "distinct active hours that day" (1-24).
+                activity_stmt = pg_insert(UserActivity).values(
+                    user_id=user_id,
+                    activity_date=now.date(),
+                )
+                activity_stmt = activity_stmt.on_conflict_do_update(
+                    index_elements=["user_id", "activity_date"],
+                    set_={"activity_count": UserActivity.activity_count + 1},
+                )
+                await session.execute(activity_stmt)
                 await session.commit()
             _last_updated[user_id] = now
             # NOTE: last_activity is the tier-3 idle-drain priority key — claim_eval_job
