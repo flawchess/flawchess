@@ -27,8 +27,8 @@ Requirements for this milestone. Each maps to exactly one roadmap phase. Almost 
 
 ### Route & Entry Points (ROUTE)
 
-- [ ] **ROUTE-01**: User can reach a standalone `/analysis` page, lazy-loaded so the engine bundle is fetched only on this route
-- [ ] **ROUTE-02**: User can open the analysis board pre-loaded from a tactic card, a game-review ply, and an opening position, carrying the relevant position and context
+- [x] **ROUTE-01**: User can reach a standalone `/analysis` page, lazy-loaded so the engine bundle is fetched only on this route
+- [x] **ROUTE-02**: User can open the analysis board pre-loaded from a tactic card, a game-review ply, and an opening position, carrying the relevant position and context
 
 ### Tactic Mode (TACTIC)
 
@@ -82,8 +82,8 @@ Explicitly excluded. Documented to prevent scope creep. Anti-features carried fr
 | BOARD-03 | Phase 137 | Complete |
 | BOARD-04 | Phase 137 | Complete |
 | BOARD-05 | Phase 137 | Complete |
-| ROUTE-01 | Phase 138 | Pending |
-| ROUTE-02 | Phase 138 | Pending |
+| ROUTE-01 | Phase 138 | Complete |
+| ROUTE-02 | Phase 138 | Complete |
 | TACTIC-01 | Phase 139 | Pending |
 | TACTIC-02 | Phase 139 | Pending |
 | TACTIC-03 | Phase 139 | Pending |

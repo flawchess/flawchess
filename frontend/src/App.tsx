@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { Navigate, Outlet, Route, BrowserRouter as Router, Routes, useLocation } from 'react-router-dom';
+import { lazy, Suspense, useState, useCallback, useEffect, useRef } from 'react';
+import { Navigate, Outlet, Route, BrowserRouter as Router, Routes, useLocation, useSearchParams } from 'react-router-dom';
 import * as Sentry from "@sentry/react";
 import { Link } from 'react-router-dom';
 import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
@@ -36,6 +36,10 @@ import { WelcomePage } from '@/pages/Welcome';
 import { useImportPolling, useActiveJobs } from '@/hooks/useImport';
 import { useUserFlag, setUserFlag } from '@/hooks/useUserFlag';
 import { useReadiness } from '@/hooks/useReadiness';
+
+// First React.lazy boundary in the app — keeps the Stockfish JS/WASM bundle off
+// every other route (ROUTE-01 / D-07). Analysis.tsx uses export default (Pitfall 1).
+const AnalysisPage = lazy(() => import('./pages/Analysis'));
 
 const FLAG_OPENINGS_VISITED = 'openings_visited';
 const FLAG_ENDGAMES_VISITED = 'endgames_visited';
@@ -80,6 +84,7 @@ const ROUTE_TITLES: Record<string, string> = {
   '/openings': 'Openings',
   '/endgames': 'Endgames',
   '/admin': 'Admin',
+  '/analysis': 'Analysis',
 };
 
 // ─── Active route helper ───────────────────────────────────────────────────────
@@ -512,6 +517,37 @@ function SuperuserRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// ─── Analysis route wrapper ───────────────────────────────────────────────────
+
+/**
+ * Thin wrapper that reads the `?fen=` search param and keys AnalysisPage by it,
+ * so a second entry-point navigation to /analysis?fen=Y remounts the page and
+ * resets useAnalysisBoard's non-reactive initialRootFen (Pitfall 2).
+ *
+ * useSearchParams is not in scope at the <Routes> site, so a scoped wrapper
+ * keeps the param-driven re-render off all other routes (RESEARCH Pattern A).
+ *
+ * Not wrapped in ImportRequiredRoute — free-play is valid for zero-game users
+ * (D-05 / RESEARCH A2). Not wrapped in SuperuserRoute.
+ */
+function AnalysisRoute() {
+  const [params] = useSearchParams();
+  return (
+    <Suspense
+      fallback={
+        <div
+          className="p-6 text-sm text-muted-foreground"
+          data-testid="analysis-loading"
+        >
+          Loading analysis board…
+        </div>
+      }
+    >
+      <AnalysisPage key={params.get('fen') ?? 'start'} />
+    </Suspense>
+  );
+}
+
 // ─── Router ───────────────────────────────────────────────────────────────────
 
 function AppRoutes() {
@@ -615,6 +651,7 @@ function AppRoutes() {
           <Route path="/openings/*" element={<ImportRequiredRoute><OpeningsPage /></ImportRequiredRoute>} />
           <Route path="/endgames/*" element={<ImportRequiredRoute><EndgamesPage /></ImportRequiredRoute>} />
           <Route path="/admin" element={<SuperuserRoute><AdminPage /></SuperuserRoute>} />
+          <Route path="/analysis" element={<AnalysisRoute />} />
         </Route>
         {/* Catch-all redirects to homepage */}
         <Route path="*" element={<Navigate to="/" replace />} />

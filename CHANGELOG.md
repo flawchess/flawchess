@@ -10,6 +10,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Added
 
+- **`/analysis` page with live engine, reachable from the Openings Explorer** — the live-engine analysis board now has a real page. Stepping through a position on the Openings Explorer, you can click "Analyze position" to open it on a dedicated `/analysis` board that loads that exact position, runs Stockfish in your browser, and shows the eval bar, top engine lines, and a branching variation tree. The engine bundle loads only when you visit `/analysis` (not on any other page), so the rest of the app stays light. The page shows a "Loading engine..." state while Stockfish starts, and the board stays usable during that wait. (Phase 138)
+
 - **Live-engine analysis board (foundation)** — internal groundwork for the upcoming `/analysis` page: a branching move tree where a move played mid-line forks a new variation instead of overwriting the line, plus the display components that will render live engine output (an eval bar, the engine's top lines, and a variation move list). Not yet reachable in the app; the page and board wiring land in a follow-up phase. (Phase 137)
 
 ### Changed

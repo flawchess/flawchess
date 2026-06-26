@@ -105,12 +105,14 @@ Plans:
   3. The "Loading engine..." state is shown in the eval area while the WASM initializes; the board and move stepper remain interactive during this window
   4. `window.crossOriginIsolated === false` on `/analysis`; the full Google OAuth login flow completes without error from any page
 
-**Plans**: TBD
+**Plans**: 3 plans
 **UI hint**: yes
 
 Plans:
 
-- [ ] TBD
+- [x] 138-01-PLAN.md — Wave-0 failing test scaffold for the Analysis page (mocked engine)
+- [x] 138-02-PLAN.md — `/analysis` page shell + first React.lazy/Suspense route wiring
+- [x] 138-03-PLAN.md — Openings "Analyze position" entry button + buildAnalysisUrl helper
 
 ### Phase 139: Tactic Mode Overlay + Phase 135 Subsume
 
@@ -190,7 +192,7 @@ Plans:
 | 135. Tactic Line Explorer (SEED-065) | 3/3 | Complete   | 2026-06-24 |
 | 136. `useStockfishEngine` Hook + WASM Setup | 2/2 | Complete    | 2026-06-26 |
 | 137. `useAnalysisBoard` Hook + Analysis Display Components | 3/3 | Complete    | 2026-06-26 |
-| 138. `/analysis` Route + Page Shell + Entry Points | 0/TBD | Not started | - |
+| 138. `/analysis` Route + Page Shell + Entry Points | 3/3 | Complete   | 2026-06-26 |
 | 139. Tactic Mode Overlay + Phase 135 Subsume | 0/TBD | Not started | - |
 
 ## Backlog

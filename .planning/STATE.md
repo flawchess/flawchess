@@ -3,28 +3,28 @@ gsd_state_version: 1.0
 milestone: v1.29
 milestone_name: Live-Engine Analysis Page
 current_phase: 138
-current_phase_name: `/analysis` Route + Page Shell + Entry Points
+current_phase_name: analysis-route-page-shell-entry-points
 status: verifying
-stopped_at: Phase 137 UI-SPEC approved
-last_updated: "2026-06-26T15:58:18.635Z"
+stopped_at: Phase 138 executed (3/3 plans); UAT deferred to Phase 139 (combined /analysis surface test)
+last_updated: "2026-06-26T19:32:00Z"
 last_activity: 2026-06-26
-last_activity_desc: Phase 137 squash-merged to main (local, no PR per GitLab Flow)
+last_activity_desc: Phase 138 executed + reviewed; 4 UAT items deferred to Phase 139
 progress:
   total_phases: 8
-  completed_phases: 2
-  total_plans: 5
-  completed_plans: 5
-  percent: 25
+  completed_phases: 3
+  total_plans: 8
+  completed_plans: 8
+  percent: 38
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 138 — `/analysis` Route + Page Shell + Entry Points
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-06-26 — Phase 137 squash-merged to main (local, no PR per GitLab Flow)
+Phase: 138 (analysis-route-page-shell-entry-points) — PENDING UAT (deferred to Phase 139)
+Plan: 3 of 3
+Status: Executed + code-reviewed (CR-01/WR-01 fixed); 4 browser/device UAT items deferred to a combined pass after Phase 139. Close with /gsd-verify-work 138.
+Last activity: 2026-06-26 — Phase 138 executed; UAT deferred to Phase 139
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -63,6 +63,9 @@ Twenty-eight milestones complete (v1.0–v1.28). v1.28 Tactic Tagging shipped 20
 - [Phase ?]: Inline debounce (useState null + setTimeout) vs useDebounce — starts null to preserve 150ms delay on all analyses
 - [Phase ?]: analyzeRef stable (useCallback []) — no render-phase update needed per react-hooks/refs rule
 - [Phase ?]: useAnalysisBoard: FEN-per-node branching tree; functional setState updaters for navigation; stateRef for makeMove synchronous read
+- [Phase 138]: Destructure useAnalysisBoard return to avoid react-hooks/refs v7 false-positive in JSX
+- [Phase 138]: AnalysisRoute wrapper reads useSearchParams and keys AnalysisPage by fen for remount on re-entry
+- [Phase 138]: Single EvalBar render to avoid duplicate testid failure in jsdom tests
 
 ### Pending Todos
 
@@ -87,9 +90,9 @@ Items acknowledged and deferred at **v1.28 milestone close on 2026-06-25**:
 
 ## Session Continuity
 
-Last session: 2026-06-26T15:11:16.846Z
-Stopped at: Phase 137 UI-SPEC approved
-Resume file: .planning/phases/137-useanalysisboard-hook-analysis-display-components/137-UI-SPEC.md
+Last session: 2026-06-26T17:12:53.494Z
+Stopped at: Phase 138 planned (3 plans, checker-verified)
+Resume file: .planning/phases/138-analysis-route-page-shell-entry-points/138-02-analysis-page-and-route-PLAN.md
 
 ## Performance Metrics
 
@@ -101,3 +104,6 @@ Resume file: .planning/phases/137-useanalysisboard-hook-analysis-display-compone
 | Phase Phase 137 P02 P7min | 2 tasks | 6 files tasks | - files |
 | Phase 137 P02 | 9min | 2 tasks | 6 files |
 | Phase Phase 137 P03 P13min | 2 tasks | 2 tasks | 2 files |
+| Phase 138 P01 | 1min | 1 tasks | 1 files |
+| Phase Phase 138 PP03 | 3min | 2 tasks | 3 files |
+| Phase 138 P02 | 7min | 2 tasks | 2 files |

@@ -12,7 +12,7 @@ import { useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { Chess } from 'chess.js';
 import { useQuery } from '@tanstack/react-query';
-import { Save, Sparkles, ArrowRightLeft, Swords, BarChart2, Lightbulb, SlidersHorizontal, BookMarked } from 'lucide-react';
+import { Save, Sparkles, ArrowRightLeft, Swords, BarChart2, Lightbulb, SlidersHorizontal, BookMarked, Microscope } from 'lucide-react';
 import { MobileFilterDrawer } from '@/components/filters/MobileFilterDrawer';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -55,6 +55,7 @@ import { SidebarLayout, type SidebarPanelConfig } from '@/components/layout/Side
 import { getArrowColor } from '@/lib/arrowColor';
 import { apiClient } from '@/api/client';
 import { getBoardContainerClassName } from '@/lib/openingsBoardLayout';
+import { buildAnalysisUrl } from '@/lib/analysisUrl';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { Color, MatchSide } from '@/types/api';
 import { resolveMatchSide } from '@/types/api';
@@ -562,6 +563,10 @@ export function OpeningsPage() {
     sidebar.setSidebarOpen(null);
   }, [handleLoadBookmark, sidebar]);
 
+  const handleAnalyzePosition = useCallback(() => {
+    navigate(buildAnalysisUrl(chess.position));
+  }, [navigate, chess.position]);
+
   // ── Desktop sidebar panel content ───────────────────────────────────────────
 
   const desktopFilterPanelContent = (
@@ -936,6 +941,17 @@ export function OpeningsPage() {
                     </InfoPopover>
                   }
                 />
+                {activeTab === 'explorer' && (
+                  <Button
+                    variant="brand-outline"
+                    className="w-full"
+                    onClick={handleAnalyzePosition}
+                    data-testid="btn-analyze-position"
+                  >
+                    <Microscope className="mr-2 h-4 w-4" />
+                    Analyze position
+                  </Button>
+                )}
                 <div className="flex items-center gap-2 px-1 text-sm min-h-[1.25rem]">
                   {chess.openingName ? (
                     <div className="flex items-baseline gap-2">
@@ -1057,6 +1073,18 @@ export function OpeningsPage() {
                     canGoBack={chess.currentPly > 0}
                     canGoForward={chess.currentPly < chess.moveHistory.length}
                   />
+                  {activeTab === 'explorer' && (
+                    <Button
+                      variant="brand-outline"
+                      className="w-full"
+                      onClick={handleAnalyzePosition}
+                      data-testid="btn-analyze-position-mobile"
+                      aria-label="Analyze position"
+                    >
+                      <Microscope className="mr-2 h-4 w-4" />
+                      Analyze position
+                    </Button>
+                  )}
                 </div>
                 {/* Settings column: 4 stacked 44px buttons — filters, played-as, bookmarks, info */}
                 <div className="flex flex-col gap-1 w-11" data-testid="openings-mobile-settings-column">
