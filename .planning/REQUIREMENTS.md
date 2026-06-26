@@ -11,11 +11,11 @@ Requirements for this milestone. Each maps to exactly one roadmap phase. Almost 
 
 ### Live Engine (ENGINE)
 
-- [ ] **ENGINE-01**: User sees a live evaluation (eval bar + numeric centipawn/mate) of the current board position, computed in-browser by a single-thread WASM Stockfish
-- [ ] **ENGINE-02**: User sees the engine's top 1–2 candidate lines (MultiPV) as clickable SAN sequences with a depth indicator
-- [ ] **ENGINE-03**: User sees the engine's best move rendered as an arrow on the board
-- [ ] **ENGINE-04**: User can toggle the engine on/off, with a visible "loading engine" / "analyzing" state; the board and move stepper stay interactive while the WASM engine initializes
-- [ ] **ENGINE-05**: Engine re-analyzes automatically (debounced) when the position changes, bounded by a movetime/node cap so low-end devices stay responsive
+- [x] **ENGINE-01**: User sees a live evaluation (eval bar + numeric centipawn/mate) of the current board position, computed in-browser by a single-thread WASM Stockfish
+- [x] **ENGINE-02**: User sees the engine's top 1–2 candidate lines (MultiPV) as clickable SAN sequences with a depth indicator
+- [x] **ENGINE-03**: User sees the engine's best move rendered as an arrow on the board
+- [x] **ENGINE-04**: User can toggle the engine on/off, with a visible "loading engine" / "analyzing" state; the board and move stepper stay interactive while the WASM engine initializes
+- [x] **ENGINE-05**: Engine re-analyzes automatically (debounced) when the position changes, bounded by a movetime/node cap so low-end devices stay responsive
 
 ### Analysis Board (BOARD)
 
@@ -38,8 +38,8 @@ Requirements for this milestone. Each maps to exactly one roadmap phase. Almost 
 
 ### Platform Hardening (PLAT)
 
-- [ ] **PLAT-01**: The live engine runs single-thread WASM with no site-wide cross-origin-isolation (COOP/COEP) headers, so Google OAuth and iOS Safari stay unaffected; the absence of isolation headers is CI-guarded
-- [ ] **PLAT-02**: Engine WASM/NNUE assets load efficiently on mobile (lite ~7 MB build, iOS Cache-API-limit safe, PWA service-worker `*.wasm` handling verified), and the engine pauses when the tab is hidden
+- [x] **PLAT-01**: The live engine runs single-thread WASM with no site-wide cross-origin-isolation (COOP/COEP) headers, so Google OAuth and iOS Safari stay unaffected; the absence of isolation headers is CI-guarded
+- [x] **PLAT-02**: Engine WASM/NNUE assets load efficiently on mobile (lite ~7 MB build, iOS Cache-API-limit safe, PWA service-worker `*.wasm` handling verified), and the engine pauses when the tab is hidden
 
 ## v2 Requirements
 
@@ -72,11 +72,11 @@ Explicitly excluded. Documented to prevent scope creep. Anti-features carried fr
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ENGINE-01 | Phase 136 | Pending |
-| ENGINE-02 | Phase 136 | Pending |
-| ENGINE-03 | Phase 136 | Pending |
-| ENGINE-04 | Phase 136 | Pending |
-| ENGINE-05 | Phase 136 | Pending |
+| ENGINE-01 | Phase 136 | Complete |
+| ENGINE-02 | Phase 136 | Complete |
+| ENGINE-03 | Phase 136 | Complete |
+| ENGINE-04 | Phase 136 | Complete |
+| ENGINE-05 | Phase 136 | Complete |
 | BOARD-01 | Phase 137 | Pending |
 | BOARD-02 | Phase 137 | Pending |
 | BOARD-03 | Phase 137 | Pending |
@@ -87,10 +87,11 @@ Explicitly excluded. Documented to prevent scope creep. Anti-features carried fr
 | TACTIC-01 | Phase 139 | Pending |
 | TACTIC-02 | Phase 139 | Pending |
 | TACTIC-03 | Phase 139 | Pending |
-| PLAT-01 | Phase 136 | Pending |
-| PLAT-02 | Phase 136 | Pending |
+| PLAT-01 | Phase 136 | Complete |
+| PLAT-02 | Phase 136 | Complete |
 
 **Coverage:**
+
 - v1 requirements: 17 total
 - Mapped to phases: 17 (100%)
 - Unmapped: 0

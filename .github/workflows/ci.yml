@@ -127,6 +127,38 @@ jobs:
         run: npm test
         working-directory: frontend
 
+      - name: No COOP/COEP header guard + WASM MIME check
+        run: |
+          npm run preview -- --port 4173 &
+          PREVIEW_PID=$!
+          sleep 3
+
+          FAIL=0
+
+          PAGE_HEADERS=$(curl -sf -I http://localhost:4173/ 2>&1)
+          echo "Page headers:"
+          echo "$PAGE_HEADERS"
+          if echo "$PAGE_HEADERS" | grep -qi 'cross-origin-opener-policy\|cross-origin-embedder-policy'; then
+            echo "FAIL: COOP/COEP header found on page — breaks Google OAuth and iOS Safari"
+            FAIL=1
+          else
+            echo "PASS: No COOP/COEP headers on page"
+          fi
+
+          WASM_HEADERS=$(curl -sf -I http://localhost:4173/engine/stockfish-18-lite-single.wasm 2>&1)
+          echo "WASM headers:"
+          echo "$WASM_HEADERS"
+          if echo "$WASM_HEADERS" | grep -qi 'content-type.*application/wasm'; then
+            echo "PASS: WASM MIME type is application/wasm"
+          else
+            echo "FAIL: WASM MIME type incorrect (expected application/wasm)"
+            FAIL=1
+          fi
+
+          kill "$PREVIEW_PID" 2>/dev/null || true
+          exit $FAIL
+        working-directory: frontend
+
       - name: Dead code check (knip)
         run: npm run knip
         working-directory: frontend

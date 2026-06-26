@@ -2,25 +2,29 @@
 gsd_state_version: 1.0
 milestone: v1.29
 milestone_name: Live-Engine Analysis Page
-status: planning
-last_updated: "2026-06-26"
+current_phase: 137
+current_phase_name: `useAnalysisBoard` Hook + Analysis Display Components
+status: executing
+stopped_at: Phase 136 context gathered
+last_updated: "2026-06-26T10:55:29.916Z"
 last_activity: 2026-06-26
+last_activity_desc: Phase 136 complete, transitioned to Phase 137
 progress:
-  total_phases: 4
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 8
+  completed_phases: 1
+  total_plans: 2
+  completed_plans: 2
+  percent: 13
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 136 of 4 (useStockfishEngine Hook + WASM Setup)
-Plan: —
-Status: Ready to plan Phase 136
-Last activity: 2026-06-26 — Roadmap created for v1.29 Live-Engine Analysis Page (Phases 136–139)
+Phase: 137 — `useAnalysisBoard` Hook + Analysis Display Components
+Plan: Not started
+Status: Ready to execute
+Last activity: 2026-06-26 — Phase 136 complete, transitioned to Phase 137
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -56,6 +60,8 @@ Twenty-eight milestones complete (v1.0–v1.28). v1.28 Tactic Tagging shipped 20
 - useAnalysisBoard must NOT modify useChessGame.ts (independent hook, different contract)
 - vite.config.ts must have optimizeDeps: { exclude: ['stockfish'] } to prevent WASM path break (Pitfall 1)
 - Phase 139 regression gate required BEFORE deleting TacticLineExplorer.tsx
+- [Phase ?]: Inline debounce (useState null + setTimeout) vs useDebounce — starts null to preserve 150ms delay on all analyses
+- [Phase ?]: analyzeRef stable (useCallback []) — no render-phase update needed per react-hooks/refs rule
 
 ### Pending Todos
 
@@ -80,6 +86,12 @@ Items acknowledged and deferred at **v1.28 milestone close on 2026-06-25**:
 
 ## Session Continuity
 
-Last session: 2026-06-26
-Stopped at: Roadmap created — Phase 136 ready to plan
-Resume file: None
+Last session: 2026-06-26T10:33:57.365Z
+Stopped at: Phase 136 context gathered
+Resume file: .planning/phases/136-usestockfishengine-hook-wasm-setup/136-CONTEXT.md
+
+## Performance Metrics
+
+| Phase | Plan | Duration | Notes |
+|-------|------|----------|-------|
+| Phase 136 P02 | 15m | 3 tasks | 6 files |
