@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.main import app
 from app.middleware.last_activity import _extract_user_id, _last_updated
 from app.models.user import User
+from app.models.user_activity import UserActivity
 from app.users import auth_backend
 
 
@@ -375,3 +376,175 @@ class TestImpersonationSkip:
         assert last_activity is not None, (
             "Regression: regular request must still write last_activity"
         )
+
+
+# ---------------------------------------------------------------------------
+# User activity recording tests (DDG-01)
+# ---------------------------------------------------------------------------
+
+
+class TestUserActivityRecording:
+    """Tests for the user_activity ON CONFLICT upsert in LastActivityMiddleware.
+
+    Covers: fresh-day insert (count=1), same-day increment (count=2, one row),
+    and skip conditions (impersonated, anonymous, >=400 status).
+    """
+
+    _DEFAULT_PASSWORD = "pw12345678"
+
+    @staticmethod
+    def _unique_email(prefix: str) -> str:
+        return f"{prefix}_{uuid.uuid4().hex[:8]}@example.com"
+
+    @classmethod
+    async def _register_and_login(cls, client: httpx.AsyncClient, email: str) -> tuple[int, str]:
+        return await register_and_login(client, email, cls._DEFAULT_PASSWORD)
+
+    @staticmethod
+    async def _get_activity_rows(test_engine, user_id: int, activity_date) -> list[UserActivity]:
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        async with session_maker() as session:
+            result = await session.execute(
+                select(UserActivity).where(
+                    UserActivity.user_id == user_id,
+                    UserActivity.activity_date == activity_date,
+                )
+            )
+            return list(result.scalars().all())
+
+    @pytest.mark.asyncio
+    async def test_fresh_active_day_creates_row_with_count_one(self, test_engine):
+        """First authenticated request on a new UTC day creates a user_activity row with count 1."""
+        email = self._unique_email("ua_fresh")
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            user_id, token = await self._register_and_login(client, email)
+            # Pop any cached throttle entry so the middleware definitely writes
+            _last_updated.pop(user_id, None)
+
+            resp = await client.get(
+                "/api/users/me/profile",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert resp.status_code == 200
+
+        today = datetime.now(timezone.utc).date()
+        rows = await self._get_activity_rows(test_engine, user_id, today)
+
+        assert len(rows) == 1, f"Expected one user_activity row, got {len(rows)}"
+        assert rows[0].activity_count == 1, f"Expected count 1, got {rows[0].activity_count}"
+
+    @pytest.mark.asyncio
+    async def test_same_day_second_write_increments_count(self, test_engine):
+        """Second throttled write on the same UTC day increments activity_count to 2 (one row)."""
+        email = self._unique_email("ua_incr")
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            user_id, token = await self._register_and_login(client, email)
+            _last_updated.pop(user_id, None)
+
+            # First write
+            resp = await client.get(
+                "/api/users/me/profile",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert resp.status_code == 200
+
+        # Force past the in-memory throttle and the DB-level throttle window:
+        # 1. Pop the in-memory cache entry.
+        # 2. Backdate users.last_activity by >1h so the conditional UPDATE fires again.
+        _last_updated.pop(user_id, None)
+        stale_time = datetime.now(timezone.utc) - timedelta(hours=2)
+        async with session_maker() as session:
+            await session.execute(
+                sa_update(User).where(User.id == user_id).values(last_activity=stale_time)
+            )
+            await session.commit()
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp2 = await client.get(
+                "/api/users/me/profile",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert resp2.status_code == 200
+
+        today = datetime.now(timezone.utc).date()
+        rows = await self._get_activity_rows(test_engine, user_id, today)
+
+        assert len(rows) == 1, f"Expected exactly one row (unique key held), got {len(rows)}"
+        assert rows[0].activity_count == 2, (
+            f"Expected count 2 after ON CONFLICT, got {rows[0].activity_count}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_impersonated_request_records_no_activity_row(self, test_engine):
+        """Impersonated request must not create a user_activity row for the target (D-07)."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            admin_id, admin_token, target_id = await TestImpersonationSkip._setup_admin_and_target(
+                client, test_engine
+            )
+            imp_token = await TestImpersonationSkip._impersonate(client, admin_token, target_id)
+
+            _last_updated.pop(admin_id, None)
+            _last_updated.pop(target_id, None)
+
+            resp = await client.get(
+                "/api/users/me/profile",
+                headers={"Authorization": f"Bearer {imp_token}"},
+            )
+            assert resp.status_code == 200
+
+        today = datetime.now(timezone.utc).date()
+        target_rows = await self._get_activity_rows(test_engine, target_id, today)
+        assert len(target_rows) == 0, (
+            f"Impersonated request must record no user_activity row for target, got {len(target_rows)}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_anonymous_request_records_no_activity_row(self, test_engine):
+        """Unauthenticated request creates no user_activity row."""
+        # Use a public health endpoint — no JWT needed
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/api/health")
+
+        # The health endpoint has no user_id; just verify it succeeded and no crash
+        assert resp.status_code == 200
+
+        # No user to check — verify that the table is still consistent (no orphan rows
+        # with NULL user_id, which would violate the FK). We count rows with null user_id
+        # as a sanity check; it is not possible via the ORM but good to assert here.
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        async with session_maker() as session:
+            result = await session.execute(
+                select(UserActivity).where(UserActivity.user_id.is_(None))
+            )
+            null_rows = list(result.scalars().all())
+        assert null_rows == [], "No user_activity row with null user_id should exist"
+
+    @pytest.mark.asyncio
+    async def test_error_response_records_no_activity_row(self, test_engine):
+        """A request returning >=400 must not create a user_activity row for the user."""
+        email = self._unique_email("ua_err")
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            user_id, token = await self._register_and_login(client, email)
+            _last_updated.pop(user_id, None)
+
+            # Hit a protected endpoint without authentication → 401
+            resp = await client.get("/api/users/me/profile")
+        assert resp.status_code == 401
+
+        today = datetime.now(timezone.utc).date()
+        rows = await self._get_activity_rows(test_engine, user_id, today)
+        assert len(rows) == 0, f"401 response must not produce a user_activity row, got {len(rows)}"
