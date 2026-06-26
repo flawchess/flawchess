@@ -71,6 +71,7 @@ from app.services.flaws_service import (
     _resolve_increment,
     _run_all_moves_pass,
 )
+from app.services.normalization import is_correspondence_time_control
 from app.services.openings_service import (
     MIN_GAMES_FOR_TIMELINE,
     derive_user_result,
@@ -128,6 +129,14 @@ def _build_eval_series(
     # Increment for _build_tags tempo computation (Phase 109: shared helper).
     increment = _resolve_increment(game)
 
+    # Bug fix: daily (chess.com) and correspondence (lichess) games emit %clk
+    # annotations but the values are meaningless — witnessed e.g. for game id 687474
+    # (user 28) where clocks jump 0.7s → 21.3s → 1008s → 90s across consecutive
+    # moves. Suppress clock_seconds and move_seconds at the display layer so the
+    # frontend's != null guards hide the nonsensical numbers. Storage is untouched
+    # (game_positions.clock_seconds feeds time-management stats, out of scope).
+    is_correspondence = is_correspondence_time_control(game.time_control_str)
+
     # Per-color previous clock for move-time computation (Phase 109 feedback:
     # tooltip shows clock remaining + time spent on the move). clock_seconds is
     # the mover's remaining time AFTER the move; even ply = White, odd = Black.
@@ -148,7 +157,10 @@ def _build_eval_series(
         # Time spent on the move = prior same-color clock − current clock + increment
         # (increment is added back after each move). Clamp negatives from rounding.
         color = pos.ply % 2  # 0 = White, 1 = Black
-        clock = pos.clock_seconds
+        # Correspondence/daily: force clock to None so both clock_seconds and the
+        # derived move_seconds are None — per-move %clk values are meaningless for
+        # these games (see is_correspondence comment above).
+        clock = None if is_correspondence else pos.clock_seconds
         move_seconds: float | None = None
         if clock is not None:
             prior = prev_clock[color]
