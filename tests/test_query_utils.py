@@ -333,15 +333,23 @@ class TestTacticDepthAndEitherFilter:
 
         The Phase 129 D-04 exemption was removed, so a bounded depth filter references
         the motif column ONCE (primary family filter), with a plain range predicate.
+        Quick 260626-bdt: the decided-lost NOT(…) clause adds OR inside its own scope;
+        those are unrelated to the depth predicate and are expected.
         """
         sql = self._stmt_sql(orientation="allowed", max_tactic_depth=3)
         # Quick 260621-qz9: allowed column is decision-anchored (+1), so the depth
         # predicate compiles as "allowed_tactic_depth + <param> <=".
         assert "allowed_tactic_depth +" in sql and "<=" in sql  # depth predicate is present
-        # The mate exemption was the ONLY OR in a single-orientation depth branch;
-        # removing it leaves a pure AND chain inside the EXISTS.
-        assert " OR " not in sql, (
-            f"Mate exemption removed → no OR in a single-orientation depth clause; got: {sql}"
+        # The old mate exemption was an OR that let mates bypass the depth bound:
+        # "(allowed_tactic_depth <= N OR eval_mate IS NOT NULL)". Verify that pattern
+        # is gone by checking the depth predicate's local AND-term contains no OR.
+        # Quick 260626-bdt: the NOT(decided_lost) clause appended after the depth term
+        # contains its own OR — those are inside a NOT(...) wrapper and do NOT appear
+        # between "allowed_tactic_depth" and the next " AND " separator.
+        depth_ctx = sql[sql.find("allowed_tactic_depth") :]
+        depth_term = depth_ctx.split(" AND ")[0]  # just the depth's own AND-term
+        assert " OR " not in depth_term, (
+            f"No OR exemption on the depth predicate itself; depth term: {depth_term}"
         )
 
     def test_min_depth_bound_references_depth_column(self) -> None:
