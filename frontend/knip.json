@@ -15,5 +15,8 @@
     "src/components/ui/input-group.tsx",
     "src/generated/endgameZones.ts"
   ],
-  "ignoreBinaries": ["cloudflared"]
+  "ignoreBinaries": ["cloudflared"],
+  "rules": {
+    "duplicates": "off"
+  }
 }

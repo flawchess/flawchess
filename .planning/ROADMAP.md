@@ -40,7 +40,7 @@
 Milestone Goal: Ship a standalone `/analysis` board where the user makes any legal move from any position and an in-browser single-thread Stockfish (WASM) evaluates it live (eval + top 1–2 lines), subsuming the static Tactic Line Explorer (Phase 135) as a tactic mode of that one shared board. No backend schema or new endpoints (D-4 locked). Paste-a-FEN deferred to v2.
 
 - [x] **Phase 136: `useStockfishEngine` Hook + WASM Setup** - Install WASM Stockfish, implement Worker lifecycle + UCI protocol + PLAT hardening (CI COOP/COEP guard, PWA wasm exclusion, tab-hide pause) (completed 2026-06-26)
-- [ ] **Phase 137: `useAnalysisBoard` Hook + Analysis Display Components** - Branching move tree (new hook, not a variant of useChessGame), EvalBar, EngineLines, VariationTree
+- [x] **Phase 137: `useAnalysisBoard` Hook + Analysis Display Components** - Branching move tree (new hook, not a variant of useChessGame), EvalBar, EngineLines, VariationTree (completed 2026-06-26)
 - [ ] **Phase 138: `/analysis` Route + Page Shell + Entry Points** - Lazy-loaded page shell, router wiring, free-play entry points (opening position + game-review ply)
 - [ ] **Phase 139: Tactic Mode Overlay + Phase 135 Subsume** - TacticModeOverlay, Phase 135 regression parity, retire TacticLineExplorer + useTacticLine
 
@@ -80,12 +80,18 @@ Plans:
   4. Board/variation state is encoded in the URL so the position is shareable and bookmarkable with no server-side persistence
   5. EvalBar (sigmoid centipawn gradient, mate label from depth 8+) and EngineLines (top 1–2 PV sequences, depth badge, "thinking" indicator) render correctly from engine output
 
-**Plans**: TBD
+**Plans**: 3 plans
 **UI hint**: yes
 
 Plans:
+**Wave 1**
 
-- [ ] TBD
+- [x] 137-01-PLAN.md — useAnalysisBoard branching move-tree hook (fork, navigation, loadMainLine) + tests
+- [x] 137-02-PLAN.md — EvalBar + EngineLines components + theme.ts EvalBar re-exports + render tests
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 137-03-PLAN.md — VariationTree responsive move list (mobile + desktop) + render tests
 
 ### Phase 138: `/analysis` Route + Page Shell + Entry Points
 
@@ -183,7 +189,7 @@ Plans:
 | 134. trapped-piece fixture expansion + cook reimpl | 3/3 | Complete | 2026-06-23 |
 | 135. Tactic Line Explorer (SEED-065) | 3/3 | Complete   | 2026-06-24 |
 | 136. `useStockfishEngine` Hook + WASM Setup | 2/2 | Complete    | 2026-06-26 |
-| 137. `useAnalysisBoard` Hook + Analysis Display Components | 0/TBD | Not started | - |
+| 137. `useAnalysisBoard` Hook + Analysis Display Components | 3/3 | Complete    | 2026-06-26 |
 | 138. `/analysis` Route + Page Shell + Entry Points | 0/TBD | Not started | - |
 | 139. Tactic Mode Overlay + Phase 135 Subsume | 0/TBD | Not started | - |
 
@@ -193,7 +199,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 2/2 plans complete
+**Plans:** 3/3 plans complete
 
 Plans:
 

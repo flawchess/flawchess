@@ -2,29 +2,29 @@
 gsd_state_version: 1.0
 milestone: v1.29
 milestone_name: Live-Engine Analysis Page
-current_phase: 137
-current_phase_name: `useAnalysisBoard` Hook + Analysis Display Components
-status: executing
-stopped_at: Phase 136 context gathered
-last_updated: "2026-06-26T10:55:29.916Z"
+current_phase: 138
+current_phase_name: `/analysis` Route + Page Shell + Entry Points
+status: verifying
+stopped_at: Phase 137 UI-SPEC approved
+last_updated: "2026-06-26T15:52:28.598Z"
 last_activity: 2026-06-26
-last_activity_desc: Phase 136 complete, transitioned to Phase 137
+last_activity_desc: Phase 137 complete, transitioned to Phase 138
 progress:
   total_phases: 8
-  completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
-  percent: 13
+  completed_phases: 2
+  total_plans: 5
+  completed_plans: 5
+  percent: 25
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 137 — `useAnalysisBoard` Hook + Analysis Display Components
+Phase: 138 — `/analysis` Route + Page Shell + Entry Points
 Plan: Not started
-Status: Ready to execute
-Last activity: 2026-06-26 — Phase 136 complete, transitioned to Phase 137
+Status: Phase complete — ready for verification
+Last activity: 2026-06-26 — Phase 137 complete, transitioned to Phase 138
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -62,6 +62,7 @@ Twenty-eight milestones complete (v1.0–v1.28). v1.28 Tactic Tagging shipped 20
 - Phase 139 regression gate required BEFORE deleting TacticLineExplorer.tsx
 - [Phase ?]: Inline debounce (useState null + setTimeout) vs useDebounce — starts null to preserve 150ms delay on all analyses
 - [Phase ?]: analyzeRef stable (useCallback []) — no render-phase update needed per react-hooks/refs rule
+- [Phase ?]: useAnalysisBoard: FEN-per-node branching tree; functional setState updaters for navigation; stateRef for makeMove synchronous read
 
 ### Pending Todos
 
@@ -86,12 +87,17 @@ Items acknowledged and deferred at **v1.28 milestone close on 2026-06-25**:
 
 ## Session Continuity
 
-Last session: 2026-06-26T10:33:57.365Z
-Stopped at: Phase 136 context gathered
-Resume file: .planning/phases/136-usestockfishengine-hook-wasm-setup/136-CONTEXT.md
+Last session: 2026-06-26T15:11:16.846Z
+Stopped at: Phase 137 UI-SPEC approved
+Resume file: .planning/phases/137-useanalysisboard-hook-analysis-display-components/137-UI-SPEC.md
 
 ## Performance Metrics
 
 | Phase | Plan | Duration | Notes |
 |-------|------|----------|-------|
 | Phase 136 P02 | 15m | 3 tasks | 6 files |
+| Phase 137 P01 | 4min | 2 tasks | 2 files |
+| Phase 137 P01 | 4min | 2 tasks | 2 files |
+| Phase Phase 137 P02 P7min | 2 tasks | 6 files tasks | - files |
+| Phase 137 P02 | 9min | 2 tasks | 6 files |
+| Phase Phase 137 P03 P13min | 2 tasks | 2 tasks | 2 files |

@@ -47,6 +47,12 @@ export const SEV_INACCURACY_BORDER = 'oklch(0.82 0.13 95 / 0.30)';
 // (below midline) = dark grey, mirroring the white/black pieces.
 export const EVAL_CHART_AREA_WHITE_AHEAD = 'oklch(0.78 0 0)';
 export const EVAL_CHART_AREA_BLACK_AHEAD = 'oklch(0.32 0 0)';
+
+// EvalBar semantic re-exports (Phase 137 — EvalBar.tsx).
+// The analysis board's vertical centipawn bar shares the same palette as the
+// eval chart: white-ahead fill on top, black-ahead fill on bottom.
+export const EVAL_BAR_WHITE = EVAL_CHART_AREA_WHITE_AHEAD;
+export const EVAL_BAR_BLACK = EVAL_CHART_AREA_BLACK_AHEAD;
 export const EVAL_CHART_LINE = 'oklch(0.82 0 0)';
 // Muted grey for the rotated "Midgame" / "Endgame" text labels centered on the
 // phase boundaries — legible over both the light and dark eval-bar regions.

@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- **Live-engine analysis board (foundation)** — internal groundwork for the upcoming `/analysis` page: a branching move tree where a move played mid-line forks a new variation instead of overwriting the line, plus the display components that will render live engine output (an eval bar, the engine's top lines, and a variation move list). Not yet reachable in the app; the page and board wiring land in a follow-up phase. (Phase 137)
+
 ### Changed
 
 - **Tactic tags hidden on already-lost positions** — a tactic motif found or missed in a position that was already decisively lost (the engine had you down by more than a rook, or facing forced mate, *before* the move) no longer shows its tag, depth number, or eval-chart tooltip entry, and is excluded from the tactic-motif and depth filters on the Flaws and Games tabs. These flaws were noise: a "missed fork" teaches nothing when the game was already gone. The blunder/mistake itself still counts in the severity badges and still appears as a marker on the eval chart; only the tactic tagging is suppressed. The tactic explorer keeps full detail. (Quick 260626-bdt)

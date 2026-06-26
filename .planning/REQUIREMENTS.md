@@ -19,11 +19,11 @@ Requirements for this milestone. Each maps to exactly one roadmap phase. Almost 
 
 ### Analysis Board (BOARD)
 
-- [ ] **BOARD-01**: User can make any legal move from any position; a mid-line move forks the line into a variation rather than being rejected
-- [ ] **BOARD-02**: User can navigate the move tree (back/forward, jump to any move, reset to start) and flip the board
-- [ ] **BOARD-03**: User can input moves by drag-drop and by click-to-click (touch)
-- [ ] **BOARD-04**: Board/variation state is encoded in the URL so a position is shareable/bookmarkable, with no server-side persistence
-- [ ] **BOARD-05**: User sees the move list and can click any move to jump to it; the v1 display shows the main line plus the single active variation (flat — full nested-tree display deferred to v2)
+- [x] **BOARD-01**: User can make any legal move from any position; a mid-line move forks the line into a variation rather than being rejected
+- [x] **BOARD-02**: User can navigate the move tree (back/forward, jump to any move, reset to start) and flip the board
+- [x] **BOARD-03**: User can input moves by drag-drop and by click-to-click (touch)
+- [x] **BOARD-04**: Board/variation state is encoded in the URL so a position is shareable/bookmarkable, with no server-side persistence
+- [x] **BOARD-05**: User sees the move list and can click any move to jump to it; the v1 display shows the main line plus the single active variation (flat — full nested-tree display deferred to v2)
 
 ### Route & Entry Points (ROUTE)
 
@@ -77,11 +77,11 @@ Explicitly excluded. Documented to prevent scope creep. Anti-features carried fr
 | ENGINE-03 | Phase 136 | Complete |
 | ENGINE-04 | Phase 136 | Complete |
 | ENGINE-05 | Phase 136 | Complete |
-| BOARD-01 | Phase 137 | Pending |
-| BOARD-02 | Phase 137 | Pending |
-| BOARD-03 | Phase 137 | Pending |
-| BOARD-04 | Phase 137 | Pending |
-| BOARD-05 | Phase 137 | Pending |
+| BOARD-01 | Phase 137 | Complete |
+| BOARD-02 | Phase 137 | Complete |
+| BOARD-03 | Phase 137 | Complete |
+| BOARD-04 | Phase 137 | Complete |
+| BOARD-05 | Phase 137 | Complete |
 | ROUTE-01 | Phase 138 | Pending |
 | ROUTE-02 | Phase 138 | Pending |
 | TACTIC-01 | Phase 139 | Pending |
