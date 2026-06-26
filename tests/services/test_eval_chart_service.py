@@ -53,6 +53,7 @@ def _make_game(
     result: str = "1-0",
     base_time_seconds: int | None = 600,
     increment_seconds: float | None = 0.0,
+    time_control_str: str | None = None,
 ) -> Game:
     """Build a minimal Game object for unit testing (no DB flush)."""
     game = Game()
@@ -61,6 +62,7 @@ def _make_game(
     game.result = result
     game.base_time_seconds = base_time_seconds
     game.increment_seconds = increment_seconds
+    game.time_control_str = time_control_str
     return game
 
 
@@ -525,3 +527,72 @@ class TestCheckmateFinalPly:
         eval_series, _, _ = _build_eval_series(game, positions)
         assert eval_series[-1].es is None
         assert eval_series[2].es is None
+
+
+# ---------------------------------------------------------------------------
+# TestCorrespondenceClockSuppression — daily/correspondence games must send
+# null clock_seconds and move_seconds regardless of stored %clk values
+# ---------------------------------------------------------------------------
+
+
+class TestCorrespondenceClockSuppression:
+    def test_daily_game_suppresses_clock_and_move_seconds(self) -> None:
+        """A chess.com daily game (time_control_str='1/86400') yields every EvalPoint
+        with clock_seconds=None and move_seconds=None, even when positions carry
+        clock_seconds values. Per-move %clk annotations on daily games are
+        meaningless (witnessed: game 687474 user 28, clocks jump 0.7s → 21.3s →
+        1008s → 90s). Suppress at display layer; storage untouched.
+        """
+        positions = [
+            _make_pos(0, eval_cp=10, clock_seconds=600.0),
+            _make_pos(1, eval_cp=20, clock_seconds=580.0),
+            _make_pos(2, eval_cp=15, clock_seconds=595.0),
+        ]
+        game = _make_game(
+            base_time_seconds=None,
+            increment_seconds=None,
+            time_control_str="1/86400",
+        )
+        eval_series, _, _ = _build_eval_series(game, positions)
+        for point in eval_series:
+            assert point.clock_seconds is None, (
+                f"ply {point.ply}: expected clock_seconds=None for daily game, "
+                f"got {point.clock_seconds}"
+            )
+            assert point.move_seconds is None, (
+                f"ply {point.ply}: expected move_seconds=None for daily game, "
+                f"got {point.move_seconds}"
+            )
+
+    def test_correspondence_three_day_suppresses_clock_and_move_seconds(self) -> None:
+        """Lichess correspondence normalized to '1/259200' (3 days per move) also suppressed."""
+        positions = [
+            _make_pos(0, eval_cp=10, clock_seconds=259200.0),
+            _make_pos(1, eval_cp=20, clock_seconds=200000.0),
+        ]
+        game = _make_game(
+            base_time_seconds=None,
+            increment_seconds=None,
+            time_control_str="1/259200",
+        )
+        eval_series, _, _ = _build_eval_series(game, positions)
+        for point in eval_series:
+            assert point.clock_seconds is None
+            assert point.move_seconds is None
+
+    def test_classical_game_preserves_clock_seconds(self) -> None:
+        """A classical game (time_control_str='1800') with clock-bearing positions
+        still surfaces clock_seconds (no suppression for real time controls).
+        """
+        positions = [
+            _make_pos(0, eval_cp=10, clock_seconds=1795.0),
+            _make_pos(1, eval_cp=20, clock_seconds=1790.0),
+        ]
+        game = _make_game(
+            base_time_seconds=1800,
+            increment_seconds=0.0,
+            time_control_str="1800",
+        )
+        eval_series, _, _ = _build_eval_series(game, positions)
+        assert eval_series[0].clock_seconds == 1795.0, "Classical game must preserve clock_seconds"
+        assert eval_series[1].clock_seconds == 1790.0

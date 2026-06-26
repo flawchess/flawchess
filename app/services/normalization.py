@@ -15,6 +15,29 @@ from app.schemas.normalization import (
 from app.services.opening_lookup import find_opening
 
 
+# Per-move time-control separator used in chess.com "daily" format ("1/86400")
+# and in the lichess correspondence normalization ("1/{daysPerTurn*86400}").
+# The presence of this separator in a non-empty, non-"-" time-control string
+# is the canonical signal that a game is daily/correspondence.
+CORRESPONDENCE_TC_SEPARATOR = "/"
+
+
+def is_correspondence_time_control(time_control_str: str | None) -> bool:
+    """Return True when *time_control_str* represents a daily / correspondence game.
+
+    Daily (chess.com) and correspondence (lichess) games encode a per-move time
+    allowance as "1/{seconds_per_move}" (e.g. "1/86400" for one day per move).
+    The CORRESPONDENCE_TC_SEPARATOR ("/") in a non-empty, non-"-" string is the
+    single identifying feature shared by both platforms after normalization.
+
+    Returns False for classical, rapid, blitz, and bullet strings ("1800",
+    "600+5", "60+0", "10+0.1") and for None / "" / "-".
+    """
+    if not time_control_str or time_control_str == "-":
+        return False
+    return CORRESPONDENCE_TC_SEPARATOR in time_control_str
+
+
 def _normalize_tc_str(tc_str: str) -> str | None:
     """Normalize time control string: drop +0 suffix when increment is 0."""
     if not tc_str or tc_str == "-":

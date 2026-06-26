@@ -17,10 +17,13 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game as GameModel
+from app.models.game_flaw import GameFlaw
+from app.models.game_position import GamePosition
 from app.repositories.library_repository import (
     ALLOWED_DECISION_DEPTH_OFFSET,
     _TACTIC_DEPTH_FULL_MAX,
     _TACTIC_DEPTH_FULL_MIN,
+    _build_flaw_item,
     query_flaws,
     tactic_slot_visible,
 )
@@ -626,3 +629,147 @@ class TestQueryFlawsPerSlotSuppression:
         # Non-tactic flaw: both tactic slots are None (no motif in DB).
         assert non_tactic_item.missed_tactic_motif is None
         assert non_tactic_item.allowed_tactic_motif is None
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for _build_flaw_item clock/move-time suppression (no DB needed)
+# ---------------------------------------------------------------------------
+
+
+def _make_flaw(
+    game_id: int = 1,
+    ply: int = 4,
+    severity: int = 2,  # 2 = blunder
+) -> GameFlaw:
+    """Build a minimal GameFlaw ORM object for pure unit testing (no DB flush)."""
+    flaw = GameFlaw()
+    flaw.game_id = game_id
+    flaw.user_id = 1
+    flaw.ply = ply
+    flaw.severity = severity
+    flaw.phase = 1
+    flaw.is_miss = False
+    flaw.is_lucky = False
+    flaw.is_reversed = False
+    flaw.is_squandered = False
+    flaw.tempo = None
+    flaw.fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
+    flaw.allowed_tactic_motif = None
+    flaw.allowed_tactic_confidence = None
+    flaw.allowed_tactic_depth = None
+    flaw.missed_tactic_motif = None
+    flaw.missed_tactic_confidence = None
+    flaw.missed_tactic_depth = None
+    return flaw
+
+
+def _make_flaw_game(
+    time_control_str: str | None = None,
+    base_time_seconds: int | None = None,
+) -> GameModel:
+    """Build a minimal Game ORM object for _build_flaw_item unit testing (no DB flush)."""
+    game = GameModel()
+    game.user_color = "white"
+    game.result = "1-0"
+    game.time_control_str = time_control_str
+    game.base_time_seconds = base_time_seconds
+    game.increment_seconds = 0.0
+    game.time_control_bucket = "classical"
+    game.platform = "chess.com"
+    game.platform_url = "https://www.chess.com/game/live/1"
+    game.white_username = "alice"
+    game.black_username = "bob"
+    game.white_rating = 1500
+    game.black_rating = 1500
+    game.played_at = None
+    game.ply_count = 10
+    game.termination = "resignation"
+    return game
+
+
+def _make_flaw_pos(
+    ply: int,
+    clock_seconds: float | None = None,
+    eval_cp: int | None = None,
+    eval_mate: int | None = None,
+    move_san: str | None = "Nf3",
+    best_move: str | None = None,
+) -> GamePosition:
+    """Build a minimal GamePosition ORM object for _build_flaw_item unit testing."""
+    pos = GamePosition()
+    pos.ply = ply
+    pos.clock_seconds = clock_seconds
+    pos.eval_cp = eval_cp
+    pos.eval_mate = eval_mate
+    pos.move_san = move_san
+    pos.best_move = best_move
+    pos.full_hash = 0
+    pos.white_hash = 0
+    pos.black_hash = 0
+    return pos
+
+
+class TestBuildFlawItemClockSuppression:
+    """Pure unit tests for _build_flaw_item clock/move-time suppression.
+
+    No DB required — objects are constructed in memory using the same pattern
+    as the eval-chart service tests. The suppression is display-only: storage
+    (game_positions.clock_seconds) is untouched.
+    """
+
+    def test_daily_game_suppresses_clock_and_move_seconds(self) -> None:
+        """A chess.com daily game (time_control_str='1/86400') yields
+        clock_seconds=None and move_seconds=None in FlawListItem, even when
+        pos_at and pos_two_before carry clock_seconds values.
+        """
+        flaw = _make_flaw(ply=4)
+        game = _make_flaw_game(time_control_str="1/86400", base_time_seconds=None)
+        pos_at = _make_flaw_pos(ply=4, clock_seconds=1008.0, eval_cp=-50)
+        pos_before = _make_flaw_pos(ply=3, clock_seconds=90.0, eval_cp=50)
+        pos_two_before = _make_flaw_pos(ply=2, clock_seconds=21.3, eval_cp=50)
+
+        item = _build_flaw_item(
+            flaw,
+            game,
+            pos_at,
+            pos_before,
+            pos_two_before,
+            tactic_families=[],
+            orientation="either",
+            min_tactic_depth=None,
+            max_tactic_depth=None,
+        )
+
+        assert item.clock_seconds is None, (
+            "Daily game must suppress clock_seconds regardless of stored value"
+        )
+        assert item.move_seconds is None, (
+            "Daily game must suppress move_seconds regardless of stored clocks"
+        )
+
+    def test_classical_game_preserves_clock_seconds(self) -> None:
+        """A classical game (time_control_str='1800') with pos_at.clock_seconds
+        set still surfaces non-null clock_seconds in FlawListItem.
+        """
+        flaw = _make_flaw(ply=4)
+        game = _make_flaw_game(time_control_str="1800", base_time_seconds=1800)
+        pos_at = _make_flaw_pos(ply=4, clock_seconds=1750.0, eval_cp=-50)
+        pos_before = _make_flaw_pos(ply=3, clock_seconds=1760.0, eval_cp=50)
+        pos_two_before = _make_flaw_pos(ply=2, clock_seconds=1790.0, eval_cp=50)
+
+        item = _build_flaw_item(
+            flaw,
+            game,
+            pos_at,
+            pos_before,
+            pos_two_before,
+            tactic_families=[],
+            orientation="either",
+            min_tactic_depth=None,
+            max_tactic_depth=None,
+        )
+
+        assert item.clock_seconds == 1750.0, "Classical game must preserve clock_seconds"
+        # move_seconds: prev_same_side (pos_two_before) - clock_after + increment
+        # = 1790.0 - 1750.0 + 0.0 = 40.0
+        assert item.move_seconds == 40.0, "Classical game must compute move_seconds from clock data"

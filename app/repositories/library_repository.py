@@ -39,7 +39,7 @@ from app.services.flaws_service import (
     FlawTag,
     MATE_LADDER_LOPSIDED_CP,
 )
-from app.services.normalization import parse_base_and_increment
+from app.services.normalization import is_correspondence_time_control, parse_base_and_increment
 from app.services.openings_service import derive_user_result
 from app.services.tactic_detector import (
     TacticMotifInt,
@@ -853,6 +853,14 @@ def _build_flaw_item(
         mover_is_white=(game.user_color == "white"),
     )
 
+    # Bug fix: daily (chess.com) and correspondence (lichess) games emit %clk
+    # annotations but the values are meaningless — witnessed e.g. for game id 687474
+    # (user 28) where clocks jump 0.7s → 21.3s → 1008s → 90s across consecutive
+    # moves. Suppress clock_seconds and move_seconds at the display layer so the
+    # frontend's != null guards hide the nonsensical numbers. Storage is untouched
+    # (game_positions.clock_seconds feeds time-management stats, out of scope).
+    is_correspondence = is_correspondence_time_control(game.time_control_str)
+
     # Tactic slot emission via the shared per-slot display predicate (tactic_slot_visible).
     # A slot is non-null IFF it satisfies the full active filter (orientation ∩ confidence ∩
     # family ∩ depth-range) AND the pre-move position was not already decided-lost.
@@ -903,8 +911,12 @@ def _build_flaw_item(
         white_username=game.white_username,
         black_username=game.black_username,
         user_color=game.user_color,
-        clock_seconds=pos_at.clock_seconds if pos_at else None,
-        move_seconds=_compute_move_seconds(pos_at, pos_two_before, game.time_control_str),
+        clock_seconds=(None if is_correspondence else (pos_at.clock_seconds if pos_at else None)),
+        move_seconds=(
+            None
+            if is_correspondence
+            else _compute_move_seconds(pos_at, pos_two_before, game.time_control_str)
+        ),
         best_move=pos_at.best_move if pos_at else None,
         allowed_tactic_motif=(
             _TACTIC_INT_TO_MOTIF.get(flaw.allowed_tactic_motif)  # ty: ignore[invalid-argument-type]
