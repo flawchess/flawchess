@@ -22,8 +22,13 @@ from typing import Any
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import Subquery, func, select
+from sqlalchemy import Subquery, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+# Distinct user ID for TestDecidedLostSuppression tests so parallel -n auto runs
+# cannot cross-contaminate with the 99999/99998 fixtures. Declared at module level
+# so _create_test_users (autouse fixture, below) can reference it.
+_DL_USER_ID = 99997
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
@@ -51,7 +56,7 @@ async def _create_test_users(db_session: AsyncSession) -> None:
     """Ensure test user IDs exist in the users table (FK constraint)."""
     from tests.conftest import ensure_test_user
 
-    for uid in [99999, 99998]:
+    for uid in [99999, 99998, _DL_USER_ID]:
         await ensure_test_user(db_session, uid)
 
 
@@ -2011,3 +2016,480 @@ class TestTacticDepthAndEitherBuildFlawFilterClauses:
         assert "tactic_confidence" in sql, (
             f"build_flaw_filter_clauses must gate confidence for either; got: {sql}"
         )
+
+
+# ---------------------------------------------------------------------------
+# TestDecidedLostSuppression (Quick 260626-bdt)
+# ---------------------------------------------------------------------------
+
+class TestDecidedLostSuppression:
+    """Decided-lost tactic suppression: flaws from positions already lost for the
+    mover have their tactic-motif tag + depth suppressed on the Flaws and Games
+    surfaces.  The flaw still exists and counts in severity totals (Quick 260626-bdt).
+    """
+
+    # ------------------------------------------------------------------
+    # Helpers for this class
+    # ------------------------------------------------------------------
+
+    async def _ensure_dl_user(self, session: AsyncSession) -> None:
+        """Ensure _DL_USER_ID exists in the users table (FK constraint)."""
+        from tests.conftest import ensure_test_user
+
+        await ensure_test_user(session, _DL_USER_ID)
+
+    async def _query_flaws_fork(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int = _DL_USER_ID,
+        orientation: str = "allowed",
+    ) -> tuple[list[Any], int]:
+        """Helper: query_flaws with tactic_families=['fork'] and explicit orientation."""
+        return await query_flaws(
+            session,
+            user_id=user_id,
+            severity=["mistake", "blunder"],
+            tags=[],
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            color=None,
+            tactic_families=["fork"],
+            orientation=orientation,  # type: ignore[arg-type]
+            offset=0,
+            limit=50,
+        )
+
+    async def _games_path_matching_ids(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int = _DL_USER_ID,
+    ) -> set[int]:
+        """Run apply_game_filters with tactic_families=['fork'] on the Games path."""
+        stmt = select(Game.id).where(Game.user_id == user_id)
+        stmt = apply_game_filters(
+            stmt,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            tactic_families=["fork"],
+            user_id=user_id,
+        )
+        rows = (await session.execute(stmt)).scalars().all()
+        return set(rows)
+
+    # ------------------------------------------------------------------
+    # Test 1: decided-lost fork excluded from motif filter
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_decided_lost_fork_excluded_from_motif_filter(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Decided-lost fork (eval_cp_before=-900) excluded; contestable fork included.
+
+        White mover: eval_cp=-900 is decisively lost (>= MATE_LADDER_LOPSIDED_CP=700
+        from white's perspective, i.e. white is losing). The fork chip is suppressed
+        so query_flaws(tactic_families=["fork"]) returns 0 for that flaw.
+        A second flaw in a contestable position (eval_cp=-100) with the same fork
+        IS returned.
+        """
+        from app.services.tactic_detector import TacticMotifInt
+        from app.repositories.library_repository import MATE_LADDER_LOPSIDED_CP
+
+        await self._ensure_dl_user(db_session)
+        game = await _seed_game(db_session, user_id=_DL_USER_ID, user_color="white")
+        try:
+            # Decided-lost flaw at even ply (white mover); pre-move eval_cp = -900 → lost.
+            await _seed_position(db_session, game=game, ply=1, eval_cp=-900)
+            await _seed_game_flaw(
+                db_session,
+                game=game,
+                ply=2,
+                severity=2,
+                allowed_tactic_motif=int(TacticMotifInt.FORK),
+                allowed_tactic_confidence=100,
+                allowed_tactic_depth=0,
+            )
+            # Control flaw at ply 4 in a contestable position (eval_cp=-100 < threshold).
+            await _seed_position(db_session, game=game, ply=3, eval_cp=-100)
+            await _seed_game_flaw(
+                db_session,
+                game=game,
+                ply=4,
+                severity=2,
+                allowed_tactic_motif=int(TacticMotifInt.FORK),
+                allowed_tactic_confidence=100,
+                allowed_tactic_depth=0,
+            )
+
+            items, count = await self._query_flaws_fork(db_session)
+            plies = [item.ply for item in items if item.game_id == game.id]
+            assert 2 not in plies, (
+                f"decided-lost fork at ply=2 (eval_cp=-{MATE_LADDER_LOPSIDED_CP+200}) "
+                "must be excluded by the motif filter"
+            )
+            assert 4 in plies, "contestable fork at ply=4 (eval_cp=-100) must be included"
+            assert count >= 1
+        finally:
+            await db_session.execute(
+                delete(Game).where(
+                    Game.id == game.id
+                )
+            )
+
+    # ------------------------------------------------------------------
+    # Test 2: decided-lost flaw still counts in severity, tag nulled
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_decided_lost_flaw_still_counts_severity(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Decided-lost flaw appears without tactic filter but with tag suppressed.
+
+        The flaw (blunder, eval_cp_before=-900) still appears in an unfiltered
+        query_flaws call. Its severity is 'blunder' and the row is present.
+        But its allowed_tactic_motif and allowed_tactic_depth are None (suppressed).
+        """
+        from app.services.tactic_detector import TacticMotifInt
+
+        await self._ensure_dl_user(db_session)
+        game = await _seed_game(db_session, user_id=_DL_USER_ID, user_color="white")
+        try:
+            await _seed_position(db_session, game=game, ply=1, eval_cp=-900)
+            await _seed_game_flaw(
+                db_session,
+                game=game,
+                ply=2,
+                severity=2,
+                allowed_tactic_motif=int(TacticMotifInt.FORK),
+                allowed_tactic_confidence=100,
+                allowed_tactic_depth=2,
+            )
+
+            # Unfiltered query (no tactic filter) — flaw must appear.
+            items, count = await query_flaws(
+                db_session,
+                user_id=_DL_USER_ID,
+                severity=["blunder"],
+                tags=[],
+                time_control=None,
+                platform=None,
+                rated=None,
+                opponent_type="all",
+                from_date=None,
+                to_date=None,
+                color=None,
+                offset=0,
+                limit=50,
+            )
+            our_flaw = next(
+                (item for item in items if item.game_id == game.id and item.ply == 2), None
+            )
+            assert our_flaw is not None, (
+                "decided-lost blunder must still appear in unfiltered query_flaws"
+            )
+            assert our_flaw.severity == "blunder", "severity must be 'blunder'"
+            assert our_flaw.allowed_tactic_motif is None, (
+                "allowed_tactic_motif must be None (suppressed) on decided-lost flaw"
+            )
+            assert our_flaw.allowed_tactic_depth is None, (
+                "allowed_tactic_depth must be None (suppressed) on decided-lost flaw"
+            )
+            assert count >= 1
+        finally:
+            await db_session.execute(
+                delete(Game).where(
+                    Game.id == game.id
+                )
+            )
+
+    # ------------------------------------------------------------------
+    # Test 3: null pre-move eval fails open
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_null_pre_move_eval_fails_open(self, db_session: AsyncSession) -> None:
+        """Null pre-move eval (no PositionBefore or both eval columns NULL) fails open.
+
+        A flaw whose ply N-1 position has eval_cp=None AND eval_mate=None must NOT
+        be suppressed: query_flaws(tactic_families=["fork"]) must return the row,
+        and the serialized allowed_tactic_motif must be non-None.
+        """
+        from app.services.tactic_detector import TacticMotifInt
+
+        await self._ensure_dl_user(db_session)
+        game = await _seed_game(db_session, user_id=_DL_USER_ID, user_color="white")
+        try:
+            # Pre-move position exists but both eval columns are NULL → fail open.
+            await _seed_position(db_session, game=game, ply=1, eval_cp=None, eval_mate=None)
+            await _seed_game_flaw(
+                db_session,
+                game=game,
+                ply=2,
+                severity=2,
+                allowed_tactic_motif=int(TacticMotifInt.FORK),
+                allowed_tactic_confidence=100,
+                allowed_tactic_depth=0,
+            )
+
+            items, count = await self._query_flaws_fork(db_session)
+            our_flaw = next(
+                (item for item in items if item.game_id == game.id and item.ply == 2), None
+            )
+            assert our_flaw is not None, (
+                "null pre-move eval must fail open: fork flaw must appear in tactic filter"
+            )
+            assert our_flaw.allowed_tactic_motif is not None, (
+                "null pre-move eval must fail open: allowed_tactic_motif must be non-None"
+            )
+            assert count >= 1
+        finally:
+            await db_session.execute(
+                delete(Game).where(
+                    Game.id == game.id
+                )
+            )
+
+    # ------------------------------------------------------------------
+    # Test 4: Flaws path and Games path agree
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_flaws_and_games_paths_agree(self, db_session: AsyncSession) -> None:
+        """Flaws path (query_flaws) and Games path (flaw_exists_from_table) agree.
+
+        One decided-lost fork game, one contestable fork game:
+        - query_flaws(tactic_families=["fork"]) returns only the contestable game.
+        - apply_game_filters(tactic_families=["fork"]) (Games tab EXISTS) returns the same set.
+        """
+        from app.services.tactic_detector import TacticMotifInt
+
+        await self._ensure_dl_user(db_session)
+        game_dl = await _seed_game(db_session, user_id=_DL_USER_ID, user_color="white")
+        game_ok = await _seed_game(db_session, user_id=_DL_USER_ID, user_color="white")
+        try:
+            # Decided-lost game
+            await _seed_position(db_session, game=game_dl, ply=1, eval_cp=-900)
+            await _seed_game_flaw(
+                db_session,
+                game=game_dl,
+                ply=2,
+                severity=2,
+                allowed_tactic_motif=int(TacticMotifInt.FORK),
+                allowed_tactic_confidence=100,
+                allowed_tactic_depth=0,
+            )
+            # Contestable game
+            await _seed_position(db_session, game=game_ok, ply=1, eval_cp=-100)
+            await _seed_game_flaw(
+                db_session,
+                game=game_ok,
+                ply=2,
+                severity=2,
+                allowed_tactic_motif=int(TacticMotifInt.FORK),
+                allowed_tactic_confidence=100,
+                allowed_tactic_depth=0,
+            )
+
+            # Flaws path
+            flaws_items, _ = await self._query_flaws_fork(db_session)
+            flaws_game_ids = {item.game_id for item in flaws_items}
+
+            # Games path (apply_game_filters / flaw_exists_from_table)
+            games_game_ids = await self._games_path_matching_ids(db_session)
+
+            # Both paths must agree: contestable matches, decided-lost does not.
+            # Filter to only our seeded games to avoid cross-test contamination.
+            our_flaws_ids = flaws_game_ids & {game_dl.id, game_ok.id}
+            our_games_ids = games_game_ids & {game_dl.id, game_ok.id}
+
+            assert game_ok.id in our_flaws_ids, "contestable fork game must appear in Flaws path"
+            assert game_dl.id not in our_flaws_ids, "decided-lost fork must NOT appear in Flaws path"
+            assert game_ok.id in our_games_ids, "contestable fork game must appear in Games path"
+            assert game_dl.id not in our_games_ids, "decided-lost fork must NOT appear in Games path"
+            assert our_flaws_ids == our_games_ids, (
+                "Flaws and Games paths must agree on which games match the tactic filter"
+            )
+        finally:
+            await db_session.execute(
+                delete(Game).where(
+                    Game.id.in_([game_dl.id, game_ok.id])
+                )
+            )
+
+    # ------------------------------------------------------------------
+    # Test 5: POV sign-flip for both colors + winning-side non-suppression
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_pov_sign_flip(self, db_session: AsyncSession) -> None:
+        """Suppression is POV-correct for both colors; winning side is NOT suppressed.
+
+        (a) White mover, eval_cp_before=-800 → suppressed.
+        (b) Black mover (black user, ODD ply passes player_only_gate), eval_cp_before=+800 → suppressed.
+        (c) White mover, eval_cp_before=+800 (winning) → NOT suppressed.
+        (d) Black mover, eval_cp_before=-800 (winning) → NOT suppressed.
+        Mate variant: white mover eval_mate_before=-2 suppressed; eval_mate_before=+2 not.
+        """
+        from app.services.tactic_detector import TacticMotifInt
+
+        await self._ensure_dl_user(db_session)
+
+        # (a) White mover losing
+        game_a = await _seed_game(db_session, user_id=_DL_USER_ID, user_color="white")
+        # (b) Black user, ODD ply → black mover = player; white-POV eval_cp=+800 → black losing.
+        game_b = await _seed_game(db_session, user_id=_DL_USER_ID, user_color="black")
+        # (c) White mover winning
+        game_c = await _seed_game(db_session, user_id=_DL_USER_ID, user_color="white")
+        # (d) Black user winning (white-POV eval_cp=-800 → black winning)
+        game_d = await _seed_game(db_session, user_id=_DL_USER_ID, user_color="black")
+        # (e) White mover, eval_mate_before=-2 (Black has mate) → suppressed
+        game_e = await _seed_game(db_session, user_id=_DL_USER_ID, user_color="white")
+        # (f) White mover, eval_mate_before=+2 (White has mate) → NOT suppressed
+        game_f = await _seed_game(db_session, user_id=_DL_USER_ID, user_color="white")
+        all_games = [game_a, game_b, game_c, game_d, game_e, game_f]
+        try:
+            # (a) white mover at ply=2 (even); ply=1 has eval_cp=-800 (white losing)
+            await _seed_position(db_session, game=game_a, ply=1, eval_cp=-800)
+            await _seed_game_flaw(
+                db_session, game=game_a, ply=2, severity=2,
+                allowed_tactic_motif=int(TacticMotifInt.FORK),
+                allowed_tactic_confidence=100, allowed_tactic_depth=0,
+            )
+            # (b) black user, odd ply=1 (black mover = player); ply=0 eval_cp=+800 (black losing)
+            await _seed_position(db_session, game=game_b, ply=0, eval_cp=800)
+            await _seed_game_flaw(
+                db_session, game=game_b, ply=1, severity=2,
+                allowed_tactic_motif=int(TacticMotifInt.FORK),
+                allowed_tactic_confidence=100, allowed_tactic_depth=0,
+            )
+            # (c) white mover at ply=2; ply=1 eval_cp=+800 (white winning) → NOT suppressed
+            await _seed_position(db_session, game=game_c, ply=1, eval_cp=800)
+            await _seed_game_flaw(
+                db_session, game=game_c, ply=2, severity=2,
+                allowed_tactic_motif=int(TacticMotifInt.FORK),
+                allowed_tactic_confidence=100, allowed_tactic_depth=0,
+            )
+            # (d) black user, odd ply=1 (black mover); ply=0 eval_cp=-800 (black winning) → NOT suppressed
+            await _seed_position(db_session, game=game_d, ply=0, eval_cp=-800)
+            await _seed_game_flaw(
+                db_session, game=game_d, ply=1, severity=2,
+                allowed_tactic_motif=int(TacticMotifInt.FORK),
+                allowed_tactic_confidence=100, allowed_tactic_depth=0,
+            )
+            # (e) white mover at ply=2; ply=1 eval_mate=-2 (Black has mate-in-2) → suppressed
+            await _seed_position(db_session, game=game_e, ply=1, eval_mate=-2)
+            await _seed_game_flaw(
+                db_session, game=game_e, ply=2, severity=2,
+                allowed_tactic_motif=int(TacticMotifInt.FORK),
+                allowed_tactic_confidence=100, allowed_tactic_depth=0,
+            )
+            # (f) white mover at ply=2; ply=1 eval_mate=+2 (White has mate-in-2) → NOT suppressed
+            await _seed_position(db_session, game=game_f, ply=1, eval_mate=2)
+            await _seed_game_flaw(
+                db_session, game=game_f, ply=2, severity=2,
+                allowed_tactic_motif=int(TacticMotifInt.FORK),
+                allowed_tactic_confidence=100, allowed_tactic_depth=0,
+            )
+
+            # Flaws filter with tactic_families=["fork"], orientation="either"
+            items, _ = await query_flaws(
+                db_session,
+                user_id=_DL_USER_ID,
+                severity=["blunder"],
+                tags=[],
+                time_control=None,
+                platform=None,
+                rated=None,
+                opponent_type="all",
+                from_date=None,
+                to_date=None,
+                color=None,
+                tactic_families=["fork"],
+                orientation="either",
+                offset=0,
+                limit=50,
+            )
+            matched_game_ids = {item.game_id for item in items}
+
+            assert game_a.id not in matched_game_ids, "(a) white mover losing must be suppressed"
+            assert game_b.id not in matched_game_ids, "(b) black mover losing must be suppressed"
+            assert game_c.id in matched_game_ids, "(c) white mover winning must NOT be suppressed"
+            assert game_d.id in matched_game_ids, "(d) black mover winning must NOT be suppressed"
+            assert game_e.id not in matched_game_ids, "(e) eval_mate_before=-2 must be suppressed"
+            assert game_f.id in matched_game_ids, "(f) eval_mate_before=+2 must NOT be suppressed"
+        finally:
+            await db_session.execute(
+                delete(Game).where(
+                    Game.id.in_([g.id for g in all_games])
+                )
+            )
+
+    # ------------------------------------------------------------------
+    # Test 6: boundary threshold — -700 is suppressed, -300 is not
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_boundary_threshold(self, db_session: AsyncSession) -> None:
+        """eval_cp_before == -MATE_LADDER_LOPSIDED_CP (-700) is suppressed (inclusive).
+
+        A flaw at eval_cp_before = -300 (still playable) is NOT suppressed.
+        Verifies the inclusive <= boundary in is_decided_lost.
+        """
+        from app.services.tactic_detector import TacticMotifInt
+        from app.repositories.library_repository import MATE_LADDER_LOPSIDED_CP
+
+        await self._ensure_dl_user(db_session)
+        # Boundary game: exactly at -MATE_LADDER_LOPSIDED_CP (-700) → suppressed
+        game_boundary = await _seed_game(db_session, user_id=_DL_USER_ID, user_color="white")
+        # Playable game: eval_cp = -300 → not suppressed
+        game_playable = await _seed_game(db_session, user_id=_DL_USER_ID, user_color="white")
+        try:
+            await _seed_position(
+                db_session, game=game_boundary, ply=1, eval_cp=-MATE_LADDER_LOPSIDED_CP
+            )
+            await _seed_game_flaw(
+                db_session,
+                game=game_boundary,
+                ply=2,
+                severity=2,
+                allowed_tactic_motif=int(TacticMotifInt.FORK),
+                allowed_tactic_confidence=100,
+                allowed_tactic_depth=0,
+            )
+            await _seed_position(db_session, game=game_playable, ply=1, eval_cp=-300)
+            await _seed_game_flaw(
+                db_session,
+                game=game_playable,
+                ply=2,
+                severity=2,
+                allowed_tactic_motif=int(TacticMotifInt.FORK),
+                allowed_tactic_confidence=100,
+                allowed_tactic_depth=0,
+            )
+
+            items, _ = await self._query_flaws_fork(db_session)
+            matched_ids = {item.game_id for item in items}
+
+            assert game_boundary.id not in matched_ids, (
+                f"eval_cp_before==-{MATE_LADDER_LOPSIDED_CP} must be suppressed (inclusive boundary)"
+            )
+            assert game_playable.id in matched_ids, (
+                "eval_cp_before==-300 must NOT be suppressed (below threshold)"
+            )
+        finally:
+            await db_session.execute(
+                delete(Game).where(
+                    Game.id.in_([game_boundary.id, game_playable.id])
+                )
+            )
