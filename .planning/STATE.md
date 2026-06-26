@@ -1,30 +1,26 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.28
-milestone_name: Tactic Tagging
-current_phase: 28
-status: Awaiting next milestone
-stopped_at: Phase 135 UI-SPEC approved
-last_updated: "2026-06-25T20:38:50.930Z"
-last_activity: 2026-06-25
-last_activity_desc: Milestone v1.28 completed and archived
+milestone: v1.29
+milestone_name: Live-Engine Analysis Page
+status: planning
+last_updated: "2026-06-26T08:35:11.970Z"
+last_activity: 2026-06-26
 progress:
-  total_phases: 18
-  completed_phases: 13
-  total_plans: 45
-  completed_plans: 45
-  percent: 72
-current_phase_name: trapped-piece-fixture-expansion-option-b-cook-predicate-reim
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: Milestone v1.28 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-06-26 — Completed quick task 260626-dxs: suppress meaningless clock/move-time display for daily/correspondence games (is_correspondence_time_control predicate + null-out at the EvalPoint and FlawListItem build sites); backend-only, storage untouched, no frontend change
+Status: Defining requirements
+Last activity: 2026-06-26 — Milestone v1.29 started
 
 ## Project Reference
 
