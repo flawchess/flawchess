@@ -1,467 +1,613 @@
-# Architecture Research
+# Architecture Research: Live-Engine Analysis Board (v1.29)
 
-**Domain:** Guest access (anonymous users with account promotion) on existing FastAPI-Users app
-**Researched:** 2026-04-06
-**Confidence:** HIGH
+**Domain:** React SPA — WASM chess engine integration, branching move tree, tactic-mode overlay
+**Researched:** 2026-06-26
+**Confidence:** HIGH (based on direct code inspection of all named files + confirmed npm package landscape)
 
-## Standard Architecture
+---
 
-### System Overview
+## System Overview
+
+The analysis board sits entirely in the frontend. The backend is untouched for v1 (locked D-4). The key architectural challenge is wiring three subsystems cleanly: a live WASM engine in a Web Worker, a branching move tree that forks on mid-line moves, and a tactic-mode overlay that seeds the initial line from stored PVs. These three subsystems compose into a single `/analysis` page.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        Frontend (React)                              │
-├─────────────────────────────────────────────────────────────────────┤
-│  ┌──────────────────┐  ┌─────────────────────────────────────────┐  │
-│  │  AuthContext      │  │  ProtectedLayout (token check)          │  │
-│  │  - token (state)  │  │  - guests pass through (token exists)  │  │
-│  │  + isGuest flag   │  │  - still redirects /login if no token  │  │
-│  │  + promoteGuest() │  └─────────────────────────────────────────┘  │
-│  └──────────────────┘                                                │
+│                   /analysis (lazy-loaded page)                       │
 │                                                                      │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │  apiClient (axios)                                            │   │
-│  │  Request: attach Bearer token from localStorage              │   │
-│  │  Response 401: clear cache, redirect /login (unchanged)      │   │
-│  └──────────────────────────────────────────────────────────────┘   │
+│  ┌──────────────────────────┐   ┌────────────────────────────────┐  │
+│  │   useAnalysisBoard       │   │   useStockfishEngine           │  │
+│  │  (branching move tree)   │   │   (worker lifecycle + UCI)     │  │
+│  │  ┌────────────────────┐  │   │  ┌──────────────────────────┐  │  │
+│  │  │ nodes: Map<id,Node>│  │   │  │ workerRef: Worker        │  │  │
+│  │  │ currentNodeId      │  │   │  │ debounce 150ms           │  │  │
+│  │  │ mainLine: NodeId[] │  │   │  │ stop-pending flag        │  │  │
+│  │  │ rootFen            │  │   │  │ evalCp / pv / depth      │  │  │
+│  │  └────────────────────┘  │   │  └──────────────────────────┘  │  │
+│  └──────────────────────────┘   └──────────────┬───────────────┘  │
+│                │                               │                    │
+│                │ position, lastMove            │ eval, pv lines     │
+│                ↓                               ↓                    │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │              Analysis page layout                            │    │
+│  │  ┌──────────┐  ┌──────────────────────┐  ┌──────────────┐  │    │
+│  │  │ EvalBar  │  │ ChessBoard (existing) │  │ EngineLines  │  │    │
+│  │  │ (new)    │  │ + ArrowOverlay        │  │ (new)        │  │    │
+│  │  └──────────┘  └──────────────────────┘  └──────────────┘  │    │
+│  │  ┌──────────────────────────────────────────────────────┐   │    │
+│  │  │ BoardControls (existing, infoSlot = depth/eval text) │   │    │
+│  │  └──────────────────────────────────────────────────────┘   │    │
+│  │  ┌──────────────────────────────────────────────────────┐   │    │
+│  │  │ VariationTree (new: branching move list)             │   │    │
+│  │  └──────────────────────────────────────────────────────┘   │    │
+│  │  ┌──────────────────────────────────────────────────────┐   │    │
+│  │  │ TacticModeOverlay (new, conditional on tactic mode)  │   │    │
+│  │  │  TacticMotifChip (existing) + missed/allowed toggle  │   │    │
+│  │  │  + next/prev-tactic rail                             │   │    │
+│  │  └──────────────────────────────────────────────────────┘   │    │
+│  └─────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────────┘
-                              │ Bearer JWT in Authorization header
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Backend (FastAPI)                             │
-├─────────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────────────────────────────────────────────────┐    │
-│  │  POST /auth/guest/create  (NEW — no auth required)          │    │
-│  │  Creates User(is_guest=True, email=<uuid>@guest.local)      │    │
-│  │  Returns JWT token in response body (Bearer transport)      │    │
-│  └─────────────────────────────────────────────────────────────┘    │
-│  ┌─────────────────────────────────────────────────────────────┐    │
-│  │  POST /auth/guest/promote  (NEW — requires current_user)    │    │
-│  │  Validates email uniqueness                                 │    │
-│  │  Updates user: email, hashed_password, is_guest=False       │    │
-│  │  Returns new JWT for same user_id                           │    │
-│  └─────────────────────────────────────────────────────────────┘    │
-│  ┌─────────────────────────────────────────────────────────────┐    │
-│  │  GET  /auth/guest/promote/google/authorize (NEW)            │    │
-│  │  GET  /auth/guest/promote/google/callback  (NEW)            │    │
-│  │  Carries guest_user_id in OAuth state JWT                   │    │
-│  │  On callback: UPDATE user, INSERT oauth_account             │    │
-│  └─────────────────────────────────────────────────────────────┘    │
-│                                                                      │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │  current_active_user dependency (FastAPI-Users, UNCHANGED)   │   │
-│  │  Returns guest User or registered User identically           │   │
-│  │  All data queries filter by user_id — no changes needed      │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-├─────────────────────────────────────────────────────────────────────┤
-│                        Database (PostgreSQL)                         │
-│  ┌──────────────┐  ┌─────────────────────────────────────────────┐  │
-│  │  users table  │  │  All user-owned tables (games, positions,  │  │
-│  │  + is_guest   │  │  bookmarks, import_jobs) — UNCHANGED       │  │
-│  │    column     │  │  All already FK CASCADE on user deletion   │  │
-│  └──────────────┘  └─────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────┘
+                                │
+                    postMessage (UCI strings)
+                                │
+┌───────────────────────────────▼───────────────────────────────────┐
+│      Web Worker: stockfish-18-lite-single.js (from public/)        │
+│      Single-thread WASM Stockfish 18 (lite, ~7MB)                 │
+│      No SharedArrayBuffer, no COOP/COEP headers required           │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
-### Component Responsibilities
+---
 
-| Component | Responsibility | Status |
-|-----------|----------------|--------|
-| `POST /auth/guest/create` | Create anonymous user, return JWT | NEW |
-| `POST /auth/guest/promote` | Promote guest to email/password account | NEW |
-| `GET /auth/guest/promote/google/authorize` | Start Google SSO promotion flow | NEW |
-| `GET /auth/guest/promote/google/callback` | Complete Google SSO promotion, issue JWT | NEW |
-| `User.is_guest` column | Flag distinguishing guest from registered users | NEW (migration) |
-| `guest_service.py` | Guest creation and promotion business logic | NEW |
-| `AuthContext.isGuest` | Frontend flag derived from user profile response | NEW |
-| `GuestInfoBox` | Import page callout explaining signup benefits | NEW |
-| `PromoteAccountModal` | UI for email/password and Google promotion | NEW |
-| `current_active_user` | FastAPI-Users dependency — works for guests too | UNCHANGED |
-| All routers (openings, imports, etc.) | Data queries by user_id — transparent to guest status | UNCHANGED |
-| `apiClient` axios interceptor | Bearer token attach + 401 redirect | UNCHANGED |
-| `ProtectedLayout` | Token presence check — guests have a token | UNCHANGED |
-| `on_after_login` in `UserManager` | Updates last_login — still fires for regular logins | UNCHANGED |
+## Component Map: New vs Modified vs Deleted vs Unchanged
 
-## Recommended Project Structure
+### New files
 
-No new directories needed. New files follow existing conventions.
+| File | Purpose |
+|------|---------|
+| `src/hooks/useStockfishEngine.ts` | Worker lifecycle, UCI protocol, debounce, stale-result cancellation, MultiPV |
+| `src/hooks/useAnalysisBoard.ts` | Branching move tree (new hook, not a variant of useChessGame), URL param sync |
+| `src/pages/Analysis.tsx` | `/analysis` page shell (lazy-loaded via React.lazy) |
+| `src/components/analysis/EvalBar.tsx` | Vertical centipawn bar (white-POV, gradient, mate display) |
+| `src/components/analysis/EngineLines.tsx` | Top 1-2 PV lines with depth and score readout |
+| `src/components/analysis/VariationTree.tsx` | Move list that shows branching — main line + variations |
+| `src/components/analysis/TacticModeOverlay.tsx` | Tactic chrome: motif chip, missed/allowed toggle, next/prev-tactic nav rail |
 
-```
-app/
-├── routers/
-│   └── auth.py               # MODIFY: add guest create + promote endpoints
-├── services/
-│   └── guest_service.py      # NEW: create_guest_user(), promote_guest(),
-│                             #      promote_guest_google_callback()
-├── models/
-│   └── user.py               # MODIFY: add is_guest: Mapped[bool] column
-├── schemas/
-│   └── auth.py               # MODIFY: add GuestCreateResponse, GuestPromoteRequest,
-│                             #         GuestPromoteResponse schemas
-alembic/
-└── versions/
-    └── <date>_add_is_guest_to_users.py  # NEW migration
+### Modified files
 
-frontend/src/
-├── hooks/
-│   └── useAuth.ts            # MODIFY: add isGuest state + promoteGuest() action
-├── types/
-│   └── users.ts              # MODIFY: add is_guest: boolean to UserProfile
-├── components/auth/
-│   └── PromoteAccountModal.tsx  # NEW: email/password + Google promotion UI
-└── pages/
-    ├── Home.tsx              # MODIFY: add "Use as Guest" button in hero section
-    └── Import.tsx            # MODIFY: add GuestInfoBox when isGuest=true
-```
+| File | Change |
+|------|--------|
+| `src/App.tsx` | Add `React.lazy` import for `AnalysisPage`, add `/analysis` route inside `ProtectedLayout`, update `ROUTE_TITLES` |
+| `src/components/library/FlawCard.tsx` | Phase 4: change "Explore" button from `setExploreOpen(true)` to `navigate('/analysis?game_id=X&flaw_ply=Y')` |
+| `src/components/results/LibraryGameCard.tsx` | Phase 4: same "Explore" button wiring change |
 
-### Structure Rationale
+### Deleted files (Phase 4, after parity verified)
 
-- **`guest_service.py` as new file:** Guest creation and promotion logic involves creating DB records, hashing passwords via `UserManager.password_helper`, and issuing JWTs via `JWTStrategy`. This is non-trivial enough to warrant its own module rather than bloating `auth.py` with business logic.
-- **`PromoteAccountModal.tsx` as new file:** Handles two distinct promotion paths (email/password + Google SSO), loading/error state per path, and conflict error handling. Separating it keeps `Import.tsx` focused.
-- **No new router file:** Guest auth endpoints belong in `auth.py` alongside the existing JWT login, registration, and Google OAuth endpoints — they are auth operations.
+| File | Reason |
+|------|--------|
+| `src/components/library/TacticLineExplorer.tsx` | Subsumed into `TacticModeOverlay` on the analysis page |
+| `src/hooks/useTacticLine.ts` | Replaced by `useAnalysisBoard` + tactic-mode seeding |
+
+### Unchanged (reused as-is)
+
+`ChessBoard.tsx`, `BoardControls.tsx`, `HorizontalMoveList.tsx`, `TacticMotifChip.tsx`,
+`tacticDepth.ts`, `tacticComparisonMeta.ts`, `resolveVisibleTactic`, `arrowColor.ts`,
+`theme.ts`, `useLibrary.ts` (including `useTacticLines`), `arrowGeometry.ts`,
+`sanToSquares.ts`, `moveNumberLabel.ts`, `formatFlawEval.ts`
+
+---
 
 ## Architectural Patterns
 
-### Pattern 1: Guest User as a First-Class User Record
+### Pattern 1: Worker Lifecycle Owned by the Hook
 
-**What:** Guest users are full `users` table rows with `is_guest=True`, a synthetic email of the form `guest_<uuid>@guest.local`, no password hash (empty string), `is_active=True`, `is_verified=False`. The JWT issued is structurally identical to a regular user JWT (same secret, same `sub` claim format).
+**What:** `useStockfishEngine` creates one `Worker` on mount and terminates it on unmount. The worker is never shared across mounts or pages.
 
-**When to use:** Always, for this feature. The alternative — storing guest identity purely in a cookie without a DB row — cannot enforce FK constraints when games and positions are imported.
+**Why single per-mount, not global singleton:** The analysis page is lazy-loaded. A global singleton would force the WASM binary to load at app start. Per-mount creation/destruction keeps the ~7MB WASM load deferred until the user actually visits `/analysis`. Worker re-creation on re-visit is acceptable (takes ~1-2 seconds for NNUE init; show a "loading engine" indicator during this window).
 
-**Trade-offs:**
-- Pro: Zero changes to any router, repository, or service downstream. `current_active_user` returns a guest `User` indistinguishably from a registered `User`. All data queries use `user_id`.
-- Pro: Account promotion is an in-place UPDATE on the existing row. No data migration, no FK changes.
-- Con: DB accumulates rows for abandoned guests. Mitigate with periodic cleanup (guests older than 30 days with no games) — defer to a future maintenance milestone.
-- Con: Synthetic emails must never be displayed in the UI or passed to email delivery systems. Safeguard: `UserProfileResponse` should not expose the raw `email` field to the frontend when `is_guest=True`, or the frontend must check `isGuest` before displaying the email.
+**Worker creation:** The `stockfish.js` npm package (nmrugg, Stockfish 18) ships `stockfish-18-lite-single.js` and `stockfish-18-lite-single.wasm` as paired files. Copy both into `public/` so Vite serves them as static assets. The hook creates a classic Worker pointing at the public URL:
 
-**Example:**
-```python
-async def create_guest_user(session: AsyncSession) -> tuple[User, str]:
-    guest_email = f"guest_{uuid4().hex}@guest.local"
-    user = User(
-        email=guest_email,
-        hashed_password="",
-        is_active=True,
-        is_verified=False,
-        is_superuser=False,
-        is_guest=True,
-    )
-    session.add(user)
-    await session.flush()  # get user.id before commit
-    await session.commit()
-    strategy = get_jwt_strategy()
-    token = await strategy.write_token(user)
-    return user, token
+```typescript
+// In useStockfishEngine, inside useEffect([]):
+const worker = new Worker('/stockfish-18-lite-single.js');
+worker.postMessage('uci');
+worker.postMessage('setoption name MultiPV value 2');
+worker.postMessage('isready');
+worker.onmessage = handleMessage;
+workerRef.current = worker;
+
+return () => {
+  worker.postMessage('stop');
+  worker.terminate();
+  workerRef.current = null;
+};
 ```
 
-### Pattern 2: Bearer Transport for Guests (same as registered users)
+Note: the `.wasm` file must sit beside the `.js` file in `public/` — the JS loader resolves its sibling by relative URL. Do not process these files through Vite's bundler.
 
-**What:** The milestone spec mentions "HttpOnly cookie JWT". The recommended approach is instead to return the guest JWT in the response body and store it in `localStorage`, exactly like regular login tokens.
+**Engine state tracking:** Maintain `isAnalyzingRef: boolean` so the hook knows whether to send `stop` before a new position. The worker emits a stale `bestmove` immediately when stopped; this must be discarded (see Pattern 2).
 
-**Why not HttpOnly cookie for this feature:**
-- The existing `apiClient` uses `Authorization: Bearer` header exclusively. Switching guests to `CookieTransport` while keeping registered users on `BearerTransport` creates a dual-transport system.
-- FastAPI-Users supports dual backends (confirmed via docs), but it requires: registering two backends, setting `credentials: true` on CORS for cookie paths, and adding CSRF double-submit protection for all state-changing cookie-authenticated endpoints.
-- The security benefit of HttpOnly (XSS protection) already exists as a known accepted risk for the current Bearer-in-localStorage design for all users. Applying it only to guests creates an inconsistent security posture.
-- **Recommendation:** Return guest JWT in response body, store in `localStorage`. The `apiClient` Bearer interceptor works without change. If HttpOnly cookies are adopted, do it uniformly for all users in a security hardening milestone.
+**UCI init sequence:** After creating the worker, send `uci` and wait for `uciok`, then send `setoption name MultiPV value 2`, then `isready` and wait for `readyok` before starting any analysis. Track this with an `isReady: boolean` state so `analyze()` queues until ready.
 
-**Trade-offs:**
-- Pro: Zero changes to auth transport, axios interceptor, or CORS configuration.
-- Pro: Guest 401 handling (redirect to /login) already works correctly.
-- Con: localStorage-stored tokens are XSS-vulnerable — an accepted risk already present for all users.
+### Pattern 2: Debounce + Stale-Result Cancellation for Rapid Position Changes
 
-### Pattern 3: Account Promotion via In-Place Row UPDATE
+**Problem:** User navigates backward/forward rapidly. Each position change triggers a new analysis. Without cancellation, late-arriving results from old positions update the displayed eval with stale data.
 
-**What:** When a guest promotes to a full account, the backend updates the existing `users` row: sets `email` to the real email, sets `hashed_password` to the bcrypt hash, sets `is_guest=False`. A new JWT is issued for the same `user_id`. All existing games, positions, and bookmarks remain intact with their FK references unchanged.
+**Solution — two-layer guard:**
 
-**When to use:** Only for guest-to-registered promotion. Not for merging two independent registered accounts.
+Layer A (debounce): Wait 150ms after the last position change before sending any UCI commands. This prevents sending stop/go for every ply during fast navigation.
 
-**Trade-offs:**
-- Pro: Data continuity is automatic — no data copy, no FK updates, no migration step.
-- Pro: Atomic single-row UPDATE.
-- Con: Email uniqueness must be checked before the UPDATE. If a registered account already exists with the target email, return `409 Conflict` and present the user with "An account with this email already exists. Sign in instead."
+Layer B (stop-pending flag): When `stop` is sent to interrupt an in-flight analysis, the engine emits a `bestmove` immediately (the termination response). That bestmove is stale and must be discarded. Track this with a `stopPendingRef: boolean` flag.
 
-**Example:**
-```python
-async def promote_guest(
-    session: AsyncSession,
-    guest_user: User,
-    email: str,
-    password: str,
-    password_helper: PasswordHelperProtocol,
-) -> str:
-    # Check email uniqueness against existing non-guest users
-    stmt = select(User).where(User.email == email, User.id != guest_user.id)
-    existing = (await session.execute(stmt)).scalar_one_or_none()
-    if existing is not None:
-        raise EmailAlreadyTakenError()
+```typescript
+const stopPendingRef = useRef(false);
+const isAnalyzingRef = useRef(false);
 
-    hashed = password_helper.hash(password)
-    await session.execute(
-        update(User)
-        .where(User.id == guest_user.id)
-        .values(email=email, hashed_password=hashed, is_guest=False)
-    )
-    await session.commit()
-    strategy = get_jwt_strategy()
-    return await strategy.write_token(guest_user)
+function analyze(fen: string) {
+  // Layer A: debounce handles calling this only after 150ms quiesce
+  const worker = workerRef.current;
+  if (!worker || !isReady) return;
+
+  if (isAnalyzingRef.current) {
+    worker.postMessage('stop');
+    stopPendingRef.current = true; // next bestmove is the stale stop-result
+    isAnalyzingRef.current = false;
+  }
+
+  worker.postMessage(`position fen ${fen}`);
+  worker.postMessage(`go nodes 500000`);
+  isAnalyzingRef.current = true;
+}
+
+// In worker.onmessage:
+if (line.startsWith('bestmove')) {
+  if (stopPendingRef.current) {
+    stopPendingRef.current = false;
+    isAnalyzingRef.current = false;
+    return; // discard stale stop-bestmove
+  }
+  isAnalyzingRef.current = false;
+  // update state with fresh result
+}
 ```
 
-### Pattern 4: Google SSO Promotion via State-Carried Guest ID
+**Node cap vs depth:** Use `go nodes 500000` rather than `go depth N` or `go movetime N`. Node count gives more consistent performance across hardware: fast desktop searches deeper, slow phone searches shallower, but both finish in roughly the same wall time. Cap at 500k-1M nodes for interactive use; expose the depth reached in the `info` callback.
 
-**What:** Guest clicks "Continue with Google" in the promotion modal. The authorize endpoint encodes the guest `user_id` into the OAuth state JWT (alongside the existing CSRF token). The callback route reads the guest ID from state and performs an UPDATE (attach `OAuthAccount`, set `is_guest=False`) rather than a CREATE.
+**Hook return shape:**
+```typescript
+interface EngineState {
+  evalCp: number | null;     // centipawns, white-POV (positive = white ahead)
+  evalMate: number | null;   // mate in N (positive = white mates)
+  pvLines: PvLine[];         // up to 2 lines, each with { moves: string[], score }
+  depth: number;             // depth reached so far
+  isAnalyzing: boolean;
+  isReady: boolean;
+}
+```
 
-**Why this approach:** The existing Google callback route (`/auth/google/callback`) calls `user_manager.oauth_callback()` which creates a new user if none exists. For guest promotion, a separate callback route is needed that knows to UPDATE the existing guest row rather than create a new one.
+### Pattern 3: Branching Move Tree in `useAnalysisBoard`
 
-**Trade-offs:**
-- Pro: Reuses existing Google OAuth client, no new OAuth credentials needed.
-- Pro: Same JWT signing infrastructure for state validation.
-- Con: Two Google callback routes must both be registered in Google Cloud Console as authorized redirect URIs. Use a different path: `/api/auth/guest/promote/google/callback` distinct from the existing `/api/auth/google/callback`.
-- Con: Must validate state JWT's `guest_user_id` matches the currently authenticated guest session to prevent CSRF guest-hijacking.
+**What:** A new hook, independent of `useChessGame`. Making a move at any node (including mid-line) creates a new child node (fork) rather than truncating the main line.
+
+**Critically: do not modify `useChessGame`.** That hook's truncation behavior at line 183-189 is correct for the Openings board. `useAnalysisBoard` is a separate hook for the analysis page only. The two hooks share no runtime code.
+
+**Why not extend useChessGame:** `useChessGame` has sessionStorage persistence, Zobrist hashing, opening lookup, `MAX_EXPLORER_PLY` cap, and window-level keyboard handling — none of which are wanted on the analysis board. The shared logic (chess.js move-making, position replay) is small enough that writing a new hook costs less than coupling two features with incompatible contracts.
+
+**Tree node shape:**
+```typescript
+type NodeId = number; // auto-incrementing integer
+
+interface MoveNode {
+  id: NodeId;
+  san: string;          // SAN of the move that reached this position
+  fen: string;          // Full FEN of this position (stored, not replayed)
+  from: string;         // Source square (for board highlighting)
+  to: string;           // Target square
+  parentId: NodeId | null; // null means the parent is rootFen
+}
+```
+
+**Why store FEN per node:** The `replayTo` pattern in `useChessGame` replays the full move history from position 0 on every navigation. For a linear list this is fine. For arbitrary tree traversal, replaying from root is O(depth). Storing FEN per node makes `goToNode(id)` O(1): read `nodes.get(id).fen`, set board state directly. The `Chess` instance only needs to be live for making new moves (initialized from the parent node's FEN).
+
+**Tree state:**
+```typescript
+interface AnalysisBoardState {
+  nodes: Map<NodeId, MoveNode>;
+  currentNodeId: NodeId | null; // null = at root (rootFen)
+  mainLine: NodeId[];           // IDs of the initial PV from loadMainLine()
+  rootFen: string;              // Starting position (may not be chess start)
+  nextId: number;               // Auto-increment for new nodes
+}
+```
+
+**Making a move (the fork behavior):**
+```typescript
+function makeMove(from: string, to: string): boolean {
+  const parentFen = currentNodeId != null
+    ? nodes.get(currentNodeId)!.fen
+    : rootFen;
+  const chess = new Chess(parentFen);
+  const result = chess.move({ from, to, promotion: 'q' });
+  if (!result) return false;
+
+  const newNode: MoveNode = {
+    id: nextId,
+    san: result.san,
+    fen: chess.fen(),
+    from: result.from,
+    to: result.to,
+    parentId: currentNodeId,
+  };
+  // Insert into map, advance nextId, set currentNodeId = newNode.id
+  return true;
+}
+```
+
+The fork happens naturally: the new node is parented to `currentNodeId` regardless of whether that node already has children in other branches.
+
+**Navigation:**
+- `goBack()` → `nodes.get(currentNodeId).parentId` or null (root)
+- `goForward()` → first child of `currentNodeId` in insertion order
+- `goToNode(id)` → set `currentNodeId = id` directly; position = `nodes.get(id).fen`
+- `loadMainLine(sans: string[], rootFen: string)` → replay the SAN array into the tree, storing one node per move as the `mainLine` NodeId array
+
+**Helper: `isOnMainLine(nodeId)`** — `mainLine.includes(nodeId)`. Used by `TacticModeOverlay` and the variation tree to distinguish the stored PV from user variations.
+
+**Keyboard handler:** Scoped to a `containerRef` div (same pattern as `useTacticLine`, not window-level like `useChessGame`) to avoid clashing with page-level shortcuts.
+
+**Session storage:** Deliberately omitted. Analysis board state is URL-encoded (see Pattern 5). No sessionStorage coupling.
+
+**Opening lookup + Zobrist hashing:** Both omitted. Not needed on the analysis board (no API calls from the board; stored PVs come from URL params).
+
+### Pattern 4: Tactic Mode as a Conditional Overlay
+
+**What:** When the `/analysis` page receives `?game_id=X&flaw_ply=Y` (or `&orientation=missed|allowed`) in the URL, it enters tactic mode. This is a mode flag on the page, not a separate component tree.
+
+**Why not a separate page/component:** The analysis board is identical between free-play and tactic mode — same hooks, same board, same controls. Only the chrome around it differs (motif chip, orientation toggle, next/prev-tactic rail). Tactic mode adds the `TacticModeOverlay` and seeds the initial mainline from the stored PV; everything else is shared.
+
+**Tactic mode seeding:**
+1. URL params `game_id` + `flaw_ply` trigger `useTacticLines(gameId, ply)` (the same TanStack Query hook already used in Phase 135, unchanged in `useLibrary.ts`)
+2. On data load: `loadMainLine(data.missed_moves, data.position_fen)` seeds `useAnalysisBoard`
+3. The `position_fen` from the response becomes `rootFen`
+4. Orientation toggle switches between `missed_moves` and `allowed_moves`, calling `loadMainLine` again
+
+**Live engine handoff:** The engine analyses every position the user navigates to, including positions within the stored mainLine. When the user makes a move that creates a new node (forking off the mainLine), the engine output is the only guidance. When on the mainLine, both stored-PV arrows and engine arrows are shown.
+
+**Arrow strategy in tactic mode:**
+- At root (ply 0): same `buildRootArrows` logic as `TacticLineExplorer` — best-move blue arrow + flaw-move red arrow
+- Stepping within mainLine: `buildPvArrow` logic — colored arrow on the last move, depth countdown badge
+- After forking off mainLine: engine `pvLines[0].moves[0]` drives a blue best-move arrow only
+
+**Parity with Phase 135 TacticLineExplorer:**
+- Depth counter: `toDisplayDepthForOrientation()` from `tacticDepth.ts` — same math, same inputs
+- `isPayoff`: `currentPly > rootDisplayDepth`, where `currentPly` = index of `currentNodeId` in `mainLine`
+- `TacticMotifChip`, `HorizontalMoveList`, `moveNumberLabel`: reused directly without change
+- `resolveVisibleTactic` from `tacticComparisonMeta.ts`: same usage, same flaw filter gate
+- `formatFlawEval`, `mateAtPly`, `isBlackToMove`: reused directly
+
+**Entry point change (Phase 4):** FlawCard and LibraryGameCard "Explore" buttons navigate to `/analysis?game_id=X&flaw_ply=Y&orientation=missed` instead of opening a modal. The modal (`TacticLineExplorer`) is deleted only after the Phase 135 UAT checklist passes against the new analysis page.
+
+### Pattern 5: URL State for Entry Points
+
+**URL param design:**
+
+| Entry point | URL params | Who sets them |
+|-------------|------------|--------------|
+| Tactic mode | `?game_id=123&flaw_ply=45&orientation=missed` | FlawCard / LibraryGameCard navigate call |
+| Game review ply | `?game_id=123&ply=30` | (future) game review entry |
+| Opening position | `?fen=<url-encoded-FEN>` | (future) Openings page deep-link |
+
+For v1, implement only tactic-mode params (`game_id`, `flaw_ply`, `orientation`) and plain `fen`.
+
+**Reading params in `Analysis.tsx`:**
+```typescript
+const [searchParams] = useSearchParams();
+const gameId = searchParams.get('game_id') ? Number(searchParams.get('game_id')) : null;
+const flawPly = searchParams.get('flaw_ply') ? Number(searchParams.get('flaw_ply')) : null;
+const orientation = (searchParams.get('orientation') ?? 'missed') as TacticDepthOrientation;
+const startFen = searchParams.get('fen') ?? undefined;
+const isTacticMode = gameId != null && flawPly != null;
+```
+
+**No URL write-back:** The analysis board does NOT update the URL as the user navigates. The URL is read-only (entry point encoding). This avoids complex history management and the confusing behavior of browser Back/Forward changing the position instead of the route. Variation exploration is ephemeral per D-4.
+
+### Pattern 6: Code-Splitting / Lazy-Load Boundary
+
+**Problem:** `stockfish-18-lite-single.wasm` (~7MB) must not inflate the initial page load or any route other than `/analysis`.
+
+**Solution — two-layer isolation:**
+
+Layer A (page-level code split): `Analysis.tsx` is imported via `React.lazy` in `App.tsx`. Vite emits it as a separate JS chunk fetched only when the router matches `/analysis`. All `analysis/` component imports are inside this chunk.
+
+```typescript
+// In App.tsx — add alongside existing page imports:
+const AnalysisPage = React.lazy(() => import('./pages/Analysis'));
+
+// In AppRoutes, inside ProtectedLayout:
+<Route
+  path="/analysis"
+  element={
+    <Suspense fallback={
+      <div className="p-6 text-muted-foreground">Loading analysis board...</div>
+    }>
+      <AnalysisPage />
+    </Suspense>
+  }
+/>
+```
+
+Layer B (WASM deferred to worker creation): `stockfish-18-lite-single.js` and `.wasm` live in `public/` (not bundled). The worker is created inside `useStockfishEngine`'s `useEffect` (runs after mount). Even if `Analysis.tsx` is pre-fetched, the WASM is only fetched when the hook mounts and `new Worker('/stockfish-18-lite-single.js')` executes.
+
+**Vite config:** No `manualChunks` change needed. `React.lazy` + dynamic `import()` is Vite's built-in code-split mechanism. The `analysis/` components (EvalBar, EngineLines, VariationTree, TacticModeOverlay) are all inside the Analysis chunk automatically.
+
+**Public file placement:** Add to project docs: copy `stockfish-18-lite-single.js` and `stockfish-18-lite-single.wasm` from `node_modules/stockfish.js/` to `public/` as part of setup (or automate via a Vite plugin hook). Do NOT import them through Vite — they must remain unprocessed static files.
+
+**PWA service worker:** The `runtimeCaching` in `vite.config.ts` uses `NetworkOnly` for `/api/`. The WASM file at `/stockfish-18-lite-single.wasm` will be cached by the browser's HTTP cache (by default) but NOT by Workbox's service-worker cache. This is fine for v1 — the browser HTTP cache is sufficient for a file that changes only with app upgrades.
+
+---
 
 ## Data Flow
 
-### Guest Creation Flow
+### Normal analysis flow (free-play mode)
 
 ```
-Homepage: "Use as Guest" button clicked
+User drags piece on ChessBoard (or click-to-move via onPointerUp)
     ↓
-POST /api/auth/guest/create  (no Authorization header)
+ChessBoard.onPieceDrop(from, to)
     ↓
-guest_service.create_guest_user(session)
-    INSERT users (email=guest_<uuid>@guest.local, is_guest=True, is_active=True)
-    generate JWT for new user.id via get_jwt_strategy()
+useAnalysisBoard.makeMove(from, to)
+  → creates new MoveNode, sets currentNodeId
     ↓
-Response: { access_token: "...", token_type: "bearer", is_guest: true }
+React re-render: position = nodes.get(currentNodeId).fen
     ↓
-Frontend:
-    localStorage.setItem('auth_token', access_token)
-    AuthContext: setToken(token), setIsGuest(true)
-    Navigate to /import
+useStockfishEngine detects position change (useEffect dependency on position)
+  → debounce 150ms
+  → if analyzing: send 'stop', set stopPendingRef = true
+  → send 'position fen <new-fen>'
+  → send 'go nodes 500000'
+  → isAnalyzingRef = true
+    ↓
+Worker (stockfish-18-lite-single.js) begins search
+  → emits 'info depth N score cp X pv e2e4 ...' lines (MultiPV 2)
+  → emits 'bestmove e2e4 ponder d7d5'
+    ↓
+worker.onmessage parses lines:
+  info lines → update { evalCp, evalMate, pvLines, depth } state
+  bestmove → clear isAnalyzingRef; if stopPendingRef → discard; else accept
+    ↓
+EvalBar, EngineLines, BoardArrows re-render with new eval
 ```
 
-### Authenticated Guest Request Flow
+### Tactic mode entry flow
 
 ```
-GET /api/openings/positions?...
+User clicks "Explore" on FlawCard (Phase 4)
     ↓
-axios interceptor: Authorization: Bearer <guest_jwt>
+navigate('/analysis?game_id=123&flaw_ply=45&orientation=missed')
     ↓
-current_active_user (FastAPI-Users JWT decode, UNCHANGED)
-    user_id = 42 (guest user)
-    returns User(id=42, is_guest=True, is_active=True)
+Analysis.tsx mounts (lazy-loaded on first visit to /analysis)
+  → reads game_id=123, flaw_ply=45, orientation='missed' from useSearchParams
+  → isTacticMode = true
     ↓
-openings_service.get_positions(session, user_id=42, filters)
-    queries game_positions WHERE user_id = 42  (UNCHANGED)
+useTacticLines(123, 45, true) fetch (TanStack Query, existing endpoint)
     ↓
-Response: WDL stats (same schema as for registered user)
+On data: useAnalysisBoard.loadMainLine(data.missed_moves, data.position_fen)
+  → creates MoveNode chain for the stored PV as mainLine NodeIds
+  → currentNodeId = null (root = position_fen)
+    ↓
+TacticModeOverlay renders:
+  - Motif chip (TacticMotifChip, existing)
+  - Orientation toggle (missed/allowed)
+  - Next/prev-tactic rail
+Board renders with root-position arrows (best-move blue + flaw-move red)
+Engine starts analyzing position_fen live
 ```
 
-### Email/Password Promotion Flow
+### Tactic-mode deviation flow (user forks off stored PV)
 
 ```
-Guest on Import page: clicks "Sign up" in GuestInfoBox
+User makes a move NOT matching the stored mainLine's next node
     ↓
-PromoteAccountModal opens (email + password fields)
+useAnalysisBoard.makeMove creates a new MoveNode (child of current)
+  → this node is NOT in mainLine[]
+  → isOnMainLine(newNodeId) = false
     ↓
-POST /api/auth/guest/promote
-    Body: { email, password }
-    Header: Authorization: Bearer <guest_jwt>
-    ↓
-current_active_user → User(is_guest=True)
-guest_service.promote_guest(session, user, email, password, password_helper)
-    check uniqueness: SELECT users WHERE email=? AND id != guest_id
-    UPDATE users SET email=?, hashed_password=?, is_guest=False WHERE id=?
-    generate new JWT (same user_id, same token structure)
-    ↓
-Response: { access_token: "...", is_guest: false }
-    ↓
-Frontend:
-    loginWithToken(new_token)  [existing AuthContext method — UNCHANGED]
-    setIsGuest(false)
-    toast("Account created successfully! All your data has been kept.")
+TacticModeOverlay: stored-PV arrows not shown (off-line)
+Engine arrows (live best-move from pvLines) take over as the only guide
+displayDepth counter: derived from ply offset (continues showing)
+isPayoff: recalculated from currentNodeId vs mainLine[rootDisplayDepth]
 ```
 
-### Google SSO Promotion Flow
+---
+
+## Component Responsibilities
+
+| Component / Hook | Responsibility | Communication |
+|-----------------|----------------|--------------|
+| `useStockfishEngine` | Worker lifecycle, UCI, debounce, stale-result cancellation | Returns `{ evalCp, evalMate, pvLines, depth, isAnalyzing, isReady }` |
+| `useAnalysisBoard` | Branching tree, makeMove, navigation, URL seeding, mainLine tracking | Returns `{ position, currentNodeId, nodes, mainLine, rootFen, lastMove, makeMove, goBack, goForward, goToNode, loadMainLine, isOnMainLine }` |
+| `Analysis.tsx` | Page shell: reads URL params, composes hooks, decides tactic/free mode | Passes props down to all sub-components |
+| `EvalBar` | Vertical centipawn bar, gradient shading, mate label | Props: `evalCp`, `evalMate` |
+| `EngineLines` | Top 1-2 PV lines with depth and score | Props: `pvLines`, `depth`, `isAnalyzing` |
+| `VariationTree` | Move list showing tree; clicking a node calls `goToNode` | Props: `nodes`, `mainLine`, `currentNodeId`, `onNodeClick` |
+| `TacticModeOverlay` | Motif chip, orientation toggle, next/prev-tactic rail | Props: tactic data, orientation, `onOrientationChange`, `onNextTactic`, `onPrevTactic` |
+| `ChessBoard` (existing) | Board rendering, drag-drop, click-to-move | No changes; receives `position`, `onPieceDrop`, `arrows`, `lastMove`, `id="analysis-board"` |
+| `BoardControls` (existing) | Back/forward/reset/flip; `infoSlot` for depth/eval readout | No changes; callbacks from `useAnalysisBoard` |
+
+---
+
+## Integration Points with Existing Code
+
+### `useChessGame.ts` — do not modify
+
+`useChessGame`'s `makeMove` at line 183-189 truncates future history when the user moves at a non-terminal ply. This is the correct behavior for the Openings board. `useAnalysisBoard` is a parallel implementation. The two hooks share no code and have no runtime coupling. The analysis board will not cause any regressions in the Openings board.
+
+### `ChessBoard.tsx` — no changes required
+
+Already supports multiple boards in the same DOM via the `id` prop (added in Phase 135). Pass `id="analysis-board"` in `Analysis.tsx`. The `onPieceDrop(sourceSquare, targetSquare): boolean` signature matches `useAnalysisBoard.makeMove` directly.
+
+The `arrows?: BoardArrow[]` prop carries both stored-PV arrows (tactic mode, while on mainLine) and engine best-move arrows. Arrow-building helpers (`buildRootArrows`, `buildPvArrow`) move from `TacticLineExplorer` into `TacticModeOverlay` with no signature changes.
+
+### `BoardControls.tsx` — no changes required
+
+The `infoSlot?: React.ReactNode` prop is the slot for the engine eval readout. Pass a small inline element showing depth and centipawn score. The `vertical` and `size` props are ready for responsive layout on the analysis page.
+
+### `HorizontalMoveList.tsx` + `TacticMotifChip.tsx` — reused as-is
+
+`VariationTree` can use `HorizontalMoveList` for the mainLine segment and a secondary list for user variations below. `TacticModeOverlay` directly reuses `TacticMotifChip` with no changes.
+
+### `useTacticLines` in `useLibrary.ts` — unchanged
+
+Called from `Analysis.tsx` in tactic mode. `TacticLineExplorer` deletion in Phase 4 removes the only other call site; `Analysis.tsx` / `TacticModeOverlay` become the new callers. The hook signature and query key are unchanged.
+
+### `tacticDepth.ts` — unchanged
+
+`toDisplayDepthForOrientation`, `DEPTH_DISPLAY_OFFSET`, `ALLOWED_DECISION_DEPTH_OFFSET` all stay as-is. `TacticModeOverlay` imports them directly, same as `TacticLineExplorer` did.
+
+### `resolveVisibleTactic` in `tacticComparisonMeta.ts` — unchanged
+
+Used in `TacticModeOverlay` to gate depth labels on the live flaw filter. Identical usage to `TacticLineExplorer`.
+
+### `App.tsx` — minimal change
+
+Add `const AnalysisPage = React.lazy(() => import('./pages/Analysis'))` alongside existing imports. Add one `<Route path="/analysis" ...>` inside `ProtectedLayout`. Add `'/analysis': 'Analysis'` to `ROUTE_TITLES`. The nav bar does not need an "Analysis" item — the page is reachable via entry points, not top navigation (consistent with the existing design where analysis is a contextual action, not a primary destination).
+
+---
+
+## Recommended Project Structure (new files only)
 
 ```
-Guest: clicks "Continue with Google" in PromoteAccountModal
-    ↓
-GET /api/auth/guest/promote/google/authorize
-    Header: Authorization: Bearer <guest_jwt>
-    current_active_user → User(is_guest=True)
-    state_jwt = { guest_user_id: user.id, csrftoken: random }
-    return { authorization_url }
-    ↓
-Frontend: window.location.href = authorization_url
-    ↓
-Google redirects to:
-GET /api/auth/guest/promote/google/callback?code=...&state=...
-    decode state JWT → guest_user_id
-    exchange code for Google id_token
-    extract account_id, account_email from id_token
-    CHECK: is account_email already owned by a different registered user?
-        YES → 409, redirect with error
-        NO → proceed
-    UPDATE users SET email=account_email, is_guest=False WHERE id=guest_user_id
-    INSERT oauth_accounts (user_id=guest_user_id, oauth_name="google", ...)
-    generate JWT for guest_user_id
-    ↓
-Redirect: FRONTEND_URL/auth/callback#token=JWT
-    ↓
-OAuthCallbackPage: loginWithToken(token)  [existing, UNCHANGED]
-    setIsGuest(false) via profile refetch
+frontend/src/
+├── hooks/
+│   ├── useAnalysisBoard.ts        # NEW — branching move tree
+│   └── useStockfishEngine.ts      # NEW — worker lifecycle + UCI
+├── components/
+│   └── analysis/                  # NEW directory
+│       ├── EvalBar.tsx            # NEW — vertical centipawn bar
+│       ├── EngineLines.tsx        # NEW — top 1-2 PV display
+│       ├── VariationTree.tsx      # NEW — branching move list
+│       └── TacticModeOverlay.tsx  # NEW — tactic chrome
+├── pages/
+│   └── Analysis.tsx               # NEW — lazy-loaded page
+public/
+├── stockfish-18-lite-single.js    # COPIED from node_modules/stockfish.js/
+└── stockfish-18-lite-single.wasm  # COPIED from node_modules/stockfish.js/
 ```
 
-### State Management
+---
 
-```
-AuthContext (React)
-    token: string | null        stored in localStorage
-    isGuest: boolean            derived from /users/me/profile.is_guest
-    isLoading: boolean
-    login()                     UNCHANGED
-    loginWithToken()            UNCHANGED — used after promotion
-    register()                  UNCHANGED
-    logout()                    UNCHANGED
-    promoteGuest(email, pw)     NEW — calls POST /auth/guest/promote
+## Dependency-Ordered Build Sequence
 
-isGuest is populated by reading the is_guest field from the UserProfile
-response already fetched in useUserProfile() on app mount.
-The UserProfile API call happens when token is set, so isGuest is available
-before any protected page renders.
-```
+The seed's 5-phase shape is validated against the real code. Dependencies flow strictly left to right.
 
-## Integration Points
+### Phase 1 — `useStockfishEngine` + WASM setup
 
-### Modified Components
+Dependencies: none (fully standalone)
 
-| Component | What Changes | Risk |
-|-----------|-------------|------|
-| `app/models/user.py` | Add `is_guest: Mapped[bool]` column with server default `false` | LOW — additive, non-breaking migration |
-| `app/schemas/users.py` | Add `is_guest: bool` field to `UserProfileResponse` | LOW — additive field |
-| `app/schemas/auth.py` | Add `GuestCreateResponse`, `GuestPromoteRequest`, `GuestPromoteResponse` | LOW — new schemas only |
-| `app/routers/auth.py` | Add 4 new endpoints; all existing endpoints untouched | LOW |
-| `frontend/src/hooks/useAuth.ts` | Add `isGuest: boolean` state + `promoteGuest()` action | MEDIUM — central auth hook |
-| `frontend/src/types/users.ts` | Add `is_guest: boolean` to `UserProfile` interface | LOW |
-| `frontend/src/pages/Home.tsx` | Add "Use as Guest" button in hero section | LOW |
-| `frontend/src/pages/Import.tsx` | Add `GuestInfoBox` conditional on `isGuest` | LOW |
-| `frontend/src/App.tsx` | No change expected; `ProtectedLayout` already works for guests | NONE |
+Deliverables:
+- Add `stockfish.js` to `package.json`; copy `stockfish-18-lite-single.js` + `.wasm` to `public/`
+- `src/hooks/useStockfishEngine.ts`: worker creation/termination in `useEffect([], [])`, UCI init sequence (`uci` → `uciok` → `setoption MultiPV 2` → `isready` → `readyok`), `analyze(fen)` function with 150ms debounce + stop-pending flag, parse `info` lines into `{ evalCp, evalMate, pvLines, depth }`, parse `bestmove`
+- Exported types: `EngineEval`, `PvLine`
+- Test: unit test the pure UCI line parser; integration test confirms worker terminates on unmount (inspect `worker.terminate` called)
 
-### New Components
+### Phase 2 — `useAnalysisBoard` + analysis display components
 
-| Component | Type | Depends On |
-|-----------|------|------------|
-| `app/services/guest_service.py` | Backend service | `User` model, `JWTStrategy`, `password_helper` |
-| `alembic/versions/<date>_add_is_guest_to_users.py` | DB migration | `users` table |
-| `frontend/src/components/auth/PromoteAccountModal.tsx` | React component | `useAuth.promoteGuest`, Google authorize endpoint |
+Dependencies: Phase 1 types (for optional `engineEval` per node in future, not required in v1)
 
-### Internal Boundaries
+Deliverables:
+- `src/hooks/useAnalysisBoard.ts`: `MoveNode` type, `nodes: Map`, `makeMove` fork behavior, `goBack/goForward/goToNode`, `loadMainLine`, `isOnMainLine(nodeId)`, `containerRef` keyboard handler scoped to container
+- `src/components/analysis/EvalBar.tsx`: vertical bar with gradient, white-POV convention, mate label
+- `src/components/analysis/EngineLines.tsx`: PV line text, depth badge, "thinking" indicator
+- `src/components/analysis/VariationTree.tsx`: move list rendering `nodes` + `mainLine`, click-to-navigate
+- URL param helpers: `useSearchParams` reading for `fen`, `game_id`, `flaw_ply`, `orientation`
+- Note: `Analysis.tsx` does NOT exist yet; test these components individually with Vitest
 
-| Boundary | Communication | Notes |
-|----------|---------------|-------|
-| `auth.py` router ↔ `guest_service.py` | Direct function call | Router stays HTTP-only; all logic in service |
-| `guest_service.py` ↔ `UserManager.password_helper` | Inject via `Depends(get_user_manager)` | Reuses existing password hashing infrastructure |
-| `guest_service.py` ↔ `get_jwt_strategy()` | Direct call (no Depends needed) | `get_jwt_strategy()` is a plain factory function in `users.py` |
-| `guest JWT` ↔ `current_active_user` | FastAPI-Users JWT decode | No change; guest users are active users with valid JWTs |
-| `UserProfile.is_guest` ↔ `AuthContext.isGuest` | API field in `/users/me/profile` response | Frontend derives `isGuest` from this field; already fetched on app mount |
-| Google promote callback ↔ existing OAuth infrastructure | Reuses `google_oauth_client.get_access_token()` | Different route path; must register new callback URL in Google Cloud Console |
+### Phase 3 — `/analysis` page + router wiring + entry points
 
-## Build Order
+Dependencies: Phases 1 and 2 complete
 
-Dependencies flow strictly top to bottom within each step.
+Deliverables:
+- `src/pages/Analysis.tsx`: compose all hooks and components, determine tactic/free mode from URL params, responsive layout (eval bar left of board on desktop, below board on mobile)
+- `src/App.tsx`: add `React.lazy` import, add `/analysis` route inside `ProtectedLayout`, wrap with `<Suspense>`
+- Entry points wired (free-play mode only; tactic entry comes in Phase 4):
+  - Openings page: "Analyze position" or "Open in Analysis" button encodes `?fen=<current-FEN>`
+  - Nav: add `'/analysis': 'Analysis'` to `ROUTE_TITLES`
+- `data-testid` attributes: `data-testid="analysis-page"`, `data-testid="analysis-eval-bar"`, `data-testid="analysis-engine-lines"`, `data-testid="analysis-variation-tree"`, `data-testid="analysis-board"` (via `id="analysis-board"` on ChessBoard)
+- Verify WASM lazy-loads: check Network tab — no stockfish fetch on `/library`, `/openings`, `/endgames`
 
-**Step 1: DB migration**
-Add `is_guest: bool` column to `users` with `server_default=false`. This is required by all subsequent steps. Run `alembic revision --autogenerate` then review the generated migration.
+### Phase 4 — Tactic mode overlay + retire TacticLineExplorer
 
-**Step 2: Backend model + schema additions**
-- Add `is_guest: Mapped[bool]` to `User` model
-- Add `is_guest: bool` to `UserProfileResponse` in `schemas/users.py`
-- Add new schemas to `schemas/auth.py`: `GuestCreateResponse`, `GuestPromoteRequest`, `GuestPromoteResponse`
-No router changes yet — just the data model and schemas.
+Dependencies: Phase 3 (`Analysis.tsx` exists and is routable)
 
-**Step 3: `guest_service.py`**
-Implement `create_guest_user()` and `promote_guest()`. These are pure service functions with no frontend dependency. Write unit tests for both (especially the email-uniqueness check).
+Deliverables:
+- `src/components/analysis/TacticModeOverlay.tsx`: render when `isTacticMode`, motif chip row, orientation toggle, next/prev-tactic navigation
+- Wire `useTacticLines` into `Analysis.tsx` for tactic mode; call `loadMainLine` on data
+- Port `buildRootArrows` and `buildPvArrow` logic from `TacticLineExplorer` into `TacticModeOverlay`
+- Port `isPayoff` and `displayDepth` logic using `tacticDepth.ts` (same math, same inputs)
+- Verify Phase 135 UAT bar: depth-0 highlight, missed/allowed offset, real-game-ply numbering, next-tactic nav, eval badge, flaw-severity glyph on allowed lead-in
+- **Only after UAT passes:** change `FlawCard` and `LibraryGameCard` "Explore" buttons to `navigate('/analysis?...')`, delete `TacticLineExplorer.tsx` and `useTacticLine.ts`
+- Run `npm run knip` after deletion to confirm no dead exports remain
 
-**Step 4: Auth router — create and promote email endpoints**
-Add `POST /auth/guest/create` and `POST /auth/guest/promote` to `auth.py`. Smoke test both with `curl` or the FastAPI `/docs` UI.
+### Phase 5 — Backend (effectively none for v1)
 
-**Step 5: Frontend `useAuth.ts` + `types/users.ts`**
-Add `isGuest` to `AuthState`, derive it from the `UserProfile.is_guest` field. Add `promoteGuest()` action. This is the frontend hub; import page and homepage depend on it.
+Per locked decision D-4: no schema, no migration, no new backend endpoints. The `tactic-lines` endpoint from Phase 135 already surfaces the stored PVs. Phase 5 is a placeholder for any minor polish (e.g., a loading-engine skeleton UX, mobile layout tweaks) that surfaces during Phases 1-4 UAT.
 
-**Step 6: Homepage "Use as Guest" button**
-Add a secondary CTA button in `Home.tsx` hero section. Calls `POST /auth/guest/create`, stores token via `loginWithToken()`, navigates to `/import`.
+---
 
-**Step 7: `GuestInfoBox` on Import page**
-Render a callout in `Import.tsx` when `isGuest=true`. Include a "Sign up to keep your data" message and a button that opens `PromoteAccountModal`.
+## Anti-Patterns to Avoid
 
-**Step 8: `PromoteAccountModal` — email/password path**
-Build the modal component with email/password fields. Call `promoteGuest()` from `useAuth`. Handle `409 Conflict` case ("Account exists — sign in instead").
+### Anti-Pattern 1: Modifying `useChessGame` to Support Branching
 
-**Step 9: Google SSO promotion endpoints**
-Implement `guest_service.promote_guest_google_callback()`. Add the authorize and callback routes to `auth.py`. Register the new callback URL in Google Cloud Console.
+**What people do:** Add a `branching?: boolean` prop to `useChessGame` and conditionally skip truncation.
+**Why it's wrong:** `useChessGame` serves the Openings board (heavily used, tested). Adding a flag makes two incompatible behaviors share state, raises regression risk, and makes the hook harder to reason about. The two behaviors have entirely different contracts: one needs sessionStorage, Zobrist, opening lookup, `MAX_EXPLORER_PLY`; the other needs none of these.
+**Do this instead:** Write `useAnalysisBoard` as a separate hook. The shared logic is small enough that duplication is cheaper than coupling.
 
-**Step 10: `PromoteAccountModal` — Google path**
-Add "Continue with Google" button to the modal. Wire to the new authorize endpoint. The existing `OAuthCallbackPage` handles the token from the redirect fragment — no change needed there.
+### Anti-Pattern 2: Global Worker Singleton
 
-## Anti-Patterns
+**What people do:** Create the Stockfish worker once at app start and share it across components.
+**Why it's wrong:** Forces the ~7MB WASM to load on every page load, defeating the lazy-load strategy. Creates lifecycle complexity (who owns teardown? what happens on re-visit?).
+**Do this instead:** Create the worker in `useStockfishEngine`'s `useEffect` (per mount) and terminate on cleanup. Browser HTTP cache ensures re-visits are fast.
 
-### Anti-Pattern 1: Switching Guests to CookieTransport
+### Anti-Pattern 3: COOP/COEP Headers for Multi-Threading
 
-**What people do:** Implement a second FastAPI-Users auth backend using `CookieTransport` for guests while keeping `BearerTransport` for registered users.
+**What people do:** Add `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp` site-wide to enable `SharedArrayBuffer` for the multi-thread Stockfish build.
+**Why it's wrong:** `COOP: same-origin` breaks Google OAuth popups (requires `same-origin-allow-popups`, which does NOT grant cross-origin isolation). `COEP: credentialless` is not reliably supported on iOS Safari. Cross-origin isolation is a document property — it cannot be toggled per-route in an SPA. This is locked decision D-3.
+**Do this instead:** Single-thread `stockfish-18-lite-single.js`. Depth 20-25 in seconds is more than sufficient for human comprehension. Multi-thread is a deferred desktop-only enhancement requiring a separately hard-loaded document.
 
-**Why it's wrong:** Dual-transport doubles backend auth complexity. The existing `apiClient` Bearer interceptor already handles all tokens uniformly. CORS must allow credentials for cookie requests. All state-changing endpoints need CSRF protection when cookie auth is possible. The XSS risk difference (HttpOnly vs localStorage) already exists for registered users and is not a guest-specific concern.
+### Anti-Pattern 4: Unbounded Engine Search
 
-**Do this instead:** Return guest JWT in the response body. Store in `localStorage`. If HttpOnly cookies become a requirement, apply to all users uniformly in a dedicated security milestone.
+**What people do:** Use `go infinite` or `go depth 20` and let the engine run until stopped manually.
+**Why it's wrong:** `go infinite` pegs the single CPU core indefinitely on low-end phones. `go depth 20` takes milliseconds on a fast desktop but minutes on weak hardware, creating unpredictable UX.
+**Do this instead:** Use `go nodes 500000`. Consistent wall-clock performance across hardware. Depth is shown as it progresses; the user sees analysis improving in real time.
 
-### Anti-Pattern 2: Separate Guest Data Tables
+### Anti-Pattern 5: Serializing Variation State in the URL
 
-**What people do:** Create a `guest_sessions` or `anonymous_data` table to avoid storing anonymous rows in `users`.
+**What people do:** Base64-encode the full branching tree into the URL on every navigation so any analysis state is bookmarkable.
+**Why it's wrong:** Overwrites the browser back/forward stack with every position change, making navigation confusing. Produces very long URLs that break PWA share sheets. High implementation complexity for v1 value.
+**Do this instead:** URL encodes only the entry point (starting FEN or tactic reference). Variations are ephemeral per D-4. The user can share the starting position; variations are re-explored manually.
 
-**Why it's wrong:** All 6+ existing repositories query by `user_id` with FK constraints. A separate table means duplicating all query logic or migrating FKs on promotion (updating `user_id` across `games`, `game_positions`, `position_bookmarks`, `import_jobs`).
-
-**Do this instead:** Store guests in `users` with `is_guest=True`. Promotion is a single-row UPDATE; child table FK references never change.
-
-### Anti-Pattern 3: Client-Side Guest Identity Generation
-
-**What people do:** Generate a random guest ID in JavaScript and use it as a fake user identifier without a DB row.
-
-**Why it's wrong:** No real DB row exists to enforce FK constraints. Games imported against a non-existent `user_id` violate referential integrity and the explicit project rule that all FK columns must have `ForeignKey()` constraints.
-
-**Do this instead:** Always create a real `users` row server-side before returning any token. The DB row is the source of truth for the user's identity.
-
-### Anti-Pattern 4: Allowing Promotion Without Email Uniqueness Check
-
-**What people do:** Execute the `UPDATE users SET email=... WHERE id=guest_id` without first checking if the email is already registered to another account.
-
-**Why it's wrong:** Violates the email uniqueness invariant. PostgreSQL will throw an integrity error, surfacing as a 500 rather than a clean 409. Worse, if the uniqueness constraint is not enforced at DB level (it is, via FastAPI-Users' `users` table DDL), this could silently create duplicate emails.
-
-**Do this instead:** Always SELECT for an existing non-guest user with the same email before UPDATE. Return `409 Conflict` with a message guiding the user to sign in instead.
-
-### Anti-Pattern 5: Exposing Synthetic Guest Email in the UI
-
-**What people do:** Render `profile.email` in the mobile "More" drawer header or account settings for guest users, showing `guest_abc123@guest.local`.
-
-**Why it's wrong:** Confuses users who see a nonsensical email address. May also cause support requests.
-
-**Do this instead:** In `App.tsx` `MobileMoreDrawer` and anywhere `profile.email` is displayed, check `isGuest` and show "Guest" (or nothing) instead of the synthetic email. This is a frontend-only guard.
+---
 
 ## Scaling Considerations
 
-| Scale | Architecture Adjustments |
-|-------|--------------------------|
-| Current (< 1k registered users) | No changes — single-process, guest rows are negligible |
-| 1k-10k users | Add periodic cleanup: DELETE users WHERE is_guest=true AND created_at < now() - interval '30 days' AND id NOT IN (SELECT DISTINCT user_id FROM games). Run as a startup task or APScheduler job. |
-| 10k+ users | Guest account accumulation becomes non-trivial. Add `created_at` index to `users` for cleanup query performance. Consider shorter TTL (7 days) for guests with no games. |
+| Concern | Now | Future |
+|---------|-----|--------|
+| Engine memory (WASM) | ~50-100MB for lite build per tab | Not a scaling issue — one engine per user, in-browser |
+| WASM load time | ~1-2s first visit; browser HTTP cache on subsequent visits | Add `<link rel="prefetch">` hint on hover of analysis entry points |
+| Tree size (nodes Map) | Grows with user exploration; fine to ~10k nodes | No concern; GC handles it on unmount |
+| Backend load | Zero additional load per D-4 | No change; `tactic-lines` endpoint already exists |
+| Mobile CPU | Single-thread node cap keeps CPU reasonable | Consider lower node count on slow devices (navigator.hardwareConcurrency === 1) |
 
-Guest cleanup is not needed at current FlawChess scale. Defer to a future maintenance task.
+---
 
 ## Sources
 
-- [FastAPI-Users CookieTransport docs](https://fastapi-users.github.io/fastapi-users/10.3/configuration/authentication/transports/cookie/) — HIGH confidence (official docs, HttpOnly default confirmed)
-- [FastAPI-Users multiple auth backends discussion](https://github.com/fastapi-users/fastapi-users/discussions/960) — HIGH confidence (maintainer confirms dual-backend works out of the box)
-- [FastAPI-Users optional current_user](https://fastapi-users.github.io/fastapi-users/latest/usage/current-user/) — HIGH confidence (current official docs)
-- [FusionAuth anonymous user pattern](https://fusionauth.io/blog/anonymous-user) — MEDIUM confidence (industry best-practices blog)
-- Direct inspection of `app/users.py`, `app/models/user.py`, `app/routers/auth.py`, `frontend/src/hooks/useAuth.ts`, `frontend/src/api/client.ts` — HIGH confidence (live codebase)
+- Direct code inspection: `useChessGame.ts`, `useTacticLine.ts`, `ChessBoard.tsx`, `BoardControls.tsx`, `TacticLineExplorer.tsx`, `tacticDepth.ts`, `App.tsx`, `vite.config.ts`, `Analysis.tsx` (the existing pages structure and router), `FlawCard.tsx`, `LibraryGameCard.tsx` — all read in full for this research session
+- SEED-066 locked design decisions (D-1 through D-5)
+- npmjs.com `stockfish.js` package (nmrugg, Stockfish 18) — ships `stockfish-18-lite-single.js` + `.wasm` (~7MB each), single-thread, runs without CORS headers, UCI via `worker.postMessage(string)` — **recommended package**
+- GitHub lichess-org/stockfish.wasm — passively maintained, multi-thread, no NNUE; recommends stockfish-web as successor
+- GitHub lichess-org/stockfish-web — not straight-forward for direct browser use; not recommended for v1
 
 ---
-*Architecture research for: FlawChess v1.8 Guest Access*
-*Researched: 2026-04-06*
+
+*Architecture research for: v1.29 Live-Engine Analysis Board (FlawChess)*
+*Researched: 2026-06-26*

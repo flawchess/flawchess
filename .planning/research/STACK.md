@@ -1,254 +1,192 @@
 # Stack Research
 
-**Domain:** Guest access / anonymous user with account promotion — adding to existing FastAPI + React SPA
-**Researched:** 2026-04-06
-**Confidence:** HIGH
-
-## Summary
-
-This is subsequent-milestone research. The existing stack (FastAPI 0.115.x, FastAPI-Users 15.0.5, React 19,
-Axios, PostgreSQL/asyncpg) is already in place. The goal is identifying the **minimal additions** needed for:
-
-1. Anonymous guest user creation (cookie-based JWT, no signup form)
-2. Full platform access as guest
-3. Account promotion (email/password or Google SSO) that preserves all imported data
-
-**Bottom line: no new Python or npm packages are required.** Everything needed is already present in
-the existing dependencies. This is a configuration and schema extension problem.
-
----
+**Domain:** In-browser single-thread WASM Stockfish — additions to existing React 19 + Vite 8 PWA
+**Researched:** 2026-06-26
+**Confidence:** MEDIUM (package details from web + npm registry; Vite 8 patterns from official docs)
 
 ## Scope Note
 
-The base stack (FastAPI, React 19, PostgreSQL, SQLAlchemy async, TanStack Query, Tailwind, shadcn/ui) is
-validated in production at v1.7. Only new capabilities for v1.8 Guest Access are documented here.
-
----
-
-## Existing Auth State (Critical Context)
-
-| Component | Current State |
-|-----------|--------------|
-| FastAPI-Users | 15.0.5, `[oauth,sqlalchemy]` extras, maintenance mode (security patches only) |
-| Auth transport | `BearerTransport` only; JWT token stored in `localStorage` |
-| Auth backend | Single `auth_backend` named `"jwt"` with 7-day JWT lifetime |
-| `FastAPIUsers` instance | `FastAPIUsers[User, int](get_user_manager, [auth_backend])` |
-| Frontend auth | `useAuth` context with `localStorage`-backed token, Bearer interceptor on `apiClient` |
-| Google OAuth | Custom callback (`/auth/google/callback`) that issues Bearer JWT and redirects to frontend |
-| CORS (dev) | `allow_credentials=False`, `allow_origins=["http://localhost:5173"]` |
-| Production routing | Caddy: same origin — `flawchess.com` serves both frontend static and `/api/` reverse-proxy |
-
----
-
-## What Changes Are Needed
-
-### Backend
-
-#### 1. Second Auth Backend: CookieTransport
-
-Add a `cookie_auth_backend` alongside the existing bearer backend. FastAPI-Users evaluates backends
-in registration order — the first to yield a valid user wins. No new library needed; `CookieTransport`
-is already included in `fastapi-users[oauth,sqlalchemy]`.
-
-```python
-from fastapi_users.authentication import CookieTransport, AuthenticationBackend, JWTStrategy
-
-cookie_transport = CookieTransport(
-    cookie_name="flawchess_guest",
-    cookie_max_age=2592000,    # 30 days; None would be session-only
-    cookie_httponly=True,      # default — no JS access (XSS protection)
-    cookie_secure=True,        # default — HTTPS only; set False in dev via settings
-    cookie_samesite="lax",     # default — safe for same-origin SPA
-)
-
-# Shared JWT strategy — cookie and bearer can reuse the same signing key and lifetime
-def get_jwt_strategy() -> JWTStrategy:
-    return JWTStrategy(secret=settings.SECRET_KEY, lifetime_seconds=2592000)
-
-cookie_auth_backend = AuthenticationBackend(
-    name="cookie",
-    transport=cookie_transport,
-    get_strategy=get_jwt_strategy,
-)
-
-# Register both — bearer checked first, then cookie
-fastapi_users = FastAPIUsers[User, int](
-    get_user_manager,
-    [bearer_auth_backend, cookie_auth_backend],
-)
-```
-
-**Why bearer first?** Existing full users always send `Authorization: Bearer ...`. Trying bearer first
-keeps zero overhead for the common case. Guests only have a cookie, so they fall through to cookie check.
-
-**Why not replace bearer with cookie?** The existing Google OAuth callback issues a Bearer JWT and
-redirects to the frontend via a URL fragment (`#token=...`). Changing the primary transport would break
-this flow and all existing login sessions.
-
-**SameSite=Lax is sufficient security.** Production is same-origin (Caddy serves both frontend and
-`/api` from `flawchess.com`). Development uses Vite proxy (`/api` → `localhost:8000`) which is also
-same-origin from the browser's view. Cross-site forgery is not a meaningful attack surface here.
-`SameSite=None` is only needed for cross-origin embeds, which this app does not do.
-
-#### 2. `is_guest` Column on User Model (Alembic migration required)
-
-```python
-# app/models/user.py
-from sqlalchemy import Boolean
-
-is_guest: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
-```
-
-Keeping guest users in the same `users` table (not a separate table) means **no FK migration on
-promotion** — the guest's `user_id` is preserved through the promotion transaction. All related rows
-(`games`, `game_positions`, `import_jobs`, `position_bookmarks`) automatically belong to the promoted
-user via existing cascade FKs.
-
-Guest creation happens via a custom endpoint (not the standard `/auth/register`), so no changes to
-`BaseUserCreate` or the FastAPI-Users schema pipeline are needed. The `is_guest` field is set
-programmatically via `user_manager.create()`.
-
-#### 3. Custom Endpoint: `POST /auth/guest`
-
-Creates an anonymous user, issues a cookie-transport JWT. Implementation uses
-`user_manager.create()` (already documented in FastAPI-Users cookbook). No new library needed.
-
-```python
-# Pseudocode — full implementation in planning
-import uuid, secrets
-from fastapi import Response
-
-@router.post("/auth/guest")
-async def create_guest(response: Response, user_manager = Depends(get_user_manager)):
-    guest_email = f"guest_{uuid.uuid4().hex}@guest.flawchess.internal"
-    guest_password = secrets.token_urlsafe(32)
-    user = await user_manager.create(UserCreate(
-        email=guest_email,
-        password=guest_password,
-        is_active=True,
-        is_verified=True,    # skip verification; guest has no real email
-        is_guest=True,
-    ))
-    # Write JWT into HttpOnly cookie via cookie_auth_backend
-    token = await cookie_auth_backend.get_strategy().write_token(user)
-    await cookie_transport.get_login_response(token, response)
-    return {"status": "ok"}
-```
-
-The generated email is an internal sentinel, never displayed to users.
-
-#### 4. `current_active_user` Dependency — No Change
-
-The existing dependency `fastapi_users.current_user(active=True)` already works with multiple backends.
-When a request arrives without a Bearer token but with the guest cookie, FastAPI-Users falls through
-to the cookie backend and authenticates the guest user. All existing protected endpoints work for
-guests without modification.
-
-For endpoints that need to distinguish guest from full user (e.g., the import page info box):
-
-```python
-current_user_optional = fastapi_users.current_user(active=True, optional=True)
-# Returns User or None — use for public endpoints that adjust behavior based on auth state
-```
-
-#### 5. Custom Endpoint: `POST /auth/promote`
-
-Promotes a guest to a full account. Two sub-flows:
-
-**Email/password promotion:**
-- Validate the guest's cookie JWT to get the current `user_id`
-- Check no account with the target email already exists
-- `UPDATE users SET email=..., hashed_password=..., is_guest=false, is_verified=true WHERE id=...`
-- Issue a new Bearer JWT (so the frontend can transition to bearer-based auth, cleaning up the cookie)
-
-**Google SSO promotion:**
-The existing custom OAuth callback in `app/routers/auth.py` is already fully custom. The promotion
-flow passes the guest identity through the OAuth round-trip by embedding the guest cookie value (or
-a signed reference to the guest `user_id`) in the OAuth `state` JWT. After Google returns:
-1. Decode the `state` JWT to extract the guest `user_id`
-2. Validate the guest cookie matches
-3. Update the guest user with Google email + link the `OAuthAccount` row
-4. Set `is_guest=False`, clear the guest cookie
-
-No new library needed — the existing `generate_jwt` / `decode_jwt` from `fastapi_users.jwt` already
-handles custom state claims (already used in the CSRF token pattern in the current callback).
-
-### Frontend
-
-#### 1. `withCredentials: true` on Axios
-
-To send the HttpOnly guest cookie with API requests:
-
-```typescript
-// frontend/src/api/client.ts
-export const apiClient = axios.create({
-  baseURL: '/api',
-  withCredentials: true,    // ADD THIS — sends cookies on all requests
-  headers: { 'Content-Type': 'application/json' },
-  paramsSerializer: { indexes: null },
-});
-```
-
-This must be at the instance level so all requests (including those that currently use Bearer) also
-send the cookie. When Bearer is present, it takes precedence (bearer backend is checked first).
-When Bearer is absent (guest flow), the cookie is the auth credential.
-
-**CORS consequence:** `withCredentials: true` requires `Access-Control-Allow-Credentials: true`
-from the server. In dev (`ENVIRONMENT=development`), update `CORSMiddleware`:
-
-```python
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
-    allow_credentials=True,    # ADD THIS — required when frontend sends withCredentials: true
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-```
-
-Production requires no CORS change — same-origin means the browser never issues a CORS preflight.
-
-#### 2. Auth State Extension
-
-The `useAuth` context needs the following additions (no new packages):
-
-| Addition | Purpose |
-|----------|---------|
-| `isGuest: boolean` | Derived from `user.is_guest`; drives UI info box, promotion CTA |
-| `loginAsGuest()` | `POST /api/auth/guest` — no token to store; browser stores HttpOnly cookie automatically |
-| `promote(email, password)` | `POST /api/auth/promote` — transitions guest to full user |
-
-The 401 response interceptor in `apiClient` currently redirects non-auth 401s to `/login`. When
-a guest's cookie expires (after 30 days), the 401 should redirect to home (`/`) not login, since
-the guest may not have credentials. A simple check: if the 401 happens and there is no `auth_token`
-in localStorage, redirect to `/` with a "session expired" query param instead.
-
-#### 3. No New Frontend Packages
-
-| Considered | Verdict | Reason |
-|------------|---------|--------|
-| `js-cookie` | Not needed | Guest cookie is HttpOnly — JS cannot and should not read it |
-| Cookie management library | Not needed | Browser handles HttpOnly cookies transparently |
-| New auth library | Not needed | Existing `useAuth` context extended with two new methods |
+This is subsequent-milestone (v1.29) research. The base stack (React 19, TypeScript 6, Vite 8,
+react-chessboard 5.x, chess.js, TanStack Query, Tailwind, FastAPI) is validated in production.
+Only **new capabilities** for the live engine are documented here. Backend is untouched (D-4 locked).
 
 ---
 
 ## Recommended Stack (New Additions Only)
 
-### No New Python Packages
+### Core: The Engine Package
 
-| What | How | Version |
-|------|-----|---------|
-| `CookieTransport` | Already in `fastapi-users[oauth,sqlalchemy]` | 15.0.5 (current) |
-| `is_guest` DB column | `Boolean` mapped column + Alembic migration | SQLAlchemy 2.x (current) |
+**Use `stockfish` npm package v18.0.8.**
 
-### No New npm Packages
+Maintained by nmrugg / Chess.com, GPLv3. This is the right package for the D-3 constraint
+(single-thread only, no SharedArrayBuffer). It ships five builds — only one is relevant for v1:
 
-| What | How |
-|------|-----|
-| `withCredentials: true` | Axios config flag on existing instance |
-| Guest login flow | New method in existing `useAuth` context |
-| Promotion flow | New method in existing `useAuth` context |
+| Build file | Size | Threading | NNUE | CORS headers needed |
+|------------|------|-----------|------|---------------------|
+| `stockfish-18.js` + `.wasm` | >100 MB | multi (SharedArrayBuffer) | full 85 MB embedded | yes (`COOP`+`COEP`) |
+| `stockfish-18-single.js` + `.wasm` | large (~30–100 MB) | single | none (HCE only) | no |
+| `stockfish-18-lite.js` + `.wasm` | ~7 MB | multi (SharedArrayBuffer) | small NNUE embedded | yes (`COOP`+`COEP`) |
+| **`stockfish-18-lite-single.js` + `.wasm`** | **~7 MB** | **single** | **small NNUE embedded** | **no** |
+| `stockfish-18-asm.js` | ~10 MB | single | none | no |
+
+**Why lite-single wins:** The only single-thread build with a neural-network evaluation is
+`stockfish-18-lite-single`. The full single-thread (`stockfish-18-single`) ships *without NNUE*
+and falls back to classical HCE evaluation — paradoxically making it weaker than the 7 MB lite
+build. The lite-single embeds a small NNUE (likely the threat-small/sscg13 family) directly in
+the `.wasm` binary, so no separate network file is fetched. "Quite a bit weaker" is relative to
+Stockfish's 3600+ ELO ceiling; the lite-single is still far stronger than any human and more than
+sufficient for comprehension-level analysis.
+
+### NNUE File Situation
+
+No separate NNUE file to host or download. The small neural-network weights are compiled into
+the `.wasm` binary itself. Total transfer for first engine load is ~7 MB across both files
+(`stockfish-18-lite-single.js` + `stockfish-18-lite-single.wasm`). The browser's HTTP cache
+plus the existing PWA service worker (Workbox, already in the project) handle subsequent visits:
+configure `CacheFirst` for `/engine/*` assets in the Workbox config so the 7 MB is fetched once
+and cached indefinitely. No `Cache-Control` header gymnastics required — stable filenames in
+`public/engine/` get cached on first visit.
+
+### Supporting Libraries
+
+| Library | Version | Purpose | When to Use |
+|---------|---------|---------|-------------|
+| `vite-plugin-static-copy` | 2.x | Copy engine files from `node_modules/stockfish/src/` to `dist/engine/` at build time | Use this instead of committing the ~7 MB binary to `public/` manually |
+
+`vite-plugin-static-copy` is the only new dev dependency. It keeps binary engine files out of
+git by pulling them from the npm package at build/dev time. Alternatively, manually copy the
+two files to `public/engine/` and skip the plugin — simpler, acceptable for v1 if you don't
+want the plugin dependency.
+
+### Development Tools
+
+| Tool | Purpose | Notes |
+|------|---------|-------|
+| Browser DevTools Performance tab | Verify engine thread isolation, measure analysis latency | Worker runs in a separate thread; main thread should not stall |
+| Lighthouse / PWA audit | Confirm engine assets are cached by service worker | Check `/engine/` routes appear in the precache manifest |
+
+---
+
+## Installation
+
+```bash
+# Runtime (engine — goes to node_modules but engine files are served from public/)
+npm install stockfish
+
+# Dev — copies engine files to dist/ at build time (skip if manually copying to public/)
+npm install -D vite-plugin-static-copy
+```
+
+---
+
+## Vite 8 Wiring Pattern
+
+### Problem: Emscripten constraint
+
+The Emscripten-compiled `stockfish-18-lite-single.js` fetches its `.wasm` companion by
+*relative path* — it assumes `stockfish-18-lite-single.wasm` is at the same URL directory as
+the `.js` file. This means:
+
+- Both files **must** be served from the same path prefix.
+- Vite's `?worker` bundling is **not suitable** here — Vite would hash and relocate the
+  `.js` file, severing the relative `.wasm` reference.
+- Vite's `?url` on the `.wasm` alone doesn't help because the `.js` glue doesn't use that URL.
+
+### Recommended: `public/engine/` placement
+
+Place both engine files under `public/engine/` (either committed or copied by `vite-plugin-static-copy`).
+Files in `public/` are served verbatim at their path prefix with no hashing, no bundling, no
+module-system involvement. This is the pattern the Stockfish.js documentation recommends for
+browser integration.
+
+**`vite.config.ts` addition (if using `vite-plugin-static-copy`):**
+
+```typescript
+import { viteStaticCopy } from 'vite-plugin-static-copy'
+
+export default defineConfig({
+  plugins: [
+    // ... existing plugins
+    viteStaticCopy({
+      targets: [
+        {
+          src: 'node_modules/stockfish/src/stockfish-18-lite-single.{js,wasm}',
+          dest: 'engine',
+        },
+      ],
+    }),
+  ],
+})
+```
+
+This copies both files to `dist/engine/` on build and makes them available at `/engine/` in dev
+via the dev server.
+
+### Worker creation in `useStockfishEngine`
+
+```typescript
+// Only called when the hook mounts — which only happens on the /analysis route
+const worker = new Worker('/engine/stockfish-18-lite-single.js')
+```
+
+Do not use `new URL('/engine/...', import.meta.url)` — that pattern is for Vite-bundled worker
+scripts and triggers module resolution. A plain string path for a `public/` file is correct and
+stable across dev/build.
+
+### Code-split / lazy-load on the `/analysis` route
+
+The engine worker is **only instantiated when `useStockfishEngine` mounts**, which only happens
+inside `AnalysisPage`. Lazy-load the route component via `React.lazy`:
+
+```typescript
+// In your router (e.g. App.tsx)
+const AnalysisPage = React.lazy(() => import('./pages/AnalysisPage'))
+```
+
+This ensures:
+- `AnalysisPage.tsx` and its imports (including `useStockfishEngine`) are code-split into a
+  separate chunk and not fetched until the user navigates to `/analysis`.
+- The `Worker` constructor (and the 7 MB fetch) is deferred until page mount.
+- The main-app bundle is not affected.
+
+The `/engine/*.js` and `/engine/*.wasm` files are **not** in any JS bundle — they're fetched
+by the browser only when `new Worker(...)` runs.
+
+### TypeScript worker types
+
+In the `useStockfishEngine` hook file, `new Worker(path)` is standard DOM and already typed in
+TypeScript 6's lib. No extra `@types` needed. The worker itself (the engine's JS file) is not
+edited, so no `/// <reference lib="webworker" />` directive is needed in project code.
+
+For the thin UCI wrapper layer that runs *in the main thread* and talks to the worker via
+`postMessage`/`onmessage`, standard `Worker` typing is sufficient.
+
+---
+
+## UCI Integration Pattern
+
+The engine exposes a UCI protocol via `postMessage` / `onmessage`. Minimal pattern:
+
+```typescript
+worker.postMessage('uci')         // -> "uciok" when ready
+worker.postMessage('isready')     // -> "readyok"
+worker.postMessage('setoption name Threads value 1')  // single-thread: 1 (already default)
+worker.postMessage('setoption name MultiPV value 2')  // top-2 lines
+worker.postMessage(`position fen ${fen}`)
+worker.postMessage('go nodes 1000000')               // 1M nodes (Lichess parity budget)
+// -> "info depth N score cp N pv <moves>" (streaming)
+// -> "bestmove <move>" (done)
+
+// Before new position:
+worker.postMessage('stop')
+```
+
+**Debounce position changes** by ~200ms to avoid flooding the engine when a user clicks rapidly
+through moves. The `stop` + new `go` pattern is safe — the engine processes commands sequentially.
+
+**Cap for mobile:** On low-end phones, `go movetime 3000` (3 second wall-clock cap) is safer
+than unbounded `go nodes`. Use `go movetime 3000` as the default and offer a `go nodes 1000000`
+mode for desktop. Show a visible "thinking..." indicator between `go` and `bestmove`.
 
 ---
 
@@ -256,15 +194,14 @@ in localStorage, redirect to `/` with a "session expired" query param instead.
 
 | Avoid | Why | Use Instead |
 |-------|-----|-------------|
-| Separate `GuestSession` table | Requires FK re-pointing on promotion; doubles schema; no advantage | `is_guest` bool on existing `User` table |
-| `js-cookie` or any cookie library | Guest cookie is HttpOnly — JS cannot access it; cookie management is unnecessary | Let browser handle cookie transparently |
-| Redis / session store | JWT is stateless; no server-side session needed | JWTStrategy (already in stack) |
-| `starlette-csrf` or CSRF tokens | Unnecessary: SameSite=Lax on same-origin app is sufficient protection | SameSite=Lax (CookieTransport default) |
-| `SameSite=None; Secure` cookies | Only needed for cross-origin embeds; adds complexity | `SameSite=Lax` — correct for this app's same-origin architecture |
-| Separate Bearer JWT for guest (stored in localStorage) | Defeats XSS-protection purpose of HttpOnly | HttpOnly cookie via CookieTransport |
-| Celery or background jobs | Promotion is a synchronous DB update; no async work needed | Inline SQLAlchemy update in promote endpoint |
-| New user verification flow for guests | Guests have no real email; `is_verified=True` set at creation | Skip verification; set `is_verified=True` at guest creation |
-| `itsdangerous` or custom signed cookies | Signing is already handled by JWTStrategy | JWTStrategy with existing `SECRET_KEY` |
+| `@lichess-org/stockfish-web` | Multi-thread optimized (PTHREAD_POOL_SIZE), requires SharedArrayBuffer. Its own README recommends `stockfish.js` for non-lichess browser use. | `stockfish` npm package (lite-single build) |
+| `stockfish.wasm` (lichess older package) | Multi-thread only, **no NNUE**. Much weaker than lite-single despite larger complexity. | `stockfish` npm package (lite-single build) |
+| `stockfish-18-single.js` (full single-thread) | Large (30–100 MB), **no NNUE** (HCE only). Weaker than the 7 MB lite-single. | `stockfish-18-lite-single.js` |
+| `stockfish-18.js` (full multi-thread) | >100 MB, requires SharedArrayBuffer — violates D-3 | `stockfish-18-lite-single.js` |
+| `vite-plugin-wasm` | Handles `import foo.wasm` as ES module — irrelevant for Emscripten-compiled engines that self-load their WASM. | None; engine self-loads via relative URL |
+| `SharedArrayBuffer` / COOP+COEP headers | Violates D-3; breaks Google OAuth popup; unreliable on iOS Safari. | Single-thread path with no headers |
+| Cloud eval API (chessdb.cn, lichess cloud eval) | External dependency, out of scope for v1 per D-5. | Stored PVs from `tactic-lines` endpoint |
+| Separate NNUE network file hosting | Unnecessary — lite-single embeds weights in `.wasm`. | Nothing; weights are bundled |
 
 ---
 
@@ -272,12 +209,11 @@ in localStorage, redirect to `/` with a "session expired" query param instead.
 
 | Decision | Recommended | Alternative | Why Not |
 |----------|-------------|-------------|---------|
-| Cookie transport | `CookieTransport` (fastapi-users built-in) | Custom middleware, session-based | CookieTransport integrates with existing UserManager pipeline; no new primitives |
-| Guest identity storage | `is_guest` bool on `User` table | Separate `GuestSession` table | Same table = no FK migration on promotion; simpler queries everywhere |
-| Data migration on promotion | None (same `user_id` preserved) | Copy rows to new user, delete old | Re-pointing all FKs across `games`, `game_positions`, `position_bookmarks`, `import_jobs` is error-prone and expensive |
-| Google SSO promotion | `guest_user_id` embedded in OAuth `state` JWT | Separate post-SSO merge endpoint | State JWT approach avoids second round-trip; consistent with existing CSRF state pattern in `google_callback` |
-| Guest sentinel email | `guest_{uuid}@guest.flawchess.internal` | NULL email | FastAPI-Users enforces non-null unique email; internal domain sentinel is invisible to users |
-| 401 redirect for expired guest | Redirect to `/` | Redirect to `/login` | Guests have no credentials; `/login` is misleading; home page re-offers "Use as Guest" |
+| Engine package | `stockfish` npm (nmrugg) lite-single | `@lichess-org/stockfish-web` | lichess package is multi-thread only; explicitly recommends stockfish.js for simpler use |
+| Engine files location | `public/engine/` (verbatim serving) | Bundle via `?worker` | Emscripten WASM relative-path assumption breaks when Vite hashes the JS glue file |
+| Engine files in git | Via `vite-plugin-static-copy` from npm | Commit binaries to `public/` | npm-sourced keeps git lean; both are valid for v1 |
+| Analysis throttle | `go movetime 3000` on mobile | `go nodes 1000000` | Node count is hardware-dependent; wall-clock cap is safer on constrained devices |
+| Multi-thread engine | Deferred to v2 (separate hard-loaded `/analysis` document) | Enable for v1 with site-wide COOP+COEP | Breaks Google OAuth popup; unreliable on iOS Safari; SPA documents can't isolate per-route |
 
 ---
 
@@ -285,26 +221,44 @@ in localStorage, redirect to `/` with a "session expired" query param instead.
 
 | Package | Version | Notes |
 |---------|---------|-------|
-| `fastapi-users` | 15.0.5 (latest, 2026-04-06) | Maintenance mode — security patches only, no new features. `CookieTransport` stable since v10. Multiple backends supported since v10. |
-| `CookieTransport` defaults | Any version >= 10 | `cookie_httponly=True`, `cookie_secure=True`, `cookie_samesite="lax"` — production-safe defaults |
-| Multiple auth backends | Any version >= 10 | `FastAPIUsers(get_user_manager, [backend1, backend2])` — documented, stable API |
-| `fastapi_users.current_user(optional=True)` | Any version >= 10 | Returns `None` instead of 401 for unauthenticated requests |
-| `axios` | 1.13.6 (already installed) | `withCredentials` supported since v0.x — stable flag |
-| `fastapi` CORSMiddleware | 0.115.x (current) | `allow_credentials=True` required when `withCredentials: true` — stable since Starlette 0.12 |
+| `stockfish` (nmrugg) | 18.0.8 | GPLv3. Current as of 2026-06-26. Lite-single build files: `src/stockfish-18-lite-single.{js,wasm}`. |
+| `vite-plugin-static-copy` | 2.x | Compatible with Vite 8 (Rolldown-based). Check peer deps when installing. |
+| Vite 8 (Rolldown) | Already in project (v1.22 Phase 101) | No breaking changes to `?worker` or `public/` asset serving vs Vite 7. Rolldown replaces esbuild/Rollup for bundling but does not affect how `public/` files are served. |
+| TypeScript 6 | Already in project (v1.22 Phase 101) | `Worker` DOM type already in `lib.dom.d.ts`. No additional `@types` needed for the UCI wrapper. |
+| React 19 | Already in project | `React.lazy` + `Suspense` for route-level code splitting is unchanged in React 19. |
+| iOS Safari | 16+ required (as stated in stockfish.js docs) | Single-thread WASM with no SharedArrayBuffer works on iOS 16+. PWA install supported. |
+
+---
+
+## License Implications
+
+Stockfish is GPLv3. Distributing the WASM binary (which includes compiled Stockfish code)
+requires providing the corresponding source code or a pointer to it.
+
+**FlawChess is already open-source**, so compliance is straightforward:
+- Add a note in `README.md` or an `ACKNOWLEDGEMENTS` section: "Chess analysis powered by
+  Stockfish (GPLv3). Source: https://github.com/official-stockfish/Stockfish".
+- Do **not** modify the Stockfish source code (use the npm package unmodified).
+- If any Stockfish source is ever modified, those changes must also be released under GPLv3.
+
+FlawChess's own codebase license is independent — GPL does not "infect" FlawChess's own code
+because Stockfish runs in a separate Worker thread (not linked into the same binary/module).
+This is the same model used by Chess.com, lichess, and countless other open platforms.
 
 ---
 
 ## Sources
 
-- [FastAPI-Users CookieTransport docs](https://fastapi-users.github.io/fastapi-users/latest/configuration/authentication/transports/cookie/) — verified parameters and defaults (`httponly=True`, `secure=True`, `samesite="lax"`) — HIGH confidence
-- [FastAPI-Users current user docs](https://fastapi-users.github.io/fastapi-users/latest/usage/current-user/) — verified `optional=True` parameter, multiple backend evaluation order — HIGH confidence
-- [FastAPI-Users multiple backends discussion](https://github.com/fastapi-users/fastapi-users/discussions/989) — confirmed two backends on same `FastAPIUsers` instance, sequential evaluation — MEDIUM confidence (community discussion, matches documented API)
-- [FastAPI-Users create user programmatically](https://fastapi-users.github.io/fastapi-users/latest/cookbook/create-user-programmatically/) — verified `user_manager.create()` pattern — HIGH confidence
-- [fastapi-users PyPI](https://pypi.org/project/fastapi-users/) — verified 15.0.5 as current version, Python 3.10–3.14 support — HIGH confidence
-- [MDN Set-Cookie / SameSite](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie) — verified SameSite=Lax behavior for same-origin requests — HIGH confidence
-- Existing codebase (`app/users.py`, `app/routers/auth.py`, `app/main.py`, `frontend/src/api/client.ts`, `frontend/src/hooks/useAuth.ts`) — current auth state verified by direct inspection — HIGH confidence
+- [stockfish npm package (nmrugg)](https://www.npmjs.com/package/stockfish) — version 18.0.8, build file names, size descriptions — LOW confidence (403 on direct fetch; cross-referenced via GitHub and web search)
+- [nmrugg/stockfish.js GitHub](https://github.com/nmrugg/stockfish.js/) — build variants, file names, UCI usage, license (GPLv3 / Chess.com) — LOW confidence (web)
+- [lichess-org/stockfish-web GitHub](https://github.com/lichess-org/stockfish-web) — NNUE file names (nn-c288c895ea92.nnue, nn-37f18f62d772.nnue), multi-thread only, pkg name `@lichess-org/stockfish-web` — LOW confidence (web)
+- [Vite Features docs — Web Workers + WASM](https://vite.dev/guide/features) — `?worker`, `?worker&url`, `new Worker(new URL(...))`, `.wasm?init`, `.wasm?url` patterns — MEDIUM confidence (official docs via WebFetch)
+- [Vite 8 announcement](https://vite.dev/blog/announcing-vite8) — Rolldown integration, no breaking changes to `public/` serving or worker patterns — MEDIUM confidence (official docs)
+- [Stockfish vs ChessBase — FOSSA](https://fossa.com/blog/stockfish-vs-chessbase-gpl-v3/) — GPLv3 distribution requirements for binary distributions — LOW confidence (web)
+- SEED-066 locked decisions (D-3, D-4, D-5) — single-thread constraint rationale, ephemeral state, stored-PV handoff — HIGH confidence (project-internal)
+- SEED-012 amendment 2026-06-12 — COOP/COEP + iOS Safari analysis already researched; single-thread = no COOP/COEP needed — HIGH confidence (project-internal)
 
 ---
 
-*Stack research for: FlawChess v1.8 Guest Access*
-*Researched: 2026-04-06*
+*Stack research for: FlawChess v1.29 Live-Engine Analysis Page*
+*Researched: 2026-06-26*
