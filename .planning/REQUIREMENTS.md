@@ -70,33 +70,31 @@ Explicitly excluded. Documented to prevent scope creep. Anti-features carried fr
 
 ## Traceability
 
-Populated during roadmap creation by the roadmapper.
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ENGINE-01 | TBD | Pending |
-| ENGINE-02 | TBD | Pending |
-| ENGINE-03 | TBD | Pending |
-| ENGINE-04 | TBD | Pending |
-| ENGINE-05 | TBD | Pending |
-| BOARD-01 | TBD | Pending |
-| BOARD-02 | TBD | Pending |
-| BOARD-03 | TBD | Pending |
-| BOARD-04 | TBD | Pending |
-| BOARD-05 | TBD | Pending |
-| ROUTE-01 | TBD | Pending |
-| ROUTE-02 | TBD | Pending |
-| TACTIC-01 | TBD | Pending |
-| TACTIC-02 | TBD | Pending |
-| TACTIC-03 | TBD | Pending |
-| PLAT-01 | TBD | Pending |
-| PLAT-02 | TBD | Pending |
+| ENGINE-01 | Phase 136 | Pending |
+| ENGINE-02 | Phase 136 | Pending |
+| ENGINE-03 | Phase 136 | Pending |
+| ENGINE-04 | Phase 136 | Pending |
+| ENGINE-05 | Phase 136 | Pending |
+| BOARD-01 | Phase 137 | Pending |
+| BOARD-02 | Phase 137 | Pending |
+| BOARD-03 | Phase 137 | Pending |
+| BOARD-04 | Phase 137 | Pending |
+| BOARD-05 | Phase 137 | Pending |
+| ROUTE-01 | Phase 138 | Pending |
+| ROUTE-02 | Phase 138 | Pending |
+| TACTIC-01 | Phase 139 | Pending |
+| TACTIC-02 | Phase 139 | Pending |
+| TACTIC-03 | Phase 139 | Pending |
+| PLAT-01 | Phase 136 | Pending |
+| PLAT-02 | Phase 136 | Pending |
 
 **Coverage:**
 - v1 requirements: 17 total
-- Mapped to phases: 0 (roadmap pending)
-- Unmapped: 17 ⚠️
+- Mapped to phases: 17 (100%)
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-06-26*
-*Last updated: 2026-06-26 after initial definition for v1.29 Live-Engine Analysis Page*
+*Last updated: 2026-06-26 — traceability populated by roadmapper (Phase 136: ENGINE-01..05 + PLAT-01/02; Phase 137: BOARD-01..05; Phase 138: ROUTE-01/02; Phase 139: TACTIC-01..03)*
