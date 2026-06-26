@@ -429,7 +429,7 @@ function ExplorerBody({
             selected={resolvedOrientation === 'missed'}
             testId="tactic-toggle-missed"
             onActivate={() => handleOrientationChange('missed')}
-            noTruncate={!isMobile}
+            noTruncate
           />
           <TacticMotifChip
             motif={data.allowed_motif!}
@@ -438,7 +438,7 @@ function ExplorerBody({
             selected={resolvedOrientation === 'allowed'}
             testId="tactic-toggle-allowed"
             onActivate={() => handleOrientationChange('allowed')}
-            noTruncate={!isMobile}
+            noTruncate
           />
         </div>
       ) : (
@@ -448,7 +448,7 @@ function ExplorerBody({
               motif={data.missed_motif}
               flawId={gameId ?? 0}
               orientation="missed"
-              noTruncate={!isMobile}
+              noTruncate
             />
           )}
           {hasAllowed && data.allowed_motif != null && (
@@ -456,7 +456,7 @@ function ExplorerBody({
               motif={data.allowed_motif}
               flawId={gameId ?? 0}
               orientation="allowed"
-              noTruncate={!isMobile}
+              noTruncate
             />
           )}
         </div>
