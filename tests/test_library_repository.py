@@ -2497,3 +2497,92 @@ class TestDecidedLostSuppression:
             await db_session.execute(
                 delete(Game).where(Game.id.in_([game_boundary.id, game_playable.id]))
             )
+
+    # ------------------------------------------------------------------
+    # Test 7: missed-orientation suppression (parity with the allowed tests)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_decided_lost_missed_orientation_excluded_and_nulled(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Decided-lost suppression covers the `missed` slot, not just `allowed`.
+
+        Seeds a fork in the MISSED slot of a decided-lost flaw (eval_cp_before=-900,
+        white mover). Asserts (a) it is excluded from query_flaws with
+        orientation="missed", (b) a contestable missed-fork is still returned, and
+        (c) the suppressed flaw's missed_tactic_motif/depth serialize to None on the
+        unfiltered query while the flaw itself still appears (severity intact).
+
+        Guards against an asymmetry where suppression would only gate the allowed
+        orientation. The SQL gate wraps or_(allowed, missed) and tactic_slot_visible
+        short-circuits before the orientation check, so both slots must be covered.
+        """
+        from app.services.tactic_detector import TacticMotifInt
+
+        await self._ensure_dl_user(db_session)
+        game = await _seed_game(db_session, user_id=_DL_USER_ID, user_color="white")
+        try:
+            # Decided-lost missed-fork at ply=2 (white mover); pre-move eval_cp=-900.
+            await _seed_position(db_session, game=game, ply=1, eval_cp=-900)
+            await _seed_game_flaw(
+                db_session,
+                game=game,
+                ply=2,
+                severity=2,
+                missed_tactic_motif=int(TacticMotifInt.FORK),
+                missed_tactic_confidence=100,
+                missed_tactic_depth=0,
+            )
+            # Control: contestable missed-fork at ply=4 (eval_cp=-100 < threshold).
+            await _seed_position(db_session, game=game, ply=3, eval_cp=-100)
+            await _seed_game_flaw(
+                db_session,
+                game=game,
+                ply=4,
+                severity=2,
+                missed_tactic_motif=int(TacticMotifInt.FORK),
+                missed_tactic_confidence=100,
+                missed_tactic_depth=0,
+            )
+
+            # (a)/(b): orientation="missed" excludes the decided-lost flaw, keeps the control.
+            items, count = await self._query_flaws_fork(db_session, orientation="missed")
+            plies = [item.ply for item in items if item.game_id == game.id]
+            assert 2 not in plies, (
+                "decided-lost missed-fork at ply=2 (eval_cp=-900) must be excluded "
+                "by the missed-orientation motif filter"
+            )
+            assert 4 in plies, "contestable missed-fork at ply=4 must be included"
+            assert count >= 1
+
+            # (c): unfiltered query — the decided-lost flaw still appears with the
+            # missed tactic slot nulled (tag suppressed) but severity intact.
+            all_items, _ = await query_flaws(
+                db_session,
+                user_id=_DL_USER_ID,
+                severity=["blunder"],
+                tags=[],
+                time_control=None,
+                platform=None,
+                rated=None,
+                opponent_type="all",
+                from_date=None,
+                to_date=None,
+                color=None,
+                tactic_families=[],
+                orientation="either",
+                offset=0,
+                limit=50,
+            )
+            suppressed = next((i for i in all_items if i.game_id == game.id and i.ply == 2), None)
+            assert suppressed is not None, "decided-lost flaw must still exist (counts)"
+            assert suppressed.severity == "blunder"
+            assert suppressed.missed_tactic_motif is None, (
+                "missed_tactic_motif must be None (suppressed) on decided-lost flaw"
+            )
+            assert suppressed.missed_tactic_depth is None, (
+                "missed_tactic_depth must be None (suppressed) on decided-lost flaw"
+            )
+        finally:
+            await db_session.execute(delete(Game).where(Game.id == game.id))
