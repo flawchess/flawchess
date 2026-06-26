@@ -37,6 +37,7 @@ from app.repositories.library_repository import (
     TacticOrientation,
     _TACTIC_CHIP_CONFIDENCE_MIN,
     _TEMPO_INT_TO_TAG,
+    is_decided_lost,
     tactic_slot_visible,
 )
 from app.services.tactic_detector import _INT_TO_MOTIF as _TACTIC_INT_TO_MOTIF
@@ -432,10 +433,21 @@ def _build_card(
             # the selected tier contribute tactic chips — matching the single-row AND
             # game-selection predicate (build_flaw_filter_clauses). Empty = no gate.
             severity_ints = {_SEVERITY_INT[s] for s in flaw_severity} if flaw_severity else None
+            # Build a ply → GamePosition index once for decided-lost lookups (per-row ply N-1).
+            # Flaw rows are player-gated (fetch_page_game_flaws uses player_only_gate), so
+            # mover == user on all rows: user_color is the correct mover perspective.
+            pos_by_ply: dict[int, GamePosition] = {p.ply: p for p in positions}
             tactic_by_ply: dict[int, _TacticByPlyEntry] = {}
             for fr in flaw_rows:
                 if severity_ints is not None and fr.severity not in severity_ints:
                     continue
+                # Decided-lost: look up the pre-move position (ply N-1) and check.
+                prev_pos = pos_by_ply.get(fr.ply - 1)
+                fr_decided_lost = is_decided_lost(
+                    prev_pos.eval_cp if prev_pos else None,
+                    prev_pos.eval_mate if prev_pos else None,
+                    mover_is_white=(game.user_color == "white"),
+                )
                 allowed_visible = tactic_slot_visible(
                     fr.allowed_tactic_motif,
                     fr.allowed_tactic_confidence,
@@ -445,6 +457,7 @@ def _build_card(
                     tactic_orientation=tactic_orientation,
                     min_tactic_depth=min_tactic_depth,
                     max_tactic_depth=max_tactic_depth,
+                    decided_lost=fr_decided_lost,
                 )
                 allowed_motif_str: str | None = None
                 allowed_conf_val: int | None = None
@@ -464,6 +477,7 @@ def _build_card(
                     tactic_orientation=tactic_orientation,
                     min_tactic_depth=min_tactic_depth,
                     max_tactic_depth=max_tactic_depth,
+                    decided_lost=fr_decided_lost,
                 )
                 missed_motif_str: str | None = None
                 missed_conf_val: int | None = None

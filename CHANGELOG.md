@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Changed
+
+- **Tactic tags hidden on already-lost positions** — a tactic motif found or missed in a position that was already decisively lost (the engine had you down by more than a rook, or facing forced mate, *before* the move) no longer shows its tag, depth number, or eval-chart tooltip entry, and is excluded from the tactic-motif and depth filters on the Flaws and Games tabs. These flaws were noise: a "missed fork" teaches nothing when the game was already gone. The blunder/mistake itself still counts in the severity badges and still appears as a marker on the eval chart; only the tactic tagging is suppressed. The tactic explorer keeps full detail. (Quick 260626-bdt)
+
 ## [v1.28] Tactic Tagging — 2026-06-25
 
 ### Added

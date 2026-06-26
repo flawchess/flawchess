@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from typing import Any, Literal
 
 import chess
-from sqlalchemy import Select, Subquery, and_, case, exists, func, or_, select, true
+from sqlalchemy import Select, Subquery, and_, case, exists, func, not_, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
@@ -37,6 +37,7 @@ from app.schemas.library import FlawListItem, TacticLinesResponse
 from app.services.flaws_service import (
     FlawSeverity,
     FlawTag,
+    MATE_LADDER_LOPSIDED_CP,
 )
 from app.services.normalization import parse_base_and_increment
 from app.services.openings_service import derive_user_result
@@ -344,10 +345,17 @@ def tactic_slot_visible(
     tactic_orientation: TacticOrientation,
     min_tactic_depth: int | None,
     max_tactic_depth: int | None,
+    decided_lost: bool = False,
 ) -> bool:
     """Return True iff this tactic slot should be DISPLAYED for the active filter.
 
     A slot is visible when ALL of the following hold:
+    0. The pre-move position was NOT already decisively lost for the mover
+       (decided_lost=True → slot is suppressed regardless of all other checks).
+       Fail-open: when decided_lost=False (default), this check is skipped.
+       The decided_lost bool must stay consistent with the SQL gate in
+       build_flaw_filter_clauses (which uses decided_lost_sql). If either is
+       changed, update the other.
     1. The slot's orientation_kind is in scope under tactic_orientation
        (missed in scope when orientation is "either" or "missed";
         allowed in scope when orientation is "either" or "allowed").
@@ -373,7 +381,13 @@ def tactic_slot_visible(
         tactic_families: Active family filter (empty = no family restriction).
         tactic_orientation: Active orientation filter ("either", "missed", "allowed").
         min_tactic_depth / max_tactic_depth: Inclusive depth-range bounds (None = unbounded).
+        decided_lost: True when the pre-move position was already decisively lost for the
+                      mover (computed via is_decided_lost). Default False = no suppression.
     """
+    # 0. Decided-lost suppression: pre-move position was already lost → tag is absent.
+    if decided_lost:
+        return False
+
     # 1. Orientation scope: the slot must be in scope for the requested orientation.
     if orientation_kind == "missed" and tactic_orientation == "allowed":
         return False
@@ -428,6 +442,86 @@ _PHASE_INT_TO_TAG: dict[int, Literal["opening", "middlegame", "endgame"]] = {  #
 }
 
 
+def is_decided_lost(
+    eval_cp_before: int | None,
+    eval_mate_before: int | None,
+    *,
+    mover_is_white: bool,
+) -> bool:
+    """Return True when the pre-move position was already decisively lost for the mover.
+
+    Fail-open: both args None → False (tag is shown / flaw matches filter).
+    eval_mate == 0 is not decisive (strict < 0 / > 0 check).
+
+    Must stay consistent with the SQL gate in decided_lost_sql —
+    both functions implement the same decided-lost predicate.
+
+    Args:
+        eval_cp_before: White-POV centipawn eval at the pre-move position (None = absent).
+        eval_mate_before: White-POV mate distance at the pre-move position (None = absent).
+        mover_is_white: True when the moving side is White.
+    """
+    if mover_is_white:
+        # White is the mover — White loses when Black has mate (eval_mate < 0) or
+        # the position is already lopsidedly losing (eval_cp <= -THRESHOLD).
+        if eval_mate_before is not None and eval_mate_before < 0:
+            return True
+        if eval_cp_before is not None and eval_cp_before <= -MATE_LADDER_LOPSIDED_CP:
+            return True
+    else:
+        # Black is the mover — Black loses when White has mate (eval_mate > 0) or
+        # the position is lopsidedly winning for White (eval_cp >= +THRESHOLD).
+        if eval_mate_before is not None and eval_mate_before > 0:
+            return True
+        if eval_cp_before is not None and eval_cp_before >= MATE_LADDER_LOPSIDED_CP:
+            return True
+    return False
+
+
+def decided_lost_sql(
+    eval_cp_col: Any,
+    eval_mate_col: Any,
+    user_color_col: Any,
+) -> ColumnElement[bool]:
+    """Return a NULL-safe SQLAlchemy boolean expression for the decided-lost predicate.
+
+    The expression is always true/false (never SQL NULL) because each disjunct is
+    wrapped in a NOT NULL guard — a NULL column simply contributes False, so the
+    fail-open rule is structural.
+
+    Mirrors is_decided_lost exactly: white mover loses when eval_mate < 0 OR
+    eval_cp <= -MATE_LADDER_LOPSIDED_CP; black mover loses when eval_mate > 0 OR
+    eval_cp >= +MATE_LADDER_LOPSIDED_CP. eval_mate == 0 is not decisive (strict signs).
+
+    Must stay consistent with is_decided_lost (the Python counterpart). If either
+    is changed, update the other.
+
+    Args:
+        eval_cp_col: SQLAlchemy column for white-POV eval_cp (game_positions.eval_cp alias).
+        eval_mate_col: SQLAlchemy column for white-POV eval_mate (game_positions.eval_mate alias).
+        user_color_col: SQLAlchemy column for game.user_color ("white" | "black").
+    """
+    white = user_color_col == "white"
+    return or_(
+        # Mate signal: Black has mate (< 0) for white mover; White has mate (> 0) for black mover.
+        and_(
+            eval_mate_col.isnot(None),
+            or_(
+                and_(white, eval_mate_col < 0),
+                and_(~white, eval_mate_col > 0),
+            ),
+        ),
+        # CP signal: lopsided loss by centipawn threshold.
+        and_(
+            eval_cp_col.isnot(None),
+            or_(
+                and_(white, eval_cp_col <= -MATE_LADDER_LOPSIDED_CP),
+                and_(~white, eval_cp_col >= MATE_LADDER_LOPSIDED_CP),
+            ),
+        ),
+    )
+
+
 def build_flaw_filter_clauses(
     severity: Sequence[FlawSeverity],
     tags: Sequence[FlawTag],
@@ -435,6 +529,7 @@ def build_flaw_filter_clauses(
     orientation: TacticOrientation = "either",
     min_tactic_depth: int | None = None,
     max_tactic_depth: int | None = None,
+    decided_lost: ColumnElement[bool] | None = None,
 ) -> list[ColumnElement[bool]]:
     """Return WHERE clauses filtering game_flaws rows (SEED-038 family-aware logic).
 
@@ -472,6 +567,12 @@ def build_flaw_filter_clauses(
                   ply) on the active orientation's depth column (Quick 260620-l5k /
                   Phase 130). Each side optional; None = unbounded that side. Mates
                   obey the range too (the Phase 129 D-04 exemption was removed).
+        decided_lost: Optional SQL boolean expression (from decided_lost_sql) for
+                  the pre-move decided-lost predicate. When non-None, ANDs
+                  NOT(decided_lost) onto the assembled tactic clause only — severity,
+                  tempo, opportunity, impact, and phase clauses are NOT gated. Callers
+                  build this expression via decided_lost_sql and pass it here.
+                  None (default) = no suppression (backward-compatible).
 
     Returns:
         A list of SQLAlchemy column expressions. Empty list = no flaw filter
@@ -562,7 +663,13 @@ def build_flaw_filter_clauses(
                 depth_col, min_tactic_depth, max_tactic_depth, depth_offset
             )
             pair_branches.append(branch)
-        clauses.append(or_(*pair_branches))
+        tactic_clause: ColumnElement[bool] = or_(*pair_branches)
+        # Decided-lost suppression: exclude flaws from positions already decisively
+        # lost for the mover. Only the tactic clause is gated — severity/tempo/
+        # opportunity/impact/phase clauses are intentionally NOT gated (flaw still exists).
+        if decided_lost is not None:
+            tactic_clause = and_(tactic_clause, not_(decided_lost))
+        clauses.append(tactic_clause)
 
     return clauses
 
@@ -603,8 +710,21 @@ def flaw_exists_from_table(
         min_tactic_depth / max_tactic_depth: Inclusive depth-range bounds on the
                  active orientation's depth column. None = unbounded that side.
     """
+    # Decided-lost suppression: LEFT JOIN the pre-move position (ply N-1) inside the
+    # EXISTS so the SQL gate has access to eval_cp/eval_mate. LEFT JOIN so ply 0/1
+    # flaws (no prior position) keep null eval → fail open (T-bdt-01: join is user-
+    # scoped + game-correlated, no cross-user rows can attach).
+    PositionBefore = aliased(GamePosition, name="pos_before_exists")  # noqa: N806
+    dl = decided_lost_sql(PositionBefore.eval_cp, PositionBefore.eval_mate, Game.user_color)
+
     clauses = build_flaw_filter_clauses(
-        severity, tags, tactic_families, orientation, min_tactic_depth, max_tactic_depth
+        severity,
+        tags,
+        tactic_families,
+        orientation,
+        min_tactic_depth,
+        max_tactic_depth,
+        decided_lost=dl,
     )
     if not clauses:
         # No filter — match all games (caller decides whether to add to statement)
@@ -614,7 +734,14 @@ def flaw_exists_from_table(
     # opponent-only flaw does not falsely flag a game into the Flaw filter (R1/R6).
     # Game.id is the outer correlating column (correlated EXISTS pattern).
     return exists(
-        select(GameFlaw.ply).where(
+        select(GameFlaw.ply)
+        .outerjoin(
+            PositionBefore,
+            (PositionBefore.game_id == GameFlaw.game_id)
+            & (PositionBefore.user_id == GameFlaw.user_id)
+            & (PositionBefore.ply == GameFlaw.ply - 1),
+        )
+        .where(
             GameFlaw.game_id == Game.id,
             GameFlaw.user_id == user_id,
             player_only_gate(GameFlaw.ply, Game.user_color),  # D-04 player gate
@@ -695,6 +822,107 @@ def _compute_move_seconds(
     return round(move_time, 1)
 
 
+def _build_flaw_item(
+    flaw: GameFlaw,
+    game: Game,
+    pos_at: GamePosition | None,
+    pos_before: GamePosition | None,
+    pos_two_before: GamePosition | None,
+    *,
+    tactic_families: Sequence[str],
+    orientation: TacticOrientation,
+    min_tactic_depth: int | None,
+    max_tactic_depth: int | None,
+) -> FlawListItem:
+    """Build one FlawListItem from a query_flaws result row.
+
+    Extracted from the query_flaws comprehension to host the per-row
+    decided_lost local (computed once, passed to all 6 tactic_slot_visible
+    calls) while keeping each helper call readable (CLAUDE.md §keep functions
+    shallow; not inlining is_decided_lost six times).
+
+    Quick 260626-bdt: decided_lost is computed from the pre-move position eval
+    (pos_before.eval_cp / eval_mate) and the mover color (user_color == "white"
+    for player flaws, since all rows are player-gated). When True the tactic tag
+    + depth are suppressed (slot returns None) while severity and all other fields
+    are unaffected — the flaw still exists and counts.
+    """
+    row_decided_lost = is_decided_lost(
+        pos_before.eval_cp if pos_before else None,
+        pos_before.eval_mate if pos_before else None,
+        mover_is_white=(game.user_color == "white"),
+    )
+
+    # Tactic slot emission via the shared per-slot display predicate (tactic_slot_visible).
+    # A slot is non-null IFF it satisfies the full active filter (orientation ∩ confidence ∩
+    # family ∩ depth-range) AND the pre-move position was not already decided-lost.
+    # The tactic_slot_visible predicate must agree with the SQL row predicate in
+    # build_flaw_filter_clauses. See tactic_slot_visible docstring.
+    _tactic_kwargs: dict[str, Any] = dict(
+        tactic_families=tactic_families,
+        tactic_orientation=orientation,
+        min_tactic_depth=min_tactic_depth,
+        max_tactic_depth=max_tactic_depth,
+        decided_lost=row_decided_lost,
+    )
+    allowed_visible = tactic_slot_visible(
+        flaw.allowed_tactic_motif,
+        flaw.allowed_tactic_confidence,
+        flaw.allowed_tactic_depth,
+        orientation_kind="allowed",
+        **_tactic_kwargs,
+    )
+    missed_visible = tactic_slot_visible(
+        flaw.missed_tactic_motif,
+        flaw.missed_tactic_confidence,
+        flaw.missed_tactic_depth,
+        orientation_kind="missed",
+        **_tactic_kwargs,
+    )
+    return FlawListItem(
+        game_id=flaw.game_id,
+        ply=flaw.ply,
+        fen=flaw.fen,
+        move_san=pos_at.move_san if pos_at else None,
+        severity=_SEVERITY_INT_TO_TAG[flaw.severity],
+        tags=_reconstruct_tags(flaw),
+        eval_cp_before=pos_before.eval_cp if pos_before else None,
+        eval_mate_before=pos_before.eval_mate if pos_before else None,
+        eval_cp_after=pos_at.eval_cp if pos_at else None,
+        eval_mate_after=pos_at.eval_mate if pos_at else None,
+        white_rating=game.white_rating,
+        black_rating=game.black_rating,
+        user_result=derive_user_result(game.result, game.user_color),
+        played_at=game.played_at,
+        time_control_bucket=game.time_control_bucket,
+        time_control_str=game.time_control_str,
+        ply_count=game.ply_count,
+        termination=game.termination,
+        platform=game.platform,
+        platform_url=game.platform_url,
+        white_username=game.white_username,
+        black_username=game.black_username,
+        user_color=game.user_color,
+        clock_seconds=pos_at.clock_seconds if pos_at else None,
+        move_seconds=_compute_move_seconds(pos_at, pos_two_before, game.time_control_str),
+        best_move=pos_at.best_move if pos_at else None,
+        allowed_tactic_motif=(
+            _TACTIC_INT_TO_MOTIF.get(flaw.allowed_tactic_motif)  # ty: ignore[invalid-argument-type]
+            if allowed_visible
+            else None
+        ),
+        allowed_tactic_confidence=(flaw.allowed_tactic_confidence if allowed_visible else None),
+        allowed_tactic_depth=(flaw.allowed_tactic_depth if allowed_visible else None),
+        missed_tactic_motif=(
+            _TACTIC_INT_TO_MOTIF.get(flaw.missed_tactic_motif)  # ty: ignore[invalid-argument-type]
+            if missed_visible
+            else None
+        ),
+        missed_tactic_confidence=(flaw.missed_tactic_confidence if missed_visible else None),
+        missed_tactic_depth=(flaw.missed_tactic_depth if missed_visible else None),
+    )
+
+
 async def query_flaws(
     session: AsyncSession,
     *,
@@ -743,6 +971,14 @@ async def query_flaws(
     Returns:
         (flaws, matched_count) where matched_count is the total before pagination.
     """
+    # Decided-lost SQL expression uses the PositionBefore alias (ply N-1, already
+    # LEFT-JOINed below) to access pre-move eval. Built here so it can be passed
+    # to both build_flaw_filter_clauses (SQL gate) and the row serialization loop
+    # (Python gate via is_decided_lost). The alias name must match the outerjoin below.
+    PositionBefore = aliased(GamePosition, name="pos_before")  # noqa: N806
+    PositionTwoBefore = aliased(GamePosition, name="pos_two_before")  # noqa: N806
+    dl_sql = decided_lost_sql(PositionBefore.eval_cp, PositionBefore.eval_mate, Game.user_color)
+
     flaw_clauses = build_flaw_filter_clauses(
         severity,
         tags,
@@ -750,17 +986,19 @@ async def query_flaws(
         orientation,
         min_tactic_depth,
         max_tactic_depth,
+        decided_lost=dl_sql,
     )
 
     # Three aliases for game_positions (Phase 112, D-08; extended 260610-vru):
     # PositionAt:        ply=N   → move_san + eval-after + clock_seconds (mover's remaining clock)
-    # PositionBefore:    ply=N-1 → eval-before (position BEFORE the flawed move)
+    # PositionBefore:    ply=N-1 → eval-before (position BEFORE the flawed move; also used
+    #                              for the decided-lost SQL gate declared above)
     # PositionTwoBefore: ply=N-2 → same-side previous clock for move_seconds computation
     #   (Pitfall 2 from flaws_service._move_time: same-side clock is two plies back, not one)
     # User-scoped on all joins (T-112-02: no cross-user position rows can attach).
+    # NOTE: PositionBefore and PositionTwoBefore are declared above (before flaw_clauses)
+    # so dl_sql can reference the same alias objects. Only PositionAt is declared here.
     PositionAt = aliased(GamePosition, name="pos_at")  # noqa: N806
-    PositionBefore = aliased(GamePosition, name="pos_before")  # noqa: N806
-    PositionTwoBefore = aliased(GamePosition, name="pos_two_before")  # noqa: N806
 
     # Base: game_flaws JOIN games + three LEFT JOINs on game_positions scoped to user
     base_stmt = (
@@ -828,128 +1066,16 @@ async def query_flaws(
     rows = (await session.execute(paged_stmt)).all()
 
     items: list[FlawListItem] = [
-        FlawListItem(
-            game_id=flaw.game_id,
-            ply=flaw.ply,
-            fen=flaw.fen,
-            move_san=pos_at.move_san if pos_at else None,
-            severity=_SEVERITY_INT_TO_TAG[flaw.severity],
-            tags=_reconstruct_tags(flaw),
-            eval_cp_before=pos_before.eval_cp if pos_before else None,
-            eval_mate_before=pos_before.eval_mate if pos_before else None,
-            eval_cp_after=pos_at.eval_cp if pos_at else None,
-            eval_mate_after=pos_at.eval_mate if pos_at else None,
-            white_rating=game.white_rating,
-            black_rating=game.black_rating,
-            user_result=derive_user_result(game.result, game.user_color),
-            played_at=game.played_at,
-            time_control_bucket=game.time_control_bucket,
-            time_control_str=game.time_control_str,
-            ply_count=game.ply_count,
-            termination=game.termination,
-            platform=game.platform,
-            platform_url=game.platform_url,
-            white_username=game.white_username,
-            black_username=game.black_username,
-            user_color=game.user_color,
-            clock_seconds=pos_at.clock_seconds if pos_at else None,
-            move_seconds=_compute_move_seconds(pos_at, pos_two_before, game.time_control_str),
-            # Engine best move FROM the pre-flaw position at ply=N (NULL for
-            # lichess-eval-only games without a captured PV).
-            best_move=pos_at.best_move if pos_at else None,
-            # Quick 260621-sm8: tactic slot emission via the shared per-slot display
-            # predicate (tactic_slot_visible). A slot is non-null IFF it satisfies the
-            # full active filter (orientation ∩ confidence ∩ family ∩ depth-range).
-            # Previously this only gated on confidence >= threshold, so orientation and
-            # depth controls had no effect on which slots were emitted — violating the
-            # type contract that slots are null when their chip would be hidden.
-            # The tactic_slot_visible predicate must agree with the SQL row predicate in
-            # build_flaw_filter_clauses (same FAMILY_TO_MOTIF_INTS, same threshold, same
-            # depth offset semantics). See tactic_slot_visible docstring.
-            allowed_tactic_motif=(
-                _TACTIC_INT_TO_MOTIF.get(flaw.allowed_tactic_motif)
-                if tactic_slot_visible(
-                    flaw.allowed_tactic_motif,
-                    flaw.allowed_tactic_confidence,
-                    flaw.allowed_tactic_depth,
-                    orientation_kind="allowed",
-                    tactic_families=tactic_families or (),
-                    tactic_orientation=orientation,
-                    min_tactic_depth=min_tactic_depth,
-                    max_tactic_depth=max_tactic_depth,
-                )
-                else None
-            ),
-            allowed_tactic_confidence=(
-                flaw.allowed_tactic_confidence
-                if tactic_slot_visible(
-                    flaw.allowed_tactic_motif,
-                    flaw.allowed_tactic_confidence,
-                    flaw.allowed_tactic_depth,
-                    orientation_kind="allowed",
-                    tactic_families=tactic_families or (),
-                    tactic_orientation=orientation,
-                    min_tactic_depth=min_tactic_depth,
-                    max_tactic_depth=max_tactic_depth,
-                )
-                else None
-            ),
-            allowed_tactic_depth=(
-                flaw.allowed_tactic_depth
-                if tactic_slot_visible(
-                    flaw.allowed_tactic_motif,
-                    flaw.allowed_tactic_confidence,
-                    flaw.allowed_tactic_depth,
-                    orientation_kind="allowed",
-                    tactic_families=tactic_families or (),
-                    tactic_orientation=orientation,
-                    min_tactic_depth=min_tactic_depth,
-                    max_tactic_depth=max_tactic_depth,
-                )
-                else None
-            ),
-            missed_tactic_motif=(
-                _TACTIC_INT_TO_MOTIF.get(flaw.missed_tactic_motif)
-                if tactic_slot_visible(
-                    flaw.missed_tactic_motif,
-                    flaw.missed_tactic_confidence,
-                    flaw.missed_tactic_depth,
-                    orientation_kind="missed",
-                    tactic_families=tactic_families or (),
-                    tactic_orientation=orientation,
-                    min_tactic_depth=min_tactic_depth,
-                    max_tactic_depth=max_tactic_depth,
-                )
-                else None
-            ),
-            missed_tactic_confidence=(
-                flaw.missed_tactic_confidence
-                if tactic_slot_visible(
-                    flaw.missed_tactic_motif,
-                    flaw.missed_tactic_confidence,
-                    flaw.missed_tactic_depth,
-                    orientation_kind="missed",
-                    tactic_families=tactic_families or (),
-                    tactic_orientation=orientation,
-                    min_tactic_depth=min_tactic_depth,
-                    max_tactic_depth=max_tactic_depth,
-                )
-                else None
-            ),
-            missed_tactic_depth=(
-                flaw.missed_tactic_depth
-                if tactic_slot_visible(
-                    flaw.missed_tactic_motif,
-                    flaw.missed_tactic_confidence,
-                    flaw.missed_tactic_depth,
-                    orientation_kind="missed",
-                    tactic_families=tactic_families or (),
-                    tactic_orientation=orientation,
-                    min_tactic_depth=min_tactic_depth,
-                    max_tactic_depth=max_tactic_depth,
-                )
-                else None
-            ),
+        _build_flaw_item(
+            flaw,
+            game,
+            pos_at,
+            pos_before,
+            pos_two_before,
+            tactic_families=tactic_families or (),
+            orientation=orientation,
+            min_tactic_depth=min_tactic_depth,
+            max_tactic_depth=max_tactic_depth,
         )
         for flaw, game, pos_at, pos_before, pos_two_before in rows
     ]
