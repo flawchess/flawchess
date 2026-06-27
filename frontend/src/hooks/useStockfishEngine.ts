@@ -94,6 +94,15 @@ export function useStockfishEngine({
   /** In-flight MultiPV map: keyed by multipv index, updated on exact info lines. */
   const pvMapRef = useRef<Map<number, PvLine>>(new Map());
 
+  /**
+   * Side to move of the FEN currently being analyzed. UCI scores are reported
+   * from the mover's POV, but evalCp/evalMate (and PvLine) are contractually
+   * white-POV. We negate the committed score when black is to move so the sign
+   * is correct on every ply. Bug fix: without this the eval was flipped on
+   * alternating plies (black-to-move positions showed black's POV).
+   */
+  const analyzedSideToMoveRef = useRef<'w' | 'b'>('w');
+
   // ─── State ─────────────────────────────────────────────────────────────────
 
   const [isReady, setIsReady] = useState(false);
@@ -163,6 +172,9 @@ export function useStockfishEngine({
     // Clear pvMap so stale lines from the previous position do not bleed into
     // the snapshot that will be committed on the next bestmove.
     pvMapRef.current.clear();
+    // Record the side to move so the committed score can be normalized to
+    // white-POV (UCI reports it from the mover's POV).
+    analyzedSideToMoveRef.current = fenToAnalyze.split(' ')[1] === 'b' ? 'b' : 'w';
     worker.postMessage(`position fen ${fenToAnalyze}`);
     worker.postMessage(`go movetime ${MOVETIME_MS} nodes ${MAX_NODES}`);
     stateRef.current = 'thinking';
@@ -239,17 +251,23 @@ export function useStockfishEngine({
         stateRef.current = 'idle';
         setIsAnalyzing(false);
 
+        // Normalize UCI's side-to-move score to white-POV (negate for black to
+        // move) so evalCp/evalMate and every PvLine honor the white-POV contract.
+        const whitePovSign = analyzedSideToMoveRef.current === 'b' ? -1 : 1;
+        const toWhitePov = (v: number | null): number | null =>
+          v === null ? null : v * whitePovSign;
+
         // Sort by multipv index so pvLines[0] is always the top line.
-        const snapshot = [...pvMapRef.current.values()].sort(
-          (a, b) => a.multipv - b.multipv,
-        );
+        const snapshot = [...pvMapRef.current.values()]
+          .sort((a, b) => a.multipv - b.multipv)
+          .map((l) => ({ ...l, evalCp: toWhitePov(l.evalCp), evalMate: toWhitePov(l.evalMate) }));
         setPvLines(snapshot);
 
         // Commit the top line's eval to the flat state fields.
         const topLine = pvMapRef.current.get(1);
         if (topLine !== undefined) {
-          setEvalCp(topLine.evalCp);
-          setEvalMate(topLine.evalMate);
+          setEvalCp(toWhitePov(topLine.evalCp));
+          setEvalMate(toWhitePov(topLine.evalMate));
           setDepth(topLine.depth);
         }
       }

@@ -28,6 +28,14 @@ export interface VariationTreeProps {
   onNodeClick: (nodeId: NodeId) => void;
   /** Height override passed to the mobile HorizontalMoveList. */
   heightClass?: string;
+  /**
+   * Optional per-node text color (CSS color string), keyed by node id. Used in
+   * tactic mode to mark the depth-0 target (blue) and the blunder (red) in the
+   * desktop move list. Applied only on desktop; the current node keeps its
+   * primary highlight. Ignored on mobile (the tactic SAN ladder carries the
+   * mobile decorations).
+   */
+  decorations?: Map<NodeId, string>;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -226,6 +234,7 @@ function DesktopTree({
   currentNodeId,
   rootPly,
   onNodeClick,
+  decorations,
 }: VariationTreeProps) {
   const activeRef = useRef<HTMLButtonElement | null>(null);
   const rootPlyVal = rootPly ?? 0;
@@ -268,6 +277,9 @@ function DesktopTree({
     const node = nodes.get(nodeId);
     if (!node) return null;
     const isCurrent = nodeId === currentNodeId;
+    // Tactic decoration color (punchline blue / blunder red) — only when the
+    // node isn't the active highlight (the primary bg would hide the text color).
+    const decoColor = !isCurrent ? decorations?.get(nodeId) : undefined;
     return (
       <button
         ref={isCurrent ? activeRef : undefined}
@@ -278,8 +290,10 @@ function DesktopTree({
         className={cn(
           'text-sm font-mono px-1 py-0.5 rounded transition-colors hover:bg-accent',
           isCurrent && 'bg-primary text-primary-foreground hover:bg-primary/90',
-          !isCurrent && isVariation && 'text-muted-foreground',
+          !isCurrent && isVariation && !decoColor && 'text-muted-foreground',
+          decoColor && 'font-bold',
         )}
+        style={decoColor ? { color: decoColor } : undefined}
       >
         {node.san}
       </button>

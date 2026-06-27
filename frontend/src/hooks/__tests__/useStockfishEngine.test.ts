@@ -204,7 +204,9 @@ describe('useStockfishEngine', () => {
       mockWorker.simulateMessage('bestmove e2e4 ponder e7e5');
     });
 
-    expect(result.current.evalCp).toBe(52);
+    // TEST_FEN is black-to-move, so UCI's +52 (mover POV) is normalized to
+    // white-POV = -52 (the eval-sign-flip fix).
+    expect(result.current.evalCp).toBe(-52);
     expect(result.current.isAnalyzing).toBe(false);
   });
 

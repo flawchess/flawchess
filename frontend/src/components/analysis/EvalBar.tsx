@@ -1,10 +1,11 @@
 /**
- * EvalBar — vertical white-POV sigmoid centipawn bar with a depth-gated mate
- * label (Phase 137, D-04).
+ * EvalBar — vertical sigmoid centipawn bar (Phase 137; Quick 260627: now follows
+ * board orientation).
  *
- * White is always at the top regardless of board orientation (D-04: no
- * `orientation` prop). The mate label is shown only when `evalMate !== null &&
- * depth >= 8` to avoid flickering early-search artefacts.
+ * The bar matches the board's perspective: the side sitting at the bottom of the
+ * board occupies the bottom of the bar. In White's view (not flipped) White is at
+ * the bottom; flipped to Black's view, Black is at the bottom. The numeric eval is
+ * shown in the engine lines, not on the bar itself.
  */
 
 import { cn } from '@/lib/utils';
@@ -49,21 +50,29 @@ export interface EvalBarProps {
   evalCp: number | null;
   evalMate: number | null;
   depth: number;
+  /**
+   * Match the board orientation. When false (default, White's view) White sits at
+   * the bottom of the bar; when true (Black's view) Black sits at the bottom.
+   */
+  flipped?: boolean;
   /** Caller (Phase 138 page shell) may override width/height via className. */
   className?: string;
 }
 
 /**
- * Renders a fixed white-POV vertical evaluation bar.
- * White always occupies the top fraction of the bar; black the bottom.
+ * Renders a vertical evaluation bar whose perspective follows the board.
+ * The side at the bottom of the board occupies the bottom fraction of the bar.
  */
-export function EvalBar({ evalCp, evalMate, depth, className }: EvalBarProps) {
+export function EvalBar({ evalCp, evalMate, depth, flipped = false, className }: EvalBarProps) {
   const whiteFraction = computeWhiteFraction(evalCp, evalMate, depth);
   const whitePercent = `${(whiteFraction * 100).toFixed(2)}%`;
   const blackPercent = `${((1 - whiteFraction) * 100).toFixed(2)}%`;
 
-  const showMateLabel = evalMate !== null && depth >= 8;
-  const mateIsWhiteWinning = showMateLabel && evalMate! > 0;
+  // White sits at the bottom in White's perspective; the bar flips with the board.
+  const whiteAtBottom = !flipped;
+  // Anchor each fill to the correct end so it follows the board orientation.
+  const whiteEnd = whiteAtBottom ? { bottom: 0 } : { top: 0 };
+  const blackEnd = whiteAtBottom ? { top: 0 } : { bottom: 0 };
 
   return (
     <div
@@ -71,33 +80,21 @@ export function EvalBar({ evalCp, evalMate, depth, className }: EvalBarProps) {
       role="img"
       aria-label={`Engine evaluation: ${scoreText(evalCp, evalMate)}`}
       className={cn(
-        'relative flex flex-col border border-border rounded overflow-hidden w-4',
+        'relative flex flex-col border border-border rounded overflow-hidden w-5',
         className,
       )}
     >
-      {/* White fill — top of bar */}
+      {/* White fill */}
       <div
-        className="absolute inset-x-0 top-0 transition-[height] duration-150"
-        style={{ background: EVAL_BAR_WHITE, height: whitePercent }}
+        className="absolute inset-x-0 transition-[height] duration-150"
+        style={{ background: EVAL_BAR_WHITE, height: whitePercent, ...whiteEnd }}
       />
 
-      {/* Black fill — bottom of bar */}
+      {/* Black fill */}
       <div
-        className="absolute inset-x-0 bottom-0"
-        style={{ background: EVAL_BAR_BLACK, height: blackPercent }}
+        className="absolute inset-x-0"
+        style={{ background: EVAL_BAR_BLACK, height: blackPercent, ...blackEnd }}
       />
-
-      {/* Mate label — depth-gated (D-04) */}
-      {showMateLabel && (
-        <span
-          className={cn(
-            'absolute left-1/2 -translate-x-1/2 text-sm font-semibold z-10',
-            mateIsWhiteWinning ? 'top-2 text-black' : 'bottom-2 text-white',
-          )}
-        >
-          M{Math.abs(evalMate!)}
-        </span>
-      )}
     </div>
   );
 }

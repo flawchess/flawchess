@@ -187,6 +187,30 @@ describe('useAnalysisBoard', () => {
     expect(result.current.position).toBe(ROOT_FEN);
   });
 
+  // ── Behavior 5: goToRoot ────────────────────────────────────────────────
+
+  it('goToRoot: sets currentNodeId to null without clearing nodes or mainLine (Phase 139)', () => {
+    const { result } = renderHook(() => useAnalysisBoard(ROOT_FEN));
+
+    // Seed a mainLine so nodes + mainLine are non-empty
+    act(() => {
+      result.current.loadMainLine(MAIN_LINE_SANS, ROOT_FEN);
+    });
+    // After loadMainLine, currentNodeId is the last node (not null)
+    expect(result.current.currentNodeId).not.toBeNull();
+    const lineLength = result.current.mainLine.length;
+    expect(lineLength).toBe(MAIN_LINE_SANS.length);
+
+    // goToRoot sets currentNodeId to null (decision position)
+    act(() => { result.current.goToRoot(); });
+    expect(result.current.currentNodeId).toBeNull();
+    expect(result.current.position).toBe(ROOT_FEN);
+
+    // nodes and mainLine are UNCHANGED
+    expect(result.current.mainLine).toHaveLength(lineLength);
+    expect(result.current.nodes.size).toBe(lineLength);
+  });
+
   // ── Boundary: goForward with multiple children picks lowest-id child ────
 
   it('goForward from root picks the first child (lowest id) when multiple children exist', () => {

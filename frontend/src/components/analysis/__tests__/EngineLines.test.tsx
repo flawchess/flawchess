@@ -77,8 +77,8 @@ describe('EngineLines', () => {
       />,
     );
 
-    // Line 0 — evalCp 142 → "+1.42"
-    expect(screen.getByText('+1.42')).toBeTruthy();
+    // Line 0 — evalCp 142 → "+1.4" (1-digit)
+    expect(screen.getByText('+1.4')).toBeTruthy();
     // Line 1 — evalMate 3 → "#+3"
     expect(screen.getByText('#+3')).toBeTruthy();
   });
@@ -167,7 +167,7 @@ describe('EngineLines', () => {
         onMoveClick={vi.fn()}
       />,
     );
-    expect(screen.getByText('-0.33')).toBeTruthy();
+    expect(screen.getByText('-0.3')).toBeTruthy();
   });
 
   it('negative evalMate displays as #-N', () => {
@@ -221,6 +221,6 @@ describe('EngineLines', () => {
         onMoveClick={vi.fn()}
       />,
     );
-    expect(screen.getByText('+0.50')).toBeTruthy();
+    expect(screen.getByText('+0.5')).toBeTruthy();
   });
 });

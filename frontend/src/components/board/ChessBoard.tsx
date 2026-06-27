@@ -54,6 +54,12 @@ interface ChessBoardProps {
    * in the DOM so their square testids do not collide (Pitfall 6 — Phase 135).
    */
   id?: string;
+  /**
+   * Maximum board width in px on desktop. Defaults to 400 (matches the Openings
+   * miniboard). The dedicated /analysis page passes a larger value so its
+   * primary board is not cramped. Mobile still uses the full container width.
+   */
+  maxWidth?: number;
 }
 
 // Coordinate labels use the opposite square's color for contrast
@@ -214,7 +220,7 @@ function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; b
   );
 }
 
-export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, arrows = [], id }: ChessBoardProps) {
+export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, arrows = [], id, maxWidth = 400 }: ChessBoardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Start at 0 so we don't mount react-chessboard until the container has measured.
   // Mounting with a non-zero width inside a display:none parent (e.g. the hidden
@@ -229,8 +235,8 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, a
     const updateWidth = () => {
       if (containerRef.current) {
         const containerWidth = containerRef.current.clientWidth;
-        // On mobile (<768px), use full container width; on desktop cap at 400px
-        setBoardWidth(Math.min(containerWidth, 400));
+        // On mobile, use full container width; on desktop cap at maxWidth (400 default).
+        setBoardWidth(Math.min(containerWidth, maxWidth));
       }
     };
 
@@ -240,7 +246,7 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, a
       observer.observe(containerRef.current);
     }
     return () => observer.disconnect();
-  }, []);
+  }, [maxWidth]);
 
   // Reset selected square when position changes (e.g. navigating move history).
   // State update during render is the React-recommended pattern for derived state resets.

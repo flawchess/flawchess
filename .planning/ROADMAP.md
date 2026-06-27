@@ -42,7 +42,7 @@ Milestone Goal: Ship a standalone `/analysis` board where the user makes any leg
 - [x] **Phase 136: `useStockfishEngine` Hook + WASM Setup** - Install WASM Stockfish, implement Worker lifecycle + UCI protocol + PLAT hardening (CI COOP/COEP guard, PWA wasm exclusion, tab-hide pause) (completed 2026-06-26)
 - [x] **Phase 137: `useAnalysisBoard` Hook + Analysis Display Components** - Branching move tree (new hook, not a variant of useChessGame), EvalBar, EngineLines, VariationTree (completed 2026-06-26)
 - [ ] **Phase 138: `/analysis` Route + Page Shell + Entry Points** - Lazy-loaded page shell, router wiring, free-play entry points (opening position + game-review ply)
-- [ ] **Phase 139: Tactic Mode Overlay + Phase 135 Subsume** - TacticModeOverlay, Phase 135 regression parity, retire TacticLineExplorer + useTacticLine
+- [x] **Phase 139: Tactic Mode Overlay + Phase 135 Subsume** - TacticModeOverlay, Phase 135 regression parity, retire TacticLineExplorer + useTacticLine (completed 2026-06-26)
 
 ## Phase Details
 
@@ -126,12 +126,18 @@ Plans:
   3. All four Phase 135 regression behaviors pass before any code deletion: depth-0 highlight (no empty-PV crash), missed/allowed +1 ply offset via `tacticDepth.ts`, real-game-ply move numbering, tactic-rail state on route re-entry
   4. `TacticLineExplorer.tsx` and `useTacticLine.ts` are deleted; all tactic "Explore" entry points navigate to `/analysis?...`; `npm run knip` passes clean
 
-**Plans**: TBD
+**Plans**: 3 plans
 **UI hint**: yes
 
 Plans:
+**Wave 1**
 
-- [ ] TBD
+- [x] 139-01-PLAN.md — TacticModeOverlay + Analysis.tsx tactic wiring + 4 regression behaviors [TACTIC-01, TACTIC-02]
+- [x] 139-02-PLAN.md — Repoint FlawCard/LibraryGameCard Explore to /analysis + D-02 "Analyze position" (?fen=) button [TACTIC-03]
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 139-03-PLAN.md — Delete TacticLineExplorer + useTacticLine; knip + deletion gate [TACTIC-03]
 
 ## Progress
 
@@ -193,7 +199,7 @@ Plans:
 | 136. `useStockfishEngine` Hook + WASM Setup | 2/2 | Complete    | 2026-06-26 |
 | 137. `useAnalysisBoard` Hook + Analysis Display Components | 3/3 | Complete    | 2026-06-26 |
 | 138. `/analysis` Route + Page Shell + Entry Points | 3/3 | Complete   | 2026-06-26 |
-| 139. Tactic Mode Overlay + Phase 135 Subsume | 0/TBD | Not started | - |
+| 139. Tactic Mode Overlay + Phase 135 Subsume | 3/3 | Complete    | 2026-06-26 |
 
 ## Backlog
 

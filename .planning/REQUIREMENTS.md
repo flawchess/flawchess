@@ -32,9 +32,9 @@ Requirements for this milestone. Each maps to exactly one roadmap phase. Almost 
 
 ### Tactic Mode (TACTIC)
 
-- [ ] **TACTIC-01**: In tactic mode the board opens at the flaw position with the stored PV as the initial mainline (D-5); the live engine takes over the moment the user deviates from or walks past the stored line
-- [ ] **TACTIC-02**: Tactic mode shows the motif badge, missed/allowed framing, depth-to-punchline counter, and next/prev-tactic rail — preserving every Phase 135 behavior (depth-0 highlight, missed/allowed +1 offset via `tacticDepth.ts`, real-game-ply move numbering, tactic-rail state)
-- [ ] **TACTIC-03**: The standalone Tactic Line Explorer modal is retired once tactic-mode parity is verified (regression-gated); all former entry points are repointed to `/analysis`
+- [x] **TACTIC-01**: In tactic mode the board opens at the flaw position with the stored PV as the initial mainline (D-5); the live engine takes over the moment the user deviates from or walks past the stored line
+- [x] **TACTIC-02**: Tactic mode shows the motif badge, missed/allowed framing, depth-to-punchline counter, and next/prev-tactic rail — preserving every Phase 135 behavior (depth-0 highlight, missed/allowed +1 offset via `tacticDepth.ts`, real-game-ply move numbering, tactic-rail state)
+- [x] **TACTIC-03**: The standalone Tactic Line Explorer modal is retired once tactic-mode parity is verified (regression-gated); all former entry points are repointed to `/analysis`
 
 ### Platform Hardening (PLAT)
 
@@ -84,9 +84,9 @@ Explicitly excluded. Documented to prevent scope creep. Anti-features carried fr
 | BOARD-05 | Phase 137 | Complete |
 | ROUTE-01 | Phase 138 | Complete |
 | ROUTE-02 | Phase 138 | Complete |
-| TACTIC-01 | Phase 139 | Pending |
-| TACTIC-02 | Phase 139 | Pending |
-| TACTIC-03 | Phase 139 | Pending |
+| TACTIC-01 | Phase 139 | Complete |
+| TACTIC-02 | Phase 139 | Complete |
+| TACTIC-03 | Phase 139 | Complete |
 | PLAT-01 | Phase 136 | Complete |
 | PLAT-02 | Phase 136 | Complete |
 

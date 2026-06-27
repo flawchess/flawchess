@@ -2,28 +2,29 @@
 gsd_state_version: 1.0
 milestone: v1.29
 milestone_name: Live-Engine Analysis Page
-current_phase: 138
-current_phase_name: analysis-route-page-shell-entry-points
-status: Phase 138 shipped — squash-merged to main (local)
-stopped_at: Phase 138 executed (3/3 plans); UAT deferred to Phase 139 (combined /analysis surface test)
-last_updated: "2026-06-26T17:57:35.521Z"
+current_phase: 999.1
+current_phase_name: BACKLOG
+status: verifying
+stopped_at: Phase 139 context gathered
+last_updated: "2026-06-26T20:15:18.652Z"
 last_activity: 2026-06-26
+last_activity_desc: Phase 139 complete, transitioned to Phase 999.1
 progress:
   total_phases: 8
-  completed_phases: 3
-  total_plans: 8
-  completed_plans: 8
-  percent: 38
+  completed_phases: 4
+  total_plans: 11
+  completed_plans: 11
+  percent: 50
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 138 (analysis-route-page-shell-entry-points) — PENDING UAT (deferred to Phase 139)
-Plan: 3 of 3
-Status: Phase 138 shipped — squash-merged to main (local)
-Last activity: 2026-06-26
+Phase: 999.1 — Password Reset (BACKLOG)
+Plan: Not started
+Status: Phase complete — ready for verification
+Last activity: 2026-06-27 — Completed quick task 260627-dny: Phase 139 tactic overlay UAT (arrows, eval bar perspective/position, controls eval, remove badge)
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -65,6 +66,10 @@ Twenty-eight milestones complete (v1.0–v1.28). v1.28 Tactic Tagging shipped 20
 - [Phase 138]: Destructure useAnalysisBoard return to avoid react-hooks/refs v7 false-positive in JSX
 - [Phase 138]: AnalysisRoute wrapper reads useSearchParams and keys AnalysisPage by fen for remount on re-entry
 - [Phase 138]: Single EvalBar render to avoid duplicate testid failure in jsdom tests
+- [Phase ?]: goToRoot sets currentNodeId=null without clearing nodes/mainLine for D-5 re-seed landing at decision position
+- [Phase ?]: TacticModeOverlay exports buildRootArrows/buildPvArrow as named exports so Analysis.tsx drives ChessBoard arrows without file indirection (Phase 139)
+- [Phase ?]: ESLint analysis/** override added for co-exported arrow helpers alongside component (mirrors ui/** and filters/** pattern)
+- [Phase 139-02]: FlawCard/LibraryGameCard Explore repointed to /analysis tactic URL params (D-01, no modal/location.state); D-02 Analyze position button added via ?fen= free-play (desktop + mobile)
 
 ### Pending Todos
 
@@ -73,6 +78,12 @@ None yet.
 ### Blockers/Concerns
 
 None at planning start.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260627-dny | Phase 139 tactic overlay UAT: remove StoredPV/engine toggle, eval bar perspective+position, live eval number, remove old eval badge | 2026-06-27 | 46067dff | [260627-dny-phase-139-tactic-overlay-uat-remove-stor](./quick/260627-dny-phase-139-tactic-overlay-uat-remove-stor/) |
 
 ## Deferred Items
 
@@ -89,9 +100,9 @@ Items acknowledged and deferred at **v1.28 milestone close on 2026-06-25**:
 
 ## Session Continuity
 
-Last session: 2026-06-26T17:12:53.494Z
-Stopped at: Phase 138 planned (3 plans, checker-verified)
-Resume file: .planning/phases/138-analysis-route-page-shell-entry-points/138-02-analysis-page-and-route-PLAN.md
+Last session: 2026-06-26T19:58:51.319Z
+Stopped at: Phase 139 context gathered
+Resume file: .planning/phases/139-tactic-mode-overlay-phase-135-subsume/139-CONTEXT.md
 
 ## Performance Metrics
 
@@ -106,3 +117,6 @@ Resume file: .planning/phases/138-analysis-route-page-shell-entry-points/138-02-
 | Phase 138 P01 | 1min | 1 tasks | 1 files |
 | Phase Phase 138 PP03 | 3min | 2 tasks | 3 files |
 | Phase 138 P02 | 7min | 2 tasks | 2 files |
+| Phase 139 P01 | 45min | 3 tasks | 7 files |
+| Phase 139 P02 | 20min | 2 tasks | 3 files |
+| Phase 139 P03 | 5min | 1 tasks | 4 files |

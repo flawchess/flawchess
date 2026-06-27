@@ -16,6 +16,7 @@
  */
 
 import { Loader2 } from 'lucide-react';
+import { Chess } from 'chess.js';
 
 import type { PvLine } from '@/hooks/uciParser';
 import { moveLabel } from '@/lib/moveNumberLabel';
@@ -24,6 +25,35 @@ import { moveLabel } from '@/lib/moveNumberLabel';
 const MAX_LINES = 2;
 /** Maximum number of plies shown per PV line. */
 const MAX_PLIES = 5;
+
+/**
+ * Convert a PV's UCI moves to SAN by replaying them from `baseFen`.
+ * Returns one entry per input move: the SAN string, or `null` when SAN can't be
+ * produced (no base FEN, or an illegal/unparseable move). Callers fall back to
+ * the raw UCI for null entries. Replay is sequential, so once a move fails the
+ * remaining moves also return null (the board state can no longer advance).
+ */
+function uciLineToSan(baseFen: string | undefined, uciMoves: string[]): (string | null)[] {
+  if (!baseFen) return uciMoves.map(() => null);
+  let game: Chess;
+  try {
+    game = new Chess(baseFen);
+  } catch {
+    return uciMoves.map(() => null);
+  }
+  let broken = false;
+  return uciMoves.map((uci) => {
+    if (broken) return null;
+    try {
+      const promotion = uci.length > 4 ? uci.slice(4, 5) : undefined;
+      const mv = game.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion });
+      return mv ? mv.san : (broken = true, null);
+    } catch {
+      broken = true;
+      return null;
+    }
+  });
+}
 
 // PV chip class — matches HorizontalMoveList chip exactly (PATTERNS line 176).
 // text-sm added to meet the CLAUDE.md text-sm floor.
@@ -41,8 +71,8 @@ function formatScore(
     return '#0';
   }
   if (evalCp !== null) {
-    if (evalCp >= 0) return `+${(evalCp / 100).toFixed(2)}`;
-    return (evalCp / 100).toFixed(2);
+    if (evalCp >= 0) return `+${(evalCp / 100).toFixed(1)}`;
+    return (evalCp / 100).toFixed(1);
   }
   return '…';
 }
@@ -56,6 +86,12 @@ export interface EngineLinesProps {
   isAnalyzing: boolean;
   /** Game ply at engine invocation — used for move-number labels. Default 0. */
   startPly?: number;
+  /**
+   * FEN of the position the engine is analyzing. When provided, PV moves render
+   * as SAN (replayed from this FEN) instead of raw UCI. Falls back to UCI per
+   * move when SAN can't be produced.
+   */
+  baseFen?: string;
   /** Called when the user clicks a PV move chip. */
   onMoveClick: (from: string, to: string) => void;
 }
@@ -65,6 +101,7 @@ interface PvLineRowProps {
   lineIndex: number;
   depth: number;
   startPly: number;
+  baseFen: string | undefined;
   onMoveClick: (from: string, to: string) => void;
   showDepthBadge: boolean;
   addSeparator: boolean;
@@ -76,13 +113,15 @@ function PvLineRow({
   lineIndex,
   depth,
   startPly,
+  baseFen,
   onMoveClick,
   showDepthBadge,
   addSeparator,
 }: PvLineRowProps) {
   const scoreText = formatScore(line.evalCp, line.evalMate);
-  // Build the moves list — aria uses UCI notation since we lack SAN here.
   const moves = line.moves.slice(0, MAX_PLIES);
+  // SAN labels (replayed from baseFen); null entries fall back to raw UCI.
+  const sanMoves = uciLineToSan(baseFen, moves);
 
   return (
     <div className={addSeparator ? 'border-t border-border' : undefined}>
@@ -107,6 +146,8 @@ function PvLineRow({
           const to = uciMove.slice(2, 4);
           const label = moveLabel(startPly, lineIndex === 0 ? moveIndex : moveIndex);
           const isWhiteMove = (startPly + moveIndex) % 2 === 0;
+          // SAN when available, raw UCI as fallback.
+          const displayMove = sanMoves[moveIndex] ?? uciMove;
 
           return (
             <span key={moveIndex} className="inline-flex items-center gap-0.5">
@@ -118,10 +159,10 @@ function PvLineRow({
               <button
                 className={CHIP_CLASS}
                 data-testid={`engine-line-${lineIndex}-move-${moveIndex}`}
-                aria-label={`Play ${uciMove}`}
+                aria-label={`Play ${displayMove}`}
                 onClick={() => onMoveClick(from, to)}
               >
-                {uciMove}
+                {displayMove}
               </button>
             </span>
           );
@@ -140,6 +181,7 @@ export function EngineLines({
   depth,
   isAnalyzing,
   startPly = 0,
+  baseFen,
   onMoveClick,
 }: EngineLinesProps) {
   const visibleLines = pvLines.slice(0, MAX_LINES);
@@ -175,6 +217,7 @@ export function EngineLines({
             lineIndex={lineIndex}
             depth={depth}
             startPly={startPly}
+            baseFen={baseFen}
             onMoveClick={onMoveClick}
             showDepthBadge={lineIndex === 0}
             addSeparator={lineIndex > 0}

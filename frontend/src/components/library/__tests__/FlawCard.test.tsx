@@ -46,11 +46,18 @@ vi.mock('@/hooks/useEnqueueGame', () => ({
 }));
 
 // Mock react-router-dom navigate — NoAnalysisState uses useNavigate for guest CTA.
+// Link is rendered without a Router context here (FlawCard's Explore button uses
+// <Button asChild><Link>), so stub it as a plain anchor to avoid the router context.
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
   return {
     ...actual,
     useNavigate: () => vi.fn(),
+    Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => (
+      <a href={typeof to === 'string' ? to : ''} {...props}>
+        {children}
+      </a>
+    ),
   };
 });
 

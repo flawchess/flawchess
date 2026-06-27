@@ -16,6 +16,7 @@
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import type { ReactNode } from 'react';
 
 // Stub Tooltip so tests don't need a TooltipProvider wrapper.
@@ -49,8 +50,14 @@ vi.mock('@/components/board/LazyMiniBoard', () => ({
   LazyMiniBoard: () => <div data-testid="stub-mini-board" />,
 }));
 
+import type { ReactElement } from 'react';
 import { LibraryGameCard } from '../LibraryGameCard';
 import type { GameFlawCard, FlawMarker } from '@/types/library';
+
+/** Wraps any element in a MemoryRouter so useNavigate is available in the subtree. */
+function renderCard(ui: ReactElement) {
+  return render(<MemoryRouter>{ui}</MemoryRouter>);
+}
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -126,7 +133,7 @@ function makeGame(markers: FlawMarker[]): GameFlawCard {
 
 describe('LibraryGameCard tactic chips (missed vs allowed)', () => {
   it('renders missed and allowed chips for the same motif as two separate chips', () => {
-    render(
+    renderCard(
       <LibraryGameCard
         game={makeGame([
           marker({ ply: 2, allowed_tactic_motif: 'fork', allowed_tactic_confidence: 90 }),
@@ -139,7 +146,7 @@ describe('LibraryGameCard tactic chips (missed vs allowed)', () => {
   });
 
   it('renders only the allowed chip when no missed motif is present', () => {
-    render(
+    renderCard(
       <LibraryGameCard
         game={makeGame([
           marker({ ply: 2, allowed_tactic_motif: 'pin', allowed_tactic_confidence: 90 }),
@@ -151,7 +158,7 @@ describe('LibraryGameCard tactic chips (missed vs allowed)', () => {
   });
 
   it('renders only the missed chip when no allowed motif is present', () => {
-    render(
+    renderCard(
       <LibraryGameCard
         game={makeGame([
           marker({ ply: 2, missed_tactic_motif: 'skewer', missed_tactic_confidence: 90 }),
@@ -163,7 +170,7 @@ describe('LibraryGameCard tactic chips (missed vs allowed)', () => {
   });
 
   it('does not surface opponent (non-user) tactic motifs', () => {
-    render(
+    renderCard(
       <LibraryGameCard
         game={makeGame([
           marker({ ply: 3, is_user: false, allowed_tactic_motif: 'fork', allowed_tactic_confidence: 90 }),
@@ -182,7 +189,7 @@ describe('LibraryGameCard tactic chips gated by active context filter (Quick 260
 
   it('hides a fork chip whose only marker fails the active context filter', () => {
     filterStore.filter = { severity: ['blunder', 'mistake'], tags: ['low-clock'] };
-    render(
+    renderCard(
       <LibraryGameCard
         game={makeGame([
           // A depth-matching fork, but NOT low-clock — must be dropped under the low-clock filter.
@@ -200,7 +207,7 @@ describe('LibraryGameCard tactic chips gated by active context filter (Quick 260
 
   it('keeps a fork chip when its marker satisfies the active context filter', () => {
     filterStore.filter = { severity: ['blunder', 'mistake'], tags: ['low-clock'] };
-    render(
+    renderCard(
       <LibraryGameCard
         game={makeGame([
           // Fork on a low-clock marker — passes; sibling fork without low-clock is dropped.
@@ -237,7 +244,7 @@ describe('LibraryGameCard platform link follows the eval-chart scrub', () => {
   }
 
   it('links to the game (no ply fragment) at the resting position', () => {
-    render(<LibraryGameCard game={multiPlyGame()} />);
+    renderCard(<LibraryGameCard game={multiPlyGame()} />);
     // hoverPly is null until the chart reports, and the resting ply equals the last
     // eval'd ply, so the header opens the game itself (white → no /black suffix).
     const link = screen.getAllByTestId(`game-card-link-${GAME_ID}`)[0];
@@ -246,7 +253,7 @@ describe('LibraryGameCard platform link follows the eval-chart scrub', () => {
 
   it('deep-links to the scrubbed move when the slider is off the last ply', () => {
     scrubCtl.ply = 1; // scrub back to ply 1 (last eval'd ply is 2)
-    render(<LibraryGameCard game={multiPlyGame()} />);
+    renderCard(<LibraryGameCard game={multiPlyGame()} />);
     fireEvent.click(screen.getAllByTestId('stub-eval-chart')[0]!);
     // platformPlyUrl navigates to ply + 1 → position after the move at ply 1.
     const link = screen.getAllByTestId(`game-card-link-${GAME_ID}`)[0];
@@ -255,7 +262,7 @@ describe('LibraryGameCard platform link follows the eval-chart scrub', () => {
 
   it('returns to the game link when scrubbed back to the last ply', () => {
     scrubCtl.ply = 2; // the last eval'd ply
-    render(<LibraryGameCard game={multiPlyGame()} />);
+    renderCard(<LibraryGameCard game={multiPlyGame()} />);
     fireEvent.click(screen.getAllByTestId('stub-eval-chart')[0]!);
     const link = screen.getAllByTestId(`game-card-link-${GAME_ID}`)[0];
     expect(link?.getAttribute('href')).toBe('https://lichess.org/abc');

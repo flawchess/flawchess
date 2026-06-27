@@ -8,6 +8,8 @@ interface BoardControlsProps {
   onReset: () => void;
   onFlip: () => void;
   canGoBack: boolean;
+  /** Enable state for the Reset button. Defaults to `canGoBack` when omitted. */
+  canReset?: boolean;
   canGoForward: boolean;
   /** Optional slot for an info icon rendered at the end of the bar */
   infoSlot?: React.ReactNode;
@@ -33,6 +35,7 @@ export function BoardControls({
   onReset,
   onFlip,
   canGoBack,
+  canReset,
   canGoForward,
   infoSlot,
   vertical = false,
@@ -50,7 +53,7 @@ export function BoardControls({
           size="icon"
           className={`${buttonSizeClass} hover:bg-accent`}
           onClick={onReset}
-          disabled={!canGoBack}
+          disabled={!(canReset ?? canGoBack)}
           aria-label="Reset to start"
           data-testid="board-btn-reset"
         >

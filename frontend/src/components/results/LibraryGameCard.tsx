@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Chess } from 'chess.js';
-import { BookOpen, Calendar, Clock, Equal, ExternalLink, Hash, Minus, Plus, Search } from 'lucide-react';
+import { Activity, BookOpen, Calendar, Clock, Equal, ExternalLink, Hash, Minus, Plus, Search } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -32,7 +33,6 @@ import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
 import { useMiniBoardSize } from '@/hooks/useMiniBoardSize';
 import { formatTimeControl } from '@/lib/formatTimeControl';
 import { Button } from '@/components/ui/button';
-import { TacticLineExplorer } from '@/components/library/TacticLineExplorer';
 import type { GameFlawCard, FlawSeverity, FlawTag, FlawMarker } from '@/types/library';
 import type { UserResult } from '@/types/api';
 
@@ -217,10 +217,6 @@ export function LibraryGameCard({
   // shows result_fen, as before.
   const [hoverPly, setHoverPly] = useState<number | null>(null);
 
-  // D-03 Explore button (Phase 135): open state for the TacticLineExplorer stacked
-  // over this modal. On close (D-01) the explorer closes only; this modal stays.
-  const [exploreOpen, setExploreOpen] = useState(false);
-
   // In-flight state for the tier-1 analyze button (D-118-11 — only the clicked game
   // shows "Analyzing…", not a global spinner across all cards). Controlled when the
   // parent passes onInFlightChange (Games subtab); otherwise managed locally
@@ -287,6 +283,8 @@ export function LibraryGameCard({
     selectedFlaw != null &&
     selectedFlaw.is_user &&
     (selectedFlaw.missed_tactic_motif != null || selectedFlaw.allowed_tactic_motif != null);
+  // D-01: orientation for /analysis tactic mode — missed takes precedence when both present.
+  const exploreOri = selectedFlaw?.missed_tactic_motif != null ? 'missed' : 'allowed';
 
   // Per-ply tactic-depth badges (1-based display). missed → blue best-move arrow,
   // allowed → colored flaw-move arrow. Null when the tactic's motif chip is hidden.
@@ -891,39 +889,75 @@ export function LibraryGameCard({
       />
     );
 
-  // D-03 Explore button (Phase 135) — desktop. Quick 260625-2: pinned as its own row
-  // below the board + right-column row, spanning the whole card width (instead of below
-  // the Missed column's chips). Always rendered; disabled+tooltip when the parked ply is
-  // not a tagged user flaw (D-02).
+  // D-01 Explore + D-02 Analyze position button row — desktop (Quick 260625-2):
+  // pinned as its own full-width row below the board + right-column row.
+  // Explore navigates to /analysis tactic mode; Analyze position navigates to /analysis?fen=
+  // (free-play, always enabled when a boardFen is available).
   const renderDesktopExploreButton = () => (
-    <div className="w-full">
-      {isTaggedFlaw ? (
-        <Button
-          variant="brand-outline"
-          // Default Button size (h-8) to match the import-page quicklink buttons.
-          className="w-full"
-          data-testid="game-card-btn-explore"
-          aria-label="Explore tactic line for selected flaw"
-          onClick={() => setExploreOpen(true)}
-        >
-          <Search className="h-4 w-4 mr-1" />
-          Explore
-        </Button>
-      ) : (
-        <Tooltip content="Park the slider on a tactic flaw to explore it" side="top">
-          <span className="block w-full">
-            <Button
-              variant="brand-outline"
-              className="w-full"
+    <div className="flex gap-2 w-full">
+      {/* Explore — tactic mode, enabled only on a tagged flaw ply */}
+      <div className="flex-1">
+        {isTaggedFlaw ? (
+          // Rendered as a real <a> via Link so middle-click / cmd-click opens the
+          // analysis page in a new tab; plain click stays SPA navigation.
+          <Button asChild variant="brand-outline" className="w-full">
+            <Link
+              to={
+                '/analysis?game_id=' +
+                game.game_id +
+                '&flaw_ply=' +
+                hoverPly +
+                '&orientation=' +
+                exploreOri
+              }
               data-testid="game-card-btn-explore"
               aria-label="Explore tactic line for selected flaw"
-              disabled
             >
               <Search className="h-4 w-4 mr-1" />
               Explore
-            </Button>
-          </span>
-        </Tooltip>
+            </Link>
+          </Button>
+        ) : (
+          <Tooltip content="Park the slider on a tactic flaw to explore it" side="top">
+            <span className="block w-full">
+              <Button
+                variant="brand-outline"
+                className="w-full"
+                data-testid="game-card-btn-explore"
+                aria-label="Explore tactic line for selected flaw"
+                disabled
+              >
+                <Search className="h-4 w-4 mr-1" />
+                Explore
+              </Button>
+            </span>
+          </Tooltip>
+        )}
+      </div>
+      {/* Analyze position — free-play, enabled whenever a ply FEN is available */}
+      {boardFen != null ? (
+        <Button asChild variant="brand-outline" className="flex-1">
+          {/* Real <a> via Link for middle-click / cmd-click new-tab support. */}
+          <Link
+            to={'/analysis?fen=' + encodeURIComponent(boardFen)}
+            data-testid="game-card-btn-analyze-position"
+            aria-label="Analyze this position"
+          >
+            <Activity className="h-4 w-4 mr-1" />
+            Analyze position
+          </Link>
+        </Button>
+      ) : (
+        <Button
+          variant="brand-outline"
+          className="flex-1"
+          data-testid="game-card-btn-analyze-position"
+          aria-label="Analyze this position"
+          disabled
+        >
+          <Activity className="h-4 w-4 mr-1" />
+          Analyze position
+        </Button>
       )}
     </div>
   );
@@ -987,38 +1021,72 @@ export function LibraryGameCard({
         <div className="flex flex-col gap-2">
           {flawContent}
         </div>
-        {/* D-03 Explore button (Phase 135) — mobile, below eval chart. Always visible;
-            disabled+tooltip when the parked ply is not a tagged user flaw (D-02). */}
-        {/* Mobile: no separate Game button on the card (the card IS the game),
-            so the Explore button spans the full card width. */}
-        <div className="md:hidden">
-          {isTaggedFlaw ? (
-            <Button
-              variant="brand-outline"
-              // Default Button size (h-8) to match the import-page quicklink buttons.
-              className="w-full"
-              data-testid="game-card-btn-explore"
-              aria-label="Explore tactic line for selected flaw"
-              onClick={() => setExploreOpen(true)}
-            >
-              <Search className="h-4 w-4 mr-1" />
-              Explore
-            </Button>
-          ) : (
-            <Tooltip content="Park the slider on a tactic flaw to explore it" side="top">
-              <span className="block w-full">
-                <Button
-                  variant="brand-outline"
-                  className="w-full"
+        {/* D-01 Explore + D-02 Analyze position — mobile, below eval chart.
+            Explore navigates to /analysis tactic mode (enabled on tagged flaw ply only).
+            Analyze position navigates to /analysis?fen= free-play (always enabled when boardFen available). */}
+        <div className="md:hidden flex gap-2">
+          {/* Explore — tactic mode */}
+          <div className="flex-1">
+            {isTaggedFlaw ? (
+              // Real <a> via Link for middle-click / cmd-click new-tab support.
+              <Button asChild variant="brand-outline" className="w-full">
+                <Link
+                  to={
+                    '/analysis?game_id=' +
+                    game.game_id +
+                    '&flaw_ply=' +
+                    hoverPly +
+                    '&orientation=' +
+                    exploreOri
+                  }
                   data-testid="game-card-btn-explore"
                   aria-label="Explore tactic line for selected flaw"
-                  disabled
                 >
                   <Search className="h-4 w-4 mr-1" />
                   Explore
-                </Button>
-              </span>
-            </Tooltip>
+                </Link>
+              </Button>
+            ) : (
+              <Tooltip content="Park the slider on a tactic flaw to explore it" side="top">
+                <span className="block w-full">
+                  <Button
+                    variant="brand-outline"
+                    className="w-full"
+                    data-testid="game-card-btn-explore"
+                    aria-label="Explore tactic line for selected flaw"
+                    disabled
+                  >
+                    <Search className="h-4 w-4 mr-1" />
+                    Explore
+                  </Button>
+                </span>
+              </Tooltip>
+            )}
+          </div>
+          {/* Analyze position — free-play */}
+          {boardFen != null ? (
+            <Button asChild variant="brand-outline" className="flex-1">
+              {/* Real <a> via Link for middle-click / cmd-click new-tab support. */}
+              <Link
+                to={'/analysis?fen=' + encodeURIComponent(boardFen)}
+                data-testid="game-card-btn-analyze-position"
+                aria-label="Analyze this position"
+              >
+                <Activity className="h-4 w-4 mr-1" />
+                Analyze position
+              </Link>
+            </Button>
+          ) : (
+            <Button
+              variant="brand-outline"
+              className="flex-1"
+              data-testid="game-card-btn-analyze-position"
+              aria-label="Analyze this position"
+              disabled
+            >
+              <Activity className="h-4 w-4 mr-1" />
+              Analyze position
+            </Button>
           )}
         </div>
       </div>
@@ -1115,22 +1183,10 @@ export function LibraryGameCard({
           )}
           </div>
         </div>
-        {/* D-03 Explore button (Quick 260625-2): own full-width row below the board +
-            right-column row, spanning the whole card. */}
+        {/* D-01 Explore + D-02 Analyze position button row (Quick 260625-2):
+            own full-width row below the board + right-column row, spanning the whole card. */}
         {renderDesktopExploreButton()}
       </div>
-
-      {/* D-01 TacticLineExplorer — stacks over the Game modal (renders as Dialog/Drawer
-          internally; its own z-index sits above the game Dialog). Opened from the Explore
-          button; closing only dismisses the explorer, leaving the game modal open. */}
-      {isTaggedFlaw && hoverPly != null && (
-        <TacticLineExplorer
-          open={exploreOpen}
-          onOpenChange={setExploreOpen}
-          gameId={game.game_id}
-          ply={hoverPly}
-        />
-      )}
     </Card>
   );
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Swords,
   Search,
@@ -32,7 +33,6 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { LibraryGameCard } from '@/components/results/LibraryGameCard';
-import { TacticLineExplorer } from '@/components/library/TacticLineExplorer';
 import { SeverityBadge } from '@/components/library/SeverityBadge';
 import { TagChip, TagLegend } from '@/components/library/TagChip';
 import { platformPlyUrl } from '@/lib/platformLinks';
@@ -56,8 +56,8 @@ import type { FlawListItem, FlawSeverity, TacticOrientation } from '@/types/libr
 const DESKTOP_BOARD_SIZE = 200;
 const MOBILE_BOARD_SIZE = 132;
 
-// Matches Tailwind `md`; mirrors the local useIsMobile pattern in
-// TacticLineExplorer (no shared hook exists — each component clones it).
+// Matches Tailwind `md`; each component that needs this clones it locally
+// (no shared hook exists — see D-05).
 const MOBILE_BREAKPOINT_PX = 768;
 
 /** True when the viewport is below the mobile breakpoint. Guards against a
@@ -139,11 +139,22 @@ export interface FlawCardProps {
 
 export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) {
   const [open, setOpen] = useState(false);
-  const [exploreOpen, setExploreOpen] = useState(false);
   const isMobile = useIsMobile();
   // Phase 135 D-04: flaw is "tagged" when it has at least one tactic motif.
   const isTagged =
     flaw.missed_tactic_motif != null || flaw.allowed_tactic_motif != null;
+  // D-01: orientation for /analysis tactic mode. Respect the active tacticOrientation
+  // filter when it pins a side (WR-02): the card only renders the pinned chip, so Explore
+  // must open the same orientation the user sees and filtered for. Fall back to
+  // missed-takes-precedence only when the filter is 'either'.
+  const ori =
+    tacticOrientation === 'allowed'
+      ? 'allowed'
+      : tacticOrientation === 'missed'
+        ? 'missed'
+        : flaw.missed_tactic_motif != null
+          ? 'missed'
+          : 'allowed';
   // Quick 260621-sm8: forward the active tactic filter into the "View game" modal
   // so the opened game nulls non-matching tactic slots the same way the flaw list
   // does — otherwise the modal showed tactics outside the depth/orientation/family
@@ -246,18 +257,26 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
     <div className="flex gap-2">
       {isTagged && (
         <Button
+          asChild
           variant="brand-outline"
           // Default Button size (h-8) to match the import-page Games/Openings/Endgames
           // quicklink buttons (Quick 260625).
           // Each button spans ~50% of the row: half each when both are present, and
           // still ~50% (capped by max-w) when Explore appears alone (Quick 250626).
           className="flex-1 max-w-[50%]"
-          data-testid="flaw-btn-explore"
-          aria-label="Explore tactic line"
-          onClick={() => setExploreOpen(true)}
         >
-          <Search className="h-4 w-4 mr-1" />
-          Explore
+          {/* Rendered as a real <a> via Link so middle-click / cmd-click opens the
+              analysis page in a new tab; plain click stays SPA navigation. */}
+          <Link
+            to={
+              '/analysis?game_id=' + flaw.game_id + '&flaw_ply=' + flaw.ply + '&orientation=' + ori
+            }
+            data-testid="flaw-btn-explore"
+            aria-label="Explore tactic line"
+          >
+            <Search className="h-4 w-4 mr-1" />
+            Explore
+          </Link>
         </Button>
       )}
       <Button
@@ -475,8 +494,7 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
 
   const gameCloseLabel = 'Close game view';
   const gameView = isMobile ? (
-    // Mobile: right-side drawer (full width on phones, 3/4 on small tablets),
-    // mirroring TacticLineExplorer's mobile surface.
+    // Mobile: right-side drawer (full width on phones, 3/4 on small tablets).
     <Drawer open={open} onOpenChange={(v) => !v && setOpen(false)} direction="right">
       <DrawerContent
         data-testid="flaw-game-modal"
@@ -569,21 +587,8 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
       </div>
 
       {/* View-game surface — fetches lazily on open via useLibraryGame.
-          Desktop: centered Dialog. Mobile: right-side Drawer (Phase 135 UAT),
-          mirroring the TacticLineExplorer mobile pattern. */}
+          Desktop: centered Dialog. Mobile: right-side Drawer (Phase 135 UAT). */}
       {gameView}
-
-      {/* D-04 TacticLineExplorer — opened by the Explore button on tagged flaws.
-          Renders as Dialog (desktop) or Drawer (mobile) internally per D-05.
-          D-01: stacks over the Game modal; closing only dismisses the explorer. */}
-      {isTagged && (
-        <TacticLineExplorer
-          open={exploreOpen}
-          onOpenChange={setExploreOpen}
-          gameId={flaw.game_id}
-          ply={flaw.ply}
-        />
-      )}
     </Card>
   );
 }

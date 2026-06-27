@@ -76,21 +76,21 @@ describe('EvalBar', () => {
     expect(negativeHeight).toBeLessThan(50);
   });
 
-  it('(b) evalMate=3 with depth=10 renders an M3 mate label', () => {
+  it('(b) evalMate=3 with depth=10 drives a full white fill', () => {
     render(<EvalBar evalCp={null} evalMate={3} depth={10} />);
-    expect(screen.getByText('M3')).toBeTruthy();
+    expect(parsePercent(getWhiteFillHeight())).toBeCloseTo(100, 1);
   });
 
-  it('(c) evalMate=3 with depth=5 renders NO mate label (depth-8 gate)', () => {
-    render(<EvalBar evalCp={null} evalMate={3} depth={5} />);
-    expect(screen.queryByText('M3')).toBeNull();
-  });
-
-  it('(d) both null → no mate label, balanced 50% fill', () => {
+  it('(d) both null → balanced 50% fill', () => {
     render(<EvalBar evalCp={null} evalMate={null} depth={10} />);
-    expect(screen.queryByText(/^M\d/)).toBeNull();
     const height = parsePercent(getWhiteFillHeight());
     expect(height).toBeCloseTo(50, 1);
+  });
+
+  it('renders no numeric text inside the bar (eval shown in the engine lines)', () => {
+    render(<EvalBar evalCp={120} evalMate={3} depth={12} />);
+    expect(screen.queryByTestId('analysis-eval-readout')).toBeNull();
+    expect(screen.getByTestId('analysis-eval-bar').textContent).toBe('');
   });
 
   it('uses EVAL_BAR_WHITE and EVAL_BAR_BLACK from theme (not hard-coded oklch)', () => {
@@ -111,16 +111,11 @@ describe('EvalBar', () => {
     expect(bar.getAttribute('aria-label')).toMatch(/Engine evaluation:/);
   });
 
-  it('white-winning mate label is at top, black-winning mate label is at bottom', () => {
-    const { unmount } = render(
-      <EvalBar evalCp={null} evalMate={2} depth={10} />,
-    );
-    const whiteLabel = screen.getByText('M2');
-    expect(whiteLabel.className).toContain('top-2');
-    unmount();
-
-    render(<EvalBar evalCp={null} evalMate={-2} depth={10} />);
-    const blackLabel = screen.getByText('M2');
-    expect(blackLabel.className).toContain('bottom-2');
+  it("flipped (Black's view) puts the white fill at the top", () => {
+    render(<EvalBar evalCp={null} evalMate={2} depth={10} flipped />);
+    const whiteFill = screen.getByTestId('analysis-eval-bar').querySelector('div');
+    if (!whiteFill) throw new Error('White fill div not found');
+    // When flipped, White is at the top of the bar.
+    expect(whiteFill.style.top).toBe('0px');
   });
 });

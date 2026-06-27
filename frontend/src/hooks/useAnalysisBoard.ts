@@ -50,6 +50,13 @@ export interface AnalysisBoardReturn {
   goBack: () => void;
   goForward: () => void;
   goToNode: (id: NodeId) => void;
+  /**
+   * goToRoot() — jump to the root position (currentNodeId = null) without
+   * altering nodes, mainLine, or rootFen. Used by tactic mode to land the
+   * board at the decision position after loadMainLine seeds the stored PV
+   * (Phase 139, D-5).
+   */
+  goToRoot: () => void;
   loadMainLine: (sans: string[], newRootFen: string) => void;
   isOnMainLine: (nodeId: NodeId) => boolean;
   containerRef: RefObject<HTMLDivElement | null>;
@@ -245,6 +252,16 @@ export function useAnalysisBoard(
   }, []);
 
   /**
+   * goToRoot() — jump to the root position (currentNodeId = null) without
+   * altering nodes, mainLine, or rootFen. Used by tactic mode (Phase 139,
+   * D-5) to land the board at the decision position after loadMainLine seeds
+   * the stored PV so the user steps forward toward the punchline.
+   */
+  const goToRoot = useCallback((): void => {
+    setState((prev) => ({ ...prev, currentNodeId: null }));
+  }, []);
+
+  /**
    * isOnMainLine(nodeId) — true iff the node was seeded by loadMainLine.
    * Reads from stateRef to avoid stale-closure issues when called from events.
    */
@@ -286,6 +303,7 @@ export function useAnalysisBoard(
     goBack,
     goForward,
     goToNode,
+    goToRoot,
     loadMainLine,
     isOnMainLine,
     containerRef,

@@ -16,6 +16,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- **Tactic Explorer now opens on the `/analysis` board** — clicking "Explore" on a tagged flaw (Flaws tab) or on a Library game card no longer opens a separate modal/drawer. It now opens the full `/analysis` board in tactic mode: it steps through the engine's principal variation with always-on arrows and an oriented eval bar, and unlike the old modal it lets you branch off into free live-engine analysis from any point in the line. Library game cards also gain an "Analyze position" button that opens the scrubbed position directly on `/analysis`. Explore and Analyze are now real links, so middle-click or ctrl-click opens them in a new tab. The standalone Tactic Line Explorer modal and its hook are retired. (Phase 139)
+
+- **Analysis eval bar polish** — the eval readout now sits inside the bottom of the eval bar (color inverted to match the fill) instead of as separate text beside it, and engine-line evaluations are rounded to one decimal. The board arrow on a stored line shows the next ply of the principal variation with its depth, rather than the move just played. (Phase 139)
+
 - **Tactic tags hidden on already-lost positions** — a tactic motif found or missed in a position that was already decisively lost (the engine had you down by more than a rook, or facing forced mate, *before* the move) no longer shows its tag, depth number, or eval-chart tooltip entry, and is excluded from the tactic-motif and depth filters on the Flaws and Games tabs. These flaws were noise: a "missed fork" teaches nothing when the game was already gone. The blunder/mistake itself still counts in the severity badges and still appears as a marker on the eval chart; only the tactic tagging is suppressed. The tactic explorer keeps full detail. (Quick 260626-bdt)
 
 ## [v1.28] Tactic Tagging — 2026-06-25

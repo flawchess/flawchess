@@ -16,6 +16,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 // ── Mock useStockfishEngine: jsdom has no real Worker for the classic engine file.
@@ -38,6 +39,17 @@ const engineState: {
 
 vi.mock('@/hooks/useStockfishEngine', () => ({
   useStockfishEngine: () => ({ ...engineState }),
+}));
+
+// Mock useTacticLines: free-play shell tests have no tactic params, so tactic data
+// is unused. Return an empty/undefined stub so the hook does not need a real network.
+vi.mock('@/hooks/useLibrary', () => ({
+  useTacticLines: () => ({ data: undefined }),
+}));
+
+// Mock useFlawFilterStore: Analysis.tsx calls this unconditionally for tactic visibility.
+vi.mock('@/hooks/useFlawFilterStore', () => ({
+  useFlawFilterStore: () => [null, vi.fn()],
 }));
 
 // NOTE: useAnalysisBoard is NOT mocked — it is pure in-memory and must run for real
@@ -87,12 +99,18 @@ import AnalysisPage from '../Analysis';
 
 // ── Render helper ──────────────────────────────────────────────────────────────
 function renderAnalysis(initialPath = '/analysis') {
+  // QueryClientProvider is required by useTacticLines (TanStack Query).
+  // Tactic-mode tests that need real query behavior will supply their own client
+  // via a dedicated test file (Analysis.tactic.test.tsx, Phase 139 Task 3).
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <MemoryRouter initialEntries={[initialPath]}>
-      <TooltipProvider>
-        <AnalysisPage />
-      </TooltipProvider>
-    </MemoryRouter>,
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[initialPath]}>
+        <TooltipProvider>
+          <AnalysisPage />
+        </TooltipProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
