@@ -43,6 +43,7 @@ Milestone Goal: Ship a standalone `/analysis` board where the user makes any leg
 - [x] **Phase 137: `useAnalysisBoard` Hook + Analysis Display Components** - Branching move tree (new hook, not a variant of useChessGame), EvalBar, EngineLines, VariationTree (completed 2026-06-26)
 - [ ] **Phase 138: `/analysis` Route + Page Shell + Entry Points** - Lazy-loaded page shell, router wiring, free-play entry points (opening position + game-review ply)
 - [x] **Phase 139: Tactic Mode Overlay + Phase 135 Subsume** - TacticModeOverlay, Phase 135 regression parity, retire TacticLineExplorer + useTacticLine (completed 2026-06-26)
+- [ ] **Phase 140: Full-Game Analysis Board** - Unified `Analyze` entry (game + flaw cards), full-game load (`?game_id&ply`), eval chart relocated below board, move-list = board height, controls below move list, inline missed/allowed tags → PV sideline (2-level nesting), contextual TacticModeOverlay
 
 ## Phase Details
 
@@ -139,6 +140,22 @@ Plans:
 
 - [x] 139-03-PLAN.md — Delete TacticLineExplorer + useTacticLine; knip + deletion gate [TACTIC-03]
 
+### Phase 140: Full-Game Analysis Board
+
+**Goal**: The `/analysis` board loads the whole game on a single unified `Analyze` entry point, with the eval chart relocated below the board and inline missed/allowed tags that expand stored PVs as navigable sidelines
+**Depends on**: Phases 137, 138, 139
+**Design note**: `.planning/notes/analysis-board-fullgame-refinement.md` (source of truth — locked decisions)
+**Success Criteria** (what must be TRUE):
+
+  1. Game card and flaw card each expose exactly one `Analyze` button; the game-card `Explore`/`Analyze position` pair and the flaw-card `Explore`/`Game` (modal) pair are gone, and the inline `Game` modal code path is deleted
+  2. `Analyze` opens `/analysis?game_id=X&ply=Y`, loading the full game line (ply 0 → end) positioned at the carried ply (eval-chart slider ply for the game card, `flaw.ply` for the flaw card)
+  3. On desktop the eval chart with slider sits directly below the board, the move list height matches the board, and the board controls are below the move list; the slider scrubs the main game line (syncing board + move-list highlight) and parks at the fork point when a sideline is active
+  4. Flaw plies show inline missed/allowed tags in the move list; clicking a tag unfolds its stored PV as a sideline, a sub-sideline can be branched within it (two nesting levels), and `TacticModeOverlay` activates contextually for the active PV line
+  5. No new backend schema or endpoints (milestone D-4); mobile layout has a stacked equivalent; `npm run knip`, lint, and frontend tests pass
+
+**Plans**: TBD (run `/gsd-ui-phase 140` or `/gsd-discuss-phase 140`)
+**UI hint**: yes
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -200,6 +217,7 @@ Plans:
 | 137. `useAnalysisBoard` Hook + Analysis Display Components | 3/3 | Complete    | 2026-06-26 |
 | 138. `/analysis` Route + Page Shell + Entry Points | 3/3 | Complete   | 2026-06-26 |
 | 139. Tactic Mode Overlay + Phase 135 Subsume | 3/3 | Complete    | 2026-06-26 |
+| 140. Full-Game Analysis Board | 0/0 | Planned | — |
 
 ## Backlog
 
