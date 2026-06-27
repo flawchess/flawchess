@@ -4,11 +4,10 @@ milestone: v1.29
 milestone_name: Live-Engine Analysis Page
 current_phase: 999.1
 current_phase_name: BACKLOG
-status: verifying
+status: Phase 139 shipped — squash-merged to main (c8516149)
 stopped_at: Phase 139 context gathered
-last_updated: "2026-06-26T20:15:18.652Z"
-last_activity: 2026-06-26
-last_activity_desc: Phase 139 complete, transitioned to Phase 999.1
+last_updated: "2026-06-27T09:22:16.841Z"
+last_activity: 2026-06-27
 progress:
   total_phases: 8
   completed_phases: 4
@@ -23,8 +22,8 @@ progress:
 
 Phase: 999.1 — Password Reset (BACKLOG)
 Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-06-27 — Completed quick task 260627-dny: Phase 139 tactic overlay UAT (arrows, eval bar perspective/position, controls eval, remove badge)
+Status: Phase 139 shipped — squash-merged to main (c8516149)
+Last activity: 2026-06-27
 
 Progress: [░░░░░░░░░░] 0%
 
