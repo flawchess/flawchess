@@ -16,7 +16,7 @@
 
 import type { CSSProperties } from 'react';
 
-import { SEV_BLUNDER, SEV_MISTAKE } from '@/lib/theme';
+import { SEVERITY_GLYPH } from '@/lib/severityGlyph';
 
 export interface SeverityGlyphIconProps {
   className?: string;
@@ -74,10 +74,16 @@ function GlyphBadge({
 
 /** "??" on a red dot — blunder. */
 export function BlunderIcon(props: SeverityGlyphIconProps) {
-  return <GlyphBadge symbol="??" color={SEV_BLUNDER} fontSize={17} {...props} />;
+  const g = SEVERITY_GLYPH.blunder;
+  return <GlyphBadge symbol={g.symbol} color={g.color} fontSize={g.fontSize} {...props} />;
 }
 
 /** "?" on an orange dot — mistake. */
 export function MistakeIcon(props: SeverityGlyphIconProps) {
-  return <GlyphBadge symbol="?" color={SEV_MISTAKE} fontSize={19} {...props} />;
+  const g = SEVERITY_GLYPH.mistake;
+  return <GlyphBadge symbol={g.symbol} color={g.color} fontSize={g.fontSize} {...props} />;
 }
+
+// The inaccuracy "!?" yellow glyph is defined in SEVERITY_GLYPH (lib/severityGlyph)
+// and rendered as an on-board SVG corner marker (boardMarkers). No standalone React
+// component is exported because the move list intentionally omits inaccuracy (D-03).

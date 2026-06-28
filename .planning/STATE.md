@@ -2,28 +2,29 @@
 gsd_state_version: 1.0
 milestone: v1.29
 milestone_name: Live-Engine Analysis Page
-current_phase: 999.1
-current_phase_name: BACKLOG
-status: Phase 139 shipped — squash-merged to main (c8516149)
-stopped_at: Phase 139 context gathered
-last_updated: "2026-06-27T09:22:16.841Z"
+current_phase: 140
+current_phase_name: full-game-analysis-board
+status: completed
+stopped_at: Phase 140 context gathered
+last_updated: "2026-06-27T11:26:11.033Z"
 last_activity: 2026-06-27
+last_activity_desc: Phase 140 execution started
 progress:
-  total_phases: 8
-  completed_phases: 4
-  total_plans: 11
-  completed_plans: 11
-  percent: 50
+  total_phases: 9
+  completed_phases: 5
+  total_plans: 14
+  completed_plans: 14
+  percent: 56
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 999.1 — Password Reset (BACKLOG)
-Plan: Not started
-Status: Phase 139 shipped — squash-merged to main (c8516149)
-Last activity: 2026-06-27
+Phase: 140 (full-game-analysis-board) — EXECUTING
+Plan: 3 of 3
+Status: phase-140-complete-pending-uat
+Last activity: 2026-06-28 — Completed quick task 260628-pcb: desktop analysis board player names + ELO + remaining clock, engine card top aligned with board top
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -83,6 +84,21 @@ None at planning start.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260627-dny | Phase 139 tactic overlay UAT: remove StoredPV/engine toggle, eval bar perspective+position, live eval number, remove old eval badge | 2026-06-27 | 46067dff | [260627-dny-phase-139-tactic-overlay-uat-remove-stor](./quick/260627-dny-phase-139-tactic-overlay-uat-remove-stor/) |
+| 260627-jqk | Phase 140 UAT: motif+depth move-list chips, fix tactic-chip PV sideline, precomputed best-move blue arrow + eval bar (engine = grey 2nd line), board tactic overlay without loaded PV, remove overlay chrome above engine lines | 2026-06-27 | 0efa9448 | [260627-jqk-uat-phase-140-tactic-badges-best-move-ar](./quick/260627-jqk-uat-phase-140-tactic-badges-best-move-ar/) |
+| 260627-l2z | Phase 140 UAT round 2: remove legacy tactic mode (?flaw_ply=), clear stale engine arrows on position change, PV-sideline depth overlay arrow, color depth-0 resolving sideline move, flip board+chart for black-player games | 2026-06-27 | 634b343f | [260627-l2z-phase-140-uat-polish-round-2-remove-tact](./quick/260627-l2z-phase-140-uat-polish-round-2-remove-tact/) |
+| 260627-mt8 | Phase 140 UAT round 3: engine info line (toggle + SF 18, Depth d), blue/grey eval badges on single-line PV rows, remove board-control engine toggle + best-line depth badge, fixed-height engine loading container, narrower move list bottom-aligned with eval slider, eval-chart slider syncs on move/sideline (fork-point) navigation | 2026-06-27 | c145d3de | [260627-mt8-more-uat-feedback-for-phase-140-analysis](./quick/260627-mt8-more-uat-feedback-for-phase-140-analysis/) |
+| 260627-r9g | Phase 140 UAT round 4: move list −25px + subtle zebra rows (sideline inherits fork-row band), engine info/lines in a fixed-height charcoal Card with skeleton loaders, severity flaw arrows → blunder/mistake/inaccuracy (`!?`) corner glyphs, severity-colored last-move overlay (red/orange/yellow/green), depth labels moved top-left + smaller; same board changes mirrored onto the games-card MiniBoard | 2026-06-27 | da3e77c3 | [260627-r9g-more-uat-feedback-for-phase-140-analysis](./quick/260627-r9g-more-uat-feedback-for-phase-140-analysis/) |
+| 260627-thl | Phase 140 UAT round 5: desktop move list −25px via flex-margin (controls stay bottom-aligned), best-move blue arrow uses next-ply best_move so it matches the live grey 2nd-best (fixed on analysis board + games-card MiniBoard; FlawCard correct), blunder/mistake glyphs in move list even when a tactic chip is present, forward button steps into the open flaw sideline, miniboard tooltip on engine-move hover | 2026-06-27 | c5389b1d | [260627-thl-more-uat-feedback-for-phase-140-analysis](./quick/260627-thl-more-uat-feedback-for-phase-140-analysis/) |
+| 260627-w8k | Phase 140 UAT round 6: miniboard hover tooltip (no border, rounded corners, green played-move overlay), eval-slider↔board-controls bottom alignment fixed via absolute-inset scroller (browser-verified, no magic px), move-list tactic badges on a line below the move, live blunder/mistake/inaccuracy classification of freely-played moves via the live engine (glyph + square overlay), missed tactics shown one ply earlier (blue arrow + depth) on board/minimap/eval-tooltip/move-list | 2026-06-27 | e116912c | [260627-w8k-phase-140-uat-round-6-miniboard-border-h](./quick/260627-w8k-phase-140-uat-round-6-miniboard-border-h/) |
+| 260628-1t5 | Phase 140 UAT round 6 follow-up: reverted the missed-tactic ply-1 shift (cfaa7856 + e116912c), drew the should-have-played move as a NEW violet arrow at the flaw ply on board + miniboard (empirically index-parity tested vs FlawCard), recolored both tactic families into opposite free zones of the board palette for distinctness (missed → magenta hue 330, allowed → teal hue 200; ~130° apart, magenta ~70° off the blue best-move arrow) across chips/arrows/depth-numbers/eval-tooltip, dropped the allowed +1 depth offset on navigable surfaces via an `anchored` flag (FlawCard + filter predicate keep it), surfaced the live free-move blunder/mistake glyph in the move list (desktop + mobile) | 2026-06-28 | 4343c576 | [260628-1t5-phase-140-uat-revert-missed-tactic-ply-1](./quick/260628-1t5-phase-140-uat-revert-missed-tactic-ply-1/) |
+| 260628-cjp | Mobile `/analysis` takeover: back-button header (no logo) + suppressed shell bottom nav; the page owns an in-flow board-controls footer (Reset/Back/Forward/Flip); the two Stockfish PV lines moved above the board without the info-card header; a Moves \| Eval-chart 2-tab view (Moves default, vertical move list) fills all space between board and footer; single-tree-per-breakpoint (`useIsMobile` 640px) so the board mounts once; desktop layout unchanged | 2026-06-28 | 8a0b93c1 | [260628-cjp-improve-the-mobile-version-of-the-analys](./quick/260628-cjp-improve-the-mobile-version-of-the-analys/) |
+| 260628-dgv | Mobile `/analysis` takeover UAT: EngineLines `compact` mode (text-xs single-row PV lines, flex-nowrap+overflow-x, shared `min-h-[44px]` across loading/analyzing/rendered) removes the vertical layout jump when lines arrive (text-xs is a user-approved exception to the text-sm floor, scoped to this engine surface; desktop keeps text-sm); BoardControls `flat` prop drops the rounded charcoal pill so the mobile board-controls footer reads like the main nav bar (desktop + Openings keep the pill); browser nav/URL-bar hiding left as-is (no reliable cross-browser JS API — PWA install is the only path) | 2026-06-28 | c215a4ac | [260628-dgv-analysis-mobile-uat-tweaks](./quick/260628-dgv-analysis-mobile-uat-tweaks/) |
+| 260628-ojq | Phase 140 UAT: tactic-colored arrows. A board arrow/sideline move belonging to a missed/allowed tactic now carries that tactic's color (missed → teal, allowed → crimson — a vivid pink-red set apart from the blunder by higher saturation + a magenta-ward hue; orientation hues swapped in theme.ts after the initial pass, after interim wine-red, purple/violet, and burgundy tries), matching the chips. FlawCard played-move arrow teal (allowed) + best-move arrow magenta (missed), gated on the same orientation+motif as the chip; LibraryGameCard following-best (opponent response) arrow teal for allowed tactics (missed unchanged — already the violet should-have arrow); Analysis sideline colors every move from the fork up to the depth-0 resolving move (was only the resolving move) and `buildPvArrow` countdown arrows in the orientation color until depth 0 (neutral payoff color past the punchline) | 2026-06-28 | 71aa4df6 | [260628-ojq-uat-feedback-phase-140-tactic-colored-ar](./quick/260628-ojq-uat-feedback-phase-140-tactic-colored-ar/) |
+| 260628-pu2 | Phase 140 UAT: analysis board. (1) On an allowed-tactic flaw the following-best (opponent response) arrow now reads in the allowed crimson, matching the game-card miniboard (was plain blue). (2) Display-depth 0 is treated as the payoff move — no number, neutral color (the tactic is over by then); dead `isFlawLeadIn` arrow branch dropped. (3) Allowed PV sidelines now start AT the flaw position (fork at `mainLine[ply]`, drop the prepended flaw move) instead of one ply before, which also fixes the depth counter that was counting one level too low (now ends at 1 on the punchline like missed). New `forkPlyForOrientation` helper; missed lines unchanged | 2026-06-28 | 582df240 | [260628-pu2-uat-phase-140-analysis-board-allowed-col](./quick/260628-pu2-uat-phase-140-analysis-board-allowed-col/) |
+| 260628-qta | Phase 140 UAT: analysis board ply / scroll. (1) Game mode keys on `game_id` alone (was `game_id` AND `ply`), so `/analysis?game_id=X` with no ply loads the game at ply 0 instead of free play. (2) The game card's Analyze button omits the `ply` param when the slider rests on the game's end position (opens at ply 0); a scrubbed-back slider still deep-links to that move (`buildGameAnalysisUrl` ply now optional). (3) The desktop move list aligns the initial-ply move to the TOP of the scroller on first open (was bottom via `block:'nearest'`), held until `currentNodeId` reaches the initial-ply node past the `loadMainLine` last-node transient | 2026-06-28 | aac82a37 | [260628-qta-phase-140-analysis-ply-scroll-uat](./quick/260628-qta-phase-140-analysis-ply-scroll-uat/) |
+| 260628-shc | Phase 140 UAT: analysis board engine lines. (1) Each of the two Stockfish PV lines gets a right-pinned `ChevronDown` (shown only when the line is longer than `MAX_PLIES`=5) that toggles between the first 5 plies and the full PV; per-row expand state survives streaming depth updates (stable `lineIndex` key); the desktop engine `CardBody` changed `h-[78px] overflow-y-auto` → `min-h-[78px]` so the card grows to fit an expanded line instead of scrolling. (2) Clicking a line move now grafts the WHOLE sideline up to that move from the current anchor: `EngineLines.onMoveClick` signature `(from,to)` → `(uciMoves[])` passing `moves.slice(0,i+1)`; new `useAnalysisBoard.playUciLine` replays the UCI prefix from `currentNodeId` in one setState (reuses matching children, no duplicate branches) and lands on the last move — fixing the old `onMoveClick={makeMove}` that played only the single clicked move and skipped the moves before it | 2026-06-28 | 75156d60 | [260628-shc-phase-140-analysis-board-uat-chevron-to-](./quick/260628-shc-phase-140-analysis-board-uat-chevron-to-/) |
+| 260628-r5v | Phase 140 UAT: analysis board. (1) Blunder/mistake icons now persist on every explored sideline move (was current-move-only): Analysis.tsx persists each freely-played node's live classification in `liveFlawByNode` (node-id keyed, FIFO-capped, stale-id/deleted-node guards, cleared on Reset) and merges it into `moveListMarkers`; VariationTree paints the severity glyph on any variation/free node, not just `isCurrent` (desktop + mobile). Also caches the per-node grading so stepping back re-shows the icon without re-running the engine (eval value already FEN-cached in `engineEvalByFen`). (2) Desktop engine lines `text-sm`→`text-xs` to match the compact mobile lines (user-approved exception to the text-sm floor, scoped to the engine surface); the `compact` split is now purely row layout | 2026-06-28 | 21a5d670 | [260628-r5v-uat-keep-blunder-mistake-icons-on-sideli](./quick/260628-r5v-uat-keep-blunder-mistake-icons-on-sideli/) |
+| 260628-pcb | Desktop analysis board: player name + ELO (in parens) above and below the board (ordered by `boardFlipped`), each with their remaining clock at the current position (lucide `Clock` icon + m:ss) on the right. New `PlayerBar` component + 8 unit tests; clocks derived from `eval_series` per ply (even=White/odd=Black, latest ≤ current ply), hidden when a game has no `%clk`. Validated against the live `/api/library/games` response + dev DB (ply 69 → White 0:24 / Black 1:32). Follow-up: invisible top spacer in the right column (`lg:-mb-2`) aligns the Stockfish card top with the board top. Desktop only; mobile takeover unchanged | 2026-06-28 | 7f461121 | [260628-pcb-analysis-board-player-names-elo-clock](./quick/260628-pcb-analysis-board-player-names-elo-clock/) |
 
 ## Deferred Items
 
@@ -99,9 +115,9 @@ Items acknowledged and deferred at **v1.28 milestone close on 2026-06-25**:
 
 ## Session Continuity
 
-Last session: 2026-06-26T19:58:51.319Z
-Stopped at: Phase 139 context gathered
-Resume file: .planning/phases/139-tactic-mode-overlay-phase-135-subsume/139-CONTEXT.md
+Last session: 2026-06-27T11:16:37.045Z
+Stopped at: Phase 140 context gathered
+Resume file: .planning/phases/140-full-game-analysis-board/140-CONTEXT.md
 
 ## Performance Metrics
 
@@ -119,3 +135,6 @@ Resume file: .planning/phases/139-tactic-mode-overlay-phase-135-subsume/139-CONT
 | Phase 139 P01 | 45min | 3 tasks | 7 files |
 | Phase 139 P02 | 20min | 2 tasks | 3 files |
 | Phase 139 P03 | 5min | 1 tasks | 4 files |
+| Phase 140 P01 | 30 | 3 tasks | 6 files |
+| Phase 140-full-game-analysis-board P02 | 45min | 2 tasks | 4 files |
+| Phase 140-full-game-analysis-board P03 | 15 | 2 tasks | 3 files |

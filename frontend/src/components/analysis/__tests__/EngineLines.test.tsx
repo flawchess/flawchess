@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 /**
  * Phase 137 Plan 02 — EngineLines render tests.
+ * Updated Quick 260627-mt8: depth badge moved to the engine info line (Analysis.tsx),
+ * so EngineLines no longer takes a `depth` prop or renders a `d{depth}` badge.
  *
  * Verifies:
- *  (a) two fixture PV lines render two chip rows with correct score format
- *  (b) depth badge appears once (on line 0 only)
+ *  (a) two fixture PV lines render two rows with correct score (badge) format
  *  (c) fireEvent.click on engine-line-0-move-0 calls onMoveClick("e2","e4")
  *  (d) isAnalyzing && empty pvLines → shows "engine-lines-analyzing"
  *      isAnalyzing && non-empty pvLines → does NOT show "engine-lines-analyzing"
@@ -14,7 +15,10 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 import { EngineLines } from '../EngineLines';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import type { PvLine } from '@/hooks/uciParser';
+
+const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -71,7 +75,6 @@ describe('EngineLines', () => {
     render(
       <EngineLines
         pvLines={TWO_LINES}
-        depth={20}
         isAnalyzing={false}
         onMoveClick={vi.fn()}
       />,
@@ -83,25 +86,11 @@ describe('EngineLines', () => {
     expect(screen.getByText('#+3')).toBeTruthy();
   });
 
-  it('(b) depth badge appears exactly once (on line 0)', () => {
-    render(
-      <EngineLines
-        pvLines={TWO_LINES}
-        depth={20}
-        isAnalyzing={false}
-        onMoveClick={vi.fn()}
-      />,
-    );
-    const badges = screen.getAllByText('d20');
-    expect(badges).toHaveLength(1);
-  });
-
-  it('(c) clicking engine-line-0-move-0 calls onMoveClick("e2","e4")', () => {
+  it('(c) clicking engine-line-0-move-0 calls onMoveClick(["e2e4"])', () => {
     const onMoveClick = vi.fn();
     render(
       <EngineLines
         pvLines={TWO_LINES}
-        depth={20}
         isAnalyzing={false}
         onMoveClick={onMoveClick}
       />,
@@ -110,27 +99,42 @@ describe('EngineLines', () => {
     const chip = screen.getByTestId('engine-line-0-move-0');
     fireEvent.click(chip);
     expect(onMoveClick).toHaveBeenCalledTimes(1);
-    expect(onMoveClick).toHaveBeenCalledWith('e2', 'e4');
+    expect(onMoveClick).toHaveBeenCalledWith(['e2e4']);
+  });
+
+  it('clicking a later move passes the full UCI prefix up to that move', () => {
+    // LINE_CP = ['e2e4', 'd7d5', 'e4d5']; clicking move index 2 must graft the
+    // whole line up to it (not just the single clicked move) — the UAT bug fix.
+    const onMoveClick = vi.fn();
+    render(
+      <EngineLines
+        pvLines={[LINE_CP]}
+        isAnalyzing={false}
+        onMoveClick={onMoveClick}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('engine-line-0-move-2'));
+    expect(onMoveClick).toHaveBeenCalledWith(['e2e4', 'd7d5', 'e4d5']);
   });
 
   it('(d) isAnalyzing && empty pvLines → shows analyzing indicator', () => {
     render(
       <EngineLines
         pvLines={[]}
-        depth={0}
         isAnalyzing={true}
         onMoveClick={vi.fn()}
       />,
     );
+    // Quick 260627-r9g item 3: the "Analyzing…" text is now a skeleton placeholder.
     expect(screen.getByTestId('engine-lines-analyzing')).toBeTruthy();
-    expect(screen.getByText('Analyzing…')).toBeTruthy();
+    expect(screen.queryByText('Analyzing…')).toBeNull();
   });
 
   it('(d) isAnalyzing && non-empty pvLines → does NOT show analyzing indicator', () => {
     render(
       <EngineLines
         pvLines={TWO_LINES}
-        depth={20}
         isAnalyzing={true}
         onMoveClick={vi.fn()}
       />,
@@ -142,7 +146,6 @@ describe('EngineLines', () => {
     render(
       <EngineLines
         pvLines={[LINE_CP]}
-        depth={15}
         isAnalyzing={false}
         onMoveClick={vi.fn()}
       />,
@@ -162,7 +165,6 @@ describe('EngineLines', () => {
     render(
       <EngineLines
         pvLines={[negativeLine]}
-        depth={15}
         isAnalyzing={false}
         onMoveClick={vi.fn()}
       />,
@@ -181,7 +183,6 @@ describe('EngineLines', () => {
     render(
       <EngineLines
         pvLines={[losingMate]}
-        depth={15}
         isAnalyzing={false}
         onMoveClick={vi.fn()}
       />,
@@ -193,13 +194,30 @@ describe('EngineLines', () => {
     render(
       <EngineLines
         pvLines={[]}
-        depth={0}
         isAnalyzing={false}
         onMoveClick={vi.fn()}
       />,
     );
     expect(screen.queryByTestId('engine-lines-analyzing')).toBeNull();
     expect(screen.queryByText('Analyzing…')).toBeNull();
+  });
+
+  it('with baseFen, move chips are tooltip-wrapped and still clickable (thl item 5)', () => {
+    const onMoveClick = vi.fn();
+    render(
+      <TooltipProvider>
+        <EngineLines
+          pvLines={[LINE_CP]}
+          isAnalyzing={false}
+          baseFen={START_FEN}
+          onMoveClick={onMoveClick}
+        />
+      </TooltipProvider>,
+    );
+    const chip = screen.getByTestId('engine-line-0-move-0');
+    expect(chip.tagName.toLowerCase()).toBe('button');
+    fireEvent.click(chip);
+    expect(onMoveClick).toHaveBeenCalledWith(['e2e4']);
   });
 
   it('reads per-line evalCp/evalMate not a non-existent score field', () => {
@@ -216,11 +234,49 @@ describe('EngineLines', () => {
     render(
       <EngineLines
         pvLines={[lineWithOnlyCp]}
-        depth={10}
         isAnalyzing={false}
         onMoveClick={vi.fn()}
       />,
     );
     expect(screen.getByText('+0.5')).toBeTruthy();
+  });
+
+  it('chevron expands a >5-ply line to reveal the rest of the PV', () => {
+    // 7 plies — collapsed shows the first 5; the expand chevron reveals 6 & 7.
+    const longLine: PvLine = {
+      multipv: 1,
+      depth: 22,
+      moves: ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1b5', 'a7a6', 'b5a4'],
+      evalCp: 20,
+      evalMate: null,
+    };
+    render(
+      <EngineLines
+        pvLines={[longLine]}
+        isAnalyzing={false}
+        onMoveClick={vi.fn()}
+      />,
+    );
+
+    // Collapsed: moves 5 and 6 are not rendered.
+    expect(screen.queryByTestId('engine-line-0-move-5')).toBeNull();
+    expect(screen.getByTestId('engine-line-0-move-4')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('engine-line-0-expand'));
+
+    // Expanded: the remaining plies are now rendered.
+    expect(screen.getByTestId('engine-line-0-move-5')).toBeTruthy();
+    expect(screen.getByTestId('engine-line-0-move-6')).toBeTruthy();
+  });
+
+  it('no chevron when the line is <= 5 plies', () => {
+    render(
+      <EngineLines
+        pvLines={[LINE_CP]} // 3 plies
+        isAnalyzing={false}
+        onMoveClick={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId('engine-line-0-expand')).toBeNull();
   });
 });

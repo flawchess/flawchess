@@ -9,43 +9,82 @@
  *   useStockfishEngine — UCI WASM engine state
  *   EvalBar / EngineLines / VariationTree — analysis display components
  *   ChessBoard / BoardControls — board interaction
- *   TacticModeOverlay — conditional tactic chrome (Phase 139)
+ *   EvalChart — below-board eval chart with slider (Phase 140 game mode)
  *
  * Security:
  *   T-138-01: FEN-guard on ?fen= param — malformed FEN degrades to STARTING_FEN.
- *   T-139-01: NaN-guard on ?game_id= / ?flaw_ply= params — malformed values → null.
- *   T-139-02: ?orientation= cast + resolveVisibleTactic fallback for unknown values.
+ *   T-140-02a: NaN-guard on ?game_id= / ?ply= params — malformed → null → isGameMode false.
+ *   T-140-02b: L-8 guard on mainLine[ply] accesses — out-of-bounds → undefined → no-op.
+ *
  * Engine: on by default (D-06); "Loading engine…" shown in eval area while WASM inits;
  *   board stays interactive throughout (SC#3).
+ *
+ * Modes: ?fen= seeds free play; ?game_id=X&ply=Y loads the full game at ply Y (game mode).
+ *   The legacy tactic mode (?flaw_ply=) was removed in Quick 260627-l2z; clicking a
+ *   move-list tactic chip grafts the PV as an in-tree sideline with a depth overlay.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Chess } from 'chess.js';
-import { Cpu, Loader2 } from 'lucide-react';
+import { Cpu } from 'lucide-react';
 import { useAnalysisBoard } from '@/hooks/useAnalysisBoard';
 import { useStockfishEngine } from '@/hooks/useStockfishEngine';
-import { useTacticLines } from '@/hooks/useLibrary';
-import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
-import { resolveVisibleTactic } from '@/lib/tacticComparisonMeta';
+import { useGameOverlay } from '@/hooks/useGameOverlay';
+import { useLiveMoveFlaw } from '@/hooks/useLiveMoveFlaw';
+import { useTacticLines, useLibraryGame } from '@/hooks/useLibrary';
 import { toDisplayDepthForOrientation } from '@/lib/tacticDepth';
-import type { TacticDepthOrientation } from '@/lib/tacticDepth';
+import { buildPvArrow } from '@/lib/tacticArrows';
 import { EvalBar } from '@/components/analysis/EvalBar';
-import { EngineLines } from '@/components/analysis/EngineLines';
+import { EngineLines, EngineLinesSkeleton } from '@/components/analysis/EngineLines';
+import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { VariationTree } from '@/components/analysis/VariationTree';
-import {
-  TacticModeOverlay,
-  buildRootArrows,
-  buildPvArrow,
-  isBlackToMove,
-} from '@/components/analysis/TacticModeOverlay';
+import type { FlawMarkerEntry } from '@/components/analysis/VariationTree';
+import type { FlawSeverity } from '@/types/library';
+import { EvalChart } from '@/components/library/EvalChart';
 import { ChessBoard } from '@/components/board/ChessBoard';
 import type { BoardArrow } from '@/components/board/ChessBoard';
 import { BoardControls } from '@/components/board/BoardControls';
+import { PlayerBar } from '@/components/board/PlayerBar';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { uciToSquares } from '@/lib/sanToSquares';
-import { BEST_MOVE_ARROW, ARROW_NEUTRAL, TAC_MISSED, TAC_ALLOWED } from '@/lib/theme';
+import { ARROW_NEUTRAL, TAC_MISSED, TAC_ALLOWED, MOVE_HIGHLIGHT_GOOD } from '@/lib/theme';
 import type { NodeId } from '@/hooks/useAnalysisBoard';
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const STARTING_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+/** Engine label shown in the engine info line — the bundled Stockfish 18 WASM. */
+const ENGINE_NAME = 'SF 18';
+
+/** Cap on the per-session live engine-eval cache (FEN → completed eval), item 4. */
+const LIVE_EVAL_CACHE_MAX = 256;
+
+/** Below this width the page renders its mobile takeover layout (matches the shell's
+ *  `sm` breakpoint where the app swaps to mobile chrome). */
+const MOBILE_BREAKPOINT_PX = 640;
+
+/**
+ * True while the viewport is below the mobile breakpoint. Drives a single-tree render
+ * (mobile OR desktop, never both) so the board / eval-chart / variation-tree mount once —
+ * a CSS `hidden` split would duplicate their stable `id`/`data-testid`s and the engine board.
+ */
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`).matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`);
+    const update = () => setIsMobile(mq.matches);
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+  return isMobile;
+}
 
 // ─── Root-ply helper ──────────────────────────────────────────────────────────
 
@@ -65,13 +104,26 @@ function fenToRootPly(fen: string | undefined): number {
   return Number.isNaN(ply) ? 0 : ply;
 }
 
+/**
+ * Main-line ply the tactic PV sideline forks from, by orientation (Quick 260628-pu2 UAT).
+ *
+ * Missed lines fork at the pre-flaw DECISION board (flawPly-1) and replay the
+ * should-have-played PV. Allowed lines fork at the FLAW position itself (flawPly): the
+ * sideline begins with the opponent's punishing response, not a replay of the flaw move.
+ * The backend's allowed_moves prepends the flaw move at index 0, so allowed PVs grafted
+ * here drop that lead-in move (allowed_moves.slice(1)).
+ */
+function forkPlyForOrientation(flawPly: number, orientation: 'missed' | 'allowed'): number {
+  return orientation === 'allowed' ? flawPly : flawPly - 1;
+}
+
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 /**
  * Default-exported Analysis page (required by React.lazy in App.tsx).
  * ROUTE-01: reachable by authenticated users inside ProtectedLayout.
  * ROUTE-02: ?fen= seeds the board; empty/malformed → standard start.
- * ROUTE-03 (Phase 139): ?game_id=&flaw_ply= enters tactic mode; ?orientation= optional.
+ * ROUTE-04 (Phase 140): ?game_id=&ply= enters game mode (full game at initial ply).
  */
 export default function Analysis() {
   const [searchParams] = useSearchParams();
@@ -90,181 +142,139 @@ export default function Analysis() {
     }
   }
 
-  // ── Tactic-mode URL params (T-139-01 / T-139-02) ────────────────────────────
-  // Security: NaN-guard on numeric params (T-139-01) — malformed → null → no tactic mode.
+  // ── URL params — game mode (T-140-02a) ──────────────────────────────────────
+  // Security: NaN-guard on numeric params — malformed → null → mode disabled.
   const gameIdRaw = searchParams.get('game_id');
-  const flawPlyRaw = searchParams.get('flaw_ply');
+  const plyRaw = searchParams.get('ply');
+
   const gameId: number | null =
     gameIdRaw != null && !Number.isNaN(Number(gameIdRaw)) ? Number(gameIdRaw) : null;
-  const flawPly: number | null =
-    flawPlyRaw != null && !Number.isNaN(Number(flawPlyRaw)) ? Number(flawPlyRaw) : null;
-  const isTacticMode = gameId != null && flawPly != null;
+  // Game mode initial ply (T-140-02a: NaN-guard). null when the ply param is absent
+  // or malformed; game mode still loads (gameId drives it) and opens at ply 0
+  // (Quick 260628-qta UAT: game_id without ply loads the game at ply 0).
+  const initialPly: number | null =
+    plyRaw != null && !Number.isNaN(Number(plyRaw)) ? Number(plyRaw) : null;
 
-  // Orientation state seeded from URL param (T-139-02: unknown value falls back to 'missed').
-  const orientationParam = searchParams.get('orientation');
-  const [orientation, setOrientation] = useState<TacticDepthOrientation>(
-    orientationParam === 'allowed' ? 'allowed' : 'missed',
-  );
+  // Game mode is keyed on game_id alone — the ply param is optional (defaults to 0
+  // via the `?? 0` guards on every mainLine[initialPly] access below).
+  const isGameMode = gameId != null;
+
+  const isMobile = useIsMobile();
 
   // D-06: engine on by default; toggle available via infoSlot button.
   const [engineEnabled, setEngineEnabled] = useState(true);
   const [boardFlipped, setBoardFlipped] = useState(false);
+  // Once we have auto-oriented the board to the player's color, manual flips win.
+  const hasAutoFlipped = useRef(false);
+
+  // Phase 140: active PV flaw state (move-list tactic-chip expansion → in-tree sideline).
+  // Ephemeral in-memory — D-01: not URL-encoded.
+  const [activePvFlaw, setActivePvFlaw] = useState<{
+    ply: number;
+    orientation: 'missed' | 'allowed';
+  } | null>(null);
 
   // ── All hooks (unconditional, React rules) ────────────────────────────────────
 
-  // Destructure board return value so each property is a plain variable.
-  // This avoids eslint-plugin-react-hooks/refs v7 false-positive that fires
-  // when hook-return properties (including containerRef) are accessed inline
-  // inside JSX — see TacticLineExplorer.tsx:289-291 for the same pattern.
   const {
     position,
     currentNodeId,
     nodes,
     mainLine,
+    pvLine,
     rootFen,
     lastMove,
     makeMove,
     goBack,
     goForward,
     goToNode,
-    goToRoot,
     loadMainLine,
     isOnMainLine,
+    insertPvLine,
+    playUciLine,
+    clearPvLine,
+    isOnPvLine,
     containerRef,
   } = useAnalysisBoard(guardedFen);
 
   // Engine hook must run unconditionally (React rules).
-  // Idled via fen=null / enabled=false when toggled off.
   const engine = useStockfishEngine({
     fen: engineEnabled ? position : null,
     enabled: engineEnabled,
   });
 
-  // Tactic data: lazy-fetch enabled only in tactic mode.
-  const { data: tacticData } = useTacticLines(gameId, flawPly, isTacticMode);
+  // Contextual PV fetch: lazy-fetch for inline chip expansion (L-3: unconditional).
+  // Enabled only when a move-list tactic chip is expanded in game mode.
+  const {
+    data: contextualTacticData,
+    isFetching: contextualPending,
+    isError: contextualError,
+  } = useTacticLines(gameId, activePvFlaw?.ply ?? null, activePvFlaw != null && isGameMode);
 
-  // Flaw filter for resolveVisibleTactic gating (mirrors TacticLineExplorer).
-  const [flawFilter] = useFlawFilterStore();
-
-  // ── Tactic-mode filter-gated visibility ────────────────────────────────────────
-
-  const missedVisible = resolveVisibleTactic(
-    'missed',
-    tacticData?.missed_motif ?? null,
-    tacticData?.missed_depth ?? null,
-    flawFilter,
+  // Game-by-id fetch for full-game mode (D-4: existing endpoint, no new backend).
+  // Unconditional hook call; enabled only when isGameMode (gameId is null otherwise).
+  const { data: gameData, isError: gameError } = useLibraryGame(
+    isGameMode ? gameId : null,
   );
-  const allowedVisible = resolveVisibleTactic(
-    'allowed',
-    tacticData?.allowed_motif ?? null,
-    tacticData?.allowed_depth ?? null,
-    flawFilter,
-  );
-  const hasMissed = missedVisible != null && (tacticData?.missed_moves ?? null) != null;
-  const hasAllowed = allowedVisible != null && (tacticData?.allowed_moves ?? null) != null;
 
-  // Resolve to the visible orientation; fall back when user choice is filtered out.
-  // T-139-02: unknown/malformed orientation falls back to the available one.
-  const resolvedOrientation: TacticDepthOrientation =
-    orientation === 'allowed'
-      ? hasAllowed
-        ? 'allowed'
-        : 'missed'
-      : hasMissed
-        ? 'missed'
-        : 'allowed';
+  // Seeding guard refs: prevent re-running effects after the first game load.
+  const hasLoadedMainLine = useRef(false);
+  const hasNavigatedToInitialPly = useRef(false);
 
-  // ── Effects (re-seed, board flip, arrow-source reset) ─────────────────────────
+  // ── Effects (game seeding, board flip, contextual PV insert) ──────────────────
 
-  const positionFen = tacticData?.position_fen;
-
-  // D-5 re-seed: fires when flaw data or resolved orientation changes (Behavior D).
-  // Seeds loadMainLine with stored PV, then goToRoot to land at the decision position.
+  // Game mode: orient the board to the player's color once (item 5). Black games open
+  // flipped; manual flips afterward win (hasAutoFlipped guard). Free play stays white.
   useEffect(() => {
-    if (!isTacticMode || positionFen == null) return;
-    const moves =
-      resolvedOrientation === 'missed'
-        ? hasMissed
-          ? (tacticData?.missed_moves ?? [])
-          : []
-        : hasAllowed
-          ? (tacticData?.allowed_moves ?? [])
-          : [];
-    loadMainLine(moves, positionFen);
-    goToRoot();
-    // loadMainLine/goToRoot are stable callbacks ([] deps). hasMissed/hasAllowed
-    // derive from tacticData which is captured via the positionFen dependency.
+    if (!isGameMode || gameData?.user_color == null || hasAutoFlipped.current) return;
+    hasAutoFlipped.current = true;
+    setBoardFlipped(gameData.user_color === 'black');
+  }, [isGameMode, gameData?.user_color]);
+
+  // Game mode: seed the board once when game data arrives (L-1: never call from chip click).
+  useEffect(() => {
+    if (!isGameMode || gameData?.moves == null || hasLoadedMainLine.current) return;
+    hasLoadedMainLine.current = true;
+    loadMainLine(gameData.moves, STARTING_FEN);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [positionFen, resolvedOrientation, isTacticMode]);
+  }, [gameData?.moves, isGameMode]);
 
-  // Board flip default (Phase 135 parity): orient so the side to move at the
-  // decision position sits at the bottom. Re-runs per flaw but preserves manual
-  // flips within the same flaw.
+  // Navigate to initialPly AFTER loadMainLine state lands (separate effect — RESEARCH.md Hardest Part 3).
+  // Watches mainLine.length so it fires after the batch-reset from loadMainLine.
   useEffect(() => {
-    if (positionFen != null) setBoardFlipped(isBlackToMove(positionFen));
-  }, [positionFen]);
+    if (!isGameMode || mainLine.length === 0 || hasNavigatedToInitialPly.current) return;
+    hasNavigatedToInitialPly.current = true;
+    // T-140-02b: L-8 guard — out-of-bounds ply is a no-op, not a crash.
+    const nodeId = mainLine[initialPly ?? 0];
+    if (nodeId !== undefined) goToNode(nodeId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mainLine.length, isGameMode]);
+
+  // Insert contextual PV sideline when the fetch arrives (L-1: insertPvLine, not loadMainLine).
+  useEffect(() => {
+    if (!isGameMode || activePvFlaw == null || contextualTacticData == null) return;
+    // Allowed lines start AT the flaw position and drop the prepended flaw move (index 0),
+    // so the sideline begins with the opponent's response (Quick 260628-pu2 UAT). Missed
+    // lines start at the decision board and use the full PV.
+    const pvMoves =
+      activePvFlaw.orientation === 'missed'
+        ? (contextualTacticData.missed_moves ?? [])
+        : (contextualTacticData.allowed_moves ?? []).slice(1);
+    // T-140-02b: L-8 guard on the fork node lookup.
+    const forkNodeId = mainLine[forkPlyForOrientation(activePvFlaw.ply, activePvFlaw.orientation)];
+    if (forkNodeId !== undefined) insertPvLine(pvMoves, forkNodeId);
+    // mainLine intentionally omitted — stable after game load; including it causes
+    // spurious re-runs when the user navigates the variation tree.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contextualTacticData, activePvFlaw?.ply, activePvFlaw?.orientation, isGameMode]);
 
   // ── Derived values ────────────────────────────────────────────────────────────
 
-  // tacticPly: 0 = decision position (root), 1+ = steps into the stored PV.
-  const tacticPly =
-    currentNodeId === null ? 0 : mainLine.indexOf(currentNodeId) + 1;
-
-  const activeDepthRaw =
-    resolvedOrientation === 'missed'
-      ? (tacticData?.missed_depth ?? 0)
-      : (tacticData?.allowed_depth ?? 0);
-
-  const rootDisplayDepth = toDisplayDepthForOrientation(activeDepthRaw, resolvedOrientation);
-  const displayDepth = Math.max(0, rootDisplayDepth - tacticPly);
-  const isPayoff = tacticPly > rootDisplayDepth;
-
-  // On main line: at root OR on a seeded mainLine node.
-  const onMainLine = currentNodeId === null || isOnMainLine(currentNodeId);
-
-  // Desktop move-list (VariationTree) tactic coloring (UAT): the depth-0 target
-  // (punchline) is marked blue and the blunder (the allowed line's prepended
-  // flaw move) red — matching the board's blue best-move / red flaw arrows.
-  const tacticNodeColors = useMemo(() => {
-    const colors = new Map<NodeId, string>();
-    if (!isTacticMode || tacticData == null) return colors;
-    const punchlineIdx =
-      resolvedOrientation === 'missed'
-        ? (tacticData.missed_tactic_ply_index ?? 0)
-        : (tacticData.allowed_tactic_ply_index ?? 0);
-    const punchlineNode = mainLine[punchlineIdx];
-    if (punchlineNode !== undefined) colors.set(punchlineNode, TAC_MISSED);
-    // Allowed line: index 0 is the prepended flaw move (the blunder) → red.
-    if (resolvedOrientation === 'allowed') {
-      const blunderNode = mainLine[0];
-      if (blunderNode !== undefined) colors.set(blunderNode, TAC_ALLOWED);
-    }
-    return colors;
-  }, [isTacticMode, tacticData, resolvedOrientation, mainLine]);
-
-  // Depth labels for root arrows (used by buildRootArrows).
-  const missedDepthLabel = hasMissed ? (missedVisible?.depthLabel ?? undefined) : undefined;
-  const allowedDepthLabel = hasAllowed ? (allowedVisible?.depthLabel ?? undefined) : undefined;
-
-  // SC#3 / D-06: "Loading engine…" only in the eval area; board stays live.
   const engineLoading = engineEnabled && !engine.isReady;
 
-  // VariationTree + EngineLines labels anchor to the FEN-derived ply. In tactic
-  // mode the seeded position_fen carries a fullmove of 1 — it is rebuilt from
-  // board_fen() (piece-placement only), so python-chess defaults the counter — so
-  // the raw FEN ply would number the tree/engine lines from move 1 while the tactic
-  // move-list numbers from the real game ply (flaw_ply). Shift both by the same
-  // offset so all three displays agree. Frontend-only (D-4: endpoint unchanged).
-  const rootPlyBase = fenToRootPly(rootFen);
-  const plyShift = isTacticMode && flawPly != null ? flawPly - rootPlyBase : 0;
-  const rootPly = rootPlyBase + plyShift;
-  // EngineLines tracks the current ply (not root) so move numbers stay correct
-  // as the user navigates. Bug fix (CR-01): passing rootPly desynced labels on navigation.
-  const currentPly = fenToRootPly(position) + plyShift;
+  const rootPly = fenToRootPly(rootFen);
+  const currentPly = fenToRootPly(position);
 
-  // canGoForward: true when the current node has at least one child. Mirrors
-  // findFirstChild() in useAnalysisBoard. Bug fix (WR-01): was hardcoded true,
-  // so the forward button never disabled at a leaf node.
   const canGoForward = useMemo(() => {
     for (const node of nodes.values()) {
       if (node.parentId === currentNodeId) return true;
@@ -272,216 +282,675 @@ export default function Analysis() {
     return false;
   }, [nodes, currentNodeId]);
 
-  // ── Board arrows ─────────────────────────────────────────────────────────────
-  // Always-on engine (Quick 260627). The blue best-move arrow is the precomputed
-  // stored-PV move while on the stored line, and the live engine best move once
-  // forked off-line; the grey second-best arrow always comes from the live engine.
-  let boardArrows: BoardArrow[] | undefined;
+  // ── Derived values (game mode — new) ─────────────────────────────────────────
 
-  // Next move in the stored PV from the current position: the move that leads to
-  // the next main-line node (current node sits at index tacticPly-1, so the next
-  // node is mainLine[tacticPly]). Used for the blue arrow at ply 1+ (UAT below).
-  const nextStoredNodeId = mainLine[tacticPly];
-  const nextStoredNode = nextStoredNodeId !== undefined ? nodes.get(nextStoredNodeId) : undefined;
-  const nextStoredMove = nextStoredNode
-    ? { from: nextStoredNode.from, to: nextStoredNode.to }
-    : null;
+  // Slider parked when not on the main line (D-05): disabled + opacity-40 + tooltip.
+  const isOnMainLineForSlider = currentNodeId === null || isOnMainLine(currentNodeId);
 
-  if (isTacticMode && tacticData != null) {
-    const arrows: BoardArrow[] = [];
-    // Blue best-move squares for the grey second-best dedup below. Every branch
-    // assigns this before it is read.
-    let bestSquares: { from: string; to: string } | null;
+  // Eval-chart sync ply (Quick 260627-mt8): the board's current main-line ply, or the
+  // fork point (nearest main-line ancestor) when off the main line. Drives the eval-
+  // chart slider so navigating the move list / board keeps the chart in sync; on a
+  // sideline it parks the (disabled) slider at the position the sideline branches from.
+  const evalChartPly = useMemo<number | null>(() => {
+    if (!isGameMode || currentNodeId === null) return null;
+    if (isOnMainLine(currentNodeId)) {
+      const idx = mainLine.indexOf(currentNodeId);
+      return idx >= 0 ? idx : null;
+    }
+    let id: NodeId | null = nodes.get(currentNodeId)?.parentId ?? null;
+    while (id !== null) {
+      if (isOnMainLine(id)) {
+        const idx = mainLine.indexOf(id);
+        return idx >= 0 ? idx : null;
+      }
+      id = nodes.get(id)?.parentId ?? null;
+    }
+    return null;
+  }, [isGameMode, currentNodeId, mainLine, nodes, isOnMainLine]);
 
-    if (onMainLine && tacticPly === 0) {
-      // Decision position: stored-PV blue arrow + red flaw arrow. The grey
-      // second-best is layered on from the live engine below.
-      arrows.push(
-        ...buildRootArrows(
-          tacticData.position_fen,
-          tacticData.best_move_uci,
-          tacticData.flaw_move_san,
-          missedDepthLabel,
-          allowedDepthLabel,
-        ),
-      );
-      bestSquares = uciToSquares(tacticData.best_move_uci);
-    } else if (onMainLine && nextStoredMove) {
-      // Within the stored PV: the blue arrow + depth describe the NEXT ply to play
-      // (the move leading to the next main-line node), matching the grey engine
-      // arrow. UAT: previously this drew lastMove (the move already played to reach
-      // the current ply), so the blue arrow + depth lagged one ply behind the grey.
-      arrows.push(...buildPvArrow(nextStoredMove, displayDepth, isPayoff, resolvedOrientation, false));
-      bestSquares = nextStoredMove;
-    } else {
-      // Off the stored line (forked) or at its leaf: blue best move from the live engine.
-      bestSquares = uciToSquares(engine.pvLines[0]?.moves[0] ?? null);
-      if (bestSquares) {
-        arrows.push({
-          startSquare: bestSquares.from,
-          endSquare: bestSquares.to,
-          color: BEST_MOVE_ARROW,
-          width: 0.5,
+  // Per-side remaining clock at the current position (Quick 260628-pcb). eval_series
+  // carries the mover's remaining clock per ply (even ply = White, odd = Black,
+  // 0-based on moves — same convention as game_positions.ply and mainLine indexing).
+  // Walk up to the current ply, keeping the latest clock seen for each side.
+  // clock_seconds is null for imports without %clk (e.g. some chess.com games), so
+  // that side simply shows no clock.
+  const playerClocks = useMemo<{ white: number | null; black: number | null }>(() => {
+    const series = gameData?.eval_series;
+    if (!isGameMode || series == null) return { white: null, black: null };
+    const ply = evalChartPly ?? -1;
+    let white: number | null = null;
+    let black: number | null = null;
+    for (const point of series) {
+      if (point.ply > ply) break; // eval_series is ply-ascending
+      if (point.clock_seconds == null) continue;
+      if (point.ply % 2 === 0) white = point.clock_seconds;
+      else black = point.clock_seconds;
+    }
+    return { white, black };
+  }, [isGameMode, gameData?.eval_series, evalChartPly]);
+
+  // Flaw marker map for VariationTree: keyed by mainLine nodeId.
+  // Only entries with a tactic chip or blunder/mistake severity are included (D-02, D-03).
+  const flawMarkerByNodeId = useMemo<Map<NodeId, FlawMarkerEntry>>(() => {
+    const map = new Map<NodeId, FlawMarkerEntry>();
+    if (!isGameMode || gameData?.flaw_markers == null) return map;
+    // Quick 260628-1t5 (reverting e116912c item 5): the missed chip goes back onto the
+    // flaw node mainLine[ply], together with the allowed chip + severity glyph — a single
+    // entry per flaw node, no decision-node (ply-1) split.
+    for (const fm of gameData.flaw_markers) {
+      // noUncheckedIndexedAccess guard (T-140-02b): skip out-of-range plies.
+      const nodeId = mainLine[fm.ply];
+      if (nodeId === undefined) continue;
+      const missedMotif = fm.missed_tactic_motif;
+      const allowedMotif = fm.allowed_tactic_motif;
+      const sev = fm.severity;
+      if (missedMotif !== null || allowedMotif !== null || sev === 'blunder' || sev === 'mistake') {
+        map.set(nodeId, {
+          missedMotif,
+          allowedMotif,
+          missedDepth: fm.missed_tactic_depth,
+          allowedDepth: fm.allowed_tactic_depth,
+          severity: sev,
+          ply: fm.ply,
         });
       }
     }
+    return map;
+  }, [isGameMode, gameData, mainLine]);
 
-    // Grey second-best arrow from the live engine. Skipped when it duplicates the
-    // blue best move (same from→to would collide on the arrow's React key).
-    const second = uciToSquares(engine.pvLines[1]?.moves[0] ?? null);
-    if (
-      second &&
-      !(bestSquares && second.from === bestSquares.from && second.to === bestSquares.to)
-    ) {
+  // The mainLine node whose chip is currently expanded (for ring highlight + aria). Both
+  // the missed and allowed chips for a flaw now live on the same flaw node mainLine[ply]
+  // (Quick 260628-1t5); activePvOrientation disambiguates which of the two is active.
+  const activePvNodeId: NodeId | null = useMemo(() => {
+    if (!isGameMode || activePvFlaw == null) return null;
+    // Chip is on mainLine[ply] — the node AFTER the flaw move (noUncheckedIndexedAccess guard).
+    const nodeId = mainLine[activePvFlaw.ply];
+    return nodeId ?? null;
+  }, [isGameMode, activePvFlaw, mainLine]);
+
+  // Contextual overlay PV ply (0 = fork position, 1+ = steps into the PV).
+  const contextualCurrentPly =
+    currentNodeId !== null ? pvLine.indexOf(currentNodeId) + 1 : 0;
+
+  // onStoredLine for contextual overlay: true only when on the PV sideline itself.
+  const contextualOnStoredLine = currentNodeId !== null && isOnPvLine(currentNodeId);
+
+  // Game-mode overlay (Quick 260627): precomputed blue best-move arrow + tactic depth
+  // overlay + eval bar, with the live engine supplying only the grey 2nd-best line.
+  const gameOverlay = useGameOverlay({
+    enabled: isGameMode,
+    evalSeries: gameData?.eval_series,
+    flawMarkers: gameData?.flaw_markers,
+    mainLine,
+    currentNodeId,
+    isOnMainLine,
+    lastMove,
+    enginePvLines: engine.pvLines,
+    engineEvalCp: engine.evalCp,
+    engineEvalMate: engine.evalMate,
+    engineDepth: engine.depth,
+  });
+
+  // ── Live free-move classification (item 4) ────────────────────────────────────
+  // Cache each position's COMPLETED engine eval (white POV) keyed by FEN. The engine
+  // only sets evalCp/evalMate once a search finishes (null while analyzing), so a
+  // non-null value here is a depth-complete eval for the current position. Held in
+  // state (not a ref) so reading it during render is legitimate; updates are
+  // low-frequency (one per completed ~1.5s search) and no-op when unchanged.
+  const [engineEvalByFen, setEngineEvalByFen] = useState<
+    Map<string, { cp: number | null; mate: number | null }>
+  >(() => new Map());
+  useEffect(() => {
+    if (!engineEnabled) return;
+    if (engine.evalCp == null && engine.evalMate == null) return;
+    setEngineEvalByFen((prev) => {
+      const existing = prev.get(position);
+      if (existing && existing.cp === engine.evalCp && existing.mate === engine.evalMate) {
+        return prev; // unchanged — skip the re-render
+      }
+      const next = new Map(prev);
+      next.set(position, { cp: engine.evalCp, mate: engine.evalMate });
+      // Rough FIFO cap (Map preserves insertion order) so a long session can't grow it
+      // without bound.
+      if (next.size > LIVE_EVAL_CACHE_MAX) {
+        const oldest = next.keys().next().value;
+        if (oldest !== undefined) next.delete(oldest);
+      }
+      return next;
+    });
+  }, [position, engine.evalCp, engine.evalMate, engineEnabled]);
+
+  // FEN of the position BEFORE the current move — the live classifier's "best before".
+  const parentFen = useMemo<string | null>(() => {
+    if (currentNodeId === null) return null;
+    const node = nodes.get(currentNodeId);
+    if (!node) return null;
+    if (node.parentId === null) return rootFen;
+    return nodes.get(node.parentId)?.fen ?? rootFen;
+  }, [currentNodeId, nodes, rootFen]);
+
+  // Live classification applies only to freely-played moves off the precomputed line:
+  // any node that is NOT a game main-line node (game mode) and NOT a grafted PV node
+  // (those are best-play lines). In free-play mode every played node qualifies.
+  const liveFlawActive =
+    currentNodeId !== null &&
+    !(isGameMode && isOnMainLine(currentNodeId)) &&
+    !isOnPvLine(currentNodeId);
+
+  const parentEval = parentFen != null ? engineEvalByFen.get(parentFen) ?? null : null;
+
+  const liveFlaw = useLiveMoveFlaw({
+    active: liveFlawActive,
+    parentFen,
+    parentEval,
+    childEvalCp: engine.evalCp,
+    childEvalMate: engine.evalMate,
+    lastMove,
+  });
+
+  // Persist each freely-played node's live blunder/mistake classification, keyed by node id
+  // (Quick 260628-r5v UAT). Two purposes: (1) the move-list glyph stays on EVERY sideline move
+  // the user has stepped through, not just the current one; (2) it caches the per-node
+  // classification so returning to an earlier sideline move re-shows its icon without waiting
+  // on the live engine to re-grade it. (The eval VALUE is already cached by FEN in
+  // engineEvalByFen above; this caches the derived classification per node.)
+  const [liveFlawByNode, setLiveFlawByNode] = useState<Map<NodeId, FlawSeverity>>(
+    () => new Map(),
+  );
+  useEffect(() => {
+    if (!liveFlawActive || currentNodeId === null) return;
+    const severity = liveFlaw.squareMarkers[0]?.severity;
+    // Only blunder/mistake paint a glyph; skip while still pending (squareMarkers is empty
+    // until both parent and child evals complete) or when the move grades clean/inaccuracy.
+    if (severity !== 'blunder' && severity !== 'mistake') return;
+    setLiveFlawByNode((prev) => {
+      if (prev.get(currentNodeId) === severity) return prev; // unchanged — skip re-render
+      const next = new Map(prev);
+      next.set(currentNodeId, severity);
+      // FIFO cap (Map preserves insertion order) mirrors the eval-cache bound.
+      if (next.size > LIVE_EVAL_CACHE_MAX) {
+        const oldest = next.keys().next().value;
+        if (oldest !== undefined) next.delete(oldest);
+      }
+      return next;
+    });
+  }, [liveFlawActive, currentNodeId, liveFlaw]);
+
+  // Move-list marker map (item 1, Quick 260628-1t5): merge the game-mode flaw markers with
+  // the live free-move severity for the CURRENT node, so a freely-played blunder/mistake
+  // paints the same glyph in the move list as on the board (single source — liveFlaw's own
+  // squareMarker severity — so list and board can never disagree). Only blunder/mistake get
+  // a glyph (inaccuracy/clean show none, matching the main-line behavior). The live entry is
+  // NOT gated by game mode — it must also surface in free-play mode (where flawMarkerByNodeId
+  // is empty). When there is no live flaw the original map is returned unchanged (stable ref).
+  const moveListMarkers = useMemo<Map<NodeId, FlawMarkerEntry>>(() => {
+    const liveSeverity = liveFlaw.squareMarkers[0]?.severity;
+    const showCurrentLive =
+      currentNodeId !== null && (liveSeverity === 'blunder' || liveSeverity === 'mistake');
+    if (liveFlawByNode.size === 0 && !showCurrentLive) return flawMarkerByNodeId;
+
+    const mainLineSet = new Set(mainLine);
+    const merged = new Map(flawMarkerByNodeId);
+    const addLive = (nodeId: NodeId, severity: FlawSeverity): void => {
+      if (merged.has(nodeId)) return; // game/PV flaw entry wins (keeps its tactic chips)
+      if (mainLineSet.has(nodeId)) return; // stale id reused as a main-line node after reload
+      if (!nodes.has(nodeId)) return; // node deleted (e.g. a collapsed PV fork)
+      merged.set(nodeId, {
+        missedMotif: null,
+        allowedMotif: null,
+        missedDepth: null,
+        allowedDepth: null,
+        severity,
+        ply: -1, // placeholder — free-move entries carry no game ply
+      });
+    };
+    // Persisted sideline classifications first, then the current node's in-flight one.
+    for (const [nodeId, severity] of liveFlawByNode) addLive(nodeId, severity);
+    if (currentNodeId !== null && (liveSeverity === 'blunder' || liveSeverity === 'mistake')) {
+      addLive(currentNodeId, liveSeverity);
+    }
+    return merged;
+  }, [flawMarkerByNodeId, liveFlaw, currentNodeId, liveFlawByNode, mainLine, nodes]);
+
+  // Move-list coloring inside the PV sideline (Quick 260628-ojq UAT, extends item 4):
+  // teal (TAC_MISSED) for a missed tactic, crimson (TAC_ALLOWED) for an allowed one. Every
+  // sideline move from the fork up to and including the depth-0 resolving move is colored,
+  // so the whole tactic line reads in its orientation color (not just the punchline move).
+  // The *_tactic_ply_index indexes the PV moves, which line up 1:1 with the grafted pvLine.
+  const sidelineNodeColors = useMemo(() => {
+    const colors = new Map<NodeId, string>();
+    if (!isGameMode || activePvFlaw == null || contextualTacticData == null) return colors;
+    const isMissed = activePvFlaw.orientation === 'missed';
+    // allowed_tactic_ply_index indexes the API allowed_moves (flaw move at index 0); the
+    // grafted pvLine drops that lead-in, so shift -1 to align with pvLine (Quick 260628-pu2).
+    const resolveIdx = isMissed
+      ? (contextualTacticData.missed_tactic_ply_index ?? 0)
+      : (contextualTacticData.allowed_tactic_ply_index ?? 1) - 1;
+    const color = isMissed ? TAC_MISSED : TAC_ALLOWED;
+    for (let i = 0; i <= resolveIdx; i++) {
+      const node = pvLine[i];
+      if (node !== undefined) colors.set(node, color);
+    }
+    return colors;
+  }, [isGameMode, activePvFlaw, contextualTacticData, pvLine]);
+
+  // Board "tactic overlay" while navigating a PV sideline (item 3): the depth-countdown
+  // arrow on the next stored PV move, mirroring the old tactic-mode overlay. Anchored to
+  // the contextual line's depth/orientation; the live engine still supplies the grey 2nd.
+  const pvSidelineArrows = useMemo<BoardArrow[] | null>(() => {
+    if (!isGameMode || activePvFlaw == null || contextualTacticData == null) return null;
+    const orientation = activePvFlaw.orientation;
+    const forkNodeId = mainLine[forkPlyForOrientation(activePvFlaw.ply, orientation)];
+    const onPvPath = contextualOnStoredLine || (forkNodeId !== undefined && currentNodeId === forkNodeId);
+    if (!onPvPath) return null;
+
+    const depthRaw =
+      orientation === 'missed'
+        ? (contextualTacticData.missed_depth ?? 0)
+        : (contextualTacticData.allowed_depth ?? 0);
+    // anchored=false (Quick 260628-1t5 DECISION 2): the analysis board is a navigable
+    // surface, so the allowed +1 decision-anchor offset is dropped (allowed reads like missed).
+    const rootDisplayDepth = toDisplayDepthForOrientation(depthRaw, orientation, false);
+
+    // Steps into the PV from the current node (0 at the fork position).
+    const stepIntoPv = contextualCurrentPly;
+    const nextPvNodeId = pvLine[stepIntoPv];
+    const nextPvNode = nextPvNodeId !== undefined ? nodes.get(nextPvNodeId) : undefined;
+    const nextMove = nextPvNode ? { from: nextPvNode.from, to: nextPvNode.to } : null;
+    if (!nextMove) return null;
+
+    const displayDepth = Math.max(0, rootDisplayDepth - stepIntoPv);
+    // Depth 0 is the move after the tactic resolves: treat it as payoff so it shows no
+    // number and drops the orientation color — the tactic is over by then (Quick 260628-pu2
+    // UAT). The countdown therefore runs ...2, 1 (punchline), then payoff.
+    const isPayoff = stepIntoPv >= rootDisplayDepth;
+    const arrows = buildPvArrow(nextMove, displayDepth, isPayoff, orientation);
+
+    // Grey 2nd-best from the live engine (skip if it duplicates the overlay arrow).
+    const grey = uciToSquares(engine.pvLines[1]?.moves[0] ?? null);
+    if (grey && !(grey.from === nextMove.from && grey.to === nextMove.to)) {
       arrows.push({
-        startSquare: second.from,
-        endSquare: second.to,
+        startSquare: grey.from,
+        endSquare: grey.to,
         color: ARROW_NEUTRAL,
         width: 0.5,
       });
     }
+    return arrows.length > 0 ? arrows : null;
+  }, [
+    isGameMode,
+    activePvFlaw,
+    contextualTacticData,
+    contextualOnStoredLine,
+    contextualCurrentPly,
+    currentNodeId,
+    mainLine,
+    pvLine,
+    nodes,
+    engine.pvLines,
+  ]);
 
-    if (arrows.length > 0) boardArrows = arrows;
-  }
+  // Game-mode board arrows: PV-sideline overlay takes precedence; otherwise the
+  // precomputed/engine overlay from useGameOverlay.
+  const boardArrows: BoardArrow[] | undefined = isGameMode
+    ? (pvSidelineArrows ?? gameOverlay.boardArrows)
+    : undefined;
 
   // ── Handlers ──────────────────────────────────────────────────────────────────
 
-  // Orientation toggle: update state; re-seed effect handles board seeding.
-  const handleOrientationChange = (next: TacticDepthOrientation): void => {
-    if (next === resolvedOrientation) return;
-    setOrientation(next);
-  };
+  // L-5: game mode Reset → clear PV, reset activePvFlaw, navigate to entry ply.
+  const handleReset = isGameMode
+    ? () => {
+        clearPvLine();
+        setActivePvFlaw(null);
+        setLiveFlawByNode(new Map()); // drop persisted sideline glyphs on reset
+        // T-140-02b: L-8 guard on initialPly — out-of-bounds is a no-op.
+        const nodeId = mainLine[initialPly ?? 0];
+        if (nodeId !== undefined) goToNode(nodeId);
+      }
+    : () => {
+        setLiveFlawByNode(new Map());
+        loadMainLine([], rootFen);
+      };
 
-  // In tactic mode Reset returns to the decision position (beginning of the PV line).
-  const handleReset = isTacticMode
-    ? () => goToRoot()
-    : () => loadMainLine([], rootFen);
-
-  // Reset stays enabled when there is somewhere to return to.
   const canReset = currentNodeId !== null;
 
+  // Inline chip click: toggle off (same chip) or set new active flaw.
+  const handlePvChipClick = (
+    nodeId: NodeId,
+    flaw: { ply: number; orientation: 'missed' | 'allowed' },
+  ): void => {
+    if (activePvFlaw?.ply === flaw.ply && activePvFlaw.orientation === flaw.orientation) {
+      // Same chip clicked again: collapse PV.
+      clearPvLine();
+      setActivePvFlaw(null);
+      return;
+    }
+    // Different chip: clear any existing PV, set new active flaw.
+    // insertPvLine is called by the useEffect when contextualTacticData arrives.
+    if (activePvFlaw != null) clearPvLine();
+    setActivePvFlaw(flaw);
+    // Navigate to the fork node — decision board (ply-1) for missed, flaw position (ply) for
+    // allowed (Quick 260628-pu2 UAT). T-140-02b guard.
+    const forkNodeId = mainLine[forkPlyForOrientation(flaw.ply, flaw.orientation)];
+    if (forkNodeId !== undefined) goToNode(forkNodeId);
+    void nodeId; // nodeId passed for API symmetry with VariationTree; ply identifies the flaw
+  };
+
+  // EvalChart scrub callback: navigate board on main line only (slider disabled off-line).
+  const handleEvalChartPlyChange = (ply: number | null): void => {
+    if (ply === null || !isOnMainLineForSlider) return;
+    // T-140-02b: L-8 guard — ply from eval chart may not align exactly with mainLine.
+    const nodeId = mainLine[ply];
+    if (nodeId !== undefined) goToNode(nodeId);
+  };
+
   // ── Render ────────────────────────────────────────────────────────────────────
+
+  // Board + EvalBar row — the single source of the `analysis-board` ref/testid and the
+  // react-chessboard instance. Shared by the desktop and mobile trees (only one renders
+  // at a time via isMobile), so the board mounts exactly once either way.
+  const boardRow = (
+    <div className="flex flex-row items-stretch gap-2">
+      <div ref={containerRef} data-testid="analysis-board" tabIndex={0} className="flex-1">
+        <ChessBoard
+          id="analysis-board"
+          position={position}
+          onPieceDrop={makeMove}
+          lastMove={lastMove}
+          // Precomputed overlay (main line) wins; else the live free-move
+          // classification (item 4), which also covers free-play mode. Default green
+          // (MOVE_HIGHLIGHT_GOOD): a played move is assumed OK until the engine proves
+          // otherwise, so engine-line (PV) moves and not-yet-graded moves read green
+          // instead of the shared yellow fallback. The engine still overrides to
+          // red/orange on a blunder/mistake (and yellow on an inaccuracy).
+          lastMoveColor={
+            gameOverlay.lastMoveHighlightColor ??
+            liveFlaw.lastMoveHighlightColor ??
+            MOVE_HIGHLIGHT_GOOD
+          }
+          flipped={boardFlipped}
+          arrows={boardArrows}
+          squareMarkers={
+            gameOverlay.squareMarkers.length > 0
+              ? gameOverlay.squareMarkers
+              : liveFlaw.squareMarkers
+          }
+          maxWidth={600}
+        />
+      </div>
+
+      {/* Eval bar: precomputed eval in game mode (immediate), live engine
+          otherwise — useGameOverlay passes the engine through when disabled. */}
+      <EvalBar
+        evalCp={gameOverlay.evalCp}
+        evalMate={gameOverlay.evalMate}
+        depth={gameOverlay.evalDepth}
+        flipped={boardFlipped}
+      />
+    </div>
+  );
+
+  // Player info row (desktop, game mode): name + ELO left, remaining clock right.
+  // Rendered above and below the board, ordered by orientation (Quick 260628-pcb).
+  const playerBar = (color: 'white' | 'black') => (
+    <PlayerBar
+      isWhite={color === 'white'}
+      name={(color === 'white' ? gameData?.white_username : gameData?.black_username) ?? null}
+      rating={(color === 'white' ? gameData?.white_rating : gameData?.black_rating) ?? null}
+      clockSeconds={color === 'white' ? playerClocks.white : playerClocks.black}
+      testId={`analysis-player-${color}`}
+    />
+  );
+
+  // VariationTree props — shared between the desktop side panel and the mobile Moves tab.
+  // The mobile tab passes variant="vertical" to fill the space; props are otherwise identical.
+  const variationTree = (variant: 'responsive' | 'vertical') => (
+    <VariationTree
+      variant={variant}
+      nodes={nodes}
+      mainLine={mainLine}
+      currentNodeId={currentNodeId}
+      rootPly={rootPly}
+      initialPly={isGameMode ? initialPly : undefined}
+      onNodeClick={goToNode}
+      decorations={sidelineNodeColors}
+      pvLine={isGameMode ? pvLine : undefined}
+      flawMarkerByNodeId={moveListMarkers}
+      onPvChipClick={isGameMode ? handlePvChipClick : undefined}
+      activePvNodeId={isGameMode ? activePvNodeId : undefined}
+      activePvOrientation={isGameMode ? (activePvFlaw?.orientation ?? null) : undefined}
+      pvFetchPending={isGameMode ? contextualPending : undefined}
+      pvFetchError={isGameMode ? contextualError : undefined}
+    />
+  );
+
+  // Board controls — shared; the desktop panel keeps the charcoal pill, the mobile
+  // footer passes flat so the buttons read like the main nav (Quick 260628-dgv).
+  const boardControls = (flat = false) => (
+    <BoardControls
+      onBack={goBack}
+      onForward={goForward}
+      onReset={handleReset}
+      onFlip={() => setBoardFlipped((f) => !f)}
+      canGoBack={currentNodeId !== null}
+      canReset={canReset}
+      canGoForward={canGoForward}
+      flat={flat}
+    />
+  );
+
+  // The eval-chart element (game mode only) — placed below the board on desktop, inside the
+  // Eval tab on mobile. Single instance; rendered in whichever tree is active.
+  const evalChartReady =
+    isGameMode &&
+    gameId != null &&
+    gameData?.eval_series != null &&
+    gameData.flaw_markers != null &&
+    gameData.phase_transitions != null &&
+    gameData.moves != null;
+  const evalChart = (heightClass: string) =>
+    evalChartReady && gameId != null && gameData?.eval_series != null && gameData.flaw_markers != null && gameData.phase_transitions != null && gameData.moves != null ? (
+      <EvalChart
+        gameId={gameId}
+        evalSeries={gameData.eval_series}
+        flawMarkers={gameData.flaw_markers}
+        phaseTransitions={gameData.phase_transitions}
+        moves={gameData.moves}
+        heightClass={heightClass}
+        initialPly={initialPly}
+        flipped={gameData.user_color === 'black'}
+        sliderTestId="analysis-eval-chart-slider"
+        sliderDisabled={!isOnMainLineForSlider}
+        onHoverPlyChange={handleEvalChartPlyChange}
+        syncPly={evalChartPly}
+      />
+    ) : null;
+
+  // ── Mobile takeover layout (< 640px) ──────────────────────────────────────────
+  // Engine PV lines above the board (no info card), board + eval bar, then a 2-tab view
+  // (Moves | Eval) that fills the space down to the in-flow board-controls footer. Free
+  // play has no eval chart, so it shows only the move list (no tab bar). The shell's
+  // back-button header + suppressed bottom nav (ProtectedLayout) complete the takeover.
+  if (isMobile) {
+    return (
+      <div
+        data-testid="analysis-page"
+        className="flex min-h-0 flex-1 flex-col bg-background"
+      >
+        {/* Engine PV lines on top, without the info-card header. */}
+        <div className="shrink-0 px-2 pt-2" data-testid="analysis-engine-lines-mobile">
+          {engineLoading ? (
+            <EngineLinesSkeleton testId="analysis-engine-loading" compact />
+          ) : (
+            <EngineLines
+              pvLines={engine.pvLines}
+              isAnalyzing={engine.isAnalyzing}
+              startPly={currentPly}
+              baseFen={position}
+              flipped={boardFlipped}
+              onMoveClick={playUciLine}
+              compact
+            />
+          )}
+        </div>
+
+        {/* Board + eval bar. */}
+        <div className="shrink-0 px-2 pt-2">{boardRow}</div>
+
+        {/* Game load error (CLAUDE.md isError branch). */}
+        {isGameMode && gameError && (
+          <p className="shrink-0 px-3 py-2 text-sm text-muted-foreground">
+            Failed to load game. Something went wrong. Please try again in a moment.
+          </p>
+        )}
+
+        {/* Tab view — fills all vertical space between the board and the footer. */}
+        {isGameMode && evalChartReady ? (
+          <Tabs
+            defaultValue="moves"
+            className="flex min-h-0 flex-1 flex-col gap-2 px-2 pt-2"
+          >
+            <TabsList variant="underline" className="w-full shrink-0">
+              <TabsTrigger value="moves" data-testid="analysis-tab-moves">
+                Moves
+              </TabsTrigger>
+              <TabsTrigger value="eval" data-testid="analysis-tab-eval">
+                Eval chart
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="moves" className="flex min-h-0 flex-1 flex-col">
+              {variationTree('vertical')}
+            </TabsContent>
+            {/* Bounded chart height (not h-full): the board already dominates the
+                viewport, so a greedy chart pushed the board-controls footer off-screen
+                when the mobile browser's URL bar shrank the height. h-[120px] (the
+                established mobile chart height) keeps the footer visible.
+                px-3 wrapper: the scrub slider is rendered 16px wider than the chart
+                (±8px thumb overhang) and normally lands in the desktop card's padding;
+                here it needs that horizontal room or it triggers a horizontal scrollbar
+                (overflow-y-auto coerces overflow-x to auto). overflow-x-hidden is the
+                belt-and-suspenders. */}
+            <TabsContent value="eval" className="min-h-0 overflow-x-hidden overflow-y-auto">
+              <div className="px-3">{evalChart('h-[120px]')}</div>
+            </TabsContent>
+          </Tabs>
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col px-2 pt-2">
+            {variationTree('vertical')}
+          </div>
+        )}
+
+        {/* In-flow board-controls footer — replaces the suppressed mobile nav bar. */}
+        <div
+          data-testid="analysis-mobile-footer"
+          className="shrink-0 border-t border-border bg-background px-2 py-2 pb-safe"
+        >
+          {boardControls(true)}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div data-testid="analysis-page" className="flex min-h-0 flex-1 flex-col bg-background">
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 pb-20 md:py-6 md:pb-6 md:px-6">
-        <div className="flex flex-col lg:flex-row lg:items-start gap-4">
+        <div className="flex flex-col lg:flex-row lg:items-stretch gap-4">
 
           {/* Board column ──────────────────────────────────────────────────── */}
-          {/* Fixed desktop width so the board does not collapse to min-content
-              inside the lg:flex-row (the side panel is flex-1 and would otherwise
-              eat all the width). Width = 480px board + 20px EvalBar + 8px gap.
-              Full width on mobile. shrink-0 keeps it from being squeezed. */}
-          <div className="flex flex-col gap-2 w-full lg:w-[508px] shrink-0">
-            {/* Eval bar to the right of the board, following its perspective
-                (Quick 260627). Single EvalBar rendered once. */}
-            <div className="flex flex-row items-stretch gap-2">
-              {/* Board wrapper: containerRef enables container-scoped ←/→ keys
-                  (Pitfall 5). tabIndex={0} ensures focus is reachable before a
-                  square button receives it. data-testid="analysis-board" is the
-                  Wave-0 test anchor; id="analysis-board" drives square testids. */}
-              <div
-                ref={containerRef}
-                data-testid="analysis-board"
-                tabIndex={0}
-                className="flex-1"
-              >
-                <ChessBoard
-                  id="analysis-board"
-                  position={position}
-                  onPieceDrop={makeMove}
-                  lastMove={lastMove}
-                  flipped={boardFlipped}
-                  arrows={boardArrows}
-                  maxWidth={480}
-                />
+          <div className="flex flex-col gap-2 w-full lg:w-[628px] shrink-0">
+            {/* Top player (opponent at top of board, by orientation) */}
+            {isGameMode && gameData && playerBar(boardFlipped ? 'white' : 'black')}
+
+            {/* Board + EvalBar row */}
+            {boardRow}
+
+            {/* Bottom player */}
+            {isGameMode && gameData && playerBar(boardFlipped ? 'black' : 'white')}
+
+            {/* EvalChart with slider — game mode only, below board (UI-SPEC Layout Contract). */}
+            {evalChartReady && (
+              <div data-testid="analysis-eval-chart">{evalChart('h-[120px]')}</div>
+            )}
+          </div>
+
+          {/* Side panel: engine + variation tree + controls. Narrower than the board
+              column (UAT 260627-mt8 item 1) and stretched to the board column's
+              height so the controls bottom-align with the eval-chart slider. */}
+          <div className="flex w-full lg:w-[360px] shrink-0 flex-col gap-4 min-w-0">
+
+            {/* Spacer mirroring the board column's top player bar so the engine card
+                top aligns with the board top (not the player-bar top). Desktop only
+                (lg) where the columns sit side by side; invisible keeps its height.
+                -mb-2 trims this column's gap-4 down to the board column's gap-2 so the
+                spacer→card gap equals the bar→board gap. (Quick 260628-pcb) */}
+            {isGameMode && gameData && (
+              <div aria-hidden="true" className="hidden lg:block lg:invisible lg:-mb-2">
+                {playerBar(boardFlipped ? 'white' : 'black')}
               </div>
+            )}
 
-              <EvalBar
-                evalCp={engine.evalCp}
-                evalMate={engine.evalMate}
-                depth={engine.depth}
-                flipped={boardFlipped}
-              />
-            </div>
+            {/* Game load error (CLAUDE.md isError branch). */}
+            {isGameMode && gameError && (
+              <p className="text-sm text-muted-foreground p-2">
+                Failed to load game. Something went wrong. Please try again in a moment.
+              </p>
+            )}
 
-            {/* Board controls with engine toggle in infoSlot */}
-            <BoardControls
-              onBack={goBack}
-              onForward={goForward}
-              onReset={handleReset}
-              onFlip={() => setBoardFlipped((f) => !f)}
-              canGoBack={currentNodeId !== null}
-              canReset={canReset}
-              canGoForward={canGoForward}
-              infoSlot={
+            {/* Engine info + lines in a fixed-height charcoal Card (Quick 260627-r9g
+                item 3). The info line is the card header; the body never jumps as the
+                engine transitions loading → analyzing → 2 lines. */}
+            <Card data-testid="analysis-engine-card">
+              {/* Info line in the header: engine toggle + "SF 18, Depth d". */}
+              <CardHeader
+                size="compact"
+                data-testid="analysis-engine-info"
+                className="font-normal text-muted-foreground"
+              >
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 hover:bg-accent"
+                  className="-ml-1 h-7 w-7 hover:bg-accent"
                   onClick={() => setEngineEnabled((v) => !v)}
                   aria-label="Toggle engine"
                   aria-pressed={engineEnabled}
                   data-testid="btn-analysis-engine-toggle"
                 >
-                  <Cpu className="h-4 w-4" />
+                  <Cpu className={`h-4 w-4 ${engineEnabled ? '' : 'text-muted-foreground'}`} />
                 </Button>
-              }
-            />
-          </div>
+                <span className="text-sm">
+                  {ENGINE_NAME}
+                  {engineEnabled && engine.depth > 0 ? `, Depth ${engine.depth}` : ''}
+                </span>
+              </CardHeader>
 
-          {/* Side panel: tactic overlay + engine lines + variation tree ────── */}
-          <div className="flex flex-1 flex-col gap-4 min-w-0">
+              {/* min-height (not fixed) — holds a stable floor through the
+                  loading → analyzing → 2-lines transition, but grows to fit a line
+                  the user expands via its chevron (Quick 260628-shc UAT). */}
+              <CardBody className="min-h-[78px] p-2">
+                {engineLoading ? (
+                  <EngineLinesSkeleton testId="analysis-engine-loading" />
+                ) : !engineEnabled ? (
+                  <div className="flex h-full items-center px-2 text-sm text-muted-foreground">
+                    Engine off
+                  </div>
+                ) : (
+                  <EngineLines
+                    pvLines={engine.pvLines}
+                    isAnalyzing={engine.isAnalyzing}
+                    startPly={currentPly}
+                    baseFen={position}
+                    flipped={boardFlipped}
+                    onMoveClick={playUciLine}
+                  />
+                )}
+              </CardBody>
+            </Card>
 
-            {/* Tactic chrome: shown in tactic mode when data is loaded. */}
-            {isTacticMode && tacticData != null && (
-              <TacticModeOverlay
-                data={tacticData}
-                resolvedOrientation={resolvedOrientation}
-                currentPly={tacticPly}
-                onStoredLine={onMainLine}
-                onOrientationChange={handleOrientationChange}
-                onMoveClick={(ply) => {
-                  const nodeId = mainLine[ply - 1];
-                  if (nodeId !== undefined) goToNode(nodeId);
-                }}
-              />
-            )}
+            {variationTree('responsive')}
 
-            {/* Engine area state machine:
-                - engineLoading: "Loading engine…" (page's job, not EngineLines)
-                - !engineEnabled: "Engine off" rest text
-                - otherwise: EngineLines (shows its own "Analyzing…" spinner or lines)
-                EvalBar + EngineLines stay LIVE throughout tactic mode (D-03). */}
-            {engineLoading ? (
-              <div
-                data-testid="analysis-engine-loading"
-                className="flex items-center gap-2 text-sm text-muted-foreground p-2"
-              >
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading engine…
-              </div>
-            ) : !engineEnabled ? (
-              <div className="text-sm text-muted-foreground p-2">Engine off</div>
-            ) : (
-              <EngineLines
-                pvLines={engine.pvLines}
-                depth={engine.depth}
-                isAnalyzing={engine.isAnalyzing}
-                startPly={currentPly}
-                baseFen={position}
-                onMoveClick={makeMove}
-              />
-            )}
-
-            <VariationTree
-              nodes={nodes}
-              mainLine={mainLine}
-              currentNodeId={currentNodeId}
-              rootPly={rootPly}
-              onNodeClick={goToNode}
-              decorations={tacticNodeColors}
-            />
+            {/* BoardControls relocated to bottom of right column (chess.com pattern — UI-SPEC). */}
+            {boardControls()}
           </div>
 
         </div>

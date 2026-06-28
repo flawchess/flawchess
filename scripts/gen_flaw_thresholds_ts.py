@@ -27,11 +27,16 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
+from app.services.eval_utils import LICHESS_K  # noqa: E402  # winning-chances sigmoid coeff
 from app.services.flaws_service import (  # noqa: E402
+    BLUNDER_DROP,  # ES drop >= 0.15 = blunder (live free-move classification)
     FROM_WINNING_ES,  # squandered entry (>= 85%: overwhelming advantage)
     HASTY_MOVE_ABS_SECONDS,  # fallback when base_time unknown
     HASTY_MOVE_FRACTION,  # < 1% of base = fast move on comfortable clock
+    INACCURACY_DROP,  # ES drop >= 0.05 = inaccuracy
     LOSING_LINE_ES,  # reversed exit (<= 30%: clearly losing)
+    MATE_CP_EQUIVALENT,  # mate mapped to ±this cp before the sigmoid
+    MISTAKE_DROP,  # ES drop >= 0.10 = mistake
     SQUANDERED_EXIT_ES,  # squandered exit (<= 60%: erased back to roughly even)
     TIME_PRESSURE_CLOCK_ABS_SECONDS,  # fallback when base_time unknown
     TIME_PRESSURE_CLOCK_FRACTION,  # < 5% of base = low clock
@@ -49,7 +54,7 @@ def _render() -> str:
     """
     return (
         "// AUTO-GENERATED — do not edit by hand.\n"
-        "// Source: app/services/flaws_service.py\n"
+        "// Source: app/services/flaws_service.py, app/services/eval_utils.py\n"
         "// Regenerate with: uv run python scripts/gen_flaw_thresholds_ts.py\n"
         "\n"
         f"export const WINNING_LINE_ES = {WINNING_LINE_ES};\n"
@@ -60,6 +65,14 @@ def _render() -> str:
         f"export const TIME_PRESSURE_CLOCK_ABS_SECONDS = {TIME_PRESSURE_CLOCK_ABS_SECONDS};\n"
         f"export const HASTY_MOVE_FRACTION = {HASTY_MOVE_FRACTION};\n"
         f"export const HASTY_MOVE_ABS_SECONDS = {HASTY_MOVE_ABS_SECONDS};\n"
+        "\n"
+        "// Expected-score drop tiers + sigmoid inputs for live move classification\n"
+        "// (Quick w8k item 4 — classifying freely-played moves with the live engine).\n"
+        f"export const INACCURACY_DROP = {INACCURACY_DROP};\n"
+        f"export const MISTAKE_DROP = {MISTAKE_DROP};\n"
+        f"export const BLUNDER_DROP = {BLUNDER_DROP};\n"
+        f"export const MATE_CP_EQUIVALENT = {MATE_CP_EQUIVALENT};\n"
+        f"export const LICHESS_K = {LICHESS_K};\n"
     )
 
 

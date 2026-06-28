@@ -55,12 +55,22 @@ export type TacticDepthOrientation = 'missed' | 'allowed';
  * Orientation-aware display depth: missed = raw + 1 (the plain offset); allowed =
  * raw + 1 + 1 (decision-anchored, see ALLOWED_DECISION_DEPTH_OFFSET). Use this for
  * the miniboard depth badges so allowed and missed are comparable on screen.
+ *
+ * `anchored` (default true) controls whether the allowed +1 decision-anchor offset
+ * applies (Quick 260628-1t5, DECISION 2). It is correct only where missed and allowed
+ * depths are co-anchored on ONE decision board — the static FlawCard. On the navigable
+ * surfaces (game card, analysis board, move list, eval-chart tooltip) missed and allowed
+ * are no longer rendered on a shared decision board, so callers pass `anchored = false`
+ * and allowed reads on the same plain scale as missed (raw + DEPTH_DISPLAY_OFFSET).
+ * The backend filter predicate and its FE mirror (`slotPassesFilter`) are unaffected —
+ * they always apply the anchor offset.
  */
 export function toDisplayDepthForOrientation(
   depth: number,
   orientation: TacticDepthOrientation,
+  anchored = true,
 ): number {
-  const anchorOffset = orientation === 'allowed' ? ALLOWED_DECISION_DEPTH_OFFSET : 0;
+  const anchorOffset = orientation === 'allowed' && anchored ? ALLOWED_DECISION_DEPTH_OFFSET : 0;
   return depth + DEPTH_DISPLAY_OFFSET + anchorOffset;
 }
 

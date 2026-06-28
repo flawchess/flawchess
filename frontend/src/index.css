@@ -201,6 +201,32 @@
   .glass-overlay {
     background-image: linear-gradient(to bottom, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0.05) 60%, rgba(0,0,0,0.05) 100%);
   }
+  /* Thin, translucent scrollbar for nested overflow containers (e.g. the analysis
+     move list). The browser's default chunky light scrollbar reads as out of place
+     on the dark UI; a foreground-tinted thumb on a transparent track matches the
+     native page scrollbar the library games list uses. Firefox uses the standard
+     properties; WebKit/Blink uses the ::-webkit pseudo-elements. */
+  .thin-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-foreground) transparent;
+    /* scrollbar-color alpha isn't widely supported on the keyword form, so tint via
+       a translucent foreground for Firefox too. */
+    scrollbar-color: color-mix(in oklch, var(--foreground) 25%, transparent) transparent;
+  }
+  .thin-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .thin-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .thin-scrollbar::-webkit-scrollbar-thumb {
+    background-color: color-mix(in oklch, var(--foreground) 22%, transparent);
+    border-radius: 9999px;
+  }
+  .thin-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklch, var(--foreground) 38%, transparent);
+  }
   /* Gold lightbulb for Insights — icon tinted gold, radial glow behind. */
   .insight-lightbulb {
     position: relative;

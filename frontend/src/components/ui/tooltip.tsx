@@ -20,11 +20,18 @@ interface TooltipProps {
   align?: "start" | "center" | "end"
   /** Override the global hover delay (ms). Pass 0 for instant tooltips. */
   delayDuration?: number
+  /**
+   * Extra classes for the content box, applied LAST so tailwind-merge lets them
+   * override the default padding/background — e.g. `p-0 overflow-hidden` for a
+   * media tooltip (the engine-line miniboard) that should fill the box with
+   * clipped rounded corners and no padding frame.
+   */
+  contentClassName?: string
 }
 
 /** Hover tooltip with white-bg style matching InfoPopover.
  *  Replaces native `title=` attributes for consistent branding. */
-function Tooltip({ content, children, side = "top", align = "center", delayDuration }: TooltipProps) {
+function Tooltip({ content, children, side = "top", align = "center", delayDuration, contentClassName }: TooltipProps) {
   // Suppress tooltip on touch interactions. Radix opens tooltips on hover
   // with a delay (setTimeout), so suppressing at the event level alone isn't
   // enough — the timer fires later and opens the tooltip. Instead we track
@@ -62,7 +69,8 @@ function Tooltip({ content, children, side = "top", align = "center", delayDurat
             "data-[state=delayed-open]:animate-in data-[state=delayed-open]:fade-in-0 data-[state=delayed-open]:zoom-in-95",
             "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
             "data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2",
-            "data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2"
+            "data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+            contentClassName
           )}
         >
           {content}

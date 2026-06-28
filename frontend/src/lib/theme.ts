@@ -15,6 +15,14 @@ export const lightSquareStyle = { backgroundColor: BOARD_LIGHT_SQUARE } as const
 // ChessBoard last-move highlight and the Library eval-chart MiniBoard scrub.
 export const MOVE_HIGHLIGHT_SQUARE = 'rgba(255, 255, 0, 0.35)';
 
+// Analysis-board last-move overlay, colored by the played move's severity
+// (Quick 260627-r9g item 5): red blunder, orange mistake, yellow inaccuracy
+// (the shared MOVE_HIGHLIGHT_SQUARE), green for a clean move. Same hues as the
+// SEV_* palette at the 0.35 alpha of the legacy yellow so all four read evenly.
+export const MOVE_HIGHLIGHT_BLUNDER = 'oklch(0.58 0.19 25 / 0.35)';
+export const MOVE_HIGHLIGHT_MISTAKE = 'oklch(0.70 0.16 55 / 0.35)';
+export const MOVE_HIGHLIGHT_GOOD = 'oklch(0.55 0.16 145 / 0.35)';
+
 // WDL colors — used in all win/draw/loss visualizations
 // Richer base colors; the glass overlay softens them visually when applied
 export const WDL_WIN = 'oklch(0.50 0.14 145)';
@@ -142,20 +150,31 @@ export const TAC_UNDER_PROMOTION_BG = TAC_BLUE_BG;
 export const TAC_PROMOTION = TAC_BLUE;
 export const TAC_PROMOTION_BG = TAC_BLUE_BG;
 
-// Orientation-coded tactic chip colors (Games + Flaw card). Missed motifs render
-// in blue, Allowed motifs in a light red, so the two orientations read apart at a
-// glance independent of motif family. Blue is reserved for missed tactics; allowed
-// must never reuse it. Both stay light enough to keep the chip text/border legible
-// on the charcoal card. BG variants end in `/ 0.15)` so the shared HIGHLIGHT_BG
-// helper (alpha 0.15 → 0.3 on hover) still applies.
-export const TAC_MISSED = 'oklch(0.70 0.15 258)'; // light blue (matches TAC_ALLOWED lightness)
-export const TAC_MISSED_BG = 'oklch(0.70 0.15 258 / 0.15)';
-// Allowed motifs render in a light red whose lightness/chroma match TAC_MISSED so the
-// two orientations read as a matched pair (only the hue differs). Used by both the
-// TacticMotifChip and the eval chart tooltip so colors match across surfaces.
-export const TAC_ALLOWED = 'oklch(0.70 0.15 25)'; // light red
-export const TAC_ALLOWED_BG = 'oklch(0.70 0.15 25 / 0.15)';
-export const TAC_ALLOWED_BORDER = 'oklch(0.70 0.15 25 / 0.30)';
+// Orientation-coded tactic colors (chips, arrows, depth badges, eval-chart tooltip;
+// Games + Flaw card + analysis board). The two orientations carry opposite semantics, so
+// they read apart at a glance independent of motif family. Both stay light enough to keep
+// the chip text/border legible on the charcoal card. BG variants end in `/ 0.15)` so the
+// shared HIGHLIGHT_BG helper (alpha 0.15 → 0.3 on hover) still applies.
+// Quick 260628-ojq: swapped the orientation hues. Missed (a missed opportunity — a cooler,
+// "you could have" signal) takes the teal (hue 200) that allowed used to wear. Allowed (you
+// handed the opponent a tactic — a bad outcome) takes a crimson (hue 10): a vivid pink-red
+// in the warm "this hurt you" family, set apart from the blunder's orange-red (hue 25) by
+// being more saturated (chroma 0.22 vs 0.19), a touch lighter, and hue-shifted toward
+// magenta. (Earlier tries — a lighter wine red, a cool purple/violet, then a dark burgundy —
+// were dropped: wine/burgundy read too close to or muddier than the blunder, the purple too
+// far from any "bad" cue.) The board's other hues are taken (red 25 blunder, orange 55
+// mistake, yellow inaccuracy, green 145 clean move, blue 260 best-move arrow); teal (200) is
+// the cool gap, crimson the warm one.
+export const TAC_MISSED = 'oklch(0.70 0.15 200)'; // teal
+export const TAC_MISSED_BG = 'oklch(0.70 0.15 200 / 0.15)';
+export const TAC_MISSED_BORDER = 'oklch(0.70 0.15 200 / 0.30)';
+// Allowed motifs render in a crimson — more saturated and pinker than the blunder red so the
+// two read apart, while staying legible as chip text on the charcoal card. Used by the
+// TacticMotifChip, the orientation arrows, and the eval chart tooltip so colors match across
+// surfaces.
+export const TAC_ALLOWED = 'oklch(0.60 0.22 10)'; // crimson
+export const TAC_ALLOWED_BG = 'oklch(0.60 0.22 10 / 0.15)';
+export const TAC_ALLOWED_BORDER = 'oklch(0.60 0.22 10 / 0.30)';
 
 // Phase 135 UAT: the active tag in the Missed/Allowed switch (TacticLineExplorer)
 // gets a solid white border so the selected line reads at a glance against its
@@ -167,8 +186,10 @@ export const TAC_SWITCH_ACTIVE_BORDER = 'white';
 // lightness (0.70) reads muddy on the same-hue arrow, so the badge numbers are
 // raised to ~0.84 for contrast against the arrow fill (the black outline does the
 // rest). Hue/chroma match TAC_MISSED/TAC_ALLOWED so they stay the same colors.
-export const TAC_MISSED_LABEL = 'oklch(0.84 0.13 258)'; // lighter blue
-export const TAC_ALLOWED_LABEL = 'oklch(0.84 0.13 25)'; // lighter red
+// Quick 260628-ojq: match the swapped families — missed teal (hue 200), allowed
+// crimson (hue 10).
+export const TAC_MISSED_LABEL = 'oklch(0.84 0.13 200)'; // lighter teal
+export const TAC_ALLOWED_LABEL = 'oklch(0.84 0.13 10)'; // lighter crimson
 
 // D-05 active-filter ring — applied to TagChip when its tag matches an active
 // useFlawFilterStore filter. Ring only: no fill, bold, or size change. The ring

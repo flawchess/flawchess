@@ -166,6 +166,23 @@ describe('toDisplayDepthForOrientation', () => {
       );
     }
   });
+
+  // anchored=false (Quick 260628-1t5 DECISION 2): on the navigable surfaces the allowed
+  // +1 decision-anchor offset is dropped, so allowed reads exactly like missed.
+  it('anchored=false drops the allowed offset — allowed equals missed (raw + 1)', () => {
+    expect(toDisplayDepthForOrientation(0, 'allowed', false)).toBe(1);
+    expect(toDisplayDepthForOrientation(11, 'allowed', false)).toBe(12);
+    for (const raw of [0, 1, 5, 11]) {
+      expect(toDisplayDepthForOrientation(raw, 'allowed', false)).toBe(
+        toDisplayDepthForOrientation(raw, 'missed', false),
+      );
+    }
+  });
+
+  it('anchored=false leaves missed unchanged (missed never carries the offset)', () => {
+    expect(toDisplayDepthForOrientation(0, 'missed', false)).toBe(1);
+    expect(toDisplayDepthForOrientation(11, 'missed', false)).toBe(12);
+  });
 });
 
 // ── depthToQueryParams ───────────────────────────────────────────────────────

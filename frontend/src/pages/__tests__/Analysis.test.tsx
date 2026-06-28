@@ -41,10 +41,11 @@ vi.mock('@/hooks/useStockfishEngine', () => ({
   useStockfishEngine: () => ({ ...engineState }),
 }));
 
-// Mock useTacticLines: free-play shell tests have no tactic params, so tactic data
-// is unused. Return an empty/undefined stub so the hook does not need a real network.
+// Mock useTacticLines and useLibraryGame: free-play shell tests have no tactic/game
+// params, so both return empty stubs — no real network needed.
 vi.mock('@/hooks/useLibrary', () => ({
-  useTacticLines: () => ({ data: undefined }),
+  useTacticLines: () => ({ data: undefined, isFetching: false, isError: false }),
+  useLibraryGame: () => ({ data: undefined, isError: false }),
 }));
 
 // Mock useFlawFilterStore: Analysis.tsx calls this unconditionally for tactic visibility.
@@ -152,12 +153,13 @@ describe('Analysis page shell', () => {
     // Default engineState has isReady: false — engine is loading.
     renderAnalysis();
 
-    // "Loading engine..." must appear in the eval area.
-    expect(screen.getByTestId('analysis-engine-loading')).toBeTruthy();
+    // The loading skeleton must appear in the engine card (Quick 260627-r9g item 3
+    // replaced the "Loading engine…" text with a content-loading animation).
+    const loading = screen.getByTestId('analysis-engine-loading');
+    expect(loading).toBeTruthy();
+    expect(loading.getAttribute('aria-busy')).toBe('true');
     // Board must remain present — never blocked on engine readiness.
     expect(screen.getByTestId('analysis-board')).toBeTruthy();
-    // The loading text must mention the engine.
-    expect(screen.getByTestId('analysis-engine-loading').textContent).toMatch(/loading engine/i);
   });
 
   it('hides the engine-loading chrome when isReady=true (D-06)', () => {

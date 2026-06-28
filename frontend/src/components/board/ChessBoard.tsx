@@ -9,6 +9,8 @@ import {
   MOVE_HIGHLIGHT_SQUARE,
 } from '../../lib/theme';
 import { HIGHLIGHT_PULSE_DURATION_MS, HIGHLIGHT_PULSE_ITERATIONS } from '../../lib/highlightPulse';
+import { DepthLabel, SquareMarkerGroup } from './boardMarkers';
+import type { SquareMarker } from './boardMarkers';
 import { squareToCoords, buildArrowPath } from './arrowGeometry';
 
 export interface BoardArrow {
@@ -40,14 +42,25 @@ export interface BoardArrow {
   labelColor?: string;
 }
 
+// Re-exported so existing importers (useGameOverlay) keep their ChessBoard path.
+export type { SquareMarker } from './boardMarkers';
+
 interface ChessBoardProps {
   position: string;
   onPieceDrop: (sourceSquare: string, targetSquare: string) => boolean;
   flipped?: boolean;
   /** Highlight: { from: "e2", to: "e4" } for the last move */
   lastMove?: { from: string; to: string } | null;
+  /**
+   * Background color for the last-move from/to square overlay. Defaults to the
+   * shared translucent yellow (MOVE_HIGHLIGHT_SQUARE). The analysis board passes
+   * a severity-coded color (Quick 260627-r9g item 5).
+   */
+  lastMoveColor?: string;
   /** Arrows to render on the board */
   arrows?: BoardArrow[];
+  /** Severity glyph badges drawn in the top-right corner of a square (item 4). */
+  squareMarkers?: SquareMarker[];
   /**
    * Board id for square testid generation. Defaults to 'chessboard'.
    * Pass a distinct id (e.g. 'tactic-explorer-board') when two boards coexist
@@ -98,20 +111,25 @@ const ARROW_TIP_OVERSHOOT = 0.15;
 // stays driven by the same timing.
 const ARROW_PULSE_CLASS = 'animate-arrow-pulse';
 
-// Depth-label badge geometry (mirrors MiniBoard.tsx — keep in sync if changed there).
-// Fractions of one square's pixel size.
-const DEPTH_LABEL_FONT = 0.55;
-const DEPTH_LABEL_OUTLINE = 0.09;
-const DEPTH_LABEL_DEFAULT_FILL = 'white';
-// Inset from the square's top-right corner so the badge stays clear of the piece.
-const DEPTH_LABEL_CORNER_INSET = 0.08;
+// Depth-label and severity corner-marker rendering live in ./boardMarkers, shared
+// with MiniBoard so both boards draw identical marks (Quick 260627-r9g items 4 & 6).
 
 // Render priority: hovered arrow always on top; otherwise green > red > blue
 // > grey (low-data). Within each tier, thicker arrows are drawn first so thin
 // arrows stay visible.
 
-function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; boardWidth: number; flipped: boolean }) {
-  if (arrows.length === 0) return null;
+function ArrowOverlay({
+  arrows,
+  markers,
+  boardWidth,
+  flipped,
+}: {
+  arrows: BoardArrow[];
+  markers: SquareMarker[];
+  boardWidth: number;
+  flipped: boolean;
+}) {
+  if (arrows.length === 0 && markers.length === 0) return null;
 
   const sqSize = boardWidth / 8;
 
@@ -190,37 +208,29 @@ function ArrowOverlay({ arrows, boardWidth, flipped }: { arrows: BoardArrow[]; b
           />
         );
       })}
-      {/* Depth-label badges drawn last so they sit on top of the arrowheads.
-          Mirrors MiniBoard.tsx badge geometry. Only rendered when label is set. */}
-      {sortedArrows.map((arrow) => {
-        if (!arrow.label) return null;
-        const [tx, ty] = squareToCoords(arrow.endSquare, flipped);
-        // Anchor to top-right corner (inset) so the badge stays clear of the piece.
-        const bx = (tx + 0.5 - DEPTH_LABEL_CORNER_INSET) * sqSize;
-        const by = (ty - 0.5 + DEPTH_LABEL_CORNER_INSET) * sqSize;
-        return (
-          <text
+      {/* Depth-label badges drawn after the arrows so they sit on top of the
+          arrowheads. Anchored top-left (item 6). Only rendered when label is set. */}
+      {sortedArrows.map((arrow) =>
+        arrow.label ? (
+          <DepthLabel
             key={`label-${arrow.startSquare}-${arrow.endSquare}`}
-            x={bx}
-            y={by}
-            fill={arrow.labelColor ?? DEPTH_LABEL_DEFAULT_FILL}
-            stroke="black"
-            strokeWidth={DEPTH_LABEL_OUTLINE * sqSize}
-            paintOrder="stroke"
-            fontSize={DEPTH_LABEL_FONT * sqSize}
-            fontWeight="700"
-            textAnchor="end"
-            dominantBaseline="hanging"
-          >
-            {arrow.label}
-          </text>
-        );
-      })}
+            square={arrow.endSquare}
+            label={arrow.label}
+            color={arrow.labelColor}
+            sqSize={sqSize}
+            flipped={flipped}
+          />
+        ) : null,
+      )}
+      {/* Severity corner markers (item 4) — glyph top-right, optional depth top-left. */}
+      {markers.map((marker) => (
+        <SquareMarkerGroup key={`marker-${marker.square}`} marker={marker} sqSize={sqSize} flipped={flipped} />
+      ))}
     </svg>
   );
 }
 
-export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, arrows = [], id, maxWidth = 400 }: ChessBoardProps) {
+export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, lastMoveColor, arrows = [], squareMarkers = [], id, maxWidth = 400 }: ChessBoardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Start at 0 so we don't mount react-chessboard until the container has measured.
   // Mounting with a non-zero width inside a display:none parent (e.g. the hidden
@@ -292,7 +302,8 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, a
   const squareStyles = useMemo<Record<string, React.CSSProperties>>(() => {
     const styles: Record<string, React.CSSProperties> = {};
     if (lastMoveFrom && lastMoveTo) {
-      const highlightStyle: React.CSSProperties = { backgroundColor: MOVE_HIGHLIGHT_SQUARE };
+      // Severity-coded on the analysis board (item 5); default translucent yellow elsewhere.
+      const highlightStyle: React.CSSProperties = { backgroundColor: lastMoveColor ?? MOVE_HIGHLIGHT_SQUARE };
       styles[lastMoveFrom] = highlightStyle;
       styles[lastMoveTo] = highlightStyle;
     }
@@ -303,7 +314,7 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, a
       };
     }
     return styles;
-  }, [lastMoveFrom, lastMoveTo, selectedSquare]);
+  }, [lastMoveFrom, lastMoveTo, lastMoveColor, selectedSquare]);
 
   const boardStyle = useMemo<React.CSSProperties>(
     () => ({ width: boardWidth, height: boardWidth, borderRadius: '0.5rem' }),
@@ -378,7 +389,7 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, a
       {boardWidth > 0 && (
       <div style={{ position: 'relative', width: boardWidth, height: boardWidth, touchAction: 'none', borderRadius: '0.5rem', overflow: 'hidden' }}>
         <Chessboard options={options} />
-        <ArrowOverlay arrows={arrows} boardWidth={boardWidth} flipped={flipped} />
+        <ArrowOverlay arrows={arrows} markers={squareMarkers} boardWidth={boardWidth} flipped={flipped} />
       </div>
       )}
     </div>

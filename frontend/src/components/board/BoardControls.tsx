@@ -15,6 +15,12 @@ interface BoardControlsProps {
   infoSlot?: React.ReactNode;
   /** Render buttons in a vertical column (used on mobile beside the board) */
   vertical?: boolean;
+  /**
+   * Flat surface (Quick 260628-dgv): drop the rounded charcoal pill so the buttons
+   * sit directly on the parent bar, reading like the main nav buttons. Used by the
+   * mobile /analysis board-controls footer; desktop/Openings keep the pill.
+   */
+  flat?: boolean;
   /** Button size. 'sm' = h-8 w-8 (desktop), 'md' = h-9 w-9 (mobile slim row), 'lg' = h-11 w-11 (mobile vertical column). Defaults to 'lg' when vertical, 'sm' otherwise. */
   size?: 'sm' | 'md' | 'lg';
   /** Explicit Tailwind size classes for the buttons. Overrides `size` when provided — use when width and height need to be decoupled (e.g. `h-9 w-11`). */
@@ -42,11 +48,22 @@ export function BoardControls({
   size,
   buttonClassName,
   className,
+  flat = false,
 }: BoardControlsProps) {
   const resolvedSize = size ?? (vertical ? 'lg' : 'sm');
-  const buttonSizeClass = buttonClassName ?? SIZE_CLASSES[resolvedSize];
+  // flat (mobile /analysis footer) reads like the main nav bar: each control fills an
+  // equal share of the width (flex-1) with a tall 48px tap target, unless the caller
+  // pins an explicit size/buttonClassName (Quick 260628-cjp — larger tap targets).
+  const navStyle = flat && !buttonClassName && !size;
+  const buttonSizeClass =
+    buttonClassName ?? (navStyle ? 'flex-1 h-12' : SIZE_CLASSES[resolvedSize]);
+  // flat drops the charcoal pill so the bar reads like the main nav (Quick 260628-dgv).
+  const surfaceClass = flat ? '' : 'rounded-lg charcoal-texture';
+  // Match the main nav icon size (h-5) on the flat mobile bar; keep h-4 on the
+  // smaller desktop/vertical pills.
+  const iconSize = navStyle ? 'h-5 w-5' : 'h-4 w-4';
   return (
-    <div className={`flex items-center justify-evenly rounded-lg charcoal-texture ${vertical ? 'flex-col' : ''} ${className ?? ''}`}>
+    <div className={`flex items-center justify-evenly ${surfaceClass} ${vertical ? 'flex-col' : ''} ${className ?? ''}`}>
       <Tooltip content="Reset to start">
         <Button
           variant="ghost"
@@ -57,7 +74,7 @@ export function BoardControls({
           aria-label="Reset to start"
           data-testid="board-btn-reset"
         >
-          <SkipBack className="h-4 w-4" />
+          <SkipBack className={iconSize} />
         </Button>
       </Tooltip>
       <Tooltip content="Previous move">
@@ -70,7 +87,7 @@ export function BoardControls({
           aria-label="Previous move"
           data-testid="board-btn-back"
         >
-          <ChevronLeft className="h-4 w-4" />
+          <ChevronLeft className={iconSize} />
         </Button>
       </Tooltip>
       <Tooltip content="Next move">
@@ -83,7 +100,7 @@ export function BoardControls({
           aria-label="Next move"
           data-testid="board-btn-forward"
         >
-          <ChevronRight className="h-4 w-4" />
+          <ChevronRight className={iconSize} />
         </Button>
       </Tooltip>
       <Tooltip content="Flip board">
@@ -95,7 +112,7 @@ export function BoardControls({
           aria-label="Flip board"
           data-testid="board-btn-flip"
         >
-          <Repeat2 className="h-4 w-4" />
+          <Repeat2 className={iconSize} />
         </Button>
       </Tooltip>
       {infoSlot}

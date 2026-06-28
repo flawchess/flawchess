@@ -93,4 +93,13 @@ describe('tacticDepthBadge', () => {
     expect(tacticDepthBadge(null, 5, 'allowed')).toBeNull();
     expect(tacticDepthBadge('fork', null, 'missed')).toBeNull();
   });
+
+  // anchored=false (Quick 260628-1t5 DECISION 2): navigable surfaces drop the allowed +1
+  // offset, so an allowed badge reads on the same plain scale as missed.
+  it('anchored=false drops the allowed offset (allowed reads like missed)', () => {
+    expect(tacticDepthBadge('fork', 0, 'allowed', false)).toBe('1');
+    expect(tacticDepthBadge('promotion', 5, 'allowed', false)).toBe('6');
+    // missed is unaffected by the flag.
+    expect(tacticDepthBadge('fork', 0, 'missed', false)).toBe('1');
+  });
 });

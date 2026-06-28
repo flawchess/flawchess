@@ -34,6 +34,12 @@ export interface AnalysisBoardState {
   nodes: Map<NodeId, MoveNode>;
   currentNodeId: NodeId | null;
   mainLine: NodeId[];
+  /**
+   * IDs of nodes grafted by insertPvLine, ordered from the fork node's first
+   * PV move to the last. Empty when no PV is expanded. Cleared by clearPvLine.
+   * Ephemeral — not URL-encoded (D-01).
+   */
+  pvLine: NodeId[];
   rootFen: string;
   nextId: number;
 }
@@ -44,6 +50,8 @@ export interface AnalysisBoardReturn {
   currentNodeId: NodeId | null;
   nodes: Map<NodeId, MoveNode>;
   mainLine: NodeId[];
+  /** Currently expanded PV nodes, ordered from fork's first move to end. */
+  pvLine: NodeId[];
   rootFen: string;
   lastMove: { from: string; to: string } | null;
   makeMove: (from: string, to: string) => boolean;
@@ -59,6 +67,27 @@ export interface AnalysisBoardReturn {
   goToRoot: () => void;
   loadMainLine: (sans: string[], newRootFen: string) => void;
   isOnMainLine: (nodeId: NodeId) => boolean;
+  /**
+   * insertPvLine(pvSans, forkNodeId) — graft a PV sideline onto the existing
+   * node map in a single setState call (L-1/L-7: stateRef only syncs after
+   * render; calling makeMove in a loop would graft every PV node onto the same
+   * stale parent). Sets pvLine to the new node IDs, leaves mainLine untouched,
+   * and parks currentNodeId at forkNodeId (not the first PV move).
+   */
+  insertPvLine: (pvSans: string[], forkNodeId: NodeId) => void;
+  /**
+   * playUciLine(uciMoves) — graft a UCI move sequence from currentNodeId as a
+   * branch (reusing matching children) and navigate to the last move. Used by the
+   * engine-line chips to play the whole line up to the clicked move.
+   */
+  playUciLine: (uciMoves: string[]) => void;
+  /**
+   * clearPvLine() — delete all pvLine nodes from the map, empty pvLine, and
+   * recover currentNodeId to the nearest ancestor on mainLine.
+   */
+  clearPvLine: () => void;
+  /** isOnPvLine(nodeId) — true iff nodeId was grafted by the last insertPvLine. */
+  isOnPvLine: (nodeId: NodeId) => boolean;
   containerRef: RefObject<HTMLDivElement | null>;
 }
 
@@ -115,6 +144,7 @@ function makeInitialState(rootFen: string): AnalysisBoardState {
     nodes: new Map<NodeId, MoveNode>(),
     currentNodeId: null,
     mainLine: [],
+    pvLine: [],
     rootFen,
     nextId: 0,
   };
@@ -199,6 +229,18 @@ export function useAnalysisBoard(
    */
   const goForward = useCallback((): void => {
     setState((prev) => {
+      // When a flaw PV sideline is grafted and the board is parked at its fork node,
+      // step INTO the sideline rather than continuing down the main line. The main-line
+      // continuation has a lower id (created by loadMainLine) than the grafted PV node
+      // (created later by insertPvLine), so findFirstChild would otherwise pick the main
+      // line and the open flaw line would feel un-enterable (UAT thl item 4).
+      if (prev.pvLine.length > 0) {
+        const firstPvId = prev.pvLine[0];
+        const firstPvNode = firstPvId !== undefined ? prev.nodes.get(firstPvId) : undefined;
+        if (firstPvNode && firstPvNode.parentId === prev.currentNodeId) {
+          return { ...prev, currentNodeId: firstPvNode.id };
+        }
+      }
       const child = findFirstChild(prev.nodes, prev.currentNodeId);
       if (!child) return prev;
       return { ...prev, currentNodeId: child.id };
@@ -212,6 +254,10 @@ export function useAnalysisBoard(
   const goToNode = useCallback((id: NodeId): void => {
     setState((prev) => {
       if (!prev.nodes.has(id)) return prev;
+      // Bail when already on this node: returning a fresh state object for a no-op
+      // navigation triggers a needless re-render, which can feed render-loop cascades
+      // (e.g. the eval-chart syncPly round-trip, FLAWCHESS-7B).
+      if (prev.currentNodeId === id) return prev;
       return { ...prev, currentNodeId: id };
     });
   }, []);
@@ -246,6 +292,7 @@ export function useAnalysisBoard(
       nodes: newNodes,
       currentNodeId: lastId !== undefined ? lastId : null,
       mainLine: newMainLine,
+      pvLine: [],
       rootFen: newRootFen,
       nextId: id,
     });
@@ -267,6 +314,156 @@ export function useAnalysisBoard(
    */
   const isOnMainLine = useCallback((nodeId: NodeId): boolean => {
     return stateRef.current.mainLine.includes(nodeId);
+  }, []);
+
+  /**
+   * insertPvLine(pvSans, forkNodeId) — graft a PV sideline in ONE setState call.
+   *
+   * Sequential makeMove calls are forbidden here (L-1/L-7): stateRef.current
+   * only syncs to state after the next render, so every makeMove in a loop would
+   * read the same stale parent and chain all PV nodes onto forkNodeId. Instead
+   * we replicate the loadMainLine batch-build loop but graft onto the existing
+   * node map rather than replacing it.
+   *
+   * After the call: pvLine holds the new PV node IDs, mainLine is untouched,
+   * and currentNodeId is parked at forkNodeId (not the first PV move).
+   */
+  const insertPvLine = useCallback((pvSans: string[], forkNodeId: NodeId): void => {
+    setState((prev) => {
+      const forkNode = prev.nodes.get(forkNodeId);
+      if (!forkNode) return prev; // guard: forkNodeId missing → no-op (T-140-01a)
+
+      const newNodes = new Map(prev.nodes);
+      const newPvLine: NodeId[] = [];
+      const chess = new Chess(forkNode.fen);
+      let prevId: NodeId | null = forkNodeId;
+      let id = prev.nextId;
+
+      for (const san of pvSans) {
+        const move = chess.move(san);
+        if (!move) break; // break on illegal SAN rather than crashing (T-140-01a)
+        const node = buildNode(id, move.san, chess.fen(), move.from, move.to, prevId);
+        newNodes.set(id, node);
+        newPvLine.push(id);
+        prevId = id;
+        id++;
+      }
+
+      return {
+        ...prev,
+        nodes: newNodes,
+        pvLine: newPvLine,
+        currentNodeId: forkNodeId, // park at fork, not first PV move
+        nextId: id,
+      };
+    });
+  }, []);
+
+  /**
+   * clearPvLine() — delete all pvLine nodes from the map, empty pvLine, and
+   * recover currentNodeId to the nearest ancestor on mainLine.
+   *
+   * Uses a functional setState updater matching the goBack() idiom to always
+   * act on the latest state. Walks parentId up from currentNodeId until it
+   * reaches a mainLine node; falls back to null (root) if none is found.
+   */
+  const clearPvLine = useCallback((): void => {
+    setState((prev) => {
+      if (prev.pvLine.length === 0) return prev; // already clear — no-op
+
+      // Recover currentNodeId BEFORE deleting pvLine nodes: walk parentId up
+      // through prev.nodes (which still has the pvLine entries) until we reach
+      // a mainLine node or root. Using newNodes here would cause dangling
+      // lookups since pvLine ids are about to be deleted.
+      const mainLineSet = new Set(prev.mainLine);
+      let recoveredId: NodeId | null = prev.currentNodeId;
+      while (recoveredId !== null && !mainLineSet.has(recoveredId)) {
+        const node = prev.nodes.get(recoveredId);
+        recoveredId = node?.parentId ?? null;
+      }
+
+      const newNodes = new Map(prev.nodes);
+      for (const id of prev.pvLine) {
+        newNodes.delete(id);
+      }
+
+      return {
+        ...prev,
+        nodes: newNodes,
+        pvLine: [],
+        currentNodeId: recoveredId,
+      };
+    });
+  }, []);
+
+  /**
+   * playUciLine(uciMoves) — graft a sequence of UCI moves from currentNodeId as a
+   * branch in ONE setState and navigate to the LAST move.
+   *
+   * Used by the engine-line move chips: clicking move N in a Stockfish line plays
+   * the WHOLE line up to that move from the current anchor, not just the single
+   * clicked move (Quick 260628-shc UAT — the old wiring called makeMove(from, to)
+   * with just the clicked move, skipping all moves before it).
+   *
+   * Differences from insertPvLine: it lands on the line's end (not the fork),
+   * reuses an existing child when its from/to already matches (so re-clicking the
+   * same line doesn't spawn duplicate branches), and does NOT touch pvLine /
+   * tactic-overlay state. Like insertPvLine it batch-builds in one setState because
+   * stateRef only syncs after render (L-1/L-7).
+   */
+  const playUciLine = useCallback((uciMoves: string[]): void => {
+    if (uciMoves.length === 0) return;
+    setState((prev) => {
+      const newNodes = new Map(prev.nodes);
+      let parentId: NodeId | null = prev.currentNodeId;
+      const parentFen =
+        parentId !== null ? (newNodes.get(parentId)?.fen ?? prev.rootFen) : prev.rootFen;
+      const chess = new Chess(parentFen);
+      let id = prev.nextId;
+      let landingId: NodeId | null = parentId;
+
+      for (const uci of uciMoves) {
+        const from = uci.slice(0, 2);
+        const to = uci.slice(2, 4);
+        // Engine UCI carries the promotion char (e.g. e7e8q); 'q' is a harmless
+        // default for non-promotion moves (chess.js ignores it).
+        const promotion = uci.length > 4 ? uci.slice(4, 5) : 'q';
+        let move: ReturnType<typeof chess.move>;
+        try {
+          move = chess.move({ from, to, promotion });
+        } catch {
+          break; // illegal move → stop grafting (land on what we reached)
+        }
+        if (!move) break;
+
+        // Reuse an existing child with the same from/to to avoid duplicate branches.
+        let child: MoveNode | undefined;
+        for (const node of newNodes.values()) {
+          if (node.parentId === parentId && node.from === move.from && node.to === move.to) {
+            child = node;
+            break;
+          }
+        }
+        if (!child) {
+          child = buildNode(id, move.san, chess.fen(), move.from, move.to, parentId);
+          newNodes.set(id, child);
+          id++;
+        }
+        parentId = child.id;
+        landingId = child.id;
+      }
+
+      if (landingId === prev.currentNodeId) return prev; // nothing grafted — no-op
+      return { ...prev, nodes: newNodes, currentNodeId: landingId, nextId: id };
+    });
+  }, []);
+
+  /**
+   * isOnPvLine(nodeId) — true iff the node was grafted by the last insertPvLine.
+   * Reads from stateRef to avoid stale-closure issues (mirrors isOnMainLine).
+   */
+  const isOnPvLine = useCallback((nodeId: NodeId): boolean => {
+    return stateRef.current.pvLine.includes(nodeId);
   }, []);
 
   // Container-scoped keyboard handler (ArrowLeft = goBack, ArrowRight = goForward).
@@ -297,6 +494,7 @@ export function useAnalysisBoard(
     currentNodeId: state.currentNodeId,
     nodes: state.nodes,
     mainLine: state.mainLine,
+    pvLine: state.pvLine,
     rootFen: state.rootFen,
     lastMove,
     makeMove,
@@ -306,6 +504,10 @@ export function useAnalysisBoard(
     goToRoot,
     loadMainLine,
     isOnMainLine,
+    insertPvLine,
+    playUciLine,
+    clearPvLine,
+    isOnPvLine,
     containerRef,
   };
 }

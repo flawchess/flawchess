@@ -43,7 +43,7 @@ Milestone Goal: Ship a standalone `/analysis` board where the user makes any leg
 - [x] **Phase 137: `useAnalysisBoard` Hook + Analysis Display Components** - Branching move tree (new hook, not a variant of useChessGame), EvalBar, EngineLines, VariationTree (completed 2026-06-26)
 - [ ] **Phase 138: `/analysis` Route + Page Shell + Entry Points** - Lazy-loaded page shell, router wiring, free-play entry points (opening position + game-review ply)
 - [x] **Phase 139: Tactic Mode Overlay + Phase 135 Subsume** - TacticModeOverlay, Phase 135 regression parity, retire TacticLineExplorer + useTacticLine (completed 2026-06-26)
-- [ ] **Phase 140: Full-Game Analysis Board** - Unified `Analyze` entry (game + flaw cards), full-game load (`?game_id&ply`), eval chart relocated below board, move-list = board height, controls below move list, inline missed/allowed tags → PV sideline (2-level nesting), contextual TacticModeOverlay
+- [x] **Phase 140: Full-Game Analysis Board** - Unified `Analyze` entry (game + flaw cards), full-game load (`?game_id&ply`), eval chart relocated below board, move-list = board height, controls below move list, inline missed/allowed tags → PV sideline (2-level nesting), contextual TacticModeOverlay
 
 ## Phase Details
 
@@ -153,7 +153,12 @@ Plans:
   4. Flaw plies show inline missed/allowed tags in the move list; clicking a tag unfolds its stored PV as a sideline, a sub-sideline can be branched within it (two nesting levels), and `TacticModeOverlay` activates contextually for the active PV line
   5. No new backend schema or endpoints (milestone D-4); mobile layout has a stacked equivalent; `npm run knip`, lint, and frontend tests pass
 
-**Plans**: TBD (run `/gsd-ui-phase 140` or `/gsd-discuss-phase 140`)
+**Plans**: 3 plans
+
+- [x] 140-01-PLAN.md — Foundation primitives (theme TAC_MISSED_BORDER, buildGameAnalysisUrl, EvalChart slider props, useAnalysisBoard PV-nesting methods + tests)
+- [x] 140-02-PLAN.md — Board rewiring (VariationTree two-level nesting + inline chips + markers; Analysis.tsx game-mode fetch + layout relocation + slider parking + contextual overlay)
+- [x] 140-03-PLAN.md — Entry points (LibraryGameCard + FlawCard unified Analyze button, Game-modal deletion, phase-close gate)
+
 **UI hint**: yes
 
 ## Progress
@@ -217,7 +222,7 @@ Plans:
 | 137. `useAnalysisBoard` Hook + Analysis Display Components | 3/3 | Complete    | 2026-06-26 |
 | 138. `/analysis` Route + Page Shell + Entry Points | 3/3 | Complete   | 2026-06-26 |
 | 139. Tactic Mode Overlay + Phase 135 Subsume | 3/3 | Complete    | 2026-06-26 |
-| 140. Full-Game Analysis Board | 0/0 | Planned | — |
+| 140. Full-Game Analysis Board | 3/3 | Complete   | 2026-06-27 |
 
 ## Backlog
 

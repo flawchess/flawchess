@@ -135,6 +135,14 @@ export function useStockfishEngine({
    */
   const [debouncedFen, setDebouncedFen] = useState<string | null>(null);
   useEffect(() => {
+    // Item 2 (Quick 260627-l2z): the analyzed position changed — immediately drop the
+    // previous position's PV lines + eval so the board never shows orphaned arrows from
+    // the prior ply. Consumers fall back to precomputed data (game main line) until the
+    // live engine reports for the new position; the grey 2nd-best reappears then.
+    setPvLines([]);
+    setEvalCp(null);
+    setEvalMate(null);
+    setDepth(0);
     if (fen === null) {
       setDebouncedFen(null);
       return;
