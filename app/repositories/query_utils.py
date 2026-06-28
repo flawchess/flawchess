@@ -20,6 +20,16 @@ from app.models.game import Game
 _PLY_EVEN_MOVER_WHITE = 0  # ply % 2 == 0 means white moved
 
 
+def mover_is_white_at_ply(ply: int) -> bool:
+    """Return True when the mover at *ply* is White (Python read-path helper).
+
+    Mirrors the SQL convention in is_opponent_expr — both derive from the same
+    _PLY_EVEN_MOVER_WHITE constant so the Python and SQL paths agree on ply parity.
+    Use this instead of bare ``ply % 2 == 0`` to keep the single source intact.
+    """
+    return ply % 2 == _PLY_EVEN_MOVER_WHITE
+
+
 def is_opponent_expr(
     ply_col: Any,
     user_color_col: Any,
