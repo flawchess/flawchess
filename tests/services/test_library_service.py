@@ -1663,3 +1663,223 @@ class TestBuildCardTacticPerSlotSuppression:
         by_ply = {fm.ply: fm for fm in card.flaw_markers if fm.is_user}
         assert by_ply[2].missed_tactic_motif == "fork"
         assert by_ply[4].missed_tactic_motif == "fork"
+
+
+# ---------------------------------------------------------------------------
+# TestOpponentTacticMarker — Quick 260628-u7d
+#
+# Opponent (hollow-square) flaw markers now show their tactic motif chips,
+# sourced from fetch_page_game_flaws_both_colors. Severity counts, curated
+# chips, and all stats remain player-gated (the landmine guard).
+# ---------------------------------------------------------------------------
+
+# Motif int for opponent flaw (using FORK, same as user flaw but kept readable
+# by naming it separately — both are "fork" family at int 1).
+_OPPONENT_MOTIF_INT = _FORK_INT  # TacticMotifInt.FORK = 1
+
+
+class TestOpponentTacticMarker:
+    """Opponent flaw markers carry tactic motif chips; counts/chips stay player-gated.
+
+    Scenario (Quick 260628-u7d): game_flaws has rows for both movers (Phase 113
+    emits FlawRecords for both). fetch_page_game_flaws is player-gated so opponent
+    rows never reach counts/chips. fetch_page_game_flaws_both_colors is ungated so
+    opponent rows populate tactic_by_ply for the eval-chart tooltip.
+
+    Separate user_id per test to avoid cross-test leakage in the rollback-scoped
+    db_session fixture.
+    """
+
+    @pytest.mark.asyncio
+    async def test_opponent_tactic_motif_on_hollow_square_marker(
+        self, db_session: object
+    ) -> None:
+        """Opponent blunder marker carries its allowed_tactic_motif (the new behavior).
+
+        Setup:
+        - User is white. User blunder at ply 2 (even ply = white mover).
+        - Opponent (black) blunder at ply 3 (odd ply = black mover).
+          Eval rises from curr_b back to 0 between ply 2 and ply 3 (black gave
+          back the advantage = black blundered).
+        - GameFlaw at ply 2: user flaw with missed_motif=fork.
+        - GameFlaw at ply 3: opponent flaw with allowed_motif=fork.
+
+        Assertions (Quick 260628-u7d must_haves):
+        1. is_user=False marker at ply 3 has non-null allowed_tactic_motif.
+        2. is_user=True marker at ply 2 still has its missed_tactic_motif (no regression).
+        3. severity_counts.blunder == 1 (opponent row does NOT inflate counts).
+        4. Opponent motif does not appear in card.chips (chips stay player-gated).
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.game import Game as GameModel
+        from app.services.flaws_service import BLUNDER_DROP
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        uid = 99995
+        await ensure_test_user(session, uid)
+
+        # prev_b=0 (ES=0.5), curr_b negative enough for a white-perspective BLUNDER_DROP.
+        prev_b, curr_b = _cp_for_white_drop(BLUNDER_DROP)
+
+        game = cast(
+            GameModel,
+            await _seed_db_game(session, user_id=uid, user_color="white", ply_count=4),
+        )
+
+        # Position sequence:
+        # ply 0: eval=prev_b (baseline, white pov = ~0)
+        # ply 1: eval=prev_b (black move, clean — no drop from black's POV)
+        # ply 2: eval=curr_b (white BLUNDER — large white-POV drop)
+        # ply 3: eval=prev_b (black BLUNDER — eval rose back to ~0, black gave it back)
+        # ply 4: eval=prev_b (white clean — flat)
+        await _seed_db_pos(session, game=game, ply=0, eval_cp=prev_b)
+        await _seed_db_pos(session, game=game, ply=1, eval_cp=prev_b)
+        await _seed_db_pos(session, game=game, ply=2, eval_cp=curr_b)  # white blunder
+        await _seed_db_pos(session, game=game, ply=3, eval_cp=prev_b)  # black blunder
+        await _seed_db_pos(session, game=game, ply=4, eval_cp=prev_b)
+
+        # User (white) flaw at ply 2 — player-gated, contributes to counts/chips.
+        await _seed_tactic_flaw_for_game(
+            session,
+            game=game,
+            ply=2,
+            severity=2,  # blunder
+            missed_motif=_FORK_INT,
+            missed_conf=80,
+            missed_depth=1,
+        )
+        # Opponent (black) flaw at ply 3 — NOT player-gated, only for tactic tooltip.
+        await _seed_tactic_flaw_for_game(
+            session,
+            game=game,
+            ply=3,
+            severity=2,  # blunder (opponent)
+            allowed_motif=_OPPONENT_MOTIF_INT,
+            allowed_conf=80,
+            allowed_depth=0,
+        )
+
+        card = await get_library_game(session, user_id=uid, game_id=game.id)
+        assert card is not None
+        assert card.flaw_markers is not None
+
+        # 1. Opponent marker at ply 3 has its allowed_tactic_motif (new behavior).
+        opp_markers = [fm for fm in card.flaw_markers if not fm.is_user]
+        ply3_marker = next((fm for fm in opp_markers if fm.ply == 3), None)
+        assert ply3_marker is not None, "Expected an opponent flaw_marker at ply 3"
+        assert ply3_marker.allowed_tactic_motif == "fork", (
+            f"Opponent marker at ply 3 must carry allowed_tactic_motif='fork', "
+            f"got {ply3_marker.allowed_tactic_motif!r}"
+        )
+        assert ply3_marker.allowed_tactic_depth == 0
+
+        # 2. User marker at ply 2 still has its missed_tactic_motif (no regression).
+        user_markers = [fm for fm in card.flaw_markers if fm.is_user]
+        ply2_marker = next((fm for fm in user_markers if fm.ply == 2), None)
+        assert ply2_marker is not None, "Expected a user flaw_marker at ply 2"
+        assert ply2_marker.missed_tactic_motif == "fork", (
+            f"User marker at ply 2 must carry missed_tactic_motif='fork', "
+            f"got {ply2_marker.missed_tactic_motif!r}"
+        )
+
+        # 3. Landmine guard: severity_counts["blunder"] == 1 (opponent row NOT counted).
+        # SeverityCounts is a TypedDict (plain dict at runtime) — use [] access.
+        assert card.severity_counts is not None
+        sc = card.severity_counts
+        assert sc["blunder"] == 1, (
+            f"Expected blunder count = 1 (user-only), got {sc['blunder']}"
+        )
+        assert sc["mistake"] == 0
+
+        # 4. Opponent motif does not appear in curated chips (chips stay player-gated).
+        # The opponent flaw has no boolean tags (is_miss=False etc.) so no chip entry
+        # regardless, but this guard is explicit: opponent rows must NOT inflate chips.
+        # The user flaw also has no boolean tags, so chips should be empty.
+        assert card.chips == [], (
+            f"chips must be player-gated and empty for this game, got {card.chips!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_opponent_tactic_motif_via_get_library_games(
+        self, db_session: object
+    ) -> None:
+        """get_library_games (page-list path) also populates opponent tactic markers.
+
+        Verifies that the page_tactic_flaws batch-fetch wired to get_library_games
+        carries opponent tactic data to the flaw_markers, mirroring the single-game
+        path tested above.
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.game import Game as GameModel
+        from app.services.flaws_service import BLUNDER_DROP
+        from app.services.library_service import get_library_games
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        uid = 99996
+        await ensure_test_user(session, uid)
+
+        prev_b, curr_b = _cp_for_white_drop(BLUNDER_DROP)
+
+        game = cast(
+            GameModel,
+            await _seed_db_game(session, user_id=uid, user_color="white", ply_count=4),
+        )
+        await _seed_db_pos(session, game=game, ply=0, eval_cp=prev_b)
+        await _seed_db_pos(session, game=game, ply=1, eval_cp=prev_b)
+        await _seed_db_pos(session, game=game, ply=2, eval_cp=curr_b)  # white blunder
+        await _seed_db_pos(session, game=game, ply=3, eval_cp=prev_b)  # black blunder
+        await _seed_db_pos(session, game=game, ply=4, eval_cp=prev_b)
+
+        # User flaw at ply 2 (player-gated).
+        await _seed_tactic_flaw_for_game(
+            session,
+            game=game,
+            ply=2,
+            severity=2,
+            missed_motif=_FORK_INT,
+            missed_conf=80,
+            missed_depth=1,
+        )
+        # Opponent flaw at ply 3 (tactic-tooltip only).
+        await _seed_tactic_flaw_for_game(
+            session,
+            game=game,
+            ply=3,
+            severity=2,
+            allowed_motif=_OPPONENT_MOTIF_INT,
+            allowed_conf=80,
+            allowed_depth=0,
+        )
+
+        resp = await get_library_games(
+            session,
+            user_id=uid,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            flaw_severity=None,
+            offset=0,
+            limit=20,
+        )
+        assert len(resp.games) == 1
+        card = resp.games[0]
+        assert card.flaw_markers is not None
+
+        # Opponent marker at ply 3 carries the tactic motif.
+        opp_markers = [fm for fm in card.flaw_markers if not fm.is_user]
+        ply3_marker = next((fm for fm in opp_markers if fm.ply == 3), None)
+        assert ply3_marker is not None, "Expected an opponent flaw_marker at ply 3"
+        assert ply3_marker.allowed_tactic_motif == "fork"
+
+        # Landmine guard: blunder count is 1 (user-only).
+        # SeverityCounts is a TypedDict (plain dict at runtime) — use [] access.
+        assert card.severity_counts is not None
+        assert card.severity_counts["blunder"] == 1
