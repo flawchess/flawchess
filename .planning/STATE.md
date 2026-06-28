@@ -4,11 +4,10 @@ milestone: v1.29
 milestone_name: Live-Engine Analysis Page
 current_phase: 140
 current_phase_name: full-game-analysis-board
-status: completed
+status: Phase 140 shipped — squash-merged to main (63b9e695)
 stopped_at: Phase 140 context gathered
-last_updated: "2026-06-27T11:26:11.033Z"
-last_activity: 2026-06-27
-last_activity_desc: Phase 140 execution started
+last_updated: "2026-06-28T19:27:36.076Z"
+last_activity: 2026-06-28
 progress:
   total_phases: 9
   completed_phases: 5
@@ -23,8 +22,8 @@ progress:
 
 Phase: 140 (full-game-analysis-board) — EXECUTING
 Plan: 3 of 3
-Status: phase-140-complete-pending-uat
-Last activity: 2026-06-28 — Completed quick task 260628-pcb: desktop analysis board player names + ELO + remaining clock, engine card top aligned with board top
+Status: Phase 140 shipped — squash-merged to main (63b9e695)
+Last activity: 2026-06-28
 
 Progress: [░░░░░░░░░░] 0%
 
