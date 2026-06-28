@@ -1,19 +1,24 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Chess } from 'chess.js';
 import { BookOpen, Calendar, Clock, Equal, ExternalLink, Hash, Minus, Plus, Search } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
-  SEV_BLUNDER,
-  SEV_MISTAKE,
-  SEV_INACCURACY,
+  MOVE_HIGHLIGHT_SQUARE,
+  MOVE_HIGHLIGHT_BLUNDER,
+  MOVE_HIGHLIGHT_MISTAKE,
+  MOVE_HIGHLIGHT_GOOD,
   WDL_BORDER_DRAW,
   WDL_BORDER_LOSS,
   WDL_BORDER_WIN,
   BEST_MOVE_ARROW,
-  TAC_MISSED_LABEL,
+  TAC_ALLOWED,
   TAC_ALLOWED_LABEL,
+  TAC_MISSED,
+  TAC_MISSED_LABEL,
 } from '@/lib/theme';
+import type { SquareMarker } from '@/components/board/boardMarkers';
 import { uciToSquares } from '@/lib/sanToSquares';
 import { Card, CardHeader } from '@/components/ui/card';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -27,13 +32,13 @@ import { ChipColumn } from '@/components/library/ChipColumn';
 import { tacticMotifLabel, TACTIC_FAMILY_FOR_MOTIF, tacticDepthBadge } from '@/lib/tacticComparisonMeta';
 import { NoAnalysisState } from '@/components/library/NoAnalysisState';
 import { gamePlatformUrl, platformPlyUrl } from '@/lib/platformLinks';
+import { buildGameAnalysisUrl } from '@/lib/analysisUrl';
 import { plysToFullMoves } from '@/lib/chess';
 import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
 import { useMiniBoardSize } from '@/hooks/useMiniBoardSize';
 import { formatTimeControl } from '@/lib/formatTimeControl';
 import { Button } from '@/components/ui/button';
-import { TacticLineExplorer } from '@/components/library/TacticLineExplorer';
-import type { GameFlawCard, FlawSeverity, FlawTag, FlawMarker } from '@/types/library';
+import type { GameFlawCard, FlawSeverity, FlawTag } from '@/types/library';
 import type { UserResult } from '@/types/api';
 
 // Standalone component per D-05 — do NOT import from or modify GameCard.tsx.
@@ -63,11 +68,14 @@ interface LibraryGameCardProps {
 const MOBILE_BOARD_SIZE = 130;
 const DESKTOP_BOARD_SIZE = 225;
 
-// Severity arrow colors (red/orange/yellow) for the flawed-move arrow on the hover miniboard.
-const FLAW_ARROW_COLOR: Record<FlawSeverity, string> = {
-  blunder: SEV_BLUNDER,
-  mistake: SEV_MISTAKE,
-  inaccuracy: SEV_INACCURACY,
+// Severity-coded last-move square overlay on the hover miniboard (Quick 260627-r9g
+// item 5): inaccuracy keeps the legacy yellow; blunder/mistake get red/orange at the
+// same alpha. The flaw itself is now a severity glyph in the target-square corner
+// (item 4) rather than a red/orange/yellow arrow.
+const MOVE_HIGHLIGHT_SEVERITY: Record<FlawSeverity, string> = {
+  blunder: MOVE_HIGHLIGHT_BLUNDER,
+  mistake: MOVE_HIGHLIGHT_MISTAKE,
+  inaccuracy: MOVE_HIGHLIGHT_SQUARE,
 };
 
 /** One reconstructed ply: the FEN after the move plus the move's from/to squares. */
@@ -217,10 +225,6 @@ export function LibraryGameCard({
   // shows result_fen, as before.
   const [hoverPly, setHoverPly] = useState<number | null>(null);
 
-  // D-03 Explore button (Phase 135): open state for the TacticLineExplorer stacked
-  // over this modal. On close (D-01) the explorer closes only; this modal stays.
-  const [exploreOpen, setExploreOpen] = useState(false);
-
   // In-flight state for the tier-1 analyze button (D-118-11 — only the clicked game
   // shows "Analyzing…", not a global spinner across all cards). Controlled when the
   // parent passes onInFlightChange (Games subtab); otherwise managed locally
@@ -270,23 +274,6 @@ export function LibraryGameCard({
     return m;
   }, [game.flaw_markers]);
 
-  // D-03 Explore button (Phase 135): full FlawMarker by ply for the Explore button.
-  // Needed to check is_user + tactic motifs for the D-02 disabled state.
-  const flawMarkerByPly = useMemo(() => {
-    const m = new Map<number, FlawMarker>();
-    for (const fm of game.flaw_markers ?? []) {
-      m.set(fm.ply, fm);
-    }
-    return m;
-  }, [game.flaw_markers]);
-
-  // The flaw_marker at the currently parked eval-chart ply (hoverPly).
-  // isTaggedFlaw: the selected ply belongs to the user AND has at least one tactic motif.
-  const selectedFlaw = hoverPly != null ? (flawMarkerByPly.get(hoverPly) ?? null) : null;
-  const isTaggedFlaw =
-    selectedFlaw != null &&
-    selectedFlaw.is_user &&
-    (selectedFlaw.missed_tactic_motif != null || selectedFlaw.allowed_tactic_motif != null);
 
   // Per-ply tactic-depth badges (1-based display). missed → blue best-move arrow,
   // allowed → colored flaw-move arrow. Null when the tactic's motif chip is hidden.
@@ -298,8 +285,16 @@ export function LibraryGameCard({
       // tacticDepthBadge returns null for family-less motifs (promotion (28),
       // self-interference (14)), so their depth never leaks onto the board as a
       // bare number with no chip to explain it (D-09).
-      const missed = tacticDepthBadge(fm.missed_tactic_motif, fm.missed_tactic_depth, 'missed');
-      const allowed = tacticDepthBadge(fm.allowed_tactic_motif, fm.allowed_tactic_depth, 'allowed');
+      // anchored=false (Quick 260628-1t5 DECISION 2): on the navigable miniboard the
+      // missed and allowed depths are no longer co-anchored on one decision board, so the
+      // allowed +1 offset is dropped — allowed reads on the same plain scale as missed.
+      const missed = tacticDepthBadge(fm.missed_tactic_motif, fm.missed_tactic_depth, 'missed', false);
+      const allowed = tacticDepthBadge(
+        fm.allowed_tactic_motif,
+        fm.allowed_tactic_depth,
+        'allowed',
+        false,
+      );
       if (missed != null || allowed != null)
         m.set(fm.ply, { missed: missed ?? undefined, allowed: allowed ?? undefined });
     }
@@ -559,14 +554,13 @@ export function LibraryGameCard({
   // the board shows the final position with no single "last move" to mark).
   const lastMove = hoverEntry ? { from: hoverEntry.from, to: hoverEntry.to } : undefined;
 
-  // Engine best move that SHOULD have been played to reach the scrubbed position,
-  // as a blue arrow that updates while scrubbing. It pairs with the yellow last-move
-  // highlight: both originate from the position BEFORE the played move, so the user
-  // sees "what I played (yellow) vs what was best (blue)" — not the opponent's best
-  // reply. The scrubbed board perPly[activePly] is game-ply activePly+1, and the move
-  // that reached it was played from game-ply activePly, so the best alternative is the
-  // best_move stored on the eval-series point at ply==activePly. Null for
-  // lichess-eval-only games (no PV) and at rest.
+  // Engine best move FROM the scrubbed position, as a blue arrow that updates while
+  // scrubbing — i.e. what the engine would play NEXT in the position the board shows.
+  // The scrubbed board perPly[activePly] is the position AFTER move activePly, so its
+  // best move lives on the NEXT eval-series row: best_move[activePly+1] (best move from
+  // that position). best_move[activePly] is the move that *led into* the shown position,
+  // which drew the arrow one ply behind (UAT thl item 2). Null for lichess-eval-only
+  // games (no PV), at rest, and at the final position.
   const bestMoveByPly = useMemo(() => {
     const m = new Map<number, string>();
     for (const pt of game.eval_series ?? []) {
@@ -575,33 +569,71 @@ export function LibraryGameCard({
     return m;
   }, [game.eval_series]);
   const bestMoveSquares =
+    activePly != null ? uciToSquares(bestMoveByPly.get(activePly + 1) ?? null) : null;
+  // Board arrows: just the blue best-move arrow (the flaw shows as a corner glyph). No
+  // depth label — the arrow is the best continuation from here, not the missed tactic at
+  // the prior decision (that depth still rides the played-move corner glyph below).
+  // Should-have-played (teal, TAC_MISSED) arrow source: the engine best move FROM the pre-flaw
+  // DECISION position perPly[activePly-1], which the eval series stores at
+  // bestMoveByPly.get(activePly) — because best_move[j] = best move from perPly[j-1] (the
+  // blue following-best uses get(activePly+1) = best from the displayed perPly[activePly]).
+  // This get(k) vs get(k+1) distinction is the recurring off-by-one; it renders the SAME
+  // move FlawCard's blue should-have-played arrow shows for the same flaw (Quick 260628-1t5).
+  const shouldHaveSquares =
     activePly != null ? uciToSquares(bestMoveByPly.get(activePly) ?? null) : null;
-  // Board arrows: blue best-move arrow plus a colored played-move arrow for the
-  // flawed move (red = blunder, orange = mistake, yellow = inaccuracy).
   const boardArrows = useMemo(() => {
-    const depths = activePly != null ? tacticDepthByPly.get(activePly) : undefined;
     const arrows: { from: string; to: string; color: string; label?: string; labelColor?: string }[] =
       [];
     if (bestMoveSquares) {
+      // Following-best arrow: the missed-tactic depth rides the teal should-have-played arrow
+      // below (Quick 260628-1t5, reverting cfaa7856). When the scrubbed flaw allowed a tactic,
+      // this arrow IS the opponent's refuting response, so it carries the allowed-tactic crimson
+      // AND the allowed depth label — the label belongs on the response's target square, not the
+      // played flaw square (Quick 260628-pu2 UAT round 2). Otherwise it stays the neutral
+      // best-continuation blue with no label.
+      const allowedDepth = activePly != null ? tacticDepthByPly.get(activePly)?.allowed : undefined;
       arrows.push({
         from: bestMoveSquares.from,
         to: bestMoveSquares.to,
-        color: BEST_MOVE_ARROW,
-        label: depths?.missed,
+        color: allowedDepth != null ? TAC_ALLOWED : BEST_MOVE_ARROW,
+        label: allowedDepth,
+        labelColor: allowedDepth != null ? TAC_ALLOWED_LABEL : undefined,
+      });
+    }
+    // Teal (TAC_MISSED) should-have-played arrow at a missed-tactic flaw ply (DECISION 1): a
+    // counterfactual arrow on the post-flaw miniboard, mirroring the analysis board.
+    const missedDepth = activePly != null ? tacticDepthByPly.get(activePly)?.missed : undefined;
+    if (shouldHaveSquares && missedDepth != null) {
+      arrows.push({
+        from: shouldHaveSquares.from,
+        to: shouldHaveSquares.to,
+        color: TAC_MISSED,
+        label: missedDepth,
         labelColor: TAC_MISSED_LABEL,
       });
     }
-    if (hoverEntry && hoverSeverity) {
-      arrows.push({
-        from: hoverEntry.from,
-        to: hoverEntry.to,
-        color: FLAW_ARROW_COLOR[hoverSeverity],
-        label: depths?.allowed,
-        labelColor: TAC_ALLOWED_LABEL,
-      });
-    }
     return arrows.length > 0 ? arrows : undefined;
-  }, [bestMoveSquares, hoverEntry, hoverSeverity, activePly, tacticDepthByPly]);
+  }, [bestMoveSquares, shouldHaveSquares, activePly, tacticDepthByPly]);
+
+  // Severity glyph marker on the played (flawed) move's target square (item 4). The allowed
+  // depth label now rides the crimson opponent-response arrow (its target square), not this
+  // played-flaw square (Quick 260628-pu2 UAT round 2 — the label was on the wrong square).
+  const squareMarkers = useMemo<SquareMarker[] | undefined>(() => {
+    if (!hoverEntry || !hoverSeverity) return undefined;
+    return [
+      {
+        square: hoverEntry.to,
+        severity: hoverSeverity,
+      },
+    ];
+  }, [hoverEntry, hoverSeverity]);
+
+  // Severity-coded last-move overlay (item 5): the scrubbed flaw move gets its
+  // red/orange/yellow tint; a clean scrubbed move reads green. At rest there is no
+  // lastMove, so the color is unused.
+  const lastMoveColor = hoverEntry
+    ? (hoverSeverity ? MOVE_HIGHLIGHT_SEVERITY[hoverSeverity] : MOVE_HIGHLIGHT_GOOD)
+    : undefined;
 
   const whiteName = game.white_username ?? '?';
   const blackName = game.black_username ?? '?';
@@ -635,6 +667,13 @@ export function LibraryGameCard({
     ? platformPlyUrl(game.platform, game.platform_url, hoverPly, game.user_color)
     : gamePlatformUrl(game.platform, game.platform_url, game.user_color);
   const linkLabel = isScrubbedBack ? 'Open at this move on platform' : 'Open game on platform';
+
+  // Analyze deep-link ply (Quick 260628-qta UAT): when the slider rests on the game's
+  // end position (not scrubbed back), omit the ply so the analysis board opens the game
+  // at ply 0. When scrubbed to an earlier move, deep-link to that move's ply. isScrubbedBack
+  // already means "slider is somewhere other than the last eval'd (end) ply".
+  const analyzePly = isScrubbedBack ? hoverPly : null;
+  const analyzeTo = buildGameAnalysisUrl(game.game_id, analyzePly);
   const platformIconAndLink = (
     <span className="ml-auto shrink-0 flex items-center gap-1.5 text-muted-foreground">
       <PlatformIcon platform={game.platform} className="h-4 w-4" />
@@ -891,42 +930,23 @@ export function LibraryGameCard({
       />
     );
 
-  // D-03 Explore button (Phase 135) — desktop. Quick 260625-2: pinned as its own row
-  // below the board + right-column row, spanning the whole card width (instead of below
-  // the Missed column's chips). Always rendered; disabled+tooltip when the parked ply is
-  // not a tagged user flaw (D-02).
-  const renderDesktopExploreButton = () => (
-    <div className="w-full">
-      {isTaggedFlaw ? (
-        <Button
-          variant="brand-outline"
-          // Default Button size (h-8) to match the import-page quicklink buttons.
-          className="w-full"
-          data-testid="game-card-btn-explore"
-          aria-label="Explore tactic line for selected flaw"
-          onClick={() => setExploreOpen(true)}
+  // D-06/D-08: Unified Analyze button — analyzed games only. Replaces the old Explore +
+  // Analyze-position pair. Opens /analysis?game_id=X&ply=Y; ply is the current slider
+  // position (hoverPly) falling back to the last eval'd ply then 0.
+  const renderDesktopExploreButton = () =>
+    isAnalyzed ? (
+      <Button asChild variant="brand-outline" className="w-full">
+        {/* Real <a> via Link for middle-click / cmd-click new-tab support. */}
+        <Link
+          to={analyzeTo}
+          data-testid="btn-library-game-analyze"
+          aria-label="Analyze game"
         >
           <Search className="h-4 w-4 mr-1" />
-          Explore
-        </Button>
-      ) : (
-        <Tooltip content="Park the slider on a tactic flaw to explore it" side="top">
-          <span className="block w-full">
-            <Button
-              variant="brand-outline"
-              className="w-full"
-              data-testid="game-card-btn-explore"
-              aria-label="Explore tactic line for selected flaw"
-              disabled
-            >
-              <Search className="h-4 w-4 mr-1" />
-              Explore
-            </Button>
-          </span>
-        </Tooltip>
-      )}
-    </div>
-  );
+          Analyze
+        </Link>
+      </Button>
+    ) : null;
 
   return (
     // The docked readout and slider live inside the card, so overflowVisible and
@@ -951,7 +971,9 @@ export function LibraryGameCard({
               flipped={game.user_color === 'black'}
               size={mobileBoardSize}
               arrows={boardArrows}
+              squareMarkers={squareMarkers}
               lastMove={lastMove}
+              lastMoveColor={lastMoveColor}
             />
           )}
           <div className="flex-1 min-w-0 flex flex-col gap-1">
@@ -987,40 +1009,22 @@ export function LibraryGameCard({
         <div className="flex flex-col gap-2">
           {flawContent}
         </div>
-        {/* D-03 Explore button (Phase 135) — mobile, below eval chart. Always visible;
-            disabled+tooltip when the parked ply is not a tagged user flaw (D-02). */}
-        {/* Mobile: no separate Game button on the card (the card IS the game),
-            so the Explore button spans the full card width. */}
-        <div className="md:hidden">
-          {isTaggedFlaw ? (
-            <Button
-              variant="brand-outline"
-              // Default Button size (h-8) to match the import-page quicklink buttons.
-              className="w-full"
-              data-testid="game-card-btn-explore"
-              aria-label="Explore tactic line for selected flaw"
-              onClick={() => setExploreOpen(true)}
-            >
-              <Search className="h-4 w-4 mr-1" />
-              Explore
+        {/* D-06/D-08: Unified Analyze button — mobile, below eval chart. Analyzed games only. */}
+        {isAnalyzed && (
+          <div className="md:hidden flex gap-2">
+            <Button asChild variant="brand-outline" className="w-full">
+              {/* Real <a> via Link for middle-click / cmd-click new-tab support. */}
+              <Link
+                to={analyzeTo}
+                data-testid="btn-library-game-analyze"
+                aria-label="Analyze game"
+              >
+                <Search className="h-4 w-4 mr-1" />
+                Analyze
+              </Link>
             </Button>
-          ) : (
-            <Tooltip content="Park the slider on a tactic flaw to explore it" side="top">
-              <span className="block w-full">
-                <Button
-                  variant="brand-outline"
-                  className="w-full"
-                  data-testid="game-card-btn-explore"
-                  aria-label="Explore tactic line for selected flaw"
-                  disabled
-                >
-                  <Search className="h-4 w-4 mr-1" />
-                  Explore
-                </Button>
-              </span>
-            </Tooltip>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Desktop body (Quick 260622-fdh): full-width metadata strip on top, then a
@@ -1041,7 +1045,9 @@ export function LibraryGameCard({
                 flipped={game.user_color === 'black'}
                 size={DESKTOP_BOARD_SIZE}
                 arrows={boardArrows}
+                squareMarkers={squareMarkers}
                 lastMove={lastMove}
+                lastMoveColor={lastMoveColor}
               />
             )}
           </div>
@@ -1115,22 +1121,10 @@ export function LibraryGameCard({
           )}
           </div>
         </div>
-        {/* D-03 Explore button (Quick 260625-2): own full-width row below the board +
-            right-column row, spanning the whole card. */}
+        {/* D-01 Explore + D-02 Analyze position button row (Quick 260625-2):
+            own full-width row below the board + right-column row, spanning the whole card. */}
         {renderDesktopExploreButton()}
       </div>
-
-      {/* D-01 TacticLineExplorer — stacks over the Game modal (renders as Dialog/Drawer
-          internally; its own z-index sits above the game Dialog). Opened from the Explore
-          button; closing only dismisses the explorer, leaving the game modal open. */}
-      {isTaggedFlaw && hoverPly != null && (
-        <TacticLineExplorer
-          open={exploreOpen}
-          onOpenChange={setExploreOpen}
-          gameId={game.game_id}
-          ply={hoverPly}
-        />
-      )}
     </Card>
   );
 }

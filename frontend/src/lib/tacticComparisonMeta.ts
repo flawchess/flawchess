@@ -560,15 +560,20 @@ export function resolveVisibleTactic(
   motif: string | null,
   depth: number | null,
   filter?: FlawFilterState,
+  anchored = true,
 ): VisibleTactic | null {
   if (motif == null) return null;
   const label = tacticMotifLabel(motif);
   if (TACTIC_FAMILY_FOR_MOTIF[label] == null) return null;
+  // NOTE: `anchored` only changes the DISPLAY depth (depthLabel). The filter predicate
+  // (`slotPassesFilter`) is the FE mirror of the backend depth filter and always keeps
+  // the +1 allowed anchor offset, regardless of this flag (Quick 260628-1t5 DECISION 2).
   if (filter != null && !slotPassesFilter(orientation, motif, depth, filter)) return null;
   return {
     motif,
     motifLabel: label,
-    depthLabel: depth != null ? String(toDisplayDepthForOrientation(depth, orientation)) : null,
+    depthLabel:
+      depth != null ? String(toDisplayDepthForOrientation(depth, orientation, anchored)) : null,
   };
 }
 
@@ -582,8 +587,9 @@ export function tacticDepthBadge(
   motif: string | null,
   depth: number | null,
   orientation: TacticDepthOrientation,
+  anchored = true,
 ): string | null {
-  return resolveVisibleTactic(orientation, motif, depth)?.depthLabel ?? null;
+  return resolveVisibleTactic(orientation, motif, depth, undefined, anchored)?.depthLabel ?? null;
 }
 
 // ─── Stat helpers (shared by the grid + tooltips) ──────────────────────────────

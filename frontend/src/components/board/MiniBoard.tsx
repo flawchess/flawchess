@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
 import { Chessboard } from 'react-chessboard';
 import { darkSquareStyle, lightSquareStyle, MOVE_HIGHLIGHT_SQUARE } from '../../lib/theme';
+import { DepthLabel, SquareMarkerGroup } from './boardMarkers';
+import type { SquareMarker } from './boardMarkers';
 import { squareToCoords, buildArrowPath } from './arrowGeometry';
 
 // Fine-arrow proportions, distinct from ChessBoard.tsx's normalized 0..1 width
@@ -13,16 +15,8 @@ const MINI_HEAD_LENGTH_RATIO = 0.7;
 const MINI_ARROW_OPACITY = 0.65;
 const MINI_TIP_OVERSHOOT = 0.16;
 
-// Depth-label badge (tactic depth shown at an arrow's target square): a large
-// number with a black outline drawn on top of the arrowhead so it reads as the
-// labeled endpoint on any square color. Fill defaults to white but callers tint
-// it (light blue for missed tactics, light red for allowed). Fractions of a square.
-const DEPTH_LABEL_FONT = 0.55;
-const DEPTH_LABEL_OUTLINE = 0.09;
-const DEPTH_LABEL_DEFAULT_FILL = 'white';
-// Inset from the square's top-right corner so the badge sits in the corner
-// (clear of the piece) rather than centered over it. Fraction of a square.
-const DEPTH_LABEL_CORNER_INSET = 0.08;
+// Depth-label badges and severity corner markers render via ./boardMarkers, shared
+// with the analysis ChessBoard so both boards draw identical marks (Quick 260627-r9g).
 
 interface MiniBoardArrow {
   from: string;
@@ -53,8 +47,37 @@ interface MiniBoardProps {
   flipped?: boolean;
   arrows?: ReadonlyArray<MiniBoardArrow>;
   cornerDot?: MiniBoardCornerDot;
+  /** Severity glyph badges drawn in a square's top-right corner (item 4). */
+  squareMarkers?: ReadonlyArray<SquareMarker>;
   /** From/to squares of the move that reached this position — highlighted like the Openings board. */
   lastMove?: { from: string; to: string };
+  /** Last-move overlay color; defaults to the shared translucent yellow (item 5). */
+  lastMoveColor?: string;
+}
+
+function MiniMarkerOverlay({
+  markers,
+  size,
+  flipped,
+}: {
+  markers: ReadonlyArray<SquareMarker>;
+  size: number;
+  flipped: boolean;
+}) {
+  if (markers.length === 0) return null;
+  const sqSize = size / 8;
+  return (
+    <svg
+      width={size}
+      height={size}
+      style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
+      data-testid="mini-board-marker-overlay"
+    >
+      {markers.map((marker) => (
+        <SquareMarkerGroup key={`marker-${marker.square}`} marker={marker} sqSize={sqSize} flipped={flipped} />
+      ))}
+    </svg>
+  );
 }
 
 function MiniCornerDotOverlay({
@@ -143,32 +166,20 @@ function MiniArrowOverlay({
           />
         );
       })}
-      {/* Depth-label badges drawn last so they sit on top of the arrowheads. */}
-      {arrows.map((a) => {
-        if (!a.label) return null;
-        const [tx, ty] = squareToCoords(a.to, flipped);
-        // Anchor the badge to the square's top-right corner (inset slightly) so
-        // it stays clear of the piece instead of covering it.
-        const cx = (tx + 0.5 - DEPTH_LABEL_CORNER_INSET) * sqSize;
-        const cy = (ty - 0.5 + DEPTH_LABEL_CORNER_INSET) * sqSize;
-        return (
-          <text
+      {/* Depth-label badges drawn last so they sit on top of the arrowheads
+          (top-left corner, shared geometry — Quick 260627-r9g item 6). */}
+      {arrows.map((a) =>
+        a.label ? (
+          <DepthLabel
             key={`label-${a.from}-${a.to}`}
-            x={cx}
-            y={cy}
-            fill={a.labelColor ?? DEPTH_LABEL_DEFAULT_FILL}
-            stroke="black"
-            strokeWidth={DEPTH_LABEL_OUTLINE * sqSize}
-            paintOrder="stroke"
-            fontSize={DEPTH_LABEL_FONT * sqSize}
-            fontWeight="700"
-            textAnchor="end"
-            dominantBaseline="hanging"
-          >
-            {a.label}
-          </text>
-        );
-      })}
+            square={a.to}
+            label={a.label}
+            color={a.labelColor}
+            sqSize={sqSize}
+            flipped={flipped}
+          />
+        ) : null,
+      )}
     </svg>
   );
 }
@@ -179,19 +190,22 @@ export function MiniBoard({
   flipped = false,
   arrows,
   cornerDot,
+  squareMarkers,
   lastMove,
+  lastMoveColor,
 }: MiniBoardProps) {
-  // Highlight the move's from/to squares with the same translucent yellow as the
-  // Openings ChessBoard last-move highlight (MOVE_HIGHLIGHT_SQUARE).
+  // Highlight the move's from/to squares. Severity-coded on the games card
+  // (item 5); default translucent yellow (MOVE_HIGHLIGHT_SQUARE) elsewhere.
   const lastFrom = lastMove?.from ?? null;
   const lastTo = lastMove?.to ?? null;
+  const highlightColor = lastMoveColor ?? MOVE_HIGHLIGHT_SQUARE;
   const squareStyles = useMemo<Record<string, { backgroundColor: string }>>(() => {
     if (!lastFrom || !lastTo) return {};
     return {
-      [lastFrom]: { backgroundColor: MOVE_HIGHLIGHT_SQUARE },
-      [lastTo]: { backgroundColor: MOVE_HIGHLIGHT_SQUARE },
+      [lastFrom]: { backgroundColor: highlightColor },
+      [lastTo]: { backgroundColor: highlightColor },
     };
-  }, [lastFrom, lastTo]);
+  }, [lastFrom, lastTo, highlightColor]);
 
   // Memoize the options object so re-renders of an ancestor (e.g. /openings/games
   // mounts up to 20 MiniBoards) don't hand react-chessboard 5.x a fresh `options`
@@ -221,6 +235,9 @@ export function MiniBoard({
       <Chessboard options={options} />
       {arrows && arrows.length > 0 && (
         <MiniArrowOverlay arrows={arrows} size={size} flipped={flipped} />
+      )}
+      {squareMarkers && squareMarkers.length > 0 && (
+        <MiniMarkerOverlay markers={squareMarkers} size={size} flipped={flipped} />
       )}
       {cornerDot && <MiniCornerDotOverlay dot={cornerDot} size={size} flipped={flipped} />}
     </div>

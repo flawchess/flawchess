@@ -173,7 +173,7 @@ export function TacticMotifChip({
   // Unknown motif (no family mapping) — render nothing rather than a broken chip.
   if (colors == null) return null;
 
-  // Orientation drives the chip color (Missed = blue, Allowed = light red) so the two
+  // Orientation drives the chip color (Missed = teal, Allowed = crimson) so the two
   // orientations read apart at a glance; fall back to the family color when no
   // orientation context is provided. The family icon is unchanged.
   const color =
@@ -185,7 +185,7 @@ export function TacticMotifChip({
         ? TAC_ALLOWED_BG
         : colors.bg;
   // Allowed chips use a dedicated lower-alpha border (rather than the text color, the
-  // default for other orientations) so the light-red fill stays legible.
+  // default for other orientations) so the crimson fill stays legible.
   const border = orientation === 'allowed' ? TAC_ALLOWED_BORDER : color;
 
   return (

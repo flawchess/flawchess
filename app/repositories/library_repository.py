@@ -1130,6 +1130,36 @@ async def fetch_page_game_flaws(
     return result
 
 
+async def fetch_page_game_flaws_both_colors(
+    session: AsyncSession,
+    user_id: int,
+    game_ids: Sequence[int],
+) -> dict[int, list[GameFlaw]]:
+    """Batch-load game_flaws rows for BOTH movers, grouped by game_id.
+
+    WARNING: This ungated both-color variant exists SOLELY to populate eval-chart
+    tactic tooltips for opponent plies. It MUST NOT feed severity counts, curated
+    chips, the Games-tab EXISTS filter, or any stats — those stay on the
+    player-gated fetch_page_game_flaws. See Quick 260628-u7d.
+
+    Identical in shape/return type to fetch_page_game_flaws but omits the
+    player_only_gate and the Game JOIN (the JOIN existed only to bring user_color
+    into scope for that gate). User-scoped via GameFlaw.user_id == user_id (IDOR).
+    """
+    if not game_ids:
+        return {}
+    stmt = select(GameFlaw).where(
+        GameFlaw.user_id == user_id,
+        GameFlaw.game_id.in_(game_ids),
+        # No player_only_gate here — intentionally returns both movers' rows.
+    )
+    rows = list((await session.execute(stmt)).scalars().all())
+    result: dict[int, list[GameFlaw]] = {gid: [] for gid in game_ids}
+    for row in rows:
+        result[row.game_id].append(row)
+    return result
+
+
 async def fetch_page_eval_positions(
     session: AsyncSession,
     user_id: int,

@@ -124,6 +124,26 @@ interface EvalChartProps {
    */
   commandedPly?: number | null;
   commandSeq?: number;
+  /**
+   * Override the slider's data-testid. Defaults to `eval-slider-${gameId}` so
+   * existing LibraryGameCard callers require no change. The analysis page passes
+   * 'analysis-eval-chart-slider' for its dedicated testid (plan 140-01, D-05).
+   */
+  sliderTestId?: string;
+  /**
+   * Park the slider: when true, the input is disabled and dimmed with a tooltip
+   * explaining the user must return to the main line to scrub. Applies on any
+   * sideline (PV or sub-PV). When false/omitted, the slider behaves normally.
+   */
+  sliderDisabled?: boolean;
+  /**
+   * Externally-driven slider position (Quick 260627-mt8). When this changes, the
+   * slider parks at the given ply WITHOUT surfacing the tooltip or stealing focus
+   * (unlike commandedPly). The analysis page passes the board's current main-line
+   * ply (or the fork point on a sideline) so navigating the move list / board keeps
+   * the eval-chart slider in sync. Clamped into the eval'd ply range; null is a no-op.
+   */
+  syncPly?: number | null;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -192,6 +212,13 @@ const TOOLTIP_SIDE_FLIP_PCT = 50;
  * so the thumb center, rather than its edge, spans the chart's full width.
  */
 const SLIDER_THUMB_PX = 16;
+
+/**
+ * Max finger travel (px) for a chart touch to count as a tap (commit the slider)
+ * rather than a drag (preview-only). Above this the touch is a scrub that reverts
+ * on lift, per the "drag doesn't move the slider" rule (Quick 260627-r9g).
+ */
+const TAP_MOVE_TOLERANCE_PX = 8;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -481,6 +508,9 @@ export function EvalChart({
   initialPly,
   commandedPly,
   commandSeq,
+  sliderTestId,
+  sliderDisabled = false,
+  syncPly,
 }: EvalChartProps) {
   // The tooltip shows flaw detail whenever the marker's dot is visible: M/B always,
   // inaccuracy only when revealed (highlighted via its badge, or cycled to). The dot
@@ -520,27 +550,73 @@ export function EvalChart({
   const [sliderPly, setSliderPly] = useState<number>(restingPly);
   const [hoverPly, setHoverPly] = useState<number | null>(null);
 
+  // True while a transient chart preview is active (desktop hover or mobile drag
+  // OVER the chart). While previewing, the slider thumb must NOT move: the parent
+  // may echo the previewed ply back via syncPly (the analysis board navigates on
+  // hover), and that echo would otherwise sweep the thumb along. A ref (not state)
+  // so toggling it never itself re-runs the syncPly effect. (Quick 260627-r9g.)
+  const previewingRef = useRef(false);
+
+  // Notify the parent of the active scrub ply. Called IMPERATIVELY from the user-
+  // gesture handlers below (slider / chart hover / touch / command / data-swap),
+  // never from a derived effect keyed on the active ply. That distinction is the
+  // FLAWCHESS-7B fix: when this drives the parent's board navigation (analysis page),
+  // notifying from a passive effect re-enters as a "nested update", and under rapid
+  // scrubbing the parent goToNode → syncPly → setSliderPly round-trip accumulates
+  // past React's 50-deep nested-update guard → "Maximum update depth exceeded".
+  // Event-handler updates are discrete and yield between events, so they never pile
+  // up. Parent-driven syncPly is deliberately NOT echoed back (the parent already
+  // knows that ply), which also keeps the binding one-directional.
+  const notifyActivePly = (ply: number): void => {
+    onHoverPlyChange?.(ply);
+  };
+
   // Reset sliderPly when the resting ply changes (a data swap moves sliderMax; opening
-  // a different flaw moves initialPly). useEffect runs after render — setState inside
-  // triggers a re-render with the new value.
+  // a different flaw moves initialPly), and report it once so the parent miniboard
+  // syncs on mount / data swap. useEffect runs after render — low-frequency, so the
+  // notify here can't accumulate the way a per-scrub effect would.
   useEffect(() => {
     setSliderPly(restingPly);
+    notifyActivePly(restingPly);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restingPly]);
+
+  // External sync (Quick 260627-mt8): park the slider on a parent-driven ply when
+  // it changes — e.g. the analysis board navigating via the move list. Unlike
+  // commandedPly this never focuses the input or shows the tooltip (keyboard board
+  // navigation must not be stolen). Clamped into the eval'd range; null is a no-op.
+  // Does NOT call notifyActivePly — echoing a parent-pushed ply straight back is the
+  // render loop above.
+  useEffect(() => {
+    if (syncPly == null) return;
+    // While the user is previewing via chart hover/drag, hold the thumb still — the
+    // slider only follows deliberate navigation (move-list click), not a hover sweep.
+    if (previewingRef.current) return;
+    setSliderPly(Math.min(Math.max(syncPly, sliderMin), sliderMax));
+  }, [syncPly, sliderMin, sliderMax]);
 
   const activePly = hoverPly ?? sliderPly;
 
-  // Report activePly to parent on every change — drives the parent's miniboard.
-  useEffect(() => {
-    onHoverPlyChange?.(activePly);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activePly]); // intentionally exclude onHoverPlyChange to avoid spurious re-fires
-
-  // Chart mouse handlers: hover sets hoverPly; leave clears it (activePly falls back to sliderPly).
+  // Chart mouse handlers: hover sets hoverPly; leave clears it (activePly falls back to
+  // sliderPly). Each reports the new active ply to the parent in the same event.
   const handlePointerMove = (state: { activeLabel?: string | number }) => {
     const raw = state?.activeLabel;
-    setHoverPly(raw == null ? null : Number(raw));
+    if (raw == null) {
+      previewingRef.current = false;
+      setHoverPly(null);
+      notifyActivePly(sliderPly);
+    } else {
+      const ply = Number(raw);
+      previewingRef.current = true;
+      setHoverPly(ply);
+      notifyActivePly(ply);
+    }
   };
-  const handleMouseLeave = () => setHoverPly(null);
+  const handleMouseLeave = () => {
+    previewingRef.current = false;
+    setHoverPly(null);
+    notifyActivePly(sliderPly);
+  };
 
   // Slider handler: explicit user scrub sets sliderPly and clears any lingering
   // hoverPly so the crosshair/tooltip immediately track the thumb. Clearing hover
@@ -553,24 +629,85 @@ export function EvalChart({
   };
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (hoverPly != null) setHoverPly(null);
-    setSliderPly(Number(e.target.value));
+    const ply = Number(e.target.value);
+    setSliderPly(ply);
+    notifyActivePly(ply);
   };
 
-  // Touch scrub over the chart. On coarse pointers the recharts surface is inert
-  // (pointer-events-none, see below) so recharts' onMouseMove never fires; a
-  // transparent overlay (rendered below the chart) forwards finger drags here. We
-  // map clientX → nearest ply across the chart's 0%–100% span and write sliderPly
-  // (not hoverPly — touch has no leave event to clear a sticky hover), giving touch
-  // users the same drag-to-scrub the desktop hover provides.
-  const handleChartTouchScrub = (e: React.TouchEvent<HTMLDivElement>): void => {
+  // Touch interaction over the chart. On coarse pointers the recharts surface is inert
+  // (pointer-events-none, see below) so recharts' onMouseMove/onClick never fire; a
+  // transparent overlay (rendered below the chart) forwards finger gestures here. We map
+  // clientX → nearest ply across the chart's 0%–100% span. Two gestures (Quick 260627-r9g):
+  //   • DRAG  → transient PREVIEW (mirrors desktop hover): drives the board + tooltip via
+  //             hoverPly but leaves the slider put; reverts to the committed ply on lift.
+  //   • TAP   → commits the slider to the tapped ply (mirrors desktop click).
+  // touchStartXRef / touchMovedRef distinguish the two; lastTouchPlyRef carries the final
+  // ply to the touchend handler (state would be stale in the closure).
+  const touchStartXRef = useRef<number | null>(null);
+  const touchMovedRef = useRef(false);
+  const lastTouchPlyRef = useRef<number | null>(null);
+
+  const plyFromTouchX = (clientX: number, rect: DOMRect): number => {
+    const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    return Math.round(sliderMin + frac * (sliderMax - sliderMin));
+  };
+  const handleChartTouchStart = (e: React.TouchEvent<HTMLDivElement>): void => {
     const touch = e.touches[0];
     if (!touch) return;
     const rect = e.currentTarget.getBoundingClientRect();
     if (rect.width <= 0) return;
-    const frac = Math.max(0, Math.min(1, (touch.clientX - rect.left) / rect.width));
+    const ply = plyFromTouchX(touch.clientX, rect);
+    touchStartXRef.current = touch.clientX;
+    touchMovedRef.current = false;
+    lastTouchPlyRef.current = ply;
+    previewingRef.current = true;
+    setHoverPly(ply);
+    notifyActivePly(ply);
+  };
+  const handleChartTouchMove = (e: React.TouchEvent<HTMLDivElement>): void => {
+    const touch = e.touches[0];
+    if (!touch) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const ply = plyFromTouchX(touch.clientX, rect);
+    if (
+      touchStartXRef.current != null &&
+      Math.abs(touch.clientX - touchStartXRef.current) > TAP_MOVE_TOLERANCE_PX
+    ) {
+      touchMovedRef.current = true;
+    }
+    lastTouchPlyRef.current = ply;
+    setHoverPly(ply);
+    notifyActivePly(ply);
+  };
+  const handleChartTouchEnd = (): void => {
+    if (!previewingRef.current) return;
+    previewingRef.current = false;
     setHoverPly(null);
-    setSliderPly(Math.round(sliderMin + frac * (sliderMax - sliderMin)));
-    setSliderFocused(true);
+    // Tap (no meaningful travel) commits the slider; a drag is preview-only and reverts.
+    if (!touchMovedRef.current && lastTouchPlyRef.current != null) {
+      const ply = lastTouchPlyRef.current;
+      setSliderPly(ply);
+      notifyActivePly(ply);
+    } else {
+      notifyActivePly(sliderPly);
+    }
+    touchStartXRef.current = null;
+    lastTouchPlyRef.current = null;
+    touchMovedRef.current = false;
+  };
+
+  // Desktop click on the chart commits the slider to the clicked ply (recharts passes
+  // the ply at the click x as activeLabel). Hover stays a transient preview; the click
+  // is what moves the thumb. Clearing previewingRef lets the committed ply settle.
+  const handleChartClick = (state: { activeLabel?: string | number }): void => {
+    const raw = state?.activeLabel;
+    if (raw == null) return;
+    const ply = Number(raw);
+    previewingRef.current = false;
+    setHoverPly(null);
+    setSliderPly(ply);
+    notifyActivePly(ply);
   };
 
   // Tooltip is interaction-gated: chart hover or slider engagement. On desktop the
@@ -608,7 +745,9 @@ export function EvalChart({
     setHoverPly(null);
     setSliderPly(commandedPly);
     setSliderFocused(true);
+    notifyActivePly(commandedPly);
     if (!isTouch) sliderRef.current?.focus({ preventScroll: true });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commandSeq, commandedPly, isTouch]);
 
   // Opened parked on a flaw ply (FlawCard modal via initialPly): the slider already
@@ -663,6 +802,8 @@ export function EvalChart({
       if (family == null) return;
       out.push({ orientation, motif: raw, family, depth });
     };
+    // Both orientations come from this ply's own flaw marker (Quick 260628-1t5, reverting
+    // cfaa7856's one-ply-early missed sourcing — the miss belongs to the flaw ply).
     add(activeMarker.missed_tactic_motif, 'missed', activeMarker.missed_tactic_depth);
     add(activeMarker.allowed_tactic_motif, 'allowed', activeMarker.allowed_tactic_depth);
     return out;
@@ -752,6 +893,7 @@ export function EvalChart({
           margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
           onMouseMove={handlePointerMove}
           onMouseLeave={handleMouseLeave}
+          onClick={handleChartClick}
         >
           {/* Hidden axes — compact sparkline mode, no ticks or labels. */}
           <XAxis dataKey="ply" hide />
@@ -851,8 +993,10 @@ export function EvalChart({
       {isTouch && (
         <div
           className="absolute inset-0 z-10 touch-none"
-          onTouchStart={handleChartTouchScrub}
-          onTouchMove={handleChartTouchScrub}
+          onTouchStart={handleChartTouchStart}
+          onTouchMove={handleChartTouchMove}
+          onTouchEnd={handleChartTouchEnd}
+          onTouchCancel={handleChartTouchEnd}
           data-testid={`eval-chart-scrub-${gameId}`}
           aria-hidden="true"
         />
@@ -935,7 +1079,10 @@ export function EvalChart({
                               text (icon width + gap = 12px + 6px). */}
                           {depth != null && (
                             <span className="pl-[18px]">
-                              depth {toDisplayDepthForOrientation(depth, orientation)}
+                              {/* anchored=false (Quick 260628-1t5 DECISION 2): the eval-chart
+                                  tooltip is a navigable surface, so the allowed +1 offset is
+                                  dropped (allowed reads on the same scale as missed). */}
+                              depth {toDisplayDepthForOrientation(depth, orientation, false)}
                             </span>
                           )}
                         </li>
@@ -998,9 +1145,16 @@ export function EvalChart({
             setSliderFocused(true);
             handleSliderEngage();
           }}
-          data-testid={`eval-slider-${gameId}`}
+          data-testid={sliderTestId ?? `eval-slider-${gameId}`}
           aria-label={`Scrub move for game ${gameId}`}
-          className="w-full h-5 appearance-none bg-transparent cursor-pointer
+          disabled={sliderDisabled}
+          title={sliderDisabled ? 'Return to main game line to scrub' : undefined}
+          // `block` (not the default inline-block) so the input leaves no inline
+          // descender space below it — that 7px gap inflated the eval-chart container
+          // past the slider's true bottom and made the analysis board controls (which
+          // bottom-align to the container) hang ~7px below the slider (Quick w8k item 2,
+          // round 6 follow-up: "bottom alignment of the eval chart slider and controls").
+          className={`block w-full h-5 appearance-none bg-transparent cursor-pointer${sliderDisabled ? ' opacity-40 cursor-not-allowed pointer-events-none' : ''}
             [&::-webkit-slider-runnable-track]:h-1.5
             [&::-webkit-slider-runnable-track]:rounded-full
             [&::-webkit-slider-runnable-track]:bg-border/40
@@ -1017,7 +1171,7 @@ export function EvalChart({
             [&::-moz-range-thumb]:h-4
             [&::-moz-range-thumb]:rounded-full
             [&::-moz-range-thumb]:bg-foreground
-            [&::-moz-range-thumb]:border-0"
+            [&::-moz-range-thumb]:border-0`}
         />
       </div>
     </div>

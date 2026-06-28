@@ -1,38 +1,26 @@
-import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
-  Swords,
   Search,
   Calendar,
   Clock,
   Cpu,
   ExternalLink,
-  Loader2,
-  X,
 } from 'lucide-react';
 import {
   SEV_BLUNDER,
   SEV_MISTAKE,
   SEV_INACCURACY,
   BEST_MOVE_ARROW,
+  TAC_MISSED,
+  TAC_ALLOWED,
   TAC_MISSED_LABEL,
   TAC_ALLOWED_LABEL,
 } from '@/lib/theme';
 import { Card, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
-import {
-  Drawer,
-  DrawerContent,
-  DrawerHeader,
-  DrawerTitle,
-  DrawerClose,
-} from '@/components/ui/drawer';
-import { LoadError } from '@/components/ui/load-error';
 import { Tooltip } from '@/components/ui/tooltip';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
-import { LibraryGameCard } from '@/components/results/LibraryGameCard';
-import { TacticLineExplorer } from '@/components/library/TacticLineExplorer';
 import { SeverityBadge } from '@/components/library/SeverityBadge';
 import { TagChip, TagLegend } from '@/components/library/TagChip';
 import { platformPlyUrl } from '@/lib/platformLinks';
@@ -40,10 +28,9 @@ import { sanToSquares, uciToSquares } from '@/lib/sanToSquares';
 import { tacticDepthBadge } from '@/lib/tacticComparisonMeta';
 import { formatMoveNotation } from '@/lib/openingInsights';
 import { formatFlawEvalParts } from '@/lib/formatFlawEval';
-import { useLibraryGame } from '@/hooks/useLibrary';
-import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
 import { useMiniBoardSize } from '@/hooks/useMiniBoardSize';
 import { TacticMotifChip } from '@/components/library/TacticMotifChip';
+import { buildGameAnalysisUrl } from '@/lib/analysisUrl';
 import type { FlawListItem, FlawSeverity, TacticOrientation } from '@/types/library';
 
 // Standalone component per D-05 (sibling to LibraryGameCard — do NOT import from it).
@@ -55,27 +42,6 @@ import type { FlawListItem, FlawSeverity, TacticOrientation } from '@/types/libr
 // (resolved to 50% viewport by useMiniBoardSize).
 const DESKTOP_BOARD_SIZE = 200;
 const MOBILE_BOARD_SIZE = 132;
-
-// Matches Tailwind `md`; mirrors the local useIsMobile pattern in
-// TacticLineExplorer (no shared hook exists — each component clones it).
-const MOBILE_BREAKPOINT_PX = 768;
-
-/** True when the viewport is below the mobile breakpoint. Guards against a
- *  missing `matchMedia` (e.g. jsdom without a stub) by defaulting to desktop. */
-function useIsMobile(): boolean {
-  const query = `(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`;
-  const [isMobile, setIsMobile] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia?.(query).matches === true,
-  );
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
-    const mq = window.matchMedia(query);
-    const update = () => setIsMobile(mq.matches);
-    mq.addEventListener('change', update);
-    return () => mq.removeEventListener('change', update);
-  }, [query]);
-  return isMobile;
-}
 
 // Severity → accent color mapping (left-spine and board arrow color)
 const SEVERITY_COLOR: Record<FlawSeverity, string> = {
@@ -138,18 +104,6 @@ export interface FlawCardProps {
 }
 
 export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) {
-  const [open, setOpen] = useState(false);
-  const [exploreOpen, setExploreOpen] = useState(false);
-  const isMobile = useIsMobile();
-  // Phase 135 D-04: flaw is "tagged" when it has at least one tactic motif.
-  const isTagged =
-    flaw.missed_tactic_motif != null || flaw.allowed_tactic_motif != null;
-  // Quick 260621-sm8: forward the active tactic filter into the "View game" modal
-  // so the opened game nulls non-matching tactic slots the same way the flaw list
-  // does — otherwise the modal showed tactics outside the depth/orientation/family
-  // filter (e.g. a depth-12 tactic under a depth 1-2 filter).
-  const [flawFilter] = useFlawFilterStore();
-  const { data, isLoading, isError } = useLibraryGame(open ? flaw.game_id : null, flawFilter);
   // Mobile (<sm) miniboard spans 40% of the viewport width; sm+ keeps the fixed
   // size. The desktop body uses the literal DESKTOP_BOARD_SIZE instead (sm+ only).
   const mobileBoardSize = useMiniBoardSize(MOBILE_BOARD_SIZE);
@@ -182,13 +136,20 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
     tacticDepthBadge(flaw.allowed_tactic_motif, flaw.allowed_tactic_depth, 'allowed') ?? undefined;
   const missedDepthLabel =
     tacticDepthBadge(flaw.missed_tactic_motif, flaw.missed_tactic_depth, 'missed') ?? undefined;
+  // Arrow recolor (Quick 260628-ojq UAT): a move that belongs to a tactic carries the
+  // tactic's color instead of the generic severity/best-move color. The played-move arrow
+  // turns crimson (allowed) and the best-move arrow turns teal (missed). Gate on the same
+  // orientation + motif condition that decides whether each tactic chip renders, so the
+  // arrow color and the chip never disagree.
+  const showAllowedTactic = tacticOrientation !== 'missed' && flaw.allowed_tactic_motif != null;
+  const showMissedTactic = tacticOrientation !== 'allowed' && flaw.missed_tactic_motif != null;
   const boardArrows = [
     ...(moveSquares
       ? [
           {
             from: moveSquares.from,
             to: moveSquares.to,
-            color: severityColor,
+            color: showAllowedTactic ? TAC_ALLOWED : severityColor,
             label: allowedDepthLabel,
             labelColor: TAC_ALLOWED_LABEL,
           },
@@ -199,7 +160,7 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
           {
             from: bestMoveSquares.from,
             to: bestMoveSquares.to,
-            color: BEST_MOVE_ARROW,
+            color: showMissedTactic ? TAC_MISSED : BEST_MOVE_ARROW,
             label: missedDepthLabel,
             labelColor: TAC_MISSED_LABEL,
           },
@@ -237,38 +198,20 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
   // Square glyph: white square = white-piece side, black square = black-piece side.
   const opponentGlyph = flaw.user_color === 'white' ? '□' : '■';
 
-  // D-04 button row (Phase 135): dedicated Explore + Game buttons.
-  // Both surfaces get the same row so either can open the explorer (CLAUDE.md mobile
-  // parity rule). Padding/placement differ per surface: mobile wraps it as a full-width
-  // card-level row below the body; desktop nests it inside the right column under the
-  // context tags (Quick 260625), so the shared row stays padding-free here.
+  // D-09 / D-06: Unified Analyze button — opens /analysis?game_id=X&ply=Y at the flaw ply.
+  // Replaces the old Explore + Game pair; the Game modal path is deleted entirely.
   const buttonRow = (
     <div className="flex gap-2">
-      {isTagged && (
-        <Button
-          variant="brand-outline"
-          // Default Button size (h-8) to match the import-page Games/Openings/Endgames
-          // quicklink buttons (Quick 260625).
-          // Each button spans ~50% of the row: half each when both are present, and
-          // still ~50% (capped by max-w) when Explore appears alone (Quick 250626).
-          className="flex-1 max-w-[50%]"
-          data-testid="flaw-btn-explore"
-          aria-label="Explore tactic line"
-          onClick={() => setExploreOpen(true)}
+      <Button asChild variant="brand-outline" className="flex-1">
+        {/* Real <a> via Link for middle-click / cmd-click new-tab support. */}
+        <Link
+          to={buildGameAnalysisUrl(flaw.game_id, flaw.ply)}
+          data-testid="btn-flaw-analyze"
+          aria-label="Analyze game"
         >
           <Search className="h-4 w-4 mr-1" />
-          Explore
-        </Button>
-      )}
-      <Button
-        variant="brand-outline"
-        className="flex-1 max-w-[50%]"
-        data-testid="flaw-btn-game"
-        aria-label={`View full game for ${whiteName} vs ${blackName}`}
-        onClick={() => setOpen(true)}
-      >
-        <Swords className="h-4 w-4 mr-1" />
-        Game
+          Analyze
+        </Link>
       </Button>
     </div>
   );
@@ -452,74 +395,6 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
     </div>
   );
 
-  // Shared game-view body (loading / error / lazily-fetched card). min-w-0 lets
-  // the embedded recharts EvalChart track the container width instead of
-  // overflowing horizontally on mobile.
-  const gameBody = (
-    <>
-      {isLoading && (
-        <div className="flex justify-center p-8">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      )}
-      {isError && <LoadError resource="game" variant="centered" />}
-      {data && (
-        <div className="min-w-0">
-          {/* initialPly: park the eval-chart slider on the clicked flaw's ply so
-              the board and crosshair land on the flawed move. */}
-          <LibraryGameCard game={data} initialPly={flaw.ply} />
-        </div>
-      )}
-    </>
-  );
-
-  const gameCloseLabel = 'Close game view';
-  const gameView = isMobile ? (
-    // Mobile: right-side drawer (full width on phones, 3/4 on small tablets),
-    // mirroring TacticLineExplorer's mobile surface.
-    <Drawer open={open} onOpenChange={(v) => !v && setOpen(false)} direction="right">
-      <DrawerContent
-        data-testid="flaw-game-modal"
-        className="!w-full sm:!w-3/4 !bottom-auto !rounded-bl-xl max-h-[95vh] overflow-y-auto no-scrollbar"
-        aria-label="View full game"
-      >
-        <DrawerHeader className="flex flex-row items-center justify-between">
-          <DrawerTitle className="text-base font-semibold">Full game view</DrawerTitle>
-          <Tooltip content={gameCloseLabel}>
-            <DrawerClose asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={gameCloseLabel}
-                data-testid="flaw-game-close"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </DrawerClose>
-          </Tooltip>
-        </DrawerHeader>
-        <div className="px-4 pb-4">{gameBody}</div>
-      </DrawerContent>
-    </Drawer>
-  ) : (
-    <Dialog open={open} onOpenChange={(v) => !v && setOpen(false)}>
-      <DialogContent
-        // no-scrollbar: the EvalChart tooltip (allowEscapeViewBox y=true) renders
-        // downward and overhangs the chart. When the modal is content-height (the
-        // common single-card case) that overhang spills past the scroll container,
-        // making overflow-y-auto flash a scrollbar (and reflow). Hiding the bar keeps
-        // wheel/touch scroll for genuinely tall cards while killing the flicker.
-        // sm:p-6: more breathing room around the card on desktop.
-        className="no-scrollbar sm:max-w-4xl overflow-y-auto max-h-[90vh] sm:p-6"
-        data-testid="flaw-game-modal"
-        aria-label="View full game"
-      >
-        <DialogTitle className="sr-only">Full game view</DialogTitle>
-        {gameBody}
-      </DialogContent>
-    </Dialog>
-  );
-
   return (
     <Card
       as="article"
@@ -568,22 +443,6 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
         </div>
       </div>
 
-      {/* View-game surface — fetches lazily on open via useLibraryGame.
-          Desktop: centered Dialog. Mobile: right-side Drawer (Phase 135 UAT),
-          mirroring the TacticLineExplorer mobile pattern. */}
-      {gameView}
-
-      {/* D-04 TacticLineExplorer — opened by the Explore button on tagged flaws.
-          Renders as Dialog (desktop) or Drawer (mobile) internally per D-05.
-          D-01: stacks over the Game modal; closing only dismisses the explorer. */}
-      {isTagged && (
-        <TacticLineExplorer
-          open={exploreOpen}
-          onOpenChange={setExploreOpen}
-          gameId={flaw.game_id}
-          ply={flaw.ply}
-        />
-      )}
     </Card>
   );
 }

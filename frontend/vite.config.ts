@@ -38,6 +38,12 @@ function forceExitAfterBuild(): Plugin {
 // https://vite.dev/config/
 export default defineConfig({
   envDir: path.resolve(__dirname, '..'), // Load .env from project root
+  optimizeDeps: {
+    // Prevent Vite's esbuild optimizer from relocating the stockfish package JS
+    // to .vite/deps/, which would break its relative WASM path.
+    // Engine files live in public/engine/ and are served verbatim.
+    exclude: ['stockfish'],
+  },
   plugins: [
     ogImageHashPlugin(),
     react(),
@@ -85,6 +91,9 @@ export default defineConfig({
         // Allowlist approach: only SPA routes get index.html fallback.
         // Everything else (API, OAuth callbacks) passes through to the server.
         navigateFallback: null,
+        // Explicitly exclude WASM from SW precache (iOS Cache API ~50 MB limit).
+        // The browser HTTP cache handles engine file caching instead.
+        globIgnores: ['**/*.wasm'],
         runtimeCaching: [
           {
             urlPattern: /^\/api\//,

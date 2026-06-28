@@ -174,7 +174,7 @@ Ran against `flawchess-prod-db`. "Analyzed" = full eval present, proxied by `whi
 
 ## Q-008: Full-game eval drain — prod 1M-node throughput + catch-up queue sizing
 
-**Asked:** 2026-06-12 (during `/gsd-explore` on prioritizing Stockfish analysis of chess.com games — see [SEED-012](../seeds/SEED-012-client-side-stockfish-tactics.md), 2026-06-12 amendment)
+**Asked:** 2026-06-12 (during `/gsd-explore` on prioritizing Stockfish analysis of chess.com games — see [SEED-012](../seeds/closed/SEED-012-client-side-stockfish-tactics.md), 2026-06-12 amendment)
 
 **Context:** SEED-012's server-first v1 locked a fixed **1,000,000-node NNUE** search per position (Lichess fishnet parity, D-6) for the all-ply eval drain. All throughput planning rests on a napkin estimate (~1–2 min core-time/game, ~4–8k games/day on ~6 SCHED_IDLE cores). Two unknowns gate the milestone's queue/window sizing:
 

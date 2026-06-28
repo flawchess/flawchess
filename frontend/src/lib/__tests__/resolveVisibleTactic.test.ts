@@ -54,6 +54,15 @@ describe('resolveVisibleTactic — family guard (no filter)', () => {
     // allowed display depth = raw + 1 + 1.
     expect(resolveVisibleTactic('allowed', SACRIFICE, 2)?.depthLabel).toBe('4');
   });
+
+  // anchored=false (Quick 260628-1t5 DECISION 2): navigable surfaces drop the allowed +1
+  // offset on the DISPLAY depth only. The filter predicate is untouched (see below).
+  it('anchored=false drops the allowed offset on the depth label (display only)', () => {
+    // allowed display depth without anchor = raw + 1 (reads like missed).
+    expect(resolveVisibleTactic('allowed', SACRIFICE, 2, undefined, false)?.depthLabel).toBe('3');
+    // missed is unaffected by the flag.
+    expect(resolveVisibleTactic('missed', SACRIFICE, 2, undefined, false)?.depthLabel).toBe('3');
+  });
 });
 
 describe('tacticDepthBadge — thin delegate over resolveVisibleTactic', () => {

@@ -1,186 +1,217 @@
 # Project Research Summary
 
-**Project:** FlawChess v1.8 — Guest Access
-**Domain:** Anonymous user / guest access with account promotion on existing FastAPI-Users app
-**Researched:** 2026-04-06
+**Project:** FlawChess v1.29 — Live-Engine Analysis Page
+**Domain:** In-browser single-thread WASM Stockfish, branching move tree, tactic-mode overlay
+**Researched:** 2026-06-26
 **Confidence:** HIGH
 
 ## Executive Summary
 
-FlawChess v1.8 adds guest access — letting visitors use the full platform without signing up and promoting to a full account at any time with all data preserved. The research is unambiguous: a read-only guest mode would be worthless (no imported games means no WDL stats, so guests experience zero value and have no reason to sign up). The only viable guest mode is full platform access backed by a real DB row per guest. The recommended approach is to create a `User` row with `is_guest=True` and a synthetic email, issue a standard Bearer JWT (stored in localStorage like all other sessions), and keep guests in the same `users` table so that account promotion is a single-row UPDATE with no FK migration needed.
+v1.29 adds a standalone `/analysis` page backed by a live in-browser Stockfish engine running as a Web Worker. All four research files agree on the convergent architecture: `stockfish` npm v18 (`stockfish-18-lite-single.js` + `.wasm`, ~7 MB, single-thread NNUE, no CORS headers required), vendored into `public/engine/` as static assets (not processed by Vite), loaded via plain `new Worker('/engine/stockfish-18-lite-single.js')`. This is the only build that gives NNUE strength in a single-thread form that works on iOS Safari without COOP/COEP headers. The full single-thread build is ~30-100 MB and has no NNUE (HCE only), making it paradoxically weaker than the lite build despite its size.
 
-No new Python or npm packages are required. The entire feature is built on existing infrastructure: FastAPI-Users 15.0.5 (already installed), SQLAlchemy async (existing ORM), the existing Bearer JWT strategy, and the existing `useAuth` context. The only schema addition is an `is_guest: bool` column on `users` (Alembic migration). The primary architecture decision confirmed by both ARCHITECTURE and PITFALLS research is to use Bearer transport for guest tokens — not `CookieTransport` — to avoid dual-transport complexity, CSRF requirements, and browser tracking-protection issues with HttpOnly cookies during the OAuth redirect round-trip.
+The feature is almost entirely frontend. The backend is explicitly locked out (D-4): no schema, no migration, no new endpoints beyond the Phase 135 `tactic-lines` endpoint that already surfaces stored PVs. The two novel frontend pieces are `useStockfishEngine` (Worker lifecycle, UCI protocol, debounce, stale-result cancellation) and `useAnalysisBoard` (branching move tree, FEN-per-node, O(1) navigation). These are written as new hooks alongside `useChessGame` — NOT modifications of it. A conditional `TacticModeOverlay` on the same page subsumes Phase 135's `TacticLineExplorer` modal once parity is verified; retiring the modal is a gated final phase.
 
-The highest-risk item in the feature is the Google SSO promotion path. An existing CVE (CVE-2025-68481) in FastAPI-Users affects the current OAuth callback implementation in `app/routers/auth.py`, which lacks double-submit CSRF cookie validation. This must be fixed before adding the guest promotion Google SSO path. The Google SSO promotion also requires the guest `user_id` to be embedded in the OAuth `state` JWT so it survives the redirect round-trip — the guest cookie cannot be relied upon in the callback. These two requirements drive the recommended phase ordering below.
+The highest-severity risk is Pitfall 8: accidentally enabling `SharedArrayBuffer` / COOP+COEP headers site-wide, which breaks Google OAuth and iOS asset loading. The second-highest is the subsume-without-regression risk for four specific Phase 135 behaviors (depth-0 highlight, missed/allowed +1 offset, real-game-ply move numbering, tactic-rail state persistence). Both are preventable with the patterns documented in PITFALLS.md and must be addressed as first-class design concerns in their respective phases, not retrofitted.
+
+---
 
 ## Key Findings
 
 ### Recommended Stack
 
-No new dependencies are needed. The v1.7 stack handles this feature entirely. The key insight from stack research is that `CookieTransport` from FastAPI-Users — while technically available — should NOT be used for guest sessions. Using it alongside the existing `BearerTransport` creates a dual-transport system requiring `allow_credentials=True` on CORS, CSRF protection on all state-changing endpoints, and introduces browser tracking-protection risks during OAuth. The simpler, safer path is to issue guest JWTs as Bearer tokens stored in localStorage, identical to registered user sessions.
+No new backend dependencies. The only new frontend runtime dependency is `stockfish` npm v18.0.8 (nmrugg / Chess.com, GPLv3). The optional dev dependency `vite-plugin-static-copy` automates copying the two engine files from `node_modules/stockfish/src/` to `dist/engine/` at build time; manually copying to `public/engine/` is equally valid and simpler for v1.
 
-**Core technologies (no additions — all existing):**
-- `FastAPI-Users 15.0.5`: guest creation via `user_manager.create()`, existing Bearer JWT strategy reused for guest tokens
-- `SQLAlchemy 2.x async`: `is_guest: Mapped[bool]` column added to `User` model via Alembic migration
-- `Axios 1.13.6`: no changes; Bearer interceptor already handles guest JWTs transparently
-- `React 19 / useAuth context`: extended with `isGuest: boolean` state and `promoteGuest()` action
+The critical Vite wiring rule: both `stockfish-18-lite-single.js` and `stockfish-18-lite-single.wasm` must sit together in `public/engine/` and be served verbatim. Never process them through Vite's bundler (`?worker`, `?url`, esbuild optimizer). Add `optimizeDeps: { exclude: ['stockfish'] }` to `vite.config.ts` before writing any UCI code — the WASM URL resolution break in Vite's pre-bundler is silent in `vite dev` and only surfaces in `npm run build`.
+
+**Core new technologies:**
+- `stockfish` npm v18.0.8, `stockfish-18-lite-single.{js,wasm}` — single-thread WASM Stockfish with small embedded NNUE, ~7 MB total, no CORS headers. The correct build; others are either weaker or unsafe.
+- `vite-plugin-static-copy` v2.x (optional) — copies engine files from `node_modules/` to `dist/engine/` at build time, keeping binaries out of git.
+- Plain `new Worker('/engine/stockfish-18-lite-single.js')` — standard DOM Worker API, no Vite magic, already typed in TypeScript 6 `lib.dom.d.ts`.
+- `React.lazy` + `Suspense` — code-splits `AnalysisPage` from the main bundle so the engine chunk is never fetched until the user navigates to `/analysis`.
+- `go movetime 1500` (primary search bound) — wall-clock cap gives consistent UX on heterogeneous hardware; `go nodes 2000000` as secondary safety valve. Replaces the server-side `nodes 1000000` budget which is too slow for low-end mobile.
+
+**License:** Stockfish is GPLv3. Distribution of the WASM binary requires a source pointer. FlawChess is already open-source; add an acknowledgement in README. The Worker thread boundary means GPL does not infect FlawChess's own code.
 
 ### Expected Features
 
-**Must have (table stakes — v1.8 launch):**
-- "Use as Guest" button on homepage — single click, no form, no friction
-- Persistent guest session (30-day JWT, real DB row) surviving page refresh
-- Full platform access: import, move explorer, endgame analysis, bookmarks
-- Non-dismissible guest status indicator in the header/navbar at all times
-- Account promotion via email/password — atomic in-place row UPDATE, fresh JWT issued
-- Account promotion via Google SSO — custom promotion path, not `user_manager.oauth_callback`
-- Explicit "claim this guest data?" confirmation before promotion
-- Import page info box explaining sign-up benefits (cross-device, no expiry, account recovery)
-- Post-promotion redirect back to the page the user was on
+Research confirms a clear MVP that closes the "go to lichess for analysis" gap, plus FlawChess-specific differentiators that neither lichess nor chess.com offer.
 
-**Should have (competitive differentiators — v1.8.x after validation):**
-- Expiry countdown in guest banner (last 7 days only, avoid premature alarm)
-- Context-sensitive promotion prompt triggered after first import completes
-- Periodic cleanup job for expired guest accounts (40-day TTL)
+**Must have (table stakes):**
+- Live eval bar (graphical centipawn bar, sigmoid-mapped, white-POV, mate-in-N display)
+- Numeric eval + depth indicator ("Depth 18", "thinking...")
+- Top 1-2 PV lines (MultiPV=2), clickable to navigate to that position
+- Engine start/stop toggle
+- Branching move tree — fork on deviation rather than reject the move
+- Drag-drop + click-to-click move input (already in `ChessBoard.tsx`)
+- Flip board, back/forward navigation, reset to root
+- Eval arrow on board highlighting engine best move
+- URL-encoded position state for sharing/bookmarking (root FEN + move sequence, not full tree)
+- Debounced engine re-analysis on position change (150-300ms)
+- "Loading engine" state while WASM initializes (board + PV stepper remain interactive)
 
-**Defer (v2+):**
-- Guest session analytics / conversion funnel metrics (requires Umami event tracking)
-- "Share this position" feature gated behind promotion CTA
+**Should have (FlawChess differentiators):**
+- Stored PV as initial mainline (D-5) — board opens pre-seeded with the Phase 135 PV; live engine supplements and takes over on deviation. Unique to FlawChess.
+- Tactic mode overlay — motif badge, missed/allowed toggle, depth-to-punchline counter, next/prev tactic rail. Neither lichess nor chess.com integrate analysis with personal game flaw history this way.
+- Context-aware entry points — tactic cards, game-review ply, and opening positions each pre-load the relevant position with relevant context.
+- Engine on/off with visible "analyzing" state chip
 
-**Anti-features to explicitly avoid:**
-- Read-only guest mode — defeats the purpose entirely; no value experienced = no conversion
-- Mandatory email capture before guest access — disguised login wall
-- Dismissible guest banner — causes surprise data loss; trust violation
-- Silent data merge without confirmation — shared-device account takeover risk
-- `CookieTransport` for guest sessions — dual-transport complexity and OAuth redirect issues
+**Defer (v2+ or post-launch):**
+- Paste-a-FEN / paste-PGN input (the three typed entry points cover 100% of in-product use cases)
+- Variation tree display with fork points shown inline in the move list
+- Full SF18 single-thread option (HCE, no NNUE — actually weaker than lite)
+- Multi-thread WASM engine (D-3 locked out; requires hard-loaded isolated document)
+- Tablebase integration, promote/demote variation, save named analyses, annotation symbols
+
+**Anti-features (explicitly omit):**
+- SharedArrayBuffer / COOP+COEP headers (breaks Google OAuth + iOS)
+- Cloud eval API (stored PVs already serve this role)
+- Server-side analysis persistence (D-4 locked out)
+- PGN annotation / comment system
+- Social sharing buttons beyond copy-URL
 
 ### Architecture Approach
 
-The architecture follows a "guest user as first-class User record" pattern. Guests are full `users` table rows distinguished only by `is_guest=True`. Promotion is an in-place single-row `UPDATE` — no FK reassignment across child tables, no data migration. The `current_active_user` FastAPI-Users dependency works for guests without modification; all existing routers, repositories, and services are unchanged. New code is confined to a `guest_service.py` module, 4 new endpoints in `auth.py`, schema additions, and frontend additions to `useAuth.ts`, `Home.tsx`, `Import.tsx`, plus a new `PromoteAccountModal.tsx`.
+The analysis board composes two new independent hooks — `useStockfishEngine` (Worker lifecycle + UCI state machine) and `useAnalysisBoard` (FEN-per-node branching tree) — into a new `Analysis.tsx` page shell, lazy-loaded via `React.lazy`. The existing `ChessBoard.tsx`, `BoardControls.tsx`, `ArrowOverlay`, and `TacticMotifChip` are reused unchanged. Tactic mode is a conditional overlay (`TacticModeOverlay`) activated by URL params. Phase 135's `useTacticLines` query hook (in `useLibrary.ts`) is called from `Analysis.tsx` in tactic mode; the standalone `TacticLineExplorer.tsx` and `useTacticLine.ts` are retired only after parity is verified.
 
 **Major components:**
+1. `useStockfishEngine` — Worker lifecycle (create on mount, terminate on unmount), UCI protocol (uci/uciok/setoption/isready/readyok/analyze loop), 150ms debounce + stop-pending flag to discard stale `bestmove`, `go movetime 1500` cap, MultiPV state map keyed by `multipv` index. Returns `{ evalCp, evalMate, pvLines, depth, isAnalyzing, isReady }`.
+2. `useAnalysisBoard` — Branching tree with `Map<NodeId, MoveNode>` where each `MoveNode` stores its own FEN (O(1) navigation). `makeMove` forks naturally at any node. `loadMainLine(sans, rootFen)` seeds the stored PV as the `mainLine` NodeId array. `isOnMainLine(nodeId)` gates tactic mode arrow logic. Keyboard handler scoped to `containerRef`, no sessionStorage, no Zobrist hashing.
+3. `Analysis.tsx` — Lazy-loaded page shell. Reads URL params (`game_id`, `flaw_ply`, `orientation`, `fen`), composes both hooks, determines tactic/free mode, responsive layout (eval bar left of board on desktop, below board on mobile).
+4. `EvalBar.tsx` — Vertical centipawn bar, sigmoid-mapped, mate label. Only shown from depth 8+ to avoid shallow misleading evals.
+5. `EngineLines.tsx` — Top 1-2 PV lines as clickable SAN sequences with depth badge.
+6. `VariationTree.tsx` — Move list rendering `nodes` + `mainLine`, click-to-navigate via `goToNode`.
+7. `TacticModeOverlay.tsx` — Conditional tactic chrome: `TacticMotifChip`, missed/allowed toggle, next/prev-tactic rail. Arrow logic ported from `TacticLineExplorer` unchanged.
 
-1. `POST /auth/guest/create` (new) — creates anonymous User row, returns Bearer JWT in response body; frontend stores in localStorage via existing `loginWithToken()`
-2. `POST /auth/guest/promote` (new) — validates email uniqueness, updates User row in-place with `SELECT FOR UPDATE` lock, issues fresh JWT
-3. `GET /auth/guest/promote/google/authorize` + `GET /auth/guest/promote/google/callback` (new) — separate from existing OAuth routes; embeds `guest_user_id` in state JWT; does NOT call `user_manager.oauth_callback`; requires new redirect URI registered in Google Cloud Console
-4. `guest_service.py` (new) — all business logic for creation and promotion; `auth.py` stays HTTP-only
-5. `PromoteAccountModal.tsx` (new) — two-path promotion UI (email/password + Google SSO); active import check before enabling Google button
-6. `is_guest: Mapped[bool]` on `User` model + Alembic migration — foundational prerequisite for all other components
+**Key pattern: FEN-per-node branching.** Storing FEN at each `MoveNode` makes `goToNode(id)` O(1) and eliminates the replay-from-root overhead of `useChessGame`'s `replayTo` pattern.
 
-**Build dependency order:** DB migration → model/schema additions → `guest_service.py` → create/promote email endpoints → frontend `useAuth.ts` + types → homepage button → `GuestInfoBox` → `PromoteAccountModal` email path → Google SSO backend endpoints → `PromoteAccountModal` Google path.
+**Key pattern: stop-pending flag.** When `stop` is sent to the engine, it always responds with a `bestmove` (the termination result). This stale `bestmove` must be discarded via `stopPendingRef: boolean`.
 
 ### Critical Pitfalls
 
-1. **CVE-2025-68481 — OAuth CSRF vulnerability in existing `google_callback`** — The current `app/routers/auth.py` implementation does not validate a CSRF cookie on the OAuth callback. Fix before adding any guest promotion OAuth route: implement the double-submit cookie pattern (`secrets.token_urlsafe(32)` set as `flawchess_oauth_csrf` HttpOnly cookie on authorize, validated on callback against a `csrftoken` claim in the state JWT). This patches the existing vulnerability AND is required by the new guest promote Google SSO route.
+All 10 pitfalls are documented in detail in PITFALLS.md. The top 5 by severity:
 
-2. **Guest identity lost during Google OAuth redirect** — The OAuth callback is a GET from Google's redirect; it has no access to frontend state or the guest Bearer token. The guest `user_id` must be embedded as a claim in the `state` JWT by the authorize endpoint and extracted by the callback. Relying on any cookie being present in the callback fails in Safari/Firefox with Enhanced Tracking Protection enabled.
+1. **Accidental COOP/COEP headers (Pitfall 8)** — Highest severity. If any dependency introduces `SharedArrayBuffer`, browsers require cross-origin isolation, severing Google OAuth and breaking iOS assets. Prevention: lock `vite.config.ts` and Caddy config with explicit no-COOP/COEP comment citing D-3; add CI `curl -I` check; verify `window.crossOriginIsolated === false` after deploy.
 
-3. **`user_manager.oauth_callback` silently orphans guest data** — For Google SSO promotion, do NOT call `user_manager.oauth_callback(associate_by_email=True)`. It will create a new `User` row, logging the user into a fresh account with no game data. Write a custom `promote_guest_via_google()` function that updates the existing guest row and inserts into `oauth_accounts`.
+2. **Subsume-without-regression (Pitfall 9)** — Four Phase 135 behaviors at high silent-regression risk: depth-0 highlight (empty PV crash), missed/allowed +1 ply offset (`tacticDepth.ts`), real-game-ply move numbering, and tactic-rail state resetting on route re-entry. Prevention: write regression tests for all four behaviors against `TacticLineExplorer` BEFORE touching Phase 135 code.
 
-4. **Email conflict during promotion must return 409, not 500** — Check for an existing user with the target email before executing the `UPDATE`. PostgreSQL's unique constraint produces a 500 if the pre-check is missing. Return `{"code": "email_exists"}` as HTTP 409; frontend shows "Email already registered — log in instead?"
+3. **Stale-eval race (Pitfall 3)** — `stop` always produces a `bestmove`; receiving it and treating it as the current result corrupts the eval display. Prevention: implement `stopPendingRef` boolean + discard the `bestmove` that immediately follows `stop`. Two-layer guard: 150ms debounce (Layer A) + stop-pending flag (Layer B).
 
-5. **Active background import orphaned during Google SSO promotion** — If a guest starts an import and immediately uses Google SSO to promote, the OAuth redirect round-trip may cross a server restart boundary, orphaning the in-memory job. Disable or warn on the Google SSO promotion button when `GET /imports/active` returns active jobs.
+4. **Vite esbuild optimizer breaks WASM URL resolution (Pitfall 1)** — If stockfish is not excluded from `optimizeDeps`, Vite relocates the JS to `.vite/deps/` while WASM stays in `node_modules/`, breaking relative path resolution. Silently works in `vite dev`, breaks in `npm run build`. Prevention: `optimizeDeps: { exclude: ['stockfish'] }` + files in `public/engine/` + verify with `npm run build && npx serve dist`.
 
-6. **Old guest JWT remains valid after promotion** — JWT is stateless; updating the user row does not invalidate the prior token. Mitigate by issuing a fresh JWT in the promotion response and ensuring the frontend immediately replaces the stored token. Acceptable for v1.8 without a `token_version` claim since the user_id is unchanged and the security window is bounded to 7 days.
+5. **iOS 50 MB Cache API limit (Pitfall 2)** — iOS Safari's `CacheStorage` is hard-capped at ~50 MB. The full SF18 single-thread WASM exceeds this; a Workbox `CacheFirst` precache throws `QuotaExceededError` on SW installation, which can break the entire PWA shell. Prevention: use the lite build (~7 MB); exclude `*.wasm` from Workbox `globPatterns`; serve with `Cache-Control: max-age=31536000, immutable`.
 
-7. **Guest user accumulation without cleanup** — Every "Use as Guest" click creates DB rows with potentially large child data. Add `is_guest` flag and a composite index `(is_guest, created_at)` in the migration; write a cleanup script even if the cron job is deferred; add per-IP rate limiting on the guest creation endpoint.
+---
 
 ## Implications for Roadmap
 
-Based on research, suggested phase structure:
+The four research files validate the seed's 5-phase shape. Dependencies flow strictly in order: engine hook before board components, board before page, page before tactic overlay, tactic subsume last.
 
-### Phase 1: Foundation — DB Migration, OAuth CSRF Fix, and Guest Creation Backend
+### Phase 1: `useStockfishEngine` Hook + WASM Setup
 
-**Rationale:** The `is_guest` flag is the prerequisite for every subsequent phase. The OAuth CSRF fix (CVE-2025-68481) must ship before any Google SSO promotion route is added — patching an existing vulnerability in the same endpoint family is the right first action and blocks no other work. Guest creation backend is a pure backend phase with no frontend dependencies. Rate limiting and the DB index for cleanup queries also belong here because they are hardest to retrofit later.
-**Delivers:** Alembic migration adding `is_guest` + composite index `(is_guest, created_at)`; CSRF double-submit cookie fix for existing `google_authorize` / `google_callback`; `guest_service.create_guest_user()`; `POST /auth/guest/create` endpoint; per-IP rate limit on guest creation
-**Addresses:** Guest session creation (table stakes). Pitfall 1 (CVE-2025-68481), Pitfall 7 (guest accumulation), Pitfall 8 (transport decision locked in as Bearer-only)
-**Avoids:** Building Google SSO promotion before the CSRF vulnerability is fixed
+**Rationale:** Entirely standalone; no dependencies on anything else in v1.29. The engine hook is the novel risk — every other piece extends well-understood existing code. Front-loading it surfaces platform/Vite issues before they entangle with board logic. All critical pitfalls (1, 2, 3, 4, 5, 6, 7, 8) are in scope here.
+**Delivers:** `stockfish` npm installed; engine files vendored to `public/engine/`; `useStockfishEngine.ts` with Worker lifecycle, UCI state machine (`idle | thinking | stopping`), 150ms debounce, stop-pending flag, MultiPV map keyed by `multipv` index, `go movetime 1500` primary cap; UCI parser unit tests for lowerbound/upperbound, `mate 0`, and MultiPV interleaved sequences.
+**Avoids:** Pitfalls 1, 2, 3, 4, 5, 6, 7, 8 — all verified before board or page code is written.
+**Verification gate:** `npm run build && npx serve dist` (not just `vite dev`); iOS Simulator (no `QuotaExceededError`); Chrome DevTools Task Manager (no worker leak on nav away); `curl -I` for COOP/COEP absence and `application/wasm` MIME type.
 
-### Phase 2: Guest Frontend — Homepage CTA, Auth Context, and Guest Status Indicator
+### Phase 2: `useAnalysisBoard` Hook + Analysis Display Components
 
-**Rationale:** With the guest creation endpoint live, the frontend can wire the "Use as Guest" button and extend the auth context. This phase produces a testable end-to-end guest session before adding the more complex promotion flows. The `isGuest` flag in auth context is required by the Import page info box and the promotion modal in later phases.
-**Delivers:** `useAuth.ts` extended with `isGuest`, `loginAsGuest()`; `is_guest` added to `UserProfile` type and API schema; "Use as Guest" button on `Home.tsx`; non-dismissible guest indicator in header/navbar; synthetic guest email hidden in mobile "More" drawer and any profile display; mobile layout verified at 375px
-**Addresses:** Guest session persistence on refresh, persistent status indicator, homepage entry point (table stakes). Pitfall — synthetic guest email must never be displayed in the UI
-**Avoids:** Building promotion UI before guest state management is stable
+**Rationale:** Depends only on Phase 1 types. Building the branching tree and display components (EvalBar, EngineLines, VariationTree) before the page shell allows unit-testing each piece in isolation with Vitest. The branching tree is the second high-complexity item; isolating it here means regressions can be bisected cleanly.
+**Delivers:** `useAnalysisBoard.ts` (MoveNode type, `nodes: Map`, `makeMove` fork, `goBack/goForward/goToNode`, `loadMainLine`, `isOnMainLine`, containerRef keyboard handler); `EvalBar.tsx`; `EngineLines.tsx`; `VariationTree.tsx`; URL param reading helpers.
+**Key constraint:** `useAnalysisBoard` must NOT modify `useChessGame.ts`. The Openings board must be regression-free throughout.
 
-### Phase 3: Account Promotion — Email/Password Path
+### Phase 3: `/analysis` Route + Page Shell + Free-Play Entry Points
 
-**Rationale:** Email/password promotion is simpler than Google SSO (no OAuth redirect, no state JWT manipulation, no external redirect URI registration). Building and validating it first isolates the core promotion logic — in-place UPDATE, email uniqueness pre-check, fresh JWT issuance, frontend token replacement — before adding OAuth complexity. The `PromoteAccountModal` skeleton is built here with only the email/password tab.
-**Delivers:** `guest_service.promote_guest()`; `POST /auth/guest/promote` endpoint with `SELECT FOR UPDATE` lock and 409 on email conflict; `GuestInfoBox` on Import page; `PromoteAccountModal.tsx` (email/password path); post-promotion redirect; frontend token replacement; Import page info box
-**Addresses:** Email/password promotion, data preservation, confirmation step (table stakes). Pitfall 2 (stale JWT replaced), Pitfall 4 (concurrent race via row lock), Pitfall 5 (email conflict pre-check)
-**Avoids:** Starting Google SSO promotion before the simpler path is proven
+**Rationale:** Composes the two hooks and all display components into a working page. Wires free-play entry points and adds the `/analysis` route to `App.tsx`. Tactic mode is deferred to the next phase to make regressions easier to bisect.
+**Delivers:** `src/pages/Analysis.tsx` (lazy-loaded via `React.lazy`, `<Suspense>` wrapper, responsive layout); `/analysis` route in `App.tsx`; `ROUTE_TITLES` entry; `data-testid` on all interactive elements; "Loading engine..." state in eval area (board and PV stepper remain interactive while engine initializes).
+**Verification gate:** Network tab confirms no stockfish fetch on non-analysis routes; full Google OAuth flow unbroken; `window.crossOriginIsolated === false`.
 
-### Phase 4: Account Promotion — Google SSO Path
+### Phase 4: Tactic Mode Overlay + Phase 135 Subsume
 
-**Rationale:** The most complex phase, with the most pitfalls. By this point the CSRF fix (Phase 1), auth context (Phase 2), and promotion core logic (Phase 3) are all stable. This phase adds the custom Google SSO promotion routes, registers the new callback URI in Google Cloud Console, adds the active-import warning/block to the promotion modal, and validates in Safari and Firefox with ETP.
-**Delivers:** `GET /auth/guest/promote/google/authorize` (embeds `guest_user_id` in state JWT, sets CSRF cookie); `GET /auth/guest/promote/google/callback` (custom `promote_guest_via_google()`, no `oauth_callback` call); "Continue with Google" button in `PromoteAccountModal`; active import check before Google SSO button; Google Cloud Console redirect URI registered; Safari + Firefox ETP tested
-**Addresses:** Google SSO promotion (table stakes). Pitfall 3 (guest identity in state JWT), Pitfall 6 (active import warning), Pitfall 9 (cookie lost on redirect), Pitfall 10 (`associate_by_email` orphan risk)
-**Avoids:** None — this is the final core phase; test thoroughly before shipping
+**Rationale:** Highest regression risk. Requires Phase 3 before tactic mode can be wired. The Phase 135 regression test suite is the acceptance bar; standalone `TacticLineExplorer` is deleted only after all four regression behaviors pass.
+**Delivers:** `TacticModeOverlay.tsx` (motif chip, orientation toggle, next/prev-tactic rail); `useTacticLines` wired into `Analysis.tsx` for tactic mode; `loadMainLine` seeding from stored PV (D-5); `buildRootArrows` / `buildPvArrow` ported from `TacticLineExplorer`; `FlawCard` and `LibraryGameCard` "Explore" buttons changed to `navigate('/analysis?...')`; `TacticLineExplorer.tsx` and `useTacticLine.ts` deleted; `npm run knip` clean.
+**Regression gate (must pass before deletion):** depth-0 highlight, missed/allowed +1 offset, real-game-ply move numbering, tactic-rail state persistence on route re-entry.
+**Avoids:** Pitfall 9 subsume regressions (Behavior A-D).
 
-### Phase 5 (Post-Launch): Conversion Optimization and Cleanup
+### Phase 5: Polish + PWA Audit
 
-**Rationale:** Defer non-essential conversion features until there is real usage data to guide decisions. The cleanup job needs the `is_guest` flag and index from Phase 1 already in place. This phase ships as a minor milestone after v1.8 is live and metrics are available.
-**Delivers:** Expiry countdown in guest banner (last 7 days only); context-sensitive promotion prompt after import completion; periodic cleanup job for guest accounts older than 40 days
-**Addresses:** Expiry countdown, context-sensitive prompt (differentiators). Pitfall 7 (long-term cleanup)
+**Rationale:** Per D-4, no backend work is required. Phase 5 catches mobile layout tweaks, loading-engine skeleton UX improvements, and any polish from Phases 1-4 UAT. Also the correct place for the PWA service-worker audit.
+**Delivers:** Mobile layout tweaks as needed; `visibilitychange` engine pause on tab hide; PWA `globPatterns` audit (confirm `*.wasm` excluded from Workbox precache); post-deploy `curl -I` MIME type verification.
 
 ### Phase Ordering Rationale
 
-- The CVE-2025-68481 CSRF fix must precede all OAuth promotion work — it patches the existing `google_callback` which the new promotion route shares infrastructure with. Shipping it in Phase 1 unblocks Phase 4 without creating a dependency chain that delays any other phase.
-- DB migration is a hard prerequisite for every subsequent phase; shipping it first eliminates blocking dependencies.
-- Email/password promotion before Google SSO promotion: simpler path, validates the core promotion logic (in-place UPDATE, JWT issuance, frontend token swap) before OAuth complexity is introduced.
-- Conversion optimization deferred to post-launch: without real guest traffic data, the expiry countdown and context-sensitive prompt are speculative. Build them after the core flow ships and metrics are available.
+- Engine hook first: only fully standalone piece, highest novel risk, allows all platform pitfalls to be caught in isolation.
+- Board hook + components second: depends only on engine hook types, not runtime behavior; isolating it enables clean unit testing.
+- Page shell third: requires both hooks and all components to compose.
+- Tactic subsume last: highest regression risk; requires the full page; separating it from the board phase means any Phase 4 regression can be bisected to the subsume.
+- No backend phase: the `tactic-lines` endpoint from Phase 135 is the only API dependency and is already live.
 
 ### Research Flags
 
-Phases likely needing deeper research during planning:
-- **Phase 4 (Google SSO Promotion):** Complex OAuth state manipulation, two new redirect URIs, browser-specific cookie behavior in Safari/Firefox ETP. PITFALLS.md covers all the risks in detail. The ARCHITECTURE.md provides detailed pseudocode for the authorize/callback flows. No additional research needed — the implementation plan can be written directly from existing research.
+**Phase 1 (Engine hook): All resolved by this research session.** The WASM build choice, Vite wiring, iOS Cache limit, COOP/COEP risk, UCI state machine, and `go movetime` tradeoffs are fully documented. PLAN.md can be written directly from STACK.md + PITFALLS.md without additional research.
 
-Phases with standard patterns (skip additional research):
-- **Phase 1 (Foundation):** DB migration is mechanical; CSRF fix implementation is fully documented in the CVE advisory and the official fix commit 7cf413c.
-- **Phase 2 (Frontend):** Standard React context extension; well-documented patterns.
-- **Phase 3 (Email/Password Promotion):** Standard REST endpoint pattern; email uniqueness pre-check is trivial SQLAlchemy.
-- **Phase 5 (Cleanup):** Standard cron/startup task pattern; cleanup SQL is documented in PITFALLS.md.
+**Phase 2 (Board hook + components): Standard patterns, well-documented.** FEN-per-node branching tree and fork behavior are fully specified in ARCHITECTURE.md. No additional research needed unless `VariationTree` UI needs a specific design decision.
+
+**Phase 3 (Page + route): Standard, no research needed.** React Router lazy-load, Suspense, and responsive layout patterns are established in the codebase.
+
+**Phase 4 (Tactic subsume): No research needed; high execution discipline required.** Architecture is fully documented. Risk is regression testing discipline — tests must precede any Phase 135 code changes.
+
+**Phase 5 (Polish): No research needed.** Standard PWA audit and mobile testing.
+
+### Open Questions (Surface During Planning)
+
+1. **Real-device `movetime` calibration:** The 1500ms wall-clock budget is well-reasoned but unvalidated on actual low-end Android hardware. Smoke-test during Phase 1 and adjust if needed.
+
+2. **Branching tree UI depth for v1:** How much branching depth to show in the v1 `VariationTree` is a product decision (flat secondary list vs. inline indented). Data model supports either; choose during Phase 2 planning.
+
+3. **PWA service-worker `*.wasm` glob audit:** Verify the existing `vite.config.ts` `globPatterns` or `globIgnores` does not match `*.wasm` before Phase 1 is declared done.
+
+4. **Engine files: committed vs. plugin-generated:** Both options (commit to `public/engine/` or use `vite-plugin-static-copy`) are valid. Make the call during Phase 1 planning based on preference for simplicity vs. keeping binaries out of git.
+
+---
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | No new packages; all existing technology. Codebase directly inspected. FastAPI-Users 15.0.5 docs verified. Transport decision (Bearer only, no CookieTransport) confirmed by both STACK and ARCHITECTURE research independently. |
-| Features | HIGH | Industry literature (Firebase, FusionAuth, NNGroup, Logto) consistent on all key decisions: full access vs read-only, 30-day TTL, non-dismissible indicator, data preservation on promotion. |
-| Architecture | HIGH | Direct codebase inspection of `app/routers/auth.py`, `app/users.py`, `frontend/src/hooks/useAuth.ts`. Build order well-defined. Component boundaries clearly specified with minimal blast radius (existing routes/repos untouched). |
-| Pitfalls | HIGH | CVE-2025-68481 verified via official GitHub advisory and fix commit. Codebase inspected to confirm current `google_callback` lacks CSRF cookie. All 10 pitfalls verified via multiple sources with specific warning signs and recovery strategies. |
+| Stack | MEDIUM | Package details from web + npm registry; Vite 8 patterns from official docs. Build file names and sizes cross-referenced from GitHub but not directly fetched. Core recommendation (lite-single, public/ placement, optimizeDeps.exclude) convergent across all sources. |
+| Features | HIGH | Analysis-board patterns well-established across lichess/chess.com; reuse map verified against direct codebase inspection of all named files. Feature table stakes unambiguous. Anti-features locked by D-1..D-5. |
+| Architecture | HIGH | Based on direct code inspection of all named files (useChessGame.ts, useTacticLine.ts, ChessBoard.tsx, BoardControls.tsx, TacticLineExplorer.tsx, tacticDepth.ts, App.tsx, vite.config.ts). Component boundaries, hook contracts, and data flow diagrams grounded in actual implementation. |
+| Pitfalls | HIGH | Codebase verified + cross-checked against official Vite docs, UCI specification, iOS Safari platform notes, stockfish npm package. All 10 pitfalls include prevention patterns and detection warning signs. |
 
-**Overall confidence:** HIGH
+**Overall confidence: HIGH**
 
 ### Gaps to Address
 
-- **Google Cloud Console redirect URI registration:** The new callback path `/api/auth/guest/promote/google/callback` must be added as an authorized redirect URI in Google Cloud Console before Phase 4 can be tested end-to-end. This is an external manual action; flag for the user to complete before Phase 4 implementation begins.
-- **`token_version` claim for JWT invalidation:** Research recommends issuing a fresh JWT on promotion (simpler, sufficient for v1.8) rather than implementing a `token_version` increment (robust full revocation). If the user wants full revocation, a migration and middleware change are needed. Flag as a decision point during Phase 3 planning.
-- **Rate limiting dependency:** PITFALLS.md references `slowapi` for per-IP rate limiting on the guest creation endpoint. The codebase should be checked during Phase 1 planning for whether `slowapi` is already installed; if this would be the only use case, a lighter alternative (manual IP tracking with TTL) avoids a new dependency.
-- **Guest email domain:** ARCHITECTURE.md recommends `@guest.local` while STACK.md recommends `@guest.flawchess.internal`. Align on one sentinel domain in Phase 1 planning — the difference is cosmetic but must be consistent across backend code, UI guards, and any email-sending paths.
+- **Real-device `movetime` calibration (Phase 1):** The 1500ms budget is well-reasoned but needs one smoke test on a budget Android during Phase 1 to confirm. Not a research gap; an empirical validation step.
+
+- **`VariationTree` v1 UI presentation (Phase 2):** How many branching levels to show in v1 is a product decision not resolved in research. The data model supports any presentation; defer to Phase 2 planning.
+
+- **Engine file placement (Phase 1):** Commit to `public/engine/` or use `vite-plugin-static-copy` — both documented, both valid. Decide during Phase 1 planning.
+
+---
 
 ## Sources
 
-### Primary (HIGH confidence)
-- FastAPI-Users 15.0.5 docs — CookieTransport, multiple auth backends, `user_manager.create()`, `optional=True` current_user
-- CVE-2025-68481 GitHub Advisory (GHSA-5j53-63w8-8625) + fix commit 7cf413cd — OAuth CSRF double-submit cookie pattern
-- Direct codebase inspection: `app/users.py`, `app/routers/auth.py`, `app/models/user.py`, `app/services/import_service.py`, `frontend/src/hooks/useAuth.ts`, `frontend/src/api/client.ts`
-- Firebase best practices for anonymous authentication
-- FusionAuth anonymous user patterns
-- NNGroup: Login Walls Stop Users
+### Primary (HIGH confidence — project-internal)
+- SEED-066 locked design decisions D-1 through D-5 — single-thread rationale, ephemeral state, stored-PV handoff, subsume strategy
+- SEED-012 amendment 2026-06-12 — COOP/COEP + iOS Safari research (prior milestone)
+- Direct codebase inspection: `useChessGame.ts`, `useTacticLine.ts`, `ChessBoard.tsx`, `BoardControls.tsx`, `TacticLineExplorer.tsx`, `tacticDepth.ts`, `App.tsx`, `vite.config.ts`, `FlawCard.tsx`, `LibraryGameCard.tsx`
+- UCI specification (official Stockfish docs) — lowerbound/upperbound, MultiPV ordering, `mate 0` semantics
 
 ### Secondary (MEDIUM confidence)
-- FastAPI-Users multiple backends discussion (GitHub #989, #960) — dual-backend evaluation order confirmed by maintainer
-- Logto: Implement Guest Mode — three-phase architecture (guest session, auth, merge)
-- SuperTokens: Anonymous Sessions — 30-day TTL industry standard
-- Auth0: SameSite Cookie Attribute Changes
-- Audiobookshelf issue #5127 — Firefox bounce-tracking strips OIDC session cookie (real-world ETP issue)
-- Curity: OAuth and Same Site Cookies best practices
-- Authgear: Login and Signup UX Guide 2025
+- Vite Features docs (vite.dev/guide/features) — `?worker`, `public/` asset serving, `optimizeDeps.exclude`
+- Vite 8 announcement (vite.dev) — Rolldown integration, no breaking changes to `public/` serving
+- Vite issues #8427 and #10837 — esbuild optimizer breaks `new URL()` in pre-bundled dependencies
+- stockfish npm package (npmjs.com, nmrugg) — version 18.0.8, build file names, single-thread NNUE confirmation
+- lichess-org/stockfish-web (GitHub) — multi-thread only, PTHREAD_POOL_SIZE requirement
+- iOS Safari Cache API 50 MB limit (love2dev.com, cross-referenced with web.dev)
+- lichess.org/analysis — feature reference for table stakes (eval bar, variation tree, URL state)
 
-### Tertiary
-- Eric Morgan: Guest Conversion Feature (Medium) — practitioner post confirming context-sensitive conversion patterns
+### Tertiary (LOW confidence — supporting context)
+- nmrugg/stockfish.js GitHub — build variants, file names, UCI usage
+- Stockfish vs ChessBase FOSSA — GPLv3 distribution requirements
+- WebAssembly MIME type / Caddy behavior — `application/wasm` content-type serving
 
 ---
-*Research completed: 2026-04-06*
+*Research completed: 2026-06-26*
 *Ready for roadmap: yes*

@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { Navigate, Outlet, Route, BrowserRouter as Router, Routes, useLocation } from 'react-router-dom';
+import { lazy, Suspense, useState, useCallback, useEffect, useRef } from 'react';
+import { Navigate, Outlet, Route, BrowserRouter as Router, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import * as Sentry from "@sentry/react";
 import { Link } from 'react-router-dom';
 import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
@@ -10,7 +10,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { BookOpenIcon, MenuIcon, LogOutIcon, TrophyIcon, DoorOpen, Shield, FolderOpen } from 'lucide-react';
+import { ArrowLeft, BookOpenIcon, MenuIcon, LogOutIcon, TrophyIcon, DoorOpen, Shield, FolderOpen } from 'lucide-react';
 import {
   Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose,
 } from '@/components/ui/drawer';
@@ -36,6 +36,10 @@ import { WelcomePage } from '@/pages/Welcome';
 import { useImportPolling, useActiveJobs } from '@/hooks/useImport';
 import { useUserFlag, setUserFlag } from '@/hooks/useUserFlag';
 import { useReadiness } from '@/hooks/useReadiness';
+
+// First React.lazy boundary in the app — keeps the Stockfish JS/WASM bundle off
+// every other route (ROUTE-01 / D-07). Analysis.tsx uses export default (Pitfall 1).
+const AnalysisPage = lazy(() => import('./pages/Analysis'));
 
 const FLAG_OPENINGS_VISITED = 'openings_visited';
 const FLAG_ENDGAMES_VISITED = 'endgames_visited';
@@ -80,6 +84,7 @@ const ROUTE_TITLES: Record<string, string> = {
   '/openings': 'Openings',
   '/endgames': 'Endgames',
   '/admin': 'Admin',
+  '/analysis': 'Analysis',
 };
 
 // ─── Active route helper ───────────────────────────────────────────────────────
@@ -235,6 +240,34 @@ function MobileHeader() {
           {pageTitle}
         </span>
       </div>
+    </header>
+  );
+}
+
+// ─── Analysis mobile header ───────────────────────────────────────────────────
+
+// The analysis page takes over the mobile shell: a back button (browser back) replaces
+// the logo, and the board controls replace the bottom nav bar (rendered by the page).
+function AnalysisMobileHeader() {
+  const navigate = useNavigate();
+  return (
+    <header
+      data-testid="analysis-mobile-header"
+      className="block sm:hidden shrink-0 pt-safe flex items-center gap-2 px-2 py-1 bg-background border-b border-border overflow-hidden"
+    >
+      {/* Quick 260628-cjp: wider tap target (w-16) so the back button matches the
+          generous board-control footer buttons (flat flex-1 h-12), not a 48px square. */}
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-12 w-16 -ml-1"
+        onClick={() => navigate(-1)}
+        aria-label="Go back"
+        data-testid="btn-analysis-back"
+      >
+        <ArrowLeft className="h-6 w-6" />
+      </Button>
+      <span className="text-sm font-medium text-foreground">Analysis</span>
     </header>
   );
 }
@@ -404,6 +437,10 @@ function ProtectedLayout() {
   const [moreOpen, setMoreOpen] = useState(false);
   const isOpeningsRoute = location.pathname.startsWith('/openings');
   const isEndgamesRoute = location.pathname.startsWith('/endgames');
+  // The analysis page takes over the mobile shell (back-button header + board-controls
+  // footer owned by the page), so it gets a full-height flex chain on mobile and the
+  // standard mobile header / bottom nav are suppressed. Desktop (sm+) is unaffected.
+  const isAnalysisRoute = location.pathname.startsWith('/analysis');
   const refreshedRef = useRef(false);
 
   useEffect(() => {
@@ -444,6 +481,25 @@ function ProtectedLayout() {
   if (!token) {
     return <Navigate to="/login" replace />;
   }
+  if (isAnalysisRoute) {
+    return (
+      <>
+        {/* Full-height flex chain on mobile so the page's tab content can fill the
+            space between the board and the in-flow board-controls footer. `sm:h-auto
+            sm:block` reverts to normal block flow on desktop (layout unchanged). */}
+        <div className="flex flex-col h-[100dvh] sm:h-auto sm:block">
+          <NavHeader />
+          <AnalysisMobileHeader />
+          <main className="flex-1 min-h-0 flex flex-col sm:block sm:flex-none">
+            <Outlet />
+          </main>
+        </div>
+        <InstallPromptBanner />
+        <FeedbackButton />
+      </>
+    );
+  }
+
   return (
     <>
       <NavHeader />
@@ -510,6 +566,37 @@ function SuperuserRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/openings" replace />;
   }
   return <>{children}</>;
+}
+
+// ─── Analysis route wrapper ───────────────────────────────────────────────────
+
+/**
+ * Thin wrapper that reads the `?fen=` search param and keys AnalysisPage by it,
+ * so a second entry-point navigation to /analysis?fen=Y remounts the page and
+ * resets useAnalysisBoard's non-reactive initialRootFen (Pitfall 2).
+ *
+ * useSearchParams is not in scope at the <Routes> site, so a scoped wrapper
+ * keeps the param-driven re-render off all other routes (RESEARCH Pattern A).
+ *
+ * Not wrapped in ImportRequiredRoute — free-play is valid for zero-game users
+ * (D-05 / RESEARCH A2). Not wrapped in SuperuserRoute.
+ */
+function AnalysisRoute() {
+  const [params] = useSearchParams();
+  return (
+    <Suspense
+      fallback={
+        <div
+          className="p-6 text-sm text-muted-foreground"
+          data-testid="analysis-loading"
+        >
+          Loading analysis board…
+        </div>
+      }
+    >
+      <AnalysisPage key={params.get('fen') ?? 'start'} />
+    </Suspense>
+  );
 }
 
 // ─── Router ───────────────────────────────────────────────────────────────────
@@ -615,6 +702,7 @@ function AppRoutes() {
           <Route path="/openings/*" element={<ImportRequiredRoute><OpeningsPage /></ImportRequiredRoute>} />
           <Route path="/endgames/*" element={<ImportRequiredRoute><EndgamesPage /></ImportRequiredRoute>} />
           <Route path="/admin" element={<SuperuserRoute><AdminPage /></SuperuserRoute>} />
+          <Route path="/analysis" element={<AnalysisRoute />} />
         </Route>
         {/* Catch-all redirects to homepage */}
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -52,6 +52,15 @@ A free, open-source chess analysis platform. Import games from chess.com and lic
 | Monitoring | Sentry |
 | Hosting | Docker Compose, Caddy (auto-TLS), Hetzner Cloud CPX42 (8 vCPU, 16 GB RAM, 160 GB NVMe) |
 
+## Engine Binaries (GPLv3 License Note)
+
+The files `frontend/public/engine/stockfish-18-lite-single.js` and `frontend/public/engine/stockfish-18-lite-single.wasm` are vendored from the `stockfish` npm package v18.0.8 ([nmrugg/stockfish.js](https://github.com/nmrugg/stockfish.js)) and are licensed under the [GNU General Public License v3 (GPL-3.0)](https://www.gnu.org/licenses/gpl-3.0.html). These binaries are loaded in a dedicated Web Worker process, which keeps the GPL non-infective for the FlawChess application code (Worker process boundary). All other FlawChess code is MIT licensed (see the LICENSE file).
+
+- Package: `stockfish` v18.0.8
+- Vendored files: `stockfish-18-lite-single.js`, `stockfish-18-lite-single.wasm`
+- License: GPL-3.0
+- Source: https://github.com/nmrugg/stockfish.js
+
 ## Getting Started
 
 ### Prerequisites

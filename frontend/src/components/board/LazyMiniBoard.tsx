@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect } from 'react';
 import { MiniBoard } from '@/components/board/MiniBoard';
+import type { SquareMarker } from '@/components/board/boardMarkers';
 
 /** Renders MiniBoard only when the card scrolls into view. */
 export function LazyMiniBoard({
@@ -8,14 +9,18 @@ export function LazyMiniBoard({
   size,
   arrows,
   cornerDot,
+  squareMarkers,
   lastMove,
+  lastMoveColor,
 }: {
   fen: string;
   flipped: boolean;
   size: number;
-  arrows?: ReadonlyArray<{ from: string; to: string; color: string; label?: string }>;
+  arrows?: ReadonlyArray<{ from: string; to: string; color: string; label?: string; labelColor?: string }>;
   cornerDot?: { square: string; color: string };
+  squareMarkers?: ReadonlyArray<SquareMarker>;
   lastMove?: { from: string; to: string };
+  lastMoveColor?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
@@ -50,7 +55,9 @@ export function LazyMiniBoard({
           flipped={flipped}
           arrows={arrows}
           cornerDot={cornerDot}
+          squareMarkers={squareMarkers}
           lastMove={lastMove}
+          lastMoveColor={lastMoveColor}
         />
       )}
     </div>

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * FlawCard vitest suite (Phase 112, SC-4, SC-5, SC-7, SC-8).
+ * FlawCard vitest suite (Phase 112 / Phase 140-03).
  *
  * Tests:
  * 1. CardHeader renders white + black usernames with ratings
@@ -9,27 +9,26 @@
  * 4. Board at size 132 with a flaw-move arrow when move_san is set
  * 5. data-testid on root article: flaw-card-{game_id}-{ply}
  * 6. Platform link testid and aria-label present
- * 7. "View game" button opens modal (flaw-game-modal appears in DOM)
- * 8. Modal shows LoadError on error state
- * 9. Modal shows LibraryGameCard on success state
+ * 7. Phase 140-03: unified Analyze button (btn-flaw-analyze) replaces Explore + Game pair
+ *
+ * Phase 140-03: "View game" button + modal path removed (D-09); old SC-7, SC-8 tests removed.
+ * The Game modal (Dialog/Drawer + useLibraryGame + LibraryGameCard inline) is deleted entirely.
  */
 
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 
 // Stub Tooltip so tests don't need a TooltipProvider wrapper.
 vi.mock('@/components/ui/tooltip', () => ({
   Tooltip: ({ children }: { children: ReactNode }) => children,
 }));
 
-// Mock useLibraryGame + useTacticLines — controlled per test.
-// TacticLineExplorer (rendered by FlawCard on tagged flaws) calls useTacticLines.
+// Mock useTacticLines — TacticMotifChip (rendered via FlawCard tagsRow) calls useTacticLines.
 vi.mock('@/hooks/useLibrary', async () => {
   const actual = await vi.importActual<typeof import('@/hooks/useLibrary')>('@/hooks/useLibrary');
   return {
     ...actual,
-    useLibraryGame: vi.fn(),
     useTacticLines: vi.fn().mockReturnValue({ isLoading: false, isError: false, data: undefined }),
   };
 });
@@ -46,17 +45,23 @@ vi.mock('@/hooks/useEnqueueGame', () => ({
 }));
 
 // Mock react-router-dom navigate — NoAnalysisState uses useNavigate for guest CTA.
+// Link is rendered without a Router context here (FlawCard's Explore button uses
+// <Button asChild><Link>), so stub it as a plain anchor to avoid the router context.
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
   return {
     ...actual,
     useNavigate: () => vi.fn(),
+    Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => (
+      <a href={typeof to === 'string' ? to : ''} {...props}>
+        {children}
+      </a>
+    ),
   };
 });
 
 import { FlawCard } from '../FlawCard';
-import type { FlawListItem, GameFlawCard } from '@/types/library';
-import { useLibraryGame } from '@/hooks/useLibrary';
+import type { FlawListItem } from '@/types/library';
 import { BEST_MOVE_ARROW } from '@/lib/theme';
 
 // ── jsdom stubs ───────────────────────────────────────────────────────────────
@@ -149,15 +154,6 @@ function makeFlaw(overrides: Partial<FlawListItem> = {}): FlawListItem {
     ...overrides,
   };
 }
-
-// Default: modal closed → disabled hook returns no-op result
-beforeEach(() => {
-  vi.mocked(useLibraryGame).mockReturnValue({
-    isLoading: false,
-    isError: false,
-    data: undefined,
-  } as ReturnType<typeof useLibraryGame>);
-});
 
 afterEach(() => {
   cleanup();
@@ -321,133 +317,35 @@ describe('FlawCard', () => {
     });
   });
 
-  describe('"View game" button + modal (SC-7, SC-8)', () => {
-    const MOCK_GAME: GameFlawCard = {
-      game_id: 42,
-      user_result: 'loss',
-      played_at: '2026-01-15T10:00:00Z',
-      time_control_bucket: 'rapid',
-      platform: 'lichess',
-      platform_url: 'https://lichess.org/abcd1234',
-      white_username: 'Alice',
-      black_username: 'Bob',
-      white_rating: 1850,
-      black_rating: 1720,
-      opening_name: null,
-      opening_eco: null,
-      user_color: 'white',
-      ply_count: 60,
-      termination: 'checkmate',
-      time_control_str: '10+5',
-      result_fen: null,
-      severity_counts: { inaccuracy: 0, mistake: 0, blunder: 1 },
-      chips: [],
-      analysis_state: 'analyzed',
-      eval_series: null,
-      flaw_markers: null,
-      phase_transitions: null,
-      moves: null,
-    };
+  describe('Phase 140-03: unified Analyze button (btn-flaw-analyze)', () => {
+    // Phase 140-03 (D-09): the Game modal path is deleted entirely. The old Explore + Game
+    // pair is replaced by a single Analyze button that opens /analysis?game_id=X&ply=Y.
+    // buttonRow renders in BOTH mobile (sm:hidden) and desktop (hidden sm:flex) wrappers;
+    // jsdom ignores CSS so both buttons appear in the DOM. Use getAllByTestId.
 
-    it('"View game" button has correct testid and aria-label', () => {
-      vi.mocked(useLibraryGame).mockReturnValue({
-        isLoading: false,
-        isError: false,
-        data: undefined,
-      } as ReturnType<typeof useLibraryGame>);
-
+    it('renders btn-flaw-analyze with aria-label "Analyze game"', () => {
       render(<FlawCard flaw={makeFlaw()} />);
-      // D-04: buttonRow renders in both mobile (sm:hidden) and desktop (hidden sm:block)
-      // wrappers; jsdom ignores CSS so both buttons are in the DOM. Use [0].
-      const btns = screen.getAllByTestId('flaw-btn-game');
+      const btns = screen.getAllByTestId('btn-flaw-analyze');
       expect(btns.length).toBeGreaterThan(0);
-      const btn = btns[0]!;
-      expect(btn.getAttribute('aria-label')).toContain('Alice');
-      expect(btn.getAttribute('aria-label')).toContain('Bob');
+      expect(btns[0]!.getAttribute('aria-label')).toBe('Analyze game');
     });
 
-    it('clicking "View game" button opens the modal (flaw-game-modal appears)', async () => {
-      vi.mocked(useLibraryGame).mockReturnValue({
-        isLoading: true,
-        isError: false,
-        data: undefined,
-      } as ReturnType<typeof useLibraryGame>);
-
+    it('btn-flaw-analyze href is /analysis?game_id=42&ply=2', () => {
       render(<FlawCard flaw={makeFlaw()} />);
-      fireEvent.click(screen.getAllByTestId('flaw-btn-game')[0]!);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('flaw-game-modal')).toBeDefined();
-      });
+      const btns = screen.getAllByTestId('btn-flaw-analyze');
+      // Link renders as <a> via the react-router-dom stub
+      expect(btns[0]!.getAttribute('href')).toBe('/analysis?game_id=42&ply=2');
     });
 
-    it('opens the game in a right-side drawer with a close button on mobile (Phase 135 UAT)', async () => {
-      // Re-mock matchMedia to mobile for this test (global beforeAll sets desktop).
-      const original = window.matchMedia;
-      Object.defineProperty(window, 'matchMedia', {
-        writable: true,
-        value: vi.fn().mockImplementation((query: string) => ({
-          matches: true, // (max-width: 767px) → mobile
-          media: query,
-          onchange: null,
-          addEventListener: vi.fn(),
-          removeEventListener: vi.fn(),
-          addListener: vi.fn(),
-          removeListener: vi.fn(),
-          dispatchEvent: vi.fn(),
-        })),
-      });
-
-      vi.mocked(useLibraryGame).mockReturnValue({
-        isLoading: true,
-        isError: false,
-        data: undefined,
-      } as ReturnType<typeof useLibraryGame>);
-
-      render(<FlawCard flaw={makeFlaw()} />);
-      fireEvent.click(screen.getAllByTestId('flaw-btn-game')[0]!);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('flaw-game-modal')).toBeDefined();
-        expect(screen.getByTestId('flaw-game-close')).toBeDefined();
-      });
-
-      // Restore the desktop matchMedia mock for subsequent tests.
-      Object.defineProperty(window, 'matchMedia', { writable: true, value: original });
+    it('no flaw-btn-explore or flaw-btn-game buttons remain', () => {
+      render(<FlawCard flaw={makeFlaw({ missed_tactic_motif: 'fork', missed_tactic_confidence: 90 })} />);
+      expect(screen.queryAllByTestId('flaw-btn-explore')).toHaveLength(0);
+      expect(screen.queryAllByTestId('flaw-btn-game')).toHaveLength(0);
     });
 
-    it('modal shows LoadError when isError is true (CLAUDE.md isError pattern)', async () => {
-      vi.mocked(useLibraryGame).mockReturnValue({
-        isLoading: false,
-        isError: true,
-        data: undefined,
-      } as ReturnType<typeof useLibraryGame>);
-
+    it('no flaw-game-modal in DOM (Game modal deleted)', () => {
       render(<FlawCard flaw={makeFlaw()} />);
-      fireEvent.click(screen.getAllByTestId('flaw-btn-game')[0]!);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('flaw-game-modal')).toBeDefined();
-        // LoadError renders "Failed to load game"
-        expect(screen.getByText(/Failed to load game/i)).toBeDefined();
-      });
-    });
-
-    it('modal shows LibraryGameCard content on success', async () => {
-      vi.mocked(useLibraryGame).mockReturnValue({
-        isLoading: false,
-        isError: false,
-        data: MOCK_GAME,
-      } as ReturnType<typeof useLibraryGame>);
-
-      render(<FlawCard flaw={makeFlaw()} />);
-      fireEvent.click(screen.getAllByTestId('flaw-btn-game')[0]!);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('flaw-game-modal')).toBeDefined();
-      });
-      // LibraryGameCard renders the white + black username
-      expect(screen.getByTestId('flaw-game-modal').textContent).toContain('Alice');
+      expect(screen.queryByTestId('flaw-game-modal')).toBeNull();
     });
   });
 
@@ -551,35 +449,4 @@ describe('FlawCard', () => {
     });
   });
 
-  describe('Phase 135 D-04: Explore + Game button row', () => {
-    // NOTE: buttonRow is rendered in BOTH mobile (sm:hidden) and desktop (hidden sm:block)
-    // wrappers, so testids appear twice in jsdom. Use queryAllByTestId to check presence.
-
-    it('tagged flaw (missed_tactic_motif set): renders flaw-btn-explore AND flaw-btn-game', () => {
-      render(
-        <FlawCard flaw={makeFlaw({ missed_tactic_motif: 'fork', missed_tactic_confidence: 90 })} />,
-      );
-      // Both button rows render (mobile + desktop = 2 each)
-      expect(screen.getAllByTestId('flaw-btn-explore').length).toBeGreaterThan(0);
-      expect(screen.getAllByTestId('flaw-btn-game').length).toBeGreaterThan(0);
-    });
-
-    it('tagged flaw (allowed_tactic_motif set): renders flaw-btn-explore AND flaw-btn-game', () => {
-      render(
-        <FlawCard flaw={makeFlaw({ allowed_tactic_motif: 'pin', allowed_tactic_confidence: 85 })} />,
-      );
-      expect(screen.getAllByTestId('flaw-btn-explore').length).toBeGreaterThan(0);
-      expect(screen.getAllByTestId('flaw-btn-game').length).toBeGreaterThan(0);
-    });
-
-    it('untagged flaw (no motifs): renders flaw-btn-game only, no flaw-btn-explore', () => {
-      render(
-        <FlawCard flaw={makeFlaw()} /* default: all motif fields null */ />,
-      );
-      // Game button always visible
-      expect(screen.getAllByTestId('flaw-btn-game').length).toBeGreaterThan(0);
-      // Explore button must be absent for untagged flaws
-      expect(screen.queryAllByTestId('flaw-btn-explore').length).toBe(0);
-    });
-  });
 });

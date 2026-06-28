@@ -1,275 +1,306 @@
 # Pitfalls Research
 
-**Domain:** Adding guest/anonymous user access with account promotion to an existing FastAPI-Users app
-**Researched:** 2026-04-06
-**Confidence:** HIGH (codebase verified, CVEs confirmed via official advisories, patterns confirmed via multiple sources)
+**Domain:** Adding a live in-browser single-thread WASM Stockfish analysis board to an existing mobile-first React 19 + Vite 8 PWA (FlawChess v1.29)
+**Researched:** 2026-06-26
+**Confidence:** HIGH — codebase verified + cross-checked against official Vite docs, stockfish npm package READMEs, iOS Safari platform notes, UCI specification, and Phase 135 source
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: CVE-2025-68481 — FastAPI-Users OAuth State Has No Session Binding
+### Pitfall 1: Vite Esbuild Optimization Breaks WASM URL Resolution in Pre-Bundled Dependencies
 
 **What goes wrong:**
-FastAPI-Users below version 15.0.2 generates OAuth state JWTs that are completely stateless — no per-request entropy, no session correlation. During guest-to-registered promotion via Google SSO, the `google_callback` route validates the state JWT's signature but cannot verify that the state belongs to the session that initiated the flow. An attacker can initiate an OAuth flow, capture the state token, and then trick a logged-in victim (including a guest user mid-promotion) into visiting the callback URL with the attacker's credentials. The victim's account becomes linked to the attacker's Google identity — account takeover.
-
-This project already implements a custom `google_callback` handler in `app/routers/auth.py` that calls `decode_jwt(state, ...)` but does not set or validate a CSRF cookie. The existing implementation has the same vulnerability pattern that CVE-2025-68481 describes.
+When a stockfish npm package (e.g. the `stockfish` npm package) uses `new URL('stockfish.wasm', import.meta.url)` internally to locate its WASM file, Vite's esbuild optimizer rewrites the package entry point from `node_modules/stockfish/stockfish-18-single.js` to `node_modules/.vite/deps/stockfish.js`. The `import.meta.url` inside that module now resolves to the `.vite/deps/` directory — so the WASM file is looked for in `.vite/deps/stockfish-18-single.wasm`, which does not exist. The result: `404 Not Found` for the WASM in development, and either a silent failure or build-time error in production. This manifests as the engine appearing to load but never responding to `uci`, or a `CompileError: invalid magic number` from `WebAssembly.instantiate`.
 
 **Why it happens:**
-The OAuth state JWT validates cryptographically (signature check passes) but provides no proof that the state was generated for the specific browser session that received the callback. Developers see the signature check and assume the state is secure.
+Vite's esbuild pre-bundling is designed for pure JS modules. It does not understand `new URL(asset, import.meta.url)` patterns inside dependencies — it physically relocates the JS file but leaves the WASM binary in `node_modules/`, breaking relative paths. This is a known Vite issue (vitejs/vite #8427, #10837); a partial fix landed via PR #17837 but it is not complete for all patterns. Developers hit this because the engine works fine in isolation (node, direct browser) but breaks under Vite's optimizer.
 
 **How to avoid:**
-- Implement the double-submit cookie pattern: generate a random CSRF token alongside the state JWT, set it as a short-lived `HttpOnly; SameSite=Lax` cookie in the `/auth/google/authorize` response, and verify on callback that the cookie value matches the CSRF claim embedded in the state JWT.
-- This must be done for the guest promotion Google SSO path too — if a guest user clicks "Sign in with Google" to promote, the authorize step must emit the CSRF cookie and the callback must validate it.
-- Use `secrets.token_urlsafe(32)` for the CSRF token (already used in `auth.py` — but the cookie-writing and callback-validation steps are missing).
-- The promotion flow must preserve the guest `user_id` in the state JWT so the callback can complete the promotion atomically.
+- Add the stockfish package to `optimizeDeps.exclude` in `vite.config.ts`:
+  ```ts
+  optimizeDeps: { exclude: ['stockfish'] }
+  ```
+  This forces Vite to load it as-is from `node_modules/`, preserving the relative WASM path.
+- Copy the `.js` and `.wasm` files into `public/` (or `public/engine/`) and instantiate the worker via a URL string pointing to the public path: `new Worker('/engine/stockfish-18-single.js')`. This fully bypasses Vite's asset pipeline for the engine and is the simplest production-safe pattern.
+- Do NOT use `?worker` suffix on a file inside `node_modules/` — the suffix is only supported for files Vite owns.
+- Do NOT use `vite-plugin-wasm` as a substitute — it targets your own WASM files imported via `import foo from './foo.wasm'`, not the engine's self-loading pattern.
 
 **Warning signs:**
-- `google_authorize` endpoint returns an `authorization_url` but sets no cookie in the response.
-- `google_callback` validates `state` JWT but reads no cookie from the request.
-- Sentry shows `InvalidOAuthStateError` or `CSRF validation failure` from a user who didn't initiate the flow.
+- Engine loads in `vite dev` but produces a 404 for the `.wasm` file in `vite build` output.
+- `WebAssembly.instantiate` throws `CompileError: invalid magic number` — the JS shim loaded but the WASM was 404'd and the response is HTML.
+- No UCI `uciok` response after posting `uci` to the worker.
+- DevTools Network tab shows the WASM request going to `.vite/deps/` instead of `node_modules/`.
 
 **Phase to address:**
-Guest creation backend — before the Google SSO promotion route exists. Fix the existing `google_authorize` / `google_callback` endpoints to use the double-submit cookie pattern, then reuse the same pattern for the guest promotion route.
+Engine hook phase (Phase 136) — resolve this before writing any UCI logic; verify with `npm run build && npx serve dist` locally, not just `vite dev`.
 
 ---
 
-### Pitfall 2: Guest JWT Still Valid After Promotion — Old Sessions Can Access the New Account
+### Pitfall 2: iOS PWA Standalone Mode Has a 50 MB Cache API Limit — The Full SF18 NNUE Net Cannot Be Cached
 
 **What goes wrong:**
-The plan promotes a guest by updating the existing `User` row in-place (email, hashed_password, is_verified, etc.). The guest JWT issued at guest creation time is valid for 7 days (`JWTStrategy(lifetime_seconds=604800)` in `app/users.py`). After promotion, the old JWT — which embeds the same `user_id` — continues to be accepted because the token validation only checks signature and expiry, not the user's `is_verified` or `hashed_password` fields. A guest user who promotes on device A can still use the old guest JWT from device B for up to 7 days without re-authenticating, operating under the promoted account's identity without having completed email verification.
-
-This is not a data integrity problem (same user_id), but it means: (a) the guest JWT bypasses email verification intended for promoted accounts, and (b) if a guest account is compromised before promotion, the attacker retains access after promotion.
+iOS Safari's Cache API (used by service workers) is capped at approximately 50 MB per partition for PWAs in standalone mode (installed to home screen). The full Stockfish 18 single-thread NNUE binary (`stockfish-18-single.wasm`) exceeds this limit. The service worker silently fails to cache it — no error is surfaced to the user — and on the next offline visit the engine is unavailable. Worse, a Workbox `CacheFirst` strategy that attempts to pre-cache the WASM throws `QuotaExceededError` during SW installation, which can abort the service worker registration entirely, breaking the PWA's offline shell as a side effect.
 
 **Why it happens:**
-JWT is stateless — there is no revocation mechanism in the current stack. Updating the user row doesn't invalidate previously issued tokens. Developers assume "promotion changes the user row" implies "old tokens are now invalid."
+The 50 MB limit is a hard platform constraint on iOS Safari's `CacheStorage`, not a Workbox or app-level setting. Developers familiar with desktop Chrome (which has generous quota) don't discover this until testing on an actual iPhone. The PWA's existing service worker (already shipping in v1.2) will try to cache whatever files are listed in its precache manifest if you add the WASM to the build output.
 
 **How to avoid:**
-- Issue a fresh JWT immediately after promotion completes and return it to the frontend in the same response. The frontend must store the new token and discard the old guest token.
-- Add a `token_version: int` field to the `User` model. Increment it on promotion. Include `token_version` as a claim in JWTs. Validate `token_version` claim against the DB on each request. This is the only way to truly invalidate old guest JWTs without a blacklist.
-- Simpler alternative (acceptable for v1.8): keep 7-day JWT lifetime, but issue a fresh JWT on promotion so the frontend immediately uses the promoted token. Document that old guest tokens expire within 7 days — the security window is bounded and the data is unchanged (same user_id).
-- Do NOT implement a token blacklist — this adds Redis/DB overhead inconsistent with the current stateless JWT approach.
+- Use `stockfish-18-lite-single.js` / `stockfish-18-lite-single.wasm` (~7 MB each) instead of the full NNUE build. The lite build reaches depth 18–20 in under 2 seconds on desktop and is far weaker than the full build only in tactical depth — not relevant for human comprehension of a position.
+- Never add the WASM file to the Workbox precache manifest. Instead, serve it with strong HTTP cache headers (`Cache-Control: max-age=31536000, immutable`) from the origin. The browser's native HTTP cache handles it; no SW involvement needed.
+- If the full NNUE is ever desired for desktop: gate the fetch behind `navigator.deviceMemory > 4 && !navigator.userAgentData?.mobile` and skip iOS entirely. Do not attempt to cache it in the SW regardless.
+- Audit the existing Vite PWA plugin config: ensure `globPatterns` or `runtimeCaching` in `vite.config.ts` does not match `*.wasm`.
 
 **Warning signs:**
-- After promotion, the frontend still sends the original guest JWT (`Authorization: Bearer <guest_token>`).
-- `GET /users/me/profile` returns `is_verified: false` for a promoted user who completed email verification.
+- SW installation fails on iOS with `QuotaExceededError` in Safari DevTools.
+- PWA shell stops working on iOS after adding the engine.
+- Network tab shows the engine WASM fetched fresh on every `/analysis` visit (HTTP 200, not 304 or from cache).
 
 **Phase to address:**
-Account promotion endpoint — issue a fresh JWT in the promotion response and instruct the frontend to replace the stored token immediately.
+Engine hook phase (Phase 136) — choose the lite build from the start; verify on an iOS device (or Simulator) before declaring the phase done.
 
 ---
 
-### Pitfall 3: Google SSO Promotion Loses Guest Identity During the OAuth Redirect Round-Trip
+### Pitfall 3: Stale Eval Race — `stop` / `bestmove` / `go` Message Ordering
 
 **What goes wrong:**
-When a guest user clicks "Sign in with Google" to promote, the flow leaves the app and goes to Google, then returns via `GET /auth/google/callback`. The guest's identity (their `user_id`) lives in the frontend auth store and the HttpOnly cookie — but neither is available inside the `google_callback` handler, which only sees the OAuth code and state. If the callback doesn't know this is a promotion (vs. a normal login), it will call `user_manager.oauth_callback(associate_by_email=True)` which either logs in an existing registered user (skipping promotion) or creates a brand-new user (losing all guest data).
+The UCI flow is asynchronous. When the user makes a move, the hook must: (1) send `stop` to halt the running search, (2) wait for `bestmove` (Stockfish always emits `bestmove` after `stop`, even mid-search), (3) send `position fen <new-fen> go nodes <N>`. If you skip step 2 and send `position fen ... go ...` immediately after `stop`, the engine may process the new `go` while still finalizing its response to `stop`. The result: the hook receives a `bestmove` from the previous search, mistakes it for the current search's result, and displays the wrong move/eval for the new position. This is the most common UCI race condition in browser chess implementations.
 
-The guest user_id must survive the redirect. The only mechanism available in the callback is the `state` JWT.
+A related variant: the hook debounces position changes (correct), but cancels the debounce on unmount without sending `stop`. The engine continues running, and when `bestmove` arrives after the component has unmounted, the hook's state setter fires on an unmounted component — React's stale-closure warning.
 
 **Why it happens:**
-The OAuth redirect breaks the request context. There is no session (the app is stateless), and HTTP redirects cannot carry custom request headers or body payloads. Developers assume the frontend can re-send the guest token on callback — but the callback is a GET from Google's redirect, not a frontend-controlled request.
+Developers model the UCI exchange as request/response, but it is actually a state machine: the engine has states (`ready`, `thinking`, `stopping`) and must receive commands in the right sequence. Sending `go` without waiting for the previous search to conclude is undefined behavior in the UCI spec.
 
 **How to avoid:**
-- Embed `guest_user_id` as a claim in the state JWT generated by `google_authorize`. The authorize endpoint must accept an optional `guest_user_id` parameter from the frontend (extracted from the current auth token).
-- On callback, decode the state JWT and extract `guest_user_id`. If present, skip `user_manager.oauth_callback` and instead run the promotion logic: update the guest `User` row with the Google email and link the OAuth account.
-- The CSRF cookie (see Pitfall 1) must be set regardless of whether this is a promotion or a normal OAuth login — same cookie, same callback validation.
-- Validate that the `guest_user_id` in the state JWT corresponds to an actual guest user (not a registered user) before executing the promotion path.
+- Implement a message-queue state machine in `useStockfishEngine`:
+  - States: `idle | thinking | stopping`
+  - On position change: if `idle`, immediately send `position fen ... go ...` (→ `thinking`). If `thinking`, send `stop` (→ `stopping`) and enqueue the new `go` command.
+  - On `bestmove` received: if `stopping`, dequeue and send the pending `position fen ... go ...` (→ `thinking`). If `thinking`, update eval state (→ `idle`).
+- Use a sequence counter (integer, incremented on each `go`). When `bestmove` arrives, only accept it if the sequence counter matches the expected value; discard stale results.
+- In the `useEffect` cleanup: send `stop`, set a `cancelled` flag to discard any subsequent `bestmove`, then call `worker.terminate()`.
 
 **Warning signs:**
-- Google SSO promotion creates a new account instead of updating the existing guest account.
-- Guest data (imported games, bookmarks) is missing after "Sign in with Google."
-- `google_callback` creates a duplicate user row with the same chess.com/lichess usernames as the guest row.
+- Eval bar flickers back to the previous position's eval when moving quickly.
+- `bestmove` arrives with a move that's illegal in the current position.
+- React warns about `setState` on an unmounted component from the engine callback.
 
 **Phase to address:**
-Account promotion backend — modify `google_authorize` to accept and embed `guest_user_id`, modify `google_callback` to detect the promotion path and route accordingly.
+Engine hook phase (Phase 136) — the state machine must be part of the hook's initial design, not retrofitted. Write a unit test for the stop/go sequence using a mock worker before integrating a real engine.
 
 ---
 
-### Pitfall 4: Concurrent Promotion Race — Two Requests Promote the Same Guest Simultaneously
+### Pitfall 4: Web Worker Leak on Route Navigation — Engine Keeps Running After `/analysis` Exit
 
 **What goes wrong:**
-If a guest user double-submits the promotion form or two tabs both trigger promotion at the same time, two concurrent requests both attempt to update the same guest `User` row. The first succeeds, setting `email`, `hashed_password`, and `is_verified`. The second reads the same guest row (before the first commit is visible), applies its own update, and either silently overwrites the first promotion's data or — if email uniqueness is enforced — raises a `UniqueViolationError` that produces a 500 response.
+When the user navigates away from `/analysis` (e.g. back to Openings), React unmounts the analysis board component. If the `useEffect` that created the Web Worker does not call `worker.terminate()` in its cleanup return, the worker continues running in the background — evaluating the last position at full CPU, draining battery, and holding the WASM linear memory allocation. On iOS, the WASM memory is not freed until the browser explicitly closes the worker or the tab is killed. Because the WASM engine allocates tens of MB of linear memory at startup, this is a real battery and memory drain on mobile.
 
-For Google SSO promotion, the race involves two calls to `user_manager.oauth_callback` with `associate_by_email=True`. If the Google email doesn't exist yet (first request mid-commit), the second might attempt to create a new user, violating the unique constraint on email and producing a 500.
+A subtler variant: the worker is instantiated at the module level (outside React's lifecycle) as a singleton for reuse. If the singleton is not explicitly stopped when no component is consuming it, it runs indefinitely during the entire session.
 
 **Why it happens:**
-The promotion endpoint updates a row — this is not naturally idempotent. Without an explicit lock or idempotency check, concurrent requests both proceed past the "is this user a guest?" check and both attempt the mutation.
+Web Workers are not tied to the DOM — they survive component unmounts unless explicitly terminated. React's `useEffect` cleanup is the only hook point; developers often add `worker.terminate()` but forget to also send `stop` first, leaving the engine in a half-terminated state that can cause a crash log on some platforms.
 
 **How to avoid:**
-- Use `SELECT ... FOR UPDATE` (PostgreSQL row-level lock) at the start of the promotion transaction to lock the guest user row. The second concurrent request blocks until the first commits, then retries and finds the user is already promoted (email is set), and returns a clear error: "Account already promoted."
-- Alternatively, use `UPDATE users SET ... WHERE id = :user_id AND email IS NULL RETURNING id` — if 0 rows returned, the user was already promoted.
-- Add a DB-level unique constraint on `email` (already present via FastAPI-Users' `SQLAlchemyBaseUserTable` base). This is the last-resort safety net, but catching a `UniqueViolationError` and returning 409 is better than a 500.
+- In `useStockfishEngine`, always return a cleanup function from `useEffect`:
+  ```ts
+  useEffect(() => {
+    const worker = new Worker(engineUrl);
+    // ... setup
+    return () => {
+      worker.postMessage('stop');
+      worker.terminate();
+    };
+  }, []);
+  ```
+- If using a singleton worker (to avoid the ~200 ms re-init cost on repeated visits): implement an explicit `pause()` call when the analysis page unmounts that sends `stop` and sets the worker to idle. Resume on re-mount. This is more complex; the component-scoped worker with terminate-on-unmount is simpler and safe enough for v1.
+- Keep `/analysis`'s lazy chunk boundary tight so the engine worker module only loads when the route is active (React Router lazy + Suspense).
 
 **Warning signs:**
-- Sentry shows `UniqueViolationError` on the `users.email` column during promotion.
-- Two JWT tokens are issued for the same `user_id` with different email claims.
-- A user reports "Sign up failed" but finds themselves already signed up on retry.
+- CPU usage stays elevated (top-of-screen Activity Monitor on iOS, or `chrome://sys-internals`) after navigating away from `/analysis`.
+- Mobile device warms up noticeably while browsing other pages of the app.
+- JS heap in Chrome DevTools grows by ~50–100 MB whenever `/analysis` is visited and does not release on navigation.
 
 **Phase to address:**
-Account promotion endpoint — the UPDATE statement must include a WHERE condition that verifies guest state, making the operation atomic and idempotent.
+Engine hook phase (Phase 136) — terminate pattern is a first-class design concern of `useStockfishEngine`, not a polish item. Verify with Chrome DevTools Memory profiler: take a snapshot before visiting `/analysis`, after, and after navigating away — heap must return to baseline.
 
 ---
 
-### Pitfall 5: Email Already Registered Conflict During Promotion
+### Pitfall 5: Single-Thread Thermal Throttle on Low-End Android — Unbounded Search Hangs the Device
 
 **What goes wrong:**
-A guest user enters an email address to promote their account. That email already exists in the `users` table because the same person previously registered with email/password (or because another user registered with that email). The promotion logic must NOT overwrite the existing registered account — that would be an account takeover. If the promotion endpoint calls `UPDATE users SET email = :email WHERE id = :guest_id` without first checking for email existence, PostgreSQL raises a `UniqueViolationError`, which is caught and shown as a generic 500 or a cryptic error.
-
-The correct behavior: detect the conflict, inform the user "An account with this email already exists — please sign in instead," and offer a login flow that merges their guest data.
+Without a hard node or time limit, a single-threaded WASM Stockfish can search indefinitely. On a low-end Android (Snapdragon 4xx series, ~150–250k nps single-thread), reaching depth 18 on a complex middlegame takes 15–30 seconds. The device's thermal governor reduces clock speed after sustained load, cutting nps further. Users experience: the "thinking" indicator spins for 30+ seconds with no eval update; tapping other UI elements is sluggish due to the Worker consuming the single JS thread's scheduling budget (even though Workers run off the main thread, they compete for the same CPU core on single-core-equivalent devices). Battery drains visibly.
 
 **Why it happens:**
-Promotion is framed as "update the guest row" but email uniqueness enforcement is pushed to the DB layer. Without an application-level pre-check, the UX is a raw constraint error.
+Desktop-calibrated node limits (e.g. 1,000,000 nodes — the server-side lichess budget) are appropriate for the server (Stockfish native binary) but too high for mobile WASM at single-thread. Lichess's browser analysis uses `go movetime` (time-based) rather than `go nodes` for exactly this reason — it's a better UX guarantee on heterogeneous hardware.
 
 **How to avoid:**
-- Before updating the guest user, query for an existing user with the same email.
-- If found and it's a different `user_id`: return HTTP 409 with a specific error body `{"code": "email_exists"}`. The frontend displays "Email already registered — log in to link your data."
-- If found and it's the same `user_id` (guest already promoted): return HTTP 200 — idempotent.
-- Do NOT silently merge data from two different registered accounts — this is out of scope and a security boundary.
-- For Google SSO promotion: `user_manager.oauth_callback(associate_by_email=True)` will automatically link the Google identity to the existing account. This is correct behavior for login, but NOT for promotion — when promoting a guest, the intent is to transform the guest row, not log into the pre-existing account and lose guest data.
+- Use `go movetime 1500` (1.5 seconds) as the primary budget instead of `go nodes N`. This gives a consistent UX: the eval refreshes in ~1.5s on every device, and users can see depth improving over time.
+- As a safety cap, also set `go movetime 1500 nodes 2000000` — whichever limit is hit first ends the search. This prevents runaway searches if the movetime calculation drifts.
+- Monitor reported `nps` in incoming `info` lines. If `nps < 30000` (severe throttling indicator — the WASM engine itself is seeing thermal throttle), reduce the next movetime budget to 1000ms and surface a subtle "device is warm" indicator if desired.
+- Never use `go infinite` in the analysis UI — always bound the search. `go infinite` is for engine tournaments, not interactive analysis.
 
 **Warning signs:**
-- Sentry shows `UniqueViolationError` on `users.email` with no corresponding 409 response.
-- A user reports their imported games disappeared after promotion (because the callback logged them into their old account, abandoning the guest row).
-- `GET /imports/active` shows 0 active imports for the promoted user despite the guest having completed imports.
+- `bestmove` arrives more than 5 seconds after `go movetime 1500` was sent (indicates the worker's event loop is itself starved or the device clock is throttled).
+- Users report "the board is frozen" after making a move.
+- `info` lines report `nps` values dropping over successive searches (thermal throttle signature).
 
 **Phase to address:**
-Account promotion endpoint — add pre-check for email existence before the UPDATE, with explicit 409 + error code for the frontend to handle.
+Engine hook phase (Phase 136) — hardcode `movetime` limit in `useStockfishEngine` from day one. Do not expose it as a user-configurable option in v1; choose a sensible default. Add a mobile smoke test: open `/analysis` on a budget Android device (or Chrome DevTools throttling at 4x slowdown) and confirm eval updates arrive within 3 seconds.
 
 ---
 
-### Pitfall 6: Active Background Import Orphaned When Guest Promotes
+### Pitfall 6: WASM `Content-Type: application/wasm` Not Served by Caddy — `instantiateStreaming` Throws
 
 **What goes wrong:**
-The import pipeline runs as a background `asyncio.create_task` that holds the `user_id` in its `JobState` dataclass (`_jobs` dict, `app/services/import_service.py`). When a guest promotes, the `user_id` does not change (in-place update). However, if the guest username is stored in `user_repository.update_platform_username` before promotion and the import task is running, the import task's `job.user_id` will still be the same integer — so the import data lands under the correct user. This is correct.
-
-The problem is the import job status UI. The frontend polls `GET /imports/active` using the guest JWT. After promotion, the frontend switches to the new JWT (same user_id). The import job's `job_id` is a UUID string stored in `_jobs` keyed by `job_id`. This survives the JWT transition fine.
-
-The real failure: if the guest starts an import, then promotes via Google SSO (which involves a full page redirect to Google and back), the in-memory `_jobs` dict still holds the job. The frontend callback page restores the new JWT and immediately redirects to the dashboard. The import continues correctly in the background. But if the backend restarts between the import start and the Google redirect return, the job is orphaned — the `cleanup_orphaned_jobs` startup function marks it failed. The user's games are not imported. They see "import failed" with no easy recovery path.
+`WebAssembly.instantiateStreaming(fetch('/engine/stockfish.wasm'))` requires the server to respond with `Content-Type: application/wasm`. If Caddy (or any proxy in the chain) serves the `.wasm` file as `application/octet-stream` or — worse — as `text/html` (a catch-all for unknown extensions), `instantiateStreaming` throws `TypeError: Failed to execute 'compile' on 'WebAssembly': Incorrect response MIME type`. The engine falls back to `WebAssembly.instantiate(arrayBuffer)` if your code handles the error, which is 30–40% slower to parse. If your code does not handle the error, the engine silently fails to load.
 
 **Why it happens:**
-The OAuth redirect is a multi-second flow that crosses a potential server restart boundary. The import service uses in-memory job state that does not survive restarts.
+Caddy 2 includes `application/wasm` for `.wasm` in its built-in MIME types (since Caddy ~2.3), so this should not be an issue for FlawChess's Caddy 2.11.2 setup — but only for files Caddy serves directly. If the WASM is bundled into a Vite asset chunk that gets inlined (base64) or renamed without a `.wasm` extension, Caddy never sees the extension. Additionally, if a CDN or Cloudflare proxy sits in front of Caddy and strips or overrides content types, `application/wasm` may not reach the browser.
 
 **How to avoid:**
-- Show a warning on the import page: "Your import is in progress. Signing up now will not interrupt it, but if you use Google Sign-In, please wait until the import completes to avoid rare data loss on server restart."
-- Better: disable the Google SSO promotion button while an import is active for the current guest.
-- The import page already shows active import status — the promotion UI should check `GET /imports/active` and block or warn if any job is PENDING or IN_PROGRESS.
+- Place the WASM in `public/engine/` and reference it as a static path. Caddy serves `public/` directly with correct MIME types.
+- After the first production deploy, run: `curl -I https://flawchess.com/engine/stockfish-18-lite-single.wasm | grep content-type` and confirm `content-type: application/wasm`.
+- If using the Cloudflare tunnel or Cloudflare proxy: verify Cloudflare does not re-serve the WASM with an overridden MIME type (Cloudflare generally preserves origin MIME types for non-HTML resources).
+- In `vite.config.ts`, ensure the `.wasm` file is NOT captured by `assetsInlineLimit` (set `assetsInlineLimit: 0` for `.wasm` files to keep them as separate fetched resources):
+  ```ts
+  build: {
+    assetsInlineLimit: (filePath) => filePath.endsWith('.wasm') ? 0 : 4096
+  }
+  ```
 
 **Warning signs:**
-- Sentry shows `cleanup_orphaned_jobs marked 1 jobs as failed` immediately followed by a guest promotion event.
-- A user reports "started import, signed up with Google, now games are gone."
+- DevTools Network tab shows the `.wasm` request returning `Content-Type: application/octet-stream`.
+- Console logs `TypeError: Failed to execute 'compile' on 'WebAssembly': Incorrect response MIME type`.
+- Engine takes noticeably longer to start (falling back to `instantiate(arrayBuffer)` path).
 
 **Phase to address:**
-Promotion UI — check for active imports before allowing Google SSO promotion and surface a clear warning or block.
+Engine hook phase (Phase 136) — add a MIME type verification step to the deployment checklist for this phase.
 
 ---
 
-### Pitfall 7: Guest Users Accumulate Without Cleanup — Table Bloat and Storage Costs
+### Pitfall 7: UCI Score Parsing — Lowerbound/Upperbound, Mate-0, and MultiPV Ordering Mistakes
 
 **What goes wrong:**
-Every "Use as Guest" click creates a real `User` row (and potentially `import_job`, `games`, `game_positions`, and `position_bookmarks` rows). Guest users who import games and never promote will remain in the DB indefinitely. At even modest traffic (100 guest sessions/day), this is 36,500 guest users per year with their full game data — potentially millions of `game_positions` rows from non-converting users. PostgreSQL will slow on `VACUUM` over bloated tables. The 75 GB NVMe disk (currently adequate for registered users) can fill from abandoned guest data.
+Three specific UCI parsing mistakes corrupt the displayed eval:
 
-The milestone notes "30-day guest cleanup deferred" — but deferring with no mechanism in place means the cleanup is never implemented until a disk-full emergency forces it.
+**Lowerbound/Upperbound:** During alpha-beta search, the engine emits `info score cp N lowerbound` or `info score cp N upperbound` when the score is a hash table estimate, not the true eval. Displaying these directly causes the eval bar to jump erratically as bounds tighten. Many hobbyist implementations ignore the flags and display every `info` line — this looks correct at depth 1 but produces jittery, wrong evals at depth 10+.
+
+**Mate scores with N=0:** `score mate 0` means the position is already checkmate (the side to move is mated). Some parsers crash or display `M0` as `M∞`. Negative mate scores (`score mate -3`) mean the side to move is losing by forced mate in 3 — the engine is reporting that the position is a loss, not that it is checkmating in 3.
+
+**MultiPV ordering:** With `MultiPV 2`, the engine sends interleaved `info multipv 1` and `info multipv 2` lines, but they arrive out of order — the engine may finish multipv 2 before multipv 1 at the same depth, then finish multipv 1 later. A naive "last info line wins" approach picks the wrong PV. The `bestmove` corresponds to multipv 1 always, but the `info` lines need the `multipv N` tag to sort correctly. With `go movetime`, the final info lines before `bestmove` are the deepest available — but across multipv slots, they may be at different depths.
 
 **Why it happens:**
-Guest user creation is fast and low-friction by design. No natural cleanup mechanism exists because registered users are permanent. Adding cleanup later requires identifying which users are guests (no email, or `is_guest` flag) and ensuring CASCADE deletes propagate correctly without touching promoted users.
+The UCI spec describes these behaviors but most browser engine wrappers are written from lichess's JavaScript analysis code, which handles them correctly. When rolling a custom parser, developers skip the spec's edge cases because the common path (exact score, single PV, not mate) covers 95% of positions.
 
 **How to avoid:**
-- Add `is_guest: bool` (or `created_as_guest: bool`) and `created_at` (already present in the `User` model) to distinguish guest rows from registered rows.
-- Add a DB index on `(is_guest, created_at)` for efficient batch cleanup queries.
-- Even if the cron job is deferred, write the cleanup SQL in a script (like `scripts/`) and document the retention policy (e.g., delete guest users inactive > 30 days).
-- Set a hard limit on guest accounts created per IP per hour using the existing rate-limiting pattern (slowapi or similar) — prevents cleanup debt from accumulating faster than the deferred job can handle.
-- Ensure `ondelete="CASCADE"` is correct on all guest-owned tables (already correct for `games` → `game_positions` → etc.) so deleting a guest `User` row cascades completely.
+- Parse every `info` line into a structured object with explicit fields: `{depth, seldepth, multipv, score: {type:'cp'|'mate', value:number, bound:'exact'|'lower'|'upper'}, nodes, nps, pv}`.
+- Only display scores where `bound === 'exact'`. Buffer `lowerbound` / `upperbound` scores as "last known bound" but never display them as the current eval.
+- For mate scores: render `M0` as "Checkmate" (game over), `M-N` as "Losing M-in-N", `M+N` as "Winning M-in-N". Handle `mate 0` explicitly as a terminal state.
+- For MultiPV: maintain a `Map<number, PVLine>` keyed by `multipv` index. Update on every `info` line. On `bestmove`, take the map's current state as the final eval. Do not assume arrival order.
 
 **Warning signs:**
-- `SELECT count(*) FROM users WHERE is_guest = true` grows unboundedly week-over-week.
-- Disk usage on `/` (NVMe) trending upward faster than registered user game count explains.
-- `autovacuum` running more frequently than usual (pg_stat_user_tables `n_dead_tup` high on `game_positions`).
+- Eval bar jumps to extreme values during normal play and then snaps back.
+- PV display shows the second-best line instead of the best.
+- The UI shows "Mate in 0" or crashes on positions where the game is already over.
+- MultiPV 2 lines swap positions randomly.
 
 **Phase to address:**
-Guest creation backend — add `is_guest` flag and DB index in the same migration that adds the column. Write the cleanup script even if the cron job is deferred. Add per-IP rate limiting on the guest creation endpoint.
+Engine hook phase (Phase 136) — write a standalone UCI parser with unit tests for all three edge cases before integrating it with the worker. Test inputs: an `info` line with `lowerbound`, a `score mate 0` line, and an interleaved MultiPV sequence.
 
 ---
 
-### Pitfall 8: HttpOnly Cookie Conflicts With Existing Bearer Token Auth
+### Pitfall 8: Accidental Multi-Thread — Slipping `SharedArrayBuffer` or COOP/COEP Headers Site-Wide
 
 **What goes wrong:**
-The current auth stack uses `BearerTransport` — the JWT lives in `localStorage` and is sent as `Authorization: Bearer <token>` on every API request. For guest users, the plan uses a separate HttpOnly cookie for the guest JWT. This creates two authentication mechanisms on the same API: Bearer token for registered users, cookie for guests.
+If any future change introduces `SharedArrayBuffer` (e.g. choosing a multi-thread engine build, using `Atomics`, or referencing a dependency that requires it), the browser requires Cross-Origin Isolation: `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp` (or `credentialless`). Setting these site-wide on FlawChess breaks three things simultaneously:
 
-If the auth middleware is not carefully ordered, a request with both a valid Bearer token and a valid guest cookie will produce undefined behavior — one middleware authenticates the registered user, another authenticates the guest. FastAPI-Users' `current_active_user` dependency resolves via the configured `auth_backend` (Bearer). If the guest cookie auth is added as a second backend, the dependency may use whichever backend resolves first, potentially mixing identities.
+1. **Google OAuth popup**: `COOP: same-origin` severs `window.opener`, so the OAuth callback cannot communicate back to the opener tab. Google Sign-In silently fails.
+2. **iOS Safari COEP**: iOS Safari only honors `COEP: require-corp`, not `credentialless`. Any cross-origin asset without `Cross-Origin-Resource-Policy: cross-origin` (e.g. user avatars from chess.com CDNs, analytics scripts) is blocked with a network error.
+3. **React Router SPA cannot isolate per-route**: Cross-origin isolation is a property of the HTML document set at load time; client-side navigation reuses the same document. You cannot enable isolation only on `/analysis` without making it a hard-navigated separate document with no shared JS context.
 
-Additionally: after promotion, the frontend stores the new JWT as a Bearer token. If the guest cookie is not cleared server-side, subsequent requests may carry both. The guest cookie auth would resolve to the (now-promoted, same user_id) user, but the stale cookie could confuse logging and Sentry traces.
+The trap is subtle: a new npm dependency (e.g. a WASM-based chess engine with threading enabled) may bundle a build that uses `SharedArrayBuffer` without advertising it prominently. The engine appears to work on desktop Chrome, but fails on Google OAuth and iOS instantly.
 
 **Why it happens:**
-Mixing CookieTransport with BearerTransport for different user types on the same endpoint is non-standard for FastAPI-Users. The framework is designed for one transport per auth backend.
+Multi-thread WASM engines are a natural upgrade path — lichess uses them, and the perf difference on desktop is real. When performance concerns arise in v1 testing, the "obvious fix" is to switch to the multi-thread build. But the full COOP/COEP impact is invisible until it breaks OAuth or iOS.
 
 **How to avoid:**
-- Do NOT use FastAPI-Users' `CookieTransport` for guest tokens. Instead, issue the guest JWT as a normal Bearer token and store it in `localStorage` exactly like the registered user flow. The guest JWT contains a `user_id` that points to a real row in the `users` table — no special transport needed.
-- The "HttpOnly cookie" approach is only necessary if the guest token must survive cross-origin requests without JavaScript access. For a same-origin SPA, Bearer token in `localStorage` is equivalent security-wise and eliminates the dual-transport problem.
-- If HttpOnly cookie is required for security reasons (e.g., XSS resistance for guest data): implement a separate `/auth/guest/token` endpoint that sets the cookie and a dedicated `get_current_guest` dependency that reads the cookie. Never mix this with `current_active_user` on the same endpoint — use separate dependency chains.
-- On promotion, explicitly clear the guest cookie (set `max_age=0`) in the promotion response, even if Bearer is the primary transport.
+- Lock in `vite.config.ts` and the Caddy config: no `Cross-Origin-Opener-Policy` or `Cross-Origin-Embedder-Policy` headers anywhere on the site. Add a comment citing D-3 and this pitfall.
+- In `useStockfishEngine`, document explicitly:
+  ```ts
+  // Single-thread WASM only — do NOT replace with a SharedArrayBuffer-requiring build.
+  // Multi-thread is deferred (SEED-066 D-3). Changing this requires full COOP/COEP analysis.
+  ```
+- If v1 desktop performance is genuinely insufficient (unlikely), the correct path is a separate hard-navigated `/analysis-desktop` document with its own HTML entry point and no OAuth — not site-wide headers. This requires a Vite multi-page setup and explicit Caddy routing. Open this path only via a dedicated `/gsd-explore` session on D-3.
+- Test: after every CI build, run `curl -I https://flawchess.com | grep -i 'cross-origin'` and fail the build if any COOP/COEP headers appear.
 
 **Warning signs:**
-- API request carries both `Authorization: Bearer <token>` and `Cookie: guest_token=<token>` simultaneously.
-- `current_active_user` dependency resolves to different users on different requests from the same browser session.
-- Sentry `user.id` alternates between guest_id and registered_id for the same session.
+- Engine package README mentions "SharedArrayBuffer" or "Threads > 1" requirement.
+- A dependency update makes Google Sign-In fail silently.
+- iOS users report that profile images or certain analytics fail to load after an update.
+- `window.crossOriginIsolated` returns `true` in the browser console — this should always be `false` for FlawChess.
 
 **Phase to address:**
-Guest creation backend — decide the transport mechanism (Bearer preferred) before writing any code. If cookie transport is chosen, implement strict separation of dependency chains.
+Engine hook phase (Phase 136) — enforce the single-thread package choice from the start. Add a CI check for COOP/COEP headers. Revisit only if v1 ships and desktop performance is genuinely inadequate, via a new discuss session.
 
 ---
 
-### Pitfall 9: SameSite=Lax Guest Cookie Lost on OAuth Redirect Return
+### Pitfall 9: Subsume-Without-Regression — Four Phase 135 Behaviors That Break During the Refactor
 
 **What goes wrong:**
-If HttpOnly cookie transport IS chosen (despite Pitfall 8 above), `SameSite=Lax` is the correct setting for OAuth compatibility. However, some browsers (notably Safari) and Firefox's bounce-tracking protection strip cookies set during cross-site redirect chains. The Google OAuth flow is:
+The subsume refactor folds the Phase 135 `TacticLineExplorer` modal into the new analysis board as a "tactic mode." Four specific behaviors are at high risk of silent regression:
 
-```
-flawchess.com → accounts.google.com → flawchess.com/auth/google/callback
-```
+**Behavior A — Depth-0 highlight:** When `currentDepth === 0` in `useTacticLine`, the flaw move itself is highlighted on the board (no PV to step through). If the new analysis board's `useChessGame` variant starts at the flaw position and the tactic mode overlay doesn't check `depth === 0` separately, it attempts to step the PV and shows the wrong position or crashes on an empty PV array.
 
-On the callback leg, the browser issues a cross-site GET to the backend. `SameSite=Lax` cookies ARE sent on top-level navigation GET requests — so the guest cookie should arrive at the callback. But Firefox's enhanced tracking protection may classify `accounts.google.com` as a bounce tracker and strip the guest cookie on the return.
+**Behavior B — Missed/Allowed +1 offset (`tacticDepth.ts`):** `tacticDepth.ts` computes the correct starting PV depending on orientation: missed = PV from the flaw position (the best reply the user should have played); allowed = PV from the position after the opponent's flaw move (+1 ply, the user's response). If the analysis board's `loadMoves()` call receives the PV anchored at the wrong ply, every subsequent step is off by one and the user sees the opponent's moves instead of their own.
 
-If the guest cookie is lost, the callback cannot identify the guest user and cannot complete promotion — it falls back to creating a new registered user with no guest data.
+**Behavior C — Real-game-ply move numbering:** The tactic context knows the original `game_ply` (e.g. ply 42 = White's 22nd move). The tactic line display shows full-move numbers anchored to the game's ply, not restarted from 1. If the analysis board's `useChessGame` variant initializes its internal `currentPly` counter from 0 when a FEN is loaded, displayed move numbers will be "1. e4 e5" instead of "22. Nxf7 Rxf7" — confusing in tactic context.
+
+**Behavior D — Next/prev-tactic navigation rail:** The next-tactic rail in the tactic overlay must survive re-mounting as an overlay on the shared board (instead of the old modal). If the rail's state (which tactic index) is stored inside `TacticLineExplorer`'s local state, it resets to 0 every time the analysis board re-mounts (e.g. on route re-entry). It needs to be lifted to the URL or a calling context.
 
 **Why it happens:**
-`SameSite=Lax` was chosen as a safe default for cross-site redirects, but browser-level tracking protection adds a layer of unpredictability that SameSite alone cannot address.
+The subsume is framed as a "refactor" but involves significant structural changes to where state lives. Each of the four behaviors was implicit in the old component's architecture; moving to a composition model exposes the implicit dependencies.
 
 **How to avoid:**
-- Do not rely on the guest cookie being present in the OAuth callback. Use the `state` JWT to carry the `guest_user_id` claim (see Pitfall 3). The state is a URL parameter, not a cookie — it survives any browser tracking protection.
-- The guest cookie (if used) serves only for regular API calls from the frontend, not for the OAuth redirect round-trip.
-- Test the promotion flow in Safari (iOS and macOS) and Firefox with Enhanced Tracking Protection enabled before shipping.
+- Write regression tests for all four behaviors BEFORE touching any Phase 135 code. Pin the tests to `TacticLineExplorer`'s current behavior (mounting at a known FEN + PV and asserting move numbers, highlight squares, PV advancement). These tests become the acceptance bar.
+- Keep `tacticDepth.ts` untouched during the subsume. The analysis board accepts a `tacticSeed` prop (FEN, PV, orientation, game-ply-offset, motif) and the overlay reads from it — no internal recalculation of the offset logic.
+- For Behavior C: the `useChessGame` branching variant must accept an optional `startingPly` parameter that offsets its internal ply counter. When loading a tactic from ply 42, pass `startingPly={42}`.
+- For Behavior D: lift the current tactic index to URL state (`/analysis?tacticId=<id>`) so it survives route re-entries and is shareable.
+- Run the tactic overlay against the existing dev database's tactic flaws before calling the subsume complete.
 
 **Warning signs:**
-- Google SSO promotion works in Chrome but fails in Safari or Firefox with ETP.
-- Backend logs show `guest_user_id=None` in the callback despite the user being a guest.
-- Users report "I signed in with Google but my imported games are gone" only in certain browsers.
+- Stepping a tactic line shows the opponent's moves instead of the user's recommended moves.
+- Move numbers displayed as "1. ..." instead of the game's actual move number.
+- The first step of a depth-0 tactic crashes (trying to advance an empty PV).
+- Next-tactic resets to tactic #1 every time the user returns to `/analysis`.
 
 **Phase to address:**
-Account promotion backend — validate in Safari and Firefox before marking the phase complete. Explicitly test the promotion redirect flow in all three major browser engines.
+Subsume phase (Phase 139, the last phase of v1.29) — this is explicitly the highest-regression-risk phase. Allocate extra time; treat it as a refactor with the Phase 135 test suite as the gate. Do NOT ship the subsume in the same phase as the engine hook or analysis board — separate phases allow bisecting regressions cleanly.
 
 ---
 
-### Pitfall 10: `associate_by_email=True` Silently Merges Guest Into Existing Google Account
+### Pitfall 10: WASM Bundle Lazy-Loading UX — "Loading Engine" State Missing or Blocking Navigation
 
 **What goes wrong:**
-The existing `google_callback` calls `user_manager.oauth_callback(associate_by_email=True, ...)`. This is correct for registered users — it links a Google identity to an existing account by matching email. For guest promotion, if a guest user clicks Google SSO and the backend does not intercept the promotion path (see Pitfall 3), `associate_by_email=True` will find the guest row has no email and create a new registered user row — abandoning the guest's data. If by some path the guest row has a matching email (impossible normally, but possible in edge cases), `associate_by_email=True` will link the Google OAuth account to the guest row and set `is_verified=True`. This is the correct outcome — but only if guest promotion logic explicitly controls the flow.
+The WASM engine binary (even the lite ~7 MB build) takes 200–800 ms to fetch, instantiate, and initialize UCI on a fast connection. On a slow mobile connection (3G, 50kbps effective in subway), it can take 30+ seconds. If the component renders the board immediately but blocks user interaction waiting for `uciok`, the board appears frozen — no "loading" indicator, no moves accepted. If instead the component shows a loading overlay, but the overlay covers the board completely and doesn't allow position navigation (e.g. stepping a loaded PV), the UX degrades: users can't explore the stored line while the engine loads.
 
-The silent failure mode: the callback creates a new `User` row for the Google account, logs the user into the new account, and the guest row remains in the DB indefinitely with all its data and no owner — a permanent data orphan.
+The complementary mistake: the WASM is NOT lazy-loaded. If the engine chunk is included in the main bundle (or even the lazy analysis chunk includes it as a synchronous import), it delays the initial parse of the JS for the entire `/analysis` route.
 
 **Why it happens:**
-`user_manager.oauth_callback` is designed for login, not for promotion. Reusing it for promotion without modifying the guest row first causes it to create a new user.
+Engine initialization is asynchronous but the board and PV stepper don't require the engine. Developers block everything on `uciok` because it's the simplest model.
 
 **How to avoid:**
-- For Google SSO promotion: do NOT call `user_manager.oauth_callback` on the guest promotion path. Instead, write a custom promotion function that: (1) verifies the Google identity via the OAuth access token, (2) updates the guest `User` row with the Google email and sets `is_verified=True`, (3) inserts a row into `oauth_accounts` linking the Google identity to the guest's `user_id`.
-- Add an integration test that exercises the full Google SSO promotion path in isolation and asserts: one `User` row (the guest, now promoted), zero abandoned guest rows, correct `oauth_accounts` entry.
+- Split engine loading from board rendering. The board, PV stepper, stored evals, and tactic overlay all work without a live engine — show them immediately.
+- Only the "live eval" area (eval bar, top lines, depth readout) is in a loading state until `uciok` arrives. Use a skeleton/spinner specifically in that region.
+- Send `uci` to the worker immediately on mount (not on first position change). Initialize in the background; show the eval area as "loading engine…" during this time.
+- Use React Router's lazy() + Suspense for the entire `/analysis` chunk. The WASM binary must NOT be a static import at the app entry point — it must only load when the route is visited.
+- On slow connections: show a progress estimate. The WASM file fetch can be tracked via `fetch()` with `ReadableStream` — not required for v1 but worth noting as a future UX polish.
 
 **Warning signs:**
-- After Google SSO promotion, `SELECT count(*) FROM users WHERE is_guest = true AND email IS NULL` still contains the original guest row.
-- The user is logged in with a new `user_id` that has no game data.
-- `oauth_accounts` table has a row pointing to a new `user_id`, not the original guest `user_id`.
+- Board appears blank for 1–2 seconds when navigating to `/analysis` even on fast Wi-Fi (WASM being parsed synchronously on the main chunk).
+- No loading indicator in the eval area — board just looks "not working."
+- Mobile users report that chess analysis "doesn't do anything" (engine loaded but no visible feedback during analysis).
 
 **Phase to address:**
-Account promotion backend — write a dedicated `promote_guest_via_google` function rather than reusing `oauth_callback`. Cover with an integration test.
+Analysis board phase (Phase 137) — the board + PV stepper must be independently renderable. Engine loading state integration is part of the route phase (Phase 138) where the full UX composition comes together.
 
 ---
 
@@ -279,73 +310,55 @@ Shortcuts that seem reasonable but create long-term problems.
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| Defer guest cleanup cron job indefinitely | Simpler v1.8 scope | Table bloat, disk pressure, VACUUM overhead; retroactive cleanup is more complex than proactive | Acceptable only if a cleanup script exists, `is_guest` flag is set, and a backlog item is explicitly scheduled |
-| Store guest JWT in localStorage (same as registered JWT) | No transport complexity | No practical downside for a same-origin SPA; this is actually the better choice | Always acceptable for same-origin SPA |
-| Use `associate_by_email=True` for promotion without a custom path | Reuse existing OAuth logic | Silently creates new user on email mismatch; orphans guest data | Never for promotion — only valid for login |
-| Skip `token_version` claim for JWT invalidation post-promotion | Simpler implementation | Old guest tokens valid for up to 7 days after promotion; acceptable if frontend replaces token immediately | Acceptable if fresh JWT is issued on promotion response |
-| Validate OAuth CSRF only in state JWT without a cookie | Simpler than double-submit | Vulnerable to login CSRF (CVE-2025-68481 pattern); full account takeover risk | Never |
-| Rate-limit guest creation by IP only | Simple to implement | Shared NAT IPs (offices, mobile carriers) get blocked while attackers use rotating proxies | Acceptable at MVP scale; revisit if abuse is observed |
-| Promote by patching `is_guest` without clearing the flag atomically | Simpler update | Promoted user still appears as guest if the flag update fails mid-transaction | Never — use a DB transaction that updates all fields atomically or none |
+| Use full NNUE SF18 build (~40+ MB) for "better analysis" | Higher depth on desktop | Breaks iOS Cache API (50 MB limit), slow on mobile, fails the PWA install flow | Never for v1; only on desktop-isolated progressive enhancement path |
+| `go infinite` with a user-facing "Stop" button | Familiar lichess UX | Requires the user to manually stop; engine runs forever if user navigates away without stopping; battery drain | Never — always bound with `movetime` |
+| Skip the stop/bestmove handshake, send `go` immediately after position change | Simpler code | Stale-eval race: bestmove from previous search displayed for new position | Never |
+| Module-level singleton worker (one instance for the entire session) | Avoids re-init cost (~200ms) | Must implement explicit pause/resume; harder to test; worker errors affect all uses | Acceptable if paired with explicit `pause()` on route unmount; not recommended for v1 |
+| Display all `info` lines including lowerbound/upperbound scores | Simpler parsing | Eval bar appears jittery; wrong score displayed during search | Never — filter to `exact` scores only |
+| Keep `TacticLineExplorer` as a separate component alongside the new analysis board | Avoids subsume risk | Code duplication forever; two separate board instances maintained; users see inconsistent behavior between tactic and free analysis | Only during Phase 135→136 transition; must complete subsume before v1.29 closes |
 
 ---
 
 ## Integration Gotchas
 
-Common mistakes when connecting to the existing FlawChess auth system.
+Common mistakes when integrating the live engine with existing FlawChess components.
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| `current_active_user` dependency | Adding a second auth backend (CookieTransport) for guests alongside Bearer | Use a single Bearer transport for both guest and registered JWTs; differentiate by a `is_guest` claim in the JWT payload |
-| `google_authorize` / `google_callback` | Not threading `guest_user_id` through the state JWT for promotion | Embed `guest_user_id` as an optional state claim; backend reads it on callback to choose promotion vs. normal login path |
-| `user_manager.oauth_callback` | Calling it unchanged for promotion path | Do NOT call for promotion — write a custom `promote_guest_via_google` that updates the existing row and inserts into `oauth_accounts` |
-| `import_service.run_import` | Assuming `user_id` changes during promotion (it does not with in-place update) | user_id is stable after in-place promotion — no import job re-association needed; but warn user to not use Google SSO while an import is running |
-| `apply_game_filters` | Adding a `is_guest` filter to restrict certain endpoints for guest users | Add as an optional parameter with a default; do not hardcode guest checks inside the shared utility |
-| `UserManager.on_after_login` | Not calling `on_after_login` after promotion (just as it is not called for OAuth flow today) | Manually update `last_login` in the promotion endpoint, the same way `google_callback` does it with `sa_update` |
-| FastAPI-Users `SQLAlchemyBaseUserTable` | Assuming adding `is_guest` column is sufficient for query filtering | Also add a partial index `CREATE INDEX ... WHERE is_guest = true AND created_at < NOW() - INTERVAL '30 days'` for efficient cleanup queries |
+| `useChessGame` clone for analysis | Copy `useChessGame` and add branching; now two copies diverge | Fork `useChessGame` into `useAnalysisGame` with a clear composition boundary; shared logic extracted to utils; no state duplication |
+| `tacticDepth.ts` import | Reimplementing the offset logic in the new analysis hook | Import `tacticDepth.ts` unchanged; the analysis board's `loadTacticSeed()` calls it to compute the correct PV anchor |
+| `ArrowOverlay` + engine arrows | Adding engine top-line arrows on top of existing tactic arrows; both sets render | Engine arrows and tactic arrows are mutually exclusive: tactic mode shows tactic arrows (best-move highlight); free analysis mode shows engine PV arrows. Gate via mode prop |
+| PWA service worker + WASM | Workbox `generateSW` auto-precaches everything in `dist/` including the new WASM | Explicitly exclude WASM from precache glob pattern: `globIgnores: ['**/*.wasm']`; let HTTP cache handle it |
+| URL state encoding for FEN/PGN | URL-encoding a full PGN string in query params; URLs become 1000+ chars, break sharing | Encode only the FEN for the current position + move list as UCI notation (compact); decode on mount |
+| Vite `optimizeDeps.exclude` for stockfish | Forgetting to exclude causes dep-optimization breakage in dev | Add `optimizeDeps: { exclude: ['stockfish'] }` before writing any engine code |
 
 ---
 
 ## Performance Traps
 
-Patterns that work at small scale but fail as usage grows.
+Patterns that work at small scale but fail under realistic mobile conditions.
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| No rate limiting on `POST /auth/guest/create` | Bots create thousands of guest accounts; disk fills; DB slows | Per-IP rate limit via slowapi (already used in project's async semaphore pattern); max 5 guest accounts per IP per hour | Noticeable at >100 bot requests/hour |
-| Guest game data not cascade-deleted | Manual cleanup queries must enumerate child tables | Verify `ondelete="CASCADE"` on `games.user_id`, `game_positions.game_id`, `position_bookmarks.user_id`, `import_jobs.user_id` before shipping | 1,000+ accumulated guest users |
-| Counting all guest users without an index | `SELECT count(*) FROM users WHERE is_guest = true` is a full table scan | Add `CREATE INDEX idx_users_is_guest_created_at ON users (is_guest, created_at)` in the migration | >50K user rows |
-| Promotion endpoint without row-level lock | Concurrent promotions corrupt user row | Use `SELECT ... FOR UPDATE` or conditional `UPDATE WHERE email IS NULL` | Rare but catastrophic when it happens |
-| Fetching full guest user list for cleanup script | Memory-intensive for large tables | Use keyset pagination: `WHERE is_guest = true AND created_at < cutoff AND id > :last_id LIMIT 100` | >10K guest rows to clean up |
-
----
-
-## Security Mistakes
-
-Domain-specific security issues for guest access and promotion.
-
-| Mistake | Risk | Prevention |
-|---------|------|------------|
-| No CSRF protection on OAuth state (CVE-2025-68481 pattern) | 1-click account takeover via login CSRF | Double-submit cookie: set `flawchess_oauth_csrf` cookie on authorize, validate on callback |
-| Guest `user_id` accepted from request body in promotion endpoint | Attacker promotes someone else's guest account | Always derive `user_id` from the authenticated JWT, never from the request body |
-| Email uniqueness checked only at DB level | 500 error on conflict instead of 409 with actionable message | Application-level pre-check: query for existing email before UPDATE; return 409 `{"code": "email_exists"}` |
-| No validation that `guest_user_id` in OAuth state is actually a guest | Attacker embeds a registered user's `user_id` in the state, triggering a "promotion" that overwrites their account | Before executing promotion path, verify `User.is_guest == True` AND `User.email IS NULL` for the `guest_user_id` in the state claim |
-| Guest accounts never expire | Unlimited data accumulation; privacy risk (GDPR: data must not be retained longer than necessary) | Set `is_guest = true` flag; delete after 30 days of inactivity (no login, no new games) |
-| Promotion endpoint accessible without any auth | Anyone can call `POST /auth/promote` without a guest JWT | Require a valid JWT (guest or otherwise) — use `current_active_user` or equivalent dependency; promotion requires an authenticated session |
+| `go nodes 1000000` (server-side budget) in browser | 10–30s waits on mobile, device heats up | Use `go movetime 1500` as the primary bound; nodes as secondary cap | Any device below flagship Android |
+| Re-creating the worker on every position change | 200ms stutter on each move; "loading engine" flashes every time | Create the worker once on mount, reuse via `stop`/`go` sequence; terminate only on unmount | Always noticeable; especially bad on mobile |
+| Sending `setoption name MultiPV value 2` unconditionally | 2x analysis cost; slower depth progression; on mobile this doubles movetime | Only enable MultiPV 2 when the UI is actually rendering a second line (analysis mode); use MultiPV 1 for tactic mode where only the best reply matters | Low-end mobile; analysis takes 2× as long |
+| Not debouncing position changes | Rapid PV stepping floods the worker with stop/go cycles; `bestmove` responses pile up | Debounce position changes by 150ms before sending `go`; this is especially important when the user holds down the forward key | Any fast PV stepping in the tactic stepper |
+| Parsing info lines in the main thread via heavy regex | Jank on info-line bursts (Stockfish emits many lines/second) | Parse in the Worker itself and postMessage only the structured result; the Worker thread is off the main thread but still reduce postMessage volume | High-depth analysis; info lines arrive ~10/sec |
 
 ---
 
 ## UX Pitfalls
 
-Common user experience mistakes for guest-to-registered flows.
+Common user experience mistakes specific to this domain.
 
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|-----------------|
-| No indication of guest status in the UI | User forgets they are a guest; imports games; closes tab; loses data | Show a persistent but non-intrusive banner: "You're using a guest account — sign up to save your data permanently" |
-| Promotion form shows generic error on email conflict | User doesn't know whether to log in or try a different email | Return `{"code": "email_exists"}` from backend; frontend shows: "This email is already registered. Log in instead?" with a direct login link |
-| Google SSO promotion button active while import is running | User promotes via Google, page redirect interrupts in-memory job, import fails | Disable or warn on the Google SSO button when `GET /imports/active` returns active jobs |
-| After promotion, page shows guest info box again | User just promoted — showing "Sign up to save your data" is confusing | Immediately update auth state in the frontend after promotion response; hide guest-only UI elements reactively |
-| No confirmation step before promotion | User accidentally promotes with wrong Google account | Show a confirmation step: "You're about to sign in as user@gmail.com — this will convert your guest account" |
-| Promotion via email/password requires verification email before access is granted | User promotes, verification email goes to spam, they cannot use the app | Allow access with a "verification pending" state; show a persistent nudge to verify; do not block the full app behind verification |
+| No "loading engine" state — board appears frozen | User thinks the page is broken; may reload, losing their position | Show a spinner in the eval area immediately; board and PV stepper are interactive while engine loads |
+| Showing engine eval before the engine is confident (depth < 8) | Shallow evals show highly misleading scores (±500 cp swings); users distrust the feature | Show eval only from depth 8+; until then show "Analyzing…" with a depth counter |
+| Eval bar updating every `info` line (30+ updates/second) | Rapid flicker; mobile renders can't keep up; perceived jitter | Throttle eval bar updates to every 300ms or on depth change; debounce with `requestAnimationFrame` |
+| No explanation when engine is unavailable (browser blocking WASM, or download fails) | User sees a dead eval bar with no explanation | Catch `WebAssembly.instantiate` errors; show "Engine unavailable. Try refreshing or using a supported browser." |
+| Tactic mode drops users into free analysis without warning | User stepped off the tactic line and suddenly has no guided content | Show a subtle "Exploring off-line — engine is analyzing freely" chip when the user deviates from the stored PV in tactic mode |
 
 ---
 
@@ -353,16 +366,17 @@ Common user experience mistakes for guest-to-registered flows.
 
 Things that appear complete but are missing critical pieces.
 
-- [ ] **Guest creation endpoint:** Rate limiting applied — verify `GET /auth/guest/create` (or equivalent) returns 429 after threshold from same IP.
-- [ ] **OAuth CSRF protection:** `google_authorize` response sets `flawchess_oauth_csrf` cookie AND `google_callback` validates it — verify both sides, not just the state JWT signature check.
-- [ ] **Google SSO promotion:** After flow completes, `SELECT * FROM users WHERE id = :guest_id` shows `email IS NOT NULL`, `is_guest = false` (or equivalent), and the guest row count has NOT increased.
-- [ ] **Email conflict:** Promotion with an email that belongs to another user returns HTTP 409 with `{"code": "email_exists"}` — not 500 and not 200.
-- [ ] **Old guest JWT after promotion:** Frontend stores the new JWT issued by the promotion response — verify via browser DevTools that `localStorage` no longer contains the pre-promotion token.
-- [ ] **Active import during Google SSO promotion:** Start an import as a guest, then attempt Google SSO promotion — verify warning or block appears; verify import completes correctly.
-- [ ] **Cascade delete:** Delete a promoted guest `User` row — verify all `games`, `game_positions`, `position_bookmarks`, and `import_jobs` rows are gone.
-- [ ] **is_guest flag:** After promotion, `User.is_guest` (or equivalent field) is `false` — guest cleanup job would not target this user.
-- [ ] **Mobile layout:** Guest info box and promotion CTA appear correctly at 375px — verify both the homepage "Use as Guest" button and the import page info box.
-- [ ] **Safari / Firefox ETP:** Google SSO promotion tested in Safari (iOS + macOS) and Firefox with Enhanced Tracking Protection — promotion completes with guest data intact.
+- [ ] **Vite dev vs prod parity:** Verify the engine loads in `npm run build && npx serve dist` on the same machine before testing on mobile — dev (`vite dev`) may succeed while `build` 404s the WASM.
+- [ ] **iOS Cache quota:** On an iPhone (or iOS Simulator), open `/analysis` in Safari standalone PWA mode; confirm no `QuotaExceededError` in the Web Inspector console and no SW registration failure.
+- [ ] **Worker terminate on unmount:** Navigate to `/analysis`, let the engine start, then navigate away. Open Chrome DevTools Task Manager; confirm no "Dedicated Worker" process remains.
+- [ ] **Stale-eval race:** Move rapidly through a PV (6+ moves in 2 seconds); confirm the displayed eval and best-move arrow correspond to the final position, not an intermediate one.
+- [ ] **Mate display:** Navigate to a checkmated position; confirm the UI shows "Checkmate" (not "Mate in 0" or a crash).
+- [ ] **MultiPV ordering:** With MultiPV 2 enabled, confirm the displayed second line is actually the second-best move, not a random line from an interleaved info sequence.
+- [ ] **Tactic mode Behavior A (depth-0):** Open a depth-0 tactic from a flaw card; confirm the flaw move square is highlighted and no PV step crash occurs.
+- [ ] **Tactic mode Behavior B (+1 offset):** For an "allowed" tactic (opponent's flaw), confirm the first PV move shown is your best response to the opponent's blunder, not the opponent's move itself.
+- [ ] **Tactic mode Behavior C (move numbers):** Open a tactic from ply 42; confirm the displayed move counter starts at move 22, not move 1.
+- [ ] **COOP/COEP header check:** After deploy, run `curl -I https://flawchess.com | grep -i cross-origin` — no COOP or COEP headers should be present.
+- [ ] **Google OAuth unbroken:** After adding the analysis page, complete a full Google Sign-In flow; confirm it still works (COOP accidental slip is silent until OAuth is tested).
 
 ---
 
@@ -372,47 +386,48 @@ When pitfalls occur despite prevention, how to recover.
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| OAuth CSRF vulnerability discovered post-ship | HIGH | Emergency deploy of double-submit cookie fix; rotate `SECRET_KEY` to invalidate all existing state JWTs; notify affected users if account linkage was observed |
-| Guest data orphaned by failed Google SSO promotion | MEDIUM | Write a one-off script to reassociate `games.user_id` from the orphaned guest_id to the new registered user_id; verify uniqueness constraints don't block the update |
-| Disk full from guest data accumulation | HIGH | Emergency cleanup: `DELETE FROM users WHERE is_guest = true AND created_at < NOW() - INTERVAL '7 days'` (aggressive; requires CASCADE on child tables to be confirmed first); expand disk on Hetzner |
-| Concurrent promotion creates duplicate email | LOW | Catch `UniqueViolationError` at the endpoint; return 409; the second promotion attempt was redundant — user is already promoted |
-| Old guest JWT used post-promotion for unauthorized access | LOW | No immediate recovery needed — same user_id, same data; wait for 7-day expiry; if urgent, implement token_version increment (requires migration + middleware change) |
-| Google SSO creates new user instead of promoting guest | MEDIUM | Identify the orphaned guest row by `created_at` + `chess_com_username`/`lichess_username`; run SQL to update `games.user_id` to new user's id; delete orphaned guest row |
+| Vite WASM URL broken in prod | LOW | Move engine files to `public/engine/`; update Worker instantiation URL; redeploy |
+| iOS Cache quota exceeded; SW broken | MEDIUM | Remove WASM from SW precache; bump SW version to force re-registration; redeploy; no data loss |
+| Worker leak discovered post-ship | LOW | Add `worker.terminate()` to `useEffect` cleanup; redeploy — one-line fix, but mobile users need to reload the app |
+| Stale-eval race producing wrong bestmove | MEDIUM | Add sequence counter to UCI parser; requires refactoring the hook's message handler; no data loss |
+| COOP/COEP headers accidentally set site-wide | HIGH | Emergency revert of header config; Google OAuth and iOS assets broken for all users until deploy; prioritize immediately |
+| Phase 135 tactic behavior regressed in subsume | MEDIUM | Revert the subsume PR; keep `TacticLineExplorer` as a separate component temporarily; re-approach with the regression tests in place |
+| Full SF18 NNUE accidentally shipped (large build) | LOW | Swap to lite build in config; redeploy; no data loss — only a bundle-size regression until fixed |
 
 ---
 
 ## Pitfall-to-Phase Mapping
 
-How roadmap phases should address these pitfalls.
-
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| CVE-2025-68481 OAuth CSRF (Pitfall 1) | Guest creation backend — fix existing OAuth endpoints | `google_authorize` sets CSRF cookie; `google_callback` validates it; integration test passes |
-| Guest JWT valid post-promotion (Pitfall 2) | Account promotion endpoint | Promotion response includes fresh JWT; frontend test confirms old token is replaced |
-| Guest identity lost in OAuth redirect (Pitfall 3) | Account promotion backend — Google SSO path | `state` JWT contains `guest_user_id`; callback correctly routes to promotion path |
-| Concurrent promotion race (Pitfall 4) | Account promotion endpoint | `UPDATE ... WHERE email IS NULL` or `SELECT FOR UPDATE` used; concurrent request returns 409 not 500 |
-| Email conflict during promotion (Pitfall 5) | Account promotion endpoint | 409 with `email_exists` code returned; no 500 on duplicate email |
-| Active import orphaned during Google SSO (Pitfall 6) | Promotion UI | Active import check before Google SSO button is enabled; warning displayed |
-| Guest accumulation / table bloat (Pitfall 7) | Guest creation backend | `is_guest` flag set; DB index created; cleanup script written |
-| HttpOnly cookie conflicts with Bearer (Pitfall 8) | Guest creation backend — transport decision | Single Bearer transport for all JWTs; no cookie transport mixed in |
-| SameSite cookie lost on redirect (Pitfall 9) | Account promotion backend — Google SSO path | `guest_user_id` in state JWT, not in cookie; Safari + Firefox tested |
-| `associate_by_email=True` orphans guest data (Pitfall 10) | Account promotion backend — Google SSO path | Custom `promote_guest_via_google` function; integration test confirms zero orphaned guest rows |
+| Vite WASM URL resolution (Pitfall 1) | Phase 136 — Engine hook | `npm run build && npx serve dist`: WASM 200, correct Content-Type |
+| iOS 50 MB Cache limit / lite build (Pitfall 2) | Phase 136 — Engine hook | iOS Simulator: no QuotaExceededError; SW registers cleanly |
+| Stale-eval race / stop-bestmove-go ordering (Pitfall 3) | Phase 136 — Engine hook | Unit test: mock worker state machine; rapid move test in browser |
+| Worker leak on route change (Pitfall 4) | Phase 136 — Engine hook | Chrome DevTools Task Manager: no lingering workers after nav away |
+| Thermal throttle / unbounded search (Pitfall 5) | Phase 136 — Engine hook | `go movetime 1500` hardcoded; test on 4x throttled Chrome DevTools |
+| WASM MIME type on Caddy (Pitfall 6) | Phase 136 — Engine hook | Post-deploy `curl -I` check on `.wasm` URL |
+| UCI score parsing edge cases (Pitfall 7) | Phase 136 — Engine hook | Unit tests: lowerbound line, `mate 0`, MultiPV interleaved sequence |
+| Accidental multi-thread / COOP+COEP (Pitfall 8) | Phase 136 — Engine hook | CI: `curl -I` check; package lock audit for SharedArrayBuffer deps |
+| Subsume regression (Behavior A–D) (Pitfall 9) | Phase 139 — Subsume | Regression tests on depth-0, +1 offset, move numbers, tactic rail state |
+| Engine loading UX / lazy load (Pitfall 10) | Phase 137–138 — Board + route | Lighthouse: analysis route doesn't add to main bundle; loading state visible in eval area |
 
 ---
 
 ## Sources
 
-- Codebase: `app/routers/auth.py`, `app/users.py`, `app/services/import_service.py`, `app/models/user.py`, `app/models/game.py` — HIGH confidence (direct inspection)
-- [CVE-2025-68481: 1-click Account Takeover in Apps Using FastAPI SSO — GitHub Advisory](https://github.com/fastapi-users/fastapi-users/security/advisories/GHSA-5j53-63w8-8625) — HIGH confidence (official advisory)
-- [CVE-2025-68481 — GitLab Advisory Database](https://advisories.gitlab.com/pkg/pypi/fastapi-users/CVE-2025-68481/) — HIGH confidence
-- [Add a double-submit cookie in the OAuth flow — fastapi-users commit 7cf413c](https://github.com/fastapi-users/fastapi-users/commit/7cf413cd766b9cb0ab323ce424ddab2c0d235932) — HIGH confidence (official fix)
-- [Auth0: SameSite Cookie Attribute Changes](https://auth0.com/docs/manage-users/cookies/samesite-cookie-attribute-changes) — MEDIUM confidence (authoritative vendor docs)
-- [Gotchas With Same Site Strict Cookie and OAuth — hrishikeshpathak.com](https://hrishikeshpathak.com/blog/gotchas-with-same-site-strict-cookie-and-oauth/) — MEDIUM confidence
-- [Audiobookshelf issue #5127 — Firefox bounce-tracking strips OIDC session cookie](https://github.com/advplyr/audiobookshelf/issues/5127) — MEDIUM confidence (real-world Firefox ETP issue)
-- [Curity: OAuth and Same Site Cookies best practices](https://curity.io/resources/learn/oauth-cookie-best-practices/) — MEDIUM confidence
-- [Stop Duplicate Records: Fix Race Conditions Using Unique Database Indexes](https://medium.com/@itsvinayc/race-conditions-in-web-apps-and-how-a-unique-index-can-save-you-736d682dabfb) — MEDIUM confidence
-- [Descope: How to Invalidate a JWT Token After Logout](https://www.descope.com/blog/post/jwt-logout-risks-mitigations) — MEDIUM confidence
+- Codebase: `frontend/src/hooks/useChessGame.ts`, `frontend/src/lib/tacticDepth.ts`, `frontend/src/components/board/` — HIGH confidence (direct inspection)
+- `.planning/seeds/SEED-066-live-engine-analysis-page.md` (Risks / watch-outs, D-3 reasoning) — HIGH confidence (project document)
+- `.planning/seeds/SEED-012-client-side-stockfish-tactics.md` (Prerequisite 1: COOP/COEP + iOS Safari research) — HIGH confidence (project document)
+- [Vite Features: Web Workers](https://vite.dev/guide/features) — MEDIUM confidence (official docs, cross-checked)
+- [Vite issue #8427: new URL() in pre-bundled deps](https://github.com/vitejs/vite/issues/8427) — MEDIUM confidence (verified issue, known pattern)
+- [Vite issue #10837: ?url / ?worker inside 3rd-party modules](https://github.com/vitejs/vite/issues/10837) — MEDIUM confidence (verified issue)
+- [stockfish npm package README](https://www.npmjs.com/package/stockfish) — MEDIUM confidence (official package)
+- [Godot issue #70621: WASM 2GB memory → OOM on iOS](https://github.com/godotengine/godot/issues/70621) — MEDIUM confidence (real-world platform report)
+- [iOS Safari Cache API 50MB limit — love2dev.com](https://love2dev.com/blog/what-is-the-service-worker-cache-storage-limit/) — MEDIUM confidence (cross-referenced with web.dev storage docs)
+- [UCI specification](https://official-stockfish.github.io/docs/stockfish-wiki/UCI-&-Commands.html) — HIGH confidence (official Stockfish documentation)
+- [WebAssembly MIME type / nginx issue](https://trac.nginx.org/test/ticket/1606) — MEDIUM confidence (known nginx pattern, applies to Caddy equally)
+- [WASM not working: MIME type requirements — fixdevs.com](https://fixdevs.com/blog/wasm-not-working/) — LOW confidence (cross-checked with official Rust/WASM deployment docs)
 
 ---
-*Pitfalls research for: FlawChess v1.8 — Guest access with account promotion to existing FastAPI-Users system*
-*Researched: 2026-04-06*
+*Pitfalls research for: FlawChess v1.29 — Live WASM Stockfish analysis board on mobile-first PWA*
+*Researched: 2026-06-26*

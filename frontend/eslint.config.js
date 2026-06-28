@@ -46,4 +46,13 @@ export default defineConfig([
       'react-refresh/only-export-components': 'off',
     },
   },
+  // Analysis board overlay exports non-component arrow builders and orientation helpers
+  // alongside the TacticModeOverlay component so Analysis.tsx can drive the shared
+  // ChessBoard arrows without a separate file indirection (Phase 139).
+  {
+    files: ['src/components/analysis/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
 ])
