@@ -1691,9 +1691,7 @@ class TestOpponentTacticMarker:
     """
 
     @pytest.mark.asyncio
-    async def test_opponent_tactic_motif_on_hollow_square_marker(
-        self, db_session: object
-    ) -> None:
+    async def test_opponent_tactic_motif_on_hollow_square_marker(self, db_session: object) -> None:
         """Opponent blunder marker carries its allowed_tactic_motif (the new behavior).
 
         Setup:
@@ -1789,9 +1787,7 @@ class TestOpponentTacticMarker:
         # SeverityCounts is a TypedDict (plain dict at runtime) — use [] access.
         assert card.severity_counts is not None
         sc = card.severity_counts
-        assert sc["blunder"] == 1, (
-            f"Expected blunder count = 1 (user-only), got {sc['blunder']}"
-        )
+        assert sc["blunder"] == 1, f"Expected blunder count = 1 (user-only), got {sc['blunder']}"
         assert sc["mistake"] == 0
 
         # 4. Opponent motif does not appear in curated chips (chips stay player-gated).
@@ -1803,9 +1799,7 @@ class TestOpponentTacticMarker:
         )
 
     @pytest.mark.asyncio
-    async def test_opponent_tactic_motif_via_get_library_games(
-        self, db_session: object
-    ) -> None:
+    async def test_opponent_tactic_motif_via_get_library_games(self, db_session: object) -> None:
         """get_library_games (page-list path) also populates opponent tactic markers.
 
         Verifies that the page_tactic_flaws batch-fetch wired to get_library_games
