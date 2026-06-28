@@ -341,15 +341,18 @@ export default function Analysis() {
       // noUncheckedIndexedAccess guard (T-140-02b): skip out-of-range plies.
       const nodeId = mainLine[fm.ply];
       if (nodeId === undefined) continue;
-      const missedMotif = fm.missed_tactic_motif;
-      const allowedMotif = fm.allowed_tactic_motif;
+      // Quick 260628-u7d follow-up: opponent tactic tags are surfaced in the eval-chart
+      // tooltip (built separately in EvalChart) but NOT in the move list — suppress the
+      // opponent's motifs here. Severity glyphs stay both-color (pre-existing behavior).
+      const missedMotif = fm.is_user ? fm.missed_tactic_motif : null;
+      const allowedMotif = fm.is_user ? fm.allowed_tactic_motif : null;
       const sev = fm.severity;
       if (missedMotif !== null || allowedMotif !== null || sev === 'blunder' || sev === 'mistake') {
         map.set(nodeId, {
           missedMotif,
           allowedMotif,
-          missedDepth: fm.missed_tactic_depth,
-          allowedDepth: fm.allowed_tactic_depth,
+          missedDepth: fm.is_user ? fm.missed_tactic_depth : null,
+          allowedDepth: fm.is_user ? fm.allowed_tactic_depth : null,
           severity: sev,
           ply: fm.ply,
         });
