@@ -40,6 +40,7 @@ from app.repositories.library_repository import (
     is_decided_lost,
     tactic_slot_visible,
 )
+from app.repositories.query_utils import mover_is_white_at_ply
 from app.services.tactic_detector import _INT_TO_MOTIF as _TACTIC_INT_TO_MOTIF
 from app.schemas.library import (
     FlawBullet,
@@ -371,6 +372,7 @@ def _build_card(
     tactic_orientation: TacticOrientation = "either",
     min_tactic_depth: int | None = None,
     max_tactic_depth: int | None = None,
+    tactic_flaw_rows: list[GameFlaw] | None = None,
 ) -> GameFlawCard:
     """Build one GameFlawCard from pre-fetched game_flaws rows (D-02 migration).
 
@@ -402,6 +404,12 @@ def _build_card(
     "blunders only" filter still surfaced tactic chips from mistake-severity flaws
     (and vice versa) because tactic_slot_visible never gated on severity. Empty =
     no narrowing (single-game path unaffected).
+
+    Quick 260628-u7d: tactic_flaw_rows is a both-color (ungated) row list used
+    ONLY to populate the per-ply tactic map for eval-chart tooltips — it may
+    include opponent rows. When None, falls back to flaw_rows so any other caller
+    keeps exact existing behavior. severity_counts, chips, and all stats still
+    iterate flaw_rows (player-gated) and are byte-for-byte unchanged.
     """
     severity_counts: SeverityCounts | None
     chips: list[FlawTag]
@@ -446,19 +454,22 @@ def _build_card(
             # game-selection predicate (build_flaw_filter_clauses). Empty = no gate.
             severity_ints = {_SEVERITY_INT[s] for s in flaw_severity} if flaw_severity else None
             # Build a ply → GamePosition index once for decided-lost lookups (per-row ply N-1).
-            # Flaw rows are player-gated (fetch_page_game_flaws uses player_only_gate), so
-            # mover == user on all rows: user_color is the correct mover perspective.
+            # Quick 260628-u7d: tactic_flaw_rows may include opponent rows (both movers),
+            # so mover_is_white is derived per-ply instead of assuming mover == user.
             pos_by_ply: dict[int, GamePosition] = {p.ply: p for p in positions}
             tactic_by_ply: dict[int, _TacticByPlyEntry] = {}
-            for fr in flaw_rows:
+            rows_for_tactic = tactic_flaw_rows if tactic_flaw_rows is not None else flaw_rows
+            for fr in rows_for_tactic:
                 if severity_ints is not None and fr.severity not in severity_ints:
                     continue
                 # Decided-lost: look up the pre-move position (ply N-1) and check.
+                # mover_is_white derived from ply parity (single-source convention) so the
+                # gate is correct for both player rows and opponent rows.
                 prev_pos = pos_by_ply.get(fr.ply - 1)
                 fr_decided_lost = is_decided_lost(
                     prev_pos.eval_cp if prev_pos else None,
                     prev_pos.eval_mate if prev_pos else None,
-                    mover_is_white=(game.user_color == "white"),
+                    mover_is_white=mover_is_white_at_ply(fr.ply),
                 )
                 allowed_visible = tactic_slot_visible(
                     fr.allowed_tactic_motif,
@@ -596,6 +607,11 @@ async def get_library_game(
     flaw_rows = (await library_repository.fetch_page_game_flaws(session, user_id, game_ids)).get(
         game_id, []
     )
+    # Both-color rows for tactic tooltip population (opponent plies included).
+    # WARNING: must not replace flaw_rows — counts/chips stay player-gated.
+    tactic_flaw_rows = (
+        await library_repository.fetch_page_game_flaws_both_colors(session, user_id, game_ids)
+    ).get(game_id, [])
 
     # Fetch active eval-job status for the pending→leased pill transition.
     # Sequential call on the same AsyncSession (no asyncio.gather per CLAUDE.md).
@@ -620,6 +636,7 @@ async def get_library_game(
         tactic_orientation=tactic_orientation,
         min_tactic_depth=min_tactic_depth,
         max_tactic_depth=max_tactic_depth,
+        tactic_flaw_rows=tactic_flaw_rows,
     )
 
 
@@ -691,6 +708,12 @@ async def get_library_games(
         # Batch fetch game_flaws for the whole page (one query, grouped by game_id).
         page_flaws = await library_repository.fetch_page_game_flaws(session, user_id, page_game_ids)
 
+        # Both-color rows for tactic tooltip population (opponent plies included).
+        # WARNING: must not replace page_flaws — counts/chips stay player-gated.
+        page_tactic_flaws = await library_repository.fetch_page_game_flaws_both_colors(
+            session, user_id, page_game_ids
+        )
+
         # Batch fetch the analyzed subset (eval-coverage gate — not game_flaws presence).
         analyzed_set = await library_repository.fetch_page_analyzed_set(
             session, user_id, page_game_ids
@@ -721,6 +744,7 @@ async def get_library_games(
                 tactic_orientation=tactic_orientation,
                 min_tactic_depth=min_tactic_depth,
                 max_tactic_depth=max_tactic_depth,
+                tactic_flaw_rows=page_tactic_flaws.get(game.id, []),
             )
             for game in games
         ]
