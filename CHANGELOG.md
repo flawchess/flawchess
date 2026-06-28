@@ -18,6 +18,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- **Eval chart tooltip now shows the opponent's tactic** — hovering an opponent flaw (the hollow-square markers) on the eval chart now shows the tactic motif and its depth (the same `missed:` / `allowed:` chips your own filled-square markers already show), on both the Games card and the `/analysis` board. Previously only your own flaws surfaced their tactic. The "Opponent · Blunder/Mistake" header keeps the perspective clear, and your blunder/mistake counts and all other stats are unchanged. (Quick 260628-u7d)
+
 - **Analysis board: engine lines expand, and clicking a line plays the whole move sequence** — each of the two Stockfish lines now has a chevron on the right that expands it to reveal the full principal variation (instead of stopping at five moves); the engine card grows to fit the expanded line. Clicking any move in a line now opens the complete sideline up to that move from your current position, instead of jumping straight to the clicked move and skipping everything before it. (Quick 260628-shc)
 
 - **Analysis board: blunder/mistake icons stay on sideline moves** — when you explore a sideline on the `/analysis` board, the live-engine blunder/mistake icons now stick to every move you've stepped through instead of only the current one (they used to vanish as you played the next move). Each sideline move's grading is cached, so stepping back re-shows its icon without re-running the engine. The two desktop Stockfish engine lines also use the same smaller font as on mobile. (Quick 260628-r5v)
