@@ -1,5 +1,24 @@
 # Milestones: FlawChess
 
+## v1.29 Live-Engine Analysis Page (Shipped: 2026-06-29)
+
+**Phases completed:** 5 phases (136–140), 14 plans. Released to production via PR #227 (commit `e3f652ab`); production tree matches `main` at close.
+**Stats:** ~370 files changed `v1.28..main`, +28k/-4k (dominated by the vendored ~7 MB WASM engine + planning docs); 61 commits (inflated by squash + the v1.28 forward-port); phases completed 2026-06-26 → 2026-06-27, post-ship hardening through 2026-06-29. No Alembic migrations, no new endpoints (milestone D-4: analysis state is ephemeral and lives in the URL).
+**Milestone goal:** Ship a standalone `/analysis` board where the user makes any legal move from any position and an in-browser single-thread Stockfish (WASM) evaluates it live, subsuming the static Tactic Line Explorer (Phase 135) as a tactic mode of that one shared board.
+
+**Key accomplishments:**
+
+- **Live in-browser engine** (Phase 136) — `useStockfishEngine` hook wrapping single-thread lite-single WASM Stockfish (~7 MB NNUE) in a Web Worker as a clean UCI state machine: eval bar, top 1–2 MultiPV lines, best-move arrow, depth; debounced auto re-analysis with a movetime/node cap and a two-layer stale-eval guard. Platform-hardened: no site-wide COOP/COEP (OAuth + iOS safe, CI-guarded), PWA `*.wasm` exclusion, tab-hide pause.
+- **Branching analysis board** (Phase 137) — `useAnalysisBoard`, a new move-tree hook where a mid-line move forks a variation instead of being rejected; O(1) navigation; URL-encoded state (no server persistence). New display components: EvalBar (sigmoid centipawn gradient), EngineLines, VariationTree.
+- **Standalone `/analysis` route** (Phase 138) — the app's first `React.lazy` + Suspense boundary, so the engine bundle loads only on this route; reachable from the Openings Explorer via "Analyze position".
+- **Tactic mode subsumes the Phase 135 explorer** (Phase 139) — TacticModeOverlay replicates every Tactic Line Explorer behavior at parity (regression-gated on 4 behaviors), then `TacticLineExplorer.tsx` + `useTacticLine.ts` + their 26 tests were deleted; all "Explore" entry points repointed to `/analysis`. Explore/Analyze are now real links (middle-click / ctrl-click open in a new tab).
+- **Full-game analysis board** (Phase 140) — a single unified `Analyze` entry on game + flaw cards loads the *whole* game (`?game_id&ply`) at the carried ply; eval chart relocated below the board with a slider that scrubs the main line and parks at the fork on a sideline; inline missed/allowed tactic chips unfold stored PVs as two-level navigable sidelines with a contextual overlay; the standalone Game modal code path was deleted. Player names, ratings, and per-side clocks shown around the board.
+- **Post-ship production hardening** (quick tasks 260628 / 260629) — both-color tactic tooltips, engine-line expansion + full-PV click-through, sideline blunder/mistake icon persistence, a mobile board-app redesign, and two Sentry-driven crash fixes: a Stockfish WASM `unreachable` trap from sending `position`+`go` during the `stopping` state (FLAWCHESS-7V), and a duplicate-React-key crash from board arrows sharing a from→to during live streaming.
+
+**Known deferred items at close:** Phases 136/138/140 VERIFICATION and Phase 138 UAT (4 scenarios) were human-signed-off at close (feature shipped to production and exercised live). v2 backlog: paste-a-FEN/PGN, full nested variation tree, promote/demote/delete variation, multi-thread WASM (D-3). Standing cross-milestone backlog noise (dormant seeds, todos, older quick-task tracking artifacts) carried forward — see STATE.md → Deferred Items.
+
+---
+
 ## v1.28 Tactic Tagging (Shipped: 2026-06-25)
 
 **Phases completed:** 14 phases (123.1, 124–135 incl. 128.1; 130 superseded by 131–134), 45 plans, 51 tasks. Phase 123.1 (standalone SEED-053 enabler) grouped in at close per the standalone-then-regroup pattern (cf. v1.20/v1.27).

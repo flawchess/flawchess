@@ -7,7 +7,7 @@
  * ENGINE-02: pvLines (MultiPV=2)
  * ENGINE-03: pvLines[0].moves[0] (best move UCI string)
  * ENGINE-04: isReady / isAnalyzing + enabled control input
- * ENGINE-05: 150ms debounce + go movetime 1500 nodes 2000000 + stopPendingRef
+ * ENGINE-05: adaptive debounce + go movetime 1500 nodes 2000000 + stopPendingRef
  *
  * Architecture: RESEARCH.md Patterns 1–4
  * Pitfall refs: Pitfall 3 (stale eval race), Pitfall 4 (worker leak),
@@ -29,8 +29,8 @@ const MOVETIME_MS = 1500;
 /** Secondary node-count valve — hardware-independent safety bound. */
 const MAX_NODES = 2000000;
 
-/** FEN debounce delay before sending go (Layer A stale-eval guard). */
-const DEBOUNCE_MS = 150;
+/** Rapid-step debounce window (ms): coalesces held arrow-key auto-repeat to one search. */
+const RAPID_STEP_DEBOUNCE_MS = 150;
 
 /** Number of candidate lines requested from the engine. */
 const MULTIPV = 2;
@@ -103,6 +103,15 @@ export function useStockfishEngine({
    */
   const analyzedSideToMoveRef = useRef<'w' | 'b'>('w');
 
+  /**
+   * Timestamp (ms) of the last FEN change, used by the adaptive debounce to
+   * distinguish settled moves (no recent prior change → fire immediately) from
+   * rapid-succession steps (held arrow key → coalesce via debounce window).
+   * Initialized to 0; in real time Date.now() >> 0 so the first mount always
+   * fires immediately.
+   */
+  const lastFenChangeAtRef = useRef(0);
+
   // ─── State ─────────────────────────────────────────────────────────────────
 
   const [isReady, setIsReady] = useState(false);
@@ -124,14 +133,14 @@ export function useStockfishEngine({
   // ─── Debounce (Layer A stale-eval guard) ───────────────────────────────────
 
   /**
-   * Debounced FEN: starts as null (not the current fen value) and updates
-   * to fen after DEBOUNCE_MS. This ensures ALL analyses — including the
-   * initial one — are delayed by the debounce, preventing unnecessary engine
-   * calls when the hook mounts before the engine has finished initializing.
+   * Adaptive debounce: fire immediately on a settled move (no recent prior
+   * FEN change); only debounce when positions change in rapid succession
+   * (held arrow-key auto-repeat). This lets the first engine line paint in
+   * well under 100ms, while still coalescing rapid steps to a single search.
    *
-   * NOTE: We use an inline debounce (not useDebounce) because useDebounce
-   * initializes its state with the current value immediately, which would
-   * bypass the 150ms delay on initial analysis.
+   * Firing before engine init is safe: analyze() early-returns on
+   * !isReadyRef.current and the debouncedFen+isReady effect re-fires once
+   * isReady flips true.
    */
   const [debouncedFen, setDebouncedFen] = useState<string | null>(null);
   useEffect(() => {
@@ -147,7 +156,18 @@ export function useStockfishEngine({
       setDebouncedFen(null);
       return;
     }
-    const timer = setTimeout(() => setDebouncedFen(fen), DEBOUNCE_MS);
+    const now = Date.now();
+    const sinceLast = now - lastFenChangeAtRef.current;
+    lastFenChangeAtRef.current = now;
+    if (sinceLast > RAPID_STEP_DEBOUNCE_MS) {
+      // Settled move (or first mount in real time where lastFenChangeAtRef is 0
+      // and Date.now() >> 0): fire immediately so the first line paints near-instantly.
+      setDebouncedFen(fen);
+      return;
+    }
+    // Rapid succession: coalesce via debounce so a storm of FEN changes
+    // produces only one search.
+    const timer = setTimeout(() => setDebouncedFen(fen), RAPID_STEP_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [fen]);
 
@@ -174,6 +194,17 @@ export function useStockfishEngine({
       worker.postMessage('stop');
       stopPendingRef.current = true;
       stateRef.current = 'stopping';
+      return;
+    }
+
+    if (stateRef.current === 'stopping') {
+      // Bug fix (FLAWCHESS-7V): a stop is already in flight and we're awaiting its
+      // terminating bestmove. Sending position+go now would race that in-flight stop
+      // and trap the Stockfish WASM engine with "RuntimeError: unreachable". Do
+      // nothing: the bestmove+stopPendingRef handler re-analyzes currentFenRef.current
+      // (always the latest FEN) once the stale bestmove arrives. This path became
+      // reachable when the adaptive debounce started firing settled moves immediately
+      // instead of serializing every change behind a 150ms timer (quick-260629-n8e).
       return;
     }
 
@@ -209,6 +240,39 @@ export function useStockfishEngine({
     const worker = new Worker(ENGINE_PATH);
     workerRef.current = worker;
 
+    /**
+     * Commit the current pvMapRef snapshot to state (white-POV normalized).
+     * Called on every info line (live first-paint) and on the non-stale bestmove
+     * (final commit). The info-line stale guard (stateRef !== 'thinking' ||
+     * stopPendingRef) ensures this is never called for a superseded search.
+     *
+     * Pitfall 5 note: bound filtering is intentionally relaxed — lowerbound and
+     * upperbound lines paint immediately so the eval sharpens in place as depth
+     * climbs. The eval may visibly bounce ~200-300ms; this is accepted
+     * (lichess-style live streaming behavior).
+     */
+    function commitPvSnapshot(): void {
+      // Normalize UCI's side-to-move score to white-POV (negate for black to
+      // move) so evalCp/evalMate and every PvLine honor the white-POV contract.
+      const whitePovSign = analyzedSideToMoveRef.current === 'b' ? -1 : 1;
+      const toWhitePov = (v: number | null): number | null =>
+        v === null ? null : v * whitePovSign;
+
+      // Sort by multipv index so pvLines[0] is always the top line.
+      const snapshot = [...pvMapRef.current.values()]
+        .sort((a, b) => a.multipv - b.multipv)
+        .map((l) => ({ ...l, evalCp: toWhitePov(l.evalCp), evalMate: toWhitePov(l.evalMate) }));
+      setPvLines(snapshot);
+
+      // Commit the top line's eval to the flat state fields.
+      const topLine = pvMapRef.current.get(1);
+      if (topLine !== undefined) {
+        setEvalCp(toWhitePov(topLine.evalCp));
+        setEvalMate(toWhitePov(topLine.evalMate));
+        setDepth(topLine.depth);
+      }
+    }
+
     /** Handle a single UCI line emitted by the engine Worker. */
     function handleLine(line: string): void {
       if (line === 'uciok') {
@@ -226,10 +290,14 @@ export function useStockfishEngine({
       }
 
       if (line.startsWith('info ')) {
+        // Stale-eval guard: ignore info lines from a superseded search.
+        // stopPendingRef means a stop was sent; the engine is winding down and
+        // its lines belong to the old position.
+        if (stateRef.current !== 'thinking' || stopPendingRef.current) return;
         const parsed = parseInfoLine(line);
-        // Pitfall 5: only commit on exact score bound — never on lowerbound /
-        // upperbound (intermediate alpha-beta bounds that cause eval jitter).
-        if (parsed !== null && parsed.bound === 'exact') {
+        // Pitfall 5 (relaxed for live first-paint): accept lowerbound/upperbound
+        // lines too — eval bounces briefly then settles (lichess-style).
+        if (parsed !== null) {
           pvMapRef.current.set(parsed.multipv, {
             multipv: parsed.multipv,
             depth: parsed.depth,
@@ -237,6 +305,7 @@ export function useStockfishEngine({
             evalCp: parsed.scoreCp,
             evalMate: parsed.scoreMate,
           });
+          commitPvSnapshot();
         }
         return;
       }
@@ -255,29 +324,10 @@ export function useStockfishEngine({
           return;
         }
 
-        // Non-stale bestmove: commit the pvMap snapshot.
+        // Non-stale bestmove: commit the final pvMap snapshot, then mark idle.
+        commitPvSnapshot();
         stateRef.current = 'idle';
         setIsAnalyzing(false);
-
-        // Normalize UCI's side-to-move score to white-POV (negate for black to
-        // move) so evalCp/evalMate and every PvLine honor the white-POV contract.
-        const whitePovSign = analyzedSideToMoveRef.current === 'b' ? -1 : 1;
-        const toWhitePov = (v: number | null): number | null =>
-          v === null ? null : v * whitePovSign;
-
-        // Sort by multipv index so pvLines[0] is always the top line.
-        const snapshot = [...pvMapRef.current.values()]
-          .sort((a, b) => a.multipv - b.multipv)
-          .map((l) => ({ ...l, evalCp: toWhitePov(l.evalCp), evalMate: toWhitePov(l.evalMate) }));
-        setPvLines(snapshot);
-
-        // Commit the top line's eval to the flat state fields.
-        const topLine = pvMapRef.current.get(1);
-        if (topLine !== undefined) {
-          setEvalCp(toWhitePov(topLine.evalCp));
-          setEvalMate(toWhitePov(topLine.evalMate));
-          setDepth(topLine.depth);
-        }
       }
     }
 

@@ -11,7 +11,7 @@ import {
 import { HIGHLIGHT_PULSE_DURATION_MS, HIGHLIGHT_PULSE_ITERATIONS } from '../../lib/highlightPulse';
 import { DepthLabel, SquareMarkerGroup } from './boardMarkers';
 import type { SquareMarker } from './boardMarkers';
-import { squareToCoords, buildArrowPath } from './arrowGeometry';
+import { squareToCoords, buildArrowPath, arrowMoveKey, dedupeArrowsByMove } from './arrowGeometry';
 
 export interface BoardArrow {
   startSquare: string;
@@ -133,12 +133,14 @@ function ArrowOverlay({
 
   const sqSize = boardWidth / 8;
 
-  const sortedArrows = [...arrows].sort((a, b) => {
-    const ah = a.isHovered ? 1 : 0;
-    const bh = b.isHovered ? 1 : 0;
-    if (ah !== bh) return ah - bh;  // hovered drawn last (on top)
-    return arrowSortKey(b.color) - arrowSortKey(a.color) || b.width - a.width;
-  });
+  const sortedArrows = dedupeArrowsByMove(
+    [...arrows].sort((a, b) => {
+      const ah = a.isHovered ? 1 : 0;
+      const bh = b.isHovered ? 1 : 0;
+      if (ah !== bh) return ah - bh; // hovered drawn last (on top)
+      return arrowSortKey(b.color) - arrowSortKey(a.color) || b.width - a.width;
+    }),
+  );
 
   return (
     <svg
@@ -196,7 +198,7 @@ function ArrowOverlay({
         // stable across hover-driven re-sorts.
         return (
           <path
-            key={`${arrow.startSquare}-${arrow.endSquare}`}
+            key={arrowMoveKey(arrow)}
             d={d}
             fill={arrow.color}
             opacity={arrow.isHovered ? ARROW_HOVER_OPACITY : baseOpacity}
@@ -213,7 +215,7 @@ function ArrowOverlay({
       {sortedArrows.map((arrow) =>
         arrow.label ? (
           <DepthLabel
-            key={`label-${arrow.startSquare}-${arrow.endSquare}`}
+            key={`label-${arrowMoveKey(arrow)}`}
             square={arrow.endSquare}
             label={arrow.label}
             color={arrow.labelColor}
