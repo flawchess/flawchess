@@ -22,13 +22,28 @@ if ("serviceWorker" in navigator) {
     });
   }
 
-  // Periodically check for SW updates (every 60 min). In a standalone PWA,
-  // the browser's default 24-hour SW check may be too infrequent.
-  const SW_UPDATE_INTERVAL_MS = 60 * 60 * 1000;
-  setInterval(async () => {
+  // Check for SW updates on a slow hourly safety net AND opportunistically when
+  // the app is resumed. Android freezes backgrounded PWAs, so a resumed app fires
+  // no fresh `load` and the interval is unreliable while suspended — that's how an
+  // installed PWA kept showing a many-deploys-old layout. visibilitychange/focus
+  // are the events that actually fire on resume, so we re-check the SW there too.
+  const SW_UPDATE_INTERVAL_MS = 60 * 60 * 1000; // hourly background safety net
+  const SW_UPDATE_DEBOUNCE_MS = 30 * 1000; // coalesce focus+visibility resume bursts
+
+  let lastUpdateCheckMs = 0;
+  const checkForSwUpdate = async () => {
+    const nowMs = Date.now();
+    if (nowMs - lastUpdateCheckMs < SW_UPDATE_DEBOUNCE_MS) return;
+    lastUpdateCheckMs = nowMs;
     const reg = await navigator.serviceWorker.getRegistration();
     await reg?.update();
-  }, SW_UPDATE_INTERVAL_MS);
+  };
+
+  setInterval(checkForSwUpdate, SW_UPDATE_INTERVAL_MS);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") checkForSwUpdate();
+  });
+  window.addEventListener("focus", checkForSwUpdate);
 }
 
 createRoot(document.getElementById("root")!, {

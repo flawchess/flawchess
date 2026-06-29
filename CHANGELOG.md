@@ -32,6 +32,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 - **Tactic tags hidden on already-lost positions** — a tactic motif found or missed in a position that was already decisively lost (the engine had you down by more than a rook, or facing forced mate, *before* the move) no longer shows its tag, depth number, or eval-chart tooltip entry, and is excluded from the tactic-motif and depth filters on the Flaws and Games tabs. These flaws were noise: a "missed fork" teaches nothing when the game was already gone. The blunder/mistake itself still counts in the severity badges and still appears as a marker on the eval chart; only the tactic tagging is suppressed. The tactic explorer keeps full detail. (Quick 260626-bdt)
 
+### Fixed
+
+- **Installed PWA no longer serves a stale layout after a deploy** — the app shell is now fetched fresh from the network whenever you're online (it was previously served from the service worker's cache, which could be many deploys old, e.g. missing the Library nav button until a manual reload). Update checks also now run when you reopen or refocus the installed app, not just on a slow timer, so a backgrounded phone PWA picks up the latest version on resume. (Quick 260629-pq8)
+
 ## [v1.28] Tactic Tagging — 2026-06-25
 
 ### Added

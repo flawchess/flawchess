@@ -87,17 +87,40 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // Only use navigateFallback for paths that don't hit the backend.
-        // Allowlist approach: only SPA routes get index.html fallback.
-        // Everything else (API, OAuth callbacks) passes through to the server.
+        // SPA fallback is handled by Caddy in prod (try_files /index.html) and by
+        // the NetworkFirst navigation route below. Keep navigateFallback null so the
+        // SW never blindly serves index.html for backend navigations such as the
+        // OAuth callback /api/auth/google/callback (commit b953abad).
         navigateFallback: null,
-        // Explicitly exclude WASM from SW precache (iOS Cache API ~50 MB limit).
-        // The browser HTTP cache handles engine file caching instead.
-        globIgnores: ['**/*.wasm'],
+        // Bug fix: installed Android PWAs launched a many-deploys-old layout because
+        // the SW precached index.html and served it cache-first for navigations to `/`
+        // (Workbox default directoryIndex resolves `/` -> precached index.html).
+        // Excluding ALL HTML from the precache removes that stale-shell route; the shell
+        // is instead served NetworkFirst below (fresh when online, cached when offline).
+        // WASM stays excluded too (iOS Cache API ~50 MB limit) — HTTP cache handles it.
+        globIgnores: ['**/*.wasm', '**/*.html'],
         runtimeCaching: [
           {
+            // Backend: never cached, always network. Registered FIRST so /api/*
+            // navigations (Google OAuth callback) are handled here, not by the
+            // navigation route below.
             urlPattern: /^\/api\//,
             handler: 'NetworkOnly',
+          },
+          {
+            // App-shell navigations: always fetch fresh index.html when online so the
+            // document references the current hashed /assets/*; fall back to the last
+            // cached shell only when the network is unreachable (true offline). No
+            // networkTimeoutSeconds — a timeout would reintroduce a staleness window
+            // where a slow-but-online resume serves an old shell referencing deleted
+            // hashed assets (404s).
+            urlPattern: ({ request, url }) =>
+              request.mode === 'navigate' && !url.pathname.startsWith('/api/'),
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'html-shell',
+              cacheableResponse: { statuses: [200] },
+            },
           },
         ],
       },
