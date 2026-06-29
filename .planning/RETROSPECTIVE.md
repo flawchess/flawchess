@@ -4,6 +4,39 @@
 
 > Note: v1.18, v1.19, v1.20, v1.23, v1.25, and v1.27 closes did not add retrospective sections (only the ROADMAP archives + MILESTONES entries were written). Not backfilled here to avoid reconstructing reflections after the fact; their facts live in the corresponding `milestones/v1.XX-ROADMAP.md` and `MILESTONES.md`.
 
+## Milestone: v1.29 — Live-Engine Analysis Page
+
+**Shipped:** 2026-06-29
+**Phases:** 5 (136–140) | **Plans:** 14
+
+### What Was Built
+A standalone `/analysis` board running single-thread lite-single WASM Stockfish (~7 MB NNUE) in-browser: `useStockfishEngine` (a UCI state machine in a Web Worker with debounced auto re-analysis and a two-layer stale-eval guard), `useAnalysisBoard` (a new branching move tree that forks a variation on a mid-line move, URL-encoded, no DB persistence), EvalBar/EngineLines/VariationTree, a lazy-loaded route (the app's first `React.lazy` + Suspense boundary), a tactic mode that subsumed and then deleted the Phase 135 TacticLineExplorer at parity, and a full-game board behind a single unified `Analyze` entry with the eval chart below the board and inline missed/allowed tactic chips that unfold stored PVs as two-level navigable sidelines. No backend schema or new endpoints (D-4).
+
+### What Worked
+- **Hook-first, test-in-isolation sequencing.** Phases 136/137 built and unit-tested the engine hook and the move-tree hook with mock Workers before any page existed, so the route (138) was thin assembly. The mock-Worker + real-WASM integration test gave a fast inner loop without a browser.
+- **Regression-gated deletion.** Tactic mode had to pass 4 explicit Phase 135 parity behaviors (depth-0 highlight, missed/allowed +1 offset, real-game-ply numbering, tactic-rail state) plus knip/tsc/lint before `TacticLineExplorer.tsx` + `useTacticLine.ts` + their 26 tests were removed — a true refactor, not a rewrite.
+- **Locked decisions held.** D-3 (single-thread, no site-wide COOP/COEP) kept Google OAuth + iOS Safari untouched with a CI `curl -I` guard; D-4 (ephemeral URL state) meant zero backend work.
+- **Lazy route boundary** kept the ~7 MB engine bundle off every other page.
+
+### What Was Inefficient
+- **Heavy post-ship UAT tail.** Phase 140 generated ~15 quick-task rounds (260627–260629) of layout/interaction polish (move-list height, arrow colors, sideline icon persistence, mobile takeover). Much of this was visual judgment that's hard to specify up front, but the sheer count suggests the full-game board could have used a tighter design contract before execution.
+- **Tactic-color churn.** Missed/allowed arrow hues were re-picked several times (violet → wine → burgundy → magenta/teal) across rounds before settling — a sketch/UI-spec pass would have front-loaded that.
+- **Two production Sentry crashes after the "snappier engine" change** (FLAWCHESS-7V WASM `unreachable` from a `position`+`go` during the `stopping` state; duplicate-React-key board arrows). Both were latent races the relaxed-debounce change exposed — the state machine had an unguarded `stopping` branch, and the arrow key contract had no dedupe. Caught only in prod, not by tests.
+
+### Patterns Established
+- **WASM engine in a Web Worker as a pure-data hook** — UCI state machine exposed as plain React state, normalized to white-POV, with a debounce + stop-pending stale-eval guard. Reusable for any future engine surface.
+- **`React.lazy` + Suspense route boundary** for heavy, single-route bundles.
+- **Renderer owns its key-uniqueness invariant** — dedupe board arrows by move-identity at the renderer (`dedupeArrowsByMove`) rather than chasing every caller.
+
+### Key Lessons
+- A UCI/engine state machine needs every state guarded, not just the common one: the `stopping` (stop-in-flight) state must refuse a new `go`, or the WASM traps. Cheap to add up front, a prod crash to find late.
+- When a feature is mostly visual full-game layout, invest in a UI spec/sketch before execution — the polish tail is where the time actually goes.
+- Subsuming an existing feature is lower-risk than rebuilding it when the old behavior is pinned as a regression gate before any deletion.
+
+### Cost Observations
+- Core phases 136–140 landed fast (2026-06-26 → 06-27); the long pole was the post-ship UAT/hardening tail through 06-29.
+- Released to production mid-tail via PR #227, then soaked and hardened (two Sentry fixes) before the formal close — the deploy-then-harden-then-close shape again.
+
 ## Milestone: v1.28 — Tactic Tagging
 
 **Shipped:** 2026-06-25

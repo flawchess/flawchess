@@ -31,135 +31,7 @@
 - ✅ **v1.26 Full-Game Eval Pipeline** — Phases 116–120 (incl. 117.1, 117.2) (shipped 2026-06-14) — see [milestones/v1.26-ROADMAP.md](milestones/v1.26-ROADMAP.md)
 - ✅ **v1.27 Remote Eval Worker Fan-Out & In-App Feedback** — Phases 121–123 (shipped 2026-06-16; releases #199, #202, #203) — see [milestones/v1.27-ROADMAP.md](milestones/v1.27-ROADMAP.md)
 - ✅ **v1.28 Tactic Tagging** — Phases 124–135 (incl. 123.1, 128.1; Phase 130 superseded by 131–134) (shipped 2026-06-25) — see [milestones/v1.28-ROADMAP.md](milestones/v1.28-ROADMAP.md)
-- 🚧 **v1.29 Live-Engine Analysis Page** — Phases 136–139 (in progress)
-
-## Phases
-
-**v1.29 Live-Engine Analysis Page (In Progress)**
-
-Milestone Goal: Ship a standalone `/analysis` board where the user makes any legal move from any position and an in-browser single-thread Stockfish (WASM) evaluates it live (eval + top 1–2 lines), subsuming the static Tactic Line Explorer (Phase 135) as a tactic mode of that one shared board. No backend schema or new endpoints (D-4 locked). Paste-a-FEN deferred to v2.
-
-- [x] **Phase 136: `useStockfishEngine` Hook + WASM Setup** - Install WASM Stockfish, implement Worker lifecycle + UCI protocol + PLAT hardening (CI COOP/COEP guard, PWA wasm exclusion, tab-hide pause) (completed 2026-06-26)
-- [x] **Phase 137: `useAnalysisBoard` Hook + Analysis Display Components** - Branching move tree (new hook, not a variant of useChessGame), EvalBar, EngineLines, VariationTree (completed 2026-06-26)
-- [ ] **Phase 138: `/analysis` Route + Page Shell + Entry Points** - Lazy-loaded page shell, router wiring, free-play entry points (opening position + game-review ply)
-- [x] **Phase 139: Tactic Mode Overlay + Phase 135 Subsume** - TacticModeOverlay, Phase 135 regression parity, retire TacticLineExplorer + useTacticLine (completed 2026-06-26)
-- [x] **Phase 140: Full-Game Analysis Board** - Unified `Analyze` entry (game + flaw cards), full-game load (`?game_id&ply`), eval chart relocated below board, move-list = board height, controls below move list, inline missed/allowed tags → PV sideline (2-level nesting), contextual TacticModeOverlay
-
-## Phase Details
-
-### Phase 136: `useStockfishEngine` Hook + WASM Setup
-
-**Goal**: Users can rely on a live in-browser engine that evaluates positions correctly and efficiently without breaking the existing site (no COOP/COEP headers, iOS-safe PWA, tab-hide pause)
-**Depends on**: Nothing (fully standalone)
-**Requirements**: ENGINE-01, ENGINE-02, ENGINE-03, ENGINE-04, ENGINE-05, PLAT-01, PLAT-02
-**Success Criteria** (what must be TRUE):
-
-  1. The engine loads (UCI `uciok` received) and reports centipawn/mate eval, top 1–2 PV lines, best-move arrow, and current depth for any given position
-  2. The engine re-evaluates automatically (debounced 150ms) on position change, capped at `go movetime 1500`; the board remains interactive while the WASM initializes
-  3. The engine can be toggled off/on; a "loading engine" / "analyzing" state is visible during each transition; low-end devices stay responsive
-  4. No `Cross-Origin-Opener-Policy` / `Cross-Origin-Embedder-Policy` headers appear on any page; a CI `curl -I` check guards against future regression; Google OAuth and iOS Safari are unaffected
-  5. The PWA service worker does not precache `*.wasm`; the engine pauses when the browser tab is hidden; iOS Cache API quota is not exceeded (`stockfish-18-lite-single` ~7 MB build used)
-
-**Plans**: 2 plans
-**UI hint**: yes
-
-Plans:
-
-- [x] 136-01-PLAN.md — Vendor WASM Stockfish + platform hardening (optimizeDeps, PWA wasm exclusion, CI COOP/COEP + MIME guard) [PLAT-01, PLAT-02]
-- [x] 136-02-PLAN.md — useStockfishEngine hook + UCI parser + mock-Worker & real-WASM tests (hook data contract; rendering deferred to 137/138) [ENGINE-01..05]
-
-### Phase 137: `useAnalysisBoard` Hook + Analysis Display Components
-
-**Goal**: The branching move tree and all analysis display components (EvalBar, EngineLines, VariationTree) are built and unit-testable in isolation; `useChessGame.ts` is unmodified
-**Depends on**: Phase 136
-**Requirements**: BOARD-01, BOARD-02, BOARD-03, BOARD-04, BOARD-05
-**Success Criteria** (what must be TRUE):
-
-  1. A mid-line move creates a new variation fork rather than being rejected; the user can navigate back, forward, and jump to any node in O(1) by clicking the move list
-  2. Drag-drop and click-to-click touch move input both work; the board can be flipped at any point
-  3. The move list renders the main line and the single active variation (flat); clicking any move navigates directly to that position
-  4. Board/variation state is encoded in the URL so the position is shareable and bookmarkable with no server-side persistence
-  5. EvalBar (sigmoid centipawn gradient, mate label from depth 8+) and EngineLines (top 1–2 PV sequences, depth badge, "thinking" indicator) render correctly from engine output
-
-**Plans**: 3 plans
-**UI hint**: yes
-
-Plans:
-**Wave 1**
-
-- [x] 137-01-PLAN.md — useAnalysisBoard branching move-tree hook (fork, navigation, loadMainLine) + tests
-- [x] 137-02-PLAN.md — EvalBar + EngineLines components + theme.ts EvalBar re-exports + render tests
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 137-03-PLAN.md — VariationTree responsive move list (mobile + desktop) + render tests
-
-### Phase 138: `/analysis` Route + Page Shell + Entry Points
-
-**Goal**: Users can navigate to a standalone `/analysis` page lazy-loaded on demand, arriving pre-loaded from tactic cards, game-review plies, and opening positions
-**Depends on**: Phase 137
-**Requirements**: ROUTE-01, ROUTE-02
-**Success Criteria** (what must be TRUE):
-
-  1. The `/analysis` page is accessible to authenticated users; network inspection confirms no stockfish WASM/JS fetch on any other route (lazy-load boundary enforced)
-  2. Navigating from an opening position or game-review ply pre-loads the analysis board with the correct starting position and context encoded in URL params
-  3. The "Loading engine..." state is shown in the eval area while the WASM initializes; the board and move stepper remain interactive during this window
-  4. `window.crossOriginIsolated === false` on `/analysis`; the full Google OAuth login flow completes without error from any page
-
-**Plans**: 3 plans
-**UI hint**: yes
-
-Plans:
-
-- [x] 138-01-PLAN.md — Wave-0 failing test scaffold for the Analysis page (mocked engine)
-- [x] 138-02-PLAN.md — `/analysis` page shell + first React.lazy/Suspense route wiring
-- [x] 138-03-PLAN.md — Openings "Analyze position" entry button + buildAnalysisUrl helper
-
-### Phase 139: Tactic Mode Overlay + Phase 135 Subsume
-
-**Goal**: Tactic mode on the analysis board replicates every Phase 135 TacticLineExplorer behavior at parity; the standalone modal and its hook are retired and all former entry points repointed
-**Depends on**: Phase 138
-**Requirements**: TACTIC-01, TACTIC-02, TACTIC-03
-**Success Criteria** (what must be TRUE):
-
-  1. Opening `/analysis?game_id=X&flaw_ply=Y` displays the flaw position with the stored PV as the initial mainline (D-5); the live engine takes over immediately when the user deviates from the stored line
-  2. The motif badge, missed/allowed orientation toggle, depth-to-punchline counter, and next/prev-tactic rail are all present and functional in tactic mode
-  3. All four Phase 135 regression behaviors pass before any code deletion: depth-0 highlight (no empty-PV crash), missed/allowed +1 ply offset via `tacticDepth.ts`, real-game-ply move numbering, tactic-rail state on route re-entry
-  4. `TacticLineExplorer.tsx` and `useTacticLine.ts` are deleted; all tactic "Explore" entry points navigate to `/analysis?...`; `npm run knip` passes clean
-
-**Plans**: 3 plans
-**UI hint**: yes
-
-Plans:
-**Wave 1**
-
-- [x] 139-01-PLAN.md — TacticModeOverlay + Analysis.tsx tactic wiring + 4 regression behaviors [TACTIC-01, TACTIC-02]
-- [x] 139-02-PLAN.md — Repoint FlawCard/LibraryGameCard Explore to /analysis + D-02 "Analyze position" (?fen=) button [TACTIC-03]
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 139-03-PLAN.md — Delete TacticLineExplorer + useTacticLine; knip + deletion gate [TACTIC-03]
-
-### Phase 140: Full-Game Analysis Board
-
-**Goal**: The `/analysis` board loads the whole game on a single unified `Analyze` entry point, with the eval chart relocated below the board and inline missed/allowed tags that expand stored PVs as navigable sidelines
-**Depends on**: Phases 137, 138, 139
-**Design note**: `.planning/notes/analysis-board-fullgame-refinement.md` (source of truth — locked decisions)
-**Success Criteria** (what must be TRUE):
-
-  1. Game card and flaw card each expose exactly one `Analyze` button; the game-card `Explore`/`Analyze position` pair and the flaw-card `Explore`/`Game` (modal) pair are gone, and the inline `Game` modal code path is deleted
-  2. `Analyze` opens `/analysis?game_id=X&ply=Y`, loading the full game line (ply 0 → end) positioned at the carried ply (eval-chart slider ply for the game card, `flaw.ply` for the flaw card)
-  3. On desktop the eval chart with slider sits directly below the board, the move list height matches the board, and the board controls are below the move list; the slider scrubs the main game line (syncing board + move-list highlight) and parks at the fork point when a sideline is active
-  4. Flaw plies show inline missed/allowed tags in the move list; clicking a tag unfolds its stored PV as a sideline, a sub-sideline can be branched within it (two nesting levels), and `TacticModeOverlay` activates contextually for the active PV line
-  5. No new backend schema or endpoints (milestone D-4); mobile layout has a stacked equivalent; `npm run knip`, lint, and frontend tests pass
-
-**Plans**: 3 plans
-
-- [x] 140-01-PLAN.md — Foundation primitives (theme TAC_MISSED_BORDER, buildGameAnalysisUrl, EvalChart slider props, useAnalysisBoard PV-nesting methods + tests)
-- [x] 140-02-PLAN.md — Board rewiring (VariationTree two-level nesting + inline chips + markers; Analysis.tsx game-mode fetch + layout relocation + slider parking + contextual overlay)
-- [x] 140-03-PLAN.md — Entry points (LibraryGameCard + FlawCard unified Analyze button, Game-modal deletion, phase-close gate)
-
-**UI hint**: yes
+- ✅ **v1.29 Live-Engine Analysis Page** — Phases 136–140 (shipped 2026-06-29; released #227) — see [milestones/v1.29-ROADMAP.md](milestones/v1.29-ROADMAP.md)
 
 ## Progress
 
@@ -218,11 +90,7 @@ Plans:
 | 133. Close suppressed-tactic gaps | 2/2 | Complete | 2026-06-23 |
 | 134. trapped-piece fixture expansion + cook reimpl | 3/3 | Complete | 2026-06-23 |
 | 135. Tactic Line Explorer (SEED-065) | 3/3 | Complete   | 2026-06-24 |
-| 136. `useStockfishEngine` Hook + WASM Setup | 2/2 | Complete    | 2026-06-26 |
-| 137. `useAnalysisBoard` Hook + Analysis Display Components | 3/3 | Complete    | 2026-06-26 |
-| 138. `/analysis` Route + Page Shell + Entry Points | 3/3 | Complete   | 2026-06-26 |
-| 139. Tactic Mode Overlay + Phase 135 Subsume | 3/3 | Complete    | 2026-06-26 |
-| 140. Full-Game Analysis Board | 3/3 | Complete   | 2026-06-27 |
+| 136-140. v1.29 phases | 14/14 | Complete | 2026-06-29 |
 
 ## Backlog
 
@@ -270,6 +138,21 @@ Plans:
 *Phase 999.7 (LLM Endgame-Insights Statistical-Reasoning Rework) promoted to active Phase 102 (v1.23) on 2026-06-01 via `/gsd-explore`; shipped 2026-06-03.*
 
 *Phase 103 (Endgame report LLM prompt refinements) shipped 2026-06-03 as an unplanned follow-on under v1.23 — see the collapsed v1.23 block above and [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md).*
+
+<details>
+<summary>✅ v1.29 Live-Engine Analysis Page (Phases 136–140) — SHIPPED 2026-06-29</summary>
+
+Standalone `/analysis` board where the user makes any legal move from any position and an in-browser single-thread Stockfish (WASM) evaluates it live (eval bar + top 1–2 lines + best-move arrow). The static Tactic Line Explorer (Phase 135) was subsumed as a tactic mode of this one shared board, and its standalone modal + hook retired regression-gated. Phase 140 then loaded the whole game onto the board behind a single unified `Analyze` entry, relocated the eval chart below the board, and turned inline missed/allowed tactic tags into navigable PV sidelines. No backend schema or new endpoints (D-4); state lives in the URL. Released to production via PR #227.
+
+- [x] Phase 136: `useStockfishEngine` Hook + WASM Setup (2/2 plans) — vendored single-thread lite-single WASM + UCI state-machine hook, CI COOP/COEP guard, PWA wasm exclusion, tab-hide pause — completed 2026-06-26
+- [x] Phase 137: `useAnalysisBoard` Hook + Analysis Display Components (3/3 plans) — branching move-tree hook (fork-on-mid-line-move) + EvalBar, EngineLines, VariationTree — completed 2026-06-26
+- [x] Phase 138: `/analysis` Route + Page Shell + Entry Points (3/3 plans) — lazy-loaded page (first React.lazy/Suspense boundary) + Openings "Analyze position" entry — completed 2026-06-26
+- [x] Phase 139: Tactic Mode Overlay + Phase 135 Subsume (3/3 plans) — TacticModeOverlay at parity, entry points repointed, TacticLineExplorer + useTacticLine deleted (knip-clean) — completed 2026-06-26
+- [x] Phase 140: Full-Game Analysis Board (3/3 plans) — unified `Analyze` entry, full-game load (`?game_id&ply`), eval chart below board, inline missed/allowed tags → 2-level PV sidelines, contextual overlay — completed 2026-06-27
+
+See [milestones/v1.29-ROADMAP.md](milestones/v1.29-ROADMAP.md) for full details.
+
+</details>
 
 <details>
 <summary>✅ v1.28 Tactic Tagging (Phases 124–135, incl. 123.1, 128.1; 130 superseded by 131–134) — SHIPPED 2026-06-25</summary>

@@ -4,38 +4,37 @@ milestone: v1.29
 milestone_name: Live-Engine Analysis Page
 current_phase: 140
 current_phase_name: full-game-analysis-board
-status: Phase 140 shipped — squash-merged to main (63b9e695)
-stopped_at: Phase 140 context gathered
-last_updated: "2026-06-28T19:27:36.076Z"
-last_activity: 2026-06-28
+status: v1.29 Live-Engine Analysis Page SHIPPED 2026-06-29 — archived, tagged v1.29; no active milestone
+stopped_at: v1.29 milestone closed
+last_updated: "2026-06-29T16:30:00.000Z"
+last_activity: 2026-06-29
 progress:
-  total_phases: 9
+  total_phases: 5
   completed_phases: 5
   total_plans: 14
   completed_plans: 14
-  percent: 56
+  percent: 100
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 140 (full-game-analysis-board) — EXECUTING
-Plan: 3 of 3
-Status: Phase 140 shipped — squash-merged to main (63b9e695)
-Last activity: 2026-06-29 - Completed quick task 260629-n8e: snappier live Stockfish first-paint
+Milestone: v1.29 Live-Engine Analysis Page — SHIPPED 2026-06-29 (archived, tagged v1.29)
+Status: No active milestone. Next: `/gsd-new-milestone`.
+Last activity: 2026-06-29 - v1.29 milestone close (archive + tag + GitHub release)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██████████] 100%
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-26 for v1.29 milestone kickoff)
+See: .planning/PROJECT.md (updated 2026-06-29 after v1.29 milestone close)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: v1.29 Live-Engine Analysis Page — standalone /analysis board with in-browser single-thread WASM Stockfish, branching move tree, and tactic-mode overlay subsuming Phase 135 TacticLineExplorer.
+Current focus: No active milestone — planning the next via `/gsd-new-milestone`. v1.29 shipped a standalone `/analysis` board with in-browser single-thread WASM Stockfish, a branching move tree, and a tactic mode that subsumed the Phase 135 TacticLineExplorer.
 
 ## Milestone Progress
 
-Twenty-eight milestones complete (v1.0–v1.28). v1.28 Tactic Tagging shipped 2026-06-25 — 14 phases (123.1, 124–135 incl. 128.1; 130 superseded by 131–134), 45 plans. Tactic-motif detector (cook.py-faithful), missed-vs-allowed dual orientation, you-vs-opponent comparison, tactic filter UI (de-beta'd, homepage hero), Tactic Line Explorer (SEED-065). Archived to milestones/v1.28-ROADMAP.md, tagged v1.28. Phase 135's TacticLineExplorer is the direct predecessor to v1.29 Phase 139 (subsume without regression).
+Twenty-nine milestones complete (v1.0–v1.29). v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 plans; released to production via PR #227 (`e3f652ab`). Live in-browser single-thread WASM Stockfish (`useStockfishEngine`), branching analysis board (`useAnalysisBoard`), lazy-loaded `/analysis` route, tactic mode subsuming + deleting the Phase 135 TacticLineExplorer, and a full-game board behind a unified `Analyze` entry with inline tactic-chip PV sidelines. No backend schema or new endpoints (D-4). Archived to milestones/v1.29-ROADMAP.md, phases to milestones/v1.29-phases/, tagged v1.29.
 
 ## Key Context
 
@@ -103,16 +102,16 @@ None at planning start.
 
 ## Deferred Items
 
-Items acknowledged and deferred at **v1.28 milestone close on 2026-06-25**:
+Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user signed off "mark all as resolved and proceed"):
 
 | Category | Item | Disposition |
 |----------|------|-------------|
-| uat | Phase 135 `135-UAT.md` — RESOLVED: passed 2/2 | Resolved — user manually verified on prod 2026-06-25 |
-| uat | Phase 126 `126-UAT.md` (passed, 0 pending) | Not a gap — frontmatter artifact |
-| debug | `entry-submit-n-plus-1` (fixed_awaiting_deploy), `insights-diskfull-shm` (awaiting_human_verify) | Carried — unrelated infra sessions |
-| quick_task | 19 incomplete (unknown/missing status) | Resolved in fact — shipped; false-positive pattern (project_stale_gsd_sdk_audit_bug) |
-| todos | 5 pending (bitboard storage, phase-70 amendments, benchmark items) | Carried — long-range, not v1.29-scoped |
-| seeds | SEED-012, SEED-037, SEED-039, SEED-042, SEED-063 | Carried — future/v2; SEED-037/039 next-milestone candidates |
+| verification | Phase 136 / 138 / 140 `VERIFICATION.md` (human_needed) | Resolved — human-signed-off at close; feature shipped to prod (#227) and exercised live (incl. 2 Sentry crash fixes against the running page) |
+| uat | Phase 138 `138-UAT.md` — 4 deferred scenarios | Resolved — human-signed-off at close; `/analysis` route + entry points live and in daily use |
+| debug | `entry-submit-n-plus-1` (fixed_awaiting_deploy), `insights-diskfull-shm` (awaiting_human_verify) | Carried — unrelated infra sessions, not v1.29-scoped |
+| quick_task | 19 incomplete (unknown/missing status, 260531–260616) | Resolved in fact — shipped across prior milestones; false-positive pattern (project_stale_gsd_sdk_audit_bug) |
+| todos | 5 pending (bitboard storage, phase-70 amendments, benchmark items) | Carried — long-range, not milestone-scoped |
+| seeds | 9 dormant (SEED-012/037/039/042/063/066/067/068/069) | Carried — SEED-066 implemented as v1.29 (move to closed/ on next housekeeping); SEED-068 (double-go on visible-during-stopping) effectively addressed by the FLAWCHESS-7V stopping-state guard; remainder future/v2 |
 
 ## Session Continuity
 
