@@ -1,30 +1,26 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.29
-milestone_name: Live-Engine Analysis Page
-current_phase: 140
-current_phase_name: full-game-analysis-board
-status: v1.29 Live-Engine Analysis Page SHIPPED 2026-06-29 — archived, tagged v1.29; no active milestone
-stopped_at: v1.29 milestone closed
-last_updated: "2026-06-29T16:30:00.000Z"
+milestone: v1.30
+milestone_name: Forcing-Line Tactic Gate
+status: planning
+last_updated: "2026-06-29T17:20:41.610Z"
 last_activity: 2026-06-29
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 14
-  completed_plans: 14
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Milestone: v1.29 Live-Engine Analysis Page — SHIPPED 2026-06-29 (archived, tagged v1.29)
-Status: No active milestone. Next: `/gsd-new-milestone`.
-Last activity: 2026-06-29 - Completed quick task 260629-pq8: Fix unreliable PWA cache-busting (stale app shell on installed Android PWA)
-
-Progress: [██████████] 100%
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-06-29 — Milestone v1.30 started
 
 ## Project Reference
 
