@@ -6,7 +6,36 @@
 // — extracted here so we have a single source of truth (see CLAUDE.md
 // "Shared Query Filters" precedent: single implementation rule).
 
+import type { BoardArrow } from './ChessBoard';
+
 const FILES = 'abcdefgh';
+
+/** React key for an arrow's <path>/label — its move identity (start→end). */
+export function arrowMoveKey(arrow: BoardArrow): string {
+  return `${arrow.startSquare}-${arrow.endSquare}`;
+}
+
+/**
+ * Collapse arrows that share a from→to (move identity) to a single arrow,
+ * keeping the LAST one in the given (draw) order — i.e. the one painted on top,
+ * which is what the user sees.
+ *
+ * <path> elements are keyed on move identity (arrowMoveKey) to keep the CSS
+ * pulse animation stable across hover-driven re-sorts, so two arrows on the same
+ * from→to collide on the React key ("Encountered two children with the same key")
+ * and double-draw on the same path. Callers can legitimately emit such a pair:
+ * the live engine's grey 2nd-best arrow churns through many transient values
+ * while the eval-chart slider drags, momentarily matching the blue best /
+ * should-have-played arrow before MultiPV differentiates (the source dedupe in
+ * useGameOverlay only covers grey-vs-blue). Deduping here, where the key
+ * contract lives, fixes it for every caller. Two arrows on one path can only
+ * render one anyway.
+ */
+export function dedupeArrowsByMove(arrows: BoardArrow[]): BoardArrow[] {
+  const lastByKey = new Map<string, BoardArrow>();
+  for (const a of arrows) lastByKey.set(arrowMoveKey(a), a);
+  return arrows.filter((a) => lastByKey.get(arrowMoveKey(a)) === a);
+}
 
 /**
  * Convert a chess square string ("e4") to grid coordinates centered on the
