@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v1.30
 milestone_name: Forcing-Line Tactic Gate
 status: planning
-last_updated: "2026-06-29T17:20:41.610Z"
+last_updated: "2026-06-29T18:00:00.000Z"
 last_activity: 2026-06-29
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,16 +17,16 @@ progress:
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Phase 141 — JSONB Schema + Gate Logic (not yet started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-29 — Milestone v1.30 started
+Status: Roadmap defined — ready to plan Phase 141
+Last activity: 2026-06-29 — Roadmap created (5 phases: 141–145)
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-06-29 after v1.29 milestone close)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: No active milestone — planning the next via `/gsd-new-milestone`. v1.29 shipped a standalone `/analysis` board with in-browser single-thread WASM Stockfish, a branching move tree, and a tactic mode that subsumed the Phase 135 TacticLineExplorer.
+Current focus: v1.30 Forcing-Line Tactic Gate — 5 phases (141–145) blocking on JSONB schema (141) before engine pass (142), offline re-tagger (143), A/B validation (144), and corpus backfill + rollout (145). Hard sequential dependency chain; no parallelization.
 
 ## Milestone Progress
 
