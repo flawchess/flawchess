@@ -55,6 +55,7 @@ function driveInit(worker: MockWorker): void {
 
 const TEST_FEN = 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1';
 const TEST_FEN_2 = 'rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq d3 0 1';
+const TEST_FEN_3 = 'rnbqkbnr/pppppppp/8/8/2P5/8/PP1PPPPP/RNBQKBNR b KQkq c3 0 1';
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
@@ -303,6 +304,50 @@ describe('useStockfishEngine', () => {
     expect(result.current.pvLines).toHaveLength(0);
     // evalCp must still be null (cleared by FEN effect; stale result not committed)
     expect(result.current.evalCp).toBeNull();
+  });
+
+  it('FEN change during the stopping state does not send a second go (FLAWCHESS-7V)', async () => {
+    // Regression: while a stop is in flight (state === 'stopping') and we are awaiting
+    // the terminating bestmove, a further FEN change must NOT send position+go — doing
+    // so races the in-flight stop and traps the Stockfish WASM engine ("unreachable").
+    // The pending bestmove handler re-analyzes the LATEST FEN once it arrives.
+    const { rerender } = renderHook(
+      ({ fen }: { fen: string }) => useStockfishEngine({ fen, enabled: true }),
+      { initialProps: { fen: TEST_FEN } },
+    );
+
+    driveInit(mockWorker);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+
+    // Engine is analyzing TEST_FEN (state === 'thinking'); exactly one go was sent.
+    expect(mockWorker.messages.filter((m) => m.startsWith('go ')).length).toBe(1);
+
+    // Change FEN while thinking → stop is sent (state → 'stopping'); no new position/go.
+    rerender({ fen: TEST_FEN_2 });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(mockWorker.messages).toContain('stop');
+
+    // Change FEN AGAIN while still stopping (no bestmove yet). With the bug this fell
+    // through to position+go; the fix returns early.
+    rerender({ fen: TEST_FEN_3 });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(mockWorker.messages).not.toContain(`position fen ${TEST_FEN_3}`);
+    expect(mockWorker.messages.filter((m) => m.startsWith('go ')).length).toBe(1);
+
+    // The terminating bestmove (from the TEST_FEN search) arrives → re-analyze the
+    // latest FEN (TEST_FEN_3), skipping the intermediate TEST_FEN_2.
+    act(() => {
+      mockWorker.simulateMessage('bestmove e2e4 ponder e7e5');
+    });
+    expect(mockWorker.messages).toContain(`position fen ${TEST_FEN_3}`);
+    expect(mockWorker.messages).not.toContain(`position fen ${TEST_FEN_2}`);
+    expect(mockWorker.messages.filter((m) => m.startsWith('go ')).length).toBe(2);
   });
 
   it('visibility hidden sends stop without terminating the Worker', async () => {

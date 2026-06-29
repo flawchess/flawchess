@@ -197,6 +197,17 @@ export function useStockfishEngine({
       return;
     }
 
+    if (stateRef.current === 'stopping') {
+      // Bug fix (FLAWCHESS-7V): a stop is already in flight and we're awaiting its
+      // terminating bestmove. Sending position+go now would race that in-flight stop
+      // and trap the Stockfish WASM engine with "RuntimeError: unreachable". Do
+      // nothing: the bestmove+stopPendingRef handler re-analyzes currentFenRef.current
+      // (always the latest FEN) once the stale bestmove arrives. This path became
+      // reachable when the adaptive debounce started firing settled moves immediately
+      // instead of serializing every change behind a 150ms timer (quick-260629-n8e).
+      return;
+    }
+
     // Clear pvMap so stale lines from the previous position do not bleed into
     // the snapshot that will be committed on the next bestmove.
     pvMapRef.current.clear();
