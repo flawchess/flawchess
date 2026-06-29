@@ -1,217 +1,163 @@
 # Project Research Summary
 
-**Project:** FlawChess v1.29 — Live-Engine Analysis Page
-**Domain:** In-browser single-thread WASM Stockfish, branching move tree, tactic-mode overlay
-**Researched:** 2026-06-26
+**Project:** FlawChess v1.30 — Forcing-Line Tactic Gate
+**Domain:** Chess tactic tagger quality — MultiPV=2 engine pass + JSONB persistence + offline re-tagger
+**Researched:** 2026-06-29
 **Confidence:** HIGH
 
 ## Executive Summary
 
-v1.29 adds a standalone `/analysis` page backed by a live in-browser Stockfish engine running as a Web Worker. All four research files agree on the convergent architecture: `stockfish` npm v18 (`stockfish-18-lite-single.js` + `.wasm`, ~7 MB, single-thread NNUE, no CORS headers required), vendored into `public/engine/` as static assets (not processed by Vite), loaded via plain `new Worker('/engine/stockfish-18-lite-single.js')`. This is the only build that gives NNUE strength in a single-thread form that works on iOS Safari without COOP/COEP headers. The full single-thread build is ~30-100 MB and has no NNUE (HCE only), making it paradoxically weaker than the lite build despite its size.
+The v1.30 milestone addresses a known mismatch between the tactic detector's training domain (lichess puzzles — fully forced lines) and its production environment (real-game refutation PVs where many nodes are not forced). The fixture precision gate scores ~0.998 micro-precision on synthetic puzzles, but that harness cannot see the non-forced tail that generates the clearance/sacrifice/capturing-defender noise observed in production. Research confirmed that modelling the gate on lichess-puzzler's `is_valid_attack` logic is the correct approach, and that the full implementation requires no new PyPI dependency, no changes to `tactic_detector.py`, and no new table beyond two nullable JSONB columns on the existing `game_flaws` table.
 
-The feature is almost entirely frontend. The backend is explicitly locked out (D-4): no schema, no migration, no new endpoints beyond the Phase 135 `tactic-lines` endpoint that already surfaces stored PVs. The two novel frontend pieces are `useStockfishEngine` (Worker lifecycle, UCI protocol, debounce, stale-result cancellation) and `useAnalysisBoard` (branching move tree, FEN-per-node, O(1) navigation). These are written as new hooks alongside `useChessGame` — NOT modifications of it. A conditional `TacticModeOverlay` on the same page subsumes Phase 135's `TacticLineExplorer` modal once parity is verified; retiring the modal is a gated final phase.
+The recommended architecture is a strict 5-phase dependency chain: schema first, then the MultiPV=2 engine pass, then the offline re-tagger, then an A/B experiment on user-28, then corpus backfill and rollout. The most important design property — confirmed by all four research files — is that the JSONB blobs decouple the expensive engine pass from the cheap gate logic. Once blobs are stored, every threshold change, new filter rule, or margin tweak is a pure-Python offline re-tag (seconds) with no engine re-pass. This property must be preserved in implementation.
 
-The highest-severity risk is Pitfall 8: accidentally enabling `SharedArrayBuffer` / COOP+COEP headers site-wide, which breaks Google OAuth and iOS asset loading. The second-highest is the subsume-without-regression risk for four specific Phase 135 behaviors (depth-0 highlight, missed/allowed +1 offset, real-game-ply move numbering, tactic-rail state persistence). Both are preventable with the patterns documented in PITFALLS.md and must be addressed as first-class design concerns in their respective phases, not retrofitted.
-
----
+The primary risks are (a) MultiPV=2 ordering reliability at the 1M-node budget — must be verified via margin histogram before committing the budget in Phase 142; (b) mate-score saturation causing the sigmoid gate to incorrectly suppress mating combinations — requires a mate-priority check before the sigmoid comparison; and (c) the A/B validation methodology in Phase 144 conflating gate effect with eval non-determinism if old-tagger replay calls the engine instead of reading stored `eval_cp` from dev's DB.
 
 ## Key Findings
 
 ### Recommended Stack
 
-No new backend dependencies. The only new frontend runtime dependency is `stockfish` npm v18.0.8 (nmrugg / Chess.com, GPLv3). The optional dev dependency `vite-plugin-static-copy` automates copying the two engine files from `node_modules/stockfish/src/` to `dist/engine/` at build time; manually copying to `public/engine/` is equally valid and simpler for v1.
+The existing stack handles everything: python-chess 1.11.x already ships the `multipv=2` overload for `protocol.analyse()`, SQLAlchemy 2.x already ships `JSONB` from `sqlalchemy.dialects.postgresql`, and the asyncpg dialect auto-registers the JSON codec on every connection via `on_connect()`. The only required source change is that `analyse(..., multipv=2)` returns `list[InfoDict]` (not a scalar `InfoDict`), which means the existing `_analyse_with_pv` cannot be repurposed — a parallel sibling method `_analyse_multipv2` must be added to `EnginePool`.
 
-The critical Vite wiring rule: both `stockfish-18-lite-single.js` and `stockfish-18-lite-single.wasm` must sit together in `public/engine/` and be served verbatim. Never process them through Vite's bundler (`?worker`, `?url`, esbuild optimizer). Add `optimizeDeps: { exclude: ['stockfish'] }` to `vite.config.ts` before writing any UCI code — the WASM URL resolution break in Vite's pre-bundler is silent in `vite dev` and only surfaces in `npm run build`.
+**Core technologies:**
+- `python-chess 1.11.x` (`protocol.analyse(board, limit, multipv=2)`) — returns `list[InfoDict]`, best-first; `infos[0]` is the best line, `infos[1]` the second; guard `len(infos) > 1` for single-legal-move positions
+- `SQLAlchemy JSONB` (`from sqlalchemy.dialects.postgresql import JSONB`) — follow the `llm_log.py` pattern exactly; `Mapped[list[Any] | None]`, no `MutableDict` (write-once blobs), no manual codec setup
+- `PostgreSQL 18 TOAST` — automatic for values over ~2 KB; the 12-node pv_lines blob is ~600 bytes, so inline storage applies; TOAST deferred loading is automatic and requires no app-side config
 
-**Core new technologies:**
-- `stockfish` npm v18.0.8, `stockfish-18-lite-single.{js,wasm}` — single-thread WASM Stockfish with small embedded NNUE, ~7 MB total, no CORS headers. The correct build; others are either weaker or unsafe.
-- `vite-plugin-static-copy` v2.x (optional) — copies engine files from `node_modules/` to `dist/engine/` at build time, keeping binaries out of git.
-- Plain `new Worker('/engine/stockfish-18-lite-single.js')` — standard DOM Worker API, no Vite magic, already typed in TypeScript 6 `lib.dom.d.ts`.
-- `React.lazy` + `Suspense` — code-splits `AnalysisPage` from the main bundle so the engine chunk is never fetched until the user navigates to `/analysis`.
-- `go movetime 1500` (primary search bound) — wall-clock cap gives consistent UX on heterogeneous hardware; `go nodes 2000000` as secondary safety valve. Replaces the server-side `nodes 1000000` budget which is too slow for low-end mobile.
-
-**License:** Stockfish is GPLv3. Distribution of the WASM binary requires a source pointer. FlawChess is already open-source; add an acknowledgement in README. The Worker thread boundary means GPL does not infect FlawChess's own code.
+No new PyPI dependency. No new table. The sidecar table (`game_flaw_pv_lines`) the design note flagged as a fallback is not needed — TOAST provides equivalent physical decoupling without a JOIN.
 
 ### Expected Features
 
-Research confirms a clear MVP that closes the "go to lichess for analysis" gap, plus FlawChess-specific differentiators that neither lichess nor chess.com offer.
+The forcing-line gate corroborates all constants and rules from the design note. Every figure below is verified directly against `generator/generator.py` and `generator/util.py` in the lichess-puzzler v50 clone.
 
-**Must have (table stakes):**
-- Live eval bar (graphical centipawn bar, sigmoid-mapped, white-POV, mate-in-N display)
-- Numeric eval + depth indicator ("Depth 18", "thinking...")
-- Top 1-2 PV lines (MultiPV=2), clickable to navigate to that position
-- Engine start/stop toggle
-- Branching move tree — fork on deviation rather than reject the move
-- Drag-drop + click-to-click move input (already in `ChessBoard.tsx`)
-- Flip board, back/forward navigation, reset to root
-- Eval arrow on board highlighting engine best move
-- URL-encoded position state for sharing/bookmarking (root FEN + move sequence, not full tree)
-- Debounced engine re-analysis on position change (150-300ms)
-- "Loading engine" state while WASM initializes (board + PV stepper remain interactive)
+**Must have (v1.30 table stakes):**
+- MultiPV=2 engine pass + JSONB storage (`allowed_pv_lines`, `missed_pv_lines` on `game_flaws`) — everything else depends on this
+- Solver-node only-move gate: `p(best) − p(second) > ONLY_MOVE_WIN_PROB_MARGIN` (0.35) — applied only at even-indexed PV nodes (solver's turn); derived from lichess's +0.7 in −1..+1 space via the algebra `2*p − 1` → exact translation, no new constant
+- Already-winning reject: `flaw_pre_eval > ALREADY_WINNING_CP_THRESHOLD` (300 cp) — high-yield cheap filter using existing `game_positions.eval_cp` at `flaw_ply`; no new engine work
+- Still-winning floor: stop PV walk when `best_cp < STILL_WINNING_FLOOR_CP` (200 cp) — cuts deep-tail fizzle
+- Trailing-only-move strip + one-mover discard — suppresses tags on trivially forced continuations
+- Offline re-tagger (`scripts/retag_flaws.py`) — pure Python; `--dry-run --margin --user-id` flags
+- User-28 A/B validation — per-motif tags removed, hand-check ~30 dropped cases, false-negative count
+- Corpus backfill + rollout
 
-**Should have (FlawChess differentiators):**
-- Stored PV as initial mainline (D-5) — board opens pre-seeded with the Phase 135 PV; live engine supplements and takes over on deviation. Unique to FlawChess.
-- Tactic mode overlay — motif badge, missed/allowed toggle, depth-to-punchline counter, next/prev tactic rail. Neither lichess nor chess.com integrate analysis with personal game flaw history this way.
-- Context-aware entry points — tactic cards, game-review ply, and opening positions each pre-load the relevant position with relevant context.
-- Engine on/off with visible "analyzing" state chip
+**Should have (zero extra engine cost — store now, surface later):**
+- Second-best UCI (`"su"` field per JSONB node) — free from MultiPV=2; future-proofs "both-winning-captures" exception
 
-**Defer (v2+ or post-launch):**
-- Paste-a-FEN / paste-PGN input (the three typed entry points cover 100% of in-product use cases)
-- Variation tree display with fork points shown inline in the move list
-- Full SF18 single-thread option (HCE, no NNUE — actually weaker than lite)
-- Multi-thread WASM engine (D-3 locked out; requires hard-loaded isolated document)
-- Tablebase integration, promote/demote variation, save named analyses, annotation symbols
-
-**Anti-features (explicitly omit):**
-- SharedArrayBuffer / COOP+COEP headers (breaks Google OAuth + iOS)
-- Cloud eval API (stored PVs already serve this role)
-- Server-side analysis persistence (D-4 locked out)
-- PGN annotation / comment system
-- Social sharing buttons beyond copy-URL
+**Defer to v2+:**
+- "Both-winning-captures" exception — implement if hand-check false-negative rate exceeds ~10%
+- Defender-node ambiguity rule — no evidence of this noise class in the corpus
+- Tablebase uniqueness (Syzygy) — multi-hundred-MB dependency, near-zero real-game reach
 
 ### Architecture Approach
 
-The analysis board composes two new independent hooks — `useStockfishEngine` (Worker lifecycle + UCI state machine) and `useAnalysisBoard` (FEN-per-node branching tree) — into a new `Analysis.tsx` page shell, lazy-loaded via `React.lazy`. The existing `ChessBoard.tsx`, `BoardControls.tsx`, `ArrowOverlay`, and `TacticMotifChip` are reused unchanged. Tactic mode is a conditional overlay (`TacticModeOverlay`) activated by URL params. Phase 135's `useTacticLines` query hook (in `useLibrary.ts`) is called from `Analysis.tsx` in tactic mode; the standalone `TacticLineExplorer.tsx` and `useTacticLine.ts` are retired only after parity is verified.
+The gate fits into the existing `routers → services → repositories` layering without structural change. The key pattern is gate-as-pre-filter, detector unchanged: `forcing_line_gate.py` (new, pure math) is called from `flaws_service.py::_detect_tactic_for_flaw` before `detect_tactic_motif`, and `tactic_detector.py` is never modified. A second key pattern is two-phase flaw processing: `_full_drain_tick` calls `classify_game_flaws` twice — once in-memory before the write session (to identify flaw plies for the MultiPV=2 gather) and once inside the write session (authoritative write). This preserves the hard constraint against `asyncio.gather` inside an `AsyncSession`.
 
 **Major components:**
-1. `useStockfishEngine` — Worker lifecycle (create on mount, terminate on unmount), UCI protocol (uci/uciok/setoption/isready/readyok/analyze loop), 150ms debounce + stop-pending flag to discard stale `bestmove`, `go movetime 1500` cap, MultiPV state map keyed by `multipv` index. Returns `{ evalCp, evalMate, pvLines, depth, isAnalyzing, isReady }`.
-2. `useAnalysisBoard` — Branching tree with `Map<NodeId, MoveNode>` where each `MoveNode` stores its own FEN (O(1) navigation). `makeMove` forks naturally at any node. `loadMainLine(sans, rootFen)` seeds the stored PV as the `mainLine` NodeId array. `isOnMainLine(nodeId)` gates tactic mode arrow logic. Keyboard handler scoped to `containerRef`, no sessionStorage, no Zobrist hashing.
-3. `Analysis.tsx` — Lazy-loaded page shell. Reads URL params (`game_id`, `flaw_ply`, `orientation`, `fen`), composes both hooks, determines tactic/free mode, responsive layout (eval bar left of board on desktop, below board on mobile).
-4. `EvalBar.tsx` — Vertical centipawn bar, sigmoid-mapped, mate label. Only shown from depth 8+ to avoid shallow misleading evals.
-5. `EngineLines.tsx` — Top 1-2 PV lines as clickable SAN sequences with depth badge.
-6. `VariationTree.tsx` — Move list rendering `nodes` + `mainLine`, click-to-navigate via `goToNode`.
-7. `TacticModeOverlay.tsx` — Conditional tactic chrome: `TacticMotifChip`, missed/allowed toggle, next/prev-tactic rail. Arrow logic ported from `TacticLineExplorer` unchanged.
+1. `app/services/forcing_line_gate.py` (NEW) — `PvNode` TypedDict, `is_solver_node_forced()`, `apply_forcing_line_filter()`; no DB, no engine; independently unit-testable
+2. `app/services/engine.py` (MODIFIED) — add `_analyse_multipv2()` / `evaluate_nodes_multipv2()` alongside existing `_analyse_with_pv`; same 1M-node budget and 5s timeout as starting point; separate method required because `multipv=2` changes the return type to `list[InfoDict]`
+3. `app/services/eval_drain.py` (MODIFIED) — add step 3b: `_run_multipv2_pass()` helper gathers MultiPV results after the existing all-ply pass, before the write session opens
+4. `app/services/flaws_service.py` (MODIFIED) — `_detect_tactic_for_flaw` gains optional `pv_lines_by_ply` param; gate pre-filter inserted before `detect_tactic_motif`; backward compat when param absent
+5. `scripts/backfill_multipv.py` (NEW) — fills JSONB for existing `game_flaws` rows using module-level `EnginePool` (not a second independent pool)
+6. `scripts/retag_flaws.py` (NEW) — reads stored blobs, applies gate, updates tactic columns; pure offline
 
-**Key pattern: FEN-per-node branching.** Storing FEN at each `MoveNode` makes `goToNode(id)` O(1) and eliminates the replay-from-root overhead of `useChessGame`'s `replayTo` pattern.
-
-**Key pattern: stop-pending flag.** When `stop` is sent to the engine, it always responds with a `bestmove` (the termination result). This stale `bestmove` must be discarded via `stopPendingRef: boolean`.
+**Confirmed unchanged:** `tactic_detector.py`, `game_positions` table, `apply_game_filters()`, `eval_queue_service.py`, all existing `classify_game_flaws` callers (new param defaults to `None`).
 
 ### Critical Pitfalls
 
-All 10 pitfalls are documented in detail in PITFALLS.md. The top 5 by severity:
+1. **MultiPV=2 ordering unreliable at 1M nodes** — at roughly half the effective depth of single-PV, the best-vs-second margin is noisy for near-equal moves. In Phase 142, plot the margin distribution on 200–500 flaw positions before finalizing the node budget. If more than 10% of positions land within ±0.05 of 0.35, increase budget to 1.5–2M nodes.
 
-1. **Accidental COOP/COEP headers (Pitfall 8)** — Highest severity. If any dependency introduces `SharedArrayBuffer`, browsers require cross-origin isolation, severing Google OAuth and breaking iOS assets. Prevention: lock `vite.config.ts` and Caddy config with explicit no-COOP/COEP comment citing D-3; add CI `curl -I` check; verify `window.crossOriginIsolated === false` after deploy.
+2. **Mate-score saturation suppresses mating tactics** — `eval_mate_to_expected_score` returns 1.0 for any forced mate; best=mate-in-3 vs second=mate-in-9 gives `1.0 − 1.0 = 0.0 < 0.35` and incorrectly fails the gate. In Phase 143, implement the priority hierarchy: (a) if only best is mate → forced; (b) if both are mates → compare distances (shorter = forced); (c) fall through to sigmoid. Mate-in-1 must never be suppressed.
 
-2. **Subsume-without-regression (Pitfall 9)** — Four Phase 135 behaviors at high silent-regression risk: depth-0 highlight (empty PV crash), missed/allowed +1 ply offset (`tacticDepth.ts`), real-game-ply move numbering, and tactic-rail state resetting on route re-entry. Prevention: write regression tests for all four behaviors against `TacticLineExplorer` BEFORE touching Phase 135 code.
+3. **A/B validation conflating gate effect with eval non-determinism** — old-tagger replay must read `eval_cp` from dev's DB and must not call the engine. Prod-28 is sanity reference only, not an A/B control.
 
-3. **Stale-eval race (Pitfall 3)** — `stop` always produces a `bestmove`; receiving it and treating it as the current result corrupts the eval display. Prevention: implement `stopPendingRef` boolean + discard the `bestmove` that immediately follows `stop`. Two-layer guard: 150ms debounce (Layer A) + stop-pending flag (Layer B).
+4. **JSONB leaking into stats queries via ORM `select(GameFlaw)`** — after the Phase 141 migration, every existing query using `select(GameFlaw)` starts fetching the new blob columns. Audit all query sites before committing the migration; convert to explicit column projections.
 
-4. **Vite esbuild optimizer breaks WASM URL resolution (Pitfall 1)** — If stockfish is not excluded from `optimizeDeps`, Vite relocates the JS to `.vite/deps/` while WASM stays in `node_modules/`, breaking relative path resolution. Silently works in `vite dev`, breaks in `npm run build`. Prevention: `optimizeDeps: { exclude: ['stockfish'] }` + files in `public/engine/` + verify with `npm run build && npx serve dist`.
-
-5. **iOS 50 MB Cache API limit (Pitfall 2)** — iOS Safari's `CacheStorage` is hard-capped at ~50 MB. The full SF18 single-thread WASM exceeds this; a Workbox `CacheFirst` precache throws `QuotaExceededError` on SW installation, which can break the entire PWA shell. Prevention: use the lite build (~7 MB); exclude `*.wasm` from Workbox `globPatterns`; serve with `Cache-Control: max-age=31536000, immutable`.
-
----
+5. **Second EnginePool in backfill pushing RSS into OOM zone** — QUEUE-07 accounting: 6 workers ~1,586 MB Stockfish + ~300 MB FastAPI = ~1.9 GB in the 4g container. Phase 145 backfill must reuse the module-level `EnginePool`.
 
 ## Implications for Roadmap
 
-The four research files validate the seed's 5-phase shape. Dependencies flow strictly in order: engine hook before board components, board before page, page before tactic overlay, tactic subsume last.
+The 5-phase dependency chain is non-negotiable: each phase's output is a required input to the next. The JSONB blobs are the load-bearing artifact — once stored, all subsequent phases are engine-free and fast to iterate.
 
-### Phase 1: `useStockfishEngine` Hook + WASM Setup
+### Phase 141: JSONB Schema + Gate Logic
+**Rationale:** Everything else depends on the ORM model and migration existing. The gate service can be written and unit-tested immediately without engine or DB.
+**Delivers:** `allowed_pv_lines` / `missed_pv_lines` JSONB columns on `game_flaws`; `forcing_line_gate.py` with all constants and logic; Alembic migration; query-site audit confirming no stats path selects the new columns.
+**Addresses:** JSONB storage (table stakes), gate constants (`ONLY_MOVE_WIN_PROB_MARGIN = 0.35`, `ALREADY_WINNING_CP_THRESHOLD = 300`, `STILL_WINNING_FLOOR_CP = 200`)
+**Avoids:** Pitfall 6 (JSONB leaking into stats queries) — audit is part of this phase's definition of done
 
-**Rationale:** Entirely standalone; no dependencies on anything else in v1.29. The engine hook is the novel risk — every other piece extends well-understood existing code. Front-loading it surfaces platform/Vite issues before they entangle with board logic. All critical pitfalls (1, 2, 3, 4, 5, 6, 7, 8) are in scope here.
-**Delivers:** `stockfish` npm installed; engine files vendored to `public/engine/`; `useStockfishEngine.ts` with Worker lifecycle, UCI state machine (`idle | thinking | stopping`), 150ms debounce, stop-pending flag, MultiPV map keyed by `multipv` index, `go movetime 1500` primary cap; UCI parser unit tests for lowerbound/upperbound, `mate 0`, and MultiPV interleaved sequences.
-**Avoids:** Pitfalls 1, 2, 3, 4, 5, 6, 7, 8 — all verified before board or page code is written.
-**Verification gate:** `npm run build && npx serve dist` (not just `vite dev`); iOS Simulator (no `QuotaExceededError`); Chrome DevTools Task Manager (no worker leak on nav away); `curl -I` for COOP/COEP absence and `application/wasm` MIME type.
+### Phase 142: MultiPV=2 Engine Pass + Eval Drain + Remote Worker
+**Rationale:** The JSONB columns must exist (Phase 141) before anything can be written to them. This phase wires the expensive engine work; its output is stored blobs in `game_flaws`.
+**Delivers:** `engine.py` `_analyse_multipv2` / `evaluate_nodes_multipv2`; `eval_drain.py` step 3b (`_run_multipv2_pass`); extended `SubmitRequest` (additive, backward-compatible); updated `remote_worker.py`; margin histogram on 200+ dev flaw positions confirming node budget.
+**Uses:** `python-chess multipv=2` list API; existing `_NODES_BUDGET` (1M nodes) as starting point
+**Avoids:** Pitfall 10 (list API misread — separate `_analyse_multipv2` method required); Pitfall 1 (ordering reliability — histogram gates the budget before merge); Pitfall 2 (RSS — reuse module-level pool)
 
-### Phase 2: `useAnalysisBoard` Hook + Analysis Display Components
+### Phase 143: Offline Re-tagger
+**Rationale:** JSONB blobs must be populated (Phase 142). This phase produces the tooling for all threshold iteration and the corpus rollout.
+**Delivers:** `scripts/retag_flaws.py` with gate logic, mate-priority hierarchy, solver-vs-defender parity; `scripts/backfill_multipv.py`; unit tests covering mate combinations and defender-branching positions; per-position margin output for Phase 144 analysis.
+**Implements:** gate-as-pre-filter architecture; mate-priority check before sigmoid; trailing-only-move strip; one-mover discard
+**Avoids:** Pitfall 5 (mate saturation — priority hierarchy before sigmoid); Pitfall 7 (defender/solver parity — unit test with defender-branching position); Pitfall 9 (AGPL slip — implement from design note prose only, not open lichess-puzzler files)
 
-**Rationale:** Depends only on Phase 1 types. Building the branching tree and display components (EvalBar, EngineLines, VariationTree) before the page shell allows unit-testing each piece in isolation with Vitest. The branching tree is the second high-complexity item; isolating it here means regressions can be bisected cleanly.
-**Delivers:** `useAnalysisBoard.ts` (MoveNode type, `nodes: Map`, `makeMove` fork, `goBack/goForward/goToNode`, `loadMainLine`, `isOnMainLine`, containerRef keyboard handler); `EvalBar.tsx`; `EngineLines.tsx`; `VariationTree.tsx`; URL param reading helpers.
-**Key constraint:** `useAnalysisBoard` must NOT modify `useChessGame.ts`. The Openings board must be regression-free throughout.
+### Phase 144: User-28 A/B Validation
+**Rationale:** The margin (0.35) is a starting point. Validation must confirm noise reduction without excessive false negatives before committing the constant.
+**Delivers:** `backfill_multipv.py --user-id 28` run on dev; per-motif tags removed and survived; hand-check of ~30 dropped cases with good-tags-killed count; depth-shift distribution; confirmed margin committed to `LICHESS_FORCING_MARGIN`.
+**Avoids:** Pitfall 3 (eval non-determinism — old-tagger replay reads dev's stored `eval_cp`, never calls engine); Pitfall 4 (false negatives unmeasured — per-motif hand-check is mandatory)
 
-### Phase 3: `/analysis` Route + Page Shell + Free-Play Entry Points
-
-**Rationale:** Composes the two hooks and all display components into a working page. Wires free-play entry points and adds the `/analysis` route to `App.tsx`. Tactic mode is deferred to the next phase to make regressions easier to bisect.
-**Delivers:** `src/pages/Analysis.tsx` (lazy-loaded via `React.lazy`, `<Suspense>` wrapper, responsive layout); `/analysis` route in `App.tsx`; `ROUTE_TITLES` entry; `data-testid` on all interactive elements; "Loading engine..." state in eval area (board and PV stepper remain interactive while engine initializes).
-**Verification gate:** Network tab confirms no stockfish fetch on non-analysis routes; full Google OAuth flow unbroken; `window.crossOriginIsolated === false`.
-
-### Phase 4: Tactic Mode Overlay + Phase 135 Subsume
-
-**Rationale:** Highest regression risk. Requires Phase 3 before tactic mode can be wired. The Phase 135 regression test suite is the acceptance bar; standalone `TacticLineExplorer` is deleted only after all four regression behaviors pass.
-**Delivers:** `TacticModeOverlay.tsx` (motif chip, orientation toggle, next/prev-tactic rail); `useTacticLines` wired into `Analysis.tsx` for tactic mode; `loadMainLine` seeding from stored PV (D-5); `buildRootArrows` / `buildPvArrow` ported from `TacticLineExplorer`; `FlawCard` and `LibraryGameCard` "Explore" buttons changed to `navigate('/analysis?...')`; `TacticLineExplorer.tsx` and `useTacticLine.ts` deleted; `npm run knip` clean.
-**Regression gate (must pass before deletion):** depth-0 highlight, missed/allowed +1 offset, real-game-ply move numbering, tactic-rail state persistence on route re-entry.
-**Avoids:** Pitfall 9 subsume regressions (Behavior A-D).
-
-### Phase 5: Polish + PWA Audit
-
-**Rationale:** Per D-4, no backend work is required. Phase 5 catches mobile layout tweaks, loading-engine skeleton UX improvements, and any polish from Phases 1-4 UAT. Also the correct place for the PWA service-worker audit.
-**Delivers:** Mobile layout tweaks as needed; `visibilitychange` engine pause on tab hide; PWA `globPatterns` audit (confirm `*.wasm` excluded from Workbox precache); post-deploy `curl -I` MIME type verification.
+### Phase 145: Corpus Backfill + Rollout
+**Rationale:** Margin is confirmed (Phase 144). This phase makes the gate user-visible in production.
+**Delivers:** `backfill_multipv.py --db prod` populates JSONB for all analyzed `game_flaws`; `retag_flaws.py --db prod` applies gate; tactic chip counts monitored per motif before/after; live drain now writes JSONB for all new games.
+**Avoids:** Pitfall 2 (RSS — reuse module-level pool; document pool-size arithmetic before any size change); Pitfall 8 (backfill idempotency — `WHERE allowed_pv_lines IS NULL` guard; MultiPV pass is NOT gated on `lichess_evals_at` because second-best is new data not from lichess)
 
 ### Phase Ordering Rationale
 
-- Engine hook first: only fully standalone piece, highest novel risk, allows all platform pitfalls to be caught in isolation.
-- Board hook + components second: depends only on engine hook types, not runtime behavior; isolating it enables clean unit testing.
-- Page shell third: requires both hooks and all components to compose.
-- Tactic subsume last: highest regression risk; requires the full page; separating it from the board phase means any Phase 4 regression can be bisected to the subsume.
-- No backend phase: the `tactic-lines` endpoint from Phase 135 is the only API dependency and is already live.
+- Schema strictly first: `SubmitRequest` extension, `FlawRecord` keys, and the repository write path all reference the new columns.
+- Engine pass before re-tagger: the re-tagger has no input without stored JSONB.
+- Validation before corpus backfill: committing the wrong margin to prod requires a second full backfill; the offline re-tagger makes margin iteration trivial on dev but expensive on prod.
+- The JSONB decoupling property is what makes Phase 144 and 145 fast — the entire margin-tuning loop in Phase 144 is engine-free and takes seconds per iteration.
 
 ### Research Flags
 
-**Phase 1 (Engine hook): All resolved by this research session.** The WASM build choice, Vite wiring, iOS Cache limit, COOP/COEP risk, UCI state machine, and `go movetime` tradeoffs are fully documented. PLAN.md can be written directly from STACK.md + PITFALLS.md without additional research.
+Phases with standard patterns (research-phase not needed):
+- **Phase 141:** Pure schema + pure-math gate; SQLAlchemy JSONB follows existing `llm_log.py` pattern
+- **Phase 144:** Operational validation; methodology fully specified in the design note and PITFALLS.md
+- **Phase 145:** Backfill follows `backfill_flaws.py` pattern; rollout is a prod run of already-validated scripts
 
-**Phase 2 (Board hook + components): Standard patterns, well-documented.** FEN-per-node branching tree and fork behavior are fully specified in ARCHITECTURE.md. No additional research needed unless `VariationTree` UI needs a specific design decision.
-
-**Phase 3 (Page + route): Standard, no research needed.** React Router lazy-load, Suspense, and responsive layout patterns are established in the codebase.
-
-**Phase 4 (Tactic subsume): No research needed; high execution discipline required.** Architecture is fully documented. Risk is regression testing discipline — tests must precede any Phase 135 code changes.
-
-**Phase 5 (Polish): No research needed.** Standard PWA audit and mobile testing.
-
-### Open Questions (Surface During Planning)
-
-1. **Real-device `movetime` calibration:** The 1500ms wall-clock budget is well-reasoned but unvalidated on actual low-end Android hardware. Smoke-test during Phase 1 and adjust if needed.
-
-2. **Branching tree UI depth for v1:** How much branching depth to show in the v1 `VariationTree` is a product decision (flat secondary list vs. inline indented). Data model supports either; choose during Phase 2 planning.
-
-3. **PWA service-worker `*.wasm` glob audit:** Verify the existing `vite.config.ts` `globPatterns` or `globIgnores` does not match `*.wasm` before Phase 1 is declared done.
-
-4. **Engine files: committed vs. plugin-generated:** Both options (commit to `public/engine/` or use `vite-plugin-static-copy`) are valid. Make the call during Phase 1 planning based on preference for simplicity vs. keeping binaries out of git.
-
----
+Phases where specific sub-decisions need care during planning:
+- **Phase 142:** Node budget must be decided empirically via margin histogram — plan should include histogram step as a mandatory gate before merge
+- **Phase 143:** Mate-priority hierarchy and solver/defender parity need explicit unit-test coverage called out in the plan
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | MEDIUM | Package details from web + npm registry; Vite 8 patterns from official docs. Build file names and sizes cross-referenced from GitHub but not directly fetched. Core recommendation (lite-single, public/ placement, optimizeDeps.exclude) convergent across all sources. |
-| Features | HIGH | Analysis-board patterns well-established across lichess/chess.com; reuse map verified against direct codebase inspection of all named files. Feature table stakes unambiguous. Anti-features locked by D-1..D-5. |
-| Architecture | HIGH | Based on direct code inspection of all named files (useChessGame.ts, useTacticLine.ts, ChessBoard.tsx, BoardControls.tsx, TacticLineExplorer.tsx, tacticDepth.ts, App.tsx, vite.config.ts). Component boundaries, hook contracts, and data flow diagrams grounded in actual implementation. |
-| Pitfalls | HIGH | Codebase verified + cross-checked against official Vite docs, UCI specification, iOS Safari platform notes, stockfish npm package. All 10 pitfalls include prevention patterns and detection warning signs. |
+| Stack | HIGH | python-chess `multipv=2` API and SQLAlchemy JSONB pattern both verified against official docs + codebase source; asyncpg codec auto-registration confirmed in existing `llm_log.py` working pattern |
+| Features | HIGH | All constants verified directly against lichess-puzzler v50 source at the local clone; sigmoid translation `0.7 (−1..+1) → 0.35 (0..1)` is exact algebra |
+| Architecture | HIGH | Derived from first-party source reading of `engine.py`, `eval_drain.py`, `flaws_service.py`, `eval_remote.py`, `game_flaws_repository.py`; all integration points confirmed |
+| Pitfalls | HIGH | Grounded in documented project history (QUEUE-07 RSS accounting, eval non-determinism memory file, OOM history, AGPL boundary from cook.py alignment) |
 
-**Overall confidence: HIGH**
+**Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **Real-device `movetime` calibration (Phase 1):** The 1500ms budget is well-reasoned but needs one smoke test on a budget Android during Phase 1 to confirm. Not a research gap; an empirical validation step.
+These are expected open items, not research failures:
 
-- **`VariationTree` v1 UI presentation (Phase 2):** How many branching levels to show in v1 is a product decision not resolved in research. The data model supports any presentation; defer to Phase 2 planning.
-
-- **Engine file placement (Phase 1):** Commit to `public/engine/` or use `vite-plugin-static-copy` — both documented, both valid. Decide during Phase 1 planning.
-
----
+- **Node budget for MultiPV=2:** 1M nodes is the correct starting point; the margin histogram in Phase 142 determines whether 1.5–2M is needed. Decision criterion: if more than 10% of positions fall within ±0.05 of 0.35, increase the budget.
+- **Per-motif margin:** Global 0.35 may prove too aggressive for shallow motifs (fork, pin at depth 1-2). Phase 144 hand-check will reveal whether per-motif tuning is warranted; a single global constant is acceptable for v1.30.
+- **False-negative rate for "both-winning-captures" positions:** Unknown until Phase 144. If hand-check shows consistent killing of real tactics on this class, the "both-winning-captures" exception should be promoted from v2+ to a Phase 145 add-on. The `"su"` field being stored in Phase 142 ensures no re-engine-pass is needed to implement it.
 
 ## Sources
 
-### Primary (HIGH confidence — project-internal)
-- SEED-066 locked design decisions D-1 through D-5 — single-thread rationale, ephemeral state, stored-PV handoff, subsume strategy
-- SEED-012 amendment 2026-06-12 — COOP/COEP + iOS Safari research (prior milestone)
-- Direct codebase inspection: `useChessGame.ts`, `useTacticLine.ts`, `ChessBoard.tsx`, `BoardControls.tsx`, `TacticLineExplorer.tsx`, `tacticDepth.ts`, `App.tsx`, `vite.config.ts`, `FlawCard.tsx`, `LibraryGameCard.tsx`
-- UCI specification (official Stockfish docs) — lowerbound/upperbound, MultiPV ordering, `mate 0` semantics
+### Primary (HIGH confidence)
+- `app/services/engine.py` (codebase) — `_analyse_with_pv`, `EnginePool`, `_NODES_BUDGET`, `_NODES_TIMEOUT_S`, QUEUE-07 RSS accounting; `_HASH_MB = 32`, `_THREADS = 1`
+- `app/models/llm_log.py` (codebase) — existing `JSONB` import, `Mapped[dict | None]` annotation, no `MutableDict`; confirms asyncpg codec is automatic
+- `app/services/eval_utils.py` (codebase) — `LICHESS_K = 0.00368208`, `eval_cp_to_expected_score`, `eval_mate_to_expected_score`; confirms sigmoid saturation for mate rows
+- `app/services/tactic_detector.py` (codebase) — `_solver_move_indices`; confirms even-index = solver, odd-index = defender
+- `/home/aimfeld/Projects/Python/lichess-puzzler` (local clone, v50) — `generator/util.py:53` (`MULTIPLIER = -0.00368208`), `generator/generator.py:60` (0.7 margin), lines 185/114/216-221 (+300/+200 cp and length rules); read for facts/constants only, AGPL boundary respected
+- `.planning/notes/tactic-forcing-line-gate.md` — source design note (SEED-070); all claims corroborated against the above
 
 ### Secondary (MEDIUM confidence)
-- Vite Features docs (vite.dev/guide/features) — `?worker`, `public/` asset serving, `optimizeDeps.exclude`
-- Vite 8 announcement (vite.dev) — Rolldown integration, no breaking changes to `public/` serving
-- Vite issues #8427 and #10837 — esbuild optimizer breaks `new URL()` in pre-bundled dependencies
-- stockfish npm package (npmjs.com, nmrugg) — version 18.0.8, build file names, single-thread NNUE confirmation
-- lichess-org/stockfish-web (GitHub) — multi-thread only, PTHREAD_POOL_SIZE requirement
-- iOS Safari Cache API 50 MB limit (love2dev.com, cross-referenced with web.dev)
-- lichess.org/analysis — feature reference for table stakes (eval bar, variation tree, URL state)
-
-### Tertiary (LOW confidence — supporting context)
-- nmrugg/stockfish.js GitHub — build variants, file names, UCI usage
-- Stockfish vs ChessBase FOSSA — GPLv3 distribution requirements
-- WebAssembly MIME type / Caddy behavior — `application/wasm` content-type serving
+- python-chess 1.11.2 engine docs (websearch) — `analyse()` multipv overload signature; `list[InfoDict]` return type
+- SQLAlchemy discussion #11318 (websearch) — maintainer confirms `Mapped[dict | None]` + `JSONB` column type annotation
+- asyncpg + SQLAlchemy JSONB codec issue #5584 (websearch) — confirms automatic `json.loads` decoder registration by the asyncpg dialect
 
 ---
-*Research completed: 2026-06-26*
+*Research completed: 2026-06-29*
 *Ready for roadmap: yes*
