@@ -15,9 +15,10 @@ import uuid
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, select
+from sqlalchemy import inspect as sa_inspect, delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import undefer
 
 from app.models.game import Game
 from app.models.game_flaw import GameFlaw
@@ -214,3 +215,112 @@ class TestGameFlawCascadeDelete:
             .all()
         )
         assert len(after) == 0, f"Expected 0 game_flaws after user delete, got {len(after)}"
+
+
+# ---------------------------------------------------------------------------
+# TestDeferredBlobLeak (Phase 141 — D-02c regression)
+# ---------------------------------------------------------------------------
+
+
+class TestDeferredBlobLeak:
+    """Regression guard: allowed_pv_lines / missed_pv_lines must not load on stats scans.
+
+    D-02 structural guard: both columns are declared `deferred=True` on GameFlaw.
+    This class verifies two properties:
+
+    1. Unloaded-attribute proof: a representative stats-style `select(GameFlaw)` does
+       NOT load the blob columns.  The inspection API is used because an implicit async
+       deferred access would raise MissingGreenlet (the fail-loud signal for a real leak).
+
+    2. undefer() round-trip proof: the Phase 143 opt-in path loads the blobs without
+       error when `undefer()` is requested explicitly.
+
+    3. Compiled-SQL check (no session): the default `select(GameFlaw)` SQL statement
+       does not contain the blob column names — mirrors the established pattern in
+       tests/test_query_utils.py.
+    """
+
+    def test_deferred_columns_absent_from_default_select_sql(self) -> None:
+        """Compiled default select(GameFlaw) must omit the deferred blob column names."""
+        # No session needed — pure statement compilation.  The deferred mapper
+        # configuration means SQLAlchemy excludes these columns from the default
+        # column list emitted in the SELECT clause.
+        sql = str(select(GameFlaw).compile(compile_kwargs={"literal_binds": True}))
+        assert "allowed_pv_lines" not in sql, (
+            "allowed_pv_lines must not appear in default select(GameFlaw) SQL — "
+            "deferred=True guard broken"
+        )
+        assert "missed_pv_lines" not in sql, (
+            "missed_pv_lines must not appear in default select(GameFlaw) SQL — "
+            "deferred=True guard broken"
+        )
+
+    @pytest.mark.asyncio
+    async def test_blob_attrs_unloaded_after_stats_select(self, db_session: AsyncSession) -> None:
+        """A stats-style select(GameFlaw) must leave both blob attrs in the unloaded set."""
+        game = await _seed_game(db_session)
+        db_session.add(_make_flaw_row(game, ply=10))
+        await db_session.flush()
+
+        # Representative stats-style select: no options(), no undefer() — mirrors every
+        # existing select(GameFlaw) site in library_repository.py.
+        flaw = (
+            await db_session.execute(
+                select(GameFlaw).where(
+                    GameFlaw.user_id == game.user_id,
+                    GameFlaw.game_id == game.id,
+                    GameFlaw.ply == 10,
+                )
+            )
+        ).scalar_one()
+
+        # Use the SQLAlchemy inspection API — do NOT touch the attributes directly.
+        # An implicit async deferred access raises MissingGreenlet (the fail-loud signal).
+        unloaded = sa_inspect(flaw).unloaded
+        assert "allowed_pv_lines" in unloaded, (
+            "allowed_pv_lines must be in unloaded after a stats select — "
+            "deferred=True guard broken (D-02)"
+        )
+        assert "missed_pv_lines" in unloaded, (
+            "missed_pv_lines must be in unloaded after a stats select — "
+            "deferred=True guard broken (D-02)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_undefer_round_trip_loads_both_blob_attrs(self, db_session: AsyncSession) -> None:
+        """undefer() opt-in (Phase 143 path) loads both blob attrs without error.
+
+        Both columns are NULL on a freshly seeded row — the assertion is that loading
+        succeeds (no MissingGreenlet / attribute error) and returns None (the expected
+        default for a row with no PV blobs written yet).
+        """
+        game = await _seed_game(db_session)
+        db_session.add(_make_flaw_row(game, ply=10))
+        await db_session.flush()
+
+        flaw = (
+            await db_session.execute(
+                select(GameFlaw)
+                .options(
+                    undefer(GameFlaw.allowed_pv_lines),
+                    undefer(GameFlaw.missed_pv_lines),
+                )
+                .where(
+                    GameFlaw.user_id == game.user_id,
+                    GameFlaw.game_id == game.id,
+                    GameFlaw.ply == 10,
+                )
+            )
+        ).scalar_one()
+
+        # Both attrs must be accessible (not in unloaded) and return None (no blob written).
+        unloaded = sa_inspect(flaw).unloaded
+        assert "allowed_pv_lines" not in unloaded, (
+            "allowed_pv_lines should be loaded after explicit undefer()"
+        )
+        assert "missed_pv_lines" not in unloaded, (
+            "missed_pv_lines should be loaded after explicit undefer()"
+        )
+        # Verify the loaded values are None (freshly seeded row has no blobs).
+        assert flaw.allowed_pv_lines is None
+        assert flaw.missed_pv_lines is None

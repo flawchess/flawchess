@@ -2047,3 +2047,245 @@ async def test_worker_id_absent_falls_back_to_remote_worker_on_full_lease(
     assert call_kwargs.get("worker_id") == "remote-worker", (
         f"Absent X-Worker-Id must fall back to 'remote-worker', got {call_kwargs!r}"
     )
+
+
+# ─── Phase 142 MPV-02: SubmitEval second-best fields + blob tests ─────────────
+
+# 6-ply game for blob tests (same structure as drain test _SIX_PLY_PGN).
+_SIX_PLY_PGN_142: str = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 *"
+
+# Blunder eval sequence for _SIX_PLY_PGN_142 (position plies 0-6).
+# Post-move storage shift via _post_move_eval(pos_eval, row_ply) = pos_eval[row_ply + 1]:
+#   row 0 = pos_eval[1] = 20, row 1 = pos_eval[2] = 30,
+#   row 2 = pos_eval[3] = -500  ← blunder (white win-prob 53%→7% at ply 2),
+#   row 3 = pos_eval[4] = -480, row 4 = pos_eval[5] = 60, row 5 = pos_eval[6] = 30.
+# ply=0 eval is positional (no matching row; not stored).
+_BLUNDER_SUBMIT_EVALS_142: list[dict[str, object]] = [
+    {"ply": 0, "eval_cp": 0, "eval_mate": None, "best_move": None, "pv": None},
+    {"ply": 1, "eval_cp": 20, "eval_mate": None, "best_move": "e2e4", "pv": None},
+    {"ply": 2, "eval_cp": 30, "eval_mate": None, "best_move": "g1f3", "pv": None},
+    {"ply": 3, "eval_cp": -500, "eval_mate": None, "best_move": "b8c6", "pv": None},
+    {"ply": 4, "eval_cp": -480, "eval_mate": None, "best_move": "f1c4", "pv": None},
+    {"ply": 5, "eval_cp": 60, "eval_mate": None, "best_move": "f8c5", "pv": None},
+    {"ply": 6, "eval_cp": 30, "eval_mate": None, "best_move": None, "pv": None},  # terminal
+]
+
+
+def test_submit_eval_accepts_second_best_fields() -> None:
+    """Phase 142 MPV-02: SubmitEval parses with and without second_* fields.
+
+    Old-worker backward-compat: payload omitting second_* must parse with all three
+    defaulting to None (D-03 additive-only schema change). New-worker: payload with
+    second_* must parse and land on the schema (including second_uci=None for
+    single-legal-move plies — wire type is str|None).
+    """
+    from app.schemas.eval_remote import SubmitEval
+
+    # Old worker: no second_* fields → all default None.
+    old_eval = SubmitEval(ply=2, eval_cp=30, eval_mate=None, best_move="g1f3", pv=None)
+    assert old_eval.second_cp is None
+    assert old_eval.second_mate is None
+    assert old_eval.second_uci is None
+
+    # New worker: second_* present → values preserved.
+    new_eval = SubmitEval(
+        ply=2,
+        eval_cp=30,
+        eval_mate=None,
+        best_move="g1f3",
+        pv=None,
+        second_cp=25,
+        second_mate=None,
+        second_uci="d2d4",
+    )
+    assert new_eval.second_cp == 25
+    assert new_eval.second_mate is None
+    assert new_eval.second_uci == "d2d4"
+
+    # Wire type: second_uci=None (single-legal-move ply) parses without error.
+    null_uci_eval = SubmitEval(
+        ply=2,
+        eval_cp=30,
+        eval_mate=None,
+        best_move="g1f3",
+        pv=None,
+        second_cp=None,
+        second_mate=None,
+        second_uci=None,
+    )
+    assert null_uci_eval.second_uci is None
+
+
+class TestMultipv2BlobsRemote:
+    """Phase 142 MPV-02: SubmitRequest with second-best fields → JSONB blobs written.
+
+    Uses _SIX_PLY_PGN_142 ("1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 *") with an artificial
+    blunder at row ply=2 (win-prob drop from +30 to -500 cp). No PV strings → 1-node
+    blobs (no continuation engine calls needed).
+    """
+
+    @pytest.mark.asyncio
+    async def test_submit_with_second_best_populates_blobs(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """Upgraded worker: submit with second_* for the flaw ply → blobs non-NULL.
+
+        Submit includes second_cp=25/second_uci='d2d4' at ply=2 (the missed-line
+        node-0 second-best for flaw at row ply=2). Asserts allowed_pv_lines and
+        missed_pv_lines are non-NULL and the missed node-0 carries the second-best.
+        """
+        from app.models.game_flaw import GameFlaw
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(
+            eval_worker_session_maker,
+            user_id,
+            pgn=_SIX_PLY_PGN_142,
+        )
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            game_id,
+            [
+                {"ply": p, "full_hash": 14200 + p, "eval_cp": None, "eval_mate": None}
+                for p in range(6)
+            ],
+        )
+
+        # Submit evals with second_cp/second_uci at ply=2 → second_best_map[2] set.
+        evals = [dict(e) for e in _BLUNDER_SUBMIT_EVALS_142]
+        evals[2] = {**evals[2], "second_cp": 25, "second_uci": "d2d4"}
+        payload = {"game_id": game_id, "sf_version": "Stockfish 18", "evals": evals}
+
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _SUBMIT_URL,
+                    json=payload,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+
+            # Verify blobs via explicit projection (allowed/missed_pv_lines are deferred=True).
+            async with eval_worker_session_maker() as verify:
+                flaw_rows = (
+                    await verify.execute(
+                        select(
+                            GameFlaw.ply,
+                            GameFlaw.allowed_pv_lines,
+                            GameFlaw.missed_pv_lines,
+                        ).where(GameFlaw.game_id == game_id)
+                    )
+                ).all()
+
+            assert len(flaw_rows) == 1, f"Expected 1 flaw (blunder at ply 2), got {len(flaw_rows)}"
+            flaw_ply, allowed, missed = flaw_rows[0]
+            assert flaw_ply == 2, f"Flaw must be at ply 2, got {flaw_ply}"
+            assert allowed is not None, (
+                "allowed_pv_lines must be non-NULL after submit with second-best (MPV-02)"
+            )
+            assert missed is not None, (
+                "missed_pv_lines must be non-NULL after submit with second-best (MPV-02)"
+            )
+            assert len(allowed) >= 1, (
+                f"allowed_pv_lines must have at least 1 node (node 0), got {len(allowed)}"
+            )
+            assert len(missed) >= 1, (
+                f"missed_pv_lines must have at least 1 node (node 0), got {len(missed)}"
+            )
+            # Node-0 of missed line carries the submitted second-best.
+            node0_missed = missed[0]
+            assert node0_missed.get("s") == 25, (
+                f"missed node-0 must carry s=25, got {node0_missed.get('s')!r}"
+            )
+            assert node0_missed.get("su") == "d2d4", (
+                f"missed node-0 must carry su='d2d4', got {node0_missed.get('su')!r}"
+            )
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_submit_without_second_best_leaves_blobs_null(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """Old worker (no second_* fields): submit succeeds AND blobs stay NULL (D-04).
+
+        Proves backward-compat: un-upgraded workers process full-ply jobs without
+        error. The D-04 guard in _apply_submit skips _build_flaw_multipv2_blobs when
+        second_best_map is empty → blob_map = {} → _run_multipv2_pass no-op → NULL.
+        Phase 145 will backfill these NULL blobs.
+        """
+        from app.models.game_flaw import GameFlaw
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(
+            eval_worker_session_maker,
+            user_id,
+            pgn=_SIX_PLY_PGN_142,
+        )
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            game_id,
+            [
+                {"ply": p, "full_hash": 14210 + p, "eval_cp": None, "eval_mate": None}
+                for p in range(6)
+            ],
+        )
+
+        # Old-worker payload: NO second_* fields (all default to None via Pydantic).
+        payload = {
+            "game_id": game_id,
+            "sf_version": "Stockfish 18",
+            "evals": list(_BLUNDER_SUBMIT_EVALS_142),
+        }
+
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _SUBMIT_URL,
+                    json=payload,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+            body = resp.json()
+            assert body["stamp_complete"] is True, f"stamp_complete should be True: {body}"
+
+            # D-04 key assertion: blobs must remain NULL for old workers.
+            async with eval_worker_session_maker() as verify:
+                flaw_rows = (
+                    await verify.execute(
+                        select(
+                            GameFlaw.ply,
+                            GameFlaw.allowed_pv_lines,
+                            GameFlaw.missed_pv_lines,
+                        ).where(GameFlaw.game_id == game_id)
+                    )
+                ).all()
+
+            # Flaw must still exist (classification is independent of second-best).
+            assert len(flaw_rows) == 1, f"Expected 1 flaw (blunder at ply 2), got {len(flaw_rows)}"
+            flaw_ply, allowed, missed = flaw_rows[0]
+            assert flaw_ply == 2, f"Flaw must be at ply 2, got {flaw_ply}"
+            assert allowed is None, (
+                "allowed_pv_lines must be NULL for old worker (D-04 backward-compat gap)"
+            )
+            assert missed is None, (
+                "missed_pv_lines must be NULL for old worker (D-04 backward-compat gap)"
+            )
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])

@@ -1,12 +1,26 @@
 """Engine wrapper contract tests (ENG-02). Phase 78 Wave 0."""
 
+from __future__ import annotations
+
 import os
+from typing import TYPE_CHECKING
+from unittest.mock import MagicMock, patch
 
 import chess
+import chess.engine
 import pytest
 
 from app.services.engine import _STOCKFISH_PATH, evaluate
+
+if TYPE_CHECKING:
+    from app.services.engine import EnginePool
 from app.services.zobrist import EVAL_CP_MAX_ABS, EVAL_MATE_MAX_ABS
+
+# ─── Constants (CLAUDE.md: no magic numbers) ──────────────────────────────────
+MOCK_BEST_CP: int = 200
+MOCK_SECOND_CP: int = 100
+MOCK_MATE_IN_2: int = 2
+MOCK_SECOND_MATE_CP: int = 500
 
 # Use the same path the engine resolves (env var / Docker / dev install / PATH),
 # so these run locally after bin/install_stockfish.sh, not only when a binary
@@ -55,6 +69,197 @@ class TestEngineWrapper:
             assert -EVAL_CP_MAX_ABS <= cp <= EVAL_CP_MAX_ABS
         if mate is not None:
             assert -EVAL_MATE_MAX_ABS <= mate <= EVAL_MATE_MAX_ABS
+
+
+def _make_mock_cp_score(cp: int) -> MagicMock:
+    """Build a mock PovScore returning a centipawn value (white perspective)."""
+    mock_score = MagicMock(spec=chess.engine.PovScore)
+    mock_white = MagicMock()
+    mock_white.score.return_value = cp
+    mock_white.mate.return_value = None
+    mock_score.white.return_value = mock_white
+    return mock_score
+
+
+def _make_mock_mate_score(mate_in: int) -> MagicMock:
+    """Build a mock PovScore returning a forced-mate value (white perspective)."""
+    mock_score = MagicMock(spec=chess.engine.PovScore)
+    mock_white = MagicMock()
+    mock_white.score.return_value = None
+    mock_white.mate.return_value = mate_in
+    mock_score.white.return_value = mock_white
+    return mock_score
+
+
+def _make_pool_with_mock_protocol(mock_analyse_fn: object) -> "EnginePool":
+    """Construct a started EnginePool with a mock protocol, ready for one call."""
+    from app.services.engine import EnginePool
+
+    pool = EnginePool(size=1)
+    pool._started = True
+    mock_protocol = MagicMock(spec=chess.engine.UciProtocol)
+    mock_protocol.analyse = mock_analyse_fn
+    pool._transports = [None]
+    pool._protocols = [mock_protocol]
+    pool._available.put_nowait(0)
+    return pool
+
+
+class TestEvaluateNodesMultipv2:
+    """Unit tests for evaluate_nodes_multipv2 (Phase 142 MPV-01).
+
+    Covers: two-line extraction, single-legal-move su='' guard,
+    not-started 7-None return, and a mate-in-N first line (Pitfall 1 guard).
+    No real Stockfish process is started — all tests use mock protocols.
+    """
+
+    async def test_pool_not_started_returns_7_none(self) -> None:
+        """evaluate_nodes_multipv2 returns (None,)*7 when pool is not started (module wrapper)."""
+        import app.services.engine as engine_module
+        from app.services.engine import evaluate_nodes_multipv2
+
+        with patch.object(engine_module, "_pool", None):
+            result = await evaluate_nodes_multipv2(chess.Board())
+        assert result == (None, None, None, None, None, None, None)
+
+    async def test_engine_not_started_returns_7_none(self) -> None:
+        """EnginePool.evaluate_nodes_multipv2 returns (None,)*7 when _started=False."""
+        from app.services.engine import EnginePool
+
+        pool = EnginePool(size=1)
+        # _started is False by default (pool.start() never called)
+        result = await pool.evaluate_nodes_multipv2(chess.Board())
+        assert result == (None, None, None, None, None, None, None)
+
+    async def test_two_line_extraction(self) -> None:
+        """Two-line info_list: best from line 0, second from line 1 (Pitfall 1 guard).
+
+        Verifies correct extraction from each InfoDict by index — the list must
+        never be passed whole to scalar helpers (_score_to_cp_mate etc.).
+        """
+        best_move = chess.Move.from_uci("e2e4")
+        second_move = chess.Move.from_uci("d2d4")
+
+        info_best: chess.engine.InfoDict = chess.engine.InfoDict(  # type: ignore[misc]
+            {"score": _make_mock_cp_score(MOCK_BEST_CP), "pv": [best_move]}
+        )
+        info_second: chess.engine.InfoDict = chess.engine.InfoDict(  # type: ignore[misc]
+            {"score": _make_mock_cp_score(MOCK_SECOND_CP), "pv": [second_move]}
+        )
+
+        async def mock_analyse(
+            board: chess.Board,
+            limit: chess.engine.Limit,
+            *args: object,
+            **kwargs: object,
+        ) -> list[chess.engine.InfoDict]:
+            return [info_best, info_second]
+
+        pool = _make_pool_with_mock_protocol(mock_analyse)
+        (
+            eval_cp,
+            eval_mate,
+            best_uci,
+            pv_str,
+            second_cp,
+            second_mate,
+            second_uci,
+        ) = await pool.evaluate_nodes_multipv2(chess.Board())
+
+        assert eval_cp == MOCK_BEST_CP
+        assert eval_mate is None
+        assert best_uci == "e2e4"
+        assert pv_str == "e2e4"
+        assert second_cp == MOCK_SECOND_CP
+        assert second_mate is None
+        assert second_uci == "d2d4"
+
+    async def test_single_legal_move_sets_second_sentinel(self) -> None:
+        """Single-legal-move board (len(info_list)==1): second_cp=None, second_mate=None, second_uci=''.
+
+        PvNode.su is str (not str | None) — the empty string sentinel must be used,
+        never None (Pitfall 2 + Pitfall 3 from RESEARCH.md D-02).
+        """
+        info_only: chess.engine.InfoDict = chess.engine.InfoDict(  # type: ignore[misc]
+            {
+                "score": _make_mock_cp_score(MOCK_BEST_CP),
+                "pv": [chess.Move.from_uci("e1e2")],
+            }
+        )
+
+        async def mock_analyse_single(
+            board: chess.Board,
+            limit: chess.engine.Limit,
+            *args: object,
+            **kwargs: object,
+        ) -> list[chess.engine.InfoDict]:
+            return [info_only]
+
+        pool = _make_pool_with_mock_protocol(mock_analyse_single)
+        (
+            eval_cp,
+            eval_mate,
+            best_uci,
+            pv_str,
+            second_cp,
+            second_mate,
+            second_uci,
+        ) = await pool.evaluate_nodes_multipv2(chess.Board())
+
+        assert eval_cp == MOCK_BEST_CP
+        assert second_cp is None
+        assert second_mate is None
+        # Critical: su must be "" (str), never None (PvNode.su sentinel)
+        assert second_uci == ""
+        assert isinstance(second_uci, str)
+
+    async def test_mate_line_best_and_second_extracted(self) -> None:
+        """Line 0 has a mate score: best_mate populated, best_cp None, second line still extracted.
+
+        Guards Pitfall 1: the list[InfoDict] must not be passed to scalar helpers.
+        With multipv=2 and a forced mate, Stockfish may still return a second PV
+        line — verify it is extracted correctly.
+        """
+        info_mate: chess.engine.InfoDict = chess.engine.InfoDict(  # type: ignore[misc]
+            {
+                "score": _make_mock_mate_score(MOCK_MATE_IN_2),
+                "pv": [chess.Move.from_uci("a1a8")],
+            }
+        )
+        info_second: chess.engine.InfoDict = chess.engine.InfoDict(  # type: ignore[misc]
+            {
+                "score": _make_mock_cp_score(MOCK_SECOND_MATE_CP),
+                "pv": [chess.Move.from_uci("d7d5")],
+            }
+        )
+
+        async def mock_analyse_mate(
+            board: chess.Board,
+            limit: chess.engine.Limit,
+            *args: object,
+            **kwargs: object,
+        ) -> list[chess.engine.InfoDict]:
+            return [info_mate, info_second]
+
+        pool = _make_pool_with_mock_protocol(mock_analyse_mate)
+        (
+            eval_cp,
+            eval_mate,
+            best_uci,
+            pv_str,
+            second_cp,
+            second_mate,
+            second_uci,
+        ) = await pool.evaluate_nodes_multipv2(chess.Board())
+
+        # Best line: mate score — cp must be None, mate must be populated
+        assert eval_cp is None
+        assert eval_mate == MOCK_MATE_IN_2
+        assert best_uci == "a1a8"
+        # Second line: cp score
+        assert second_cp == MOCK_SECOND_MATE_CP
+        assert second_mate is None
+        assert second_uci == "d7d5"
 
 
 class TestEngineNotStarted:

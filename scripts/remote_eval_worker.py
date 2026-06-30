@@ -103,11 +103,17 @@ async def _eval_positions(
     UNCHANGED from the engine — NO post-move shift, NO transformation.
     The server owns the SEED-044 storage convention (D-2 / pitfall 1).
 
+    Phase 142 MPV-02: switched to evaluate_nodes_multipv2 (7-tuple) so the
+    second-best data flows to the server for JSONB blob assembly. Old-format
+    servers accepting only the first 4 fields still parse correctly because
+    SubmitEval.second_cp/second_mate/second_uci all default to None.
+
     Each position dict contains: ply, fen, is_terminal.
-    Each output dict contains:  ply, eval_cp, eval_mate, best_move, pv.
+    Each output dict contains:  ply, eval_cp, eval_mate, best_move, pv,
+                                 second_cp, second_mate, second_uci.
     """
     boards: list[chess.Board] = [chess.Board(str(pos["fen"])) for pos in positions]
-    results = await asyncio.gather(*(pool.evaluate_nodes_with_pv(b) for b in boards))
+    results = await asyncio.gather(*(pool.evaluate_nodes_multipv2(b) for b in boards))
     return [
         {
             "ply": pos["ply"],
@@ -115,6 +121,9 @@ async def _eval_positions(
             "eval_mate": r[1],
             "best_move": r[2],
             "pv": r[3],
+            "second_cp": r[4],
+            "second_mate": r[5],
+            "second_uci": r[6],
         }
         for pos, r in zip(positions, results)
     ]

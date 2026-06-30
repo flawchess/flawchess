@@ -92,8 +92,8 @@
 | 134. trapped-piece fixture expansion + cook reimpl | 3/3 | Complete | 2026-06-23 |
 | 135. Tactic Line Explorer (SEED-065) | 3/3 | Complete   | 2026-06-24 |
 | 136-140. v1.29 phases | 14/14 | Complete | 2026-06-29 |
-| 141. JSONB Schema + Gate Logic | 0/? | Not started | - |
-| 142. MultiPV=2 Engine Pass + Eval Drain + Remote Worker | 0/? | Not started | - |
+| 141. JSONB Schema + Gate Logic | 2/2 | Complete    | 2026-06-29 |
+| 142. MultiPV=2 Engine Pass + Eval Drain + Remote Worker | 4/4 | Complete    | 2026-06-29 |
 | 143. Offline Re-tagger | 0/? | Not started | - |
 | 144. User-28 A/B Validation | 0/? | Not started | - |
 | 145. Corpus Backfill + Rollout | 0/? | Not started | - |
@@ -104,8 +104,8 @@
 
 ### Phases
 
-- [ ] **Phase 141: JSONB Schema + Gate Logic** — Alembic migration + pure-math forcing_line_gate module with all named constants; query-site audit
-- [ ] **Phase 142: MultiPV=2 Engine Pass + Eval Drain + Remote Worker** — _analyse_multipv2 method + eval drain step 3b + backward-compatible remote-worker wiring; margin histogram gate before merge
+- [x] **Phase 141: JSONB Schema + Gate Logic** — Alembic migration + pure-math forcing_line_gate module with all named constants; query-site audit (completed 2026-06-29)
+- [x] **Phase 142: MultiPV=2 Engine Pass + Eval Drain + Remote Worker** — _analyse_multipv2 method + eval drain step 3b + backward-compatible remote-worker wiring; margin histogram gate before merge (completed 2026-06-30)
 - [ ] **Phase 143: Offline Re-tagger** — scripts/retag_flaws.py with mate-priority hierarchy, solver/defender parity, --dry-run/--margin/--user-id flags; explicit unit tests for mate and defender-branch cases
 - [ ] **Phase 144: User-28 A/B Validation** — engine-free old-vs-new diff on stored MultiPV evals; per-motif removed/survived counts; hand-check ~30 dropped cases; commit final margin
 - [ ] **Phase 145: Corpus Backfill + Rollout** — backfill_multipv.py --db prod + retag_flaws.py --db prod; WHERE allowed_pv_lines IS NULL idempotency; per-motif chip counts before/after
@@ -113,60 +113,86 @@
 ### Phase Details
 
 ### Phase 141: JSONB Schema + Gate Logic
+
 **Goal**: The ORM model, DB migration, and forcing_line_gate module exist and are independently testable without any engine or DB
 **Depends on**: Phase 140 (previous milestone)
 **Requirements**: STORE-01, STORE-02, GATE-01, GATE-02
 **Success Criteria** (what must be TRUE):
+
   1. allowed_pv_lines / missed_pv_lines JSONB columns exist on game_flaws via an Alembic migration and existing mistake-stats, flaw-comparison, and benchmark-delta queries show zero regression
   2. forcing_line_gate.py exports apply_forcing_line_filter() with all threshold constants named; unit tests pass with no engine or DB fixture
   3. The only-move margin gate (p(best) minus p(second) > ONLY_MOVE_WIN_PROB_MARGIN), already-winning reject (ALREADY_WINNING_CP_THRESHOLD = 300 cp), still-winning floor (STILL_WINNING_FLOOR_CP = 200 cp), trailing-only-move strip, and one-mover discard are all implemented and unit-tested
   4. Every select(GameFlaw) query site is confirmed to use explicit column projections — JSONB blobs are never fetched by stats scans
+
 **Plans**: TBD
 
 ### Phase 142: MultiPV=2 Engine Pass + Eval Drain + Remote Worker
+
 **Goal**: The engine produces and persists per-flaw-node MultiPV=2 blobs on every new game analysis, with node-budget ordering reliability validated before merge
 **Depends on**: Phase 141
 **Requirements**: MPV-01, MPV-02, MPV-03
 **Success Criteria** (what must be TRUE):
+
   1. EnginePool._analyse_multipv2() accepts a board + node limit and returns list[InfoDict] with best + second eval cp/mate + second-best UCI per PV node, guarded for single-legal-move positions
   2. The eval drain _run_multipv2_pass() populates allowed_pv_lines / missed_pv_lines on game_flaws rows for every newly analyzed game
   3. The remote-worker SubmitRequest schema is extended additively — un-upgraded workers continue processing full-ply jobs without error
   4. A margin histogram on 200+ dev flaw positions confirms reliable best-vs-second ordering at the chosen node budget before the phase merges (budget raised to 1.5–2M nodes if >10% of positions fall within ±0.05 of the margin)
-**Plans**: TBD
+
+**Plans**: 4 plans
+**Wave 1**
+
+- [x] 142-01-PLAN.md — `_analyse_multipv2` + `evaluate_nodes_multipv2` EnginePool method (MPV-01)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 142-02-PLAN.md — eval-drain multipv=2 switch + Option-B PV-walk blob assembly + JSONB write (MPV-02)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 142-03-PLAN.md — additive `SubmitEval` second-best fields + `_apply_submit` threading + worker upgrade (MPV-02)
+- [x] 142-04-PLAN.md — `scripts/validate_multipv_budget.py` margin-histogram merge gate (MPV-03)
 
 ### Phase 143: Offline Re-tagger
+
 **Goal**: A pure-offline scripts/retag_flaws.py re-derives tactic tags from stored JSONB in seconds with no engine pass, with mate combinations and defender branching covered by explicit unit tests
 **Depends on**: Phase 142
 **Requirements**: GATE-03, GATE-04, RETAG-01, RETAG-02
 **Success Criteria** (what must be TRUE):
+
   1. scripts/retag_flaws.py --dry-run --margin X --user-id N reports per-motif tag delta without writing to DB; --db dev|benchmark|prod is supported
   2. Unit tests cover the mate-priority hierarchy: only-best-is-mate means forced; both-mates means shorter-distance-to-mate is forced; else fall through to sigmoid — and confirm mate-in-1 is never suppressed
   3. A unit test with a defender-branching position confirms that ambiguity at defender nodes does not kill a valid forcing line (branch-then-reconverge treated as forced)
   4. The re-tagger updates game_flaws tactic columns idempotently via the single classify path — a second run on the same data produces identical output
+
 **Plans**: TBD
 
 ### Phase 144: User-28 A/B Validation
+
 **Goal**: The gate's effect is measured engine-free on dev's stored MultiPV evals — noise removed vs good tags killed — and the final margin constant is committed
 **Depends on**: Phase 143
 **Requirements**: VALID-01, VALID-02
 **Success Criteria** (what must be TRUE):
+
   1. Old and new tagger logic both execute against the same stored MultiPV evals for user 28 in dev — no engine call occurs during the comparison
   2. Per-motif counts of tags removed vs survived are reported across all motifs and depth buckets
   3. A hand-check of ~30 randomly-sampled dropped cases produces an explicit false-negative count (good tags killed)
   4. The final ONLY_MOVE_WIN_PROB_MARGIN value is committed to forcing_line_gate.py with the A/B summary justifying the chosen value
+
 **Plans**: TBD
 
 ### Phase 145: Corpus Backfill + Rollout
+
 **Goal**: Gated tactic tags are live in production for all users' existing and new games, with no second EnginePool and per-motif chip counts monitored before/after
 **Depends on**: Phase 144
 **Requirements**: SHIP-01, SHIP-02
 **Success Criteria** (what must be TRUE):
+
   1. backfill_multipv.py --db prod populates JSONB for all analyzed game_flaws rows using a WHERE allowed_pv_lines IS NULL idempotency guard; the module-level EnginePool is reused (no second pool, no OOM risk)
   2. retag_flaws.py --db prod applies the gated tags across the full corpus
   3. Per-motif tactic chip counts are recorded before and after rollout confirming noise reduction
   4. The live eval drain writes JSONB for all new games; the MultiPV pass is NOT gated on lichess_evals_at (second-best is new data, not a lichess freebie)
-**Plans**: TBD
 
+**Plans**: TBD
 
 ## Backlog
 
@@ -174,7 +200,7 @@
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 3/3 plans complete
+**Plans:** 4/4 plans complete
 
 Plans:
 

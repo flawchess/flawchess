@@ -9,9 +9,10 @@ is retained: game_positions stores only Zobrist hashes (no FEN column), so fen
 is the one denormalized display column that cannot be recovered without PGN replay.
 """
 
-from typing import Optional
+from typing import Any, Optional
 
 from sqlalchemy import Boolean, ForeignKey, Index, SmallInteger, String
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -92,3 +93,29 @@ class GameFlaw(Base):
     missed_tactic_piece: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
     missed_tactic_confidence: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
     missed_tactic_depth: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+
+    # PV-line blob family (Phase 141 — D-05, D-06): write-once JSONB blobs, nullable.
+    # These store the principal-variation nodes for the forcing-line tactic gate (Phase 143).
+    # `deferred=True` is the structural leak guard (D-02): the columns are never emitted in
+    # any `select(GameFlaw)` stats scan; an implicit async access would raise MissingGreenlet.
+    # Load explicitly via `.options(undefer(GameFlaw.allowed_pv_lines), ...)` (Phase 143 path).
+    #
+    # Two orientations, mirroring the tactic family above:
+    #   allowed_pv_lines — the refutation PV starting at flaw_ply+1 (the opponent's punishing
+    #                       line); pov = board_after_flaw.turn (same as allowed_tactic_* family).
+    #   missed_pv_lines  — the best-move PV starting at flaw_ply (engine's best continuation
+    #                       for the flaw-maker at the decision position); pov = board_before.turn.
+    #
+    # D-05 blob shape: each element is a per-node dict with keys:
+    #   b  — best_cp (int | null): best-move eval in centipawns, WHITE-perspective.
+    #          Gate converts to side-to-move at read time (matching eval_cp convention).
+    #   bm — best_mate (int | null): best-move mate distance (positive = mating, white-pov).
+    #   s  — second_cp (int | null): second-best-move eval in centipawns, WHITE-perspective.
+    #   sm — second_mate (int | null): second-best-move mate distance, white-pov.
+    #   su — second_uci (str): second-best-move UCI string (e.g. "e2e4"),
+    #          or "" when there is no legal second move (mirrors the PvNode TypedDict sentinel).
+    #
+    # No MutableList wrapper needed — write-once blobs (D-06, mirror of llm_log.response_json).
+    # asyncpg auto-registers the JSONB codec; no manual setup required.
+    allowed_pv_lines: Mapped[list[Any] | None] = mapped_column(JSONB, nullable=True, deferred=True)
+    missed_pv_lines: Mapped[list[Any] | None] = mapped_column(JSONB, nullable=True, deferred=True)

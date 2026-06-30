@@ -33,6 +33,11 @@ class SubmitEval(BaseModel):
     eval_mate: int | None
     best_move: str | None  # UCI string
     pv: str | None  # space-joined UCI, up to 12 plies
+    # Phase 142 MPV-02: second-best per ply for JSONB blob assembly (D-03).
+    # Default None = old worker omits field → server treats as no second-best (D-04).
+    second_cp: int | None = None
+    second_mate: int | None = None
+    second_uci: str | None = None  # wire type str|None; None maps to su="" sentinel in blob
 
 
 class SubmitRequest(BaseModel):

@@ -64,6 +64,7 @@ from app.services.eval_drain import (
     _EvalTarget,
     _apply_eval_results,
     _apply_full_eval_results,
+    _build_flaw_multipv2_blobs,
     _claim_entry_eval_games,
     _classify_and_fill_oracle,
     _classify_and_insert_flaws,
@@ -73,6 +74,7 @@ from app.services.eval_drain import (
     _mark_evals_completed,
     _mark_full_evals_completed,
     _mark_full_pv_completed,
+    _run_multipv2_pass,
     _signal_flaw_completion,
 )
 from app.models.eval_jobs import EvalJob
@@ -241,6 +243,27 @@ async def _apply_submit(
     engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]] = {
         e.ply: (e.eval_cp, e.eval_mate, e.best_move, e.pv) for e in body.evals
     }
+    # Phase 142 MPV-02: parallel second-best map (D-03 inline fields, not a parallel list).
+    # Only includes rows where the worker provided second-best data; empty when old worker
+    # omits fields (all three default None → condition is False → map stays empty → D-04).
+    second_best_map: dict[int, tuple[int | None, int | None, str | None]] = {
+        e.ply: (e.second_cp, e.second_mate, e.second_uci)
+        for e in body.evals
+        if e.second_cp is not None or e.second_uci is not None
+    }
+
+    # Phase 142 MPV-02: build PvNode blobs from second-best data (CPU/engine region —
+    # no session open here; CLAUDE.md hard rule). Passes dedup_map={} because the remote
+    # path has no cross-user dedup (worker already evaluated all positions).
+    # Guard: skip when second_best_map is empty (D-04 — old worker omits all second_*
+    # fields → leave blobs NULL; Phase 145 backfills the gap). Only upgraded workers
+    # providing at least one second-best ply trigger blob assembly.
+    if second_best_map:
+        blob_map = await _build_flaw_multipv2_blobs(
+            game_id, targets, {}, engine_result_map, second_best_map
+        )
+    else:
+        blob_map = {}
 
     # ── Write phase — ONE late session, all UPDATEs + commit atomic ──────────
     stamp_complete: bool
@@ -257,6 +280,12 @@ async def _apply_submit(
         # Runs AFTER _apply_full_eval_results so eval_cp is visible for classification.
         # Runs BEFORE completion markers so evals + flaws commit atomically (T-117-11).
         await _classify_and_fill_oracle(write_session, game_id, engine_result_map)
+
+        # Phase 142 MPV-02: write allowed_pv_lines / missed_pv_lines JSONB blobs.
+        # Runs AFTER _classify_and_fill_oracle so flaw rows exist for the UPDATE.
+        # Same transaction = atomic with flaw rows (Pitfall 5 / T-142-03-04).
+        # No-op when blob_map is empty (old worker omitted second-best — D-04).
+        await _run_multipv2_pass(write_session, game_id, blob_map)
 
         new_attempts = current_attempts + 1
         games_table = Game.__table__

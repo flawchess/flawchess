@@ -2,25 +2,29 @@
 gsd_state_version: 1.0
 milestone: v1.30
 milestone_name: Forcing-Line Tactic Gate
-status: planning
-last_updated: "2026-06-29T18:00:00.000Z"
-last_activity: 2026-06-29
+current_phase: 143
+current_phase_name: Offline Re-tagger
+status: verifying
+stopped_at: Completed 142-02-PLAN.md
+last_updated: "2026-06-30T01:43:01.540Z"
+last_activity: 2026-06-30
+last_activity_desc: Phase 142 complete, transitioned to Phase 143
 progress:
   total_phases: 5
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  completed_phases: 2
+  total_plans: 6
+  completed_plans: 6
+  percent: 40
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: Phase 141 — JSONB Schema + Gate Logic (not yet started)
-Plan: —
-Status: Roadmap defined — ready to plan Phase 141
-Last activity: 2026-06-29 — Roadmap created (5 phases: 141–145)
+Phase: 143 — Offline Re-tagger
+Plan: Not started
+Status: Phase complete — ready for verification
+Last activity: 2026-06-30 — Phase 142 complete, transitioned to Phase 143
 
 ## Project Reference
 
@@ -64,6 +68,18 @@ Twenty-nine milestones complete (v1.0–v1.29). v1.29 Live-Engine Analysis Page 
 - [Phase ?]: TacticModeOverlay exports buildRootArrows/buildPvArrow as named exports so Analysis.tsx drives ChessBoard arrows without file indirection (Phase 139)
 - [Phase ?]: ESLint analysis/** override added for co-exported arrow helpers alongside component (mirrors ui/** and filters/** pattern)
 - [Phase 139-02]: FlawCard/LibraryGameCard Explore repointed to /analysis tactic URL params (D-01, no modal/location.state); D-02 Analyze position button added via ?fen= free-play (desktop + mobile)
+- [Phase ?]: deferred=True on allowed_pv_lines/missed_pv_lines is the D-02 structural leak guard; no repository rewrites needed (D-02b)
+- [Phase ?]: list[Any] | None type for PV-line blobs (D-05: blob is a list-of-dicts; write-once, no MutableList)
+- [Phase 141]: Mate-priority hierarchy (D-01) implemented in forcing_line_gate.py: only-best-is-mate forced; both-mates shorter-distance; mate-in-1 never suppressed; fall through to win-prob margin
+- [Phase 141]: ONLY_MOVE_WIN_PROB_MARGIN=0.35, ALREADY_WINNING_CP_THRESHOLD=300, STILL_WINNING_FLOOR_CP=200 as named constants (D-07..D-09); final margin committed in Phase 144
+- [Phase 141]: PvNode uses eval_mate_to_expected_score for perspective-safe mate checking (T-141-04 guard)
+- [Phase ?]: D-02: New _analyse_multipv2 method required for list[InfoDict] return type (MPV-01)
+- [Phase ?]: Pitfall 3: second_uci str sentinel is '' for single-legal-move positions (never None, PvNode.su: str)
+- [Phase ?]: whole-game per-ply pass switched to evaluate_nodes_multipv2 (D-01 MPV-02)
+- [Phase ?]: engine_result_map kept as 4-tuple; second_best_map carries 3-tuple second-best per ply (no blast radius on existing callers)
+- [Phase ?]: _fill_engine_game_flaw_second_best mirrors SEED-056 for dedup-transplanted flaw plies (D-05 MPV-02)
+- [Phase ?]: additive schema extension
+- [Phase ?]: NULL blobs for old workers; Phase 145 backfills
 
 ### Pending Todos
 
@@ -112,9 +128,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-Last session: 2026-06-27T11:16:37.045Z
-Stopped at: Phase 140 context gathered
-Resume file: .planning/phases/140-full-game-analysis-board/140-CONTEXT.md
+Last session: 2026-06-29T21:55:17.130Z
+Stopped at: Completed 142-02-PLAN.md
+Resume file: None
 
 ## Performance Metrics
 
@@ -135,3 +151,9 @@ Resume file: .planning/phases/140-full-game-analysis-board/140-CONTEXT.md
 | Phase 140 P01 | 30 | 3 tasks | 6 files |
 | Phase 140-full-game-analysis-board P02 | 45min | 2 tasks | 4 files |
 | Phase 140-full-game-analysis-board P03 | 15 | 2 tasks | 3 files |
+| Phase 141 P01 | 15min | 3 tasks | 3 files |
+| Phase 141 P02 | 25min | 2 tasks | 2 files |
+| Phase 142 P01 | 301 | 2 tasks | 2 files |
+| Phase 142 P02 | 5400 | 3 tasks | 2 files |
+| Phase 142 P03 | 3600 | 3 tasks | 4 files |
+| Phase 142 P04 | 900 | 2 tasks | 2 files |
