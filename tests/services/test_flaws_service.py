@@ -2518,13 +2518,14 @@ class TestClassifyTacticGated:
         assert conf == TACTIC_CONFIDENCE_HIGH
         assert depth == 0
 
-    def test_suppression_when_blob_is_empty_list(self) -> None:
-        """pv_blob=[]: gate runs, one-mover discard applies, motif suppressed.
+    def test_sentinel_empty_blob_skips_gate_returns_kernel_result(self) -> None:
+        """pv_blob=[]: D-06 sentinel — gate is SKIPPED, raw kernel result returned.
 
-        An empty list is NOT the same as None. Pitfall 2 (PLAN.md): the gate
-        condition must be `pv_blob is not None` (not `if pv_blob`). An empty blob
-        is a valid blob that goes through the gate and is rejected by the
-        one-mover discard (0 solver nodes < 2 required).
+        An empty list is the D-06 un-fillable sentinel (a flaw whose PV blob could
+        not be assembled, e.g. single-legal-move position or analysis gap). The gate
+        condition must be `pv_blob is not None and len(pv_blob) > 0` so that [] is
+        treated the same as None (gate skipped, no suppression). This supersedes the
+        Phase-143 Pitfall-2 wording which treated [] as a gate-eligible blob.
         """
         positions = _make_positions_128()
         motif, piece, conf, depth = _classify_tactic_gated(
@@ -2535,12 +2536,12 @@ class TestClassifyTacticGated:
             pv_blob=[],
             pre_flaw_eval_cp=300,
         )
-        assert motif is None, (
-            "empty blob must suppress the motif (one-mover discard: 0 solver nodes)"
+        assert motif == TacticMotifInt.HANGING_PIECE, (
+            "D-06 sentinel [] must skip the gate and return raw kernel result (HANGING_PIECE)"
         )
-        assert piece is None
-        assert conf is None
-        assert depth is None
+        assert piece is not None
+        assert conf == TACTIC_CONFIDENCE_HIGH
+        assert depth == 0
 
     def test_pass_through_when_line_is_forced(self) -> None:
         """pv_blob with a forced line: gate passes, kernel result returned unchanged.

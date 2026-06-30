@@ -54,6 +54,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.database import async_session_maker
 from app.models.game import Game
+from app.models.game_flaw import GameFlaw
+from app.schemas.eval_remote import FlawBlobLeasePosition, FlawBlobSubmitEval
 from app.models.game_position import DEDUP_MAX_PLY, GamePosition
 from app.models.import_job import ImportJob
 from app.models.opening_position_eval import OpeningPositionEval
@@ -1325,6 +1327,211 @@ async def _run_multipv2_pass(
     if not flaw_pv_blobs:
         return
     await _batch_update_flaw_pv_lines(session, game_id, flaw_pv_blobs)
+
+
+async def _build_flaw_blob_lease_positions(
+    game_id: int,
+) -> tuple[list[FlawBlobLeasePosition], set[tuple[int, str]]]:
+    """Phase 145 SHIP-01: build lease positions for one game's NULL-blob flaws (D-04).
+
+    Opens a READ session, loads the game PGN, flaw rows (allowed_pv_lines IS NULL),
+    and game_positions PV strings at {flaw_ply, flaw_ply+1} for each flaw.
+    Closes the session, then replays the PGN to a per-ply board map and, for each
+    flaw's two lines ("missed" at flaw_ply, "allowed" at flaw_ply+1), calls
+    _walk_pv_boards with the stored game_positions.pv string.
+
+    Returns (lease_positions, sentinel_lines):
+    - lease_positions: FlawBlobLeasePosition list. Token = "{flaw_ply}:{line}:{node_k}".
+      fen = board.fen() for each node k in a walkable PV (walk length >= 2).
+    - sentinel_lines: set of (flaw_ply, line) for lines with NULL pv, missing start board,
+      or < 2-node walks (un-fillable; caller writes [] sentinel for these via D-06).
+
+    Engine and lichess %eval games are handled identically (D-09/D-09a): no is_lichess
+    branch in the PV walk — game_positions.pv is populated for both at flaw plies.
+    Only flaws with allowed_pv_lines IS NULL are considered (predicate consistency with
+    the tier-4 lottery in _claim_tier4_blob).
+
+    No asyncio.gather, no engine calls — all CPU work (PGN replay, PV walk) happens after
+    the session closes. CLAUDE.md hard rule: AsyncSession is not safe for concurrent use.
+    """
+    # ── Read phase: load game, flaws, and per-ply PV strings ──────────────────
+    async with async_session_maker() as session:
+        game = await session.scalar(select(Game).where(Game.id == game_id))
+        if game is None:
+            return [], set()
+
+        pgn_text: str = game.pgn
+
+        # Only flaws that still need blobs (predicate consistency with tier-4 lottery).
+        flaw_plies_result = await session.execute(
+            sa.select(GameFlaw.ply).where(
+                GameFlaw.game_id == game_id,
+                GameFlaw.allowed_pv_lines.is_(None),
+            )
+        )
+        flaw_plies: list[int] = list(flaw_plies_result.scalars().all())
+
+        if not flaw_plies:
+            return [], set()
+
+        # PV walk uses boards at {flaw_ply (missed start), flaw_ply+1 (allowed start)}.
+        target_plies: list[int] = []
+        for ply in flaw_plies:
+            target_plies.append(ply)
+            target_plies.append(ply + 1)
+
+        pv_result = await session.execute(
+            sa.select(GamePosition.ply, GamePosition.pv).where(
+                GamePosition.game_id == game_id,
+                GamePosition.user_id == game.user_id,
+                GamePosition.ply.in_(target_plies),
+            )
+        )
+        pv_at_ply: dict[int, str | None] = {row.ply: row.pv for row in pv_result.all()}
+    # read_session closed — no sessions open during CPU work below
+
+    # ── CPU phase: replay PGN to build per-ply board map ──────────────────────
+    try:
+        pgn_game = chess.pgn.read_game(io.StringIO(pgn_text))
+    except Exception:
+        return [], set()
+    if pgn_game is None:
+        return [], set()
+
+    board_at_ply: dict[int, chess.Board] = {}
+    board = pgn_game.board()
+    for ply, node in enumerate(pgn_game.mainline()):
+        board_at_ply[ply] = board.copy()
+        board.push(node.move)
+
+    cap = engine_service.PV_CAP_PLIES
+    lease_positions: list[FlawBlobLeasePosition] = []
+    sentinel_lines: set[tuple[int, str]] = set()
+
+    for flaw_ply in flaw_plies:
+        for line, node0_ply in [("missed", flaw_ply), ("allowed", flaw_ply + 1)]:
+            start_board = board_at_ply.get(node0_ply)
+            if start_board is None:
+                # Board beyond the game end or PGN parse gap → un-fillable sentinel.
+                sentinel_lines.add((flaw_ply, line))
+                continue
+            pv = pv_at_ply.get(node0_ply)
+            walk = _walk_pv_boards(start_board, pv, cap)
+            if len(walk) < 2:
+                # NULL pv → 1-node walk (just start_board); gate discards 1-node blobs (D-06).
+                sentinel_lines.add((flaw_ply, line))
+                continue
+            for k, walk_board in enumerate(walk):
+                token = f"{flaw_ply}:{line}:{k}"
+                lease_positions.append(FlawBlobLeasePosition(token=token, fen=walk_board.fen()))
+
+    return lease_positions, sentinel_lines
+
+
+def _parse_token(token: str) -> tuple[int, str, int]:
+    """Phase 145 SHIP-01: parse a "{flaw_ply}:{line}:{node_k}" reassembly token (D-04a).
+
+    Args:
+        token: The opaque server-issued token echoed by the worker on submit.
+
+    Returns:
+        (flaw_ply, line, node_k) where line ∈ {"missed", "allowed"}.
+
+    Raises:
+        ValueError: On malformed token (wrong number of parts, non-integer
+            flaw_ply/node_k, or line not in {"missed", "allowed"}).
+    """
+    parts = token.split(":", 2)
+    if len(parts) != 3:
+        raise ValueError(f"Token must have 3 colon-separated parts: {token!r}")
+    flaw_ply_str, line, node_k_str = parts
+    if line not in ("missed", "allowed"):
+        raise ValueError(f"Token line must be 'missed' or 'allowed': {token!r}")
+    return int(flaw_ply_str), line, int(node_k_str)
+
+
+def _assemble_one_line_blob(
+    flaw_ply: int,
+    line: str,
+    node_results: dict[tuple[int, str, int], FlawBlobSubmitEval],
+    sentinel_lines: set[tuple[int, str]],
+) -> list[PvNode]:
+    """Assemble one PvNode list for a flaw line from indexed worker results.
+
+    Sentinel lines (from _build_flaw_blob_lease_positions) and lines missing
+    a node-0 result both return []. Nodes are walked in order (k=0, 1, 2, ...)
+    until a gap is found. su='' maps from None second_uci (Pitfall 3).
+    """
+    if (flaw_ply, line) in sentinel_lines:
+        return []
+    node0 = node_results.get((flaw_ply, line, 0))
+    if node0 is None:
+        return []
+    nodes: list[PvNode] = []
+    k = 0
+    while True:
+        res = node_results.get((flaw_ply, line, k))
+        if res is None:
+            break
+        su: str = res.second_uci if res.second_uci is not None else ""
+        nodes.append(
+            PvNode(b=res.best_cp, bm=res.best_mate, s=res.second_cp, sm=res.second_mate, su=su)
+        )
+        k += 1
+    return nodes
+
+
+def _assemble_flaw_blobs_from_submit(
+    game_id: int,
+    submit_evals: Sequence[FlawBlobSubmitEval],
+    sentinel_lines: set[tuple[int, str]],
+) -> dict[int, tuple[list[PvNode], list[PvNode]]]:
+    """Phase 145 SHIP-01: assemble PvNode blobs from worker MultiPV=2 results (D-04 submit path).
+
+    Pure CPU helper — no engine calls, no DB sessions. Parses tokens, groups by
+    (flaw_ply, line, node_k), and builds list[PvNode] per line. Lines in
+    sentinel_lines and lines missing a node-0 result both get [].
+
+    All (flaw_ply, line) pairs found across submitted evals and sentinel_lines
+    appear in the returned blob_map. The caller writes [] for sentinels via
+    _batch_update_flaw_pv_lines (D-06 sentinel write clears the IS NULL predicate).
+
+    Token format: "{flaw_ply}:{line}:{node_k}" (D-04a). All three components
+    are used as the index key so "10:missed:2" and "10:allowed:2" remain distinct
+    (Pitfall 5). su='' maps from None second_uci on the wire (Pitfall 3).
+
+    Args:
+        game_id: Owning game (informational — not used in the pure CPU path).
+        submit_evals: Worker evaluation results, each carrying an echoed token.
+        sentinel_lines: Set of (flaw_ply, line) pairs identified as un-fillable
+            by the lease builder (NULL PV or < 2-node walk). These get [] blobs.
+
+    Returns:
+        blob_map: {flaw_ply → (allowed_pv_lines_value, missed_pv_lines_value)}
+        where each value is a list[PvNode] (possibly [] for sentinels).
+    """
+    # Index worker results by (flaw_ply, line, node_k) — all three components.
+    node_results: dict[tuple[int, str, int], FlawBlobSubmitEval] = {}
+    for e in submit_evals:
+        try:
+            key = _parse_token(e.token)
+        except (ValueError, IndexError):
+            # Malformed token: skip silently; endpoint validates tokens upstream.
+            continue
+        node_results[key] = e
+
+    # Collect all unique flaw plies from submitted evals + sentinel_lines.
+    flaw_plies_from_evals: set[int] = {fp for fp, _ln, _k in node_results}
+    flaw_plies_from_sentinels: set[int] = {fp for fp, _ln in sentinel_lines}
+    all_flaw_plies = flaw_plies_from_evals | flaw_plies_from_sentinels
+
+    blob_map: dict[int, tuple[list[PvNode], list[PvNode]]] = {}
+    for flaw_ply in all_flaw_plies:
+        allowed_blob = _assemble_one_line_blob(flaw_ply, "allowed", node_results, sentinel_lines)
+        missed_blob = _assemble_one_line_blob(flaw_ply, "missed", node_results, sentinel_lines)
+        blob_map[flaw_ply] = (allowed_blob, missed_blob)
+
+    return blob_map
 
 
 # Minimal duck-typed view so count_game_severities can be called with a

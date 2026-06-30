@@ -535,7 +535,7 @@ def _classify_tactic_gated(
     """Run tactic detection then apply the forcing-line gate (D-02, SC4 single classify path).
 
     Calls _detect_tactic_for_flaw, then — only when a motif was detected AND
-    pv_blob is not None AND pre_flaw_eval_cp is not None — applies
+    pv_blob is a non-empty list AND pre_flaw_eval_cp is not None — applies
     apply_forcing_line_filter at the given margin. If the line is non-forcing,
     returns (None, None, None, None) to suppress the motif.
 
@@ -546,14 +546,23 @@ def _classify_tactic_gated(
     already-winning / still-winning thresholds are cp-based, so it has nothing to
     compare against; the raw detect result stands (RESEARCH A1, accepted).
 
-    Gate condition is `pv_blob is not None` (not `if pv_blob`): an empty list is
-    a valid blob that must go through the gate and be rejected by the one-mover
-    discard (Pitfall 2 from PLAN.md).
+    D-06 sentinel: an empty list [] means the blob could not be assembled for this
+    flaw (e.g. single-legal-move position, analysis gap). The gate is SKIPPED for
+    [] — same outcome as pv_blob is None (no suppression, raw kernel result returned).
+    Gate condition is `pv_blob is not None and len(pv_blob) > 0`, superseding the
+    Phase-143 Pitfall-2 wording that treated [] as a gate-eligible blob requiring
+    the one-mover discard. apply_forcing_line_filter itself still rejects [] when
+    called directly; the skip here is intentional and upstream of that call.
     """
     motif, piece, conf, depth = _detect_tactic_for_flaw(
         n, fen_map, positions, pv_by_ply, orientation
     )
-    if motif is not None and pv_blob is not None and pre_flaw_eval_cp is not None:
+    if (
+        motif is not None
+        and pv_blob is not None
+        and len(pv_blob) > 0
+        and pre_flaw_eval_cp is not None
+    ):
         solver_color = _solver_color_for(n, orientation)
         # Bug B: pass the detected firing depth so only the solver nodes up to the
         # tactic's firing point need be forced (the conversion tail is exempt).

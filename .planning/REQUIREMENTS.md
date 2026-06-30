@@ -39,8 +39,8 @@ Requirements for the v1.30 milestone. Each maps to a roadmap phase (141–145).
 
 ### Backfill + Rollout (SHIP)
 
-- [ ] **SHIP-01**: A corpus backfill populates JSONB for existing analyzed `game_flaws` rows with a `WHERE allowed_pv_lines IS NULL` idempotency guard, reusing the module-level `EnginePool`; the MultiPV pass is NOT gated on `lichess_evals_at` (second-best is new data, not a lichess freebie).
-- [ ] **SHIP-02**: The gated tags are rolled out to production, the live drain writes JSONB for all new games, and per-motif tactic chip counts are monitored before/after.
+- [x] **SHIP-01**: A corpus backfill populates JSONB for existing analyzed `game_flaws` rows with a `WHERE allowed_pv_lines IS NULL` idempotency guard, reusing the module-level `EnginePool`; the MultiPV pass is NOT gated on `lichess_evals_at` (second-best is new data, not a lichess freebie).
+- [x] **SHIP-02**: The gated tags are rolled out to production, the live drain writes JSONB for all new games, and per-motif tactic chip counts are monitored before/after.
 
 ## v2 Requirements
 
@@ -84,5 +84,5 @@ Which phases cover which requirements. Filled during roadmap creation.
 | RETAG-02 | Phase 143 | Complete |
 | VALID-01 | Phase 144 | Complete |
 | VALID-02 | Phase 144 | Complete |
-| SHIP-01 | Phase 145 | Pending |
-| SHIP-02 | Phase 145 | Pending |
+| SHIP-01 | Phase 145 | Complete |
+| SHIP-02 | Phase 145 | Complete |

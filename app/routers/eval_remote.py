@@ -51,6 +51,9 @@ from app.schemas.eval_remote import (
     EntryLeaseResponse,
     EntrySubmitRequest,
     EntrySubmitResponse,
+    FlawBlobLeaseResponse,
+    FlawBlobSubmitRequest,
+    FlawBlobSubmitResponse,
     LeasePosition,
     LeaseResponse,
     SubmitRequest,
@@ -64,6 +67,9 @@ from app.services.eval_drain import (
     _EvalTarget,
     _apply_eval_results,
     _apply_full_eval_results,
+    _assemble_flaw_blobs_from_submit,
+    _batch_update_flaw_pv_lines,
+    _build_flaw_blob_lease_positions,
     _build_flaw_multipv2_blobs,
     _claim_entry_eval_games,
     _classify_and_fill_oracle,
@@ -74,11 +80,15 @@ from app.services.eval_drain import (
     _mark_evals_completed,
     _mark_full_evals_completed,
     _mark_full_pv_completed,
+    _parse_token,
     _run_multipv2_pass,
     _signal_flaw_completion,
 )
 from app.models.eval_jobs import EvalJob
-from app.services.eval_queue_service import claim_eval_job, release_job
+from app.models.game_flaw import GameFlaw
+from app.repositories.game_flaws_repository import bulk_update_tactic_tags
+from app.services.eval_queue_service import _claim_tier4_blob, claim_eval_job, release_job
+from app.services.flaws_service import _classify_tactic_gated, _recompute_fen_map
 
 # Worker identity for the remote eval worker — distinct from WORKER_ID_SERVER_POOL
 # ("server-pool") so the eval_jobs.leased_by column is traceable per worker type.
@@ -279,7 +289,15 @@ async def _apply_submit(
         # Classify game_flaws + fill oracle counts + write flaw PVs.
         # Runs AFTER _apply_full_eval_results so eval_cp is visible for classification.
         # Runs BEFORE completion markers so evals + flaws commit atomically (T-117-11).
-        await _classify_and_fill_oracle(write_session, game_id, engine_result_map)
+        # Bug fix (SHIP-02): pass blob_map so the forcing-line gate filters tactic tags.
+        # Before this fix, blobs were written via _run_multipv2_pass but
+        # _classify_and_fill_oracle was called without blob_map, leaving new-game tactic
+        # tags unfiltered even when second-best data was available. blob_map if blob_map
+        # degrades an empty dict (old worker, no second-best) to None → gate skipped →
+        # old-worker backward-compat preserved.
+        await _classify_and_fill_oracle(
+            write_session, game_id, engine_result_map, blob_map if blob_map else None
+        )
 
         # Phase 142 MPV-02: write allowed_pv_lines / missed_pv_lines JSONB blobs.
         # Runs AFTER _classify_and_fill_oracle so flaw rows exist for the UPDATE.
@@ -722,3 +740,228 @@ async def entry_submit_eval(
         game_ids=leased_game_ids,
         stamped_count=stamped_count,
     )
+
+
+# ─── Phase 145 SHIP-01: flaw-blob-only lease endpoint (D-04) ─────────────────
+
+
+@router.post("/flaw-blob-lease", response_model=None)
+async def flaw_blob_lease(
+    _auth: Annotated[None, Depends(require_operator_token)],
+) -> Response | FlawBlobLeaseResponse:
+    """Claim one tier-4-selected game's flaw-blob FENs for MultiPV=2 evaluation.
+
+    Dedicated, isolated flaw-blob backfill endpoint (D-04). Does NOT reuse or touch
+    the live _apply_submit path — see D-04 isolation boundary in the threat model.
+
+    Flow:
+    1. Call _claim_tier4_blob — random pick of one analyzed non-guest game with
+       at least one NULL-blob flaw (allowed_pv_lines IS NULL). Returns 204 when the
+       backfill queue is empty.
+    2. Build lease via _build_flaw_blob_lease_positions — walks each flaw's two PV
+       lines from stored game_positions.pv. Walkable lines (>= 2 PV nodes) become
+       FlawBlobLeasePosition entries with token="{flaw_ply}:{line}:{node_k}". Lines
+       with NULL pv or < 2-node walks are sentinels.
+    3. All-sentinel games (zero walkable lines): write [] sentinel for all flaw plies
+       via _batch_update_flaw_pv_lines and return 204. Sentinels clear the
+       allowed_pv_lines IS NULL predicate so the game is never re-picked (T-145-07
+       forward-progress guarantee — the lottery cannot loop on un-fillable games).
+    4. Mixed or fully-walkable games: return FlawBlobLeaseResponse. The worker will
+       evaluate the leased FENs at MultiPV=2 and submit via /flaw-blob-submit (Plan 04).
+       Sentinel lines in mixed games are written at submit time (Plan 04 handler).
+
+    Token format (D-04a): "{flaw_ply}:{line}:{node_k}" — opaque to worker. The worker
+    echoes the token unchanged on submit; the server parses it to reassemble PvNode blobs.
+    """
+    # ── Tier-4 pick: open own session, close after pick ───────────────────────
+    async with async_session_maker() as session:
+        blob_pick = await _claim_tier4_blob(session)
+    # session closed
+
+    if blob_pick is None:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    game_id, _user_id = blob_pick
+
+    # ── Build lease positions from stored PVs (no engine calls, no gather) ────
+    lease_positions, sentinel_lines = await _build_flaw_blob_lease_positions(game_id)
+
+    # All-sentinel: no walkable lines → write [] sentinels and return 204 (T-145-07).
+    # This clears the allowed_pv_lines IS NULL predicate so the game is never re-picked.
+    if not lease_positions:
+        if sentinel_lines:
+            # Build blob_map: {flaw_ply: ([], [])} for every sentinel flaw.
+            # Both allowed and missed get [] because the worker won't fill them.
+            sentinel_plies = {flaw_ply for flaw_ply, _line in sentinel_lines}
+            sentinel_blob_map = {ply: ([], []) for ply in sentinel_plies}
+            async with async_session_maker() as write_session:
+                await _batch_update_flaw_pv_lines(write_session, game_id, sentinel_blob_map)
+                await write_session.commit()
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    return FlawBlobLeaseResponse(
+        game_id=game_id,
+        positions=lease_positions,
+        leased_at=datetime.now(timezone.utc),
+    )
+
+
+# ─── Phase 145 SHIP-01: flaw-blob submit helper + endpoint (D-04, D-07) ──────
+
+
+async def _apply_flaw_blob_submit(
+    game_id: int,
+    body: FlawBlobSubmitRequest,
+) -> FlawBlobSubmitResponse:
+    """Apply a flaw-blob submit: reassemble PvNode blobs and run per-game gated retag (D-07).
+
+    Isolated from _apply_submit (D-04): does not branch that handler, does not call
+    _classify_and_fill_oracle, does not stamp full_evals_completed_at. Only the 8 tactic
+    columns are updated (bulk_update_tactic_tags). No engine calls, no asyncio.gather.
+
+    Flow:
+    1. Read phase: load Game + all GamePosition rows + NULL-blob flaw plies.
+    2. Idempotency gate: if no NULL-blob flaws remain → return blobs_written=0 (D-03).
+    3. Re-derive lease (opens its own sessions inside _build_flaw_blob_lease_positions).
+    4. Security: reject any submitted token not in the current lease (T-145-09).
+    5. CPU phase: assemble blob_map, build fen_map, run _classify_tactic_gated per flaw.
+    6. Write phase: _batch_update_flaw_pv_lines + bulk_update_tactic_tags + commit.
+    """
+    # ── Read phase ────────────────────────────────────────────────────────────
+    async with async_session_maker() as read_session:
+        game = await read_session.scalar(select(Game).where(Game.id == game_id))
+        if game is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Game not found",
+            )
+
+        positions_result = await read_session.execute(
+            select(GamePosition)
+            .where(GamePosition.game_id == game_id, GamePosition.user_id == game.user_id)
+            .order_by(GamePosition.ply)
+        )
+        positions = list(positions_result.scalars().all())
+
+        null_plies_result = await read_session.execute(
+            sa.select(GameFlaw.ply).where(
+                GameFlaw.game_id == game_id,
+                GameFlaw.allowed_pv_lines.is_(None),
+            )
+        )
+        null_flaw_plies: set[int] = set(null_plies_result.scalars().all())
+    # read_session closed
+
+    # ── Idempotency gate: all blobs already written → no-op double-submit (D-03) ──
+    if not null_flaw_plies:
+        return FlawBlobSubmitResponse(game_id=game_id, blobs_written=0)
+
+    # ── Re-derive lease for token validation and sentinel detection ───────────
+    # _build_flaw_blob_lease_positions opens its own sessions (after our read_session
+    # was closed) so the CLAUDE.md no-concurrent-session rule is satisfied.
+    lease_positions, sentinel_lines = await _build_flaw_blob_lease_positions(game_id)
+    valid_tokens: set[str] = {pos.token for pos in lease_positions}
+
+    # Security T-145-09: reject tokens not issued in the current lease.
+    # Workers only receive tokens for walkable PV nodes; sentinel-line tokens
+    # were never emitted and must never be accepted as valid submissions.
+    for e in body.evals:
+        if e.token not in valid_tokens:
+            try:
+                flaw_ply, _line, _k = _parse_token(e.token)
+                in_null_plies = flaw_ply in null_flaw_plies
+            except ValueError:
+                in_null_plies = False
+            # A token for a flaw_ply that doesn't belong to this game's NULL-blob set
+            # is definitively foreign — reject unconditionally.
+            if not in_null_plies:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Unknown or foreign token: {e.token!r}",
+                )
+            # Token is for a NULL-blob flaw but not in the lease — it's a sentinel-line
+            # token that was never leased to the worker. Reject it: workers must not
+            # submit tokens the server never issued (T-145-09 tampering guard).
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Unknown or foreign token: {e.token!r}",
+            )
+
+    # ── CPU phase: assemble blobs + classify ─────────────────────────────────
+    blob_map = _assemble_flaw_blobs_from_submit(game_id, body.evals, sentinel_lines)
+    fen_map = _recompute_fen_map(game.pgn)
+
+    # D-07: per-game gated retag — only the 8 tactic columns; no severity/phase reclassification.
+    updates: list[dict[str, object]] = []
+    for flaw_ply in null_flaw_plies:
+        blob_pair = blob_map.get(flaw_ply)
+        allowed_blob = blob_pair[0] if blob_pair is not None else None
+        missed_blob = blob_pair[1] if blob_pair is not None else None
+        pre_flaw_eval_cp: int | None = (
+            positions[flaw_ply - 1].eval_cp
+            if flaw_ply >= 1 and flaw_ply - 1 < len(positions)
+            else None
+        )
+        allowed_motif, allowed_piece, allowed_conf, allowed_depth = _classify_tactic_gated(
+            flaw_ply, fen_map, positions, "allowed", allowed_blob, pre_flaw_eval_cp
+        )
+        missed_motif, missed_piece, missed_conf, missed_depth = _classify_tactic_gated(
+            flaw_ply, fen_map, positions, "missed", missed_blob, pre_flaw_eval_cp
+        )
+        updates.append(
+            {
+                "user_id": game.user_id,
+                "game_id": game_id,
+                "ply": flaw_ply,
+                "allowed_tactic_motif": allowed_motif,
+                "allowed_tactic_piece": allowed_piece,
+                "allowed_tactic_confidence": allowed_conf,
+                "allowed_tactic_depth": allowed_depth,
+                "missed_tactic_motif": missed_motif,
+                "missed_tactic_piece": missed_piece,
+                "missed_tactic_confidence": missed_conf,
+                "missed_tactic_depth": missed_depth,
+            }
+        )
+
+    # ── Write phase: blobs + tactic tags in one transaction ──────────────────
+    async with async_session_maker() as write_session:
+        await _batch_update_flaw_pv_lines(write_session, game_id, blob_map)
+        await bulk_update_tactic_tags(write_session, updates)
+        await write_session.commit()
+
+    return FlawBlobSubmitResponse(game_id=game_id, blobs_written=len(blob_map))
+
+
+@router.post("/flaw-blob-submit", response_model=FlawBlobSubmitResponse)
+async def flaw_blob_submit(
+    body: FlawBlobSubmitRequest,
+    _auth: Annotated[None, Depends(require_operator_token)],
+) -> FlawBlobSubmitResponse:
+    """Apply worker MultiPV=2 results: write PvNode blobs and run per-game gated retag (D-07).
+
+    Dedicated, isolated submit endpoint for the flaw-blob backfill (D-04). Does NOT
+    call _apply_submit or _classify_and_fill_oracle — isolation from the live eval
+    ingest path is enforced by the dedicated schema and separate handler logic.
+
+    Flow (see _apply_flaw_blob_submit for details):
+    1. Validates every token against the server-issued lease (T-145-09 foreign-token guard).
+    2. Assembles PvNode blobs from worker results; writes sentinel [] for NULL-PV lines (D-06).
+    3. Runs _classify_tactic_gated per flaw using the in-memory blob_map (no extra DB round-trip).
+    4. Updates only the 8 tactic columns via bulk_update_tactic_tags (D-07 rolling rollout).
+    5. Returns FlawBlobSubmitResponse(game_id, blobs_written) where blobs_written counts flaw
+       rows updated (real blobs + sentinels []).
+
+    A re-submit after all blobs are written is write-idempotent: returns blobs_written=0 (D-03).
+
+    Expected status codes (do NOT Sentry-capture):
+      404 — game not found
+      422 — SF version mismatch or foreign/unknown token (T-145-09)
+    """
+    # D-5 SF-version gate (same as /submit and /entry-submit — T-145-05b).
+    if settings.EXPECTED_SF_VERSION and body.sf_version != settings.EXPECTED_SF_VERSION:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Stockfish version mismatch",
+        )
+    return await _apply_flaw_blob_submit(body.game_id, body)

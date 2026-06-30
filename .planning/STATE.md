@@ -2,17 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.30
 milestone_name: Forcing-Line Tactic Gate
-current_phase: 144
-current_phase_name: user-28-a-b-validation
-status: Phases 143-144 squash-merged to main (f09fcddb) — offline re-tagger + A/B gate validation
-stopped_at: Phase 144 context gathered
-last_updated: "2026-06-30T17:37:21.868Z"
+current_phase: 145
+current_phase_name: corpus-backfill-rollout
+status: executing
+stopped_at: Phase 145 context gathered
+last_updated: "2026-06-30T21:08:16.285Z"
 last_activity: 2026-06-30
+last_activity_desc: Phase 145 execution started
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 11
-  completed_plans: 10
+  total_plans: 17
+  completed_plans: 15
   percent: 60
 ---
 
@@ -20,10 +21,10 @@ progress:
 
 ## Current Position
 
-Phase: 144 (user-28-a-b-validation) — EXECUTING
-Plan: 2 of 2
-Status: Phases 143-144 squash-merged to main (f09fcddb) — offline re-tagger + A/B gate validation
-Last activity: 2026-06-30
+Phase: 145 (corpus-backfill-rollout) — EXECUTING
+Plan: 6 of 6
+Status: Ready to execute
+Last activity: 2026-06-30 — Phase 145 execution started
 
 ## Project Reference
 
@@ -84,6 +85,12 @@ Twenty-nine milestones complete (v1.0–v1.29). v1.29 Live-Engine Analysis Page 
 - [Phase ?]: flaw_pv_blobs threaded from drain into classify before _run_multipv2_pass writes to DB (Pitfall 4 avoided)
 - [Phase ?]: Ungated arm wires _detect_tactic_for_flaw directly, not margin=0, to get the genuine pre-gate baseline
 - [Phase ?]: Both arms replay identical stored JSONB blobs, isolating gate effect from eval_cp cross-machine variance (VALID-01)
+- [Phase ?]: D-06 sentinel: [] skips gate in _classify_tactic_gated (D-06 supersedes Phase-143 Pitfall-2); SHIP-02: blob_map threaded into _classify_and_fill_oracle in _apply_submit
+- [Phase ?]: D-04 isolation enforced
+- [Phase ?]: T-145-09: foreign token injection blocked — per-token validation against re-derived lease returns 422
+- [Phase ?]: D-03: double-submit idempotent — blobs_written=0 when no NULL-blob flaws remain (early exit before token validation)
+- [Phase ?]: D-06 sentinel write: [] blob written for un-fillable flaw lines so they stop matching the IS NULL predicate
+- [Phase ?]: D-07 rolling retag: only 8 tactic columns updated via bulk_update_tactic_tags after blob write (no severity reclassification)
 
 ### Pending Todos
 
@@ -133,9 +140,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-Last session: 2026-06-30T06:26:11.401Z
-Stopped at: Phase 144 context gathered
-Resume file: .planning/phases/144-user-28-a-b-validation/144-CONTEXT.md
+Last session: 2026-06-30T21:08:16.273Z
+Stopped at: Phase 145 context gathered
+Resume file: .planning/phases/145-corpus-backfill-rollout/145-CONTEXT.md
 
 ## Performance Metrics
 
@@ -166,3 +173,8 @@ Resume file: .planning/phases/144-user-28-a-b-validation/144-CONTEXT.md
 | Phase 143 P02 | 20min | 2 tasks | 3 files |
 | Phase 143 P03 | 10min | 3 tasks | 4 files |
 | Phase 144-user-28-a-b-validation P01 | 45 | 2 tasks | 3 files |
+| Phase 145 P01 | 7min | 3 tasks | 5 files |
+| Phase 145 P02 | 16min | 2 tasks | 3 files |
+| Phase 145 P03 | 15min | 3 tasks | 5 files |
+| Phase 145-corpus-backfill-rollout P04 | 30 minutes | 2 tasks | 3 files |
+| Phase 145 P05 | 60 | 2 tasks | 3 files |

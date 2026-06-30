@@ -96,7 +96,7 @@
 | 142. MultiPV=2 Engine Pass + Eval Drain + Remote Worker | 4/4 | Complete    | 2026-06-29 |
 | 143. Offline Re-tagger | 3/3 | Complete    | 2026-06-30 |
 | 144. User-28 A/B Validation | 1/2 | In Progress|  |
-| 145. Corpus Backfill + Rollout | 0/? | Not started | - |
+| 145. Corpus Backfill + Rollout | 5/6 | In Progress|  |
 
 ## v1.30 Forcing-Line Tactic Gate (Phases 141–145)
 
@@ -211,7 +211,30 @@
   3. Per-motif tactic chip counts are recorded before and after rollout confirming noise reduction
   4. The live eval drain writes JSONB for all new games; the MultiPV pass is NOT gated on lichess_evals_at (second-best is new data, not a lichess freebie)
 
-**Plans**: TBD
+**Plans**: 6 plans
+
+Plans:
+
+**Wave 1**
+
+- [x] 145-01-PLAN.md — D-06 sentinel tolerance + _apply_submit gate gap + tier-4 partial index
+- [x] 145-02-PLAN.md — tier-4 blob-backfill lottery (D-02/D-03/D-05)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [x] 145-03-PLAN.md — FlawBlob schemas + /flaw-blob-lease endpoint + lease builder (D-04/D-09)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [x] 145-04-PLAN.md — /flaw-blob-submit + blob assembly + sentinel write + D-07 per-game retag
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [x] 145-05-PLAN.md — backfill_multipv.py + snapshot_tactic_counts.py (SC1/SC3 scripts)
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 145-06-PLAN.md — prod rollout: dev-validate gate → drain → D-08 sweep → before/after (human-verify)
 
 ## Backlog
 
