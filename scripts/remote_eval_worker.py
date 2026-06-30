@@ -58,7 +58,11 @@ DEFAULT_WORKERS: int = 4
 # so this affects only idle-pickup latency for a freshly-enqueued tier-1 job.
 # The busy path (a game was leased) is already a tight loop — unchanged.
 DEFAULT_IDLE_SLEEP: float = 1.0
-HTTP_TIMEOUT_S: float = 30.0
+# Stopgap (SEED-071): the live /submit handler runs server-side MultiPV-2 continuation
+# Stockfish eval inline (~22*N 1M-node evals for an N-flaw game) before responding, so a
+# flaw-heavy game's submit can take well over 30s under load and trip a ReadTimeout. Bumped
+# 30 -> 120 to absorb it until the live-path continuation eval is moved off the submit response.
+HTTP_TIMEOUT_S: float = 120.0
 # D-10 (Phase 123 SEED-051): worker IDs must fit VARCHAR(16) on games.entry_eval_leased_by.
 # Random default is ~8 base36 chars; operator override is validated < 10 chars.
 WORKER_ID_MAX_LEN: int = 9  # exclusive upper bound: len < 10
