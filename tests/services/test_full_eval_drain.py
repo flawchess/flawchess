@@ -569,6 +569,10 @@ def _patch_drain_for_tick_tests(
         job_id=job_id,
     )
     monkeypatch.setattr(drain_module, "claim_eval_job", AsyncMock(return_value=claimed))
+    # Phase 142 MPV-02: stub _build_flaw_multipv2_blobs so existing tests that only
+    # mock the main-gather side-effect list are not disrupted by continuation calls.
+    # Tests that specifically exercise blobs patch this away or skip _patch_drain.
+    monkeypatch.setattr(drain_module, "_build_flaw_multipv2_blobs", AsyncMock(return_value={}))
     return drain_module
 
 
@@ -613,12 +617,28 @@ class TestMarkerWrite:
         # Post-move: row 0 = pos_eval[1] (50), row 1 = pos_eval[2] (30) — no holes.
         mock_evaluate = AsyncMock(
             side_effect=[
-                (99, None, "e2e4", "e2e4 e7e5"),  # ply 0 (best_move; eval unused for row)
-                (50, None, "e7e5", "e7e5"),  # ply 1 → row 0 post-move eval
-                (30, None, "g1f3", "g1f3"),  # terminal → row 1 post-move eval (no hole)
+                (
+                    99,
+                    None,
+                    "e2e4",
+                    "e2e4 e7e5",
+                    None,
+                    None,
+                    "",
+                ),  # ply 0 (best_move; eval unused for row)
+                (50, None, "e7e5", "e7e5", None, None, ""),  # ply 1 → row 0 post-move eval
+                (
+                    30,
+                    None,
+                    "g1f3",
+                    "g1f3",
+                    None,
+                    None,
+                    "",
+                ),  # terminal → row 1 post-move eval (no hole)
             ]
         )
-        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
 
         # Insert game_position rows for both plies — needed so each has a post-move donor.
         await _insert_game_positions(
@@ -653,7 +673,7 @@ class TestMarkerWrite:
         full_drain_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Phase 119 SEED-045: when evaluate_nodes_with_pv fails for SOME plies and
+        """Phase 119 SEED-045: when evaluate_nodes_multipv2 fails for SOME plies and
         full_eval_attempts + 1 < MAX_EVAL_ATTEMPTS, the marker is NOT set and
         full_eval_attempts is incremented. The partial eval IS written.
 
@@ -690,12 +710,20 @@ class TestMarkerWrite:
         #   row 1 = pos_eval[2] = terminal result (None)  → NULL hole
         mock_evaluate = AsyncMock(
             side_effect=[
-                (99, None, "e2e4", "e2e4 e7e5"),  # ply 0 (best_move; eval unused for row)
-                (50, None, "e7e5", "e7e5"),  # ply 1 → row 0 post-move eval
-                (None, None, None, None),  # terminal → row 1 hole
+                (
+                    99,
+                    None,
+                    "e2e4",
+                    "e2e4 e7e5",
+                    None,
+                    None,
+                    "",
+                ),  # ply 0 (best_move; eval unused for row)
+                (50, None, "e7e5", "e7e5", None, None, ""),  # ply 1 → row 0 post-move eval
+                (None, None, None, None, None, None, None),  # terminal → row 1 hole
             ]
         )
-        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
 
         await _insert_game_positions(
             full_drain_session_maker,
@@ -770,8 +798,8 @@ class TestMarkerWrite:
         )
 
         # Engine always returns all-None 4-tuple — simulated dead pool.
-        mock_evaluate = AsyncMock(return_value=(None, None, None, None))
-        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+        mock_evaluate = AsyncMock(return_value=(None, None, None, None, None, None, None))
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
 
         await _insert_game_positions(
             full_drain_session_maker,
@@ -1078,11 +1106,22 @@ class TestBestMove:
         best_moves = ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5"]
         mock_evaluate = AsyncMock(
             side_effect=[
-                *[(cp, None, bm, bm) for cp, bm in zip([20, 15, 25, 10, 30, 5], best_moves)],
-                (5, None, "h2h3", "h2h3"),  # terminal eval-donor call (best_move ignored)
+                *[
+                    (cp, None, bm, bm, None, None, "")
+                    for cp, bm in zip([20, 15, 25, 10, 30, 5], best_moves)
+                ],
+                (
+                    5,
+                    None,
+                    "h2h3",
+                    "h2h3",
+                    None,
+                    None,
+                    "",
+                ),  # terminal eval-donor call (best_move ignored)
             ]
         )
-        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
 
         # Provide rows for all 6 plies so each row has a post-move eval donor.
         gp_rows = [
@@ -1218,8 +1257,8 @@ class TestBestMove:
 
         # Engine is called for ply 3, ply 4 (non-dedup'd), and the terminal (ply 5).
         # Ply 2 is dedup'd → no engine call for it.
-        mock_evaluate = AsyncMock(return_value=(40, None, "d2d4", "d2d4"))
-        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+        mock_evaluate = AsyncMock(return_value=(40, None, "d2d4", "d2d4", None, None, ""))
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
 
         assert 2 <= _DEDUP_MAX_PLY, f"ply 2 must be within DEDUP_MAX_PLY={_DEDUP_MAX_PLY}"
 
@@ -1253,7 +1292,7 @@ class TestBestMove:
 # ─── EVAL-04: flaw PV written at ply N+1 (D-117-02) ──────────────────────────
 
 
-def _blunder_eval_sequence() -> list[tuple[int, None, str, str]]:
+def _blunder_eval_sequence() -> list[tuple[int, None, str, str, None, None, str]]:
     """Return an engine eval sequence whose POST-MOVE written rows cause exactly ONE
     blunder (white, ply 2) for _SIX_PLY_PGN = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 *".
 
@@ -1279,22 +1318,37 @@ def _blunder_eval_sequence() -> list[tuple[int, None, str, str]]:
 
     Result: exactly one blunder (white at ply 2). PV must be written at ply 3 (the
     refutation board = engine_result_map[3]), nowhere else.
+
+    Phase 142: expanded to 7-tuple (eval_cp, eval_mate, best_move, pv, second_cp,
+    second_mate, second_uci) as evaluate_nodes_multipv2 now returns multipv=2 results.
+    second_uci="" is the PvNode.su single-legal-move / no-second-move sentinel.
     """
     return [
         # engine call ply 0 — eval unused for storage (no row before move 0); supplies
         # row 0's best_move. The remaining six entries become the stored rows 0..5.
-        (20, None, "e2e4", "e2e4 e7e5"),
-        (20, None, "e2e4", "e2e4 e7e5"),  # → row 0 = 20 (balanced)
-        (30, None, "e7e5", "e7e5 g1f3"),  # → row 1 = 30 (stable; black tiny drop)
+        (20, None, "e2e4", "e2e4 e7e5", None, None, ""),
+        (20, None, "e2e4", "e2e4 e7e5", None, None, ""),  # → row 0 = 20 (balanced)
+        (30, None, "e7e5", "e7e5 g1f3", None, None, ""),  # → row 1 = 30 (stable; black tiny drop)
         (
             -500,
             None,
             "g1f3",
             "g1f3 g8f6 d2d4",
+            None,
+            None,
+            "",
         ),  # → row 2 = -500 (white BLUNDER; PV from here at ply 3)
-        (-480, None, "g8f6", "g8f6 f1c4 d7d5"),  # → row 3 = -480 (still black winning)
-        (60, None, "f1c4", "f1c4 f8c5"),  # → row 4 = 60 (white recovers)
-        (30, None, "f8c5", "f8c5"),  # terminal call → row 5 = 30 (stable)
+        (
+            -480,
+            None,
+            "g8f6",
+            "g8f6 f1c4 d7d5",
+            None,
+            None,
+            "",
+        ),  # → row 3 = -480 (still black winning)
+        (60, None, "f1c4", "f1c4 f8c5", None, None, ""),  # → row 4 = 60 (white recovers)
+        (30, None, "f8c5", "f8c5", None, None, ""),  # terminal call → row 5 = 30 (stable)
     ]
 
 
@@ -1338,7 +1392,7 @@ class TestFlawPv:
 
         eval_sequence = _blunder_eval_sequence()
         mock_evaluate = AsyncMock(side_effect=eval_sequence)
-        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
 
         gp_rows = [
             {"ply": i, "full_hash": 0xBEEF_F1A0 + i, "eval_cp": None, "eval_mate": None}
@@ -1424,8 +1478,10 @@ class TestFlawPv:
 
         # Both ply 2 (flaw_ply) and ply 3 (flaw_ply + 1) should reach the engine
         # (SEED-054). Same mock result for each — only the keying matters here.
-        mock_evaluate = AsyncMock(return_value=(-480, None, "g8f6", "g8f6 f1c4 d7d5"))
-        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+        mock_evaluate = AsyncMock(
+            return_value=(-480, None, "g8f6", "g8f6 f1c4 d7d5", None, None, "")
+        )
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
 
         # Pre-existing lichess %evals on EVERY ply, encoding a white blunder at ply 2
         # (30 cp -> -500 cp). Without D-117-13 the is_lichess_eval_game filter would
@@ -1530,10 +1586,10 @@ class TestFlawPv:
         eval_by_ply = {0: 20, 1: 20, 2: 30, 3: -500, 4: -480, 5: 60, 6: 30}
         ply3_pv = "g1f3 g8f6 d2d4"
 
-        def _eval_for_board(board: chess.Board) -> tuple[int, None, str, str]:
+        def _eval_for_board(board: chess.Board) -> tuple[int, None, str, str, None, None, str]:
             ply = 2 * (board.fullmove_number - 1) + (0 if board.turn == chess.WHITE else 1)
             pv = ply3_pv if ply == 3 else f"e2e4 {ply}"
-            return (eval_by_ply[ply], None, pv.split()[0], pv)
+            return (eval_by_ply[ply], None, pv.split()[0], pv, None, None, "")
 
         assert 3 <= _DEDUP_MAX_PLY, f"ply 3 must be within DEDUP_MAX_PLY={_DEDUP_MAX_PLY}"
 
@@ -1559,7 +1615,12 @@ class TestFlawPv:
 
         monkeypatch.setattr(drain_module, "_fetch_dedup_evals", _fake_fetch_dedup_evals)
         mock_evaluate = AsyncMock(side_effect=_eval_for_board)
-        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
+        # The SEED-056 refutation-pv recovery pass (_fill_engine_game_flaw_pvs) still calls
+        # evaluate_nodes_with_pv (4-tuple), not multipv2 — mock it from the same board-keyed
+        # eval so the ply-3 pv is recovered (Phase 142 left the recovery pass on with_pv).
+        mock_evaluate_pv = AsyncMock(side_effect=lambda board: _eval_for_board(board)[:4])
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate_pv)
 
         gp_rows = [
             {
@@ -1643,7 +1704,7 @@ class TestClassifyHook:
 
         eval_sequence = _blunder_eval_sequence()
         mock_evaluate = AsyncMock(side_effect=eval_sequence)
-        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
 
         gp_rows = [
             {"ply": i, "full_hash": 0xBEEF_B00C + i, "eval_cp": None, "eval_mate": None}
@@ -1708,7 +1769,7 @@ class TestClassifyHook:
 
         eval_sequence = _blunder_eval_sequence()
         mock_evaluate = AsyncMock(side_effect=eval_sequence)
-        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
 
         gp_rows = [
             {"ply": i, "full_hash": 0xDEAD_B00C + i, "eval_cp": None, "eval_mate": None}
@@ -1819,7 +1880,7 @@ class TestOracleCounts:
 
         eval_sequence = _blunder_eval_sequence()
         mock_evaluate = AsyncMock(side_effect=eval_sequence)
-        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
 
         gp_rows = [
             {"ply": i, "full_hash": 0xBEEF_0AC0 + i, "eval_cp": None, "eval_mate": None}
@@ -1958,12 +2019,12 @@ class TestHoleAwareCompletionGate:
         # All engine calls succeed — no holes after the tick.
         mock_evaluate = AsyncMock(
             side_effect=[
-                (99, None, "e2e4", "e2e4 e7e5"),  # ply 0
-                (50, None, "e7e5", "e7e5"),  # ply 1 → row 0 eval
-                (30, None, "g1f3", "g1f3"),  # terminal → row 1 eval
+                (99, None, "e2e4", "e2e4 e7e5", None, None, ""),  # ply 0
+                (50, None, "e7e5", "e7e5", None, None, ""),  # ply 1 → row 0 eval
+                (30, None, "g1f3", "g1f3", None, None, ""),  # terminal → row 1 eval
             ]
         )
-        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
 
         await _insert_game_positions(
             full_drain_session_maker,
@@ -2036,12 +2097,20 @@ class TestHoleAwareCompletionGate:
         # Terminal call returns a mate score; row 1 gets eval_mate=1 (not a hole).
         mock_evaluate = AsyncMock(
             side_effect=[
-                (99, None, "e2e4", "e2e4"),  # ply 0 best_move (eval unused)
-                (50, None, "e7e5", "e7e5"),  # ply 1 → row 0 eval
-                (None, 1, "g1f3", "g1f3"),  # terminal → row 1 = mate score (NOT a hole)
+                (99, None, "e2e4", "e2e4", None, None, ""),  # ply 0 best_move (eval unused)
+                (50, None, "e7e5", "e7e5", None, None, ""),  # ply 1 → row 0 eval
+                (
+                    None,
+                    1,
+                    "g1f3",
+                    "g1f3",
+                    None,
+                    None,
+                    "",
+                ),  # terminal → row 1 = mate score (NOT a hole)
             ]
         )
-        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
 
         await _insert_game_positions(
             full_drain_session_maker,
@@ -2109,12 +2178,12 @@ class TestHoleAwareCompletionGate:
         )
         mock_tick1 = AsyncMock(
             side_effect=[
-                (99, None, "e2e4", "e2e4"),  # ply 0 (best_move; eval unused)
-                (50, None, "e7e5", "e7e5"),  # ply 1 → row 0 eval
-                (None, None, None, None),  # terminal → row 1 hole
+                (99, None, "e2e4", "e2e4", None, None, ""),  # ply 0 (best_move; eval unused)
+                (50, None, "e7e5", "e7e5", None, None, ""),  # ply 1 → row 0 eval
+                (None, None, None, None, None, None, None),  # terminal → row 1 hole
             ]
         )
-        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_tick1)
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_tick1)
 
         try:
             processed1 = await drain_module._full_drain_tick()
@@ -2134,12 +2203,12 @@ class TestHoleAwareCompletionGate:
             # ── Tick 2: terminal succeeds → hole fills → stamp ──
             mock_tick2 = AsyncMock(
                 side_effect=[
-                    (99, None, "e2e4", "e2e4"),
-                    (50, None, "e7e5", "e7e5"),
-                    (30, None, "g1f3", "g1f3"),  # terminal now succeeds
+                    (99, None, "e2e4", "e2e4", None, None, ""),
+                    (50, None, "e7e5", "e7e5", None, None, ""),
+                    (30, None, "g1f3", "g1f3", None, None, ""),  # terminal now succeeds
                 ]
             )
-            monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_tick2)
+            monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_tick2)
 
             processed2 = await drain_module._full_drain_tick()
             assert processed2 is True, "Tick 2 must report processed (hole filled)"
@@ -2212,12 +2281,12 @@ class TestHoleAwareCompletionGate:
         # Hole persists: terminal still returns None.
         mock_evaluate = AsyncMock(
             side_effect=[
-                (99, None, "e2e4", "e2e4"),
-                (50, None, "e7e5", "e7e5"),
-                (None, None, None, None),  # hole persists
+                (99, None, "e2e4", "e2e4", None, None, ""),
+                (50, None, "e7e5", "e7e5", None, None, ""),
+                (None, None, None, None, None, None, None),  # hole persists
             ]
         )
-        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
 
         try:
             processed = await drain_module._full_drain_tick()
@@ -2286,8 +2355,8 @@ class TestHoleAwareCompletionGate:
             monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_119
         )
         # Dead pool — every call returns all-None.
-        mock_evaluate = AsyncMock(return_value=(None, None, None, None))
-        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+        mock_evaluate = AsyncMock(return_value=(None, None, None, None, None, None, None))
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
 
         await _insert_game_positions(
             full_drain_session_maker,
@@ -2644,18 +2713,34 @@ class TestSeed049GameEndingPly:
         # SEED-049: this must NOT count as a hole (ends_game=True on ply 6 target).
         mock_evaluate = AsyncMock(
             side_effect=[
-                (20, None, "e2e4", "e2e4"),  # ply 0 — best_move; eval becomes row 0 = pos_eval[1]
-                (15, None, "e7e5", "e7e5"),  # ply 1 → row 0's post-move eval
-                (25, None, "d1h5", "d1h5"),  # ply 2 → row 1's post-move eval
-                (10, None, "b8c6", "b8c6"),  # ply 3 → row 2's post-move eval
-                (30, None, "f1c4", "f1c4"),  # ply 4 → row 3's post-move eval
-                (5, None, "g8f6", "g8f6"),  # ply 5 → row 4's post-move eval
-                (80, None, "d1f7", "d1f7"),  # ply 6 (Qxf7# move) — best_move; eval for row 5
+                (
+                    20,
+                    None,
+                    "e2e4",
+                    "e2e4",
+                    None,
+                    None,
+                    "",
+                ),  # ply 0 — best_move; eval becomes row 0 = pos_eval[1]
+                (15, None, "e7e5", "e7e5", None, None, ""),  # ply 1 → row 0's post-move eval
+                (25, None, "d1h5", "d1h5", None, None, ""),  # ply 2 → row 1's post-move eval
+                (10, None, "b8c6", "b8c6", None, None, ""),  # ply 3 → row 2's post-move eval
+                (30, None, "f1c4", "f1c4", None, None, ""),  # ply 4 → row 3's post-move eval
+                (5, None, "g8f6", "g8f6", None, None, ""),  # ply 5 → row 4's post-move eval
+                (
+                    80,
+                    None,
+                    "d1f7",
+                    "d1f7",
+                    None,
+                    None,
+                    "",
+                ),  # ply 6 (Qxf7# move) — best_move; eval for row 5
                 # No terminal call: is_game_over() board skipped in _collect_full_ply_targets
                 # → pos_eval[7] absent → row 6's post-move eval = (None, None) by design
             ]
         )
-        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
 
         # Insert game_position rows for all 7 plies (0..6).
         gp_rows = [
@@ -2752,12 +2837,28 @@ class TestSeed049GameEndingPly:
         # Post-move: row 1 = pos_eval[2] = terminal result (None) → genuine hole.
         mock_evaluate = AsyncMock(
             side_effect=[
-                (99, None, "e2e4", "e2e4"),  # ply 0 (best_move; eval unused for row 0 here)
-                (50, None, "e7e5", "e7e5"),  # ply 1 → row 0 post-move eval
-                (None, None, None, None),  # terminal → row 1 hole (non-game-ending board)
+                (
+                    99,
+                    None,
+                    "e2e4",
+                    "e2e4",
+                    None,
+                    None,
+                    "",
+                ),  # ply 0 (best_move; eval unused for row 0 here)
+                (50, None, "e7e5", "e7e5", None, None, ""),  # ply 1 → row 0 post-move eval
+                (
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                ),  # terminal → row 1 hole (non-game-ending board)
             ]
         )
-        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
 
         await _insert_game_positions(
             full_drain_session_maker,
@@ -2924,7 +3025,7 @@ async def full_drain_test_user_jq1(
     return _TEST_USER_ID_JQ1
 
 
-def _two_blunder_eval_sequence() -> list[tuple[int, None, str, str]]:
+def _two_blunder_eval_sequence() -> list[tuple[int, None, str, str, None, None, str]]:
     """Engine eval sequence that produces TWO blunders for _SIX_PLY_PGN.
 
     Stored (post-move) eval-by-ply after the tick (row k = engine_call[k+1]):
@@ -2936,22 +3037,24 @@ def _two_blunder_eval_sequence() -> list[tuple[int, None, str, str]]:
 
     PV must be written at ply 3 (refutation after white blunder at ply 2)
     and ply 4 (refutation after black blunder at ply 3).
+
+    Phase 142: expanded to 7-tuple; second_uci="" is the no-second-move sentinel.
     """
     return [
         # engine_call[0] (ply 0) — best_move only; eval never stored (no pre-ply-0 row)
-        (20, None, "e2e4", "e2e4 e7e5"),
+        (20, None, "e2e4", "e2e4 e7e5", None, None, ""),
         # engine_call[1] (ply 1) → row 0 stored eval = 20
-        (20, None, "e7e5", "e7e5 g1f3"),
+        (20, None, "e7e5", "e7e5 g1f3", None, None, ""),
         # engine_call[2] (ply 2) → row 1 stored eval = 30
-        (30, None, "g1f3", "g1f3 b8c6"),
+        (30, None, "g1f3", "g1f3 b8c6", None, None, ""),
         # engine_call[3] (ply 3) → row 2 stored eval = -500 (WHITE BLUNDER; PV at ply 3)
-        (-500, None, "g8f6", "g8f6 d2d4 d7d5"),
+        (-500, None, "g8f6", "g8f6 d2d4 d7d5", None, None, ""),
         # engine_call[4] (ply 4) → row 3 stored eval = 100 (BLACK BLUNDER; PV at ply 4)
-        (100, None, "f1c4", "f1c4 f8c5 d2d4"),
+        (100, None, "f1c4", "f1c4 f8c5 d2d4", None, None, ""),
         # engine_call[5] (ply 5) → row 4 stored eval = 60
-        (60, None, "f8c5", "f8c5 d2d4"),
+        (60, None, "f8c5", "f8c5 d2d4", None, None, ""),
         # engine_call[6] (terminal) → row 5 stored eval = 30
-        (30, None, "h2h3", "h2h3"),
+        (30, None, "h2h3", "h2h3", None, None, ""),
     ]
 
 
@@ -2997,7 +3100,7 @@ class TestBatchedWriteRegression:
 
         eval_sequence = _two_blunder_eval_sequence()
         mock_evaluate = AsyncMock(side_effect=eval_sequence)
-        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate)
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
 
         gp_rows = [
             {"ply": i, "full_hash": 0xBEEF_6B00 + i, "eval_cp": None, "eval_mate": None}
@@ -3134,5 +3237,184 @@ class TestBatchedWriteRegression:
                 "existing best_move must be preserved when the eval-bearing batched "
                 "UPDATE carries best_move=None (COALESCE no-clobber, FLAWCHESS-6B)"
             )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+
+# ─── Phase 142 MPV-02: blob population ────────────────────────────────────────
+
+_TEST_USER_ID_142: int = 99211
+
+
+@pytest_asyncio.fixture(scope="session", autouse=False)
+async def full_drain_test_user_142(
+    full_drain_session_maker: async_sessionmaker[AsyncSession],
+) -> int:
+    """Ensure test user _TEST_USER_ID_142 exists in the test DB. Returns user_id."""
+    from app.models.user import User
+
+    async with full_drain_session_maker() as session:
+        result = await session.execute(select(User).where(User.id == _TEST_USER_ID_142))
+        if result.unique().scalar_one_or_none() is None:
+            session.add(
+                User(
+                    id=_TEST_USER_ID_142,
+                    email=f"full-drain-test-{_TEST_USER_ID_142}@example.com",
+                    hashed_password="fakehash",
+                )
+            )
+            await session.commit()
+    return _TEST_USER_ID_142
+
+
+class TestMultipv2Blobs:
+    """Phase 142 MPV-02: _full_drain_tick populates allowed_pv_lines / missed_pv_lines.
+
+    T-142-02-03: drain integration test proving non-NULL multi-node blobs and the
+    flaw/tactic count invariant (multipv2 pass does not add or remove flaws).
+    """
+
+    async def test_blobs_populated_after_drain_tick(
+        self,
+        full_drain_test_user_142: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """After one drain tick on _SIX_PLY_PGN with one blunder, the flaw row has
+        non-NULL allowed_pv_lines and missed_pv_lines, each with at least one node.
+
+        Uses _blunder_eval_sequence (7-tuple; one white blunder at ply 2) for the
+        main gather; continuation calls in _build_flaw_multipv2_blobs fall back to
+        (None,)*7 so node-0 blobs are still built from engine_result_map.
+        """
+        from app.models.game_flaw import GameFlaw
+
+        now = datetime.now(timezone.utc)
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_142,
+            pgn=_SIX_PLY_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=None,
+        )
+
+        import app.services.eval_drain as drain_module
+
+        monkeypatch.setattr(drain_module, "async_session_maker", full_drain_session_maker)
+        monkeypatch.setattr(drain_module.sentry_sdk, "capture_exception", lambda *a, **kw: None)
+        monkeypatch.setattr(drain_module.sentry_sdk, "capture_message", lambda *a, **kw: None)
+        monkeypatch.setattr(drain_module.sentry_sdk, "set_tag", lambda *a, **kw: None)
+        monkeypatch.setattr(drain_module.sentry_sdk, "set_context", lambda *a, **kw: None)
+        monkeypatch.setattr(
+            drain_module,
+            "_any_active_import_or_entry_ply_pending",
+            AsyncMock(return_value=False),
+        )
+        from app.services.eval_queue_service import ClaimedJob
+
+        monkeypatch.setattr(
+            drain_module,
+            "claim_eval_job",
+            AsyncMock(
+                return_value=ClaimedJob(
+                    game_id=game_id,
+                    user_id=full_drain_test_user_142,
+                    tier=3,
+                    is_lichess_eval_game=False,
+                    job_id=None,
+                )
+            ),
+        )
+        # NOTE: _build_flaw_multipv2_blobs is NOT mocked here — this test exercises it.
+
+        # Board-keyed eval so EVERY board (main-gather plies AND the hypothetical PV
+        # continuation positions the Option-B walk visits) gets a LEGAL multi-move PV.
+        # eval_by_ply reproduces the post-move stored sequence [20,30,-500,-480,60,30]
+        # → one white blunder at ply 2 (same construction as _blunder_eval_sequence,
+        # but board-keyed like the SEED-056 dedup test's _eval_for_board). A by-call-order
+        # list would emit illegal PVs (e.g. a black move from a white-to-move board), so
+        # _walk_pv_boards would stop at node 0 and no multi-node blob could form.
+        eval_by_ply = {0: 20, 1: 20, 2: 30, 3: -500, 4: -480, 5: 60, 6: 30}
+
+        def _legal_pv(board: chess.Board) -> str:
+            moves: list[str] = []
+            b = board.copy()
+            for _ in range(3):
+                legal = list(b.legal_moves)
+                if not legal:
+                    break
+                mv = legal[0]
+                moves.append(mv.uci())
+                b.push(mv)
+            return " ".join(moves)
+
+        async def _multipv2_side_effect(
+            board: chess.Board, *args: Any
+        ) -> tuple[int, None, str, str, None, None, str]:
+            ply = 2 * (board.fullmove_number - 1) + (0 if board.turn == chess.WHITE else 1)
+            pv = _legal_pv(board)
+            best = pv.split()[0] if pv else ""
+            return (eval_by_ply.get(ply, 0), None, best, pv, None, None, "")
+
+        monkeypatch.setattr(
+            drain_module.engine_service,
+            "evaluate_nodes_multipv2",
+            AsyncMock(side_effect=_multipv2_side_effect),
+        )
+
+        gp_rows = [
+            {"ply": i, "full_hash": 0x0142_B10B_0000 + i, "eval_cp": None, "eval_mate": None}
+            for i in range(6)
+        ]
+        await _insert_game_positions(
+            full_drain_session_maker, full_drain_test_user_142, game_id, gp_rows
+        )
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is True, "Drain tick must report processed game"
+
+            async with full_drain_session_maker() as verify:
+                # allowed_pv_lines / missed_pv_lines are deferred=True — must project explicitly.
+                flaw_rows = (
+                    await verify.execute(
+                        select(
+                            GameFlaw.ply,
+                            GameFlaw.allowed_pv_lines,
+                            GameFlaw.missed_pv_lines,
+                        ).where(GameFlaw.game_id == game_id)
+                    )
+                ).all()
+
+            assert len(flaw_rows) == 1, (
+                f"Exactly 1 flaw expected (one blunder at ply 2), got {len(flaw_rows)}"
+            )
+            flaw_ply, allowed, missed = flaw_rows[0]
+            assert flaw_ply == 2, f"Flaw must be at ply 2 (white blunder), got ply {flaw_ply}"
+
+            assert allowed is not None, (
+                "allowed_pv_lines must be non-NULL after drain tick (MPV-02)"
+            )
+            assert missed is not None, "missed_pv_lines must be non-NULL after drain tick (MPV-02)"
+            assert len(allowed) >= 1, (
+                f"allowed_pv_lines must have at least 1 node (node 0), got {len(allowed)}"
+            )
+            assert len(missed) >= 1, (
+                f"missed_pv_lines must have at least 1 node (node 0), got {len(missed)}"
+            )
+            # Multi-node requirement: the PV-walk (Option B) must produce >=2 nodes on at
+            # least one line so the Phase 143 gate's >=2-solver-node path is reachable.
+            assert max(len(allowed), len(missed)) >= 2, (
+                "at least one blob must have >=2 nodes (PV continuation walked); "
+                f"got allowed={len(allowed)}, missed={len(missed)}"
+            )
+            # Every node is a PvNode dict carrying the full b/bm/s/sm/su key set (the
+            # JSONB-over-text future-proofing: su is stored even when unused by the gate).
+            for node in (*allowed, *missed):
+                assert set(node.keys()) == {"b", "bm", "s", "sm", "su"}, (
+                    f"each PvNode must carry keys b/bm/s/sm/su, got {sorted(node.keys())}"
+                )
+                assert isinstance(node["su"], str), (
+                    "PvNode.su must be a str sentinel (never None — Pitfall 3)"
+                )
         finally:
             await _delete_games(full_drain_session_maker, [game_id])

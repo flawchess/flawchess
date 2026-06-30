@@ -1193,3 +1193,419 @@ class TestTier3GamePickSpread:
                         )
         finally:
             await _delete_games(queue_session_maker, [sole_game])
+
+
+# ─── Tier-4 blob-backfill lottery ─────────────────────────────────────────────
+
+# Unique user IDs for tier-4 blob tests — range 99220–99229 reserved.
+_TEST_USER_TIER4_ID: int = 99220
+_TEST_GUEST_TIER4_ID: int = 99221
+
+
+@pytest_asyncio.fixture(scope="session", autouse=False)
+async def tier4_test_users(
+    queue_session_maker: async_sessionmaker[AsyncSession],
+) -> dict[str, int]:
+    """Ensure tier-4 blob-backfill test users exist. Returns mapping role -> user_id."""
+    from app.models.user import User
+
+    users = [
+        User(
+            id=_TEST_USER_TIER4_ID,
+            email=f"tier4-test-{_TEST_USER_TIER4_ID}@example.com",
+            hashed_password="fakehash",
+            is_guest=False,
+        ),
+        User(
+            id=_TEST_GUEST_TIER4_ID,
+            email=f"tier4-guest-{_TEST_GUEST_TIER4_ID}@example.com",
+            hashed_password="fakehash",
+            is_guest=True,
+        ),
+    ]
+
+    async with queue_session_maker() as session:
+        for u in users:
+            existing = await session.execute(select(User).where(User.id == u.id))
+            if existing.unique().scalar_one_or_none() is None:
+                session.add(u)
+        await session.commit()
+
+    return {
+        "user": _TEST_USER_TIER4_ID,
+        "guest": _TEST_GUEST_TIER4_ID,
+    }
+
+
+async def _insert_game_flaw(
+    session_maker: async_sessionmaker[AsyncSession],
+    user_id: int,
+    game_id: int,
+    *,
+    ply: int = 2,
+    allowed_pv_lines: list[dict[str, object]] | None = None,
+) -> None:
+    """Insert a GameFlaw row and commit via the ORM.
+
+    allowed_pv_lines=None  → column NOT set → PostgreSQL stores SQL NULL → IS NULL matches.
+    allowed_pv_lines=[...] → JSONB blob via asyncpg codec → IS NULL does NOT match.
+
+    IMPORTANT: do NOT do `flaw.allowed_pv_lines = None` — asyncpg's JSONB codec serializes
+    Python None as JSON null ('null'::jsonb), not as SQL NULL. The _claim_tier4_blob predicate
+    `gf.allowed_pv_lines IS NULL` only matches SQL NULL (which is what production rows have
+    after the ALTER TABLE ADD COLUMN migration sets all existing rows to NULL by default).
+    Omitting the attribute entirely lets PostgreSQL insert SQL NULL via the column default.
+    """
+    from app.models.game_flaw import GameFlaw
+
+    async with session_maker() as session:
+        flaw = GameFlaw(
+            user_id=user_id,
+            game_id=game_id,
+            ply=ply,
+            severity=2,
+            phase=0,
+            is_miss=False,
+            is_lucky=False,
+            is_reversed=False,
+            is_squandered=False,
+            fen="rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR",
+        )
+        # Only explicitly set when non-NULL — asyncpg sends Python None through the JSONB
+        # codec, which stores the JSONB null atom, not SQL NULL (see comment above).
+        if allowed_pv_lines is not None:
+            flaw.allowed_pv_lines = allowed_pv_lines
+        session.add(flaw)
+        await session.commit()
+
+
+class TestTier4BlobBackfill:
+    """Phase 145 Plan 02: tier-4 spare-capacity flaw-blob backfill lottery.
+
+    Tests cover:
+    - tier4_null_blob_picked: _claim_tier4_blob returns analyzed non-guest game with NULL blob
+    - tier4_returns_none_empty_queue: returns None when no matching game exists
+    - tier4_excludes_guests: guest-owned games are never returned (QUEUE-08)
+    - tier4_excludes_unanalyzed: games without full_evals_completed_at are excluded
+    - tier4_blobbed_game_excluded: fully-blobbed game stops matching predicate (idempotency)
+    - tier4_dispatch_via_claim: claim_eval_job dispatches tier-4 after tier-1/2/3 fall through
+    - tier4_dispatch_disabled: tier-4 is suppressed when EVAL_AUTO_DRAIN_ENABLED=False
+    - tier4_claimed_job_fields: ClaimedJob has tier=TIER_BLOB_BACKFILL and job_id=None
+    """
+
+    async def test_tier4_null_blob_picked(
+        self,
+        tier4_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """_claim_tier4_blob returns the analyzed non-guest game that has a NULL-blob flaw."""
+        from app.services.eval_queue_service import _claim_tier4_blob
+
+        user_id = tier4_test_users["user"]
+        now = datetime.now(timezone.utc)
+
+        game_id = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_evals_completed_at=now,
+        )
+        await _insert_game_flaw(queue_session_maker, user_id, game_id)
+
+        try:
+            async with queue_session_maker() as session:
+                result = await _claim_tier4_blob(session)
+
+            assert result is not None, "Expected _claim_tier4_blob to return a game; got None"
+            picked_game_id, picked_user_id = result
+            assert picked_game_id == game_id, (
+                f"Expected game {game_id} with NULL-blob flaw; got {picked_game_id}"
+            )
+            assert picked_user_id == user_id, f"Expected user_id={user_id}; got {picked_user_id}"
+        finally:
+            await _delete_games(queue_session_maker, [game_id])
+
+    async def test_tier4_returns_none_empty_queue(
+        self,
+        tier4_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """_claim_tier4_blob returns None when no analyzed non-guest game has a NULL-blob flaw."""
+        from app.services.eval_queue_service import _claim_tier4_blob
+
+        user_id = tier4_test_users["user"]
+        now = datetime.now(timezone.utc)
+
+        # Game with all blobs already written (non-NULL allowed_pv_lines) — no NULL rows.
+        written_blob: list[dict[str, object]] = [
+            {"b": 10, "bm": None, "s": 5, "sm": None, "su": "e2e4"}
+        ]
+        game_id = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_evals_completed_at=now,
+        )
+        await _insert_game_flaw(
+            queue_session_maker, user_id, game_id, allowed_pv_lines=written_blob
+        )
+
+        try:
+            async with queue_session_maker() as session:
+                result = await _claim_tier4_blob(session)
+
+            # If other test games happen to have NULL blobs, result might not be None.
+            # Assert our specific game is NOT picked (it has a written blob).
+            if result is not None:
+                assert result[0] != game_id, (
+                    f"Game {game_id} with written blob must not be returned by _claim_tier4_blob"
+                )
+        finally:
+            await _delete_games(queue_session_maker, [game_id])
+
+    async def test_tier4_excludes_guests(
+        self,
+        tier4_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Guest-owned games with NULL-blob flaws are never returned (QUEUE-08)."""
+        from app.services.eval_queue_service import _claim_tier4_blob
+
+        guest_id = tier4_test_users["guest"]
+        now = datetime.now(timezone.utc)
+
+        game_id = await _insert_game(
+            queue_session_maker,
+            guest_id,
+            full_evals_completed_at=now,
+        )
+        await _insert_game_flaw(queue_session_maker, guest_id, game_id)
+
+        try:
+            async with queue_session_maker() as session:
+                for i in range(10):
+                    result = await _claim_tier4_blob(session)
+                    if result is not None:
+                        assert result[0] != game_id, (
+                            f"Draw {i}: guest game {game_id} must never be returned "
+                            f"by _claim_tier4_blob (QUEUE-08)"
+                        )
+        finally:
+            await _delete_games(queue_session_maker, [game_id])
+
+    async def test_tier4_excludes_unanalyzed(
+        self,
+        tier4_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Games with full_evals_completed_at IS NULL are excluded — tier-4 is for analyzed games only."""
+        from app.services.eval_queue_service import _claim_tier4_blob
+
+        user_id = tier4_test_users["user"]
+
+        # full_evals_completed_at=None → NOT analyzed → must be excluded from tier-4.
+        game_id = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_evals_completed_at=None,
+        )
+        await _insert_game_flaw(queue_session_maker, user_id, game_id)
+
+        try:
+            async with queue_session_maker() as session:
+                for i in range(10):
+                    result = await _claim_tier4_blob(session)
+                    if result is not None:
+                        assert result[0] != game_id, (
+                            f"Draw {i}: unanalyzed game {game_id} must never be returned "
+                            f"by _claim_tier4_blob"
+                        )
+        finally:
+            await _delete_games(queue_session_maker, [game_id])
+
+    async def test_tier4_blobbed_game_excluded(
+        self,
+        tier4_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """A game whose flaw blobs are all written stops being selected (idempotency by predicate).
+
+        Simulates the full blob-write lifecycle: insert game + flaw with NULL blob,
+        verify it is picked, then set allowed_pv_lines to a non-NULL value and
+        verify the game is no longer returned.
+        """
+        from sqlalchemy import update as sa_update2
+
+        from app.models.game_flaw import GameFlaw
+        from app.services.eval_queue_service import _claim_tier4_blob
+
+        user_id = tier4_test_users["user"]
+        now = datetime.now(timezone.utc)
+
+        game_id = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_evals_completed_at=now,
+        )
+        await _insert_game_flaw(queue_session_maker, user_id, game_id, ply=4)
+
+        try:
+            # Phase 1: flaw has NULL blob — game must be picked.
+            async with queue_session_maker() as session:
+                result = await _claim_tier4_blob(session)
+            assert result is not None, "Before blob write, game with NULL flaw must be returned"
+            assert result[0] == game_id, f"Expected game {game_id}; got {result[0]}"
+
+            # Phase 2: write the blob (simulate Plan-03 handler completing the write).
+            written_blob: list[dict[str, object]] = [
+                {"b": 50, "bm": None, "s": 20, "sm": None, "su": "d2d4"}
+            ]
+            async with queue_session_maker() as session:
+                await session.execute(
+                    sa_update2(GameFlaw)
+                    .where(GameFlaw.game_id == game_id, GameFlaw.ply == 4)
+                    .values(allowed_pv_lines=written_blob)
+                )
+                await session.commit()
+
+            # Phase 3: all flaw blobs written — game must no longer be returned.
+            async with queue_session_maker() as session:
+                for i in range(10):
+                    result_after = await _claim_tier4_blob(session)
+                    if result_after is not None:
+                        assert result_after[0] != game_id, (
+                            f"Draw {i}: fully-blobbed game {game_id} must not be re-selected "
+                            f"(idempotency by predicate)"
+                        )
+        finally:
+            await _delete_games(queue_session_maker, [game_id])
+
+    async def test_tier4_dispatch_via_claim(
+        self,
+        tier4_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """claim_eval_job dispatches tier-4 after tier-1/2/3 all fall through.
+
+        Strategy: mock _claim_tier3_derived to return None so tier-3 is bypassed,
+        then insert an analyzed game with a NULL-blob flaw for the tier-4 path.
+        """
+        import app.services.eval_queue_service as svc
+        from app.models.eval_jobs import TIER_BLOB_BACKFILL
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+
+        # Force tier-3 to return None so tier-4 is reached.
+        async def _mock_tier3(session: object) -> None:
+            return None
+
+        monkeypatch.setattr(svc, "_claim_tier3_derived", _mock_tier3)
+
+        user_id = tier4_test_users["user"]
+        now = datetime.now(timezone.utc)
+
+        game_id = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_evals_completed_at=now,
+        )
+        await _insert_game_flaw(queue_session_maker, user_id, game_id, ply=6)
+
+        try:
+            claimed = await svc.claim_eval_job()
+
+            assert claimed is not None, (
+                "claim_eval_job must return tier-4 when tier-3 is exhausted and a "
+                "NULL-blob analyzed game exists"
+            )
+            assert claimed.game_id == game_id, (
+                f"Expected tier-4 game {game_id}; got {claimed.game_id}"
+            )
+            assert claimed.tier == TIER_BLOB_BACKFILL, (
+                f"Expected tier={TIER_BLOB_BACKFILL}; got {claimed.tier}"
+            )
+            assert claimed.job_id is None, (
+                f"Tier-4 table-less lottery must return job_id=None; got {claimed.job_id}"
+            )
+        finally:
+            await _delete_games(queue_session_maker, [game_id])
+
+    async def test_tier4_dispatch_disabled(
+        self,
+        tier4_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Tier-4 is NOT dispatched when EVAL_AUTO_DRAIN_ENABLED=False.
+
+        The same EVAL_AUTO_DRAIN_ENABLED gate that guards tier-3 also prevents
+        tier-4 from running — spare-capacity backfill is off when auto-drain is off.
+        """
+        import app.services.eval_queue_service as svc
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+        monkeypatch.setattr(svc.settings, "EVAL_AUTO_DRAIN_ENABLED", False)
+
+        user_id = tier4_test_users["user"]
+        now = datetime.now(timezone.utc)
+
+        game_id = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_evals_completed_at=now,
+        )
+        await _insert_game_flaw(queue_session_maker, user_id, game_id, ply=8)
+
+        try:
+            claimed = await svc.claim_eval_job()
+            assert claimed is None, (
+                f"With EVAL_AUTO_DRAIN_ENABLED=False, claim_eval_job must return None "
+                f"even when a tier-4 candidate exists; got {claimed!r}"
+            )
+        finally:
+            await _delete_games(queue_session_maker, [game_id])
+
+    async def test_tier4_claimed_job_fields(
+        self,
+        tier4_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """ClaimedJob returned for tier-4 has tier=TIER_BLOB_BACKFILL and job_id=None."""
+        import app.services.eval_queue_service as svc
+        from app.models.eval_jobs import TIER_BLOB_BACKFILL
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+
+        # Force tier-3 to return None so we reach tier-4.
+        async def _mock_tier3(session: object) -> None:
+            return None
+
+        monkeypatch.setattr(svc, "_claim_tier3_derived", _mock_tier3)
+
+        user_id = tier4_test_users["user"]
+        now = datetime.now(timezone.utc)
+
+        game_id = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_evals_completed_at=now,
+        )
+        await _insert_game_flaw(queue_session_maker, user_id, game_id, ply=10)
+
+        try:
+            claimed = await svc.claim_eval_job()
+
+            assert claimed is not None, "Expected tier-4 ClaimedJob; got None"
+            assert claimed.tier == TIER_BLOB_BACKFILL, (
+                f"Expected tier={TIER_BLOB_BACKFILL}; got {claimed.tier}"
+            )
+            assert claimed.job_id is None, (
+                f"Tier-4 must have job_id=None (table-less lottery); got {claimed.job_id}"
+            )
+            assert claimed.is_lichess_eval_game is False, (
+                "is_lichess_eval_game must be False at claim time (resolved in Plan-03 handler)"
+            )
+            assert isinstance(claimed.game_id, int), "game_id must be an int"
+            assert isinstance(claimed.user_id, int), "user_id must be an int"
+        finally:
+            await _delete_games(queue_session_maker, [game_id])

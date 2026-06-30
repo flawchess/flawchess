@@ -1186,3 +1186,337 @@ class TestOpeningEvalCacheWrite:
             )
         finally:
             await _delete_opening_eval_rows(drain_test_session_maker, [_CACHE_HASH_A])
+
+
+# ─── Phase 145 Plan 03: _build_flaw_blob_lease_positions tests ────────────────
+#
+# PGN used throughout: "1. e4 e5 2. Nf3 Nc6 3. Bc4 *"
+# Half-move (ply) sequence:
+#   ply 0 = initial board (before e4)
+#   ply 1 = after 1. e4  (e4)
+#   ply 2 = after 1... e5 (e5)   ← flaw ply in tests below
+#   ply 3 = after 2. Nf3 (Nf3)
+# Missed line walks from board-at-ply-2 using game_positions.pv at ply 2.
+# Allowed line walks from board-at-ply-3 using game_positions.pv at ply 3.
+_LEASE_BUILD_PGN: str = "1. e4 e5 2. Nf3 Nc6 3. Bc4 *"
+_LEASE_BUILD_FLAW_PLY: int = 2  # artificial flaw ply for the tests
+
+# A valid 2-move PV from the e5 position (ply 2): Nf3 then Nc6.
+_WALKABLE_PV_AT_PLY_2: str = "g1f3 b8c6"  # 2 moves → walk len 3 (nodes 0, 1, 2)
+# A valid 1-move PV from the Nf3 position (ply 3): Nc6.
+_WALKABLE_PV_AT_PLY_3: str = "b8c6"  # 1 move → walk len 2 (nodes 0, 1)
+
+
+@pytest_asyncio.fixture(scope="session")
+async def lease_build_test_session_maker(test_engine) -> async_sessionmaker[AsyncSession]:
+    """async_sessionmaker bound to the test engine for lease-builder tests."""
+    return async_sessionmaker(test_engine, expire_on_commit=False)
+
+
+@pytest_asyncio.fixture(scope="session")
+async def lease_build_test_user(
+    lease_build_test_session_maker: async_sessionmaker[AsyncSession],
+) -> int:
+    """Ensure a unique non-guest test user exists for lease-builder tests. Returns user_id."""
+    from app.models.user import User
+
+    _LEASE_BUILD_USER_ID = 99120  # unique range for this test class
+
+    async with lease_build_test_session_maker() as session:
+        result = await session.execute(select(User).where(User.id == _LEASE_BUILD_USER_ID))
+        if result.scalar_one_or_none() is None:
+            session.add(
+                User(
+                    id=_LEASE_BUILD_USER_ID,
+                    email=f"lease-build-test-{_LEASE_BUILD_USER_ID}@example.com",
+                    hashed_password="fakehash",
+                    is_active=True,
+                    is_superuser=False,
+                    is_verified=True,
+                )
+            )
+            await session.commit()
+    return _LEASE_BUILD_USER_ID
+
+
+async def _insert_lease_build_game(
+    session_maker: async_sessionmaker[AsyncSession],
+    user_id: int,
+    *,
+    pgn: str = _LEASE_BUILD_PGN,
+    full_evals_completed_at: dt | None = None,
+) -> int:
+    """Insert an analyzed game row and commit. Returns game_id."""
+    from app.models.game import Game
+
+    async with session_maker() as session:
+        g = Game(
+            user_id=user_id,
+            platform="chess.com",
+            platform_game_id=f"lease-build-{uuid.uuid4().hex}",
+            pgn=pgn,
+            result="1-0",
+            user_color="white",
+            rated=True,
+            is_computer_game=False,
+            full_evals_completed_at=full_evals_completed_at or dt.now(timezone.utc),
+        )
+        session.add(g)
+        await session.flush()
+        game_id = int(g.id)  # type: ignore[arg-type]
+        await session.commit()
+    return game_id
+
+
+async def _insert_game_position_with_pv(
+    session_maker: async_sessionmaker[AsyncSession],
+    user_id: int,
+    game_id: int,
+    ply: int,
+    pv: str | None,
+) -> None:
+    """Insert a GamePosition row with a PV string at the given ply and commit."""
+    from app.models.game_position import GamePosition
+
+    async with session_maker() as session:
+        gp = GamePosition(
+            user_id=user_id,
+            game_id=game_id,
+            ply=ply,
+            full_hash=hash((game_id, ply)) & 0x7FFFFFFFFFFFFFFF,
+            white_hash=0,
+            black_hash=0,
+            pv=pv,
+        )
+        session.add(gp)
+        await session.commit()
+
+
+async def _insert_null_blob_flaw(
+    session_maker: async_sessionmaker[AsyncSession],
+    user_id: int,
+    game_id: int,
+    ply: int,
+) -> None:
+    """Insert a GameFlaw row with allowed_pv_lines = SQL NULL (not set) and commit."""
+    from app.models.game_flaw import GameFlaw
+
+    async with session_maker() as session:
+        flaw = GameFlaw(
+            user_id=user_id,
+            game_id=game_id,
+            ply=ply,
+            severity=2,
+            phase=0,
+            is_miss=False,
+            is_lucky=False,
+            is_reversed=False,
+            is_squandered=False,
+            fen="rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR",
+        )
+        # Do NOT set allowed_pv_lines → PostgreSQL stores SQL NULL (asyncpg JSONB caution)
+        session.add(flaw)
+        await session.commit()
+
+
+async def _delete_lease_build_games(
+    session_maker: async_sessionmaker[AsyncSession],
+    game_ids: list[int],
+) -> None:
+    """Delete games by ID (cascades to game_positions, game_flaws). Committed cleanup."""
+    from app.models.game import Game
+
+    if not game_ids:
+        return
+    async with session_maker() as session:
+        await session.execute(sa.delete(Game).where(Game.id.in_(game_ids)))
+        await session.commit()
+
+
+class TestBuildFlawBlobLeasePositions:
+    """Phase 145 Plan 03: _build_flaw_blob_lease_positions correctness.
+
+    Tests:
+    - lease_build_normal: walkable PV → N tokens with correct {flaw_ply}:{line}:{node_k}
+    - lease_build_null_pv_sentinel: NULL pv → zero positions, one sentinel entry
+    - lease_build_lichess_identical: lichess %eval game → same output as engine game
+    """
+
+    async def test_lease_build_normal_walkable_line(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        lease_build_test_session_maker: async_sessionmaker[AsyncSession],
+        lease_build_test_user: int,
+    ) -> None:
+        """Walkable PV (>= 2 nodes) → lease positions with correct token format."""
+        import app.services.eval_drain as eval_drain_module
+        from app.services.eval_drain import _build_flaw_blob_lease_positions
+
+        monkeypatch.setattr(
+            eval_drain_module, "async_session_maker", lease_build_test_session_maker
+        )
+
+        user_id = lease_build_test_user
+        game_id = await _insert_lease_build_game(lease_build_test_session_maker, user_id)
+        await _insert_null_blob_flaw(
+            lease_build_test_session_maker, user_id, game_id, _LEASE_BUILD_FLAW_PLY
+        )
+        # ply 2 (missed start): walkable PV with 2 moves → 3 nodes (k=0, 1, 2)
+        await _insert_game_position_with_pv(
+            lease_build_test_session_maker,
+            user_id,
+            game_id,
+            _LEASE_BUILD_FLAW_PLY,
+            _WALKABLE_PV_AT_PLY_2,
+        )
+        # ply 3 (allowed start): walkable PV with 1 move → 2 nodes (k=0, 1)
+        await _insert_game_position_with_pv(
+            lease_build_test_session_maker,
+            user_id,
+            game_id,
+            _LEASE_BUILD_FLAW_PLY + 1,
+            _WALKABLE_PV_AT_PLY_3,
+        )
+
+        try:
+            positions, sentinels = await _build_flaw_blob_lease_positions(game_id)
+
+            # Both lines are walkable → no sentinels
+            assert len(sentinels) == 0, f"Expected no sentinels for walkable PV, got {sentinels}"
+
+            # Missed line: 2-move PV → 3 nodes (k=0, 1, 2)
+            missed_tokens = [p.token for p in positions if ":missed:" in p.token]
+            assert len(missed_tokens) == 3, f"Expected 3 missed tokens, got {missed_tokens}"
+            assert "2:missed:0" in missed_tokens, f"Token '2:missed:0' not found in {missed_tokens}"
+            assert "2:missed:1" in missed_tokens, f"Token '2:missed:1' not found in {missed_tokens}"
+            assert "2:missed:2" in missed_tokens, f"Token '2:missed:2' not found in {missed_tokens}"
+
+            # Allowed line: 1-move PV → 2 nodes (k=0, 1)
+            allowed_tokens = [p.token for p in positions if ":allowed:" in p.token]
+            assert len(allowed_tokens) == 2, f"Expected 2 allowed tokens, got {allowed_tokens}"
+            assert "2:allowed:0" in allowed_tokens, (
+                f"Token '2:allowed:0' not found in {allowed_tokens}"
+            )
+            assert "2:allowed:1" in allowed_tokens, (
+                f"Token '2:allowed:1' not found in {allowed_tokens}"
+            )
+
+            # All positions have non-empty FEN strings
+            for pos in positions:
+                assert pos.fen, f"FEN must be non-empty for token {pos.token}"
+        finally:
+            await _delete_lease_build_games(lease_build_test_session_maker, [game_id])
+
+    async def test_lease_build_null_pv_sentinel(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        lease_build_test_session_maker: async_sessionmaker[AsyncSession],
+        lease_build_test_user: int,
+    ) -> None:
+        """NULL pv at flaw ply → zero lease positions and one sentinel entry."""
+        import app.services.eval_drain as eval_drain_module
+        from app.services.eval_drain import _build_flaw_blob_lease_positions
+
+        monkeypatch.setattr(
+            eval_drain_module, "async_session_maker", lease_build_test_session_maker
+        )
+
+        user_id = lease_build_test_user
+        game_id = await _insert_lease_build_game(lease_build_test_session_maker, user_id)
+        await _insert_null_blob_flaw(
+            lease_build_test_session_maker, user_id, game_id, _LEASE_BUILD_FLAW_PLY
+        )
+        # NULL pv at ply 2 → missed line walk = 1 node (just start board) → sentinel
+        await _insert_game_position_with_pv(
+            lease_build_test_session_maker, user_id, game_id, _LEASE_BUILD_FLAW_PLY, None
+        )
+        # No position at ply 3 → allowed line has no start board → sentinel
+
+        try:
+            positions, sentinels = await _build_flaw_blob_lease_positions(game_id)
+
+            # No walkable lines → no lease positions
+            assert len(positions) == 0, f"Expected 0 positions for NULL PV, got {len(positions)}"
+
+            # Both lines become sentinels
+            assert (_LEASE_BUILD_FLAW_PLY, "missed") in sentinels, (
+                f"Expected sentinel for (ply={_LEASE_BUILD_FLAW_PLY}, 'missed'), got {sentinels}"
+            )
+            assert (_LEASE_BUILD_FLAW_PLY, "allowed") in sentinels, (
+                f"Expected sentinel for (ply={_LEASE_BUILD_FLAW_PLY}, 'allowed'), got {sentinels}"
+            )
+        finally:
+            await _delete_lease_build_games(lease_build_test_session_maker, [game_id])
+
+    async def test_lease_build_lichess_game_identical(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        lease_build_test_session_maker: async_sessionmaker[AsyncSession],
+        lease_build_test_user: int,
+    ) -> None:
+        """Lichess %eval game leased identically to engine game (D-09/D-09a)."""
+        import app.services.eval_drain as eval_drain_module
+        from app.services.eval_drain import _build_flaw_blob_lease_positions
+
+        monkeypatch.setattr(
+            eval_drain_module, "async_session_maker", lease_build_test_session_maker
+        )
+
+        from app.models.game import Game
+
+        user_id = lease_build_test_user
+
+        # Insert a lichess-style game (lichess_evals_at IS NOT NULL marks it as a lichess game)
+        async with lease_build_test_session_maker() as session:
+            g = Game(
+                user_id=user_id,
+                platform="lichess",
+                platform_game_id=f"lichess-lease-build-{uuid.uuid4().hex}",
+                pgn=_LEASE_BUILD_PGN,
+                result="1-0",
+                user_color="white",
+                rated=True,
+                is_computer_game=False,
+                full_evals_completed_at=dt.now(timezone.utc),
+                lichess_evals_at=dt.now(timezone.utc),
+            )
+            session.add(g)
+            await session.flush()
+            game_id = int(g.id)  # type: ignore[arg-type]
+            await session.commit()
+
+        await _insert_null_blob_flaw(
+            lease_build_test_session_maker, user_id, game_id, _LEASE_BUILD_FLAW_PLY
+        )
+        await _insert_game_position_with_pv(
+            lease_build_test_session_maker,
+            user_id,
+            game_id,
+            _LEASE_BUILD_FLAW_PLY,
+            _WALKABLE_PV_AT_PLY_2,
+        )
+        await _insert_game_position_with_pv(
+            lease_build_test_session_maker,
+            user_id,
+            game_id,
+            _LEASE_BUILD_FLAW_PLY + 1,
+            _WALKABLE_PV_AT_PLY_3,
+        )
+
+        try:
+            positions, sentinels = await _build_flaw_blob_lease_positions(game_id)
+
+            # D-09: lichess game produces identical output (no is_lichess branch in the walk)
+            assert len(sentinels) == 0, (
+                f"Lichess game: expected no sentinels for walkable PV, got {sentinels}"
+            )
+            missed_tokens = [p.token for p in positions if ":missed:" in p.token]
+            allowed_tokens = [p.token for p in positions if ":allowed:" in p.token]
+            assert len(missed_tokens) == 3, (
+                f"Lichess: expected 3 missed tokens, got {missed_tokens}"
+            )
+            assert len(allowed_tokens) == 2, (
+                f"Lichess: expected 2 allowed tokens, got {allowed_tokens}"
+            )
+        finally:
+            await _delete_lease_build_games(lease_build_test_session_maker, [game_id])

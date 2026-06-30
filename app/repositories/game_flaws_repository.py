@@ -149,7 +149,7 @@ async def bulk_insert_game_flaws(
     await session.execute(stmt)
 
 
-# The 8 tactic-tag columns refreshed in isolation by backfill_tactic_tags.py.
+# The 8 tactic-tag columns refreshed in isolation by retag_flaws.py.
 # Kept as a tuple so the script and bulk_update_tactic_tags share one source of truth.
 TACTIC_TAG_COLUMNS: tuple[str, ...] = (
     "allowed_tactic_motif",
@@ -169,7 +169,7 @@ async def bulk_update_tactic_tags(
 ) -> None:
     """Update ONLY the 8 tactic-tag columns for existing game_flaws rows.
 
-    Used by backfill_tactic_tags.py to refresh tactic tags after a detector change
+    Used by retag_flaws.py to refresh tactic tags after a detector change or gate margin change
     without delete-and-reinsert (no FK churn, no recompute of severity/tempo/phase,
     minimal WAL). All non-tactic columns are left untouched.
 

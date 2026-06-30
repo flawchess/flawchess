@@ -2047,3 +2047,1395 @@ async def test_worker_id_absent_falls_back_to_remote_worker_on_full_lease(
     assert call_kwargs.get("worker_id") == "remote-worker", (
         f"Absent X-Worker-Id must fall back to 'remote-worker', got {call_kwargs!r}"
     )
+
+
+# ─── Phase 142 MPV-02: SubmitEval second-best fields + blob tests ─────────────
+
+# 6-ply game for blob tests (same structure as drain test _SIX_PLY_PGN).
+_SIX_PLY_PGN_142: str = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 *"
+
+# Blunder eval sequence for _SIX_PLY_PGN_142 (position plies 0-6).
+# Post-move storage shift via _post_move_eval(pos_eval, row_ply) = pos_eval[row_ply + 1]:
+#   row 0 = pos_eval[1] = 20, row 1 = pos_eval[2] = 30,
+#   row 2 = pos_eval[3] = -500  ← blunder (white win-prob 53%→7% at ply 2),
+#   row 3 = pos_eval[4] = -480, row 4 = pos_eval[5] = 60, row 5 = pos_eval[6] = 30.
+# ply=0 eval is positional (no matching row; not stored).
+_BLUNDER_SUBMIT_EVALS_142: list[dict[str, object]] = [
+    {"ply": 0, "eval_cp": 0, "eval_mate": None, "best_move": None, "pv": None},
+    {"ply": 1, "eval_cp": 20, "eval_mate": None, "best_move": "e2e4", "pv": None},
+    {"ply": 2, "eval_cp": 30, "eval_mate": None, "best_move": "g1f3", "pv": None},
+    {"ply": 3, "eval_cp": -500, "eval_mate": None, "best_move": "b8c6", "pv": None},
+    {"ply": 4, "eval_cp": -480, "eval_mate": None, "best_move": "f1c4", "pv": None},
+    {"ply": 5, "eval_cp": 60, "eval_mate": None, "best_move": "f8c5", "pv": None},
+    {"ply": 6, "eval_cp": 30, "eval_mate": None, "best_move": None, "pv": None},  # terminal
+]
+
+
+def test_submit_eval_accepts_second_best_fields() -> None:
+    """Phase 142 MPV-02: SubmitEval parses with and without second_* fields.
+
+    Old-worker backward-compat: payload omitting second_* must parse with all three
+    defaulting to None (D-03 additive-only schema change). New-worker: payload with
+    second_* must parse and land on the schema (including second_uci=None for
+    single-legal-move plies — wire type is str|None).
+    """
+    from app.schemas.eval_remote import SubmitEval
+
+    # Old worker: no second_* fields → all default None.
+    old_eval = SubmitEval(ply=2, eval_cp=30, eval_mate=None, best_move="g1f3", pv=None)
+    assert old_eval.second_cp is None
+    assert old_eval.second_mate is None
+    assert old_eval.second_uci is None
+
+    # New worker: second_* present → values preserved.
+    new_eval = SubmitEval(
+        ply=2,
+        eval_cp=30,
+        eval_mate=None,
+        best_move="g1f3",
+        pv=None,
+        second_cp=25,
+        second_mate=None,
+        second_uci="d2d4",
+    )
+    assert new_eval.second_cp == 25
+    assert new_eval.second_mate is None
+    assert new_eval.second_uci == "d2d4"
+
+    # Wire type: second_uci=None (single-legal-move ply) parses without error.
+    null_uci_eval = SubmitEval(
+        ply=2,
+        eval_cp=30,
+        eval_mate=None,
+        best_move="g1f3",
+        pv=None,
+        second_cp=None,
+        second_mate=None,
+        second_uci=None,
+    )
+    assert null_uci_eval.second_uci is None
+
+
+class TestMultipv2BlobsRemote:
+    """Phase 142 MPV-02: SubmitRequest with second-best fields → JSONB blobs written.
+
+    Uses _SIX_PLY_PGN_142 ("1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 *") with an artificial
+    blunder at row ply=2 (win-prob drop from +30 to -500 cp). No PV strings → 1-node
+    blobs (no continuation engine calls needed).
+    """
+
+    @pytest.mark.asyncio
+    async def test_submit_with_second_best_populates_blobs(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """Upgraded worker: submit with second_* for the flaw ply → blobs non-NULL.
+
+        Submit includes second_cp=25/second_uci='d2d4' at ply=2 (the missed-line
+        node-0 second-best for flaw at row ply=2). Asserts allowed_pv_lines and
+        missed_pv_lines are non-NULL and the missed node-0 carries the second-best.
+        """
+        from app.models.game_flaw import GameFlaw
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(
+            eval_worker_session_maker,
+            user_id,
+            pgn=_SIX_PLY_PGN_142,
+        )
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            game_id,
+            [
+                {"ply": p, "full_hash": 14200 + p, "eval_cp": None, "eval_mate": None}
+                for p in range(6)
+            ],
+        )
+
+        # Submit evals with second_cp/second_uci at ply=2 → second_best_map[2] set.
+        evals = [dict(e) for e in _BLUNDER_SUBMIT_EVALS_142]
+        evals[2] = {**evals[2], "second_cp": 25, "second_uci": "d2d4"}
+        payload = {"game_id": game_id, "sf_version": "Stockfish 18", "evals": evals}
+
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _SUBMIT_URL,
+                    json=payload,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+
+            # Verify blobs via explicit projection (allowed/missed_pv_lines are deferred=True).
+            async with eval_worker_session_maker() as verify:
+                flaw_rows = (
+                    await verify.execute(
+                        select(
+                            GameFlaw.ply,
+                            GameFlaw.allowed_pv_lines,
+                            GameFlaw.missed_pv_lines,
+                        ).where(GameFlaw.game_id == game_id)
+                    )
+                ).all()
+
+            assert len(flaw_rows) == 1, f"Expected 1 flaw (blunder at ply 2), got {len(flaw_rows)}"
+            flaw_ply, allowed, missed = flaw_rows[0]
+            assert flaw_ply == 2, f"Flaw must be at ply 2, got {flaw_ply}"
+            assert allowed is not None, (
+                "allowed_pv_lines must be non-NULL after submit with second-best (MPV-02)"
+            )
+            assert missed is not None, (
+                "missed_pv_lines must be non-NULL after submit with second-best (MPV-02)"
+            )
+            assert len(allowed) >= 1, (
+                f"allowed_pv_lines must have at least 1 node (node 0), got {len(allowed)}"
+            )
+            assert len(missed) >= 1, (
+                f"missed_pv_lines must have at least 1 node (node 0), got {len(missed)}"
+            )
+            # Node-0 of missed line carries the submitted second-best.
+            node0_missed = missed[0]
+            assert node0_missed.get("s") == 25, (
+                f"missed node-0 must carry s=25, got {node0_missed.get('s')!r}"
+            )
+            assert node0_missed.get("su") == "d2d4", (
+                f"missed node-0 must carry su='d2d4', got {node0_missed.get('su')!r}"
+            )
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_submit_without_second_best_leaves_blobs_null(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """Old worker (no second_* fields): submit succeeds AND blobs stay NULL (D-04).
+
+        Proves backward-compat: un-upgraded workers process full-ply jobs without
+        error. The D-04 guard in _apply_submit skips _build_flaw_multipv2_blobs when
+        second_best_map is empty → blob_map = {} → _run_multipv2_pass no-op → NULL.
+        Phase 145 will backfill these NULL blobs.
+        """
+        from app.models.game_flaw import GameFlaw
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(
+            eval_worker_session_maker,
+            user_id,
+            pgn=_SIX_PLY_PGN_142,
+        )
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            game_id,
+            [
+                {"ply": p, "full_hash": 14210 + p, "eval_cp": None, "eval_mate": None}
+                for p in range(6)
+            ],
+        )
+
+        # Old-worker payload: NO second_* fields (all default to None via Pydantic).
+        payload = {
+            "game_id": game_id,
+            "sf_version": "Stockfish 18",
+            "evals": list(_BLUNDER_SUBMIT_EVALS_142),
+        }
+
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _SUBMIT_URL,
+                    json=payload,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+            body = resp.json()
+            assert body["stamp_complete"] is True, f"stamp_complete should be True: {body}"
+
+            # D-04 key assertion: blobs must remain NULL for old workers.
+            async with eval_worker_session_maker() as verify:
+                flaw_rows = (
+                    await verify.execute(
+                        select(
+                            GameFlaw.ply,
+                            GameFlaw.allowed_pv_lines,
+                            GameFlaw.missed_pv_lines,
+                        ).where(GameFlaw.game_id == game_id)
+                    )
+                ).all()
+
+            # Flaw must still exist (classification is independent of second-best).
+            assert len(flaw_rows) == 1, f"Expected 1 flaw (blunder at ply 2), got {len(flaw_rows)}"
+            flaw_ply, allowed, missed = flaw_rows[0]
+            assert flaw_ply == 2, f"Flaw must be at ply 2, got {flaw_ply}"
+            assert allowed is None, (
+                "allowed_pv_lines must be NULL for old worker (D-04 backward-compat gap)"
+            )
+            assert missed is None, (
+                "missed_pv_lines must be NULL for old worker (D-04 backward-compat gap)"
+            )
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_apply_submit_passes_blob_map_to_classify(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """SHIP-02: _apply_submit must pass blob_map to _classify_and_fill_oracle.
+
+        Before the fix, _classify_and_fill_oracle was called without blob_map even
+        when blobs were assembled (the blobs were written via _run_multipv2_pass but
+        tags were unfiltered). This test verifies the corrected call site:
+        - New-worker submit (with second_*): flaw_pv_blobs is non-None → gate fires.
+        - Old-worker submit (no second_*): flaw_pv_blobs is None → gate skipped.
+        """
+        import app.routers.eval_remote as eval_remote_module
+        import app.services.eval_drain as eval_drain_module
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+
+        # ── New-worker submit: second_* at ply=2 → blob_map assembled ────────────
+        game_id_new = await _insert_game(
+            eval_worker_session_maker,
+            user_id,
+            pgn=_SIX_PLY_PGN_142,
+        )
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            game_id_new,
+            [
+                {"ply": p, "full_hash": 14220 + p, "eval_cp": None, "eval_mate": None}
+                for p in range(6)
+            ],
+        )
+
+        # Spy on _classify_and_fill_oracle to capture flaw_pv_blobs kwarg.
+        captured_blobs: list[object] = []
+        original = eval_drain_module._classify_and_fill_oracle
+
+        async def spy_classify(session, game_id, engine_result_map, flaw_pv_blobs=None):  # type: ignore[no-untyped-def]
+            captured_blobs.append(flaw_pv_blobs)
+            return await original(session, game_id, engine_result_map, flaw_pv_blobs)
+
+        monkeypatch.setattr(eval_remote_module, "_classify_and_fill_oracle", spy_classify)
+
+        evals_new = [dict(e) for e in _BLUNDER_SUBMIT_EVALS_142]
+        # Provide second-best at the flaw ply so blob_map is assembled.
+        evals_new[2] = {**evals_new[2], "second_cp": 25, "second_uci": "d2d4"}
+        payload_new = {
+            "game_id": game_id_new,
+            "sf_version": "Stockfish 18",
+            "evals": evals_new,
+        }
+
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _SUBMIT_URL,
+                    json=payload_new,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+
+            assert len(captured_blobs) == 1, (
+                f"Expected spy to capture exactly 1 call, got {len(captured_blobs)}"
+            )
+            new_worker_blobs = captured_blobs[0]
+            assert new_worker_blobs is not None, (
+                "SHIP-02: blob_map must be passed to _classify_and_fill_oracle "
+                "when second-best data is available (was called without it before fix)"
+            )
+            assert isinstance(new_worker_blobs, dict), (
+                f"flaw_pv_blobs must be a dict, got {type(new_worker_blobs)}"
+            )
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id_new])
+
+        # ── Old-worker submit: no second_* → blob_map is {} → None passed ────────
+        game_id_old = await _insert_game(
+            eval_worker_session_maker,
+            user_id,
+            pgn=_SIX_PLY_PGN_142,
+        )
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            game_id_old,
+            [
+                {"ply": p, "full_hash": 14230 + p, "eval_cp": None, "eval_mate": None}
+                for p in range(6)
+            ],
+        )
+
+        captured_blobs.clear()
+        payload_old = {
+            "game_id": game_id_old,
+            "sf_version": "Stockfish 18",
+            "evals": list(_BLUNDER_SUBMIT_EVALS_142),
+        }
+
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _SUBMIT_URL,
+                    json=payload_old,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+
+            assert len(captured_blobs) == 1, (
+                f"Expected spy to capture exactly 1 call for old-worker, got {len(captured_blobs)}"
+            )
+            old_worker_blobs = captured_blobs[0]
+            assert old_worker_blobs is None, (
+                "Old-worker submit (no second_*) must pass flaw_pv_blobs=None to "
+                "_classify_and_fill_oracle so the gate is skipped (backward-compat)"
+            )
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id_old])
+
+
+# ─── Phase 145 SHIP-01: FlawBlob lease/submit schema tests ───────────────────
+
+_FLAW_BLOB_LEASE_URL = "/api/eval/remote/flaw-blob-lease"
+
+
+def test_flaw_blob_schema_lease_position() -> None:
+    """FlawBlobLeasePosition holds token + fen (D-04 schema, Task 1)."""
+    from app.schemas.eval_remote import FlawBlobLeasePosition
+
+    pos = FlawBlobLeasePosition(
+        token="10:missed:0", fen="rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
+    )
+    assert pos.token == "10:missed:0"
+    assert "rnbqkbnr" in pos.fen
+
+
+def test_flaw_blob_schema_lease_response() -> None:
+    """FlawBlobLeaseResponse holds game_id, positions, leased_at (D-04 schema)."""
+    from datetime import datetime, timezone
+
+    from app.schemas.eval_remote import FlawBlobLeasePosition, FlawBlobLeaseResponse
+
+    now = datetime.now(timezone.utc)
+    pos = FlawBlobLeasePosition(token="4:allowed:1", fen="8/8/8/8/8/8/8/8 w - - 0 1")
+    resp = FlawBlobLeaseResponse(game_id=42, positions=[pos], leased_at=now)
+    assert resp.game_id == 42
+    assert len(resp.positions) == 1
+    assert resp.leased_at == now
+
+
+def test_flaw_blob_schema_submit_eval_fields() -> None:
+    """FlawBlobSubmitEval holds all required fields; second_uci=None allowed (D-04 Pitfall 3)."""
+    from app.schemas.eval_remote import FlawBlobSubmitEval
+
+    ev = FlawBlobSubmitEval(
+        token="10:missed:0",
+        best_cp=100,
+        best_mate=None,
+        second_cp=25,
+        second_mate=None,
+        second_uci="d2d4",
+    )
+    assert ev.token == "10:missed:0"
+    assert ev.best_cp == 100
+    assert ev.second_uci == "d2d4"
+
+    # second_uci=None is valid on the wire (single-legal-move sentinel)
+    ev_null_uci = FlawBlobSubmitEval(
+        token="10:allowed:2",
+        best_cp=None,
+        best_mate=None,
+        second_cp=None,
+        second_mate=None,
+        second_uci=None,
+    )
+    assert ev_null_uci.second_uci is None
+
+
+def test_flaw_blob_schema_submit_request_max_length() -> None:
+    """FlawBlobSubmitRequest.evals rejects >MAX_SUBMIT_EVALS entries (DoS guard)."""
+    from app.schemas.eval_remote import MAX_SUBMIT_EVALS, FlawBlobSubmitEval, FlawBlobSubmitRequest
+
+    import pytest
+
+    ok_evals = [
+        FlawBlobSubmitEval(
+            token=f"0:missed:{k}",
+            best_cp=0,
+            best_mate=None,
+            second_cp=None,
+            second_mate=None,
+            second_uci=None,
+        )
+        for k in range(MAX_SUBMIT_EVALS)
+    ]
+    req = FlawBlobSubmitRequest(game_id=1, sf_version="Stockfish 18", evals=ok_evals)
+    assert len(req.evals) == MAX_SUBMIT_EVALS
+
+    too_many = ok_evals + [
+        FlawBlobSubmitEval(
+            token="0:missed:1024",
+            best_cp=0,
+            best_mate=None,
+            second_cp=None,
+            second_mate=None,
+            second_uci=None,
+        )
+    ]
+    with pytest.raises(Exception):
+        FlawBlobSubmitRequest(game_id=1, sf_version="Stockfish 18", evals=too_many)
+
+
+def test_flaw_blob_schema_submit_response() -> None:
+    """FlawBlobSubmitResponse holds game_id + blobs_written (D-04 schema)."""
+    from app.schemas.eval_remote import FlawBlobSubmitResponse
+
+    resp = FlawBlobSubmitResponse(game_id=7, blobs_written=3)
+    assert resp.game_id == 7
+    assert resp.blobs_written == 3
+
+
+# ─── Phase 145 Plan 03: POST /eval/remote/flaw-blob-lease endpoint tests ────
+
+# PGN for flaw-blob-lease endpoint tests: 6-half-move game.
+# Flaw at ply=2 (e5 position). Missed PV walks from ply=2, allowed from ply=3.
+_FLAW_LEASE_PGN: str = "1. e4 e5 2. Nf3 Nc6 3. Bc4 *"
+# Walkable PVs for the positions at ply 2 and ply 3:
+_WALKABLE_PV_PLY2: str = "g1f3 b8c6"  # 2 moves → 3 nodes (k=0,1,2) for missed
+_WALKABLE_PV_PLY3: str = "b8c6"  # 1 move → 2 nodes (k=0,1) for allowed
+
+
+async def _insert_flaw_for_lease_test(
+    session_maker: async_sessionmaker[AsyncSession],
+    user_id: int,
+    game_id: int,
+    ply: int = 2,
+) -> None:
+    """Insert a GameFlaw row with allowed_pv_lines = SQL NULL (not set) for blob-lease tests."""
+    from app.models.game_flaw import GameFlaw
+
+    async with session_maker() as session:
+        flaw = GameFlaw(
+            user_id=user_id,
+            game_id=game_id,
+            ply=ply,
+            severity=2,
+            phase=0,
+            is_miss=False,
+            is_lucky=False,
+            is_reversed=False,
+            is_squandered=False,
+            fen="rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR",
+        )
+        # Do NOT set allowed_pv_lines → SQL NULL (asyncpg JSONB caution)
+        session.add(flaw)
+        await session.commit()
+
+
+async def _insert_game_position_pv(
+    session_maker: async_sessionmaker[AsyncSession],
+    user_id: int,
+    game_id: int,
+    ply: int,
+    pv: str | None,
+) -> None:
+    """Insert a GamePosition row with the given PV string and commit."""
+    from app.models.game_position import GamePosition
+
+    async with session_maker() as session:
+        gp = GamePosition(
+            user_id=user_id,
+            game_id=game_id,
+            ply=ply,
+            full_hash=hash((game_id, ply)) & 0x7FFFFFFFFFFFFFFF,
+            white_hash=0,
+            black_hash=0,
+            pv=pv,
+        )
+        session.add(gp)
+        await session.commit()
+
+
+class TestFlawBlobLeaseEndpoint:
+    """Phase 145 Plan 03: POST /eval/remote/flaw-blob-lease endpoint.
+
+    Tests:
+    - blob_lease_empty_queue_returns_204: no tier-4 pick → 204
+    - blob_lease_requires_operator_token: missing/wrong token → 403/401
+    - blob_lease_returns_positions: walkable game → FlawBlobLeaseResponse with tokens
+    - blob_lease_token_parses_correctly: tokens parse to (flaw_ply, line, node_k)
+    - blob_lease_all_sentinel_game_no_loop: all-sentinel game → 204 (sentinels written, no loop)
+    - blob_lease_does_not_touch_apply_submit: /submit behavior unchanged after adding endpoint
+    """
+
+    @pytest.mark.asyncio
+    async def test_blob_lease_requires_operator_token(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Missing operator token → 403 (fail-closed); wrong token → 401."""
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", "")
+        async with _make_client() as client:
+            resp = await client.post(_FLAW_BLOB_LEASE_URL)
+        assert resp.status_code == 403, f"Expected 403, got {resp.status_code}: {resp.text}"
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        async with _make_client() as client:
+            resp = await client.post(
+                _FLAW_BLOB_LEASE_URL, headers={"X-Operator-Token": "bad-token"}
+            )
+        assert resp.status_code == 401, f"Expected 401, got {resp.status_code}: {resp.text}"
+
+    @pytest.mark.asyncio
+    async def test_blob_lease_empty_queue_returns_204(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """No tier-4 pick available → 204 (empty backfill queue)."""
+        import app.routers.eval_remote as eval_remote_module
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        # Patch _claim_tier4_blob to return None (empty queue)
+        monkeypatch.setattr(eval_remote_module, "_claim_tier4_blob", AsyncMock(return_value=None))
+
+        async with _make_client() as client:
+            resp = await client.post(
+                _FLAW_BLOB_LEASE_URL,
+                headers={"X-Operator-Token": _TEST_TOKEN},
+            )
+        assert resp.status_code == 204, f"Expected 204, got {resp.status_code}: {resp.text}"
+
+    @pytest.mark.asyncio
+    async def test_blob_lease_returns_positions(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """Walkable game → FlawBlobLeaseResponse with game_id, positions, leased_at."""
+        import app.routers.eval_remote as eval_remote_module
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(
+            eval_worker_session_maker,
+            user_id,
+            pgn=_FLAW_LEASE_PGN,
+            full_evals_completed_at=datetime.now(timezone.utc),
+        )
+        await _insert_flaw_for_lease_test(eval_worker_session_maker, user_id, game_id, ply=2)
+        # Insert walkable PV strings at ply 2 (missed start) and ply 3 (allowed start)
+        await _insert_game_position_pv(
+            eval_worker_session_maker, user_id, game_id, 2, _WALKABLE_PV_PLY2
+        )
+        await _insert_game_position_pv(
+            eval_worker_session_maker, user_id, game_id, 3, _WALKABLE_PV_PLY3
+        )
+
+        # Patch _claim_tier4_blob to return this specific game
+        monkeypatch.setattr(
+            eval_remote_module,
+            "_claim_tier4_blob",
+            AsyncMock(return_value=(game_id, user_id)),
+        )
+
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _FLAW_BLOB_LEASE_URL,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+            body = resp.json()
+            assert body["game_id"] == game_id, (
+                f"Expected game_id={game_id}, got {body.get('game_id')}"
+            )
+            assert "leased_at" in body, "Response must include leased_at"
+            positions = body["positions"]
+            assert len(positions) > 0, "Expected non-empty positions list"
+            # Each position must have token and fen
+            for pos in positions:
+                assert "token" in pos, f"Position missing token: {pos}"
+                assert "fen" in pos, f"Position missing fen: {pos}"
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_blob_lease_token_parses_correctly(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """Tokens parse back to expected (flaw_ply, line, node_k) components."""
+        import app.routers.eval_remote as eval_remote_module
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(
+            eval_worker_session_maker,
+            user_id,
+            pgn=_FLAW_LEASE_PGN,
+            full_evals_completed_at=datetime.now(timezone.utc),
+        )
+        await _insert_flaw_for_lease_test(eval_worker_session_maker, user_id, game_id, ply=2)
+        await _insert_game_position_pv(
+            eval_worker_session_maker, user_id, game_id, 2, _WALKABLE_PV_PLY2
+        )
+        await _insert_game_position_pv(
+            eval_worker_session_maker, user_id, game_id, 3, _WALKABLE_PV_PLY3
+        )
+
+        monkeypatch.setattr(
+            eval_remote_module,
+            "_claim_tier4_blob",
+            AsyncMock(return_value=(game_id, user_id)),
+        )
+
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _FLAW_BLOB_LEASE_URL,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+            positions = resp.json()["positions"]
+
+            # Verify token format: "{flaw_ply}:{line}:{node_k}"
+            for pos in positions:
+                parts = pos["token"].split(":")
+                assert len(parts) == 3, f"Token must have 3 ':'-separated parts: {pos['token']!r}"
+                flaw_ply_str, line, node_k_str = parts
+                assert flaw_ply_str.isdigit(), f"flaw_ply must be int: {pos['token']!r}"
+                assert line in ("missed", "allowed"), (
+                    f"line must be missed/allowed: {pos['token']!r}"
+                )
+                assert node_k_str.isdigit(), f"node_k must be int: {pos['token']!r}"
+                assert int(flaw_ply_str) == 2, f"flaw_ply must be 2 for this test: {pos['token']!r}"
+
+            # Missed line: 2-move PV → nodes k=0,1,2
+            missed_ks = sorted(
+                int(p["token"].split(":")[2]) for p in positions if ":missed:" in p["token"]
+            )
+            assert missed_ks == [0, 1, 2], f"Expected missed k=[0,1,2], got {missed_ks}"
+            # Allowed line: 1-move PV → nodes k=0,1
+            allowed_ks = sorted(
+                int(p["token"].split(":")[2]) for p in positions if ":allowed:" in p["token"]
+            )
+            assert allowed_ks == [0, 1], f"Expected allowed k=[0,1], got {allowed_ks}"
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_blob_lease_all_sentinel_game_no_loop(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """All-sentinel game: endpoint writes [] sentinels, returns 204 (forward progress, T-145-07)."""
+        import app.routers.eval_remote as eval_remote_module
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        from app.models.game_flaw import GameFlaw
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(
+            eval_worker_session_maker,
+            user_id,
+            pgn=_FLAW_LEASE_PGN,
+            full_evals_completed_at=datetime.now(timezone.utc),
+        )
+        # Insert flaw but NO game_positions with pv → NULL pv at both plies → all-sentinel
+        await _insert_flaw_for_lease_test(eval_worker_session_maker, user_id, game_id, ply=2)
+        # No game_positions rows → board_at_ply will be empty → sentinel for both lines
+
+        monkeypatch.setattr(
+            eval_remote_module,
+            "_claim_tier4_blob",
+            AsyncMock(return_value=(game_id, user_id)),
+        )
+
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _FLAW_BLOB_LEASE_URL,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            # All-sentinel game → 204 (forward progress, no empty lease returned)
+            assert resp.status_code == 204, (
+                f"Expected 204 for all-sentinel game, got {resp.status_code}: {resp.text}"
+            )
+
+            # Verify sentinels were written: allowed_pv_lines must be [] (not SQL NULL)
+            # so the game no longer matches the tier-4 predicate
+            async with eval_worker_session_maker() as verify:
+                flaw_rows = (
+                    await verify.execute(
+                        sa.select(
+                            GameFlaw.ply,
+                            GameFlaw.allowed_pv_lines,
+                            GameFlaw.missed_pv_lines,
+                        ).where(GameFlaw.game_id == game_id)
+                    )
+                ).all()
+
+            assert len(flaw_rows) == 1, f"Expected 1 flaw row, got {len(flaw_rows)}"
+            _flaw_ply, allowed, missed = flaw_rows[0]
+            # After sentinel write, blobs are [] (not NULL) — game leaves the predicate
+            assert allowed is not None, (
+                "allowed_pv_lines must be non-NULL (sentinel []) after all-sentinel lease"
+            )
+            assert missed is not None, (
+                "missed_pv_lines must be non-NULL (sentinel []) after all-sentinel lease"
+            )
+            assert allowed == [], f"allowed_pv_lines must be sentinel [], got {allowed!r}"
+            assert missed == [], f"missed_pv_lines must be sentinel [], got {missed!r}"
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_blob_lease_does_not_touch_submit(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """The /submit endpoint behavior is byte-for-byte unchanged after adding /flaw-blob-lease (D-04 isolation)."""
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        # Use a 2-move game with game positions that the existing submit path handles fine.
+        game_id = await _insert_game(eval_worker_session_maker, user_id, pgn=_TWO_MOVE_PGN)
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            game_id,
+            [
+                {"ply": p, "full_hash": 14500 + p, "eval_cp": None, "eval_mate": None}
+                for p in range(4)
+            ],
+        )
+
+        payload = {
+            "game_id": game_id,
+            "sf_version": "Stockfish 18",
+            "evals": [
+                {"ply": p, "eval_cp": 10, "eval_mate": None, "best_move": None, "pv": None}
+                for p in range(4)
+            ],
+        }
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _SUBMIT_URL,
+                    json=payload,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            # Submit must still return 200 with stamp_complete (isolation invariant)
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+            body = resp.json()
+            assert "stamp_complete" in body, (
+                "SubmitResponse must still have stamp_complete (D-04 isolation)"
+            )
+            assert "failed_ply_count" in body, (
+                "SubmitResponse must still have failed_ply_count (D-04 isolation)"
+            )
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+
+# ─── Phase 145 Plan 04 Task 1: blob assembly from worker results (TDD RED) ───
+
+
+class TestBlobAssemblyHelper:
+    """Unit tests for _assemble_flaw_blobs_from_submit (pure CPU helper, Task 1).
+
+    Tests:
+    - test_blob_assembly_full_sequence_assembles_pvnodes: k=0..N sequence with
+      second_uci=None→"" conversion (Pitfall 3).
+    - test_blob_assembly_sentinel_line_returns_empty: (flaw_ply, line) in sentinel_lines → [].
+    - test_blob_assembly_missing_node0_returns_empty: no k=0 result → [].
+    - test_blob_assembly_missed_allowed_stay_distinct: "10:missed:2" and "10:allowed:2"
+      stay distinct (Pitfall 5 — all three token components are used as index key).
+    """
+
+    def test_blob_assembly_full_sequence_assembles_pvnodes(self) -> None:
+        """Full 2-node sequence assembles PvNode list; second_uci=None maps to su='' (Pitfall 3)."""
+        from app.schemas.eval_remote import FlawBlobSubmitEval
+        from app.services.eval_drain import _assemble_flaw_blobs_from_submit
+
+        evals = [
+            FlawBlobSubmitEval(
+                token="10:missed:0",
+                best_cp=150,
+                best_mate=None,
+                second_cp=50,
+                second_mate=None,
+                second_uci=None,  # None on the wire → su="" in PvNode (Pitfall 3)
+            ),
+            FlawBlobSubmitEval(
+                token="10:missed:1",
+                best_cp=100,
+                best_mate=None,
+                second_cp=20,
+                second_mate=None,
+                second_uci="d2d4",
+            ),
+        ]
+        blob_map = _assemble_flaw_blobs_from_submit(42, evals, sentinel_lines=set())
+
+        assert 10 in blob_map, "flaw_ply=10 must appear in blob_map"
+        allowed_blob, missed_blob = blob_map[10]
+        # missed: 2 nodes (k=0, k=1) submitted → 2-element PvNode list
+        assert len(missed_blob) == 2, f"Expected 2 missed nodes, got {len(missed_blob)}"
+        assert missed_blob[0]["b"] == 150
+        assert missed_blob[0]["su"] == "", "None second_uci must map to '' (Pitfall 3)"
+        assert missed_blob[1]["b"] == 100
+        assert missed_blob[1]["su"] == "d2d4"
+        # allowed: no tokens submitted → no node-0 → []
+        assert allowed_blob == [], "No allowed tokens submitted → blob should be []"
+
+    def test_blob_assembly_sentinel_line_returns_empty(self) -> None:
+        """Line in sentinel_lines gets [] regardless of submitted evals (D-06 sentinel write)."""
+        from app.schemas.eval_remote import FlawBlobSubmitEval
+        from app.services.eval_drain import _assemble_flaw_blobs_from_submit
+
+        evals = [
+            FlawBlobSubmitEval(
+                token="10:allowed:0",
+                best_cp=100,
+                best_mate=None,
+                second_cp=None,
+                second_mate=None,
+                second_uci=None,
+            ),
+        ]
+        sentinel_lines: set[tuple[int, str]] = {(10, "missed")}  # missed is un-fillable
+        blob_map = _assemble_flaw_blobs_from_submit(42, evals, sentinel_lines)
+
+        assert 10 in blob_map
+        allowed_blob, missed_blob = blob_map[10]
+        assert missed_blob == [], "Sentinel line must produce [] (D-06)"
+        assert len(allowed_blob) == 1, "Non-sentinel allowed line must have real blob"
+
+    def test_blob_assembly_missing_node0_returns_empty(self) -> None:
+        """Line missing node-0 result gets [] (can't start the PvNode sequence)."""
+        from app.schemas.eval_remote import FlawBlobSubmitEval
+        from app.services.eval_drain import _assemble_flaw_blobs_from_submit
+
+        # Submit k=1 but not k=0 — no start node → can't assemble
+        evals = [
+            FlawBlobSubmitEval(
+                token="5:missed:1",
+                best_cp=100,
+                best_mate=None,
+                second_cp=None,
+                second_mate=None,
+                second_uci=None,
+            ),
+        ]
+        blob_map = _assemble_flaw_blobs_from_submit(42, evals, sentinel_lines=set())
+
+        assert 5 in blob_map
+        _allowed, missed_blob = blob_map[5]
+        assert missed_blob == [], "Missing node-0 → no blob sequence can be built → []"
+
+    def test_blob_assembly_missed_allowed_stay_distinct(self) -> None:
+        """Tokens '10:missed:0' and '10:allowed:0' are distinct keys (Pitfall 5 — all 3 components)."""
+        from app.schemas.eval_remote import FlawBlobSubmitEval
+        from app.services.eval_drain import _assemble_flaw_blobs_from_submit
+
+        evals = [
+            FlawBlobSubmitEval(
+                token="10:missed:0",
+                best_cp=50,
+                best_mate=None,
+                second_cp=10,
+                second_mate=None,
+                second_uci="e2e4",  # missed line marker
+            ),
+            FlawBlobSubmitEval(
+                token="10:allowed:0",
+                best_cp=200,
+                best_mate=None,
+                second_cp=80,
+                second_mate=None,
+                second_uci="d2d4",  # allowed line marker
+            ),
+        ]
+        blob_map = _assemble_flaw_blobs_from_submit(42, evals, sentinel_lines=set())
+
+        assert 10 in blob_map
+        allowed_blob, missed_blob = blob_map[10]
+        # missed and allowed must NOT overwrite each other
+        assert len(missed_blob) == 1
+        assert missed_blob[0]["b"] == 50
+        assert missed_blob[0]["su"] == "e2e4"
+        assert len(allowed_blob) == 1
+        assert allowed_blob[0]["b"] == 200
+        assert allowed_blob[0]["su"] == "d2d4"
+
+
+# ─── Phase 145 Plan 04 Task 2: /flaw-blob-submit endpoint tests (TDD RED) ────
+
+_FLAW_BLOB_SUBMIT_URL = "/api/eval/remote/flaw-blob-submit"
+
+
+class TestFlawBlobSubmitEndpoint:
+    """Phase 145 Plan 04 Task 2: POST /eval/remote/flaw-blob-submit endpoint.
+
+    Tests:
+    - test_blob_submit_requires_operator_token: missing/wrong token → 403/401.
+    - test_blob_submit_game_not_found: unknown game_id → 404.
+    - test_blob_submit_roundtrip_writes_blobs: lease→submit writes blobs + tactic tags.
+    - test_blob_submit_sentinel_line_gets_empty_blob: NULL-PV allowed line gets [],
+      submitted missed line gets real blob (mixed-game sentinel D-06).
+    - test_blob_submit_foreign_token_rejected: token not from lease → 422 (T-145-09).
+    - test_blob_submit_idempotent: second submit of same game → 200, blobs_written=0
+      (no NULL-blob flaws remain → no-op D-03 idempotency).
+    - test_blob_submit_does_not_touch_apply_submit: /submit response shape unchanged
+      after adding /flaw-blob-submit (D-04 isolation).
+    """
+
+    @pytest.mark.asyncio
+    async def test_blob_submit_requires_operator_token(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Missing operator token → 403 (fail-closed); wrong token → 401."""
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", "")
+        async with _make_client() as client:
+            resp = await client.post(
+                _FLAW_BLOB_SUBMIT_URL,
+                json={"game_id": 1, "sf_version": "Stockfish 18", "evals": []},
+            )
+        assert resp.status_code == 403, f"Expected 403, got {resp.status_code}: {resp.text}"
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        async with _make_client() as client:
+            resp = await client.post(
+                _FLAW_BLOB_SUBMIT_URL,
+                json={"game_id": 1, "sf_version": "Stockfish 18", "evals": []},
+                headers={"X-Operator-Token": "bad-token"},
+            )
+        assert resp.status_code == 401, f"Expected 401, got {resp.status_code}: {resp.text}"
+
+    @pytest.mark.asyncio
+    async def test_blob_submit_game_not_found(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Unknown game_id → 404."""
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        async with _make_client() as client:
+            resp = await client.post(
+                _FLAW_BLOB_SUBMIT_URL,
+                json={"game_id": 999999999, "sf_version": "Stockfish 18", "evals": []},
+                headers={"X-Operator-Token": _TEST_TOKEN},
+            )
+        assert resp.status_code == 404, f"Expected 404, got {resp.status_code}: {resp.text}"
+
+    @pytest.mark.asyncio
+    async def test_blob_submit_roundtrip_writes_blobs(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """Lease→submit roundtrip writes non-NULL blobs and updates tactic tag columns (D-07)."""
+        import app.routers.eval_remote as eval_remote_module
+        from app.models.game_flaw import GameFlaw
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(
+            eval_worker_session_maker,
+            user_id,
+            pgn=_FLAW_LEASE_PGN,
+            full_evals_completed_at=datetime.now(timezone.utc),
+        )
+        await _insert_flaw_for_lease_test(eval_worker_session_maker, user_id, game_id, ply=2)
+        # Insert PV strings + basic positions for positions list
+        for ply, pv in [(0, None), (1, None), (2, _WALKABLE_PV_PLY2), (3, _WALKABLE_PV_PLY3)]:
+            await _insert_game_position_pv(eval_worker_session_maker, user_id, game_id, ply, pv)
+
+        monkeypatch.setattr(
+            eval_remote_module, "_claim_tier4_blob", AsyncMock(return_value=(game_id, user_id))
+        )
+
+        try:
+            # Step 1: lease
+            async with _make_client() as client:
+                lease_resp = await client.post(
+                    _FLAW_BLOB_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN}
+                )
+            assert lease_resp.status_code == 200, f"Lease failed: {lease_resp.text}"
+            lease_positions = lease_resp.json()["positions"]
+            assert len(lease_positions) > 0, "Expected non-empty lease positions"
+
+            # Step 2: submit worker evals (one per leased token)
+            submit_evals = [
+                {
+                    "token": pos["token"],
+                    "best_cp": 80,
+                    "best_mate": None,
+                    "second_cp": None,
+                    "second_mate": None,
+                    "second_uci": None,
+                }
+                for pos in lease_positions
+            ]
+            async with _make_client() as client:
+                submit_resp = await client.post(
+                    _FLAW_BLOB_SUBMIT_URL,
+                    json={"game_id": game_id, "sf_version": "Stockfish 18", "evals": submit_evals},
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert submit_resp.status_code == 200, (
+                f"Submit failed: {submit_resp.status_code} {submit_resp.text}"
+            )
+            body = submit_resp.json()
+            assert body["game_id"] == game_id
+            assert body["blobs_written"] >= 1, "At least one blob must be written"
+
+            # Step 3: verify blobs are non-NULL in DB
+            async with eval_worker_session_maker() as verify:
+                flaw_rows = (
+                    await verify.execute(
+                        sa.select(
+                            GameFlaw.ply,
+                            GameFlaw.allowed_pv_lines,
+                            GameFlaw.missed_pv_lines,
+                        ).where(GameFlaw.game_id == game_id)
+                    )
+                ).all()
+
+            assert len(flaw_rows) == 1, f"Expected 1 flaw row, got {len(flaw_rows)}"
+            _ply, allowed, missed = flaw_rows[0]
+            assert allowed is not None, "allowed_pv_lines must be non-NULL after submit (D-01)"
+            assert missed is not None, "missed_pv_lines must be non-NULL after submit (D-01)"
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_blob_submit_sentinel_line_gets_empty_blob(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """Mixed game: allowed line with NULL PV gets sentinel [], missed (walkable) gets real blob (D-06)."""
+        import app.routers.eval_remote as eval_remote_module
+        from app.models.game_flaw import GameFlaw
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(
+            eval_worker_session_maker,
+            user_id,
+            pgn=_FLAW_LEASE_PGN,
+            full_evals_completed_at=datetime.now(timezone.utc),
+        )
+        await _insert_flaw_for_lease_test(eval_worker_session_maker, user_id, game_id, ply=2)
+        # missed line (ply=2): walkable PV → leased to worker
+        # allowed line (ply=3): no PV row inserted → NULL pv → 1-node walk → sentinel
+        for ply, pv in [(0, None), (1, None), (2, _WALKABLE_PV_PLY2)]:
+            await _insert_game_position_pv(eval_worker_session_maker, user_id, game_id, ply, pv)
+        # ply=3 NOT inserted → pv_at_ply.get(3) is None → sentinel for allowed line
+
+        monkeypatch.setattr(
+            eval_remote_module, "_claim_tier4_blob", AsyncMock(return_value=(game_id, user_id))
+        )
+
+        try:
+            # Lease: should return only missed tokens (allowed is sentinel)
+            async with _make_client() as client:
+                lease_resp = await client.post(
+                    _FLAW_BLOB_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN}
+                )
+            assert lease_resp.status_code == 200, f"Lease failed: {lease_resp.text}"
+            lease_positions = lease_resp.json()["positions"]
+            # All tokens should be for missed line only
+            for pos in lease_positions:
+                assert ":missed:" in pos["token"], (
+                    f"Allowed line has NULL PV → sentinel; no allowed tokens should be leased. "
+                    f"Got: {pos['token']!r}"
+                )
+
+            # Submit missed-line evals
+            submit_evals = [
+                {
+                    "token": pos["token"],
+                    "best_cp": 60,
+                    "best_mate": None,
+                    "second_cp": None,
+                    "second_mate": None,
+                    "second_uci": None,
+                }
+                for pos in lease_positions
+            ]
+            async with _make_client() as client:
+                submit_resp = await client.post(
+                    _FLAW_BLOB_SUBMIT_URL,
+                    json={"game_id": game_id, "sf_version": "Stockfish 18", "evals": submit_evals},
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert submit_resp.status_code == 200, (
+                f"Submit failed: {submit_resp.status_code} {submit_resp.text}"
+            )
+
+            # Verify: allowed_pv_lines=[] (sentinel), missed_pv_lines=<real blob>
+            async with eval_worker_session_maker() as verify:
+                flaw_rows = (
+                    await verify.execute(
+                        sa.select(
+                            GameFlaw.ply,
+                            GameFlaw.allowed_pv_lines,
+                            GameFlaw.missed_pv_lines,
+                        ).where(GameFlaw.game_id == game_id)
+                    )
+                ).all()
+
+            assert len(flaw_rows) == 1
+            _ply, allowed, missed = flaw_rows[0]
+            assert allowed == [], (
+                "Sentinel allowed line (NULL PV) must get [] blob — D-06 sentinel write"
+            )
+            assert missed is not None and missed != [], (
+                "Walkable missed line must get real PvNode blob"
+            )
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_blob_submit_foreign_token_rejected(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """Token not in the current lease set → 422 (T-145-09: foreign-token injection blocked)."""
+        import app.routers.eval_remote as eval_remote_module
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(
+            eval_worker_session_maker,
+            user_id,
+            pgn=_FLAW_LEASE_PGN,
+            full_evals_completed_at=datetime.now(timezone.utc),
+        )
+        await _insert_flaw_for_lease_test(eval_worker_session_maker, user_id, game_id, ply=2)
+        for ply, pv in [(0, None), (1, None), (2, _WALKABLE_PV_PLY2), (3, _WALKABLE_PV_PLY3)]:
+            await _insert_game_position_pv(eval_worker_session_maker, user_id, game_id, ply, pv)
+
+        monkeypatch.setattr(
+            eval_remote_module, "_claim_tier4_blob", AsyncMock(return_value=(game_id, user_id))
+        )
+
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _FLAW_BLOB_SUBMIT_URL,
+                    json={
+                        "game_id": game_id,
+                        "sf_version": "Stockfish 18",
+                        "evals": [
+                            {
+                                # Foreign token: flaw_ply=99 doesn't exist in this game
+                                "token": "99:missed:0",
+                                "best_cp": 50,
+                                "best_mate": None,
+                                "second_cp": None,
+                                "second_mate": None,
+                                "second_uci": None,
+                            }
+                        ],
+                    },
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 422, (
+                f"Foreign token must be rejected with 422 (T-145-09). Got {resp.status_code}: {resp.text}"
+            )
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_blob_submit_idempotent(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """Double-submit is idempotent: second submit of same game → 200, blobs_written=0 (D-03)."""
+        import app.routers.eval_remote as eval_remote_module
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(
+            eval_worker_session_maker,
+            user_id,
+            pgn=_FLAW_LEASE_PGN,
+            full_evals_completed_at=datetime.now(timezone.utc),
+        )
+        await _insert_flaw_for_lease_test(eval_worker_session_maker, user_id, game_id, ply=2)
+        for ply, pv in [(0, None), (1, None), (2, _WALKABLE_PV_PLY2), (3, _WALKABLE_PV_PLY3)]:
+            await _insert_game_position_pv(eval_worker_session_maker, user_id, game_id, ply, pv)
+
+        monkeypatch.setattr(
+            eval_remote_module, "_claim_tier4_blob", AsyncMock(return_value=(game_id, user_id))
+        )
+
+        try:
+            # Lease tokens
+            async with _make_client() as client:
+                lease_resp = await client.post(
+                    _FLAW_BLOB_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN}
+                )
+            assert lease_resp.status_code == 200
+            lease_positions = lease_resp.json()["positions"]
+
+            submit_evals = [
+                {
+                    "token": pos["token"],
+                    "best_cp": 70,
+                    "best_mate": None,
+                    "second_cp": None,
+                    "second_mate": None,
+                    "second_uci": None,
+                }
+                for pos in lease_positions
+            ]
+            submit_payload = {
+                "game_id": game_id,
+                "sf_version": "Stockfish 18",
+                "evals": submit_evals,
+            }
+
+            # First submit
+            async with _make_client() as client:
+                resp1 = await client.post(
+                    _FLAW_BLOB_SUBMIT_URL,
+                    json=submit_payload,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp1.status_code == 200, (
+                f"First submit failed: {resp1.status_code} {resp1.text}"
+            )
+            assert resp1.json()["blobs_written"] >= 1, "First submit must write blobs"
+
+            # Second submit (same payload) — idempotent no-op
+            async with _make_client() as client:
+                resp2 = await client.post(
+                    _FLAW_BLOB_SUBMIT_URL,
+                    json=submit_payload,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp2.status_code == 200, (
+                f"Second (idempotent) submit must return 200, got {resp2.status_code}: {resp2.text}"
+            )
+            assert resp2.json()["blobs_written"] == 0, (
+                "Second submit is a no-op — no NULL-blob flaws remain → blobs_written=0 (D-03)"
+            )
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_blob_submit_does_not_touch_apply_submit(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """The /submit endpoint behavior is unchanged after adding /flaw-blob-submit (D-04 isolation)."""
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(eval_worker_session_maker, user_id, pgn=_TWO_MOVE_PGN)
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            game_id,
+            [
+                {"ply": p, "full_hash": 15600 + p, "eval_cp": None, "eval_mate": None}
+                for p in range(4)
+            ],
+        )
+
+        payload = {
+            "game_id": game_id,
+            "sf_version": "Stockfish 18",
+            "evals": [
+                {"ply": p, "eval_cp": 15, "eval_mate": None, "best_move": None, "pv": None}
+                for p in range(4)
+            ],
+        }
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _SUBMIT_URL,
+                    json=payload,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+            body = resp.json()
+            assert "stamp_complete" in body, (
+                "/submit must still have stamp_complete (D-04 isolation)"
+            )
+            assert "failed_ply_count" in body, (
+                "/submit must still have failed_ply_count (D-04 isolation)"
+            )
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])

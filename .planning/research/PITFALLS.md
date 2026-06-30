@@ -1,433 +1,464 @@
 # Pitfalls Research
 
-**Domain:** Adding a live in-browser single-thread WASM Stockfish analysis board to an existing mobile-first React 19 + Vite 8 PWA (FlawChess v1.29)
-**Researched:** 2026-06-26
-**Confidence:** HIGH — codebase verified + cross-checked against official Vite docs, stockfish npm package READMEs, iOS Safari platform notes, UCI specification, and Phase 135 source
+**Domain:** MultiPV=2 eval pass + JSONB storage + forcing-line tactic gate (v1.30)
+**Researched:** 2026-06-29
+**Confidence:** HIGH
+
+Sources: project memory files, `app/services/engine.py` QUEUE-07 accounting comment,
+`app/services/eval_utils.py` sigmoid constant, `.planning/notes/tactic-forcing-line-gate.md`
+(design note), `.planning/PROJECT.md` v1.30 milestone context, and CLAUDE.md prod config.
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: Vite Esbuild Optimization Breaks WASM URL Resolution in Pre-Bundled Dependencies
+### Pitfall 1: MultiPV=2 ordering unreliable at the 1M-node budget
 
 **What goes wrong:**
-When a stockfish npm package (e.g. the `stockfish` npm package) uses `new URL('stockfish.wasm', import.meta.url)` internally to locate its WASM file, Vite's esbuild optimizer rewrites the package entry point from `node_modules/stockfish/stockfish-18-single.js` to `node_modules/.vite/deps/stockfish.js`. The `import.meta.url` inside that module now resolves to the `.vite/deps/` directory — so the WASM file is looked for in `.vite/deps/stockfish-18-single.wasm`, which does not exist. The result: `404 Not Found` for the WASM in development, and either a silent failure or build-time error in production. This manifests as the engine appearing to load but never responding to `uci`, or a `CompileError: invalid magic number` from `WebAssembly.instantiate`.
+The 0.35 margin is calibrated for lichess-puzzler's depth-50 / ~25M-node searches, where
+best-vs-second ordering is close to certain. At 1M nodes with `multipv=2`, each line gets
+roughly half the effective search depth of a single-PV run at the same budget. For positions
+where the margin is close to 0.35 (neither clearly forced nor clearly branching), the ordering
+is noisy: the gate will randomly fire or pass on the same position depending on TT state and
+machine speed, producing flaky tags across re-runs and between dev and prod.
 
 **Why it happens:**
-Vite's esbuild pre-bundling is designed for pure JS modules. It does not understand `new URL(asset, import.meta.url)` patterns inside dependencies — it physically relocates the JS file but leaves the WASM binary in `node_modules/`, breaking relative paths. This is a known Vite issue (vitejs/vite #8427, #10837); a partial fix landed via PR #17837 but it is not complete for all patterns. Developers hit this because the engine works fine in isolation (node, direct browser) but breaks under Vite's optimizer.
+The node budget (`_NODES_BUDGET = 1_000_000`) was set for Lichess fishnet parity on
+single-PV eval quality. MultiPV=2 at the same budget doesn't halve quality evenly — Stockfish
+reuses most of the search tree — but depth per line drops from roughly 22 to roughly 18-20 at
+this budget, and the margin between two near-equal moves is exactly what depth-sensitive search
+is meant to resolve.
 
 **How to avoid:**
-- Add the stockfish package to `optimizeDeps.exclude` in `vite.config.ts`:
-  ```ts
-  optimizeDeps: { exclude: ['stockfish'] }
-  ```
-  This forces Vite to load it as-is from `node_modules/`, preserving the relative WASM path.
-- Copy the `.js` and `.wasm` files into `public/` (or `public/engine/`) and instantiate the worker via a URL string pointing to the public path: `new Worker('/engine/stockfish-18-single.js')`. This fully bypasses Vite's asset pipeline for the engine and is the simplest production-safe pattern.
-- Do NOT use `?worker` suffix on a file inside `node_modules/` — the suffix is only supported for files Vite owns.
-- Do NOT use `vite-plugin-wasm` as a substitute — it targets your own WASM files imported via `import foo from './foo.wasm'`, not the engine's self-loading pattern.
+In Phase 142, after wiring the MultiPV pass, sample 200-500 flaw positions from the dev corpus
+and plot the distribution of `p(best) - p(second)`. If the distribution is bimodal (most
+positions far from 0.35, few near it), 1M nodes is probably fine for ordering. If there is a
+fat distribution of margins near the threshold, increase the budget to 1.5-2M nodes before
+committing. Document the chosen budget with the same rationale as `_NODES_BUDGET`. The
+reliability check is cheap to do in Phase 142 and eliminates the risk before backfill.
 
 **Warning signs:**
-- Engine loads in `vite dev` but produces a 404 for the `.wasm` file in `vite build` output.
-- `WebAssembly.instantiate` throws `CompileError: invalid magic number` — the JS shim loaded but the WASM was 404'd and the response is HTML.
-- No UCI `uciok` response after posting `uci` to the worker.
-- DevTools Network tab shows the WASM request going to `.vite/deps/` instead of `node_modules/`.
+Running the re-tagger twice on the same stored MultiPV evals produces different tag sets (if
+deterministic re-tagger logic is confirmed, this means the eval capture code is re-running the
+engine rather than reading stored blobs). Alternatively: the margin histogram shows >10% of
+positions within ±0.05 of the 0.35 threshold.
 
-**Phase to address:**
-Engine hook phase (Phase 136) — resolve this before writing any UCI logic; verify with `npm run build && npx serve dist` locally, not just `vite dev`.
+**Phase to address:** Phase 142 (MultiPV eval pass — includes budget calibration before commit)
 
 ---
 
-### Pitfall 2: iOS PWA Standalone Mode Has a 50 MB Cache API Limit — The Full SF18 NNUE Net Cannot Be Cached
+### Pitfall 2: RSS regression from MultiPV=2 pushing into the 4g OOM zone
 
 **What goes wrong:**
-iOS Safari's Cache API (used by service workers) is capped at approximately 50 MB per partition for PWAs in standalone mode (installed to home screen). The full Stockfish 18 single-thread NNUE binary (`stockfish-18-single.wasm`) exceeds this limit. The service worker silently fails to cache it — no error is surfaced to the user — and on the next offline visit the engine is unavailable. Worse, a Workbox `CacheFirst` strategy that attempts to pre-cache the WASM throws `QuotaExceededError` during SW installation, which can abort the service worker registration entirely, breaking the PWA's offline shell as a side effect.
+The QUEUE-07 accounting (engine.py comment) shows 6 workers = ~1,586 MB Stockfish RSS,
+leaving ~0.76 GB headroom in the 4g container when FastAPI/Uvicorn (~0.3 GB) is included.
+If the MultiPV budget is raised significantly above 1M nodes to get reliable ordering, the
+effective per-worker working set grows. Hash table size is fixed at 32 MB per worker, but
+longer searches fill it more densely and keep more NNUE network paths hot, modestly increasing
+RSS from the kernel's demand-paged perspective. Crucially, if a separate `EnginePool` is
+created for the MultiPV backfill with different sizing than the module-level pool, two pools
+can co-exist and exceed the container limit.
 
 **Why it happens:**
-The 50 MB limit is a hard platform constraint on iOS Safari's `CacheStorage`, not a Workbox or app-level setting. Developers familiar with desktop Chrome (which has generous quota) don't discover this until testing on an actual iPhone. The PWA's existing service worker (already shipping in v1.2) will try to cache whatever files are listed in its precache manifest if you add the WASM to the build output.
+The OOM history (CLAUDE.md and memory files) traces to import memory pressure, not Stockfish.
+The temptation is to assume Stockfish is safe and be aggressive with a larger MultiPV pool for
+the backfill. But the Phase 145 backfill will run concurrently with normal prod operations, and
+a separate N-worker pool layered on top of the existing 6-worker pool could push RSS above 4g.
 
 **How to avoid:**
-- Use `stockfish-18-lite-single.js` / `stockfish-18-lite-single.wasm` (~7 MB each) instead of the full NNUE build. The lite build reaches depth 18–20 in under 2 seconds on desktop and is far weaker than the full build only in tactical depth — not relevant for human comprehension of a position.
-- Never add the WASM file to the Workbox precache manifest. Instead, serve it with strong HTTP cache headers (`Cache-Control: max-age=31536000, immutable`) from the origin. The browser's native HTTP cache handles it; no SW involvement needed.
-- If the full NNUE is ever desired for desktop: gate the fetch behind `navigator.deviceMemory > 4 && !navigator.userAgentData?.mobile` and skip iOS entirely. Do not attempt to cache it in the SW regardless.
-- Audit the existing Vite PWA plugin config: ensure `globPatterns` or `runtimeCaching` in `vite.config.ts` does not match `*.wasm`.
+Reuse the module-level pool for the MultiPV pass. For the backfill script (Phase 145), use
+`STOCKFISH_POOL_SIZE` workers, not a pool sized independently. If the backfill needs speed,
+document the RSS arithmetic before raising pool size: 7 workers at ~368 MB = ~2.58 GB
+Stockfish + 0.3 GB FastAPI = ~2.88 GB fits the 4g limit; 8 workers = ~3.24 GB, which is the
+Phase 116 ceiling. Do not exceed the Phase 116 pool-size gate (8 workers) without a fresh RSS
+measurement.
 
 **Warning signs:**
-- SW installation fails on iOS with `QuotaExceededError` in Safari DevTools.
-- PWA shell stops working on iOS after adding the engine.
-- Network tab shows the engine WASM fetched fresh on every `/analysis` visit (HTTP 200, not 304 or from cache).
+Container RSS crossing 3.5 GB in a 4g container. `docker stats` on prod backend showing
+sustained memory near the limit during a backfill run. A sudden backend container restart
+(OOM-kill) during Phase 145 backfill while the regular eval drain is also active.
 
-**Phase to address:**
-Engine hook phase (Phase 136) — choose the lite build from the start; verify on an iOS device (or Simulator) before declaring the phase done.
+**Phase to address:** Phase 142 (wiring decision: reuse module pool vs. separate pool);
+Phase 145 (backfill run — must not create a second independent EnginePool during prod hours)
 
 ---
 
-### Pitfall 3: Stale Eval Race — `stop` / `bestmove` / `go` Message Ordering
+### Pitfall 3: A/B validation conflating gate effect with eval_cp non-determinism
 
 **What goes wrong:**
-The UCI flow is asynchronous. When the user makes a move, the hook must: (1) send `stop` to halt the running search, (2) wait for `bestmove` (Stockfish always emits `bestmove` after `stop`, even mid-search), (3) send `position fen <new-fen> go nodes <N>`. If you skip step 2 and send `position fen ... go ...` immediately after `stop`, the engine may process the new `go` while still finalizing its response to `stop`. The result: the hook receives a `bestmove` from the previous search, mistakes it for the current search's result, and displays the wrong move/eval for the new position. This is the most common UCI race condition in browser chess implementations.
-
-A related variant: the hook debounces position changes (correct), but cancels the debounce on unmount without sending `stop`. The engine continues running, and when `bestmove` arrives after the component has unmounted, the hook's state setter fires on an unmounted component — React's stale-closure warning.
+The natural-seeming validation is: run the old tagger on prod's stored `eval_cp` /
+`tactic_motif` columns and run the new gated tagger on dev's newly stored MultiPV evals, then
+diff the tag sets. This conflates two independent signals: (a) the gate filtering noise and
+(b) eval drift between dev and prod machines (documented in `project_eval_nondeterminism`:
+TT cross-position contamination + wall-clock timeout differences + different NNUE scheduling
+on different hosts). The diff will show tag changes that are pure eval drift, not gate effect,
+and the false-negative count will be inflated or deflated by accident.
 
 **Why it happens:**
-Developers model the UCI exchange as request/response, but it is actually a state machine: the engine has states (`ready`, `thinking`, `stopping`) and must receive commands in the right sequence. Sending `go` without waiting for the previous search to conclude is undefined behavior in the UCI spec.
+The eval non-determinism is a known fact but an easy trap when "user-28 has the same games in
+dev and prod" seems to imply a clean comparison. The games are the same; the stored evals are
+not identical.
 
 **How to avoid:**
-- Implement a message-queue state machine in `useStockfishEngine`:
-  - States: `idle | thinking | stopping`
-  - On position change: if `idle`, immediately send `position fen ... go ...` (→ `thinking`). If `thinking`, send `stop` (→ `stopping`) and enqueue the new `go` command.
-  - On `bestmove` received: if `stopping`, dequeue and send the pending `position fen ... go ...` (→ `thinking`). If `thinking`, update eval state (→ `idle`).
-- Use a sequence counter (integer, incremented on each `go`). When `bestmove` arrives, only accept it if the sequence counter matches the expected value; discard stale results.
-- In the `useEffect` cleanup: send `stop`, set a `cancelled` flag to discard any subsequent `bestmove`, then call `worker.terminate()`.
+Implement the A/B exactly as the design note specifies: compute the MultiPV evals ONCE in dev,
+store them to `allowed_pv_lines` / `missed_pv_lines` in dev's `game_flaws`, then run BOTH old
+tagger logic AND new gated tagger logic against that SAME stored MultiPV data. The old-tagger
+re-run must read from the same stored `eval_cp` already in dev's DB — it must NOT call
+`engine.evaluate_nodes`. Prod-28 is a "what users see today" sanity reference only, not an A/B
+control. The Phase 144 test code must make this isolation explicit.
 
 **Warning signs:**
-- Eval bar flickers back to the previous position's eval when moving quickly.
-- `bestmove` arrives with a move that's illegal in the current position.
-- React warns about `setState` on an unmounted component from the engine callback.
+The A/B diff shows tag differences on positions where both old and new logic would agree if
+given identical inputs (e.g., depth-12 forced mates that would never be gated). If the
+no-gate replay on dev produces different tags from prod even without the gate applied, the
+comparison methodology is wrong — the eval source is leaking.
 
-**Phase to address:**
-Engine hook phase (Phase 136) — the state machine must be part of the hook's initial design, not retrofitted. Write a unit test for the stop/go sequence using a mock worker before integrating a real engine.
+**Phase to address:** Phase 144 (validation) — the methodology must be locked in the plan
+before Phase 143 (re-tagger) completes, so Phase 143 knows exactly what data to produce for 144
 
 ---
 
-### Pitfall 4: Web Worker Leak on Route Navigation — Engine Keeps Running After `/analysis` Exit
+### Pitfall 4: Measuring only tags removed, not good tags killed (false negatives)
 
 **What goes wrong:**
-When the user navigates away from `/analysis` (e.g. back to Openings), React unmounts the analysis board component. If the `useEffect` that created the Web Worker does not call `worker.terminate()` in its cleanup return, the worker continues running in the background — evaluating the last position at full CPU, draining battery, and holding the WASM linear memory allocation. On iOS, the WASM memory is not freed until the browser explicitly closes the worker or the tab is killed. Because the WASM engine allocates tens of MB of linear memory at startup, this is a real battery and memory drain on mobile.
-
-A subtler variant: the worker is instantiated at the module level (outside React's lifecycle) as a singleton for reuse. If the singleton is not explicitly stopped when no component is consuming it, it runs indefinitely during the entire session.
+If Phase 144 reports "X% of clearance/sacrifice tags removed" as the success metric, the gate
+tuning looks successful even if it killed a comparable number of real tactics. The known risk
+(design note "Known risk to measure, not assume away"): two moves both winning — a fork AND a
+simpler capture — produce `p(best) - p(second) ≈ 0` because both moves have similar win
+probability. The gate drops the fork tag as "not forced" even though the fork is a real and
+instructive tactic. With a margin of 0.35 and a 1M-node budget, this failure mode is
+non-trivial at the corpus scale.
 
 **Why it happens:**
-Web Workers are not tied to the DOM — they survive component unmounts unless explicitly terminated. React's `useEffect` cleanup is the only hook point; developers often add `worker.terminate()` but forget to also send `stop` first, leaving the engine in a half-terminated state that can cause a crash log on some platforms.
+Tag-removal rate is easy to compute; false-negative rate requires knowing the ground truth,
+which is unavailable at scale. The fixture harness cannot catch this because the fixtures have
+no non-forced tail — the same reason the original bug went undetected until real-game
+observation.
 
 **How to avoid:**
-- In `useStockfishEngine`, always return a cleanup function from `useEffect`:
-  ```ts
-  useEffect(() => {
-    const worker = new Worker(engineUrl);
-    // ... setup
-    return () => {
-      worker.postMessage('stop');
-      worker.terminate();
-    };
-  }, []);
-  ```
-- If using a singleton worker (to avoid the ~200 ms re-init cost on repeated visits): implement an explicit `pause()` call when the analysis page unmounts that sends `stop` and sets the worker to idle. Resume on re-mount. This is more complex; the component-scoped worker with terminate-on-unmount is simpler and safe enough for v1.
-- Keep `/analysis`'s lazy chunk boundary tight so the engine worker module only loads when the route is active (React Router lazy + Suspense).
+The Phase 144 validation report must include per-motif: (a) tags removed, (b) a hand-checked
+sample of ~30 removed tags, and (c) a per-motif estimate of "looks like a real tactic but
+dropped". The 30-sample check is the design note's explicit floor — do not reduce it.
+Additionally, spot-check positions where `p(best) - p(second)` is between 0.20 and 0.40 (the
+gray zone): these are candidates where the gate is making a real call and may be wrong in
+either direction. If the hand-check shows a consistent pattern of killing real tactics in a
+specific motif (e.g., fork), adjust the per-motif margin rather than one global threshold.
 
 **Warning signs:**
-- CPU usage stays elevated (top-of-screen Activity Monitor on iOS, or `chrome://sys-internals`) after navigating away from `/analysis`.
-- Mobile device warms up noticeably while browsing other pages of the app.
-- JS heap in Chrome DevTools grows by ~50–100 MB whenever `/analysis` is visited and does not release on navigation.
+A high removal rate (>50%) on motifs known to fire on genuinely forcing lines (fork, skewer,
+pin) is a red flag for false negatives. Removal rates for motifs that fire deep (clearance at
+depth 8+) should be high; removal rates for shallow motifs (pin, fork at depth 1-2) should be
+low. If they are not ordered this way, the gate is misfiring.
 
-**Phase to address:**
-Engine hook phase (Phase 136) — terminate pattern is a first-class design concern of `useStockfishEngine`, not a polish item. Verify with Chrome DevTools Memory profiler: take a snapshot before visiting `/analysis`, after, and after navigating away — heap must return to baseline.
+**Phase to address:** Phase 143 (re-tagger must output per-position margin data);
+Phase 144 (validation must include the false-negative sample, not just aggregate removal stats)
 
 ---
 
-### Pitfall 5: Single-Thread Thermal Throttle on Low-End Android — Unbounded Search Hangs the Device
+### Pitfall 5: Mate-score saturation in the win-prob margin calculation
 
 **What goes wrong:**
-Without a hard node or time limit, a single-threaded WASM Stockfish can search indefinitely. On a low-end Android (Snapdragon 4xx series, ~150–250k nps single-thread), reaching depth 18 on a complex middlegame takes 15–30 seconds. The device's thermal governor reduces clock speed after sustained load, cutting nps further. Users experience: the "thinking" indicator spins for 30+ seconds with no eval update; tapping other UI elements is sluggish due to the Worker consuming the single JS thread's scheduling budget (even though Workers run off the main thread, they compete for the same CPU core on single-core-equivalent devices). Battery drains visibly.
+`eval_cp_to_expected_score` for a mate position returns 1.0 (documented in eval_utils.py:
+"Mate handling (D-02, Pitfall 1) — mate scores are NOT routed through the sigmoid").
+If the best move is mate-in-3 and the second-best is mate-in-9, both return 1.0 from the
+winning side's perspective. The gate computes `p(best) - p(second) = 1.0 - 1.0 = 0.0 < 0.35`
+and marks the position as NOT forced — incorrectly suppressing a valid (and likely very
+instructive) mating tactic.
+
+Symmetric problem: if best move is mate-in-1 and second-best is a normal +500cp win, the gate
+computes `1.0 - sigmoid(500) ≈ 1.0 - 0.84 = 0.16 < 0.35` — also fails the gate. But a
+mate-in-1 is the most forcing move possible.
 
 **Why it happens:**
-Desktop-calibrated node limits (e.g. 1,000,000 nodes — the server-side lichess budget) are appropriate for the server (Stockfish native binary) but too high for mobile WASM at single-thread. Lichess's browser analysis uses `go movetime` (time-based) rather than `go nodes` for exactly this reason — it's a better UX guarantee on heterogeneous hardware.
+The gate is designed for the centipawn regime where the sigmoid is the right discriminator.
+lichess-puzzler handles the edge case explicitly: "A move also passes if there is no legal
+second move, it's a clean mate-in-1, or it's the unique tablebase-winning move." The design
+note mentions mate-in-1 in passing but does not specify how to handle best=mate-in-N vs
+second=mate-in-M or best=mate vs second=large positive.
 
 **How to avoid:**
-- Use `go movetime 1500` (1.5 seconds) as the primary budget instead of `go nodes N`. This gives a consistent UX: the eval refreshes in ~1.5s on every device, and users can see depth improving over time.
-- As a safety cap, also set `go movetime 1500 nodes 2000000` — whichever limit is hit first ends the search. This prevents runaway searches if the movetime calculation drifts.
-- Monitor reported `nps` in incoming `info` lines. If `nps < 30000` (severe throttling indicator — the WASM engine itself is seeing thermal throttle), reduce the next movetime budget to 1000ms and surface a subtle "device is warm" indicator if desired.
-- Never use `go infinite` in the analysis UI — always bound the search. `go infinite` is for engine tournaments, not interactive analysis.
+In Phase 143, implement the following hierarchy before the sigmoid margin check:
+1. If `best_mate` is not None (any forced mate) and `second_mate` is None (no mate for second):
+   forced (gate passes — one move gives mate, the other does not).
+2. If both `best_mate` and `second_mate` are not None:
+   compare mate distances; if `abs(best_mate) < abs(second_mate)` then forced (shorter mate
+   wins); if equal distances, not forced.
+3. Fall through to sigmoid margin for the cp-vs-cp case.
+
+Add a unit test covering each branch: (mate vs cp), (short mate vs long mate), (equal mates),
+(cp vs cp below threshold), (cp vs cp above threshold).
 
 **Warning signs:**
-- `bestmove` arrives more than 5 seconds after `go movetime 1500` was sent (indicates the worker's event loop is itself starved or the device clock is throttled).
-- Users report "the board is frozen" after making a move.
-- `info` lines report `nps` values dropping over successive searches (thermal throttle signature).
+Mating combinations disappearing from the tactic UI after the gate is applied. If the
+"mate" motif family has a very high gate-removal rate in Phase 144, the mate handling is wrong.
+Specifically: any mate-in-1 position being suppressed is a definitive failure signal.
 
-**Phase to address:**
-Engine hook phase (Phase 136) — hardcode `movetime` limit in `useStockfishEngine` from day one. Do not expose it as a user-configurable option in v1; choose a sensible default. Add a mobile smoke test: open `/analysis` on a budget Android device (or Chrome DevTools throttling at 4x slowdown) and confirm eval updates arrive within 3 seconds.
+**Phase to address:** Phase 143 (re-tagger implementation — must include the mate hierarchy);
+Phase 144 (validate against a synthetic corpus position with mate-in-N vs cp)
 
 ---
 
-### Pitfall 6: WASM `Content-Type: application/wasm` Not Served by Caddy — `instantiateStreaming` Throws
+### Pitfall 6: JSONB columns leaking into stats queries via ORM SELECT *
 
 **What goes wrong:**
-`WebAssembly.instantiateStreaming(fetch('/engine/stockfish.wasm'))` requires the server to respond with `Content-Type: application/wasm`. If Caddy (or any proxy in the chain) serves the `.wasm` file as `application/octet-stream` or — worse — as `text/html` (a catch-all for unknown extensions), `instantiateStreaming` throws `TypeError: Failed to execute 'compile' on 'WebAssembly': Incorrect response MIME type`. The engine falls back to `WebAssembly.instantiate(arrayBuffer)` if your code handles the error, which is 30–40% slower to parse. If your code does not handle the error, the engine silently fails to load.
+`allowed_pv_lines` and `missed_pv_lines` store arrays of per-ply JSON objects (up to 12 nodes,
+5 fields each). A single row's JSONB can be a few hundred bytes; across a corpus of 100k flaws,
+a query that selects `*` from `game_flaws` pulls substantial TOAST I/O. Postgres automatically
+TOASTs JSONB values over ~2 KB out-of-line, which means any code that accidentally expands `*`
+triggers real TOAST block fetches. The risk is the existing stats queries (`/api/library/
+mistake-stats`, flaw-comparison endpoint, benchmark flaw-delta computation) — these all touch
+`game_flaws` and care only about `ply`, `severity`, `tag`, `tactic_motif`, not the PV blobs.
 
 **Why it happens:**
-Caddy 2 includes `application/wasm` for `.wasm` in its built-in MIME types (since Caddy ~2.3), so this should not be an issue for FlawChess's Caddy 2.11.2 setup — but only for files Caddy serves directly. If the WASM is bundled into a Vite asset chunk that gets inlined (base64) or renamed without a `.wasm` extension, Caddy never sees the extension. Additionally, if a CDN or Cloudflare proxy sits in front of Caddy and strips or overrides content types, `application/wasm` may not reach the browser.
+SQLAlchemy 2.x `select(GameFlaw)` selects all mapped columns including future ones. When the
+migration adds `allowed_pv_lines` and `missed_pv_lines` to the ORM model, every existing query
+that uses `select(GameFlaw)` starts fetching them without any code change.
 
 **How to avoid:**
-- Place the WASM in `public/engine/` and reference it as a static path. Caddy serves `public/` directly with correct MIME types.
-- After the first production deploy, run: `curl -I https://flawchess.com/engine/stockfish-18-lite-single.wasm | grep content-type` and confirm `content-type: application/wasm`.
-- If using the Cloudflare tunnel or Cloudflare proxy: verify Cloudflare does not re-serve the WASM with an overridden MIME type (Cloudflare generally preserves origin MIME types for non-HTML resources).
-- In `vite.config.ts`, ensure the `.wasm` file is NOT captured by `assetsInlineLimit` (set `assetsInlineLimit: 0` for `.wasm` files to keep them as separate fetched resources):
-  ```ts
-  build: {
-    assetsInlineLimit: (filePath) => filePath.endsWith('.wasm') ? 0 : 4096
-  }
-  ```
+In Phase 141, after writing the migration and adding the columns to the ORM model, grep all
+existing `game_flaws` queries for `select(GameFlaw)` (model-level selection) and convert them
+to explicit column projections: `select(GameFlaw.ply, GameFlaw.severity, ...)`. The PV columns
+should only be selected in the re-tagger and any future PV display path. Document this
+constraint in a comment on the model columns: "# Not selected by stats queries — add explicitly
+only for PV access."
 
 **Warning signs:**
-- DevTools Network tab shows the `.wasm` request returning `Content-Type: application/octet-stream`.
-- Console logs `TypeError: Failed to execute 'compile' on 'WebAssembly': Incorrect response MIME type`.
-- Engine takes noticeably longer to start (falling back to `instantiate(arrayBuffer)` path).
+A slow-down in the flaw-comparison or mistake-stats endpoints after the Phase 141 migration
+without any other change. `EXPLAIN (ANALYZE, BUFFERS)` showing unexpected "Heap Fetches" or
+TOAST block reads on game_flaws scans.
 
-**Phase to address:**
-Engine hook phase (Phase 136) — add a MIME type verification step to the deployment checklist for this phase.
+**Phase to address:** Phase 141 (migration + model) — audit all existing query sites before
+committing the migration
 
 ---
 
-### Pitfall 7: UCI Score Parsing — Lowerbound/Upperbound, Mate-0, and MultiPV Ordering Mistakes
+### Pitfall 7: Defender-vs-solver node confusion in the re-tagger
 
 **What goes wrong:**
-Three specific UCI parsing mistakes corrupt the displayed eval:
+The gate applies uniqueness only at SOLVER nodes (the attacking/tactic-delivering side).
+At DEFENDER nodes, any move is valid — the engine's single best reply is played and the line
+continues. If the re-tagger applies `p(best) - p(second) > 0.35` at every ply (including
+defender plies), it will kill valid tactics where the defender has two reasonable responses
+(both of which lead to the same tactic firing one ply later). This is a different failure mode
+from the false-negative problem: it kills correct tags even at shallow depth where the tactic
+is clear.
 
-**Lowerbound/Upperbound:** During alpha-beta search, the engine emits `info score cp N lowerbound` or `info score cp N upperbound` when the score is a hash table estimate, not the true eval. Displaying these directly causes the eval bar to jump erratically as bounds tighten. Many hobbyist implementations ignore the flags and display every `info` line — this looks correct at depth 1 but produces jittery, wrong evals at depth 10+.
-
-**Mate scores with N=0:** `score mate 0` means the position is already checkmate (the side to move is mated). Some parsers crash or display `M0` as `M∞`. Negative mate scores (`score mate -3`) mean the side to move is losing by forced mate in 3 — the engine is reporting that the position is a loss, not that it is checkmating in 3.
-
-**MultiPV ordering:** With `MultiPV 2`, the engine sends interleaved `info multipv 1` and `info multipv 2` lines, but they arrive out of order — the engine may finish multipv 2 before multipv 1 at the same depth, then finish multipv 1 later. A naive "last info line wins" approach picks the wrong PV. The `bestmove` corresponds to multipv 1 always, but the `info` lines need the `multipv N` tag to sort correctly. With `go movetime`, the final info lines before `bestmove` are the deepest available — but across multipv slots, they may be at different depths.
+The design note is explicit: "At defender nodes there is no uniqueness check." The existing
+`tactic_detector.py` uses `pov` to track whose turn it is. The re-tagger must correctly read
+this turn structure from the stored PV, where ply parity (relative to the flaw ply) determines
+solver vs. defender.
 
 **Why it happens:**
-The UCI spec describes these behaviors but most browser engine wrappers are written from lichess's JavaScript analysis code, which handles them correctly. When rolling a custom parser, developers skip the spec's edge cases because the common path (exact score, single PV, not mate) covers 95% of positions.
+The PV in `allowed_pv_lines` / `missed_pv_lines` is indexed from the flaw ply. Whether ply 0
+in the blob is a solver or defender move depends on the flaw orientation (`allowed` vs
+`missed`) and `user_color`. Getting this wrong by one ply means the gate fires on every
+defender node and suppresses most deep tactics.
 
 **How to avoid:**
-- Parse every `info` line into a structured object with explicit fields: `{depth, seldepth, multipv, score: {type:'cp'|'mate', value:number, bound:'exact'|'lower'|'upper'}, nodes, nps, pv}`.
-- Only display scores where `bound === 'exact'`. Buffer `lowerbound` / `upperbound` scores as "last known bound" but never display them as the current eval.
-- For mate scores: render `M0` as "Checkmate" (game over), `M-N` as "Losing M-in-N", `M+N` as "Winning M-in-N". Handle `mate 0` explicitly as a terminal state.
-- For MultiPV: maintain a `Map<number, PVLine>` keyed by `multipv` index. Update on every `info` line. On `bestmove`, take the map's current state as the final eval. Do not assume arrival order.
+In Phase 143, write a unit test that constructs a position where the defender has two plausible
+responses (e.g., a pin where the defender can block with either of two pieces) but the attacker
+has one forced winning continuation regardless. Verify the gate passes. The ply-to-pov mapping
+must be extracted from the existing `tactic_detector.py` `pov` logic and reused, not
+reimplemented.
 
 **Warning signs:**
-- Eval bar jumps to extreme values during normal play and then snaps back.
-- PV display shows the second-best line instead of the best.
-- The UI shows "Mate in 0" or crashes on positions where the game is already over.
-- MultiPV 2 lines swap positions randomly.
+Overall tag survival rate far lower than expected — especially motifs that require defender
+responses (back-rank mate, discovered attack). A pov-parity off-by-one produces approximately
+a 50% reduction in all surviving tags across motifs uniformly.
 
-**Phase to address:**
-Engine hook phase (Phase 136) — write a standalone UCI parser with unit tests for all three edge cases before integrating it with the worker. Test inputs: an `info` line with `lowerbound`, a `score mate 0` line, and an interleaved MultiPV sequence.
+**Phase to address:** Phase 143 (re-tagger implementation) — verify with unit tests covering
+both allowed-flaw and missed-flaw orientations for both user colors
 
 ---
 
-### Pitfall 8: Accidental Multi-Thread — Slipping `SharedArrayBuffer` or COOP/COEP Headers Site-Wide
+### Pitfall 8: Backfill not idempotent; lichess-eval gate policy left ambiguous
 
 **What goes wrong:**
-If any future change introduces `SharedArrayBuffer` (e.g. choosing a multi-thread engine build, using `Atomics`, or referencing a dependency that requires it), the browser requires Cross-Origin Isolation: `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp` (or `credentialless`). Setting these site-wide on FlawChess breaks three things simultaneously:
+Two sub-pitfalls:
 
-1. **Google OAuth popup**: `COOP: same-origin` severs `window.opener`, so the OAuth callback cannot communicate back to the opener tab. Google Sign-In silently fails.
-2. **iOS Safari COEP**: iOS Safari only honors `COEP: require-corp`, not `credentialless`. Any cross-origin asset without `Cross-Origin-Resource-Policy: cross-origin` (e.g. user avatars from chess.com CDNs, analytics scripts) is blocked with a network error.
-3. **React Router SPA cannot isolate per-route**: Cross-origin isolation is a property of the HTML document set at load time; client-side navigation reuses the same document. You cannot enable isolation only on `/analysis` without making it a hard-navigated separate document with no shared JS context.
+(a) **Idempotency failure.** If the MultiPV backfill crashes mid-run and is restarted, it may
+re-evaluate already-filled positions (wasting engine time) or produce inconsistent JSONB values
+from a second engine pass. The common trap: using `INSERT ... ON CONFLICT DO NOTHING` silently
+skips incomplete rows if the PK exists but the JSONB columns were only partially written before
+the crash.
 
-The trap is subtle: a new npm dependency (e.g. a WASM-based chess engine with threading enabled) may bundle a build that uses `SharedArrayBuffer` without advertising it prominently. The engine appears to work on desktop Chrome, but fails on Google OAuth and iOS instantly.
+(b) **Lichess-eval gate.** The existing eval pipeline gates all Stockfish re-evaluation on
+`lichess_evals_at IS NULL` — positions whose evals came from lichess are left alone. The
+MultiPV pass needs to evaluate flaw positions with Stockfish to get second-best data (lichess
+provides only best-move eval). If the backfill reflexively adds `WHERE lichess_evals_at IS NULL`
+to the MultiPV pass, users whose games were analyzed by lichess get NULL JSONB blobs and the
+gate never fires for them — silently leaving all their noisy tags intact.
 
 **Why it happens:**
-Multi-thread WASM engines are a natural upgrade path — lichess uses them, and the perf difference on desktop is real. When performance concerns arise in v1 testing, the "obvious fix" is to switch to the multi-thread build. But the full COOP/COEP impact is invisible until it breaks OAuth or iOS.
+The lichess-eval gate is deeply ingrained in the eval pipeline (EVALFIX-01..05, Phase 117.1).
+Developers following that pattern reflexively add `WHERE lichess_evals_at IS NULL` to any new
+Stockfish pass, even when the new pass has different semantics (second-best is needed
+regardless of eval source).
 
 **How to avoid:**
-- Lock in `vite.config.ts` and the Caddy config: no `Cross-Origin-Opener-Policy` or `Cross-Origin-Embedder-Policy` headers anywhere on the site. Add a comment citing D-3 and this pitfall.
-- In `useStockfishEngine`, document explicitly:
-  ```ts
-  // Single-thread WASM only — do NOT replace with a SharedArrayBuffer-requiring build.
-  // Multi-thread is deferred (SEED-066 D-3). Changing this requires full COOP/COEP analysis.
-  ```
-- If v1 desktop performance is genuinely insufficient (unlikely), the correct path is a separate hard-navigated `/analysis-desktop` document with its own HTML entry point and no OAuth — not site-wide headers. This requires a Vite multi-page setup and explicit Caddy routing. Open this path only via a dedicated `/gsd-explore` session on D-3.
-- Test: after every CI build, run `curl -I https://flawchess.com | grep -i 'cross-origin'` and fail the build if any COOP/COEP headers appear.
+(a) Write the backfill as `UPDATE game_flaws SET allowed_pv_lines = :blob, missed_pv_lines = :blob
+WHERE (user_id, game_id, ply) = (:uid, :gid, :ply) AND allowed_pv_lines IS NULL`. The
+`IS NULL` guard makes it idempotent: a restart skips already-filled rows.
+
+(b) Explicitly document in the Phase 145 plan: the MultiPV pass runs on ALL flaw positions
+(NOT gated on `lichess_evals_at`), because it captures second-best data that lichess never
+provided. The stored `eval_cp` in the JSONB best field may differ from the lichess-sourced
+`eval_cp` on the row — this is acceptable and must be called out in a code comment.
 
 **Warning signs:**
-- Engine package README mentions "SharedArrayBuffer" or "Threads > 1" requirement.
-- A dependency update makes Google Sign-In fail silently.
-- iOS users report that profile images or certain analytics fail to load after an update.
-- `window.crossOriginIsolated` returns `true` in the browser console — this should always be `false` for FlawChess.
+The backfill script reports 0 rows updated on a second run but the JSONB columns are only
+partially populated (some rows NULL). The `allowed_pv_lines` column is NULL for all users
+whose games have `lichess_evals_at NOT NULL` after the backfill completes.
 
-**Phase to address:**
-Engine hook phase (Phase 136) — enforce the single-thread package choice from the start. Add a CI check for COOP/COEP headers. Revisit only if v1 ships and desktop performance is genuinely inadequate, via a new discuss session.
+**Phase to address:** Phase 145 (backfill script and rollout)
 
 ---
 
-### Pitfall 9: Subsume-Without-Regression — Four Phase 135 Behaviors That Break During the Refactor
+### Pitfall 9: AGPL boundary slip — copying lichess-puzzler source patterns
 
 **What goes wrong:**
-The subsume refactor folds the Phase 135 `TacticLineExplorer` modal into the new analysis board as a "tactic mode." Four specific behaviors are at high risk of silent regression:
-
-**Behavior A — Depth-0 highlight:** When `currentDepth === 0` in `useTacticLine`, the flaw move itself is highlighted on the board (no PV to step through). If the new analysis board's `useChessGame` variant starts at the flaw position and the tactic mode overlay doesn't check `depth === 0` separately, it attempts to step the PV and shows the wrong position or crashes on an empty PV array.
-
-**Behavior B — Missed/Allowed +1 offset (`tacticDepth.ts`):** `tacticDepth.ts` computes the correct starting PV depending on orientation: missed = PV from the flaw position (the best reply the user should have played); allowed = PV from the position after the opponent's flaw move (+1 ply, the user's response). If the analysis board's `loadMoves()` call receives the PV anchored at the wrong ply, every subsequent step is off by one and the user sees the opponent's moves instead of their own.
-
-**Behavior C — Real-game-ply move numbering:** The tactic context knows the original `game_ply` (e.g. ply 42 = White's 22nd move). The tactic line display shows full-move numbers anchored to the game's ply, not restarted from 1. If the analysis board's `useChessGame` variant initializes its internal `currentPly` counter from 0 when a FEN is loaded, displayed move numbers will be "1. e4 e5" instead of "22. Nxf7 Rxf7" — confusing in tactic context.
-
-**Behavior D — Next/prev-tactic navigation rail:** The next-tactic rail in the tactic overlay must survive re-mounting as an overlay on the shared board (instead of the old modal). If the rail's state (which tactic index) is stored inside `TacticLineExplorer`'s local state, it resets to 0 every time the analysis board re-mounts (e.g. on route re-entry). It needs to be lifted to the URL or a calling context.
+The forcing-line gate closely mirrors lichess-puzzler's `is_valid_attack` logic from
+`generator/generator.py`. The temptation is to copy function structure, variable names, or
+the exact conditional tree verbatim, which constitutes derivative work of AGPL-3.0 source.
+The prior cook.py alignment (Phases 124/125) established the correct boundary: heuristics,
+constants, and function names are facts/ideas (not copyrightable) and can be referenced in
+prose. Code structure and implementation must be original.
 
 **Why it happens:**
-The subsume is framed as a "refactor" but involves significant structural changes to where state lives. Each of the four behaviors was implicit in the old component's architecture; moving to a composition model exposes the implicit dependencies.
+The reference clone at `/home/aimfeld/Projects/Python/lichess-puzzler` is explicitly used as
+reference. In the flow of implementation, copying a conditional into Python and "planning to
+paraphrase it later" is the classic slip. The MultiPV gate adds new surface area beyond the
+prior cook.py alignment work.
 
 **How to avoid:**
-- Write regression tests for all four behaviors BEFORE touching any Phase 135 code. Pin the tests to `TacticLineExplorer`'s current behavior (mounting at a known FEN + PV and asserting move numbers, highlight squares, PV advancement). These tests become the acceptance bar.
-- Keep `tacticDepth.ts` untouched during the subsume. The analysis board accepts a `tacticSeed` prop (FEN, PV, orientation, game-ply-offset, motif) and the overlay reads from it — no internal recalculation of the offset logic.
-- For Behavior C: the `useChessGame` branching variant must accept an optional `startingPly` parameter that offsets its internal ply counter. When loading a tactic from ply 42, pass `startingPly={42}`.
-- For Behavior D: lift the current tactic index to URL state (`/analysis?tacticId=<id>`) so it survives route re-entries and is shareable.
-- Run the tactic overlay against the existing dev database's tactic flaws before calling the subsume complete.
+Never open `generator/generator.py` or `tagger/cook.py` while writing the re-tagger. Implement
+the gate from the design note description alone — which already translates all heuristics into
+our units. After implementation, confirm no function body in tactic_detector.py or the
+re-tagger could only have been derived from the reference clone source (not from the design
+note prose). The Phase 143 code review must include an explicit AGPL scan.
 
 **Warning signs:**
-- Stepping a tactic line shows the opponent's moves instead of the user's recommended moves.
-- Move numbers displayed as "1. ..." instead of the game's actual move number.
-- The first step of a depth-0 tactic crashes (trying to advance an empty PV).
-- Next-tactic resets to tactic #1 every time the user returns to `/analysis`.
+Any variable named `is_valid_attack`, `cook_advantage`, or other verbatim lichess-puzzler
+internal names appearing in committed source (these names in comments and design notes are
+fine; in code they signal copy-paste risk). Function bodies that match the reference clone
+line-for-line.
 
-**Phase to address:**
-Subsume phase (Phase 139, the last phase of v1.29) — this is explicitly the highest-regression-risk phase. Allocate extra time; treat it as a refactor with the Phase 135 test suite as the gate. Do NOT ship the subsume in the same phase as the engine hook or analysis board — separate phases allow bisecting regressions cleanly.
+**Phase to address:** Phase 143 (re-tagger implementation and code review)
 
 ---
 
-### Pitfall 10: WASM Bundle Lazy-Loading UX — "Loading Engine" State Missing or Blocking Navigation
+### Pitfall 10: python-chess MultiPV API returns a list, not a scalar InfoDict
 
 **What goes wrong:**
-The WASM engine binary (even the lite ~7 MB build) takes 200–800 ms to fetch, instantiate, and initialize UCI on a fast connection. On a slow mobile connection (3G, 50kbps effective in subway), it can take 30+ seconds. If the component renders the board immediately but blocks user interaction waiting for `uciok`, the board appears frozen — no "loading" indicator, no moves accepted. If instead the component shows a loading overlay, but the overlay covers the board completely and doesn't allow position navigation (e.g. stepping a loaded PV), the UX degrades: users can't explore the stored line while the engine loads.
-
-The complementary mistake: the WASM is NOT lazy-loaded. If the engine chunk is included in the main bundle (or even the lazy analysis chunk includes it as a synchronous import), it delays the initial parse of the JS for the entire `/analysis` route.
+The existing `_analyse_with_pv` method calls `protocol.analyse(board, limit)` and treats the
+return as a single `chess.engine.InfoDict`. With `multipv=2`, python-chess's `analyse()` call
+returns `list[InfoDict]` where index 0 is the best-move line and index 1 is the second-best.
+If Phase 142 adds `{"MultiPV": 2}` to the options or passes it as a search parameter but still
+treats the return as a scalar, it silently takes the second-best eval as the best, or crashes
+with `AttributeError: 'list' object has no attribute 'get'` on the first real call.
 
 **Why it happens:**
-Engine initialization is asynchronous but the board and PV stepper don't require the engine. Developers block everything on `uciok` because it's the simplest model.
+The chess.engine API difference between `multipv=1` (scalar InfoDict) and `multipv>1` (list)
+is not obvious from the function signature. All existing callers pass scalar results to
+`_score_to_cp_mate(info)` which calls `info.get("score")` — this will fail or mis-read if
+`info` is a list.
 
 **How to avoid:**
-- Split engine loading from board rendering. The board, PV stepper, stored evals, and tactic overlay all work without a live engine — show them immediately.
-- Only the "live eval" area (eval bar, top lines, depth readout) is in a loading state until `uciok` arrives. Use a skeleton/spinner specifically in that region.
-- Send `uci` to the worker immediately on mount (not on first position change). Initialize in the background; show the eval area as "loading engine…" during this time.
-- Use React Router's lazy() + Suspense for the entire `/analysis` chunk. The WASM binary must NOT be a static import at the app entry point — it must only load when the route is visited.
-- On slow connections: show a progress estimate. The WASM file fetch can be tracked via `fetch()` with `ReadableStream` — not required for v1 but worth noting as a future UX polish.
+In Phase 142, add a new `_analyse_multipv` method alongside the existing `_analyse_with_pv`.
+This method must handle the list return: `infos = await protocol.analyse(board, limit,
+multipv=2)` returns `list[InfoDict]`. Extract `infos[0]` for best-move data and `infos[1]`
+for second-best. Guard for the case where only one legal move exists (`len(infos) == 1`):
+treat as forced (no second best). Add a unit test that mocks `protocol.analyse` returning a
+two-element list and verifies correct extraction of best vs second.
 
 **Warning signs:**
-- Board appears blank for 1–2 seconds when navigating to `/analysis` even on fast Wi-Fi (WASM being parsed synchronously on the main chunk).
-- No loading indicator in the eval area — board just looks "not working."
-- Mobile users report that chess analysis "doesn't do anything" (engine loaded but no visible feedback during analysis).
+`AttributeError: 'list' object has no attribute 'get'` in the engine pool on the first
+MultiPV call. Or, more insidiously: tactic tags consistently suppressed across all motifs
+(if best/second evals are transposed, the margin is near zero for all positions).
 
-**Phase to address:**
-Analysis board phase (Phase 137) — the board + PV stepper must be independently renderable. Engine loading state integration is part of the route phase (Phase 138) where the full UX composition comes together.
+**Phase to address:** Phase 142 (engine.py MultiPV method implementation)
 
 ---
 
 ## Technical Debt Patterns
 
-Shortcuts that seem reasonable but create long-term problems.
-
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| Use full NNUE SF18 build (~40+ MB) for "better analysis" | Higher depth on desktop | Breaks iOS Cache API (50 MB limit), slow on mobile, fails the PWA install flow | Never for v1; only on desktop-isolated progressive enhancement path |
-| `go infinite` with a user-facing "Stop" button | Familiar lichess UX | Requires the user to manually stop; engine runs forever if user navigates away without stopping; battery drain | Never — always bound with `movetime` |
-| Skip the stop/bestmove handshake, send `go` immediately after position change | Simpler code | Stale-eval race: bestmove from previous search displayed for new position | Never |
-| Module-level singleton worker (one instance for the entire session) | Avoids re-init cost (~200ms) | Must implement explicit pause/resume; harder to test; worker errors affect all uses | Acceptable if paired with explicit `pause()` on route unmount; not recommended for v1 |
-| Display all `info` lines including lowerbound/upperbound scores | Simpler parsing | Eval bar appears jittery; wrong score displayed during search | Never — filter to `exact` scores only |
-| Keep `TacticLineExplorer` as a separate component alongside the new analysis board | Avoids subsume risk | Code duplication forever; two separate board instances maintained; users see inconsistent behavior between tactic and free analysis | Only during Phase 135→136 transition; must complete subsume before v1.29 closes |
-
----
+| Inline JSONB on game_flaws (not sidecar table) | No JOIN for re-tagger | If stats queries select `*` on game_flaws, TOAST I/O becomes a bottleneck at >200k flaws | Acceptable IF Pitfall 6 prevention (explicit column projection) is applied in Phase 141 |
+| Reuse 1M-node budget for MultiPV pass without measuring margin distribution | No timeout change | Ordering may be noisy at the threshold; false-negative rate inflated | Never — Phase 142 must include the margin histogram check before budget is finalized |
+| Single global 0.35 margin for all motifs | Simple implementation | Pin/fork at depth 1 and clearance at depth 8 have different noise profiles | Acceptable for v1.30; flag as a follow-on tuning seed if Phase 144 shows per-motif FN divergence |
+| Backfill during prod hours without throttle | No deploy window needed | MultiPV backfill competes with import-era eval drain for pool workers | Only if the backfill leaves at least 2 pool slots free for live traffic (checked via pool-size arithmetic) |
 
 ## Integration Gotchas
 
-Common mistakes when integrating the live engine with existing FlawChess components.
-
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| `useChessGame` clone for analysis | Copy `useChessGame` and add branching; now two copies diverge | Fork `useChessGame` into `useAnalysisGame` with a clear composition boundary; shared logic extracted to utils; no state duplication |
-| `tacticDepth.ts` import | Reimplementing the offset logic in the new analysis hook | Import `tacticDepth.ts` unchanged; the analysis board's `loadTacticSeed()` calls it to compute the correct PV anchor |
-| `ArrowOverlay` + engine arrows | Adding engine top-line arrows on top of existing tactic arrows; both sets render | Engine arrows and tactic arrows are mutually exclusive: tactic mode shows tactic arrows (best-move highlight); free analysis mode shows engine PV arrows. Gate via mode prop |
-| PWA service worker + WASM | Workbox `generateSW` auto-precaches everything in `dist/` including the new WASM | Explicitly exclude WASM from precache glob pattern: `globIgnores: ['**/*.wasm']`; let HTTP cache handle it |
-| URL state encoding for FEN/PGN | URL-encoding a full PGN string in query params; URLs become 1000+ chars, break sharing | Encode only the FEN for the current position + move list as UCI notation (compact); decode on mount |
-| Vite `optimizeDeps.exclude` for stockfish | Forgetting to exclude causes dep-optimization breakage in dev | Add `optimizeDeps: { exclude: ['stockfish'] }` before writing any engine code |
-
----
+| python-chess MultiPV analyse() | Passing result to `_score_to_cp_mate(info)` as a scalar | `infos = await protocol.analyse(..., multipv=2)` returns `list[InfoDict]`; check `len(infos)` before indexing |
+| chess.engine.Limit with MultiPV | Assuming `Limit(nodes=1_000_000)` gives equal quality to single-PV at same budget | MultiPV=2 at 1M nodes gives roughly single-PV quality at ~500k nodes per line; measure margin stability before finalizing |
+| Remote workers + MultiPV pass | Creating a parallel submission pathway outside the existing lease/submit contract | Extend the existing lease payload to include the `multipv=2` flag and expected return schema; do not add a separate endpoint |
+| game_flaws ORM model | SQLAlchemy `select(GameFlaw)` auto-includes all mapped columns after migration | Use explicit column selects in all stats queries; JSONB columns selected only by PV-specific callers |
+| Already-winning reject (>300 cp) | Re-computing the reject threshold using the MultiPV best-eval from the new engine pass | Use the stored `eval_cp` at the flaw ply from the existing eval pipeline (already materialized); do not mix eval sources in the gate |
 
 ## Performance Traps
 
-Patterns that work at small scale but fail under realistic mobile conditions.
-
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| `go nodes 1000000` (server-side budget) in browser | 10–30s waits on mobile, device heats up | Use `go movetime 1500` as the primary bound; nodes as secondary cap | Any device below flagship Android |
-| Re-creating the worker on every position change | 200ms stutter on each move; "loading engine" flashes every time | Create the worker once on mount, reuse via `stop`/`go` sequence; terminate only on unmount | Always noticeable; especially bad on mobile |
-| Sending `setoption name MultiPV value 2` unconditionally | 2x analysis cost; slower depth progression; on mobile this doubles movetime | Only enable MultiPV 2 when the UI is actually rendering a second line (analysis mode); use MultiPV 1 for tactic mode where only the best reply matters | Low-end mobile; analysis takes 2× as long |
-| Not debouncing position changes | Rapid PV stepping floods the worker with stop/go cycles; `bestmove` responses pile up | Debounce position changes by 150ms before sending `go`; this is especially important when the user holds down the forward key | Any fast PV stepping in the tactic stepper |
-| Parsing info lines in the main thread via heavy regex | Jank on info-line bursts (Stockfish emits many lines/second) | Parse in the Worker itself and postMessage only the structured result; the Worker thread is off the main thread but still reduce postMessage volume | High-depth analysis; info lines arrive ~10/sec |
-
----
-
-## UX Pitfalls
-
-Common user experience mistakes specific to this domain.
-
-| Pitfall | User Impact | Better Approach |
-|---------|-------------|-----------------|
-| No "loading engine" state — board appears frozen | User thinks the page is broken; may reload, losing their position | Show a spinner in the eval area immediately; board and PV stepper are interactive while engine loads |
-| Showing engine eval before the engine is confident (depth < 8) | Shallow evals show highly misleading scores (±500 cp swings); users distrust the feature | Show eval only from depth 8+; until then show "Analyzing…" with a depth counter |
-| Eval bar updating every `info` line (30+ updates/second) | Rapid flicker; mobile renders can't keep up; perceived jitter | Throttle eval bar updates to every 300ms or on depth change; debounce with `requestAnimationFrame` |
-| No explanation when engine is unavailable (browser blocking WASM, or download fails) | User sees a dead eval bar with no explanation | Catch `WebAssembly.instantiate` errors; show "Engine unavailable. Try refreshing or using a supported browser." |
-| Tactic mode drops users into free analysis without warning | User stepped off the tactic line and suddenly has no guided content | Show a subtle "Exploring off-line — engine is analyzing freely" chip when the user deviates from the stored PV in tactic mode |
-
----
+| JSONB blobs selected in flaw-comparison / mistake-stats queries | Slow endpoints after Phase 141 migration with no other change | Explicit column projection in all stats queries (Pitfall 6) | Noticeable at >50k game_flaws rows per user; measurable at corpus scale |
+| Backfill using a second independent EnginePool | Backend RSS spikes toward 4g during Phase 145 | Reuse the module-level pool; calculate RSS before any pool-size change | Any time two pools overlap with combined size > 8 workers |
+| MultiPV eval on all game_positions ply by ply | Phase 142 scope creep inflating the eval drain runtime | MultiPV pass is only for FLAW POSITIONS (game_flaws rows), not all game_positions; the flaw set is typically <5% of all positions | Immediately at corpus scale — all-ply drain is already several seconds per game |
+| Node budget increase without timeout increase | Timeout-triggered (None, None) returns on slow/busy machine; gate silently skips positions with NULL second-best | If budget > 1M, scale `_NODES_TIMEOUT_S` proportionally; document the ratio | On prod where machine load varies |
 
 ## "Looks Done But Isn't" Checklist
 
-Things that appear complete but are missing critical pieces.
-
-- [ ] **Vite dev vs prod parity:** Verify the engine loads in `npm run build && npx serve dist` on the same machine before testing on mobile — dev (`vite dev`) may succeed while `build` 404s the WASM.
-- [ ] **iOS Cache quota:** On an iPhone (or iOS Simulator), open `/analysis` in Safari standalone PWA mode; confirm no `QuotaExceededError` in the Web Inspector console and no SW registration failure.
-- [ ] **Worker terminate on unmount:** Navigate to `/analysis`, let the engine start, then navigate away. Open Chrome DevTools Task Manager; confirm no "Dedicated Worker" process remains.
-- [ ] **Stale-eval race:** Move rapidly through a PV (6+ moves in 2 seconds); confirm the displayed eval and best-move arrow correspond to the final position, not an intermediate one.
-- [ ] **Mate display:** Navigate to a checkmated position; confirm the UI shows "Checkmate" (not "Mate in 0" or a crash).
-- [ ] **MultiPV ordering:** With MultiPV 2 enabled, confirm the displayed second line is actually the second-best move, not a random line from an interleaved info sequence.
-- [ ] **Tactic mode Behavior A (depth-0):** Open a depth-0 tactic from a flaw card; confirm the flaw move square is highlighted and no PV step crash occurs.
-- [ ] **Tactic mode Behavior B (+1 offset):** For an "allowed" tactic (opponent's flaw), confirm the first PV move shown is your best response to the opponent's blunder, not the opponent's move itself.
-- [ ] **Tactic mode Behavior C (move numbers):** Open a tactic from ply 42; confirm the displayed move counter starts at move 22, not move 1.
-- [ ] **COOP/COEP header check:** After deploy, run `curl -I https://flawchess.com | grep -i cross-origin` — no COOP or COEP headers should be present.
-- [ ] **Google OAuth unbroken:** After adding the analysis page, complete a full Google Sign-In flow; confirm it still works (COOP accidental slip is silent until OAuth is tested).
-
----
+- [ ] **MultiPV ordering reliability:** the margin histogram is plotted and confirms most positions are far from the 0.35 threshold before finalizing the node budget — not just "the pass runs without error"
+- [ ] **Mate-score special case:** unit tests cover (mate vs cp), (short mate vs long mate), (equal-length mates), (mate-in-1) — the gate must not suppress a mate-in-1
+- [ ] **Solver-vs-defender parity:** the re-tagger applies the gate only at solver nodes; a unit test with a defender-branching position confirms the gate passes
+- [ ] **False negatives measured:** Phase 144 report includes a per-motif "good tags killed" estimate from a 30-sample hand-check, not just total removed count
+- [ ] **A/B isolation verified:** old-logic replay reads stored `eval_cp` from dev's DB and does NOT call the engine; confirmed by checking that re-running Phase 144 with a mocked engine produces identical old-logic results
+- [ ] **python-chess list API:** the new MultiPV method is tested against a mock that returns `[InfoDict, InfoDict]`; the `len(infos) == 1` (only-move) path is tested separately
+- [ ] **Stats query column audit:** `grep -rn "select(GameFlaw)" app/` shows zero hits in stats paths after Phase 141 (all converted to explicit column projection)
+- [ ] **Backfill idempotency:** running the Phase 145 backfill script twice produces zero rows updated on the second run and identical JSONB content
+- [ ] **Lichess-eval policy explicit:** the Phase 145 plan documents that lichess-eval positions ARE included in the MultiPV pass (second-best from Stockfish is new data not from lichess)
+- [ ] **AGPL scan complete:** no variable or function body in the committed re-tagger matches the reference clone's `is_valid_attack` or `generator.py` structure; reviewer confirms independently
 
 ## Recovery Strategies
 
-When pitfalls occur despite prevention, how to recover.
-
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| Vite WASM URL broken in prod | LOW | Move engine files to `public/engine/`; update Worker instantiation URL; redeploy |
-| iOS Cache quota exceeded; SW broken | MEDIUM | Remove WASM from SW precache; bump SW version to force re-registration; redeploy; no data loss |
-| Worker leak discovered post-ship | LOW | Add `worker.terminate()` to `useEffect` cleanup; redeploy — one-line fix, but mobile users need to reload the app |
-| Stale-eval race producing wrong bestmove | MEDIUM | Add sequence counter to UCI parser; requires refactoring the hook's message handler; no data loss |
-| COOP/COEP headers accidentally set site-wide | HIGH | Emergency revert of header config; Google OAuth and iOS assets broken for all users until deploy; prioritize immediately |
-| Phase 135 tactic behavior regressed in subsume | MEDIUM | Revert the subsume PR; keep `TacticLineExplorer` as a separate component temporarily; re-approach with the regression tests in place |
-| Full SF18 NNUE accidentally shipped (large build) | LOW | Swap to lite build in config; redeploy; no data loss — only a bundle-size regression until fixed |
-
----
+| Wrong node budget and noisy ordering producing bad corpus tags | MEDIUM | Re-run MultiPV backfill at corrected budget (idempotency means clean update); re-tag with stored blobs — no engine re-pass |
+| RSS regression / OOM-kill during backfill | LOW | Stop backfill, reduce pool size or throttle concurrency, restart; partial progress preserved by idempotency guard |
+| A/B methodology flaw discovered post-Phase-144 | LOW | Re-run Phase 144 with correct same-stored-eval methodology; stored MultiPV blobs are already in dev's DB |
+| False negative issue found post-rollout | HIGH | Re-tune margin per-motif, re-run offline re-tagger against stored blobs, ship updated tags via another backfill; no schema change, no engine re-pass |
+| Mate-score gate bug suppressing mating combinations post-rollout | MEDIUM | Fix re-tagger logic, re-run offline re-tagger against stored blobs, redeploy updated tags |
+| JSONB leaking into stats queries | LOW | Add explicit column projection to offending queries; no migration needed |
+| AGPL slip in re-tagger | HIGH | Rewrite the gate implementation from the design note prose alone; legal review if the code was public-facing |
+| Defender-node parity bug suppressing real tags | MEDIUM | Fix pov-mapping in re-tagger, re-run against stored blobs — no engine re-pass |
+| Backfill non-idempotent and partial state in prod | LOW | NULL out partially-filled rows via migration, restart backfill; the `IS NULL` guard then re-processes only incomplete rows |
 
 ## Pitfall-to-Phase Mapping
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| Vite WASM URL resolution (Pitfall 1) | Phase 136 — Engine hook | `npm run build && npx serve dist`: WASM 200, correct Content-Type |
-| iOS 50 MB Cache limit / lite build (Pitfall 2) | Phase 136 — Engine hook | iOS Simulator: no QuotaExceededError; SW registers cleanly |
-| Stale-eval race / stop-bestmove-go ordering (Pitfall 3) | Phase 136 — Engine hook | Unit test: mock worker state machine; rapid move test in browser |
-| Worker leak on route change (Pitfall 4) | Phase 136 — Engine hook | Chrome DevTools Task Manager: no lingering workers after nav away |
-| Thermal throttle / unbounded search (Pitfall 5) | Phase 136 — Engine hook | `go movetime 1500` hardcoded; test on 4x throttled Chrome DevTools |
-| WASM MIME type on Caddy (Pitfall 6) | Phase 136 — Engine hook | Post-deploy `curl -I` check on `.wasm` URL |
-| UCI score parsing edge cases (Pitfall 7) | Phase 136 — Engine hook | Unit tests: lowerbound line, `mate 0`, MultiPV interleaved sequence |
-| Accidental multi-thread / COOP+COEP (Pitfall 8) | Phase 136 — Engine hook | CI: `curl -I` check; package lock audit for SharedArrayBuffer deps |
-| Subsume regression (Behavior A–D) (Pitfall 9) | Phase 139 — Subsume | Regression tests on depth-0, +1 offset, move numbers, tactic rail state |
-| Engine loading UX / lazy load (Pitfall 10) | Phase 137–138 — Board + route | Lighthouse: analysis route doesn't add to main bundle; loading state visible in eval area |
-
----
+| MultiPV ordering unreliable at 1M nodes | Phase 142 | Margin histogram on 200+ flaw positions; budget locked before merge |
+| RSS regression from second pool or increased budget | Phase 142 + Phase 145 | `docker stats` during Phase 145 backfill dry-run on dev; backend stays <3.5 GB |
+| A/B conflating gate effect with eval drift | Phase 144 (plan) + Phase 143 (re-tagger output format) | Old-logic replay does not call engine; verified by mocking evaluate_nodes in test |
+| False negatives unmeasured | Phase 143 + Phase 144 | Phase 144 report includes per-motif hand-check table with good-tags-killed count |
+| Mate-score saturation at the gate | Phase 143 | Unit tests covering all 4 mate/cp combinations; no mate-in-1 suppressed in corpus spot-check |
+| JSONB in stats queries | Phase 141 | `grep -rn "select(GameFlaw)"` returns zero hits in stats paths after migration |
+| Defender-vs-solver parity | Phase 143 | Unit test with defender-branching position passing the gate |
+| Backfill not idempotent / lichess-eval gate | Phase 145 | Second backfill run updates 0 rows; NULL check for lichess-eval users passes |
+| AGPL boundary slip | Phase 143 (implementation + code review) | No reference clone file open during implementation; reviewer confirms no structural match |
+| python-chess MultiPV list API | Phase 142 | Unit test with mocked 2-element list return; `len==1` guard tested separately |
 
 ## Sources
 
-- Codebase: `frontend/src/hooks/useChessGame.ts`, `frontend/src/lib/tacticDepth.ts`, `frontend/src/components/board/` — HIGH confidence (direct inspection)
-- `.planning/seeds/SEED-066-live-engine-analysis-page.md` (Risks / watch-outs, D-3 reasoning) — HIGH confidence (project document)
-- `.planning/seeds/SEED-012-client-side-stockfish-tactics.md` (Prerequisite 1: COOP/COEP + iOS Safari research) — HIGH confidence (project document)
-- [Vite Features: Web Workers](https://vite.dev/guide/features) — MEDIUM confidence (official docs, cross-checked)
-- [Vite issue #8427: new URL() in pre-bundled deps](https://github.com/vitejs/vite/issues/8427) — MEDIUM confidence (verified issue, known pattern)
-- [Vite issue #10837: ?url / ?worker inside 3rd-party modules](https://github.com/vitejs/vite/issues/10837) — MEDIUM confidence (verified issue)
-- [stockfish npm package README](https://www.npmjs.com/package/stockfish) — MEDIUM confidence (official package)
-- [Godot issue #70621: WASM 2GB memory → OOM on iOS](https://github.com/godotengine/godot/issues/70621) — MEDIUM confidence (real-world platform report)
-- [iOS Safari Cache API 50MB limit — love2dev.com](https://love2dev.com/blog/what-is-the-service-worker-cache-storage-limit/) — MEDIUM confidence (cross-referenced with web.dev storage docs)
-- [UCI specification](https://official-stockfish.github.io/docs/stockfish-wiki/UCI-&-Commands.html) — HIGH confidence (official Stockfish documentation)
-- [WebAssembly MIME type / nginx issue](https://trac.nginx.org/test/ticket/1606) — MEDIUM confidence (known nginx pattern, applies to Caddy equally)
-- [WASM not working: MIME type requirements — fixdevs.com](https://fixdevs.com/blog/wasm-not-working/) — LOW confidence (cross-checked with official Rust/WASM deployment docs)
+- `app/services/engine.py` — QUEUE-07 accounting comment (6-worker RSS measured 1,586 MB; 4g container headroom ~0.76 GB including FastAPI); `_HASH_MB = 32`, `_NODES_BUDGET = 1_000_000`, `_NODES_TIMEOUT_S = 5.0`
+- `app/services/eval_utils.py` — mate handling note (sigmoid saturates at mate; mate-score special case needed); `LICHESS_K = 0.00368208`
+- `.planning/notes/tactic-forcing-line-gate.md` — design note; "Known risk to measure" and "Open knobs" sections; solver-only gate description; storage schema rationale
+- `.planning/PROJECT.md` — v1.30 milestone context; OOM history references (v1.18 Phase 90, v1.26 Phase 116 QUEUE-07); cook.py alignment (Phases 124/125)
+- `CLAUDE.md` — prod config (4g container, pool=6, ~368 MB/worker), AGPL norms ("Copy no source"), Critical Constraints
+- Project memory files: `project_eval_nondeterminism`, `project_prod_oom_cause_and_stockfish_capacity`, `project_game_flaws_both_players_scope`, `project_eval_completion_columns`, `project_tactic_detector_flaw_move_context`
 
 ---
-*Pitfalls research for: FlawChess v1.29 — Live WASM Stockfish analysis board on mobile-first PWA*
-*Researched: 2026-06-26*
+*Pitfalls research for: MultiPV=2 + JSONB + forcing-line tactic gate (v1.30 FlawChess)*
+*Researched: 2026-06-29*

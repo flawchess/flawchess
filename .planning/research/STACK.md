@@ -1,264 +1,317 @@
 # Stack Research
 
-**Domain:** In-browser single-thread WASM Stockfish — additions to existing React 19 + Vite 8 PWA
-**Researched:** 2026-06-26
-**Confidence:** MEDIUM (package details from web + npm registry; Vite 8 patterns from official docs)
-
-## Scope Note
-
-This is subsequent-milestone (v1.29) research. The base stack (React 19, TypeScript 6, Vite 8,
-react-chessboard 5.x, chess.js, TanStack Query, Tailwind, FastAPI) is validated in production.
-Only **new capabilities** for the live engine are documented here. Backend is untouched (D-4 locked).
+**Domain:** Chess tactic analysis — MultiPV=2 engine pass + JSONB persistence (v1.30 Forcing-Line Gate)
+**Researched:** 2026-06-29
+**Confidence:** HIGH (both topics verified against official docs + existing codebase patterns)
 
 ---
 
-## Recommended Stack (New Additions Only)
+## Context
 
-### Core: The Engine Package
+This is a **subsequent-milestone stack note**, not a greenfield survey. The full backend stack
+(FastAPI / Python 3.13 / SQLAlchemy 2.x async + asyncpg / PostgreSQL 18 / python-chess 1.11.x /
+Stockfish 18 via `EnginePool`) is already built and shipped. The scope here is exactly two new
+mechanics: running Stockfish with `multipv=2` and storing the results as JSONB on `game_flaws`.
 
-**Use `stockfish` npm package v18.0.8.**
+**Verdict up front: no new PyPI dependency is required.**
 
-Maintained by nmrugg / Chess.com, GPLv3. This is the right package for the D-3 constraint
-(single-thread only, no SharedArrayBuffer). It ships five builds — only one is relevant for v1:
+---
 
-| Build file | Size | Threading | NNUE | CORS headers needed |
-|------------|------|-----------|------|---------------------|
-| `stockfish-18.js` + `.wasm` | >100 MB | multi (SharedArrayBuffer) | full 85 MB embedded | yes (`COOP`+`COEP`) |
-| `stockfish-18-single.js` + `.wasm` | large (~30–100 MB) | single | none (HCE only) | no |
-| `stockfish-18-lite.js` + `.wasm` | ~7 MB | multi (SharedArrayBuffer) | small NNUE embedded | yes (`COOP`+`COEP`) |
-| **`stockfish-18-lite-single.js` + `.wasm`** | **~7 MB** | **single** | **small NNUE embedded** | **no** |
-| `stockfish-18-asm.js` | ~10 MB | single | none | no |
+## Recommended Stack
 
-**Why lite-single wins:** The only single-thread build with a neural-network evaluation is
-`stockfish-18-lite-single`. The full single-thread (`stockfish-18-single`) ships *without NNUE*
-and falls back to classical HCE evaluation — paradoxically making it weaker than the 7 MB lite
-build. The lite-single embeds a small NNUE (likely the threat-small/sscg13 family) directly in
-the `.wasm` binary, so no separate network file is fetched. "Quite a bit weaker" is relative to
-Stockfish's 3600+ ELO ceiling; the lite-single is still far stronger than any human and more than
-sufficient for comprehension-level analysis.
+### Core Technologies
 
-### NNUE File Situation
-
-No separate NNUE file to host or download. The small neural-network weights are compiled into
-the `.wasm` binary itself. Total transfer for first engine load is ~7 MB across both files
-(`stockfish-18-lite-single.js` + `stockfish-18-lite-single.wasm`). The browser's HTTP cache
-plus the existing PWA service worker (Workbox, already in the project) handle subsequent visits:
-configure `CacheFirst` for `/engine/*` assets in the Workbox config so the 7 MB is fetched once
-and cached indefinitely. No `Cache-Control` header gymnastics required — stable filenames in
-`public/engine/` get cached on first visit.
+| Technology | Version | Purpose | Why Recommended |
+|------------|---------|---------|-----------------|
+| python-chess | 1.11.x (installed) | MultiPV=2 analysis via `engine.analyse(..., multipv=2)` | Already ships the multipv overload; zero upgrade needed |
+| SQLAlchemy `dialects.postgresql.JSONB` | 2.x (installed) | JSONB column type for `allowed_pv_lines` / `missed_pv_lines` | Already used in `llm_log.py`; asyncpg codec wired automatically by the dialect |
+| asyncpg | installed | Async PostgreSQL driver | Auto-configures json.loads/dumps as JSONB codec; no manual `set_type_codec()` needed |
+| PostgreSQL 18 | 18 (prod) | JSONB storage + TOAST | JSONB is a first-class type; TOAST is automatic for large values (not triggered at our blob size) |
 
 ### Supporting Libraries
 
-| Library | Version | Purpose | When to Use |
-|---------|---------|---------|-------------|
-| `vite-plugin-static-copy` | 2.x | Copy engine files from `node_modules/stockfish/src/` to `dist/engine/` at build time | Use this instead of committing the ~7 MB binary to `public/` manually |
-
-`vite-plugin-static-copy` is the only new dev dependency. It keeps binary engine files out of
-git by pulling them from the npm package at build/dev time. Alternatively, manually copy the
-two files to `public/engine/` and skip the plugin — simpler, acceptable for v1 if you don't
-want the plugin dependency.
-
-### Development Tools
-
-| Tool | Purpose | Notes |
-|------|---------|-------|
-| Browser DevTools Performance tab | Verify engine thread isolation, measure analysis latency | Worker runs in a separate thread; main thread should not stall |
-| Lighthouse / PWA audit | Confirm engine assets are cached by service worker | Check `/engine/` routes appear in the precache manifest |
+None new. All mechanics are in already-installed packages.
 
 ---
 
-## Installation
+## python-chess MultiPV=2 — Exact API
 
-```bash
-# Runtime (engine — goes to node_modules but engine files are served from public/)
-npm install stockfish
+### `engine.analyse()` with `multipv=2`
 
-# Dev — copies engine files to dist/ at build time (skip if manually copying to public/)
-npm install -D vite-plugin-static-copy
+The python-chess `UciProtocol.analyse()` method has a typed overload that changes its return
+type based on whether `multipv` is passed:
+
+```python
+# Without multipv — returns a single InfoDict (existing usage in engine.py)
+info: chess.engine.InfoDict = await protocol.analyse(board, limit)
+
+# With multipv=2 — returns List[InfoDict], best-first
+info_list: list[chess.engine.InfoDict] = await protocol.analyse(board, limit, multipv=2)
 ```
+
+The overload signature is (from python-chess 1.11.2 docs):
+
+```python
+async def analyse(
+    self,
+    board: Board,
+    limit: Limit,
+    *,
+    multipv: int,
+    game: object = None,
+    info: Info = INFO_ALL,
+    root_moves: Iterable[Move] | None = None,
+    options: Mapping[str, str | int | bool | None] = {},
+) -> List[InfoDict]: ...
+```
+
+Internally, when `multipv` is an int, `analyse()` returns `analysis.multipv` (a list) rather
+than `analysis.info` (a single dict).
+
+### Ordering and Access
+
+`info_list[0]` is the best line (multipv rank 1), `info_list[1]` is the second-best (rank 2).
+The `"multipv"` key inside each `InfoDict` holds the 1-based rank integer.
+
+**Edge case: if the position has only one legal move, the list has 1 element.** Callers must
+guard `len(info_list) > 1` before accessing `info_list[1]`. This naturally handles terminal
+positions and near-terminal forced mates — the gate logic should treat a missing second line as
+"no second-best exists" (i.e. the move is trivially only-move).
+
+### Extracting Scores and Moves
+
+The `PovScore` interface is identical to what `_score_to_cp_mate()` and `_pv_to_best_move()`
+already use. For the MultiPV=2 case:
+
+```python
+info_list = await protocol.analyse(board, limit, multipv=2)
+
+# Best line (always present if engine returned anything)
+best = info_list[0]
+best_white: chess.engine.Score = best["score"].white()   # white-perspective Score
+best_cp: int | None = best_white.score(mate_score=None)  # None when it is a mate score
+best_mate: int | None = best_white.mate()                # None when it is a cp score
+best_pv = best.get("pv") or []
+best_move_uci: str | None = best_pv[0].uci() if best_pv else None
+
+# Second-best line (may not exist)
+if len(info_list) > 1:
+    second = info_list[1]
+    second_white = second["score"].white()
+    second_cp = second_white.score(mate_score=None)
+    second_mate = second_white.mate()
+    second_pv = second.get("pv") or []
+    second_move_uci: str | None = second_pv[0].uci() if second_pv else None
+else:
+    second_cp = second_mate = second_move_uci = None
+```
+
+The `LICHESS_K` sigmoid in `eval_utils.py` applies to both best and second evals identically.
+The gate formula `p(best) - p(second) > 0.35` (from the design note) computes:
+
+```python
+from app.services.eval_utils import eval_cp_to_expected_score
+
+# White-perspective margin: "user_color" convention is not relevant here because both
+# sides of the subtraction share the same perspective (white). Pick "white" for both.
+p_best = eval_cp_to_expected_score(best_cp, "white")      # works for cp scores
+p_second = eval_cp_to_expected_score(second_cp, "white")
+is_only_move = (p_best - p_second) > 0.35
+```
+
+Mate scores must be mapped first via `eval_mate_to_expected_score()` if `best_cp is None` or
+`second_cp is None`. The design note's blobs store raw cp/mate, so the gate can re-derive this
+offline without the engine.
+
+### Integration with Existing EnginePool
+
+`EnginePool._analyse_with_pv()` currently calls `protocol.analyse(board, limit)` (no `multipv`)
+and returns a single `InfoDict`. Passing `multipv=2` changes the return type to `List[InfoDict]`
+— this is not a runtime surprise but a typed overload resolution. The existing method cannot be
+repurposed in-place; it needs a parallel sibling.
+
+**Required addition — new EnginePool method:**
+
+```python
+async def _analyse_multipv2(
+    self,
+    board: chess.Board,
+    limit: chess.engine.Limit,
+    timeout: float,
+) -> list[chess.engine.InfoDict] | None:
+    """Worker acquisition / analyse / restart path returning List[InfoDict] for multipv=2.
+
+    Returns None on timeout/crash (same failure semantics as _analyse_with_pv).
+    Caller must handle len(result) < 2 (only one legal move in position).
+    """
+    if not self._started:
+        return None
+    idx = await self._available.get()
+    try:
+        protocol = self._protocols[idx]
+        if protocol is None:
+            return None
+        try:
+            info_list = await asyncio.wait_for(
+                protocol.analyse(board, limit, multipv=2),
+                timeout=timeout,
+            )
+        except (
+            asyncio.TimeoutError,
+            chess.engine.EngineError,
+            chess.engine.EngineTerminatedError,
+        ):
+            await self._restart_worker(idx)
+            return None
+        return info_list
+    finally:
+        self._available.put_nowait(idx)
+```
+
+The public module-level wrapper follows the pattern of `evaluate_nodes_with_pv()`:
+
+```python
+async def evaluate_nodes_multipv2(
+    board: chess.Board,
+) -> list[chess.engine.InfoDict] | None:
+    """Evaluate at 1M nodes with multipv=2. Returns List[InfoDict] (best first) or None."""
+    if _pool is None:
+        return None
+    return await _pool._analyse_multipv2(
+        board, chess.engine.Limit(nodes=_NODES_BUDGET), _NODES_TIMEOUT_S
+    )
+```
+
+**Existing `_NODES_BUDGET` (1M nodes) and `_NODES_TIMEOUT_S` (5.0s) are the right starting
+budget.** MultiPV=2 costs roughly 1.5–2x vs MultiPV=1 at the same node count, but the
+pv_lines pass runs only over flaw positions along a ~6–12-ply line — a tiny fraction of a
+full-game pass. Tune the node budget empirically during implementation; 1M nodes is the correct
+starting point.
+
+**No changes to UCI `Hash` or `Threads` configuration.** The existing 32 MB Hash and 1 Thread
+per worker are fine for the second-line ordering stability needed at this node budget.
 
 ---
 
-## Vite 8 Wiring Pattern
+## SQLAlchemy 2.x JSONB — Exact Declaration
 
-### Problem: Emscripten constraint
+### Column Declaration
 
-The Emscripten-compiled `stockfish-18-lite-single.js` fetches its `.wasm` companion by
-*relative path* — it assumes `stockfish-18-lite-single.wasm` is at the same URL directory as
-the `.js` file. This means:
+Follow the existing `llm_log.py` pattern exactly. The only difference is the Python type
+annotation: blobs are JSON arrays (not objects), so `list[Any]` instead of `dict`:
 
-- Both files **must** be served from the same path prefix.
-- Vite's `?worker` bundling is **not suitable** here — Vite would hash and relocate the
-  `.js` file, severing the relative `.wasm` reference.
-- Vite's `?url` on the `.wasm` alone doesn't help because the `.js` glue doesn't use that URL.
+```python
+# app/models/game_flaw.py — additions
 
-### Recommended: `public/engine/` placement
+from typing import Any                            # add to imports if not present
+from sqlalchemy.dialects.postgresql import JSONB  # same import as llm_log.py
 
-Place both engine files under `public/engine/` (either committed or copied by `vite-plugin-static-copy`).
-Files in `public/` are served verbatim at their path prefix with no hashing, no bundling, no
-module-system involvement. This is the pattern the Stockfish.js documentation recommends for
-browser integration.
-
-**`vite.config.ts` addition (if using `vite-plugin-static-copy`):**
-
-```typescript
-import { viteStaticCopy } from 'vite-plugin-static-copy'
-
-export default defineConfig({
-  plugins: [
-    // ... existing plugins
-    viteStaticCopy({
-      targets: [
-        {
-          src: 'node_modules/stockfish/src/stockfish-18-lite-single.{js,wasm}',
-          dest: 'engine',
-        },
-      ],
-    }),
-  ],
-})
+# Inside GameFlaw class:
+allowed_pv_lines: Mapped[list[Any] | None] = mapped_column(JSONB, nullable=True)
+missed_pv_lines: Mapped[list[Any] | None] = mapped_column(JSONB, nullable=True)
 ```
 
-This copies both files to `dist/engine/` on build and makes them available at `/engine/` in dev
-via the dev server.
+The blob shape per the design note (one element per PV node, white-perspective cp):
 
-### Worker creation in `useStockfishEngine`
-
-```typescript
-// Only called when the hook mounts — which only happens on the /analysis route
-const worker = new Worker('/engine/stockfish-18-lite-single.js')
+```python
+# Python value written to the column:
+[
+    {"b": 350, "bm": None, "s": 280, "sm": None, "su": "e2e4"},
+    {"b": 320, "bm": None, "s": 250, "sm": None, "su": "d2d4"},
+    # ... up to 12 nodes
+]
 ```
 
-Do not use `new URL('/engine/...', import.meta.url)` — that pattern is for Vite-bundled worker
-scripts and triggers module resolution. A plain string path for a `public/` file is correct and
-stable across dev/build.
+For ty compliance, `list[Any]` is the correct annotation because the inner dict structure
+varies (nullable fields). A stricter `list[dict[str, int | str | None]]` is valid too if ty
+can infer it — use whichever passes `uv run ty check app/ tests/` with zero errors.
 
-### Code-split / lazy-load on the `/analysis` route
+### MutableDict — Not Needed
 
-The engine worker is **only instantiated when `useStockfishEngine` mounts**, which only happens
-inside `AnalysisPage`. Lazy-load the route component via `React.lazy`:
+`MutableDict.as_mutable(JSONB)` emits SQLAlchemy change events when a dict is mutated
+**in-place between two flushes** (e.g. `flaw.col["key"] = val` without reassigning `flaw.col`).
+For write-once blobs:
 
-```typescript
-// In your router (e.g. App.tsx)
-const AnalysisPage = React.lazy(() => import('./pages/AnalysisPage'))
+- During backfill: the entire column is assigned once (`flaw.allowed_pv_lines = [...]`).
+- After storage: the column is read by the re-tagger but never mutated in-place.
+
+Plain `mapped_column(JSONB, nullable=True)` is sufficient and avoids mutation-tracking overhead.
+Do not add `MutableDict`. The existing `llm_log.py` columns (`filter_context`, `response_json`)
+confirm this — neither uses `MutableDict`.
+
+### asyncpg Codec — Automatic
+
+SQLAlchemy's asyncpg dialect (already active via the project's
+`create_async_engine("postgresql+asyncpg://...")` call) auto-registers `json.loads`/`json.dumps`
+as the JSONB codec for every connection via the dialect's `on_connect()` hook. No manual
+`connection.set_type_codec()` call is needed in the project. A Python `list[dict]` is
+transparently serialized to a JSONB array on write and deserialized back to `list[dict]` on
+read. This is confirmed by the working `filter_context` and `response_json` JSONB columns in
+`llm_log.py`.
+
+### TOAST Behavior
+
+PostgreSQL automatically stores JSONB values out-of-line (TOAST) only after compression if the
+compressed result exceeds ~2KB (~one quarter of an 8KB page). A 12-node pv_lines blob:
+
+```
+[{"b": 350, "bm": null, "s": 280, "sm": null, "su": "e2e4"}, ...]
 ```
 
-This ensures:
-- `AnalysisPage.tsx` and its imports (including `useStockfishEngine`) are code-split into a
-  separate chunk and not fetched until the user navigates to `/analysis`.
-- The `Worker` constructor (and the 7 MB fetch) is deferred until page mount.
-- The main-app bundle is not affected.
+Each node is roughly 50 bytes; 12 nodes = approximately 600 bytes. **TOAST does not apply at
+this size.** Blobs are stored inline on the `game_flaws` page.
 
-The `/engine/*.js` and `/engine/*.wasm` files are **not** in any JS bundle — they're fetched
-by the browser only when `new Worker(...)` runs.
+Even if a future blob exceeded the threshold and was TOASTed, PostgreSQL fetches TOAST values
+only when explicitly SELECTed. Queries scanning `game_flaws` without selecting the pv_lines
+columns (e.g. flaw-comparison aggregation, tactic-stats queries) are unaffected — TOAST
+deferred loading is automatic and requires no application-side configuration.
 
-### TypeScript worker types
-
-In the `useStockfishEngine` hook file, `new Worker(path)` is standard DOM and already typed in
-TypeScript 6's lib. No extra `@types` needed. The worker itself (the engine's JS file) is not
-edited, so no `/// <reference lib="webworker" />` directive is needed in project code.
-
-For the thin UCI wrapper layer that runs *in the main thread* and talks to the worker via
-`postMessage`/`onmessage`, standard `Worker` typing is sufficient.
+**Starting inline is correct.** The design note's "sidecar table fallback" (`game_flaw_pv_lines`
+FK + two blobs) is not needed at launch. Defer unless profiling shows `game_flaws` page bloat
+affecting aggregation queries that do not select the JSONB columns.
 
 ---
 
-## UCI Integration Pattern
+## Alembic Migration
 
-The engine exposes a UCI protocol via `postMessage` / `onmessage`. Minimal pattern:
+Two nullable JSONB columns, one migration. Generated output will be:
 
-```typescript
-worker.postMessage('uci')         // -> "uciok" when ready
-worker.postMessage('isready')     // -> "readyok"
-worker.postMessage('setoption name Threads value 1')  // single-thread: 1 (already default)
-worker.postMessage('setoption name MultiPV value 2')  // top-2 lines
-worker.postMessage(`position fen ${fen}`)
-worker.postMessage('go nodes 1000000')               // 1M nodes (Lichess parity budget)
-// -> "info depth N score cp N pv <moves>" (streaming)
-// -> "bestmove <move>" (done)
-
-// Before new position:
-worker.postMessage('stop')
+```python
+op.add_column("game_flaws", sa.Column("allowed_pv_lines", postgresql.JSONB(), nullable=True))
+op.add_column("game_flaws", sa.Column("missed_pv_lines", postgresql.JSONB(), nullable=True))
 ```
 
-**Debounce position changes** by ~200ms to avoid flooding the engine when a user clicks rapidly
-through moves. The `stop` + new `go` pattern is safe — the engine processes commands sequentially.
-
-**Cap for mobile:** On low-end phones, `go movetime 3000` (3 second wall-clock cap) is safer
-than unbounded `go nodes`. Use `go movetime 3000` as the default and offer a `go nodes 1000000`
-mode for desktop. Show a visible "thinking..." indicator between `go` and `bestmove`.
+No index on either column. The re-tagger fetches batches of `game_flaws` rows by `(user_id,
+game_id, ply)` — an existing primary-key scan — and processes the blobs in Python. No SQL
+filtering on JSONB content is required.
 
 ---
 
 ## What NOT to Add
 
-| Avoid | Why | Use Instead |
-|-------|-----|-------------|
-| `@lichess-org/stockfish-web` | Multi-thread optimized (PTHREAD_POOL_SIZE), requires SharedArrayBuffer. Its own README recommends `stockfish.js` for non-lichess browser use. | `stockfish` npm package (lite-single build) |
-| `stockfish.wasm` (lichess older package) | Multi-thread only, **no NNUE**. Much weaker than lite-single despite larger complexity. | `stockfish` npm package (lite-single build) |
-| `stockfish-18-single.js` (full single-thread) | Large (30–100 MB), **no NNUE** (HCE only). Weaker than the 7 MB lite-single. | `stockfish-18-lite-single.js` |
-| `stockfish-18.js` (full multi-thread) | >100 MB, requires SharedArrayBuffer — violates D-3 | `stockfish-18-lite-single.js` |
-| `vite-plugin-wasm` | Handles `import foo.wasm` as ES module — irrelevant for Emscripten-compiled engines that self-load their WASM. | None; engine self-loads via relative URL |
-| `SharedArrayBuffer` / COOP+COEP headers | Violates D-3; breaks Google OAuth popup; unreliable on iOS Safari. | Single-thread path with no headers |
-| Cloud eval API (chessdb.cn, lichess cloud eval) | External dependency, out of scope for v1 per D-5. | Stored PVs from `tactic-lines` endpoint |
-| Separate NNUE network file hosting | Unnecessary — lite-single embeds weights in `.wasm`. | Nothing; weights are bundled |
-
----
-
-## Alternatives Considered
-
-| Decision | Recommended | Alternative | Why Not |
-|----------|-------------|-------------|---------|
-| Engine package | `stockfish` npm (nmrugg) lite-single | `@lichess-org/stockfish-web` | lichess package is multi-thread only; explicitly recommends stockfish.js for simpler use |
-| Engine files location | `public/engine/` (verbatim serving) | Bundle via `?worker` | Emscripten WASM relative-path assumption breaks when Vite hashes the JS glue file |
-| Engine files in git | Via `vite-plugin-static-copy` from npm | Commit binaries to `public/` | npm-sourced keeps git lean; both are valid for v1 |
-| Analysis throttle | `go movetime 3000` on mobile | `go nodes 1000000` | Node count is hardware-dependent; wall-clock cap is safer on constrained devices |
-| Multi-thread engine | Deferred to v2 (separate hard-loaded `/analysis` document) | Enable for v1 with site-wide COOP+COEP | Breaks Google OAuth popup; unreliable on iOS Safari; SPA documents can't isolate per-route |
-
----
-
-## Version Compatibility
-
-| Package | Version | Notes |
-|---------|---------|-------|
-| `stockfish` (nmrugg) | 18.0.8 | GPLv3. Current as of 2026-06-26. Lite-single build files: `src/stockfish-18-lite-single.{js,wasm}`. |
-| `vite-plugin-static-copy` | 2.x | Compatible with Vite 8 (Rolldown-based). Check peer deps when installing. |
-| Vite 8 (Rolldown) | Already in project (v1.22 Phase 101) | No breaking changes to `?worker` or `public/` asset serving vs Vite 7. Rolldown replaces esbuild/Rollup for bundling but does not affect how `public/` files are served. |
-| TypeScript 6 | Already in project (v1.22 Phase 101) | `Worker` DOM type already in `lib.dom.d.ts`. No additional `@types` needed for the UCI wrapper. |
-| React 19 | Already in project | `React.lazy` + `Suspense` for route-level code splitting is unchanged in React 19. |
-| iOS Safari | 16+ required (as stated in stockfish.js docs) | Single-thread WASM with no SharedArrayBuffer works on iOS 16+. PWA install supported. |
-
----
-
-## License Implications
-
-Stockfish is GPLv3. Distributing the WASM binary (which includes compiled Stockfish code)
-requires providing the corresponding source code or a pointer to it.
-
-**FlawChess is already open-source**, so compliance is straightforward:
-- Add a note in `README.md` or an `ACKNOWLEDGEMENTS` section: "Chess analysis powered by
-  Stockfish (GPLv3). Source: https://github.com/official-stockfish/Stockfish".
-- Do **not** modify the Stockfish source code (use the npm package unmodified).
-- If any Stockfish source is ever modified, those changes must also be released under GPLv3.
-
-FlawChess's own codebase license is independent — GPL does not "infect" FlawChess's own code
-because Stockfish runs in a separate Worker thread (not linked into the same binary/module).
-This is the same model used by Chess.com, lichess, and countless other open platforms.
+| Avoid | Why |
+|-------|-----|
+| New PyPI package | python-chess `multipv` and SQLAlchemy `JSONB` already ship in installed versions |
+| `MutableDict.as_mutable(JSONB)` | Write-once blobs; plain `mapped_column(JSONB)` is correct and matches existing `llm_log.py` pattern |
+| Manual `set_type_codec()` / asyncpg codec setup | SQLAlchemy asyncpg dialect wires json.loads/dumps automatically |
+| TOAST configuration | Automatic; blobs are ~600 bytes, well below the ~2KB threshold |
+| `game_flaw_pv_lines` sidecar table | Not warranted at launch; start inline; revisit only if page bloat is observed in production |
+| Increased `_NODES_BUDGET` for the multipv pass | Start at existing 1M nodes; tune empirically during implementation |
+| Changes to `_HASH_MB` or `_THREADS` UCI settings | Same 32 MB / 1 thread per worker is fine for multipv ordering stability |
+| JSONB GIN index on pv_lines columns | No SQL filtering on pv_lines content; the re-tagger reads all rows and processes in Python |
 
 ---
 
 ## Sources
 
-- [stockfish npm package (nmrugg)](https://www.npmjs.com/package/stockfish) — version 18.0.8, build file names, size descriptions — LOW confidence (403 on direct fetch; cross-referenced via GitHub and web search)
-- [nmrugg/stockfish.js GitHub](https://github.com/nmrugg/stockfish.js/) — build variants, file names, UCI usage, license (GPLv3 / Chess.com) — LOW confidence (web)
-- [lichess-org/stockfish-web GitHub](https://github.com/lichess-org/stockfish-web) — NNUE file names (nn-c288c895ea92.nnue, nn-37f18f62d772.nnue), multi-thread only, pkg name `@lichess-org/stockfish-web` — LOW confidence (web)
-- [Vite Features docs — Web Workers + WASM](https://vite.dev/guide/features) — `?worker`, `?worker&url`, `new Worker(new URL(...))`, `.wasm?init`, `.wasm?url` patterns — MEDIUM confidence (official docs via WebFetch)
-- [Vite 8 announcement](https://vite.dev/blog/announcing-vite8) — Rolldown integration, no breaking changes to `public/` serving or worker patterns — MEDIUM confidence (official docs)
-- [Stockfish vs ChessBase — FOSSA](https://fossa.com/blog/stockfish-vs-chessbase-gpl-v3/) — GPLv3 distribution requirements for binary distributions — LOW confidence (web)
-- SEED-066 locked decisions (D-3, D-4, D-5) — single-thread constraint rationale, ephemeral state, stored-PV handoff — HIGH confidence (project-internal)
-- SEED-012 amendment 2026-06-12 — COOP/COEP + iOS Safari analysis already researched; single-thread = no COOP/COEP needed — HIGH confidence (project-internal)
+- [python-chess 1.11.2 engine docs](https://python-chess.readthedocs.io/en/latest/engine.html) — `analyse()` overloads, multipv return type `List[InfoDict]`, PovScore `.white()` / `.score()` / `.mate()` API (MEDIUM confidence, websearch)
+- [python-chess _modules/chess/engine.html](https://python-chess.readthedocs.io/en/latest/_modules/chess/engine.html) — implementation: `analysis.multipv` returned when multipv is int; list ordered best-first by rank (MEDIUM confidence, websearch)
+- [SQLAlchemy discussion #11318 — JSONB typing](https://github.com/sqlalchemy/sqlalchemy/discussions/11318) — maintainer confirms `Mapped[dict | None]` correct; JSONB class used directly as column type arg (MEDIUM confidence, websearch)
+- [asyncpg + SQLAlchemy JSONB codec](https://github.com/sqlalchemy/sqlalchemy/issues/5584) — SQLAlchemy asyncpg dialect sets json.loads as default JSONB decoder automatically (MEDIUM confidence, websearch)
+- `app/models/llm_log.py` (codebase) — existing `from sqlalchemy.dialects.postgresql import JSONB` import, `Mapped[dict | None]` annotation, no MutableDict (HIGH confidence, verified in source)
+- `app/services/engine.py` (codebase) — `_analyse_with_pv()` / `evaluate_nodes_with_pv()` patterns; `_NODES_BUDGET` / `_NODES_TIMEOUT_S` constants; `_score_to_cp_mate()` / `_pv_to_best_move()` helpers (HIGH confidence, verified in source)
 
 ---
 
-*Stack research for: FlawChess v1.29 Live-Engine Analysis Page*
-*Researched: 2026-06-26*
+*Stack research for: FlawChess v1.30 Forcing-Line Tactic Gate — MultiPV=2 + JSONB storage*
+*Researched: 2026-06-29*

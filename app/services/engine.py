@@ -19,6 +19,11 @@ Two APIs:
         evaluate_nodes(board)       -- async; returns (eval_cp, eval_mate); 1M nodes (EVAL-02).
         evaluate_nodes_with_pv(board) -- async; returns (eval_cp, eval_mate, best_move, pv_string);
                                         zero extra search cost (EVAL-04, Phase 117).
+        evaluate_nodes_multipv2(board) -- async; returns 7-tuple
+                                         (eval_cp, eval_mate, best_move, pv_string,
+                                          second_cp, second_mate, second_uci);
+                                         multipv=2 at the same 1M-node budget
+                                         (Phase 142 MPV-01).
 
         With STOCKFISH_POOL_SIZE=1 (the dev/CI default) this behaves exactly
         like the original singleton. Set STOCKFISH_POOL_SIZE=2+ on prod to get
@@ -286,6 +291,25 @@ async def evaluate_nodes_with_pv(
     return await _pool.evaluate_nodes_with_pv(board)
 
 
+async def evaluate_nodes_multipv2(
+    board: chess.Board,
+) -> tuple[int | None, int | None, str | None, str | None, int | None, int | None, str | None]:
+    """Evaluate position at 1M nodes with multipv=2, returning best + second-best data.
+
+    Phase 142 MPV-01: returns (eval_cp, eval_mate, best_move, pv_string,
+    second_cp, second_mate, second_uci).
+
+    second_uci is str (never None) when the engine ran — empty string indicates a
+    single-legal-move position (PvNode.su sentinel;
+    forcing_line_gate.PvNode.su: str, D-02 Pitfall 3).
+    Returns (None, None, None, None, None, None, None) on engine failure or
+    when the pool is not started.
+    """
+    if _pool is None:
+        return None, None, None, None, None, None, None
+    return await _pool.evaluate_nodes_multipv2(board)
+
+
 def _pv_to_best_move(info: chess.engine.InfoDict) -> str | None:
     """Extract the best move UCI string from an InfoDict (EVAL-04 / D-117-01).
 
@@ -540,3 +564,79 @@ class EnginePool:
         best_move = _pv_to_best_move(info)
         pv_string = _pv_to_uci_string(info)
         return eval_cp, eval_mate, best_move, pv_string
+
+    async def _analyse_multipv2(
+        self,
+        board: chess.Board,
+        limit: chess.engine.Limit,
+        timeout: float,
+    ) -> list[chess.engine.InfoDict] | None:
+        """Worker-acquisition path returning list[InfoDict] for multipv=2.
+
+        Parallel sibling of _analyse_with_pv; changes the inner call to
+        protocol.analyse(board, limit, multipv=2) and the return type to
+        list[chess.engine.InfoDict] | None (D-02: the list[InfoDict] return
+        type cannot reuse the scalar _analyse_with_pv — Pitfall 1).
+
+        Returns None on timeout/crash/missing protocol (mirrors _analyse_with_pv).
+        Caller must handle len(result) < 2: single-legal-move positions return a
+        list of length 1 — set second_cp/second_mate=None, second_uci="" (Pitfall 2).
+        """
+        if not self._started:
+            return None
+        idx = await self._available.get()
+        try:
+            protocol = self._protocols[idx]
+            if protocol is None:
+                return None
+            try:
+                info_list = await asyncio.wait_for(
+                    protocol.analyse(board, limit, multipv=2),
+                    timeout=timeout,
+                )
+            except (
+                asyncio.TimeoutError,
+                chess.engine.EngineError,
+                chess.engine.EngineTerminatedError,
+            ):
+                await self._restart_worker(idx)
+                return None
+            return info_list
+        finally:
+            self._available.put_nowait(idx)
+
+    async def evaluate_nodes_multipv2(
+        self,
+        board: chess.Board,
+    ) -> tuple[int | None, int | None, str | None, str | None, int | None, int | None, str | None]:
+        """Evaluate at 1M nodes with multipv=2, returning best + second-best per-ply data.
+
+        Phase 142 MPV-01: returns (eval_cp, eval_mate, best_move, pv_string,
+        second_cp, second_mate, second_uci). Reuses _NODES_BUDGET and _NODES_TIMEOUT_S
+        (D-06: keep existing node budget; raise only if SC4 histogram fails).
+
+        second_uci is str (never None) when the engine ran — empty string indicates a
+        single-legal-move position (PvNode.su sentinel;
+        forcing_line_gate.PvNode.su: str, D-02 Pitfall 3).
+        Returns (None, None, None, None, None, None, None) on engine failure (D-09).
+        """
+        info_list = await self._analyse_multipv2(
+            board, chess.engine.Limit(nodes=_NODES_BUDGET), _NODES_TIMEOUT_S
+        )
+        if info_list is None:
+            return None, None, None, None, None, None, None
+        eval_cp, eval_mate = _score_to_cp_mate(info_list[0])
+        best_move = _pv_to_best_move(info_list[0])
+        pv_string = _pv_to_uci_string(info_list[0])
+        # Guard single-legal-move positions: Stockfish returns len(info_list)==1
+        # when only one legal move exists. Set su="" (not None) — PvNode.su is str,
+        # not str | None (Pitfall 2 + Pitfall 3 from RESEARCH.md).
+        if len(info_list) > 1:
+            second_cp, second_mate = _score_to_cp_mate(info_list[1])
+            second_pv = info_list[1].get("pv")
+            second_uci: str = second_pv[0].uci() if second_pv else ""
+        else:
+            second_cp = None
+            second_mate = None
+            second_uci = ""
+        return eval_cp, eval_mate, best_move, pv_string, second_cp, second_mate, second_uci

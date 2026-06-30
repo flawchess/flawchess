@@ -53,7 +53,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import async_session_maker
-from app.models.eval_jobs import EvalJob, TIER_EXPLICIT, TIER_AUTO_WINDOW, TIER_IDLE_BACKLOG  # noqa: F401 — re-export constants for callers
+from app.models.eval_jobs import (
+    EvalJob,
+    TIER_EXPLICIT,
+    TIER_IDLE_BACKLOG,
+    TIER_BLOB_BACKFILL,
+)  # noqa: F401 — re-export constants for callers
 from app.models.game import Game
 from app.models.user import User
 
@@ -451,6 +456,49 @@ async def _claim_tier3_derived(
     return fallback_game_id, fallback_user_id, True
 
 
+async def _claim_tier4_blob(
+    session: AsyncSession,
+) -> tuple[int, int] | None:
+    """Tier-4 spare-capacity lottery: pick one analyzed non-guest game with a NULL-blob flaw.
+
+    Selects from game_flaws rows where allowed_pv_lines IS NULL, joined to games and users,
+    filtered to analyzed (full_evals_completed_at IS NOT NULL) non-guest games. A single
+    random pick (ORDER BY random() LIMIT 1) — no ES user weighting, tier-4 is spare capacity.
+
+    Returns (game_id, user_id) or None when no backfill-eligible flaw remains.
+
+    No eval_jobs row is created — this is a table-less, idempotent-by-construction lottery.
+    Once all of a game's flaw blobs (or D-06 sentinels) are written the game stops matching
+    the predicate and is never re-selected.
+
+    is_lichess_eval_game is NOT resolved here — it is determined later in the Plan-03 lease
+    handler, which has the full game context needed to route the blob write correctly
+    (RESEARCH Pitfall 6). This function returns only the (game_id, user_id) pair.
+
+    Security: no f-string interpolation inside sa.text; all values are static SQL predicates
+    with no variable parts. The ORDER BY random() is intentional for the spare-capacity tier.
+    """
+    result = await session.execute(
+        sa.text("""
+            SELECT gf.game_id, g.user_id
+            FROM game_flaws gf
+            JOIN games g ON g.id = gf.game_id
+            JOIN users u ON u.id = g.user_id
+            WHERE gf.allowed_pv_lines IS NULL
+              AND g.full_evals_completed_at IS NOT NULL
+              AND u.is_guest = false  -- intentional: guests excluded (QUEUE-08)
+            ORDER BY random()
+            LIMIT 1
+        """)
+    )
+    row = result.one_or_none()
+    if row is None:
+        return None
+    game_id: int = row[0]
+    user_id: int = row[1]
+    return game_id, user_id
+
+
 # ─── Public API ───────────────────────────────────────────────────────────────
 
 
@@ -458,33 +506,48 @@ async def claim_eval_job(
     worker_id: str = WORKER_ID_SERVER_POOL,
     scope: Literal["explicit", "idle"] | None = None,
 ) -> ClaimedJob | None:
-    """Claim the next eval job — tier-1 > tier-2 > tier-3 (derived).
+    """Claim the next eval job — tier-1 > tier-2 > tier-3 > tier-4 (derived).
 
     Session discipline: opens its own short session, commits, closes.
     The SKIP LOCKED lock is released immediately on commit — never held
     across the engine gather (Pitfall 1 in RESEARCH §Common Pitfalls).
 
     D-05 scope param (Phase 123 SEED-051):
-      None     → today's bundled tier-1>2>3 behavior (backward-compat for un-updated workers).
-      "explicit" → tier-1/2 only (_claim_queued_job); return None if empty (skip tier-3).
-      "idle"   → tier-3 only (_claim_tier3_derived, still gated by EVAL_AUTO_DRAIN_ENABLED).
+      None     → bundled tier-1>2>3>4 behavior (backward-compat for un-updated workers).
+      "explicit" → tier-1/2 only (_claim_queued_job); return None if empty (skip tier-3/4).
+      "idle"   → tier-3/4 only (still gated by EVAL_AUTO_DRAIN_ENABLED).
+
+    Tier-4 (TIER_BLOB_BACKFILL) fires only after tier-1/2/3 fall through AND only
+    under EVAL_AUTO_DRAIN_ENABLED — spare-capacity flaw-blob backfill (Phase 145).
 
     Returns ClaimedJob or None when there is nothing to process.
     """
-    # scope="idle" → skip tier-1/2 entirely; go straight to tier-3.
+    # scope="idle" → skip tier-1/2 entirely; go straight to tier-3, then tier-4.
     if scope == "idle":
         if not settings.EVAL_AUTO_DRAIN_ENABLED:
             return None
         async with async_session_maker() as session:
             derived = await _claim_tier3_derived(session)
-        if derived is None:
+        if derived is not None:
+            game_id_idle, user_id_idle, is_lichess_eval_game_idle = derived
+            return ClaimedJob(
+                game_id=game_id_idle,
+                user_id=user_id_idle,
+                tier=TIER_IDLE_BACKLOG,
+                is_lichess_eval_game=is_lichess_eval_game_idle,
+                job_id=None,
+            )
+        # Tier-3 empty → try tier-4 blob-backfill (same EVAL_AUTO_DRAIN_ENABLED gate).
+        async with async_session_maker() as session:
+            blob_pick = await _claim_tier4_blob(session)
+        if blob_pick is None:
             return None
-        game_id_idle, user_id_idle, is_lichess_eval_game_idle = derived
+        game_id_blob, user_id_blob = blob_pick
         return ClaimedJob(
-            game_id=game_id_idle,
-            user_id=user_id_idle,
-            tier=TIER_IDLE_BACKLOG,
-            is_lichess_eval_game=is_lichess_eval_game_idle,
+            game_id=game_id_blob,
+            user_id=user_id_blob,
+            tier=TIER_BLOB_BACKFILL,
+            is_lichess_eval_game=False,  # resolved in Plan-03 lease handler (Pitfall 6)
             job_id=None,
         )
 
@@ -508,7 +571,7 @@ async def claim_eval_job(
             job_id=job_id,
         )
 
-    # scope="explicit" → tier-1/2 only; do NOT fall through to tier-3.
+    # scope="explicit" → tier-1/2 only; do NOT fall through to tier-3/4.
     if scope == "explicit":
         return None
 
@@ -516,7 +579,7 @@ async def claim_eval_job(
     # unless automatic eval is disabled via EVAL_AUTO_DRAIN_ENABLED (e.g. dev, to
     # avoid pinning every local core on the hundreds-of-thousands-game backlog).
     # Tier-1 explicit jobs above are never gated; tier-2 has no enqueue source
-    # (Phase 118) so only the tier-3 idle drain below is gated by this flag.
+    # (Phase 118) so only the tier-3/4 idle drain below is gated by this flag.
     if not settings.EVAL_AUTO_DRAIN_ENABLED:
         return None
 
@@ -524,16 +587,32 @@ async def claim_eval_job(
         derived = await _claim_tier3_derived(session)
         # No write needed for tier-3; session auto-closes.
 
-    if derived is None:
+    if derived is not None:
+        game_id3, user_id3, is_lichess_eval_game3 = derived
+        return ClaimedJob(
+            game_id=game_id3,
+            user_id=user_id3,
+            tier=TIER_IDLE_BACKLOG,
+            is_lichess_eval_game=is_lichess_eval_game3,
+            job_id=None,  # no eval_jobs row for tier-3
+        )
+
+    # Tier-3 empty → fall through to tier-4 blob-backfill spare-capacity lottery.
+    # Same EVAL_AUTO_DRAIN_ENABLED gate (already checked above); live tier-1/2/3
+    # work always preempts tier-4 (D-02).
+    async with async_session_maker() as session:
+        blob_pick = await _claim_tier4_blob(session)
+
+    if blob_pick is None:
         return None
 
-    game_id3, user_id3, is_lichess_eval_game3 = derived
+    game_id4, user_id4 = blob_pick
     return ClaimedJob(
-        game_id=game_id3,
-        user_id=user_id3,
-        tier=TIER_IDLE_BACKLOG,
-        is_lichess_eval_game=is_lichess_eval_game3,
-        job_id=None,  # no eval_jobs row for tier-3
+        game_id=game_id4,
+        user_id=user_id4,
+        tier=TIER_BLOB_BACKFILL,
+        is_lichess_eval_game=False,  # resolved in Plan-03 lease handler (Pitfall 6)
+        job_id=None,  # table-less lottery, no eval_jobs row (D-03)
     )
 
 

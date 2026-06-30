@@ -27,6 +27,11 @@ import sentry_sdk
 from app.models.game import Game
 from app.models.game_position import GamePosition
 from app.services.eval_utils import eval_cp_to_expected_score
+from app.services.forcing_line_gate import (
+    ONLY_MOVE_WIN_PROB_MARGIN,
+    PvNode,
+    apply_forcing_line_filter,
+)
 from app.services.normalization import parse_base_and_increment
 from app.services.openings_service import derive_user_result
 from app.services.tactic_detector import detect_tactic_motif
@@ -500,6 +505,74 @@ def _detect_tactic_for_flaw(
         return None, None, None, None
 
 
+def _solver_color_for(
+    n: int,
+    orientation: Literal["allowed", "missed"],
+) -> Literal["white", "black"]:
+    """Return the tactic-delivering side's color for the gate (D-02, SC4).
+
+    Even ply means white moved (made the flaw). Ply parity matches the
+    board_before.turn convention at flaws_service.py line 444-446.
+
+    "allowed": the refuter (solver) is the OPPONENT of the mover.
+    "missed": the flaw-maker (solver) IS the mover.
+    """
+    if orientation == "allowed":
+        return "black" if n % 2 == 0 else "white"
+    return "white" if n % 2 == 0 else "black"
+
+
+def _classify_tactic_gated(
+    n: int,
+    fen_map: dict[int, str],
+    positions: list[GamePosition],
+    orientation: Literal["allowed", "missed"],
+    pv_blob: list[PvNode] | None,
+    pre_flaw_eval_cp: int | None,
+    pv_by_ply: Mapping[int, str] | None = None,
+    margin: float = ONLY_MOVE_WIN_PROB_MARGIN,
+) -> tuple[int | None, int | None, int | None, int | None]:
+    """Run tactic detection then apply the forcing-line gate (D-02, SC4 single classify path).
+
+    Calls _detect_tactic_for_flaw, then — only when a motif was detected AND
+    pv_blob is a non-empty list AND pre_flaw_eval_cp is not None — applies
+    apply_forcing_line_filter at the given margin. If the line is non-forcing,
+    returns (None, None, None, None) to suppress the motif.
+
+    When pv_blob is None (pre-Phase-142 rows with no stored blob), the gate is
+    skipped and the raw detect result is returned unchanged (backward compat).
+    The gate is likewise skipped when pre_flaw_eval_cp is None — mate-adjacent
+    flaw plies carry eval_mate (not eval_cp), and the forcing-line gate's
+    already-winning / still-winning thresholds are cp-based, so it has nothing to
+    compare against; the raw detect result stands (RESEARCH A1, accepted).
+
+    D-06 sentinel: an empty list [] means the blob could not be assembled for this
+    flaw (e.g. single-legal-move position, analysis gap). The gate is SKIPPED for
+    [] — same outcome as pv_blob is None (no suppression, raw kernel result returned).
+    Gate condition is `pv_blob is not None and len(pv_blob) > 0`, superseding the
+    Phase-143 Pitfall-2 wording that treated [] as a gate-eligible blob requiring
+    the one-mover discard. apply_forcing_line_filter itself still rejects [] when
+    called directly; the skip here is intentional and upstream of that call.
+    """
+    motif, piece, conf, depth = _detect_tactic_for_flaw(
+        n, fen_map, positions, pv_by_ply, orientation
+    )
+    if (
+        motif is not None
+        and pv_blob is not None
+        and len(pv_blob) > 0
+        and pre_flaw_eval_cp is not None
+    ):
+        solver_color = _solver_color_for(n, orientation)
+        # Bug B: pass the detected firing depth so only the solver nodes up to the
+        # tactic's firing point need be forced (the conversion tail is exempt).
+        if not apply_forcing_line_filter(
+            pv_blob, solver_color, pre_flaw_eval_cp, firing_depth=depth, margin=margin
+        ):
+            return None, None, None, None
+    return motif, piece, conf, depth
+
+
 def _build_flaw_record(
     n: int,
     mover: Literal["white", "black"],
@@ -509,6 +582,7 @@ def _build_flaw_record(
     fen_map: dict[int, str],
     positions: list[GamePosition],
     pv_by_ply: Mapping[int, str] | None = None,
+    flaw_pv_blobs: dict[int, tuple[list[PvNode], list[PvNode]]] | None = None,
 ) -> FlawRecord:
     """Build a single FlawRecord for the mover's mistake/blunder at ply N."""
     # `n` is the 0-indexed half-move of the flawed move (positions[n].move_san is
@@ -518,16 +592,30 @@ def _build_flaw_record(
     # rendered the miniboard one ply too early (decision point off by one move).
     # This makes the miniboard show the decision point and lets the frontend
     # resolve move_san → arrow squares.
+    # Extract MultiPV-2 blobs for this flaw ply (None when not in dict → gate skips).
+    blob_pair = flaw_pv_blobs.get(n) if flaw_pv_blobs is not None else None
+    allowed_pv_blob: list[PvNode] | None = blob_pair[0] if blob_pair is not None else None
+    missed_pv_blob: list[PvNode] | None = blob_pair[1] if blob_pair is not None else None
+    # pre_flaw_eval_cp: white-perspective eval_cp BEFORE the flaw move, used by the
+    # gate's already-winning reject (D-08). BUG FIX: this previously read positions[n],
+    # which is the eval AFTER the flaw move (see _run_all_moves_pass line 348:
+    # "positions[N].eval_cp = eval AFTER move N"). Feeding the post-blunder eval made
+    # the already-winning reject fire on exactly the strongest allowed tactics — a big
+    # blunder swings the solver past +300, so the gate discarded it as "already winning"
+    # even when the solver was losing a move earlier. The pre-flaw board is positions[n-1]
+    # (the position the flaw move was played FROM). Same value used for both orientations.
+    pre_flaw_eval_cp: int | None = positions[n - 1].eval_cp if 1 <= n < len(positions) else None
     # allowed_* pass: detect tactic from flaw_ply+1 PV (the refutation of the flaw).
     # pov = the refuting side (board_after_flaw.turn), per D-03.
-    allowed_motif_int, allowed_piece, allowed_confidence, allowed_depth = _detect_tactic_for_flaw(
-        n, fen_map, positions, pv_by_ply, orientation="allowed"
+    # Routes through _classify_tactic_gated (single classify path, SC4 no-drift, D-02).
+    allowed_motif_int, allowed_piece, allowed_confidence, allowed_depth = _classify_tactic_gated(
+        n, fen_map, positions, "allowed", allowed_pv_blob, pre_flaw_eval_cp, pv_by_ply
     )
     # missed_* pass: detect tactic from flaw_ply PV (the "instead-of" line).
     # pov = board_before.turn = the mover (the flaw-maker, who should have played this line).
     # Reuses the same dispatcher + relevance gate unchanged (D-04).
-    missed_motif_int, missed_piece, missed_confidence, missed_depth = _detect_tactic_for_flaw(
-        n, fen_map, positions, pv_by_ply, orientation="missed"
+    missed_motif_int, missed_piece, missed_confidence, missed_depth = _classify_tactic_gated(
+        n, fen_map, positions, "missed", missed_pv_blob, pre_flaw_eval_cp, pv_by_ply
     )
     return FlawRecord(
         ply=n,
@@ -788,6 +876,7 @@ def classify_game_flaws(
     game: Game,
     positions: list[GamePosition],
     pv_by_ply: Mapping[int, str] | None = None,
+    flaw_pv_blobs: dict[int, tuple[list[PvNode], list[PvNode]]] | None = None,
 ) -> GameFlawsResult:
     """Derive all user flaws from stored per-ply evals.
 
@@ -801,6 +890,11 @@ def classify_game_flaws(
             here because they are not yet written to game_positions at classify
             time; without it the live drain would tag every flaw NULL. The
             backfill path omits it and reads PVs from positions[n+1].pv.
+        flaw_pv_blobs: optional {flaw_ply -> (allowed_blob, missed_blob)} mapping
+            of MultiPV-2 PvNode blobs built in memory by the eval drain (Phase 142).
+            When provided, _build_flaw_record routes tactic classification through
+            _classify_tactic_gated which applies the forcing-line gate (D-02, SC4).
+            None (default) preserves the pre-Phase-143 gate-free behavior.
 
     Returns:
         list[FlawRecord] for analyzed games — one entry per user mistake or
@@ -842,7 +936,7 @@ def classify_game_flaws(
             # Inaccuracies are count-only per the 2026-06-05 amendment
             continue
         flaw = _build_flaw_record(
-            n, mover, severity, es_before, es_after, fen_map, positions, pv_by_ply
+            n, mover, severity, es_before, es_after, fen_map, positions, pv_by_ply, flaw_pv_blobs
         )
         # Per-mover subject_result drives the lucky tag correctly for both sides (D-05).
         subject_result = derive_user_result(game.result, mover)

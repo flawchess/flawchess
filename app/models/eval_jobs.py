@@ -8,12 +8,14 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base
 
 # Tier meanings (no magic numbers in consumers — use these constants):
-#   TIER_EXPLICIT = 1   — explicit user request (highest priority)
-#   TIER_AUTO_WINDOW = 2 — automatic window (e.g. recent activity)
-#   TIER_IDLE_BACKLOG = 3 — idle-backlog drain (lowest priority)
+#   TIER_EXPLICIT = 1       — explicit user request (highest priority)
+#   TIER_AUTO_WINDOW = 2    — automatic window (e.g. recent activity)
+#   TIER_IDLE_BACKLOG = 3   — idle-backlog drain
+#   TIER_BLOB_BACKFILL = 4  — spare-capacity flaw-blob backfill (lowest priority)
 TIER_EXPLICIT: int = 1
 TIER_AUTO_WINDOW: int = 2
 TIER_IDLE_BACKLOG: int = 3
+TIER_BLOB_BACKFILL: int = 4
 
 
 class EvalJob(Base):

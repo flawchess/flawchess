@@ -39,14 +39,17 @@ from app.services.flaws_service import (
     _classify_mate_ladder,
     _classify_severity,
     _classify_tempo,
+    _classify_tactic_gated,
     _compute_eval_coverage,
     _detect_tactic_for_flaw,
     _move_time,
     _ply_to_es,
     _recompute_fen_map,
     _run_all_moves_pass,
+    _solver_color_for,
     classify_game_flaws,
 )
+from app.services.forcing_line_gate import PvNode
 from app.services.tactic_detector import TACTIC_CONFIDENCE_HIGH, TacticMotifInt
 
 
@@ -2439,3 +2442,160 @@ class TestBuildFlawRecordBothOrientations:
         assert flaw["missed_tactic_piece"] is None
         assert flaw["missed_tactic_confidence"] is None
         assert flaw["missed_tactic_depth"] is None
+
+
+# ---------------------------------------------------------------------------
+# Phase 143 Plan 02 Task 1: _classify_tactic_gated wrapper + _solver_color_for
+# ---------------------------------------------------------------------------
+
+
+class TestSolverColorFor:
+    """_solver_color_for maps (ply parity, orientation) to solver color (D-02, SC4).
+
+    Convention (matches flaws_service.py line 444-446):
+      Even ply: white moved (made the flaw).
+      "allowed": the refuter (solver) is the OPPONENT of the mover.
+      "missed": the flaw-maker (solver) IS the mover.
+
+    Four parity cases:
+      (even, "allowed")  -> opponent of white = "black"
+      (odd,  "allowed")  -> opponent of black = "white"
+      (even, "missed")   -> flaw-maker = white = "white"
+      (odd,  "missed")   -> flaw-maker = black = "black"
+    """
+
+    def test_even_ply_allowed_returns_black(self) -> None:
+        """Even ply = white mover; allowed refuter = opponent = black."""
+        assert _solver_color_for(4, "allowed") == "black"
+
+    def test_odd_ply_allowed_returns_white(self) -> None:
+        """Odd ply = black mover; allowed refuter = opponent = white."""
+        assert _solver_color_for(5, "allowed") == "white"
+
+    def test_even_ply_missed_returns_white(self) -> None:
+        """Even ply = white mover; missed flaw-maker = white."""
+        assert _solver_color_for(4, "missed") == "white"
+
+    def test_odd_ply_missed_returns_black(self) -> None:
+        """Odd ply = black mover; missed flaw-maker = black."""
+        assert _solver_color_for(5, "missed") == "black"
+
+
+class TestClassifyTacticGated:
+    """Phase 143 Plan 02 Task 1 (D-02, SC4): _classify_tactic_gated wrapper contract.
+
+    Uses the 'black flaw at ply 5' fixture from TestDetectTacticForFlawOrientation
+    (PGN "1. e4 e5 2. Bc4 d5 3. f3 Bg4 *"). _detect_tactic_for_flaw(5, ..., "allowed")
+    fires HANGING_PIECE (allowed PV at ply 6: "f3g4"). This baseline motif lets the
+    gate tests verify skip / suppress / pass-through without mocking the kernel.
+
+    Solver color for n=5, "allowed": _solver_color_for(5, "allowed") = "white"
+    pre_flaw_eval_cp for n=5: positions[5].eval_cp = 300 (from _make_positions_128).
+
+    Already-winning check: _is_already_winning(300, "white") = (300 > 300) = False
+    => the gate proceeds to node-level checks.
+    """
+
+    def test_gate_skip_on_none_blob_returns_kernel_result(self) -> None:
+        """pv_blob=None: gate is skipped; raw _detect_tactic_for_flaw result returned.
+
+        Gate condition is `pv_blob is not None` (not truthiness). None means a
+        pre-Phase-142 row with no stored blob — backward compatibility preserved.
+        """
+        positions = _make_positions_128()
+        motif, piece, conf, depth = _classify_tactic_gated(
+            n=5,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            orientation="allowed",
+            pv_blob=None,
+            pre_flaw_eval_cp=None,
+        )
+        assert motif == TacticMotifInt.HANGING_PIECE, (
+            "gate-skip on None blob must return raw kernel result (HANGING_PIECE)"
+        )
+        assert piece is not None
+        assert conf == TACTIC_CONFIDENCE_HIGH
+        assert depth == 0
+
+    def test_sentinel_empty_blob_skips_gate_returns_kernel_result(self) -> None:
+        """pv_blob=[]: D-06 sentinel — gate is SKIPPED, raw kernel result returned.
+
+        An empty list is the D-06 un-fillable sentinel (a flaw whose PV blob could
+        not be assembled, e.g. single-legal-move position or analysis gap). The gate
+        condition must be `pv_blob is not None and len(pv_blob) > 0` so that [] is
+        treated the same as None (gate skipped, no suppression). This supersedes the
+        Phase-143 Pitfall-2 wording which treated [] as a gate-eligible blob.
+        """
+        positions = _make_positions_128()
+        motif, piece, conf, depth = _classify_tactic_gated(
+            n=5,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            orientation="allowed",
+            pv_blob=[],
+            pre_flaw_eval_cp=300,
+        )
+        assert motif == TacticMotifInt.HANGING_PIECE, (
+            "D-06 sentinel [] must skip the gate and return raw kernel result (HANGING_PIECE)"
+        )
+        assert piece is not None
+        assert conf == TACTIC_CONFIDENCE_HIGH
+        assert depth == 0
+
+    def test_pass_through_when_line_is_forced(self) -> None:
+        """pv_blob with a forced line: gate passes, kernel result returned unchanged.
+
+        Uses a 3-node line [S0_forced, D0_defender, S1_forced] with large cp gaps.
+        Both solver nodes (S0, S1) have p_best - p_second >> 0.35 (the margin).
+        The gate passes and the underlying HANGING_PIECE detection is returned.
+        """
+        positions = _make_positions_128()
+        # 3-node forced blob: solver nodes at indices 0, 2; defender at index 1 (ignored).
+        # Solver color = "white" (odd ply, allowed), white-perspective values:
+        #   S0: b=800, s=0 -> p(800,"white")-p(0,"white") ≈ 0.45 > 0.35 -> forced
+        #   D0: defender node, not evaluated for uniqueness
+        #   S1: b=800, s=0 -> forced
+        forced_blob: list[PvNode] = [
+            {"b": 800, "bm": None, "s": 0, "sm": None, "su": "f3g4"},
+            {"b": -300, "bm": None, "s": -350, "sm": None, "su": "g8f6"},
+            {"b": 800, "bm": None, "s": 0, "sm": None, "su": "d1h5"},
+        ]
+        motif, piece, conf, depth = _classify_tactic_gated(
+            n=5,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            orientation="allowed",
+            pv_blob=forced_blob,
+            pre_flaw_eval_cp=300,
+        )
+        assert motif == TacticMotifInt.HANGING_PIECE, (
+            "forced line must pass the gate and return the kernel HANGING_PIECE result"
+        )
+        assert conf == TACTIC_CONFIDENCE_HIGH
+
+    def test_suppression_when_nodes_have_small_gap(self) -> None:
+        """pv_blob with non-forcing nodes (small margin gap): motif suppressed.
+
+        Solver nodes have p_best - p_second < 0.35 AND a cp gap below the 100cp escape;
+        the gate rejects the line. Uses a 3-node line where both solver nodes have b=200, s=120.
+        p(200,"white") - p(120,"white") ≈ 0.068 < 0.35, and the 80cp gap < 100 escape.
+        """
+        positions = _make_positions_128()
+        non_forcing_blob: list[PvNode] = [
+            {"b": 200, "bm": None, "s": 120, "sm": None, "su": "f3g4"},
+            {"b": -100, "bm": None, "s": -150, "sm": None, "su": "g8f6"},
+            {"b": 200, "bm": None, "s": 120, "sm": None, "su": "d1h5"},
+        ]
+        motif, piece, conf, depth = _classify_tactic_gated(
+            n=5,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            orientation="allowed",
+            pv_blob=non_forcing_blob,
+            pre_flaw_eval_cp=300,
+        )
+        assert motif is None, "non-forcing blob (small margin gap) must suppress the motif"
+        assert piece is None
+        assert conf is None
+        assert depth is None
