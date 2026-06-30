@@ -296,9 +296,7 @@ def _build_histogram_table(margins: list[float]) -> str:
         # Mark bins that overlap with the [band_lo, band_hi] interval.
         in_band = lo < band_hi and hi > band_lo
         marker = " `** IN BAND **`" if in_band else ""
-        lines.append(
-            f"| {i:2d} | [{lo:.2f}, {hi:.2f}) | {count:6d} | {frac:.4f} |{marker} |"
-        )
+        lines.append(f"| {i:2d} | [{lo:.2f}, {hi:.2f}) | {count:6d} | {frac:.4f} |{marker} |")
 
     if n_negative:
         lines.append(
@@ -306,10 +304,7 @@ def _build_histogram_table(margins: list[float]) -> str:
             f" {n_negative / total:.4f} | (negative margin) |"
         )
     if n_overflow:
-        lines.append(
-            f"| —  | [≥ 1.00)      | {n_overflow:6d} |"
-            f" {n_overflow / total:.4f} | |"
-        )
+        lines.append(f"| —  | [≥ 1.00)      | {n_overflow:6d} | {n_overflow / total:.4f} | |")
 
     return "\n".join(lines)
 
@@ -365,7 +360,9 @@ def _build_drift_section(drift: _DriftStats) -> str:
     frac_decisive = n_decisive / len(ev)
 
     lines.append(f"**Sample size:** {len(ev)} game_positions rows with non-NULL eval_cp")
-    lines.append(f"(sampled from up to {_DRIFT_SAMPLE_LIMIT} positions in Phase-142-analyzed games)")
+    lines.append(
+        f"(sampled from up to {_DRIFT_SAMPLE_LIMIT} positions in Phase-142-analyzed games)"
+    )
     lines.append("")
     lines.append("| Metric | Value |")
     lines.append("|--------|-------|")
@@ -382,7 +379,7 @@ def _build_drift_section(drift: _DriftStats) -> str:
     lines.append("")
     lines.append(
         "**Interpretation:** Compare these values across Phase 142 boundary. A systematic "
-        f"multipv=2 PV1 shift of >15-20 cp would increase the contested-zone fraction "
+        "multipv=2 PV1 shift of >15-20 cp would increase the contested-zone fraction "
         "significantly (more positions would be pushed into or out of the ±150 cp band). "
         "The values above represent the post-Phase-142 distribution; if a pre-Phase-142 "
         "snapshot is available, subtract means to estimate drift magnitude."
@@ -401,9 +398,8 @@ def _build_report(
 ) -> str:
     """Assemble the full markdown report."""
     n_in_band, fraction_in_band = _count_in_band(stats.margins)
-    gate_passes = (
-        stats.n_positions >= _MIN_POSITIONS
-        and (fraction_in_band <= _MAX_FRACTION_IN_BAND if stats.margins else False)
+    gate_passes = stats.n_positions >= _MIN_POSITIONS and (
+        fraction_in_band <= _MAX_FRACTION_IN_BAND if stats.margins else False
     )
     gate_verdict = "PASS" if gate_passes else "FAIL"
     gate_color = "" if gate_passes else " (action required)"
@@ -414,11 +410,13 @@ def _build_report(
     lines.append(f"**Generated:** {generated.strftime('%Y-%m-%d %H:%M:%SZ')} (UTC)")
     lines.append(f"**DB target:** `{db}`")
     lines.append(f"**Query limit:** {limit}")
-    lines.append(f"**Script:** `scripts/validate_multipv_budget.py`")
+    lines.append("**Script:** `scripts/validate_multipv_budget.py`")
     lines.append(f"**Constant:** `ONLY_MOVE_WIN_PROB_MARGIN = {ONLY_MOVE_WIN_PROB_MARGIN}`")
     lines.append(f"**Margin band:** +/-{_MARGIN_BAND} around {ONLY_MOVE_WIN_PROB_MARGIN}")
-    lines.append(f"**SC4 gate:** fraction-in-band <= {_MAX_FRACTION_IN_BAND} "
-                 f"AND positions >= {_MIN_POSITIONS}")
+    lines.append(
+        f"**SC4 gate:** fraction-in-band <= {_MAX_FRACTION_IN_BAND} "
+        f"AND positions >= {_MIN_POSITIONS}"
+    )
     lines.append("")
     lines.append(
         "Reads `game_flaws.allowed_pv_lines` JSONB blobs (Phase 142 eval drain) and "
@@ -486,9 +484,7 @@ def _build_report(
         stdev_m = statistics.stdev(stats.margins) if len(stats.margins) >= 2 else float("nan")
         med_m = statistics.median(stats.margins)
         lines.append(
-            f"**Mean margin:** {mean_m:.4f} | "
-            f"**Median:** {med_m:.4f} | "
-            f"**Stdev:** {stdev_m:.4f}"
+            f"**Mean margin:** {mean_m:.4f} | **Median:** {med_m:.4f} | **Stdev:** {stdev_m:.4f}"
         )
         lines.append("")
 
@@ -582,9 +578,7 @@ async def _load_data(
                 .limit(_DRIFT_SAMPLE_LIMIT)
             )
             eval_cp_sample = [
-                row.eval_cp
-                for row in drift_result.all()
-                if isinstance(row.eval_cp, int)
+                row.eval_cp for row in drift_result.all() if isinstance(row.eval_cp, int)
             ]
 
     await engine.dispose()

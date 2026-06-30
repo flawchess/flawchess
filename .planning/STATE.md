@@ -2,29 +2,29 @@
 gsd_state_version: 1.0
 milestone: v1.30
 milestone_name: Forcing-Line Tactic Gate
-current_phase: 143
-current_phase_name: Offline Re-tagger
-status: verifying
-stopped_at: Completed 142-02-PLAN.md
-last_updated: "2026-06-30T01:43:01.540Z"
+current_phase: 144
+current_phase_name: user-28-a-b-validation
+status: executing
+stopped_at: Phase 144 context gathered
+last_updated: "2026-06-30T06:26:30.217Z"
 last_activity: 2026-06-30
-last_activity_desc: Phase 142 complete, transitioned to Phase 143
+last_activity_desc: Phase 144 execution started
 progress:
   total_phases: 5
-  completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
-  percent: 40
+  completed_phases: 3
+  total_plans: 11
+  completed_plans: 10
+  percent: 60
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 143 — Offline Re-tagger
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-06-30 — Phase 142 complete, transitioned to Phase 143
+Phase: 144 (user-28-a-b-validation) — EXECUTING
+Plan: 2 of 2
+Status: Ready to execute
+Last activity: 2026-06-30 — Phase 144 execution started
 
 ## Project Reference
 
@@ -80,6 +80,11 @@ Twenty-nine milestones complete (v1.0–v1.29). v1.29 Live-Engine Analysis Page 
 - [Phase ?]: _fill_engine_game_flaw_second_best mirrors SEED-056 for dedup-transplanted flaw plies (D-05 MPV-02)
 - [Phase ?]: additive schema extension
 - [Phase ?]: NULL blobs for old workers; Phase 145 backfills
+- [Phase ?]: Phase 143-01 gate parameterization
+- [Phase ?]: D-02 implemented: _classify_tactic_gated wrapper routes live classify through forcing-line gate (SC4 single classify path)
+- [Phase ?]: flaw_pv_blobs threaded from drain into classify before _run_multipv2_pass writes to DB (Pitfall 4 avoided)
+- [Phase ?]: Ungated arm wires _detect_tactic_for_flaw directly, not margin=0, to get the genuine pre-gate baseline
+- [Phase ?]: Both arms replay identical stored JSONB blobs, isolating gate effect from eval_cp cross-machine variance (VALID-01)
 
 ### Pending Todos
 
@@ -112,6 +117,7 @@ None at planning start.
 | 260628-u7d | Eval-chart flaw tooltip now shows the OPPONENT's tactic motif (missed:/allowed: + depth) on hollow-square markers, matching the user's own filled markers, on both the games card and `/analysis` (shared `EvalChart`). Backend-only, zero frontend changes: opponent tactic data already exists in `game_flaws` (Phase 113 emits both movers) and was withheld only by `player_only_gate` at read time. New ungated `fetch_page_game_flaws_both_colors` + `mover_is_white_at_ply` ply-parity helper feed ONLY the per-ply `tactic_by_ply` map; severity counts, curated chips, the Games-tab EXISTS filter, and stats stay player-gated (landmine guard test asserts blunder/mistake counts unchanged). Full backend suite green (2918 passed) | 2026-06-28 | 7fd6c91c | [260628-u7d-show-opponent-tactic-motif-in-eval-chart](./quick/260628-u7d-show-opponent-tactic-motif-in-eval-chart/) |
 | 260629-n8e | `/analysis` live Stockfish feels snappier: first engine line now paints sub-100ms and sharpens in place (lichess-style) instead of waiting ~0.5–1s. Two changes in `useStockfishEngine.ts`: (1) adaptive first-paint debounce — `DEBOUNCE_MS`→`RAPID_STEP_DEBOUNCE_MS=150` + `lastFenChangeAtRef`; a settled move (or first mount) fires `setDebouncedFen` immediately, only rapid-succession FEN changes (held arrow-key stepping) fall back to the timer. (2) Relaxed the `bound==='exact'` gate AND added a live `commitPvSnapshot()` on every passing `info` line (the UI previously only painted at `bestmove`, so relaxing the bound alone did nothing) — eval now bounces for ~200–300ms then settles, by design. Stale-search / stop-pending discard guard preserved (info handler gated on `stateRef!=='thinking' \|\| stopPendingRef`). MultiPV 2, movetime 1500/nodes 2M, warm worker, tab-hide pause all unchanged. Multithreading explicitly NOT touched (D-3). All 1231 frontend tests + lint + tsc green | 2026-06-29 | 94aadd5f | [260629-n8e-make-analysis-page-live-stockfish-feel-s](./quick/260629-n8e-make-analysis-page-live-stockfish-feel-s/) |
 | 260629-pq8 | Fix installed-PWA stale layout: SW precached index.html and served it cache-first, so an installed Android PWA launched a many-deploys-old shell (e.g. missing Library nav) until a manual reload. `vite.config.ts`: `globIgnores` adds `**/*.html` (drops index.html from the precache) + a `NetworkFirst` navigation route into an `html-shell` cache (online → always-fresh shell → current hashed assets; offline → last cached shell); `/api/` `NetworkOnly` kept first + `navigateFallback: null` so OAuth callback is unaffected. `main.tsx`: debounced `reg.update()` now also fires on `visibilitychange`/`focus` (the events that fire when Android resumes a frozen PWA), not just the hourly interval. Caddy already correct. Verified `dist/sw.js` has no `*.html` precache entries; lint + 1237 tests + build green | 2026-06-29 | 8c3400dc | [260629-pq8-fix-unreliable-pwa-cache-busting-stale-a](./quick/260629-pq8-fix-unreliable-pwa-cache-busting-stale-a/) |
+| 260630-jsr | Fix Bug B in the forcing-line gate: make `apply_forcing_line_filter` depth-aware. It required EVERY solver node in the full stored PV line to be a unique only-move, so a tactic that already fired and won material at the firing node was rejected whenever the winning conversion had several near-equal follow-ups (the still-winning floor never truncates a flatly-winning line). Added a `firing_depth` param (the detector's tactic depth) so only solver nodes up to and including the firing node must be forced; the conversion tail is exempt. `firing_depth=None` preserves the legacy whole-line check (all existing gate tests unchanged); `_classify_tactic_gated` passes the detected depth; guard rejects a firing node lost to floor truncation. Diagnosed via UAT report case 27 (game 681358 ply 16, allowed fork ...e5 forking Bf4+Nd4): now survives. FORK/allowed suppression 97.6%→83.1%, HANGING_PIECE 96.5%→65.3%, no motif flooded to 0%. Follows the Bug A pre-flaw-eval fix (dc0077b7). 193+32 backend tests + ruff + ty green | 2026-06-30 | cd1d1a57 | [260630-jsr-fix-bug-b-in-the-forcing-line-gate-make-](./quick/260630-jsr-fix-bug-b-in-the-forcing-line-gate-make-/) |
 
 ## Deferred Items
 
@@ -128,9 +134,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-Last session: 2026-06-29T21:55:17.130Z
-Stopped at: Completed 142-02-PLAN.md
-Resume file: None
+Last session: 2026-06-30T06:26:11.401Z
+Stopped at: Phase 144 context gathered
+Resume file: .planning/phases/144-user-28-a-b-validation/144-CONTEXT.md
 
 ## Performance Metrics
 
@@ -157,3 +163,7 @@ Resume file: None
 | Phase 142 P02 | 5400 | 3 tasks | 2 files |
 | Phase 142 P03 | 3600 | 3 tasks | 4 files |
 | Phase 142 P04 | 900 | 2 tasks | 2 files |
+| Phase Phase 143 PP01 | 15min | 2 tasks | 2 files |
+| Phase 143 P02 | 20min | 2 tasks | 3 files |
+| Phase 143 P03 | 10min | 3 tasks | 4 files |
+| Phase 144-user-28-a-b-validation P01 | 45 | 2 tasks | 3 files |

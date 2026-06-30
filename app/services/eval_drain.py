@@ -677,6 +677,7 @@ async def _classify_and_fill_oracle(
     session: AsyncSession,
     game_id: int,
     engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
+    flaw_pv_blobs: dict[int, tuple[list[PvNode], list[PvNode]]] | None = None,
 ) -> None:
     """Classify game_flaws and fill oracle count columns for one engine-analyzed game (EVAL-06).
 
@@ -693,6 +694,17 @@ async def _classify_and_fill_oracle(
     5. UPDATE games oracle columns (white/black inaccuracies/mistakes/blunders).
     6. For each FlawRecord at ply N, write game_positions.pv at ply N+1 (D-117-02,
        Pitfall 4 off-by-one: pv belongs to the position AFTER the flaw was played).
+
+    Args:
+        session: Write session (same transaction as _apply_full_eval_results).
+        game_id: The game being classified.
+        engine_result_map: {ply -> (eval_cp, eval_mate, best_move, pv_string)} from
+            the engine pass — PVs are not yet in game_positions at classify time.
+        flaw_pv_blobs: Optional {flaw_ply -> (allowed_blob, missed_blob)} MultiPV-2
+            blobs built in memory by _build_flaw_multipv2_blobs (Phase 142, D-02).
+            MUST be passed from the call site — blobs are NOT yet in the DB when
+            classify runs (Pitfall 4: classify precedes _run_multipv2_pass). When
+            None (old games without blobs), the gate is skipped for all flaws.
 
     Errors in bulk_insert_game_flaws and the oracle-count UPDATE are intentionally
     NOT caught here — they must propagate to the caller so the write-session
@@ -728,7 +740,11 @@ async def _classify_and_fill_oracle(
         ply: entry[3] for ply, entry in engine_result_map.items() if entry[3] is not None
     }
 
-    flaw_result = classify_game_flaws(game, positions, pv_by_ply=pv_by_ply)
+    # Phase 143 D-02: pass in-memory blobs to route classify through _classify_tactic_gated.
+    # Blobs are NOT yet in the DB here (Pitfall 4: classify precedes _run_multipv2_pass).
+    flaw_result = classify_game_flaws(
+        game, positions, pv_by_ply=pv_by_ply, flaw_pv_blobs=flaw_pv_blobs
+    )
     if "reason" in flaw_result:
         # GameNotAnalyzed: insufficient eval coverage — skip.
         return
@@ -2321,7 +2337,9 @@ async def _full_drain_tick() -> bool:
         # Runs AFTER _apply_full_eval_results so eval_cp is visible for classification.
         # Runs BEFORE the completion markers so evals + flaws commit atomically (T-117-11).
         # Always runs — partial flaws should materialize even when holes remain.
-        await _classify_and_fill_oracle(write_session, game_id, engine_result_map)
+        # Phase 143 D-02: pass in-memory flaw_pv_blobs so the gate runs at classify time.
+        # Ordering: classify must PRECEDE _run_multipv2_pass (blobs not yet in DB here).
+        await _classify_and_fill_oracle(write_session, game_id, engine_result_map, flaw_pv_blobs)
 
         # Phase 142 MPV-02: write PvNode blobs (allowed/missed lines) to game_flaws.
         # Runs in the same transaction as _classify_and_fill_oracle so flaw rows exist

@@ -94,8 +94,8 @@
 | 136-140. v1.29 phases | 14/14 | Complete | 2026-06-29 |
 | 141. JSONB Schema + Gate Logic | 2/2 | Complete    | 2026-06-29 |
 | 142. MultiPV=2 Engine Pass + Eval Drain + Remote Worker | 4/4 | Complete    | 2026-06-29 |
-| 143. Offline Re-tagger | 0/? | Not started | - |
-| 144. User-28 A/B Validation | 0/? | Not started | - |
+| 143. Offline Re-tagger | 3/3 | Complete    | 2026-06-30 |
+| 144. User-28 A/B Validation | 1/2 | In Progress|  |
 | 145. Corpus Backfill + Rollout | 0/? | Not started | - |
 
 ## v1.30 Forcing-Line Tactic Gate (Phases 141–145)
@@ -106,7 +106,7 @@
 
 - [x] **Phase 141: JSONB Schema + Gate Logic** — Alembic migration + pure-math forcing_line_gate module with all named constants; query-site audit (completed 2026-06-29)
 - [x] **Phase 142: MultiPV=2 Engine Pass + Eval Drain + Remote Worker** — _analyse_multipv2 method + eval drain step 3b + backward-compatible remote-worker wiring; margin histogram gate before merge (completed 2026-06-30)
-- [ ] **Phase 143: Offline Re-tagger** — scripts/retag_flaws.py with mate-priority hierarchy, solver/defender parity, --dry-run/--margin/--user-id flags; explicit unit tests for mate and defender-branch cases
+- [x] **Phase 143: Offline Re-tagger** — scripts/retag_flaws.py with mate-priority hierarchy, solver/defender parity, --dry-run/--margin/--user-id flags; explicit unit tests for mate and defender-branch cases (completed 2026-06-30)
 - [ ] **Phase 144: User-28 A/B Validation** — engine-free old-vs-new diff on stored MultiPV evals; per-motif removed/survived counts; hand-check ~30 dropped cases; commit final margin
 - [ ] **Phase 145: Corpus Backfill + Rollout** — backfill_multipv.py --db prod + retag_flaws.py --db prod; WHERE allowed_pv_lines IS NULL idempotency; per-motif chip counts before/after
 
@@ -164,7 +164,18 @@
   3. A unit test with a defender-branching position confirms that ambiguity at defender nodes does not kill a valid forcing line (branch-then-reconverge treated as forced)
   4. The re-tagger updates game_flaws tactic columns idempotently via the single classify path — a second run on the same data produces identical output
 
-**Plans**: TBD
+**Plans**: 3 plans
+**Wave 1**
+
+- [x] 143-01-PLAN.md — Parameterize the gate by margin (D-03) + audit/fill GATE-03 mate-priority & GATE-04 multi-ply defender unit tests
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 143-02-PLAN.md — Wire the gate into the live classify path (`_classify_tactic_gated` + thread in-memory blobs through the eval drain) — single classify path (SC4)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 143-03-PLAN.md — Offline re-tagger: extend + `git mv` to `scripts/retag_flaws.py` (blob loading, `--margin`, gated classify), per-motif delta report, idempotency test
 
 ### Phase 144: User-28 A/B Validation
 
@@ -178,7 +189,15 @@
   3. A hand-check of ~30 randomly-sampled dropped cases produces an explicit false-negative count (good tags killed)
   4. The final ONLY_MOVE_WIN_PROB_MARGIN value is committed to forcing_line_gate.py with the A/B summary justifying the chosen value
 
-**Plans**: TBD
+**Plans**: 2 plans
+
+**Wave 1**
+
+- [x] 144-01-PLAN.md — engine-free A/B harness `scripts/ab_validate_gate.py` (ungated vs gated arms over identical stored blobs) + Wave 0 test scaffold; per-motif removed/survived, depth distribution, dropped-case + report writer (VALID-01, VALID-02)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 144-02-PLAN.md — run against dev user-28, commit `reports/retag/` report; HUMAN-UAT hand-check → false-negative count; commit final `ONLY_MOVE_WIN_PROB_MARGIN` (keep 0.35 unless hand-check fails) (VALID-02)
 
 ### Phase 145: Corpus Backfill + Rollout
 
@@ -200,7 +219,7 @@
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 4/4 plans complete
+**Plans:** 3/3 plans complete
 
 Plans:
 

@@ -18,8 +18,8 @@ Requirements for the v1.30 milestone. Each maps to a roadmap phase (141–145).
 
 - [x] **GATE-01**: A pure, engine-free, independently unit-testable `forcing_line_gate` module credits a motif only when its firing node — and every solver node leading to it — passes the only-move margin `p(best) − p(second) > ONLY_MOVE_WIN_PROB_MARGIN` (via `eval_utils.LICHESS_K`), with all thresholds as named constants. The margin is a *tunable* parameter: it defaults to lichess-puzzler's 0.35 (their +0.7 in −1..+1 space) as a **starting** value, NOT a fixed constant — the final value is chosen empirically in VALID-02. Note this margin is a best-vs-second-best *forced-ness* test on the refutation line, orthogonal to the 15pp move-severity blunder threshold.
 - [x] **GATE-02**: The gate applies the already-winning reject (pre-flaw eval > `ALREADY_WINNING_CP_THRESHOLD` = 300 cp, using existing `game_positions.eval_cp` at the flaw ply), the still-winning floor (stop extending below `STILL_WINNING_FLOOR_CP` = 200 cp), a trailing-only-move strip, and a one-mover discard.
-- [ ] **GATE-03**: Mate scores are handled by a mate-priority hierarchy that runs *before* the sigmoid comparison — only-best-is-mate → forced; both-mate → shorter distance forced; else fall through to sigmoid — so mate-in-1 and genuine mating combinations are never suppressed by sigmoid saturation.
-- [ ] **GATE-04**: Uniqueness is checked at solver nodes only; defender-node ambiguity does not kill a line (branch-then-reconverge is treated as forced).
+- [x] **GATE-03**: Mate scores are handled by a mate-priority hierarchy that runs *before* the sigmoid comparison — only-best-is-mate → forced; both-mate → shorter distance forced; else fall through to sigmoid — so mate-in-1 and genuine mating combinations are never suppressed by sigmoid saturation.
+- [x] **GATE-04**: Uniqueness is checked at solver nodes only; defender-node ambiguity does not kill a line (branch-then-reconverge is treated as forced).
 
 ### MultiPV Engine Pass (MPV)
 
@@ -29,13 +29,13 @@ Requirements for the v1.30 milestone. Each maps to a roadmap phase (141–145).
 
 ### Offline Re-tagger (RETAG)
 
-- [ ] **RETAG-01**: An offline re-tagger re-derives tactic tags purely from the stored JSONB (no engine), tunable via CLI flags (`--dry-run` / `--margin` / `--user-id` / `--db`), making every threshold change a seconds-fast `/loop`-able re-derivation.
-- [ ] **RETAG-02**: The re-tagger is idempotent and updates the `game_flaws` tactic columns in place via the single classify path.
+- [x] **RETAG-01**: An offline re-tagger re-derives tactic tags purely from the stored JSONB (no engine), tunable via CLI flags (`--dry-run` / `--margin` / `--user-id` / `--db`), making every threshold change a seconds-fast `/loop`-able re-derivation.
+- [x] **RETAG-02**: The re-tagger is idempotent and updates the `game_flaws` tactic columns in place via the single classify path.
 
 ### Validation (VALID)
 
-- [ ] **VALID-01**: A user-28 dev A/B runs the old and new tagger logic against the *same* stored MultiPV evals (engine-free), isolating the gate's effect from `eval_cp` cross-machine non-determinism; prod-28 is a sanity reference only, not an A/B control.
-- [ ] **VALID-02**: The A/B measures noise removed **and** good tags killed — per-motif tags removed/survived, depth-shift distribution, and a hand-check of ~30 dropped cases with an explicit false-negative count — and the final margin is committed.
+- [x] **VALID-01**: A user-28 dev A/B runs the old and new tagger logic against the *same* stored MultiPV evals (engine-free), isolating the gate's effect from `eval_cp` cross-machine non-determinism; prod-28 is a sanity reference only, not an A/B control.
+- [x] **VALID-02**: The A/B measures noise removed **and** good tags killed — per-motif tags removed/survived, depth-shift distribution, and a hand-check of ~30 dropped cases with an explicit false-negative count — and the final margin is committed.
 
 ### Backfill + Rollout (SHIP)
 
@@ -75,14 +75,14 @@ Which phases cover which requirements. Filled during roadmap creation.
 | STORE-02 | Phase 141 | Complete |
 | GATE-01 | Phase 141 | Complete |
 | GATE-02 | Phase 141 | Complete |
-| GATE-03 | Phase 143 | Pending |
-| GATE-04 | Phase 143 | Pending |
+| GATE-03 | Phase 143 | Complete |
+| GATE-04 | Phase 143 | Complete |
 | MPV-01 | Phase 142 | Complete |
 | MPV-02 | Phase 142 | Complete |
 | MPV-03 | Phase 142 | Complete |
-| RETAG-01 | Phase 143 | Pending |
-| RETAG-02 | Phase 143 | Pending |
-| VALID-01 | Phase 144 | Pending |
-| VALID-02 | Phase 144 | Pending |
+| RETAG-01 | Phase 143 | Complete |
+| RETAG-02 | Phase 143 | Complete |
+| VALID-01 | Phase 144 | Complete |
+| VALID-02 | Phase 144 | Complete |
 | SHIP-01 | Phase 145 | Pending |
 | SHIP-02 | Phase 145 | Pending |
