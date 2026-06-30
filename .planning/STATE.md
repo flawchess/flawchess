@@ -4,11 +4,10 @@ milestone: v1.30
 milestone_name: Forcing-Line Tactic Gate
 current_phase: 144
 current_phase_name: user-28-a-b-validation
-status: executing
+status: Phases 143-144 squash-merged to main (f09fcddb) — offline re-tagger + A/B gate validation
 stopped_at: Phase 144 context gathered
-last_updated: "2026-06-30T06:26:30.217Z"
+last_updated: "2026-06-30T17:37:21.868Z"
 last_activity: 2026-06-30
-last_activity_desc: Phase 144 execution started
 progress:
   total_phases: 5
   completed_phases: 3
@@ -23,8 +22,8 @@ progress:
 
 Phase: 144 (user-28-a-b-validation) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
-Last activity: 2026-06-30 — Phase 144 execution started
+Status: Phases 143-144 squash-merged to main (f09fcddb) — offline re-tagger + A/B gate validation
+Last activity: 2026-06-30
 
 ## Project Reference
 
