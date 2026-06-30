@@ -5,16 +5,16 @@ milestone_name: Forcing-Line Tactic Gate
 current_phase: 145
 current_phase_name: corpus-backfill-rollout
 status: executing
-stopped_at: Phase 145 context gathered
-last_updated: "2026-06-30T21:08:16.285Z"
+stopped_at: Phase 146 context gathered
+last_updated: "2026-06-30T22:28:39.136Z"
 last_activity: 2026-06-30
 last_activity_desc: Phase 145 execution started
 progress:
-  total_phases: 5
+  total_phases: 6
   completed_phases: 3
   total_plans: 17
   completed_plans: 15
-  percent: 60
+  percent: 50
 ---
 
 # Project State: FlawChess
@@ -49,6 +49,10 @@ Twenty-nine milestones complete (v1.0–v1.29). v1.29 Live-Engine Analysis Page 
 - v1.29 D-5 locked: stored PVs (Phase 135 tactic-lines endpoint) are the initial mainline; live engine takes over on deviation
 
 ## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 146 added: Offload live-submit forcing-line continuation eval to the remote worker (SEED-071)
 
 ### Decisions
 
@@ -140,9 +144,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-Last session: 2026-06-30T21:08:16.273Z
-Stopped at: Phase 145 context gathered
-Resume file: .planning/phases/145-corpus-backfill-rollout/145-CONTEXT.md
+Last session: 2026-06-30T22:28:39.122Z
+Stopped at: Phase 146 context gathered
+Resume file: .planning/phases/146-offload-live-submit-forcing-line-continuation-eval-to-the-re/146-CONTEXT.md
 
 ## Performance Metrics
 
