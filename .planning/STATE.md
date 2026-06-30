@@ -2,29 +2,34 @@
 gsd_state_version: 1.0
 milestone: v1.30
 milestone_name: Forcing-Line Tactic Gate
-current_phase: 145
-current_phase_name: corpus-backfill-rollout
-status: executing
+current_phase: 146
+current_phase_name: offload-live-submit-forcing-line-continuation-eval-to-the-re
+status: planning
 stopped_at: Phase 146 context gathered
-last_updated: "2026-06-30T22:28:39.136Z"
-last_activity: 2026-06-30
-last_activity_desc: Phase 145 execution started
+last_updated: "2026-07-01T00:00:00.000Z"
+last_activity: 2026-07-01
+last_activity_desc: Phase 145 closed out (code shipped in v1.30); Phase 146 context gathered
 progress:
   total_phases: 6
-  completed_phases: 3
+  completed_phases: 5
   total_plans: 17
-  completed_plans: 15
-  percent: 50
+  completed_plans: 16
+  percent: 83
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 145 (corpus-backfill-rollout) — EXECUTING
-Plan: 6 of 6
-Status: Ready to execute
-Last activity: 2026-06-30 — Phase 145 execution started
+Phase: 146 (offload-live-submit-forcing-line-continuation-eval-to-the-re) — CONTEXT GATHERED, ready to plan
+Last activity: 2026-07-01 — Phase 145 closed out; Phase 146 context gathered
+
+Phase 145 (corpus-backfill-rollout) — COMPLETE (code). Plans 01–05 + the autonomous part of
+plan 06 are merged to main (`875bc164`) and released to production in v1.30 (PR #229,
+`61107f47`). The remaining plan-06 `[HUMAN-VERIFY]` prod backfill *drain* (fleet drain → D-08
+retag sweep → SC3 after-snapshot) is intentionally deferred: it is gated on the upgraded
+remote-worker fleet deploy, which IS the deliverable of Phase 146 (D-04). So 145's rollout
+completes through 146 — not a 145 gap.
 
 ## Project Reference
 
