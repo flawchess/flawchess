@@ -4,7 +4,7 @@ status: dormant
 planted: 2026-07-01
 planted_during: post-v1.30-deploy prod investigation. After deploying the v1.30 Forcing-Line Tactic Gate milestone (phases 141-145), remote eval workers began intermittently failing with ReadTimeout on POST /eval/remote/submit. Root-caused live, on prod, to the synchronous server-side MultiPV-2 continuation eval that Phase 142 added to the live submit path. NOT a Phase 145 bug.
 trigger_when: soon — this is an active prod pain point (submit timeouts under any real load, e.g. while a user's imported games are tier-3 draining). Promote as a single backend phase when the v1.30 corpus rollout settles, or sooner if submit timeouts worsen. Stopgap in place: bump worker HTTP_TIMEOUT_S 30 -> 120.
-scope: Medium — backend remote-eval submit path only (app/routers/eval_remote.py::_apply_submit, app/services/eval_drain.py::_build_flaw_multipv2_blobs). No DB schema change. Either move blob assembly off the synchronous submit, or offload continuation eval to the worker via the existing Phase-145 lease/submit token machinery.
+scope: Medium — backend remote-eval submit path + live worker (app/routers/eval_remote.py::_apply_submit, app/services/eval_drain.py::_build_flaw_multipv2_blobs, scripts/remote_eval_worker.py). No DB schema change. DECIDED APPROACH: Option 2 — offload the continuation eval to the worker via the existing Phase-145 lease/submit token machinery so the server runs zero Stockfish on the live submit path.
 ---
 
 # SEED-071: Live submit path runs forcing-line continuation eval on the server, blocking the response → ReadTimeouts under load
@@ -50,19 +50,39 @@ Bump the worker's `HTTP_TIMEOUT_S` 30 -> 120 so submits complete (the work isn't
 submits retry, and may already be committing past the client timeout). Note `--workers 12` locally
 barely helps now: the server pool is the bottleneck, so a lower local worker count is fine.
 
-## Proposed fix (one backend phase)
+## Decided approach: Option 2 — offload continuation eval to the worker (LOCKED 2026-07-01)
 
-Pick one (decide during plan-phase):
+The live submit handler must stop running `asyncio.gather(evaluate_nodes_multipv2(...))` on the
+server. The worker computes the flaw PV-continuation nodes itself (reusing the Phase-145
+`/eval/remote/flaw-blob-lease` + `/flaw-blob-submit` token machinery), so the server runs **zero**
+Stockfish on the live path. This removes server-side engine load entirely (not just the timeout)
+and unifies the live path with the backfill path.
 
-1. **Async-ify blob assembly on the live path** — return the submit *before* `_build_flaw_multipv2_blobs`,
-   and do blob assembly + the gated retag in a background task / the existing drain loop. The submit
-   becomes a pure DB write (fast); the gate work happens off the request. Simplest; keeps engine work
-   on the server but unblocks the worker.
-2. **Offload continuation eval to the worker** — have the live worker compute the continuation nodes
-   (reusing the Phase-145 lease/submit token machinery), so the server never runs Stockfish on submit.
-   More work, but removes server-side engine load from the live path entirely and unifies live + backfill.
+**Why Option 2 over the simpler async-ify alternative (rejected):** async-ifying blob assembly into
+a background task would unblock the worker (fix the timeout) but the server *still* runs the same
+continuation eval, so it does NOT fix the throughput contention with tier-3 drain — the actual prod
+pain. It would also break Phase-145's D-07 atomicity invariant (evals + flaws + blobs + completion
+markers commit in one transaction; a backgrounded blob assembly stamps the game complete before its
+gated tags exist, opening a window of ungated/missing tactic tags). Option 2 avoids both.
 
-Either way: the submit handler must stop blocking on `asyncio.gather(evaluate_nodes_multipv2(...))`.
+**Protocol shape (the real design work — flaws are only known after the server classifies):**
+1. Worker submits the full-ply evals as today (`/submit`), but the server does **not** call
+   `_build_flaw_multipv2_blobs`. It applies evals, classifies flaws, and stamps `full_evals_completed`,
+   leaving `allowed_pv_lines`/`missed_pv_lines` NULL — i.e. the game lands in exactly the state the
+   tier-4 backfill predicate already matches (`allowed_pv_lines IS NULL`).
+2. The freshly-submitted game's flaws then drain through the **existing** Phase-145 flaw-blob
+   lease/submit + per-game gated D-07 retag path — same code already serving the backfill, just now
+   also fed by live submits. No new server engine work, no new endpoint.
+
+**Open questions for plan-phase:**
+- Should the live game be picked up by the *same* tier-4 lottery (it already matches the predicate),
+  or get a higher-priority lane so a just-analyzed game's tags aren't gated-late behind the old-corpus
+  backfill? (Leaning: a dedicated tier between live eval and tier-4, or boost recency in the lottery.)
+- Tag-display semantics in the NULL-blob window: a live game is briefly analyzed-but-ungated. Confirm
+  the UI shows raw tags (current behavior for un-blobbed flaws) vs. hides them until blobs land.
+- Worker change: the live worker must also speak the flaw-blob lease/submit contract (it currently
+  only calls `/submit`) — i.e. the same "upgraded worker" client that RESEARCH Open Question 2 / phase
+  145 already needs. This phase and the phase-145 fleet-worker upgrade likely share that client work.
 
 ## Pointers
 
