@@ -227,6 +227,12 @@ def is_solver_node_forced(
 
     p_best = eval_cp_to_expected_score(b, solver_color)
     p_second = eval_cp_to_expected_score(s, solver_color)
+    # NOTE: at the current ONLY_MOVE_CP_GAP_THRESHOLD (100 cp) this win-prob branch is fully
+    # dominated by the cp-gap escape below and never decides on its own: the sigmoid's max slope
+    # is K/4 ~= 0.00092 per cp, so a win-prob gap > margin (0.35) implies a cp gap > ~380, which
+    # already clears the 100 cp escape. The branch is NOT redundant in general -- it is the
+    # canonical lichess-puzzler only-move test (D-07) and re-activates as the binding constraint
+    # if cp_gap is ever raised above ~380. Keep both; sweeping `margin` alone is a no-op until then.
     if p_best - p_second > margin:
         return True
 

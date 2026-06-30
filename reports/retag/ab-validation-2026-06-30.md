@@ -4,7 +4,10 @@
 **Script:** `scripts/ab_validate_gate.py`
 **DB:** dev, user-id 28
 **Scope:** player's own flaws only (opponent flaws excluded via player_only_gate)
-**Margin tested:** 0.35 (ONLY_MOVE_WIN_PROB_MARGIN default: 0.35)
+**Margin tested:** 0.35 (ONLY_MOVE_WIN_PROB_MARGIN default: 0.35) — NOTE: inert at the current
+ONLY_MOVE_CP_GAP_THRESHOLD (100 cp). The win-prob margin is fully dominated by the cp-gap escape
+(a >0.35 win-prob gap implies a >~380 cp gap, which already clears the 100 cp escape), so this run
+effectively swept a "best move ≥ 100 cp better than second-best" only-move rule, not the 0.35 bar.
 **Total blob-bearing flaws loaded:** 3359
 
 ## Executive Summary
