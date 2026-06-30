@@ -2072,70 +2072,70 @@ _BLUNDER_SUBMIT_EVALS_142: list[dict[str, object]] = [
 
 
 def test_submit_eval_accepts_second_best_fields() -> None:
-    """Phase 142 MPV-02: SubmitEval parses with and without second_* fields.
+    """Phase 146 D-03: SubmitEval no longer carries second_cp/second_mate/second_uci.
 
-    Old-worker backward-compat: payload omitting second_* must parse with all three
-    defaulting to None (D-03 additive-only schema change). New-worker: payload with
-    second_* must parse and land on the schema (including second_uci=None for
-    single-legal-move plies — wire type is str|None).
+    Phase 146 removes the three second_* fields from SubmitEval (the live /submit
+    contract). Old workers that still send these fields are backward-compatible:
+    Pydantic v2 ignores unknown fields by default (no extra='forbid').
     """
     from app.schemas.eval_remote import SubmitEval
 
-    # Old worker: no second_* fields → all default None.
-    old_eval = SubmitEval(ply=2, eval_cp=30, eval_mate=None, best_move="g1f3", pv=None)
-    assert old_eval.second_cp is None
-    assert old_eval.second_mate is None
-    assert old_eval.second_uci is None
-
-    # New worker: second_* present → values preserved.
-    new_eval = SubmitEval(
-        ply=2,
-        eval_cp=30,
-        eval_mate=None,
-        best_move="g1f3",
-        pv=None,
-        second_cp=25,
-        second_mate=None,
-        second_uci="d2d4",
+    # New contract: base fields only — no second_* attributes on the model.
+    base_eval = SubmitEval(ply=2, eval_cp=30, eval_mate=None, best_move="g1f3", pv=None)
+    assert base_eval.ply == 2
+    assert base_eval.eval_cp == 30
+    # Phase 146: second_cp / second_mate / second_uci fields are removed.
+    assert not hasattr(base_eval, "second_cp"), "second_cp must not be on SubmitEval (Phase 146)"
+    assert not hasattr(base_eval, "second_mate"), (
+        "second_mate must not be on SubmitEval (Phase 146)"
     )
-    assert new_eval.second_cp == 25
-    assert new_eval.second_mate is None
-    assert new_eval.second_uci == "d2d4"
+    assert not hasattr(base_eval, "second_uci"), "second_uci must not be on SubmitEval (Phase 146)"
 
-    # Wire type: second_uci=None (single-legal-move ply) parses without error.
-    null_uci_eval = SubmitEval(
-        ply=2,
-        eval_cp=30,
-        eval_mate=None,
-        best_move="g1f3",
-        pv=None,
-        second_cp=None,
-        second_mate=None,
-        second_uci=None,
+    # Old-worker backward-compat: extra second_* keys in the JSON payload must be
+    # silently ignored by Pydantic v2 — no ValidationError, no attribute stored.
+    old_worker_payload = {
+        "ply": 2,
+        "eval_cp": 30,
+        "eval_mate": None,
+        "best_move": "g1f3",
+        "pv": None,
+        "second_cp": 25,
+        "second_mate": None,
+        "second_uci": "d2d4",
+    }
+    compat_eval = SubmitEval(**old_worker_payload)
+    assert compat_eval.ply == 2
+    assert compat_eval.eval_cp == 30
+    assert not hasattr(compat_eval, "second_cp"), (
+        "Extra second_cp key must be silently ignored by Pydantic v2 (no extra='forbid')"
     )
-    assert null_uci_eval.second_uci is None
 
 
 class TestMultipv2BlobsRemote:
-    """Phase 142 MPV-02: SubmitRequest with second-best fields → JSONB blobs written.
+    """Phase 142 MPV-02 / Phase 146 D-03: /submit blob behavior.
 
     Uses _SIX_PLY_PGN_142 ("1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 *") with an artificial
-    blunder at row ply=2 (win-prob drop from +30 to -500 cp). No PV strings → 1-node
-    blobs (no continuation engine calls needed).
+    blunder at row ply=2 (win-prob drop from +30 to -500 cp).
+
+    Phase 146 update: /submit always leaves blobs NULL (deferred to tier-4 drain).
     """
 
     @pytest.mark.asyncio
-    async def test_submit_with_second_best_populates_blobs(
+    async def test_submit_with_second_best_leaves_blobs_null(
         self,
         monkeypatch: pytest.MonkeyPatch,
         eval_worker_session_maker: async_sessionmaker[AsyncSession],
         eval_worker_test_user: int,
     ) -> None:
-        """Upgraded worker: submit with second_* for the flaw ply → blobs non-NULL.
+        """Phase 146 D-03: /submit always leaves blobs NULL, even with second_* in payload.
 
-        Submit includes second_cp=25/second_uci='d2d4' at ply=2 (the missed-line
-        node-0 second-best for flaw at row ply=2). Asserts allowed_pv_lines and
-        missed_pv_lines are non-NULL and the missed node-0 carries the second-best.
+        Prior to Phase 146, a payload including second_cp caused inline blob assembly
+        (allowed_pv_lines/missed_pv_lines populated). Phase 146 makes blob_map={}
+        unconditional — second_* keys in the JSON body are silently ignored (Pydantic
+        v2 extra-field behavior). Blobs are deferred to the tier-4 worker drain.
+
+        Also verifies: flaw classification still runs (flaw row created for the blunder)
+        and both completion markers are stamped — the live path stamps both unconditionally.
         """
         from app.models.game_flaw import GameFlaw
 
@@ -2159,7 +2159,8 @@ class TestMultipv2BlobsRemote:
             ],
         )
 
-        # Submit evals with second_cp/second_uci at ply=2 → second_best_map[2] set.
+        # Payload still includes second_cp/second_uci to simulate an old-worker wire
+        # format — Phase 146 verifies these are silently ignored.
         evals = [dict(e) for e in _BLUNDER_SUBMIT_EVALS_142]
         evals[2] = {**evals[2], "second_cp": 25, "second_uci": "d2d4"}
         payload = {"game_id": game_id, "sf_version": "Stockfish 18", "evals": evals}
@@ -2173,7 +2174,7 @@ class TestMultipv2BlobsRemote:
                 )
             assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
 
-            # Verify blobs via explicit projection (allowed/missed_pv_lines are deferred=True).
+            # Phase 146 key assertion: blobs must be NULL (deferred to tier-4 drain).
             async with eval_worker_session_maker() as verify:
                 flaw_rows = (
                     await verify.execute(
@@ -2188,25 +2189,13 @@ class TestMultipv2BlobsRemote:
             assert len(flaw_rows) == 1, f"Expected 1 flaw (blunder at ply 2), got {len(flaw_rows)}"
             flaw_ply, allowed, missed = flaw_rows[0]
             assert flaw_ply == 2, f"Flaw must be at ply 2, got {flaw_ply}"
-            assert allowed is not None, (
-                "allowed_pv_lines must be non-NULL after submit with second-best (MPV-02)"
+            assert allowed is None, (
+                "Phase 146 D-03: allowed_pv_lines must be NULL after /submit "
+                "(blob assembly deferred to tier-4 worker drain)"
             )
-            assert missed is not None, (
-                "missed_pv_lines must be non-NULL after submit with second-best (MPV-02)"
-            )
-            assert len(allowed) >= 1, (
-                f"allowed_pv_lines must have at least 1 node (node 0), got {len(allowed)}"
-            )
-            assert len(missed) >= 1, (
-                f"missed_pv_lines must have at least 1 node (node 0), got {len(missed)}"
-            )
-            # Node-0 of missed line carries the submitted second-best.
-            node0_missed = missed[0]
-            assert node0_missed.get("s") == 25, (
-                f"missed node-0 must carry s=25, got {node0_missed.get('s')!r}"
-            )
-            assert node0_missed.get("su") == "d2d4", (
-                f"missed node-0 must carry su='d2d4', got {node0_missed.get('su')!r}"
+            assert missed is None, (
+                "Phase 146 D-03: missed_pv_lines must be NULL after /submit "
+                "(blob assembly deferred to tier-4 worker drain)"
             )
         finally:
             await _delete_games(eval_worker_session_maker, [game_id])
@@ -2291,19 +2280,21 @@ class TestMultipv2BlobsRemote:
             await _delete_games(eval_worker_session_maker, [game_id])
 
     @pytest.mark.asyncio
-    async def test_apply_submit_passes_blob_map_to_classify(
+    async def test_apply_submit_passes_none_to_classify(
         self,
         monkeypatch: pytest.MonkeyPatch,
         eval_worker_session_maker: async_sessionmaker[AsyncSession],
         eval_worker_test_user: int,
     ) -> None:
-        """SHIP-02: _apply_submit must pass blob_map to _classify_and_fill_oracle.
+        """Phase 146 D-03: _apply_submit always passes flaw_pv_blobs=None to _classify_and_fill_oracle.
 
-        Before the fix, _classify_and_fill_oracle was called without blob_map even
-        when blobs were assembled (the blobs were written via _run_multipv2_pass but
-        tags were unfiltered). This test verifies the corrected call site:
-        - New-worker submit (with second_*): flaw_pv_blobs is non-None → gate fires.
-        - Old-worker submit (no second_*): flaw_pv_blobs is None → gate skipped.
+        Phase 146 makes blob_map={} unconditional. Since {} is falsy,
+        `blob_map if blob_map else None` always evaluates to None — the gate is
+        always skipped on the live submit path. Tactic tags are gated later by the
+        tier-4 worker drain via _classify_tactic_gated (D-07 gated retag).
+
+        Test verifies that even with second_* keys in the JSON body (old-worker wire
+        format), the spy always receives None — confirming the unconditional path.
         """
         import app.routers.eval_remote as eval_remote_module
         import app.services.eval_drain as eval_drain_module
@@ -2314,8 +2305,7 @@ class TestMultipv2BlobsRemote:
 
         user_id = eval_worker_test_user
 
-        # ── New-worker submit: second_* at ply=2 → blob_map assembled ────────────
-        game_id_new = await _insert_game(
+        game_id = await _insert_game(
             eval_worker_session_maker,
             user_id,
             pgn=_SIX_PLY_PGN_142,
@@ -2323,7 +2313,7 @@ class TestMultipv2BlobsRemote:
         await _insert_game_positions(
             eval_worker_session_maker,
             user_id,
-            game_id_new,
+            game_id,
             [
                 {"ply": p, "full_hash": 14220 + p, "eval_cp": None, "eval_mate": None}
                 for p in range(6)
@@ -2340,20 +2330,20 @@ class TestMultipv2BlobsRemote:
 
         monkeypatch.setattr(eval_remote_module, "_classify_and_fill_oracle", spy_classify)
 
-        evals_new = [dict(e) for e in _BLUNDER_SUBMIT_EVALS_142]
-        # Provide second-best at the flaw ply so blob_map is assembled.
-        evals_new[2] = {**evals_new[2], "second_cp": 25, "second_uci": "d2d4"}
-        payload_new = {
-            "game_id": game_id_new,
+        # Include second_* in the payload to simulate old-worker wire format.
+        evals = [dict(e) for e in _BLUNDER_SUBMIT_EVALS_142]
+        evals[2] = {**evals[2], "second_cp": 25, "second_uci": "d2d4"}
+        payload = {
+            "game_id": game_id,
             "sf_version": "Stockfish 18",
-            "evals": evals_new,
+            "evals": evals,
         }
 
         try:
             async with _make_client() as client:
                 resp = await client.post(
                     _SUBMIT_URL,
-                    json=payload_new,
+                    json=payload,
                     headers={"X-Operator-Token": _TEST_TOKEN},
                 )
             assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
@@ -2361,59 +2351,204 @@ class TestMultipv2BlobsRemote:
             assert len(captured_blobs) == 1, (
                 f"Expected spy to capture exactly 1 call, got {len(captured_blobs)}"
             )
-            new_worker_blobs = captured_blobs[0]
-            assert new_worker_blobs is not None, (
-                "SHIP-02: blob_map must be passed to _classify_and_fill_oracle "
-                "when second-best data is available (was called without it before fix)"
-            )
-            assert isinstance(new_worker_blobs, dict), (
-                f"flaw_pv_blobs must be a dict, got {type(new_worker_blobs)}"
+            blobs_arg = captured_blobs[0]
+            assert blobs_arg is None, (
+                "Phase 146 D-03: _classify_and_fill_oracle must receive flaw_pv_blobs=None "
+                "on the live submit path (blob_map={} unconditional → gate skipped)"
             )
         finally:
-            await _delete_games(eval_worker_session_maker, [game_id_new])
+            await _delete_games(eval_worker_session_maker, [game_id])
 
-        # ── Old-worker submit: no second_* → blob_map is {} → None passed ────────
-        game_id_old = await _insert_game(
-            eval_worker_session_maker,
-            user_id,
-            pgn=_SIX_PLY_PGN_142,
+
+# ─── Phase 146: _apply_submit unconditional blob_map={} (D-03) ───────────────
+
+
+def test_submit_eval_schema_phase146_no_second_best_fields() -> None:
+    """Phase 146 D-03: SubmitEval drops second_cp/second_mate/second_uci.
+
+    After Phase 146, SubmitEval is the honest contract — full-ply evals only.
+    Old workers that still send second_* fields in the JSON body have those
+    extra keys silently ignored by Pydantic v2 (no extra='forbid').
+
+    RED assertion (fails before Phase 146 code change): SubmitEval instances
+    must NOT have a second_cp attribute — the field is removed from the model.
+    After removing the fields, extra keys are silently ignored.
+    """
+    from app.schemas.eval_remote import SubmitEval
+
+    # New contract: parse without second_* keys.
+    ev_no_second = SubmitEval(ply=2, eval_cp=30, eval_mate=None, best_move="g1f3", pv=None)
+    # After Phase 146 the field is gone — hasattr must return False.
+    assert not hasattr(ev_no_second, "second_cp"), (
+        "Phase 146: SubmitEval.second_cp must not exist (field removed from schema)"
+    )
+
+    # Old worker backward-compat: payload that still includes second_* keys must
+    # parse without error (extra fields silently ignored by Pydantic v2 default).
+    payload_with_extra = {
+        "ply": 2,
+        "eval_cp": 30,
+        "eval_mate": None,
+        "best_move": "g1f3",
+        "pv": None,
+        "second_cp": 25,
+        "second_mate": None,
+        "second_uci": "d2d4",
+    }
+    ev_with_extra = SubmitEval(**payload_with_extra)
+    assert ev_with_extra.ply == 2
+    assert ev_with_extra.eval_cp == 30
+    assert not hasattr(ev_with_extra, "second_cp"), (
+        "Phase 146: extra second_cp key must be silently ignored (not stored as attribute)"
+    )
+
+
+@pytest.mark.asyncio
+async def test_submit_phase146_build_blob_not_called(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """Phase 146 D-03: _build_flaw_multipv2_blobs must NEVER be called from /submit.
+
+    Monkeypatches _build_flaw_multipv2_blobs in eval_drain to raise AssertionError.
+    The function is no longer imported in eval_remote (Phase 146 removed the import),
+    so no call path can reach it from _apply_submit. Submit with old-worker second_cp
+    payload must succeed and leave blobs NULL.
+
+    Patch location: app.services.eval_drain (the definition site) rather than
+    app.routers.eval_remote (which no longer imports the function).
+    """
+    import app.services.eval_drain as eval_drain_module
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    # Monkeypatch _build_flaw_multipv2_blobs at the definition site — any call is a test failure.
+    async def _raise_if_called(*args: object, **kwargs: object) -> object:
+        raise AssertionError(
+            "Phase 146: _build_flaw_multipv2_blobs must not be called from _apply_submit"
         )
-        await _insert_game_positions(
-            eval_worker_session_maker,
-            user_id,
-            game_id_old,
-            [
-                {"ply": p, "full_hash": 14230 + p, "eval_cp": None, "eval_mate": None}
-                for p in range(6)
-            ],
+
+    monkeypatch.setattr(eval_drain_module, "_build_flaw_multipv2_blobs", _raise_if_called)
+
+    user_id = eval_worker_test_user
+    game_id = await _insert_game(eval_worker_session_maker, user_id, pgn=_SIX_PLY_PGN_142)
+    await _insert_game_positions(
+        eval_worker_session_maker,
+        user_id,
+        game_id,
+        [{"ply": p, "full_hash": 14600 + p, "eval_cp": None, "eval_mate": None} for p in range(6)],
+    )
+
+    # Include second_cp in the payload — old worker style (still sent on wire, must be ignored).
+    evals = [dict(e) for e in _BLUNDER_SUBMIT_EVALS_142]
+    evals[2] = {**evals[2], "second_cp": 25, "second_uci": "d2d4"}
+    payload = {"game_id": game_id, "sf_version": "Stockfish 18", "evals": evals}
+
+    try:
+        async with _make_client() as client:
+            resp = await client.post(
+                _SUBMIT_URL,
+                json=payload,
+                headers={"X-Operator-Token": _TEST_TOKEN},
+            )
+        assert resp.status_code == 200, (
+            f"Phase 146: submit must succeed even with second_cp in payload "
+            f"(got {resp.status_code}: {resp.text})"
         )
+    finally:
+        await _delete_games(eval_worker_session_maker, [game_id])
 
-        captured_blobs.clear()
-        payload_old = {
-            "game_id": game_id_old,
-            "sf_version": "Stockfish 18",
-            "evals": list(_BLUNDER_SUBMIT_EVALS_142),
-        }
 
-        try:
-            async with _make_client() as client:
-                resp = await client.post(
-                    _SUBMIT_URL,
-                    json=payload_old,
-                    headers={"X-Operator-Token": _TEST_TOKEN},
+@pytest.mark.asyncio
+async def test_submit_phase146_blobs_null_both_markers_stamped(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """Phase 146 D-03: /submit always leaves allowed_pv_lines/missed_pv_lines NULL
+    and stamps BOTH full_evals_completed_at AND full_pv_completed_at.
+
+    Even when the payload includes second_cp (old-worker forward-compat), the live
+    submit takes the empty blob_map path — blob assembly is deferred to tier-4.
+
+    RED (fails before Phase 146 code change): current code populates blobs when
+    second_best_map is non-empty → allowed_pv_lines IS NOT NULL → assertion fails.
+    GREEN (passes after change): blobs always NULL, both markers stamped.
+    """
+    from app.models.game import Game
+    from app.models.game_flaw import GameFlaw
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    user_id = eval_worker_test_user
+    game_id = await _insert_game(eval_worker_session_maker, user_id, pgn=_SIX_PLY_PGN_142)
+    await _insert_game_positions(
+        eval_worker_session_maker,
+        user_id,
+        game_id,
+        [{"ply": p, "full_hash": 14610 + p, "eval_cp": None, "eval_mate": None} for p in range(6)],
+    )
+
+    # Payload with second_cp at the flaw ply — verifies blobs stay NULL regardless.
+    evals = [dict(e) for e in _BLUNDER_SUBMIT_EVALS_142]
+    evals[2] = {**evals[2], "second_cp": 25, "second_uci": "d2d4"}
+    payload = {"game_id": game_id, "sf_version": "Stockfish 18", "evals": evals}
+
+    try:
+        async with _make_client() as client:
+            resp = await client.post(
+                _SUBMIT_URL,
+                json=payload,
+                headers={"X-Operator-Token": _TEST_TOKEN},
+            )
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+
+        async with eval_worker_session_maker() as verify:
+            # Blob columns: both must remain NULL (deferred to tier-4 drain).
+            flaw_rows = (
+                await verify.execute(
+                    select(
+                        GameFlaw.ply,
+                        GameFlaw.allowed_pv_lines,
+                        GameFlaw.missed_pv_lines,
+                    ).where(GameFlaw.game_id == game_id)
                 )
-            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+            ).all()
+            assert len(flaw_rows) == 1, f"Expected 1 flaw (blunder at ply 2), got {len(flaw_rows)}"
+            flaw_ply, allowed, missed = flaw_rows[0]
+            assert flaw_ply == 2, f"Flaw must be at ply 2, got {flaw_ply}"
+            assert allowed is None, (
+                "Phase 146 D-03: allowed_pv_lines must be NULL after /submit "
+                "(blob assembly deferred to tier-4 worker drain)"
+            )
+            assert missed is None, (
+                "Phase 146 D-03: missed_pv_lines must be NULL after /submit "
+                "(blob assembly deferred to tier-4 worker drain)"
+            )
 
-            assert len(captured_blobs) == 1, (
-                f"Expected spy to capture exactly 1 call for old-worker, got {len(captured_blobs)}"
+            # Completion markers: BOTH must be stamped on the live path (Path A).
+            game_row = (
+                await verify.execute(
+                    select(Game.full_evals_completed_at, Game.full_pv_completed_at).where(
+                        Game.id == game_id
+                    )
+                )
+            ).one()
+            full_evals_at, full_pv_at = game_row
+            assert full_evals_at is not None, (
+                "Phase 146: full_evals_completed_at must be stamped after /submit"
             )
-            old_worker_blobs = captured_blobs[0]
-            assert old_worker_blobs is None, (
-                "Old-worker submit (no second_*) must pass flaw_pv_blobs=None to "
-                "_classify_and_fill_oracle so the gate is skipped (backward-compat)"
+            assert full_pv_at is not None, (
+                "Phase 146: full_pv_completed_at must be stamped after /submit "
+                "(live path stamps both markers unconditionally)"
             )
-        finally:
-            await _delete_games(eval_worker_session_maker, [game_id_old])
+    finally:
+        await _delete_games(eval_worker_session_maker, [game_id])
 
 
 # ─── Phase 145 SHIP-01: FlawBlob lease/submit schema tests ───────────────────

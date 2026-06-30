@@ -97,7 +97,7 @@
 | 143. Offline Re-tagger | 3/3 | Complete    | 2026-06-30 |
 | 144. User-28 A/B Validation | 2/2 | Complete (shipped v1.30) | 2026-06-30 |
 | 145. Corpus Backfill + Rollout | 6/6 | Complete (code shipped v1.30 #229; prod drain via Phase 146) | 2026-06-30 |
-| 146. Offload live-submit continuation eval to remote worker (SEED-071) | 0/0 | Context gathered | — |
+| 146. Offload live-submit continuation eval to remote worker (SEED-071) | 2/2 | Complete   | 2026-06-30 |
 
 ## v1.30 Forcing-Line Tactic Gate (Phases 141–145)
 
@@ -669,8 +669,9 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 **Requirements**: TBD
 **Depends on:** Phase 145
 **Reference:** `.planning/seeds/SEED-071-live-submit-continuation-eval-bottleneck.md` (DECIDED APPROACH: Option 2, LOCKED 2026-07-01)
-**Plans:** 0 plans
+**Plans:** 2/2 plans complete
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 146 to break down)
+- [x] 146-01-PLAN.md — Server live-path offload: force blob_map={} in _apply_submit, drop second-best from SubmitEval (D-03), recency-order _claim_tier4_blob (D-01)
+- [x] 146-02-PLAN.md — Fleet-worker tier-4 drain rung (D-04), full-ply MultiPV-1 reduction, restore HTTP_TIMEOUT_S=30

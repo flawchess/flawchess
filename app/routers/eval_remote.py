@@ -70,7 +70,6 @@ from app.services.eval_drain import (
     _assemble_flaw_blobs_from_submit,
     _batch_update_flaw_pv_lines,
     _build_flaw_blob_lease_positions,
-    _build_flaw_multipv2_blobs,
     _claim_entry_eval_games,
     _classify_and_fill_oracle,
     _classify_and_insert_flaws,
@@ -81,9 +80,9 @@ from app.services.eval_drain import (
     _mark_full_evals_completed,
     _mark_full_pv_completed,
     _parse_token,
-    _run_multipv2_pass,
     _signal_flaw_completion,
 )
+from app.services.forcing_line_gate import PvNode
 from app.models.eval_jobs import EvalJob
 from app.models.game_flaw import GameFlaw
 from app.repositories.game_flaws_repository import bulk_update_tactic_tags
@@ -253,27 +252,13 @@ async def _apply_submit(
     engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]] = {
         e.ply: (e.eval_cp, e.eval_mate, e.best_move, e.pv) for e in body.evals
     }
-    # Phase 142 MPV-02: parallel second-best map (D-03 inline fields, not a parallel list).
-    # Only includes rows where the worker provided second-best data; empty when old worker
-    # omits fields (all three default None → condition is False → map stays empty → D-04).
-    second_best_map: dict[int, tuple[int | None, int | None, str | None]] = {
-        e.ply: (e.second_cp, e.second_mate, e.second_uci)
-        for e in body.evals
-        if e.second_cp is not None or e.second_uci is not None
-    }
-
-    # Phase 142 MPV-02: build PvNode blobs from second-best data (CPU/engine region —
-    # no session open here; CLAUDE.md hard rule). Passes dedup_map={} because the remote
-    # path has no cross-user dedup (worker already evaluated all positions).
-    # Guard: skip when second_best_map is empty (D-04 — old worker omits all second_*
-    # fields → leave blobs NULL; Phase 145 backfills the gap). Only upgraded workers
-    # providing at least one second-best ply trigger blob assembly.
-    if second_best_map:
-        blob_map = await _build_flaw_multipv2_blobs(
-            game_id, targets, {}, engine_result_map, second_best_map
-        )
-    else:
-        blob_map = {}
+    # Phase 146 D-03: unconditionally skip blob assembly on the live submit path.
+    # Blob construction is deferred to the tier-4 worker drain (flaw-blob-lease →
+    # worker MultiPV=2 → flaw-blob-submit). allowed_pv_lines / missed_pv_lines
+    # stay NULL → game matches the tier-4 predicate → self-heals.
+    # Old workers that still send second_* fields in the JSON body have those keys
+    # silently ignored by Pydantic v2 (SubmitEval has no extra='forbid') — no 422.
+    blob_map: dict[int, tuple[list[PvNode], list[PvNode]]] = {}
 
     # ── Write phase — ONE late session, all UPDATEs + commit atomic ──────────
     stamp_complete: bool
@@ -289,21 +274,13 @@ async def _apply_submit(
         # Classify game_flaws + fill oracle counts + write flaw PVs.
         # Runs AFTER _apply_full_eval_results so eval_cp is visible for classification.
         # Runs BEFORE completion markers so evals + flaws commit atomically (T-117-11).
-        # Bug fix (SHIP-02): pass blob_map so the forcing-line gate filters tactic tags.
-        # Before this fix, blobs were written via _run_multipv2_pass but
-        # _classify_and_fill_oracle was called without blob_map, leaving new-game tactic
-        # tags unfiltered even when second-best data was available. blob_map if blob_map
-        # degrades an empty dict (old worker, no second-best) to None → gate skipped →
-        # old-worker backward-compat preserved.
+        # Phase 146 D-03: blob_map is always {} (empty) so blob_map if blob_map evaluates
+        # to None → gate skipped → raw classify. Blobs are assembled by the tier-4 worker
+        # drain (flaw-blob-lease → worker MultiPV=2 → flaw-blob-submit); tactic tags are
+        # recomputed via _classify_tactic_gated (D-07 gated retag) at blob-submit time.
         await _classify_and_fill_oracle(
             write_session, game_id, engine_result_map, blob_map if blob_map else None
         )
-
-        # Phase 142 MPV-02: write allowed_pv_lines / missed_pv_lines JSONB blobs.
-        # Runs AFTER _classify_and_fill_oracle so flaw rows exist for the UPDATE.
-        # Same transaction = atomic with flaw rows (Pitfall 5 / T-142-03-04).
-        # No-op when blob_map is empty (old worker omitted second-best — D-04).
-        await _run_multipv2_pass(write_session, game_id, blob_map)
 
         new_attempts = current_attempts + 1
         games_table = Game.__table__

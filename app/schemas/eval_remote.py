@@ -33,11 +33,11 @@ class SubmitEval(BaseModel):
     eval_mate: int | None
     best_move: str | None  # UCI string
     pv: str | None  # space-joined UCI, up to 12 plies
-    # Phase 142 MPV-02: second-best per ply for JSONB blob assembly (D-03).
-    # Default None = old worker omits field → server treats as no second-best (D-04).
-    second_cp: int | None = None
-    second_mate: int | None = None
-    second_uci: str | None = None  # wire type str|None; None maps to su="" sentinel in blob
+    # Phase 146 D-03: second_cp/second_mate/second_uci removed — the live /submit
+    # path no longer builds PvNode blobs inline. Blob assembly is deferred to the
+    # tier-4 worker drain (_claim_tier4_blob → /flaw-blob-lease → /flaw-blob-submit).
+    # Pydantic v2 default ignores extra fields, so old workers that still send
+    # second_* fields have those keys silently discarded — no 422 (backward-compat).
 
 
 class SubmitRequest(BaseModel):

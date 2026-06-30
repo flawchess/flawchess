@@ -5,24 +5,24 @@ milestone_name: Forcing-Line Tactic Gate
 current_phase: 146
 current_phase_name: offload-live-submit-forcing-line-continuation-eval-to-the-re
 status: planning
-stopped_at: Phase 146 context gathered
-last_updated: "2026-07-01T00:00:00.000Z"
-last_activity: 2026-07-01
-last_activity_desc: Phase 145 closed out (code shipped in v1.30); Phase 146 context gathered
+stopped_at: Completed 146-02-PLAN.md
+last_updated: "2026-06-30T23:40:30.381Z"
+last_activity: 2026-06-30
+last_activity_desc: Phase 146 execution started
 progress:
   total_phases: 6
-  completed_phases: 5
-  total_plans: 17
-  completed_plans: 16
-  percent: 83
+  completed_phases: 4
+  total_plans: 19
+  completed_plans: 17
+  percent: 67
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 146 (offload-live-submit-forcing-line-continuation-eval-to-the-re) — CONTEXT GATHERED, ready to plan
-Last activity: 2026-07-01 — Phase 145 closed out; Phase 146 context gathered
+Phase: 146 (offload-live-submit-forcing-line-continuation-eval-to-the-re) — EXECUTING
+Last activity: 2026-06-30 — Phase 146 execution started
 
 Phase 145 (corpus-backfill-rollout) — COMPLETE (code). Plans 01–05 + the autonomous part of
 plan 06 are merged to main (`875bc164`) and released to production in v1.30 (PR #229,
@@ -100,6 +100,10 @@ Twenty-nine milestones complete (v1.0–v1.29). v1.29 Live-Engine Analysis Page 
 - [Phase ?]: D-03: double-submit idempotent — blobs_written=0 when no NULL-blob flaws remain (early exit before token validation)
 - [Phase ?]: D-06 sentinel write: [] blob written for un-fillable flaw lines so they stop matching the IS NULL predicate
 - [Phase ?]: D-07 rolling retag: only 8 tactic columns updated via bulk_update_tactic_tags after blob write (no severity reclassification)
+- [Phase ?]: blob_map={} unconditional in _apply_submit (Phase 146 D-03)
+- [Phase ?]: TIER4_RECENCY_WINDOW=50 + recency CTE in _claim_tier4_blob — fresh games drain first (Phase 146 D-01)
+- [Phase ?]: _eval_flaw_blob_positions maps r[0]/r[1]/r[4]/r[5]/r[6]; r[2]/r[3] excluded; token echoed (D-04a)
+- [Phase ?]: HTTP_TIMEOUT_S=30.0 — SEED-071 stopgap removed; full-ply pass reduced to MultiPV-1
 
 ### Pending Todos
 
@@ -149,9 +153,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-Last session: 2026-06-30T22:28:39.122Z
-Stopped at: Phase 146 context gathered
-Resume file: .planning/phases/146-offload-live-submit-forcing-line-continuation-eval-to-the-re/146-CONTEXT.md
+Last session: 2026-06-30T23:40:30.361Z
+Stopped at: Completed 146-02-PLAN.md
+Resume file: None
 
 ## Performance Metrics
 
@@ -187,3 +191,4 @@ Resume file: .planning/phases/146-offload-live-submit-forcing-line-continuation-
 | Phase 145 P03 | 15min | 3 tasks | 5 files |
 | Phase 145-corpus-backfill-rollout P04 | 30 minutes | 2 tasks | 3 files |
 | Phase 145 P05 | 60 | 2 tasks | 3 files |
+| Phase 146 P02 | 8 | - tasks | - files |

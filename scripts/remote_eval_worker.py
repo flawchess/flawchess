@@ -58,11 +58,7 @@ DEFAULT_WORKERS: int = 4
 # so this affects only idle-pickup latency for a freshly-enqueued tier-1 job.
 # The busy path (a game was leased) is already a tight loop — unchanged.
 DEFAULT_IDLE_SLEEP: float = 1.0
-# Stopgap (SEED-071): the live /submit handler runs server-side MultiPV-2 continuation
-# Stockfish eval inline (~22*N 1M-node evals for an N-flaw game) before responding, so a
-# flaw-heavy game's submit can take well over 30s under load and trip a ReadTimeout. Bumped
-# 30 -> 120 to absorb it until the live-path continuation eval is moved off the submit response.
-HTTP_TIMEOUT_S: float = 120.0
+HTTP_TIMEOUT_S: float = 30.0
 # D-10 (Phase 123 SEED-051): worker IDs must fit VARCHAR(16) on games.entry_eval_leased_by.
 # Random default is ~8 base36 chars; operator override is validated < 10 chars.
 WORKER_ID_MAX_LEN: int = 9  # exclusive upper bound: len < 10
@@ -107,17 +103,16 @@ async def _eval_positions(
     UNCHANGED from the engine — NO post-move shift, NO transformation.
     The server owns the SEED-044 storage convention (D-2 / pitfall 1).
 
-    Phase 142 MPV-02: switched to evaluate_nodes_multipv2 (7-tuple) so the
-    second-best data flows to the server for JSONB blob assembly. Old-format
-    servers accepting only the first 4 fields still parse correctly because
-    SubmitEval.second_cp/second_mate/second_uci all default to None.
+    Phase 146 D-03 consequence: reduced to MultiPV-1 (evaluate_nodes_with_pv, 4-tuple) now
+    that per-ply second-best was dropped from SubmitEval. The tier-4 blob rung
+    (_eval_flaw_blob_positions) still evaluates at MultiPV-2 where the blob contract
+    requires second-best.
 
     Each position dict contains: ply, fen, is_terminal.
-    Each output dict contains:  ply, eval_cp, eval_mate, best_move, pv,
-                                 second_cp, second_mate, second_uci.
+    Each output dict contains:  ply, eval_cp, eval_mate, best_move, pv.
     """
     boards: list[chess.Board] = [chess.Board(str(pos["fen"])) for pos in positions]
-    results = await asyncio.gather(*(pool.evaluate_nodes_multipv2(b) for b in boards))
+    results = await asyncio.gather(*(pool.evaluate_nodes_with_pv(b) for b in boards))
     return [
         {
             "ply": pos["ply"],
@@ -125,6 +120,37 @@ async def _eval_positions(
             "eval_mate": r[1],
             "best_move": r[2],
             "pv": r[3],
+        }
+        for pos, r in zip(positions, results)
+    ]
+
+
+async def _eval_flaw_blob_positions(
+    pool: EnginePool,
+    positions: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Evaluate flaw-blob positions at MultiPV=2 and echo tokens (D-04a).
+
+    Worker stays token-opaque: the token is echoed unchanged from the lease response;
+    the server holds the flaw-structure reassembly map. Returns dicts with keys:
+    {token, best_cp, best_mate, second_cp, second_mate, second_uci}.
+
+    The MultiPV-2 engine call returns a 7-tuple:
+        (eval_cp, eval_mate, best_move, pv, second_cp, second_mate, second_uci)
+    Indices r[2] (best_move) and r[3] (pv) are intentionally NOT included in the
+    output — these are PV-continuation FENs, not game plies. Indices are mapped
+    explicitly to avoid off-by-one errors (RESEARCH Pitfall 3).
+
+    asyncio.gather is safe here — no AsyncSession is open in the worker process.
+    The CLAUDE.md gather rule applies to the server only (RESEARCH Pitfall 6).
+    """
+    boards: list[chess.Board] = [chess.Board(str(pos["fen"])) for pos in positions]
+    results = await asyncio.gather(*(pool.evaluate_nodes_multipv2(b) for b in boards))
+    return [
+        {
+            "token": str(pos["token"]),  # echoed unchanged (D-04a)
+            "best_cp": r[0],
+            "best_mate": r[1],
             "second_cp": r[4],
             "second_mate": r[5],
             "second_uci": r[6],
@@ -212,19 +238,22 @@ async def _run_cycle(
 ) -> bool:
     """Run one D-06 ladder cycle. Returns True when the loop should stop.
 
-    D-06 three-rung ladder (Phase 123 SEED-051):
+    D-06 four-rung ladder (Phase 123 SEED-051; rung 4 added Phase 146 D-04):
       1. POST /lease?scope=explicit (tier-1/2 only)
-         200 → eval full-ply, submit to /submit, done.
+         200 → eval full-ply (MultiPV-1), submit to /submit, done.
          204 → fall to rung 2.
       2. POST /entry-lease (entry-ply, gated by D-5 backlog probe server-side)
          200 → eval at depth-15, submit to /entry-submit, done.
          204 → fall to rung 3.
       3. POST /lease?scope=idle (tier-3 only)
-         200 → eval full-ply, submit to /submit, done.
-         204 → queue fully empty; sleep idle_sleep.
+         200 → eval full-ply (MultiPV-1), submit to /submit, done.
+         204 → fall to rung 4.
+      4. POST /flaw-blob-lease (tier-4 blob drain, Phase 146 D-04)
+         200 → eval continuation FENs at MultiPV-2, submit to /flaw-blob-submit, done.
+         204 → all queues empty; sleep idle_sleep.
 
     Busy paths (tier-1, entry-ply) stay at 1-2 calls. Only the fully-idle path
-    makes all 3 round-trips. Entry-ply is always-on (D-08); the server D-5 gate
+    makes all 4 round-trips. Entry-ply is always-on (D-08); the server D-5 gate
     makes it cost nothing when there's no big import.
 
     Returns True only in non-loop mode after a completed cycle (or an idle 204);
@@ -248,9 +277,13 @@ async def _run_cycle(
     idle_resp = await client.post("/api/eval/remote/lease", params={"scope": "idle"})
 
     if idle_resp.status_code == 204:
-        _log("Queue empty (204). Sleeping...")
-        await asyncio.sleep(idle_sleep)
-        return not loop
+        # Rung 4: tier-3 empty → try tier-4 flaw-blob drain (Phase 146 D-04).
+        blob_resp = await client.post("/api/eval/remote/flaw-blob-lease")
+        if blob_resp.status_code == 204:
+            _log("Queue fully empty (204). Sleeping...")
+            await asyncio.sleep(idle_sleep)
+            return not loop
+        return await _handle_flaw_blob_response(client, pool, sf_version, dry_run, loop, blob_resp)
 
     return await _handle_full_ply_response(client, pool, sf_version, dry_run, loop, idle_resp)
 
@@ -331,6 +364,46 @@ async def _handle_entry_ply_response(
         f"Entry-submit complete: game_ids={result.get('game_ids')}, "
         f"stamped_count={result.get('stamped_count')}"
     )
+    return not loop
+
+
+async def _handle_flaw_blob_response(
+    client: httpx.AsyncClient,
+    pool: EnginePool,
+    sf_version: str,
+    dry_run: bool,
+    loop: bool,
+    blob_lease_resp: httpx.Response,
+) -> bool:
+    """Handle a 200 response from /flaw-blob-lease (tier-4 blob drain path, D-04).
+
+    Evaluates each leased FEN at MultiPV=2, then POSTs the results to
+    /flaw-blob-submit. The server assembles PvNode blobs and runs the per-game
+    gated retag (_classify_tactic_gated, D-07). Token is echoed unchanged (D-04a).
+    """
+    blob_lease_resp.raise_for_status()
+    data = blob_lease_resp.json()
+    game_id = data["game_id"]
+    positions = data["positions"]
+
+    _log(
+        f"Flaw-blob lease game_id={game_id} ({len(positions)} positions). Evaluating at MultiPV=2..."
+    )
+    evals = await _eval_flaw_blob_positions(pool, positions)
+
+    if dry_run:
+        _log(
+            f"--dry-run: evaluated {len(evals)} flaw-blob positions for game_id={game_id}; skipping submit."
+        )
+        return not loop
+
+    submit_resp = await client.post(
+        "/api/eval/remote/flaw-blob-submit",
+        json={"game_id": game_id, "sf_version": sf_version, "evals": evals},
+    )
+    submit_resp.raise_for_status()
+    result = submit_resp.json()
+    _log(f"Flaw-blob submit game_id={game_id}: blobs_written={result.get('blobs_written')}")
     return not loop
 
 

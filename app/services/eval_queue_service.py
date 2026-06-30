@@ -93,6 +93,13 @@ RECENCY_HALF_LIFE_DAYS: float = 1.0
 # (SEED-046 / RESEARCH-NOTES τ/floor recommendation)
 WEIGHT_FLOOR: float = 0.005
 
+# Phase 146 D-01: recency window for the tier-4 blob lottery.
+# The CTE selects the top-N most-recently-analyzed games (ORDER BY full_evals_completed_at DESC
+# LIMIT :recency_window), then picks one randomly — so a just-analyzed live game is sampled
+# within a small pool rather than competing uniformly with the entire corpus backfill.
+# N=50 covers ~8 minutes of prod activity (6 engines × ~1 game/min × ~8 min).
+TIER4_RECENCY_WINDOW: int = 50
+
 # ─── D-7: game-level weighted-random pick constants ───────────────────────────
 # Applied in Step 2 and the residual fallback of _claim_tier3_derived (see D-7
 # in SEED-048-headless-remote-eval-worker for rationale).
@@ -461,35 +468,46 @@ async def _claim_tier4_blob(
 ) -> tuple[int, int] | None:
     """Tier-4 spare-capacity lottery: pick one analyzed non-guest game with a NULL-blob flaw.
 
-    Selects from game_flaws rows where allowed_pv_lines IS NULL, joined to games and users,
-    filtered to analyzed (full_evals_completed_at IS NOT NULL) non-guest games. A single
-    random pick (ORDER BY random() LIMIT 1) — no ES user weighting, tier-4 is spare capacity.
+    Phase 146 D-01: uses a recency-ordered CTE to favor recently-analyzed games. The CTE
+    selects the top TIER4_RECENCY_WINDOW games by full_evals_completed_at DESC (one row
+    per game — queries games directly to avoid game_flaws duplicate rows; RESEARCH Pitfall 4),
+    then picks uniformly at random within that window. A just-analyzed live game reliably
+    falls in the top-N and drains promptly instead of competing with the whole old corpus.
 
     Returns (game_id, user_id) or None when no backfill-eligible flaw remains.
 
     No eval_jobs row is created — this is a table-less, idempotent-by-construction lottery.
     Once all of a game's flaw blobs (or D-06 sentinels) are written the game stops matching
-    the predicate and is never re-selected.
+    the predicate (no flaw with allowed_pv_lines IS NULL) and is never re-selected.
 
     is_lichess_eval_game is NOT resolved here — it is determined later in the Plan-03 lease
     handler, which has the full game context needed to route the blob write correctly
     (RESEARCH Pitfall 6). This function returns only the (game_id, user_id) pair.
 
-    Security: no f-string interpolation inside sa.text; all values are static SQL predicates
-    with no variable parts. The ORDER BY random() is intentional for the spare-capacity tier.
+    Security: :recency_window is bound via the sa.text params dict — never f-string-interpolated
+    (consistent with the eval_queue_service convention; RESEARCH §3, QUEUE-08).
     """
     result = await session.execute(
         sa.text("""
-            SELECT gf.game_id, g.user_id
-            FROM game_flaws gf
-            JOIN games g ON g.id = gf.game_id
-            JOIN users u ON u.id = g.user_id
-            WHERE gf.allowed_pv_lines IS NULL
-              AND g.full_evals_completed_at IS NOT NULL
-              AND u.is_guest = false  -- intentional: guests excluded (QUEUE-08)
+            WITH recent AS (
+                SELECT g.id AS game_id, g.user_id, g.full_evals_completed_at
+                FROM games g
+                JOIN users u ON u.id = g.user_id
+                WHERE EXISTS (
+                    SELECT 1 FROM game_flaws gf
+                    WHERE gf.game_id = g.id AND gf.allowed_pv_lines IS NULL
+                )
+                  AND g.full_evals_completed_at IS NOT NULL
+                  AND u.is_guest = false  -- intentional: guests excluded (QUEUE-08)
+                ORDER BY g.full_evals_completed_at DESC
+                LIMIT :recency_window
+            )
+            SELECT game_id, user_id
+            FROM recent
             ORDER BY random()
             LIMIT 1
-        """)
+        """),
+        {"recency_window": TIER4_RECENCY_WINDOW},
     )
     row = result.one_or_none()
     if row is None:

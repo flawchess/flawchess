@@ -22,6 +22,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- **Live game analysis no longer waits on the server's engine** — when a remote worker submits a freshly-analyzed game, the server now applies the evals and tactic tags immediately instead of running an extra inline Stockfish pass to refine the forcing-line gate. That refinement (the per-flaw MultiPV continuation eval) now happens on the remote-worker fleet through the same backfill lottery as the rest of your history, with freshly-analyzed games prioritized so they get gated promptly. The result: snappier, more reliable analysis submission (worker timeouts and engine contention under load are gone) with no change to your blunder/mistake counts. (Phase 146)
+
 - **Forcing-line tactic gate calibration** — tuned the gate's two centipawn thresholds from a hand-checked A/B validation over the dev sample: the already-winning reject was relaxed (600 → 800 cp) so genuine conversion tactics played while already ahead (a hanging queen at +6, a clean skewer) are still credited, and the only-move escape was lowered (200 → 100 cp) so clear ~1-pawn-better best moves count as forced. Together these credit noticeably more real tactics without admitting false alarms in the sample. (Phase 144)
 
 - **Eval chart tooltip now shows the opponent's tactic** — hovering an opponent flaw (the hollow-square markers) on the eval chart now shows the tactic motif and its depth (the same `missed:` / `allowed:` chips your own filled-square markers already show), on both the Games card and the `/analysis` board. Previously only your own flaws surfaced their tactic. The "Opponent · Blunder/Mistake" header keeps the perspective clear, and your blunder/mistake counts and all other stats are unchanged. (Quick 260628-u7d)

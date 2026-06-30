@@ -54,8 +54,8 @@ capabilities belong in their own phase.
     spread picks the way the tier-3 ES lottery does. Exact form is planner/researcher's call.
 
 ### Tag display during the NULL-blob window
-- **D-02: Show raw (ungated) tactic tags during the window — current behavior, no read-path
-  change.** Tags are stored in the `game_flaws` tactic columns and gated at classify-time;
+- **D-02: Show raw (ungated) tactic tags during the window — no read-path change (current behavior).**
+  Tags are stored in the `game_flaws` tactic columns and gated at classify-time;
   with blobs NULL the gate is skipped, so the stored columns hold raw tags and display reads
   them directly. A freshly-analyzed game shows its tactic chips immediately; tier-4 retag
   (D-07) silently denoises them shortly after (window is short thanks to D-01). This is
@@ -64,8 +64,8 @@ capabilities belong in their own phase.
   blob-presence gating on the read path for no real gain given D-01 shortens the window.
 
 ### Live submit payload & completion-marker semantics
-- **D-03: Live `/submit` drops per-ply second-best; server unconditionally skips the blob
-  build; flaw PVs + both completion markers still stamped live.** The worker stops sending
+- **D-03: Live `/submit` drops per-ply second-best; server unconditionally skips the blob build; flaw PVs + both completion markers still stamped live.**
+  The worker stops sending
   `second_cp`/`second_mate`/`second_uci` on `/submit` (honest contract: live submit = full-ply
   evals + flaw PVs). `_apply_submit` always takes the empty-`blob_map` path (it already exists
   as the D-04 old-worker backward-compat branch at `eval_remote.py:275`), so it: applies evals,
@@ -84,8 +84,8 @@ capabilities belong in their own phase.
     per SEED-071 (the live path now behaves like the existing transitional/old-worker path).
 
 ### Fleet-worker tier-4 drainer (load-bearing — surfaced during scout, accepted as in-scope)
-- **D-04: Phase 146 MUST add a flaw-blob lease/submit drain loop to the long-running fleet
-  worker (`scripts/remote_eval_worker.py`).** Scout finding: **no fleet worker speaks the
+- **D-04: Phase 146 MUST add a flaw-blob lease/submit drain loop to the long-running fleet worker (`scripts/remote_eval_worker.py`).**
+  Scout finding: **no fleet worker speaks the
   flaw-blob contract today** — `remote_eval_worker.py` only calls `/lease` + `/submit`, and
   `scripts/backfill_multipv.py` is observability/kickoff/dev-validate **only** (no EnginePool,
   no continuous drain). So Phase 145's tier-4 endpoints exist but nothing drains them
