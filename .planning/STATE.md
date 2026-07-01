@@ -58,6 +58,7 @@ Twenty-nine milestones complete (v1.0–v1.29). v1.29 Live-Engine Analysis Page 
 ### Roadmap Evolution
 
 - Phase 146 added: Offload live-submit forcing-line continuation eval to the remote worker (SEED-071)
+- Phase 147 added: Persist only forcing-line-gated tactic tags — suppress ungated remote-submit tags (A) + upgraded-worker atomic eval+blob pipeline (B) (SEED-074; scope confirmed as A+B together)
 
 ### Decisions
 
