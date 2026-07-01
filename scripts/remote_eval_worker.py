@@ -33,6 +33,7 @@ import secrets
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import cast
 
 import chess
 import httpx
@@ -48,7 +49,17 @@ import app.models.oauth_account  # noqa: E402, F401
 import app.models.user  # noqa: E402, F401
 
 from app.core.config import settings  # noqa: E402
-from app.services.engine import EnginePool, get_stockfish_version  # noqa: E402
+from app.models.game_position import GamePosition  # noqa: E402
+from app.services.engine import PV_CAP_PLIES, EnginePool, get_stockfish_version  # noqa: E402
+
+# Phase 147 SEED-074 Part B: worker-side hint classification + PV walk reuse the
+# fat `app.*` client pattern already established for _eval_flaw_blob_positions —
+# this worker imports server-internal helpers directly rather than duplicating them.
+# _walk_pv_boards / _run_all_moves_pass are leading-underscore "module-private" by
+# convention only; app/routers/eval_remote.py already imports _derive_atomic_sentinel_lines
+# the same way (precedent), so this is consistent cross-module reuse, not a layering break.
+from app.services.eval_drain import _walk_pv_boards  # noqa: E402
+from app.services.flaws_service import _run_all_moves_pass  # noqa: E402
 
 # ─── Named constants (no magic numbers) ──────────────────────────────────────
 
@@ -64,6 +75,12 @@ HTTP_TIMEOUT_S: float = 30.0
 WORKER_ID_MAX_LEN: int = 9  # exclusive upper bound: len < 10
 _WORKER_ID_ALPHABET: str = "0123456789abcdefghijklmnopqrstuvwxyz"
 _WORKER_ID_DEFAULT_LEN: int = 8
+
+# Phase 147 SEED-074 Part B (Q5, RESEARCH.md "Claude's Discretion"): observability
+# and stale-worker rejection ONLY — the server never gates correctness on this
+# value, it always re-classifies authoritatively. Bump when the atomic submit
+# payload shape changes in a way the server should be able to distinguish.
+WORKER_SCHEMA_VERSION: int = 1
 
 
 # ─── Logging helper ───────────────────────────────────────────────────────────
@@ -159,6 +176,133 @@ async def _eval_flaw_blob_positions(
     ]
 
 
+# ─── Atomic eval+blob helpers (Phase 147 SEED-074 Part B) ────────────────────
+
+
+def _hint_flaw_plies(evals: list[dict[str, object]]) -> set[int]:
+    """LOCAL flaw-ply HINT via `_run_all_moves_pass` (mistake/blunder only).
+
+    Builds lightweight in-memory `GamePosition` objects (never persisted — no
+    session, no flush, no DB round-trip) carrying only the ply-indexed
+    `eval_cp`/`eval_mate` this worker just computed in the full-ply MultiPV-1
+    pass, matching the SEED-044 post-move eval convention `_run_all_moves_pass`
+    expects. No PGN, no `Game` row needed (Q4/RESEARCH A2 — the narrower hint).
+
+    This is a HINT ONLY (T-147-03): it decides which plies get a MultiPV-2
+    continuation blob walked below, nothing more. The server re-runs
+    `classify_game_flaws` authoritatively on its own `game_positions` and never
+    trusts which plies this function returns.
+    """
+    eval_by_ply: dict[int, dict[str, object]] = {int(cast(int, e["ply"])): e for e in evals}
+    if not eval_by_ply:
+        return set()
+    max_ply = max(eval_by_ply)
+
+    hint_positions: list[GamePosition] = []
+    for ply in range(max_ply + 1):
+        pos = GamePosition()
+        pos.ply = ply
+        e = eval_by_ply.get(ply)
+        pos.eval_cp = cast("int | None", e["eval_cp"]) if e is not None else None
+        pos.eval_mate = cast("int | None", e["eval_mate"]) if e is not None else None
+        hint_positions.append(pos)
+
+    all_moves = _run_all_moves_pass(hint_positions)
+    return {
+        ply
+        for ply, (_mover, severity, _es_before, _es_after) in all_moves.items()
+        if severity in ("mistake", "blunder")
+    }
+
+
+def _build_blob_walk_targets(
+    positions: list[dict[str, object]],
+    evals: list[dict[str, object]],
+    flaw_plies: set[int],
+) -> tuple[list[chess.Board], list[str]]:
+    """Walk the missed/allowed PV lines for each hinted flaw ply.
+
+    Mirrors the server's own walk (`_derive_atomic_sentinel_lines`,
+    `app/services/eval_drain.py`): missed line starts at the board for
+    `flaw_ply` (the position the flaw-maker faced), allowed line starts at the
+    board for `flaw_ply + 1` (the position after the flaw move — the
+    refutation's starting point). D-04a token scheme reused: `"{flaw_ply}:{line}:{node_k}"`.
+
+    A line whose start ply has no FEN in this lease payload (e.g. flaw_ply is
+    the game's last ply, so flaw_ply + 1 does not exist) is simply skipped —
+    the server independently re-derives sentinel status for any line this
+    worker could not walk (T-147-03; never trusts which lines were sent).
+    """
+    fen_by_ply: dict[int, str] = {int(cast(int, p["ply"])): str(p["fen"]) for p in positions}
+    pv_by_ply: dict[int, str | None] = {
+        int(cast(int, e["ply"])): cast("str | None", e.get("pv")) for e in evals
+    }
+
+    boards: list[chess.Board] = []
+    tokens: list[str] = []
+    for flaw_ply in sorted(flaw_plies):
+        for line, node0_ply in (("missed", flaw_ply), ("allowed", flaw_ply + 1)):
+            start_fen = fen_by_ply.get(node0_ply)
+            if start_fen is None:
+                continue
+            walk = _walk_pv_boards(chess.Board(start_fen), pv_by_ply.get(node0_ply), PV_CAP_PLIES)
+            for k, board in enumerate(walk):
+                boards.append(board)
+                tokens.append(f"{flaw_ply}:{line}:{k}")
+    return boards, tokens
+
+
+async def _eval_atomic_blob_nodes(
+    pool: EnginePool,
+    boards: list[chess.Board],
+    tokens: list[str],
+) -> list[dict[str, object]]:
+    """Evaluate walked continuation boards at MultiPV=2, echoing tokens (D-04a).
+
+    Mirrors `_eval_flaw_blob_positions`' index mapping exactly (r[0]/r[1]/r[4]/
+    r[5]/r[6]; r[2]=best_move and r[3]=pv are intentionally excluded — these are
+    PV-continuation FENs, not game plies). `asyncio.gather` is safe here — no
+    `AsyncSession` is open in the worker process (CLAUDE.md gather rule applies
+    to the server only, RESEARCH Pitfall 6).
+    """
+    results = await asyncio.gather(*(pool.evaluate_nodes_multipv2(b) for b in boards))
+    return [
+        {
+            "token": token,
+            "best_cp": r[0],
+            "best_mate": r[1],
+            "second_cp": r[4],
+            "second_mate": r[5],
+            "second_uci": r[6],
+        }
+        for token, r in zip(tokens, results)
+    ]
+
+
+async def _eval_atomic_game(
+    pool: EnginePool,
+    positions: list[dict[str, object]],
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    """Evaluate full-ply (MultiPV-1), then locally hint + blob flaw plies (Part B).
+
+    The full-ply pass reuses `_eval_positions` UNCHANGED (MultiPV-1 — Phase 146
+    D-03 invariant; MUST NOT regress to MultiPV-2, see
+    `test_eval_positions_uses_multipv1_no_second_best`). The local hint
+    (`_hint_flaw_plies`) is computed purely from the just-evaluated eval_cp/
+    eval_mate and is NEVER submitted or trusted as authoritative (T-147-03) — it
+    only decides which plies get a MultiPV-2 continuation blob walked and
+    evaluated for the server to use as gate input in its own independent
+    classify.
+
+    Returns (evals, blob_nodes) — both go straight into the /atomic-submit body.
+    """
+    evals = await _eval_positions(pool, positions)
+    flaw_plies = _hint_flaw_plies(evals)
+    boards, tokens = _build_blob_walk_targets(positions, evals, flaw_plies)
+    blob_nodes = await _eval_atomic_blob_nodes(pool, boards, tokens) if boards else []
+    return evals, blob_nodes
+
+
 async def _eval_entry_positions(
     pool: EnginePool,
     positions: list[dict[str, object]],
@@ -238,15 +382,23 @@ async def _run_cycle(
 ) -> bool:
     """Run one D-06 ladder cycle. Returns True when the loop should stop.
 
-    D-06 four-rung ladder (Phase 123 SEED-051; rung 4 added Phase 146 D-04):
-      1. POST /lease?scope=explicit (tier-1/2 only)
-         200 → eval full-ply (MultiPV-1), submit to /submit, done.
+    D-06 four-rung ladder (Phase 123 SEED-051; rung 4 added Phase 146 D-04).
+    Rungs 1 and 3 upgraded to the atomic (versioned) eval+blob pair in Phase 147
+    SEED-074 Part B — this worker now exclusively leases/submits its full-ply
+    tiers via /atomic-lease + /atomic-submit so a leased game is never written
+    with a raw/ungated tactic tag (D-01). The old /lease + /submit pair stays
+    live and untouched server-side for any not-yet-upgraded worker still
+    running an older copy of this script during a rolling mixed-fleet deploy
+    (D-02) — this file simply no longer calls it:
+      1. POST /atomic-lease?scope=explicit (tier-1/2 only)
+         200 → eval full-ply (MultiPV-1) + local flaw-ply hint + MultiPV-2
+               blobs, submit to /atomic-submit, done.
          204 → fall to rung 2.
       2. POST /entry-lease (entry-ply, gated by D-5 backlog probe server-side)
          200 → eval at depth-15, submit to /entry-submit, done.
          204 → fall to rung 3.
-      3. POST /lease?scope=idle (tier-3 only)
-         200 → eval full-ply (MultiPV-1), submit to /submit, done.
+      3. POST /atomic-lease?scope=idle (tier-3 only)
+         200 → same atomic eval+blob+submit path as rung 1.
          204 → fall to rung 4.
       4. POST /flaw-blob-lease (tier-4 blob drain, Phase 146 D-04)
          200 → eval continuation FENs at MultiPV-2, submit to /flaw-blob-submit, done.
@@ -259,12 +411,12 @@ async def _run_cycle(
     Returns True only in non-loop mode after a completed cycle (or an idle 204);
     in loop mode it always returns False so _run_loop keeps draining.
     """
-    # ── Rung 1: explicit tier-1/2 ────────────────────────────────────────────
-    lease_resp = await client.post("/api/eval/remote/lease", params={"scope": "explicit"})
+    # ── Rung 1: explicit tier-1/2 (atomic eval+blob pair, Phase 147 Part B) ──
+    lease_resp = await client.post("/api/eval/remote/atomic-lease", params={"scope": "explicit"})
 
     if lease_resp.status_code != 204:
-        # Got a tier-1/2 game — eval and submit as before.
-        return await _handle_full_ply_response(client, pool, sf_version, dry_run, loop, lease_resp)
+        # Got a tier-1/2 game — eval + hint + blob + submit atomically.
+        return await _handle_atomic_response(client, pool, sf_version, dry_run, loop, lease_resp)
 
     # ── Rung 2: entry-ply (gated by D-5 backlog probe server-side) ───────────
     entry_resp = await client.post("/api/eval/remote/entry-lease")
@@ -273,8 +425,8 @@ async def _run_cycle(
         # Got entry-ply positions — eval at depth-15, submit to /entry-submit.
         return await _handle_entry_ply_response(client, pool, sf_version, dry_run, loop, entry_resp)
 
-    # ── Rung 3: idle tier-3 ───────────────────────────────────────────────────
-    idle_resp = await client.post("/api/eval/remote/lease", params={"scope": "idle"})
+    # ── Rung 3: idle tier-3 (atomic eval+blob pair) ──────────────────────────
+    idle_resp = await client.post("/api/eval/remote/atomic-lease", params={"scope": "idle"})
 
     if idle_resp.status_code == 204:
         # Rung 4: tier-3 empty → try tier-4 flaw-blob drain (Phase 146 D-04).
@@ -285,7 +437,7 @@ async def _run_cycle(
             return not loop
         return await _handle_flaw_blob_response(client, pool, sf_version, dry_run, loop, blob_resp)
 
-    return await _handle_full_ply_response(client, pool, sf_version, dry_run, loop, idle_resp)
+    return await _handle_atomic_response(client, pool, sf_version, dry_run, loop, idle_resp)
 
 
 async def _handle_full_ply_response(
@@ -296,7 +448,15 @@ async def _handle_full_ply_response(
     loop: bool,
     lease_resp: httpx.Response,
 ) -> bool:
-    """Handle a 200 response from /lease (full-ply path). Eval and submit."""
+    """Handle a 200 response from /lease (full-ply path). Eval and submit.
+
+    Phase 147 SEED-074 Part B: this rung is no longer wired into `_run_cycle`
+    (rungs 1/3 now use `_handle_atomic_response` against /atomic-lease +
+    /atomic-submit) but is intentionally left unmodified — the server's
+    /lease + /submit pair stays live for any older, not-yet-upgraded copy of
+    this script still running elsewhere during a rolling mixed-fleet deploy
+    (D-02/D-05).
+    """
     lease_resp.raise_for_status()
     data = lease_resp.json()
     game_id = data["game_id"]
@@ -327,6 +487,66 @@ async def _handle_full_ply_response(
     _log(
         f"Submitted game_id={game_id}: stamp_complete={result.get('stamp_complete')}, "
         f"failed_ply_count={result.get('failed_ply_count')}"
+    )
+    return not loop
+
+
+async def _handle_atomic_response(
+    client: httpx.AsyncClient,
+    pool: EnginePool,
+    sf_version: str,
+    dry_run: bool,
+    loop: bool,
+    lease_resp: httpx.Response,
+) -> bool:
+    """Handle a 200 response from /atomic-lease (Phase 147 SEED-074 Part B).
+
+    Evaluates full-ply at MultiPV-1 (unchanged `_eval_positions`), derives a
+    LOCAL flaw-ply HINT via `_run_all_moves_pass` (mistake/blunder only —
+    never trusted as authoritative, T-147-03), walks + evaluates MultiPV-2
+    continuation blobs for those hinted plies, then POSTs the full-ply evals
+    and blob nodes TOGETHER to /atomic-submit in one request. The server
+    re-runs `classify_game_flaws` authoritatively there and writes gated
+    tactic tags + both completion markers in one transaction — this rung
+    closes the ungated-window gap the old /lease + /submit pair leaves open
+    (D-01): this worker's hint only decides WHICH plies get blobbed, never
+    WHAT gets persisted.
+    """
+    lease_resp.raise_for_status()
+    data = lease_resp.json()
+    game_id = data["game_id"]
+    positions = data["positions"]
+    # Opaque job token from the lease response (eval_jobs.id for tier-1/2, None for tier-3).
+    # The worker stores and echoes it without interpreting it; the server uses it to stamp
+    # eval_jobs.status='completed' when the submit is clean and no holes remain.
+    job_id = data.get("job_id")
+
+    _log(f"Atomic-leased game_id={game_id} ({len(positions)} positions). Evaluating...")
+    evals, blob_nodes = await _eval_atomic_game(pool, positions)
+
+    if dry_run:
+        _log(
+            f"--dry-run: evaluated {len(evals)} positions + {len(blob_nodes)} blob nodes "
+            f"for game_id={game_id}; skipping submit."
+        )
+        return not loop
+
+    submit_resp = await client.post(
+        "/api/eval/remote/atomic-submit",
+        json={
+            "game_id": game_id,
+            "sf_version": sf_version,
+            "worker_schema_version": WORKER_SCHEMA_VERSION,
+            "evals": evals,
+            "blob_nodes": blob_nodes,
+            "job_id": job_id,
+        },
+    )
+    submit_resp.raise_for_status()
+    result = submit_resp.json()
+    _log(
+        f"Atomic-submitted game_id={game_id}: flaws_written={result.get('flaws_written')}, "
+        f"blobs_written={result.get('blobs_written')}"
     )
     return not loop
 
