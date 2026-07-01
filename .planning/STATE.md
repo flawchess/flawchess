@@ -5,24 +5,24 @@ milestone_name: Forcing-Line Tactic Gate
 current_phase: 147
 current_phase_name: persist-only-forcing-line-gated-tactic-tags-suppress-ungated
 status: planning
-stopped_at: Phase 147 Plan 05 complete
-last_updated: "2026-07-01T20:01:35.789Z"
+stopped_at: Phase 147 Plan 06 complete -- Phase 147 complete (all 6 plans)
+last_updated: "2026-07-01T20:23:51.701Z"
 last_activity: 2026-07-01
-last_activity_desc: Phase 147 Plan 05 (atomic /eval/remote/atomic-submit endpoint, server-authoritative single-transaction) complete
+last_activity_desc: Phase 147 Plan 06 (fleet worker atomic eval+blob rung) complete -- Phase 147 complete
 progress:
   total_phases: 7
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 25
-  completed_plans: 22
-  percent: 57
+  completed_plans: 23
+  percent: 71
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 147 (persist-only-forcing-line-gated-tactic-tags-suppress-ungated) — EXECUTING (Plan 05/06 complete)
-Last activity: 2026-07-01 — Phase 147 Plan 05 (atomic /eval/remote/atomic-submit endpoint, server-authoritative single-transaction) complete
+Phase: 147 (persist-only-forcing-line-gated-tactic-tags-suppress-ungated) — COMPLETE (Plan 06/06 complete, all plans done — ready for verification)
+Last activity: 2026-07-01 — Phase 147 Plan 06 (fleet worker atomic eval+blob rung) complete
 
 Phase 145 (corpus-backfill-rollout) — COMPLETE (code). Plans 01–05 + the autonomous part of
 plan 06 are merged to main (`875bc164`) and released to production in v1.30 (PR #229,
@@ -110,6 +110,8 @@ Twenty-nine milestones complete (v1.0–v1.29). v1.29 Live-Engine Analysis Page 
 - [Phase ?]: SEED-073 over-cap sentinel: elif len(lease_positions) > MAX_SUBMIT_EVALS branch sentinels every NULL-blob flaw ply (fresh GameFlaw query, not sentinel_lines) via _batch_update_flaw_pv_lines, returns 204 -- establishes the pattern Part B reuses
 - [Phase ?]: AtomicLeaseResponse.positions has no Field(max_length=...) constraint (matches old LeaseResponse); over-cap guard is application-code len() check + release_job, not a GameFlaw sentinel write (no flaw rows exist yet at this endpoint's selection stage)
 - [Phase ?]: Phase 147-05: _classify_and_fill_oracle called with blobs_pending=True in atomic-submit (deviation from plan's literal prohibition) -- required to suppress a server-found-but-unblobbed flaw's tag to NULL; provably has zero effect on flaws with a real submitted blob or D-06/mate-adjacent FINAL cases
+- [Phase ?]: Phase 147-06: upgraded worker's D-06 ladder rungs 1/3 (explicit/idle full-ply) call /atomic-lease + /atomic-submit exclusively; old _handle_full_ply_response/_eval_positions code stays but is unreachable, satisfying D-02/D-05 as code-preservation not runtime fallback
+- [Phase ?]: Phase 147-06: full atomic gated-write e2e confirmation deferred to HUMAN-UAT (dev DB has zero queued eval_jobs, EVAL_AUTO_DRAIN_ENABLED=false) -- automated dry-run against live dev backend confirmed /atomic-lease wiring integrates cleanly
 
 ### Pending Todos
 
@@ -161,9 +163,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-Last session: 2026-07-01T20:01:23.488Z
-Stopped at: Phase 147 Plan 05 complete
-Resume file: 147-06-PLAN.md
+Last session: 2026-07-01T20:23:51.692Z
+Stopped at: Phase 147 Plan 06 complete -- Phase 147 complete (all 6 plans)
+Resume file: None
 
 ## Performance Metrics
 
@@ -205,3 +207,4 @@ Resume file: 147-06-PLAN.md
 | Phase 147 P03 | 15min | 2 tasks | 2 files |
 | Phase 147 P04 | 20min | 2 tasks | 3 files |
 | Phase 147 P05 | 21min | 2 tasks | 3 files |
+| Phase 147 P06 | 55min | 3 tasks | 2 files |
