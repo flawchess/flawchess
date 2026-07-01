@@ -122,3 +122,11 @@ Part A (go-forward suppression from 147-01 + old-corpus migration from this plan
 *Phase: 147-persist-only-forcing-line-gated-tactic-tags-suppress-ungated*
 *Plan: 02*
 *Completed: 2026-07-01*
+
+## Self-Check: PASSED
+
+- FOUND: alembic/versions/20260701_190758_eb341e836ee9_suppress_ungated_tactic_tags_old_corpus.py
+- FOUND: tests/test_migration_suppress_ungated_tactic_tags.py
+- FOUND: .planning/phases/147-persist-only-forcing-line-gated-tactic-tags-suppress-ungated/147-02-SUMMARY.md
+- FOUND commit: 26f1d55a
+- FOUND commit: 0c0b2a8d
