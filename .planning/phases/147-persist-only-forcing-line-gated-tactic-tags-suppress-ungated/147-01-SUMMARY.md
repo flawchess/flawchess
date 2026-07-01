@@ -162,3 +162,7 @@ None - no external service configuration required.
 ---
 *Phase: 147-persist-only-forcing-line-gated-tactic-tags-suppress-ungated*
 *Completed: 2026-07-01*
+
+## Self-Check: PASSED
+
+All modified files found on disk; all task/summary commit hashes (`cd7a50fc`, `bb1d17dd`, `6790e1d3`) found in git log.
