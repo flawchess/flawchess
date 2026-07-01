@@ -229,8 +229,17 @@ class AtomicSubmitRequest(BaseModel):
 
 
 class AtomicSubmitResponse(BaseModel):
-    """Submit acknowledgement: game id + how many flaw/blob rows were written."""
+    """Submit acknowledgement: game id + how many flaw/blob rows were written.
+
+    failed_ply_count / stamp_complete mirror SubmitResponse (CR-01,
+    147-REVIEW.md): the atomic-submit write path now shares the same SEED-045
+    bounded-retry / hole-detection invariant as /submit, so the worker/operator
+    can observe when a submit left holes (stamp_complete=False, Path B) instead
+    of that state being silently unobservable.
+    """
 
     game_id: int
     flaws_written: int
     blobs_written: int
+    failed_ply_count: int
+    stamp_complete: bool

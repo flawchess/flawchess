@@ -3515,6 +3515,14 @@ class TestAtomicSubmitEndpoint:
       MAX_SUBMIT_EVALS -> Pydantic 422 before the handler runs, so no write is ever
       attempted (the over-cap game itself is already sentineled at /atomic-lease,
       147-04; this covers the submit side's own structural cap as defense-in-depth).
+    - test_atomic_submit_holed_batch_under_cap_leaves_pending (CR-01, Path B): a
+      NULL-hole engine-game ply on the first attempt must NOT stamp either
+      completion marker, must increment full_eval_attempts, and must NOT signal
+      flaw completion (IN-01).
+    - test_atomic_submit_holed_batch_at_cap_stamps_with_sentry_warning (CR-01,
+      Path C): the same hole, but full_eval_attempts is already at
+      MAX_EVAL_ATTEMPTS - 1 -> stamps anyway, emits one aggregated Sentry warning,
+      and DOES signal flaw completion.
     """
 
     @pytest.mark.asyncio
@@ -3745,6 +3753,223 @@ class TestAtomicSubmitEndpoint:
                 full_evals_at, full_pv_at = game_row
                 assert full_evals_at is not None, "completion must still be stamped"
                 assert full_pv_at is not None, "completion must still be stamped"
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_atomic_submit_holed_batch_under_cap_leaves_pending(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """CR-01 (147-REVIEW.md, Path B): a NULL-hole engine-game ply on the first
+        attempt must NOT stamp either completion marker, must increment
+        full_eval_attempts, and must NOT signal flaw completion (IN-01) — mirrors
+        /submit's SEED-045 bounded-retry invariant instead of unconditionally
+        stamping complete with a gap.
+
+        The hole is engineered by nulling the terminal eval (ply=6) of
+        _BLUNDER_SUBMIT_EVALS_142: row 5 = pos_eval[6] = None on a non-terminal
+        row (the game is not over) -> failed_ply_count == 1.
+        """
+        import app.routers.eval_remote as eval_remote_module
+        from app.models.game import Game
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        signal_calls: list[int] = []
+        monkeypatch.setattr(eval_remote_module, "_signal_flaw_completion", signal_calls.append)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(
+            eval_worker_session_maker,
+            user_id,
+            pgn=_SIX_PLY_PGN_142,
+            full_eval_attempts=0,  # explicitly under cap
+        )
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            game_id,
+            [
+                {"ply": p, "full_hash": 51500 + p, "eval_cp": None, "eval_mate": None}
+                for p in range(6)
+            ],
+        )
+
+        holed_evals: list[dict[str, object]] = [dict(e) for e in _BLUNDER_SUBMIT_EVALS_142]
+        holed_evals[6]["eval_cp"] = None  # terminal eval hole -> row 5 (pos_eval[6]) NULL
+        holed_evals[6]["eval_mate"] = None
+
+        payload = {
+            "game_id": game_id,
+            "sf_version": "Stockfish 18",
+            "worker_schema_version": 1,
+            "evals": holed_evals,
+            "blob_nodes": [],
+            "job_id": None,
+        }
+
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _ATOMIC_SUBMIT_URL,
+                    json=payload,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+            body = resp.json()
+            assert body["failed_ply_count"] == 1, f"One hole expected: {body}"
+            assert body["stamp_complete"] is False, (
+                f"Path B (under cap) must not report complete: {body}"
+            )
+
+            async with eval_worker_session_maker() as verify:
+                game_row = (
+                    await verify.execute(
+                        select(
+                            Game.full_evals_completed_at,
+                            Game.full_pv_completed_at,
+                            Game.full_eval_attempts,
+                        ).where(Game.id == game_id)
+                    )
+                ).one()
+                full_evals_at, full_pv_at, attempts = game_row
+                assert full_evals_at is None, (
+                    "Path B must NOT stamp full_evals_completed_at with a residual hole"
+                )
+                assert full_pv_at is None, (
+                    "Path B must NOT stamp full_pv_completed_at with a residual hole"
+                )
+                assert attempts == 1, f"full_eval_attempts must increment to 1, got {attempts}"
+
+            assert signal_calls == [], (
+                "IN-01: a Path-B (not-yet-complete) submit must NOT signal flaw "
+                f"completion, got {signal_calls}"
+            )
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_atomic_submit_holed_batch_at_cap_stamps_with_sentry_warning(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """CR-01 (147-REVIEW.md, Path C): the same hole as the Path B test, but
+        full_eval_attempts is already at MAX_EVAL_ATTEMPTS - 1 -> the NEXT attempt
+        reaches the cap, stamps anyway (D-116-07 no-loop invariant), emits exactly
+        one aggregated Sentry warning (game_id/hole_count/attempts via
+        set_context, never embedded in the message string per CLAUDE.md), and
+        DOES signal flaw completion (stamp_complete=True gates IN-01 the other way).
+        """
+        import app.routers.eval_remote as eval_remote_module
+        from app.models.game import Game
+        from app.services.eval_drain import MAX_EVAL_ATTEMPTS
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        signal_calls: list[int] = []
+        monkeypatch.setattr(eval_remote_module, "_signal_flaw_completion", signal_calls.append)
+
+        set_context_calls: list[tuple[str, Any]] = []
+        capture_message_calls: list[str] = []
+        monkeypatch.setattr(
+            eval_remote_module.sentry_sdk,
+            "set_context",
+            lambda name, ctx: set_context_calls.append((name, ctx)),
+        )
+        monkeypatch.setattr(
+            eval_remote_module.sentry_sdk,
+            "capture_message",
+            lambda msg, **kw: capture_message_calls.append(msg),
+        )
+
+        user_id = eval_worker_test_user
+        assert MAX_EVAL_ATTEMPTS > 1, "test requires MAX_EVAL_ATTEMPTS > 1 for the cap path"
+        game_id = await _insert_game(
+            eval_worker_session_maker,
+            user_id,
+            pgn=_SIX_PLY_PGN_142,
+            full_eval_attempts=MAX_EVAL_ATTEMPTS - 1,  # ONE more attempt reaches the cap
+        )
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            game_id,
+            [
+                {"ply": p, "full_hash": 51600 + p, "eval_cp": None, "eval_mate": None}
+                for p in range(6)
+            ],
+        )
+
+        holed_evals: list[dict[str, object]] = [dict(e) for e in _BLUNDER_SUBMIT_EVALS_142]
+        holed_evals[6]["eval_cp"] = None  # same persistent hole as the Path B test
+        holed_evals[6]["eval_mate"] = None
+
+        payload = {
+            "game_id": game_id,
+            "sf_version": "Stockfish 18",
+            "worker_schema_version": 1,
+            "evals": holed_evals,
+            "blob_nodes": [],
+            "job_id": None,
+        }
+
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _ATOMIC_SUBMIT_URL,
+                    json=payload,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+            body = resp.json()
+            assert body["failed_ply_count"] == 1, f"One hole expected: {body}"
+            assert body["stamp_complete"] is True, (
+                f"Path C (cap reached) must report complete despite the hole: {body}"
+            )
+
+            async with eval_worker_session_maker() as verify:
+                game_row = (
+                    await verify.execute(
+                        select(Game.full_evals_completed_at, Game.full_pv_completed_at).where(
+                            Game.id == game_id
+                        )
+                    )
+                ).one()
+                full_evals_at, full_pv_at = game_row
+                assert full_evals_at is not None, (
+                    "Path C must stamp full_evals_completed_at despite the residual hole"
+                )
+                assert full_pv_at is not None, (
+                    "Path C must stamp full_pv_completed_at despite the residual hole"
+                )
+
+            cap_events = [m for m in capture_message_calls if "MAX_EVAL_ATTEMPTS" in m]
+            assert len(cap_events) == 1, (
+                f"Exactly one cap Sentry event expected, got {len(cap_events)}: {cap_events}"
+            )
+            eval_ctx = next(
+                (ctx for name, ctx in set_context_calls if name == "eval" and "hole_count" in ctx),
+                None,
+            )
+            assert eval_ctx is not None, (
+                "sentry_sdk.set_context('eval', {...}) with 'hole_count' must be called "
+                "at the cap event — variables in context, not in the message string"
+            )
+            assert eval_ctx.get("game_id") == game_id
+            assert eval_ctx.get("hole_count") == 1
+
+            assert signal_calls == [user_id], (
+                f"Path C (stamp_complete=True) must signal flaw completion, got {signal_calls}"
+            )
         finally:
             await _delete_games(eval_worker_session_maker, [game_id])
 

@@ -22,9 +22,10 @@ POST /eval/remote/atomic-submit — (Phase 147 SEED-074 Part B, D-01/D-02) paire
                                  MultiPV-2 continuation blobs together, in ONE write_session:
                                  evals -> server-authoritative classify_game_flaws (with the
                                  worker's blobs as gate input only, never trusted for flaw
-                                 membership) -> blob write -> both completion markers, one
-                                 commit. No ungated window is ever observable for a game
-                                 processed here (see _apply_atomic_submit).
+                                 membership) -> blob write -> SEED-045 bounded-retry stamping
+                                 (same Path A/B/C invariant as /submit, CR-01) -> one commit.
+                                 No ungated window is ever observable for a game processed
+                                 here (see _apply_atomic_submit).
 
 All endpoints require the X-Operator-Token header (T-120-01 operator auth gate).
 403 when the token is not configured on the server (fail-closed); 401 when it does
@@ -1129,8 +1130,12 @@ async def _apply_atomic_submit(
 
     Write phase (ONE session, mirrors _full_drain_tick Step 4 / RESEARCH.md
     "_full_drain_tick's atomic-write ordering"): apply evals -> classify_game_flaws
-    (with the worker-supplied blob_map) -> write blobs -> stamp both completion
-    markers -> ONE commit (T-117-11: no partial/ungated state is ever observable).
+    (with the worker-supplied blob_map) -> write blobs -> branch on failed_ply_count
+    into the same Path A/B/C SEED-045 bounded-retry invariant _apply_submit uses
+    (CR-01, 147-REVIEW.md) -> ONE commit (T-117-11: no partial/ungated state is
+    ever observable). Path A (no holes) and Path C (holes, MAX_EVAL_ATTEMPTS
+    reached) stamp both completion markers; Path B (holes, under cap) increments
+    full_eval_attempts and leaves the game pending for retry instead.
 
     blobs_pending=True is passed to _classify_and_fill_oracle here (a deliberate,
     documented deviation from the plan's literal "blobs_pending stays False" — see
@@ -1159,6 +1164,9 @@ async def _apply_atomic_submit(
         pgn_text: str = game.pgn
         is_lichess_eval_game: bool = game.lichess_evals_at is not None
         owner_id: int = game.user_id
+        # CR-01: read the current retry count so the write phase can branch on
+        # the same Path A/B/C SEED-045 bounded-retry invariant _apply_submit uses.
+        current_attempts: int = game.full_eval_attempts
 
         gp_result = await read_session.execute(
             select(
@@ -1222,8 +1230,14 @@ async def _apply_atomic_submit(
     flaw_pv_blobs = _assemble_flaw_blobs_from_submit(game_id, body.blob_nodes, sentinel_lines)
 
     # ── Write phase — ONE late session, all UPDATEs + commit atomic (T-117-11) ──
+    stamp_complete: bool
+
     async with async_session_maker() as write_session:
-        await _apply_full_eval_results(
+        # CR-01 (147-REVIEW.md): capture failed_ply_count — previously discarded,
+        # which unconditionally stamped completion markers even with NULL-hole
+        # engine-game plies, reintroducing the pre-Phase-119 SEED-045 bug class
+        # (see resweep_holed_games() docstring for the exact failure mode).
+        failed_ply_count = await _apply_full_eval_results(
             write_session, targets, {}, engine_result_map, is_lichess_eval_game
         )
 
@@ -1246,13 +1260,54 @@ async def _apply_atomic_submit(
 
         await _run_multipv2_pass(write_session, game_id, flaw_pv_blobs)
 
-        await _mark_full_evals_completed(write_session, game_id)
-        await _mark_full_pv_completed(write_session, game_id)
+        # CR-01: mirror _apply_submit's Path A/B/C SEED-045 bounded-retry branch
+        # exactly, instead of unconditionally stamping both completion markers.
+        new_attempts = current_attempts + 1
+        games_table = Game.__table__
 
-        # Stamp eval_jobs for tier-1/tier-2 claims (mirrors _apply_submit). The
-        # WHERE status='leased' guard makes a late submit (lease expired + re-claimed,
-        # or job already completed) a safe no-op.
-        if body.job_id is not None:
+        if failed_ply_count == 0:
+            # Path A: no holes — stamp both markers complete.
+            await _mark_full_evals_completed(write_session, game_id)
+            await _mark_full_pv_completed(write_session, game_id)
+            stamp_complete = True
+
+        elif new_attempts < MAX_EVAL_ATTEMPTS:
+            # Path B: holes remain, under cap — increment attempts, leave pending.
+            # Do NOT stamp full_evals_completed_at or full_pv_completed_at.
+            await write_session.execute(
+                update(games_table)  # ty: ignore[invalid-argument-type]
+                .where(games_table.c.id == game_id)
+                .values(full_eval_attempts=new_attempts)
+            )
+            stamp_complete = False
+
+        else:
+            # Path C: holes remain AND cap reached — stamp anyway (D-116-07 no-loop
+            # invariant). One aggregated Sentry warning (never embed variable data in
+            # the message string — use set_context for Sentry grouping, CLAUDE.md rule).
+            await _mark_full_evals_completed(write_session, game_id)
+            await _mark_full_pv_completed(write_session, game_id)
+            sentry_sdk.set_context(
+                "eval",
+                {
+                    "game_id": game_id,
+                    "hole_count": failed_ply_count,
+                    "attempts": new_attempts,
+                },
+            )
+            sentry_sdk.set_tag("source", "remote_eval_worker")
+            sentry_sdk.capture_message(
+                "atomic-submit: stamping complete after MAX_EVAL_ATTEMPTS with residual holes",
+                level="warning",
+            )
+            stamp_complete = True
+
+        # Stamp eval_jobs for tier-1/tier-2 claims when all plies resolved (Path A/C).
+        # The WHERE status='leased' guard makes a late submit (lease expired + re-claimed,
+        # or job already completed) a safe no-op — never corrupts an unrelated job.
+        # Path B (holes remain, stamp_complete=False) is deliberately NOT stamped:
+        # the eval_jobs row stays 'leased' until the sweep requeues it after the TTL.
+        if body.job_id is not None and stamp_complete:
             jobs_table = EvalJob.__table__
             now_ts = datetime.now(timezone.utc)
             await write_session.execute(
@@ -1267,12 +1322,17 @@ async def _apply_atomic_submit(
         await write_session.commit()
 
     # Signal after commit so the hook never fires for a partially-committed game.
-    _signal_flaw_completion(owner_id)
+    # IN-01: gate on stamp_complete — a Path-B late submit must not prematurely
+    # notify user-facing caches/UI that a game's analysis is complete.
+    if stamp_complete:
+        _signal_flaw_completion(owner_id)
 
     return AtomicSubmitResponse(
         game_id=game_id,
         flaws_written=flaws_written or 0,
         blobs_written=len(flaw_pv_blobs),
+        failed_ply_count=failed_ply_count,
+        stamp_complete=stamp_complete,
     )
 
 
