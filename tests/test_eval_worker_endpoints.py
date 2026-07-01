@@ -2321,12 +2321,17 @@ class TestMultipv2BlobsRemote:
         )
 
         # Spy on _classify_and_fill_oracle to capture flaw_pv_blobs kwarg.
+        # Phase 147: signature also accepts blobs_pending (forwarded, not asserted here).
         captured_blobs: list[object] = []
         original = eval_drain_module._classify_and_fill_oracle
 
-        async def spy_classify(session, game_id, engine_result_map, flaw_pv_blobs=None):  # type: ignore[no-untyped-def]
+        async def spy_classify(  # type: ignore[no-untyped-def]
+            session, game_id, engine_result_map, flaw_pv_blobs=None, blobs_pending=False
+        ):
             captured_blobs.append(flaw_pv_blobs)
-            return await original(session, game_id, engine_result_map, flaw_pv_blobs)
+            return await original(
+                session, game_id, engine_result_map, flaw_pv_blobs, blobs_pending=blobs_pending
+            )
 
         monkeypatch.setattr(eval_remote_module, "_classify_and_fill_oracle", spy_classify)
 
@@ -2546,6 +2551,162 @@ async def test_submit_phase146_blobs_null_both_markers_stamped(
             assert full_pv_at is not None, (
                 "Phase 146: full_pv_completed_at must be stamped after /submit "
                 "(live path stamps both markers unconditionally)"
+            )
+    finally:
+        await _delete_games(eval_worker_session_maker, [game_id])
+
+
+# ─── Phase 147 Plan 01 Task 2: blobs_pending suppression + D-07 self-heal ─────
+
+
+@pytest.mark.asyncio
+async def test_submit_suppresses_cp_flaw_tag_then_blob_submit_self_heals(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """Phase 147 D-01/D-03: /submit suppresses a cp-based tactic tag to NULL when the
+    continuation blob is deferred; a subsequent /flaw-blob-submit (existing D-07 gated
+    retag) fills the correctly-gated tag once the real blob lands (self-heal).
+
+    Uses _SIX_PLY_PGN_142 / _BLUNDER_SUBMIT_EVALS_142 (blunder at ply 2,
+    pre_flaw_eval_cp = positions[1].eval_cp = 30 — cp-based, not mate-adjacent). The
+    tactic kernel (_detect_tactic_for_flaw) is monkeypatched to a fixed HANGING_PIECE
+    motif on the "allowed" orientation so the test is independent of real PV-based
+    pattern matching (mirrors
+    tests/scripts/test_retag_flaws.py::TestPreFlawEvalParity._patch_detector, which
+    funnels through the same flaws_service._classify_tactic_gated -> _detect_tactic_for_flaw
+    chain). The blob-assembly CPU helper (_assemble_flaw_blobs_from_submit) is
+    monkeypatched at the D-07 retag step to return a hand-built forcing blob for the
+    "allowed" line, so the real forcing-line gate genuinely passes and fills the tag —
+    proving the self-heal path, not just that suppression happened.
+    """
+    import app.routers.eval_remote as eval_remote_module
+    import app.services.flaws_service as flaws_service_module
+    from app.models.game import Game
+    from app.models.game_flaw import GameFlaw
+    from app.services.forcing_line_gate import PvNode
+    from app.services.tactic_detector import TACTIC_CONFIDENCE_HIGH, TacticMotifInt
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    # Fix the tactic kernel to a deterministic motif on "allowed" only, independent of
+    # real pattern matching (mirrors TestPreFlawEvalParity._patch_detector).
+    def _fake_detect(
+        n: int,
+        fen_map: dict[int, str],
+        positions: list[Any],
+        pv_by_ply: Any = None,
+        orientation: str = "allowed",
+    ) -> tuple[int | None, int | None, int | None, int | None]:
+        if orientation == "allowed":
+            return (int(TacticMotifInt.HANGING_PIECE), 2, TACTIC_CONFIDENCE_HIGH, 0)
+        return (None, None, None, None)
+
+    monkeypatch.setattr(flaws_service_module, "_detect_tactic_for_flaw", _fake_detect)
+
+    user_id = eval_worker_test_user
+    game_id = await _insert_game(eval_worker_session_maker, user_id, pgn=_SIX_PLY_PGN_142)
+    await _insert_game_positions(
+        eval_worker_session_maker,
+        user_id,
+        game_id,
+        [{"ply": p, "full_hash": 14700 + p, "eval_cp": None, "eval_mate": None} for p in range(6)],
+    )
+
+    payload = {
+        "game_id": game_id,
+        "sf_version": "Stockfish 18",
+        "evals": list(_BLUNDER_SUBMIT_EVALS_142),
+    }
+
+    try:
+        # ── Step 1: /submit — blobs_pending=True suppresses the raw ungated tag ──
+        async with _make_client() as client:
+            resp = await client.post(
+                _SUBMIT_URL,
+                json=payload,
+                headers={"X-Operator-Token": _TEST_TOKEN},
+            )
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+
+        async with eval_worker_session_maker() as verify:
+            flaw_row = (
+                await verify.execute(
+                    select(
+                        GameFlaw.ply,
+                        GameFlaw.allowed_tactic_motif,
+                        GameFlaw.missed_tactic_motif,
+                    ).where(GameFlaw.game_id == game_id)
+                )
+            ).one()
+            flaw_ply, allowed_motif, missed_motif = flaw_row
+            assert flaw_ply == 2, f"Flaw must be at ply 2, got {flaw_ply}"
+            assert allowed_motif is None, (
+                "Phase 147 D-01/D-03: allowed_tactic_motif must be suppressed to NULL "
+                "when the continuation blob is deferred (blobs_pending=True, no blob yet)"
+            )
+            assert missed_motif is None
+
+            game_row = (
+                await verify.execute(
+                    select(Game.full_evals_completed_at, Game.full_pv_completed_at).where(
+                        Game.id == game_id
+                    )
+                )
+            ).one()
+            full_evals_at, full_pv_at = game_row
+            assert full_evals_at is not None, (
+                "full_evals_completed_at must be stamped after /submit"
+            )
+            assert full_pv_at is not None, "full_pv_completed_at must be stamped after /submit"
+
+        # ── Step 2: /flaw-blob-submit (existing D-07 gated retag) fills the tag ──
+        # Hand-built forcing blob (solver="black" — _solver_color_for(2, "allowed")):
+        # white-perspective cp very negative at both solver nodes (indices 0, 2) means
+        # black is crushing, well past the only-move margin and the still-winning floor;
+        # a neutral defender node (index 1) in between. Mirrors the forced-line fixture
+        # in tests/services/test_flaws_service.py::TestClassifyTacticGated
+        # (sign-flipped here for a black solver).
+        forcing_allowed_blob: list[PvNode] = [
+            {"b": -800, "bm": None, "s": 0, "sm": None, "su": "b8c6"},
+            {"b": 300, "bm": None, "s": 250, "sm": None, "su": "f1c4"},
+            {"b": -800, "bm": None, "s": 0, "sm": None, "su": "f8c5"},
+        ]
+
+        def _fake_assemble(
+            game_id_arg: int, submit_evals: object, sentinel_lines: object
+        ) -> dict[int, tuple[list[PvNode], list[PvNode]]]:
+            return {2: (forcing_allowed_blob, [])}
+
+        monkeypatch.setattr(eval_remote_module, "_assemble_flaw_blobs_from_submit", _fake_assemble)
+
+        async with _make_client() as client:
+            blob_resp = await client.post(
+                _FLAW_BLOB_SUBMIT_URL,
+                json={"game_id": game_id, "sf_version": "Stockfish 18", "evals": []},
+                headers={"X-Operator-Token": _TEST_TOKEN},
+            )
+        assert blob_resp.status_code == 200, (
+            f"flaw-blob-submit failed: {blob_resp.status_code} {blob_resp.text}"
+        )
+        assert blob_resp.json()["blobs_written"] >= 1, "At least one blob must be written"
+
+        async with eval_worker_session_maker() as verify:
+            flaw_row2 = (
+                await verify.execute(
+                    select(
+                        GameFlaw.allowed_tactic_motif,
+                        GameFlaw.missed_tactic_motif,
+                    ).where(GameFlaw.game_id == game_id)
+                )
+            ).one()
+            allowed_motif2, missed_motif2 = flaw_row2
+            assert allowed_motif2 == int(TacticMotifInt.HANGING_PIECE), (
+                "Phase 147 self-heal: /flaw-blob-submit (D-07 gated retag) must fill the "
+                "correctly-gated tag once the real forcing blob lands"
             )
     finally:
         await _delete_games(eval_worker_session_maker, [game_id])

@@ -2599,3 +2599,107 @@ class TestClassifyTacticGated:
         assert piece is None
         assert conf is None
         assert depth is None
+
+
+# ---------------------------------------------------------------------------
+# Phase 147 Plan 01 Task 2: blobs_pending suppression branch (D-01, D-03)
+# ---------------------------------------------------------------------------
+
+
+class TestClassifyTacticGatedBlobsPending:
+    """blobs_pending=True suppresses cp-based tags with no blob yet (D-01, D-03).
+
+    Uses the same n=5 "allowed" fixture as TestClassifyTacticGated: raw kernel
+    result is HANGING_PIECE (TACTIC_CONFIDENCE_HIGH, depth=0).
+    """
+
+    def test_blobs_pending_true_cp_flaw_no_blob_suppresses(self) -> None:
+        """blobs_pending=True, pv_blob=None, cp-based flaw: motif suppressed to NULL.
+
+        The continuation blob is deferred (tier-4 pass); the gate cannot yet
+        run, so the raw ungated motif must NOT be persisted (self-heals later
+        via the D-07 gated retag once the blob lands).
+        """
+        positions = _make_positions_128()
+        motif, piece, conf, depth = _classify_tactic_gated(
+            n=5,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            orientation="allowed",
+            pv_blob=None,
+            pre_flaw_eval_cp=300,
+            blobs_pending=True,
+        )
+        assert motif is None, "blobs_pending=True with a cp-based, blob-less flaw must suppress"
+        assert piece is None
+        assert conf is None
+        assert depth is None
+
+    def test_blobs_pending_true_mate_adjacent_keeps_raw(self) -> None:
+        """blobs_pending=True, pre_flaw_eval_cp=None (mate-adjacent): raw tag KEPT.
+
+        Mate-adjacent flaw plies are a FINAL case (D-06 KEEP rule) — there is no
+        cp value to gate-check against even once a blob eventually arrives, so
+        suppression must never apply here.
+        """
+        positions = _make_positions_128()
+        motif, piece, conf, depth = _classify_tactic_gated(
+            n=5,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            orientation="allowed",
+            pv_blob=None,
+            pre_flaw_eval_cp=None,
+            blobs_pending=True,
+        )
+        assert motif == TacticMotifInt.HANGING_PIECE, (
+            "mate-adjacent flaws are FINAL and must keep the raw motif under blobs_pending"
+        )
+        assert piece is not None
+        assert conf == TACTIC_CONFIDENCE_HIGH
+        assert depth == 0
+
+    def test_blobs_pending_true_sentinel_empty_blob_keeps_raw(self) -> None:
+        """blobs_pending=True, pv_blob=[] (D-06 sentinel): raw tag KEPT.
+
+        The []-sentinel is a FINAL un-fillable case. Suppression must key off
+        `pv_blob is None`, NOT falsy, so [] is never re-suppressed here.
+        """
+        positions = _make_positions_128()
+        motif, piece, conf, depth = _classify_tactic_gated(
+            n=5,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            orientation="allowed",
+            pv_blob=[],
+            pre_flaw_eval_cp=300,
+            blobs_pending=True,
+        )
+        assert motif == TacticMotifInt.HANGING_PIECE, (
+            "D-06 []-sentinel is FINAL and must keep the raw motif under blobs_pending"
+        )
+        assert piece is not None
+        assert conf == TACTIC_CONFIDENCE_HIGH
+        assert depth == 0
+
+    def test_blobs_pending_false_default_cp_flaw_no_blob_keeps_raw(self) -> None:
+        """blobs_pending=False (default): no suppression, raw tag KEPT — unchanged behavior.
+
+        This is the local-drain / discovery-only default; the new parameter must
+        be opt-in only at the remote go-forward call site.
+        """
+        positions = _make_positions_128()
+        motif, piece, conf, depth = _classify_tactic_gated(
+            n=5,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            orientation="allowed",
+            pv_blob=None,
+            pre_flaw_eval_cp=300,
+        )
+        assert motif == TacticMotifInt.HANGING_PIECE, (
+            "blobs_pending default False must preserve pre-Phase-147 behavior (raw kept)"
+        )
+        assert piece is not None
+        assert conf == TACTIC_CONFIDENCE_HIGH
+        assert depth == 0

@@ -580,12 +580,7 @@ def _classify_tactic_gated(
             pv_blob, solver_color, pre_flaw_eval_cp, firing_depth=depth, margin=margin
         ):
             return None, None, None, None
-    if (
-        blobs_pending
-        and motif is not None
-        and pv_blob is None
-        and pre_flaw_eval_cp is not None
-    ):
+    if blobs_pending and motif is not None and pv_blob is None and pre_flaw_eval_cp is not None:
         return None, None, None, None
     return motif, piece, conf, depth
 

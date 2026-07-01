@@ -275,11 +275,19 @@ async def _apply_submit(
         # Runs AFTER _apply_full_eval_results so eval_cp is visible for classification.
         # Runs BEFORE completion markers so evals + flaws commit atomically (T-117-11).
         # Phase 146 D-03: blob_map is always {} (empty) so blob_map if blob_map evaluates
-        # to None → gate skipped → raw classify. Blobs are assembled by the tier-4 worker
-        # drain (flaw-blob-lease → worker MultiPV=2 → flaw-blob-submit); tactic tags are
-        # recomputed via _classify_tactic_gated (D-07 gated retag) at blob-submit time.
+        # to None → gate skipped at the blob level. Blobs are assembled by the tier-4
+        # worker drain (flaw-blob-lease → worker MultiPV=2 → flaw-blob-submit).
+        # Phase 147 D-01/D-03: blobs_pending=True suppresses raw ungated cp-based tactic
+        # tags to NULL here (no blob yet to gate-check against) instead of persisting them
+        # ungated; mate-adjacent and D-06 []-sentinel flaws are FINAL and keep their raw
+        # tag. The suppressed NULL self-heals via the tier-4 D-07 gated retag at
+        # blob-submit time.
         await _classify_and_fill_oracle(
-            write_session, game_id, engine_result_map, blob_map if blob_map else None
+            write_session,
+            game_id,
+            engine_result_map,
+            blob_map if blob_map else None,
+            blobs_pending=True,
         )
 
         new_attempts = current_attempts + 1
