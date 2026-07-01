@@ -2,27 +2,26 @@
 gsd_state_version: 1.0
 milestone: v1.30
 milestone_name: Forcing-Line Tactic Gate
-current_phase: 146
-current_phase_name: offload-live-submit-forcing-line-continuation-eval-to-the-re
-status: planning
-stopped_at: Completed 146-02-PLAN.md
-last_updated: "2026-06-30T23:40:30.381Z"
-last_activity: 2026-06-30
-last_activity_desc: Phase 146 execution started
+current_phase: 999.1
+current_phase_name: BACKLOG
+status: Ready to plan
+stopped_at: Phase 147 Plan 06 complete -- Phase 147 complete (all 6 plans)
+last_updated: "2026-07-01T21:35:11.614Z"
+last_activity: 2026-07-01
 progress:
-  total_phases: 6
-  completed_phases: 4
-  total_plans: 19
-  completed_plans: 17
-  percent: 67
+  total_phases: 7
+  completed_phases: 5
+  total_plans: 25
+  completed_plans: 23
+  percent: 71
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 146 (offload-live-submit-forcing-line-continuation-eval-to-the-re) — EXECUTING
-Last activity: 2026-07-01 — Completed quick task 260701-lw4: replace tier-4 blob-backfill top-50 recency window with a two-stage ES weighted lottery
+Phase: 999.1 — Password Reset (BACKLOG)
+Last activity: 2026-07-01
 
 Phase 145 (corpus-backfill-rollout) — COMPLETE (code). Plans 01–05 + the autonomous part of
 plan 06 are merged to main (`875bc164`) and released to production in v1.30 (PR #229,
@@ -105,6 +104,13 @@ Twenty-nine milestones complete (v1.0–v1.29). v1.29 Live-Engine Analysis Page 
 - [Phase ?]: _claim_tier4_blob is a two-stage Efraimidis-Spirakis weighted lottery (user by last_activity, then game by full_evals_completed_at, no tc_multiplier) — floor terms give the whole corpus non-zero draw mass so old analyzed games drain, fresh stays dominant (supersedes the TIER4_RECENCY_WINDOW top-50 window from Phase 146 D-01; quick 260701-lw4)
 - [Phase ?]: _eval_flaw_blob_positions maps r[0]/r[1]/r[4]/r[5]/r[6]; r[2]/r[3] excluded; token echoed (D-04a)
 - [Phase ?]: HTTP_TIMEOUT_S=30.0 — SEED-071 stopgap removed; full-ply pass reduced to MultiPV-1
+- [Phase ?]: blobs_pending is an independent default-False parameter, never derived from flaw_pv_blobs — closes the go-forward ungated-tag window at _apply_submit (D-01, D-03)
+- [Phase ?]: Migration predicate joins game_flaws to game_positions on the composite PK for the cp-based candidate check; per-orientation suppression gates on each orientation's own PV-line blob column, not the empirical NULL-together invariant
+- [Phase ?]: SEED-073 over-cap sentinel: elif len(lease_positions) > MAX_SUBMIT_EVALS branch sentinels every NULL-blob flaw ply (fresh GameFlaw query, not sentinel_lines) via _batch_update_flaw_pv_lines, returns 204 -- establishes the pattern Part B reuses
+- [Phase ?]: AtomicLeaseResponse.positions has no Field(max_length=...) constraint (matches old LeaseResponse); over-cap guard is application-code len() check + release_job, not a GameFlaw sentinel write (no flaw rows exist yet at this endpoint's selection stage)
+- [Phase ?]: Phase 147-05: _classify_and_fill_oracle called with blobs_pending=True in atomic-submit (deviation from plan's literal prohibition) -- required to suppress a server-found-but-unblobbed flaw's tag to NULL; provably has zero effect on flaws with a real submitted blob or D-06/mate-adjacent FINAL cases
+- [Phase ?]: Phase 147-06: upgraded worker's D-06 ladder rungs 1/3 (explicit/idle full-ply) call /atomic-lease + /atomic-submit exclusively; old _handle_full_ply_response/_eval_positions code stays but is unreachable, satisfying D-02/D-05 as code-preservation not runtime fallback
+- [Phase ?]: Phase 147-06: full atomic gated-write e2e confirmation deferred to HUMAN-UAT (dev DB has zero queued eval_jobs, EVAL_AUTO_DRAIN_ENABLED=false) -- automated dry-run against live dev backend confirmed /atomic-lease wiring integrates cleanly
 
 ### Pending Todos
 
@@ -156,8 +162,8 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-Last session: 2026-06-30T23:40:30.361Z
-Stopped at: Completed 146-02-PLAN.md
+Last session: 2026-07-01T20:23:51.692Z
+Stopped at: Phase 147 Plan 06 complete -- Phase 147 complete (all 6 plans)
 Resume file: None
 
 ## Performance Metrics
@@ -195,3 +201,9 @@ Resume file: None
 | Phase 145-corpus-backfill-rollout P04 | 30 minutes | 2 tasks | 3 files |
 | Phase 145 P05 | 60 | 2 tasks | 3 files |
 | Phase 146 P02 | 8 | - tasks | - files |
+| Phase 147 P01 | 20min | 2 tasks | 5 files |
+| Phase 147 P02 | 10min | 2 tasks | 2 files |
+| Phase 147 P03 | 15min | 2 tasks | 2 files |
+| Phase 147 P04 | 20min | 2 tasks | 3 files |
+| Phase 147 P05 | 21min | 2 tasks | 3 files |
+| Phase 147 P06 | 55min | 3 tasks | 2 files |
