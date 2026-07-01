@@ -508,11 +508,13 @@ async def _claim_tier4_blob(
 
     Stage 2 — WEIGHTED GAME PICK FOR THE PICKED USER:
       Within the picked user, pick a NULL-blob-flaw analyzed game weighted by
-      full_evals_completed_at recency only — NO tc_multiplier CASE (unlike tier-3's
-      game pick): blob enrichment is not time-control sensitive. weight =
-      exp(-Δt_evals/τ_g) + TIER4_GAME_WEIGHT_FLOOR, Δt_evals = seconds since
-      full_evals_completed_at (NULL cannot occur here — gated by the WHERE clause),
-      τ_g = TIER4_GAME_RECENCY_HALF_LIFE_DAYS / ln(2) in seconds. Pick game
+      full_evals_completed_at recency AND time-control priority (longer TCs first),
+      mirroring tier-3's game pick. weight =
+      tc_multiplier * (exp(-Δt_evals/τ_g) + TIER4_GAME_WEIGHT_FLOOR), where
+      tc_multiplier comes from GAME_TC_WEIGHTS (classical=8 > rapid=4 > blitz=2 >
+      bullet=1 > other=0.5), Δt_evals = seconds since full_evals_completed_at (NULL
+      cannot occur here — gated by the WHERE clause), τ_g =
+      TIER4_GAME_RECENCY_HALF_LIFE_DAYS / ln(2) in seconds. Pick game
       ORDER BY -ln(random()) / weight LIMIT 1.
 
     This replaces the Phase 146 D-01 top-N recency-window CTE: that mechanism was a
@@ -535,9 +537,9 @@ async def _claim_tier4_blob(
     handler, which has the full game context needed to route the blob write correctly
     (RESEARCH Pitfall 6). This function returns only the (game_id, user_id) pair.
 
-    Security: :tau_u, :floor_u, :picked_user, :tau_g, :floor_g are all bound via the
-    sa.text params dict — never f-string-interpolated (QUEUE-08 convention, mirrors
-    tier-3's "never f-string-interpolated" rule above).
+    Security: :tau_u, :floor_u, :picked_user, :tau_g, :floor_g, and the :tc_* TC
+    multipliers are all bound via the sa.text params dict — never f-string-interpolated
+    (QUEUE-08 convention, mirrors tier-3's "never f-string-interpolated" rule above).
     """
     # Convert half-lives (days) to decay constants τ in seconds — same conversion
     # used by _claim_tier3_derived above: τ = τ½ / ln2; weight = exp(-Δt/τ) + floor.
@@ -545,6 +547,12 @@ async def _claim_tier4_blob(
     floor_u: float = TIER4_USER_WEIGHT_FLOOR
     tau_g_seconds: float = TIER4_GAME_RECENCY_HALF_LIFE_DAYS / math.log(2) * 86400.0
     floor_g: float = TIER4_GAME_WEIGHT_FLOOR
+    # Stage-2 TC priority (longer TCs first), shared with tier-3's game pick.
+    tc_classical: float = GAME_TC_WEIGHTS["classical"]
+    tc_rapid: float = GAME_TC_WEIGHTS["rapid"]
+    tc_blitz: float = GAME_TC_WEIGHTS["blitz"]
+    tc_bullet: float = GAME_TC_WEIGHTS["bullet"]
+    tc_other: float = GAME_TC_WEIGHTS["other"]
 
     # Stage 1: ES weighted user pick over users with an eligible NULL-blob analyzed game.
     user_pick_result = await session.execute(
@@ -575,8 +583,11 @@ async def _claim_tier4_blob(
         return None
     picked_user_id: int = user_row[0]
 
-    # Stage 2: ES weighted game pick for the picked user (full_evals_completed_at
-    # recency only — no tc_multiplier, unlike tier-3's game pick).
+    # Stage 2: ES weighted game pick for the picked user — full_evals_completed_at
+    # recency AND TC priority (longer TCs first), mirroring tier-3's game pick.
+    # game_weight = tc_multiplier * (exp(-Δt_evals / τ_g) + floor_g). The tc_multiplier
+    # CASE keys are static SQL literals (not interpolated); all numeric values bound
+    # as :params (QUEUE-08).
     game_result = await session.execute(
         sa.text("""
             SELECT g.id
@@ -589,14 +600,32 @@ async def _claim_tier4_blob(
               )
             ORDER BY
                 -ln(random()) / (
-                    exp(
-                        -EXTRACT(EPOCH FROM (now() - COALESCE(g.full_evals_completed_at, '1970-01-01'::timestamptz)))
-                        / :tau_g
-                    ) + :floor_g
+                    CASE g.time_control_bucket
+                        WHEN 'classical' THEN CAST(:tc_classical AS float8)
+                        WHEN 'rapid'     THEN CAST(:tc_rapid AS float8)
+                        WHEN 'blitz'     THEN CAST(:tc_blitz AS float8)
+                        WHEN 'bullet'    THEN CAST(:tc_bullet AS float8)
+                        ELSE CAST(:tc_other AS float8)
+                    END
+                    * (
+                        exp(
+                            -EXTRACT(EPOCH FROM (now() - COALESCE(g.full_evals_completed_at, '1970-01-01'::timestamptz)))
+                            / :tau_g
+                        ) + :floor_g
+                    )
                 )
             LIMIT 1
         """),
-        {"picked_user": picked_user_id, "tau_g": tau_g_seconds, "floor_g": floor_g},
+        {
+            "picked_user": picked_user_id,
+            "tau_g": tau_g_seconds,
+            "floor_g": floor_g,
+            "tc_classical": tc_classical,
+            "tc_rapid": tc_rapid,
+            "tc_blitz": tc_blitz,
+            "tc_bullet": tc_bullet,
+            "tc_other": tc_other,
+        },
     )
     game_row = game_result.one_or_none()
     if game_row is None:
