@@ -2883,6 +2883,8 @@ class TestFlawBlobLeaseEndpoint:
     - blob_lease_returns_positions: walkable game → FlawBlobLeaseResponse with tokens
     - blob_lease_token_parses_correctly: tokens parse to (flaw_ply, line, node_k)
     - blob_lease_all_sentinel_game_no_loop: all-sentinel game → 204 (sentinels written, no loop)
+    - blob_lease_over_cap_sentinels_all_null_blob_flaws: >MAX_SUBMIT_EVALS lease positions →
+      204 (not 500), every NULL-blob flaw ply sentineled, existing tactic tags unchanged (SEED-073)
     - blob_lease_does_not_touch_apply_submit: /submit behavior unchanged after adding endpoint
     """
 
@@ -3118,6 +3120,124 @@ class TestFlawBlobLeaseEndpoint:
             )
             assert allowed == [], f"allowed_pv_lines must be sentinel [], got {allowed!r}"
             assert missed == [], f"missed_pv_lines must be sentinel [], got {missed!r}"
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_blob_lease_over_cap_sentinels_all_null_blob_flaws(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """SEED-073: >MAX_SUBMIT_EVALS lease positions → 204 (not 500).
+
+        Fat games used to raise a Pydantic ValidationError when FlawBlobLeaseResponse
+        (positions max_length=MAX_SUBMIT_EVALS) was constructed with an oversized list,
+        surfacing as a 500 and looping forever in the tier-4 lottery. The over-cap branch
+        must sentinel EVERY NULL-blob flaw ply of the game (not just the un-walkable
+        sentinel_lines the mocked builder happens to report) and leave existing tactic
+        tags untouched — sentinel-ing must not run the gated retag.
+
+        Real seeding of >1024 walkable positions is impractical (would require a PGN with
+        hundreds of flaws and long PVs), so _build_flaw_blob_lease_positions is monkeypatched
+        to return an oversized lease_positions list. The NULL-blob flaw plies it sentinels
+        are queried live from real GameFlaw rows, so the write path itself is exercised
+        end-to-end against the real DB.
+        """
+        import app.routers.eval_remote as eval_remote_module
+        from app.models.game_flaw import GameFlaw
+        from app.schemas.eval_remote import MAX_SUBMIT_EVALS, FlawBlobLeasePosition
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(
+            eval_worker_session_maker,
+            user_id,
+            pgn=_FLAW_LEASE_PGN,
+            full_evals_completed_at=datetime.now(timezone.utc),
+        )
+        # Two NULL-blob flaws with pre-existing tactic tags — the over-cap sentinel write
+        # must leave these tags exactly as they were (no gated retag runs).
+        await _insert_flaw_for_lease_test(eval_worker_session_maker, user_id, game_id, ply=2)
+        await _insert_flaw_for_lease_test(eval_worker_session_maker, user_id, game_id, ply=4)
+        async with eval_worker_session_maker() as tag_session:
+            await tag_session.execute(
+                sa.update(GameFlaw)
+                .where(GameFlaw.game_id == game_id, GameFlaw.ply == 2)
+                .values(allowed_tactic_motif=5, missed_tactic_motif=None)
+            )
+            await tag_session.execute(
+                sa.update(GameFlaw)
+                .where(GameFlaw.game_id == game_id, GameFlaw.ply == 4)
+                .values(allowed_tactic_motif=None, missed_tactic_motif=9)
+            )
+            await tag_session.commit()
+
+        monkeypatch.setattr(
+            eval_remote_module,
+            "_claim_tier4_blob",
+            AsyncMock(return_value=(game_id, user_id)),
+        )
+        # Oversized lease: > MAX_SUBMIT_EVALS walkable positions, no sentinel_lines.
+        oversized_positions = [
+            FlawBlobLeasePosition(token=f"2:missed:{k}", fen="8/8/8/8/8/8/8/8 w - - 0 1")
+            for k in range(MAX_SUBMIT_EVALS + 1)
+        ]
+        monkeypatch.setattr(
+            eval_remote_module,
+            "_build_flaw_blob_lease_positions",
+            AsyncMock(return_value=(oversized_positions, set())),
+        )
+
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _FLAW_BLOB_LEASE_URL,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 204, (
+                f"Expected 204 for over-cap game, got {resp.status_code}: {resp.text}"
+            )
+
+            async with eval_worker_session_maker() as verify:
+                flaw_rows = (
+                    await verify.execute(
+                        sa.select(
+                            GameFlaw.ply,
+                            GameFlaw.allowed_pv_lines,
+                            GameFlaw.missed_pv_lines,
+                            GameFlaw.allowed_tactic_motif,
+                            GameFlaw.missed_tactic_motif,
+                        ).where(GameFlaw.game_id == game_id)
+                    )
+                ).all()
+
+            assert len(flaw_rows) == 2, f"Expected 2 flaw rows, got {len(flaw_rows)}"
+            by_ply = {row.ply: row for row in flaw_rows}
+
+            # Zero NULL-blob flaws remain — both plies sentineled in one pass.
+            for ply, row in by_ply.items():
+                assert row.allowed_pv_lines == [], (
+                    f"ply {ply}: allowed_pv_lines must be sentinel [], got {row.allowed_pv_lines!r}"
+                )
+                assert row.missed_pv_lines == [], (
+                    f"ply {ply}: missed_pv_lines must be sentinel [], got {row.missed_pv_lines!r}"
+                )
+
+            # Tactic tags unchanged — the sentinel write does not run the gated retag.
+            assert by_ply[2].allowed_tactic_motif == 5, (
+                "ply 2 allowed_tactic_motif must be unchanged"
+            )
+            assert by_ply[2].missed_tactic_motif is None, (
+                "ply 2 missed_tactic_motif must be unchanged"
+            )
+            assert by_ply[4].allowed_tactic_motif is None, (
+                "ply 4 allowed_tactic_motif must be unchanged"
+            )
+            assert by_ply[4].missed_tactic_motif == 9, "ply 4 missed_tactic_motif must be unchanged"
         finally:
             await _delete_games(eval_worker_session_maker, [game_id])
 
