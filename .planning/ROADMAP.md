@@ -684,10 +684,23 @@ Plans:
 **Plans:** 6 plans
 
 Plans:
+**Wave 1**
 
 - [ ] 147-01-PLAN.md — Part A go-forward: thread blobs_pending → suppress ungated cp tags at _apply_submit (D-01, D-03, D-06)
 - [ ] 147-02-PLAN.md — Part A old-corpus: batched Alembic data migration suppressing raw cp tags with carve-outs (D-03, D-04)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 147-03-PLAN.md — SEED-073 over-cap sentinel prerequisite: fix /flaw-blob-lease 500 on fat games
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 147-04-PLAN.md — Part B: new atomic lease/submit schema pair + /atomic-lease endpoint (D-02)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 147-05-PLAN.md — Part B: atomic /atomic-submit handler — server-authoritative classify + single-transaction gated write (D-01)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 147-06-PLAN.md — Part B: upgraded fleet worker atomic eval+blob rung + dev-first e2e gate (D-05 kept)

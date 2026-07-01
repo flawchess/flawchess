@@ -685,10 +685,13 @@ phase.
 | A2 | The narrower `_run_all_moves_pass`-based worker hint (vs. the full `classify_game_flaws` hint CONTEXT.md describes) is the recommended design | Part B, "Q4 verification" | If the planner picks the full-classify hint instead, the new lease schema needs PGN + Game metadata fields this research's recommended design avoids; not wrong, just a different schema shape — flagged as an explicit planner decision either way. |
 | A3 | SEED-073's fix, or an equivalent, must be implemented as part of (or immediately before) this phase for Part B to work correctly on fat games | Part B, "Landmine: SEED-073" | If skipped, Part B's new endpoint pair 500s on the same fat-game class tier-4 already hits — a real functional bug, not a nice-to-have; HIGH risk if ignored. |
 
-## Open Questions
+## Open Questions (RESOLVED during planning)
+
+> RESOLVED: all three questions were closed by the Phase 147 plan set (commit `d7371653`). Markers added post-planning so future readers don't treat this section as still-open.
 
 1. **Should Part B's new lease response include PGN, or should the worker's hint use the narrower
    `_run_all_moves_pass` (no PGN needed)?**
+   - **RESOLVED (147-04):** narrower `_run_all_moves_pass` hint; lease stays FEN-only, no PGN.
    - What we know: both are technically viable; `classify_game_flaws` is confirmed pure either way.
    - What's unclear: whether the planner values reusing the exact `classify_game_flaws` entry point
      (simplicity, single code path) over the smaller payload/dependency footprint of the narrower
@@ -697,7 +700,9 @@ phase.
      for full tactic-motif detection in the worker's hint emerges (e.g. future per-motif
      back-pressure or worker-side prioritization by motif type — none exists today).
 
-2. **Where does SEED-073's over-cap fix land — as an explicit Phase 147 task, or as a quick task
+2. **RESOLVED (147-03):** folded into this phase as a standalone Part-B-prerequisite plan (wave 2), not a separate quick task.
+
+   **Where does SEED-073's over-cap fix land — as an explicit Phase 147 task, or as a quick task
    shipped just before this phase executes?**
    - What we know: it's required either way for Part B to function on fat games; it's small
      (SEED-073 estimates ~5 lines).
@@ -708,7 +713,9 @@ phase.
    - Recommendation: include it as an explicit first task in Part B's plan (small, well-scoped,
      already fully speced in the seed file) rather than assuming it's out of scope.
 
-3. **Exact prod row count for the old-corpus migration** — not verified this session (tooling
+3. **RESOLVED (147-02, non-blocking):** deferred to a documented manual `user_setup` step; batch size is index-driven and safe regardless of exact count, so this does not gate execution.
+
+   **Exact prod row count for the old-corpus migration** — not verified this session (tooling
    access gap, see Assumption A1). Recommend the planner or a human run the query above via
    `bin/prod_db_tunnel.sh` + the `flawchess-prod-db` MCP tool before finalizing the batch size /
    sizing the deploy-downtime impact.
