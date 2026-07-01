@@ -533,14 +533,28 @@ async def claim_eval_job(
     D-05 scope param (Phase 123 SEED-051):
       None     → bundled tier-1>2>3>4 behavior (backward-compat for un-updated workers).
       "explicit" → tier-1/2 only (_claim_queued_job); return None if empty (skip tier-3/4).
-      "idle"   → tier-3/4 only (still gated by EVAL_AUTO_DRAIN_ENABLED).
+      "idle"   → tier-3 only (still gated by EVAL_AUTO_DRAIN_ENABLED).
 
     Tier-4 (TIER_BLOB_BACKFILL) fires only after tier-1/2/3 fall through AND only
     under EVAL_AUTO_DRAIN_ENABLED — spare-capacity flaw-blob backfill (Phase 145).
 
+    SEED-072: tier-4 is NOT served through the idle `/lease` path. Phase 146 removed the
+    inline server walk that used to fill blobs on the `/submit` path (`_apply_submit` now
+    forces `blob_map={}`), so a tier-4 game re-evaluated via `/lease` → `/submit` writes no
+    blob and stays NULL-blob → gets re-served indefinitely (~5:1 submit:completion waste,
+    `/lease?scope=idle` never 204s, gating backfill starved). Remote workers must instead
+    fall through to their dedicated rung-4 `/flaw-blob-lease` (→ `_claim_tier4_blob` →
+    MultiPV-2 continuation → `/flaw-blob-submit`), the only post-146 path that writes blobs.
+    So the idle scope returns None (→ 204) once tier-3 is empty. The bundled `scope=None`
+    path below DOES keep tier-4: its sole consumer is the in-process server-pool drain
+    (eval_drain.run_one_full_eval_tick), which writes blobs via the MultiPV-2 pass
+    (_build_flaw_multipv2_blobs → _run_multipv2_pass) — not the broken `/submit` path.
+
     Returns ClaimedJob or None when there is nothing to process.
     """
-    # scope="idle" → skip tier-1/2 entirely; go straight to tier-3, then tier-4.
+    # scope="idle" → skip tier-1/2 entirely; go straight to tier-3.
+    # Tier-4 is intentionally NOT reached here (SEED-072); an empty tier-3 returns
+    # None → 204 so the remote worker drains tier-4 via /flaw-blob-lease instead.
     if scope == "idle":
         if not settings.EVAL_AUTO_DRAIN_ENABLED:
             return None
@@ -555,19 +569,7 @@ async def claim_eval_job(
                 is_lichess_eval_game=is_lichess_eval_game_idle,
                 job_id=None,
             )
-        # Tier-3 empty → try tier-4 blob-backfill (same EVAL_AUTO_DRAIN_ENABLED gate).
-        async with async_session_maker() as session:
-            blob_pick = await _claim_tier4_blob(session)
-        if blob_pick is None:
-            return None
-        game_id_blob, user_id_blob = blob_pick
-        return ClaimedJob(
-            game_id=game_id_blob,
-            user_id=user_id_blob,
-            tier=TIER_BLOB_BACKFILL,
-            is_lichess_eval_game=False,  # resolved in Plan-03 lease handler (Pitfall 6)
-            job_id=None,
-        )
+        return None
 
     async with async_session_maker() as session:
         # Sweep expired leases first so they re-enter the queue.
@@ -618,6 +620,9 @@ async def claim_eval_job(
     # Tier-3 empty → fall through to tier-4 blob-backfill spare-capacity lottery.
     # Same EVAL_AUTO_DRAIN_ENABLED gate (already checked above); live tier-1/2/3
     # work always preempts tier-4 (D-02).
+    # SEED-072: retained here (unlike the idle scope) because the only bundled-path
+    # consumer is the in-process server-pool drain (eval_drain.run_one_full_eval_tick),
+    # which writes blobs via the MultiPV-2 pass — not the broken `/submit` path.
     async with async_session_maker() as session:
         blob_pick = await _claim_tier4_blob(session)
 

@@ -42,6 +42,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Fixed
 
+- **Forcing-line gate backfill un-stalled** — the spare-capacity backfill that re-tags your whole game history through the forcing-line gate was stuck: after Phase 146 the remote-worker fleet was re-evaluating already-analyzed games in a loop instead of filling the gating data, so the re-tag never progressed. Fixed the routing so idle workers drain the backfill through the dedicated path that actually writes it; the fleet's spare capacity now goes to completing the re-tag instead of redundant re-analysis. No change to your evals, tactic tags, or blunder/mistake counts. (Quick 260701-93s)
+
 - **Installed PWA no longer serves a stale layout after a deploy** — the app shell is now fetched fresh from the network whenever you're online (it was previously served from the service worker's cache, which could be many deploys old, e.g. missing the Library nav button until a manual reload). Update checks also now run when you reopen or refocus the installed app, not just on a slow timer, so a backgrounded phone PWA picks up the latest version on resume. (Quick 260629-pq8)
 
 ## [v1.28] Tactic Tagging — 2026-06-25
