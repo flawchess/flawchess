@@ -148,3 +148,89 @@ class FlawBlobSubmitResponse(BaseModel):
 
     game_id: int
     blobs_written: int  # number of flaw rows updated (blobs + sentinels [] counts)
+
+
+# ─── Phase 147 SEED-074 Part B: atomic lease/submit schema pair (D-02) ────────
+#
+# NEW, ISOLATED schema set for the versioned lease+submit endpoint pair
+# (POST /eval/remote/atomic-lease + POST /eval/remote/atomic-submit). Per D-02
+# this is a NEW pair, not an overload of LeaseResponse/SubmitRequest or the
+# tier-4 FlawBlob* pair above — the old pair stays deprecated (not removed)
+# during a mixed-fleet deploy (old evals-only workers + upgraded evals+blobs
+# workers running simultaneously).
+#
+# The lease payload stays FEN-per-ply (Q4: narrower `_run_all_moves_pass`-based
+# worker hint design, RESEARCH.md A2) — no PGN, no Game metadata is added. The
+# upgraded worker classifies locally purely as a HINT (which plies are flaws),
+# builds its own MultiPV-2 continuation blobs for those plies, and submits
+# full-ply evals + blob nodes together. The server re-runs its OWN
+# classify_game_flaws authoritatively at submit time — it never trusts the
+# worker's local hint-classify as ground truth.
+
+
+class AtomicLeaseResponse(BaseModel):
+    """Lease response for the atomic (versioned) eval+blob worker pipeline."""
+
+    game_id: int
+    user_id: int  # informational: the game's authoritative owner (not trusted on submit)
+    is_lichess_eval_game: bool
+    positions: list[LeasePosition]  # FEN-per-ply — reuses the existing lease position shape
+    leased_at: datetime
+    # Opaque eval_jobs.id token; None for tier-3 derived picks (no eval_jobs row).
+    # The worker echoes this back on submit so the server can stamp eval_jobs.
+    job_id: int | None = None
+
+
+class AtomicSubmitEval(BaseModel):
+    """One full-ply engine result (mirrors SubmitEval — MultiPV-1, Phase 146 D-03)."""
+
+    ply: int = Field(ge=0)
+    eval_cp: int | None
+    eval_mate: int | None
+    best_move: str | None  # UCI string
+    pv: str | None  # space-joined UCI, up to 12 plies
+
+
+class AtomicBlobNode(BaseModel):
+    """One MultiPV-2 continuation-blob node for a flaw ply (mirrors FlawBlobSubmitEval)."""
+
+    token: str  # "{flaw_ply}:{line}:{node_k}" — opaque to worker (D-04a scheme, reused)
+    best_cp: int | None
+    best_mate: int | None
+    second_cp: int | None
+    second_mate: int | None
+    # Wire type is str|None: None = single-legal-move sentinel on the wire.
+    # The server maps None -> "" when assembling PvNode blobs (Pitfall 3).
+    second_uci: str | None
+
+
+# Distinct DoS cap from MAX_SUBMIT_EVALS (D-02) — do NOT reuse or raise the
+# shared eval cap for the blob-node list. SEED-073 already documents why
+# MAX_SUBMIT_EVALS is a fixed DoS-guard constant, not meant to grow; the same
+# reasoning applies here with its own, independently-tunable cap.
+MAX_SUBMIT_BLOB_NODES: int = 1024
+
+
+class AtomicSubmitRequest(BaseModel):
+    """Worker submit payload: full-ply evals + MultiPV-2 blob nodes, submitted together."""
+
+    game_id: int
+    sf_version: str  # e.g. "Stockfish 18" — for D-5 version gate
+    # Q5 (Claude's Discretion, RESEARCH.md): observability/rejection of egregiously
+    # stale workers only — correctness is never gated on this field. The server
+    # re-classifies authoritatively regardless, and Part A's NULL suppression is
+    # the graceful-degradation net under worker/server version skew.
+    worker_schema_version: int
+    evals: list[AtomicSubmitEval] = Field(max_length=MAX_SUBMIT_EVALS)
+    blob_nodes: list[AtomicBlobNode] = Field(max_length=MAX_SUBMIT_BLOB_NODES)
+    # Opaque eval_jobs.id token echoed from the lease response; None for tier-3
+    # or for a worker that doesn't include the field.
+    job_id: int | None = None
+
+
+class AtomicSubmitResponse(BaseModel):
+    """Submit acknowledgement: game id + how many flaw/blob rows were written."""
+
+    game_id: int
+    flaws_written: int
+    blobs_written: int
