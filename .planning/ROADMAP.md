@@ -32,7 +32,7 @@
 - ✅ **v1.27 Remote Eval Worker Fan-Out & In-App Feedback** — Phases 121–123 (shipped 2026-06-16; releases #199, #202, #203) — see [milestones/v1.27-ROADMAP.md](milestones/v1.27-ROADMAP.md)
 - ✅ **v1.28 Tactic Tagging** — Phases 124–135 (incl. 123.1, 128.1; Phase 130 superseded by 131–134) (shipped 2026-06-25) — see [milestones/v1.28-ROADMAP.md](milestones/v1.28-ROADMAP.md)
 - ✅ **v1.29 Live-Engine Analysis Page** — Phases 136–140 (shipped 2026-06-29; released #227) — see [milestones/v1.29-ROADMAP.md](milestones/v1.29-ROADMAP.md)
-- [ ] **v1.30 Forcing-Line Tactic Gate** — Phases 141–145 (in progress)
+- [x] **v1.30 Forcing-Line Tactic Gate** — Phases 141–145 shipped (released #229, 2026-06-30); Phase 146 (SEED-071) is a post-release follow-on
 
 ## Progress
 
@@ -95,8 +95,9 @@
 | 141. JSONB Schema + Gate Logic | 2/2 | Complete    | 2026-06-29 |
 | 142. MultiPV=2 Engine Pass + Eval Drain + Remote Worker | 4/4 | Complete    | 2026-06-29 |
 | 143. Offline Re-tagger | 3/3 | Complete    | 2026-06-30 |
-| 144. User-28 A/B Validation | 1/2 | In Progress|  |
-| 145. Corpus Backfill + Rollout | 5/6 | In Progress|  |
+| 144. User-28 A/B Validation | 2/2 | Complete (shipped v1.30) | 2026-06-30 |
+| 145. Corpus Backfill + Rollout | 6/6 | Complete (code shipped v1.30 #229; prod drain via Phase 146) | 2026-06-30 |
+| 146. Offload live-submit continuation eval to remote worker (SEED-071) | 2/2 | Complete   | 2026-06-30 |
 
 ## v1.30 Forcing-Line Tactic Gate (Phases 141–145)
 
@@ -107,8 +108,8 @@
 - [x] **Phase 141: JSONB Schema + Gate Logic** — Alembic migration + pure-math forcing_line_gate module with all named constants; query-site audit (completed 2026-06-29)
 - [x] **Phase 142: MultiPV=2 Engine Pass + Eval Drain + Remote Worker** — _analyse_multipv2 method + eval drain step 3b + backward-compatible remote-worker wiring; margin histogram gate before merge (completed 2026-06-30)
 - [x] **Phase 143: Offline Re-tagger** — scripts/retag_flaws.py with mate-priority hierarchy, solver/defender parity, --dry-run/--margin/--user-id flags; explicit unit tests for mate and defender-branch cases (completed 2026-06-30)
-- [ ] **Phase 144: User-28 A/B Validation** — engine-free old-vs-new diff on stored MultiPV evals; per-motif removed/survived counts; hand-check ~30 dropped cases; commit final margin
-- [ ] **Phase 145: Corpus Backfill + Rollout** — backfill_multipv.py --db prod + retag_flaws.py --db prod; WHERE allowed_pv_lines IS NULL idempotency; per-motif chip counts before/after
+- [x] **Phase 144: User-28 A/B Validation** — engine-free old-vs-new diff on stored MultiPV evals; per-motif removed/survived counts; hand-check ~30 dropped cases; commit final margin (completed 2026-06-30, shipped in v1.30)
+- [x] **Phase 145: Corpus Backfill + Rollout** — backfill_multipv.py --db prod + retag_flaws.py --db prod; WHERE allowed_pv_lines IS NULL idempotency; per-motif chip counts before/after (code completed 2026-06-30, shipped in v1.30 / PR #229; prod backfill *drain* + D-08 sweep + after-snapshot deferred to the Phase 146 upgraded-worker deploy)
 
 ### Phase Details
 
@@ -661,3 +662,16 @@ See [milestones/v1.14-ROADMAP.md](milestones/v1.14-ROADMAP.md) for full details.
 See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 
 </details>
+
+### Phase 146: Offload live-submit forcing-line continuation eval to the remote worker
+
+**Goal:** Stop the live `/eval/remote/submit` path from running server-side Stockfish. Phase 142 made every worker submit synchronously evaluate the MultiPV-2 forcing-line continuation nodes inline before responding (`_apply_submit` → `_build_flaw_multipv2_blobs`), which surfaces as worker `ReadTimeout`s under load (Sentry FLAWCHESS-7Y) and contends with tier-3 drain. Per the locked SEED-071 Option 2, move the continuation eval onto the remote fleet: the live submit applies evals + classifies flaws + stamps `full_evals_completed` leaving `allowed_pv_lines`/`missed_pv_lines` NULL (matching the existing tier-4 backfill predicate), then the freshly-submitted game drains through the existing Phase-145 flaw-blob lease/submit + D-07 gated-retag path. Server runs zero Stockfish on the live path; unifies live and backfill.
+**Requirements**: TBD
+**Depends on:** Phase 145
+**Reference:** `.planning/seeds/SEED-071-live-submit-continuation-eval-bottleneck.md` (DECIDED APPROACH: Option 2, LOCKED 2026-07-01)
+**Plans:** 2/2 plans complete
+
+Plans:
+
+- [x] 146-01-PLAN.md — Server live-path offload: force blob_map={} in _apply_submit, drop second-best from SubmitEval (D-03), recency-order _claim_tier4_blob (D-01)
+- [x] 146-02-PLAN.md — Fleet-worker tier-4 drain rung (D-04), full-ply MultiPV-1 reduction, restore HTTP_TIMEOUT_S=30

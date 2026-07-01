@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -28,8 +28,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scripts.remote_eval_worker import (
     _WORKER_ID_ALPHABET,
     _WORKER_ID_DEFAULT_LEN,
+    HTTP_TIMEOUT_S,
     WORKER_ID_MAX_LEN,
     _eval_entry_positions,
+    _eval_flaw_blob_positions,
     _generate_worker_id,
     _run_cycle,
     parse_args,
@@ -281,3 +283,184 @@ async def test_entry_eval_uses_depth15_not_evaluate_nodes_with_pv() -> None:
     for r in results:
         assert "best_move" not in r, "Entry-ply results must not contain best_move"
         assert "pv" not in r, "Entry-ply results must not contain pv"
+
+
+# ─── D-04 tier-4 flaw-blob drain rung tests (Phase 146) ─────────────────────
+
+
+async def test_ladder_flaw_blob_on_all_tier123_204() -> None:
+    """When all tier-1/2/3 rungs return 204, the worker reaches rung 4 (flaw-blob-lease).
+
+    On a 200 flaw-blob-lease response, the cycle evaluates at MultiPV=2 and POSTs to
+    /flaw-blob-submit. Both URLs must appear in the client.post call list (D-04).
+    """
+    blob_lease_body = {
+        "game_id": 7,
+        "positions": [
+            {
+                "token": "10:missed:0",
+                "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+            }
+        ],
+        "leased_at": "2026-07-01T10:00:00Z",
+    }
+    submit_body = {"game_id": 7, "blobs_written": 1}
+
+    client = AsyncMock()
+    client.post = AsyncMock(
+        side_effect=[
+            _make_response(204),  # /lease?scope=explicit
+            _make_response(204),  # /entry-lease
+            _make_response(204),  # /lease?scope=idle
+            _make_response(200, blob_lease_body),  # /flaw-blob-lease
+            _make_response(200, submit_body),  # /flaw-blob-submit
+        ]
+    )
+
+    pool = AsyncMock()
+    # evaluate_nodes_multipv2 returns 7-tuple (D-04 blob rung keeps MultiPV-2)
+    pool.evaluate_nodes_multipv2 = AsyncMock(
+        return_value=(100, None, "e2e4", "e2e4 e7e5", 50, None, "d2d4")
+    )
+
+    await _run_cycle(
+        client=client,
+        pool=pool,
+        sf_version="sf18",
+        idle_sleep=1.0,
+        dry_run=False,
+        loop=False,
+    )
+
+    called_urls = [c.args[0] for c in client.post.call_args_list]
+    assert "/api/eval/remote/flaw-blob-lease" in called_urls, (
+        "rung-4 /flaw-blob-lease was not called after all tier-1/2/3 returned 204"
+    )
+    assert "/api/eval/remote/flaw-blob-submit" in called_urls, (
+        "/flaw-blob-submit was not POSTed after a 200 from /flaw-blob-lease"
+    )
+
+
+async def test_ladder_all_queues_empty_sleeps_once() -> None:
+    """When all four tiers (including rung-4 flaw-blob) return 204, the worker sleeps exactly once.
+
+    Regression guard: rung-4 must not introduce a double-sleep (T-146-06).
+    """
+    client = AsyncMock()
+    client.post = AsyncMock(
+        side_effect=[
+            _make_response(204),  # /lease?scope=explicit
+            _make_response(204),  # /entry-lease
+            _make_response(204),  # /lease?scope=idle
+            _make_response(204),  # /flaw-blob-lease
+        ]
+    )
+    pool = AsyncMock()
+
+    with patch("scripts.remote_eval_worker.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        await _run_cycle(
+            client=client,
+            pool=pool,
+            sf_version="sf18",
+            idle_sleep=1.0,
+            dry_run=False,
+            loop=False,
+        )
+        mock_sleep.assert_awaited_once_with(1.0)
+
+    # Confirm rung-4 was actually reached (not just 3-rung sleep)
+    called_urls = [c.args[0] for c in client.post.call_args_list]
+    assert "/api/eval/remote/flaw-blob-lease" in called_urls, (
+        "rung-4 /flaw-blob-lease was not called — sleep may have fired from rung 3 tail"
+    )
+
+
+async def test_eval_flaw_blob_positions_maps_indices_correctly() -> None:
+    """_eval_flaw_blob_positions maps r[0]/r[1]/r[4]/r[5]/r[6]; never r[2]/r[3].
+
+    evaluate_nodes_multipv2 returns (eval_cp, eval_mate, best_move, pv,
+    second_cp, second_mate, second_uci). Fields r[2] (best_move) and r[3] (pv)
+    must NOT appear in the output dict. Token is echoed unchanged (D-04a).
+    """
+    pool = AsyncMock()
+    # 7-tuple: (eval_cp=100, eval_mate=None, best_move="e2e4", pv="e2e4 e7e5",
+    #            second_cp=50, second_mate=None, second_uci="d2d4")
+    pool.evaluate_nodes_multipv2 = AsyncMock(
+        return_value=(100, None, "e2e4", "e2e4 e7e5", 50, None, "d2d4")
+    )
+
+    positions: list[dict[str, object]] = [
+        {
+            "token": "10:missed:0",
+            "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+        }
+    ]
+    results = await _eval_flaw_blob_positions(pool, positions)
+
+    assert len(results) == 1
+    r = results[0]
+    assert r["token"] == "10:missed:0", "Token must be echoed unchanged (D-04a)"
+    assert r["best_cp"] == 100, "best_cp must be r[0] (eval_cp)"
+    assert r["best_mate"] is None, "best_mate must be r[1] (eval_mate)"
+    assert r["second_cp"] == 50, "second_cp must be r[4]"
+    assert r["second_mate"] is None, "second_mate must be r[5]"
+    assert r["second_uci"] == "d2d4", "second_uci must be r[6]"
+    assert "best_move" not in r, "r[2] (best_move) must NOT leak into the output dict"
+    assert "pv" not in r, "r[3] (pv) must NOT leak into the output dict"
+
+
+# ─── MultiPV-1 full-ply reduction + HTTP_TIMEOUT_S tests (Phase 146 Task 2) ──
+
+
+def test_http_timeout_s_restored_to_30() -> None:
+    """HTTP_TIMEOUT_S must be 30.0 — the SEED-071 120s stopgap is removed in Phase 146.
+
+    After Phase 146 the live /submit no longer calls any engine, so the p99 latency
+    drops well below 30s. 30s provides a 10x safety margin (RESEARCH §5).
+    """
+    assert HTTP_TIMEOUT_S == 30.0, (
+        f"HTTP_TIMEOUT_S is {HTTP_TIMEOUT_S}, expected 30.0. "
+        "Remove the SEED-071 stopgap comment and restore the original value."
+    )
+
+
+async def test_eval_positions_uses_multipv1_no_second_best() -> None:
+    """_eval_positions (full-ply pass) uses evaluate_nodes_with_pv (4-tuple, MultiPV-1).
+
+    Second-best fields (second_cp/second_mate/second_uci) must be absent from the output
+    dict — they were dropped from SubmitEval in Plan 01 (D-03). The tier-4 blob rung
+    (_eval_flaw_blob_positions) keeps evaluate_nodes_multipv2; the full-ply rung does not.
+    """
+    from scripts.remote_eval_worker import _eval_positions
+
+    pool = AsyncMock()
+    # evaluate_nodes_with_pv returns 4-tuple (eval_cp, eval_mate, best_move, pv)
+    pool.evaluate_nodes_with_pv = AsyncMock(return_value=(100, None, "e2e4", "e2e4 e7e5"))
+    # evaluate_nodes_multipv2 must NOT be called on the full-ply path
+    pool.evaluate_nodes_multipv2 = AsyncMock(
+        return_value=(99, None, "e2e4", "e2e4", 50, None, "d2d4")
+    )
+
+    positions: list[dict[str, object]] = [
+        {
+            "ply": 2,
+            "fen": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
+            "is_terminal": False,
+        }
+    ]
+    results = await _eval_positions(pool, positions)
+
+    assert len(results) == 1
+    r = results[0]
+    assert r["ply"] == 2
+    assert r["eval_cp"] == 100
+    assert r["eval_mate"] is None
+    assert r["best_move"] == "e2e4"
+    assert r["pv"] == "e2e4 e7e5"
+    # Second-best keys must be absent (D-03 consequence: SubmitEval dropped them)
+    assert "second_cp" not in r, "second_cp must not appear in full-ply output (D-03)"
+    assert "second_mate" not in r, "second_mate must not appear in full-ply output (D-03)"
+    assert "second_uci" not in r, "second_uci must not appear in full-ply output (D-03)"
+    # Confirm MultiPV-1 path was used (not MultiPV-2)
+    pool.evaluate_nodes_with_pv.assert_called_once()
+    pool.evaluate_nodes_multipv2.assert_not_called()
