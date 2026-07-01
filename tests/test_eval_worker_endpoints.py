@@ -3294,6 +3294,208 @@ class TestFlawBlobLeaseEndpoint:
             await _delete_games(eval_worker_session_maker, [game_id])
 
 
+# ─── Phase 147 Plan 04 Task 2: POST /eval/remote/atomic-lease (SEED-074 Part B) ──
+
+_ATOMIC_LEASE_URL = "/api/eval/remote/atomic-lease"
+
+
+class TestAtomicLeaseEndpoint:
+    """Tests for the NEW /atomic-lease endpoint (D-02 — does not touch /lease).
+
+    - test_atomic_lease_requires_operator_token: empty server token → 403.
+    - test_atomic_lease_wrong_operator_token: configured token, wrong header → 401.
+    - test_atomic_lease_no_pending_games: no eligible game → 204.
+    - test_atomic_lease_returns_positions: eligible game → 200, well-formed
+      AtomicLeaseResponse (FEN-per-ply positions, exactly one is_terminal=True).
+    - test_atomic_lease_over_cap_releases_job_and_returns_204: >MAX_SUBMIT_EVALS
+      lease positions → 204, not 500 (147-03/SEED-073 over-cap sentinel pattern);
+      a held tier-1/2 job is released back to 'pending' instead of staying leased.
+    """
+
+    @pytest.mark.asyncio
+    async def test_atomic_lease_requires_operator_token(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Empty server EVAL_OPERATOR_TOKEN → 403 (fail-closed per T-120-01)."""
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", "")
+        async with _make_client() as client:
+            response = await client.post(_ATOMIC_LEASE_URL)
+        assert response.status_code == 403, (
+            f"Expected 403, got {response.status_code}: {response.text}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_atomic_lease_wrong_operator_token(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Configured token but wrong header value → 401."""
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        async with _make_client() as client:
+            response = await client.post(
+                _ATOMIC_LEASE_URL, headers={"X-Operator-Token": "wrong-secret"}
+            )
+        assert response.status_code == 401, (
+            f"Expected 401, got {response.status_code}: {response.text}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_atomic_lease_no_pending_games(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """No eligible game in the queue → 204 (empty response)."""
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        import app.routers.eval_remote as eval_remote_module
+
+        monkeypatch.setattr(eval_remote_module, "claim_eval_job", AsyncMock(return_value=None))
+
+        async with _make_client() as client:
+            response = await client.post(
+                _ATOMIC_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN}
+            )
+        assert response.status_code == 204, (
+            f"Expected 204, got {response.status_code}: {response.text}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_atomic_lease_returns_positions(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """Eligible game → 200 with a well-formed AtomicLeaseResponse.
+
+        Mirrors test_lease_returns_positions: seeds a 4-half-move game, claims it as
+        a tier-3 pick, asserts the same FEN-per-ply shape (positions non-empty,
+        exactly one is_terminal=True, every position has a non-empty FEN).
+        """
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(eval_worker_session_maker, user_id)
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            game_id,
+            [
+                {"ply": ply, "full_hash": 51000 + ply, "eval_cp": None, "eval_mate": None}
+                for ply in range(4)
+            ],
+        )
+
+        import app.routers.eval_remote as eval_remote_module
+
+        monkeypatch.setattr(
+            eval_remote_module,
+            "claim_eval_job",
+            AsyncMock(
+                return_value=ClaimedJob(
+                    game_id=game_id,
+                    user_id=user_id,
+                    tier=3,
+                    is_lichess_eval_game=False,
+                    job_id=None,
+                )
+            ),
+        )
+
+        try:
+            async with _make_client() as client:
+                response = await client.post(
+                    _ATOMIC_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN}
+                )
+
+            assert response.status_code == 200, (
+                f"Expected 200, got {response.status_code}: {response.text}"
+            )
+            body = response.json()
+            assert body["game_id"] == game_id
+            assert body["user_id"] == user_id
+            assert body["is_lichess_eval_game"] is False
+            assert body["job_id"] is None
+
+            positions = body["positions"]
+            assert len(positions) > 0, "positions must be non-empty"
+
+            terminal_positions = [p for p in positions if p["is_terminal"]]
+            assert len(terminal_positions) == 1, (
+                f"Expected exactly 1 is_terminal=True position, got {len(terminal_positions)}: "
+                f"{terminal_positions}"
+            )
+            for pos in positions:
+                assert pos["fen"], f"position at ply {pos['ply']} has empty FEN"
+                assert "ply" in pos and isinstance(pos["ply"], int)
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_atomic_lease_over_cap_releases_job_and_returns_204(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """>MAX_SUBMIT_EVALS lease positions → 204, not 500 (over-cap sentinel).
+
+        A real chess game essentially never reaches MAX_SUBMIT_EVALS (1024) plies,
+        so _build_lease_positions is monkeypatched to return an oversized list
+        (mirroring how 147-03's flaw-blob-lease over-cap test simulates a fat
+        game). The held tier-1 job must be released back to 'pending' rather than
+        left stuck 'leased' — asserted via a spied release_job.
+        """
+        from app.schemas.eval_remote import MAX_SUBMIT_EVALS, LeasePosition
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        import app.routers.eval_remote as eval_remote_module
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(eval_worker_session_maker, user_id)
+        held_job_id = 424242
+
+        monkeypatch.setattr(
+            eval_remote_module,
+            "claim_eval_job",
+            AsyncMock(
+                return_value=ClaimedJob(
+                    game_id=game_id,
+                    user_id=user_id,
+                    tier=1,
+                    is_lichess_eval_game=False,
+                    job_id=held_job_id,
+                )
+            ),
+        )
+        release_job_mock = AsyncMock(return_value=None)
+        monkeypatch.setattr(eval_remote_module, "release_job", release_job_mock)
+
+        oversized_positions = [
+            LeasePosition(ply=ply, fen="8/8/8/8/8/8/8/8 w - - 0 1", is_terminal=False)
+            for ply in range(MAX_SUBMIT_EVALS + 1)
+        ]
+        monkeypatch.setattr(
+            eval_remote_module,
+            "_build_lease_positions",
+            lambda *args, **kwargs: oversized_positions,
+        )
+
+        try:
+            async with _make_client() as client:
+                response = await client.post(
+                    _ATOMIC_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN}
+                )
+            assert response.status_code == 204, (
+                f"Expected 204 for over-cap game, got {response.status_code}: {response.text}"
+            )
+            release_job_mock.assert_awaited_once_with(held_job_id)
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+
 # ─── Phase 145 Plan 04 Task 1: blob assembly from worker results (TDD RED) ───
 
 

@@ -12,6 +12,11 @@ POST /eval/remote/entry-lease  — (Phase 123 SEED-051 D-07) claim a batch of pe
                                  gates this endpoint; returns 204 when backlog < threshold.
 POST /eval/remote/entry-submit — (Phase 123 SEED-051 D-07) apply depth-15 entry-ply evals
                                  via the no-shift SEED-044 write path (_apply_eval_results).
+POST /eval/remote/atomic-lease — (Phase 147 SEED-074 Part B, D-02) NEW versioned lease for the
+                                 upgraded eval+blob worker pipeline. Claims via claim_eval_job
+                                 UNCHANGED (tier-1 > tier-2 > tier-3), returns the same
+                                 FEN-per-ply shape as /lease. Runs alongside the old /lease pair
+                                 (not a replacement) during a mixed-fleet deploy.
 
 All endpoints require the X-Operator-Token header (T-120-01 operator auth gate).
 403 when the token is not configured on the server (fail-closed); 401 when it does
@@ -21,6 +26,7 @@ Expected / non-exception status codes (do NOT Sentry-capture):
   403 — token not configured
   401 — wrong token
   204 — empty queue (lease) or lichess game deferred (lease) or shallow backlog (entry-lease)
+        or over-cap fat game (atomic-lease)
   422 — SF version mismatch (submit / entry-submit)
   404 — game not found (submit)
 
@@ -48,6 +54,7 @@ from app.models.game import Game
 from app.models.game_position import GamePosition
 from app.schemas.eval_remote import (
     MAX_SUBMIT_EVALS,
+    AtomicLeaseResponse,
     EntryLeasePosition,
     EntryLeaseResponse,
     EntrySubmitRequest,
@@ -473,6 +480,101 @@ async def lease_eval_game(
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     return LeaseResponse(
+        game_id=game_id,
+        user_id=user_id,
+        is_lichess_eval_game=False,
+        positions=positions,
+        leased_at=datetime.now(timezone.utc),
+        job_id=claim.job_id,
+    )
+
+
+@router.post("/atomic-lease", response_model=None)
+async def atomic_lease_eval_game(
+    _auth: Annotated[None, Depends(require_operator_token)],
+    worker_id: Annotated[str, Depends(worker_id_label)],
+    scope: Annotated[Literal["explicit", "idle"] | None, Query()] = None,
+) -> Response | AtomicLeaseResponse:
+    """Claim the next eval game for the atomic (versioned) eval+blob worker pipeline.
+
+    NEW endpoint pair (Phase 147 SEED-074 Part B, D-02) — does NOT modify /lease
+    or /submit; both stay live and deprecated for a mixed-fleet deploy. Selects
+    games with the IDENTICAL claim_eval_job priority (tier-1 > tier-2 > tier-3,
+    SKIP LOCKED, stale-lease sweep) and returns the same FEN-per-ply lease shape
+    _build_lease_positions already produces (Q4 narrower-hint design — no PGN,
+    no Game metadata added to the payload).
+
+    The upgraded worker classifies the leased positions locally purely as a HINT
+    (which plies look like flaws), builds its own MultiPV-2 continuation blobs for
+    those plies, and submits full-ply evals + blob nodes together via the paired
+    /atomic-submit endpoint (147-05). The server re-runs classify_game_flaws
+    authoritatively there — it never trusts the worker's local hint-classify.
+
+    Returns 204 when no eligible game is in the queue, when the claimed game is a
+    lichess-eval game (PV-backfill path deferred, mirrors /lease), or when the
+    game's lease payload would exceed MAX_SUBMIT_EVALS positions (over-cap
+    sentinel — reuses the 147-03/SEED-073 "never construct an oversized response,
+    204 instead of 500" pattern). A real chess game essentially never reaches
+    MAX_SUBMIT_EVALS (1024) plies, so this is defense-in-depth, not an expected
+    path; the claimed job (if any) is released back to 'pending' rather than
+    stuck 'leased' for the full TTL, mirroring the lichess-eval-game skip above.
+    """
+    # claim_eval_job owns its sessions — no caller session context needed.
+    claim = await claim_eval_job(worker_id=worker_id, scope=scope)
+
+    if claim is None:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    game_id = claim.game_id
+    user_id = claim.user_id
+    is_lichess_eval_game = claim.is_lichess_eval_game
+
+    # D-4 / v1 scope: lichess PV-backfill games deferred (mirrors /lease).
+    if is_lichess_eval_game:
+        if claim.job_id is not None:
+            await release_job(claim.job_id)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    # Load PGN + game_positions in a second short read session.
+    async with async_session_maker() as read_session:
+        game_result = await read_session.execute(
+            sa.select(Game.pgn, Game.user_id).where(Game.id == game_id)
+        )
+        row = game_result.one_or_none()
+        if row is None:
+            return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+        pgn_text: str = row.pgn
+
+        gp_result = await read_session.execute(
+            select(
+                GamePosition.ply,
+                GamePosition.full_hash,
+                GamePosition.eval_cp,
+                GamePosition.eval_mate,
+            ).where(
+                GamePosition.game_id == game_id,
+                GamePosition.user_id == row.user_id,
+            )
+        )
+        gp_rows: list[tuple[int, int, int | None, int | None]] = [
+            (r.ply, r.full_hash, r.eval_cp, r.eval_mate) for r in gp_result.all()
+        ]
+    # read_session closed
+
+    positions = _build_lease_positions(game_id, pgn_text, gp_rows)
+    if positions is None:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    # SEED-073/147-03 over-cap sentinel pattern: never construct an oversized
+    # lease response. Release the job (if any) so it does not stay stuck
+    # 'leased' for the full TTL instead of going back to 'pending' immediately.
+    if len(positions) > MAX_SUBMIT_EVALS:
+        if claim.job_id is not None:
+            await release_job(claim.job_id)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    return AtomicLeaseResponse(
         game_id=game_id,
         user_id=user_id,
         is_lichess_eval_game=False,
