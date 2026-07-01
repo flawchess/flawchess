@@ -680,6 +680,7 @@ async def _classify_and_fill_oracle(
     game_id: int,
     engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
     flaw_pv_blobs: dict[int, tuple[list[PvNode], list[PvNode]]] | None = None,
+    blobs_pending: bool = False,
 ) -> None:
     """Classify game_flaws and fill oracle count columns for one engine-analyzed game (EVAL-06).
 
@@ -707,6 +708,12 @@ async def _classify_and_fill_oracle(
             MUST be passed from the call site — blobs are NOT yet in the DB when
             classify runs (Pitfall 4: classify precedes _run_multipv2_pass). When
             None (old games without blobs), the gate is skipped for all flaws.
+        blobs_pending: Phase 147 (D-01/D-03) — forwarded unchanged to
+            classify_game_flaws. Defaults to False (local drain / discovery
+            behavior unchanged, D-05). The remote go-forward call site
+            (_apply_submit) passes True so cp-based flaws whose continuation blob
+            is deferred to the tier-4 pass are suppressed to NULL instead of
+            persisted raw/ungated.
 
     Errors in bulk_insert_game_flaws and the oracle-count UPDATE are intentionally
     NOT caught here — they must propagate to the caller so the write-session
@@ -745,7 +752,11 @@ async def _classify_and_fill_oracle(
     # Phase 143 D-02: pass in-memory blobs to route classify through _classify_tactic_gated.
     # Blobs are NOT yet in the DB here (Pitfall 4: classify precedes _run_multipv2_pass).
     flaw_result = classify_game_flaws(
-        game, positions, pv_by_ply=pv_by_ply, flaw_pv_blobs=flaw_pv_blobs
+        game,
+        positions,
+        pv_by_ply=pv_by_ply,
+        flaw_pv_blobs=flaw_pv_blobs,
+        blobs_pending=blobs_pending,
     )
     if "reason" in flaw_result:
         # GameNotAnalyzed: insufficient eval coverage — skip.

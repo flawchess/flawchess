@@ -531,6 +531,7 @@ def _classify_tactic_gated(
     pre_flaw_eval_cp: int | None,
     pv_by_ply: Mapping[int, str] | None = None,
     margin: float = ONLY_MOVE_WIN_PROB_MARGIN,
+    blobs_pending: bool = False,
 ) -> tuple[int | None, int | None, int | None, int | None]:
     """Run tactic detection then apply the forcing-line gate (D-02, SC4 single classify path).
 
@@ -553,6 +554,15 @@ def _classify_tactic_gated(
     Phase-143 Pitfall-2 wording that treated [] as a gate-eligible blob requiring
     the one-mover discard. apply_forcing_line_filter itself still rejects [] when
     called directly; the skip here is intentional and upstream of that call.
+
+    blobs_pending (Phase 147, D-01/D-03): an independent, explicitly-passed signal
+    (never derived from pv_blob) meaning the continuation blob for this flaw is
+    deferred to a later tier-4 pass (the remote go-forward submit path). When True
+    AND a motif was detected AND pv_blob is None AND pre_flaw_eval_cp is not None,
+    the motif cannot yet be gate-checked, so it is suppressed to NULL rather than
+    persisted raw/ungated. This self-heals when the tier-4 D-07 gated retag lands
+    with the real blob. Mate-adjacent (pre_flaw_eval_cp is None) and the D-06 []
+    sentinel are FINAL cases and are NEVER suppressed by this branch.
     """
     motif, piece, conf, depth = _detect_tactic_for_flaw(
         n, fen_map, positions, pv_by_ply, orientation
@@ -570,6 +580,13 @@ def _classify_tactic_gated(
             pv_blob, solver_color, pre_flaw_eval_cp, firing_depth=depth, margin=margin
         ):
             return None, None, None, None
+    if (
+        blobs_pending
+        and motif is not None
+        and pv_blob is None
+        and pre_flaw_eval_cp is not None
+    ):
+        return None, None, None, None
     return motif, piece, conf, depth
 
 
@@ -583,6 +600,7 @@ def _build_flaw_record(
     positions: list[GamePosition],
     pv_by_ply: Mapping[int, str] | None = None,
     flaw_pv_blobs: dict[int, tuple[list[PvNode], list[PvNode]]] | None = None,
+    blobs_pending: bool = False,
 ) -> FlawRecord:
     """Build a single FlawRecord for the mover's mistake/blunder at ply N."""
     # `n` is the 0-indexed half-move of the flawed move (positions[n].move_san is
@@ -609,13 +627,27 @@ def _build_flaw_record(
     # pov = the refuting side (board_after_flaw.turn), per D-03.
     # Routes through _classify_tactic_gated (single classify path, SC4 no-drift, D-02).
     allowed_motif_int, allowed_piece, allowed_confidence, allowed_depth = _classify_tactic_gated(
-        n, fen_map, positions, "allowed", allowed_pv_blob, pre_flaw_eval_cp, pv_by_ply
+        n,
+        fen_map,
+        positions,
+        "allowed",
+        allowed_pv_blob,
+        pre_flaw_eval_cp,
+        pv_by_ply,
+        blobs_pending=blobs_pending,
     )
     # missed_* pass: detect tactic from flaw_ply PV (the "instead-of" line).
     # pov = board_before.turn = the mover (the flaw-maker, who should have played this line).
     # Reuses the same dispatcher + relevance gate unchanged (D-04).
     missed_motif_int, missed_piece, missed_confidence, missed_depth = _classify_tactic_gated(
-        n, fen_map, positions, "missed", missed_pv_blob, pre_flaw_eval_cp, pv_by_ply
+        n,
+        fen_map,
+        positions,
+        "missed",
+        missed_pv_blob,
+        pre_flaw_eval_cp,
+        pv_by_ply,
+        blobs_pending=blobs_pending,
     )
     return FlawRecord(
         ply=n,
@@ -877,6 +909,7 @@ def classify_game_flaws(
     positions: list[GamePosition],
     pv_by_ply: Mapping[int, str] | None = None,
     flaw_pv_blobs: dict[int, tuple[list[PvNode], list[PvNode]]] | None = None,
+    blobs_pending: bool = False,
 ) -> GameFlawsResult:
     """Derive all user flaws from stored per-ply evals.
 
@@ -895,6 +928,13 @@ def classify_game_flaws(
             When provided, _build_flaw_record routes tactic classification through
             _classify_tactic_gated which applies the forcing-line gate (D-02, SC4).
             None (default) preserves the pre-Phase-143 gate-free behavior.
+        blobs_pending: Phase 147 (D-01/D-03) — independent signal, defaulting to
+            False and NEVER derived from flaw_pv_blobs, meaning the continuation
+            blob for every flaw in this game is deferred to a later tier-4 pass
+            (the remote go-forward submit path). When True, cp-based flaws that
+            cannot yet be gate-checked (no blob, pre_flaw_eval_cp not None) are
+            suppressed to NULL instead of persisted raw/ungated; mate-adjacent and
+            D-06 []-sentinel flaws are FINAL cases and keep their raw tag.
 
     Returns:
         list[FlawRecord] for analyzed games — one entry per user mistake or
@@ -936,7 +976,16 @@ def classify_game_flaws(
             # Inaccuracies are count-only per the 2026-06-05 amendment
             continue
         flaw = _build_flaw_record(
-            n, mover, severity, es_before, es_after, fen_map, positions, pv_by_ply, flaw_pv_blobs
+            n,
+            mover,
+            severity,
+            es_before,
+            es_after,
+            fen_map,
+            positions,
+            pv_by_ply,
+            flaw_pv_blobs,
+            blobs_pending=blobs_pending,
         )
         # Per-mover subject_result drives the lucky tag correctly for both sides (D-05).
         subject_result = derive_user_result(game.result, mover)
