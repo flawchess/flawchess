@@ -6,14 +6,14 @@ current_phase: 147
 current_phase_name: persist-only-forcing-line-gated-tactic-tags-suppress-ungated
 status: planning
 stopped_at: Phase 147 context gathered
-last_updated: "2026-07-01T19:14:28.733Z"
+last_updated: "2026-07-01T19:23:38.062Z"
 last_activity: 2026-07-01
-last_activity_desc: Phase 147 Plan 02 (old-corpus ungated tactic tag suppression migration) complete
+last_activity_desc: Phase 147 Plan 03 (SEED-073 over-cap sentinel prerequisite for flaw-blob-lease) complete
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 25
-  completed_plans: 19
+  completed_plans: 20
   percent: 57
 ---
 
@@ -21,8 +21,8 @@ progress:
 
 ## Current Position
 
-Phase: 147 (persist-only-forcing-line-gated-tactic-tags-suppress-ungated) — EXECUTING (Plan 02/06 complete)
-Last activity: 2026-07-01 — Phase 147 Plan 02 (old-corpus ungated tactic tag suppression migration) complete
+Phase: 147 (persist-only-forcing-line-gated-tactic-tags-suppress-ungated) — EXECUTING (Plan 03/06 complete)
+Last activity: 2026-07-01 — Phase 147 Plan 03 (SEED-073 over-cap sentinel prerequisite for flaw-blob-lease) complete
 
 Phase 145 (corpus-backfill-rollout) — COMPLETE (code). Plans 01–05 + the autonomous part of
 plan 06 are merged to main (`875bc164`) and released to production in v1.30 (PR #229,
@@ -107,6 +107,7 @@ Twenty-nine milestones complete (v1.0–v1.29). v1.29 Live-Engine Analysis Page 
 - [Phase ?]: HTTP_TIMEOUT_S=30.0 — SEED-071 stopgap removed; full-ply pass reduced to MultiPV-1
 - [Phase ?]: blobs_pending is an independent default-False parameter, never derived from flaw_pv_blobs — closes the go-forward ungated-tag window at _apply_submit (D-01, D-03)
 - [Phase ?]: Migration predicate joins game_flaws to game_positions on the composite PK for the cp-based candidate check; per-orientation suppression gates on each orientation's own PV-line blob column, not the empirical NULL-together invariant
+- [Phase ?]: SEED-073 over-cap sentinel: elif len(lease_positions) > MAX_SUBMIT_EVALS branch sentinels every NULL-blob flaw ply (fresh GameFlaw query, not sentinel_lines) via _batch_update_flaw_pv_lines, returns 204 -- establishes the pattern Part B reuses
 
 ### Pending Todos
 
@@ -158,7 +159,7 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-Last session: 2026-07-01T19:13:45.758Z
+Last session: 2026-07-01T19:22:32.822Z
 Stopped at: Phase 147 context gathered
 Resume file: .planning/phases/147-persist-only-forcing-line-gated-tactic-tags-suppress-ungated/147-CONTEXT.md
 
@@ -199,3 +200,4 @@ Resume file: .planning/phases/147-persist-only-forcing-line-gated-tactic-tags-su
 | Phase 146 P02 | 8 | - tasks | - files |
 | Phase 147 P01 | 20min | 2 tasks | 5 files |
 | Phase 147 P02 | 10min | 2 tasks | 2 files |
+| Phase 147 P03 | 15min | 2 tasks | 2 files |
