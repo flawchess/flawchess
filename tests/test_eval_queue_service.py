@@ -1,9 +1,14 @@
-"""Tests for app/services/eval_queue_service.py (Phase 146 D-01: recency-ordered tier-4 claim).
+"""Tests for app/services/eval_queue_service.py (260701-lw4: tier-4 ES lottery).
 
 Covers:
-- test_claim_tier4_blob_recency_favors_fresh_game: Monkeypatches TIER4_RECENCY_WINDOW=1
-  so only the most-recently-analyzed game is in the CTE window. Asserts the fresh game
-  (1 min ago) wins all draws when old game (1 hour ago) is also eligible.
+- test_claim_tier4_blob_anti_starvation_and_recency_preference: inserts one very-old
+  and one fresh analyzed game (same non-guest user, so Stage 1's user pick is
+  deterministic) and monkeypatches TIER4_GAME_WEIGHT_FLOOR to a moderate value so the
+  old game's Stage 2 weight collapses to (approximately) the floor while the fresh
+  game's weight is dominated by its recency term. Over N draws, asserts both that the
+  old game is picked at least once (anti-starvation — the core fix replacing the old
+  top-50 window, which gave old games zero probability) and that the fresh game wins a
+  strict majority (recency weighting still dominant).
 
 Eval-lottery isolation (MEMORY: project_eval_lottery_test_isolation): every
 non-guest Game + GameFlaw insert is wrapped in a finally-cleanup so global
@@ -17,11 +22,29 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 # Unique user ID range for this module — avoids FK conflicts with other test modules.
 _TEST_USER_ID_TIER4: int = 99400
+
+# Number of lottery draws in the anti-starvation + recency-preference test.
+# With P(old) ≈ 0.1875 (see TEST_GAME_WEIGHT_FLOOR_MODERATE below), P(old never
+# picked in N=40 draws) = (1 - 0.1875)^40 ≈ 4.4e-4 — well below the 1e-3 target,
+# so "old picked >= 1" is statistically near-certain without being tautological.
+N_DRAWS: int = 40
+
+# Moderate TIER4_GAME_WEIGHT_FLOOR used only for this test (monkeypatched). With
+# the old game aged far past TIER4_GAME_RECENCY_HALF_LIFE_DAYS (its exp() decay
+# term ~0), its Stage-2 weight collapses to ~this floor while the fresh game's
+# weight is ~1.0 (recency term) + this floor. That yields
+# P(old) = floor / (floor + (1 + floor)) ≈ 0.3 / 1.6 ≈ 0.1875 — inside the
+# plan's target 0.15-0.25 band (fresh keeps a clear >0.5 majority).
+TEST_GAME_WEIGHT_FLOOR_MODERATE: float = 0.3
+
+# Old game age: far beyond TIER4_GAME_RECENCY_HALF_LIFE_DAYS (30 days) so its
+# recency term is negligible (~1e-4), leaving its Stage-2 weight ≈ the floor.
+OLD_GAME_AGE_DAYS: int = 400
 
 
 @pytest_asyncio.fixture(scope="session")
@@ -39,7 +62,8 @@ async def tier4_test_user(
 
     async with tier4_session_maker() as session:
         result = await session.execute(select(User).where(User.id == _TEST_USER_ID_TIER4))
-        if result.unique().scalar_one_or_none() is None:
+        user = result.unique().scalar_one_or_none()
+        if user is None:
             session.add(
                 User(
                     id=_TEST_USER_ID_TIER4,
@@ -48,7 +72,21 @@ async def tier4_test_user(
                     is_active=True,
                     is_superuser=False,
                     is_verified=True,
+                    # Recent last_activity so Stage 1 (user pick) is not starved by its
+                    # own floor — this is the only non-guest user this test relies on
+                    # being eligible, so its Stage 1 weight just needs to be > 0.
+                    last_activity=datetime.now(timezone.utc),
                 )
+            )
+            await session.commit()
+        else:
+            # Refresh last_activity in case a prior test run left a stale value —
+            # shared session-scoped row, not a new non-guest game, so no
+            # per-test cleanup is required (mirrors the module docstring note).
+            await session.execute(
+                update(User)
+                .where(User.id == _TEST_USER_ID_TIER4)
+                .values(last_activity=datetime.now(timezone.utc))
             )
             await session.commit()
     return _TEST_USER_ID_TIER4
@@ -122,55 +160,74 @@ async def _delete_games_tier4(
 
 
 @pytest.mark.asyncio
-async def test_claim_tier4_blob_recency_favors_fresh_game(
+async def test_claim_tier4_blob_anti_starvation_and_recency_preference(
     monkeypatch: pytest.MonkeyPatch,
     tier4_session_maker: async_sessionmaker[AsyncSession],
     tier4_test_user: int,
 ) -> None:
-    """Phase 146 D-01: _claim_tier4_blob recency CTE favors recently-analyzed games.
+    """260701-lw4: _claim_tier4_blob's Stage-2 ES lottery favors fresh games without
+    starving old ones.
 
-    Monkeypatches TIER4_RECENCY_WINDOW to 1 so only the single most-recently-analyzed
-    game is in the CTE. With two eligible games — one fresh (1 min ago) and one old
-    (1 hour ago) — the fresh game must win every draw when the window is 1.
+    Both games belong to the same tier-4 test user, so Stage 1 (user pick) is
+    deterministic — only one eligible user exists in this test's scope — and the
+    fresh-vs-old contrast lives entirely in Stage 2 (game pick).
 
-    RED (fails before Phase 146 code change): TIER4_RECENCY_WINDOW constant does not
-    exist in eval_queue_service → monkeypatch.setattr raises AttributeError → test fails.
-    GREEN (passes after change): constant exists, CTE uses :recency_window bound param,
-    window=1 selects only the fresh game → 100% fresh-game picks.
-
-    Eval-lottery isolation: both games are inserted before and deleted in a finally
-    block so rows don't leak into the global tier-4 lottery state.
+    TIER4_GAME_WEIGHT_FLOOR is monkeypatched to a moderate value
+    (TEST_GAME_WEIGHT_FLOOR_MODERATE) and the old game is aged well past
+    TIER4_GAME_RECENCY_HALF_LIFE_DAYS so its recency term is negligible and its
+    weight collapses to ~the floor. This lands P(old) ≈ 0.1875 (see the module
+    constant docstring above) — high enough that "old picked >= 1" over N_DRAWS
+    draws is statistically near-certain (not a coin-flip-adjacent flaky assertion),
+    while the fresh game still wins a clear majority.
     """
     import app.services.eval_queue_service as eval_queue_module
     from app.services.eval_queue_service import _claim_tier4_blob
 
-    # RED assertion: TIER4_RECENCY_WINDOW must exist (fails before Phase 146 adds it).
-    monkeypatch.setattr(eval_queue_module, "TIER4_RECENCY_WINDOW", 1)
+    monkeypatch.setattr(
+        eval_queue_module, "TIER4_GAME_WEIGHT_FLOOR", TEST_GAME_WEIGHT_FLOOR_MODERATE
+    )
 
     now = datetime.now(timezone.utc)
-    recent_at = now - timedelta(minutes=1)
-    old_at = now - timedelta(hours=1)
+    fresh_at = now
+    old_at = now - timedelta(days=OLD_GAME_AGE_DAYS)
 
     user_id = tier4_test_user
-    recent_game_id = await _insert_analyzed_game_with_flaw(tier4_session_maker, user_id, recent_at)
+    fresh_game_id = await _insert_analyzed_game_with_flaw(tier4_session_maker, user_id, fresh_at)
     old_game_id = await _insert_analyzed_game_with_flaw(tier4_session_maker, user_id, old_at)
 
     try:
-        # With TIER4_RECENCY_WINDOW=1, only the most-recently-analyzed game is in the
-        # CTE (ORDER BY full_evals_completed_at DESC LIMIT 1). The fresh game (1 min ago)
-        # always beats the old game (1 hour ago). Every draw must pick the fresh game.
-        n_draws = 20
-        for i in range(n_draws):
+        fresh_picks = 0
+        old_picks = 0
+        for i in range(N_DRAWS):
             async with tier4_session_maker() as session:
                 result = await _claim_tier4_blob(session)
             assert result is not None, (
                 f"_claim_tier4_blob returned None on draw {i}; both games are eligible"
             )
             picked_game_id = result[0]
-            assert picked_game_id == recent_game_id, (
-                f"Draw {i}: expected fresh game {recent_game_id} (1 min ago) to be picked "
-                f"when TIER4_RECENCY_WINDOW=1, but got {picked_game_id} (old game is {old_game_id}). "
-                "Phase 146 D-01: recency CTE must limit the pool to the top-N most-recent games."
+            assert picked_game_id in (fresh_game_id, old_game_id), (
+                f"Draw {i}: picked game {picked_game_id} is neither our fresh game "
+                f"({fresh_game_id}) nor our old game ({old_game_id}) — Stage 1 (user "
+                "pick) likely selected a different eligible non-guest user; check for "
+                "leaked tier-4 lottery rows from a sibling test."
             )
+            if picked_game_id == fresh_game_id:
+                fresh_picks += 1
+            else:
+                old_picks += 1
+
+        # Anti-starvation: the floor term must give the old game nonzero draw mass
+        # (the core fix — the old top-50 window gave game #51+ probability zero).
+        assert old_picks >= 1, (
+            f"Old game {old_game_id} was never picked in {N_DRAWS} draws (fresh won "
+            f"{fresh_picks}/{N_DRAWS}). TIER4_GAME_WEIGHT_FLOOR anti-starvation floor "
+            "should give every pending-blob game nonzero draw probability."
+        )
+        # Recency preference: the fresh game must still win a strict majority.
+        assert fresh_picks > N_DRAWS / 2, (
+            f"Fresh game {fresh_game_id} won only {fresh_picks}/{N_DRAWS} draws (old won "
+            f"{old_picks}). Recency weighting should keep freshly-analyzed games "
+            "dominant despite the anti-starvation floor."
+        )
     finally:
-        await _delete_games_tier4(tier4_session_maker, [recent_game_id, old_game_id])
+        await _delete_games_tier4(tier4_session_maker, [fresh_game_id, old_game_id])
