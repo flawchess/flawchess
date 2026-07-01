@@ -198,11 +198,16 @@ def _hint_flaw_plies(evals: list[dict[str, object]]) -> set[int]:
         return set()
     max_ply = max(eval_by_ply)
 
+    # CR-02 fix: evals is POSITION-keyed (eval OF the board at `ply`), but
+    # _run_all_moves_pass expects ROW-keyed / POST-MOVE values — row `m` must
+    # hold pos_eval[m + 1], matching _post_move_eval (app/services/eval_drain.py).
+    # Without this +1 shift, hint_positions[k] == db_row[k-1], which
+    # systematically reports the flaw one ply off (see CR-02, 147-REVIEW.md).
     hint_positions: list[GamePosition] = []
-    for ply in range(max_ply + 1):
+    for row_ply in range(max_ply):  # one hint row per real move (0..max_ply-1)
         pos = GamePosition()
-        pos.ply = ply
-        e = eval_by_ply.get(ply)
+        pos.ply = row_ply
+        e = eval_by_ply.get(row_ply + 1)
         pos.eval_cp = cast("int | None", e["eval_cp"]) if e is not None else None
         pos.eval_mate = cast("int | None", e["eval_mate"]) if e is not None else None
         hint_positions.append(pos)

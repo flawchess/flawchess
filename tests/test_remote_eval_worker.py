@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import chess
@@ -479,13 +480,12 @@ async def test_eval_positions_uses_multipv1_no_second_best() -> None:
 
 # ─── Phase 147 SEED-074 Part B: atomic eval+blob rung tests ─────────────────
 #
-# A 3-position synthetic mini-game (ply 0/1/2) with hand-picked eval_cp values
-# drives a single hinted flaw at ply=1 (mover=black, per _run_all_moves_pass'
-# n%2==0 -> white convention): eval_cp[0]=0 -> eval_cp[1]=+600 is a huge ES
-# drop from black's POV (blunder), while eval_cp[1]=+600 -> eval_cp[2]=+600 is
-# zero drop for white at ply=2 (no flaw). FENs are all the starting position
-# (board legality of the hint/token machinery does not depend on the real
-# game — pv=None everywhere keeps _walk_pv_boards' walk a single node).
+# A 3-position synthetic mini-game (ply 0/1/2) used ONLY by tests that pass an
+# explicit flaw_plies set directly (test_build_blob_walk_targets_*) or that
+# don't inspect the hinted plies at all (test_eval_atomic_game_full_ply_pass_
+# stays_multipv1). FENs are all the starting position (board legality of the
+# hint/token machinery does not depend on the real game — pv=None everywhere
+# keeps _walk_pv_boards' walk a single node).
 
 _ATOMIC_POSITIONS: list[dict[str, object]] = [
     {"ply": 0, "fen": chess.STARTING_FEN, "is_terminal": False},
@@ -498,15 +498,45 @@ _ATOMIC_EVALS: list[dict[str, object]] = [
     {"ply": 2, "eval_cp": 600, "eval_mate": None, "best_move": "g1f3", "pv": None},
 ]
 
+# CR-02 fix (147-REVIEW.md): `evals` is POSITION-keyed (the eval OF the board
+# AT a given ply), but _run_all_moves_pass — and therefore _hint_flaw_plies —
+# expects ROW-keyed/POST-MOVE values: hint row `m` must hold pos_eval[m + 1],
+# exactly matching the server's _post_move_eval convention
+# (app/services/eval_drain.py). The fixture below is NOT arbitrary: it reuses
+# the EXACT eval values from _BLUNDER_SUBMIT_EVALS_142 / _SIX_PLY_PGN_142
+# (tests/test_eval_worker_endpoints.py) — a 6-ply game where /atomic-submit's
+# SERVER-SIDE classify_game_flaws independently confirms a real blunder at
+# ply=2 for these SAME values
+# (test_atomic_submit_gates_tactic_tag_and_stamps_both_markers asserts
+# flaw_ply == 2 through the authoritative server path). Reusing that
+# cross-validated fixture here proves the local hint agrees with the server's
+# own classify, rather than locking in whatever the local code happens to
+# compute.
+_HINTED_BLUNDER_POSITIONS: list[dict[str, object]] = [
+    {"ply": p, "fen": chess.STARTING_FEN, "is_terminal": p == 6} for p in range(7)
+]
+_HINTED_BLUNDER_EVALS: list[dict[str, object]] = [
+    {"ply": 0, "eval_cp": 0, "eval_mate": None, "best_move": None, "pv": None},
+    {"ply": 1, "eval_cp": 20, "eval_mate": None, "best_move": "e2e4", "pv": None},
+    {"ply": 2, "eval_cp": 30, "eval_mate": None, "best_move": "g1f3", "pv": None},
+    {"ply": 3, "eval_cp": -500, "eval_mate": None, "best_move": "b8c6", "pv": None},
+    {"ply": 4, "eval_cp": -480, "eval_mate": None, "best_move": "f1c4", "pv": None},
+    {"ply": 5, "eval_cp": 60, "eval_mate": None, "best_move": "f8c5", "pv": None},
+    {"ply": 6, "eval_cp": 30, "eval_mate": None, "best_move": None, "pv": None},
+]
+
 
 def test_hint_flaw_plies_selects_mistake_and_blunder_only() -> None:
     """_hint_flaw_plies runs _run_all_moves_pass over lightweight in-memory
-    GamePosition objects and keeps only mistake/blunder plies (Q4/RESEARCH A2).
+    GamePosition objects, POST-MOVE shifted by one (CR-02), and keeps only
+    mistake/blunder plies (Q4/RESEARCH A2).
 
-    ply=1 (black, ES 0.5 -> ~0.02) is a blunder; ply=2 (white, zero ES change)
-    is not a flaw and must be excluded.
+    ply=2 (white, ES ~53% -> ~7%) is the real blunder in _HINTED_BLUNDER_EVALS
+    — independently confirmed by the server's own classify_game_flaws for
+    these same values (see the fixture's docstring above). Every other ply
+    has a small or zero ES change and must be excluded.
     """
-    assert _hint_flaw_plies(_ATOMIC_EVALS) == {1}
+    assert _hint_flaw_plies(_HINTED_BLUNDER_EVALS) == {2}
 
 
 def test_hint_flaw_plies_empty_for_no_evals() -> None:
@@ -573,12 +603,17 @@ async def test_eval_atomic_game_hints_and_blobs_flaw_plies_only() -> None:
     """_eval_atomic_game: full-ply MultiPV-1 pass -> local hint -> MultiPV-2 blobs
     only for the hinted flaw ply (mistake/blunder), token-keyed per D-04a.
 
-    Only flaw_ply=1 is hinted (the synthetic blunder); flaw_ply=2 has zero ES
-    drop and must NOT produce any blob node or engine call.
+    Uses _HINTED_BLUNDER_POSITIONS/_HINTED_BLUNDER_EVALS (CR-02 cross-validated
+    fixture, see the fixture docstring): only flaw_ply=2 is hinted (the real
+    blunder); every other ply has a small/zero ES change and must NOT produce
+    any blob node or engine call.
     """
     pool = AsyncMock()
     pool.evaluate_nodes_with_pv = AsyncMock(
-        side_effect=[(0, None, "e2e4", None), (600, None, "d7d5", None), (600, None, "g1f3", None)]
+        side_effect=[
+            (int(cast(int, e["eval_cp"])), None, e["best_move"], None)
+            for e in _HINTED_BLUNDER_EVALS
+        ]
     )
     pool.evaluate_nodes_multipv2 = AsyncMock(
         side_effect=[
@@ -587,13 +622,13 @@ async def test_eval_atomic_game_hints_and_blobs_flaw_plies_only() -> None:
         ]
     )
 
-    evals, blob_nodes = await _eval_atomic_game(pool, _ATOMIC_POSITIONS)
+    evals, blob_nodes = await _eval_atomic_game(pool, _HINTED_BLUNDER_POSITIONS)
 
-    assert len(evals) == 3
+    assert len(evals) == 7
     assert pool.evaluate_nodes_multipv2.call_count == 2
 
     tokens = [n["token"] for n in blob_nodes]
-    assert tokens == ["1:missed:0", "1:allowed:0"], tokens
+    assert tokens == ["2:missed:0", "2:allowed:0"], tokens
 
     missed_node = blob_nodes[0]
     assert missed_node["best_cp"] == 10
@@ -638,7 +673,7 @@ async def test_atomic_submit_payload_shape_and_schema_version() -> None:
         "game_id": 55,
         "user_id": 9,
         "is_lichess_eval_game": False,
-        "positions": _ATOMIC_POSITIONS,
+        "positions": _HINTED_BLUNDER_POSITIONS,
         "leased_at": "2026-07-01T10:00:00Z",
         "job_id": "job-atomic-1",
     }
@@ -654,7 +689,10 @@ async def test_atomic_submit_payload_shape_and_schema_version() -> None:
 
     pool = AsyncMock()
     pool.evaluate_nodes_with_pv = AsyncMock(
-        side_effect=[(0, None, "e2e4", None), (600, None, "d7d5", None), (600, None, "g1f3", None)]
+        side_effect=[
+            (int(cast(int, e["eval_cp"])), None, e["best_move"], None)
+            for e in _HINTED_BLUNDER_EVALS
+        ]
     )
     pool.evaluate_nodes_multipv2 = AsyncMock(
         side_effect=[
@@ -674,5 +712,5 @@ async def test_atomic_submit_payload_shape_and_schema_version() -> None:
     assert body["sf_version"] == "sf18"
     assert body["worker_schema_version"] == WORKER_SCHEMA_VERSION
     assert body["job_id"] == "job-atomic-1"
-    assert len(body["evals"]) == 3
-    assert [n["token"] for n in body["blob_nodes"]] == ["1:missed:0", "1:allowed:0"]
+    assert len(body["evals"]) == 7
+    assert [n["token"] for n in body["blob_nodes"]] == ["2:missed:0", "2:allowed:0"]
