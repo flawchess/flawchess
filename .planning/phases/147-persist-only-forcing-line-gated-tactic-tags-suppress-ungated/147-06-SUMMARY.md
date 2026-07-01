@@ -167,3 +167,7 @@ None for the code itself. See "Deferred Items" above for the one manual dev-firs
 ---
 *Phase: 147-persist-only-forcing-line-gated-tactic-tags-suppress-ungated*
 *Completed: 2026-07-01*
+
+## Self-Check: PASSED
+
+All modified files found on disk; all task/summary commit hashes (`d05d78a5`, `5ba15415`, `98369b64`) found in git log.
