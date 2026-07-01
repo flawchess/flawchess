@@ -675,3 +675,32 @@ Plans:
 
 - [x] 146-01-PLAN.md — Server live-path offload: force blob_map={} in _apply_submit, drop second-best from SubmitEval (D-03), recency-order _claim_tier4_blob (D-01)
 - [x] 146-02-PLAN.md — Fleet-worker tier-4 drain rung (D-04), full-ply MultiPV-1 reduction, restore HTTP_TIMEOUT_S=30
+
+### Phase 147: Persist only forcing-line-gated tactic tags: suppress ungated remote-submit tags (A) and add an upgraded-worker atomic eval+blob pipeline that gates at write time (B)
+
+**Goal:** Ensure `game_flaws.tactic_motif` is never persisted with raw, ungated (pre-forcing-line-gate) values that pollute backend stats and tag-based game-selection filters. Part A (data-level, ship-first): on the remote-submit path where blobs are deferred, write `tactic_motif = NULL` for cp-based flaws whose forcing-line gate can't yet run — keeping mate-adjacent (`pre_flaw_eval_cp IS NULL`) and D-06 `[]`-sentinel raw tags — so values self-heal when the tier-4 gated retag lands. Part B (worker pipeline): add a versioned lease+submit endpoint pair and an upgraded fat-`app.*` fleet worker that submits full-ply evals + MultiPV-2 blobs together; the server runs its own authoritative `classify_game_flaws` with those blobs and writes flaws + forcing-line-gated tags + completion markers in one transaction, eliminating the ungated window at write time. Reuses the SEED-073 over-cap sentinel for fat games (no chunking); A is B's graceful-degradation net under version skew.
+**Requirements**: SEED-074 (see .planning/seeds/SEED-074-gated-tags-at-write-time.md)
+**Depends on:** Phase 146
+**Plans:** 6/6 plans complete
+
+Plans:
+**Wave 1**
+
+- [x] 147-01-PLAN.md — Part A go-forward: thread blobs_pending → suppress ungated cp tags at _apply_submit (D-01, D-03, D-06)
+- [x] 147-02-PLAN.md — Part A old-corpus: batched Alembic data migration suppressing raw cp tags with carve-outs (D-03, D-04)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 147-03-PLAN.md — SEED-073 over-cap sentinel prerequisite: fix /flaw-blob-lease 500 on fat games
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 147-04-PLAN.md — Part B: new atomic lease/submit schema pair + /atomic-lease endpoint (D-02)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 147-05-PLAN.md — Part B: atomic /atomic-submit handler — server-authoritative classify + single-transaction gated write (D-01)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [x] 147-06-PLAN.md — Part B: upgraded fleet worker atomic eval+blob rung + dev-first e2e gate (D-05 kept)

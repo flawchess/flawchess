@@ -4,12 +4,16 @@ Covers:
 - worker_id_default_length: generated default IDs are < 10 chars, base36 charset.
 - worker_id_override_too_long: --worker-id >= 10 chars raises SystemExit (parser.error);
   < 10 chars accepted as-is.
-- ladder_explicit_first: with /lease?scope=explicit returning 200, the cycle submits via
-  /submit and does NOT call /entry-lease (busy tier-1 path stays 1-2 calls).
+- ladder_explicit_first: with /atomic-lease?scope=explicit returning 200, the cycle
+  submits via /atomic-submit and does NOT call /entry-lease (busy path stays 1-2 calls).
 - ladder_entry_then_idle: scope=explicit 204 -> /entry-lease 200 -> /entry-submit; on
-  /entry-lease 204 falls through to scope=idle.
+  /entry-lease 204 falls through to scope=idle (also /atomic-lease, Phase 147 Part B).
 - entry_eval_uses_depth15: _eval_entry_positions calls pool.evaluate (depth-15) and
   never calls pool.evaluate_nodes_with_pv (the 1M-node full-ply mode).
+- Phase 147 SEED-074 Part B (atomic rung): _hint_flaw_plies/_build_blob_walk_targets/
+  _eval_atomic_game — the local hint stays MultiPV-1 for the full-ply pass, selects
+  only mistake/blunder plies, and the assembled /atomic-submit payload carries
+  blob_nodes only for those hinted plies plus worker_schema_version.
 
 All tests are unit-level -- no DB, no real Stockfish. Engine pool and httpx are mocked.
 """
@@ -18,8 +22,10 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
+import chess
 import pytest
 
 # Ensure project root is importable from the test root.
@@ -30,9 +36,13 @@ from scripts.remote_eval_worker import (
     _WORKER_ID_DEFAULT_LEN,
     HTTP_TIMEOUT_S,
     WORKER_ID_MAX_LEN,
+    WORKER_SCHEMA_VERSION,
+    _build_blob_walk_targets,
+    _eval_atomic_game,
     _eval_entry_positions,
     _eval_flaw_blob_positions,
     _generate_worker_id,
+    _hint_flaw_plies,
     _run_cycle,
     parse_args,
 )
@@ -100,7 +110,8 @@ def _make_response(status_code: int, body: dict | None = None) -> MagicMock:
 
 
 async def test_ladder_explicit_first_skips_entry_lease() -> None:
-    """When /lease?scope=explicit returns 200, the cycle submits via /submit only.
+    """When /atomic-lease?scope=explicit returns 200, the cycle submits via
+    /atomic-submit only (Phase 147 SEED-074 Part B — rung 1 upgraded).
 
     It must NOT call /entry-lease (busy tier-1 path stays at 1-2 calls per D-06).
     """
@@ -115,13 +126,13 @@ async def test_ladder_explicit_first_skips_entry_lease() -> None:
         ],
         "job_id": "job-token-abc",
     }
-    submit_body = {"stamp_complete": True, "failed_ply_count": 0}
+    submit_body = {"game_id": 42, "flaws_written": 0, "blobs_written": 0}
 
     client = AsyncMock()
     client.post = AsyncMock(
         side_effect=[
-            _make_response(200, lease_body),  # /lease?scope=explicit -> 200
-            _make_response(200, submit_body),  # /submit -> 200
+            _make_response(200, lease_body),  # /atomic-lease?scope=explicit -> 200
+            _make_response(200, submit_body),  # /atomic-submit -> 200
         ]
     )
 
@@ -137,13 +148,13 @@ async def test_ladder_explicit_first_skips_entry_lease() -> None:
         loop=False,
     )
 
-    # First call: /lease with scope=explicit
+    # First call: /atomic-lease with scope=explicit
     first_call = client.post.call_args_list[0]
-    assert first_call == call("/api/eval/remote/lease", params={"scope": "explicit"})
+    assert first_call == call("/api/eval/remote/atomic-lease", params={"scope": "explicit"})
 
-    # Second call: /submit
+    # Second call: /atomic-submit
     second_call = client.post.call_args_list[1]
-    assert second_call.args[0] == "/api/eval/remote/submit"
+    assert second_call.args[0] == "/api/eval/remote/atomic-submit"
 
     # /entry-lease must never be called on the busy tier-1 path
     called_urls = [c.args[0] for c in client.post.call_args_list]
@@ -151,7 +162,7 @@ async def test_ladder_explicit_first_skips_entry_lease() -> None:
 
 
 async def test_ladder_entry_ply_on_explicit_204() -> None:
-    """When scope=explicit returns 204, the cycle calls /entry-lease.
+    """When atomic-lease scope=explicit returns 204, the cycle calls /entry-lease.
 
     On /entry-lease 200, it evaluates at depth-15 and POSTs to /entry-submit.
     It must NOT fall through to scope=idle in this case.
@@ -169,7 +180,7 @@ async def test_ladder_entry_ply_on_explicit_204() -> None:
     client = AsyncMock()
     client.post = AsyncMock(
         side_effect=[
-            _make_response(204),  # /lease?scope=explicit -> 204
+            _make_response(204),  # /atomic-lease?scope=explicit -> 204
             _make_response(200, entry_body),  # /entry-lease -> 200
             _make_response(200, entry_submit_body),  # /entry-submit -> 200
         ]
@@ -188,17 +199,21 @@ async def test_ladder_entry_ply_on_explicit_204() -> None:
     )
 
     called_urls = [c.args[0] for c in client.post.call_args_list]
-    assert called_urls[0] == "/api/eval/remote/lease"
+    assert called_urls[0] == "/api/eval/remote/atomic-lease"
     assert called_urls[1] == "/api/eval/remote/entry-lease"
     assert called_urls[2] == "/api/eval/remote/entry-submit"
 
-    # Must NOT call /lease?scope=idle -- entry-ply was served
-    lease_calls = [c for c in client.post.call_args_list if c.args[0] == "/api/eval/remote/lease"]
+    # Must NOT call atomic-lease?scope=idle -- entry-ply was served
+    lease_calls = [
+        c for c in client.post.call_args_list if c.args[0] == "/api/eval/remote/atomic-lease"
+    ]
     assert len(lease_calls) == 1, "scope=idle should not be called when entry-ply returned work"
 
 
 async def test_ladder_falls_to_idle_when_entry_lease_204() -> None:
-    """When scope=explicit 204 and /entry-lease 204, the cycle falls to scope=idle."""
+    """When scope=explicit 204 and /entry-lease 204, the cycle falls to scope=idle
+    (also via /atomic-lease, Phase 147 SEED-074 Part B — rung 3 upgraded).
+    """
     idle_body = {
         "game_id": 99,
         "positions": [
@@ -210,15 +225,15 @@ async def test_ladder_falls_to_idle_when_entry_lease_204() -> None:
         ],
         "job_id": None,
     }
-    submit_body = {"stamp_complete": True, "failed_ply_count": 0}
+    submit_body = {"game_id": 99, "flaws_written": 0, "blobs_written": 0}
 
     client = AsyncMock()
     client.post = AsyncMock(
         side_effect=[
-            _make_response(204),  # /lease?scope=explicit -> 204
+            _make_response(204),  # /atomic-lease?scope=explicit -> 204
             _make_response(204),  # /entry-lease -> 204
-            _make_response(200, idle_body),  # /lease?scope=idle -> 200
-            _make_response(200, submit_body),  # /submit -> 200
+            _make_response(200, idle_body),  # /atomic-lease?scope=idle -> 200
+            _make_response(200, submit_body),  # /atomic-submit -> 200
         ]
     )
 
@@ -235,14 +250,14 @@ async def test_ladder_falls_to_idle_when_entry_lease_204() -> None:
     )
 
     called_urls = [c.args[0] for c in client.post.call_args_list]
-    assert called_urls[0] == "/api/eval/remote/lease"  # scope=explicit
+    assert called_urls[0] == "/api/eval/remote/atomic-lease"  # scope=explicit
     assert called_urls[1] == "/api/eval/remote/entry-lease"
-    assert called_urls[2] == "/api/eval/remote/lease"  # scope=idle
-    assert called_urls[3] == "/api/eval/remote/submit"
+    assert called_urls[2] == "/api/eval/remote/atomic-lease"  # scope=idle
+    assert called_urls[3] == "/api/eval/remote/atomic-submit"
 
-    # Confirm the idle /lease call used scope=idle param
+    # Confirm the idle atomic-lease call used scope=idle param
     idle_lease_call = client.post.call_args_list[2]
-    assert idle_lease_call == call("/api/eval/remote/lease", params={"scope": "idle"})
+    assert idle_lease_call == call("/api/eval/remote/atomic-lease", params={"scope": "idle"})
 
 
 # ─── Depth-15 eval path assertion ─────────────────────────────────────────────
@@ -461,6 +476,241 @@ async def test_eval_positions_uses_multipv1_no_second_best() -> None:
     assert "second_cp" not in r, "second_cp must not appear in full-ply output (D-03)"
     assert "second_mate" not in r, "second_mate must not appear in full-ply output (D-03)"
     assert "second_uci" not in r, "second_uci must not appear in full-ply output (D-03)"
-    # Confirm MultiPV-1 path was used (not MultiPV-2)
-    pool.evaluate_nodes_with_pv.assert_called_once()
+
+
+# ─── Phase 147 SEED-074 Part B: atomic eval+blob rung tests ─────────────────
+#
+# A 3-position synthetic mini-game (ply 0/1/2) used ONLY by tests that pass an
+# explicit flaw_plies set directly (test_build_blob_walk_targets_*) or that
+# don't inspect the hinted plies at all (test_eval_atomic_game_full_ply_pass_
+# stays_multipv1). FENs are all the starting position (board legality of the
+# hint/token machinery does not depend on the real game — pv=None everywhere
+# keeps _walk_pv_boards' walk a single node).
+
+_ATOMIC_POSITIONS: list[dict[str, object]] = [
+    {"ply": 0, "fen": chess.STARTING_FEN, "is_terminal": False},
+    {"ply": 1, "fen": chess.STARTING_FEN, "is_terminal": False},
+    {"ply": 2, "fen": chess.STARTING_FEN, "is_terminal": True},
+]
+_ATOMIC_EVALS: list[dict[str, object]] = [
+    {"ply": 0, "eval_cp": 0, "eval_mate": None, "best_move": "e2e4", "pv": None},
+    {"ply": 1, "eval_cp": 600, "eval_mate": None, "best_move": "d7d5", "pv": None},
+    {"ply": 2, "eval_cp": 600, "eval_mate": None, "best_move": "g1f3", "pv": None},
+]
+
+# CR-02 fix (147-REVIEW.md): `evals` is POSITION-keyed (the eval OF the board
+# AT a given ply), but _run_all_moves_pass — and therefore _hint_flaw_plies —
+# expects ROW-keyed/POST-MOVE values: hint row `m` must hold pos_eval[m + 1],
+# exactly matching the server's _post_move_eval convention
+# (app/services/eval_drain.py). The fixture below is NOT arbitrary: it reuses
+# the EXACT eval values from _BLUNDER_SUBMIT_EVALS_142 / _SIX_PLY_PGN_142
+# (tests/test_eval_worker_endpoints.py) — a 6-ply game where /atomic-submit's
+# SERVER-SIDE classify_game_flaws independently confirms a real blunder at
+# ply=2 for these SAME values
+# (test_atomic_submit_gates_tactic_tag_and_stamps_both_markers asserts
+# flaw_ply == 2 through the authoritative server path). Reusing that
+# cross-validated fixture here proves the local hint agrees with the server's
+# own classify, rather than locking in whatever the local code happens to
+# compute.
+_HINTED_BLUNDER_POSITIONS: list[dict[str, object]] = [
+    {"ply": p, "fen": chess.STARTING_FEN, "is_terminal": p == 6} for p in range(7)
+]
+_HINTED_BLUNDER_EVALS: list[dict[str, object]] = [
+    {"ply": 0, "eval_cp": 0, "eval_mate": None, "best_move": None, "pv": None},
+    {"ply": 1, "eval_cp": 20, "eval_mate": None, "best_move": "e2e4", "pv": None},
+    {"ply": 2, "eval_cp": 30, "eval_mate": None, "best_move": "g1f3", "pv": None},
+    {"ply": 3, "eval_cp": -500, "eval_mate": None, "best_move": "b8c6", "pv": None},
+    {"ply": 4, "eval_cp": -480, "eval_mate": None, "best_move": "f1c4", "pv": None},
+    {"ply": 5, "eval_cp": 60, "eval_mate": None, "best_move": "f8c5", "pv": None},
+    {"ply": 6, "eval_cp": 30, "eval_mate": None, "best_move": None, "pv": None},
+]
+
+
+def test_hint_flaw_plies_selects_mistake_and_blunder_only() -> None:
+    """_hint_flaw_plies runs _run_all_moves_pass over lightweight in-memory
+    GamePosition objects, POST-MOVE shifted by one (CR-02), and keeps only
+    mistake/blunder plies (Q4/RESEARCH A2).
+
+    ply=2 (white, ES ~53% -> ~7%) is the real blunder in _HINTED_BLUNDER_EVALS
+    — independently confirmed by the server's own classify_game_flaws for
+    these same values (see the fixture's docstring above). Every other ply
+    has a small or zero ES change and must be excluded.
+    """
+    assert _hint_flaw_plies(_HINTED_BLUNDER_EVALS) == {2}
+
+
+def test_hint_flaw_plies_empty_for_no_evals() -> None:
+    """An empty evals list yields an empty hint set (no crash on an empty lease)."""
+    assert _hint_flaw_plies([]) == set()
+
+
+def test_build_blob_walk_targets_tokens_missed_and_allowed() -> None:
+    """Walks the missed line at flaw_ply and the allowed line at flaw_ply + 1,
+    token-keyed per the D-04a scheme ("{flaw_ply}:{line}:{node_k}").
+    """
+    boards, tokens = _build_blob_walk_targets(_ATOMIC_POSITIONS, _ATOMIC_EVALS, {1})
+
+    assert tokens == ["1:missed:0", "1:allowed:0"]
+    assert len(boards) == 2
+    assert all(isinstance(b, chess.Board) for b in boards)
+
+
+def test_build_blob_walk_targets_skips_line_with_no_start_fen() -> None:
+    """A flaw_ply at the game's last ply has no allowed-line start FEN (flaw_ply + 1
+    does not exist in the lease payload) -- skipped, not crashed. The server
+    independently re-derives this as a D-06 sentinel (T-147-03; never trusts
+    which lines this worker could walk).
+    """
+    positions: list[dict[str, object]] = [
+        {"ply": 0, "fen": chess.STARTING_FEN, "is_terminal": False},
+        {"ply": 1, "fen": chess.STARTING_FEN, "is_terminal": True},
+    ]
+    evals: list[dict[str, object]] = [
+        {"ply": 0, "eval_cp": 0, "eval_mate": None, "best_move": "e2e4", "pv": None},
+        {"ply": 1, "eval_cp": 600, "eval_mate": None, "best_move": "d7d5", "pv": None},
+    ]
+
+    boards, tokens = _build_blob_walk_targets(positions, evals, {1})
+
+    assert tokens == ["1:missed:0"]
+    assert len(boards) == 1
+
+
+async def test_eval_atomic_game_full_ply_pass_stays_multipv1() -> None:
+    """The full-ply pass inside _eval_atomic_game uses MultiPV-1 (evaluate_nodes_with_pv),
+    never MultiPV-2, for the /atomic-submit evals list (Phase 146 D-03 invariant
+    still holds under the new atomic rung — mirrors
+    test_eval_positions_uses_multipv1_no_second_best).
+    """
+    pool = AsyncMock()
+    pool.evaluate_nodes_with_pv = AsyncMock(
+        side_effect=[(0, None, "e2e4", None), (600, None, "d7d5", None), (600, None, "g1f3", None)]
+    )
+    pool.evaluate_nodes_multipv2 = AsyncMock(
+        return_value=(0, None, "a2a3", "a2a3", 0, None, "b2b3")
+    )
+
+    evals, _blob_nodes = await _eval_atomic_game(pool, _ATOMIC_POSITIONS)
+
+    assert pool.evaluate_nodes_with_pv.call_count == 3
+    for r in evals:
+        assert "second_cp" not in r, "second_cp must not appear in the full-ply evals (D-03)"
+        assert "second_mate" not in r, "second_mate must not appear in the full-ply evals (D-03)"
+        assert "second_uci" not in r, "second_uci must not appear in the full-ply evals (D-03)"
+
+
+async def test_eval_atomic_game_hints_and_blobs_flaw_plies_only() -> None:
+    """_eval_atomic_game: full-ply MultiPV-1 pass -> local hint -> MultiPV-2 blobs
+    only for the hinted flaw ply (mistake/blunder), token-keyed per D-04a.
+
+    Uses _HINTED_BLUNDER_POSITIONS/_HINTED_BLUNDER_EVALS (CR-02 cross-validated
+    fixture, see the fixture docstring): only flaw_ply=2 is hinted (the real
+    blunder); every other ply has a small/zero ES change and must NOT produce
+    any blob node or engine call.
+    """
+    pool = AsyncMock()
+    pool.evaluate_nodes_with_pv = AsyncMock(
+        side_effect=[
+            (int(cast(int, e["eval_cp"])), None, e["best_move"], None)
+            for e in _HINTED_BLUNDER_EVALS
+        ]
+    )
+    pool.evaluate_nodes_multipv2 = AsyncMock(
+        side_effect=[
+            (10, None, "a2a3", "a2a3", 5, None, "b2b3"),
+            (20, None, "b2b3", "b2b3", 15, None, "c2c3"),
+        ]
+    )
+
+    evals, blob_nodes = await _eval_atomic_game(pool, _HINTED_BLUNDER_POSITIONS)
+
+    assert len(evals) == 7
+    assert pool.evaluate_nodes_multipv2.call_count == 2
+
+    tokens = [n["token"] for n in blob_nodes]
+    assert tokens == ["2:missed:0", "2:allowed:0"], tokens
+
+    missed_node = blob_nodes[0]
+    assert missed_node["best_cp"] == 10
+    assert missed_node["best_mate"] is None
+    assert missed_node["second_cp"] == 5
+    assert missed_node["second_mate"] is None
+    assert missed_node["second_uci"] == "b2b3"
+
+
+async def test_eval_atomic_game_no_hinted_flaws_skips_multipv2_entirely() -> None:
+    """When the local hint selects zero flaw plies, evaluate_nodes_multipv2 is
+    never called at all (no gather over an empty board list — cheap idle path).
+    """
+    flat_evals: list[dict[str, object]] = [
+        {"ply": 0, "eval_cp": 0, "eval_mate": None, "best_move": "e2e4", "pv": None},
+        {"ply": 1, "eval_cp": 0, "eval_mate": None, "best_move": "d7d5", "pv": None},
+    ]
+    positions: list[dict[str, object]] = [
+        {"ply": 0, "fen": chess.STARTING_FEN, "is_terminal": False},
+        {"ply": 1, "fen": chess.STARTING_FEN, "is_terminal": True},
+    ]
+
+    pool = AsyncMock()
+    pool.evaluate_nodes_with_pv = AsyncMock(
+        side_effect=[(e["eval_cp"], None, "e2e4", None) for e in flat_evals]
+    )
+    pool.evaluate_nodes_multipv2 = AsyncMock()
+
+    evals, blob_nodes = await _eval_atomic_game(pool, positions)
+
+    assert len(evals) == 2
+    assert blob_nodes == []
     pool.evaluate_nodes_multipv2.assert_not_called()
+
+
+async def test_atomic_submit_payload_shape_and_schema_version() -> None:
+    """The /atomic-submit body carries evals + blob_nodes together with
+    worker_schema_version, matching the 147-04 AtomicSubmitRequest schema, and
+    blob_nodes contains tokens only for the hinted flaw ply.
+    """
+    lease_body = {
+        "game_id": 55,
+        "user_id": 9,
+        "is_lichess_eval_game": False,
+        "positions": _HINTED_BLUNDER_POSITIONS,
+        "leased_at": "2026-07-01T10:00:00Z",
+        "job_id": "job-atomic-1",
+    }
+    submit_body = {"game_id": 55, "flaws_written": 1, "blobs_written": 1}
+
+    client = AsyncMock()
+    client.post = AsyncMock(
+        side_effect=[
+            _make_response(200, lease_body),  # /atomic-lease
+            _make_response(200, submit_body),  # /atomic-submit
+        ]
+    )
+
+    pool = AsyncMock()
+    pool.evaluate_nodes_with_pv = AsyncMock(
+        side_effect=[
+            (int(cast(int, e["eval_cp"])), None, e["best_move"], None)
+            for e in _HINTED_BLUNDER_EVALS
+        ]
+    )
+    pool.evaluate_nodes_multipv2 = AsyncMock(
+        side_effect=[
+            (10, None, "a2a3", "a2a3", 5, None, "b2b3"),
+            (20, None, "b2b3", "b2b3", 15, None, "c2c3"),
+        ]
+    )
+
+    await _run_cycle(
+        client=client, pool=pool, sf_version="sf18", idle_sleep=1.0, dry_run=False, loop=False
+    )
+
+    submit_call = client.post.call_args_list[1]
+    assert submit_call.args[0] == "/api/eval/remote/atomic-submit"
+    body = submit_call.kwargs["json"]
+    assert body["game_id"] == 55
+    assert body["sf_version"] == "sf18"
+    assert body["worker_schema_version"] == WORKER_SCHEMA_VERSION
+    assert body["job_id"] == "job-atomic-1"
+    assert len(body["evals"]) == 7
+    assert [n["token"] for n in body["blob_nodes"]] == ["2:missed:0", "2:allowed:0"]
