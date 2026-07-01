@@ -386,8 +386,13 @@ async def _handle_flaw_blob_response(
     game_id = data["game_id"]
     positions = data["positions"]
 
+    # Positions are FENs expanded from each flaw's two PV walks (missed + allowed);
+    # token format is "{flaw_ply}:{line}:{k}", so unique flaw plies = the flaw count
+    # that blobs_written will report on submit. Log both so the counts share a frame.
+    flaw_count = len({str(pos["token"]).split(":", 1)[0] for pos in positions})
     _log(
-        f"Flaw-blob lease game_id={game_id} ({len(positions)} positions). Evaluating at MultiPV=2..."
+        f"Flaw-blob lease game_id={game_id} ({len(positions)} FENs across {flaw_count} flaws). "
+        "Evaluating at MultiPV=2..."
     )
     evals = await _eval_flaw_blob_positions(pool, positions)
 
