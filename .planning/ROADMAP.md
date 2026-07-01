@@ -681,7 +681,7 @@ Plans:
 **Goal:** Ensure `game_flaws.tactic_motif` is never persisted with raw, ungated (pre-forcing-line-gate) values that pollute backend stats and tag-based game-selection filters. Part A (data-level, ship-first): on the remote-submit path where blobs are deferred, write `tactic_motif = NULL` for cp-based flaws whose forcing-line gate can't yet run — keeping mate-adjacent (`pre_flaw_eval_cp IS NULL`) and D-06 `[]`-sentinel raw tags — so values self-heal when the tier-4 gated retag lands. Part B (worker pipeline): add a versioned lease+submit endpoint pair and an upgraded fat-`app.*` fleet worker that submits full-ply evals + MultiPV-2 blobs together; the server runs its own authoritative `classify_game_flaws` with those blobs and writes flaws + forcing-line-gated tags + completion markers in one transaction, eliminating the ungated window at write time. Reuses the SEED-073 over-cap sentinel for fat games (no chunking); A is B's graceful-degradation net under version skew.
 **Requirements**: SEED-074 (see .planning/seeds/SEED-074-gated-tags-at-write-time.md)
 **Depends on:** Phase 146
-**Plans:** 4/6 plans executed
+**Plans:** 5/6 plans executed
 
 Plans:
 **Wave 1**
@@ -699,7 +699,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 147-05-PLAN.md — Part B: atomic /atomic-submit handler — server-authoritative classify + single-transaction gated write (D-01)
+- [x] 147-05-PLAN.md — Part B: atomic /atomic-submit handler — server-authoritative classify + single-transaction gated write (D-01)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
