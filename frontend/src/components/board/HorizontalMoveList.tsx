@@ -68,7 +68,7 @@ export function HorizontalMoveList({
       <div
         data-testid={testId}
         className={cn(
-          'overflow-y-auto rounded border border-border bg-muted/30 p-2 text-sm text-muted-foreground',
+          'overflow-y-auto thin-scrollbar rounded border border-border bg-muted/30 p-2 text-sm text-muted-foreground',
           heightClass,
         )}
       >
@@ -81,7 +81,7 @@ export function HorizontalMoveList({
     <div
       data-testid={testId}
       className={cn(
-        'overflow-y-auto rounded border border-border bg-muted/30 p-2 text-sm',
+        'overflow-y-auto thin-scrollbar rounded border border-border bg-muted/30 p-2 text-sm',
         heightClass,
       )}
     >

@@ -834,7 +834,7 @@ export default function Analysis() {
                 here it needs that horizontal room or it triggers a horizontal scrollbar
                 (overflow-y-auto coerces overflow-x to auto). overflow-x-hidden is the
                 belt-and-suspenders. */}
-            <TabsContent value="eval" className="min-h-0 overflow-x-hidden overflow-y-auto">
+            <TabsContent value="eval" className="min-h-0 overflow-x-hidden overflow-y-auto thin-scrollbar">
               <div className="px-3">{evalChart('h-[120px]')}</div>
             </TabsContent>
           </Tabs>

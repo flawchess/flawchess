@@ -596,7 +596,7 @@ function DesktopTree({
         data-testid="variation-tree-desktop"
         aria-label="Move list"
         role="navigation"
-        className="min-h-0 flex-1 overflow-y-auto"
+        className="min-h-0 flex-1 overflow-y-auto thin-scrollbar"
       >
         <p className="text-sm text-muted-foreground p-2">No moves yet</p>
       </div>

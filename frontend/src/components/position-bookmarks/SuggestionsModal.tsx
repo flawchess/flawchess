@@ -182,7 +182,7 @@ export function SuggestionsModal({ open, onOpenChange, mostPlayedData, bookmarks
           <DialogTitle>Suggested Bookmarks</DialogTitle>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+        <div className="flex-1 overflow-y-auto thin-scrollbar space-y-4 pr-1">
           {mostPlayedData === undefined && (
             <div className="text-center py-8 text-muted-foreground text-sm">
               Loading suggestions...

@@ -157,7 +157,7 @@ export function SidebarLayout({ panels, activePanel, onActivePanelChange, sideCo
           {activePanelConfig.headerExtra}
         </div>
         {/* Scrollable content area — header above and footer below stay pinned. */}
-        <div className="overflow-y-auto flex-1 min-h-0">{activePanelConfig.content}</div>
+        <div className="overflow-y-auto flex-1 min-h-0 thin-scrollbar">{activePanelConfig.content}</div>
         {activePanelConfig.footer && <div className="shrink-0">{activePanelConfig.footer}</div>}
       </div>
     </div>
