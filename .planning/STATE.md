@@ -5,16 +5,16 @@ milestone_name: Forcing-Line Tactic Gate
 current_phase: 146
 current_phase_name: offload-live-submit-forcing-line-continuation-eval-to-the-re
 status: planning
-stopped_at: Completed 146-02-PLAN.md
-last_updated: "2026-06-30T23:40:30.381Z"
-last_activity: 2026-06-30
-last_activity_desc: Phase 146 execution started
+stopped_at: Phase 147 context gathered
+last_updated: "2026-07-01T18:09:34.293Z"
+last_activity: 2026-07-01
+last_activity_desc: "Completed quick task 260701-lw4: replace tier-4 blob-backfill top-50 recency window with a two-stage ES weighted lottery"
 progress:
-  total_phases: 6
+  total_phases: 7
   completed_phases: 4
   total_plans: 19
   completed_plans: 17
-  percent: 67
+  percent: 57
 ---
 
 # Project State: FlawChess
@@ -156,9 +156,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-Last session: 2026-06-30T23:40:30.361Z
-Stopped at: Completed 146-02-PLAN.md
-Resume file: None
+Last session: 2026-07-01T18:09:34.277Z
+Stopped at: Phase 147 context gathered
+Resume file: .planning/phases/147-persist-only-forcing-line-gated-tactic-tags-suppress-ungated/147-CONTEXT.md
 
 ## Performance Metrics
 
