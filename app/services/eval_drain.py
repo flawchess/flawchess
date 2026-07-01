@@ -55,7 +55,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.database import async_session_maker
 from app.models.game import Game
 from app.models.game_flaw import GameFlaw
-from app.schemas.eval_remote import FlawBlobLeasePosition, FlawBlobSubmitEval
+from app.schemas.eval_remote import AtomicBlobNode, FlawBlobLeasePosition, FlawBlobSubmitEval
 from app.models.game_position import DEDUP_MAX_PLY, GamePosition
 from app.models.import_job import ImportJob
 from app.models.opening_position_eval import OpeningPositionEval
@@ -1290,6 +1290,79 @@ async def _build_flaw_multipv2_blobs(
     return blobs
 
 
+async def _derive_atomic_sentinel_lines(
+    game_id: int,
+    targets: Sequence[_FullPlyEvalTarget],
+    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
+) -> set[tuple[int, str]]:
+    """Phase 147 SEED-074 Part B: re-derive un-walkable (flaw_ply, line) pairs for one
+    atomic-submit game, entirely from the worker's OWN submitted evals/PVs (D-01/D-02).
+
+    Mirrors _build_flaw_multipv2_blobs's classify+walk preamble (overlay in-memory
+    evals, classify_game_flaws, walk each flaw's PV via _walk_pv_boards) but makes NO
+    engine calls and stops before any continuation-node gather — the atomic-submit
+    worker already supplies the MultiPV-2 continuation nodes via body.blob_nodes, so
+    the caller (_apply_atomic_submit) assembles those directly via
+    _assemble_flaw_blobs_from_submit. This function only classifies (server-
+    authoritative, T-147-03: never trusts the worker's local hint-classify) and
+    determines which (flaw_ply, line) pairs are structurally un-walkable (< 2-node
+    PV walk or missing start board — D-06 sentinel semantics), independent of which
+    blob_nodes tokens the worker happened to submit.
+
+    A flaw_ply with a walkable line the worker did NOT submit any token for is
+    deliberately left OUT of the returned set (not sentineled) — the caller's
+    _assemble_flaw_blobs_from_submit then omits that flaw entirely from blob_map,
+    letting classify_game_flaws' blobs_pending=True suppression net it to NULL
+    (T-147-08 "flaw the server found but the worker did not blob" case) rather than
+    incorrectly treating it as a D-06 structural sentinel.
+
+    Opens and closes its own read session (positions with in-memory eval overlay,
+    same pattern as _build_flaw_multipv2_blobs); makes no asyncio.gather calls at
+    all (CLAUDE.md hard rule: AsyncSession is not safe for concurrent use — trivially
+    satisfied here since there is no gather to begin with).
+    """
+    pos_eval = _reconstruct_pos_eval(targets, {}, engine_result_map)
+    targets_by_ply = {t.ply: t for t in targets}
+
+    async with async_session_maker() as session:
+        game = await session.scalar(select(Game).where(Game.id == game_id))
+        if game is None:
+            return set()
+        positions_result = await session.execute(
+            select(GamePosition)
+            .where(GamePosition.game_id == game_id, GamePosition.user_id == game.user_id)
+            .order_by(GamePosition.ply)
+        )
+        positions = list(positions_result.scalars().all())
+    # session closed — CPU-only work below
+
+    for pos in positions:
+        cp, mate = _post_move_eval(pos_eval, pos.ply)
+        pos.eval_cp = cp
+        pos.eval_mate = mate
+
+    flaw_result = classify_game_flaws(game, positions)
+    if "reason" in flaw_result:
+        return set()
+
+    cap = engine_service.PV_CAP_PLIES
+    sentinel_lines: set[tuple[int, str]] = set()
+
+    for flaw in flaw_result:
+        flaw_ply: int = flaw["ply"]
+        for line, node0_ply in [("missed", flaw_ply), ("allowed", flaw_ply + 1)]:
+            start_target = targets_by_ply.get(node0_ply)
+            if start_target is None:
+                sentinel_lines.add((flaw_ply, line))
+                continue
+            pv = engine_result_map.get(node0_ply, (None, None, None, None))[3]
+            walk = _walk_pv_boards(start_target.board, pv, cap)
+            if len(walk) < 2:
+                sentinel_lines.add((flaw_ply, line))
+
+    return sentinel_lines
+
+
 async def _batch_update_flaw_pv_lines(
     session: AsyncSession,
     game_id: int,
@@ -1464,7 +1537,7 @@ def _parse_token(token: str) -> tuple[int, str, int]:
 def _assemble_one_line_blob(
     flaw_ply: int,
     line: str,
-    node_results: dict[tuple[int, str, int], FlawBlobSubmitEval],
+    node_results: dict[tuple[int, str, int], FlawBlobSubmitEval | AtomicBlobNode],
     sentinel_lines: set[tuple[int, str]],
 ) -> list[PvNode]:
     """Assemble one PvNode list for a flaw line from indexed worker results.
@@ -1494,10 +1567,11 @@ def _assemble_one_line_blob(
 
 def _assemble_flaw_blobs_from_submit(
     game_id: int,
-    submit_evals: Sequence[FlawBlobSubmitEval],
+    submit_evals: Sequence[FlawBlobSubmitEval | AtomicBlobNode],
     sentinel_lines: set[tuple[int, str]],
 ) -> dict[int, tuple[list[PvNode], list[PvNode]]]:
-    """Phase 145 SHIP-01: assemble PvNode blobs from worker MultiPV=2 results (D-04 submit path).
+    """Phase 145 SHIP-01 / Phase 147 Part B: assemble PvNode blobs from worker MultiPV=2
+    results (D-04 tier-4 submit path AND the atomic-submit path, D-02).
 
     Pure CPU helper — no engine calls, no DB sessions. Parses tokens, groups by
     (flaw_ply, line, node_k), and builds list[PvNode] per line. Lines in
@@ -1506,6 +1580,11 @@ def _assemble_flaw_blobs_from_submit(
     All (flaw_ply, line) pairs found across submitted evals and sentinel_lines
     appear in the returned blob_map. The caller writes [] for sentinels via
     _batch_update_flaw_pv_lines (D-06 sentinel write clears the IS NULL predicate).
+    A flaw_ply with NEITHER a submitted token NOR a sentinel_lines entry for EITHER
+    line is intentionally left OUT of the returned blob_map entirely (Phase 147
+    Part B): the caller's classify_game_flaws sees flaw_pv_blobs.get(flaw_ply) is
+    None for that flaw and, with blobs_pending=True, suppresses its tag to NULL
+    instead of persisting it raw/ungated (T-147-08).
 
     Token format: "{flaw_ply}:{line}:{node_k}" (D-04a). All three components
     are used as the index key so "10:missed:2" and "10:allowed:2" remain distinct
@@ -1514,6 +1593,9 @@ def _assemble_flaw_blobs_from_submit(
     Args:
         game_id: Owning game (informational — not used in the pure CPU path).
         submit_evals: Worker evaluation results, each carrying an echoed token.
+            FlawBlobSubmitEval (tier-4) and AtomicBlobNode (Phase 147 Part B) share
+            the identical field set (token/best_cp/best_mate/second_cp/second_mate/
+            second_uci) so either submit shape can be assembled here unchanged.
         sentinel_lines: Set of (flaw_ply, line) pairs identified as un-fillable
             by the lease builder (NULL PV or < 2-node walk). These get [] blobs.
 
@@ -1522,7 +1604,7 @@ def _assemble_flaw_blobs_from_submit(
         where each value is a list[PvNode] (possibly [] for sentinels).
     """
     # Index worker results by (flaw_ply, line, node_k) — all three components.
-    node_results: dict[tuple[int, str, int], FlawBlobSubmitEval] = {}
+    node_results: dict[tuple[int, str, int], FlawBlobSubmitEval | AtomicBlobNode] = {}
     for e in submit_evals:
         try:
             key = _parse_token(e.token)

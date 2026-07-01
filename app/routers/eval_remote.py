@@ -17,6 +17,14 @@ POST /eval/remote/atomic-lease — (Phase 147 SEED-074 Part B, D-02) NEW version
                                  UNCHANGED (tier-1 > tier-2 > tier-3), returns the same
                                  FEN-per-ply shape as /lease. Runs alongside the old /lease pair
                                  (not a replacement) during a mixed-fleet deploy.
+POST /eval/remote/atomic-submit — (Phase 147 SEED-074 Part B, D-01/D-02) paired with
+                                 /atomic-lease. Applies full-ply evals + the worker's own
+                                 MultiPV-2 continuation blobs together, in ONE write_session:
+                                 evals -> server-authoritative classify_game_flaws (with the
+                                 worker's blobs as gate input only, never trusted for flaw
+                                 membership) -> blob write -> both completion markers, one
+                                 commit. No ungated window is ever observable for a game
+                                 processed here (see _apply_atomic_submit).
 
 All endpoints require the X-Operator-Token header (T-120-01 operator auth gate).
 403 when the token is not configured on the server (fail-closed); 401 when it does
@@ -27,8 +35,9 @@ Expected / non-exception status codes (do NOT Sentry-capture):
   401 — wrong token
   204 — empty queue (lease) or lichess game deferred (lease) or shallow backlog (entry-lease)
         or over-cap fat game (atomic-lease)
-  422 — SF version mismatch (submit / entry-submit)
-  404 — game not found (submit)
+  422 — SF version mismatch (submit / entry-submit / atomic-submit) or foreign/out-of-range
+        blob token (flaw-blob-submit / atomic-submit)
+  404 — game not found (submit / atomic-submit)
 
 The server owns ALL storage convention (D-2): workers are dumb FEN→eval functions.
 The submit endpoint calls _apply_full_eval_results with the worker's ply-keyed evals;
@@ -55,6 +64,8 @@ from app.models.game_position import GamePosition
 from app.schemas.eval_remote import (
     MAX_SUBMIT_EVALS,
     AtomicLeaseResponse,
+    AtomicSubmitRequest,
+    AtomicSubmitResponse,
     EntryLeasePosition,
     EntryLeaseResponse,
     EntrySubmitRequest,
@@ -83,11 +94,13 @@ from app.services.eval_drain import (
     _classify_and_insert_flaws,
     _collect_eval_targets_from_db,
     _collect_full_ply_targets,
+    _derive_atomic_sentinel_lines,
     _load_pgns_for_games,
     _mark_evals_completed,
     _mark_full_evals_completed,
     _mark_full_pv_completed,
     _parse_token,
+    _run_multipv2_pass,
     _signal_flaw_completion,
 )
 from app.services.forcing_line_gate import PvNode
@@ -1078,3 +1091,221 @@ async def flaw_blob_submit(
             detail="Stockfish version mismatch",
         )
     return await _apply_flaw_blob_submit(body.game_id, body)
+
+
+# ─── Phase 147 SEED-074 Part B: atomic eval+blob submit helper + endpoint (D-01/D-02) ──
+
+
+async def _apply_atomic_submit(
+    game_id: int,
+    body: AtomicSubmitRequest,
+) -> AtomicSubmitResponse:
+    """Apply an atomic eval+blob submit: evals -> authoritative classify (with the
+    worker's blobs) -> blob write -> both completion markers, ONE write_session
+    (Phase 147 SEED-074 Part B, D-01/D-02 — the _full_drain_tick Step 4 template).
+
+    Eliminates the ungated window the old /lease + /submit pair leaves open (D-01):
+    the upgraded worker submits full-ply evals AND its own MultiPV-2 continuation
+    blobs for the plies its LOCAL hint-classify flagged as flaws, together, in one
+    request. The server NEVER trusts that hint (T-147-03 Spoofing/Tampering
+    boundary) — it re-runs classify_game_flaws on its OWN game_positions and
+    independently re-derives which (flaw_ply, line) pairs are structurally
+    un-walkable (D-06 sentinel semantics) purely from the worker's submitted
+    evals/PVs, via _derive_atomic_sentinel_lines — never from which tokens the
+    worker happened to send.
+
+    Read phase (short session, closed before CPU work): load Game + GamePosition
+    rows, mirroring _apply_submit's read phase.
+
+    Token tamper guard (T-147-02, mirrors _apply_flaw_blob_submit's T-145-09):
+    every submitted blob_nodes token must parse and reference a flaw_ply within
+    this game's actual ply range; anything else is rejected with 422 BEFORE any
+    write happens. A token for an in-range ply the server does NOT classify as a
+    flaw is intentionally NOT rejected here — the worker's local hint-classify is
+    expected to sometimes diverge from the server's authoritative classify (that
+    divergence is the whole reason the server re-classifies at all), so such a
+    token is silently dropped later at the SQL join in _run_multipv2_pass (no
+    game_flaws row exists at that ply to update).
+
+    Write phase (ONE session, mirrors _full_drain_tick Step 4 / RESEARCH.md
+    "_full_drain_tick's atomic-write ordering"): apply evals -> classify_game_flaws
+    (with the worker-supplied blob_map) -> write blobs -> stamp both completion
+    markers -> ONE commit (T-117-11: no partial/ungated state is ever observable).
+
+    blobs_pending=True is passed to _classify_and_fill_oracle here (a deliberate,
+    documented deviation from the plan's literal "blobs_pending stays False" — see
+    147-05-SUMMARY.md Deviations): tracing _classify_tactic_gated shows blobs_pending
+    ONLY affects the case where flaw_pv_blobs.get(flaw_ply) is None (the flaw_ply
+    key is entirely absent — i.e. the server found a flaw the worker did not blob
+    at all). It has ZERO effect on a flaw with a real submitted blob (gate runs via
+    apply_forcing_line_filter unconditionally) and ZERO effect on the D-06
+    []-sentinel / mate-adjacent FINAL cases (both gate on `pv_blob` being present,
+    not on blobs_pending). blobs_pending=True is therefore required — and safe — to
+    satisfy the must_have "a flaw the server found but the worker did not blob
+    writes NULL (Part A net) and is left for tier-4 backfill", which is otherwise
+    unreachable with blobs_pending=False (that must_have's own explicit Task 2 test
+    requires it).
+    """
+    # ── Read phase — short session, close before CPU work ────────────────────
+    async with async_session_maker() as read_session:
+        game_result = await read_session.execute(select(Game).where(Game.id == game_id))
+        game = game_result.unique().scalar_one_or_none()
+        if game is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Game not found",
+            )
+
+        pgn_text: str = game.pgn
+        is_lichess_eval_game: bool = game.lichess_evals_at is not None
+        owner_id: int = game.user_id
+
+        gp_result = await read_session.execute(
+            select(
+                GamePosition.ply,
+                GamePosition.full_hash,
+                GamePosition.eval_cp,
+                GamePosition.eval_mate,
+            ).where(
+                GamePosition.game_id == game_id,
+                GamePosition.user_id == game.user_id,
+            )
+        )
+        gp_rows: list[tuple[int, int, int | None, int | None]] = [
+            (row.ply, row.full_hash, row.eval_cp, row.eval_mate) for row in gp_result.all()
+        ]
+    # read_session closed — no sessions open during CPU work below
+
+    targets = _collect_full_ply_targets(
+        game_id=game_id,
+        pgn_text=pgn_text,
+        game_positions_rows=gp_rows,
+        include_terminal=not is_lichess_eval_game,
+    )
+    game_length = sum(1 for t in targets if not t.is_terminal)
+
+    # Worker supplies (eval_cp, eval_mate, best_move, pv) keyed by position ply —
+    # identical shape to /submit's engine_result_map (D-2: worker is a dumb
+    # FEN->eval function; the server owns all storage convention).
+    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]] = {
+        e.ply: (e.eval_cp, e.eval_mate, e.best_move, e.pv) for e in body.evals
+    }
+
+    # ── Token tamper guard (T-147-02): structural in-game-range check ─────────
+    # A token whose flaw_ply falls outside this game's actual ply range is
+    # unconditionally foreign — reject before any write (mirrors the
+    # _apply_flaw_blob_submit / T-145-09 precedent, whose own test uses an
+    # out-of-range flaw_ply=99 for exactly this reason).
+    for node in body.blob_nodes:
+        try:
+            node_flaw_ply, _line, _k = _parse_token(node.token)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Malformed token: {node.token!r}",
+            ) from exc
+        if not (0 <= node_flaw_ply < game_length):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Unknown or foreign token: {node.token!r}",
+            )
+
+    # ── Re-derive un-walkable (flaw_ply, line) pairs server-side (D-06) ────────
+    # Entirely from the server's own authoritative classify + the worker's
+    # submitted evals/PVs — independent of which tokens the worker submitted.
+    sentinel_lines = await _derive_atomic_sentinel_lines(game_id, targets, engine_result_map)
+
+    # Reassemble the worker's token-keyed blob_nodes into a {flaw_ply -> (allowed,
+    # missed)} PvNode map. A flaw_ply with no submitted tokens and no sentinel entry
+    # for either line is left out entirely — the classify call below (blobs_pending
+    # =True) suppresses that flaw's tag to NULL rather than persisting it raw.
+    flaw_pv_blobs = _assemble_flaw_blobs_from_submit(game_id, body.blob_nodes, sentinel_lines)
+
+    # ── Write phase — ONE late session, all UPDATEs + commit atomic (T-117-11) ──
+    async with async_session_maker() as write_session:
+        await _apply_full_eval_results(
+            write_session, targets, {}, engine_result_map, is_lichess_eval_game
+        )
+
+        # Server-authoritative classify: re-runs classify_game_flaws on the server's
+        # OWN game_positions (T-147-03) using the worker's blobs purely as gate input,
+        # never as a trusted flaw-ply hint. Runs BEFORE the blob write (Pitfall 4:
+        # blobs are not yet in the DB here) and BEFORE the completion markers so
+        # evals + flaws + blobs commit atomically with the markers.
+        await _classify_and_fill_oracle(
+            write_session,
+            game_id,
+            engine_result_map,
+            flaw_pv_blobs if flaw_pv_blobs else None,
+            blobs_pending=True,
+        )
+
+        flaws_written = await write_session.scalar(
+            sa.select(sa.func.count()).select_from(GameFlaw).where(GameFlaw.game_id == game_id)
+        )
+
+        await _run_multipv2_pass(write_session, game_id, flaw_pv_blobs)
+
+        await _mark_full_evals_completed(write_session, game_id)
+        await _mark_full_pv_completed(write_session, game_id)
+
+        # Stamp eval_jobs for tier-1/tier-2 claims (mirrors _apply_submit). The
+        # WHERE status='leased' guard makes a late submit (lease expired + re-claimed,
+        # or job already completed) a safe no-op.
+        if body.job_id is not None:
+            jobs_table = EvalJob.__table__
+            now_ts = datetime.now(timezone.utc)
+            await write_session.execute(
+                update(jobs_table)  # ty: ignore[invalid-argument-type]
+                .where(
+                    jobs_table.c.id == body.job_id,
+                    jobs_table.c.status == "leased",
+                )
+                .values(status="completed", completed_at=now_ts)
+            )
+
+        await write_session.commit()
+
+    # Signal after commit so the hook never fires for a partially-committed game.
+    _signal_flaw_completion(owner_id)
+
+    return AtomicSubmitResponse(
+        game_id=game_id,
+        flaws_written=flaws_written or 0,
+        blobs_written=len(flaw_pv_blobs),
+    )
+
+
+@router.post("/atomic-submit", response_model=AtomicSubmitResponse)
+async def atomic_submit_eval(
+    body: AtomicSubmitRequest,
+    _auth: Annotated[None, Depends(require_operator_token)],
+) -> AtomicSubmitResponse:
+    """Apply one game's full-ply evals + MultiPV-2 blobs atomically (Phase 147 D-01/D-02).
+
+    NEW endpoint pair (paired with /atomic-lease, 147-04) — does NOT modify /submit
+    or /flaw-blob-submit; both stay live for a mixed-fleet deploy. Unlike the old
+    /submit (which always defers blobs to a separate tier-4 round-trip) and
+    /flaw-blob-submit (which only ever retags existing NULL-blob flaw rows), this
+    endpoint applies evals, classifies flaws, and writes gated tactic tags + PV-line
+    blobs + both completion markers in ONE transaction — no ungated window is ever
+    observable for a game processed here (see _apply_atomic_submit for the full
+    write-ordering rationale).
+
+    worker_schema_version is accepted but not gated on (Q5, RESEARCH.md): the server
+    re-classifies authoritatively regardless of which schema version produced the
+    worker's evals/blobs, so a stale worker cannot corrupt correctness — only
+    (transiently) miss the gate for plies it didn't blob, which the NULL-suppression
+    net + a future tier-4 pass resolves.
+
+    Expected status codes (do NOT Sentry-capture):
+      404 — game not found
+      422 — SF version mismatch or foreign/out-of-range blob token (T-147-02)
+    """
+    # D-5 SF-version gate (same as /submit, /entry-submit, /flaw-blob-submit).
+    if settings.EXPECTED_SF_VERSION and body.sf_version != settings.EXPECTED_SF_VERSION:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Stockfish version mismatch",
+        )
+    return await _apply_atomic_submit(game_id=body.game_id, body=body)
