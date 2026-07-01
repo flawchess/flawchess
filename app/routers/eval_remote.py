@@ -47,6 +47,7 @@ from app.core.database import async_session_maker
 from app.models.game import Game
 from app.models.game_position import GamePosition
 from app.schemas.eval_remote import (
+    MAX_SUBMIT_EVALS,
     EntryLeasePosition,
     EntryLeaseResponse,
     EntrySubmitRequest,
@@ -782,6 +783,31 @@ async def flaw_blob_lease(
             async with async_session_maker() as write_session:
                 await _batch_update_flaw_pv_lines(write_session, game_id, sentinel_blob_map)
                 await write_session.commit()
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    # SEED-073: over-cap sentinel. Fat games (> MAX_SUBMIT_EVALS walkable flaw-blob
+    # positions, e.g. games with many flaws and long PVs) used to raise a Pydantic
+    # ValidationError when FlawBlobLeaseResponse.positions (max_length=MAX_SUBMIT_EVALS)
+    # was constructed with an oversized list, surfacing as a 500. The tier-4 lottery then
+    # re-picked the same game forever because it never wrote a blob and never cleared the
+    # allowed_pv_lines IS NULL predicate. Fix: sentinel EVERY NULL-blob flaw ply of the
+    # game (not just the un-walkable sentinel_lines) in one pass, mirroring the all-sentinel
+    # branch above, and return 204 instead of ever building the oversized response. This
+    # does not touch MAX_SUBMIT_EVALS (shared DoS guard T-145-05/T-123-05) or the submit
+    # path — over-cap games never reach /flaw-blob-submit because no lease is returned.
+    elif len(lease_positions) > MAX_SUBMIT_EVALS:
+        async with async_session_maker() as null_plies_session:
+            null_plies_result = await null_plies_session.execute(
+                sa.select(GameFlaw.ply).where(
+                    GameFlaw.game_id == game_id,
+                    GameFlaw.allowed_pv_lines.is_(None),
+                )
+            )
+            over_cap_plies: set[int] = set(null_plies_result.scalars().all())
+        over_cap_blob_map = {ply: ([], []) for ply in over_cap_plies}
+        async with async_session_maker() as write_session:
+            await _batch_update_flaw_pv_lines(write_session, game_id, over_cap_blob_map)
+            await write_session.commit()
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     return FlawBlobLeaseResponse(
