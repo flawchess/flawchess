@@ -1609,3 +1609,69 @@ class TestTier4BlobBackfill:
             assert isinstance(claimed.user_id, int), "user_id must be an int"
         finally:
             await _delete_games(queue_session_maker, [game_id])
+
+    async def test_idle_scope_returns_none_when_tier3_empty(
+        self,
+        tier4_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """SEED-072: scope="idle" must NOT fall through to tier-4.
+
+        With tier-3 mocked empty and a tier-4-eligible NULL-blob game present,
+        claim_eval_job(scope="idle") returns None (→ HTTP 204) so the remote worker
+        drains tier-4 via the dedicated /flaw-blob-lease rung instead of re-evaluating
+        the already-complete game through the full-ply /lease path. The bundled
+        scope=None path (in-process server pool) still dispatches tier-4 — asserted by
+        test_tier4_dispatch_via_claim.
+        """
+        import app.services.eval_queue_service as svc
+        from app.models.eval_jobs import TIER_BLOB_BACKFILL
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+
+        # Force tier-3 to return None so tier-4 would be reached under the old behavior.
+        async def _mock_tier3(session: object) -> None:
+            return None
+
+        monkeypatch.setattr(svc, "_claim_tier3_derived", _mock_tier3)
+
+        user_id = tier4_test_users["user"]
+        now = datetime.now(timezone.utc)
+
+        game_id = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_evals_completed_at=now,
+        )
+        await _insert_game_flaw(queue_session_maker, user_id, game_id, ply=12)
+
+        try:
+            claimed = await svc.claim_eval_job(scope="idle")
+            assert claimed is None, (
+                "scope='idle' must return None once tier-3 is empty (SEED-072); "
+                f"tier-4 must NOT be served via /lease. Got {claimed!r}"
+            )
+        finally:
+            await _delete_games(queue_session_maker, [game_id])
+
+        # Sanity: the same NULL-blob game is still a valid tier-4 candidate — proving
+        # the None above is the routing change, not an empty backlog. (Re-insert since
+        # the game was deleted in the finally; a fresh row keeps the assertion honest.)
+        game_id2 = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_evals_completed_at=now,
+        )
+        await _insert_game_flaw(queue_session_maker, user_id, game_id2, ply=12)
+        try:
+            from app.services.eval_queue_service import _claim_tier4_blob
+
+            async with queue_session_maker() as session:
+                tier4_pick = await _claim_tier4_blob(session)
+            assert tier4_pick is not None and tier4_pick[0] == game_id2, (
+                f"Expected tier-4 to still see game {game_id2}; got {tier4_pick!r}. "
+                f"(TIER_BLOB_BACKFILL={TIER_BLOB_BACKFILL})"
+            )
+        finally:
+            await _delete_games(queue_session_maker, [game_id2])
