@@ -93,12 +93,36 @@ RECENCY_HALF_LIFE_DAYS: float = 1.0
 # (SEED-046 / RESEARCH-NOTES τ/floor recommendation)
 WEIGHT_FLOOR: float = 0.005
 
-# Phase 146 D-01: recency window for the tier-4 blob lottery.
-# The CTE selects the top-N most-recently-analyzed games (ORDER BY full_evals_completed_at DESC
-# LIMIT :recency_window), then picks one randomly — so a just-analyzed live game is sampled
-# within a small pool rather than competing uniformly with the entire corpus backfill.
-# N=50 covers ~8 minutes of prod activity (6 engines × ~1 game/min × ~8 min).
-TIER4_RECENCY_WINDOW: int = 50
+# ─── Tier-4 blob-backfill ES lottery constants (replaces Phase 146 D-01 window) ──
+# Two-stage lottery mirroring the tier-3 constants above (see _claim_tier4_blob):
+# Stage 1 picks a non-guest user weighted by last_activity recency; Stage 2 picks
+# that user's NULL-blob analyzed game weighted by full_evals_completed_at recency.
+# The floor terms are the anti-starvation fix (SEED-072 fairness): every pending-
+# blob user/game combination gets non-zero draw mass, so an old analyzed corpus
+# (e.g. user 28's ~5k games) drains instead of only the freshly-analyzed trickle.
+# Independently tunable from the tier-3 constants, though currently seeded from
+# the same values.
+
+# Tier-4 Stage 1 user-pick recency half-life. Seeded from RECENCY_HALF_LIFE_DAYS.
+# PROD TUNING: raise for broader idle sharing across returning users; see the
+# tier-3 RECENCY_HALF_LIFE_DAYS comment above for the same tension.
+TIER4_USER_RECENCY_HALF_LIFE_DAYS: float = 1.0
+
+# Tier-4 Stage 1 user-pick anti-starvation floor. Seeded from WEIGHT_FLOOR.
+# PROD TUNING: do NOT raise above 0.01 — larger floor swamps the recency signal
+# (mirrors the tier-3 WEIGHT_FLOOR comment above).
+TIER4_USER_WEIGHT_FLOOR: float = 0.005
+
+# Tier-4 Stage 2 game-pick recency half-life. Seeded from GAME_RECENCY_HALF_LIFE_DAYS.
+# PROD TUNING: lower for tighter recency preference; raise for broader spread
+# across old games (mirrors the tier-3 GAME_RECENCY_HALF_LIFE_DAYS comment above).
+TIER4_GAME_RECENCY_HALF_LIFE_DAYS: float = 30.0
+
+# Tier-4 Stage 2 game-pick anti-starvation floor — the core fix this constants
+# block exists for: guarantees every pending-blob game across the whole corpus a
+# non-zero draw probability instead of the old hard top-50 cutoff (game #51 by
+# full_evals_completed_at DESC had probability zero). Seeded from GAME_WEIGHT_FLOOR.
+TIER4_GAME_WEIGHT_FLOOR: float = 0.01
 
 # ─── D-7: game-level weighted-random pick constants ───────────────────────────
 # Applied in Step 2 and the residual fallback of _claim_tier3_derived (see D-7
@@ -468,13 +492,40 @@ async def _claim_tier4_blob(
 ) -> tuple[int, int] | None:
     """Tier-4 spare-capacity lottery: pick one analyzed non-guest game with a NULL-blob flaw.
 
-    Phase 146 D-01: uses a recency-ordered CTE to favor recently-analyzed games. The CTE
-    selects the top TIER4_RECENCY_WINDOW games by full_evals_completed_at DESC (one row
-    per game — queries games directly to avoid game_flaws duplicate rows; RESEARCH Pitfall 4),
-    then picks uniformly at random within that window. A just-analyzed live game reliably
-    falls in the top-N and drains promptly instead of competing with the whole old corpus.
+    Two-stage Efraimidis-Spirakis (ES) weighted lottery mirroring _claim_tier3_derived's
+    two-step pattern (see its docstring for the general ES-key derivation). Both stages run
+    sequentially in the same session — no asyncio.gather (AsyncSession is not safe for
+    concurrent coroutine use) and no locking, mirroring tier-3's plain-SELECT shape.
 
-    Returns (game_id, user_id) or None when no backfill-eligible flaw remains.
+    Stage 1 — WEIGHTED USER PICK:
+      Candidate users = non-guest users with at least one analyzed game
+      (full_evals_completed_at IS NOT NULL) that has a NULL-blob flaw
+      (game_flaws.allowed_pv_lines IS NULL). For each candidate compute
+      weight = exp(-Δt/τ_u) + TIER4_USER_WEIGHT_FLOOR, where Δt = seconds since
+      last_activity (NULL coalesced to epoch-0 so the exp term ≈ 0, weight ≈ floor)
+      and τ_u = TIER4_USER_RECENCY_HALF_LIFE_DAYS / ln(2) in seconds. Pick user
+      ORDER BY -ln(random()) / weight LIMIT 1.
+
+    Stage 2 — WEIGHTED GAME PICK FOR THE PICKED USER:
+      Within the picked user, pick a NULL-blob-flaw analyzed game weighted by
+      full_evals_completed_at recency only — NO tc_multiplier CASE (unlike tier-3's
+      game pick): blob enrichment is not time-control sensitive. weight =
+      exp(-Δt_evals/τ_g) + TIER4_GAME_WEIGHT_FLOOR, Δt_evals = seconds since
+      full_evals_completed_at (NULL cannot occur here — gated by the WHERE clause),
+      τ_g = TIER4_GAME_RECENCY_HALF_LIFE_DAYS / ln(2) in seconds. Pick game
+      ORDER BY -ln(random()) / weight LIMIT 1.
+
+    This replaces the Phase 146 D-01 top-N recency-window CTE: that mechanism was a
+    hard cutoff (game #51 by full_evals_completed_at DESC had probability zero), so an
+    old analyzed corpus (e.g. user 28's ~5k games) never drained while a trickle of
+    freshly-analyzed games kept refilling the window. The floor terms here give every
+    pending-blob game across the whole corpus non-zero draw mass so the whole backlog
+    drains, while the recency weighting keeps freshly-analyzed games dominant on most
+    draws (SEED-072 fairness fix).
+
+    Returns (game_id, user_id) or None when no backfill-eligible flaw remains (either
+    stage returning no row is a None-guard fall-through, mirroring _claim_tier3_derived's
+    `.one_or_none()` shape).
 
     No eval_jobs row is created — this is a table-less, idempotent-by-construction lottery.
     Once all of a game's flaw blobs (or D-06 sentinels) are written the game stops matching
@@ -484,37 +535,75 @@ async def _claim_tier4_blob(
     handler, which has the full game context needed to route the blob write correctly
     (RESEARCH Pitfall 6). This function returns only the (game_id, user_id) pair.
 
-    Security: :recency_window is bound via the sa.text params dict — never f-string-interpolated
-    (consistent with the eval_queue_service convention; RESEARCH §3, QUEUE-08).
+    Security: :tau_u, :floor_u, :picked_user, :tau_g, :floor_g are all bound via the
+    sa.text params dict — never f-string-interpolated (QUEUE-08 convention, mirrors
+    tier-3's "never f-string-interpolated" rule above).
     """
-    result = await session.execute(
+    # Convert half-lives (days) to decay constants τ in seconds — same conversion
+    # used by _claim_tier3_derived above: τ = τ½ / ln2; weight = exp(-Δt/τ) + floor.
+    tau_u_seconds: float = TIER4_USER_RECENCY_HALF_LIFE_DAYS / math.log(2) * 86400.0
+    floor_u: float = TIER4_USER_WEIGHT_FLOOR
+    tau_g_seconds: float = TIER4_GAME_RECENCY_HALF_LIFE_DAYS / math.log(2) * 86400.0
+    floor_g: float = TIER4_GAME_WEIGHT_FLOOR
+
+    # Stage 1: ES weighted user pick over users with an eligible NULL-blob analyzed game.
+    user_pick_result = await session.execute(
         sa.text("""
-            WITH recent AS (
-                SELECT g.id AS game_id, g.user_id, g.full_evals_completed_at
-                FROM games g
-                JOIN users u ON u.id = g.user_id
-                WHERE EXISTS (
-                    SELECT 1 FROM game_flaws gf
-                    WHERE gf.game_id = g.id AND gf.allowed_pv_lines IS NULL
-                )
+            SELECT u.id
+            FROM users u
+            WHERE u.is_guest = false  -- intentional: guests excluded (QUEUE-08)
+              AND EXISTS (
+                SELECT 1 FROM games g
+                JOIN game_flaws gf ON gf.game_id = g.id
+                WHERE g.user_id = u.id
                   AND g.full_evals_completed_at IS NOT NULL
-                  AND u.is_guest = false  -- intentional: guests excluded (QUEUE-08)
-                ORDER BY g.full_evals_completed_at DESC
-                LIMIT :recency_window
-            )
-            SELECT game_id, user_id
-            FROM recent
-            ORDER BY random()
+                  AND gf.allowed_pv_lines IS NULL
+              )
+            ORDER BY
+                -ln(random()) / (
+                    exp(
+                        -EXTRACT(EPOCH FROM (now() - COALESCE(u.last_activity, '1970-01-01'::timestamptz)))
+                        / :tau_u
+                    ) + :floor_u
+                )
             LIMIT 1
         """),
-        {"recency_window": TIER4_RECENCY_WINDOW},
+        {"tau_u": tau_u_seconds, "floor_u": floor_u},
     )
-    row = result.one_or_none()
-    if row is None:
+    user_row = user_pick_result.one_or_none()
+    if user_row is None:
         return None
-    game_id: int = row[0]
-    user_id: int = row[1]
-    return game_id, user_id
+    picked_user_id: int = user_row[0]
+
+    # Stage 2: ES weighted game pick for the picked user (full_evals_completed_at
+    # recency only — no tc_multiplier, unlike tier-3's game pick).
+    game_result = await session.execute(
+        sa.text("""
+            SELECT g.id
+            FROM games g
+            WHERE g.user_id = :picked_user
+              AND g.full_evals_completed_at IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM game_flaws gf
+                WHERE gf.game_id = g.id AND gf.allowed_pv_lines IS NULL
+              )
+            ORDER BY
+                -ln(random()) / (
+                    exp(
+                        -EXTRACT(EPOCH FROM (now() - COALESCE(g.full_evals_completed_at, '1970-01-01'::timestamptz)))
+                        / :tau_g
+                    ) + :floor_g
+                )
+            LIMIT 1
+        """),
+        {"picked_user": picked_user_id, "tau_g": tau_g_seconds, "floor_g": floor_g},
+    )
+    game_row = game_result.one_or_none()
+    if game_row is None:
+        return None
+
+    game_id: int = game_row[0]
+    return game_id, picked_user_id
 
 
 # ─── Public API ───────────────────────────────────────────────────────────────
