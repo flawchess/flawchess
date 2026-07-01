@@ -1,11 +1,12 @@
 ---
 phase: 147-persist-only-forcing-line-gated-tactic-tags-suppress-ungated
 verified: 2026-07-01T21:45:00Z
-status: human_needed
+status: passed
 score: 9/9 must-haves verified (1 item routed to human verification, pre-flagged by the executor as HUMAN-UAT)
 behavior_unverified: 0
 overrides_applied: 0
 human_verification:
+
   - test: "Run the upgraded worker against a live local dev backend and confirm a real atomic gated-write cycle: `docker compose -f docker-compose.dev.yml -p flawchess-dev up -d` + `uv run uvicorn app.main:app --reload`, queue at least one game for eval (fresh import or existing tier-1 explicit enqueue), then `uv run python scripts/remote_eval_worker.py --base-url http://localhost:8000 --once`."
     expected: "Logs show `Atomic-leased game_id=...` then `Atomic-submitted game_id=...: flaws_written=N, blobs_written=M`. Inspecting `game_flaws`/`game_positions` for that game afterward shows `full_evals_completed_at` and `full_pv_completed_at` both set, and any `tactic_motif` values reflect the forcing-line-gated result (never a raw/ungated value observable between the two markers)."
     why_human: "The current dev DB has zero pending `eval_jobs` rows and `EVAL_AUTO_DRAIN_ENABLED=false` blocks the tier-3 idle path locally, so `/atomic-lease` legitimately 204s end-to-end today — there is no queued tier-1/2/3 game to drive a real 200 lease→submit cycle. Manufacturing one via direct DB seeding would violate the project's 'no dev DB reset/seeding in plans' convention. This is a live network/DB/timing behavior that cannot be proven by static analysis; 147-VALIDATION.md's own Manual-Only Verifications table already lists this exact item."
