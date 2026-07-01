@@ -6,9 +6,8 @@ current_phase: 999.1
 current_phase_name: BACKLOG
 status: Ready to plan
 stopped_at: Phase 147 Plan 06 complete -- Phase 147 complete (all 6 plans)
-last_updated: "2026-07-01T21:20:28.909Z"
+last_updated: "2026-07-01T21:35:11.614Z"
 last_activity: 2026-07-01
-last_activity_desc: Phase 147 complete, transitioned to Phase 999.1
 progress:
   total_phases: 7
   completed_phases: 5
@@ -22,7 +21,7 @@ progress:
 ## Current Position
 
 Phase: 999.1 — Password Reset (BACKLOG)
-Last activity: 2026-07-01 — Phase 147 complete, transitioned to Phase 999.1
+Last activity: 2026-07-01
 
 Phase 145 (corpus-backfill-rollout) — COMPLETE (code). Plans 01–05 + the autonomous part of
 plan 06 are merged to main (`875bc164`) and released to production in v1.30 (PR #229,
