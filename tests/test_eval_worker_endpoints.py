@@ -3297,6 +3297,7 @@ class TestFlawBlobLeaseEndpoint:
 # ─── Phase 147 Plan 04 Task 2: POST /eval/remote/atomic-lease (SEED-074 Part B) ──
 
 _ATOMIC_LEASE_URL = "/api/eval/remote/atomic-lease"
+_ATOMIC_SUBMIT_URL = "/api/eval/remote/atomic-submit"
 
 
 class TestAtomicLeaseEndpoint:
@@ -3492,6 +3493,470 @@ class TestAtomicLeaseEndpoint:
                 f"Expected 204 for over-cap game, got {response.status_code}: {response.text}"
             )
             release_job_mock.assert_awaited_once_with(held_job_id)
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+
+class TestAtomicSubmitEndpoint:
+    """Tests for the NEW /atomic-submit endpoint (Phase 147 SEED-074 Part B, D-01/D-02).
+
+    - test_atomic_submit_gates_tactic_tag_and_stamps_both_markers: a real forcing
+      blob submitted for the server-classified flaw -> the GATED tag is persisted
+      AND both completion markers are stamped, atomically, in one call.
+    - test_atomic_submit_missing_blob_writes_null_tag: a walkable flaw with zero
+      submitted blob_nodes -> the tag is suppressed to NULL (Part A net), completion
+      is still stamped (blobs_pending=True — see the deviation documented in
+      _apply_atomic_submit's docstring).
+    - test_atomic_submit_drops_blob_for_non_flaw_ply: a blob token for an in-range
+      ply the server does not classify as a flaw -> silently dropped, no error.
+    - test_atomic_submit_foreign_token_rejected: a token whose flaw_ply falls
+      outside the game's ply range -> 422, nothing persisted (T-147-02 tamper guard).
+    - test_atomic_submit_over_cap_payload_rejected_by_schema: an evals list beyond
+      MAX_SUBMIT_EVALS -> Pydantic 422 before the handler runs, so no write is ever
+      attempted (the over-cap game itself is already sentineled at /atomic-lease,
+      147-04; this covers the submit side's own structural cap as defense-in-depth).
+    """
+
+    @pytest.mark.asyncio
+    async def test_atomic_submit_gates_tactic_tag_and_stamps_both_markers(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """Real forcing blob for the server-classified flaw -> GATED tag + both
+        completion markers stamped atomically in one /atomic-submit call.
+
+        Mirrors test_submit_suppresses_cp_flaw_tag_then_blob_submit_self_heals's
+        setup (_SIX_PLY_PGN_142 / _BLUNDER_SUBMIT_EVALS_142, blunder at ply 2,
+        pre_flaw_eval_cp = positions[1].eval_cp = 30). _detect_tactic_for_flaw is
+        monkeypatched to a fixed HANGING_PIECE motif on "allowed" (deterministic,
+        independent of real PV pattern matching, mirrors
+        tests/scripts/test_retag_flaws.py::TestPreFlawEvalParity._patch_detector).
+        _assemble_flaw_blobs_from_submit is monkeypatched to return a hand-built
+        forcing blob so the REAL forcing-line gate genuinely runs and passes —
+        proving the gate fires within this single call, not just that some tag
+        exists.
+        """
+        import app.routers.eval_remote as eval_remote_module
+        import app.services.flaws_service as flaws_service_module
+        from app.models.game import Game
+        from app.models.game_flaw import GameFlaw
+        from app.services.forcing_line_gate import PvNode
+        from app.services.tactic_detector import TACTIC_CONFIDENCE_HIGH, TacticMotifInt
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        def _fake_detect(
+            n: int,
+            fen_map: dict[int, str],
+            positions: list[Any],
+            pv_by_ply: Any = None,
+            orientation: str = "allowed",
+        ) -> tuple[int | None, int | None, int | None, int | None]:
+            if orientation == "allowed":
+                return (int(TacticMotifInt.HANGING_PIECE), 2, TACTIC_CONFIDENCE_HIGH, 0)
+            return (None, None, None, None)
+
+        monkeypatch.setattr(flaws_service_module, "_detect_tactic_for_flaw", _fake_detect)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(eval_worker_session_maker, user_id, pgn=_SIX_PLY_PGN_142)
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            game_id,
+            [
+                {"ply": p, "full_hash": 51100 + p, "eval_cp": None, "eval_mate": None}
+                for p in range(6)
+            ],
+        )
+
+        forcing_allowed_blob: list[PvNode] = [
+            {"b": -800, "bm": None, "s": 0, "sm": None, "su": "b8c6"},
+            {"b": 300, "bm": None, "s": 250, "sm": None, "su": "f1c4"},
+            {"b": -800, "bm": None, "s": 0, "sm": None, "su": "f8c5"},
+        ]
+
+        def _fake_assemble(
+            game_id_arg: int, submit_evals: object, sentinel_lines: object
+        ) -> dict[int, tuple[list[PvNode], list[PvNode]]]:
+            return {2: (forcing_allowed_blob, [])}
+
+        monkeypatch.setattr(eval_remote_module, "_assemble_flaw_blobs_from_submit", _fake_assemble)
+
+        payload = {
+            "game_id": game_id,
+            "sf_version": "Stockfish 18",
+            "worker_schema_version": 1,
+            "evals": list(_BLUNDER_SUBMIT_EVALS_142),
+            "blob_nodes": [],
+            "job_id": None,
+        }
+
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _ATOMIC_SUBMIT_URL,
+                    json=payload,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+
+            async with eval_worker_session_maker() as verify:
+                flaw_row = (
+                    await verify.execute(
+                        select(
+                            GameFlaw.ply,
+                            GameFlaw.allowed_tactic_motif,
+                            GameFlaw.missed_tactic_motif,
+                        ).where(GameFlaw.game_id == game_id)
+                    )
+                ).one()
+                flaw_ply, allowed_motif, missed_motif = flaw_row
+                assert flaw_ply == 2, f"Flaw must be at ply 2, got {flaw_ply}"
+                assert allowed_motif == int(TacticMotifInt.HANGING_PIECE), (
+                    "Real forcing blob must pass the gate and persist the GATED tag "
+                    "in the same atomic-submit call"
+                )
+                assert missed_motif is None
+
+                game_row = (
+                    await verify.execute(
+                        select(Game.full_evals_completed_at, Game.full_pv_completed_at).where(
+                            Game.id == game_id
+                        )
+                    )
+                ).one()
+                full_evals_at, full_pv_at = game_row
+                assert full_evals_at is not None, (
+                    "full_evals_completed_at must be stamped atomically with the gated tag"
+                )
+                assert full_pv_at is not None, (
+                    "full_pv_completed_at must be stamped atomically with the gated tag"
+                )
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_atomic_submit_missing_blob_writes_null_tag(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """A walkable flaw with zero submitted blob_nodes -> tag suppressed to NULL
+        (Part A net), completion still stamped (must_have: "a flaw the server found
+        but the worker did not blob writes NULL ... and is left for tier-4 backfill").
+
+        Both PV lines of the ply-2 flaw are made walkable via _WALKABLE_PV_PLY2 /
+        _WALKABLE_PV_PLY3 (reused from the flaw-blob-lease fixtures — the opening
+        moves of _SIX_PLY_PGN_142 and _FLAW_LEASE_PGN are identical through ply 3,
+        so the same PV strings walk the same boards) so the flaw_ply key ends up
+        entirely absent from the assembled blob_map (neither submitted nor
+        sentineled) — the specific condition that triggers the blobs_pending=True
+        suppression net rather than a D-06 structural sentinel.
+        """
+        import app.services.flaws_service as flaws_service_module
+        from app.models.game import Game
+        from app.models.game_flaw import GameFlaw
+        from app.services.tactic_detector import TACTIC_CONFIDENCE_HIGH, TacticMotifInt
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        def _fake_detect(
+            n: int,
+            fen_map: dict[int, str],
+            positions: list[Any],
+            pv_by_ply: Any = None,
+            orientation: str = "allowed",
+        ) -> tuple[int | None, int | None, int | None, int | None]:
+            if orientation == "allowed":
+                return (int(TacticMotifInt.HANGING_PIECE), 2, TACTIC_CONFIDENCE_HIGH, 0)
+            return (None, None, None, None)
+
+        monkeypatch.setattr(flaws_service_module, "_detect_tactic_for_flaw", _fake_detect)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(eval_worker_session_maker, user_id, pgn=_SIX_PLY_PGN_142)
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            game_id,
+            [
+                {"ply": p, "full_hash": 51200 + p, "eval_cp": None, "eval_mate": None}
+                for p in range(6)
+            ],
+        )
+
+        walkable_evals: list[dict[str, object]] = [dict(e) for e in _BLUNDER_SUBMIT_EVALS_142]
+        walkable_evals[2]["pv"] = _WALKABLE_PV_PLY2  # flaw's "missed" line (node0 = ply 2)
+        walkable_evals[3]["pv"] = _WALKABLE_PV_PLY3  # flaw's "allowed" line (node0 = ply 3)
+
+        payload = {
+            "game_id": game_id,
+            "sf_version": "Stockfish 18",
+            "worker_schema_version": 1,
+            "evals": walkable_evals,
+            "blob_nodes": [],
+            "job_id": None,
+        }
+
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _ATOMIC_SUBMIT_URL,
+                    json=payload,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+
+            async with eval_worker_session_maker() as verify:
+                flaw_row = (
+                    await verify.execute(
+                        select(
+                            GameFlaw.ply,
+                            GameFlaw.allowed_tactic_motif,
+                            GameFlaw.allowed_pv_lines,
+                        ).where(GameFlaw.game_id == game_id)
+                    )
+                ).one()
+                flaw_ply, allowed_motif, allowed_pv_lines = flaw_row
+                assert flaw_ply == 2, f"Flaw must be at ply 2, got {flaw_ply}"
+                assert allowed_motif is None, (
+                    "A server-found flaw the worker did not blob must be suppressed "
+                    "to NULL, never raw/ungated (Part A net)"
+                )
+                assert allowed_pv_lines is None, (
+                    "PV-line columns must stay NULL so the flaw is left for tier-4 backfill"
+                )
+
+                game_row = (
+                    await verify.execute(
+                        select(Game.full_evals_completed_at, Game.full_pv_completed_at).where(
+                            Game.id == game_id
+                        )
+                    )
+                ).one()
+                full_evals_at, full_pv_at = game_row
+                assert full_evals_at is not None, "completion must still be stamped"
+                assert full_pv_at is not None, "completion must still be stamped"
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_atomic_submit_drops_blob_for_non_flaw_ply(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """A blob_nodes token for an in-range ply the server does not classify as a
+        flaw -> silently dropped (no matching game_flaws row to update), no error —
+        the worker's local hint-classify is expected to sometimes diverge from the
+        server's authoritative classify.
+        """
+        from app.models.game_flaw import GameFlaw
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(eval_worker_session_maker, user_id, pgn=_SIX_PLY_PGN_142)
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            game_id,
+            [
+                {"ply": p, "full_hash": 51300 + p, "eval_cp": None, "eval_mate": None}
+                for p in range(6)
+            ],
+        )
+
+        payload = {
+            "game_id": game_id,
+            "sf_version": "Stockfish 18",
+            "worker_schema_version": 1,
+            "evals": list(_BLUNDER_SUBMIT_EVALS_142),
+            "blob_nodes": [
+                {
+                    # ply 0 is a real ply of this game but not the ply-2 flaw.
+                    "token": "0:missed:0",
+                    "best_cp": 10,
+                    "best_mate": None,
+                    "second_cp": None,
+                    "second_mate": None,
+                    "second_uci": None,
+                }
+            ],
+            "job_id": None,
+        }
+
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _ATOMIC_SUBMIT_URL,
+                    json=payload,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 200, (
+                f"Non-flaw-ply token must be dropped, not rejected: "
+                f"got {resp.status_code} {resp.text}"
+            )
+
+            async with eval_worker_session_maker() as verify:
+                flaw_plies = (
+                    (await verify.execute(select(GameFlaw.ply).where(GameFlaw.game_id == game_id)))
+                    .scalars()
+                    .all()
+                )
+                assert list(flaw_plies) == [2], (
+                    f"Only the real ply-2 flaw must exist; got {list(flaw_plies)}"
+                )
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_atomic_submit_foreign_token_rejected(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """A token whose flaw_ply falls outside the game's ply range -> 422, nothing
+        persisted (T-147-02 tamper guard, mirrors _apply_flaw_blob_submit's T-145-09
+        precedent, whose own test uses an equally out-of-range flaw_ply=99).
+        """
+        from app.models.game import Game
+        from app.models.game_flaw import GameFlaw
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(eval_worker_session_maker, user_id, pgn=_SIX_PLY_PGN_142)
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            game_id,
+            [
+                {"ply": p, "full_hash": 51400 + p, "eval_cp": None, "eval_mate": None}
+                for p in range(6)
+            ],
+        )
+
+        payload = {
+            "game_id": game_id,
+            "sf_version": "Stockfish 18",
+            "worker_schema_version": 1,
+            "evals": list(_BLUNDER_SUBMIT_EVALS_142),
+            "blob_nodes": [
+                {
+                    # flaw_ply=99 is far beyond this 6-ply game — structurally foreign.
+                    "token": "99:missed:0",
+                    "best_cp": 50,
+                    "best_mate": None,
+                    "second_cp": None,
+                    "second_mate": None,
+                    "second_uci": None,
+                }
+            ],
+            "job_id": None,
+        }
+
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _ATOMIC_SUBMIT_URL,
+                    json=payload,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 422, (
+                f"Foreign token must be rejected with 422 (T-147-02). "
+                f"Got {resp.status_code}: {resp.text}"
+            )
+
+            async with eval_worker_session_maker() as verify:
+                flaw_count = (
+                    await verify.execute(
+                        select(sa.func.count())
+                        .select_from(GameFlaw)
+                        .where(GameFlaw.game_id == game_id)
+                    )
+                ).scalar_one()
+                assert flaw_count == 0, "Rejection must happen before any write"
+
+                full_evals_at = (
+                    await verify.execute(
+                        select(Game.full_evals_completed_at).where(Game.id == game_id)
+                    )
+                ).scalar_one()
+                assert full_evals_at is None, "No partial write on a rejected submit"
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_atomic_submit_over_cap_payload_rejected_by_schema(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """An evals list beyond MAX_SUBMIT_EVALS is rejected by Pydantic validation
+        before the handler runs, so an over-cap payload can never reach a partial
+        write. The primary defense is /atomic-lease's own over-cap sentinel
+        (147-04 — an over-cap game is never even issued a lease); this covers
+        /atomic-submit's own structural cap as defense-in-depth for a worker that
+        posts directly without going through /atomic-lease.
+        """
+        from app.models.game import Game
+        from app.schemas.eval_remote import MAX_SUBMIT_EVALS
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(eval_worker_session_maker, user_id, pgn=_SIX_PLY_PGN_142)
+
+        oversized_evals = [
+            {"ply": p, "eval_cp": 0, "eval_mate": None, "best_move": None, "pv": None}
+            for p in range(MAX_SUBMIT_EVALS + 1)
+        ]
+        payload = {
+            "game_id": game_id,
+            "sf_version": "Stockfish 18",
+            "worker_schema_version": 1,
+            "evals": oversized_evals,
+            "blob_nodes": [],
+            "job_id": None,
+        }
+
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _ATOMIC_SUBMIT_URL,
+                    json=payload,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 422, (
+                f"Over-cap evals list must be rejected by schema validation, "
+                f"got {resp.status_code}: {resp.text}"
+            )
+
+            async with eval_worker_session_maker() as verify:
+                full_evals_at = (
+                    await verify.execute(
+                        select(Game.full_evals_completed_at).where(Game.id == game_id)
+                    )
+                ).scalar_one()
+                assert full_evals_at is None, "No write must occur for a schema-rejected payload"
         finally:
             await _delete_games(eval_worker_session_maker, [game_id])
 
