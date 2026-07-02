@@ -90,6 +90,16 @@ interface TacticMotifChipProps {
    * the full text, so they pass `noTruncate`; mobile keeps abbreviating.
    */
   noTruncate?: boolean;
+  /**
+   * Quick 260702-mnd (D-2): override the store-derived active-filter ring with a
+   * precise all-axes (family + orientation + depth) match computed by the caller
+   * (LibraryGameCard, via `resolveVisibleTactic`). The Games card now renders every
+   * tactic chip regardless of the active filter, so the store-only `isActive` (which
+   * only checks family + orientation) would light the ring on same-family chips that
+   * actually fail the depth filter. `undefined` (the default) preserves the legacy
+   * store-derived ring for FlawCard, which passes no prop.
+   */
+  filterRingActive?: boolean;
 }
 
 /**
@@ -117,6 +127,7 @@ export function TacticMotifChip({
   selected,
   testId: testIdOverride,
   noTruncate,
+  filterRingActive,
 }: TacticMotifChipProps) {
   const family = TACTIC_FAMILY_FOR_MOTIF[motif];
   const colors = family != null ? TACTIC_FAMILY_COLORS[family] : null;
@@ -165,6 +176,11 @@ export function TacticMotifChip({
       orientation == null ||
       flawFilter.tacticOrientation === orientation);
 
+  // Quick 260702-mnd (D-2): the Games card overrides this store-derived (family +
+  // orientation only) match with a depth-aware, all-axes match it computes itself
+  // via resolveVisibleTactic. FlawCard passes no override and keeps the legacy ring.
+  const ringActive = filterRingActive ?? isActive;
+
   // The chip earns hover/tap affordances only when something is wired to it (Games
   // card). FlawCard renders it with no callbacks — purely decorative, matching the
   // sibling TagChips there (definition=false, no callbacks).
@@ -195,7 +211,7 @@ export function TacticMotifChip({
         // tactic motif chips match the flaw-tag chip sizing.
         'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-bold',
         interactive && 'cursor-pointer transition-all hover:-translate-y-px',
-        isActive && ACTIVE_FILTER_RING_CLASS,
+        ringActive && ACTIVE_FILTER_RING_CLASS,
       )}
       style={{
         color,
@@ -204,7 +220,7 @@ export function TacticMotifChip({
         borderColor: selected ? TAC_SWITCH_ACTIVE_BORDER : border,
         filter: highlighted ? 'brightness(1.2)' : undefined,
         // Ring color matches the family color for active-filter emphasis (TagChip parity).
-        ...(isActive ? { '--tw-ring-color': color } as React.CSSProperties : {}),
+        ...(ringActive ? { '--tw-ring-color': color } as React.CSSProperties : {}),
       }}
       role={interactive ? 'button' : undefined}
       tabIndex={interactive ? 0 : undefined}
