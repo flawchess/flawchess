@@ -40,7 +40,7 @@ You don't need to be a programmer to set this up, and you don't need a database 
    ```
    `--workers 4` means it uses 4 CPU cores. 4 is a good default. If your computer is powerful and you want it to do more, you can go up to twice your number of CPU cores.
 
-7. **Leave it running** as long as you like. To stop it, press `Ctrl-C` in the terminal or just close the window.
+7. **Leave it running** as long as you like. If it crashes or freezes up, it restarts itself automatically, no need to babysit it. To stop it, press `Ctrl-C` in the terminal — that always stops it cleanly and it will not restart on its own.
 
 ## Setup (Windows)
 
@@ -86,4 +86,4 @@ If you already use Docker, you can run the worker in a container instead of inst
    docker compose -f docker-compose.worker.yml down
    ```
 
-The container restarts automatically if it crashes or your computer reboots, so it keeps helping until you run the stop command above.
+The container restarts automatically if it crashes, freezes up, or your computer reboots, so it keeps helping until you run the stop command above. Running the stop command is always clean and will not trigger a restart.
