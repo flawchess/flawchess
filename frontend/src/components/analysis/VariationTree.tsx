@@ -124,10 +124,12 @@ export interface VariationTreeProps {
    */
   variant?: 'responsive' | 'vertical';
   /**
-   * Game-mode entry ply (the URL `ply` param, defaulting to 0). When set, the desktop
-   * move list aligns the move at this ply to the TOP of the scroller on first open
-   * instead of minimal-scrolling it to the bottom (Quick 260628-qta UAT). Omitted /
-   * null in free play, where the initial-align is skipped.
+   * Game-mode ply the board first lands on (the URL `ply` param, defaulting to 0 — or the
+   * tactic fork ply when the entry ply auto-opens a tactic line: decision board `ply-1` for
+   * missed, flaw ply for allowed, Quick 260702-fog). When set, the desktop move list aligns
+   * the move at this ply to the TOP of the scroller on first open instead of minimal-
+   * scrolling it to the bottom (Quick 260628-qta UAT). Omitted / null in free play, where
+   * the initial-align is skipped.
    */
   initialPly?: number | null;
 }
@@ -596,7 +598,7 @@ function DesktopTree({
         data-testid="variation-tree-desktop"
         aria-label="Move list"
         role="navigation"
-        className="min-h-0 flex-1 overflow-y-auto"
+        className="min-h-0 flex-1 overflow-y-auto thin-scrollbar"
       >
         <p className="text-sm text-muted-foreground p-2">No moves yet</p>
       </div>

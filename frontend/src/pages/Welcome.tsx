@@ -115,7 +115,7 @@ export function WelcomePage() {
       </div>
 
       {/* Value-split table */}
-      <div className="overflow-x-auto rounded-md border border-border">
+      <div className="overflow-x-auto thin-scrollbar rounded-md border border-border">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/30">

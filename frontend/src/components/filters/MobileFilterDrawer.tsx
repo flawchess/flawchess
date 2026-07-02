@@ -80,7 +80,7 @@ export function MobileFilterDrawer({
             </DrawerClose>
           </Tooltip>
         </DrawerHeader>
-        <div className={cn('overflow-y-auto flex-1 p-4', bodyClassName)}>{children}</div>
+        <div className={cn('overflow-y-auto thin-scrollbar flex-1 p-4', bodyClassName)}>{children}</div>
         {footer != null && <div className="shrink-0 px-4 pb-4">{footer}</div>}
       </DrawerContent>
     </Drawer>

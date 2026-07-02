@@ -260,7 +260,7 @@ function PvLineRow({
       <div
         className={cn(
           'flex min-w-0 flex-1 items-center gap-1',
-          compact ? 'flex-nowrap overflow-x-auto' : 'flex-wrap',
+          compact ? 'flex-nowrap overflow-x-auto thin-scrollbar' : 'flex-wrap',
         )}
       >
       {/* PV move chips — inline on the same row as the badge. */}

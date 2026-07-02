@@ -4,6 +4,79 @@
 
 > Note: v1.18, v1.19, v1.20, v1.23, v1.25, and v1.27 closes did not add retrospective sections (only the ROADMAP archives + MILESTONES entries were written). Not backfilled here to avoid reconstructing reflections after the fact; their facts live in the corresponding `milestones/v1.XX-ROADMAP.md` and `MILESTONES.md`.
 
+## Milestone: v1.30 — Forcing-Line Tactic Gate
+
+**Shipped:** 2026-06-30
+**Phases:** 7 (141–147) | **Plans:** 25
+
+### What Was Built
+
+An "only-move" forcing-line gate (lichess-puzzler-modeled) that pre-filters the v1.28 tactic
+tagger so it credits a motif only on genuinely forced refutation lines, plus persisted
+MultiPV=2 evals (`allowed_pv_lines`/`missed_pv_lines` JSONB on `game_flaws`) that make every
+threshold change a seconds-fast offline re-tag. Phases 141–145 shipped the gate and rolled it
+live (#229); Phase 146 offloaded the live-submit continuation eval to the remote fleet (#230);
+Phase 147 hardened the invariant so only gated tags are ever persisted — go-forward
+suppression + a corpus data migration + a server-authoritative atomic eval+blob worker
+pipeline (#234).
+
+### What Worked
+
+- **Persist-then-re-derive** was the right architecture: storing MultiPV=2 blobs once turned
+  every subsequent margin/threshold decision into an engine-free `retag_flaws.py --margin X`
+  run (seconds), which made the Phase 144 A/B and the Bug-B depth-aware fix cheap to iterate.
+- **Engine-free A/B over identical stored blobs** cleanly isolated the gate's effect from
+  `eval_cp` cross-machine non-determinism — the ungated arm wired the raw detector directly
+  (not `margin=0`) for a true pre-gate baseline.
+- **Additive, versioned worker contracts** (Phase 142 additive `SubmitEval`; Phase 147
+  parallel `/atomic-lease`/`/atomic-submit`) let a mixed old+upgraded fleet run simultaneously
+  with instant rollback — no lockstep worker/server deploy.
+- **The standalone-then-regroup pattern** absorbed Phases 146/147 (SEED-071/074) into the
+  milestone naturally, since the real prod rollout genuinely completed through them.
+
+### What Was Inefficient
+
+- The **live-submit path shipped a blocking server-side continuation eval first** (Phase 145)
+  and had to be offloaded to the fleet immediately after (Phase 146, SEED-071) — the bottleneck
+  was foreseeable; a fleet-first design would have avoided the 120s `HTTP_TIMEOUT_S` stopgap.
+- **Tier-4 blob routing shipped with two latent bugs** discovered only in prod soak: idle-scope
+  fallthrough starvation (SEED-072) and a top-50 recency window that dead-lined the old
+  analyzed backlog (fixed by the ES lottery). Both were queue-fairness issues that a drain
+  simulation could have surfaced pre-ship.
+- **The Phase 147 strict-zero invariant leaked** through the one classify caller (the in-process
+  drain) that wasn't threaded with `blobs_pending` — a "suppress at every write site" invariant
+  is only as strong as its least-audited caller.
+
+### Patterns Established
+
+- **Independent boolean signal threaded through a pure pipeline** (`blobs_pending`, never
+  derived from a sibling parameter) to change behavior at exactly one call site.
+- **Over-cap DoS sentinel**: when a would-be response exceeds a shared `max_length` cap,
+  sentinel the underlying data (clear the re-selecting predicate) and return 204 — never
+  construct the oversized payload (established in 147-03, reused by the atomic lease).
+- **Two-stage Efraimidis-Spirakis weighted lottery** with floor terms for anti-starvation +
+  recency preference (tier-4 blob draw, mirroring the tier-3 derived lottery).
+- **Batched composite-PK Alembic DATA migration** (`DO $$ ... WHILE rows_updated > 0 LOOP`).
+
+### Key Lessons
+
+- When a gate has a "never do X" invariant, enumerate **every** write/classify caller and
+  thread the guard through all of them at plan time — a leaked in-process caller is exactly how
+  the strict-zero invariant broke.
+- For any new queue rung, **simulate the drain against the real corpus shape** before ship;
+  fairness bugs (starvation, dead-lined backlog) don't show up in unit tests, only in soak.
+- Design compute-heavy live-request work as **fleet-offloaded from the start** when a remote
+  worker contract already exists — don't ship the blocking server version as a stopgap.
+
+### Cost Observations
+
+- Heavy use of `/gsd-quick` for post-ship hardening (Bug-B gate fix, tier-4 routing/lottery,
+  idle-scope) — the forcing-line gate's correctness surfaced through prod soak, not planning.
+- The persist-then-re-derive design front-loaded the engine cost (one MultiPV=2 pass) and made
+  the tuning loop nearly free, which is the intended economics of the milestone.
+
+---
+
 ## Milestone: v1.29 — Live-Engine Analysis Page
 
 **Shipped:** 2026-06-29

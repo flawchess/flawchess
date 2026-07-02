@@ -41,6 +41,7 @@ import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { VariationTree } from '@/components/analysis/VariationTree';
 import type { FlawMarkerEntry } from '@/components/analysis/VariationTree';
 import type { FlawSeverity } from '@/types/library';
+import { tacticOrientationAtPly } from '@/lib/tacticOrientation';
 import { EvalChart } from '@/components/library/EvalChart';
 import { ChessBoard } from '@/components/board/ChessBoard';
 import type { BoardArrow } from '@/components/board/ChessBoard';
@@ -221,6 +222,24 @@ export default function Analysis() {
   const hasLoadedMainLine = useRef(false);
   const hasNavigatedToInitialPly = useRef(false);
 
+  // Quick 260702-fog: the tactic (if any) the board auto-opens to when the entry ply carries
+  // a user tactic chip. Drives BOTH the initial navigation effect and the move-list top-align
+  // target, so the two stay in sync. Missed wins over allowed (see tacticOrientationAtPly).
+  const initialTactic = useMemo<{ ply: number; orientation: 'missed' | 'allowed' } | null>(() => {
+    if (!isGameMode) return null;
+    const ply = initialPly ?? 0;
+    const orientation = tacticOrientationAtPly(gameData?.flaw_markers, ply);
+    return orientation === null ? null : { ply, orientation };
+  }, [isGameMode, gameData?.flaw_markers, initialPly]);
+
+  // Ply the move list top-aligns on first open: the tactic fork ply when a tactic auto-opens
+  // (missed → decision board ply-1, allowed → flaw ply), else the plain entry ply. Keeps the
+  // scroller's initial top-align on the node the board actually navigates to (Quick 260702-fog).
+  const initialAlignPly =
+    initialTactic !== null
+      ? forkPlyForOrientation(initialTactic.ply, initialTactic.orientation)
+      : (initialPly ?? 0);
+
   // ── Effects (game seeding, board flip, contextual PV insert) ──────────────────
 
   // Game mode: orient the board to the player's color once (item 5). Black games open
@@ -244,8 +263,23 @@ export default function Analysis() {
   useEffect(() => {
     if (!isGameMode || mainLine.length === 0 || hasNavigatedToInitialPly.current) return;
     hasNavigatedToInitialPly.current = true;
+    const ply = initialPly ?? 0;
+    // Quick 260702-fog: if the opening ply carries a user tactic chip, open its line
+    // automatically — same effect as clicking the chip (setActivePvFlaw + navigate to the
+    // fork node; the useTacticLines → insertPvLine effect chain grafts the sideline once the
+    // PV arrives). Missed forks at the decision board (ply-1), allowed at the flaw position.
+    // initialAlignPly mirrors this fork so the move list top-aligns the same node.
+    if (initialTactic !== null) {
+      const forkNodeId = mainLine[forkPlyForOrientation(initialTactic.ply, initialTactic.orientation)];
+      if (forkNodeId !== undefined) {
+        setActivePvFlaw(initialTactic);
+        goToNode(forkNodeId);
+        return;
+      }
+    }
+    // No tactic chip here (or fork out of bounds): navigate to initialPly as before.
     // T-140-02b: L-8 guard — out-of-bounds ply is a no-op, not a crash.
-    const nodeId = mainLine[initialPly ?? 0];
+    const nodeId = mainLine[ply];
     if (nodeId !== undefined) goToNode(nodeId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mainLine.length, isGameMode]);
@@ -715,7 +749,7 @@ export default function Analysis() {
       mainLine={mainLine}
       currentNodeId={currentNodeId}
       rootPly={rootPly}
-      initialPly={isGameMode ? initialPly : undefined}
+      initialPly={isGameMode ? initialAlignPly : undefined}
       onNodeClick={goToNode}
       decorations={sidelineNodeColors}
       pvLine={isGameMode ? pvLine : undefined}
@@ -834,7 +868,7 @@ export default function Analysis() {
                 here it needs that horizontal room or it triggers a horizontal scrollbar
                 (overflow-y-auto coerces overflow-x to auto). overflow-x-hidden is the
                 belt-and-suspenders. */}
-            <TabsContent value="eval" className="min-h-0 overflow-x-hidden overflow-y-auto">
+            <TabsContent value="eval" className="min-h-0 overflow-x-hidden overflow-y-auto thin-scrollbar">
               <div className="px-3">{evalChart('h-[120px]')}</div>
             </TabsContent>
           </Tabs>
