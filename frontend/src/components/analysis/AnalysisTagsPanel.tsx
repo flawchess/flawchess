@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { SeverityBadge } from '@/components/library/SeverityBadge';
 import { TacticMotifGroup } from '@/components/library/TacticMotifGroup';
 import { ChipColumn } from '@/components/library/ChipColumn';
@@ -49,10 +49,22 @@ interface AnalysisTagsPanelProps {
   game: GameFlawCard;
   /** Cycles the board (+ synced move list + eval-chart crosshair) to a flaw's ply. */
   onCyclePly: (ply: number) => void;
+  /**
+   * Optional desktop hover-highlight (Task 3, resolved decision 5): reports the set
+   * of plies matching the hovered badge/chip so the caller can dim non-matching
+   * eval-chart markers, mirroring LibraryGameCard's highlightedPlies. null clears the
+   * highlight. Omitted on mobile (the chart lives on a different tab there).
+   */
+  onHighlightChange?: (plies: Set<number> | null) => void;
   className?: string;
 }
 
-export function AnalysisTagsPanel({ game, onCyclePly, className }: AnalysisTagsPanelProps) {
+export function AnalysisTagsPanel({
+  game,
+  onCyclePly,
+  onHighlightChange,
+  className,
+}: AnalysisTagsPanelProps) {
   const markers = game.flaw_markers ?? [];
 
   // Per-severity ascending list of the user's marker plies (B/M/I).
@@ -141,6 +153,8 @@ export function AnalysisTagsPanel({ game, onCyclePly, className }: AnalysisTagsP
   // Click-to-cycle state: clicking a ref advances through its ply list, wrapping;
   // clicking a different ref restarts at position 0.
   const [cycle, setCycle] = useState<{ ref: FlawRef; pos: number } | null>(null);
+  // Transient hover state (desktop only — Task 3, resolved decision 5).
+  const [highlight, setHighlight] = useState<FlawRef | null>(null);
 
   const pliesForRef = (ref: FlawRef): number[] => {
     if (ref.kind === 'tag') return tagPlies.get(ref.tag) ?? [];
@@ -155,7 +169,35 @@ export function AnalysisTagsPanel({ game, onCyclePly, className }: AnalysisTagsP
     setCycle({ ref, pos });
     const ply = plies[pos];
     if (ply !== undefined) onCyclePly(ply);
+    // A click also emphasizes this ref's markers, matching LibraryGameCard.
+    setHighlight(ref);
   };
+
+  // A cycled ref keeps its markers lit even after the pointer leaves (mirrors
+  // LibraryGameCard: touch has no mouse-leave to clear the hover highlight).
+  const highlightedPlies = useMemo(() => {
+    const ref = highlight ?? cycle?.ref ?? null;
+    if (!ref) return null;
+    const set = new Set<number>();
+    for (const fm of markers) {
+      if (!fm.is_user) continue;
+      let matches: boolean;
+      if (ref.kind === 'severity') matches = fm.severity === ref.severity;
+      else if (ref.kind === 'tag') matches = fm.tags.includes(ref.tag);
+      else {
+        const col = ref.orientation === 'missed' ? fm.missed_tactic_motif : fm.allowed_tactic_motif;
+        matches = col != null && tacticMotifLabel(col) === ref.motif;
+      }
+      if (matches) set.add(fm.ply);
+    }
+    return set;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlight, cycle, game.flaw_markers]);
+
+  useEffect(() => {
+    onHighlightChange?.(highlightedPlies);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlightedPlies]);
 
   // Belt-and-suspenders: the Analysis page already gates rendering on evalChartReady
   // (which implies flaw_markers present), but guard here too — no NoAnalysisState.
@@ -171,6 +213,7 @@ export function AnalysisTagsPanel({ game, onCyclePly, className }: AnalysisTagsP
             gameId={game.game_id}
             count={tagCounts.get(tag)}
             definition={false}
+            onHover={(active) => setHighlight(active ? { kind: 'tag', tag } : null)}
             onActivate={() => handleActivate({ kind: 'tag', tag })}
           />
         ))}
@@ -193,6 +236,7 @@ export function AnalysisTagsPanel({ game, onCyclePly, className }: AnalysisTagsP
               severity={sev}
               count={count}
               gameId={game.game_id}
+              onHover={(active) => setHighlight(active ? { kind: 'severity', severity: sev } : null)}
               onActivate={() => handleActivate({ kind: 'severity', severity: sev })}
             />
           );
@@ -213,7 +257,9 @@ export function AnalysisTagsPanel({ game, onCyclePly, className }: AnalysisTagsP
                 // No filter store on /analysis (resolved decision 3) — never ring.
                 filterRingActive: false,
               }))}
-              onChipHover={() => {}}
+              onChipHover={(motif, active) =>
+                setHighlight(active ? { kind: 'motif', motif, orientation } : null)
+              }
               onChipActivate={(motif) => handleActivate({ kind: 'motif', motif, orientation })}
               legend={
                 <TagLegend

@@ -176,6 +176,11 @@ export default function Analysis() {
     orientation: 'missed' | 'allowed';
   } | null>(null);
 
+  // Quick 260702-nm8 (Task 3): desktop-only hover-highlight from the tags panel onto
+  // the eval chart's markers — mirrors LibraryGameCard's highlightedPlies. Not passed
+  // on mobile (the chart lives on a different tab there).
+  const [tagsHighlightedPlies, setTagsHighlightedPlies] = useState<Set<number> | null>(null);
+
   // ── All hooks (unconditional, React rules) ────────────────────────────────────
 
   const {
@@ -787,7 +792,9 @@ export default function Analysis() {
     gameData.flaw_markers != null &&
     gameData.phase_transitions != null &&
     gameData.moves != null;
-  const evalChart = (heightClass: string) =>
+  // `highlightedPlies` is desktop-only (the tags panel's hover-highlight, Task 3);
+  // the mobile evalChart() call site omits it, leaving chart markers un-dimmed there.
+  const evalChart = (heightClass: string, highlightedPlies?: Set<number> | null) =>
     evalChartReady && gameId != null && gameData?.eval_series != null && gameData.flaw_markers != null && gameData.phase_transitions != null && gameData.moves != null ? (
       <EvalChart
         gameId={gameId}
@@ -802,6 +809,7 @@ export default function Analysis() {
         sliderDisabled={!isOnMainLineForSlider}
         onHoverPlyChange={handleEvalChartPlyChange}
         syncPly={evalChartPly}
+        highlightedPlies={highlightedPlies}
       />
     ) : null;
 
@@ -810,8 +818,9 @@ export default function Analysis() {
   // flaw_markers present); mounts exactly once regardless of desktop/mobile, mirroring
   // the evalChart helper above. Cycling a badge/chip reuses the exact goToNode pattern
   // from handleEvalChartPlyChange — a single call auto-syncs board + move list +
-  // eval-chart crosshair (evalChartPly derives from currentNodeId).
-  const tagsPanel = () =>
+  // eval-chart crosshair (evalChartPly derives from currentNodeId). `withHighlight`
+  // (Task 3, desktop only) wires the hover-highlight back onto the eval chart.
+  const tagsPanel = (withHighlight = false) =>
     evalChartReady && gameData ? (
       <AnalysisTagsPanel
         game={gameData}
@@ -820,6 +829,7 @@ export default function Analysis() {
           const nodeId = mainLine[ply];
           if (nodeId !== undefined) goToNode(nodeId);
         }}
+        onHighlightChange={withHighlight ? setTagsHighlightedPlies : undefined}
       />
     ) : null;
 
@@ -930,14 +940,19 @@ export default function Analysis() {
             {/* Bottom player */}
             {isGameMode && gameData && playerBar(boardFlipped ? 'black' : 'white')}
 
-            {/* EvalChart with slider — game mode only, below board (UI-SPEC Layout Contract). */}
+            {/* EvalChart with slider — game mode only, below board (UI-SPEC Layout Contract).
+                highlightedPlies (Task 3, desktop only): dims non-matching markers while
+                hovering a tags-panel badge/chip. */}
             {evalChartReady && (
-              <div data-testid="analysis-eval-chart">{evalChart('h-[120px]')}</div>
+              <div data-testid="analysis-eval-chart">
+                {evalChart('h-[120px]', tagsHighlightedPlies)}
+              </div>
             )}
 
             {/* Flaw-tags panel — game mode only, directly below the eval chart
-                (quick-260702-nm8). */}
-            {tagsPanel()}
+                (quick-260702-nm8). withHighlight=true wires its hover state back onto
+                the eval chart above (desktop only — mobile's tagsPanel() call omits it). */}
+            {tagsPanel(true)}
           </div>
 
           {/* Side panel: engine + variation tree + controls. Narrower than the board
