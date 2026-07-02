@@ -21,7 +21,7 @@ progress:
 ## Current Position
 
 Phase: 999.1 — Password Reset (BACKLOG)
-Last activity: 2026-07-01
+Last activity: 2026-07-02 - Completed quick task 260702-fog: auto-open tactic line when analysis board opens at a tactic ply
 
 Phase 145 (corpus-backfill-rollout) — COMPLETE (code). Plans 01–05 + the autonomous part of
 plan 06 are merged to main (`875bc164`) and released to production in v1.30 (PR #229,
@@ -124,6 +124,7 @@ None at planning start.
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 260702-fog | Opening the analysis board at a ply that carries a user tactic tag (`?game_id=X&ply=Y`) now auto-opens that tactic line, as if the chip were clicked: missed wins over allowed when both are present, missed forks at the decision board (ply-1), allowed at the flaw position; opponent-only tactics ignored. Pure `tacticOrientationAtPly` helper (new `lib/tacticOrientation.ts` + 7 unit tests) wired into the initial-ply navigation effect; tsc/lint/knip clean, 1244 frontend tests green | 2026-07-02 | f4c74706 | [260702-fog-when-opening-the-analysis-board-at-a-ply](./quick/260702-fog-when-opening-the-analysis-board-at-a-ply/) |
 | 260702-12z | Replace browser-default chunky/white scrollbars on desktop nested overflow containers (filter/bookmark sidebar panel, analysis move list, suggestions modal, Radix select dropdown, Welcome table, compact engine PV row) with the existing translucent `.thin-scrollbar` utility so they match the dark UI; CSS-class-only, 9 files, lint+1237 tests green | 2026-07-01 | 274041f3 | [260702-12z-replace-white-scrollbars-on-desktop-with](./quick/260702-12z-replace-white-scrollbars-on-desktop-with/) |
 | 260627-dny | Phase 139 tactic overlay UAT: remove StoredPV/engine toggle, eval bar perspective+position, live eval number, remove old eval badge | 2026-06-27 | 46067dff | [260627-dny-phase-139-tactic-overlay-uat-remove-stor](./quick/260627-dny-phase-139-tactic-overlay-uat-remove-stor/) |
 | 260627-jqk | Phase 140 UAT: motif+depth move-list chips, fix tactic-chip PV sideline, precomputed best-move blue arrow + eval bar (engine = grey 2nd line), board tactic overlay without loaded PV, remove overlay chrome above engine lines | 2026-06-27 | 0efa9448 | [260627-jqk-uat-phase-140-tactic-badges-best-move-ar](./quick/260627-jqk-uat-phase-140-tactic-badges-best-move-ar/) |
