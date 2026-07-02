@@ -222,6 +222,24 @@ export default function Analysis() {
   const hasLoadedMainLine = useRef(false);
   const hasNavigatedToInitialPly = useRef(false);
 
+  // Quick 260702-fog: the tactic (if any) the board auto-opens to when the entry ply carries
+  // a user tactic chip. Drives BOTH the initial navigation effect and the move-list top-align
+  // target, so the two stay in sync. Missed wins over allowed (see tacticOrientationAtPly).
+  const initialTactic = useMemo<{ ply: number; orientation: 'missed' | 'allowed' } | null>(() => {
+    if (!isGameMode) return null;
+    const ply = initialPly ?? 0;
+    const orientation = tacticOrientationAtPly(gameData?.flaw_markers, ply);
+    return orientation === null ? null : { ply, orientation };
+  }, [isGameMode, gameData?.flaw_markers, initialPly]);
+
+  // Ply the move list top-aligns on first open: the tactic fork ply when a tactic auto-opens
+  // (missed → decision board ply-1, allowed → flaw ply), else the plain entry ply. Keeps the
+  // scroller's initial top-align on the node the board actually navigates to (Quick 260702-fog).
+  const initialAlignPly =
+    initialTactic !== null
+      ? forkPlyForOrientation(initialTactic.ply, initialTactic.orientation)
+      : (initialPly ?? 0);
+
   // ── Effects (game seeding, board flip, contextual PV insert) ──────────────────
 
   // Game mode: orient the board to the player's color once (item 5). Black games open
@@ -250,11 +268,11 @@ export default function Analysis() {
     // automatically — same effect as clicking the chip (setActivePvFlaw + navigate to the
     // fork node; the useTacticLines → insertPvLine effect chain grafts the sideline once the
     // PV arrives). Missed forks at the decision board (ply-1), allowed at the flaw position.
-    const orientation = tacticOrientationAtPly(gameData?.flaw_markers, ply);
-    if (orientation !== null) {
-      const forkNodeId = mainLine[forkPlyForOrientation(ply, orientation)];
+    // initialAlignPly mirrors this fork so the move list top-aligns the same node.
+    if (initialTactic !== null) {
+      const forkNodeId = mainLine[forkPlyForOrientation(initialTactic.ply, initialTactic.orientation)];
       if (forkNodeId !== undefined) {
-        setActivePvFlaw({ ply, orientation });
+        setActivePvFlaw(initialTactic);
         goToNode(forkNodeId);
         return;
       }
@@ -731,7 +749,7 @@ export default function Analysis() {
       mainLine={mainLine}
       currentNodeId={currentNodeId}
       rootPly={rootPly}
-      initialPly={isGameMode ? initialPly : undefined}
+      initialPly={isGameMode ? initialAlignPly : undefined}
       onNodeClick={goToNode}
       decorations={sidelineNodeColors}
       pvLine={isGameMode ? pvLine : undefined}
