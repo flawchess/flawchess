@@ -221,13 +221,14 @@ Append one or more bullets under `## [Unreleased]` in `CHANGELOG.md`, grouped in
 
 ### Per-milestone (at milestone close)
 
-When a milestone ships (e.g. via `/gsd-complete-milestone`):
+When a milestone ships (e.g. via `/gsd-complete-milestone`), **always do all of the following — none are optional**:
 
 1. In `CHANGELOG.md`, rename `## [Unreleased]` → `## [vX.Y] Milestone Title — YYYY-MM-DD`, reset `[Unreleased]` to empty, and update the compare links at the bottom.
-2. Tag and push (`git tag vX.Y && git push origin vX.Y`).
-3. `gh release create vX.Y` using the `CHANGELOG.md` section as the body.
+2. **Archive the milestone's phase directories**: `git mv .planning/phases/<phase-dir> .planning/milestones/vX.Y-phases/` for every phase in the milestone (create `.planning/milestones/vX.Y-phases/` if absent), so `.planning/phases/` holds only the next milestone's active work. This is separate from the milestone-doc archival (`/gsd-complete-milestone` archives MILESTONES/ROADMAP/RETROSPECTIVE/REQUIREMENTS but does NOT move the phase working dirs).
+3. Tag and push (`git tag vX.Y && git push origin vX.Y`).
+4. **`gh release create vX.Y`** using the `CHANGELOG.md` section as the body — the tag alone is not a release; verify with `gh release list` that vX.Y shows up (a lingering tag with no GitHub release means this step was skipped).
 
-Never cut a release without a matching `CHANGELOG.md` entry. Never edit a released section retroactively — corrections go in a new `[Unreleased]` bullet.
+Never cut a release without a matching `CHANGELOG.md` entry. Never edit a released section retroactively — corrections go in a new `[Unreleased]` bullet. Archiving the phase dirs and creating the GitHub release are mandatory milestone-close steps, not just the tag.
 
 ## Project Management
 
