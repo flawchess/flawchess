@@ -31,7 +31,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.game import Game
 from app.models.game_flaw import GameFlaw
 from app.repositories import library_repository
-from app.repositories.game_flaws_repository import _SEVERITY_INT
 from app.repositories.library_repository import (
     FAMILY_TO_MOTIF_INTS,
     TacticOrientation,
@@ -367,11 +366,6 @@ def _build_card(
     positions: list[GamePosition],
     active_eval_status: Literal["pending", "leased"] | None = None,
     *,
-    flaw_severity: Sequence[str] = (),
-    tactic_families: Sequence[str] = (),
-    tactic_orientation: TacticOrientation = "either",
-    min_tactic_depth: int | None = None,
-    max_tactic_depth: int | None = None,
     tactic_flaw_rows: list[GameFlaw] | None = None,
 ) -> GameFlawCard:
     """Build one GameFlawCard from pre-fetched game_flaws rows (D-02 migration).
@@ -392,18 +386,16 @@ def _build_card(
     new eval chart fields (eval_series, flaw_markers, phase_transitions) are
     populated via _build_eval_series. Unanalyzed games always get None for these.
 
-    Quick 260621-sm8: tactic_families/tactic_orientation/min_tactic_depth/
-    max_tactic_depth are applied to null non-matching tactic slots in flaw_markers
-    via the shared tactic_slot_visible predicate (same predicate as query_flaws).
-    Defaults (no controls active) leave both slots populated, so the single-game
-    path (get_library_game, which passes no filter params) is unaffected.
-
-    Bug fix (severity tactic leak): flaw_severity narrows which flaws contribute
-    tactic chips, mirroring the single-row AND game-selection predicate
-    (build_flaw_filter_clauses: GameFlaw.severity.in_(...)). Without this, a
-    "blunders only" filter still surfaced tactic chips from mistake-severity flaws
-    (and vice versa) because tactic_slot_visible never gated on severity. Empty =
-    no narrowing (single-game path unaffected).
+    Quick 260702-mnd: the card now surfaces every valid tactic slot regardless of
+    the active tactic/severity filter — a selected card is a complete picture of
+    that game's flaws, consistent with the context chips (which already ignore
+    every filter, see _curate_chips_from_rows). Game SELECTION (which games
+    appear at all) is still enforced upstream by query_filtered_games; this
+    function only decides which tags render on an already-selected card. The two
+    validity gates that remain are: (1) decided_lost — the pre-move position was
+    not already decisively lost for the mover, and (2) the confidence floor
+    (_TACTIC_CHIP_CONFIDENCE_MIN, inside tactic_slot_visible). Both gate
+    correctness/noise, not filter membership.
 
     Quick 260628-u7d: tactic_flaw_rows is a both-color (ungated) row list used
     ONLY to populate the per-ply tactic map for eval-chart tooltips — it may
@@ -442,17 +434,12 @@ def _build_card(
         analysis_state = "analyzed"
         # Phase 109 (LIBG-10): populate eval chart fields for analyzed games.
         if positions:
-            # Quick 260621-sm8: build tactic_by_ply via the shared per-slot predicate
-            # (tactic_slot_visible), identical to the predicate used by query_flaws.
-            # A slot is emitted non-null IFF it satisfies orientation ∩ confidence ∩
-            # family ∩ depth-range. Defaults (tactic_families=(), orientation="either",
-            # no depth bounds) leave both slots populated, so the single-game path is
-            # unaffected. Previously only the confidence threshold was checked, so
-            # orientation and depth controls had no effect on the Games tab (BUG).
-            # Severity gate: when the severity filter narrows the set, only flaws of
-            # the selected tier contribute tactic chips — matching the single-row AND
-            # game-selection predicate (build_flaw_filter_clauses). Empty = no gate.
-            severity_ints = {_SEVERITY_INT[s] for s in flaw_severity} if flaw_severity else None
+            # Quick 260702-mnd: build tactic_by_ply via the shared per-slot predicate
+            # (tactic_slot_visible), called with filter-neutral arguments so it only
+            # applies the two validity gates (decided_lost + confidence floor) — no
+            # filter/severity pruning. Game SELECTION is enforced upstream by
+            # query_filtered_games (D-1: the severity gate that used to live here is
+            # removed too, matching the context chips which never pruned by severity).
             # Build a ply → GamePosition index once for decided-lost lookups (per-row ply N-1).
             # Quick 260628-u7d: tactic_flaw_rows may include opponent rows (both movers),
             # so mover_is_white is derived per-ply instead of assuming mover == user.
@@ -460,8 +447,6 @@ def _build_card(
             tactic_by_ply: dict[int, _TacticByPlyEntry] = {}
             rows_for_tactic = tactic_flaw_rows if tactic_flaw_rows is not None else flaw_rows
             for fr in rows_for_tactic:
-                if severity_ints is not None and fr.severity not in severity_ints:
-                    continue
                 # Decided-lost: look up the pre-move position (ply N-1) and check.
                 # mover_is_white derived from ply parity (single-source convention) so the
                 # gate is correct for both player rows and opponent rows.
@@ -476,10 +461,10 @@ def _build_card(
                     fr.allowed_tactic_confidence,
                     fr.allowed_tactic_depth,
                     orientation_kind="allowed",
-                    tactic_families=tactic_families,
-                    tactic_orientation=tactic_orientation,
-                    min_tactic_depth=min_tactic_depth,
-                    max_tactic_depth=max_tactic_depth,
+                    tactic_families=(),
+                    tactic_orientation="either",
+                    min_tactic_depth=None,
+                    max_tactic_depth=None,
                     decided_lost=fr_decided_lost,
                 )
                 allowed_motif_str: str | None = None
@@ -496,10 +481,10 @@ def _build_card(
                     fr.missed_tactic_confidence,
                     fr.missed_tactic_depth,
                     orientation_kind="missed",
-                    tactic_families=tactic_families,
-                    tactic_orientation=tactic_orientation,
-                    min_tactic_depth=min_tactic_depth,
-                    max_tactic_depth=max_tactic_depth,
+                    tactic_families=(),
+                    tactic_orientation="either",
+                    min_tactic_depth=None,
+                    max_tactic_depth=None,
                     decided_lost=fr_decided_lost,
                 )
                 missed_motif_str: str | None = None
@@ -569,12 +554,6 @@ async def get_library_game(
     session: AsyncSession,
     user_id: int,
     game_id: int,
-    *,
-    flaw_severity: Sequence[str] | None = None,
-    tactic_families: Sequence[str] | None = None,
-    tactic_orientation: TacticOrientation = "either",
-    min_tactic_depth: int | None = None,
-    max_tactic_depth: int | None = None,
 ) -> GameFlawCard | None:
     """Return a single GameFlawCard for a game owned by the authenticated user.
 
@@ -588,12 +567,10 @@ async def get_library_game(
     called with [game_id]. Queries run sequentially on the one AsyncSession
     (no asyncio.gather — CLAUDE.md §"Never use asyncio.gather on the same AsyncSession").
 
-    Quick 260621-sm8: the tactic filter params are threaded to _build_card so the
-    "View game" modal honors the active depth/orientation/family filter (per-slot
-    nulling), identical to the list path. Defaults leave both slots populated.
-    flaw_severity is threaded for the same reason: opening a game under a
-    "blunders only" / "mistakes only" filter must gate the modal's tactic chips by
-    severity too, matching the list (severity tactic-leak fix). None = no narrowing.
+    Quick 260702-mnd (D-3): the tactic/severity filter params this endpoint used
+    to accept existed ONLY to drive per-slot pruning in _build_card, which is now
+    removed. The single-game path does no game selection, so those params had no
+    other purpose — dropped end-to-end (router, service, frontend client/hook).
     """
     game = await session.get(Game, game_id)
     if game is None or game.user_id != user_id:
@@ -631,11 +608,6 @@ async def get_library_game(
         is_analyzed,
         positions,
         active_map.get(game_id),
-        flaw_severity=flaw_severity or (),
-        tactic_families=tactic_families or (),
-        tactic_orientation=tactic_orientation,
-        min_tactic_depth=min_tactic_depth,
-        max_tactic_depth=max_tactic_depth,
         tactic_flaw_rows=tactic_flaw_rows,
     )
 
@@ -739,11 +711,6 @@ async def get_library_games(
                 game.id in analyzed_set,
                 page_positions.get(game.id, []),
                 active_status_map.get(game.id),
-                flaw_severity=flaw_severity or (),
-                tactic_families=tactic_families or (),
-                tactic_orientation=tactic_orientation,
-                min_tactic_depth=min_tactic_depth,
-                max_tactic_depth=max_tactic_depth,
                 tactic_flaw_rows=page_tactic_flaws.get(game.id, []),
             )
             for game in games

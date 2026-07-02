@@ -1220,11 +1220,14 @@ async def _seed_tactic_flaw_for_game(
 
 
 class TestBuildCardTacticPerSlotSuppression:
-    """get_library_games / _build_card nulls non-matching tactic slots (Quick 260621-sm8).
+    """get_library_games / _build_card (Quick 260702-mnd: cards show all tactic slots).
 
-    Scenario (d) from the plan: the Games endpoint must apply the same per-slot
-    predicate as query_flaws. Tests use separate user_id values to avoid
-    cross-test leakage in the rollback-scoped db_session.
+    Quick 260702-mnd removed the filter/severity pruning from _build_card's
+    tactic_by_ply construction — a selected card is now a complete picture of
+    its own tactic tags, regardless of the active tactic/severity filter (which
+    still only selects WHICH games appear, via query_filtered_games). Tests use
+    separate user_id values to avoid cross-test leakage in the rollback-scoped
+    db_session.
     """
 
     @pytest.mark.asyncio
@@ -1233,12 +1236,11 @@ class TestBuildCardTacticPerSlotSuppression:
     ) -> None:
         """orientation='missed' → allowed slot is nulled in flaw_markers.
 
-        Seeds a tactic flaw with both slots populated. When get_library_games is
-        called with tactic_orientation='missed', the allowed slot must be null in
-        the card's flaw_markers (if the card has flaw markers at all — an analyzed
-        game with positions would; here we test via get_library_games which calls
-        _build_card, and we verify via query_flaws since _build_card uses the same
-        predicate as the Flaws path).
+        Validates the FLAWS SUBTAB path (query_flaws), which still prunes
+        per-slot by the active orientation/family/depth filter (each Flaws row
+        IS a matching flaw — pruning is correct there). This is NOT the Games
+        card path (_build_card no longer prunes, Quick 260702-mnd) — kept
+        unchanged as a regression guard for query_flaws.
         """
         from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1372,19 +1374,16 @@ class TestBuildCardTacticPerSlotSuppression:
         assert ply2_marker.allowed_tactic_motif == "discovered-attack"
 
     @pytest.mark.asyncio
-    async def test_single_game_depth_filter_nulls_out_of_range_slot(
+    async def test_single_game_shows_all_tactic_slots_depth_filter_removed(
         self, db_session: object
     ) -> None:
-        """get_library_game (the "View game" modal path) honors the depth filter (Quick 260621-sm8).
+        """get_library_game (the "View game" modal path) shows all slots (Quick 260702-mnd).
 
-        Regression for the modal bug: opening a game from a flaw card with a depth
-        1-2 filter must null the out-of-range allowed slot in the card's
-        flaw_markers, exactly like the Flaws/Games lists. Before the fix the
-        single-game path passed no tactic params, so every tactic rendered.
-
-        missed raw depth 1 → anchored 1 (offset 0) → in [1, 2] → populated.
-        allowed raw depth 10 → anchored 11 (ALLOWED_DECISION_DEPTH_OFFSET=1) →
-        outside [1, 2] → nulled.
+        The single-game endpoint no longer accepts tactic filter params at all
+        (D-3 dead-param removal) — a would-have-been depth-1-2 filter has no way
+        to reach _build_card. Both slots must be populated regardless of the
+        (now nonexistent) depth range, since one slot's raw depth would have
+        anchored well outside any narrow range under the old pruning behavior.
         """
         from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1415,32 +1414,24 @@ class TestBuildCardTacticPerSlotSuppression:
             ply=2,
             missed_motif=_FORK_INT,
             missed_conf=80,
-            missed_depth=1,  # anchored 1 → in [1, 2]
+            missed_depth=1,
             allowed_motif=_DISCOVERED_ATTACK_INT,
             allowed_conf=75,
-            allowed_depth=10,  # anchored 11 → outside [1, 2]
+            allowed_depth=10,  # would have anchored outside a [1, 2] range under old pruning
         )
 
-        card = await get_library_game(
-            session,
-            user_id=uid,
-            game_id=game.id,
-            tactic_families=None,
-            tactic_orientation="either",
-            min_tactic_depth=1,
-            max_tactic_depth=2,
-        )
+        card = await get_library_game(session, user_id=uid, game_id=game.id)
         assert card is not None
         assert card.flaw_markers is not None
         ply2_marker = next((fm for fm in card.flaw_markers if fm.is_user and fm.ply == 2), None)
         assert ply2_marker is not None, "Expected a flaw_marker at ply 2"
 
-        # missed slot in range → populated; allowed slot out of range → nulled.
+        # Both slots populated — no filter pruning on the single-game card.
         assert ply2_marker.missed_tactic_motif == "fork"
         assert ply2_marker.missed_tactic_depth == 1
-        assert ply2_marker.allowed_tactic_motif is None
-        assert ply2_marker.allowed_tactic_confidence is None
-        assert ply2_marker.allowed_tactic_depth is None
+        assert ply2_marker.allowed_tactic_motif == "discovered-attack"
+        assert ply2_marker.allowed_tactic_confidence == 75
+        assert ply2_marker.allowed_tactic_depth == 10
 
     @pytest.mark.asyncio
     async def test_single_game_default_filter_unaffected(self, db_session: object) -> None:
@@ -1493,22 +1484,18 @@ class TestBuildCardTacticPerSlotSuppression:
         assert ply2_marker.allowed_tactic_motif == "discovered-attack"
 
     @pytest.mark.asyncio
-    async def test_severity_filter_gates_tactic_slots_in_games_response(
+    async def test_severity_filter_no_longer_gates_tactic_slots_in_games_response(
         self, db_session: object
     ) -> None:
-        """Severity filter narrows which flaws contribute tactic chips on the card.
+        """Severity filter selects games but no longer prunes tactic chips (Quick 260702-mnd, D-1).
 
-        Regression for the reported bug: with "blunders only" active, tactic badges
-        from mistake-severity flaws still rendered on the game card (and vice versa),
-        because tactic_slot_visible never gated on severity. The fix threads
-        flaw_severity into _build_card and skips non-matching-severity flaws when
-        building tactic_by_ply — mirroring the single-row AND game-selection predicate
-        (build_flaw_filter_clauses: GameFlaw.severity.in_(...)).
-
-        Game has a white blunder at ply 2 and a white mistake at ply 4, each with a
-        tactic. With flaw_severity=["blunder"] the game is selected (it has a blunder),
-        but only the blunder's tactic slots survive; the mistake's are nulled. With
-        flaw_severity=["mistake"] the opposite holds.
+        Reverses the pre-260702-mnd behavior: the severity gate that used to null
+        non-matching-severity tactic slots in _build_card is removed (D-1 — kept
+        consistent with context chips, which never pruned by severity). The game
+        has a white blunder at ply 2 and a white mistake at ply 4, each with a
+        tactic. Under EVERY flaw_severity value the game is selected (it always has
+        at least one matching-severity flaw) and BOTH plies' tactics survive on the
+        returned card.
         """
         from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1581,28 +1568,30 @@ class TestBuildCardTacticPerSlotSuppression:
         assert markers[2].severity == "blunder"
         assert markers[4].severity == "mistake"
 
-        # "Blunders only": blunder ply keeps its tactic; mistake ply is gated out.
+        # "Blunders only": the game is selected (has a blunder), but BOTH plies'
+        # tactics survive — severity no longer prunes tactic tags (D-1).
         assert markers[2].missed_tactic_motif == "fork"
-        assert markers[4].missed_tactic_motif is None
+        assert markers[4].missed_tactic_motif == "fork"
 
-        # "Mistakes only": the reverse — mistake ply keeps its tactic, blunder ply gated.
+        # "Mistakes only": same — both tactics still survive.
         markers = await _markers_for_severity(["mistake"])
         assert markers[4].missed_tactic_motif == "fork"
-        assert markers[2].missed_tactic_motif is None
+        assert markers[2].missed_tactic_motif == "fork"
 
-        # Both tiers selected (= no narrowing): both tactics survive.
+        # Both tiers selected: both tactics survive (unchanged).
         markers = await _markers_for_severity(["blunder", "mistake"])
         assert markers[2].missed_tactic_motif == "fork"
         assert markers[4].missed_tactic_motif == "fork"
 
     @pytest.mark.asyncio
-    async def test_single_game_severity_filter_gates_tactic_slots(self, db_session: object) -> None:
-        """get_library_game (the "View game" modal path) honors the severity filter.
+    async def test_single_game_shows_all_severities_severity_param_removed(
+        self, db_session: object
+    ) -> None:
+        """get_library_game (the "View game" modal path) shows all tactic slots (Quick 260702-mnd, D-3).
 
-        Opening a game from a card under "blunders only" must gate the modal's tactic
-        chips by severity too, matching the list. With flaw_severity=["blunder"] the
-        mistake ply's tactic slots are nulled while the blunder ply's survive.
-        Without flaw_severity (a direct open) both survive.
+        The single-game endpoint no longer accepts a severity param at all (D-3
+        dead-param removal) — both plies' tactics always survive, matching the
+        Games list's new selection-only severity semantics (D-1).
         """
         from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1646,23 +1635,99 @@ class TestBuildCardTacticPerSlotSuppression:
             missed_depth=1,
         )
 
-        # "Blunders only" → mistake ply's tactic gated out.
-        card = await get_library_game(
-            session, user_id=uid, game_id=game.id, flaw_severity=["blunder"]
-        )
-        assert card is not None
-        assert card.flaw_markers is not None
-        by_ply = {fm.ply: fm for fm in card.flaw_markers if fm.is_user}
-        assert by_ply[2].missed_tactic_motif == "fork"
-        assert by_ply[4].missed_tactic_motif is None
-
-        # Direct open (no severity) → both survive.
+        # Single-game open: both plies' tactics always survive (no severity param exists).
         card = await get_library_game(session, user_id=uid, game_id=game.id)
         assert card is not None
         assert card.flaw_markers is not None
         by_ply = {fm.ply: fm for fm in card.flaw_markers if fm.is_user}
         assert by_ply[2].missed_tactic_motif == "fork"
         assert by_ply[4].missed_tactic_motif == "fork"
+
+    @pytest.mark.asyncio
+    async def test_games_filter_selects_only_card_content_shows_every_motif(
+        self, db_session: object
+    ) -> None:
+        """Lock-in test (Quick 260702-mnd): active tactic filter selects, never prunes.
+
+        Seeds two tactic flaws: ply 2 (fork, depth anchored in-range) matches an
+        active tactic_families=["fork"] + depth [1, 2] filter (so the game is
+        SELECTED via query_filtered_games' EXISTS predicate); ply 4
+        (discovered-attack, depth anchored well outside the range) does NOT match
+        the filter on either axis. Under the pre-260702-mnd per-slot pruning
+        behavior, ply 4's tactic would have been nulled on the card. It must now
+        survive alongside ply 2's, proving the filter only selects games and no
+        longer prunes card content.
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.services.flaws_service import BLUNDER_DROP, MISTAKE_DROP
+        from app.services.library_service import get_library_games
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        uid = 99995
+        await ensure_test_user(session, uid)
+
+        _, curr_b = _cp_for_white_drop(BLUNDER_DROP)
+        _, curr_m = _cp_for_white_drop(MISTAKE_DROP)
+
+        game = await _seed_db_game(session, user_id=uid, user_color="white", ply_count=4)
+        await _seed_db_pos(session, game=game, ply=0, eval_cp=0)
+        await _seed_db_pos(session, game=game, ply=1, eval_cp=0)
+        await _seed_db_pos(session, game=game, ply=2, eval_cp=curr_b)  # white blunder
+        await _seed_db_pos(session, game=game, ply=3, eval_cp=0)  # recover
+        await _seed_db_pos(session, game=game, ply=4, eval_cp=curr_m)  # white mistake
+
+        # Matches the active filter (family=fork, depth in [1, 2]) -> selects the game.
+        await _seed_tactic_flaw_for_game(
+            session,
+            game=game,
+            ply=2,
+            severity=2,
+            missed_motif=_FORK_INT,
+            missed_conf=80,
+            missed_depth=1,
+        )
+        # Does NOT match the active filter (wrong family, depth anchored well outside
+        # [1, 2]) -> would have been nulled under the old per-slot pruning behavior.
+        await _seed_tactic_flaw_for_game(
+            session,
+            game=game,
+            ply=4,
+            severity=1,
+            missed_motif=_DISCOVERED_ATTACK_INT,
+            missed_conf=75,
+            missed_depth=10,
+        )
+
+        resp = await get_library_games(
+            session,
+            user_id=uid,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            flaw_severity=None,
+            flaw_tags=None,
+            tactic_families=["fork"],
+            tactic_orientation="either",
+            min_tactic_depth=1,
+            max_tactic_depth=2,
+            offset=0,
+            limit=20,
+        )
+        # Game selection still works (ply 2's flaw matches the EXISTS predicate).
+        assert len(resp.games) == 1
+        card = resp.games[0]
+        assert card.flaw_markers is not None
+        by_ply = {fm.ply: fm for fm in card.flaw_markers if fm.is_user}
+
+        # Both seeded motifs survive on the card despite the active filter — the
+        # non-matching ply-4 tactic is NOT pruned (selection-only semantics).
+        assert by_ply[2].missed_tactic_motif == "fork"
+        assert by_ply[4].missed_tactic_motif == "discovered-attack"
 
 
 # ---------------------------------------------------------------------------
