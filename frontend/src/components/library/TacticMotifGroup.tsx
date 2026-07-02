@@ -15,8 +15,14 @@ interface TacticMotifGroupProps {
   label: string;
   /** Game id — keeps chip + control testids unique within a card. */
   gameId: number;
-  /** Distinct motifs for this orientation, with per-motif occurrence count. */
-  motifs: { motif: string; count: number }[];
+  /**
+   * Distinct motifs for this orientation, with per-motif occurrence count. Quick
+   * 260702-mnd (D-2): optional `filterRingActive` overrides the store-derived ring
+   * with the caller's precise all-axes (family+orientation+depth) match — passed
+   * through unconditionally so a `false` value (a chip that fails the depth filter)
+   * suppresses the ring rather than falling back to the coarser store match.
+   */
+  motifs: { motif: string; count: number; filterRingActive?: boolean }[];
   /** Hover a chip → parent highlights this motif's eval-chart markers. */
   onChipHover: (motif: string, active: boolean) => void;
   /** Activate a chip → parent cycles the eval chart through this motif's plies. */
@@ -62,7 +68,7 @@ export function TacticMotifGroup({
       labelTrailing={legend}
       footer={footer}
     >
-      {visible.map(({ motif, count }) => (
+      {visible.map(({ motif, count, filterRingActive }) => (
         <TacticMotifChip
           key={motif}
           motif={motif}
@@ -70,6 +76,7 @@ export function TacticMotifGroup({
           hidePrefix
           count={count}
           flawId={gameId}
+          filterRingActive={filterRingActive}
           onHover={(active) => onChipHover(motif, active)}
           onActivate={() => onChipActivate(motif)}
         />

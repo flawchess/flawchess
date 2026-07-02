@@ -563,6 +563,10 @@ function DesktopTree({
   // The node the board opens at in game mode (initialPly, defaulting to ply 0).
   // undefined in free play (empty mainLine) — the initial top-align branch is skipped.
   const initialNodeId = mainLine.length > 0 ? mainLine[initialPly ?? 0] : undefined;
+  // Last mainLine node — used to detect (and skip) the initial-load last-node transient
+  // in the scroll effect. A primitive NodeId (not the mainLine array) so it can sit in the
+  // effect deps without re-running on every render.
+  const lastNodeId = mainLine.length > 0 ? mainLine[mainLine.length - 1] : undefined;
   const didInitialAlign = useRef(false);
 
   // Scroll the active node into view whenever currentNodeId changes. On the FIRST settle
@@ -577,13 +581,23 @@ function DesktopTree({
     const el = activeRef.current;
     if (!el) return;
     if (!didInitialAlign.current && initialNodeId !== undefined) {
-      if (currentNodeId !== initialNodeId) return; // ignore the loadMainLine last-node transient
+      // Skip ONLY the initial-load last-node transient: loadMainLine parks currentNodeId at
+      // the last mainLine node before the board navigates to the initial ply, and we don't
+      // want that transient to scroll before the initial ply top-aligns. A mid-session
+      // remount (mobile tab switch back to Moves after cycling tags) has no such transient —
+      // currentNodeId is already the user's actual position — so fall through and top-align
+      // to it instead of waiting forever for an initialNodeId settle that never comes.
+      // (Quick 260702-nm8 follow-up. Edge case: a remount while genuinely parked on the last
+      // node is indistinguishable from the transient and won't auto-scroll — acceptable.)
+      if (currentNodeId !== initialNodeId && currentNodeId === lastNodeId && initialNodeId !== lastNodeId) {
+        return;
+      }
       didInitialAlign.current = true;
       el.scrollIntoView({ block: 'start', behavior: 'auto' });
       return;
     }
     el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }, [currentNodeId, initialNodeId]);
+  }, [currentNodeId, initialNodeId, lastNodeId]);
 
   const { forkParentId, chain, subChain, level } = resolvePvDisplayChain(
     buildVariationChain(nodes, mainLine, resolvedPvLine, currentNodeId),

@@ -8,6 +8,14 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- **Flaw tags on the analysis board** — the `/analysis` board (in game mode) now shows the game's flaw tags below the eval chart: a Blunders / Mistakes / Inaccuracies row on top of a three-column Missed | Allowed | Context block, matching the Library game card. Click or tap any badge or tag to step the board through that flaw's positions, with the move list and eval-chart crosshair staying in sync. On mobile the tags live behind a new third "Tags" tab alongside Moves and Eval chart. (Quick 260702-nm8)
+
+### Changed
+
+- **Library Games cards now show all tactic + context tags** — the active tactic/severity/context/depth/orientation filter on the Games tab now only decides which games appear; it no longer hides tags from a shown card. Tactic chips are consistent with context chips (both always show the game's full set), and the active-filter ring lights only on chips that truly match the filter across family, orientation, and depth. (Quick 260702-mnd)
+
 ## [v1.30] Forcing-Line Tactic Gate — 2026-06-30
 
 ### Added

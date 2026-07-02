@@ -29,12 +29,18 @@ import { SeverityBadge } from '@/components/library/SeverityBadge';
 import { TagChip, TagLegend } from '@/components/library/TagChip';
 import { TacticMotifGroup } from '@/components/library/TacticMotifGroup';
 import { ChipColumn } from '@/components/library/ChipColumn';
-import { tacticMotifLabel, TACTIC_FAMILY_FOR_MOTIF, tacticDepthBadge } from '@/lib/tacticComparisonMeta';
+import {
+  tacticMotifLabel,
+  TACTIC_FAMILY_FOR_MOTIF,
+  tacticDepthBadge,
+  resolveVisibleTactic,
+} from '@/lib/tacticComparisonMeta';
 import { NoAnalysisState } from '@/components/library/NoAnalysisState';
 import { gamePlatformUrl, platformPlyUrl } from '@/lib/platformLinks';
 import { buildGameAnalysisUrl } from '@/lib/analysisUrl';
 import { plysToFullMoves } from '@/lib/chess';
 import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
+import { DEFAULT_TACTIC_DEPTH_VALUE } from '@/lib/tacticDepth';
 import { useMiniBoardSize } from '@/hooks/useMiniBoardSize';
 import { formatTimeControl } from '@/lib/formatTimeControl';
 import { Button } from '@/components/ui/button';
@@ -336,16 +342,11 @@ export function LibraryGameCard({
   // the SAME predicate used to select games (OR within family, AND across families —
   // build_flaw_filter_clauses). Returns null when no context/phase filter is active.
   //
-  // Two roles:
-  //  1. The persistent white outline on the eval chart (passed as `outlinedPlies`,
-  //     mirroring the TagChip ring).
-  //  2. Gating the tactic-motif chips/counts/cycle below (Quick 260621 follow-up).
-  //     Tactic family/depth/orientation are enforced server-side by nulling the
-  //     per-marker tactic slots, but context tags live on fm.tags and are NEVER
-  //     nulled — so a fork on a marker that lacks the active context tag (e.g. not
-  //     low-clock) would still be counted and cycled, diverging from the filtered
-  //     games list. Intersecting the tactic derivations with this set restores the
-  //     single-marker AND the games list and Flaws tab already enforce.
+  // Quick 260702-mnd: this is now the eval chart's ONLY consumer — the persistent
+  // white marker outline (passed as `outlinedPlies`, mirroring the TagChip ring).
+  // It no longer gates the tactic-motif chip derivations below (motifPlies,
+  // tacticMotifs, highlightedPlies) — those now render/highlight unconditionally,
+  // consistent with the context chips (which never gated on this set either).
   const [flawFilter] = useFlawFilterStore();
   const filterTags = flawFilter.tags;
   const outlinedPlies = useMemo(() => {
@@ -377,6 +378,11 @@ export function LibraryGameCard({
   // the same motif cycle through their own plies independently. Keying on the display
   // label (not raw motif) collapses every mate subtype to the single "checkmate" key
   // so one chip cycles through all checkmate plies (Quick 260620-onv).
+  // Quick 260702-mnd: tactic chips now render unconditionally on every analyzed
+  // card, independent of the active context/tactic filter — a selected card is a
+  // complete picture of its own flaws (consistent with context chips, which never
+  // pruned by filter). outlinedPlies keeps its ONE remaining role: driving the
+  // eval-chart white marker outline (below); it no longer gates tactic derivations.
   const motifPlies = useMemo(() => {
     const m = new Map<string, number[]>();
     const push = (key: string, ply: number): void => {
@@ -386,10 +392,6 @@ export function LibraryGameCard({
     };
     for (const fm of game.flaw_markers ?? []) {
       if (!fm.is_user) continue;
-      // Quick 260621 follow-up: drop forks on markers that fail the active context
-      // filter (e.g. a depth-1-2 fork that is NOT low-clock) so the chip count and
-      // cycle set match the filtered games list. outlinedPlies is null = no gating.
-      if (outlinedPlies && !outlinedPlies.has(fm.ply)) continue;
       if (fm.allowed_tactic_motif != null)
         push(motifPliesKey('allowed', tacticMotifLabel(fm.allowed_tactic_motif)), fm.ply);
       if (fm.missed_tactic_motif != null)
@@ -397,7 +399,7 @@ export function LibraryGameCard({
     }
     for (const arr of m.values()) arr.sort((a, b) => a - b);
     return m;
-  }, [game.flaw_markers, outlinedPlies]);
+  }, [game.flaw_markers]);
 
   // Per-severity ascending list of the user's marker plies (B/M/I), for click-to-
   // cycle on the severity count badges. Inaccuracies are included — the chart
@@ -441,18 +443,15 @@ export function LibraryGameCard({
         // Quick 260620-pza: match the orientation the chip represents.
         const col =
           ref.orientation === 'missed' ? fm.missed_tactic_motif : fm.allowed_tactic_motif;
-        // Quick 260621 follow-up: gate the motif highlight by the active context filter
-        // too (matching motifPlies), so hovering/cycling a fork chip emphasizes only the
-        // forks that satisfy it. outlinedPlies is null = no gating.
-        matches =
-          col != null &&
-          tacticMotifLabel(col) === ref.motif &&
-          (!outlinedPlies || outlinedPlies.has(fm.ply));
+        // Quick 260702-mnd: no longer gated by outlinedPlies (context filter) — hovering
+        // or cycling a tactic chip highlights ALL of its plies, matching the
+        // now-unconditional tactic-chip rendering (motifPlies/tacticMotifs above).
+        matches = col != null && tacticMotifLabel(col) === ref.motif;
       }
       if (matches) set.add(fm.ply);
     }
     return set;
-  }, [highlight, cycle, game.flaw_markers, outlinedPlies]);
+  }, [highlight, cycle, game.flaw_markers]);
 
   // Mobile (<sm) miniboard spans 50% of the viewport width; sm+ keeps the fixed size.
   const mobileBoardSize = useMiniBoardSize(MOBILE_BOARD_SIZE);
@@ -481,15 +480,50 @@ export function LibraryGameCard({
       out.push({ motif: label, orientation });
     };
     const markers = game.flaw_markers ?? [];
-    // Quick 260621 follow-up: only surface a tactic chip when ≥1 marker carrying that
-    // motif also passes the active context filter (e.g. is low-clock), so the chip set
-    // matches the gated counts in motifPlies. outlinedPlies is null = no gating.
-    const passesContext = (fm: (typeof markers)[number]): boolean =>
-      fm.is_user && (!outlinedPlies || outlinedPlies.has(fm.ply));
+    // Quick 260702-mnd: surface every user tactic chip unconditionally — no longer
+    // gated by the active context/tactic filter (matching motifPlies above).
+    const passesContext = (fm: (typeof markers)[number]): boolean => fm.is_user;
     for (const fm of markers) if (passesContext(fm)) collect(fm.allowed_tactic_motif, 'allowed');
     for (const fm of markers) if (passesContext(fm)) collect(fm.missed_tactic_motif, 'missed');
     return out;
-  }, [game.flaw_markers, outlinedPlies]);
+  }, [game.flaw_markers]);
+
+  // Quick 260702-mnd (D-2): depth-aware active-filter ring. Since every tactic chip
+  // now renders regardless of the filter, the ring must independently reflect the
+  // full active filter (family + orientation + depth) so a same-family chip whose
+  // plies fall OUTSIDE the depth range does NOT light up — "highlighted === actually
+  // matches the active filter". True only when a tactic axis (not context tags or
+  // severity) is non-default.
+  const tacticFilterActive =
+    flawFilter.tacticFamilies.length > 0 ||
+    flawFilter.tacticOrientation !== 'either' ||
+    flawFilter.tacticDepthMin !== DEFAULT_TACTIC_DEPTH_VALUE.min ||
+    flawFilter.tacticDepthMax !== DEFAULT_TACTIC_DEPTH_VALUE.max;
+
+  // Set of motifPlies-style keys (orientation:label) whose raw slot fully matches the
+  // active filter on ALL axes via the shared resolveVisibleTactic predicate (the same
+  // one the backend's tactic_slot_visible mirrors) — used to gate the ring per chip.
+  const matchingFilterKeys = useMemo(() => {
+    const set = new Set<string>();
+    for (const fm of game.flaw_markers ?? []) {
+      if (!fm.is_user) continue;
+      const allowedMotif = fm.allowed_tactic_motif;
+      if (
+        allowedMotif != null &&
+        resolveVisibleTactic('allowed', allowedMotif, fm.allowed_tactic_depth, flawFilter)
+      ) {
+        set.add(motifPliesKey('allowed', tacticMotifLabel(allowedMotif)));
+      }
+      const missedMotif = fm.missed_tactic_motif;
+      if (
+        missedMotif != null &&
+        resolveVisibleTactic('missed', missedMotif, fm.missed_tactic_depth, flawFilter)
+      ) {
+        set.add(motifPliesKey('missed', tacticMotifLabel(missedMotif)));
+      }
+    }
+    return set;
+  }, [game.flaw_markers, flawFilter]);
 
   // Click-to-cycle: clicking a tag chip advances through that tag's flaw plies,
   // commanding the eval chart to scrub to each and show its tooltip. `cycle`/
@@ -873,6 +907,10 @@ export function LibraryGameCard({
             motifs={groupMotifs.map(({ motif }) => ({
               motif,
               count: motifPlies.get(motifPliesKey(orientation, motif))?.length ?? 0,
+              // Quick 260702-mnd (D-2): ring lights only when a tactic filter is active
+              // AND this chip's slot(s) actually match it on every axis (depth-aware).
+              filterRingActive:
+                tacticFilterActive && matchingFilterKeys.has(motifPliesKey(orientation, motif)),
             }))}
             onChipHover={(motif, active) =>
               setHighlight(active ? { kind: 'motif', motif, orientation } : null)

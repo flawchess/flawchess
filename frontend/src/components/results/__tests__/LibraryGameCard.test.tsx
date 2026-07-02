@@ -25,9 +25,29 @@ vi.mock('@/components/ui/tooltip', () => ({
 }));
 
 // Shared flaw filter store stub. Mutable (via vi.hoisted) so a test can activate a
-// context-tag filter (e.g. low-clock) and assert the tactic chips are gated by it.
+// context-tag or tactic filter and assert the card's behavior (Quick 260702-mnd: the
+// filter now only selects games — it never hides a chip — but it DOES drive the
+// depth-aware active-filter ring, so tacticFamilies/tacticOrientation/tacticDepthMin/
+// tacticDepthMax must be present with their real defaults for that logic to run).
+function defaultTestFilter() {
+  return {
+    severity: ['blunder', 'mistake'] as string[],
+    tags: [] as string[],
+    tacticFamilies: [] as string[],
+    tacticOrientation: 'either' as const,
+    tacticDepthMin: 0,
+    tacticDepthMax: 11,
+  };
+}
 const filterStore = vi.hoisted(() => ({
-  filter: { severity: ['blunder', 'mistake'], tags: [] as string[] },
+  filter: {
+    severity: ['blunder', 'mistake'] as string[],
+    tags: [] as string[],
+    tacticFamilies: [] as string[],
+    tacticOrientation: 'either' as const,
+    tacticDepthMin: 0,
+    tacticDepthMax: 11,
+  },
 }));
 vi.mock('@/hooks/useFlawFilterStore', () => ({
   useFlawFilterStore: () => [filterStore.filter, vi.fn()] as const,
@@ -78,7 +98,7 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   // Reset the mutable filter stub so context-filter tests don't leak into the defaults.
-  filterStore.filter = { severity: ['blunder', 'mistake'], tags: [] };
+  filterStore.filter = defaultTestFilter();
   scrubCtl.ply = 0;
 });
 
@@ -181,18 +201,18 @@ describe('LibraryGameCard tactic chips (missed vs allowed)', () => {
   });
 });
 
-describe('LibraryGameCard tactic chips gated by active context filter (Quick 260621)', () => {
-  // Tactic family/depth/orientation are enforced server-side by nulling the per-marker
-  // tactic slots, but context tags (low-clock) live on the marker and are never nulled.
-  // The card must drop forks on markers that fail the active context filter so the chip
-  // set/count matches the filtered games list (single-marker AND).
+describe('LibraryGameCard tactic chips show regardless of active context filter (Quick 260702-mnd)', () => {
+  // Reverses the pre-260702-mnd behavior: an active context-tag filter (e.g. low-clock)
+  // only selects WHICH games appear — it must never hide a tactic chip on a card that
+  // is already shown. Both markers below render their fork chip even though one fails
+  // the active low-clock filter.
 
-  it('hides a fork chip whose only marker fails the active context filter', () => {
-    filterStore.filter = { severity: ['blunder', 'mistake'], tags: ['low-clock'] };
+  it('does NOT hide a fork chip whose only marker fails the active context filter', () => {
+    filterStore.filter = { ...defaultTestFilter(), tags: ['low-clock'] };
     renderCard(
       <LibraryGameCard
         game={makeGame([
-          // A depth-matching fork, but NOT low-clock — must be dropped under the low-clock filter.
+          // NOT low-clock — must still render under the active low-clock filter.
           marker({
             ply: 2,
             tags: [],
@@ -202,15 +222,14 @@ describe('LibraryGameCard tactic chips gated by active context filter (Quick 260
         ])}
       />,
     );
-    expect(screen.queryAllByTestId(`chip-tactic-allowed-fork-${GAME_ID}`)).toHaveLength(0);
+    expect(screen.getAllByTestId(`chip-tactic-allowed-fork-${GAME_ID}`).length).toBeGreaterThan(0);
   });
 
   it('keeps a fork chip when its marker satisfies the active context filter', () => {
-    filterStore.filter = { severity: ['blunder', 'mistake'], tags: ['low-clock'] };
+    filterStore.filter = { ...defaultTestFilter(), tags: ['low-clock'] };
     renderCard(
       <LibraryGameCard
         game={makeGame([
-          // Fork on a low-clock marker — passes; sibling fork without low-clock is dropped.
           marker({
             ply: 2,
             tags: ['low-clock'],
@@ -227,6 +246,76 @@ describe('LibraryGameCard tactic chips gated by active context filter (Quick 260
       />,
     );
     expect(screen.getAllByTestId(`chip-tactic-allowed-fork-${GAME_ID}`).length).toBeGreaterThan(0);
+  });
+});
+
+describe('LibraryGameCard tactic chip active-filter ring is depth-aware (Quick 260702-mnd, D-2)', () => {
+  // Both chips below render (filters never hide content), but only the in-range chip
+  // should carry the active-filter ring class. ACTIVE_FILTER_RING_CLASS applies a
+  // ring-2 utility class to the chip's className when its slot fully matches the
+  // active filter (family + orientation + depth).
+  const RING_CLASS_FRAGMENT = 'ring-2';
+
+  it('rings an in-range fork chip but not an out-of-range fork chip under a depth filter', () => {
+    filterStore.filter = {
+      ...defaultTestFilter(),
+      tacticFamilies: ['fork'],
+      tacticDepthMin: 1,
+      tacticDepthMax: 2,
+    };
+    renderCard(
+      <LibraryGameCard
+        game={makeGame([
+          // Depth 1 (missed, offset 0) → anchored 1 → in [1, 2] → ringed.
+          marker({
+            ply: 2,
+            missed_tactic_motif: 'fork',
+            missed_tactic_confidence: 90,
+            missed_tactic_depth: 1,
+          }),
+          // Depth 10 (missed, offset 0) → anchored 10 → outside [1, 2] → NOT ringed.
+          marker({
+            ply: 4,
+            missed_tactic_motif: 'skewer',
+            missed_tactic_confidence: 90,
+            missed_tactic_depth: 10,
+          }),
+        ])}
+      />,
+    );
+    const forkChips = screen.getAllByTestId(`chip-tactic-missed-fork-${GAME_ID}`);
+    expect(forkChips.length).toBeGreaterThan(0);
+    for (const chip of forkChips) {
+      expect(chip.className).toContain(RING_CLASS_FRAGMENT);
+    }
+
+    // Both chips render (selection-only filtering) but the wrong-family/out-of-range
+    // skewer chip does not carry the ring.
+    const skewerChips = screen.getAllByTestId(`chip-tactic-missed-skewer-${GAME_ID}`);
+    expect(skewerChips.length).toBeGreaterThan(0);
+    for (const chip of skewerChips) {
+      expect(chip.className).not.toContain(RING_CLASS_FRAGMENT);
+    }
+  });
+
+  it('rings no chips when no tactic filter is active (defaults)', () => {
+    renderCard(
+      <LibraryGameCard
+        game={makeGame([
+          marker({
+            ply: 2,
+            missed_tactic_motif: 'fork',
+            missed_tactic_confidence: 90,
+            missed_tactic_depth: 1,
+          }),
+        ])}
+      />,
+    );
+    const forkChips = screen.getAllByTestId(`chip-tactic-missed-fork-${GAME_ID}`);
+    expect(forkChips.length).toBeGreaterThan(0);
+    for (const chip of forkChips) {
+      expect(chip.className).not.toContain(RING_CLASS_FRAGMENT);
+    }
   });
 });
 

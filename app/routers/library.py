@@ -132,11 +132,6 @@ async def get_library_game(
     game_id: int,
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
-    severity: list[SeverityFilter] | None = Query(default=None),
-    tactic_family: list[str] | None = Query(default=None),
-    tactic_orientation: TacticOrientationFilter = Query(default="either"),
-    min_tactic_depth: int | None = Query(default=None, ge=0, le=11),
-    max_tactic_depth: int | None = Query(default=None, ge=0, le=11),
 ) -> GameFlawCard:
     """Return a single GameFlawCard for the authenticated user's game (SC-7).
 
@@ -145,26 +140,16 @@ async def get_library_game(
     confirming whether the id exists for the requester. game_id is typed int
     so FastAPI rejects non-integer values with 422 (T-112-05).
 
-    Quick 260621-sm8: accepts the same tactic filter params as /games so the
-    "View game" modal (opened from a flaw card with an active filter) nulls
-    non-matching tactic slots per-slot, matching the list. Without these params
-    the modal showed every tactic regardless of the depth/orientation/family
-    filter the user had set (the bug being fixed). Defaults (no family, either,
-    no depth bounds) leave both slots populated, so direct opens are unchanged.
-
-    severity is accepted for the same reason: a game opened under a "blunders
-    only" / "mistakes only" filter must gate the modal's tactic chips by severity
-    too, matching the list (severity tactic-leak fix). None = no narrowing.
+    Quick 260702-mnd (D-3): this endpoint no longer accepts severity/tactic
+    filter params. It does no game selection, so the params it used to accept
+    only drove per-slot tactic pruning in the service layer — now removed, the
+    card always shows every valid tactic + context tag regardless of the
+    Games-tab filter.
     """
     card = await library_service.get_library_game(
         session,
         user_id=user.id,
         game_id=game_id,
-        flaw_severity=list(severity) if severity else None,
-        tactic_families=list(tactic_family) if tactic_family else None,
-        tactic_orientation=tactic_orientation,
-        min_tactic_depth=min_tactic_depth,
-        max_tactic_depth=max_tactic_depth,
     )
     if card is None:
         raise HTTPException(status_code=404, detail="Game not found")

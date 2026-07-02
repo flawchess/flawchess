@@ -43,6 +43,7 @@ import type { FlawMarkerEntry } from '@/components/analysis/VariationTree';
 import type { FlawSeverity } from '@/types/library';
 import { tacticOrientationAtPly } from '@/lib/tacticOrientation';
 import { EvalChart } from '@/components/library/EvalChart';
+import { AnalysisTagsPanel } from '@/components/analysis/AnalysisTagsPanel';
 import { ChessBoard } from '@/components/board/ChessBoard';
 import type { BoardArrow } from '@/components/board/ChessBoard';
 import { BoardControls } from '@/components/board/BoardControls';
@@ -174,6 +175,11 @@ export default function Analysis() {
     ply: number;
     orientation: 'missed' | 'allowed';
   } | null>(null);
+
+  // Quick 260702-nm8 (Task 3): desktop-only hover-highlight from the tags panel onto
+  // the eval chart's markers — mirrors LibraryGameCard's highlightedPlies. Not passed
+  // on mobile (the chart lives on a different tab there).
+  const [tagsHighlightedPlies, setTagsHighlightedPlies] = useState<Set<number> | null>(null);
 
   // ── All hooks (unconditional, React rules) ────────────────────────────────────
 
@@ -786,7 +792,9 @@ export default function Analysis() {
     gameData.flaw_markers != null &&
     gameData.phase_transitions != null &&
     gameData.moves != null;
-  const evalChart = (heightClass: string) =>
+  // `highlightedPlies` is desktop-only (the tags panel's hover-highlight, Task 3);
+  // the mobile evalChart() call site omits it, leaving chart markers un-dimmed there.
+  const evalChart = (heightClass: string, highlightedPlies?: Set<number> | null) =>
     evalChartReady && gameId != null && gameData?.eval_series != null && gameData.flaw_markers != null && gameData.phase_transitions != null && gameData.moves != null ? (
       <EvalChart
         gameId={gameId}
@@ -801,6 +809,27 @@ export default function Analysis() {
         sliderDisabled={!isOnMainLineForSlider}
         onHoverPlyChange={handleEvalChartPlyChange}
         syncPly={evalChartPly}
+        highlightedPlies={highlightedPlies}
+      />
+    ) : null;
+
+  // The flaw-tags panel (game mode only, quick-260702-nm8) — severity row + Missed |
+  // Allowed | Context chip block. Same readiness gate as the eval chart (implies
+  // flaw_markers present); mounts exactly once regardless of desktop/mobile, mirroring
+  // the evalChart helper above. Cycling a badge/chip reuses the exact goToNode pattern
+  // from handleEvalChartPlyChange — a single call auto-syncs board + move list +
+  // eval-chart crosshair (evalChartPly derives from currentNodeId). `withHighlight`
+  // (Task 3, desktop only) wires the hover-highlight back onto the eval chart.
+  const tagsPanel = (withHighlight = false) =>
+    evalChartReady && gameData ? (
+      <AnalysisTagsPanel
+        game={gameData}
+        onCyclePly={(ply) => {
+          // T-140-02b: L-8 guard for noUncheckedIndexedAccess.
+          const nodeId = mainLine[ply];
+          if (nodeId !== undefined) goToNode(nodeId);
+        }}
+        onHighlightChange={withHighlight ? setTagsHighlightedPlies : undefined}
       />
     ) : null;
 
@@ -855,6 +884,9 @@ export default function Analysis() {
               <TabsTrigger value="eval" data-testid="analysis-tab-eval">
                 Eval chart
               </TabsTrigger>
+              <TabsTrigger value="tags" data-testid="analysis-tab-tags">
+                Tags
+              </TabsTrigger>
             </TabsList>
             <TabsContent value="moves" className="flex min-h-0 flex-1 flex-col">
               {variationTree('vertical')}
@@ -870,6 +902,9 @@ export default function Analysis() {
                 belt-and-suspenders. */}
             <TabsContent value="eval" className="min-h-0 overflow-x-hidden overflow-y-auto thin-scrollbar">
               <div className="px-3">{evalChart('h-[120px]')}</div>
+            </TabsContent>
+            <TabsContent value="tags" className="min-h-0 overflow-y-auto thin-scrollbar">
+              <div className="px-2">{tagsPanel()}</div>
             </TabsContent>
           </Tabs>
         ) : (
@@ -905,10 +940,19 @@ export default function Analysis() {
             {/* Bottom player */}
             {isGameMode && gameData && playerBar(boardFlipped ? 'black' : 'white')}
 
-            {/* EvalChart with slider — game mode only, below board (UI-SPEC Layout Contract). */}
+            {/* EvalChart with slider — game mode only, below board (UI-SPEC Layout Contract).
+                highlightedPlies (Task 3, desktop only): dims non-matching markers while
+                hovering a tags-panel badge/chip. */}
             {evalChartReady && (
-              <div data-testid="analysis-eval-chart">{evalChart('h-[120px]')}</div>
+              <div data-testid="analysis-eval-chart">
+                {evalChart('h-[120px]', tagsHighlightedPlies)}
+              </div>
             )}
+
+            {/* Flaw-tags panel — game mode only, directly below the eval chart
+                (quick-260702-nm8). withHighlight=true wires its hover state back onto
+                the eval chart above (desktop only — mobile's tagsPanel() call omits it). */}
+            {tagsPanel(true)}
           </div>
 
           {/* Side panel: engine + variation tree + controls. Narrower than the board

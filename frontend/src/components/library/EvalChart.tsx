@@ -546,8 +546,13 @@ export function EvalChart({
   //   slider thumb, and parent (hover sweeps the thumb along with it).
   //
   // Initialize sliderPly to the resting ply (initialPly when opened on a flaw, else
-  // the last eval'd ply — locked decision 5).
-  const [sliderPly, setSliderPly] = useState<number>(restingPly);
+  // the last eval'd ply — locked decision 5). When the parent controls the chart via
+  // syncPly (analysis board), seed from the current syncPly instead so a mount/remount
+  // (e.g. a mobile tab switch after cycling tags) opens the slider on the board's actual
+  // position, not the entry/last ply (Quick 260702-nm8 follow-up).
+  const [sliderPly, setSliderPly] = useState<number>(
+    syncPly != null ? Math.min(Math.max(syncPly, sliderMin), sliderMax) : restingPly,
+  );
   const [hoverPly, setHoverPly] = useState<number | null>(null);
 
   // True while a transient chart preview is active (desktop hover or mobile drag
@@ -576,6 +581,13 @@ export function EvalChart({
   // syncs on mount / data swap. useEffect runs after render — low-frequency, so the
   // notify here can't accumulate the way a per-scrub effect would.
   useEffect(() => {
+    // Parent-controlled charts (analysis board passes syncPly) own the active ply — the
+    // board is the source of truth and the syncPly effect below drives sliderPly. Echoing
+    // restingPly back here on mount/remount would notify the parent to navigate to
+    // restingPly (initial/last ply), discarding the position the board is actually on —
+    // e.g. after a mobile tab remount when cycling tags. Only the uncontrolled card
+    // miniboard needs this mount echo. (Quick 260702-nm8 follow-up.)
+    if (syncPly != null) return;
     setSliderPly(restingPly);
     notifyActivePly(restingPly);
   // eslint-disable-next-line react-hooks/exhaustive-deps
