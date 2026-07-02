@@ -43,6 +43,7 @@ import type { FlawMarkerEntry } from '@/components/analysis/VariationTree';
 import type { FlawSeverity } from '@/types/library';
 import { tacticOrientationAtPly } from '@/lib/tacticOrientation';
 import { EvalChart } from '@/components/library/EvalChart';
+import { AnalysisTagsPanel } from '@/components/analysis/AnalysisTagsPanel';
 import { ChessBoard } from '@/components/board/ChessBoard';
 import type { BoardArrow } from '@/components/board/ChessBoard';
 import { BoardControls } from '@/components/board/BoardControls';
@@ -804,6 +805,24 @@ export default function Analysis() {
       />
     ) : null;
 
+  // The flaw-tags panel (game mode only, quick-260702-nm8) — severity row + Missed |
+  // Allowed | Context chip block. Same readiness gate as the eval chart (implies
+  // flaw_markers present); mounts exactly once regardless of desktop/mobile, mirroring
+  // the evalChart helper above. Cycling a badge/chip reuses the exact goToNode pattern
+  // from handleEvalChartPlyChange — a single call auto-syncs board + move list +
+  // eval-chart crosshair (evalChartPly derives from currentNodeId).
+  const tagsPanel = () =>
+    evalChartReady && gameData ? (
+      <AnalysisTagsPanel
+        game={gameData}
+        onCyclePly={(ply) => {
+          // T-140-02b: L-8 guard for noUncheckedIndexedAccess.
+          const nodeId = mainLine[ply];
+          if (nodeId !== undefined) goToNode(nodeId);
+        }}
+      />
+    ) : null;
+
   // ── Mobile takeover layout (< 640px) ──────────────────────────────────────────
   // Engine PV lines above the board (no info card), board + eval bar, then a 2-tab view
   // (Moves | Eval) that fills the space down to the in-flow board-controls footer. Free
@@ -855,6 +874,9 @@ export default function Analysis() {
               <TabsTrigger value="eval" data-testid="analysis-tab-eval">
                 Eval chart
               </TabsTrigger>
+              <TabsTrigger value="tags" data-testid="analysis-tab-tags">
+                Tags
+              </TabsTrigger>
             </TabsList>
             <TabsContent value="moves" className="flex min-h-0 flex-1 flex-col">
               {variationTree('vertical')}
@@ -870,6 +892,9 @@ export default function Analysis() {
                 belt-and-suspenders. */}
             <TabsContent value="eval" className="min-h-0 overflow-x-hidden overflow-y-auto thin-scrollbar">
               <div className="px-3">{evalChart('h-[120px]')}</div>
+            </TabsContent>
+            <TabsContent value="tags" className="min-h-0 overflow-y-auto thin-scrollbar">
+              <div className="px-2">{tagsPanel()}</div>
             </TabsContent>
           </Tabs>
         ) : (
@@ -909,6 +934,10 @@ export default function Analysis() {
             {evalChartReady && (
               <div data-testid="analysis-eval-chart">{evalChart('h-[120px]')}</div>
             )}
+
+            {/* Flaw-tags panel — game mode only, directly below the eval chart
+                (quick-260702-nm8). */}
+            {tagsPanel()}
           </div>
 
           {/* Side panel: engine + variation tree + controls. Narrower than the board
