@@ -2639,7 +2639,18 @@ async def _full_drain_tick() -> bool:
         # Always runs — partial flaws should materialize even when holes remain.
         # Phase 143 D-02: pass in-memory flaw_pv_blobs so the gate runs at classify time.
         # Ordering: classify must PRECEDE _run_multipv2_pass (blobs not yet in DB here).
-        await _classify_and_fill_oracle(write_session, game_id, engine_result_map, flaw_pv_blobs)
+        # SEED-075: blobs_pending=True mirrors the atomic go-forward path
+        # (eval_remote.py _apply_submit / the worker blob-submit path). Without it the
+        # local drain defaulted to False and re-minted raw ungated cp-based tactic tags
+        # for any flaw whose continuation blob was NOT assembled into flaw_pv_blobs this
+        # pass (flaw_ply absent from the dict, pre_flaw_eval_cp present) — the exact
+        # Phase 147 strict-zero violation. blobs_pending=True suppresses those to NULL so
+        # the tier-4 D-07 gated retag can later land the real blob and re-tag correctly.
+        # It has ZERO effect on flaws that DID get a blob (the gate runs on pv_blob
+        # directly) and on the D-06 []-sentinel / mate-adjacent FINAL cases.
+        await _classify_and_fill_oracle(
+            write_session, game_id, engine_result_map, flaw_pv_blobs, blobs_pending=True
+        )
 
         # Phase 142 MPV-02: write PvNode blobs (allowed/missed lines) to game_flaws.
         # Runs in the same transaction as _classify_and_fill_oracle so flaw rows exist

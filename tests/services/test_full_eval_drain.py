@@ -1843,6 +1843,106 @@ class TestClassifyHook:
             await _delete_games(full_drain_session_maker, [game_id])
 
 
+class TestLocalDrainBlobsPendingSuppression:
+    """SEED-075: the local in-process drain must pass blobs_pending=True to
+    _classify_and_fill_oracle, mirroring the atomic go-forward path
+    (test_eval_worker_endpoints.py::test_submit_suppresses_cp_flaw_tag_then_blob_submit_self_heals).
+
+    Before the fix the drain defaulted blobs_pending=False and re-minted raw ungated
+    cp-based tactic tags for any flaw whose continuation blob was not assembled this
+    pass — the Phase 147 strict-zero violation this seed closes.
+    """
+
+    async def test_drain_suppresses_cp_flaw_tag_with_no_blob(
+        self,
+        full_drain_test_user_117: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A cp-based motif'd flaw with no assembled blob is suppressed to NULL after a
+        drain tick (blobs_pending=True), not persisted raw/ungated.
+
+        Setup mirrors the atomic-submit test: blunder at ply 2 (pre_flaw_eval_cp =
+        stored row 1 = 30, cp-based not mate-adjacent), the tactic kernel is fixed to a
+        deterministic HANGING_PIECE motif on the "allowed" orientation, and
+        _build_flaw_multipv2_blobs is stubbed to {} by _patch_drain_for_tick_tests so
+        the flaw_ply is absent from flaw_pv_blobs (pv_blob is None) — the exact leak
+        condition. With the SEED-075 fix the raw tag is suppressed; without it (default
+        False) allowed_tactic_motif would be persisted non-NULL.
+        """
+        import app.services.flaws_service as flaws_service_module
+        from app.models.game_flaw import GameFlaw
+        from app.services.tactic_detector import TACTIC_CONFIDENCE_HIGH, TacticMotifInt
+
+        def _fake_detect(
+            n: int,
+            fen_map: dict[int, str],
+            positions: list[Any],
+            pv_by_ply: Any = None,
+            orientation: str = "allowed",
+        ) -> tuple[int | None, int | None, int | None, int | None]:
+            if orientation == "allowed":
+                return (int(TacticMotifInt.HANGING_PIECE), 2, TACTIC_CONFIDENCE_HIGH, 0)
+            return (None, None, None, None)
+
+        monkeypatch.setattr(flaws_service_module, "_detect_tactic_for_flaw", _fake_detect)
+
+        now = datetime.now(timezone.utc)
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_117,
+            pgn=_SIX_PLY_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=None,
+        )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_117
+        )
+
+        eval_sequence = _blunder_eval_sequence()
+        mock_evaluate = AsyncMock(side_effect=eval_sequence)
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
+
+        gp_rows = [
+            {"ply": i, "full_hash": 0x5EED_0075 + i, "eval_cp": None, "eval_mate": None}
+            for i in range(6)
+        ]
+        await _insert_game_positions(
+            full_drain_session_maker, full_drain_test_user_117, game_id, gp_rows
+        )
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is True, "Tick must report a processed game"
+
+            async with full_drain_session_maker() as verify:
+                flaw_row = (
+                    await verify.execute(
+                        select(
+                            GameFlaw.ply,
+                            GameFlaw.allowed_tactic_motif,
+                            GameFlaw.missed_tactic_motif,
+                            GameFlaw.allowed_pv_lines,
+                        ).where(GameFlaw.game_id == game_id)
+                    )
+                ).one()
+            flaw_ply, allowed_motif, missed_motif, allowed_blob = flaw_row
+
+            assert flaw_ply == 2, f"Flaw must be at ply 2, got {flaw_ply}"
+            assert allowed_blob is None, (
+                "No blob was assembled this pass (flaw_pv_blobs stubbed to {}), so "
+                "allowed_pv_lines must be NULL — the leak precondition."
+            )
+            assert allowed_motif is None, (
+                "SEED-075: the local drain must pass blobs_pending=True so a cp-based "
+                "motif with no assembled blob is suppressed to NULL, not persisted "
+                "raw/ungated (Phase 147 strict-zero invariant)."
+            )
+            assert missed_motif is None
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+
 class TestOracleCounts:
     """EVAL-06 / D-117-08: oracle count columns are filled after full eval and match game_flaws."""
 
