@@ -41,6 +41,7 @@ import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { VariationTree } from '@/components/analysis/VariationTree';
 import type { FlawMarkerEntry } from '@/components/analysis/VariationTree';
 import type { FlawSeverity } from '@/types/library';
+import { tacticOrientationAtPly } from '@/lib/tacticOrientation';
 import { EvalChart } from '@/components/library/EvalChart';
 import { ChessBoard } from '@/components/board/ChessBoard';
 import type { BoardArrow } from '@/components/board/ChessBoard';
@@ -244,8 +245,23 @@ export default function Analysis() {
   useEffect(() => {
     if (!isGameMode || mainLine.length === 0 || hasNavigatedToInitialPly.current) return;
     hasNavigatedToInitialPly.current = true;
+    const ply = initialPly ?? 0;
+    // Quick 260702-fog: if the opening ply carries a user tactic chip, open its line
+    // automatically — same effect as clicking the chip (setActivePvFlaw + navigate to the
+    // fork node; the useTacticLines → insertPvLine effect chain grafts the sideline once the
+    // PV arrives). Missed forks at the decision board (ply-1), allowed at the flaw position.
+    const orientation = tacticOrientationAtPly(gameData?.flaw_markers, ply);
+    if (orientation !== null) {
+      const forkNodeId = mainLine[forkPlyForOrientation(ply, orientation)];
+      if (forkNodeId !== undefined) {
+        setActivePvFlaw({ ply, orientation });
+        goToNode(forkNodeId);
+        return;
+      }
+    }
+    // No tactic chip here (or fork out of bounds): navigate to initialPly as before.
     // T-140-02b: L-8 guard — out-of-bounds ply is a no-op, not a crash.
-    const nodeId = mainLine[initialPly ?? 0];
+    const nodeId = mainLine[ply];
     if (nodeId !== undefined) goToNode(nodeId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mainLine.length, isGameMode]);
