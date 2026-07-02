@@ -35,6 +35,7 @@ import secrets
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -95,6 +96,18 @@ _CHILD_MARKER_VALUE: str = "1"
 # Fixed-small backoff before relaunching a crashed/wedged child (SEED-063: fixed, NOT
 # capped-exponential -- predictable behavior for volunteers watching the logs).
 SUPERVISOR_BACKOFF_S: float = 3.0
+
+# SEED-063 watchdog: ~4 minutes, NOT seconds. Must clear the slowest legitimate cycle
+# (a tier-1 game = 100 positions; with --workers 4 and _NODES_TIMEOUT_S=5s, worst case
+# is ~25 batches x 5s = ~125s if everything times out) so a slow-but-healthy worker is
+# never killed.
+STALL_THRESHOLD_S: float = 240.0
+# How often the watchdog checker task wakes to compare now vs. last_progress.
+WATCHDOG_POLL_INTERVAL_S: float = 15.0
+# Override env var for the heartbeat file path (used by the Docker healthcheck so it
+# agrees with the worker on the same path).
+HEARTBEAT_FILE_ENV: str = "FLAWCHESS_WORKER_HEARTBEAT_FILE"
+_DEFAULT_HEARTBEAT_FILE: Path = Path(tempfile.gettempdir()) / "flawchess-worker.heartbeat"
 
 
 # ─── Logging helper ───────────────────────────────────────────────────────────
@@ -352,6 +365,87 @@ async def _eval_entry_positions(
     ]
 
 
+# ─── Watchdog (SEED-063: converts a HANG into a process exit) ───────────────
+
+
+def _is_stalled(now: float, last_progress: float, threshold_s: float) -> bool:
+    """Pure predicate: True once no cycle has completed for more than threshold_s.
+
+    Never calls os._exit -- side-effect-free and safe to unit test directly.
+    """
+    return (now - last_progress) > threshold_s
+
+
+class _Heartbeat:
+    """Tracks wall-clock "last progress" and optionally freshens a heartbeat file.
+
+    Uses wall-clock `time.time()` (NOT monotonic) so a laptop sleep/resume produces
+    a huge gap -> instant restart on resume (SEED-063).
+    """
+
+    def __init__(self, path: Path | None) -> None:
+        self.path = path
+        self.last_progress: float = time.time()
+
+    def mark(self) -> None:
+        """Record progress now; best-effort freshen the heartbeat file's mtime.
+
+        A file-write failure must NEVER kill the worker -- the heartbeat file is
+        observability-only (it feeds the Docker healthcheck); the actual stall
+        decision uses `self.last_progress` in memory, not the file.
+        """
+        self.last_progress = time.time()
+        if self.path is not None:
+            try:
+                self.path.write_text(str(self.last_progress))
+            except OSError:
+                pass
+
+
+def _heartbeat_file_path() -> Path:
+    """Resolve the heartbeat file path: env override, else the default tmp path."""
+    override = os.environ.get(HEARTBEAT_FILE_ENV)
+    return Path(override) if override else _DEFAULT_HEARTBEAT_FILE
+
+
+async def _watchdog_checker(
+    heartbeat: _Heartbeat,
+    threshold_s: float,
+    poll_interval_s: float,
+) -> None:
+    """Periodically checks for a stalled worker and forces a process exit.
+
+    `os._exit(1)` intentionally bypasses cleanup: the process is wedged with dead
+    engines that cannot be cleanly stopped (the InvalidStateError storm scenario,
+    SEED-063). The supervisor relaunches the child with a fresh EnginePool.
+    """
+    while True:
+        await asyncio.sleep(poll_interval_s)
+        if _is_stalled(time.time(), heartbeat.last_progress, threshold_s):
+            _log(f"No progress for >{threshold_s:.0f}s — forcing restart.")
+            sentry_sdk.capture_message("Remote eval worker stalled; forcing restart")
+            os._exit(1)
+
+
+def _loop_exception_handler(
+    loop: asyncio.AbstractEventLoop,
+    context: dict[str, object],
+) -> None:
+    """asyncio loop exception handler for callback exceptions that bypass
+    `_run_loop`'s try/except entirely -- e.g. the InvalidStateError storm fired
+    from the event loop's `_call_connection_lost` callback when all Stockfish
+    subprocesses die at once (SEED-063 root cause). Sentry groups identical storm
+    entries, so per-callback capture is safe here -- no N-in-window fast-path is
+    needed (deferred; the stall timer alone is sufficient to force a restart).
+    """
+    exc = context.get("exception")
+    if isinstance(exc, BaseException):
+        sentry_sdk.capture_exception(exc)
+    else:
+        sentry_sdk.capture_message("Remote eval worker asyncio loop callback exception")
+    _log(f"Loop exception handler: {context.get('message', 'unknown')}")
+
+
 # ─── Main worker loop ─────────────────────────────────────────────────────────
 
 
@@ -362,6 +456,7 @@ async def _run_loop(
     idle_sleep: float,
     dry_run: bool,
     loop: bool,
+    heartbeat: _Heartbeat | None = None,
 ) -> None:
     """Inner lease → eval → submit loop.
 
@@ -374,11 +469,15 @@ async def _run_loop(
     exception is Sentry-captured (CLAUDE.md rule for operational except blocks) and,
     when looping, the worker backs off `idle_sleep` and retries. When not looping the
     exception propagates so --once surfaces failures with a non-zero exit.
+
+    SEED-063: `heartbeat.mark()` is called after each `_run_cycle` that returns
+    WITHOUT raising -- BEFORE the stop check. A clean 204 idle cycle returns
+    normally, so it counts as progress (an idle worker with an empty queue is
+    healthy, not stalled). A failed cycle (the except branch) is NOT progress.
     """
     while True:
         try:
-            if await _run_cycle(client, pool, sf_version, idle_sleep, dry_run, loop):
-                return
+            stop = await _run_cycle(client, pool, sf_version, idle_sleep, dry_run, loop)
         except (KeyboardInterrupt, asyncio.CancelledError):
             raise
         except Exception:
@@ -389,6 +488,12 @@ async def _run_loop(
             if not loop:
                 raise
             await asyncio.sleep(idle_sleep)
+            continue
+
+        if heartbeat is not None:
+            heartbeat.mark()
+        if stop:
+            return
 
 
 async def _run_cycle(
@@ -662,11 +767,16 @@ async def run_worker(
     idle_sleep: float,
     dry_run: bool,
     loop: bool,
+    heartbeat: _Heartbeat | None = None,
 ) -> None:
     """Start an EnginePool, read the SF version, then run the lease/eval/submit loop.
 
     worker_id is sent on every request via X-Worker-Id (D-10 / SEED-051) so that
     eval_jobs.leased_by and games.entry_eval_leased_by are per-worker in prod.
+
+    `heartbeat` (SEED-063) defaults to None so existing callers/tests are unaffected;
+    the supervised "child" role passes a `_Heartbeat` instance so `_run_loop` marks
+    progress on every completed cycle for the watchdog checker.
 
     Handles KeyboardInterrupt gracefully — logs the interruption and ensures the
     pool is stopped via the finally block.
@@ -692,6 +802,7 @@ async def run_worker(
                 idle_sleep=idle_sleep,
                 dry_run=dry_run,
                 loop=loop,
+                heartbeat=heartbeat,
             )
     except KeyboardInterrupt:
         _log("Interrupted by user. Shutting down...")
@@ -853,19 +964,45 @@ async def _run_async(
 ) -> None:
     """Run the worker body for the "child" or "once" role.
 
-    Task 1: a thin pass-through to `run_worker` so the file stays runnable. Task 2
-    wires up the watchdog heartbeat + checker + loop exception handler for the
-    `supervised=True` (child) case.
+    SEED-063: when `supervised` (the "child" role under the supervisor), installs
+    the watchdog -- a heartbeat, an asyncio loop exception handler for the
+    InvalidStateError storm, and a checker task that forces `os._exit(1)` on a
+    stall. A bounded `--once` run needs no supervision at all, so it passes
+    `heartbeat=None` and skips the checker task entirely.
     """
-    await run_worker(
-        base_url=args.base_url,
-        token=token,
-        worker_id=worker_id,
-        workers=args.workers,
-        idle_sleep=args.idle_sleep,
-        dry_run=args.dry_run,
-        loop=not args.once,
+    if not supervised:
+        await run_worker(
+            base_url=args.base_url,
+            token=token,
+            worker_id=worker_id,
+            workers=args.workers,
+            idle_sleep=args.idle_sleep,
+            dry_run=args.dry_run,
+            loop=not args.once,
+            heartbeat=None,
+        )
+        return
+
+    heartbeat = _Heartbeat(_heartbeat_file_path())
+    asyncio.get_running_loop().set_exception_handler(_loop_exception_handler)
+    checker = asyncio.create_task(
+        _watchdog_checker(heartbeat, STALL_THRESHOLD_S, WATCHDOG_POLL_INTERVAL_S)
     )
+    try:
+        await run_worker(
+            base_url=args.base_url,
+            token=token,
+            worker_id=worker_id,
+            workers=args.workers,
+            idle_sleep=args.idle_sleep,
+            dry_run=args.dry_run,
+            loop=not args.once,
+            heartbeat=heartbeat,
+        )
+    finally:
+        checker.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await checker
 
 
 def main() -> int:
