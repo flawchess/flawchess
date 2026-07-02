@@ -44,6 +44,18 @@ Selection rules:
 - `npm run knip` — clean
 - `npm test -- --run` — 106 files, 1244 tests pass (includes the 7 new cases)
 
+## Follow-up (UAT) — commit f30d1c20
+
+The move list didn't scroll to the highlighted move when a tactic auto-opened (it worked
+for the no-tactic case). Cause: `VariationTree`'s first-open top-align holds until the board
+reaches `mainLine[initialPly]`, but an auto-opened tactic navigates to the **fork** node
+(missed → `ply-1`), so the guard never released. Fix: a shared `initialTactic` memo now
+drives both the navigation effect and a derived `initialAlignPly` (the fork ply when a
+tactic auto-opens, else the entry ply); `VariationTree` receives `initialAlignPly`, while
+the `EvalChart` slider keeps the true entry ply. `frontend/src/pages/Analysis.tsx` +
+`frontend/src/components/analysis/VariationTree.tsx` (prop doc). tsc/lint/knip clean, 1244
+tests green.
+
 ## Notes / trade-offs
 
 - The effect-level wiring (state + navigation) is not covered by a new integration test —
