@@ -21,7 +21,7 @@ progress:
 ## Current Position
 
 Phase: none — v1.30 milestone closed; planning next milestone
-Last activity: 2026-07-02 - Closed and archived v1.30 Forcing-Line Tactic Gate (Phases 141–147)
+Last activity: 2026-07-02 - Completed quick task 260702-lml: fix local eval drain re-minting ungated cp-based tactic tags (SEED-075)
 
 v1.30 Forcing-Line Tactic Gate shipped to production 2026-06-30 (releases #229/#230/#231/#234)
 and is now closed in GSD. All 7 phases (141–147) complete; 15/15 requirements validated.
@@ -123,6 +123,7 @@ None at planning start.
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 260702-lml | SEED-075: the local in-process eval drain re-minted raw ungated cp-based tactic tags (Phase 147 strict-zero gap; 75 rows on prod, growing). `eval_drain.py` `_full_drain_tick` now passes `blobs_pending=True` to `_classify_and_fill_oracle`, mirroring the atomic go-forward paths in `eval_remote.py`: a flaw with `eval_cp` present but no continuation blob assembled this pass is suppressed to NULL instead of persisted raw, then self-heals when the tier-4 D-07 gated retag lands the real blob. Zero effect on blobbed flaws (gate runs on `pv_blob`), on the D-06 `[]`-sentinel, or on mate-adjacent (`eval_cp IS NULL`) FINAL cases. Added a mirrored suppression test (verified it fails against the pre-fix default). ruff/ty clean; full backend suite 3100 passed | 2026-07-02 | b86fe0bf | [260702-lml-implement-seed-075-fix-local-eval-drain-](./quick/260702-lml-implement-seed-075-fix-local-eval-drain-/) |
 | 260702-fog | Opening the analysis board at a ply that carries a user tactic tag (`?game_id=X&ply=Y`) now auto-opens that tactic line, as if the chip were clicked: missed wins over allowed when both are present, missed forks at the decision board (ply-1), allowed at the flaw position; opponent-only tactics ignored. Pure `tacticOrientationAtPly` helper (new `lib/tacticOrientation.ts` + 7 unit tests) wired into the initial-ply navigation effect; tsc/lint/knip clean, 1244 frontend tests green | 2026-07-02 | f4c74706 | [260702-fog-when-opening-the-analysis-board-at-a-ply](./quick/260702-fog-when-opening-the-analysis-board-at-a-ply/) |
 | 260702-12z | Replace browser-default chunky/white scrollbars on desktop nested overflow containers (filter/bookmark sidebar panel, analysis move list, suggestions modal, Radix select dropdown, Welcome table, compact engine PV row) with the existing translucent `.thin-scrollbar` utility so they match the dark UI; CSS-class-only, 9 files, lint+1237 tests green | 2026-07-01 | 274041f3 | [260702-12z-replace-white-scrollbars-on-desktop-with](./quick/260702-12z-replace-white-scrollbars-on-desktop-with/) |
 | 260627-dny | Phase 139 tactic overlay UAT: remove StoredPV/engine toggle, eval bar perspective+position, live eval number, remove old eval badge | 2026-06-27 | 46067dff | [260627-dny-phase-139-tactic-overlay-uat-remove-stor](./quick/260627-dny-phase-139-tactic-overlay-uat-remove-stor/) |

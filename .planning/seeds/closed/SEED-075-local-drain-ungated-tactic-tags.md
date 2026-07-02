@@ -1,6 +1,8 @@
 ---
 id: SEED-075
-status: dormant
+status: closed
+closed: 2026-07-02
+closed_by: quick task 260702-lml (commit b86fe0bf) — eval_drain.py _full_drain_tick now passes blobs_pending=True to _classify_and_fill_oracle, mirroring the atomic go-forward path; go-forward ungated tags suppressed to NULL + tier-4 self-heal. Fix Candidate 1 chosen (Candidate 2 sentinel not needed).
 planted: 2026-07-02
 planted_during: v1.30 milestone close. While closing v1.30 the Phase 147 "no ungated tactic tag anywhere" strict-zero invariant was re-verified against prod and found still broken (and growing: ~9 on 2026-07-01 → 75 on 2026-07-02). Root-caused to the local in-process eval drain, which was never given the blobs_pending guard that the atomic upgraded-worker path got in Phase 147.
 trigger_when: soon-ish — analytical-only, not rollback-class, but it grows during active analysis (in-process drain mints faster than tier-4 drains). One-line-ish backend fix, ideal for /gsd-quick in a fresh session.
