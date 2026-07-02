@@ -87,3 +87,30 @@ If you already use Docker, you can run the worker in a container instead of inst
    ```
 
 The container restarts automatically if it crashes, freezes up, or your computer reboots, so it keeps helping until you run the stop command above. Running the stop command is always clean and will not trigger a restart.
+
+## Updating the worker
+
+Every so often the worker gets improvements and fixes. Updating is worth doing occasionally, and it takes two steps: get the latest files, then restart.
+
+**Step 1 — Get the latest files.**
+
+- *If you downloaded the ZIP:* download a fresh ZIP the same way as [step 1](#setup-linux-and-macos) and unzip it over your existing folder (or into a new folder). Your `.env` file is not in the download, so keep your old one or copy it across, your token does not change.
+- *If you used git:* open a terminal in the flawchess folder and run:
+  ```
+  git pull
+  ```
+  Your `.env` file is not tracked by git, so your token stays untouched.
+
+**Step 2 — Restart the worker.**
+
+- *If you run it directly (Linux/macOS/Windows):* press `Ctrl-C` to stop it, then start it again with the same command as before:
+  ```
+  uv run python scripts/remote_eval_worker.py --workers 4
+  ```
+  `uv` automatically installs any new dependencies on start, so there is nothing else to do.
+
+- *If you run it in Docker:* rebuild and restart in one command:
+  ```
+  docker compose -f docker-compose.worker.yml up -d --build
+  ```
+  The `--build` picks up the new code and any new dependencies. You do not need to stop it first.
