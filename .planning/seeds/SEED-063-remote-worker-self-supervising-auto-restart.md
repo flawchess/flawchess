@@ -205,6 +205,19 @@ interval, and the child-marker env-var name all become named constants.
   stall timer?
 - Max-restart safety valve? Probably **NOT** (a volunteer wants it to keep trying
   forever, matching `unless-stopped`). Confirm.
+- **Cross-platform signal handling (Windows/macOS/Linux — the one portability landmine).**
+  The parent's stop handling must use `signal.signal()` / `KeyboardInterrupt`, **NOT**
+  `loop.add_signal_handler()` — the latter is Unix-only and raises `NotImplementedError`
+  on Windows' `ProactorEventLoop`, breaking the worker at startup. The existing worker
+  already catches `KeyboardInterrupt` in `__main__`, so this is the portable path. SIGTERM
+  is effectively a non-concern for bare-metal Windows volunteers (Windows doesn't deliver
+  it on normal termination); Ctrl-C / SIGINT is the real stop path everywhere. Note the
+  child-signal delivery differs by OS and must be verified on each: **Unix** parent
+  forwards SIGINT to the child explicitly; **Windows** console Ctrl-C is delivered to the
+  ENTIRE process group (parent + child) automatically, so the child self-cleans and the
+  parent must simply not relaunch after an intentional stop. Verify "stop cleanly, no
+  relaunch storm" on all three. (The PID-1 reaping / SIGTERM-forwarding item in D6 is
+  Docker/Linux-only and does not apply to bare-metal Windows/macOS.)
 
 ## Notes
 
