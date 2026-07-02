@@ -174,43 +174,20 @@ export function useTacticComparison(
 /**
  * Fetch a single game by id for the "View game" modal.
  *
- * Query key: ['library-game', gameId, tacticFamily, tacticOrientation, depthParam]
+ * Query key: ['library-game', gameId]
  * Disabled when gameId is null — no fetch fires until the modal opens.
  * Returns the full GameFlawCard for rendering in LibraryGameCard.
  *
- * Quick 260621-sm8: when a flawFilter is supplied, the active tactic filter is
- * forwarded so the modal nulls non-matching tactic slots per-slot, matching the
- * Flaws/Games lists. orientation + depth are always sent (like useLibraryFlaws),
- * family only when ≥1 is selected; the backend treats the all-inclusive default
- * as a no-op, so a direct/unfiltered open is unchanged. The tactic params join
- * the query key so changing the filter refetches the open modal.
- *
- * Severity tactic-leak fix: severity is forwarded only when it narrows (exactly one
- * tier selected — matching isFlawFilterNonDefault), so opening a game under
- * "blunders only" / "mistakes only" gates the modal's tactic chips by severity too.
- * Empty or both-selected = no narrowing, so it is omitted (a direct open is unchanged).
+ * Quick 260702-mnd (D-3): the single-game card is now filter-independent — its
+ * content (which tactic + context tags render) no longer changes with the active
+ * flaw filter (the backend endpoint no longer accepts filter params at all; the
+ * filter only affects which games are SELECTED on the Games list). Dropped the
+ * flawFilter param and every derived query param.
  */
-export function useLibraryGame(
-  gameId: number | null,
-  flawFilter?: FlawFilterState,
-): ReturnType<typeof useQuery<GameFlawCard>> {
-  const severity =
-    flawFilter && flawFilter.severity.length === 1 ? flawFilter.severity : undefined;
-  const tacticFamily =
-    flawFilter && flawFilter.tacticFamilies.length > 0 ? flawFilter.tacticFamilies : undefined;
-  const tacticOrientation = flawFilter ? (flawFilter.tacticOrientation ?? 'either') : undefined;
-  const depthParam = flawFilter
-    ? depthToQueryParams(flawFilter.tacticDepthMin, flawFilter.tacticDepthMax)
-    : undefined;
+export function useLibraryGame(gameId: number | null): ReturnType<typeof useQuery<GameFlawCard>> {
   return useQuery<GameFlawCard>({
-    queryKey: ['library-game', gameId, severity, tacticFamily, tacticOrientation, depthParam],
-    queryFn: () =>
-      libraryApi.getGame(gameId!, {
-        severity,
-        tactic_family: tacticFamily,
-        tactic_orientation: tacticOrientation,
-        ...depthParam,
-      }),
+    queryKey: ['library-game', gameId],
+    queryFn: () => libraryApi.getGame(gameId!),
     enabled: gameId !== null,
     staleTime: LIBRARY_STALE_TIME,
     refetchOnWindowFocus: false,
