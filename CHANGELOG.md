@@ -8,11 +8,29 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v1.30] Forcing-Line Tactic Gate — 2026-06-30
+
 ### Added
 
 - **Forcing-line tactic gate goes live across your whole game history** — the tactic chips on every already-imported game are being re-tagged through the forcing-line gate, so motifs that weren't on a genuinely forced line stop showing as tags (less noise, same blunder/mistake counts). The bulk MultiPV analysis runs on the remote-worker fleet on spare capacity via a new lowest-priority backfill lottery (live analysis always wins), and each game flips to gated tags the moment its backfill lands (no big-bang switchover). New games analyzed from the live remote-worker drain are gated too. Operator tooling (`backfill_multipv.py` progress/dev-validate, `snapshot_tactic_counts.py` before/after per-motif counts) ships alongside. (Phase 145)
 
-- **Forcing-line tactic gate (foundation)** — internal groundwork for the v1.30 Forcing-Line Tactic Gate: two nullable JSONB columns (`allowed_pv_lines` / `missed_pv_lines`) added to `game_flaws` for storing per-flaw-node MultiPV blobs (deferred-loaded so existing stats scans never fetch them), plus a pure, engine-free and DB-free `forcing_line_gate` module that decides whether a flaw sits on a genuinely forced line (only-move margin, already-winning reject, still-winning floor, trailing-only-move strip, one-mover discard). Not yet wired to game analysis; the engine pass and re-tagger land in follow-up phases. (Phase 141)
+- **Forcing-line tactic gate (foundation)** — internal groundwork for the v1.30 Forcing-Line Tactic Gate: two nullable JSONB columns (`allowed_pv_lines` / `missed_pv_lines`) added to `game_flaws` for storing per-flaw-node MultiPV blobs (deferred-loaded so existing stats scans never fetch them), plus a pure, engine-free and DB-free `forcing_line_gate` module that decides whether a flaw sits on a genuinely forced line (only-move margin, already-winning reject, still-winning floor, trailing-only-move strip, one-mover discard). The MultiPV=2 engine pass (Phase 142) and offline re-tagger (`scripts/retag_flaws.py`, Phase 143) that make re-tagging a seconds-fast engine-free re-derivation land in the same milestone. (Phases 141, 142, 143)
+
+### Changed
+
+- **Live game analysis no longer waits on the server's engine** — when a remote worker submits a freshly-analyzed game, the server now applies the evals and tactic tags immediately instead of running an extra inline Stockfish pass to refine the forcing-line gate. That refinement (the per-flaw MultiPV continuation eval) now happens on the remote-worker fleet through the same backfill lottery as the rest of your history, with freshly-analyzed games prioritized so they get gated promptly. The result: snappier, more reliable analysis submission (worker timeouts and engine contention under load are gone) with no change to your blunder/mistake counts. (Phase 146)
+
+- **Only forcing-line-gated tactic tags are stored** — the tagger now writes a tactic tag only once its forcing-line data is present, so an ungated (raw) motif is never persisted, even transiently; a one-time migration cleared the raw tags left on already-imported games. New games are gated end-to-end via an upgraded remote worker that evaluates and blob-writes each game in a single server-checked transaction. No change to your blunder/mistake counts. (Phase 147)
+
+- **Forcing-line tactic gate calibration** — tuned the gate's two centipawn thresholds from a hand-checked A/B validation over the dev sample: the already-winning reject was relaxed (600 → 800 cp) so genuine conversion tactics played while already ahead (a hanging queen at +6, a clean skewer) are still credited, and the only-move escape was lowered (200 → 100 cp) so clear ~1-pawn-better best moves count as forced. Together these credit noticeably more real tactics without admitting false alarms in the sample. (Phase 144)
+
+### Fixed
+
+- **Forcing-line gate backfill un-stalled** — the spare-capacity backfill that re-tags your whole game history through the forcing-line gate was stuck: after Phase 146 the remote-worker fleet was re-evaluating already-analyzed games in a loop instead of filling the gating data, so the re-tag never progressed. Fixed the routing so idle workers drain the backfill through the dedicated path that actually writes it; the fleet's spare capacity now goes to completing the re-tag instead of redundant re-analysis. No change to your evals, tactic tags, or blunder/mistake counts. (Quick 260701-93s)
+
+## [v1.29] Live-Engine Analysis Page — 2026-06-29
+
+### Added
 
 - **Analyze a whole game on the `/analysis` board** — opening a game from the Games/Library now loads the *entire* game on the live-engine analysis board, positioned at the move you were viewing (`/analysis?game_id=X&ply=Y`). The eval-chart slider scrubs the full game with the board and move list staying in sync; on a sideline the slider dims until you return to the main line. Inline missed/allowed tactic chips unfold the engine's stored line as a branchable sideline with the tactic overlay, and a move played inside a sideline forks a deeper one. Player names, ratings, and each side's remaining clock at the current position show above and below the board. (Phase 140)
 
@@ -21,10 +39,6 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - **Live-engine analysis board (foundation)** — internal groundwork for the upcoming `/analysis` page: a branching move tree where a move played mid-line forks a new variation instead of overwriting the line, plus the display components that will render live engine output (an eval bar, the engine's top lines, and a variation move list). Not yet reachable in the app; the page and board wiring land in a follow-up phase. (Phase 137)
 
 ### Changed
-
-- **Live game analysis no longer waits on the server's engine** — when a remote worker submits a freshly-analyzed game, the server now applies the evals and tactic tags immediately instead of running an extra inline Stockfish pass to refine the forcing-line gate. That refinement (the per-flaw MultiPV continuation eval) now happens on the remote-worker fleet through the same backfill lottery as the rest of your history, with freshly-analyzed games prioritized so they get gated promptly. The result: snappier, more reliable analysis submission (worker timeouts and engine contention under load are gone) with no change to your blunder/mistake counts. (Phase 146)
-
-- **Forcing-line tactic gate calibration** — tuned the gate's two centipawn thresholds from a hand-checked A/B validation over the dev sample: the already-winning reject was relaxed (600 → 800 cp) so genuine conversion tactics played while already ahead (a hanging queen at +6, a clean skewer) are still credited, and the only-move escape was lowered (200 → 100 cp) so clear ~1-pawn-better best moves count as forced. Together these credit noticeably more real tactics without admitting false alarms in the sample. (Phase 144)
 
 - **Eval chart tooltip now shows the opponent's tactic** — hovering an opponent flaw (the hollow-square markers) on the eval chart now shows the tactic motif and its depth (the same `missed:` / `allowed:` chips your own filled-square markers already show), on both the Games card and the `/analysis` board. Previously only your own flaws surfaced their tactic. The "Opponent · Blunder/Mistake" header keeps the perspective clear, and your blunder/mistake counts and all other stats are unchanged. (Quick 260628-u7d)
 
@@ -41,8 +55,6 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - **Tactic tags hidden on already-lost positions** — a tactic motif found or missed in a position that was already decisively lost (the engine had you down by more than a rook, or facing forced mate, *before* the move) no longer shows its tag, depth number, or eval-chart tooltip entry, and is excluded from the tactic-motif and depth filters on the Flaws and Games tabs. These flaws were noise: a "missed fork" teaches nothing when the game was already gone. The blunder/mistake itself still counts in the severity badges and still appears as a marker on the eval chart; only the tactic tagging is suppressed. The tactic explorer keeps full detail. (Quick 260626-bdt)
 
 ### Fixed
-
-- **Forcing-line gate backfill un-stalled** — the spare-capacity backfill that re-tags your whole game history through the forcing-line gate was stuck: after Phase 146 the remote-worker fleet was re-evaluating already-analyzed games in a loop instead of filling the gating data, so the re-tag never progressed. Fixed the routing so idle workers drain the backfill through the dedicated path that actually writes it; the fleet's spare capacity now goes to completing the re-tag instead of redundant re-analysis. No change to your evals, tactic tags, or blunder/mistake counts. (Quick 260701-93s)
 
 - **Installed PWA no longer serves a stale layout after a deploy** — the app shell is now fetched fresh from the network whenever you're online (it was previously served from the service worker's cache, which could be many deploys old, e.g. missing the Library nav button until a manual reload). Update checks also now run when you reopen or refocus the installed app, not just on a slow timer, so a backgrounded phone PWA picks up the latest version on resume. (Quick 260629-pq8)
 
@@ -928,7 +940,9 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.28...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.30...HEAD
+[v1.30]: https://github.com/flawchess/flawchess/compare/v1.29...v1.30
+[v1.29]: https://github.com/flawchess/flawchess/compare/v1.28...v1.29
 [v1.28]: https://github.com/flawchess/flawchess/compare/v1.27...v1.28
 [v1.27]: https://github.com/flawchess/flawchess/compare/v1.26...v1.27
 [v1.26]: https://github.com/flawchess/flawchess/compare/v1.25...v1.26

@@ -2,43 +2,42 @@
 gsd_state_version: 1.0
 milestone: v1.30
 milestone_name: Forcing-Line Tactic Gate
-current_phase: 999.1
-current_phase_name: BACKLOG
-status: Ready to plan
-stopped_at: Phase 147 Plan 06 complete -- Phase 147 complete (all 6 plans)
-last_updated: "2026-07-01T21:35:11.614Z"
-last_activity: 2026-07-01
+current_phase: none
+current_phase_name: Planning next milestone
+status: Milestone v1.30 complete — planning next
+stopped_at: v1.30 milestone closed and archived (Phases 141–147)
+last_updated: "2026-07-02T00:00:00.000Z"
+last_activity: 2026-07-02
 progress:
   total_phases: 7
-  completed_phases: 5
+  completed_phases: 7
   total_plans: 25
-  completed_plans: 23
-  percent: 71
+  completed_plans: 25
+  percent: 100
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 999.1 — Password Reset (BACKLOG)
-Last activity: 2026-07-02 - Completed quick task 260702-fog: auto-open tactic line when analysis board opens at a tactic ply
+Phase: none — v1.30 milestone closed; planning next milestone
+Last activity: 2026-07-02 - Closed and archived v1.30 Forcing-Line Tactic Gate (Phases 141–147)
 
-Phase 145 (corpus-backfill-rollout) — COMPLETE (code). Plans 01–05 + the autonomous part of
-plan 06 are merged to main (`875bc164`) and released to production in v1.30 (PR #229,
-`61107f47`). The remaining plan-06 `[HUMAN-VERIFY]` prod backfill *drain* (fleet drain → D-08
-retag sweep → SC3 after-snapshot) is intentionally deferred: it is gated on the upgraded
-remote-worker fleet deploy, which IS the deliverable of Phase 146 (D-04). So 145's rollout
-completes through 146 — not a 145 gap.
+v1.30 Forcing-Line Tactic Gate shipped to production 2026-06-30 (releases #229/#230/#231/#234)
+and is now closed in GSD. All 7 phases (141–147) complete; 15/15 requirements validated.
+Roadmap collapsed, REQUIREMENTS archived, tagged v1.30. Next: `/gsd-new-milestone`.
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-29 after v1.29 milestone close)
+See: .planning/PROJECT.md (updated 2026-06-30 after v1.30 milestone close)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: v1.30 Forcing-Line Tactic Gate — 5 phases (141–145) blocking on JSONB schema (141) before engine pass (142), offline re-tagger (143), A/B validation (144), and corpus backfill + rollout (145). Hard sequential dependency chain; no parallelization.
+Current focus: Planning next milestone (`/gsd-new-milestone`). Leading candidates: Analysis board v2, SEED-037 Train drills, SEED-036 remainder.
 
 ## Milestone Progress
 
-Twenty-nine milestones complete (v1.0–v1.29). v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 plans; released to production via PR #227 (`e3f652ab`). Live in-browser single-thread WASM Stockfish (`useStockfishEngine`), branching analysis board (`useAnalysisBoard`), lazy-loaded `/analysis` route, tactic mode subsuming + deleting the Phase 135 TacticLineExplorer, and a full-game board behind a unified `Analyze` entry with inline tactic-chip PV sidelines. No backend schema or new endpoints (D-4). Archived to milestones/v1.29-ROADMAP.md, phases to milestones/v1.29-phases/, tagged v1.29.
+Thirty milestones complete (v1.0–v1.30). v1.30 Forcing-Line Tactic Gate shipped 2026-06-30 — 7 phases (141–147), 25 plans; released across PRs #229/#230/#231/#234. An engine-free `forcing_line_gate` module over persisted MultiPV=2 blobs (`allowed_pv_lines`/`missed_pv_lines` JSONB on `game_flaws`) gates the v1.28 tactic tags to real forced tactics; `retag_flaws.py` makes every threshold change a seconds-fast engine-free re-derivation; the continuation eval + blob backfill run on the remote fleet via an atomic `/atomic-lease`/`/atomic-submit` pipeline (Phases 146/147, SEED-071/074). Known gap: the local in-process drain re-mints ~9/3.36M ungated cp tags (self-heals via tier-4, not rollback-class). Archived to milestones/v1.30-ROADMAP.md + v1.30-REQUIREMENTS.md, tagged v1.30.
+
+v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 plans; released to production via PR #227 (`e3f652ab`). Live in-browser single-thread WASM Stockfish (`useStockfishEngine`), branching analysis board (`useAnalysisBoard`), lazy-loaded `/analysis` route, tactic mode subsuming + deleting the Phase 135 TacticLineExplorer, and a full-game board behind a unified `Analyze` entry with inline tactic-chip PV sidelines. No backend schema or new endpoints (D-4). Archived to milestones/v1.29-ROADMAP.md, phases to milestones/v1.29-phases/, tagged v1.29.
 
 ## Key Context
 
@@ -150,6 +149,19 @@ None at planning start.
 | 260701-lw4 | Replaced the tier-4 blob-backfill top-50 recency window (`TIER4_RECENCY_WINDOW`, a hard cutoff giving game #51+ zero draw probability) with a two-stage Efraimidis-Spirakis weighted lottery in `_claim_tier4_blob`, mirroring `_claim_tier3_derived`: stage 1 picks a non-guest user weighted by `last_activity` recency + floor, stage 2 picks that user's game weighted by `full_evals_completed_at` recency + floor (no `tc_multiplier` — blobs aren't TC-sensitive). The floor terms give every pending-blob game across the whole corpus non-zero mass so the old analyzed backlog (e.g. user 28's ~5k games) drains instead of being permanently dead-last behind freshly-analyzed games, while recency weighting keeps fresh dominant. Table-less/idempotent preserved (no eval_jobs row, no locking); all ES params bound via `sa.text` dict (QUEUE-08). Four tunable `TIER4_*` constants seeded from tier-3. New `test_claim_tier4_blob_anti_starvation_and_recency_preference` (old game aged 400d + floor monkeypatched to land P(old)≈0.19; finally-cleanup on all non-guest rows). Fairness/ordering fix, not throughput. ruff + ty + eval-queue suite green | 2026-07-01 | 9ac007ea | [260701-lw4-replace-tier-4-blob-backfill-top-50-rece](./quick/260701-lw4-replace-tier-4-blob-backfill-top-50-rece/) |
 
 ## Deferred Items
+
+Items acknowledged and deferred at **v1.30 milestone close on 2026-07-02** (user signed off "mark all as resolved and proceed"):
+
+| Category | Item | Disposition |
+|----------|------|-------------|
+| verification | Phase 146 `146-VERIFICATION.md` (human_needed) | Resolved at close — Phase 146 shipped to prod (#230) + follow-on fix #231, soaked live; verification human-signed-off |
+| uat | Phase 142 `142-UAT.md` (passed, 0 pending scenarios) | Resolved — false positive (status already `passed`) |
+| verification | Phase 147-06 atomic gated-write e2e (HUMAN-UAT-pending) | Carried — dev DB has no queued eval_jobs (`EVAL_AUTO_DRAIN_ENABLED=false`); automated dry-run confirmed `/atomic-lease` wiring; verify on live prod drain |
+| known-gap | Phase 147 strict-zero invariant broken (local in-process drain re-mints ~9/3.36M ungated cp tags) | Carried — self-heals via tier-4, not rollback-class; tracked in `project_local_drain_ungated_tactic_tags` |
+| debug | `entry-submit-n-plus-1` (fixed_awaiting_deploy), `insights-diskfull-shm` (awaiting_human_verify) | Carried — unrelated infra sessions, not v1.30-scoped (carried since v1.29) |
+| quick_task | 19 incomplete (unknown/missing status, 260531–260616) | Resolved in fact — shipped across prior milestones; false-positive pattern (`project_stale_gsd_sdk_audit_bug`) |
+| todos | 5 pending (bitboard storage, phase-70 amendments, benchmark items) | Carried — long-range, not milestone-scoped |
+| seeds | 9 dormant (SEED-037/042/063/067/069 + closed-in-fact SEED-070/071/073/074) | Carried — SEED-070/071/073/074 implemented as v1.30 (move to closed/ on next housekeeping); remainder future/v2 |
 
 Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user signed off "mark all as resolved and proceed"):
 
