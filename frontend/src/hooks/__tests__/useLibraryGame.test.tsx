@@ -7,6 +7,10 @@
  * 2. useLibraryGame(123) — calls libraryApi.getGame(123) → GET /library/games/123.
  * 3. Query key is ['library-game', gameId].
  * 4. refetchOnWindowFocus false — focus event does not trigger a second fetch.
+ *
+ * Quick 260702-mnd (D-3): the hook no longer accepts a flawFilter param and
+ * getGame takes no query params — the single-game card's content is now
+ * filter-independent.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -79,7 +83,7 @@ describe('useLibraryGame', () => {
     expect(getSpy).not.toHaveBeenCalled();
   });
 
-  it('calls libraryApi.getGame(123) when gameId is 123', async () => {
+  it('calls libraryApi.getGame(123) with no query params when gameId is 123', async () => {
     vi.mocked(libraryApi.getGame).mockResolvedValue(MOCK_CARD);
 
     const { result } = renderHook(() => useLibraryGame(123), {
@@ -87,37 +91,9 @@ describe('useLibraryGame', () => {
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    // Quick 260621-sm8: getGame now takes (gameId, tacticParams?). With no
-    // flawFilter passed, the tactic params are all undefined (a backend no-op).
+    // Quick 260702-mnd: getGame takes only gameId — no filter params exist anymore.
     const call = vi.mocked(libraryApi.getGame).mock.calls[0]!;
-    expect(call[0]).toBe(123);
-    expect(call[1]?.tactic_family).toBeUndefined();
-    expect(call[1]?.tactic_orientation).toBeUndefined();
-  });
-
-  it('forwards the active tactic filter to getGame when supplied', async () => {
-    vi.mocked(libraryApi.getGame).mockResolvedValue(MOCK_CARD);
-
-    const { result } = renderHook(
-      () =>
-        useLibraryGame(123, {
-          severity: [],
-          tags: [],
-          tacticFamilies: ['fork'],
-          tacticOrientation: 'missed',
-          tacticDepthMin: 1,
-          tacticDepthMax: 2,
-        }),
-      { wrapper: makeWrapper() },
-    );
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    const call = vi.mocked(libraryApi.getGame).mock.calls[0]!;
-    expect(call[0]).toBe(123);
-    expect(call[1]?.tactic_family).toEqual(['fork']);
-    expect(call[1]?.tactic_orientation).toBe('missed');
-    expect(call[1]?.min_tactic_depth).toBe(1);
-    expect(call[1]?.max_tactic_depth).toBe(2);
+    expect(call).toEqual([123]);
   });
 
   it('returns the game data on success', async () => {

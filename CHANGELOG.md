@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Changed
+
+- **Library Games cards now show all tactic + context tags** — the active tactic/severity/context/depth/orientation filter on the Games tab now only decides which games appear; it no longer hides tags from a shown card. Tactic chips are consistent with context chips (both always show the game's full set), and the active-filter ring lights only on chips that truly match the filter across family, orientation, and depth. (Quick 260702-mnd)
+
 ## [v1.30] Forcing-Line Tactic Gate — 2026-06-30
 
 ### Added

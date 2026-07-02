@@ -371,35 +371,13 @@ export const libraryApi = {
       },
     }).then(r => r.data),
 
-  // Quick 260621-sm8: the "View game" modal forwards the active tactic filter so
-  // the single-game view nulls non-matching tactic slots per-slot (same as the
-  // list). orientation omitted when 'either'; depth bounds sent when present.
   getTacticLines: (gameId: number, ply: number) =>
     apiClient
       .get<TacticLinesResponse>(`/library/flaws/${gameId}/${ply}/tactic-lines`)
       .then(r => r.data),
 
-  getGame: (
-    gameId: number,
-    params?: {
-      severity?: string[];
-      tactic_family?: string[];
-      tactic_orientation?: string;
-      min_tactic_depth?: number;
-      max_tactic_depth?: number;
-    },
-  ) =>
-    apiClient.get<GameFlawCard>(`/library/games/${gameId}`, {
-      params: {
-        ...(params?.severity && params.severity.length > 0 ? { severity: params.severity } : {}),
-        ...(params?.tactic_family && params.tactic_family.length > 0
-          ? { tactic_family: params.tactic_family }
-          : {}),
-        ...(params?.tactic_orientation && params.tactic_orientation !== 'either'
-          ? { tactic_orientation: params.tactic_orientation }
-          : {}),
-        ...(params?.min_tactic_depth != null ? { min_tactic_depth: params.min_tactic_depth } : {}),
-        ...(params?.max_tactic_depth != null ? { max_tactic_depth: params.max_tactic_depth } : {}),
-      },
-    }).then(r => r.data),
+  // Quick 260702-mnd (D-3): the backend endpoint no longer accepts severity/tactic
+  // filter params (they only drove now-removed per-slot pruning) — no query params.
+  getGame: (gameId: number) =>
+    apiClient.get<GameFlawCard>(`/library/games/${gameId}`).then(r => r.data),
 };
