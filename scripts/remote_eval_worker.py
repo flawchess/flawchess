@@ -97,16 +97,16 @@ _CHILD_MARKER_VALUE: str = "1"
 # capped-exponential -- predictable behavior for volunteers watching the logs).
 SUPERVISOR_BACKOFF_S: float = 3.0
 
-# SEED-063 watchdog: ~8 minutes, NOT seconds. Must clear the slowest LEGITIMATE cycle
+# SEED-063 watchdog: 10 minutes, NOT seconds. Must clear the slowest LEGITIMATE cycle
 # so a slow-but-healthy worker is never killed. A tier-1 game = 100 positions; with
 # _NODES_TIMEOUT_S=5s the worst case is ~(100 / --workers) x 5s if every position times
 # out -- ~125s at --workers 4, but ~250s at --workers 2 and up to ~500s at --workers 1.
 # The original 240s tripped on slower boxes / low worker counts doing honest work (a
 # false restart also discards in-progress analysis and forces an EnginePool rebuild, so
-# it makes a slow machine contribute even less). 480s leaves generous headroom. Raising
-# it only delays recovery from a GENUINE wedge (the InvalidStateError storm's future
-# never resolves), so it can never mask a real hang.
-STALL_THRESHOLD_S: float = 480.0
+# it makes a slow machine contribute even less). 600s leaves generous headroom even for
+# --workers 1. Raising it only delays recovery from a GENUINE wedge (the
+# InvalidStateError storm's future never resolves), so it can never mask a real hang.
+STALL_THRESHOLD_S: float = 600.0
 # How often the watchdog checker task wakes to compare now vs. last_progress.
 WATCHDOG_POLL_INTERVAL_S: float = 15.0
 # Override env var for the heartbeat file path (used by the Docker healthcheck so it
