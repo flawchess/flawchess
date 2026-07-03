@@ -64,7 +64,9 @@ incremental. Reuses `full_eval_attempts` + `MAX_EVAL_ATTEMPTS` as the bound (no 
    the residual opening eval-holes is therefore naturally blob-cheap. Edge case — a filled
    opening hole that turns out to sit on a flaw ply needing a blob — is already caught by the
    existing tier-4 blob backfill (`flaw-blob-lease`, `allowed_pv_lines IS NULL`), so no blob
-   is lost.
+   is lost. **[WRONG — see Follow-up below.** The tier-4 backfill needs `game_positions.pv`
+   at the flaw's node-0 plies to build the walk; a dedup transplant carried no pv, so tier-4
+   sentineled the line to a permanent `[]` instead of filling it.]
 
 ## Plan-level details to verify (not decisions)
 
@@ -78,6 +80,43 @@ incremental. Reuses `full_eval_attempts` + `MAX_EVAL_ATTEMPTS` as the bound (no 
 - Regression test: simulate a worker submitting a partial (opening-missing) eval set and
   assert cached openings fill server-side without a worker round-trip AND uncached residual
   holes stay bounded by Path C (no permanent stamp of a fillable hole; no infinite re-lease).
+
+## Follow-up fix (2026-07-03, quick 260703-qgp): cache pv so opening flaws are not []-sentineled
+
+Post-merge review of the implementation (quick 260703-nux, commit 27117f45) found a regression
+the cache-aware lease introduced on the atomic path — the "Blobs untouched" assumption above
+did not hold:
+
+- The lease omits cached opening positions, so the worker never sends a **pv** for them. The
+  submit dedup fill supplies the eval, but `_classify_and_fill_oracle` writes pv from
+  `engine_result_map` only → `game_positions.pv` stays NULL at cache-omitted flaw-adjacent plies.
+- The tier-4 blob backfill (`_build_flaw_blob_lease_positions`) requires that pv to build the
+  walk; NULL pv → `sentinel_lines` → permanent `[]` blob (clears the `IS NULL` predicate).
+  The flaw's PV lines and tactic tags were lost forever, not deferred.
+- Scale (dev DB): 15.3% of flaws sit at ply <= 20; of those ~68% had the missed-line node-0
+  position cached → ~1 in 10 flaws in remote-analyzed games affected. The local drain never
+  had this problem because SEED-056 runs a second engine pass; the engine-free atomic path
+  cannot.
+
+Fix (commits 38e7ecbb / 2db52995 / 3a7d936f, migration `df8d4f5bc37b`):
+
+1. **`opening_position_eval.pv` column** (nullable Text), populated by `_upsert_opening_cache`
+   with a self-healing `ON CONFLICT (full_hash) DO UPDATE SET pv = EXCLUDED.pv WHERE pv IS
+   NULL AND EXCLUDED.pv IS NOT NULL` — pre-existing pv-less rows backfill as the drain
+   re-sees those positions; eval_cp/eval_mate/best_move stay first-write-wins.
+2. **`_fetch_dedup_evals` returns a 4-tuple** `(eval_cp, eval_mate, best_move, pv)`; the
+   `dedup_map` type widened through eval_drain.py + eval_remote.py.
+3. **`_merge_dedup_pv_into_engine_map`** (eval_remote.py): at submit, cache-omitted opening
+   plies get their cached 4-tuple inserted into `engine_result_map` (never overriding a ply
+   the worker evaluated fresh). Runs in both submit paths; on the atomic path the dedup fetch
+   moved ahead of `_derive_atomic_sentinel_lines` so the sentinel walk sees the real pv.
+4. **Lease omission gated on pv**: `_fetch_cached_opening_hashes` only treats a cache row as
+   server-fillable when `pv IS NOT NULL`; a pv-less row is still leased to the worker fresh.
+   Omission coverage ramps back up as the DO UPDATE backfill fills pv.
+
+Nothing shipped to prod between the two commits (main unreleased), so this is purely
+go-forward — no prod rows need repair. Regression tests cover the lease pv-gate, the
+merged-pv-not-sentineled atomic flow, and the cache backfill semantics.
 
 ## Directions considered but NOT chosen
 
