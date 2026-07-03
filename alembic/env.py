@@ -83,6 +83,12 @@ _AUTOGEN_INDEX_IGNORELIST = {
     "ix_games_full_evals_pending",
     "ix_games_full_pv_pending",
     "ix_games_needs_engine_full_evals",
+    # Partial index from the Phase 145 tier-4 blob-backfill migration (c3f5d1e8a092),
+    # WHERE allowed_pv_lines IS NULL. Like the others above it is migration-only (not
+    # ORM-declared), so without this entry the next --autogenerate would emit
+    # op.drop_index on prod's most-scanned game_flaws index (~348M scans). Time-bomb
+    # fix from code-review 2026-07-02 (#3).
+    "ix_game_flaws_blob_backfill",
     # ix_eval_jobs_user_id is created by index=True on EvalJob.user_id but autogenerate
     # detects it as missing in the DB due to the eval_jobs table being created by a prior
     # migration that didn't reflect this ORM-level index. Let alembic manage it separately.
