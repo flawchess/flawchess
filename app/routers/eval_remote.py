@@ -49,6 +49,7 @@ already position-keyed at the correct row; do NOT use _apply_full_eval_results.
 
 import hmac
 import io
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Annotated, Any, Literal
 
@@ -169,19 +170,23 @@ async def _fetch_cached_opening_hashes(
     session: AsyncSession,
     gp_rows: list[tuple[int, int, int | None, int | None]],
 ) -> frozenset[int]:
-    """SEED-076: the game's opening full_hashes (ply <= DEDUP_MAX_PLY) already present in
-    opening_position_eval.
+    """SEED-076 (+follow-up): the game's opening full_hashes (ply <= DEDUP_MAX_PLY) that
+    are server-fillable — present in opening_position_eval WITH a cached pv.
 
     Reuses the same position-keyed cache lookup the local drain and submit dedup use
     (`_fetch_dedup_evals`) so the lease's cache-aware omission and the submit's dedup fill
-    agree on exactly which openings are server-fillable. Returns an empty set for a game
-    with no opening rows.
+    agree on exactly which openings are server-fillable. Gated on pv IS NOT NULL (SEED-076
+    follow-up): a pv-less cache row can fill the eval at submit but NOT the pv, so the
+    worker must still evaluate that opening fresh — omitting it here would leave a flaw at
+    that ply permanently []-sentineled (no PV to walk). As `_upsert_opening_cache`'s
+    DO UPDATE backfill fills pv onto existing rows over time, omission coverage ramps back
+    up naturally. Returns an empty set for a game with no opening rows.
     """
     opening_hashes = [fh for (ply, fh, _cp, _mate) in gp_rows if ply <= DEDUP_MAX_PLY]
     if not opening_hashes:
         return frozenset()
     cached = await _fetch_dedup_evals(session, opening_hashes)
-    return frozenset(cached.keys())
+    return frozenset(fh for fh, (_cp, _mate, _bm, pv) in cached.items() if pv is not None)
 
 
 def _lease_position_redundant(
@@ -216,6 +221,36 @@ def _lease_position_redundant(
     ):
         return True
     return False
+
+
+def _merge_dedup_pv_into_engine_map(
+    targets: Sequence[_FullPlyEvalTarget],
+    dedup_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
+    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
+) -> None:
+    """SEED-076 follow-up: merge a cached opening position's pv into engine_result_map.
+
+    The cache-aware lease omits opening positions already in opening_position_eval, so
+    the worker never sends an eval/pv for them — the submit dedup_map fills the eval, but
+    engine_result_map (and thus _classify_and_fill_oracle's pv write / sentinel derivation)
+    never saw the cached pv. This is the crux fix: for each non-terminal target in the
+    opening region whose full_hash is in dedup_map AND whose ply the worker did NOT
+    evaluate fresh, insert the cached 4-tuple (cp, mate, best_move, pv) into
+    engine_result_map. Never overrides a ply the worker resolved itself. Mutates
+    engine_result_map in place; a no-op tuple for a dedup miss is never inserted.
+
+    MUST run before `_classify_and_fill_oracle` (so classify writes the merged pv) and,
+    on the atomic path, before `_derive_atomic_sentinel_lines` (so it walks the real pv
+    instead of []-sentineling the flaw).
+    """
+    for target in targets:
+        if target.is_terminal or target.ply > DEDUP_MAX_PLY:
+            continue
+        if target.ply in engine_result_map:
+            continue
+        cached = dedup_map.get(target.full_hash)
+        if cached is not None:
+            engine_result_map[target.ply] = cached
 
 
 def _build_lease_positions(
@@ -390,6 +425,12 @@ async def _apply_submit(
             is_lichess_eval_game,
             preserve_existing_evals=True,
         )
+
+        # SEED-076 follow-up: merge the cached opening pv into engine_result_map BEFORE
+        # classify writes the pv / flaw tags, so a flaw at a cache-omitted opening ply
+        # gets a real walkable PV instead of a permanent [] sentinel. No sentinel
+        # derivation on this (non-atomic) path, so in-session is fine.
+        _merge_dedup_pv_into_engine_map(targets, dedup_map, engine_result_map)
 
         # Classify game_flaws + fill oracle counts + write flaw PVs.
         # Runs AFTER _apply_full_eval_results so eval_cp is visible for classification.
@@ -1383,6 +1424,24 @@ async def _apply_atomic_submit(
         e.ply: (e.eval_cp, e.eval_mate, e.best_move, e.pv) for e in body.evals
     }
 
+    # SEED-076 follow-up: fetch the opening-cache dedup_map in its own short read
+    # session and merge cached pv into engine_result_map BEFORE
+    # _derive_atomic_sentinel_lines below — the sentinel derivation must see the
+    # merged pv so a flaw at a cache-omitted opening ply gets a real PV walk
+    # instead of a permanent [] sentinel. The cache is insert-only, so reading it
+    # here (ahead of the write session) is staleness-safe. Reused as-is inside the
+    # write session for _apply_full_eval_results below (not re-fetched).
+    async with async_session_maker() as dedup_session:
+        dedup_map = (
+            {}
+            if is_lichess_eval_game
+            else await _fetch_dedup_evals(
+                dedup_session,
+                [t.full_hash for t in targets if t.ply <= DEDUP_MAX_PLY and not t.is_terminal],
+            )
+        )
+    _merge_dedup_pv_into_engine_map(targets, dedup_map, engine_result_map)
+
     # ── Token tamper guard (T-147-02): structural in-game-range check ─────────
     # A token whose flaw_ply falls outside this game's actual ply range is
     # unconditionally foreign — reject before any write (mirrors the
@@ -1417,20 +1476,13 @@ async def _apply_atomic_submit(
     stamp_complete: bool
 
     async with async_session_maker() as write_session:
-        # SEED-076: real opening-cache dedup_map (mirrors _full_drain_tick / _apply_submit)
+        # SEED-076: dedup_map (fetched above, pre-write-session — SEED-076 follow-up
+        # moved this earlier so the pv merge could run before sentinel derivation)
         # so cached opening plies the weak worker timed out on — and the cache-aware lease
         # omitted — are filled server-side BEFORE failed_ply_count is computed, and
         # preserve_existing_evals keeps already-eval'd plies dropped from the incremental
         # re-lease out of the hole count. Together they stop a fillable opening hole from
         # reaching the Path-C cap and permanently stamping the game incomplete (FLAWCHESS-8B).
-        dedup_map = (
-            {}
-            if is_lichess_eval_game
-            else await _fetch_dedup_evals(
-                write_session,
-                [t.full_hash for t in targets if t.ply <= DEDUP_MAX_PLY and not t.is_terminal],
-            )
-        )
 
         # SEED-076: snapshot existing flaw blobs + tactic tags BEFORE classify's
         # delete-then-insert, so a sparse incremental retry (worker did not re-blob an

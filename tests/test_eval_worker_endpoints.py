@@ -201,6 +201,7 @@ async def _get_game_position(
             "eval_cp": gp.eval_cp,
             "eval_mate": gp.eval_mate,
             "best_move": gp.best_move,
+            "pv": gp.pv,
         }
 
 
@@ -4805,6 +4806,25 @@ async def _insert_opening_cache(
         await session.commit()
 
 
+async def _insert_opening_cache_with_pv(
+    session_maker: async_sessionmaker[AsyncSession],
+    rows: list[tuple[int, int | None, int | None, str | None, str | None]],
+) -> None:
+    """Insert opening_position_eval rows incl. pv: (full_hash, eval_cp, eval_mate,
+    best_move, pv). SEED-076 follow-up: pv-bearing variant of _insert_opening_cache
+    for tests exercising the pv-gated lease omission / merge mechanism."""
+    from app.models.opening_position_eval import OpeningPositionEval
+
+    async with session_maker() as session:
+        for full_hash, cp, mate, bm, pv in rows:
+            session.add(
+                OpeningPositionEval(
+                    full_hash=full_hash, eval_cp=cp, eval_mate=mate, best_move=bm, pv=pv
+                )
+            )
+        await session.commit()
+
+
 async def _delete_opening_cache(
     session_maker: async_sessionmaker[AsyncSession],
     full_hashes: list[int],
@@ -5073,3 +5093,203 @@ async def test_atomic_retry_preserves_existing_flaw_blobs_and_tags(
         assert motif == 7, f"allowed_tactic_motif must be preserved, got {motif}"
     finally:
         await _delete_games(eval_worker_session_maker, [game_id])
+
+
+# ─── SEED-076 follow-up: cache the pv alongside the eval (Task 3) ─────────────
+#
+# Fix: opening_position_eval gained a nullable pv column (Task 1) and
+# _fetch_dedup_evals/_upsert_opening_cache now carry it (Task 2). These tests cover
+# the submit-side merge + pv-gated lease omission:
+#   - _fetch_cached_opening_hashes only omits a cached opening when its cache row
+#     has a real pv (a pv-less row must still be leased to the worker).
+#   - _merge_dedup_pv_into_engine_map lets a cache-omitted opening flaw ply get a
+#     real walkable PV (game_positions.pv + a non-sentineled game_flaws blob line)
+#     instead of the permanent [] sentinel.
+#   - _upsert_opening_cache's self-heal backfills pv onto a pv-less row without
+#     touching eval_cp/eval_mate/best_move, and never clobbers an existing pv.
+
+
+@pytest.mark.asyncio
+async def test_fetch_cached_opening_hashes_gates_on_pv_presence(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    """SEED-076 follow-up: a cache row WITH pv is omittable from the lease; a cache row
+    WITHOUT pv is NOT (the worker must still evaluate it fresh to get a pv)."""
+    from app.routers.eval_remote import _fetch_cached_opening_hashes
+
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    base = 76400
+    hash_with_pv = base
+    hash_without_pv = base + 1
+    await _insert_opening_cache_with_pv(
+        eval_worker_session_maker, [(hash_with_pv, 30, None, "g1f3", "g1f3 b8c6")]
+    )
+    await _insert_opening_cache(eval_worker_session_maker, [(hash_without_pv, 10, None, "d2d4")])
+
+    gp_rows: list[tuple[int, int, int | None, int | None]] = [
+        (2, hash_with_pv, None, None),
+        (4, hash_without_pv, None, None),
+    ]
+    try:
+        async with eval_worker_session_maker() as session:
+            cached = await _fetch_cached_opening_hashes(session, gp_rows)
+        assert hash_with_pv in cached, "pv-bearing cache row must be omittable from the lease"
+        assert hash_without_pv not in cached, (
+            "pv-less cache row must NOT be omitted — the worker still needs to evaluate it"
+        )
+    finally:
+        await _delete_opening_cache(eval_worker_session_maker, [hash_with_pv, hash_without_pv])
+
+
+@pytest.mark.asyncio
+async def test_atomic_submit_merges_cached_pv_into_flaw_line_not_sentineled(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """SEED-076 follow-up (req a): a cached opening ply omitted from a partial atomic
+    submit still gets its pv merged into engine_result_map — game_positions.pv at the
+    flaw-adjacent ply matches the cached pv, the flaw's PV lines are NOT []-sentineled
+    (left NULL / still fillable), and _build_flaw_blob_lease_positions walks a real,
+    non-empty lease for it instead of a D-06 sentinel.
+
+    Uses _SIX_PLY_PGN_142 / _BLUNDER_SUBMIT_EVALS_142 (blunder at ply 2, flaw_ply=2):
+    missed line starts at ply 2 (the flaw's own board), allowed line at ply 3.
+    """
+    from app.models.game_flaw import GameFlaw
+    from app.routers.eval_remote import _apply_atomic_submit
+    from app.services.eval_drain import _build_flaw_blob_lease_positions
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    user_id = eval_worker_test_user
+    base = 76500
+    game_id = await _insert_game(eval_worker_session_maker, user_id, pgn=_SIX_PLY_PGN_142)
+    await _insert_game_positions(
+        eval_worker_session_maker,
+        user_id,
+        game_id,
+        [{"ply": p, "full_hash": base + p, "eval_cp": None, "eval_mate": None} for p in range(6)],
+    )
+    # Cache ply 2's position (the flaw's own board, "missed" line node 0) WITH a real,
+    # walkable pv — matching what _fetch_cached_opening_hashes would have made the
+    # lease omit. The worker's partial submit below omits ply 2 accordingly.
+    cached_pv = "g1f3 b8c6"
+    await _insert_opening_cache_with_pv(
+        eval_worker_session_maker, [(base + 2, 30, None, "g1f3", cached_pv)]
+    )
+    # Ply 3 ("allowed" line node 0) is NOT cache-omitted — the worker evaluates and
+    # submits it directly, including a real pv so the allowed line is walkable too
+    # (isolating the fix under test to the missed line's cache-merged pv).
+    allowed_pv = "b8c6 f1c4"
+    partial = [dict(e) for e in _BLUNDER_SUBMIT_EVALS_142 if e["ply"] != 2]
+    for e in partial:
+        if e["ply"] == 3:
+            e["pv"] = allowed_pv
+
+    try:
+        resp = await _apply_atomic_submit(game_id, _atomic_request(game_id, partial))
+        assert resp.failed_ply_count == 0, (
+            f"cached opening must fill the hole (eval + pv), got {resp.failed_ply_count}"
+        )
+
+        row2 = await _get_game_position(eval_worker_session_maker, game_id, 2)
+        assert row2 is not None and row2["pv"] == cached_pv, (
+            f"game_positions.pv at the flaw-adjacent cached ply must equal the cached "
+            f"pv, got {row2}"
+        )
+
+        async with eval_worker_session_maker() as verify:
+            flaw_row = (
+                await verify.execute(
+                    select(GameFlaw.allowed_pv_lines, GameFlaw.missed_pv_lines).where(
+                        GameFlaw.game_id == game_id, GameFlaw.ply == 2
+                    )
+                )
+            ).one_or_none()
+        assert flaw_row is not None, "flaw at ply 2 must exist"
+        allowed_lines, missed_lines = flaw_row
+        assert allowed_lines != [], "allowed_pv_lines must NOT be []-sentineled"
+        assert missed_lines != [], "missed_pv_lines must NOT be []-sentineled"
+
+        # _build_flaw_blob_lease_positions must find a real, walkable lease for the
+        # flaw (not a D-06 sentinel) — proving the merged pv reached game_positions.pv
+        # for BOTH lines and is walkable.
+        positions, sentinel_lines = await _build_flaw_blob_lease_positions(game_id)
+        assert (2, "missed") not in sentinel_lines, "missed line must not be sentineled"
+        assert (2, "allowed") not in sentinel_lines, "allowed line must not be sentineled"
+        assert len(positions) > 0, "a real, non-empty lease must be built for the flaw"
+    finally:
+        await _delete_games(eval_worker_session_maker, [game_id])
+        await _delete_opening_cache(eval_worker_session_maker, [base + 2])
+
+
+@pytest.mark.asyncio
+async def test_upsert_opening_cache_backfills_pv_without_overwriting_eval_or_existing_pv(
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    """SEED-076 follow-up (req c): _upsert_opening_cache's self-heal backfills pv onto
+    a pv-less existing row without touching eval_cp/eval_mate/best_move, and leaves an
+    existing non-NULL pv untouched (first-write-wins for pv too, once set)."""
+    import chess
+
+    from app.models.opening_position_eval import OpeningPositionEval
+    from app.services.eval_drain import _FullPlyEvalTarget, _upsert_opening_cache
+
+    board = chess.Board()
+    base = 76600
+    hash_pv_less = base
+    hash_pv_bearing = base + 1
+
+    # Row A: pre-existing pv-less cache row — must self-heal pv only.
+    await _insert_opening_cache(eval_worker_session_maker, [(hash_pv_less, 42, None, "e2e4")])
+    # Row B: pre-existing cache row that ALREADY has a real pv — must not be clobbered.
+    await _insert_opening_cache_with_pv(
+        eval_worker_session_maker, [(hash_pv_bearing, 10, None, "d2d4", "d2d4 d7d5")]
+    )
+
+    t_a = _FullPlyEvalTarget(
+        game_id=1, ply=2, full_hash=hash_pv_less, board=board, eval_cp=None, eval_mate=None
+    )
+    t_b = _FullPlyEvalTarget(
+        game_id=1, ply=4, full_hash=hash_pv_bearing, board=board, eval_cp=None, eval_mate=None
+    )
+    # Different eval/best_move/pv than what's cached — proves first-write-wins on
+    # eval/best_move (row A) and on pv once already set (row B), with row A's pv
+    # backfilled from this fresh engine result.
+    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]] = {
+        2: (99, None, "a2a4", "a2a4 a7a5"),
+        4: (55, None, "c2c4", "c2c4 c7c5"),
+    }
+
+    try:
+        async with eval_worker_session_maker() as session:
+            await _upsert_opening_cache(session, [t_a, t_b], engine_result_map)
+            await session.commit()
+
+        async with eval_worker_session_maker() as session:
+            rows = (
+                await session.execute(
+                    select(
+                        OpeningPositionEval.full_hash,
+                        OpeningPositionEval.eval_cp,
+                        OpeningPositionEval.eval_mate,
+                        OpeningPositionEval.best_move,
+                        OpeningPositionEval.pv,
+                    ).where(OpeningPositionEval.full_hash.in_([hash_pv_less, hash_pv_bearing]))
+                )
+            ).all()
+        by_hash = {r[0]: (r[1], r[2], r[3], r[4]) for r in rows}
+
+        assert by_hash[hash_pv_less] == (42, None, "e2e4", "a2a4 a7a5"), (
+            f"row A must keep its original eval/best_move and self-heal pv only: "
+            f"{by_hash[hash_pv_less]}"
+        )
+        assert by_hash[hash_pv_bearing] == (10, None, "d2d4", "d2d4 d7d5"), (
+            f"row B's existing pv must NOT be overwritten: {by_hash[hash_pv_bearing]}"
+        )
+    finally:
+        await _delete_opening_cache(eval_worker_session_maker, [hash_pv_less, hash_pv_bearing])
