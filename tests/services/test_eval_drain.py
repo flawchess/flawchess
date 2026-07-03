@@ -1384,21 +1384,22 @@ class TestBuildFlawBlobLeasePositions:
             # Both lines are walkable → no sentinels
             assert len(sentinels) == 0, f"Expected no sentinels for walkable PV, got {sentinels}"
 
-            # Missed line: 2-move PV → 3 nodes (k=0, 1, 2)
+            # SEED-079: only even (solver) node_k are leased — the gate never reads
+            # odd (defender) nodes, so they are not engine-evaluated.
+            # Missed line: 2-move PV → walk nodes 0, 1, 2 → even tokens k=0, k=2 only.
             missed_tokens = [p.token for p in positions if ":missed:" in p.token]
-            assert len(missed_tokens) == 3, f"Expected 3 missed tokens, got {missed_tokens}"
+            assert len(missed_tokens) == 2, f"Expected 2 missed tokens, got {missed_tokens}"
             assert "2:missed:0" in missed_tokens, f"Token '2:missed:0' not found in {missed_tokens}"
-            assert "2:missed:1" in missed_tokens, f"Token '2:missed:1' not found in {missed_tokens}"
             assert "2:missed:2" in missed_tokens, f"Token '2:missed:2' not found in {missed_tokens}"
+            assert "2:missed:1" not in missed_tokens, (
+                f"Odd (defender) node_k must not be leased (SEED-079), got {missed_tokens}"
+            )
 
-            # Allowed line: 1-move PV → 2 nodes (k=0, 1)
+            # Allowed line: 1-move PV → walk nodes 0, 1 → even token k=0 only.
             allowed_tokens = [p.token for p in positions if ":allowed:" in p.token]
-            assert len(allowed_tokens) == 2, f"Expected 2 allowed tokens, got {allowed_tokens}"
+            assert len(allowed_tokens) == 1, f"Expected 1 allowed token, got {allowed_tokens}"
             assert "2:allowed:0" in allowed_tokens, (
                 f"Token '2:allowed:0' not found in {allowed_tokens}"
-            )
-            assert "2:allowed:1" in allowed_tokens, (
-                f"Token '2:allowed:1' not found in {allowed_tokens}"
             )
 
             # All positions have non-empty FEN strings
@@ -1510,13 +1511,178 @@ class TestBuildFlawBlobLeasePositions:
             assert len(sentinels) == 0, (
                 f"Lichess game: expected no sentinels for walkable PV, got {sentinels}"
             )
+            # SEED-079: even-only leasing applies identically to lichess games.
             missed_tokens = [p.token for p in positions if ":missed:" in p.token]
             allowed_tokens = [p.token for p in positions if ":allowed:" in p.token]
-            assert len(missed_tokens) == 3, (
-                f"Lichess: expected 3 missed tokens, got {missed_tokens}"
+            assert len(missed_tokens) == 2, (
+                f"Lichess: expected 2 missed tokens (even k only), got {missed_tokens}"
             )
-            assert len(allowed_tokens) == 2, (
-                f"Lichess: expected 2 allowed tokens, got {allowed_tokens}"
+            assert len(allowed_tokens) == 1, (
+                f"Lichess: expected 1 allowed token (even k only), got {allowed_tokens}"
             )
         finally:
             await _delete_lease_build_games(lease_build_test_session_maker, [game_id])
+
+
+# ─── SEED-079: slim-blob assembly (even-only worker results + odd placeholders) ─
+
+
+def _submit_eval(
+    flaw_ply: int,
+    line: str,
+    k: int,
+    best_cp: int | None = 100,
+    second_cp: int | None = -50,
+    second_uci: str | None = "e2e4",
+):
+    """Build a FlawBlobSubmitEval for token '{flaw_ply}:{line}:{k}'."""
+    from app.schemas.eval_remote import FlawBlobSubmitEval
+
+    return FlawBlobSubmitEval(
+        token=f"{flaw_ply}:{line}:{k}",
+        best_cp=best_cp,
+        best_mate=None,
+        second_cp=second_cp,
+        second_mate=None,
+        second_uci=second_uci,
+    )
+
+
+def _is_placeholder_node(node: dict) -> bool:
+    """True when a PvNode is the SEED-079 all-None odd-index defender placeholder."""
+    return (
+        node["b"] is None
+        and node["bm"] is None
+        and node["s"] is None
+        and node["sm"] is None
+        and node["su"] == ""
+    )
+
+
+class TestSlimBlobAssembly:
+    """SEED-079: _assemble_one_line_blob reconstructs full-index blobs from even-only results.
+
+    - even-only worker results → full-index blob with all-None placeholders at odd indices
+    - a missing EVEN node is a gap (stop); a missing odd node is a placeholder (not a gap)
+    - odd-k worker submissions (old workers) are discarded — placeholder wins
+    - slim blob gates identically to its fat equivalent for even-firing tactics
+    """
+
+    def test_even_only_results_reconstruct_full_index_blob(self) -> None:
+        """k=0 and k=2 results yield [node0, placeholder, node2]; placeholder is all-None."""
+        from app.services.eval_drain import _assemble_one_line_blob
+
+        node_results = {
+            (10, "missed", 0): _submit_eval(10, "missed", 0, best_cp=150),
+            (10, "missed", 2): _submit_eval(10, "missed", 2, best_cp=120),
+        }
+        blob = _assemble_one_line_blob(10, "missed", node_results, sentinel_lines=set())
+
+        assert len(blob) == 3, f"Expected 3 nodes (real, placeholder, real), got {len(blob)}"
+        assert blob[0]["b"] == 150
+        assert _is_placeholder_node(blob[1]), f"Odd index must be a placeholder, got {blob[1]}"
+        assert blob[2]["b"] == 120
+        # The blob must always end on a real even solver node (never a trailing placeholder)
+        # to preserve _strip_trailing_only_moves' "last solver node is real" assumption.
+        assert not _is_placeholder_node(blob[-1])
+
+    def test_missing_node0_returns_empty(self) -> None:
+        """A missing node-0 result still returns [] (can't start the sequence)."""
+        from app.services.eval_drain import _assemble_one_line_blob
+
+        node_results = {
+            (5, "missed", 2): _submit_eval(5, "missed", 2),
+        }
+        assert _assemble_one_line_blob(5, "missed", node_results, sentinel_lines=set()) == []
+
+    def test_missing_even_node_is_gap(self) -> None:
+        """k=0 present, k=2 missing, k=4 present → [node0] (stop at the first missing EVEN)."""
+        from app.services.eval_drain import _assemble_one_line_blob
+
+        node_results = {
+            (7, "allowed", 0): _submit_eval(7, "allowed", 0, best_cp=90),
+            (7, "allowed", 4): _submit_eval(7, "allowed", 4, best_cp=80),
+        }
+        blob = _assemble_one_line_blob(7, "allowed", node_results, sentinel_lines=set())
+
+        assert len(blob) == 1, f"Missing even k=2 must stop the walk at [node0], got {len(blob)}"
+        assert blob[0]["b"] == 90
+
+    def test_odd_worker_submissions_discarded(self) -> None:
+        """Old workers still submitting odd nodes have them discarded at assembly (item 5)."""
+        from app.services.eval_drain import _assemble_one_line_blob
+
+        node_results = {
+            (12, "missed", 0): _submit_eval(12, "missed", 0, best_cp=200),
+            # Old fat-lease worker submits the odd defender node — must never be read.
+            (12, "missed", 1): _submit_eval(12, "missed", 1, best_cp=-999, second_uci="a1a2"),
+            (12, "missed", 2): _submit_eval(12, "missed", 2, best_cp=180),
+        }
+        blob = _assemble_one_line_blob(12, "missed", node_results, sentinel_lines=set())
+
+        assert len(blob) == 3
+        assert _is_placeholder_node(blob[1]), (
+            f"Odd index must be the server-synthesized placeholder, not the worker value "
+            f"(server authoritative — SEED-079 item 5); got {blob[1]}"
+        )
+        assert blob[1]["b"] != -999
+
+    def test_sentinel_line_still_returns_empty(self) -> None:
+        """Sentinel lines keep their [] semantics under slim assembly."""
+        from app.services.eval_drain import _assemble_one_line_blob
+
+        node_results = {
+            (3, "missed", 0): _submit_eval(3, "missed", 0),
+        }
+        blob = _assemble_one_line_blob(3, "missed", node_results, sentinel_lines={(3, "missed")})
+        assert blob == []
+
+    def test_slim_blob_gates_identically_to_fat(self) -> None:
+        """A slim blob yields the SAME gate decision as its fat equivalent (even firing depth)."""
+        from app.services.eval_drain import _assemble_one_line_blob
+        from app.services.forcing_line_gate import PvNode, apply_forcing_line_filter
+
+        # Fat blob: forced tactic firing at depth 0 (S0 forced via cp gap, S2 conversion).
+        fat: list[PvNode] = [
+            PvNode(b=400, bm=None, s=-100, sm=None, su="d2d4"),  # S0 firing — forced
+            PvNode(b=380, bm=None, s=300, sm=None, su="g8f6"),  # D0 defender (real data)
+            PvNode(b=420, bm=None, s=350, sm=None, su="c2c4"),  # S2 conversion
+        ]
+        # Slim equivalent assembled from even-only worker results.
+        node_results = {
+            (20, "missed", 0): _submit_eval(20, "missed", 0, best_cp=400, second_cp=-100),
+            (20, "missed", 2): _submit_eval(
+                20, "missed", 2, best_cp=420, second_cp=350, second_uci="c2c4"
+            ),
+        }
+        slim = _assemble_one_line_blob(20, "missed", node_results, sentinel_lines=set())
+
+        fat_decision = apply_forcing_line_filter(fat, "white", pre_flaw_eval_cp=0, firing_depth=0)
+        slim_decision = apply_forcing_line_filter(
+            slim, "white", pre_flaw_eval_cp=0, firing_depth=0
+        )
+        assert fat_decision is True, "Sanity: the fat blob must be credited"
+        assert slim_decision == fat_decision, (
+            "Slim blob must yield the same credit decision as its fat equivalent "
+            f"(fat={fat_decision}, slim={slim_decision})"
+        )
+
+        # Rejected case: firing node not forced (small gap) — both shapes reject.
+        fat_reject = [
+            PvNode(b=50, bm=None, s=40, sm=None, su="d2d4"),
+            PvNode(b=45, bm=None, s=30, sm=None, su="g8f6"),
+            PvNode(b=55, bm=None, s=45, sm=None, su="c2c4"),
+        ]
+        reject_results = {
+            (21, "missed", 0): _submit_eval(21, "missed", 0, best_cp=50, second_cp=40),
+            (21, "missed", 2): _submit_eval(21, "missed", 2, best_cp=55, second_cp=45),
+        }
+        slim_reject = _assemble_one_line_blob(21, "missed", reject_results, sentinel_lines=set())
+        assert (
+            apply_forcing_line_filter(fat_reject, "white", pre_flaw_eval_cp=0, firing_depth=0)
+            is False
+        )
+        assert (
+            apply_forcing_line_filter(slim_reject, "white", pre_flaw_eval_cp=0, firing_depth=0)
+            is False
+        )
