@@ -39,13 +39,16 @@ services:
     # os._exit(1) on a stall) remains the actual restart mechanism, exercised via
     # `restart: unless-stopped` above. Deliberately NOT adding an autoheal sidecar
     # or requiring Swarm here -- rejected as over-engineering for a volunteer tool.
+    # Staleness bound (600s) MUST stay above the worker's STALL_THRESHOLD_S (480s) so
+    # the watchdog fires first -- this only reports `unhealthy`, it must not flag a
+    # still-working worker before the in-process restart kicks in.
     healthcheck:
       test:
         [
           "CMD",
           "python",
           "-c",
-          "import os,sys,time; p='/tmp/flawchess-worker.heartbeat'; sys.exit(0 if os.path.exists(p) and time.time() - os.path.getmtime(p) < 300 else 1)",
+          "import os,sys,time; p='/tmp/flawchess-worker.heartbeat'; sys.exit(0 if os.path.exists(p) and time.time() - os.path.getmtime(p) < 600 else 1)",
         ]
       interval: 30s
       timeout: 5s
