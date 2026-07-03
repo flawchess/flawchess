@@ -539,8 +539,17 @@ async def _apply_full_eval_results(
     dedup_map: dict[int, tuple[int | None, int | None, str | None]],
     engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
     is_lichess_eval_game: bool,
+    preserve_existing_evals: bool = False,
 ) -> int:
     """Write POST-MOVE evals + best_move to GamePosition rows (WR-04; SEED-044).
+
+    preserve_existing_evals (SEED-076): submit paths that use an INCREMENTAL re-lease
+    (only the still-missing positions are handed to the worker) pass True. An engine-game
+    row that already carries a non-NULL DB eval but resolves to None this pass — because
+    its filling position was omitted from the re-lease and the worker did not resend it —
+    is then treated as already-resolved: NOT counted as a hole and NOT overwritten. The
+    local drain leaves this False (it re-evaluates the whole game each tick), so its
+    behavior is unchanged (zero blast radius).
 
     Batched single-round-trip writes replace the former per-row UPDATE loop
     (FLAWCHESS-6B N+1 fix). UPDATEs run sequentially against the caller-owned
@@ -619,6 +628,17 @@ async def _apply_full_eval_results(
                 # already omits the terminal donor when is_game_over()). This NULL is
                 # legitimate, not a transient Stockfish timeout. Do NOT count it as a
                 # hole; the row is written normally (eval stays NULL, best_move if set).
+                if best_move is not None:
+                    bm_only_rows.append((ply, best_move))
+            elif preserve_existing_evals and (
+                target.eval_cp is not None or target.eval_mate is not None
+            ):
+                # SEED-076: incremental re-lease. This row's eval was filled by a prior
+                # partial submit and its filling position was omitted from the re-lease,
+                # so the worker did not resend it (fresh resolution is None). It is NOT a
+                # hole — preserve the existing DB eval (do not overwrite with NULL) and do
+                # not count it. Without this guard the whole-game failed_ply_count would
+                # recount every already-eval'd ply as a hole and never reach Path A.
                 if best_move is not None:
                     bm_only_rows.append((ply, best_move))
             else:
