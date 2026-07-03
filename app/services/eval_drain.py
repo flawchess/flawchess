@@ -1982,16 +1982,20 @@ async def _apply_eval_results(
     for target, (eval_cp, eval_mate) in zip(eval_targets, eval_results, strict=True):
         eval_calls_made += 1
         if eval_cp is None and eval_mate is None:
-            # D-09: engine error / timeout — skip row, capture to Sentry, continue drain.
+            # D-09: engine error / timeout — skip row, continue drain. One position's engine
+            # returning nothing is expected operational churn (the row is re-picked on a
+            # later tick), not a bug. Log locally instead of a Sentry event: capturing every
+            # failed position flooded Sentry and burned the error quota (was FLAWCHESS-5A)
+            # for zero actionable signal.
             eval_calls_failed += 1
-            # Bounded Sentry context (D-79-04, T-78-18: no PGN/FEN/user_id).
-            ctx: dict[str, Any] = {"game_id": target.game_id, "ply": target.ply}
-            if target.endgame_class is not None:
-                ctx["endgame_class"] = target.endgame_class
-            sentry_sdk.set_context("eval", ctx)
-            sentry_sdk.set_tag("source", "eval_drain")
-            sentry_sdk.set_tag("eval_kind", target.eval_kind)
-            sentry_sdk.capture_message("cold-drain engine returned None tuple", level="warning")
+            logger.warning(
+                "eval_drain: engine returned None tuple (game_id=%s ply=%s eval_kind=%s "
+                "endgame_class=%s)",
+                target.game_id,
+                target.ply,
+                target.eval_kind,
+                target.endgame_class,
+            )
             continue
 
         # Endgame span entries carry endgame_class to disambiguate when the same
@@ -2683,18 +2687,19 @@ async def _full_drain_tick() -> bool:
 
         else:
             # Path C: holes remain AND cap reached — stamp anyway (D-116-07 no-loop
-            # invariant) + ONE aggregated Sentry event (T-119-03: variables via
-            # set_context, never interpolated into the message string per CLAUDE.md).
+            # invariant). This is the EXPECTED terminal state of the bounded-retry drain,
+            # not an error: a few positions stayed un-evaluable after MAX_EVAL_ATTEMPTS and
+            # we deliberately stop retrying. Log locally instead of a Sentry event —
+            # capturing an expected cap-path outcome burned the error quota (was
+            # FLAWCHESS-5V) for no signal.
             await _mark_full_evals_completed(write_session, game_id)
             await _mark_full_pv_completed(write_session, game_id)
-            sentry_sdk.set_context(
-                "eval",
-                {"game_id": game_id, "hole_count": failed_ply_count, "attempts": new_attempts},
-            )
-            sentry_sdk.set_tag("source", "full_eval_drain")
-            sentry_sdk.capture_message(
-                "full-drain: stamping complete after MAX_EVAL_ATTEMPTS with residual holes",
-                level="warning",
+            logger.warning(
+                "full_eval_drain: stamping complete after MAX_EVAL_ATTEMPTS with residual "
+                "holes (game_id=%s hole_count=%s attempts=%s)",
+                game_id,
+                failed_ply_count,
+                new_attempts,
             )
             stamp_complete = True
 
