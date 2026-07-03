@@ -5101,6 +5101,81 @@ async def test_atomic_retry_preserves_existing_flaw_blobs_and_tags(
         await _delete_games(eval_worker_session_maker, [game_id])
 
 
+# Flat (non-blunder) eval set: no win-prob drop anywhere, so classify finds no flaw.
+_FLAT_SUBMIT_EVALS_142: list[dict[str, object]] = [
+    {"ply": 0, "eval_cp": 0, "eval_mate": None, "best_move": None, "pv": None},
+    {"ply": 1, "eval_cp": 20, "eval_mate": None, "best_move": "e2e4", "pv": None},
+    {"ply": 2, "eval_cp": 30, "eval_mate": None, "best_move": "g1f3", "pv": None},
+    {"ply": 3, "eval_cp": 25, "eval_mate": None, "best_move": "b8c6", "pv": None},
+    {"ply": 4, "eval_cp": 28, "eval_mate": None, "best_move": "f1c4", "pv": None},
+    {"ply": 5, "eval_cp": 22, "eval_mate": None, "best_move": "f8c5", "pv": None},
+    {"ply": 6, "eval_cp": 20, "eval_mate": None, "best_move": None, "pv": None},  # terminal
+]
+
+
+@pytest.mark.asyncio
+async def test_atomic_retry_snapshotted_ply_no_longer_flaw_does_not_raise(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """FLAWCHESS-8D regression: a snapshotted (previously-blobbed) flaw ply that the retry's
+    reclassify no longer flags as a flaw must NOT raise StaleDataError.
+
+    The restore uses the ORM bulk-update-by-PK path, which asserts exactly 1 row matched
+    per parameter set. When attempt 2's evals flip ply 2 out of flaw status, classify's
+    delete-then-insert leaves no row at ply 2, so restoring the attempt-1 snapshot there
+    matched 0 rows and crashed (500 on /atomic-submit). The fix filters the snapshot to
+    plies that survived classify.
+    """
+    from app.models.game_flaw import GameFlaw
+    from app.routers.eval_remote import _apply_atomic_submit
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    user_id = eval_worker_test_user
+    base = 76350
+    game_id = await _insert_game(eval_worker_session_maker, user_id, pgn=_SEED076_PGN)
+    await _insert_game_positions(
+        eval_worker_session_maker,
+        user_id,
+        game_id,
+        [{"ply": p, "full_hash": base + p, "eval_cp": None, "eval_mate": None} for p in range(6)],
+    )
+
+    preserved_allowed = [{"b": 10, "bm": None, "s": 5, "sm": None, "su": "e2e4"}]
+    try:
+        # Attempt 1: blunder evals → flaw row created + blobbed at ply 2 (snapshot source).
+        await _apply_atomic_submit(
+            game_id, _atomic_request(game_id, list(_BLUNDER_SUBMIT_EVALS_142))
+        )
+        async with eval_worker_session_maker() as s:
+            await s.execute(
+                sa.update(GameFlaw)
+                .where(GameFlaw.game_id == game_id, GameFlaw.ply == 2)
+                .values(allowed_pv_lines=preserved_allowed)
+            )
+            await s.commit()
+
+        # Attempt 2: FLAT evals → reclassify drops the ply-2 flaw. Pre-fix this raised
+        # StaleDataError inside _restore_preserved_flaw_blobs; post-fix it is a clean no-op.
+        resp = await _apply_atomic_submit(
+            game_id, _atomic_request(game_id, list(_FLAT_SUBMIT_EVALS_142))
+        )
+        assert resp.stamp_complete is True, "flat retry has no holes → Path A stamps complete"
+
+        async with eval_worker_session_maker() as verify:
+            still_flaw = (
+                await verify.execute(
+                    select(GameFlaw.ply).where(GameFlaw.game_id == game_id, GameFlaw.ply == 2)
+                )
+            ).one_or_none()
+        assert still_flaw is None, "ply 2 must no longer be a flaw after the flat retry"
+    finally:
+        await _delete_games(eval_worker_session_maker, [game_id])
+
+
 # ─── SEED-076 follow-up: cache the pv alongside the eval (Task 3) ─────────────
 #
 # Fix: opening_position_eval gained a nullable pv column (Task 1) and

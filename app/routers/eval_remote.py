@@ -1307,15 +1307,34 @@ async def _restore_preserved_flaw_blobs(
 
     - A ply the worker DID re-blob this submit (in `freshly_blobbed`) is skipped — its
       fresh values from `_run_multipv2_pass` + the fresh gate win.
-    - A snapshotted ply no longer classified as a flaw matches no row → harmless no-op.
+    - A snapshotted ply no longer classified as a flaw after classify's delete-then-insert
+      has NO surviving row and MUST be filtered out (see the `existing` guard below).
 
     Uses the ORM bulk-update-by-PK path (same as `bulk_update_tactic_tags`) so the JSONB
     blobs and tag columns update in one round-trip, inside the caller's write transaction.
+
+    Bug fix (FLAWCHESS-8D): the ORM bulk-update-by-PK path asserts exactly 1 row matched
+    per parameter set (GameFlaw PK = user_id/game_id/ply), so a snapshotted ply that
+    classify no longer flags as a flaw raises StaleDataError ("0 were matched"), NOT the
+    silent no-op the old docstring assumed. Incremental re-leasing (SEED-076) makes evals
+    arrive across attempts and flip borderline plies in/out of flaw status between submits,
+    so this is routine, not a race. Intersect the snapshot with the plies that actually
+    survived classify before the bulk update.
     """
+    existing_plies = set(
+        (
+            await session.scalars(
+                select(GameFlaw.ply).where(
+                    GameFlaw.game_id == game_id,
+                    GameFlaw.user_id == user_id,
+                )
+            )
+        ).all()
+    )
     rows = [
         {"user_id": user_id, "game_id": game_id, "ply": ply, **cols}
         for ply, cols in snapshot.items()
-        if ply not in freshly_blobbed
+        if ply not in freshly_blobbed and ply in existing_plies
     ]
     if not rows:
         return
