@@ -1186,7 +1186,11 @@ def _build_line_blobs(
     """Phase 142 MPV-02: assemble PvNode list for one line (allowed or missed) of a flaw.
 
     Node 0 evals come from pos_eval + second_best_map (no engine call needed).
-    Nodes 1..N come from node_eval (batch-gathered in _build_flaw_multipv2_blobs).
+    SEED-079 slim scheme: only EVEN continuation nodes (2, 4, ...) come from node_eval
+    (batch-gathered in _build_flaw_multipv2_blobs — odd defender boards are never
+    engine-evaluated); each skipped odd index is filled with the all-None placeholder
+    so the gate's index-parity convention (even = solver) stays intact. A missing even
+    node_eval entry is a gap (stop), so the blob always ends on a real even node.
     su='' is the no-second-move sentinel (Pitfall 3: never None in PvNode).
     """
     if not walk:
@@ -1198,10 +1202,11 @@ def _build_line_blobs(
     scp, smt, su_raw = second if second else (None, None, "")
     su: str = su_raw if su_raw is not None else ""
     nodes.append(PvNode(b=best_cp, bm=best_mate, s=scp, sm=smt, su=su))
-    for k in range(1, len(walk)):
+    for k in range(2, len(walk), 2):
         res = node_eval.get((flaw_ply, line, k))
         if res is None:
             break
+        nodes.append(_placeholder_defender_node())  # The skipped odd index k-1.
         # su must be str (Pitfall 3): engine failure yields (None,)*7 → res[6]=None → "".
         su_k: str = res[6] if res[6] is not None else ""
         nodes.append(PvNode(b=res[0], bm=res[1], s=res[4], sm=res[5], su=su_k))
@@ -1264,13 +1269,16 @@ async def _build_flaw_multipv2_blobs(
         if flaw_ply not in targets_by_ply:
             continue
 
+        # SEED-079: only EVEN continuation indices (2, 4, ...) are gathered — the gate
+        # reads only solver (even) nodes (D-10), so defender (odd) continuation evals
+        # are dead weight. Node 0 is not gathered (comes from pos_eval).
         # Missed line: PV walk from the flaw position (board at flaw_ply).
         board_missed = targets_by_ply[flaw_ply].board.copy()
         pv_missed = engine_result_map.get(flaw_ply, (None, None, None, None))[3]
         missed_walk = _walk_pv_boards(board_missed, pv_missed, cap)
         walks[(flaw_ply, "missed")] = missed_walk
-        for k, b in enumerate(missed_walk[1:], 1):
-            gather_boards.append(b)
+        for k in range(2, len(missed_walk), 2):
+            gather_boards.append(missed_walk[k])
             gather_keys.append((flaw_ply, "missed", k))
 
         # Allowed line: PV walk from the position after the flaw move (board at flaw_ply + 1).
@@ -1282,8 +1290,8 @@ async def _build_flaw_multipv2_blobs(
         pv_allowed = engine_result_map.get(allowed_start, (None, None, None, None))[3]
         allowed_walk = _walk_pv_boards(board_allowed, pv_allowed, cap)
         walks[(flaw_ply, "allowed")] = allowed_walk
-        for k, b in enumerate(allowed_walk[1:], 1):
-            gather_boards.append(b)
+        for k in range(2, len(allowed_walk), 2):
+            gather_boards.append(allowed_walk[k])
             gather_keys.append((flaw_ply, "allowed", k))
 
     # Evaluate all continuation boards in one gather (NO session open — CLAUDE.md hard rule).

@@ -1697,9 +1697,13 @@ class TestSlimLocalDrainLineBlobs:
     """
 
     _FLAW_PLY = 4
-    _NODE_EVAL_7TUPLE = staticmethod(
-        lambda b, su="e2e4": (b, None, "e2e4", "e2e4 e7e5", -50, None, su)
-    )
+
+    @staticmethod
+    def _node_eval_7tuple(
+        b: int, su: str | None = "e2e4"
+    ) -> tuple[int | None, int | None, str | None, str | None, int | None, int | None, str | None]:
+        """Build a 7-tuple matching evaluate_nodes_multipv2's return shape."""
+        return (b, None, "e2e4", "e2e4 e7e5", -50, None, su)
 
     def _walk_of_len(self, n: int) -> list:
         """Build a walk of n boards (content unused by _build_line_blobs; only len matters)."""
@@ -1707,10 +1711,10 @@ class TestSlimLocalDrainLineBlobs:
 
         return [chess.Board() for _ in range(n)]
 
-    def _pos_eval(self) -> dict:
+    def _pos_eval(self) -> dict[int, tuple[int | None, int | None]]:
         return {self._FLAW_PLY: (30, None)}
 
-    def _second_best(self) -> dict:
+    def _second_best(self) -> dict[int, tuple[int | None, int | None, str | None]]:
         return {self._FLAW_PLY: (-100, None, "d2d4")}
 
     def test_even_continuation_nodes_with_placeholders(self) -> None:
@@ -1718,8 +1722,8 @@ class TestSlimLocalDrainLineBlobs:
         from app.services.eval_drain import _build_line_blobs
 
         node_eval = {
-            (self._FLAW_PLY, "missed", 2): self._NODE_EVAL_7TUPLE(120),
-            (self._FLAW_PLY, "missed", 4): self._NODE_EVAL_7TUPLE(110),
+            (self._FLAW_PLY, "missed", 2): self._node_eval_7tuple(120),
+            (self._FLAW_PLY, "missed", 4): self._node_eval_7tuple(110),
         }
         blob = _build_line_blobs(
             self._FLAW_PLY,
@@ -1744,7 +1748,7 @@ class TestSlimLocalDrainLineBlobs:
         from app.services.eval_drain import _build_line_blobs
 
         node_eval = {
-            (self._FLAW_PLY, "missed", 2): self._NODE_EVAL_7TUPLE(120),
+            (self._FLAW_PLY, "missed", 2): self._node_eval_7tuple(120),
         }
         blob = _build_line_blobs(
             self._FLAW_PLY,
@@ -1780,9 +1784,9 @@ class TestSlimLocalDrainLineBlobs:
         from app.services.eval_drain import _build_line_blobs
 
         node_eval = {
-            (self._FLAW_PLY, "missed", 1): self._NODE_EVAL_7TUPLE(-999),
-            (self._FLAW_PLY, "missed", 2): self._NODE_EVAL_7TUPLE(120),
-            (self._FLAW_PLY, "missed", 3): self._NODE_EVAL_7TUPLE(-999),
+            (self._FLAW_PLY, "missed", 1): self._node_eval_7tuple(-999),
+            (self._FLAW_PLY, "missed", 2): self._node_eval_7tuple(120),
+            (self._FLAW_PLY, "missed", 3): self._node_eval_7tuple(-999),
         }
         blob = _build_line_blobs(
             self._FLAW_PLY,
