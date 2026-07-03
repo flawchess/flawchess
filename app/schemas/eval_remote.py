@@ -9,6 +9,22 @@ from pydantic import BaseModel, Field
 # an arbitrarily large body that the endpoint would materialize in memory at once.
 MAX_SUBMIT_EVALS: int = 1024
 
+# Per-field worker-submit bounds (code-review 2026-07-02, #11). An out-of-range value
+# from a buggy/compromised worker would otherwise reach the DB and raise a DBAPIError →
+# 500 → an unresolvable worker retry-loop that never fills the hole. Reject it at the API
+# boundary (422) instead, and cap pv to block multi-MB payloads.
+#   - eval_cp / eval_mate: game_positions.eval_cp/eval_mate are SMALLINT columns.
+#   - best_move: stored in a String(5) column (UCI, e.g. "e7e8q").
+#   - pv: space-joined UCI "up to 12 plies" (~71 chars); 512 leaves generous headroom.
+#   - ply: game_positions.ply is SMALLINT with a real-world max of ~600 half-moves.
+EVAL_CP_MIN: int = -32768
+EVAL_CP_MAX: int = 32767
+EVAL_MATE_MIN: int = -32768
+EVAL_MATE_MAX: int = 32767
+MAX_BEST_MOVE_LEN: int = 5
+MAX_PV_LEN: int = 512
+MAX_PLY: int = 2048
+
 
 class LeasePosition(BaseModel):
     ply: int = Field(ge=0)
@@ -28,11 +44,11 @@ class LeaseResponse(BaseModel):
 
 
 class SubmitEval(BaseModel):
-    ply: int = Field(ge=0)
-    eval_cp: int | None
-    eval_mate: int | None
-    best_move: str | None  # UCI string
-    pv: str | None  # space-joined UCI, up to 12 plies
+    ply: int = Field(ge=0, le=MAX_PLY)
+    eval_cp: int | None = Field(ge=EVAL_CP_MIN, le=EVAL_CP_MAX)
+    eval_mate: int | None = Field(ge=EVAL_MATE_MIN, le=EVAL_MATE_MAX)
+    best_move: str | None = Field(max_length=MAX_BEST_MOVE_LEN)  # UCI string
+    pv: str | None = Field(max_length=MAX_PV_LEN)  # space-joined UCI, up to 12 plies
     # Phase 146 D-03: second_cp/second_mate/second_uci removed — the live /submit
     # path no longer builds PvNode blobs inline. Blob assembly is deferred to the
     # tier-4 worker drain (_claim_tier4_blob → /flaw-blob-lease → /flaw-blob-submit).
@@ -75,9 +91,9 @@ class EntryLeaseResponse(BaseModel):
 
 class EntrySubmitEval(BaseModel):
     game_id: int
-    ply: int = Field(ge=0)
-    eval_cp: int | None
-    eval_mate: int | None
+    ply: int = Field(ge=0, le=MAX_PLY)
+    eval_cp: int | None = Field(ge=EVAL_CP_MIN, le=EVAL_CP_MAX)
+    eval_mate: int | None = Field(ge=EVAL_MATE_MIN, le=EVAL_MATE_MAX)
 
 
 class EntrySubmitRequest(BaseModel):
@@ -184,11 +200,11 @@ class AtomicLeaseResponse(BaseModel):
 class AtomicSubmitEval(BaseModel):
     """One full-ply engine result (mirrors SubmitEval — MultiPV-1, Phase 146 D-03)."""
 
-    ply: int = Field(ge=0)
-    eval_cp: int | None
-    eval_mate: int | None
-    best_move: str | None  # UCI string
-    pv: str | None  # space-joined UCI, up to 12 plies
+    ply: int = Field(ge=0, le=MAX_PLY)
+    eval_cp: int | None = Field(ge=EVAL_CP_MIN, le=EVAL_CP_MAX)
+    eval_mate: int | None = Field(ge=EVAL_MATE_MIN, le=EVAL_MATE_MAX)
+    best_move: str | None = Field(max_length=MAX_BEST_MOVE_LEN)  # UCI string
+    pv: str | None = Field(max_length=MAX_PV_LEN)  # space-joined UCI, up to 12 plies
 
 
 class AtomicBlobNode(BaseModel):
