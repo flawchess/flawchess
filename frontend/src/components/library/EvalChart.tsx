@@ -734,15 +734,26 @@ export function EvalChart({
   const tooltipVisible = hoverPly != null || sliderFocused;
 
   useEffect(() => {
-    if (!isTouch || !sliderFocused) return;
-    const dismissOnOutsideTouch = (e: TouchEvent): void => {
+    if (!sliderFocused) return;
+    const dismissOnOutside = (e: Event): void => {
       const root = rootRef.current;
       if (root && e.target instanceof Node && !root.contains(e.target)) {
         setSliderFocused(false);
+        setHoverPly(null);
       }
     };
-    document.addEventListener('touchstart', dismissOnOutsideTouch);
-    return () => document.removeEventListener('touchstart', dismissOnOutsideTouch);
+    // pointerdown covers the desktop mouse case: the slider's onBlur dismisses the
+    // tooltip only when the click lands on a focusable element, but clicking a
+    // non-focusable element (e.g. the analysis board or empty page area) doesn't
+    // blur the slider, leaving the tooltip stuck. A document-level pointerdown
+    // dismisses on any outside click, matching the game card. touchstart is kept
+    // for iOS Safari, where pointerdown on touch is unreliable.
+    document.addEventListener('pointerdown', dismissOnOutside);
+    if (isTouch) document.addEventListener('touchstart', dismissOnOutside);
+    return () => {
+      document.removeEventListener('pointerdown', dismissOnOutside);
+      document.removeEventListener('touchstart', dismissOnOutside);
+    };
   }, [isTouch, sliderFocused]);
 
   // Imperative scrub command (card click-to-cycle). On a new seq, jump the slider
