@@ -381,8 +381,10 @@ class TestDedupHitsParity:
                 f"Parity source (full_evals_completed_at set, ply {5} <= {_DEDUP_MAX_PLY}) "
                 "must be recovered by the post-move self-join (EVAL-03 / SEED-044)."
             )
-            # (eval OF Q from prior row, eval_mate, best_move FROM Q from Q's own row).
-            assert result[target_hash] == (42, None, "g1f3")
+            # (eval OF Q from prior row, eval_mate, best_move FROM Q from Q's own row, pv).
+            # OPENING_CACHE_BACKFILL_SQL does not populate pv (SEED-076 follow-up scope
+            # is _upsert_opening_cache's incremental write path, not the one-time backfill).
+            assert result[target_hash] == (42, None, "g1f3", None)
         finally:
             await _delete_games(full_drain_session_maker, [source_game_id])
             await _delete_opening_eval_rows(
@@ -1607,11 +1609,14 @@ class TestFlawPv:
         )
 
         # Stub the dedup lookup to transplant ONLY ply 3 (eval -500, no pv — dedup never
-        # carries a pv). Every other opening ply falls through to a real engine call.
+        # carries a pv through _resolve_full_eval). Every other opening ply falls through
+        # to a real engine call. 4-tuple shape (SEED-076 follow-up added cached pv as the
+        # 4th element); this cache row itself has no pv (None) so it does not change
+        # SEED-056's recovery-pass behavior under test here.
         async def _fake_fetch_dedup_evals(
             _session: Any, hashes: Any
-        ) -> dict[int, tuple[int | None, int | None, str | None]]:
-            return {ply3_hash: (-500, None, "g1f3")} if ply3_hash in hashes else {}
+        ) -> dict[int, tuple[int | None, int | None, str | None, str | None]]:
+            return {ply3_hash: (-500, None, "g1f3", None)} if ply3_hash in hashes else {}
 
         monkeypatch.setattr(drain_module, "_fetch_dedup_evals", _fake_fetch_dedup_evals)
         mock_evaluate = AsyncMock(side_effect=_eval_for_board)
