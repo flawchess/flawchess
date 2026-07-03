@@ -35,6 +35,28 @@ logger = logging.getLogger(__name__)
 _DB_TRANSIENT_ERRORS = (ConnectionDoesNotExistError, CannotConnectNowError)
 _MAX_CAUSE_CHAIN_DEPTH = 5
 
+# Remote eval worker poll loop hits /api/eval/remote/* endpoints continuously
+# (lease, submit, flaw-blob, entry). Each incoming request is auto-instrumented as
+# a Sentry transaction, which floods the trace/span quota. These are internal
+# machine-to-machine calls with no user-latency value, so we sample them out of
+# tracing entirely (error capture is unaffected — before_send / capture_exception
+# still fire). See _sentry_traces_sampler.
+_UNTRACED_PATH_PREFIX = "/api/eval/remote/"
+
+
+def _sentry_traces_sampler(sampling_context: dict[str, Any]) -> float:
+    """Drop traces for the remote-worker poll endpoints, keep the configured rate otherwise.
+
+    The ASGI scope is available in the sampling context before route resolution,
+    so we match on the raw request path. Returning 0.0 means the transaction is
+    never sampled (no spans sent); errors are still reported independently.
+    """
+    scope = sampling_context.get("asgi_scope")
+    path = scope.get("path", "") if isinstance(scope, dict) else ""
+    if path.startswith(_UNTRACED_PATH_PREFIX):
+        return 0.0
+    return settings.SENTRY_TRACES_SAMPLE_RATE
+
 
 def _sentry_before_send(event: Event, hint: dict[str, Any]) -> Event | None:
     """Group transient DB connection errors into a single Sentry issue.
@@ -117,8 +139,10 @@ if settings.SENTRY_DSN:
     sentry_sdk.init(
         dsn=settings.SENTRY_DSN,
         environment=settings.ENVIRONMENT,
-        # Only trace in production — dev traces are noise and waste quota
-        traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
+        # Only trace in production — dev traces are noise and waste quota.
+        # traces_sampler (not a flat rate) so the remote-worker poll endpoints are
+        # excluded from tracing — they otherwise dominate the span quota.
+        traces_sampler=_sentry_traces_sampler,
         send_default_pii=False,  # Do not send user PII (emails, IPs)
         before_send=_sentry_before_send,
     )
