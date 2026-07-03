@@ -9,6 +9,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # not into the process environment.
 load_dotenv()
 
+# Insecure placeholder SECRET_KEY. Booting a non-development environment with this
+# value is a deploy-blocker (see assert_secret_key_configured); JWTs signed with a
+# publicly-known key are trivially forgeable.
+DEFAULT_SECRET_KEY = "change-me-in-production"
+
 
 class Settings(BaseSettings):
     # DATABASE_URL is what the running app (and Alembic) connect to. The four
@@ -23,7 +28,7 @@ class Settings(BaseSettings):
     DATABASE_URL_PROD: str = "postgresql+asyncpg://flawchess:flawchess@localhost:15432/flawchess"
     DATABASE_URL_BENCHMARK: str = "postgresql+asyncpg://flawchess_benchmark:flawchess_benchmark@localhost:5433/flawchess_benchmark"
     DB_ECHO: bool = False
-    SECRET_KEY: str = "change-me-in-production"
+    SECRET_KEY: str = DEFAULT_SECRET_KEY
     GOOGLE_OAUTH_CLIENT_ID: str = ""
     GOOGLE_OAUTH_CLIENT_SECRET: str = ""
     BACKEND_URL: str = "http://localhost:8000"
@@ -91,6 +96,26 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def assert_secret_key_configured() -> None:
+    """Fail closed if a non-development environment still uses the default SECRET_KEY.
+
+    Mirrors the D-22 deploy-blocker pattern in get_insights_agent(): called from the
+    app lifespan at startup (NOT at import time) so maintenance scripts and Alembic —
+    which import ``settings`` but never sign tokens — are unaffected. A default
+    SECRET_KEY in production means every JWT is forgeable, so we abort startup rather
+    than serve auth with a publicly-known signing key (code-review 2026-07-02, #1.2).
+
+    Raises:
+        RuntimeError: ENVIRONMENT is not "development" and SECRET_KEY is the default.
+    """
+    if settings.ENVIRONMENT != "development" and settings.SECRET_KEY == DEFAULT_SECRET_KEY:
+        raise RuntimeError(
+            "SECRET_KEY is still the insecure default in a non-development environment "
+            f"(ENVIRONMENT={settings.ENVIRONMENT!r}). Set a strong random SECRET_KEY in "
+            ".env before starting the server."
+        )
 
 
 # Maintenance scripts (backfill_eval, reindex_table, gen_benchmarks, …) accept a
