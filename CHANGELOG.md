@@ -16,6 +16,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 - **Library Games cards now show all tactic + context tags** — the active tactic/severity/context/depth/orientation filter on the Games tab now only decides which games appear; it no longer hides tags from a shown card. Tactic chips are consistent with context chips (both always show the game's full set), and the active-filter ring lights only on chips that truly match the filter across family, orientation, and depth. (Quick 260702-mnd)
 
+### Fixed
+
+- **Eval-chart gaps from slow analysis workers** — games analyzed by a slower remote worker could keep permanent gaps in the opening portion of the eval chart (the worker timed out on the busiest opening positions and the server gave up after a few retries). The server now fills those openings from its own cache and only re-checks the positions that are genuinely still missing, so weak workers no longer leave games stuck with missing evals. Previously-affected games self-heal on re-analysis. (Quick 260703-nux)
+
 ## [v1.30] Forcing-Line Tactic Gate — 2026-06-30
 
 ### Added

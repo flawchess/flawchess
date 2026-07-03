@@ -1,6 +1,6 @@
 ---
 id: SEED-076
-status: open
+status: closed
 planted: 2026-07-03
 planted_during: /gsd-explore session investigating prod user 218's eval-chart gaps. Quantified 36 games / 642 opening-weighted hole plies stamped complete via the Path-C cap. Root cause (confirmed via Sentry FLAWCHESS-8B, `atomic-submit ... residual holes`, geo DE): a **weak Hetzner remote worker** ran the same engine (`_NODES_TIMEOUT_S = 5.0s`, engine.py:100) and timed out on high-branching opening positions on slower hardware, submitting partial evals; the server re-leased 3× and Path-C-stamped (`eval_remote.py:1300`). NOT the in-process server pool. Full evidence: `.planning/notes/eval-chart-opening-holes-root-cause.md`.
 design_locked_during: /gsd-explore follow-up 2026-07-03 (chose the cache-aware incremental-lease approach below over the seed's original "don't stamp / reroute" lever, which needs a new lease-time attempts gate and is not quick-sized).
