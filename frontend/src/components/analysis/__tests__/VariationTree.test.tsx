@@ -2,15 +2,20 @@
 /**
  * Phase 137 Plan 03: VariationTree render tests.
  * Phase 140 Plan 02: Two-level nesting, inline flaw chips, blunder/mistake markers.
+ * Quick 260703-kyb: rewritten to the flat-sibling multi-line contract (replaces
+ * the old singleton pvLine / Level-2 nesting model).
  *
  * Fixture A: 3-node main line (1.e4 1...e5 2.Nf3) + one variation (1...d5
  * branching from node 1). Tests cover both dual-DOM paths (mobile + desktop),
  * main-line rendering, variation rendering (BOARD-05), active node
  * aria-current, click → onNodeClick, and the empty state.
  *
- * Fixture B: Extended tree with pvLine (nodes 10, 11) and a level-2 sub-fork
- * (node 20, parent=11). Tests cover variation-pv-section, variation-subpv-section,
- * inline flaw chips, and blunder/mistake severity markers.
+ * Fixture B: 3-node main line (1.e4 1...e5 2.Nf3) + TWO flat sibling lines off
+ * two different mainLine forks — Line A (tactic, nodes 10/11, pvNodeIds
+ * membership) off node 1 (after 1.e4), and Line B (free-move, node 20) off
+ * node 2 (after 1...e5). Tests cover variation-pv-section,
+ * variation-freemove-section, the × delete affordance, inline flaw chips, and
+ * blunder/mistake severity markers.
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -118,25 +123,25 @@ function buildFixture(): {
   return { nodes, mainLine };
 }
 
-// ─── Fixture B — two-level nesting + flaw markers ────────────────────────────
+// ─── Fixture B — two flat sibling lines + flaw markers ───────────────────────
 
 /**
  * Main line: ids [1, 2, 3]
  *   1. e4 (id=1) 1...e5 (id=2) 2. Nf3 (id=3)
  *
- * pvLine: ids [10, 11] — grafted from id=1 (after 1.e4, the decision position).
- *   10: Nf3 (parentId=1), 11: d5 (parentId=10)
+ * Line A (tactic, pvNodeIds = {10, 11}) — grafted from id=1 (after 1.e4):
+ *   10: Nf6 (parentId=1), 11: Nc3 (parentId=10)
  *
- * Level-2 sub-fork: id=20 — user plays c4 from pvLine node 11.
- *   20: c4 (parentId=11)
+ * Line B (free-move) — forked from id=2 (after 1...e5):
+ *   20: Bc4 (parentId=2)
  *
- * currentNodeId=10 → level 1 (on pvLine)
- * currentNodeId=20 → level 2 (sub-fork from pvLine node 11)
+ * Both lines are flat siblings off DIFFERENT mainLine forks and render
+ * simultaneously, regardless of currentNodeId (Quick 260703-kyb).
  */
 function buildPvFixture(): {
   nodes: Map<NodeId, MoveNode>;
   mainLine: NodeId[];
-  pvLine: NodeId[];
+  pvNodeIds: Set<NodeId>;
 } {
   const nodes = new Map<NodeId, MoveNode>([
     [
@@ -172,15 +177,15 @@ function buildPvFixture(): {
         parentId: 2,
       },
     ],
-    // PV sideline grafted from node 1 (after 1.e4).
+    // Line A (tactic) — grafted from node 1 (after 1.e4, black to move).
     [
       10,
       {
         id: 10,
-        san: 'Nf3',
-        fen: 'rnbqkbnr/pppppppp/8/8/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 1',
-        from: 'g1',
-        to: 'f3',
+        san: 'Nf6',
+        fen: 'rnbqkb1r/pppppppp/5n2/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 1 2',
+        from: 'g8',
+        to: 'f6',
         parentId: 1,
       },
     ],
@@ -188,29 +193,29 @@ function buildPvFixture(): {
       11,
       {
         id: 11,
-        san: 'd5',
-        fen: 'rnbqkbnr/ppp1pppp/8/3p4/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq d6 0 2',
-        from: 'd7',
-        to: 'd5',
+        san: 'Nc3',
+        fen: 'rnbqkb1r/pppppppp/5n2/8/4P3/2N5/PPPP1PPP/R1BQKBNR b KQkq - 2 2',
+        from: 'b1',
+        to: 'c3',
         parentId: 10,
       },
     ],
-    // Level-2 sub-fork from pvLine node 11.
+    // Line B (free-move) — forked from node 2 (after 1...e5, white to move).
     [
       20,
       {
         id: 20,
-        san: 'c4',
-        fen: 'rnbqkbnr/ppp1pppp/8/3p4/2P1P3/5N2/PP1P1PPP/RNBQKB1R b KQkq c3 0 2',
-        from: 'c2',
+        san: 'Bc4',
+        fen: 'rnbqkbnr/pppp1ppp/8/4p3/2B1P3/8/PPPP1PPP/RNBQK1NR b KQkq - 1 2',
+        from: 'f1',
         to: 'c4',
-        parentId: 11,
+        parentId: 2,
       },
     ],
   ]);
   const mainLine: NodeId[] = [1, 2, 3];
-  const pvLine: NodeId[] = [10, 11];
-  return { nodes, mainLine, pvLine };
+  const pvNodeIds = new Set<NodeId>([10, 11]);
+  return { nodes, mainLine, pvNodeIds };
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -355,45 +360,50 @@ describe('VariationTree', () => {
     expect(emptyTexts.length).toBeGreaterThan(0);
   });
 
-  // ─── Phase 140 Plan 02: two-level nesting + inline chips + markers ───────────
+  // ─── Quick 260703-kyb: flat sibling blocks, × delete, inline chips + markers ──
 
-  it('(7) variation-pv-section renders in desktop when currentNodeId is on pvLine (level 1)', () => {
-    const { nodes, mainLine, pvLine } = buildPvFixture();
+  it('(7) both variation-pv-section (tactic) and variation-freemove-section render simultaneously, regardless of currentNodeId', () => {
+    const { nodes, mainLine, pvNodeIds } = buildPvFixture();
     render(
       <VariationTree
         nodes={nodes}
         mainLine={mainLine}
-        currentNodeId={10}
-        pvLine={pvLine}
+        currentNodeId={3} // parked on the mainLine — NOT inside either sideline
+        pvNodeIds={pvNodeIds}
         onNodeClick={vi.fn()}
       />,
     );
-    // Desktop shows the Level-1 PV block.
+    // Both flat sibling blocks render — sidelines are always-visible, not tied to
+    // where the board is currently parked (Quick 260703-kyb truth #1).
     expect(screen.getByTestId('variation-pv-section')).toBeTruthy();
-    // No Level-2 block for a level-1 current node.
-    expect(screen.queryByTestId('variation-subpv-section')).toBeNull();
+    expect(screen.getByTestId('variation-freemove-section')).toBeTruthy();
+    // Both lines' nodes are present.
+    expect(screen.getAllByTestId('variation-node-10').length).toBeGreaterThan(0);
+    expect(screen.getAllByTestId('variation-node-11').length).toBeGreaterThan(0);
+    expect(screen.getAllByTestId('variation-node-20').length).toBeGreaterThan(0);
   });
 
-  it('(8) variation-subpv-section renders in desktop when currentNodeId is a level-2 sub-fork', () => {
-    const { nodes, mainLine, pvLine } = buildPvFixture();
+  it('(8) the free-move line exposes btn-delete-line-{rootId} calling onDeleteLine; the tactic line has no ×', () => {
+    const { nodes, mainLine, pvNodeIds } = buildPvFixture();
+    const onDeleteLine = vi.fn();
     render(
       <VariationTree
         nodes={nodes}
         mainLine={mainLine}
-        currentNodeId={20}
-        pvLine={pvLine}
+        currentNodeId={null}
+        pvNodeIds={pvNodeIds}
+        onDeleteLine={onDeleteLine}
         onNodeClick={vi.fn()}
       />,
     );
-    // Desktop shows both Level-1 and Level-2 blocks.
-    expect(screen.getByTestId('variation-pv-section')).toBeTruthy();
-    expect(screen.getByTestId('variation-subpv-section')).toBeTruthy();
-    // The sub-pv section should contain the sub-fork node (id=20, 'c4').
-    const subpv = screen.getByTestId('variation-subpv-section');
-    expect(subpv).toBeTruthy();
-    // node 20 should appear inside or outside the subpv section as a button
-    const c4Buttons = screen.getAllByTestId('variation-node-20');
-    expect(c4Buttons.length).toBeGreaterThan(0);
+    // Free-move line (root=20) has a working × delete affordance.
+    const deleteButtons = screen.getAllByTestId('btn-delete-line-20');
+    expect(deleteButtons.length).toBeGreaterThan(0);
+    expect(deleteButtons[0]!.getAttribute('aria-label')).toBe('Delete variation');
+    fireEvent.click(deleteButtons[0]!);
+    expect(onDeleteLine).toHaveBeenCalledWith(20);
+    // Tactic line (root=10) has NO × — it closes via its chip instead.
+    expect(screen.queryByTestId('btn-delete-line-10')).toBeNull();
   });
 
   it('(9) flaw-inline-tag-missed-{nodeId} shows the motif name + depth (UAT 260627)', () => {
@@ -409,7 +419,7 @@ describe('VariationTree', () => {
         currentNodeId={2}
         flawMarkerByNodeId={flawMarkerByNodeId}
         onPvChipClick={onPvChipClick}
-        activePvNodeId={null}
+        activePvKeys={undefined}
         onNodeClick={vi.fn()}
       />,
     );
@@ -433,7 +443,7 @@ describe('VariationTree', () => {
         mainLine={mainLine}
         currentNodeId={3}
         flawMarkerByNodeId={flawMarkerByNodeId}
-        activePvNodeId={null}
+        activePvKeys={undefined}
         onNodeClick={vi.fn()}
       />,
     );
@@ -460,7 +470,7 @@ describe('VariationTree', () => {
         currentNodeId={null}
         flawMarkerByNodeId={flawMarkerByNodeId}
         onPvChipClick={onPvChipClick}
-        activePvNodeId={null}
+        activePvKeys={undefined}
         onNodeClick={vi.fn()}
       />,
     );
@@ -497,13 +507,19 @@ describe('VariationTree', () => {
   });
 
   it('(11) inaccuracy severity renders no chip and no marker', () => {
-    const { nodes, mainLine } = buildPvFixture();
+    // Use the mainLine-only fixture (no sidelines at all) so the SVG count is not
+    // contaminated by a free-move block's × delete-icon — Quick 260703-kyb renders
+    // sidelines unconditionally now, not just when currentNodeId is inside one.
+    const { nodes, mainLine } = buildFixture();
+    const mainLineOnlyNodes = new Map(
+      [...nodes].filter(([id]) => mainLine.includes(id)),
+    );
     const flawMarkerByNodeId = new Map<NodeId, FlawMarkerEntry>([
       [2, { missedMotif: null, allowedMotif: null, missedDepth: null, allowedDepth: null, severity: 'inaccuracy', ply: 1 }],
     ]);
     render(
       <VariationTree
-        nodes={nodes}
+        nodes={mainLineOnlyNodes}
         mainLine={mainLine}
         currentNodeId={null}
         flawMarkerByNodeId={flawMarkerByNodeId}
@@ -519,7 +535,7 @@ describe('VariationTree', () => {
     expect(svgs.length).toBe(0);
   });
 
-  it('(12) active chip (activePvNodeId === nodeId) shows ring and collapse aria-label', () => {
+  it('(12) active chip (key ∈ activePvKeys) shows ring and collapse aria-label', () => {
     const { nodes, mainLine } = buildPvFixture();
     const flawMarkerByNodeId = new Map<NodeId, FlawMarkerEntry>([
       [2, { missedMotif: 'fork', allowedMotif: null, missedDepth: null, allowedDepth: null, severity: 'blunder', ply: 1 }],
@@ -531,13 +547,34 @@ describe('VariationTree', () => {
         currentNodeId={null}
         flawMarkerByNodeId={flawMarkerByNodeId}
         onPvChipClick={vi.fn()}
-        activePvNodeId={2}
+        activePvKeys={new Set(['1:missed'])}
         onNodeClick={vi.fn()}
       />,
     );
     const chip = screen.getByTestId('flaw-inline-tag-missed-2');
     // Active chip aria-label ends with "collapse".
     expect(chip.getAttribute('aria-label')).toContain('collapse');
+  });
+
+  it('(12b) two chips can be simultaneously active via activePvKeys (flat siblings)', () => {
+    const { nodes, mainLine } = buildPvFixture();
+    const flawMarkerByNodeId = new Map<NodeId, FlawMarkerEntry>([
+      [2, { missedMotif: 'fork', allowedMotif: null, missedDepth: null, allowedDepth: null, severity: 'blunder', ply: 1 }],
+      [3, { missedMotif: null, allowedMotif: 'pin', missedDepth: null, allowedDepth: null, severity: 'mistake', ply: 2 }],
+    ]);
+    render(
+      <VariationTree
+        nodes={nodes}
+        mainLine={mainLine}
+        currentNodeId={null}
+        flawMarkerByNodeId={flawMarkerByNodeId}
+        onPvChipClick={vi.fn()}
+        activePvKeys={new Set(['1:missed', '2:allowed'])}
+        onNodeClick={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId('flaw-inline-tag-missed-2').getAttribute('aria-label')).toContain('collapse');
+    expect(screen.getByTestId('flaw-inline-tag-allowed-3').getAttribute('aria-label')).toContain('collapse');
   });
 
   it('(13) pvFetchError shows error message text next to the active chip', () => {
@@ -551,7 +588,7 @@ describe('VariationTree', () => {
         mainLine={mainLine}
         currentNodeId={null}
         flawMarkerByNodeId={flawMarkerByNodeId}
-        activePvNodeId={2}
+        activePvKeys={new Set(['1:missed'])}
         pvFetchError={true}
         onNodeClick={vi.fn()}
       />,
@@ -565,7 +602,7 @@ describe('VariationTree', () => {
   // blunder/mistake injects a severity-only entry keyed by the CURRENT (variation/free)
   // node. The move list must paint the matching glyph there, mirroring the board.
   it('(14) injected live severity on the CURRENT variation node renders the glyph', () => {
-    const { nodes, mainLine, pvLine } = buildPvFixture();
+    const { nodes, mainLine, pvNodeIds } = buildPvFixture();
     const flawMarkerByNodeId = new Map<NodeId, FlawMarkerEntry>([
       [10, { missedMotif: null, allowedMotif: null, missedDepth: null, allowedDepth: null, severity: 'blunder', ply: -1 }],
     ]);
@@ -574,7 +611,7 @@ describe('VariationTree', () => {
         nodes={nodes}
         mainLine={mainLine}
         currentNodeId={10} // variation node 10 is the current node
-        pvLine={pvLine}
+        pvNodeIds={pvNodeIds}
         flawMarkerByNodeId={flawMarkerByNodeId}
         onNodeClick={vi.fn()}
       />,
@@ -589,7 +626,7 @@ describe('VariationTree', () => {
   });
 
   it('(15) injected severity on a NON-current variation node still renders the glyph', () => {
-    const { nodes, mainLine, pvLine } = buildPvFixture();
+    const { nodes, mainLine, pvNodeIds } = buildPvFixture();
     const flawMarkerByNodeId = new Map<NodeId, FlawMarkerEntry>([
       [10, { missedMotif: null, allowedMotif: null, missedDepth: null, allowedDepth: null, severity: 'blunder', ply: -1 }],
     ]);
@@ -598,7 +635,7 @@ describe('VariationTree', () => {
         nodes={nodes}
         mainLine={mainLine}
         currentNodeId={11} // node 10 carries the entry but is NOT current
-        pvLine={pvLine}
+        pvNodeIds={pvNodeIds}
         flawMarkerByNodeId={flawMarkerByNodeId}
         onNodeClick={vi.fn()}
       />,
