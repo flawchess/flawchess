@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import ast
 import inspect
-import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -2331,7 +2330,6 @@ class TestHoleAwareCompletionGate:
         full_drain_test_user_119: int,
         full_drain_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
-        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """After full_eval_attempts reaches MAX_EVAL_ATTEMPTS with a persistent hole,
         the game IS stamped complete and the cap outcome is LOGGED locally — NOT sent to
@@ -2367,6 +2365,8 @@ class TestHoleAwareCompletionGate:
         )
 
         capture_message_calls: list[str] = []
+        # (msg_template, positional_args) tuples for each logger.warning call.
+        warning_logs: list[tuple[str, tuple[object, ...]]] = []
 
         drain_module = _patch_drain_for_tick_tests(
             monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_119
@@ -2376,6 +2376,13 @@ class TestHoleAwareCompletionGate:
             drain_module.sentry_sdk,
             "capture_message",
             lambda msg, **kw: capture_message_calls.append(msg),
+        )
+        # Patch the module logger directly rather than relying on caplog propagation,
+        # which is fragile under CI's logging config (a real record never reached caplog).
+        monkeypatch.setattr(
+            drain_module.logger,
+            "warning",
+            lambda msg, *args, **kw: warning_logs.append((msg, args)),
         )
 
         # Hole persists: terminal still returns None.
@@ -2389,8 +2396,7 @@ class TestHoleAwareCompletionGate:
         monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
 
         try:
-            with caplog.at_level(logging.WARNING, logger="app.services.eval_drain"):
-                processed = await drain_module._full_drain_tick()
+            processed = await drain_module._full_drain_tick()
             assert processed is True, "Cap tick must report processed (stamp happens at cap)"
 
             async with full_drain_session_maker() as verify:
@@ -2412,18 +2418,14 @@ class TestHoleAwareCompletionGate:
                 f"Cap path must NOT capture to Sentry (demoted to log), got {cap_events}"
             )
 
-            # Exactly one WARNING log line carrying the variables (game_id in the record).
-            cap_logs = [
-                r
-                for r in caplog.records
-                if r.levelno == logging.WARNING and "MAX_EVAL_ATTEMPTS" in r.getMessage()
-            ]
+            # Exactly one WARNING log line for the cap path, carrying game_id as an arg
+            # (variables passed as logger args, never interpolated into the template).
+            cap_logs = [(msg, args) for msg, args in warning_logs if "MAX_EVAL_ATTEMPTS" in msg]
             assert len(cap_logs) == 1, (
-                f"Expected one cap warning log, got {len(cap_logs)}: "
-                f"{[r.getMessage() for r in cap_logs]}"
+                f"Expected one cap warning log, got {len(cap_logs)}: {cap_logs}"
             )
-            assert str(game_id) in cap_logs[0].getMessage(), (
-                f"Cap log must carry game_id={game_id}, got {cap_logs[0].getMessage()!r}"
+            assert game_id in cap_logs[0][1], (
+                f"Cap log must carry game_id={game_id} as an arg, got {cap_logs[0]!r}"
             )
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
