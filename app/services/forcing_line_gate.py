@@ -301,6 +301,17 @@ def _is_forced_mate_firing(
 
     The firing node is at index firing_depth (the detector's tactic depth); None defaults
     to index 0 (mate motifs fire at depth 0 in practice).
+
+    SEED-079 accepted degradation (slim blobs): blobs built after SEED-079 carry all-None
+    placeholder PvNodes at odd (defender) indices — defender nodes are no longer
+    engine-evaluated. When the detector reports an ODD firing_depth (the WR-02 k-1 quirk,
+    mainly DISCOVERED_ATTACK depth 1, ~5% of gated tags), this function reads a
+    placeholder, bm is None, and it returns False: the forced-mate exemption (D-08/D-10)
+    is conservatively lost for those motifs on slim blobs. We deliberately do NOT
+    normalize an odd firing_depth to an adjacent even index: that would read a DIFFERENT
+    node's mate value, changing credit decisions on the ~460k existing fat blobs and
+    touching the gate read surface — both non-goals. Fat blobs are unaffected: their odd
+    nodes carry real data, so the exemption keeps working on them exactly as before.
     """
     idx = firing_depth if firing_depth is not None else 0
     if idx < 0 or idx >= len(line):

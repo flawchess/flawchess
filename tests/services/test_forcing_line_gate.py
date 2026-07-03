@@ -766,3 +766,105 @@ class TestFloorScopedToConversionTail:
         assert (
             apply_forcing_line_filter(line, "white", pre_flaw_eval_cp=0, firing_depth=None) is False
         )
+
+
+# ---------------------------------------------------------------------------
+# TestSlimBlobGateBehavior: SEED-079 -- slim blobs (all-None odd placeholders)
+# ---------------------------------------------------------------------------
+
+
+def _placeholder_node() -> PvNode:
+    """The SEED-079 slim-blob odd-index (defender) placeholder: all-None, su=''."""
+    return PvNode(b=None, bm=None, s=None, sm=None, su="")
+
+
+class TestSlimBlobGateBehavior:
+    """SEED-079: gate behavior on slim blobs (odd defender indices are all-None placeholders).
+
+    The gate reads only solver (even) nodes, so slim and fat blobs gate identically for
+    even-firing tactics. The one exception is _is_forced_mate_firing at an ODD
+    firing_depth (WR-02 k-1 quirk): on a slim blob it reads a placeholder and returns
+    False -- the forced-mate exemption conservatively degrades to non-exempt (accepted,
+    documented on the function; NOT normalized to an even index because that would read
+    a different node and change fat-blob outcomes). Fat blobs are unaffected.
+    """
+
+    def test_slim_odd_firing_placeholder_loses_mate_exemption(self) -> None:
+        """Slim blob, odd firing_depth -> placeholder read -> exemption lost (accepted degradation)."""
+        from app.services.forcing_line_gate import _is_forced_mate_firing
+
+        slim: list[PvNode] = [
+            PvNode(b=None, bm=2, s=500, sm=None, su="d1h5"),  # S0 mate-in-2, forced
+            _placeholder_node(),  # D1 placeholder -- fat blob would carry bm=1 here
+        ]
+        assert _is_forced_mate_firing(slim, "white", firing_depth=1) is False, (
+            "Placeholder defender node has bm=None -> no forced-mate exemption (SEED-079)"
+        )
+        # Degradation end-to-end: without the exemption, the already-winning reject
+        # (pre-flaw +900 > 800) now kills the motif on the slim blob.
+        assert (
+            apply_forcing_line_filter(slim, "white", pre_flaw_eval_cp=900, firing_depth=1) is False
+        )
+
+    def test_fat_odd_firing_defender_mate_still_exempt(self) -> None:
+        """Regression: a FAT blob with a real defender firing node at an odd depth keeps its exemption."""
+        from app.services.forcing_line_gate import _is_forced_mate_firing
+
+        fat: list[PvNode] = [
+            PvNode(b=None, bm=2, s=500, sm=None, su="d1h5"),  # S0 mate-in-2, forced
+            PvNode(b=None, bm=1, s=None, sm=None, su=""),  # D1 real defender node: mate-in-1
+        ]
+        assert _is_forced_mate_firing(fat, "white", firing_depth=1) is True, (
+            "Fat blobs carry real odd-node data -- the odd-firing mate exemption must keep working"
+        )
+        # Same shape as the slim test above, but the real defender mate node grants the
+        # exemption, so the +900 already-winning reject is bypassed and the motif credits.
+        assert apply_forcing_line_filter(fat, "white", pre_flaw_eval_cp=900, firing_depth=1) is True
+
+    def test_slim_even_firing_mate_still_exempt(self) -> None:
+        """Slim blob with an EVEN firing_depth (real solver forced mate) keeps the exemption."""
+        from app.services.forcing_line_gate import _is_forced_mate_firing
+
+        slim: list[PvNode] = [
+            PvNode(b=None, bm=2, s=500, sm=None, su="d1h5"),  # S0 mate-in-2 firing node
+            _placeholder_node(),  # D1 placeholder
+            _cp_node(b=800, s=0),  # S2 conversion (above floor)
+        ]
+        assert _is_forced_mate_firing(slim, "white", firing_depth=0) is True
+        # Exemption applies: pre-flaw +2000 would reject any non-mate motif.
+        assert (
+            apply_forcing_line_filter(slim, "white", pre_flaw_eval_cp=2000, firing_depth=0) is True
+        )
+
+    def test_fat_and_slim_gate_identically_for_even_firing_tactic(self) -> None:
+        """Mixed fat/slim correctness: same credit decision on both shapes (even firing depth)."""
+        fat_credited: list[PvNode] = [
+            _cp_node(b=400, s=-100),  # S0 firing -- forced (cp gap 500)
+            _cp_node(b=380, s=300),  # D1 defender with real data
+            _cp_node(b=420, s=350),  # S2 conversion
+        ]
+        slim_credited: list[PvNode] = [
+            _cp_node(b=400, s=-100),
+            _placeholder_node(),
+            _cp_node(b=420, s=350),
+        ]
+        for line in (fat_credited, slim_credited):
+            assert (
+                apply_forcing_line_filter(line, "white", pre_flaw_eval_cp=0, firing_depth=0) is True
+            ), "Fat and slim shapes must both credit the same even-firing forced tactic"
+
+        fat_rejected: list[PvNode] = [
+            _cp_node(b=50, s=40),  # S0 not forced (10 cp gap)
+            _cp_node(b=45, s=30),
+            _cp_node(b=55, s=45),
+        ]
+        slim_rejected: list[PvNode] = [
+            _cp_node(b=50, s=40),
+            _placeholder_node(),
+            _cp_node(b=55, s=45),
+        ]
+        for line in (fat_rejected, slim_rejected):
+            assert (
+                apply_forcing_line_filter(line, "white", pre_flaw_eval_cp=0, firing_depth=0)
+                is False
+            ), "Fat and slim shapes must both reject the same non-forced tactic"
