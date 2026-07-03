@@ -1686,3 +1686,115 @@ class TestSlimBlobAssembly:
             apply_forcing_line_filter(slim_reject, "white", pre_flaw_eval_cp=0, firing_depth=0)
             is False
         )
+
+
+class TestSlimLocalDrainLineBlobs:
+    """SEED-079 item 4: _build_line_blobs assembles slim blobs (even continuation nodes only).
+
+    Node 0 comes from pos_eval + second_best_map (unchanged); even continuation nodes
+    (2, 4, ...) come from node_eval; odd indices are all-None placeholders; a missing
+    even node_eval entry stops the walk.
+    """
+
+    _FLAW_PLY = 4
+    _NODE_EVAL_7TUPLE = staticmethod(
+        lambda b, su="e2e4": (b, None, "e2e4", "e2e4 e7e5", -50, None, su)
+    )
+
+    def _walk_of_len(self, n: int) -> list:
+        """Build a walk of n boards (content unused by _build_line_blobs; only len matters)."""
+        import chess
+
+        return [chess.Board() for _ in range(n)]
+
+    def _pos_eval(self) -> dict:
+        return {self._FLAW_PLY: (30, None)}
+
+    def _second_best(self) -> dict:
+        return {self._FLAW_PLY: (-100, None, "d2d4")}
+
+    def test_even_continuation_nodes_with_placeholders(self) -> None:
+        """Walk len 5, node_eval at k=2 and k=4 → [node0, ph, n2, ph, n4]."""
+        from app.services.eval_drain import _build_line_blobs
+
+        node_eval = {
+            (self._FLAW_PLY, "missed", 2): self._NODE_EVAL_7TUPLE(120),
+            (self._FLAW_PLY, "missed", 4): self._NODE_EVAL_7TUPLE(110),
+        }
+        blob = _build_line_blobs(
+            self._FLAW_PLY,
+            "missed",
+            self._walk_of_len(5),
+            self._pos_eval(),
+            self._second_best(),
+            node_eval,
+        )
+
+        assert len(blob) == 5, f"Expected 5 nodes (0..4 with odd placeholders), got {len(blob)}"
+        assert blob[0]["b"] == 30, "node 0 must come from pos_eval"
+        assert blob[0]["su"] == "d2d4", "node 0 su must come from second_best_map"
+        assert _is_placeholder_node(blob[1]), f"Index 1 must be a placeholder, got {blob[1]}"
+        assert blob[2]["b"] == 120
+        assert _is_placeholder_node(blob[3]), f"Index 3 must be a placeholder, got {blob[3]}"
+        assert blob[4]["b"] == 110
+        assert not _is_placeholder_node(blob[-1]), "Blob must end on a real even solver node"
+
+    def test_missing_even_node_eval_stops_walk(self) -> None:
+        """Walk len 5 but node_eval only at k=2 → [node0, ph, n2] (k=4 missing = gap)."""
+        from app.services.eval_drain import _build_line_blobs
+
+        node_eval = {
+            (self._FLAW_PLY, "missed", 2): self._NODE_EVAL_7TUPLE(120),
+        }
+        blob = _build_line_blobs(
+            self._FLAW_PLY,
+            "missed",
+            self._walk_of_len(5),
+            self._pos_eval(),
+            self._second_best(),
+            node_eval,
+        )
+
+        assert len(blob) == 3, f"Missing even k=4 must stop the walk at 3 nodes, got {len(blob)}"
+        assert _is_placeholder_node(blob[1])
+        assert blob[2]["b"] == 120
+
+    def test_short_walk_yields_node0_only(self) -> None:
+        """Walk len 2 (no even continuation index) → [node0] only."""
+        from app.services.eval_drain import _build_line_blobs
+
+        blob = _build_line_blobs(
+            self._FLAW_PLY,
+            "missed",
+            self._walk_of_len(2),
+            self._pos_eval(),
+            self._second_best(),
+            node_eval={},
+        )
+
+        assert len(blob) == 1, f"Walk of len 2 has no even continuation node, got {len(blob)}"
+        assert blob[0]["b"] == 30
+
+    def test_odd_node_eval_entries_never_read(self) -> None:
+        """Stray odd-k node_eval entries are ignored — placeholders win (defense in depth)."""
+        from app.services.eval_drain import _build_line_blobs
+
+        node_eval = {
+            (self._FLAW_PLY, "missed", 1): self._NODE_EVAL_7TUPLE(-999),
+            (self._FLAW_PLY, "missed", 2): self._NODE_EVAL_7TUPLE(120),
+            (self._FLAW_PLY, "missed", 3): self._NODE_EVAL_7TUPLE(-999),
+        }
+        blob = _build_line_blobs(
+            self._FLAW_PLY,
+            "missed",
+            self._walk_of_len(4),
+            self._pos_eval(),
+            self._second_best(),
+            node_eval,
+        )
+
+        # Walk len 4: indices 0..3; even continuation k=2 only; blob ends at n2.
+        assert len(blob) == 3, f"Expected [node0, ph, n2], got {len(blob)} nodes"
+        assert _is_placeholder_node(blob[1]), "Odd node_eval entry must never be read"
+        assert blob[1]["b"] != -999
+        assert blob[2]["b"] == 120

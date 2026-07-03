@@ -3524,5 +3524,21 @@ class TestMultipv2Blobs:
                 assert isinstance(node["su"], str), (
                     "PvNode.su must be a str sentinel (never None — Pitfall 3)"
                 )
+            # SEED-079: the local drain skips odd (defender) continuation engine calls.
+            # The mock returns a real cp for EVERY evaluated board, so an all-None odd
+            # node proves the defender board was never handed to the engine; even
+            # (solver) nodes must carry real evals.
+            _placeholder = {"b": None, "bm": None, "s": None, "sm": None, "su": ""}
+            for blob in (allowed, missed):
+                for i, node in enumerate(blob):
+                    if i % 2 == 1:
+                        assert node == _placeholder, (
+                            f"Odd index {i} must be the all-None defender placeholder "
+                            f"(SEED-079), got {node}"
+                        )
+                    else:
+                        assert node["b"] is not None, (
+                            f"Even (solver) index {i} must carry a real eval, got {node}"
+                        )
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
