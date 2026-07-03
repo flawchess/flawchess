@@ -88,6 +88,13 @@ _FAILURE_RECORD_MAX_RETRIES = 5  # max attempts in failure-state retry loop
 _FAILURE_RECORD_BACKOFF_BASE_SECONDS = 2  # base for exponential backoff
 _FAILURE_RECORD_BACKOFF_CAP_SECONDS = 30  # per-sleep cap (defensive, currently never hit)
 
+# Bug fix (code-review 2026-07-02, #1): the generic-exception handler previously stored
+# the raw ``str(exc)`` in job.error / error_message, which is surfaced verbatim to clients
+# by GET /imports/{job_id} and GET /imports/active. That leaks DB/httpx/internal details
+# (connection strings, stack fragments) to the browser. Store a fixed user-safe message
+# instead; the raw exception is still captured to Sentry for diagnosis.
+_GENERIC_IMPORT_FAILURE_MSG = "Import failed due to an unexpected error. Please try re-syncing."
+
 
 @dataclass(slots=True)
 class _PositionRowsResult:
@@ -616,7 +623,14 @@ async def run_import(job_id: str) -> None:
     except Exception as exc:
         logger.exception("Import job %s failed: %s", job_id, exc)
         job.status = JobStatus.FAILED
-        job.error = str(exc)
+        # Sanitize the client-facing error (code-review 2026-07-02, #1): the raw
+        # str(exc) is surfaced to clients by GET /imports/{job_id} and /active, so a
+        # DBAPIError / httpx / connection error would leak internals. ValueError is the
+        # codebase's deliberate user-facing import error (e.g. "chess.com user 'x' not
+        # found") — safe and actionable, so keep its message. Any other type gets a
+        # fixed generic message. The raw exc always goes to Sentry for diagnosis.
+        client_error = str(exc) if isinstance(exc, ValueError) else _GENERIC_IMPORT_FAILURE_MSG
+        job.error = client_error
         sentry_sdk.set_context(
             "import", {"job_id": job_id, "user_id": job.user_id, "platform": job.platform}
         )
@@ -629,7 +643,7 @@ async def run_import(job_id: str) -> None:
             status="failed",
             games_fetched=job.games_fetched,
             games_imported=job.games_imported,
-            error_message=str(exc),
+            error_message=client_error,
             completed_at=datetime.now(timezone.utc),
         )
 
