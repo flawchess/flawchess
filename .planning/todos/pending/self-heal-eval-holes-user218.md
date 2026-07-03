@@ -11,10 +11,11 @@ files:
 ## Problem
 
 36 prod games (all user 218), 642 mid-game plies, are stamped `full_evals_completed_at`
-but have NULL evals — opening-weighted holes from the per-eval 5s wall-clock timeout firing
-under batch saturation, then Path-C-stamped complete after `MAX_EVAL_ATTEMPTS = 3`. Because
-they're stamped, the drain (`WHERE full_evals_completed_at IS NULL`) never revisits them.
-Full diagnosis: `.planning/notes/eval-chart-opening-holes-root-cause.md`.
+but have NULL evals — opening-weighted holes from a **weak Hetzner remote worker** timing
+out on high-branching opening positions (per-eval 5s `_NODES_TIMEOUT_S`), submitting partial
+evals via `/atomic-submit`, then Path-C-stamped after `MAX_EVAL_ATTEMPTS = 3` (Sentry
+FLAWCHESS-8B). Because they're stamped, the drain (`WHERE full_evals_completed_at IS NULL`)
+never revisits them. Full diagnosis: `.planning/notes/eval-chart-opening-holes-root-cause.md`.
 
 ## Fix (self-heal — cheap, cache is now warm)
 

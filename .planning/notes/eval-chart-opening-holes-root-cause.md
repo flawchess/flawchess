@@ -14,16 +14,17 @@ access logs + code read of `eval_drain.py` / `engine.py` / `eval_remote.py`.
      right edge. Not a bug (SEED-049 legitimate NULL).
   2. **Real mid-game holes** — **36 games / 642 plies, all user 218**, stamped
      `full_evals_completed_at` yet missing evals in the middle of the game.
-- **Root cause:** the in-process `server-pool` Stockfish drain's **per-eval wall-clock
-  timeout** (`_NODES_TIMEOUT_S = 5.0s`, `engine.py:100`) fired on the **slowest positions
-  (openings, high branching factor)** while user 218's **1,220-game single-user batch**
-  saturated the pool of 6. Timed-out evals return the `(None, …)` sentinel + restart the
-  worker → NULL holes (D-116-07 mark-and-continue). After `MAX_EVAL_ATTEMPTS = 3` retries
-  hitting the same slow positions, the **Path-C cap** stamped the games complete with
-  residual holes → they are permanently "complete" and never revisited.
-- **The user's intuition was directionally right** ("timeouts + forced restart") but wrong
-  about the *actor*: not the two weak remote Hetzner workers (they were idle the whole time,
-  every lease returned `204`), but the backend's own Stockfish pool under batch load.
+- **Root cause:** a **remote worker's** Stockfish (`scripts/remote_eval_worker.py`, same
+  `EnginePool` from `app.services.engine`) hit its **per-eval wall-clock timeout**
+  (`_NODES_TIMEOUT_S = 5.0s`, `engine.py:100`) on the **slowest positions (openings, high
+  branching factor)** on **weaker Hetzner hardware**. Timed-out evals return the `(None, …)`
+  sentinel; the worker submits partial evals via `/atomic-submit`. The server counts the
+  missing plies as holes (D-116-07 mark-and-continue), re-leases up to `MAX_EVAL_ATTEMPTS = 3`,
+  then the **Path-C cap** (`eval_remote.py:1300`) stamps the games complete with residual
+  holes → permanently "complete", never revisited.
+- **The user's original hypothesis was CORRECT** — weaker remote workers hitting timeouts.
+  (An earlier draft of this note wrongly blamed the in-process server pool; see the
+  "Correction" section — that was a log-buffer artifact.)
 
 ## Quantification (prod, 2026-07-03)
 
@@ -45,63 +46,92 @@ Path C does not write `full_eval_attempts`, the real attempt count is **3** (`= 
 
 ## The mechanism, end to end
 
-1. **Engine layer** (`app/services/engine.py`): the full-game drain calls
+1. **Remote worker engine** (`scripts/remote_eval_worker.py` → `app.services.engine`): the
+   worker fans its leased game's plies across its local `EnginePool`, calling
    `evaluate_nodes_multipv2` at a 1M-node budget with a defensive wall-clock timeout
-   `_NODES_TIMEOUT_S = 5.0s` (line 100; = 4× prod p90 of 1.277s). On timeout/crash the
-   worker returns the failure sentinel `(None, …)` and **restarts in place** (lines 41-42,
-   247-248, 379-380). The file's own NOTE (lines 106-118) already documents this class:
-   *"this wall-clock timeout is machine-speed-dependent — a slower/busier host times out more
-   searches, leaving eval_cp=NULL."*
-2. **Load** — user 218 was a 1,220-game single-user batch, 45% of all engine work prod did
-   today, fanned across `STOCKFISH_POOL_SIZE=6`. That saturation stretched wall-clock per
-   position; the **slowest searches (openings: high branching factor at fixed node budget)**
-   intermittently crossed 5s → `(None, …)` → hole.
-3. **Drain** (`app/services/eval_drain.py`): a timed-out position gets no eval into
-   `engine_result_map`; `_resolve_full_eval` returns `(None, None, …)` → `_apply_full_eval_results`
-   counts it as a hole (`failed_ply_count`, D-116-07 mark-and-continue, line ~627). The
-   **WR-05 circuit breaker** (line ~2564) leaves a game pending only when *all* its engine
-   calls fail; partial (opening-concentrated) failures **proceed**.
-4. **Cap / Path C** — game re-leased 3× (`MAX_EVAL_ATTEMPTS = 3`, `eval_drain.py:111`),
-   same slow positions time out each time, then Path C stamps `full_evals_completed_at` +
-   `full_pv_completed_at` anyway (D-116-07 no-loop invariant) and fires ONE aggregated
-   Sentry warning ("...stamping complete after MAX_EVAL_ATTEMPTS with residual holes").
-   Once stamped, the drain's `WHERE full_evals_completed_at IS NULL` never revisits it.
+   `_NODES_TIMEOUT_S = 5.0s` (`engine.py:100`; = 4× *prod* p90 of 1.277s). On a weaker box
+   the p90 is higher, so the slowest searches cross 5s. On timeout the pool returns the
+   `(None, …)` sentinel and restarts the worker in place. The worker code itself calls this
+   out (`remote_eval_worker.py:114`: *"with `_NODES_TIMEOUT_S=5s` the worst case is
+   ~(100/--workers) × 5s if every position times out"*). `engine.py:106-118` documents the
+   same class: *"a slower/busier host times out more searches, leaving eval_cp=NULL."*
+2. **Which positions** — the **openings** (high branching factor → longest wall-clock at a
+   fixed 1M-node budget) are the ones that cross 5s on slow hardware. The worker submits
+   whatever resolved; timed-out opening plies are simply **absent** from its submitted map.
+3. **Server apply** (`_apply_atomic_submit` → `_apply_full_eval_results`,
+   `app/routers/eval_remote.py`): a missing ply → no eval in the map → counted as a hole
+   (`failed_ply_count`, D-116-07 mark-and-continue). Under the atomic path there is **no
+   opening dedup** (`dedup_map = {}`, `eval_remote.py:290-291`) — the worker is expected to
+   eval every position — so a worker timeout is not backfilled from the cache.
+4. **Cap / Path C** — the game is re-leased up to `MAX_EVAL_ATTEMPTS = 3`; a slow worker keeps
+   timing out on the same opening positions, then Path C (`eval_remote.py:1300`) stamps
+   `full_evals_completed_at` + `full_pv_completed_at` anyway (D-116-07 no-loop invariant) and
+   fires ONE Sentry warning per game. Once stamped, the drain's
+   `WHERE full_evals_completed_at IS NULL` never revisits it.
 
 ## Why only user 218
 
-Only user 218 had a batch large enough to saturate pool=6 and push opening evals past the
-5s wall-clock timeout. The other 61 users' smaller / interleaved workloads today stayed
-under the threshold → zero holes.
+User 218 was the large batch being farmed out to remote workers during 08:36–10:02, so a
+weak Hetzner worker leased and timed out on a share of *its* games. The other 61 users'
+games today were smaller / processed at other times / by faster workers (or the in-process
+pool), so they didn't accumulate the same worker-timeout holes. It is batch-exposure +
+which-worker-drew-the-game, not anything intrinsic to 218's positions.
 
-## Who processed the games (log evidence)
+## Who processed the games — DEFINITIVE (Sentry)
 
-Prod backend access logs (`docker compose logs backend`) over the window showed **1,422
-`atomic-lease` requests, ALL returning `204 No Content`** from all three remote worker IPs
-(194.191.211.24 local Swiss box; 95.217.146.94 + 88.198.19.214 Hetzner). **Zero
-`atomic-submit`** requests. So remote workers were idle; the in-process `server-pool` drain
-did 100% of the work (no HTTP trace — it applies evals in-process). This disproves the
-weak-remote-worker hypothesis as the *actor* (though the timeout+restart *mechanism* is
-identical, just on the local pool).
+Sentry issue **FLAWCHESS-8B** = `atomic-submit: stamping complete after MAX_EVAL_ATTEMPTS
+with residual holes`:
+- **45 events, first seen `2026-07-03T08:36:10.475Z`, last seen `10:04:30Z`** — user 218's
+  exact processing window (the first event is 2 ms after the first holey game's completion).
+- Culprit `/api/eval/remote/atomic-submit`; tag `source: remote_eval_worker`;
+  **`user.geo: DE` (Germany)** → the submitting worker was a **Hetzner** box
+  (95.217.146.94 / 88.198.19.214), NOT the Swiss local box (194.191.211.24, geo CH).
+- Sample event context: `game_id 1666938, hole_count 11, attempts 3` (game 1666938 = user
+  218; had 11 holes at Path-C time, self-healed to 2 later — see below).
+- **No `full_eval_drain:` (server-pool) issue fired in 24h** → the in-process pool did NOT
+  Path-C-stamp any of these; the holes are 100% the remote atomic path.
+
+### CORRECTION — my earlier "server-pool did it" claim was wrong
+
+An earlier pass concluded the remote workers were idle (all `atomic-lease` → `204`) and the
+in-process server pool did everything. **That was a log-buffer artifact.** Docker's
+json-file buffer for this chatty backend only retains ~1h; `docker compose logs --since 8h`
+returned only ~11:59–13:00 (AFTER user 218 finished, backlog drained), whose `204`s I
+mis-read as the state *during* 08:36–10:02. The real submit traffic from the window had
+already rotated out. Sentry (durable) settles it: remote atomic workers processed the
+holey games. **Lesson: don't infer worker activity from a rotated docker log window; use
+Sentry / a durable store for anything older than ~1h on prod.**
+
+### 45 events vs 36 currently-holey games
+
+Some Path-C games self-healed after stamping (e.g. game 1666938: 11 holes → 2). Likely a
+later idempotent re-submit for the same game landed more plies before the final stamp, or a
+duplicate lease resolved some positions. So 45 Path-C stampings collapse to ~36 games still
+showing mid-game holes now; a few dropped below the "≥2-from-end" mid-game threshold.
 
 ## Dead ends ruled out
 
 - **Not a Phase-116 backfill artifact.** Both clean and holey games were stamped today; the
   full-eval stamp does not mirror `evals_completed_at`.
-- **Not NULL-poisoned dedup cache.** `opening_position_eval` currently has **0 rows with
-  NULL eval**. A dedup *hit* always yields a valid eval, so the opening holes are cache-*miss*
-  positions routed to the engine that then timed out — not bad cache donors.
+- **Not NULL-poisoned dedup cache.** `opening_position_eval` has **0 rows with NULL eval**,
+  and the atomic path doesn't dedup anyway — the holes are worker-side engine timeouts.
 
 ## Remediation (see TODO + SEED)
 
 - **Self-heal the 36 games:** re-NULL `full_evals_completed_at` AND `full_pv_completed_at`
-  AND reset `full_eval_attempts = 0` so the next drain tick reprocesses them. The
-  `opening_position_eval` cache is now **warm** for these openings, so the re-drain fills the
-  opening holes via cheap **dedup transplants** (no engine, no timeouts). **Trap:** if you
-  do not also reset `full_eval_attempts` (stored 2 → next attempt = 3 = MAX), any residual
-  hole re-hits Path C immediately and re-stamps.
-- **Durable fix:** distinguish timeout-holes from deterministically-unevaluable holes so
-  Path-C timeout-holes remain re-drainable (e.g. once the opening cache warms), and/or
-  throttle pool concurrency / lower per-user in-flight fan-out for single-user mega-batches.
+  AND reset `full_eval_attempts = 0` so a drain tick reprocesses them. The **in-process
+  server-pool** re-drain (scope=None) DOES use opening dedup, and the `opening_position_eval`
+  cache is now **warm** for these openings, so it fills the holes via cheap **dedup
+  transplants** — no engine, no timeouts. **Trap:** if you do not also reset
+  `full_eval_attempts` (stored 2 → next attempt = 3 = MAX), any residual hole re-hits Path C
+  immediately and re-stamps.
+- **Durable fix (worker timeout, not pool load):** on `/atomic-submit` Path C, don't
+  permanently stamp a game whose residual holes are worker **timeouts** — re-route it to the
+  in-process server pool (which dedups the openings) or a stronger worker instead of
+  accepting the weak worker's partial submit. Options: distinguish timeout-holes from
+  deterministically-unevaluable holes; have the worker retry its own timed-out plies (or fall
+  back to a lower node budget) before submitting; or exclude weak/slow workers from full-eval
+  leases (keep them on tier-4 blob work) via a capability/latency signal.
 
 Related: `.planning/notes/eval-completion-columns.md` (the 4 completion columns), D-116-07
 (no-loop invariant), WR-05 (circuit breaker), SEED-044 (post-move eval shift), SEED-049
