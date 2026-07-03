@@ -32,8 +32,11 @@ import pytest
 # Ensure project root is importable from the test root.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import httpx
+
 from scripts.remote_eval_worker import (
     STALL_THRESHOLD_S,
+    TRANSIENT_FAILURE_ALERT_S,
     _WORKER_ID_ALPHABET,
     _WORKER_ID_DEFAULT_LEN,
     HTTP_TIMEOUT_S,
@@ -44,13 +47,23 @@ from scripts.remote_eval_worker import (
     _eval_entry_positions,
     _eval_flaw_blob_positions,
     _generate_worker_id,
+    _handle_transient_failure,
     _Heartbeat,
     _hint_flaw_plies,
+    _is_expected_transient,
     _is_stalled,
     _run_cycle,
     _worker_role,
     parse_args,
 )
+
+
+def _http_status_error(code: int) -> httpx.HTTPStatusError:
+    """Build an HTTPStatusError carrying a response with the given status code."""
+    request = httpx.Request("GET", "https://flawchess.com/api/eval/remote/lease")
+    response = httpx.Response(code, request=request)
+    return httpx.HTTPStatusError(f"{code}", request=request, response=response)
+
 
 # ─── Worker-ID generation tests ──────────────────────────────────────────────
 
@@ -797,3 +810,95 @@ def test_stall_threshold_s_is_minutes_not_seconds() -> None:
     assert STALL_THRESHOLD_S >= 180.0, (
         f"STALL_THRESHOLD_S is {STALL_THRESHOLD_S}, expected >= 180s (~3-4 minutes)"
     )
+
+
+# ─── Transient-failure classification / escalation tests (quota hygiene) ──────
+
+
+@pytest.mark.parametrize("code", [500, 502, 503, 401, 404, 409, 425, 429])
+def test_is_expected_transient_true_for_transient_http(code: int) -> None:
+    """5xx and the auth/claim-race statuses are operational churn a polling daemon
+    rides out silently -- they must NOT be captured per-cycle (quota drain)."""
+    assert _is_expected_transient(_http_status_error(code)) is True
+
+
+@pytest.mark.parametrize("code", [400, 403, 422])
+def test_is_expected_transient_false_for_client_bug_http(code: int) -> None:
+    """A 400/403/422 signals a real payload/permission bug -- capture immediately."""
+    assert _is_expected_transient(_http_status_error(code)) is False
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        httpx.ConnectError("all connection attempts failed"),
+        httpx.ReadError("read error"),
+        httpx.ReadTimeout("read timeout"),
+        httpx.ConnectTimeout("connect timeout"),
+        ConnectionRefusedError(111, "Connection refused"),
+    ],
+)
+def test_is_expected_transient_true_for_transport_errors(exc: BaseException) -> None:
+    """Transport blips (httpx.TransportError family + raw ConnectionRefusedError) are
+    transient and must not be captured per-cycle."""
+    assert _is_expected_transient(exc) is True
+
+
+@pytest.mark.parametrize("exc", [ValueError("bad FEN"), KeyError("game_id"), RuntimeError("x")])
+def test_is_expected_transient_false_for_real_defects(exc: BaseException) -> None:
+    """Non-network exceptions (ValidationError, bad-FEN ValueError, KeyError) are real
+    defects and fall through to immediate capture."""
+    assert _is_expected_transient(exc) is False
+
+
+def test_handle_transient_failure_no_capture_before_threshold() -> None:
+    """A short-lived transient streak (deploy/restart window) logs locally and captures
+    nothing -- the whole point of the quota fix."""
+    exc = _http_status_error(502)
+    with patch("scripts.remote_eval_worker.sentry_sdk") as mock_sentry:
+        with patch("scripts.remote_eval_worker.time.time", return_value=1000.0):
+            start, alerted = _handle_transient_failure(exc, None, False)
+        assert start == 1000.0
+        assert alerted is False
+        # Still within the alert window on a later failure.
+        with patch(
+            "scripts.remote_eval_worker.time.time",
+            return_value=1000.0 + TRANSIENT_FAILURE_ALERT_S - 1.0,
+        ):
+            start, alerted = _handle_transient_failure(exc, start, alerted)
+        assert alerted is False
+        mock_sentry.capture_message.assert_not_called()
+        mock_sentry.capture_exception.assert_not_called()
+
+
+def test_handle_transient_failure_escalates_once_past_threshold() -> None:
+    """A streak persisting past TRANSIENT_FAILURE_ALERT_S escalates exactly ONE Sentry
+    event; further failures in the same streak stay silent."""
+    exc = _http_status_error(502)
+    with patch("scripts.remote_eval_worker.sentry_sdk") as mock_sentry:
+        with patch("scripts.remote_eval_worker.time.time", return_value=2000.0):
+            start, alerted = _handle_transient_failure(exc, None, False)
+        # Cross the threshold.
+        with patch(
+            "scripts.remote_eval_worker.time.time",
+            return_value=2000.0 + TRANSIENT_FAILURE_ALERT_S + 1.0,
+        ):
+            start, alerted = _handle_transient_failure(exc, start, alerted)
+        assert alerted is True
+        assert mock_sentry.capture_message.call_count == 1
+        # message must be static (grouping); variable data goes to context, not the string.
+        msg = mock_sentry.capture_message.call_args.args[0]
+        assert "%" not in msg and "502" not in msg
+        # A further failure in the same (still-alerted) streak captures nothing more.
+        with patch(
+            "scripts.remote_eval_worker.time.time",
+            return_value=2000.0 + TRANSIENT_FAILURE_ALERT_S + 30.0,
+        ):
+            _handle_transient_failure(exc, start, alerted)
+        assert mock_sentry.capture_message.call_count == 1
+
+
+def test_transient_failure_alert_s_clears_deploy_window() -> None:
+    """Regression guard: the escalation threshold must clear a normal deploy/restart
+    window so routine deploys never escalate (they're the churn we stopped capturing)."""
+    assert TRANSIENT_FAILURE_ALERT_S >= 120.0

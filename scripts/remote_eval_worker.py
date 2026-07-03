@@ -77,6 +77,18 @@ DEFAULT_WORKERS: int = 4
 # The busy path (a game was leased) is already a tight loop — unchanged.
 DEFAULT_IDLE_SLEEP: float = 1.0
 HTTP_TIMEOUT_S: float = 30.0
+# How long a streak of *expected transient* cycle failures (502/ReadTimeout/ConnectError
+# etc.) must persist before the worker escalates ONE Sentry event. A continuous polling
+# daemon rides out deploys, backend restarts, and load-balancer hiccups routinely — those
+# are operational churn, not bugs, so capturing each one floods Sentry and burns the error
+# quota (hundreds of near-identical 502/ReadError events that told us nothing). 300s clears
+# any normal deploy/restart window, so only a genuine sustained outage escalates. See
+# _is_expected_transient / _run_loop.
+TRANSIENT_FAILURE_ALERT_S: float = 300.0
+# HTTP status codes treated as transient alongside all 5xx: 401 (stale-token / rotation
+# race), 404 (lease already taken by another worker), 409 (claim conflict), 425/429
+# (too-early / rate-limited). A persistent one still escalates via the streak timer.
+_TRANSIENT_HTTP_STATUSES: frozenset[int] = frozenset({401, 404, 409, 425, 429})
 # D-10 (Phase 123 SEED-051): worker IDs must fit VARCHAR(16) on games.entry_eval_leased_by.
 # Random default is ~8 base36 chars; operator override is validated < 10 chars.
 WORKER_ID_MAX_LEN: int = 9  # exclusive upper bound: len < 10
@@ -454,6 +466,29 @@ def _loop_exception_handler(
 # ─── Main worker loop ─────────────────────────────────────────────────────────
 
 
+def _is_expected_transient(exc: BaseException) -> bool:
+    """True for operational churn a continuous polling daemon rides out silently.
+
+    A worker looping against the API across deploys, backend restarts, and load-balancer
+    hiccups WILL routinely see 5xx (Caddy 502/503 mid-restart), auth/claim races (401/404/
+    409), and transport blips (ConnectError, ReadError, ReadTimeout, connection refused).
+    None are bugs. Capturing each on every failed cycle floods Sentry and burns the error
+    quota, and violates the CLAUDE.md "retry loops: capture on last attempt only" rule.
+    These are ridden out; only a streak that persists past TRANSIENT_FAILURE_ALERT_S (a
+    genuine sustained outage, not a deploy blip) escalates one event — see _run_loop.
+
+    Anything NOT matched here (e.g. a pydantic ValidationError on a lease/submit payload,
+    a bad-FEN ValueError, an unexpected type) is a real defect and captured immediately.
+    """
+    if isinstance(exc, httpx.HTTPStatusError):
+        code = exc.response.status_code
+        return code >= 500 or code in _TRANSIENT_HTTP_STATUSES
+    # httpx.TransportError covers ConnectError/ReadError/ReadTimeout/ConnectTimeout;
+    # the builtin ConnectionError covers a raw ConnectionRefusedError that reaches here
+    # unwrapped.
+    return isinstance(exc, (httpx.TransportError, ConnectionError))
+
+
 async def _run_loop(
     client: httpx.AsyncClient,
     pool: EnginePool,
@@ -470,35 +505,84 @@ async def _run_loop(
     unless `dry_run`. Exits cleanly when `not loop` after one game cycle.
 
     Each cycle is wrapped in an exception boundary: a transient network error,
-    a 5xx (raise_for_status), or a bad FEN must not kill a continuous daemon. The
-    exception is Sentry-captured (CLAUDE.md rule for operational except blocks) and,
-    when looping, the worker backs off `idle_sleep` and retries. When not looping the
+    a 5xx (raise_for_status), or a bad FEN must not kill a continuous daemon. When
+    looping, the worker backs off `idle_sleep` and retries. When not looping the
     exception propagates so --once surfaces failures with a non-zero exit.
+
+    Sentry policy (quota hygiene): expected transient failures (_is_expected_transient)
+    are logged locally and NOT captured per-cycle — only ONE event escalates once a
+    failure streak has persisted past TRANSIENT_FAILURE_ALERT_S (a real sustained outage,
+    not a deploy blip). Unexpected exceptions (a genuine bug) are captured immediately.
+    A successful cycle resets the streak. `--once` runs surface everything.
 
     SEED-063: `heartbeat.mark()` is called after each `_run_cycle` that returns
     WITHOUT raising -- BEFORE the stop check. A clean 204 idle cycle returns
     normally, so it counts as progress (an idle worker with an empty queue is
     healthy, not stalled). A failed cycle (the except branch) is NOT progress.
     """
+    # Transient-failure streak tracking: start timestamp of the current uninterrupted
+    # run of expected-transient failures, and whether we've already escalated it once.
+    streak_start: float | None = None
+    streak_alerted: bool = False
     while True:
         try:
             stop = await _run_cycle(client, pool, sf_version, idle_sleep, dry_run, loop)
         except (KeyboardInterrupt, asyncio.CancelledError):
             raise
-        except Exception:
-            # Operational failure (network blip, 5xx, bad FEN). Capture once, then
-            # back off and retry if this is a continuous daemon; otherwise re-raise.
-            sentry_sdk.capture_exception()
-            _log("Cycle failed; see Sentry. Backing off...")
+        except Exception as exc:
+            # --once (manual run): surface everything, then re-raise for a non-zero exit.
             if not loop:
+                sentry_sdk.capture_exception(exc)
                 raise
+            if _is_expected_transient(exc):
+                streak_start, streak_alerted = _handle_transient_failure(
+                    exc, streak_start, streak_alerted
+                )
+            else:
+                # Genuine defect (bad payload, ValidationError, unexpected type): capture now.
+                sentry_sdk.capture_exception(exc)
+                _log("Cycle failed (unexpected); see Sentry. Backing off...")
             await asyncio.sleep(idle_sleep)
             continue
 
+        # Success: reset the transient-failure streak.
+        streak_start = None
+        streak_alerted = False
         if heartbeat is not None:
             heartbeat.mark()
         if stop:
             return
+
+
+def _handle_transient_failure(
+    exc: BaseException,
+    streak_start: float | None,
+    streak_alerted: bool,
+) -> tuple[float, bool]:
+    """Log a transient cycle failure; escalate ONE Sentry event if the streak persists.
+
+    Returns the updated (streak_start, streak_alerted). The first transient failure of a
+    streak stamps `streak_start`; once the streak has run continuously past
+    TRANSIENT_FAILURE_ALERT_S we capture exactly one warning (variable data goes in the
+    Sentry context, not the message, to preserve grouping) and set `streak_alerted`.
+    """
+    now = time.time()
+    if streak_start is None:
+        streak_start = now
+        streak_alerted = False
+    elapsed = now - streak_start
+    if elapsed >= TRANSIENT_FAILURE_ALERT_S and not streak_alerted:
+        sentry_sdk.set_context(
+            "worker_outage", {"streak_seconds": round(elapsed), "error": repr(exc)}
+        )
+        sentry_sdk.set_tag("source", "remote_eval_worker")
+        sentry_sdk.capture_message(
+            "Remote eval worker: transient failures persisting past threshold",
+            level="warning",
+        )
+        streak_alerted = True
+    _log(f"Cycle failed (transient, {round(elapsed)}s streak). Backing off...")
+    return streak_start, streak_alerted
 
 
 async def _run_cycle(

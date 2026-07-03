@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import ast
 import inspect
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -2325,14 +2326,18 @@ class TestHoleAwareCompletionGate:
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
 
-    async def test_cap_reached_stamps_and_emits_sentry(
+    async def test_cap_reached_stamps_and_logs(
         self,
         full_drain_test_user_119: int,
         full_drain_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """After full_eval_attempts reaches MAX_EVAL_ATTEMPTS with a persistent hole,
-        the game IS stamped complete AND exactly one aggregated Sentry event fires.
+        the game IS stamped complete and the cap outcome is LOGGED locally — NOT sent to
+        Sentry. The cap path is the expected terminal state of the bounded-retry drain
+        (D-116-07), so capturing it per game burned the error quota (was FLAWCHESS-5V);
+        it was demoted to logger.warning. Sentry must NOT be touched on this path.
 
         Seed game with full_eval_attempts = MAX_EVAL_ATTEMPTS - 1 so the NEXT tick
         is the cap tick (attempts + 1 >= MAX_EVAL_ATTEMPTS).
@@ -2361,17 +2366,12 @@ class TestHoleAwareCompletionGate:
             ],
         )
 
-        set_context_calls: list[tuple[str, Any]] = []
         capture_message_calls: list[str] = []
 
         drain_module = _patch_drain_for_tick_tests(
             monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_119
         )
-        monkeypatch.setattr(
-            drain_module.sentry_sdk,
-            "set_context",
-            lambda name, ctx: set_context_calls.append((name, ctx)),
-        )
+        # Guard: the cap path must not emit ANY Sentry event.
         monkeypatch.setattr(
             drain_module.sentry_sdk,
             "capture_message",
@@ -2389,7 +2389,8 @@ class TestHoleAwareCompletionGate:
         monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
 
         try:
-            processed = await drain_module._full_drain_tick()
+            with caplog.at_level(logging.WARNING, logger="app.services.eval_drain"):
+                processed = await drain_module._full_drain_tick()
             assert processed is True, "Cap tick must report processed (stamp happens at cap)"
 
             async with full_drain_session_maker() as verify:
@@ -2405,24 +2406,24 @@ class TestHoleAwareCompletionGate:
                 "full_evals_completed_at must be stamped at cap even with residual holes"
             )
 
-            # Exactly ONE aggregated Sentry capture_message call for the cap event.
+            # No Sentry event for the cap path (quota fix — FLAWCHESS-5V).
             cap_events = [m for m in capture_message_calls if "MAX_EVAL_ATTEMPTS" in m]
-            assert len(cap_events) == 1, (
-                f"Exactly one cap Sentry event expected at MAX_EVAL_ATTEMPTS, "
-                f"got {len(cap_events)}: {cap_events}"
+            assert cap_events == [], (
+                f"Cap path must NOT capture to Sentry (demoted to log), got {cap_events}"
             )
 
-            # set_context must carry game_id and hole_count (NOT interpolated in message).
-            eval_ctx = next(
-                (ctx for name, ctx in set_context_calls if name == "eval" and "hole_count" in ctx),
-                None,
+            # Exactly one WARNING log line carrying the variables (game_id in the record).
+            cap_logs = [
+                r
+                for r in caplog.records
+                if r.levelno == logging.WARNING and "MAX_EVAL_ATTEMPTS" in r.getMessage()
+            ]
+            assert len(cap_logs) == 1, (
+                f"Expected one cap warning log, got {len(cap_logs)}: "
+                f"{[r.getMessage() for r in cap_logs]}"
             )
-            assert eval_ctx is not None, (
-                "sentry_sdk.set_context('eval', {...}) with 'hole_count' must be called "
-                "at the cap event — variables in context, not in message string"
-            )
-            assert eval_ctx.get("game_id") == game_id, (
-                f"set_context must carry game_id={game_id}, got {eval_ctx}"
+            assert str(game_id) in cap_logs[0].getMessage(), (
+                f"Cap log must carry game_id={game_id}, got {cap_logs[0].getMessage()!r}"
             )
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
