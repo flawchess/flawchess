@@ -41,6 +41,8 @@ import sqlalchemy as sa
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.services.forcing_line_gate import PvNode
+
 # No module-level `pytestmark = pytest.mark.asyncio`: asyncio_mode = "auto"
 # (pyproject.toml) auto-marks every `async def` test, so the module mark was
 # redundant — and it also stamped the sync tests in this file (e.g.
@@ -1548,7 +1550,7 @@ def _submit_eval(
     )
 
 
-def _is_placeholder_node(node: dict) -> bool:
+def _is_placeholder_node(node: PvNode) -> bool:
     """True when a PvNode is the SEED-079 all-None odd-index defender placeholder."""
     return (
         node["b"] is None
@@ -1658,9 +1660,7 @@ class TestSlimBlobAssembly:
         slim = _assemble_one_line_blob(20, "missed", node_results, sentinel_lines=set())
 
         fat_decision = apply_forcing_line_filter(fat, "white", pre_flaw_eval_cp=0, firing_depth=0)
-        slim_decision = apply_forcing_line_filter(
-            slim, "white", pre_flaw_eval_cp=0, firing_depth=0
-        )
+        slim_decision = apply_forcing_line_filter(slim, "white", pre_flaw_eval_cp=0, firing_depth=0)
         assert fat_decision is True, "Sanity: the fat blob must be credited"
         assert slim_decision == fat_decision, (
             "Slim blob must yield the same credit decision as its fat equivalent "
