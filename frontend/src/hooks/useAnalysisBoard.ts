@@ -35,11 +35,13 @@ export interface AnalysisBoardState {
   currentNodeId: NodeId | null;
   mainLine: NodeId[];
   /**
-   * IDs of nodes grafted by insertPvLine, ordered from the fork node's first
-   * PV move to the last. Empty when no PV is expanded. Cleared by clearPvLine.
-   * Ephemeral — not URL-encoded (D-01).
+   * Membership set of every node grafted by insertPvLine, across ALL currently
+   * open tactic lines (Quick 260703-kyb: flat siblings, multiple lines can be
+   * open at once — this is a union, not a single line). Ephemeral — not
+   * URL-encoded (D-01). Emptied by clearAllSidelines(); individual lines are
+   * removed via deleteSubtree(rootId).
    */
-  pvLine: NodeId[];
+  pvNodeIds: Set<NodeId>;
   rootFen: string;
   nextId: number;
 }
@@ -50,9 +52,11 @@ export interface AnalysisBoardReturn {
   currentNodeId: NodeId | null;
   nodes: Map<NodeId, MoveNode>;
   mainLine: NodeId[];
-  /** Currently expanded PV nodes, ordered from fork's first move to end. */
-  pvLine: NodeId[];
+  /** Membership set of every node belonging to a currently open tactic line. */
+  pvNodeIds: Set<NodeId>;
   rootFen: string;
+  /** The id the NEXT grafted node (insertPvLine/makeMove/playUciLine) will receive. */
+  nextId: number;
   lastMove: { from: string; to: string } | null;
   makeMove: (from: string, to: string) => boolean;
   goBack: () => void;
@@ -71,8 +75,10 @@ export interface AnalysisBoardReturn {
    * insertPvLine(pvSans, forkNodeId) — graft a PV sideline onto the existing
    * node map in a single setState call (L-1/L-7: stateRef only syncs after
    * render; calling makeMove in a loop would graft every PV node onto the same
-   * stale parent). Sets pvLine to the new node IDs, leaves mainLine untouched,
-   * and parks currentNodeId at forkNodeId (not the first PV move).
+   * stale parent). UNIONS the new node IDs into pvNodeIds (never clobbers a
+   * prior open line), leaves mainLine untouched, and parks currentNodeId at
+   * forkNodeId (not the first PV move). The line's root node id equals
+   * nextId at call time.
    */
   insertPvLine: (pvSans: string[], forkNodeId: NodeId) => void;
   /**
@@ -82,11 +88,20 @@ export interface AnalysisBoardReturn {
    */
   playUciLine: (uciMoves: string[]) => void;
   /**
-   * clearPvLine() — delete all pvLine nodes from the map, empty pvLine, and
-   * recover currentNodeId to the nearest ancestor on mainLine.
+   * deleteSubtree(rootId) — delete rootId and all its descendants from the
+   * node map, drop those ids from pvNodeIds, and recover currentNodeId to
+   * rootId's parent (the fork parent) when it was inside the deleted subtree.
+   * The single delete op behind both the free-move × affordance and the
+   * tactic chip toggle-off.
    */
-  clearPvLine: () => void;
-  /** isOnPvLine(nodeId) — true iff nodeId was grafted by the last insertPvLine. */
+  deleteSubtree: (rootId: NodeId) => void;
+  /**
+   * clearAllSidelines() — remove every node NOT in mainLine, empty pvNodeIds,
+   * and recover currentNodeId to its nearest mainLine ancestor (or null at
+   * root). Used by Reset.
+   */
+  clearAllSidelines: () => void;
+  /** isOnPvLine(nodeId) — true iff nodeId belongs to a currently open PV line. */
   isOnPvLine: (nodeId: NodeId) => boolean;
   containerRef: RefObject<HTMLDivElement | null>;
 }
@@ -144,7 +159,7 @@ function makeInitialState(rootFen: string): AnalysisBoardState {
     nodes: new Map<NodeId, MoveNode>(),
     currentNodeId: null,
     mainLine: [],
-    pvLine: [],
+    pvNodeIds: new Set<NodeId>(),
     rootFen,
     nextId: 0,
   };
@@ -226,20 +241,24 @@ export function useAnalysisBoard(
   /**
    * goForward() — advance to the first child of currentNodeId in insertion
    * order (lowest id). No-op when the node has no children (BOARD-02).
+   *
+   * When one or more flaw PV sidelines are grafted and the board is parked at
+   * a fork node, prefer the lowest-id child that is IN pvNodeIds (step into an
+   * open sideline) — the main-line continuation would otherwise win by lowest
+   * id (created earlier by loadMainLine than the grafted PV node), making an
+   * open flaw line feel un-enterable (UAT thl item 4). Falls back to the
+   * lowest-id child overall when no child is a PV member.
    */
   const goForward = useCallback((): void => {
     setState((prev) => {
-      // When a flaw PV sideline is grafted and the board is parked at its fork node,
-      // step INTO the sideline rather than continuing down the main line. The main-line
-      // continuation has a lower id (created by loadMainLine) than the grafted PV node
-      // (created later by insertPvLine), so findFirstChild would otherwise pick the main
-      // line and the open flaw line would feel un-enterable (UAT thl item 4).
-      if (prev.pvLine.length > 0) {
-        const firstPvId = prev.pvLine[0];
-        const firstPvNode = firstPvId !== undefined ? prev.nodes.get(firstPvId) : undefined;
-        if (firstPvNode && firstPvNode.parentId === prev.currentNodeId) {
-          return { ...prev, currentNodeId: firstPvNode.id };
+      if (prev.pvNodeIds.size > 0) {
+        let pvChild: MoveNode | undefined;
+        for (const node of prev.nodes.values()) {
+          if (node.parentId === prev.currentNodeId && prev.pvNodeIds.has(node.id)) {
+            if (!pvChild || node.id < pvChild.id) pvChild = node;
+          }
         }
+        if (pvChild) return { ...prev, currentNodeId: pvChild.id };
       }
       const child = findFirstChild(prev.nodes, prev.currentNodeId);
       if (!child) return prev;
@@ -292,7 +311,7 @@ export function useAnalysisBoard(
       nodes: newNodes,
       currentNodeId: lastId !== undefined ? lastId : null,
       mainLine: newMainLine,
-      pvLine: [],
+      pvNodeIds: new Set<NodeId>(),
       rootFen: newRootFen,
       nextId: id,
     });
@@ -325,8 +344,11 @@ export function useAnalysisBoard(
    * we replicate the loadMainLine batch-build loop but graft onto the existing
    * node map rather than replacing it.
    *
-   * After the call: pvLine holds the new PV node IDs, mainLine is untouched,
-   * and currentNodeId is parked at forkNodeId (not the first PV move).
+   * After the call: the new node IDs are UNIONED into pvNodeIds (any
+   * previously-open line's ids are preserved — flat siblings, Quick
+   * 260703-kyb), mainLine is untouched, and currentNodeId is parked at
+   * forkNodeId (not the first PV move). The line's root node is the id equal
+   * to prev.nextId at call time.
    */
   const insertPvLine = useCallback((pvSans: string[], forkNodeId: NodeId): void => {
     setState((prev) => {
@@ -334,7 +356,7 @@ export function useAnalysisBoard(
       if (!forkNode) return prev; // guard: forkNodeId missing → no-op (T-140-01a)
 
       const newNodes = new Map(prev.nodes);
-      const newPvLine: NodeId[] = [];
+      const newPvIds: NodeId[] = [];
       const chess = new Chess(forkNode.fen);
       let prevId: NodeId | null = forkNodeId;
       let id = prev.nextId;
@@ -344,15 +366,18 @@ export function useAnalysisBoard(
         if (!move) break; // break on illegal SAN rather than crashing (T-140-01a)
         const node = buildNode(id, move.san, chess.fen(), move.from, move.to, prevId);
         newNodes.set(id, node);
-        newPvLine.push(id);
+        newPvIds.push(id);
         prevId = id;
         id++;
       }
 
+      const newPvNodeIds = new Set(prev.pvNodeIds);
+      for (const pvId of newPvIds) newPvNodeIds.add(pvId);
+
       return {
         ...prev,
         nodes: newNodes,
-        pvLine: newPvLine,
+        pvNodeIds: newPvNodeIds,
         currentNodeId: forkNodeId, // park at fork, not first PV move
         nextId: id,
       };
@@ -360,37 +385,85 @@ export function useAnalysisBoard(
   }, []);
 
   /**
-   * clearPvLine() — delete all pvLine nodes from the map, empty pvLine, and
-   * recover currentNodeId to the nearest ancestor on mainLine.
+   * deleteSubtree(rootId) — delete rootId and all its transitive descendants
+   * from the node map, drop those ids from pvNodeIds, and recover
+   * currentNodeId to rootId's parent (the fork parent) if it was inside the
+   * deleted subtree. The single delete op behind both the free-move ×
+   * affordance and the tactic chip toggle-off (Quick 260703-kyb).
    *
    * Uses a functional setState updater matching the goBack() idiom to always
-   * act on the latest state. Walks parentId up from currentNodeId until it
-   * reaches a mainLine node; falls back to null (root) if none is found.
+   * act on the latest state.
    */
-  const clearPvLine = useCallback((): void => {
+  const deleteSubtree = useCallback((rootId: NodeId): void => {
     setState((prev) => {
-      if (prev.pvLine.length === 0) return prev; // already clear — no-op
+      if (!prev.nodes.has(rootId)) return prev; // no-op when rootId is absent
 
-      // Recover currentNodeId BEFORE deleting pvLine nodes: walk parentId up
-      // through prev.nodes (which still has the pvLine entries) until we reach
-      // a mainLine node or root. Using newNodes here would cause dangling
-      // lookups since pvLine ids are about to be deleted.
+      // Compute the deleted id set: rootId plus all transitive descendants.
+      // Iterate until the set stops growing (nodes whose parentId is already
+      // in the deleted set get added).
+      const deleted = new Set<NodeId>([rootId]);
+      let grew = true;
+      while (grew) {
+        grew = false;
+        for (const node of prev.nodes.values()) {
+          if (node.parentId !== null && deleted.has(node.parentId) && !deleted.has(node.id)) {
+            deleted.add(node.id);
+            grew = true;
+          }
+        }
+      }
+
+      const newNodes = new Map(prev.nodes);
+      for (const id of deleted) newNodes.delete(id);
+
+      const newPvNodeIds = new Set(prev.pvNodeIds);
+      for (const id of deleted) newPvNodeIds.delete(id);
+
+      // Recover currentNodeId to the fork parent when it was inside the
+      // deleted subtree; otherwise leave it unchanged.
+      const currentNodeId = prev.currentNodeId;
+      const recoveredId =
+        currentNodeId !== null && deleted.has(currentNodeId)
+          ? (prev.nodes.get(rootId)?.parentId ?? null)
+          : currentNodeId;
+
+      return {
+        ...prev,
+        nodes: newNodes,
+        pvNodeIds: newPvNodeIds,
+        currentNodeId: recoveredId,
+      };
+    });
+  }, []);
+
+  /**
+   * clearAllSidelines() — remove every node NOT in mainLine, empty pvNodeIds,
+   * and recover currentNodeId to its nearest mainLine ancestor (or null at
+   * root). Used by Reset (Quick 260703-kyb — generalizes the old
+   * clearPvLine singleton to every open sideline, free-move or tactic).
+   */
+  const clearAllSidelines = useCallback((): void => {
+    setState((prev) => {
       const mainLineSet = new Set(prev.mainLine);
+
+      // Recover currentNodeId BEFORE dropping non-mainLine nodes: walk parentId
+      // up through prev.nodes (which still has every entry) until reaching a
+      // mainLine node or root.
       let recoveredId: NodeId | null = prev.currentNodeId;
       while (recoveredId !== null && !mainLineSet.has(recoveredId)) {
         const node = prev.nodes.get(recoveredId);
         recoveredId = node?.parentId ?? null;
       }
 
-      const newNodes = new Map(prev.nodes);
-      for (const id of prev.pvLine) {
-        newNodes.delete(id);
+      const newNodes = new Map<NodeId, MoveNode>();
+      for (const [id, node] of prev.nodes) {
+        if (mainLineSet.has(id)) newNodes.set(id, node);
       }
 
       return {
         ...prev,
         nodes: newNodes,
-        pvLine: [],
+        pvNodeIds: new Set<NodeId>(),
         currentNodeId: recoveredId,
       };
     });
@@ -407,7 +480,7 @@ export function useAnalysisBoard(
    *
    * Differences from insertPvLine: it lands on the line's end (not the fork),
    * reuses an existing child when its from/to already matches (so re-clicking the
-   * same line doesn't spawn duplicate branches), and does NOT touch pvLine /
+   * same line doesn't spawn duplicate branches), and does NOT touch pvNodeIds /
    * tactic-overlay state. Like insertPvLine it batch-builds in one setState because
    * stateRef only syncs after render (L-1/L-7).
    */
@@ -459,11 +532,12 @@ export function useAnalysisBoard(
   }, []);
 
   /**
-   * isOnPvLine(nodeId) — true iff the node was grafted by the last insertPvLine.
+   * isOnPvLine(nodeId) — true iff the node belongs to a currently open PV
+   * line (pvNodeIds membership — reflects EVERY open line, not just one).
    * Reads from stateRef to avoid stale-closure issues (mirrors isOnMainLine).
    */
   const isOnPvLine = useCallback((nodeId: NodeId): boolean => {
-    return stateRef.current.pvLine.includes(nodeId);
+    return stateRef.current.pvNodeIds.has(nodeId);
   }, []);
 
   // Container-scoped keyboard handler (ArrowLeft = goBack, ArrowRight = goForward).
@@ -494,8 +568,9 @@ export function useAnalysisBoard(
     currentNodeId: state.currentNodeId,
     nodes: state.nodes,
     mainLine: state.mainLine,
-    pvLine: state.pvLine,
+    pvNodeIds: state.pvNodeIds,
     rootFen: state.rootFen,
+    nextId: state.nextId,
     lastMove,
     makeMove,
     goBack,
@@ -506,7 +581,8 @@ export function useAnalysisBoard(
     isOnMainLine,
     insertPvLine,
     playUciLine,
-    clearPvLine,
+    deleteSubtree,
+    clearAllSidelines,
     isOnPvLine,
     containerRef,
   };
