@@ -830,6 +830,13 @@ export default function Analysis() {
     if (nodeId !== undefined) goToNode(nodeId);
   };
 
+  // Cycling a flaw tag/severity/motif chip surfaces the eval-chart tooltip on the
+  // targeted ply, mirroring the Library game card's click-to-cycle. commandedPly is
+  // the target ply; commandSeq is a nonce so re-clicking the same ply re-fires the
+  // reveal (and re-shows the tooltip after the chart's outside-click dismissal).
+  const [tagCommandedPly, setTagCommandedPly] = useState<number | null>(null);
+  const [tagCommandSeq, setTagCommandSeq] = useState(0);
+
   // ── Render ────────────────────────────────────────────────────────────────────
 
   // Board + EvalBar row — the single source of the `analysis-board` ref/testid and the
@@ -951,6 +958,8 @@ export default function Analysis() {
         sliderDisabled={!isOnMainLineForSlider}
         onHoverPlyChange={handleEvalChartPlyChange}
         syncPly={evalChartPly}
+        commandedPly={tagCommandedPly}
+        commandSeq={tagCommandSeq}
         highlightedPlies={highlightedPlies}
       />
     ) : null;
@@ -970,6 +979,9 @@ export default function Analysis() {
           // T-140-02b: L-8 guard for noUncheckedIndexedAccess.
           const nodeId = mainLine[ply];
           if (nodeId !== undefined) goToNode(nodeId);
+          // Surface the eval-chart tooltip on the cycled ply (like the game card).
+          setTagCommandedPly(ply);
+          setTagCommandSeq((s) => s + 1);
         }}
         onHighlightChange={withHighlight ? setTagsHighlightedPlies : undefined}
       />
