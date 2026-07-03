@@ -316,8 +316,8 @@ def _collect_full_ply_targets(
 async def _fetch_dedup_evals(
     session: AsyncSession,
     full_hashes: Sequence[int],
-) -> dict[int, tuple[int | None, int | None, str | None]]:
-    """Batch-fetch a position's OWN eval + best_move for opening-region hashes (EVAL-03, D-116-02).
+) -> dict[int, tuple[int | None, int | None, str | None, str | None]]:
+    """Batch-fetch a position's OWN eval + best_move + pv for opening-region hashes (EVAL-03, D-116-02).
 
     SEED-053 / D-123.1-05: reads the position-keyed opening_position_eval cache instead
     of the former self-join on game_positions. The cache is a hash-unique relation keyed by
@@ -330,7 +330,9 @@ async def _fetch_dedup_evals(
     remain entirely in the caller at ~line 1640 — UNCHANGED. This function only changes
     which table backs the lookup.
 
-    Returns {full_hash: (eval_cp, eval_mate, best_move)} for hashes present in the cache.
+    Returns {full_hash: (eval_cp, eval_mate, best_move, pv)} for hashes present in the
+    cache. pv is the cached PV string FROM the position (SEED-076 follow-up); it may
+    be None for cache rows written before the pv column existed or not yet backfilled.
     """
     if not full_hashes:
         return {}
@@ -340,9 +342,10 @@ async def _fetch_dedup_evals(
             OpeningPositionEval.eval_cp,
             OpeningPositionEval.eval_mate,
             OpeningPositionEval.best_move,
+            OpeningPositionEval.pv,
         ).where(OpeningPositionEval.full_hash.in_(full_hashes))
     )
-    return {row[0]: (row[1], row[2], row[3]) for row in result.all()}
+    return {row[0]: (row[1], row[2], row[3], row[4]) for row in result.all()}
 
 
 async def _any_active_import_or_entry_ply_pending(session: AsyncSession) -> bool:
@@ -368,7 +371,7 @@ async def _any_active_import_or_entry_ply_pending(session: AsyncSession) -> bool
 
 def _resolve_full_eval(
     target: _FullPlyEvalTarget,
-    dedup_map: dict[int, tuple[int | None, int | None, str | None]],
+    dedup_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
     engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
 ) -> tuple[int | None, int | None, str | None, str | None]:
     """Resolve a target's POSITION-keyed eval + decision best_move/pv (pure; WR-04).
@@ -382,10 +385,14 @@ def _resolve_full_eval(
 
     Priority: dedup hit (EVAL-03, opening region only) > engine result >
     (None, None, None, None) hole (D-116-07). pv_string is always None for dedup'd
-    positions (the per-flaw PV is only written at flaw-adjacent plies N+1 — D-117-02).
+    positions here — the dedup map's cached pv (element [3]) is intentionally NOT
+    surfaced through this function, which only feeds _apply_full_eval_results'
+    eval/best_move writes. The cached pv is merged into engine_result_map upstream
+    at submit time instead (SEED-076 follow-up), so flaw-adjacent PV writes still
+    happen elsewhere.
     """
     if not target.is_terminal and target.ply <= _DEDUP_MAX_PLY and target.full_hash in dedup_map:
-        eval_cp, eval_mate, best_move = dedup_map[target.full_hash]
+        eval_cp, eval_mate, best_move, _pv = dedup_map[target.full_hash]
         return eval_cp, eval_mate, best_move, None
     return engine_result_map.get(target.ply, (None, None, None, None))
 
@@ -536,11 +543,20 @@ async def _batch_update_eval_rows(
 async def _apply_full_eval_results(
     session: AsyncSession,
     targets: Sequence[_FullPlyEvalTarget],
-    dedup_map: dict[int, tuple[int | None, int | None, str | None]],
+    dedup_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
     engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
     is_lichess_eval_game: bool,
+    preserve_existing_evals: bool = False,
 ) -> int:
     """Write POST-MOVE evals + best_move to GamePosition rows (WR-04; SEED-044).
+
+    preserve_existing_evals (SEED-076): submit paths that use an INCREMENTAL re-lease
+    (only the still-missing positions are handed to the worker) pass True. An engine-game
+    row that already carries a non-NULL DB eval but resolves to None this pass — because
+    its filling position was omitted from the re-lease and the worker did not resend it —
+    is then treated as already-resolved: NOT counted as a hole and NOT overwritten. The
+    local drain leaves this False (it re-evaluates the whole game each tick), so its
+    behavior is unchanged (zero blast radius).
 
     Batched single-round-trip writes replace the former per-row UPDATE loop
     (FLAWCHESS-6B N+1 fix). UPDATEs run sequentially against the caller-owned
@@ -619,6 +635,17 @@ async def _apply_full_eval_results(
                 # already omits the terminal donor when is_game_over()). This NULL is
                 # legitimate, not a transient Stockfish timeout. Do NOT count it as a
                 # hole; the row is written normally (eval stays NULL, best_move if set).
+                if best_move is not None:
+                    bm_only_rows.append((ply, best_move))
+            elif preserve_existing_evals and (
+                target.eval_cp is not None or target.eval_mate is not None
+            ):
+                # SEED-076: incremental re-lease. This row's eval was filled by a prior
+                # partial submit and its filling position was omitted from the re-lease,
+                # so the worker did not resend it (fresh resolution is None). It is NOT a
+                # hole — preserve the existing DB eval (do not overwrite with NULL) and do
+                # not count it. Without this guard the whole-game failed_ply_count would
+                # recount every already-eval'd ply as a hole and never reach Path A.
                 if best_move is not None:
                     bm_only_rows.append((ply, best_move))
             else:
@@ -926,7 +953,7 @@ async def _flaw_engine_plies(session: AsyncSession, game_id: int) -> set[int]:
 
 def _reconstruct_pos_eval(
     targets: Sequence[_FullPlyEvalTarget],
-    dedup_map: dict[int, tuple[int | None, int | None, str | None]],
+    dedup_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
     engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
 ) -> dict[int, tuple[int | None, int | None]]:
     """Position-keyed eval map (eval OF each ply's position) assembled in-memory from
@@ -944,7 +971,7 @@ def _reconstruct_pos_eval(
         if engine_entry is not None:
             pos_eval[t.ply] = (engine_entry[0], engine_entry[1])
         elif not t.is_terminal and t.ply <= _DEDUP_MAX_PLY and t.full_hash in dedup_map:
-            cp, mate, _bm = dedup_map[t.full_hash]
+            cp, mate, _bm, _pv = dedup_map[t.full_hash]
             pos_eval[t.ply] = (cp, mate)
     return pos_eval
 
@@ -952,7 +979,7 @@ def _reconstruct_pos_eval(
 async def _missing_flaw_pv_targets(
     game_id: int,
     targets: Sequence[_FullPlyEvalTarget],
-    dedup_map: dict[int, tuple[int | None, int | None, str | None]],
+    dedup_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
     engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
 ) -> list[_FullPlyEvalTarget]:
     """SEED-056: find engine-game flaw plies that took a pv-less opening dedup transplant.
@@ -1022,7 +1049,7 @@ async def _missing_flaw_pv_targets(
 async def _fill_engine_game_flaw_pvs(
     game_id: int,
     targets: Sequence[_FullPlyEvalTarget],
-    dedup_map: dict[int, tuple[int | None, int | None, str | None]],
+    dedup_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
     engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
     is_lichess_eval_game: bool,
 ) -> None:
@@ -1067,7 +1094,7 @@ async def _fill_engine_game_flaw_pvs(
 async def _fill_engine_game_flaw_second_best(
     game_id: int,
     targets: Sequence[_FullPlyEvalTarget],
-    dedup_map: dict[int, tuple[int | None, int | None, str | None]],
+    dedup_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
     engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
     second_best_map: dict[int, tuple[int | None, int | None, str | None]],
     is_lichess_eval_game: bool,
@@ -1172,7 +1199,7 @@ def _build_line_blobs(
 async def _build_flaw_multipv2_blobs(
     game_id: int,
     targets: Sequence[_FullPlyEvalTarget],
-    dedup_map: dict[int, tuple[int | None, int | None, str | None]],
+    dedup_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
     engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
     second_best_map: dict[int, tuple[int | None, int | None, str | None]],
 ) -> dict[int, tuple[list[PvNode], list[PvNode]]]:
@@ -2369,8 +2396,16 @@ async def _upsert_opening_cache(
     - Terminal donors (is_terminal=True; no game_positions row, eval is post-move only)
     - Null-eval holes (engine failure — nothing to cache)
 
-    Uses ON CONFLICT (full_hash) DO NOTHING (first-write-wins per D-123.1-04). Insert
-    volume is self-limiting: as the cache fills, fewer misses reach here each tick.
+    eval_cp/eval_mate/best_move stay first-write-wins (ON CONFLICT DO NOTHING semantics
+    via the WHERE guard below). pv alone self-heals: SEED-076 follow-up — a pre-existing
+    cache row written before the pv column existed (or whose engine pass raced without a
+    pv) stays pv-less forever without this backfill, which permanently blocks the
+    atomic-submit path from carrying a walkable PV for any flaw that lands on that
+    position. DO UPDATE SET pv = EXCLUDED.pv only fires when the existing row's pv IS
+    NULL AND the new value is non-NULL, so it never clobbers a real cached pv and never
+    touches eval_cp/eval_mate/best_move on conflict.
+
+    Insert volume is self-limiting: as the cache fills, fewer misses reach here each tick.
 
     The INSERT is inside the existing Step-4 write transaction. If it fails the whole txn
     rolls back and the game is re-picked next tick — acceptable, as the eval writes have
@@ -2382,32 +2417,35 @@ async def _upsert_opening_cache(
     Guard: empty cache_rows is a no-op — no SQL emitted.
     """
     cache_rows = [
-        (t.full_hash, cp, mate, bm)
+        (t.full_hash, cp, mate, bm, pv)
         for t in engine_targets
         if t.ply <= _DEDUP_MAX_PLY and not t.is_terminal
-        for cp, mate, bm, _pv in (engine_result_map.get(t.ply, (None, None, None, None)),)
+        for cp, mate, bm, pv in (engine_result_map.get(t.ply, (None, None, None, None)),)
         if cp is not None or mate is not None
     ]
     if not cache_rows:
         return
     params: dict[str, int | str | None] = {}
     values_parts: list[str] = []
-    for i, (fh, cp, mate, bm) in enumerate(cache_rows):
+    for i, (fh, cp, mate, bm, pv) in enumerate(cache_rows):
         params[f"fh_{i}"] = fh
         params[f"cp_{i}"] = cp
         params[f"mt_{i}"] = mate
         params[f"bm_{i}"] = bm
+        params[f"pv_{i}"] = pv
         values_parts.append(
             f"(CAST(:fh_{i} AS bigint),"
             f" CAST(:cp_{i} AS smallint),"
             f" CAST(:mt_{i} AS smallint),"
-            f" CAST(:bm_{i} AS varchar))"
+            f" CAST(:bm_{i} AS varchar),"
+            f" CAST(:pv_{i} AS text))"
         )
     values_sql = ", ".join(values_parts)
     sql = sa.text(
-        f"INSERT INTO opening_position_eval (full_hash, eval_cp, eval_mate, best_move)"  # noqa: S608
+        f"INSERT INTO opening_position_eval (full_hash, eval_cp, eval_mate, best_move, pv)"  # noqa: S608
         f" VALUES {values_sql}"
-        f" ON CONFLICT (full_hash) DO NOTHING"
+        f" ON CONFLICT (full_hash) DO UPDATE SET pv = EXCLUDED.pv"
+        f" WHERE opening_position_eval.pv IS NULL AND EXCLUDED.pv IS NOT NULL"
     )
     await session.execute(sql, params)
 

@@ -49,8 +49,9 @@ already position-keyed at the correct row; do NOT use _apply_full_eval_results.
 
 import hmac
 import io
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import chess
 import chess.pgn
@@ -59,9 +60,11 @@ import sqlalchemy as sa
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from sqlalchemy import select, update
 from app.core.config import settings
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import async_session_maker
 from app.models.game import Game
-from app.models.game_position import GamePosition
+from app.models.game_position import DEDUP_MAX_PLY, GamePosition
 from app.schemas.eval_remote import (
     MAX_SUBMIT_EVALS,
     AtomicLeaseResponse,
@@ -85,6 +88,7 @@ from app.services.eval_drain import (
     ENTRY_LEASE_TTL_SECONDS,
     MAX_EVAL_ATTEMPTS,
     _EvalTarget,
+    _FullPlyEvalTarget,
     _apply_eval_results,
     _apply_full_eval_results,
     _assemble_flaw_blobs_from_submit,
@@ -96,6 +100,7 @@ from app.services.eval_drain import (
     _collect_eval_targets_from_db,
     _collect_full_ply_targets,
     _derive_atomic_sentinel_lines,
+    _fetch_dedup_evals,
     _load_pgns_for_games,
     _mark_evals_completed,
     _mark_full_evals_completed,
@@ -161,16 +166,113 @@ async def require_operator_token(
 # ---------------------------------------------------------------------------
 
 
+async def _fetch_cached_opening_hashes(
+    session: AsyncSession,
+    gp_rows: list[tuple[int, int, int | None, int | None]],
+) -> frozenset[int]:
+    """SEED-076 (+follow-up): the game's opening full_hashes (ply <= DEDUP_MAX_PLY) that
+    are server-fillable — present in opening_position_eval WITH a cached pv.
+
+    Reuses the same position-keyed cache lookup the local drain and submit dedup use
+    (`_fetch_dedup_evals`) so the lease's cache-aware omission and the submit's dedup fill
+    agree on exactly which openings are server-fillable. Gated on pv IS NOT NULL (SEED-076
+    follow-up): a pv-less cache row can fill the eval at submit but NOT the pv, so the
+    worker must still evaluate that opening fresh — omitting it here would leave a flaw at
+    that ply permanently []-sentineled (no PV to walk). As `_upsert_opening_cache`'s
+    DO UPDATE backfill fills pv onto existing rows over time, omission coverage ramps back
+    up naturally. Returns an empty set for a game with no opening rows.
+    """
+    opening_hashes = [fh for (ply, fh, _cp, _mate) in gp_rows if ply <= DEDUP_MAX_PLY]
+    if not opening_hashes:
+        return frozenset()
+    cached = await _fetch_dedup_evals(session, opening_hashes)
+    return frozenset(fh for fh, (_cp, _mate, _bm, pv) in cached.items() if pv is not None)
+
+
+def _lease_position_redundant(
+    target: _FullPlyEvalTarget,
+    target_by_ply: dict[int, _FullPlyEvalTarget],
+    cached_hashes: frozenset[int],
+) -> bool:
+    """SEED-076: True when the worker need not evaluate this lease position.
+
+    Two omission reasons, both making the position's eval available without a worker
+    round-trip:
+
+    - Cache-aware: an opening position (ply <= DEDUP_MAX_PLY) whose full_hash is already
+      in `opening_position_eval` — the submit dedup_map fills it server-side. (Never
+      applies to the terminal donor: its full_hash is 0 and is never cached.)
+    - Incremental: position Q's eval is stored, post-move (SEED-044), at DB row Q-1. If
+      that row already carries an eval, or is the legit game-over NULL (ends_game), the
+      worker need not re-evaluate Q — the paired submit `preserve_existing_evals` guard
+      keeps it out of the whole-game hole count.
+
+    The terminal eval-donor is NEVER redundant (SEED-044 pitfall 3 / plan detail #2): it
+    supplies the last played move's after-eval and must survive the filter.
+    """
+    if target.is_terminal:
+        return False
+    ply = target.ply
+    if ply <= DEDUP_MAX_PLY and target.full_hash in cached_hashes:
+        return True
+    prev = target_by_ply.get(ply - 1)
+    if prev is not None and (
+        prev.eval_cp is not None or prev.eval_mate is not None or prev.ends_game
+    ):
+        return True
+    return False
+
+
+def _merge_dedup_pv_into_engine_map(
+    targets: Sequence[_FullPlyEvalTarget],
+    dedup_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
+    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
+) -> None:
+    """SEED-076 follow-up: merge a cached opening position's pv into engine_result_map.
+
+    The cache-aware lease omits opening positions already in opening_position_eval, so
+    the worker never sends an eval/pv for them — the submit dedup_map fills the eval, but
+    engine_result_map (and thus _classify_and_fill_oracle's pv write / sentinel derivation)
+    never saw the cached pv. This is the crux fix: for each non-terminal target in the
+    opening region whose full_hash is in dedup_map AND whose ply the worker did NOT
+    evaluate fresh, insert the cached 4-tuple (cp, mate, best_move, pv) into
+    engine_result_map. Never overrides a ply the worker resolved itself. Mutates
+    engine_result_map in place; a no-op tuple for a dedup miss is never inserted.
+
+    MUST run before `_classify_and_fill_oracle` (so classify writes the merged pv) and,
+    on the atomic path, before `_derive_atomic_sentinel_lines` (so it walks the real pv
+    instead of []-sentineling the flaw).
+    """
+    for target in targets:
+        if target.is_terminal or target.ply > DEDUP_MAX_PLY:
+            continue
+        if target.ply in engine_result_map:
+            continue
+        cached = dedup_map.get(target.full_hash)
+        if cached is not None:
+            engine_result_map[target.ply] = cached
+
+
 def _build_lease_positions(
     game_id: int,
     pgn_text: str,
     gp_rows: list[tuple[int, int, int | None, int | None]],
+    cached_hashes: frozenset[int] = frozenset(),
 ) -> list[LeasePosition] | None:
     """Collect per-ply FEN positions from a game's PGN for the lease response.
 
     Replays the PGN once to build a ply->board.fen() map, then merges with the
     target list from _collect_full_ply_targets (include_terminal=True so the last
     played ply's after-eval can be resolved at submit time — SEED-044 pitfall 3).
+
+    SEED-076 (cache-aware incremental lease): positions already fillable server-side —
+    cached openings (in `opening_position_eval`) and plies whose DB row already has an
+    eval — are omitted so a weak/slow worker never re-grinds them (the exact repeated
+    opening timeout that permanently stamped user 218's games). See
+    `_lease_position_redundant`. The terminal donor is always kept, and if the filter
+    empties the lease (e.g. a board-over game with everything already resolved) we fall
+    back to the full list so a claimed game is never starved of the submit that triggers
+    the server-side dedup fill.
 
     Returns None on PGN parse failure (caller should return 204 — treat as no game).
     Returns a list of LeasePosition (may include an is_terminal=True entry).
@@ -203,13 +305,25 @@ def _build_lease_positions(
     terminal_ply = len(fen_by_ply)
     fen_by_ply[terminal_ply] = board.fen()
 
-    positions: list[LeasePosition] = []
+    # Index non-terminal targets by ply so the redundancy check can inspect the DB row
+    # that each position's eval would fill (row Q-1, post-move shift — SEED-044).
+    target_by_ply = {t.ply: t for t in targets if not t.is_terminal}
+
+    all_positions: list[LeasePosition] = []
+    filtered_positions: list[LeasePosition] = []
     for t in targets:
         fen = fen_by_ply.get(t.ply)
         if fen is None:
             continue
-        positions.append(LeasePosition(ply=t.ply, fen=fen, is_terminal=t.is_terminal))
+        pos = LeasePosition(ply=t.ply, fen=fen, is_terminal=t.is_terminal)
+        all_positions.append(pos)
+        if not _lease_position_redundant(t, target_by_ply, cached_hashes):
+            filtered_positions.append(pos)
 
+    # SEED-076 safety net: never return an empty lease for a claimed game — the submit
+    # (which triggers the server-side dedup fill + the Path A/B/C completion decision)
+    # only runs if the worker has something to evaluate. Fall back to the full list.
+    positions = filtered_positions if filtered_positions else all_positions
     return positions if positions else None
 
 
@@ -287,11 +401,36 @@ async def _apply_submit(
     failed_ply_count: int
 
     async with async_session_maker() as write_session:
-        # dedup_map is empty {} — no cross-user dedup for remote submissions;
-        # the worker already evaluated all positions (D-2: no dedup needed).
-        failed_ply_count = await _apply_full_eval_results(
-            write_session, targets, {}, engine_result_map, is_lichess_eval_game
+        # SEED-076: build the real opening-cache dedup_map (mirrors _full_drain_tick) so
+        # opening plies a weak worker timed out on — and the cache-aware lease omitted —
+        # are filled server-side BEFORE failed_ply_count is computed, instead of counting
+        # as holes and eventually Path-C-stamping the game permanently incomplete.
+        # preserve_existing_evals keeps already-eval'd plies dropped from an incremental
+        # re-lease out of the hole count (not resent, not in dedup_map, but DB eval stands).
+        # Engine-game only: leases never hand out lichess games, but a direct POST could —
+        # keep dedup_map empty there so the worker's %eval best_move is not overridden.
+        dedup_map = (
+            {}
+            if is_lichess_eval_game
+            else await _fetch_dedup_evals(
+                write_session,
+                [t.full_hash for t in targets if t.ply <= DEDUP_MAX_PLY and not t.is_terminal],
+            )
         )
+        failed_ply_count = await _apply_full_eval_results(
+            write_session,
+            targets,
+            dedup_map,
+            engine_result_map,
+            is_lichess_eval_game,
+            preserve_existing_evals=True,
+        )
+
+        # SEED-076 follow-up: merge the cached opening pv into engine_result_map BEFORE
+        # classify writes the pv / flaw tags, so a flaw at a cache-omitted opening ply
+        # gets a real walkable PV instead of a permanent [] sentinel. No sentinel
+        # derivation on this (non-atomic) path, so in-session is fine.
+        _merge_dedup_pv_into_engine_map(targets, dedup_map, engine_result_map)
 
         # Classify game_flaws + fill oracle counts + write flaw PVs.
         # Runs AFTER _apply_full_eval_results so eval_cp is visible for classification.
@@ -487,9 +626,12 @@ async def lease_eval_game(
         gp_rows: list[tuple[int, int, int | None, int | None]] = [
             (r.ply, r.full_hash, r.eval_cp, r.eval_mate) for r in gp_result.all()
         ]
+        # SEED-076: opening full_hashes already in opening_position_eval — the
+        # cache-aware lease omits these so a weak worker never re-grinds them.
+        cached_hashes = await _fetch_cached_opening_hashes(read_session, gp_rows)
     # read_session closed
 
-    positions = _build_lease_positions(game_id, pgn_text, gp_rows)
+    positions = _build_lease_positions(game_id, pgn_text, gp_rows, cached_hashes)
     if positions is None:
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -574,9 +716,12 @@ async def atomic_lease_eval_game(
         gp_rows: list[tuple[int, int, int | None, int | None]] = [
             (r.ply, r.full_hash, r.eval_cp, r.eval_mate) for r in gp_result.all()
         ]
+        # SEED-076: opening full_hashes already in opening_position_eval — the
+        # cache-aware lease omits these so a weak worker never re-grinds them.
+        cached_hashes = await _fetch_cached_opening_hashes(read_session, gp_rows)
     # read_session closed
 
-    positions = _build_lease_positions(game_id, pgn_text, gp_rows)
+    positions = _build_lease_positions(game_id, pgn_text, gp_rows, cached_hashes)
     if positions is None:
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -1097,6 +1242,86 @@ async def flaw_blob_submit(
 # ─── Phase 147 SEED-074 Part B: atomic eval+blob submit helper + endpoint (D-01/D-02) ──
 
 
+async def _snapshot_preserved_flaw_blobs(
+    session: AsyncSession,
+    game_id: int,
+    user_id: int,
+) -> dict[int, dict[str, Any]]:
+    """SEED-076: capture a game's flaw blob + tactic-tag columns before classify runs.
+
+    `_classify_and_fill_oracle` does delete-then-insert, so an incremental atomic retry
+    (the worker re-evaluates only the residual holes and does NOT re-blob already-done
+    midgame flaws) would leave those flaws' `{allowed,missed}_pv_lines` + 8 tactic-tag
+    columns NULL — dumping work already done back onto the tier-4 blob pass and transiently
+    dropping tactic tags. We snapshot them here (keyed by ply) and restore them after the
+    blob write for flaws not re-blobbed this submit.
+
+    Only flaws that already carry a blob (allowed_pv_lines IS NOT NULL) are captured — a
+    NULL-blob flaw has nothing to preserve (it is already awaiting the tier-4 pass).
+    """
+    result = await session.execute(
+        select(
+            GameFlaw.ply,
+            GameFlaw.allowed_pv_lines,
+            GameFlaw.missed_pv_lines,
+            GameFlaw.allowed_tactic_motif,
+            GameFlaw.allowed_tactic_piece,
+            GameFlaw.allowed_tactic_confidence,
+            GameFlaw.allowed_tactic_depth,
+            GameFlaw.missed_tactic_motif,
+            GameFlaw.missed_tactic_piece,
+            GameFlaw.missed_tactic_confidence,
+            GameFlaw.missed_tactic_depth,
+        ).where(
+            GameFlaw.game_id == game_id,
+            GameFlaw.user_id == user_id,
+            GameFlaw.allowed_pv_lines.isnot(None),
+        )
+    )
+    snapshot: dict[int, dict[str, Any]] = {}
+    for row in result.all():
+        snapshot[row.ply] = {
+            "allowed_pv_lines": row.allowed_pv_lines,
+            "missed_pv_lines": row.missed_pv_lines,
+            "allowed_tactic_motif": row.allowed_tactic_motif,
+            "allowed_tactic_piece": row.allowed_tactic_piece,
+            "allowed_tactic_confidence": row.allowed_tactic_confidence,
+            "allowed_tactic_depth": row.allowed_tactic_depth,
+            "missed_tactic_motif": row.missed_tactic_motif,
+            "missed_tactic_piece": row.missed_tactic_piece,
+            "missed_tactic_confidence": row.missed_tactic_confidence,
+            "missed_tactic_depth": row.missed_tactic_depth,
+        }
+    return snapshot
+
+
+async def _restore_preserved_flaw_blobs(
+    session: AsyncSession,
+    game_id: int,
+    user_id: int,
+    snapshot: dict[int, dict[str, Any]],
+    freshly_blobbed: set[int],
+) -> None:
+    """SEED-076: re-apply snapshotted blob + tactic-tag columns for flaws the current
+    submit did NOT re-blob, after classify's delete-then-insert reset them to NULL.
+
+    - A ply the worker DID re-blob this submit (in `freshly_blobbed`) is skipped — its
+      fresh values from `_run_multipv2_pass` + the fresh gate win.
+    - A snapshotted ply no longer classified as a flaw matches no row → harmless no-op.
+
+    Uses the ORM bulk-update-by-PK path (same as `bulk_update_tactic_tags`) so the JSONB
+    blobs and tag columns update in one round-trip, inside the caller's write transaction.
+    """
+    rows = [
+        {"user_id": user_id, "game_id": game_id, "ply": ply, **cols}
+        for ply, cols in snapshot.items()
+        if ply not in freshly_blobbed
+    ]
+    if not rows:
+        return
+    await session.execute(update(GameFlaw), rows)
+
+
 async def _apply_atomic_submit(
     game_id: int,
     body: AtomicSubmitRequest,
@@ -1199,6 +1424,24 @@ async def _apply_atomic_submit(
         e.ply: (e.eval_cp, e.eval_mate, e.best_move, e.pv) for e in body.evals
     }
 
+    # SEED-076 follow-up: fetch the opening-cache dedup_map in its own short read
+    # session and merge cached pv into engine_result_map BEFORE
+    # _derive_atomic_sentinel_lines below — the sentinel derivation must see the
+    # merged pv so a flaw at a cache-omitted opening ply gets a real PV walk
+    # instead of a permanent [] sentinel. The cache is insert-only, so reading it
+    # here (ahead of the write session) is staleness-safe. Reused as-is inside the
+    # write session for _apply_full_eval_results below (not re-fetched).
+    async with async_session_maker() as dedup_session:
+        dedup_map = (
+            {}
+            if is_lichess_eval_game
+            else await _fetch_dedup_evals(
+                dedup_session,
+                [t.full_hash for t in targets if t.ply <= DEDUP_MAX_PLY and not t.is_terminal],
+            )
+        )
+    _merge_dedup_pv_into_engine_map(targets, dedup_map, engine_result_map)
+
     # ── Token tamper guard (T-147-02): structural in-game-range check ─────────
     # A token whose flaw_ply falls outside this game's actual ply range is
     # unconditionally foreign — reject before any write (mirrors the
@@ -1233,12 +1476,32 @@ async def _apply_atomic_submit(
     stamp_complete: bool
 
     async with async_session_maker() as write_session:
+        # SEED-076: dedup_map (fetched above, pre-write-session — SEED-076 follow-up
+        # moved this earlier so the pv merge could run before sentinel derivation)
+        # so cached opening plies the weak worker timed out on — and the cache-aware lease
+        # omitted — are filled server-side BEFORE failed_ply_count is computed, and
+        # preserve_existing_evals keeps already-eval'd plies dropped from the incremental
+        # re-lease out of the hole count. Together they stop a fillable opening hole from
+        # reaching the Path-C cap and permanently stamping the game incomplete (FLAWCHESS-8B).
+
+        # SEED-076: snapshot existing flaw blobs + tactic tags BEFORE classify's
+        # delete-then-insert, so a sparse incremental retry (worker did not re-blob an
+        # already-done midgame flaw) does not wipe them (restored after the blob write).
+        preserved_flaw_blobs = await _snapshot_preserved_flaw_blobs(
+            write_session, game_id, owner_id
+        )
+
         # CR-01 (147-REVIEW.md): capture failed_ply_count — previously discarded,
         # which unconditionally stamped completion markers even with NULL-hole
         # engine-game plies, reintroducing the pre-Phase-119 SEED-045 bug class
         # (see resweep_holed_games() docstring for the exact failure mode).
         failed_ply_count = await _apply_full_eval_results(
-            write_session, targets, {}, engine_result_map, is_lichess_eval_game
+            write_session,
+            targets,
+            dedup_map,
+            engine_result_map,
+            is_lichess_eval_game,
+            preserve_existing_evals=True,
         )
 
         # Server-authoritative classify: re-runs classify_game_flaws on the server's
@@ -1259,6 +1522,19 @@ async def _apply_atomic_submit(
         )
 
         await _run_multipv2_pass(write_session, game_id, flaw_pv_blobs)
+
+        # SEED-076: restore preserved blobs/tags for flaws this submit did NOT re-blob
+        # with a REAL blob, undoing classify's delete-then-insert reset. "Freshly blobbed"
+        # counts only non-empty lines: a sparse incremental retry that never re-evaluated
+        # an already-done flaw yields a []-sentinel for it (no PV to walk), which
+        # _run_multipv2_pass just wrote — restoring the prior real blob over that transient
+        # sentinel is correct (the line's walkability was already proven on the first pass).
+        freshly_blobbed = {
+            ply for ply, (allowed, missed) in flaw_pv_blobs.items() if allowed or missed
+        }
+        await _restore_preserved_flaw_blobs(
+            write_session, game_id, owner_id, preserved_flaw_blobs, freshly_blobbed
+        )
 
         # CR-01: mirror _apply_submit's Path A/B/C SEED-045 bounded-retry branch
         # exactly, instead of unconditionally stamping both completion markers.

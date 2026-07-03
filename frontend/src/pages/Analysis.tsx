@@ -52,7 +52,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { uciToSquares } from '@/lib/sanToSquares';
 import { ARROW_NEUTRAL, TAC_MISSED, TAC_ALLOWED, MOVE_HIGHLIGHT_GOOD } from '@/lib/theme';
-import type { NodeId } from '@/hooks/useAnalysisBoard';
+import type { NodeId, MoveNode } from '@/hooks/useAnalysisBoard';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -119,6 +119,92 @@ function forkPlyForOrientation(flawPly: number, orientation: 'missed' | 'allowed
   return orientation === 'allowed' ? flawPly : flawPly - 1;
 }
 
+/**
+ * Stable key for a tactic line (Quick 260703-kyb multi-line state): identifies which
+ * flaw a chip / open line belongs to. Used as the openLines Map key and as an
+ * activePvKeys entry so VariationTree can read chip "on" state by membership.
+ */
+function flawKey(flaw: { ply: number; orientation: 'missed' | 'allowed' }): string {
+  return `${flaw.ply}:${flaw.orientation}`;
+}
+
+type OpenLine = { rootNodeId: NodeId; ply: number; orientation: 'missed' | 'allowed' };
+type FlawRef = { ply: number; orientation: 'missed' | 'allowed' };
+
+/**
+ * Find the open (or pending) tactic line the board is currently "in" — extracted to a
+ * pure module-scope function (not inlined in a component useMemo) because the React
+ * Compiler's memoization-preservation lint cannot analyze this control flow (nested
+ * for/while loop with early returns) inline; a plain function called FROM useMemo
+ * satisfies it (Quick 260703-kyb).
+ *
+ * Checks pendingFlaw first (its fork node always matches BEFORE any previously-focused
+ * line would, since handlePvChipClick / the auto-open effect navigate there immediately),
+ * then every open line: match by fork-node equality OR subtree containment (walk parentId
+ * up from currentNodeId until it reaches the line's rootNodeId).
+ */
+function findFocusedFlaw(
+  isGameMode: boolean,
+  currentNodeId: NodeId | null,
+  pendingFlaw: FlawRef | null,
+  openLines: Map<string, OpenLine>,
+  mainLine: NodeId[],
+  nodes: Map<NodeId, MoveNode>,
+): FlawRef | null {
+  if (!isGameMode || currentNodeId === null) return null;
+  if (pendingFlaw != null) {
+    const forkNodeId = mainLine[forkPlyForOrientation(pendingFlaw.ply, pendingFlaw.orientation)];
+    if (forkNodeId !== undefined && currentNodeId === forkNodeId) return pendingFlaw;
+  }
+  for (const line of openLines.values()) {
+    const forkNodeId = mainLine[forkPlyForOrientation(line.ply, line.orientation)];
+    if (forkNodeId !== undefined && currentNodeId === forkNodeId) {
+      return { ply: line.ply, orientation: line.orientation };
+    }
+    if (isNodeInsideSubtree(nodes, currentNodeId, line.rootNodeId)) {
+      return { ply: line.ply, orientation: line.orientation };
+    }
+  }
+  return null;
+}
+
+/** True iff walking parentId up from `nodeId` reaches `rootId`. */
+function isNodeInsideSubtree(
+  nodes: Map<NodeId, MoveNode>,
+  nodeId: NodeId,
+  rootId: NodeId,
+): boolean {
+  let id: NodeId | null = nodeId;
+  while (id !== null) {
+    if (id === rootId) return true;
+    id = nodes.get(id)?.parentId ?? null;
+  }
+  return false;
+}
+
+/**
+ * Walk children from `rootNodeId` following the lowest-id child chain until it leaves
+ * `pvNodeIds` — the ordered node array of an open tactic line. Module-scope pure
+ * function for the same React Compiler reason as findFocusedFlaw above.
+ */
+function buildFocusedPvLine(
+  nodes: Map<NodeId, MoveNode>,
+  pvNodeIds: Set<NodeId>,
+  rootNodeId: NodeId,
+): NodeId[] {
+  const chain: NodeId[] = [];
+  let id: NodeId | undefined = rootNodeId;
+  while (id !== undefined && pvNodeIds.has(id)) {
+    chain.push(id);
+    let lowest: NodeId | undefined;
+    for (const node of nodes.values()) {
+      if (node.parentId === id && (lowest === undefined || node.id < lowest)) lowest = node.id;
+    }
+    id = lowest;
+  }
+  return chain;
+}
+
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 /**
@@ -169,9 +255,18 @@ export default function Analysis() {
   // Once we have auto-oriented the board to the player's color, manual flips win.
   const hasAutoFlipped = useRef(false);
 
-  // Phase 140: active PV flaw state (move-list tactic-chip expansion → in-tree sideline).
+  // Quick 260703-kyb: multi-line tactic state (move-list tactic-chip expansion →
+  // flat in-tree sideline; replaces the Phase 140 activePvFlaw singleton).
   // Ephemeral in-memory — D-01: not URL-encoded.
-  const [activePvFlaw, setActivePvFlaw] = useState<{
+  //
+  // openLines — every currently GRAFTED tactic line, keyed by flawKey(ply, orientation).
+  // pendingFlaw — the line currently being opened, awaiting its PV fetch. Only one
+  // open action is in flight at a time (clicks/auto-opens are sequential); once its
+  // fetch arrives, the graft effect below records it into openLines and clears this.
+  const [openLines, setOpenLines] = useState<
+    Map<string, { rootNodeId: NodeId; ply: number; orientation: 'missed' | 'allowed' }>
+  >(() => new Map());
+  const [pendingFlaw, setPendingFlaw] = useState<{
     ply: number;
     orientation: 'missed' | 'allowed';
   } | null>(null);
@@ -188,7 +283,8 @@ export default function Analysis() {
     currentNodeId,
     nodes,
     mainLine,
-    pvLine,
+    pvNodeIds,
+    nextId,
     rootFen,
     lastMove,
     makeMove,
@@ -199,7 +295,8 @@ export default function Analysis() {
     isOnMainLine,
     insertPvLine,
     playUciLine,
-    clearPvLine,
+    deleteSubtree,
+    clearAllSidelines,
     isOnPvLine,
     containerRef,
   } = useAnalysisBoard(guardedFen);
@@ -210,13 +307,36 @@ export default function Analysis() {
     enabled: engineEnabled,
   });
 
+  // focusedFlaw: the open (or pending) line the board is currently "in" — its subtree
+  // contains currentNodeId, OR its fork node equals currentNodeId (so the depth arrow
+  // shows while parked at a just-opened line's fork). pendingFlaw is checked first: as
+  // soon as it's set, handlePvChipClick/the auto-open effect also navigate to its fork
+  // node, so this always matches BEFORE any previously-focused line would.
+  const focusedFlaw = useMemo(
+    () => findFocusedFlaw(isGameMode, currentNodeId, pendingFlaw, openLines, mainLine, nodes),
+    [isGameMode, currentNodeId, pendingFlaw, openLines, mainLine, nodes],
+  );
+
+  // focusedPvLine: the ordered node array of the focused line — replaces the old
+  // singleton pvLine as the input to the overlay memos below. Empty while the line is
+  // still pending (not yet grafted) or when nothing is focused.
+  const focusedPvLine = useMemo<NodeId[]>(() => {
+    if (focusedFlaw == null) return [];
+    const line = openLines.get(flawKey(focusedFlaw));
+    if (line == null) return [];
+    return buildFocusedPvLine(nodes, pvNodeIds, line.rootNodeId);
+  }, [focusedFlaw, openLines, nodes, pvNodeIds]);
+
   // Contextual PV fetch: lazy-fetch for inline chip expansion (L-3: unconditional).
-  // Enabled only when a move-list tactic chip is expanded in game mode.
+  // Keyed on pendingFlaw when a line is being opened, else the focused (already-open)
+  // line — react-query caches per (gameId, ply), so re-focusing an already-opened line
+  // is a cache hit, not a re-fetch.
+  const fetchFlaw = pendingFlaw ?? focusedFlaw;
   const {
     data: contextualTacticData,
     isFetching: contextualPending,
     isError: contextualError,
-  } = useTacticLines(gameId, activePvFlaw?.ply ?? null, activePvFlaw != null && isGameMode);
+  } = useTacticLines(gameId, fetchFlaw?.ply ?? null, fetchFlaw != null && isGameMode);
 
   // Game-by-id fetch for full-game mode (D-4: existing endpoint, no new backend).
   // Unconditional hook call; enabled only when isGameMode (gameId is null otherwise).
@@ -271,14 +391,14 @@ export default function Analysis() {
     hasNavigatedToInitialPly.current = true;
     const ply = initialPly ?? 0;
     // Quick 260702-fog: if the opening ply carries a user tactic chip, open its line
-    // automatically — same effect as clicking the chip (setActivePvFlaw + navigate to the
-    // fork node; the useTacticLines → insertPvLine effect chain grafts the sideline once the
-    // PV arrives). Missed forks at the decision board (ply-1), allowed at the flaw position.
-    // initialAlignPly mirrors this fork so the move list top-aligns the same node.
+    // automatically — same effect as clicking the chip (setPendingFlaw + navigate to the
+    // fork node; the useTacticLines → insertPvLine graft effect below records the sideline
+    // once the PV arrives). Missed forks at the decision board (ply-1), allowed at the flaw
+    // position. initialAlignPly mirrors this fork so the move list top-aligns the same node.
     if (initialTactic !== null) {
       const forkNodeId = mainLine[forkPlyForOrientation(initialTactic.ply, initialTactic.orientation)];
       if (forkNodeId !== undefined) {
-        setActivePvFlaw(initialTactic);
+        setPendingFlaw(initialTactic);
         goToNode(forkNodeId);
         return;
       }
@@ -291,22 +411,34 @@ export default function Analysis() {
   }, [mainLine.length, isGameMode]);
 
   // Insert contextual PV sideline when the fetch arrives (L-1: insertPvLine, not loadMainLine).
+  // Quick 260703-kyb: records the new line into openLines WITHOUT touching any previously
+  // open line — insertPvLine unions ids into pvNodeIds, never clobbers.
   useEffect(() => {
-    if (!isGameMode || activePvFlaw == null || contextualTacticData == null) return;
+    if (!isGameMode || pendingFlaw == null || contextualTacticData == null) return;
+    const key = flawKey(pendingFlaw);
+    if (openLines.has(key)) return; // already recorded — guard against a stale re-run
     // Allowed lines start AT the flaw position and drop the prepended flaw move (index 0),
     // so the sideline begins with the opponent's response (Quick 260628-pu2 UAT). Missed
     // lines start at the decision board and use the full PV.
     const pvMoves =
-      activePvFlaw.orientation === 'missed'
+      pendingFlaw.orientation === 'missed'
         ? (contextualTacticData.missed_moves ?? [])
         : (contextualTacticData.allowed_moves ?? []).slice(1);
     // T-140-02b: L-8 guard on the fork node lookup.
-    const forkNodeId = mainLine[forkPlyForOrientation(activePvFlaw.ply, activePvFlaw.orientation)];
-    if (forkNodeId !== undefined) insertPvLine(pvMoves, forkNodeId);
-    // mainLine intentionally omitted — stable after game load; including it causes
-    // spurious re-runs when the user navigates the variation tree.
+    const forkNodeId = mainLine[forkPlyForOrientation(pendingFlaw.ply, pendingFlaw.orientation)];
+    if (forkNodeId === undefined || pvMoves.length === 0) return;
+    // Snapshot the line's root id BEFORE grafting — the hook assigns nextId to the first
+    // grafted node (insertPvLine's batch-build loop starts at prev.nextId).
+    const rootNodeId = nextId;
+    insertPvLine(pvMoves, forkNodeId);
+    setOpenLines((prev) => new Map(prev).set(key, { rootNodeId, ply: pendingFlaw.ply, orientation: pendingFlaw.orientation }));
+    setPendingFlaw(null);
+    // mainLine/openLines/nextId intentionally omitted — mainLine is stable after game load;
+    // openLines/nextId are read fresh from the latest render at the moment this effect
+    // fires (triggered by pendingFlaw/contextualTacticData, already guarded above), so
+    // reacting to them too would cause spurious re-runs when the user navigates the tree.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contextualTacticData, activePvFlaw?.ply, activePvFlaw?.orientation, isGameMode]);
+  }, [contextualTacticData, pendingFlaw?.ply, pendingFlaw?.orientation, isGameMode]);
 
   // ── Derived values ────────────────────────────────────────────────────────────
 
@@ -401,19 +533,19 @@ export default function Analysis() {
     return map;
   }, [isGameMode, gameData, mainLine]);
 
-  // The mainLine node whose chip is currently expanded (for ring highlight + aria). Both
-  // the missed and allowed chips for a flaw now live on the same flaw node mainLine[ply]
-  // (Quick 260628-1t5); activePvOrientation disambiguates which of the two is active.
-  const activePvNodeId: NodeId | null = useMemo(() => {
-    if (!isGameMode || activePvFlaw == null) return null;
-    // Chip is on mainLine[ply] — the node AFTER the flaw move (noUncheckedIndexedAccess guard).
-    const nodeId = mainLine[activePvFlaw.ply];
-    return nodeId ?? null;
-  }, [isGameMode, activePvFlaw, mainLine]);
+  // Multi-active chip highlight (Quick 260703-kyb): every currently OPEN or
+  // pending-open chip's key, so multiple tactic chips can read "on" simultaneously
+  // (flat siblings) instead of a single activePvNodeId/activePvOrientation match.
+  const activePvKeys = useMemo<Set<string>>(() => {
+    const keys = new Set<string>();
+    for (const key of openLines.keys()) keys.add(key);
+    if (pendingFlaw != null) keys.add(flawKey(pendingFlaw));
+    return keys;
+  }, [openLines, pendingFlaw]);
 
-  // Contextual overlay PV ply (0 = fork position, 1+ = steps into the PV).
+  // Contextual overlay PV ply (0 = fork position, 1+ = steps into the focused PV).
   const contextualCurrentPly =
-    currentNodeId !== null ? pvLine.indexOf(currentNodeId) + 1 : 0;
+    currentNodeId !== null ? focusedPvLine.indexOf(currentNodeId) + 1 : 0;
 
   // onStoredLine for contextual overlay: true only when on the PV sideline itself.
   const contextualOnStoredLine = currentNodeId !== null && isOnPvLine(currentNodeId);
@@ -559,31 +691,32 @@ export default function Analysis() {
   // teal (TAC_MISSED) for a missed tactic, crimson (TAC_ALLOWED) for an allowed one. Every
   // sideline move from the fork up to and including the depth-0 resolving move is colored,
   // so the whole tactic line reads in its orientation color (not just the punchline move).
-  // The *_tactic_ply_index indexes the PV moves, which line up 1:1 with the grafted pvLine.
+  // The *_tactic_ply_index indexes the PV moves, which line up 1:1 with focusedPvLine.
   const sidelineNodeColors = useMemo(() => {
     const colors = new Map<NodeId, string>();
-    if (!isGameMode || activePvFlaw == null || contextualTacticData == null) return colors;
-    const isMissed = activePvFlaw.orientation === 'missed';
+    if (!isGameMode || focusedFlaw == null || contextualTacticData == null) return colors;
+    const isMissed = focusedFlaw.orientation === 'missed';
     // allowed_tactic_ply_index indexes the API allowed_moves (flaw move at index 0); the
-    // grafted pvLine drops that lead-in, so shift -1 to align with pvLine (Quick 260628-pu2).
+    // grafted focusedPvLine drops that lead-in, so shift -1 to align (Quick 260628-pu2).
     const resolveIdx = isMissed
       ? (contextualTacticData.missed_tactic_ply_index ?? 0)
       : (contextualTacticData.allowed_tactic_ply_index ?? 1) - 1;
     const color = isMissed ? TAC_MISSED : TAC_ALLOWED;
     for (let i = 0; i <= resolveIdx; i++) {
-      const node = pvLine[i];
+      const node = focusedPvLine[i];
       if (node !== undefined) colors.set(node, color);
     }
     return colors;
-  }, [isGameMode, activePvFlaw, contextualTacticData, pvLine]);
+  }, [isGameMode, focusedFlaw, contextualTacticData, focusedPvLine]);
 
   // Board "tactic overlay" while navigating a PV sideline (item 3): the depth-countdown
   // arrow on the next stored PV move, mirroring the old tactic-mode overlay. Anchored to
-  // the contextual line's depth/orientation; the live engine still supplies the grey 2nd.
+  // the FOCUSED line's depth/orientation (the line the board is currently in); the live
+  // engine still supplies the grey 2nd.
   const pvSidelineArrows = useMemo<BoardArrow[] | null>(() => {
-    if (!isGameMode || activePvFlaw == null || contextualTacticData == null) return null;
-    const orientation = activePvFlaw.orientation;
-    const forkNodeId = mainLine[forkPlyForOrientation(activePvFlaw.ply, orientation)];
+    if (!isGameMode || focusedFlaw == null || contextualTacticData == null) return null;
+    const orientation = focusedFlaw.orientation;
+    const forkNodeId = mainLine[forkPlyForOrientation(focusedFlaw.ply, orientation)];
     const onPvPath = contextualOnStoredLine || (forkNodeId !== undefined && currentNodeId === forkNodeId);
     if (!onPvPath) return null;
 
@@ -595,9 +728,9 @@ export default function Analysis() {
     // surface, so the allowed +1 decision-anchor offset is dropped (allowed reads like missed).
     const rootDisplayDepth = toDisplayDepthForOrientation(depthRaw, orientation, false);
 
-    // Steps into the PV from the current node (0 at the fork position).
+    // Steps into the focused PV from the current node (0 at the fork position).
     const stepIntoPv = contextualCurrentPly;
-    const nextPvNodeId = pvLine[stepIntoPv];
+    const nextPvNodeId = focusedPvLine[stepIntoPv];
     const nextPvNode = nextPvNodeId !== undefined ? nodes.get(nextPvNodeId) : undefined;
     const nextMove = nextPvNode ? { from: nextPvNode.from, to: nextPvNode.to } : null;
     if (!nextMove) return null;
@@ -622,13 +755,13 @@ export default function Analysis() {
     return arrows.length > 0 ? arrows : null;
   }, [
     isGameMode,
-    activePvFlaw,
+    focusedFlaw,
     contextualTacticData,
     contextualOnStoredLine,
     contextualCurrentPly,
     currentNodeId,
     mainLine,
-    pvLine,
+    focusedPvLine,
     nodes,
     engine.pvLines,
   ]);
@@ -641,11 +774,12 @@ export default function Analysis() {
 
   // ── Handlers ──────────────────────────────────────────────────────────────────
 
-  // L-5: game mode Reset → clear PV, reset activePvFlaw, navigate to entry ply.
+  // L-5: game mode Reset → clear every sideline, reset multi-line state, navigate to entry ply.
   const handleReset = isGameMode
     ? () => {
-        clearPvLine();
-        setActivePvFlaw(null);
+        clearAllSidelines();
+        setOpenLines(new Map());
+        setPendingFlaw(null);
         setLiveFlawByNode(new Map()); // drop persisted sideline glyphs on reset
         // T-140-02b: L-8 guard on initialPly — out-of-bounds is a no-op.
         const nodeId = mainLine[initialPly ?? 0];
@@ -658,21 +792,29 @@ export default function Analysis() {
 
   const canReset = currentNodeId !== null;
 
-  // Inline chip click: toggle off (same chip) or set new active flaw.
+  // Inline chip click: toggle off (SAME chip only — deleteSubtree removes just that
+  // line, others stay open) or open a new line WITHOUT touching any other open line
+  // (Quick 260703-kyb — flat siblings, removes the old singleton "clear previous PV
+  // on chip switch" behavior).
   const handlePvChipClick = (
     nodeId: NodeId,
     flaw: { ply: number; orientation: 'missed' | 'allowed' },
   ): void => {
-    if (activePvFlaw?.ply === flaw.ply && activePvFlaw.orientation === flaw.orientation) {
-      // Same chip clicked again: collapse PV.
-      clearPvLine();
-      setActivePvFlaw(null);
+    const key = flawKey(flaw);
+    const existing = openLines.get(key);
+    if (existing != null) {
+      // Same chip clicked again: collapse ONLY this line — no fetch needed.
+      deleteSubtree(existing.rootNodeId);
+      setOpenLines((prev) => {
+        const next = new Map(prev);
+        next.delete(key);
+        return next;
+      });
       return;
     }
-    // Different chip: clear any existing PV, set new active flaw.
-    // insertPvLine is called by the useEffect when contextualTacticData arrives.
-    if (activePvFlaw != null) clearPvLine();
-    setActivePvFlaw(flaw);
+    // Different/new chip: open it. insertPvLine is called by the graft effect once
+    // contextualTacticData arrives; other open lines are left untouched.
+    setPendingFlaw(flaw);
     // Navigate to the fork node — decision board (ply-1) for missed, flaw position (ply) for
     // allowed (Quick 260628-pu2 UAT). T-140-02b guard.
     const forkNodeId = mainLine[forkPlyForOrientation(flaw.ply, flaw.orientation)];
@@ -758,13 +900,13 @@ export default function Analysis() {
       initialPly={isGameMode ? initialAlignPly : undefined}
       onNodeClick={goToNode}
       decorations={sidelineNodeColors}
-      pvLine={isGameMode ? pvLine : undefined}
+      pvNodeIds={isGameMode ? pvNodeIds : undefined}
       flawMarkerByNodeId={moveListMarkers}
       onPvChipClick={isGameMode ? handlePvChipClick : undefined}
-      activePvNodeId={isGameMode ? activePvNodeId : undefined}
-      activePvOrientation={isGameMode ? (activePvFlaw?.orientation ?? null) : undefined}
+      activePvKeys={isGameMode ? activePvKeys : undefined}
       pvFetchPending={isGameMode ? contextualPending : undefined}
       pvFetchError={isGameMode ? contextualError : undefined}
+      onDeleteLine={isGameMode ? deleteSubtree : undefined}
     />
   );
 

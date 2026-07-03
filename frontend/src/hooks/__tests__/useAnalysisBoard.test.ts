@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 /**
- * useAnalysisBoard hook tests (Phase 137, Plan 01; extended Phase 140, Plan 01).
+ * useAnalysisBoard hook tests (Phase 137, Plan 01; extended Phase 140, Plan 01;
+ * rewritten to the multi-line flat-sibling contract, Quick 260703-kyb).
  *
  * Required D-05 behaviors (Phase 137):
  * 1. Mid-line fork: a move at a mid-line node creates a child node; mainLine is NOT truncated.
@@ -8,10 +9,15 @@
  * 3. O(1) goToNode: position equals the stored FEN, not a root-replay artifact.
  * 4. loadMainLine + isOnMainLine: seeds mainLine IDs in order; true for seeded, false for forked.
  *
- * Phase 140 Plan 01 — PV-nesting invariants:
- * 5. insertPvLine: pvLine length matches pvSans, nodes chain to forkNodeId, mainLine unmutated.
- * 6. clearPvLine: pvLine emptied, node ids removed, currentNodeId back on mainLine.
- * 7. Level-2 fork: makeMove from a pvLine node creates a node NOT in pvLine.
+ * Quick 260703-kyb — multi-line flat-sibling invariants (replaces the old singleton
+ * pvLine/clearPvLine/Level-2 behaviors):
+ * 5. insertPvLine unions ids: opening two lines off two different forks leaves both
+ *    isOnPvLine-true simultaneously; mainLine stays unmutated.
+ * 6. deleteSubtree removes exactly one line's ids (the other line is untouched) and
+ *    recovers currentNodeId to the deleted line's fork parent when the board was inside it.
+ * 7. clearAllSidelines strips every non-mainLine node and empties pvNodeIds.
+ * 8. goForward from a fork still steps into an open sideline (pvNodeIds membership).
+ * 9. makeMove off a PV node yields a node with isOnPvLine=false (a free-move sub-fork).
  */
 
 import { describe, it, expect } from 'vitest';
@@ -216,9 +222,9 @@ describe('useAnalysisBoard', () => {
     expect(result.current.nodes.size).toBe(lineLength);
   });
 
-  // ── Phase 140-01 Behavior 5: insertPvLine invariants ───────────────────
+  // ── Quick 260703-kyb Behavior 5: insertPvLine unions ids across lines ──
 
-  it('insertPvLine: pvLine length === pvSans.length; nodes chain to forkNodeId; mainLine unmutated; isOnPvLine/isOnMainLine correct', () => {
+  it('insertPvLine unions ids: two lines off two different forks are both open simultaneously; mainLine unmutated', () => {
     const { result } = renderHook(() => useAnalysisBoard(ROOT_FEN));
 
     // Seed a 3-move main line: Nf3, Nc6, Bc4
@@ -228,38 +234,35 @@ describe('useAnalysisBoard', () => {
     const mainLineBefore = [...result.current.mainLine];
     expect(mainLineBefore).toHaveLength(3);
 
-    // Fork from node0 (after Nf3, black to move)
-    const forkNodeId: NodeId = mainLineBefore[0]!;
-    // PV: Nf6 (black), Bc4 (white) — both legal from node0 FEN (post-Nf3, black to move)
-    const pvSans = ['Nf6', 'Bc4'];
-
+    // Line A: fork from node0 (after Nf3, black to move) — Nf6, Bc4.
+    const forkA: NodeId = mainLineBefore[0]!;
     act(() => {
-      result.current.insertPvLine(pvSans, forkNodeId);
+      result.current.insertPvLine(['Nf6', 'Bc4'], forkA);
     });
+    const lineARootId = 3; // first grafted id after the 3-node main line (ids 0,1,2)
+    expect(result.current.isOnPvLine(lineARootId)).toBe(true);
 
-    // pvLine.length === pvSans.length
-    expect(result.current.pvLine).toHaveLength(pvSans.length);
+    // Line B: fork from node1 (after Nf3 Nc6, white to move) — Bb5 (Ruy Lopez).
+    const forkB: NodeId = mainLineBefore[1]!;
+    act(() => {
+      result.current.insertPvLine(['Bb5'], forkB);
+    });
+    const lineBRootId = 5; // next id after line A's two nodes (3, 4)
 
-    // every pvLine node's parentId chain reaches forkNodeId
-    const pvLine = result.current.pvLine;
-    const nodes = result.current.nodes;
-    const firstPvId = pvLine[0]!;
-    const firstPvNode = nodes.get(firstPvId);
-    expect(firstPvNode?.parentId).toBe(forkNodeId);
+    // Both lines' nodes are simultaneously in pvNodeIds — insertPvLine UNIONS, never clobbers.
+    expect(result.current.isOnPvLine(lineARootId)).toBe(true);
+    expect(result.current.isOnPvLine(4)).toBe(true); // line A's second node
+    expect(result.current.isOnPvLine(lineBRootId)).toBe(true);
 
     // mainLine is reference-unchanged (same ids)
     expect(result.current.mainLine).toEqual(mainLineBefore);
 
-    // currentNodeId is forkNodeId (not first PV move)
-    expect(result.current.currentNodeId).toBe(forkNodeId);
-
-    // isOnPvLine true for first PV node, isOnMainLine false
-    expect(result.current.isOnPvLine(firstPvId)).toBe(true);
-    expect(result.current.isOnMainLine(firstPvId)).toBe(false);
+    // nodes.size = 3 mainLine + 2 (line A) + 1 (line B)
+    expect(result.current.nodes.size).toBe(6);
   });
 
-  // ── Quick thl item 4: forward steps into the open flaw sideline ─────────
-  it('goForward from the fork node steps into the grafted pvLine, not the main line', () => {
+  // ── Quick thl item 4 (retained under the multi-line contract) ──────────
+  it('goForward from the fork node steps into an open sideline (pvNodeIds membership), not the main line', () => {
     const { result } = renderHook(() => useAnalysisBoard(ROOT_FEN));
 
     act(() => {
@@ -273,9 +276,10 @@ describe('useAnalysisBoard', () => {
     });
     // insertPvLine parks at the fork node.
     expect(result.current.currentNodeId).toBe(forkNodeId);
-    const firstPvId = result.current.pvLine[0]!;
+    const firstPvId = 3;
+    expect(result.current.isOnPvLine(firstPvId)).toBe(true);
 
-    // Forward from the fork must enter the sideline (pvLine[0]), not mainLine[1].
+    // Forward from the fork must enter the sideline, not mainLine[1].
     act(() => {
       result.current.goForward();
     });
@@ -283,51 +287,121 @@ describe('useAnalysisBoard', () => {
     expect(result.current.currentNodeId).not.toBe(mainLine[1]);
   });
 
-  // ── Phase 140-01 Behavior 6: clearPvLine invariants ────────────────────
+  // ── Quick 260703-kyb Behavior 6: deleteSubtree removes exactly one line ──
 
-  it('clearPvLine: pvLine emptied, pvLine node ids removed from nodes, currentNodeId on mainLine', () => {
+  it('deleteSubtree removes exactly one open line and recovers currentNodeId to its fork parent; the other line is untouched', () => {
     const { result } = renderHook(() => useAnalysisBoard(ROOT_FEN));
 
     act(() => {
       result.current.loadMainLine(MAIN_LINE_SANS, ROOT_FEN);
     });
-    const forkNodeId: NodeId = result.current.mainLine[0]!;
-
-    // Navigate into PV so currentNodeId is on a pvLine node
-    act(() => {
-      result.current.insertPvLine(['Nf6'], forkNodeId);
-    });
-    const pvLine = [...result.current.pvLine];
-    expect(pvLine).toHaveLength(1);
-
-    // Navigate to first pv node
-    const pvNodeId = pvLine[0]!;
-    act(() => {
-      result.current.goToNode(pvNodeId);
-    });
-    expect(result.current.currentNodeId).toBe(pvNodeId);
+    const mainLine = [...result.current.mainLine];
+    const forkA: NodeId = mainLine[0]!;
+    const forkB: NodeId = mainLine[1]!;
 
     act(() => {
-      result.current.clearPvLine();
+      result.current.insertPvLine(['Nf6', 'Bc4'], forkA); // ids 3, 4
+    });
+    act(() => {
+      result.current.insertPvLine(['Bb5'], forkB); // id 5
     });
 
-    // pvLine is empty
-    expect(result.current.pvLine).toHaveLength(0);
+    // Navigate the board into line A (node 4, parent=3, parent's parent=forkA).
+    act(() => {
+      result.current.goToNode(4);
+    });
+    expect(result.current.currentNodeId).toBe(4);
 
-    // Prior pvLine node ids no longer in nodes map
-    for (const id of pvLine) {
-      expect(result.current.nodes.has(id)).toBe(false);
-    }
+    // Delete line A's root (id 3) — removes 3 and 4.
+    act(() => {
+      result.current.deleteSubtree(3);
+    });
 
-    // currentNodeId is back on mainLine
-    const currentId = result.current.currentNodeId;
-    expect(currentId).not.toBeNull();
-    expect(result.current.isOnMainLine(currentId!)).toBe(true);
+    expect(result.current.nodes.has(3)).toBe(false);
+    expect(result.current.nodes.has(4)).toBe(false);
+    expect(result.current.isOnPvLine(3)).toBe(false);
+    expect(result.current.isOnPvLine(4)).toBe(false);
+
+    // Line B (id 5) is untouched.
+    expect(result.current.nodes.has(5)).toBe(true);
+    expect(result.current.isOnPvLine(5)).toBe(true);
+
+    // currentNodeId recovers to line A's fork parent (forkA), since it was inside the
+    // deleted subtree.
+    expect(result.current.currentNodeId).toBe(forkA);
   });
 
-  // ── Phase 140-01 Behavior 7: level-2 fork — makeMove from pvLine node ──
+  it('deleteSubtree is a no-op on currentNodeId when the board is NOT inside the deleted subtree', () => {
+    const { result } = renderHook(() => useAnalysisBoard(ROOT_FEN));
 
-  it('makeMove from a pvLine node creates a node NOT in pvLine (level-2 sub-sideline)', () => {
+    act(() => {
+      result.current.loadMainLine(MAIN_LINE_SANS, ROOT_FEN);
+    });
+    const forkA: NodeId = result.current.mainLine[0]!;
+
+    act(() => {
+      result.current.insertPvLine(['Nf6'], forkA); // id 3
+    });
+    // Stay on the main line (goToNode to mainLine[2]).
+    const mainLineLeaf = result.current.mainLine[2]!;
+    act(() => {
+      result.current.goToNode(mainLineLeaf);
+    });
+
+    act(() => {
+      result.current.deleteSubtree(3);
+    });
+
+    expect(result.current.nodes.has(3)).toBe(false);
+    // currentNodeId is unchanged — the board was never inside the deleted subtree.
+    expect(result.current.currentNodeId).toBe(mainLineLeaf);
+  });
+
+  // ── Quick 260703-kyb Behavior 7: clearAllSidelines strips every non-mainLine node ──
+
+  it('clearAllSidelines strips every non-mainLine node, empties pvNodeIds, and recovers currentNodeId to mainLine', () => {
+    const { result } = renderHook(() => useAnalysisBoard(ROOT_FEN));
+
+    act(() => {
+      result.current.loadMainLine(MAIN_LINE_SANS, ROOT_FEN);
+    });
+    const mainLine = [...result.current.mainLine];
+    const forkA: NodeId = mainLine[0]!;
+    const forkB: NodeId = mainLine[1]!;
+
+    act(() => {
+      result.current.insertPvLine(['Nf6', 'Bc4'], forkA); // ids 3, 4
+    });
+    act(() => {
+      result.current.insertPvLine(['Bb5'], forkB); // id 5
+    });
+    act(() => {
+      result.current.goToNode(4);
+    });
+
+    act(() => {
+      result.current.clearAllSidelines();
+    });
+
+    // Only mainLine nodes remain.
+    expect(result.current.nodes.size).toBe(mainLine.length);
+    for (const id of mainLine) expect(result.current.nodes.has(id)).toBe(true);
+    expect(result.current.nodes.has(3)).toBe(false);
+    expect(result.current.nodes.has(4)).toBe(false);
+    expect(result.current.nodes.has(5)).toBe(false);
+
+    // pvNodeIds is empty — no line reads as open.
+    expect(result.current.isOnPvLine(3)).toBe(false);
+    expect(result.current.isOnPvLine(5)).toBe(false);
+
+    // currentNodeId recovered to the nearest mainLine ancestor of node 4 (forkA).
+    expect(result.current.currentNodeId).toBe(forkA);
+    expect(result.current.isOnMainLine(result.current.currentNodeId!)).toBe(true);
+  });
+
+  // ── Quick 260703-kyb Behavior 9: makeMove off a PV node is a free-move sub-fork ──
+
+  it('makeMove from a PV node creates a node NOT in pvNodeIds (free-move sub-fork, deletable independently)', () => {
     const { result } = renderHook(() => useAnalysisBoard(ROOT_FEN));
 
     act(() => {
@@ -337,10 +411,9 @@ describe('useAnalysisBoard', () => {
 
     // Insert a PV: Nf6 from forkNodeId (after Nf3, black to move)
     act(() => {
-      result.current.insertPvLine(['Nf6'], forkNodeId);
+      result.current.insertPvLine(['Nf6'], forkNodeId); // id 3
     });
-    const pvLine = [...result.current.pvLine];
-    const pvNodeId = pvLine[0]!;
+    const pvNodeId = 3;
 
     // Navigate to the PV node and make a move from it
     act(() => {
@@ -355,10 +428,10 @@ describe('useAnalysisBoard', () => {
     const newNodeId = result.current.currentNodeId;
     expect(newNodeId).not.toBeNull();
 
-    // The new node is NOT in pvLine
+    // The new node is NOT in pvNodeIds — it's a free-move sub-fork, not part of the tactic line.
     expect(result.current.isOnPvLine(newNodeId!)).toBe(false);
-    // The original pvLine is unchanged
-    expect(result.current.pvLine).toEqual(pvLine);
+    // The original PV node is unchanged.
+    expect(result.current.isOnPvLine(pvNodeId)).toBe(true);
   });
 
   // ── Boundary: goForward with multiple children picks lowest-id child ────

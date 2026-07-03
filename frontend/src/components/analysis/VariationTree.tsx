@@ -1,14 +1,17 @@
 /**
  * VariationTree — responsive move list for the analysis board (Phase 137 Plan 03).
  *
- * Renders the flat main line plus up to two active nesting levels (Phase 140):
- *   Level 0 — main game line
- *   Level 1 — PV sideline (tactic chip expanded via insertPvLine)
- *   Level 2 — user fork within PV (ephemeral sub-sideline)
+ * Renders the main game line plus every open sideline as a FLAT sibling block —
+ * one indent level, no recursive nesting, no promote-to-mainline (Quick
+ * 260703-kyb: replaces the old Level-1/Level-2 singleton-PV nesting model).
+ * A sideline is either a tactic line (its root is in pvNodeIds — closes via its
+ * chip) or a free-move line (closes via a per-line × delete affordance). Multiple
+ * lines off different forks — or multiple sub-forks off the same line — all
+ * render simultaneously as separate flat blocks.
  *
  * Responsive split (D-02): mobile extends HorizontalMoveList (horizontal chips
- * with variation inline in parentheses, double-paren for Level-2); desktop uses
- * a vertical paired N. white black list with indented sub-sections.
+ * with each sideline inline in single parentheses); desktop uses a vertical
+ * paired N. white black list with indented sibling blocks.
  * Split is Tailwind dual-DOM (sm:hidden / hidden sm:block) — no media-query hook.
  *
  * Security: node.san comes from chess.js-validated moves, not user input.
@@ -17,7 +20,7 @@
 
 import { useRef, useEffect, useState, Fragment } from 'react';
 import type { ReactNode } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 import type { NodeId, MoveNode } from '@/hooks/useAnalysisBoard';
 import { HorizontalMoveList } from '@/components/board/HorizontalMoveList';
 import type { HorizontalMoveItem } from '@/components/board/HorizontalMoveList';
@@ -85,13 +88,15 @@ export interface VariationTreeProps {
    */
   decorations?: Map<NodeId, string>;
 
-  // ── Phase 140: PV nesting + flaw chips ──────────────────────────────────────
+  // ── Flat sibling lines + flaw chips (Quick 260703-kyb) ───────────────────────
 
   /**
-   * IDs of PV nodes grafted by insertPvLine, ordered fork→end. Used to
-   * distinguish Level-1 (in pvLine) from Level-2 (forked off pvLine).
+   * Membership set of every node belonging to a currently OPEN tactic line
+   * (grafted by insertPvLine). A sibling block whose root is in this set is a
+   * tactic line (closes via its chip, no × affordance); any other non-mainLine
+   * block is a free-move line (closes via its × affordance).
    */
-  pvLine?: NodeId[];
+  pvNodeIds?: Set<NodeId>;
   /**
    * Flaw marker data keyed by mainLine node id. Only nodes that have at least one
    * tactic motif (missed/allowed) or a non-inaccuracy severity receive an entry.
@@ -100,22 +105,25 @@ export interface VariationTreeProps {
   flawMarkerByNodeId?: Map<NodeId, FlawMarkerEntry>;
   /**
    * Called when the user clicks a missed/allowed chip. Analysis.tsx fetches the
-   * PV via useTacticLines and calls insertPvLine on arrival (toggle off if same).
+   * PV via useTacticLines and calls insertPvLine on arrival (toggle off on
+   * re-click of the SAME chip; other open lines are left untouched).
    */
   onPvChipClick?: (nodeId: NodeId, flaw: { ply: number; orientation: 'missed' | 'allowed' }) => void;
-  /** The mainLine nodeId whose chip is currently expanded (one at a time). */
-  activePvNodeId?: NodeId | null;
   /**
-   * Orientation of the currently expanded chip. With the missed chip shown one ply
-   * before the flaw (item 5), a single node can host both a missed chip (from the
-   * next flaw) and its own allowed chip; the orientation disambiguates which one
-   * gets the active ring. Null/undefined → match by node only (legacy behavior).
+   * Set of `${ply}:${orientation}` keys for every currently OPEN tactic chip.
+   * Multiple chips can be simultaneously "on" (flat siblings).
    */
-  activePvOrientation?: 'missed' | 'allowed' | null;
+  activePvKeys?: Set<string>;
   /** True while the tactic-lines fetch for the active chip is in flight. */
   pvFetchPending?: boolean;
   /** True when the tactic-lines fetch for the active chip returned an error. */
   pvFetchError?: boolean;
+  /**
+   * Called with a free-move sideline's root node id when its × delete
+   * affordance is clicked. Tactic lines (root ∈ pvNodeIds) render no ×; they
+   * close via their chip (onPvChipClick) instead.
+   */
+  onDeleteLine?: (rootId: NodeId) => void;
   /**
    * Layout variant. `'responsive'` (default) keeps the breakpoint split — horizontal
    * strip on mobile, vertical paired list on desktop. `'vertical'` forces the vertical
@@ -136,91 +144,119 @@ export interface VariationTreeProps {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-interface VariationChain {
-  /** mainLine node at which the variation splits off (null when on main line). */
+/** A single flat sibling sideline block (Quick 260703-kyb — one indent level only). */
+interface SiblingBlock {
+  /** The block's first node id (a graft target for insertPvLine / a free fork's own id). */
+  rootId: NodeId;
+  /** The node this block branches off — null only when it branches off the true root
+   *  position (before mainLine[0]; possible via goBack()+makeMove at the decision board). */
   forkParentId: NodeId | null;
-  /** Level-1 chain nodes (pvLine nodes, or regular variation nodes). */
+  /** Index in mainLine of the nearest mainLine ancestor; -1 when forkParentId is null
+   *  (branches off the position BEFORE mainLine[0]). */
+  nearestMainIdx: number;
+  /** Ordered node ids: rootId, then the lowest-id child chain. */
   chain: NodeId[];
-  /** Level-2 chain nodes (user forks within the PV). Empty unless level === 2. */
-  subChain: NodeId[];
-  /** 0 = main line, 1 = in/off pvLine, 2 = user forked within pvLine. */
-  level: 0 | 1 | 2;
+  /** True when rootId belongs to a currently open tactic line (pvNodeIds membership). */
+  isTactic: boolean;
+  /** Non-null only for a sub-fork (forkParentId itself is off mainLine): the fork
+   *  parent's SAN, so the block shows where it diverges (no second indent level). */
+  branchLabel: string | null;
 }
 
-/**
- * Walk from currentNodeId up through parentId pointers to the nearest mainLine
- * ancestor. Returns chain in fork-to-current order and the nesting level.
- *
- * Level 2 detection: if currentNodeId is NOT in pvLine but we cross a pvLine
- * node during the walk (before reaching mainLine), level is 2. The chain is split
- * at the pvLine crossing point into chain (pvLine nodes) and subChain (user fork).
- */
-function buildVariationChain(
+/** Derive the ply offset of a position from its FEN (mirrors Analysis.tsx's fenToRootPly). */
+function plyFromFen(fen: string | undefined): number {
+  if (!fen) return 0;
+  const parts = fen.split(' ');
+  const side = parts[1];
+  const fullmove = parts[5];
+  if (side === undefined || fullmove === undefined) return 0;
+  const ply = (Number(fullmove) - 1) * 2 + (side === 'b' ? 1 : 0);
+  return Number.isNaN(ply) ? 0 : ply;
+}
+
+/** The lowest-id (insertion-order-first) child of `parentId`, or undefined if none. */
+function findLowestIdChild(
+  nodes: Map<NodeId, MoveNode>,
+  parentId: NodeId | null,
+): MoveNode | undefined {
+  let lowest: MoveNode | undefined;
+  for (const node of nodes.values()) {
+    if (node.parentId === parentId && (!lowest || node.id < lowest.id)) lowest = node;
+  }
+  return lowest;
+}
+
+/** Walk parentId up from `startId` until a mainLine node (or root) is reached. */
+function nearestMainLineIdx(
   nodes: Map<NodeId, MoveNode>,
   mainLine: NodeId[],
-  pvLine: NodeId[],
-  currentNodeId: NodeId | null,
-): VariationChain {
-  const empty: VariationChain = { forkParentId: null, chain: [], subChain: [], level: 0 };
-  if (currentNodeId === null) return empty;
-
+  startId: NodeId | null,
+): number {
   const mainLineSet = new Set(mainLine);
-  if (mainLineSet.has(currentNodeId)) return empty;
-
-  const pvLineSet = new Set(pvLine);
-  const startedOnPvLine = pvLineSet.has(currentNodeId);
-
-  const reversed: NodeId[] = [];
-  // Index in reversed where we FIRST hit a pvLine node (only when NOT started on pvLine).
-  let pvLineCrossIdx = -1;
-  let id: NodeId | null = currentNodeId;
-
-  while (id !== null && !mainLineSet.has(id)) {
-    reversed.push(id);
-    // Detect pvLine crossing (only meaningful when started off pvLine).
-    if (!startedOnPvLine && pvLineSet.has(id) && pvLineCrossIdx === -1) {
-      pvLineCrossIdx = reversed.length - 1;
-    }
-    const node = nodes.get(id);
-    id = node?.parentId ?? null;
+  let id = startId;
+  while (id !== null) {
+    if (mainLineSet.has(id)) return mainLine.indexOf(id);
+    id = nodes.get(id)?.parentId ?? null;
   }
+  return -1;
+}
 
-  const fullChain = reversed.reverse();
-
-  if (pvLineCrossIdx === -1) {
-    // Level 1: on the pvLine itself, or a variation off mainLine without pvLine crossing.
-    return { forkParentId: id, chain: fullChain, subChain: [], level: 1 };
-  }
-
-  // Level 2: started off pvLine, crossed a pvLine node during the walk.
-  // pvLineCrossIdx is the index in reversed (reverse-walk order) of the first pvLine node.
-  // In fullChain (forward order), the crossing node is at fullChain.length - 1 - pvLineCrossIdx.
-  const pvCrossForwardIdx = fullChain.length - 1 - pvLineCrossIdx;
-  // chain = pvLine portion (mainLine fork → pvLine crossing node, inclusive).
-  const chain = fullChain.slice(0, pvCrossForwardIdx + 1);
-  // subChain = user's sub-fork nodes after the pvLine crossing.
-  const subChain = fullChain.slice(pvCrossForwardIdx + 1);
-  return { forkParentId: id, chain, subChain, level: 2 };
+/** The starting ply of a block's first move, derived from its fork parent's FEN. */
+function blockStartPly(
+  nodes: Map<NodeId, MoveNode>,
+  forkParentId: NodeId | null,
+  rootPly: number,
+): number {
+  if (forkParentId === null) return rootPly;
+  return plyFromFen(nodes.get(forkParentId)?.fen);
 }
 
 /**
- * Resolve which variation chain to render. When a PV sideline exists and the user
- * has NOT forked off it (level !== 2), always render the FULL pvLine as the Level-1
- * variation — even while parked at the fork node on the main line (insertPvLine
- * parks currentNodeId there). Without this the grafted PV stays invisible until the
- * user steps into it, so clicking a tactic chip appeared to do nothing
- * (UAT 260627 item 3 — "load and show the PV as a sideline").
+ * Enumerate every sideline as a flat SiblingBlock — one indent level, no
+ * recursive nesting (Quick 260703-kyb).
+ *
+ * A non-mainLine node is a BRANCH ROOT iff its parent is on mainLine (or is the
+ * true root), OR its parent is off mainLine AND it is NOT that parent's
+ * lowest-id child (a secondary sub-fork). The lowest-id child of an off-mainLine
+ * node instead EXTENDS its parent's block — so a block's chain is its root, then
+ * the lowest-id child of the tail, repeated. Every higher-id child along the way
+ * becomes its own branch root, surfacing sub-forks as additional flat blocks
+ * rather than deeper nesting.
  */
-function resolvePvDisplayChain(
-  vc: VariationChain,
-  pvLine: NodeId[],
+function buildSiblingBlocks(
   nodes: Map<NodeId, MoveNode>,
-): VariationChain {
-  if (pvLine.length === 0 || vc.level === 2) return vc;
-  const firstPvId = pvLine[0];
-  const firstPvNode = firstPvId !== undefined ? nodes.get(firstPvId) : undefined;
-  if (firstPvNode === undefined) return vc;
-  return { forkParentId: firstPvNode.parentId, chain: pvLine, subChain: [], level: 1 };
+  mainLine: NodeId[],
+  pvNodeIds: Set<NodeId>,
+): SiblingBlock[] {
+  const mainLineSet = new Set(mainLine);
+  const blocks: SiblingBlock[] = [];
+
+  for (const node of nodes.values()) {
+    if (mainLineSet.has(node.id)) continue;
+    const parentId = node.parentId;
+    const parentOnMainOrRoot = parentId === null || mainLineSet.has(parentId);
+    const isRoot = parentOnMainOrRoot || findLowestIdChild(nodes, parentId)?.id !== node.id;
+    if (!isRoot) continue;
+
+    const chain: NodeId[] = [node.id];
+    let tailId = node.id;
+    for (let child = findLowestIdChild(nodes, tailId); child; child = findLowestIdChild(nodes, tailId)) {
+      chain.push(child.id);
+      tailId = child.id;
+    }
+
+    blocks.push({
+      rootId: node.id,
+      forkParentId: parentId,
+      nearestMainIdx: nearestMainLineIdx(nodes, mainLine, parentId),
+      chain,
+      isTactic: pvNodeIds.has(node.id),
+      branchLabel: parentOnMainOrRoot ? null : (nodes.get(parentId!)?.san ?? null),
+    });
+  }
+
+  blocks.sort((a, b) => a.rootId - b.rootId);
+  return blocks;
 }
 
 // ─── Desktop row types and builders ──────────────────────────────────────────
@@ -258,13 +294,9 @@ function buildDesktopRows(mainLine: NodeId[], rootPly: number): DesktopRow[] {
   return rows;
 }
 
-function buildVariationRows(
-  chain: NodeId[],
-  forkIdx: number,
-  rootPly: number,
-): DesktopRow[] {
+/** Build desktop rows for a sibling block's chain, starting at the given ply. */
+function buildRowsFromPly(chain: NodeId[], startPly: number): DesktopRow[] {
   const rows: DesktopRow[] = [];
-  const startPly = rootPly + forkIdx + 1; // ply of the first variation move
   let idx = 0;
 
   // When the first variation move is black's turn, open with a black-only row.
@@ -302,8 +334,8 @@ interface FlawChipProps {
   orientation: 'missed' | 'allowed';
   ply: number;
   depth: number | null;
-  activePvNodeId: NodeId | null | undefined;
-  activePvOrientation: 'missed' | 'allowed' | null | undefined;
+  /** Set of `${ply}:${orientation}` keys for every currently open tactic chip. */
+  activePvKeys: Set<string> | undefined;
   pvFetchPending: boolean | undefined;
   pvFetchError: boolean | undefined;
   onPvChipClick:
@@ -326,17 +358,14 @@ function FlawChip({
   orientation,
   ply,
   depth,
-  activePvNodeId,
-  activePvOrientation,
+  activePvKeys,
   pvFetchPending,
   pvFetchError,
   onPvChipClick,
 }: FlawChipProps): ReactNode {
-  // Match by node AND orientation when an orientation is supplied — one node can host
-  // both a missed (next flaw, shown early) and its own allowed chip (item 5).
-  const isActive =
-    nodeId === activePvNodeId &&
-    (activePvOrientation == null || activePvOrientation === orientation);
+  // Quick 260703-kyb: multiple chips read active via key membership (flat siblings),
+  // not a node/orientation singleton match.
+  const isActive = activePvKeys?.has(`${ply}:${orientation}`) ?? false;
   const isMissed = orientation === 'missed';
   const color = isMissed ? TAC_MISSED : TAC_ALLOWED;
   const bg = isMissed ? TAC_MISSED_BG : TAC_ALLOWED_BG;
@@ -403,37 +432,113 @@ function FlawChip({
 
 // ─── Mobile sub-component ────────────────────────────────────────────────────
 
+/**
+ * Convert a single flat sibling block into chip items, wrapped in single
+ * parentheses: the FIRST chip's numberLabel gets a leading "(", the LAST chip's
+ * trailing gets the severity glyph, a closing ")", and — for a free-move block
+ * only — the × delete affordance (Quick 260703-kyb — flat siblings, one paren
+ * level, no Level-2 double-paren case).
+ */
+function siblingBlockToChips(
+  block: SiblingBlock,
+  nodes: Map<NodeId, MoveNode>,
+  rootPlyVal: number,
+  currentNodeId: NodeId | null,
+  flawMarkerByNodeId: Map<NodeId, FlawMarkerEntry> | undefined,
+  onDeleteLine: ((rootId: NodeId) => void) | undefined,
+): HorizontalMoveItem[] {
+  const startPly = blockStartPly(nodes, block.forkParentId, rootPlyVal);
+  const items: HorizontalMoveItem[] = [];
+
+  block.chain.forEach((nodeId, i) => {
+    const node = nodes.get(nodeId);
+    if (!node) return;
+    const isWhite = (startPly + i) % 2 === 0;
+    const label = isWhite ? moveLabel(startPly, i) : null;
+    const isFirst = i === 0;
+    const isLast = i === block.chain.length - 1;
+
+    const flaw = flawMarkerByNodeId?.get(nodeId);
+    const showSeverityMarker =
+      flaw != null && (flaw.severity === 'blunder' || flaw.severity === 'mistake');
+    const SeverityIcon = flaw?.severity === 'blunder' ? BlunderIcon : MistakeIcon;
+
+    const trailing = isLast ? (
+      <span className="text-muted-foreground select-none inline-flex items-center">
+        {showSeverityMarker && (
+          <SeverityIcon className="inline h-4 w-4 ml-0.5 align-middle" aria-hidden />
+        )}
+        {')'}
+        {!block.isTactic && (
+          <button
+            type="button"
+            data-testid={`btn-delete-line-${block.rootId}`}
+            aria-label="Delete variation"
+            className="text-muted-foreground hover:text-foreground inline-flex items-center ml-0.5"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDeleteLine?.(block.rootId);
+            }}
+          >
+            <X className="h-3.5 w-3.5" aria-hidden />
+          </button>
+        )}
+      </span>
+    ) : showSeverityMarker ? (
+      <SeverityIcon className="inline h-4 w-4 ml-0.5 align-middle" aria-hidden />
+    ) : undefined;
+
+    items.push({
+      key: nodeId,
+      ply: nodeId,
+      numberLabel: isFirst ? `(${label ?? ''}` : label,
+      san: node.san,
+      isCurrent: nodeId === currentNodeId,
+      testId: `variation-node-${nodeId}`,
+      ariaLabel: `Move ${label ?? ''} ${node.san}`.trim(),
+      trailing,
+    });
+  });
+
+  return items;
+}
+
 function MobileTree({
   nodes,
   mainLine,
   currentNodeId,
-  pvLine,
+  pvNodeIds,
   rootPly,
   onNodeClick,
   heightClass,
   flawMarkerByNodeId,
+  onDeleteLine,
 }: VariationTreeProps) {
   const rootPlyVal = rootPly ?? 0;
-  const resolvedPvLine = pvLine ?? [];
-  const { forkParentId, chain, subChain, level } = resolvePvDisplayChain(
-    buildVariationChain(nodes, mainLine, resolvedPvLine, currentNodeId),
-    resolvedPvLine,
-    nodes,
-  );
-  const forkIdx = forkParentId !== null ? mainLine.indexOf(forkParentId) : -1;
+  const resolvedPvNodeIds = pvNodeIds ?? new Set<NodeId>();
+  const blocks = buildSiblingBlocks(nodes, mainLine, resolvedPvNodeIds);
 
-  // Combined flat variation chain for mobile rendering: PV nodes + sub-fork nodes.
-  const fullVarChain: NodeId[] = level === 2 ? [...chain, ...subChain] : chain;
+  // Group blocks by the mainLine index they attach to (-1 = before mainLine[0]).
+  // buildSiblingBlocks already sorts by rootId (fork-creation order), preserved here.
+  const blocksByIdx = new Map<number, SiblingBlock[]>();
+  for (const block of blocks) {
+    const list = blocksByIdx.get(block.nearestMainIdx) ?? [];
+    list.push(block);
+    blocksByIdx.set(block.nearestMainIdx, list);
+  }
 
-  // Map main-line nodes to chip items.
-  const mainItems = mainLine.map((nodeId, idx): HorizontalMoveItem | null => {
+  const chipsFor = (block: SiblingBlock): HorizontalMoveItem[] =>
+    siblingBlockToChips(block, nodes, rootPlyVal, currentNodeId, flawMarkerByNodeId, onDeleteLine);
+
+  const items: HorizontalMoveItem[] = [];
+  for (const block of blocksByIdx.get(-1) ?? []) items.push(...chipsFor(block));
+
+  mainLine.forEach((nodeId, idx) => {
     const node = nodes.get(nodeId);
-    if (!node) return null;
+    if (!node) return;
     const plyOffset = rootPlyVal + idx;
     const isWhite = plyOffset % 2 === 0;
     const label = isWhite ? moveLabel(rootPlyVal, idx) : null;
-    const isFork = idx === forkIdx;
-    const isAfterFork = forkIdx >= 0 && idx > forkIdx;
 
     // Severity marker for blunders/mistakes (mobile parity — D-02). Shown regardless
     // of a tactic chip on the move (UAT thl item 3); mobile renders no inline chip, so
@@ -443,93 +548,25 @@ function MobileTree({
       flaw != null && (flaw.severity === 'blunder' || flaw.severity === 'mistake');
     const SeverityIcon = flaw?.severity === 'blunder' ? BlunderIcon : MistakeIcon;
 
-    // Opening paren: single for Level-1, double for Level-2.
-    const parenOpen =
-      isFork && fullVarChain.length > 0 ? (level === 2 ? '((' : '(') : null;
-
-    return {
+    items.push({
       key: nodeId,
       ply: nodeId,
       numberLabel: label,
       san: node.san,
       isCurrent: nodeId === currentNodeId,
-      dimmed: isAfterFork,
       testId: `variation-node-${nodeId}`,
       ariaLabel: `Move ${label ?? ''} ${node.san}`.trim(),
-      trailing:
-        parenOpen != null ? (
-          <span className="text-muted-foreground select-none ml-0.5">
-            {parenOpen}
-            {showSeverityMarker && (
-              <SeverityIcon className="inline h-4 w-4 ml-0.5 align-middle" aria-hidden />
-            )}
-          </span>
-        ) : showSeverityMarker ? (
-          <SeverityIcon className="inline h-4 w-4 ml-0.5 align-middle" aria-hidden />
-        ) : undefined,
-    };
+      trailing: showSeverityMarker ? (
+        <SeverityIcon className="inline h-4 w-4 ml-0.5 align-middle" aria-hidden />
+      ) : undefined,
+    });
+
+    for (const block of blocksByIdx.get(idx) ?? []) items.push(...chipsFor(block));
   });
-
-  // Map variation-chain nodes to chip items.
-  const varItems = fullVarChain.map((nodeId, varIdx): HorizontalMoveItem | null => {
-    const node = nodes.get(nodeId);
-    if (!node) return null;
-    const varPlyIdx = (forkIdx >= 0 ? forkIdx + 1 : 0) + varIdx;
-    const plyOffset = rootPlyVal + varPlyIdx;
-    const isWhite = plyOffset % 2 === 0;
-    const label = isWhite ? moveLabel(rootPlyVal, varPlyIdx) : null;
-    const isLast = varIdx === fullVarChain.length - 1;
-    // Closing paren: single for Level-1, double for Level-2.
-    const parenClose = level === 2 ? '))' : ')';
-    const isCurrent = nodeId === currentNodeId;
-
-    // Live free-move severity glyph on EVERY variation/free node, not just the current one
-    // (Quick 260628-r5v UAT — icons used to vanish when stepping forward): blunder/mistake
-    // only, glyph-only (no tactic chip on mobile variations). Mirrors the desktop renderer +
-    // the main-line mobile glyph; entries come from the per-node live-flaw cache.
-    const flaw = flawMarkerByNodeId?.get(nodeId);
-    const showSeverityMarker =
-      flaw != null && (flaw.severity === 'blunder' || flaw.severity === 'mistake');
-    const SeverityIcon = flaw?.severity === 'blunder' ? BlunderIcon : MistakeIcon;
-    const severityGlyph = showSeverityMarker ? (
-      <SeverityIcon className="inline h-4 w-4 ml-0.5 align-middle" aria-hidden />
-    ) : null;
-
-    return {
-      key: nodeId,
-      ply: nodeId,
-      numberLabel: label,
-      san: node.san,
-      isCurrent,
-      testId: `variation-node-${nodeId}`,
-      ariaLabel: `Move ${label ?? ''} ${node.san}`.trim(),
-      trailing: isLast ? (
-        <span className="text-muted-foreground select-none">
-          {severityGlyph}
-          {parenClose}
-        </span>
-      ) : (
-        severityGlyph ?? undefined
-      ),
-    };
-  });
-
-  const filteredMain = mainItems.filter((i): i is HorizontalMoveItem => i !== null);
-  const filteredVar = varItems.filter((i): i is HorizontalMoveItem => i !== null);
-
-  // Insert variation items between the fork node and the rest of the main line.
-  const finalItems: HorizontalMoveItem[] =
-    forkIdx >= 0
-      ? [
-          ...filteredMain.slice(0, forkIdx + 1),
-          ...filteredVar,
-          ...filteredMain.slice(forkIdx + 1),
-        ]
-      : filteredMain;
 
   return (
     <HorizontalMoveList
-      items={finalItems}
+      items={items}
       onMoveClick={(ply) => onNodeClick(ply)}
       heightClass={heightClass ?? 'h-20 sm:h-20'}
       emptyText="No moves yet"
@@ -544,21 +581,21 @@ function DesktopTree({
   nodes,
   mainLine,
   currentNodeId,
-  pvLine,
+  pvNodeIds,
   rootPly,
   onNodeClick,
   decorations,
   flawMarkerByNodeId,
   onPvChipClick,
-  activePvNodeId,
-  activePvOrientation,
+  activePvKeys,
   pvFetchPending,
   pvFetchError,
   initialPly,
+  onDeleteLine,
 }: VariationTreeProps) {
   const activeRef = useRef<HTMLButtonElement | null>(null);
   const rootPlyVal = rootPly ?? 0;
-  const resolvedPvLine = pvLine ?? [];
+  const resolvedPvNodeIds = pvNodeIds ?? new Set<NodeId>();
 
   // The node the board opens at in game mode (initialPly, defaulting to ply 0).
   // undefined in free play (empty mainLine) — the initial top-align branch is skipped.
@@ -599,13 +636,6 @@ function DesktopTree({
     el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [currentNodeId, initialNodeId, lastNodeId]);
 
-  const { forkParentId, chain, subChain, level } = resolvePvDisplayChain(
-    buildVariationChain(nodes, mainLine, resolvedPvLine, currentNodeId),
-    resolvedPvLine,
-    nodes,
-  );
-  const forkIdx = forkParentId !== null ? mainLine.indexOf(forkParentId) : -1;
-
   if (mainLine.length === 0 && nodes.size === 0) {
     return (
       <div
@@ -620,37 +650,37 @@ function DesktopTree({
   }
 
   const mainRows = buildDesktopRows(mainLine, rootPlyVal);
-  const varRows =
-    chain.length > 0 && forkIdx >= 0 ? buildVariationRows(chain, forkIdx, rootPlyVal) : [];
-  // Level-2 sub-rows start after all Level-1 chain nodes.
-  const subVarRows =
-    level === 2 && subChain.length > 0 && forkIdx >= 0
-      ? buildVariationRows(subChain, forkIdx + chain.length, rootPlyVal)
-      : [];
 
-  const forkRowIdx =
-    forkIdx >= 0
-      ? mainRows.findIndex(
-          (r) => r.whiteNodeId === forkParentId || r.blackNodeId === forkParentId,
-        )
-      : -1;
+  // Flat sibling blocks — one per open sideline (tactic or free-move), grouped by
+  // the mainLine row they attach to (Quick 260703-kyb).
+  const blocks = buildSiblingBlocks(nodes, mainLine, resolvedPvNodeIds);
+  const blocksByRow = new Map<number, SiblingBlock[]>();
+  for (const block of blocks) {
+    const mainNodeId = block.nearestMainIdx >= 0 ? mainLine[block.nearestMainIdx] : undefined;
+    const rowIdx =
+      mainNodeId !== undefined
+        ? mainRows.findIndex((r) => r.whiteNodeId === mainNodeId || r.blackNodeId === mainNodeId)
+        : -1;
+    const list = blocksByRow.get(rowIdx) ?? [];
+    list.push(block);
+    blocksByRow.set(rowIdx, list);
+  }
 
   const renderMoveButton = (
     nodeId: NodeId,
     label: string,
     isVariation: boolean,
-    isSubVariation = false,
   ): ReactNode => {
     const node = nodes.get(nodeId);
     if (!node) return null;
     const isCurrent = nodeId === currentNodeId;
     const decoColor = !isCurrent ? decorations?.get(nodeId) : undefined;
 
-    // Flaw marker for mainLine nodes only (not variation/sub-variation nodes) — drives the
+    // Flaw marker for mainLine nodes only (not sideline nodes) — drives the
     // tactic chips, which stay main-line-only.
     const flaw = !isVariation ? flawMarkerByNodeId?.get(nodeId) : undefined;
     const hasTacticChip = flaw != null && (flaw.missedMotif != null || flaw.allowedMotif != null);
-    // Severity glyph source: main-line nodes use their flaw entry; variation/free nodes read
+    // Severity glyph source: main-line nodes use their flaw entry; sideline/free nodes read
     // the same map (moveListMarkers) for ANY node, not only the current one — so the live
     // blunder/mistake glyph persists on every explored sideline move instead of vanishing when
     // the user steps forward (Quick 260628-r5v UAT). The variation entries come from the
@@ -677,8 +707,7 @@ function DesktopTree({
             className={cn(
               'text-sm font-mono px-1 py-0.5 rounded transition-colors hover:bg-accent',
               isCurrent && 'bg-primary text-primary-foreground hover:bg-primary/90',
-              !isCurrent && (isVariation || isSubVariation) && !decoColor && 'text-muted-foreground',
-              isSubVariation && !isCurrent && 'opacity-80',
+              !isCurrent && isVariation && !decoColor && 'text-muted-foreground',
               decoColor && 'font-bold',
             )}
             style={decoColor ? { color: decoColor } : undefined}
@@ -706,8 +735,7 @@ function DesktopTree({
                 // chip is rendered on the decision node one ply earlier (item 5).
                 ply={flaw.missedPly ?? flaw.ply}
                 depth={flaw.missedDepth}
-                activePvNodeId={activePvNodeId}
-                activePvOrientation={activePvOrientation}
+                activePvKeys={activePvKeys}
                 pvFetchPending={pvFetchPending}
                 pvFetchError={pvFetchError}
                 onPvChipClick={onPvChipClick}
@@ -721,8 +749,7 @@ function DesktopTree({
                 orientation="allowed"
                 ply={flaw.ply}
                 depth={flaw.allowedDepth}
-                activePvNodeId={activePvNodeId}
-                activePvOrientation={activePvOrientation}
+                activePvKeys={activePvKeys}
                 pvFetchPending={pvFetchPending}
                 pvFetchError={pvFetchError}
                 onPvChipClick={onPvChipClick}
@@ -737,7 +764,6 @@ function DesktopTree({
   const renderDesktopRow = (
     row: DesktopRow,
     isVariation: boolean,
-    isSubVariation = false,
     rowBg = '',
   ): ReactNode => {
     const whiteLabel = `${row.moveNumber}.`;
@@ -749,12 +775,55 @@ function DesktopTree({
         </span>
         <div className="flex-1 min-w-0">
           {row.whiteNodeId !== undefined &&
-            renderMoveButton(row.whiteNodeId, whiteLabel, isVariation, isSubVariation)}
+            renderMoveButton(row.whiteNodeId, whiteLabel, isVariation)}
         </div>
         <div className="flex-1 min-w-0">
           {row.blackNodeId !== undefined &&
-            renderMoveButton(row.blackNodeId, blackLabel, isVariation, isSubVariation)}
+            renderMoveButton(row.blackNodeId, blackLabel, isVariation)}
         </div>
+      </div>
+    );
+  };
+
+  // Render one flat sibling block (Quick 260703-kyb): a header (branch label +
+  // × delete for a free-move block) followed by its move rows. Kept as a
+  // separate helper (not inlined in the JSX below) to keep the return block's
+  // logic LOC in check (CLAUDE.md function-size limits).
+  const renderSiblingBlock = (block: SiblingBlock, rowBg: string): ReactNode => {
+    const startPly = blockStartPly(nodes, block.forkParentId, rootPlyVal);
+    const rows = buildRowsFromPly(block.chain, startPly);
+    const showHeader = block.branchLabel != null || !block.isTactic;
+    return (
+      <div
+        key={block.rootId}
+        data-testid={block.isTactic ? 'variation-pv-section' : 'variation-freemove-section'}
+        // The whole sideline inherits the fork row's zebra band (item 2).
+        className={cn('ml-8 border-l-2 border-muted/40 pl-2', rowBg)}
+      >
+        {showHeader && (
+          <div className="flex items-center justify-between min-h-[20px]">
+            <span className="text-sm text-muted-foreground">
+              {block.branchLabel != null ? `(after ${block.branchLabel})` : ''}
+            </span>
+            {!block.isTactic && (
+              <button
+                type="button"
+                data-testid={`btn-delete-line-${block.rootId}`}
+                aria-label="Delete variation"
+                className="text-muted-foreground hover:text-foreground shrink-0 p-0.5"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteLine?.(block.rootId);
+                }}
+              >
+                <X className="h-4 w-4" aria-hidden />
+              </button>
+            )}
+          </div>
+        )}
+        {rows.map((row, rowIdx) => (
+          <Fragment key={rowIdx}>{renderDesktopRow(row, true)}</Fragment>
+        ))}
       </div>
     );
   };
@@ -775,30 +844,12 @@ function DesktopTree({
       // height, so the controls bottom-align with the eval-chart slider — no magic px.
       className="absolute inset-0 overflow-y-auto thin-scrollbar"
     >
+      {(blocksByRow.get(-1) ?? []).map((block) => renderSiblingBlock(block, ''))}
       {mainRows.map((row, rowIdx) => (
         <Fragment key={rowIdx}>
-          {renderDesktopRow(row, false, false, zebraBg(rowIdx))}
-          {rowIdx === forkRowIdx && varRows.length > 0 && (
-            <div
-              data-testid="variation-pv-section"
-              // The whole sideline inherits the fork row's zebra band (item 2).
-              className={cn('ml-8 border-l-2 border-muted/40 pl-2', zebraBg(forkRowIdx))}
-            >
-              {varRows.map((vRow, vIdx) => (
-                <Fragment key={vIdx}>{renderDesktopRow(vRow, true)}</Fragment>
-              ))}
-              {/* Level-2 sub-PV block nested inside Level-1. */}
-              {level === 2 && subVarRows.length > 0 && (
-                <div
-                  data-testid="variation-subpv-section"
-                  className="ml-8 border-l-2 border-muted/30 pl-2"
-                >
-                  {subVarRows.map((sRow, sIdx) => (
-                    <Fragment key={sIdx}>{renderDesktopRow(sRow, true, true)}</Fragment>
-                  ))}
-                </div>
-              )}
-            </div>
+          {renderDesktopRow(row, false, zebraBg(rowIdx))}
+          {(blocksByRow.get(rowIdx) ?? []).map((block) =>
+            renderSiblingBlock(block, zebraBg(rowIdx)),
           )}
         </Fragment>
       ))}
@@ -809,12 +860,14 @@ function DesktopTree({
 // ─── Main export ─────────────────────────────────────────────────────────────
 
 /**
- * VariationTree — navigable move list showing the main line + up to two active
- * nesting levels. Click any node to call onNodeClick(nodeId) (→ goToNode).
+ * VariationTree — navigable move list showing the main line + every open
+ * sideline as a flat sibling block. Click any node to call onNodeClick(nodeId)
+ * (→ goToNode).
  *
- * Phase 140 additions: pvLine/flawMarkerByNodeId/onPvChipClick/activePvNodeId
- * enable inline tactic chip expansion (Level-1) and sub-sideline navigation (Level-2).
- * All new props are optional so existing callers require no changes.
+ * Quick 260703-kyb: pvNodeIds/flawMarkerByNodeId/onPvChipClick/activePvKeys/
+ * onDeleteLine enable inline tactic chip expansion and free-move × deletion —
+ * one indent level only, no recursive nesting, no promote-to-mainline. All new
+ * props are optional so existing callers require no changes.
  */
 export function VariationTree(props: VariationTreeProps) {
   // `variant='vertical'` forces the paired vertical list at every width (mobile

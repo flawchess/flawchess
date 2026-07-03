@@ -952,12 +952,12 @@ class TestOpeningEvalCacheRead:
             assert _CACHE_HASH_B in result, "cached hash B must be returned"
             assert _CACHE_HASH_MISS not in result, "uncached hash must be absent"
 
-            # Values must match what was seeded.
-            assert result[_CACHE_HASH_A] == (42, None, "e2e4"), (
-                f"hash A: expected (42, None, 'e2e4'), got {result[_CACHE_HASH_A]}"
+            # Values must match what was seeded (4-tuple incl. pv — SEED-076 follow-up).
+            assert result[_CACHE_HASH_A] == (42, None, "e2e4", None), (
+                f"hash A: expected (42, None, 'e2e4', None), got {result[_CACHE_HASH_A]}"
             )
-            assert result[_CACHE_HASH_B] == (None, 3, "d1h5"), (
-                f"hash B: expected (None, 3, 'd1h5'), got {result[_CACHE_HASH_B]}"
+            assert result[_CACHE_HASH_B] == (None, 3, "d1h5", None), (
+                f"hash B: expected (None, 3, 'd1h5', None), got {result[_CACHE_HASH_B]}"
             )
         finally:
             await _delete_opening_eval_rows(drain_test_session_maker, cleanup_hashes)

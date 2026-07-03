@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import httpx
@@ -201,6 +201,7 @@ async def _get_game_position(
             "eval_cp": gp.eval_cp,
             "eval_mate": gp.eval_mate,
             "best_move": gp.best_move,
+            "pv": gp.pv,
         }
 
 
@@ -4747,3 +4748,548 @@ class TestFlawBlobSubmitEndpoint:
             )
         finally:
             await _delete_games(eval_worker_session_maker, [game_id])
+
+
+# ─── SEED-076: cache-aware incremental lease + blob-preserving classify ────────
+#
+# Root cause (FLAWCHESS-8B): a weak remote worker times out on high-branching
+# opening positions, submits partial evals; the atomic path passed dedup_map={}
+# and re-leased the whole game, so fillable cached-opening holes reached the
+# Path-C cap and were permanently stamped complete. These tests cover the fix:
+#   - _build_lease_positions omits cached + already-eval'd positions (never the
+#     terminal donor; falls back to the full list rather than an empty lease).
+#   - the submit paths fill cached openings server-side (dedup_map) before the
+#     hole count, and preserve_existing_evals keeps already-eval'd plies out of it.
+#   - _apply_atomic_submit snapshots + restores flaw blobs/tags so a sparse retry
+#     never wipes an already-blobbed midgame flaw.
+
+_SEED076_PGN: str = _SIX_PLY_PGN_142  # 6 plies (0-5) + terminal donor (ply 6)
+
+
+def _atomic_request(
+    game_id: int,
+    eval_dicts: list[dict[str, object]],
+) -> Any:
+    """Build an AtomicSubmitRequest from _BLUNDER-style eval dicts (no blob_nodes)."""
+    from app.schemas.eval_remote import AtomicSubmitEval, AtomicSubmitRequest
+
+    return AtomicSubmitRequest(
+        game_id=game_id,
+        sf_version="Stockfish 18",
+        worker_schema_version=1,
+        evals=[
+            AtomicSubmitEval(
+                ply=int(cast(int, e["ply"])),
+                eval_cp=cast("int | None", e["eval_cp"]),
+                eval_mate=cast("int | None", e["eval_mate"]),
+                best_move=cast("str | None", e["best_move"]),
+                pv=cast("str | None", e["pv"]),
+            )
+            for e in eval_dicts
+        ],
+        blob_nodes=[],
+    )
+
+
+async def _insert_opening_cache(
+    session_maker: async_sessionmaker[AsyncSession],
+    rows: list[tuple[int, int | None, int | None, str | None]],
+) -> None:
+    """Insert opening_position_eval rows: (full_hash, eval_cp, eval_mate, best_move)."""
+    from app.models.opening_position_eval import OpeningPositionEval
+
+    async with session_maker() as session:
+        for full_hash, cp, mate, bm in rows:
+            session.add(
+                OpeningPositionEval(full_hash=full_hash, eval_cp=cp, eval_mate=mate, best_move=bm)
+            )
+        await session.commit()
+
+
+async def _insert_opening_cache_with_pv(
+    session_maker: async_sessionmaker[AsyncSession],
+    rows: list[tuple[int, int | None, int | None, str | None, str | None]],
+) -> None:
+    """Insert opening_position_eval rows incl. pv: (full_hash, eval_cp, eval_mate,
+    best_move, pv). SEED-076 follow-up: pv-bearing variant of _insert_opening_cache
+    for tests exercising the pv-gated lease omission / merge mechanism."""
+    from app.models.opening_position_eval import OpeningPositionEval
+
+    async with session_maker() as session:
+        for full_hash, cp, mate, bm, pv in rows:
+            session.add(
+                OpeningPositionEval(
+                    full_hash=full_hash, eval_cp=cp, eval_mate=mate, best_move=bm, pv=pv
+                )
+            )
+        await session.commit()
+
+
+async def _delete_opening_cache(
+    session_maker: async_sessionmaker[AsyncSession],
+    full_hashes: list[int],
+) -> None:
+    from app.models.opening_position_eval import OpeningPositionEval
+
+    if not full_hashes:
+        return
+    async with session_maker() as session:
+        await session.execute(
+            delete(OpeningPositionEval).where(OpeningPositionEval.full_hash.in_(full_hashes))
+        )
+        await session.commit()
+
+
+def test_build_lease_positions_incremental_omits_already_evald() -> None:
+    """SEED-076: a ply whose DB row (row Q-1, post-move shift) already has an eval is
+    omitted from the re-lease; the terminal donor and genuine holes are kept."""
+    from app.routers.eval_remote import _build_lease_positions
+
+    # row 1 already eval'd → position 2 (whose eval fills row 1) is redundant.
+    gp_rows: list[tuple[int, int, int | None, int | None]] = [
+        (0, 100, None, None),
+        (1, 101, 50, None),
+        (2, 102, None, None),
+        (3, 103, None, None),
+        (4, 104, None, None),
+        (5, 105, None, None),
+    ]
+    positions = _build_lease_positions(1, _SEED076_PGN, gp_rows)
+    assert positions is not None
+    plies = {p.ply for p in positions}
+    assert 2 not in plies, "position 2 (fills already-eval'd row 1) must be omitted"
+    assert {0, 1, 3, 4, 5}.issubset(plies), "genuine holes must remain leased"
+    assert any(p.is_terminal for p in positions), "terminal donor must always be kept"
+
+
+def test_build_lease_positions_cache_aware_omits_cached_opening() -> None:
+    """SEED-076: an opening position whose full_hash is in the cache is omitted (the
+    submit dedup_map fills it server-side)."""
+    from app.routers.eval_remote import _build_lease_positions
+
+    gp_rows = [(p, 100 + p, None, None) for p in range(6)]
+    # h3 = 103 is cached → position 3 omitted.
+    positions = _build_lease_positions(1, _SEED076_PGN, gp_rows, frozenset({103}))
+    assert positions is not None
+    plies = {p.ply for p in positions}
+    assert 3 not in plies, "cached opening position 3 must be omitted"
+    assert any(p.is_terminal for p in positions), "terminal donor must always be kept"
+
+
+def test_build_lease_positions_terminal_kept_when_all_rows_filled() -> None:
+    """SEED-076: even with every real row already eval'd, the terminal donor survives
+    the incremental filter (SEED-044 pitfall 3)."""
+    from app.routers.eval_remote import _build_lease_positions
+
+    gp_rows: list[tuple[int, int, int | None, int | None]] = [
+        (p, 100 + p, 10 + p, None) for p in range(6)
+    ]  # all filled
+    positions = _build_lease_positions(1, _SEED076_PGN, gp_rows)
+    assert positions is not None
+    assert any(p.is_terminal for p in positions), "terminal donor must survive"
+
+
+def test_build_lease_positions_empty_filter_falls_back_to_full_list() -> None:
+    """SEED-076 safety net: a board-over game with every position redundant must not
+    yield an empty lease (which would starve the game of the dedup-triggering submit)."""
+    from app.routers.eval_remote import _build_lease_positions
+
+    # Fool's mate → game-over final board → NO terminal donor; last row ends_game.
+    fools_mate = "1. f3 e5 2. g4 Qh4# *"
+    gp_rows: list[tuple[int, int, int | None, int | None]] = [
+        (p, 200 + p, 10 + p, None) for p in range(4)
+    ]  # all filled
+    cached = frozenset({200, 201, 202, 203})  # + all cached
+    positions = _build_lease_positions(1, fools_mate, gp_rows, cached)
+    assert positions is not None
+    assert len(positions) == 4, "must fall back to the full position list, not an empty lease"
+
+
+@pytest.mark.asyncio
+async def test_atomic_submit_fills_cached_opening_hole_server_side(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """SEED-076 (req a): a partial submit missing a cached opening ply is filled
+    server-side from opening_position_eval — no worker round-trip — and the game
+    reaches Path A (no permanent hole)."""
+    from app.routers.eval_remote import _apply_atomic_submit
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    user_id = eval_worker_test_user
+    base = 76000
+    game_id = await _insert_game(eval_worker_session_maker, user_id, pgn=_SEED076_PGN)
+    await _insert_game_positions(
+        eval_worker_session_maker,
+        user_id,
+        game_id,
+        [{"ply": p, "full_hash": base + p, "eval_cp": None, "eval_mate": None} for p in range(6)],
+    )
+    # Cache position 1's hash with eval 20 (== blunder pos_eval[1]); worker omits ply 1.
+    await _insert_opening_cache(eval_worker_session_maker, [(base + 1, 20, None, "e2e4")])
+    partial = [e for e in _BLUNDER_SUBMIT_EVALS_142 if e["ply"] != 1]
+
+    try:
+        resp = await _apply_atomic_submit(game_id, _atomic_request(game_id, partial))
+        assert resp.failed_ply_count == 0, (
+            f"cached opening must be filled server-side (no hole), got {resp.failed_ply_count}"
+        )
+        row0 = await _get_game_position(eval_worker_session_maker, game_id, 0)
+        assert row0 is not None and row0["eval_cp"] == 20, (
+            f"row 0 (= pos_eval[1]) must be filled from cache, got {row0}"
+        )
+        stamped = await _get_game_full_evals_completed_at(eval_worker_session_maker, game_id)
+        assert stamped is not None, "Path A must stamp full_evals_completed_at"
+    finally:
+        await _delete_games(eval_worker_session_maker, [game_id])
+        await _delete_opening_cache(eval_worker_session_maker, [base + 1])
+
+
+@pytest.mark.asyncio
+async def test_atomic_submit_uncached_hole_bounded_by_path_c(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """SEED-076 (req b): a genuinely-uncached residual hole stays bounded by Path C —
+    stamped complete after MAX_EVAL_ATTEMPTS, never re-leased forever."""
+    from app.routers.eval_remote import _apply_atomic_submit
+    from app.services.eval_drain import MAX_EVAL_ATTEMPTS
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    user_id = eval_worker_test_user
+    base = 76100
+    game_id = await _insert_game(
+        eval_worker_session_maker,
+        user_id,
+        pgn=_SEED076_PGN,
+        full_eval_attempts=MAX_EVAL_ATTEMPTS - 1,  # this submit is the last attempt
+    )
+    await _insert_game_positions(
+        eval_worker_session_maker,
+        user_id,
+        game_id,
+        [{"ply": p, "full_hash": base + p, "eval_cp": None, "eval_mate": None} for p in range(6)],
+    )
+    # No cache entry → position 1 is a genuine hole; worker omits it.
+    partial = [e for e in _BLUNDER_SUBMIT_EVALS_142 if e["ply"] != 1]
+
+    try:
+        resp = await _apply_atomic_submit(game_id, _atomic_request(game_id, partial))
+        assert resp.failed_ply_count == 1, f"row 0 must be an uncached hole, got {resp}"
+        stamped = await _get_game_full_evals_completed_at(eval_worker_session_maker, game_id)
+        assert stamped is not None, "Path C must stamp complete at the cap (no infinite re-lease)"
+        row0 = await _get_game_position(eval_worker_session_maker, game_id, 0)
+        assert row0 is not None and row0["eval_cp"] is None, "residual hole stays NULL (accepted)"
+    finally:
+        await _delete_games(eval_worker_session_maker, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_atomic_submit_preserve_guard_omitted_evald_ply_not_hole(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """SEED-076: an already-eval'd ply dropped from the incremental re-lease (worker
+    does not resend it) is NOT counted as a hole — the game still reaches Path A."""
+    from app.routers.eval_remote import _apply_atomic_submit
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    user_id = eval_worker_test_user
+    base = 76200
+    game_id = await _insert_game(eval_worker_session_maker, user_id, pgn=_SEED076_PGN)
+    rows = [{"ply": p, "full_hash": base + p, "eval_cp": None, "eval_mate": None} for p in range(6)]
+    rows[1] = {"ply": 1, "full_hash": base + 1, "eval_cp": 45, "eval_mate": None}  # already eval'd
+    await _insert_game_positions(eval_worker_session_maker, user_id, game_id, rows)
+    # Worker omits position 2 (which fills row 1) — row 1 already carries an eval.
+    partial = [e for e in _BLUNDER_SUBMIT_EVALS_142 if e["ply"] != 2]
+
+    try:
+        resp = await _apply_atomic_submit(game_id, _atomic_request(game_id, partial))
+        assert resp.failed_ply_count == 0, (
+            f"already-eval'd row 1 must not be counted as a hole, got {resp.failed_ply_count}"
+        )
+        stamped = await _get_game_full_evals_completed_at(eval_worker_session_maker, game_id)
+        assert stamped is not None, "preserve guard must let the game reach Path A"
+        row1 = await _get_game_position(eval_worker_session_maker, game_id, 1)
+        assert row1 is not None and row1["eval_cp"] == 45, "existing eval must not be overwritten"
+    finally:
+        await _delete_games(eval_worker_session_maker, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_atomic_retry_preserves_existing_flaw_blobs_and_tags(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """SEED-076: a sparse atomic retry (no fresh blob for an already-done flaw) must NOT
+    wipe its allowed/missed PV-line blobs + tactic tags via classify's delete-then-insert."""
+    from app.models.game_flaw import GameFlaw
+    from app.routers.eval_remote import _apply_atomic_submit
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    user_id = eval_worker_test_user
+    base = 76300
+    game_id = await _insert_game(eval_worker_session_maker, user_id, pgn=_SEED076_PGN)
+    await _insert_game_positions(
+        eval_worker_session_maker,
+        user_id,
+        game_id,
+        [{"ply": p, "full_hash": base + p, "eval_cp": None, "eval_mate": None} for p in range(6)],
+    )
+
+    preserved_allowed = [{"b": 10, "bm": None, "s": 5, "sm": None, "su": "e2e4"}]
+    preserved_missed = [{"b": 20, "bm": None, "s": 8, "sm": None, "su": "d2d4"}]
+    try:
+        # Attempt 1: full evals, no blobs → flaw row created at ply 2 (blobs NULL).
+        await _apply_atomic_submit(
+            game_id, _atomic_request(game_id, list(_BLUNDER_SUBMIT_EVALS_142))
+        )
+        # Simulate attempt 1 having blobbed + tagged the flaw (as an atomic worker would).
+        async with eval_worker_session_maker() as s:
+            await s.execute(
+                sa.update(GameFlaw)
+                .where(GameFlaw.game_id == game_id, GameFlaw.ply == 2)
+                .values(
+                    allowed_pv_lines=preserved_allowed,
+                    missed_pv_lines=preserved_missed,
+                    allowed_tactic_motif=7,
+                    allowed_tactic_confidence=80,
+                )
+            )
+            await s.commit()
+
+        # Attempt 2: full evals again, NO blobs → classify delete-then-insert would wipe
+        # the flaw's blobs/tags; the snapshot+restore must preserve them.
+        await _apply_atomic_submit(
+            game_id, _atomic_request(game_id, list(_BLUNDER_SUBMIT_EVALS_142))
+        )
+
+        async with eval_worker_session_maker() as verify:
+            row = (
+                await verify.execute(
+                    select(
+                        GameFlaw.allowed_pv_lines,
+                        GameFlaw.missed_pv_lines,
+                        GameFlaw.allowed_tactic_motif,
+                    ).where(GameFlaw.game_id == game_id, GameFlaw.ply == 2)
+                )
+            ).one_or_none()
+        assert row is not None, "flaw at ply 2 must still exist after the retry"
+        allowed, missed, motif = row
+        assert allowed == preserved_allowed, f"allowed_pv_lines must be preserved, got {allowed}"
+        assert missed == preserved_missed, f"missed_pv_lines must be preserved, got {missed}"
+        assert motif == 7, f"allowed_tactic_motif must be preserved, got {motif}"
+    finally:
+        await _delete_games(eval_worker_session_maker, [game_id])
+
+
+# ─── SEED-076 follow-up: cache the pv alongside the eval (Task 3) ─────────────
+#
+# Fix: opening_position_eval gained a nullable pv column (Task 1) and
+# _fetch_dedup_evals/_upsert_opening_cache now carry it (Task 2). These tests cover
+# the submit-side merge + pv-gated lease omission:
+#   - _fetch_cached_opening_hashes only omits a cached opening when its cache row
+#     has a real pv (a pv-less row must still be leased to the worker).
+#   - _merge_dedup_pv_into_engine_map lets a cache-omitted opening flaw ply get a
+#     real walkable PV (game_positions.pv + a non-sentineled game_flaws blob line)
+#     instead of the permanent [] sentinel.
+#   - _upsert_opening_cache's self-heal backfills pv onto a pv-less row without
+#     touching eval_cp/eval_mate/best_move, and never clobbers an existing pv.
+
+
+@pytest.mark.asyncio
+async def test_fetch_cached_opening_hashes_gates_on_pv_presence(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    """SEED-076 follow-up: a cache row WITH pv is omittable from the lease; a cache row
+    WITHOUT pv is NOT (the worker must still evaluate it fresh to get a pv)."""
+    from app.routers.eval_remote import _fetch_cached_opening_hashes
+
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    base = 76400
+    hash_with_pv = base
+    hash_without_pv = base + 1
+    await _insert_opening_cache_with_pv(
+        eval_worker_session_maker, [(hash_with_pv, 30, None, "g1f3", "g1f3 b8c6")]
+    )
+    await _insert_opening_cache(eval_worker_session_maker, [(hash_without_pv, 10, None, "d2d4")])
+
+    gp_rows: list[tuple[int, int, int | None, int | None]] = [
+        (2, hash_with_pv, None, None),
+        (4, hash_without_pv, None, None),
+    ]
+    try:
+        async with eval_worker_session_maker() as session:
+            cached = await _fetch_cached_opening_hashes(session, gp_rows)
+        assert hash_with_pv in cached, "pv-bearing cache row must be omittable from the lease"
+        assert hash_without_pv not in cached, (
+            "pv-less cache row must NOT be omitted — the worker still needs to evaluate it"
+        )
+    finally:
+        await _delete_opening_cache(eval_worker_session_maker, [hash_with_pv, hash_without_pv])
+
+
+@pytest.mark.asyncio
+async def test_atomic_submit_merges_cached_pv_into_flaw_line_not_sentineled(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """SEED-076 follow-up (req a): a cached opening ply omitted from a partial atomic
+    submit still gets its pv merged into engine_result_map — game_positions.pv at the
+    flaw-adjacent ply matches the cached pv, the flaw's PV lines are NOT []-sentineled
+    (left NULL / still fillable), and _build_flaw_blob_lease_positions walks a real,
+    non-empty lease for it instead of a D-06 sentinel.
+
+    Uses _SIX_PLY_PGN_142 / _BLUNDER_SUBMIT_EVALS_142 (blunder at ply 2, flaw_ply=2):
+    missed line starts at ply 2 (the flaw's own board), allowed line at ply 3.
+    """
+    from app.models.game_flaw import GameFlaw
+    from app.routers.eval_remote import _apply_atomic_submit
+    from app.services.eval_drain import _build_flaw_blob_lease_positions
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    user_id = eval_worker_test_user
+    base = 76500
+    game_id = await _insert_game(eval_worker_session_maker, user_id, pgn=_SIX_PLY_PGN_142)
+    await _insert_game_positions(
+        eval_worker_session_maker,
+        user_id,
+        game_id,
+        [{"ply": p, "full_hash": base + p, "eval_cp": None, "eval_mate": None} for p in range(6)],
+    )
+    # Cache ply 2's position (the flaw's own board, "missed" line node 0) WITH a real,
+    # walkable pv — matching what _fetch_cached_opening_hashes would have made the
+    # lease omit. The worker's partial submit below omits ply 2 accordingly.
+    cached_pv = "g1f3 b8c6"
+    await _insert_opening_cache_with_pv(
+        eval_worker_session_maker, [(base + 2, 30, None, "g1f3", cached_pv)]
+    )
+    # Ply 3 ("allowed" line node 0) is NOT cache-omitted — the worker evaluates and
+    # submits it directly, including a real pv so the allowed line is walkable too
+    # (isolating the fix under test to the missed line's cache-merged pv).
+    allowed_pv = "b8c6 f1c4"
+    partial = [dict(e) for e in _BLUNDER_SUBMIT_EVALS_142 if e["ply"] != 2]
+    for e in partial:
+        if e["ply"] == 3:
+            e["pv"] = allowed_pv
+
+    try:
+        resp = await _apply_atomic_submit(game_id, _atomic_request(game_id, partial))
+        assert resp.failed_ply_count == 0, (
+            f"cached opening must fill the hole (eval + pv), got {resp.failed_ply_count}"
+        )
+
+        row2 = await _get_game_position(eval_worker_session_maker, game_id, 2)
+        assert row2 is not None and row2["pv"] == cached_pv, (
+            f"game_positions.pv at the flaw-adjacent cached ply must equal the cached "
+            f"pv, got {row2}"
+        )
+
+        async with eval_worker_session_maker() as verify:
+            flaw_row = (
+                await verify.execute(
+                    select(GameFlaw.allowed_pv_lines, GameFlaw.missed_pv_lines).where(
+                        GameFlaw.game_id == game_id, GameFlaw.ply == 2
+                    )
+                )
+            ).one_or_none()
+        assert flaw_row is not None, "flaw at ply 2 must exist"
+        allowed_lines, missed_lines = flaw_row
+        assert allowed_lines != [], "allowed_pv_lines must NOT be []-sentineled"
+        assert missed_lines != [], "missed_pv_lines must NOT be []-sentineled"
+
+        # _build_flaw_blob_lease_positions must find a real, walkable lease for the
+        # flaw (not a D-06 sentinel) — proving the merged pv reached game_positions.pv
+        # for BOTH lines and is walkable.
+        positions, sentinel_lines = await _build_flaw_blob_lease_positions(game_id)
+        assert (2, "missed") not in sentinel_lines, "missed line must not be sentineled"
+        assert (2, "allowed") not in sentinel_lines, "allowed line must not be sentineled"
+        assert len(positions) > 0, "a real, non-empty lease must be built for the flaw"
+    finally:
+        await _delete_games(eval_worker_session_maker, [game_id])
+        await _delete_opening_cache(eval_worker_session_maker, [base + 2])
+
+
+@pytest.mark.asyncio
+async def test_upsert_opening_cache_backfills_pv_without_overwriting_eval_or_existing_pv(
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    """SEED-076 follow-up (req c): _upsert_opening_cache's self-heal backfills pv onto
+    a pv-less existing row without touching eval_cp/eval_mate/best_move, and leaves an
+    existing non-NULL pv untouched (first-write-wins for pv too, once set)."""
+    import chess
+
+    from app.models.opening_position_eval import OpeningPositionEval
+    from app.services.eval_drain import _FullPlyEvalTarget, _upsert_opening_cache
+
+    board = chess.Board()
+    base = 76600
+    hash_pv_less = base
+    hash_pv_bearing = base + 1
+
+    # Row A: pre-existing pv-less cache row — must self-heal pv only.
+    await _insert_opening_cache(eval_worker_session_maker, [(hash_pv_less, 42, None, "e2e4")])
+    # Row B: pre-existing cache row that ALREADY has a real pv — must not be clobbered.
+    await _insert_opening_cache_with_pv(
+        eval_worker_session_maker, [(hash_pv_bearing, 10, None, "d2d4", "d2d4 d7d5")]
+    )
+
+    t_a = _FullPlyEvalTarget(
+        game_id=1, ply=2, full_hash=hash_pv_less, board=board, eval_cp=None, eval_mate=None
+    )
+    t_b = _FullPlyEvalTarget(
+        game_id=1, ply=4, full_hash=hash_pv_bearing, board=board, eval_cp=None, eval_mate=None
+    )
+    # Different eval/best_move/pv than what's cached — proves first-write-wins on
+    # eval/best_move (row A) and on pv once already set (row B), with row A's pv
+    # backfilled from this fresh engine result.
+    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]] = {
+        2: (99, None, "a2a4", "a2a4 a7a5"),
+        4: (55, None, "c2c4", "c2c4 c7c5"),
+    }
+
+    try:
+        async with eval_worker_session_maker() as session:
+            await _upsert_opening_cache(session, [t_a, t_b], engine_result_map)
+            await session.commit()
+
+        async with eval_worker_session_maker() as session:
+            rows = (
+                await session.execute(
+                    select(
+                        OpeningPositionEval.full_hash,
+                        OpeningPositionEval.eval_cp,
+                        OpeningPositionEval.eval_mate,
+                        OpeningPositionEval.best_move,
+                        OpeningPositionEval.pv,
+                    ).where(OpeningPositionEval.full_hash.in_([hash_pv_less, hash_pv_bearing]))
+                )
+            ).all()
+        by_hash = {r[0]: (r[1], r[2], r[3], r[4]) for r in rows}
+
+        assert by_hash[hash_pv_less] == (42, None, "e2e4", "a2a4 a7a5"), (
+            f"row A must keep its original eval/best_move and self-heal pv only: "
+            f"{by_hash[hash_pv_less]}"
+        )
+        assert by_hash[hash_pv_bearing] == (10, None, "d2d4", "d2d4 d7d5"), (
+            f"row B's existing pv must NOT be overwritten: {by_hash[hash_pv_bearing]}"
+        )
+    finally:
+        await _delete_opening_cache(eval_worker_session_maker, [hash_pv_less, hash_pv_bearing])

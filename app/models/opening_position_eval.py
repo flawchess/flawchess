@@ -17,7 +17,7 @@ Design decisions (D-123.1-01, D-123.1-02, D-123.1-03):
 
 from typing import Optional
 
-from sqlalchemy import BigInteger, SmallInteger, String
+from sqlalchemy import BigInteger, SmallInteger, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -48,3 +48,9 @@ class OpeningPositionEval(Base):
     # PV[0] UCI best move for the position: 4 chars normal (e.g. "e2e4") or 5 chars
     # for promotions (e.g. "e7e8q"). Matches game_positions.best_move (D-117-01).
     best_move: Mapped[Optional[str]] = mapped_column(String(5), nullable=True)
+
+    # Full UCI PV string FROM this position (space-separated moves), Text not
+    # String(5) since a PV is many moves. Cached so dedup transplants on the
+    # engine-free atomic path carry a walkable PV instead of a permanent []
+    # sentinel for opening flaws that land on a cached position (SEED-076 follow-up).
+    pv: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

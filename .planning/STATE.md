@@ -5,15 +5,15 @@ milestone_name: Forcing-Line Tactic Gate
 current_phase: none
 current_phase_name: Planning next milestone
 status: Milestone v1.30 complete — planning next
-stopped_at: v1.30 milestone closed and archived (Phases 141–147)
-last_updated: "2026-07-02T00:00:00.000Z"
-last_activity: 2026-07-02
+stopped_at: "Completed quick task 260703-qgp: cache pv alongside eval in opening_position_eval (SEED-076 follow-up) — fixes permanent [] PV sentinel for cached opening flaws"
+last_updated: "2026-07-03T17:31:09.642Z"
+last_activity: 2026-07-03
+last_activity_desc: "Completed quick task 260703-qgp: SEED-076 follow-up — cache the pv alongside the eval in opening_position_eval so cached opening flaws keep a real walkable PV instead of a permanent [] sentinel"
 progress:
-  total_phases: 7
-  completed_phases: 7
-  total_plans: 25
-  completed_plans: 25
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State: FlawChess
@@ -21,7 +21,7 @@ progress:
 ## Current Position
 
 Phase: none — v1.30 milestone closed; planning next milestone
-Last activity: 2026-07-02 - Completed quick task 260702-snc: Self-supervising auto-restart + hang-watchdog for the remote eval worker (SEED-063) — always-supervised parent/child, wall-clock heartbeat + stall checker converting hangs into exits, asyncio InvalidStateError-storm capture, cross-platform SIGINT handling, Docker log rotation + observability healthcheck
+Last activity: 2026-07-03 - Completed quick task 260703-qgp: SEED-076 follow-up — cache the pv alongside the eval in opening_position_eval so cached opening flaws keep a real walkable PV instead of a permanent [] sentinel
 
 v1.30 Forcing-Line Tactic Gate shipped to production 2026-06-30 (releases #229/#230/#231/#234)
 and is now closed in GSD. All 7 phases (141–147) complete; 15/15 requirements validated.
@@ -110,6 +110,9 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase ?]: Phase 147-05: _classify_and_fill_oracle called with blobs_pending=True in atomic-submit (deviation from plan's literal prohibition) -- required to suppress a server-found-but-unblobbed flaw's tag to NULL; provably has zero effect on flaws with a real submitted blob or D-06/mate-adjacent FINAL cases
 - [Phase ?]: Phase 147-06: upgraded worker's D-06 ladder rungs 1/3 (explicit/idle full-ply) call /atomic-lease + /atomic-submit exclusively; old _handle_full_ply_response/_eval_positions code stays but is unreachable, satisfying D-02/D-05 as code-preservation not runtime fallback
 - [Phase ?]: Phase 147-06: full atomic gated-write e2e confirmation deferred to HUMAN-UAT (dev DB has zero queued eval_jobs, EVAL_AUTO_DRAIN_ENABLED=false) -- automated dry-run against live dev backend confirmed /atomic-lease wiring integrates cleanly
+- [Phase ?]: SEED-076 follow-up: opening_position_eval.pv self-heals via ON CONFLICT DO UPDATE SET pv WHERE pv IS NULL; eval_cp/eval_mate/best_move stay first-write-wins
+- [Phase ?]: SEED-076 follow-up: atomic-submit's dedup_map fetch moved to its own read session before _derive_atomic_sentinel_lines so the merged cached pv is visible to the sentinel walk
+- [Phase ?]: SEED-076 follow-up: lease omission gated on opening_position_eval.pv IS NOT NULL, not merely full_hash presence — a pv-less cache row still must be leased fresh
 
 ### Pending Todos
 
@@ -123,6 +126,9 @@ None at planning start.
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 260703-qgp | SEED-076 follow-up: cached the pv alongside the eval in `opening_position_eval` so cache-omitted opening flaws keep a real walkable PV instead of a permanent `[]` sentinel. Added a nullable `pv` Text column (migration `df8d4f5bc37b`); widened `dedup_map` to a 4-tuple `(eval_cp, eval_mate, best_move, pv)` throughout `eval_drain.py` (`second_best_map`, a separate 3-tuple map, untouched); `_upsert_opening_cache` writes + self-heals pv-less rows via `ON CONFLICT ... DO UPDATE SET pv WHERE pv IS NULL` without touching eval/best_move (first-write-wins preserved). New `_merge_dedup_pv_into_engine_map` (`eval_remote.py`) fills a cache-omitted opening ply's `engine_result_map` entry from the cached tuple; wired into both `_apply_submit` (before classify) and `_apply_atomic_submit` (dedup_map fetch moved to its own read session, before `_derive_atomic_sentinel_lines`, so the merged pv reaches the sentinel walk). `_fetch_cached_opening_hashes` now gates lease omission on `pv IS NOT NULL` — a pv-less cache row is still leased fresh. +3 regression tests. Gate green: ruff + ty clean, `pytest -n auto` 3154 passed / 18 skipped. Backend-only. | 2026-07-03 | 3a7d936f | [260703-qgp-fix-seed-076-follow-up-cache-pv-in-openi](./quick/260703-qgp-fix-seed-076-follow-up-cache-pv-in-openi/) |
+| 260703-nux | SEED-076: hardened the atomic eval lease/submit pair against weak-worker opening-timeout holes (FLAWCHESS-8B). Both submit paths (`_apply_submit`, `_apply_atomic_submit`) now build the real `opening_position_eval` dedup_map (mirroring `_full_drain_tick`) instead of `{}`, so cached opening plies a weak worker timed out on are filled server-side BEFORE `failed_ply_count` — a fillable hole never reaches the Path-C cap and gets permanently stamped. `_apply_full_eval_results` gained an opt-in `preserve_existing_evals` param (default off → local drain unchanged): an already-eval'd row dropped from an incremental re-lease is not recounted as a hole. `_build_lease_positions` is now incremental + cache-aware (`_lease_position_redundant` / `_fetch_cached_opening_hashes`): omits cached openings + already-eval'd rows (post-move shift row Q-1), always keeps the terminal donor, falls back to the full list rather than an empty lease; wired into both lease endpoints. `_apply_atomic_submit` snapshots + restores flaw `{allowed,missed}_pv_lines` + 8 tactic-tag columns so a sparse retry doesn't wipe an already-done flaw via classify's delete-then-insert (a `[]`-sentinel is overridden by the preserved real blob; `game_positions.pv` untouched so tier-4 healing survives). Two correctness gaps in the locked seed found & fixed during impl (already-eval'd hole-miscount → preserve guard; midgame blob-wipe → snapshot/restore). +8 regression tests. Gate green: ruff + ty clean, `pytest -n auto` 3151 passed / 18 skipped. Backend-only. | 2026-07-03 | 27117f45 | [260703-nux-implement-seed-076-harden-atomic-eval-su](./quick/260703-nux-implement-seed-076-harden-atomic-eval-su/) |
+| 260703-kyb | Analysis move list now keeps every variation line open as a flat sibling (chess.com/lichess-style), replacing the single-line-at-a-time behavior. `useAnalysisBoard.ts`: the singleton `pvLine: NodeId[]` became a `pvNodeIds: Set<NodeId>` membership set — `insertPvLine` unions (never clobbers) so multiple tactic lines coexist; `clearPvLine` split into a generic `deleteSubtree(rootId)` (recovers `currentNodeId` to the deleted subtree's fork parent) + `clearAllSidelines()` for Reset. `VariationTree.tsx`: the Level-1/Level-2 single-chain renderer (`buildVariationChain`/`resolvePvDisplayChain`) replaced with a flat `buildSiblingBlocks` model — every open line renders unconditionally as its own indented block (one level), free-move lines get a `btn-delete-line-{rootId}` × (aria-label "Delete variation"), tactic lines close via their chip toggle. `Analysis.tsx`: singleton `activePvFlaw`/`activePvNodeId` replaced with `openLines` Map + `pendingFlaw`; each tactic chip toggles only its own line, board overlays follow a derived "focused line". No data-model change (the flat `Map<NodeId,MoveNode>` already stored unlimited branches) and no cross-reload persistence (URL-only state retained). Mobile parity via MobileTree. Both hook + component test suites rewritten to the multi-line contract. Gate green: lint 0, tsc -b 0, knip clean, 1256 frontend tests. HUMAN-UAT: (a) two free-move lines persist, (b) free-move line survives navigate-away, (c) two tactic chips open as siblings, (d) chip toggles only its own line, (e) × removes a free-move line, (f) all on mobile. | 2026-07-03 | 8d5e4090 | [260703-kyb-persistent-flat-sidelines-in-the-analysi](./quick/260703-kyb-persistent-flat-sidelines-in-the-analysi/) |
 | 260702-snc | SEED-063: `scripts/remote_eval_worker.py` is now always a self-supervising parent — with no flags it spawns a child of itself (internal `_FLAWCHESS_WORKER_CHILD` env marker, `_worker_role` predicate) to do the real lease/eval/submit work and relaunches it on ANY exit with fixed-small backoff, no max cap (D1–D4). The load-bearing fix is an in-child watchdog that turns a HANG into an exit: a wall-clock `_Heartbeat` marks progress on every completed cycle (a clean 204 idle cycle counts as healthy), and an asyncio checker task `os._exit(1)`s when `_is_stalled` (no progress for > `STALL_THRESHOLD_S`=240s, ~2x the ~125s worst-case legit cycle), so both the supervisor AND Docker `restart: unless-stopped` get an exit to react to. A `loop.set_exception_handler` now Sentry-captures the InvalidStateError storm that previously bypassed `_run_loop`'s try/except entirely (root cause). Cross-platform signals via `signal.signal()`/`KeyboardInterrupt` only (never `add_signal_handler` — Windows ProactorEventLoop raises); POSIX parent forwards SIGINT to the child, Windows relies on console process-group Ctrl-C; token checked BEFORE role dispatch so a missing token can't become an infinite relaunch loop (T-snc-02). `--once` bypasses supervision entirely. Docker hardening (D6): `docker-compose.worker.yml` log rotation (max-size 10m/max-file 3) + observability-only heartbeat-mtime healthcheck (no autoheal sidecar, no Swarm); `Dockerfile.worker` STOPSIGNAL/CMD comment-only review; `restart: unless-stopped` retained. `app/services/engine.py` confirmed untouched (process-level recovery, no in-process pool rebuild). REMOTE_WORKER.md now promises self-restart on crash/hang + clean Ctrl-C stop. 33 worker unit tests (new pure `_worker_role`/`_is_stalled`/`_Heartbeat` coverage) green; ruff + ty clean. Cross-OS manual UAT (kill Stockfish mid-run, `docker stop`, laptop sleep/resume) flagged as HUMAN-UAT. | 2026-07-02 | 1daa113e | [260702-snc-self-supervising-auto-restart-watchdog-f](./quick/260702-snc-self-supervising-auto-restart-watchdog-f/) |
 | 260702-nm8 | The /analysis board (game mode) now surfaces the game's flaw tags, mirroring the Library game card. Below the eval chart (desktop) a new self-contained `AnalysisTagsPanel` renders a severity-badge row (Blunders/Mistakes/Inacc.) on top of a 3-column Missed \| Allowed \| Context tactic+context block; on mobile it lives behind a new third "Tags" tab (`analysis-tab-tags`) alongside Moves/Eval chart, using the mobile game-card layout. Clicking/tapping any badge or chip cycles the board through that flaw's positions via a single `goToNode(mainLine[ply])` — auto-syncing move list + eval-chart crosshair (reuses the `handleEvalChartPlyChange` pattern; no PV/commandedPly plumbing). Data reuses the existing `useLibraryGame` `GameFlawCard` (no backend/fetch changes); leaf chip components (`SeverityBadge`/`TacticMotifGroup`/`ChipColumn`/`TagChip`/`TagLegend`) and `LibraryGameCard` reused unmodified. No filter ring on /analysis chips. Desktop hover-highlight of eval-chart markers wired via `EvalChart`'s existing `highlightedPlies` prop (D-5 optional, done cheaply). Gate green: lint + tsc -b + knip + 1253 frontend tests (8 new for AnalysisTagsPanel) | 2026-07-02 | 9e653236 | [260702-nm8-add-tactic-tags-below-the-eval-chart-in-](./quick/260702-nm8-add-tactic-tags-below-the-eval-chart-in-/) |
 | 260702-mnd | Library Games tab now shows ALL tactic + context flaw tags on each game card; the tactic/context/severity tag filters drive game SELECTION only (WHERE clause in `query_filtered_games`) and no longer prune which tags render on a matched card. Backend: `library_service.py::_build_card` stops nulling non-matching tactic motifs (dropped the family/orientation/depth AND severity pruning gates in `tactic_slot_visible`); validity gates (decided-lost, confidence) retained. Frontend: `LibraryGameCard.tsx` `outlinedPlies` reverts to driving only the eval-chart white marker outline/hover-highlight, all tactic chips render (`TacticMotifGroup`/`TacticMotifChip`); per-chip active-filter ring made depth-aware via `resolveVisibleTactic` so highlighted === actually matches the active filter (D-2). D-1: severity gate removed for consistency with context chips. D-3: dead filter params removed from `get_library_game` endpoint + `client.ts`/`useLibrary.ts` forwarding. Full gate green: ty 0, pytest 3101 passed, frontend tsc/lint/knip + 1245 tests green | 2026-07-02 | af25d3a9 | [260702-mnd-library-games-tab-show-all-tactic-contex](./quick/260702-mnd-library-games-tab-show-all-tactic-contex/) |
@@ -180,8 +186,8 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-Last session: 2026-07-01T20:23:51.692Z
-Stopped at: Phase 147 Plan 06 complete -- Phase 147 complete (all 6 plans)
+Last session: 2026-07-03T17:31:09.626Z
+Stopped at: Completed quick task 260703-qgp: cache pv alongside eval in opening_position_eval (SEED-076 follow-up) — fixes permanent [] PV sentinel for cached opening flaws
 Resume file: None
 
 ## Performance Metrics
@@ -225,3 +231,4 @@ Resume file: None
 | Phase 147 P04 | 20min | 2 tasks | 3 files |
 | Phase 147 P05 | 21min | 2 tasks | 3 files |
 | Phase 147 P06 | 55min | 3 tasks | 2 files |
+| Phase quick-260703-qgp P01 | 25min | 3 tasks | 7 files |
