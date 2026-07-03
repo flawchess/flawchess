@@ -1160,6 +1160,18 @@ def _walk_pv_boards(
     return boards
 
 
+def _placeholder_defender_node() -> PvNode:
+    """SEED-079: the slim-blob odd-index (defender) placeholder node.
+
+    The forcing-line gate reads only solver nodes (even indices, D-10), so defender
+    continuation nodes are no longer engine-evaluated. To keep the gate's index-parity
+    convention intact (even = solver, odd = defender), every skipped odd index is
+    filled with this all-None PvNode so the stored list keeps its original indices
+    and length. su must be str, never None (Pitfall 3).
+    """
+    return PvNode(b=None, bm=None, s=None, sm=None, su="")
+
+
 def _build_line_blobs(
     flaw_ply: int,
     line: str,
@@ -1174,7 +1186,11 @@ def _build_line_blobs(
     """Phase 142 MPV-02: assemble PvNode list for one line (allowed or missed) of a flaw.
 
     Node 0 evals come from pos_eval + second_best_map (no engine call needed).
-    Nodes 1..N come from node_eval (batch-gathered in _build_flaw_multipv2_blobs).
+    SEED-079 slim scheme: only EVEN continuation nodes (2, 4, ...) come from node_eval
+    (batch-gathered in _build_flaw_multipv2_blobs — odd defender boards are never
+    engine-evaluated); each skipped odd index is filled with the all-None placeholder
+    so the gate's index-parity convention (even = solver) stays intact. A missing even
+    node_eval entry is a gap (stop), so the blob always ends on a real even node.
     su='' is the no-second-move sentinel (Pitfall 3: never None in PvNode).
     """
     if not walk:
@@ -1186,10 +1202,11 @@ def _build_line_blobs(
     scp, smt, su_raw = second if second else (None, None, "")
     su: str = su_raw if su_raw is not None else ""
     nodes.append(PvNode(b=best_cp, bm=best_mate, s=scp, sm=smt, su=su))
-    for k in range(1, len(walk)):
+    for k in range(2, len(walk), 2):
         res = node_eval.get((flaw_ply, line, k))
         if res is None:
             break
+        nodes.append(_placeholder_defender_node())  # The skipped odd index k-1.
         # su must be str (Pitfall 3): engine failure yields (None,)*7 → res[6]=None → "".
         su_k: str = res[6] if res[6] is not None else ""
         nodes.append(PvNode(b=res[0], bm=res[1], s=res[4], sm=res[5], su=su_k))
@@ -1252,13 +1269,16 @@ async def _build_flaw_multipv2_blobs(
         if flaw_ply not in targets_by_ply:
             continue
 
+        # SEED-079: only EVEN continuation indices (2, 4, ...) are gathered — the gate
+        # reads only solver (even) nodes (D-10), so defender (odd) continuation evals
+        # are dead weight. Node 0 is not gathered (comes from pos_eval).
         # Missed line: PV walk from the flaw position (board at flaw_ply).
         board_missed = targets_by_ply[flaw_ply].board.copy()
         pv_missed = engine_result_map.get(flaw_ply, (None, None, None, None))[3]
         missed_walk = _walk_pv_boards(board_missed, pv_missed, cap)
         walks[(flaw_ply, "missed")] = missed_walk
-        for k, b in enumerate(missed_walk[1:], 1):
-            gather_boards.append(b)
+        for k in range(2, len(missed_walk), 2):
+            gather_boards.append(missed_walk[k])
             gather_keys.append((flaw_ply, "missed", k))
 
         # Allowed line: PV walk from the position after the flaw move (board at flaw_ply + 1).
@@ -1270,8 +1290,8 @@ async def _build_flaw_multipv2_blobs(
         pv_allowed = engine_result_map.get(allowed_start, (None, None, None, None))[3]
         allowed_walk = _walk_pv_boards(board_allowed, pv_allowed, cap)
         walks[(flaw_ply, "allowed")] = allowed_walk
-        for k, b in enumerate(allowed_walk[1:], 1):
-            gather_boards.append(b)
+        for k in range(2, len(allowed_walk), 2):
+            gather_boards.append(allowed_walk[k])
             gather_keys.append((flaw_ply, "allowed", k))
 
     # Evaluate all continuation boards in one gather (NO session open — CLAUDE.md hard rule).
@@ -1453,7 +1473,9 @@ async def _build_flaw_blob_lease_positions(
 
     Returns (lease_positions, sentinel_lines):
     - lease_positions: FlawBlobLeasePosition list. Token = "{flaw_ply}:{line}:{node_k}".
-      fen = board.fen() for each node k in a walkable PV (walk length >= 2).
+      fen = board.fen() for each EVEN (solver) node k in a walkable PV (walk length
+      >= 2). Odd (defender) nodes are never leased (SEED-079): the gate only reads
+      solver nodes, so defender continuation evals are dead weight.
     - sentinel_lines: set of (flaw_ply, line) for lines with NULL pv, missing start board,
       or < 2-node walks (un-fillable; caller writes [] sentinel for these via D-06).
 
@@ -1532,9 +1554,12 @@ async def _build_flaw_blob_lease_positions(
                 # NULL pv → 1-node walk (just start_board); gate discards 1-node blobs (D-06).
                 sentinel_lines.add((flaw_ply, line))
                 continue
-            for k, walk_board in enumerate(walk):
+            # SEED-079: only solver (even) nodes are gate-read (D-10), so defender (odd)
+            # nodes are never leased — halves the tier-4 continuation-eval compute. The
+            # assembler fills skipped odd indices with all-None placeholders at submit.
+            for k in range(0, len(walk), 2):
                 token = f"{flaw_ply}:{line}:{k}"
-                lease_positions.append(FlawBlobLeasePosition(token=token, fen=walk_board.fen()))
+                lease_positions.append(FlawBlobLeasePosition(token=token, fen=walk[k].fen()))
 
     return lease_positions, sentinel_lines
 
@@ -1567,11 +1592,19 @@ def _assemble_one_line_blob(
     node_results: dict[tuple[int, str, int], FlawBlobSubmitEval | AtomicBlobNode],
     sentinel_lines: set[tuple[int, str]],
 ) -> list[PvNode]:
-    """Assemble one PvNode list for a flaw line from indexed worker results.
+    """Assemble one PvNode list for a flaw line from indexed worker results (slim scheme).
 
     Sentinel lines (from _build_flaw_blob_lease_positions) and lines missing
-    a node-0 result both return []. Nodes are walked in order (k=0, 1, 2, ...)
-    until a gap is found. su='' maps from None second_uci (Pitfall 3).
+    a node-0 result both return []. SEED-079 slim blobs: only EVEN (solver) node_k
+    are leased/evaluated, so the walk steps k = 0, 2, 4, ... and inserts an all-None
+    placeholder PvNode for each skipped odd (defender) index, keeping the gate's
+    index-parity convention intact. A missing EVEN node is a gap (stop); the result
+    therefore always ends on a real even solver node — never a trailing placeholder —
+    preserving _strip_trailing_only_moves' "last solver node is real" assumption.
+
+    Odd-k entries in node_results (old fat-lease/atomic workers still submitting
+    defender nodes) are intentionally never read — server-authoritative discard
+    (SEED-079 item 5). su='' maps from None second_uci (Pitfall 3).
     """
     if (flaw_ply, line) in sentinel_lines:
         return []
@@ -1583,12 +1616,14 @@ def _assemble_one_line_blob(
     while True:
         res = node_results.get((flaw_ply, line, k))
         if res is None:
-            break
+            break  # Missing EVEN node = gap; missing odd nodes are placeholders below.
+        if k > 0:
+            nodes.append(_placeholder_defender_node())  # The skipped odd index k-1.
         su: str = res.second_uci if res.second_uci is not None else ""
         nodes.append(
             PvNode(b=res.best_cp, bm=res.best_mate, s=res.second_cp, sm=res.second_mate, su=su)
         )
-        k += 1
+        k += 2
     return nodes
 
 

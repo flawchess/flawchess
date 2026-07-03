@@ -3041,16 +3041,17 @@ class TestFlawBlobLeaseEndpoint:
                 assert node_k_str.isdigit(), f"node_k must be int: {pos['token']!r}"
                 assert int(flaw_ply_str) == 2, f"flaw_ply must be 2 for this test: {pos['token']!r}"
 
-            # Missed line: 2-move PV → nodes k=0,1,2
+            # SEED-079: only even (solver) node_k are leased — defender nodes skipped.
+            # Missed line: 2-move PV → walk nodes 0,1,2 → even tokens k=0,2.
             missed_ks = sorted(
                 int(p["token"].split(":")[2]) for p in positions if ":missed:" in p["token"]
             )
-            assert missed_ks == [0, 1, 2], f"Expected missed k=[0,1,2], got {missed_ks}"
-            # Allowed line: 1-move PV → nodes k=0,1
+            assert missed_ks == [0, 2], f"Expected missed k=[0,2] (even only), got {missed_ks}"
+            # Allowed line: 1-move PV → walk nodes 0,1 → even token k=0.
             allowed_ks = sorted(
                 int(p["token"].split(":")[2]) for p in positions if ":allowed:" in p["token"]
             )
-            assert allowed_ks == [0, 1], f"Expected allowed k=[0,1], got {allowed_ks}"
+            assert allowed_ks == [0], f"Expected allowed k=[0] (even only), got {allowed_ks}"
         finally:
             await _delete_games(eval_worker_session_maker, [game_id])
 
@@ -4203,7 +4204,8 @@ class TestBlobAssemblyHelper:
     """
 
     def test_blob_assembly_full_sequence_assembles_pvnodes(self) -> None:
-        """Full 2-node sequence assembles PvNode list; second_uci=None maps to su='' (Pitfall 3)."""
+        """Even-k sequence assembles a full-index PvNode list with odd placeholders (SEED-079);
+        second_uci=None maps to su='' (Pitfall 3)."""
         from app.schemas.eval_remote import FlawBlobSubmitEval
         from app.services.eval_drain import _assemble_flaw_blobs_from_submit
 
@@ -4217,7 +4219,7 @@ class TestBlobAssemblyHelper:
                 second_uci=None,  # None on the wire → su="" in PvNode (Pitfall 3)
             ),
             FlawBlobSubmitEval(
-                token="10:missed:1",
+                token="10:missed:2",
                 best_cp=100,
                 best_mate=None,
                 second_cp=20,
@@ -4229,12 +4231,16 @@ class TestBlobAssemblyHelper:
 
         assert 10 in blob_map, "flaw_ply=10 must appear in blob_map"
         allowed_blob, missed_blob = blob_map[10]
-        # missed: 2 nodes (k=0, k=1) submitted → 2-element PvNode list
-        assert len(missed_blob) == 2, f"Expected 2 missed nodes, got {len(missed_blob)}"
+        # missed: even nodes k=0, k=2 submitted → 3-element list with an odd placeholder
+        # at index 1 (SEED-079 slim blob keeps the gate's solver-node indices aligned).
+        assert len(missed_blob) == 3, f"Expected 3 missed nodes, got {len(missed_blob)}"
         assert missed_blob[0]["b"] == 150
         assert missed_blob[0]["su"] == "", "None second_uci must map to '' (Pitfall 3)"
-        assert missed_blob[1]["b"] == 100
-        assert missed_blob[1]["su"] == "d2d4"
+        assert missed_blob[1] == {"b": None, "bm": None, "s": None, "sm": None, "su": ""}, (
+            "Odd index must be the all-None defender placeholder (SEED-079)"
+        )
+        assert missed_blob[2]["b"] == 100
+        assert missed_blob[2]["su"] == "d2d4"
         # allowed: no tokens submitted → no node-0 → []
         assert allowed_blob == [], "No allowed tokens submitted → blob should be []"
 
