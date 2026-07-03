@@ -21,6 +21,7 @@ All tests are unit-level -- no DB, no real Stockfish. Engine pool and httpx are 
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock, call, patch
@@ -32,6 +33,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scripts.remote_eval_worker import (
+    STALL_THRESHOLD_S,
     _WORKER_ID_ALPHABET,
     _WORKER_ID_DEFAULT_LEN,
     HTTP_TIMEOUT_S,
@@ -42,8 +44,11 @@ from scripts.remote_eval_worker import (
     _eval_entry_positions,
     _eval_flaw_blob_positions,
     _generate_worker_id,
+    _Heartbeat,
     _hint_flaw_plies,
+    _is_stalled,
     _run_cycle,
+    _worker_role,
     parse_args,
 )
 
@@ -714,3 +719,81 @@ async def test_atomic_submit_payload_shape_and_schema_version() -> None:
     assert body["job_id"] == "job-atomic-1"
     assert len(body["evals"]) == 7
     assert [n["token"] for n in body["blob_nodes"]] == ["2:missed:0", "2:allowed:0"]
+
+
+# ─── SEED-063: supervisor/child/once dispatch + watchdog stall predicate ────
+
+
+def test_worker_role_once_no_marker() -> None:
+    """--once with no child marker returns "once"."""
+    assert _worker_role(once=True, child_marker=False) == "once"
+
+
+def test_worker_role_child_marker_set() -> None:
+    """No --once but the child marker is set returns "child"."""
+    assert _worker_role(once=False, child_marker=True) == "child"
+
+
+def test_worker_role_supervisor_default() -> None:
+    """No --once and no child marker (the default, top-level invocation) returns
+    "supervisor" (SEED-063 D3: always supervised unless --once).
+    """
+    assert _worker_role(once=False, child_marker=False) == "supervisor"
+
+
+def test_worker_role_once_always_wins_over_marker() -> None:
+    """--once always bypasses supervision, even if the child marker is (implausibly)
+    also set.
+    """
+    assert _worker_role(once=True, child_marker=True) == "once"
+
+
+def test_is_stalled_true_when_gap_exceeds_threshold() -> None:
+    """A gap strictly greater than threshold_s is a stall."""
+    assert _is_stalled(now=100.0, last_progress=0.0, threshold_s=50.0) is True
+
+
+def test_is_stalled_false_when_idle_but_under_threshold() -> None:
+    """An idle-but-healthy gap under threshold_s is NOT a stall (SEED-063:
+    a clean 204 idle cycle counts as progress; this only guards the boundary
+    predicate itself).
+    """
+    assert _is_stalled(now=40.0, last_progress=0.0, threshold_s=50.0) is False
+
+
+def test_heartbeat_mark_advances_last_progress_and_writes_file(tmp_path: Path) -> None:
+    """_Heartbeat.mark() advances last_progress toward "now" and freshens the
+    heartbeat file's mtime with a value that parses as a float.
+    """
+    heartbeat_file = tmp_path / "worker.heartbeat"
+    heartbeat = _Heartbeat(heartbeat_file)
+    initial_progress = heartbeat.last_progress
+
+    time.sleep(0.01)  # ensure a measurable, monotonically-increasing wall-clock gap
+    heartbeat.mark()
+
+    assert heartbeat.last_progress > initial_progress
+    assert heartbeat_file.exists()
+    written_value = float(heartbeat_file.read_text())
+    assert written_value == heartbeat.last_progress
+    # mtime is fresh (written within the last few seconds of this test running).
+    assert abs(time.time() - heartbeat_file.stat().st_mtime) < 5.0
+
+
+def test_heartbeat_mark_never_raises_on_write_failure(tmp_path: Path) -> None:
+    """A heartbeat file write failure must never propagate -- observability-only
+    (SEED-063: writing must never kill the worker).
+    """
+    # Point the heartbeat at a path whose parent directory does not exist, so the
+    # write raises OSError (FileNotFoundError is an OSError subclass).
+    heartbeat = _Heartbeat(tmp_path / "missing-dir" / "worker.heartbeat")
+    heartbeat.mark()  # must not raise
+
+
+def test_stall_threshold_s_is_minutes_not_seconds() -> None:
+    """STALL_THRESHOLD_S must clear the slowest legit cycle (~125s worst case) --
+    regression guard against an accidental seconds-scale value (SEED-063).
+    """
+    assert STALL_THRESHOLD_S >= 180.0, (
+        f"STALL_THRESHOLD_S is {STALL_THRESHOLD_S}, expected >= 180s (~3-4 minutes)"
+    )

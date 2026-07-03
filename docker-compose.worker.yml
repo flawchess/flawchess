@@ -16,8 +16,43 @@ services:
       # Passed into the container; pydantic-settings reads it from the OS env.
       EVAL_OPERATOR_TOKEN: ${EVAL_OPERATOR_TOKEN:?set EVAL_OPERATOR_TOKEN in .env}
       SENTRY_DSN: ${SENTRY_DSN:-}
+      # SEED-063 D6: agreed path so the healthcheck below reads the same file the
+      # worker's watchdog (_Heartbeat) writes to.
+      FLAWCHESS_WORKER_HEARTBEAT_FILE: /tmp/flawchess-worker.heartbeat
     # ${REMOTE_WORKER_COUNT:-4} is substituted host-side at compose-parse time, so it
     # reaches the worker as a CLI flag. Default 4 if unset. The worker defaults
-    # --base-url to https://flawchess.com, so no URL flag is needed.
+    # --base-url to https://flawchess.com, so no URL flag is needed. The process
+    # is now ALWAYS the self-supervising auto-restart worker (SEED-063 D3) -- no
+    # flag needed to enable it.
     command: python scripts/remote_eval_worker.py --workers ${REMOTE_WORKER_COUNT:-4}
     restart: unless-stopped
+    # SEED-063 D6: cap the unbounded InvalidStateError log flood so it cannot fill
+    # the host disk before the in-process watchdog fires and forces a restart.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # SEED-063 D6: OBSERVABILITY-ONLY -- plain `docker compose` does NOT act on
+    # health status (only Docker Swarm or an `autoheal` sidecar do). This only
+    # surfaces `unhealthy` in `docker ps`; the in-process watchdog (which forces
+    # os._exit(1) on a stall) remains the actual restart mechanism, exercised via
+    # `restart: unless-stopped` above. Deliberately NOT adding an autoheal sidecar
+    # or requiring Swarm here -- rejected as over-engineering for a volunteer tool.
+    # Staleness bound (600s) MUST stay above the worker's STALL_THRESHOLD_S (480s) so
+    # the watchdog fires first -- this only reports `unhealthy`, it must not flag a
+    # still-working worker before the in-process restart kicks in.
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import os,sys,time; p='/tmp/flawchess-worker.heartbeat'; sys.exit(0 if os.path.exists(p) and time.time() - os.path.getmtime(p) < 600 else 1)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # Covers EnginePool startup (Stockfish process spawn + UCI handshake) before
+      # the first heartbeat write is expected.
+      start_period: 120s

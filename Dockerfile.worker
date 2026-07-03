@@ -76,12 +76,14 @@ ENV STOCKFISH_PATH=/usr/local/bin/stockfish
 # never appear until the buffer fills or the process exits.
 ENV PYTHONUNBUFFERED=1
 
-# Stop the container with SIGINT, which the worker already handles as
-# KeyboardInterrupt for a clean EnginePool shutdown + exit 0. `docker stop`
-# defaults to SIGTERM, which the worker (running as PID 1) ignores — Docker then
-# waits out its grace period and SIGKILLs it (exit 137) on every down/restart.
+# Stop the container with SIGINT. SEED-063: the SUPERVISOR is now PID 1 (the CMD
+# below always launches the self-supervising auto-restart worker). On `docker
+# stop`, PID 1 receives SIGINT, forwards it to the live child (clean EnginePool
+# shutdown + exit 0), reaps the child, and exits without relaunching -- so
+# `docker stop` still exits cleanly (no SIGTERM grace-period SIGKILL / exit 137).
 STOPSIGNAL SIGINT
 
 # Default to the continuous loop against the production API. docker-compose.worker.yml
-# overrides this to inject --workers ${REMOTE_WORKER_COUNT}.
+# overrides this to inject --workers ${REMOTE_WORKER_COUNT}. This now launches the
+# always-on supervisor (SEED-063 D3) -- no flag needed to enable it.
 CMD ["python", "scripts/remote_eval_worker.py"]
