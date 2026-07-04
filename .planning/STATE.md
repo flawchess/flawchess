@@ -1,31 +1,26 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.30
-milestone_name: Forcing-Line Tactic Gate
-current_phase: 148
-status: Milestone complete
-stopped_at: Completed 148-03-PLAN.md
-last_updated: "2026-07-04T09:28:52.183Z"
+milestone: v1.31
+milestone_name: Pipeline Consolidation
+status: planning
+last_updated: "2026-07-04T10:20:42.437Z"
 last_activity: 2026-07-04
 progress:
-  total_phases: 1
-  completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
-  percent: 100
-current_phase_name: pipeline-tactic-correctness-fixes-code-review-2026-07-02
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 148
-Last activity: 2026-07-04
-
-v1.30 Forcing-Line Tactic Gate shipped to production 2026-06-30 (releases #229/#230/#231/#234)
-and is now closed in GSD. All 7 phases (141–147) complete; 15/15 requirements validated.
-Roadmap collapsed, REQUIREMENTS archived, tagged v1.30. Next: `/gsd-new-milestone`.
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-07-04 — Milestone v1.31 started
 
 ## Project Reference
 
