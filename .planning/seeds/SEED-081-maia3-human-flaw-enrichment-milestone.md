@@ -262,7 +262,8 @@ arm's-length — see Legal section) — low-stakes for a free OSS project, decid
   Stockfish-as-separate-UCI precedent, LLM insight infra.
 - Related seeds: SEED-037 (spaced-repetition blunder drills — Pillar A quadrant is a natural
   drill-selection signal), SEED-012/066 (client-side / live engine analysis — Maia could ride
-  the same board surface).
+  the same board surface), **SEED-082 (human-playable-line engine — Maia-filtered Stockfish;
+  depends on this seed's Maia infra; a later milestone)**.
 
 ## Notes
 
