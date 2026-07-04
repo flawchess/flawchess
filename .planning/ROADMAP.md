@@ -99,6 +99,22 @@
 | 145. Corpus Backfill + Rollout | 6/6 | Complete (code shipped v1.30 #229; prod drain completes through 146/147) | 2026-06-30 |
 | 146. Offload live-submit continuation eval to remote worker (SEED-071) | 2/2 | Complete (release #230; SEED-072 fix #231) | 2026-06-30 |
 | 147. Persist only forcing-line-gated tactic tags (SEED-074, A+B) | 6/6 | Complete (release #234) | 2026-06-30 |
+| 148. Pipeline & tactic correctness fixes (code-review 2026-07-02) | 0/? | Not planned | — |
+
+## Active (unassigned milestone)
+
+*Standalone active phase — not yet grouped under a milestone. Fold into the next `/gsd-new-milestone` (or promote as a maintenance release) at planning time.*
+
+### Phase 148: Pipeline & tactic correctness fixes (code-review 2026-07-02)
+
+**Goal:** Fix five silent-data-loss / production-only-correctness defects from the 2026-07-02 code review, each with tests + a verify loop: (1) tactic `has_forced_mate` no-op → deep mates never tag + `fen_map` `board_fen()` drops ep/castling state (`tactic_detector.py`, `flaws_service.py`); (2) entry-ply drain stamps `evals_completed_at` even on a dead pool → mirror the WR-05 all-fail circuit breaker (`eval_drain.py`); (3) quintile significance test treats overlapping cohorts as independent → add the covariance term (`endgame_service.py`); (4) one malformed platform game aborts the whole import → per-game try/except + skip + aggregated Sentry (`chesscom_client.py`, `lichess_client.py`); (5) entry-submit batch-scoping minimum guard `entry_eval_lease_expiry > now()` (`eval_remote.py`).
+**Source:** `.planning/todos/pending/2026-07-03-code-review-pipeline-tactic-correctness-phase.md`; triage `.planning/notes/2026-07-03-code-review-fable-triage.md`
+**Depends on:** Phase 147
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 148 to break down)
 
 ## Backlog
 

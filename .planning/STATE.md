@@ -57,6 +57,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 - Phase 146 added: Offload live-submit forcing-line continuation eval to the remote worker (SEED-071)
 - Phase 147 added: Persist only forcing-line-gated tactic tags — suppress ungated remote-submit tags (A) + upgraded-worker atomic eval+blob pipeline (B) (SEED-074; scope confirmed as A+B together)
+- Phase 148 added: Pipeline & tactic correctness fixes (code-review 2026-07-02) — standalone active phase, milestone deferred (user chose "add now, defer milestone" 2026-07-04); source todo `2026-07-03-code-review-pipeline-tactic-correctness-phase.md`
 
 ### Decisions
 
