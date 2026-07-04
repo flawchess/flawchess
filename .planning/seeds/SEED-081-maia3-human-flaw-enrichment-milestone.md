@@ -78,13 +78,22 @@ Pillar A ships as **two paired surfaces**, verdict + visual:
   - Frontend: Recharts (already in use), colors from `theme.ts`, WDL-consistent styling.
     Computed live from the same single Maia pass, so it's free and needs no persistence.
 
-The verdict is the takeaway; the chart is the evidence. Show both together in the board / flaw
-detail.
+The verdict is the takeaway; the chart is the evidence.
 
-**Pillar B — practical-severity reweighting** (from signal 3): Maia's human win% reframes how
-bad a flaw really is. A Stockfish −1.5 blunder that Maia says players your level still hold
-~50% from is *not* the same disaster as one that collapses practical chances. Stockfish eval
-stays the objective source of truth; Maia WDL adds a *practical* severity lens.
+> **Scope — chart everywhere, verdict on flaws (locked).** The **"Moves by Rating" chart is
+> shown for _every_ position** on the analysis board (Maia gives a move distribution for any
+> position — it's a general exploration/scouting tool: "how do players at each level handle
+> this?", with the game move vs Maia's top move highlighted). The **Pillar A verdict banner**
+> (salience × trainability) is an **overlay that only appears when the current move is a flaw**
+> — it needs a played-blunder + a best move to classify. So: chart = always; verdict = flaws.
+
+**Pillar B — practical-severity reweighting + Maia eval bar** (from signal 3): Maia's human
+win% reframes how bad a flaw really is — a Stockfish −1.5 blunder that Maia says players your
+level still hold ~50% from is *not* the same disaster as one that collapses practical chances.
+Stockfish eval stays the objective source of truth; Maia WDL adds a *practical* severity lens.
+Surface it as a **Maia eval bar on the left side of the chessboard** (WDL human win%, analogous
+to a Stockfish eval bar), shown for **all positions** — not just flaws. (If a Stockfish eval bar
+is also present, the Maia bar is a distinct, human-practical companion to it, not a replacement.)
 
 **Pillar C — aggregate weakness rollup (DEFERRED, DB-GATED — NOT in this seed's scope)**: the
 original aspiration was to roll Pillars A + B across the user's whole history via
@@ -100,10 +109,10 @@ Maia's calibration is trustworthy enough to aggregate on. Parked, not deleted.
 
 **Browser-only. Nothing Maia-related is stored in the DB in this seed's scope.**
 
-- **What we build:** run Maia live in the **analysis board** only, computing Pillars **A** and
-  **B** **for the position currently on the board / the flaw being viewed**. The per-ELO curve,
-  the salience×trainability quadrant, and the WDL practical-severity lens are all derived on
-  demand and rendered in the board / flaw detail. **No DB writes.**
+- **What we build:** run Maia live in the **analysis board**, re-inferring on every board
+  navigation. **For all positions:** render the "Moves by Rating" chart + a Maia WDL eval bar
+  on the left of the board. **On flaw moves only:** overlay the salience×trainability verdict
+  and the practical-severity reframe. All derived on demand, in-memory. **No DB writes.**
 - **Inference location — RESOLVED by spikes 004–006: client-side (in-browser).** Maia-3 runs in
   the browser via **onnxruntime-web** (WASM/WebGPU) — this is the model authors' own shipped
   architecture (maiachess.com), a public **`maia3_simplified.onnx`** already exists, and we
@@ -156,18 +165,20 @@ Maia as a **separate, unmodified process** (like our GPL Stockfish via `python-c
 
 Browser-only, client-side inference. No DB writes. ~2 phases.
 
-1. **Maia in the browser + analysis-board wiring** — load `maia3_simplified.onnx` (smallest
+1. **Maia in the browser + all-positions surfaces** — load `maia3_simplified.onnx` (smallest
    Maia-3) via **onnxruntime-web** in a Web Worker, lazy-loaded only when the analysis board
    opens (never in the initial bundle); our own MIT glue for board→tensor encoding, ELO input,
-   legal-move masking, softmax; ephemeral session cache; attribution notice. Surface the raw
-   per-ELO move-probability curve + Maia WDL for the current position. Ships standalone value;
-   validates Maia quality live.
-2. **Live per-position Pillars A + B** — compute the salience×trainability quadrant and the WDL
-   practical-severity lens **live** for the position on the board / the flaw being viewed.
-   Render the paired **verbal verdict + "Moves by Rating" chart** (Recharts, per-move
-   probability lines over ELO, player's-ELO `ReferenceLine` marker, blunder/best emphasized,
-   top-N-by-peak ∪ {blunder,best} cap) plus the WDL severity lens. Still no persistence.
-   (Chart shape/cap/verdict-pairing already prototyped — spike 006.)
+   legal-move masking, softmax; ephemeral session cache; attribution notice. Re-run on every
+   board navigation and surface, **for every position**: the **"Moves by Rating" chart**
+   (Recharts — per-move probability lines over ELO, player's-ELO `ReferenceLine` marker, game
+   move vs Maia-top emphasized, top-N-by-peak ∪ {game move, best} cap) and a **Maia WDL eval
+   bar on the left of the board**. Chart shape/cap already prototyped — spike 006. Ships
+   standalone value; validates Maia quality live across all positions.
+2. **Flaw overlay — Pillars A + B verdict** — when the current move **is a flaw**, overlay the
+   salience×trainability **verdict banner** (Growth edge / Even masters fall for this / lapse /
+   above your level) on the chart, and apply the WDL **practical-severity** reframe to the flaw.
+   The chart + eval bar from Phase 1 are already there for all positions; this phase adds the
+   flaw-specific *interpretation* on top. Still no persistence.
 
 **Out of scope (separate future milestone, DB-gated):** Pillar C aggregate weakness rollup,
 `game_flaws` schema, flaw-node backfill, history-wide stats/LLM narration. Only revisit after
