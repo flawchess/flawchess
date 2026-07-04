@@ -64,4 +64,25 @@ Dependency chain, in order. R1/R4 first shrink R3 and R7.
 
 ## Traceability
 
-*(Filled by the roadmapper — maps each REQ-ID to its phase.)*
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| CORR-01 | Phase 148 | Complete |
+| CORR-02 | Phase 148 | Complete |
+| CORR-03 | Phase 148 | Complete |
+| CORR-04 | Phase 148 | Complete |
+| CORR-05 | Phase 148 | Complete |
+| CORR-06 | Phase 148 | Complete |
+| PRUNE-01 | Phase 149 | Pending |
+| PRUNE-02 | Phase 149 | Pending |
+| PRUNE-03 | Phase 149 | Pending |
+| PRUNE-04 | Phase 149 | Pending |
+| PRUNE-05 | Phase 149 | Pending |
+| PRUNE-06 | Phase 149 | Pending |
+| WRITE-01 | Phase 150 | Pending |
+| WRITE-02 | Phase 150 | Pending |
+| WRITE-03 | Phase 150 | Pending |
+| WRITE-04 | Phase 150 | Pending |
+| WRITE-05 | Phase 150 | Pending |
+| WRITE-06 | Phase 150 | Pending |
+
+Coverage: 18/18 v1.31 requirements mapped. No orphans.

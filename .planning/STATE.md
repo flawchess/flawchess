@@ -6,27 +6,27 @@ status: planning
 last_updated: "2026-07-04T10:20:42.437Z"
 last_activity: 2026-07-04
 progress:
-  total_phases: 0
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 3
+  completed_phases: 1
+  total_plans: 4
+  completed_plans: 4
+  percent: 33
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 149 (Retire & Prune) — not started
 Plan: —
-Status: Defining requirements
-Last activity: 2026-07-04 — Milestone v1.31 started
+Status: ROADMAP.md created for v1.31 (Phase 148 grouped in as complete; Phases 149-150 defined). Next: /gsd-plan-phase 149
+Last activity: 2026-07-04 — v1.31 roadmap created (18/18 requirements mapped: CORR-* → 148, PRUNE-* → 149, WRITE-* → 150)
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-06-30 after v1.30 milestone close)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: Planning next milestone (`/gsd-new-milestone`). Leading candidates: Analysis board v2, SEED-037 Train drills, SEED-036 remainder.
+Current focus: Executing v1.31 Pipeline Consolidation. Phase 148 (correctness fixes) already shipped; Phase 149 (Retire & Prune) is next via `/gsd-plan-phase 149`, then Phase 150 (Consolidate Write Path).
 
 ## Milestone Progress
 
@@ -53,6 +53,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - Phase 146 added: Offload live-submit forcing-line continuation eval to the remote worker (SEED-071)
 - Phase 147 added: Persist only forcing-line-gated tactic tags — suppress ungated remote-submit tags (A) + upgraded-worker atomic eval+blob pipeline (B) (SEED-074; scope confirmed as A+B together)
 - Phase 148 added: Pipeline & tactic correctness fixes (code-review 2026-07-02) — standalone active phase, milestone deferred (user chose "add now, defer milestone" 2026-07-04); source todo `2026-07-03-code-review-pipeline-tactic-correctness-phase.md`
+- v1.31 Pipeline Consolidation roadmap created 2026-07-04 (source SEED-080): Phase 148 grouped in retroactively as complete (CORR-01..06); Phase 149 Retire & Prune added (PRUNE-01..06 — delete Gen-1 `/lease`+`/submit` protocol + dead weight + import-job/heartbeat migrations); Phase 150 Consolidate Write Path added (WRITE-01..06 — unify completion decision, classify preamble, delete-then-insert flaw write, EnginePool, ES lottery). Phase 149 strictly precedes Phase 150.
 
 ### Decisions
 
