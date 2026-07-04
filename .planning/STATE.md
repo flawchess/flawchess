@@ -2,26 +2,27 @@
 gsd_state_version: 1.0
 milestone: v1.30
 milestone_name: Forcing-Line Tactic Gate
-current_phase: none
-current_phase_name: Planning next milestone
-status: Milestone v1.30 complete — planning next
-stopped_at: "Completed quick task 260703-suq: SEED-079 slim MultiPV blobs — skip defender-node engine evals in flaw-blob building (~halves remaining tier-4 backfill compute)"
-last_updated: "2026-07-03T19:20:00.000Z"
-last_activity: 2026-07-03
-last_activity_desc: "Completed quick task 260703-suq: SEED-079 slim MultiPV blobs — even-only tier-4 leasing, placeholder-filling assembler, slim local drain; odd-firing mate exemption conservatively accepted"
+current_phase: 148
+status: Milestone complete
+stopped_at: Completed 148-03-PLAN.md
+last_updated: "2026-07-04T09:19:51.760Z"
+last_activity: 2026-07-04
+last_activity_desc: Phase 148 complete
 progress:
-  total_phases: 0
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_phases: 1
+  completed_phases: 1
+  total_plans: 4
+  completed_plans: 4
+  percent: 100
+current_phase_name: pipeline-tactic-correctness-fixes-code-review-2026-07-02
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: none — v1.30 milestone closed; planning next milestone
-Last activity: 2026-07-03 - Completed quick task 260703-vg3: code-review security/ops hardening batch (auth+sanitize GET /imports/{job_id}, ix_game_flaws_blob_backfill autogen ignorelist + index drift guard, SECRET_KEY fail-closed startup guard, worker eval bound-validation)
+Phase: 148
+Last activity: 2026-07-04 — Phase 148 complete
 
 v1.30 Forcing-Line Tactic Gate shipped to production 2026-06-30 (releases #229/#230/#231/#234)
 and is now closed in GSD. All 7 phases (141–147) complete; 15/15 requirements validated.
@@ -114,6 +115,10 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase ?]: SEED-076 follow-up: opening_position_eval.pv self-heals via ON CONFLICT DO UPDATE SET pv WHERE pv IS NULL; eval_cp/eval_mate/best_move stay first-write-wins
 - [Phase ?]: SEED-076 follow-up: atomic-submit's dedup_map fetch moved to its own read session before _derive_atomic_sentinel_lines so the merged cached pv is visible to the sentinel walk
 - [Phase ?]: SEED-076 follow-up: lease omission gated on opening_position_eval.pv IS NOT NULL, not merely full_hash presence — a pv-less cache row still must be leased fresh
+- [Phase ?]: D-01/D-02 (148-01): truncated forced-mate PV tags generic MATE; fen_map stores full board.fen() detector-internally only, FlawRecord.fen kept piece-placement-only via split at construction site — Preserves the persisted game_flaws.fen API contract while fixing PV replay for ep/castling flaws
+- [Phase 148-02]: item-2 circuit breaker gated on eval_targets non-empty (not game_ids) to preserve D-09 test_engine_none_marks_complete invariant; lease release is implicit TTL expiry, no explicit UPDATE
+- [Phase 148-02]: item-5 (D-05) minimum guard only -- entry_eval_lease_expiry > sa.func.now() added to entry_submit_eval guard query; fuller echoed-game_ids intersection deferred
+- [Phase 148-03]: D-04 least-invasive choice: v_shared = (var_eg + var_ne) / 2.0 count-only proxy for the covariance correction
 
 ### Pending Todos
 
@@ -189,8 +194,8 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-Last session: 2026-07-03T19:20:00.000Z
-Stopped at: Completed quick task 260703-suq: SEED-079 slim MultiPV blobs — skip defender-node engine evals in flaw-blob building
+Last session: 2026-07-04T08:59:58.567Z
+Stopped at: Completed 148-03-PLAN.md
 Resume file: None
 
 ## Performance Metrics
@@ -235,3 +240,7 @@ Resume file: None
 | Phase 147 P05 | 21min | 2 tasks | 3 files |
 | Phase 147 P06 | 55min | 3 tasks | 2 files |
 | Phase quick-260703-qgp P01 | 25min | 3 tasks | 7 files |
+| Phase 148 P01 | 25min | 2 tasks | 4 files |
+| Phase 148 P02 | 22min | 2 tasks | 5 files |
+| Phase 148 P03 | 20min | 2 tasks | 4 files |
+| Phase 148 P04 | 15min | 2 tasks | 4 files |

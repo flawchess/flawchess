@@ -2356,6 +2356,31 @@ async def run_eval_drain() -> None:
             else:
                 eval_results = []
 
+            # WR-05 mirror (Phase 148 item 2): when EVERY engine call in a
+            # non-empty batch failed, the cause is overwhelmingly a dead
+            # engine pool (all workers permanently failed after restart
+            # attempts — see the corrected EnginePool docstring in engine.py),
+            # not a position problem. Stamping evals_completed_at here would
+            # silently convert a transient pool outage into permanent
+            # complete-but-unevaluated games. Gate on `eval_targets` non-empty
+            # (not `game_ids`) so the legitimate D-09 zero-eval-target case
+            # (test_engine_none_marks_complete) still stamps complete — see
+            # Pitfall 2 in 148-RESEARCH.md. Leave the lease to expire via its
+            # ENTRY_LEASE_TTL_SECONDS TTL (the same reclaim mechanism
+            # test_idempotent_on_simulated_crash already relies on) rather
+            # than an explicit UPDATE.
+            if eval_targets and all(cp is None and mt is None for cp, mt in eval_results):
+                sentry_sdk.set_context(
+                    "eval", {"game_id_count": len(game_ids), "failed_ply_count": len(eval_targets)}
+                )
+                sentry_sdk.set_tag("source", "eval_drain")
+                sentry_sdk.capture_message(
+                    "entry-drain: all engine evals failed for batch — leaving pending",
+                    level="warning",
+                )
+                await asyncio.sleep(_DRAIN_IDLE_SLEEP_SECONDS)
+                continue
+
             # Step 5: open session LATE, write all UPDATEs in one short tx.
             # Session opens only AFTER gather completes — write window is <100 ms.
             async with async_session_maker() as session:

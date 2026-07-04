@@ -1716,6 +1716,87 @@ async def test_entry_submit_stamps_full_leased_set_including_zero_target_games(
 
 
 @pytest.mark.asyncio
+async def test_entry_submit_excludes_expired_lease(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """D-05 (Phase 148 item 5): entry-submit excludes a leased-but-expired game.
+
+    Two games leased to the SAME worker_id (default X-Worker-Id-less
+    "remote-worker" label) — one with a PAST entry_eval_lease_expiry, one with
+    a FUTURE expiry. Only the future-expiry game may appear in the response
+    game_ids / get evals_completed_at stamped; the past-expiry game must stay
+    NULL (reclaimable by a fresh lease later), mirroring test_lease_reclaim's
+    raw-SQL fixture style.
+    """
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    user_id = eval_worker_test_user
+    game_expired = await _insert_game(eval_worker_session_maker, user_id, evals_completed_at=None)
+    game_active = await _insert_game(eval_worker_session_maker, user_id, evals_completed_at=None)
+
+    now = datetime.now(timezone.utc)
+    async with eval_worker_session_maker() as session:
+        await session.execute(
+            sa.text("""
+                UPDATE games
+                SET entry_eval_lease_expiry = :past_ts,
+                    entry_eval_leased_by = 'remote-worker'
+                WHERE id = :gid
+            """),
+            {"past_ts": now - timedelta(minutes=10), "gid": game_expired},
+        )
+        await session.execute(
+            sa.text("""
+                UPDATE games
+                SET entry_eval_lease_expiry = :future_ts,
+                    entry_eval_leased_by = 'remote-worker'
+                WHERE id = :gid
+            """),
+            {"future_ts": now + timedelta(seconds=60), "gid": game_active},
+        )
+        await session.commit()
+
+    payload = {"sf_version": "", "evals": []}
+
+    try:
+        async with _make_client() as client:
+            resp = await client.post(
+                _ENTRY_SUBMIT_URL,
+                json=payload,
+                headers={"X-Operator-Token": _TEST_TOKEN},
+            )
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        body = resp.json()
+
+        assert game_active in body["game_ids"], f"Future-expiry game must be in game_ids: {body}"
+        assert game_expired not in body["game_ids"], (
+            f"Past-expiry (expired) game must NOT be in game_ids: {body}"
+        )
+
+        active_completed_at = await _get_game_evals_completed_at(
+            eval_worker_session_maker, game_active
+        )
+        assert active_completed_at is not None, (
+            "Future-expiry game must be stamped evals_completed_at"
+        )
+
+        expired_completed_at = await _get_game_evals_completed_at(
+            eval_worker_session_maker, game_expired
+        )
+        assert expired_completed_at is None, (
+            "Past-expiry (expired) game must NOT be stamped evals_completed_at "
+            "(D-05: entry_eval_lease_expiry > now() excludes it) — it stays "
+            "reclaimable by a fresh lease"
+        )
+    finally:
+        await _delete_games(eval_worker_session_maker, [game_expired, game_active])
+
+
+@pytest.mark.asyncio
 async def test_entry_submit_idempotent(
     monkeypatch: pytest.MonkeyPatch,
     eval_worker_session_maker: async_sessionmaker[AsyncSession],

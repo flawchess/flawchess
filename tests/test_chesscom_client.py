@@ -120,6 +120,35 @@ class TestFetchChesscomGames:
         assert results[0].user_id == 1
 
     @pytest.mark.asyncio
+    async def test_malformed_game_skipped_and_continues(self):
+        """A malformed game (missing the 'white' key -> KeyError in normalize)
+        is skipped; the remaining good games are still yielded and one Sentry
+        capture is recorded for the bad game (item 4, Phase 148)."""
+        good1 = _make_game(uuid="game-uuid-1")
+        malformed = _make_game(uuid="game-uuid-bad")
+        del malformed["white"]
+        good2 = _make_game(uuid="game-uuid-2")
+
+        archives_resp = _make_response(
+            {"archives": ["https://api.chess.com/pub/player/testuser/games/2024/03"]}
+        )
+        games_resp = _make_response({"games": [good1, malformed, good2]})
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=[archives_resp, games_resp])
+
+        with (
+            patch("app.services.chesscom_client.asyncio.sleep", new=AsyncMock()),
+            patch("app.services.chesscom_client.sentry_sdk.capture_exception") as mock_capture,
+        ):
+            results = []
+            async for game in fetch_chesscom_games(mock_client, "testuser", user_id=1):
+                results.append(game)
+
+        assert [g.platform_game_id for g in results] == ["game-uuid-1", "game-uuid-2"]
+        assert mock_capture.call_count == 1
+
+    @pytest.mark.asyncio
     async def test_404_raises_value_error(self):
         """Should raise ValueError when the chess.com user is not found.
 

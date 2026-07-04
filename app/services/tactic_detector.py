@@ -2434,6 +2434,10 @@ def detect_tactic_motif(
         - tactic_piece: chess.PieceType int (1-6) or None (per-motif semantic D-12).
         - tactic_confidence: 0-100 or None when tactic_motif_int is None.
         - tactic_depth: raw half-move ply index from flaw_ply+1 (D-04), or None.
+          Caveat (Phase 148 truncated-mate fallback): when `has_forced_mate=True` and
+          the PV was capped before reaching mate, this is the last-displayed-ply
+          approximation (len(moves)-1), not the true (unknown) mating ply — so it is
+          systematically shallower than a fully-resolved mate's depth.
 
     Dispatch strategy (D-02): mates (Tier 1) short-circuit and always win (D-03/D-07).
     All non-mate detectors run and collect firings; the SHALLOWEST motif wins (depth primary,
@@ -2488,6 +2492,22 @@ def detect_tactic_motif(
         gm_fired, gm_piece, gm_depth = detect_generic_mate(boards, moves, pov)
         if gm_fired:
             return TacticMotifInt.MATE, gm_piece, TACTIC_CONFIDENCE_HIGH, gm_depth
+
+        # BUGFIX (Phase 148, D-01): has_forced_mate=True means Stockfish reported a
+        # genuine eval_mate score, but every per-detector mate function above (and
+        # detect_generic_mate) bails out via `if not boards[-1].is_checkmate()` when
+        # the PV is capped at PV_CAP_PLIES (engine.py) before reaching the mating
+        # position — so a real, deep forced mate previously fell through to Tier 2+
+        # untagged (no-op). Named-mate geometry cannot be verified on a truncated
+        # line, so tag the generic fallback only — do NOT suppress a real mate.
+        # `moves` is guaranteed non-empty here (early-return above when `not moves`).
+        if has_forced_mate and not boards[-1].is_checkmate():
+            _fallback_depth = len(moves) - 1
+            _fallback_piece: int | None = None
+            _last = boards[-1].piece_at(moves[-1].to_square)
+            if _last is not None and _last.color == pov:
+                _fallback_piece = _last.piece_type
+            return TacticMotifInt.MATE, _fallback_piece, TACTIC_CONFIDENCE_HIGH, _fallback_depth
 
     # --- Collect all non-mate firings (D-05: depth-primary dispatch) ---
     # Candidates: run ALL non-mate detectors and collect firings.

@@ -99,7 +99,7 @@
 | 145. Corpus Backfill + Rollout | 6/6 | Complete (code shipped v1.30 #229; prod drain completes through 146/147) | 2026-06-30 |
 | 146. Offload live-submit continuation eval to remote worker (SEED-071) | 2/2 | Complete (release #230; SEED-072 fix #231) | 2026-06-30 |
 | 147. Persist only forcing-line-gated tactic tags (SEED-074, A+B) | 6/6 | Complete (release #234) | 2026-06-30 |
-| 148. Pipeline & tactic correctness fixes (code-review 2026-07-02) | 0/? | Not planned | — |
+| 148. Pipeline & tactic correctness fixes (code-review 2026-07-02) | 4/4 | Complete    | 2026-07-04 |
 
 ## Active (unassigned milestone)
 
@@ -110,11 +110,14 @@
 **Goal:** Fix five silent-data-loss / production-only-correctness defects from the 2026-07-02 code review, each with tests + a verify loop: (1) tactic `has_forced_mate` no-op → deep mates never tag + `fen_map` `board_fen()` drops ep/castling state (`tactic_detector.py`, `flaws_service.py`); (2) entry-ply drain stamps `evals_completed_at` even on a dead pool → mirror the WR-05 all-fail circuit breaker (`eval_drain.py`); (3) quintile significance test treats overlapping cohorts as independent → add the covariance term (`endgame_service.py`); (4) one malformed platform game aborts the whole import → per-game try/except + skip + aggregated Sentry (`chesscom_client.py`, `lichess_client.py`); (5) entry-submit batch-scoping minimum guard `entry_eval_lease_expiry > now()` (`eval_remote.py`).
 **Source:** `.planning/todos/pending/2026-07-03-code-review-pipeline-tactic-correctness-phase.md`; triage `.planning/notes/2026-07-03-code-review-fable-triage.md`
 **Depends on:** Phase 147
-**Plans:** 0 plans
+**Plans:** 4/4 plans complete
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 148 to break down)
+- [x] 148-01-PLAN.md — Item 1 tactics: has_forced_mate mate-fallback (D-01) + fen_map full-FEN storage (D-02) + precision-gate regression (D-03)
+- [x] 148-02-PLAN.md — Items 2+5 eval-lease: entry-ply drain all-fail circuit breaker + EnginePool docstring + entry-submit lease-expiry guard (D-05)
+- [x] 148-03-PLAN.md — Item 3 stats: quintile covariance-correction term (D-04) + docstring fix
+- [x] 148-04-PLAN.md — Item 4 import: per-game normalization try/except + skip + aggregated Sentry (chess.com + lichess)
 
 ## Backlog
 

@@ -110,7 +110,9 @@ class TestUserAndOppQuintileIndependentSplit:
         row = _make_row(
             "blitz", user_clk_pct=0.10, opp_clk_pct=0.90, result="1-0", user_color="white"
         )
-        _tc_total, _tc_diffs, user_q_wdl, opp_q_wdl, _tc_agg = _iterate_clock_rows([row])
+        _tc_total, _tc_diffs, user_q_wdl, opp_q_wdl, _tc_agg, _tc_shared = _iterate_clock_rows(
+            [row]
+        )
 
         # User in quintile 0 (max pressure) with one win.
         assert user_q_wdl.get(("blitz", 0)) == (1, 0, 0)
@@ -128,7 +130,9 @@ class TestUserAndOppQuintileIndependentSplit:
         row = _make_row(
             "rapid", user_clk_pct=0.50, opp_clk_pct=0.50, result="1-0", user_color="white"
         )
-        _tc_total, _tc_diffs, user_q_wdl, opp_q_wdl, _tc_agg = _iterate_clock_rows([row])
+        _tc_total, _tc_diffs, user_q_wdl, opp_q_wdl, _tc_agg, _tc_shared = _iterate_clock_rows(
+            [row]
+        )
         assert user_q_wdl.get(("rapid", 2)) == (1, 0, 0)  # user win
         assert opp_q_wdl.get(("rapid", 2)) == (0, 0, 1)  # opp loss
 
@@ -149,7 +153,9 @@ class TestUserAndOppQuintileIndependentSplit:
             [0, 1],
             [0.50 * base, 0.50 * base],  # ply 0 = opp's clock, ply 1 = user's clock
         )
-        _tc_total, _tc_diffs, user_q_wdl, opp_q_wdl, _tc_agg = _iterate_clock_rows([row])
+        _tc_total, _tc_diffs, user_q_wdl, opp_q_wdl, _tc_agg, _tc_shared = _iterate_clock_rows(
+            [row]
+        )
         assert user_q_wdl.get(("rapid", 2)) == (0, 0, 1)  # user loss
         assert opp_q_wdl.get(("rapid", 2)) == (1, 0, 0)  # opp win
 
@@ -158,10 +164,145 @@ class TestUserAndOppQuintileIndependentSplit:
         row = _make_row(
             "bullet", user_clk_pct=0.30, opp_clk_pct=0.70, result="1/2-1/2", user_color="white"
         )
-        _tc_total, _tc_diffs, user_q_wdl, opp_q_wdl, _tc_agg = _iterate_clock_rows([row])
+        _tc_total, _tc_diffs, user_q_wdl, opp_q_wdl, _tc_agg, _tc_shared = _iterate_clock_rows(
+            [row]
+        )
         # User in quintile 1 (0.30 -> int(1.5) = 1), opp in quintile 3 (0.70 -> int(3.5) = 3).
         assert user_q_wdl.get(("bullet", 1)) == (0, 1, 0)
         assert opp_q_wdl.get(("bullet", 3)) == (0, 1, 0)
+
+    def test_shared_quintile_count_increments_only_when_quintiles_match(self) -> None:
+        """Phase 148 item 3 (D-04): tc_shared_quintile_count[(tc, q)] counts only
+        rows where user_quintile == opp_quintile == q. A row where the two
+        sides land in DIFFERENT quintiles must not increment any bucket."""
+        same_quintile_row = _make_row(
+            "blitz", user_clk_pct=0.50, opp_clk_pct=0.50, result="1-0", user_color="white"
+        )
+        different_quintile_row = _make_row(
+            "blitz", user_clk_pct=0.10, opp_clk_pct=0.90, result="1-0", user_color="white"
+        )
+        _tc_total, _tc_diffs, _user_q_wdl, _opp_q_wdl, _tc_agg, tc_shared = _iterate_clock_rows(
+            [same_quintile_row, different_quintile_row]
+        )
+        assert tc_shared.get(("blitz", 2)) == 1
+        # The different-quintile row (Q0 vs Q4) must not appear anywhere.
+        assert tc_shared.get(("blitz", 0)) is None
+        assert tc_shared.get(("blitz", 4)) is None
+
+
+class TestSharedQuintileCovarianceWidening:
+    """Phase 148 item 3 (D-04): a shared-quintile cohort (user_quintile ==
+    opp_quintile for the same games) must produce a WIDER CI than a
+    non-shared control with identical W/D/L totals, per the covariance
+    correction threaded through _build_quintile_bullets."""
+
+    def test_shared_cohort_ci_wider_than_non_shared_control_same_totals(self) -> None:
+        tc = "blitz"
+        base = 300
+
+        # --- Shared case: all 20 games have user AND opp in Q2 (0.50/0.50). ---
+        # 10 user wins (opp losses) + 10 user losses (opp wins) -> user Q2
+        # wdl=(10,0,10), opp Q2 wdl=(10,0,10) (symmetric under inversion).
+        # Every one of these 20 games has user_quintile == opp_quintile == 2.
+        shared_rows: list[tuple[Any, ...]] = []
+        for i in range(10):
+            shared_rows.append(
+                _make_row(
+                    tc,
+                    0.50,
+                    0.50,
+                    result="1-0",
+                    user_color="white",
+                    game_id=i,
+                    base_time_seconds=base,
+                )
+            )
+        for i in range(10):
+            shared_rows.append(
+                _make_row(
+                    tc,
+                    0.50,
+                    0.50,
+                    result="0-1",
+                    user_color="white",
+                    game_id=100 + i,
+                    base_time_seconds=base,
+                )
+            )
+        shared_result = _compute_time_pressure_cards(shared_rows)
+        assert len(shared_result.cards) == 1
+        shared_q2 = shared_result.cards[0].quintiles[2]
+        assert shared_q2.n == 20
+        assert shared_q2.ci_low is not None and shared_q2.ci_high is not None
+
+        # --- Control case: same Q2 W/D/L totals on each side, but assembled
+        # from DIFFERENT games so no row has user_quintile == opp_quintile == 2.
+        # Set A: user in Q2 (0.50), opp in Q4 (0.90) -> feeds user_wdl[Q2].
+        # Set B: user in Q0 (0.10), opp in Q2 (0.50) -> feeds opp_wdl[Q2].
+        control_rows: list[tuple[Any, ...]] = []
+        for i in range(10):
+            control_rows.append(
+                _make_row(
+                    tc,
+                    0.50,
+                    0.90,
+                    result="1-0",
+                    user_color="white",
+                    game_id=200 + i,
+                    base_time_seconds=base,
+                )
+            )
+        for i in range(10):
+            control_rows.append(
+                _make_row(
+                    tc,
+                    0.50,
+                    0.90,
+                    result="0-1",
+                    user_color="white",
+                    game_id=210 + i,
+                    base_time_seconds=base,
+                )
+            )
+        for i in range(10):
+            control_rows.append(
+                _make_row(
+                    tc,
+                    0.10,
+                    0.50,
+                    result="1-0",
+                    user_color="white",
+                    game_id=220 + i,
+                    base_time_seconds=base,
+                )
+            )
+        for i in range(10):
+            control_rows.append(
+                _make_row(
+                    tc,
+                    0.10,
+                    0.50,
+                    result="0-1",
+                    user_color="white",
+                    game_id=230 + i,
+                    base_time_seconds=base,
+                )
+            )
+        control_result = _compute_time_pressure_cards(control_rows)
+        assert len(control_result.cards) == 1
+        control_q2 = control_result.cards[0].quintiles[2]
+        assert control_q2.n == 20
+        assert control_q2.ci_low is not None and control_q2.ci_high is not None
+
+        # Same W/D/L totals on both sides at Q2 -> identical delta and opp_score.
+        assert shared_q2.delta == pytest.approx(control_q2.delta, abs=1e-9)
+        assert shared_q2.opp_score == pytest.approx(control_q2.opp_score, abs=1e-9)
+
+        # The shared cohort's CI must be WIDER (covariance correction applies;
+        # control has shared_n=0 at Q2, so it gets the historical narrower CI).
+        shared_width = shared_q2.ci_high - shared_q2.ci_low
+        control_width = control_q2.ci_high - control_q2.ci_low
+        assert shared_width > control_width
 
 
 class TestQuintileBulletDelta:

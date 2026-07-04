@@ -181,7 +181,24 @@ async def fetch_lichess_games(
                             # Skip malformed lines without aborting the stream
                             continue
 
-                        normalized = normalize_lichess_game(game, username, user_id)
+                        # Item 4 (Phase 148): normalize_lichess_game does direct
+                        # dict lookups (e.g. game["players"]) with no fallback,
+                        # so a single structurally-malformed (but valid-JSON)
+                        # game raised an uncaught KeyError that aborted the
+                        # whole import. Mirror the per-game PGN-parse precedent
+                        # (import_service.py) — skip the bad game, keep going.
+                        # Leave the json.JSONDecodeError guard above untouched.
+                        try:
+                            normalized = normalize_lichess_game(game, username, user_id)
+                        except Exception as exc:
+                            logger.warning(
+                                "Failed to normalize lichess game for user_id=%s", user_id
+                            )
+                            sentry_sdk.set_context(
+                                "import", {"platform": "lichess", "user_id": user_id}
+                            )
+                            sentry_sdk.capture_exception(exc)
+                            continue
                         if normalized is not None:
                             yield normalized
                             if on_game_fetched is not None:

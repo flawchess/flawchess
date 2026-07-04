@@ -179,6 +179,34 @@ class TestFetchLichessGames:
         assert len(results) == 1
 
     @pytest.mark.asyncio
+    async def test_normalization_failure_skipped_and_continues(self):
+        """A structurally-malformed (but valid-JSON) game -- missing the "id"
+        key, which normalize_lichess_game subscripts directly with no .get()
+        fallback -- is skipped; g1/g2 are still yielded and one Sentry capture
+        is recorded for the bad game (item 4, Phase 148).
+
+        Note: `players` itself is read via `game.get("players", {})` inside
+        normalize_lichess_game, so a missing "players" key does NOT raise --
+        "id" is the field whose direct subscript actually raises KeyError.
+        """
+        good1 = _make_lichess_game(game_id="g1")
+        malformed = _make_lichess_game()
+        del malformed["id"]
+        good2 = _make_lichess_game(game_id="g2")
+        lines = [json.dumps(good1), json.dumps(malformed), json.dumps(good2)]
+
+        mock_client = MagicMock()
+        mock_client.stream = MagicMock(return_value=_make_streaming_response(lines))
+
+        with patch("app.services.lichess_client.sentry_sdk.capture_exception") as mock_capture:
+            results = []
+            async for g in fetch_lichess_games(mock_client, "testuser", user_id=1):
+                results.append(g)
+
+        assert [g.platform_game_id for g in results] == ["g1", "g2"]
+        assert mock_capture.call_count == 1
+
+    @pytest.mark.asyncio
     async def test_on_game_fetched_callback_called(self):
         """on_game_fetched should be called once per yielded game."""
         games = [

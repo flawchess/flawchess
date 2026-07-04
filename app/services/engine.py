@@ -377,8 +377,13 @@ class EnginePool:
     analyse in parallel.
 
     On per-worker timeout / crash, that worker restarts in place; siblings
-    keep going. If restart fails the worker is permanently disabled and its
-    slot is dropped from the queue — remaining workers continue to serve.
+    keep going. If restart fails, the worker's slot is NOT dropped — it
+    stays in the available queue and every future pickup returns (None, None)
+    almost instantly (see the `protocol is None` early-return in `_analyse`).
+    A pool where every worker has permanently failed therefore answers
+    every evaluate() call near-instantly with (None, None) rather than
+    hanging — this is what the entry/full-ply drain "all engine evals
+    failed" circuit breakers (WR-05, Phase 148 item 2) detect and react to.
 
     The module-level start_engine() / evaluate() use a pool of size
     STOCKFISH_POOL_SIZE (default 1). Use this class directly when you need

@@ -2067,6 +2067,62 @@ def test_missed_no_suppression() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Phase 148 D-01: has_forced_mate truncated-mate fallback (Bug A).
+#
+# BUGFIX (Phase 148): has_forced_mate=True signals Stockfish reported a genuine
+# eval_mate score, but every per-detector mate function bails via
+# `if not boards[-1].is_checkmate()` when the PV is capped at PV_CAP_PLIES=12
+# before reaching the mating position — so a real, deep forced mate previously
+# fell through to Tier 2+ untagged. This fixture (from _HARD_NEGATIVES above,
+# reused here for a verified-quiet 12-ply/PV_CAP_PLIES-length truncated line)
+# already asserts motif_int is None with has_forced_mate=False (the default),
+# which also proves boards[-1].is_checkmate() is False here — if it were True,
+# detect_generic_mate would already fire regardless of the flag. This is
+# exactly the "capped-before-mate" precondition the fallback branch requires.
+# ---------------------------------------------------------------------------
+
+_TRUNCATED_MATE_FEN = "r7/8/6R1/3k4/2p5/8/P4P1P/6K1 b - - 0 1"
+_TRUNCATED_MATE_PV = "c4c3 g6g5 d5d4 g5g4 d4d3 g4g3 d3d2 g3g7 a8c8 g7d7 d2e2 d7e7"
+
+
+class TestHasForcedMateFallback:
+    """D-01: truncated forced-mate PV tags generic MATE only when the flag is set."""
+
+    def test_truncated_mate_with_flag_tags_mate(self) -> None:
+        """has_forced_mate=True on a truncated (non-checkmate-terminal) PV must
+        tag the generic MATE motif instead of falling through untagged (Bug A)."""
+        from app.services.tactic_detector import TACTIC_CONFIDENCE_HIGH
+
+        board = chess.Board(_TRUNCATED_MATE_FEN)
+        boards, moves = _parse_pv(board, _TRUNCATED_MATE_PV)
+        assert not boards[-1].is_checkmate(), (
+            "fixture precondition: PV must be truncated BEFORE reaching checkmate"
+        )
+
+        motif_int, _piece, conf, depth = detect_tactic_motif(
+            board, _TRUNCATED_MATE_PV, has_forced_mate=True
+        )
+        assert motif_int == TacticMotifInt.MATE, (
+            f"expected TacticMotifInt.MATE with has_forced_mate=True, got motif_int={motif_int}"
+        )
+        assert conf == TACTIC_CONFIDENCE_HIGH
+        assert depth == len(moves) - 1
+
+    def test_truncated_mate_without_flag_returns_none(self) -> None:
+        """Flag-gate regression guard: the SAME truncated PV with has_forced_mate=False
+        (default) must NOT fire the fallback — returns None as before the fix."""
+        board = chess.Board(_TRUNCATED_MATE_FEN)
+        motif_int, piece, conf, depth = detect_tactic_motif(
+            board, _TRUNCATED_MATE_PV, has_forced_mate=False
+        )
+        assert motif_int is None, (
+            f"fallback must not fire without has_forced_mate=True, got "
+            f"{_INT_TO_MOTIF.get(motif_int)}"
+        )
+        assert piece is None and conf is None and depth is None
+
+
+# ---------------------------------------------------------------------------
 # Phase 132 Plan 04: cook AND-chain behavioral assertions for attraction,
 # x-ray, and sacrifice (TDD RED gate — Phase 132 D-01/D-02/D-03).
 #

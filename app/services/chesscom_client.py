@@ -323,7 +323,18 @@ async def fetch_chesscom_games(
 
         games = resp.json().get("games", [])
         for game in games:
-            normalized = normalize_chesscom_game(game, username, user_id)
+            # Item 4 (Phase 148): normalize_chesscom_game does direct-subscript
+            # lookups (e.g. game["white"]) with no .get() fallback, so a single
+            # malformed chess.com game raised an uncaught KeyError that aborted
+            # the whole import. Mirror the existing per-game PGN-parse precedent
+            # (import_service.py) — skip the bad game, keep the import going.
+            try:
+                normalized = normalize_chesscom_game(game, username, user_id)
+            except Exception as exc:
+                logger.warning("Failed to normalize chess.com game for user_id=%s", user_id)
+                sentry_sdk.set_context("import", {"platform": "chess.com", "user_id": user_id})
+                sentry_sdk.capture_exception(exc)
+                continue
             if normalized is not None:
                 yield normalized
                 if on_game_fetched is not None:

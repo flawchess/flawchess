@@ -447,6 +447,100 @@ class TestEngineNoneMarksComplete:
             await _delete_games_by_ids(drain_test_session_maker, game_ids)
 
 
+# ─── Test: dead-pool all-fail circuit breaker leaves batch pending (Phase 148 item 2) ──
+
+
+class TestDeadPoolAllFailLeavesPending:
+    """Phase 148 item 2: a non-empty entry-ply batch where every engine eval
+
+    returns (None, None) must NOT be stamped evals_completed_at — mirrors the
+    full-ply WR-05 breaker (test_full_eval_drain.py::test_all_fail_keeps_game_pending).
+    Must coexist with TestEngineNoneMarksComplete (D-09 zero-eval-target case),
+    which asserts the OPPOSITE outcome for an empty eval_targets batch.
+    """
+
+    async def test_dead_pool_all_fail_leaves_batch_pending(
+        self,
+        drain_test_user: int,
+        drain_test_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Non-empty eval_targets, engine always (None, None) -> evals_completed_at stays NULL."""
+        import app.services.eval_drain as drain_module
+        from app.models.game import Game
+        from app.models.game_position import GamePosition
+
+        # Route drain sessions to test DB
+        monkeypatch.setattr(drain_module, "async_session_maker", drain_test_session_maker)
+
+        # Suppress unrelated Sentry calls; capture capture_message calls for assertion.
+        capture_message_calls: list[Any] = []
+
+        def mock_capture_message(*args: Any, **kwargs: Any) -> None:
+            capture_message_calls.append((args, kwargs))
+
+        monkeypatch.setattr(drain_module.sentry_sdk, "capture_exception", lambda *a, **kw: None)
+        monkeypatch.setattr(drain_module.sentry_sdk, "capture_message", mock_capture_message)
+        monkeypatch.setattr(drain_module.sentry_sdk, "set_tag", lambda *a, **kw: None)
+        monkeypatch.setattr(drain_module.sentry_sdk, "set_context", lambda *a, **kw: None)
+
+        # Engine always returns (None, None) — simulates a fully-dead pool.
+        mock_evaluate = AsyncMock(return_value=(None, None))
+        monkeypatch.setattr(drain_module.engine_service, "evaluate", mock_evaluate)
+
+        # One pending game with a real midgame-entry GamePosition row (phase=1)
+        # so eval_targets is non-empty — this is the load-bearing distinction
+        # from TestEngineNoneMarksComplete (which uses zero GamePosition rows).
+        game_ids = await _insert_and_commit_pending_games(
+            drain_test_session_maker, drain_test_user, 1
+        )
+        game_id = game_ids[0]
+        async with drain_test_session_maker() as session:
+            session.add(
+                GamePosition(
+                    user_id=drain_test_user,
+                    game_id=game_id,
+                    ply=2,
+                    full_hash=2,
+                    white_hash=0,
+                    black_hash=0,
+                    phase=1,  # midgame entry — needs eval
+                    endgame_class=None,
+                    eval_cp=None,
+                    eval_mate=None,
+                )
+            )
+            await session.commit()
+        try:
+            drain_task = asyncio.create_task(drain_module.run_eval_drain())
+            try:
+                await asyncio.wait_for(asyncio.shield(drain_task), timeout=1.0)
+            except asyncio.TimeoutError:
+                pass  # expected — the breaker sleeps after the all-fail batch
+            drain_task.cancel()
+            try:
+                await drain_task
+            except asyncio.CancelledError:
+                pass
+
+            async with drain_test_session_maker() as verify_session:
+                result = await verify_session.execute(
+                    select(Game.evals_completed_at).where(Game.id == game_id)
+                )
+                evals_completed_at = result.scalar_one()
+
+            assert evals_completed_at is None, (
+                "Game with an all-fail non-empty eval batch was stamped "
+                "evals_completed_at — dead-pool circuit breaker (Phase 148 item 2) "
+                "did not trip"
+            )
+            assert len(capture_message_calls) >= 1, (
+                "Expected one aggregated Sentry capture_message for the all-fail batch"
+            )
+        finally:
+            await _delete_games_by_ids(drain_test_session_maker, game_ids)
+
+
 # ─── Test: cancellation propagates ────────────────────────────────────────────
 
 

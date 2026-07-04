@@ -2111,6 +2111,7 @@ def _iterate_clock_rows(
     dict[tuple[str, int], tuple[int, int, int]],
     dict[tuple[str, int], tuple[int, int, int]],
     dict[str, _ClockAggregate],
+    dict[tuple[str, int], int],
 ]:
     """Iterate clock_rows once, accumulating per-TC and per-(TC, quintile) data.
 
@@ -2118,7 +2119,8 @@ def _iterate_clock_rows(
     removed. We now build TWO parallel quintile splits from the SAME filtered
     games — one bucketed by USER's clock-pct, one by OPPONENT's clock-pct. The
     per-quintile delta is computed in _build_quintile_bullets against these
-    independent splits, not against a cross-user cohort.
+    two splits, which are NOT independent (see below) — the D-04 covariance
+    correction (Phase 148 item 3) accounts for the overlap.
 
     Plan 88-14 (A-3 top-zone restore): an additional per-TC _ClockAggregate
     accumulates in the same pass — clock sums (for the 5 average fields) plus
@@ -2132,15 +2134,26 @@ def _iterate_clock_rows(
             with result inverted from the opponent's perspective (user-win = opp-loss).
         tc_clock_agg: dict[tc -> _ClockAggregate] of summable inputs for the
             TimePressureTcCard top-zone summary stats (Plan 88-14 A-3).
+        tc_shared_quintile_count: dict[(tc, quintile) -> count of games where
+            user_quintile == opp_quintile == quintile] (Phase 148 item 3, D-04).
+            Feeds the covariance-correction `shared_n` parameter of
+            `compute_score_difference_test` in `_build_quintile_bullets`.
 
     Quintile index = min(4, int(clk_pct * 5)) so:
         0.0..0.2 -> 0 (max pressure), 0.2..0.4 -> 1, ..., 0.8..1.0 -> 4 (min pressure)
 
-    User and opponent quintile assignments are INDEPENDENT within the same row:
-    a game where the user banked clock but the opponent burned it will fall in
-    different quintiles for the two splits. That independence is what makes the
-    unpaired two-sample test (compute_score_difference_test) valid in
-    _build_quintile_bullets.
+    User and opponent quintile assignments are computed independently per row
+    (each side's own clock-pct decides its own bucket), but the two SPLITS are
+    NOT statistically independent samples: whenever a game's user_quintile
+    equals its opp_quintile (both players in the same time-pressure bucket),
+    that single game contributes to BOTH cohorts for the SAME quintile index
+    q — as `X` (user outcome) on the user side and as the exact linear inverse
+    `1 - X` (opponent outcome) on the opp side. That shared-game overlap makes
+    `compute_score_difference_test`'s naive independent-samples SE an
+    underestimate; Phase 148 item 3 (D-04) tracks the per-(tc, quintile)
+    shared-game count `m` (below) and passes it through `_build_quintile_bullets`
+    as `shared_n` so the SE gets the `+2m*v/(n_u*n_o)` covariance-correction
+    term instead of silently treating the cohorts as independent.
 
     Rows with base_clock <= 0 are skipped (T-88-04-02 defensive guard).
     Rows where either clock exceeds MAX_CLOCK_PCT_OF_BASE * base_clock are skipped
@@ -2155,6 +2168,9 @@ def _iterate_clock_rows(
         lambda: (0, 0, 0)
     )
     tc_clock_agg: dict[str, _ClockAggregate] = defaultdict(_ClockAggregate)
+    # Phase 148 item 3 (D-04): count of games per (tc, quintile) where the user
+    # and opponent land in the SAME quintile — feeds the covariance correction.
+    tc_shared_quintile_count: dict[tuple[str, int], int] = defaultdict(int)
 
     for row in clock_rows:
         time_control_bucket: str | None = row[1]
@@ -2202,6 +2218,10 @@ def _iterate_clock_rows(
         opp_clk_pct = opp_clock / base_time_seconds
         user_quintile = min(4, int(user_clk_pct * 5))
         opp_quintile = min(4, int(opp_clk_pct * 5))
+        # Phase 148 item 3 (D-04): this game overlaps both cohorts for the
+        # same (tc, quintile) bucket when the two sides share a quintile.
+        if user_quintile == opp_quintile:
+            tc_shared_quintile_count[(tc, user_quintile)] += 1
 
         clock_diff_pct = (user_clock - opp_clock) / base_time_seconds
         tc_clock_diffs[tc].append(clock_diff_pct)
@@ -2242,6 +2262,7 @@ def _iterate_clock_rows(
         dict(tc_user_quintile_wdl),
         dict(tc_opp_quintile_wdl),
         dict(tc_clock_agg),
+        dict(tc_shared_quintile_count),
     )
 
 
@@ -2264,16 +2285,20 @@ def _build_quintile_bullets(
     tc: str,
     user_quintile_wdl: dict[tuple[str, int], tuple[int, int, int]],
     opp_quintile_wdl: dict[tuple[str, int], tuple[int, int, int]],
+    shared_wdl_count: dict[tuple[str, int], int],
 ) -> list[PressureQuintileBullet]:
     """Build exactly 5 PressureQuintileBullet entries for quintiles 0..4.
 
     Phase 88.1 (D-07 supersedes D-05): each bullet compares the user's score
     in quintile Q (bucketed by USER's clock-pct) against the opponent's score
     in the same quintile index Q (bucketed by OPPONENT's clock-pct). The two
-    splits are INDEPENDENT samples of the same filtered game-set — a game where
-    the user banked clock but the opponent burned it falls in different quintile
-    indices on the two splits — so the unpaired two-sample Wilson test in
-    compute_score_difference_test is the correct significance test.
+    splits are NOT independent samples of the same filtered game-set — a game
+    where the user's and opponent's quintile happen to coincide contributes to
+    BOTH cohorts for the same quintile index (see `_iterate_clock_rows`
+    docstring). Phase 148 item 3 (D-04): `shared_wdl_count[(tc, q)]` (the
+    number of such overlapping games) is passed as `shared_n` to
+    `compute_score_difference_test`, which adds a covariance-correction term to
+    the SE instead of treating the two cohorts as independent.
 
     For each quintile q in 0..4:
     - n_user = sum of user_quintile_wdl[(tc, q)]; n_opp = sum of opp_quintile_wdl[(tc, q)].
@@ -2283,7 +2308,7 @@ def _build_quintile_bullets(
       all stats (p_value, ci_low, ci_high, opp_score) are None.
     - When the gate is met, delta = user_score - opp_score and significance comes
       from compute_score_difference_test(user_w, user_d, user_l, n_user, opp_w,
-      opp_d, opp_l, n_opp).
+      opp_d, opp_l, n_opp, shared_n=m).
     """
     bullets: list[PressureQuintileBullet] = []
     for q in range(5):
@@ -2323,8 +2348,9 @@ def _build_quintile_bullets(
         user_score = (u_w + 0.5 * u_d) / n_user
         opp_score = (o_w + 0.5 * o_d) / n_opp
         delta = user_score - opp_score
+        m = shared_wdl_count.get((tc, q), 0)
         p_value, ci_low, ci_high = compute_score_difference_test(
-            u_w, u_d, u_l, n_user, o_w, o_d, o_l, n_opp
+            u_w, u_d, u_l, n_user, o_w, o_d, o_l, n_opp, shared_n=m
         )
         bullets.append(
             PressureQuintileBullet(
@@ -2386,6 +2412,7 @@ def _compute_time_pressure_cards(
         tc_user_quintile_wdl,
         tc_opp_quintile_wdl,
         tc_clock_agg,
+        tc_shared_quintile_count,
     ) = _iterate_clock_rows(clock_rows)
 
     # Phase 94.4 D-08: nested per-(metric, TC) shape. Mirror the
@@ -2403,7 +2430,9 @@ def _compute_time_pressure_cards(
             continue
 
         clock_gap = _build_clock_gap(tc, tc_clock_diffs.get(tc, []))
-        quintiles = _build_quintile_bullets(tc, tc_user_quintile_wdl, tc_opp_quintile_wdl)
+        quintiles = _build_quintile_bullets(
+            tc, tc_user_quintile_wdl, tc_opp_quintile_wdl, tc_shared_quintile_count
+        )
 
         # Plan 88-14 A-3: derive the top-zone summary stats from the per-TC
         # clock aggregate. 5 averages render None when no clock-eligible game

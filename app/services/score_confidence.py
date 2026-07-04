@@ -179,15 +179,20 @@ def compute_score_difference_test(
     ne_d: int,
     ne_l: int,
     ne_n: int,
+    shared_n: int = 0,
 ) -> tuple[float | None, float | None, float | None]:
-    """Return (p_value, ci_low, ci_high) for the independent two-sample z-test
-    on the chess-score difference between two WDL cohorts.
+    """Return (p_value, ci_low, ci_high) for the two-sample z-test on the
+    chess-score difference between two WDL cohorts.
 
     H0: `score_eg - score_ne == 0`, where `score_i = (w_i + 0.5 * d_i) / n_i`.
 
-    SE of the difference uses the *empirical* trinomial variance per side:
+    SE of the difference uses the *empirical* trinomial variance per side, plus
+    an optional covariance-correction term (Phase 148 item 3 / D-04) for the
+    case where the two cohorts are NOT independent — see `shared_n` below:
         var_i = max(0.0, (w_i + 0.25 * d_i) / n_i - score_i ** 2)
-        SE_diff = sqrt(var_eg / eg_n + var_ne / ne_n)
+        v_shared = (var_eg + var_ne) / 2.0
+        cov_correction = 2.0 * shared_n * v_shared / (eg_n * ne_n)
+        SE_diff = sqrt(var_eg / eg_n + var_ne / ne_n + cov_correction)
         z = (score_eg - score_ne) / SE_diff
         p_value = erfc(|z| / sqrt(2))                       # two-sided
 
@@ -198,6 +203,17 @@ def compute_score_difference_test(
     95% CI (also Wald):
         ci_low  = (score_eg - score_ne) - CI_Z_95 * SE_diff
         ci_high = (score_eg - score_ne) + CI_Z_95 * SE_diff
+
+    `shared_n` (Phase 148 item 3, D-04 covariance correction): the count of
+    observations shared between the two cohorts (e.g. the same game
+    contributing to both `score_eg` and `score_ne` via `score_ne = 1 -
+    score_eg`, as in `endgame_service._build_quintile_bullets`). When the two
+    cohorts overlap like this, `Cov(score_eg, score_ne) = -shared_n * v /
+    (eg_n * ne_n)` (derived from `Var(A - B) = Var(A) + Var(B) - 2*Cov(A,B)`),
+    which widens SE_diff relative to the naive independent-samples formula.
+    `shared_n` defaults to 0 (the historical independent-samples behavior,
+    used by every caller except the quintile-bullet one) — this default keeps
+    every other call site byte-identical.
 
     Independent n-gates (per SEC1-08/09):
       - p_value is None when `min(eg_n, ne_n) < CONFIDENCE_MIN_N` (=10).
@@ -223,7 +239,11 @@ def compute_score_difference_test(
     # — at all-wins or all-losses the raw value is exactly 0; at all-draws likewise).
     var_eg = max(0.0, (eg_w + 0.25 * eg_d) / eg_n - score_eg * score_eg)
     var_ne = max(0.0, (ne_w + 0.25 * ne_d) / ne_n - score_ne * score_ne)
-    se_diff = math.sqrt(var_eg / eg_n + var_ne / ne_n)
+    # D-04 covariance correction: shared_n=0 (default) makes this term 0.0,
+    # so se_diff is byte-identical to the pre-fix independent-samples formula.
+    v_shared = (var_eg + var_ne) / 2.0
+    cov_correction = 2.0 * shared_n * v_shared / (eg_n * ne_n)
+    se_diff = math.sqrt(max(0.0, var_eg / eg_n + var_ne / ne_n + cov_correction))
     diff = score_eg - score_ne
 
     if se_diff == 0.0:

@@ -20,6 +20,14 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 - **Eval-chart gaps from slow analysis workers** — games analyzed by a slower remote worker could keep permanent gaps in the opening portion of the eval chart (the worker timed out on the busiest opening positions and the server gave up after a few retries). The server now fills those openings from its own cache and only re-checks the positions that are genuinely still missing, so weak workers no longer leave games stuck with missing evals. Previously-affected games self-heal on re-analysis. (Quick 260703-nux)
 
+- **Imports no longer abort on a single bad game** — one malformed game from chess.com or lichess could previously abort an entire import; the importer now skips the unparseable game and continues with the rest. (Phase 148)
+
+- **More accurate tactic tags around forced mates** — forced-mate tactic detection now tags truncated mate sequences and reads mate scores correctly from both White's and Black's side, and positions preserve en-passant / castling state so tactics near those moves are recognized. (Phase 148)
+
+- **Opening-eval analysis correctness** — the opening-eval drain stops cleanly when every position in a batch fails instead of retrying in place, and games whose analysis lease has expired are correctly offered back up for re-analysis. (Phase 148)
+
+- **Time-pressure stat significance** — the significance test comparing your time-pressure quintiles now corrects for shared-sample covariance, so differences between overlapping quintiles are no longer overstated. (Phase 148)
+
 ## [v1.30] Forcing-Line Tactic Gate — 2026-06-30
 
 ### Added
