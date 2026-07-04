@@ -112,26 +112,6 @@ Plans:
 
 - [ ] TBD (promote with /gsd:review-backlog when ready)
 
-### Phase 999.4: Position-Based Most Played Openings via game_positions (BACKLOG)
-
-**Goal:** Redesign "Most Played Openings" to count how many games *passed through* each opening position (via `game_positions` Zobrist hash matching) instead of counting final opening name classifications from chess.com/lichess. Currently "1. e4" shows ~75 games (only games *classified* as "King's Pawn Game") while obscure specific lines rank higher. Position-based counting would show all ~2000+ games that played 1. e4, consistent with FlawChess's core Zobrist hash architecture. Requires JOIN from `openings` reference table to `game_positions` on FEN or precomputed hash, then `COUNT(DISTINCT game_id)`.
-**Requirements:** TBD
-**Plans:** 0 plans
-
-Plans:
-
-- [ ] TBD (promote with /gsd:review-backlog when ready)
-
-### Phase 999.5: Hybrid Stockfish Eval for Conversion/Recovery (BACKLOG)
-
-**Goal:** Use Stockfish eval (`eval_cp`) as the advantage/disadvantage signal for conversion/recovery classification when available, falling back to material imbalance + 4-ply persistence for games without eval. Stockfish eval is the gold standard (no persistence filter needed since eval handles transient trades natively). Currently only ~15% of Lichess games have eval data and chess.com has 0%, but this improves automatically as more games get server-analyzed. Validated in `docs/endgame-conversion-recovery-analysis.md`: persistence closes 50-70% of the gap to Stockfish for pawn/mixed endgames, but a hybrid approach would eliminate the remaining 5-8pp offset for eval-available games.
-**Requirements:** TBD
-**Plans:** 0 plans
-
-Plans:
-
-- [ ] TBD (promote with /gsd:review-backlog when ready)
-
 ### Phase 999.6: Opening Risk & Drawishness (BACKLOG)
 
 **Goal:** Risk and drawishness metrics per position in the move explorer.
@@ -544,45 +524,3 @@ See [milestones/v1.14-ROADMAP.md](milestones/v1.14-ROADMAP.md) for full details.
 See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 
 </details>
-
-### Phase 146: Offload live-submit forcing-line continuation eval to the remote worker
-
-**Goal:** Stop the live `/eval/remote/submit` path from running server-side Stockfish. Phase 142 made every worker submit synchronously evaluate the MultiPV-2 forcing-line continuation nodes inline before responding (`_apply_submit` → `_build_flaw_multipv2_blobs`), which surfaces as worker `ReadTimeout`s under load (Sentry FLAWCHESS-7Y) and contends with tier-3 drain. Per the locked SEED-071 Option 2, move the continuation eval onto the remote fleet: the live submit applies evals + classifies flaws + stamps `full_evals_completed` leaving `allowed_pv_lines`/`missed_pv_lines` NULL (matching the existing tier-4 backfill predicate), then the freshly-submitted game drains through the existing Phase-145 flaw-blob lease/submit + D-07 gated-retag path. Server runs zero Stockfish on the live path; unifies live and backfill.
-**Requirements**: TBD
-**Depends on:** Phase 145
-**Reference:** `.planning/seeds/SEED-071-live-submit-continuation-eval-bottleneck.md` (DECIDED APPROACH: Option 2, LOCKED 2026-07-01)
-**Plans:** 2/2 plans complete
-
-Plans:
-
-- [x] 146-01-PLAN.md — Server live-path offload: force blob_map={} in _apply_submit, drop second-best from SubmitEval (D-03), recency-order _claim_tier4_blob (D-01)
-- [x] 146-02-PLAN.md — Fleet-worker tier-4 drain rung (D-04), full-ply MultiPV-1 reduction, restore HTTP_TIMEOUT_S=30
-
-### Phase 147: Persist only forcing-line-gated tactic tags: suppress ungated remote-submit tags (A) and add an upgraded-worker atomic eval+blob pipeline that gates at write time (B)
-
-**Goal:** Ensure `game_flaws.tactic_motif` is never persisted with raw, ungated (pre-forcing-line-gate) values that pollute backend stats and tag-based game-selection filters. Part A (data-level, ship-first): on the remote-submit path where blobs are deferred, write `tactic_motif = NULL` for cp-based flaws whose forcing-line gate can't yet run — keeping mate-adjacent (`pre_flaw_eval_cp IS NULL`) and D-06 `[]`-sentinel raw tags — so values self-heal when the tier-4 gated retag lands. Part B (worker pipeline): add a versioned lease+submit endpoint pair and an upgraded fat-`app.*` fleet worker that submits full-ply evals + MultiPV-2 blobs together; the server runs its own authoritative `classify_game_flaws` with those blobs and writes flaws + forcing-line-gated tags + completion markers in one transaction, eliminating the ungated window at write time. Reuses the SEED-073 over-cap sentinel for fat games (no chunking); A is B's graceful-degradation net under version skew.
-**Requirements**: SEED-074 (see .planning/seeds/SEED-074-gated-tags-at-write-time.md)
-**Depends on:** Phase 146
-**Plans:** 6/6 plans complete
-
-Plans:
-**Wave 1**
-
-- [x] 147-01-PLAN.md — Part A go-forward: thread blobs_pending → suppress ungated cp tags at _apply_submit (D-01, D-03, D-06)
-- [x] 147-02-PLAN.md — Part A old-corpus: batched Alembic data migration suppressing raw cp tags with carve-outs (D-03, D-04)
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 147-03-PLAN.md — SEED-073 over-cap sentinel prerequisite: fix /flaw-blob-lease 500 on fat games
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 147-04-PLAN.md — Part B: new atomic lease/submit schema pair + /atomic-lease endpoint (D-02)
-
-**Wave 4** *(blocked on Wave 3 completion)*
-
-- [x] 147-05-PLAN.md — Part B: atomic /atomic-submit handler — server-authoritative classify + single-transaction gated write (D-01)
-
-**Wave 5** *(blocked on Wave 4 completion)*
-
-- [x] 147-06-PLAN.md — Part B: upgraded fleet worker atomic eval+blob rung + dev-first e2e gate (D-05 kept)
