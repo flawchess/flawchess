@@ -333,16 +333,26 @@ async def enqueue_tier1(
 @router.get("/{job_id}", response_model=ImportStatusResponse)
 async def get_import_status(
     job_id: str,
+    user: Annotated[User, Depends(current_active_user)],
     session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> ImportStatusResponse:
     """Return the current progress of an import job.
 
     Checks in-memory registry first (live jobs), then falls back to the database
     (for completed/failed jobs that may have been evicted from memory after restart).
+
+    Auth + IDOR guard (code-review 2026-07-02, #1): this was previously the only
+    import route with no authentication and no user scoping — any client could poll
+    another user's job and read its (formerly raw) error string. Requires an
+    authenticated user and returns 404 (never 403) when the job belongs to someone
+    else, matching the enqueue_tier1 / library IDOR pattern (don't confirm id
+    existence to unauthorised callers).
     """
     # Try in-memory registry first (live progress)
     job = import_service.get_job(job_id)
     if job is not None:
+        if job.user_id != user.id:
+            raise HTTPException(status_code=404, detail="Job not found")
         return ImportStatusResponse(
             job_id=job.job_id,
             platform=job.platform,
@@ -357,6 +367,8 @@ async def get_import_status(
     # Fall back to DB for historical jobs
     db_job = await import_job_repository.get_import_job(session, job_id)
     if db_job is not None:
+        if db_job.user_id != user.id:
+            raise HTTPException(status_code=404, detail="Job not found")
         # other_importers=0 is correct for completed/failed jobs — count is irrelevant
         return ImportStatusResponse(
             job_id=db_job.id,

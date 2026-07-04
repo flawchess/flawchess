@@ -127,7 +127,10 @@ class FlawRecord(TypedDict):
     ply: int  # half-move number (0-indexed)
     fen: str  # board_fen() of the position BEFORE the flawed move (piece placement
     # only) — so the Flaws-tab miniboard renders the decision point and move_san
-    # resolves to its from/to arrow squares
+    # resolves to its from/to arrow squares. Since Phase 148 D-02 fen_map holds the
+    # FULL board.fen(); this piece-placement-only value is derived by splitting it in
+    # _build_flaw_record (fen_before_flaw.split(" ")[0]) — it is NOT filled directly
+    # from fen_map.
     side: Literal["white", "black"]  # mover who made the flawed move
     severity: FlawSeverity
     tags: list[FlawTag]  # ordered, additive, orthogonal (populated in plan 02)
@@ -310,21 +313,29 @@ def _compute_eval_coverage(positions: list[GamePosition]) -> float:
 
 
 def _recompute_fen_map(pgn: str) -> dict[int, str]:
-    """Return {ply: board_fen()} for every ply by replaying the PGN with python-chess.
+    """Return {ply: board.fen()} for every ply by replaying the PGN with python-chess.
 
-    Uses board_fen() (piece placement only — CLAUDE.md §Chess logic: never board.fen()
-    which includes castling/en passant metadata). Returns empty dict on parse failure,
-    or a partial map if replay fails mid-game (callers fall back to fen="" per ply).
+    BUGFIX (Phase 148, D-02): this map used to store board_fen() (piece placement
+    only), which drops side-to-move, castling rights, and the en-passant target.
+    A PV replay through _detect_tactic_for_flaw would then rebuild a chess.Board
+    from that incomplete string, silently corrupting castling/en-passant flaw
+    positions (parse_san failures, or replaying an en-passant capture against a
+    board that never recorded the ep target square).
+    This is the ONE sanctioned exception to the CLAUDE.md board_fen()-only rule:
+    the map is detector-internal (PV replay / parse_san only) and never touches
+    Zobrist position-comparison call sites, which must keep using board_fen().
+    Returns empty dict on parse failure, or a partial map if replay fails
+    mid-game (callers fall back to fen="" per ply).
     """
     game = chess.pgn.read_game(io.StringIO(pgn))
     if game is None:
         return {}
     board = game.board()
-    fens: dict[int, str] = {0: board.board_fen()}
+    fens: dict[int, str] = {0: board.fen()}
     try:
         for ply, node in enumerate(game.mainline(), start=1):
             board.push(node.move)
-            fens[ply] = board.board_fen()
+            fens[ply] = board.fen()
     except (ValueError, AssertionError) as exc:
         # WR-03 fix: this PGN already parsed cleanly at import time (its positions
         # and evals are stored), so a replay failure here is a genuine data
@@ -444,9 +455,11 @@ def _detect_tactic_for_flaw(
     if not fen_before_flaw:
         return None, None, None, None
 
-    # fen_map stores board.board_fen() (piece-placement only, no side-to-move).
-    # chess.Board() defaults to white to move, so we must set the side explicitly
-    # from ply parity: even = white mover, odd = black mover.
+    # fen_map now stores the full board.fen() (Phase 148 D-02), which already
+    # carries the correct side-to-move parsed from the FEN string itself. This
+    # explicit override is redundant (re-asserts the same value chess.Board
+    # already parsed) but harmless, and is kept as a defense-in-depth guard
+    # against a partial/legacy fen_map entry — not required for correctness.
     board_before = chess.Board(fen_before_flaw)
     board_before.turn = chess.WHITE if n % 2 == 0 else chess.BLACK
 
@@ -470,10 +483,20 @@ def _detect_tactic_for_flaw(
         flaw_san_missed = positions[n].move_san if 0 <= n < len(positions) else None
         if flaw_san_missed and _same_dest_as_best_line(board_before, flaw_san_missed, pv):
             return None, None, None, None
-        # D-06: pov at flaw_ply is the mover (board_before.turn). eval_mate > 0 means
-        # the mover (pov) has a forced mate — allow the mate branch even when PV is truncated.
-        _mate_missed = positions[n].eval_mate if 0 <= n < len(positions) else None
-        has_forced_mate_missed = _mate_missed is not None and _mate_missed > 0
+        # D-06: pov at flaw_ply is the mover (board_before.turn). A forced mate FOR the
+        # mover means the mover-POV mate distance is positive — allow the mate branch even
+        # when the PV is truncated.
+        # Bug fix (Phase 148 code review CR-01): GamePosition.eval_mate is stored
+        # white-perspective-absolute (positive = white mates), so a raw `> 0` test is only
+        # correct when the mover is White. For black-POV flaws (~half of all plies) it
+        # inverted the sign and silently dropped real Black forced mates. Convert to the
+        # mover's POV via _pov_mate/_solver_color_for before comparing, exactly like every
+        # other mate-sign site in this file.
+        _pos_missed = positions[n] if 0 <= n < len(positions) else None
+        _pov_mate_missed = (
+            _pov_mate(_pos_missed, _solver_color_for(n, "missed")) if _pos_missed else None
+        )
+        has_forced_mate_missed = _pov_mate_missed is not None and _pov_mate_missed > 0
         return detect_tactic_motif(board_before, pv, has_forced_mate=has_forced_mate_missed)
 
     # orientation == "allowed" (default):
@@ -493,10 +516,16 @@ def _detect_tactic_for_flaw(
         board_after_flaw = board_before.copy()
         board_after_flaw.push(flaw_move)
         # D-06: pov at flaw_ply+1 is the refuting side (board_after_flaw.turn). The
-        # refuting side has a forced mate when positions[n+1].eval_mate > 0, meaning
-        # the side to move on that board can force checkmate.
-        _mate_allowed = positions[n + 1].eval_mate if n + 1 < len(positions) else None
-        has_forced_mate_allowed = _mate_allowed is not None and _mate_allowed > 0
+        # refuting side has a forced mate when its mover-POV mate distance is positive.
+        # Bug fix (Phase 148 code review CR-01): eval_mate is white-perspective-absolute,
+        # so a raw `> 0` test only holds when the refuter is White; convert to the
+        # refuter's POV (== _solver_color_for(n, "allowed") == board_after_flaw.turn)
+        # before comparing.
+        _pos_allowed = positions[n + 1] if n + 1 < len(positions) else None
+        _pov_mate_allowed = (
+            _pov_mate(_pos_allowed, _solver_color_for(n, "allowed")) if _pos_allowed else None
+        )
+        has_forced_mate_allowed = _pov_mate_allowed is not None and _pov_mate_allowed > 0
         return detect_tactic_motif(
             board_after_flaw, pv_allowed, has_forced_mate=has_forced_mate_allowed
         )
@@ -644,9 +673,18 @@ def _build_flaw_record(
         pv_by_ply,
         blobs_pending=blobs_pending,
     )
+    # BUGFIX (Phase 148, D-02): fen_map now stores the full board.fen() (side-to-move,
+    # castling, en-passant) for detector-internal PV replay — but FlawRecord.fen /
+    # game_flaws.fen is a persisted, API-facing column whose contract (piece-placement
+    # only; downstream reconstructs side-to-move from ply parity — see
+    # app/schemas/library.py TacticLinesResponse.position_fen) is explicitly OUT of
+    # scope for this fix (D-02: "detector-internal map only"). Split off the
+    # piece-placement field to keep that contract unchanged.
+    fen_before_flaw = fen_map.get(n, "")
+    board_fen_only = fen_before_flaw.split(" ")[0] if fen_before_flaw else ""
     return FlawRecord(
         ply=n,
-        fen=fen_map.get(n, ""),
+        fen=board_fen_only,
         side=mover,
         severity=severity,
         tags=[],

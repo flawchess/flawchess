@@ -15,7 +15,7 @@ from fastapi.responses import RedirectResponse
 if TYPE_CHECKING:
     from sentry_sdk._types import Event
 
-from app.core.config import settings
+from app.core.config import assert_secret_key_configured, settings
 from app.middleware.last_activity import LastActivityMiddleware
 from app.routers import openings, position_bookmarks, imports, auth, feedback
 from app.routers.admin import router as admin_router
@@ -79,6 +79,10 @@ def _sentry_before_send(event: Event, hint: dict[str, Any]) -> Event | None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    # CR #1.2: refuse to boot a non-development environment with the default
+    # SECRET_KEY — a publicly-known signing key makes every JWT forgeable. Checked
+    # before anything else so the deploy-blocker fires as early as possible.
+    assert_secret_key_configured()
     # D-22: validate insights Agent FIRST — startup failure is a deploy-blocker.
     # Orphan cleanup is best-effort and must not run if the app can't serve
     # the insights endpoint. Any pydantic-ai UserError / ValueError

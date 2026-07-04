@@ -895,6 +895,15 @@ async def entry_submit_eval(
                     select(Game.id).where(
                         Game.entry_eval_leased_by == worker_id,
                         Game.evals_completed_at.is_(None),
+                        # D-05 (Phase 148 item 5): exclude a leased-but-expired game.
+                        # Without this, a stale/re-leased game (e.g. re-leased under
+                        # the same fixed --worker-id by a different worker instance,
+                        # or a late resubmit after TTL reclaim) would still match on
+                        # worker_id alone and get stamped complete with a late/wrong
+                        # submission. sa.func.now() is server-side (avoids app/DB
+                        # clock skew), matching the established pattern elsewhere
+                        # (app/users.py, app/routers/auth.py).
+                        Game.entry_eval_lease_expiry > sa.func.now(),
                     )
                 )
             )

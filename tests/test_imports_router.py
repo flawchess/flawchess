@@ -62,6 +62,30 @@ async def auth_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+async def _register_and_login() -> tuple[int, dict[str, str]]:
+    """Register a fresh user and return (user_id, auth_headers).
+
+    Used by the GET /imports/{job_id} ownership tests (code-review 2026-07-02, #1)
+    that need the authenticated user's id to assert the IDOR guard (own job → 200,
+    another user's job → 404).
+    """
+    email = f"importer_{uuid.uuid4().hex[:8]}@example.com"
+    password = "testpassword123"
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        reg_resp = await client.post(
+            "/api/auth/register", json={"email": email, "password": password}
+        )
+        user_id = int(reg_resp.json()["id"])
+        login_resp = await client.post(
+            "/api/auth/jwt/login",
+            data={"username": email, "password": password},
+        )
+        token = login_resp.json()["access_token"]
+    return user_id, {"Authorization": f"Bearer {token}"}
+
+
 # ---------------------------------------------------------------------------
 # POST /imports
 # ---------------------------------------------------------------------------
@@ -225,8 +249,8 @@ class TestGetImportStatus:
             )
             job_id = create_resp.json()["job_id"]
 
-            # Poll it
-            status_resp = await client.get(f"/api/imports/{job_id}")
+            # Poll it (as the same authenticated user who owns the job)
+            status_resp = await client.get(f"/api/imports/{job_id}", headers=auth_headers)
 
         assert status_resp.status_code == 200
         data = status_resp.json()
@@ -238,8 +262,17 @@ class TestGetImportStatus:
         assert "games_imported" in data
 
     @pytest.mark.asyncio
-    async def test_get_unknown_job_id_returns_404(self):
-        """GET /imports/{unknown_id} should return 404."""
+    async def test_get_requires_auth(self):
+        """GET /imports/{job_id} with no token → 401 (code-review 2026-07-02, #1)."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/api/imports/00000000-0000-0000-0000-000000000000")
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_get_unknown_job_id_returns_404(self, auth_headers):
+        """GET /imports/{unknown_id} should return 404 for an authenticated user."""
         # Also mock the DB fallback so we don't need a real DB
         with patch(
             "app.routers.imports.import_job_repository.get_import_job",
@@ -248,7 +281,29 @@ class TestGetImportStatus:
             async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app), base_url="http://test"
             ) as client:
-                resp = await client.get("/api/imports/00000000-0000-0000-0000-000000000000")
+                resp = await client.get(
+                    "/api/imports/00000000-0000-0000-0000-000000000000", headers=auth_headers
+                )
+
+        assert resp.status_code == 404
+        assert "not found" in resp.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    async def test_get_cross_user_in_memory_returns_404(self, no_op_run_import):
+        """A user polling another user's in-memory job → 404 IDOR guard (#1)."""
+        _owner_id, owner_headers = await _register_and_login()
+        _other_id, other_headers = await _register_and_login()
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            create_resp = await client.post(
+                "/api/imports",
+                json={"platform": "chess.com", "username": "alice"},
+                headers=owner_headers,
+            )
+            job_id = create_resp.json()["job_id"]
+            # A different authenticated user must not see the job (404, not 403).
+            resp = await client.get(f"/api/imports/{job_id}", headers=other_headers)
 
         assert resp.status_code == 404
         assert "not found" in resp.json()["detail"].lower()
@@ -274,7 +329,7 @@ class TestGetImportStatus:
             job.games_imported = 40
 
             # Poll it
-            status_resp = await client.get(f"/api/imports/{job_id}")
+            status_resp = await client.get(f"/api/imports/{job_id}", headers=auth_headers)
 
         assert status_resp.status_code == 200
         data = status_resp.json()
@@ -283,9 +338,11 @@ class TestGetImportStatus:
 
     @pytest.mark.asyncio
     async def test_get_falls_back_to_db_when_not_in_memory(self):
-        """GET should query DB when job not found in in-memory registry."""
+        """GET should query DB when job not found in in-memory registry (owner)."""
+        user_id, headers = await _register_and_login()
         db_job = MagicMock()
         db_job.id = "some-db-job-id"
+        db_job.user_id = user_id  # owned by the requesting user → 200
         db_job.platform = "chess.com"
         db_job.username = "alice"
         db_job.status = "completed"
@@ -300,9 +357,34 @@ class TestGetImportStatus:
             async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app), base_url="http://test"
             ) as client:
-                resp = await client.get("/api/imports/some-db-job-id")
+                resp = await client.get("/api/imports/some-db-job-id", headers=headers)
 
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "completed"
         assert data["games_fetched"] == 100
+
+    @pytest.mark.asyncio
+    async def test_get_cross_user_db_fallback_returns_404(self):
+        """A DB job owned by another user → 404 IDOR guard on the DB fallback (#1)."""
+        _requester_id, headers = await _register_and_login()
+        db_job = MagicMock()
+        db_job.id = "some-db-job-id"
+        db_job.user_id = _requester_id + 999_999  # a different owner
+        db_job.platform = "chess.com"
+        db_job.username = "alice"
+        db_job.status = "completed"
+        db_job.games_fetched = 100
+        db_job.games_imported = 98
+        db_job.error_message = None
+
+        with patch(
+            "app.routers.imports.import_job_repository.get_import_job",
+            new=AsyncMock(return_value=db_job),
+        ):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.get("/api/imports/some-db-job-id", headers=headers)
+
+        assert resp.status_code == 404

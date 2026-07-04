@@ -435,6 +435,71 @@ class TestComputeScoreDifferenceTest:
         assert p is not None
         assert 0.0 <= p <= 1.0
 
+    # --- shared_n covariance correction (Phase 148 item 3, D-04) ----------
+    # Quintile cohorts overlap when a game lands in the same quintile on both
+    # the user and opponent splits (endgame_service._build_quintile_bullets).
+    # shared_n tracks that overlap count; see RESEARCH.md "Item 3 — D-04
+    # covariance algebra" for the full derivation and worked example.
+
+    def test_shared_n_widens_se_matching_covariance_correction(self) -> None:
+        """CONTEXT.md's own worked example: 100 fully-shared games, var=0.25
+        both sides (w=50, d=0, l=50, n=100 -> score=0.5, var=0.25).
+
+        Buggy (shared_n=0) SE = sqrt(0.25/100 + 0.25/100) = sqrt(0.005) ~=
+        0.0707. Corrected (shared_n=100) SE = sqrt(0.005 + 2*100*0.25/(100*100))
+        = sqrt(0.01) = 0.10 -- exactly reproducing the cited "true SE 0.10".
+        SE is recovered from the returned CI: ci_half_width = 1.96 * se_diff.
+        """
+        kwargs = dict(eg_w=50, eg_d=0, eg_l=50, eg_n=100, ne_w=50, ne_d=0, ne_l=50, ne_n=100)
+
+        _p_buggy, lo_buggy, hi_buggy = compute_score_difference_test(**kwargs, shared_n=0)
+        assert lo_buggy is not None and hi_buggy is not None
+        se_buggy = (hi_buggy - lo_buggy) / 2.0 / 1.96
+        assert se_buggy == pytest.approx(0.0707, abs=1e-3)
+
+        _p_corrected, lo_corrected, hi_corrected = compute_score_difference_test(
+            **kwargs, shared_n=100
+        )
+        assert lo_corrected is not None and hi_corrected is not None
+        se_corrected = (hi_corrected - lo_corrected) / 2.0 / 1.96
+        assert se_corrected == pytest.approx(0.10, abs=1e-3)
+
+        # The corrected SE must be strictly wider than the buggy one.
+        assert se_corrected > se_buggy
+
+    def test_shared_n_default_zero_is_byte_identical_to_pre_fix_formula(self) -> None:
+        """shared_n=0 (default, every non-quintile caller) reproduces the
+        historical independent-samples formula exactly -- no cov_correction
+        term leaks in when there is no shared cohort."""
+        eg_w, eg_d, eg_l, eg_n = 60, 20, 20, 100
+        ne_w, ne_d, ne_l, ne_n = 40, 20, 40, 100
+
+        score_eg = (eg_w + 0.5 * eg_d) / eg_n
+        score_ne = (ne_w + 0.5 * ne_d) / ne_n
+        var_eg = max(0.0, (eg_w + 0.25 * eg_d) / eg_n - score_eg**2)
+        var_ne = max(0.0, (ne_w + 0.25 * ne_d) / ne_n - score_ne**2)
+        pre_fix_se = math.sqrt(var_eg / eg_n + var_ne / ne_n)
+        pre_fix_diff = score_eg - score_ne
+        pre_fix_p = math.erfc(abs(pre_fix_diff / pre_fix_se) / math.sqrt(2.0))
+        pre_fix_lo = pre_fix_diff - 1.96 * pre_fix_se
+        pre_fix_hi = pre_fix_diff + 1.96 * pre_fix_se
+
+        # Implicit default (no shared_n kwarg at all).
+        p_default, lo_default, hi_default = compute_score_difference_test(
+            eg_w, eg_d, eg_l, eg_n, ne_w, ne_d, ne_l, ne_n
+        )
+        # Explicit shared_n=0.
+        p_explicit, lo_explicit, hi_explicit = compute_score_difference_test(
+            eg_w, eg_d, eg_l, eg_n, ne_w, ne_d, ne_l, ne_n, shared_n=0
+        )
+
+        assert p_default == p_explicit
+        assert lo_default == lo_explicit
+        assert hi_default == hi_explicit
+        assert p_default == pytest.approx(pre_fix_p, abs=1e-9)
+        assert lo_default == pytest.approx(pre_fix_lo, abs=1e-9)
+        assert hi_default == pytest.approx(pre_fix_hi, abs=1e-9)
+
 
 # --- compute_paired_difference_test (Phase 85.1 Plan 1 Task 2) ------------
 # Paired one-sample z-test on per-game differences d_i = actual_i - expected_i.

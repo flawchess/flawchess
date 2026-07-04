@@ -2,26 +2,26 @@
 gsd_state_version: 1.0
 milestone: v1.30
 milestone_name: Forcing-Line Tactic Gate
-current_phase: none
-current_phase_name: Planning next milestone
-status: Milestone v1.30 complete — planning next
-stopped_at: "Completed quick task 260703-suq: SEED-079 slim MultiPV blobs — skip defender-node engine evals in flaw-blob building (~halves remaining tier-4 backfill compute)"
-last_updated: "2026-07-03T19:20:00.000Z"
-last_activity: 2026-07-03
-last_activity_desc: "Completed quick task 260703-suq: SEED-079 slim MultiPV blobs — even-only tier-4 leasing, placeholder-filling assembler, slim local drain; odd-firing mate exemption conservatively accepted"
+current_phase: 148
+status: Milestone complete
+stopped_at: Completed 148-03-PLAN.md
+last_updated: "2026-07-04T09:28:52.183Z"
+last_activity: 2026-07-04
 progress:
-  total_phases: 0
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_phases: 1
+  completed_phases: 1
+  total_plans: 4
+  completed_plans: 4
+  percent: 100
+current_phase_name: pipeline-tactic-correctness-fixes-code-review-2026-07-02
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: none — v1.30 milestone closed; planning next milestone
-Last activity: 2026-07-03 - Completed quick task 260703-suq: SEED-079 slim MultiPV blobs — even-only tier-4 leasing, placeholder-filling assembler, slim local drain (skip defender-node engine evals)
+Phase: 148
+Last activity: 2026-07-04
 
 v1.30 Forcing-Line Tactic Gate shipped to production 2026-06-30 (releases #229/#230/#231/#234)
 and is now closed in GSD. All 7 phases (141–147) complete; 15/15 requirements validated.
@@ -57,6 +57,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 - Phase 146 added: Offload live-submit forcing-line continuation eval to the remote worker (SEED-071)
 - Phase 147 added: Persist only forcing-line-gated tactic tags — suppress ungated remote-submit tags (A) + upgraded-worker atomic eval+blob pipeline (B) (SEED-074; scope confirmed as A+B together)
+- Phase 148 added: Pipeline & tactic correctness fixes (code-review 2026-07-02) — standalone active phase, milestone deferred (user chose "add now, defer milestone" 2026-07-04); source todo `2026-07-03-code-review-pipeline-tactic-correctness-phase.md`
 
 ### Decisions
 
@@ -113,6 +114,10 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase ?]: SEED-076 follow-up: opening_position_eval.pv self-heals via ON CONFLICT DO UPDATE SET pv WHERE pv IS NULL; eval_cp/eval_mate/best_move stay first-write-wins
 - [Phase ?]: SEED-076 follow-up: atomic-submit's dedup_map fetch moved to its own read session before _derive_atomic_sentinel_lines so the merged cached pv is visible to the sentinel walk
 - [Phase ?]: SEED-076 follow-up: lease omission gated on opening_position_eval.pv IS NOT NULL, not merely full_hash presence — a pv-less cache row still must be leased fresh
+- [Phase ?]: D-01/D-02 (148-01): truncated forced-mate PV tags generic MATE; fen_map stores full board.fen() detector-internally only, FlawRecord.fen kept piece-placement-only via split at construction site — Preserves the persisted game_flaws.fen API contract while fixing PV replay for ep/castling flaws
+- [Phase 148-02]: item-2 circuit breaker gated on eval_targets non-empty (not game_ids) to preserve D-09 test_engine_none_marks_complete invariant; lease release is implicit TTL expiry, no explicit UPDATE
+- [Phase 148-02]: item-5 (D-05) minimum guard only -- entry_eval_lease_expiry > sa.func.now() added to entry_submit_eval guard query; fuller echoed-game_ids intersection deferred
+- [Phase 148-03]: D-04 least-invasive choice: v_shared = (var_eg + var_ne) / 2.0 count-only proxy for the covariance correction
 
 ### Pending Todos
 
@@ -126,6 +131,7 @@ None at planning start.
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 260703-vg3 | Code-review (fable 2026-07-02) security/ops hardening batch — 4 committable "Fix now" items, one atomic commit each. **#1** (`8f77e484`): `GET /imports/{job_id}` was the only import route with no `current_active_user` + no user scoping — added the dep + a 404 IDOR guard (never 403) on both in-memory and DB-fallback paths; sanitized the client-facing error **at the source** (`import_service.py` generic-except handler covers `/{job_id}` AND `/active`): `ValueError` (user-facing "user not found") kept verbatim, any other exception → fixed generic message, raw exc still to Sentry. **#3** (`968ef5ca`): added `ix_game_flaws_blob_backfill` to `_AUTOGEN_INDEX_IGNORELIST` (was one `--autogenerate` from dropping prod's ~348M-scan index; verified autogen now a clean no-op) + new `test_migration_only_indexes_exist` drift guard; the 4 "dev-missing" partials were local dev drift (migrations create them unconditionally), restored in local dev via `CREATE INDEX IF NOT EXISTS`. **#1.2** (`2cadc0f8`): `assert_secret_key_configured()` in config.py called first in the app lifespan (mirrors D-22 runtime deploy-blocker, NOT import-time — Alembic/scripts importing `settings` unaffected); raises when `ENVIRONMENT != development` and SECRET_KEY is the default. **#11** (`39cdd6f6`): `ge`/`le`/`max_length` Field bounds on `SubmitEval`/`AtomicSubmitEval`/`EntrySubmitEval` (SMALLINT eval ranges, String(5) best_move, 512-char pv, ply ≤ 2048) — stops out-of-range worker value → DBAPIError → 500 → retry-loop, blocks multi-MB pv. Gate green: ruff + ty clean, `pytest -n auto` 3188 passed / 18 skipped. Backend-only (frontend gate N/A). **Follow-up NOT done**: #5 `ANALYZE opening_position_eval` is a prod write (RO MCP can't) — flagged for confirmation. | 2026-07-03 | 39cdd6f6 | [260703-vg3-code-review-hardening-batch-auth-import-](./quick/260703-vg3-code-review-hardening-batch-auth-import-/) |
 | 260703-suq | SEED-079 (items 1–5, server-side): slim MultiPV blobs — stop paying 1M-node MultiPV-2 Stockfish evals for defender (odd-index) continuation nodes the forcing-line gate never reads, ~halving the remaining tier-4 blob-backfill compute (~14% coverage). `eval_drain.py`: `_build_flaw_blob_lease_positions` emits only even (solver) node_k tokens; new shared `_placeholder_defender_node()` (all-None PvNode, su=''); `_assemble_one_line_blob` walks even k in steps of 2, inserting odd placeholders and treating a missing EVEN node as the gap — old workers' odd submissions discarded at assembly (server authoritative; covers both tier-4 and atomic submit paths); `_build_flaw_multipv2_blobs`/`_build_line_blobs` (local drain) gather/assemble even continuation nodes only. Blob always ends on a real even solver node (preserves `_strip_trailing_only_moves`' assumption). Item 3 resolved as ACCEPT CONSERVATIVELY (docs-only on `_is_forced_mate_firing`): slim blobs lose the forced-mate exemption at odd firing depths (WR-02 k-1 quirk, ~5% of gated tags) — NOT normalized since that would read a different node and change fat-blob outcomes. Existing 460k fat blobs untouched; mixed fat/slim valid; no migration. TDD (2 RED + 2 GREEN + 1 docs commits); +15 tests. Gate green: ruff + ty clean, `pytest -n auto` 3168 passed / 18 skipped. Backend-only. | 2026-07-03 | d8b81a14 | [260703-suq-slim-multipv-blobs-skip-defender-node-en](./quick/260703-suq-slim-multipv-blobs-skip-defender-node-en/) |
 | 260703-qgp | SEED-076 follow-up: cached the pv alongside the eval in `opening_position_eval` so cache-omitted opening flaws keep a real walkable PV instead of a permanent `[]` sentinel. Added a nullable `pv` Text column (migration `df8d4f5bc37b`); widened `dedup_map` to a 4-tuple `(eval_cp, eval_mate, best_move, pv)` throughout `eval_drain.py` (`second_best_map`, a separate 3-tuple map, untouched); `_upsert_opening_cache` writes + self-heals pv-less rows via `ON CONFLICT ... DO UPDATE SET pv WHERE pv IS NULL` without touching eval/best_move (first-write-wins preserved). New `_merge_dedup_pv_into_engine_map` (`eval_remote.py`) fills a cache-omitted opening ply's `engine_result_map` entry from the cached tuple; wired into both `_apply_submit` (before classify) and `_apply_atomic_submit` (dedup_map fetch moved to its own read session, before `_derive_atomic_sentinel_lines`, so the merged pv reaches the sentinel walk). `_fetch_cached_opening_hashes` now gates lease omission on `pv IS NOT NULL` — a pv-less cache row is still leased fresh. +3 regression tests. Gate green: ruff + ty clean, `pytest -n auto` 3154 passed / 18 skipped. Backend-only. | 2026-07-03 | 3a7d936f | [260703-qgp-fix-seed-076-follow-up-cache-pv-in-openi](./quick/260703-qgp-fix-seed-076-follow-up-cache-pv-in-openi/) |
 | 260703-nux | SEED-076: hardened the atomic eval lease/submit pair against weak-worker opening-timeout holes (FLAWCHESS-8B). Both submit paths (`_apply_submit`, `_apply_atomic_submit`) now build the real `opening_position_eval` dedup_map (mirroring `_full_drain_tick`) instead of `{}`, so cached opening plies a weak worker timed out on are filled server-side BEFORE `failed_ply_count` — a fillable hole never reaches the Path-C cap and gets permanently stamped. `_apply_full_eval_results` gained an opt-in `preserve_existing_evals` param (default off → local drain unchanged): an already-eval'd row dropped from an incremental re-lease is not recounted as a hole. `_build_lease_positions` is now incremental + cache-aware (`_lease_position_redundant` / `_fetch_cached_opening_hashes`): omits cached openings + already-eval'd rows (post-move shift row Q-1), always keeps the terminal donor, falls back to the full list rather than an empty lease; wired into both lease endpoints. `_apply_atomic_submit` snapshots + restores flaw `{allowed,missed}_pv_lines` + 8 tactic-tag columns so a sparse retry doesn't wipe an already-done flaw via classify's delete-then-insert (a `[]`-sentinel is overridden by the preserved real blob; `game_positions.pv` untouched so tier-4 healing survives). Two correctness gaps in the locked seed found & fixed during impl (already-eval'd hole-miscount → preserve guard; midgame blob-wipe → snapshot/restore). +8 regression tests. Gate green: ruff + ty clean, `pytest -n auto` 3151 passed / 18 skipped. Backend-only. | 2026-07-03 | 27117f45 | [260703-nux-implement-seed-076-harden-atomic-eval-su](./quick/260703-nux-implement-seed-076-harden-atomic-eval-su/) |
@@ -187,8 +193,8 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-Last session: 2026-07-03T19:20:00.000Z
-Stopped at: Completed quick task 260703-suq: SEED-079 slim MultiPV blobs — skip defender-node engine evals in flaw-blob building
+Last session: 2026-07-04T08:59:58.567Z
+Stopped at: Completed 148-03-PLAN.md
 Resume file: None
 
 ## Performance Metrics
@@ -233,3 +239,7 @@ Resume file: None
 | Phase 147 P05 | 21min | 2 tasks | 3 files |
 | Phase 147 P06 | 55min | 3 tasks | 2 files |
 | Phase quick-260703-qgp P01 | 25min | 3 tasks | 7 files |
+| Phase 148 P01 | 25min | 2 tasks | 4 files |
+| Phase 148 P02 | 22min | 2 tasks | 5 files |
+| Phase 148 P03 | 20min | 2 tasks | 4 files |
+| Phase 148 P04 | 15min | 2 tasks | 4 files |

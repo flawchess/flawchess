@@ -533,23 +533,35 @@ class TestEvalCoverageGate:
 
 
 class TestFenRecompute:
-    """Tests for _recompute_fen_map — PGN replay using board.board_fen()."""
+    """Tests for _recompute_fen_map — PGN replay using board.fen() (Phase 148 D-02).
+
+    BUGFIX (Phase 148): this map used to store board.board_fen() (piece placement
+    only), dropping side-to-move/castling/en-passant state and corrupting PV replay
+    for ep/castling flaws. These tests were inverted to encode the fixed (full-FEN)
+    contract as correct — see 148-RESEARCH.md's inversion table; the pre-fix
+    assertions below are expected fallout, not a regression.
+    """
 
     def test_initial_position_at_ply_zero(self) -> None:
-        """Ply 0 (before any moves) is the standard initial position."""
+        """Ply 0 (before any moves) is the standard initial position (full FEN)."""
         fen_map = _recompute_fen_map(_SHORT_PGN)
-        # Standard starting position piece placement
         assert 0 in fen_map
-        assert fen_map[0] == "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR"
+        assert fen_map[0] == "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
-    def test_after_e4_board_fen(self) -> None:
-        """After 1. e4, the fen at ply 1 reflects e4 played (no en passant in board_fen)."""
+    def test_after_e4_full_fen(self) -> None:
+        """After 1. e4, the fen at ply 1 is a full FEN (side-to-move, castling rights)."""
         fen_map = _recompute_fen_map(_SHORT_PGN)
-        # After e4, pawn on e4; board_fen has no castling/en passant suffix
         assert 1 in fen_map
         fen = fen_map[1]
-        # board_fen is piece placement only — no space-separated fields
-        assert " " not in fen
+        # Full FEN has 6 space-separated fields: placement, side, castling, ep, halfmove, fullmove
+        fields = fen.split(" ")
+        assert len(fields) == 6, f"expected 6 space-separated FEN fields, got {len(fields)}: {fen}"
+        assert fields[1] == "b", "black to move after 1. e4"
+        assert fields[2] == "KQkq", "castling rights unaffected by a pawn push"
+        # No black pawn is adjacent to capture en passant yet, so python-chess omits
+        # the ep target here (it only records a target when a capture is legally
+        # available) — the dedicated ep-capture fixture below covers the case where
+        # the target square DOES matter for replay correctness.
 
     def test_three_moves_produces_four_entries(self) -> None:
         """A 3-move PGN produces 4 entries: ply 0 through 3."""
@@ -568,22 +580,25 @@ class TestFenRecompute:
         # No moves parsed, so only ply 0 is in the map
         assert len(fen_map) == 1
 
-    def test_board_fen_not_full_fen(self) -> None:
-        """FEN values are piece-placement only (no castling/en passant/move count fields)."""
+    def test_full_fen_not_board_fen(self) -> None:
+        """FEN values are full FENs (6 space-separated fields), not piece-placement-only."""
         fen_map = _recompute_fen_map(_PGN_THREE_MOVES)
         for ply_n, fen in fen_map.items():
-            # board_fen() output has exactly 8 rank fields separated by /
-            ranks = fen.split("/")
+            fields = fen.split(" ")
+            assert len(fields) == 6, (
+                f"ply {ply_n}: expected 6 space-separated FEN fields, got {len(fields)}: {fen}"
+            )
+            assert fields[1] in ("w", "b"), f"ply {ply_n}: missing side-to-move field: {fen}"
+            # Piece-placement field alone still has exactly 8 rank fields.
+            ranks = fields[0].split("/")
             assert len(ranks) == 8, f"ply {ply_n}: expected 8 rank fields, got {len(ranks)}: {fen}"
-            # No space in board_fen output (full FEN has ' w KQkq ...' suffix)
-            assert " " not in fen, f"ply {ply_n}: board_fen should have no spaces: {fen}"
 
     def test_replay_failure_captured_to_sentry(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """WR-03: a replay failure is captured to Sentry, not silently swallowed.
 
-        We make board_fen() raise inside the replay loop and assert capture_exception
-        fired exactly once while the partial map (ply 0) is still returned. board_fen
-        is only called by the replay (never by chess.pgn.read_game), so patching it
+        We make board.fen() raise inside the replay loop and assert capture_exception
+        fired exactly once while the partial map (ply 0) is still returned. fen() is
+        only called by the replay (never by chess.pgn.read_game), so patching it
         isolates the failure to the try block without breaking PGN parsing.
         """
         captured: list[BaseException | None] = []
@@ -593,18 +608,18 @@ class TestFenRecompute:
 
         monkeypatch.setattr("app.services.flaws_service.sentry_sdk.capture_exception", fake_capture)
 
-        real_board_fen = chess.Board.board_fen
+        real_fen = chess.Board.fen
         calls = {"n": 0}
 
-        def flaky_board_fen(self: chess.Board, *, promoted: bool = False) -> str:
+        def flaky_fen(self: chess.Board, **kwargs: object) -> str:
             calls["n"] += 1
             # 1st call is ply 0 (outside the try) and must succeed; raise on the
             # 2nd call (first loop iteration, inside the try) to hit the except path.
             if calls["n"] == 2:
                 raise ValueError("simulated replay failure")
-            return real_board_fen(self, promoted=promoted)
+            return real_fen(self, **kwargs)  # ty: ignore[invalid-argument-type]  # monkeypatch shim
 
-        monkeypatch.setattr(chess.Board, "board_fen", flaky_board_fen)
+        monkeypatch.setattr(chess.Board, "fen", flaky_fen)
 
         fen_map = _recompute_fen_map(_PGN_THREE_MOVES)
 
@@ -612,6 +627,90 @@ class TestFenRecompute:
         # Partial map preserved: ply 0 captured before the failure; later plies absent.
         assert 0 in fen_map
         assert 1 not in fen_map
+
+
+_EP_CAPTURE_PGN = "1. e4 Nf6 2. e5 d5 3. exd6 *"  # 3. exd6 is an en-passant capture
+
+
+class TestFenMapEpCapture:
+    """Bug B (Phase 148 D-02): full-FEN fen_map replays en-passant flaws correctly.
+
+    Before the fix, _recompute_fen_map stored board.board_fen() (piece placement
+    only), dropping the en-passant target square. Reconstructing a chess.Board from
+    that string made a subsequent en-passant-capture SAN illegal (IllegalMoveError),
+    silently corrupting the PV replay for any flaw at or after an ep capture.
+    """
+
+    def test_ep_target_recorded_and_capture_replays(self) -> None:
+        """fen_map preserves the en-passant target so an ep-capture SAN parses and
+        pushing it removes the captured pawn (occupant-count check)."""
+        fen_map = _recompute_fen_map(_EP_CAPTURE_PGN)
+        # ply 4: after 1. e4 Nf6 2. e5 d5 (black's double push) — white to move.
+        fen_before = fen_map[4]
+        fields = fen_before.split(" ")
+        assert fields[1] == "w"
+        assert fields[3] == "d6", f"expected en-passant target d6, got FEN: {fen_before}"
+
+        board_before = chess.Board(fen_before)
+        pawns_before = len(board_before.pieces(chess.PAWN, chess.BLACK))
+
+        # SAN parses — this would raise chess.IllegalMoveError under the pre-fix
+        # board_fen()-only reconstruction, since the ep target square is missing.
+        ep_move = board_before.parse_san("exd6")
+        assert board_before.is_en_passant(ep_move)
+
+        board_before.push(ep_move)
+        pawns_after = len(board_before.pieces(chess.PAWN, chess.BLACK))
+        assert pawns_after == pawns_before - 1, "the en-passant-captured black pawn must be removed"
+        # The captured pawn sat on d5 (not the destination square d6) — verify it's gone.
+        assert board_before.piece_at(chess.D5) is None
+
+    def test_detect_tactic_for_flaw_replays_ep_capture_without_parse_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The consumption site (_detect_tactic_for_flaw, 'allowed' orientation) parses
+        the ep-capture flaw move and reaches the tactic detector without raising.
+
+        Pre-fix, board_before.parse_san("exd6") would raise chess.IllegalMoveError
+        (caught by the existing try/except), silently returning all-None for the
+        WRONG reason (a parse failure, not "no tactic detected"). We prove the parse
+        succeeded by monkeypatching detect_tactic_motif with a sentinel stub and
+        asserting it was actually reached and called with the post-capture board.
+        """
+        fen_map = _recompute_fen_map(_EP_CAPTURE_PGN)
+        positions = [_make_pos(i) for i in range(6)]
+        positions[4].move_san = "exd6"
+
+        sentinel_calls: list[chess.Board] = []
+
+        def fake_detect_tactic_motif(
+            board_after_flaw: chess.Board, pv_str: str, has_forced_mate: bool = False
+        ) -> tuple[int | None, int | None, int | None, int | None]:
+            sentinel_calls.append(board_after_flaw)
+            return TacticMotifInt.FORK, chess.KNIGHT, TACTIC_CONFIDENCE_HIGH, 0
+
+        monkeypatch.setattr(
+            "app.services.flaws_service.detect_tactic_motif", fake_detect_tactic_motif
+        )
+
+        motif_int, piece, conf, depth = _detect_tactic_for_flaw(
+            4, fen_map, positions, pv_by_ply={5: "b8c6"}, orientation="allowed"
+        )
+
+        assert len(sentinel_calls) == 1, (
+            "detect_tactic_motif must be reached — parse_san('exd6') must not raise"
+        )
+        # The board passed to the detector reflects the ep capture already played:
+        # black's d5 pawn is gone and it's black to move.
+        board_after_flaw = sentinel_calls[0]
+        assert board_after_flaw.piece_at(chess.D5) is None
+        assert board_after_flaw.turn == chess.BLACK
+        assert (motif_int, piece, conf, depth) == (
+            TacticMotifInt.FORK,
+            chess.KNIGHT,
+            TACTIC_CONFIDENCE_HIGH,
+            0,
+        )
 
 
 class TestClassifyGameFlaws:
@@ -775,13 +874,15 @@ class TestClassifyGameFlaws:
         assert flaw["move_san"] == "Ba4"
 
         fen_map = _recompute_fen_map(pgn)
-        # The stored fen is the decision point (board after `ply` half-moves).
-        assert flaw["fen"] == fen_map[6]
+        # flaw["fen"] is the persisted, API-facing piece-placement-only field (Phase
+        # 148 D-02 keeps this contract unchanged); fen_map now stores the full FEN
+        # (detector-internal). The decision point is board after `ply` half-moves.
+        assert flaw["fen"] == fen_map[6].split(" ")[0]
         # And playing the flawed move from it reaches the next ply's board.
         side = "w" if flaw["side"] == "white" else "b"
         board = chess.Board(f"{flaw['fen']} {side} - - 0 1")
         board.push_san(flaw["move_san"])
-        assert board.board_fen() == fen_map[7]
+        assert board.board_fen() == fen_map[7].split(" ")[0]
 
     def test_es_before_greater_than_es_after_for_blunder(self) -> None:
         """Eval-AFTER landmine: ES_before reads positions[N-1], ES_after reads positions[N].
@@ -2283,6 +2384,97 @@ class TestDetectTacticForFlawOrientation:
         assert piece is None
         assert confidence is None
         assert depth is None
+
+
+class TestDetectTacticForFlawForcedMatePov:
+    """Phase 148 code-review CR-01 regression: has_forced_mate honors eval_mate's
+    white-perspective sign convention for black-POV flaws.
+
+    GamePosition.eval_mate is stored white-perspective-absolute (positive = white
+    mates, negative = black mates). The has_forced_mate flag passed to
+    detect_tactic_motif must be True iff the POV side (the mover for 'missed', the
+    refuter for 'allowed') has the forced mate — which requires converting to that
+    side's POV before the sign test. The original Phase 148 wiring compared the raw
+    stored value against 0, inverting the result for every black-POV flaw (~half of
+    all plies). These tests pin the corrected conversion by capturing the flag value
+    detect_tactic_motif receives.
+    """
+
+    @staticmethod
+    def _capture_forced_mate(
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> list[bool]:
+        captured: list[bool] = []
+
+        def fake_detect_tactic_motif(
+            board: chess.Board, pv_str: str, has_forced_mate: bool = False
+        ) -> tuple[int | None, int | None, int | None, int | None]:
+            captured.append(has_forced_mate)
+            return TacticMotifInt.MATE, None, TACTIC_CONFIDENCE_HIGH, 0
+
+        monkeypatch.setattr(
+            "app.services.flaws_service.detect_tactic_motif", fake_detect_tactic_motif
+        )
+        return captured
+
+    def test_missed_black_pov_forced_mate_sets_flag(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """'missed' at ply 5 (mover=Black): a Black forced mate (eval_mate<0) sets the flag.
+
+        With the pre-fix `eval_mate > 0` test this returned False (the exact deep-mate
+        drop the phase set out to fix, reintroduced for black POV).
+        """
+        captured = self._capture_forced_mate(monkeypatch)
+        positions = _make_positions_128()
+        positions[5] = _make_pos_with_pv(5, eval_mate=-4, move_san="Bg4", pv="d5c4")
+        _detect_tactic_for_flaw(
+            n=5,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            pv_by_ply={5: "d5c4"},
+            orientation="missed",
+        )
+        assert captured == [True], (
+            "black mover with a Black forced mate (eval_mate=-4) must set has_forced_mate=True"
+        )
+
+    def test_missed_black_pov_white_mate_does_not_set_flag(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """'missed' at ply 5 (mover=Black): a White forced mate (eval_mate>0) does NOT set it.
+
+        Guards the false-positive direction — the pre-fix code fired the fallback for
+        the wrong side, tagging MATE on a line that is not the mover's mate.
+        """
+        captured = self._capture_forced_mate(monkeypatch)
+        positions = _make_positions_128()
+        positions[5] = _make_pos_with_pv(5, eval_mate=4, move_san="Bg4", pv="d5c4")
+        _detect_tactic_for_flaw(
+            n=5,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            pv_by_ply={5: "d5c4"},
+            orientation="missed",
+        )
+        assert captured == [False], (
+            "black mover with only a White forced mate must leave has_forced_mate=False"
+        )
+
+    def test_allowed_black_refuter_forced_mate_sets_flag(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """'allowed' at ply 4 (refuter=Black): a Black forced mate (eval_mate<0) sets the flag."""
+        captured = self._capture_forced_mate(monkeypatch)
+        positions = _make_positions_128()
+        positions[5] = _make_pos_with_pv(5, eval_mate=-4, move_san="Bg4", pv="d5c4")
+        _detect_tactic_for_flaw(
+            n=4,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            orientation="allowed",
+        )
+        assert captured == [True], (
+            "black refuter with a Black forced mate (eval_mate=-4) must set has_forced_mate=True"
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -315,6 +315,59 @@ class TestRunImport:
         assert "nonexistent" in job.error
 
     @pytest.mark.asyncio
+    async def test_failed_import_sanitizes_internal_error(self):
+        """A non-ValueError (internal) exception must NOT leak str(exc) to the client.
+
+        Code-review 2026-07-02 (#1): the raw exception string was surfaced to clients
+        by the import status endpoints. Only ValueError (user-facing) is kept verbatim;
+        anything else is replaced with the fixed generic message.
+        """
+        job_id = create_job(user_id=1, platform="chess.com", username="secret")
+
+        async def _raise_internal(*args, **kwargs):
+            # Simulate a DB/driver error whose message embeds internals.
+            raise RuntimeError("connection to server at 'db:5432' failed: password auth")
+            yield  # pragma: no cover
+
+        mock_session = _make_mock_session()
+        mock_maker = _mock_session_maker(mock_session)
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games",
+                side_effect=_raise_internal,
+            ),
+            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_http_ctx = AsyncMock()
+            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_http_ctx
+
+            await run_import(job_id)
+
+        job = get_job(job_id)
+        assert job is not None
+        assert job.status == JobStatus.FAILED
+        assert job.error == import_service._GENERIC_IMPORT_FAILURE_MSG
+        # The internal details must not have leaked into the client-facing error.
+        assert "db:5432" not in job.error
+        assert "password" not in job.error
+
+    @pytest.mark.asyncio
     async def test_incremental_sync_passes_since_to_chesscom_client(self):
         """When a previous completed job exists, since_timestamp should be passed."""
         job_id = create_job(user_id=1, platform="chess.com", username="alice")
