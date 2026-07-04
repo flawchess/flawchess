@@ -2980,9 +2980,11 @@ async def resweep_holed_games(
                 return count
 
             # Clear the completion markers and reset the attempt counter.
-            # Clearing full_evals_completed_at makes needs_engine_full_evals True again
-            # → tier-3 re-picks the game. The ix_games_needs_engine_full_evals partial
-            # index (SEED-046, migration 20260614150000) covers this predicate.
+            # Clearing full_evals_completed_at makes the game match the
+            # "needs engine" predicate again (full_evals_completed_at IS NULL
+            # AND lichess_evals_at IS NULL) → tier-3 re-picks it. The
+            # ix_games_needs_engine_full_evals partial index (SEED-046,
+            # migration 20260614150000) covers this predicate.
             #
             # WR-04: chunk the UPDATE in _RESWEEP_UPDATE_CHUNK_SIZE batches so the
             # unbounded prod path can't re-arm the whole holed backlog in one

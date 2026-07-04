@@ -14,9 +14,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 import pytest_asyncio
+from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 import app.services.import_service as import_service
 from app.main import app
+from app.models.import_job import ImportJob
 
 
 # ---------------------------------------------------------------------------
@@ -30,6 +33,31 @@ def clear_jobs():
     import_service._jobs.clear()
     yield
     import_service._jobs.clear()
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def clear_import_job_rows(test_engine):
+    """Delete durable import_jobs rows before/after each test.
+
+    Bug fix (Phase 149 PRUNE-05): start_import now creates the import_jobs row
+    synchronously (previously only the no-op'd background task wrote it, so
+    these router tests never touched the table). `auth_headers` is
+    module-scoped (one real user shared across this whole test class), so a
+    leftover 'pending' row from an earlier test would collide with
+    uq_import_jobs_user_platform_active on the next POST /imports for the same
+    platform. `clear_jobs` above only clears the in-memory registry — this
+    clears the durable DB rows too.
+    """
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async def _clear() -> None:
+        async with session_maker() as session:
+            await session.execute(delete(ImportJob))
+            await session.commit()
+
+    await _clear()
+    yield
+    await _clear()
 
 
 @pytest.fixture
@@ -227,6 +255,118 @@ class TestPostImports:
         # Args: (session, user_id, platform, username) — check platform and username
         assert call_args.args[2] == "chess.com"
         assert call_args.args[3] == "alice"
+
+    @pytest.mark.asyncio
+    async def test_concurrent_duplicate_import_returns_existing_job_with_200(
+        self, no_op_run_import, test_engine
+    ):
+        """A genuine race (not just a same-process duplicate) is rejected at the
+        DB level and returns the existing job with 200 (Phase 149 PRUNE-05).
+
+        The in-memory find_active_job pre-check cannot catch every race: two
+        concurrent requests can both observe an empty in-memory registry before
+        either commits its durable row. Simulates that race window directly by
+        (a) seeding a durable 'pending' import_jobs row for this user+platform
+        as if a concurrent request already won, and (b) forcing
+        find_active_job to return None (the pre-check's view during the race
+        window). start_import must then hit the partial unique index's
+        IntegrityError, roll back, and return the ALREADY-WON job with 200 —
+        never creating a second active row for this (user_id, platform).
+        """
+        from sqlalchemy import select
+        from sqlalchemy.ext.asyncio import async_sessionmaker
+
+        from app.models.import_job import ImportJob
+
+        user_id, headers = await _register_and_login()
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+        winner_job_id = str(uuid.uuid4())
+        async with session_maker() as session:
+            session.add(
+                ImportJob(
+                    id=winner_job_id,
+                    user_id=user_id,
+                    platform="chess.com",
+                    username="winner",
+                    status="pending",
+                    games_fetched=0,
+                    games_imported=0,
+                )
+            )
+            await session.commit()
+
+        with patch(
+            "app.routers.imports.import_service.find_active_job",
+            return_value=None,
+        ):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.post(
+                    "/api/imports",
+                    json={"platform": "chess.com", "username": "loser"},
+                    headers=headers,
+                )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["job_id"] == winner_job_id
+
+        async with session_maker() as session:
+            rows = (
+                (
+                    await session.execute(
+                        select(ImportJob).where(
+                            ImportJob.user_id == user_id,
+                            ImportJob.platform == "chess.com",
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        active_rows = [r for r in rows if r.status in ("pending", "in_progress")]
+        assert len(active_rows) == 1, (
+            f"Expected exactly one active row after the race, got {len(active_rows)}: "
+            f"{[(r.id, r.status) for r in active_rows]}"
+        )
+        assert active_rows[0].id == winner_job_id
+
+    @pytest.mark.asyncio
+    async def test_non_integrity_db_failure_discards_stuck_in_memory_job(self):
+        """A non-IntegrityError DB failure (e.g. a transient outage) during the
+        durable-row insert must not strand the in-memory JobState as PENDING
+        forever (CR-01 code review 2026-07-04).
+
+        Before the fix, only IntegrityError was caught, so an OperationalError
+        (or any other exception) left find_active_job() reporting a phantom
+        PENDING job on every subsequent request — permanently locking the user
+        out of importing this platform until a backend restart.
+        """
+        from sqlalchemy.exc import OperationalError
+
+        import app.services.import_service as import_service
+
+        user_id, headers = await _register_and_login()
+
+        with patch(
+            "app.routers.imports.import_job_repository.create_import_job",
+            AsyncMock(side_effect=OperationalError("insert", {}, Exception("connection lost"))),
+        ):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                with pytest.raises(OperationalError):
+                    await client.post(
+                        "/api/imports",
+                        json={"platform": "chess.com", "username": "outage"},
+                        headers=headers,
+                    )
+
+        # The stuck in-memory PENDING job must have been discarded, so a
+        # retry after the outage clears is not permanently locked out.
+        assert import_service.find_active_job(user_id, "chess.com") is None
 
 
 # ---------------------------------------------------------------------------

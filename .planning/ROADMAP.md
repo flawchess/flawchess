@@ -101,7 +101,7 @@
 | 146. Offload live-submit continuation eval to remote worker (SEED-071) | 2/2 | Complete (release #230; SEED-072 fix #231) | 2026-06-30 |
 | 147. Persist only forcing-line-gated tactic tags (SEED-074, A+B) | 6/6 | Complete (release #234) | 2026-06-30 |
 | 148. Pipeline & tactic correctness fixes (code-review 2026-07-02) | 4/4 | Complete    | 2026-07-04 |
-| 149. Retire & Prune | 0 plans | Not started | - |
+| 149. Retire & Prune | 5/5 | Complete    | 2026-07-04 |
 | 150. Consolidate Write Path | 0 plans | Not started | - |
 
 ## Current Milestone: v1.31 Pipeline Consolidation
@@ -109,7 +109,7 @@
 **Goal:** Retire the dead Gen-1 eval protocol and unify the copy-pasted eval write path so new pipeline work threads through one code path instead of 3+, removing the seams that generated FLAWCHESS-8D and the Phase 146/147 ungated-tag bugs. Server-side only — no worker protocol change, no fleet redeploy (fleet confirmed fully on atomic-lease/submit; 2026-07-04 prod log grep showed zero legacy `/lease`+`/submit` hits over 11.3h). Sourced from SEED-080 (Tier-A/B recommendations of `reports/pipeline-review-2026-07-04.md`).
 
 - [x] **Phase 148: Pipeline & tactic correctness fixes (code-review 2026-07-02)** - Five silent-data-loss / production-only-correctness defects fixed and shipped; SEED-080's hard prerequisite
-- [ ] **Phase 149: Retire & Prune** - Delete the dead Gen-1 protocol + other dead weight, shrinking the surface before Phase 150 consolidates the write path
+- [x] **Phase 149: Retire & Prune** - Delete the dead Gen-1 protocol + other dead weight, shrinking the surface before Phase 150 consolidates the write path (completed 2026-07-04)
 - [ ] **Phase 150: Consolidate Write Path** - Unify the copy-pasted completion decision, classify preamble, and delete-then-insert flaw write into one code path
 
 ## Phase Details (v1.31)
@@ -121,11 +121,13 @@
 **Depends on:** Phase 147
 **Requirements:** CORR-01, CORR-02, CORR-03, CORR-04, CORR-05, CORR-06
 **Success Criteria** (validated — already shipped):
+
   1. A deep forced-mate PV tags generic `mate` instead of silently dropping the tag, and the tactic detector's PV replay correctly parses en-passant/castling state internally while `game_flaws.fen` stays piece-placement-only (CORR-01, CORR-02)
   2. The entry-ply eval drain no longer stamps `evals_completed_at` on an all-fail (dead-pool) tick (CORR-03)
   3. The endgame quintile significance test no longer produces false "significant" verdicts from treating overlapping cohorts as independent (CORR-04)
   4. A single malformed platform game is skipped, not fatal, during import (CORR-05)
   5. The entry-submit endpoint rejects a sparse/partial batch via a batch-scoping minimum guard (CORR-06)
+
 **Plans:** 4/4 plans complete
 
 Plans:
@@ -141,12 +143,26 @@ Plans:
 **Depends on:** Phase 148
 **Requirements:** PRUNE-01, PRUNE-02, PRUNE-03, PRUNE-04, PRUNE-05, PRUNE-06
 **Success Criteria** (what must be TRUE):
+
   1. The dead Gen-1 eval protocol (`/lease` + `/submit` + `_apply_submit` + the worker's `_handle_full_ply_response` handler + `test_eval_worker_endpoints.py`) no longer exists in the codebase, `/flaw-blob-*` is untouched, and the full backend suite is green (PRUNE-01)
   2. Dead code (tier-2 lane logic, `hashes_for_game`, the `chesscom_to_lichess` tables, `Game.needs_engine_full_evals`) is removed with no behavior change to any live path (PRUNE-02)
   3. A malformed/unknown chess.com result surfaces as an explicit "unknown" outcome with a Sentry capture instead of silently scoring a draw, and every eval submit is tagged with `worker_schema_version` telemetry (PRUNE-03, PRUNE-04)
   4. Concurrent duplicate imports for the same (user, platform) are rejected at the DB level via a durable `import_jobs` row created in the request handler plus a partial unique index (PRUNE-05)
   5. A `worker_heartbeats` table (worker_id, version, last_seen, counts) is populated server-side from existing `X-Worker-Id` / submit fields, with zero worker-side change (PRUNE-06)
-**Plans:** TBD
+
+**Plans:** 5/5 plans complete
+
+Plans:
+**Wave 1**
+
+- [x] 149-01-PLAN.md — Worker heartbeats table + upsert helper wired into all 3 live submit lanes + worker_schema_version telemetry (PRUNE-06, PRUNE-04) [wave 1]
+- [x] 149-02-PLAN.md — Unknown chess.com result → skip + Sentry capture instead of silent draw (PRUNE-03) [wave 1]
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 149-03-PLAN.md — Delete Gen-1 /lease+/submit+_apply_submit+worker handler + surgical Gen-1 test removal, after porting job_id/lichess coverage to the atomic lane (PRUNE-01) [wave 2]
+- [x] 149-04-PLAN.md — Remove dead weight: hashes_for_game, chesscom_to_lichess Table 3, Game.needs_engine_full_evals, TIER_AUTO_WINDOW (PRUNE-02) [wave 2]
+- [x] 149-05-PLAN.md — Durable import guard: partial unique index + move import_jobs INSERT into start_import with IntegrityError idempotency (PRUNE-05) [wave 2]
 
 ### Phase 150: Consolidate Write Path
 
@@ -154,11 +170,13 @@ Plans:
 **Depends on:** Phase 149
 **Requirements:** WRITE-01, WRITE-02, WRITE-03, WRITE-04, WRITE-05, WRITE-06
 **Success Criteria** (what must be TRUE):
+
   1. The Path A/B/C completion decision + guarded `eval_jobs` stamp lives in exactly one `apply_completion_decision()` function, replacing the 3 verbatim copies in `eval_drain.py` and `eval_remote.py` (WRITE-01)
   2. The classify preamble (load positions + apply the in-memory post-move overlay + classify once per tick) runs through one shared implementation, replacing the 4 previously-repeated call sites (WRITE-02)
   3. `_classify_and_fill_oracle` performs a per-ply diff/upsert instead of delete-then-insert, `_snapshot_preserved_flaw_blobs`/`_restore_preserved_flaw_blobs` are deleted, and an old-vs-new equivalence test proves identical output across the incremental-retry scenarios (WRITE-03)
   4. Shared submit/tick orchestration lives in `app/services/eval_apply.py`, `eval_drain.py` is split into entry-lane / full-lane / shared-write-path modules, and the router no longer imports private drain helpers (WRITE-04)
   5. `EnginePool` exposes one generic acquire/analyse/restart method replacing its 3 near-identical copies, and the tier-3/tier-4 Efraimidis-Spirakis lottery is a single parameterized implementation (WRITE-05, WRITE-06)
+
 **Plans:** TBD
 
 ## Backlog

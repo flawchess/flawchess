@@ -1,12 +1,15 @@
 """Tests for `app.services.chesscom_to_lichess` — Phase 94.4 Plan 01.
 
-Pure-Python lookup module. The three lookup tables are the canonical
-re-fetched ChessGoals 2025-07 snapshot (RESEARCH Pattern 8b, lines 924-1045),
-which supersedes the earlier Pattern 8 draft. Snapshot is locked at the value
-level; all assertions reference exact values from the dict literals shipped in
-the module.
+Pure-Python lookup module. The two lookup tables (Table 1 `CHESSCOM_INTRA_TC`,
+Table 2 `CHESSCOM_BLITZ_TO_LICHESS`) are the canonical re-fetched ChessGoals
+2025-07 snapshot (RESEARCH Pattern 8b, lines 924-1045), which supersedes the
+earlier Pattern 8 draft. Snapshot is locked at the value level; all assertions
+reference exact values from the dict literals shipped in the module.
 
-Coverage (13 behavior cases per plan):
+(Phase 149-04 PRUNE-02: the former Lichess-Blitz-anchored Table 3 and its
+dedicated tests were removed as genuinely dead code — zero callers.)
+
+Coverage:
 - Test 1: chess.com Blitz → Lichess Blitz at an exact anchor row (Table 2).
 - Test 2: chess.com Blitz → Lichess Blitz between two anchors (linear interp).
 - Test 3: chess.com Bullet → Lichess Bullet via Table 1 inversion → Table 2.
@@ -14,8 +17,8 @@ Coverage (13 behavior cases per plan):
 - Test 5: chess.com Daily → Lichess Rapid returns None (Pitfall 2).
 - Test 6: Below-min anchor (rating < 500) returns None.
 - Test 7: Above-max anchor (rating > 3000 chess.com Blitz) returns None.
-- Tests 8-11: Each USCF/FIDE accessor returns the snapshot anchor value at a
-  mid-range row.
+- Tests 8-9: Each chess.com-Blitz USCF/FIDE accessor returns the snapshot
+  anchor value at a mid-range row.
 - Test 12: USCF/FIDE accessors return None for below-min and above-max inputs
   (parametrized).
 - Test 13: Snapshot constants are present and correct.
@@ -30,15 +33,12 @@ from app.services.chesscom_to_lichess import (
     CHESSCOM_INTRA_TC,
     CHESSCOM_TO_LICHESS_SOURCE,
     CHESSCOM_TO_LICHESS_TABLE_SNAPSHOT,
-    LICHESS_BLITZ_INTRA_TC,
     ChessComSourceTC,
     LichessTC,
     composed_chesscom_to_lichess_grid,
     convert_chesscom_to_lichess,
     lookup_fide_from_chesscom_blitz,
-    lookup_fide_from_lichess_blitz,
     lookup_uscf_from_chesscom_blitz,
-    lookup_uscf_from_lichess_blitz,
 )
 
 
@@ -141,30 +141,8 @@ def test_lookup_fide_from_chesscom_blitz_mid_range() -> None:
 
 
 # -----------------------------------------------------------------------------
-# Test 10: lookup_uscf_from_lichess_blitz at a mid-range anchor.
-# Snapshot: Lichess Blitz 1780 → USCF 1595.
-# -----------------------------------------------------------------------------
-def test_lookup_uscf_from_lichess_blitz_mid_range() -> None:
-    result = lookup_uscf_from_lichess_blitz(1780)
-    assert result == LICHESS_BLITZ_INTRA_TC[1780]["uscf"]
-    assert result == 1595
-
-
-# -----------------------------------------------------------------------------
-# Test 11: lookup_fide_from_lichess_blitz at a mid-range anchor.
-# Snapshot: Lichess Blitz 1780 → FIDE 1710.
-# -----------------------------------------------------------------------------
-def test_lookup_fide_from_lichess_blitz_mid_range() -> None:
-    result = lookup_fide_from_lichess_blitz(1780)
-    assert result == LICHESS_BLITZ_INTRA_TC[1780]["fide"]
-    assert result == 1710
-
-
-# -----------------------------------------------------------------------------
-# Test 12: All four USCF/FIDE accessors return None for below-min + above-max.
-# chess.com Blitz table: [500, 3000]. Lichess Blitz table: [1030, 2850].
-# Plus: lookup_fide_from_lichess_blitz returns None for the 5 below-1420 rows
-# where the FIDE column is None in the snapshot (Lichess Blitz 1030..1335).
+# Test 12: Both chess.com-Blitz USCF/FIDE accessors return None for
+# below-min + above-max. chess.com Blitz table: [500, 3000].
 # -----------------------------------------------------------------------------
 @pytest.mark.parametrize(
     ("accessor", "rating"),
@@ -172,23 +150,13 @@ def test_lookup_fide_from_lichess_blitz_mid_range() -> None:
         # Below-min
         (lookup_uscf_from_chesscom_blitz, 400),
         (lookup_fide_from_chesscom_blitz, 400),
-        (lookup_uscf_from_lichess_blitz, 900),
-        (lookup_fide_from_lichess_blitz, 900),
         # Above-max
         (lookup_uscf_from_chesscom_blitz, 3500),
         (lookup_fide_from_chesscom_blitz, 3500),
-        (lookup_uscf_from_lichess_blitz, 3000),
-        (lookup_fide_from_lichess_blitz, 3000),
     ],
 )
 def test_accessors_return_none_at_edges(accessor, rating: int) -> None:
     assert accessor(rating) is None
-
-
-# Snapshot-Null rows: Lichess Blitz <= 1335 has FIDE = None in the source.
-def test_lookup_fide_from_lichess_blitz_returns_none_in_null_region() -> None:
-    # Lichess Blitz 1030 has FIDE=None per snapshot.
-    assert lookup_fide_from_lichess_blitz(1030) is None
 
 
 # -----------------------------------------------------------------------------
@@ -211,10 +179,6 @@ def test_snapshot_constants() -> None:
         # chess.com Blitz 1000 is the lowest FIDE-mapped row (2026-05-27 snapshot;
         # 500-900 are None).
         (lookup_fide_from_chesscom_blitz, 1000, 1450),
-        # Interpolated read: Lichess Blitz 1500 sits between anchors 1475
-        # (USCF=1280) and 1525 (USCF=1325). Linear interpolation: 1280 +
-        # (25/50)*(1325-1280) = 1280 + 22.5 ≈ 1302 (round-half-to-even).
-        (lookup_uscf_from_lichess_blitz, 1500, 1302),
     ],
 )
 def test_accessor_mid_range_hits(accessor, rating: int, expected: int) -> None:

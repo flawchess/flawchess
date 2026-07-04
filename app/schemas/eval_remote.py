@@ -32,46 +32,6 @@ class LeasePosition(BaseModel):
     is_terminal: bool  # True for the terminal eval-donor
 
 
-class LeaseResponse(BaseModel):
-    game_id: int
-    user_id: int  # informational: the game's authoritative owner (not trusted on submit)
-    is_lichess_eval_game: bool
-    positions: list[LeasePosition]
-    leased_at: datetime
-    # Opaque eval_jobs.id token; None for tier-3 derived picks (no eval_jobs row).
-    # The worker echoes this back on submit so the server can stamp eval_jobs.
-    job_id: int | None = None
-
-
-class SubmitEval(BaseModel):
-    ply: int = Field(ge=0, le=MAX_PLY)
-    eval_cp: int | None = Field(ge=EVAL_CP_MIN, le=EVAL_CP_MAX)
-    eval_mate: int | None = Field(ge=EVAL_MATE_MIN, le=EVAL_MATE_MAX)
-    best_move: str | None = Field(max_length=MAX_BEST_MOVE_LEN)  # UCI string
-    pv: str | None = Field(max_length=MAX_PV_LEN)  # space-joined UCI, up to 12 plies
-    # Phase 146 D-03: second_cp/second_mate/second_uci removed — the live /submit
-    # path no longer builds PvNode blobs inline. Blob assembly is deferred to the
-    # tier-4 worker drain (_claim_tier4_blob → /flaw-blob-lease → /flaw-blob-submit).
-    # Pydantic v2 default ignores extra fields, so old workers that still send
-    # second_* fields have those keys silently discarded — no 422 (backward-compat).
-
-
-class SubmitRequest(BaseModel):
-    game_id: int
-    sf_version: str  # e.g. "Stockfish 18" — for D-5 version gate
-    evals: list[SubmitEval] = Field(max_length=MAX_SUBMIT_EVALS)
-    # Opaque eval_jobs.id token echoed from the lease response; None for tier-3
-    # or for an old worker that doesn't include the field. When present, the
-    # submit handler stamps eval_jobs.status='completed' (guarded by WHERE status='leased').
-    job_id: int | None = None
-
-
-class SubmitResponse(BaseModel):
-    game_id: int
-    stamp_complete: bool
-    failed_ply_count: int
-
-
 # ─── Phase 123 SEED-051: entry-ply (import-time) batched schemas (D-07) ──────
 # Entry-ply is a BATCH across games, so every position carries its game_id.
 # Entry-ply uses depth-15 → returns only eval_cp/eval_mate (no best_move/pv).

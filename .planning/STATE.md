@@ -2,25 +2,29 @@
 gsd_state_version: 1.0
 milestone: v1.31
 milestone_name: Pipeline Consolidation
-status: planning
-last_updated: "2026-07-04T10:20:42.437Z"
+current_phase: 150
+current_phase_name: Consolidate Write Path
+status: verifying
+stopped_at: Phase 149 context gathered
+last_updated: "2026-07-04T13:25:00.356Z"
 last_activity: 2026-07-04
+last_activity_desc: Phase 149 complete, transitioned to Phase 150
 progress:
   total_phases: 3
-  completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
-  percent: 33
+  completed_phases: 2
+  total_plans: 9
+  completed_plans: 9
+  percent: 67
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 149 (Retire & Prune) — not started
-Plan: —
-Status: ROADMAP.md created for v1.31 (Phase 148 grouped in as complete; Phases 149-150 defined). Next: /gsd-plan-phase 149
-Last activity: 2026-07-04 — v1.31 roadmap created (18/18 requirements mapped: CORR-* → 148, PRUNE-* → 149, WRITE-* → 150)
+Phase: 150 — Consolidate Write Path
+Plan: Not started
+Status: Phase complete — ready for verification
+Last activity: 2026-07-04 — Phase 149 complete, transitioned to Phase 150
 
 ## Project Reference
 
@@ -114,6 +118,19 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 148-02]: item-2 circuit breaker gated on eval_targets non-empty (not game_ids) to preserve D-09 test_engine_none_marks_complete invariant; lease release is implicit TTL expiry, no explicit UPDATE
 - [Phase 148-02]: item-5 (D-05) minimum guard only -- entry_eval_lease_expiry > sa.func.now() added to entry_submit_eval guard query; fuller echoed-game_ids intersection deferred
 - [Phase 148-03]: D-04 least-invasive choice: v_shared = (var_eg + var_ne) / 2.0 count-only proxy for the covariance correction
+- [Phase ?]: worker_id is VARCHAR(16) matching worker_id_label truncation (no ForeignKey — free-form external identity)
+- [Phase ?]: worker_schema_version coalesced in the SQL set_ clause so a lane that omits it never clobbers the atomic lane's last known value
+- [Phase ?]: D-07 upheld (PRUNE-03): GameResult Literal NOT widened; _normalize_chesscom_result's internal return type widened to GameResult | None instead, signaling unknown out-of-band
+- [Phase ?]: Deleted 29 Gen-1 tests (not ~28 per RESEARCH) after a mechanical AST+URL-reference recount of all 95 original tests; TestMultipv2BlobsRemote actually had 3 /submit-only methods, not 2
+- [Phase ?]: test_default_idle_sleep_is_one_second relocated out of TestTier1Claiming to module level instead of deleted (tests a worker-script constant, not a /lease or /submit behavior)
+- [Phase ?]: No new atomic-lane test for scope= or X-Worker-Id on /atomic-lease (Gen-1's deleted equivalents) -- same claim_eval_job()/worker_id_label() call sites as the deleted lease_eval_game, worker_id_label already exercised via kept entry-lease tests
+- [Phase ?]: hashes_for_game deleted outright (zero production callers confirmed via grep) — process_game_pgn is now the sole PGN-walk implementation
+- [Phase ?]: chesscom_to_lichess.py: only Table 3 (LICHESS_BLITZ_INTRA_TC) deleted; Tables 1/2 stay live-imported by canonical_slice_sql.py
+- [Phase ?]: Game.needs_engine_full_evals hybrid property deleted (caller-less); ix_games partial index + raw predicate kept
+- [Phase ?]: TIER_AUTO_WINDOW constant deleted (RESEARCH Pitfall 2: no deletable tier-2 branch ever existed); eval_jobs.tier column + tier-agnostic claim SQL kept as-is
+- [Phase 149]: Durable import_jobs INSERT moved from _bootstrap_import_job (background task) into start_import (before asyncio.create_task) — closes the actual TOCTOU race per RESEARCH Pitfall 3
+- [Phase 149]: IntegrityError from the partial unique index is caught, rolled back, and returns the existing active job with 200 — never capture_exception'd (expected race, not a bug)
+- [Phase 149]: Added discard_job() to remove the losing request's orphaned in-memory JobState — Rule 1 auto-fix, not in the original plan text
 
 ### Pending Todos
 
@@ -189,9 +206,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-Last session: 2026-07-04T08:59:58.567Z
-Stopped at: Completed 148-03-PLAN.md
-Resume file: None
+Last session: 2026-07-04T12:50:10.814Z
+Stopped at: Phase 149 context gathered
+Resume file: .planning/phases/149-retire-prune/149-CONTEXT.md
 
 ## Performance Metrics
 
@@ -239,3 +256,8 @@ Resume file: None
 | Phase 148 P02 | 22min | 2 tasks | 5 files |
 | Phase 148 P03 | 20min | 2 tasks | 4 files |
 | Phase 148 P04 | 15min | 2 tasks | 4 files |
+| Phase 149 P01 | 20min | 2 tasks | 7 files |
+| Phase 149 P02 | 6min | 1 tasks | 2 files |
+| Phase 149-retire-prune P03 | 25min | 3 tasks | 3 files |
+| Phase 149 P04 | 20min | 2 tasks | 11 files |
+| Phase 149 P05 | 25min | 2 tasks | 8 files |

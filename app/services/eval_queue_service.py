@@ -2,24 +2,23 @@
 
 Three-tier pick:
   Tier 1 (TIER_EXPLICIT)      — explicit user request
-  Tier 2 (TIER_AUTO_WINDOW)   — automatic recency window (no active enqueue source
-                                as of Phase 118 — see note below; lane retained)
+  Tier 2                      — unused (its only enqueue source was removed in
+                                Phase 118; the eval_jobs.tier column and the
+                                tier-agnostic claim SQL below still support it,
+                                but there is no active tier-2 lane)
   Tier 3 (TIER_IDLE_BACKLOG)  — idle backlog (derived pick, no eval_jobs row)
 
-Tier-1 and tier-2 use SELECT FOR UPDATE OF … SKIP LOCKED against the eval_jobs
-table for a lock-safe, serialized claim contract (QUEUE-06 / SEED-012 D-8).
-
-Phase 118 removed the tier-2 auto-enqueue (`enqueue_tier2_window`): the tier-3 idle
-drain already prioritizes recently-active users and covers the whole backlog, so an
-explicit auto-window added no scheduling value. The tier-2 lane (constant, generic
-claim handling, eval_jobs.tier column) is intentionally retained for a future per-user
-"analyze my games" vs "help drain for everybody" mode.
+Tier-1 uses SELECT FOR UPDATE OF … SKIP LOCKED against the eval_jobs table for
+a lock-safe, serialized claim contract (QUEUE-06 / SEED-012 D-8); the claim SQL
+is tier-agnostic (`ORDER BY tier ASC`) so it would transparently pick up a
+future tier-2 row without changes.
 
 Tier-3 is a *derived* pick via an Efraimidis–Spirakis recency-weighted lottery over
-candidate users (games WHERE needs_engine_full_evals = full_evals_completed_at IS NULL
-AND lichess_evals_at IS NULL AND is_guest=false). No rows are pre-populated in
-eval_jobs for the backlog. This keeps the queue table lean (~558k backlog games never
-pre-inserted) while providing fast catch-up for returning users (SEED-046).
+candidate users (games WHERE full_evals_completed_at IS NULL AND lichess_evals_at
+IS NULL AND is_guest=false — the "needs our engine" predicate). No rows are
+pre-populated in eval_jobs for the backlog. This keeps the queue table lean
+(~558k backlog games never pre-inserted) while providing fast catch-up for
+returning users (SEED-046).
 
 When the primary lottery finds no candidate (no needs-engine games), a residual
 fallback picks a PV-backfill-only game (lichess_evals_at IS NOT NULL).
@@ -284,9 +283,9 @@ async def _claim_tier3_derived(
 
     Step 1 — WEIGHTED USER PICK (SEED-046):
       Candidate users = non-guest users with at least one needs-engine game
-      (full_evals_completed_at IS NULL AND lichess_evals_at IS NULL). This
-      predicate matches Game.needs_engine_full_evals exactly and is backed by
-      ix_games_needs_engine_full_evals partial index (added by migration 119-01).
+      (full_evals_completed_at IS NULL AND lichess_evals_at IS NULL). This raw
+      predicate is backed by the ix_games_needs_engine_full_evals partial index
+      (added by migration 119-01).
       For each candidate compute:
         weight = exp(-Δt/τ) + WEIGHT_FLOOR
       where Δt = seconds since last_activity (NULL → coalesced to a very old
@@ -321,8 +320,8 @@ async def _claim_tier3_derived(
     This replaces the old D-118-04 last_activity DESC winner-take-all ordering and
     drops the dead lichess_evals_at tiebreaker (live prod bug: it was the LAST ORDER
     key and played_at broke ties first, so lichess games were picked at full engine
-    cost despite needs_engine_full_evals saying to skip them — ~70% throughput waste
-    on user 28; see RESEARCH-NOTES §Live prod bug).
+    cost despite the needs-engine predicate above saying to skip them — ~70%
+    throughput waste on user 28; see RESEARCH-NOTES §Live prod bug).
 
     Guest games are excluded (QUEUE-08) via JOIN users + is_guest filter.
 

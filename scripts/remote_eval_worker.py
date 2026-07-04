@@ -599,10 +599,10 @@ async def _run_cycle(
     Rungs 1 and 3 upgraded to the atomic (versioned) eval+blob pair in Phase 147
     SEED-074 Part B — this worker now exclusively leases/submits its full-ply
     tiers via /atomic-lease + /atomic-submit so a leased game is never written
-    with a raw/ungated tactic tag (D-01). The old /lease + /submit pair stays
-    live and untouched server-side for any not-yet-upgraded worker still
-    running an older copy of this script during a rolling mixed-fleet deploy
-    (D-02) — this file simply no longer calls it:
+    with a raw/ungated tactic tag (D-01). The old /lease + /submit pair (and this
+    file's own now-removed full-ply response handler, which called it) has been
+    deleted server-side and here — Phase 149-03 PRUNE-01, after confirming zero
+    legacy traffic across the fleet:
       1. POST /atomic-lease?scope=explicit (tier-1/2 only)
          200 → eval full-ply (MultiPV-1) + local flaw-ply hint + MultiPV-2
                blobs, submit to /atomic-submit, done.
@@ -653,57 +653,6 @@ async def _run_cycle(
     return await _handle_atomic_response(client, pool, sf_version, dry_run, loop, idle_resp)
 
 
-async def _handle_full_ply_response(
-    client: httpx.AsyncClient,
-    pool: EnginePool,
-    sf_version: str,
-    dry_run: bool,
-    loop: bool,
-    lease_resp: httpx.Response,
-) -> bool:
-    """Handle a 200 response from /lease (full-ply path). Eval and submit.
-
-    Phase 147 SEED-074 Part B: this rung is no longer wired into `_run_cycle`
-    (rungs 1/3 now use `_handle_atomic_response` against /atomic-lease +
-    /atomic-submit) but is intentionally left unmodified — the server's
-    /lease + /submit pair stays live for any older, not-yet-upgraded copy of
-    this script still running elsewhere during a rolling mixed-fleet deploy
-    (D-02/D-05).
-    """
-    lease_resp.raise_for_status()
-    data = lease_resp.json()
-    game_id = data["game_id"]
-    positions = data["positions"]
-    # Opaque job token from the lease response (eval_jobs.id for tier-1/2, None for tier-3).
-    # The worker stores and echoes it without interpreting it; the server uses it to stamp
-    # eval_jobs.status='completed' when the submit is clean and no holes remain.
-    job_id = data.get("job_id")
-
-    _log(f"Leased game_id={game_id} ({len(positions)} positions). Evaluating...")
-    evals = await _eval_positions(pool, positions)
-
-    if dry_run:
-        _log(f"--dry-run: evaluated {len(evals)} positions for game_id={game_id}; skipping submit.")
-        return not loop
-
-    submit_resp = await client.post(
-        "/api/eval/remote/submit",
-        json={
-            "game_id": game_id,
-            "sf_version": sf_version,
-            "evals": evals,
-            "job_id": job_id,
-        },
-    )
-    submit_resp.raise_for_status()
-    result = submit_resp.json()
-    _log(
-        f"Submitted game_id={game_id}: stamp_complete={result.get('stamp_complete')}, "
-        f"failed_ply_count={result.get('failed_ply_count')}"
-    )
-    return not loop
-
-
 async def _handle_atomic_response(
     client: httpx.AsyncClient,
     pool: EnginePool,
@@ -721,8 +670,9 @@ async def _handle_atomic_response(
     and blob nodes TOGETHER to /atomic-submit in one request. The server
     re-runs `classify_game_flaws` authoritatively there and writes gated
     tactic tags + both completion markers in one transaction — this rung
-    closes the ungated-window gap the old /lease + /submit pair leaves open
-    (D-01): this worker's hint only decides WHICH plies get blobbed, never
+    closes the ungated-window gap the Gen-1 /lease + /submit pair used to
+    leave open (D-01, pair deleted server-side and here in Phase 149-03
+    PRUNE-01): this worker's hint only decides WHICH plies get blobbed, never
     WHAT gets persisted.
     """
     lease_resp.raise_for_status()

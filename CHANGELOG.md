@@ -18,6 +18,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Fixed
 
+- **Duplicate imports for the same account are now blocked reliably** — starting an import while one is already running for the same platform returns the in-progress job instead of ever launching a second one, now enforced at the database level (closes a race where two near-simultaneous requests could both start). (Phase 149)
+
+- **Malformed game results no longer count as draws** — a chess.com game with an unrecognized result is now skipped (and flagged for review) instead of being silently recorded as a draw, so your win/draw/loss stats aren't polluted by fabricated draws. (Phase 149)
+
 - **Eval-chart gaps from slow analysis workers** — games analyzed by a slower remote worker could keep permanent gaps in the opening portion of the eval chart (the worker timed out on the busiest opening positions and the server gave up after a few retries). The server now fills those openings from its own cache and only re-checks the positions that are genuinely still missing, so weak workers no longer leave games stuck with missing evals. Previously-affected games self-heal on re-analysis. (Quick 260703-nux)
 
 - **Imports no longer abort on a single bad game** — one malformed game from chess.com or lichess could previously abort an entire import; the importer now skips the unparseable game and continues with the rest. (Phase 148)

@@ -6,8 +6,10 @@ HTTP layer only — all orchestration logic lives in import_service.
 import asyncio
 from typing import Annotated
 
+import sentry_sdk
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import delete
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
@@ -82,6 +84,72 @@ async def start_import(
     await session.commit()
 
     job_id = import_service.create_job(user_id, request.platform, request.username)
+
+    # Bug fix (Phase 149 PRUNE-05): the durable import_jobs row used to be
+    # created later, inside the fire-and-forget background task
+    # (_bootstrap_import_job) — strictly AFTER this response would already
+    # have been sent. That left a TOCTOU window where two concurrent requests
+    # both see an empty in-memory registry above and both proceed. The row is
+    # now created HERE, synchronously, before the background task is
+    # scheduled, backed by the uq_import_jobs_user_platform_active partial
+    # unique index — the DB, not the in-memory registry, is the real
+    # concurrency guarantee. A losing concurrent request hits IntegrityError
+    # below (expected race, not a bug — mirrors guest_service.py's Google-
+    # promotion double-submit handling) and returns the winner's job with 200.
+    try:
+        await import_job_repository.create_import_job(
+            session,
+            job_id=job_id,
+            user_id=user_id,
+            platform=request.platform,
+            username=request.username,
+        )
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        # This request's in-memory JobState never got a background task
+        # scheduled — discard it so it doesn't linger as a permanently-stuck
+        # duplicate in find_active_jobs_for_user / count_active_platform_jobs.
+        import_service.discard_job(job_id)
+        # Re-fetch scoped by user_id + platform (V4 / IDOR guard) — never
+        # leaks another user's job. IntegrityError is not capture_exception'd:
+        # it's an expected race, per CLAUDE.md's skip-trivial-exceptions rule.
+        existing_row = await import_job_repository.get_active_job_for_user_platform(
+            session, user_id, request.platform
+        )
+        # Explicit guard, not `assert` (Bug fix, IN-02 code review 2026-07-04):
+        # `assert` statements are stripped under `python -O`, which would let
+        # this genuinely-should-never-happen invariant fail silently and fall
+        # through to an AttributeError on `existing_row.id` below instead of a
+        # clearly-labeled internal error.
+        if existing_row is None:
+            sentry_sdk.set_context(
+                "import", {"user_id": str(user_id), "platform": request.platform}
+            )
+            exc = RuntimeError(
+                "uq_import_jobs_user_platform_active raised IntegrityError but no "
+                "active row was found on re-fetch"
+            )
+            sentry_sdk.capture_exception(exc)
+            raise exc
+        response.status_code = 200
+        return ImportStartedResponse(job_id=existing_row.id, status=existing_row.status)
+    except Exception:
+        # Bug fix (CR-01 code review 2026-07-04): the durable-insert write
+        # above can fail for reasons OTHER than the expected IntegrityError
+        # race (e.g. a transient Postgres outage during flush/commit). Before
+        # this branch existed, such a failure left the in-memory
+        # JobState(status=PENDING) registered forever — no background task
+        # was ever scheduled to transition it, and no reaper touches the
+        # in-memory registry, so find_active_job() would report this phantom
+        # job as active on every retry, permanently locking the user out of
+        # importing this platform until the backend process restarted.
+        await session.rollback()
+        import_service.discard_job(job_id)
+        sentry_sdk.set_context("import", {"user_id": str(user_id), "platform": request.platform})
+        sentry_sdk.capture_exception()
+        raise
+
     asyncio.create_task(import_service.run_import(job_id))
 
     return ImportStartedResponse(job_id=job_id, status="pending")

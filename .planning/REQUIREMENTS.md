@@ -25,12 +25,12 @@ Five silent-data-loss / production-only-correctness defects from the 2026-07-02 
 
 Independent low-risk deletions + two small migrations. Shrink the surface before refactoring so Phase 2 consolidates 2 copies rather than 3.
 
-- [ ] **PRUNE-01** (R2): The dead Gen-1 protocol is deleted — `/lease` + `/submit` endpoints + `_apply_submit` (`eval_remote.py`), the worker `_handle_full_ply_response` handler (`remote_eval_worker.py`), and the associated `test_eval_worker_endpoints.py` tests are removed; `/flaw-blob-*` is retained (tier-4 backfill actively draining). Prod traffic confirmed zero legacy hits before deletion.
-- [ ] **PRUNE-02** (R12): Dead weight is removed — tier-2 lane code (the DB column is kept), `hashes_for_game` (`zobrist.py`), the `chesscom_to_lichess` future-use tables, and the caller-less `Game.needs_engine_full_evals` hybrid
-- [ ] **PRUNE-03** (R13): `_normalize_chesscom_result`'s silent-draw fallback is replaced with an explicit "unknown" result + a Sentry capture, so a malformed/unknown result is surfaced rather than silently scored as a draw
-- [ ] **PRUNE-04** (R11): `worker_schema_version` is recorded on submits as telemetry (log/tag only — no 426 rejection gate yet), giving fleet-version visibility
-- [ ] **PRUNE-05** (R8): The import-job guard is durable — the `import_jobs` row is created in the request handler and a partial unique index on `(user_id, platform) WHERE status IN ('pending','in_progress')` prevents concurrent duplicate imports at the DB level
-- [ ] **PRUNE-06** (R15): A `worker_heartbeats` table (worker_id, version, last_seen, counts) is populated server-side from the existing `X-Worker-Id` / submit fields — no worker-side change
+- [x] **PRUNE-01** (R2): The dead Gen-1 protocol is deleted — `/lease` + `/submit` endpoints + `_apply_submit` (`eval_remote.py`), the worker `_handle_full_ply_response` handler (`remote_eval_worker.py`), and the associated `test_eval_worker_endpoints.py` tests are removed; `/flaw-blob-*` is retained (tier-4 backfill actively draining). Prod traffic confirmed zero legacy hits before deletion.
+- [x] **PRUNE-02** (R12): Dead weight is removed — tier-2 lane code (the DB column is kept), `hashes_for_game` (`zobrist.py`), the `chesscom_to_lichess` future-use tables, and the caller-less `Game.needs_engine_full_evals` hybrid
+- [x] **PRUNE-03** (R13): `_normalize_chesscom_result`'s silent-draw fallback is replaced with an explicit "unknown" result + a Sentry capture, so a malformed/unknown result is surfaced rather than silently scored as a draw
+- [x] **PRUNE-04** (R11): `worker_schema_version` is recorded on submits as telemetry (log/tag only — no 426 rejection gate yet), giving fleet-version visibility
+- [x] **PRUNE-05** (R8): The import-job guard is durable — the `import_jobs` row is created in the request handler and a partial unique index on `(user_id, platform) WHERE status IN ('pending','in_progress')` prevents concurrent duplicate imports at the DB level
+- [x] **PRUNE-06** (R15): A `worker_heartbeats` table (worker_id, version, last_seen, counts) is populated server-side from the existing `X-Worker-Id` / submit fields — no worker-side change
 
 ### Phase 2 — Consolidate Write Path
 
@@ -72,12 +72,12 @@ Dependency chain, in order. R1/R4 first shrink R3 and R7.
 | CORR-04 | Phase 148 | Complete |
 | CORR-05 | Phase 148 | Complete |
 | CORR-06 | Phase 148 | Complete |
-| PRUNE-01 | Phase 149 | Pending |
-| PRUNE-02 | Phase 149 | Pending |
-| PRUNE-03 | Phase 149 | Pending |
-| PRUNE-04 | Phase 149 | Pending |
-| PRUNE-05 | Phase 149 | Pending |
-| PRUNE-06 | Phase 149 | Pending |
+| PRUNE-01 | Phase 149 | Complete |
+| PRUNE-02 | Phase 149 | Complete |
+| PRUNE-03 | Phase 149 | Complete |
+| PRUNE-04 | Phase 149 | Complete |
+| PRUNE-05 | Phase 149 | Complete |
+| PRUNE-06 | Phase 149 | Complete |
 | WRITE-01 | Phase 150 | Pending |
 | WRITE-02 | Phase 150 | Pending |
 | WRITE-03 | Phase 150 | Pending |
