@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Spike 006 — Moves by Rating</title>
+<style>
+  :root {
+    --bg: #0f1012; --card: #17181b; --card2: #1d1f23; --ink: #ececec;
+    --muted: #9aa0a6; --grid: #2a2d31; --axis: #3a3d42;
+    --loss: #e0836f;   /* blunder / your move  */
+    --win:  #5fbf7a;   /* best move            */
+    --brand:#b07a52;   /* you-are-here marker  */
+    --amber:#d8b45a;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f4f2ee; --card:#fff; --card2:#faf9f7; --ink:#1c1c1c;
+            --muted:#5c6167; --grid:#e6e3dd; --axis:#cfccc4; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  .wrap { max-width:560px; margin:0 auto; padding:20px 16px 40px; }
+  .card { background:var(--card); border:1px solid var(--grid); border-radius:14px;
+          padding:18px 18px 8px; }
+  h1 { font-size:18px; margin:0 0 2px; }
+  .sub { color:var(--muted); font-size:13px; margin:0 0 14px; }
+  /* verdict banner */
+  .verdict { display:flex; gap:12px; align-items:flex-start; background:var(--card2);
+             border:1px solid var(--grid); border-left:4px solid var(--win);
+             border-radius:10px; padding:12px 14px; margin-bottom:16px; }
+  .verdict .tag { font-weight:700; color:var(--win); white-space:nowrap; }
+  .verdict .body { font-size:13.5px; color:var(--ink); }
+  .verdict .body b.b { color:var(--loss); }
+  .axis-label { fill:var(--muted); font-size:12px; }
+  .legend { display:flex; flex-wrap:wrap; gap:6px 14px; justify-content:flex-end;
+            margin:2px 0 8px; font-size:13px; }
+  .legend span { display:inline-flex; align-items:center; gap:6px; color:var(--muted); }
+  .legend i { width:16px; height:3px; border-radius:2px; display:inline-block; }
+  .legend .emph { color:var(--ink); font-weight:600; }
+  .note { color:var(--muted); font-size:12.5px; margin:10px 2px 4px; }
+  svg { width:100%; height:auto; display:block; touch-action:none; }
+  .tt { fill:var(--ink); font-size:12px; }
+  .tt-bg { fill:var(--card2); stroke:var(--grid); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>Moves by Rating</h1>
+    <p class="sub">After 12.Nbd2 — you played <b style="color:var(--loss)">Ne4?</b> at 1500 · best was <b style="color:var(--win)">O-O</b></p>
+
+    <div class="verdict">
+      <div class="tag">◆ Growth edge<br>— drill this</div>
+      <div class="body">
+        You play <b class="b">Ne4</b> ~28% at your level. It <b>peaks at ~1800</b> then masters
+        grow out of it (→8% by 2600). <b>Salience HIGH × Trainability HIGH</b> — a findable trap
+        you're sitting right on top of, not a lapse and not above your level.
+      </div>
+    </div>
+
+    <div class="legend" id="legend"></div>
+    <svg id="chart" viewBox="0 0 520 430" role="img" aria-label="Move probability by rating"></svg>
+    <p class="note" id="capnote"></p>
+  </div>
+</div>
+
+<script>
+// ---- reference data: the Ne4 example (probabilities %, ELO 600..2600 step 200) ----
+const ELOS = [600,800,1000,1200,1400,1600,1800,2000,2200,2400,2600];
+const YOU = 1500;
+// each move: label, color, values %, role
+const MOVES = [
+  { m:"Ne4",  color:"var(--loss)", role:"blunder", v:[13,18,24,29,32,33,31,26,18,11, 8] },
+  { m:"O-O",  color:"var(--win)",  role:"best",    v:[45,40,33,25,19,15,17,22,28,33,36] },
+  { m:"e4",   color:"#7fae72",     role:"",        v:[ 8, 9,10,11,12,13,13,13,12,11,10] },
+  { m:"h3",   color:"#c9a24a",     role:"",        v:[ 2, 3, 4, 5, 6, 6, 6, 5, 5, 4, 4] },
+  { m:"Qd2",  color:"#8a8f96",     role:"",        v:[ 1, 2, 3, 4, 5, 5, 6, 6, 6, 6, 6] },
+  { m:"a3",   color:"#6f7f9a",     role:"",        v:[ 1, 1, 2, 2, 3, 3, 3, 3, 2, 2, 2] },
+  { m:"Re1",  color:"#9a6f8a",     role:"",        v:[ 1, 1, 1, 2, 2, 2, 3, 4, 5, 6, 7] },
+];
+
+// ---- top-N by PEAK probability, always unioned with blunder + best ----
+const TOP_N = 5;
+const byPeak = [...MOVES].sort((a,b)=>Math.max(...b.v)-Math.max(...a.v));
+const keep = new Set(byPeak.slice(0,TOP_N).map(d=>d.m));
+MOVES.forEach(d=>{ if(d.role) keep.add(d.m); });      // union {blunder, best}
+const shown = MOVES.filter(d=>keep.has(d.m));
+const hidden = MOVES.filter(d=>!keep.has(d.m)).map(d=>d.m);
+
+// ---- geometry ----
+const W=520,H=430, P={l:44,r:16,t:14,b:34};
+const x0=P.l, x1=W-P.r, y0=H-P.b, y1=P.t;
+const YMAX=60;
+const xOf = e => x0 + (e-600)/(2600-600)*(x1-x0);
+const yOf = p => y0 - p/YMAX*(y0-y1);
+
+// smooth path (Catmull-Rom -> cubic bezier)
+function smooth(pts){
+  if(pts.length<2) return "";
+  let d=`M${pts[0][0]},${pts[0][1]}`;
+  for(let i=0;i<pts.length-1;i++){
+    const p0=pts[i-1]||pts[i], p1=pts[i], p2=pts[i+1], p3=pts[i+2]||p2;
+    const c1x=p1[0]+(p2[0]-p0[0])/6, c1y=p1[1]+(p2[1]-p0[1])/6;
+    const c2x=p2[0]-(p3[0]-p1[0])/6, c2y=p2[1]-(p3[1]-p1[1])/6;
+    d+=`C${c1x},${c1y} ${c2x},${c2y} ${p2[0]},${p2[1]}`;
+  }
+  return d;
+}
+const SVGNS="http://www.w3.org/2000/svg";
+const el=(n,a)=>{const e=document.createElementNS(SVGNS,n);for(const k in a)e.setAttribute(k,a[k]);return e;};
+const svg=document.getElementById("chart");
+
+// gridlines + y labels
+for(let p=0;p<=YMAX;p+=15){
+  svg.appendChild(el("line",{x1:x0,y1:yOf(p),x2:x1,y2:yOf(p),stroke:"var(--grid)","stroke-width":1}));
+  const t=el("text",{x:x0-8,y:yOf(p)+4,"text-anchor":"end",class:"axis-label"});t.textContent=p+"%";svg.appendChild(t);
+}
+// x labels
+ELOS.filter((_,i)=>i%2===0).forEach(e=>{
+  const t=el("text",{x:xOf(e),y:H-12,"text-anchor":"middle",class:"axis-label"});t.textContent=e;svg.appendChild(t);
+});
+
+// "you are here" marker
+svg.appendChild(el("line",{x1:xOf(YOU),y1:y1,x2:xOf(YOU),y2:y0,stroke:"var(--brand)","stroke-width":1.5,"stroke-dasharray":"4 4"}));
+const pill=el("rect",{x:xOf(YOU)-30,y:y1-2,width:60,height:18,rx:9,fill:"var(--brand)"});svg.appendChild(pill);
+const pl=el("text",{x:xOf(YOU),y:y1+11,"text-anchor":"middle",fill:"#fff","font-size":11,"font-weight":700});pl.textContent="you 1500";svg.appendChild(pl);
+
+// lines
+shown.forEach(d=>{
+  const pts=ELOS.map((e,i)=>[xOf(e),yOf(d.v[i])]);
+  const emph=!!d.role;
+  svg.appendChild(el("path",{d:smooth(pts),fill:"none",stroke:d.color,
+     "stroke-width":emph?3:1.5,"stroke-opacity":emph?1:0.7,
+     "stroke-dasharray":d.role==="blunder"?"":"" }));
+  // end label
+  const last=pts[pts.length-1];
+  const lb=el("text",{x:last[0]+4,y:last[1]+4,fill:d.color,"font-size":12,"font-weight":emph?700:400});
+  lb.textContent=d.m;svg.appendChild(lb);
+});
+
+// hover tracker
+const track=el("line",{x1:0,y1:y1,x2:0,y2:y0,stroke:"var(--axis)","stroke-width":1,opacity:0});svg.appendChild(track);
+const dots=shown.map(d=>{const c=el("circle",{r:3.5,fill:d.color,opacity:0});svg.appendChild(c);return c;});
+const ttg=el("g",{opacity:0});const ttbg=el("rect",{class:"tt-bg",rx:6,width:96,height:0});ttg.appendChild(ttbg);svg.appendChild(ttg);
+function nearestIdx(e){let bi=0,bd=1e9;ELOS.forEach((v,i)=>{const dd=Math.abs(xOf(v)-e);if(dd<bd){bd=dd;bi=i;}});return bi;}
+function move(evt){
+  const r=svg.getBoundingClientRect();const mx=(evt.clientX-r.left)/r.width*W;
+  const i=nearestIdx(mx);const xx=xOf(ELOS[i]);
+  track.setAttribute("x1",xx);track.setAttribute("x2",xx);track.setAttribute("opacity",1);
+  const rows=[...shown].sort((a,b)=>b.v[i]-a.v[i]);
+  dots.forEach((c,k)=>{const d=shown[k];c.setAttribute("cx",xx);c.setAttribute("cy",yOf(d.v[i]));c.setAttribute("opacity",1);});
+  while(ttg.childNodes.length>1)ttg.removeChild(ttg.lastChild);
+  const th=16+rows.length*15;ttbg.setAttribute("height",th);
+  const hd=el("text",{class:"tt",x:8,y:13,"font-weight":700});hd.textContent=ELOS[i];ttg.appendChild(hd);
+  rows.forEach((d,k)=>{const t=el("text",{class:"tt",x:8,y:28+k*15,fill:d.color});t.textContent=`${d.m} ${d.v[i]}%`;ttg.appendChild(t);});
+  let tx=xx+10; if(tx+96>x1)tx=xx-106;
+  ttg.setAttribute("transform",`translate(${tx},${y1+4})`);ttg.setAttribute("opacity",1);
+}
+function leave(){track.setAttribute("opacity",0);dots.forEach(c=>c.setAttribute("opacity",0));ttg.setAttribute("opacity",0);}
+svg.addEventListener("mousemove",move);svg.addEventListener("mouseleave",leave);
+svg.addEventListener("touchmove",e=>{move(e.touches[0]);e.preventDefault();},{passive:false});
+
+// legend
+const leg=document.getElementById("legend");
+shown.forEach(d=>{const s=document.createElement("span");if(d.role)s.className="emph";
+  s.innerHTML=`<i style="background:${d.color}"></i>${d.m}${d.role?` · ${d.role}`:""}`;leg.appendChild(s);});
+document.getElementById("capnote").textContent =
+  `Line cap: top ${TOP_N} by peak probability ∪ {your move, best}. `+
+  (hidden.length?`Hidden (below cap): ${hidden.join(", ")}.`:`All moves shown.`);
+</script>
+</body>
+</html>
