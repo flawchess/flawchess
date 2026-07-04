@@ -447,6 +447,19 @@ async def _upsert_opening_cache(
     ]
     if not cache_rows:
         return
+    # A single game can reach the same position at two different plies (a
+    # transposition or repetition), so cache_rows may hold multiple entries with the
+    # same full_hash. Postgres rejects INSERT ... ON CONFLICT when two proposed rows
+    # share the conflict key ("ON CONFLICT DO UPDATE command cannot affect row a
+    # second time" — FLAWCHESS-8E), so collapse duplicates by full_hash here. The
+    # eval is identical for a given position; prefer a pv-bearing row so the pv
+    # backfill (ON CONFLICT DO UPDATE SET pv) still fires.
+    deduped: dict[int, tuple[int, int | None, int | None, str | None, str | None]] = {}
+    for row in cache_rows:
+        existing = deduped.get(row[0])
+        if existing is None or (existing[4] is None and row[4] is not None):
+            deduped[row[0]] = row
+    cache_rows = list(deduped.values())
     params: dict[str, int | str | None] = {}
     values_parts: list[str] = []
     for i, (fh, cp, mate, bm, pv) in enumerate(cache_rows):

@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Opening-cache crash on transpositions** — analyzing a game that reaches the same position twice (a transposition or repetition) no longer crashes the opening-eval cache write; duplicate positions in a batch are now collapsed to a single row. Affected games self-heal on the next analysis pass. (FLAWCHESS-8E)
+
 ## [v1.31] Pipeline Consolidation — 2026-07-04
 
 Server-side pipeline consolidation: the eval write path now threads through a single code path
