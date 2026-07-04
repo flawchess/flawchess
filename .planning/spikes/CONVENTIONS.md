@@ -28,6 +28,19 @@ these unless the question requires otherwise.
   (spike 001 `--dump-fens`) so prod runs need no DB access.
 - Clean up `/tmp` artifacts on the server after prod runs.
 
+## Visual / feasibility spikes (SEED-081 Maia)
+
+- **Visual** spikes ship a self-contained `index.html` with **inline SVG + vanilla JS** (no
+  build, no deps) so the chart runs by just opening the file — surfaced to the user via
+  `SendUserFile` (`display: render`). Production charts port to **Recharts** (`recharts@3.8.1`,
+  already a dep) with colors from `frontend/src/lib/theme.ts`.
+- **Feasibility** spikes with heavy/unavailable infra (model download, ONNX export) are
+  **research-grounded verdicts** (docs + precedent) with an explicit "hands-on pass still
+  needed" list — not faked runs. State clearly what was proven by research vs what remains to
+  measure.
+- License/legal spikes produce a conditions-based verdict and defer the final call to human
+  counsel; they never assert a legal certainty.
+
 ## Prod DB queries
 
 - Read-only via the `flawchess-prod-db` MCP tool (tunnel:
