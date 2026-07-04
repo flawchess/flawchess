@@ -100,11 +100,16 @@ Maia's calibration is trustworthy enough to aggregate on. Parked, not deleted.
 
 **Browser-only. Nothing Maia-related is stored in the DB in this seed's scope.**
 
-- **What we build:** run Maia live in the **analysis board** only. It delivers the Maia serving
-  layer (arm's-length UCI/inference service — the prerequisite for anything Maia) and computes
-  Pillars **A** and **B** **live for the position currently on the board / the flaw being
-  viewed**. The per-ELO curve, the salience×trainability quadrant, and the WDL practical-severity
-  lens are all derived on demand and rendered in the board / flaw detail. **No DB writes.**
+- **What we build:** run Maia live in the **analysis board** only, computing Pillars **A** and
+  **B** **for the position currently on the board / the flaw being viewed**. The per-ELO curve,
+  the salience×trainability quadrant, and the WDL practical-severity lens are all derived on
+  demand and rendered in the board / flaw detail. **No DB writes.**
+- **Inference location — TBD by SPIKE-001 (see below).** Preferred: **client-side** (in-browser
+  ONNX/WASM, like the existing client-side Stockfish, SEED-012) — zero server load, but needs a
+  Chessformer→ONNX export path (unproven) and a resolved AGPL-in-MIT-frontend license question.
+  Fallback: a **synchronous backend inference endpoint** (PyTorch runs as-is, clean arm's-length
+  AGPL). **Not the remote worker fleet** — that's pull-based batch infra for *precompute*, unfit
+  for interactive latency; reusing it would force the parked precompute-every-flaw + DB path.
 - **Cache is EPHEMERAL and board-session-scoped only.** No persistence of any kind. Rationale
   (locked): (a) cross-user hit rate outside opening theory is low — positions are too diverse
   to make a persistent hash cache pay off; (b) we will be **experimenting with different Maia
