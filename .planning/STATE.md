@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.32
 milestone_name: Maia-3 Human-Move Enrichment
-status: planning
+status: roadmap
 last_updated: "2026-07-04T21:17:06.500Z"
 last_activity: 2026-07-04
 progress:
-  total_phases: 0
+  total_phases: 2
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,16 +17,16 @@ progress:
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 151 Maia in the Browser + All-Position Surfaces (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-07-04 — Milestone v1.32 started
+Status: Roadmap defined (2 phases); awaiting phase planning
+Last activity: 2026-07-04 — Milestone v1.32 roadmap created
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-07-04 after v1.31 milestone close)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: v1.32 Maia-3 Human-Move Enrichment opened (SEED-081) — defining requirements + roadmap. License decision locked: relicense MIT → AGPL-3.0. Browser-only, client-side onnxruntime-web, zero DB writes. Carryover: v1.31 is on `main` but NOT yet deployed to production (`bin/deploy.sh` / `/deploy`) — v1.32 is fully independent of the eval pipeline, but v1.31 should ship before v1.32 does.
+Current focus: v1.32 Maia-3 Human-Move Enrichment roadmap created (SEED-081) — 2 phases (151 Maia-in-browser + all-position surfaces; 152 flaw overlay Pillars A+B), all 18 v1 requirements mapped. Next: `/gsd-plan-phase 151`. License decision locked: relicense MIT → AGPL-3.0. Browser-only, client-side onnxruntime-web, zero DB writes. Carryover: v1.31 is on `main` but NOT yet deployed to production (`bin/deploy.sh` / `/deploy`) — v1.32 is fully independent of the eval pipeline, but v1.31 should ship before v1.32 does.
 
 ## Milestone Progress
 
