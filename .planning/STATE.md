@@ -1,35 +1,32 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.31
-milestone_name: Pipeline Consolidation
-current_phase: 999.1
-current_phase_name: BACKLOG
-status: v1.31 Pipeline Consolidation complete — archived + tagged v1.31; merged to main, prod deploy pending
-stopped_at: v1.31 milestone closed
-last_updated: "2026-07-04T20:00:00.000Z"
+milestone: v1.32
+milestone_name: Maia-3 Human-Move Enrichment
+status: planning
+last_updated: "2026-07-04T21:17:06.500Z"
 last_activity: 2026-07-04
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 14
-  completed_plans: 14
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Milestone: v1.31 Pipeline Consolidation — **COMPLETE** (Phases 148, 149, 150; tagged v1.31; archived to milestones/)
-Phase: none active — planning next milestone
-Status: v1.31 complete and merged to `main`; **prod deploy pending** (`bin/deploy.sh` — last prod release was #242)
-Last activity: 2026-07-04
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-07-04 — Milestone v1.32 started
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-07-04 after v1.31 milestone close)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: v1.31 complete. Next: deploy v1.31 to production (`bin/deploy.sh` / `/deploy`), then `/gsd-new-milestone` (leading candidate: SEED-081 Maia-3 human-move enrichment).
+Current focus: v1.32 Maia-3 Human-Move Enrichment opened (SEED-081) — defining requirements + roadmap. License decision locked: relicense MIT → AGPL-3.0. Browser-only, client-side onnxruntime-web, zero DB writes. Carryover: v1.31 is on `main` but NOT yet deployed to production (`bin/deploy.sh` / `/deploy`) — v1.32 is fully independent of the eval pipeline, but v1.31 should ship before v1.32 does.
 
 ## Milestone Progress
 
