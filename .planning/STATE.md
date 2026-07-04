@@ -4,11 +4,10 @@ milestone: v1.31
 milestone_name: Pipeline Consolidation
 current_phase: 150
 current_phase_name: Consolidate Write Path
-status: verifying
+status: Phase 149 shipped — squash-merged to main (local)
 stopped_at: Phase 149 context gathered
-last_updated: "2026-07-04T13:25:00.356Z"
+last_updated: "2026-07-04T13:58:59.292Z"
 last_activity: 2026-07-04
-last_activity_desc: Phase 149 complete, transitioned to Phase 150
 progress:
   total_phases: 3
   completed_phases: 2
@@ -23,8 +22,8 @@ progress:
 
 Phase: 150 — Consolidate Write Path
 Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-07-04 — Phase 149 complete, transitioned to Phase 150
+Status: Phase 149 shipped — squash-merged to main (local)
+Last activity: 2026-07-04
 
 ## Project Reference
 
