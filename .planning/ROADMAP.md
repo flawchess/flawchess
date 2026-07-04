@@ -33,7 +33,8 @@
 - ✅ **v1.28 Tactic Tagging** — Phases 124–135 (incl. 123.1, 128.1; Phase 130 superseded by 131–134) (shipped 2026-06-25) — see [milestones/v1.28-ROADMAP.md](milestones/v1.28-ROADMAP.md)
 - ✅ **v1.29 Live-Engine Analysis Page** — Phases 136–140 (shipped 2026-06-29; released #227) — see [milestones/v1.29-ROADMAP.md](milestones/v1.29-ROADMAP.md)
 - ✅ **v1.30 Forcing-Line Tactic Gate** — Phases 141–147 (shipped 2026-06-30; releases #229/#230/#231/#234) — see [milestones/v1.30-ROADMAP.md](milestones/v1.30-ROADMAP.md)
-- 🚧 **v1.31 Pipeline Consolidation** — Phases 148–150 (in progress, started 2026-07-04)
+- ✅ **v1.31 Pipeline Consolidation** — Phases 148–150 (completed 2026-07-04; merged to `main`, prod deploy pending) — see [milestones/v1.31-ROADMAP.md](milestones/v1.31-ROADMAP.md)
+- 🚧 **v1.32 Maia-3 Human-Move Enrichment** — Phases 151–152 (in progress; started 2026-07-04) — browser-only client-side Maia-3, zero DB writes; relicense MIT → AGPL-3.0 (SEED-081)
 
 ## Progress
 
@@ -103,99 +104,38 @@
 | 148. Pipeline & tactic correctness fixes (code-review 2026-07-02) | 4/4 | Complete    | 2026-07-04 |
 | 149. Retire & Prune | 5/5 | Complete    | 2026-07-04 |
 | 150. Consolidate Write Path | 5/5 | Complete    | 2026-07-04 |
+| 151. Maia in the Browser + All-Position Surfaces | 0/0 | Not started | - |
+| 152. Flaw Overlay (Pillars A + B) | 0/0 | Not started | - |
 
-## Current Milestone: v1.31 Pipeline Consolidation
+## Active Milestone: v1.32 Maia-3 Human-Move Enrichment
 
-**Goal:** Retire the dead Gen-1 eval protocol and unify the copy-pasted eval write path so new pipeline work threads through one code path instead of 3+, removing the seams that generated FLAWCHESS-8D and the Phase 146/147 ungated-tag bugs. Server-side only — no worker protocol change, no fleet redeploy (fleet confirmed fully on atomic-lease/submit; 2026-07-04 prod log grep showed zero legacy `/lease`+`/submit` hits over 11.3h). Sourced from SEED-080 (Tier-A/B recommendations of `reports/pipeline-review-2026-07-04.md`).
+Browser-only, client-side onnxruntime-web inference. **Zero DB writes** — no new backend endpoints, no schema, no migration. Add Maia-3 (a human move-prediction engine) as a second, in-browser engine on the analysis board: where Stockfish says "what is objectively best," Maia says "what a player at *your* rating would actually do here" — the missing half of coaching, directly on-brand ("Engines are flawless, humans play FlawChess"). Relicense MIT → AGPL-3.0 so the AGPL Maia model hosts with zero combined-work ambiguity. Feasibility settled by spikes 004–006; design locked in SEED-081. Pillar C (history-wide aggregate rollup) and SEED-082 (human-playable-line engine) are explicitly out of scope (persistence-gated, future milestone).
 
-- [x] **Phase 148: Pipeline & tactic correctness fixes (code-review 2026-07-02)** - Five silent-data-loss / production-only-correctness defects fixed and shipped; SEED-080's hard prerequisite
-- [x] **Phase 149: Retire & Prune** - Delete the dead Gen-1 protocol + other dead weight, shrinking the surface before Phase 150 consolidates the write path (completed 2026-07-04)
-- [x] **Phase 150: Consolidate Write Path** - Unify the copy-pasted completion decision, classify preamble, and delete-then-insert flaw write into one code path (completed 2026-07-04)
-
-## Phase Details (v1.31)
-
-### Phase 148: Pipeline & tactic correctness fixes (code-review 2026-07-02)
-
-**Goal:** Fix five silent-data-loss / production-only-correctness defects from the 2026-07-02 code review, each with tests + a verify loop: (1) tactic `has_forced_mate` no-op → deep mates never tag + `fen_map` `board_fen()` drops ep/castling state (`tactic_detector.py`, `flaws_service.py`); (2) entry-ply drain stamps `evals_completed_at` even on a dead pool → mirror the WR-05 all-fail circuit breaker (`eval_drain.py`); (3) quintile significance test treats overlapping cohorts as independent → add the covariance term (`endgame_service.py`); (4) one malformed platform game aborts the whole import → per-game try/except + skip + aggregated Sentry (`chesscom_client.py`, `lichess_client.py`); (5) entry-submit batch-scoping minimum guard `entry_eval_lease_expiry > now()` (`eval_remote.py`).
-**Source:** `.planning/todos/pending/2026-07-03-code-review-pipeline-tactic-correctness-phase.md`; triage `.planning/notes/2026-07-03-code-review-fable-triage.md`
-**Depends on:** Phase 147
-**Requirements:** CORR-01, CORR-02, CORR-03, CORR-04, CORR-05, CORR-06
-**Success Criteria** (validated — already shipped):
-
-  1. A deep forced-mate PV tags generic `mate` instead of silently dropping the tag, and the tactic detector's PV replay correctly parses en-passant/castling state internally while `game_flaws.fen` stays piece-placement-only (CORR-01, CORR-02)
-  2. The entry-ply eval drain no longer stamps `evals_completed_at` on an all-fail (dead-pool) tick (CORR-03)
-  3. The endgame quintile significance test no longer produces false "significant" verdicts from treating overlapping cohorts as independent (CORR-04)
-  4. A single malformed platform game is skipped, not fatal, during import (CORR-05)
-  5. The entry-submit endpoint rejects a sparse/partial batch via a batch-scoping minimum guard (CORR-06)
-
-**Plans:** 4/4 plans complete
-
-Plans:
-
-- [x] 148-01-PLAN.md — Item 1 tactics: has_forced_mate mate-fallback (D-01) + fen_map full-FEN storage (D-02) + precision-gate regression (D-03)
-- [x] 148-02-PLAN.md — Items 2+5 eval-lease: entry-ply drain all-fail circuit breaker + EnginePool docstring + entry-submit lease-expiry guard (D-05)
-- [x] 148-03-PLAN.md — Item 3 stats: quintile covariance-correction term (D-04) + docstring fix
-- [x] 148-04-PLAN.md — Item 4 import: per-game normalization try/except + skip + aggregated Sentry (chess.com + lichess)
-
-### Phase 149: Retire & Prune
-
-**Goal:** Shrink the eval-pipeline surface before Phase 150 refactors it — delete the dead Gen-1 protocol and other dead weight, and land two small durability migrations, so Phase 150 consolidates 2 copies of the write path rather than 3.
-**Depends on:** Phase 148
-**Requirements:** PRUNE-01, PRUNE-02, PRUNE-03, PRUNE-04, PRUNE-05, PRUNE-06
+### Phase 151: Maia in the Browser + All-Position Surfaces
+**Goal**: Maia-3 runs live in-browser on the analysis board and, for every position, surfaces a "Moves by Rating" chart plus a Maia WDL eval bar on the LEFT of the board — standalone user value, and the live calibration gate that proves Maia is trustworthy enough to build on.
+**Depends on**: Nothing (first phase of the milestone; feasibility de-risked by spikes 004–006)
+**Requirements**: LIC-01, LIC-02, MAIA-01, MAIA-02, MAIA-03, MAIA-04, MAIA-05, MAIA-06, SURF-01, SURF-02, SURF-03, SURF-04, SURF-05, VALID-01
 **Success Criteria** (what must be TRUE):
+  1. Hands-on de-risking happens FIRST — the version-pinned `maia3_simplified.onnx` is obtained, its exact input encoding (board planes + how ELO is fed) and output tensor layout (policy 64×64 vs flat; WDL order) are confirmed against the reference client, and it loads via onnxruntime-web with no unsupported-op errors (MAIA-01, MAIA-06).
+  2. On any position, a "Moves by Rating" chart renders one probability line per candidate move across the ELO ladder, with a vertical "you are here" reference line at the player's rating-at-game-time, the played and engine-best moves emphasized, and the line set capped at top-N-by-peak ∪ {played, best} (SURF-01/02/03, MAIA-04).
+  3. A Maia WDL eval bar renders on the LEFT of the board and the Stockfish eval bar on the RIGHT, both shown live for every position and recomputing on every board navigation with no server round-trip (SURF-04/05).
+  4. Maia-3 runs entirely client-side — onnxruntime-web in a Web Worker, lazy-loaded only when the analysis board opens (never in the initial bundle) — with our own MIT glue (board→tensor, ELO input, legal-move masking, softmax) producing a normalized, deterministic per-legal-move distribution + WDL from a FEN + ELO, and nothing persists (ephemeral, board-session-scoped cache only) (MAIA-02/03/05).
+  5. The repo is relicensed to AGPL-3.0 and the app shows a visible Maia attribution + offer-source notice (link to the CSSLab source repo + AGPL license text + the model artifact) citing the Chessformer paper (LIC-01/02).
+  6. Maia's calibration is validated by eyeballing live output across representative positions, and download size + per-position latency are measured on desktop and mobile, before the feature is considered shippable — the ephemeral in-browser surface is itself the quality gate (VALID-01).
+**Plans**: TBD
+**UI hint**: yes
 
-  1. The dead Gen-1 eval protocol (`/lease` + `/submit` + `_apply_submit` + the worker's `_handle_full_ply_response` handler + `test_eval_worker_endpoints.py`) no longer exists in the codebase, `/flaw-blob-*` is untouched, and the full backend suite is green (PRUNE-01)
-  2. Dead code (tier-2 lane logic, `hashes_for_game`, the `chesscom_to_lichess` tables, `Game.needs_engine_full_evals`) is removed with no behavior change to any live path (PRUNE-02)
-  3. A malformed/unknown chess.com result surfaces as an explicit "unknown" outcome with a Sentry capture instead of silently scoring a draw, and every eval submit is tagged with `worker_schema_version` telemetry (PRUNE-03, PRUNE-04)
-  4. Concurrent duplicate imports for the same (user, platform) are rejected at the DB level via a durable `import_jobs` row created in the request handler plus a partial unique index (PRUNE-05)
-  5. A `worker_heartbeats` table (worker_id, version, last_seen, counts) is populated server-side from existing `X-Worker-Id` / submit fields, with zero worker-side change (PRUNE-06)
-
-**Plans:** 5/5 plans complete
-
-Plans:
-**Wave 1**
-
-- [x] 149-01-PLAN.md — Worker heartbeats table + upsert helper wired into all 3 live submit lanes + worker_schema_version telemetry (PRUNE-06, PRUNE-04) [wave 1]
-- [x] 149-02-PLAN.md — Unknown chess.com result → skip + Sentry capture instead of silent draw (PRUNE-03) [wave 1]
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 149-03-PLAN.md — Delete Gen-1 /lease+/submit+_apply_submit+worker handler + surgical Gen-1 test removal, after porting job_id/lichess coverage to the atomic lane (PRUNE-01) [wave 2]
-- [x] 149-04-PLAN.md — Remove dead weight: hashes_for_game, chesscom_to_lichess Table 3, Game.needs_engine_full_evals, TIER_AUTO_WINDOW (PRUNE-02) [wave 2]
-- [x] 149-05-PLAN.md — Durable import guard: partial unique index + move import_jobs INSERT into start_import with IntegrityError idempotency (PRUNE-05) [wave 2]
-
-### Phase 150: Consolidate Write Path
-
-**Goal:** Unify the copy-pasted eval write path into one code path — the Path A/B/C completion decision, the classify preamble, and the delete-then-insert flaw write all currently exist as verbatim copies, which produced FLAWCHESS-8D and the Phase 146/147 ungated-tag bugs. Consolidate in dependency order (R1 → R4 → R3 → R7) so each step shrinks the next; R5/R6 ride along.
-**Depends on:** Phase 149
-**Requirements:** WRITE-01, WRITE-02, WRITE-03, WRITE-04, WRITE-05, WRITE-06
+### Phase 152: Flaw Overlay (Pillars A + B)
+**Goal**: When the current move is a flaw, interpret it in human terms on top of the Phase 151 surfaces — a salience × trainability verdict banner plus a Maia-WDL practical-severity reframe of how bad the flaw really is.
+**Depends on**: Phase 151 (reuses the all-position "Moves by Rating" chart + Maia WDL eval bar)
+**Requirements**: FLAW-01, FLAW-02, FLAW-03, FLAW-04
 **Success Criteria** (what must be TRUE):
-
-  1. The Path A/B/C completion decision + guarded `eval_jobs` stamp lives in exactly one `apply_completion_decision()` function, replacing the 3 verbatim copies in `eval_drain.py` and `eval_remote.py` (WRITE-01)
-  2. The classify preamble (load positions + apply the in-memory post-move overlay + classify once per tick) runs through one shared implementation, replacing the 4 previously-repeated call sites (WRITE-02)
-  3. `_classify_and_fill_oracle` performs a per-ply diff/upsert instead of delete-then-insert, `_snapshot_preserved_flaw_blobs`/`_restore_preserved_flaw_blobs` are deleted, and an old-vs-new equivalence test proves identical output across the incremental-retry scenarios (WRITE-03)
-  4. Shared submit/tick orchestration lives in `app/services/eval_apply.py`, `eval_drain.py` is split into entry-lane / full-lane / shared-write-path modules, and the router no longer imports private drain helpers (WRITE-04)
-  5. `EnginePool` exposes one generic acquire/analyse/restart method replacing its 3 near-identical copies, and the tier-3/tier-4 Efraimidis-Spirakis lottery is a single parameterized implementation (WRITE-05, WRITE-06)
-
-**Plans:** 5/5 plans complete
-
-Plans:
-**Wave 1**
-
-- [x] 150-01-PLAN.md — WRITE-03 golden-snapshot equivalence harness: committed generator + 8 goldens from pristine HEAD + drift-check test (WRITE-03 prep) [wave 1]
-- [x] 150-02-PLAN.md — Ride-alongs: EnginePool generic acquire/analyse method + parameterized tier-3/tier-4 ES lottery (WRITE-05, WRITE-06) [wave 1]
-
-**Wave 2** *(blocked on 150-01)*
-
-- [x] 150-03-PLAN.md — Shrink prep: extract apply_completion_decision (R1, 2 copies) + unify overlay-parameterized classify preamble (R4) (WRITE-01, WRITE-02) [wave 2]
-
-**Wave 3** *(blocked on 150-03)*
-
-- [x] 150-04-PLAN.md — R3 per-ply diff/upsert + FLAW_BLOB_COLUMNS + delete snapshot/restore, proven by golden equivalence test (WRITE-03) [wave 3]
-
-**Wave 4** *(blocked on 150-04)*
-
-- [x] 150-05-PLAN.md — R7 module split: eval_apply.py + apply_full_eval, kill router private-import leak, entry/full lane split (WRITE-04) [wave 4]
+  1. When the current move is a flaw, a verdict banner overlays the chart with the salience × trainability quadrant call ("Growth edge — drill this" / "Even masters fall for this" / "You rarely err here" / above-your-level) (FLAW-01).
+  2. The verdict derives salience = `P(blunder move | your ELO)` and trainability = `P(blunder | your ELO) − P(blunder | top ELO)` as an endpoint difference from the stored curve — robust to non-monotonic (hump/U) curve shapes, never a local slope (FLAW-02).
+  3. The flaw carries a Maia-WDL practical-severity reframe alongside the objective Stockfish eval — the human win% reframes how bad the flaw is, with Stockfish staying the objective source of truth (FLAW-03).
+  4. Where Maia's calibration is not trustworthy for the relevant ELO bucket, the verdict is withheld rather than shown wrong (precision-first, consistent with the tactic-tag NULL-on-low-confidence stance) (FLAW-04).
+**Plans**: TBD
+**UI hint**: yes
 
 ## Backlog
 
@@ -223,6 +163,19 @@ Plans:
 *Phase 999.7 (LLM Endgame-Insights Statistical-Reasoning Rework) promoted to active Phase 102 (v1.23) on 2026-06-01 via `/gsd-explore`; shipped 2026-06-03.*
 
 *Phase 103 (Endgame report LLM prompt refinements) shipped 2026-06-03 as an unplanned follow-on under v1.23 — see the collapsed v1.23 block above and [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md).*
+
+<details>
+<summary>✅ v1.31 Pipeline Consolidation (Phases 148–150) — COMPLETE 2026-07-04 (prod deploy pending)</summary>
+
+Server-side-only consolidation (no worker protocol change, no fleet redeploy): retire the dead Gen-1 eval protocol and unify the copy-pasted eval write path so the pipeline threads through one code path instead of 3+, removing the seams that generated FLAWCHESS-8D and the Phase 146/147 ungated-tag bugs. Sourced from SEED-080 (Tier-A/B recommendations of `reports/pipeline-review-2026-07-04.md`). User-visible contract: **no behavior change**. Merged to `main`; prod deploy (`bin/deploy.sh`) is the next step.
+
+- [x] Phase 148: Pipeline & tactic correctness fixes (code-review 2026-07-02) (4/4 plans) — five silent-data-loss / production-only defects: deep-mate tag no-op + `fen_map` ep/castling corruption, entry-drain all-fail circuit breaker, quintile overlapping-cohort sig-test covariance term, per-game import normalization guard, entry-submit batch-scoping lease-expiry guard (SEED-080's hard prerequisite, grouped in retroactively) — completed 2026-07-04
+- [x] Phase 149: Retire & Prune (5/5 plans) — deleted the Gen-1 `/lease`+`/submit`+`_apply_submit`+worker handler & tests (after porting job_id/lichess coverage to the atomic lane; `/flaw-blob-*` retained), removed dead weight (`hashes_for_game`, `chesscom_to_lichess` Table-3, `Game.needs_engine_full_evals`, `TIER_AUTO_WINDOW`), explicit-unknown chess.com result + Sentry, `worker_schema_version` + `worker_heartbeats` telemetry, durable `import_jobs` concurrent-import guard — completed 2026-07-04
+- [x] Phase 150: Consolidate Write Path (5/5 plans) — `apply_completion_decision()` (3→1), `_classify_with_overlay` (4→1), per-ply diff/upsert replacing delete-then-insert (deleting the snapshot/restore compensation layer, proven byte-identical by a golden-snapshot harness across 8 scenarios), `app/services/eval_apply.py` + `eval_entry.py` split (`eval_drain.py` 3188 → 1074 lines, router private-helper leak gone), generic `EnginePool` acquire/analyse + parameterized ES lottery — completed 2026-07-04
+
+See [milestones/v1.31-ROADMAP.md](milestones/v1.31-ROADMAP.md) for full details.
+
+</details>
 
 <details>
 <summary>✅ v1.30 Forcing-Line Tactic Gate (Phases 141–147) — SHIPPED 2026-06-30</summary>

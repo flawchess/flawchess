@@ -5,7 +5,7 @@ planted: 2026-07-04
 planted_during: v1.30 closed / planning next milestone
 trigger_when: next /gsd-new-milestone (candidate milestone)
 scope: medium (browser-only interactive, ~2 phases; aggregate/DB deferred to a separate future milestone)
-source: /gsd-explore session 2026-07-04; .planning/research/maia-3-integration.md
+source: /gsd-explore session 2026-07-04; spikes 004-006; .planning/research/maia-3-integration.md
 ---
 
 # SEED-081: Maia-3 human-move enrichment of flaws (per-ELO trap/fix probabilities + practical WDL)
@@ -78,13 +78,23 @@ Pillar A ships as **two paired surfaces**, verdict + visual:
   - Frontend: Recharts (already in use), colors from `theme.ts`, WDL-consistent styling.
     Computed live from the same single Maia pass, so it's free and needs no persistence.
 
-The verdict is the takeaway; the chart is the evidence. Show both together in the board / flaw
-detail.
+The verdict is the takeaway; the chart is the evidence.
 
-**Pillar B — practical-severity reweighting** (from signal 3): Maia's human win% reframes how
-bad a flaw really is. A Stockfish −1.5 blunder that Maia says players your level still hold
-~50% from is *not* the same disaster as one that collapses practical chances. Stockfish eval
-stays the objective source of truth; Maia WDL adds a *practical* severity lens.
+> **Scope — chart everywhere, verdict on flaws (locked).** The **"Moves by Rating" chart is
+> shown for _every_ position** on the analysis board (Maia gives a move distribution for any
+> position — it's a general exploration/scouting tool: "how do players at each level handle
+> this?", with the game move vs Maia's top move highlighted). The **Pillar A verdict banner**
+> (salience × trainability) is an **overlay that only appears when the current move is a flaw**
+> — it needs a played-blunder + a best move to classify. So: chart = always; verdict = flaws.
+
+**Pillar B — practical-severity reweighting + Maia eval bar** (from signal 3): Maia's human
+win% reframes how bad a flaw really is — a Stockfish −1.5 blunder that Maia says players your
+level still hold ~50% from is *not* the same disaster as one that collapses practical chances.
+Stockfish eval stays the objective source of truth; Maia WDL adds a *practical* severity lens.
+Surface it as a **Maia WDL eval bar on the LEFT of the chessboard**, with the **Stockfish eval
+bar on the RIGHT — both shown simultaneously** for **all positions** (not just flaws). The two
+bars frame the product thesis on either side of the board: **left = human-practical (Maia WDL),
+right = engine-objective (Stockfish)**. "Engines are flawless, humans play FlawChess."
 
 **Pillar C — aggregate weakness rollup (DEFERRED, DB-GATED — NOT in this seed's scope)**: the
 original aspiration was to roll Pillars A + B across the user's whole history via
@@ -100,16 +110,17 @@ Maia's calibration is trustworthy enough to aggregate on. Parked, not deleted.
 
 **Browser-only. Nothing Maia-related is stored in the DB in this seed's scope.**
 
-- **What we build:** run Maia live in the **analysis board** only, computing Pillars **A** and
-  **B** **for the position currently on the board / the flaw being viewed**. The per-ELO curve,
-  the salience×trainability quadrant, and the WDL practical-severity lens are all derived on
-  demand and rendered in the board / flaw detail. **No DB writes.**
-- **Inference location — TBD by SPIKE-001 (see below).** Preferred: **client-side** (in-browser
-  ONNX/WASM, like the existing client-side Stockfish, SEED-012) — zero server load, but needs a
-  Chessformer→ONNX export path (unproven) and a resolved AGPL-in-MIT-frontend license question.
-  Fallback: a **synchronous backend inference endpoint** (PyTorch runs as-is, clean arm's-length
-  AGPL). **Not the remote worker fleet** — that's pull-based batch infra for *precompute*, unfit
-  for interactive latency; reusing it would force the parked precompute-every-flaw + DB path.
+- **What we build:** run Maia live in the **analysis board**, re-inferring on every board
+  navigation. **For all positions:** render the "Moves by Rating" chart + a Maia WDL eval bar
+  on the left of the board. **On flaw moves only:** overlay the salience×trainability verdict
+  and the practical-severity reframe. All derived on demand, in-memory. **No DB writes.**
+- **Inference location — RESOLVED by spikes 004–006: client-side (in-browser).** Maia-3 runs in
+  the browser via **onnxruntime-web** (WASM/WebGPU) — this is the model authors' own shipped
+  architecture (maiachess.com), a public **`maia3_simplified.onnx`** already exists, and we
+  already ship client-side Stockfish (SEED-012). Zero server load. **Fallback** (only if the
+  license nod fails): a **synchronous backend inference endpoint** (PyTorch as-is, arm's-length).
+  **Never the remote worker fleet** — it's pull-based batch infra for *precompute*, unfit for
+  interactive latency; reusing it would force the parked precompute-every-flaw + DB path.
 - **Cache is EPHEMERAL and board-session-scoped only.** No persistence of any kind. Rationale
   (locked): (a) cross-user hit rate outside opening theory is low — positions are too diverse
   to make a persistent hash cache pay off; (b) we will be **experimenting with different Maia
@@ -130,61 +141,129 @@ low-risk *if* the persist decision is made. That decision is not made here.
 ## Legal / integration constraint (non-negotiable)
 
 Maia-3 code **and** weights are **AGPL-3.0** (verified against the repo `LICENSE`; the
-"Apache 2.0" claim in secondary press is wrong — see report). FlawChess is **MIT**. Integrate
-**at arm's length**: run Maia as a **separate, unmodified UCI process / inference service** —
-identical governance to how we already run GPL-3.0 Stockfish via `python-chess`. **Never
-`import` the `maia3` package in-process into the FastAPI backend** (that makes the served
-backend a combined work and AGPL §13 would force the whole backend to AGPL). Keep it
-unmodified (any fine-tune triggers §13 publish-source obligations). Attribute + cite the
-Chessformer paper. Full analysis: `.planning/research/maia-3-integration.md`.
+"Apache 2.0" claim in secondary press is wrong — see report). FlawChess is **MIT**. Spike 005
+resolved how to stay MIT for the **chosen client-side** path — four conditions:
+
+1. Load the **unmodified** `maia3_simplified.onnx` as a **runtime data asset** via **MIT
+   onnxruntime-web** (loading a model *file* through a permissive runtime = data/aggregation,
+   not linking AGPL code).
+2. **Write our own MIT glue** (board encoding, ELO input, legal-move masking, softmax, chart).
+   **Never copy/bundle CSSLab's AGPL inference/encoding JS** — that would combine AGPL *source*
+   into the MIT frontend and force it to AGPL.
+3. Ship an **attribution + offer-source notice** (link CSSLab repo + AGPL text + the model) and
+   cite the Chessformer paper.
+4. Keep the model **unmodified** (any fine-tune → §13 publish-source; treat a fork as its own
+   AGPL project). Note §13's network clause is largely inert client-side (user runs it locally,
+   unmodified).
+
+**On the "legal nod" (low stakes — don't over-worry it).** Condition 1's "model-as-data ≠
+linking" reading is untested, but for a **free, already-open-source** project the practical
+risk is small: the worst case isn't liability, it's "the Maia-touching frontend is effectively
+AGPL for anyone *redistributing our code*" — and FlawChess's source is public anyway, and
+CSSLab distributes Maia precisely for tools like this. No formal lawyer is needed; it's a
+**license-posture choice**, made at build time. Three ways to make it a non-issue (pick one):
+
+- **(a) Relicense FlawChess to AGPL-3.0 — recommended, cleanest.** Zero ambiguity (AGPL-in-AGPL
+  is fine); it's exactly what lichess and Maia themselves use. Only downside: more restrictive
+  for third parties reusing *our* code — which barely matters for a hosted product whose value
+  is the service, not a library.
+- **(b) Keep MIT, ship under the reasonable interpretation** + the offer-source notice
+  (conditions 1–4). Worst case is a licensing-purity nuance for redistributors, not a liability
+  event.
+- **(c) Server-side arm's-length** — sidestep entirely: run Maia as a **separate, unmodified
+  process** (like our GPL Stockfish via `python-chess`); never `import maia3` in-process. Costs
+  server CPU/RAM + a round-trip; only worth it to keep MIT pristine.
+
+Not a blocker — decide (a)/(b)/(c) when the milestone starts. Full analysis: spike 005 +
+`.planning/research/maia-3-integration.md`.
 
 ## Suggested phase shape (for /gsd-new-milestone to refine)
 
-Browser-only. No DB writes. ~2 phases.
+Browser-only, client-side inference. No DB writes. ~2 phases.
 
-1. **Maia serving + interactive board** — arm's-length Maia UCI/inference service (start 5M or
-   23M on CPU), analysis-board integration showing the per-ELO move-probability curve + Maia
-   WDL for the current position, ephemeral session cache, attribution. Ships standalone value;
-   validates quality.
-2. **Live per-position Pillars A + B** — compute the salience×trainability quadrant and the WDL
-   practical-severity lens **live** for the position on the board / the flaw being viewed.
-   Render the paired **verbal verdict + "Moves by Rating" chart** (Recharts, per-move
-   probability lines over ELO, player's-ELO marker, blunder/best emphasized) plus the WDL
-   severity lens in the board and flaw detail. Still no persistence.
+1. **Maia in the browser + all-positions surfaces** — load `maia3_simplified.onnx` (smallest
+   Maia-3) via **onnxruntime-web** in a Web Worker, lazy-loaded only when the analysis board
+   opens (never in the initial bundle); our own MIT glue for board→tensor encoding, ELO input,
+   legal-move masking, softmax; ephemeral session cache; attribution notice. Re-run on every
+   board navigation and surface, **for every position**: the **"Moves by Rating" chart**
+   (Recharts — per-move probability lines over ELO, player's-ELO `ReferenceLine` marker, game
+   move vs Maia-top emphasized, top-N-by-peak ∪ {game move, best} cap) and a **Maia WDL eval
+   bar on the left of the board**. Chart shape/cap already prototyped — spike 006. Ships
+   standalone value; validates Maia quality live across all positions.
+2. **Flaw overlay — Pillars A + B verdict** — when the current move **is a flaw**, overlay the
+   salience×trainability **verdict banner** (Growth edge / Even masters fall for this / lapse /
+   above your level) on the chart, and apply the WDL **practical-severity** reframe to the flaw.
+   The chart + eval bar from Phase 1 are already there for all positions; this phase adds the
+   flaw-specific *interpretation* on top. Still no persistence.
 
 **Out of scope (separate future milestone, DB-gated):** Pillar C aggregate weakness rollup,
 `game_flaws` schema, flaw-node backfill, history-wide stats/LLM narration. Only revisit after
 Phase 1–2 prove Maia quality is trustworthy enough to justify persisting.
 
-## Open feasibility questions (must resolve before/early in the milestone)
+## Spike findings (spikes 004–006, 2026-07-04 — `.planning/spikes/`)
 
-Tracked in `.planning/research/questions.md` (Q-013…Q-016): per-move probability extraction
-from Maia's policy head at arbitrary positions/ELOs; Maia-WDL ↔ Stockfish-eval comparability;
-Maia-3 ELO range & low-rating calibration + whether the value head is ELO-conditioned;
-model-size vs latency/accuracy tradeoff for the interactive board and the eventual backfill
-cost. A `/gsd-spike` against the real `maia3` API is the natural way to close Q-013/Q-014
-before committing.
+Feasibility is settled; the milestone starts de-risked.
+
+- **004 VALIDATED — client-side Maia-3 works.** maiachess.com runs Maia in-browser via
+  onnxruntime-web (WASM/WebGPU); a public **`maia3_simplified.onnx`** already exists (no need to
+  export Chessformer ourselves). Rating-conditioned output gives exactly the per-ELO curve. The
+  arch (encoder transformer + GAB + 64×64 attention policy head + mean-pooled WDL head) exports
+  cleanly (the ONNX exists). Biggest technical unknown removed.
+- **005 PARTIAL — license viable, needs a nod.** Client-side AGPL bundling is not a kill; it's
+  shippable under the 4 conditions in the Legal section, resting on the untested
+  "model-as-data ≠ linking" reading → get a one-paragraph legal confirmation. Server-side
+  arm's-length is the safe-harbor fallback.
+- **006 VALIDATED — the chart reproduces.** Prototype (`.planning/spikes/006-.../index.html`)
+  renders the Ne4 hump + O-O mirror, the you-are-here marker, the top-N-by-peak ∪ {blunder,best}
+  cap, and the verdict+chart pairing. Production port to Recharts (already a dep) is mechanical.
+
+**Remaining hands-on items (do first in Phase 1, could not be done in-sandbox):**
+1. Obtain `maia3_simplified.onnx` (locate in maia-platform-frontend / its CDN); confirm exact
+   **input encoding** (board planes + how ELO is fed) and **output tensor layout** (policy
+   64×64 vs flat; WDL order).
+2. Measure **download size** + **per-position latency** (WASM vs WebGPU, desktop **and phone** —
+   PWA is mobile-first) and the cost of an ELO **sweep** for the full curve vs a single batched
+   call. Pick the model size accordingly.
+3. Confirm onnxruntime-web loads it with no unsupported-op errors.
+
+## Open feasibility questions (largely closed by the spikes)
+
+Tracked in `.planning/research/questions.md` (Q-013…Q-016). Status after spikes 004–006:
+**Q-013** (per-move probability extraction) — *mechanism confirmed* (the ONNX policy head gives
+it); remaining = the tensor-I/O contract in hands-on item 1. **Q-016** (model-size vs
+latency) — *narrowed* to hands-on item 2 (start smallest). **Q-014** (Maia-WDL ↔ Stockfish
+comparability) and **Q-015** (ELO range / low-rating calibration / is the value head
+ELO-conditioned) — *still open*, best answered by eyeballing live output in Phase 1 (the
+quality gate), not desk research.
 
 ## When to Surface
 
-**Trigger:** next `/gsd-new-milestone`. No hard code prerequisite. Being browser-only it does
-**not** touch `game_flaws` or the eval/worker write path, so it's largely independent of the
-in-flight pipeline work (Phase 149 retire/prune, SEED-080 consolidation) — the main shared
-concern is worker CPU/RAM headroom for the Maia inference service (see memory
-`project_prod_oom_cause_and_stockfish_capacity`).
+**Trigger:** next `/gsd-new-milestone`. No hard code prerequisite. Being browser-only with
+**client-side** inference it does **not** touch `game_flaws`, the eval/worker write path, or
+prod server CPU/RAM at all — fully independent of the in-flight pipeline work (Phase 149
+retire/prune, SEED-080 consolidation). The real constraints are client-side: **model download
+size** and **in-browser latency on mobile** (PWA is mobile-first). The only non-code decision
+is a **license posture** (relicense to AGPL / keep MIT under the reasonable reading / server-side
+arm's-length — see Legal section) — low-stakes for a free OSS project, decided at build time.
 
 ## Breadcrumbs
 
+- **Spikes 004–006** (`.planning/spikes/`, MANIFEST.md) — client-side feasibility VALIDATED,
+  license PARTIAL/conditional, chart prototype (`006-moves-by-rating-chart/index.html`).
 - `.planning/research/maia-3-integration.md` — license + technical integration report
-  (AGPL arm's-length pattern, PyTorch/UCI, 5M/23M/79M, WDL value head)
+  (AGPL, PyTorch/UCI, 5M/23M/79M, WDL value head)
 - Maia-3: https://github.com/CSSLab/maia3 · weights https://huggingface.co/UofTCSSLab
+- **Reference client impl** (authors run Maia in-browser via onnxruntime-web):
+  https://github.com/CSSLab/maia-platform-frontend — source the `maia3_simplified.onnx` +
+  its board/ELO encoding here.
 - Existing grain to reuse: `game_flaws` (both players' flaws, per ply — memory
   `game_flaws_both_players_scope`), rating-at-game-time basis (memory
   `eval_completion_columns` / benchmark rating-lag note), `apply_game_filters()`,
   Stockfish-as-separate-UCI precedent, LLM insight infra.
 - Related seeds: SEED-037 (spaced-repetition blunder drills — Pillar A quadrant is a natural
   drill-selection signal), SEED-012/066 (client-side / live engine analysis — Maia could ride
-  the same board surface).
+  the same board surface), **SEED-082 (human-playable-line engine — Maia-filtered Stockfish;
+  depends on this seed's Maia infra; a later milestone)**.
 
 ## Notes
 

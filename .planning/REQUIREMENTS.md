@@ -1,88 +1,103 @@
-# Requirements: v1.31 Pipeline Consolidation
+# Requirements: FlawChess — v1.32 Maia-3 Human-Move Enrichment
 
-**Milestone goal:** Retire the dead Gen-1 eval protocol and unify the copy-pasted eval write path so new pipeline work threads through one code path instead of 3+, removing the seams that generated FLAWCHESS-8D and the Phase 146/147 ungated-tag bugs. Server-side only — no worker protocol change, no fleet redeploy.
+**Defined:** 2026-07-04
+**Core Value:** Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games — now extended on the analysis board with a *human*-model second opinion: what a player at your rating would actually do, and how bad your flaws are in *practical* (not just objective) terms.
 
-**Source:** SEED-080 (Tier-A/B recommendations of `reports/pipeline-review-2026-07-04.md`). R-numbers below reference that review's recommendation list.
+**Source:** SEED-081 (design locked in a 2026-07-04 `/gsd-explore` session; feasibility settled by spikes 004–006). Browser-only, client-side onnxruntime-web inference, **zero DB writes**.
 
-**Scope note:** These are engineering-correctness/consolidation requirements, not user-facing capabilities, so they are phrased as observable code/behavior guarantees rather than "User can X". The milestone's user-visible contract is *no behavior change* — the pipeline produces identical eval/flaw/tag results through a smaller, single-path implementation.
+## v1 Requirements
 
----
+Requirements for this milestone. Each maps to a roadmap phase (151 or 152).
 
-## v1.31 Requirements
+### Licensing (LIC)
 
-### Correctness fixes — Phase 148 (already shipped)
+- [ ] **LIC-01**: FlawChess is relicensed from MIT to **AGPL-3.0** — `LICENSE` replaced, and README / package metadata / any license references updated to reflect AGPL.
+- [ ] **LIC-02**: The app shows a visible **attribution + offer-source notice** for Maia-3 (link to the CSSLab source repo + AGPL license text + the model artifact) and cites the Chessformer paper.
 
-Five silent-data-loss / production-only-correctness defects from the 2026-07-02 code review. SEED-080's hard prerequisite (edits the same files as Phase 1/2); grouped into this milestone retroactively. All validated and shipped.
+### Maia Serving (MAIA)
 
-- [x] **CORR-01**: A deep forced mate is tagged — a truncated forced-mate PV (`has_forced_mate` set, PV capped before `is_checkmate()`) tags generic `mate` instead of the pre-fix no-op that dropped the tag entirely
-- [x] **CORR-02**: Tactic PV replay preserves en-passant/castling state — the detector's `fen_map` carries full board FEN internally so ep/castling positions parse and replay correctly, while the persisted `game_flaws.fen` stays piece-placement-only (API contract unchanged)
-- [x] **CORR-03**: The entry-ply eval drain does not stamp `evals_completed_at` on an all-fail (dead-pool) tick — an added circuit breaker withholds the completion marker when every eval in the tick fails
-- [x] **CORR-04**: The endgame quintile significance test corrects for overlapping cohorts — no false "significant" verdicts from treating overlapping quintile cohorts as independent
-- [x] **CORR-05**: A single malformed platform game no longer aborts the whole import — per-game normalization is guarded so one bad game is skipped, not fatal
-- [x] **CORR-06**: The entry-submit endpoint enforces a batch-scoping minimum guard so a sparse/partial submit cannot silently under-scope its target set
+- [ ] **MAIA-01**: The unmodified `maia3_simplified.onnx` is obtained, **version-pinned**, and loaded as a runtime data asset; its exact input encoding (board planes + how ELO is fed) and output tensor layout (policy 64×64 vs flat; WDL order) are confirmed against the reference client.
+- [ ] **MAIA-02**: onnxruntime-web runs the model in a **Web Worker**, **lazy-loaded only when the analysis board opens** — never in the initial app bundle.
+- [ ] **MAIA-03**: Our own glue (board→tensor encoding, ELO input, **legal-move masking**, softmax) produces a **normalized, deterministic per-legal-move probability distribution** for a given FEN + ELO. No AGPL inference/encoding JS is copied or bundled.
+- [ ] **MAIA-04**: A single forward pass (or an efficient ELO sweep) yields the **full per-ELO probability curve** across the rating ladder for every legal move, plus the position's **Maia WDL** value; the player's ELO is derived from **rating at game time** (`games.white_rating` / `games.black_rating`).
+- [ ] **MAIA-05**: The inference cache is **ephemeral and board-session-scoped only** — no persistence of any kind (no DB, no localStorage of Maia artifacts).
+- [ ] **MAIA-06**: Download size and **per-position latency are measured on desktop and mobile** (WASM vs WebGPU; single call vs ELO sweep), a model size is chosen against a board-response target, and the model is confirmed to load with **no unsupported-op errors**.
 
-### Phase 1 — Retire & Prune
+### All-Position Surfaces (SURF)
 
-Independent low-risk deletions + two small migrations. Shrink the surface before refactoring so Phase 2 consolidates 2 copies rather than 3.
+- [ ] **SURF-01**: For **every position** on the analysis board, a **"Moves by Rating" chart** (Recharts, `theme.ts` colors) renders one probability line per candidate move over the ELO ladder.
+- [ ] **SURF-02**: The chart marks the **player's ELO with a vertical "you are here" reference line** and visually emphasizes the **played move** and the **engine-best move**.
+- [ ] **SURF-03**: The chart's line set is capped at **top-N-by-peak probability** (default N ≈ 6), **always unioned with {played move, engine-best move}** even when they fall outside the top-N.
+- [ ] **SURF-04**: A **Maia WDL eval bar** renders on the **LEFT** of the board and the **Stockfish eval bar** on the **RIGHT**, both shown simultaneously for **all positions** (human-practical left, engine-objective right).
+- [ ] **SURF-05**: The chart and Maia bar **re-compute live on every board navigation**, in-memory, with no server round-trip.
 
-- [x] **PRUNE-01** (R2): The dead Gen-1 protocol is deleted — `/lease` + `/submit` endpoints + `_apply_submit` (`eval_remote.py`), the worker `_handle_full_ply_response` handler (`remote_eval_worker.py`), and the associated `test_eval_worker_endpoints.py` tests are removed; `/flaw-blob-*` is retained (tier-4 backfill actively draining). Prod traffic confirmed zero legacy hits before deletion.
-- [x] **PRUNE-02** (R12): Dead weight is removed — tier-2 lane code (the DB column is kept), `hashes_for_game` (`zobrist.py`), the `chesscom_to_lichess` future-use tables, and the caller-less `Game.needs_engine_full_evals` hybrid
-- [x] **PRUNE-03** (R13): `_normalize_chesscom_result`'s silent-draw fallback is replaced with an explicit "unknown" result + a Sentry capture, so a malformed/unknown result is surfaced rather than silently scored as a draw
-- [x] **PRUNE-04** (R11): `worker_schema_version` is recorded on submits as telemetry (log/tag only — no 426 rejection gate yet), giving fleet-version visibility
-- [x] **PRUNE-05** (R8): The import-job guard is durable — the `import_jobs` row is created in the request handler and a partial unique index on `(user_id, platform) WHERE status IN ('pending','in_progress')` prevents concurrent duplicate imports at the DB level
-- [x] **PRUNE-06** (R15): A `worker_heartbeats` table (worker_id, version, last_seen, counts) is populated server-side from the existing `X-Worker-Id` / submit fields — no worker-side change
+### Flaw Overlay (FLAW)
 
-### Phase 2 — Consolidate Write Path
+- [ ] **FLAW-01**: When the current move **is a flaw**, a **verdict banner** overlays the chart with the salience × trainability quadrant call ("Growth edge — drill this" / "Even masters fall for this" / "You rarely err here" / above-your-level).
+- [ ] **FLAW-02**: The verdict derives **salience** = `P(blunder move | your ELO)` and **trainability** = `P(blunder | your ELO) − P(blunder | top ELO)` from the stored curve — an **endpoint** difference, robust to non-monotonic (hump/U) curve shapes, never a local slope.
+- [ ] **FLAW-03**: The **Maia-WDL practical-severity reframe** is applied to the flaw — the human win% reframes how bad the flaw is relative to the objective Stockfish eval (Stockfish stays the objective source of truth; Maia adds the practical lens).
+- [ ] **FLAW-04**: **Precision-first fallback** — where Maia's calibration is not trustworthy for the relevant ELO bucket, the verdict is **withheld** rather than shown wrong (consistent with the tactic-tag NULL-on-low-confidence stance).
 
-Dependency chain, in order. R1/R4 first shrink R3 and R7.
+### Validation Gate (VALID)
 
-- [x] **WRITE-01** (R1): The Path A/B/C completion decision + guarded `eval_jobs` stamp is extracted into one `apply_completion_decision()`, replacing the 3 verbatim copies (`eval_drain.py`, `eval_remote.py` ×2)
-- [x] **WRITE-02** (R4): The classify preamble is unified — positions loaded + in-memory post-move overlay applied + classify run once per tick, replacing the 4 repeated sites (`_flaw_engine_plies`, `_missing_flaw_pv_targets`, `_build_flaw_multipv2_blobs`, `_derive_atomic_sentinel_lines`)
-- [x] **WRITE-03** (R3): `_classify_and_fill_oracle` replaces delete-then-insert with a per-ply diff/upsert, and `_snapshot_preserved_flaw_blobs` / `_restore_preserved_flaw_blobs` are deleted; an old-vs-new equivalence test across the incremental-retry scenarios proves identical output
-- [x] **WRITE-04** (R7): Shared submit/tick orchestration is extracted into `app/services/eval_apply.py`, `eval_drain.py` is split (entry lane / full lane / shared write path), and the router no longer imports private drain helpers
-- [x] **WRITE-05** (R5): `EnginePool` exposes one generic acquire/analyse/restart method, replacing the 3 near-identical copies (ride-along on Phase 2)
-- [x] **WRITE-06** (R6): The tier-3 / tier-4 Efraimidis–Spirakis lottery is parameterized into a single shared implementation (ride-along on Phase 2)
+- [ ] **VALID-01**: Maia's **calibration is validated by eyeballing live output** across representative positions before the feature is considered shippable — Maia-WDL ↔ Stockfish comparability (Q-014) and low/high-ELO calibration + platform-rating mapping (Q-015) answered live, since the ephemeral in-browser surface *is* the quality gate.
 
----
+## v2 Requirements
 
-## Future Requirements (deferred)
+Deferred to a future, persistence-gated milestone. Tracked, not in this roadmap.
 
-- **R14** — tier-3 lease (double-claim hardening). Owned by SEED-072, deferred to a later milestone.
-- **SEED-078** — full eval-result streaming. Separate trigger, out of this milestone.
-- **SEED-077** — deferred, separate trigger.
-- **R9** — entry-drain all-fail circuit breaker. Already delivered in Phase 148 (CORR-03), so not a Phase 1/2 item.
+### Aggregate Rollup — Pillar C (AGG)
 
-## Out of Scope (explicit exclusions)
+- **AGG-01**: History-wide rollup of per-flaw salience/trainability across the user's games via `apply_game_filters()` to surface systematic level-relative weaknesses ("you commit high-trainability traps 2× the Maia baseline for your level").
+- **AGG-02**: Persist the per-ELO curve + derived Maia signals (`game_flaws` schema + flaw-node backfill — a single deterministic Maia forward pass per flaw decision node).
 
-- **Merging the entry lane and full lane** — review §7 "not recommended"; the two lanes have genuinely different latency/priority contracts.
-- **Changing the post-move eval convention** — load-bearing across every source; a rewrite reopens the SEED-044 off-by-one risk for no consolidation gain.
-- **Queue/broker rewrite** — the SKIP-LOCKED tiered queue is sound; replacing it is a different, larger project.
-- **Any worker protocol change / fleet redeploy** — the whole milestone is server-side by design; the fleet is confirmed on atomic-lease/submit.
-- **Client-facing behavior change** — the pipeline's eval/flaw/tag outputs must be byte-identical through the consolidated path.
+### Human-Playable-Line Engine (HPL)
 
----
+- **HPL-01**: SEED-082 — Maia-filtered Stockfish surfacing the strongest *human-plausible* line at a target ELO (depends on this milestone's Maia serving layer).
+
+## Out of Scope
+
+Explicitly excluded for this milestone.
+
+| Feature | Reason |
+|---------|--------|
+| Any DB write / persistence of Maia signals | Locked browser-only design; ephemeral cache is the calibration quality gate; model size still being chosen, so a persisted artifact keyed to it is a migration liability |
+| Pillar C aggregate weakness rollup | Impossible without persistence (can't aggregate values that only existed live); a separate future decision (AGG, v2) |
+| `game_flaws` schema change / flaw-node backfill | Persistence-gated; not needed for the live browser feature |
+| Server-side / remote-worker Maia inference | Resolved to client-side (spikes 004–006); the remote fleet is pull-based batch precompute, unfit for interactive latency. Server-side backend endpoint kept only as a documented fallback if client-side proves unviable |
+| SEED-082 human-playable-line engine | Depends on this milestone's Maia infra; a later milestone |
+| Maia model fine-tuning / modification | Any modification triggers AGPL §13 publish-source and forks the model into its own project; the model stays unmodified |
 
 ## Traceability
 
+Provisional mapping (finalized by the roadmapper).
+
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CORR-01 | Phase 148 | Complete |
-| CORR-02 | Phase 148 | Complete |
-| CORR-03 | Phase 148 | Complete |
-| CORR-04 | Phase 148 | Complete |
-| CORR-05 | Phase 148 | Complete |
-| CORR-06 | Phase 148 | Complete |
-| PRUNE-01 | Phase 149 | Complete |
-| PRUNE-02 | Phase 149 | Complete |
-| PRUNE-03 | Phase 149 | Complete |
-| PRUNE-04 | Phase 149 | Complete |
-| PRUNE-05 | Phase 149 | Complete |
-| PRUNE-06 | Phase 149 | Complete |
-| WRITE-01 | Phase 150 | Complete |
-| WRITE-02 | Phase 150 | Complete |
-| WRITE-03 | Phase 150 | Complete |
-| WRITE-04 | Phase 150 | Complete |
-| WRITE-05 | Phase 150 | Complete |
-| WRITE-06 | Phase 150 | Complete |
+| LIC-01 | Phase 151 | Pending |
+| LIC-02 | Phase 151 | Pending |
+| MAIA-01 | Phase 151 | Pending |
+| MAIA-02 | Phase 151 | Pending |
+| MAIA-03 | Phase 151 | Pending |
+| MAIA-04 | Phase 151 | Pending |
+| MAIA-05 | Phase 151 | Pending |
+| MAIA-06 | Phase 151 | Pending |
+| SURF-01 | Phase 151 | Pending |
+| SURF-02 | Phase 151 | Pending |
+| SURF-03 | Phase 151 | Pending |
+| SURF-04 | Phase 151 | Pending |
+| SURF-05 | Phase 151 | Pending |
+| VALID-01 | Phase 151 | Pending |
+| FLAW-01 | Phase 152 | Pending |
+| FLAW-02 | Phase 152 | Pending |
+| FLAW-03 | Phase 152 | Pending |
+| FLAW-04 | Phase 152 | Pending |
 
-Coverage: 18/18 v1.31 requirements mapped. No orphans.
+**Coverage:**
+- v1 requirements: 18 total
+- Mapped to phases: 18
+- Unmapped: 0 ✓
+
+---
+*Requirements defined: 2026-07-04*
+*Last updated: 2026-07-04 after initial definition (SEED-081, research skipped — feasibility settled by spikes 004–006)*

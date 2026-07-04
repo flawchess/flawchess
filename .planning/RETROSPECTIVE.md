@@ -4,6 +4,46 @@
 
 > Note: v1.18, v1.19, v1.20, v1.23, v1.25, and v1.27 closes did not add retrospective sections (only the ROADMAP archives + MILESTONES entries were written). Not backfilled here to avoid reconstructing reflections after the fact; their facts live in the corresponding `milestones/v1.XX-ROADMAP.md` and `MILESTONES.md`.
 
+## Milestone: v1.31 — Pipeline Consolidation
+
+**Completed:** 2026-07-04 (merged to `main`; prod deploy pending)
+**Phases:** 3 (148, 149, 150) | **Plans:** 14
+
+### What Was Built
+
+A server-side-only consolidation of the eval pipeline (SEED-080, from `reports/pipeline-review-2026-07-04.md`). Phase 148 fixed five 2026-07-02 code-review correctness defects (SEED-080's hard prerequisite: deep-mate tag no-op, `fen_map` ep/castling corruption, entry-drain all-fail circuit breaker, quintile overlapping-cohort sig-test, per-game import guard, entry-submit batch-scoping guard). Phase 149 retired the dead Gen-1 `/lease`+`/submit` protocol + dead weight, replaced the silent-draw chess.com fallback with an explicit unknown+Sentry, and added `worker_heartbeats`/`worker_schema_version` telemetry + a durable `import_jobs` concurrent-import guard. Phase 150 consolidated the copy-pasted write path: `apply_completion_decision()` (3→1), `_classify_with_overlay` (4→1), a per-ply diff/upsert replacing delete-then-insert (deleting the snapshot/restore compensation layer that generated FLAWCHESS-8D), extracted into `eval_apply.py` + `eval_entry.py` (`eval_drain.py` 3188 → 1074 lines). User-visible contract: no behavior change.
+
+### What Worked
+
+- **Retire-before-consolidate ordering** (149 → 150) paid off directly: deleting the Gen-1 protocol and dead weight first meant Phase 150 collapsed 2 copies of the write path, not 3 — the risky R3 authoritative-write rewrite got smaller before it was touched.
+- **A golden-snapshot equivalence harness** (150-01: 8 fixtures captured from pristine pre-refactor HEAD + a regenerate-and-diff test) was the right gate for a load-bearing authoritative-write rewrite — it proved byte-identical output across every incremental-retry scenario and caught a real preservation bug (scenario 5, `already_blobbed_plies`) before it shipped.
+- **Prod-traffic-zero evidence before deletion** — the 11.3h `/lease`+`/submit` grep + porting the only end-to-end job_id/lichess coverage to the atomic lane made the Gen-1 removal safe rather than hopeful.
+- **Fixing the delete-then-insert seam at the source** (per-ply diff/upsert) retired the whole `_snapshot`/`_restore` compensation layer that had generated FLAWCHESS-8D and the Phase 146/147 ungated-tag bugs — the consolidation was also a correctness win, not just tidiness.
+
+### What Was Inefficient
+
+- **Plan-vs-artifact drift on fixture counts** (150-01 documented "8 goldens" but produced 7; the plan's own artifact list said 7) required a reconciliation mid-execution — a reminder that a plan's prose and its concrete-artifacts list must agree.
+- **The R7 module split left one deliberate residual** (`_load_pgns_for_games` still imported by the router) — a clean "router imports zero private drain helpers" target ended at "one narrow, flagged exception," because that symbol opens its own session unlike the other 14.
+
+### Patterns Established
+
+- **Golden-snapshot equivalence harness for a zero-behavior-change refactor**: capture outputs from pristine HEAD as committed fixtures, then a regenerate-and-diff drift test drives the real production entry point — the safe way to rewrite a load-bearing write path.
+- **One constant drives the diff** (`FLAW_BLOB_COLUMNS`): a per-ply 4-way diff/upsert keyed off a single column list makes blob/tag preservation native to the write instead of a caller-side compensation step.
+- **Durable guard row + partial unique index over an in-memory check** to close a TOCTOU race at the DB level, with `IntegrityError` idempotency returning the existing job (import concurrency).
+
+### Key Lessons
+
+- A "consolidate the copy-paste" milestone is really a **correctness milestone** — the verbatim copies were where FLAWCHESS-8D and the ungated-tag bugs lived; unifying them removes the class of bug, not just the duplication.
+- **Shrink the surface before refactoring it**: deleting dead code first (Phase 149) is the cheapest way to de-risk the hard refactor (Phase 150) — fewer copies to keep in sync, smaller blast radius.
+- For a load-bearing authoritative write, **gate the rewrite on an equivalence proof, not just a green suite** — the golden harness caught a preservation bug the existing tests missed.
+
+### Cost Observations
+
+- Net-neutral diff (+6,579 / −6,156) is the signature of a healthy consolidation: `eval_drain.py` alone shrank 3188 → 1074 lines while behavior stayed identical.
+- Clean 3-phase execution with no inserted decimal phases and no post-ship hardening quick-tasks (contrast v1.30) — the internal-refactor scope with concrete review-supplied file/line targets planned and executed predictably.
+
+---
+
 ## Milestone: v1.30 — Forcing-Line Tactic Gate
 
 **Shipped:** 2026-06-30

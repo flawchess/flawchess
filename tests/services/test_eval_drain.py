@@ -1288,6 +1288,70 @@ class TestOpeningEvalCacheWrite:
         finally:
             await _delete_opening_eval_rows(drain_test_session_maker, [_CACHE_HASH_A])
 
+    async def test_transposition_duplicate_full_hash_deduped(
+        self,
+        drain_test_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """FLAWCHESS-8E: two plies reaching the same position must not crash the upsert.
+
+        A single game can reach the same board position at two different plies (a
+        transposition or repetition). Both plies produce a cache row with the same
+        full_hash, and Postgres rejects INSERT ... ON CONFLICT when two proposed rows
+        share the conflict key (CardinalityViolationError). The upsert must collapse
+        duplicates and prefer a pv-bearing row so the pv backfill still works.
+        """
+        from app.services.eval_drain import _upsert_opening_cache, _FullPlyEvalTarget
+        from app.models.opening_position_eval import OpeningPositionEval
+        import chess
+
+        board = chess.Board()
+        # Two targets at different plies but the SAME full_hash (the transposition).
+        t_first = _FullPlyEvalTarget(
+            game_id=99999,
+            ply=2,
+            full_hash=_CACHE_HASH_A,
+            board=board,
+            eval_cp=None,
+            eval_mate=None,
+        )
+        t_second = _FullPlyEvalTarget(
+            game_id=99999,
+            ply=6,
+            full_hash=_CACHE_HASH_A,
+            board=board,
+            eval_cp=None,
+            eval_mate=None,
+        )
+        # First occurrence has no pv; second carries one — dedup must keep the pv row.
+        result_map: dict[int, tuple[int | None, int | None, str | None, str | None]] = {
+            2: (55, None, "e2e4", None),
+            6: (55, None, "e2e4", "e2e4 e7e5"),
+        }
+        await _delete_opening_eval_rows(drain_test_session_maker, [_CACHE_HASH_A])
+
+        try:
+            async with drain_test_session_maker() as session:
+                # Must not raise CardinalityViolationError.
+                await _upsert_opening_cache(session, [t_first, t_second], result_map)
+                await session.commit()
+
+            async with drain_test_session_maker() as session:
+                row = (
+                    await session.execute(
+                        select(
+                            OpeningPositionEval.eval_cp,
+                            OpeningPositionEval.best_move,
+                            OpeningPositionEval.pv,
+                        ).where(OpeningPositionEval.full_hash == _CACHE_HASH_A)
+                    )
+                ).one_or_none()
+
+            assert row is not None, "transposition position must be cached exactly once"
+            assert row[0] == 55, f"eval_cp wrong: {row[0]}"
+            assert row[2] == "e2e4 e7e5", f"dedup must prefer the pv-bearing row, got pv={row[2]!r}"
+        finally:
+            await _delete_opening_eval_rows(drain_test_session_maker, [_CACHE_HASH_A])
+
 
 # ─── Phase 145 Plan 03: _build_flaw_blob_lease_positions tests ────────────────
 #
