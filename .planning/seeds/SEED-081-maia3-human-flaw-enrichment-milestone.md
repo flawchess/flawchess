@@ -91,9 +91,10 @@ The verdict is the takeaway; the chart is the evidence.
 win% reframes how bad a flaw really is — a Stockfish −1.5 blunder that Maia says players your
 level still hold ~50% from is *not* the same disaster as one that collapses practical chances.
 Stockfish eval stays the objective source of truth; Maia WDL adds a *practical* severity lens.
-Surface it as a **Maia eval bar on the left side of the chessboard** (WDL human win%, analogous
-to a Stockfish eval bar), shown for **all positions** — not just flaws. (If a Stockfish eval bar
-is also present, the Maia bar is a distinct, human-practical companion to it, not a replacement.)
+Surface it as a **Maia WDL eval bar on the LEFT of the chessboard**, with the **Stockfish eval
+bar on the RIGHT — both shown simultaneously** for **all positions** (not just flaws). The two
+bars frame the product thesis on either side of the board: **left = human-practical (Maia WDL),
+right = engine-objective (Stockfish)**. "Engines are flawless, humans play FlawChess."
 
 **Pillar C — aggregate weakness rollup (DEFERRED, DB-GATED — NOT in this seed's scope)**: the
 original aspiration was to roll Pillars A + B across the user's whole history via
@@ -155,10 +156,25 @@ resolved how to stay MIT for the **chosen client-side** path — four conditions
    AGPL project). Note §13's network clause is largely inert client-side (user runs it locally,
    unmodified).
 
-Condition 1's "model-as-data ≠ linking" reading is **untested law** → get a one-paragraph
-**legal nod before shipping**. **Fallback if counsel balks:** server-side arm's-length — run
-Maia as a **separate, unmodified process** (like our GPL Stockfish via `python-chess`); never
-`import maia3` in-process into the MIT backend. Full analysis: spike 005 +
+**On the "legal nod" (low stakes — don't over-worry it).** Condition 1's "model-as-data ≠
+linking" reading is untested, but for a **free, already-open-source** project the practical
+risk is small: the worst case isn't liability, it's "the Maia-touching frontend is effectively
+AGPL for anyone *redistributing our code*" — and FlawChess's source is public anyway, and
+CSSLab distributes Maia precisely for tools like this. No formal lawyer is needed; it's a
+**license-posture choice**, made at build time. Three ways to make it a non-issue (pick one):
+
+- **(a) Relicense FlawChess to AGPL-3.0 — recommended, cleanest.** Zero ambiguity (AGPL-in-AGPL
+  is fine); it's exactly what lichess and Maia themselves use. Only downside: more restrictive
+  for third parties reusing *our* code — which barely matters for a hosted product whose value
+  is the service, not a library.
+- **(b) Keep MIT, ship under the reasonable interpretation** + the offer-source notice
+  (conditions 1–4). Worst case is a licensing-purity nuance for redistributors, not a liability
+  event.
+- **(c) Server-side arm's-length** — sidestep entirely: run Maia as a **separate, unmodified
+  process** (like our GPL Stockfish via `python-chess`); never `import maia3` in-process. Costs
+  server CPU/RAM + a round-trip; only worth it to keep MIT pristine.
+
+Not a blocker — decide (a)/(b)/(c) when the milestone starts. Full analysis: spike 005 +
 `.planning/research/maia-3-integration.md`.
 
 ## Suggested phase shape (for /gsd-new-milestone to refine)
@@ -226,8 +242,9 @@ quality gate), not desk research.
 **client-side** inference it does **not** touch `game_flaws`, the eval/worker write path, or
 prod server CPU/RAM at all — fully independent of the in-flight pipeline work (Phase 149
 retire/prune, SEED-080 consolidation). The real constraints are client-side: **model download
-size** and **in-browser latency on mobile** (PWA is mobile-first). One prerequisite worth
-getting before planning: the **legal nod** on client-side AGPL bundling (spike 005).
+size** and **in-browser latency on mobile** (PWA is mobile-first). The only non-code decision
+is a **license posture** (relicense to AGPL / keep MIT under the reasonable reading / server-side
+arm's-length — see Legal section) — low-stakes for a free OSS project, decided at build time.
 
 ## Breadcrumbs
 
