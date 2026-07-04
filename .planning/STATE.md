@@ -2,28 +2,29 @@
 gsd_state_version: 1.0
 milestone: v1.31
 milestone_name: Pipeline Consolidation
-current_phase: 150
-current_phase_name: Consolidate Write Path
-status: Phase 149 shipped — squash-merged to main (local)
-stopped_at: Phase 149 context gathered
-last_updated: "2026-07-04T13:58:59.292Z"
+current_phase: 999.1
+current_phase_name: BACKLOG
+status: verifying
+stopped_at: Phase 150 context gathered
+last_updated: "2026-07-04T17:44:16.145Z"
 last_activity: 2026-07-04
+last_activity_desc: Phase 150 complete, transitioned to Phase 999.1
 progress:
   total_phases: 3
-  completed_phases: 2
-  total_plans: 9
-  completed_plans: 9
-  percent: 67
+  completed_phases: 3
+  total_plans: 14
+  completed_plans: 14
+  percent: 100
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 150 — Consolidate Write Path
+Phase: 999.1 — Password Reset (BACKLOG)
 Plan: Not started
-Status: Phase 149 shipped — squash-merged to main (local)
-Last activity: 2026-07-04
+Status: Phase complete — ready for verification
+Last activity: 2026-07-04 — Phase 150 complete, transitioned to Phase 999.1
 
 ## Project Reference
 
@@ -130,6 +131,19 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 149]: Durable import_jobs INSERT moved from _bootstrap_import_job (background task) into start_import (before asyncio.create_task) — closes the actual TOCTOU race per RESEARCH Pitfall 3
 - [Phase 149]: IntegrityError from the partial unique index is caught, rolled back, and returns the existing active job with 200 — never capture_exception'd (expected race, not a bug)
 - [Phase 149]: Added discard_job() to remove the losing request's orphaned in-memory JobState — Rule 1 auto-fix, not in the original plan text
+- [Phase ?]: 150-01: All 7 write-path golden scenarios drive _apply_atomic_submit directly (the single stable production entry point) rather than _full_drain_tick, since both call the same _classify_and_fill_oracle and _apply_atomic_submit already runs with blobs_pending=True
+- [Phase ?]: 150-01: Golden fixtures are 7, not 8 -- plan-authoring inconsistency reconciled against the plan's own concrete artifacts list and RESEARCH.md's scenario table (flip-IN is item 4 of 7, not an 8th scenario)
+- [Phase ?]: 150-01: gen_write_path_golden.py spins up its own ephemeral per-run test DB by reusing tests/conftest.py's private template-clone/drop helpers directly, avoiding any dependency on bin/reset_db.sh or a persistent flawchess_test database
+- [Phase ?]: 150-02: EnginePool._acquire_and_analyse keeps the plan's union return type (InfoDict | list[InfoDict] | None); callers narrow via isinstance(result, list) rather than @overload (no @overload precedent in codebase)
+- [Phase ?]: 150-02: _es_weighted_game_pick base query is FROM games g alone (no JOIN); tier-3 residual fallback's old JOIN users is_guest=false became an equivalent EXISTS subquery (1:1 FK, no cardinality change), paired user_id fetched via one cheap PK lookup
+- [Phase ?]: 150-02: extra_params: dict[str, Any] | None = None added to _es_weighted_game_pick to bind :picked_user without breaking sa.text bound-params discipline
+- [Phase ?]: 150-03: R1 apply_completion_decision threads source into the Path-C callback signature so the router's callback can set the Sentry tag from the parameter instead of a second hardcoded literal
+- [Phase ?]: 150-03: R4 _classify_with_overlay takes the caller's own session (not a positions_loader callable) — preserves the real session-lifecycle difference between the 3 sites and _flaw_engine_plies
+- [Phase ?]: 150-04: already_blobbed_plies (allowed_pv_lines IS NOT NULL) gates preservation, not merely existing_plies -- caught by the golden equivalence test (scenario 5) before the fix
+- [Phase ?]: 150-04: PV-line blob write folded into _classify_and_fill_oracle itself (filtered to skip preserve-plies) instead of a separate caller-side _run_multipv2_pass call, so a preserved ply's blob is never even written a D-06 [] sentinel to begin with; _run_multipv2_pass deleted as dead code
+- [Phase ?]: 150-05: apply_full_eval takes caller-owned write_session (no internal open/commit) so eval_drain.py's and eval_remote.py's own async_session_maker test patches keep routing correctly
+- [Phase ?]: 150-05: _build_flaw_blob_lease_positions (tier-4 lane) relocated to eval_apply.py despite being functionally isolated -- file-location move only, not merged with apply_full_eval, needed to fully close eval_remote.py's private-import leak
+- [Phase ?]: 150-05: Task 2 entry-lane split kept _pick_pending_game_ids/_load_pgns_for_games in eval_drain.py (flagged partial descope, D-05) -- both open their own internal session, unlike the other 14 entry-lane symbols which take session as a param
 
 ### Pending Todos
 
@@ -205,9 +219,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-Last session: 2026-07-04T12:50:10.814Z
-Stopped at: Phase 149 context gathered
-Resume file: .planning/phases/149-retire-prune/149-CONTEXT.md
+Last session: 2026-07-04T17:27:25.524Z
+Stopped at: Phase 150 context gathered
+Resume file: .planning/phases/150-consolidate-write-path/150-CONTEXT.md
 
 ## Performance Metrics
 
@@ -260,3 +274,8 @@ Resume file: .planning/phases/149-retire-prune/149-CONTEXT.md
 | Phase 149-retire-prune P03 | 25min | 3 tasks | 3 files |
 | Phase 149 P04 | 20min | 2 tasks | 11 files |
 | Phase 149 P05 | 25min | 2 tasks | 8 files |
+| Phase 150 P01 | 25min | 2 tasks | 10 files |
+| Phase 150 P02 | 25min | 2 tasks | 2 files |
+| Phase 150 P03 | 22min | 2 tasks | 2 files |
+| Phase 150 P04 | 40min | 2 tasks | 3 files |
+| Phase 150 P05 | 100min | 2 tasks | 9 files |

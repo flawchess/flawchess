@@ -36,12 +36,12 @@ Independent low-risk deletions + two small migrations. Shrink the surface before
 
 Dependency chain, in order. R1/R4 first shrink R3 and R7.
 
-- [ ] **WRITE-01** (R1): The Path A/B/C completion decision + guarded `eval_jobs` stamp is extracted into one `apply_completion_decision()`, replacing the 3 verbatim copies (`eval_drain.py`, `eval_remote.py` ×2)
-- [ ] **WRITE-02** (R4): The classify preamble is unified — positions loaded + in-memory post-move overlay applied + classify run once per tick, replacing the 4 repeated sites (`_flaw_engine_plies`, `_missing_flaw_pv_targets`, `_build_flaw_multipv2_blobs`, `_derive_atomic_sentinel_lines`)
-- [ ] **WRITE-03** (R3): `_classify_and_fill_oracle` replaces delete-then-insert with a per-ply diff/upsert, and `_snapshot_preserved_flaw_blobs` / `_restore_preserved_flaw_blobs` are deleted; an old-vs-new equivalence test across the incremental-retry scenarios proves identical output
-- [ ] **WRITE-04** (R7): Shared submit/tick orchestration is extracted into `app/services/eval_apply.py`, `eval_drain.py` is split (entry lane / full lane / shared write path), and the router no longer imports private drain helpers
-- [ ] **WRITE-05** (R5): `EnginePool` exposes one generic acquire/analyse/restart method, replacing the 3 near-identical copies (ride-along on Phase 2)
-- [ ] **WRITE-06** (R6): The tier-3 / tier-4 Efraimidis–Spirakis lottery is parameterized into a single shared implementation (ride-along on Phase 2)
+- [x] **WRITE-01** (R1): The Path A/B/C completion decision + guarded `eval_jobs` stamp is extracted into one `apply_completion_decision()`, replacing the 3 verbatim copies (`eval_drain.py`, `eval_remote.py` ×2)
+- [x] **WRITE-02** (R4): The classify preamble is unified — positions loaded + in-memory post-move overlay applied + classify run once per tick, replacing the 4 repeated sites (`_flaw_engine_plies`, `_missing_flaw_pv_targets`, `_build_flaw_multipv2_blobs`, `_derive_atomic_sentinel_lines`)
+- [x] **WRITE-03** (R3): `_classify_and_fill_oracle` replaces delete-then-insert with a per-ply diff/upsert, and `_snapshot_preserved_flaw_blobs` / `_restore_preserved_flaw_blobs` are deleted; an old-vs-new equivalence test across the incremental-retry scenarios proves identical output
+- [x] **WRITE-04** (R7): Shared submit/tick orchestration is extracted into `app/services/eval_apply.py`, `eval_drain.py` is split (entry lane / full lane / shared write path), and the router no longer imports private drain helpers
+- [x] **WRITE-05** (R5): `EnginePool` exposes one generic acquire/analyse/restart method, replacing the 3 near-identical copies (ride-along on Phase 2)
+- [x] **WRITE-06** (R6): The tier-3 / tier-4 Efraimidis–Spirakis lottery is parameterized into a single shared implementation (ride-along on Phase 2)
 
 ---
 
@@ -78,11 +78,11 @@ Dependency chain, in order. R1/R4 first shrink R3 and R7.
 | PRUNE-04 | Phase 149 | Complete |
 | PRUNE-05 | Phase 149 | Complete |
 | PRUNE-06 | Phase 149 | Complete |
-| WRITE-01 | Phase 150 | Pending |
-| WRITE-02 | Phase 150 | Pending |
-| WRITE-03 | Phase 150 | Pending |
-| WRITE-04 | Phase 150 | Pending |
-| WRITE-05 | Phase 150 | Pending |
-| WRITE-06 | Phase 150 | Pending |
+| WRITE-01 | Phase 150 | Complete |
+| WRITE-02 | Phase 150 | Complete |
+| WRITE-03 | Phase 150 | Complete |
+| WRITE-04 | Phase 150 | Complete |
+| WRITE-05 | Phase 150 | Complete |
+| WRITE-06 | Phase 150 | Complete |
 
 Coverage: 18/18 v1.31 requirements mapped. No orphans.

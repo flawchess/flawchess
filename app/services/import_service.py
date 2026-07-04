@@ -30,11 +30,13 @@ from app.repositories import game_repository, import_job_repository
 from app.repositories.import_job_repository import ImportJobNotFound
 from app.schemas.normalization import NormalizedGame
 from app.services import chesscom_client, lichess_client, percentile_compute_registry
-from app.services.eval_drain import (
+from app.services.eval_entry import (
     _classify_and_insert_flaws,
-    _collect_midgame_eval_targets,
     _collect_endgame_span_eval_targets,
+    _collect_midgame_eval_targets,
 )  # Phase 91: cross-module use of eval_drain internals is intentional — see SEED-023.
+
+# Phase 150 R7 Task 2: these moved from eval_drain.py to eval_entry.py.
 from app.services.user_benchmark_percentiles_service import compute_stage_a, compute_stage_b
 from app.services.zobrist import PlyData, process_game_pgn
 

@@ -102,7 +102,7 @@
 | 147. Persist only forcing-line-gated tactic tags (SEED-074, A+B) | 6/6 | Complete (release #234) | 2026-06-30 |
 | 148. Pipeline & tactic correctness fixes (code-review 2026-07-02) | 4/4 | Complete    | 2026-07-04 |
 | 149. Retire & Prune | 5/5 | Complete    | 2026-07-04 |
-| 150. Consolidate Write Path | 0 plans | Not started | - |
+| 150. Consolidate Write Path | 5/5 | Complete    | 2026-07-04 |
 
 ## Current Milestone: v1.31 Pipeline Consolidation
 
@@ -110,7 +110,7 @@
 
 - [x] **Phase 148: Pipeline & tactic correctness fixes (code-review 2026-07-02)** - Five silent-data-loss / production-only-correctness defects fixed and shipped; SEED-080's hard prerequisite
 - [x] **Phase 149: Retire & Prune** - Delete the dead Gen-1 protocol + other dead weight, shrinking the surface before Phase 150 consolidates the write path (completed 2026-07-04)
-- [ ] **Phase 150: Consolidate Write Path** - Unify the copy-pasted completion decision, classify preamble, and delete-then-insert flaw write into one code path
+- [x] **Phase 150: Consolidate Write Path** - Unify the copy-pasted completion decision, classify preamble, and delete-then-insert flaw write into one code path (completed 2026-07-04)
 
 ## Phase Details (v1.31)
 
@@ -177,7 +177,25 @@ Plans:
   4. Shared submit/tick orchestration lives in `app/services/eval_apply.py`, `eval_drain.py` is split into entry-lane / full-lane / shared-write-path modules, and the router no longer imports private drain helpers (WRITE-04)
   5. `EnginePool` exposes one generic acquire/analyse/restart method replacing its 3 near-identical copies, and the tier-3/tier-4 Efraimidis-Spirakis lottery is a single parameterized implementation (WRITE-05, WRITE-06)
 
-**Plans:** TBD
+**Plans:** 5/5 plans complete
+
+Plans:
+**Wave 1**
+
+- [x] 150-01-PLAN.md — WRITE-03 golden-snapshot equivalence harness: committed generator + 8 goldens from pristine HEAD + drift-check test (WRITE-03 prep) [wave 1]
+- [x] 150-02-PLAN.md — Ride-alongs: EnginePool generic acquire/analyse method + parameterized tier-3/tier-4 ES lottery (WRITE-05, WRITE-06) [wave 1]
+
+**Wave 2** *(blocked on 150-01)*
+
+- [x] 150-03-PLAN.md — Shrink prep: extract apply_completion_decision (R1, 2 copies) + unify overlay-parameterized classify preamble (R4) (WRITE-01, WRITE-02) [wave 2]
+
+**Wave 3** *(blocked on 150-03)*
+
+- [x] 150-04-PLAN.md — R3 per-ply diff/upsert + FLAW_BLOB_COLUMNS + delete snapshot/restore, proven by golden equivalence test (WRITE-03) [wave 3]
+
+**Wave 4** *(blocked on 150-04)*
+
+- [x] 150-05-PLAN.md — R7 module split: eval_apply.py + apply_full_eval, kill router private-import leak, entry/full lane split (WRITE-04) [wave 4]
 
 ## Backlog
 

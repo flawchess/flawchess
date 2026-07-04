@@ -257,18 +257,23 @@ def _patch_router_session(
     monkeypatch: pytest.MonkeyPatch,
     session_maker: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Patch session makers for the eval remote router and the eval drain service.
+    """Patch session makers for the eval remote router, eval drain, and eval apply services.
 
     The router's own sessions (probe, claim, read) use async_session_maker imported
     into the router module. The entry-ply endpoints also call _load_pgns_for_games and
     _collect_eval_targets_from_db which open sessions via eval_drain.async_session_maker,
-    so that module binding must also be redirected to the test DB.
+    so that module binding must also be redirected to the test DB. Phase 150 R7: several
+    shared-write-path primitives (_derive_atomic_sentinel_lines, _build_flaw_multipv2_blobs,
+    _build_flaw_blob_lease_positions, apply_full_eval's helpers) moved to eval_apply.py and
+    open their OWN internal sessions there, so that module binding must be redirected too.
     """
     import app.routers.eval_remote as eval_remote_module
+    import app.services.eval_apply as eval_apply_module
     import app.services.eval_drain as eval_drain_module
 
     monkeypatch.setattr(eval_remote_module, "async_session_maker", session_maker)
     monkeypatch.setattr(eval_drain_module, "async_session_maker", session_maker)
+    monkeypatch.setattr(eval_apply_module, "async_session_maker", session_maker)
 
 
 # Phase 149-03 PRUNE-01: the Gen-1 /lease auth/queue and /submit auth/version-gate

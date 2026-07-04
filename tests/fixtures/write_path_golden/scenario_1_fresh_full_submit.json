@@ -1,0 +1,44 @@
+{
+  "2": {
+    "severity": 2,
+    "tempo": null,
+    "phase": 0,
+    "is_miss": false,
+    "is_lucky": false,
+    "is_reversed": false,
+    "is_squandered": false,
+    "fen": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR",
+    "allowed_tactic_motif": 2,
+    "allowed_tactic_piece": 2,
+    "allowed_tactic_confidence": 100,
+    "allowed_tactic_depth": 0,
+    "missed_tactic_motif": null,
+    "missed_tactic_piece": null,
+    "missed_tactic_confidence": null,
+    "missed_tactic_depth": null,
+    "allowed_pv_lines": [
+      {
+        "b": -800,
+        "s": 0,
+        "bm": null,
+        "sm": null,
+        "su": "b8c6"
+      },
+      {
+        "b": 300,
+        "s": 250,
+        "bm": null,
+        "sm": null,
+        "su": "f1c4"
+      },
+      {
+        "b": -800,
+        "s": 0,
+        "bm": null,
+        "sm": null,
+        "su": "f8c5"
+      }
+    ],
+    "missed_pv_lines": []
+  }
+}

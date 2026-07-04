@@ -621,20 +621,25 @@ class TestSingleWalkTargetCollection:
     """
 
     def _install_read_game_counter(self, monkeypatch: pytest.MonkeyPatch) -> list[int]:
-        """Patch chess.pgn.read_game in the eval_drain namespace with a counter wrapper.
+        """Patch chess.pgn.read_game in the eval_entry namespace with a counter wrapper.
+
+        Phase 150 R7 Task 2: the single-walk collectors live in eval_entry.py now
+        (moved from eval_drain.py) -- chess.pgn is a shared module object either way
+        (patching it here affects the one real chess.pgn.read_game globally), but
+        `import chess.pgn` itself only lives in eval_entry.py's namespace post-move.
 
         Returns a single-element list so the closure can mutate the counter.
         """
-        import app.services.eval_drain as drain_module
+        import app.services.eval_entry as eval_entry_module
 
-        original_read_game = drain_module.chess.pgn.read_game
+        original_read_game = eval_entry_module.chess.pgn.read_game
         counter: list[int] = [0]
 
         def counting_read_game(*args: Any, **kwargs: Any) -> Any:
             counter[0] += 1
             return original_read_game(*args, **kwargs)
 
-        monkeypatch.setattr(drain_module.chess.pgn, "read_game", counting_read_game)
+        monkeypatch.setattr(eval_entry_module.chess.pgn, "read_game", counting_read_game)
         return counter
 
     async def test_single_parse_invariant(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -706,14 +711,14 @@ class TestSingleWalkTargetCollection:
 
     async def test_parse_failure_returns_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test 3: unparseable PGN → both collectors return [] without raising."""
-        import app.services.eval_drain as drain_module
+        import app.services.eval_entry as eval_entry_module
         from app.services.eval_drain import (
             _collect_endgame_span_eval_targets,
             _collect_midgame_eval_targets,
         )
 
         # Force read_game to return None (simulates unparseable PGN).
-        monkeypatch.setattr(drain_module.chess.pgn, "read_game", lambda *_a, **_kw: None)
+        monkeypatch.setattr(eval_entry_module.chess.pgn, "read_game", lambda *_a, **_kw: None)
 
         plies_list: list[Any] = [
             _make_ply_data(4, phase=1),  # midgame entry — needs board
@@ -1445,11 +1450,17 @@ class TestBuildFlawBlobLeasePositions:
         lease_build_test_user: int,
     ) -> None:
         """Walkable PV (>= 2 nodes) → lease positions with correct token format."""
+        import app.services.eval_apply as eval_apply_module
         import app.services.eval_drain as eval_drain_module
         from app.services.eval_drain import _build_flaw_blob_lease_positions
 
         monkeypatch.setattr(
             eval_drain_module, "async_session_maker", lease_build_test_session_maker
+        )
+        # Phase 150 R7: _build_flaw_blob_lease_positions moved to eval_apply.py and
+        # opens its own internal session there -- redirect that binding too.
+        monkeypatch.setattr(
+            eval_apply_module, "async_session_maker", lease_build_test_session_maker
         )
 
         user_id = lease_build_test_user
@@ -1511,11 +1522,17 @@ class TestBuildFlawBlobLeasePositions:
         lease_build_test_user: int,
     ) -> None:
         """NULL pv at flaw ply → zero lease positions and one sentinel entry."""
+        import app.services.eval_apply as eval_apply_module
         import app.services.eval_drain as eval_drain_module
         from app.services.eval_drain import _build_flaw_blob_lease_positions
 
         monkeypatch.setattr(
             eval_drain_module, "async_session_maker", lease_build_test_session_maker
+        )
+        # Phase 150 R7: _build_flaw_blob_lease_positions moved to eval_apply.py and
+        # opens its own internal session there -- redirect that binding too.
+        monkeypatch.setattr(
+            eval_apply_module, "async_session_maker", lease_build_test_session_maker
         )
 
         user_id = lease_build_test_user
@@ -1552,11 +1569,17 @@ class TestBuildFlawBlobLeasePositions:
         lease_build_test_user: int,
     ) -> None:
         """Lichess %eval game leased identically to engine game (D-09/D-09a)."""
+        import app.services.eval_apply as eval_apply_module
         import app.services.eval_drain as eval_drain_module
         from app.services.eval_drain import _build_flaw_blob_lease_positions
 
         monkeypatch.setattr(
             eval_drain_module, "async_session_maker", lease_build_test_session_maker
+        )
+        # Phase 150 R7: _build_flaw_blob_lease_positions moved to eval_apply.py and
+        # opens its own internal session there -- redirect that binding too.
+        monkeypatch.setattr(
+            eval_apply_module, "async_session_maker", lease_build_test_session_maker
         )
 
         from app.models.game import Game

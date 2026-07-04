@@ -41,7 +41,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Any, Literal
 
 import math
 
@@ -274,34 +274,155 @@ async def _claim_queued_job(
     return job_id, game_id, user_id, tier, is_lichess_eval_game
 
 
+async def _es_weighted_user_pick(
+    session: AsyncSession,
+    *,
+    candidate_exists_sql: str,
+    recency_col_sql: str,
+    tau_seconds: float,
+    floor: float,
+) -> int | None:
+    """Generic Efraimidis–Spirakis weighted user pick (WRITE-06).
+
+    Shared building block behind both _claim_tier3_derived's Step 1 and
+    _claim_tier4_blob's Stage 1 — the acquisition shape (non-guest candidate
+    filter + recency-weighted ES key) is identical between tiers; only the
+    EXISTS predicate narrowing "eligible" candidates and which recency column
+    anchors the decay differ per tier.
+
+    weight = exp(-Δt/τ) + floor, where Δt = seconds since recency_col_sql
+    (COALESCE'd to epoch-0 so NULL → exp term ≈ 0, weight ≈ floor). Pick
+    ORDER BY -ln(random()) / weight LIMIT 1 (the ES key: LIMIT 1 = winner).
+
+    candidate_exists_sql / recency_col_sql are trusted, hardcoded SQL fragments
+    authored by the two call sites below (never derived from request/user
+    input) — composing query SHAPE from these fixed strings carries no
+    injection surface. All variable VALUES (tau_seconds, floor) are bound via
+    the sa.text params dict — never f-string-interpolated (QUEUE-08).
+
+    Returns the picked user_id, or None when no candidate exists.
+    """
+    result = await session.execute(
+        sa.text(f"""
+            SELECT u.id
+            FROM users u
+            WHERE u.is_guest = false  -- intentional: guests excluded from automatic bulk analysis; only tier-1 explicit is opened (QUEUE-08)
+              AND EXISTS (
+                {candidate_exists_sql}
+              )
+            ORDER BY
+                -ln(random()) / (
+                    exp(
+                        -EXTRACT(EPOCH FROM (now() - COALESCE({recency_col_sql}, '1970-01-01'::timestamptz)))
+                        / :tau_s
+                    ) + :floor
+                )
+            LIMIT 1
+        """),
+        {"tau_s": tau_seconds, "floor": floor},
+    )
+    row = result.one_or_none()
+    return row[0] if row is not None else None
+
+
+async def _es_weighted_game_pick(
+    session: AsyncSession,
+    *,
+    game_where_sql: str,
+    recency_col_sql: str,
+    tau_seconds: float,
+    game_floor: float,
+    tc_weights: dict[str, float],
+    extra_params: dict[str, Any] | None = None,
+) -> int | None:
+    """Generic Efraimidis–Spirakis weighted game pick (WRITE-06).
+
+    Shared building block behind _claim_tier3_derived's Step 2 AND residual
+    fallback, and _claim_tier4_blob's Stage 2 — all three share the identical
+    TC-multiplier CASE block (tc_weights, e.g. GAME_TC_WEIGHTS) and ES key
+    shape; only the WHERE predicate and which recency column anchors the
+    decay differ per call site.
+
+    game_weight = tc_multiplier * (exp(-Δt/τ) + game_floor), where
+    tc_multiplier comes from tc_weights and Δt = seconds since recency_col_sql
+    (COALESCE'd to epoch-0). Pick ORDER BY -ln(random()) / game_weight LIMIT 1.
+
+    game_where_sql / recency_col_sql are trusted, hardcoded SQL fragments
+    authored by the call sites below (never derived from request/user input);
+    game_where_sql may reference bound params (e.g. :picked_user) supplied via
+    extra_params. All numeric weight values (and any extra_params) are bound
+    via the sa.text params dict — never f-string-interpolated (QUEUE-08).
+
+    Returns the picked game_id, or None when no candidate game matches.
+    """
+    params: dict[str, Any] = {
+        "tc_classical": tc_weights["classical"],
+        "tc_rapid": tc_weights["rapid"],
+        "tc_blitz": tc_weights["blitz"],
+        "tc_bullet": tc_weights["bullet"],
+        "tc_other": tc_weights["other"],
+        "tau_game": tau_seconds,
+        "game_floor": game_floor,
+    }
+    if extra_params:
+        params.update(extra_params)
+    result = await session.execute(
+        sa.text(f"""
+            SELECT g.id
+            FROM games g
+            WHERE {game_where_sql}
+            ORDER BY
+                -ln(random()) / (
+                    CASE g.time_control_bucket
+                        WHEN 'classical' THEN CAST(:tc_classical AS float8)
+                        WHEN 'rapid'     THEN CAST(:tc_rapid AS float8)
+                        WHEN 'blitz'     THEN CAST(:tc_blitz AS float8)
+                        WHEN 'bullet'    THEN CAST(:tc_bullet AS float8)
+                        ELSE CAST(:tc_other AS float8)
+                    END
+                    * (
+                        exp(
+                            -EXTRACT(EPOCH FROM (now() - COALESCE({recency_col_sql}, '1970-01-01'::timestamptz)))
+                            / CAST(:tau_game AS float8)
+                        ) + CAST(:game_floor AS float8)
+                    )
+                )
+            LIMIT 1
+        """),
+        params,
+    )
+    row = result.one_or_none()
+    return row[0] if row is not None else None
+
+
 async def _claim_tier3_derived(
     session: AsyncSession,
 ) -> tuple[int, int, bool] | None:
     """Derive a tier-3 pick using a recency-weighted Efraimidis–Spirakis user lottery.
 
-    Two steps in a single session (no locking — see Phase 118 note below):
+    Two steps in a single session (no locking — see Phase 118 note below), both
+    built on the shared _es_weighted_user_pick / _es_weighted_game_pick building
+    blocks (WRITE-06):
 
     Step 1 — WEIGHTED USER PICK (SEED-046):
       Candidate users = non-guest users with at least one needs-engine game
       (full_evals_completed_at IS NULL AND lichess_evals_at IS NULL). This raw
       predicate is backed by the ix_games_needs_engine_full_evals partial index
       (added by migration 119-01).
-      For each candidate compute:
-        weight = exp(-Δt/τ) + WEIGHT_FLOOR
-      where Δt = seconds since last_activity (NULL → coalesced to a very old
-      timestamp so the exp term ≈ 0 and weight ≈ floor), τ = RECENCY_HALF_LIFE_DAYS
-      / ln(2) converted to seconds. weight is always > 0 (guards div-by-zero in the
-      ES key). Pick user ORDER BY -ln(random()) / weight LIMIT 1.
+      weight = exp(-Δt/τ) + WEIGHT_FLOOR, where Δt = seconds since last_activity
+      (NULL → coalesced to a very old timestamp so the exp term ≈ 0 and weight ≈
+      floor), τ = RECENCY_HALF_LIFE_DAYS / ln(2) converted to seconds. weight is
+      always > 0 (guards div-by-zero in the ES key).
 
     Step 2 — WEIGHTED GAME PICK FOR PICKED USER (D-7):
       Within the chosen user, pick a needs-engine game via the same ES
-      weighted-random key used in Step 1 — ORDER BY -ln(random()) / game_weight
-      where game_weight = tc_multiplier * (exp(-Δt_played / τ_game) + GAME_WEIGHT_FLOOR).
-      tc_multiplier comes from GAME_TC_WEIGHTS (classical=8 > rapid=4 > blitz=2 >
-      bullet=1 > other=0.5), τ_game derives from GAME_RECENCY_HALF_LIFE_DAYS, and
-      Δt_played is seconds since played_at (NULL coalesced to epoch-0 so a game
-      without a played_at date collapses to floor weight, matching the previous
-      NULLS LAST deprioritization intent). This replaces the old deterministic
+      weighted-random key used in Step 1 — game_weight = tc_multiplier *
+      (exp(-Δt_played / τ_game) + GAME_WEIGHT_FLOOR). tc_multiplier comes from
+      GAME_TC_WEIGHTS (classical=8 > rapid=4 > blitz=2 > bullet=1 > other=0.5),
+      τ_game derives from GAME_RECENCY_HALF_LIFE_DAYS, and Δt_played is seconds
+      since played_at (NULL coalesced to epoch-0 so a game without a played_at
+      date collapses to floor weight, matching the previous NULLS LAST
+      deprioritization intent). This replaces the old deterministic
       ORDER BY tc_case, played_at DESC LIMIT 1 (D-7: three workers landing on
       the same user now usually pick different games, cutting avoidable wasted
       eval cycles; D-4 residual-duplicate acceptance still stands).
@@ -314,7 +435,10 @@ async def _claim_tier3_derived(
       lichess_evals_at IS NOT NULL AND is_guest=false) via the same ES game_weight
       formula and ORDER BY -ln(random()) / game_weight LIMIT 1 (D-7: same
       collision shape as Step 2 under contention; symmetry preferred over a
-      "left deterministic because rare" carve-out).
+      "left deterministic because rare" carve-out). The guest exclusion is
+      expressed as an EXISTS subquery (equivalent to the old JOIN users — a
+      game's user_id maps to exactly one user row, so no cardinality change)
+      since _es_weighted_game_pick's base query is `FROM games g` alone.
       Returns is_lichess_eval_game=True for this path only.
 
     This replaces the old D-118-04 last_activity DESC winner-take-all ordering and
@@ -323,7 +447,8 @@ async def _claim_tier3_derived(
     cost despite the needs-engine predicate above saying to skip them — ~70%
     throughput waste on user 28; see RESEARCH-NOTES §Live prod bug).
 
-    Guest games are excluded (QUEUE-08) via JOIN users + is_guest filter.
+    Guest games are excluded (QUEUE-08) via the shared building blocks' is_guest
+    filter / EXISTS subquery.
 
     Returns (game_id, user_id, is_lichess_eval_game) or None when nothing to process.
 
@@ -334,9 +459,8 @@ async def _claim_tier3_derived(
     collision endgame. Add FOR UPDATE SKIP LOCKED when multi-worker leasing is added.
 
     Security: τ_seconds, floor_val, game τ and multipliers bound as :params —
-    no f-string inside any sa.text call. The TC-bucket CASE keys are static SQL
-    literals, not interpolated (mirror of Step-1 "never f-string-interpolated"
-    comment; same principle applied to game pick and residual fallback).
+    no f-string-interpolated VALUES anywhere (see _es_weighted_user_pick /
+    _es_weighted_game_pick docstrings for the query-shape-vs-value distinction).
     """
     # Convert half-life (days) to the decay constant τ in seconds.
     # τ = τ½ / ln2; weight = exp(-Δt_seconds / τ_seconds) + floor
@@ -347,142 +471,66 @@ async def _claim_tier3_derived(
     # to seconds exactly as the user τ above. All values bound as :params below.
     tau_game_seconds: float = GAME_RECENCY_HALF_LIFE_DAYS / math.log(2) * 86400.0
     game_floor: float = GAME_WEIGHT_FLOOR
-    tc_classical: float = GAME_TC_WEIGHTS["classical"]
-    tc_rapid: float = GAME_TC_WEIGHTS["rapid"]
-    tc_blitz: float = GAME_TC_WEIGHTS["blitz"]
-    tc_bullet: float = GAME_TC_WEIGHTS["bullet"]
-    tc_other: float = GAME_TC_WEIGHTS["other"]
 
     # Step 1: ES weighted user pick over needs-engine games.
     # ix_games_needs_engine_full_evals (119-01 migration) covers
     # WHERE full_evals_completed_at IS NULL AND lichess_evals_at IS NULL.
-    # COALESCE last_activity to epoch-0 so NULL → exp term ≈ 0 (floor weight).
-    # -ln(random()) / weight is the Efraimidis–Spirakis key: LIMIT 1 = winner.
-    # All variable values bound as :tau_s, :floor — never f-string-interpolated.
-    user_pick_result = await session.execute(
-        sa.text("""
-            SELECT u.id
-            FROM users u
-            WHERE u.is_guest = false  -- intentional: guests excluded from automatic bulk analysis; only tier-1 explicit is opened (QUEUE-08)
-              AND EXISTS (
+    picked_user_id = await _es_weighted_user_pick(
+        session,
+        candidate_exists_sql="""
                 SELECT 1 FROM games g
                 WHERE g.user_id = u.id
                   AND g.full_evals_completed_at IS NULL
                   AND g.lichess_evals_at IS NULL
-              )
-            ORDER BY
-                -ln(random()) / (
-                    exp(
-                        -EXTRACT(EPOCH FROM (now() - COALESCE(u.last_activity, '1970-01-01'::timestamptz)))
-                        / :tau_s
-                    ) + :floor
-                )
-            LIMIT 1
-        """),
-        {"tau_s": tau_seconds, "floor": floor_val},
+        """,
+        recency_col_sql="u.last_activity",
+        tau_seconds=tau_seconds,
+        floor=floor_val,
     )
-    user_row = user_pick_result.one_or_none()
 
-    if user_row is not None:
-        picked_user_id: int = user_row[0]
+    if picked_user_id is not None:
         # Step 2: ES weighted game pick for the picked user (D-7).
-        # game_weight = tc_multiplier * (exp(-Δt_played / τ_game) + game_floor)
-        # tc_multiplier is a CASE expression over g.time_control_bucket with keys
-        # as static SQL literals (not interpolated). All numeric values bound as
-        # :params — never f-string-interpolated into the sa.text string (security;
-        # same rule as Step 1 user pick above).
-        # COALESCE played_at to epoch-0 so a game with NULL played_at collapses to
-        # floor weight, matching the previous NULLS LAST deprioritization intent.
-        game_result = await session.execute(
-            sa.text("""
-                SELECT g.id
-                FROM games g
-                WHERE g.user_id = :picked_user
-                  AND g.full_evals_completed_at IS NULL
-                  AND g.lichess_evals_at IS NULL
-                ORDER BY
-                    -ln(random()) / (
-                        CASE g.time_control_bucket
-                            WHEN 'classical' THEN CAST(:tc_classical AS float8)
-                            WHEN 'rapid'     THEN CAST(:tc_rapid AS float8)
-                            WHEN 'blitz'     THEN CAST(:tc_blitz AS float8)
-                            WHEN 'bullet'    THEN CAST(:tc_bullet AS float8)
-                            ELSE CAST(:tc_other AS float8)
-                        END
-                        * (
-                            exp(
-                                -EXTRACT(EPOCH FROM (now() - COALESCE(g.played_at, '1970-01-01'::timestamptz)))
-                                / CAST(:tau_game AS float8)
-                            ) + CAST(:game_floor AS float8)
-                        )
-                    )
-                LIMIT 1
-            """),
-            {
-                "picked_user": picked_user_id,
-                "tc_classical": tc_classical,
-                "tc_rapid": tc_rapid,
-                "tc_blitz": tc_blitz,
-                "tc_bullet": tc_bullet,
-                "tc_other": tc_other,
-                "tau_game": tau_game_seconds,
-                "game_floor": game_floor,
-            },
+        game_id = await _es_weighted_game_pick(
+            session,
+            game_where_sql=(
+                "g.user_id = :picked_user"
+                " AND g.full_evals_completed_at IS NULL"
+                " AND g.lichess_evals_at IS NULL"
+            ),
+            recency_col_sql="g.played_at",
+            tau_seconds=tau_game_seconds,
+            game_floor=game_floor,
+            tc_weights=GAME_TC_WEIGHTS,
+            extra_params={"picked_user": picked_user_id},
         )
-        game_row = game_result.scalar_one_or_none()
-        if game_row is not None:
+        if game_id is not None:
             # Needs-engine game → is_lichess_eval_game=False by construction.
-            return game_row, picked_user_id, False
+            return game_id, picked_user_id, False
 
-    # Residual fallback: no needs-engine candidate → try PV-backfill-only games.
+    # Residual fallback: no needs-engine candidate exists → try PV-backfill-only games.
     # Only path that returns is_lichess_eval_game=True.
-    # D-7: same ES game_weight spread applied here for symmetry — the residual
-    # path has the identical collision shape and a remote worker can sit on it
-    # for long stretches once the needs-engine backlog drains.
-    # All numeric values bound as :params — never f-string-interpolated (same
-    # security rule as Step 1 and Step 2 above).
-    fallback_result = await session.execute(
-        sa.text("""
-            SELECT g.id, g.user_id
-            FROM games g
-            JOIN users u ON u.id = g.user_id
-            WHERE g.full_evals_completed_at IS NULL
-              AND g.lichess_evals_at IS NOT NULL
-              AND u.is_guest = false  -- intentional: guests excluded from automatic bulk analysis; only tier-1 explicit is opened (QUEUE-08)
-            ORDER BY
-                -ln(random()) / (
-                    CASE g.time_control_bucket
-                        WHEN 'classical' THEN CAST(:tc_classical AS float8)
-                        WHEN 'rapid'     THEN CAST(:tc_rapid AS float8)
-                        WHEN 'blitz'     THEN CAST(:tc_blitz AS float8)
-                        WHEN 'bullet'    THEN CAST(:tc_bullet AS float8)
-                        ELSE CAST(:tc_other AS float8)
-                    END
-                    * (
-                        exp(
-                            -EXTRACT(EPOCH FROM (now() - COALESCE(g.played_at, '1970-01-01'::timestamptz)))
-                            / CAST(:tau_game AS float8)
-                        ) + CAST(:game_floor AS float8)
-                    )
-                )
-            LIMIT 1
-        """),
-        {
-            "tc_classical": tc_classical,
-            "tc_rapid": tc_rapid,
-            "tc_blitz": tc_blitz,
-            "tc_bullet": tc_bullet,
-            "tc_other": tc_other,
-            "tau_game": tau_game_seconds,
-            "game_floor": game_floor,
-        },
+    fallback_game_id = await _es_weighted_game_pick(
+        session,
+        game_where_sql=(
+            "g.full_evals_completed_at IS NULL"
+            " AND g.lichess_evals_at IS NOT NULL"
+            " AND EXISTS ("
+            "SELECT 1 FROM users u WHERE u.id = g.user_id AND u.is_guest = false"
+            ")"  # intentional: guests excluded from automatic bulk analysis (QUEUE-08)
+        ),
+        recency_col_sql="g.played_at",
+        tau_seconds=tau_game_seconds,
+        game_floor=game_floor,
+        tc_weights=GAME_TC_WEIGHTS,
     )
-    fallback_row = fallback_result.one_or_none()
-    if fallback_row is None:
+    if fallback_game_id is None:
         return None
 
-    fallback_game_id: int = fallback_row[0]
-    fallback_user_id: int = fallback_row[1]
+    # _es_weighted_game_pick only returns game_id — fetch the owning user_id via a
+    # trivial PK-indexed lookup (the residual fallback is the one caller that needs
+    # a paired (game_id, user_id), unlike Step 2 which already knows picked_user_id).
+    user_result = await session.execute(select(Game.user_id).where(Game.id == fallback_game_id))
+    fallback_user_id: int = user_result.scalar_one()
     return fallback_game_id, fallback_user_id, True
 
 
@@ -492,18 +540,19 @@ async def _claim_tier4_blob(
     """Tier-4 spare-capacity lottery: pick one analyzed non-guest game with a NULL-blob flaw.
 
     Two-stage Efraimidis-Spirakis (ES) weighted lottery mirroring _claim_tier3_derived's
-    two-step pattern (see its docstring for the general ES-key derivation). Both stages run
-    sequentially in the same session — no asyncio.gather (AsyncSession is not safe for
-    concurrent coroutine use) and no locking, mirroring tier-3's plain-SELECT shape.
+    two-step pattern, built on the same shared _es_weighted_user_pick /
+    _es_weighted_game_pick building blocks (see their docstrings for the general
+    ES-key derivation; WRITE-06). Both stages run sequentially in the same session —
+    no asyncio.gather (AsyncSession is not safe for concurrent coroutine use) and no
+    locking, mirroring tier-3's plain-SELECT shape.
 
     Stage 1 — WEIGHTED USER PICK:
       Candidate users = non-guest users with at least one analyzed game
       (full_evals_completed_at IS NOT NULL) that has a NULL-blob flaw
-      (game_flaws.allowed_pv_lines IS NULL). For each candidate compute
-      weight = exp(-Δt/τ_u) + TIER4_USER_WEIGHT_FLOOR, where Δt = seconds since
-      last_activity (NULL coalesced to epoch-0 so the exp term ≈ 0, weight ≈ floor)
-      and τ_u = TIER4_USER_RECENCY_HALF_LIFE_DAYS / ln(2) in seconds. Pick user
-      ORDER BY -ln(random()) / weight LIMIT 1.
+      (game_flaws.allowed_pv_lines IS NULL). weight = exp(-Δt/τ_u) +
+      TIER4_USER_WEIGHT_FLOOR, where Δt = seconds since last_activity (NULL
+      coalesced to epoch-0 so the exp term ≈ 0, weight ≈ floor) and τ_u =
+      TIER4_USER_RECENCY_HALF_LIFE_DAYS / ln(2) in seconds.
 
     Stage 2 — WEIGHTED GAME PICK FOR THE PICKED USER:
       Within the picked user, pick a NULL-blob-flaw analyzed game weighted by
@@ -513,8 +562,7 @@ async def _claim_tier4_blob(
       tc_multiplier comes from GAME_TC_WEIGHTS (classical=8 > rapid=4 > blitz=2 >
       bullet=1 > other=0.5), Δt_evals = seconds since full_evals_completed_at (NULL
       cannot occur here — gated by the WHERE clause), τ_g =
-      TIER4_GAME_RECENCY_HALF_LIFE_DAYS / ln(2) in seconds. Pick game
-      ORDER BY -ln(random()) / weight LIMIT 1.
+      TIER4_GAME_RECENCY_HALF_LIFE_DAYS / ln(2) in seconds.
 
     This replaces the Phase 146 D-01 top-N recency-window CTE: that mechanism was a
     hard cutoff (game #51 by full_evals_completed_at DESC had probability zero), so an
@@ -526,7 +574,7 @@ async def _claim_tier4_blob(
 
     Returns (game_id, user_id) or None when no backfill-eligible flaw remains (either
     stage returning no row is a None-guard fall-through, mirroring _claim_tier3_derived's
-    `.one_or_none()` shape).
+    None-guard shape).
 
     No eval_jobs row is created — this is a table-less, idempotent-by-construction lottery.
     Once all of a game's flaw blobs (or D-06 sentinels) are written the game stops matching
@@ -538,7 +586,7 @@ async def _claim_tier4_blob(
 
     Security: :tau_u, :floor_u, :picked_user, :tau_g, :floor_g, and the :tc_* TC
     multipliers are all bound via the sa.text params dict — never f-string-interpolated
-    (QUEUE-08 convention, mirrors tier-3's "never f-string-interpolated" rule above).
+    (QUEUE-08 convention, mirrors tier-3's rule above).
     """
     # Convert half-lives (days) to decay constants τ in seconds — same conversion
     # used by _claim_tier3_derived above: τ = τ½ / ln2; weight = exp(-Δt/τ) + floor.
@@ -546,91 +594,45 @@ async def _claim_tier4_blob(
     floor_u: float = TIER4_USER_WEIGHT_FLOOR
     tau_g_seconds: float = TIER4_GAME_RECENCY_HALF_LIFE_DAYS / math.log(2) * 86400.0
     floor_g: float = TIER4_GAME_WEIGHT_FLOOR
-    # Stage-2 TC priority (longer TCs first), shared with tier-3's game pick.
-    tc_classical: float = GAME_TC_WEIGHTS["classical"]
-    tc_rapid: float = GAME_TC_WEIGHTS["rapid"]
-    tc_blitz: float = GAME_TC_WEIGHTS["blitz"]
-    tc_bullet: float = GAME_TC_WEIGHTS["bullet"]
-    tc_other: float = GAME_TC_WEIGHTS["other"]
 
     # Stage 1: ES weighted user pick over users with an eligible NULL-blob analyzed game.
-    user_pick_result = await session.execute(
-        sa.text("""
-            SELECT u.id
-            FROM users u
-            WHERE u.is_guest = false  -- intentional: guests excluded (QUEUE-08)
-              AND EXISTS (
+    picked_user_id = await _es_weighted_user_pick(
+        session,
+        candidate_exists_sql="""
                 SELECT 1 FROM games g
                 JOIN game_flaws gf ON gf.game_id = g.id
                 WHERE g.user_id = u.id
                   AND g.full_evals_completed_at IS NOT NULL
                   AND gf.allowed_pv_lines IS NULL
-              )
-            ORDER BY
-                -ln(random()) / (
-                    exp(
-                        -EXTRACT(EPOCH FROM (now() - COALESCE(u.last_activity, '1970-01-01'::timestamptz)))
-                        / :tau_u
-                    ) + :floor_u
-                )
-            LIMIT 1
-        """),
-        {"tau_u": tau_u_seconds, "floor_u": floor_u},
+        """,
+        recency_col_sql="u.last_activity",
+        tau_seconds=tau_u_seconds,
+        floor=floor_u,
     )
-    user_row = user_pick_result.one_or_none()
-    if user_row is None:
+    if picked_user_id is None:
         return None
-    picked_user_id: int = user_row[0]
 
     # Stage 2: ES weighted game pick for the picked user — full_evals_completed_at
     # recency AND TC priority (longer TCs first), mirroring tier-3's game pick.
-    # game_weight = tc_multiplier * (exp(-Δt_evals / τ_g) + floor_g). The tc_multiplier
-    # CASE keys are static SQL literals (not interpolated); all numeric values bound
-    # as :params (QUEUE-08).
-    game_result = await session.execute(
-        sa.text("""
-            SELECT g.id
-            FROM games g
-            WHERE g.user_id = :picked_user
-              AND g.full_evals_completed_at IS NOT NULL
-              AND EXISTS (
-                SELECT 1 FROM game_flaws gf
-                WHERE gf.game_id = g.id AND gf.allowed_pv_lines IS NULL
-              )
-            ORDER BY
-                -ln(random()) / (
-                    CASE g.time_control_bucket
-                        WHEN 'classical' THEN CAST(:tc_classical AS float8)
-                        WHEN 'rapid'     THEN CAST(:tc_rapid AS float8)
-                        WHEN 'blitz'     THEN CAST(:tc_blitz AS float8)
-                        WHEN 'bullet'    THEN CAST(:tc_bullet AS float8)
-                        ELSE CAST(:tc_other AS float8)
-                    END
-                    * (
-                        exp(
-                            -EXTRACT(EPOCH FROM (now() - COALESCE(g.full_evals_completed_at, '1970-01-01'::timestamptz)))
-                            / :tau_g
-                        ) + :floor_g
-                    )
-                )
-            LIMIT 1
-        """),
-        {
-            "picked_user": picked_user_id,
-            "tau_g": tau_g_seconds,
-            "floor_g": floor_g,
-            "tc_classical": tc_classical,
-            "tc_rapid": tc_rapid,
-            "tc_blitz": tc_blitz,
-            "tc_bullet": tc_bullet,
-            "tc_other": tc_other,
-        },
+    game_id = await _es_weighted_game_pick(
+        session,
+        game_where_sql=(
+            "g.user_id = :picked_user"
+            " AND g.full_evals_completed_at IS NOT NULL"
+            " AND EXISTS ("
+            "SELECT 1 FROM game_flaws gf"
+            " WHERE gf.game_id = g.id AND gf.allowed_pv_lines IS NULL"
+            ")"
+        ),
+        recency_col_sql="g.full_evals_completed_at",
+        tau_seconds=tau_g_seconds,
+        game_floor=floor_g,
+        tc_weights=GAME_TC_WEIGHTS,
+        extra_params={"picked_user": picked_user_id},
     )
-    game_row = game_result.one_or_none()
-    if game_row is None:
+    if game_id is None:
         return None
 
-    game_id: int = game_row[0]
     return game_id, picked_user_id
 
 
