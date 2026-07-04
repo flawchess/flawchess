@@ -8,6 +8,13 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v1.31] Pipeline Consolidation — 2026-07-04
+
+Server-side pipeline consolidation: the eval write path now threads through a single code path
+instead of 3+ copies, and the dead Gen-1 eval protocol is retired. No change to your evals,
+flaw/tactic tags, or stats — this is an internal correctness-and-maintainability milestone with
+a handful of user-facing bug fixes folded in.
+
 ### Added
 
 - **Flaw tags on the analysis board** — the `/analysis` board (in game mode) now shows the game's flaw tags below the eval chart: a Blunders / Mistakes / Inaccuracies row on top of a three-column Missed | Allowed | Context block, matching the Library game card. Click or tap any badge or tag to step the board through that flaw's positions, with the move list and eval-chart crosshair staying in sync. On mobile the tags live behind a new third "Tags" tab alongside Moves and Eval chart. (Quick 260702-nm8)
@@ -964,7 +971,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.30...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.31...HEAD
+[v1.31]: https://github.com/flawchess/flawchess/compare/v1.30...v1.31
 [v1.30]: https://github.com/flawchess/flawchess/compare/v1.29...v1.30
 [v1.29]: https://github.com/flawchess/flawchess/compare/v1.28...v1.29
 [v1.28]: https://github.com/flawchess/flawchess/compare/v1.27...v1.28
