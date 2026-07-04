@@ -956,6 +956,7 @@ export default function Analysis() {
         flipped={gameData.user_color === 'black'}
         sliderTestId="analysis-eval-chart-slider"
         sliderDisabled={!isOnMainLineForSlider}
+        disableHoverScrub
         onHoverPlyChange={handleEvalChartPlyChange}
         syncPly={evalChartPly}
         commandedPly={tagCommandedPly}

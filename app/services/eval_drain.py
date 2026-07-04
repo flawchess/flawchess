@@ -34,44 +34,69 @@ Quick 260521-d6o follow-up:
 """
 
 import asyncio
-import io
-import json
 import logging
-from collections import defaultdict
 from collections.abc import Sequence
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Literal
 
 import asyncpg
-import chess
-import chess.pgn
 import sentry_sdk
 import sqlalchemy as sa
-from sqlalchemy import TextClause, bindparam, select, text, update
+from sqlalchemy import TextClause, select, text, update
 from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.database import async_session_maker
 from app.models.game import Game
-from app.models.game_flaw import GameFlaw
-from app.schemas.eval_remote import AtomicBlobNode, FlawBlobLeasePosition, FlawBlobSubmitEval
 from app.models.game_position import DEDUP_MAX_PLY, GamePosition
 from app.models.import_job import ImportJob
-from app.models.opening_position_eval import OpeningPositionEval
-from app.repositories.game_flaws_repository import (
-    bulk_insert_game_flaws,
-    delete_flaws_for_game,
-    flaw_record_to_row,
-)
 from app.repositories.game_repository import users_with_zero_pending
 from app.services import engine as engine_service
 from app.services import percentile_compute_registry
+
+# Phase 150 R7: the shared write-path primitives physically moved to eval_apply.py.
+# Several are re-imported here purely for backward compatibility with existing
+# `from app.services.eval_drain import <symbol>` references in tests/scripts (they
+# are re-bound names, not re-definitions — the implementation lives in eval_apply.py
+# only) — noqa: F401 marks the ones this module's own code does not call directly.
+from app.services.eval_apply import (
+    MAX_EVAL_ATTEMPTS,  # noqa: F401 — backward-compat re-export (tests)
+    _FullPlyEvalTarget,
+    _apply_full_eval_results,  # noqa: F401 — backward-compat re-export (tests/scripts)
+    _assemble_flaw_blobs_from_submit,  # noqa: F401 — backward-compat re-export (tests)
+    _assemble_one_line_blob,  # noqa: F401 — backward-compat re-export (tests)
+    _batch_update_best_move_rows,  # noqa: F401 — backward-compat re-export (scripts)
+    _batch_update_flaw_pv_lines,  # noqa: F401 — backward-compat re-export (scripts)
+    _batch_update_pv_rows,  # noqa: F401 — backward-compat re-export (scripts)
+    _build_flaw_blob_lease_positions,  # noqa: F401 — backward-compat re-export (tests/scripts)
+    _build_flaw_multipv2_blobs,
+    _build_line_blobs,  # noqa: F401 — backward-compat re-export (tests)
+    _classify_with_overlay,
+    _collect_full_ply_targets,
+    _fetch_dedup_evals,
+    _flaw_engine_plies,
+    _reconstruct_pos_eval,
+    _signal_flaw_completion,
+    _walk_pv_boards,  # noqa: F401 — backward-compat re-export (scripts)
+    apply_full_eval,
+)
+
+# Phase 150 R7 Task 2: entry-ply (import-time, no-shift) collection/write/classify
+# primitives physically moved to eval_entry.py (none of them open their own session
+# -- see eval_entry.py's module docstring). run_eval_drain (below) still needs them;
+# _EvalTarget/ENTRY_LEASE_* symbols and several others are re-imported purely for
+# backward compatibility with existing `from app.services.eval_drain import <symbol>`
+# references in tests/import_service.py.
+from app.services.eval_entry import (
+    _EvalTarget,  # noqa: F401 — backward-compat re-export (tests/eval_remote.py)
+    _apply_eval_results,
+    _claim_entry_eval_games,
+    _classify_and_insert_flaws,
+    _collect_endgame_span_eval_targets,  # noqa: F401 — backward-compat re-export (import_service.py/tests)
+    _collect_eval_targets_from_db,
+    _collect_midgame_eval_targets,  # noqa: F401 — backward-compat re-export (import_service.py/tests)
+    _mark_evals_completed,
+)
 from app.services.eval_queue_service import WORKER_ID_SERVER_POOL, claim_eval_job
-from app.services.flaws_service import classify_game_flaws, count_game_severities
-from app.services.forcing_line_gate import PvNode
 from app.services.user_benchmark_percentiles_service import compute_stage_b
-from app.services.zobrist import PlyData
 
 logger = logging.getLogger(__name__)
 
@@ -103,12 +128,9 @@ _DRAIN_IDLE_SLEEP_SECONDS = 5  # D-13 (poll interval when queue empty)
 # behaviorally identical to the pre-batching code.
 _RESWEEP_UPDATE_CHUNK_SIZE = 1000
 
-# Phase 119 SEED-045: max drain ticks that may leave a non-terminal hole before
-# the game is stamped complete anyway (with one aggregated Sentry warning).
-# D-116-07 intent: a deterministically-unevaluable ply cannot loop forever.
-# Pool outages (all-fail circuit breaker WR-05) do NOT consume attempts, so a
-# transient outage cannot exhaust the budget and silently drop coverage.
-MAX_EVAL_ATTEMPTS: int = 3
+# MAX_EVAL_ATTEMPTS moved to eval_apply.py (Phase 150 R7) — apply_completion_decision
+# is defined there now. Imported below (re-exported for backward compatibility with
+# existing `from app.services.eval_drain import MAX_EVAL_ATTEMPTS` test/script imports).
 
 # Phase 116 EVAL-03 / D-116-02: dedup only in the opening region.
 # WR-08: aliased from the model constant (single source of truth) so this
@@ -178,176 +200,6 @@ ENTRY_LEASE_BATCH_SIZE: int = 50
 ENTRY_LEASE_BACKLOG_THRESHOLD: int = 300
 
 
-# ---------------------------------------------------------------------------
-# Phase 116 full-ply drain: dataclass + helpers
-# ---------------------------------------------------------------------------
-
-
-@dataclass(slots=True)
-class _FullPlyEvalTarget:
-    """One position scheduled for full-ply eval (Phase 116 EVAL-01).
-
-    ply: game_positions.ply (0-indexed; 0 = initial position before first move)
-    full_hash: for dedup batch-lookup at ply <= _DEDUP_MAX_PLY (EVAL-03)
-    board: board snapshot for the engine call (if not dedup'd)
-    eval_cp / eval_mate: the row's CURRENT stored values from the DB. Carried so
-        the drain can skip engine calls for plies whose result would be
-        discarded by the D-116-04 preservation gate anyway (WR-01), and so the
-        write path's belt-and-braces preservation check needs no row re-scan.
-    best_move: Phase 117 EVAL-04 — populated from engine result or dedup transplant.
-    is_terminal: SEED-044 — True for the post-game terminal-position target. Under
-        the post-move convention the eval stored at the LAST played move's row is
-        the eval of the position AFTER that move (the terminal position), so the
-        terminal board is evaluated as an eval-only donor. A terminal target has
-        NO game_positions row of its own (no move was played from it): it is never
-        written, never dedup'd, and contributes only its position eval as the
-        pos_eval[k+1] donor for the last real row.
-    """
-
-    game_id: int
-    ply: int
-    full_hash: int
-    board: chess.Board
-    eval_cp: int | None
-    eval_mate: int | None
-    best_move: str | None = None
-    is_terminal: bool = False
-    ends_game: bool = False
-    """SEED-049 — True for the single real (non-terminal) row whose move ENDS the game
-    (resulting position is_game_over()). Under post-move storage its after-eval is the
-    game-over terminal, which is deliberately unevaluable and never gets a donor, so its
-    NULL post-move eval is legitimate — never counted as a hole."""
-
-
-def _collect_full_ply_targets(
-    game_id: int,
-    pgn_text: str,
-    game_positions_rows: Sequence[tuple[int, int, int | None, int | None]],
-    include_terminal: bool = False,
-) -> list[_FullPlyEvalTarget]:
-    """Collect one target per ply, with an optional terminal eval-donor (EVAL-01, SEED-044).
-
-    game_positions_rows: (ply, full_hash, eval_cp, eval_mate) loaded from DB.
-
-    Per-ply targets snapshot the PRE-PUSH board (the position BEFORE the move at
-    that ply), so the engine's eval is the eval OF that position and its best_move
-    is the best move FROM it — both position-/decision-keyed. The POST-MOVE storage
-    shift (eval stored at row k = eval of the position AFTER move k) is applied
-    later, at write time, in `_post_move_eval`.
-
-    include_terminal (SEED-044): when True, append ONE extra terminal target for
-    the post-game board (the position after the final push). Under the post-move
-    convention the last played move's stored eval is the eval of that terminal
-    position, so it must be evaluated. The terminal target has `is_terminal=True`,
-    `ply = <number of plies played>` (one past the last real row), and no DB row of
-    its own — it is an eval-only donor (never written, never dedup'd). Engine games
-    pass include_terminal=True; lichess `%eval` games pass False (their evals are
-    preserved, never shifted, so no terminal donor is needed).
-
-    Returns [] on PGN parse failure or None game.
-    """
-    try:
-        game = chess.pgn.read_game(io.StringIO(pgn_text))
-    except Exception:
-        return []
-    if game is None:
-        return []
-
-    # Build ply -> (full_hash, eval_cp, eval_mate) lookup from DB rows
-    ply_meta: dict[int, tuple[int, int | None, int | None]] = {
-        ply: (fh, cp, mt) for ply, fh, cp, mt in game_positions_rows
-    }
-
-    board = game.board()
-    targets: list[_FullPlyEvalTarget] = []
-    ply_count = 0
-    for ply, node in enumerate(game.mainline()):
-        ply_count = ply + 1
-        meta = ply_meta.get(ply)
-        if meta is not None:
-            fh, cp, mt = meta
-            targets.append(
-                _FullPlyEvalTarget(
-                    game_id=game_id,
-                    ply=ply,
-                    full_hash=fh,
-                    board=board.copy(),
-                    eval_cp=cp,
-                    eval_mate=mt,
-                )
-            )
-        board.push(node.move)
-    # board is now the terminal position. Under post-move storage it is the
-    # after-eval donor for the last played move (SEED-044). full_hash is 0 (unused:
-    # terminal targets are excluded from dedup and never written by full_hash).
-    #
-    # Skip a GAME-OVER terminal (checkmate/stalemate/insufficient material): the
-    # engine cannot search a finished position (evaluate_nodes_multipv2 would error
-    # or return a degenerate result), and a mating/stalemating final move is the
-    # best move, never a flaw to assess. Games that ended by resignation/timeout
-    # leave a normal (not game-over) final board, so the last move IS assessable
-    # (a pre-resignation blunder gets its after-eval).
-    if include_terminal and ply_count > 0 and not board.is_game_over():
-        targets.append(
-            _FullPlyEvalTarget(
-                game_id=game_id,
-                ply=ply_count,
-                full_hash=0,
-                board=board.copy(),
-                eval_cp=None,
-                eval_mate=None,
-                is_terminal=True,
-            )
-        )
-    elif include_terminal and ply_count > 0 and board.is_game_over():
-        # SEED-049: the final board is game-over (checkmate/stalemate/insufficient
-        # material), which means the last real move was the game-ending move. Its
-        # post-move eval is the unevaluable terminal position — legitimately NULL,
-        # not a hole. Mark ends_game=True on the last real target (ply = ply_count - 1)
-        # so _apply_full_eval_results skips it in the failed_ply_count counter.
-        game_ending_ply = ply_count - 1
-        for target in reversed(targets):
-            if target.ply == game_ending_ply:
-                target.ends_game = True
-                break
-    return targets
-
-
-async def _fetch_dedup_evals(
-    session: AsyncSession,
-    full_hashes: Sequence[int],
-) -> dict[int, tuple[int | None, int | None, str | None, str | None]]:
-    """Batch-fetch a position's OWN eval + best_move + pv for opening-region hashes (EVAL-03, D-116-02).
-
-    SEED-053 / D-123.1-05: reads the position-keyed opening_position_eval cache instead
-    of the former self-join on game_positions. The cache is a hash-unique relation keyed by
-    full_hash, so the lookup collapses to a PK index scan (~1-5 ms) versus the ~8.4 s
-    DISTINCT-ON self-join (see CONTEXT.md for EXPLAIN evidence). Column semantics are
-    identical to the self-join result: eval_cp/eval_mate are the eval OF the requested
-    position and best_move is the engine's decision FROM it.
-
-    Read-side guards (ply <= DEDUP_MAX_PLY, not in flaw_engine_plies, not is_terminal)
-    remain entirely in the caller at ~line 1640 — UNCHANGED. This function only changes
-    which table backs the lookup.
-
-    Returns {full_hash: (eval_cp, eval_mate, best_move, pv)} for hashes present in the
-    cache. pv is the cached PV string FROM the position (SEED-076 follow-up); it may
-    be None for cache rows written before the pv column existed or not yet backfilled.
-    """
-    if not full_hashes:
-        return {}
-    result = await session.execute(
-        select(
-            OpeningPositionEval.full_hash,
-            OpeningPositionEval.eval_cp,
-            OpeningPositionEval.eval_mate,
-            OpeningPositionEval.best_move,
-            OpeningPositionEval.pv,
-        ).where(OpeningPositionEval.full_hash.in_(full_hashes))
-    )
-    return {row[0]: (row[1], row[2], row[3], row[4]) for row in result.all()}
-
-
 async def _any_active_import_or_entry_ply_pending(session: AsyncSession) -> bool:
     """True if the full drain should yield to higher-priority work (D-116-11).
 
@@ -369,1748 +221,16 @@ async def _any_active_import_or_entry_ply_pending(session: AsyncSession) -> bool
     return bool(entry_ply_pending)
 
 
-def _resolve_full_eval(
-    target: _FullPlyEvalTarget,
-    dedup_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
-    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
-) -> tuple[int | None, int | None, str | None, str | None]:
-    """Resolve a target's POSITION-keyed eval + decision best_move/pv (pure; WR-04).
-
-    Returns (eval_cp, eval_mate, best_move, pv_string) where eval_cp/eval_mate are
-    the eval OF this target's own position (the engine evaluated the pre-push
-    board, or the dedup map supplies the same position-keyed value) and
-    best_move/pv are the engine's best move + PV FROM this position. This function
-    does NOT apply the post-move storage shift — that is done at write time in
-    `_post_move_eval` (SEED-044), so the same +1 lives in exactly one place.
-
-    Priority: dedup hit (EVAL-03, opening region only) > engine result >
-    (None, None, None, None) hole (D-116-07). pv_string is always None for dedup'd
-    positions here — the dedup map's cached pv (element [3]) is intentionally NOT
-    surfaced through this function, which only feeds _apply_full_eval_results'
-    eval/best_move writes. The cached pv is merged into engine_result_map upstream
-    at submit time instead (SEED-076 follow-up), so flaw-adjacent PV writes still
-    happen elsewhere.
-    """
-    if not target.is_terminal and target.ply <= _DEDUP_MAX_PLY and target.full_hash in dedup_map:
-        eval_cp, eval_mate, best_move, _pv = dedup_map[target.full_hash]
-        return eval_cp, eval_mate, best_move, None
-    return engine_result_map.get(target.ply, (None, None, None, None))
-
-
-def _post_move_eval(
-    pos_eval: dict[int, tuple[int | None, int | None]],
-    ply: int,
-) -> tuple[int | None, int | None]:
-    """Post-move storage shift — the SINGLE site of the +1 (SEED-044).
-
-    Under the post-move convention the eval stored at row `ply` is the eval of
-    the position AFTER the move at `ply`, i.e. the eval of the NEXT position
-    (`ply + 1`). `pos_eval` is the position-keyed eval map (eval OF each ply's
-    position, including the terminal ply that follows the last move). For the
-    last real row, `ply + 1` is the terminal position. A missing next-ply eval
-    (engine hole at ply+1, or no terminal donor) yields a (None, None) NULL hole.
-    """
-    return pos_eval.get(ply + 1, (None, None))
-
-
-async def _batch_update_best_move_rows(
-    session: AsyncSession,
-    game_id: int,
-    bm_rows: list[tuple[int, str]],
-) -> None:
-    """Emit ONE batched UPDATE for best_move-only rows (FLAWCHESS-6B).
-
-    Used by _apply_full_eval_results for:
-    - lichess-eval game plies (best_move only; evals preserved untouched)
-    - engine-game plies that have a best_move but a NULL post-move eval (hole rows
-      where best_move is still available — written independently of eval, per SEED-044)
-
-    Uses CAST() instead of :: cast syntax: asyncpg's named-param rewrite (`$N`)
-    occurs before the server parses the SQL, so `::` adjacent to a `$N` placeholder
-    raises a syntax error. CAST() is the portable equivalent.
-
-    Guard: empty input is a no-op (no zero-row VALUES UPDATE is emitted).
-    Sequential execute on caller-owned session — no asyncio.gather (CLAUDE.md).
-    """
-    if not bm_rows:
-        return
-    params: dict[str, int | str] = {"game_id": game_id}
-    values_parts: list[str] = []
-    for i, (ply, bm) in enumerate(bm_rows):
-        params[f"ply_{i}"] = ply
-        params[f"bm_{i}"] = bm
-        values_parts.append(f"(CAST(:ply_{i} AS smallint), CAST(:bm_{i} AS varchar))")
-    values_sql = ", ".join(values_parts)
-    sql = sa.text(
-        f"UPDATE game_positions"  # noqa: S608 — no user input; params are bound
-        f" SET best_move = v.best_move"
-        f" FROM (VALUES {values_sql}) AS v(ply, best_move)"
-        f" WHERE game_positions.game_id = :game_id"
-        f" AND game_positions.ply = v.ply"
-    )
-    await session.execute(sql, params)
-
-
-async def _batch_update_pv_rows(
-    session: AsyncSession,
-    game_id: int,
-    pv_rows: list[tuple[int, str]],
-) -> None:
-    """Emit ONE batched UPDATE writing pv (principal variation) for the given plies.
-
-    Shared by the live drain (_classify_and_fill_oracle) and the SEED-054 backfill
-    (scripts/backfill_best_move_pv.py) so the (game_id, ply) keying is identical by
-    construction. pv is unbounded Text (PostgreSQL won't reject it at the column
-    level).
-
-    Does NOT catch exceptions — callers decide fault tolerance. The drain wraps the
-    call in its own try/except so a PV write failure never aborts the flaw rows +
-    oracle counts already written in the same transaction (T-108-04 / WR-01).
-
-    Uses CAST() rather than :: cast syntax for asyncpg compatibility (same reason
-    as _batch_update_best_move_rows). Guard: empty input is a no-op (no zero-row
-    VALUES UPDATE). Sequential execute on caller-owned session — no asyncio.gather
-    (CLAUDE.md).
-    """
-    if not pv_rows:
-        return
-    params: dict[str, int | str] = {"game_id": game_id}
-    values_parts: list[str] = []
-    for i, (ply, pv) in enumerate(pv_rows):
-        params[f"ply_{i}"] = ply
-        params[f"pv_{i}"] = pv
-        values_parts.append(f"(CAST(:ply_{i} AS smallint), CAST(:pv_{i} AS text))")
-    values_sql = ", ".join(values_parts)
-    sql = sa.text(
-        f"UPDATE game_positions"  # noqa: S608 — no user input; params are bound
-        f" SET pv = v.pv"
-        f" FROM (VALUES {values_sql}) AS v(ply, pv)"
-        f" WHERE game_positions.game_id = :game_id"
-        f" AND game_positions.ply = v.ply"
-    )
-    await session.execute(sql, params)
-
-
-async def _batch_update_eval_rows(
-    session: AsyncSession,
-    game_id: int,
-    eval_rows: list[tuple[int, int | None, int | None, str | None]],
-) -> None:
-    """Emit ONE batched UPDATE for eval-bearing engine rows (FLAWCHESS-6B).
-
-    Each row carries (ply, eval_cp, eval_mate, best_move). eval_cp/eval_mate are
-    always non-NULL (at least one is set) and overwrite unconditionally. best_move
-    may be NULL: it is sourced from THIS ply's resolution while the eval is the
-    post-move eval of ply+1 (a different resolution), so an eval-bearing row can
-    legitimately carry best_move=None. We must NOT clobber a previously-written
-    best_move in that case (re-submit / retry path), so best_move is written via
-    COALESCE(v.best_move, existing) — exactly matching the pre-batch semantics
-    where best_move was only ever written when present (FLAWCHESS-6B).
-
-    Uses CAST() instead of :: cast syntax for asyncpg compatibility (same reason
-    as _batch_update_best_move_rows).
-
-    Guard: empty input is a no-op (no zero-row VALUES UPDATE is emitted).
-    Sequential execute on caller-owned session — no asyncio.gather (CLAUDE.md).
-    """
-    if not eval_rows:
-        return
-    params: dict[str, int | str | None] = {"game_id": game_id}
-    values_parts: list[str] = []
-    for i, (ply, eval_cp, eval_mate, bm) in enumerate(eval_rows):
-        params[f"ply_{i}"] = ply
-        params[f"ecp_{i}"] = eval_cp
-        params[f"emt_{i}"] = eval_mate
-        params[f"bm_{i}"] = bm
-        values_parts.append(
-            f"(CAST(:ply_{i} AS smallint),"
-            f" CAST(:ecp_{i} AS smallint),"
-            f" CAST(:emt_{i} AS smallint),"
-            f" CAST(:bm_{i} AS varchar))"
-        )
-    values_sql = ", ".join(values_parts)
-    sql = sa.text(
-        f"UPDATE game_positions"  # noqa: S608 — no user input; params are bound
-        f" SET eval_cp = v.eval_cp, eval_mate = v.eval_mate,"
-        f" best_move = COALESCE(v.best_move, game_positions.best_move)"
-        f" FROM (VALUES {values_sql}) AS v(ply, eval_cp, eval_mate, best_move)"
-        f" WHERE game_positions.game_id = :game_id"
-        f" AND game_positions.ply = v.ply"
-    )
-    await session.execute(sql, params)
-
-
-async def _apply_full_eval_results(
-    session: AsyncSession,
-    targets: Sequence[_FullPlyEvalTarget],
-    dedup_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
-    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
-    is_lichess_eval_game: bool,
-    preserve_existing_evals: bool = False,
-) -> int:
-    """Write POST-MOVE evals + best_move to GamePosition rows (WR-04; SEED-044).
-
-    preserve_existing_evals (SEED-076): submit paths that use an INCREMENTAL re-lease
-    (only the still-missing positions are handed to the worker) pass True. An engine-game
-    row that already carries a non-NULL DB eval but resolves to None this pass — because
-    its filling position was omitted from the re-lease and the worker did not resend it —
-    is then treated as already-resolved: NOT counted as a hole and NOT overwritten. The
-    local drain leaves this False (it re-evaluates the whole game each tick), so its
-    behavior is unchanged (zero blast radius).
-
-    Batched single-round-trip writes replace the former per-row UPDATE loop
-    (FLAWCHESS-6B N+1 fix). UPDATEs run sequentially against the caller-owned
-    session (CLAUDE.md hard rule: AsyncSession is not safe under asyncio.gather);
-    the caller commits.
-
-    Convention (SEED-044): a row stores the eval of the position AFTER its move
-    (post-move), matching lichess `%eval` and the flaw classifier. We resolve a
-    position-keyed eval for every target (incl. the terminal eval-donor), then
-    write row k's eval from `pos_eval[k + 1]` via `_post_move_eval` — the single
-    +1 shift site. best_move stays decision-ply-keyed (best move FROM row k's
-    position), so it is NOT shifted.
-
-    is_lichess_eval_game gate (lichess_evals_at IS NOT NULL, D-117-07):
-    - is_lichess_eval_game=True: lichess %evals are already post-move and
-      authoritative — NEVER shifted or overwritten. Only best_move
-      (engine-supplied; lichess lacks it) is written, at the flaw-adjacent plies
-      that reached the write phase (WR-01 / D-117-13). SEED-044: un-annotated
-      lichess plies are left NULL rather than filled with a pre-push engine eval
-      (which mixed conventions in-game).
-    - is_lichess_eval_game=False: engine games get the full post-move eval written.
-
-    Returns the number of failed (NULL-hole) engine-game plies. Sentry reporting
-    is the caller's responsibility — ONE aggregated event per game, never per ply
-    (WR-05).
-    """
-    # Position-keyed resolve for every target (incl. the terminal eval-donor),
-    # then the post-move +1 shift at write time (SEED-044).
-    pos_eval: dict[int, tuple[int | None, int | None]] = {}
-    best_move_by_ply: dict[int, str | None] = {}
-    for target in targets:
-        eval_cp, eval_mate, best_move, _pv_string = _resolve_full_eval(
-            target, dedup_map, engine_result_map
-        )
-        # _pv_string intentionally discarded here: pv is written ONLY at flaw-adjacent
-        # plies (ply = flaw_ply + 1) in _classify_and_fill_oracle below (D-117-02).
-        pos_eval[target.ply] = (eval_cp, eval_mate)
-        if not target.is_terminal:
-            best_move_by_ply[target.ply] = best_move
-
-    # Collect write-rows in one pass; emit batched UPDATEs after the loop.
-    # Two groups (FLAWCHESS-6B):
-    #   bm_only_rows  — lichess plies (best_move-only) + engine hole-rows w/ best_move
-    #   eval_rows     — engine plies with a resolved eval (eval_cp/eval_mate + best_move)
-    # failed_ply_count is accumulated in the same pass (pure Python; no DB I/O here).
-    game_id = next((t.game_id for t in targets if not t.is_terminal), 0)
-    bm_only_rows: list[tuple[int, str]] = []
-    eval_rows: list[tuple[int, int | None, int | None, str | None]] = []
-    failed_ply_count = 0
-
-    for target in targets:
-        if target.is_terminal:
-            # Eval-only donor: its eval already lives in pos_eval as the last
-            # real row's after-eval. It has no game_positions row to write.
-            continue
-
-        ply = target.ply
-        best_move = best_move_by_ply.get(ply)
-
-        if is_lichess_eval_game:
-            # Preserve lichess %evals (post-move, authoritative); write best_move only.
-            if best_move is not None:
-                bm_only_rows.append((ply, best_move))
-            continue
-
-        # Engine game: store the POST-MOVE eval (eval of the position AFTER this
-        # move = pos_eval[ply + 1]); best_move stays decision-ply-keyed. best_move is
-        # written whenever available, INDEPENDENT of the eval — an engine hole at the
-        # after-position (ply + 1) must not drop this row's own best_move (SEED-044).
-        eval_cp, eval_mate = _post_move_eval(pos_eval, ply)
-
-        if eval_cp is None and eval_mate is None:
-            if target.ends_game:
-                # SEED-049: the after-position is the game-over terminal — deliberately
-                # unevaluable (no legal moves; engine skip in _collect_full_ply_targets
-                # already omits the terminal donor when is_game_over()). This NULL is
-                # legitimate, not a transient Stockfish timeout. Do NOT count it as a
-                # hole; the row is written normally (eval stays NULL, best_move if set).
-                if best_move is not None:
-                    bm_only_rows.append((ply, best_move))
-            elif preserve_existing_evals and (
-                target.eval_cp is not None or target.eval_mate is not None
-            ):
-                # SEED-076: incremental re-lease. This row's eval was filled by a prior
-                # partial submit and its filling position was omitted from the re-lease,
-                # so the worker did not resend it (fresh resolution is None). It is NOT a
-                # hole — preserve the existing DB eval (do not overwrite with NULL) and do
-                # not count it. Without this guard the whole-game failed_ply_count would
-                # recount every already-eval'd ply as a hole and never reach Path A.
-                if best_move is not None:
-                    bm_only_rows.append((ply, best_move))
-            else:
-                # D-116-07: engine hole at the after-position — leave the eval NULL;
-                # counted for the caller's per-game aggregated Sentry event (WR-05).
-                failed_ply_count += 1
-                if best_move is not None:
-                    bm_only_rows.append((ply, best_move))
-        else:
-            # Eval resolved: include best_move in the eval group (may be None — writing
-            # NULL over NULL is safe; both values come from the same target pass so no
-            # in-flight best_move is discarded).
-            eval_rows.append((ply, eval_cp, eval_mate, best_move))
-
-    # Emit batched UPDATEs — O(1) round-trips per game (FLAWCHESS-6B).
-    # Empty lists are guarded inside each helper (no zero-row VALUES statement).
-    await _batch_update_best_move_rows(session, game_id, bm_only_rows)
-    await _batch_update_eval_rows(session, game_id, eval_rows)
-
-    return failed_ply_count
-
-
-async def _mark_full_evals_completed(session: AsyncSession, game_id: int) -> None:
-    """Mark one game as fully analyzed (EVAL-05, Phase 119 SEED-045).
-
-    Called only when no non-terminal holes remain (failed_ply_count == 0) OR when
-    full_eval_attempts reaches MAX_EVAL_ATTEMPTS (cap path). D-116-07 invariant
-    preserved: a deterministically-unevaluable ply cannot loop forever — the cap
-    stamps anyway after MAX_EVAL_ATTEMPTS ticks. One UPDATE per game (single tick).
-    """
-    now_ts = datetime.now(timezone.utc)
-    games_table = Game.__table__
-    stmt = (
-        update(games_table)  # ty: ignore[invalid-argument-type]
-        .where(games_table.c.id == game_id)
-        .values(full_evals_completed_at=now_ts)
-    )
-    await session.execute(stmt)
-
-
-async def _mark_full_pv_completed(session: AsyncSession, game_id: int) -> None:
-    """Mark one game's best_move/PV as written (D-117-12 second completion dimension).
-
-    Mirrors _mark_full_evals_completed. Set after best_move is written for all
-    plies and flaw PVs are written at flaw-adjacent positions.
-    """
-    now_ts = datetime.now(timezone.utc)
-    games_table = Game.__table__
-    stmt = (
-        update(games_table)  # ty: ignore[invalid-argument-type]
-        .where(games_table.c.id == game_id)
-        .values(full_pv_completed_at=now_ts)
-    )
-    await session.execute(stmt)
-
-
-async def _classify_and_fill_oracle(
-    session: AsyncSession,
-    game_id: int,
-    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
-    flaw_pv_blobs: dict[int, tuple[list[PvNode], list[PvNode]]] | None = None,
-    blobs_pending: bool = False,
-) -> None:
-    """Classify game_flaws and fill oracle count columns for one engine-analyzed game (EVAL-06).
-
-    Runs inside the Step 4 write session (same transaction as _apply_full_eval_results)
-    so flaw rows, oracle counts, and flaw PVs commit atomically with the evals (T-117-11).
-
-    Steps:
-    1. Load game + ordered positions from the write session.
-    2. classify_game_flaws — emits FlawRecord for M+B across both players.
-    3. delete_flaws_for_game + bulk_insert_game_flaws — the full/oracle pass is
-       authoritative and fully REPLACES any entry-pass rows (see tactic-tagging
-       note below).
-    4. count_game_severities × 2 (white then black) to get inaccuracy counts.
-    5. UPDATE games oracle columns (white/black inaccuracies/mistakes/blunders).
-    6. For each FlawRecord at ply N, write game_positions.pv at ply N+1 (D-117-02,
-       Pitfall 4 off-by-one: pv belongs to the position AFTER the flaw was played).
-
-    Args:
-        session: Write session (same transaction as _apply_full_eval_results).
-        game_id: The game being classified.
-        engine_result_map: {ply -> (eval_cp, eval_mate, best_move, pv_string)} from
-            the engine pass — PVs are not yet in game_positions at classify time.
-        flaw_pv_blobs: Optional {flaw_ply -> (allowed_blob, missed_blob)} MultiPV-2
-            blobs built in memory by _build_flaw_multipv2_blobs (Phase 142, D-02).
-            MUST be passed from the call site — blobs are NOT yet in the DB when
-            classify runs (Pitfall 4: classify precedes _run_multipv2_pass). When
-            None (old games without blobs), the gate is skipped for all flaws.
-        blobs_pending: Phase 147 (D-01/D-03) — forwarded unchanged to
-            classify_game_flaws. Defaults to False (local drain / discovery
-            behavior unchanged, D-05). The remote go-forward call site
-            (_apply_submit) passes True so cp-based flaws whose continuation blob
-            is deferred to the tier-4 pass are suppressed to NULL instead of
-            persisted raw/ungated.
-
-    Errors in bulk_insert_game_flaws and the oracle-count UPDATE are intentionally
-    NOT caught here — they must propagate to the caller so the write-session
-    transaction is aborted and the completion markers (_mark_full_evals_completed /
-    _mark_full_pv_completed) are NOT committed.  Only the per-flaw PV writes are
-    individually fault-tolerant (a single bad PV row must not abort the whole game).
-
-    T-108-04 still applies at the drain-tick level: _full_drain_tick wraps the entire
-    write phase in its own exception boundary so one bad game never aborts the drain.
-    """
-    game_result = await session.execute(select(Game).where(Game.id == game_id))
-    game = game_result.scalar_one_or_none()
-    if game is None:
-        return
-
-    positions_result = await session.execute(
-        select(GamePosition)
-        .where(
-            GamePosition.game_id == game.id,
-            GamePosition.user_id == game.user_id,
-        )
-        .order_by(GamePosition.ply)
-    )
-    positions = list(positions_result.scalars().all())
-
-    # Live tactic tagging (260618-aiq): the freshly-computed PVs in
-    # engine_result_map are NOT yet written to game_positions at this point (the
-    # batched PV UPDATE below runs after classify). _detect_tactic_for_flaw reads
-    # the PV at flaw_ply+1, so without this override every live classify would see
-    # pv=NULL and tag tactic_motif=NULL until a later backfill_flaws.py run. Pass
-    # the in-memory PVs (ply -> pv_string) so the drain tags tactics on the fly.
-    pv_by_ply: dict[int, str] = {
-        ply: entry[3] for ply, entry in engine_result_map.items() if entry[3] is not None
-    }
-
-    # Phase 143 D-02: pass in-memory blobs to route classify through _classify_tactic_gated.
-    # Blobs are NOT yet in the DB here (Pitfall 4: classify precedes _run_multipv2_pass).
-    flaw_result = classify_game_flaws(
-        game,
-        positions,
-        pv_by_ply=pv_by_ply,
-        flaw_pv_blobs=flaw_pv_blobs,
-        blobs_pending=blobs_pending,
-    )
-    if "reason" in flaw_result:
-        # GameNotAnalyzed: insufficient eval coverage — skip.
-        return
-
-    flaw_list = flaw_result  # list[FlawRecord]
-
-    # Delete-then-insert (not ON CONFLICT DO NOTHING): the full/oracle pass is
-    # authoritative and must REPLACE any rows written by the entry pass. Lichess
-    # "covered" games (full %eval at import) get flaw rows from
-    # _classify_and_insert_flaws (import_service.py / entry-submit) BEFORE this
-    # runs — those rows carry NULL tactic columns because the entry pass has no
-    # PVs. A plain ON CONFLICT DO NOTHING would silently drop these fresh
-    # tactic-bearing rows, so the live PVs above would never reach game_flaws
-    # (tactic_motif stayed NULL until a backfill_flaws.py run). Deleting first
-    # also lets our deeper Stockfish evals reclassify the flaw SET (lichess %eval
-    # can disagree on severity / which plies are flaws) instead of leaving stale
-    # entry-pass rows behind. Same write transaction → atomic with the evals.
-    await delete_flaws_for_game(session, game_id=game.id, user_id=game.user_id)
-
-    # Insert M+B flaw rows.
-    # Bug fix (WR-01): DB errors here MUST propagate — a failure at this point
-    # means no flaw rows were inserted; catching it would let the caller commit
-    # the completion markers and permanently mark the game done with no flaws.
-    rows = [
-        flaw_record_to_row(user_id=game.user_id, game_id=game.id, flaw=flaw) for flaw in flaw_list
-    ]
-    await bulk_insert_game_flaws(session, rows)
-
-    # Oracle count columns: count_game_severities reads only game.user_color.
-    # Call twice with a swapped-color view (no DB I/O in count_game_severities —
-    # it's pure Python over already-loaded positions).
-    counts_white = count_game_severities(
-        _GameColorView(game, "white"),  # ty: ignore[invalid-argument-type]  # reads only user_color
-        positions,
-    )
-    counts_black = count_game_severities(
-        _GameColorView(game, "black"),  # ty: ignore[invalid-argument-type]  # reads only user_color
-        positions,
-    )
-
-    # Use "reason" key as the TypedDict discriminator (isinstance on TypedDict raises TypeError).
-    if "reason" in counts_white or "reason" in counts_black:
-        # Shouldn't happen (same coverage gate as classify_game_flaws), but be defensive.
-        return
-
-    games_table = Game.__table__
-    # Bug fix (WR-01): DB errors here MUST propagate — if the oracle-count UPDATE
-    # fails the game must be retried, not silently marked complete with NULL counts.
-    await session.execute(
-        update(games_table)  # ty: ignore[invalid-argument-type]
-        .where(games_table.c.id == game_id)
-        .values(
-            white_inaccuracies=counts_white["inaccuracy"],
-            white_mistakes=counts_white["mistake"],
-            white_blunders=counts_white["blunder"],
-            black_inaccuracies=counts_black["inaccuracy"],
-            black_mistakes=counts_black["mistake"],
-            black_blunders=counts_black["blunder"],
-        )
-    )
-
-    # Flaw PV write (D-117-02 / SEED-054): for each FlawRecord at ply N, write pv at
-    # BOTH ply N and ply N+1:
-    #   - ply N    = the ideal-continuation line from the pre-blunder decision board
-    #                (latent until a frontend surface renders it — SEED-054 Part 2).
-    #   - ply N+1  = the refutation line from the post-blunder board (D-117-02, the
-    #                SEED-039 tactic-motif input).
-    # Each pv_string comes from engine_result_map at its OWN ply. For lichess games
-    # ply N is engine-evaluated thanks to _flaw_engine_plies (SEED-054 Part 1); for
-    # chess.com every ply already ran. Opening dedup-transplanted plies are absent
-    # from engine_result_map → pv stays NULL there (acceptable per SEED-054). Deduped
-    # by ply: consecutive flaws can make one flaw's ply N collide with another's N+1.
-    #
-    # FLAWCHESS-6B: collect surviving (ply, pv_string) pairs, then ONE batched UPDATE
-    # via _batch_update_pv_rows.
-    #
-    # Fault tolerance rationale: batching trades per-row isolation for one round-trip —
-    # acceptable because pv is unbounded Text (PostgreSQL won't reject it at the column
-    # level), so the realistic failure mode is a DB connection error that would have
-    # invalidated the whole session anyway, not a single bad row. The surviving rows
-    # commit atomically with the flaw rows and oracle counts above (T-117-11). If the
-    # batched execute fails, flaw rows + oracle counts are NOT rolled back — both the
-    # old code and this block are inside the write_session transaction; asyncpg-level
-    # errors invalidate the whole session regardless.
-    flaw_pv_by_ply: dict[int, str] = {}
-    for flaw in flaw_list:
-        flaw_ply_val: int = flaw["ply"]
-        for cand_ply in (flaw_ply_val, flaw_ply_val + 1):
-            if cand_ply in flaw_pv_by_ply:
-                continue
-            engine_entry = engine_result_map.get(cand_ply)
-            if engine_entry is None:
-                continue
-            _cp, _mt, _bm, pv_string = engine_entry
-            if pv_string is None:
-                continue
-            flaw_pv_by_ply[cand_ply] = pv_string
-
-    if flaw_pv_by_ply:
-        try:
-            await _batch_update_pv_rows(session, game_id, list(flaw_pv_by_ply.items()))
-        except Exception as exc:
-            # T-108-04 / WR-01: PV write failure must not abort flaw rows + oracle
-            # counts already written above. Capture for visibility without embedding
-            # variables in the message string (CLAUDE.md Sentry grouping rule).
-            sentry_sdk.set_context(
-                "classify_oracle",
-                {"game_id": game_id},
-            )
-            sentry_sdk.set_tag("source", "full_eval_drain")
-            sentry_sdk.capture_exception(exc)
-
-
-async def _flaw_engine_plies(session: AsyncSession, game_id: int) -> set[int]:
-    """Pre-classify a lichess-eval game's flaws to find plies needing an engine pass (D-117-13 / SEED-054).
-
-    Lichess-eval games (is_lichess_eval_game=True) carry a lichess %eval on
-    (nearly) every ply, so the is_lichess_eval_game target filter in
-    _full_drain_tick would otherwise drop every flaw ply before the engine
-    gather — and lichess supplies %eval but NO principal variation and NO
-    best_move. The observed result (prod sanity check ~1 h after the Phase 117
-    deploy) was 0% flaw-PV coverage for analyzed lichess games: every flaw's
-    refutation line (the SEED-039 input) was missing.
-
-    Fix: classify flaws up front from the already-stored %evals — the SAME inputs
-    the write-time classify in _classify_and_fill_oracle uses — and return the set
-    of {flaw_ply, flaw_ply + 1} plies. The caller exempts these from the
-    eval-preservation filter and from the opening dedup so the engine evaluates
-    exactly those positions, while the write path still preserves the lichess
-    %eval (D-116-04). Covers BOTH players' flaws (classify_game_flaws is two-sided
-    per D-06), matching the write-time PV loop.
-
-    Two plies per flaw (SEED-054):
-    - flaw_ply: the pre-blunder decision board → best_move (the better alternative
-      the Flaw/Library arrow renders, read at game_positions[flaw_ply].best_move) +
-      the ideal-continuation pv at the decision ply. This was NULL for lichess
-      games before SEED-054 because the engine only ran at flaw_ply + 1.
-    - flaw_ply + 1: the post-blunder board → the refutation pv (D-117-02, the
-      SEED-039 tactic-motif input).
-
-    Returns an empty set when the game is missing or classification reports
-    insufficient coverage (GameNotAnalyzed) — the caller then falls back to the
-    prior filter behavior (no extra engine calls). Engine-source (non-analyzed)
-    games never call this: their evals aren't computed at load time, and they
-    already get full-game PV coverage from the unfiltered engine pass.
-    """
-    game = (await session.execute(select(Game).where(Game.id == game_id))).scalar_one_or_none()
-    if game is None:
-        return set()
-    positions_result = await session.execute(
-        select(GamePosition)
-        .where(GamePosition.game_id == game_id, GamePosition.user_id == game.user_id)
-        .order_by(GamePosition.ply)
-    )
-    positions = list(positions_result.scalars().all())
-    flaw_result = classify_game_flaws(game, positions)
-    if "reason" in flaw_result:
-        # GameNotAnalyzed: insufficient eval coverage — fall back to prior filter.
-        return set()
-    plies: set[int] = set()
-    for flaw in flaw_result:
-        plies.add(flaw["ply"])
-        plies.add(flaw["ply"] + 1)
-    return plies
-
-
-def _reconstruct_pos_eval(
-    targets: Sequence[_FullPlyEvalTarget],
-    dedup_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
-    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
-) -> dict[int, tuple[int | None, int | None]]:
-    """Position-keyed eval map (eval OF each ply's position) assembled in-memory from
-    the just-completed gather + the dedup transplants (SEED-056).
-
-    Mirrors what _apply_full_eval_results will write, but with no DB round-trip, so the
-    drain can pre-classify an engine game's flaws BEFORE the write session. Opening
-    plies are mutually exclusive across the two maps by construction (engine_targets in
-    _full_drain_tick excludes any opening ply with a dedup hit), so source precedence
-    never matters here.
-    """
-    pos_eval: dict[int, tuple[int | None, int | None]] = {}
-    for t in targets:
-        engine_entry = engine_result_map.get(t.ply)
-        if engine_entry is not None:
-            pos_eval[t.ply] = (engine_entry[0], engine_entry[1])
-        elif not t.is_terminal and t.ply <= _DEDUP_MAX_PLY and t.full_hash in dedup_map:
-            cp, mate, _bm, _pv = dedup_map[t.full_hash]
-            pos_eval[t.ply] = (cp, mate)
-    return pos_eval
-
-
-async def _missing_flaw_pv_targets(
-    game_id: int,
-    targets: Sequence[_FullPlyEvalTarget],
-    dedup_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
-    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
-) -> list[_FullPlyEvalTarget]:
-    """SEED-056: find engine-game flaw plies that took a pv-less opening dedup transplant.
-
-    The lichess path pre-classifies flaws from stored %evals up front (_flaw_engine_plies)
-    and exempts {flaw_ply, flaw_ply + 1} from dedup so they always get a real engine pass
-    (PV + best_move). Fresh engine games can't do that — they have no evals until AFTER
-    the gather — so an opening-region flaw ply whose full_hash matched a dedup donor gets
-    an eval-only transplant with NO pv. The flaw is registered but un-taggable (no
-    refutation line for the SEED-039 motif classifier), and the better-alternative PV at
-    flaw_ply is lost too.
-
-    Fix: once the gather is done we DO know every ply's eval (engine_result_map for
-    engine plies, dedup_map for transplanted ones). Reconstruct the post-move evals
-    in-memory, classify, and return the dedup-transplanted {flaw_ply, flaw_ply + 1}
-    targets that still lack a pv. The caller runs a tiny second engine gather on these
-    boards and merges the results back into engine_result_map before the write session,
-    so classify + the PV write pick the pv up exactly as for any engine-evaluated ply.
-
-    Returns [] when the game has no flaws, no eval coverage, or no pv-less opening flaw
-    plies — the common case (the prod gap is ~0.3% of opening-region engine-game flaws).
-    """
-    pos_eval = _reconstruct_pos_eval(targets, dedup_map, engine_result_map)
-    async with async_session_maker() as session:
-        game_result = await session.execute(select(Game).where(Game.id == game_id))
-        game = game_result.scalar_one_or_none()
-        if game is None:
-            return []
-        positions_result = await session.execute(
-            select(GamePosition)
-            .where(GamePosition.game_id == game_id, GamePosition.user_id == game.user_id)
-            .order_by(GamePosition.ply)
-        )
-        positions = list(positions_result.scalars().all())
-    # Overlay the reconstructed post-move evals (engine games have NULL evals in the DB
-    # until the write session runs). _post_move_eval is the single source of the +1 shift.
-    for pos in positions:
-        cp, mate = _post_move_eval(pos_eval, pos.ply)
-        pos.eval_cp = cp
-        pos.eval_mate = mate
-
-    flaw_result = classify_game_flaws(game, positions)
-    if "reason" in flaw_result:
-        return []
-
-    targets_by_ply = {t.ply: t for t in targets}
-    need: dict[int, _FullPlyEvalTarget] = {}
-    for flaw in flaw_result:
-        flaw_ply_val: int = flaw["ply"]
-        for cand_ply in (flaw_ply_val, flaw_ply_val + 1):
-            if cand_ply in need:
-                continue
-            engine_entry = engine_result_map.get(cand_ply)
-            if engine_entry is not None and engine_entry[3] is not None:
-                continue  # already engine-evaluated with a pv
-            target = targets_by_ply.get(cand_ply)
-            if target is None or target.is_terminal:
-                continue
-            # Only the opening dedup region is in scope: a transplanted ply has its eval
-            # but no pv. Engine-region flaw plies always get a real pass already, and an
-            # engine HOLE (eval failed) would just fail the re-pass too — out of scope.
-            if cand_ply <= _DEDUP_MAX_PLY and target.full_hash in dedup_map:
-                need[cand_ply] = target
-    return list(need.values())
-
-
-async def _fill_engine_game_flaw_pvs(
-    game_id: int,
-    targets: Sequence[_FullPlyEvalTarget],
-    dedup_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
-    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
-    is_lichess_eval_game: bool,
-) -> None:
-    """SEED-056: targeted second engine pass for pv-less opening flaw plies (engine games).
-
-    Engine games can't pre-know their flaws (no evals until after the gather), so an
-    opening-region flaw ply that matched a dedup donor took an eval-only transplant with
-    NO pv — registered but un-taggable. This classifies from the in-memory gather results,
-    finds those pv-less flaw plies, runs ONE more gather over just their boards, and merges
-    the pv back into engine_result_map (mutated in place) so the write-session classify
-    (tactic tagging) and the pv write pick it up like any engine-evaluated ply.
-
-    No-op for lichess games (they pre-classify up front via _flaw_engine_plies) and when
-    there were no opening dedup hits (no possible gap). MUST be called with NO session open
-    — it runs asyncio.gather (CLAUDE.md hard rule).
-    """
-    if is_lichess_eval_game:
-        return
-    has_opening_dedup = any(
-        not t.is_terminal and t.ply <= _DEDUP_MAX_PLY and t.full_hash in dedup_map for t in targets
-    )
-    if not has_opening_dedup:
-        return
-    pv_gap_targets = await _missing_flaw_pv_targets(game_id, targets, dedup_map, engine_result_map)
-    if not pv_gap_targets:
-        return
-    # Phase 142: switch to evaluate_nodes_multipv2 so the PV-recovery pass also returns
-    # multipv=2 data. Slice to 4-tuple before writing to engine_result_map (which is keyed
-    # as dict[int, tuple[...*4]] to avoid blast radius on _apply_full_eval_results).
-    pv_gap_results: Sequence[
-        tuple[int | None, int | None, str | None, str | None, int | None, int | None, str | None]
-    ] = await asyncio.gather(
-        *(engine_service.evaluate_nodes_multipv2(t.board) for t in pv_gap_targets)
-    )
-    for t, res in zip(pv_gap_targets, pv_gap_results, strict=True):
-        # Only merge a real pv — a failed re-pass (pv None) leaves the status quo (eval
-        # still served from the dedup transplant; pv stays NULL).
-        if res[3] is not None:
-            engine_result_map[t.ply] = (res[0], res[1], res[2], res[3])
-
-
-async def _fill_engine_game_flaw_second_best(
-    game_id: int,
-    targets: Sequence[_FullPlyEvalTarget],
-    dedup_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
-    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
-    second_best_map: dict[int, tuple[int | None, int | None, str | None]],
-    is_lichess_eval_game: bool,
-) -> None:
-    """D-05 / Phase 142 MPV-02: recover node-0 second-best for flaw plies that used
-    the opening dedup cache (no engine second-best in second_best_map for those plies).
-
-    Mirrors _fill_engine_game_flaw_pvs (SEED-056): no-op for lichess games and when
-    there is no opening dedup. Reuses _missing_flaw_pv_targets to find the same
-    dedup-transplanted flaw plies. Mutates second_best_map in place. MUST be called
-    with NO session open — runs asyncio.gather (CLAUDE.md hard rule).
-    """
-    if is_lichess_eval_game:
-        return
-    has_opening_dedup = any(
-        not t.is_terminal and t.ply <= _DEDUP_MAX_PLY and t.full_hash in dedup_map for t in targets
-    )
-    if not has_opening_dedup:
-        return
-    # Find flaw-ply targets in the dedup region — the same set as pv-less gap targets.
-    gap_targets = await _missing_flaw_pv_targets(game_id, targets, dedup_map, engine_result_map)
-    if not gap_targets:
-        return
-    # Only recover plies still absent from second_best_map (avoid redundant engine calls).
-    missing = [t for t in gap_targets if t.ply not in second_best_map]
-    if not missing:
-        return
-    gap_results: Sequence[
-        tuple[int | None, int | None, str | None, str | None, int | None, int | None, str | None]
-    ] = await asyncio.gather(*(engine_service.evaluate_nodes_multipv2(t.board) for t in missing))
-    for t, res in zip(missing, gap_results, strict=True):
-        second_cp, second_mate, second_uci = res[4], res[5], res[6]
-        # Include valid second-best data only (not engine failure). second_uci is str
-        # when the engine ran: "" = single-legal-move sentinel, non-empty = real second move.
-        if second_cp is not None or second_uci is not None:
-            second_best_map[t.ply] = (second_cp, second_mate, second_uci)
-
-
-def _walk_pv_boards(
-    start_board: chess.Board,
-    pv_string: str | None,
-    cap: int,
-) -> list[chess.Board]:
-    """Phase 142 MPV-02: return boards at each PV node (Option B server-side walk).
-
-    Yields independent board copies: node 0 = copy of start_board, node k = position
-    after k PV moves. Stops when a move is illegal, a UCI is malformed, or cap nodes
-    are reached (cap limits nodes 1..N, so the list has at most cap+1 entries).
-    """
-    boards: list[chess.Board] = [start_board.copy()]
-    if not pv_string:
-        return boards
-    for move_uci in pv_string.split()[:cap]:
-        try:
-            move = chess.Move.from_uci(move_uci)
-            if not boards[-1].is_legal(move):
-                break
-            next_board = boards[-1].copy()
-            next_board.push(move)
-            boards.append(next_board)
-        except (ValueError, AssertionError):
-            break
-    return boards
-
-
-def _placeholder_defender_node() -> PvNode:
-    """SEED-079: the slim-blob odd-index (defender) placeholder node.
-
-    The forcing-line gate reads only solver nodes (even indices, D-10), so defender
-    continuation nodes are no longer engine-evaluated. To keep the gate's index-parity
-    convention intact (even = solver, odd = defender), every skipped odd index is
-    filled with this all-None PvNode so the stored list keeps its original indices
-    and length. su must be str, never None (Pitfall 3).
-    """
-    return PvNode(b=None, bm=None, s=None, sm=None, su="")
-
-
-def _build_line_blobs(
-    flaw_ply: int,
-    line: str,
-    walk: list[chess.Board],
-    pos_eval: dict[int, tuple[int | None, int | None]],
-    second_best_map: dict[int, tuple[int | None, int | None, str | None]],
-    node_eval: dict[
-        tuple[int, str, int],
-        tuple[int | None, int | None, str | None, str | None, int | None, int | None, str | None],
-    ],
-) -> list[PvNode]:
-    """Phase 142 MPV-02: assemble PvNode list for one line (allowed or missed) of a flaw.
-
-    Node 0 evals come from pos_eval + second_best_map (no engine call needed).
-    SEED-079 slim scheme: only EVEN continuation nodes (2, 4, ...) come from node_eval
-    (batch-gathered in _build_flaw_multipv2_blobs — odd defender boards are never
-    engine-evaluated); each skipped odd index is filled with the all-None placeholder
-    so the gate's index-parity convention (even = solver) stays intact. A missing even
-    node_eval entry is a gap (stop), so the blob always ends on a real even node.
-    su='' is the no-second-move sentinel (Pitfall 3: never None in PvNode).
-    """
-    if not walk:
-        return []
-    nodes: list[PvNode] = []
-    node0_ply = flaw_ply if line == "missed" else flaw_ply + 1
-    best_cp, best_mate = pos_eval.get(node0_ply, (None, None))
-    second = second_best_map.get(node0_ply)
-    scp, smt, su_raw = second if second else (None, None, "")
-    su: str = su_raw if su_raw is not None else ""
-    nodes.append(PvNode(b=best_cp, bm=best_mate, s=scp, sm=smt, su=su))
-    for k in range(2, len(walk), 2):
-        res = node_eval.get((flaw_ply, line, k))
-        if res is None:
-            break
-        nodes.append(_placeholder_defender_node())  # The skipped odd index k-1.
-        # su must be str (Pitfall 3): engine failure yields (None,)*7 → res[6]=None → "".
-        su_k: str = res[6] if res[6] is not None else ""
-        nodes.append(PvNode(b=res[0], bm=res[1], s=res[4], sm=res[5], su=su_k))
-    return nodes
-
-
-async def _build_flaw_multipv2_blobs(
-    game_id: int,
-    targets: Sequence[_FullPlyEvalTarget],
-    dedup_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
-    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
-    second_best_map: dict[int, tuple[int | None, int | None, str | None]],
-) -> dict[int, tuple[list[PvNode], list[PvNode]]]:
-    """Phase 142 MPV-02: build PvNode blobs for the allowed/missed lines of each flaw.
-
-    Loads game + positions (own read session, closed before gather), overlays in-memory
-    evals (same pattern as _missing_flaw_pv_targets), classifies flaws, walks each
-    flaw's PV using _walk_pv_boards, then evaluates ALL continuation nodes (1..N) across
-    all flaws and both lines in ONE asyncio.gather. MUST be called with NO session open
-    (CLAUDE.md hard rule). Returns {} on DB miss or no flaws.
-
-    Return type: dict[flaw_ply -> (allowed_blobs, missed_blobs)].
-    Node 0 of missed = position at flaw_ply; node 0 of allowed = position at flaw_ply + 1.
-    """
-    pos_eval = _reconstruct_pos_eval(targets, dedup_map, engine_result_map)
-    targets_by_ply = {t.ply: t for t in targets}
-
-    async with async_session_maker() as session:
-        game = await session.scalar(select(Game).where(Game.id == game_id))
-        if game is None:
-            return {}
-        positions_result = await session.execute(
-            select(GamePosition)
-            .where(GamePosition.game_id == game_id, GamePosition.user_id == game.user_id)
-            .order_by(GamePosition.ply)
-        )
-        positions = list(positions_result.scalars().all())
-
-    # Overlay in-memory evals (same as _missing_flaw_pv_targets) so classify_game_flaws
-    # sees the newly-computed evals (not the NULLs still in the DB at this point).
-    for pos in positions:
-        cp, mate = _post_move_eval(pos_eval, pos.ply)
-        pos.eval_cp = cp
-        pos.eval_mate = mate
-
-    flaw_result = classify_game_flaws(game, positions)
-    if "reason" in flaw_result:
-        return {}
-
-    cap = engine_service.PV_CAP_PLIES
-
-    # Collect boards for continuation nodes (k >= 1) across all flaws and both lines.
-    # Batching into one gather avoids repeated session opens (CLAUDE.md).
-    gather_boards: list[chess.Board] = []
-    gather_keys: list[tuple[int, str, int]] = []  # (flaw_ply, "allowed"|"missed", node_k)
-    walks: dict[tuple[int, str], list[chess.Board]] = {}
-
-    for flaw in flaw_result:
-        flaw_ply: int = flaw["ply"]
-        if flaw_ply not in targets_by_ply:
-            continue
-
-        # SEED-079: only EVEN continuation indices (2, 4, ...) are gathered — the gate
-        # reads only solver (even) nodes (D-10), so defender (odd) continuation evals
-        # are dead weight. Node 0 is not gathered (comes from pos_eval).
-        # Missed line: PV walk from the flaw position (board at flaw_ply).
-        board_missed = targets_by_ply[flaw_ply].board.copy()
-        pv_missed = engine_result_map.get(flaw_ply, (None, None, None, None))[3]
-        missed_walk = _walk_pv_boards(board_missed, pv_missed, cap)
-        walks[(flaw_ply, "missed")] = missed_walk
-        for k in range(2, len(missed_walk), 2):
-            gather_boards.append(missed_walk[k])
-            gather_keys.append((flaw_ply, "missed", k))
-
-        # Allowed line: PV walk from the position after the flaw move (board at flaw_ply + 1).
-        allowed_start = flaw_ply + 1
-        if allowed_start not in targets_by_ply:
-            walks[(flaw_ply, "allowed")] = []
-            continue
-        board_allowed = targets_by_ply[allowed_start].board.copy()
-        pv_allowed = engine_result_map.get(allowed_start, (None, None, None, None))[3]
-        allowed_walk = _walk_pv_boards(board_allowed, pv_allowed, cap)
-        walks[(flaw_ply, "allowed")] = allowed_walk
-        for k in range(2, len(allowed_walk), 2):
-            gather_boards.append(allowed_walk[k])
-            gather_keys.append((flaw_ply, "allowed", k))
-
-    # Evaluate all continuation boards in one gather (NO session open — CLAUDE.md hard rule).
-    continuation_results: Sequence[
-        tuple[int | None, int | None, str | None, str | None, int | None, int | None, str | None]
-    ]
-    if gather_boards:
-        continuation_results = await asyncio.gather(
-            *(engine_service.evaluate_nodes_multipv2(b) for b in gather_boards)
-        )
-    else:
-        continuation_results = []
-
-    node_eval: dict[
-        tuple[int, str, int],
-        tuple[int | None, int | None, str | None, str | None, int | None, int | None, str | None],
-    ] = {}
-    for key, res in zip(gather_keys, continuation_results, strict=True):
-        node_eval[key] = res
-
-    # Assemble PvNode blobs for each flaw.
-    blobs: dict[int, tuple[list[PvNode], list[PvNode]]] = {}
-    for flaw in flaw_result:
-        flaw_ply = flaw["ply"]
-        allowed = _build_line_blobs(
-            flaw_ply,
-            "allowed",
-            walks.get((flaw_ply, "allowed"), []),
-            pos_eval,
-            second_best_map,
-            node_eval,
-        )
-        missed = _build_line_blobs(
-            flaw_ply,
-            "missed",
-            walks.get((flaw_ply, "missed"), []),
-            pos_eval,
-            second_best_map,
-            node_eval,
-        )
-        if allowed or missed:
-            blobs[flaw_ply] = (allowed, missed)
-    return blobs
-
-
-async def _derive_atomic_sentinel_lines(
-    game_id: int,
-    targets: Sequence[_FullPlyEvalTarget],
-    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
-) -> set[tuple[int, str]]:
-    """Phase 147 SEED-074 Part B: re-derive un-walkable (flaw_ply, line) pairs for one
-    atomic-submit game, entirely from the worker's OWN submitted evals/PVs (D-01/D-02).
-
-    Mirrors _build_flaw_multipv2_blobs's classify+walk preamble (overlay in-memory
-    evals, classify_game_flaws, walk each flaw's PV via _walk_pv_boards) but makes NO
-    engine calls and stops before any continuation-node gather — the atomic-submit
-    worker already supplies the MultiPV-2 continuation nodes via body.blob_nodes, so
-    the caller (_apply_atomic_submit) assembles those directly via
-    _assemble_flaw_blobs_from_submit. This function only classifies (server-
-    authoritative, T-147-03: never trusts the worker's local hint-classify) and
-    determines which (flaw_ply, line) pairs are structurally un-walkable (< 2-node
-    PV walk or missing start board — D-06 sentinel semantics), independent of which
-    blob_nodes tokens the worker happened to submit.
-
-    A flaw_ply with a walkable line the worker did NOT submit any token for is
-    deliberately left OUT of the returned set (not sentineled) — the caller's
-    _assemble_flaw_blobs_from_submit then omits that flaw entirely from blob_map,
-    letting classify_game_flaws' blobs_pending=True suppression net it to NULL
-    (T-147-08 "flaw the server found but the worker did not blob" case) rather than
-    incorrectly treating it as a D-06 structural sentinel.
-
-    Opens and closes its own read session (positions with in-memory eval overlay,
-    same pattern as _build_flaw_multipv2_blobs); makes no asyncio.gather calls at
-    all (CLAUDE.md hard rule: AsyncSession is not safe for concurrent use — trivially
-    satisfied here since there is no gather to begin with).
-    """
-    pos_eval = _reconstruct_pos_eval(targets, {}, engine_result_map)
-    targets_by_ply = {t.ply: t for t in targets}
-
-    async with async_session_maker() as session:
-        game = await session.scalar(select(Game).where(Game.id == game_id))
-        if game is None:
-            return set()
-        positions_result = await session.execute(
-            select(GamePosition)
-            .where(GamePosition.game_id == game_id, GamePosition.user_id == game.user_id)
-            .order_by(GamePosition.ply)
-        )
-        positions = list(positions_result.scalars().all())
-    # session closed — CPU-only work below
-
-    for pos in positions:
-        cp, mate = _post_move_eval(pos_eval, pos.ply)
-        pos.eval_cp = cp
-        pos.eval_mate = mate
-
-    flaw_result = classify_game_flaws(game, positions)
-    if "reason" in flaw_result:
-        return set()
-
-    cap = engine_service.PV_CAP_PLIES
-    sentinel_lines: set[tuple[int, str]] = set()
-
-    for flaw in flaw_result:
-        flaw_ply: int = flaw["ply"]
-        for line, node0_ply in [("missed", flaw_ply), ("allowed", flaw_ply + 1)]:
-            start_target = targets_by_ply.get(node0_ply)
-            if start_target is None:
-                sentinel_lines.add((flaw_ply, line))
-                continue
-            pv = engine_result_map.get(node0_ply, (None, None, None, None))[3]
-            walk = _walk_pv_boards(start_target.board, pv, cap)
-            if len(walk) < 2:
-                sentinel_lines.add((flaw_ply, line))
-
-    return sentinel_lines
-
-
-async def _batch_update_flaw_pv_lines(
-    session: AsyncSession,
-    game_id: int,
-    blob_map: dict[int, tuple[list[PvNode], list[PvNode]]],
-) -> None:
-    """Phase 142 MPV-02: write allowed_pv_lines + missed_pv_lines for each flaw ply.
-
-    One batched UPDATE mirroring _batch_update_pv_rows: CAST(:param AS jsonb) syntax for
-    asyncpg compatibility (not :: cast). Does NOT catch exceptions — caller decides fault
-    tolerance. Guard: empty blob_map is a no-op.
-    """
-    if not blob_map:
-        return
-    params: dict[str, Any] = {"game_id": game_id}
-    values_parts: list[str] = []
-    for i, (ply, (allowed_blobs, missed_blobs)) in enumerate(blob_map.items()):
-        params[f"ply_{i}"] = ply
-        params[f"allowed_{i}"] = json.dumps(allowed_blobs)
-        params[f"missed_{i}"] = json.dumps(missed_blobs)
-        values_parts.append(
-            f"(CAST(:ply_{i} AS smallint), CAST(:allowed_{i} AS jsonb), CAST(:missed_{i} AS jsonb))"
-        )
-    values_sql = ", ".join(values_parts)
-    sql = sa.text(
-        f"UPDATE game_flaws"  # noqa: S608 — no user input; params are bound
-        f" SET allowed_pv_lines = v.allowed_pv_lines,"
-        f"     missed_pv_lines = v.missed_pv_lines"
-        f" FROM (VALUES {values_sql}) AS v(ply, allowed_pv_lines, missed_pv_lines)"
-        f" WHERE game_flaws.game_id = :game_id"
-        f" AND game_flaws.ply = v.ply"
-    )
-    await session.execute(sql, params)
-
-
-async def _run_multipv2_pass(
-    session: AsyncSession,
-    game_id: int,
-    flaw_pv_blobs: dict[int, tuple[list[PvNode], list[PvNode]]],
-) -> None:
-    """Phase 142 MPV-02: write PvNode blobs to game_flaws inside the write session.
-
-    Wrapper around _batch_update_flaw_pv_lines that enforces write-session discipline
-    (Pitfall 5: must run in the same transaction as _classify_and_fill_oracle so flaw rows
-    exist before the UPDATE). No-op when flaw_pv_blobs is empty.
-    """
-    if not flaw_pv_blobs:
-        return
-    await _batch_update_flaw_pv_lines(session, game_id, flaw_pv_blobs)
-
-
-async def _build_flaw_blob_lease_positions(
-    game_id: int,
-) -> tuple[list[FlawBlobLeasePosition], set[tuple[int, str]]]:
-    """Phase 145 SHIP-01: build lease positions for one game's NULL-blob flaws (D-04).
-
-    Opens a READ session, loads the game PGN, flaw rows (allowed_pv_lines IS NULL),
-    and game_positions PV strings at {flaw_ply, flaw_ply+1} for each flaw.
-    Closes the session, then replays the PGN to a per-ply board map and, for each
-    flaw's two lines ("missed" at flaw_ply, "allowed" at flaw_ply+1), calls
-    _walk_pv_boards with the stored game_positions.pv string.
-
-    Returns (lease_positions, sentinel_lines):
-    - lease_positions: FlawBlobLeasePosition list. Token = "{flaw_ply}:{line}:{node_k}".
-      fen = board.fen() for each EVEN (solver) node k in a walkable PV (walk length
-      >= 2). Odd (defender) nodes are never leased (SEED-079): the gate only reads
-      solver nodes, so defender continuation evals are dead weight.
-    - sentinel_lines: set of (flaw_ply, line) for lines with NULL pv, missing start board,
-      or < 2-node walks (un-fillable; caller writes [] sentinel for these via D-06).
-
-    Engine and lichess %eval games are handled identically (D-09/D-09a): no is_lichess
-    branch in the PV walk — game_positions.pv is populated for both at flaw plies.
-    Only flaws with allowed_pv_lines IS NULL are considered (predicate consistency with
-    the tier-4 lottery in _claim_tier4_blob).
-
-    No asyncio.gather, no engine calls — all CPU work (PGN replay, PV walk) happens after
-    the session closes. CLAUDE.md hard rule: AsyncSession is not safe for concurrent use.
-    """
-    # ── Read phase: load game, flaws, and per-ply PV strings ──────────────────
-    async with async_session_maker() as session:
-        game = await session.scalar(select(Game).where(Game.id == game_id))
-        if game is None:
-            return [], set()
-
-        pgn_text: str = game.pgn
-
-        # Only flaws that still need blobs (predicate consistency with tier-4 lottery).
-        flaw_plies_result = await session.execute(
-            sa.select(GameFlaw.ply).where(
-                GameFlaw.game_id == game_id,
-                GameFlaw.allowed_pv_lines.is_(None),
-            )
-        )
-        flaw_plies: list[int] = list(flaw_plies_result.scalars().all())
-
-        if not flaw_plies:
-            return [], set()
-
-        # PV walk uses boards at {flaw_ply (missed start), flaw_ply+1 (allowed start)}.
-        target_plies: list[int] = []
-        for ply in flaw_plies:
-            target_plies.append(ply)
-            target_plies.append(ply + 1)
-
-        pv_result = await session.execute(
-            sa.select(GamePosition.ply, GamePosition.pv).where(
-                GamePosition.game_id == game_id,
-                GamePosition.user_id == game.user_id,
-                GamePosition.ply.in_(target_plies),
-            )
-        )
-        pv_at_ply: dict[int, str | None] = {row.ply: row.pv for row in pv_result.all()}
-    # read_session closed — no sessions open during CPU work below
-
-    # ── CPU phase: replay PGN to build per-ply board map ──────────────────────
-    try:
-        pgn_game = chess.pgn.read_game(io.StringIO(pgn_text))
-    except Exception:
-        return [], set()
-    if pgn_game is None:
-        return [], set()
-
-    board_at_ply: dict[int, chess.Board] = {}
-    board = pgn_game.board()
-    for ply, node in enumerate(pgn_game.mainline()):
-        board_at_ply[ply] = board.copy()
-        board.push(node.move)
-
-    cap = engine_service.PV_CAP_PLIES
-    lease_positions: list[FlawBlobLeasePosition] = []
-    sentinel_lines: set[tuple[int, str]] = set()
-
-    for flaw_ply in flaw_plies:
-        for line, node0_ply in [("missed", flaw_ply), ("allowed", flaw_ply + 1)]:
-            start_board = board_at_ply.get(node0_ply)
-            if start_board is None:
-                # Board beyond the game end or PGN parse gap → un-fillable sentinel.
-                sentinel_lines.add((flaw_ply, line))
-                continue
-            pv = pv_at_ply.get(node0_ply)
-            walk = _walk_pv_boards(start_board, pv, cap)
-            if len(walk) < 2:
-                # NULL pv → 1-node walk (just start_board); gate discards 1-node blobs (D-06).
-                sentinel_lines.add((flaw_ply, line))
-                continue
-            # SEED-079: only solver (even) nodes are gate-read (D-10), so defender (odd)
-            # nodes are never leased — halves the tier-4 continuation-eval compute. The
-            # assembler fills skipped odd indices with all-None placeholders at submit.
-            for k in range(0, len(walk), 2):
-                token = f"{flaw_ply}:{line}:{k}"
-                lease_positions.append(FlawBlobLeasePosition(token=token, fen=walk[k].fen()))
-
-    return lease_positions, sentinel_lines
-
-
-def _parse_token(token: str) -> tuple[int, str, int]:
-    """Phase 145 SHIP-01: parse a "{flaw_ply}:{line}:{node_k}" reassembly token (D-04a).
-
-    Args:
-        token: The opaque server-issued token echoed by the worker on submit.
-
-    Returns:
-        (flaw_ply, line, node_k) where line ∈ {"missed", "allowed"}.
-
-    Raises:
-        ValueError: On malformed token (wrong number of parts, non-integer
-            flaw_ply/node_k, or line not in {"missed", "allowed"}).
-    """
-    parts = token.split(":", 2)
-    if len(parts) != 3:
-        raise ValueError(f"Token must have 3 colon-separated parts: {token!r}")
-    flaw_ply_str, line, node_k_str = parts
-    if line not in ("missed", "allowed"):
-        raise ValueError(f"Token line must be 'missed' or 'allowed': {token!r}")
-    return int(flaw_ply_str), line, int(node_k_str)
-
-
-def _assemble_one_line_blob(
-    flaw_ply: int,
-    line: str,
-    node_results: dict[tuple[int, str, int], FlawBlobSubmitEval | AtomicBlobNode],
-    sentinel_lines: set[tuple[int, str]],
-) -> list[PvNode]:
-    """Assemble one PvNode list for a flaw line from indexed worker results (slim scheme).
-
-    Sentinel lines (from _build_flaw_blob_lease_positions) and lines missing
-    a node-0 result both return []. SEED-079 slim blobs: only EVEN (solver) node_k
-    are leased/evaluated, so the walk steps k = 0, 2, 4, ... and inserts an all-None
-    placeholder PvNode for each skipped odd (defender) index, keeping the gate's
-    index-parity convention intact. A missing EVEN node is a gap (stop); the result
-    therefore always ends on a real even solver node — never a trailing placeholder —
-    preserving _strip_trailing_only_moves' "last solver node is real" assumption.
-
-    Odd-k entries in node_results (old fat-lease/atomic workers still submitting
-    defender nodes) are intentionally never read — server-authoritative discard
-    (SEED-079 item 5). su='' maps from None second_uci (Pitfall 3).
-    """
-    if (flaw_ply, line) in sentinel_lines:
-        return []
-    node0 = node_results.get((flaw_ply, line, 0))
-    if node0 is None:
-        return []
-    nodes: list[PvNode] = []
-    k = 0
-    while True:
-        res = node_results.get((flaw_ply, line, k))
-        if res is None:
-            break  # Missing EVEN node = gap; missing odd nodes are placeholders below.
-        if k > 0:
-            nodes.append(_placeholder_defender_node())  # The skipped odd index k-1.
-        su: str = res.second_uci if res.second_uci is not None else ""
-        nodes.append(
-            PvNode(b=res.best_cp, bm=res.best_mate, s=res.second_cp, sm=res.second_mate, su=su)
-        )
-        k += 2
-    return nodes
-
-
-def _assemble_flaw_blobs_from_submit(
-    game_id: int,
-    submit_evals: Sequence[FlawBlobSubmitEval | AtomicBlobNode],
-    sentinel_lines: set[tuple[int, str]],
-) -> dict[int, tuple[list[PvNode], list[PvNode]]]:
-    """Phase 145 SHIP-01 / Phase 147 Part B: assemble PvNode blobs from worker MultiPV=2
-    results (D-04 tier-4 submit path AND the atomic-submit path, D-02).
-
-    Pure CPU helper — no engine calls, no DB sessions. Parses tokens, groups by
-    (flaw_ply, line, node_k), and builds list[PvNode] per line. Lines in
-    sentinel_lines and lines missing a node-0 result both get [].
-
-    All (flaw_ply, line) pairs found across submitted evals and sentinel_lines
-    appear in the returned blob_map. The caller writes [] for sentinels via
-    _batch_update_flaw_pv_lines (D-06 sentinel write clears the IS NULL predicate).
-    A flaw_ply with NEITHER a submitted token NOR a sentinel_lines entry for EITHER
-    line is intentionally left OUT of the returned blob_map entirely (Phase 147
-    Part B): the caller's classify_game_flaws sees flaw_pv_blobs.get(flaw_ply) is
-    None for that flaw and, with blobs_pending=True, suppresses its tag to NULL
-    instead of persisting it raw/ungated (T-147-08).
-
-    Token format: "{flaw_ply}:{line}:{node_k}" (D-04a). All three components
-    are used as the index key so "10:missed:2" and "10:allowed:2" remain distinct
-    (Pitfall 5). su='' maps from None second_uci on the wire (Pitfall 3).
-
-    Args:
-        game_id: Owning game (informational — not used in the pure CPU path).
-        submit_evals: Worker evaluation results, each carrying an echoed token.
-            FlawBlobSubmitEval (tier-4) and AtomicBlobNode (Phase 147 Part B) share
-            the identical field set (token/best_cp/best_mate/second_cp/second_mate/
-            second_uci) so either submit shape can be assembled here unchanged.
-        sentinel_lines: Set of (flaw_ply, line) pairs identified as un-fillable
-            by the lease builder (NULL PV or < 2-node walk). These get [] blobs.
-
-    Returns:
-        blob_map: {flaw_ply → (allowed_pv_lines_value, missed_pv_lines_value)}
-        where each value is a list[PvNode] (possibly [] for sentinels).
-    """
-    # Index worker results by (flaw_ply, line, node_k) — all three components.
-    node_results: dict[tuple[int, str, int], FlawBlobSubmitEval | AtomicBlobNode] = {}
-    for e in submit_evals:
-        try:
-            key = _parse_token(e.token)
-        except (ValueError, IndexError):
-            # Malformed token: skip silently; endpoint validates tokens upstream.
-            continue
-        node_results[key] = e
-
-    # Collect all unique flaw plies from submitted evals + sentinel_lines.
-    flaw_plies_from_evals: set[int] = {fp for fp, _ln, _k in node_results}
-    flaw_plies_from_sentinels: set[int] = {fp for fp, _ln in sentinel_lines}
-    all_flaw_plies = flaw_plies_from_evals | flaw_plies_from_sentinels
-
-    blob_map: dict[int, tuple[list[PvNode], list[PvNode]]] = {}
-    for flaw_ply in all_flaw_plies:
-        allowed_blob = _assemble_one_line_blob(flaw_ply, "allowed", node_results, sentinel_lines)
-        missed_blob = _assemble_one_line_blob(flaw_ply, "missed", node_results, sentinel_lines)
-        blob_map[flaw_ply] = (allowed_blob, missed_blob)
-
-    return blob_map
-
-
-# Minimal duck-typed view so count_game_severities can be called with a
-# synthetic user_color without mutating the ORM Game object.
-class _GameColorView:
-    """Provides the user_color attribute for count_game_severities (D-117-08).
-
-    count_game_severities reads only game.user_color; this thin wrapper avoids
-    mutating the ORM object and avoids deepcopy overhead. Named with a leading
-    underscore — internal to eval_drain, not exported.
-    """
-
-    def __init__(self, game: Game, user_color: str) -> None:
-        self._game = game
-        self.user_color = user_color
-
-    def __getattr__(self, name: str) -> object:
-        return getattr(self._game, name)
-
-
-# Module-level set for per-user flaw completion signals (D-117-11).
-# Phase 118 wires real cache invalidation against this set. For Phase 117,
-# it is a lightweight append-only set that future cache middleware can poll.
-_recently_flaw_completed_users: set[int] = set()
-
-
-def _signal_flaw_completion(user_id: int) -> None:
-    """Mark a user as having newly-completed flaw analysis (D-117-11 hook).
-
-    Phase 117: no-op beyond a set insert. Phase 118 will wire cache
-    invalidation here (debounced per-user asyncio.Task pattern).
-    The set is intentionally not bounded — at 8.4k games/day and ~few hundred
-    users, it stays small in practice.
-    """
-    _recently_flaw_completed_users.add(user_id)
-
-
 # ---------------------------------------------------------------------------
-# Lifted eval helpers — Phase 91: lifted from import_service.py for the
-# cold-drain lane. The originals in import_service.py are removed in Plan 91-03.
+# Phase 123 SEED-051: entry-ply lease claim. Physically stays here (Phase 150
+# R7 Task 2) rather than moving to eval_entry.py -- it opens its own internal
+# session via async_session_maker, and this is the ONLY caller of that binding
+# in the entry-ply cold-drain lane; keeping it local avoids adding a second
+# module (eval_entry.py) whose own async_session_maker binding every existing
+# test/script session-patch would need to learn about, for zero behavioral
+# benefit (both _pick_pending_game_ids and _load_pgns_for_games are consumed
+# exclusively by run_eval_drain, which also stays in this module).
 # ---------------------------------------------------------------------------
-
-
-@dataclass(slots=True)
-class _EvalTarget:
-    """One row scheduled for engine evaluation in the cold-drain eval pass.
-
-    Phase 91: lifted from import_service.py for the cold-drain lane.
-    The originals in import_service.py are removed in Plan 91-03.
-
-    Collected up-front across all games in a drain batch so the per-eval
-    asyncio.gather() can fan out to every Stockfish worker in the module-level
-    pool. Without batching the gather, a multi-worker pool would still serve
-    only one in-flight evaluation at a time.
-    """
-
-    game_id: int
-    ply: int
-    eval_kind: Literal["middlegame_entry", "endgame_span_entry"]
-    endgame_class: int | None  # None for middlegame; int for endgame span entry
-    board: chess.Board
-
-
-# A "target spec" describes one entry ply that needs a Stockfish eval. The
-# per-game helper builds these from PlyData first (no PGN parsing), then in a
-# single mainline walk snapshots board state at each target's ply.
-@dataclass(slots=True, frozen=True)
-class _TargetSpec:
-    ply: int
-    eval_kind: Literal["middlegame_entry", "endgame_span_entry"]
-    endgame_class: int | None
-
-
-def _collect_target_specs(plies_list: Sequence[PlyData]) -> list[_TargetSpec]:
-    """Pure: derive the (ply, eval_kind, endgame_class) tuples that need eval.
-
-    Skips plies where lichess %eval already populated eval_cp or eval_mate
-    (T-78-17). At most one middlegame entry per game (D-79-08). Endgame spans
-    are split into contiguous-ply islands per class; each island contributes
-    one entry ply.
-    """
-    specs: list[_TargetSpec] = []
-
-    # Midgame entry: MIN(ply) where phase == 1, unless already covered.
-    midgame_entries = [pd for pd in plies_list if pd["phase"] == 1]
-    if midgame_entries:
-        mid_pd = min(midgame_entries, key=lambda p: p["ply"])
-        if mid_pd["eval_cp"] is None and mid_pd["eval_mate"] is None:
-            specs.append(
-                _TargetSpec(
-                    ply=mid_pd["ply"],
-                    eval_kind="middlegame_entry",
-                    endgame_class=None,
-                )
-            )
-
-    # Endgame spans: contiguous-ply islands per endgame_class.
-    class_plies: dict[int, list[PlyData]] = defaultdict(list)
-    for pd in plies_list:
-        ec = pd["endgame_class"]
-        if ec is not None:
-            class_plies[ec].append(pd)
-
-    for ec, pds in class_plies.items():
-        for island in _split_into_contiguous_islands(pds):
-            span_pd = island[0]
-            if span_pd["eval_cp"] is not None or span_pd["eval_mate"] is not None:
-                # T-78-17 lichess preservation: do not overwrite.
-                continue
-            specs.append(
-                _TargetSpec(
-                    ply=span_pd["ply"],
-                    eval_kind="endgame_span_entry",
-                    endgame_class=ec,
-                )
-            )
-
-    return specs
-
-
-def _snapshot_boards(pgn_text: str, target_plies: set[int]) -> dict[int, chess.Board]:
-    """Parse PGN once and return board snapshots keyed by ply (0-indexed, pre-push).
-
-    Plies not reached before the mainline ends are silently omitted — no
-    Sentry (parse errors and short games are rare and not urgent).
-    Unparseable PGNs return an empty dict.
-    """
-    if not target_plies:
-        return {}
-    try:
-        game = chess.pgn.read_game(io.StringIO(pgn_text))
-    except Exception:
-        return {}
-    if game is None:
-        return {}
-
-    board = game.board()
-    snapshots: dict[int, chess.Board] = {}
-    remaining = set(target_plies)
-    for i, node in enumerate(game.mainline()):
-        if i in remaining:
-            snapshots[i] = board.copy()
-            remaining.discard(i)
-            if not remaining:
-                break
-        board.push(node.move)
-    return snapshots
-
-
-def _collect_eval_targets_per_game(
-    g_id: int,
-    pgn_text: str,
-    plies_list: Sequence[PlyData],
-) -> list[_EvalTarget]:
-    """Per-game single-walk target builder (Quick 260521-d6o).
-
-    Replaces the previous N-parse pattern where each midgame + endgame span
-    entry triggered its own PGN parse and mainline walk per target ply.
-    The new path:
-
-      1. Derive every target ply up front from PlyData alone (no parsing).
-      2. If no targets, return [] WITHOUT touching the PGN — cold drain
-         covered-game gate goes through zero parses.
-      3. Otherwise parse the PGN once and walk the mainline once, snapshotting
-         `board.copy()` at each target ply (early-break when all targets are
-         filled).
-      4. Assemble _EvalTarget rows. Midgame entry first (matches the previous
-         collector ordering — midgame helper output, then endgame helper
-         output), then endgame targets in ply-ascending order.
-
-    Targets whose ply was unreachable (game ended early) are silently dropped
-    — no Sentry, matching the previous best-effort semantics for short games.
-    """
-    specs = _collect_target_specs(plies_list)
-    if not specs:
-        return []
-
-    snapshots = _snapshot_boards(pgn_text, {s.ply for s in specs})
-    if not snapshots:
-        return []
-
-    midgame_targets: list[_EvalTarget] = []
-    endgame_targets: list[_EvalTarget] = []
-    for spec in specs:
-        board = snapshots.get(spec.ply)
-        if board is None:
-            # Mainline ended before this target ply — silently skip (no Sentry).
-            continue
-        target = _EvalTarget(
-            game_id=g_id,
-            ply=spec.ply,
-            eval_kind=spec.eval_kind,
-            endgame_class=spec.endgame_class,
-            board=board,
-        )
-        if spec.eval_kind == "middlegame_entry":
-            midgame_targets.append(target)
-        else:
-            endgame_targets.append(target)
-
-    endgame_targets.sort(key=lambda t: t.ply)
-    return midgame_targets + endgame_targets
-
-
-def _collect_midgame_eval_targets(
-    game_eval_data: Sequence[tuple[int, str, list[PlyData]]],
-) -> list[_EvalTarget]:
-    """Phase 79 PHASE-IMP-01: middlegame entry eval — MIN(ply) where phase == 1.
-
-    Phase 91: lifted from import_service.py for the cold-drain lane.
-
-    Quick 260521-d6o: now a thin filter over the single-walk per-game helper.
-    The hot-lane Stage 5c covered-game gate in import_service.py still imports
-    and calls this with single-game tuples; the signature is preserved. When
-    both collectors are called back-to-back on the same `game_eval_data`, each
-    invocation does its own single mainline walk per game — the production
-    cold-drain path in `_collect_eval_targets_from_db` therefore calls
-    `_collect_eval_targets_per_game` directly to avoid the double walk.
-
-    Skips plies where lichess %eval already populated the row (T-78-17).
-    At most one middlegame entry per game (D-79-08).
-    """
-    targets: list[_EvalTarget] = []
-    for g_id, pgn_text, plies_list in game_eval_data:
-        all_targets = _collect_eval_targets_per_game(g_id, pgn_text, plies_list)
-        targets.extend(t for t in all_targets if t.eval_kind == "middlegame_entry")
-    return targets
-
-
-def _collect_endgame_span_eval_targets(
-    game_eval_data: Sequence[tuple[int, str, list[PlyData]]],
-) -> list[_EvalTarget]:
-    """Phase 78 per-class endgame span entry collection.
-
-    Phase 91: lifted from import_service.py for the cold-drain lane.
-
-    Quick 260521-d6o: now a thin filter over the single-walk per-game helper.
-    Same signature-preservation note as `_collect_midgame_eval_targets`.
-    Each contiguous run of the same endgame_class within a game is its own
-    span; a class=1 → class=2 → class=1 sequence yields two class=1 entry
-    evals, not one. Skips plies where lichess %eval already populated the
-    row (T-78-17).
-    """
-    targets: list[_EvalTarget] = []
-    for g_id, pgn_text, plies_list in game_eval_data:
-        all_targets = _collect_eval_targets_per_game(g_id, pgn_text, plies_list)
-        targets.extend(t for t in all_targets if t.eval_kind == "endgame_span_entry")
-    return targets
-
-
-def _split_into_contiguous_islands(pds: Sequence[PlyData]) -> list[list[PlyData]]:
-    """Split per-class plies into contiguous runs ("islands").
-
-    Phase 91: lifted from import_service.py for the cold-drain lane.
-
-    A new island starts whenever the ply gap to the previous entry is > 1
-    — i.e. the class was interrupted by a non-class ply. plies_list is
-    already in ply order, so pds is too; sort defensively.
-    """
-    pds_sorted = sorted(pds, key=lambda p: p["ply"])
-    islands: list[list[PlyData]] = []
-    current: list[PlyData] = []
-    for pd in pds_sorted:
-        if current and pd["ply"] != current[-1]["ply"] + 1:
-            islands.append(current)
-            current = []
-        current.append(pd)
-    if current:
-        islands.append(current)
-    return islands
-
-
-async def _batch_update_entry_eval_rows(
-    session: AsyncSession,
-    rows: list[tuple[int, int, int | None, int | None, int | None]],
-) -> None:
-    """Emit ONE batched UPDATE for entry-ply / cold-drain eval rows (SEED-052).
-
-    Each row carries (game_id, ply, eval_cp, eval_mate, endgame_class). Mirrors the
-    full-ply batched-write helpers (_batch_update_eval_rows) but for the entry-ply
-    lane (_apply_eval_results), which differs in three ways:
-    - rows span MULTIPLE games in a drain batch, so game_id lives in the VALUES tuple
-      (not a single :game_id param) and the WHERE matches on v.game_id;
-    - only eval_cp/eval_mate are written (no best_move);
-    - the optional endgame_class disambiguation is preserved per-row via
-      (v.endgame_class IS NULL OR game_positions.endgame_class = v.endgame_class) —
-      exactly the pre-batch semantics where the endgame_class predicate was only added
-      when target.endgame_class was not None (defensive: current schema has at most one
-      row per (game_id, ply)).
-
-    Uses CAST() instead of :: cast syntax: asyncpg rewrites named params to $N before
-    the server parses the SQL, so `::` adjacent to a $N placeholder is a syntax error.
-    CAST() is the portable equivalent.
-
-    Guard: empty input is a no-op (no zero-row VALUES UPDATE is emitted).
-    Sequential execute on caller-owned session — no asyncio.gather (CLAUDE.md).
-    """
-    if not rows:
-        return
-    params: dict[str, int | None] = {}
-    values_parts: list[str] = []
-    for i, (game_id, ply, eval_cp, eval_mate, endgame_class) in enumerate(rows):
-        params[f"gid_{i}"] = game_id
-        params[f"ply_{i}"] = ply
-        params[f"ecp_{i}"] = eval_cp
-        params[f"emt_{i}"] = eval_mate
-        params[f"ec_{i}"] = endgame_class
-        values_parts.append(
-            f"(CAST(:gid_{i} AS integer),"
-            f" CAST(:ply_{i} AS smallint),"
-            f" CAST(:ecp_{i} AS smallint),"
-            f" CAST(:emt_{i} AS smallint),"
-            f" CAST(:ec_{i} AS smallint))"
-        )
-    values_sql = ", ".join(values_parts)
-    sql = sa.text(
-        f"UPDATE game_positions"  # noqa: S608 — no user input; params are bound
-        f" SET eval_cp = v.eval_cp, eval_mate = v.eval_mate"
-        f" FROM (VALUES {values_sql}) AS v(game_id, ply, eval_cp, eval_mate, endgame_class)"
-        f" WHERE game_positions.game_id = v.game_id"
-        f" AND game_positions.ply = v.ply"
-        f" AND (v.endgame_class IS NULL OR game_positions.endgame_class = v.endgame_class)"
-    )
-    await session.execute(sql, params)
-
-
-async def _apply_eval_results(
-    session: AsyncSession,
-    eval_targets: Sequence[_EvalTarget],
-    eval_results: Sequence[tuple[int | None, int | None]],
-) -> tuple[int, int]:
-    """Apply engine eval results to GamePosition rows via one batched UPDATE.
-
-    Phase 91: lifted from import_service.py for the cold-drain lane.
-    The originals in import_service.py are removed in Plan 91-03.
-
-    SEED-052: the per-row update(GamePosition) loop became a single batched
-    UPDATE … FROM (VALUES …) round-trip (mirrors the full-ply lane's 260616-jq1 /
-    FLAWCHESS-6B fix). One Python pass classifies rows (counting + Sentry on the
-    (None, None) skips, collecting write-rows); _batch_update_entry_eval_rows then
-    emits the single UPDATE. The batched UPDATE runs sequentially against the
-    shared, caller-owned session (CLAUDE.md hard rule: AsyncSession is not safe
-    under asyncio.gather) and lands in its transaction.
-
-    When engine returns (None, None), the row is skipped (eval_cp/eval_mate
-    stays NULL permanently per D-09). The game is still marked
-    evals_completed_at = NOW() by _mark_evals_completed so it is never
-    re-picked (D-09 / R-02 — no permanent retry loop).
-
-    Returns (eval_calls_made, eval_calls_failed).
-    """
-    eval_calls_made = 0
-    eval_calls_failed = 0
-    write_rows: list[tuple[int, int, int | None, int | None, int | None]] = []
-    for target, (eval_cp, eval_mate) in zip(eval_targets, eval_results, strict=True):
-        eval_calls_made += 1
-        if eval_cp is None and eval_mate is None:
-            # D-09: engine error / timeout — skip row, continue drain. One position's engine
-            # returning nothing is expected operational churn (the row is re-picked on a
-            # later tick), not a bug. Log locally instead of a Sentry event: capturing every
-            # failed position flooded Sentry and burned the error quota (was FLAWCHESS-5A)
-            # for zero actionable signal.
-            eval_calls_failed += 1
-            logger.warning(
-                "eval_drain: engine returned None tuple (game_id=%s ply=%s eval_kind=%s "
-                "endgame_class=%s)",
-                target.game_id,
-                target.ply,
-                target.eval_kind,
-                target.endgame_class,
-            )
-            continue
-
-        # Endgame span entries carry endgame_class to disambiguate when the same
-        # ply could in principle belong to multiple class spans; middlegame entries
-        # carry None (no predicate). The per-row WHERE semantics are preserved inside
-        # _batch_update_entry_eval_rows via the (v.endgame_class IS NULL OR …) clause.
-        write_rows.append((target.game_id, target.ply, eval_cp, eval_mate, target.endgame_class))
-
-    await _batch_update_entry_eval_rows(session, write_rows)
-    return eval_calls_made, eval_calls_failed
-
-
-# ---------------------------------------------------------------------------
-# Cold-drain helpers: pick / load / mark
-# ---------------------------------------------------------------------------
-
-
-async def _claim_entry_eval_games(
-    session: AsyncSession, worker_id: str, batch_size: int, ttl_seconds: int
-) -> list[int]:
-    """Atomically claim up to batch_size pending entry-ply games (LIFO id DESC) and
-    stamp their lease. Returns the list of claimed game IDs.
-
-    Shared by _pick_pending_game_ids (server pool, D-01) and /entry-lease (remote
-    workers, D-05/D-07). This is the ONE canonical claim — do not write a second copy.
-
-    SEED-051 D-3 shape: UPDATE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED) RETURNING.
-    Mirrors _claim_queued_job (eval_queue_service.py) in both bound-param discipline
-    (every value bound as :param, never f-string-interpolated — project Security rule)
-    and TTL idiom (:ttl || ' seconds')::interval / str(ttl_seconds).
-
-    Lease ends naturally: _mark_evals_completed stamps evals_completed_at = now() which
-    removes the game from the predicate permanently. A crashed claimer's batch is
-    reclaimed when entry_eval_lease_expiry < now() (TTL reclaim, D-04).
-    """
-    result = await session.execute(
-        sa.text("""
-            UPDATE games
-            SET entry_eval_lease_expiry = now() + (:ttl || ' seconds')::interval,
-                entry_eval_leased_by = :worker_id
-            WHERE id IN (
-                SELECT id FROM games
-                WHERE evals_completed_at IS NULL
-                  AND (entry_eval_lease_expiry IS NULL OR entry_eval_lease_expiry < now())
-                ORDER BY id DESC
-                LIMIT :batch
-                FOR UPDATE SKIP LOCKED
-            )
-            RETURNING id
-        """),
-        {"ttl": str(ttl_seconds), "worker_id": worker_id, "batch": batch_size},
-    )
-    return [row[0] for row in result.all()]
 
 
 async def _pick_pending_game_ids(limit: int) -> list[int]:
@@ -2145,167 +265,9 @@ async def _load_pgns_for_games(game_ids: Sequence[int]) -> list[tuple[int, str]]
         return [(row[0], row[1]) for row in result.all()]
 
 
-async def _mark_evals_completed(session: AsyncSession, game_ids: Sequence[int]) -> None:
-    """Mark all picked games as eval-complete in one executemany UPDATE.
-
-    Uses Game.__table__ + bindparam discipline (same as Stage 5 executemany in
-    import_service.py) to emit invariant SQL (no unique-SQL cache growth).
-
-    Idempotent: calling twice simply re-stamps evals_completed_at with a newer
-    timestamp. All *limit* games are marked regardless of whether they had any
-    eval targets — engine (None, None) counts as "evaluated" per D-09 / R-02.
-    """
-    now_ts = datetime.now(timezone.utc)
-    # ty: __table__ is typed as FromClause on declarative base, but is a Table at runtime.
-    games_table = Game.__table__
-    stmt = (
-        update(games_table)  # ty: ignore[invalid-argument-type]
-        .where(games_table.c.id == bindparam("b_id"))
-        .values(evals_completed_at=now_ts)
-    )
-    await session.execute(stmt, [{"b_id": gid} for gid in game_ids])
-
-
 # ---------------------------------------------------------------------------
 # Cold-drain coroutine + DB-backed target collection
 # ---------------------------------------------------------------------------
-
-
-async def _collect_eval_targets_from_db(
-    session: AsyncSession,
-    game_ids: Sequence[int],
-    pgn_map: dict[int, str],
-) -> list[_EvalTarget]:
-    """Load GamePosition metadata for game_ids and derive eval targets.
-
-    Loads (game_id, ply, phase, endgame_class, eval_cp, eval_mate) from
-    GamePosition rows, then calls the single-walk per-game target builder.
-
-    This is the correct cold-drain path: it avoids re-running process_game_pgn
-    and uses the stored phase/endgame_class from the DB.
-
-    Quick 260521-d6o: calls `_collect_eval_targets_per_game` directly (one
-    PGN parse + one mainline walk per game) instead of routing through the
-    two public wrappers (which would walk the mainline twice).
-    """
-    from app.services.zobrist import PlyData
-
-    result = await session.execute(
-        select(
-            GamePosition.game_id,
-            GamePosition.ply,
-            GamePosition.phase,
-            GamePosition.endgame_class,
-            GamePosition.eval_cp,
-            GamePosition.eval_mate,
-        ).where(GamePosition.game_id.in_(game_ids))
-    )
-    rows = result.all()
-
-    # Build game_eval_data: list of (game_id, pgn_text, plies_list)
-    game_plies: dict[int, list[PlyData]] = defaultdict(list)
-    for row in rows:
-        gid, ply, phase, endgame_class, eval_cp, eval_mate = row
-        if gid not in pgn_map:
-            continue
-        ply_data: PlyData = {
-            "ply": ply,
-            "phase": phase if phase is not None else 0,
-            "endgame_class": endgame_class,
-            "eval_cp": eval_cp,
-            "eval_mate": eval_mate,
-            # Fields not needed by eval target collection — provide defaults
-            "white_hash": 0,
-            "black_hash": 0,
-            "full_hash": 0,
-            "move_san": None,
-            "clock_seconds": None,
-            "piece_count": 0,
-            "backrank_sparse": False,
-            "mixedness": 0,
-        }
-        game_plies[gid].append(ply_data)
-
-    targets: list[_EvalTarget] = []
-    for gid, plies in game_plies.items():
-        if gid not in pgn_map:
-            continue
-        targets.extend(_collect_eval_targets_per_game(gid, pgn_map[gid], plies))
-    return targets
-
-
-async def _classify_and_insert_flaws(
-    session: AsyncSession,
-    game_ids: Sequence[int],
-) -> None:
-    """Classify game_flaws for a batch of just-evaluated games and bulk-insert.
-
-    Called in the cold-lane write session AFTER _apply_eval_results and BEFORE
-    _mark_evals_completed — so eval_cp is committed before classification reads
-    it, and flaw rows commit atomically with the eval results (Pitfall 2 guard).
-
-    SEQUENTIAL loop — AsyncSession is not safe for concurrent use from multiple
-    coroutines (CLAUDE.md hard rule). The drain batch size is _DRAIN_BATCH_SIZE
-    (10 games), producing ~1-5 M+B flaw rows each (~50 rows max) — well within
-    the memory envelope. No asyncio.gather on this session.
-
-    Skips GameNotAnalyzed games silently (chess.com / low eval coverage).
-    Per-game classify errors are Sentry-captured and the loop continues (T-108-04:
-    one bad game must not abort the whole drain batch).
-
-    D-10: reuses classify_game_flaws (the single classification kernel) and
-    flaw_record_to_row (the single FlawRecord→row mapping) so the materialized
-    table never drifts from the live kernel.
-    """
-    games_result = await session.execute(select(Game).where(Game.id.in_(game_ids)))
-    games = games_result.scalars().all()
-
-    # N+1 fix (FLAWCHESS-6G): load ALL positions for the batch in ONE query instead of
-    # one SELECT per game inside the loop (Sentry flagged the per-game query as N+1 on
-    # /api/eval/remote/entry-submit). Group by game_id in Python. The composite FK
-    # (game_id, user_id) -> games(id, user_id) guarantees a position's user_id matches
-    # its owning game, so filtering on game_id alone preserves the T-108-05 user-scope
-    # guard. ORDER BY game_id, ply keeps each game's positions in ply-ASC order, which
-    # classify_game_flaws requires.
-    positions_by_game: dict[int, list[GamePosition]] = defaultdict(list)
-    if games:
-        positions_result = await session.execute(
-            select(GamePosition)
-            .where(GamePosition.game_id.in_([game.id for game in games]))
-            .order_by(GamePosition.game_id, GamePosition.ply)
-        )
-        for pos in positions_result.scalars().all():
-            positions_by_game[pos.game_id].append(pos)
-
-    for game in games:
-        try:
-            positions = positions_by_game.get(game.id, [])
-
-            result = classify_game_flaws(game, positions)
-            if "reason" in result:
-                # GameNotAnalyzed = chess.com / insufficient eval coverage — no rows.
-                # TypedDict is a plain dict at runtime; discriminate on "reason" key.
-                continue
-
-            rows = [
-                flaw_record_to_row(
-                    user_id=game.user_id,
-                    game_id=game.id,
-                    flaw=flaw,
-                )
-                for flaw in result
-            ]
-            await bulk_insert_game_flaws(session, rows)
-
-        except Exception as exc:
-            # T-108-04: per-game errors must not abort the whole drain batch.
-            # Never embed variables in the message (CLAUDE.md Sentry rule).
-            sentry_sdk.set_context(
-                "game_flaws",
-                {"game_id": game.id, "user_id": game.user_id},
-            )
-            sentry_sdk.capture_exception(exc)
-            continue
 
 
 async def run_eval_drain() -> None:
@@ -2508,6 +470,171 @@ async def _upsert_opening_cache(
         f" WHERE opening_position_eval.pv IS NULL AND EXCLUDED.pv IS NOT NULL"
     )
     await session.execute(sql, params)
+
+
+async def _missing_flaw_pv_targets(
+    game_id: int,
+    targets: Sequence[_FullPlyEvalTarget],
+    dedup_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
+    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
+) -> list[_FullPlyEvalTarget]:
+    """SEED-056: find engine-game flaw plies that took a pv-less opening dedup transplant.
+
+    The lichess path pre-classifies flaws from stored %evals up front (_flaw_engine_plies)
+    and exempts {flaw_ply, flaw_ply + 1} from dedup so they always get a real engine pass
+    (PV + best_move). Fresh engine games can't do that — they have no evals until AFTER
+    the gather — so an opening-region flaw ply whose full_hash matched a dedup donor gets
+    an eval-only transplant with NO pv. The flaw is registered but un-taggable (no
+    refutation line for the SEED-039 motif classifier), and the better-alternative PV at
+    flaw_ply is lost too.
+
+    Fix: once the gather is done we DO know every ply's eval (engine_result_map for
+    engine plies, dedup_map for transplanted ones). Reconstruct the post-move evals
+    in-memory, classify, and return the dedup-transplanted {flaw_ply, flaw_ply + 1}
+    targets that still lack a pv. The caller runs a tiny second engine gather on these
+    boards and merges the results back into engine_result_map before the write session,
+    so classify + the PV write pick the pv up exactly as for any engine-evaluated ply.
+
+    Returns [] when the game has no flaws, no eval coverage, or no pv-less opening flaw
+    plies — the common case (the prod gap is ~0.3% of opening-region engine-game flaws).
+    """
+    # R4: overlay=True — reconstructed post-move evals fill the NULL evals still in
+    # the DB at this point (engine games have no eval written until the write
+    # session runs).
+    pos_eval = _reconstruct_pos_eval(targets, dedup_map, engine_result_map)
+    async with async_session_maker() as session:
+        flaw_result = await _classify_with_overlay(
+            game_id, session, overlay=True, pos_eval=pos_eval
+        )
+    if flaw_result is None:
+        return []
+
+    targets_by_ply = {t.ply: t for t in targets}
+    need: dict[int, _FullPlyEvalTarget] = {}
+    for flaw in flaw_result:
+        flaw_ply_val: int = flaw["ply"]
+        for cand_ply in (flaw_ply_val, flaw_ply_val + 1):
+            if cand_ply in need:
+                continue
+            engine_entry = engine_result_map.get(cand_ply)
+            if engine_entry is not None and engine_entry[3] is not None:
+                continue  # already engine-evaluated with a pv
+            target = targets_by_ply.get(cand_ply)
+            if target is None or target.is_terminal:
+                continue
+            # Only the opening dedup region is in scope: a transplanted ply has its eval
+            # but no pv. Engine-region flaw plies always get a real pass already, and an
+            # engine HOLE (eval failed) would just fail the re-pass too — out of scope.
+            if cand_ply <= _DEDUP_MAX_PLY and target.full_hash in dedup_map:
+                need[cand_ply] = target
+    return list(need.values())
+
+
+async def _fill_engine_game_flaw_pvs(
+    game_id: int,
+    targets: Sequence[_FullPlyEvalTarget],
+    dedup_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
+    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
+    is_lichess_eval_game: bool,
+) -> None:
+    """SEED-056: targeted second engine pass for pv-less opening flaw plies (engine games).
+
+    Engine games can't pre-know their flaws (no evals until after the gather), so an
+    opening-region flaw ply that matched a dedup donor took an eval-only transplant with
+    NO pv — registered but un-taggable. This classifies from the in-memory gather results,
+    finds those pv-less flaw plies, runs ONE more gather over just their boards, and merges
+    the pv back into engine_result_map (mutated in place) so the write-session classify
+    (tactic tagging) and the pv write pick it up like any engine-evaluated ply.
+
+    No-op for lichess games (they pre-classify up front via _flaw_engine_plies) and when
+    there were no opening dedup hits (no possible gap). MUST be called with NO session open
+    — it runs asyncio.gather (CLAUDE.md hard rule).
+    """
+    if is_lichess_eval_game:
+        return
+    has_opening_dedup = any(
+        not t.is_terminal and t.ply <= _DEDUP_MAX_PLY and t.full_hash in dedup_map for t in targets
+    )
+    if not has_opening_dedup:
+        return
+    pv_gap_targets = await _missing_flaw_pv_targets(game_id, targets, dedup_map, engine_result_map)
+    if not pv_gap_targets:
+        return
+    # Phase 142: switch to evaluate_nodes_multipv2 so the PV-recovery pass also returns
+    # multipv=2 data. Slice to 4-tuple before writing to engine_result_map (which is keyed
+    # as dict[int, tuple[...*4]] to avoid blast radius on _apply_full_eval_results).
+    pv_gap_results: Sequence[
+        tuple[int | None, int | None, str | None, str | None, int | None, int | None, str | None]
+    ] = await asyncio.gather(
+        *(engine_service.evaluate_nodes_multipv2(t.board) for t in pv_gap_targets)
+    )
+    for t, res in zip(pv_gap_targets, pv_gap_results, strict=True):
+        # Only merge a real pv — a failed re-pass (pv None) leaves the status quo (eval
+        # still served from the dedup transplant; pv stays NULL).
+        if res[3] is not None:
+            engine_result_map[t.ply] = (res[0], res[1], res[2], res[3])
+
+
+async def _fill_engine_game_flaw_second_best(
+    game_id: int,
+    targets: Sequence[_FullPlyEvalTarget],
+    dedup_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
+    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
+    second_best_map: dict[int, tuple[int | None, int | None, str | None]],
+    is_lichess_eval_game: bool,
+) -> None:
+    """D-05 / Phase 142 MPV-02: recover node-0 second-best for flaw plies that used
+    the opening dedup cache (no engine second-best in second_best_map for those plies).
+
+    Mirrors _fill_engine_game_flaw_pvs (SEED-056): no-op for lichess games and when
+    there is no opening dedup. Reuses _missing_flaw_pv_targets to find the same
+    dedup-transplanted flaw plies. Mutates second_best_map in place. MUST be called
+    with NO session open — runs asyncio.gather (CLAUDE.md hard rule).
+    """
+    if is_lichess_eval_game:
+        return
+    has_opening_dedup = any(
+        not t.is_terminal and t.ply <= _DEDUP_MAX_PLY and t.full_hash in dedup_map for t in targets
+    )
+    if not has_opening_dedup:
+        return
+    # Find flaw-ply targets in the dedup region — the same set as pv-less gap targets.
+    gap_targets = await _missing_flaw_pv_targets(game_id, targets, dedup_map, engine_result_map)
+    if not gap_targets:
+        return
+    # Only recover plies still absent from second_best_map (avoid redundant engine calls).
+    missing = [t for t in gap_targets if t.ply not in second_best_map]
+    if not missing:
+        return
+    gap_results: Sequence[
+        tuple[int | None, int | None, str | None, str | None, int | None, int | None, str | None]
+    ] = await asyncio.gather(*(engine_service.evaluate_nodes_multipv2(t.board) for t in missing))
+    for t, res in zip(missing, gap_results, strict=True):
+        second_cp, second_mate, second_uci = res[4], res[5], res[6]
+        # Include valid second-best data only (not engine failure). second_uci is str
+        # when the engine ran: "" = single-legal-move sentinel, non-empty = real second move.
+        if second_cp is not None or second_uci is not None:
+            second_best_map[t.ply] = (second_cp, second_mate, second_uci)
+
+
+def _log_path_c_capacity_reached(
+    game_id: int, failed_ply_count: int, new_attempts: int, source: str
+) -> None:
+    """Path-C reporting for the in-process drain tick (R1).
+
+    Deliberately logger.warning, not a Sentry event: an earlier per-tick Sentry
+    capture on this expected cap-path outcome burned the error quota for no
+    signal (FLAWCHESS-5V). `source` is accepted for signature parity with the
+    router's callback but not embedded in the log message here.
+    """
+    _ = source
+    logger.warning(
+        "full_eval_drain: stamping complete after MAX_EVAL_ATTEMPTS with residual "
+        "holes (game_id=%s hole_count=%s attempts=%s)",
+        game_id,
+        failed_ply_count,
+        new_attempts,
+    )
 
 
 async def _full_drain_tick() -> bool:
@@ -2716,107 +843,41 @@ async def _full_drain_tick() -> bool:
     #   plies where BOTH eval_cp IS NULL AND eval_mate IS NULL after the tick (holes).
     #   Mate-scored plies (eval_mate IS NOT NULL) and terminal donors are NOT counted.
     #
-    # Decision tree (applied inside the write session so all UPDATEs commit atomically):
-    #   A. failed_ply_count == 0 → no holes: stamp both markers, classify, report job.
-    #      full_eval_attempts unchanged.
-    #   B. failed_ply_count > 0 AND current_attempts + 1 < MAX_EVAL_ATTEMPTS → under cap:
-    #      Do NOT stamp full_evals_completed_at / full_pv_completed_at. Still run classify
-    #      so partial flaws materialize (and evals that DID resolve are already written by
-    #      _apply_full_eval_results). Increment full_eval_attempts, commit, return False so
-    #      the game is re-picked next tick. Do NOT report the job complete (tier-1/2 lease
-    #      sweep re-queues it; tier-3 has no job_id so it is naturally re-derived).
-    #   C. failed_ply_count > 0 AND current_attempts + 1 >= MAX_EVAL_ATTEMPTS → cap:
-    #      Stamp complete anyway (preserves D-116-07 no-infinite-loop invariant), classify,
-    #      report job, emit ONE aggregated Sentry warning. Never emit the cap event unless
-    #      holes actually persist — this replaces the former per-tick Sentry call at the
-    #      failed_ply_count > 0 branch (which would have fired even on retried games).
+    # Phase 150 R7: the write-session body (evals -> classify/oracle/diff-upsert ->
+    # opening-cache fill -> Path A/B/C completion decision) is now the single shared
+    # eval_apply.apply_full_eval(...), also called by the router's atomic-submit
+    # wrapper (eval_remote.py). This function still owns session lifecycle (mirrors
+    # apply_completion_decision's pre-existing convention) so async_session_maker
+    # test monkeypatches on THIS module continue to route correctly.
     async with async_session_maker() as write_session:
-        failed_ply_count = await _apply_full_eval_results(
-            write_session, targets, dedup_map, engine_result_map, is_lichess_eval_game
+        failed_ply_count, stamp_complete, _flaws_written = await apply_full_eval(
+            write_session,
+            game_id=game_id,
+            job_id=job_id,
+            targets=targets,
+            dedup_map=dedup_map,
+            engine_result_map=engine_result_map,
+            is_lichess_eval_game=is_lichess_eval_game,
+            flaw_pv_blobs=flaw_pv_blobs,
+            current_attempts=current_attempts,
+            source="full_eval_drain",
+            on_path_c_capacity_reached=_log_path_c_capacity_reached,
+            # SEED-075: blobs_pending=True mirrors the atomic go-forward path
+            # (eval_remote.py atomic-submit). Without it the local drain defaulted to
+            # False and re-minted raw ungated cp-based tactic tags for any flaw whose
+            # continuation blob was NOT assembled into flaw_pv_blobs this pass
+            # (flaw_ply absent from the dict, pre_flaw_eval_cp present) — the exact
+            # Phase 147 strict-zero violation. It has ZERO effect on flaws that DID
+            # get a blob (the gate runs on pv_blob directly) and on the D-06
+            # []-sentinel / mate-adjacent FINAL cases.
+            blobs_pending=True,
+            # SEED-053 / D-123.1-04: fill the opening-eval cache with freshly-computed
+            # misses (this lane only — Pitfall 4 / D-05: the atomic-submit lane does
+            # NOT populate the cache, see eval_apply.apply_full_eval's docstring).
+            update_opening_cache=True,
+            upsert_opening_cache_fn=_upsert_opening_cache,
+            engine_targets_for_cache=engine_targets,
         )
-
-        # EVAL-06 / D-117-08: classify game_flaws + fill oracle columns + write flaw PVs.
-        # Runs AFTER _apply_full_eval_results so eval_cp is visible for classification.
-        # Runs BEFORE the completion markers so evals + flaws commit atomically (T-117-11).
-        # Always runs — partial flaws should materialize even when holes remain.
-        # Phase 143 D-02: pass in-memory flaw_pv_blobs so the gate runs at classify time.
-        # Ordering: classify must PRECEDE _run_multipv2_pass (blobs not yet in DB here).
-        # SEED-075: blobs_pending=True mirrors the atomic go-forward path
-        # (eval_remote.py _apply_submit / the worker blob-submit path). Without it the
-        # local drain defaulted to False and re-minted raw ungated cp-based tactic tags
-        # for any flaw whose continuation blob was NOT assembled into flaw_pv_blobs this
-        # pass (flaw_ply absent from the dict, pre_flaw_eval_cp present) — the exact
-        # Phase 147 strict-zero violation. blobs_pending=True suppresses those to NULL so
-        # the tier-4 D-07 gated retag can later land the real blob and re-tag correctly.
-        # It has ZERO effect on flaws that DID get a blob (the gate runs on pv_blob
-        # directly) and on the D-06 []-sentinel / mate-adjacent FINAL cases.
-        await _classify_and_fill_oracle(
-            write_session, game_id, engine_result_map, flaw_pv_blobs, blobs_pending=True
-        )
-
-        # Phase 142 MPV-02: write PvNode blobs (allowed/missed lines) to game_flaws.
-        # Runs in the same transaction as _classify_and_fill_oracle so flaw rows exist
-        # before the UPDATE (Pitfall 5: write-session discipline).
-        await _run_multipv2_pass(write_session, game_id, flaw_pv_blobs)
-
-        # SEED-053 / D-123.1-04: fill the opening-eval cache with freshly-computed misses.
-        # Runs inside the same write txn — cache write + eval write commit atomically.
-        # Skipped for lichess-eval games (no engine_targets generated for them).
-        await _upsert_opening_cache(write_session, engine_targets, engine_result_map)
-
-        new_attempts = current_attempts + 1
-        games_table = Game.__table__
-
-        if failed_ply_count == 0:
-            # Path A: no holes — stamp complete and report job.
-            await _mark_full_evals_completed(write_session, game_id)
-            await _mark_full_pv_completed(write_session, game_id)
-            stamp_complete = True
-
-        elif new_attempts < MAX_EVAL_ATTEMPTS:
-            # Path B: holes remain, under cap — increment attempts, leave pending.
-            # Do NOT stamp full_evals_completed_at or full_pv_completed_at.
-            await write_session.execute(
-                update(games_table)  # ty: ignore[invalid-argument-type]
-                .where(games_table.c.id == game_id)
-                .values(full_eval_attempts=new_attempts)
-            )
-            stamp_complete = False
-
-        else:
-            # Path C: holes remain AND cap reached — stamp anyway (D-116-07 no-loop
-            # invariant). This is the EXPECTED terminal state of the bounded-retry drain,
-            # not an error: a few positions stayed un-evaluable after MAX_EVAL_ATTEMPTS and
-            # we deliberately stop retrying. Log locally instead of a Sentry event —
-            # capturing an expected cap-path outcome burned the error quota (was
-            # FLAWCHESS-5V) for no signal.
-            await _mark_full_evals_completed(write_session, game_id)
-            await _mark_full_pv_completed(write_session, game_id)
-            logger.warning(
-                "full_eval_drain: stamping complete after MAX_EVAL_ATTEMPTS with residual "
-                "holes (game_id=%s hole_count=%s attempts=%s)",
-                game_id,
-                failed_ply_count,
-                new_attempts,
-            )
-            stamp_complete = True
-
-        if stamp_complete:
-            # QUEUE-06: report the leased job as complete (tier-3 has no job row — job_id
-            # is None, so this block is skipped for tier-3 and the game is re-derived next tick).
-            if job_id is not None:
-                from app.models.eval_jobs import EvalJob
-
-                jobs_table_jobs = EvalJob.__table__
-                now_ts = datetime.now(timezone.utc)
-                await write_session.execute(
-                    update(jobs_table_jobs)  # ty: ignore[invalid-argument-type]
-                    .where(
-                        jobs_table_jobs.c.id == job_id,
-                        jobs_table_jobs.c.status == "leased",
-                    )
-                    .values(status="completed", completed_at=now_ts)
-                )
 
         await write_session.commit()
 
@@ -2980,9 +1041,11 @@ async def resweep_holed_games(
                 return count
 
             # Clear the completion markers and reset the attempt counter.
-            # Clearing full_evals_completed_at makes needs_engine_full_evals True again
-            # → tier-3 re-picks the game. The ix_games_needs_engine_full_evals partial
-            # index (SEED-046, migration 20260614150000) covers this predicate.
+            # Clearing full_evals_completed_at makes the game match the
+            # "needs engine" predicate again (full_evals_completed_at IS NULL
+            # AND lichess_evals_at IS NULL) → tier-3 re-picks it. The
+            # ix_games_needs_engine_full_evals partial index (SEED-046,
+            # migration 20260614150000) covers this predicate.
             #
             # WR-04: chunk the UPDATE in _RESWEEP_UPDATE_CHUNK_SIZE batches so the
             # unbounded prod path can't re-arm the whole holed backlog in one

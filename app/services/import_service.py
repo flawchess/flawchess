@@ -30,11 +30,13 @@ from app.repositories import game_repository, import_job_repository
 from app.repositories.import_job_repository import ImportJobNotFound
 from app.schemas.normalization import NormalizedGame
 from app.services import chesscom_client, lichess_client, percentile_compute_registry
-from app.services.eval_drain import (
+from app.services.eval_entry import (
     _classify_and_insert_flaws,
-    _collect_midgame_eval_targets,
     _collect_endgame_span_eval_targets,
+    _collect_midgame_eval_targets,
 )  # Phase 91: cross-module use of eval_drain internals is intentional — see SEED-023.
+
+# Phase 150 R7 Task 2: these moved from eval_drain.py to eval_entry.py.
 from app.services.user_benchmark_percentiles_service import compute_stage_a, compute_stage_b
 from app.services.zobrist import PlyData, process_game_pgn
 
@@ -205,6 +207,24 @@ def create_job(
         perf_type=perf_type,
     )
     return job_id
+
+
+def discard_job(job_id: str) -> None:
+    """Remove a job from the in-memory registry without ever running it.
+
+    Phase 149 PRUNE-05: start_import registers the in-memory JobState via
+    create_job before attempting the durable DB insert. When that insert
+    loses the race to a concurrent duplicate request (IntegrityError on
+    uq_import_jobs_user_platform_active), the losing request's job_id is
+    never scheduled via asyncio.create_task — leaving it in `_jobs` would
+    show up as a permanently-stuck duplicate import in
+    find_active_jobs_for_user / count_active_platform_jobs. No-op if the
+    job_id is already absent.
+
+    Args:
+        job_id: UUID string of the job to discard.
+    """
+    _jobs.pop(job_id, None)
 
 
 def get_job(job_id: str) -> JobState | None:
@@ -437,13 +457,21 @@ async def _record_failure_with_retry(
 
 
 async def _bootstrap_import_job(job: JobState, job_id: str) -> datetime | None:
-    """Bootstrap scope: previous-job lookup + job-record creation.
+    """Bootstrap scope: previous-job lookup for the incremental-sync cursor.
 
     Extracted from run_import (WR-01: nesting-depth reduction). Owns its own
-    AsyncSession so the bootstrap row is committed and the session is closed
-    before the batch loop begins. Only the plain scalar `previous_last_synced_at`
-    crosses the boundary, avoiding any DetachedInstanceError risk on cross-scope
-    ORM attribute access (Pitfall 2, 90-RESEARCH.md).
+    AsyncSession so the session is closed before the batch loop begins. Only
+    the plain scalar `previous_last_synced_at` crosses the boundary, avoiding
+    any DetachedInstanceError risk on cross-scope ORM attribute access
+    (Pitfall 2, 90-RESEARCH.md).
+
+    Bug fix (Phase 149 PRUNE-05): this used to ALSO create the durable
+    import_jobs row here — strictly after the HTTP response for start_import
+    had already been sent, leaving a TOCTOU race window two concurrent
+    requests could both pass through. The row is now created synchronously in
+    start_import (app/routers/imports.py), before asyncio.create_task
+    schedules run_import, backed by the uq_import_jobs_user_platform_active
+    partial unique index. Only the previous-job lookup remains here.
     """
     async with async_session_maker() as bootstrap_session:
         previous_job = await import_job_repository.get_latest_for_user_platform(
@@ -453,14 +481,6 @@ async def _bootstrap_import_job(job: JobState, job_id: str) -> datetime | None:
         previous_last_synced_at: datetime | None = (
             previous_job.last_synced_at if previous_job is not None else None
         )
-        await import_job_repository.create_import_job(
-            bootstrap_session,
-            job_id=job_id,
-            user_id=job.user_id,
-            platform=job.platform,
-            username=job.username,
-        )
-        await bootstrap_session.commit()
     return previous_last_synced_at
 
 
@@ -846,11 +866,11 @@ async def _stamp_lichess_evals_at(
     Bug fix: the column was introduced in Phase 117 with only a one-time backfill
     (``white_blunders IS NOT NULL``) — no live import path ever set it. So lichess
     games re-imported after that migration arrived WITH lichess computer analysis
-    yet got ``lichess_evals_at = NULL``, which made them match
-    ``needs_engine_full_evals`` (``full_evals_completed_at IS NULL AND
-    lichess_evals_at IS NULL``) and get wastefully re-queued for our Stockfish drain
-    despite already carrying per-ply %evals (observed: 5,152 of one user's lichess
-    games after a delete+reimport).
+    yet got ``lichess_evals_at = NULL``, which made them match the "needs our
+    engine" predicate (``full_evals_completed_at IS NULL AND lichess_evals_at IS
+    NULL``) and get wastefully re-queued for our Stockfish drain despite already
+    carrying per-ply %evals (observed: 5,152 of one user's lichess games after a
+    delete+reimport).
 
     Mirrors the Phase 117 migration's condition. The ``platform = 'lichess'`` guard
     future-proofs the case where engine-filled oracle counts blur the white_blunders

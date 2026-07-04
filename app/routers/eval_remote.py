@@ -1,31 +1,30 @@
 """Endpoints for the remote eval worker protocol (Phase 120 SEED-048).
 
-POST /eval/remote/lease        — claim the next eval game (tier-1 > tier-2 > tier-3) and
-                                 return its (ply, FEN) positions (Phase 121 SEED-048).
-                                 Optional scope param (Phase 123 D-05): absent = bundled;
-                                 scope=explicit = tier-1/2 only; scope=idle = tier-3 only.
-POST /eval/remote/submit       — apply a batch of engine evals server-side via the SEED-044
-                                 write path, enforcing D-5 SF-version gate and SEED-045
-                                 bounded-retry stamping.
+Phase 149-03 PRUNE-01: the original Gen-1 POST /lease + POST /submit pair (and
+_apply_submit) has been deleted — the fleet fully migrated to the atomic
+(versioned) /atomic-lease + /atomic-submit pair below (Phase 147 SEED-074 Part
+B), which closes the ungated-tag window the Gen-1 pair left open. See
+149-RESEARCH.md for the deletion's Runtime State Inventory / zero-legacy-
+traffic verification.
+
 POST /eval/remote/entry-lease  — (Phase 123 SEED-051 D-07) claim a batch of pending
                                  entry-ply (import-time) games. D-5 backlog existence probe
                                  gates this endpoint; returns 204 when backlog < threshold.
 POST /eval/remote/entry-submit — (Phase 123 SEED-051 D-07) apply depth-15 entry-ply evals
                                  via the no-shift SEED-044 write path (_apply_eval_results).
-POST /eval/remote/atomic-lease — (Phase 147 SEED-074 Part B, D-02) NEW versioned lease for the
-                                 upgraded eval+blob worker pipeline. Claims via claim_eval_job
-                                 UNCHANGED (tier-1 > tier-2 > tier-3), returns the same
-                                 FEN-per-ply shape as /lease. Runs alongside the old /lease pair
-                                 (not a replacement) during a mixed-fleet deploy.
+POST /eval/remote/atomic-lease — (Phase 147 SEED-074 Part B, D-02) versioned lease for the
+                                 eval+blob worker pipeline. Claims via claim_eval_job
+                                 (tier-1 > tier-2 > tier-3), returns the FEN-per-ply shape
+                                 (_build_lease_positions, shared with the deleted Gen-1 /lease).
 POST /eval/remote/atomic-submit — (Phase 147 SEED-074 Part B, D-01/D-02) paired with
                                  /atomic-lease. Applies full-ply evals + the worker's own
                                  MultiPV-2 continuation blobs together, in ONE write_session:
                                  evals -> server-authoritative classify_game_flaws (with the
                                  worker's blobs as gate input only, never trusted for flaw
                                  membership) -> blob write -> SEED-045 bounded-retry stamping
-                                 (same Path A/B/C invariant as /submit, CR-01) -> one commit.
-                                 No ungated window is ever observable for a game processed
-                                 here (see _apply_atomic_submit).
+                                 (same Path A/B/C invariant _apply_submit used to use, CR-01)
+                                 -> one commit. No ungated window is ever observable for a
+                                 game processed here (see _apply_atomic_submit).
 
 All endpoints require the X-Operator-Token header (T-120-01 operator auth gate).
 403 when the token is not configured on the server (fail-closed); 401 when it does
@@ -34,15 +33,15 @@ not match. Token comparison is constant-time (hmac.compare_digest — no timing 
 Expected / non-exception status codes (do NOT Sentry-capture):
   403 — token not configured
   401 — wrong token
-  204 — empty queue (lease) or lichess game deferred (lease) or shallow backlog (entry-lease)
-        or over-cap fat game (atomic-lease)
-  422 — SF version mismatch (submit / entry-submit / atomic-submit) or foreign/out-of-range
+  204 — empty queue (atomic-lease) or lichess game deferred (atomic-lease) or shallow
+        backlog (entry-lease) or over-cap fat game (atomic-lease)
+  422 — SF version mismatch (entry-submit / atomic-submit) or foreign/out-of-range
         blob token (flaw-blob-submit / atomic-submit)
-  404 — game not found (submit / atomic-submit)
+  404 — game not found (atomic-submit)
 
 The server owns ALL storage convention (D-2): workers are dumb FEN→eval functions.
-The submit endpoint calls _apply_full_eval_results with the worker's ply-keyed evals;
-the SEED-044 +1 post-move shift is applied there, not by the worker.
+The atomic-submit endpoint calls _apply_full_eval_results with the worker's ply-keyed
+evals; the SEED-044 +1 post-move shift is applied there, not by the worker.
 The entry-submit endpoint calls _apply_eval_results (no shift) — entry-ply targets are
 already position-keyed at the correct row; do NOT use _apply_full_eval_results.
 """
@@ -51,13 +50,13 @@ import hmac
 import io
 from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 import chess
 import chess.pgn
 import sentry_sdk
 import sqlalchemy as sa
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
 from sqlalchemy import select, update
 from app.core.config import settings
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -78,41 +77,45 @@ from app.schemas.eval_remote import (
     FlawBlobSubmitRequest,
     FlawBlobSubmitResponse,
     LeasePosition,
-    LeaseResponse,
-    SubmitRequest,
-    SubmitResponse,
 )
+from app.services.eval_apply import (
+    _FullPlyEvalTarget,
+    _assemble_flaw_blobs_from_submit,
+    _batch_update_flaw_pv_lines,
+    _build_flaw_blob_lease_positions,
+    _collect_full_ply_targets,
+    _derive_atomic_sentinel_lines,
+    _fetch_dedup_evals,
+    _parse_token,
+    _signal_flaw_completion,
+    apply_full_eval,
+)
+
+# Entry-lane collection/write/classify primitives (Phase 150 R7 Task 2 split).
+from app.services.eval_entry import (
+    _EvalTarget,
+    _apply_eval_results,
+    _claim_entry_eval_games,
+    _classify_and_insert_flaws,
+    _collect_eval_targets_from_db,
+    _mark_evals_completed,
+)
+
+# ENTRY_LEASE_* constants and _load_pgns_for_games stay in eval_drain.py: the
+# latter opens its own internal session and is deliberately kept alongside its
+# only other caller (run_eval_drain) rather than moved to eval_entry.py — see
+# eval_drain.py's own comment above _pick_pending_game_ids for the rationale
+# (150-05-SUMMARY.md documents this as the phase's one flagged, deliberate
+# residual private import).
 from app.services.eval_drain import (
     ENTRY_LEASE_BACKLOG_THRESHOLD,
     ENTRY_LEASE_BATCH_SIZE,
     ENTRY_LEASE_TTL_SECONDS,
-    MAX_EVAL_ATTEMPTS,
-    _EvalTarget,
-    _FullPlyEvalTarget,
-    _apply_eval_results,
-    _apply_full_eval_results,
-    _assemble_flaw_blobs_from_submit,
-    _batch_update_flaw_pv_lines,
-    _build_flaw_blob_lease_positions,
-    _claim_entry_eval_games,
-    _classify_and_fill_oracle,
-    _classify_and_insert_flaws,
-    _collect_eval_targets_from_db,
-    _collect_full_ply_targets,
-    _derive_atomic_sentinel_lines,
-    _fetch_dedup_evals,
     _load_pgns_for_games,
-    _mark_evals_completed,
-    _mark_full_evals_completed,
-    _mark_full_pv_completed,
-    _parse_token,
-    _run_multipv2_pass,
-    _signal_flaw_completion,
 )
-from app.services.forcing_line_gate import PvNode
-from app.models.eval_jobs import EvalJob
 from app.models.game_flaw import GameFlaw
 from app.repositories.game_flaws_repository import bulk_update_tactic_tags
+from app.repositories.worker_heartbeat_repository import upsert_worker_heartbeat
 from app.services.eval_queue_service import _claim_tier4_blob, claim_eval_job, release_job
 from app.services.flaws_service import _classify_tactic_gated, _recompute_fen_map
 
@@ -327,200 +330,6 @@ def _build_lease_positions(
     return positions if positions else None
 
 
-async def _apply_submit(
-    game_id: int,
-    body: SubmitRequest,
-) -> SubmitResponse:
-    """Apply a submit payload using the SEED-044 write path + SEED-045 decision tree.
-
-    Read phase (short session, closed before write): load Game fields + GamePosition rows.
-    Write phase (ONE late session): apply evals, classify flaws, stamp or retry.
-    Mirrors _full_drain_tick Steps 2-4 (eval_drain.py lines ~1431-1519).
-
-    Does NOT use asyncio.gather inside any open session (CLAUDE.md hard rule).
-    """
-    # ── Read phase — short session, close before write ────────────────────────
-    async with async_session_maker() as read_session:
-        game_result = await read_session.execute(select(Game).where(Game.id == game_id))
-        game = game_result.unique().scalar_one_or_none()
-        if game is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Game not found",
-            )
-
-        pgn_text: str = game.pgn
-        current_attempts: int = game.full_eval_attempts
-        is_lichess_eval_game: bool = game.lichess_evals_at is not None
-        # Authoritative owner for the post-commit cache signal — derived from the
-        # game itself, NOT the worker payload. Trusting a client-supplied user_id
-        # here (WR-04) would invalidate the wrong user's cache and leave the real
-        # owner's analysis stale while signalling an unrelated user.
-        owner_id: int = game.user_id
-
-        gp_result = await read_session.execute(
-            select(
-                GamePosition.ply,
-                GamePosition.full_hash,
-                GamePosition.eval_cp,
-                GamePosition.eval_mate,
-            ).where(
-                GamePosition.game_id == game_id,
-                GamePosition.user_id == game.user_id,
-            )
-        )
-        gp_rows: list[tuple[int, int, int | None, int | None]] = [
-            (row.ply, row.full_hash, row.eval_cp, row.eval_mate) for row in gp_result.all()
-        ]
-    # read_session closed — no sessions open during CPU work below
-
-    # Derive targets and build the engine_result_map from submitted evals.
-    # Worker evals are position-keyed (no shift) — the server applies the +1 shift
-    # inside _apply_full_eval_results via _post_move_eval (D-2 / pitfall 1).
-    targets = _collect_full_ply_targets(
-        game_id=game_id,
-        pgn_text=pgn_text,
-        game_positions_rows=gp_rows,
-        include_terminal=not is_lichess_eval_game,
-    )
-
-    # Worker supplies (eval_cp, eval_mate, best_move, pv) keyed by position ply.
-    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]] = {
-        e.ply: (e.eval_cp, e.eval_mate, e.best_move, e.pv) for e in body.evals
-    }
-    # Phase 146 D-03: unconditionally skip blob assembly on the live submit path.
-    # Blob construction is deferred to the tier-4 worker drain (flaw-blob-lease →
-    # worker MultiPV=2 → flaw-blob-submit). allowed_pv_lines / missed_pv_lines
-    # stay NULL → game matches the tier-4 predicate → self-heals.
-    # Old workers that still send second_* fields in the JSON body have those keys
-    # silently ignored by Pydantic v2 (SubmitEval has no extra='forbid') — no 422.
-    blob_map: dict[int, tuple[list[PvNode], list[PvNode]]] = {}
-
-    # ── Write phase — ONE late session, all UPDATEs + commit atomic ──────────
-    stamp_complete: bool
-    failed_ply_count: int
-
-    async with async_session_maker() as write_session:
-        # SEED-076: build the real opening-cache dedup_map (mirrors _full_drain_tick) so
-        # opening plies a weak worker timed out on — and the cache-aware lease omitted —
-        # are filled server-side BEFORE failed_ply_count is computed, instead of counting
-        # as holes and eventually Path-C-stamping the game permanently incomplete.
-        # preserve_existing_evals keeps already-eval'd plies dropped from an incremental
-        # re-lease out of the hole count (not resent, not in dedup_map, but DB eval stands).
-        # Engine-game only: leases never hand out lichess games, but a direct POST could —
-        # keep dedup_map empty there so the worker's %eval best_move is not overridden.
-        dedup_map = (
-            {}
-            if is_lichess_eval_game
-            else await _fetch_dedup_evals(
-                write_session,
-                [t.full_hash for t in targets if t.ply <= DEDUP_MAX_PLY and not t.is_terminal],
-            )
-        )
-        failed_ply_count = await _apply_full_eval_results(
-            write_session,
-            targets,
-            dedup_map,
-            engine_result_map,
-            is_lichess_eval_game,
-            preserve_existing_evals=True,
-        )
-
-        # SEED-076 follow-up: merge the cached opening pv into engine_result_map BEFORE
-        # classify writes the pv / flaw tags, so a flaw at a cache-omitted opening ply
-        # gets a real walkable PV instead of a permanent [] sentinel. No sentinel
-        # derivation on this (non-atomic) path, so in-session is fine.
-        _merge_dedup_pv_into_engine_map(targets, dedup_map, engine_result_map)
-
-        # Classify game_flaws + fill oracle counts + write flaw PVs.
-        # Runs AFTER _apply_full_eval_results so eval_cp is visible for classification.
-        # Runs BEFORE completion markers so evals + flaws commit atomically (T-117-11).
-        # Phase 146 D-03: blob_map is always {} (empty) so blob_map if blob_map evaluates
-        # to None → gate skipped at the blob level. Blobs are assembled by the tier-4
-        # worker drain (flaw-blob-lease → worker MultiPV=2 → flaw-blob-submit).
-        # Phase 147 D-01/D-03: blobs_pending=True suppresses raw ungated cp-based tactic
-        # tags to NULL here (no blob yet to gate-check against) instead of persisting them
-        # ungated; mate-adjacent and D-06 []-sentinel flaws are FINAL and keep their raw
-        # tag. The suppressed NULL self-heals via the tier-4 D-07 gated retag at
-        # blob-submit time.
-        await _classify_and_fill_oracle(
-            write_session,
-            game_id,
-            engine_result_map,
-            blob_map if blob_map else None,
-            blobs_pending=True,
-        )
-
-        new_attempts = current_attempts + 1
-        games_table = Game.__table__
-
-        if failed_ply_count == 0:
-            # Path A: no holes — stamp both markers complete.
-            await _mark_full_evals_completed(write_session, game_id)
-            await _mark_full_pv_completed(write_session, game_id)
-            stamp_complete = True
-
-        elif new_attempts < MAX_EVAL_ATTEMPTS:
-            # Path B: holes remain, under cap — increment attempts, leave pending.
-            # Do NOT stamp full_evals_completed_at or full_pv_completed_at.
-            await write_session.execute(
-                update(games_table)  # ty: ignore[invalid-argument-type]
-                .where(games_table.c.id == game_id)
-                .values(full_eval_attempts=new_attempts)
-            )
-            stamp_complete = False
-
-        else:
-            # Path C: holes remain AND cap reached — stamp anyway (D-116-07 no-loop
-            # invariant). One aggregated Sentry warning (never embed variable data in
-            # the message string — use set_context for Sentry grouping, CLAUDE.md rule).
-            await _mark_full_evals_completed(write_session, game_id)
-            await _mark_full_pv_completed(write_session, game_id)
-            sentry_sdk.set_context(
-                "eval",
-                {
-                    "game_id": game_id,
-                    "hole_count": failed_ply_count,
-                    "attempts": new_attempts,
-                },
-            )
-            sentry_sdk.set_tag("source", "remote_eval_worker")
-            sentry_sdk.capture_message(
-                "remote-worker: stamping complete after MAX_EVAL_ATTEMPTS with residual holes",
-                level="warning",
-            )
-            stamp_complete = True
-
-        # Stamp eval_jobs for tier-1/tier-2 claims when all plies resolved (Path A/C).
-        # The WHERE status='leased' guard makes a late submit (lease expired + re-claimed,
-        # or job already completed) a safe no-op — never corrupts an unrelated job.
-        # Path B (holes remain, stamp_complete=False) is deliberately NOT stamped:
-        # the eval_jobs row stays 'leased' until the sweep requeues it after the TTL.
-        if body.job_id is not None and stamp_complete:
-            jobs_table = EvalJob.__table__
-            now_ts = datetime.now(timezone.utc)
-            await write_session.execute(
-                update(jobs_table)  # ty: ignore[invalid-argument-type]
-                .where(
-                    jobs_table.c.id == body.job_id,
-                    jobs_table.c.status == "leased",  # idempotency / late-submit guard
-                )
-                .values(status="completed", completed_at=now_ts)
-            )
-
-        await write_session.commit()
-
-    # Signal after commit so the hook never fires for a partially-committed game.
-    if stamp_complete:
-        _signal_flaw_completion(owner_id)
-
-    return SubmitResponse(
-        game_id=game_id,
-        stamp_complete=stamp_complete,
-        failed_ply_count=failed_ply_count,
-    )
-
-
 # ---------------------------------------------------------------------------
 # Worker-id advisory dependency (D-10)
 # ---------------------------------------------------------------------------
@@ -548,101 +357,6 @@ async def worker_id_label(
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
-
-
-@router.post("/lease", response_model=None)
-async def lease_eval_game(
-    _auth: Annotated[None, Depends(require_operator_token)],
-    worker_id: Annotated[str, Depends(worker_id_label)],
-    scope: Annotated[Literal["explicit", "idle"] | None, Query()] = None,
-) -> Response | LeaseResponse:
-    """Claim the next eval game (tier-1 > tier-2 > tier-3) and return its FEN positions.
-
-    Returns 204 when no eligible game is in the queue, or when the claimed game
-    is a lichess-eval game (PV-backfill path deferred to v2 per D-4/v1 scope).
-
-    Delegates to claim_eval_job which implements tier-1 > tier-2 > tier-3 priority
-    with SKIP LOCKED and stale-lease sweep. claim_eval_job opens its own sessions
-    internally — do NOT wrap this call in a session context (Pitfall 1).
-
-    D-05 scope param (Phase 123):
-      absent   → today's bundled tier-1>2>3 (backward-compat for un-updated workers).
-      explicit → tier-1/2 only.
-      idle     → tier-3 only.
-
-    The EVAL_AUTO_DRAIN_ENABLED gate inside claim_eval_job applies only to tier-3
-    (idle backlog). Tier-1/tier-2 picks are never gated — a freshly-enqueued
-    explicit request must always be claimable by the remote worker.
-
-    The lease response carries job_id = eval_jobs.id for tier-1/tier-2 claims,
-    and job_id=None for tier-3 derived picks (no eval_jobs row exists).
-
-    The terminal eval-donor (is_terminal=True) is always included (pitfall 3):
-    without it, the last played ply's eval_cp stays NULL after submit.
-    """
-    # claim_eval_job owns its sessions — no caller session context needed.
-    claim = await claim_eval_job(worker_id=worker_id, scope=scope)
-
-    if claim is None:
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-    game_id = claim.game_id
-    user_id = claim.user_id
-    is_lichess_eval_game = claim.is_lichess_eval_game
-
-    # D-4 / v1 scope: lichess PV-backfill games (is_lichess_eval_game=True) deferred.
-    # WR-01 (Phase 121): claim_eval_job leased the eval_jobs row before we discovered
-    # it's a lichess game we don't process. Release it back to 'pending' so the server
-    # pool (which DOES do the flaw-PV backfill) can claim it immediately, instead of
-    # leaving it stranded 'leased' for the full lease TTL. Tier-3 derived picks have
-    # job_id=None and own no eval_jobs row, so the guard skips them.
-    if is_lichess_eval_game:
-        if claim.job_id is not None:
-            await release_job(claim.job_id)
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-    # Load PGN + game_positions in a second short read session.
-    async with async_session_maker() as read_session:
-        game_result = await read_session.execute(
-            sa.select(Game.pgn, Game.user_id).where(Game.id == game_id)
-        )
-        row = game_result.one_or_none()
-        if row is None:
-            return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-        pgn_text: str = row.pgn
-
-        gp_result = await read_session.execute(
-            select(
-                GamePosition.ply,
-                GamePosition.full_hash,
-                GamePosition.eval_cp,
-                GamePosition.eval_mate,
-            ).where(
-                GamePosition.game_id == game_id,
-                GamePosition.user_id == row.user_id,
-            )
-        )
-        gp_rows: list[tuple[int, int, int | None, int | None]] = [
-            (r.ply, r.full_hash, r.eval_cp, r.eval_mate) for r in gp_result.all()
-        ]
-        # SEED-076: opening full_hashes already in opening_position_eval — the
-        # cache-aware lease omits these so a weak worker never re-grinds them.
-        cached_hashes = await _fetch_cached_opening_hashes(read_session, gp_rows)
-    # read_session closed
-
-    positions = _build_lease_positions(game_id, pgn_text, gp_rows, cached_hashes)
-    if positions is None:
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-    return LeaseResponse(
-        game_id=game_id,
-        user_id=user_id,
-        is_lichess_eval_game=False,
-        positions=positions,
-        leased_at=datetime.now(timezone.utc),
-        job_id=claim.job_id,
-    )
 
 
 @router.post("/atomic-lease", response_model=None)
@@ -743,36 +457,6 @@ async def atomic_lease_eval_game(
     )
 
 
-@router.post("/submit", response_model=SubmitResponse)
-async def submit_eval(
-    body: SubmitRequest,
-    _auth: Annotated[None, Depends(require_operator_token)],
-) -> SubmitResponse:
-    """Apply a batch of engine evals to one game using the SEED-044 write path.
-
-    D-5 SF-version gate is checked FIRST: if EXPECTED_SF_VERSION is configured
-    and body.sf_version does not match, 422 is raised before any DB access.
-
-    Server applies the SEED-044 +1 post-move shift via _apply_full_eval_results —
-    the worker submits position-keyed evals as-is (D-2 storage responsibility).
-    Duplicate submits for the same game are idempotent (ON CONFLICT DO NOTHING for
-    flaws, idempotent oracle UPDATE, completion markers set to the same timestamp).
-    """
-    # D-5 gate FIRST — check before any DB access.
-    if settings.EXPECTED_SF_VERSION and body.sf_version != settings.EXPECTED_SF_VERSION:
-        # Static detail string for Sentry grouping — never embed version values
-        # directly (fragments Sentry issues per CLAUDE.md rule).
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Stockfish version mismatch",
-        )
-
-    return await _apply_submit(
-        game_id=body.game_id,
-        body=body,
-    )
-
-
 @router.post("/entry-lease", response_model=None)
 async def entry_lease_eval_games(
     _auth: Annotated[None, Depends(require_operator_token)],
@@ -853,6 +537,7 @@ async def entry_lease_eval_games(
 @router.post("/entry-submit", response_model=EntrySubmitResponse)
 async def entry_submit_eval(
     body: EntrySubmitRequest,
+    request: Request,
     _auth: Annotated[None, Depends(require_operator_token)],
     worker_id: Annotated[str, Depends(worker_id_label)],
 ) -> EntrySubmitResponse:
@@ -965,6 +650,16 @@ async def entry_submit_eval(
             # matching immediately, breaking the re-lease livelock.
             await _mark_evals_completed(write_session, leased_game_ids)
             stamped_count = len(leased_game_ids)
+
+            # PRUNE-06: passive telemetry only (D-01/D-04) — no gate, submits only.
+            await upsert_worker_heartbeat(
+                write_session,
+                worker_id=worker_id,
+                last_ip=request.client.host if request.client else None,
+                sf_version=body.sf_version,
+                worker_schema_version=None,  # entry-submit never sends this (D-03)
+                n_evals=len(body.evals),
+            )
             await write_session.commit()
     except Exception as exc:
         # Capture non-trivial exceptions (Sentry rule: never embed variables in message).
@@ -1093,6 +788,8 @@ async def flaw_blob_lease(
 async def _apply_flaw_blob_submit(
     game_id: int,
     body: FlawBlobSubmitRequest,
+    worker_id: str,
+    last_ip: str | None,
 ) -> FlawBlobSubmitResponse:
     """Apply a flaw-blob submit: reassemble PvNode blobs and run per-game gated retag (D-07).
 
@@ -1145,24 +842,13 @@ async def _apply_flaw_blob_submit(
 
     # Security T-145-09: reject tokens not issued in the current lease.
     # Workers only receive tokens for walkable PV nodes; sentinel-line tokens
-    # were never emitted and must never be accepted as valid submissions.
+    # were never emitted and must never be accepted as valid submissions. This
+    # is a single unconditional rejection — a token for a foreign flaw_ply and a
+    # token for a NULL-blob flaw's un-leased sentinel line are both rejected the
+    # same way (WR-03: a prior two-branch structure computed a flaw_ply/
+    # null_flaw_plies distinction but never actually branched on it).
     for e in body.evals:
         if e.token not in valid_tokens:
-            try:
-                flaw_ply, _line, _k = _parse_token(e.token)
-                in_null_plies = flaw_ply in null_flaw_plies
-            except ValueError:
-                in_null_plies = False
-            # A token for a flaw_ply that doesn't belong to this game's NULL-blob set
-            # is definitively foreign — reject unconditionally.
-            if not in_null_plies:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail=f"Unknown or foreign token: {e.token!r}",
-                )
-            # Token is for a NULL-blob flaw but not in the lease — it's a sentinel-line
-            # token that was never leased to the worker. Reject it: workers must not
-            # submit tokens the server never issued (T-145-09 tampering guard).
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Unknown or foreign token: {e.token!r}",
@@ -1209,6 +895,16 @@ async def _apply_flaw_blob_submit(
     async with async_session_maker() as write_session:
         await _batch_update_flaw_pv_lines(write_session, game_id, blob_map)
         await bulk_update_tactic_tags(write_session, updates)
+
+        # PRUNE-06: passive telemetry only (D-01/D-04) — no gate, submits only.
+        await upsert_worker_heartbeat(
+            write_session,
+            worker_id=worker_id,
+            last_ip=last_ip,
+            sf_version=body.sf_version,
+            worker_schema_version=None,  # flaw-blob-submit never sends this (D-03)
+            n_evals=len(body.evals),
+        )
         await write_session.commit()
 
     return FlawBlobSubmitResponse(game_id=game_id, blobs_written=len(blob_map))
@@ -1217,7 +913,9 @@ async def _apply_flaw_blob_submit(
 @router.post("/flaw-blob-submit", response_model=FlawBlobSubmitResponse)
 async def flaw_blob_submit(
     body: FlawBlobSubmitRequest,
+    request: Request,
     _auth: Annotated[None, Depends(require_operator_token)],
+    worker_id: Annotated[str, Depends(worker_id_label)],
 ) -> FlawBlobSubmitResponse:
     """Apply worker MultiPV=2 results: write PvNode blobs and run per-game gated retag (D-07).
 
@@ -1245,114 +943,43 @@ async def flaw_blob_submit(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Stockfish version mismatch",
         )
-    return await _apply_flaw_blob_submit(body.game_id, body)
+    return await _apply_flaw_blob_submit(
+        body.game_id,
+        body,
+        worker_id=worker_id,
+        last_ip=request.client.host if request.client else None,
+    )
 
 
 # ─── Phase 147 SEED-074 Part B: atomic eval+blob submit helper + endpoint (D-01/D-02) ──
 
 
-async def _snapshot_preserved_flaw_blobs(
-    session: AsyncSession,
-    game_id: int,
-    user_id: int,
-) -> dict[int, dict[str, Any]]:
-    """SEED-076: capture a game's flaw blob + tactic-tag columns before classify runs.
-
-    `_classify_and_fill_oracle` does delete-then-insert, so an incremental atomic retry
-    (the worker re-evaluates only the residual holes and does NOT re-blob already-done
-    midgame flaws) would leave those flaws' `{allowed,missed}_pv_lines` + 8 tactic-tag
-    columns NULL — dumping work already done back onto the tier-4 blob pass and transiently
-    dropping tactic tags. We snapshot them here (keyed by ply) and restore them after the
-    blob write for flaws not re-blobbed this submit.
-
-    Only flaws that already carry a blob (allowed_pv_lines IS NOT NULL) are captured — a
-    NULL-blob flaw has nothing to preserve (it is already awaiting the tier-4 pass).
-    """
-    result = await session.execute(
-        select(
-            GameFlaw.ply,
-            GameFlaw.allowed_pv_lines,
-            GameFlaw.missed_pv_lines,
-            GameFlaw.allowed_tactic_motif,
-            GameFlaw.allowed_tactic_piece,
-            GameFlaw.allowed_tactic_confidence,
-            GameFlaw.allowed_tactic_depth,
-            GameFlaw.missed_tactic_motif,
-            GameFlaw.missed_tactic_piece,
-            GameFlaw.missed_tactic_confidence,
-            GameFlaw.missed_tactic_depth,
-        ).where(
-            GameFlaw.game_id == game_id,
-            GameFlaw.user_id == user_id,
-            GameFlaw.allowed_pv_lines.isnot(None),
-        )
-    )
-    snapshot: dict[int, dict[str, Any]] = {}
-    for row in result.all():
-        snapshot[row.ply] = {
-            "allowed_pv_lines": row.allowed_pv_lines,
-            "missed_pv_lines": row.missed_pv_lines,
-            "allowed_tactic_motif": row.allowed_tactic_motif,
-            "allowed_tactic_piece": row.allowed_tactic_piece,
-            "allowed_tactic_confidence": row.allowed_tactic_confidence,
-            "allowed_tactic_depth": row.allowed_tactic_depth,
-            "missed_tactic_motif": row.missed_tactic_motif,
-            "missed_tactic_piece": row.missed_tactic_piece,
-            "missed_tactic_confidence": row.missed_tactic_confidence,
-            "missed_tactic_depth": row.missed_tactic_depth,
-        }
-    return snapshot
-
-
-async def _restore_preserved_flaw_blobs(
-    session: AsyncSession,
-    game_id: int,
-    user_id: int,
-    snapshot: dict[int, dict[str, Any]],
-    freshly_blobbed: set[int],
+def _report_path_c_capacity_reached(
+    game_id: int, failed_ply_count: int, new_attempts: int, source: str
 ) -> None:
-    """SEED-076: re-apply snapshotted blob + tactic-tag columns for flaws the current
-    submit did NOT re-blob, after classify's delete-then-insert reset them to NULL.
+    """Path-C reporting for the atomic-submit lane (R1).
 
-    - A ply the worker DID re-blob this submit (in `freshly_blobbed`) is skipped — its
-      fresh values from `_run_multipv2_pass` + the fresh gate win.
-    - A snapshotted ply no longer classified as a flaw after classify's delete-then-insert
-      has NO surviving row and MUST be filtered out (see the `existing` guard below).
-
-    Uses the ORM bulk-update-by-PK path (same as `bulk_update_tactic_tags`) so the JSONB
-    blobs and tag columns update in one round-trip, inside the caller's write transaction.
-
-    Bug fix (FLAWCHESS-8D): the ORM bulk-update-by-PK path asserts exactly 1 row matched
-    per parameter set (GameFlaw PK = user_id/game_id/ply), so a snapshotted ply that
-    classify no longer flags as a flaw raises StaleDataError ("0 were matched"), NOT the
-    silent no-op the old docstring assumed. Incremental re-leasing (SEED-076) makes evals
-    arrive across attempts and flip borderline plies in/out of flaw status between submits,
-    so this is routine, not a race. Intersect the snapshot with the plies that actually
-    survived classify before the bulk update.
+    Sentry capture_message (not logger.warning) — the router lane wants this
+    expected-but-notable cap-path outcome visible in Sentry. Variables go via
+    set_context/set_tag, never embedded in the message string (CLAUDE.md rule),
+    so every occurrence groups as one Sentry issue.
     """
-    existing_plies = set(
-        (
-            await session.scalars(
-                select(GameFlaw.ply).where(
-                    GameFlaw.game_id == game_id,
-                    GameFlaw.user_id == user_id,
-                )
-            )
-        ).all()
+    sentry_sdk.set_context(
+        "eval",
+        {"game_id": game_id, "hole_count": failed_ply_count, "attempts": new_attempts},
     )
-    rows = [
-        {"user_id": user_id, "game_id": game_id, "ply": ply, **cols}
-        for ply, cols in snapshot.items()
-        if ply not in freshly_blobbed and ply in existing_plies
-    ]
-    if not rows:
-        return
-    await session.execute(update(GameFlaw), rows)
+    sentry_sdk.set_tag("source", source)
+    sentry_sdk.capture_message(
+        "atomic-submit: stamping complete after MAX_EVAL_ATTEMPTS with residual holes",
+        level="warning",
+    )
 
 
 async def _apply_atomic_submit(
     game_id: int,
     body: AtomicSubmitRequest,
+    worker_id: str,
+    last_ip: str | None,
 ) -> AtomicSubmitResponse:
     """Apply an atomic eval+blob submit: evals -> authoritative classify (with the
     worker's blobs) -> blob write -> both completion markers, ONE write_session
@@ -1378,17 +1005,18 @@ async def _apply_atomic_submit(
     flaw is intentionally NOT rejected here — the worker's local hint-classify is
     expected to sometimes diverge from the server's authoritative classify (that
     divergence is the whole reason the server re-classifies at all), so such a
-    token is silently dropped later at the SQL join in _run_multipv2_pass (no
-    game_flaws row exists at that ply to update).
+    token is silently dropped later at the SQL join inside _classify_and_fill_oracle's
+    blob write (no game_flaws row exists at that ply to update).
 
     Write phase (ONE session, mirrors _full_drain_tick Step 4 / RESEARCH.md
-    "_full_drain_tick's atomic-write ordering"): apply evals -> classify_game_flaws
-    (with the worker-supplied blob_map) -> write blobs -> branch on failed_ply_count
-    into the same Path A/B/C SEED-045 bounded-retry invariant _apply_submit uses
-    (CR-01, 147-REVIEW.md) -> ONE commit (T-117-11: no partial/ungated state is
-    ever observable). Path A (no holes) and Path C (holes, MAX_EVAL_ATTEMPTS
-    reached) stamp both completion markers; Path B (holes, under cap) increments
-    full_eval_attempts and leaves the game pending for retry instead.
+    "_full_drain_tick's atomic-write ordering"): delegates to eval_apply.
+    apply_full_eval (Phase 150 R7 — evals -> classify_game_flaws (with the
+    worker-supplied blob_map) -> write blobs -> apply_completion_decision, the
+    same Path A/B/C SEED-045 bounded-retry invariant _full_drain_tick uses) -> ONE
+    commit (T-117-11: no partial/ungated state is ever observable). Path A (no
+    holes) and Path C (holes, MAX_EVAL_ATTEMPTS reached) stamp both completion
+    markers; Path B (holes, under cap) increments full_eval_attempts and leaves
+    the game pending for retry instead.
 
     blobs_pending=True is passed to _classify_and_fill_oracle here (a deliberate,
     documented deviation from the plan's literal "blobs_pending stays False" — see
@@ -1501,8 +1129,13 @@ async def _apply_atomic_submit(
     flaw_pv_blobs = _assemble_flaw_blobs_from_submit(game_id, body.blob_nodes, sentinel_lines)
 
     # ── Write phase — ONE late session, all UPDATEs + commit atomic (T-117-11) ──
-    stamp_complete: bool
-
+    # Phase 150 R7: the shared write-session body (evals -> classify/oracle/
+    # diff-upsert -> Path A/B/C completion decision -> heartbeat) is now
+    # eval_apply.apply_full_eval, also called by _full_drain_tick (eval_drain.py).
+    # This function still owns session lifecycle (mirrors the pre-move code, and
+    # keeps this module's own async_session_maker test monkeypatches routing
+    # correctly). update_opening_cache stays False here (Pitfall 4 / D-05 — the
+    # atomic-submit lane does not populate the opening cache, unlike the drain tick).
     async with async_session_maker() as write_session:
         # SEED-076: dedup_map (fetched above, pre-write-session — SEED-076 follow-up
         # moved this earlier so the pv merge could run before sentinel derivation)
@@ -1511,117 +1144,36 @@ async def _apply_atomic_submit(
         # preserve_existing_evals keeps already-eval'd plies dropped from the incremental
         # re-lease out of the hole count. Together they stop a fillable opening hole from
         # reaching the Path-C cap and permanently stamping the game incomplete (FLAWCHESS-8B).
-
-        # SEED-076: snapshot existing flaw blobs + tactic tags BEFORE classify's
-        # delete-then-insert, so a sparse incremental retry (worker did not re-blob an
-        # already-done midgame flaw) does not wipe them (restored after the blob write).
-        preserved_flaw_blobs = await _snapshot_preserved_flaw_blobs(
-            write_session, game_id, owner_id
-        )
-
-        # CR-01 (147-REVIEW.md): capture failed_ply_count — previously discarded,
-        # which unconditionally stamped completion markers even with NULL-hole
-        # engine-game plies, reintroducing the pre-Phase-119 SEED-045 bug class
-        # (see resweep_holed_games() docstring for the exact failure mode).
-        failed_ply_count = await _apply_full_eval_results(
+        #
+        # blobs_pending=True (a deliberate, documented deviation from the plan's literal
+        # "blobs_pending stays False" — see 147-05-SUMMARY.md Deviations): tracing
+        # _classify_tactic_gated shows blobs_pending ONLY affects the case where
+        # flaw_pv_blobs.get(flaw_ply) is None (the server found a flaw the worker did not
+        # blob at all). Required — and safe — to satisfy the must_have "a flaw the server
+        # found but the worker did not blob writes NULL (Part A net) and is left for
+        # tier-4 backfill".
+        failed_ply_count, stamp_complete, flaws_written = await apply_full_eval(
             write_session,
-            targets,
-            dedup_map,
-            engine_result_map,
-            is_lichess_eval_game,
+            game_id=game_id,
+            job_id=body.job_id,
+            targets=targets,
+            dedup_map=dedup_map,
+            engine_result_map=engine_result_map,
+            is_lichess_eval_game=is_lichess_eval_game,
+            flaw_pv_blobs=flaw_pv_blobs if flaw_pv_blobs else None,
+            current_attempts=current_attempts,
+            source="remote_eval_worker",
+            on_path_c_capacity_reached=_report_path_c_capacity_reached,
             preserve_existing_evals=True,
-        )
-
-        # Server-authoritative classify: re-runs classify_game_flaws on the server's
-        # OWN game_positions (T-147-03) using the worker's blobs purely as gate input,
-        # never as a trusted flaw-ply hint. Runs BEFORE the blob write (Pitfall 4:
-        # blobs are not yet in the DB here) and BEFORE the completion markers so
-        # evals + flaws + blobs commit atomically with the markers.
-        await _classify_and_fill_oracle(
-            write_session,
-            game_id,
-            engine_result_map,
-            flaw_pv_blobs if flaw_pv_blobs else None,
             blobs_pending=True,
+            count_flaws_written=True,
+            record_heartbeat=True,
+            heartbeat_worker_id=worker_id,
+            heartbeat_last_ip=last_ip,
+            heartbeat_sf_version=body.sf_version,
+            heartbeat_worker_schema_version=body.worker_schema_version,
+            heartbeat_n_evals=len(body.evals),
         )
-
-        flaws_written = await write_session.scalar(
-            sa.select(sa.func.count()).select_from(GameFlaw).where(GameFlaw.game_id == game_id)
-        )
-
-        await _run_multipv2_pass(write_session, game_id, flaw_pv_blobs)
-
-        # SEED-076: restore preserved blobs/tags for flaws this submit did NOT re-blob
-        # with a REAL blob, undoing classify's delete-then-insert reset. "Freshly blobbed"
-        # counts only non-empty lines: a sparse incremental retry that never re-evaluated
-        # an already-done flaw yields a []-sentinel for it (no PV to walk), which
-        # _run_multipv2_pass just wrote — restoring the prior real blob over that transient
-        # sentinel is correct (the line's walkability was already proven on the first pass).
-        freshly_blobbed = {
-            ply for ply, (allowed, missed) in flaw_pv_blobs.items() if allowed or missed
-        }
-        await _restore_preserved_flaw_blobs(
-            write_session, game_id, owner_id, preserved_flaw_blobs, freshly_blobbed
-        )
-
-        # CR-01: mirror _apply_submit's Path A/B/C SEED-045 bounded-retry branch
-        # exactly, instead of unconditionally stamping both completion markers.
-        new_attempts = current_attempts + 1
-        games_table = Game.__table__
-
-        if failed_ply_count == 0:
-            # Path A: no holes — stamp both markers complete.
-            await _mark_full_evals_completed(write_session, game_id)
-            await _mark_full_pv_completed(write_session, game_id)
-            stamp_complete = True
-
-        elif new_attempts < MAX_EVAL_ATTEMPTS:
-            # Path B: holes remain, under cap — increment attempts, leave pending.
-            # Do NOT stamp full_evals_completed_at or full_pv_completed_at.
-            await write_session.execute(
-                update(games_table)  # ty: ignore[invalid-argument-type]
-                .where(games_table.c.id == game_id)
-                .values(full_eval_attempts=new_attempts)
-            )
-            stamp_complete = False
-
-        else:
-            # Path C: holes remain AND cap reached — stamp anyway (D-116-07 no-loop
-            # invariant). One aggregated Sentry warning (never embed variable data in
-            # the message string — use set_context for Sentry grouping, CLAUDE.md rule).
-            await _mark_full_evals_completed(write_session, game_id)
-            await _mark_full_pv_completed(write_session, game_id)
-            sentry_sdk.set_context(
-                "eval",
-                {
-                    "game_id": game_id,
-                    "hole_count": failed_ply_count,
-                    "attempts": new_attempts,
-                },
-            )
-            sentry_sdk.set_tag("source", "remote_eval_worker")
-            sentry_sdk.capture_message(
-                "atomic-submit: stamping complete after MAX_EVAL_ATTEMPTS with residual holes",
-                level="warning",
-            )
-            stamp_complete = True
-
-        # Stamp eval_jobs for tier-1/tier-2 claims when all plies resolved (Path A/C).
-        # The WHERE status='leased' guard makes a late submit (lease expired + re-claimed,
-        # or job already completed) a safe no-op — never corrupts an unrelated job.
-        # Path B (holes remain, stamp_complete=False) is deliberately NOT stamped:
-        # the eval_jobs row stays 'leased' until the sweep requeues it after the TTL.
-        if body.job_id is not None and stamp_complete:
-            jobs_table = EvalJob.__table__
-            now_ts = datetime.now(timezone.utc)
-            await write_session.execute(
-                update(jobs_table)  # ty: ignore[invalid-argument-type]
-                .where(
-                    jobs_table.c.id == body.job_id,
-                    jobs_table.c.status == "leased",
-                )
-                .values(status="completed", completed_at=now_ts)
-            )
 
         await write_session.commit()
 
@@ -1643,7 +1195,9 @@ async def _apply_atomic_submit(
 @router.post("/atomic-submit", response_model=AtomicSubmitResponse)
 async def atomic_submit_eval(
     body: AtomicSubmitRequest,
+    request: Request,
     _auth: Annotated[None, Depends(require_operator_token)],
+    worker_id: Annotated[str, Depends(worker_id_label)],
 ) -> AtomicSubmitResponse:
     """Apply one game's full-ply evals + MultiPV-2 blobs atomically (Phase 147 D-01/D-02).
 
@@ -1672,4 +1226,9 @@ async def atomic_submit_eval(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Stockfish version mismatch",
         )
-    return await _apply_atomic_submit(game_id=body.game_id, body=body)
+    return await _apply_atomic_submit(
+        game_id=body.game_id,
+        body=body,
+        worker_id=worker_id,
+        last_ip=request.client.host if request.client else None,
+    )

@@ -130,6 +130,41 @@ async def get_latest_for_user_platform(
     return result.scalar_one_or_none()
 
 
+async def get_active_job_for_user_platform(
+    session: AsyncSession,
+    user_id: int,
+    platform: str,
+) -> ImportJob | None:
+    """Return the single active (pending or in_progress) job for a user+platform.
+
+    Phase 149 PRUNE-05: used by start_import's IntegrityError handler to
+    re-fetch the existing job after the partial unique index rejects a
+    concurrent duplicate insert. The status set here MUST stay textually
+    identical to the `uq_import_jobs_user_platform_active` index predicate
+    (drift-prevention) — see ImportJob.__table_args__ and the matching
+    migration.
+
+    Scoped to user_id + platform so the re-fetch can never leak another
+    user's job (ASVS V4 / IDOR guard).
+
+    Args:
+        session: AsyncSession to use.
+        user_id: Internal user ID.
+        platform: 'chess.com' or 'lichess'.
+
+    Returns:
+        The active ImportJob or None if none exists.
+    """
+    result = await session.execute(
+        select(ImportJob).where(
+            ImportJob.user_id == user_id,
+            ImportJob.platform == platform,
+            ImportJob.status.in_(("pending", "in_progress")),
+        )
+    )
+    return result.scalar_one_or_none()
+
+
 async def get_unseen_failed_jobs_for_user(
     session: AsyncSession,
     user_id: int,

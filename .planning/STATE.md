@@ -1,37 +1,35 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.30
-milestone_name: Forcing-Line Tactic Gate
-current_phase: 148
-status: Milestone complete
-stopped_at: Completed 148-03-PLAN.md
-last_updated: "2026-07-04T09:28:52.183Z"
+milestone: v1.31
+milestone_name: Pipeline Consolidation
+current_phase: 999.1
+current_phase_name: BACKLOG
+status: Phase 150 shipped — squash-merged to main (1c73899a)
+stopped_at: Phase 150 context gathered
+last_updated: "2026-07-04T19:01:12.976Z"
 last_activity: 2026-07-04
 progress:
-  total_phases: 1
-  completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
+  total_phases: 3
+  completed_phases: 3
+  total_plans: 14
+  completed_plans: 14
   percent: 100
-current_phase_name: pipeline-tactic-correctness-fixes-code-review-2026-07-02
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 148
+Phase: 999.1 — Password Reset (BACKLOG)
+Plan: Not started
+Status: Phase 150 shipped — squash-merged to main (1c73899a)
 Last activity: 2026-07-04
-
-v1.30 Forcing-Line Tactic Gate shipped to production 2026-06-30 (releases #229/#230/#231/#234)
-and is now closed in GSD. All 7 phases (141–147) complete; 15/15 requirements validated.
-Roadmap collapsed, REQUIREMENTS archived, tagged v1.30. Next: `/gsd-new-milestone`.
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-06-30 after v1.30 milestone close)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: Planning next milestone (`/gsd-new-milestone`). Leading candidates: Analysis board v2, SEED-037 Train drills, SEED-036 remainder.
+Current focus: Executing v1.31 Pipeline Consolidation. Phase 148 (correctness fixes) already shipped; Phase 149 (Retire & Prune) is next via `/gsd-plan-phase 149`, then Phase 150 (Consolidate Write Path).
 
 ## Milestone Progress
 
@@ -58,6 +56,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - Phase 146 added: Offload live-submit forcing-line continuation eval to the remote worker (SEED-071)
 - Phase 147 added: Persist only forcing-line-gated tactic tags — suppress ungated remote-submit tags (A) + upgraded-worker atomic eval+blob pipeline (B) (SEED-074; scope confirmed as A+B together)
 - Phase 148 added: Pipeline & tactic correctness fixes (code-review 2026-07-02) — standalone active phase, milestone deferred (user chose "add now, defer milestone" 2026-07-04); source todo `2026-07-03-code-review-pipeline-tactic-correctness-phase.md`
+- v1.31 Pipeline Consolidation roadmap created 2026-07-04 (source SEED-080): Phase 148 grouped in retroactively as complete (CORR-01..06); Phase 149 Retire & Prune added (PRUNE-01..06 — delete Gen-1 `/lease`+`/submit` protocol + dead weight + import-job/heartbeat migrations); Phase 150 Consolidate Write Path added (WRITE-01..06 — unify completion decision, classify preamble, delete-then-insert flaw write, EnginePool, ES lottery). Phase 149 strictly precedes Phase 150.
 
 ### Decisions
 
@@ -118,6 +117,32 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 148-02]: item-2 circuit breaker gated on eval_targets non-empty (not game_ids) to preserve D-09 test_engine_none_marks_complete invariant; lease release is implicit TTL expiry, no explicit UPDATE
 - [Phase 148-02]: item-5 (D-05) minimum guard only -- entry_eval_lease_expiry > sa.func.now() added to entry_submit_eval guard query; fuller echoed-game_ids intersection deferred
 - [Phase 148-03]: D-04 least-invasive choice: v_shared = (var_eg + var_ne) / 2.0 count-only proxy for the covariance correction
+- [Phase ?]: worker_id is VARCHAR(16) matching worker_id_label truncation (no ForeignKey — free-form external identity)
+- [Phase ?]: worker_schema_version coalesced in the SQL set_ clause so a lane that omits it never clobbers the atomic lane's last known value
+- [Phase ?]: D-07 upheld (PRUNE-03): GameResult Literal NOT widened; _normalize_chesscom_result's internal return type widened to GameResult | None instead, signaling unknown out-of-band
+- [Phase ?]: Deleted 29 Gen-1 tests (not ~28 per RESEARCH) after a mechanical AST+URL-reference recount of all 95 original tests; TestMultipv2BlobsRemote actually had 3 /submit-only methods, not 2
+- [Phase ?]: test_default_idle_sleep_is_one_second relocated out of TestTier1Claiming to module level instead of deleted (tests a worker-script constant, not a /lease or /submit behavior)
+- [Phase ?]: No new atomic-lane test for scope= or X-Worker-Id on /atomic-lease (Gen-1's deleted equivalents) -- same claim_eval_job()/worker_id_label() call sites as the deleted lease_eval_game, worker_id_label already exercised via kept entry-lease tests
+- [Phase ?]: hashes_for_game deleted outright (zero production callers confirmed via grep) — process_game_pgn is now the sole PGN-walk implementation
+- [Phase ?]: chesscom_to_lichess.py: only Table 3 (LICHESS_BLITZ_INTRA_TC) deleted; Tables 1/2 stay live-imported by canonical_slice_sql.py
+- [Phase ?]: Game.needs_engine_full_evals hybrid property deleted (caller-less); ix_games partial index + raw predicate kept
+- [Phase ?]: TIER_AUTO_WINDOW constant deleted (RESEARCH Pitfall 2: no deletable tier-2 branch ever existed); eval_jobs.tier column + tier-agnostic claim SQL kept as-is
+- [Phase 149]: Durable import_jobs INSERT moved from _bootstrap_import_job (background task) into start_import (before asyncio.create_task) — closes the actual TOCTOU race per RESEARCH Pitfall 3
+- [Phase 149]: IntegrityError from the partial unique index is caught, rolled back, and returns the existing active job with 200 — never capture_exception'd (expected race, not a bug)
+- [Phase 149]: Added discard_job() to remove the losing request's orphaned in-memory JobState — Rule 1 auto-fix, not in the original plan text
+- [Phase ?]: 150-01: All 7 write-path golden scenarios drive _apply_atomic_submit directly (the single stable production entry point) rather than _full_drain_tick, since both call the same _classify_and_fill_oracle and _apply_atomic_submit already runs with blobs_pending=True
+- [Phase ?]: 150-01: Golden fixtures are 7, not 8 -- plan-authoring inconsistency reconciled against the plan's own concrete artifacts list and RESEARCH.md's scenario table (flip-IN is item 4 of 7, not an 8th scenario)
+- [Phase ?]: 150-01: gen_write_path_golden.py spins up its own ephemeral per-run test DB by reusing tests/conftest.py's private template-clone/drop helpers directly, avoiding any dependency on bin/reset_db.sh or a persistent flawchess_test database
+- [Phase ?]: 150-02: EnginePool._acquire_and_analyse keeps the plan's union return type (InfoDict | list[InfoDict] | None); callers narrow via isinstance(result, list) rather than @overload (no @overload precedent in codebase)
+- [Phase ?]: 150-02: _es_weighted_game_pick base query is FROM games g alone (no JOIN); tier-3 residual fallback's old JOIN users is_guest=false became an equivalent EXISTS subquery (1:1 FK, no cardinality change), paired user_id fetched via one cheap PK lookup
+- [Phase ?]: 150-02: extra_params: dict[str, Any] | None = None added to _es_weighted_game_pick to bind :picked_user without breaking sa.text bound-params discipline
+- [Phase ?]: 150-03: R1 apply_completion_decision threads source into the Path-C callback signature so the router's callback can set the Sentry tag from the parameter instead of a second hardcoded literal
+- [Phase ?]: 150-03: R4 _classify_with_overlay takes the caller's own session (not a positions_loader callable) — preserves the real session-lifecycle difference between the 3 sites and _flaw_engine_plies
+- [Phase ?]: 150-04: already_blobbed_plies (allowed_pv_lines IS NOT NULL) gates preservation, not merely existing_plies -- caught by the golden equivalence test (scenario 5) before the fix
+- [Phase ?]: 150-04: PV-line blob write folded into _classify_and_fill_oracle itself (filtered to skip preserve-plies) instead of a separate caller-side _run_multipv2_pass call, so a preserved ply's blob is never even written a D-06 [] sentinel to begin with; _run_multipv2_pass deleted as dead code
+- [Phase ?]: 150-05: apply_full_eval takes caller-owned write_session (no internal open/commit) so eval_drain.py's and eval_remote.py's own async_session_maker test patches keep routing correctly
+- [Phase ?]: 150-05: _build_flaw_blob_lease_positions (tier-4 lane) relocated to eval_apply.py despite being functionally isolated -- file-location move only, not merged with apply_full_eval, needed to fully close eval_remote.py's private-import leak
+- [Phase ?]: 150-05: Task 2 entry-lane split kept _pick_pending_game_ids/_load_pgns_for_games in eval_drain.py (flagged partial descope, D-05) -- both open their own internal session, unlike the other 14 entry-lane symbols which take session as a param
 
 ### Pending Todos
 
@@ -193,9 +218,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-Last session: 2026-07-04T08:59:58.567Z
-Stopped at: Completed 148-03-PLAN.md
-Resume file: None
+Last session: 2026-07-04T17:27:25.524Z
+Stopped at: Phase 150 context gathered
+Resume file: .planning/phases/150-consolidate-write-path/150-CONTEXT.md
 
 ## Performance Metrics
 
@@ -243,3 +268,13 @@ Resume file: None
 | Phase 148 P02 | 22min | 2 tasks | 5 files |
 | Phase 148 P03 | 20min | 2 tasks | 4 files |
 | Phase 148 P04 | 15min | 2 tasks | 4 files |
+| Phase 149 P01 | 20min | 2 tasks | 7 files |
+| Phase 149 P02 | 6min | 1 tasks | 2 files |
+| Phase 149-retire-prune P03 | 25min | 3 tasks | 3 files |
+| Phase 149 P04 | 20min | 2 tasks | 11 files |
+| Phase 149 P05 | 25min | 2 tasks | 8 files |
+| Phase 150 P01 | 25min | 2 tasks | 10 files |
+| Phase 150 P02 | 25min | 2 tasks | 2 files |
+| Phase 150 P03 | 22min | 2 tasks | 2 files |
+| Phase 150 P04 | 40min | 2 tasks | 3 files |
+| Phase 150 P05 | 100min | 2 tasks | 9 files |

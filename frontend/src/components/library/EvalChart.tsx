@@ -144,6 +144,13 @@ interface EvalChartProps {
    * the eval-chart slider in sync. Clamped into the eval'd ply range; null is a no-op.
    */
   syncPly?: number | null;
+  /**
+   * Disable the desktop hover-to-scrub interaction (Quick: analysis page found it too
+   * distracting). When true, mouse hover no longer moves the slider/crosshair/board —
+   * only an explicit click or the slider itself scrubs. The game card leaves this off
+   * (hover scrub stays). Touch scrub is unaffected either way.
+   */
+  disableHoverScrub?: boolean;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -511,6 +518,7 @@ export function EvalChart({
   sliderTestId,
   sliderDisabled = false,
   syncPly,
+  disableHoverScrub = false,
 }: EvalChartProps) {
   // The tooltip shows flaw detail whenever the marker's dot is visible: M/B always,
   // inaccuracy only when revealed (highlighted via its badge, or cycled to). The dot
@@ -914,8 +922,10 @@ export function EvalChart({
         <ComposedChart
           data={chartSeries}
           margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
-          onMouseMove={handlePointerMove}
-          onMouseLeave={handleMouseLeave}
+          // Hover scrub is opt-out (disableHoverScrub) — the analysis page found the
+          // slider jumping on mouse-over too distracting. Click-to-scrub is unaffected.
+          onMouseMove={disableHoverScrub ? undefined : handlePointerMove}
+          onMouseLeave={disableHoverScrub ? undefined : handleMouseLeave}
           onClick={handleChartClick}
         >
           {/* Hidden axes — compact sparkline mode, no ticks or labels. */}

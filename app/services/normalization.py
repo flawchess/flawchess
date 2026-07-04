@@ -5,6 +5,9 @@ Converts chess.com and lichess game objects into NormalizedGame Pydantic models 
 
 import datetime
 import re
+
+import sentry_sdk
+
 from app.schemas.normalization import (
     Color,
     GameResult,
@@ -183,7 +186,7 @@ _CHESSCOM_DRAW_RESULTS = {
 }
 
 
-def _normalize_chesscom_result(white_result: str, black_result: str) -> GameResult:
+def _normalize_chesscom_result(white_result: str, black_result: str) -> GameResult | None:
     """Convert chess.com result strings to standard "1-0"/"0-1"/"1/2-1/2".
 
     chess.com stores results from each player's perspective:
@@ -193,6 +196,11 @@ def _normalize_chesscom_result(white_result: str, black_result: str) -> GameResu
 
     The actual game outcome is "1-0" if white won, "0-1" if black won,
     "1/2-1/2" for draws.
+
+    Returns None (PRUNE-03 / D-07) when neither side's result string is
+    recognized as a win or a draw. The public GameResult literal is
+    intentionally NOT widened with an "unknown" member (D-07) — None signals
+    the unknown case out-of-band so the caller can skip the game instead.
     """
     if white_result in _CHESSCOM_WIN_RESULTS:
         return "1-0"
@@ -201,10 +209,13 @@ def _normalize_chesscom_result(white_result: str, black_result: str) -> GameResu
     elif white_result in _CHESSCOM_DRAW_RESULTS or black_result in _CHESSCOM_DRAW_RESULTS:
         return "1/2-1/2"
     else:
-        # Fallback: try to determine from result strings
-        # If neither is "win" and neither is a draw, one must have lost
-        # "checkmated", "resigned", "timeout", "abandoned" etc. = loss for that player
-        return "1/2-1/2"  # safe fallback
+        # FIX (PRUNE-03): this branch used to silently return "1/2-1/2" as a
+        # fallback, fabricating a draw for any unrecognized white/black result
+        # pair. That corrupted the position-precise WDL stats this product is
+        # built on (a malformed/unmapped chess.com result string looked exactly
+        # like a genuine draw). Signal "unknown" out-of-band instead — the
+        # caller (normalize_chesscom_game) skips the game + Sentry-captures.
+        return None
 
 
 def normalize_chesscom_game(game: dict, username: str, user_id: int) -> NormalizedGame | None:
@@ -250,6 +261,18 @@ def normalize_chesscom_game(game: dict, username: str, user_id: int) -> Normaliz
     white_result_str = white.get("result", "")
     black_result_str = black.get("result", "")
     result = _normalize_chesscom_result(white_result_str, black_result_str)
+    if result is None:
+        # PRUNE-03: unrecognized white/black result combination. Skip the game
+        # (flows through the same `if normalized is not None` gate in
+        # chesscom_client.py that already skips non-standard variants) rather
+        # than persisting a fabricated draw. Variables go in set_context only —
+        # never interpolated into the message string (Sentry grouping rule).
+        sentry_sdk.set_context(
+            "chesscom_result",
+            {"white_result": white_result_str, "black_result": black_result_str},
+        )
+        sentry_sdk.capture_message("Unrecognized chess.com result combination")
+        return None
 
     # Determine termination from the losing side's result string
     if result == "1/2-1/2":

@@ -8,6 +8,7 @@ from app.models.llm_log import LlmLog
 from app.models.opening_position_eval import OpeningPositionEval
 from app.models.user_activity import UserActivity
 from app.models.user_benchmark_percentile import UserBenchmarkPercentile
+from app.models.worker_heartbeat import WorkerHeartbeat
 
 __all__ = [
     "BenchmarkCohortCdf",
@@ -20,4 +21,5 @@ __all__ = [
     "OpeningPositionEval",
     "UserActivity",
     "UserBenchmarkPercentile",
+    "WorkerHeartbeat",
 ]

@@ -10,56 +10,16 @@ import pytest
 from pydantic import ValidationError
 
 from app.schemas.eval_remote import (
-    EVAL_CP_MAX,
-    EVAL_MATE_MIN,
     MAX_PLY,
-    MAX_PV_LEN,
     AtomicSubmitEval,
     EntrySubmitEval,
-    SubmitEval,
 )
 
-
-def test_submit_eval_accepts_valid_and_null() -> None:
-    # Nulls must pass (single-legal-move / no-pv positions) despite the int bounds.
-    SubmitEval(ply=1, eval_cp=None, eval_mate=None, best_move=None, pv=None)
-    SubmitEval(ply=10, eval_cp=100, eval_mate=None, best_move="e7e8q", pv="e2e4 e7e5")
-
-
-def test_submit_eval_rejects_eval_cp_above_max() -> None:
-    with pytest.raises(ValidationError):
-        SubmitEval(ply=1, eval_cp=EVAL_CP_MAX + 1, eval_mate=None, best_move=None, pv=None)
-
-
-def test_submit_eval_rejects_eval_cp_below_min() -> None:
-    with pytest.raises(ValidationError):
-        SubmitEval(ply=1, eval_cp=-40000, eval_mate=None, best_move=None, pv=None)
-
-
-def test_submit_eval_rejects_eval_mate_below_min() -> None:
-    with pytest.raises(ValidationError):
-        SubmitEval(ply=1, eval_cp=None, eval_mate=EVAL_MATE_MIN - 1, best_move=None, pv=None)
-
-
-def test_submit_eval_rejects_ply_above_max() -> None:
-    with pytest.raises(ValidationError):
-        SubmitEval(ply=MAX_PLY + 1, eval_cp=None, eval_mate=None, best_move=None, pv=None)
-
-
-def test_submit_eval_rejects_negative_ply() -> None:
-    with pytest.raises(ValidationError):
-        SubmitEval(ply=-1, eval_cp=None, eval_mate=None, best_move=None, pv=None)
-
-
-def test_submit_eval_rejects_overlong_best_move() -> None:
-    # 6 chars > the String(5) column would otherwise DBAPIError.
-    with pytest.raises(ValidationError):
-        SubmitEval(ply=1, eval_cp=None, eval_mate=None, best_move="abcdef", pv=None)
-
-
-def test_submit_eval_rejects_multi_kb_pv() -> None:
-    with pytest.raises(ValidationError):
-        SubmitEval(ply=1, eval_cp=None, eval_mate=None, best_move=None, pv="x" * (MAX_PV_LEN + 1))
+# Phase 149 WR-02 (code review 2026-07-04): test_submit_eval_accepts_valid_and_null
+# and the seven test_submit_eval_rejects_* bound tests (all exercised the
+# now-deleted Gen-1 SubmitEval schema in isolation) deleted along with the
+# schema class itself. The same Field bounds live on AtomicSubmitEval (Phase
+# 147), covered by test_atomic_submit_eval_rejects_out_of_range below.
 
 
 def test_atomic_submit_eval_rejects_out_of_range() -> None:

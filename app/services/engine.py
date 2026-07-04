@@ -378,9 +378,10 @@ class EnginePool:
 
     On per-worker timeout / crash, that worker restarts in place; siblings
     keep going. If restart fails, the worker's slot is NOT dropped — it
-    stays in the available queue and every future pickup returns (None, None)
-    almost instantly (see the `protocol is None` early-return in `_analyse`).
-    A pool where every worker has permanently failed therefore answers
+    stays in the available queue and every future pickup returns None
+    almost instantly (see the `protocol is None` early-return in
+    `_acquire_and_analyse`). A pool where every worker has permanently failed
+    therefore answers
     every evaluate() call near-instantly with (None, None) rather than
     hanging — this is what the entry/full-ply drain "all engine evals
     failed" circuit breakers (WR-05, Phase 148 item 2) detect and react to.
@@ -461,68 +462,27 @@ class EnginePool:
         self._protocols[idx] = protocol
         return True
 
-    async def _analyse(
+    async def _acquire_and_analyse(
         self,
         board: chess.Board,
         limit: chess.engine.Limit,
         timeout: float,
-    ) -> tuple[int | None, int | None]:
-        """Shared worker-acquisition / analyse / failure-restart path (WR-06).
+        *,
+        multipv: int | None = None,
+    ) -> chess.engine.InfoDict | list[chess.engine.InfoDict] | None:
+        """Shared worker-acquisition / analyse / failure-restart path (WR-05).
 
-        Single implementation behind evaluate() and evaluate_nodes() — the
-        acquisition, exception tuple, restart-on-failure, and slot-release
-        logic must never diverge between the two public methods.
-        """
-        if not self._started:
-            return None, None
-        idx = await self._available.get()
-        try:
-            protocol = self._protocols[idx]
-            if protocol is None:
-                return None, None
-            try:
-                info = await asyncio.wait_for(
-                    protocol.analyse(board, limit),
-                    timeout=timeout,
-                )
-            except (
-                asyncio.TimeoutError,
-                chess.engine.EngineError,
-                chess.engine.EngineTerminatedError,
-            ):
-                # Restart the failed worker; its slot returns to the queue regardless
-                # of restart success — a permanently-failed worker returns (None, None)
-                # on its next pickup but does not block sibling workers.
-                await self._restart_worker(idx)
-                return None, None
-            return _score_to_cp_mate(info)
-        finally:
-            self._available.put_nowait(idx)
+        Single implementation behind evaluate(), evaluate_nodes(),
+        evaluate_nodes_with_pv(), and evaluate_nodes_multipv2() — the acquisition,
+        exception tuple, restart-on-failure, and slot-release logic must never
+        diverge between the four public methods. Only genuine difference across
+        callers is whether `multipv` is passed to `protocol.analyse()`; everything
+        else (post-processing into (cp, mate), raw InfoDict, or list[InfoDict])
+        is the caller's responsibility.
 
-    async def evaluate(self, board: chess.Board) -> tuple[int | None, int | None]:
-        """Evaluate a position at depth 15 on the next idle worker."""
-        return await self._analyse(board, chess.engine.Limit(depth=_DEPTH), _TIMEOUT_S)
-
-    async def evaluate_nodes(self, board: chess.Board) -> tuple[int | None, int | None]:
-        """Evaluate at 1M nodes on the next idle worker. EVAL-02.
-
-        Same contract as evaluate() but uses Limit(nodes=_NODES_BUDGET) and
-        _NODES_TIMEOUT_S. Single PV only (Phase 116); PV capture is EVAL-04 / Phase 117.
-        Scalar InfoDict returned directly, handled by _score_to_cp_mate() unchanged.
-        """
-        return await self._analyse(board, chess.engine.Limit(nodes=_NODES_BUDGET), _NODES_TIMEOUT_S)
-
-    async def _analyse_with_pv(
-        self,
-        board: chess.Board,
-        limit: chess.engine.Limit,
-        timeout: float,
-    ) -> chess.engine.InfoDict | None:
-        """Shared worker-acquisition / analyse / failure-restart path returning raw InfoDict.
-
-        Parallel to _analyse but returns the InfoDict instead of applying _score_to_cp_mate,
-        so callers can extract both eval and PV from a single search (EVAL-04).
-        Returns None on timeout / crash / missing protocol (mirrors _analyse failure path).
+        Returns the raw analyse() result — a scalar InfoDict when multipv is None,
+        or list[InfoDict] when multipv is set — or None on failure (not started,
+        missing protocol, timeout, or engine crash/restart).
         """
         if not self._started:
             return None
@@ -532,20 +492,52 @@ class EnginePool:
             if protocol is None:
                 return None
             try:
-                info = await asyncio.wait_for(
-                    protocol.analyse(board, limit),
-                    timeout=timeout,
-                )
+                if multipv is not None:
+                    result = await asyncio.wait_for(
+                        protocol.analyse(board, limit, multipv=multipv),
+                        timeout=timeout,
+                    )
+                else:
+                    result = await asyncio.wait_for(
+                        protocol.analyse(board, limit),
+                        timeout=timeout,
+                    )
             except (
                 asyncio.TimeoutError,
                 chess.engine.EngineError,
                 chess.engine.EngineTerminatedError,
             ):
+                # Restart the failed worker; its slot returns to the queue regardless
+                # of restart success — a permanently-failed worker returns None on
+                # its next pickup but does not block sibling workers.
                 await self._restart_worker(idx)
                 return None
-            return info
+            return result
         finally:
             self._available.put_nowait(idx)
+
+    async def evaluate(self, board: chess.Board) -> tuple[int | None, int | None]:
+        """Evaluate a position at depth 15 on the next idle worker."""
+        result = await self._acquire_and_analyse(
+            board, chess.engine.Limit(depth=_DEPTH), _TIMEOUT_S
+        )
+        if result is None or isinstance(result, list):
+            return None, None
+        return _score_to_cp_mate(result)
+
+    async def evaluate_nodes(self, board: chess.Board) -> tuple[int | None, int | None]:
+        """Evaluate at 1M nodes on the next idle worker. EVAL-02.
+
+        Same contract as evaluate() but uses Limit(nodes=_NODES_BUDGET) and
+        _NODES_TIMEOUT_S. Single PV only (Phase 116); PV capture is EVAL-04 / Phase 117.
+        Scalar InfoDict returned directly, handled by _score_to_cp_mate() unchanged.
+        """
+        result = await self._acquire_and_analyse(
+            board, chess.engine.Limit(nodes=_NODES_BUDGET), _NODES_TIMEOUT_S
+        )
+        if result is None or isinstance(result, list):
+            return None, None
+        return _score_to_cp_mate(result)
 
     async def evaluate_nodes_with_pv(
         self,
@@ -560,55 +552,15 @@ class EnginePool:
         pv_uci_string: space-joined UCI capped at PV_CAP_PLIES (D-117-02).
         Returns (None, None, None, None) on engine failure (D-09 failure semantics).
         """
-        info = await self._analyse_with_pv(
+        result = await self._acquire_and_analyse(
             board, chess.engine.Limit(nodes=_NODES_BUDGET), _NODES_TIMEOUT_S
         )
-        if info is None:
+        if result is None or isinstance(result, list):
             return None, None, None, None
-        eval_cp, eval_mate = _score_to_cp_mate(info)
-        best_move = _pv_to_best_move(info)
-        pv_string = _pv_to_uci_string(info)
+        eval_cp, eval_mate = _score_to_cp_mate(result)
+        best_move = _pv_to_best_move(result)
+        pv_string = _pv_to_uci_string(result)
         return eval_cp, eval_mate, best_move, pv_string
-
-    async def _analyse_multipv2(
-        self,
-        board: chess.Board,
-        limit: chess.engine.Limit,
-        timeout: float,
-    ) -> list[chess.engine.InfoDict] | None:
-        """Worker-acquisition path returning list[InfoDict] for multipv=2.
-
-        Parallel sibling of _analyse_with_pv; changes the inner call to
-        protocol.analyse(board, limit, multipv=2) and the return type to
-        list[chess.engine.InfoDict] | None (D-02: the list[InfoDict] return
-        type cannot reuse the scalar _analyse_with_pv — Pitfall 1).
-
-        Returns None on timeout/crash/missing protocol (mirrors _analyse_with_pv).
-        Caller must handle len(result) < 2: single-legal-move positions return a
-        list of length 1 — set second_cp/second_mate=None, second_uci="" (Pitfall 2).
-        """
-        if not self._started:
-            return None
-        idx = await self._available.get()
-        try:
-            protocol = self._protocols[idx]
-            if protocol is None:
-                return None
-            try:
-                info_list = await asyncio.wait_for(
-                    protocol.analyse(board, limit, multipv=2),
-                    timeout=timeout,
-                )
-            except (
-                asyncio.TimeoutError,
-                chess.engine.EngineError,
-                chess.engine.EngineTerminatedError,
-            ):
-                await self._restart_worker(idx)
-                return None
-            return info_list
-        finally:
-            self._available.put_nowait(idx)
 
     async def evaluate_nodes_multipv2(
         self,
@@ -624,12 +576,15 @@ class EnginePool:
         single-legal-move position (PvNode.su sentinel;
         forcing_line_gate.PvNode.su: str, D-02 Pitfall 3).
         Returns (None, None, None, None, None, None, None) on engine failure (D-09).
+        Caller must handle len(result) < 2: single-legal-move positions return a
+        list of length 1 — second_cp/second_mate=None, second_uci="" (Pitfall 2).
         """
-        info_list = await self._analyse_multipv2(
-            board, chess.engine.Limit(nodes=_NODES_BUDGET), _NODES_TIMEOUT_S
+        result = await self._acquire_and_analyse(
+            board, chess.engine.Limit(nodes=_NODES_BUDGET), _NODES_TIMEOUT_S, multipv=2
         )
-        if info_list is None:
+        if result is None or not isinstance(result, list):
             return None, None, None, None, None, None, None
+        info_list = result
         eval_cp, eval_mate = _score_to_cp_mate(info_list[0])
         best_move = _pv_to_best_move(info_list[0])
         pv_string = _pv_to_uci_string(info_list[0])

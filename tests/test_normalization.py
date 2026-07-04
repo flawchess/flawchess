@@ -1226,6 +1226,95 @@ class TestNormalizeChesscomResult:
         assert result is not None
         assert result.result == "1/2-1/2"
 
+    def test_unrecognized_result_pair_returns_none(self):
+        """PRUNE-03: an unmapped white/black result pair must NOT fabricate a draw.
+
+        Neither result string is a "win" or a known draw string, so
+        _normalize_chesscom_result signals unknown (None) and the game
+        must be skipped rather than persisted as '1/2-1/2'.
+        """
+        from app.services.normalization import normalize_chesscom_game
+
+        game = {
+            "uuid": "test",
+            "url": "https://chess.com/test",
+            "pgn": "",
+            "rules": "chess",
+            "time_control": "600+0",
+            "rated": True,
+            "end_time": 1700000000,
+            "white": {"username": "Alice", "rating": 1500, "result": "some_new_unmapped_status"},
+            "black": {"username": "Bob", "rating": 1500, "result": "some_new_unmapped_status"},
+        }
+        result = normalize_chesscom_game(game, "Alice", user_id=1)
+        assert result is None
+
+    def test_unrecognized_result_pair_captures_sentry_with_context_not_message(self):
+        """The unknown branch emits exactly one Sentry capture with white_result/
+        black_result carried via set_context — never interpolated into the
+        message string (Sentry grouping rule)."""
+        from unittest.mock import patch
+
+        from app.services.normalization import normalize_chesscom_game
+
+        game = {
+            "uuid": "test",
+            "url": "https://chess.com/test",
+            "pgn": "",
+            "rules": "chess",
+            "time_control": "600+0",
+            "rated": True,
+            "end_time": 1700000000,
+            "white": {"username": "Alice", "rating": 1500, "result": "some_new_unmapped_status"},
+            "black": {"username": "Bob", "rating": 1500, "result": "another_unmapped_status"},
+        }
+
+        with (
+            patch("app.services.normalization.sentry_sdk.set_context") as mock_set_context,
+            patch("app.services.normalization.sentry_sdk.capture_message") as mock_capture,
+        ):
+            result = normalize_chesscom_game(game, "Alice", user_id=1)
+
+        assert result is None
+        mock_capture.assert_called_once()
+        # Message string must be a constant with no interpolated result values.
+        message = mock_capture.call_args.args[0]
+        assert "some_new_unmapped_status" not in message
+        assert "another_unmapped_status" not in message
+        mock_set_context.assert_called_once_with(
+            "chesscom_result",
+            {"white_result": "some_new_unmapped_status", "black_result": "another_unmapped_status"},
+        )
+
+    def test_genuine_draw_is_not_captured_to_sentry(self):
+        """A real draw must normalize to '1/2-1/2' without any Sentry capture."""
+        from unittest.mock import patch
+
+        from app.services.normalization import normalize_chesscom_game
+
+        game = {
+            "uuid": "test",
+            "url": "https://chess.com/test",
+            "pgn": "",
+            "rules": "chess",
+            "time_control": "600+0",
+            "rated": True,
+            "end_time": 1700000000,
+            "white": {"username": "Alice", "rating": 1500, "result": "agreed"},
+            "black": {"username": "Bob", "rating": 1500, "result": "agreed"},
+        }
+
+        with (
+            patch("app.services.normalization.sentry_sdk.set_context") as mock_set_context,
+            patch("app.services.normalization.sentry_sdk.capture_message") as mock_capture,
+        ):
+            result = normalize_chesscom_game(game, "Alice", user_id=1)
+
+        assert result is not None
+        assert result.result == "1/2-1/2"
+        mock_set_context.assert_not_called()
+        mock_capture.assert_not_called()
+
 
 class TestParseBaseAndIncrement:
     """Tests for parse_base_and_increment function."""

@@ -9,11 +9,14 @@ from app.models.base import Base
 
 # Tier meanings (no magic numbers in consumers — use these constants):
 #   TIER_EXPLICIT = 1       — explicit user request (highest priority)
-#   TIER_AUTO_WINDOW = 2    — automatic window (e.g. recent activity)
+#   (tier 2 was an automatic recency window; its only enqueue path was removed
+#   in Phase 118, and Phase 149-04 removed the then-callerless tier-2 constant.
+#   The `tier` column and its ORDER BY tier ASC claim SQL are tier-agnostic
+#   and unaffected — a future tier-2 use would just need a new constant, no
+#   schema change.)
 #   TIER_IDLE_BACKLOG = 3   — idle-backlog drain
 #   TIER_BLOB_BACKFILL = 4  — spare-capacity flaw-blob backfill (lowest priority)
 TIER_EXPLICIT: int = 1
-TIER_AUTO_WINDOW: int = 2
 TIER_IDLE_BACKLOG: int = 3
 TIER_BLOB_BACKFILL: int = 4
 
@@ -21,7 +24,8 @@ TIER_BLOB_BACKFILL: int = 4
 class EvalJob(Base):
     """Priority queue / lease table for the full-ply eval drain (QUEUE-01, QUEUE-06).
 
-    Tier ordering: 1 (explicit request) > 2 (auto-window) > 3 (idle backlog).
+    Tier ordering: 1 (explicit request) > 3 (idle backlog) [tier 2 unused, see
+    the TIER_* constants comment above].
     Status lifecycle: pending -> leased -> completed | failed.
     Expired leases are requeued to 'pending' by a sweep at the top of each drain tick.
 

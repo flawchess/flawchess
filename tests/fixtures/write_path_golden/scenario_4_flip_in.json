@@ -1,0 +1,22 @@
+{
+  "2": {
+    "severity": 2,
+    "tempo": null,
+    "phase": 0,
+    "is_miss": false,
+    "is_lucky": false,
+    "is_reversed": false,
+    "is_squandered": false,
+    "fen": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR",
+    "allowed_tactic_motif": null,
+    "allowed_tactic_piece": null,
+    "allowed_tactic_confidence": null,
+    "allowed_tactic_depth": null,
+    "missed_tactic_motif": null,
+    "missed_tactic_piece": null,
+    "missed_tactic_confidence": null,
+    "missed_tactic_depth": null,
+    "allowed_pv_lines": [],
+    "missed_pv_lines": []
+  }
+}

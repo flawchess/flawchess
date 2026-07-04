@@ -547,10 +547,15 @@ def _patch_drain_for_tick_tests(
 
     Returns the drain module.
     """
+    import app.services.eval_apply as eval_apply_module
     import app.services.eval_drain as drain_module
     from app.services.eval_queue_service import ClaimedJob
 
     monkeypatch.setattr(drain_module, "async_session_maker", session_maker)
+    # Phase 150 R7: _build_flaw_multipv2_blobs / _flaw_engine_plies / _classify_with_overlay
+    # etc. moved to eval_apply.py and some open their OWN internal sessions there — that
+    # module binding must be redirected to the test DB too.
+    monkeypatch.setattr(eval_apply_module, "async_session_maker", session_maker)
     monkeypatch.setattr(drain_module.sentry_sdk, "capture_exception", lambda *a, **kw: None)
     monkeypatch.setattr(drain_module.sentry_sdk, "capture_message", lambda *a, **kw: None)
     monkeypatch.setattr(drain_module.sentry_sdk, "set_tag", lambda *a, **kw: None)
@@ -3406,9 +3411,13 @@ class TestMultipv2Blobs:
             full_evals_completed_at=None,
         )
 
+        import app.services.eval_apply as eval_apply_module
         import app.services.eval_drain as drain_module
 
         monkeypatch.setattr(drain_module, "async_session_maker", full_drain_session_maker)
+        # Phase 150 R7: _build_flaw_multipv2_blobs (exercised by this test, NOT mocked)
+        # opens its own internal session in eval_apply.py now — redirect that too.
+        monkeypatch.setattr(eval_apply_module, "async_session_maker", full_drain_session_maker)
         monkeypatch.setattr(drain_module.sentry_sdk, "capture_exception", lambda *a, **kw: None)
         monkeypatch.setattr(drain_module.sentry_sdk, "capture_message", lambda *a, **kw: None)
         monkeypatch.setattr(drain_module.sentry_sdk, "set_tag", lambda *a, **kw: None)

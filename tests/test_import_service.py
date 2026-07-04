@@ -1641,8 +1641,17 @@ class TestFailOrphanedJobsAgeThreshold:
         job_id: str,
         status: str,
         started_at: datetime,
+        platform: str = "lichess",
     ) -> None:
-        """Insert an ImportJob with a controlled started_at."""
+        """Insert an ImportJob with a controlled started_at.
+
+        Bug fix (Phase 149 PRUNE-05): platform is now a parameter (default
+        "lichess", unchanged for existing single-job callers) so tests seeding
+        two simultaneously-active (pending/in_progress) rows for the same
+        user_id can use two different platforms — otherwise they'd collide
+        with the new uq_import_jobs_user_platform_active partial unique index,
+        which is orthogonal to what these reaper-age-threshold tests exercise.
+        """
         from app.models.import_job import ImportJob
 
         from tests.conftest import ensure_test_user
@@ -1651,7 +1660,7 @@ class TestFailOrphanedJobsAgeThreshold:
         job = ImportJob(
             id=job_id,
             user_id=user_id,
-            platform="lichess",
+            platform=platform,
             username="test_user",
             status=status,
             games_fetched=0,
@@ -1685,9 +1694,21 @@ class TestFailOrphanedJobsAgeThreshold:
         job_id_old = str(uuid.uuid4())
 
         await self._seed_job(
-            db_session, 9001, job_id_recent, "in_progress", now - timedelta(seconds=10)
+            db_session,
+            9001,
+            job_id_recent,
+            "in_progress",
+            now - timedelta(seconds=10),
+            platform="lichess",
         )
-        await self._seed_job(db_session, 9001, job_id_old, "in_progress", now - timedelta(hours=4))
+        await self._seed_job(
+            db_session,
+            9001,
+            job_id_old,
+            "in_progress",
+            now - timedelta(hours=4),
+            platform="chess.com",
+        )
 
         count = await fail_orphaned_jobs(db_session)
         await db_session.commit()
@@ -1732,9 +1753,21 @@ class TestFailOrphanedJobsAgeThreshold:
         job_id_old = str(uuid.uuid4())
 
         await self._seed_job(
-            db_session, 9002, job_id_recent, "in_progress", now - timedelta(seconds=10)
+            db_session,
+            9002,
+            job_id_recent,
+            "in_progress",
+            now - timedelta(seconds=10),
+            platform="lichess",
         )
-        await self._seed_job(db_session, 9002, job_id_old, "in_progress", now - timedelta(hours=4))
+        await self._seed_job(
+            db_session,
+            9002,
+            job_id_old,
+            "in_progress",
+            now - timedelta(hours=4),
+            platform="chess.com",
+        )
 
         count = await fail_orphaned_jobs(
             db_session,
@@ -1790,6 +1823,124 @@ class TestFailOrphanedJobsAgeThreshold:
             .all()
         )
         assert rows[0].status == "failed"
+
+
+class TestImportJobsPartialUniqueIndex:
+    """DB-backed tests for the uq_import_jobs_user_platform_active partial
+    unique index (Phase 149 PRUNE-05).
+
+    Uses the real test DB via db_session fixture (rollback-scoped transactions).
+    """
+
+    @pytest.mark.asyncio
+    async def test_second_active_insert_for_same_user_platform_raises_integrity_error(
+        self, db_session
+    ):
+        """Two active (pending) rows for the same (user_id, platform) cannot
+        coexist — the second create_import_job raises IntegrityError (via its
+        internal flush, mirroring start_import's try/except shape), and
+        get_active_job_for_user_platform still resolves to the first job.
+        """
+        import uuid
+
+        from sqlalchemy.exc import IntegrityError
+
+        from app.repositories.import_job_repository import (
+            create_import_job,
+            get_active_job_for_user_platform,
+        )
+        from tests.conftest import ensure_test_user
+
+        user_id = 9010
+        await ensure_test_user(db_session, user_id)
+
+        first_job_id = str(uuid.uuid4())
+        await create_import_job(
+            db_session, job_id=first_job_id, user_id=user_id, platform="lichess", username="alice"
+        )
+
+        # Second insert wrapped in a SAVEPOINT (begin_nested) so its
+        # IntegrityError only unwinds itself, leaving the first (still
+        # uncommitted, but flushed and visible to this session) insert
+        # intact — mirrors start_import's single-session try/except shape
+        # without requiring two independently committed transactions.
+        second_job_id = str(uuid.uuid4())
+        with pytest.raises(IntegrityError):
+            async with db_session.begin_nested():
+                await create_import_job(
+                    db_session,
+                    job_id=second_job_id,
+                    user_id=user_id,
+                    platform="lichess",
+                    username="alice",
+                )
+
+        active_job = await get_active_job_for_user_platform(db_session, user_id, "lichess")
+        assert active_job is not None
+        assert active_job.id == first_job_id
+
+    @pytest.mark.asyncio
+    async def test_get_active_job_for_user_platform_scoped_to_requesting_user(self, db_session):
+        """The re-fetch must never leak another user's active job (ASVS V4 / IDOR)."""
+        import uuid
+
+        from app.repositories.import_job_repository import (
+            create_import_job,
+            get_active_job_for_user_platform,
+        )
+        from tests.conftest import ensure_test_user
+
+        owner_id, other_id = 9011, 9012
+        await ensure_test_user(db_session, owner_id)
+        await ensure_test_user(db_session, other_id)
+
+        owner_job_id = str(uuid.uuid4())
+        await create_import_job(
+            db_session, job_id=owner_job_id, user_id=owner_id, platform="lichess", username="alice"
+        )
+        await db_session.commit()
+
+        result = await get_active_job_for_user_platform(db_session, other_id, "lichess")
+        assert result is None
+
+        result = await get_active_job_for_user_platform(db_session, owner_id, "lichess")
+        assert result is not None
+        assert result.id == owner_job_id
+
+    @pytest.mark.asyncio
+    async def test_completed_job_does_not_block_reimport(self, db_session):
+        """A completed job for (user_id, platform) must not block a new active
+        insert — the index only guards pending/in_progress rows.
+        """
+        import uuid
+
+        from sqlalchemy import update as sa_update
+
+        from app.models.import_job import ImportJob
+        from app.repositories.import_job_repository import create_import_job
+        from tests.conftest import ensure_test_user
+
+        user_id = 9013
+        await ensure_test_user(db_session, user_id)
+
+        completed_job_id = str(uuid.uuid4())
+        await create_import_job(
+            db_session,
+            job_id=completed_job_id,
+            user_id=user_id,
+            platform="lichess",
+            username="alice",
+        )
+        await db_session.execute(
+            sa_update(ImportJob).where(ImportJob.id == completed_job_id).values(status="completed")
+        )
+        await db_session.commit()
+
+        new_job_id = str(uuid.uuid4())
+        await create_import_job(
+            db_session, job_id=new_job_id, user_id=user_id, platform="lichess", username="alice"
+        )
+        await db_session.commit()  # must not raise
 
 
 class TestPeriodicReaper:
@@ -2762,8 +2913,10 @@ class TestStampLichessEvalsAtRealDb:
     freshly imported lichess games that arrived with lichess computer analysis
     (white_blunders IS NOT NULL), and must NOT touch chess.com games, lichess games
     without analysis, or games that already carry a lichess_evals_at value. Without
-    the stamp those games match needs_engine_full_evals and get wastefully re-queued
-    for our Stockfish drain despite already having per-ply %evals.
+    the stamp those games match the "needs our engine" predicate
+    (full_evals_completed_at IS NULL AND lichess_evals_at IS NULL) and get
+    wastefully re-queued for our Stockfish drain despite already having per-ply
+    %evals.
     """
 
     async def _seed_game(

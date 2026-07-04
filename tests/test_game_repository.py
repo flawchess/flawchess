@@ -322,16 +322,15 @@ class TestImportJobRepository:
         user_id = 42  # Use distinct user_id to avoid cross-test interference
         now = datetime.datetime.now(tz=datetime.timezone.utc)
 
-        # Create two completed jobs
+        # Create two completed jobs. Each is transitioned to "completed"
+        # before the next is created (Phase 149 PRUNE-05: only one active
+        # pending/in_progress row per user+platform is allowed by
+        # uq_import_jobs_user_platform_active — two simultaneously-pending
+        # rows for the same user+platform would raise IntegrityError).
         job_id_1 = str(uuid.uuid4())
-        job_id_2 = str(uuid.uuid4())
         await create_import_job(
             db_session, job_id=job_id_1, user_id=user_id, platform="lichess", username="myuser"
         )
-        await create_import_job(
-            db_session, job_id=job_id_2, user_id=user_id, platform="lichess", username="myuser"
-        )
-
         earlier = now - datetime.timedelta(hours=1)
         await update_import_job(
             db_session,
@@ -339,6 +338,11 @@ class TestImportJobRepository:
             status="completed",
             completed_at=earlier,
             last_synced_at=earlier,
+        )
+
+        job_id_2 = str(uuid.uuid4())
+        await create_import_job(
+            db_session, job_id=job_id_2, user_id=user_id, platform="lichess", username="myuser"
         )
         await update_import_job(
             db_session, job_id=job_id_2, status="completed", completed_at=now, last_synced_at=now

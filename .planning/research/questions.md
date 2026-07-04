@@ -282,3 +282,94 @@ across motifs**, so the column needs a defined per-motif semantic. Provisional m
 Provisional mapping above is enough to scope the column.
 
 **Resolved:** _(open)_
+
+---
+
+## Q-013: How do we extract deterministic per-move probabilities from Maia-3 at a chosen ELO?
+
+**Asked:** 2026-07-04 (`/gsd-explore` — Maia-3 flaw enrichment, SEED-081)
+
+**Context:** SEED-081's Pillars A/B need `P(specific move | ELO)` for both the played (blunder)
+move and the engine-best move, at the player's rating, at arbitrary positions — not just a
+single sampled move. Maia-3's policy head produces a distribution over legal moves conditioned
+on ELO, but the packaged `maia3` interface exposes UCI + preset executables and mentions
+temperature/nucleus *sampling*. We need the raw, deterministic policy vector, not a sample.
+
+**How to answer:**
+1. Spike against the real `maia3` API/UCI: can we read the full normalized policy distribution
+   over legal moves for a given FEN + ELO in one call, deterministically (same input → same
+   probs)? Confirm arm's-length (separate process) access is enough — no in-process import
+   (AGPL constraint, see `.planning/research/maia-3-integration.md`).
+2. Confirm ELO is a first-class query parameter (single forward pass yields all-ELO curve, per
+   the maiachess.com "Moves by Rating" chart) vs requiring one pass per ELO.
+3. Verify determinism holds across our CPU worker hardware (float nondeterminism tolerance).
+
+**Why deferred:** Core-mechanism feasibility; a `/gsd-spike` closes it before milestone commit.
+
+**Resolved:** _(open)_
+
+---
+
+## Q-014: Is Maia-3's WDL value head comparable to a Stockfish-eval→win% mapping?
+
+**Asked:** 2026-07-04 (`/gsd-explore` — Maia-3 flaw enrichment, SEED-081)
+
+**Context:** Pillar B (practical-severity reweighting) compares Maia's human win% against the
+objective Stockfish picture. For "divergence" to be meaningful and not a scale artifact, the
+two must be on comparable footings.
+
+**How to answer:**
+1. Determine what Maia-3's value head actually outputs (W/D/L probabilities? single scalar?)
+   and whether it is ELO-conditioned (a 1200's practical chances ≠ a 2000's from the same FEN).
+2. Decide the comparison basis: map Stockfish eval_cp → win% (existing lichess-style logistic)
+   and compare to Maia W-L, OR keep them separate and only flag *sign/magnitude* divergence.
+3. Sanity-check on known positions where human practical chances famously diverge from engine
+   truth (fortress draws, sharp tactical positions only an engine holds).
+
+**Why deferred:** Depends on inspecting the actual value-head output; pairs with the Q-013 spike.
+
+**Resolved:** _(open)_
+
+---
+
+## Q-015: Maia-3 ELO range, low-rating calibration, and rating-basis mapping
+
+**Asked:** 2026-07-04 (`/gsd-explore` — Maia-3 flaw enrichment, SEED-081)
+
+**Context:** We condition Maia on the player's rating at game time. Original Maia covered
+~600–2600 Lichess; Maia-3's exact supported range and calibration quality (esp. at the low and
+high tails, and near rating floors) determine how far the feature generalizes across our user
+base and which ELO buckets to trust.
+
+**How to answer:**
+1. Confirm Maia-3's supported/ trained ELO range and how it behaves outside it (clamp? degrade?).
+2. Map our platform ratings (chess.com + lichess, different scales) onto Maia's expected ELO
+   input — do we need a per-platform offset, or is "close enough" acceptable for coaching?
+3. Check calibration quality per bucket well enough to decide which buckets earn a quadrant
+   label vs fall back to NULL (precision-first, consistent with the tactic-tag stance).
+
+**Why deferred:** Calibration/quality question; answerable once the Q-013 spike gives raw output.
+
+**Resolved:** _(open)_
+
+---
+
+## Q-016: Maia model size vs latency/accuracy — interactive board and eventual backfill cost
+
+**Asked:** 2026-07-04 (`/gsd-explore` — Maia-3 flaw enrichment, SEED-081)
+
+**Context:** Three sizes (5M/23M/79M). SEED-081 starts interactive-only (latency-sensitive,
+CPU workers, prod memory pressure — see memory `project_prod_oom_cause_and_stockfish_capacity`)
+and later does a flaw-node backfill (throughput-sensitive). The right size may differ per use.
+
+**How to answer:**
+1. Benchmark per-position CPU latency + RSS for 5M/23M/79M on our worker hardware; pick the
+   interactive default (likely 5M or 23M) against a target board response time.
+2. Measure accuracy delta (move-prediction agreement) between sizes on our own flaw positions —
+   is 79M worth it for the stats layer, or does 23M suffice?
+3. Estimate total flaw-node backfill cost (inference/flaw × `game_flaws` row count) to size the
+   eventual deliberate backfill and confirm it's far below the Stockfish-eval backfill.
+
+**Why deferred:** Sizing/perf question; needs the serving layer (Phase 1) to measure against.
+
+**Resolved:** _(open)_

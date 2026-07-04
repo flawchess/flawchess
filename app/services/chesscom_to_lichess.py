@@ -3,7 +3,7 @@
 Snapshot source: https://chessgoals.com/rating-comparison/ (source page "Last
 Updated: July 2025"; data re-fetched into this module on 2026-05-27).
 
-Pure Python — no DB, no I/O. The three tables are the ChessGoals study output
+Pure Python — no DB, no I/O. The two tables are the ChessGoals study output
 (N=~10k profiles, per-TC empirical fit).
 
   * Table 1 (`CHESSCOM_INTRA_TC`):  chess.com Blitz anchor → chess.com Bullet,
@@ -12,10 +12,6 @@ Pure Python — no DB, no I/O. The three tables are the ChessGoals study output
   * Table 2 (`CHESSCOM_BLITZ_TO_LICHESS`): chess.com Blitz anchor → Lichess
     Bullet, Lichess Blitz, Lichess Rapid, Lichess Classical. Consumed by
     `convert_chesscom_to_lichess` (Phase 94.4 Plan 05 wires the call).
-  * Table 3 (`LICHESS_BLITZ_INTRA_TC`): Lichess Blitz anchor → Lichess Bullet,
-    Lichess Rapid, Lichess Classical, USCF, FIDE. Ships per D-14 for future
-    surfaces (federation cohorts, opponent normalisation, scout view); no
-    Phase 94.4 caller consumes it yet.
 
 For non-Blitz chess.com inputs (Bullet, Rapid), invert Table 1 to estimate the
 chess.com Blitz equivalent, then look up in Table 2. Inversion bias is
@@ -27,7 +23,11 @@ caller suppresses the chip for that (user, TC) combination (Pitfall 2).
 
 Interpolation: bisect_left + linear interpolation between adjacent anchors;
 clamp at edges (return None below min or above max — do NOT extrapolate beyond
-the published 500–3000 chess.com Blitz / 1030-2850 Lichess Blitz range).
+the published 500–3000 chess.com Blitz range).
+
+(Phase 149-04 PRUNE-02: the former Lichess-Blitz-anchored Table 3 and its two
+USCF/FIDE lookups were removed as genuinely dead code — zero callers ever
+consumed them.)
 """
 
 from __future__ import annotations
@@ -51,7 +51,6 @@ CHESSCOM_TO_LICHESS_SOURCE: Final[str] = "https://chessgoals.com/rating-comparis
 ChessComSourceTC = Literal["bullet", "blitz", "rapid", "daily"]
 LichessTC = Literal["bullet", "blitz", "rapid", "classical"]
 ChessComIntraTC = Literal["bullet", "rapid", "uscf", "fide"]
-LichessIntraTC = Literal["bullet", "rapid", "classical", "uscf", "fide"]
 
 
 # ---------------------------------------------------------------------------
@@ -163,58 +162,6 @@ CHESSCOM_BLITZ_TO_LICHESS: Final[Mapping[int, Mapping[LichessTC, int | None]]] =
 
 
 # ---------------------------------------------------------------------------
-# Table 3 — Lichess Blitz → Lichess Bullet/Rapid/Classical + USCF + FIDE.
-# Canonical re-fetched 2026-05-26 snapshot (RESEARCH Pattern 8b, lines 1009-1044).
-#
-# Ships per D-14 for future surfaces (federation-specific cohort overlays,
-# opponent-rating normalisation, scout view). No Phase 94.4 caller consumes
-# Table 3 yet; the four module-level lookup_* helpers expose typed access.
-#
-# Multiple None values in source: lichess_classical None for top 3 rows
-# (2695, 2780, 2850); USCF None for top row (2850); FIDE None for bottom
-# 6 rows (1030..1420) AND top row (2850).
-# ---------------------------------------------------------------------------
-
-LICHESS_BLITZ_INTRA_TC: Final[Mapping[int, Mapping[LichessIntraTC, int | None]]] = {
-    1030: {"bullet": 975, "rapid": 1205, "classical": 1405, "uscf": 715, "fide": None},
-    1075: {"bullet": 1010, "rapid": 1270, "classical": 1435, "uscf": 775, "fide": None},
-    1145: {"bullet": 1075, "rapid": 1340, "classical": 1495, "uscf": 860, "fide": None},
-    1200: {"bullet": 1115, "rapid": 1400, "classical": 1555, "uscf": 930, "fide": None},
-    1335: {"bullet": 1200, "rapid": 1515, "classical": 1625, "uscf": 1055, "fide": None},
-    1420: {"bullet": 1295, "rapid": 1615, "classical": 1715, "uscf": 1155, "fide": 1450},
-    1475: {"bullet": 1385, "rapid": 1690, "classical": 1770, "uscf": 1280, "fide": 1490},
-    1525: {"bullet": 1435, "rapid": 1730, "classical": 1795, "uscf": 1325, "fide": 1540},
-    1565: {"bullet": 1475, "rapid": 1765, "classical": 1810, "uscf": 1350, "fide": 1555},
-    1605: {"bullet": 1530, "rapid": 1795, "classical": 1830, "uscf": 1390, "fide": 1570},
-    1635: {"bullet": 1575, "rapid": 1825, "classical": 1850, "uscf": 1435, "fide": 1610},
-    1670: {"bullet": 1630, "rapid": 1850, "classical": 1855, "uscf": 1480, "fide": 1625},
-    1705: {"bullet": 1675, "rapid": 1880, "classical": 1865, "uscf": 1530, "fide": 1650},
-    1745: {"bullet": 1720, "rapid": 1915, "classical": 1915, "uscf": 1570, "fide": 1690},
-    1780: {"bullet": 1770, "rapid": 1930, "classical": 1935, "uscf": 1595, "fide": 1710},
-    1815: {"bullet": 1805, "rapid": 1965, "classical": 1935, "uscf": 1640, "fide": 1720},
-    1850: {"bullet": 1845, "rapid": 1990, "classical": 1935, "uscf": 1675, "fide": 1735},
-    1895: {"bullet": 1895, "rapid": 2020, "classical": 1985, "uscf": 1710, "fide": 1745},
-    1910: {"bullet": 1920, "rapid": 2035, "classical": 2000, "uscf": 1750, "fide": 1770},
-    1950: {"bullet": 1960, "rapid": 2055, "classical": 2010, "uscf": 1790, "fide": 1795},
-    1970: {"bullet": 2000, "rapid": 2085, "classical": 2030, "uscf": 1815, "fide": 1810},
-    2005: {"bullet": 2040, "rapid": 2115, "classical": 2045, "uscf": 1850, "fide": 1840},
-    2050: {"bullet": 2110, "rapid": 2135, "classical": 2070, "uscf": 1880, "fide": 1880},
-    2075: {"bullet": 2145, "rapid": 2155, "classical": 2095, "uscf": 1910, "fide": 1910},
-    2100: {"bullet": 2195, "rapid": 2185, "classical": 2100, "uscf": 1940, "fide": 1925},
-    2170: {"bullet": 2255, "rapid": 2240, "classical": 2125, "uscf": 2005, "fide": 1990},
-    2235: {"bullet": 2330, "rapid": 2285, "classical": 2195, "uscf": 2085, "fide": 2055},
-    2295: {"bullet": 2400, "rapid": 2330, "classical": 2245, "uscf": 2185, "fide": 2135},
-    2370: {"bullet": 2490, "rapid": 2380, "classical": 2340, "uscf": 2210, "fide": 2210},
-    2445: {"bullet": 2560, "rapid": 2445, "classical": 2360, "uscf": 2260, "fide": 2275},
-    2560: {"bullet": 2700, "rapid": 2510, "classical": 2435, "uscf": 2315, "fide": 2350},
-    2625: {"bullet": 2765, "rapid": 2595, "classical": 2500, "uscf": 2435, "fide": 2415},
-    2695: {"bullet": 2870, "rapid": 2630, "classical": None, "uscf": 2500, "fide": 2470},
-    2780: {"bullet": 3005, "rapid": 2705, "classical": None, "uscf": 2575, "fide": 2535},
-    2850: {"bullet": 3090, "rapid": 2735, "classical": None, "uscf": 2685, "fide": 2590},
-}
-
-
-# ---------------------------------------------------------------------------
 # Anchor bounds — named constants per CLAUDE.md no-magic-numbers rule. Derived
 # from the keys of the lookup tables above (kept in sync by inspection — the
 # tables ARE the source of truth; these constants are convenience aliases).
@@ -222,13 +169,10 @@ LICHESS_BLITZ_INTRA_TC: Final[Mapping[int, Mapping[LichessIntraTC, int | None]]]
 
 _CHESSCOM_BLITZ_MIN_ANCHOR: Final[int] = 500
 _CHESSCOM_BLITZ_MAX_ANCHOR: Final[int] = 3000
-_LICHESS_BLITZ_MIN_ANCHOR: Final[int] = 1030
-_LICHESS_BLITZ_MAX_ANCHOR: Final[int] = 2850
 
 # Pre-sorted anchor key lists for bisect_left (module-load-time cost only).
 _CHESSCOM_INTRA_KEYS: Final[list[int]] = sorted(CHESSCOM_INTRA_TC.keys())
 _CHESSCOM_BLITZ_KEYS: Final[list[int]] = sorted(CHESSCOM_BLITZ_TO_LICHESS.keys())
-_LICHESS_BLITZ_KEYS: Final[list[int]] = sorted(LICHESS_BLITZ_INTRA_TC.keys())
 
 
 # ---------------------------------------------------------------------------
@@ -294,8 +238,9 @@ def _interp_int_column(
     Returns None when:
       * `rating` is below `keys[0]` or above `keys[-1]` (no extrapolation).
       * Either of the two anchor values flanking `rating` is None (sentinel for
-        "no published mapping in this row" — Table 3 USCF/FIDE/classical
-        edges).
+        "no published mapping in this row" — e.g. Table 2's Lichess Classical
+        None rows above chess.com Blitz 2800, or Table 1's FIDE None rows
+        below chess.com Blitz 1000).
 
     Returns the lookup value directly when `rating` is exactly an anchor.
     """
@@ -507,32 +452,3 @@ def lookup_fide_from_chesscom_blitz(rating: int) -> int | None:
         anchor: row["fide"] for anchor, row in CHESSCOM_INTRA_TC.items()
     }
     return _interp_int_column(_CHESSCOM_INTRA_KEYS, rating, column)
-
-
-def lookup_uscf_from_lichess_blitz(rating: int) -> int | None:
-    """USCF rating from a Lichess Blitz rating (Table 3 ``uscf`` column).
-
-    Linear interpolation between adjacent anchors; returns None outside the
-    [1030, 2850] Lichess Blitz range. Top row (Lichess Blitz 2850) has
-    USCF=None — interpolation refuses to cross the None gap, so ratings near
-    the top edge may return None. No Phase 94.4 caller (D-14 future-use).
-    """
-    column: dict[int, int | None] = {
-        anchor: row["uscf"] for anchor, row in LICHESS_BLITZ_INTRA_TC.items()
-    }
-    return _interp_int_column(_LICHESS_BLITZ_KEYS, rating, column)
-
-
-def lookup_fide_from_lichess_blitz(rating: int) -> int | None:
-    """FIDE rating from a Lichess Blitz rating (Table 3 ``fide`` column).
-
-    Linear interpolation between adjacent anchors; returns None outside the
-    [1030, 2850] Lichess Blitz range. The 6 lowest-rated rows
-    (Lichess Blitz 1030..1420) AND the top row (2850) have FIDE=None in the
-    source — interpolation refuses to cross None gaps. No Phase 94.4 caller
-    (D-14 future-use).
-    """
-    column: dict[int, int | None] = {
-        anchor: row["fide"] for anchor, row in LICHESS_BLITZ_INTRA_TC.items()
-    }
-    return _interp_int_column(_LICHESS_BLITZ_KEYS, rating, column)

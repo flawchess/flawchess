@@ -7,6 +7,7 @@ table never drifts from the live classify_game_flaws kernel.
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from typing import Any
 
 from sqlalchemy import delete, update
@@ -162,6 +163,13 @@ TACTIC_TAG_COLUMNS: tuple[str, ...] = (
     "missed_tactic_depth",
 )
 
+# Phase 150 R3/D-04: the 10 columns a diff/upsert must preserve-by-omission for a
+# flaw ply that was NOT freshly re-blobbed this pass — the 2 PV-line JSONB blobs
+# plus the 8 tactic-tag columns above. Single source of truth so a future 11th
+# blob/tactic column cannot be silently nulled by an upsert that forgets to list it
+# (the exact "add a column, forget to preserve it" seam this phase closes).
+FLAW_BLOB_COLUMNS: tuple[str, ...] = ("allowed_pv_lines", "missed_pv_lines") + TACTIC_TAG_COLUMNS
+
 
 async def bulk_update_tactic_tags(
     session: AsyncSession,
@@ -207,3 +215,51 @@ async def delete_flaws_for_game(
             GameFlaw.user_id == user_id,
         )
     )
+
+
+async def delete_flaw_plies(
+    session: AsyncSession,
+    *,
+    game_id: int,
+    user_id: int,
+    plies: Collection[int],
+) -> None:
+    """Delete specific game_flaws rows by ply (R3 diff/upsert "no longer a flaw" branch).
+
+    A clean per-ply ``DELETE ... WHERE ply IN (...)`` — never a bulk-update-by-PK,
+    which asserts exactly one row matched per parameter set and raises
+    StaleDataError when a ply no longer exists (FLAWCHESS-8D). Scoped to BOTH
+    game_id AND user_id (T-108-05 mitigation, same as delete_flaws_for_game).
+
+    No-op on an empty ``plies``.
+    """
+    if not plies:
+        return
+    await session.execute(
+        delete(GameFlaw).where(
+            GameFlaw.game_id == game_id,
+            GameFlaw.user_id == user_id,
+            GameFlaw.ply.in_(plies),
+        )
+    )
+
+
+async def bulk_update_game_flaw_rows(
+    session: AsyncSession,
+    rows: list[dict[str, Any]],
+) -> None:
+    """Update existing game_flaws rows by full row dict (ORM bulk-update-by-PK).
+
+    Generic counterpart to bulk_update_tactic_tags: each dict must carry the full
+    PK (user_id/game_id/ply) plus whichever non-PK columns should be SET. A column
+    absent from a dict is left untouched by the compiled ``UPDATE ... SET`` clause
+    — this is R3's "preservation-by-omission" (never rely on COALESCE-vs-bound-None
+    semantics for a JSONB column, see FLAW_BLOB_COLUMNS / project_asyncpg_jsonb_
+    null_vs_sql_null). Every dict in one call must share the SAME set of keys
+    (SQLAlchemy compiles one UPDATE statement, executed via executemany).
+
+    No-op on an empty list.
+    """
+    if not rows:
+        return
+    await session.execute(update(GameFlaw), rows)
