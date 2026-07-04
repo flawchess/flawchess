@@ -4,11 +4,10 @@ milestone: v1.31
 milestone_name: Pipeline Consolidation
 current_phase: 999.1
 current_phase_name: BACKLOG
-status: verifying
+status: Phase 150 shipped — squash-merged to main (1c73899a)
 stopped_at: Phase 150 context gathered
-last_updated: "2026-07-04T17:44:16.145Z"
+last_updated: "2026-07-04T19:01:12.976Z"
 last_activity: 2026-07-04
-last_activity_desc: Phase 150 complete, transitioned to Phase 999.1
 progress:
   total_phases: 3
   completed_phases: 3
@@ -23,8 +22,8 @@ progress:
 
 Phase: 999.1 — Password Reset (BACKLOG)
 Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-07-04 — Phase 150 complete, transitioned to Phase 999.1
+Status: Phase 150 shipped — squash-merged to main (1c73899a)
+Last activity: 2026-07-04
 
 ## Project Reference
 
