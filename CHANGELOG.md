@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Changed
+
+- **Opponent tactic arrows no longer clutter the analysis board** — on `/analysis`, the opponent's allowed/missed tactic arrows (crimson and teal) are no longer drawn on the board; they remain available in the eval-chart tooltip. Your own tactic arrows are unchanged. (Quick 260705)
+
 ## [v1.32] Maia-3 Human-Move Enrichment — 2026-07-05
 
 A human-model second opinion on the analysis board. Maia-3 (a chess engine trained to predict

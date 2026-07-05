@@ -151,6 +151,38 @@ describe('useGameOverlay violet should-have-played arrow (missed tactic)', () =>
     expect(result.current.squareMarkers.every((m) => m.label === undefined)).toBe(true);
   });
 
+  it('draws NO tactic arrows for an opponent flaw (is_user=false), keeping the blue best-move arrow', () => {
+    // Quick 260705: opponent tactics live in the eval-chart tooltip only, never on the board.
+    const oppAllowed: FlawMarker = {
+      ...missedFork(1),
+      is_user: false,
+      missed_tactic_motif: null,
+      missed_tactic_depth: null,
+      allowed_tactic_motif: 'fork',
+      allowed_tactic_depth: 2,
+    };
+    const { result } = renderHook(() =>
+      useGameOverlay({
+        ...base,
+        flawMarkers: [oppAllowed],
+        evalSeries,
+        currentNodeId: 11,
+        enginePvLines: [],
+      }),
+    );
+    const arrows = result.current.boardArrows ?? [];
+    // No crimson allowed / teal missed tactic arrows for the opponent's flaw.
+    expect(arrows.find((a) => a.color === TAC_ALLOWED)).toBeUndefined();
+    expect(arrows.find((a) => a.color === TAC_MISSED)).toBeUndefined();
+    // The neutral blue best-move arrow (from the displayed position) still shows, unlabeled.
+    expect(arrows.find((a) => a.color === BEST_MOVE_ARROW)).toMatchObject({
+      startSquare: 'g1',
+      endSquare: 'f3',
+    });
+    // Severity glyph stays both-color (pre-existing behavior).
+    expect(result.current.squareMarkers.length).toBeGreaterThan(0);
+  });
+
   it('draws NO violet arrow on a clean (non-flaw) ply', () => {
     const { result } = renderHook(() =>
       useGameOverlay({
