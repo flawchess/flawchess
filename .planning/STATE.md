@@ -1,30 +1,26 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.32
-milestone_name: Maia-3 Human-Move Enrichment
-current_phase: none
-status: Awaiting next milestone
-stopped_at: Milestone v1.32 shipped and archived
-last_updated: "2026-07-05T15:43:45.929Z"
+milestone: v2.0
+milestone_name: FlawChess Engine
+status: planning
+last_updated: "2026-07-05T18:21:37.674Z"
 last_activity: 2026-07-05
-last_activity_desc: Milestone v1.32 completed and archived
 progress:
-  total_phases: 2
-  completed_phases: 2
-  total_plans: 10
-  completed_plans: 10
-  percent: 100
-current_phase_name: stockfish-graded-maia-moves-on-the-moves-by-rating-chart
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: Milestone v1.32 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-07-05 — Milestone v1.32 completed and archived
+Status: Defining requirements
+Last activity: 2026-07-05 — Milestone v2.0 started
 
 ## Project Reference
 
