@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Maia now works on browsers whose WebGPU rejects a shader** — on some devices (e.g. Firefox on Windows) WebGPU accepts the model but fails to compile a compute shader (`Clip`) on the first inference, which left the human-move model silently dead. The worker now runs a warmup inference while probing WebGPU, so a lazy shader failure is detected up front and cleanly falls back to CPU (WASM) instead of breaking Maia. These onnxruntime failures are also now reported to Sentry (they previously only printed to the console). (Quick 260705)
+
 ### Changed
 
 - **Opponent tactic arrows no longer clutter the analysis board** — on `/analysis`, the opponent's allowed/missed tactic arrows (crimson and teal) are no longer drawn on the board; they remain available in the eval-chart tooltip. Your own tactic arrows are unchanged. (Quick 260705)

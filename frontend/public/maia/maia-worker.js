@@ -56,6 +56,12 @@ const PLANES_PER_SQUARE = 12;
 const POLICY_VOCAB_SIZE = 4352;
 const WDL_SIZE = 3;
 
+/** Warmup inference (startpos, single ELO) run under the WebGPU try/catch so lazily-
+ *  compiled compute shaders (e.g. the `Clip` node) are exercised BEFORE we commit to
+ *  the webgpu backend — see initSession. */
+const WARMUP_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+const WARMUP_ELO = 1500;
+
 /** Confirmed 12-plane order (CONTRACT §a): white P,N,B,R,Q,K, black p,n,b,r,q,k. */
 const PIECE_PLANE_ORDER = ['P', 'N', 'B', 'R', 'Q', 'K', 'p', 'n', 'b', 'r', 'q', 'k'];
 
@@ -134,10 +140,18 @@ async function initSession() {
       ort.env.wasm.numThreads = 1;
       ort.env.wasm.wasmPaths = WASM_ASSET_PREFIX;
       session = await ort.InferenceSession.create(MODEL_PATH, { executionProviders: ['webgpu'] });
+      // BUG FIX: WebGPU compiles compute shaders LAZILY on first run, not at create().
+      // On Firefox/Windows the `Clip` shader ("ShaderModule with 'Clip' label is invalid",
+      // sequential_executor.cc ExecuteKernel) fails only at run time, so wrapping create()
+      // alone let a broken webgpu session slip through — the first real analyze() then threw
+      // and Maia died with no WASM fallback. A warmup run inside this try surfaces the shader
+      // failure here so the catch below falls through to WASM.
+      await analyze(WARMUP_FEN, [WARMUP_ELO]);
       backend = 'webgpu';
       return;
     } catch {
-      // WebGPU session-create or op-support failure (Pitfall 4) — fall through to WASM.
+      // WebGPU session-create, op-support, or lazy shader-compile failure (Pitfall 4) —
+      // fall through to WASM.
       session = null;
     }
   }

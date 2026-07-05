@@ -19,6 +19,7 @@
  */
 
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
+import * as Sentry from '@sentry/react';
 import { maskAndSoftmax, softmaxWdl, expectedScore, MAIA_ELO_LADDER } from '../lib/maiaEncoding';
 import type { WdlVector } from '../lib/maiaEncoding';
 
@@ -111,6 +112,8 @@ export function useMaiaEngine({ fen, enabled, selectedElo }: UseMaiaEngineOption
   const workerRef = useRef<Worker | null>(null);
   const isReadyRef = useRef(false);
   const currentFenRef = useRef<string | null>(null);
+  /** Active execution provider once the worker reports `ready` — tags Sentry errors. */
+  const backendRef = useRef<'webgpu' | 'wasm' | null>(null);
 
   /** Ephemeral, board-session-scoped FIFO cache (MAIA-05) — no persistence. */
   const cacheRef = useRef<Map<string, MaiaResult>>(new Map());
@@ -206,6 +209,7 @@ export function useMaiaEngine({ fen, enabled, selectedElo }: UseMaiaEngineOption
       if (msg.type === 'ready') {
         setIsReady(true);
         isReadyRef.current = true;
+        backendRef.current = msg.backend;
         return;
       }
       if (msg.type === 'result') {
@@ -216,8 +220,14 @@ export function useMaiaEngine({ fen, enabled, selectedElo }: UseMaiaEngineOption
         setIsAnalyzing(false);
         return;
       }
-      // msg.type === 'error': surfaced as isAnalyzing=false (no partial UI state);
-      // real-model error handling is exercised manually in Plan 06 / VALID-01.
+      // msg.type === 'error': surfaced as isAnalyzing=false (no partial UI state).
+      // The worker is a classic Worker with no Sentry init, and onnxruntime-web's
+      // native failures (e.g. the Firefox/Windows `Clip` WebGPU shader error) print to
+      // console but never throw a catchable JS exception — so they reach Sentry ONLY by
+      // being forwarded here. Capture manually (CLAUDE.md frontend Sentry rules).
+      Sentry.captureException(new Error(`Maia worker error: ${msg.message}`), {
+        tags: { source: 'maia-worker', backend: backendRef.current ?? 'unknown' },
+      });
       setIsAnalyzing(false);
     };
 
