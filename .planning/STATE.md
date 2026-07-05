@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: FlawChess Engine
-status: planning
-last_updated: "2026-07-05T18:21:37.674Z"
+status: roadmap
+last_updated: "2026-07-05T19:00:00.000Z"
 last_activity: 2026-07-05
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,16 +17,16 @@ progress:
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 153 Pure Search Core (Guardrail + Backup + MCTS + Fallback) (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-07-05 — Milestone v2.0 started
+Status: Roadmap defined (5 phases); awaiting phase planning
+Last activity: 2026-07-05 — Milestone v2.0 roadmap created
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-07-04 after v1.31 milestone close)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: **Between milestones** — v1.32 Maia-3 Human-Move Enrichment shipped 2026-07-05 (Phases 151, 151.1; tag v1.32). Client-side Maia-3 on `/analysis` (Moves-by-Rating chart + Maia WDL bar, Stockfish-graded human moves, MIT → AGPL-3.0 relicense), zero DB writes. Phase 152 (Flaw Overlay) demoted to SEED-084. Next: `/gsd-new-milestone` (leading candidates: SEED-084 Flaw Overlay, SEED-082 human-playable-line engine — both build on the shipped Maia infra). **Carryover: neither v1.31 nor v1.32 is deployed to production** — both sit on `main`; the next `bin/deploy.sh` ships them (v1.31 first). v1.32 is fully independent of the eval pipeline.
+Current focus: v2.0 FlawChess Engine roadmap created (SEED-082) — 5 phases (153 pure search core; 154 real providers/worker pool; 155 React hook + anytime UI; 156 board arrows + toggles; 157 game-review overlay), all 21 v2.0 requirements mapped (REQUIREMENTS.md's own "19 total" placeholder was a miscount — corrected to 21 in the traceability table). Next: `/gsd-plan-phase 153`. Client-side-only, no backend/schema/migrations/new-deps — builds on the shipped v1.29 Stockfish.wasm + v1.32 Maia infra. **Carryover: neither v1.31 nor v1.32 is deployed to production** — both sit on `main`; the next `bin/deploy.sh` ships them (v1.31 first).
 
 ## Milestone Progress
 
@@ -150,9 +150,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 **Resume file:** 
 
-.planning/phases/151.1-stockfish-graded-maia-moves-on-the-moves-by-rating-chart/151.1-CONTEXT.md
-Stopped at: Phase 151.1 context gathered
-Resume: deploy v1.31 (`bin/deploy.sh` / `/deploy`), then `/gsd-new-milestone`
+.planning/ROADMAP.md (v2.0 FlawChess Engine, Phases 153-157)
+Stopped at: v2.0 roadmap created
+Resume: `/gsd-plan-phase 153`
 
 ## Performance Metrics
 
@@ -171,4 +171,4 @@ Resume: deploy v1.31 (`bin/deploy.sh` / `/deploy`), then `/gsd-new-milestone`
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Plan the first v2.0 phase with `/gsd-plan-phase 153`

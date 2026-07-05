@@ -78,13 +78,33 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| _(to be filled by roadmapper)_ | | Pending |
+| ENGINE-01 | Phase 153 | Pending |
+| ENGINE-02 | Phase 153 | Pending |
+| ENGINE-03 | Phase 153 | Pending |
+| ENGINE-04 | Phase 153 | Pending |
+| ENGINE-05 | Phase 153 | Pending |
+| ENGINE-06 | Phase 153 | Pending |
+| ENGINE-07 | Phase 153 | Pending |
+| POOL-01 | Phase 154 | Pending |
+| POOL-02 | Phase 154 | Pending |
+| POOL-03 | Phase 154 | Pending |
+| POOL-04 | Phase 154 | Pending |
+| DISPLAY-01 | Phase 155 | Pending |
+| DISPLAY-02 | Phase 155 | Pending |
+| DISPLAY-03 | Phase 155 | Pending |
+| DISPLAY-04 | Phase 155 | Pending |
+| ARROW-01 | Phase 156 | Pending |
+| ARROW-02 | Phase 156 | Pending |
+| ARROW-03 | Phase 156 | Pending |
+| ARROW-04 | Phase 156 | Pending |
+| REVIEW-01 | Phase 157 | Pending |
+| REVIEW-02 | Phase 157 | Pending |
 
 **Coverage:**
-- Milestone v2.0 requirements: 19 total
-- Mapped to phases: _(pending roadmap)_
-- Unmapped: _(pending roadmap)_
+- Milestone v2.0 requirements: 21 total (corrected — the "19" figure recorded at requirements-definition time was a miscount; ENGINE-01..07 [7] + POOL-01..04 [4] + DISPLAY-01..04 [4] + ARROW-01..04 [4] + REVIEW-01..02 [2] = 21)
+- Mapped to phases: 21/21
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-07-05*
-*Last updated: 2026-07-05 after initial definition*
+*Last updated: 2026-07-05 after roadmap creation (Phases 153-157)*
