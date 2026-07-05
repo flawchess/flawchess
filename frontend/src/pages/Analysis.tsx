@@ -89,9 +89,9 @@ const MOBILE_BREAKPOINT_PX = 640;
 /** Normalized width of the move-quality-bar hover arrows (quick 260705-kfg). */
 const QUALITY_HOVER_ARROW_WIDTH = 0.6;
 
-/** Normalized width of the on-main-line next-move arrow — a bit thinner than the
- *  standard 0.5 engine arrows so it reads as a subtle hint. */
-const NEXT_MOVE_ARROW_WIDTH = 0.35;
+/** Normalized width of the on-main-line next-move arrow — thin so it reads as a
+ *  subtle hint layered over the wider 0.5 engine arrows. */
+const NEXT_MOVE_ARROW_WIDTH = 0.18;
 
 /**
  * True while the viewport is below the mobile breakpoint. Drives a single-tree render

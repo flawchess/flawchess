@@ -10,9 +10,16 @@ import type { BoardArrow } from './ChessBoard';
 
 const FILES = 'abcdefgh';
 
-/** React key for an arrow's <path>/label — its move identity (start→end). */
+/**
+ * React key for an arrow's <path>/label — its move identity (start→end).
+ *
+ * `onTop` arrows get a distinct suffix so they are NOT collapsed against a
+ * regular arrow on the same from→to by dedupeArrowsByMove: the analysis board's
+ * thin white next-move arrow must layer OVER the wider engine best-move arrow
+ * when they point at the same move, not replace it.
+ */
 export function arrowMoveKey(arrow: BoardArrow): string {
-  return `${arrow.startSquare}-${arrow.endSquare}`;
+  return `${arrow.startSquare}-${arrow.endSquare}${arrow.onTop ? '-top' : ''}`;
 }
 
 /**
