@@ -3,11 +3,11 @@ gsd_state_version: 1.0
 milestone: v1.32
 milestone_name: Maia-3 Human-Move Enrichment
 current_phase: 151.1
-status: completed
-stopped_at: Phase 151.1 context gathered
-last_updated: "2026-07-05T10:44:44.638Z"
+status: shipped
+stopped_at: Phase 151.1 shipped to main
+last_updated: "2026-07-05T17:35:00.000Z"
 last_activity: 2026-07-05
-last_activity_desc: Phase 151.1 marked complete
+last_activity_desc: Phase 151.1 shipped to main via local squash-merge (099b9138)
 progress:
   total_phases: 3
   completed_phases: 2
@@ -23,8 +23,8 @@ current_phase_name: stockfish-graded-maia-moves-on-the-moves-by-rating-chart
 
 Phase: 151.1 — COMPLETE
 Plan: 1 of 4
-Status: Phase 151.1 complete
-Last activity: 2026-07-05 — Completed quick task 260705-m3z: Prose position evaluation below the Maia move-quality bar
+Status: Phase 151.1 shipped — squash-merged to main (099b9138)
+Last activity: 2026-07-05 — Shipped phase 151.1 (Stockfish-graded Maia moves) to main via local squash-merge
 
 ## Project Reference
 
