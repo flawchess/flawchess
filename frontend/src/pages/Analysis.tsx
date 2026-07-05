@@ -65,6 +65,7 @@ import {
   MOVE_HIGHLIGHT_GOOD,
   STOCKFISH_ACCENT,
   MAIA_ACCENT,
+  NEXT_MOVE_ARROW,
 } from '@/lib/theme';
 import { selectCandidatesByMass, classifyMoveQuality } from '@/lib/moveQuality';
 import type { MoveQualityEval, EngineLine } from '@/components/analysis/MovesByRatingChart';
@@ -87,6 +88,10 @@ const MOBILE_BREAKPOINT_PX = 640;
 
 /** Normalized width of the move-quality-bar hover arrows (quick 260705-kfg). */
 const QUALITY_HOVER_ARROW_WIDTH = 0.6;
+
+/** Normalized width of the on-main-line next-move arrow — a bit thinner than the
+ *  standard 0.5 engine arrows so it reads as a subtle hint. */
+const NEXT_MOVE_ARROW_WIDTH = 0.35;
 
 /**
  * True while the viewport is below the mobile breakpoint. Drives a single-tree render
@@ -937,11 +942,36 @@ export default function Analysis() {
     return arrows.length > 0 ? arrows : null;
   }, [hoveredQualityMoves, position]);
 
+  // Translucent white "next move played" arrow, shown whenever the board sits on
+  // the main line (root or a main-line node). It points to the move that follows
+  // in the game's main line — mainLine[0] at the root, else the node after the
+  // current one. Rendered on top of the engine overlay (onTop) and a bit thinner.
+  const nextMoveArrow = useMemo<BoardArrow | null>(() => {
+    const onMain = currentNodeId === null || isOnMainLine(currentNodeId);
+    if (!onMain) return null;
+    const idx = currentNodeId === null ? -1 : mainLine.indexOf(currentNodeId);
+    const nextNodeId = mainLine[idx + 1];
+    if (nextNodeId === undefined) return null; // at the end of the main line
+    const nextNode = nodes.get(nextNodeId);
+    if (!nextNode) return null;
+    return {
+      startSquare: nextNode.from,
+      endSquare: nextNode.to,
+      color: NEXT_MOVE_ARROW,
+      width: NEXT_MOVE_ARROW_WIDTH,
+      onTop: true,
+    };
+  }, [currentNodeId, isOnMainLine, mainLine, nodes]);
+
   // Game-mode board arrows: the move-quality hover overlay wins (both modes) so
   // hovering the bar previews its moves; otherwise the PV-sideline overlay takes
-  // precedence, then the precomputed/engine overlay from useGameOverlay.
-  const boardArrows: BoardArrow[] | undefined =
+  // precedence, then the precomputed/engine overlay from useGameOverlay. The
+  // white next-move arrow is layered on top of whatever base overlay applies.
+  const baseArrows: BoardArrow[] | undefined =
     qualityHoverArrows ?? (isGameMode ? (pvSidelineArrows ?? gameOverlay.boardArrows) : undefined);
+  const boardArrows: BoardArrow[] | undefined = nextMoveArrow
+    ? [...(baseArrows ?? []), nextMoveArrow]
+    : baseArrows;
 
   // ── Handlers ──────────────────────────────────────────────────────────────────
 
