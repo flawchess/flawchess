@@ -335,7 +335,7 @@ export const BEST_MOVE_ARROW = 'rgba(37, 99, 235, 0.8)';  // Tailwind blue-600 @
 // read as a blue hierarchy (best = solid blue, second = light blue) rather than the
 // old blue-vs-grey. SECOND_BEST_BADGE_TEXT is a dark ink for the eval number, since
 // near-white text is unreadable on the light-blue badge fill.
-export const SECOND_BEST_ARROW = 'rgba(191, 219, 254, 0.85)';  // Tailwind blue-200 @ 85%
+export const SECOND_BEST_ARROW = 'rgba(147, 197, 253, 0.85)';  // Tailwind blue-300 @ 85%
 export const SECOND_BEST_BADGE_TEXT = 'oklch(0.25 0.03 255)';  // dark blue ink
 
 // Tactic Line Explorer payoff-ply arrows (Phase 135). Lighter alpha than BEST_MOVE_ARROW
