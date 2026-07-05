@@ -46,13 +46,6 @@ export interface BoardArrow {
    * next-move arrow so it always stays visible on top of the engine overlay.
    */
   onTop?: boolean;
-  /**
-   * Pull BOTH ends of the arrow in toward the middle by this fraction (0–0.45)
-   * of the source→target-center distance, dropping the tip overshoot. Centers a
-   * shorter arrow over the middle of the move — used by the analysis board's
-   * next-move arrow so it sits centered on the wider engine arrow it overlays.
-   */
-  insetFraction?: number;
 }
 
 // Re-exported so existing importers (useGameOverlay) keep their ChessBoard path.
@@ -185,29 +178,8 @@ function ArrowOverlay({
         const headWidth = (MIN_HEAD_WIDTH + (MAX_HEAD_WIDTH - MIN_HEAD_WIDTH) * w) * sqSize * scale;
         const headLen = headWidth * HEAD_LENGTH_RATIO;
 
-        // Default endpoints: tail at source center, tip past target center.
-        let tailX = x1 * sqSize;
-        let tailY = y1 * sqSize;
-        let tipX = x2 * sqSize;
-        let tipY = y2 * sqSize;
-        if (arrow.insetFraction) {
-          // Center a shorter arrow over the middle of the move: pull both ends
-          // in by insetFraction of the source→target-center segment (no overshoot).
-          const inset = Math.min(Math.max(arrow.insetFraction, 0), 0.45);
-          const sx = x1 * sqSize;
-          const sy = y1 * sqSize;
-          const cx = cx2 * sqSize;
-          const cy = cy2 * sqSize;
-          const dx = cx - sx;
-          const dy = cy - sy;
-          tailX = sx + dx * inset;
-          tailY = sy + dy * inset;
-          tipX = cx - dx * inset;
-          tipY = cy - dy * inset;
-        }
-
         const d = buildArrowPath(
-          tailX, tailY, tipX, tipY,
+          x1 * sqSize, y1 * sqSize, x2 * sqSize, y2 * sqSize,
           shaftHalf, headWidth / 2, headLen,
         );
 
