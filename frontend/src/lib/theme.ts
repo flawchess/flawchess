@@ -329,13 +329,13 @@ export const ARROW_NEUTRAL = '#6B7280';  // Tailwind gray-500 / matches WDL_BORD
 // built-in alpha so it reads as a translucent "engine suggestion" pointer — visually
 // secondary to the red flaw-move arrow it sits beside on the Flaw card, and a calm
 // overlay on the scrubbed Game-card board. rgba (not oklch) so the alpha is explicit.
-export const BEST_MOVE_ARROW = 'rgba(59, 130, 246, 0.8)';  // Tailwind blue-500 @ 80%
+export const BEST_MOVE_ARROW = 'rgba(37, 99, 235, 0.8)';  // Tailwind blue-600 @ 80%
 
 // Second-best engine move: arrow + eval badge (151.1 UAT). A light blue so 1st vs 2nd
 // read as a blue hierarchy (best = solid blue, second = light blue) rather than the
 // old blue-vs-grey. SECOND_BEST_BADGE_TEXT is a dark ink for the eval number, since
 // near-white text is unreadable on the light-blue badge fill.
-export const SECOND_BEST_ARROW = 'rgba(147, 197, 253, 0.85)';  // Tailwind blue-300 @ 85%
+export const SECOND_BEST_ARROW = 'rgba(191, 219, 254, 0.85)';  // Tailwind blue-200 @ 85%
 export const SECOND_BEST_BADGE_TEXT = 'oklch(0.25 0.03 255)';  // dark blue ink
 
 // Tactic Line Explorer payoff-ply arrows (Phase 135). Lighter alpha than BEST_MOVE_ARROW
