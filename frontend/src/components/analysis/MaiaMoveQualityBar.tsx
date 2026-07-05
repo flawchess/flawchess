@@ -240,8 +240,8 @@ function renderVerdictSentence(
   if (badList === null) {
     return (
       <>
-        At {elo} Elo, this position is {tierWord} for {owner}, though {escapeNode} ({escapeMove!.maiaPct}%) escapes
-        cleanly.
+        At {elo} Elo, this position is {tierWord} for {owner}, though {escapeNode} ({escapeMove!.maiaPct}%) keeps
+        things on track.
       </>
     );
   }
@@ -255,7 +255,7 @@ function renderVerdictSentence(
   return (
     <>
       At {elo} Elo, this position is {tierWord} for {owner} — {badList} lead to trouble, but {escapeNode} (
-      {escapeMove!.maiaPct}%) escapes cleanly.
+      {escapeMove!.maiaPct}%) keeps things on track.
     </>
   );
 }
