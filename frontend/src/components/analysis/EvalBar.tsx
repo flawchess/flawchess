@@ -24,7 +24,11 @@ function computeWhiteFraction(
   evalCp: number | null,
   evalMate: number | null,
   depth: number,
+  whiteFraction?: number,
 ): number {
+  // whiteFraction override (Maia expected-score bar, Plan 05 SURF-04/D-04/D-05):
+  // bypasses the evalCp/evalMate/depth sigmoid entirely and drives the fill directly.
+  if (whiteFraction !== undefined) return Math.min(1, Math.max(0, whiteFraction));
   if (evalMate !== null && depth >= 8) {
     if (evalMate > 0) return 1.0;
     if (evalMate < 0) return 0.0;
@@ -57,14 +61,39 @@ export interface EvalBarProps {
   flipped?: boolean;
   /** Caller (Phase 138 page shell) may override width/height via className. */
   className?: string;
+  /**
+   * Override the fill fraction directly (0..1), bypassing evalCp/evalMate/depth
+   * entirely — used by the Maia bar (Plan 05), which supplies
+   * `expectedScoreAtSelectedElo` (W + 0.5*D) instead of a centipawn eval. Clamped
+   * to 0..1. The `flipped` orientation behavior is unchanged.
+   */
+  whiteFraction?: number;
+  /** Distinct data-testid so two EvalBar instances (Stockfish + Maia) can coexist. */
+  testId?: string;
+  /**
+   * Source accent (Phase 151.1 UAT): tints the advantage (white-share) fill and the
+   * bar frame so the Stockfish bar (blue) and Maia bar (red) are distinguishable at a
+   * glance. When omitted the bar keeps the neutral grayscale palette. The dark
+   * (other-side) fill stays `EVAL_BAR_BLACK` as the track under either accent.
+   */
+  accentColor?: string;
 }
 
 /**
  * Renders a vertical evaluation bar whose perspective follows the board.
  * The side at the bottom of the board occupies the bottom fraction of the bar.
  */
-export function EvalBar({ evalCp, evalMate, depth, flipped = false, className }: EvalBarProps) {
-  const whiteFraction = computeWhiteFraction(evalCp, evalMate, depth);
+export function EvalBar({
+  evalCp,
+  evalMate,
+  depth,
+  flipped = false,
+  className,
+  whiteFraction: whiteFractionOverride,
+  testId = 'analysis-eval-bar',
+  accentColor,
+}: EvalBarProps) {
+  const whiteFraction = computeWhiteFraction(evalCp, evalMate, depth, whiteFractionOverride);
   const whitePercent = `${(whiteFraction * 100).toFixed(2)}%`;
   const blackPercent = `${((1 - whiteFraction) * 100).toFixed(2)}%`;
 
@@ -74,17 +103,28 @@ export function EvalBar({ evalCp, evalMate, depth, flipped = false, className }:
   const whiteEnd = whiteAtBottom ? { bottom: 0 } : { top: 0 };
   const blackEnd = whiteAtBottom ? { top: 0 } : { bottom: 0 };
 
+  const ariaLabel =
+    whiteFractionOverride !== undefined
+      ? `Maia expected score: ${(whiteFraction * 100).toFixed(0)}%`
+      : `Engine evaluation: ${scoreText(evalCp, evalMate)}`;
+
   return (
     <div
-      data-testid="analysis-eval-bar"
+      data-testid={testId}
       role="img"
-      aria-label={`Engine evaluation: ${scoreText(evalCp, evalMate)}`}
+      aria-label={ariaLabel}
       className={cn(
-        'relative flex flex-col border border-border rounded overflow-hidden w-5',
+        'relative flex flex-col rounded overflow-hidden w-5',
+        // Thicker frame when accented so the source color reads at a glance.
+        accentColor ? 'border-2' : 'border border-border',
         className,
       )}
+      // Accent tints the frame so the bar's source (Stockfish blue / Maia red) is
+      // identifiable while the fills keep the white/black advantage semantics
+      // (Phase 151.1 UAT: the white area stays visible).
+      style={accentColor ? { borderColor: accentColor } : undefined}
     >
-      {/* White fill */}
+      {/* White (advantage-share) fill — always the light grey so the white area reads. */}
       <div
         className="absolute inset-x-0 transition-[height] duration-150"
         style={{ background: EVAL_BAR_WHITE, height: whitePercent, ...whiteEnd }}

@@ -104,7 +104,7 @@
 | 148. Pipeline & tactic correctness fixes (code-review 2026-07-02) | 4/4 | Complete    | 2026-07-04 |
 | 149. Retire & Prune | 5/5 | Complete    | 2026-07-04 |
 | 150. Consolidate Write Path | 5/5 | Complete    | 2026-07-04 |
-| 151. Maia in the Browser + All-Position Surfaces | 0/0 | Not started | - |
+| 151. Maia in the Browser + All-Position Surfaces | 6/6 | Complete   | 2026-07-05 |
 | 152. Flaw Overlay (Pillars A + B) | 0/0 | Not started | - |
 
 ## Active Milestone: v1.32 Maia-3 Human-Move Enrichment
@@ -112,28 +112,80 @@
 Browser-only, client-side onnxruntime-web inference. **Zero DB writes** — no new backend endpoints, no schema, no migration. Add Maia-3 (a human move-prediction engine) as a second, in-browser engine on the analysis board: where Stockfish says "what is objectively best," Maia says "what a player at *your* rating would actually do here" — the missing half of coaching, directly on-brand ("Engines are flawless, humans play FlawChess"). Relicense MIT → AGPL-3.0 so the AGPL Maia model hosts with zero combined-work ambiguity. Feasibility settled by spikes 004–006; design locked in SEED-081. Pillar C (history-wide aggregate rollup) and SEED-082 (human-playable-line engine) are explicitly out of scope (persistence-gated, future milestone).
 
 ### Phase 151: Maia in the Browser + All-Position Surfaces
+
 **Goal**: Maia-3 runs live in-browser on the analysis board and, for every position, surfaces a "Moves by Rating" chart plus a Maia WDL eval bar on the LEFT of the board — standalone user value, and the live calibration gate that proves Maia is trustworthy enough to build on.
 **Depends on**: Nothing (first phase of the milestone; feasibility de-risked by spikes 004–006)
 **Requirements**: LIC-01, LIC-02, MAIA-01, MAIA-02, MAIA-03, MAIA-04, MAIA-05, MAIA-06, SURF-01, SURF-02, SURF-03, SURF-04, SURF-05, VALID-01
 **Success Criteria** (what must be TRUE):
+
   1. Hands-on de-risking happens FIRST — the version-pinned `maia3_simplified.onnx` is obtained, its exact input encoding (board planes + how ELO is fed) and output tensor layout (policy 64×64 vs flat; WDL order) are confirmed against the reference client, and it loads via onnxruntime-web with no unsupported-op errors (MAIA-01, MAIA-06).
   2. On any position, a "Moves by Rating" chart renders one probability line per candidate move across the ELO ladder, with a vertical "you are here" reference line at the player's rating-at-game-time, the played and engine-best moves emphasized, and the line set capped at top-N-by-peak ∪ {played, best} (SURF-01/02/03, MAIA-04).
   3. A Maia WDL eval bar renders on the LEFT of the board and the Stockfish eval bar on the RIGHT, both shown live for every position and recomputing on every board navigation with no server round-trip (SURF-04/05).
   4. Maia-3 runs entirely client-side — onnxruntime-web in a Web Worker, lazy-loaded only when the analysis board opens (never in the initial bundle) — with our own MIT glue (board→tensor, ELO input, legal-move masking, softmax) producing a normalized, deterministic per-legal-move distribution + WDL from a FEN + ELO, and nothing persists (ephemeral, board-session-scoped cache only) (MAIA-02/03/05).
   5. The repo is relicensed to AGPL-3.0 and the app shows a visible Maia attribution + offer-source notice (link to the CSSLab source repo + AGPL license text + the model artifact) citing the Chessformer paper (LIC-01/02).
   6. Maia's calibration is validated by eyeballing live output across representative positions, and download size + per-position latency are measured on desktop and mobile, before the feature is considered shippable — the ephemeral in-browser surface is itself the quality gate (VALID-01).
-**Plans**: TBD
+
+**Plans**: 6 plans
+**Wave 1**
+
+- [x] 151-01-PLAN.md — De-risk: obtain + pin maia3_simplified.onnx, vendor ort assets, confirm tensor I/O contract (MAIA-01/06)
+- [x] 151-02-PLAN.md — Relicense MIT → AGPL-3.0 + visible Maia attribution component (LIC-01/02)
+- [x] 151-03-PLAN.md — Backend: read-only current_rating on /users/me/profile for free-play ELO default (MAIA-04/D-07)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 151-04-PLAN.md — Maia glue (board→tensor/mask/softmax) + Web Worker (EP selection) + useMaiaEngine hook (MAIA-02/03/04/05/06, SURF-05)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 151-05-PLAN.md — Surfaces: EvalBar whiteFraction (Maia bar), MovesByRatingChart, EloSelector (SURF-01/02/03/04, D-06)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 151-06-PLAN.md — Integrate into Analysis (3-column desktop + mobile Human tab), wire defaults, mount attribution, VALID-01 gate (SURF-04/05, MAIA-04/05/06, LIC-02, VALID-01)
+
 **UI hint**: yes
 
+### Phase 151.1: Stockfish-graded Maia moves on the Moves-by-Rating chart (INSERTED)
+
+**Goal**: Grade each shown Maia candidate move with the existing client Stockfish and recolor the "Moves by Rating" chart lines by move quality (dark-green best → red blunder), and replace the fixed top-6 cap with a "moves people actually play" candidate set — so the chart surfaces the human *trap* (a popular move Stockfish grades as a mistake), not just which moves humans play. Browser-only, ephemeral, zero DB writes (same posture as Phase 151).
+**Depends on**: Phase 151 (extends the Moves-by-Rating chart + client Stockfish/Maia surfaces)
+**Source**: SEED-083 (promoted 2026-07-05); maiachess.com reference + CSSLab/maia-platform-frontend research
+**Success Criteria** (what must be TRUE):
+
+  1. Each shown Maia move on the "Moves by Rating" chart (line + end-of-line SAN label) is colored by Stockfish quality using FlawChess's OWN existing expected-score-drop thresholds (`liveFlaw.ts` / `flawThresholds.ts`), in 5 buckets: dark-green = SF-best, light-green = good (drop < 0.05), yellow = inaccuracy (0.05–0.10), orange = mistake (0.10–0.15), red = blunder (≥ 0.15). Color encodes quality; SAN labels carry identity; played/best emphasis stays as stroke width. Theme colors live in `theme.ts`.
+  2. The candidate/line set is the Maia cumulative-probability ≥ 0.95 set (at the selected ELO) ∪ {Stockfish-best move}, replacing the fixed top-6-by-peak cap — adaptive so sharp positions show few lines and quiet positions more, and the near-zero-probability tail is dropped.
+  3. Stockfish grades every shown human candidate via a SINGLE root search using UCI `searchmoves = candidates` + `MultiPV = |candidates|` (no per-child N-searches, no coverage gap), confirmed working on the vendored `stockfish-18-lite` WASM build, without disturbing the existing eval bar / engine-card variation tree.
+  4. Per-board-navigation latency (grading search on top of live Maia inference) is measured and acceptable on desktop and mobile Safari; if not, degrade gracefully (cap candidate count, lower grading depth, or debounce grading behind the primary eval). Nothing persists — ephemeral, board-session-scoped only.
+
+**Plans:** 4 plans
+
+Plans:
+**Wave 1**
+
+- [x] 151.1-01-PLAN.md — Real-WASM searchmoves+MultiPV spike (SC3 de-risk, throwaway probe + human verify)
+- [x] 151.1-02-PLAN.md — Foundation: moveQuality.ts (5-bucket classify + 0.95-mass selection), sanToUci, MOVE_QUALITY_* theme tokens, unit tests
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 151.1-03-PLAN.md — useStockfishGradingEngine: second worker, searchmoves+MultiPV, pv[0]-keyed per-FEN grade cache + MockWorker tests
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 151.1-04-PLAN.md — Chart recolor by quality + Analysis/MaiaHumanPanel wiring + D-08 tooltip + SC3/SC4 real-browser UAT
+
 ### Phase 152: Flaw Overlay (Pillars A + B)
+
 **Goal**: When the current move is a flaw, interpret it in human terms on top of the Phase 151 surfaces — a salience × trainability verdict banner plus a Maia-WDL practical-severity reframe of how bad the flaw really is.
 **Depends on**: Phase 151 (reuses the all-position "Moves by Rating" chart + Maia WDL eval bar)
 **Requirements**: FLAW-01, FLAW-02, FLAW-03, FLAW-04
 **Success Criteria** (what must be TRUE):
+
   1. When the current move is a flaw, a verdict banner overlays the chart with the salience × trainability quadrant call ("Growth edge — drill this" / "Even masters fall for this" / "You rarely err here" / above-your-level) (FLAW-01).
   2. The verdict derives salience = `P(blunder move | your ELO)` and trainability = `P(blunder | your ELO) − P(blunder | top ELO)` as an endpoint difference from the stored curve — robust to non-monotonic (hump/U) curve shapes, never a local slope (FLAW-02).
   3. The flaw carries a Maia-WDL practical-severity reframe alongside the objective Stockfish eval — the human win% reframes how bad the flaw is, with Stockfish staying the objective source of truth (FLAW-03).
   4. Where Maia's calibration is not trustworthy for the relevant ELO bucket, the verdict is withheld rather than shown wrong (precision-first, consistent with the tactic-tag NULL-on-low-confidence stance) (FLAW-04).
+
 **Plans**: TBD
 **UI hint**: yes
 

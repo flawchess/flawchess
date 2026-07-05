@@ -41,6 +41,40 @@ vi.mock('@/hooks/useStockfishEngine', () => ({
   useStockfishEngine: () => ({ ...engineState }),
 }));
 
+// Mock useStockfishGradingEngine (Phase 151.1 Plan 04): jsdom has no real Worker for
+// this SECOND classic engine file either. Deterministic empty-gradeMap stub — the
+// grading hook's own behavior is covered by useStockfishGradingEngine.test.ts.
+vi.mock('@/hooks/useStockfishGradingEngine', () => ({
+  useStockfishGradingEngine: () => ({
+    gradeMap: new Map(),
+    isGrading: false,
+    isReady: false,
+  }),
+}));
+
+// Mock useMaiaEngine: jsdom has no real Worker for the classic Maia worker file
+// either (Phase 151 Plan 06). Deterministic curve stub via the mutable maiaState —
+// the Maia surfaces' own behavior is covered by useMaiaEngine.test.ts /
+// MovesByRatingChart.test.tsx. expectedScoreAtSelectedElo drives the Maia bar fill.
+const maiaState: { expectedScoreAtSelectedElo: number | null } = {
+  expectedScoreAtSelectedElo: null,
+};
+
+vi.mock('@/hooks/useMaiaEngine', () => ({
+  useMaiaEngine: () => ({
+    perElo: [],
+    expectedScoreAtSelectedElo: maiaState.expectedScoreAtSelectedElo,
+    wdl: null,
+    isReady: false,
+    isAnalyzing: false,
+  }),
+}));
+
+// Mock useUserProfile: no real network in this shell-level test.
+vi.mock('@/hooks/useUserProfile', () => ({
+  useUserProfile: () => ({ data: undefined, isError: false }),
+}));
+
 // Mock useTacticLines and useLibraryGame: free-play shell tests have no tactic/game
 // params, so both return empty stubs — no real network needed.
 vi.mock('@/hooks/useLibrary', () => ({
@@ -92,6 +126,7 @@ afterEach(() => {
   engineState.depth = 0;
   engineState.isAnalyzing = false;
   engineState.isReady = false;
+  maiaState.expectedScoreAtSelectedElo = null;
 });
 
 // Late import after vi.mock calls — Analysis.tsx is a default export (required by React.lazy).
@@ -124,6 +159,8 @@ describe('Analysis page shell', () => {
     expect(screen.getByTestId('analysis-page')).toBeTruthy();
     expect(screen.getByTestId('analysis-board')).toBeTruthy();
     expect(screen.getByTestId('analysis-eval-bar')).toBeTruthy();
+    // Phase 151 Plan 06 (SURF-04): the Maia bar renders on every position too.
+    expect(screen.getByTestId('analysis-maia-eval-bar')).toBeTruthy();
   });
 
   it('seeds the board from a valid ?fen= param (ROUTE-02)', () => {
@@ -168,5 +205,36 @@ describe('Analysis page shell', () => {
     renderAnalysis();
 
     expect(screen.queryByTestId('analysis-engine-loading')).toBeNull();
+  });
+});
+
+describe('Maia eval bar perspective (151.1 UAT regression)', () => {
+  // Reads the Maia bar's white-share fill height. The white fill is the first
+  // absolutely-positioned child div (same convention as EvalBar.test.tsx).
+  function maiaWhiteFillPercent(): number {
+    const bar = screen.getByTestId('analysis-maia-eval-bar');
+    const whiteFill = bar.querySelector('div');
+    if (!whiteFill) throw new Error('Maia white fill div not found');
+    return parseFloat(whiteFill.style.height.replace('%', ''));
+  }
+
+  // Maia's WDL is the side-to-MOVE's perspective. The bar's fill must be
+  // WHITE-relative, so a black-to-move expected score of 0.8 (Black favored) must
+  // render as a ~20% white fill — NOT 80% (the pre-fix inverted behavior).
+  it('inverts the expected score to white-POV when Black is to move', () => {
+    maiaState.expectedScoreAtSelectedElo = 0.8;
+    // Black to move (after 1. e4).
+    const blackToMoveFen = 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1';
+    renderAnalysis(`/analysis?fen=${encodeURIComponent(blackToMoveFen)}`);
+
+    expect(maiaWhiteFillPercent()).toBeCloseTo(20, 1);
+  });
+
+  it('uses the expected score directly (white-POV) when White is to move', () => {
+    maiaState.expectedScoreAtSelectedElo = 0.8;
+    const whiteToMoveFen = 'rnbqkb1r/pppp1ppp/5n2/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3';
+    renderAnalysis(`/analysis?fen=${encodeURIComponent(whiteToMoveFen)}`);
+
+    expect(maiaWhiteFillPercent()).toBeCloseTo(80, 1);
   });
 });

@@ -31,7 +31,7 @@ import { uciToSquares } from '@/lib/sanToSquares';
 import { tacticDepthBadge } from '@/lib/tacticComparisonMeta';
 import {
   BEST_MOVE_ARROW,
-  ARROW_NEUTRAL,
+  SECOND_BEST_ARROW,
   TAC_ALLOWED,
   TAC_ALLOWED_LABEL,
   TAC_MISSED,
@@ -268,17 +268,21 @@ export function useGameOverlay(params: UseGameOverlayParams): GameOverlay {
       }
     }
 
-    // Grey second-best arrow from the live engine (pvLines[1]). When precomputed best
-    // is shown, the engine's own top line is suppressed — only the 2nd best is added.
-    const greySquares = uciToSquares(enginePvLines[1]?.moves[0] ?? null);
+    // Light-blue second-best arrow from the live engine (pvLines[1]). When precomputed
+    // best is shown, the engine's own top line is suppressed — only the 2nd best is added.
+    const secondBestSquares = uciToSquares(enginePvLines[1]?.moves[0] ?? null);
     if (
-      greySquares &&
-      !(blueSquares && greySquares.from === blueSquares.from && greySquares.to === blueSquares.to)
+      secondBestSquares &&
+      !(
+        blueSquares &&
+        secondBestSquares.from === blueSquares.from &&
+        secondBestSquares.to === blueSquares.to
+      )
     ) {
       arrows.push({
-        startSquare: greySquares.from,
-        endSquare: greySquares.to,
-        color: ARROW_NEUTRAL,
+        startSquare: secondBestSquares.from,
+        endSquare: secondBestSquares.to,
+        color: SECOND_BEST_ARROW,
         width: ARROW_WIDTH,
       });
     }

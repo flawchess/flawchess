@@ -26,6 +26,10 @@ class UserProfileResponse(BaseModel):
     impersonation: ImpersonationContext | None = None
     # BETA-01: beta_enabled flag (e.g. Endgame Insights). Default false; flipped via direct DB op.
     beta_enabled: bool
+    # MAIA-04 / D-07: rating from the user's most-recent game (across platforms),
+    # read-only, index-backed. Feeds the free-play ELO-selector default. None
+    # when the user has no games or their most recent game is unrated.
+    current_rating: int | None = None
 
 
 class UserProfileUpdate(BaseModel):

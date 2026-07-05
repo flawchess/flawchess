@@ -189,12 +189,16 @@ export function useAnalysisBoard(
    * Both drag-drop and click-to-click board input call this.
    * Board wiring is Phase 138; this hook exposes the entry point only.
    *
-   * Mid-line fork: the new node is parented to currentNodeId regardless of
-   * whether that node already has children. This is the inverse of
-   * The opening board hook truncates on mid-line moves — this hook forks instead.
+   * Advance-or-fork: when the played move already exists as a child of
+   * currentNodeId (the next move in the game line or an open sideline), just
+   * navigate into it; only a genuinely divergent move forks a new sideline
+   * (UAT quick 260705-mth — previously it always forked, spawning a duplicate
+   * branch even when the move was the existing continuation). Mirrors
+   * playUciLine's child-reuse. The opening board hook truncates on mid-line
+   * moves — this hook advances or forks instead.
    */
   const makeMove = useCallback((from: string, to: string): boolean => {
-    const { currentNodeId, nodes, rootFen, nextId } = stateRef.current;
+    const { currentNodeId, nodes, rootFen } = stateRef.current;
     const parentFen =
       currentNodeId !== null ? (nodes.get(currentNodeId)?.fen ?? rootFen) : rootFen;
 
@@ -207,16 +211,18 @@ export function useAnalysisBoard(
     }
     if (!result) return false;
 
-    const newNode = buildNode(
-      nextId,
-      result.san,
-      chess.fen(),
-      result.from,
-      result.to,
-      currentNodeId,
-    );
+    const { from: moveFrom, to: moveTo, san } = result;
+    const childFen = chess.fen();
 
     setState((prev) => {
+      // Reuse an existing child with the same from/to (game continuation or open
+      // sideline) — advance into it rather than forking a duplicate branch.
+      for (const node of prev.nodes.values()) {
+        if (node.parentId === currentNodeId && node.from === moveFrom && node.to === moveTo) {
+          return prev.currentNodeId === node.id ? prev : { ...prev, currentNodeId: node.id };
+        }
+      }
+      const newNode = buildNode(prev.nextId, san, childFen, moveFrom, moveTo, currentNodeId);
       const newNodes = new Map(prev.nodes);
       newNodes.set(newNode.id, newNode);
       return { ...prev, nodes: newNodes, currentNodeId: newNode.id, nextId: prev.nextId + 1 };

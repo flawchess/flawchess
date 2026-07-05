@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fenAfterMove, sanToSquares } from './sanToSquares';
+import { fenAfterMove, sanToSquares, sanToUci } from './sanToSquares';
 
 const STARTING_FEN_WHITE = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
@@ -45,6 +45,31 @@ describe('sanToSquares', () => {
   it('returns null on a malformed FEN without throwing', () => {
     expect(() => sanToSquares('this is not a fen', 'e4')).not.toThrow();
     expect(sanToSquares('this is not a fen', 'e4')).toBeNull();
+  });
+});
+
+describe('sanToUci', () => {
+  it('returns "e2e4" for the e4 opening move', () => {
+    expect(sanToUci(STARTING_FEN_WHITE, 'e4')).toBe('e2e4');
+  });
+
+  it('returns a 5-char UCI ending in the promotion piece', () => {
+    const PROMOTION_FEN = '6k1/4P3/8/8/8/8/8/4K3 w - - 0 1';
+    expect(sanToUci(PROMOTION_FEN, 'e8=Q+')).toBe('e7e8q');
+  });
+
+  it('returns null on illegal/unparseable SAN', () => {
+    expect(sanToUci(STARTING_FEN_WHITE, 'xx99')).toBeNull();
+  });
+
+  it('returns null on a SAN that is illegal in the given FEN (without throwing)', () => {
+    expect(() => sanToUci(STARTING_FEN_WHITE, 'Nxd4')).not.toThrow();
+    expect(sanToUci(STARTING_FEN_WHITE, 'Nxd4')).toBeNull();
+  });
+
+  it('returns null on a malformed FEN without throwing', () => {
+    expect(() => sanToUci('this is not a fen', 'e4')).not.toThrow();
+    expect(sanToUci('this is not a fen', 'e4')).toBeNull();
   });
 });
 

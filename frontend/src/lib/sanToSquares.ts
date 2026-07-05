@@ -53,3 +53,19 @@ export function fenAfterMove(fen: string, san: string): string | null {
     return null;
   }
 }
+
+/**
+ * Convert a SAN move (relative to `fen`) into its UCI string (e.g. "e2e4",
+ * "e7e8q" for a promotion), or `null` on illegal/malformed input. Used to
+ * build the grading search's `searchmoves` list (Phase 151.1 SC3) — mirrors
+ * `sanToSquares`'s try/catch-return-null style, never throws.
+ */
+export function sanToUci(fen: string, san: string): string | null {
+  try {
+    const chess = new Chess(fen);
+    const move = chess.move(san);
+    return `${move.from}${move.to}${move.promotion ?? ''}`;
+  } catch {
+    return null;
+  }
+}

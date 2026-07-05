@@ -83,6 +83,50 @@ describe('useAnalysisBoard', () => {
     expect(result.current.mainLine).toEqual(mainLineBefore);
   });
 
+  // ── Behavior 1b: advance-or-fork (quick 260705-mth) ─────────────────────
+
+  it('advance-or-fork: replaying the existing next main-line move advances into it, no new node', () => {
+    const { result } = renderHook(() => useAnalysisBoard(ROOT_FEN));
+
+    act(() => { result.current.loadMainLine(['Nf3', 'Nc6'], ROOT_FEN); });
+    const node0: NodeId = result.current.mainLine[0]!; // after Nf3, black to move
+    const node1: NodeId = result.current.mainLine[1]!; // after Nf3 Nc6
+
+    // Park at node0, then replay the existing continuation Nc6 (b8→c6).
+    act(() => { result.current.goToNode(node0); });
+    const sizeBefore = result.current.nodes.size;
+
+    let moved = false;
+    act(() => { moved = result.current.makeMove(MOVE_NC6.from, MOVE_NC6.to); });
+
+    expect(moved).toBe(true);
+    // No duplicate branch — advanced into the existing node1.
+    expect(result.current.nodes.size).toBe(sizeBefore);
+    expect(result.current.currentNodeId).toBe(node1);
+  });
+
+  it('advance-or-fork: replaying an existing sideline move advances into the sideline, not a duplicate', () => {
+    const { result } = renderHook(() => useAnalysisBoard(ROOT_FEN));
+
+    act(() => { result.current.loadMainLine(['Nf3', 'Nc6'], ROOT_FEN); });
+    const forkNode: NodeId = result.current.mainLine[0]!; // after Nf3, black to move
+
+    // Graft a sideline Nf6 (g8→f6) off the fork node; its root id == nextId now.
+    const pvNodeId: NodeId = result.current.nextId;
+    act(() => { result.current.insertPvLine(['Nf6'], forkNode); });
+
+    act(() => { result.current.goToNode(forkNode); });
+    const sizeBefore = result.current.nodes.size;
+
+    // Replaying Nf6 must step into the existing sideline node, not fork a copy.
+    let moved = false;
+    act(() => { moved = result.current.makeMove(MOVE_NF6.from, MOVE_NF6.to); });
+
+    expect(moved).toBe(true);
+    expect(result.current.nodes.size).toBe(sizeBefore);
+    expect(result.current.currentNodeId).toBe(pvNodeId);
+  });
+
   // ── Behavior 2: Navigation ──────────────────────────────────────────────
 
   it('goBack / goForward / goToNode move currentNodeId and position correctly', () => {

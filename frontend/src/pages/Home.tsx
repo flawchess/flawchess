@@ -508,6 +508,17 @@ export function HomePageContent() {
           </li>
           <li>
             <a
+              href="https://maiachess.com"
+              className="text-primary underline-offset-4 hover:underline"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Maia Chess
+            </a>{' '}
+            &mdash; human-like neural model powering the move-probability predictions
+          </li>
+          <li>
+            <a
               href="https://fastapi.tiangolo.com"
               className="text-primary underline-offset-4 hover:underline"
               target="_blank"

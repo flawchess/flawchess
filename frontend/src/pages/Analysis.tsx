@@ -25,11 +25,16 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Chess } from 'chess.js';
-import { Cpu } from 'lucide-react';
+import { ArrowLeftRight, Cpu, Tag, TrendingUp, User } from 'lucide-react';
 import { useAnalysisBoard } from '@/hooks/useAnalysisBoard';
 import { useStockfishEngine } from '@/hooks/useStockfishEngine';
+import { useStockfishGradingEngine } from '@/hooks/useStockfishGradingEngine';
+import { useMaiaEngine } from '@/hooks/useMaiaEngine';
+import { useMaiaEloDefault } from '@/hooks/useMaiaEloDefault';
+import { useUserProfile } from '@/hooks/useUserProfile';
 import { useGameOverlay } from '@/hooks/useGameOverlay';
 import { useLiveMoveFlaw } from '@/hooks/useLiveMoveFlaw';
 import { useTacticLines, useLibraryGame } from '@/hooks/useLibrary';
@@ -44,6 +49,8 @@ import type { FlawSeverity } from '@/types/library';
 import { tacticOrientationAtPly } from '@/lib/tacticOrientation';
 import { EvalChart } from '@/components/library/EvalChart';
 import { AnalysisTagsPanel } from '@/components/analysis/AnalysisTagsPanel';
+import { MaiaHumanPanel } from '@/components/analysis/MaiaHumanPanel';
+import type { HoveredQualityMove } from '@/components/analysis/MaiaMoveQualityBar';
 import { ChessBoard } from '@/components/board/ChessBoard';
 import type { BoardArrow } from '@/components/board/ChessBoard';
 import { BoardControls } from '@/components/board/BoardControls';
@@ -51,7 +58,17 @@ import { PlayerBar } from '@/components/board/PlayerBar';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { uciToSquares } from '@/lib/sanToSquares';
-import { ARROW_NEUTRAL, TAC_MISSED, TAC_ALLOWED, MOVE_HIGHLIGHT_GOOD } from '@/lib/theme';
+import {
+  SECOND_BEST_ARROW,
+  TAC_MISSED,
+  TAC_ALLOWED,
+  MOVE_HIGHLIGHT_GOOD,
+  STOCKFISH_ACCENT,
+  MAIA_ACCENT,
+} from '@/lib/theme';
+import { selectCandidatesByMass, classifyMoveQuality } from '@/lib/moveQuality';
+import type { MoveQualityEval, EngineLine } from '@/components/analysis/MovesByRatingChart';
+import { sideToMoveFromFen } from '@/lib/liveFlaw';
 import type { NodeId, MoveNode } from '@/hooks/useAnalysisBoard';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -59,7 +76,7 @@ import type { NodeId, MoveNode } from '@/hooks/useAnalysisBoard';
 const STARTING_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
 /** Engine label shown in the engine info line — the bundled Stockfish 18 WASM. */
-const ENGINE_NAME = 'SF 18';
+const ENGINE_NAME = 'Stockfish 18';
 
 /** Cap on the per-session live engine-eval cache (FEN → completed eval), item 4. */
 const LIVE_EVAL_CACHE_MAX = 256;
@@ -67,6 +84,9 @@ const LIVE_EVAL_CACHE_MAX = 256;
 /** Below this width the page renders its mobile takeover layout (matches the shell's
  *  `sm` breakpoint where the app swaps to mobile chrome). */
 const MOBILE_BREAKPOINT_PX = 640;
+
+/** Normalized width of the move-quality-bar hover arrows (quick 260705-kfg). */
+const QUALITY_HOVER_ARROW_WIDTH = 0.6;
 
 /**
  * True while the viewport is below the mobile breakpoint. Drives a single-tree render
@@ -126,6 +146,27 @@ function forkPlyForOrientation(flawPly: number, orientation: 'missed' | 'allowed
  */
 function flawKey(flaw: { ply: number; orientation: 'missed' | 'allowed' }): string {
   return `${flaw.ply}:${flaw.orientation}`;
+}
+
+/**
+ * The engine's top-line first move (UCI) converted to SAN at `baseFen` — feeds
+ * MovesByRatingChart's `bestSan` emphasis (Plan 06, SURF-01). Returns null for no
+ * PV yet or an illegal/malformed replay (never throws).
+ */
+function bestSanFromPv(baseFen: string, uci: string | null): string | null {
+  const squares = uciToSquares(uci);
+  if (!squares || !uci) return null;
+  try {
+    const chess = new Chess(baseFen);
+    const move = chess.move({
+      from: squares.from,
+      to: squares.to,
+      promotion: uci.length > 4 ? uci[4] : undefined,
+    });
+    return move.san;
+  } catch {
+    return null;
+  }
 }
 
 type OpenLine = { rootNodeId: NodeId; ply: number; orientation: 'missed' | 'allowed' };
@@ -276,6 +317,10 @@ export default function Analysis() {
   // on mobile (the chart lives on a different tab there).
   const [tagsHighlightedPlies, setTagsHighlightedPlies] = useState<Set<number> | null>(null);
 
+  // Quick 260705-kfg: the moves of the move-quality bar's currently-hovered segment
+  // (SAN + severity color), drawn as board arrows. Null when nothing is hovered.
+  const [hoveredQualityMoves, setHoveredQualityMoves] = useState<HoveredQualityMove[] | null>(null);
+
   // ── All hooks (unconditional, React rules) ────────────────────────────────────
 
   const {
@@ -343,6 +388,45 @@ export default function Analysis() {
   const { data: gameData, isError: gameError } = useLibraryGame(
     isGameMode ? gameId : null,
   );
+
+  // Free-play ELO default source (D-07) — read from useUserProfile(), never useAuth().user
+  // (no rating field there, cf. beta-gating memory).
+  const { data: userProfile } = useUserProfile();
+
+  // D-06/D-07: "you are here" ELO for the Maia surfaces, derived from game-mode
+  // rating-at-game-time or free-play current_rating, with user-override precedence.
+  const { selectedElo, setSelectedElo } = useMaiaEloDefault({
+    isGameMode,
+    gameData,
+    profile: userProfile,
+    // Default the ELO to whoever is to move — the opponent's rating on their
+    // moves — so the Maia surfaces reflect the actual decision-maker (quick 260705-m3z).
+    sideToMove: sideToMoveFromFen(position),
+  });
+
+  // Whose move the analysed position is — drives the Maia verdict's you/opponent
+  // framing. False in free play (no opponent).
+  const isOpponentToMove =
+    isGameMode && gameData?.user_color != null && sideToMoveFromFen(position) !== gameData.user_color;
+
+  // Play a named move from the Maia verdict prose as a free move (quick 260705-mth).
+  // The prose SANs are legal at the current position; resolve to from/to and hand
+  // to makeMove, which advances into the existing line or forks a sideline.
+  const playProseMove = (san: string): void => {
+    try {
+      const move = new Chess(position).move(san);
+      if (move) makeMove(move.from, move.to);
+    } catch {
+      // SAN no longer legal (position changed under the prose) — ignore.
+    }
+  };
+
+  // Maia-3 human-move model (MAIA-04/05, SURF-05): full per-ELO curve + WDL for the
+  // current position, no server round-trip. `enabled: true` — MAIA-02's laziness is
+  // already satisfied by the route-level React.lazy covering this whole page; the
+  // Worker itself lives/dies with this component's mount, unlike the Stockfish
+  // engine's separate on/off toggle.
+  const maia = useMaiaEngine({ fen: position, enabled: true, selectedElo });
 
   // Seeding guard refs: prevent re-running effects after the first game load.
   const hasLoadedMainLine = useRef(false);
@@ -453,6 +537,69 @@ export default function Analysis() {
     }
     return false;
   }, [nodes, currentNodeId]);
+
+  // MovesByRatingChart emphasis (Plan 06, SURF-01): the SAN of the move that reached
+  // the current node — true for both game mode (the played main-line/PV move) and
+  // free play (the last move the user played), since both read the same node field.
+  const playedSan = currentNodeId !== null ? (nodes.get(currentNodeId)?.san ?? null) : null;
+
+  // MovesByRatingChart emphasis: the engine's current top-line first move, converted
+  // to SAN at the current position.
+  const bestSan = useMemo(
+    () => bestSanFromPv(position, engine.pvLines[0]?.moves[0] ?? null),
+    [position, engine.pvLines],
+  );
+
+  // The primary engine's top PV lines (best + 2nd-best), each as its first move's
+  // SAN + white-POV eval — shown as a reference header in the Maia chart tooltip
+  // (151.1 UAT). These are the authoritative eval-bar/engine-card evals, distinct
+  // from the searchmoves-restricted grading pass that colors the lines.
+  const engineTopLines = useMemo<EngineLine[]>(() => {
+    const lines: EngineLine[] = [];
+    for (const line of engine.pvLines.slice(0, 2)) {
+      const san = bestSanFromPv(position, line.moves[0] ?? null);
+      if (san === null) continue;
+      lines.push({ san, evalCp: line.evalCp, evalMate: line.evalMate });
+    }
+    return lines;
+  }, [position, engine.pvLines]);
+
+  // Phase 151.1 SC2/D-02/D-06/D-07: the 0.95-cumulative-mass candidate set at the
+  // selected ELO, unioned with {bestSan, playedSan} — computed ONCE here and passed
+  // to both the grading hook (as candidateSans) and the chart (as shownSans),
+  // replacing MovesByRatingChart's own top-6-by-peak cap.
+  const shownSans = useMemo(
+    () => selectCandidatesByMass(maia.perElo, selectedElo, playedSan, bestSan),
+    [maia.perElo, selectedElo, playedSan, bestSan],
+  );
+
+  // Phase 151.1 SC3: a SECOND, independent Stockfish worker that grades shownSans via
+  // one searchmoves-restricted MultiPV search. Gated on the SAME engineEnabled toggle
+  // as the primary engine so grading is off whenever the primary engine is off; it
+  // never touches the `engine` (useStockfishEngine) instance or its consumers.
+  const grading = useStockfishGradingEngine({
+    fen: engineEnabled ? position : null,
+    candidateSans: shownSans,
+    enabled: engineEnabled,
+  });
+
+  // Phase 151.1 D-08: 5-bucket quality classification of the streamed grades, merged
+  // with each grade's raw white-POV eval (cp/mate) for the chart's tooltip.
+  const qualityBySan = useMemo<Map<string, MoveQualityEval>>(() => {
+    // Pass the primary engine's bestSan so the chart's "best" agrees with the
+    // eval bar + engine card (151.1 UAT: reconcile the two Stockfish sources).
+    const infoBySan = classifyMoveQuality(grading.gradeMap, sideToMoveFromFen(position), bestSan);
+    const merged = new Map<string, MoveQualityEval>();
+    for (const [san, info] of infoBySan) {
+      const grade = grading.gradeMap.get(san);
+      merged.set(san, {
+        quality: info.quality,
+        evalCp: grade?.evalCp ?? null,
+        evalMate: grade?.evalMate ?? null,
+      });
+    }
+    return merged;
+  }, [grading.gradeMap, position, bestSan]);
 
   // ── Derived values (game mode — new) ─────────────────────────────────────────
 
@@ -742,13 +889,13 @@ export default function Analysis() {
     const isPayoff = stepIntoPv >= rootDisplayDepth;
     const arrows = buildPvArrow(nextMove, displayDepth, isPayoff, orientation);
 
-    // Grey 2nd-best from the live engine (skip if it duplicates the overlay arrow).
-    const grey = uciToSquares(engine.pvLines[1]?.moves[0] ?? null);
-    if (grey && !(grey.from === nextMove.from && grey.to === nextMove.to)) {
+    // Light-blue 2nd-best from the live engine (skip if it duplicates the overlay arrow).
+    const secondBest = uciToSquares(engine.pvLines[1]?.moves[0] ?? null);
+    if (secondBest && !(secondBest.from === nextMove.from && secondBest.to === nextMove.to)) {
       arrows.push({
-        startSquare: grey.from,
-        endSquare: grey.to,
-        color: ARROW_NEUTRAL,
+        startSquare: secondBest.from,
+        endSquare: secondBest.to,
+        color: SECOND_BEST_ARROW,
         width: 0.5,
       });
     }
@@ -766,11 +913,35 @@ export default function Analysis() {
     engine.pvLines,
   ]);
 
-  // Game-mode board arrows: PV-sideline overlay takes precedence; otherwise the
-  // precomputed/engine overlay from useGameOverlay.
-  const boardArrows: BoardArrow[] | undefined = isGameMode
-    ? (pvSidelineArrows ?? gameOverlay.boardArrows)
-    : undefined;
+  // Quick 260705-kfg: arrows for the move-quality bar's hovered segment — one per
+  // move, tinted its severity color. Each SAN is replayed at the CURRENT position
+  // to resolve from/to squares (skipped if illegal/malformed; never throws). Works
+  // in both game mode and free play, so it's derived independently of isGameMode.
+  const qualityHoverArrows = useMemo<BoardArrow[] | null>(() => {
+    if (hoveredQualityMoves === null || hoveredQualityMoves.length === 0) return null;
+    const arrows: BoardArrow[] = [];
+    for (const { san, color } of hoveredQualityMoves) {
+      try {
+        const chess = new Chess(position);
+        const move = chess.move(san);
+        arrows.push({
+          startSquare: move.from,
+          endSquare: move.to,
+          color,
+          width: QUALITY_HOVER_ARROW_WIDTH,
+        });
+      } catch {
+        // Illegal SAN for this position (stale hover across a board move) — skip it.
+      }
+    }
+    return arrows.length > 0 ? arrows : null;
+  }, [hoveredQualityMoves, position]);
+
+  // Game-mode board arrows: the move-quality hover overlay wins (both modes) so
+  // hovering the bar previews its moves; otherwise the PV-sideline overlay takes
+  // precedence, then the precomputed/engine overlay from useGameOverlay.
+  const boardArrows: BoardArrow[] | undefined =
+    qualityHoverArrows ?? (isGameMode ? (pvSidelineArrows ?? gameOverlay.boardArrows) : undefined);
 
   // ── Handlers ──────────────────────────────────────────────────────────────────
 
@@ -839,11 +1010,40 @@ export default function Analysis() {
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
+  // Maia expected score is the side-to-MOVE's expected score (WDL is emitted from the
+  // mover's POV). Convert to a WHITE-relative fraction for the eval bar so it agrees
+  // with the Stockfish (white-POV) bar and the board orientation. 0.5 while unresolved.
+  const maiaWhiteFraction =
+    maia.expectedScoreAtSelectedElo === null
+      ? 0.5
+      : sideToMoveFromFen(position) === 'white'
+        ? maia.expectedScoreAtSelectedElo
+        : 1 - maia.expectedScoreAtSelectedElo;
+
   // Board + EvalBar row — the single source of the `analysis-board` ref/testid and the
   // react-chessboard instance. Shared by the desktop and mobile trees (only one renders
   // at a time via isMobile), so the board mounts exactly once either way.
   const boardRow = (
     <div className="flex flex-row items-stretch gap-2">
+      {/* Maia expected-score bar — LEFT of the board (D-01/D-05, SURF-04). Single
+          expected-score fill (D-04): whiteFraction bypasses the cp sigmoid entirely.
+          0.5 fallback while Maia hasn't produced a result for this position yet.
+          Bug fix (151.1 UAT): Maia's WDL is from the side-to-MOVE's perspective (the
+          board is mirrored to the mover's POV when Black is to move — see
+          maiaEncoding.encodeBoard), so expectedScore is the mover's expected score.
+          The bar's whiteFraction must be WHITE-relative to match the Stockfish bar and
+          the board orientation, so invert it whenever Black is to move. Without this
+          the bar read inverted on every Black-to-move position. */}
+      <EvalBar
+        evalCp={null}
+        evalMate={null}
+        depth={0}
+        whiteFraction={maiaWhiteFraction}
+        flipped={boardFlipped}
+        accentColor={MAIA_ACCENT}
+        testId="analysis-maia-eval-bar"
+      />
+
       <div ref={containerRef} data-testid="analysis-board" tabIndex={0} className="flex-1">
         <ChessBoard
           id="analysis-board"
@@ -879,6 +1079,7 @@ export default function Analysis() {
         evalMate={gameOverlay.evalMate}
         depth={gameOverlay.evalDepth}
         flipped={boardFlipped}
+        accentColor={STOCKFISH_ACCENT}
       />
     </div>
   );
@@ -893,6 +1094,44 @@ export default function Analysis() {
       clockSeconds={color === 'white' ? playerClocks.white : playerClocks.black}
       testId={`analysis-player-${color}`}
     />
+  );
+
+  // Small source cap centered over an eval bar (151.1 UAT): "Maia" (violet) over the
+  // left bar, "SF" (blue) over the right. "Maia" is wider than the w-5 slot and
+  // overflows symmetrically — the ~7px right overflow stays inside the gap-2 to the
+  // player name, and the left overflow lands in the inter-column gutter.
+  const evalBarCap = (text: 'Maia' | 'SF', color: string) => (
+    // text-xs (below the usual text-sm floor) — a tiny bar cap acting as a visual
+    // aside, per UAT "make the labels smaller". leading-none keeps the row compact.
+    <span className="whitespace-nowrap text-xs font-medium leading-none" style={{ color }}>
+      {text}
+    </span>
+  );
+
+  // Eval-bar-width flanking slot — matches boardRow's `w-5` bars + `gap-2` so the
+  // center content lines up exactly with the board's left/right edges.
+  const evalBarSlot = (content: ReactNode) => (
+    <div className="flex w-5 shrink-0 justify-center">{content}</div>
+  );
+
+  // Row flanking the board with the source caps, its center aligned to the board
+  // edges. `player` renders the name/clock line (game mode); free play passes null
+  // to show the caps alone over the bars.
+  const boardHeaderRow = (player: ReactNode) => (
+    <div className="flex flex-row items-center gap-2">
+      {evalBarSlot(evalBarCap('Maia', MAIA_ACCENT))}
+      <div className="min-w-0 flex-1">{player}</div>
+      {evalBarSlot(evalBarCap('SF', STOCKFISH_ACCENT))}
+    </div>
+  );
+
+  // Bottom player row: same board-edge alignment as the header, no caps.
+  const boardFooterRow = (player: ReactNode) => (
+    <div className="flex flex-row items-center gap-2">
+      {evalBarSlot(null)}
+      <div className="min-w-0 flex-1">{player}</div>
+      {evalBarSlot(null)}
+    </div>
   );
 
   // VariationTree props — shared between the desktop side panel and the mobile Moves tab.
@@ -988,6 +1227,30 @@ export default function Analysis() {
       />
     ) : null;
 
+  // The mobile "Human" tab content (D-03, LIC-02) — shared between the game-mode
+  // 4-tab strip and the free-play Moves|Human pair below, so this JSX isn't
+  // duplicated across both mobile tab layouts.
+  const humanTab = (
+    <TabsContent value="human" className="min-h-0 overflow-y-auto thin-scrollbar">
+      <div className="px-3">
+        <MaiaHumanPanel
+          selectedElo={selectedElo}
+          onEloChange={setSelectedElo}
+          perElo={maia.perElo}
+          playedSan={playedSan}
+          bestSan={bestSan}
+          shownSans={shownSans}
+          qualityBySan={qualityBySan}
+          engineTopLines={engineTopLines}
+          onHoverMovesChange={setHoveredQualityMoves}
+          isOpponentToMove={isOpponentToMove}
+          onPlayMove={playProseMove}
+          compact
+        />
+      </div>
+    </TabsContent>
+  );
+
   // ── Mobile takeover layout (< 640px) ──────────────────────────────────────────
   // Engine PV lines above the board (no info card), board + eval bar, then a 2-tab view
   // (Moves | Eval) that fills the space down to the in-flow board-controls footer. Free
@@ -1017,7 +1280,16 @@ export default function Analysis() {
         </div>
 
         {/* Board + eval bar. */}
-        <div className="shrink-0 px-2 pt-2">{boardRow}</div>
+        {/* Board block: source caps + top player, board, bottom player. max-w-[92vw]
+            shrinks the board a touch so the name/clock strips top and bottom stay on
+            screen (151.1 UAT). Free play has no players — the caps show alone. */}
+        <div className="mx-auto flex w-full max-w-[92vw] shrink-0 flex-col gap-1 px-2 pt-2">
+          {boardHeaderRow(
+            isGameMode && gameData ? playerBar(boardFlipped ? 'white' : 'black') : null,
+          )}
+          {boardRow}
+          {isGameMode && gameData && boardFooterRow(playerBar(boardFlipped ? 'black' : 'white'))}
+        </div>
 
         {/* Game load error (CLAUDE.md isError branch). */}
         {isGameMode && gameError && (
@@ -1034,12 +1306,19 @@ export default function Analysis() {
           >
             <TabsList variant="underline" className="w-full shrink-0">
               <TabsTrigger value="moves" data-testid="analysis-tab-moves">
+                <ArrowLeftRight aria-hidden="true" />
                 Moves
               </TabsTrigger>
               <TabsTrigger value="eval" data-testid="analysis-tab-eval">
-                Eval chart
+                <TrendingUp aria-hidden="true" />
+                Chart
+              </TabsTrigger>
+              <TabsTrigger value="human" data-testid="analysis-tab-human">
+                <User aria-hidden="true" />
+                Maia
               </TabsTrigger>
               <TabsTrigger value="tags" data-testid="analysis-tab-tags">
+                <Tag aria-hidden="true" />
                 Tags
               </TabsTrigger>
             </TabsList>
@@ -1058,11 +1337,34 @@ export default function Analysis() {
             <TabsContent value="eval" className="min-h-0 overflow-x-hidden overflow-y-auto thin-scrollbar">
               <div className="px-3">{evalChart('h-[120px]')}</div>
             </TabsContent>
+            {humanTab}
             <TabsContent value="tags" className="min-h-0 overflow-y-auto thin-scrollbar">
               <div className="px-2">{tagsPanel()}</div>
             </TabsContent>
           </Tabs>
+        ) : !isGameMode ? (
+          // Free play (D-03 open detail): a minimal Moves | Human tab pair — no eval
+          // chart / tags in free play, but the Human chart must still be reachable.
+          <Tabs defaultValue="moves" className="flex min-h-0 flex-1 flex-col gap-2 px-2 pt-2">
+            <TabsList variant="underline" className="w-full shrink-0">
+              <TabsTrigger value="moves" data-testid="analysis-tab-moves">
+                <ArrowLeftRight aria-hidden="true" />
+                Moves
+              </TabsTrigger>
+              <TabsTrigger value="human" data-testid="analysis-tab-human">
+                <User aria-hidden="true" />
+                Maia
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="moves" className="flex min-h-0 flex-1 flex-col">
+              {variationTree('vertical')}
+            </TabsContent>
+            {humanTab}
+          </Tabs>
         ) : (
+          // Game mode but not yet ready for the full tab strip (game data still
+          // loading, or an unanalyzed game with no eval_series) — unchanged prior
+          // behavior: move list only.
           <div className="flex min-h-0 flex-1 flex-col px-2 pt-2">
             {variationTree('vertical')}
           </div>
@@ -1084,16 +1386,51 @@ export default function Analysis() {
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 pb-20 md:py-6 md:pb-6 md:px-6">
         <div className="flex flex-col lg:flex-row lg:items-stretch gap-4">
 
+          {/* Human column ──────────────────────────────────────────────────── */}
+          {/* D-01 3-column layout: left = Maia ("human") surfaces, matching the
+              existing right panel's ~360px width (D-02 trade-off: narrower chart,
+              fewer x-axis ticks, accepted for the thematic left-grouping). */}
+          <div
+            data-testid="analysis-human-column"
+            className="flex w-full lg:w-[360px] shrink-0 flex-col gap-4 min-w-0"
+          >
+            {/* Invisible spacer mirroring the board column's top player bar so the
+                Human card top aligns with the board top (not the player-bar top) —
+                same trick as the engine column. Desktop only; -mb-2 trims this
+                column's gap-4 to the board column's gap-2. (Quick 260705-bm3) */}
+            {isGameMode && gameData && (
+              <div aria-hidden="true" className="hidden lg:block lg:invisible lg:-mb-2">
+                {playerBar(boardFlipped ? 'white' : 'black')}
+              </div>
+            )}
+            <MaiaHumanPanel
+              selectedElo={selectedElo}
+              onEloChange={setSelectedElo}
+              perElo={maia.perElo}
+              playedSan={playedSan}
+              bestSan={bestSan}
+              shownSans={shownSans}
+              qualityBySan={qualityBySan}
+              engineTopLines={engineTopLines}
+              onHoverMovesChange={setHoveredQualityMoves}
+              isOpponentToMove={isOpponentToMove}
+              onPlayMove={playProseMove}
+            />
+          </div>
+
           {/* Board column ──────────────────────────────────────────────────── */}
           <div className="flex flex-col gap-2 w-full lg:w-[628px] shrink-0">
-            {/* Top player (opponent at top of board, by orientation) */}
-            {isGameMode && gameData && playerBar(boardFlipped ? 'white' : 'black')}
+            {/* Top row: source caps (Maia/SF) over the bars, name/clock aligned to
+                the board edges. Free play has no player line — caps show alone. */}
+            {boardHeaderRow(
+              isGameMode && gameData ? playerBar(boardFlipped ? 'white' : 'black') : null,
+            )}
 
             {/* Board + EvalBar row */}
             {boardRow}
 
-            {/* Bottom player */}
-            {isGameMode && gameData && playerBar(boardFlipped ? 'black' : 'white')}
+            {/* Bottom player (game mode only), aligned to the board edges. */}
+            {isGameMode && gameData && boardFooterRow(playerBar(boardFlipped ? 'black' : 'white'))}
 
             {/* EvalChart with slider — game mode only, below board (UI-SPEC Layout Contract).
                 highlightedPlies (Task 3, desktop only): dims non-matching markers while
@@ -1137,7 +1474,7 @@ export default function Analysis() {
                 item 3). The info line is the card header; the body never jumps as the
                 engine transitions loading → analyzing → 2 lines. */}
             <Card data-testid="analysis-engine-card">
-              {/* Info line in the header: engine toggle + "SF 18, Depth d". */}
+              {/* Info line in the header: engine toggle + "Stockfish 18, Depth d". */}
               <CardHeader
                 size="compact"
                 data-testid="analysis-engine-info"
@@ -1154,7 +1491,8 @@ export default function Analysis() {
                 >
                   <Cpu className={`h-4 w-4 ${engineEnabled ? '' : 'text-muted-foreground'}`} />
                 </Button>
-                <span className="text-sm">
+                {/* Blue SF caption pairs with the blue Stockfish eval bar (151.1 UAT). */}
+                <span className="text-sm font-medium" style={{ color: STOCKFISH_ACCENT }}>
                   {ENGINE_NAME}
                   {engineEnabled && engine.depth > 0 ? `, Depth ${engine.depth}` : ''}
                 </span>

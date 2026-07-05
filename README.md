@@ -16,7 +16,7 @@
   <a href="https://github.com/flawchess/flawchess/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/flawchess/flawchess/actions/workflows/ci.yml/badge.svg" /></a>
   <a href="https://github.com/flawchess/flawchess/actions/workflows/github-code-scanning/codeql"><img alt="CodeQL" src="https://github.com/flawchess/flawchess/actions/workflows/github-code-scanning/codeql/badge.svg" /></a>
   <a href="https://docs.renovatebot.com"><img alt="Renovate" src="https://img.shields.io/badge/renovate-enabled-brightgreen?logo=renovatebot" /></a>
-  <img alt="License" src="https://img.shields.io/badge/license-MIT-blue" />
+  <img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0-blue" />
   <img alt="Python" src="https://img.shields.io/badge/python-3.13-blue" />
   <img alt="React" src="https://img.shields.io/badge/react-19-blue" />
   <img alt="FastAPI" src="https://img.shields.io/badge/fastapi-0.115-green" />
@@ -38,7 +38,7 @@ A free, open-source chess analysis platform. Import games from chess.com and lic
 - **System opening filter** — filter by your pieces only to analyze system openings like the London across all opponent variations.
 - **Cross-platform import** — combine chess.com and lichess games, filter by color, time control, opponent type, and recency.
 - **Mobile-friendly PWA** — installable on Android and iOS, optimized for touch.
-- **Open source** — self-hostable, MIT licensed.
+- **Open source** — self-hostable, AGPL-3.0 licensed.
 
 ## Tech Stack
 
@@ -54,7 +54,7 @@ A free, open-source chess analysis platform. Import games from chess.com and lic
 
 ## Engine Binaries (GPLv3 License Note)
 
-The files `frontend/public/engine/stockfish-18-lite-single.js` and `frontend/public/engine/stockfish-18-lite-single.wasm` are vendored from the `stockfish` npm package v18.0.8 ([nmrugg/stockfish.js](https://github.com/nmrugg/stockfish.js)) and are licensed under the [GNU General Public License v3 (GPL-3.0)](https://www.gnu.org/licenses/gpl-3.0.html). These binaries are loaded in a dedicated Web Worker process, which keeps the GPL non-infective for the FlawChess application code (Worker process boundary). All other FlawChess code is MIT licensed (see the LICENSE file).
+The files `frontend/public/engine/stockfish-18-lite-single.js` and `frontend/public/engine/stockfish-18-lite-single.wasm` are vendored from the `stockfish` npm package v18.0.8 ([nmrugg/stockfish.js](https://github.com/nmrugg/stockfish.js)) and are licensed under the [GNU General Public License v3 (GPL-3.0)](https://www.gnu.org/licenses/gpl-3.0.html). These binaries are loaded in a dedicated Web Worker process, which keeps the GPL non-infective for the FlawChess application code (Worker process boundary). All other FlawChess code is AGPL-3.0 licensed (see the LICENSE file).
 
 - Package: `stockfish` v18.0.8
 - Vendored files: `stockfish-18-lite-single.js`, `stockfish-18-lite-single.wasm`
@@ -151,7 +151,9 @@ Code style:
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+AGPL-3.0 — see [LICENSE](LICENSE). If you run a modified version of FlawChess as a network
+service, the AGPL requires you to make your modified source available to its users (see
+LICENSE §13).
 
 ## Links
 

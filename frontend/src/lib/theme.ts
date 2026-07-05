@@ -61,6 +61,17 @@ export const EVAL_CHART_AREA_BLACK_AHEAD = 'oklch(0.32 0 0)';
 // eval chart: white-ahead fill on top, black-ahead fill on bottom.
 export const EVAL_BAR_WHITE = EVAL_CHART_AREA_WHITE_AHEAD;
 export const EVAL_BAR_BLACK = EVAL_CHART_AREA_BLACK_AHEAD;
+
+// Analysis eval-bar source accents (Phase 151.1 UAT). The two bars flanking the
+// analysis board are color-coded by their source so the pair is legible at a
+// glance: Stockfish (blue) on the right, Maia human-model (red) on the left. The
+// accent tints the bar's advantage fill + frame, the source's card-header caption,
+// and the small "SF"/"Maia" cap rendered above each bar.
+export const STOCKFISH_ACCENT = 'oklch(0.58 0.16 255)'; // blue
+// Violet (not red): red/orange/yellow read as move-quality severity, teal/crimson are
+// the missed/allowed tactic arrows, and blue is Stockfish — violet sits in the one open
+// hue gap and reads as a distinct "human" identity (151.1 UAT).
+export const MAIA_ACCENT = 'oklch(0.58 0.20 290)'; // violet
 export const EVAL_CHART_LINE = 'oklch(0.82 0 0)';
 // Muted grey for the rotated "Midgame" / "Endgame" text labels centered on the
 // phase boundaries — legible over both the light and dark eval-bar regions.
@@ -320,6 +331,13 @@ export const ARROW_NEUTRAL = '#6B7280';  // Tailwind gray-500 / matches WDL_BORD
 // overlay on the scrubbed Game-card board. rgba (not oklch) so the alpha is explicit.
 export const BEST_MOVE_ARROW = 'rgba(59, 130, 246, 0.8)';  // Tailwind blue-500 @ 80%
 
+// Second-best engine move: arrow + eval badge (151.1 UAT). A light blue so 1st vs 2nd
+// read as a blue hierarchy (best = solid blue, second = light blue) rather than the
+// old blue-vs-grey. SECOND_BEST_BADGE_TEXT is a dark ink for the eval number, since
+// near-white text is unreadable on the light-blue badge fill.
+export const SECOND_BEST_ARROW = 'rgba(147, 197, 253, 0.85)';  // Tailwind blue-300 @ 85%
+export const SECOND_BEST_BADGE_TEXT = 'oklch(0.25 0.03 255)';  // dark blue ink
+
 // Tactic Line Explorer payoff-ply arrows (Phase 135). Lighter alpha than BEST_MOVE_ARROW
 // so payoff arrows visually recede behind the punchline arrow (same blue, less prominent).
 export const PAYOFF_MOVE_ARROW = 'rgba(59, 130, 246, 0.5)';  // Tailwind blue-500 @ 50%
@@ -350,3 +368,32 @@ export const SCORE_TIMELINE_LINE_ENDGAME = MY_SCORE_COLOR;
 export const SCORE_TIMELINE_LINE_NON_ENDGAME = 'oklch(0.78 0.09 230)';
 export const SCORE_TIMELINE_FILL_ABOVE = 'oklch(0.50 0.14 145 / 0.28)';
 export const SCORE_TIMELINE_FILL_BELOW = 'oklch(0.50 0.15 25 / 0.28)';
+
+// "Moves by Rating" chart (Phase 151 Plan 05 — SURF-01/02/03, spike 006 port).
+// The "you are here" ELO reference line uses a dedicated warm brown (matches
+// spike 006's --brand marker). Line/label COLOR used to encode played/best
+// identity (MOVES_BY_RATING_PLAYED_LINE/BEST_LINE/OTHER_LINES) — that
+// identity-palette was replaced in Phase 151.1 (D-03) by the MOVE_QUALITY_*
+// palette below: color now encodes the Stockfish-graded quality bucket, and
+// played/best emphasis is carried by stroke WIDTH alone (decoupled, D-01/D-07).
+export const MOVES_BY_RATING_REFERENCE_LINE = 'white'; // white "you are here" marker (151.1 UAT)
+
+// Move-quality 5-bucket palette (Phase 151.1 D-03 — Stockfish-graded Maia
+// moves on the Moves-by-Rating chart). Color now encodes QUALITY (was
+// identity, MOVES_BY_RATING_* above): dark-green = the grading search's own
+// best-scoring candidate, light-green = a clean non-best move ("good"), and
+// the 3 severity tiers reuse SEV_INACCURACY/SEV_MISTAKE/SEV_BLUNDER verbatim
+// (never re-derive their oklch values — see liveFlaw.ts/flawThresholds.ts,
+// the single-sourced grading pipeline this phase's classifyMoveQuality
+// reuses). Both new greens share WDL_WIN's hue (145) but sit at distinct
+// lightness from each other and from WDL_WIN itself (which stays reserved
+// for its own win/draw/loss semantic, not quality). MOVE_QUALITY_PENDING is
+// the neutral "graded not yet arrived" line color (D-05 progressive/
+// streaming grading — lines render immediately in this muted gray before the
+// first shallow Stockfish eval commits a real quality color).
+export const MOVE_QUALITY_BEST = 'oklch(0.40 0.17 145)'; // dark green
+export const MOVE_QUALITY_GOOD = 'oklch(0.72 0.13 145)'; // light green
+export const MOVE_QUALITY_INACCURACY = SEV_INACCURACY;
+export const MOVE_QUALITY_MISTAKE = SEV_MISTAKE;
+export const MOVE_QUALITY_BLUNDER = SEV_BLUNDER;
+export const MOVE_QUALITY_PENDING = 'oklch(0.65 0.02 260)'; // muted neutral gray

@@ -118,4 +118,64 @@ describe('EvalBar', () => {
     // When flipped, White is at the top of the bar.
     expect(whiteFill.style.top).toBe('0px');
   });
+
+  describe('whiteFraction override (Maia expected-score bar, Plan 05)', () => {
+    it('whiteFraction=0.75 drives ~75% white fill regardless of evalCp', () => {
+      // evalCp is a strongly negative eval — without the override this would yield
+      // a low white fraction, proving the override truly bypasses the sigmoid.
+      render(<EvalBar evalCp={-900} evalMate={null} depth={15} whiteFraction={0.75} />);
+      expect(parsePercent(getWhiteFillHeight())).toBeCloseTo(75, 1);
+    });
+
+    it('whiteFraction ignores evalMate too', () => {
+      render(<EvalBar evalCp={null} evalMate={-5} depth={15} whiteFraction={0.3} />);
+      expect(parsePercent(getWhiteFillHeight())).toBeCloseTo(30, 1);
+    });
+
+    it('whiteFraction is clamped to 0..1', () => {
+      const { unmount } = render(
+        <EvalBar evalCp={null} evalMate={null} depth={15} whiteFraction={1.5} />,
+      );
+      expect(parsePercent(getWhiteFillHeight())).toBeCloseTo(100, 1);
+      unmount();
+
+      render(<EvalBar evalCp={null} evalMate={null} depth={15} whiteFraction={-0.5} />);
+      expect(parsePercent(getWhiteFillHeight())).toBeCloseTo(0, 1);
+    });
+
+    it('whiteFraction respects the flipped orientation', () => {
+      render(<EvalBar evalCp={null} evalMate={null} depth={15} whiteFraction={0.8} flipped />);
+      const whiteFill = screen.getByTestId('analysis-eval-bar').querySelector('div');
+      if (!whiteFill) throw new Error('White fill div not found');
+      // Flipped: white fill anchors to the top, same as the non-override path.
+      expect(whiteFill.style.top).toBe('0px');
+      expect(parsePercent(whiteFill.style.height)).toBeCloseTo(80, 1);
+    });
+
+    it('drives a Maia-appropriate aria-label when whiteFraction is set', () => {
+      render(<EvalBar evalCp={null} evalMate={null} depth={15} whiteFraction={0.62} />);
+      const bar = screen.getByTestId('analysis-eval-bar');
+      expect(bar.getAttribute('aria-label')).toMatch(/Maia expected score: 62%/);
+    });
+
+    it('the Stockfish (no-whiteFraction) path aria-label is unchanged', () => {
+      render(<EvalBar evalCp={100} evalMate={null} depth={15} />);
+      const bar = screen.getByTestId('analysis-eval-bar');
+      expect(bar.getAttribute('aria-label')).toMatch(/^Engine evaluation:/);
+    });
+
+    it('a distinct testId prop renders a separately queryable bar', () => {
+      render(
+        <EvalBar
+          evalCp={null}
+          evalMate={null}
+          depth={15}
+          whiteFraction={0.5}
+          testId="analysis-maia-eval-bar"
+        />,
+      );
+      expect(screen.getByTestId('analysis-maia-eval-bar')).not.toBeNull();
+      expect(screen.queryByTestId('analysis-eval-bar')).toBeNull();
+    });
+  });
 });
