@@ -46,6 +46,13 @@ export interface BoardArrow {
    * next-move arrow so it always stays visible on top of the engine overlay.
    */
   onTop?: boolean;
+  /**
+   * Shorten the arrow by this many pixels, pulling the tail toward the tip so
+   * the arrowhead stays anchored on the target square. Used by the analysis
+   * board's next-move arrow so it reads slightly shorter than the engine arrow
+   * it overlays. Ignored (no shortening) when it would collapse the arrow.
+   */
+  shortenTailPx?: number;
 }
 
 // Re-exported so existing importers (useGameOverlay) keep their ChessBoard path.
@@ -178,8 +185,25 @@ function ArrowOverlay({
         const headWidth = (MIN_HEAD_WIDTH + (MAX_HEAD_WIDTH - MIN_HEAD_WIDTH) * w) * sqSize * scale;
         const headLen = headWidth * HEAD_LENGTH_RATIO;
 
+        // Optionally pull the tail toward the tip so the arrow reads a bit
+        // shorter while its head stays anchored on the target square.
+        let tailX = x1 * sqSize;
+        let tailY = y1 * sqSize;
+        const tipX = x2 * sqSize;
+        const tipY = y2 * sqSize;
+        if (arrow.shortenTailPx) {
+          const tdx = tipX - tailX;
+          const tdy = tipY - tailY;
+          const tlen = Math.sqrt(tdx * tdx + tdy * tdy);
+          // Skip when shortening would leave no room for the arrowhead.
+          if (tlen > arrow.shortenTailPx + headLen) {
+            tailX += (tdx / tlen) * arrow.shortenTailPx;
+            tailY += (tdy / tlen) * arrow.shortenTailPx;
+          }
+        }
+
         const d = buildArrowPath(
-          x1 * sqSize, y1 * sqSize, x2 * sqSize, y2 * sqSize,
+          tailX, tailY, tipX, tipY,
           shaftHalf, headWidth / 2, headLen,
         );
 

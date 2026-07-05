@@ -93,6 +93,10 @@ const QUALITY_HOVER_ARROW_WIDTH = 0.6;
  *  subtle hint layered over the wider 0.5 engine arrows. */
 const NEXT_MOVE_ARROW_WIDTH = 0.18;
 
+/** Pixels to pull the next-move arrow's tail in, so it reads a bit shorter than
+ *  the engine arrow it overlays (head stays anchored on the target square). */
+const NEXT_MOVE_ARROW_SHORTEN_PX = 5;
+
 /**
  * True while the viewport is below the mobile breakpoint. Drives a single-tree render
  * (mobile OR desktop, never both) so the board / eval-chart / variation-tree mount once —
@@ -960,6 +964,7 @@ export default function Analysis() {
       color: NEXT_MOVE_ARROW,
       width: NEXT_MOVE_ARROW_WIDTH,
       onTop: true,
+      shortenTailPx: NEXT_MOVE_ARROW_SHORTEN_PX,
     };
   }, [currentNodeId, isOnMainLine, mainLine, nodes]);
 
