@@ -47,12 +47,12 @@ export interface BoardArrow {
    */
   onTop?: boolean;
   /**
-   * Shorten the arrow by this many pixels, pulling the tail toward the tip so
-   * the arrowhead stays anchored on the target square. Used by the analysis
-   * board's next-move arrow so it reads slightly shorter than the engine arrow
-   * it overlays. Ignored (no shortening) when it would collapse the arrow.
+   * Pull BOTH ends of the arrow in toward the middle by this fraction (0–0.45)
+   * of the source→target-center distance, dropping the tip overshoot. Centers a
+   * shorter arrow over the middle of the move — used by the analysis board's
+   * next-move arrow so it sits centered on the wider engine arrow it overlays.
    */
-  shortenTailPx?: number;
+  insetFraction?: number;
 }
 
 // Re-exported so existing importers (useGameOverlay) keep their ChessBoard path.
@@ -185,21 +185,25 @@ function ArrowOverlay({
         const headWidth = (MIN_HEAD_WIDTH + (MAX_HEAD_WIDTH - MIN_HEAD_WIDTH) * w) * sqSize * scale;
         const headLen = headWidth * HEAD_LENGTH_RATIO;
 
-        // Optionally pull the tail toward the tip so the arrow reads a bit
-        // shorter while its head stays anchored on the target square.
+        // Default endpoints: tail at source center, tip past target center.
         let tailX = x1 * sqSize;
         let tailY = y1 * sqSize;
-        const tipX = x2 * sqSize;
-        const tipY = y2 * sqSize;
-        if (arrow.shortenTailPx) {
-          const tdx = tipX - tailX;
-          const tdy = tipY - tailY;
-          const tlen = Math.sqrt(tdx * tdx + tdy * tdy);
-          // Skip when shortening would leave no room for the arrowhead.
-          if (tlen > arrow.shortenTailPx + headLen) {
-            tailX += (tdx / tlen) * arrow.shortenTailPx;
-            tailY += (tdy / tlen) * arrow.shortenTailPx;
-          }
+        let tipX = x2 * sqSize;
+        let tipY = y2 * sqSize;
+        if (arrow.insetFraction) {
+          // Center a shorter arrow over the middle of the move: pull both ends
+          // in by insetFraction of the source→target-center segment (no overshoot).
+          const inset = Math.min(Math.max(arrow.insetFraction, 0), 0.45);
+          const sx = x1 * sqSize;
+          const sy = y1 * sqSize;
+          const cx = cx2 * sqSize;
+          const cy = cy2 * sqSize;
+          const dx = cx - sx;
+          const dy = cy - sy;
+          tailX = sx + dx * inset;
+          tailY = sy + dy * inset;
+          tipX = cx - dx * inset;
+          tipY = cy - dy * inset;
         }
 
         const d = buildArrowPath(
