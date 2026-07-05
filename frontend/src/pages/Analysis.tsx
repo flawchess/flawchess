@@ -95,7 +95,7 @@ const NEXT_MOVE_ARROW_WIDTH = 0.18;
 
 /** Fraction to pull BOTH ends of the next-move arrow in, centering the shorter
  *  arrow over the middle of the wider engine arrow it overlays. */
-const NEXT_MOVE_ARROW_INSET_FRACTION = 0.18;
+const NEXT_MOVE_ARROW_INSET_FRACTION = 0.06;
 
 /**
  * True while the viewport is below the mobile breakpoint. Drives a single-tree render
