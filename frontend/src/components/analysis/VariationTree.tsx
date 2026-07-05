@@ -47,6 +47,44 @@ function zebraBg(rowIdx: number): string {
   return rowIdx % 2 === 1 ? ZEBRA_ROW_BG : '';
 }
 
+/** Nearest scrollable ancestor of `el`, or null if none before the document. */
+function scrollableParent(el: HTMLElement): HTMLElement | null {
+  let node = el.parentElement;
+  while (node) {
+    const overflowY = getComputedStyle(node).overflowY;
+    if (overflowY === 'auto' || overflowY === 'scroll') return node;
+    node = node.parentElement;
+  }
+  return null;
+}
+
+/**
+ * Scrolls ONLY the move-list scroll container to reveal `el` — never the window.
+ *
+ * BUG FIX: `el.scrollIntoView()` scrolls every scrollable ancestor, including the
+ * document. The Analysis page scrolls on the window (the move list is a nested
+ * overflow-y-auto scroller inside it), so when opening a game at a specific ply the
+ * initial `scrollIntoView({block:'start'})` top-align dragged the WHOLE page down on
+ * Firefox to bring the selected move to the top of the viewport, instead of only
+ * scrolling the move list. Scoping the scroll to the container keeps the page at top.
+ */
+function scrollActiveIntoView(el: HTMLElement, align: 'start' | 'nearest'): void {
+  const container = scrollableParent(el);
+  if (!container) return;
+  const elRect = el.getBoundingClientRect();
+  const cRect = container.getBoundingClientRect();
+  if (align === 'start') {
+    container.scrollTo({ top: container.scrollTop + (elRect.top - cRect.top), behavior: 'auto' });
+    return;
+  }
+  // 'nearest' — only scroll when the row is outside the container's viewport.
+  if (elRect.top < cRect.top) {
+    container.scrollTo({ top: container.scrollTop + (elRect.top - cRect.top), behavior: 'smooth' });
+  } else if (elRect.bottom > cRect.bottom) {
+    container.scrollTo({ top: container.scrollTop + (elRect.bottom - cRect.bottom), behavior: 'smooth' });
+  }
+}
+
 // ─── Props ───────────────────────────────────────────────────────────────────
 
 /** Flaw marker entry for a mainLine node — tactic motifs + non-tactic severity. */
@@ -630,10 +668,10 @@ function DesktopTree({
         return;
       }
       didInitialAlign.current = true;
-      el.scrollIntoView({ block: 'start', behavior: 'auto' });
+      scrollActiveIntoView(el, 'start');
       return;
     }
-    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    scrollActiveIntoView(el, 'nearest');
   }, [currentNodeId, initialNodeId, lastNodeId]);
 
   if (mainLine.length === 0 && nodes.size === 0) {

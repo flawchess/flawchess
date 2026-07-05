@@ -10,6 +10,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Fixed
 
+- **Opening a game no longer scrolls the whole Analysis page down** — when opening `/analysis` at a specific move (the "Analyze" button's ply), the move list aligned the selected move to the top by scrolling every scrollable ancestor, which on Firefox dragged the entire page down instead of just the move list. The alignment is now scoped to the move-list container, so the page opens at the top. (Quick 260705)
 - **Maia now works on browsers whose WebGPU rejects a shader** — on some devices (e.g. Firefox on Windows) WebGPU accepts the model but fails to compile a compute shader (`Clip`) on the first inference, which left the human-move model silently dead. The worker now runs a warmup inference while probing WebGPU, so a lazy shader failure is detected up front and cleanly falls back to CPU (WASM) instead of breaking Maia. These onnxruntime failures are also now reported to Sentry (they previously only printed to the console). (Quick 260705)
 
 ### Changed
