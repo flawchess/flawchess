@@ -8,8 +8,31 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v1.32] Maia-3 Human-Move Enrichment — 2026-07-05
+
+A human-model second opinion on the analysis board. Maia-3 (a chess engine trained to predict
+what a human at a given rating would actually play) now runs live in your browser on `/analysis`,
+alongside Stockfish: a "Moves by Rating" chart shows which moves players at each rating pick, a
+Maia win/draw/loss bar sits on the left of the board opposite the Stockfish bar on the right, and
+each shown human move is colored by Stockfish quality so the chart surfaces the *human trap* — a
+popular move the engine grades as a mistake. Everything runs client-side with nothing stored. The
+project also relicensed from MIT to AGPL-3.0 to host the Maia model cleanly.
+
+### Added
+
+- **Prose position verdict below the move-quality bar** — when no bar segment is hovered, the text slot below the move-quality bar on `/analysis` now reads a plain-language verdict of how hard the position is to play at the selected rating (safe, tricky, or highly difficult), based on how much the humans-at-this-rating probability mass falls on Stockfish-graded mistakes or blunders. It names the moves worth knowing — the clean options in a safe position, or the risky ones plus a reliable escape move in a tricky/difficult one — each as a hoverable/tappable word that draws its board arrow and shows its human play-rate + Stockfish eval. (Quick 260705-m3z)
+- **Move-quality bar under the human-move chart** — below the Human Move Probability chart and ELO slider on `/analysis`, a stacked bar splits the shown candidate moves by Stockfish-graded severity — Blunders (red), Mistakes (orange), Inaccuracies (yellow), and Good Moves (green) — weighted by how often humans at the selected rating play them. Hover (or tap) a segment to list its moves with their play rates and draw an arrow for each on the board in the matching severity color. (Quick 260705-kfg)
+- **Stockfish-graded Maia moves on the "Moves by Rating" chart** — the human-move chart on `/analysis` now colors each shown line (and its end-of-line SAN label) by Stockfish move quality using FlawChess's own thresholds — dark-green best, light-green good, yellow inaccuracy, orange mistake, red blunder — so the chart surfaces the *human trap* (a popular move the engine grades as a mistake), not just which moves people play. The line set is now the moves people actually play (Maia cumulative-probability ≥ 0.95 ∪ the engine's best move) instead of a fixed top-6 cap, so sharp positions show fewer lines and quiet ones more. Played and best moves stay emphasized by stroke width regardless of color, and the hover tooltip adds each move's quality word and eval. Grades stream in and refine as the search deepens; everything runs in your browser with nothing stored, and the eval bar / engine card are unaffected. (Phase 151.1)
+
+### Changed
+
+- **Analysis eval bars are now labeled and color-coded** — the two bars flanking the board carry a small caption ("Maia" in violet on the left, "SF" in blue on the right) and a matching colored frame, echoed in the engine card header and the human-panel header, so it's obvious at a glance which bar is the human-move model and which is Stockfish (the white/black advantage fills are unchanged). The player names and clocks now align with the board's left and right edges to make room for the captions, and on mobile the name/clock strips render above and below the board. (Phase 151.1 UAT)
+- **Second-best engine move is now light blue** — the analysis board's second-best Stockfish arrow and its eval badge changed from grey to light blue, so the top two engine lines read as a blue hierarchy (solid blue best, light blue second). (Phase 151.1 UAT)
+- **Human-move panel polish** — the panel is titled "Maia - Human Move Probability", the ELO slider moved below the chart, and its accent is now violet (was red, which clashed with move-quality severity colors). The chart's "you are here" ELO marker is now a plain white dashed line (the "You: <elo>" caption was dropped). On mobile the tabs gained icons and read "Moves", "Chart", "Maia", and "Tags", and the Maia tab drops the redundant header and uses a shorter chart. (Phase 151.1 UAT)
+
 ### Fixed
 
+- **Maia expected-score bar showed the wrong side when Black was to move** — the human-model eval bar read the position from the mover's perspective, so on Black-to-move positions it filled as if the evaluation were White's. It now always reads from White's perspective, matching the Stockfish bar and the board. (Phase 151.1 UAT)
 - **Opening-cache crash on transpositions** — analyzing a game that reaches the same position twice (a transposition or repetition) no longer crashes the opening-eval cache write; duplicate positions in a batch are now collapsed to a single row. Affected games self-heal on the next analysis pass. (FLAWCHESS-8E)
 
 ## [v1.31] Pipeline Consolidation — 2026-07-04
@@ -975,7 +998,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.31...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.32...HEAD
+[v1.32]: https://github.com/flawchess/flawchess/compare/v1.31...v1.32
 [v1.31]: https://github.com/flawchess/flawchess/compare/v1.30...v1.31
 [v1.30]: https://github.com/flawchess/flawchess/compare/v1.29...v1.30
 [v1.29]: https://github.com/flawchess/flawchess/compare/v1.28...v1.29

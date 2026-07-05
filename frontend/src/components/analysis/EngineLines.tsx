@@ -3,8 +3,8 @@
  *
  * Each line is a single row:
  *  - a colored eval badge (read from pvLines[i].evalCp / pvLines[i].evalMate, D-03):
- *    blue (BEST_MOVE_ARROW) on the best line, grey (ARROW_NEUTRAL) on the second —
- *    matching the board's best-move / second-best arrow colors (Quick 260627-mt8).
+ *    solid blue (BEST_MOVE_ARROW) on the best line, light blue (SECOND_BEST_ARROW) on
+ *    the second — matching the board's best-move / second-best arrow colors (151.1 UAT).
  *  - up to 5 clickable PV move chips that call onMoveClick(from, to)
  *
  * The search depth is shown by the engine info line above this component, not here.
@@ -25,7 +25,12 @@ import { ChevronDown } from 'lucide-react';
 import type { PvLine } from '@/hooks/uciParser';
 import { moveLabel } from '@/lib/moveNumberLabel';
 import { cn } from '@/lib/utils';
-import { ARROW_NEUTRAL, BEST_MOVE_ARROW, MOVE_HIGHLIGHT_GOOD } from '@/lib/theme';
+import {
+  SECOND_BEST_ARROW,
+  SECOND_BEST_BADGE_TEXT,
+  BEST_MOVE_ARROW,
+  MOVE_HIGHLIGHT_GOOD,
+} from '@/lib/theme';
 import { MiniBoard } from '@/components/board/MiniBoard';
 import { Tooltip } from '@/components/ui/tooltip';
 
@@ -232,8 +237,11 @@ function PvLineRow({
   // SAN labels + per-step FENs (replayed from baseFen). Null SAN falls back to raw
   // UCI; null FEN skips the hover preview for that (and every later) chip.
   const steps = replayPvLine(baseFen, moves);
-  // Badge color matches the board arrow: blue best move, grey second-best.
-  const badgeColor = lineIndex === 0 ? BEST_MOVE_ARROW : ARROW_NEUTRAL;
+  // Badge matches the board arrow: solid blue best move, light-blue second-best.
+  // The light-blue badge needs dark ink for the eval number to stay readable.
+  const isBest = lineIndex === 0;
+  const badgeColor = isBest ? BEST_MOVE_ARROW : SECOND_BEST_ARROW;
+  const badgeTextColor = isBest ? undefined : SECOND_BEST_BADGE_TEXT;
 
   return (
     <div
@@ -245,10 +253,10 @@ function PvLineRow({
         addSeparator && 'border-t border-border',
       )}
     >
-      {/* Eval badge — blue (best) / grey (second), matching the arrow colors. */}
+      {/* Eval badge — solid blue (best) / light blue (second), matching the arrows. */}
       <span
         className={compact ? BADGE_CLASS_COMPACT : BADGE_CLASS}
-        style={{ backgroundColor: badgeColor }}
+        style={{ backgroundColor: badgeColor, color: badgeTextColor }}
         aria-label={`Line ${lineIndex + 1}: ${scoreText}`}
       >
         {scoreText}

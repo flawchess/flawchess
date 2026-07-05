@@ -6,7 +6,8 @@
     "shadcn",
     "tailwindcss",
     "tailwindcss-safe-area",
-    "tw-animate-css"
+    "tw-animate-css",
+    "onnxruntime-web"
   ],
   "ignoreExportsUsedInFile": true,
   "ignore": [

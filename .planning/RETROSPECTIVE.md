@@ -4,6 +4,45 @@
 
 > Note: v1.18, v1.19, v1.20, v1.23, v1.25, and v1.27 closes did not add retrospective sections (only the ROADMAP archives + MILESTONES entries were written). Not backfilled here to avoid reconstructing reflections after the fact; their facts live in the corresponding `milestones/v1.XX-ROADMAP.md` and `MILESTONES.md`.
 
+## Milestone: v1.32 — Maia-3 Human-Move Enrichment
+
+**Shipped:** 2026-07-05 (merged to `main`; prod deploy pending)
+**Phases:** 2 (151, 151.1) | **Plans:** 10
+
+### What Was Built
+
+Maia-3, a human move-prediction engine, added as a second in-browser engine on `/analysis`: onnxruntime-web inference of the unmodified, version-pinned `maia3_simplified.onnx` in a lazy Web Worker with our own MIT board→tensor/ELO/softmax glue, rendering a per-ELO "Moves by Rating" chart + a Maia WDL eval bar on the LEFT of the board (Stockfish on the RIGHT), both live per navigation with zero server round-trip and nothing persisted. Phase 151.1 (SEED-083) recolored the chart lines by Stockfish move quality on FlawChess's own expected-score-drop thresholds and replaced the fixed top-6 cap with the Maia cumulative-probability ≥ 0.95 ∪ {SF-best} set, graded by a *second, fully isolated* Stockfish WASM worker doing one `searchmoves`+MultiPV root search. The repo relicensed MIT → AGPL-3.0 with a visible attribution notice. One read-only backend field (`current_rating`); no schema, no migration.
+
+### What Worked
+
+- **Spike-first de-risking.** Feasibility (client-side AGPL bundling, tensor I/O contract, `searchmoves`+MultiPV on the vendored WASM) was settled by spikes 004–006 and a throwaway Plan-01 real-binary probe *before* any production code — so the two phases were mostly execution, not discovery. The multipv-reordering "landmine" (grade cache must key on pv[0]'s SAN, never the multipv index) was caught in the probe and encoded in a MockWorker test harness.
+- **Reusing FlawChess's own primitives.** 151.1 graded moves through the existing `liveFlaw.ts`/`flawThresholds.ts` expected-score bands rather than importing maiachess's 3-class scheme — the chart's coloring is consistent with game analysis / live-flaw coloring elsewhere in the app, with no new thresholds to calibrate.
+- **Structural isolation over shared state.** The grading engine is a wholly separate Web Worker instance that never reads the primary eval-bar engine; git history confirms it never touched `useStockfishEngine.ts`. That made "does it disturb the eval bar / engine card?" answerable by inspection.
+
+### What Was Inefficient
+
+- **MAIA-06 latency never measured.** The requirement called for a per-device board-response budget, but no numeric target was ever defined and no cold-load/per-position timings were recorded — the model-size decision (D-10) rests on a qualitative "felt responsive" sign-off. REQUIREMENTS.md initially marked MAIA-06 an unconditional "Complete," which the verifier flagged as overstating delivery; it closed `passed_with_override`. Lesson: if a requirement names a measurable target, define the number at plan time or explicitly downgrade the clause — don't let "felt fine" silently satisfy a metric.
+- **Policy-vocab reconstruction was best-effort.** The 4352-entry Maia policy vocabulary was reconstructed (base + underpromotion lanes) rather than verified against CSSLab's literal index order until the VALID-01 live move-label check — a late, manual gate for something that could have been cross-checked mechanically against the reference client earlier.
+
+### Patterns Established
+
+- **Client-side ML engine in a lazy Web Worker** (onnxruntime-web + MIT glue, route-level `React.lazy` so it never enters the initial bundle) — a reusable shape for future in-browser models (SEED-082).
+- **Second isolated grading worker** alongside the primary engine, with a pv[0]-keyed per-FEN cache — reusable whenever a surface needs engine evals without perturbing the main analysis engine.
+- **Demote-to-seed at close** — a not-started phase (152) with its requirements captured verbatim into a seed (SEED-084), keeping the shipped milestone honest rather than carrying dead scope.
+
+### Key Lessons
+
+- De-risk the genuinely uncertain thing with a throwaway spike/probe and bake its findings into a test — it turns a scary integration into routine execution.
+- A "measured and acceptable" acceptance clause needs a number defined up front, or it degrades into an unfalsifiable vibe check.
+- Reuse the product's own thresholds/tokens for anything user-facing before importing an external reference's scheme.
+
+### Cost Observations
+
+- Two tightly-scoped browser-only phases over ~2 days; the bulk of the diff is the vendored model + WASM assets + planning docs (real code ~7.4k lines across 56 files).
+- Heavy reliance on human live-UAT for the two irreducibly-visual/latency gates (calibration eyeball, per-device latency) — jsdom can't cover them.
+
+---
+
 ## Milestone: v1.31 — Pipeline Consolidation
 
 **Completed:** 2026-07-04 (merged to `main`; prod deploy pending)

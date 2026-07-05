@@ -17,4 +17,8 @@ export interface UserProfile {
   impersonation: ImpersonationContext | null;
   // BETA-01: beta feature flag (e.g. Endgame Insights in v1.11). Default false; flipped via direct DB op.
   beta_enabled: boolean;
+  // MAIA-04 / D-07: rating from the user's most-recent game (across platforms),
+  // read-only. Feeds the free-play ELO-selector default (Plan 06). Null when the
+  // user has no games or their most recent game is unrated.
+  current_rating: number | null;
 }

@@ -39,10 +39,10 @@ function forceExitAfterBuild(): Plugin {
 export default defineConfig({
   envDir: path.resolve(__dirname, '..'), // Load .env from project root
   optimizeDeps: {
-    // Prevent Vite's esbuild optimizer from relocating the stockfish package JS
-    // to .vite/deps/, which would break its relative WASM path.
-    // Engine files live in public/engine/ and are served verbatim.
-    exclude: ['stockfish'],
+    // Prevent Vite's esbuild optimizer from relocating the stockfish/onnxruntime-web
+    // package JS to .vite/deps/, which would break their relative WASM paths.
+    // Runtime assets live in public/engine/ and public/maia/ and are served verbatim.
+    exclude: ['stockfish', 'onnxruntime-web'],
   },
   plugins: [
     ogImageHashPlugin(),
@@ -98,7 +98,10 @@ export default defineConfig({
         // Excluding ALL HTML from the precache removes that stale-shell route; the shell
         // is instead served NetworkFirst below (fresh when online, cached when offline).
         // WASM stays excluded too (iOS Cache API ~50 MB limit) — HTTP cache handles it.
-        globIgnores: ['**/*.wasm', '**/*.html'],
+        // The Maia ONNX model (public/maia/*.onnx, ~44 MB) is likewise excluded from the
+        // precache manifest — it alone exceeds the iOS Cache API limit; the onnxruntime-web
+        // runtime (ort-wasm-simd-threaded.wasm) is already covered by the **/*.wasm entry.
+        globIgnores: ['**/*.wasm', '**/*.html', '**/*.onnx'],
         runtimeCaching: [
           {
             // Backend: never cached, always network. Registered FIRST so /api/*

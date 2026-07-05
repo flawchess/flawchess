@@ -34,7 +34,7 @@
 - ✅ **v1.29 Live-Engine Analysis Page** — Phases 136–140 (shipped 2026-06-29; released #227) — see [milestones/v1.29-ROADMAP.md](milestones/v1.29-ROADMAP.md)
 - ✅ **v1.30 Forcing-Line Tactic Gate** — Phases 141–147 (shipped 2026-06-30; releases #229/#230/#231/#234) — see [milestones/v1.30-ROADMAP.md](milestones/v1.30-ROADMAP.md)
 - ✅ **v1.31 Pipeline Consolidation** — Phases 148–150 (completed 2026-07-04; merged to `main`, prod deploy pending) — see [milestones/v1.31-ROADMAP.md](milestones/v1.31-ROADMAP.md)
-- 🚧 **v1.32 Maia-3 Human-Move Enrichment** — Phases 151–152 (in progress; started 2026-07-04) — browser-only client-side Maia-3, zero DB writes; relicense MIT → AGPL-3.0 (SEED-081)
+- ✅ **v1.32 Maia-3 Human-Move Enrichment** — Phases 151, 151.1 (shipped 2026-07-05; Phase 152 demoted to SEED-084; prod deploy pending) — see [milestones/v1.32-ROADMAP.md](milestones/v1.32-ROADMAP.md)
 
 ## Progress
 
@@ -104,38 +104,8 @@
 | 148. Pipeline & tactic correctness fixes (code-review 2026-07-02) | 4/4 | Complete    | 2026-07-04 |
 | 149. Retire & Prune | 5/5 | Complete    | 2026-07-04 |
 | 150. Consolidate Write Path | 5/5 | Complete    | 2026-07-04 |
-| 151. Maia in the Browser + All-Position Surfaces | 0/0 | Not started | - |
-| 152. Flaw Overlay (Pillars A + B) | 0/0 | Not started | - |
-
-## Active Milestone: v1.32 Maia-3 Human-Move Enrichment
-
-Browser-only, client-side onnxruntime-web inference. **Zero DB writes** — no new backend endpoints, no schema, no migration. Add Maia-3 (a human move-prediction engine) as a second, in-browser engine on the analysis board: where Stockfish says "what is objectively best," Maia says "what a player at *your* rating would actually do here" — the missing half of coaching, directly on-brand ("Engines are flawless, humans play FlawChess"). Relicense MIT → AGPL-3.0 so the AGPL Maia model hosts with zero combined-work ambiguity. Feasibility settled by spikes 004–006; design locked in SEED-081. Pillar C (history-wide aggregate rollup) and SEED-082 (human-playable-line engine) are explicitly out of scope (persistence-gated, future milestone).
-
-### Phase 151: Maia in the Browser + All-Position Surfaces
-**Goal**: Maia-3 runs live in-browser on the analysis board and, for every position, surfaces a "Moves by Rating" chart plus a Maia WDL eval bar on the LEFT of the board — standalone user value, and the live calibration gate that proves Maia is trustworthy enough to build on.
-**Depends on**: Nothing (first phase of the milestone; feasibility de-risked by spikes 004–006)
-**Requirements**: LIC-01, LIC-02, MAIA-01, MAIA-02, MAIA-03, MAIA-04, MAIA-05, MAIA-06, SURF-01, SURF-02, SURF-03, SURF-04, SURF-05, VALID-01
-**Success Criteria** (what must be TRUE):
-  1. Hands-on de-risking happens FIRST — the version-pinned `maia3_simplified.onnx` is obtained, its exact input encoding (board planes + how ELO is fed) and output tensor layout (policy 64×64 vs flat; WDL order) are confirmed against the reference client, and it loads via onnxruntime-web with no unsupported-op errors (MAIA-01, MAIA-06).
-  2. On any position, a "Moves by Rating" chart renders one probability line per candidate move across the ELO ladder, with a vertical "you are here" reference line at the player's rating-at-game-time, the played and engine-best moves emphasized, and the line set capped at top-N-by-peak ∪ {played, best} (SURF-01/02/03, MAIA-04).
-  3. A Maia WDL eval bar renders on the LEFT of the board and the Stockfish eval bar on the RIGHT, both shown live for every position and recomputing on every board navigation with no server round-trip (SURF-04/05).
-  4. Maia-3 runs entirely client-side — onnxruntime-web in a Web Worker, lazy-loaded only when the analysis board opens (never in the initial bundle) — with our own MIT glue (board→tensor, ELO input, legal-move masking, softmax) producing a normalized, deterministic per-legal-move distribution + WDL from a FEN + ELO, and nothing persists (ephemeral, board-session-scoped cache only) (MAIA-02/03/05).
-  5. The repo is relicensed to AGPL-3.0 and the app shows a visible Maia attribution + offer-source notice (link to the CSSLab source repo + AGPL license text + the model artifact) citing the Chessformer paper (LIC-01/02).
-  6. Maia's calibration is validated by eyeballing live output across representative positions, and download size + per-position latency are measured on desktop and mobile, before the feature is considered shippable — the ephemeral in-browser surface is itself the quality gate (VALID-01).
-**Plans**: TBD
-**UI hint**: yes
-
-### Phase 152: Flaw Overlay (Pillars A + B)
-**Goal**: When the current move is a flaw, interpret it in human terms on top of the Phase 151 surfaces — a salience × trainability verdict banner plus a Maia-WDL practical-severity reframe of how bad the flaw really is.
-**Depends on**: Phase 151 (reuses the all-position "Moves by Rating" chart + Maia WDL eval bar)
-**Requirements**: FLAW-01, FLAW-02, FLAW-03, FLAW-04
-**Success Criteria** (what must be TRUE):
-  1. When the current move is a flaw, a verdict banner overlays the chart with the salience × trainability quadrant call ("Growth edge — drill this" / "Even masters fall for this" / "You rarely err here" / above-your-level) (FLAW-01).
-  2. The verdict derives salience = `P(blunder move | your ELO)` and trainability = `P(blunder | your ELO) − P(blunder | top ELO)` as an endpoint difference from the stored curve — robust to non-monotonic (hump/U) curve shapes, never a local slope (FLAW-02).
-  3. The flaw carries a Maia-WDL practical-severity reframe alongside the objective Stockfish eval — the human win% reframes how bad the flaw is, with Stockfish staying the objective source of truth (FLAW-03).
-  4. Where Maia's calibration is not trustworthy for the relevant ELO bucket, the verdict is withheld rather than shown wrong (precision-first, consistent with the tactic-tag NULL-on-low-confidence stance) (FLAW-04).
-**Plans**: TBD
-**UI hint**: yes
+| 151. Maia in the Browser + All-Position Surfaces | 6/6 | Complete   | 2026-07-05 |
+| 151.1. Stockfish-graded Maia moves (INSERTED, SEED-083) | 4/4 | Complete | 2026-07-05 |
 
 ## Backlog
 
@@ -163,6 +133,20 @@ Plans:
 *Phase 999.7 (LLM Endgame-Insights Statistical-Reasoning Rework) promoted to active Phase 102 (v1.23) on 2026-06-01 via `/gsd-explore`; shipped 2026-06-03.*
 
 *Phase 103 (Endgame report LLM prompt refinements) shipped 2026-06-03 as an unplanned follow-on under v1.23 — see the collapsed v1.23 block above and [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md).*
+
+<details>
+<summary>✅ v1.32 Maia-3 Human-Move Enrichment (Phases 151, 151.1) — SHIPPED 2026-07-05 (prod deploy pending)</summary>
+
+Browser-only, client-side onnxruntime-web inference — **zero DB writes** (no schema, no migration; one read-only `current_rating` field on `/users/me/profile` is the only backend touch). Added Maia-3 (a human move-prediction engine) as a second, in-browser engine on the `/analysis` board: where Stockfish says "what is objectively best," Maia says "what a player at *your* rating would actually do here." Relicensed MIT → AGPL-3.0 so the AGPL Maia model hosts with zero combined-work ambiguity. Sourced from SEED-081; feasibility settled by spikes 004–006. Phase 152 (Flaw Overlay, Pillars A + B) was demoted to SEED-084 at close.
+
+- [x] Phase 151: Maia in the Browser + All-Position Surfaces (6/6 plans) — relicense MIT → AGPL-3.0 + always-visible `MaiaAttribution`; unmodified version-pinned `maia3_simplified.onnx` via onnxruntime-web in a lazy Web Worker; original MIT glue (`maiaEncoding.ts`) → normalized per-legal-move distribution + WDL from FEN + ELO; "Moves by Rating" chart + Maia WDL bar (LEFT) / Stockfish bar (RIGHT), live per navigation; 3-column desktop + mobile Human tab; backend read-only `current_rating`; VALID-01 live calibration sign-off. Verified `passed_with_override` (MAIA-06 latency-measurement clause accepted) — completed 2026-07-05
+- [x] Phase 151.1: Stockfish-graded Maia moves on the Moves-by-Rating chart (INSERTED, SEED-083) (4/4 plans) — chart lines + SAN labels recolored by Stockfish quality on FlawChess's own expected-score-drop thresholds (dark-green best → red blunder); fixed top-6 cap replaced by the Maia cumulative-probability ≥ 0.95 ∪ {SF-best} set; a second, fully isolated Stockfish WASM grading worker (ONE `searchmoves`+MultiPV root search, pv[0]-keyed cache); UAT polish added a move-quality bar + plain-language position-difficulty verdict — completed 2026-07-05
+
+**Deferred at close:** Pillars A + B (Flaw Overlay, FLAW-01..04) → [SEED-084](seeds/SEED-084-flaw-overlay-pillars-a-b.md); Pillar C (aggregate rollup) + SEED-082 (human-playable-line engine) remain persistence-gated future work. **Not yet deployed to production** (ships with the pending v1.31 deploy on the next `bin/deploy.sh`).
+
+See [milestones/v1.32-ROADMAP.md](milestones/v1.32-ROADMAP.md) for full details.
+
+</details>
 
 <details>
 <summary>✅ v1.31 Pipeline Consolidation (Phases 148–150) — COMPLETE 2026-07-04 (prod deploy pending)</summary>
