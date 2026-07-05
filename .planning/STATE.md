@@ -26,15 +26,15 @@ Last activity: 2026-07-05 — Milestone v2.0 roadmap created
 
 See: .planning/PROJECT.md (updated 2026-07-04 after v1.31 milestone close)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: v2.0 FlawChess Engine roadmap created (SEED-082) — 5 phases (153 pure search core; 154 real providers/worker pool; 155 React hook + anytime UI; 156 board arrows + toggles; 157 game-review overlay), all 21 v2.0 requirements mapped (REQUIREMENTS.md's own "19 total" placeholder was a miscount — corrected to 21 in the traceability table). Next: `/gsd-plan-phase 153`. Client-side-only, no backend/schema/migrations/new-deps — builds on the shipped v1.29 Stockfish.wasm + v1.32 Maia infra. **Carryover: neither v1.31 nor v1.32 is deployed to production** — both sit on `main`; the next `bin/deploy.sh` ships them (v1.31 first).
+Current focus: v2.0 FlawChess Engine roadmap created (SEED-082) — 5 phases (153 pure search core; 154 real providers/worker pool; 155 React hook + anytime UI; 156 board arrows + toggles; 157 game-review overlay), all 21 v2.0 requirements mapped (REQUIREMENTS.md's own "19 total" placeholder was a miscount — corrected to 21 in the traceability table). Next: `/gsd-plan-phase 153`. Client-side-only, no backend/schema/migrations/new-deps — builds on the shipped, deployed v1.29 Stockfish.wasm + v1.32 Maia infra. v1.31 and v1.32 are both live in production.
 
 ## Milestone Progress
 
 Thirty-two milestones complete (v1.0–v1.32).
 
-v1.32 Maia-3 Human-Move Enrichment shipped 2026-07-05 — 2 phases (151, 151.1), 10 plans. Client-side Maia-3 (`maia3_simplified.onnx` via onnxruntime-web in a lazy Web Worker) on `/analysis`: a per-ELO "Moves by Rating" chart + a Maia WDL eval bar (LEFT; Stockfish RIGHT), live per navigation, zero server round-trip, nothing persisted. Phase 151.1 (SEED-083) recolored chart lines by Stockfish move quality and swapped the top-6 cap for the Maia ≥0.95-mass ∪ {SF-best} set via a second isolated grading worker. Repo relicensed MIT → AGPL-3.0. Phase 152 (Flaw Overlay, Pillars A+B) demoted to SEED-084; MAIA-06 latency measurement accepted as override. No schema/migration; one read-only `current_rating` backend field. Archived to milestones/v1.32-ROADMAP.md + v1.32-REQUIREMENTS.md, phases to milestones/v1.32-phases/, tagged v1.32. **Not yet deployed to prod.**
+v1.32 Maia-3 Human-Move Enrichment shipped 2026-07-05 — 2 phases (151, 151.1), 10 plans. Client-side Maia-3 (`maia3_simplified.onnx` via onnxruntime-web in a lazy Web Worker) on `/analysis`: a per-ELO "Moves by Rating" chart + a Maia WDL eval bar (LEFT; Stockfish RIGHT), live per navigation, zero server round-trip, nothing persisted. Phase 151.1 (SEED-083) recolored chart lines by Stockfish move quality and swapped the top-6 cap for the Maia ≥0.95-mass ∪ {SF-best} set via a second isolated grading worker. Repo relicensed MIT → AGPL-3.0. Phase 152 (Flaw Overlay, Pillars A+B) demoted to SEED-084; MAIA-06 latency measurement accepted as override. No schema/migration; one read-only `current_rating` backend field. Archived to milestones/v1.32-ROADMAP.md + v1.32-REQUIREMENTS.md, phases to milestones/v1.32-phases/, tagged v1.32. **Deployed to production.**
 
-v1.31 Pipeline Consolidation completed 2026-07-04 — 3 phases (148, 149, 150), 14 plans. Server-side-only consolidation: retired the dead Gen-1 eval protocol and unified the copy-pasted eval write path (`apply_completion_decision()` 3→1, `_classify_with_overlay` 4→1, per-ply diff/upsert replacing delete-then-insert, `eval_apply.py`/`eval_entry.py` split), proven byte-identical. No behavior change. Archived, tagged v1.31. **Not yet deployed to prod** (last prod release #244).
+v1.31 Pipeline Consolidation completed 2026-07-04 — 3 phases (148, 149, 150), 14 plans. Server-side-only consolidation: retired the dead Gen-1 eval protocol and unified the copy-pasted eval write path (`apply_completion_decision()` 3→1, `_classify_with_overlay` 4→1, per-ply diff/upsert replacing delete-then-insert, `eval_apply.py`/`eval_entry.py` split), proven byte-identical. No behavior change. Archived, tagged v1.31. **Deployed to production.**
 
 v1.30 Forcing-Line Tactic Gate shipped 2026-06-30 — 7 phases (141–147), 25 plans; released across PRs #229/#230/#231/#234. An engine-free `forcing_line_gate` module over persisted MultiPV=2 blobs (`allowed_pv_lines`/`missed_pv_lines` JSONB on `game_flaws`) gates the v1.28 tactic tags to real forced tactics; `retag_flaws.py` makes every threshold change a seconds-fast engine-free re-derivation; the continuation eval + blob backfill run on the remote fleet via an atomic `/atomic-lease`/`/atomic-submit` pipeline (Phases 146/147, SEED-071/074). Known gap: the local in-process drain re-mints ~9/3.36M ungated cp tags (self-heals via tier-4, not rollback-class). Archived to milestones/v1.30-ROADMAP.md + v1.30-REQUIREMENTS.md, tagged v1.30.
 
@@ -84,7 +84,7 @@ None active.
 
 ### Blockers/Concerns
 
-- v1.31 is complete on `main` but **not yet deployed to production** — deploy is the next step (`bin/deploy.sh` / `/deploy`).
+- None active. (v1.31 and v1.32 are both deployed to production.)
 
 ### Quick Tasks Completed
 
@@ -107,7 +107,7 @@ Items acknowledged and deferred at **v1.32 milestone close on 2026-07-05** (ackn
 | seeds | 8 dormant → now 8 active after housekeeping: SEED-081 (Maia-3 milestone) + SEED-083 (Stockfish-graded moves, shipped as Phase 151.1) moved to `seeds/closed/` at close; SEED-084 (Flaw Overlay, demoted from Phase 152) newly opened; remainder (SEED-037/042/067/069/077/078/082) future/v2 | Housekept + carried |
 | known-gap | MAIA-06 per-device latency numbers never recorded | Accepted override — D-10 smallest-model choice rests on qualitative VALID-01 sign-off; no numeric board-response target was ever defined; Phase 151 verified `passed_with_override` |
 | known-gap | Local in-process drain re-mints ~9/3.36M ungated cp tags | Carried from v1.30 — self-heals via tier-4, not rollback-class; `project_local_drain_ungated_tactic_tags` |
-| deploy | v1.31 AND v1.32 not yet deployed to production | Intentional — both closed on `main`; deploy is the explicit next step (`bin/deploy.sh`); v1.31 should ship first |
+| deploy | v1.31 AND v1.32 not yet deployed to production (at v1.32 close) | Resolved — both since deployed to production |
 
 Items acknowledged and deferred at **v1.31 milestone close on 2026-07-04** (user chose "Acknowledge & proceed" on the 31-item pre-close audit):
 

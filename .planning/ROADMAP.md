@@ -33,8 +33,8 @@
 - ✅ **v1.28 Tactic Tagging** — Phases 124–135 (incl. 123.1, 128.1; Phase 130 superseded by 131–134) (shipped 2026-06-25) — see [milestones/v1.28-ROADMAP.md](milestones/v1.28-ROADMAP.md)
 - ✅ **v1.29 Live-Engine Analysis Page** — Phases 136–140 (shipped 2026-06-29; released #227) — see [milestones/v1.29-ROADMAP.md](milestones/v1.29-ROADMAP.md)
 - ✅ **v1.30 Forcing-Line Tactic Gate** — Phases 141–147 (shipped 2026-06-30; releases #229/#230/#231/#234) — see [milestones/v1.30-ROADMAP.md](milestones/v1.30-ROADMAP.md)
-- ✅ **v1.31 Pipeline Consolidation** — Phases 148–150 (completed 2026-07-04; merged to `main`, prod deploy pending) — see [milestones/v1.31-ROADMAP.md](milestones/v1.31-ROADMAP.md)
-- ✅ **v1.32 Maia-3 Human-Move Enrichment** — Phases 151, 151.1 (shipped 2026-07-05; Phase 152 demoted to SEED-084; prod deploy pending) — see [milestones/v1.32-ROADMAP.md](milestones/v1.32-ROADMAP.md)
+- ✅ **v1.31 Pipeline Consolidation** — Phases 148–150 (shipped 2026-07-04; deployed to production) — see [milestones/v1.31-ROADMAP.md](milestones/v1.31-ROADMAP.md)
+- ✅ **v1.32 Maia-3 Human-Move Enrichment** — Phases 151, 151.1 (shipped 2026-07-05; Phase 152 demoted to SEED-084; deployed to production) — see [milestones/v1.32-ROADMAP.md](milestones/v1.32-ROADMAP.md)
 - 🚧 **v2.0 FlawChess Engine** — Phases 153–157 (in progress; started 2026-07-05) — client-side practical-play analysis engine (Stockfish + Maia expectimax-in-MCTS) on `/analysis`, zero server load (SEED-082)
 
 ## Progress
