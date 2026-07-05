@@ -8,6 +8,16 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v1.32] Maia-3 Human-Move Enrichment — 2026-07-05
+
+A human-model second opinion on the analysis board. Maia-3 (a chess engine trained to predict
+what a human at a given rating would actually play) now runs live in your browser on `/analysis`,
+alongside Stockfish: a "Moves by Rating" chart shows which moves players at each rating pick, a
+Maia win/draw/loss bar sits on the left of the board opposite the Stockfish bar on the right, and
+each shown human move is colored by Stockfish quality so the chart surfaces the *human trap* — a
+popular move the engine grades as a mistake. Everything runs client-side with nothing stored. The
+project also relicensed from MIT to AGPL-3.0 to host the Maia model cleanly.
+
 ### Added
 
 - **Prose position verdict below the move-quality bar** — when no bar segment is hovered, the text slot below the move-quality bar on `/analysis` now reads a plain-language verdict of how hard the position is to play at the selected rating (safe, tricky, or highly difficult), based on how much the humans-at-this-rating probability mass falls on Stockfish-graded mistakes or blunders. It names the moves worth knowing — the clean options in a safe position, or the risky ones plus a reliable escape move in a tricky/difficult one — each as a hoverable/tappable word that draws its board arrow and shows its human play-rate + Stockfish eval. (Quick 260705-m3z)
@@ -988,7 +998,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.31...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.32...HEAD
+[v1.32]: https://github.com/flawchess/flawchess/compare/v1.31...v1.32
 [v1.31]: https://github.com/flawchess/flawchess/compare/v1.30...v1.31
 [v1.30]: https://github.com/flawchess/flawchess/compare/v1.29...v1.30
 [v1.29]: https://github.com/flawchess/flawchess/compare/v1.28...v1.29
