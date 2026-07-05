@@ -117,6 +117,11 @@ function buildPlyMaps(
   const depthByPly = new Map<number, { missed?: string; allowed?: string }>();
   for (const fm of flawMarkers ?? []) {
     severityByPly.set(fm.ply, fm.severity);
+    // Quick 260705: opponent tactic arrows (crimson allowed / teal missed) are surfaced in
+    // the eval-chart tooltip (built separately in EvalChart) but NOT on the board — suppress
+    // the opponent's tactic depths here so no tactic arrow paints for them. Mirrors the same
+    // is_user gate on the move list (Quick 260628-u7d). Severity glyphs stay both-color.
+    if (!fm.is_user) continue;
     // tacticDepthBadge returns null for family-less / hidden motifs, so a bare depth
     // never paints on the board without its paired chip (same guard as the miniboard).
     // anchored=false (Quick 260628-1t5 DECISION 2): on the navigable analysis board the

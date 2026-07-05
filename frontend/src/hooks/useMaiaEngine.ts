@@ -19,6 +19,7 @@
  */
 
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
+import * as Sentry from '@sentry/react';
 import { maskAndSoftmax, softmaxWdl, expectedScore, MAIA_ELO_LADDER } from '../lib/maiaEncoding';
 import type { WdlVector } from '../lib/maiaEncoding';
 
@@ -111,6 +112,10 @@ export function useMaiaEngine({ fen, enabled, selectedElo }: UseMaiaEngineOption
   const workerRef = useRef<Worker | null>(null);
   const isReadyRef = useRef(false);
   const currentFenRef = useRef<string | null>(null);
+  /** FEN of the inference we are currently waiting on (null when nothing is in flight). */
+  const pendingFenRef = useRef<string | null>(null);
+  /** Active execution provider once the worker reports `ready` — tags Sentry errors. */
+  const backendRef = useRef<'webgpu' | 'wasm' | null>(null);
 
   /** Ephemeral, board-session-scoped FIFO cache (MAIA-05) — no persistence. */
   const cacheRef = useRef<Map<string, MaiaResult>>(new Map());
@@ -161,6 +166,16 @@ export function useMaiaEngine({ fen, enabled, selectedElo }: UseMaiaEngineOption
         return;
       }
 
+      // Keep a single inference in flight. The Maia worker can't cancel a running
+      // ONNX inference, so posting a second `analyze` only queues it behind the
+      // first — a slider drag that settles while an earlier position is still
+      // computing used to wait out that whole backlog (far slower than a direct
+      // click to the same position). Drop the request here; the result handler
+      // re-issues for whatever position is current once the running inference
+      // completes, skipping every intermediate slider position.
+      if (pendingFenRef.current !== null) return;
+
+      pendingFenRef.current = fenToAnalyze;
       setIsAnalyzing(true);
       worker.postMessage({ type: 'analyze', fen: fenToAnalyze, eloInputs: MAIA_ELO_LADDER });
     },
@@ -171,23 +186,40 @@ export function useMaiaEngine({ fen, enabled, selectedElo }: UseMaiaEngineOption
 
   // ─── Debounce (mirrors useStockfishEngine's adaptive debounce) ────────────
 
-  const [debouncedFen, setDebouncedFen] = useState<string | null>(null);
+  // The analyze trigger carries a monotonic `seq` so that navigating back to a
+  // FEN identical to the last one still re-fires the analyze effect. Keying the
+  // effect on the raw FEN string alone let React bail out of an identical-value
+  // state update, which (after a rapid slider scrub landing back on the current
+  // position) left the chart blank and the eval bar stuck at 50% — no analyze
+  // was ever issued for the resting position.
+  const [analyzeTarget, setAnalyzeTarget] = useState<{ fen: string; seq: number } | null>(null);
+  const seqRef = useRef(0);
   useEffect(() => {
-    // Drop the previous position's curve/WDL immediately so a slow (cache-miss)
-    // inference never leaves a stale curve mislabeled as the current position's.
-    setLatestResult(null);
     if (fen === null) {
-      setDebouncedFen(null);
+      setLatestResult(null);
+      setAnalyzeTarget(null);
       return;
     }
+    // Revisiting an already-analyzed position (common when scrubbing the slider
+    // back and forth) is an instant cache restore — no null-flash, and critically
+    // never leaves the curve/eval-bar stuck blank while waiting on the trigger.
+    const cached = cacheRef.current.get(fen);
+    if (cached) {
+      setLatestResult(cached);
+      return;
+    }
+    // Cache miss: drop the previous position's curve/WDL immediately so a slow
+    // inference never leaves a stale curve mislabeled as the current position's.
+    setLatestResult(null);
+    const commit = (): void => setAnalyzeTarget({ fen, seq: seqRef.current++ });
     const now = Date.now();
     const sinceLast = now - lastFenChangeAtRef.current;
     lastFenChangeAtRef.current = now;
     if (sinceLast > RAPID_STEP_DEBOUNCE_MS) {
-      setDebouncedFen(fen);
+      commit();
       return;
     }
-    const timer = setTimeout(() => setDebouncedFen(fen), RAPID_STEP_DEBOUNCE_MS);
+    const timer = setTimeout(commit, RAPID_STEP_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [fen]);
 
@@ -206,18 +238,42 @@ export function useMaiaEngine({ fen, enabled, selectedElo }: UseMaiaEngineOption
       if (msg.type === 'ready') {
         setIsReady(true);
         isReadyRef.current = true;
+        backendRef.current = msg.backend;
         return;
       }
       if (msg.type === 'result') {
-        if (msg.fen !== currentFenRef.current) return; // stale-result guard
+        // Cache every completed inference, even one whose position was already
+        // superseded — the result is valid for msg.fen, so caching it makes a
+        // later revisit (a slider scrub back) an instant cache hit instead of a
+        // recompute, and keeps the debounce-effect cache restore below effective.
         const result = buildMaiaResult(msg.fen, msg);
         cacheResult(msg.fen, result);
-        setLatestResult(result);
-        setIsAnalyzing(false);
+        // Only paint it if it still matches the on-screen position (stale guard).
+        if (msg.fen === currentFenRef.current) setLatestResult(result);
+        // Clear the in-flight flag only when the result we were waiting on lands —
+        // a superseded result must not stop the spinner for a request still running.
+        if (msg.fen === pendingFenRef.current) {
+          pendingFenRef.current = null;
+          setIsAnalyzing(false);
+          // The worker is free again — converge on the live position. If the user
+          // moved on (slider drag/scrub) while this ran, analyze where they are
+          // now, skipping the intermediate positions we deliberately never queued.
+          const current = currentFenRef.current;
+          if (current && current !== msg.fen && !cacheRef.current.has(current)) {
+            analyzeRef.current(current);
+          }
+        }
         return;
       }
-      // msg.type === 'error': surfaced as isAnalyzing=false (no partial UI state);
-      // real-model error handling is exercised manually in Plan 06 / VALID-01.
+      // msg.type === 'error': surfaced as isAnalyzing=false (no partial UI state).
+      // The worker is a classic Worker with no Sentry init, and onnxruntime-web's
+      // native failures (e.g. the Firefox/Windows `Clip` WebGPU shader error) print to
+      // console but never throw a catchable JS exception — so they reach Sentry ONLY by
+      // being forwarded here. Capture manually (CLAUDE.md frontend Sentry rules).
+      Sentry.captureException(new Error(`Maia worker error: ${msg.message}`), {
+        tags: { source: 'maia-worker', backend: backendRef.current ?? 'unknown' },
+      });
+      pendingFenRef.current = null;
       setIsAnalyzing(false);
     };
 
@@ -233,9 +289,9 @@ export function useMaiaEngine({ fen, enabled, selectedElo }: UseMaiaEngineOption
   // ─── Debounced FEN -> analyze ───────────────────────────────────────────────
 
   useEffect(() => {
-    if (!debouncedFen || !isReady) return;
-    analyze(debouncedFen);
-  }, [debouncedFen, isReady, analyze]);
+    if (!analyzeTarget || !isReady) return;
+    analyze(analyzeTarget.fen);
+  }, [analyzeTarget, isReady, analyze]);
 
   // ─── Tab-hide pause ─────────────────────────────────────────────────────────
 

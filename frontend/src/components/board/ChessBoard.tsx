@@ -40,6 +40,12 @@ export interface BoardArrow {
    * (e.g. TAC_MISSED_LABEL, TAC_ALLOWED_LABEL). Defaults to white.
    */
   labelColor?: string;
+  /**
+   * When true, this arrow is drawn last of all — above every other arrow,
+   * including hovered ones. Used by the analysis board's translucent white
+   * next-move arrow so it always stays visible on top of the engine overlay.
+   */
+  onTop?: boolean;
 }
 
 // Re-exported so existing importers (useGameOverlay) keep their ChessBoard path.
@@ -135,6 +141,9 @@ function ArrowOverlay({
 
   const sortedArrows = dedupeArrowsByMove(
     [...arrows].sort((a, b) => {
+      const at = a.onTop ? 1 : 0;
+      const bt = b.onTop ? 1 : 0;
+      if (at !== bt) return at - bt; // onTop drawn last (above everything, even hovered)
       const ah = a.isHovered ? 1 : 0;
       const bh = b.isHovered ? 1 : 0;
       if (ah !== bh) return ah - bh; // hovered drawn last (on top)

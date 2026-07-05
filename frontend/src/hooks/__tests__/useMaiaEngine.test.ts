@@ -201,24 +201,86 @@ describe('useMaiaEngine', () => {
     expect(result.current.perElo.length).toBe(MAIA_ELO_LADDER.length);
   });
 
-  it('does not analyze while hidden; re-analyzes the current FEN on visible', async () => {
+  it('restores the cached curve when a rapid scrub lands back on the current position', async () => {
+    // Regression: a rapid slider scrub away and straight back to the current
+    // position used to no-op the analyze trigger (identical debounced FEN) while
+    // still clearing the curve, leaving the chart blank and the eval bar at 50%.
+    vi.advanceTimersByTime(200); // make the first FEN settle immediately
+    const { rerender, result } = renderHook(
+      ({ fen }: { fen: string }) => useMaiaEngine({ fen, enabled: true, selectedElo: 1500 }),
+      { initialProps: { fen: TEST_FEN } },
+    );
+    driveReady(mockWorker);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    // TEST_FEN analyzed and cached.
+    act(() => {
+      mockWorker.simulateMessage(buildResultMessage(TEST_FEN));
+    });
+    expect(result.current.perElo.length).toBe(MAIA_ELO_LADDER.length);
+
+    // Scrub away and straight back inside the debounce window so the intermediate
+    // FEN never commits — the final FEN equals the last-committed one.
+    rerender({ fen: TEST_FEN_2 });
+    rerender({ fen: TEST_FEN });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+
+    // The cached TEST_FEN curve is restored, not stuck empty (empty => 50% bar).
+    expect(result.current.perElo.length).toBe(MAIA_ELO_LADDER.length);
+  });
+
+  it('keeps one inference in flight and converges to the current position on completion', async () => {
+    // A slider drag settling while an earlier position is still computing must not
+    // queue a backlog behind the running inference — instead the worker jumps
+    // straight to the current position once it frees up (skipping intermediates).
+    vi.advanceTimersByTime(200); // first FEN settles immediately
+    const { rerender } = renderHook(
+      ({ fen }: { fen: string }) => useMaiaEngine({ fen, enabled: true, selectedElo: 1500 }),
+      { initialProps: { fen: TEST_FEN } },
+    );
+    driveReady(mockWorker);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    // TEST_FEN is analyzing (worker "busy"), no result yet.
+    expect(analyzeMessages(mockWorker)).toHaveLength(1);
+
+    // Move to a new settled position while TEST_FEN is still in flight.
+    rerender({ fen: TEST_FEN_2 });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    // No second request queued behind the running one.
+    expect(analyzeMessages(mockWorker)).toHaveLength(1);
+
+    // TEST_FEN result lands -> worker free -> analyze the current FEN (TEST_FEN_2).
+    act(() => {
+      mockWorker.simulateMessage(buildResultMessage(TEST_FEN));
+    });
+    const msgs = analyzeMessages(mockWorker);
+    expect(msgs).toHaveLength(2);
+    expect(msgs[1]?.fen).toBe(TEST_FEN_2);
+  });
+
+  it('does not analyze while hidden; analyzes the current FEN on visible', async () => {
+    // Start hidden so analyze() bails and nothing is left in flight — this lets us
+    // assert the single-inference guard does not swallow the on-visible analyze.
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'hidden',
+      configurable: true,
+      writable: true,
+    });
+    vi.advanceTimersByTime(200); // Date.now() >> 0 so the first FEN settles immediately.
     renderHook(() => useMaiaEngine({ fen: TEST_FEN, enabled: true, selectedElo: 1500 }));
     driveReady(mockWorker);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(200);
     });
-    const countBeforeHide = analyzeMessages(mockWorker).length;
-    expect(countBeforeHide).toBe(1);
-
-    act(() => {
-      Object.defineProperty(document, 'visibilityState', {
-        value: 'hidden',
-        configurable: true,
-        writable: true,
-      });
-      document.dispatchEvent(new Event('visibilitychange'));
-    });
-    expect(analyzeMessages(mockWorker)).toHaveLength(countBeforeHide);
+    // Hidden: the debounce committed but analyze() bailed — no worker round-trip.
+    expect(analyzeMessages(mockWorker)).toHaveLength(0);
 
     act(() => {
       Object.defineProperty(document, 'visibilityState', {
@@ -228,7 +290,9 @@ describe('useMaiaEngine', () => {
       });
       document.dispatchEvent(new Event('visibilitychange'));
     });
-    expect(analyzeMessages(mockWorker)).toHaveLength(countBeforeHide + 1);
+    // On return the current FEN is analyzed.
+    expect(analyzeMessages(mockWorker)).toHaveLength(1);
+    expect(analyzeMessages(mockWorker)[0]?.fen).toBe(TEST_FEN);
   });
 
   it('unmount sends terminate and terminates the Worker (no leak)', () => {

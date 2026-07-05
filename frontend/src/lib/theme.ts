@@ -329,7 +329,7 @@ export const ARROW_NEUTRAL = '#6B7280';  // Tailwind gray-500 / matches WDL_BORD
 // built-in alpha so it reads as a translucent "engine suggestion" pointer — visually
 // secondary to the red flaw-move arrow it sits beside on the Flaw card, and a calm
 // overlay on the scrubbed Game-card board. rgba (not oklch) so the alpha is explicit.
-export const BEST_MOVE_ARROW = 'rgba(59, 130, 246, 0.8)';  // Tailwind blue-500 @ 80%
+export const BEST_MOVE_ARROW = 'rgba(37, 99, 235, 0.8)';  // Tailwind blue-600 @ 80%
 
 // Second-best engine move: arrow + eval badge (151.1 UAT). A light blue so 1st vs 2nd
 // read as a blue hierarchy (best = solid blue, second = light blue) rather than the
@@ -341,6 +341,12 @@ export const SECOND_BEST_BADGE_TEXT = 'oklch(0.25 0.03 255)';  // dark blue ink
 // Tactic Line Explorer payoff-ply arrows (Phase 135). Lighter alpha than BEST_MOVE_ARROW
 // so payoff arrows visually recede behind the punchline arrow (same blue, less prominent).
 export const PAYOFF_MOVE_ARROW = 'rgba(59, 130, 246, 0.5)';  // Tailwind blue-500 @ 50%
+
+// Next-move arrow on the analysis board: while on the main line, a translucent white
+// pointer for the move actually played next in the game. Rendered on top of the other
+// arrows (see BoardArrow.onTop) so it stays visible, and a bit thinner than the standard
+// engine arrows so it reads as a subtle "you played this next" hint.
+export const NEXT_MOVE_ARROW = 'rgba(255, 255, 255, 0.9)';
 
 // Endgame ELO Timeline volume bars (Phase 57.1; rebuilt Phase 87.5).
 // Muted gray with alpha so the

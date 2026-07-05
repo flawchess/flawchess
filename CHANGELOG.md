@@ -8,6 +8,16 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Maia chart no longer gets stuck or lags when scrubbing the eval slider** — on `/analysis`, dragging the eval-chart slider quickly (especially on mobile) could leave the "Moves by Rating" chart blank and the Maia eval bar frozen at 50%, and dragging to a position loaded noticeably slower than clicking straight to it. Revisiting a position now restores its result instantly from cache, and the human-move worker keeps a single inference in flight and jumps to the position you land on, skipping the intermediate slider positions instead of queuing them. (Quick 260705)
+- **Opening a game no longer scrolls the whole Analysis page down** — when opening `/analysis` at a specific move (the "Analyze" button's ply), the move list aligned the selected move to the top by scrolling every scrollable ancestor, which on Firefox dragged the entire page down instead of just the move list. The alignment is now scoped to the move-list container, so the page opens at the top. (Quick 260705)
+- **Maia now works on browsers whose WebGPU rejects a shader** — on some devices (e.g. Firefox on Windows) WebGPU accepts the model but fails to compile a compute shader (`Clip`) on the first inference, which left the human-move model silently dead. The worker now runs a warmup inference while probing WebGPU, so a lazy shader failure is detected up front and cleanly falls back to CPU (WASM) instead of breaking Maia. These onnxruntime failures are also now reported to Sentry (they previously only printed to the console). (Quick 260705)
+
+### Changed
+
+- **Opponent tactic arrows no longer clutter the analysis board** — on `/analysis`, the opponent's allowed/missed tactic arrows (crimson and teal) are no longer drawn on the board; they remain available in the eval-chart tooltip. Your own tactic arrows are unchanged. (Quick 260705)
+
 ## [v1.32] Maia-3 Human-Move Enrichment — 2026-07-05
 
 A human-model second opinion on the analysis board. Maia-3 (a chess engine trained to predict
