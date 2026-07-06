@@ -19,10 +19,10 @@ Committed scope for this milestone (MVP1 core, per SEED-082). Each maps to a roa
 
 ### Parallel Grading & Providers (POOL)
 
-- [ ] **POOL-01**: Stockfish child/leaf grading runs across a pool of 2–4 single-threaded Stockfish.wasm workers in parallel, with no SharedArrayBuffer and no site-wide COOP/COEP.
-- [ ] **POOL-02**: A node-evaluation priority queue schedules grading work toward the currently-best root lines.
-- [ ] **POOL-03**: Maia move-probability distributions are provided per node (with a per-side ELO parameter) from a dedicated Maia worker, reusing the v1.32 client-side inference.
-- [ ] **POOL-04**: The Stockfish pool size adapts to the device so the page stays responsive and stays within the browser (mobile Safari) memory ceiling, and does not run concurrently with the standalone eval bar on the same position.
+- [x] **POOL-01**: Stockfish child/leaf grading runs across a pool of 2–4 single-threaded Stockfish.wasm workers in parallel, with no SharedArrayBuffer and no site-wide COOP/COEP.
+- [x] **POOL-02**: A node-evaluation priority queue schedules grading work toward the currently-best root lines.
+- [x] **POOL-03**: Maia move-probability distributions are provided per node (with a per-side ELO parameter) from a dedicated Maia worker, reusing the v1.32 client-side inference.
+- [x] **POOL-04**: The Stockfish pool size adapts to the device so the page stays responsive and stays within the browser (mobile Safari) memory ceiling, and does not run concurrently with the standalone eval bar on the same position. (Code-complete: Plan 01 delivered workerPool.ts's adaptive sizing + lazy spawn/abort surface; Plan 02 delivered maiaQueue.ts's own isolated lazy-spawn/terminate lifecycle. SC4's real-device mobile-memory-ceiling UAT and the actual eval-bar mutual-exclusion wiring remain deferred to Phase 155, which is the first phase with a UI to drive them — tracked in 154-VALIDATION.md.)
 
 ### Anytime Display (DISPLAY)
 
@@ -85,10 +85,10 @@ Which phases cover which requirements. Populated during roadmap creation.
 | ENGINE-05 | Phase 153 | Complete |
 | ENGINE-06 | Phase 153 | Complete |
 | ENGINE-07 | Phase 153 | Complete |
-| POOL-01 | Phase 154 | Pending |
-| POOL-02 | Phase 154 | Pending |
-| POOL-03 | Phase 154 | Pending |
-| POOL-04 | Phase 154 | Pending |
+| POOL-01 | Phase 154 | Complete |
+| POOL-02 | Phase 154 | Complete |
+| POOL-03 | Phase 154 | Complete |
+| POOL-04 | Phase 154 | Complete (SC4 real-device UAT deferred to Phase 155) |
 | DISPLAY-01 | Phase 155 | Pending |
 | DISPLAY-02 | Phase 155 | Pending |
 | DISPLAY-03 | Phase 155 | Pending |

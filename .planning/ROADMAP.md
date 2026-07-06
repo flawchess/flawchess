@@ -108,7 +108,7 @@
 | 151. Maia in the Browser + All-Position Surfaces | 6/6 | Complete   | 2026-07-05 |
 | 151.1. Stockfish-graded Maia moves (INSERTED, SEED-083) | 4/4 | Complete | 2026-07-05 |
 | 153. Pure Search Core (Guardrail + Backup + MCTS + Fallback) | 5/5 | Complete    | 2026-07-05 |
-| 154. Real Providers (Stockfish Worker Pool + Maia Queue) | 0/0 | Not started | - |
+| 154. Real Providers (Stockfish Worker Pool + Maia Queue) | 4/4 | Complete    | 2026-07-06 |
 | 155. React Hook + Anytime UI (Free Analysis) | 0/0 | Not started | - |
 | 156. Board Arrows + Toggles (Free Analysis) | 0/0 | Not started | - |
 | 157. Game Review Overlay Integration | 0/0 | Not started | - |
@@ -161,7 +161,12 @@ Client-side-only: no backend, no schema, no migrations, no new endpoints, no new
   4. On a real iPhone and a real mid-tier Android device, a multi-position review session runs the FlawChess Engine pool without the browser tab reloading or crashing; pool size adapts to device (fewer workers on mobile, via `navigator.hardwareConcurrency` plus a mobile heuristic) and the pool never runs concurrently with the standalone `useStockfishEngine` eval bar on the same position (POOL-04).
   5. Every new Stockfish MultiPV consumption path added in this phase keys results by `pv[0]` (the move), never by the `multipv` rank index — reusing the shared parsing utility Phase 151.1 already built, confirmed by a grep audit (multipv-as-identity landmine prevention).
 
-**Plans**: TBD
+**Plans**: 4 plans (2 initial + 2 gap-closure; gap-closure plans are Wave 1, parallel — independent files)
+
+- [x] 154-01-PLAN.md — workerPool.ts: 2–4-worker Stockfish grading pool + priority queue + adaptive sizing + abort surface (POOL-01, POOL-02, POOL-04)
+- [x] 154-02-PLAN.md — maiaQueue.ts: dedicated Maia policy worker, deduped narrow-ELO UCI-keyed distributions, own cache (POOL-03, POOL-04)
+- [x] 154-03-PLAN.md — gap closure: settle in-flight grade() promises on stopAll()/terminate() (CR-01/CR-02), grade() fail-fast guards (WR-01/WR-05), worker-failure Sentry observability (WR-03/WR-04), WR-02 docstring honesty (POOL-01, POOL-02, POOL-04)
+- [x] 154-04-PLAN.md — gap closure: drain pending + drop dead worker on pre-ready Maia worker error (CR-03), worker.onerror handler (WR-03) (POOL-03)
 
 ### Phase 155: React Hook + Anytime UI (Free Analysis)
 
@@ -213,7 +218,7 @@ Client-side-only: no backend, no schema, no migrations, no new endpoints, no new
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 5/5 plans complete
+**Plans:** 4/4 plans complete
 
 Plans:
 

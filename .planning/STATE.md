@@ -2,29 +2,29 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: FlawChess Engine
-current_phase: 154
-current_phase_name: Stockfish Worker Pool + Maia Queue
-status: verifying
-stopped_at: Completed 153-05-PLAN.md
-last_updated: "2026-07-06T13:14:54.010Z"
+current_phase: 155
+current_phase_name: Free Analysis
+status: completed
+stopped_at: Completed 154-04-PLAN.md (Phase 154 fully gap-closed)
+last_updated: "2026-07-06T16:04:35.611Z"
 last_activity: 2026-07-06
-last_activity_desc: Phase 153 complete, transitioned to Phase 154
+last_activity_desc: Phase 154 complete, transitioned to Phase 155
 progress:
   total_phases: 5
-  completed_phases: 1
-  total_plans: 5
-  completed_plans: 5
-  percent: 20
+  completed_phases: 2
+  total_plans: 9
+  completed_plans: 9
+  percent: 40
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 154 — Real Providers (Stockfish Worker Pool + Maia Queue)
+Phase: 155 — React Hook + Anytime UI (Free Analysis)
 Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-07-06 — Phase 153 complete, transitioned to Phase 154
+Status: Phase 154 complete — ready for `/gsd-plan-phase 155`
+Last activity: 2026-07-06 — Phase 154 complete, transitioned to Phase 155
 
 ## Project Reference
 
@@ -91,6 +91,16 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 153]: [Phase 153-04]: Added selectPath root-pending guard (Rule 1 bug fix) - child-level pending filter never protected the walk's own starting node
 - [Phase 153-05]: fallbackExpectimax reuses backup.ts/leafScore.ts/select.ts, ignores budget.concurrency entirely (purely sequential walk), and matches mctsSearch's visits/modalPath semantics for output-shape parity
 - [Phase 153-05]: knip passed unchanged with no knip.json edit needed — the anticipated engine-export-consumed-only-by-tests caveat did not trip knip's vitest-plugin entry-point detection
+- [Phase 154-01]: grade() uses priority=0/depth=0 internally since the frozen 2-arg EngineProviders.grade signature has no priority channel; the priority queue's ordering logic itself is fully built and unit-tested per POOL-02, ready for a future caller
+- [Phase 154-01]: pool.grade's third signal?: AbortSignal param is an ADDITIONAL optional parameter, keeping it structurally assignable to EngineProviders['grade'] per TypeScript's trailing-optional-param assignability rule
+- [Phase 154-01]: Reverted requirements.mark-complete's POOL-04 checkbox flip: POOL-04 is shared across Plans 01/02 (frontmatter) — 154-01 only partially delivers it (Stockfish-pool adaptive sizing + lazy spawn/abort surface); left [ ] Pending with a partial-delivery note; Plan 02 will actually close it
+- [Phase 154-02]: requestPolicy pipeline (dedup/cache/FIFO/SAN-UCI) committed as Task 1 without terminate()/Sentry/graceful-degradation, then Task 2 layered worker lifecycle + error forwarding on top
+- [Phase 154-02]: same-fen batching collapses ANY pending requests sharing a FEN into one analyze call with the deduped ELO set, beyond the literal two-same-ELO-requests example
+- [Phase 154-02]: worker error / construction failure both resolve affected policy() promises to {} rather than reject, mirroring workerPool.ts's resolve-empty-on-failure precedent
+- [Phase 154-02]: POOL-04 marked complete; SC4 real-device UAT and eval-bar mutual-exclusion wiring remain deferred to Phase 155 per CONTEXT.md D-03, tracked in 154-VALIDATION.md
+- [Phase 154-03]: Used a dedicated PoolWorkerSlot.dead boolean rather than inferring pool failure from isReady, to avoid a false-positive drain during normal not-yet-ready startup — isReady is also false during normal init before uciok/readyok, so an inference-based all-failed check would incorrectly drain valid pending requests
+- [Phase 154-03]: WR-02 fixed as a documentation-only correction: priority/depth stay 0 under the frozen 2-arg grade() contract until Phase 155 supplies a real caller — No caller exists yet in Phase 154 to supply real priority values; the ordering machinery itself is already correct and unit-tested
+- [Phase 154]: [Phase 154-04]: Task 1 committed as a standalone inline fix (no shared helper) so its commit is self-contained; Task 2 extracted settleAllAndDropWorker() and layered the onerror handler on top, per plan's explicit permission to factor shared logic in Task 2
 
 ### Pending Todos
 
@@ -160,12 +170,12 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-07-05T21:57:27.775Z
+**Last session:** 2026-07-06T15:56:34.011Z
 
 **Resume file:** 
 
 None
-Stopped at: Completed 153-05-PLAN.md
+Stopped at: Completed 154-04-PLAN.md (Phase 154 fully gap-closed)
 Resume: `/gsd-plan-phase 153`
 
 ## Performance Metrics
@@ -187,6 +197,10 @@ Resume: `/gsd-plan-phase 153`
 | Phase 153 P03 | 15min | 2 tasks | 2 files |
 | Phase 153 P04 | 35min | 3 tasks | 2 files |
 | Phase 153 P05 | 20min | 2 tasks | 2 files |
+| Phase 154 P01 | 15min | 3 tasks | 2 files |
+| Phase 154 P02 | 25min | 2 tasks | 2 files |
+| Phase 154 P03 | 25min | 3 tasks | 2 files |
+| Phase 154 P04 | 20min | 2 tasks | 2 files |
 
 ## Operator Next Steps
 
