@@ -107,7 +107,7 @@
 | 150. Consolidate Write Path | 5/5 | Complete    | 2026-07-04 |
 | 151. Maia in the Browser + All-Position Surfaces | 6/6 | Complete   | 2026-07-05 |
 | 151.1. Stockfish-graded Maia moves (INSERTED, SEED-083) | 4/4 | Complete | 2026-07-05 |
-| 153. Pure Search Core (Guardrail + Backup + MCTS + Fallback) | 0/0 | Not started | - |
+| 153. Pure Search Core (Guardrail + Backup + MCTS + Fallback) | 5/5 | Complete    | 2026-07-05 |
 | 154. Real Providers (Stockfish Worker Pool + Maia Queue) | 0/0 | Not started | - |
 | 155. React Hook + Anytime UI (Free Analysis) | 0/0 | Not started | - |
 | 156. Board Arrows + Toggles (Free Analysis) | 0/0 | Not started | - |
@@ -118,61 +118,92 @@
 Client-side-only: no backend, no schema, no migrations, no new endpoints, no new npm dependencies — hand-rolled TypeScript in `frontend/src/lib/engine/` plus hooks over the already-vendored Stockfish.wasm (v1.29) and onnxruntime-web Maia-3 (v1.32) infra. Ships the **FlawChess Engine** — a practical-play analysis engine computing the strongest *human-playable* line for a player at their rating: Maia supplies opponent-reply and self-execution probability, Stockfish supplies leaf quality, combined via a custom expectimax-inside-MCTS backup (Maia-prior-weighted expectation at non-root nodes, plain max at root, asymmetric self+opponent ELO keyed on actual side-to-move). Surfaced on the `/analysis` board in both free analysis and game review, with a new "FlawChess Engine top-2" arrow layer and an objective-vs-practical score pair ("objectively +3.0, practically +0.9 for you"). Sourced from SEED-082; five dependency-ordered phases per the research build order (pure core → real providers → UI → arrows → game review) so the one genuinely novel piece — the backup rule + asymmetric-ELO routing — is proven correct against fabricated providers before a single worker exists, and the SEED-mandated depth-limited-expectimax fallback stays a real, exercised escape hatch rather than an aspirational claim. **Deferred by design (not in this roadmap):** trap-finder/branch-point UI, per-ELO leaf sigmoids, time-pressure conditioning, SharedArrayBuffer multithreading, Maia-2 dual-skill attention (see REQUIREMENTS.md → Future Requirements).
 
 ### Phase 153: Pure Search Core (Guardrail + Backup + MCTS + Fallback)
+
 **Goal**: A fully unit-tested, worker-free search core exists behind a stable `position + budget → ranked root lines` interface, with the two highest-risk pieces of the design — the custom Maia-weighted expectimax backup rule and the asymmetric self+opponent ELO routing — proven correct against fabricated providers before any WASM/ONNX integration exists.
 **Depends on**: Nothing (first phase of the milestone; new `frontend/src/lib/engine/` subsystem, no code dependency yet on the v1.29 Stockfish.wasm or v1.32 Maia infra)
 **Requirements**: ENGINE-01, ENGINE-02, ENGINE-03, ENGINE-04, ENGINE-05, ENGINE-06, ENGINE-07
 **Success Criteria** (what must be TRUE):
+
   1. Given a fixed FEN, a fixed node budget, and fabricated (non-random) `EngineProviders` (fake `policy`/`grade` tables, no real WASM/ONNX), the search returns bit-identical ranked-root-lines output across repeated runs — no Dirichlet noise, canonical tie-breaking (ENGINE-07).
   2. A hand-computed fixture test proves the non-root backup value is the Maia-prior-weighted expectation over expanded children, with a negative assertion that it does NOT equal a naive average or a visit-count-weighted average — the search cannot silently degenerate into textbook MCTS (ENGINE-03).
   3. A node-level oracle test confirms, for both root colors (White-to-move and Black-to-move), that the opponent's ELO is queried at opponent-to-move nodes and the player's own ELO at the player's own future nodes, derived from actual side-to-move color rather than depth/ply parity (ENGINE-04).
   4. Node expansion draws candidate moves from a fabricated Maia policy top-k (truncated at ~90% cumulative probability, renormalized) graded by a fabricated Stockfish shallow-eval, and leaf positions at the depth cutoff (6–10 plies, a hard-coded ceiling) convert to expected score via the lichess eval→win% sigmoid (ENGINE-02, ENGINE-05).
   5. `fallbackExpectimax.ts` (depth-limited expectimax, reusing the same `backup.ts`) implements the identical `SearchRunner` interface as the MCTS core and is swapped in for a test run with no interface change required — the guardrail fallback is exercised, not just claimed (ENGINE-06).
-**Plans**: TBD
+
+**Plans**: 5 plans
+**Wave 1**
+
+- [x] 153-01-PLAN.md — Frozen engine interface (types/guardrail) + root-relative leaf score (ENGINE-05, ENGINE-06)
+- [x] 153-02-PLAN.md — Maia-weighted expectation + root-max backup rule with SC2 fixture (ENGINE-03)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 153-03-PLAN.md — Top-k truncation/renormalization + deterministic PUCT selection + root floor-boost (ENGINE-02)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 153-04-PLAN.md — MCTS orchestrator + ELO oracle + determinism suite (ENGINE-01, ENGINE-02, ENGINE-04, ENGINE-05, ENGINE-07)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 153-05-PLAN.md — Depth-limited expectimax fallback + swap-in test + phase gate (ENGINE-06)
 
 ### Phase 154: Real Providers (Stockfish Worker Pool + Maia Queue)
+
 **Goal**: The Phase 153 search core runs against real Stockfish.wasm and Maia workers — a 2–4-instance grading pool prioritized toward the current-best root line, and a dedicated Maia policy worker — sized adaptively so the browser tab stays within mobile Safari's memory ceiling.
 **Depends on**: Phase 153 (real providers implement the exact `EngineProviders` interface the pure core already tests against)
 **Requirements**: POOL-01, POOL-02, POOL-03, POOL-04
 **Success Criteria** (what must be TRUE):
+
   1. `workerPool.ts` runs 2–4 single-threaded Stockfish.wasm workers in parallel, grading candidate moves/leaves, with no SharedArrayBuffer and no site-wide COOP/COEP headers (POOL-01).
   2. Pending node-grading requests are dequeued in priority order favoring nodes under the currently-highest-scoring root line, not FIFO/arrival order, verified by a queue-ordering test (POOL-02).
   3. `maiaQueue.ts` — a dedicated Maia worker instance, separate from the existing `useMaiaEngine` — supplies per-node move-probability distributions keyed by an explicit per-side ELO parameter, reusing the v1.32 client-side inference glue (POOL-03).
   4. On a real iPhone and a real mid-tier Android device, a multi-position review session runs the FlawChess Engine pool without the browser tab reloading or crashing; pool size adapts to device (fewer workers on mobile, via `navigator.hardwareConcurrency` plus a mobile heuristic) and the pool never runs concurrently with the standalone `useStockfishEngine` eval bar on the same position (POOL-04).
   5. Every new Stockfish MultiPV consumption path added in this phase keys results by `pv[0]` (the move), never by the `multipv` rank index — reusing the shared parsing utility Phase 151.1 already built, confirmed by a grep audit (multipv-as-identity landmine prevention).
+
 **Plans**: TBD
 
 ### Phase 155: React Hook + Anytime UI (Free Analysis)
+
 **Goal**: A user analyzing any position on the free-analysis `/analysis` board sees the FlawChess Engine's ranked practical-play lines appear immediately and refine live as the search runs, each with its modal path and objective-vs-practical score pair.
 **Depends on**: Phase 154 (wires the real worker-pool/Maia-queue providers into a React-facing hook)
 **Requirements**: DISPLAY-01, DISPLAY-02, DISPLAY-03, DISPLAY-04
 **Success Criteria** (what must be TRUE):
+
   1. On the `/analysis` board (free play, arbitrary position), quick top-n candidate lines from `useFlawChessEngine` appear almost immediately after navigating to a position, without waiting for the full node budget to exhaust (DISPLAY-01, DISPLAY-04).
   2. The displayed lines visibly refine (reorder/update) as the search accumulates more visits, batched at a fixed cadence (mirroring the existing `RAPID_STEP_DEBOUNCE_MS` convention) so updates neither jank the page nor flicker faster than a human can read.
   3. Each candidate line in `FlawChessEngineLines.tsx` shows its modal path — the player's chosen move followed by the opponent's most-likely replies, walked from already-expanded tree nodes — not just the bare root move (DISPLAY-02).
   4. Each ranked move displays the objective Stockfish evaluation alongside the practical-for-you score in the same badge (e.g. "objectively +3.0, practically +0.9 for you"), sourced from data the search already computed with no second grading pass (DISPLAY-03).
+
 **Plans**: TBD
 **UI hint**: yes
 
 ### Phase 156: Board Arrows + Toggles (Free Analysis)
+
 **Goal**: A user sees the FlawChess Engine's top practical moves rendered directly on the board as a distinct, individually toggleable arrow layer alongside the existing Stockfish top-2 arrows, always paired with the score explanation so disagreement reads as intentional rather than broken.
 **Depends on**: Phase 155 (arrows are computed from the hook's `rankedLines`, already live-refining)
 **Requirements**: ARROW-01, ARROW-02, ARROW-03, ARROW-04
 **Success Criteria** (what must be TRUE):
+
   1. A new FlawChess Engine top-2 arrow layer (two new `theme.ts` constants, visually distinct from the Stockfish/Maia/tactic palettes) renders on the board and visibly refines live as the search's ranked lines update (ARROW-01).
   2. The FlawChess Engine arrow layer and the Stockfish top-2 arrow layer are each independently toggleable on/off via their own toggle state, without needing to hide the other (ARROW-02).
   3. The existing played-move arrow (game review) and Stockfish top-2 arrow render unchanged — reused, not reimplemented — and there is no separate Maia arrow layer; Maia's actual reply distribution stays reachable via the existing Moves-by-Rating chart hover (ARROW-03).
   4. Whenever the FlawChess Engine arrow disagrees with the Stockfish top-2 arrow at the root, the objective-vs-practical score pair is simultaneously visible (never a hover away), and no UI string — button label, empty state, or tooltip — reads "best move" unqualified (ARROW-04).
+
 **Plans**: TBD
 **UI hint**: yes
 
 ### Phase 157: Game Review Overlay Integration
+
 **Goal**: A user reviewing a full game (`?game_id&ply`) gets the same FlawChess Engine analysis already shipped for free analysis, plus an explicit "what you played vs what was practically best for you" comparison at every position — the milestone's highest-leverage differentiator.
 **Depends on**: Phase 156 (arrow rendering + toggles already proven in free analysis; this phase confirms the three-layer precedence + defaults on the second surface)
 **Requirements**: REVIEW-01, REVIEW-02
 **Success Criteria** (what must be TRUE):
+
   1. The FlawChess Engine runs on the game-review board at any ply of a loaded game, producing the same ranked-lines / modal-path / score-pair / arrow experience already shipped for free analysis, with no mode-specific data plumbing beyond the existing `position`/`enabled` props (REVIEW-01).
   2. At each reviewed position, the user sees a comparison between the move they actually played and the FlawChess Engine's top practical recommendation (including when they match), looked up from the root's already-expanded children or a single supplementary grade call (REVIEW-02).
   3. The three arrow layers render with the game-review-specific default visibility confirmed on the game-review board itself: played-move ON, FlawChess Engine top-2 ON, Stockfish top-2 OFF ("show your work").
+
 **Plans**: TBD
 **UI hint**: yes
 
@@ -182,7 +213,7 @@ Client-side-only: no backend, no schema, no migrations, no new endpoints, no new
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 3/3 plans complete
+**Plans:** 5/5 plans complete
 
 Plans:
 

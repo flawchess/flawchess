@@ -2,25 +2,29 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: FlawChess Engine
-status: roadmap
-last_updated: "2026-07-05T19:00:00.000Z"
-last_activity: 2026-07-05
+current_phase: 154
+current_phase_name: Stockfish Worker Pool + Maia Queue
+status: verifying
+stopped_at: Completed 153-05-PLAN.md
+last_updated: "2026-07-06T13:14:54.010Z"
+last_activity: 2026-07-06
+last_activity_desc: Phase 153 complete, transitioned to Phase 154
 progress:
   total_phases: 5
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  completed_phases: 1
+  total_plans: 5
+  completed_plans: 5
+  percent: 20
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 153 Pure Search Core (Guardrail + Backup + MCTS + Fallback) (not started)
-Plan: —
-Status: Roadmap defined (5 phases); awaiting phase planning
-Last activity: 2026-07-05 — Milestone v2.0 roadmap created
+Phase: 154 — Real Providers (Stockfish Worker Pool + Maia Queue)
+Plan: Not started
+Status: Phase complete — ready for verification
+Last activity: 2026-07-06 — Phase 153 complete, transitioned to Phase 154
 
 ## Project Reference
 
@@ -77,6 +81,16 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 151-06]: useMaiaEloDefault clamps the ELO default to the ladder [min,max] bounds only (no step-snapping); user pick wins permanently over late data loads (userOverrodeRef)
 - [Phase 151-06]: useMaiaEngine mounted enabled:true (route-level React.lazy provides MAIA-02 laziness); desktop reworked into 3-column layout (Maia chart+selector left, both eval bars flanking board, engine panel right)
 - [Phase 151-06]: VALID-01 APPROVED — calibration + policy-vocab move-label sanity check confirmed (closes 151-04 vocab-index risk); D-10 smallest model retained; MAIA-06 per-device latency left unmeasured, not fabricated
+- [Phase 153]: MoveGrade re-exported from moveQuality.ts in types.ts (single import surface), not redeclared
+- [Phase 153]: leafExpectedScore wraps liveFlaw.ts's evalToExpectedScore verbatim; mate-near-certainty test thresholds set to 0.95/0.05 matching actual sigmoid output
+- [Phase 153-02]: backupExpectation's empty-array case is a natural consequence of the totalPrior===0 guard, tested explicitly alongside the plan-specified totalPrior===0 case
+- [Phase 153-03]: selectChild() throws on empty children array (Rule 2 precondition validation) rather than returning a sentinel - no sensible default UCI move exists
+- [Phase 153-03]: D-01 root/non-root split test uses ONE shared children fixture (rootExplorationPrior tied, plain prior differs) proving the SAME object selects differently by isRoot flag alone
+- [Phase 153]: [Phase 153-04]: extraRootMoves unioned with the truncated Maia top-k AFTER truncateAndRenormalize (not before) to satisfy D-05's floor-boost rationale
+- [Phase 153]: [Phase 153-04]: Visit-count increments deferred from selection/dispatch time to apply time - isPending alone prevents same-round re-picks; eager bumping broke ENGINE-07 snapshot-sequence determinism at concurrency=2
+- [Phase 153]: [Phase 153-04]: Added selectPath root-pending guard (Rule 1 bug fix) - child-level pending filter never protected the walk's own starting node
+- [Phase 153-05]: fallbackExpectimax reuses backup.ts/leafScore.ts/select.ts, ignores budget.concurrency entirely (purely sequential walk), and matches mctsSearch's visits/modalPath semantics for output-shape parity
+- [Phase 153-05]: knip passed unchanged with no knip.json edit needed — the anticipated engine-export-consumed-only-by-tests caveat did not trip knip's vitest-plugin entry-point detection
 
 ### Pending Todos
 
@@ -146,12 +160,12 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-07-05T08:32:35.940Z
+**Last session:** 2026-07-05T21:57:27.775Z
 
 **Resume file:** 
 
-.planning/ROADMAP.md (v2.0 FlawChess Engine, Phases 153-157)
-Stopped at: v2.0 roadmap created
+None
+Stopped at: Completed 153-05-PLAN.md
 Resume: `/gsd-plan-phase 153`
 
 ## Performance Metrics
@@ -168,6 +182,11 @@ Resume: `/gsd-plan-phase 153`
 | Phase 151 P04 | 45min | 3 tasks | 10 files |
 | Phase 151 P05 | 20min | 3 tasks | 7 files |
 | Phase 151 P06 | 30min | 4 tasks | 7 files |
+| Phase 153 P01 | 12min | 2 tasks | 4 files |
+| Phase 153 P02 | 8min | 2 tasks | 2 files |
+| Phase 153 P03 | 15min | 2 tasks | 2 files |
+| Phase 153 P04 | 35min | 3 tasks | 2 files |
+| Phase 153 P05 | 20min | 2 tasks | 2 files |
 
 ## Operator Next Steps
 

@@ -1,0 +1,37 @@
+{
+  "phase": "153",
+  "phase_name": "Pure Search Core (Guardrail + Backup + MCTS + Fallback)",
+  "timestamp": "2026-07-05T20:00:00Z",
+  "areas_completed": ["Selection policy", "Root candidate union interface", "Score semantics + RankedLine shape", "Budget + snapshot contract"],
+  "areas_remaining": [],
+  "decisions": {
+    "Selection policy": [
+      {"question": "Budget-allocation rule for select.ts", "answer": "Deterministic PUCT: walk from root via argmax Q(c) + c_puct*P_maia(c)*sqrt(N)/(1+n(c)), canonical tie-break, expand landed leaf; c_puct a named tunable constant", "options_presented": ["Deterministic PUCT (Recommended)", "Greedy prior-path expansion", "Value-weighted prior path"]},
+      {"question": "PUCT Q-term at non-root (all-expectation) nodes", "answer": "Chance-node-aware: Q-based UCB only at root; below root allocate visits by prior mass only (argmax P(c)*sqrt(N)/(1+n(c)), no Q term)", "options_presented": ["Chance-node-aware (Recommended)", "Root-perspective Q everywhere", "Side-to-move negamax Q"]},
+      {"question": "Which children the backup expectation ranges over", "answer": "Full truncated+renormalized top-k set, best-estimate per child: subtree expectation if expanded, sigmoid(shallowEval) otherwise. Clarifies ROADMAP SC2's 'over expanded children' wording (fixture must mix expanded + unexpanded children)", "options_presented": ["Full top-k set, best estimate (Recommended)", "Expanded subtrees only, renormalized", "Full set + unexpanded penalty"]},
+      {"question": "Sequential vs parallel-ready core loop", "answer": "Parallel-ready now: budget.concurrency in-flight expansions, pending/virtual-visit marking so selection skips in-flight nodes; determinism suite at concurrency=1 plus one concurrency=2 fake-provider test", "options_presented": ["Parallel-ready core now (Recommended)", "Strictly sequential in 153"]}
+    ],
+    "Root candidate union interface": [
+      {"question": "How SF MultiPV root candidates enter the pure core", "answer": "Optional extraRootMoves: string[] on the SearchRunner signature; root children = MaiaTopK union extraRootMoves, graded in the same grade() call; deeper nodes stay Maia-only; EngineProviders stays {policy, grade}", "options_presented": ["extraRootMoves input (Recommended)", "Third provider method", "Defer union to Phase 155"]},
+      {"question": "Root exploration prior for SF-injected ~0-Maia-probability candidates", "answer": "Floor-boosted: P_root(c) = max(P_maia(c), ROOT_PRIOR_FLOOR) renormalized, used ONLY in the root exploration term; backup expectations keep true renormalized Maia priors; ranking by V so the floor never distorts scores", "options_presented": ["Floor-boosted Maia prior (Recommended)", "Uniform root prior", "True Maia prior, no floor"]}
+    ],
+    "Score semantics + RankedLine shape": [
+      {"question": "Internal representation of practicalScore", "answer": "Expected score 0..1 from the root side-to-move's perspective (native evalToExpectedScore space; SEED-082's stated unit). Display formatting ('practically +0.9') is a Phase 155 decision from the raw {practicalScore, objectiveEvalCp} pair; the core never converts", "options_presented": ["Expected score 0-1 (Recommended)", "Pawn-equivalent centipawns", "Store both fields"]},
+      {"question": "ELO parameterization in SearchBudget", "answer": "Color-keyed: budget.elo = { w, b }; core picks ELO purely from node side-to-move color (ENGINE-04 keying becomes structural); yourElo/opponentElo -> color mapping resolved once in the Phase 155 hook", "options_presented": ["Color-keyed eloByColor (Recommended)", "yourElo/opponentElo + convention"]},
+      {"question": "Move notation in core interfaces", "answer": "UCI throughout lib/engine (policy keys, grade candidates, RankedLine.rootMove/modalPath, canonical tie-break key = UCI string); SAN conversion only at display time in Phase 155", "options_presented": ["UCI throughout core (Recommended)", "SAN throughout core"]}
+    ],
+    "Budget + snapshot contract": [
+      {"question": "What counts as one node toward maxNodes", "answer": "One expansion event: one policy() call + one batched grade() call over the node's truncated top-k = 1 node; budgetExhausted at nodesEvaluated >= maxNodes. Maps 1:1 to wall-clock cost drivers and SEED-082's node arithmetic", "options_presented": ["One expansion event (Recommended)", "Per-candidate grade count", "Tree nodes created"]},
+      {"question": "Where anytime-snapshot throttling lives", "answer": "Core emits onSnapshot after EVERY completed backup (no wall-clock in lib/engine); the Phase 155 hook throttles to UI cadence. ENGINE-07 test asserts the full emission sequence is bit-identical across runs", "options_presented": ["Emit every expansion; hook throttles (Recommended)", "Core throttles by node count", "Core throttles by wall clock"]},
+      {"question": "Engine ~90% mass truncation vs chart's CUMULATIVE_MASS_THRESHOLD=0.95", "answer": "Separate new named constant in lib/engine (e.g. POLICY_MASS_THRESHOLD = 0.90), independent of moveQuality.ts's 0.95 — search branching and chart display tune independently", "options_presented": ["Separate engine constant (Recommended)", "Reuse the chart's 0.95"]}
+    ]
+  },
+  "deferred_ideas": [],
+  "canonical_refs": [
+    ".planning/seeds/SEED-082-human-playable-line-engine.md",
+    ".planning/research/ARCHITECTURE.md",
+    ".planning/research/SUMMARY.md",
+    ".planning/research/PITFALLS.md",
+    ".planning/REQUIREMENTS.md"
+  ]
+}

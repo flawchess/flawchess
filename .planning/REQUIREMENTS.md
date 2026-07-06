@@ -9,13 +9,13 @@ Committed scope for this milestone (MVP1 core, per SEED-082). Each maps to a roa
 
 ### Search Core (ENGINE)
 
-- [ ] **ENGINE-01**: A user can request a practical-play analysis of any position and receive a ranked list of candidate root moves scored by *expected practical score* (not objective evaluation).
-- [ ] **ENGINE-02**: Node expansion draws candidate moves from the Maia policy top-k (opponent replies truncated at ~90% cumulative probability, renormalized) graded by a Stockfish shallow evaluation — the Phase 151 per-node primitive.
-- [ ] **ENGINE-03**: The search values non-root nodes as a Maia-prior-weighted expectation over expanded children, and the root as a max over candidates (the custom expectimax-in-MCTS backup rule).
-- [ ] **ENGINE-04**: The search applies the opponent's ELO at opponent-to-move nodes and the player's own ELO at the player's own future nodes (asymmetric self+opponent rating), keyed on actual side-to-move.
-- [ ] **ENGINE-05**: Leaf positions (explicit depth ~6–10 plies) are converted to expected score via the lichess eval→win% sigmoid.
-- [ ] **ENGINE-06**: The search core is exposed behind a stable `position + budget → ranked root lines` interface, so a depth-limited expectimax is a drop-in fallback behind the same contract.
-- [ ] **ENGINE-07**: The search produces identical output for identical inputs under a fixed node budget (deterministic: no Dirichlet noise, canonical tie-breaking).
+- [x] **ENGINE-01**: A user can request a practical-play analysis of any position and receive a ranked list of candidate root moves scored by *expected practical score* (not objective evaluation).
+- [x] **ENGINE-02**: Node expansion draws candidate moves from the Maia policy top-k (opponent replies truncated at ~90% cumulative probability, renormalized) graded by a Stockfish shallow evaluation — the Phase 151 per-node primitive.
+- [x] **ENGINE-03**: The search values non-root nodes as a Maia-prior-weighted expectation over expanded children, and the root as a max over candidates (the custom expectimax-in-MCTS backup rule).
+- [x] **ENGINE-04**: The search applies the opponent's ELO at opponent-to-move nodes and the player's own ELO at the player's own future nodes (asymmetric self+opponent rating), keyed on actual side-to-move.
+- [x] **ENGINE-05**: Leaf positions (explicit depth ~6–10 plies) are converted to expected score via the lichess eval→win% sigmoid.
+- [x] **ENGINE-06**: The search core is exposed behind a stable `position + budget → ranked root lines` interface, so a depth-limited expectimax is a drop-in fallback behind the same contract.
+- [x] **ENGINE-07**: The search produces identical output for identical inputs under a fixed node budget (deterministic: no Dirichlet noise, canonical tie-breaking).
 
 ### Parallel Grading & Providers (POOL)
 
@@ -78,13 +78,13 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ENGINE-01 | Phase 153 | Pending |
-| ENGINE-02 | Phase 153 | Pending |
-| ENGINE-03 | Phase 153 | Pending |
-| ENGINE-04 | Phase 153 | Pending |
-| ENGINE-05 | Phase 153 | Pending |
-| ENGINE-06 | Phase 153 | Pending |
-| ENGINE-07 | Phase 153 | Pending |
+| ENGINE-01 | Phase 153 | Complete |
+| ENGINE-02 | Phase 153 | Complete |
+| ENGINE-03 | Phase 153 | Complete |
+| ENGINE-04 | Phase 153 | Complete |
+| ENGINE-05 | Phase 153 | Complete |
+| ENGINE-06 | Phase 153 | Complete |
+| ENGINE-07 | Phase 153 | Complete |
 | POOL-01 | Phase 154 | Pending |
 | POOL-02 | Phase 154 | Pending |
 | POOL-03 | Phase 154 | Pending |
@@ -101,6 +101,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | REVIEW-02 | Phase 157 | Pending |
 
 **Coverage:**
+
 - Milestone v2.0 requirements: 21 total (corrected — the "19" figure recorded at requirements-definition time was a miscount; ENGINE-01..07 [7] + POOL-01..04 [4] + DISPLAY-01..04 [4] + ARROW-01..04 [4] + REVIEW-01..02 [2] = 21)
 - Mapped to phases: 21/21
 - Unmapped: 0
