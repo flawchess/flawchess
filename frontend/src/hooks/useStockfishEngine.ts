@@ -343,6 +343,16 @@ export function useStockfishEngine({
       worker.postMessage('stop');
       worker.terminate();
       workerRef.current = null;
+      // Reset readiness + state machine so a re-enable waits for the NEW worker's
+      // readyok (which follows the `setoption MultiPV` sent on uciok). Bug (155 UAT):
+      // isReady survived the toggle, so on re-enable analyze() fired a `go` on the
+      // fresh worker BEFORE it had received `setoption MultiPV value 2` — the
+      // re-search ran at MultiPV=1, painting only the best-move arrow (no 2nd-best)
+      // until the next position change re-triggered a search post-init.
+      setIsReady(false);
+      isReadyRef.current = false;
+      stateRef.current = 'idle';
+      stopPendingRef.current = false;
     };
   }, [enabled]); // re-run only if enabled toggles
 

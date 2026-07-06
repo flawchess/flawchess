@@ -11,10 +11,12 @@
  * - Malformed ?fen= degrades to standard start without throwing (ROUTE-02 / security)
  * - "Loading engine..." chrome shows while isReady=false, board stays interactive (D-06 / SC#3)
  * - Engine ready hides the loading chrome (D-06)
+ * - Phase 155: FlawChess Engine eval-bar precedence (DISPLAY-04) — see the dedicated
+ *   describe block below.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -67,6 +69,32 @@ vi.mock('@/hooks/useMaiaEngine', () => ({
     wdl: null,
     isReady: false,
     isAnalyzing: false,
+  }),
+}));
+
+// Mock useFlawChessEngine (Phase 155): jsdom has no real Worker for the pool this
+// hook creates either. Deterministic stub via the mutable flawChessState — the
+// hook's own throttle/abort behavior is covered by useFlawChessEngine.test.ts.
+// isReady defaults to true so the FlawChess card's pre-ready skeleton doesn't mask
+// the shell/eval-bar assertions below; individual tests override rankedLines to
+// drive the eval-bar precedence.
+const flawChessState: {
+  rankedLines: { rootMove: string; practicalScore: number; objectiveEvalCp: number | null; modalPath: string[]; visits: number }[];
+  isSearching: boolean;
+  isReady: boolean;
+} = {
+  rankedLines: [],
+  isSearching: false,
+  isReady: true,
+};
+
+vi.mock('@/hooks/useFlawChessEngine', () => ({
+  useFlawChessEngine: () => ({
+    rankedLines: flawChessState.rankedLines,
+    nodesEvaluated: 0,
+    budgetExhausted: false,
+    isSearching: flawChessState.isSearching,
+    isReady: flawChessState.isReady,
   }),
 }));
 
@@ -127,6 +155,9 @@ afterEach(() => {
   engineState.isAnalyzing = false;
   engineState.isReady = false;
   maiaState.expectedScoreAtSelectedElo = null;
+  flawChessState.rankedLines = [];
+  flawChessState.isSearching = false;
+  flawChessState.isReady = true;
 });
 
 // Late import after vi.mock calls — Analysis.tsx is a default export (required by React.lazy).
@@ -159,8 +190,10 @@ describe('Analysis page shell', () => {
     expect(screen.getByTestId('analysis-page')).toBeTruthy();
     expect(screen.getByTestId('analysis-board')).toBeTruthy();
     expect(screen.getByTestId('analysis-eval-bar')).toBeTruthy();
-    // Phase 151 Plan 06 (SURF-04): the Maia bar renders on every position too.
-    expect(screen.getByTestId('analysis-maia-eval-bar')).toBeTruthy();
+    // Phase 155 D-04: the FlawChess Engine is on by default, so its bar takes
+    // left-slot precedence over Maia (see the dedicated describe block below
+    // for the Maia fallback case).
+    expect(screen.getByTestId('analysis-flawchess-eval-bar')).toBeTruthy();
   });
 
   it('seeds the board from a valid ?fen= param (ROUTE-02)', () => {
@@ -187,8 +220,12 @@ describe('Analysis page shell', () => {
   });
 
   it('shows engine-loading chrome while isReady=false, board stays present (D-06 / SC#3)', () => {
-    // Default engineState has isReady: false — engine is loading.
+    // Default engineState has isReady: false — engine is loading. Phase 155 D-04:
+    // the FlawChess Engine suppresses the standalone Stockfish search while it is
+    // enabled (POOL-04 mutual exclusion, default ON), so the Stockfish card's own
+    // loading skeleton only shows once FlawChess is toggled off.
     renderAnalysis();
+    fireEvent.click(screen.getByTestId('btn-analysis-flawchess-toggle'));
 
     // The loading skeleton must appear in the engine card (Quick 260627-r9g item 3
     // replaced the "Loading engine…" text with a content-loading animation).
@@ -206,6 +243,21 @@ describe('Analysis page shell', () => {
 
     expect(screen.queryByTestId('analysis-engine-loading')).toBeNull();
   });
+
+  it('shows the standalone Stockfish top lines in the default state (both switches ON), not a merged placeholder (155 UAT un-merge)', () => {
+    // Both engineEnabled and flawChessEnabled default to true — the state every
+    // first-time visitor lands in. Post un-merge, the Stockfish search runs
+    // independently of the FlawChess Engine, so the card shows its own top-2
+    // lines (never a "merged" message).
+    engineState.isReady = true;
+    engineState.pvLines = [{ moves: ['e2e4'], evalCp: 30, evalMate: null, depth: 12 }];
+
+    renderAnalysis();
+
+    expect(screen.queryByTestId('analysis-engine-merged-message')).toBeNull();
+    expect(screen.getByTestId('engine-line-0-move-0')).toBeTruthy();
+    expect(screen.queryByTestId('analysis-engine-loading')).toBeNull();
+  });
 });
 
 describe('Maia eval bar perspective (151.1 UAT regression)', () => {
@@ -221,11 +273,17 @@ describe('Maia eval bar perspective (151.1 UAT regression)', () => {
   // Maia's WDL is the side-to-MOVE's perspective. The bar's fill must be
   // WHITE-relative, so a black-to-move expected score of 0.8 (Black favored) must
   // render as a ~20% white fill — NOT 80% (the pre-fix inverted behavior).
+  //
+  // Phase 155 D-04: the FlawChess Engine takes left-slot precedence over Maia
+  // by default, so these pre-155 tests toggle it off first to exercise the Maia
+  // bar specifically (the FC-precedence describe block below covers the
+  // FC-enabled path).
   it('inverts the expected score to white-POV when Black is to move', () => {
     maiaState.expectedScoreAtSelectedElo = 0.8;
     // Black to move (after 1. e4).
     const blackToMoveFen = 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1';
     renderAnalysis(`/analysis?fen=${encodeURIComponent(blackToMoveFen)}`);
+    fireEvent.click(screen.getByTestId('btn-analysis-flawchess-toggle'));
 
     expect(maiaWhiteFillPercent()).toBeCloseTo(20, 1);
   });
@@ -234,7 +292,40 @@ describe('Maia eval bar perspective (151.1 UAT regression)', () => {
     maiaState.expectedScoreAtSelectedElo = 0.8;
     const whiteToMoveFen = 'rnbqkb1r/pppp1ppp/5n2/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3';
     renderAnalysis(`/analysis?fen=${encodeURIComponent(whiteToMoveFen)}`);
+    fireEvent.click(screen.getByTestId('btn-analysis-flawchess-toggle'));
 
     expect(maiaWhiteFillPercent()).toBeCloseTo(80, 1);
+  });
+});
+
+describe('FlawChess Engine eval-bar precedence (Phase 155)', () => {
+  it('shows the FlawChess eval bar in the left slot when the FlawChess Engine is enabled (DISPLAY-04)', () => {
+    // FlawChess Engine is on by default (D-02) — its bar takes left-slot
+    // precedence over Maia.
+    renderAnalysis();
+
+    expect(screen.getByTestId('analysis-flawchess-eval-bar')).toBeTruthy();
+    expect(screen.queryByTestId('analysis-maia-eval-bar')).toBeNull();
+  });
+
+  it('falls back to the Maia eval bar in the left slot once the FlawChess Engine is toggled off (DISPLAY-04)', () => {
+    renderAnalysis();
+
+    fireEvent.click(screen.getByTestId('btn-analysis-flawchess-toggle'));
+
+    expect(screen.getByTestId('analysis-maia-eval-bar')).toBeTruthy();
+    expect(screen.queryByTestId('analysis-flawchess-eval-bar')).toBeNull();
+  });
+
+  it('renders the FlawChess card above the Maia panel by default (D-01)', () => {
+    renderAnalysis();
+
+    const flawChessCard = screen.getByTestId('analysis-flawchess-panel');
+    const maiaPanel = screen.getByTestId('maia-human-panel');
+
+    // DOCUMENT_POSITION_FOLLOWING: maiaPanel comes AFTER flawChessCard in the DOM.
+    const maiaFollowsFlawChess =
+      flawChessCard.compareDocumentPosition(maiaPanel) & Node.DOCUMENT_POSITION_FOLLOWING;
+    expect(maiaFollowsFlawChess).toBeTruthy();
   });
 });

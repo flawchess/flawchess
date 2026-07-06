@@ -72,6 +72,20 @@ export const STOCKFISH_ACCENT = 'oklch(0.58 0.16 255)'; // blue
 // the missed/allowed tactic arrows, and blue is Stockfish — violet sits in the one open
 // hue gap and reads as a distinct "human" identity (151.1 UAT).
 export const MAIA_ACCENT = 'oklch(0.58 0.20 290)'; // violet
+// FlawChess Engine source accent (Phase 155, D-05). Tints the new
+// FlawChessEngineLines card frame + header caption + "FC" eval-bar fill/cap —
+// the third source alongside Stockfish (blue) and Maia (violet).
+export const FLAWCHESS_ENGINE_ACCENT = 'oklch(0.55 0.09 55)'; // brand brown
+// FlawChess Engine practical-score badge shades (155 UAT). Three brand-brown
+// shades keyed by practical rank (best / 2nd / 3rd), the brown analog of the
+// blue Stockfish best/2nd badges — all filled with white text (unlike the light
+// SF second badge, these stay dark enough to carry white). Rank 1 is darkest and
+// most saturated so the top line reads strongest.
+export const FLAWCHESS_ENGINE_BADGE_SHADES = [
+  'oklch(0.45 0.10 55)', // best
+  'oklch(0.52 0.08 55)', // second
+  'oklch(0.59 0.06 55)', // third
+] as const;
 export const EVAL_CHART_LINE = 'oklch(0.82 0 0)';
 // Muted grey for the rotated "Midgame" / "Endgame" text labels centered on the
 // phase boundaries — legible over both the light and dark eval-bar regions.

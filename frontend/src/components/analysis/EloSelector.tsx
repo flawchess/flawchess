@@ -1,6 +1,7 @@
 /**
  * EloSelector — interactive control driving the "you are here" ELO used by the
- * Maia surfaces (Phase 151 Plan 05, D-06). A single-thumb Slider snapped to the
+ * FlawChess and Maia engines (Phase 151 Plan 05, D-06; moved below the Maia card
+ * in 155 UAT since it drives both). A single-thumb Slider snapped to the
  * Maia ELO ladder (MAIA_ELO_LADDER, 600-2600 step 100 per UAT quick 260705-bm3) —
  * bounds and step derive from the ladder, never hard-coded, so a future contract
  * revision (a wider/narrower ladder) doesn't require touching this component.
@@ -42,7 +43,7 @@ export function EloSelector({
     <div
       data-testid="analysis-elo-selector"
       role="group"
-      aria-label="Maia strength (ELO)"
+      aria-label="Engine strength (ELO)"
       className="flex items-center gap-3"
     >
       <span className="text-sm text-muted-foreground">ELO</span>
@@ -52,7 +53,7 @@ export function EloSelector({
         step={step}
         value={[value]}
         onValueChange={handleValueChange}
-        thumbLabels={['Maia strength (ELO)']}
+        thumbLabels={['Engine strength (ELO)']}
         className="min-w-24"
       />
       <span

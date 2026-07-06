@@ -1,7 +1,8 @@
 /**
  * MaiaHumanPanel — the "human" surface bundle for the analysis page (Phase 151 Plan 06,
  * D-01/D-03): a charcoal Card whose header reads "<User> Maia - Human Move Probability <info>"
- * and whose body holds the interactive ELO selector + the Moves-by-Rating chart.
+ * and whose body holds the Moves-by-Rating chart (the ELO slider was moved out
+ * below the card in 155 UAT — it drives both engines, not just Maia).
  *
  * The header info tooltip carries the compact Maia attribution (UAT quick 260705-bm3):
  * it links to the maia3 source repo (the AGPL offer-source, in shortened form) and to
@@ -14,12 +15,12 @@
  * "Human" tab — keeping all three call sites one line instead of tripling this JSX.
  */
 import { User } from 'lucide-react';
-import { EloSelector } from '@/components/analysis/EloSelector';
 import { MovesByRatingChart } from '@/components/analysis/MovesByRatingChart';
 import type { MoveQualityEval, EngineLine } from '@/components/analysis/MovesByRatingChart';
 import { MaiaMoveQualityBar } from '@/components/analysis/MaiaMoveQualityBar';
 import type { HoveredQualityMove } from '@/components/analysis/MaiaMoveQualityBar';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
+import { Switch } from '@/components/ui/switch';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { MAIA_ACCENT } from '@/lib/theme';
 import type { MoveCurvePoint } from '@/hooks/useMaiaEngine';
@@ -28,10 +29,10 @@ const MAIA_SOURCE_URL = 'https://github.com/CSSLab/maia3';
 const MAIA_SITE_URL = 'https://maiachess.com';
 
 export interface MaiaHumanPanelProps {
-  /** Current "you are here" ELO (useMaiaEloDefault's selectedElo). */
+  /** Current "you are here" ELO (useMaiaEloDefault's selectedElo). The ELO slider
+   *  itself now lives BELOW this card (155 UAT) — it drives both the FlawChess and
+   *  Maia engines, so it no longer belongs inside the Maia card. */
   selectedElo: number;
-  /** Fired when the user drags the ELO selector (useMaiaEloDefault's setSelectedElo). */
-  onEloChange: (elo: number) => void;
   /** useMaiaEngine's perElo verbatim — [] renders the chart's own waiting placeholder. */
   perElo: MoveCurvePoint[];
   playedSan: string | null;
@@ -54,6 +55,16 @@ export interface MaiaHumanPanelProps {
   /** Mobile compact mode (151.1 UAT): drop the card header and use a shorter chart to
    * reclaim vertical space — the mobile "Maia" tab is already labeled by its tab. */
   compact?: boolean;
+  /**
+   * Phase 155 D-03: the header toggle Switch's checked state. Provided
+   * together with `onToggleEnabled` from Analysis.tsx's `maiaEnabled` state.
+   * When BOTH are omitted (e.g. the pre-155 unit tests below), the header
+   * renders exactly as before this phase — no switch, no toggle row in
+   * `compact` mode — preserving that locked behavior unchanged.
+   */
+  enabled?: boolean;
+  /** Fired when the header Switch is toggled — wire directly to `setMaiaEnabled`. */
+  onToggleEnabled?: (enabled: boolean) => void;
 }
 
 /** Shorter chart on mobile (compact); desktop keeps MovesByRatingChart's default. */
@@ -92,7 +103,6 @@ function MaiaInfoTooltip(): React.ReactElement {
 
 export function MaiaHumanPanel({
   selectedElo,
-  onEloChange,
   perElo,
   playedSan,
   bestSan,
@@ -104,19 +114,45 @@ export function MaiaHumanPanel({
   onPlayMove,
   className,
   compact = false,
+  enabled,
+  onToggleEnabled,
 }: MaiaHumanPanelProps): React.ReactElement {
+  // Phase 155 D-03: the header Switch only renders when the caller wires both
+  // enabled/onToggleEnabled (Analysis.tsx always does) — omitting them (as the
+  // pre-155 unit tests below do) reproduces the exact prior header/no-header
+  // behavior, so the locked "compact drops the header" test stays green.
+  const showToggle = onToggleEnabled !== undefined;
+  const toggleSwitch = showToggle && (
+    <Switch
+      checked={enabled ?? true}
+      onCheckedChange={onToggleEnabled}
+      aria-label="Toggle Maia"
+      data-testid="btn-analysis-maia-toggle"
+      style={enabled ? { backgroundColor: MAIA_ACCENT } : undefined}
+    />
+  );
   return (
     <Card className={className} data-testid="maia-human-panel">
       {/* Violet header pairs with the violet Maia eval bar (151.1 UAT). Dropped on
-          mobile (compact) — the "Maia" tab already names the surface. */}
-      {!compact && (
+          mobile (compact) unless a toggle is wired, in which case a minimal
+          switch-only row keeps the toggle reachable on mobile (D-03 mobile
+          parity) without reintroducing the full title row's height. */}
+      {!compact ? (
         <CardHeader size="compact" data-testid="maia-human-header" style={{ color: MAIA_ACCENT }}>
+          {toggleSwitch}
           <User aria-hidden="true" className="h-4 w-4" />
           <span>Maia - Human Move Probability</span>
           <MaiaInfoTooltip />
         </CardHeader>
+      ) : (
+        showToggle && (
+          <CardHeader size="compact" data-testid="maia-human-header" style={{ color: MAIA_ACCENT }}>
+            {toggleSwitch}
+            <span className="text-sm font-medium">Maia</span>
+          </CardHeader>
+        )
       )}
-      {/* ELO slider sits BELOW the chart (151.1 UAT). */}
+      {/* The ELO slider now lives BELOW this card (155 UAT) — it drives both engines. */}
       <CardBody className="flex flex-col gap-3 p-3">
         <MovesByRatingChart
           perElo={perElo}
@@ -128,8 +164,7 @@ export function MaiaHumanPanel({
           engineTopLines={engineTopLines}
           heightClass={compact ? COMPACT_CHART_HEIGHT_CLASS : undefined}
         />
-        <EloSelector value={selectedElo} onChange={onEloChange} />
-        {/* Move-quality bar below the chart + slider (quick 260705-kfg): the shown
+        {/* Move-quality bar below the chart (quick 260705-kfg): the shown
             candidates' Maia mass split by Stockfish-graded severity. */}
         <MaiaMoveQualityBar
           perElo={perElo}

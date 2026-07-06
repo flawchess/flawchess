@@ -81,6 +81,14 @@ export interface GameOverlay {
 export interface UseGameOverlayParams {
   /** Active only in game mode; otherwise the hook passes the live engine through. */
   enabled: boolean;
+  /**
+   * Whether the Stockfish engine is toggled on. When false, the blue best-move /
+   * light-blue second-best arrows are suppressed (155 UAT) — even the precomputed
+   * best-move arrow, which otherwise shows independently of the live search. The
+   * crimson allowed-tactic and teal missed-tactic arrows are part of the tactic
+   * overlay, not live engine suggestions, so they stay regardless.
+   */
+  engineEnabled: boolean;
   evalSeries: EvalPoint[] | null | undefined;
   flawMarkers: FlawMarker[] | null | undefined;
   mainLine: NodeId[];
@@ -148,6 +156,7 @@ function buildPlyMaps(
 export function useGameOverlay(params: UseGameOverlayParams): GameOverlay {
   const {
     enabled,
+    engineEnabled,
     evalSeries,
     flawMarkers,
     mainLine,
@@ -200,8 +209,13 @@ export function useGameOverlay(params: UseGameOverlayParams): GameOverlay {
     // blue with no label. depths is anchored at the played move's decision ply k.
     const allowedDepthLabel = depths?.allowed;
     const followingBestColor = allowedDepthLabel != null ? TAC_ALLOWED : BEST_MOVE_ARROW;
+    // When it carries the allowed-tactic label it's the crimson opponent-response
+    // arrow (part of the tactic overlay — always shown); otherwise it's the plain
+    // blue best-continuation, a Stockfish suggestion suppressed when the engine is
+    // toggled off (155 UAT).
+    const isAllowedTacticArrow = allowedDepthLabel != null;
     let blueSquares = uciToSquares(precomputedBest);
-    if (blueSquares) {
+    if (blueSquares && (engineEnabled || isAllowedTacticArrow)) {
       // The engine's best continuation from the displayed post-flaw position. For an allowed
       // tactic this is the opponent's response and carries the allowed depth label; the
       // missed-tactic depth rides the teal should-have-played arrow below (Quick 260628-1t5).
@@ -213,8 +227,9 @@ export function useGameOverlay(params: UseGameOverlayParams): GameOverlay {
         label: allowedDepthLabel,
         labelColor: allowedDepthLabel != null ? TAC_ALLOWED_LABEL : undefined,
       });
-    } else {
-      // No precomputed best (sideline / root): live engine top line drives the blue.
+    } else if (!blueSquares && engineEnabled) {
+      // No precomputed best (sideline / root): live engine top line drives the blue
+      // (only while Stockfish is on).
       blueSquares = uciToSquares(enginePvLines[0]?.moves[0] ?? null);
       if (blueSquares) {
         arrows.push({
@@ -275,7 +290,10 @@ export function useGameOverlay(params: UseGameOverlayParams): GameOverlay {
 
     // Light-blue second-best arrow from the live engine (pvLines[1]). When precomputed
     // best is shown, the engine's own top line is suppressed — only the 2nd best is added.
-    const secondBestSquares = uciToSquares(enginePvLines[1]?.moves[0] ?? null);
+    // Suppressed entirely when Stockfish is toggled off (155 UAT).
+    const secondBestSquares = engineEnabled
+      ? uciToSquares(enginePvLines[1]?.moves[0] ?? null)
+      : null;
     if (
       secondBestSquares &&
       !(
@@ -308,6 +326,7 @@ export function useGameOverlay(params: UseGameOverlayParams): GameOverlay {
     };
   }, [
     enabled,
+    engineEnabled,
     maps,
     mainLine,
     currentNodeId,

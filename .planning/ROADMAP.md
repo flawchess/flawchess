@@ -109,7 +109,7 @@
 | 151.1. Stockfish-graded Maia moves (INSERTED, SEED-083) | 4/4 | Complete | 2026-07-05 |
 | 153. Pure Search Core (Guardrail + Backup + MCTS + Fallback) | 5/5 | Complete    | 2026-07-05 |
 | 154. Real Providers (Stockfish Worker Pool + Maia Queue) | 4/4 | Complete    | 2026-07-06 |
-| 155. React Hook + Anytime UI (Free Analysis) | 0/0 | Not started | - |
+| 155. React Hook + Anytime UI (Free Analysis) | 4/4 | Complete   | 2026-07-06 |
 | 156. Board Arrows + Toggles (Free Analysis) | 0/0 | Not started | - |
 | 157. Game Review Overlay Integration | 0/0 | Not started | - |
 
@@ -180,7 +180,20 @@ Client-side-only: no backend, no schema, no migrations, no new endpoints, no new
   3. Each candidate line in `FlawChessEngineLines.tsx` shows its modal path — the player's chosen move followed by the opponent's most-likely replies, walked from already-expanded tree nodes — not just the bare root move (DISPLAY-02).
   4. Each ranked move displays the objective Stockfish evaluation alongside the practical-for-you score in the same badge (e.g. "objectively +3.0, practically +0.9 for you"), sourced from data the search already computed with no second grading pass (DISPLAY-03).
 
-**Plans**: TBD
+**Plans**: 4 plans
+**Wave 1**
+
+- [x] 155-01-PLAN.md — Foundation: theme tokens (brown + gold), inverse-sigmoid `expectedScoreToWhitePovCp`, `Switch` primitive, Wave 0 test scaffolds
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 155-02-PLAN.md — `useFlawChessEngine` hook: provider lifecycle + FEN trigger + abort/stopAll + 150ms onSnapshot throttle (DISPLAY-01)
+- [x] 155-03-PLAN.md — `FlawChessEngineLines` card: top-3 lines, objective/practical score-pair badge, modal-path SAN chips + graft (DISPLAY-02, DISPLAY-03)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 155-04-PLAN.md — Analysis.tsx integration: 3-toggle Switch refactor, card placement (desktop + mobile), eval-bar precedence + SF-source handoff (DISPLAY-01, DISPLAY-04)
+
 **UI hint**: yes
 
 ### Phase 156: Board Arrows + Toggles (Free Analysis)

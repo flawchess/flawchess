@@ -3,8 +3,10 @@
  * Phase 151 Plan 06 — MaiaHumanPanel tests.
  *
  * Thin composition component: a Card whose header carries the title + info tooltip
- * and whose body holds EloSelector + MovesByRatingChart. Verifies wiring, not the
- * child components' own behavior (each has its own test suite already).
+ * and whose body holds the MovesByRatingChart. The ELO selector was moved OUT of
+ * this card in 155 UAT (it drives both engines), so it is no longer asserted here.
+ * Verifies wiring, not the child components' own behavior (each has its own test
+ * suite already).
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -41,11 +43,10 @@ afterEach(() => {
 });
 
 describe('MaiaHumanPanel', () => {
-  it('renders the ELO selector and the chart', () => {
+  it('renders the chart (ELO selector now lives outside the card, 155 UAT)', () => {
     render(
       <MaiaHumanPanel
         selectedElo={1500}
-        onEloChange={vi.fn()}
         perElo={[]}
         playedSan={null}
         bestSan={null}
@@ -54,15 +55,15 @@ describe('MaiaHumanPanel', () => {
         engineTopLines={[]}
       />,
     );
-    expect(screen.getByTestId('analysis-elo-selector')).toBeTruthy();
     expect(screen.getByTestId('moves-by-rating-chart')).toBeTruthy();
+    // The ELO slider was moved out below the card (155 UAT).
+    expect(screen.queryByTestId('analysis-elo-selector')).toBeNull();
   });
 
   it('renders the header title and the info tooltip trigger (UAT quick 260705-bm3)', () => {
     render(
       <MaiaHumanPanel
         selectedElo={1500}
-        onEloChange={vi.fn()}
         perElo={[]}
         playedSan={null}
         bestSan={null}
@@ -79,7 +80,6 @@ describe('MaiaHumanPanel', () => {
     render(
       <MaiaHumanPanel
         selectedElo={1500}
-        onEloChange={vi.fn()}
         perElo={[]}
         playedSan={null}
         bestSan={null}
@@ -91,11 +91,10 @@ describe('MaiaHumanPanel', () => {
     expect(screen.queryByTestId('maia-attribution')).toBeNull();
   });
 
-  it('compact mode drops the header but keeps the chart + selector (151.1 UAT)', () => {
+  it('compact mode drops the header but keeps the chart (151.1 UAT)', () => {
     render(
       <MaiaHumanPanel
         selectedElo={1500}
-        onEloChange={vi.fn()}
         perElo={[]}
         playedSan={null}
         bestSan={null}
@@ -106,7 +105,6 @@ describe('MaiaHumanPanel', () => {
       />,
     );
     expect(screen.queryByTestId('maia-human-header')).toBeNull();
-    expect(screen.getByTestId('analysis-elo-selector')).toBeTruthy();
     expect(screen.getByTestId('moves-by-rating-chart')).toBeTruthy();
   });
 });

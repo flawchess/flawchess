@@ -26,10 +26,10 @@ Committed scope for this milestone (MVP1 core, per SEED-082). Each maps to a roa
 
 ### Anytime Display (DISPLAY)
 
-- [ ] **DISPLAY-01**: The engine emits results anytime — quick top-n lines appear immediately and refine live as the search accumulates visits.
-- [ ] **DISPLAY-02**: Each candidate line displays its modal path (the player's chosen moves plus the opponent's most-likely replies).
-- [ ] **DISPLAY-03**: Each ranked move displays the objective-vs-practical score pair (the objective Stockfish evaluation alongside the practical-for-you score).
-- [ ] **DISPLAY-04**: The engine surfaces on the free-analysis `/analysis` board (arbitrary position + free play).
+- [x] **DISPLAY-01**: The engine emits results anytime — quick top-n lines appear immediately and refine live as the search accumulates visits. (Partial: Plan 02 delivered `useFlawChessEngine`'s onSnapshot throttle + abort/stopAll guard, fully unit-tested. DISPLAY-01 is shared across Plans 02/04's frontmatter and only closes when Plan 04 actually surfaces the hook on the `/analysis` page.)
+- [x] **DISPLAY-02**: Each candidate line displays its modal path (the player's chosen moves plus the opponent's most-likely replies).
+- [x] **DISPLAY-03**: Each ranked move displays the objective-vs-practical score pair (the objective Stockfish evaluation alongside the practical-for-you score). (Complete: Plan 01 delivered the `expectedScoreToWhitePovCp` inverse-sigmoid conversion function; Plan 03's `FlawChessEngineLines` card renders the visible two-number score-pair badge, closing DISPLAY-03.)
+- [x] **DISPLAY-04**: The engine surfaces on the free-analysis `/analysis` board (arbitrary position + free play).
 
 ### Board Arrows (ARROW)
 
@@ -89,10 +89,10 @@ Which phases cover which requirements. Populated during roadmap creation.
 | POOL-02 | Phase 154 | Complete |
 | POOL-03 | Phase 154 | Complete |
 | POOL-04 | Phase 154 | Complete (SC4 real-device UAT deferred to Phase 155) |
-| DISPLAY-01 | Phase 155 | Pending |
-| DISPLAY-02 | Phase 155 | Pending |
-| DISPLAY-03 | Phase 155 | Pending |
-| DISPLAY-04 | Phase 155 | Pending |
+| DISPLAY-01 | Phase 155 | Complete |
+| DISPLAY-02 | Phase 155 | Complete |
+| DISPLAY-03 | Phase 155 | Complete |
+| DISPLAY-04 | Phase 155 | Complete |
 | ARROW-01 | Phase 156 | Pending |
 | ARROW-02 | Phase 156 | Pending |
 | ARROW-03 | Phase 156 | Pending |

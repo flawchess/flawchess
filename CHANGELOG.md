@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- **FlawChess Engine practical-play analysis on `/analysis`** — a new client-side engine that ranks candidate moves by how well they score *for you in practice*, not just by objective strength. Toggle it on from the analysis header (next to Stockfish and Maia) and each line shows a score pair: the objective Stockfish evaluation alongside the practical-for-you score (e.g. "objectively +3.0, practically +0.9"), plus the modal continuation (your move followed by the opponent's most-likely replies) as clickable chips. Lines appear almost immediately and refine live as the search runs. The engine runs entirely in your browser (a Maia-weighted expectimax search over a Stockfish worker pool and a dedicated Maia policy worker), with no shared-memory headers and pool size adapting to your device. (Phases 153, 154, 155)
+
 ### Fixed
 
 - **Maia chart no longer gets stuck or lags when scrubbing the eval slider** — on `/analysis`, dragging the eval-chart slider quickly (especially on mobile) could leave the "Moves by Rating" chart blank and the Maia eval bar frozen at 50%, and dragging to a position loaded noticeably slower than clicking straight to it. Revisiting a position now restores its result instantly from cache, and the human-move worker keeps a single inference in flight and jumps to the position you land on, skipping the intermediate slider positions instead of queuing them. (Quick 260705)

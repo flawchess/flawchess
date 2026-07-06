@@ -3,28 +3,28 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: FlawChess Engine
 current_phase: 155
-current_phase_name: Free Analysis
-status: completed
-stopped_at: Completed 154-04-PLAN.md (Phase 154 fully gap-closed)
-last_updated: "2026-07-06T16:04:35.611Z"
+current_phase_name: react-hook-anytime-ui-free-analysis
+status: verifying
+stopped_at: Completed 155-04-PLAN.md
+last_updated: "2026-07-06T18:39:36.918Z"
 last_activity: 2026-07-06
-last_activity_desc: Phase 154 complete, transitioned to Phase 155
+last_activity_desc: Phase 155 execution started
 progress:
   total_phases: 5
-  completed_phases: 2
-  total_plans: 9
-  completed_plans: 9
-  percent: 40
+  completed_phases: 3
+  total_plans: 13
+  completed_plans: 13
+  percent: 60
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 155 — React Hook + Anytime UI (Free Analysis)
-Plan: Not started
-Status: Phase 154 complete — ready for `/gsd-plan-phase 155`
-Last activity: 2026-07-06 — Phase 154 complete, transitioned to Phase 155
+Phase: 155 (react-hook-anytime-ui-free-analysis) — EXECUTING
+Plan: 4 of 4
+Status: Phase complete — ready for verification
+Last activity: 2026-07-06 — Phase 155 execution started
 
 ## Project Reference
 
@@ -101,6 +101,21 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 154-03]: Used a dedicated PoolWorkerSlot.dead boolean rather than inferring pool failure from isReady, to avoid a false-positive drain during normal not-yet-ready startup — isReady is also false during normal init before uciok/readyok, so an inference-based all-failed check would incorrectly drain valid pending requests
 - [Phase 154-03]: WR-02 fixed as a documentation-only correction: priority/depth stay 0 under the frozen 2-arg grade() contract until Phase 155 supplies a real caller — No caller exists yet in Phase 154 to supply real priority values; the ordering machinery itself is already correct and unit-tested
 - [Phase 154]: [Phase 154-04]: Task 1 committed as a standalone inline fix (no shared helper) so its commit is self-contained; Task 2 extracted settleAllAndDropWorker() and layered the onerror handler on top, per plan's explicit permission to factor shared logic in Task 2
+- [Phase 155-01]: expectedScoreToWhitePovCp special-cases es<=0/es>=1 to +/-MATE_CP_EQUIVALENT*sign (mirroring evalToExpectedScore's mate-before-sigmoid convention) instead of a literal log-odds inverse — avoids Infinity/NaN blow-up on a genuine forced-mate subtree (Pitfall 2)
+- [Phase 155-01]: Switch's checked-track fill defaults to bg-primary but is caller-overridable via className, not a single hardcoded accent baked into the primitive — each engine card (Stockfish/Maia/FlawChess) needs its own switch tint (D-03)
+- [Phase 155-01]: Reverted requirements.mark-complete's DISPLAY-03 checkbox flip — DISPLAY-03 is shared across Plans 01/03 (frontmatter) — 155-01 alone only delivers the expectedScoreToWhitePovCp conversion function; left [ ] Pending with a partial-delivery note; Plan 03 (the visible score-pair badge) actually closes it
+- [Phase 155-02]: budget.elo = { w: elo, b: elo } — both colors share the single on-page ELO in free analysis (D-07/Open Question 2); true self/opponent asymmetry deferred to Phase 157
+- [Phase 155-02]: lastCommitAtRef reset to 0 at the start of every fresh mctsSearch call, not just on hook mount, so the D-09 first-paint guarantee holds on every FEN navigation
+- [Phase 155-02]: abortControllerRef.abort() + pool.stopAll() called unconditionally at the top of the search-trigger effect (including the first search, where stopAll is a harmless no-op) — matches 155-RESEARCH.md Pattern 2 literally
+- [Phase 155-02]: Reverted requirements.mark-complete's DISPLAY-01 checkbox flip: DISPLAY-01 is shared across Plans 02/04 (frontmatter) — 155-02 alone only delivers the hook's throttle/abort mechanics; left [ ] Pending with a partial-delivery note; Plan 04 (surfacing on /analysis) actually closes it
+- [Phase 155-03]: Exported replayPvLine/formatScore from EngineLines.tsx (additive only) and gave EngineLinesSkeleton a rows?: 2|3 prop rather than duplicating logic or writing a second skeleton
+- [Phase 155-03]: FlawChessEngineLines has no compact prop - card placement/mobile-tab wiring is Plan 04's job per this plan's Out-of-Scope section
+- [Phase 155-03]: DISPLAY-02 and DISPLAY-03 marked fully complete - DISPLAY-02 was never shared with another plan, and DISPLAY-03's Plan 01/03 split closes here per REQUIREMENTS.md's own note
+- [Phase 155-04]: Combined Task 1+2 into one commit — topLine/flawChessEngine's mount is inert until Task 2 consumes it, so a Task-1-only commit would fail its own tsc --noEmit gate under noUnusedLocals
+- [Phase 155-04]: Expanded files_modified to include MaiaHumanPanel.tsx — the Maia card header lives there, not in Analysis.tsx; added optional enabled/onToggleEnabled props, no-op when omitted (preserves the locked 151.1 compact-drops-header test)
+- [Phase 155-04]: FlawChess card wrapper uses testid analysis-flawchess-panel (not analysis-flawchess-card, already used by FlawChessEngineLines.tsx's own root div) to avoid a duplicate-testid collision
+- [Phase 155-04]: engineLoading gained a && !flawChessEnabled guard (Rule 1 bug fix) — without it the Stockfish card's loading skeleton spins forever once FlawChess suppresses the standalone search (both default ON)
+- [Phase 155-04]: No isError/FlawChess-unavailable state wired — the frozen Plan 02 hook exposes no error field (worker/pool failures resolve to empty results internally); documented as a known gap rather than fabricated
 
 ### Pending Todos
 
@@ -170,12 +185,12 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-07-06T15:56:34.011Z
+**Last session:** 2026-07-06T18:39:36.902Z
 
 **Resume file:** 
 
 None
-Stopped at: Completed 154-04-PLAN.md (Phase 154 fully gap-closed)
+Stopped at: Completed 155-04-PLAN.md
 Resume: `/gsd-plan-phase 153`
 
 ## Performance Metrics
@@ -201,6 +216,10 @@ Resume: `/gsd-plan-phase 153`
 | Phase 154 P02 | 25min | 2 tasks | 2 files |
 | Phase 154 P03 | 25min | 3 tasks | 2 files |
 | Phase 154 P04 | 20min | 2 tasks | 2 files |
+| Phase 155 P01 | 15min | 3 tasks | 6 files |
+| Phase 155 P02 | 10min | 2 tasks | 2 files |
+| Phase 155 P03 | 13min | 2 tasks | 3 files |
+| Phase 155 P04 | 55min | 3 tasks | 3 files |
 
 ## Operator Next Steps
 
