@@ -4,11 +4,10 @@ milestone: v2.0
 milestone_name: FlawChess Engine
 current_phase: 156
 current_phase_name: board-arrows-toggles-free-analysis
-status: verifying
+status: Phase 156 shipped — squash-merged to main (70b1684a)
 stopped_at: Phase 156 context gathered
-last_updated: "2026-07-06T21:52:17.252Z"
-last_activity: 2026-07-06
-last_activity_desc: Phase 156 execution started
+last_updated: "2026-07-07T03:51:28.843Z"
+last_activity: 2026-07-07
 progress:
   total_phases: 5
   completed_phases: 4
@@ -23,8 +22,8 @@ progress:
 
 Phase: 156 (board-arrows-toggles-free-analysis) — EXECUTING
 Plan: 1 of 1
-Status: Phase complete — ready for verification
-Last activity: 2026-07-06 — Phase 156 execution started
+Status: Phase 156 shipped — squash-merged to main (70b1684a)
+Last activity: 2026-07-07
 
 ## Project Reference
 
