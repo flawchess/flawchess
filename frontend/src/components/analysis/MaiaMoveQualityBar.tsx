@@ -44,7 +44,7 @@ import {
   type QualityBucketKey,
 } from '@/lib/moveQuality';
 import { computePositionVerdict, formatVerdictEval, type PositionVerdictResult, type VerdictMove } from '@/lib/positionVerdict';
-import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
+import { ProseSpan } from '@/components/analysis/ProseSpan';
 import type { MoveQualityEval } from '@/components/analysis/MovesByRatingChart';
 import type { MoveCurvePoint } from '@/hooks/useMaiaEngine';
 
@@ -159,50 +159,22 @@ function ProseMoveSpan({
 }): React.ReactElement {
   const evalText = formatVerdictEval(move.evalCp, move.evalMate);
   const ariaLabel = `${move.san}, ${move.maiaPct}% at this rating, evaluated ${evalText}. Click to play it.`;
-  // Whether the popover was already open when this press began — decides
-  // reveal-vs-play. A ref (not state) so it's synchronous and immune to the
-  // focus-driven re-render that opens the popover mid-tap.
-  const wasOpenAtPress = useRef(false);
 
   return (
-    <Popover open={isOpen} onOpenChange={(next) => (next ? undefined : onClose())}>
-      <PopoverAnchor asChild>
-        <button
-          type="button"
-          className="font-semibold underline decoration-dotted underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          style={{ color: move.textColor }}
-          aria-label={ariaLabel}
-          data-testid={`maia-prose-move-${move.san}`}
-          onMouseEnter={onOpenDelayed}
-          onMouseLeave={onClose}
-          onFocus={onOpenNow}
-          onBlur={onClose}
-          onPointerDown={() => {
-            wasOpenAtPress.current = isOpen;
-          }}
-          onClick={() => {
-            if (wasOpenAtPress.current) {
-              if (onPlay) onPlay();
-              else onClose();
-            } else {
-              onOpenNow();
-            }
-          }}
-        >
-          {move.san}
-        </button>
-      </PopoverAnchor>
-      {/* Content-bridge: keep it open while the pointer is on the popover. */}
-      <PopoverContent
-        side="top"
-        onMouseEnter={onOpenNow}
-        onMouseLeave={onClose}
-        className="w-auto max-w-xs rounded-md border-0 bg-foreground px-3 py-1.5 text-xs text-background"
-        data-testid={`maia-prose-move-tooltip-${move.san}`}
-      >
-        {`${move.maiaPct}% at this rating · ${evalText}`}
-      </PopoverContent>
-    </Popover>
+    <ProseSpan
+      label={move.san}
+      textColor={move.textColor}
+      ariaLabel={ariaLabel}
+      testId={`maia-prose-move-${move.san}`}
+      tooltipTestId={`maia-prose-move-tooltip-${move.san}`}
+      isOpen={isOpen}
+      onOpenDelayed={onOpenDelayed}
+      onOpenNow={onOpenNow}
+      onClose={onClose}
+      onPlay={onPlay}
+    >
+      {`${move.maiaPct}% at this rating · ${evalText}`}
+    </ProseSpan>
   );
 }
 

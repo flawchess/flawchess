@@ -111,7 +111,7 @@
 | 154. Real Providers (Stockfish Worker Pool + Maia Queue) | 4/4 | Complete    | 2026-07-06 |
 | 155. React Hook + Anytime UI (Free Analysis) | 4/4 | Complete   | 2026-07-06 |
 | 156. Board Arrows + Toggles (Free Analysis) | 1/1 | Complete   | 2026-07-06 |
-| 157. FlawChess Agreement Verdict (prose + hoverable moves) | 0/0 | Not started | - |
+| 157. FlawChess Agreement Verdict (prose + hoverable moves) | 2/2 | Complete   | 2026-07-07 |
 
 ## Active Milestone: v2.0 FlawChess Engine
 
@@ -229,7 +229,15 @@ Plans:
 
 **Scope note**: Shrunk from the original "Game Review Overlay Integration" (`/gsd-explore`, 2026-07-07). Old success criteria 1 and 3 (engine + three arrow layers on the game-review board) were already satisfied incidentally because game review and free analysis share `Analysis.tsx`; only the played-vs-recommended comparison remained, and it was reframed from "your played move vs practical best" to "FlawChess vs Stockfish agreement". The dropped played-move comparison is captured as SEED-086.
 
-**Plans**: TBD
+**Plans**: 2 plans
+**Wave 1**
+
+- [x] 157-01-PLAN.md — pure `flawChessVerdict.ts` three-tier classifier (aligned/safe/sharp) + Wave-0 unit tests
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 157-02-PLAN.md — `FlawChessAgreementVerdict` component (extracted `ProseSpan`, D-07 prose, D-09 arrow isolation, D-10 popover, D-11 click-to-play) + `Analysis.tsx` wiring
+
 **UI hint**: yes
 
 ## Backlog
@@ -267,7 +275,7 @@ Browser-only, client-side onnxruntime-web inference — **zero DB writes** (no s
 - [x] Phase 151: Maia in the Browser + All-Position Surfaces (6/6 plans) — relicense MIT → AGPL-3.0 + always-visible `MaiaAttribution`; unmodified version-pinned `maia3_simplified.onnx` via onnxruntime-web in a lazy Web Worker; original MIT glue (`maiaEncoding.ts`) → normalized per-legal-move distribution + WDL from FEN + ELO; "Moves by Rating" chart + Maia WDL bar (LEFT) / Stockfish bar (RIGHT), live per navigation; 3-column desktop + mobile Human tab; backend read-only `current_rating`; VALID-01 live calibration sign-off. Verified `passed_with_override` (MAIA-06 latency-measurement clause accepted) — completed 2026-07-05
 - [x] Phase 151.1: Stockfish-graded Maia moves on the Moves-by-Rating chart (INSERTED, SEED-083) (4/4 plans) — chart lines + SAN labels recolored by Stockfish quality on FlawChess's own expected-score-drop thresholds (dark-green best → red blunder); fixed top-6 cap replaced by the Maia cumulative-probability ≥ 0.95 ∪ {SF-best} set; a second, fully isolated Stockfish WASM grading worker (ONE `searchmoves`+MultiPV root search, pv[0]-keyed cache); UAT polish added a move-quality bar + plain-language position-difficulty verdict — completed 2026-07-05
 
-**Deferred at close:** Pillars A + B (Flaw Overlay, FLAW-01..04) → [SEED-084](seeds/SEED-084-flaw-overlay-pillars-a-b.md); Pillar C (aggregate rollup) + SEED-082 (human-playable-line engine) remain persistence-gated future work. **Not yet deployed to production** (ships with the pending v1.31 deploy on the next `bin/deploy.sh`).
+**Deferred at close:** Pillars A + B (Flaw Overlay, FLAW-01..04) → [SEED-084](seeds/closed/SEED-084-flaw-overlay-pillars-a-b.md); Pillar C (aggregate rollup) + SEED-082 (human-playable-line engine) remain persistence-gated future work. **Not yet deployed to production** (ships with the pending v1.31 deploy on the next `bin/deploy.sh`).
 
 See [milestones/v1.32-ROADMAP.md](milestones/v1.32-ROADMAP.md) for full details.
 

@@ -92,7 +92,7 @@ Picture a tiny two-ply tree. You are to move (`MAX`), and for each of your candi
 
 Move A wins here even if, say, move C led to a higher score *when the opponent defends perfectly* — because the opponent usually won't. That is the swindle instinct, expressed as arithmetic.
 
-This asymmetry (maximize at the current move, average everywhere below) is the genuinely unusual piece, and it is deliberately kept to a few lines of code so it can't quietly turn into something else (more on that in §5).
+This asymmetry (maximize at the current move, average everywhere below) is the genuinely unusual piece, and it is deliberately kept to a few lines of code so it can't quietly turn into something else (more on that in §6).
 
 ### 3b. Why a "smart budget allocator" — MCTS
 
@@ -141,11 +141,11 @@ Here is one full cycle of the search, start to finish. Repeat this a few hundred
         └──────────────────────── repeat until budget spent ──────────────────┘
 ```
 
-1. **Select.** Starting from the current position, walk down the tree, at each step choosing the child that best balances "looks good already" against "hasn't been explored much" (the PUCT rule, §5). Stop when you reach a spot not yet expanded — the most promising frontier.
+1. **Select.** Starting from the current position, walk down the tree, at each step choosing the child that best balances "looks good already" against "hasn't been explored much" (the PUCT rule, §6). Stop when you reach a spot not yet expanded — the most promising frontier.
 
 2. **Terminal check.** If that spot is checkmate, stalemate, or a draw, it gets a fixed value (a win for you = 1, a loss = 0, any draw = 0.5) and is never expanded. Same if the line has hit the depth ceiling. These dead ends cost nothing — no model calls.
 
-3. **Expand.** For a genuine new position: ask Maia for the candidate moves, keep the most likely ones (see "truncation" in §5), then make **one batched Stockfish call** to evaluate all of them at once. Each candidate becomes a new child, seeded with its Stockfish-derived score.
+3. **Expand.** For a genuine new position: ask Maia for the candidate moves, keep the most likely ones (see "truncation" in §6), then make **one batched Stockfish call** to evaluate all of them at once. Each candidate becomes a new child, seeded with its Stockfish-derived score.
 
 4. **Back up.** Recompute this spot's value from its fresh children using the expectimax rule (average for a normal node, maximum at the current move), then walk back up the path applying the same recomputation to every ancestor. The estimate for the move on the board is now a touch sharper than before.
 
@@ -171,7 +171,17 @@ At the bottom of a line the engine needs a number between 0 and 1, but Stockfish
 
 ---
 
-## 5. The judgment calls, and why they are made this way
+## 5. Which moves get considered, and how the search steers them
+
+Before anything else, a fair question: where does the short list of candidate moves at each position even come from? **In the current implementation, entirely from Maia.** Maia proposes the moves — the ones a human at the relevant rating would actually consider — and Stockfish's only job is to *score* that list. Stockfish contributes no moves of its own.
+
+Concretely, at every position the engine takes Maia's probability distribution over all legal moves and keeps the most likely ones until they add up to about 90% of the probability, which usually leaves three to five moves (this is the "truncation" detailed below). That truncated set *is* the candidate list.
+
+There is a dormant capability worth knowing about, because the machinery for it is already built (and referenced in the "exploration floor" below). The engine *can* inject one extra move into the root's candidate set — typically Stockfish's objective top choice — so that a strong move Maia rates as near-impossible still gets searched. When enabled, that move is unioned in *after* truncation (so the mass cut can't drop it) and kept alive by the exploration floor. **This injection is switched off in the current build**, so nothing changes the "pure Maia" answer above; the hook simply exists for the day a specific move needs to be forced in.
+
+---
+
+## 6. The judgment calls inside the search
 
 A few decisions inside the search deserve a plain explanation, because they are where a naive version would go wrong.
 
@@ -187,16 +197,6 @@ with a bonus that is larger for moves Maia thinks are likely and smaller for mov
 **Making sure a strong-but-rare move still gets a look — the exploration floor.** Sometimes you want to force a specific move into consideration — say, Stockfish's top choice — even though Maia gives it almost no human probability. Left alone, the branch-selection rule would never spend any visits on a move with ~0 probability, so its score would stay a single shallow guess. The fix: for the *current move only*, and *only* when deciding where to spend visits, treat every candidate as if it had at least a 10% probability. This guarantees the injected move actually gets searched. Critically, this nudge affects only *where the search looks* — it never touches the actual score math, which always uses Maia's true probabilities. Visit allocation is steered; the reported numbers are never distorted.
 
 **Keeping the novel rule honest.** The one genuinely unusual idea — maximize at the current move, human-weighted average everywhere else — lives in a tiny, isolated piece of arithmetic. There's a good reason for that. A famous pitfall is that this kind of custom rule can *silently* slide back into textbook MCTS, which weights children by how often they were *visited* rather than by *how likely a human is to play them*. Those produce different answers, and the wrong one still looks plausible. By isolating the rule and building it so that visit counts physically cannot enter the averaging, the mistake becomes impossible to make by accident.
-
----
-
-## 6. Two subtle traps, prevented by design
-
-Two bugs here would be *silent* — the engine would still print believable numbers, just wrong ones. Both are guarded structurally, not by good intentions.
-
-**The sign-flip trap.** Textbook chess search flips the sign of the evaluation at every move, because "good for White" is "bad for Black" and the side to move alternates. This engine deliberately does *not* flip signs during its averaging. Instead, every value in the whole tree is expressed from **one fixed point of view: the player to move in the starting position**, held constant from top to bottom. The moment a value were accidentally measured from the *local* side to move instead, the sign would flip every half-move and quietly corrupt everything. The safeguard is to compute "whose perspective" exactly once, at the top, and carry it as a constant everywhere below. This is the single subtlest correctness detail in the design.
-
-**The rating-inversion trap.** The engine must ask Maia at *your* rating on your moves and the *opponent's* rating on theirs. The tempting-but-fragile way to decide whose move it is would be to count half-moves ("even = me, odd = opponent"). That breaks the instant you analyze a position with Black to move, or an off-by-one slips in. Instead the engine reads the side to move straight from each position itself and looks the rating up by color. Because color comes directly from the board and the two ratings are stored by color, the routing has no arithmetic to get wrong.
 
 ---
 
@@ -221,4 +221,4 @@ Restraint is part of the design. Some limits are worth stating plainly.
 
 ## 9. The whole thing in one paragraph
 
-The FlawChess Engine ranks moves by **expected practical score** — how well a move actually does *for you*, given that you and your opponent both play like real humans at your respective ratings rather than like perfect engines. It borrows Stockfish for objective quality and Maia for human move-probability, and fuses them with **expectimax** (you maximize at the move on the board; every deeper position is a probability-weighted average that honestly prices in fallibility on both sides) run inside an **MCTS** budget allocator that spends its scarce, expensive evaluations on the lines that matter instead of splitting them evenly across good and bad alike. The novel maximize-here-average-everywhere rule is kept tiny and isolated so it can't drift into ordinary MCTS; two silent traps — a per-move sign flip and rating-by-parity confusion — are prevented by construction rather than by care; and a simpler reserve engine that provably agrees on scoring stands behind the same door. The result is a search that will rank an objectively second-best move first when it sets a trap the opponent walks into — the one thing no conventional engine will ever tell you.
+The FlawChess Engine ranks moves by **expected practical score** — how well a move actually does *for you*, given that you and your opponent both play like real humans at your respective ratings rather than like perfect engines. It borrows Stockfish for objective quality and Maia for human move-probability, and fuses them with **expectimax** (you maximize at the move on the board; every deeper position is a probability-weighted average that honestly prices in fallibility on both sides) run inside an **MCTS** budget allocator that spends its scarce, expensive evaluations on the lines that matter instead of splitting them evenly across good and bad alike. The novel maximize-here-average-everywhere rule is kept tiny and isolated so it can't drift into ordinary MCTS, and a simpler reserve engine that provably agrees on scoring stands behind the same door. The result is a search that will rank an objectively second-best move first when it sets a trap the opponent walks into — the one thing no conventional engine will ever tell you.

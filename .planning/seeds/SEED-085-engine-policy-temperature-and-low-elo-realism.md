@@ -4,21 +4,33 @@ status: dormant
 planted: 2026-07-06
 planted_during: FlawChess Engine explainer doc session (2026-07-06)
 trigger_when: after the FlawChess Engine ships its MVP UI (post SEED-082 MVP1) and real Maia+Stockfish providers are live enough to observe low-ELO recommendation quality
-scope: medium (one tunable + a UI slider; possibly a deeper root-findability change)
-source: user observation on a live 600-ELO analysis (screenshot) during the engine-doc session
+scope: medium (one tunable + a UI slider) + the Thread-B root-findability change is now a committed real fix, not an optional fork
+source: user observations on live 600-ELO (2026-07-06) and 1000-ELO (2026-07-07) analyses (screenshots); root-findability confirmed in code 2026-07-07
 depends_on: SEED-082 (FlawChess Engine — this tunes its behavior)
 ---
 
 # SEED-085: Policy temperature knob + low-ELO practical-move realism
 
-## The observation that triggered this
+## The observations that triggered this
 
-On a live 600-ELO analysis, the FlawChess Engine's top practical move was **Nb5** — which
+**600 ELO (2026-07-06).** The FlawChess Engine's top practical move was **Nb5** — which
 Maia says a 600 plays only **5% of the time** (labeled "Best" in the move list, but nearly
 unfindable at that level). The most *likely* human move in the same position was Rxf2 (a
 Mistake, 57%). The complaint: at low ELO the engine still **favors Stockfish-like moves the
 player is very unlikely to find**, which undercuts the "best move *you can actually pull off*"
 promise.
+
+**1000 ELO (2026-07-07) — independent corroboration.** The engine recommended **Qb8** and the
+`FlawChessAgreementVerdict` prose called it *"far easier to find and play."* But the Maia
+"Human Move Probability" chart rendered directly below it does **not even plot Qb8** — it's a
+low-probability tail move, well outside the chart's shown candidates (Qc7 / O-O / Qf6 / g5 / b5).
+So the UI simultaneously recommended a move as "easy to find" *and* visibly showed humans rarely
+find it. This is the *same defect as the 600-ELO case*, now confirmed at a second ELO and with a
+second UI symptom: the verdict copy asserts findability the engine never actually checks.
+
+This rules out the "just a 600-ELO extreme-tail artifact" reading — the root-max ranking ignores
+first-move findability at *every* level; it's just most visible where the findable and accurate
+moves diverge most (low ELO).
 
 ## Two distinct threads (keep them separate)
 
@@ -45,12 +57,39 @@ parameter, not a redesign.
 drags down the practical score of lines requiring hard-to-find continuations, so simpler,
 more-forgiving moves can overtake them. It penalizes *fragile* lines.
 
-### Thread B — Should the recommendation itself respect first-move findability? [DEEPER — the real fork]
+### Thread B — The recommendation MUST respect first-move findability [COMMITTED — the real fix]
+
+**Decision (user, 2026-07-07):** "We need a real fix here. A practical engine like FlawChess
+needs to take findability into consideration." This is no longer an open fork to weigh against
+Thread A — the root-findability change is the required fix; Thread A (temperature) is the
+complementary quick win, not a substitute.
 
 Temperature alone does **not** fix the complaint. The root is a `max` node, and a root
 candidate's practical score is the *expectation below it* — it deliberately does **not**
 include the probability that you find the root move *itself*. If Nb5 were a one-move shot with
 a trivial follow-up, no temperature setting would stop it topping the list.
+
+**Confirmed mechanism (code read, 2026-07-07).** The exact path that lets a rarely-played move
+top the ranking, verified in the live engine:
+- Final ranking sorts purely by `practicalScore = child.value`
+  (`frontend/src/lib/engine/treeCommon.ts:150,156`); the root value is a plain **max** over
+  children (`backup.ts:54` `backupRootMax`). `P_you` of the root move is nowhere in the sort.
+- Maia probability only ever enters as (a) the top-k candidate filter
+  (`POLICY_MASS_THRESHOLD = 0.9`, `select.ts:21`) and (b) the PUCT *exploration* prior, **floored
+  at `ROOT_PRIOR_FLOOR = 0.10`** (`select.ts:32`). That floor is what lets a ~3-5% move accrue
+  enough of the 400 visits to expand a real subtree and win on value.
+- Note this is NOT Stockfish `extraRootMoves` injection — that path is intentionally unset for
+  the real engine (`useFlawChessEngine.ts:218`). Qb8/Nb5 came straight through the Maia
+  0.9-mass set; the floor + root-max did the rest.
+- The chart hides such moves by construction: it shows 0.95-cumulative-mass **capped at 5**
+  (`moveQuality.ts:48,51`), so a rank-6+ tail move like Qb8 is recommended yet never drawn.
+
+**Secondary symptom to fix alongside — the verdict copy overclaims.** The `safe`-tier prose
+*"far easier to find and play"* (`FlawChessAgreementVerdict.tsx`) is chosen purely from the
+Stockfish win%-drop (`flawChessVerdict.ts:99-103`) and **never consults Maia**. Even after the
+ranking fix, the copy should say what it can back (nearly-as-good + safer to follow up) and/or
+be gated on the pick's actual Maia probability, so the words can never again contradict the
+chart beneath them.
 
 **The premise under question (user, 2026-07-06):** "I'm not sure giving lines that assume the
 first move is found makes sense. Practical lines are the ones where the first move can be
@@ -123,10 +162,13 @@ signal for the product.
 
 ## When to surface
 
-After the engine has a working MVP UI and real providers, so recommendation quality can be
-observed on real positions (like the screenshot). Not before — this is a *tuning/UX* seed,
-and it needs the live engine to tune against. Bundle Thread A (temperature slider) as the
-quick win; treat Thread B as a design discussion in its own right.
+**The trigger has fired (as of 2026-07-07).** The engine MVP UI, the Maia chart, and the
+agreement verdict are all live (Phase 157) and recommendation quality is now observable on real
+positions at multiple ELOs — that's exactly what produced the 600- and 1000-ELO cases above. So
+this is ready to promote to a phase whenever prioritized. Thread B (root findability) is the
+committed real fix and should anchor the phase; Thread A (temperature slider) is the
+complementary quick win; the verdict-copy consistency fix rides along cheaply. Design the two
+threads together (findability reads `P_you` from the temperature-adjusted distribution).
 
 ## Breadcrumbs
 

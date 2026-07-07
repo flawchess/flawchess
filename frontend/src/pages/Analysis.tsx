@@ -52,6 +52,7 @@ import { buildPvArrow } from '@/lib/tacticArrows';
 import { EvalBar } from '@/components/analysis/EvalBar';
 import { EngineLines, EngineLinesSkeleton, LINES_MIN_HEIGHT } from '@/components/analysis/EngineLines';
 import { FlawChessEngineLines } from '@/components/analysis/FlawChessEngineLines';
+import { FlawChessAgreementVerdict } from '@/components/analysis/FlawChessAgreementVerdict';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { VariationTree } from '@/components/analysis/VariationTree';
@@ -1140,9 +1141,13 @@ export default function Analysis() {
     qualityHoverArrows ??
     pvSidelineArrows ??
     (engineArrows.length > 0 ? engineArrows : undefined);
-  const boardArrows: BoardArrow[] | undefined = nextMoveArrow
-    ? [...(baseArrows ?? []), nextMoveArrow]
-    : baseArrows;
+  // D-09 arrow isolation (157 UAT): while a move is being previewed via hover (or
+  // first-tap on mobile), show ONLY that move's arrow(s). The translucent white
+  // next-move arrow was previously appended unconditionally, so it survived the
+  // preview and cluttered the board — suppress it too whenever a hover is active.
+  const isHoverIsolated = qualityHoverArrows !== null;
+  const boardArrows: BoardArrow[] | undefined =
+    nextMoveArrow && !isHoverIsolated ? [...(baseArrows ?? []), nextMoveArrow] : baseArrows;
 
   // ── Handlers ──────────────────────────────────────────────────────────────────
 
@@ -1501,14 +1506,30 @@ export default function Analysis() {
             FlawChess Engine off
           </div>
         ) : (
-          <FlawChessEngineLines
-            rankedLines={flawChessEngine.rankedLines}
-            isSearching={flawChessEngine.isSearching}
-            baseFen={position}
-            startPly={currentPly}
-            flipped={boardFlipped}
-            onMoveClick={playUciLine}
-          />
+          <>
+            <FlawChessEngineLines
+              rankedLines={flawChessEngine.rankedLines}
+              isSearching={flawChessEngine.isSearching}
+              baseFen={position}
+              startPly={currentPly}
+              flipped={boardFlipped}
+              onMoveClick={playUciLine}
+            />
+            {/* Agreement verdict (Phase 157-02, REVIEW-02): reads Stockfish's
+                TRUE objective #1 from engine.pvLines[0] (D-01) — never
+                engineTopLines, which silently degrades to a FlawChess row
+                when standalone Stockfish is off. */}
+            <FlawChessAgreementVerdict
+              flawChessLine={flawChessEngine.rankedLines[0] ?? null}
+              stockfishLine={engine.pvLines[0] ?? null}
+              flawChessRankedLines={flawChessEngine.rankedLines}
+              engineEnabled={engineEnabled}
+              elo={selectedElo}
+              baseFen={position}
+              onHoverMovesChange={setHoveredQualityMoves}
+              onPlayMove={playProseMove}
+            />
+          </>
         )}
       </CardBody>
     </Card>

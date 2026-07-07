@@ -2,28 +2,29 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: FlawChess Engine
-current_phase: 156
-current_phase_name: board-arrows-toggles-free-analysis
-status: Phase 156 shipped — squash-merged to main (70b1684a)
-stopped_at: Phase 156 context gathered
-last_updated: "2026-07-07T03:51:28.843Z"
+current_phase: 157
+current_phase_name: flawchess-agreement-verdict-prose-hoverable-moves
+status: verifying
+stopped_at: Phase 157 context gathered
+last_updated: "2026-07-07T06:19:45.197Z"
 last_activity: 2026-07-07
+last_activity_desc: Phase 157 execution started
 progress:
   total_phases: 5
-  completed_phases: 4
-  total_plans: 14
-  completed_plans: 14
-  percent: 80
+  completed_phases: 5
+  total_plans: 16
+  completed_plans: 16
+  percent: 100
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 156 (board-arrows-toggles-free-analysis) — EXECUTING
-Plan: 1 of 1
-Status: Phase 156 shipped — squash-merged to main (70b1684a)
-Last activity: 2026-07-07
+Phase: 157 (flawchess-agreement-verdict-prose-hoverable-moves) — EXECUTING
+Plan: 2 of 2
+Status: Phase complete — ready for verification
+Last activity: 2026-07-07 — Phase 157 execution started
 
 ## Project Reference
 
@@ -115,6 +116,12 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 155-04]: FlawChess card wrapper uses testid analysis-flawchess-panel (not analysis-flawchess-card, already used by FlawChessEngineLines.tsx's own root div) to avoid a duplicate-testid collision
 - [Phase 155-04]: engineLoading gained a && !flawChessEnabled guard (Rule 1 bug fix) — without it the Stockfish card's loading skeleton spins forever once FlawChess suppresses the standalone search (both default ON)
 - [Phase 155-04]: No isError/FlawChess-unavailable state wired — the frozen Plan 02 hook exposes no error field (worker/pool failures resolve to empty results internally); documented as a known gap rather than fabricated
+- [Phase 157-01]: D-04 aligned check is UCI-string equality before the drop split, not derived from drop === 0
+- [Phase 157-01]: SHARP_DROP_THRESHOLD is the imported BLUNDER_DROP alias -- no bare 0.15 literal
+- [Phase 157-01]: FlawChess-side FlawChessVerdictMove always sets evalMate: null (Pitfall 4 -- RankedLine has no mate field)
+- [Phase 157-02]: ProseSpan extracted (not duplicated) into a shared content-agnostic hover/click-to-play shell
+- [Phase 157-02]: Main verdict sentence cites each pick's objective eval (not practicalScore-derived) to stay consistent with the win%-drop tier split; the D-10 popover separately shows the practical-converted number
+- [Phase 157-02]: Aligned tier renders a single shared ProseSpan (FlawChess pick's own span/popover) rather than a distinct combined-role type
 
 ### Pending Todos
 
@@ -184,12 +191,12 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-07-06T21:51:42.946Z
+**Last session:** 2026-07-07T06:19:13.260Z
 
 **Resume file:** 
 
 None
-Stopped at: Phase 156 context gathered
+Stopped at: Phase 157 context gathered
 Resume: `/gsd-plan-phase 153`
 
 ## Performance Metrics
@@ -220,6 +227,8 @@ Resume: `/gsd-plan-phase 153`
 | Phase 155 P03 | 13min | 2 tasks | 3 files |
 | Phase 155 P04 | 55min | 3 tasks | 3 files |
 | Phase 156 P01 | 15min | 2 tasks | 5 files |
+| Phase 157 P01 | 15min | 2 tasks | 2 files |
+| Phase 157 P02 | 40min | 3 tasks | 5 files |
 
 ## Operator Next Steps
 

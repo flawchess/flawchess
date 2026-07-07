@@ -40,8 +40,8 @@ Committed scope for this milestone (MVP1 core, per SEED-082). Each maps to a roa
 
 ### Game Review Integration (REVIEW)
 
-- [ ] **REVIEW-01**: The engine runs on the game-review board (whole game via `?game_id&ply`) as well as in free analysis (satisfied incidentally by the shared `Analysis.tsx`; Phase 157 confirms end-to-end parity there).
-- [ ] **REVIEW-02**: The FlawChess Engine card surfaces a prose agreement verdict — whether its top **practical** move agrees or diverges from Stockfish's top **objective** move, citing both evals, with the named moves hoverable (arrow + popover) and click-to-play. Reframed 2026-07-07 from "what you played vs practical best" (that game-review-only comparison is now SEED-086).
+- [x] **REVIEW-01**: The engine runs on the game-review board (whole game via `?game_id&ply`) as well as in free analysis (satisfied incidentally by the shared `Analysis.tsx`; Phase 157 confirms end-to-end parity there). Confirmed via live human UAT 2026-07-07.
+- [x] **REVIEW-02**: The FlawChess Engine card surfaces a prose agreement verdict — whether its top **practical** move agrees or diverges from Stockfish's top **objective** move, citing both evals, with the named moves hoverable (arrow + popover) and click-to-play. Reframed 2026-07-07 from "what you played vs practical best" (that game-review-only comparison is now SEED-086).
 
 ## Future Requirements
 
@@ -98,7 +98,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | ARROW-03 | Phase 156 | Complete |
 | ARROW-04 | Phase 156 | Complete |
 | REVIEW-01 | Phase 157 | Pending |
-| REVIEW-02 | Phase 157 | Pending |
+| REVIEW-02 | Phase 157 | Complete |
 
 **Coverage:**
 
