@@ -105,7 +105,7 @@ const BADGE_CLASS_COMPACT = 'shrink-0 rounded px-1 text-xs font-semibold leading
 
 // Fixed-height container for the engine-lines region — keeps the panel from
 // jumping as the engine transitions analyzing → 2 lines (Quick 260627-mt8 item 5).
-const LINES_MIN_HEIGHT = 'min-h-[60px]';
+export const LINES_MIN_HEIGHT = 'min-h-[60px]';
 // Compact min-height — sized to two single-row text-xs PV lines so the loading
 // skeleton, the analyzing skeleton, and the rendered rows are all the same height
 // (no vertical jump on the mobile takeover — Quick 260628-dgv).

@@ -6,7 +6,7 @@
  * style against a `RankedLine[]` fixture instead of `PvLine[]`.
  *
  * Verifies:
- *  - MAX_LINES=3 row cap from a 4-line fixture (D-08)
+ *  - MAX_LINES=2 row cap from a 4-line fixture (D-08)
  *  - modalPath renders SAN chips, first 5 visible + expand for a >5-ply path
  *    (DISPLAY-02)
  *  - the brown practical badge shows the practical (expected-score-derived,
@@ -95,7 +95,7 @@ const FOUR_LINES: RankedLine[] = [LINE_1, LINE_2, LINE_3, LINE_4];
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('FlawChessEngineLines', () => {
-  it('renders exactly 3 rows from a 4-line fixture (MAX_LINES=3, D-08)', () => {
+  it('renders exactly 2 rows from a 4-line fixture (MAX_LINES=2, D-08)', () => {
     render(
       <TooltipProvider>
         <FlawChessEngineLines
@@ -108,11 +108,11 @@ describe('FlawChessEngineLines', () => {
       </TooltipProvider>,
     );
 
-    // Lines 0-2 render (their first move chip is present)...
+    // Lines 0-1 render (their first move chip is present)...
     expect(screen.getByTestId('flawchess-line-0-move-0')).toBeTruthy();
     expect(screen.getByTestId('flawchess-line-1-move-0')).toBeTruthy();
-    expect(screen.getByTestId('flawchess-line-2-move-0')).toBeTruthy();
-    // ...line 3 (the 4th fixture) does not.
+    // ...lines 2 and 3 (the 3rd/4th fixtures) do not.
+    expect(screen.queryByTestId('flawchess-line-2-move-0')).toBeNull();
     expect(screen.queryByTestId('flawchess-line-3-move-0')).toBeNull();
   });
 
@@ -233,7 +233,7 @@ describe('FlawChessEngineLines', () => {
     expect(chip.tagName.toLowerCase()).toBe('button');
   });
 
-  it('isSearching && empty rankedLines → shows the 3-row skeleton', () => {
+  it('isSearching && empty rankedLines → shows the 2-row skeleton', () => {
     render(
       <FlawChessEngineLines
         rankedLines={[]}

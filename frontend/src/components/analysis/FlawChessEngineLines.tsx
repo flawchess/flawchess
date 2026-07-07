@@ -1,11 +1,11 @@
 /**
- * FlawChessEngineLines — renders the top 3 ranked practical lines from the
+ * FlawChessEngineLines — renders the top 2 ranked practical lines from the
  * FlawChess Engine (the Phase 153-155 client-side MCTS search core).
  *
  * Structurally a sibling of `EngineLines.tsx`: same row skeleton, same
  * chip/badge/hover-preview pattern, same expand chevron — with three deltas
  * (D-08/D-06/D-07):
- *  - top 3 lines instead of 2 (`MAX_LINES = 3`, D-08).
+ *  - top 2 lines (`MAX_LINES = 2`, D-08).
  *  - a filled gold practical-score badge (white font, one of three
  *    `FLAWCHESS_ENGINE_BADGE_SHADES` by rank — the gold analog of the blue
  *    Stockfish best/2nd badges), followed by the objective Stockfish eval of the
@@ -38,11 +38,11 @@ import {
 } from '@/lib/theme';
 import { MiniBoard } from '@/components/board/MiniBoard';
 import { Tooltip } from '@/components/ui/tooltip';
-import { replayPvLine, formatScore, EngineLinesSkeleton, LINES_MIN_HEIGHT_3 } from './EngineLines';
+import { replayPvLine, formatScore, EngineLinesSkeleton, LINES_MIN_HEIGHT } from './EngineLines';
 
 /** Maximum number of ranked lines displayed (D-08) — a LOCAL constant, distinct
- * from EngineLines.tsx's own MAX_LINES=2; do not mutate the shared one. */
-const MAX_LINES = 3;
+ * from EngineLines.tsx's own MAX_LINES; do not mutate the shared one. */
+const MAX_LINES = 2;
 /** Maximum number of plies shown per modal path (D-07, mirrors EngineLines.tsx). */
 const MAX_PLIES = 5;
 /** Miniboard size (px) inside the move-chip hover tooltip (mirrors EngineLines.tsx). */
@@ -232,7 +232,7 @@ function RankedLineRow({
 }
 
 /**
- * Renders up to 3 top FlawChess Engine ranked lines as single rows (score-pair
+ * Renders up to 2 top FlawChess Engine ranked lines as single rows (score-pair
  * badge + clickable modal-path chips) inside a fixed-height container, with a
  * non-jumping skeleton before the first snapshot arrives (D-09). Card
  * chrome/placement inside `/analysis` is Plan 04's job — this component is
@@ -256,9 +256,9 @@ export function FlawChessEngineLines({
       data-testid="analysis-flawchess-card"
       aria-label="FlawChess Engine lines"
       aria-live="polite"
-      className={LINES_MIN_HEIGHT_3}
+      className={LINES_MIN_HEIGHT}
     >
-      {/* Pre-first-snapshot placeholder — fixed-height skeleton sized for 3 rows
+      {/* Pre-first-snapshot placeholder — fixed-height skeleton sized for 2 rows
           (D-09), avoids layout jump as lines arrive. */}
       {isSearching && rankedLines.length === 0 && (
         <EngineLinesSkeleton testId="analysis-flawchess-loading" rows={MAX_LINES} />

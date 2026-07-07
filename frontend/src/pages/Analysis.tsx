@@ -50,7 +50,7 @@ import { useTacticLines, useLibraryGame } from '@/hooks/useLibrary';
 import { toDisplayDepthForOrientation } from '@/lib/tacticDepth';
 import { buildPvArrow } from '@/lib/tacticArrows';
 import { EvalBar } from '@/components/analysis/EvalBar';
-import { EngineLines, EngineLinesSkeleton, LINES_MIN_HEIGHT_3 } from '@/components/analysis/EngineLines';
+import { EngineLines, EngineLinesSkeleton, LINES_MIN_HEIGHT } from '@/components/analysis/EngineLines';
 import { FlawChessEngineLines } from '@/components/analysis/FlawChessEngineLines';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
@@ -1493,9 +1493,9 @@ export default function Analysis() {
           FlawChess Engine ({selectedElo} ELO)
         </EngineToggleHeader>
       </CardHeader>
-      <CardBody className={`${LINES_MIN_HEIGHT_3} p-2`}>
+      <CardBody className={`${LINES_MIN_HEIGHT} p-2`}>
         {flawChessLoading ? (
-          <EngineLinesSkeleton testId="analysis-flawchess-loading" rows={3} />
+          <EngineLinesSkeleton testId="analysis-flawchess-loading" rows={2} />
         ) : !flawChessEnabled ? (
           <div className="flex h-full items-center px-2 text-sm text-muted-foreground">
             FlawChess Engine off
