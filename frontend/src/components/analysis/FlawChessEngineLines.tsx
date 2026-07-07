@@ -41,8 +41,10 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { replayPvLine, formatScore, EngineLinesSkeleton, LINES_MIN_HEIGHT } from './EngineLines';
 
 /** Maximum number of ranked lines displayed (D-08) — a LOCAL constant, distinct
- * from EngineLines.tsx's own MAX_LINES; do not mutate the shared one. */
-const MAX_LINES = 2;
+ * from EngineLines.tsx's own MAX_LINES; do not mutate the shared one. Exported
+ * (Phase 158, RESEARCH Open Question 3) so Analysis.tsx sizes the FC-displayed
+ * SAN slice from this single source of truth instead of a duplicated literal. */
+export const MAX_LINES = 2;
 /** Maximum number of plies shown per modal path (D-07, mirrors EngineLines.tsx). */
 const MAX_PLIES = 5;
 /** Miniboard size (px) inside the move-chip hover tooltip (mirrors EngineLines.tsx). */

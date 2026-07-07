@@ -36,11 +36,20 @@ import type { MoveGrade } from '@/lib/moveQuality';
 /** Path to the vendored Stockfish engine served from public/engine/. Same binary as the primary worker, a SEPARATE Worker() load. */
 const ENGINE_PATH = '/engine/stockfish-18-lite-single.js';
 
-/** Grading search depth target — conservative start per RESEARCH Open Question 1. */
-const GRADING_TARGET_DEPTH = 14;
-
-/** Wall-clock safety valve (ms) so a slow position never stalls the grading worker. */
-const GRADING_MOVETIME_SAFETY_CAP_MS = 2500;
+/**
+ * Wall-clock cap (ms) — the grading run's ONLY search-termination clause, no
+ * depth cap (mirrors useStockfishEngine's movetime-only convention). Value
+ * measured via a headless Node WASM sweep (Phase 158 Plan 01, SEED-087): at
+ * movetime=4000 on both a middlegame and an endgame position, the grading
+ * run's depth for a candidate-union size of 6-8 reaches parity with (or
+ * exceeds) the free run's depth at its existing MOVETIME_MS=1500/MULTIPV=2
+ * budget, and a shared candidate's eval agrees with the free run's eval for
+ * that same move within noise (2cp and 23cp deltas on the two test
+ * positions — see 158-01-SUMMARY.md for the full depth-per-config table).
+ * Replaces the prior depth-14/movetime-2500 cap, which the seed's live UAT
+ * confirmed was the source of the cross-card eval skew this phase fixes.
+ */
+const GRADING_MOVETIME_SAFETY_CAP_MS = 4000;
 
 /** Per-FEN grade-cache cap (mirrors useMaiaEngine's MAIA_CACHE_MAX FIFO pattern). */
 const GRADE_CACHE_MAX = 256;
@@ -231,8 +240,16 @@ export function useStockfishGradingEngine({
 
     worker.postMessage(`setoption name MultiPV value ${candidateUcis.length}`);
     worker.postMessage(`position fen ${fenToGrade}`);
+    // Bug fix (Rule 1, found during Phase 158 Plan 01's headless measurement):
+    // `searchmoves` MUST be the LAST clause in the go command on this WASM
+    // build — everything after it is silently swallowed into the move list
+    // (the engine's documented "illegal searchmoves are silently dropped"
+    // behavior also drops trailing keywords like `movetime`, since they get
+    // parsed as bogus move tokens). The prior `go depth … searchmoves … movetime …`
+    // ordering meant movetime was NEVER actually limiting the search — only
+    // the depth clause terminated it. Movetime now correctly caps the search.
     worker.postMessage(
-      `go depth ${GRADING_TARGET_DEPTH} searchmoves ${candidateUcis.join(' ')} movetime ${GRADING_MOVETIME_SAFETY_CAP_MS}`,
+      `go movetime ${GRADING_MOVETIME_SAFETY_CAP_MS} searchmoves ${candidateUcis.join(' ')}`,
     );
     stateRef.current = 'thinking';
     setIsGrading(true);

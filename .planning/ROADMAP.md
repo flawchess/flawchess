@@ -253,11 +253,17 @@ Plans:
   4. The agreement verdict's FC-pick and SF-best evals both come from the lookup, making "FC pick grades higher than the objective best" impossible by construction (the SEED-087 2100-ELO Qc7 +2.8 vs O-O +1.3 case).
   5. Practical scores (brown badges, the MCTS backed-up expectation) and the locked Phase 153 search core are untouched — this is a display/verdict overlay only.
 
-**Plans**: 0 plans
+**Plans**: 3 plans
 
 Plans:
+**Wave 1**
 
-- [ ] TBD (run /gsd-plan-phase 158 to break down)
+- [x] 158-01-PLAN.md — Measure the depth/latency trade and apply the analysis-grade grading budget constants
+- [x] 158-02-PLAN.md — New UCI-keyed eval-lookup pure lib module (buildEvalLookup/getByUci/getBySan, TDD)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 158-03-PLAN.md — Wire reconciliation into Analysis.tsx across all display consumers (SF/FC/Maia/verdict)
 
 ## Backlog
 

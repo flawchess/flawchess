@@ -51,7 +51,7 @@ import { toDisplayDepthForOrientation } from '@/lib/tacticDepth';
 import { buildPvArrow } from '@/lib/tacticArrows';
 import { EvalBar } from '@/components/analysis/EvalBar';
 import { EngineLines, EngineLinesSkeleton, LINES_MIN_HEIGHT } from '@/components/analysis/EngineLines';
-import { FlawChessEngineLines } from '@/components/analysis/FlawChessEngineLines';
+import { FlawChessEngineLines, MAX_LINES as FC_MAX_LINES } from '@/components/analysis/FlawChessEngineLines';
 import { FlawChessAgreementVerdict } from '@/components/analysis/FlawChessAgreementVerdict';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
@@ -81,10 +81,12 @@ import {
   BEST_MOVE_ARROW,
   NEXT_MOVE_ARROW,
 } from '@/lib/theme';
-import { selectCandidatesByMass, classifyMoveQuality } from '@/lib/moveQuality';
+import { selectCandidatesByMass, classifyMoveQuality, type MoveGrade } from '@/lib/moveQuality';
 import type { MoveQualityEval, EngineLine } from '@/components/analysis/MovesByRatingChart';
 import { sideToMoveFromFen } from '@/lib/liveFlaw';
 import type { NodeId, MoveNode } from '@/hooks/useAnalysisBoard';
+import { buildEvalLookup, getByUci, getBySan } from '@/lib/engineEvalLookup';
+import type { RankedLine } from '@/lib/engine/types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -675,10 +677,124 @@ export default function Analysis() {
     return bestSanFromPv(position, uci);
   }, [position, engineEnabled, engine.pvLines, flawChessEnabled, flawChessEngine.rankedLines]);
 
+  // Phase 151.1 SC2/D-02/D-06/D-07: the 0.95-cumulative-mass candidate set at the
+  // selected ELO, unioned with {bestSan, playedSan} — computed ONCE here and
+  // consumed as one contributor to the grading union below (unionSans), plus
+  // passed to the chart (as shownSans), replacing MovesByRatingChart's own
+  // top-6-by-peak cap.
+  const shownSans = useMemo(
+    () => selectCandidatesByMass(maia.perElo, selectedElo, playedSan, bestSan),
+    [maia.perElo, selectedElo, playedSan, bestSan],
+  );
+
+  // Phase 158 (SEED-087 SC2): the FC card's own top-MAX_LINES displayed SANs,
+  // converted from their root UCI moves — the FlawChess Engine's contribution
+  // to the shared grading union below. Empty (a no-op contributor) whenever
+  // the FC card is off, so the union reflects only active consumers.
+  const flawChessDisplayedSans = useMemo(() => {
+    if (!flawChessEnabled) return [];
+    const sans: string[] = [];
+    for (const line of flawChessEngine.rankedLines.slice(0, FC_MAX_LINES)) {
+      const san = bestSanFromPv(position, line.rootMove);
+      if (san !== null) sans.push(san);
+    }
+    return sans;
+  }, [flawChessEnabled, flawChessEngine.rankedLines, position]);
+
+  // Phase 158 (SEED-087 SC2, RESEARCH Pitfall 4): the deduplicated, sorted
+  // union of the Maia chart's shownSans and the FC card's displayed SANs —
+  // the shared grading run's candidate set. Sorted + deduped (mirroring the
+  // grading hook's own candidatesKey pattern) so a re-throttle of the SAME
+  // top moves produces the same array and does not re-trigger the search.
+  const unionSans = useMemo(() => {
+    const maiaSans = maiaEnabled ? shownSans : [];
+    const fcSans = flawChessEnabled ? flawChessDisplayedSans : [];
+    return Array.from(new Set([...maiaSans, ...fcSans])).sort();
+  }, [maiaEnabled, shownSans, flawChessEnabled, flawChessDisplayedSans]);
+
+  // Phase 158 (SEED-087 SC2, RESEARCH Pitfall 5): the shared grading run is
+  // gated on EITHER display consumer being active — fen/enabled are always
+  // paired on this same condition below so the worker is never alive-but-
+  // positionless.
+  const gradingEnabled = maiaEnabled || flawChessEnabled;
+
+  // Phase 151.1 SC3 / Phase 158 (SEED-087 SC2): a SECOND, independent
+  // Stockfish worker that grades the FC∪Maia candidate union via one
+  // searchmoves-restricted MultiPV search. This shared run now powers BOTH
+  // the Moves-by-Rating chart (via qualityBySan) and the FC card's reconciled
+  // evals (via evalLookup below), so it is gated on `maiaEnabled ||
+  // flawChessEnabled` (gradingEnabled) — replacing the prior Maia-switch-only
+  // gating. It never touches the `engine` (useStockfishEngine) instance or
+  // its consumers.
+  const grading = useStockfishGradingEngine({
+    fen: gradingEnabled ? position : null,
+    candidateSans: unionSans,
+    enabled: gradingEnabled,
+  });
+
+  // Phase 158 (SEED-087 SC1): the single UCI-keyed eval source every
+  // displayed Stockfish eval on this page resolves through — the free run's
+  // pvLines win by construction (module precedence in buildEvalLookup), so a
+  // move graded by both sources always shows the free-run value, and
+  // progressive refinement is emergent (a resolved UCI's value can never
+  // regress to the grading value).
+  const evalLookup = useMemo(
+    () => buildEvalLookup(engine.pvLines, grading.gradeMap, position),
+    [engine.pvLines, grading.gradeMap, position],
+  );
+
+  // Phase 158 (SEED-087 SC1/SC3/SC4, SC5 scope fence): parallel RankedLine-
+  // shaped display objects — NEVER the live MCTS-core snapshots themselves —
+  // with only `objectiveEvalCp` swapped for the reconciled lookup value. A
+  // resolved mate grade (evalCp null) yields null here, same as the
+  // pre-existing FC-source cp-only limitation (RankedLine has no mate field);
+  // the card renders its existing '…' placeholder, not a bug.
+  const reconciledRankedLines = useMemo<RankedLine[]>(
+    () =>
+      flawChessEngine.rankedLines.slice(0, FC_MAX_LINES).map((line) => ({
+        ...line,
+        objectiveEvalCp: getByUci(evalLookup, line.rootMove)?.evalCp ?? null,
+      })),
+    [flawChessEngine.rankedLines, evalLookup],
+  );
+
+  // Phase 151.1 D-08 / Phase 158 (SEED-087 SC3): 5-bucket quality
+  // classification of the RECONCILED grades (not the raw grading pass's
+  // gradeMap directly) — so a move's displayed number and its severity color
+  // can never disagree at a bucket boundary (covers the Maia chart line/
+  // SAN-label colors, the quality-bar segments, and positionVerdict). The
+  // reconciled map is built over the SAME SAN keyspace the grading pass
+  // produced; an unresolved SAN (a sanToUci conversion failure) maps to a
+  // null/null grade, never the raw pool grade.
+  const qualityBySan = useMemo<Map<string, MoveQualityEval>>(() => {
+    const reconciledGradeMap = new Map<string, MoveGrade>();
+    for (const san of grading.gradeMap.keys()) {
+      reconciledGradeMap.set(
+        san,
+        getBySan(evalLookup, position, san) ?? { evalCp: null, evalMate: null, depth: 0 },
+      );
+    }
+    // Pass the primary engine's bestSan so the chart's "best" agrees with the
+    // eval bar + engine card (151.1 UAT: reconcile the two Stockfish sources).
+    const infoBySan = classifyMoveQuality(reconciledGradeMap, sideToMoveFromFen(position), bestSan);
+    const merged = new Map<string, MoveQualityEval>();
+    for (const [san, info] of infoBySan) {
+      const grade = reconciledGradeMap.get(san);
+      merged.set(san, {
+        quality: info.quality,
+        evalCp: grade?.evalCp ?? null,
+        evalMate: grade?.evalMate ?? null,
+      });
+    }
+    return merged;
+  }, [evalLookup, grading.gradeMap, position, bestSan]);
+
   // The primary engine's top PV lines (best + 2nd-best), each as its first move's
   // SAN + white-POV eval — shown as a reference header in the Maia chart tooltip
   // (151.1 UAT). Prefer standalone Stockfish (the objective reference); fall back to
-  // the FlawChess Engine's practical top-2 only when Stockfish is off (WR-04). The
+  // the FlawChess Engine's RECONCILED practical top-2 only when Stockfish is off
+  // (WR-04, Phase 158 SEED-087 SC1) — relocated after evalLookup/
+  // reconciledRankedLines so its FC branch can read reconciled values. The
   // FlawChess source has no mate field, so evalMate is null there.
   const engineTopLines = useMemo<EngineLine[]>(() => {
     const lines: EngineLine[] = [];
@@ -691,53 +807,14 @@ export default function Analysis() {
       return lines;
     }
     if (flawChessEnabled) {
-      for (const line of flawChessEngine.rankedLines.slice(0, 2)) {
+      for (const line of reconciledRankedLines) {
         const san = bestSanFromPv(position, line.rootMove);
         if (san === null) continue;
         lines.push({ san, evalCp: line.objectiveEvalCp, evalMate: null });
       }
     }
     return lines;
-  }, [position, engineEnabled, engine.pvLines, flawChessEnabled, flawChessEngine.rankedLines]);
-
-  // Phase 151.1 SC2/D-02/D-06/D-07: the 0.95-cumulative-mass candidate set at the
-  // selected ELO, unioned with {bestSan, playedSan} — computed ONCE here and passed
-  // to both the grading hook (as candidateSans) and the chart (as shownSans),
-  // replacing MovesByRatingChart's own top-6-by-peak cap.
-  const shownSans = useMemo(
-    () => selectCandidatesByMass(maia.perElo, selectedElo, playedSan, bestSan),
-    [maia.perElo, selectedElo, playedSan, bestSan],
-  );
-
-  // Phase 151.1 SC3: a SECOND, independent Stockfish worker that grades shownSans via
-  // one searchmoves-restricted MultiPV search. Phase 155 D-03/UI-SPEC Component
-  // Inventory §3: gated on the Maia switch (`maiaEnabled`), NOT `engineEnabled` —
-  // this grading pass colors the Moves-by-Rating chart, a Maia-chart-surface
-  // concern bundled under the Maia toggle alongside `useMaiaEngine`. It never
-  // touches the `engine` (useStockfishEngine) instance or its consumers.
-  const grading = useStockfishGradingEngine({
-    fen: maiaEnabled ? position : null,
-    candidateSans: shownSans,
-    enabled: maiaEnabled,
-  });
-
-  // Phase 151.1 D-08: 5-bucket quality classification of the streamed grades, merged
-  // with each grade's raw white-POV eval (cp/mate) for the chart's tooltip.
-  const qualityBySan = useMemo<Map<string, MoveQualityEval>>(() => {
-    // Pass the primary engine's bestSan so the chart's "best" agrees with the
-    // eval bar + engine card (151.1 UAT: reconcile the two Stockfish sources).
-    const infoBySan = classifyMoveQuality(grading.gradeMap, sideToMoveFromFen(position), bestSan);
-    const merged = new Map<string, MoveQualityEval>();
-    for (const [san, info] of infoBySan) {
-      const grade = grading.gradeMap.get(san);
-      merged.set(san, {
-        quality: info.quality,
-        evalCp: grade?.evalCp ?? null,
-        evalMate: grade?.evalMate ?? null,
-      });
-    }
-    return merged;
-  }, [grading.gradeMap, position, bestSan]);
+  }, [position, engineEnabled, engine.pvLines, flawChessEnabled, reconciledRankedLines]);
 
   // ── Derived values (game mode — new) ─────────────────────────────────────────
 
@@ -1508,21 +1585,24 @@ export default function Analysis() {
         ) : (
           <>
             <FlawChessEngineLines
-              rankedLines={flawChessEngine.rankedLines}
+              rankedLines={reconciledRankedLines}
               isSearching={flawChessEngine.isSearching}
               baseFen={position}
               startPly={currentPly}
               flipped={boardFlipped}
               onMoveClick={playUciLine}
             />
-            {/* Agreement verdict (Phase 157-02, REVIEW-02): reads Stockfish's
-                TRUE objective #1 from engine.pvLines[0] (D-01) — never
-                engineTopLines, which silently degrades to a FlawChess row
-                when standalone Stockfish is off. */}
+            {/* Agreement verdict (Phase 157-02, REVIEW-02; Phase 158 SEED-087
+                SC4): reads Stockfish's TRUE objective #1 from engine.pvLines[0]
+                (D-01) — never engineTopLines, which silently degrades to a
+                FlawChess row when standalone Stockfish is off. The FlawChess
+                side is reconciledRankedLines (evalLookup-sourced), so both
+                picks resolve through the SAME lookup — making "FC pick grades
+                higher than the objective best" impossible by construction. */}
             <FlawChessAgreementVerdict
-              flawChessLine={flawChessEngine.rankedLines[0] ?? null}
+              flawChessLine={reconciledRankedLines[0] ?? null}
               stockfishLine={engine.pvLines[0] ?? null}
-              flawChessRankedLines={flawChessEngine.rankedLines}
+              flawChessRankedLines={reconciledRankedLines}
               engineEnabled={engineEnabled}
               elo={selectedElo}
               baseFen={position}

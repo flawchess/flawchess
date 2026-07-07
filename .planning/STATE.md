@@ -2,28 +2,29 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: FlawChess Engine
-current_phase: 157
-current_phase_name: flawchess-agreement-verdict-prose-hoverable-moves
-status: Phase 157 shipped — squash-merged to main (local)
-stopped_at: Phase 157 context gathered
-last_updated: "2026-07-07T16:33:15.636Z"
+current_phase: 158
+current_phase_name: flawchess-engine-displayed-eval-provenance-reconciliation-se
+status: verifying
+stopped_at: Completed 158-03-PLAN.md
+last_updated: "2026-07-07T17:57:50.305Z"
 last_activity: 2026-07-07
+last_activity_desc: Phase 158 execution started
 progress:
   total_phases: 6
-  completed_phases: 5
-  total_plans: 16
-  completed_plans: 16
-  percent: 83
+  completed_phases: 6
+  total_plans: 19
+  completed_plans: 19
+  percent: 100
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 157 (flawchess-agreement-verdict-prose-hoverable-moves) — EXECUTING
-Plan: 2 of 2
-Status: Phase 157 shipped — squash-merged to main (local)
-Last activity: 2026-07-07
+Phase: 158 (flawchess-engine-displayed-eval-provenance-reconciliation-se) — EXECUTING
+Plan: 3 of 3
+Status: Phase complete — ready for verification
+Last activity: 2026-07-07 — Phase 158 execution started
 
 ## Project Reference
 
@@ -122,6 +123,12 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 157-02]: ProseSpan extracted (not duplicated) into a shared content-agnostic hover/click-to-play shell
 - [Phase 157-02]: Main verdict sentence cites each pick's objective eval (not practicalScore-derived) to stay consistent with the win%-drop tier split; the D-10 popover separately shows the practical-converted number
 - [Phase 157-02]: Aligned tier renders a single shared ProseSpan (FlawChess pick's own span/popover) rather than a distinct combined-role type
+- [Phase 158-01]: Chosen grading budget: movetime=4000ms, no depth clause (pure movetime cap) — measured via headless WASM sweep to reach depth parity with the free run and agree within noise on shared candidates
+- [Phase 158-01]: Rule 1 bug fix — go-command clause order: searchmoves must be LAST (trailing movetime was silently swallowed as an illegal move token, so the old 2500ms cap never actually limited search time)
+- [Phase 158-01]: Free-run MULTIPV left at 2 unchanged — widening it only costs search depth with no meaningful union-coverage benefit
+- [Phase 158-02]: buildEvalLookup takes exactly 3 params (pvLines, gradeMapBySan, baseFen) — no pool-grade parameter, structurally excluding a shallow MCTS pool eval from ever surfacing through this lookup
+- [Phase 158-03]: Task 1+2 combined into one commit — interleaved memo chain (unionSans/gradingEnabled -> evalLookup -> reconciledRankedLines -> qualityBySan -> engineTopLines), mirrors 155-04 precedent
+- [Phase 158-03]: qualityBySan's reconciled grade map is keyed by grading.gradeMap's own SAN set (not a fresh union) — preserves identical classification coverage, only the resolved values are reconciled
 
 ### Pending Todos
 
@@ -191,12 +198,11 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-07-07T06:19:13.260Z
+**Last session:** 2026-07-07T17:57:50.291Z
 
 **Resume file:** 
 
-None
-Stopped at: Phase 157 context gathered
+Stopped at: Completed 158-03-PLAN.md
 Resume: `/gsd-plan-phase 153`
 
 ## Performance Metrics
@@ -229,6 +235,9 @@ Resume: `/gsd-plan-phase 153`
 | Phase 156 P01 | 15min | 2 tasks | 5 files |
 | Phase 157 P01 | 15min | 2 tasks | 2 files |
 | Phase 157 P02 | 40min | 3 tasks | 5 files |
+| Phase 158 P01 | 23min | 2 tasks | 2 files |
+| Phase 158 P02 | 20min | 1 tasks | 2 files |
+| Phase 158 P03 | 40min | 3 tasks | 3 files |
 
 ## Operator Next Steps
 

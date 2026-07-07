@@ -44,14 +44,34 @@ vi.mock('@/hooks/useStockfishEngine', () => ({
 }));
 
 // Mock useStockfishGradingEngine (Phase 151.1 Plan 04): jsdom has no real Worker for
-// this SECOND classic engine file either. Deterministic empty-gradeMap stub — the
-// grading hook's own behavior is covered by useStockfishGradingEngine.test.ts.
+// this SECOND classic engine file either. Deterministic gradeMap stub via the
+// mutable gradingState — the grading hook's own behavior is covered by
+// useStockfishGradingEngine.test.ts. Phase 158 Plan 03 (SEED-087 SC2): every
+// call's options are captured into gradingCalls so tests can assert the
+// shared run's (fen, enabled, candidateSans) across toggle combinations.
+interface GradingMoveGrade {
+  evalCp: number | null;
+  evalMate: number | null;
+  depth: number;
+}
+const gradingState: { gradeMap: Map<string, GradingMoveGrade> } = {
+  gradeMap: new Map(),
+};
+const gradingCalls: { fen: string | null; candidateSans: string[]; enabled: boolean }[] = [];
+
 vi.mock('@/hooks/useStockfishGradingEngine', () => ({
-  useStockfishGradingEngine: () => ({
-    gradeMap: new Map(),
-    isGrading: false,
-    isReady: false,
-  }),
+  useStockfishGradingEngine: (options: {
+    fen: string | null;
+    candidateSans: string[];
+    enabled: boolean;
+  }) => {
+    gradingCalls.push(options);
+    return {
+      gradeMap: gradingState.gradeMap,
+      isGrading: false,
+      isReady: false,
+    };
+  },
 }));
 
 // Mock useMaiaEngine: jsdom has no real Worker for the classic Maia worker file
@@ -158,6 +178,8 @@ afterEach(() => {
   flawChessState.rankedLines = [];
   flawChessState.isSearching = false;
   flawChessState.isReady = true;
+  gradingState.gradeMap = new Map();
+  gradingCalls.length = 0;
 });
 
 // Late import after vi.mock calls — Analysis.tsx is a default export (required by React.lazy).
@@ -327,5 +349,77 @@ describe('FlawChess Engine eval-bar precedence (Phase 155)', () => {
     const maiaFollowsFlawChess =
       flawChessCard.compareDocumentPosition(maiaPanel) & Node.DOCUMENT_POSITION_FOLLOWING;
     expect(maiaFollowsFlawChess).toBeTruthy();
+  });
+});
+
+describe('Grading run gating (Phase 158, SEED-087 SC2)', () => {
+  it('runs the shared grading run whenever EITHER switch is on, and stops only when both are off', () => {
+    renderAnalysis();
+
+    // (maiaEnabled=true, flawChessEnabled=true) — the default state.
+    let lastCall = gradingCalls[gradingCalls.length - 1];
+    expect(lastCall?.enabled).toBe(true);
+    expect(lastCall?.fen).not.toBeNull();
+
+    // (maiaEnabled=false, flawChessEnabled=true) — OR gating keeps it enabled.
+    fireEvent.click(screen.getByTestId('btn-analysis-maia-toggle'));
+    lastCall = gradingCalls[gradingCalls.length - 1];
+    expect(lastCall?.enabled).toBe(true);
+    expect(lastCall?.fen).not.toBeNull();
+
+    // (maiaEnabled=false, flawChessEnabled=false) — both off, the run is
+    // disabled; fen/enabled stay paired on the SAME condition (RESEARCH
+    // Pitfall 5 — the worker must never be alive-but-positionless).
+    fireEvent.click(screen.getByTestId('btn-analysis-flawchess-toggle'));
+    lastCall = gradingCalls[gradingCalls.length - 1];
+    expect(lastCall?.enabled).toBe(false);
+    expect(lastCall?.fen).toBeNull();
+
+    // (maiaEnabled=true, flawChessEnabled=false) — OR gating re-enables it.
+    fireEvent.click(screen.getByTestId('btn-analysis-maia-toggle'));
+    lastCall = gradingCalls[gradingCalls.length - 1];
+    expect(lastCall?.enabled).toBe(true);
+    expect(lastCall?.fen).not.toBeNull();
+  });
+});
+
+describe('Reconciled eval provenance (Phase 158, SEED-087)', () => {
+  it('a move graded by both the free run and the grading run displays the free-run value (SC1 precedence)', () => {
+    engineState.isReady = true;
+    engineState.pvLines = [{ moves: ['e2e4'], evalCp: 310, evalMate: null, depth: 18 }];
+    // objectiveEvalCp seeded at 80 (the grading run's own value) to prove
+    // reconciliation OVERRIDES the raw RankedLine field, not merely echoes it.
+    flawChessState.rankedLines = [
+      { rootMove: 'e2e4', practicalScore: 0.6, objectiveEvalCp: 80, modalPath: ['e2e4'], visits: 5 },
+    ];
+    gradingState.gradeMap = new Map([['e4', { evalCp: 80, evalMate: null, depth: 10 }]]);
+
+    renderAnalysis();
+
+    // The FC card's badge aria-label carries "objectively <cp>" — it must read
+    // the free-run's +3.1, never the grading run's +0.8.
+    const badge = screen.getByLabelText(/Line 1: practically/);
+    expect(badge.getAttribute('aria-label')).toContain('objectively +3.1');
+    expect(badge.getAttribute('aria-label')).not.toContain('objectively +0.8');
+  });
+
+  it("the verdict's FC-pick and SF-best evals both resolve through evalLookup, so a stale/inflated raw RankedLine eval never leaks through (SC4)", () => {
+    engineState.isReady = true;
+    engineState.pvLines = [{ moves: ['g1f3'], evalCp: 130, evalMate: null, depth: 18 }];
+    // A deliberately inflated raw objectiveEvalCp (999) simulates the "Qc7
+    // +2.8 vs O-O +1.3" bug class this phase fixes — reconciliation must
+    // replace it with the shared grading run's own value (40) before it ever
+    // reaches the verdict, making a FC-pick-exceeds-SF-best reading impossible.
+    flawChessState.rankedLines = [
+      { rootMove: 'e2e4', practicalScore: 0.55, objectiveEvalCp: 999, modalPath: ['e2e4'], visits: 5 },
+    ];
+    gradingState.gradeMap = new Map([['e4', { evalCp: 40, evalMate: null, depth: 10 }]]);
+
+    renderAnalysis();
+
+    const sentence = screen.getByTestId('flawchess-verdict-sentence');
+    expect(sentence.textContent).toContain('+1.3');
+    expect(sentence.textContent).toContain('+0.4');
+    expect(sentence.textContent).not.toContain('+10.0');
   });
 });
