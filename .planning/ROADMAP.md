@@ -111,7 +111,7 @@
 | 154. Real Providers (Stockfish Worker Pool + Maia Queue) | 4/4 | Complete    | 2026-07-06 |
 | 155. React Hook + Anytime UI (Free Analysis) | 4/4 | Complete   | 2026-07-06 |
 | 156. Board Arrows + Toggles (Free Analysis) | 1/1 | Complete   | 2026-07-06 |
-| 157. Game Review Overlay Integration | 0/0 | Not started | - |
+| 157. FlawChess Agreement Verdict (prose + hoverable moves) | 0/0 | Not started | - |
 
 ## Active Milestone: v2.0 FlawChess Engine
 
@@ -215,16 +215,19 @@ Plans:
 
 - [x] 156-01-PLAN.md — Render live FC (amber) + SF (blue) engine arrows on the free-analysis board: new amber theme token, ARROW_COUNT=1, layerKey dedupe-bypass for concentric FC/SF nesting, gated on the existing card toggles (desktop + mobile)
 
-### Phase 157: Game Review Overlay Integration
+### Phase 157: FlawChess Agreement Verdict (prose + hoverable moves)
 
-**Goal**: A user reviewing a full game (`?game_id&ply`) gets the same FlawChess Engine analysis already shipped for free analysis, plus an explicit "what you played vs what was practically best for you" comparison at every position — the milestone's highest-leverage differentiator.
-**Depends on**: Phase 156 (arrow rendering + toggles already proven in free analysis; this phase confirms the three-layer precedence + defaults on the second surface)
-**Requirements**: REVIEW-01, REVIEW-02
+**Goal**: The FlawChess Engine card gains a one-line prose verdict, analogous to the Maia position verdict, narrating whether the engine's top *practical* move agrees or diverges from Stockfish's top *objective* move — named moves hoverable (board arrow + practical/objective popover) and click-to-play. It renders on both free analysis and game review (shared `Analysis.tsx`), turning the side-by-side score badges into a plain-language "engines are flawless, humans play FlawChess" read.
+**Depends on**: Phase 155 (`RankedLine` practical + objective evals), Phase 156 (amber FlawChess + blue Stockfish arrows), `MaiaMoveQualityBar` (the `ProseMoveSpan` verdict pattern to reuse)
+**Requirements**: REVIEW-02 (reframed)
 **Success Criteria** (what must be TRUE):
 
-  1. The FlawChess Engine runs on the game-review board at any ply of a loaded game, producing the same ranked-lines / modal-path / score-pair / arrow experience already shipped for free analysis, with no mode-specific data plumbing beyond the existing `position`/`enabled` props (REVIEW-01).
-  2. At each reviewed position, the user sees a comparison between the move they actually played and the FlawChess Engine's top practical recommendation (including when they match), looked up from the root's already-expanded children or a single supplementary grade call (REVIEW-02).
-  3. The three arrow layers render with the game-review-specific default visibility confirmed on the game-review board itself: played-move ON, FlawChess Engine top-2 ON, Stockfish top-2 OFF ("show your work").
+  1. Below the ranked lines in the FlawChess card, a prose verdict states agreement or divergence between FlawChess's #1 practical move and Stockfish's #1 objective move (sourced from the primary Stockfish PV, `engineTopLines[0]`, not the max-objective FlawChess row), citing both the practical and objective eval. No UI string reads a bare "best move" (REVIEW-02).
+  2. The named moves are interactive spans (reused `ProseMoveSpan` mechanics): hover lights the move's board arrow (amber = FlawChess pick, blue = Stockfish pick), opens a "practically X · objectively Y" popover, and click plays it as a free move.
+  3. The verdict resolves to one of three tiers — aligned / safe divergence / sharp divergence (trap) — from move identity plus the objective eval sacrificed (Stockfish #1 objective − FlawChess #1 objective), via named constants (no bare thresholds), and refines live with the search without layout jump.
+  4. It renders identically on the game-review board (`?game_id&ply`), confirming the FlawChess card + arrows already shipped there work end-to-end (absorbs the old REVIEW-01 game-review-parity check).
+
+**Scope note**: Shrunk from the original "Game Review Overlay Integration" (`/gsd-explore`, 2026-07-07). Old success criteria 1 and 3 (engine + three arrow layers on the game-review board) were already satisfied incidentally because game review and free analysis share `Analysis.tsx`; only the played-vs-recommended comparison remained, and it was reframed from "your played move vs practical best" to "FlawChess vs Stockfish agreement". The dropped played-move comparison is captured as SEED-086.
 
 **Plans**: TBD
 **UI hint**: yes
