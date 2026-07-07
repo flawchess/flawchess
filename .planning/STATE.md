@@ -4,11 +4,10 @@ milestone: v2.0
 milestone_name: FlawChess Engine
 current_phase: 157
 current_phase_name: flawchess-agreement-verdict-prose-hoverable-moves
-status: verifying
+status: Phase 157 shipped — squash-merged to main (local)
 stopped_at: Phase 157 context gathered
-last_updated: "2026-07-07T06:19:45.197Z"
+last_updated: "2026-07-07T16:15:48.950Z"
 last_activity: 2026-07-07
-last_activity_desc: Phase 157 execution started
 progress:
   total_phases: 5
   completed_phases: 5
@@ -23,8 +22,8 @@ progress:
 
 Phase: 157 (flawchess-agreement-verdict-prose-hoverable-moves) — EXECUTING
 Plan: 2 of 2
-Status: Phase complete — ready for verification
-Last activity: 2026-07-07 — Phase 157 execution started
+Status: Phase 157 shipped — squash-merged to main (local)
+Last activity: 2026-07-07
 
 ## Project Reference
 
