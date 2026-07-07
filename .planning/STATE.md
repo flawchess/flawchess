@@ -4,11 +4,10 @@ milestone: v2.0
 milestone_name: FlawChess Engine
 current_phase: 158
 current_phase_name: flawchess-engine-displayed-eval-provenance-reconciliation-se
-status: verifying
+status: Phase 158 shipped — squash-merged to main (e8773fd6)
 stopped_at: Completed 158-03-PLAN.md
-last_updated: "2026-07-07T17:57:50.305Z"
+last_updated: "2026-07-07T18:59:48.241Z"
 last_activity: 2026-07-07
-last_activity_desc: Phase 158 execution started
 progress:
   total_phases: 6
   completed_phases: 6
@@ -23,8 +22,8 @@ progress:
 
 Phase: 158 (flawchess-engine-displayed-eval-provenance-reconciliation-se) — EXECUTING
 Plan: 3 of 3
-Status: Phase complete — ready for verification
-Last activity: 2026-07-07 — Phase 158 execution started
+Status: Phase 158 shipped — squash-merged to main (e8773fd6)
+Last activity: 2026-07-07
 
 ## Project Reference
 
