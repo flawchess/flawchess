@@ -28,7 +28,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Chess } from 'chess.js';
-import { ArrowLeftRight, Tag, TrendingUp, User } from 'lucide-react';
+import {
+  ArrowLeftRight,
+  ChessKnight,
+  Cpu,
+  type LucideIcon,
+  Tag,
+  TrendingUp,
+  User,
+} from 'lucide-react';
 import { useAnalysisBoard } from '@/hooks/useAnalysisBoard';
 import { useStockfishEngine } from '@/hooks/useStockfishEngine';
 import { useStockfishGradingEngine } from '@/hooks/useStockfishGradingEngine';
@@ -153,6 +161,7 @@ function EngineToggleHeader({
   accent,
   testId,
   ariaLabel,
+  icon: Icon,
   children,
 }: {
   checked: boolean;
@@ -160,6 +169,7 @@ function EngineToggleHeader({
   accent: string;
   testId: string;
   ariaLabel: string;
+  icon: LucideIcon;
   children: ReactNode;
 }) {
   return (
@@ -171,7 +181,11 @@ function EngineToggleHeader({
         data-testid={testId}
         style={checked ? { backgroundColor: accent } : undefined}
       />
-      <span className="text-sm font-medium" style={{ color: accent }}>
+      <span
+        className="flex items-center gap-1.5 text-sm font-medium"
+        style={{ color: accent }}
+      >
+        <Icon className="size-4 shrink-0" aria-hidden="true" />
         {children}
       </span>
     </>
@@ -1472,6 +1486,7 @@ export default function Analysis() {
           accent={FLAWCHESS_ENGINE_ACCENT}
           testId="btn-analysis-flawchess-toggle"
           ariaLabel="Toggle FlawChess Engine"
+          icon={ChessKnight}
         >
           {/* ELO in parens = the mover's rating (or the slider override), the
               strength the engine is playing at (155 UAT). */}
@@ -1780,6 +1795,7 @@ export default function Analysis() {
                   accent={STOCKFISH_ACCENT}
                   testId="btn-analysis-engine-toggle"
                   ariaLabel="Toggle Stockfish engine"
+                  icon={Cpu}
                 >
                   {ENGINE_NAME}
                   {engineEnabled && engine.depth > 0 ? `, Depth ${engine.depth}` : ''}
