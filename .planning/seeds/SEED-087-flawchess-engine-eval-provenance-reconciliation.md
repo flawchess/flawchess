@@ -1,11 +1,11 @@
 ---
 id: SEED-087
-status: dormant
+status: promoted (→ Phase 158, 2026-07-07)
 planted: 2026-07-07
 planted_during: Phase 157 UAT — FlawChess agreement verdict eval-consistency review (2026-07-07)
-trigger_when: whenever the displayed FlawChess/Stockfish evals (line cards + agreement verdict) need to be made mutually consistent — or when making the FC/SF line counts configurable, which forces this reconciliation
-scope: medium (a post-settle authoritative eval pass + UCI-lookup wiring; a MultiPV-width/latency measurement; no change to the locked MCTS search core)
-source: user UAT observations on live 1000- and 2100-ELO analyses (screenshots); root cause confirmed in code 2026-07-07
+trigger_when: whenever the displayed FlawChess/Stockfish/Maia evals (line cards + agreement verdict + Maia chart) need to be made mutually consistent — or when making the FC/SF line counts configurable, which forces this reconciliation
+scope: medium (a post-settle authoritative eval pass + UCI-lookup wiring across THREE surfaces + a shared fallback grading run; a MultiPV-width/latency measurement; no change to the locked MCTS search core)
+source: user UAT observations on live 1000- and 2100-ELO analyses (screenshots); root cause confirmed in code 2026-07-07; third provenance chain (Maia card) confirmed 2026-07-07
 depends_on: SEED-082 (FlawChess Engine — this reconciles the evals it displays)
 ---
 
@@ -13,12 +13,14 @@ depends_on: SEED-082 (FlawChess Engine — this reconciles the evals it displays
 
 ## The problem
 
-The `/analysis` FlawChess card and the agreement verdict display Stockfish evals that come
-from **two different Stockfish searches with different configs**, so the same move can be graded
-differently by each — and the FlawChess pick can even grade *higher* than Stockfish's own
-"objective best" move, which is logically impossible if the evals were comparable.
+The `/analysis` page displays Stockfish evals on **three surfaces** — the FlawChess card, the
+Stockfish card (+ agreement verdict), and the Maia card (chart tooltip + move-quality bar) —
+and they come from **three different Stockfish searches with different configs**, so the same
+move can be graded differently by each. The FlawChess pick can even grade *higher* than
+Stockfish's own "objective best" move, which is logically impossible if the evals were
+comparable.
 
-Two provenance chains (confirmed in code 2026-07-07):
+Three provenance chains (confirmed in code 2026-07-07):
 
 - **FlawChess line evals** (`RankedLine.objectiveEvalCp`, the blue numbers in the FC card) come
   from the MCTS **grading worker pool** (`frontend/src/lib/engine/workerPool.ts`): a
@@ -27,6 +29,13 @@ Two provenance chains (confirmed in code 2026-07-07):
 - **Stockfish PV evals** (`engine.pvLines`, the SF card + eval bar) come from the separate
   analysis engine (`frontend/src/hooks/useStockfishEngine.ts`): a free `go movetime 1500` search
   at **MultiPV=2**, default hash. Deeper, authoritative, but only its own top 2 moves.
+- **Maia card evals** (`qualityBySan`, the evals in the Moves-by-Rating chart tooltip and the
+  move-quality bar's classification input) come from a **third, independent grading worker**
+  (`frontend/src/hooks/useStockfishGradingEngine.ts`, Phase 151.1): its own
+  searchmoves-restricted MultiPV search over `shownSans` with the *same* depth-14 / 2500 ms cap
+  as the pool but a different candidate set, MultiPV width, and hash — so it agrees with
+  neither of the other two except by coincidence. Wired in `Analysis.tsx` (`grading` →
+  `qualityBySan`).
 
 ## The observations that triggered this
 
@@ -41,6 +50,10 @@ Two provenance chains (confirmed in code 2026-07-07):
   artifact on specific forced moves, not a systematic offset.
 - The same discrepancy already shows **across cards today**: a move in both the SF card and the
   FC card renders different numbers (O-O +1.3 vs +1.4).
+- **Three-way pattern confirming three sources (2026-07-07 UAT):** exd5 renders +1.3 in the FC
+  card but +1.1 in *both* the Maia and SF cards; Bc5 renders +0.9 in *both* the FC and Maia
+  cards but +0.8 in the SF card. Pairwise agreement flips per move — exactly what three
+  independent searches produce (coincidental agreement), and what no two-source model explains.
 
 ## Already fixed (symptom, not root) — commit e930cd91, Phase 157
 
@@ -53,39 +66,60 @@ returns W+½D, not win%). **That stops the prose from lying but does NOT reconci
 the FC card still shows Qc7 at +2.8 next to O-O at +1.3 from different runs. This seed is the
 root fix.
 
-## The design — single authoritative run + UCI lookup + searchmoves fallback
+## The design — single authoritative run + UCI lookup + ONE shared searchmoves fallback
 
-The verdict compares exactly two moves, and the SF best is *always* the deep PV#1, so only a
-small **set** of moves ever needs deep, mutually-comparable evals: the displayed FC moves
-(`MAX_LINES = 2` today) ∪ the SF best. Don't try to back-fill all FC lines by widening the free
-run alone (coverage gaps), and don't fire one targeted search per move (doesn't scale).
+The set of moves needing deep, mutually-comparable evals is small: the displayed FC moves
+(`MAX_LINES = 2` today) ∪ the SF best ∪ the Maia card's `shownSans`. Don't try to back-fill
+them by widening the free run alone (coverage gaps), and don't fire one targeted search per
+move (doesn't scale).
 
 **Make the free SF MultiPV run the single source of truth.** Every displayed move — SF card, FC
-card, verdict — looks up its eval from that one run by UCI. Any move shown in **both** cards then
-renders the *same* number by construction (fixes the cross-card discrepancy). The `searchmoves`
-pass demotes to a **fallback**, used only for an FC move the free run doesn't cover — and those
-are FC-only by definition (outside SF's top-MultiPV), so they never appear in the SF card and
-have no cross-card number to disagree with.
+card, Maia card, verdict — looks up its eval from that one run by UCI. Any move shown on two or
+more cards then renders the *same* number by construction (fixes the cross-card discrepancy).
+
+**The fallback must be ONE shared run, not per-card.** The original sketch gave each uncovered
+FC move its own searchmoves grade, but most displayed FC moves are *also* in the Maia card's
+candidate set (high Maia mass is roughly what makes a move a FlawChess pick) — so per-card
+fallbacks would still let the FC and Maia cards disagree with *each other* even after both stop
+disagreeing with the SF card. Instead: `useStockfishGradingEngine` already IS a
+searchmoves-restricted MultiPV grading run; promote it to the single shared fallback by (a)
+unioning the displayed FC moves into its candidate set (`shownSans ∪ displayed FC moves`), and
+(b) raising its budget to analysis-grade depth (the depth-14 / 2500 ms cap is the proven skew
+source). Then every displayed eval resolves by strict precedence: **authoritative free run
+first, shared grading run second.**
 
 ```
-one free SF run @ MultiPV = N        ← source of truth (also drives the eval bar)
-  ├─ SF card:  its top N_sf lines
-  ├─ FC card:  each displayed FC move → look up eval in the run by UCI
-  │              └─ not covered? → supplementary searchmoves grade (FC-only, deep)
-  └─ verdict:  FC pick eval + SF-best eval, both from the run
+one free SF run @ MultiPV = N              ← source of truth (also drives the eval bar)
+one shared grading run (searchmoves over shownSans ∪ FC displayed moves, analysis-grade depth)
+  ├─ SF card:   its top N_sf lines (free run by definition)
+  ├─ FC card:   each displayed FC move → lookup: free run ▸ shared grading run
+  ├─ Maia card: each shown candidate  → lookup: free run ▸ shared grading run
+  └─ verdict:   FC pick eval + SF-best eval, both via the same lookup
 practical scores (brown badges): still the MCTS expectation — untouched
+MCTS pool grades (workerPool.ts): stop being a display source entirely — internal to the search
 ```
+
+Two wiring details the implementation must handle:
+
+- **Gating.** `useStockfishGradingEngine` is currently gated on `maiaEnabled`. As the shared
+  fallback it must run when *either* Maia or the FlawChess Engine needs display evals
+  (`maiaEnabled || flawChessEnabled`), with the candidate union reflecting which consumers are
+  active.
+- **Quality buckets classify from the reconciled eval.** The Maia move-quality bar's 5-bucket
+  classification (`classifyMoveQuality`) currently reads the grading run's raw grades. It must
+  classify from the same reconciled (post-lookup) evals it displays, or a move's number and its
+  severity color can disagree at bucket boundaries.
 
 **Configurable, independent line counts fall out for free.** `N_fc` (FC lines) and `N_sf` (SF
-lines) can differ; the reconciliation is per-move ("source each displayed move's eval from the
-authoritative run"), agnostic to the counts. Shared moves stay identical across cards *provided*
-you commit to the single-source-of-truth run rather than two parallel searches — that commitment
-is the whole point.
+lines) can differ; the reconciliation is per-move ("source each displayed move's eval via the
+lookup"), agnostic to the counts. Shared moves stay identical across cards *provided* you commit
+to the single lookup rather than parallel searches — that commitment is the whole point.
 
 **The one tuning knob:** the free run's `MultiPV` width trades against eval-bar depth (fixed time
-budget). Set it to cover `N_sf` plus a margin and let the fallback handle the tail of FC-only
-moves. Wider = fewer fallback searches but a shallower eval bar; narrower = more fallbacks.
-Needs a latency/depth measurement on real positions before landing.
+budget). Set it to cover `N_sf` plus a margin and let the shared grading run handle the tail.
+Wider = smaller fallback candidate set but a shallower eval bar; narrower = more moves resolved
+by the fallback. The grading run's own width-vs-depth trade (its MultiPV = candidate-union size)
+needs the same latency/depth measurement on real positions before landing.
 
 **Why `searchmoves` fallback is safe:** proven by the O-O +1.4 ≈ +1.3 agreement above —
 restricting which moves are searched doesn't skew the eval; only the depth/hash cap did. Grade
@@ -113,10 +147,10 @@ question about search-internal grade fidelity — flag it, don't fold it in here
 
 ## When to surface
 
-Two natural triggers: (1) any pass to make the FC/SF displayed evals mutually consistent, or
-(2) making the line counts (`MAX_LINES`) configurable — that change *forces* this reconciliation,
-so do them together. Not urgent on its own now that the verdict copy no longer overclaims
-(e930cd91), but the cross-card number discrepancy remains user-visible.
+Surfaced 2026-07-07: promoted to **Phase 158** at user request after the three-source pattern
+(exd5/Bc5) was confirmed on live analyses. Original triggers were (1) any pass to make the
+FC/SF displayed evals mutually consistent, or (2) making the line counts (`MAX_LINES`)
+configurable, which forces this reconciliation.
 
 ## Breadcrumbs
 
@@ -124,15 +158,27 @@ so do them together. Not urgent on its own now that the verdict copy no longer o
   `GRADING_MOVETIME_SAFETY_CAP_MS = 2500`, 8 MB hash) → source of `objectiveEvalCp`.
 - `frontend/src/hooks/useStockfishEngine.ts` — free analysis engine (`MULTIPV = 2`,
   `MOVETIME_MS = 1500`) → source of `engine.pvLines`.
+- `frontend/src/hooks/useStockfishGradingEngine.ts` — the THIRD searcher (Phase 151.1), same
+  depth-14 / 2500 ms constants as the pool; becomes the shared fallback run.
+- `frontend/src/pages/Analysis.tsx` — wires all three engines; `shownSans` (candidate set),
+  `grading` → `qualityBySan` (~line 718-740); passes `engine.pvLines[0]` as the verdict's
+  Stockfish side.
+- `frontend/src/lib/moveQuality.ts` — `classifyMoveQuality` / `selectCandidatesByMass` (the
+  Maia-card classification that must switch to reconciled evals).
+- `frontend/src/components/analysis/MaiaHumanPanel.tsx`, `MovesByRatingChart.tsx`,
+  `MaiaMoveQualityBar.tsx` — the Maia display surfaces consuming `qualityBySan` /
+  `engineTopLines`.
 - `frontend/src/lib/flawChessVerdict.ts` — the verdict classifier; `NEARLY_SAME_EVAL_CP`,
   `objectiveEvalGapCp`, `nearlySameEval` (the e930cd91 copy gate).
 - `frontend/src/components/analysis/FlawChessEngineLines.tsx` — FC card, `MAX_LINES = 2`.
 - `frontend/src/components/analysis/FlawChessAgreementVerdict.tsx` — the verdict prose.
-- `frontend/src/pages/Analysis.tsx` — wires both engines; passes `engine.pvLines[0]` as the
-  verdict's Stockfish side.
 
 ## Notes
 
-Captured 2026-07-07 during Phase 157 UAT. Root cause (two-search eval provenance) confirmed by
-code read; the verdict-copy symptom was fixed in the same session (e930cd91), leaving the
-displayed-eval reconciliation as the remaining root work this seed tracks.
+Captured 2026-07-07 during Phase 157 UAT. Root cause (multi-search eval provenance) confirmed
+by code read; the verdict-copy symptom was fixed in the same session (e930cd91). Amended later
+the same day: the Maia card (`useStockfishGradingEngine`, Phase 151.1) is a THIRD independent
+searcher — confirmed by the exd5/Bc5 pairwise-agreement flip — and the fallback design was
+upgraded from per-card searchmoves grades to ONE shared grading run (candidate union, strict
+lookup precedence), because per-card fallbacks would leave the FC and Maia cards disagreeing
+with each other. Promoted to Phase 158 in the same session.
