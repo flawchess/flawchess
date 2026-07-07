@@ -35,7 +35,7 @@
 - ✅ **v1.30 Forcing-Line Tactic Gate** — Phases 141–147 (shipped 2026-06-30; releases #229/#230/#231/#234) — see [milestones/v1.30-ROADMAP.md](milestones/v1.30-ROADMAP.md)
 - ✅ **v1.31 Pipeline Consolidation** — Phases 148–150 (shipped 2026-07-04; deployed to production) — see [milestones/v1.31-ROADMAP.md](milestones/v1.31-ROADMAP.md)
 - ✅ **v1.32 Maia-3 Human-Move Enrichment** — Phases 151, 151.1 (shipped 2026-07-05; Phase 152 demoted to SEED-084; deployed to production) — see [milestones/v1.32-ROADMAP.md](milestones/v1.32-ROADMAP.md)
-- 🚧 **v2.0 FlawChess Engine** — Phases 153–157 (in progress; started 2026-07-05) — client-side practical-play analysis engine (Stockfish + Maia expectimax-in-MCTS) on `/analysis`, zero server load (SEED-082)
+- 🚧 **v2.0 FlawChess Engine** — Phases 153–158 (in progress; started 2026-07-05) — client-side practical-play analysis engine (Stockfish + Maia expectimax-in-MCTS) on `/analysis`, zero server load (SEED-082)
 
 ## Progress
 
@@ -239,6 +239,25 @@ Plans:
 - [x] 157-02-PLAN.md — `FlawChessAgreementVerdict` component (extracted `ProseSpan`, D-07 prose, D-09 arrow isolation, D-10 popover, D-11 click-to-play) + `Analysis.tsx` wiring
 
 **UI hint**: yes
+
+### Phase 158: FlawChess Engine displayed-eval provenance reconciliation (SEED-087)
+
+**Goal**: Every Stockfish eval displayed on the `/analysis` page — SF card, FlawChess card, Maia chart/quality bar, agreement verdict — resolves through one UCI-keyed lookup (authoritative free MultiPV run first, ONE shared analysis-grade searchmoves grading run second), so any move shown on two or more surfaces renders the identical number by construction, ending the three-independent-searches provenance mess (exd5 +1.3/+1.1/+1.1, Bc5 +0.9/+0.9/+0.8).
+**Depends on**: Phase 157 (agreement verdict consumes the reconciled evals), Phase 151.1 (`useStockfishGradingEngine` — promoted to the shared fallback run), Phase 155 (`RankedLine.objectiveEvalCp` display path being replaced)
+**Requirements**: SEED-087 (amended 2026-07-07: third provenance chain + shared-fallback design)
+**Success Criteria** (what must be TRUE):
+
+  1. A move displayed on two or more of the SF card, FC card, and Maia chart renders the *same* eval on all of them, sourced by UCI lookup with strict precedence: free MultiPV run ▸ shared grading run. The MCTS pool's shallow grades (`objectiveEvalCp` from `workerPool.ts`) are no longer a display source anywhere.
+  2. `useStockfishGradingEngine` is the single shared fallback: its candidate set is `shownSans ∪ displayed FC moves`, it runs at analysis-grade depth (the depth-14 / 2500 ms cap demonstrably lifted, budget chosen from a measured latency/depth trade on real positions), and it is gated on `maiaEnabled || flawChessEnabled` with the union reflecting active consumers.
+  3. The Maia move-quality buckets (`classifyMoveQuality`) classify from the same reconciled evals they display, so a move's number and its severity color cannot disagree at bucket boundaries.
+  4. The agreement verdict's FC-pick and SF-best evals both come from the lookup, making "FC pick grades higher than the objective best" impossible by construction (the SEED-087 2100-ELO Qc7 +2.8 vs O-O +1.3 case).
+  5. Practical scores (brown badges, the MCTS backed-up expectation) and the locked Phase 153 search core are untouched — this is a display/verdict overlay only.
+
+**Plans**: 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 158 to break down)
 
 ## Backlog
 

@@ -6,14 +6,14 @@ current_phase: 157
 current_phase_name: flawchess-agreement-verdict-prose-hoverable-moves
 status: Phase 157 shipped — squash-merged to main (local)
 stopped_at: Phase 157 context gathered
-last_updated: "2026-07-07T16:15:48.950Z"
+last_updated: "2026-07-07T16:33:15.636Z"
 last_activity: 2026-07-07
 progress:
-  total_phases: 5
+  total_phases: 6
   completed_phases: 5
   total_plans: 16
   completed_plans: 16
-  percent: 100
+  percent: 83
 ---
 
 # Project State: FlawChess
@@ -61,6 +61,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 - v1.31 Pipeline Consolidation closed 2026-07-04 (Phases 148, 149, 150; tag v1.31). Execution decisions + quick-task log archived to `milestones/v1.31-ROADMAP.md`, PROJECT.md Key Decisions, and git. Reset for the next milestone.
 - Phase 151.1 inserted after Phase 151: Stockfish-graded Maia moves on the Moves-by-Rating chart (from SEED-083)
+- Phase 158 added: FlawChess Engine displayed-eval provenance reconciliation (SEED-087, amended with third Maia-card provenance chain + shared-fallback design)
 
 ### Decisions
 
