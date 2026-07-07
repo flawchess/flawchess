@@ -46,6 +46,13 @@ export interface BoardArrow {
    * next-move arrow so it always stays visible on top of the engine overlay.
    */
   onTop?: boolean;
+  /**
+   * Optional layer id folded into the arrow's React/dedupe key so two engine
+   * arrows on the same from→to (FC + SF agreeing) both survive
+   * dedupeArrowsByMove instead of collapsing — mirrors the `-top` suffix
+   * escape (D-06).
+   */
+  layerKey?: string;
 }
 
 // Re-exported so existing importers (useGameOverlay) keep their ChessBoard path.

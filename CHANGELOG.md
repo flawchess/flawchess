@@ -11,6 +11,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Added
 
 - **FlawChess Engine practical-play analysis on `/analysis`** — a new client-side engine that ranks candidate moves by how well they score *for you in practice*, not just by objective strength. Toggle it on from the analysis header (next to Stockfish and Maia) and each line shows a score pair: the objective Stockfish evaluation alongside the practical-for-you score (e.g. "objectively +3.0, practically +0.9"), plus the modal continuation (your move followed by the opponent's most-likely replies) as clickable chips. Lines appear almost immediately and refine live as the search runs. The engine runs entirely in your browser (a Maia-weighted expectimax search over a Stockfish worker pool and a dedicated Maia policy worker), with no shared-memory headers and pool size adapting to your device. (Phases 153, 154, 155)
+- **Engine top moves drawn on the analysis board** — the FlawChess Engine's top practical move now renders as its own amber arrow on the board, alongside Stockfish's blue arrow, so you can see at a glance where the two engines agree or disagree. Each engine's arrow toggles independently with its card, and when both engines pick the same move the arrows nest concentrically instead of collapsing to one. Works identically on the mobile board. (Phase 156)
 
 ### Fixed
 

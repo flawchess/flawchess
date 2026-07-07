@@ -62,13 +62,14 @@ import { PlayerBar } from '@/components/board/PlayerBar';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { uciToSquares } from '@/lib/sanToSquares';
 import {
-  SECOND_BEST_ARROW,
   TAC_MISSED,
   TAC_ALLOWED,
   MOVE_HIGHLIGHT_GOOD,
   STOCKFISH_ACCENT,
   MAIA_ACCENT,
   FLAWCHESS_ENGINE_ACCENT,
+  FLAWCHESS_ENGINE_ARROW,
+  BEST_MOVE_ARROW,
   NEXT_MOVE_ARROW,
 } from '@/lib/theme';
 import { selectCandidatesByMass, classifyMoveQuality } from '@/lib/moveQuality';
@@ -96,6 +97,23 @@ const QUALITY_HOVER_ARROW_WIDTH = 0.6;
 /** Normalized width of the on-main-line next-move arrow — thin so it reads as a
  *  subtle hint layered over the wider 0.5 engine arrows. */
 const NEXT_MOVE_ARROW_WIDTH = 0.18;
+
+/**
+ * Phase 156 (ARROW-01/02/03, D-02): top-1-per-engine arrow count for the
+ * free-analysis board's FC + SF arrow layer. A future engine-settings panel
+ * may make this configurable (e.g. top-2) — bumping this constant is the only
+ * change needed then, no prop threading now (D-03).
+ */
+const ARROW_COUNT = 1;
+
+/** Normalized width of the FlawChess Engine board arrow — widest of the three
+ *  concentric arrows so it draws at the bottom (D-05). Maxed at 1.0 (156 UAT: the
+ *  FC practical move is the headline signal, so its arrow is the boldest on the board). */
+const FLAWCHESS_ENGINE_ARROW_WIDTH = 1.0;
+
+/** Normalized width of the Stockfish board arrow — nests inside the FC arrow
+ *  and outside the thin white next-move arrow (D-05). */
+const STOCKFISH_ENGINE_ARROW_WIDTH = 0.5;
 
 /**
  * True while the viewport is below the mobile breakpoint. Drives a single-tree render
@@ -993,18 +1011,10 @@ export default function Analysis() {
     // number and drops the orientation color — the tactic is over by then (Quick 260628-pu2
     // UAT). The countdown therefore runs ...2, 1 (punchline), then payoff.
     const isPayoff = stepIntoPv >= rootDisplayDepth;
+    // 156 UAT (top-1 per engine): only the single PV-continuation arrow — the
+    // light-blue 2nd-best Stockfish arrow was dropped here for parity with the
+    // free-analysis board (one FC arrow + one SF arrow, no second-best anywhere).
     const arrows = buildPvArrow(nextMove, displayDepth, isPayoff, orientation);
-
-    // Light-blue 2nd-best from the live engine (skip if it duplicates the overlay arrow).
-    const secondBest = uciToSquares(engine.pvLines[1]?.moves[0] ?? null);
-    if (secondBest && !(secondBest.from === nextMove.from && secondBest.to === nextMove.to)) {
-      arrows.push({
-        startSquare: secondBest.from,
-        endSquare: secondBest.to,
-        color: SECOND_BEST_ARROW,
-        width: 0.5,
-      });
-    }
     return arrows.length > 0 ? arrows : null;
   }, [
     isGameMode,
@@ -1016,7 +1026,6 @@ export default function Analysis() {
     mainLine,
     focusedPvLine,
     nodes,
-    engine.pvLines,
   ]);
 
   // Quick 260705-kfg: arrows for the move-quality bar's hovered segment — one per
@@ -1064,12 +1073,59 @@ export default function Analysis() {
     };
   }, [currentNodeId, isOnMainLine, mainLine, nodes]);
 
-  // Game-mode board arrows: the move-quality hover overlay wins (both modes) so
-  // hovering the bar previews its moves; otherwise the PV-sideline overlay takes
-  // precedence, then the precomputed/engine overlay from useGameOverlay. The
-  // white next-move arrow is layered on top of whatever base overlay applies.
+  // Phase 156 (ARROW-01/02/03): the board's two live engine arrows — amber
+  // FlawChess Engine (practical move) and blue Stockfish (objective move).
+  // Independently toggled via the existing Phase 155 card switches; each simply
+  // doesn't render until its engine's first snapshot yields a root move (no
+  // placeholder arrow, mirrors the card skeleton timing). 156 UAT: this layer is
+  // the default board overlay in BOTH game mode and free analysis — the engine
+  // arrows must be identical regardless of whether a game is loaded.
+  const engineArrows = useMemo<BoardArrow[]>(() => {
+    const arrows: BoardArrow[] = [];
+    if (flawChessEnabled) {
+      for (let i = 0; i < ARROW_COUNT; i++) {
+        const fcSquares = uciToSquares(flawChessEngine.rankedLines[i]?.rootMove ?? null);
+        if (fcSquares) {
+          arrows.push({
+            startSquare: fcSquares.from,
+            endSquare: fcSquares.to,
+            color: FLAWCHESS_ENGINE_ARROW,
+            width: FLAWCHESS_ENGINE_ARROW_WIDTH,
+            layerKey: `fc-${i}`,
+          });
+        }
+      }
+    }
+    if (engineEnabled) {
+      for (let i = 0; i < ARROW_COUNT; i++) {
+        const sfSquares = uciToSquares(engine.pvLines[i]?.moves[0] ?? null);
+        if (sfSquares) {
+          arrows.push({
+            startSquare: sfSquares.from,
+            endSquare: sfSquares.to,
+            color: BEST_MOVE_ARROW,
+            width: STOCKFISH_ENGINE_ARROW_WIDTH,
+            layerKey: `sf-${i}`,
+          });
+        }
+      }
+    }
+    return arrows;
+  }, [flawChessEnabled, flawChessEngine.rankedLines, engineEnabled, engine.pvLines]);
+
+  // Board arrows (156 UAT — game/free parity): the FC + SF engine-arrow layer is
+  // the default overlay in BOTH modes, so the board looks identical whether or not
+  // a game is loaded. The move-quality hover overlay still wins (both modes) so
+  // hovering the bar previews its moves; the game-only flaw-line drill-down overlay
+  // (pvSidelineArrows, self-gated to null outside game mode) still takes precedence
+  // when you navigate into a specific flaw's PV. The old game-review default overlay
+  // (gameOverlay.boardArrows: Stockfish best + light-blue 2nd-best) is no longer
+  // drawn — top-1 per engine everywhere. Draw order is ChessBoard's width sort
+  // (D-05), not array order; the white next-move arrow layers on top (onTop).
   const baseArrows: BoardArrow[] | undefined =
-    qualityHoverArrows ?? (isGameMode ? (pvSidelineArrows ?? gameOverlay.boardArrows) : undefined);
+    qualityHoverArrows ??
+    pvSidelineArrows ??
+    (engineArrows.length > 0 ? engineArrows : undefined);
   const boardArrows: BoardArrow[] | undefined = nextMoveArrow
     ? [...(baseArrows ?? []), nextMoveArrow]
     : baseArrows;

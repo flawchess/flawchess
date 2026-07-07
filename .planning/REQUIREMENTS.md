@@ -33,10 +33,10 @@ Committed scope for this milestone (MVP1 core, per SEED-082). Each maps to a roa
 
 ### Board Arrows (ARROW)
 
-- [ ] **ARROW-01**: A new FlawChess Engine top-2 arrow layer renders the engine's best practical moves on the board, refining live with the search.
-- [ ] **ARROW-02**: The FlawChess Engine, Stockfish top-2, and (in game review) played-move arrow layers are each individually toggleable.
-- [ ] **ARROW-03**: The existing played-move arrow (game review) and Stockfish top-2 arrow are reused; there is no dedicated Maia arrow layer (Maia moves stay reachable by hovering the Moves-by-Rating chart / prose).
-- [ ] **ARROW-04**: Engine output is always framed as the "best **practical** move for you," never "best move" unqualified; disagreement with Stockfish reads as intentional.
+- [x] **ARROW-01**: A new FlawChess Engine top-2 arrow layer renders the engine's best practical moves on the board, refining live with the search.
+- [x] **ARROW-02**: The FlawChess Engine, Stockfish top-2, and (in game review) played-move arrow layers are each individually toggleable.
+- [x] **ARROW-03**: The existing played-move arrow (game review) and Stockfish top-2 arrow are reused; there is no dedicated Maia arrow layer (Maia moves stay reachable by hovering the Moves-by-Rating chart / prose).
+- [x] **ARROW-04**: Engine output is always framed as the "best **practical** move for you," never "best move" unqualified; disagreement with Stockfish reads as intentional.
 
 ### Game Review Integration (REVIEW)
 
@@ -93,10 +93,10 @@ Which phases cover which requirements. Populated during roadmap creation.
 | DISPLAY-02 | Phase 155 | Complete |
 | DISPLAY-03 | Phase 155 | Complete |
 | DISPLAY-04 | Phase 155 | Complete |
-| ARROW-01 | Phase 156 | Pending |
-| ARROW-02 | Phase 156 | Pending |
-| ARROW-03 | Phase 156 | Pending |
-| ARROW-04 | Phase 156 | Pending |
+| ARROW-01 | Phase 156 | Complete |
+| ARROW-02 | Phase 156 | Complete |
+| ARROW-03 | Phase 156 | Complete |
+| ARROW-04 | Phase 156 | Complete |
 | REVIEW-01 | Phase 157 | Pending |
 | REVIEW-02 | Phase 157 | Pending |
 

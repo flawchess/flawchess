@@ -110,7 +110,7 @@
 | 153. Pure Search Core (Guardrail + Backup + MCTS + Fallback) | 5/5 | Complete    | 2026-07-05 |
 | 154. Real Providers (Stockfish Worker Pool + Maia Queue) | 4/4 | Complete    | 2026-07-06 |
 | 155. React Hook + Anytime UI (Free Analysis) | 4/4 | Complete   | 2026-07-06 |
-| 156. Board Arrows + Toggles (Free Analysis) | 0/0 | Not started | - |
+| 156. Board Arrows + Toggles (Free Analysis) | 1/1 | Complete   | 2026-07-06 |
 | 157. Game Review Overlay Integration | 0/0 | Not started | - |
 
 ## Active Milestone: v2.0 FlawChess Engine
@@ -208,8 +208,12 @@ Client-side-only: no backend, no schema, no migrations, no new endpoints, no new
   3. The existing played-move arrow (game review) and Stockfish top-2 arrow render unchanged — reused, not reimplemented — and there is no separate Maia arrow layer; Maia's actual reply distribution stays reachable via the existing Moves-by-Rating chart hover (ARROW-03).
   4. Whenever the FlawChess Engine arrow disagrees with the Stockfish top-2 arrow at the root, the objective-vs-practical score pair is simultaneously visible (never a hover away), and no UI string — button label, empty state, or tooltip — reads "best move" unqualified (ARROW-04).
 
-**Plans**: TBD
+**Plans**: 1 plan
 **UI hint**: yes
+
+Plans:
+
+- [x] 156-01-PLAN.md — Render live FC (amber) + SF (blue) engine arrows on the free-analysis board: new amber theme token, ARROW_COUNT=1, layerKey dedupe-bypass for concentric FC/SF nesting, gated on the existing card toggles (desktop + mobile)
 
 ### Phase 157: Game Review Overlay Integration
 

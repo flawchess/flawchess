@@ -72,19 +72,22 @@ export const STOCKFISH_ACCENT = 'oklch(0.58 0.16 255)'; // blue
 // the missed/allowed tactic arrows, and blue is Stockfish — violet sits in the one open
 // hue gap and reads as a distinct "human" identity (151.1 UAT).
 export const MAIA_ACCENT = 'oklch(0.58 0.20 290)'; // violet
-// FlawChess Engine source accent (Phase 155, D-05). Tints the new
-// FlawChessEngineLines card frame + header caption + "FC" eval-bar fill/cap —
-// the third source alongside Stockfish (blue) and Maia (violet).
-export const FLAWCHESS_ENGINE_ACCENT = 'oklch(0.55 0.09 55)'; // brand brown
-// FlawChess Engine practical-score badge shades (155 UAT). Three brand-brown
-// shades keyed by practical rank (best / 2nd / 3rd), the brown analog of the
-// blue Stockfish best/2nd badges — all filled with white text (unlike the light
-// SF second badge, these stay dark enough to carry white). Rank 1 is darkest and
-// most saturated so the top line reads strongest.
+// FlawChess Engine source accent (Phase 155, D-05; 156 UAT: brown → gold). Tints
+// the FlawChessEngineLines card frame + header caption + "FC" eval-bar fill/cap —
+// the third source alongside Stockfish (blue) and Maia (violet). Gold/amber (not the
+// app's brand brown) gives the house engine a warm identity that's clearly distinct
+// from Stockfish's cold blue and doesn't collide with the brand-brown primary UI.
+// Rendered as colored text/elements on the dark card, so a bright gold is legible.
+export const FLAWCHESS_ENGINE_ACCENT = 'oklch(0.78 0.14 80)'; // gold/amber
+// FlawChess Engine practical-score badge shades (155 UAT; 156 UAT: brown → gold).
+// Three gold shades keyed by practical rank (best / 2nd / 3rd), the gold analog of the
+// blue Stockfish best/2nd badges — all filled with WHITE text, so they stay dark enough
+// (matching the prior brown shades' white-text contrast ~6.9/5.4/4.2) to carry it. Rank 1
+// is darkest and most saturated so the top line reads strongest.
 export const FLAWCHESS_ENGINE_BADGE_SHADES = [
-  'oklch(0.45 0.10 55)', // best
-  'oklch(0.52 0.08 55)', // second
-  'oklch(0.59 0.06 55)', // third
+  'oklch(0.47 0.13 80)', // best
+  'oklch(0.53 0.12 80)', // second
+  'oklch(0.59 0.10 80)', // third
 ] as const;
 export const EVAL_CHART_LINE = 'oklch(0.82 0 0)';
 // Muted grey for the rotated "Midgame" / "Endgame" text labels centered on the
@@ -344,6 +347,14 @@ export const ARROW_NEUTRAL = '#6B7280';  // Tailwind gray-500 / matches WDL_BORD
 // secondary to the red flaw-move arrow it sits beside on the Flaw card, and a calm
 // overlay on the scrubbed Game-card board. rgba (not oklch) so the alpha is explicit.
 export const BEST_MOVE_ARROW = 'rgba(37, 99, 235, 0.8)';  // Tailwind blue-600 @ 80%
+
+// FlawChess Engine board arrow (Phase 156) — the practical-play move rendered on the
+// analysis board (game + free). Bright gold/amber (matching FLAWCHESS_ENGINE_ACCENT's
+// hue) so it pops against both the dark and light board squares and reads as the FC
+// engine's identity color, distinct from the blue Stockfish arrow (156 UAT). rgba (not
+// oklch) like the other arrow tokens: oklch() does not reliably paint in the SVG `fill`
+// presentation attribute, which left the arrow invisible. sRGB of oklch(0.80 0.15 80).
+export const FLAWCHESS_ENGINE_ARROW = 'rgb(213, 152, 0)';  // deep gold/amber (156 UAT: darker + fully opaque)
 
 // Second-best engine move: arrow + eval badge (151.1 UAT). A light blue so 1st vs 2nd
 // read as a blue hierarchy (best = solid blue, second = light blue) rather than the

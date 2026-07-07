@@ -6,8 +6,8 @@
  * chip/badge/hover-preview pattern, same expand chevron — with three deltas
  * (D-08/D-06/D-07):
  *  - top 3 lines instead of 2 (`MAX_LINES = 3`, D-08).
- *  - a filled brown practical-score badge (white font, one of three
- *    `FLAWCHESS_ENGINE_BADGE_SHADES` by rank — the brown analog of the blue
+ *  - a filled gold practical-score badge (white font, one of three
+ *    `FLAWCHESS_ENGINE_BADGE_SHADES` by rank — the gold analog of the blue
  *    Stockfish best/2nd badges), followed by the objective Stockfish eval of the
  *    same move in Stockfish blue (155 UAT). Both numbers are white-POV
  *    pawn-scale (D-06, DISPLAY-03). The badge NEVER renders the bare phrase "best
@@ -53,9 +53,9 @@ const TOOLTIP_BOARD_SIZE = 144;
 // card placement/mobile-tab wiring is Plan 04's job, not this body component's.
 const CHIP_CLASS =
   'inline-flex items-center gap-0.5 rounded px-1 py-0.5 font-mono text-xs transition-colors hover:bg-accent';
-// Filled brown practical-score badge — the same pill shell as EngineLines'
+// Filled gold practical-score badge — the same pill shell as EngineLines'
 // BADGE_CLASS (white font), so the two engine cards read as one visual family;
-// only the fill color differs (brown-by-rank vs SF blue). shrink-0 lives on the
+// only the fill color differs (gold-by-rank vs SF blue). shrink-0 lives on the
 // wrapper so the badge + "SF <eval>" aside stay together on one line.
 const BADGE_CLASS = 'rounded px-1.5 py-0.5 text-xs font-semibold text-white';
 
@@ -124,7 +124,7 @@ function RankedLineRow({
   const objectiveText = formatScore(line.objectiveEvalCp, null);
   const practicalCp = expectedScoreToWhitePovCp(line.practicalScore, rootMover);
   const practicalText = formatScore(practicalCp, null);
-  // Brown badge shade by practical rank (best/2nd/3rd). noUncheckedIndexedAccess:
+  // Gold badge shade by practical rank (best/2nd/3rd). noUncheckedIndexedAccess:
   // lineIndex is 0..MAX_LINES-1 and SHADES has MAX_LINES entries, but narrow anyway.
   const badgeShade =
     FLAWCHESS_ENGINE_BADGE_SHADES[lineIndex] ??
@@ -140,7 +140,7 @@ function RankedLineRow({
     <div
       className={cn('flex items-start gap-1 px-2 py-1', addSeparator && 'border-t border-border')}
     >
-      {/* Brown practical-score badge (white font, shade by rank) + the objective
+      {/* Gold practical-score badge (white font, shade by rank) + the objective
           Stockfish eval of this same move in Stockfish blue. Never the bare phrase
           "best move" (D-06). */}
       <span
