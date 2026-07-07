@@ -6,14 +6,14 @@ current_phase: 158
 current_phase_name: flawchess-engine-displayed-eval-provenance-reconciliation-se
 status: Phase 158 shipped — squash-merged to main (e8773fd6)
 stopped_at: Completed 158-03-PLAN.md
-last_updated: "2026-07-07T18:59:48.241Z"
+last_updated: "2026-07-07T19:05:07.031Z"
 last_activity: 2026-07-07
 progress:
-  total_phases: 6
+  total_phases: 7
   completed_phases: 6
   total_plans: 19
   completed_plans: 19
-  percent: 100
+  percent: 86
 ---
 
 # Project State: FlawChess
@@ -62,6 +62,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - v1.31 Pipeline Consolidation closed 2026-07-04 (Phases 148, 149, 150; tag v1.31). Execution decisions + quick-task log archived to `milestones/v1.31-ROADMAP.md`, PROJECT.md Key Decisions, and git. Reset for the next milestone.
 - Phase 151.1 inserted after Phase 151: Stockfish-graded Maia moves on the Moves-by-Rating chart (from SEED-083)
 - Phase 158 added: FlawChess Engine displayed-eval provenance reconciliation (SEED-087, amended with third Maia-card provenance chain + shared-fallback design)
+- Phase 159 added: FlawChess Engine policy temperature + root-move findability (SEED-085, Threads A + B committed)
 
 ### Decisions
 

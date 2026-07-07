@@ -35,7 +35,7 @@
 - ✅ **v1.30 Forcing-Line Tactic Gate** — Phases 141–147 (shipped 2026-06-30; releases #229/#230/#231/#234) — see [milestones/v1.30-ROADMAP.md](milestones/v1.30-ROADMAP.md)
 - ✅ **v1.31 Pipeline Consolidation** — Phases 148–150 (shipped 2026-07-04; deployed to production) — see [milestones/v1.31-ROADMAP.md](milestones/v1.31-ROADMAP.md)
 - ✅ **v1.32 Maia-3 Human-Move Enrichment** — Phases 151, 151.1 (shipped 2026-07-05; Phase 152 demoted to SEED-084; deployed to production) — see [milestones/v1.32-ROADMAP.md](milestones/v1.32-ROADMAP.md)
-- 🚧 **v2.0 FlawChess Engine** — Phases 153–158 (in progress; started 2026-07-05) — client-side practical-play analysis engine (Stockfish + Maia expectimax-in-MCTS) on `/analysis`, zero server load (SEED-082)
+- 🚧 **v2.0 FlawChess Engine** — Phases 153–159 (in progress; started 2026-07-05) — client-side practical-play analysis engine (Stockfish + Maia expectimax-in-MCTS) on `/analysis`, zero server load (SEED-082)
 
 ## Progress
 
@@ -264,6 +264,17 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 158-03-PLAN.md — Wire reconciliation into Analysis.tsx across all display consumers (SF/FC/Maia/verdict)
+
+### Phase 159: FlawChess Engine policy temperature + root-move findability (SEED-085)
+
+**Goal**: The FlawChess Engine recommends the best move the user will *plausibly find* ("best you'll likely find", not "best if you can find it"). Thread B (the committed real fix): the root ranking stops being the one place that ignores the player's own move probability — bring `P_you(X)` into the root sort via a findability floor or soft `P_you(X)^β · V(X)` weighting, auto-scaled by ELO (near-off at master level, aggressive at 600), so a ~5%-findable tail move (Nb5 @600, Qb8 @1000) can no longer top the list while the per-move practical score `V(X)` stays untouched; must NOT collapse into ranking by raw `P·V` (the rejected greedy modal-move engine). Thread A (complementary knob): a Maia policy-temperature parameter exposed as a UI slider directly below the ELO slider (>1 flattens toward more human fallibility, <1 sharpens toward Stockfish, 1 = today), with the findability weighting reading `P_you` from the temperature-adjusted distribution so the two compose. Rides along: the agreement-verdict copy ("far easier to find and play") is gated on the pick's actual Maia probability so the prose can never contradict the Maia chart rendered beneath it.
+**Depends on**: Phase 153 (search core: `select.ts` `ROOT_PRIOR_FLOOR`/candidate filter, `backup.ts` root-max, `treeCommon.ts` ranking sort), Phase 157 (`FlawChessAgreementVerdict` / `flawChessVerdict.ts` copy tiers), Phase 158 (reconciled displayed evals)
+**Requirements**: SEED-085 (Threads A + B, both committed; verdict-copy consistency fix included)
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 159 to break down)
 
 ## Backlog
 
