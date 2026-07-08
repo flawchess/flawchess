@@ -33,6 +33,23 @@ export function sideToMoveFromFen(fen: string): MoverColor {
  * in (0, 1). Mate is mapped to ±MATE_CP_EQUIVALENT cp before the sigmoid (Option B),
  * matching the flaw classifier. Returns 0.5 (neutral) when no eval is available.
  */
+/**
+ * Convert a 0-1 root-side-to-move expected score (`RankedLine.practicalScore`,
+ * Phase 155 D-06) back to a white-POV centipawn value — the algebraic inverse of
+ * evalToExpectedScore: es = 1 / (1 + exp(-K * sign * cp)) => cp = ln(es/(1-es)) / (K * sign).
+ * Special-cases the es<=0 / es>=1 mate boundaries to ±MATE_CP_EQUIVALENT (mirroring
+ * evalToExpectedScore's own mate-before-sigmoid convention) instead of computing
+ * ln(0)/ln(Infinity), which a genuine forced-mate subtree in RankedLine.practicalScore
+ * can reach exactly (never 0.5 ± ε near mate boundaries). Display-only math — never
+ * fed back into the search core.
+ */
+export function expectedScoreToWhitePovCp(es: number, rootMover: MoverColor): number {
+  const sign = rootMover === 'white' ? 1 : -1;
+  if (es <= 0) return -MATE_CP_EQUIVALENT * sign;
+  if (es >= 1) return MATE_CP_EQUIVALENT * sign;
+  return Math.log(es / (1 - es)) / (LICHESS_K * sign);
+}
+
 export function evalToExpectedScore(
   evalCp: number | null,
   evalMate: number | null,

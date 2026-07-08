@@ -17,10 +17,22 @@
  * EvalChart.tsx / ScoreChart.tsx, not a line-by-line port of the spike's DOM code.
  */
 
-import { CartesianGrid, LabelList, Line, LineChart, ReferenceLine, XAxis, YAxis } from 'recharts';
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ReferenceLine,
+  usePlotArea,
+  useXAxisScale,
+  useYAxisScale,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import {
+  FLAWCHESS_ENGINE_ACCENT,
+  MAIA_ACCENT,
   MOVE_QUALITY_BEST,
   MOVE_QUALITY_BLUNDER,
   MOVE_QUALITY_GOOD,
@@ -28,6 +40,7 @@ import {
   MOVE_QUALITY_MISTAKE,
   MOVE_QUALITY_PENDING,
   MOVES_BY_RATING_REFERENCE_LINE,
+  STOCKFISH_ACCENT,
 } from '@/lib/theme';
 import type { MoveCurvePoint } from '@/hooks/useMaiaEngine';
 import type { MoveQuality } from '@/lib/moveQuality';
@@ -46,12 +59,27 @@ const CHART_HEIGHT_CLASS = 'h-64';
 
 // End-of-line move labels (UAT quick 260705-dj5): each shown line is tagged with its
 // SAN at its right end (like the desktop reference), so the chart carries its own
-// legend. MOVE_LABEL_RIGHT_MARGIN reserves room for them; the tighter Y_AXIS_WIDTH
-// reclaims the left gutter so the plot itself gets wider.
+// legend. MOVE_LABEL_RIGHT_MARGIN reserves room for the label column PLUS the leader
+// gutter; the tighter Y_AXIS_WIDTH reclaims the left gutter so the plot stays wide.
 const MOVE_LABEL_FONT_SIZE = 11;
-const MOVE_LABEL_OFFSET_X = 4;
-const MOVE_LABEL_RIGHT_MARGIN = 40;
+const MOVE_LABEL_RIGHT_MARGIN = 48;
 const Y_AXIS_WIDTH = 36;
+
+// Leader lines (Option B): when de-collision nudges a label off its endpoint, a thin
+// connector links the label back to the line's true end so the pairing stays clear.
+// MOVE_LABEL_LEADER_GUTTER is the horizontal band reserved for that connector between
+// the plot's right edge and the label text; MOVE_LABEL_LEADER_MIN_OFFSET is how far a
+// label must be nudged before a connector is worth drawing (an unmoved label sits on
+// its endpoint, so a connector would just be noise).
+const MOVE_LABEL_LEADER_GUTTER = 12;
+const MOVE_LABEL_LEADER_MIN_OFFSET = 4;
+const MOVE_LABEL_LEADER_OPACITY = 0.5;
+
+// Minimum vertical spacing (px) between two adjacent end-of-line labels. When
+// several moves converge to near-equal probabilities at the right edge, their raw
+// endpoints collide; the de-collision pass (spreadLabels) nudges them apart to at
+// least this gap so no two SANs overprint each other.
+export const MOVE_LABEL_LINE_HEIGHT = MOVE_LABEL_FONT_SIZE + 2;
 
 // Fallback y-axis ticks (0-100%) used only when no probability data is available.
 const PROBABILITY_TICKS = [0, 0.25, 0.5, 0.75, 1];
@@ -192,31 +220,143 @@ function sampleTicks(values: number[], maxTicks: number): number[] {
     .filter((v): v is number => v !== undefined);
 }
 
+/** One end-of-line SAN label: its text, line color, and (mutated during spreading) y. */
+export interface EndLabelDatum {
+  san: string;
+  color: string;
+  y: number;
+}
+
 /**
- * `content` render prop for a per-line LabelList that draws the move's SAN at the
- * RIGHT end of its line only (the last ELO rung), in the line's own color — an
- * on-chart legend mirroring the desktop reference (UAT quick 260705-dj5).
+ * Vertical de-collision (Option A): nudge labels apart so no two overprint, while
+ * keeping each as close as possible to its line's true endpoint y. Sorts by target
+ * y, pushes each label down until it clears the previous by MOVE_LABEL_LINE_HEIGHT,
+ * then relaxes back up if the stack overflowed the bottom, and finally clamps the
+ * top (only reachable when there are more labels than vertical room, in which case
+ * the bottom is allowed to overflow rather than compress below one line height).
+ * Returns copies; input is not mutated. Order of the returned array is irrelevant
+ * (each label carries its own san/color), so no remap to the original order.
  */
-function endOfLineLabel(san: string, color: string, lastIndex: number) {
-  return function EndOfLineLabel(props: {
-    x?: number | string;
-    y?: number | string;
-    index?: number;
-  }): React.ReactElement {
-    if (props.index !== lastIndex || props.x == null || props.y == null) return <g />;
-    return (
-      <text
-        x={Number(props.x) + MOVE_LABEL_OFFSET_X}
-        y={Number(props.y)}
-        textAnchor="start"
-        dominantBaseline="central"
-        fontSize={MOVE_LABEL_FONT_SIZE}
-        fill={color}
-      >
-        {san}
-      </text>
-    );
-  };
+export function spreadLabels(
+  labels: EndLabelDatum[],
+  minY: number,
+  maxY: number,
+): EndLabelDatum[] {
+  const gap = MOVE_LABEL_LINE_HEIGHT;
+  const sorted = labels.map((l) => ({ ...l })).sort((a, b) => a.y - b.y);
+  const n = sorted.length;
+
+  for (let i = 1; i < n; i++) {
+    const prev = sorted[i - 1]!;
+    const cur = sorted[i]!;
+    if (cur.y < prev.y + gap) cur.y = prev.y + gap;
+  }
+  const last = sorted[n - 1]!;
+  if (last.y > maxY) {
+    last.y = maxY;
+    for (let i = n - 2; i >= 0; i--) {
+      const below = sorted[i + 1]!;
+      const cur = sorted[i]!;
+      if (cur.y > below.y - gap) cur.y = below.y - gap;
+    }
+  }
+  const first = sorted[0]!;
+  if (first.y < minY) {
+    first.y = minY;
+    for (let i = 1; i < n; i++) {
+      const prev = sorted[i - 1]!;
+      const cur = sorted[i]!;
+      if (cur.y < prev.y + gap) cur.y = prev.y + gap;
+    }
+  }
+  return sorted;
+}
+
+/**
+ * Leader polyline points connecting a nudged label back to its line's true endpoint:
+ * a short horizontal stub off the line end, then a diagonal to just left of the
+ * label text. Kept as a "start-horizontal-then-diagonal" elbow so the connector
+ * clearly emanates from the line rather than crossing neighbouring endpoints.
+ */
+function leaderPoints(xEnd: number, targetY: number, labelX: number, placedY: number): string {
+  const elbowX = xEnd + MOVE_LABEL_LEADER_GUTTER * 0.4;
+  const textEdgeX = labelX - 2;
+  return `${xEnd},${targetY} ${elbowX},${targetY} ${textEdgeX},${placedY}`;
+}
+
+/**
+ * On-chart legend: draws each shown move's SAN at the RIGHT end of its line (the
+ * last ELO rung) in the line's own color, mirroring the desktop reference (UAT
+ * quick 260705-dj5). Rendered as a SINGLE layer (not per-line LabelLists) so it can
+ * see every endpoint at once and run spreadLabels to prevent overlaps when moves
+ * converge to near-equal probabilities (Option A). When de-collision nudges a label
+ * more than MOVE_LABEL_LEADER_MIN_OFFSET off its endpoint, a thin same-color leader
+ * line links it back to the line end (Option B). Uses Recharts 3.8 scale/plot-area
+ * hooks to locate the endpoints; renders nothing until the geometry is available.
+ */
+function MoveEndLabels({
+  lastRow,
+  shownSans,
+  qualityBySan,
+}: {
+  lastRow: Record<string, number>;
+  shownSans: string[];
+  qualityBySan: Map<string, MoveQualityEval>;
+}): React.ReactElement | null {
+  const xScale = useXAxisScale();
+  const yScale = useYAxisScale();
+  const plot = usePlotArea();
+  if (!xScale || !yScale || !plot) return null;
+
+  const xEnd = xScale(lastRow.elo);
+  if (xEnd == null) return null;
+  const labelX = xEnd + MOVE_LABEL_LEADER_GUTTER;
+
+  const labels: EndLabelDatum[] = [];
+  const targetBySan = new Map<string, number>();
+  for (const san of shownSans) {
+    const value = lastRow[san];
+    if (typeof value !== 'number') continue;
+    const y = yScale(value);
+    if (y == null) continue;
+    labels.push({ san, color: colorForQuality(qualityBySan.get(san)?.quality), y });
+    targetBySan.set(san, y);
+  }
+  if (labels.length === 0) return null;
+
+  const placed = spreadLabels(labels, plot.y, plot.y + plot.height);
+  return (
+    <g data-testid="moves-by-rating-end-labels">
+      {placed.map((label) => {
+        const targetY = targetBySan.get(label.san);
+        const nudged = targetY != null && Math.abs(label.y - targetY) > MOVE_LABEL_LEADER_MIN_OFFSET;
+        return nudged ? (
+          <polyline
+            key={`leader-${label.san}`}
+            data-testid={`moves-by-rating-leader-${label.san}`}
+            points={leaderPoints(xEnd, targetY, labelX, label.y)}
+            fill="none"
+            stroke={label.color}
+            strokeWidth={1}
+            opacity={MOVE_LABEL_LEADER_OPACITY}
+          />
+        ) : null;
+      })}
+      {placed.map((label) => (
+        <text
+          key={label.san}
+          x={labelX}
+          y={label.y}
+          textAnchor="start"
+          dominantBaseline="central"
+          fontSize={MOVE_LABEL_FONT_SIZE}
+          fill={label.color}
+        >
+          {label.san}
+        </text>
+      ))}
+    </g>
+  );
 }
 
 type TooltipPayloadItem = {
@@ -234,15 +374,20 @@ export interface MovesTooltipRow {
 }
 
 /**
- * Custom tooltip body (D-08): ELO rung header, an engine-reference line showing
- * the primary engine's top PV lines (best + 2nd-best; 151.1 UAT), then every
- * shown move's row `${san}${roleSuffix}: ${qualityWord} · ${evalText} · ${prob}%`,
- * sorted by probability descending. The best move carries no role suffix — its
- * "Best" quality word already says so (151.1 UAT: the old `· best` suffix was
- * redundant). Exported as a standalone component (mirroring
- * ScoreGapByTimePressureChart.tsx's `ScoreGapTooltipContent` convention) so
- * it's directly unit-testable without simulating a recharts hover.
+ * Custom tooltip body (D-08): an ELO-rung header over a 4-column table — move name,
+ * a label (gold "FlawChess" for the engine's top move, or the Stockfish-graded
+ * quality word for each predicted move), the white-POV Stockfish eval (accent blue),
+ * and the Maia probability (violet). The move name and quality word share the
+ * quality color; the FlawChess row is pinned on top and the shown moves below,
+ * sorted by probability descending. The columns align the evals and probabilities.
+ * Exported as a standalone component
+ * (mirroring ScoreGapByTimePressureChart.tsx's `ScoreGapTooltipContent` convention)
+ * so it's directly unit-testable without simulating a recharts hover.
  */
+// Numeric columns share one right-aligned, tabular-figure class so the Stockfish
+// evals line up in one column and the Maia probabilities in the next.
+const NUM_CELL_CLASS = 'pl-3 text-right tabular-nums';
+
 export function MovesByRatingTooltipContent({
   label,
   rows,
@@ -256,31 +401,67 @@ export function MovesByRatingTooltipContent({
   engineTopLines: EngineLine[];
   qualityBySan: Map<string, MoveQualityEval>;
 }): React.ReactElement {
+  const topLine = engineTopLines[0];
+  const topLineProb = topLine ? rows.find((r) => r.san === topLine.san)?.probability : undefined;
   return (
     <ChartTooltipBox data-testid="moves-by-rating-tooltip">
       <div className="font-medium text-foreground">{`ELO ${label}`}</div>
-      {engineTopLines.length > 0 && (
-        <div className="text-muted-foreground" data-testid="moves-by-rating-tooltip-engine">
-          {`Engine: ${engineTopLines
-            .map((line) => `${line.san} ${formatEvalText(line.evalCp, line.evalMate)}`)
-            .join(' · ')}`}
-        </div>
-      )}
-      {rows.map((row) => {
-        const { san } = row;
-        const roleSuffix = san === playedSan ? ' · played' : '';
-        const graded = qualityBySan.get(san);
-        const evalText = formatEvalText(graded?.evalCp ?? null, graded?.evalMate ?? null);
-        return (
-          <div
-            key={san}
-            data-testid={`moves-by-rating-tooltip-row-${san}`}
-            style={{ color: row.color }}
-          >
-            {`${san}${roleSuffix}: ${qualityWord(graded?.quality)} · ${evalText} · ${Math.round(row.probability * 100)}%`}
-          </div>
-        );
-      })}
+      {/* 4-column table: move | source (gold "FlawChess" or the Maia rating) |
+          Stockfish eval (blue) | Maia probability (violet). Columns align the evals
+          and probabilities; no separator dots. */}
+      <table className="border-collapse">
+        <tbody>
+          {topLine && (
+            <tr
+              data-testid="moves-by-rating-tooltip-engine"
+              className="[&>td]:border-b [&>td]:border-border [&>td]:pb-1"
+            >
+              <td
+                className="pr-3"
+                style={{ color: colorForQuality(qualityBySan.get(topLine.san)?.quality) }}
+              >
+                {topLine.san}
+              </td>
+              <td className="pr-3" style={{ color: FLAWCHESS_ENGINE_ACCENT }}>
+                FlawChess
+              </td>
+              <td className={NUM_CELL_CLASS} style={{ color: STOCKFISH_ACCENT }}>
+                {formatEvalText(topLine.evalCp, topLine.evalMate)}
+              </td>
+              <td className={NUM_CELL_CLASS} style={{ color: MAIA_ACCENT }}>
+                {topLineProb !== undefined ? `${Math.round(topLineProb * 100)}%` : ''}
+              </td>
+            </tr>
+          )}
+          {rows.map((row, i) => {
+            const { san } = row;
+            const graded = qualityBySan.get(san);
+            const evalText = formatEvalText(graded?.evalCp ?? null, graded?.evalMate ?? null);
+            // Only the first move row gets the gap under the FlawChess divider.
+            const topPad = topLine && i === 0 ? 'pt-1' : '';
+            return (
+              <tr key={san} data-testid={`moves-by-rating-tooltip-row-${san}`}>
+                {/* Move name | quality word — both in the move-quality color | eval
+                    (blue) | probability (violet). A muted "(played)" marks the move
+                    actually played. */}
+                <td className={`pr-3 ${topPad}`} style={{ color: row.color }}>
+                  {san}
+                  {san === playedSan && <span className="text-muted-foreground"> (played)</span>}
+                </td>
+                <td className={`pr-3 ${topPad}`} style={{ color: row.color }}>
+                  {qualityWord(graded?.quality)}
+                </td>
+                <td className={`${NUM_CELL_CLASS} ${topPad}`} style={{ color: STOCKFISH_ACCENT }}>
+                  {evalText}
+                </td>
+                <td className={`${NUM_CELL_CLASS} ${topPad}`} style={{ color: MAIA_ACCENT }}>
+                  {`${Math.round(row.probability * 100)}%`}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </ChartTooltipBox>
   );
 }
@@ -358,6 +539,7 @@ export function MovesByRatingChart({
   }
 
   const rows = pivotRows(perElo, shownSans);
+  const lastRow = rows[rows.length - 1];
   const elos = perElo.map((p) => p.elo);
   const xTicks = sampleTicks(elos, MAX_X_TICKS);
   const { domain: yDomain, ticks: yTicks } = computeYAxis(rows, shownSans);
@@ -408,11 +590,15 @@ export function MovesByRatingChart({
                 strokeWidth={emphasized ? EMPHASIZED_STROKE_WIDTH : OTHER_STROKE_WIDTH}
                 dot={false}
                 isAnimationActive={false}
-              >
-                <LabelList content={endOfLineLabel(san, color, rows.length - 1)} />
-              </Line>
+              />
             );
           })}
+
+          {/* Single de-collided label layer (Option A) drawn after the lines so the
+              SANs sit on top; sees every endpoint at once to avoid overlaps. */}
+          {lastRow && (
+            <MoveEndLabels lastRow={lastRow} shownSans={shownSans} qualityBySan={qualityBySan} />
+          )}
         </LineChart>
       </ChartContainer>
     </div>

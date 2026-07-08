@@ -37,7 +37,13 @@ vi.mock('recharts', async () => {
   };
 });
 
-import { MovesByRatingChart, MovesByRatingTooltipContent } from '../MovesByRatingChart';
+import {
+  MOVE_LABEL_LINE_HEIGHT,
+  MovesByRatingChart,
+  MovesByRatingTooltipContent,
+  spreadLabels,
+  type EndLabelDatum,
+} from '../MovesByRatingChart';
 import type { MoveQualityEval } from '../MovesByRatingChart';
 import type { MoveCurvePoint } from '@/hooks/useMaiaEngine';
 import { MOVE_QUALITY_BLUNDER, MOVE_QUALITY_PENDING } from '@/lib/theme';
@@ -245,8 +251,11 @@ describe('MovesByRatingTooltipContent (D-08)', () => {
         qualityBySan={makeQualityBySan()}
       />,
     );
-    const row = screen.getByTestId('moves-by-rating-tooltip-row-Ne4');
-    expect(row.textContent).toBe('Ne4 · played: Blunder · -4.0 · 8%');
+    const cells = screen.getByTestId('moves-by-rating-tooltip-row-Ne4').querySelectorAll('td');
+    expect(cells[0]?.textContent).toBe('Ne4 (played)');
+    expect(cells[1]?.textContent).toBe('Blunder');
+    expect(cells[2]?.textContent).toBe('-4.0');
+    expect(cells[3]?.textContent).toBe('8%');
   });
 
   it('shows a positive cp eval with a leading + sign and no redundant suffix for the best move', () => {
@@ -259,9 +268,11 @@ describe('MovesByRatingTooltipContent (D-08)', () => {
         qualityBySan={makeQualityBySan()}
       />,
     );
-    const row = screen.getByTestId('moves-by-rating-tooltip-row-O-O');
-    // 151.1 UAT: the "Best" quality word already marks it best — no "· best" suffix.
-    expect(row.textContent).toBe('O-O: Best · +0.5 · 45%');
+    const cells = screen.getByTestId('moves-by-rating-tooltip-row-O-O').querySelectorAll('td');
+    expect(cells[0]?.textContent).toBe('O-O');
+    expect(cells[1]?.textContent).toBe('Best');
+    expect(cells[2]?.textContent).toBe('+0.5');
+    expect(cells[3]?.textContent).toBe('45%');
   });
 
   it('renders "Pending" and an em dash for an ungraded shown move', () => {
@@ -274,8 +285,11 @@ describe('MovesByRatingTooltipContent (D-08)', () => {
         qualityBySan={makeQualityBySan()}
       />,
     );
-    const row = screen.getByTestId('moves-by-rating-tooltip-row-a3');
-    expect(row.textContent).toBe('a3: Pending · — · 30%');
+    const cells = screen.getByTestId('moves-by-rating-tooltip-row-a3').querySelectorAll('td');
+    expect(cells[0]?.textContent).toBe('a3');
+    expect(cells[1]?.textContent).toBe('Pending');
+    expect(cells[2]?.textContent).toBe('—');
+    expect(cells[3]?.textContent).toBe('30%');
   });
 
   it('formats a mate score as "#N"', () => {
@@ -291,11 +305,14 @@ describe('MovesByRatingTooltipContent (D-08)', () => {
         qualityBySan={qualityBySan}
       />,
     );
-    const row = screen.getByTestId('moves-by-rating-tooltip-row-Qh7');
-    expect(row.textContent).toBe('Qh7: Best · #3 · 90%');
+    const cells = screen.getByTestId('moves-by-rating-tooltip-row-Qh7').querySelectorAll('td');
+    expect(cells[0]?.textContent).toBe('Qh7');
+    expect(cells[1]?.textContent).toBe('Best');
+    expect(cells[2]?.textContent).toBe('#3');
+    expect(cells[3]?.textContent).toBe('90%');
   });
 
-  it('renders the primary engine top-2 lines as a reference header (151.1 UAT)', () => {
+  it('renders only the top FlawChess move as a reference header', () => {
     render(
       <MovesByRatingTooltipContent
         label={2400}
@@ -308,8 +325,11 @@ describe('MovesByRatingTooltipContent (D-08)', () => {
         qualityBySan={new Map([['Nf6', { quality: 'best', evalCp: 30, evalMate: null }]])}
       />,
     );
-    const engine = screen.getByTestId('moves-by-rating-tooltip-engine');
-    expect(engine.textContent).toBe('Engine: Nf6 +0.3 · d5 +0.3');
+    const cells = screen.getByTestId('moves-by-rating-tooltip-engine').querySelectorAll('td');
+    expect(cells[0]?.textContent).toBe('Nf6');
+    expect(cells[1]?.textContent).toBe('FlawChess');
+    expect(cells[2]?.textContent).toBe('+0.3');
+    expect(cells[3]?.textContent).toBe('42%');
   });
 
   it('omits the engine reference header when no engine lines are available', () => {
@@ -323,5 +343,108 @@ describe('MovesByRatingTooltipContent (D-08)', () => {
       />,
     );
     expect(screen.queryByTestId('moves-by-rating-tooltip-engine')).toBeNull();
+  });
+});
+
+/**
+ * Option A end-of-line label de-collision. spreadLabels nudges near-equal endpoints
+ * apart so no two SANs overprint, while keeping each as close to its true y as the
+ * min gap and the [minY, maxY] bounds allow.
+ */
+describe('spreadLabels (end-of-line label de-collision, Option A)', () => {
+  const mk = (san: string, y: number): EndLabelDatum => ({ san, color: '#000', y });
+  const gaps = (labels: EndLabelDatum[]): number[] => {
+    const ys = labels.map((l) => l.y).sort((a, b) => a - b);
+    return ys.slice(1).map((y, i) => y - ys[i]!);
+  };
+
+  it('leaves already-separated labels untouched', () => {
+    const input = [mk('a', 10), mk('b', 60), mk('c', 120)];
+    const out = spreadLabels(input, 0, 200);
+    expect(out.map((l) => [l.san, l.y]).sort()).toEqual([
+      ['a', 10],
+      ['b', 60],
+      ['c', 120],
+    ]);
+  });
+
+  it('pushes two colliding labels apart to at least one line height', () => {
+    // Both moves land at ~5% → nearly identical endpoint y (the screenshot's f3/Bxd6).
+    const out = spreadLabels([mk('f3', 200), mk('Bxd6', 203)], 0, 260);
+    for (const g of gaps(out)) expect(g).toBeGreaterThanOrEqual(MOVE_LABEL_LINE_HEIGHT);
+  });
+
+  it('keeps every gap >= one line height for a dense cluster', () => {
+    const cluster = [mk('a', 100), mk('b', 101), mk('c', 102), mk('d', 103), mk('e', 104)];
+    const out = spreadLabels(cluster, 0, 400);
+    for (const g of gaps(out)) expect(g).toBeGreaterThanOrEqual(MOVE_LABEL_LINE_HEIGHT - 1e-9);
+  });
+
+  it('relaxes upward instead of overflowing the bottom bound', () => {
+    // A collision right at the bottom edge must move labels UP, not past maxY.
+    const maxY = 260;
+    const out = spreadLabels([mk('x', 259), mk('y', 260)], 0, maxY);
+    for (const l of out) expect(l.y).toBeLessThanOrEqual(maxY);
+    for (const g of gaps(out)) expect(g).toBeGreaterThanOrEqual(MOVE_LABEL_LINE_HEIGHT - 1e-9);
+  });
+
+  it('does not mutate the input labels', () => {
+    const input = [mk('a', 100), mk('b', 101)];
+    const before = input.map((l) => l.y);
+    spreadLabels(input, 0, 400);
+    expect(input.map((l) => l.y)).toEqual(before);
+  });
+});
+
+/**
+ * Option B leader lines: when a label is nudged off its endpoint, a same-color
+ * connector links it back to the line end; a label left on its endpoint gets none.
+ */
+describe('end-of-line leader lines (Option B)', () => {
+  const flatCurve = (endValues: Record<string, number>): MoveCurvePoint[] =>
+    [1100, 1500, 1900].map((elo) => ({
+      elo,
+      moveProbabilities: Object.fromEntries(
+        Object.entries(endValues).map(([san, end]) => [san, end]),
+      ),
+    }));
+  const q = (sans: string[]): Map<string, MoveQualityEval> =>
+    new Map(sans.map((san) => [san, { quality: 'good', evalCp: 10, evalMate: null }]));
+
+  it('draws leader lines for labels nudged apart by de-collision', () => {
+    // f3 (5%) and Bxd6 (4.5%) collide at the right edge → at least one is nudged.
+    const sans = ['O-O', 'f3', 'Bxd6'];
+    const { container } = render(
+      <MovesByRatingChart
+        perElo={flatCurve({ 'O-O': 0.4, f3: 0.05, Bxd6: 0.045 })}
+        playedSan={null}
+        bestSan="O-O"
+        selectedElo={1500}
+        shownSans={sans}
+        engineTopLines={[]}
+        qualityBySan={q(sans)}
+      />,
+    );
+    expect(container.querySelector('[data-testid="moves-by-rating-end-labels"]')).toBeTruthy();
+    const leaders = container.querySelectorAll('[data-testid^="moves-by-rating-leader-"]');
+    expect(leaders.length).toBeGreaterThan(0);
+  });
+
+  it('draws no leader lines when all endpoints are well separated', () => {
+    const sans = ['O-O', 'f3', 'Bxd6'];
+    const { container } = render(
+      <MovesByRatingChart
+        perElo={flatCurve({ 'O-O': 0.45, f3: 0.25, Bxd6: 0.05 })}
+        playedSan={null}
+        bestSan="O-O"
+        selectedElo={1500}
+        shownSans={sans}
+        engineTopLines={[]}
+        qualityBySan={q(sans)}
+      />,
+    );
+    expect(container.querySelector('[data-testid="moves-by-rating-end-labels"]')).toBeTruthy();
+    const leaders = container.querySelectorAll('[data-testid^="moves-by-rating-leader-"]');
+    expect(leaders.length).toBe(0);
   });
 });

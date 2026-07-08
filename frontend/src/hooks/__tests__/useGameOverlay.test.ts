@@ -11,7 +11,7 @@
 import { renderHook } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import { useGameOverlay } from '@/hooks/useGameOverlay';
-import { BEST_MOVE_ARROW, TAC_ALLOWED, TAC_MISSED } from '@/lib/theme';
+import { BEST_MOVE_ARROW, SECOND_BEST_ARROW, TAC_ALLOWED, TAC_MISSED } from '@/lib/theme';
 import type { EvalPoint, FlawMarker } from '@/types/library';
 import type { PvLine } from '@/hooks/uciParser';
 
@@ -30,6 +30,7 @@ const isOnMainLine = (id: number) => mainLine.includes(id);
 
 const base = {
   enabled: true,
+  engineEnabled: true,
   flawMarkers: [],
   mainLine,
   isOnMainLine,
@@ -69,6 +70,61 @@ describe('useGameOverlay blue-arrow source', () => {
     );
     const blue = result.current.boardArrows?.find((a) => a.color === BEST_MOVE_ARROW);
     expect(blue).toMatchObject({ startSquare: 'c2', endSquare: 'c4' });
+  });
+
+  it('suppresses the blue best-move arrow when Stockfish is toggled off (155 UAT)', () => {
+    const { result } = renderHook(() =>
+      useGameOverlay({
+        ...base,
+        engineEnabled: false,
+        evalSeries: [pt(0, 'e2e4'), pt(1, 'e7e5'), pt(2, 'g1f3')], // precomputed best present
+        currentNodeId: 11,
+        enginePvLines: [
+          { moves: ['c2c4'], multipv: 1, depth: 12, evalCp: 20, evalMate: null },
+          { moves: ['d2d4'], multipv: 2, depth: 12, evalCp: 10, evalMate: null },
+        ],
+      }),
+    );
+    const arrows = result.current.boardArrows ?? [];
+    // Neither the precomputed blue best nor the live second-best show while off.
+    expect(arrows.find((a) => a.color === BEST_MOVE_ARROW)).toBeUndefined();
+    expect(arrows.find((a) => a.color === SECOND_BEST_ARROW)).toBeUndefined();
+  });
+
+  it('keeps the crimson allowed-tactic arrow even when Stockfish is toggled off (155 UAT)', () => {
+    const allowedFork: FlawMarker = {
+      ply: 1,
+      severity: 'blunder',
+      tags: [],
+      is_user: true,
+      move_san: 'Nf3',
+      allowed_tactic_motif: 'fork',
+      allowed_tactic_confidence: 1,
+      allowed_tactic_depth: 2,
+      missed_tactic_motif: null,
+      missed_tactic_confidence: null,
+      missed_tactic_depth: null,
+    };
+    const { result } = renderHook(() =>
+      useGameOverlay({
+        ...base,
+        engineEnabled: false,
+        flawMarkers: [allowedFork],
+        evalSeries: [pt(0, 'a2a3'), pt(1, 'd2d4'), pt(2, 'g1f3')],
+        currentNodeId: 11,
+        enginePvLines: [],
+      }),
+    );
+    const arrows = result.current.boardArrows ?? [];
+    // The crimson opponent-response arrow is part of the tactic overlay, not a live
+    // engine suggestion, so it survives the Stockfish toggle.
+    expect(arrows.find((a) => a.color === TAC_ALLOWED)).toMatchObject({
+      startSquare: 'g1',
+      endSquare: 'f3',
+      label: '3',
+    });
+    // ...but no plain blue best-move arrow.
+    expect(arrows.find((a) => a.color === BEST_MOVE_ARROW)).toBeUndefined();
   });
 });
 

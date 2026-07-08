@@ -5,8 +5,10 @@
  * Mirrors useStockfishEngine.test.ts's MockWorker harness (no real WASM — that
  * is Plan 01's spike + Plan 04's SC3 HUMAN-UAT). Behaviors verified:
  * 1. Init: uci -> uciok -> isready -> readyok -> isReady false->true.
- * 2. Search command: setoption name MultiPV value <N> + go depth 14
- *    searchmoves <ucis> movetime 2500 for a settled (fen, candidateSans).
+ * 2. Search command: setoption name MultiPV value <N> + go movetime 4000
+ *    searchmoves <ucis> (no depth clause — searchmoves MUST be last, per
+ *    Phase 158 Plan 01's headless-measurement bug fix) for a settled
+ *    (fen, candidateSans).
  * 3. pv[0] keying: two info lines report the SAME multipv index but
  *    DIFFERENT pv[0] moves — both must appear as distinct grade-map keys
  *    (Pitfall 1 — never key by multipv index).
@@ -116,7 +118,7 @@ describe('useStockfishGradingEngine', () => {
     expect(result.current.isReady).toBe(true);
   });
 
-  it('search command: setoption MultiPV value 3 + go depth 14 searchmoves <3 ucis> movetime 2500', async () => {
+  it('search command: setoption MultiPV value 3 + go movetime 4000 searchmoves <3 ucis>, no depth clause, searchmoves last', async () => {
     renderHook(() =>
       useStockfishGradingEngine({ fen: TEST_FEN, candidateSans: CANDIDATES, enabled: true }),
     );
@@ -130,10 +132,14 @@ describe('useStockfishGradingEngine', () => {
 
     const goCmd = mockWorker.messages.find((m) => m.startsWith('go '));
     expect(goCmd).toBeDefined();
-    expect(goCmd).toContain('depth 14');
-    expect(goCmd).toContain('movetime 2500');
+    // No depth clause (Phase 158 Plan 01 measurement chose a pure movetime cap).
+    expect(goCmd).not.toContain('depth ');
+    expect(goCmd).toContain('movetime 4000');
     // Candidate SANs converted to UCI in order (e5->e7e5, c5->c7c5, e6->e7e6).
     expect(goCmd).toContain('searchmoves e7e5 c7c5 e7e6');
+    // searchmoves MUST be the LAST clause — everything after it is silently
+    // swallowed into the move list on this WASM build (Rule 1 bug fix).
+    expect(goCmd).toBe(`go movetime 4000 searchmoves e7e5 c7c5 e7e6`);
   });
 
   it('pv[0] keying: same multipv index reporting DIFFERENT pv[0] moves produces distinct grade-map keys', async () => {

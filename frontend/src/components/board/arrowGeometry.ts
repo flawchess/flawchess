@@ -17,9 +17,14 @@ const FILES = 'abcdefgh';
  * regular arrow on the same from→to by dedupeArrowsByMove: the analysis board's
  * thin white next-move arrow must layer OVER the wider engine best-move arrow
  * when they point at the same move, not replace it.
+ *
+ * `layerKey` is a second, caller-supplied escape for the same problem: when the
+ * FlawChess Engine and Stockfish arrows agree on the same from→to, both must
+ * survive dedupe and render as nested concentric arrows rather than collapsing
+ * to one (D-06).
  */
 export function arrowMoveKey(arrow: BoardArrow): string {
-  return `${arrow.startSquare}-${arrow.endSquare}${arrow.onTop ? '-top' : ''}`;
+  return `${arrow.startSquare}-${arrow.endSquare}${arrow.onTop ? '-top' : ''}${arrow.layerKey ? `-${arrow.layerKey}` : ''}`;
 }
 
 /**

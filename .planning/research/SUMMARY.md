@@ -1,163 +1,108 @@
 # Project Research Summary
 
-**Project:** FlawChess v1.30 — Forcing-Line Tactic Gate
-**Domain:** Chess tactic tagger quality — MultiPV=2 engine pass + JSONB persistence + offline re-tagger
-**Researched:** 2026-06-29
-**Confidence:** HIGH
+**Project:** FlawChess Engine (v2.0 milestone)
+**Domain:** Client-side MCTS practical-play chess search (expectimax-inside-MCTS, Maia-weighted backup), integrating Stockfish + Maia into a mobile-first React/Vite analysis board
+**Researched:** 2026-07-05
+**Confidence:** HIGH (stack/architecture grounded in direct codebase reads and a locked design spec; features/pitfalls MEDIUM on browser-memory extrapolation and Maia-drift, HIGH on protocol facts already proven in Phase 151/151.1)
 
 ## Executive Summary
 
-The v1.30 milestone addresses a known mismatch between the tactic detector's training domain (lichess puzzles — fully forced lines) and its production environment (real-game refutation PVs where many nodes are not forced). The fixture precision gate scores ~0.998 micro-precision on synthetic puzzles, but that harness cannot see the non-forced tail that generates the clearance/sacrifice/capturing-defender noise observed in production. Research confirmed that modelling the gate on lichess-puzzler's `is_valid_attack` logic is the correct approach, and that the full implementation requires no new PyPI dependency, no changes to `tactic_detector.py`, and no new table beyond two nullable JSONB columns on the existing `game_flaws` table.
+FlawChess Engine is a client-side chess search that ranks moves by *expected practical score* rather than pure objective evaluation — Stockfish supplies leaf quality, Maia supplies opponent-reply and self-execution probability, combined in an MCTS search with a deliberately non-textbook backup rule (Maia-prior-weighted expectation at non-root nodes, plain max at root, with the ELO used at each node depending asymmetrically on whose move it is). All four researchers converge on the same core verdict: **this ships as glue code over already-shipped infrastructure, not a new dependency.** No new npm packages are needed — the ~150-line MCTS core, the worker pool, and the priority queue are all hand-rolled extensions of patterns this codebase already has proven in `useStockfishGradingEngine.ts` and `useMaiaEngine.ts`. Reading the two closest prior-art systems (Polecat, vala-bot) directly — not just their marketing pages — confirmed the core concept (Maia-model + engine-eval expectimax that plays swindles) is not novel, but also confirmed the one thing FlawChess's design does that neither prior system does: model the *player's own* future execution probability at the *player's own* rating, not just the opponent's. That asymmetric self+opponent rating is the one legitimately unclaimed hook and the copy must never claim more than that.
 
-The recommended architecture is a strict 5-phase dependency chain: schema first, then the MultiPV=2 engine pass, then the offline re-tagger, then an A/B experiment on user-28, then corpus backfill and rollout. The most important design property — confirmed by all four research files — is that the JSONB blobs decouple the expensive engine pass from the cheap gate logic. Once blobs are stored, every threshold change, new filter rule, or margin tweak is a pure-Python offline re-tag (seconds) with no engine re-pass. This property must be preserved in implementation.
+The recommended approach is a strict separation between a pure, framework-agnostic, worker-free search core (`frontend/src/lib/engine/`, testable with fabricated `EngineProviders` and zero WASM/ONNX in the loop) and two thin adapter layers that touch real workers (`workerPool.ts` generalizing the Phase 151.1 Stockfish grading protocol to 2-4 parallel instances; `maiaQueue.ts` as a dedicated, separate Maia worker). This separation is what makes the two highest-risk pieces of logic — the custom backup rule and the ELO-at-node routing — unit-testable with hand-computed fixtures before a single worker exists, and what makes the SEED-mandated depth-limited-expectimax fallback a real, exercised escape hatch rather than an aspirational claim. Build order is five dependency-ordered phases: (A) pure search core + tests, (B) real worker-pool/Maia providers, (C) React hook + anytime UI in free analysis, (D) board arrows + toggles, (E) game-review overlay integration.
 
-The primary risks are (a) MultiPV=2 ordering reliability at the 1M-node budget — must be verified via margin histogram before committing the budget in Phase 142; (b) mate-score saturation causing the sigmoid gate to incorrectly suppress mating combinations — requires a mate-priority check before the sigmoid comparison; and (c) the A/B validation methodology in Phase 144 conflating gate effect with eval non-determinism if old-tagger replay calls the engine instead of reading stored `eval_cp` from dev's DB.
+The two risks that matter most are orthogonal to each other and must both be addressed inside the relevant phase, not deferred: mobile Safari's memory ceiling (2-4 Stockfish WASM heaps + 1 Maia ONNX session + the existing eval bar can silently crash/reload the tab on iOS with no catchable exception — cap pool size adaptively and never run the new pool concurrently with the existing free-standing eval bar on the same position) and backup-rule/ELO-routing correctness (the custom Maia-weighted backup is one careless refactor away from silently degenerating into textbook visit-count-weighted MCTS, and ELO-at-node is one off-by-one from being fully inverted — both need golden-value negative-assertion unit tests, not integration tests, as the primary defense). Scope is deliberately narrow: MVP1 ships the modal-path line, the score pair, live-refining top-n lines, and a single new board-arrow layer on both surfaces — trap-finder UI, per-ELO sigmoids, time-pressure modeling, and SharedArrayBuffer multithreading are all explicitly deferred by design, and the arrow layer count was reduced from SEED-082's original 4 to 3 (no dedicated Maia arrow; Maia stays reachable via the existing Moves-by-Rating chart hover).
 
 ## Key Findings
 
 ### Recommended Stack
 
-The existing stack handles everything: python-chess 1.11.x already ships the `multipv=2` overload for `protocol.analyse()`, SQLAlchemy 2.x already ships `JSONB` from `sqlalchemy.dialects.postgresql`, and the asyncpg dialect auto-registers the JSON codec on every connection via `on_connect()`. The only required source change is that `analyse(..., multipv=2)` returns `list[InfoDict]` (not a scalar `InfoDict`), which means the existing `_analyse_with_pv` cannot be repurposed — a parallel sibling method `_analyse_multipv2` must be added to `EnginePool`.
+Zero new frontend dependencies. Every "which library" question resolves to "hand-roll it" because either no maintained library exists (no current MCTS npm package, none would fit the non-standard asymmetric backup rule even if maintained) or the workload is too small to justify one (a few hundred node evaluations per search doesn't need a priority-queue library — a plain array with linear max-scan suffices; `tinyqueue` is named only as a future option past ~1-2k pending nodes). The entire "new" surface is glue code over `stockfish@18.0.8` (lite-single WASM, already vendored) and `onnxruntime-web@1.27.0` (Maia-3, already vendored, already forced to `numThreads=1`).
 
 **Core technologies:**
-- `python-chess 1.11.x` (`protocol.analyse(board, limit, multipv=2)`) — returns `list[InfoDict]`, best-first; `infos[0]` is the best line, `infos[1]` the second; guard `len(infos) > 1` for single-legal-move positions
-- `SQLAlchemy JSONB` (`from sqlalchemy.dialects.postgresql import JSONB`) — follow the `llm_log.py` pattern exactly; `Mapped[list[Any] | None]`, no `MutableDict` (write-once blobs), no manual codec setup
-- `PostgreSQL 18 TOAST` — automatic for values over ~2 KB; the 12-node pv_lines blob is ~600 bytes, so inline storage applies; TOAST deferred loading is automatic and requires no app-side config
+- `stockfish` 18.0.8 (lite-single WASM) — leaf-eval workhorse, pooled 2-4 instances, no version bump
+- `onnxruntime-web` 1.27.0 — Maia-3 policy/WDL, single dedicated worker, already pinned single-threaded
+- Hand-rolled MCTS core (`lib/engine/`) — ~150 lines, pure functions, `vitest`-testable with fabricated providers
 
-No new PyPI dependency. No new table. The sidecar table (`game_flaw_pv_lines`) the design note flagged as a fallback is not needed — TOAST provides equivalent physical decoupling without a JOIN.
+**Explicitly rejected:** generic MCTS packages, priority-queue libraries at MVP1 scale, worker-RPC wrappers (Comlink/workerpool), SharedArrayBuffer multithreading (breaks the existing Google OAuth popup flow via COOP/COEP).
 
 ### Expected Features
 
-The forcing-line gate corroborates all constants and rules from the design note. Every figure below is verified directly against `generator/generator.py` and `generator/util.py` in the lichess-puzzler v50 clone.
+**Must have (MVP1):** MCTS + custom Maia-weighted backup over the Phase 151 primitive; Stockfish.wasm worker pool (2-4); lichess eval→win% leaf sigmoid; modal-path line + objective-vs-practical score pair; live-refining top-n lines; FlawChess Engine top-2 board arrow, toggleable; works on both free analysis and game review, with the played-vs-practical-best comparison loop in game review (highest leverage-per-LOC item in the milestone).
 
-**Must have (v1.30 table stakes):**
-- MultiPV=2 engine pass + JSONB storage (`allowed_pv_lines`, `missed_pv_lines` on `game_flaws`) — everything else depends on this
-- Solver-node only-move gate: `p(best) − p(second) > ONLY_MOVE_WIN_PROB_MARGIN` (0.35) — applied only at even-indexed PV nodes (solver's turn); derived from lichess's +0.7 in −1..+1 space via the algebra `2*p − 1` → exact translation, no new constant
-- Already-winning reject: `flaw_pre_eval > ALREADY_WINNING_CP_THRESHOLD` (300 cp) — high-yield cheap filter using existing `game_positions.eval_cp` at `flaw_ply`; no new engine work
-- Still-winning floor: stop PV walk when `best_cp < STILL_WINNING_FLOOR_CP` (200 cp) — cuts deep-tail fizzle
-- Trailing-only-move strip + one-mover discard — suppresses tags on trivially forced continuations
-- Offline re-tagger (`scripts/retag_flaws.py`) — pure Python; `--dry-run --margin --user-id` flags
-- User-28 A/B validation — per-motif tags removed, hand-check ~30 dropped cases, false-negative count
-- Corpus backfill + rollout
+**Should have ("Ambitious" tier, post-validation):** dedicated trap-finder/branch-point UI; per-ELO leaf sigmoids from the benchmark DB; SAB-multithreaded root grading.
 
-**Should have (zero extra engine cost — store now, surface later):**
-- Second-best UCI (`"su"` field per JSONB node) — free from MultiPV=2; future-proofs "both-winning-captures" exception
-
-**Defer to v2+:**
-- "Both-winning-captures" exception — implement if hand-check false-negative rate exceeds ~10%
-- Defender-node ambiguity rule — no evidence of this noise class in the corpus
-- Tablebase uniqueness (Syzygy) — multi-hundred-MB dependency, near-zero real-game reach
+**Defer (v2+):** time-pressure conditioning (clock→temperature/ELO-offset — flagged as possibly the most defensible genuinely-novel axis found); Maia-2 dual-skill-attention adoption.
 
 ### Architecture Approach
 
-The gate fits into the existing `routers → services → repositories` layering without structural change. The key pattern is gate-as-pre-filter, detector unchanged: `forcing_line_gate.py` (new, pure math) is called from `flaws_service.py::_detect_tactic_for_flaw` before `detect_tactic_motif`, and `tactic_detector.py` is never modified. A second key pattern is two-phase flaw processing: `_full_drain_tick` calls `classify_game_flaws` twice — once in-memory before the write session (to identify flaw plies for the MultiPV=2 gather) and once inside the write session (authoritative write). This preserves the hard constraint against `asyncio.gather` inside an `AsyncSession`.
+A nested `lib/engine/` subsystem holds the pure, worker-free search core behind a narrow `SearchRunner` guardrail interface (`position + budget + EngineProviders → ranked root lines`, incremental emission). The core never imports `Worker` directly — only an `EngineProviders` interface (`policy()`, `grade()`) — enabling fully deterministic tests against fabricated tables with zero real WASM/ONNX. `workerPool.ts` and `maiaQueue.ts` are the only files touching `postMessage`, each generalizing an already-shipped protocol rather than inventing one. `useFlawChessEngine.ts` is the sole React-aware file.
 
-**Major components:**
-1. `app/services/forcing_line_gate.py` (NEW) — `PvNode` TypedDict, `is_solver_node_forced()`, `apply_forcing_line_filter()`; no DB, no engine; independently unit-testable
-2. `app/services/engine.py` (MODIFIED) — add `_analyse_multipv2()` / `evaluate_nodes_multipv2()` alongside existing `_analyse_with_pv`; same 1M-node budget and 5s timeout as starting point; separate method required because `multipv=2` changes the return type to `list[InfoDict]`
-3. `app/services/eval_drain.py` (MODIFIED) — add step 3b: `_run_multipv2_pass()` helper gathers MultiPV results after the existing all-ply pass, before the write session opens
-4. `app/services/flaws_service.py` (MODIFIED) — `_detect_tactic_for_flaw` gains optional `pv_lines_by_ply` param; gate pre-filter inserted before `detect_tactic_motif`; backward compat when param absent
-5. `scripts/backfill_multipv.py` (NEW) — fills JSONB for existing `game_flaws` rows using module-level `EnginePool` (not a second independent pool)
-6. `scripts/retag_flaws.py` (NEW) — reads stored blobs, applies gate, updates tactic columns; pure offline
+**Major components:** (1) `lib/engine/backup.ts` — the one genuinely novel piece, pure and fixture-tested; (2) `lib/engine/mctsSearch.ts`/`select.ts` + `fallbackExpectimax.ts` — orchestrator and the 1-day recovery path behind the identical interface; (3) `workerPool.ts` (2-4 Stockfish workers, priority queue) + `maiaQueue.ts` (dedicated Maia worker); (4) `useFlawChessEngine.ts` + `FlawChessEngineLines.tsx` + `Analysis.tsx` wiring.
 
-**Confirmed unchanged:** `tactic_detector.py`, `game_positions` table, `apply_game_filters()`, `eval_queue_service.py`, all existing `classify_game_flaws` callers (new param defaults to `None`).
+Suggested build order: **A** pure search core with fake providers → **B** real providers (worker pool + Maia queue) → **C** React hook + anytime UI (free analysis only) → **D** board arrows + toggles → **E** game-review overlay integration.
 
 ### Critical Pitfalls
 
-1. **MultiPV=2 ordering unreliable at 1M nodes** — at roughly half the effective depth of single-PV, the best-vs-second margin is noisy for near-equal moves. In Phase 142, plot the margin distribution on 200–500 flaw positions before finalizing the node budget. If more than 10% of positions land within ±0.05 of 0.35, increase budget to 1.5–2M nodes.
-
-2. **Mate-score saturation suppresses mating tactics** — `eval_mate_to_expected_score` returns 1.0 for any forced mate; best=mate-in-3 vs second=mate-in-9 gives `1.0 − 1.0 = 0.0 < 0.35` and incorrectly fails the gate. In Phase 143, implement the priority hierarchy: (a) if only best is mate → forced; (b) if both are mates → compare distances (shorter = forced); (c) fall through to sigmoid. Mate-in-1 must never be suppressed.
-
-3. **A/B validation conflating gate effect with eval non-determinism** — old-tagger replay must read `eval_cp` from dev's DB and must not call the engine. Prod-28 is sanity reference only, not an A/B control.
-
-4. **JSONB leaking into stats queries via ORM `select(GameFlaw)`** — after the Phase 141 migration, every existing query using `select(GameFlaw)` starts fetching the new blob columns. Audit all query sites before committing the migration; convert to explicit column projections.
-
-5. **Second EnginePool in backfill pushing RSS into OOM zone** — QUEUE-07 accounting: 6 workers ~1,586 MB Stockfish + ~300 MB FastAPI = ~1.9 GB in the 4g container. Phase 145 backfill must reuse the module-level `EnginePool`.
+1. **Mobile Safari memory ceiling** — 2-4 Stockfish WASM heaps + 1 Maia ONNX session + the existing eval bar can silently crash/reload the tab on iOS. Cap pool size adaptively, never run concurrently with the existing eval bar, real-device profiling before ship.
+2. **Backup rule silently degenerates into textbook MCTS** — negative golden-value unit tests asserting the result ≠ naive/visit-count-weighted average, plus explicit root-vs-non-root branch tests.
+3. **Asymmetric ELO crossed at the node level** — derive "whose ELO" from actual side-to-move color, never depth parity; node-level oracle test covering both root colors.
+4. **Non-determinism from worker-arrival order, not RNG** — canonical sort-by-move-key tie-breaks, stubbed-engine bit-identical repeated-run CI test.
+5. **`multipv` reused as move identity** — the exact bug Phase 151.1 already fixed; reuse the shared `pv[0]`-keyed parsing utility and grep-audit every new call site.
 
 ## Implications for Roadmap
 
-The 5-phase dependency chain is non-negotiable: each phase's output is a required input to the next. The JSONB blobs are the load-bearing artifact — once stored, all subsequent phases are engine-free and fast to iterate.
+### Phase 1: Pure Search Core (guardrail + backup + MCTS + fallback, no workers)
+**Rationale:** riskiest logic proven correct before WASM/ONNX exists. **Delivers:** `lib/engine/{types,guardrail,backup,select,mctsSearch,fallbackExpectimax}.ts`, fully unit-tested against fake providers. **Addresses:** MVP1 algorithmic core. **Avoids:** Pitfalls 3, 4, 5, 10.
 
-### Phase 141: JSONB Schema + Gate Logic
-**Rationale:** Everything else depends on the ORM model and migration existing. The gate service can be written and unit-tested immediately without engine or DB.
-**Delivers:** `allowed_pv_lines` / `missed_pv_lines` JSONB columns on `game_flaws`; `forcing_line_gate.py` with all constants and logic; Alembic migration; query-site audit confirming no stats path selects the new columns.
-**Addresses:** JSONB storage (table stakes), gate constants (`ONLY_MOVE_WIN_PROB_MARGIN = 0.35`, `ALREADY_WINNING_CP_THRESHOLD = 300`, `STILL_WINNING_FLOOR_CP = 200`)
-**Avoids:** Pitfall 6 (JSONB leaking into stats queries) — audit is part of this phase's definition of done
+### Phase 2: Real Providers (worker pool + Maia queue)
+**Rationale:** mechanical generalization of already-shipped Phase 151.1 protocol, lowest-risk new-worker-code phase. **Delivers:** `workerPool.ts`, `maiaQueue.ts`, swapped in for fakes. **Uses:** `stockfish` 18.0.8, `onnxruntime-web` 1.27.0. **Implements:** Architecture Patterns 3 & 4. **Avoids:** Pitfall 1 (mobile memory — adaptive sizing lands here), Pitfall 6.
 
-### Phase 142: MultiPV=2 Engine Pass + Eval Drain + Remote Worker
-**Rationale:** The JSONB columns must exist (Phase 141) before anything can be written to them. This phase wires the expensive engine work; its output is stored blobs in `game_flaws`.
-**Delivers:** `engine.py` `_analyse_multipv2` / `evaluate_nodes_multipv2`; `eval_drain.py` step 3b (`_run_multipv2_pass`); extended `SubmitRequest` (additive, backward-compatible); updated `remote_worker.py`; margin histogram on 200+ dev flaw positions confirming node budget.
-**Uses:** `python-chess multipv=2` list API; existing `_NODES_BUDGET` (1M nodes) as starting point
-**Avoids:** Pitfall 10 (list API misread — separate `_analyse_multipv2` method required); Pitfall 1 (ordering reliability — histogram gates the budget before merge); Pitfall 2 (RSS — reuse module-level pool)
+### Phase 3: React Hook + Anytime UI (free analysis only)
+**Rationale:** first user-visible surface, arrows deferred. **Delivers:** `useFlawChessEngine.ts` + `FlawChessEngineLines.tsx`. **Addresses:** modal-path/score-pair, live-refining P1 items. **Avoids:** Pitfall 2 (main-thread jank), Pitfall 9 (anytime flicker).
 
-### Phase 143: Offline Re-tagger
-**Rationale:** JSONB blobs must be populated (Phase 142). This phase produces the tooling for all threshold iteration and the corpus rollout.
-**Delivers:** `scripts/retag_flaws.py` with gate logic, mate-priority hierarchy, solver-vs-defender parity; `scripts/backfill_multipv.py`; unit tests covering mate combinations and defender-branching positions; per-position margin output for Phase 144 analysis.
-**Implements:** gate-as-pre-filter architecture; mate-priority check before sigmoid; trailing-only-move strip; one-mover discard
-**Avoids:** Pitfall 5 (mate saturation — priority hierarchy before sigmoid); Pitfall 7 (defender/solver parity — unit test with defender-branching position); Pitfall 9 (AGPL slip — implement from design note prose only, not open lichess-puzzler files)
+### Phase 4: Board Arrows + Toggles (free analysis)
+**Rationale:** depends on Phase 3's hook. **Delivers:** new `theme.ts` constants, `flawChessEngineArrows` useMemo, toggles. **Addresses:** headline visual (3-layer arrow system). **Avoids:** Pitfall 8 (disagreement looking broken).
 
-### Phase 144: User-28 A/B Validation
-**Rationale:** The margin (0.35) is a starting point. Validation must confirm noise reduction without excessive false negatives before committing the constant.
-**Delivers:** `backfill_multipv.py --user-id 28` run on dev; per-motif tags removed and survived; hand-check of ~30 dropped cases with good-tags-killed count; depth-shift distribution; confirmed margin committed to `LICHESS_FORCING_MARGIN`.
-**Avoids:** Pitfall 3 (eval non-determinism — old-tagger replay reads dev's stored `eval_cp`, never calls engine); Pitfall 4 (false negatives unmeasured — per-motif hand-check is mandatory)
-
-### Phase 145: Corpus Backfill + Rollout
-**Rationale:** Margin is confirmed (Phase 144). This phase makes the gate user-visible in production.
-**Delivers:** `backfill_multipv.py --db prod` populates JSONB for all analyzed `game_flaws`; `retag_flaws.py --db prod` applies gate; tactic chip counts monitored per motif before/after; live drain now writes JSONB for all new games.
-**Avoids:** Pitfall 2 (RSS — reuse module-level pool; document pool-size arithmetic before any size change); Pitfall 8 (backfill idempotency — `WHERE allowed_pv_lines IS NULL` guard; MultiPV pass is NOT gated on `lichess_evals_at` because second-best is new data not from lichess)
+### Phase 5: Game-Review Overlay Integration
+**Rationale:** depends on Phase 4. **Delivers:** full locked v2.0 scope, both surfaces. **Addresses:** highest-leverage differentiator (played-vs-practical-best loop).
 
 ### Phase Ordering Rationale
-
-- Schema strictly first: `SubmitRequest` extension, `FlawRecord` keys, and the repository write path all reference the new columns.
-- Engine pass before re-tagger: the re-tagger has no input without stored JSONB.
-- Validation before corpus backfill: committing the wrong margin to prod requires a second full backfill; the offline re-tagger makes margin iteration trivial on dev but expensive on prod.
-- The JSONB decoupling property is what makes Phase 144 and 145 fast — the entire margin-tuning loop in Phase 144 is engine-free and takes seconds per iteration.
+Pure logic → workers → UI → free analysis → game review, each phase depending strictly on the prior phase's stable output. The one novel logic piece (backup rule) gets maximal upfront isolation so the fallback stays a real one-day swap. Mobile memory/pool sizing lands in Phase 2, not a later "polish" phase.
 
 ### Research Flags
-
-Phases with standard patterns (research-phase not needed):
-- **Phase 141:** Pure schema + pure-math gate; SQLAlchemy JSONB follows existing `llm_log.py` pattern
-- **Phase 144:** Operational validation; methodology fully specified in the design note and PITFALLS.md
-- **Phase 145:** Backfill follows `backfill_flaws.py` pattern; rollout is a prod run of already-validated scripts
-
-Phases where specific sub-decisions need care during planning:
-- **Phase 142:** Node budget must be decided empirically via margin histogram — plan should include histogram step as a mandatory gate before merge
-- **Phase 143:** Mate-priority hierarchy and solver/defender parity need explicit unit-test coverage called out in the plan
+Needs research: Phase 1 (backup-rule/ELO-oracle test-fixture design), Phase 2 (real-device memory profiling methodology).
+Standard patterns (skip research-phase): Phases 3, 4, 5 (compose already-shipped, well-understood codebase patterns).
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | python-chess `multipv=2` API and SQLAlchemy JSONB pattern both verified against official docs + codebase source; asyncpg codec auto-registration confirmed in existing `llm_log.py` working pattern |
-| Features | HIGH | All constants verified directly against lichess-puzzler v50 source at the local clone; sigmoid translation `0.7 (−1..+1) → 0.35 (0..1)` is exact algebra |
-| Architecture | HIGH | Derived from first-party source reading of `engine.py`, `eval_drain.py`, `flaws_service.py`, `eval_remote.py`, `game_flaws_repository.py`; all integration points confirmed |
-| Pitfalls | HIGH | Grounded in documented project history (QUEUE-07 RSS accounting, eval non-determinism memory file, OOM history, AGPL boundary from cook.py alignment) |
+| Stack | HIGH | npm registry verified directly; codebase conventions cross-checked |
+| Features | MEDIUM-HIGH | Polecat/vala-bot source read directly via WebFetch, some files partially retrievable |
+| Architecture | HIGH | Grounded in direct reads of every relevant hook/component/page |
+| Pitfalls | MEDIUM | HIGH on protocol facts (own postmortems); MEDIUM on browser-memory (third-party, not device-measured); LOW-MEDIUM on Maia-drift extrapolation |
 
-**Overall confidence:** HIGH
+**Overall confidence:** HIGH — hardest technical questions well-answered; residual uncertainty is empirical and correctly deferred to spike/UAT gates.
 
 ### Gaps to Address
-
-These are expected open items, not research failures:
-
-- **Node budget for MultiPV=2:** 1M nodes is the correct starting point; the margin histogram in Phase 142 determines whether 1.5–2M is needed. Decision criterion: if more than 10% of positions fall within ±0.05 of 0.35, increase the budget.
-- **Per-motif margin:** Global 0.35 may prove too aggressive for shallow motifs (fork, pin at depth 1-2). Phase 144 hand-check will reveal whether per-motif tuning is warranted; a single global constant is acceptable for v1.30.
-- **False-negative rate for "both-winning-captures" positions:** Unknown until Phase 144. If hand-check shows consistent killing of real tactics on this class, the "both-winning-captures" exception should be promoted from v2+ to a Phase 145 add-on. The `"su"` field being stored in Phase 142 ensures no re-engine-pass is needed to implement it.
+- Real-device mobile memory ceiling unmeasured — needs an explicit iPhone + mid-tier-Android profiling pass in Phase 2 before committing to a default pool size.
+- Opponent-ELO input in free analysis unresolved (symmetric default vs. a second ELO control) — flag as a Phase 3/4 scoping decision via `/gsd-discuss-phase` or `/gsd-ui-phase`.
+- Arrow hue selection — one open high-saturation slot confirmed, final pick is a `/gsd-ui-phase` decision.
+- Node-budget sizing across devices should be a tunable constant, revisited post-UAT.
+- maiachess.com "played move arrow" precedent is LOW confidence — verify against the live UI before repeating the claim.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- `app/services/engine.py` (codebase) — `_analyse_with_pv`, `EnginePool`, `_NODES_BUDGET`, `_NODES_TIMEOUT_S`, QUEUE-07 RSS accounting; `_HASH_MB = 32`, `_THREADS = 1`
-- `app/models/llm_log.py` (codebase) — existing `JSONB` import, `Mapped[dict | None]` annotation, no `MutableDict`; confirms asyncpg codec is automatic
-- `app/services/eval_utils.py` (codebase) — `LICHESS_K = 0.00368208`, `eval_cp_to_expected_score`, `eval_mate_to_expected_score`; confirms sigmoid saturation for mate rows
-- `app/services/tactic_detector.py` (codebase) — `_solver_move_indices`; confirms even-index = solver, odd-index = defender
-- `/home/aimfeld/Projects/Python/lichess-puzzler` (local clone, v50) — `generator/util.py:53` (`MULTIPLIER = -0.00368208`), `generator/generator.py:60` (0.7 margin), lines 185/114/216-221 (+300/+200 cp and length rules); read for facts/constants only, AGPL boundary respected
-- `.planning/notes/tactic-forcing-line-gate.md` — source design note (SEED-070); all claims corroborated against the above
+npm registry (2026-07-05); FlawChess codebase (`useStockfishGradingEngine.ts`, `useMaiaEngine.ts`, `useStockfishEngine.ts`, `useAnalysisBoard.ts`, `Analysis.tsx`, `useGameOverlay.ts`, `moveQuality.ts`, `theme.ts`, `maia-worker.js`); `.planning/seeds/SEED-082-human-playable-line-engine.md`; `.planning/PROJECT.md` v2.0 section; Polecat and vala-bot repo source read directly.
 
 ### Secondary (MEDIUM confidence)
-- python-chess 1.11.2 engine docs (websearch) — `analyse()` multipv overload signature; `list[InfoDict]` return type
-- SQLAlchemy discussion #11318 (websearch) — maintainer confirms `Mapped[dict | None]` + `JSONB` column type annotation
-- asyncpg + SQLAlchemy JSONB codec issue #5584 (websearch) — confirms automatic `json.loads` decoder registration by the asyncpg dialect
+Maia KDD 2020, ALLIE (ICLR 2025), Maia-2 (NeurIPS 2024); Mobile Safari memory-ceiling third-party measurements; onnxruntime-web GitHub issues (#26858, #22086, #22776, #26827).
+
+### Tertiary (LOW confidence)
+maiachess.com marketing page (unconfirmed UI claim); player-specific Maia-2+MCTS (arXiv 2605.11893, background only).
 
 ---
-*Research completed: 2026-06-29*
+*Research completed: 2026-07-05*
 *Ready for roadmap: yes*

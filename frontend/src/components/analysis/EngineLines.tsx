@@ -54,8 +54,11 @@ interface PvStep {
  * Callers fall back to raw UCI for null SAN and skip the hover preview for null FEN.
  * Replay is sequential, so once a move fails every later move returns nulls (the
  * board can no longer advance).
+ *
+ * Exported (Phase 155 Plan 03) so `FlawChessEngineLines.tsx` can reuse this verbatim
+ * instead of duplicating it — see D-07.
  */
-function replayPvLine(baseFen: string | undefined, uciMoves: string[]): PvStep[] {
+export function replayPvLine(baseFen: string | undefined, uciMoves: string[]): PvStep[] {
   if (!baseFen) return uciMoves.map(() => ({ san: null, fen: null }));
   let game: Chess;
   try {
@@ -102,7 +105,7 @@ const BADGE_CLASS_COMPACT = 'shrink-0 rounded px-1 text-xs font-semibold leading
 
 // Fixed-height container for the engine-lines region — keeps the panel from
 // jumping as the engine transitions analyzing → 2 lines (Quick 260627-mt8 item 5).
-const LINES_MIN_HEIGHT = 'min-h-[60px]';
+export const LINES_MIN_HEIGHT = 'min-h-[60px]';
 // Compact min-height — sized to two single-row text-xs PV lines so the loading
 // skeleton, the analyzing skeleton, and the rendered rows are all the same height
 // (no vertical jump on the mobile takeover — Quick 260628-dgv).
@@ -113,31 +116,42 @@ const LINES_MIN_HEIGHT = 'min-h-[60px]';
 // 40px. min-h-[44px] let the loaded lines outgrow the box by ~5px (the residual jump).
 // 50px clears the measured 49px with a 1px margin so every state is the same height.
 const LINES_MIN_HEIGHT_COMPACT = 'min-h-[50px]';
+// 3-row variant (Phase 155 Plan 03, D-08/D-09) — FlawChessEngineLines shows the top
+// 3 ranked lines (not 2), so its skeleton + rendered rows both need a taller fixed
+// height. Same ~30px-per-row math as LINES_MIN_HEIGHT (2 rows = 60px).
+export const LINES_MIN_HEIGHT_3 = 'min-h-[90px]';
 
 /**
- * Two pulsing placeholder rows shaped like PV lines (eval badge + move chips) —
- * the card-content loading animation that replaces the "Analyzing…" / "Loading
+ * Pulsing placeholder rows shaped like PV lines (eval badge + move chips) — the
+ * card-content loading animation that replaces the "Analyzing…" / "Loading
  * engine…" text while the engine spins up or searches (Quick 260627-r9g item 3).
  */
 export function EngineLinesSkeleton({
   testId,
   compact = false,
+  rows = 2,
 }: {
   testId?: string;
   /** Mobile takeover: shorter rows matching the compact text-xs PV lines. */
   compact?: boolean;
+  /**
+   * Number of placeholder rows (Phase 155 Plan 03, D-09) — 2 for EngineLines'
+   * default, 3 for FlawChessEngineLines' top-3-lines card. `rows=3` implies the
+   * non-compact `LINES_MIN_HEIGHT_3` sizing regardless of `compact`.
+   */
+  rows?: 2 | 3;
 }) {
   return (
     <div
       data-testid={testId}
       className={cn(
         'flex flex-col justify-center gap-2 px-2',
-        compact ? LINES_MIN_HEIGHT_COMPACT : LINES_MIN_HEIGHT,
+        rows === 3 ? LINES_MIN_HEIGHT_3 : compact ? LINES_MIN_HEIGHT_COMPACT : LINES_MIN_HEIGHT,
       )}
       aria-busy="true"
       aria-label="Loading engine lines"
     >
-      {[0, 1].map((i) => (
+      {Array.from({ length: rows }, (_, i) => (
         <div key={i} className="flex items-center gap-2">
           <span
             className={cn(
@@ -157,8 +171,12 @@ export function EngineLinesSkeleton({
   );
 }
 
-/** Format a per-line score from evalCp / evalMate per the UI-SPEC table. */
-function formatScore(
+/**
+ * Format a per-line score from evalCp / evalMate per the UI-SPEC table.
+ * Exported (Phase 155 Plan 03) so `FlawChessEngineLines.tsx` can reuse this
+ * verbatim for both the objective and practical score-pair numbers (D-06).
+ */
+export function formatScore(
   evalCp: number | null,
   evalMate: number | null,
 ): string {
@@ -246,7 +264,7 @@ function PvLineRow({
   return (
     <div
       className={cn(
-        'flex gap-1 px-2',
+        'flex gap-1 mx-2',
         // Expanded desktop lines wrap to several rows; top-align so the badge and
         // chevron pin to the first row instead of floating in the vertical center.
         compact ? 'items-center py-0.5' : 'items-start py-1',

@@ -33,8 +33,9 @@
 - ✅ **v1.28 Tactic Tagging** — Phases 124–135 (incl. 123.1, 128.1; Phase 130 superseded by 131–134) (shipped 2026-06-25) — see [milestones/v1.28-ROADMAP.md](milestones/v1.28-ROADMAP.md)
 - ✅ **v1.29 Live-Engine Analysis Page** — Phases 136–140 (shipped 2026-06-29; released #227) — see [milestones/v1.29-ROADMAP.md](milestones/v1.29-ROADMAP.md)
 - ✅ **v1.30 Forcing-Line Tactic Gate** — Phases 141–147 (shipped 2026-06-30; releases #229/#230/#231/#234) — see [milestones/v1.30-ROADMAP.md](milestones/v1.30-ROADMAP.md)
-- ✅ **v1.31 Pipeline Consolidation** — Phases 148–150 (completed 2026-07-04; merged to `main`, prod deploy pending) — see [milestones/v1.31-ROADMAP.md](milestones/v1.31-ROADMAP.md)
-- ✅ **v1.32 Maia-3 Human-Move Enrichment** — Phases 151, 151.1 (shipped 2026-07-05; Phase 152 demoted to SEED-084; prod deploy pending) — see [milestones/v1.32-ROADMAP.md](milestones/v1.32-ROADMAP.md)
+- ✅ **v1.31 Pipeline Consolidation** — Phases 148–150 (shipped 2026-07-04; deployed to production) — see [milestones/v1.31-ROADMAP.md](milestones/v1.31-ROADMAP.md)
+- ✅ **v1.32 Maia-3 Human-Move Enrichment** — Phases 151, 151.1 (shipped 2026-07-05; Phase 152 demoted to SEED-084; deployed to production) — see [milestones/v1.32-ROADMAP.md](milestones/v1.32-ROADMAP.md)
+- 🚧 **v2.0 FlawChess Engine** — Phases 153–159 (in progress; started 2026-07-05) — client-side practical-play analysis engine (Stockfish + Maia expectimax-in-MCTS) on `/analysis`, zero server load (SEED-082)
 
 ## Progress
 
@@ -106,6 +107,184 @@
 | 150. Consolidate Write Path | 5/5 | Complete    | 2026-07-04 |
 | 151. Maia in the Browser + All-Position Surfaces | 6/6 | Complete   | 2026-07-05 |
 | 151.1. Stockfish-graded Maia moves (INSERTED, SEED-083) | 4/4 | Complete | 2026-07-05 |
+| 153. Pure Search Core (Guardrail + Backup + MCTS + Fallback) | 5/5 | Complete    | 2026-07-05 |
+| 154. Real Providers (Stockfish Worker Pool + Maia Queue) | 4/4 | Complete    | 2026-07-06 |
+| 155. React Hook + Anytime UI (Free Analysis) | 4/4 | Complete   | 2026-07-06 |
+| 156. Board Arrows + Toggles (Free Analysis) | 1/1 | Complete   | 2026-07-06 |
+| 157. FlawChess Agreement Verdict (prose + hoverable moves) | 2/2 | Complete   | 2026-07-07 |
+
+## Active Milestone: v2.0 FlawChess Engine
+
+Client-side-only: no backend, no schema, no migrations, no new endpoints, no new npm dependencies — hand-rolled TypeScript in `frontend/src/lib/engine/` plus hooks over the already-vendored Stockfish.wasm (v1.29) and onnxruntime-web Maia-3 (v1.32) infra. Ships the **FlawChess Engine** — a practical-play analysis engine computing the strongest *human-playable* line for a player at their rating: Maia supplies opponent-reply and self-execution probability, Stockfish supplies leaf quality, combined via a custom expectimax-inside-MCTS backup (Maia-prior-weighted expectation at non-root nodes, plain max at root, asymmetric self+opponent ELO keyed on actual side-to-move). Surfaced on the `/analysis` board in both free analysis and game review, with a new "FlawChess Engine top-2" arrow layer and an objective-vs-practical score pair ("objectively +3.0, practically +0.9 for you"). Sourced from SEED-082; five dependency-ordered phases per the research build order (pure core → real providers → UI → arrows → game review) so the one genuinely novel piece — the backup rule + asymmetric-ELO routing — is proven correct against fabricated providers before a single worker exists, and the SEED-mandated depth-limited-expectimax fallback stays a real, exercised escape hatch rather than an aspirational claim. **Deferred by design (not in this roadmap):** trap-finder/branch-point UI, per-ELO leaf sigmoids, time-pressure conditioning, SharedArrayBuffer multithreading, Maia-2 dual-skill attention (see REQUIREMENTS.md → Future Requirements).
+
+### Phase 153: Pure Search Core (Guardrail + Backup + MCTS + Fallback)
+
+**Goal**: A fully unit-tested, worker-free search core exists behind a stable `position + budget → ranked root lines` interface, with the two highest-risk pieces of the design — the custom Maia-weighted expectimax backup rule and the asymmetric self+opponent ELO routing — proven correct against fabricated providers before any WASM/ONNX integration exists.
+**Depends on**: Nothing (first phase of the milestone; new `frontend/src/lib/engine/` subsystem, no code dependency yet on the v1.29 Stockfish.wasm or v1.32 Maia infra)
+**Requirements**: ENGINE-01, ENGINE-02, ENGINE-03, ENGINE-04, ENGINE-05, ENGINE-06, ENGINE-07
+**Success Criteria** (what must be TRUE):
+
+  1. Given a fixed FEN, a fixed node budget, and fabricated (non-random) `EngineProviders` (fake `policy`/`grade` tables, no real WASM/ONNX), the search returns bit-identical ranked-root-lines output across repeated runs — no Dirichlet noise, canonical tie-breaking (ENGINE-07).
+  2. A hand-computed fixture test proves the non-root backup value is the Maia-prior-weighted expectation over expanded children, with a negative assertion that it does NOT equal a naive average or a visit-count-weighted average — the search cannot silently degenerate into textbook MCTS (ENGINE-03).
+  3. A node-level oracle test confirms, for both root colors (White-to-move and Black-to-move), that the opponent's ELO is queried at opponent-to-move nodes and the player's own ELO at the player's own future nodes, derived from actual side-to-move color rather than depth/ply parity (ENGINE-04).
+  4. Node expansion draws candidate moves from a fabricated Maia policy top-k (truncated at ~90% cumulative probability, renormalized) graded by a fabricated Stockfish shallow-eval, and leaf positions at the depth cutoff (6–10 plies, a hard-coded ceiling) convert to expected score via the lichess eval→win% sigmoid (ENGINE-02, ENGINE-05).
+  5. `fallbackExpectimax.ts` (depth-limited expectimax, reusing the same `backup.ts`) implements the identical `SearchRunner` interface as the MCTS core and is swapped in for a test run with no interface change required — the guardrail fallback is exercised, not just claimed (ENGINE-06).
+
+**Plans**: 5 plans
+**Wave 1**
+
+- [x] 153-01-PLAN.md — Frozen engine interface (types/guardrail) + root-relative leaf score (ENGINE-05, ENGINE-06)
+- [x] 153-02-PLAN.md — Maia-weighted expectation + root-max backup rule with SC2 fixture (ENGINE-03)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 153-03-PLAN.md — Top-k truncation/renormalization + deterministic PUCT selection + root floor-boost (ENGINE-02)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 153-04-PLAN.md — MCTS orchestrator + ELO oracle + determinism suite (ENGINE-01, ENGINE-02, ENGINE-04, ENGINE-05, ENGINE-07)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 153-05-PLAN.md — Depth-limited expectimax fallback + swap-in test + phase gate (ENGINE-06)
+
+### Phase 154: Real Providers (Stockfish Worker Pool + Maia Queue)
+
+**Goal**: The Phase 153 search core runs against real Stockfish.wasm and Maia workers — a 2–4-instance grading pool prioritized toward the current-best root line, and a dedicated Maia policy worker — sized adaptively so the browser tab stays within mobile Safari's memory ceiling.
+**Depends on**: Phase 153 (real providers implement the exact `EngineProviders` interface the pure core already tests against)
+**Requirements**: POOL-01, POOL-02, POOL-03, POOL-04
+**Success Criteria** (what must be TRUE):
+
+  1. `workerPool.ts` runs 2–4 single-threaded Stockfish.wasm workers in parallel, grading candidate moves/leaves, with no SharedArrayBuffer and no site-wide COOP/COEP headers (POOL-01).
+  2. Pending node-grading requests are dequeued in priority order favoring nodes under the currently-highest-scoring root line, not FIFO/arrival order, verified by a queue-ordering test (POOL-02).
+  3. `maiaQueue.ts` — a dedicated Maia worker instance, separate from the existing `useMaiaEngine` — supplies per-node move-probability distributions keyed by an explicit per-side ELO parameter, reusing the v1.32 client-side inference glue (POOL-03).
+  4. On a real iPhone and a real mid-tier Android device, a multi-position review session runs the FlawChess Engine pool without the browser tab reloading or crashing; pool size adapts to device (fewer workers on mobile, via `navigator.hardwareConcurrency` plus a mobile heuristic) and the pool never runs concurrently with the standalone `useStockfishEngine` eval bar on the same position (POOL-04).
+  5. Every new Stockfish MultiPV consumption path added in this phase keys results by `pv[0]` (the move), never by the `multipv` rank index — reusing the shared parsing utility Phase 151.1 already built, confirmed by a grep audit (multipv-as-identity landmine prevention).
+
+**Plans**: 4 plans (2 initial + 2 gap-closure; gap-closure plans are Wave 1, parallel — independent files)
+
+- [x] 154-01-PLAN.md — workerPool.ts: 2–4-worker Stockfish grading pool + priority queue + adaptive sizing + abort surface (POOL-01, POOL-02, POOL-04)
+- [x] 154-02-PLAN.md — maiaQueue.ts: dedicated Maia policy worker, deduped narrow-ELO UCI-keyed distributions, own cache (POOL-03, POOL-04)
+- [x] 154-03-PLAN.md — gap closure: settle in-flight grade() promises on stopAll()/terminate() (CR-01/CR-02), grade() fail-fast guards (WR-01/WR-05), worker-failure Sentry observability (WR-03/WR-04), WR-02 docstring honesty (POOL-01, POOL-02, POOL-04)
+- [x] 154-04-PLAN.md — gap closure: drain pending + drop dead worker on pre-ready Maia worker error (CR-03), worker.onerror handler (WR-03) (POOL-03)
+
+### Phase 155: React Hook + Anytime UI (Free Analysis)
+
+**Goal**: A user analyzing any position on the free-analysis `/analysis` board sees the FlawChess Engine's ranked practical-play lines appear immediately and refine live as the search runs, each with its modal path and objective-vs-practical score pair.
+**Depends on**: Phase 154 (wires the real worker-pool/Maia-queue providers into a React-facing hook)
+**Requirements**: DISPLAY-01, DISPLAY-02, DISPLAY-03, DISPLAY-04
+**Success Criteria** (what must be TRUE):
+
+  1. On the `/analysis` board (free play, arbitrary position), quick top-n candidate lines from `useFlawChessEngine` appear almost immediately after navigating to a position, without waiting for the full node budget to exhaust (DISPLAY-01, DISPLAY-04).
+  2. The displayed lines visibly refine (reorder/update) as the search accumulates more visits, batched at a fixed cadence (mirroring the existing `RAPID_STEP_DEBOUNCE_MS` convention) so updates neither jank the page nor flicker faster than a human can read.
+  3. Each candidate line in `FlawChessEngineLines.tsx` shows its modal path — the player's chosen move followed by the opponent's most-likely replies, walked from already-expanded tree nodes — not just the bare root move (DISPLAY-02).
+  4. Each ranked move displays the objective Stockfish evaluation alongside the practical-for-you score in the same badge (e.g. "objectively +3.0, practically +0.9 for you"), sourced from data the search already computed with no second grading pass (DISPLAY-03).
+
+**Plans**: 4 plans
+**Wave 1**
+
+- [x] 155-01-PLAN.md — Foundation: theme tokens (brown + gold), inverse-sigmoid `expectedScoreToWhitePovCp`, `Switch` primitive, Wave 0 test scaffolds
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 155-02-PLAN.md — `useFlawChessEngine` hook: provider lifecycle + FEN trigger + abort/stopAll + 150ms onSnapshot throttle (DISPLAY-01)
+- [x] 155-03-PLAN.md — `FlawChessEngineLines` card: top-3 lines, objective/practical score-pair badge, modal-path SAN chips + graft (DISPLAY-02, DISPLAY-03)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 155-04-PLAN.md — Analysis.tsx integration: 3-toggle Switch refactor, card placement (desktop + mobile), eval-bar precedence + SF-source handoff (DISPLAY-01, DISPLAY-04)
+
+**UI hint**: yes
+
+### Phase 156: Board Arrows + Toggles (Free Analysis)
+
+**Goal**: A user sees the FlawChess Engine's top practical moves rendered directly on the board as a distinct, individually toggleable arrow layer alongside the existing Stockfish top-2 arrows, always paired with the score explanation so disagreement reads as intentional rather than broken.
+**Depends on**: Phase 155 (arrows are computed from the hook's `rankedLines`, already live-refining)
+**Requirements**: ARROW-01, ARROW-02, ARROW-03, ARROW-04
+**Success Criteria** (what must be TRUE):
+
+  1. A new FlawChess Engine top-2 arrow layer (two new `theme.ts` constants, visually distinct from the Stockfish/Maia/tactic palettes) renders on the board and visibly refines live as the search's ranked lines update (ARROW-01).
+  2. The FlawChess Engine arrow layer and the Stockfish top-2 arrow layer are each independently toggleable on/off via their own toggle state, without needing to hide the other (ARROW-02).
+  3. The existing played-move arrow (game review) and Stockfish top-2 arrow render unchanged — reused, not reimplemented — and there is no separate Maia arrow layer; Maia's actual reply distribution stays reachable via the existing Moves-by-Rating chart hover (ARROW-03).
+  4. Whenever the FlawChess Engine arrow disagrees with the Stockfish top-2 arrow at the root, the objective-vs-practical score pair is simultaneously visible (never a hover away), and no UI string — button label, empty state, or tooltip — reads "best move" unqualified (ARROW-04).
+
+**Plans**: 1 plan
+**UI hint**: yes
+
+Plans:
+
+- [x] 156-01-PLAN.md — Render live FC (amber) + SF (blue) engine arrows on the free-analysis board: new amber theme token, ARROW_COUNT=1, layerKey dedupe-bypass for concentric FC/SF nesting, gated on the existing card toggles (desktop + mobile)
+
+### Phase 157: FlawChess Agreement Verdict (prose + hoverable moves)
+
+**Goal**: The FlawChess Engine card gains a one-line prose verdict, analogous to the Maia position verdict, narrating whether the engine's top *practical* move agrees or diverges from Stockfish's top *objective* move — named moves hoverable (board arrow + practical/objective popover) and click-to-play. It renders on both free analysis and game review (shared `Analysis.tsx`), turning the side-by-side score badges into a plain-language "engines are flawless, humans play FlawChess" read.
+**Depends on**: Phase 155 (`RankedLine` practical + objective evals), Phase 156 (amber FlawChess + blue Stockfish arrows), `MaiaMoveQualityBar` (the `ProseMoveSpan` verdict pattern to reuse)
+**Requirements**: REVIEW-02 (reframed)
+**Success Criteria** (what must be TRUE):
+
+  1. Below the ranked lines in the FlawChess card, a prose verdict states agreement or divergence between FlawChess's #1 practical move and Stockfish's #1 objective move (sourced from the primary Stockfish PV, `engineTopLines[0]`, not the max-objective FlawChess row), citing both the practical and objective eval. No UI string reads a bare "best move" (REVIEW-02).
+  2. The named moves are interactive spans (reused `ProseMoveSpan` mechanics): hover lights the move's board arrow (amber = FlawChess pick, blue = Stockfish pick), opens a "practically X · objectively Y" popover, and click plays it as a free move.
+  3. The verdict resolves to one of three tiers — aligned / safe divergence / sharp divergence (trap) — from move identity plus the objective eval sacrificed (Stockfish #1 objective − FlawChess #1 objective), via named constants (no bare thresholds), and refines live with the search without layout jump.
+  4. It renders identically on the game-review board (`?game_id&ply`), confirming the FlawChess card + arrows already shipped there work end-to-end (absorbs the old REVIEW-01 game-review-parity check).
+
+**Scope note**: Shrunk from the original "Game Review Overlay Integration" (`/gsd-explore`, 2026-07-07). Old success criteria 1 and 3 (engine + three arrow layers on the game-review board) were already satisfied incidentally because game review and free analysis share `Analysis.tsx`; only the played-vs-recommended comparison remained, and it was reframed from "your played move vs practical best" to "FlawChess vs Stockfish agreement". The dropped played-move comparison is captured as SEED-086.
+
+**Plans**: 2 plans
+**Wave 1**
+
+- [x] 157-01-PLAN.md — pure `flawChessVerdict.ts` three-tier classifier (aligned/safe/sharp) + Wave-0 unit tests
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 157-02-PLAN.md — `FlawChessAgreementVerdict` component (extracted `ProseSpan`, D-07 prose, D-09 arrow isolation, D-10 popover, D-11 click-to-play) + `Analysis.tsx` wiring
+
+**UI hint**: yes
+
+### Phase 158: FlawChess Engine displayed-eval provenance reconciliation (SEED-087)
+
+**Goal**: Every Stockfish eval displayed on the `/analysis` page — SF card, FlawChess card, Maia chart/quality bar, agreement verdict — resolves through one UCI-keyed lookup (authoritative free MultiPV run first, ONE shared analysis-grade searchmoves grading run second), so any move shown on two or more surfaces renders the identical number by construction, ending the three-independent-searches provenance mess (exd5 +1.3/+1.1/+1.1, Bc5 +0.9/+0.9/+0.8).
+**Depends on**: Phase 157 (agreement verdict consumes the reconciled evals), Phase 151.1 (`useStockfishGradingEngine` — promoted to the shared fallback run), Phase 155 (`RankedLine.objectiveEvalCp` display path being replaced)
+**Requirements**: SEED-087 (amended 2026-07-07: third provenance chain + shared-fallback design)
+**Success Criteria** (what must be TRUE):
+
+  1. A move displayed on two or more of the SF card, FC card, and Maia chart renders the *same* eval on all of them, sourced by UCI lookup with strict precedence: free MultiPV run ▸ shared grading run. The MCTS pool's shallow grades (`objectiveEvalCp` from `workerPool.ts`) are no longer a display source anywhere.
+  2. `useStockfishGradingEngine` is the single shared fallback: its candidate set is `shownSans ∪ displayed FC moves`, it runs at analysis-grade depth (the depth-14 / 2500 ms cap demonstrably lifted, budget chosen from a measured latency/depth trade on real positions), and it is gated on `maiaEnabled || flawChessEnabled` with the union reflecting active consumers.
+  3. The Maia move-quality buckets (`classifyMoveQuality`) classify from the same reconciled evals they display, so a move's number and its severity color cannot disagree at bucket boundaries.
+  4. The agreement verdict's FC-pick and SF-best evals both come from the lookup, making "FC pick grades higher than the objective best" impossible by construction (the SEED-087 2100-ELO Qc7 +2.8 vs O-O +1.3 case).
+  5. Practical scores (brown badges, the MCTS backed-up expectation) and the locked Phase 153 search core are untouched — this is a display/verdict overlay only.
+
+**Plans**: 3 plans
+
+Plans:
+**Wave 1**
+
+- [x] 158-01-PLAN.md — Measure the depth/latency trade and apply the analysis-grade grading budget constants
+- [x] 158-02-PLAN.md — New UCI-keyed eval-lookup pure lib module (buildEvalLookup/getByUci/getBySan, TDD)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 158-03-PLAN.md — Wire reconciliation into Analysis.tsx across all display consumers (SF/FC/Maia/verdict)
+
+### Phase 159: FlawChess Engine policy temperature + root-move findability (SEED-085)
+
+**Goal**: The FlawChess Engine recommends the best move the user will *plausibly find* ("best you'll likely find", not "best if you can find it"). Thread B (the committed real fix): the root ranking stops being the one place that ignores the player's own move probability — bring `P_you(X)` into the root sort via a findability floor or soft `P_you(X)^β · V(X)` weighting, auto-scaled by ELO (near-off at master level, aggressive at 600), so a ~5%-findable tail move (Nb5 @600, Qb8 @1000) can no longer top the list while the per-move practical score `V(X)` stays untouched; must NOT collapse into ranking by raw `P·V` (the rejected greedy modal-move engine). Thread A (complementary knob): a Maia policy-temperature parameter exposed as a UI slider directly below the ELO slider (>1 flattens toward more human fallibility, <1 sharpens toward Stockfish, 1 = today), with the findability weighting reading `P_you` from the temperature-adjusted distribution so the two compose. Rides along: the agreement-verdict copy ("far easier to find and play") is gated on the pick's actual Maia probability so the prose can never contradict the Maia chart rendered beneath it.
+**Depends on**: Phase 153 (search core: `select.ts` `ROOT_PRIOR_FLOOR`/candidate filter, `backup.ts` root-max, `treeCommon.ts` ranking sort), Phase 157 (`FlawChessAgreementVerdict` / `flawChessVerdict.ts` copy tiers), Phase 158 (reconciled displayed evals)
+**Requirements**: SEED-085 (Threads A + B, both committed; verdict-copy consistency fix included)
+**Plans:** 4 plans
+
+Plans:
+**Wave 1**
+
+- [x] 159-01-PLAN.md — Thread B: root-move findability ranking (findability.ts + buildRankedLines rootElo) [wave 1]
+- [x] 159-02-PLAN.md — Verdict-copy findability gate (raw-Maia gated prose, D-11 fallback) [wave 1]
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 159-03-PLAN.md — Thread A: policy-temperature transform wired through both search runners [wave 2]
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 159-04-PLAN.md — Temperature slider UI + hook wiring, end-of-phase D-03 UAT [wave 3]
 
 ## Backlog
 
@@ -113,7 +292,7 @@
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 3/3 plans complete
+**Plans:** 4/4 plans complete
 
 Plans:
 
@@ -142,7 +321,7 @@ Browser-only, client-side onnxruntime-web inference — **zero DB writes** (no s
 - [x] Phase 151: Maia in the Browser + All-Position Surfaces (6/6 plans) — relicense MIT → AGPL-3.0 + always-visible `MaiaAttribution`; unmodified version-pinned `maia3_simplified.onnx` via onnxruntime-web in a lazy Web Worker; original MIT glue (`maiaEncoding.ts`) → normalized per-legal-move distribution + WDL from FEN + ELO; "Moves by Rating" chart + Maia WDL bar (LEFT) / Stockfish bar (RIGHT), live per navigation; 3-column desktop + mobile Human tab; backend read-only `current_rating`; VALID-01 live calibration sign-off. Verified `passed_with_override` (MAIA-06 latency-measurement clause accepted) — completed 2026-07-05
 - [x] Phase 151.1: Stockfish-graded Maia moves on the Moves-by-Rating chart (INSERTED, SEED-083) (4/4 plans) — chart lines + SAN labels recolored by Stockfish quality on FlawChess's own expected-score-drop thresholds (dark-green best → red blunder); fixed top-6 cap replaced by the Maia cumulative-probability ≥ 0.95 ∪ {SF-best} set; a second, fully isolated Stockfish WASM grading worker (ONE `searchmoves`+MultiPV root search, pv[0]-keyed cache); UAT polish added a move-quality bar + plain-language position-difficulty verdict — completed 2026-07-05
 
-**Deferred at close:** Pillars A + B (Flaw Overlay, FLAW-01..04) → [SEED-084](seeds/SEED-084-flaw-overlay-pillars-a-b.md); Pillar C (aggregate rollup) + SEED-082 (human-playable-line engine) remain persistence-gated future work. **Not yet deployed to production** (ships with the pending v1.31 deploy on the next `bin/deploy.sh`).
+**Deferred at close:** Pillars A + B (Flaw Overlay, FLAW-01..04) → [SEED-084](seeds/closed/SEED-084-flaw-overlay-pillars-a-b.md); Pillar C (aggregate rollup) + SEED-082 (human-playable-line engine) remain persistence-gated future work. **Not yet deployed to production** (ships with the pending v1.31 deploy on the next `bin/deploy.sh`).
 
 See [milestones/v1.32-ROADMAP.md](milestones/v1.32-ROADMAP.md) for full details.
 
@@ -558,3 +737,14 @@ See [milestones/v1.14-ROADMAP.md](milestones/v1.14-ROADMAP.md) for full details.
 See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 
 </details>
+
+### Phase 160: Analysis page layout and card/element UI polish (ad-hoc via /gsd-quick and /gsd-fast, no preplanning)
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 159
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 160 to break down)

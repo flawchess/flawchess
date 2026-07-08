@@ -28,12 +28,20 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Chess } from 'chess.js';
-import { ArrowLeftRight, Cpu, Tag, TrendingUp, User } from 'lucide-react';
+import {
+  ArrowLeftRight,
+  ChessKnight,
+  Cpu,
+  type LucideIcon,
+  Tag,
+  User,
+} from 'lucide-react';
 import { useAnalysisBoard } from '@/hooks/useAnalysisBoard';
 import { useStockfishEngine } from '@/hooks/useStockfishEngine';
 import { useStockfishGradingEngine } from '@/hooks/useStockfishGradingEngine';
 import { useMaiaEngine } from '@/hooks/useMaiaEngine';
 import { useMaiaEloDefault } from '@/hooks/useMaiaEloDefault';
+import { useFlawChessEngine } from '@/hooks/useFlawChessEngine';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useGameOverlay } from '@/hooks/useGameOverlay';
 import { useLiveMoveFlaw } from '@/hooks/useLiveMoveFlaw';
@@ -41,8 +49,12 @@ import { useTacticLines, useLibraryGame } from '@/hooks/useLibrary';
 import { toDisplayDepthForOrientation } from '@/lib/tacticDepth';
 import { buildPvArrow } from '@/lib/tacticArrows';
 import { EvalBar } from '@/components/analysis/EvalBar';
-import { EngineLines, EngineLinesSkeleton } from '@/components/analysis/EngineLines';
+import { EngineLines, EngineLinesSkeleton, LINES_MIN_HEIGHT } from '@/components/analysis/EngineLines';
+import { FlawChessEngineLines, MAX_LINES as FC_MAX_LINES } from '@/components/analysis/FlawChessEngineLines';
+import { FlawChessAgreementVerdict } from '@/components/analysis/FlawChessAgreementVerdict';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
+import { Switch } from '@/components/ui/switch';
+import { InfoPopover } from '@/components/ui/info-popover';
 import { VariationTree } from '@/components/analysis/VariationTree';
 import type { FlawMarkerEntry } from '@/components/analysis/VariationTree';
 import type { FlawSeverity } from '@/types/library';
@@ -50,27 +62,32 @@ import { tacticOrientationAtPly } from '@/lib/tacticOrientation';
 import { EvalChart } from '@/components/library/EvalChart';
 import { AnalysisTagsPanel } from '@/components/analysis/AnalysisTagsPanel';
 import { MaiaHumanPanel } from '@/components/analysis/MaiaHumanPanel';
+import { EloSelector } from '@/components/analysis/EloSelector';
+import { TemperatureSelector, TEMPERATURE_DEFAULT } from '@/components/analysis/TemperatureSelector';
 import type { HoveredQualityMove } from '@/components/analysis/MaiaMoveQualityBar';
 import { ChessBoard } from '@/components/board/ChessBoard';
 import type { BoardArrow } from '@/components/board/ChessBoard';
 import { BoardControls } from '@/components/board/BoardControls';
 import { PlayerBar } from '@/components/board/PlayerBar';
-import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { uciToSquares } from '@/lib/sanToSquares';
 import {
-  SECOND_BEST_ARROW,
   TAC_MISSED,
   TAC_ALLOWED,
   MOVE_HIGHLIGHT_GOOD,
   STOCKFISH_ACCENT,
   MAIA_ACCENT,
+  FLAWCHESS_ENGINE_ACCENT,
+  FLAWCHESS_ENGINE_ARROW,
+  BEST_MOVE_ARROW,
   NEXT_MOVE_ARROW,
 } from '@/lib/theme';
-import { selectCandidatesByMass, classifyMoveQuality } from '@/lib/moveQuality';
+import { selectCandidatesByMass, nearestByElo, classifyMoveQuality, type MoveGrade } from '@/lib/moveQuality';
 import type { MoveQualityEval, EngineLine } from '@/components/analysis/MovesByRatingChart';
 import { sideToMoveFromFen } from '@/lib/liveFlaw';
 import type { NodeId, MoveNode } from '@/hooks/useAnalysisBoard';
+import { buildEvalLookup, getByUci, getBySan } from '@/lib/engineEvalLookup';
+import type { RankedLine } from '@/lib/engine/types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -94,6 +111,23 @@ const QUALITY_HOVER_ARROW_WIDTH = 0.6;
 const NEXT_MOVE_ARROW_WIDTH = 0.18;
 
 /**
+ * Phase 156 (ARROW-01/02/03, D-02): top-1-per-engine arrow count for the
+ * free-analysis board's FC + SF arrow layer. A future engine-settings panel
+ * may make this configurable (e.g. top-2) — bumping this constant is the only
+ * change needed then, no prop threading now (D-03).
+ */
+const ARROW_COUNT = 1;
+
+/** Normalized width of the FlawChess Engine board arrow — widest of the three
+ *  concentric arrows so it draws at the bottom (D-05). Maxed at 1.0 (156 UAT: the
+ *  FC practical move is the headline signal, so its arrow is the boldest on the board). */
+const FLAWCHESS_ENGINE_ARROW_WIDTH = 1.0;
+
+/** Normalized width of the Stockfish board arrow — nests inside the FC arrow
+ *  and outside the thin white next-move arrow (D-05). */
+const STOCKFISH_ENGINE_ARROW_WIDTH = 0.5;
+
+/**
  * True while the viewport is below the mobile breakpoint. Drives a single-tree render
  * (mobile OR desktop, never both) so the board / eval-chart / variation-tree mount once —
  * a CSS `hidden` split would duplicate their stable `id`/`data-testid`s and the engine board.
@@ -111,6 +145,82 @@ function useIsMobile(): boolean {
     return () => mq.removeEventListener('change', update);
   }, []);
   return isMobile;
+}
+
+// ─── Shared engine-card header toggle (D-03) ──────────────────────────────────
+
+/**
+ * Switch + accent-tinted caption, shared by all three engine card headers
+ * (Stockfish/Maia/FlawChess) so none of the three headers triples this
+ * near-identical markup inline (155-RESEARCH.md Pitfall 5). Visual weight:
+ * switch first (left), caption text after (UI-SPEC Component Inventory §3).
+ * The checked-state track color is set via an inline `style` override (wins
+ * over the Switch primitive's default `data-[state=checked]:bg-primary`
+ * class) rather than a CSS custom property, keeping this a plain, typed
+ * `style={{...}}` object like every other accent usage in this file.
+ */
+function EngineToggleHeader({
+  checked,
+  onCheckedChange,
+  accent,
+  testId,
+  ariaLabel,
+  icon: Icon,
+  children,
+}: {
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  accent: string;
+  testId: string;
+  ariaLabel: string;
+  icon: LucideIcon;
+  children: ReactNode;
+}) {
+  return (
+    <>
+      <Switch
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+        aria-label={ariaLabel}
+        data-testid={testId}
+        style={checked ? { backgroundColor: accent } : undefined}
+      />
+      <span
+        className="flex items-center gap-1.5 text-sm font-medium"
+        style={{ color: accent }}
+      >
+        <Icon className="size-4 shrink-0" aria-hidden="true" />
+        {children}
+      </span>
+    </>
+  );
+}
+
+/**
+ * Header info tooltip for the FlawChess Engine card — a plain-language, three-paragraph
+ * explanation of what the engine does and why it differs from a normal engine. Sourced
+ * from docs/flawchess-engine-explained-2026-07-06.md (§1, §9), kept non-technical
+ * (no "expectimax"/"MCTS" jargon in user-facing copy).
+ */
+function FlawChessInfoTooltip() {
+  return (
+    <InfoPopover ariaLabel="About the FlawChess Engine" testId="flawchess-info-popover">
+      <div className="max-w-xs space-y-2">
+        <p>
+          Stockfish shows the objectively best move, assuming perfect play. The FlawChess
+          Engine instead favors moves you can realistically pull off: ones that are easier
+          for a player at your level to find (along with their follow-ups), and that pay off
+          against an opponent who defends imperfectly, the way real players do.
+        </p>
+        <p>
+          It blends Stockfish's objective quality with Maia's model of how humans at a given
+          rating really play, treating both sides as fallible. So it can rank a trap above
+          the textbook best move, showing both numbers: "objectively +3.0, but practically
+          +0.9 for you."
+        </p>
+      </div>
+    </InfoPopover>
+  );
 }
 
 // ─── Root-ply helper ──────────────────────────────────────────────────────────
@@ -297,6 +407,11 @@ export default function Analysis() {
 
   // D-06: engine on by default; toggle available via infoSlot button.
   const [engineEnabled, setEngineEnabled] = useState(true);
+  // Phase 155 D-02/D-03: the Maia and FlawChess Engine header switches — all
+  // three engine cards default ON (all-by-default UI, gated on the SC4
+  // real-device mobile-memory UAT per 155-RESEARCH.md D-02).
+  const [maiaEnabled, setMaiaEnabled] = useState(true);
+  const [flawChessEnabled, setFlawChessEnabled] = useState(true);
   const [boardFlipped, setBoardFlipped] = useState(false);
   // Once we have auto-oriented the board to the player's color, manual flips win.
   const hasAutoFlipped = useRef(false);
@@ -352,6 +467,15 @@ export default function Analysis() {
   } = useAnalysisBoard(guardedFen);
 
   // Engine hook must run unconditionally (React rules).
+  // 155 UAT un-merge: the standalone Stockfish search runs whenever its own
+  // switch (`engineEnabled`) is on, independently of the FlawChess Engine. The
+  // two engines pick very different moves (objective vs practical-for-you), so
+  // the user must see both — the Stockfish card shows Stockfish's own top-2 with
+  // depth deepening live, alongside the separate FlawChess Engine card. This
+  // reverses the earlier D-04 handoff (which fed the SF surfaces the FlawChess
+  // engine's objective root eval and blanked the Stockfish card). Cost: two
+  // concurrent Stockfish searches (this standalone WASM + the engine's 2-4
+  // worker pool); mobile memory stays the deferred SC4 follow-up, not a blocker.
   const engine = useStockfishEngine({
     fen: engineEnabled ? position : null,
     enabled: engineEnabled,
@@ -427,11 +551,31 @@ export default function Analysis() {
   };
 
   // Maia-3 human-move model (MAIA-04/05, SURF-05): full per-ELO curve + WDL for the
-  // current position, no server round-trip. `enabled: true` — MAIA-02's laziness is
-  // already satisfied by the route-level React.lazy covering this whole page; the
-  // Worker itself lives/dies with this component's mount, unlike the Stockfish
-  // engine's separate on/off toggle.
-  const maia = useMaiaEngine({ fen: position, enabled: true, selectedElo });
+  // current position, no server round-trip. Phase 155 D-03: gated on the Maia
+  // card's own header switch (`maiaEnabled`) — MAIA-02's laziness is otherwise
+  // already satisfied by the route-level React.lazy covering this whole page.
+  // Note: this is a SEPARATE Worker instance from the FlawChess Engine's own
+  // internal maiaQueue (Phase 154) — turning this switch off must not starve
+  // the FlawChess Engine's policy source (UI-SPEC Component Inventory §3).
+  const maia = useMaiaEngine({ fen: position, enabled: maiaEnabled, selectedElo });
+
+  // Phase 159 D-08 (Thread A): session-only policy-temperature state, plain
+  // useState mirroring the ELO slider's no-persistence behavior (no
+  // localStorage/URL param) — resets to TEMPERATURE_DEFAULT on every page load.
+  const [temperature, setTemperature] = useState(TEMPERATURE_DEFAULT);
+
+  // FlawChess Engine (Phase 153-155 client-side MCTS search core, DISPLAY-01):
+  // gated on its own header switch (`flawChessEnabled`), independent of the
+  // Stockfish and Maia switches. `selectedElo` is shared for both colors
+  // (D-07/Open Question 2, 155-02). `temperature` (Phase 159 D-06/D-07) reshapes
+  // the root-mover's-own-side Maia policy before search and composes with the
+  // findability ranking automatically (buildRankedLines reads child.prior).
+  const flawChessEngine = useFlawChessEngine({
+    fen: flawChessEnabled ? position : null,
+    enabled: flawChessEnabled,
+    elo: selectedElo,
+    policyTemperature: temperature,
+  });
 
   // Seeding guard refs: prevent re-running effects after the first game load.
   const hasLoadedMainLine = useRef(false);
@@ -531,7 +675,14 @@ export default function Analysis() {
 
   // ── Derived values ────────────────────────────────────────────────────────────
 
+  // Stockfish card loading skeleton — spins only while the standalone Stockfish
+  // WASM is still initializing (155 UAT un-merge: the search runs independently
+  // of the FlawChess Engine, so this no longer depends on flawChessEnabled).
   const engineLoading = engineEnabled && !engine.isReady;
+  // Mirrors engineLoading: true only while the FlawChess Engine's WorkerPool/
+  // MaiaQueue are still spinning up (pre-`isReady`); once ready,
+  // FlawChessEngineLines handles its own pre-first-snapshot skeleton.
+  const flawChessLoading = flawChessEnabled && !flawChessEngine.isReady;
 
   const rootPly = fenToRootPly(rootFen);
   const currentPly = fenToRootPly(position);
@@ -549,54 +700,131 @@ export default function Analysis() {
   const playedSan = currentNodeId !== null ? (nodes.get(currentNodeId)?.san ?? null) : null;
 
   // MovesByRatingChart emphasis: the engine's current top-line first move, converted
-  // to SAN at the current position.
-  const bestSan = useMemo(
-    () => bestSanFromPv(position, engine.pvLines[0]?.moves[0] ?? null),
-    [position, engine.pvLines],
-  );
-
-  // The primary engine's top PV lines (best + 2nd-best), each as its first move's
-  // SAN + white-POV eval — shown as a reference header in the Maia chart tooltip
-  // (151.1 UAT). These are the authoritative eval-bar/engine-card evals, distinct
-  // from the searchmoves-restricted grading pass that colors the lines.
-  const engineTopLines = useMemo<EngineLine[]>(() => {
-    const lines: EngineLine[] = [];
-    for (const line of engine.pvLines.slice(0, 2)) {
-      const san = bestSanFromPv(position, line.moves[0] ?? null);
-      if (san === null) continue;
-      lines.push({ san, evalCp: line.evalCp, evalMate: line.evalMate });
-    }
-    return lines;
-  }, [position, engine.pvLines]);
+  // to SAN at the current position. Prefer the standalone Stockfish top move (its
+  // objective best); when Stockfish is off but the FlawChess Engine is on, fall back
+  // to the top practical candidate so the 151.1 best-move highlight still shows
+  // (WR-04, 155-REVIEW.md).
+  const bestSan = useMemo(() => {
+    const uci = engineEnabled
+      ? (engine.pvLines[0]?.moves[0] ?? null)
+      : flawChessEnabled
+        ? (flawChessEngine.rankedLines[0]?.rootMove ?? null)
+        : null;
+    return bestSanFromPv(position, uci);
+  }, [position, engineEnabled, engine.pvLines, flawChessEnabled, flawChessEngine.rankedLines]);
 
   // Phase 151.1 SC2/D-02/D-06/D-07: the 0.95-cumulative-mass candidate set at the
-  // selected ELO, unioned with {bestSan, playedSan} — computed ONCE here and passed
-  // to both the grading hook (as candidateSans) and the chart (as shownSans),
-  // replacing MovesByRatingChart's own top-6-by-peak cap.
+  // selected ELO, unioned with {bestSan, playedSan} — computed ONCE here and
+  // consumed as one contributor to the grading union below (unionSans), plus
+  // passed to the chart (as shownSans), replacing MovesByRatingChart's own
+  // top-6-by-peak cap.
   const shownSans = useMemo(
     () => selectCandidatesByMass(maia.perElo, selectedElo, playedSan, bestSan),
     [maia.perElo, selectedElo, playedSan, bestSan],
   );
 
-  // Phase 151.1 SC3: a SECOND, independent Stockfish worker that grades shownSans via
-  // one searchmoves-restricted MultiPV search. Gated on the SAME engineEnabled toggle
-  // as the primary engine so grading is off whenever the primary engine is off; it
-  // never touches the `engine` (useStockfishEngine) instance or its consumers.
+  // Phase 159 D-10/D-12 (SEED-085 ride-along, 159-Pitfall 5): raw Maia move-probability-by-SAN
+  // map at the selected ELO, computed ONCE here (the SAME rung the chart displays via
+  // nearestByElo) and passed down to FlawChessAgreementVerdict as `rawProbBySan` — the verdict
+  // gate must never call nearestByElo independently, so the prose can never contradict the chart.
+  const rawProbBySan = useMemo(
+    () => nearestByElo(maia.perElo, selectedElo)?.moveProbabilities ?? {},
+    [maia.perElo, selectedElo],
+  );
+
+  // Phase 158 (SEED-087 SC2): the FC card's own top-MAX_LINES displayed SANs,
+  // converted from their root UCI moves — the FlawChess Engine's contribution
+  // to the shared grading union below. Empty (a no-op contributor) whenever
+  // the FC card is off, so the union reflects only active consumers.
+  const flawChessDisplayedSans = useMemo(() => {
+    if (!flawChessEnabled) return [];
+    const sans: string[] = [];
+    for (const line of flawChessEngine.rankedLines.slice(0, FC_MAX_LINES)) {
+      const san = bestSanFromPv(position, line.rootMove);
+      if (san !== null) sans.push(san);
+    }
+    return sans;
+  }, [flawChessEnabled, flawChessEngine.rankedLines, position]);
+
+  // Phase 158 (SEED-087 SC2, RESEARCH Pitfall 4): the deduplicated, sorted
+  // union of the Maia chart's shownSans and the FC card's displayed SANs —
+  // the shared grading run's candidate set. Sorted + deduped (mirroring the
+  // grading hook's own candidatesKey pattern) so a re-throttle of the SAME
+  // top moves produces the same array and does not re-trigger the search.
+  const unionSans = useMemo(() => {
+    const maiaSans = maiaEnabled ? shownSans : [];
+    const fcSans = flawChessEnabled ? flawChessDisplayedSans : [];
+    return Array.from(new Set([...maiaSans, ...fcSans])).sort();
+  }, [maiaEnabled, shownSans, flawChessEnabled, flawChessDisplayedSans]);
+
+  // Phase 158 (SEED-087 SC2, RESEARCH Pitfall 5): the shared grading run is
+  // gated on EITHER display consumer being active — fen/enabled are always
+  // paired on this same condition below so the worker is never alive-but-
+  // positionless.
+  const gradingEnabled = maiaEnabled || flawChessEnabled;
+
+  // Phase 151.1 SC3 / Phase 158 (SEED-087 SC2): a SECOND, independent
+  // Stockfish worker that grades the FC∪Maia candidate union via one
+  // searchmoves-restricted MultiPV search. This shared run now powers BOTH
+  // the Moves-by-Rating chart (via qualityBySan) and the FC card's reconciled
+  // evals (via evalLookup below), so it is gated on `maiaEnabled ||
+  // flawChessEnabled` (gradingEnabled) — replacing the prior Maia-switch-only
+  // gating. It never touches the `engine` (useStockfishEngine) instance or
+  // its consumers.
   const grading = useStockfishGradingEngine({
-    fen: engineEnabled ? position : null,
-    candidateSans: shownSans,
-    enabled: engineEnabled,
+    fen: gradingEnabled ? position : null,
+    candidateSans: unionSans,
+    enabled: gradingEnabled,
   });
 
-  // Phase 151.1 D-08: 5-bucket quality classification of the streamed grades, merged
-  // with each grade's raw white-POV eval (cp/mate) for the chart's tooltip.
+  // Phase 158 (SEED-087 SC1): the single UCI-keyed eval source every
+  // displayed Stockfish eval on this page resolves through — the free run's
+  // pvLines win by construction (module precedence in buildEvalLookup), so a
+  // move graded by both sources always shows the free-run value, and
+  // progressive refinement is emergent (a resolved UCI's value can never
+  // regress to the grading value).
+  const evalLookup = useMemo(
+    () => buildEvalLookup(engine.pvLines, grading.gradeMap, position),
+    [engine.pvLines, grading.gradeMap, position],
+  );
+
+  // Phase 158 (SEED-087 SC1/SC3/SC4, SC5 scope fence): parallel RankedLine-
+  // shaped display objects — NEVER the live MCTS-core snapshots themselves —
+  // with only `objectiveEvalCp` swapped for the reconciled lookup value. A
+  // resolved mate grade (evalCp null) yields null here, same as the
+  // pre-existing FC-source cp-only limitation (RankedLine has no mate field);
+  // the card renders its existing '…' placeholder, not a bug.
+  const reconciledRankedLines = useMemo<RankedLine[]>(
+    () =>
+      flawChessEngine.rankedLines.slice(0, FC_MAX_LINES).map((line) => ({
+        ...line,
+        objectiveEvalCp: getByUci(evalLookup, line.rootMove)?.evalCp ?? null,
+      })),
+    [flawChessEngine.rankedLines, evalLookup],
+  );
+
+  // Phase 151.1 D-08 / Phase 158 (SEED-087 SC3): 5-bucket quality
+  // classification of the RECONCILED grades (not the raw grading pass's
+  // gradeMap directly) — so a move's displayed number and its severity color
+  // can never disagree at a bucket boundary (covers the Maia chart line/
+  // SAN-label colors, the quality-bar segments, and positionVerdict). The
+  // reconciled map is built over the SAME SAN keyspace the grading pass
+  // produced; an unresolved SAN (a sanToUci conversion failure) maps to a
+  // null/null grade, never the raw pool grade.
   const qualityBySan = useMemo<Map<string, MoveQualityEval>>(() => {
+    const reconciledGradeMap = new Map<string, MoveGrade>();
+    for (const san of grading.gradeMap.keys()) {
+      reconciledGradeMap.set(
+        san,
+        getBySan(evalLookup, position, san) ?? { evalCp: null, evalMate: null, depth: 0 },
+      );
+    }
     // Pass the primary engine's bestSan so the chart's "best" agrees with the
     // eval bar + engine card (151.1 UAT: reconcile the two Stockfish sources).
-    const infoBySan = classifyMoveQuality(grading.gradeMap, sideToMoveFromFen(position), bestSan);
+    const infoBySan = classifyMoveQuality(reconciledGradeMap, sideToMoveFromFen(position), bestSan);
     const merged = new Map<string, MoveQualityEval>();
     for (const [san, info] of infoBySan) {
-      const grade = grading.gradeMap.get(san);
+      const grade = reconciledGradeMap.get(san);
       merged.set(san, {
         quality: info.quality,
         evalCp: grade?.evalCp ?? null,
@@ -604,7 +832,34 @@ export default function Analysis() {
       });
     }
     return merged;
-  }, [grading.gradeMap, position, bestSan]);
+  }, [evalLookup, grading.gradeMap, position, bestSan]);
+
+  // The primary engine's top PV lines (best + 2nd-best), each as its first move's
+  // SAN + white-POV eval — shown as a reference header in the Maia chart tooltip
+  // (151.1 UAT). Prefer standalone Stockfish (the objective reference); fall back to
+  // the FlawChess Engine's RECONCILED practical top-2 only when Stockfish is off
+  // (WR-04, Phase 158 SEED-087 SC1) — relocated after evalLookup/
+  // reconciledRankedLines so its FC branch can read reconciled values. The
+  // FlawChess source has no mate field, so evalMate is null there.
+  const engineTopLines = useMemo<EngineLine[]>(() => {
+    const lines: EngineLine[] = [];
+    if (engineEnabled) {
+      for (const line of engine.pvLines.slice(0, 2)) {
+        const san = bestSanFromPv(position, line.moves[0] ?? null);
+        if (san === null) continue;
+        lines.push({ san, evalCp: line.evalCp, evalMate: line.evalMate });
+      }
+      return lines;
+    }
+    if (flawChessEnabled) {
+      for (const line of reconciledRankedLines) {
+        const san = bestSanFromPv(position, line.rootMove);
+        if (san === null) continue;
+        lines.push({ san, evalCp: line.objectiveEvalCp, evalMate: null });
+      }
+    }
+    return lines;
+  }, [position, engineEnabled, engine.pvLines, flawChessEnabled, reconciledRankedLines]);
 
   // ── Derived values (game mode — new) ─────────────────────────────────────────
 
@@ -706,6 +961,7 @@ export default function Analysis() {
   // overlay + eval bar, with the live engine supplying only the grey 2nd-best line.
   const gameOverlay = useGameOverlay({
     enabled: isGameMode,
+    engineEnabled,
     evalSeries: gameData?.eval_series,
     flawMarkers: gameData?.flaw_markers,
     mainLine,
@@ -892,18 +1148,10 @@ export default function Analysis() {
     // number and drops the orientation color — the tactic is over by then (Quick 260628-pu2
     // UAT). The countdown therefore runs ...2, 1 (punchline), then payoff.
     const isPayoff = stepIntoPv >= rootDisplayDepth;
+    // 156 UAT (top-1 per engine): only the single PV-continuation arrow — the
+    // light-blue 2nd-best Stockfish arrow was dropped here for parity with the
+    // free-analysis board (one FC arrow + one SF arrow, no second-best anywhere).
     const arrows = buildPvArrow(nextMove, displayDepth, isPayoff, orientation);
-
-    // Light-blue 2nd-best from the live engine (skip if it duplicates the overlay arrow).
-    const secondBest = uciToSquares(engine.pvLines[1]?.moves[0] ?? null);
-    if (secondBest && !(secondBest.from === nextMove.from && secondBest.to === nextMove.to)) {
-      arrows.push({
-        startSquare: secondBest.from,
-        endSquare: secondBest.to,
-        color: SECOND_BEST_ARROW,
-        width: 0.5,
-      });
-    }
     return arrows.length > 0 ? arrows : null;
   }, [
     isGameMode,
@@ -915,7 +1163,6 @@ export default function Analysis() {
     mainLine,
     focusedPvLine,
     nodes,
-    engine.pvLines,
   ]);
 
   // Quick 260705-kfg: arrows for the move-quality bar's hovered segment — one per
@@ -963,15 +1210,66 @@ export default function Analysis() {
     };
   }, [currentNodeId, isOnMainLine, mainLine, nodes]);
 
-  // Game-mode board arrows: the move-quality hover overlay wins (both modes) so
-  // hovering the bar previews its moves; otherwise the PV-sideline overlay takes
-  // precedence, then the precomputed/engine overlay from useGameOverlay. The
-  // white next-move arrow is layered on top of whatever base overlay applies.
+  // Phase 156 (ARROW-01/02/03): the board's two live engine arrows — amber
+  // FlawChess Engine (practical move) and blue Stockfish (objective move).
+  // Independently toggled via the existing Phase 155 card switches; each simply
+  // doesn't render until its engine's first snapshot yields a root move (no
+  // placeholder arrow, mirrors the card skeleton timing). 156 UAT: this layer is
+  // the default board overlay in BOTH game mode and free analysis — the engine
+  // arrows must be identical regardless of whether a game is loaded.
+  const engineArrows = useMemo<BoardArrow[]>(() => {
+    const arrows: BoardArrow[] = [];
+    if (flawChessEnabled) {
+      for (let i = 0; i < ARROW_COUNT; i++) {
+        const fcSquares = uciToSquares(flawChessEngine.rankedLines[i]?.rootMove ?? null);
+        if (fcSquares) {
+          arrows.push({
+            startSquare: fcSquares.from,
+            endSquare: fcSquares.to,
+            color: FLAWCHESS_ENGINE_ARROW,
+            width: FLAWCHESS_ENGINE_ARROW_WIDTH,
+            layerKey: `fc-${i}`,
+          });
+        }
+      }
+    }
+    if (engineEnabled) {
+      for (let i = 0; i < ARROW_COUNT; i++) {
+        const sfSquares = uciToSquares(engine.pvLines[i]?.moves[0] ?? null);
+        if (sfSquares) {
+          arrows.push({
+            startSquare: sfSquares.from,
+            endSquare: sfSquares.to,
+            color: BEST_MOVE_ARROW,
+            width: STOCKFISH_ENGINE_ARROW_WIDTH,
+            layerKey: `sf-${i}`,
+          });
+        }
+      }
+    }
+    return arrows;
+  }, [flawChessEnabled, flawChessEngine.rankedLines, engineEnabled, engine.pvLines]);
+
+  // Board arrows (156 UAT — game/free parity): the FC + SF engine-arrow layer is
+  // the default overlay in BOTH modes, so the board looks identical whether or not
+  // a game is loaded. The move-quality hover overlay still wins (both modes) so
+  // hovering the bar previews its moves; the game-only flaw-line drill-down overlay
+  // (pvSidelineArrows, self-gated to null outside game mode) still takes precedence
+  // when you navigate into a specific flaw's PV. The old game-review default overlay
+  // (gameOverlay.boardArrows: Stockfish best + light-blue 2nd-best) is no longer
+  // drawn — top-1 per engine everywhere. Draw order is ChessBoard's width sort
+  // (D-05), not array order; the white next-move arrow layers on top (onTop).
   const baseArrows: BoardArrow[] | undefined =
-    qualityHoverArrows ?? (isGameMode ? (pvSidelineArrows ?? gameOverlay.boardArrows) : undefined);
-  const boardArrows: BoardArrow[] | undefined = nextMoveArrow
-    ? [...(baseArrows ?? []), nextMoveArrow]
-    : baseArrows;
+    qualityHoverArrows ??
+    pvSidelineArrows ??
+    (engineArrows.length > 0 ? engineArrows : undefined);
+  // D-09 arrow isolation (157 UAT): while a move is being previewed via hover (or
+  // first-tap on mobile), show ONLY that move's arrow(s). The translucent white
+  // next-move arrow was previously appended unconditionally, so it survived the
+  // preview and cluttered the board — suppress it too whenever a hover is active.
+  const isHoverIsolated = qualityHoverArrows !== null;
+  const boardArrows: BoardArrow[] | undefined =
+    nextMoveArrow && !isHoverIsolated ? [...(baseArrows ?? []), nextMoveArrow] : baseArrows;
 
   // ── Handlers ──────────────────────────────────────────────────────────────────
 
@@ -1050,28 +1348,56 @@ export default function Analysis() {
         ? maia.expectedScoreAtSelectedElo
         : 1 - maia.expectedScoreAtSelectedElo;
 
+  // Eval-bar wiring. Left slot shows FC (brown) over Maia (violet) whenever the
+  // FlawChess Engine is enabled — its practical-for-you expected score. Right slot
+  // is always the standalone Stockfish objective eval (155 UAT un-merge: no handoff
+  // — Stockfish runs independently again, so the SF bar shows Stockfish's own eval
+  // with depth deepening live). Kept as a small derived block (not inlined in the
+  // JSX below) per Pitfall 5.
+  // noUncheckedIndexedAccess: topLine is RankedLine | undefined, narrowed via
+  // the `topLine ? ... : ...` ternaries below rather than a non-null assertion.
+  const topLine = flawChessEngine.rankedLines[0];
+  const fcWhiteFraction = topLine
+    ? sideToMoveFromFen(position) === 'white'
+      ? topLine.practicalScore
+      : 1 - topLine.practicalScore
+    : 0.5;
+  const leftEvalBarWhiteFraction = flawChessEnabled ? fcWhiteFraction : maiaWhiteFraction;
+  const leftEvalBarAccent = flawChessEnabled ? FLAWCHESS_ENGINE_ACCENT : MAIA_ACCENT;
+  const leftEvalBarTestId = flawChessEnabled ? 'analysis-flawchess-eval-bar' : 'analysis-maia-eval-bar';
+  // The right bar is labeled "SF" (Stockfish): the real standalone Stockfish eval
+  // whenever its switch is on, going neutral when the user turns Stockfish off
+  // (`!engineEnabled`). `null`/`0` reads as the sigmoid midpoint in EvalBar's
+  // computeWhiteFraction (no data → 0.5).
+  const rightEvalBarEvalCp = engineEnabled ? gameOverlay.evalCp : null;
+  const rightEvalBarEvalMate = engineEnabled ? gameOverlay.evalMate : null;
+  const rightEvalBarDepth = engineEnabled ? gameOverlay.evalDepth : 0;
+
   // Board + EvalBar row — the single source of the `analysis-board` ref/testid and the
   // react-chessboard instance. Shared by the desktop and mobile trees (only one renders
   // at a time via isMobile), so the board mounts exactly once either way.
   const boardRow = (
     <div className="flex flex-row items-stretch gap-2">
-      {/* Maia expected-score bar — LEFT of the board (D-01/D-05, SURF-04). Single
-          expected-score fill (D-04): whiteFraction bypasses the cp sigmoid entirely.
-          0.5 fallback while Maia hasn't produced a result for this position yet.
+      {/* Left eval bar — FlawChess Engine (brown) when enabled (D-04 precedence),
+          else Maia (violet, D-01/D-05, SURF-04). Single expected-score fill: both
+          sources bypass the cp sigmoid entirely via whiteFraction. 0.5 fallback
+          while neither source has produced a result yet.
           Bug fix (151.1 UAT): Maia's WDL is from the side-to-MOVE's perspective (the
           board is mirrored to the mover's POV when Black is to move — see
           maiaEncoding.encodeBoard), so expectedScore is the mover's expected score.
           The bar's whiteFraction must be WHITE-relative to match the Stockfish bar and
           the board orientation, so invert it whenever Black is to move. Without this
-          the bar read inverted on every Black-to-move position. */}
+          the bar read inverted on every Black-to-move position. RankedLine.practicalScore
+          (D-06) is likewise root-side-to-move-relative, same inversion applies (see
+          fcWhiteFraction above). */}
       <EvalBar
         evalCp={null}
         evalMate={null}
         depth={0}
-        whiteFraction={maiaWhiteFraction}
+        whiteFraction={leftEvalBarWhiteFraction}
         flipped={boardFlipped}
-        accentColor={MAIA_ACCENT}
-        testId="analysis-maia-eval-bar"
+        accentColor={leftEvalBarAccent}
+        testId={leftEvalBarTestId}
       />
 
       <div ref={containerRef} data-testid="analysis-board" tabIndex={0} className="flex-1">
@@ -1102,12 +1428,16 @@ export default function Analysis() {
         />
       </div>
 
-      {/* Eval bar: precomputed eval in game mode (immediate), live engine
-          otherwise — useGameOverlay passes the engine through when disabled. */}
+      {/* Right eval bar: precomputed eval in game mode (immediate), live engine
+          otherwise — useGameOverlay passes the engine through when disabled. D-04
+          handoff: while the FlawChess Engine runs, this bar is instead fed its top
+          line's own objective root eval (never a mate — ±MATE_CP_EQUIVALENT reads
+          as near-mate on the sigmoid scale) rather than a second live Stockfish
+          search on the same position (POOL-04). */}
       <EvalBar
-        evalCp={gameOverlay.evalCp}
-        evalMate={gameOverlay.evalMate}
-        depth={gameOverlay.evalDepth}
+        evalCp={rightEvalBarEvalCp}
+        evalMate={rightEvalBarEvalMate}
+        depth={rightEvalBarDepth}
         flipped={boardFlipped}
         accentColor={STOCKFISH_ACCENT}
       />
@@ -1126,11 +1456,13 @@ export default function Analysis() {
     />
   );
 
-  // Small source cap centered over an eval bar (151.1 UAT): "Maia" (violet) over the
-  // left bar, "SF" (blue) over the right. "Maia" is wider than the w-5 slot and
-  // overflows symmetrically — the ~7px right overflow stays inside the gap-2 to the
-  // player name, and the left overflow lands in the inter-column gutter.
-  const evalBarCap = (text: 'Maia' | 'SF', color: string) => (
+  // Small source cap centered over an eval bar (151.1 UAT): "FC"/"Maia" (brown/
+  // violet) over the left bar per D-04 precedence, "SF" (blue) over the right.
+  // "Maia" is wider than the w-5 slot and overflows symmetrically — the ~7px
+  // right overflow stays inside the gap-2 to the player name, and the left
+  // overflow lands in the inter-column gutter. Common Pitfall 4: keep the new
+  // "FC" cap at the existing text-xs size — do not introduce text-sm here.
+  const evalBarCap = (text: 'Maia' | 'SF' | 'FC', color: string) => (
     // text-xs (below the usual text-sm floor) — a tiny bar cap acting as a visual
     // aside, per UAT "make the labels smaller". leading-none keeps the row compact.
     <span className="whitespace-nowrap text-xs font-medium leading-none" style={{ color }}>
@@ -1149,7 +1481,11 @@ export default function Analysis() {
   // to show the caps alone over the bars.
   const boardHeaderRow = (player: ReactNode) => (
     <div className="flex flex-row items-center gap-2">
-      {evalBarSlot(evalBarCap('Maia', MAIA_ACCENT))}
+      {evalBarSlot(
+        flawChessEnabled
+          ? evalBarCap('FC', FLAWCHESS_ENGINE_ACCENT)
+          : evalBarCap('Maia', MAIA_ACCENT),
+      )}
       <div className="min-w-0 flex-1">{player}</div>
       {evalBarSlot(evalBarCap('SF', STOCKFISH_ACCENT))}
     </div>
@@ -1257,15 +1593,105 @@ export default function Analysis() {
       />
     ) : null;
 
-  // The mobile "Human" tab content (D-03, LIC-02) — shared between the game-mode
-  // 4-tab strip and the free-play Moves|Human pair below, so this JSX isn't
-  // duplicated across both mobile tab layouts.
+  // Shared ELO slider (155 UAT): drives BOTH the FlawChess and Maia engines. Its
+  // canonical home is the bottom of the FlawChess Engine card (below), where the
+  // header already shows the selected ELO; the mobile Maia tab renders a second copy
+  // since it's a separate screen. Defined before the card so the card can embed it.
+  const eloSelector = (
+    <div className="px-1 flex flex-col gap-2" data-testid="analysis-elo-selector-row">
+      <EloSelector value={selectedElo} onChange={setSelectedElo} />
+    </div>
+  );
+
+  // FlawChess Engine card (D-01, DISPLAY-04) — a fixed-height charcoal Card
+  // stacked directly above MaiaHumanPanel, reused verbatim in BOTH the desktop
+  // human column and the mobile "FlawChess" tab (mobile-parity: D-01's "apply to
+  // both" + CLAUDE.md's mobile-parity rule). Mirrors the Stockfish card's own
+  // loading → off → lines CardBody pattern (line ~1585 below): flawChessLoading
+  // gates the pre-`isReady` skeleton (worker pool spin-up); once ready,
+  // FlawChessEngineLines renders its OWN pre-first-snapshot skeleton internally.
+  const flawChessCard = (
+    <Card data-testid="analysis-flawchess-panel">
+      <CardHeader
+        size="compact"
+        data-testid="analysis-flawchess-info"
+        className="font-normal text-muted-foreground"
+      >
+        <EngineToggleHeader
+          checked={flawChessEnabled}
+          onCheckedChange={setFlawChessEnabled}
+          accent={FLAWCHESS_ENGINE_ACCENT}
+          testId="btn-analysis-flawchess-toggle"
+          ariaLabel="Toggle FlawChess Engine"
+          icon={ChessKnight}
+        >
+          {/* ELO in parens = the mover's rating (or the slider override), the
+              strength the engine is playing at (155 UAT). */}
+          FlawChess Engine ({selectedElo} ELO)
+        </EngineToggleHeader>
+        <FlawChessInfoTooltip />
+      </CardHeader>
+      <CardBody className={`${LINES_MIN_HEIGHT} p-2`}>
+        {flawChessLoading ? (
+          <EngineLinesSkeleton testId="analysis-flawchess-loading" rows={2} />
+        ) : !flawChessEnabled ? (
+          <div className="flex h-full items-center px-2 text-sm text-muted-foreground">
+            FlawChess Engine off
+          </div>
+        ) : (
+          <>
+            <FlawChessEngineLines
+              rankedLines={reconciledRankedLines}
+              isSearching={flawChessEngine.isSearching}
+              baseFen={position}
+              startPly={currentPly}
+              flipped={boardFlipped}
+              onMoveClick={playUciLine}
+            />
+            {/* Agreement verdict (Phase 157-02, REVIEW-02; Phase 158 SEED-087
+                SC4): reads Stockfish's TRUE objective #1 from engine.pvLines[0]
+                (D-01) — never engineTopLines, which silently degrades to a
+                FlawChess row when standalone Stockfish is off. The FlawChess
+                side is reconciledRankedLines (evalLookup-sourced), so both
+                picks resolve through the SAME lookup — making "FC pick grades
+                higher than the objective best" impossible by construction. */}
+            <FlawChessAgreementVerdict
+              flawChessLine={reconciledRankedLines[0] ?? null}
+              stockfishLine={engine.pvLines[0] ?? null}
+              flawChessRankedLines={reconciledRankedLines}
+              engineEnabled={engineEnabled}
+              elo={selectedElo}
+              baseFen={position}
+              rawProbBySan={rawProbBySan}
+              shownSans={shownSans}
+              onHoverMovesChange={setHoveredQualityMoves}
+              onPlayMove={playProseMove}
+            />
+            {/* Phase 159 D-08: the Human <-> Stockfish play-style slider lives at
+                the bottom of the FlawChess Engine card (it only reshapes this
+                engine's policy). */}
+            <div className="mt-2 px-2">
+              <TemperatureSelector value={temperature} onChange={setTemperature} />
+            </div>
+          </>
+        )}
+        {/* ELO slider — always shown at the bottom of the card, even when the
+            FlawChess Engine is off, since it also drives the Maia surfaces. The card
+            header already reflects this value ("FlawChess Engine (N ELO)"). */}
+        <div className="mt-2 border-t border-border pt-2">{eloSelector}</div>
+      </CardBody>
+    </Card>
+  );
+
+  // The mobile "Maia" tab content (D-03, LIC-02) — shared across every mobile tab
+  // layout below, so this JSX isn't duplicated. The FlawChess card lives in its own
+  // adjacent tab (flawChessTab) rather than here; the shared ELO slider stays with
+  // the Maia panel since it drives both engines.
   const humanTab = (
     <TabsContent value="human" className="min-h-0 overflow-y-auto thin-scrollbar">
-      <div className="px-3">
+      <div className="flex flex-col gap-3 px-3">
         <MaiaHumanPanel
           selectedElo={selectedElo}
-          onEloChange={setSelectedElo}
           perElo={maia.perElo}
           playedSan={playedSan}
           bestSan={bestSan}
@@ -1275,40 +1701,90 @@ export default function Analysis() {
           onHoverMovesChange={setHoveredQualityMoves}
           isOpponentToMove={isOpponentToMove}
           onPlayMove={playProseMove}
+          enabled={maiaEnabled}
+          onToggleEnabled={setMaiaEnabled}
           compact
         />
+        {eloSelector}
       </div>
     </TabsContent>
   );
 
+  // The mobile "FlawChess" tab content — the FlawChess Engine card, moved out of the
+  // Maia tab into its own tab to the right of it. Shared across the mobile tab layouts.
+  const flawChessTab = (
+    <TabsContent value="flawchess" className="min-h-0 overflow-y-auto thin-scrollbar">
+      <div className="flex flex-col gap-3 px-3">{flawChessCard}</div>
+    </TabsContent>
+  );
+
+  // Mobile Stockfish PV lines, without the info-card header. Mirrors the desktop
+  // `analysis-engine-card` body's loading → off → lines branches. Relocated from
+  // above the board to the top of the Eval tab; shown there in every mobile layout.
+  const mobileEngineLines = (
+    <div className="shrink-0 px-2" data-testid="analysis-engine-lines-mobile">
+      {engineLoading ? (
+        <EngineLinesSkeleton testId="analysis-engine-loading" compact />
+      ) : !engineEnabled ? (
+        <div className="flex h-full items-center px-2 text-sm text-muted-foreground">
+          Engine off
+        </div>
+      ) : (
+        <EngineLines
+          pvLines={engine.pvLines}
+          isAnalyzing={engine.isAnalyzing}
+          startPly={currentPly}
+          baseFen={position}
+          flipped={boardFlipped}
+          onMoveClick={playUciLine}
+          compact
+        />
+      )}
+    </div>
+  );
+
+  // The mobile "Eval" tab content — Stockfish PV lines on top, the eval chart below
+  // (game mode only; evalChart() returns null in free play / before the game loads,
+  // leaving just the engine lines).
+  const evalTab = (
+    <TabsContent
+      value="eval"
+      className="min-h-0 overflow-x-hidden overflow-y-auto thin-scrollbar"
+    >
+      <div className="flex flex-col gap-2 pt-1">
+        {mobileEngineLines}
+        {evalChartReady && <div className="px-3">{evalChart('h-[120px]')}</div>}
+      </div>
+    </TabsContent>
+  );
+
+  // The mobile "Moves" tab content — the vertical variation tree. Shared across the
+  // mobile tab layouts.
+  const movesTab = (
+    <TabsContent value="moves" className="flex min-h-0 flex-1 flex-col">
+      {variationTree('vertical')}
+    </TabsContent>
+  );
+
+  // The mobile "Tags" tab content — the flaw-tags panel (game mode only, so it only
+  // appears in the full tab strip below).
+  const tagsTab = (
+    <TabsContent value="tags" className="min-h-0 overflow-y-auto thin-scrollbar">
+      <div className="px-2">{tagsPanel()}</div>
+    </TabsContent>
+  );
+
   // ── Mobile takeover layout (< 640px) ──────────────────────────────────────────
-  // Engine PV lines above the board (no info card), board + eval bar, then a 2-tab view
-  // (Moves | Eval) that fills the space down to the in-flow board-controls footer. Free
-  // play has no eval chart, so it shows only the move list (no tab bar). The shell's
-  // back-button header + suppressed bottom nav (ProtectedLayout) complete the takeover.
+  // Board + eval bar, then a tab view (Moves | Eval | Maia | FlawChess [| Tags]) that
+  // fills the space down to the in-flow board-controls footer. The Stockfish PV lines
+  // live at the top of the Eval tab (not above the board). The shell's back-button
+  // header + suppressed bottom nav (ProtectedLayout) complete the takeover.
   if (isMobile) {
     return (
       <div
         data-testid="analysis-page"
         className="flex min-h-0 flex-1 flex-col bg-background"
       >
-        {/* Engine PV lines on top, without the info-card header. */}
-        <div className="shrink-0 px-2 pt-2" data-testid="analysis-engine-lines-mobile">
-          {engineLoading ? (
-            <EngineLinesSkeleton testId="analysis-engine-loading" compact />
-          ) : (
-            <EngineLines
-              pvLines={engine.pvLines}
-              isAnalyzing={engine.isAnalyzing}
-              startPly={currentPly}
-              baseFen={position}
-              flipped={boardFlipped}
-              onMoveClick={playUciLine}
-              compact
-            />
-          )}
-        </div>
-
         {/* Board + eval bar. */}
         {/* Board block: source caps + top player, board, bottom player. max-w-[92vw]
             shrinks the board a touch so the name/clock strips top and bottom stay on
@@ -1328,76 +1804,107 @@ export default function Analysis() {
           </p>
         )}
 
-        {/* Tab view — fills all vertical space between the board and the footer. */}
+        {/* Tab view — fills all vertical space between the board and the footer.
+            Bounded chart height inside the Eval tab (not h-full): the board already
+            dominates the viewport, so a greedy chart pushed the board-controls footer
+            off-screen when the mobile browser's URL bar shrank the height. h-[120px]
+            (the established mobile chart height) keeps the footer visible. The full
+            5-tab strip (with Tags) shows only for a loaded, analyzed game; free play
+            and still-loading games drop the Tags tab. */}
         {isGameMode && evalChartReady ? (
           <Tabs
             defaultValue="moves"
             className="flex min-h-0 flex-1 flex-col gap-2 px-2 pt-2"
           >
             <TabsList variant="underline" className="w-full shrink-0">
-              <TabsTrigger value="moves" data-testid="analysis-tab-moves">
+              <TabsTrigger value="moves" data-testid="analysis-tab-moves" className="gap-1 px-1">
                 <ArrowLeftRight aria-hidden="true" />
                 Moves
               </TabsTrigger>
-              <TabsTrigger value="eval" data-testid="analysis-tab-eval">
-                <TrendingUp aria-hidden="true" />
-                Chart
+              {/* Engine-colored tab nav: Eval = Stockfish blue, Maia = violet,
+                  FlawChess = gold — matching each surface's accent (theme.ts). */}
+              <TabsTrigger
+                value="eval"
+                data-testid="analysis-tab-eval"
+                className="gap-1 px-1"
+                style={{ color: STOCKFISH_ACCENT }}
+              >
+                <Cpu aria-hidden="true" />
+                Eval
               </TabsTrigger>
-              <TabsTrigger value="human" data-testid="analysis-tab-human">
+              <TabsTrigger
+                value="human"
+                data-testid="analysis-tab-human"
+                className="gap-1 px-1"
+                style={{ color: MAIA_ACCENT }}
+              >
                 <User aria-hidden="true" />
                 Maia
               </TabsTrigger>
-              <TabsTrigger value="tags" data-testid="analysis-tab-tags">
+              <TabsTrigger
+                value="flawchess"
+                data-testid="analysis-tab-flawchess"
+                className="gap-1 px-1"
+                style={{ color: FLAWCHESS_ENGINE_ACCENT }}
+              >
+                <ChessKnight aria-hidden="true" />
+                FlawChess
+              </TabsTrigger>
+              <TabsTrigger value="tags" data-testid="analysis-tab-tags" className="gap-1 px-1">
                 <Tag aria-hidden="true" />
                 Tags
               </TabsTrigger>
             </TabsList>
-            <TabsContent value="moves" className="flex min-h-0 flex-1 flex-col">
-              {variationTree('vertical')}
-            </TabsContent>
-            {/* Bounded chart height (not h-full): the board already dominates the
-                viewport, so a greedy chart pushed the board-controls footer off-screen
-                when the mobile browser's URL bar shrank the height. h-[120px] (the
-                established mobile chart height) keeps the footer visible.
-                px-3 wrapper: the scrub slider is rendered 16px wider than the chart
-                (±8px thumb overhang) and normally lands in the desktop card's padding;
-                here it needs that horizontal room or it triggers a horizontal scrollbar
-                (overflow-y-auto coerces overflow-x to auto). overflow-x-hidden is the
-                belt-and-suspenders. */}
-            <TabsContent value="eval" className="min-h-0 overflow-x-hidden overflow-y-auto thin-scrollbar">
-              <div className="px-3">{evalChart('h-[120px]')}</div>
-            </TabsContent>
+            {movesTab}
+            {evalTab}
             {humanTab}
-            <TabsContent value="tags" className="min-h-0 overflow-y-auto thin-scrollbar">
-              <div className="px-2">{tagsPanel()}</div>
-            </TabsContent>
+            {flawChessTab}
+            {tagsTab}
           </Tabs>
-        ) : !isGameMode ? (
-          // Free play (D-03 open detail): a minimal Moves | Human tab pair — no eval
-          // chart / tags in free play, but the Human chart must still be reachable.
+        ) : (
+          // Free play or a still-loading / unanalyzed game: no eval chart or tags, but
+          // Moves, engine lines (Eval tab), Maia, and FlawChess must all stay reachable.
           <Tabs defaultValue="moves" className="flex min-h-0 flex-1 flex-col gap-2 px-2 pt-2">
             <TabsList variant="underline" className="w-full shrink-0">
-              <TabsTrigger value="moves" data-testid="analysis-tab-moves">
+              <TabsTrigger value="moves" data-testid="analysis-tab-moves" className="gap-1 px-1">
                 <ArrowLeftRight aria-hidden="true" />
                 Moves
               </TabsTrigger>
-              <TabsTrigger value="human" data-testid="analysis-tab-human">
+              {/* Engine-colored tab nav: Eval = Stockfish blue, Maia = violet,
+                  FlawChess = gold — matching each surface's accent (theme.ts). */}
+              <TabsTrigger
+                value="eval"
+                data-testid="analysis-tab-eval"
+                className="gap-1 px-1"
+                style={{ color: STOCKFISH_ACCENT }}
+              >
+                <Cpu aria-hidden="true" />
+                Eval
+              </TabsTrigger>
+              <TabsTrigger
+                value="human"
+                data-testid="analysis-tab-human"
+                className="gap-1 px-1"
+                style={{ color: MAIA_ACCENT }}
+              >
                 <User aria-hidden="true" />
                 Maia
               </TabsTrigger>
+              <TabsTrigger
+                value="flawchess"
+                data-testid="analysis-tab-flawchess"
+                className="gap-1 px-1"
+                style={{ color: FLAWCHESS_ENGINE_ACCENT }}
+              >
+                <ChessKnight aria-hidden="true" />
+                FlawChess
+              </TabsTrigger>
             </TabsList>
-            <TabsContent value="moves" className="flex min-h-0 flex-1 flex-col">
-              {variationTree('vertical')}
-            </TabsContent>
+            {movesTab}
+            {evalTab}
             {humanTab}
+            {flawChessTab}
           </Tabs>
-        ) : (
-          // Game mode but not yet ready for the full tab strip (game data still
-          // loading, or an unanalyzed game with no eval_series) — unchanged prior
-          // behavior: move list only.
-          <div className="flex min-h-0 flex-1 flex-col px-2 pt-2">
-            {variationTree('vertical')}
-          </div>
         )}
 
         {/* In-flow board-controls footer — replaces the suppressed mobile nav bar. */}
@@ -1433,9 +1940,9 @@ export default function Analysis() {
                 {playerBar(boardFlipped ? 'white' : 'black')}
               </div>
             )}
+            {flawChessCard}
             <MaiaHumanPanel
               selectedElo={selectedElo}
-              onEloChange={setSelectedElo}
               perElo={maia.perElo}
               playedSan={playedSan}
               bestSan={bestSan}
@@ -1445,7 +1952,11 @@ export default function Analysis() {
               onHoverMovesChange={setHoveredQualityMoves}
               isOpponentToMove={isOpponentToMove}
               onPlayMove={playProseMove}
+              enabled={maiaEnabled}
+              onToggleEnabled={setMaiaEnabled}
             />
+            {/* The ELO slider now lives at the bottom of the FlawChess card above (its
+                canonical home), so no separate slider is rendered here on desktop. */}
           </div>
 
           {/* Board column ──────────────────────────────────────────────────── */}
@@ -1510,22 +2021,17 @@ export default function Analysis() {
                 data-testid="analysis-engine-info"
                 className="font-normal text-muted-foreground"
               >
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="-ml-1 h-7 w-7 hover:bg-accent"
-                  onClick={() => setEngineEnabled((v) => !v)}
-                  aria-label="Toggle engine"
-                  aria-pressed={engineEnabled}
-                  data-testid="btn-analysis-engine-toggle"
+                <EngineToggleHeader
+                  checked={engineEnabled}
+                  onCheckedChange={setEngineEnabled}
+                  accent={STOCKFISH_ACCENT}
+                  testId="btn-analysis-engine-toggle"
+                  ariaLabel="Toggle Stockfish engine"
+                  icon={Cpu}
                 >
-                  <Cpu className={`h-4 w-4 ${engineEnabled ? '' : 'text-muted-foreground'}`} />
-                </Button>
-                {/* Blue SF caption pairs with the blue Stockfish eval bar (151.1 UAT). */}
-                <span className="text-sm font-medium" style={{ color: STOCKFISH_ACCENT }}>
                   {ENGINE_NAME}
                   {engineEnabled && engine.depth > 0 ? `, Depth ${engine.depth}` : ''}
-                </span>
+                </EngineToggleHeader>
               </CardHeader>
 
               {/* min-height (not fixed) — holds a stable floor through the
@@ -1539,6 +2045,8 @@ export default function Analysis() {
                     Engine off
                   </div>
                 ) : (
+                  // 155 UAT un-merge: the standalone Stockfish top-2 (depth
+                  // deepening live) shows independently of the FlawChess Engine.
                   <EngineLines
                     pvLines={engine.pvLines}
                     isAnalyzing={engine.isAnalyzing}

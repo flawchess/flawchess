@@ -1,44 +1,43 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.32
-milestone_name: Maia-3 Human-Move Enrichment
-current_phase: none
-status: Awaiting next milestone
-stopped_at: Milestone v1.32 shipped and archived
-last_updated: "2026-07-05T15:43:45.929Z"
-last_activity: 2026-07-05
-last_activity_desc: Milestone v1.32 completed and archived
+milestone: v2.0
+milestone_name: FlawChess Engine
+current_phase: 159
+current_phase_name: flawchess-engine-policy-temperature-root-move-findability-se
+status: Phase 159 shipped — squash-merged to main
+stopped_at: Completed 159-04-PLAN.md
+last_updated: "2026-07-08T15:56:10.814Z"
+last_activity: 2026-07-08
 progress:
-  total_phases: 2
-  completed_phases: 2
-  total_plans: 10
-  completed_plans: 10
+  total_phases: 7
+  completed_phases: 7
+  total_plans: 23
+  completed_plans: 23
   percent: 100
-current_phase_name: stockfish-graded-maia-moves-on-the-moves-by-rating-chart
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: Milestone v1.32 complete
-Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-07-05 — Milestone v1.32 completed and archived
+Phase: 159 (flawchess-engine-policy-temperature-root-move-findability-se) — EXECUTING
+Plan: 4 of 4
+Status: Phase 159 shipped — squash-merged to main
+Last activity: 2026-07-08 - Completed quick task 260708-qrr: unified move-hover popover across both analysis cards
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-07-04 after v1.31 milestone close)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: **Between milestones** — v1.32 Maia-3 Human-Move Enrichment shipped 2026-07-05 (Phases 151, 151.1; tag v1.32). Client-side Maia-3 on `/analysis` (Moves-by-Rating chart + Maia WDL bar, Stockfish-graded human moves, MIT → AGPL-3.0 relicense), zero DB writes. Phase 152 (Flaw Overlay) demoted to SEED-084. Next: `/gsd-new-milestone` (leading candidates: SEED-084 Flaw Overlay, SEED-082 human-playable-line engine — both build on the shipped Maia infra). **Carryover: neither v1.31 nor v1.32 is deployed to production** — both sit on `main`; the next `bin/deploy.sh` ships them (v1.31 first). v1.32 is fully independent of the eval pipeline.
+Current focus: v2.0 FlawChess Engine roadmap created (SEED-082) — 5 phases (153 pure search core; 154 real providers/worker pool; 155 React hook + anytime UI; 156 board arrows + toggles; 157 game-review overlay), all 21 v2.0 requirements mapped (REQUIREMENTS.md's own "19 total" placeholder was a miscount — corrected to 21 in the traceability table). Next: `/gsd-plan-phase 153`. Client-side-only, no backend/schema/migrations/new-deps — builds on the shipped, deployed v1.29 Stockfish.wasm + v1.32 Maia infra. v1.31 and v1.32 are both live in production.
 
 ## Milestone Progress
 
 Thirty-two milestones complete (v1.0–v1.32).
 
-v1.32 Maia-3 Human-Move Enrichment shipped 2026-07-05 — 2 phases (151, 151.1), 10 plans. Client-side Maia-3 (`maia3_simplified.onnx` via onnxruntime-web in a lazy Web Worker) on `/analysis`: a per-ELO "Moves by Rating" chart + a Maia WDL eval bar (LEFT; Stockfish RIGHT), live per navigation, zero server round-trip, nothing persisted. Phase 151.1 (SEED-083) recolored chart lines by Stockfish move quality and swapped the top-6 cap for the Maia ≥0.95-mass ∪ {SF-best} set via a second isolated grading worker. Repo relicensed MIT → AGPL-3.0. Phase 152 (Flaw Overlay, Pillars A+B) demoted to SEED-084; MAIA-06 latency measurement accepted as override. No schema/migration; one read-only `current_rating` backend field. Archived to milestones/v1.32-ROADMAP.md + v1.32-REQUIREMENTS.md, phases to milestones/v1.32-phases/, tagged v1.32. **Not yet deployed to prod.**
+v1.32 Maia-3 Human-Move Enrichment shipped 2026-07-05 — 2 phases (151, 151.1), 10 plans. Client-side Maia-3 (`maia3_simplified.onnx` via onnxruntime-web in a lazy Web Worker) on `/analysis`: a per-ELO "Moves by Rating" chart + a Maia WDL eval bar (LEFT; Stockfish RIGHT), live per navigation, zero server round-trip, nothing persisted. Phase 151.1 (SEED-083) recolored chart lines by Stockfish move quality and swapped the top-6 cap for the Maia ≥0.95-mass ∪ {SF-best} set via a second isolated grading worker. Repo relicensed MIT → AGPL-3.0. Phase 152 (Flaw Overlay, Pillars A+B) demoted to SEED-084; MAIA-06 latency measurement accepted as override. No schema/migration; one read-only `current_rating` backend field. Archived to milestones/v1.32-ROADMAP.md + v1.32-REQUIREMENTS.md, phases to milestones/v1.32-phases/, tagged v1.32. **Deployed to production.**
 
-v1.31 Pipeline Consolidation completed 2026-07-04 — 3 phases (148, 149, 150), 14 plans. Server-side-only consolidation: retired the dead Gen-1 eval protocol and unified the copy-pasted eval write path (`apply_completion_decision()` 3→1, `_classify_with_overlay` 4→1, per-ply diff/upsert replacing delete-then-insert, `eval_apply.py`/`eval_entry.py` split), proven byte-identical. No behavior change. Archived, tagged v1.31. **Not yet deployed to prod** (last prod release #244).
+v1.31 Pipeline Consolidation completed 2026-07-04 — 3 phases (148, 149, 150), 14 plans. Server-side-only consolidation: retired the dead Gen-1 eval protocol and unified the copy-pasted eval write path (`apply_completion_decision()` 3→1, `_classify_with_overlay` 4→1, per-ply diff/upsert replacing delete-then-insert, `eval_apply.py`/`eval_entry.py` split), proven byte-identical. No behavior change. Archived, tagged v1.31. **Deployed to production.**
 
 v1.30 Forcing-Line Tactic Gate shipped 2026-06-30 — 7 phases (141–147), 25 plans; released across PRs #229/#230/#231/#234. An engine-free `forcing_line_gate` module over persisted MultiPV=2 blobs (`allowed_pv_lines`/`missed_pv_lines` JSONB on `game_flaws`) gates the v1.28 tactic tags to real forced tactics; `retag_flaws.py` makes every threshold change a seconds-fast engine-free re-derivation; the continuation eval + blob backfill run on the remote fleet via an atomic `/atomic-lease`/`/atomic-submit` pipeline (Phases 146/147, SEED-071/074). Known gap: the local in-process drain re-mints ~9/3.36M ungated cp tags (self-heals via tier-4, not rollback-class). Archived to milestones/v1.30-ROADMAP.md + v1.30-REQUIREMENTS.md, tagged v1.30.
 
@@ -62,6 +61,9 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 - v1.31 Pipeline Consolidation closed 2026-07-04 (Phases 148, 149, 150; tag v1.31). Execution decisions + quick-task log archived to `milestones/v1.31-ROADMAP.md`, PROJECT.md Key Decisions, and git. Reset for the next milestone.
 - Phase 151.1 inserted after Phase 151: Stockfish-graded Maia moves on the Moves-by-Rating chart (from SEED-083)
+- Phase 158 added: FlawChess Engine displayed-eval provenance reconciliation (SEED-087, amended with third Maia-card provenance chain + shared-fallback design)
+- Phase 159 added: FlawChess Engine policy temperature + root-move findability (SEED-085, Threads A + B committed)
+- Phase 160 added: Analysis page layout and card/element UI polish — ad-hoc improvements via /gsd-quick and /gsd-fast, no preplanning
 
 ### Decisions
 
@@ -81,6 +83,63 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 151-06]: useMaiaEloDefault clamps the ELO default to the ladder [min,max] bounds only (no step-snapping); user pick wins permanently over late data loads (userOverrodeRef)
 - [Phase 151-06]: useMaiaEngine mounted enabled:true (route-level React.lazy provides MAIA-02 laziness); desktop reworked into 3-column layout (Maia chart+selector left, both eval bars flanking board, engine panel right)
 - [Phase 151-06]: VALID-01 APPROVED — calibration + policy-vocab move-label sanity check confirmed (closes 151-04 vocab-index risk); D-10 smallest model retained; MAIA-06 per-device latency left unmeasured, not fabricated
+- [Phase 153]: MoveGrade re-exported from moveQuality.ts in types.ts (single import surface), not redeclared
+- [Phase 153]: leafExpectedScore wraps liveFlaw.ts's evalToExpectedScore verbatim; mate-near-certainty test thresholds set to 0.95/0.05 matching actual sigmoid output
+- [Phase 153-02]: backupExpectation's empty-array case is a natural consequence of the totalPrior===0 guard, tested explicitly alongside the plan-specified totalPrior===0 case
+- [Phase 153-03]: selectChild() throws on empty children array (Rule 2 precondition validation) rather than returning a sentinel - no sensible default UCI move exists
+- [Phase 153-03]: D-01 root/non-root split test uses ONE shared children fixture (rootExplorationPrior tied, plain prior differs) proving the SAME object selects differently by isRoot flag alone
+- [Phase 153]: [Phase 153-04]: extraRootMoves unioned with the truncated Maia top-k AFTER truncateAndRenormalize (not before) to satisfy D-05's floor-boost rationale
+- [Phase 153]: [Phase 153-04]: Visit-count increments deferred from selection/dispatch time to apply time - isPending alone prevents same-round re-picks; eager bumping broke ENGINE-07 snapshot-sequence determinism at concurrency=2
+- [Phase 153]: [Phase 153-04]: Added selectPath root-pending guard (Rule 1 bug fix) - child-level pending filter never protected the walk's own starting node
+- [Phase 153-05]: fallbackExpectimax reuses backup.ts/leafScore.ts/select.ts, ignores budget.concurrency entirely (purely sequential walk), and matches mctsSearch's visits/modalPath semantics for output-shape parity
+- [Phase 153-05]: knip passed unchanged with no knip.json edit needed — the anticipated engine-export-consumed-only-by-tests caveat did not trip knip's vitest-plugin entry-point detection
+- [Phase 154-01]: grade() uses priority=0/depth=0 internally since the frozen 2-arg EngineProviders.grade signature has no priority channel; the priority queue's ordering logic itself is fully built and unit-tested per POOL-02, ready for a future caller
+- [Phase 154-01]: pool.grade's third signal?: AbortSignal param is an ADDITIONAL optional parameter, keeping it structurally assignable to EngineProviders['grade'] per TypeScript's trailing-optional-param assignability rule
+- [Phase 154-01]: Reverted requirements.mark-complete's POOL-04 checkbox flip: POOL-04 is shared across Plans 01/02 (frontmatter) — 154-01 only partially delivers it (Stockfish-pool adaptive sizing + lazy spawn/abort surface); left [ ] Pending with a partial-delivery note; Plan 02 will actually close it
+- [Phase 154-02]: requestPolicy pipeline (dedup/cache/FIFO/SAN-UCI) committed as Task 1 without terminate()/Sentry/graceful-degradation, then Task 2 layered worker lifecycle + error forwarding on top
+- [Phase 154-02]: same-fen batching collapses ANY pending requests sharing a FEN into one analyze call with the deduped ELO set, beyond the literal two-same-ELO-requests example
+- [Phase 154-02]: worker error / construction failure both resolve affected policy() promises to {} rather than reject, mirroring workerPool.ts's resolve-empty-on-failure precedent
+- [Phase 154-02]: POOL-04 marked complete; SC4 real-device UAT and eval-bar mutual-exclusion wiring remain deferred to Phase 155 per CONTEXT.md D-03, tracked in 154-VALIDATION.md
+- [Phase 154-03]: Used a dedicated PoolWorkerSlot.dead boolean rather than inferring pool failure from isReady, to avoid a false-positive drain during normal not-yet-ready startup — isReady is also false during normal init before uciok/readyok, so an inference-based all-failed check would incorrectly drain valid pending requests
+- [Phase 154-03]: WR-02 fixed as a documentation-only correction: priority/depth stay 0 under the frozen 2-arg grade() contract until Phase 155 supplies a real caller — No caller exists yet in Phase 154 to supply real priority values; the ordering machinery itself is already correct and unit-tested
+- [Phase 154]: [Phase 154-04]: Task 1 committed as a standalone inline fix (no shared helper) so its commit is self-contained; Task 2 extracted settleAllAndDropWorker() and layered the onerror handler on top, per plan's explicit permission to factor shared logic in Task 2
+- [Phase 155-01]: expectedScoreToWhitePovCp special-cases es<=0/es>=1 to +/-MATE_CP_EQUIVALENT*sign (mirroring evalToExpectedScore's mate-before-sigmoid convention) instead of a literal log-odds inverse — avoids Infinity/NaN blow-up on a genuine forced-mate subtree (Pitfall 2)
+- [Phase 155-01]: Switch's checked-track fill defaults to bg-primary but is caller-overridable via className, not a single hardcoded accent baked into the primitive — each engine card (Stockfish/Maia/FlawChess) needs its own switch tint (D-03)
+- [Phase 155-01]: Reverted requirements.mark-complete's DISPLAY-03 checkbox flip — DISPLAY-03 is shared across Plans 01/03 (frontmatter) — 155-01 alone only delivers the expectedScoreToWhitePovCp conversion function; left [ ] Pending with a partial-delivery note; Plan 03 (the visible score-pair badge) actually closes it
+- [Phase 155-02]: budget.elo = { w: elo, b: elo } — both colors share the single on-page ELO in free analysis (D-07/Open Question 2); true self/opponent asymmetry deferred to Phase 157
+- [Phase 155-02]: lastCommitAtRef reset to 0 at the start of every fresh mctsSearch call, not just on hook mount, so the D-09 first-paint guarantee holds on every FEN navigation
+- [Phase 155-02]: abortControllerRef.abort() + pool.stopAll() called unconditionally at the top of the search-trigger effect (including the first search, where stopAll is a harmless no-op) — matches 155-RESEARCH.md Pattern 2 literally
+- [Phase 155-02]: Reverted requirements.mark-complete's DISPLAY-01 checkbox flip: DISPLAY-01 is shared across Plans 02/04 (frontmatter) — 155-02 alone only delivers the hook's throttle/abort mechanics; left [ ] Pending with a partial-delivery note; Plan 04 (surfacing on /analysis) actually closes it
+- [Phase 155-03]: Exported replayPvLine/formatScore from EngineLines.tsx (additive only) and gave EngineLinesSkeleton a rows?: 2|3 prop rather than duplicating logic or writing a second skeleton
+- [Phase 155-03]: FlawChessEngineLines has no compact prop - card placement/mobile-tab wiring is Plan 04's job per this plan's Out-of-Scope section
+- [Phase 155-03]: DISPLAY-02 and DISPLAY-03 marked fully complete - DISPLAY-02 was never shared with another plan, and DISPLAY-03's Plan 01/03 split closes here per REQUIREMENTS.md's own note
+- [Phase 155-04]: Combined Task 1+2 into one commit — topLine/flawChessEngine's mount is inert until Task 2 consumes it, so a Task-1-only commit would fail its own tsc --noEmit gate under noUnusedLocals
+- [Phase 155-04]: Expanded files_modified to include MaiaHumanPanel.tsx — the Maia card header lives there, not in Analysis.tsx; added optional enabled/onToggleEnabled props, no-op when omitted (preserves the locked 151.1 compact-drops-header test)
+- [Phase 155-04]: FlawChess card wrapper uses testid analysis-flawchess-panel (not analysis-flawchess-card, already used by FlawChessEngineLines.tsx's own root div) to avoid a duplicate-testid collision
+- [Phase 155-04]: engineLoading gained a && !flawChessEnabled guard (Rule 1 bug fix) — without it the Stockfish card's loading skeleton spins forever once FlawChess suppresses the standalone search (both default ON)
+- [Phase 155-04]: No isError/FlawChess-unavailable state wired — the frozen Plan 02 hook exposes no error field (worker/pool failures resolve to empty results internally); documented as a known gap rather than fabricated
+- [Phase 157-01]: D-04 aligned check is UCI-string equality before the drop split, not derived from drop === 0
+- [Phase 157-01]: SHARP_DROP_THRESHOLD is the imported BLUNDER_DROP alias -- no bare 0.15 literal
+- [Phase 157-01]: FlawChess-side FlawChessVerdictMove always sets evalMate: null (Pitfall 4 -- RankedLine has no mate field)
+- [Phase 157-02]: ProseSpan extracted (not duplicated) into a shared content-agnostic hover/click-to-play shell
+- [Phase 157-02]: Main verdict sentence cites each pick's objective eval (not practicalScore-derived) to stay consistent with the win%-drop tier split; the D-10 popover separately shows the practical-converted number
+- [Phase 157-02]: Aligned tier renders a single shared ProseSpan (FlawChess pick's own span/popover) rather than a distinct combined-role type
+- [Phase 158-01]: Chosen grading budget: movetime=4000ms, no depth clause (pure movetime cap) — measured via headless WASM sweep to reach depth parity with the free run and agree within noise on shared candidates
+- [Phase 158-01]: Rule 1 bug fix — go-command clause order: searchmoves must be LAST (trailing movetime was silently swallowed as an illegal move token, so the old 2500ms cap never actually limited search time)
+- [Phase 158-01]: Free-run MULTIPV left at 2 unchanged — widening it only costs search depth with no meaningful union-coverage benefit
+- [Phase 158-02]: buildEvalLookup takes exactly 3 params (pvLines, gradeMapBySan, baseFen) — no pool-grade parameter, structurally excluding a shallow MCTS pool eval from ever surfacing through this lookup
+- [Phase 158-03]: Task 1+2 combined into one commit — interleaved memo chain (unionSans/gradingEnabled -> evalLookup -> reconciledRankedLines -> qualityBySan -> engineTopLines), mirrors 155-04 precedent
+- [Phase 158-03]: qualityBySan's reconciled grade map is keyed by grading.gradeMap's own SAN set (not a fresh union) — preserves identical classification coverage, only the resolved values are reconciled
+- [Phase 159-01]: P_REF_ANCHORS starting hypothesis taken verbatim from RESEARCH.md; flagged as assumption pending live UAT validation (159-04)
+- [Phase 159-01]: buildRankedLines pairs each RankedLine with a sort-only rankScore via a parallel array (not spread-and-omit) to keep eslint no-unused-vars clean
+- [Phase 159-02]: rawProbBySan and shownSans made REQUIRED props on FlawChessAgreementVerdictProps (not optional) - Analysis.tsx always has this data; all 11 pre-existing component tests updated with the two new props
+- [Phase 159-02]: D-11 fallback wording is tier-nearlySameEval-aware (4 total safe-tier variants: gate x nearlySameEval), not a single flat fallback string
+- [Phase 159-03]: ROOT_CANDIDATE_HARD_CAP set to 15 (D-07/Pitfall 6 discretion) - generous at T~1, bounded at T=2.0 against the 400-node budget
+- [Phase 159-03]: sideMatchesMover and applyRootCandidateHardCap placed in treeCommon.ts (shared cross-runner file) rather than inlined per-runner, structurally preventing Pitfall 3 divergence
+- [Phase 159-03]: Opponent-untouched (D-05) test proven via the exact candidateUcis recorded at grade() call time (2 kept at T=1 raw vs 4 at T=2 flattened on the same distribution shape), not via output inference
+- [Phase 159-04]: TEMPERATURE_DEFAULT imported directly from DEFAULT_POLICY_TEMPERATURE rather than declared as a matching literal - makes the Pitfall 7/T-159-08 invariant (slider center === search no-op value) structural, not just test-covered
+- [Phase 159-04]: TemperatureSelector rendered exactly once, inside the pre-existing shared eloSelector JSX const (already rendered in both the mobile humanTab and desktop human column) - mobile/desktop parity via one render site, not two
+- [Phase 159-04]: policyTemperature defaulted (?? DEFAULT_POLICY_TEMPERATURE) at useFlawChessEngine's own SearchBudget-construction call site, not inside a helper - keeps the no-op short-circuit visible at the orchestrator layer per 159-03's established Pitfall 1 discipline
 
 ### Pending Todos
 
@@ -88,7 +147,7 @@ None active.
 
 ### Blockers/Concerns
 
-- v1.31 is complete on `main` but **not yet deployed to production** — deploy is the next step (`bin/deploy.sh` / `/deploy`).
+- None active. (v1.31 and v1.32 are both deployed to production.)
 
 ### Quick Tasks Completed
 
@@ -98,6 +157,7 @@ None active.
 | 260705-dj5 | Phase 151 Maia UAT: fixed-size card + loading skeleton, wider chart with right-side move labels, horizontal grid lines | 2026-07-05 | 026e2edb | [260705-dj5-uat-feedback-phase-151-fixed-size-human-](./quick/260705-dj5-uat-feedback-phase-151-fixed-size-human-/) |
 | 260705-kfg | Maia move-quality bar below Human Move Probability chart (hover-reveal move lists + severity-colored board arrows) | 2026-07-05 | 15b3a156 | [260705-kfg-maia-move-quality-bar-below-human-move-p](./quick/260705-kfg-maia-move-quality-bar-below-human-move-p/) |
 | 260705-m3z | Prose position evaluation (safe/tricky/highly difficult verdict + interactive severity-colored move spans with board arrows and Maia %/eval tooltips) below the Maia move-quality bar | 2026-07-05 | b31a1f45 | [260705-m3z-prose-position-evaluation-below-the-maia](./quick/260705-m3z-prose-position-evaluation-below-the-maia/) |
+| 260708-qrr | Unified move-hover popover (FlawChess/practical gold, Stockfish/objective blue, Maia/human violet — icon-led, whole-line color, omit unavailable) shared by both analysis cards' dotted moves | 2026-07-08 | a339346a | [260708-qrr-unified-move-popover-on-dotted-moves](./quick/260708-qrr-unified-move-popover-on-dotted-moves/) |
 
 ## Deferred Items
 
@@ -111,7 +171,7 @@ Items acknowledged and deferred at **v1.32 milestone close on 2026-07-05** (ackn
 | seeds | 8 dormant → now 8 active after housekeeping: SEED-081 (Maia-3 milestone) + SEED-083 (Stockfish-graded moves, shipped as Phase 151.1) moved to `seeds/closed/` at close; SEED-084 (Flaw Overlay, demoted from Phase 152) newly opened; remainder (SEED-037/042/067/069/077/078/082) future/v2 | Housekept + carried |
 | known-gap | MAIA-06 per-device latency numbers never recorded | Accepted override — D-10 smallest-model choice rests on qualitative VALID-01 sign-off; no numeric board-response target was ever defined; Phase 151 verified `passed_with_override` |
 | known-gap | Local in-process drain re-mints ~9/3.36M ungated cp tags | Carried from v1.30 — self-heals via tier-4, not rollback-class; `project_local_drain_ungated_tactic_tags` |
-| deploy | v1.31 AND v1.32 not yet deployed to production | Intentional — both closed on `main`; deploy is the explicit next step (`bin/deploy.sh`); v1.31 should ship first |
+| deploy | v1.31 AND v1.32 not yet deployed to production (at v1.32 close) | Resolved — both since deployed to production |
 
 Items acknowledged and deferred at **v1.31 milestone close on 2026-07-04** (user chose "Acknowledge & proceed" on the 31-item pre-close audit):
 
@@ -150,13 +210,13 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-07-05T08:32:35.940Z
+**Stopped at:** Completed 159-04-PLAN.md
+
+**Last session:** 2026-07-07T20:54:14.129Z
 
 **Resume file:** 
 
-.planning/phases/151.1-stockfish-graded-maia-moves-on-the-moves-by-rating-chart/151.1-CONTEXT.md
-Stopped at: Phase 151.1 context gathered
-Resume: deploy v1.31 (`bin/deploy.sh` / `/deploy`), then `/gsd-new-milestone`
+Resume: `/gsd-plan-phase 153`
 
 ## Performance Metrics
 
@@ -172,7 +232,30 @@ Resume: deploy v1.31 (`bin/deploy.sh` / `/deploy`), then `/gsd-new-milestone`
 | Phase 151 P04 | 45min | 3 tasks | 10 files |
 | Phase 151 P05 | 20min | 3 tasks | 7 files |
 | Phase 151 P06 | 30min | 4 tasks | 7 files |
+| Phase 153 P01 | 12min | 2 tasks | 4 files |
+| Phase 153 P02 | 8min | 2 tasks | 2 files |
+| Phase 153 P03 | 15min | 2 tasks | 2 files |
+| Phase 153 P04 | 35min | 3 tasks | 2 files |
+| Phase 153 P05 | 20min | 2 tasks | 2 files |
+| Phase 154 P01 | 15min | 3 tasks | 2 files |
+| Phase 154 P02 | 25min | 2 tasks | 2 files |
+| Phase 154 P03 | 25min | 3 tasks | 2 files |
+| Phase 154 P04 | 20min | 2 tasks | 2 files |
+| Phase 155 P01 | 15min | 3 tasks | 6 files |
+| Phase 155 P02 | 10min | 2 tasks | 2 files |
+| Phase 155 P03 | 13min | 2 tasks | 3 files |
+| Phase 155 P04 | 55min | 3 tasks | 3 files |
+| Phase 156 P01 | 15min | 2 tasks | 5 files |
+| Phase 157 P01 | 15min | 2 tasks | 2 files |
+| Phase 157 P02 | 40min | 3 tasks | 5 files |
+| Phase 158 P01 | 23min | 2 tasks | 2 files |
+| Phase 158 P02 | 20min | 1 tasks | 2 files |
+| Phase 158 P03 | 40min | 3 tasks | 3 files |
+| Phase 159 P01 | 12min | 2 tasks | 7 files |
+| Phase 159 P02 | 14min | 2 tasks | 5 files |
+| Phase 159 P03 | 16min | 2 tasks | 9 files |
+| Phase 159 P04 | 20min | 2 tasks | 4 files |
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Plan the first v2.0 phase with `/gsd-plan-phase 153`
