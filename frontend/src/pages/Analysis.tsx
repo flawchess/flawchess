@@ -1629,6 +1629,12 @@ export default function Analysis() {
               onHoverMovesChange={setHoveredQualityMoves}
               onPlayMove={playProseMove}
             />
+            {/* Phase 159 D-08: the Human <-> Stockfish play-style slider lives at
+                the bottom of the FlawChess Engine card (it only reshapes this
+                engine's policy). */}
+            <div className="mt-2 px-2">
+              <TemperatureSelector value={temperature} onChange={setTemperature} />
+            </div>
           </>
         )}
       </CardBody>
@@ -1637,14 +1643,12 @@ export default function Analysis() {
 
   // Shared ELO slider (155 UAT): moved OUT of the Maia card because it drives BOTH
   // the FlawChess and Maia engines, not just Maia. Rendered directly below the Maia
-  // panel in both the desktop human column and the mobile "Human" tab. Phase 159
-  // D-08: the temperature slider renders directly below it, in this SAME shared
-  // JSX const, so both mobile (humanTab) and desktop (human column) render sites
-  // get it for free (mobile/desktop parity via one render site, not two).
+  // panel in both the desktop human column and the mobile "Human" tab. (Phase 159
+  // D-08's temperature slider moved to the bottom of the FlawChess Engine card,
+  // since it only reshapes that engine's policy.)
   const eloSelector = (
     <div className="px-1 flex flex-col gap-2" data-testid="analysis-elo-selector-row">
       <EloSelector value={selectedElo} onChange={setSelectedElo} />
-      <TemperatureSelector value={temperature} onChange={setTemperature} />
     </div>
   );
 

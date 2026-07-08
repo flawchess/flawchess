@@ -1,22 +1,26 @@
 /**
  * TemperatureSelector — interactive control for Phase 159 Thread A's
- * policy-temperature knob (D-08/D-09, SEED-085): mirrors EloSelector.tsx's
- * structure, but the underlying domain is continuous and log-symmetric
- * (0.5-2.0) rather than a discrete ELO ladder. The Radix <Slider> stays
- * LINEAR over [-1, 1] (Pitfall 7 — exact center); this component converts
- * to/from the displayed temperature at its own boundary via
- * sliderPositionToTemperature / temperatureToSliderPosition (matching
- * bases: `2 ** x` and `Math.log2`, so position 0 <-> temperature 1 exactly,
- * which is what lets `useFlawChessEngine`'s `temperature === DEFAULT_POLICY_TEMPERATURE`
- * no-op short-circuit fire for every user who never touches the slider).
+ * policy-temperature knob (D-08/D-09, SEED-085): the underlying domain is
+ * continuous and log-symmetric (0.5-2.0). The Radix <Slider> stays LINEAR over
+ * [-1, 1] (Pitfall 7 — exact center); this component converts to/from the
+ * temperature at its own boundary via sliderPositionToTemperature /
+ * temperatureToSliderPosition (matching bases: `2 ** x` and `Math.log2`, so
+ * position 0 <-> temperature 1 exactly, which is what lets
+ * `useFlawChessEngine`'s `temperature === DEFAULT_POLICY_TEMPERATURE` no-op
+ * short-circuit fire for every user who never touches the slider).
  *
- * Plain-language copy per D-09: no "Temperature"/"T=" jargon in the primary
- * label — a "Play style" group label with "Sharper" <-> "More human" endpoint
- * captions; the numeric T value is shown subtly (text-sm, one decimal).
+ * Polarity: the slider's LEFT end is "Human" (high temperature, more
+ * human-like move spread) and the RIGHT end is "Stockfish" (low/sharp
+ * temperature, engine-optimal). Endpoints are labelled with the Maia-violet
+ * Human and Stockfish-blue Stockfish captions above the track; no numeric
+ * value is shown.
  */
+
+import { User, Cpu } from 'lucide-react';
 
 import { Slider } from '@/components/ui/slider';
 import { DEFAULT_POLICY_TEMPERATURE } from '@/lib/engine/policyTemperature';
+import { MAIA_ACCENT, STOCKFISH_ACCENT } from '@/lib/theme';
 
 export interface TemperatureSelectorProps {
   /** Current policy temperature (TEMPERATURE_MIN-TEMPERATURE_MAX). */
@@ -43,18 +47,22 @@ const SLIDER_STEP = 0.01;
 
 /**
  * Radix Slider stays linear internally over [-1, 1]; position 0 maps to
- * temperature 1 EXACTLY (2 ** 0 === 1 in IEEE 754 — Pitfall 7).
+ * temperature 1 EXACTLY (2 ** -0 === 1 in IEEE 754 — Pitfall 7). The exponent
+ * is NEGATED so the polarity matches the labels: the LEFT end (position -1) is
+ * "Human" (temperature 2.0) and the RIGHT end (position +1) is "Stockfish"
+ * (temperature 0.5) — moving the thumb toward Stockfish lowers the temperature.
  */
 export function sliderPositionToTemperature(position: number): number {
-  return 2 ** position;
+  return 2 ** -position;
 }
 
 /**
- * Inverse of sliderPositionToTemperature — matching `Math.log2`/`2 **` bases
- * (Pitfall 7) so the round trip is exact at the endpoints and center.
+ * Inverse of sliderPositionToTemperature — `log2(1 / t)` rather than
+ * `-log2(t)` so the center is exactly +0 (not -0) and the round trip is exact
+ * at the endpoints (Pitfall 7).
  */
 export function temperatureToSliderPosition(temperature: number): number {
-  return Math.log2(temperature);
+  return Math.log2(1 / temperature);
 }
 
 export function TemperatureSelector({
@@ -72,10 +80,18 @@ export function TemperatureSelector({
       data-testid="analysis-temperature-selector"
       role="group"
       aria-label="Play style"
-      className="flex flex-wrap items-center gap-3"
+      className="flex flex-col gap-0.5 border-t border-border pt-2"
     >
-      <span className="text-sm text-muted-foreground">Play style</span>
-      <span className="text-sm text-muted-foreground">Sharper</span>
+      <div className="flex items-center justify-between text-sm font-medium">
+        <span className="inline-flex items-center gap-1" style={{ color: MAIA_ACCENT }}>
+          <User aria-hidden="true" className="h-4 w-4" />
+          Human
+        </span>
+        <span className="inline-flex items-center gap-1" style={{ color: STOCKFISH_ACCENT }}>
+          <Cpu aria-hidden="true" className="h-4 w-4" />
+          Stockfish
+        </span>
+      </div>
       <Slider
         min={SLIDER_POSITION_MIN}
         max={SLIDER_POSITION_MAX}
@@ -83,15 +99,7 @@ export function TemperatureSelector({
         value={[temperatureToSliderPosition(value)]}
         onValueChange={handleValueChange}
         thumbLabels={['Play style']}
-        className="min-w-24"
       />
-      <span className="text-sm text-muted-foreground">More human</span>
-      <span
-        className="text-sm font-medium tabular-nums w-10 text-right"
-        data-testid="analysis-temperature-selector-value"
-      >
-        {value.toFixed(1)}
-      </span>
     </div>
   );
 }

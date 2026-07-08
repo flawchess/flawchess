@@ -49,24 +49,24 @@ describe('TemperatureSelector mapping helpers', () => {
     expect(sliderPositionToTemperature(0)).toBe(1);
   });
 
-  it('sliderPositionToTemperature(1) === 2', () => {
-    expect(sliderPositionToTemperature(1)).toBe(2);
+  it('sliderPositionToTemperature(1) === 0.5 (right end = Stockfish/sharp)', () => {
+    expect(sliderPositionToTemperature(1)).toBe(0.5);
   });
 
-  it('sliderPositionToTemperature(-1) === 0.5', () => {
-    expect(sliderPositionToTemperature(-1)).toBe(0.5);
+  it('sliderPositionToTemperature(-1) === 2 (left end = Human)', () => {
+    expect(sliderPositionToTemperature(-1)).toBe(2);
   });
 
   it('temperatureToSliderPosition(1) === 0 (strict — Pitfall 7 center exactness)', () => {
     expect(temperatureToSliderPosition(1)).toBe(0);
   });
 
-  it('temperatureToSliderPosition(2) === 1', () => {
-    expect(temperatureToSliderPosition(2)).toBe(1);
+  it('temperatureToSliderPosition(2) === -1 (Human sits at the left end)', () => {
+    expect(temperatureToSliderPosition(2)).toBe(-1);
   });
 
-  it('temperatureToSliderPosition(0.5) === -1', () => {
-    expect(temperatureToSliderPosition(0.5)).toBe(-1);
+  it('temperatureToSliderPosition(0.5) === 1 (Stockfish sits at the right end)', () => {
+    expect(temperatureToSliderPosition(0.5)).toBe(1);
   });
 
   it('round-trips exactly at min/center/max', () => {
@@ -87,9 +87,9 @@ describe('TemperatureSelector mapping helpers', () => {
 });
 
 describe('TemperatureSelector component', () => {
-  it('renders the current value formatted to one decimal place', () => {
+  it('does not render a numeric temperature value', () => {
     render(<TemperatureSelector value={1.4} onChange={vi.fn()} />);
-    expect(screen.getByTestId('analysis-temperature-selector-value').textContent).toBe('1.4');
+    expect(screen.queryByTestId('analysis-temperature-selector-value')).toBeNull();
   });
 
   it('has data-testid="analysis-temperature-selector" and a plain-language aria-label', () => {
@@ -98,11 +98,11 @@ describe('TemperatureSelector component', () => {
     expect(el.getAttribute('aria-label')).toBe('Play style');
   });
 
-  it('shows plain-language endpoint captions, never "Temperature"/"T=" jargon', () => {
+  it('shows Human/Stockfish endpoint labels, never "Temperature"/"T=" jargon', () => {
     render(<TemperatureSelector value={1.0} onChange={vi.fn()} />);
     const el = screen.getByTestId('analysis-temperature-selector');
-    expect(el.textContent).toMatch(/Sharper/);
-    expect(el.textContent).toMatch(/More human/);
+    expect(el.textContent).toMatch(/Human/);
+    expect(el.textContent).toMatch(/Stockfish/);
     expect(el.textContent).not.toMatch(/Temperature/i);
     expect(el.textContent).not.toMatch(/T=/);
   });
