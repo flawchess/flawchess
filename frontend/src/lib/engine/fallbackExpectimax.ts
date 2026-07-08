@@ -45,6 +45,7 @@ import type { SearchBudget, EngineProviders, EngineSnapshot } from './types';
 import type { SearchRunner } from './guardrail';
 import { truncateAndRenormalize } from './select';
 import { leafExpectedScore } from './leafScore';
+import { DEFAULT_POLICY_TEMPERATURE, applyPolicyTemperature } from './policyTemperature';
 import {
   NEUTRAL_EXPECTED_SCORE,
   type SearchTreeNode,
@@ -53,6 +54,8 @@ import {
   applyUciMoveFen,
   recomputeValue,
   buildSnapshot,
+  sideMatchesMover,
+  applyRootCandidateHardCap,
 } from './treeCommon';
 
 /**
@@ -131,7 +134,11 @@ interface FallbackState {
  * emits ONE `onSnapshot`, then recurses uniformly into every surviving child
  * — bounded only by `budget.maxPlies` (depth cutoff) and `budget.maxNodes`
  * (D-09 expansion-event budget). `path` holds `node`'s ancestors, root-first,
- * NOT including `node` itself.
+ * NOT including `node` itself. Phase 159 D-05/D-06/D-07: the raw policy is
+ * reshaped by `applyPolicyTemperature` ONLY when `node.side` matches
+ * `rootMover` and the budget's temperature differs from the default
+ * (Pitfall 1 short-circuit), mirroring `mctsSearch.ts`'s `dispatchExpansion`
+ * identically (Pitfall 3 — the two runners must never diverge here).
  */
 async function expandNode(
   node: FallbackNode,
@@ -164,13 +171,21 @@ async function expandNode(
   }
 
   const rawPolicy = await providers.policy(node.fen, budget.elo[node.side], node.side);
-  let candidateMap = truncateAndRenormalize(rawPolicy);
+  const temperature = budget.policyTemperature ?? DEFAULT_POLICY_TEMPERATURE;
+  const effectivePolicy =
+    sideMatchesMover(node.side, rootMover) && temperature !== DEFAULT_POLICY_TEMPERATURE
+      ? applyPolicyTemperature(rawPolicy, temperature)
+      : rawPolicy;
+  let candidateMap = truncateAndRenormalize(effectivePolicy);
   if (node.isRoot && budget.extraRootMoves && budget.extraRootMoves.length > 0) {
     const merged = new Map(candidateMap);
     for (const uci of budget.extraRootMoves) {
       if (!merged.has(uci)) merged.set(uci, 0);
     }
     candidateMap = merged;
+  }
+  if (node.isRoot) {
+    candidateMap = applyRootCandidateHardCap(candidateMap);
   }
   const candidateUcis = Array.from(candidateMap.keys());
   if (candidateUcis.length === 0) {
@@ -202,7 +217,7 @@ async function expandNode(
   }
   node.visits += 1;
   for (const ancestor of path) ancestor.visits += 1;
-  onSnapshot(buildSnapshot(root, state.nodesEvaluated, state.budgetExhausted));
+  onSnapshot(buildSnapshot(root, state.nodesEvaluated, state.budgetExhausted, budget.elo[root.side]));
 
   if (signal.aborted) return;
   const nextPath = [...path, node];
@@ -227,5 +242,5 @@ export const fallbackExpectimax: SearchRunner = async (rootFen, budget, provider
 
   await expandNode(root, [], rootMover, budget, providers, state, root, onSnapshot, signal);
 
-  return buildSnapshot(root, state.nodesEvaluated, state.budgetExhausted);
+  return buildSnapshot(root, state.nodesEvaluated, state.budgetExhausted, budget.elo[root.side]);
 };

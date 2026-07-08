@@ -42,6 +42,8 @@ export interface SearchBudget {
   concurrency: number;
   /** D-04: root-only UCI moves unioned with Maia top-k at the root. */
   extraRootMoves?: string[];
+  /** Phase 159 D-06/D-07: reshapes the user's-side policy before truncation; omitted/1 = no-op. */
+  policyTemperature?: number;
 }
 
 /** One ranked root candidate line in an `EngineSnapshot` (D-06/D-08). */

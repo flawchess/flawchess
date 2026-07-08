@@ -19,6 +19,7 @@ import * as Sentry from '@sentry/react';
 import { mctsSearch } from '@/lib/engine/mctsSearch';
 import { createWorkerPool, computePoolSize, type WorkerPool } from '@/lib/engine/workerPool';
 import { createMaiaQueue, type MaiaQueue } from '@/lib/engine/maiaQueue';
+import { DEFAULT_POLICY_TEMPERATURE } from '@/lib/engine/policyTemperature';
 import type { EngineSnapshot, SearchBudget, EngineProviders, RankedLine } from '@/lib/engine/types';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -56,6 +57,14 @@ export interface UseFlawChessEngineOptions {
    * deferred to Phase 157's game-review overlay.
    */
   elo: number;
+  /**
+   * Phase 159 D-06/D-07 (Thread A): reshapes the root-mover's-own-side Maia
+   * policy before search. Omitted defaults to `DEFAULT_POLICY_TEMPERATURE`
+   * (a true no-op) at THIS call site — kept visible here, not hidden inside
+   * `mctsSearch`, so the search-orchestrator layer's no-op short-circuit
+   * (Pitfall 1/T-159-08) stays legible from the hook's own call site.
+   */
+  policyTemperature?: number;
 }
 
 export interface FlawChessEngineState {
@@ -83,6 +92,7 @@ export function useFlawChessEngine({
   fen,
   enabled,
   elo,
+  policyTemperature,
 }: UseFlawChessEngineOptions): FlawChessEngineState {
   // ─── Refs ──────────────────────────────────────────────────────────────────
 
@@ -216,6 +226,10 @@ export function useFlawChessEngine({
       // free analysis; true self/opponent asymmetry is deferred to Phase 157.
       elo: { w: elo, b: elo },
       // extraRootMoves intentionally left unset (155-RESEARCH.md A5).
+      // Phase 159 D-06/D-07 (Thread A): defaulted at THIS call site (not
+      // inside mctsSearch) so the no-op short-circuit stays visible at the
+      // orchestrator layer (Pitfall 1/T-159-08).
+      policyTemperature: policyTemperature ?? DEFAULT_POLICY_TEMPERATURE,
     };
     const providers: EngineProviders = { policy: queue.policy, grade: pool.grade };
 
@@ -240,7 +254,7 @@ export function useFlawChessEngine({
         Sentry.captureException(err, { tags: { source: 'flawchess-engine' } });
         setIsSearching(false);
       });
-  }, [debouncedFen, enabled, elo, handleSnapshot]);
+  }, [debouncedFen, enabled, elo, policyTemperature, handleSnapshot]);
 
   // ─── Abort-on-disable guard (WR-02, 155-REVIEW.md) ─────────────────────────
   //

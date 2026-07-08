@@ -270,11 +270,21 @@ Plans:
 **Goal**: The FlawChess Engine recommends the best move the user will *plausibly find* ("best you'll likely find", not "best if you can find it"). Thread B (the committed real fix): the root ranking stops being the one place that ignores the player's own move probability — bring `P_you(X)` into the root sort via a findability floor or soft `P_you(X)^β · V(X)` weighting, auto-scaled by ELO (near-off at master level, aggressive at 600), so a ~5%-findable tail move (Nb5 @600, Qb8 @1000) can no longer top the list while the per-move practical score `V(X)` stays untouched; must NOT collapse into ranking by raw `P·V` (the rejected greedy modal-move engine). Thread A (complementary knob): a Maia policy-temperature parameter exposed as a UI slider directly below the ELO slider (>1 flattens toward more human fallibility, <1 sharpens toward Stockfish, 1 = today), with the findability weighting reading `P_you` from the temperature-adjusted distribution so the two compose. Rides along: the agreement-verdict copy ("far easier to find and play") is gated on the pick's actual Maia probability so the prose can never contradict the Maia chart rendered beneath it.
 **Depends on**: Phase 153 (search core: `select.ts` `ROOT_PRIOR_FLOOR`/candidate filter, `backup.ts` root-max, `treeCommon.ts` ranking sort), Phase 157 (`FlawChessAgreementVerdict` / `flawChessVerdict.ts` copy tiers), Phase 158 (reconciled displayed evals)
 **Requirements**: SEED-085 (Threads A + B, both committed; verdict-copy consistency fix included)
-**Plans:** 0 plans
+**Plans:** 4 plans
 
 Plans:
+**Wave 1**
 
-- [ ] TBD (run /gsd-plan-phase 159 to break down)
+- [x] 159-01-PLAN.md — Thread B: root-move findability ranking (findability.ts + buildRankedLines rootElo) [wave 1]
+- [x] 159-02-PLAN.md — Verdict-copy findability gate (raw-Maia gated prose, D-11 fallback) [wave 1]
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 159-03-PLAN.md — Thread A: policy-temperature transform wired through both search runners [wave 2]
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 159-04-PLAN.md — Temperature slider UI + hook wiring, end-of-phase D-03 UAT [wave 3]
 
 ## Backlog
 

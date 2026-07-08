@@ -130,3 +130,35 @@ export function computeFlawChessVerdict(
 
   return { tier, flawChessMove, stockfishMove, drop, objectiveEvalGapCp, nearlySameEval };
 }
+
+// ─── computeFindabilityGate (Phase 159 ride-along, D-10/D-11/D-12) ─────────
+
+/**
+ * Margin (raw Maia probability, 0-1 scale) by which the FlawChess pick's
+ * probability must exceed the Stockfish pick's probability for the safe-tier
+ * "far easier to find and play" claim to render (D-10). Starting value; needs
+ * UAT tuning like SHARP_DROP_THRESHOLD/NEARLY_SAME_EVAL_CP — same order of
+ * magnitude as INACCURACY_DROP (0.05) in generated/flawThresholds.ts.
+ */
+export const FINDABILITY_MARGIN = 0.05;
+
+/**
+ * Findability-claim gate (D-10). Both `pYouFc`/`pYouSf` MUST be raw Maia
+ * probability at the selected ELO (D-12) — the SAME distribution the Maia
+ * "Moves by Rating" chart renders beneath this prose — never the search-
+ * internal temperature-adjusted prior, which this module cannot even see
+ * (RankedLine has no `prior` field; this file imports nothing from
+ * `lib/engine/` beyond the RankedLine type, and nothing temperature-related).
+ * Returns false (never throws) whenever either probability is unavailable,
+ * whenever the FlawChess pick isn't inside the chart's plotted candidate set
+ * (`fcInPlottedSet`, from `selectCandidatesByMass`), or whenever the margin
+ * isn't exceeded (D-10's AND, not OR).
+ */
+export function computeFindabilityGate(
+  pYouFc: number | null,
+  pYouSf: number | null,
+  fcInPlottedSet: boolean,
+): boolean {
+  if (pYouFc == null || pYouSf == null) return false;
+  return fcInPlottedSet && pYouFc > pYouSf + FINDABILITY_MARGIN;
+}

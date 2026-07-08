@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { computeFlawChessVerdict, SHARP_DROP_THRESHOLD } from '@/lib/flawChessVerdict';
+import {
+  computeFlawChessVerdict,
+  computeFindabilityGate,
+  FINDABILITY_MARGIN,
+  SHARP_DROP_THRESHOLD,
+} from '@/lib/flawChessVerdict';
 import { evalToExpectedScore } from '@/lib/liveFlaw';
 import type { RankedLine } from '@/lib/engine/types';
 import type { PvLine } from '@/hooks/uciParser';
@@ -162,6 +167,47 @@ describe('computeFlawChessVerdict — Pitfall 4: FC side is always cp-only', () 
     expect(result?.stockfishMove.evalMate).toBe(3);
     expect(result?.stockfishMove.evalCp).toBeNull();
     expect(result?.flawChessMove.evalMate).toBeNull();
+  });
+});
+
+describe('computeFindabilityGate — D-10/D-11/D-12', () => {
+  it('fires when the FC pick clears the margin AND is in the plotted set', () => {
+    const pYouFc = 0.4;
+    const pYouSf = 0.1;
+    expect(pYouFc).toBeGreaterThan(pYouSf + FINDABILITY_MARGIN);
+    expect(computeFindabilityGate(pYouFc, pYouSf, true)).toBe(true);
+  });
+
+  it('fails when the margin is not exceeded, even though the pick is in the plotted set', () => {
+    const pYouFc = 0.12;
+    const pYouSf = 0.1;
+    expect(pYouFc).toBeLessThanOrEqual(pYouSf + FINDABILITY_MARGIN);
+    expect(computeFindabilityGate(pYouFc, pYouSf, true)).toBe(false);
+  });
+
+  it('fails when NOT in the plotted set, even though the margin is exceeded', () => {
+    const pYouFc = 0.4;
+    const pYouSf = 0.1;
+    expect(pYouFc).toBeGreaterThan(pYouSf + FINDABILITY_MARGIN);
+    expect(computeFindabilityGate(pYouFc, pYouSf, false)).toBe(false);
+  });
+
+  it('returns false without throwing when pYouFc is null', () => {
+    expect(computeFindabilityGate(null, 0.1, true)).toBe(false);
+  });
+
+  it('returns false without throwing when pYouSf is null', () => {
+    expect(computeFindabilityGate(0.4, null, true)).toBe(false);
+  });
+
+  it('returns false without throwing when both are null', () => {
+    expect(computeFindabilityGate(null, null, true)).toBe(false);
+  });
+
+  it('does not fire exactly at the margin boundary (strict >, not >=)', () => {
+    const pYouSf = 0.1;
+    const pYouFc = pYouSf + FINDABILITY_MARGIN; // exactly at the margin
+    expect(computeFindabilityGate(pYouFc, pYouSf, true)).toBe(false);
   });
 });
 

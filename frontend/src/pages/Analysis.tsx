@@ -63,6 +63,7 @@ import { EvalChart } from '@/components/library/EvalChart';
 import { AnalysisTagsPanel } from '@/components/analysis/AnalysisTagsPanel';
 import { MaiaHumanPanel } from '@/components/analysis/MaiaHumanPanel';
 import { EloSelector } from '@/components/analysis/EloSelector';
+import { TemperatureSelector, TEMPERATURE_DEFAULT } from '@/components/analysis/TemperatureSelector';
 import type { HoveredQualityMove } from '@/components/analysis/MaiaMoveQualityBar';
 import { ChessBoard } from '@/components/board/ChessBoard';
 import type { BoardArrow } from '@/components/board/ChessBoard';
@@ -81,7 +82,7 @@ import {
   BEST_MOVE_ARROW,
   NEXT_MOVE_ARROW,
 } from '@/lib/theme';
-import { selectCandidatesByMass, classifyMoveQuality, type MoveGrade } from '@/lib/moveQuality';
+import { selectCandidatesByMass, nearestByElo, classifyMoveQuality, type MoveGrade } from '@/lib/moveQuality';
 import type { MoveQualityEval, EngineLine } from '@/components/analysis/MovesByRatingChart';
 import { sideToMoveFromFen } from '@/lib/liveFlaw';
 import type { NodeId, MoveNode } from '@/hooks/useAnalysisBoard';
@@ -531,14 +532,22 @@ export default function Analysis() {
   // the FlawChess Engine's policy source (UI-SPEC Component Inventory §3).
   const maia = useMaiaEngine({ fen: position, enabled: maiaEnabled, selectedElo });
 
+  // Phase 159 D-08 (Thread A): session-only policy-temperature state, plain
+  // useState mirroring the ELO slider's no-persistence behavior (no
+  // localStorage/URL param) — resets to TEMPERATURE_DEFAULT on every page load.
+  const [temperature, setTemperature] = useState(TEMPERATURE_DEFAULT);
+
   // FlawChess Engine (Phase 153-155 client-side MCTS search core, DISPLAY-01):
   // gated on its own header switch (`flawChessEnabled`), independent of the
   // Stockfish and Maia switches. `selectedElo` is shared for both colors
-  // (D-07/Open Question 2, 155-02).
+  // (D-07/Open Question 2, 155-02). `temperature` (Phase 159 D-06/D-07) reshapes
+  // the root-mover's-own-side Maia policy before search and composes with the
+  // findability ranking automatically (buildRankedLines reads child.prior).
   const flawChessEngine = useFlawChessEngine({
     fen: flawChessEnabled ? position : null,
     enabled: flawChessEnabled,
     elo: selectedElo,
+    policyTemperature: temperature,
   });
 
   // Seeding guard refs: prevent re-running effects after the first game load.
@@ -685,6 +694,15 @@ export default function Analysis() {
   const shownSans = useMemo(
     () => selectCandidatesByMass(maia.perElo, selectedElo, playedSan, bestSan),
     [maia.perElo, selectedElo, playedSan, bestSan],
+  );
+
+  // Phase 159 D-10/D-12 (SEED-085 ride-along, 159-Pitfall 5): raw Maia move-probability-by-SAN
+  // map at the selected ELO, computed ONCE here (the SAME rung the chart displays via
+  // nearestByElo) and passed down to FlawChessAgreementVerdict as `rawProbBySan` — the verdict
+  // gate must never call nearestByElo independently, so the prose can never contradict the chart.
+  const rawProbBySan = useMemo(
+    () => nearestByElo(maia.perElo, selectedElo)?.moveProbabilities ?? {},
+    [maia.perElo, selectedElo],
   );
 
   // Phase 158 (SEED-087 SC2): the FC card's own top-MAX_LINES displayed SANs,
@@ -1606,6 +1624,8 @@ export default function Analysis() {
               engineEnabled={engineEnabled}
               elo={selectedElo}
               baseFen={position}
+              rawProbBySan={rawProbBySan}
+              shownSans={shownSans}
               onHoverMovesChange={setHoveredQualityMoves}
               onPlayMove={playProseMove}
             />
@@ -1617,10 +1637,14 @@ export default function Analysis() {
 
   // Shared ELO slider (155 UAT): moved OUT of the Maia card because it drives BOTH
   // the FlawChess and Maia engines, not just Maia. Rendered directly below the Maia
-  // panel in both the desktop human column and the mobile "Human" tab.
+  // panel in both the desktop human column and the mobile "Human" tab. Phase 159
+  // D-08: the temperature slider renders directly below it, in this SAME shared
+  // JSX const, so both mobile (humanTab) and desktop (human column) render sites
+  // get it for free (mobile/desktop parity via one render site, not two).
   const eloSelector = (
-    <div className="px-1" data-testid="analysis-elo-selector-row">
+    <div className="px-1 flex flex-col gap-2" data-testid="analysis-elo-selector-row">
       <EloSelector value={selectedElo} onChange={setSelectedElo} />
+      <TemperatureSelector value={temperature} onChange={setTemperature} />
     </div>
   );
 

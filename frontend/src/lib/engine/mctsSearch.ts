@@ -47,6 +47,7 @@ import type { SearchBudget, EngineProviders, MoveGrade } from './types';
 import type { SearchRunner } from './guardrail';
 import { truncateAndRenormalize, rootExplorationPriors, selectChild, type SelectionChild } from './select';
 import { leafExpectedScore } from './leafScore';
+import { DEFAULT_POLICY_TEMPERATURE, applyPolicyTemperature } from './policyTemperature';
 import {
   NEUTRAL_EXPECTED_SCORE,
   type SearchTreeNode,
@@ -55,6 +56,8 @@ import {
   applyUciMoveFen,
   recomputeValue,
   buildSnapshot,
+  sideMatchesMover,
+  applyRootCandidateHardCap,
 } from './treeCommon';
 
 /**
@@ -280,27 +283,39 @@ function applyExpansion(result: DispatchedExpansion, rootMover: MoverColor): voi
 }
 
 /**
- * Expands one leaf: `policy()` -> `truncateAndRenormalize` -> (root only)
- * union with `budget.extraRootMoves` AFTER truncation (D-04 — guarantees
- * inclusion regardless of Maia mass, matching D-05's floor rationale) ->
- * ONE batched `grade()` call over the resulting candidate set. Pure with
- * respect to the tree — does not mutate anything; `applyExpansion` performs
- * all mutation once every concurrent dispatch has resolved.
+ * Expands one leaf: `policy()` -> (Phase 159 D-05/D-06/D-07, root-mover side
+ * only, short-circuited at the default temperature per Pitfall 1) temperature
+ * reshape -> `truncateAndRenormalize` -> (root only) union with
+ * `budget.extraRootMoves` AFTER truncation (D-04 — guarantees inclusion
+ * regardless of Maia mass, matching D-05's floor rationale) -> (root only)
+ * `applyRootCandidateHardCap` (D-07/Pitfall 6) -> ONE batched `grade()` call
+ * over the resulting candidate set. Pure with respect to the tree — does not
+ * mutate anything; `applyExpansion` performs all mutation once every
+ * concurrent dispatch has resolved.
  */
 async function dispatchExpansion(
   leaf: EngineNode,
   path: EngineNode[],
   budget: SearchBudget,
   providers: EngineProviders,
+  rootMover: MoverColor,
 ): Promise<DispatchedExpansion> {
   const rawPolicy = await providers.policy(leaf.fen, budget.elo[leaf.side], leaf.side);
-  let candidateMap = truncateAndRenormalize(rawPolicy);
+  const temperature = budget.policyTemperature ?? DEFAULT_POLICY_TEMPERATURE;
+  const effectivePolicy =
+    sideMatchesMover(leaf.side, rootMover) && temperature !== DEFAULT_POLICY_TEMPERATURE
+      ? applyPolicyTemperature(rawPolicy, temperature)
+      : rawPolicy;
+  let candidateMap = truncateAndRenormalize(effectivePolicy);
   if (leaf.isRoot && budget.extraRootMoves && budget.extraRootMoves.length > 0) {
     const merged = new Map(candidateMap);
     for (const uci of budget.extraRootMoves) {
       if (!merged.has(uci)) merged.set(uci, 0);
     }
     candidateMap = merged;
+  }
+  if (leaf.isRoot) {
+    candidateMap = applyRootCandidateHardCap(candidateMap);
   }
   const candidateUcis = Array.from(candidateMap.keys());
   if (candidateUcis.length === 0) {
@@ -383,7 +398,7 @@ export const mctsSearch: SearchRunner = async (rootFen, budget, providers, onSna
     // to an array in INPUT order regardless of which promise settles first,
     // so applying `results` in order is never raw arrival order.
     const results = await Promise.all(
-      toExpand.map(({ leaf, path }) => dispatchExpansion(leaf, path, budget, providers)),
+      toExpand.map(({ leaf, path }) => dispatchExpansion(leaf, path, budget, providers, rootMover)),
     );
 
     for (const result of results) {
@@ -392,9 +407,9 @@ export const mctsSearch: SearchRunner = async (rootFen, budget, providers, onSna
       if (result.candidateMap.size === 0) continue; // degenerate close (WR-04): not an expansion event (D-09), no snapshot
       nodesEvaluated += 1;
       if (nodesEvaluated >= budget.maxNodes) budgetExhausted = true;
-      onSnapshot(buildSnapshot(root, nodesEvaluated, budgetExhausted));
+      onSnapshot(buildSnapshot(root, nodesEvaluated, budgetExhausted, budget.elo[root.side]));
     }
   }
 
-  return buildSnapshot(root, nodesEvaluated, budgetExhausted);
+  return buildSnapshot(root, nodesEvaluated, budgetExhausted, budget.elo[root.side]);
 };

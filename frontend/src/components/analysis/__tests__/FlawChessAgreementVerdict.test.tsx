@@ -53,6 +53,8 @@ describe('FlawChessAgreementVerdict', () => {
         engineEnabled={false}
         elo={1500}
         baseFen={START_FEN}
+        rawProbBySan={{}}
+        shownSans={[]}
       />,
     );
     expect(screen.getByTestId('flawchess-verdict-prompt').textContent).toBe('Turn on Stockfish to compare picks.');
@@ -69,6 +71,8 @@ describe('FlawChessAgreementVerdict', () => {
         engineEnabled
         elo={1500}
         baseFen={START_FEN}
+        rawProbBySan={{}}
+        shownSans={[]}
       />,
     );
     expect(screen.getByTestId('flawchess-verdict-prompt').textContent).toBe('Turn on Stockfish to compare picks.');
@@ -84,6 +88,8 @@ describe('FlawChessAgreementVerdict', () => {
         engineEnabled
         elo={1500}
         baseFen={START_FEN}
+        rawProbBySan={{}}
+        shownSans={[]}
       />,
     );
     const sentence = screen.getByTestId('flawchess-verdict-sentence').textContent ?? '';
@@ -101,6 +107,8 @@ describe('FlawChessAgreementVerdict', () => {
         engineEnabled
         elo={1500}
         baseFen={START_FEN}
+        rawProbBySan={{}}
+        shownSans={[]}
       />,
     );
     const sentence = screen.getByTestId('flawchess-verdict-sentence').textContent ?? '';
@@ -109,6 +117,59 @@ describe('FlawChessAgreementVerdict', () => {
     expect(sentence).not.toMatch(/best move/i);
     expect(screen.getByTestId('flawchess-verdict-move-e4')).toBeTruthy();
     expect(screen.getByTestId('flawchess-verdict-move-d4')).toBeTruthy();
+  });
+
+  it('shows the findability claim when the gate passes (Phase 159 D-10): FC pick clears the margin AND is in the plotted set', () => {
+    render(
+      <FlawChessAgreementVerdict
+        flawChessLine={fcLine('e2e4', 30)}
+        stockfishLine={sfLine('d2d4', 60)}
+        flawChessRankedLines={[fcLine('e2e4', 30)]}
+        engineEnabled
+        elo={1500}
+        baseFen={START_FEN}
+        rawProbBySan={{ e4: 0.4, d4: 0.1 }}
+        shownSans={['e4', 'd4']}
+      />,
+    );
+    const sentence = screen.getByTestId('flawchess-verdict-sentence').textContent ?? '';
+    expect(sentence).toMatch(/far easier to find and play/);
+  });
+
+  it('shows the D-11 fallback (no findability claim) when the gate fails: FC pick not in the plotted set', () => {
+    render(
+      <FlawChessAgreementVerdict
+        flawChessLine={fcLine('e2e4', 30)}
+        stockfishLine={sfLine('d2d4', 60)}
+        flawChessRankedLines={[fcLine('e2e4', 30)]}
+        engineEnabled
+        elo={1500}
+        baseFen={START_FEN}
+        rawProbBySan={{ e4: 0.4, d4: 0.1 }}
+        shownSans={['d4']}
+      />,
+    );
+    const sentence = screen.getByTestId('flawchess-verdict-sentence').textContent ?? '';
+    expect(sentence).not.toMatch(/far easier to find and play/);
+    expect(sentence).toMatch(/safer follow-ups/);
+  });
+
+  it('shows the D-11 fallback (no findability claim) when the gate fails: margin not exceeded', () => {
+    render(
+      <FlawChessAgreementVerdict
+        flawChessLine={fcLine('e2e4', 30)}
+        stockfishLine={sfLine('d2d4', 60)}
+        flawChessRankedLines={[fcLine('e2e4', 30)]}
+        engineEnabled
+        elo={1500}
+        baseFen={START_FEN}
+        rawProbBySan={{ e4: 0.12, d4: 0.1 }}
+        shownSans={['e4', 'd4']}
+      />,
+    );
+    const sentence = screen.getByTestId('flawchess-verdict-sentence').textContent ?? '';
+    expect(sentence).not.toMatch(/far easier to find and play/);
+    expect(sentence).toMatch(/safer follow-ups/);
   });
 
   it('renders the sharp-divergence (trap) tier naming both picks (D-05/D-07)', () => {
@@ -120,6 +181,8 @@ describe('FlawChessAgreementVerdict', () => {
         engineEnabled
         elo={1500}
         baseFen={START_FEN}
+        rawProbBySan={{}}
+        shownSans={[]}
       />,
     );
     const sentence = screen.getByTestId('flawchess-verdict-sentence').textContent ?? '';
@@ -141,6 +204,8 @@ describe('FlawChessAgreementVerdict', () => {
         engineEnabled
         elo={1500}
         baseFen={START_FEN}
+        rawProbBySan={{}}
+        shownSans={[]}
         onHoverMovesChange={onHover}
       />,
     );
@@ -167,6 +232,8 @@ describe('FlawChessAgreementVerdict', () => {
         engineEnabled
         elo={1500}
         baseFen={START_FEN}
+        rawProbBySan={{}}
+        shownSans={[]}
       />,
     );
     fireEvent.focus(screen.getByTestId('flawchess-verdict-move-e4'));
@@ -184,6 +251,8 @@ describe('FlawChessAgreementVerdict', () => {
         engineEnabled
         elo={1500}
         baseFen={START_FEN}
+        rawProbBySan={{}}
+        shownSans={[]}
       />,
     );
     fireEvent.focus(screen.getByTestId('flawchess-verdict-move-d4'));
@@ -201,6 +270,8 @@ describe('FlawChessAgreementVerdict', () => {
         engineEnabled
         elo={1500}
         baseFen={START_FEN}
+        rawProbBySan={{}}
+        shownSans={[]}
       />,
     );
     fireEvent.focus(screen.getByTestId('flawchess-verdict-move-d4'));
@@ -219,6 +290,8 @@ describe('FlawChessAgreementVerdict', () => {
         engineEnabled
         elo={1500}
         baseFen={START_FEN}
+        rawProbBySan={{}}
+        shownSans={[]}
         onPlayMove={onPlayMove}
       />,
     );
@@ -239,6 +312,8 @@ describe('FlawChessAgreementVerdict', () => {
         engineEnabled
         elo={1500}
         baseFen={START_FEN}
+        rawProbBySan={{}}
+        shownSans={[]}
         onPlayMove={onPlayMove}
       />,
     );

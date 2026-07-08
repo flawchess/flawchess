@@ -22,12 +22,24 @@
  * shifting the layout.
  * D-08: no UI string in this module reads the bare unqualified phrase this
  * decision forbids (see REQUIREMENTS.md REVIEW-02 / ARROW-04).
+ *
+ * Phase 159 ride-along (SEED-085 D-10/D-11/D-12, distinct decision IDs from
+ * the Phase 157 D-10/D-11 above): the safe tier's "far easier to find and
+ * play" claim now only renders when `computeFindabilityGate` passes — raw
+ * Maia probability (`rawProbBySan`, `shownSans`), computed ONCE in
+ * Analysis.tsx and passed down as props, never re-derived here (159-Pitfall
+ * 5). When the gate fails, a fallback variant with no findability claim
+ * renders instead.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Chess } from 'chess.js';
 
-import { computeFlawChessVerdict, type FlawChessVerdictResult } from '@/lib/flawChessVerdict';
+import {
+  computeFindabilityGate,
+  computeFlawChessVerdict,
+  type FlawChessVerdictResult,
+} from '@/lib/flawChessVerdict';
 import type { RankedLine } from '@/lib/engine/types';
 import type { PvLine } from '@/hooks/uciParser';
 import { sideToMoveFromFen, expectedScoreToWhitePovCp, type MoverColor } from '@/lib/liveFlaw';
@@ -59,6 +71,13 @@ export interface FlawChessAgreementVerdictProps {
   elo: number;
   /** FEN of the position both engines analyzed — used to convert each pick's UCI to a legal SAN. */
   baseFen: string;
+  /** Raw Maia move-probability-by-SAN map at the selected ELO (Phase 159 D-10/D-12) — computed
+   *  ONCE in Analysis.tsx (`nearestByElo(maia.perElo, selectedElo)?.moveProbabilities`) and passed
+   *  down; this component never calls `nearestByElo` independently (159-Pitfall 5). */
+  rawProbBySan: Record<string, number>;
+  /** The Maia chart's plotted candidate set (`selectCandidatesByMass` output, Phase 159 D-10) —
+   *  the findability claim only renders when the FlawChess pick is inside this set. */
+  shownSans: string[];
   /** Lifts the hovered pick's move (SAN + tier color) for the board-arrow overlay, or null on leave (D-09). */
   onHoverMovesChange?: (moves: HoveredQualityMove[] | null) => void;
   /** Plays a named pick as a free move on the board (D-11). */
@@ -137,6 +156,7 @@ function renderVerdictSentence(
   moveSpan: React.ReactNode,
   fcSpan: React.ReactNode,
   sfSpan: React.ReactNode,
+  findabilityOk: boolean,
 ): React.ReactNode {
   if (verdict.tier === 'aligned') {
     const evalText = formatScore(verdict.stockfishMove.evalCp, verdict.stockfishMove.evalMate);
@@ -153,13 +173,22 @@ function renderVerdictSentence(
   if (verdict.tier === 'safe') {
     // Only claim "nearly the same eval" when the rendered centipawns actually agree (D-05 tier is
     // expected-score-based, which saturates at high evals — a ~1.5-pawn gap can still be 'safe').
+    // Phase 159 D-10/D-11: the "far easier to find and play" findability claim only renders when
+    // findabilityOk (the FC pick's raw Maia probability clears the SF pick's by FINDABILITY_MARGIN
+    // AND is inside the chart's plotted set) — otherwise fall back to wording the evals actually
+    // support, with no findability claim (D-11).
+    const closingClause = findabilityOk
+      ? verdict.nearlySameEval
+        ? 'nearly the same eval, far easier to find and play.'
+        : "a safe, practical pick that's far easier to find and play."
+      : verdict.nearlySameEval
+        ? 'nearly as good an eval, with safer follow-ups.'
+        : 'a safe, practical pick with safer follow-ups.';
     return (
       <>
         Objectively {sfSpan} ({sfEvalText}). But for a human at {elo} ELO here, FlawChess plays {fcSpan} ({fcEvalText})
         {' — '}
-        {verdict.nearlySameEval
-          ? 'nearly the same eval, far easier to find and play.'
-          : "a safe, practical pick that's far easier to find and play."}
+        {closingClause}
       </>
     );
   }
@@ -179,6 +208,8 @@ export function FlawChessAgreementVerdict({
   engineEnabled,
   elo,
   baseFen,
+  rawProbBySan,
+  shownSans,
   onHoverMovesChange,
   onPlayMove,
 }: FlawChessAgreementVerdictProps): React.ReactElement {
@@ -201,6 +232,17 @@ export function FlawChessAgreementVerdict({
     () => (verdict ? uciToSan(baseFen, verdict.stockfishMove.uci) : null),
     [verdict, baseFen],
   );
+
+  // Phase 159 D-10/D-12: raw Maia probability lookup for the findability gate — reads
+  // rawProbBySan (raw Maia at the selected ELO, computed once in Analysis.tsx), never
+  // the search-internal temperature-adjusted prior (159-Pitfall 5: no independent
+  // nearestByElo call in this component).
+  const findabilityOk = useMemo(() => {
+    const pYouFc = fcSan ? (rawProbBySan[fcSan] ?? null) : null;
+    const pYouSf = sfSan ? (rawProbBySan[sfSan] ?? null) : null;
+    const fcInPlottedSet = fcSan ? shownSans.includes(fcSan) : false;
+    return computeFindabilityGate(pYouFc, pYouSf, fcInPlottedSet);
+  }, [fcSan, sfSan, rawProbBySan, shownSans]);
 
   // D-10: was the Stockfish pick ALSO ranked by FlawChess (any rank, not just #1)?
   const matchedFlawChessLineForSf = useMemo(() => {
@@ -328,7 +370,7 @@ export function FlawChessAgreementVerdict({
   // Aligned: same move on both sides — a single shared span (fcSan === sfSan),
   // rendered via the FlawChess pick's own span (both-lines popover body) so
   // hovering it lights the FlawChess arrow color (D-09's aligned convention).
-  const sentence = renderVerdictSentence(verdict, elo, fcSpan, fcSpan, sfSpan);
+  const sentence = renderVerdictSentence(verdict, elo, fcSpan, fcSpan, sfSpan, findabilityOk);
 
   return (
     <div className="min-h-[1.5rem] text-sm" data-testid="flawchess-verdict-slot">

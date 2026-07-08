@@ -2,28 +2,29 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: FlawChess Engine
-current_phase: 158
-current_phase_name: flawchess-engine-displayed-eval-provenance-reconciliation-se
-status: Phase 158 shipped — squash-merged to main (e8773fd6)
-stopped_at: Completed 158-03-PLAN.md
-last_updated: "2026-07-07T19:05:07.031Z"
+current_phase: 159
+current_phase_name: flawchess-engine-policy-temperature-root-move-findability-se
+status: verifying
+stopped_at: Completed 159-04-PLAN.md
+last_updated: "2026-07-07T20:54:14.143Z"
 last_activity: 2026-07-07
+last_activity_desc: Phase 159 execution started
 progress:
   total_phases: 7
-  completed_phases: 6
-  total_plans: 19
-  completed_plans: 19
-  percent: 86
+  completed_phases: 7
+  total_plans: 23
+  completed_plans: 23
+  percent: 100
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 158 (flawchess-engine-displayed-eval-provenance-reconciliation-se) — EXECUTING
-Plan: 3 of 3
-Status: Phase 158 shipped — squash-merged to main (e8773fd6)
-Last activity: 2026-07-07
+Phase: 159 (flawchess-engine-policy-temperature-root-move-findability-se) — EXECUTING
+Plan: 4 of 4
+Status: Phase complete — ready for verification
+Last activity: 2026-07-07 — Phase 159 execution started
 
 ## Project Reference
 
@@ -129,6 +130,16 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 158-02]: buildEvalLookup takes exactly 3 params (pvLines, gradeMapBySan, baseFen) — no pool-grade parameter, structurally excluding a shallow MCTS pool eval from ever surfacing through this lookup
 - [Phase 158-03]: Task 1+2 combined into one commit — interleaved memo chain (unionSans/gradingEnabled -> evalLookup -> reconciledRankedLines -> qualityBySan -> engineTopLines), mirrors 155-04 precedent
 - [Phase 158-03]: qualityBySan's reconciled grade map is keyed by grading.gradeMap's own SAN set (not a fresh union) — preserves identical classification coverage, only the resolved values are reconciled
+- [Phase 159-01]: P_REF_ANCHORS starting hypothesis taken verbatim from RESEARCH.md; flagged as assumption pending live UAT validation (159-04)
+- [Phase 159-01]: buildRankedLines pairs each RankedLine with a sort-only rankScore via a parallel array (not spread-and-omit) to keep eslint no-unused-vars clean
+- [Phase 159-02]: rawProbBySan and shownSans made REQUIRED props on FlawChessAgreementVerdictProps (not optional) - Analysis.tsx always has this data; all 11 pre-existing component tests updated with the two new props
+- [Phase 159-02]: D-11 fallback wording is tier-nearlySameEval-aware (4 total safe-tier variants: gate x nearlySameEval), not a single flat fallback string
+- [Phase 159-03]: ROOT_CANDIDATE_HARD_CAP set to 15 (D-07/Pitfall 6 discretion) - generous at T~1, bounded at T=2.0 against the 400-node budget
+- [Phase 159-03]: sideMatchesMover and applyRootCandidateHardCap placed in treeCommon.ts (shared cross-runner file) rather than inlined per-runner, structurally preventing Pitfall 3 divergence
+- [Phase 159-03]: Opponent-untouched (D-05) test proven via the exact candidateUcis recorded at grade() call time (2 kept at T=1 raw vs 4 at T=2 flattened on the same distribution shape), not via output inference
+- [Phase 159-04]: TEMPERATURE_DEFAULT imported directly from DEFAULT_POLICY_TEMPERATURE rather than declared as a matching literal - makes the Pitfall 7/T-159-08 invariant (slider center === search no-op value) structural, not just test-covered
+- [Phase 159-04]: TemperatureSelector rendered exactly once, inside the pre-existing shared eloSelector JSX const (already rendered in both the mobile humanTab and desktop human column) - mobile/desktop parity via one render site, not two
+- [Phase 159-04]: policyTemperature defaulted (?? DEFAULT_POLICY_TEMPERATURE) at useFlawChessEngine's own SearchBudget-construction call site, not inside a helper - keeps the no-op short-circuit visible at the orchestrator layer per 159-03's established Pitfall 1 discipline
 
 ### Pending Todos
 
@@ -198,11 +209,12 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-07-07T17:57:50.291Z
+**Stopped at:** Completed 159-04-PLAN.md
+
+**Last session:** 2026-07-07T20:54:14.129Z
 
 **Resume file:** 
 
-Stopped at: Completed 158-03-PLAN.md
 Resume: `/gsd-plan-phase 153`
 
 ## Performance Metrics
@@ -238,6 +250,10 @@ Resume: `/gsd-plan-phase 153`
 | Phase 158 P01 | 23min | 2 tasks | 2 files |
 | Phase 158 P02 | 20min | 1 tasks | 2 files |
 | Phase 158 P03 | 40min | 3 tasks | 3 files |
+| Phase 159 P01 | 12min | 2 tasks | 7 files |
+| Phase 159 P02 | 14min | 2 tasks | 5 files |
+| Phase 159 P03 | 16min | 2 tasks | 9 files |
+| Phase 159 P04 | 20min | 2 tasks | 4 files |
 
 ## Operator Next Steps
 

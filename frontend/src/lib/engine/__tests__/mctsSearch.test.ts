@@ -25,6 +25,17 @@
  *   it onto a different node — the two levels may build different trees).
  * - D-04: `budget.extraRootMoves` survives the truncation cut, is graded,
  *   and appears in rankedLines (WR-08).
+ * - Phase 159 D-01: a low-prior/high-value root child that would WIN under
+ *   the old practicalScore-only sort LOSES under the new findability sort at
+ *   a low root ELO, while practicalScore itself is unchanged (D-04).
+ * - Phase 159 D-05/D-06/D-07 (policy temperature): omitting
+ *   `policyTemperature` behaves identically to explicitly passing the
+ *   default (Pitfall 1 no-op short-circuit); temperature reshapes ONLY the
+ *   root-mover's own side, never the opponent's (D-05, proven via the exact
+ *   candidateUcis passed to grade() at a non-root node); the
+ *   temperature-adjusted prior composes with the D-01 findability sort with
+ *   zero extra glue (D-06); an extreme-flatness fixture never exceeds
+ *   `ROOT_CANDIDATE_HARD_CAP` root children (D-07/Pitfall 6).
  * - AbortSignal: aborting mid-run stops promptly, resolves with a usable
  *   partial snapshot, and never reports budget exhaustion (WR-08).
  * - WR-04/WR-07 degenerate providers: empty candidate sets and
@@ -40,6 +51,7 @@ import { describe, it, expect } from 'vitest';
 import { Chess } from 'chess.js';
 import { evalToExpectedScore } from '@/lib/liveFlaw';
 import { mctsSearch } from '../mctsSearch';
+import { ROOT_CANDIDATE_HARD_CAP } from '../policyTemperature';
 import type { EngineProviders, EngineSnapshot, SearchBudget, Side, MoveGrade } from '../types';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -349,6 +361,200 @@ describe('mctsSearch — D-04 extraRootMoves', () => {
     expect(extraLine!.practicalScore).toBe(evalToExpectedScore(extraMoveGrade.evalCp, extraMoveGrade.evalMate, 'white'));
     // The union revives ONLY the injected move — its dropped-tail siblings stay dropped.
     expect(snapshot.rankedLines.map((l) => l.rootMove)).not.toContain('e1d1');
+  });
+});
+
+// ─── Phase 159 D-01: findability ranking reorders the root at low ELO ──────
+
+describe('mctsSearch — Phase 159 D-01 findability ranking', () => {
+  // e2e4 (low prior 0.06, high V via evalCp=700) would win the OLD
+  // practicalScore-only sort against e2e3 (high prior 0.85, lower V via
+  // evalCp=100). At a low root ELO (600, pRefForElo(600)=0.12) e2e4's
+  // renormalized prior (~0.066) is well below pRef, so its findability
+  // factor suppresses it below e2e3's saturated (prior >> pRef) rankScore.
+  const FINDABILITY_FEN = SIMPLE_WHITE_FEN;
+  const FINDABILITY_POLICY: Record<string, number> = {
+    e2e3: 0.85,
+    e2e4: 0.06,
+    e1d2: 0.04,
+    e1f2: 0.03,
+    e1d1: 0.01,
+    e1f1: 0.01,
+  };
+  const FINDABILITY_GRADES: Record<string, MoveGrade> = {
+    e2e4: { evalCp: 700, evalMate: null, depth: 10 }, // high V, low prior
+    e2e3: { evalCp: 100, evalMate: null, depth: 10 }, // lower V, high prior
+  };
+  const LOW_ELO = 600;
+
+  it('demotes the low-prior/high-V move below the high-prior/lower-V move at low ELO, while practicalScore stays unchanged', async () => {
+    const budget: SearchBudget = {
+      maxNodes: 1,
+      elo: { w: LOW_ELO, b: LOW_ELO },
+      maxPlies: 4,
+      concurrency: 1,
+    };
+    const providers: EngineProviders = {
+      policy: makeFixedPolicy({ [FINDABILITY_FEN]: FINDABILITY_POLICY }),
+      grade: makeFixedGrade({ [FINDABILITY_FEN]: FINDABILITY_GRADES }),
+    };
+
+    const snapshot = await mctsSearch(FINDABILITY_FEN, budget, providers, () => {}, freshSignal());
+
+    const e2e4Line = snapshot.rankedLines.find((l) => l.rootMove === 'e2e4');
+    const e2e3Line = snapshot.rankedLines.find((l) => l.rootMove === 'e2e3');
+    expect(e2e4Line).toBeDefined();
+    expect(e2e3Line).toBeDefined();
+
+    // practicalScore (D-04) is untouched: still the raw leaf conversion.
+    expect(e2e4Line!.practicalScore).toBe(evalToExpectedScore(700, null, 'white'));
+    expect(e2e3Line!.practicalScore).toBe(evalToExpectedScore(100, null, 'white'));
+    // Sanity: e2e4 really does have the higher practicalScore (would have
+    // won the OLD sort) — the assertion below proves the NEW sort reverses it.
+    expect(e2e4Line!.practicalScore).toBeGreaterThan(e2e3Line!.practicalScore);
+
+    // The findability-weighted sort puts e2e3 FIRST despite its lower
+    // practicalScore, because e2e4's prior is well below pRefForElo(600).
+    expect(snapshot.rankedLines[0]?.rootMove).toBe('e2e3');
+  });
+});
+
+// ─── Phase 159 D-05/D-06/D-07: policy temperature ───────────────────────────
+
+describe('mctsSearch — Phase 159 policy temperature', () => {
+  it('omitting policyTemperature behaves identically to the default (no-op short-circuit, Pitfall 1)', async () => {
+    const providers = (): EngineProviders => ({
+      policy: makeFixedPolicy({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_POLICY }),
+      grade: makeFixedGrade({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_GRADES }),
+    });
+
+    const withoutField: SearchBudget = { maxNodes: 3, elo: NEUTRAL_BUDGET_ELO, maxPlies: 3, concurrency: 1 };
+    const withDefault: SearchBudget = { ...withoutField, policyTemperature: 1 };
+
+    const snapshotA = await mctsSearch(SIMPLE_WHITE_FEN, withoutField, providers(), () => {}, freshSignal());
+    const snapshotB = await mctsSearch(SIMPLE_WHITE_FEN, withDefault, providers(), () => {}, freshSignal());
+
+    expect(snapshotB.rankedLines).toEqual(snapshotA.rankedLines);
+    expect(snapshotB.nodesEvaluated).toBe(snapshotA.nodesEvaluated);
+    expect(snapshotB.budgetExhausted).toBe(snapshotA.budgetExhausted);
+  });
+
+  it("reshapes ONLY the root-mover's own side — the opponent's candidateUcis passed to grade() are the untouched raw truncation (D-05)", async () => {
+    // ROOT (White to move): a real, legal 4-move policy so root's own
+    // children actually get created (needed to reach a depth-1 node).
+    const ROOT_POLICY: Record<string, number> = {
+      e2e4: 0.85,
+      e2e3: 0.05,
+      e1d2: 0.05,
+      e1f2: 0.05,
+    };
+    // e2e4 gets by far the best grade so PUCT deterministically selects it
+    // as the depth-1 continuation to expand next.
+    const ROOT_GRADES: Record<string, MoveGrade> = {
+      e2e4: { evalCp: 900, evalMate: null, depth: 10 },
+      e2e3: { evalCp: 50, evalMate: null, depth: 10 },
+      e1d2: { evalCp: 10, evalMate: null, depth: 10 },
+      e1f2: { evalCp: 5, evalMate: null, depth: 10 },
+    };
+    const chess = new Chess(SIMPLE_WHITE_FEN);
+    chess.move({ from: 'e2', to: 'e4' });
+    const AFTER_E2E4_FEN = chess.fen(); // Black to move — the opponent node.
+
+    // Same 0.85/0.05/0.05/0.05 shape as ROOT_POLICY, arbitrary fake UCI keys
+    // (legality doesn't matter — grade() records candidateUcis BEFORE any
+    // legality check). Raw truncation (T=1) keeps exactly 2 of these 4
+    // (a1 + the ascending-tie-break first tail move, cumulative 0.85+0.05 =
+    // 0.90); T=2 flattening would keep all 4 — the discriminator this test
+    // exploits.
+    const OPPONENT_POLICY: Record<string, number> = { a1: 0.85, b1: 0.05, c1: 0.05, d1: 0.05 };
+
+    const gradeCalls: GradeCall[] = [];
+    const budget: SearchBudget = {
+      maxNodes: 2,
+      elo: NEUTRAL_BUDGET_ELO,
+      maxPlies: 3,
+      concurrency: 1,
+      policyTemperature: 2,
+    };
+    const providers: EngineProviders = {
+      policy: makeFixedPolicy({ [SIMPLE_WHITE_FEN]: ROOT_POLICY, [AFTER_E2E4_FEN]: OPPONENT_POLICY }),
+      grade: makeFixedGrade({ [SIMPLE_WHITE_FEN]: ROOT_GRADES }, gradeCalls),
+    };
+
+    await mctsSearch(SIMPLE_WHITE_FEN, budget, providers, () => {}, freshSignal());
+
+    const opponentCall = gradeCalls.find((c) => c.fen === AFTER_E2E4_FEN);
+    expect(opponentCall).toBeDefined();
+    // Untouched raw truncation kept exactly 2 candidates — proof the
+    // opponent's policy was never flattened despite budget.policyTemperature=2.
+    expect(opponentCall!.candidateUcis.sort()).toEqual(['a1', 'b1']);
+
+    // Sanity: the root's OWN (rootMover-side) expansion DID see all 4
+    // candidates flattened in by T=2 (contrast case, same distribution shape).
+    const rootCall = gradeCalls.find((c) => c.fen === SIMPLE_WHITE_FEN);
+    expect(rootCall).toBeDefined();
+    expect(rootCall!.candidateUcis.length).toBe(4);
+  });
+
+  it('composes with D-01 findability: reverses the T=1 winner at T=2 via the SAME low-ELO fixture', async () => {
+    // Identical fixture to the "Phase 159 D-01 findability ranking" describe
+    // above: e2e4 (low prior, high V) vs e2e3 (high prior, lower V) at a low
+    // root ELO. At T=1, e2e4's renormalized prior (~0.066) stays below
+    // pRefForElo(600)=0.12 — e2e3 wins (asserted above). At T=2, flattening
+    // raises e2e4's renormalized prior to ~0.149, ABOVE pRef — its
+    // findability factor saturates to 1, and its higher practicalScore then
+    // wins outright. This is D-06's "compose with zero extra glue" claim:
+    // the reorder happens purely because child.prior (what T=2 changed) is
+    // exactly what rankScore reads.
+    const FEN = SIMPLE_WHITE_FEN;
+    const POLICY: Record<string, number> = {
+      e2e3: 0.85,
+      e2e4: 0.06,
+      e1d2: 0.04,
+      e1f2: 0.03,
+      e1d1: 0.01,
+      e1f1: 0.01,
+    };
+    const GRADES: Record<string, MoveGrade> = {
+      e2e4: { evalCp: 700, evalMate: null, depth: 10 },
+      e2e3: { evalCp: 100, evalMate: null, depth: 10 },
+    };
+    const LOW_ELO = 600;
+
+    const budgetT2: SearchBudget = {
+      maxNodes: 1,
+      elo: { w: LOW_ELO, b: LOW_ELO },
+      maxPlies: 4,
+      concurrency: 1,
+      policyTemperature: 2,
+    };
+    const providers = (): EngineProviders => ({
+      policy: makeFixedPolicy({ [FEN]: POLICY }),
+      grade: makeFixedGrade({ [FEN]: GRADES }),
+    });
+
+    const snapshot = await mctsSearch(FEN, budgetT2, providers(), () => {}, freshSignal());
+
+    expect(snapshot.rankedLines[0]?.rootMove).toBe('e2e4');
+  });
+
+  it('an extreme-flatness fixture never produces more than ROOT_CANDIDATE_HARD_CAP root children (D-07/Pitfall 6)', async () => {
+    const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'; // 20 legal moves
+    const budget: SearchBudget = {
+      maxNodes: 1,
+      elo: NEUTRAL_BUDGET_ELO,
+      maxPlies: 1,
+      concurrency: 1,
+      policyTemperature: 2,
+    };
+    const providers: EngineProviders = {
+      policy: makeFixedPolicy({ [START_FEN]: uniformPolicyFromLegalMoves(START_FEN) }),
+      grade: makeFixedGrade({}),
+    };
+
+    const snapshot = await mctsSearch(START_FEN, budget, providers, () => {}, freshSignal());
+
+    expect(snapshot.rankedLines.length).toBeLessThanOrEqual(ROOT_CANDIDATE_HARD_CAP);
   });
 });
 

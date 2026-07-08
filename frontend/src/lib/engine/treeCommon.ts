@@ -22,6 +22,8 @@ import type { MoverColor } from '@/lib/liveFlaw';
 import { uciToSquares } from '@/lib/sanToSquares';
 import type { EngineSnapshot, RankedLine, Side } from './types';
 import { type BackupChild, backupExpectation, backupRootMax } from './backup';
+import { pRefForElo, rankScore } from './findability';
+import { ROOT_CANDIDATE_HARD_CAP } from './policyTemperature';
 
 /**
  * Neutral expected score (0-1 midpoint): the initial value of an ungraded
@@ -46,7 +48,11 @@ export interface SearchTreeNode<N extends SearchTreeNode<N>> {
   readonly isRoot: boolean;
   /** The UCI move that produced this node from its parent; null for the root. */
   readonly uci: string | null;
-  /** Renormalized Maia prior for this child at its parent (D-02) — root's own value is unused. */
+  /**
+   * Renormalized Maia prior for this child at its parent (D-02). At the
+   * root, this is exactly the `P_you` the Phase 159 findability ranking
+   * reads (`buildRankedLines`'s `rankScore`) — no longer unused.
+   */
   prior: number;
   /** Root-relative expected score (0-1): leaf estimate until expanded, then the backed-up value. */
   value: number;
@@ -63,6 +69,34 @@ export interface SearchTreeNode<N extends SearchTreeNode<N>> {
 /** Side-to-move literal from a FEN's own second field (D-08) — never depth/ply parity (Pitfall 3/4). */
 export function fenSide(fen: string): Side {
   return fen.split(' ')[1] === 'b' ? 'b' : 'w';
+}
+
+/**
+ * Compares a `Side` ('w'|'b') against a `MoverColor` ('white'|'black') — two
+ * distinct literal-type domains used side-by-side in this codebase with no
+ * existing converter between them (Phase 159 Pitfall 2/T-159-07). Dedicated,
+ * explicitly-tested helper so the root-mover-side comparison never gets
+ * hand-rolled (and possibly flipped) independently at the two Phase 159
+ * temperature call sites (`mctsSearch.ts`, `fallbackExpectimax.ts`).
+ */
+export function sideMatchesMover(side: Side, mover: MoverColor): boolean {
+  return (side === 'w' ? 'white' : 'black') === mover;
+}
+
+/**
+ * Root-only hard cap on candidate count, applied AFTER temperature +
+ * `truncateAndRenormalize` + the `extraRootMoves` union (Phase 159
+ * D-07/Pitfall 6, T-159-05) — never inside `truncateAndRenormalize` itself,
+ * which stays general-purpose and untouched. Keeps at most
+ * `ROOT_CANDIDATE_HARD_CAP` entries by probability descending, canonical
+ * ascending-UCI tie-break for equal probabilities (ENGINE-07). Shared by
+ * both `SearchRunner` implementations so the cap can never diverge between
+ * them (Pitfall 3).
+ */
+export function applyRootCandidateHardCap(candidateMap: Map<string, number>): Map<string, number> {
+  if (candidateMap.size <= ROOT_CANDIDATE_HARD_CAP) return candidateMap;
+  const sorted = Array.from(candidateMap.entries()).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+  return new Map(sorted.slice(0, ROOT_CANDIDATE_HARD_CAP));
 }
 
 /**
@@ -140,30 +174,46 @@ function buildModalPath<N extends SearchTreeNode<N>>(rootChild: N): string[] {
   return path;
 }
 
-/** Ranked root candidates by practicalScore descending, canonical-UCI tie-break (ENGINE-01/ENGINE-07). */
-function buildRankedLines<N extends SearchTreeNode<N>>(root: N): RankedLine[] {
-  const lines: RankedLine[] = [];
+/**
+ * Ranked root candidates by findability-weighted rankScore descending,
+ * canonical-UCI tie-break (ENGINE-01/ENGINE-07, Phase 159 D-01/D-04).
+ * `rankScore` is a SORT-ONLY local — never assigned onto the public
+ * `RankedLine` the UI consumes; `practicalScore` stays `child.value`,
+ * byte-identical to before this phase (D-04). `pRef` is computed ONCE per
+ * call from `rootElo` (Anti-Pattern: never recompute per child).
+ */
+function buildRankedLines<N extends SearchTreeNode<N>>(root: N, rootElo: number): RankedLine[] {
+  const pRef = pRefForElo(rootElo);
+  // Sort-only pairing of each public RankedLine with its ephemeral rankScore
+  // (never assigned onto RankedLine itself, D-04) — kept as parallel local
+  // state rather than a spread-and-omit so no unused-binding placeholder is
+  // needed to strip the sort key afterwards.
+  const scored: { line: RankedLine; sortRankScore: number }[] = [];
   for (const child of root.children.values()) {
     if (child.uci === null) continue; // defensive; every root child has a uci
-    lines.push({
-      rootMove: child.uci,
-      practicalScore: child.value,
-      objectiveEvalCp: child.objectiveEvalCp,
-      modalPath: buildModalPath(child),
-      visits: child.visits,
+    scored.push({
+      line: {
+        rootMove: child.uci,
+        practicalScore: child.value,
+        objectiveEvalCp: child.objectiveEvalCp,
+        modalPath: buildModalPath(child),
+        visits: child.visits,
+      },
+      sortRankScore: rankScore(child.prior, pRef, child.value),
     });
   }
-  lines.sort((a, b) => {
-    if (b.practicalScore !== a.practicalScore) return b.practicalScore - a.practicalScore;
-    return a.rootMove < b.rootMove ? -1 : a.rootMove > b.rootMove ? 1 : 0;
+  scored.sort((a, b) => {
+    if (b.sortRankScore !== a.sortRankScore) return b.sortRankScore - a.sortRankScore;
+    return a.line.rootMove < b.line.rootMove ? -1 : a.line.rootMove > b.line.rootMove ? 1 : 0;
   });
-  return lines;
+  return scored.map((s) => s.line);
 }
 
 export function buildSnapshot<N extends SearchTreeNode<N>>(
   root: N,
   nodesEvaluated: number,
   budgetExhausted: boolean,
+  rootElo: number,
 ): EngineSnapshot {
-  return { rankedLines: buildRankedLines(root), nodesEvaluated, budgetExhausted };
+  return { rankedLines: buildRankedLines(root, rootElo), nodesEvaluated, budgetExhausted };
 }
