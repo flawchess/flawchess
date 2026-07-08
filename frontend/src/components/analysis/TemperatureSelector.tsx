@@ -80,18 +80,15 @@ export function TemperatureSelector({
       data-testid="analysis-temperature-selector"
       role="group"
       aria-label="Play style"
-      className="flex flex-col gap-0.5 border-t border-border pt-2"
+      className="flex items-center gap-2 border-t border-border pt-2 text-sm font-medium"
     >
-      <div className="flex items-center justify-between text-sm font-medium">
-        <span className="inline-flex items-center gap-1" style={{ color: MAIA_ACCENT }}>
-          <User aria-hidden="true" className="h-4 w-4" />
-          Human
-        </span>
-        <span className="inline-flex items-center gap-1" style={{ color: STOCKFISH_ACCENT }}>
-          <Cpu aria-hidden="true" className="h-4 w-4" />
-          Stockfish
-        </span>
-      </div>
+      <span
+        className="inline-flex shrink-0 items-center gap-1"
+        style={{ color: MAIA_ACCENT }}
+      >
+        <User aria-hidden="true" className="h-4 w-4" />
+        Human
+      </span>
       <Slider
         min={SLIDER_POSITION_MIN}
         max={SLIDER_POSITION_MAX}
@@ -99,7 +96,15 @@ export function TemperatureSelector({
         value={[temperatureToSliderPosition(value)]}
         onValueChange={handleValueChange}
         thumbLabels={['Play style']}
+        className="min-w-16 flex-1"
       />
+      <span
+        className="inline-flex shrink-0 items-center gap-1"
+        style={{ color: STOCKFISH_ACCENT }}
+      >
+        <Cpu aria-hidden="true" className="h-4 w-4" />
+        Stockfish
+      </span>
     </div>
   );
 }
