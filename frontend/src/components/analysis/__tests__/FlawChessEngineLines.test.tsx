@@ -57,12 +57,23 @@ afterEach(() => {
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
 // Ruy Lopez opening — 7 plies, valid from START_FEN, so replayPvLine produces
-// real SAN for every move (needed to exercise the >5-ply expand chevron).
+// real SAN for every move (needed to exercise the >4-ply expand chevron).
 const LINE_1: RankedLine = {
   rootMove: 'e2e4',
   practicalScore: 0.9, // white rootMover → expectedScoreToWhitePovCp ≈ +596.7cp → "+6.0"
   objectiveEvalCp: 300, // → "+3.0"
   modalPath: ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1b5', 'a7a6', 'b5a4'],
+  // Per-ply hover-header stats, index-aligned with modalPath. First ply:
+  // +0.2 eval, 45% Maia — asserted by the hover-header test below.
+  modalStats: [
+    { objectiveEvalCp: 20, maiaProb: 0.45 },
+    { objectiveEvalCp: -10, maiaProb: 0.38 },
+    { objectiveEvalCp: 15, maiaProb: 0.5 },
+    { objectiveEvalCp: 5, maiaProb: 0.2 },
+    { objectiveEvalCp: 25, maiaProb: 0.6 },
+    { objectiveEvalCp: 30, maiaProb: 0.55 },
+    { objectiveEvalCp: 40, maiaProb: 0.7 },
+  ],
   visits: 120,
 };
 
@@ -71,6 +82,10 @@ const LINE_2: RankedLine = {
   practicalScore: 0.6,
   objectiveEvalCp: 50, // → "+0.5"
   modalPath: ['d2d4', 'd7d5'],
+  modalStats: [
+    { objectiveEvalCp: 40, maiaProb: 0.35 },
+    { objectiveEvalCp: 45, maiaProb: 0.42 },
+  ],
   visits: 80,
 };
 
@@ -79,6 +94,7 @@ const LINE_3: RankedLine = {
   practicalScore: 0.5,
   objectiveEvalCp: null, // → "…" placeholder
   modalPath: ['c2c4'],
+  modalStats: [{ objectiveEvalCp: null, maiaProb: null }],
   visits: 40,
 };
 
@@ -87,6 +103,7 @@ const LINE_4: RankedLine = {
   practicalScore: 0.4,
   objectiveEvalCp: -20,
   modalPath: ['g1f3'],
+  modalStats: [{ objectiveEvalCp: -20, maiaProb: 0.15 }],
   visits: 20,
 };
 
@@ -116,7 +133,7 @@ describe('FlawChessEngineLines', () => {
     expect(screen.queryByTestId('flawchess-line-3-move-0')).toBeNull();
   });
 
-  it('renders modalPath as SAN chips, first MAX_PLIES=5 plies + expand chevron (DISPLAY-02)', () => {
+  it('renders modalPath as SAN chips, first MAX_PLIES=4 plies + expand chevron (DISPLAY-02)', () => {
     render(
       <TooltipProvider>
         <FlawChessEngineLines
@@ -129,19 +146,21 @@ describe('FlawChessEngineLines', () => {
       </TooltipProvider>,
     );
 
-    // Collapsed: first 5 plies visible, plies 5 and 6 are not.
+    // Collapsed: first 4 plies visible, plies 4+ are not (one fewer than the
+    // Stockfish card — the objective-eval aside makes this row wider, so 4 is
+    // what fits on a single line).
     expect(screen.getByTestId('flawchess-line-0-move-0')).toBeTruthy();
-    expect(screen.getByTestId('flawchess-line-0-move-4')).toBeTruthy();
-    expect(screen.queryByTestId('flawchess-line-0-move-5')).toBeNull();
+    expect(screen.getByTestId('flawchess-line-0-move-3')).toBeTruthy();
+    expect(screen.queryByTestId('flawchess-line-0-move-4')).toBeNull();
 
     fireEvent.click(screen.getByTestId('flawchess-line-0-expand'));
 
     // Expanded: the remaining plies are now rendered.
-    expect(screen.getByTestId('flawchess-line-0-move-5')).toBeTruthy();
+    expect(screen.getByTestId('flawchess-line-0-move-4')).toBeTruthy();
     expect(screen.getByTestId('flawchess-line-0-move-6')).toBeTruthy();
   });
 
-  it('no chevron when the modal path is <= 5 plies', () => {
+  it('no chevron when the modal path is <= 4 plies', () => {
     render(
       <TooltipProvider>
         <FlawChessEngineLines
@@ -196,6 +215,45 @@ describe('FlawChessEngineLines', () => {
     expect(screen.getByText('…')).toBeTruthy();
   });
 
+  it('move hover header shows the ply Stockfish eval (left) + raw Maia probability (right)', async () => {
+    render(
+      <TooltipProvider>
+        <FlawChessEngineLines
+          rankedLines={[LINE_1]}
+          isSearching={false}
+          baseFen={START_FEN}
+          rootMover="white"
+          onMoveClick={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+    // Focus opens the Radix tooltip instantly (no hover delay). LINE_1's first
+    // ply stat is { objectiveEvalCp: 20, maiaProb: 0.45 } → "+0.2" and "45%".
+    // Radix renders a visually-hidden accessible duplicate of the content, so
+    // each label appears more than once — assert at least one match.
+    fireEvent.focus(screen.getByTestId('flawchess-line-0-move-0'));
+    expect((await screen.findAllByLabelText('Stockfish evaluation +0.2')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByLabelText('Maia probability 45%')).length).toBeGreaterThan(0);
+  });
+
+  it('move hover header falls back to the placeholder glyph when a ply has no stats', async () => {
+    render(
+      <TooltipProvider>
+        <FlawChessEngineLines
+          rankedLines={[LINE_3]}
+          isSearching={false}
+          baseFen={START_FEN}
+          rootMover="white"
+          onMoveClick={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+    // LINE_3's only ply has null eval + null Maia → both slots show "…".
+    fireEvent.focus(screen.getByTestId('flawchess-line-0-move-0'));
+    expect((await screen.findAllByLabelText('Stockfish evaluation …')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByLabelText('Maia probability …')).length).toBeGreaterThan(0);
+  });
+
   it('clicking a modal-path chip calls onMoveClick with the expected UCI prefix (D-10)', () => {
     const onMoveClick = vi.fn();
     render(
@@ -215,6 +273,36 @@ describe('FlawChessEngineLines', () => {
     fireEvent.click(screen.getByTestId('flawchess-line-0-move-2'));
     expect(onMoveClick).toHaveBeenCalledTimes(1);
     expect(onMoveClick).toHaveBeenCalledWith(['e2e4', 'e7e5', 'g1f3']);
+  });
+
+  it('on touch, the first tap reveals the preview and the second tap plays the move', async () => {
+    const onMoveClick = vi.fn();
+    render(
+      <TooltipProvider>
+        <FlawChessEngineLines
+          rankedLines={[LINE_1]}
+          isSearching={false}
+          baseFen={START_FEN}
+          rootMover="white"
+          onMoveClick={onMoveClick}
+        />
+      </TooltipProvider>,
+    );
+    const chip = screen.getByTestId('flawchess-line-0-move-0');
+
+    // First tap: a real pointer click (detail 1) with the preview closed at
+    // pointerdown → reveals the preview, does NOT play.
+    fireEvent.pointerDown(chip, { pointerType: 'touch' });
+    fireEvent.click(chip, { detail: 1 });
+    expect(onMoveClick).not.toHaveBeenCalled();
+    expect((await screen.findAllByLabelText('Stockfish evaluation +0.2')).length).toBeGreaterThan(0);
+
+    // Second tap: pointerdown now sees the preview already open → plays the move
+    // (the one-move prefix for chip index 0).
+    fireEvent.pointerDown(chip, { pointerType: 'touch' });
+    fireEvent.click(chip, { detail: 1 });
+    expect(onMoveClick).toHaveBeenCalledTimes(1);
+    expect(onMoveClick).toHaveBeenCalledWith(['e2e4']);
   });
 
   it('move chips are <button> elements (semantic HTML)', () => {

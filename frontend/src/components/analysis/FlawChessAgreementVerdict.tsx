@@ -44,7 +44,9 @@ import type { RankedLine } from '@/lib/engine/types';
 import type { PvLine } from '@/hooks/uciParser';
 import { sideToMoveFromFen, expectedScoreToWhitePovCp, type MoverColor } from '@/lib/liveFlaw';
 import { formatScore } from '@/components/analysis/EngineLines';
+import { STOCKFISH_ACCENT } from '@/lib/theme';
 import { ProseSpan } from '@/components/analysis/ProseSpan';
+import { UnifiedMovePopover } from '@/components/analysis/UnifiedMovePopover';
 import type { HoveredQualityMove } from '@/components/analysis/MaiaMoveQualityBar';
 
 /** Hover-intent delay before a verdict move's popover opens (ms) — matches
@@ -105,46 +107,69 @@ function uciToSan(baseFen: string, uci: string): string | null {
   }
 }
 
-/** D-10 popover body for the FlawChess pick: always both lines (it's a ranked line with its own objective eval). */
+/** Formats a raw Maia move probability (0-1) as a rounded percent string, or
+ *  null when unavailable — which drops the Maia line from the unified popover. */
+function formatMaiaProbability(prob: number | null | undefined): string | null {
+  return prob == null ? null : `${Math.round(prob * 100)}%`;
+}
+
+/** D-10 popover body for the FlawChess pick: always the practical + objective
+ *  lines (it's a ranked line with its own objective eval); the Maia line renders
+ *  when the pick's raw Maia probability is available. Unified 3-line format shared
+ *  with the Maia card (quick 260708-qrr). */
 function FlawChessPickPopoverBody({
   line,
   mover,
+  maiaProbability,
 }: {
   line: RankedLine;
   mover: MoverColor;
+  maiaProbability: string | null;
 }): React.ReactElement {
   const practicalCp = expectedScoreToWhitePovCp(line.practicalScore, mover);
   return (
-    <>
-      <div>FlawChess: {formatScore(practicalCp, null)} (practical)</div>
-      <div>Stockfish: {formatScore(line.objectiveEvalCp, null)} (objective)</div>
-    </>
+    <UnifiedMovePopover
+      practicalEval={formatScore(practicalCp, null)}
+      objectiveEval={formatScore(line.objectiveEvalCp, null)}
+      maiaProbability={maiaProbability}
+    />
   );
 }
 
 /** D-10 popover body for the Stockfish pick: the Stockfish line always shows; the
  *  FlawChess line shows ONLY when `matchedLine` (a rootMove match in
  *  flawChessRankedLines) is non-null — otherwise it's omitted entirely, no
- *  placeholder. */
+ *  placeholder. The Maia line renders when the pick's raw Maia probability is
+ *  available. Unified 3-line format shared with the Maia card (quick 260708-qrr). */
 function StockfishPickPopoverBody({
   evalCp,
   evalMate,
   matchedLine,
   mover,
+  maiaProbability,
 }: {
   evalCp: number | null;
   evalMate: number | null;
   matchedLine: RankedLine | null;
   mover: MoverColor;
+  maiaProbability: string | null;
 }): React.ReactElement {
   return (
-    <>
-      {matchedLine && (
-        <div>FlawChess: {formatScore(expectedScoreToWhitePovCp(matchedLine.practicalScore, mover), null)} (practical)</div>
-      )}
-      <div>Stockfish: {formatScore(evalCp, evalMate)} (objective)</div>
-    </>
+    <UnifiedMovePopover
+      practicalEval={
+        matchedLine ? formatScore(expectedScoreToWhitePovCp(matchedLine.practicalScore, mover), null) : null
+      }
+      objectiveEval={formatScore(evalCp, evalMate)}
+      maiaProbability={maiaProbability}
+    />
   );
+}
+
+/** Renders a Stockfish (objective) eval in the Stockfish accent blue — matching
+ *  the blue eval badges in FlawChessEngineLines so the parenthetical evals read
+ *  as Stockfish's objective numbers at a glance. */
+function StockfishEval({ text }: { text: string }): React.ReactNode {
+  return <span style={{ color: STOCKFISH_ACCENT }}>{text}</span>;
 }
 
 /** Assembles the D-07 prose sentence for the given tier, interpolating the
@@ -162,7 +187,8 @@ function renderVerdictSentence(
     const evalText = formatScore(verdict.stockfishMove.evalCp, verdict.stockfishMove.evalMate);
     return (
       <>
-        FlawChess and Stockfish agree on {moveSpan} — objectively {evalText}, and the practical pick too.
+        FlawChess and Stockfish agree on {moveSpan} — objectively <StockfishEval text={evalText} />, and the practical
+        pick too.
       </>
     );
   }
@@ -186,7 +212,8 @@ function renderVerdictSentence(
         : 'a safe, practical pick with safer follow-ups.';
     return (
       <>
-        Objectively {sfSpan} ({sfEvalText}). But for a human at {elo} ELO here, FlawChess plays {fcSpan} ({fcEvalText})
+        Objectively {sfSpan} (<StockfishEval text={sfEvalText} />). But for a human at {elo} ELO here, FlawChess plays{' '}
+        {fcSpan} (<StockfishEval text={fcEvalText} />)
         {' — '}
         {closingClause}
       </>
@@ -195,8 +222,8 @@ function renderVerdictSentence(
 
   return (
     <>
-      {sfSpan} is objectively best ({sfEvalText}) but it&apos;s a trap for humans. FlawChess plays the safer {fcSpan}{' '}
-      ({fcEvalText}) instead.
+      {sfSpan} is objectively best (<StockfishEval text={sfEvalText} />) but it&apos;s a trap for humans. FlawChess plays
+      the safer {fcSpan} (<StockfishEval text={fcEvalText} />) instead.
     </>
   );
 }
@@ -300,7 +327,7 @@ export function FlawChessAgreementVerdict({
   // narrowing sound for TypeScript without an `as` cast below.
   if (!engineEnabled || !verdict || !fcSan || !sfSan || !flawChessLine) {
     return (
-      <div className="min-h-[1.5rem] text-sm" data-testid="flawchess-verdict-slot">
+      <div className="min-h-[3.75rem] px-2 text-sm" data-testid="flawchess-verdict-slot">
         <span className="text-muted-foreground" data-testid="flawchess-verdict-prompt">
           {MUTED_PROMPT_TEXT}
         </span>
@@ -331,7 +358,11 @@ export function FlawChessAgreementVerdict({
           : undefined
       }
     >
-      <FlawChessPickPopoverBody line={flawChessLine} mover={mover} />
+      <FlawChessPickPopoverBody
+        line={flawChessLine}
+        mover={mover}
+        maiaProbability={formatMaiaProbability(rawProbBySan[fcSan])}
+      />
     </ProseSpan>
   );
 
@@ -363,6 +394,7 @@ export function FlawChessAgreementVerdict({
         evalMate={verdict.stockfishMove.evalMate}
         matchedLine={matchedFlawChessLineForSf}
         mover={mover}
+        maiaProbability={formatMaiaProbability(rawProbBySan[sfSan])}
       />
     </ProseSpan>
   );
@@ -373,7 +405,7 @@ export function FlawChessAgreementVerdict({
   const sentence = renderVerdictSentence(verdict, elo, fcSpan, fcSpan, sfSpan, findabilityOk);
 
   return (
-    <div className="min-h-[1.5rem] text-sm" data-testid="flawchess-verdict-slot">
+    <div className="min-h-[3.75rem] px-2 text-sm" data-testid="flawchess-verdict-slot">
       <span data-testid="flawchess-verdict-sentence">{sentence}</span>
     </div>
   );

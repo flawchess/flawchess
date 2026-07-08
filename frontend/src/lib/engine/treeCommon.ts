@@ -20,7 +20,7 @@
 import { Chess } from 'chess.js';
 import type { MoverColor } from '@/lib/liveFlaw';
 import { uciToSquares } from '@/lib/sanToSquares';
-import type { EngineSnapshot, RankedLine, Side } from './types';
+import type { EngineSnapshot, ModalPlyStat, RankedLine, Side } from './types';
 import { type BackupChild, backupExpectation, backupRootMax } from './backup';
 import { pRefForElo, rankScore } from './findability';
 import { ROOT_CANDIDATE_HARD_CAP } from './policyTemperature';
@@ -63,6 +63,14 @@ export interface SearchTreeNode<N extends SearchTreeNode<N>> {
   isExpanded: boolean;
   /** White-POV Stockfish eval (cp) at grading time, if available — surfaced on RankedLine. */
   objectiveEvalCp: number | null;
+  /**
+   * Raw Maia policy probability (0-1) of this node's move at its parent — the
+   * value straight from `policy()` before temperature/truncation/renorm, so
+   * the move-chip hover matches the raw Maia % shown elsewhere (not `prior`,
+   * which is renormalized). Null at the root and for any move `policy()` did
+   * not score (e.g. a Stockfish-injected `extraRootMoves` candidate).
+   */
+  rawMaiaProb: number | null;
   readonly children: Map<string, N>;
 }
 
@@ -154,12 +162,25 @@ export function recomputeValue<N extends SearchTreeNode<N>>(node: N): void {
   node.value = node.isRoot ? backupRootMax(backupChildren) : backupExpectation(backupChildren);
 }
 
-/** Most-visited continuation from a root candidate's own subtree (canonical UCI tie-break). */
-function buildModalPath<N extends SearchTreeNode<N>>(rootChild: N): string[] {
+/**
+ * Most-visited continuation from a root candidate's own subtree (canonical UCI
+ * tie-break), returning both the UCI path and the index-aligned per-ply stats
+ * (Stockfish eval + raw Maia prob, read off each node on the walk) that the
+ * move-chip hover preview surfaces (Phase 160). Single walk so `modalPath` and
+ * `modalStats` can never drift out of alignment.
+ */
+function buildModalPath<N extends SearchTreeNode<N>>(rootChild: N): {
+  path: string[];
+  stats: ModalPlyStat[];
+} {
   const path: string[] = [];
+  const stats: ModalPlyStat[] = [];
   let node: N | null = rootChild;
   while (node !== null) {
-    if (node.uci !== null) path.push(node.uci);
+    if (node.uci !== null) {
+      path.push(node.uci);
+      stats.push({ objectiveEvalCp: node.objectiveEvalCp, maiaProb: node.rawMaiaProb });
+    }
     if (!node.isExpanded || node.children.size === 0) break;
     let best: N | null = null;
     for (const child of node.children.values()) {
@@ -171,7 +192,7 @@ function buildModalPath<N extends SearchTreeNode<N>>(rootChild: N): string[] {
     }
     node = best;
   }
-  return path;
+  return { path, stats };
 }
 
 /**
@@ -191,12 +212,14 @@ function buildRankedLines<N extends SearchTreeNode<N>>(root: N, rootElo: number)
   const scored: { line: RankedLine; sortRankScore: number }[] = [];
   for (const child of root.children.values()) {
     if (child.uci === null) continue; // defensive; every root child has a uci
+    const modal = buildModalPath(child);
     scored.push({
       line: {
         rootMove: child.uci,
         practicalScore: child.value,
         objectiveEvalCp: child.objectiveEvalCp,
-        modalPath: buildModalPath(child),
+        modalPath: modal.path,
+        modalStats: modal.stats,
         visits: child.visits,
       },
       sortRankScore: rankScore(child.prior, pRef, child.value),

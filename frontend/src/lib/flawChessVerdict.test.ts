@@ -16,6 +16,7 @@ function fcLine(rootMove: string, objectiveEvalCp: number | null): RankedLine {
     practicalScore: 0.5,
     objectiveEvalCp,
     modalPath: [rootMove],
+    modalStats: [{ objectiveEvalCp, maiaProb: null }],
     visits: 1,
   };
 }

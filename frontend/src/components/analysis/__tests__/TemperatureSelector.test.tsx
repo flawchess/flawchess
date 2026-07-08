@@ -49,24 +49,24 @@ describe('TemperatureSelector mapping helpers', () => {
     expect(sliderPositionToTemperature(0)).toBe(1);
   });
 
-  it('sliderPositionToTemperature(1) === 0.5 (right end = Stockfish/sharp)', () => {
-    expect(sliderPositionToTemperature(1)).toBe(0.5);
+  it('sliderPositionToTemperature(1) === 2 (right end = Stockfish/flat)', () => {
+    expect(sliderPositionToTemperature(1)).toBe(2);
   });
 
-  it('sliderPositionToTemperature(-1) === 2 (left end = Human)', () => {
-    expect(sliderPositionToTemperature(-1)).toBe(2);
+  it('sliderPositionToTemperature(-1) === 0.5 (left end = Human/sharp)', () => {
+    expect(sliderPositionToTemperature(-1)).toBe(0.5);
   });
 
   it('temperatureToSliderPosition(1) === 0 (strict — Pitfall 7 center exactness)', () => {
     expect(temperatureToSliderPosition(1)).toBe(0);
   });
 
-  it('temperatureToSliderPosition(2) === -1 (Human sits at the left end)', () => {
-    expect(temperatureToSliderPosition(2)).toBe(-1);
+  it('temperatureToSliderPosition(2) === 1 (Stockfish sits at the right end)', () => {
+    expect(temperatureToSliderPosition(2)).toBe(1);
   });
 
-  it('temperatureToSliderPosition(0.5) === 1 (Stockfish sits at the right end)', () => {
-    expect(temperatureToSliderPosition(0.5)).toBe(1);
+  it('temperatureToSliderPosition(0.5) === -1 (Human sits at the left end)', () => {
+    expect(temperatureToSliderPosition(0.5)).toBe(-1);
   });
 
   it('round-trips exactly at min/center/max', () => {

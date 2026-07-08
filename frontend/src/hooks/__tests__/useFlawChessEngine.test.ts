@@ -72,7 +72,14 @@ const TEST_FEN_2 = 'rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq d3 0 1'
 function makeSnapshot(rootMove: string): EngineSnapshot {
   return {
     rankedLines: [
-      { rootMove, practicalScore: 0.6, objectiveEvalCp: 30, modalPath: [rootMove], visits: 1 },
+      {
+        rootMove,
+        practicalScore: 0.6,
+        objectiveEvalCp: 30,
+        modalPath: [rootMove],
+        modalStats: [{ objectiveEvalCp: 30, maiaProb: 0.5 }],
+        visits: 1,
+      },
     ],
     nodesEvaluated: 1,
     budgetExhausted: false,

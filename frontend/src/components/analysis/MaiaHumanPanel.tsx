@@ -52,8 +52,9 @@ export interface MaiaHumanPanelProps {
    *  the opponent rather than "you" (quick 260705-m3z). */
   isOpponentToMove?: boolean;
   className?: string;
-  /** Mobile compact mode (151.1 UAT): drop the card header and use a shorter chart to
-   * reclaim vertical space — the mobile "Maia" tab is already labeled by its tab. */
+  /** Mobile compact mode (151.1 UAT): use a shorter chart to reclaim vertical space.
+   * The header now matches desktop (full title + info tooltip); it is still dropped
+   * only when compact AND no toggle is wired (the pre-155 unit tests). */
   compact?: boolean;
   /**
    * Phase 155 D-03: the header toggle Switch's checked state. Provided
@@ -70,33 +71,42 @@ export interface MaiaHumanPanelProps {
 /** Shorter chart on mobile (compact); desktop keeps MovesByRatingChart's default. */
 const COMPACT_CHART_HEIGHT_CLASS = 'h-48';
 
-/** Compact Maia attribution shown in the header info tooltip (UAT quick 260705-bm3). */
+/** Header info tooltip: what the chart shows + compact Maia attribution (UAT quick 260705-bm3). */
 function MaiaInfoTooltip(): React.ReactElement {
   return (
     <InfoPopover ariaLabel="About human-move predictions" testId="maia-info-popover">
-      <p className="max-w-xs">
-        Human-move predictions are based on{' '}
-        <a
-          href={MAIA_SOURCE_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          data-testid="maia-info-link-maia3"
-          className="underline"
-        >
-          maia3
-        </a>
-        . Check out{' '}
-        <a
-          href={MAIA_SITE_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          data-testid="maia-info-link-maiachess"
-          className="underline"
-        >
-          maiachess.com
-        </a>
-        .
-      </p>
+      <div className="max-w-xs space-y-2">
+        <p>
+          This chart shows how often real players at each rating actually pick each
+          move in this position — the human choice, not the engine's best move. Every
+          curve traces one candidate move, so you can see its popularity rise or fall
+          as players get stronger, and read off what a player at your level would most
+          likely play.
+        </p>
+        <p>
+          Predictions come from{' '}
+          <a
+            href={MAIA_SOURCE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="maia-info-link-maia3"
+            className="underline"
+          >
+            maia3
+          </a>
+          , a neural network trained on millions of human games. Check out{' '}
+          <a
+            href={MAIA_SITE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="maia-info-link-maiachess"
+            className="underline"
+          >
+            maiachess.com
+          </a>
+          .
+        </p>
+      </div>
     </InfoPopover>
   );
 }
@@ -133,24 +143,18 @@ export function MaiaHumanPanel({
   );
   return (
     <Card className={className} data-testid="maia-human-panel">
-      {/* Violet header pairs with the violet Maia eval bar (151.1 UAT). Dropped on
-          mobile (compact) unless a toggle is wired, in which case a minimal
-          switch-only row keeps the toggle reachable on mobile (D-03 mobile
-          parity) without reintroducing the full title row's height. */}
-      {!compact ? (
+      {/* Violet header pairs with the violet Maia eval bar (151.1 UAT). Rendered
+          identically on desktop and mobile — full title + info tooltip (the mobile
+          "Maia" tab shows the same header + tooltip as desktop). Still dropped when
+          compact AND no toggle is wired (the pre-155 unit tests), preserving that
+          locked "compact drops the header" behavior. */}
+      {(!compact || showToggle) && (
         <CardHeader size="compact" data-testid="maia-human-header" style={{ color: MAIA_ACCENT }}>
           {toggleSwitch}
           <User aria-hidden="true" className="h-4 w-4" />
           <span>Maia - Human Move Probability</span>
           <MaiaInfoTooltip />
         </CardHeader>
-      ) : (
-        showToggle && (
-          <CardHeader size="compact" data-testid="maia-human-header" style={{ color: MAIA_ACCENT }}>
-            {toggleSwitch}
-            <span className="text-sm font-medium">Maia</span>
-          </CardHeader>
-        )
       )}
       {/* The ELO slider now lives BELOW this card (155 UAT) — it drives both engines. */}
       <CardBody className="flex flex-col gap-3 p-3">

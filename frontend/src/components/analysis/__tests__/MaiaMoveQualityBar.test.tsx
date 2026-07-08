@@ -78,7 +78,8 @@ describe('MaiaMoveQualityBar', () => {
     fireEvent.mouseEnter(screen.getByTestId('maia-quality-segment-good'));
     const list = screen.getByTestId('maia-quality-hovered-list').textContent ?? '';
     expect(list).toMatch(/Good Moves:/);
-    expect(list).toMatch(/Ra8 52%/);
+    // Each move now renders as `SAN · eval · pct%` (quick 260708).
+    expect(list).toMatch(/Ra8 · .+ · 52%/);
     // Blunder moves are NOT listed while hovering the good segment.
     expect(list).not.toMatch(/g4/);
     expect(onHover).toHaveBeenLastCalledWith([{ san: 'Ra8', color: MOVE_QUALITY_GOOD }]);

@@ -26,6 +26,7 @@ function fcLine(rootMove: string, objectiveEvalCp: number | null, practicalScore
     practicalScore,
     objectiveEvalCp,
     modalPath: [rootMove],
+    modalStats: [{ objectiveEvalCp, maiaProb: null }],
     visits: 1,
   };
 }
@@ -223,7 +224,27 @@ describe('FlawChessAgreementVerdict', () => {
     expect(onHover).toHaveBeenLastCalledWith(null);
   });
 
-  it('shows both engine-labeled lines in the FlawChess pick\'s popover (D-10)', () => {
+  it('shows all three unified engine-labeled lines in the FlawChess pick\'s popover (D-10 / quick 260708-qrr)', () => {
+    render(
+      <FlawChessAgreementVerdict
+        flawChessLine={fcLine('e2e4', 30, 0.5)}
+        stockfishLine={sfLine('d2d4', 60)}
+        flawChessRankedLines={[fcLine('e2e4', 30, 0.5)]}
+        engineEnabled
+        elo={1500}
+        baseFen={START_FEN}
+        rawProbBySan={{ e4: 0.82 }}
+        shownSans={['e4']}
+      />,
+    );
+    fireEvent.focus(screen.getByTestId('flawchess-verdict-move-e4'));
+    const tooltip = screen.getByTestId('flawchess-verdict-tooltip-e4').textContent ?? '';
+    expect(tooltip).toMatch(/FlawChess \(practical\)/);
+    expect(tooltip).toMatch(/Stockfish \(objective\)/);
+    expect(tooltip).toMatch(/Maia \(human\)82%/);
+  });
+
+  it('omits the Maia line from the popover when the pick has no Maia probability (quick 260708-qrr)', () => {
     render(
       <FlawChessAgreementVerdict
         flawChessLine={fcLine('e2e4', 30, 0.5)}
@@ -238,8 +259,9 @@ describe('FlawChessAgreementVerdict', () => {
     );
     fireEvent.focus(screen.getByTestId('flawchess-verdict-move-e4'));
     const tooltip = screen.getByTestId('flawchess-verdict-tooltip-e4').textContent ?? '';
-    expect(tooltip).toMatch(/FlawChess:.*\(practical\)/);
-    expect(tooltip).toMatch(/Stockfish:.*\(objective\)/);
+    expect(tooltip).toMatch(/FlawChess \(practical\)/);
+    expect(tooltip).toMatch(/Stockfish \(objective\)/);
+    expect(tooltip).not.toMatch(/Maia \(human\)/);
   });
 
   it('omits the FlawChess line from the Stockfish pick\'s popover when not FlawChess-ranked (D-10)', () => {
@@ -257,8 +279,8 @@ describe('FlawChessAgreementVerdict', () => {
     );
     fireEvent.focus(screen.getByTestId('flawchess-verdict-move-d4'));
     const tooltip = screen.getByTestId('flawchess-verdict-tooltip-d4').textContent ?? '';
-    expect(tooltip).not.toMatch(/FlawChess:/);
-    expect(tooltip).toMatch(/Stockfish:.*\(objective\)/);
+    expect(tooltip).not.toMatch(/FlawChess \(practical\)/);
+    expect(tooltip).toMatch(/Stockfish \(objective\)/);
   });
 
   it('includes the FlawChess line in the Stockfish pick\'s popover when it WAS FlawChess-ranked (D-10)', () => {
@@ -276,8 +298,8 @@ describe('FlawChessAgreementVerdict', () => {
     );
     fireEvent.focus(screen.getByTestId('flawchess-verdict-move-d4'));
     const tooltip = screen.getByTestId('flawchess-verdict-tooltip-d4').textContent ?? '';
-    expect(tooltip).toMatch(/FlawChess:.*\(practical\)/);
-    expect(tooltip).toMatch(/Stockfish:.*\(objective\)/);
+    expect(tooltip).toMatch(/FlawChess \(practical\)/);
+    expect(tooltip).toMatch(/Stockfish \(objective\)/);
   });
 
   it('plays a verdict move as a free move when clicked while its popover is open (D-11)', () => {

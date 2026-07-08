@@ -99,7 +99,14 @@ vi.mock('@/hooks/useMaiaEngine', () => ({
 // the shell/eval-bar assertions below; individual tests override rankedLines to
 // drive the eval-bar precedence.
 const flawChessState: {
-  rankedLines: { rootMove: string; practicalScore: number; objectiveEvalCp: number | null; modalPath: string[]; visits: number }[];
+  rankedLines: {
+    rootMove: string;
+    practicalScore: number;
+    objectiveEvalCp: number | null;
+    modalPath: string[];
+    modalStats: { objectiveEvalCp: number | null; maiaProb: number | null }[];
+    visits: number;
+  }[];
   isSearching: boolean;
   isReady: boolean;
 } = {
@@ -390,7 +397,14 @@ describe('Reconciled eval provenance (Phase 158, SEED-087)', () => {
     // objectiveEvalCp seeded at 80 (the grading run's own value) to prove
     // reconciliation OVERRIDES the raw RankedLine field, not merely echoes it.
     flawChessState.rankedLines = [
-      { rootMove: 'e2e4', practicalScore: 0.6, objectiveEvalCp: 80, modalPath: ['e2e4'], visits: 5 },
+      {
+        rootMove: 'e2e4',
+        practicalScore: 0.6,
+        objectiveEvalCp: 80,
+        modalPath: ['e2e4'],
+        modalStats: [{ objectiveEvalCp: 80, maiaProb: 0.5 }],
+        visits: 5,
+      },
     ];
     gradingState.gradeMap = new Map([['e4', { evalCp: 80, evalMate: null, depth: 10 }]]);
 
@@ -411,7 +425,14 @@ describe('Reconciled eval provenance (Phase 158, SEED-087)', () => {
     // replace it with the shared grading run's own value (40) before it ever
     // reaches the verdict, making a FC-pick-exceeds-SF-best reading impossible.
     flawChessState.rankedLines = [
-      { rootMove: 'e2e4', practicalScore: 0.55, objectiveEvalCp: 999, modalPath: ['e2e4'], visits: 5 },
+      {
+        rootMove: 'e2e4',
+        practicalScore: 0.55,
+        objectiveEvalCp: 999,
+        modalPath: ['e2e4'],
+        modalStats: [{ objectiveEvalCp: 999, maiaProb: 0.5 }],
+        visits: 5,
+      },
     ];
     gradingState.gradeMap = new Map([['e4', { evalCp: 40, evalMate: null, depth: 10 }]]);
 

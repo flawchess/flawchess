@@ -269,6 +269,27 @@ describe('mctsSearch — ENGINE-05 leaf conversion + depth cutoff', () => {
     }
   });
 
+  it("modalStats carries each ply's RAW Maia prob (not the renormalized prior) + white-POV eval (Phase 160)", async () => {
+    const budget: SearchBudget = { maxNodes: 1, elo: NEUTRAL_BUDGET_ELO, maxPlies: 4, concurrency: 1 };
+    const providers: EngineProviders = {
+      policy: makeFixedPolicy({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_POLICY }),
+      grade: makeFixedGrade({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_GRADES }),
+    };
+
+    const snapshot = await mctsSearch(SIMPLE_WHITE_FEN, budget, providers, () => {}, freshSignal());
+
+    const e2e4 = snapshot.rankedLines.find((l) => l.rootMove === 'e2e4');
+    expect(e2e4).toBeDefined();
+    // Index-aligned with modalPath, one entry per ply.
+    expect(e2e4!.modalStats).toHaveLength(e2e4!.modalPath.length);
+    // The RAW policy value (0.5) — NOT the renormalized prior (0.5 / 0.95-mass
+    // ≈ 0.526). This is exactly what makes the move-chip hover header agree with
+    // the raw Maia % shown in the prose move popovers.
+    expect(e2e4!.modalStats[0]!.maiaProb).toBeCloseTo(0.5, 10);
+    // Per-ply objective eval = the graded white-POV cp of the resulting position.
+    expect(e2e4!.modalStats[0]!.objectiveEvalCp).toBe(200);
+  });
+
   it('stops descending at budget.maxPlies — every modal path is exactly one ply', async () => {
     const budget: SearchBudget = { maxNodes: 3, elo: NEUTRAL_BUDGET_ELO, maxPlies: 1, concurrency: 1 };
     const providers: EngineProviders = { policy: makeFixedPolicy({}), grade: makeFixedGrade({}) };

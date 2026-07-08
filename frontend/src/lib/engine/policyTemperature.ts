@@ -2,9 +2,16 @@
  * policyTemperature — Maia policy-temperature transform (Phase 159 D-06/D-07,
  * Thread A of SEED-085): reshapes an already-softmaxed move-probability
  * distribution as if the temperature had been applied before the softmax:
- * `p_i^(1/T)` renormalized. T>1 flattens the distribution (more mass on tail
- * moves — more human fallibility modeled); T<1 sharpens it toward the top
- * move (converges toward Stockfish-like play). Valid because Maia's
+ * `p_i^(1/T)` renormalized. T>1 flattens the distribution (mass bleeds onto
+ * the rarer moves); T<1 sharpens it toward the top move. The user-facing
+ * polarity is the OPPOSITE of the naive reading, because Maia's peak is the
+ * most *human* move, not the objectively best one: sharpening (T<1) is the
+ * "Human" end (the engine leans on the single most human-likely move, and
+ * findability demotes rare-but-strong moves harder), while flattening (T>1) is
+ * the "Stockfish" end (rare-but-strong moves gain enough weight to clear
+ * findability and surface in the ranking). Do NOT re-label T<1 as
+ * "Stockfish-like" — that inverted assumption was the original bug. Valid
+ * because Maia's
  * `policy()` output is itself a softmax over move logits (`maskAndSoftmax`,
  * `@/lib/maiaEncoding`) — `p_i^(1/T) / sum(p_j^(1/T))` is mathematically
  * equivalent to `softmax(logits/T)` for such inputs.

@@ -91,7 +91,7 @@ export function ProseSpan({
         side="top"
         onMouseEnter={onOpenNow}
         onMouseLeave={onClose}
-        className="w-auto max-w-xs rounded-md border-0 bg-foreground px-3 py-1.5 text-xs text-background"
+        className="w-auto max-w-xs rounded-lg border border-border/50 bg-background px-3 py-2 text-xs text-foreground shadow-xl"
         data-testid={tooltipTestId}
       >
         {children}

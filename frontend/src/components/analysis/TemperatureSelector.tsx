@@ -9,11 +9,16 @@
  * `useFlawChessEngine`'s `temperature === DEFAULT_POLICY_TEMPERATURE` no-op
  * short-circuit fire for every user who never touches the slider).
  *
- * Polarity: the slider's LEFT end is "Human" (high temperature, more
- * human-like move spread) and the RIGHT end is "Stockfish" (low/sharp
- * temperature, engine-optimal). Endpoints are labelled with the Maia-violet
- * Human and Stockfish-blue Stockfish captions above the track; no numeric
- * value is shown.
+ * Polarity: the slider's LEFT end is "Human" (LOW/sharp temperature) and the
+ * RIGHT end is "Stockfish" (HIGH/flat temperature). This looks backwards until
+ * you remember Maia's distribution models *human* choice — its peak is the
+ * most human-likely move, not the objectively best one. Sharpening (Human end)
+ * concentrates mass on that peak, so findability pushes rare-but-strong moves
+ * down and the engine settles on the natural move; flattening (Stockfish end)
+ * spreads mass onto the rarer moves, so a strong move you'd seldom find clears
+ * the findability bar and surfaces. Endpoints are labelled with the
+ * Maia-violet Human and Stockfish-blue Stockfish captions above the track; no
+ * numeric value is shown.
  */
 
 import { User, Cpu } from 'lucide-react';
@@ -47,22 +52,23 @@ const SLIDER_STEP = 0.01;
 
 /**
  * Radix Slider stays linear internally over [-1, 1]; position 0 maps to
- * temperature 1 EXACTLY (2 ** -0 === 1 in IEEE 754 — Pitfall 7). The exponent
- * is NEGATED so the polarity matches the labels: the LEFT end (position -1) is
- * "Human" (temperature 2.0) and the RIGHT end (position +1) is "Stockfish"
- * (temperature 0.5) — moving the thumb toward Stockfish lowers the temperature.
+ * temperature 1 EXACTLY (2 ** 0 === 1 in IEEE 754 — Pitfall 7). The LEFT end
+ * (position -1) is "Human" (temperature 0.5, sharp) and the RIGHT end
+ * (position +1) is "Stockfish" (temperature 2.0, flat) — moving the thumb
+ * toward Stockfish RAISES the temperature (see the Polarity note above for why
+ * a flatter Maia distribution is the more engine-optimal end).
  */
 export function sliderPositionToTemperature(position: number): number {
-  return 2 ** -position;
+  return 2 ** position;
 }
 
 /**
- * Inverse of sliderPositionToTemperature — `log2(1 / t)` rather than
- * `-log2(t)` so the center is exactly +0 (not -0) and the round trip is exact
- * at the endpoints (Pitfall 7).
+ * Inverse of sliderPositionToTemperature — `log2(t)` (not `-log2(1 / t)`) so
+ * the center is exactly +0 (not -0) and the round trip is exact at the
+ * endpoints (Pitfall 7).
  */
 export function temperatureToSliderPosition(temperature: number): number {
-  return Math.log2(1 / temperature);
+  return Math.log2(temperature);
 }
 
 export function TemperatureSelector({

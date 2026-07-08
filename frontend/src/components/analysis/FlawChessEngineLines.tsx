@@ -24,8 +24,8 @@
  * mitigation).
  */
 
-import { useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ChevronDown, Cpu, User } from 'lucide-react';
 
 import type { RankedLine } from '@/lib/engine/types';
 import { expectedScoreToWhitePovCp, sideToMoveFromFen, type MoverColor } from '@/lib/liveFlaw';
@@ -34,10 +34,11 @@ import { cn } from '@/lib/utils';
 import {
   FLAWCHESS_ENGINE_BADGE_SHADES,
   STOCKFISH_ACCENT,
+  MAIA_ACCENT,
   MOVE_HIGHLIGHT_GOOD,
 } from '@/lib/theme';
 import { MiniBoard } from '@/components/board/MiniBoard';
-import { Tooltip } from '@/components/ui/tooltip';
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 import { replayPvLine, formatScore, EngineLinesSkeleton, LINES_MIN_HEIGHT } from './EngineLines';
 
 /** Maximum number of ranked lines displayed (D-08) — a LOCAL constant, distinct
@@ -45,10 +46,35 @@ import { replayPvLine, formatScore, EngineLinesSkeleton, LINES_MIN_HEIGHT } from
  * (Phase 158, RESEARCH Open Question 3) so Analysis.tsx sizes the FC-displayed
  * SAN slice from this single source of truth instead of a duplicated literal. */
 export const MAX_LINES = 2;
-/** Maximum number of plies shown per modal path (D-07, mirrors EngineLines.tsx). */
-const MAX_PLIES = 5;
+/** Maximum number of plies shown per collapsed modal path. One fewer than
+ * EngineLines.tsx's 5: the FlawChess row carries an extra objective-eval aside
+ * next to the badge, so it's wider — 5 plies overflow the card and would either
+ * wrap (layout jump) or scroll (ugly bar). 4 fits on one line; the chevron
+ * reveals the full path. */
+const MAX_PLIES = 4;
 /** Miniboard size (px) inside the move-chip hover tooltip (mirrors EngineLines.tsx). */
 const TOOLTIP_BOARD_SIZE = 144;
+/** Placeholder for an unavailable eval/probability in the hover header — the
+ *  same glyph `formatScore` uses for a null eval, so both slots read alike. */
+const STAT_PLACEHOLDER = '…';
+/** Icon size in the preview header — matches UnifiedMovePopover's ICON_CLASS. */
+const HEADER_ICON_CLASS = 'inline h-3.5 w-3.5 shrink-0';
+// Preview-panel chrome — the SAME override the dotted-move popover uses
+// (ProseSpan's PopoverContent), so a hovered/tapped move chip reads identically
+// to a hovered prose move. `w-auto` collapses the primitive's default w-72 to
+// hug the miniboard.
+const HOVER_CHROME =
+  'w-auto max-w-xs rounded-lg border border-border/50 bg-background px-3 py-2 text-xs text-foreground shadow-xl';
+/** Hover-intent delay (ms) before a mouse-hover opens the preview — mirrors the
+ *  prose move popovers so the two surfaces feel the same on desktop. */
+const HOVER_OPEN_DELAY_MS = 150;
+
+/** Formats a raw Maia move probability (0-1) as a rounded percent, or the
+ *  placeholder glyph when unavailable — mirrors FlawChessAgreementVerdict's
+ *  formatMaiaProbability, defaulted (not dropped) so the header slot always fills. */
+function formatMaiaPct(prob: number | null): string {
+  return prob == null ? STAT_PLACEHOLDER : `${Math.round(prob * 100)}%`;
+}
 
 // Chip class — identical to EngineLines.tsx's desktop (non-compact) CHIP_CLASS,
 // so the two engine cards read as one visual family. No compact variant here:
@@ -103,6 +129,150 @@ interface RankedLineRowProps {
   addSeparator: boolean;
 }
 
+/** The per-ply data a move chip's preview panel shows; null renders a bare
+ *  play-on-click chip (no preview) for a ply whose FEN replay failed. */
+interface ChipPreview {
+  fen: string;
+  from: string;
+  to: string;
+  flipped: boolean;
+  /** Stockfish eval of the position after the move, pre-formatted (white-POV). */
+  evalText: string;
+  /** Raw Maia probability of the move, pre-formatted (e.g. "45%"). */
+  maiaText: string;
+}
+
+/**
+ * A single modal-path move chip with its position preview. The preview is a
+ * Popover (not a bare Tooltip) so it works on BOTH pointer types with one
+ * reveal-then-play contract, mirroring `ProseSpan`:
+ *  - Mouse: hover opens the preview after a short intent delay; a click plays
+ *    (the preview is already open from the hover, so it's effectively single-click).
+ *  - Touch: the FIRST tap reveals the preview, the SECOND tap plays — tapping
+ *    elsewhere dismisses it (Radix outside-press).
+ *  - Keyboard: focus opens the preview; Enter/Space plays.
+ *
+ * `wasOpenAtPress` is captured at `pointerdown` (before the tap-driven focus can
+ * flip `open`), so a first tap can never be misread as "already open" and play
+ * early — the exact race `ProseSpan` documents.
+ */
+function ModalMoveChip({
+  displayMove,
+  testId,
+  onPlay,
+  preview,
+}: {
+  displayMove: string;
+  testId: string;
+  onPlay: () => void;
+  preview: ChipPreview | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wasOpenAtPress = useRef(false);
+
+  const clearTimer = () => {
+    if (openTimer.current) {
+      clearTimeout(openTimer.current);
+      openTimer.current = null;
+    }
+  };
+  const openNow = () => {
+    clearTimer();
+    setOpen(true);
+  };
+  const openDelayed = () => {
+    clearTimer();
+    openTimer.current = setTimeout(() => setOpen(true), HOVER_OPEN_DELAY_MS);
+  };
+  const close = () => {
+    clearTimer();
+    setOpen(false);
+  };
+  useEffect(() => () => clearTimer(), []);
+
+  const button = (
+    <button
+      type="button"
+      className={CHIP_CLASS}
+      data-testid={testId}
+      aria-label={`Play ${displayMove}`}
+      // Mouse hover opens/closes with intent delay; touch never opens on
+      // enter/leave (only on tap, below), so the two paths never fight.
+      onPointerEnter={preview ? (e) => e.pointerType === 'mouse' && openDelayed() : undefined}
+      onPointerLeave={preview ? (e) => e.pointerType === 'mouse' && close() : undefined}
+      onFocus={preview ? openNow : undefined}
+      onBlur={preview ? close : undefined}
+      onPointerDown={preview ? () => (wasOpenAtPress.current = open) : undefined}
+      onClick={(e) => {
+        // No preview → always play. Keyboard-activated click (detail 0) plays
+        // (focus already revealed it). Pointer click plays only when the preview
+        // was already open at press time (2nd tap / post-hover); else it reveals.
+        if (!preview || e.detail === 0 || wasOpenAtPress.current) {
+          onPlay();
+          close();
+        } else {
+          openNow();
+        }
+      }}
+    >
+      {displayMove}
+    </button>
+  );
+
+  if (!preview) return button;
+
+  return (
+    <Popover open={open} onOpenChange={(next) => (next ? undefined : close())}>
+      <PopoverAnchor asChild>{button}</PopoverAnchor>
+      <PopoverContent
+        side="top"
+        className={HOVER_CHROME}
+        data-testid={`${testId}-preview`}
+        // Keep focus on the chip so the second tap's press-time `open` read is
+        // reliable and opening doesn't blur-close the panel on touch.
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        onMouseEnter={openNow}
+        onMouseLeave={close}
+      >
+        <div className="flex flex-col gap-1.5">
+          {/* Stockfish eval (top-left, white-POV pawn scale like the row badge) +
+              raw Maia probability (top-right). */}
+          <div className="flex items-center justify-between gap-4 text-xs font-medium tabular-nums">
+            <span
+              className="flex items-center gap-1"
+              style={{ color: STOCKFISH_ACCENT }}
+              aria-label={`Stockfish evaluation ${preview.evalText}`}
+            >
+              <Cpu className={HEADER_ICON_CLASS} aria-hidden="true" />
+              {preview.evalText}
+            </span>
+            <span
+              className="flex items-center gap-1"
+              style={{ color: MAIA_ACCENT }}
+              aria-label={`Maia probability ${preview.maiaText}`}
+            >
+              <User className={HEADER_ICON_CLASS} aria-hidden="true" />
+              {preview.maiaText}
+            </span>
+          </div>
+          {/* pointer-events-none: the board is a pure preview — taps fall through
+              to the panel (kept open) or outside (dismiss), never the board. */}
+          <div className="pointer-events-none overflow-hidden rounded-md">
+            <MiniBoard
+              fen={preview.fen}
+              size={TOOLTIP_BOARD_SIZE}
+              flipped={preview.flipped}
+              lastMove={{ from: preview.from, to: preview.to }}
+              lastMoveColor={MOVE_HIGHLIGHT_GOOD}
+            />
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 /** Renders a single ranked line as one row: score-pair badge + modal-path chips. */
 function RankedLineRow({
   line,
@@ -140,7 +310,14 @@ function RankedLineRow({
 
   return (
     <div
-      className={cn('flex items-start gap-1 px-2 py-1', addSeparator && 'border-t border-border')}
+      className={cn(
+        'flex gap-1 mx-2 py-1',
+        // Collapsed: single row (badge vertically centered against the one move
+        // line). Expanded: the modal path wraps to several rows, so top-align the
+        // badge/chevron to the first row instead of the vertical center.
+        expanded ? 'items-start' : 'items-center',
+        addSeparator && 'border-t border-border',
+      )}
     >
       {/* Gold practical-score badge (white font, shade by rank) + the objective
           Stockfish eval of this same move in Stockfish blue. Never the bare phrase
@@ -157,8 +334,16 @@ function RankedLineRow({
         </span>
       </span>
 
-      {/* Modal-path chips, in a flex-1 wrapping container so the chevron pins right. */}
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+      {/* Modal-path chips, in a flex-1 container so the chevron pins right.
+          Collapsed: one line, no wrap — MAX_PLIES is tuned so the row fits; clip
+          (not scroll) as a safety net against rare long SANs, since a scrollbar
+          reads as clutter and wrapping jumps the layout. Expanded: wrap to rows. */}
+      <div
+        className={cn(
+          'flex min-w-0 flex-1 items-center gap-1',
+          expanded ? 'flex-wrap' : 'flex-nowrap overflow-hidden',
+        )}
+      >
         {moves.map((uciMove, moveIndex) => {
           // Safe: moveIndex is within moves.slice(0, MAX_PLIES) bounds (noUncheckedIndexedAccess).
           const from = uciMove.slice(0, 2);
@@ -169,47 +354,34 @@ function RankedLineRow({
           const step = steps[moveIndex];
           const displayMove = step?.san ?? uciMove;
           const previewFen = step?.fen ?? null;
-
-          const chip = (
-            <button
-              className={CHIP_CLASS}
-              data-testid={`flawchess-line-${lineIndex}-move-${moveIndex}`}
-              aria-label={`Play ${displayMove}`}
-              // Grafts the WHOLE line up to (and including) this move — moves is
-              // a prefix of line.modalPath, so slice gives the UCI path (D-10).
-              onClick={() => onMoveClick(moves.slice(0, moveIndex + 1))}
-            >
-              {displayMove}
-            </button>
-          );
+          // Per-ply stats for the preview header, index-aligned with modalPath
+          // (moves is a leading prefix, so moveIndex maps straight across).
+          const stat = line.modalStats[moveIndex];
 
           return (
             <span key={moveIndex} className="inline-flex items-center gap-0.5">
               {isWhiteMove && (
                 <span className="text-muted-foreground select-none text-xs">{label}</span>
               )}
-              {/* Hover preview: a miniboard of the position after this modal-path
-                  move (desktop only — Tooltip suppresses on touch). */}
-              {previewFen ? (
-                <Tooltip
-                  side="top"
-                  delayDuration={150}
-                  contentClassName="overflow-hidden p-0"
-                  content={
-                    <MiniBoard
-                      fen={previewFen}
-                      size={TOOLTIP_BOARD_SIZE}
-                      flipped={flipped}
-                      lastMove={{ from, to }}
-                      lastMoveColor={MOVE_HIGHLIGHT_GOOD}
-                    />
-                  }
-                >
-                  {chip}
-                </Tooltip>
-              ) : (
-                chip
-              )}
+              <ModalMoveChip
+                displayMove={displayMove}
+                testId={`flawchess-line-${lineIndex}-move-${moveIndex}`}
+                // Grafts the WHOLE line up to (and including) this move — moves is
+                // a prefix of line.modalPath, so slice gives the UCI path (D-10).
+                onPlay={() => onMoveClick(moves.slice(0, moveIndex + 1))}
+                preview={
+                  previewFen
+                    ? {
+                        fen: previewFen,
+                        from,
+                        to,
+                        flipped,
+                        evalText: formatScore(stat?.objectiveEvalCp ?? null, null),
+                        maiaText: formatMaiaPct(stat?.maiaProb ?? null),
+                      }
+                    : null
+                }
+              />
             </span>
           );
         })}

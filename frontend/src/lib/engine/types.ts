@@ -46,6 +46,25 @@ export interface SearchBudget {
   policyTemperature?: number;
 }
 
+/**
+ * Per-ply display stats for one move in a line's `modalPath`, index-aligned
+ * with it (`modalStats[i]` describes `modalPath[i]`). Surfaced for the
+ * move-chip hover preview so each miniboard can annotate the position it
+ * shows; NOT consumed by the search itself. Both fields are read straight off
+ * the search-tree node the modal path walks through (Phase 160).
+ */
+export interface ModalPlyStat {
+  /** White-POV Stockfish eval (cp) of the position AFTER this move, if graded. */
+  objectiveEvalCp: number | null;
+  /**
+   * Raw Maia policy probability (0-1) of this move at its parent position —
+   * the un-truncated, un-temperature-reshaped value, so it matches the raw
+   * Maia % shown in the prose move popovers rather than the search's
+   * renormalized `prior`.
+   */
+  maiaProb: number | null;
+}
+
 /** One ranked root candidate line in an `EngineSnapshot` (D-06/D-08). */
 export interface RankedLine {
   /** The root candidate move, UCI (D-08). */
@@ -56,6 +75,8 @@ export interface RankedLine {
   objectiveEvalCp: number | null;
   /** The line's most-visited continuation, UCI sequence (D-08). */
   modalPath: string[];
+  /** Per-ply display stats index-aligned with `modalPath` (Phase 160). */
+  modalStats: ModalPlyStat[];
   /** Total expansion visits attributed to this root candidate. */
   visits: number;
 }

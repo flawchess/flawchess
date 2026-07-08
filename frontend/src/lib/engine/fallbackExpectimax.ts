@@ -79,6 +79,7 @@ function createRoot(rootFen: string, rootMover: MoverColor): FallbackNode {
     isTerminal: false,
     isExpanded: false,
     objectiveEvalCp: null,
+    rawMaiaProb: null,
     children: new Map(),
   };
   const terminal = terminalValue(rootFen, rootMover);
@@ -97,6 +98,7 @@ function createChildNode(
   prior: number,
   value: number,
   objectiveEvalCp: number | null,
+  rawMaiaProb: number | null,
   rootMover: MoverColor,
 ): FallbackNode {
   const node: FallbackNode = {
@@ -111,6 +113,7 @@ function createChildNode(
     isTerminal: false,
     isExpanded: false,
     objectiveEvalCp,
+    rawMaiaProb,
     children: new Map(),
   };
   const terminal = terminalValue(fen, rootMover);
@@ -205,7 +208,16 @@ async function expandNode(
     const prior = candidateMap.get(uci) ?? 0;
     const grade = grades.get(uci);
     const value = grade ? leafExpectedScore(grade, rootMover) : NEUTRAL_EXPECTED_SCORE;
-    const child = createChildNode(childFen, node.depth + 1, uci, prior, value, grade?.evalCp ?? null, rootMover);
+    const child = createChildNode(
+      childFen,
+      node.depth + 1,
+      uci,
+      prior,
+      value,
+      grade?.evalCp ?? null,
+      rawPolicy[uci] ?? null,
+      rootMover,
+    );
     node.children.set(uci, child);
   }
   node.isExpanded = true;

@@ -32,11 +32,13 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  MAIA_ACCENT,
   MOVE_QUALITY_BLUNDER,
   MOVE_QUALITY_GOOD,
   MOVE_QUALITY_INACCURACY,
   MOVE_QUALITY_MISTAKE,
   MOVE_QUALITY_PENDING,
+  STOCKFISH_ACCENT,
 } from '@/lib/theme';
 import {
   bucketMovesByQuality,
@@ -45,6 +47,7 @@ import {
 } from '@/lib/moveQuality';
 import { computePositionVerdict, formatVerdictEval, type PositionVerdictResult, type VerdictMove } from '@/lib/positionVerdict';
 import { ProseSpan } from '@/components/analysis/ProseSpan';
+import { UnifiedMovePopover } from '@/components/analysis/UnifiedMovePopover';
 import type { MoveQualityEval } from '@/components/analysis/MovesByRatingChart';
 import type { MoveCurvePoint } from '@/hooks/useMaiaEngine';
 
@@ -126,6 +129,13 @@ function interleaveWithConjunction(nodes: React.ReactNode[], conjunction: 'and' 
 /** Hover-intent delay before a prose move's popover opens (ms) — matches InfoPopover. */
 const PROSE_POPOVER_OPEN_DELAY_MS = 100;
 
+/** Renders a move's objective (Stockfish) eval in the Stockfish accent blue —
+ *  matches the blue eval numbers in FlawChessEngineLines / the FlawChess card's
+ *  prose so the parenthetical evals read as Stockfish's objective numbers. */
+function StockfishEval({ text }: { text: string }): React.ReactNode {
+  return <span style={{ color: STOCKFISH_ACCENT }}>{text}</span>;
+}
+
 /**
  * One interactive move span (controlled by the parent). Hover/tap/focus opens a
  * white Maia%+eval popover with the same mechanics + styling as InfoPopover
@@ -173,7 +183,10 @@ function ProseMoveSpan({
       onClose={onClose}
       onPlay={onPlay}
     >
-      {`${move.maiaPct}% at this rating · ${evalText}`}
+      {/* Unified 3-line popover shared with the FlawChess card (quick 260708-qrr).
+          FlawChess's practical eval isn't available in this component's inputs
+          (only Maia probabilities + Stockfish grading), so that line is omitted. */}
+      <UnifiedMovePopover objectiveEval={evalText} maiaProbability={`${move.maiaPct}%`} />
     </ProseSpan>
   );
 }
@@ -212,8 +225,7 @@ function renderVerdictSentence(
   if (badList === null) {
     return (
       <>
-        At {elo} Elo, this position is {tierWord} for {owner}, though {escapeNode} ({escapeMove!.maiaPct}%) keeps
-        things on track.
+        At {elo} Elo, this position is {tierWord} for {owner}, though {escapeNode} keeps things on track.
       </>
     );
   }
@@ -226,8 +238,8 @@ function renderVerdictSentence(
   }
   return (
     <>
-      At {elo} Elo, this position is {tierWord} for {owner} — {badList} lead to trouble, but {escapeNode} (
-      {escapeMove!.maiaPct}%) keeps things on track.
+      At {elo} Elo, this position is {tierWord} for {owner} — {badList} lead to trouble, but {escapeNode} keeps
+      things on track.
     </>
   );
 }
@@ -338,27 +350,33 @@ export function MaiaMoveQualityBar({
     setActiveProseSan(null);
   };
 
+  // Each prose move is followed by its objective (Stockfish) eval in blue parens,
+  // mirroring the FlawChess card's `move (eval)` convention (quick 260708-qrr).
   const renderMove = (m: VerdictMove): React.ReactNode => (
-    <ProseMoveSpan
-      key={m.san}
-      move={m}
-      isOpen={activeProseSan === m.san}
-      onOpenDelayed={() => openProseDelayed(m.san)}
-      onOpenNow={() => openProseNow(m.san)}
-      onClose={closeProse}
-      onPlay={
-        onPlayMove
-          ? () => {
-              closeProse();
-              onPlayMove(m.san);
-            }
-          : undefined
-      }
-    />
+    <Fragment key={m.san}>
+      <ProseMoveSpan
+        move={m}
+        isOpen={activeProseSan === m.san}
+        onOpenDelayed={() => openProseDelayed(m.san)}
+        onOpenNow={() => openProseNow(m.san)}
+        onClose={closeProse}
+        onPlay={
+          onPlayMove
+            ? () => {
+                closeProse();
+                onPlayMove(m.san);
+              }
+            : undefined
+        }
+      />
+      {' ('}
+      <StockfishEval text={formatVerdictEval(m.evalCp, m.evalMate)} />
+      {')'}
+    </Fragment>
   );
 
   return (
-    <div className="flex flex-col gap-2" data-testid="maia-move-quality-bar">
+    <div className="flex flex-col gap-2 px-1" data-testid="maia-move-quality-bar">
       {/* The stacked bar. Segments abut inside a single rounded, clipped track. */}
       <div className="flex h-7 w-full overflow-hidden rounded-md" role="group" aria-label="Move quality distribution">
         {buckets.map((bucket) => {
@@ -414,15 +432,34 @@ export function MaiaMoveQualityBar({
       {/* Hovered segment's move list, or (resting state) the prose position
           verdict, or (nothing graded yet) the original static help text.
           Fixed min-height so switching between them doesn't shift the layout. */}
-      <div className="min-h-[1.5rem] text-sm" data-testid="maia-quality-hovered-list">
+      <div className="min-h-[3.75rem] text-sm" data-testid="maia-quality-hovered-list">
         {activeBucket && activeBucket.moves.length > 0 ? (
           <span>
             <span className="font-semibold" style={{ color: BUCKET_META[activeBucket.key].color }}>
               {BUCKET_META[activeBucket.key].label}:
             </span>{' '}
-            <span className="text-muted-foreground">
-              {activeBucket.moves.map((m) => `${m.san} ${pct(m.probability)}`).join(', ')}
-            </span>
+            {/* Per move: SAN in the segment's severity color, the objective
+                Stockfish eval in blue, and the Maia probability in violet —
+                matching the page's source palette (Stockfish blue / Maia
+                violet). The three parts are joined by grey dots; moves are
+                separated by commas (quick 260708). */}
+            {activeBucket.moves.map((m, i) => {
+              const grade = qualityBySan.get(m.san);
+              return (
+                <Fragment key={m.san}>
+                  {i > 0 && <span className="text-muted-foreground">, </span>}
+                  <span className="font-medium" style={{ color: BUCKET_META[activeBucket.key].color }}>
+                    {m.san}
+                  </span>
+                  <span className="text-muted-foreground"> · </span>
+                  <span style={{ color: STOCKFISH_ACCENT }}>
+                    {formatVerdictEval(grade?.evalCp ?? null, grade?.evalMate ?? null)}
+                  </span>
+                  <span className="text-muted-foreground"> · </span>
+                  <span style={{ color: MAIA_ACCENT }}>{pct(m.probability)}</span>
+                </Fragment>
+              );
+            })}
           </span>
         ) : verdict ? (
           <span data-testid="maia-position-verdict">

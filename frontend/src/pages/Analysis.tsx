@@ -34,7 +34,6 @@ import {
   Cpu,
   type LucideIcon,
   Tag,
-  TrendingUp,
   User,
 } from 'lucide-react';
 import { useAnalysisBoard } from '@/hooks/useAnalysisBoard';
@@ -55,6 +54,7 @@ import { FlawChessEngineLines, MAX_LINES as FC_MAX_LINES } from '@/components/an
 import { FlawChessAgreementVerdict } from '@/components/analysis/FlawChessAgreementVerdict';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
+import { InfoPopover } from '@/components/ui/info-popover';
 import { VariationTree } from '@/components/analysis/VariationTree';
 import type { FlawMarkerEntry } from '@/components/analysis/VariationTree';
 import type { FlawSeverity } from '@/types/library';
@@ -193,6 +193,33 @@ function EngineToggleHeader({
         {children}
       </span>
     </>
+  );
+}
+
+/**
+ * Header info tooltip for the FlawChess Engine card — a plain-language, three-paragraph
+ * explanation of what the engine does and why it differs from a normal engine. Sourced
+ * from docs/flawchess-engine-explained-2026-07-06.md (§1, §9), kept non-technical
+ * (no "expectimax"/"MCTS" jargon in user-facing copy).
+ */
+function FlawChessInfoTooltip() {
+  return (
+    <InfoPopover ariaLabel="About the FlawChess Engine" testId="flawchess-info-popover">
+      <div className="max-w-xs space-y-2">
+        <p>
+          Stockfish shows the objectively best move, assuming perfect play. The FlawChess
+          Engine instead favors moves you can realistically pull off: ones that are easier
+          for a player at your level to find (along with their follow-ups), and that pay off
+          against an opponent who defends imperfectly, the way real players do.
+        </p>
+        <p>
+          It blends Stockfish's objective quality with Maia's model of how humans at a given
+          rating really play, treating both sides as fallible. So it can rank a trap above
+          the textbook best move, showing both numbers: "objectively +3.0, but practically
+          +0.9 for you."
+        </p>
+      </div>
+    </InfoPopover>
   );
 }
 
@@ -1566,9 +1593,19 @@ export default function Analysis() {
       />
     ) : null;
 
+  // Shared ELO slider (155 UAT): drives BOTH the FlawChess and Maia engines. Its
+  // canonical home is the bottom of the FlawChess Engine card (below), where the
+  // header already shows the selected ELO; the mobile Maia tab renders a second copy
+  // since it's a separate screen. Defined before the card so the card can embed it.
+  const eloSelector = (
+    <div className="px-1 flex flex-col gap-2" data-testid="analysis-elo-selector-row">
+      <EloSelector value={selectedElo} onChange={setSelectedElo} />
+    </div>
+  );
+
   // FlawChess Engine card (D-01, DISPLAY-04) — a fixed-height charcoal Card
   // stacked directly above MaiaHumanPanel, reused verbatim in BOTH the desktop
-  // human column and the mobile "Human" tab (mobile-parity: D-01's "apply to
+  // human column and the mobile "FlawChess" tab (mobile-parity: D-01's "apply to
   // both" + CLAUDE.md's mobile-parity rule). Mirrors the Stockfish card's own
   // loading → off → lines CardBody pattern (line ~1585 below): flawChessLoading
   // gates the pre-`isReady` skeleton (worker pool spin-up); once ready,
@@ -1592,6 +1629,7 @@ export default function Analysis() {
               strength the engine is playing at (155 UAT). */}
           FlawChess Engine ({selectedElo} ELO)
         </EngineToggleHeader>
+        <FlawChessInfoTooltip />
       </CardHeader>
       <CardBody className={`${LINES_MIN_HEIGHT} p-2`}>
         {flawChessLoading ? (
@@ -1637,28 +1675,21 @@ export default function Analysis() {
             </div>
           </>
         )}
+        {/* ELO slider — always shown at the bottom of the card, even when the
+            FlawChess Engine is off, since it also drives the Maia surfaces. The card
+            header already reflects this value ("FlawChess Engine (N ELO)"). */}
+        <div className="mt-2 border-t border-border pt-2">{eloSelector}</div>
       </CardBody>
     </Card>
   );
 
-  // Shared ELO slider (155 UAT): moved OUT of the Maia card because it drives BOTH
-  // the FlawChess and Maia engines, not just Maia. Rendered directly below the Maia
-  // panel in both the desktop human column and the mobile "Human" tab. (Phase 159
-  // D-08's temperature slider moved to the bottom of the FlawChess Engine card,
-  // since it only reshapes that engine's policy.)
-  const eloSelector = (
-    <div className="px-1 flex flex-col gap-2" data-testid="analysis-elo-selector-row">
-      <EloSelector value={selectedElo} onChange={setSelectedElo} />
-    </div>
-  );
-
-  // The mobile "Human" tab content (D-03, LIC-02) — shared between the game-mode
-  // 4-tab strip and the free-play Moves|Human pair below, so this JSX isn't
-  // duplicated across both mobile tab layouts.
+  // The mobile "Maia" tab content (D-03, LIC-02) — shared across every mobile tab
+  // layout below, so this JSX isn't duplicated. The FlawChess card lives in its own
+  // adjacent tab (flawChessTab) rather than here; the shared ELO slider stays with
+  // the Maia panel since it drives both engines.
   const humanTab = (
     <TabsContent value="human" className="min-h-0 overflow-y-auto thin-scrollbar">
       <div className="flex flex-col gap-3 px-3">
-        {flawChessCard}
         <MaiaHumanPanel
           selectedElo={selectedElo}
           perElo={maia.perElo}
@@ -1679,41 +1710,81 @@ export default function Analysis() {
     </TabsContent>
   );
 
+  // The mobile "FlawChess" tab content — the FlawChess Engine card, moved out of the
+  // Maia tab into its own tab to the right of it. Shared across the mobile tab layouts.
+  const flawChessTab = (
+    <TabsContent value="flawchess" className="min-h-0 overflow-y-auto thin-scrollbar">
+      <div className="flex flex-col gap-3 px-3">{flawChessCard}</div>
+    </TabsContent>
+  );
+
+  // Mobile Stockfish PV lines, without the info-card header. Mirrors the desktop
+  // `analysis-engine-card` body's loading → off → lines branches. Relocated from
+  // above the board to the top of the Eval tab; shown there in every mobile layout.
+  const mobileEngineLines = (
+    <div className="shrink-0 px-2" data-testid="analysis-engine-lines-mobile">
+      {engineLoading ? (
+        <EngineLinesSkeleton testId="analysis-engine-loading" compact />
+      ) : !engineEnabled ? (
+        <div className="flex h-full items-center px-2 text-sm text-muted-foreground">
+          Engine off
+        </div>
+      ) : (
+        <EngineLines
+          pvLines={engine.pvLines}
+          isAnalyzing={engine.isAnalyzing}
+          startPly={currentPly}
+          baseFen={position}
+          flipped={boardFlipped}
+          onMoveClick={playUciLine}
+          compact
+        />
+      )}
+    </div>
+  );
+
+  // The mobile "Eval" tab content — Stockfish PV lines on top, the eval chart below
+  // (game mode only; evalChart() returns null in free play / before the game loads,
+  // leaving just the engine lines).
+  const evalTab = (
+    <TabsContent
+      value="eval"
+      className="min-h-0 overflow-x-hidden overflow-y-auto thin-scrollbar"
+    >
+      <div className="flex flex-col gap-2 pt-1">
+        {mobileEngineLines}
+        {evalChartReady && <div className="px-3">{evalChart('h-[120px]')}</div>}
+      </div>
+    </TabsContent>
+  );
+
+  // The mobile "Moves" tab content — the vertical variation tree. Shared across the
+  // mobile tab layouts.
+  const movesTab = (
+    <TabsContent value="moves" className="flex min-h-0 flex-1 flex-col">
+      {variationTree('vertical')}
+    </TabsContent>
+  );
+
+  // The mobile "Tags" tab content — the flaw-tags panel (game mode only, so it only
+  // appears in the full tab strip below).
+  const tagsTab = (
+    <TabsContent value="tags" className="min-h-0 overflow-y-auto thin-scrollbar">
+      <div className="px-2">{tagsPanel()}</div>
+    </TabsContent>
+  );
+
   // ── Mobile takeover layout (< 640px) ──────────────────────────────────────────
-  // Engine PV lines above the board (no info card), board + eval bar, then a 2-tab view
-  // (Moves | Eval) that fills the space down to the in-flow board-controls footer. Free
-  // play has no eval chart, so it shows only the move list (no tab bar). The shell's
-  // back-button header + suppressed bottom nav (ProtectedLayout) complete the takeover.
+  // Board + eval bar, then a tab view (Moves | Eval | Maia | FlawChess [| Tags]) that
+  // fills the space down to the in-flow board-controls footer. The Stockfish PV lines
+  // live at the top of the Eval tab (not above the board). The shell's back-button
+  // header + suppressed bottom nav (ProtectedLayout) complete the takeover.
   if (isMobile) {
     return (
       <div
         data-testid="analysis-page"
         className="flex min-h-0 flex-1 flex-col bg-background"
       >
-        {/* Stockfish PV lines on top, without the info-card header. Mirrors the
-            desktop `analysis-engine-card` body's loading → off → lines branches.
-            155 UAT un-merge: the standalone Stockfish top-2 shows independently of
-            the FlawChess Engine (no "merged" state). */}
-        <div className="shrink-0 px-2 pt-2" data-testid="analysis-engine-lines-mobile">
-          {engineLoading ? (
-            <EngineLinesSkeleton testId="analysis-engine-loading" compact />
-          ) : !engineEnabled ? (
-            <div className="flex h-full items-center px-2 text-sm text-muted-foreground">
-              Engine off
-            </div>
-          ) : (
-            <EngineLines
-              pvLines={engine.pvLines}
-              isAnalyzing={engine.isAnalyzing}
-              startPly={currentPly}
-              baseFen={position}
-              flipped={boardFlipped}
-              onMoveClick={playUciLine}
-              compact
-            />
-          )}
-        </div>
-
         {/* Board + eval bar. */}
         {/* Board block: source caps + top player, board, bottom player. max-w-[92vw]
             shrinks the board a touch so the name/clock strips top and bottom stay on
@@ -1733,76 +1804,107 @@ export default function Analysis() {
           </p>
         )}
 
-        {/* Tab view — fills all vertical space between the board and the footer. */}
+        {/* Tab view — fills all vertical space between the board and the footer.
+            Bounded chart height inside the Eval tab (not h-full): the board already
+            dominates the viewport, so a greedy chart pushed the board-controls footer
+            off-screen when the mobile browser's URL bar shrank the height. h-[120px]
+            (the established mobile chart height) keeps the footer visible. The full
+            5-tab strip (with Tags) shows only for a loaded, analyzed game; free play
+            and still-loading games drop the Tags tab. */}
         {isGameMode && evalChartReady ? (
           <Tabs
             defaultValue="moves"
             className="flex min-h-0 flex-1 flex-col gap-2 px-2 pt-2"
           >
             <TabsList variant="underline" className="w-full shrink-0">
-              <TabsTrigger value="moves" data-testid="analysis-tab-moves">
+              <TabsTrigger value="moves" data-testid="analysis-tab-moves" className="gap-1 px-1">
                 <ArrowLeftRight aria-hidden="true" />
                 Moves
               </TabsTrigger>
-              <TabsTrigger value="eval" data-testid="analysis-tab-eval">
-                <TrendingUp aria-hidden="true" />
-                Chart
+              {/* Engine-colored tab nav: Eval = Stockfish blue, Maia = violet,
+                  FlawChess = gold — matching each surface's accent (theme.ts). */}
+              <TabsTrigger
+                value="eval"
+                data-testid="analysis-tab-eval"
+                className="gap-1 px-1"
+                style={{ color: STOCKFISH_ACCENT }}
+              >
+                <Cpu aria-hidden="true" />
+                Eval
               </TabsTrigger>
-              <TabsTrigger value="human" data-testid="analysis-tab-human">
+              <TabsTrigger
+                value="human"
+                data-testid="analysis-tab-human"
+                className="gap-1 px-1"
+                style={{ color: MAIA_ACCENT }}
+              >
                 <User aria-hidden="true" />
                 Maia
               </TabsTrigger>
-              <TabsTrigger value="tags" data-testid="analysis-tab-tags">
+              <TabsTrigger
+                value="flawchess"
+                data-testid="analysis-tab-flawchess"
+                className="gap-1 px-1"
+                style={{ color: FLAWCHESS_ENGINE_ACCENT }}
+              >
+                <ChessKnight aria-hidden="true" />
+                FlawChess
+              </TabsTrigger>
+              <TabsTrigger value="tags" data-testid="analysis-tab-tags" className="gap-1 px-1">
                 <Tag aria-hidden="true" />
                 Tags
               </TabsTrigger>
             </TabsList>
-            <TabsContent value="moves" className="flex min-h-0 flex-1 flex-col">
-              {variationTree('vertical')}
-            </TabsContent>
-            {/* Bounded chart height (not h-full): the board already dominates the
-                viewport, so a greedy chart pushed the board-controls footer off-screen
-                when the mobile browser's URL bar shrank the height. h-[120px] (the
-                established mobile chart height) keeps the footer visible.
-                px-3 wrapper: the scrub slider is rendered 16px wider than the chart
-                (±8px thumb overhang) and normally lands in the desktop card's padding;
-                here it needs that horizontal room or it triggers a horizontal scrollbar
-                (overflow-y-auto coerces overflow-x to auto). overflow-x-hidden is the
-                belt-and-suspenders. */}
-            <TabsContent value="eval" className="min-h-0 overflow-x-hidden overflow-y-auto thin-scrollbar">
-              <div className="px-3">{evalChart('h-[120px]')}</div>
-            </TabsContent>
+            {movesTab}
+            {evalTab}
             {humanTab}
-            <TabsContent value="tags" className="min-h-0 overflow-y-auto thin-scrollbar">
-              <div className="px-2">{tagsPanel()}</div>
-            </TabsContent>
+            {flawChessTab}
+            {tagsTab}
           </Tabs>
-        ) : !isGameMode ? (
-          // Free play (D-03 open detail): a minimal Moves | Human tab pair — no eval
-          // chart / tags in free play, but the Human chart must still be reachable.
+        ) : (
+          // Free play or a still-loading / unanalyzed game: no eval chart or tags, but
+          // Moves, engine lines (Eval tab), Maia, and FlawChess must all stay reachable.
           <Tabs defaultValue="moves" className="flex min-h-0 flex-1 flex-col gap-2 px-2 pt-2">
             <TabsList variant="underline" className="w-full shrink-0">
-              <TabsTrigger value="moves" data-testid="analysis-tab-moves">
+              <TabsTrigger value="moves" data-testid="analysis-tab-moves" className="gap-1 px-1">
                 <ArrowLeftRight aria-hidden="true" />
                 Moves
               </TabsTrigger>
-              <TabsTrigger value="human" data-testid="analysis-tab-human">
+              {/* Engine-colored tab nav: Eval = Stockfish blue, Maia = violet,
+                  FlawChess = gold — matching each surface's accent (theme.ts). */}
+              <TabsTrigger
+                value="eval"
+                data-testid="analysis-tab-eval"
+                className="gap-1 px-1"
+                style={{ color: STOCKFISH_ACCENT }}
+              >
+                <Cpu aria-hidden="true" />
+                Eval
+              </TabsTrigger>
+              <TabsTrigger
+                value="human"
+                data-testid="analysis-tab-human"
+                className="gap-1 px-1"
+                style={{ color: MAIA_ACCENT }}
+              >
                 <User aria-hidden="true" />
                 Maia
               </TabsTrigger>
+              <TabsTrigger
+                value="flawchess"
+                data-testid="analysis-tab-flawchess"
+                className="gap-1 px-1"
+                style={{ color: FLAWCHESS_ENGINE_ACCENT }}
+              >
+                <ChessKnight aria-hidden="true" />
+                FlawChess
+              </TabsTrigger>
             </TabsList>
-            <TabsContent value="moves" className="flex min-h-0 flex-1 flex-col">
-              {variationTree('vertical')}
-            </TabsContent>
+            {movesTab}
+            {evalTab}
             {humanTab}
+            {flawChessTab}
           </Tabs>
-        ) : (
-          // Game mode but not yet ready for the full tab strip (game data still
-          // loading, or an unanalyzed game with no eval_series) — unchanged prior
-          // behavior: move list only.
-          <div className="flex min-h-0 flex-1 flex-col px-2 pt-2">
-            {variationTree('vertical')}
-          </div>
         )}
 
         {/* In-flow board-controls footer — replaces the suppressed mobile nav bar. */}
@@ -1853,7 +1955,8 @@ export default function Analysis() {
               enabled={maiaEnabled}
               onToggleEnabled={setMaiaEnabled}
             />
-            {eloSelector}
+            {/* The ELO slider now lives at the bottom of the FlawChess card above (its
+                canonical home), so no separate slider is rendered here on desktop. */}
           </div>
 
           {/* Board column ──────────────────────────────────────────────────── */}

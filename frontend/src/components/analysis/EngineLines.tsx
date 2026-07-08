@@ -264,7 +264,7 @@ function PvLineRow({
   return (
     <div
       className={cn(
-        'flex gap-1 px-2',
+        'flex gap-1 mx-2',
         // Expanded desktop lines wrap to several rows; top-align so the badge and
         // chevron pin to the first row instead of floating in the vertical center.
         compact ? 'items-center py-0.5' : 'items-start py-1',

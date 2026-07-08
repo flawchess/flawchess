@@ -23,7 +23,7 @@ progress:
 Phase: 159 (flawchess-engine-policy-temperature-root-move-findability-se) — EXECUTING
 Plan: 4 of 4
 Status: Phase 159 shipped — squash-merged to main
-Last activity: 2026-07-08
+Last activity: 2026-07-08 - Completed quick task 260708-qrr: unified move-hover popover across both analysis cards
 
 ## Project Reference
 
@@ -157,6 +157,7 @@ None active.
 | 260705-dj5 | Phase 151 Maia UAT: fixed-size card + loading skeleton, wider chart with right-side move labels, horizontal grid lines | 2026-07-05 | 026e2edb | [260705-dj5-uat-feedback-phase-151-fixed-size-human-](./quick/260705-dj5-uat-feedback-phase-151-fixed-size-human-/) |
 | 260705-kfg | Maia move-quality bar below Human Move Probability chart (hover-reveal move lists + severity-colored board arrows) | 2026-07-05 | 15b3a156 | [260705-kfg-maia-move-quality-bar-below-human-move-p](./quick/260705-kfg-maia-move-quality-bar-below-human-move-p/) |
 | 260705-m3z | Prose position evaluation (safe/tricky/highly difficult verdict + interactive severity-colored move spans with board arrows and Maia %/eval tooltips) below the Maia move-quality bar | 2026-07-05 | b31a1f45 | [260705-m3z-prose-position-evaluation-below-the-maia](./quick/260705-m3z-prose-position-evaluation-below-the-maia/) |
+| 260708-qrr | Unified move-hover popover (FlawChess/practical gold, Stockfish/objective blue, Maia/human violet — icon-led, whole-line color, omit unavailable) shared by both analysis cards' dotted moves | 2026-07-08 | a339346a | [260708-qrr-unified-move-popover-on-dotted-moves](./quick/260708-qrr-unified-move-popover-on-dotted-moves/) |
 
 ## Deferred Items
 

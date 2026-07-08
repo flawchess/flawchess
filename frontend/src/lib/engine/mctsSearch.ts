@@ -98,6 +98,7 @@ function createRoot(rootFen: string, rootMover: MoverColor): EngineNode {
     isExpanded: false,
     isClosed: false,
     objectiveEvalCp: null,
+    rawMaiaProb: null,
     rootExplorationPrior: 0,
     children: new Map(),
   };
@@ -118,6 +119,7 @@ function createChildNode(
   prior: number,
   value: number,
   objectiveEvalCp: number | null,
+  rawMaiaProb: number | null,
   rootMover: MoverColor,
 ): EngineNode {
   const node: EngineNode = {
@@ -134,6 +136,7 @@ function createChildNode(
     isExpanded: false,
     isClosed: false,
     objectiveEvalCp,
+    rawMaiaProb,
     rootExplorationPrior: 0,
     children: new Map(),
   };
@@ -227,12 +230,16 @@ interface DispatchedExpansion {
   path: EngineNode[];
   candidateMap: Map<string, number>;
   grades: Map<string, MoveGrade>;
+  /** Raw `policy()` distribution at the leaf — the un-reshaped Maia probs each
+   *  child's `rawMaiaProb` is read from (Phase 160), distinct from the
+   *  renormalized `candidateMap` priors. */
+  rawPolicy: Record<string, number>;
   rootExploration: Map<string, number> | null;
 }
 
 /** Applies a resolved expansion to the tree: creates children, recomputes the leaf's value, then propagates root-ward. */
 function applyExpansion(result: DispatchedExpansion, rootMover: MoverColor): void {
-  const { leaf, path, candidateMap, grades, rootExploration } = result;
+  const { leaf, path, candidateMap, grades, rawPolicy, rootExploration } = result;
   if (candidateMap.size === 0) {
     // Degenerate empty candidate set (WR-04): close as a dead end with no
     // children, no visit bumps, and no backup — matching what
@@ -249,7 +256,16 @@ function applyExpansion(result: DispatchedExpansion, rootMover: MoverColor): voi
     if (childFen === null) continue; // illegal/malformed provider candidate — deterministic drop, never a crash (WR-07)
     const grade = grades.get(uci);
     const value = grade ? leafExpectedScore(grade, rootMover) : NEUTRAL_EXPECTED_SCORE;
-    const child = createChildNode(childFen, leaf.depth + 1, uci, prior, value, grade?.evalCp ?? null, rootMover);
+    const child = createChildNode(
+      childFen,
+      leaf.depth + 1,
+      uci,
+      prior,
+      value,
+      grade?.evalCp ?? null,
+      rawPolicy[uci] ?? null,
+      rootMover,
+    );
     if (leaf.isRoot && rootExploration) {
       child.rootExplorationPrior = rootExploration.get(uci) ?? 0;
     }
@@ -324,11 +340,18 @@ async function dispatchExpansion(
     // fallbackExpectimax's guard so both SearchRunner implementations agree
     // on D-09 semantics for the identical input. applyExpansion closes the
     // leaf as a dead end and the orchestrator skips the node budget.
-    return { leaf, path, candidateMap, grades: new Map<string, MoveGrade>(), rootExploration: null };
+    return {
+      leaf,
+      path,
+      candidateMap,
+      grades: new Map<string, MoveGrade>(),
+      rawPolicy,
+      rootExploration: null,
+    };
   }
   const grades = await providers.grade(leaf.fen, candidateUcis);
   const rootExploration = leaf.isRoot ? rootExplorationPriors(candidateMap) : null;
-  return { leaf, path, candidateMap, grades, rootExploration };
+  return { leaf, path, candidateMap, grades, rawPolicy, rootExploration };
 }
 
 /**
