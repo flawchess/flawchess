@@ -4,11 +4,10 @@ milestone: v2.0
 milestone_name: FlawChess Engine
 current_phase: 159
 current_phase_name: flawchess-engine-policy-temperature-root-move-findability-se
-status: verifying
+status: Phase 159 shipped — squash-merged to main
 stopped_at: Completed 159-04-PLAN.md
-last_updated: "2026-07-07T20:54:14.143Z"
-last_activity: 2026-07-07
-last_activity_desc: Phase 159 execution started
+last_updated: "2026-07-08T15:56:10.814Z"
+last_activity: 2026-07-08
 progress:
   total_phases: 7
   completed_phases: 7
@@ -23,8 +22,8 @@ progress:
 
 Phase: 159 (flawchess-engine-policy-temperature-root-move-findability-se) — EXECUTING
 Plan: 4 of 4
-Status: Phase complete — ready for verification
-Last activity: 2026-07-07 — Phase 159 execution started
+Status: Phase 159 shipped — squash-merged to main
+Last activity: 2026-07-08
 
 ## Project Reference
 
