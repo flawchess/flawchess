@@ -737,3 +737,14 @@ See [milestones/v1.14-ROADMAP.md](milestones/v1.14-ROADMAP.md) for full details.
 See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 
 </details>
+
+### Phase 160: Analysis page layout and card/element UI polish (ad-hoc via /gsd-quick and /gsd-fast, no preplanning)
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 159
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 160 to break down)
