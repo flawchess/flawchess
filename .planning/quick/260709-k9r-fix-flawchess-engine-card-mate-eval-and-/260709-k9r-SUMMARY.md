@@ -19,8 +19,11 @@ surfaced as `null`.
   node and through `buildModalPath` / `buildRankedLines`.
 - **Both search runners** (`mctsSearch.ts`, `fallbackExpectimax.ts`): pass
   `grade?.evalMate ?? null` symmetrically (child + root nodes).
-- **Display** (`FlawChessEngineLines.tsx`): badge + chip-preview eval now
-  `formatScore(objectiveEvalCp, objectiveEvalMate)` → `#-4` instead of `…`.
+- **Display** (`FlawChessEngineLines.tsx`): objective badge + chip-preview eval now
+  `formatScore(objectiveEvalCp, objectiveEvalMate)` → `#-4` instead of `…`. The gold
+  **practical** badge, a probability that saturates to a useless `-10.0` cap on a
+  forced mate, also borrows the objective mate distance → `#-N` (follow-up per user
+  request: option A — both badges show the mate).
 - **Verdict** (`lib/flawChessVerdict.ts`): bails only when BOTH cp and mate are
   null; sets `flawChessMove.evalMate`; feeds mate into `evalToExpectedScore`;
   nulls the cp gap when the FC side is a mate.
