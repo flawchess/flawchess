@@ -24,6 +24,12 @@ surfaced as `null`.
   **practical** badge, a probability that saturates to a useless `-10.0` cap on a
   forced mate, also borrows the objective mate distance → `#-N` (follow-up per user
   request: option A — both badges show the mate).
+- **Terminal positions** (`FlawChessEngineLines.tsx` + `Analysis.tsx`): a
+  checkmated/drawn root has no legal moves, so the engine ranks nothing and the
+  card previously sat blank with a misleading "Turn on Stockfish to compare picks."
+  prompt. The card now renders a single terminal row — a gold `#0` badge for
+  checkmate, `½–½` for a draw — driven by the existing `terminalPositionEval`, and
+  the agreement verdict is hidden in a terminal position (nothing to compare).
 - **Verdict** (`lib/flawChessVerdict.ts`): bails only when BOTH cp and mate are
   null; sets `flawChessMove.evalMate`; feeds mate into `evalToExpectedScore`;
   nulls the cp gap when the FC side is a mate.
