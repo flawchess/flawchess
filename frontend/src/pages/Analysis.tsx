@@ -1757,6 +1757,7 @@ export default function Analysis() {
           bestSan={bestSan}
           shownSans={shownSans}
           qualityBySan={qualityBySan}
+          mover={sideToMoveFromFen(position)}
           engineTopLines={engineTopLines}
           onHoverMovesChange={setHoveredQualityMoves}
           isOpponentToMove={isOpponentToMove}
@@ -2008,6 +2009,7 @@ export default function Analysis() {
               bestSan={bestSan}
               shownSans={shownSans}
               qualityBySan={qualityBySan}
+              mover={sideToMoveFromFen(position)}
               engineTopLines={engineTopLines}
               onHoverMovesChange={setHoveredQualityMoves}
               isOpponentToMove={isOpponentToMove}
