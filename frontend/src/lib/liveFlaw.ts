@@ -12,6 +12,8 @@
  * All thresholds come from the generated mirror so they never drift from Python.
  */
 
+import { Chess } from 'chess.js';
+
 import type { FlawSeverity } from '@/types/library';
 import {
   BLUNDER_DROP,
@@ -23,9 +25,42 @@ import {
 
 export type MoverColor = 'white' | 'black';
 
+/** White-POV mate magnitude for a *delivered* checkmate (sign encodes the winner). */
+const TERMINAL_MATE = 1;
+
 /** Side to move encoded in a FEN's second field. Defaults to white on malformed input. */
 export function sideToMoveFromFen(fen: string): MoverColor {
   return fen.split(' ')[1] === 'b' ? 'black' : 'white';
+}
+
+/**
+ * Deterministic white-POV eval for a *terminal* position (checkmate or draw), or
+ * null while the game is still in progress.
+ *
+ * Bug fix (Quick 260709-j3k): on a checkmated position the live Stockfish worker
+ * reports an ambiguous `mate 0` / no score. Downstream that read as the 0.5
+ * midpoint — snapping the eval bar to equal and grading the *mating* move as a
+ * blunder. The rules already know the answer: the side to move in a checkmate
+ * position is the loser, so the eval is a decisive mate for the other side. A
+ * draw (stalemate / insufficient material / threefold / 50-move) is dead-equal —
+ * feeding cp 0 keeps a genuine stalemate-when-winning correctly flagged as a flaw
+ * while pinning the bar to the midpoint.
+ */
+export function terminalPositionEval(
+  fen: string,
+): { cp: number | null; mate: number | null } | null {
+  let chess: Chess;
+  try {
+    chess = new Chess(fen);
+  } catch {
+    return null;
+  }
+  if (chess.isCheckmate()) {
+    // White-POV: negative mate when White is the mated side (Black delivered mate).
+    return { cp: null, mate: sideToMoveFromFen(fen) === 'white' ? -TERMINAL_MATE : TERMINAL_MATE };
+  }
+  if (chess.isDraw()) return { cp: 0, mate: null };
+  return null;
 }
 
 /**

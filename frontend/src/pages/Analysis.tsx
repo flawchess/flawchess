@@ -84,7 +84,7 @@ import {
 } from '@/lib/theme';
 import { selectCandidatesByMass, nearestByElo, classifyMoveQuality, type MoveGrade } from '@/lib/moveQuality';
 import type { MoveQualityEval, EngineLine } from '@/components/analysis/MovesByRatingChart';
-import { sideToMoveFromFen } from '@/lib/liveFlaw';
+import { sideToMoveFromFen, terminalPositionEval } from '@/lib/liveFlaw';
 import type { NodeId, MoveNode } from '@/hooks/useAnalysisBoard';
 import { buildEvalLookup, getByUci, getBySan } from '@/lib/engineEvalLookup';
 import type { RankedLine } from '@/lib/engine/types';
@@ -98,6 +98,10 @@ const ENGINE_NAME = 'Stockfish 18';
 
 /** Cap on the per-session live engine-eval cache (FEN → completed eval), item 4. */
 const LIVE_EVAL_CACHE_MAX = 256;
+
+/** Synthetic eval-bar depth for a terminal (checkmate/draw) position — clears EvalBar's
+ *  mate-display gate (depth >= 8) so a decisive terminal eval fills the bar (Quick 260709-j3k). */
+const TERMINAL_EVAL_DEPTH = 99;
 
 /** Below this width the page renders its mobile takeover layout (matches the shell's
  *  `sm` breakpoint where the app swaps to mobile chrome). */
@@ -1022,12 +1026,21 @@ export default function Analysis() {
 
   const parentEval = parentFen != null ? engineEvalByFen.get(parentFen) ?? null : null;
 
+  // Deterministic eval for a terminal (checkmate/draw) displayed position — the live
+  // engine reports an ambiguous `mate 0` there, which read as the 0.5 midpoint and
+  // graded a mating move as a blunder (Quick 260709-j3k). Drives both the live
+  // classification below and the right eval bar.
+  const terminalEval = useMemo(() => terminalPositionEval(position), [position]);
+
   const liveFlaw = useLiveMoveFlaw({
     active: liveFlawActive,
     parentFen,
     parentEval,
-    childEvalCp: engine.evalCp,
-    childEvalMate: engine.evalMate,
+    // On a checkmate the child position is decisive for the mover, so the mating move
+    // reads clean (green) instead of a blunder; a genuine stalemate-when-winning still
+    // flags because its cp-0 child correctly drops the mover's expected score.
+    childEvalCp: terminalEval ? terminalEval.cp : engine.evalCp,
+    childEvalMate: terminalEval ? terminalEval.mate : engine.evalMate,
     lastMove,
   });
 
@@ -1369,9 +1382,25 @@ export default function Analysis() {
   // whenever its switch is on, going neutral when the user turns Stockfish off
   // (`!engineEnabled`). `null`/`0` reads as the sigmoid midpoint in EvalBar's
   // computeWhiteFraction (no data → 0.5).
-  const rightEvalBarEvalCp = engineEnabled ? gameOverlay.evalCp : null;
-  const rightEvalBarEvalMate = engineEnabled ? gameOverlay.evalMate : null;
-  const rightEvalBarDepth = engineEnabled ? gameOverlay.evalDepth : 0;
+  // A terminal position (checkmate/draw) overrides the engine passthrough with the
+  // deterministic eval so the bar fills to the winner (or sits at the midpoint on a
+  // draw) instead of snapping to `mate 0` at ~50% (Quick 260709-j3k). Synthetic depth
+  // clears EvalBar's mate-display gate.
+  const rightEvalBarEvalCp = engineEnabled
+    ? terminalEval
+      ? terminalEval.cp
+      : gameOverlay.evalCp
+    : null;
+  const rightEvalBarEvalMate = engineEnabled
+    ? terminalEval
+      ? terminalEval.mate
+      : gameOverlay.evalMate
+    : null;
+  const rightEvalBarDepth = engineEnabled
+    ? terminalEval
+      ? TERMINAL_EVAL_DEPTH
+      : gameOverlay.evalDepth
+    : 0;
 
   // Board + EvalBar row — the single source of the `analysis-board` ref/testid and the
   // react-chessboard instance. Shared by the desktop and mobile trees (only one renders
