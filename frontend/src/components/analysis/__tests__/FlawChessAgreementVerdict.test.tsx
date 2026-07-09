@@ -195,10 +195,29 @@ describe('FlawChessAgreementVerdict', () => {
     const sentence = screen.getByTestId('flawchess-verdict-sentence').textContent ?? '';
     expect(sentence).toMatch(/is objectively best/);
     expect(sentence).toMatch(/trap for humans/);
-    expect(sentence).toMatch(/FlawChess plays the safer/);
+    expect(sentence).toMatch(/FlawChess plays the more reliable/);
     expect(sentence).not.toMatch(/best move/i);
     expect(screen.getByTestId('flawchess-verdict-move-e4')).toBeTruthy();
     expect(screen.getByTestId('flawchess-verdict-move-Nf3')).toBeTruthy();
+  });
+
+  it('renders sentence eval chips player-POV: a black-mover white-POV mate reads "-M4", not the raw "M4" (quick 260709-o72)', () => {
+    const BLACK_TO_MOVE_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1';
+    render(
+      <FlawChessAgreementVerdict
+        flawChessLine={fcLine('e7e5', null, 0.5, 4)}
+        stockfishLine={sfLine('e7e5', null, 4)}
+        flawChessRankedLines={[fcLine('e7e5', null, 0.5, 4)]}
+        engineEnabled
+        elo={1500}
+        baseFen={BLACK_TO_MOVE_FEN}
+        rawProbBySan={{}}
+        shownSans={[]}
+      />,
+    );
+    const sentence = screen.getByTestId('flawchess-verdict-sentence').textContent ?? '';
+    expect(sentence).toMatch(/-M4/);
+    expect(sentence).not.toMatch(/(?<!-)M4/);
   });
 
   it('isolates the hovered pick\'s board arrow in its tier color, restoring on leave (D-09)', () => {

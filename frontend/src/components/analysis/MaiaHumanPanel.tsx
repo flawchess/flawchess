@@ -24,6 +24,7 @@ import { Switch } from '@/components/ui/switch';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { MAIA_ACCENT } from '@/lib/theme';
 import type { MoveCurvePoint } from '@/hooks/useMaiaEngine';
+import type { MoverColor } from '@/lib/liveFlaw';
 
 const MAIA_SOURCE_URL = 'https://github.com/CSSLab/maia3';
 const MAIA_SITE_URL = 'https://maiachess.com';
@@ -41,6 +42,9 @@ export interface MaiaHumanPanelProps {
   shownSans: string[];
   /** Analysis.tsx's classifyMoveQuality output merged with grading evals, keyed by SAN (Phase 151.1, D-08). */
   qualityBySan: Map<string, MoveQualityEval>;
+  /** Side to move at this position (sideToMoveFromFen) — threaded into MaiaMoveQualityBar so its
+   *  prose can re-sign white-POV evals to the addressed player's frame (quick 260709-o72). */
+  mover: MoverColor;
   /** Primary engine's top PV lines (best + 2nd-best) for the tooltip's engine-reference header (151.1 UAT). */
   engineTopLines: EngineLine[];
   /** Fired with the move-quality bar's hovered segment moves so the page can draw board arrows (quick 260705-kfg). */
@@ -118,6 +122,7 @@ export function MaiaHumanPanel({
   bestSan,
   shownSans,
   qualityBySan,
+  mover,
   engineTopLines,
   onHoverMovesChange,
   isOpponentToMove = false,
@@ -175,6 +180,7 @@ export function MaiaHumanPanel({
           selectedElo={selectedElo}
           shownSans={shownSans}
           qualityBySan={qualityBySan}
+          mover={mover}
           onHoverMovesChange={onHoverMovesChange}
           isOpponentToMove={isOpponentToMove}
           onPlayMove={onPlayMove}

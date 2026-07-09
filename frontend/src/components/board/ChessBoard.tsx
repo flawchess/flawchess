@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { useRef, useEffect, useState, useCallback, useMemo, type RefObject } from 'react';
 import { Chessboard } from 'react-chessboard';
 import { arrowSortKey, DARK_BLUE } from '../../lib/arrowColor';
 import {
@@ -12,6 +12,7 @@ import { HIGHLIGHT_PULSE_DURATION_MS, HIGHLIGHT_PULSE_ITERATIONS } from '../../l
 import { DepthLabel, SquareMarkerGroup } from './boardMarkers';
 import type { SquareMarker } from './boardMarkers';
 import { squareToCoords, buildArrowPath, arrowMoveKey, dedupeArrowsByMove } from './arrowGeometry';
+import { computeBoardSize } from './boardSize';
 
 export interface BoardArrow {
   startSquare: string;
@@ -86,6 +87,13 @@ interface ChessBoardProps {
    * primary board is not cramped. Mobile still uses the full container width.
    */
   maxWidth?: number;
+  /**
+   * When supplied, the board also shrinks to this element's flex-resolved
+   * clientHeight so it fits the available viewport height (Phase 161 D-02).
+   * Omitted (default) = width-only sizing exactly as today — the height
+   * budget resolves to Infinity, so no other caller's behavior changes.
+   */
+  heightRef?: RefObject<HTMLElement | null>;
 }
 
 // Coordinate labels use the opposite square's color for contrast
@@ -248,7 +256,7 @@ function ArrowOverlay({
   );
 }
 
-export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, lastMoveColor, arrows = [], squareMarkers = [], id, maxWidth = 400 }: ChessBoardProps) {
+export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, lastMoveColor, arrows = [], squareMarkers = [], id, maxWidth = 400, heightRef }: ChessBoardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Start at 0 so we don't mount react-chessboard until the container has measured.
   // Mounting with a non-zero width inside a display:none parent (e.g. the hidden
@@ -263,18 +271,28 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, l
     const updateWidth = () => {
       if (containerRef.current) {
         const containerWidth = containerRef.current.clientWidth;
-        // On mobile, use full container width; on desktop cap at maxWidth (400 default).
-        setBoardWidth(Math.min(containerWidth, maxWidth));
+        // heightRef points at a wrapper the caller sizes via flex-1 min-h-0 (the
+        // /analysis board row gives the board this treatment, D-02); when unset
+        // (e.g. Openings mini-board, tactic explorer), heightBudget is Infinity so
+        // sizing stays width-driven exactly as it was before this prop existed.
+        const heightBudget = heightRef?.current?.clientHeight ?? Infinity;
+        setBoardWidth(computeBoardSize(containerWidth, heightBudget, maxWidth));
       }
     };
 
     updateWidth();
+    // Single ResizeObserver instance observing both the width container and the
+    // optional height-bounding element — one code path, one set of edge cases
+    // (Phase 161 RESEARCH.md "Don't Hand-Roll": do not add a second observer).
     const observer = new ResizeObserver(updateWidth);
     if (containerRef.current) {
       observer.observe(containerRef.current);
     }
+    if (heightRef?.current) {
+      observer.observe(heightRef.current);
+    }
     return () => observer.disconnect();
-  }, [maxWidth]);
+  }, [maxWidth, heightRef]);
 
   // Reset selected square when position changes (e.g. navigating move history).
   // State update during render is the React-recommended pattern for derived state resets.

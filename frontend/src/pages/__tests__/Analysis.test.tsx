@@ -20,6 +20,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import type { GameFlawCard } from '@/types/library';
 
 // ── Mock useStockfishEngine: jsdom has no real Worker for the classic engine file.
 // Drive isReady/pvLines states deterministically via the mutable engineState object.
@@ -132,15 +133,27 @@ vi.mock('@/hooks/useUserProfile', () => ({
 }));
 
 // Mock useTacticLines and useLibraryGame: free-play shell tests have no tactic/game
-// params, so both return empty stubs — no real network needed.
+// params, so both default to empty stubs — no real network needed. Phase 161 D-04's
+// tags-relocation test opts into game mode by setting libraryGameState.data before
+// rendering with a `?game_id=` param.
+const libraryGameState: { data: GameFlawCard | undefined } = { data: undefined };
 vi.mock('@/hooks/useLibrary', () => ({
   useTacticLines: () => ({ data: undefined, isFetching: false, isError: false }),
-  useLibraryGame: () => ({ data: undefined, isError: false }),
+  useLibraryGame: () => ({ data: libraryGameState.data, isError: false }),
 }));
 
-// Mock useFlawFilterStore: Analysis.tsx calls this unconditionally for tactic visibility.
+// Mock useFlawFilterStore: Analysis.tsx calls this unconditionally for tactic
+// visibility, and (Phase 161 D-04 test) SeverityBadge — rendered inside
+// AnalysisTagsPanel, now exercised for the first time in this file — also calls
+// the hook directly and reads `flawFilter.severity` without a null guard. A
+// realistic DEFAULT_FLAW_FILTER-shaped object (not null) is required for any
+// game-mode render, not just the D-04 test (Rule 3 — the game-mode path was
+// previously unexercised, so this null default worked by chance until now).
 vi.mock('@/hooks/useFlawFilterStore', () => ({
-  useFlawFilterStore: () => [null, vi.fn()],
+  useFlawFilterStore: () => [
+    { severity: [], tags: [], tacticFamilies: [], tacticOrientation: 'either', tacticDepthMin: 0, tacticDepthMax: 11 },
+    vi.fn(),
+  ],
 }));
 
 // NOTE: useAnalysisBoard is NOT mocked — it is pure in-memory and must run for real
@@ -173,6 +186,13 @@ if (!('scrollTo' in window) || typeof window.scrollTo !== 'function') {
   window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
 }
 
+// jsdom has no scrollIntoView implementation. Only reached in game mode (the D-04
+// test below renders game_id=1 for the first time in this file), where
+// HorizontalMoveList's active-move effect calls it unconditionally.
+if (typeof Element.prototype.scrollIntoView !== 'function') {
+  Element.prototype.scrollIntoView = vi.fn();
+}
+
 afterEach(() => {
   cleanup();
   // Reset engine state to defaults after each test.
@@ -188,6 +208,7 @@ afterEach(() => {
   flawChessState.isReady = true;
   gradingState.gradeMap = new Map();
   gradingCalls.length = 0;
+  libraryGameState.data = undefined;
 });
 
 // Late import after vi.mock calls — Analysis.tsx is a default export (required by React.lazy).
@@ -445,5 +466,92 @@ describe('Reconciled eval provenance (Phase 158, SEED-087)', () => {
     expect(sentence.textContent).toContain('+1.3');
     expect(sentence.textContent).toContain('+0.4');
     expect(sentence.textContent).not.toContain('+10.0');
+  });
+});
+
+// Phase 161 (SEED-088), D-04 — structural-only coverage: jsdom performs no real CSS
+// layout, so the 100dvh lock / breakpoint switching / board height-aware sizing are
+// HUMAN-UAT only (161-RESEARCH.md Validation Architecture). What IS testable here is
+// the JSX reorder itself: AnalysisTagsPanel must render in the RIGHT column, after
+// the engine card and move list, not in its old home under the eval chart.
+function buildGame(overrides: Partial<GameFlawCard> = {}): GameFlawCard {
+  return {
+    game_id: 1,
+    user_result: 'win',
+    played_at: null,
+    time_control_bucket: null,
+    platform: 'chess.com',
+    platform_url: null,
+    white_username: 'alice',
+    black_username: 'bob',
+    white_rating: null,
+    black_rating: null,
+    opening_name: null,
+    opening_eco: null,
+    user_color: 'white',
+    ply_count: 1,
+    termination: null,
+    time_control_str: null,
+    result_fen: null,
+    severity_counts: { inaccuracy: 0, mistake: 0, blunder: 0 },
+    chips: [],
+    analysis_state: 'analyzed',
+    // Non-null on all four — the exact evalChartReady gate Analysis.tsx checks
+    // before mounting AnalysisTagsPanel/EvalChart.
+    eval_series: [
+      { ply: 0, es: 0.5, eval_cp: 20, eval_mate: null, clock_seconds: null, move_seconds: null, best_move: null },
+      { ply: 1, es: 0.52, eval_cp: 25, eval_mate: null, clock_seconds: null, move_seconds: null, best_move: null },
+    ],
+    // AnalysisTagsPanel.tsx returns null when analysis_state !== 'analyzed' OR
+    // flaw_markers is empty — at least one marker is required to actually mount it.
+    flaw_markers: [
+      {
+        ply: 0,
+        severity: 'inaccuracy',
+        tags: [],
+        is_user: true,
+        move_san: 'e4',
+        allowed_tactic_motif: null,
+        allowed_tactic_confidence: null,
+        allowed_tactic_depth: null,
+        missed_tactic_motif: null,
+        missed_tactic_confidence: null,
+        missed_tactic_depth: null,
+      },
+    ],
+    phase_transitions: { middlegame_ply: null, endgame_ply: null },
+    moves: ['e4'],
+    active_eval_status: null,
+    ...overrides,
+  };
+}
+
+describe('Analysis desktop layout (Phase 161, SEED-088)', () => {
+  it('renders AnalysisTagsPanel in the right column, after the engine card and move list (D-04)', () => {
+    libraryGameState.data = buildGame();
+
+    renderAnalysis('/analysis?game_id=1');
+
+    const engineCard = screen.getByTestId('analysis-engine-card');
+    const tagsPanel = screen.getByTestId('analysis-tags-panel');
+
+    // DOCUMENT_POSITION_FOLLOWING: tagsPanel comes AFTER the engine card in the DOM
+    // (same compareDocumentPosition pattern as the D-01 FlawChess-card-order test
+    // above) — proving the relocation out of the board column and into the right
+    // column, appended after boardControls().
+    const tagsFollowEngineCard =
+      engineCard.compareDocumentPosition(tagsPanel) & Node.DOCUMENT_POSITION_FOLLOWING;
+    expect(tagsFollowEngineCard).toBeTruthy();
+  });
+
+  it('carries the desk3col 3-column grid-cols class on the grid row (D-03)', () => {
+    renderAnalysis();
+
+    // Traverse from a stable desktop-tree anchor up to the grid row rather than
+    // adding a new testid purely for this assertion — analysis-human-column's
+    // parent IS the grid row per the current DOM structure.
+    const humanColumn = screen.getByTestId('analysis-human-column');
+    const gridRow = humanColumn.parentElement;
+    expect(gridRow?.className).toContain('desk3col:grid-cols-[360px_1fr_360px]');
   });
 });

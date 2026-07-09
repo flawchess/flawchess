@@ -43,6 +43,7 @@ import {
 import type { RankedLine } from '@/lib/engine/types';
 import type { PvLine } from '@/hooks/uciParser';
 import { sideToMoveFromFen, expectedScoreToWhitePovCp, type MoverColor } from '@/lib/liveFlaw';
+import { formatPlayerPovEval } from '@/lib/playerPovEval';
 import { formatScore } from '@/components/analysis/EngineLines';
 import { STOCKFISH_ACCENT } from '@/lib/theme';
 import { ProseSpan } from '@/components/analysis/ProseSpan';
@@ -174,17 +175,22 @@ function StockfishEval({ text }: { text: string }): React.ReactNode {
 
 /** Assembles the D-07 prose sentence for the given tier, interpolating the
  *  already-built move spans. `moveSpan` is the single shared span used for the
- *  `aligned` tier (same move on both sides — only 1 span, per D-07/D-08). */
+ *  `aligned` tier (same move on both sides — only 1 span, per D-07/D-08).
+ *  Sentence eval chips are player-POV (quick 260709-o72: a mate against the
+ *  mover reads "-M4", not the raw white-POV "M4") — `mover` re-signs them.
+ *  The EngineLines PV table and the FlawChess/Stockfish popover bodies keep
+ *  formatScore (objective, out of scope for this rewrite). */
 function renderVerdictSentence(
   verdict: FlawChessVerdictResult,
   elo: number,
+  mover: MoverColor,
   moveSpan: React.ReactNode,
   fcSpan: React.ReactNode,
   sfSpan: React.ReactNode,
   findabilityOk: boolean,
 ): React.ReactNode {
   if (verdict.tier === 'aligned') {
-    const evalText = formatScore(verdict.stockfishMove.evalCp, verdict.stockfishMove.evalMate);
+    const evalText = formatPlayerPovEval(verdict.stockfishMove.evalCp, verdict.stockfishMove.evalMate, mover);
     return (
       <>
         FlawChess and Stockfish agree on {moveSpan} — objectively <StockfishEval text={evalText} />, and the practical
@@ -193,8 +199,8 @@ function renderVerdictSentence(
     );
   }
 
-  const sfEvalText = formatScore(verdict.stockfishMove.evalCp, verdict.stockfishMove.evalMate);
-  const fcEvalText = formatScore(verdict.flawChessMove.evalCp, verdict.flawChessMove.evalMate);
+  const sfEvalText = formatPlayerPovEval(verdict.stockfishMove.evalCp, verdict.stockfishMove.evalMate, mover);
+  const fcEvalText = formatPlayerPovEval(verdict.flawChessMove.evalCp, verdict.flawChessMove.evalMate, mover);
 
   if (verdict.tier === 'safe') {
     // Only claim "nearly the same eval" when the rendered centipawns actually agree (D-05 tier is
@@ -223,7 +229,7 @@ function renderVerdictSentence(
   return (
     <>
       {sfSpan} is objectively best (<StockfishEval text={sfEvalText} />) but it&apos;s a trap for humans. FlawChess plays
-      the safer {fcSpan} (<StockfishEval text={fcEvalText} />) instead.
+      the more reliable {fcSpan} (<StockfishEval text={fcEvalText} />) instead.
     </>
   );
 }
@@ -402,7 +408,7 @@ export function FlawChessAgreementVerdict({
   // Aligned: same move on both sides — a single shared span (fcSan === sfSan),
   // rendered via the FlawChess pick's own span (both-lines popover body) so
   // hovering it lights the FlawChess arrow color (D-09's aligned convention).
-  const sentence = renderVerdictSentence(verdict, elo, fcSpan, fcSpan, sfSpan, findabilityOk);
+  const sentence = renderVerdictSentence(verdict, elo, mover, fcSpan, fcSpan, sfSpan, findabilityOk);
 
   return (
     <div className="min-h-[3.75rem] px-2 text-sm" data-testid="flawchess-verdict-slot">

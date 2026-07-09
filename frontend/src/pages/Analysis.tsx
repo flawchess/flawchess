@@ -25,7 +25,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode, RefObject } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Chess } from 'chess.js';
 import {
@@ -67,6 +67,7 @@ import { TemperatureSelector, TEMPERATURE_DEFAULT } from '@/components/analysis/
 import type { HoveredQualityMove } from '@/components/analysis/MaiaMoveQualityBar';
 import { ChessBoard } from '@/components/board/ChessBoard';
 import type { BoardArrow } from '@/components/board/ChessBoard';
+import { BOARD_MAX_WIDTH, computeBoardSize } from '@/components/board/boardSize';
 import { BoardControls } from '@/components/board/BoardControls';
 import { PlayerBar } from '@/components/board/PlayerBar';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -106,6 +107,43 @@ const TERMINAL_EVAL_DEPTH = 99;
 /** Below this width the page renders its mobile takeover layout (matches the shell's
  *  `sm` breakpoint where the app swaps to mobile chrome). */
 const MOBILE_BREAKPOINT_PX = 640;
+
+/** Horizontal space the two flanking eval bars + their `gap-2` gutters consume in the
+ *  desktop board row: 2×(w-5 bar = 20px) + 2×(gap-2 = 8px). Subtracted from the stage's
+ *  measured width so the board is sized to the space that actually remains beside the
+ *  bars (Phase 161 UAT: bars hug the board, board never clips). */
+const BOARD_EVAL_BARS_ALLOWANCE_PX = 56;
+
+/** The board's height budget only binds in the locked desktop layout, i.e. at/above the
+ *  desk3col width breakpoint AND at/above the `short` height-unlock threshold. Both mirror
+ *  the CSS tokens in index.css (`--breakpoint-desk3col: 1200px`, `short` = max-height
+ *  559.98px). Outside that band the page scrolls, so the board is width-driven. */
+const BOARD_WIDTH_LOCK_MIN_PX = 1200;
+const BOARD_HEIGHT_LOCK_MIN_PX = 560;
+
+/** Fixed width (px) of each side-panel grid track. Mirrors the `360px` literals in the
+ *  `desk3col:grid-cols-[360px_1fr_360px]` template and `desk3col:w-[360px]` columns below. */
+const SIDE_COLUMN_WIDTH_PX = 360;
+/** Gutter (px) between the three desktop columns — mirrors the grid's `gap-4`. */
+const DESKTOP_GRID_GAP_PX = 16;
+/** Per-side horizontal slack (px) left between the board group and its center track. The
+ *  board group is sized this much narrower than the track so it centers with breathing room
+ *  on each side, into which the EvalChart slider's ±8px thumb overhang (EvalChart.tsx: the
+ *  `calc(100% + 16px)` / `-8px` marginLeft slider) lands — otherwise the stage's
+ *  overflow-x-hidden clips the thumb at the min/max position (Phase 161 UAT). Also widens the
+ *  visible column gap a touch, which was the paired request. */
+const EVAL_SLIDER_SLACK_PX = 12;
+/** Max width of the desktop 3-column grid: two side panels + two gutters + the board group
+ *  at its ceiling (board max + flanking eval bars + the two slider-slack margins). Past this
+ *  the grid stops stretching and centers itself, so extra viewport width falls to the window
+ *  margins instead of inflating the fluid center track and pulling the side panels away from
+ *  the board (Phase 161 UAT). */
+const DESKTOP_GRID_MAX_WIDTH_PX =
+  SIDE_COLUMN_WIDTH_PX * 2 +
+  DESKTOP_GRID_GAP_PX * 2 +
+  BOARD_MAX_WIDTH +
+  BOARD_EVAL_BARS_ALLOWANCE_PX +
+  EVAL_SLIDER_SLACK_PX * 2;
 
 /** Normalized width of the move-quality-bar hover arrows (quick 260705-kfg). */
 const QUALITY_HOVER_ARROW_WIDTH = 0.6;
@@ -1427,74 +1465,137 @@ export default function Analysis() {
       : gameOverlay.evalDepth
     : 0;
 
-  // Board + EvalBar row — the single source of the `analysis-board` ref/testid and the
-  // react-chessboard instance. Shared by the desktop and mobile trees (only one renders
-  // at a time via isMobile), so the board mounts exactly once either way.
+  // Desktop board sizing (Phase 161 UAT): the board + eval bars are measured and sized
+  // in JS rather than via flexbox, so the bars are exactly as tall as the board and hug
+  // its edges, and the board shrinks (never clips) when width/height is tight. We measure
+  // the STAGE (a full-width, flex-height box that is NOT sized by the board itself, so no
+  // circular/zero-height bootstrap), subtract the eval-bar allowance, and clamp with the
+  // same computeBoardSize helper ChessBoard uses. The height budget only binds inside the
+  // locked band; outside it the page scrolls and the board is width-driven.
+  const boardStageRef = useRef<HTMLDivElement>(null);
+  const [boardWidth, setBoardWidth] = useState(0);
+  useEffect(() => {
+    const stage = boardStageRef.current;
+    if (!stage) return; // mobile tree: the desktop stage is not mounted; boardWidth is unused there.
+    const measure = (): void => {
+      const el = boardStageRef.current;
+      if (!el) return;
+      const locked =
+        window.matchMedia(`(min-width:${BOARD_WIDTH_LOCK_MIN_PX}px)`).matches &&
+        window.matchMedia(`(min-height:${BOARD_HEIGHT_LOCK_MIN_PX}px)`).matches;
+      // Non-board "chrome" (source caps + player rows + eval chart + gaps) shares the board's
+      // vertical budget, so subtract it. Derived from the DOM as (group height − board box
+      // height) rather than the boardWidth STATE, so it carries no stale closure and settles
+      // in one pass: group height = chrome + board box height, so the difference is exactly
+      // the chrome regardless of the current board size.
+      const group = el.firstElementChild;
+      const boardBoxHeight = containerRef.current?.clientHeight ?? 0;
+      const chrome = group ? Math.max(0, group.clientHeight - boardBoxHeight) : 0;
+      // Reserve the bars allowance AND both slider-slack margins so the board group ends up
+      // narrower than its track and centers with EVAL_SLIDER_SLACK_PX of breathing room on
+      // each side — room the eval-chart slider's thumb overhang needs to avoid being clipped.
+      const widthBudget = el.clientWidth - BOARD_EVAL_BARS_ALLOWANCE_PX - EVAL_SLIDER_SLACK_PX * 2;
+      const heightBudget = locked ? el.clientHeight - chrome : Infinity;
+      setBoardWidth(computeBoardSize(widthBudget, heightBudget, BOARD_MAX_WIDTH));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(stage);
+    // A viewport resize that crosses the width/height lock thresholds also flips the
+    // `locked` branch above; observe window resize too so those crossings recompute even
+    // if the stage's own box happens not to change on the same frame.
+    window.addEventListener('resize', measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+    // containerRef is a stable ref object; listed to satisfy exhaustive-deps without churn.
+    // isGameMode/gameData: the board-group chrome (player bars + eval chart) mounts
+    // ASYNChronously once the game loads, but the ResizeObserver watches the fixed-size
+    // stage box and never fires on that inner growth — so without a re-measure here the
+    // board stays sized for the pre-load (chrome-less) group and the now-taller group
+    // overflows the stage, producing a spurious vertical scrollbar (Phase 161 UAT). Re-run
+    // on those transitions so the height budget re-subtracts the real chrome and refits.
+  }, [isMobile, containerRef, isGameMode, gameData]);
+
+  // Left eval bar — FlawChess Engine (brown) when enabled (D-04 precedence), else Maia
+  // (violet, D-01/D-05, SURF-04). Single expected-score fill: both sources bypass the cp
+  // sigmoid entirely via whiteFraction. 0.5 fallback while neither source has a result yet.
+  // Bug fix (151.1 UAT): Maia's WDL is from the side-to-MOVE's perspective (the board is
+  // mirrored to the mover's POV when Black is to move — see maiaEncoding.encodeBoard), so
+  // expectedScore is the mover's expected score. The bar's whiteFraction must be
+  // WHITE-relative to match the Stockfish bar and the board orientation, so invert it
+  // whenever Black is to move (see fcWhiteFraction above).
+  const leftEvalBarNode = (className?: string) => (
+    <EvalBar
+      evalCp={null}
+      evalMate={null}
+      depth={0}
+      whiteFraction={leftEvalBarWhiteFraction}
+      flipped={boardFlipped}
+      accentColor={leftEvalBarAccent}
+      testId={leftEvalBarTestId}
+      className={className}
+    />
+  );
+
+  // Right eval bar: precomputed eval in game mode (immediate), live engine otherwise —
+  // useGameOverlay passes the engine through when disabled. D-04 handoff: while the
+  // FlawChess Engine runs, this bar is fed its top line's own objective root eval (never a
+  // mate — ±MATE_CP_EQUIVALENT reads as near-mate on the sigmoid) rather than a second live
+  // Stockfish search on the same position (POOL-04).
+  const rightEvalBarNode = (className?: string) => (
+    <EvalBar
+      evalCp={rightEvalBarEvalCp}
+      evalMate={rightEvalBarEvalMate}
+      depth={rightEvalBarDepth}
+      flipped={boardFlipped}
+      accentColor={STOCKFISH_ACCENT}
+      className={className}
+    />
+  );
+
+  // The single react-chessboard instance / `analysis-board` focus target. Shared by the
+  // desktop stage and the mobile row (only one renders at a time via isMobile), so the
+  // board mounts exactly once either way. `heightRef` is supplied on mobile (the row's own
+  // wrapper drives height-aware sizing); the desktop stage sizes the wrapping box directly.
+  const chessBoardNode = (heightRef?: RefObject<HTMLElement | null>) => (
+    <ChessBoard
+      id="analysis-board"
+      position={position}
+      onPieceDrop={makeMove}
+      lastMove={lastMove}
+      // Precomputed overlay (main line) wins; else the live free-move classification (item
+      // 4), which also covers free-play mode. Default green (MOVE_HIGHLIGHT_GOOD): a played
+      // move is assumed OK until the engine proves otherwise, so engine-line (PV) moves and
+      // not-yet-graded moves read green instead of the shared yellow fallback. The engine
+      // still overrides to red/orange on a blunder/mistake (and yellow on an inaccuracy).
+      lastMoveColor={
+        gameOverlay.lastMoveHighlightColor ??
+        liveFlaw.lastMoveHighlightColor ??
+        MOVE_HIGHLIGHT_GOOD
+      }
+      flipped={boardFlipped}
+      arrows={boardArrows}
+      squareMarkers={
+        gameOverlay.squareMarkers.length > 0 ? gameOverlay.squareMarkers : liveFlaw.squareMarkers
+      }
+      maxWidth={BOARD_MAX_WIDTH}
+      heightRef={heightRef}
+    />
+  );
+
+  // Mobile board row — purely width-driven square that fills the takeover width. No
+  // heightRef: the mobile page scrolls (no viewport height lock), so the board sizes to its
+  // flex-1 container width alone. The bars (items-stretch) match the board's height and the
+  // board fills its container, so the bars hug it. Desktop uses the JS-sized stage below.
   const boardRow = (
     <div className="flex flex-row items-stretch gap-2">
-      {/* Left eval bar — FlawChess Engine (brown) when enabled (D-04 precedence),
-          else Maia (violet, D-01/D-05, SURF-04). Single expected-score fill: both
-          sources bypass the cp sigmoid entirely via whiteFraction. 0.5 fallback
-          while neither source has produced a result yet.
-          Bug fix (151.1 UAT): Maia's WDL is from the side-to-MOVE's perspective (the
-          board is mirrored to the mover's POV when Black is to move — see
-          maiaEncoding.encodeBoard), so expectedScore is the mover's expected score.
-          The bar's whiteFraction must be WHITE-relative to match the Stockfish bar and
-          the board orientation, so invert it whenever Black is to move. Without this
-          the bar read inverted on every Black-to-move position. RankedLine.practicalScore
-          (D-06) is likewise root-side-to-move-relative, same inversion applies (see
-          fcWhiteFraction above). */}
-      <EvalBar
-        evalCp={null}
-        evalMate={null}
-        depth={0}
-        whiteFraction={leftEvalBarWhiteFraction}
-        flipped={boardFlipped}
-        accentColor={leftEvalBarAccent}
-        testId={leftEvalBarTestId}
-      />
-
-      <div ref={containerRef} data-testid="analysis-board" tabIndex={0} className="flex-1">
-        <ChessBoard
-          id="analysis-board"
-          position={position}
-          onPieceDrop={makeMove}
-          lastMove={lastMove}
-          // Precomputed overlay (main line) wins; else the live free-move
-          // classification (item 4), which also covers free-play mode. Default green
-          // (MOVE_HIGHLIGHT_GOOD): a played move is assumed OK until the engine proves
-          // otherwise, so engine-line (PV) moves and not-yet-graded moves read green
-          // instead of the shared yellow fallback. The engine still overrides to
-          // red/orange on a blunder/mistake (and yellow on an inaccuracy).
-          lastMoveColor={
-            gameOverlay.lastMoveHighlightColor ??
-            liveFlaw.lastMoveHighlightColor ??
-            MOVE_HIGHLIGHT_GOOD
-          }
-          flipped={boardFlipped}
-          arrows={boardArrows}
-          squareMarkers={
-            gameOverlay.squareMarkers.length > 0
-              ? gameOverlay.squareMarkers
-              : liveFlaw.squareMarkers
-          }
-          maxWidth={600}
-        />
+      {leftEvalBarNode()}
+      <div ref={containerRef} data-testid="analysis-board" tabIndex={0} className="min-w-0 flex-1">
+        {chessBoardNode()}
       </div>
-
-      {/* Right eval bar: precomputed eval in game mode (immediate), live engine
-          otherwise — useGameOverlay passes the engine through when disabled. D-04
-          handoff: while the FlawChess Engine runs, this bar is instead fed its top
-          line's own objective root eval (never a mate — ±MATE_CP_EQUIVALENT reads
-          as near-mate on the sigmoid scale) rather than a second live Stockfish
-          search on the same position (POOL-04). */}
-      <EvalBar
-        evalCp={rightEvalBarEvalCp}
-        evalMate={rightEvalBarEvalMate}
-        depth={rightEvalBarDepth}
-        flipped={boardFlipped}
-        accentColor={STOCKFISH_ACCENT}
-      />
+      {rightEvalBarNode()}
     </div>
   );
 
@@ -1576,9 +1677,10 @@ export default function Analysis() {
     />
   );
 
-  // Board controls — shared; the desktop panel keeps the charcoal pill, the mobile
-  // footer passes flat so the buttons read like the main nav (Quick 260628-dgv).
-  const boardControls = (flat = false) => (
+  // Board controls — shared. The desktop panel now sits in the move-list card's darker
+  // footer band (flat, compact sm icons evenly spread); the mobile footer passes flat with
+  // no size so the buttons fill the width like the main nav (Quick 260628-dgv).
+  const boardControls = (flat = false, size?: 'sm' | 'md' | 'lg') => (
     <BoardControls
       onBack={goBack}
       onForward={goForward}
@@ -1588,6 +1690,7 @@ export default function Analysis() {
       canReset={canReset}
       canGoForward={canGoForward}
       flat={flat}
+      size={size}
     />
   );
 
@@ -1623,6 +1726,72 @@ export default function Analysis() {
         highlightedPlies={highlightedPlies}
       />
     ) : null;
+
+  // Desktop board column (Phase 161 UAT). The outer div is the measured "stage" (see the
+  // boardStageRef effect): a full-width, viewport-height-locked box. Inside sits ONE tight,
+  // centered group — source caps + top player, the board flanked by its two eval bars, the
+  // bottom player, and the eval chart. The board is JS-sized (computeBoardSize) so:
+  //   • the eval bars are exactly as tall as the board and sit flush to its edges (gap-2),
+  //   • the player rows and chart stay directly adjacent to the board (no flex-1 gap), and
+  //   • the board shrinks to fit as width/height tighten until it hits the board's floor
+  //     (D-08), past which the overflowing bottom (eval chart, then board) is CLIPPED, not
+  //     scrolled — a middle-column scrollbar is never acceptable (Phase 161 UAT).
+  // The group's width follows the board+bars row (maxWidth = boardWidth + bars allowance),
+  // so the caps, player rows and chart all align to the board edges. `w-5` fixes each bar's
+  // width; `h-full` makes it fill the boardWidth-tall wrapper.
+  const desktopBoardStage = (
+    <div
+      ref={boardStageRef}
+      // overflow-hidden on BOTH axes: x clips the EvalChart slider's intentional ±8px
+      // alignment slack (its -ml-8px track overhang); y clips a too-tall group on a short
+      // window instead of showing a vertical scrollbar (Phase 161 UAT — the user prefers
+      // the eval chart cut off at the bottom over a middle-column scrollbar).
+      className="flex w-full min-w-0 shrink-0 flex-col items-center desk3col:min-h-0 desk3col:h-full desk3col:justify-start desk3col:overflow-hidden"
+    >
+      <div
+        className="flex w-full flex-col items-center gap-2"
+        style={{ maxWidth: boardWidth ? boardWidth + BOARD_EVAL_BARS_ALLOWANCE_PX : undefined }}
+      >
+        {/* Source caps (Maia/SF) over the bars + top player (game mode). */}
+        <div className="w-full">
+          {boardHeaderRow(
+            isGameMode && gameData ? playerBar(boardFlipped ? 'white' : 'black') : null,
+          )}
+        </div>
+
+        {/* Board flanked by its two eval bars — all three exactly boardWidth tall. */}
+        <div className="flex flex-row items-center gap-2">
+          <div className="w-5 shrink-0" style={{ height: boardWidth }}>
+            {leftEvalBarNode('h-full w-full')}
+          </div>
+          <div
+            ref={containerRef}
+            data-testid="analysis-board"
+            tabIndex={0}
+            style={{ width: boardWidth, height: boardWidth }}
+          >
+            {chessBoardNode()}
+          </div>
+          <div className="w-5 shrink-0" style={{ height: boardWidth }}>
+            {rightEvalBarNode('h-full w-full')}
+          </div>
+        </div>
+
+        {/* Bottom player (game mode only). */}
+        {isGameMode && gameData && (
+          <div className="w-full">{boardFooterRow(playerBar(boardFlipped ? 'black' : 'white'))}</div>
+        )}
+
+        {/* EvalChart with slider — game mode only, aligned to the board width.
+            highlightedPlies (Task 3): dims non-matching markers on tags-panel hover. */}
+        {evalChartReady && (
+          <div data-testid="analysis-eval-chart" className="w-full">
+            {evalChart('h-[120px]', tagsHighlightedPlies)}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   // The flaw-tags panel (game mode only, quick-260702-nm8) — severity row + Missed |
   // Allowed | Context chip block. Same readiness gate as the eval chart (implies
@@ -1757,6 +1926,7 @@ export default function Analysis() {
           bestSan={bestSan}
           shownSans={shownSans}
           qualityBySan={qualityBySan}
+          mover={sideToMoveFromFen(position)}
           engineTopLines={engineTopLines}
           onHoverMovesChange={setHoveredQualityMoves}
           isOpponentToMove={isOpponentToMove}
@@ -1980,8 +2150,22 @@ export default function Analysis() {
 
   return (
     <div data-testid="analysis-page" className="flex min-h-0 flex-1 flex-col bg-background">
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 pb-20 md:py-6 md:pb-6 md:px-6">
-        <div className="flex flex-col lg:flex-row lg:items-stretch gap-4">
+      {/* Phase 161 D-03: max-w-7xl removed at desk3col+ to reclaim horizontal space
+          for the fluid grid; min-h-0/flex/h-full complete the min-h-0 chain from the
+          App shell (D-01) down into the grid row below. */}
+      <main className="mx-auto w-full flex-1 px-4 py-2 pb-20 md:py-6 md:pb-6 md:px-6 desk3col:flex desk3col:h-full desk3col:min-h-0 desk3col:flex-col">
+        {/* Phase 161 UAT: cap the grid at its natural full-board width and center it
+            (desk3col:mx-auto). Below the cap the fluid `1fr` center track still shrinks the
+            board; above it the grid stops growing, so surplus width lands in the window
+            margins and the side panels stay hugged to the board+bars instead of drifting
+            apart. maxWidth is harmless below desk3col (stacked column, always narrower).
+            desk3col:w-full gives the grid a definite width so the `1fr` track keeps a real
+            basis; without it a bare mx-auto collapses the flex item to content width and
+            starves the board's width measurement. */}
+        <div
+          className="flex flex-col gap-4 desk3col:mx-auto desk3col:grid desk3col:h-full desk3col:min-h-0 desk3col:w-full desk3col:grid-cols-[360px_1fr_360px]"
+          style={{ maxWidth: DESKTOP_GRID_MAX_WIDTH_PX }}
+        >
 
           {/* Human column ──────────────────────────────────────────────────── */}
           {/* D-01 3-column layout: left = Maia ("human") surfaces, matching the
@@ -1989,14 +2173,14 @@ export default function Analysis() {
               fewer x-axis ticks, accepted for the thematic left-grouping). */}
           <div
             data-testid="analysis-human-column"
-            className="flex w-full lg:w-[360px] shrink-0 flex-col gap-4 min-w-0"
+            className="flex w-full shrink-0 flex-col gap-4 min-w-0 desk3col:w-[360px] desk3col:min-h-0 desk3col:h-full desk3col:overflow-y-auto"
           >
             {/* Invisible spacer mirroring the board column's top player bar so the
                 Human card top aligns with the board top (not the player-bar top) —
                 same trick as the engine column. Desktop only; -mb-2 trims this
                 column's gap-4 to the board column's gap-2. (Quick 260705-bm3) */}
             {isGameMode && gameData && (
-              <div aria-hidden="true" className="hidden lg:block lg:invisible lg:-mb-2">
+              <div aria-hidden="true" className="hidden desk3col:block desk3col:invisible desk3col:-mb-2">
                 {playerBar(boardFlipped ? 'white' : 'black')}
               </div>
             )}
@@ -2008,6 +2192,7 @@ export default function Analysis() {
               bestSan={bestSan}
               shownSans={shownSans}
               qualityBySan={qualityBySan}
+              mover={sideToMoveFromFen(position)}
               engineTopLines={engineTopLines}
               onHoverMovesChange={setHoveredQualityMoves}
               isOpponentToMove={isOpponentToMove}
@@ -2020,46 +2205,26 @@ export default function Analysis() {
           </div>
 
           {/* Board column ──────────────────────────────────────────────────── */}
-          <div className="flex flex-col gap-2 w-full lg:w-[628px] shrink-0">
-            {/* Top row: source caps (Maia/SF) over the bars, name/clock aligned to
-                the board edges. Free play has no player line — caps show alone. */}
-            {boardHeaderRow(
-              isGameMode && gameData ? playerBar(boardFlipped ? 'white' : 'black') : null,
-            )}
-
-            {/* Board + EvalBar row */}
-            {boardRow}
-
-            {/* Bottom player (game mode only), aligned to the board edges. */}
-            {isGameMode && gameData && boardFooterRow(playerBar(boardFlipped ? 'black' : 'white'))}
-
-            {/* EvalChart with slider — game mode only, below board (UI-SPEC Layout Contract).
-                highlightedPlies (Task 3, desktop only): dims non-matching markers while
-                hovering a tags-panel badge/chip. */}
-            {evalChartReady && (
-              <div data-testid="analysis-eval-chart">
-                {evalChart('h-[120px]', tagsHighlightedPlies)}
-              </div>
-            )}
-
-            {/* Flaw-tags panel — game mode only, directly below the eval chart
-                (quick-260702-nm8). withHighlight=true wires its hover state back onto
-                the eval chart above (desktop only — mobile's tagsPanel() call omits it). */}
-            {tagsPanel(true)}
-          </div>
+          {/* Fluid `1fr` grid track holding the JS-sized board stage (caps + players +
+              board/eval-bars + eval chart). All sizing/scroll behavior lives inside
+              desktopBoardStage (defined above) so this middle track is just its slot. */}
+          {desktopBoardStage}
 
           {/* Side panel: engine + variation tree + controls. Narrower than the board
               column (UAT 260627-mt8 item 1) and stretched to the board column's
-              height so the controls bottom-align with the eval-chart slider. */}
-          <div className="flex w-full lg:w-[360px] shrink-0 flex-col gap-4 min-w-0">
+              height. overflow-hidden (not -y-auto): the column NEVER shows its own
+              scrollbar — a too-tall stack is clipped at the viewport bottom, matching the
+              board column's Phase 161 clip-don't-scroll rule (user UAT). The move list
+              keeps its own internal scroller, so no moves are lost. */}
+          <div className="flex w-full shrink-0 flex-col gap-4 min-w-0 desk3col:w-[360px] desk3col:min-h-0 desk3col:h-full desk3col:overflow-hidden">
 
             {/* Spacer mirroring the board column's top player bar so the engine card
                 top aligns with the board top (not the player-bar top). Desktop only
-                (lg) where the columns sit side by side; invisible keeps its height.
-                -mb-2 trims this column's gap-4 down to the board column's gap-2 so the
-                spacer→card gap equals the bar→board gap. (Quick 260628-pcb) */}
+                (desk3col) where the columns sit side by side; invisible keeps its
+                height. -mb-2 trims this column's gap-4 down to the board column's
+                gap-2 so the spacer→card gap equals the bar→board gap. (Quick 260628-pcb) */}
             {isGameMode && gameData && (
-              <div aria-hidden="true" className="hidden lg:block lg:invisible lg:-mb-2">
+              <div aria-hidden="true" className="hidden desk3col:block desk3col:invisible desk3col:-mb-2">
                 {playerBar(boardFlipped ? 'white' : 'black')}
               </div>
             )}
@@ -2071,6 +2236,16 @@ export default function Analysis() {
               </p>
             )}
 
+            {/* Board-height region: the engine + moves cards together span exactly the
+                board's height at desk3col, so the moves card's bottom border (its controls
+                footer) lands on the board's bottom edge (user UAT). `--analysis-board-h` is
+                the JS-measured board size; the desk3col:h-[var(...)] only binds it on the
+                3-column desktop layout, leaving the stacked mobile layout at natural height.
+                The tags panel below then sits beside the bottom player bar + eval chart. */}
+            <div
+              className="flex min-h-0 flex-col gap-4 desk3col:h-[var(--analysis-board-h)] desk3col:shrink-0"
+              style={{ '--analysis-board-h': boardWidth ? `${boardWidth}px` : undefined } as CSSProperties}
+            >
             {/* Engine info + lines in a fixed-height charcoal Card (Quick 260627-r9g
                 item 3). The info line is the card header; the body never jumps as the
                 engine transitions loading → analyzing → 2 lines. */}
@@ -2119,10 +2294,31 @@ export default function Analysis() {
               </CardBody>
             </Card>
 
-            {variationTree('responsive')}
+            {/* Move list in a charcoal card. Unlike the engine card above (darker HEADER),
+                the board controls sit in a darker FOOTER band (bg-black/20 border-t —
+                mirror of CardHeader) so the card reads header-less at the top. The card is
+                the column's flex-1 element: the move list fills and scrolls internally, the
+                controls stay pinned at the card bottom (chess.com pattern — UI-SPEC). */}
+            <Card
+              data-testid="analysis-movelist-card"
+              className="relative flex min-h-0 flex-1 flex-col"
+            >
+              <CardHeader size="compact" data-testid="analysis-movelist-header">
+                <ArrowLeftRight className="h-4 w-4" aria-hidden />
+                Moves
+              </CardHeader>
+              {variationTree('responsive')}
+              <div className="border-t border-border/40 bg-black/20 px-1">
+                {boardControls(true, 'sm')}
+              </div>
+            </Card>
+            </div>
 
-            {/* BoardControls relocated to bottom of right column (chess.com pattern — UI-SPEC). */}
-            {boardControls()}
+            {/* Phase 161 D-04: Tags/badges panel relocated here from the board column
+                (was directly under the eval chart) so that column is board + chart
+                only. withHighlight=true preserved — its hover state still wires back
+                onto the eval chart in the middle column. */}
+            {tagsPanel(true)}
           </div>
 
         </div>

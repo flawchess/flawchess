@@ -880,7 +880,8 @@ function DesktopTree({
       // slider (42px dead space) while the controls pinned to the true bottom. Taking
       // the scroller out of flow (absolute inset-0) lets the board column drive the row
       // height, so the controls bottom-align with the eval-chart slider — no magic px.
-      className="absolute inset-0 overflow-y-auto thin-scrollbar"
+      // pl-2 indents the move rows off the card's left edge (scrollbar stays flush right).
+      className="absolute inset-0 overflow-y-auto thin-scrollbar pl-2"
     >
       {(blocksByRow.get(-1) ?? []).map((block) => renderSiblingBlock(block, ''))}
       {mainRows.map((row, rowIdx) => (

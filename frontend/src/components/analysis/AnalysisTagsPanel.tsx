@@ -242,7 +242,10 @@ export function AnalysisTagsPanel({
           );
         })}
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-x-3 gap-y-2 mt-2">
+      {/* Float each label + its chips on one wrapping line (Missed / Allowed / Context
+          stacked as rows), not a 3-column grid — the narrow analysis rail reads better
+          with chips floated beside their label, mirroring the mobile card layout. */}
+      <div className="flex flex-col gap-y-2 mt-2">
         {TACTIC_ORIENTATIONS.map((orientation) => {
           const groupMotifs = tacticMotifs.filter((t) => t.orientation === orientation);
           return (
@@ -251,6 +254,7 @@ export function AnalysisTagsPanel({
               orientation={orientation}
               label={TACTIC_ORIENTATION_LABELS[orientation]}
               gameId={game.game_id}
+              inline
               motifs={groupMotifs.map(({ motif }) => ({
                 motif,
                 count: motifPlies.get(motifPliesKey(orientation, motif))?.length ?? 0,
@@ -278,6 +282,7 @@ export function AnalysisTagsPanel({
           testId={`context-column-${game.game_id}`}
           isEmpty={contextChips == null}
           labelTrailing={contextLegend}
+          inline
         >
           {contextChips}
         </ChipColumn>

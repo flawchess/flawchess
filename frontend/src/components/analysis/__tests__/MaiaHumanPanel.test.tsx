@@ -52,6 +52,7 @@ describe('MaiaHumanPanel', () => {
         bestSan={null}
         shownSans={[]}
         qualityBySan={new Map()}
+        mover="white"
         engineTopLines={[]}
       />,
     );
@@ -69,6 +70,7 @@ describe('MaiaHumanPanel', () => {
         bestSan={null}
         shownSans={[]}
         qualityBySan={new Map()}
+        mover="white"
         engineTopLines={[]}
       />,
     );
@@ -85,6 +87,7 @@ describe('MaiaHumanPanel', () => {
         bestSan={null}
         shownSans={[]}
         qualityBySan={new Map()}
+        mover="white"
         engineTopLines={[]}
       />,
     );
@@ -100,6 +103,7 @@ describe('MaiaHumanPanel', () => {
         bestSan={null}
         shownSans={[]}
         qualityBySan={new Map()}
+        mover="white"
         engineTopLines={[]}
         compact
       />,
