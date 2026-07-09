@@ -1375,7 +1375,21 @@ export default function Analysis() {
       ? topLine.practicalScore
       : 1 - topLine.practicalScore
     : 0.5;
-  const leftEvalBarWhiteFraction = flawChessEnabled ? fcWhiteFraction : maiaWhiteFraction;
+  // A terminal position pins the left bar to the deterministic result too: neither the
+  // FlawChess nor the Maia engine emits a ranked line for a checkmate (no legal move),
+  // so their fraction fell back to 0.5 while the Stockfish bar already read decisive
+  // (Quick 260709-j3k follow-up). mate > 0 = White wins (full white), < 0 = Black wins
+  // (full black), draw = midpoint.
+  const terminalWhiteFraction =
+    terminalEval == null
+      ? null
+      : terminalEval.mate != null
+        ? terminalEval.mate > 0
+          ? 1
+          : 0
+        : 0.5;
+  const leftEvalBarWhiteFraction =
+    terminalWhiteFraction ?? (flawChessEnabled ? fcWhiteFraction : maiaWhiteFraction);
   const leftEvalBarAccent = flawChessEnabled ? FLAWCHESS_ENGINE_ACCENT : MAIA_ACCENT;
   const leftEvalBarTestId = flawChessEnabled ? 'analysis-flawchess-eval-bar' : 'analysis-maia-eval-bar';
   // The right bar is labeled "SF" (Stockfish): the real standalone Stockfish eval
