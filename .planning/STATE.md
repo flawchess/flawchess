@@ -23,7 +23,7 @@ progress:
 Phase: 159 (flawchess-engine-policy-temperature-root-move-findability-se) — EXECUTING
 Plan: 4 of 4
 Status: Phase 159 shipped — squash-merged to main
-Last activity: 2026-07-09 - Completed quick task 260709-k9r: FlawChess Engine card surfaces forced mates (#-N eval + verdict)
+Last activity: 2026-07-09 - Completed quick task 260709-o72: Maia/FlawChess card prose reflects player standing (Option B) + player-POV eval chips
 
 ## Project Reference
 
@@ -160,6 +160,7 @@ None active.
 | 260708-qrr | Unified move-hover popover (FlawChess/practical gold, Stockfish/objective blue, Maia/human violet — icon-led, whole-line color, omit unavailable) shared by both analysis cards' dotted moves | 2026-07-08 | a339346a | [260708-qrr-unified-move-popover-on-dotted-moves](./quick/260708-qrr-unified-move-popover-on-dotted-moves/) |
 | 260709-j3k | Checkmate on a free move line no longer reads as a blunder — terminal eval derived from the rules so the bar fills to 0%/100% and the mating move reads green | 2026-07-09 | ce8d19b5 | [260709-j3k-analysis-board-a-free-move-line-ending-i](./quick/260709-j3k-analysis-board-a-free-move-line-ending-i/) |
 | 260709-k9r | FlawChess Engine card surfaces forced mates — thread evalMate through RankedLine/search/reconciliation so a mate line shows #-4 (not …) and the agreement verdict narrates instead of the stale "Turn on Stockfish" prompt | 2026-07-09 | 0b02c4f9 | [260709-k9r-fix-flawchess-engine-card-mate-eval-and-](./quick/260709-k9r-fix-flawchess-engine-card-mate-eval-and-/) |
+| 260709-o72 | Maia/FlawChess card prose now reflects player standing (Option B: "{standing} — {difficulty}"); player-POV eval chips (−M4 = "You're being mated" not white-POV), standing bands (winning/better/level/worse/losing/mate), decisive+safe collapse to "longest resistance"; FlawChess "safer" → "more reliable" | 2026-07-09 | ca301bee | [260709-o72-fix-maia-flawchess-card-prose-to-reflect](./quick/260709-o72-fix-maia-flawchess-card-prose-to-reflect/) |
 
 ## Deferred Items
 
