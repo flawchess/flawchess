@@ -484,13 +484,35 @@ function ProtectedLayout() {
   if (isAnalysisRoute) {
     return (
       <>
-        {/* Full-height flex chain on mobile so the page's tab content can fill the
-            space between the board and the in-flow board-controls footer. `sm:h-auto
-            sm:block` reverts to normal block flow on desktop (layout unchanged). */}
-        <div className="flex flex-col h-[100dvh] sm:h-auto sm:block">
+        {/* Phase 161 (SEED-088), D-01/D-05/D-06/D-09: the shell is LOCKED
+            (h-[100dvh]) by default. This covers both mobile (<640px, isMobile
+            tab-takeover UI — its tab content relies on this to fill the space
+            above the in-flow board-controls footer, unchanged per D-05) AND
+            the new desktop 3-column grid (>=desk3col, D-01/D-07) so its move
+            list / board+chart column scroll internally instead of the page.
+            Two range-scoped variants UNLOCK it: `sm:max-desk3col:` (the
+            640-desk3col tablet/stacked-fallback band, D-06 — today's
+            unchanged scroll behavior, now scoped to just that band instead of
+            "everything sm: and up") and `short:` (<560px tall, D-09, a
+            safety-valve override at ANY width). Applied at this shell level
+            only — the min-h-0 chain further down does not repeat it
+            (RESEARCH.md Pattern 4).
+            Deviation from RESEARCH.md's illustrative "full base-vs-desk3col
+            polarity inversion": that example used base=unlocked +
+            `desk3col:` re-locks, but `desk3col:` (a custom @theme breakpoint)
+            compiles to an EARLIER media block than the built-in `sm:` in this
+            Tailwind v4.3.0 build (verified via `npm run build` + inspecting
+            the generated CSS), so `sm:h-auto` would win the cascade at
+            >=1200px and silently keep desktop unlocked — the opposite of
+            D-01. Scoping the unlock to `sm:max-desk3col:` (a compound range
+            variant) sidesteps the ordering issue entirely: base is naturally
+            locked everywhere except the two explicit unlock bands, with no
+            dependency on Tailwind's custom-vs-named breakpoint sort order
+            (Rule 1 auto-fix — see 161-01-SUMMARY.md). */}
+        <div className="flex flex-col h-[100dvh] sm:max-desk3col:h-auto sm:max-desk3col:block short:h-auto short:block">
           <NavHeader />
           <AnalysisMobileHeader />
-          <main className="flex-1 min-h-0 flex flex-col sm:block sm:flex-none">
+          <main className="flex-1 min-h-0 flex flex-col sm:max-desk3col:block sm:max-desk3col:flex-none short:block short:flex-none">
             <Outlet />
           </main>
         </div>

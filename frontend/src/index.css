@@ -6,6 +6,22 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Phase 161 (SEED-088): /analysis viewport-locked responsive layout.
+   desk3col (D-06/D-07) is the single named width threshold above which the
+   /analysis page renders its 3-column grid instead of the stacked fallback.
+   1200px sits at the seed's own minimum-viable-width math (360 Human column +
+   ~420 board floor + ~50 eval bars + 360 right column ≈ 1190) and stays below
+   1280/1366 so small laptops keep the desktop 3-column layout — the bug this
+   phase fixes. */
+@theme {
+    --breakpoint-desk3col: 1200px;
+}
+
+/* short (D-09) releases the /analysis page's 100dvh lock below ~560px viewport
+   height so the whole page scrolls instead of clipping content. 559.98px makes
+   >=560px the locked band and <560px the release band. */
+@custom-variant short (@media (max-height: 559.98px));
+
 :root {
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);

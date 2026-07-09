@@ -28,6 +28,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- **Analysis page now fits your screen without cutting off** — the desktop `/analysis` layout is locked to the viewport height (like chess.com/lichess): no more page scroll that clipped content at the bottom on small laptops. The board sizes fluidly to the space available (shrinking to fit shorter screens down to a readable floor), the columns reflow into a fluid grid that reclaims horizontal space, and the tactic tags/badges panel moved to the bottom of the right column. Mobile is unchanged. (Phase 161)
 - **Opponent tactic arrows no longer clutter the analysis board** — on `/analysis`, the opponent's allowed/missed tactic arrows (crimson and teal) are no longer drawn on the board; they remain available in the eval-chart tooltip. Your own tactic arrows are unchanged. (Quick 260705)
 - **FlawChess Engine now recommends the move you'll plausibly find** — the ranking folds in how likely you are to actually play each candidate at your selected rating, so a rare (~5%-findable) tail move can no longer top the list on objective value alone, while the displayed practical score for each move is unchanged. The findability weighting auto-scales with the ELO slider. (Phase 159)
 

@@ -2,28 +2,29 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: FlawChess Engine
-current_phase: 159
-current_phase_name: flawchess-engine-policy-temperature-root-move-findability-se
-status: Phase 159 shipped — squash-merged to main
-stopped_at: Completed 159-04-PLAN.md
-last_updated: "2026-07-08T15:56:10.814Z"
-last_activity: 2026-07-08
+current_phase: 161
+current_phase_name: analysis-page-viewport-locked-responsive-layout-seed-088
+status: executing
+stopped_at: Phase 161 context gathered
+last_updated: "2026-07-09T17:46:00.962Z"
+last_activity: 2026-07-09
+last_activity_desc: Phase 161 execution started
 progress:
-  total_phases: 7
+  total_phases: 9
   completed_phases: 7
-  total_plans: 23
+  total_plans: 24
   completed_plans: 23
-  percent: 100
+  percent: 78
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 159 (flawchess-engine-policy-temperature-root-move-findability-se) — EXECUTING
-Plan: 4 of 4
-Status: Phase 159 shipped — squash-merged to main
-Last activity: 2026-07-09 - Reframed Maia verdict to the objective/accuracy lens so it no longer contradicts the FlawChess Engine card's practical pick (follow-up to 260709-o72)
+Phase: 161 (analysis-page-viewport-locked-responsive-layout-seed-088) — EXECUTING
+Plan: 1 of 1
+Status: Executing Phase 161
+Last activity: 2026-07-09 — Phase 161 execution started
 
 ## Project Reference
 
@@ -214,13 +215,13 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Completed 159-04-PLAN.md
+**Stopped at:** Phase 161 context gathered
 
-**Last session:** 2026-07-07T20:54:14.129Z
+**Last session:** 2026-07-09T17:12:37.609Z
 
 **Resume file:** 
 
-Resume: `/gsd-plan-phase 153`
+.planning/phases/161-analysis-page-viewport-locked-responsive-layout-seed-088/161-CONTEXT.md
 
 ## Performance Metrics
 

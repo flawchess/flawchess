@@ -748,3 +748,14 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 Plans:
 
 - [ ] TBD (run /gsd-plan-phase 160 to break down)
+
+### Phase 161: Analysis page viewport-locked responsive layout (SEED-088)
+
+**Goal:** Convert the `/analysis` desktop (`lg+`) layout from scrolling fixed-pixel columns to a viewport-locked, fluid layout (chess.com/lichess model) so content no longer cuts off at the bottom on small laptop screens. Lock the frame to `100dvh` (no page scroll, inner regions scroll), size the board to `min(width budget, remaining height)` with a ~420px floor, reclaim horizontal space (widen/remove `max-w-7xl`, flex row → CSS grid with fluid middle), and relocate the Tags/badges panel from the middle column into the bottom of the right column. Mobile (`<lg`) stays unchanged.
+**Requirements**: SEED-088
+**Depends on:** Phase 160
+**Plans:** 1 plan
+
+Plans:
+
+- [ ] 161-01-PLAN.md — viewport-lock shell + height-aware board + fluid grid + tags relocation (D-01…D-09)

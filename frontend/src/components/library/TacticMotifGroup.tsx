@@ -33,6 +33,9 @@ interface TacticMotifGroupProps {
   /** Optional node rendered below the chips inside this column lane (Quick 260625: the
    *  desktop game-card Explore button is pinned under the Missed column). */
   footer?: React.ReactNode;
+  /** Keep the label + chips inline (flex-wrap) at every width instead of stacking into a
+   *  column at md+. Forwarded to ChipColumn — used by the /analysis tags rail. */
+  inline?: boolean;
 }
 
 /**
@@ -51,6 +54,7 @@ export function TacticMotifGroup({
   onChipActivate,
   legend,
   footer,
+  inline = false,
 }: TacticMotifGroupProps) {
   const [expanded, setExpanded] = React.useState(false);
 
@@ -67,6 +71,7 @@ export function TacticMotifGroup({
       isEmpty={motifs.length === 0}
       labelTrailing={legend}
       footer={footer}
+      inline={inline}
     >
       {visible.map(({ motif, count, filterRingActive }) => (
         <TacticMotifChip
