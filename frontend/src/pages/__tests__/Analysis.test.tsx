@@ -103,8 +103,9 @@ const flawChessState: {
     rootMove: string;
     practicalScore: number;
     objectiveEvalCp: number | null;
+    objectiveEvalMate: number | null;
     modalPath: string[];
-    modalStats: { objectiveEvalCp: number | null; maiaProb: number | null }[];
+    modalStats: { objectiveEvalCp: number | null; objectiveEvalMate: number | null; maiaProb: number | null }[];
     visits: number;
   }[];
   isSearching: boolean;
@@ -401,8 +402,9 @@ describe('Reconciled eval provenance (Phase 158, SEED-087)', () => {
         rootMove: 'e2e4',
         practicalScore: 0.6,
         objectiveEvalCp: 80,
+        objectiveEvalMate: null,
         modalPath: ['e2e4'],
-        modalStats: [{ objectiveEvalCp: 80, maiaProb: 0.5 }],
+        modalStats: [{ objectiveEvalCp: 80, objectiveEvalMate: null, maiaProb: 0.5 }],
         visits: 5,
       },
     ];
@@ -429,8 +431,9 @@ describe('Reconciled eval provenance (Phase 158, SEED-087)', () => {
         rootMove: 'e2e4',
         practicalScore: 0.55,
         objectiveEvalCp: 999,
+        objectiveEvalMate: null,
         modalPath: ['e2e4'],
-        modalStats: [{ objectiveEvalCp: 999, maiaProb: 0.5 }],
+        modalStats: [{ objectiveEvalCp: 999, objectiveEvalMate: null, maiaProb: 0.5 }],
         visits: 5,
       },
     ];

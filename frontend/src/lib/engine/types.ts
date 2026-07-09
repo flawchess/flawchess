@@ -57,6 +57,14 @@ export interface ModalPlyStat {
   /** White-POV Stockfish eval (cp) of the position AFTER this move, if graded. */
   objectiveEvalCp: number | null;
   /**
+   * White-POV Stockfish mate distance of the position AFTER this move, if the
+   * grade was a forced mate (e.g. -4 for "mate in 4 against the mover"). Carried
+   * alongside `objectiveEvalCp` so a forced-mate leaf renders `#-4` instead of the
+   * `…` placeholder a null cp would print (quick 260709). Mutually exclusive with a
+   * non-null `objectiveEvalCp` — exactly one is set for a graded position.
+   */
+  objectiveEvalMate: number | null;
+  /**
    * Raw Maia policy probability (0-1) of this move at its parent position —
    * the un-truncated, un-temperature-reshaped value, so it matches the raw
    * Maia % shown in the prose move popovers rather than the search's
@@ -73,6 +81,13 @@ export interface RankedLine {
   practicalScore: number;
   /** Objective white-POV Stockfish eval (cp) at the modal leaf, if available. */
   objectiveEvalCp: number | null;
+  /**
+   * Objective white-POV Stockfish mate distance at the root candidate, when the
+   * grade is a forced mate (e.g. -4). Set instead of `objectiveEvalCp` for a
+   * mate leaf so the FlawChess card + agreement verdict can render `#-4` rather
+   * than the `…` a null cp would print (quick 260709).
+   */
+  objectiveEvalMate: number | null;
   /** The line's most-visited continuation, UCI sequence (D-08). */
   modalPath: string[];
   /** Per-ply display stats index-aligned with `modalPath` (Phase 160). */

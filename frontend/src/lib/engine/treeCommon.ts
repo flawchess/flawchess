@@ -63,6 +63,10 @@ export interface SearchTreeNode<N extends SearchTreeNode<N>> {
   isExpanded: boolean;
   /** White-POV Stockfish eval (cp) at grading time, if available — surfaced on RankedLine. */
   objectiveEvalCp: number | null;
+  /** White-POV Stockfish mate distance at grading time (e.g. -4), set instead of
+   *  `objectiveEvalCp` for a forced-mate grade — surfaced on RankedLine so a mate
+   *  leaf renders `#-4` instead of `…` (quick 260709). */
+  objectiveEvalMate: number | null;
   /**
    * Raw Maia policy probability (0-1) of this node's move at its parent — the
    * value straight from `policy()` before temperature/truncation/renorm, so
@@ -179,7 +183,11 @@ function buildModalPath<N extends SearchTreeNode<N>>(rootChild: N): {
   while (node !== null) {
     if (node.uci !== null) {
       path.push(node.uci);
-      stats.push({ objectiveEvalCp: node.objectiveEvalCp, maiaProb: node.rawMaiaProb });
+      stats.push({
+        objectiveEvalCp: node.objectiveEvalCp,
+        objectiveEvalMate: node.objectiveEvalMate,
+        maiaProb: node.rawMaiaProb,
+      });
     }
     if (!node.isExpanded || node.children.size === 0) break;
     let best: N | null = null;
@@ -218,6 +226,7 @@ function buildRankedLines<N extends SearchTreeNode<N>>(root: N, rootElo: number)
         rootMove: child.uci,
         practicalScore: child.value,
         objectiveEvalCp: child.objectiveEvalCp,
+        objectiveEvalMate: child.objectiveEvalMate,
         modalPath: modal.path,
         modalStats: modal.stats,
         visits: child.visits,

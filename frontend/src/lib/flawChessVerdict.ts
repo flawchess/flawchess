@@ -33,9 +33,9 @@ export type FlawChessVerdictTier = 'aligned' | 'safe' | 'sharp';
 export interface FlawChessVerdictMove {
   uci: string;
   role: 'flawchess' | 'stockfish';
-  /** White-POV centipawns. Always null on the FlawChess side (Pitfall 4 — RankedLine has no mate field). */
+  /** White-POV centipawns. Null on the FlawChess side when the pick grades to a forced mate (evalMate set instead). */
   evalCp: number | null;
-  /** White-POV mate distance. Always null on the FlawChess side (Pitfall 4). */
+  /** White-POV mate distance, when the pick grades to a forced mate (quick 260709 threaded RankedLine.objectiveEvalMate through). */
   evalMate: number | null;
   textColor: string;
   arrowColor: string;
@@ -79,7 +79,10 @@ export function computeFlawChessVerdict(
   mover: MoverColor,
 ): FlawChessVerdictResult | null {
   if (flawChessLine == null || stockfishLine == null) return null;
-  if (flawChessLine.objectiveEvalCp == null) return null;
+  // A forced-mate leaf grades to evalMate (cp null), so accept either — bailing on a
+  // null cp alone dropped the whole verdict on mate lines, surfacing the muted
+  // "Turn on Stockfish" prompt even with Stockfish on (quick 260709).
+  if (flawChessLine.objectiveEvalCp == null && flawChessLine.objectiveEvalMate == null) return null;
 
   const sfMoveUci = stockfishLine.moves[0];
   if (sfMoveUci === undefined) return null;
@@ -92,7 +95,7 @@ export function computeFlawChessVerdict(
     uci: flawChessLine.rootMove,
     role: 'flawchess',
     evalCp: flawChessLine.objectiveEvalCp,
-    evalMate: null, // Pitfall 4: RankedLine has no mate field.
+    evalMate: flawChessLine.objectiveEvalMate,
     textColor: FLAWCHESS_ENGINE_ARROW,
     arrowColor: FLAWCHESS_ENGINE_ARROW,
   };
@@ -105,10 +108,13 @@ export function computeFlawChessVerdict(
     arrowColor: BEST_MOVE_ARROW,
   };
 
-  // Raw white-POV centipawn gap between the two evals the prose actually renders. Null when the
-  // Stockfish side is a mate score (a forced mate vs a cp eval is never "nearly the same eval").
+  // Raw white-POV centipawn gap between the two evals the prose actually renders. Null when EITHER
+  // side is a mate score (a forced mate vs a cp eval is never "nearly the same eval") — including
+  // the FlawChess side, whose objectiveEvalCp is null on a mate leaf (quick 260709).
   const objectiveEvalGapCp =
-    sfEvalCp == null ? null : Math.abs(sfEvalCp - flawChessLine.objectiveEvalCp);
+    sfEvalCp == null || flawChessLine.objectiveEvalCp == null
+      ? null
+      : Math.abs(sfEvalCp - flawChessLine.objectiveEvalCp);
   const nearlySameEval = objectiveEvalGapCp != null && objectiveEvalGapCp <= NEARLY_SAME_EVAL_CP;
 
   // D-04: aligned check is UCI-string equality, done BEFORE the drop split.
@@ -116,7 +122,7 @@ export function computeFlawChessVerdict(
     return { tier: 'aligned', flawChessMove, stockfishMove, drop: 0, objectiveEvalGapCp, nearlySameEval };
   }
 
-  const fcExpectedScore = evalToExpectedScore(flawChessLine.objectiveEvalCp, null, mover);
+  const fcExpectedScore = evalToExpectedScore(flawChessLine.objectiveEvalCp, flawChessLine.objectiveEvalMate, mover);
   const sfExpectedScore = evalToExpectedScore(sfEvalCp, sfEvalMate, mover);
   // The max() is load-bearing, not merely defensive: fcExpectedScore derives from the FlawChess
   // pick's objectiveEvalCp — a move-restricted grade from a DIFFERENT Stockfish search than

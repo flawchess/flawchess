@@ -20,13 +20,19 @@ import { FLAWCHESS_ENGINE_ARROW, BEST_MOVE_ARROW } from '@/lib/theme';
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
 /** Minimal RankedLine fixture, mirroring flawChessVerdict.test.ts's fcLine helper. */
-function fcLine(rootMove: string, objectiveEvalCp: number | null, practicalScore = 0.5): RankedLine {
+function fcLine(
+  rootMove: string,
+  objectiveEvalCp: number | null,
+  practicalScore = 0.5,
+  objectiveEvalMate: number | null = null,
+): RankedLine {
   return {
     rootMove,
     practicalScore,
     objectiveEvalCp,
+    objectiveEvalMate,
     modalPath: [rootMove],
-    modalStats: [{ objectiveEvalCp, maiaProb: null }],
+    modalStats: [{ objectiveEvalCp, objectiveEvalMate, maiaProb: null }],
     visits: 1,
   };
 }

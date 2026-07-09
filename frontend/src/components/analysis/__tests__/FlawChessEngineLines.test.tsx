@@ -62,17 +62,18 @@ const LINE_1: RankedLine = {
   rootMove: 'e2e4',
   practicalScore: 0.9, // white rootMover → expectedScoreToWhitePovCp ≈ +596.7cp → "+6.0"
   objectiveEvalCp: 300, // → "+3.0"
+  objectiveEvalMate: null,
   modalPath: ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1b5', 'a7a6', 'b5a4'],
   // Per-ply hover-header stats, index-aligned with modalPath. First ply:
   // +0.2 eval, 45% Maia — asserted by the hover-header test below.
   modalStats: [
-    { objectiveEvalCp: 20, maiaProb: 0.45 },
-    { objectiveEvalCp: -10, maiaProb: 0.38 },
-    { objectiveEvalCp: 15, maiaProb: 0.5 },
-    { objectiveEvalCp: 5, maiaProb: 0.2 },
-    { objectiveEvalCp: 25, maiaProb: 0.6 },
-    { objectiveEvalCp: 30, maiaProb: 0.55 },
-    { objectiveEvalCp: 40, maiaProb: 0.7 },
+    { objectiveEvalCp: 20, objectiveEvalMate: null, maiaProb: 0.45 },
+    { objectiveEvalCp: -10, objectiveEvalMate: null, maiaProb: 0.38 },
+    { objectiveEvalCp: 15, objectiveEvalMate: null, maiaProb: 0.5 },
+    { objectiveEvalCp: 5, objectiveEvalMate: null, maiaProb: 0.2 },
+    { objectiveEvalCp: 25, objectiveEvalMate: null, maiaProb: 0.6 },
+    { objectiveEvalCp: 30, objectiveEvalMate: null, maiaProb: 0.55 },
+    { objectiveEvalCp: 40, objectiveEvalMate: null, maiaProb: 0.7 },
   ],
   visits: 120,
 };
@@ -81,10 +82,11 @@ const LINE_2: RankedLine = {
   rootMove: 'd2d4',
   practicalScore: 0.6,
   objectiveEvalCp: 50, // → "+0.5"
+  objectiveEvalMate: null,
   modalPath: ['d2d4', 'd7d5'],
   modalStats: [
-    { objectiveEvalCp: 40, maiaProb: 0.35 },
-    { objectiveEvalCp: 45, maiaProb: 0.42 },
+    { objectiveEvalCp: 40, objectiveEvalMate: null, maiaProb: 0.35 },
+    { objectiveEvalCp: 45, objectiveEvalMate: null, maiaProb: 0.42 },
   ],
   visits: 80,
 };
@@ -93,8 +95,9 @@ const LINE_3: RankedLine = {
   rootMove: 'c2c4',
   practicalScore: 0.5,
   objectiveEvalCp: null, // → "…" placeholder
+  objectiveEvalMate: null,
   modalPath: ['c2c4'],
-  modalStats: [{ objectiveEvalCp: null, maiaProb: null }],
+  modalStats: [{ objectiveEvalCp: null, objectiveEvalMate: null, maiaProb: null }],
   visits: 40,
 };
 
@@ -102,8 +105,9 @@ const LINE_4: RankedLine = {
   rootMove: 'g1f3',
   practicalScore: 0.4,
   objectiveEvalCp: -20,
+  objectiveEvalMate: null,
   modalPath: ['g1f3'],
-  modalStats: [{ objectiveEvalCp: -20, maiaProb: 0.15 }],
+  modalStats: [{ objectiveEvalCp: -20, objectiveEvalMate: null, maiaProb: 0.15 }],
   visits: 20,
 };
 
@@ -215,6 +219,41 @@ describe('FlawChessEngineLines', () => {
     expect(screen.getByText('…')).toBeTruthy();
   });
 
+  it('a forced-mate line renders "#-4" on BOTH the objective and practical badges, not "…" or a saturated cp (quick 260709)', () => {
+    // Regression: a mate leaf grades to objectiveEvalMate with cp null, which
+    // previously printed "…" (objective) because only objectiveEvalCp was
+    // formatted, and "-10.0" (practical) because the saturated expected-score cap
+    // was shown. Both now borrow the objective mate distance → "#-4".
+    const mateLine: RankedLine = {
+      rootMove: 'e2e4',
+      practicalScore: 0.02, // deeply lost for white → tiny expected score (would show "-10.0")
+      objectiveEvalCp: null,
+      objectiveEvalMate: -4,
+      modalPath: ['e2e4'],
+      modalStats: [{ objectiveEvalCp: null, objectiveEvalMate: -4, maiaProb: 0.5 }],
+      visits: 10,
+    };
+    render(
+      <TooltipProvider>
+        <FlawChessEngineLines
+          rankedLines={[mateLine]}
+          isSearching={false}
+          baseFen={START_FEN}
+          rootMover="white"
+          onMoveClick={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+    // Both the gold practical badge and the blue objective eval render "#-4".
+    expect(screen.getAllByText('#-4')).toHaveLength(2);
+    expect(screen.queryByText('…')).toBeNull();
+    expect(screen.queryByText('-10.0')).toBeNull();
+    // The aria-label reflects the mate on both sides.
+    expect(
+      screen.getByLabelText('Line 1: practically #-4 for you, objectively #-4'),
+    ).toBeTruthy();
+  });
+
   it('move hover header shows the ply Stockfish eval (left) + raw Maia probability (right)', async () => {
     render(
       <TooltipProvider>
@@ -228,7 +267,7 @@ describe('FlawChessEngineLines', () => {
       </TooltipProvider>,
     );
     // Focus opens the Radix tooltip instantly (no hover delay). LINE_1's first
-    // ply stat is { objectiveEvalCp: 20, maiaProb: 0.45 } → "+0.2" and "45%".
+    // ply stat is { objectiveEvalCp: 20, objectiveEvalMate: null, maiaProb: 0.45 } → "+0.2" and "45%".
     // Radix renders a visually-hidden accessible duplicate of the content, so
     // each label appears more than once — assert at least one match.
     fireEvent.focus(screen.getByTestId('flawchess-line-0-move-0'));
@@ -346,6 +385,69 @@ describe('FlawChessEngineLines', () => {
     );
     expect(screen.queryByTestId('analysis-flawchess-loading')).toBeNull();
     expect(screen.queryByTestId('flawchess-line-0-move-0')).toBeNull();
+  });
+
+  it('checkmate terminalOutcome + empty rankedLines → renders a gold "#0" Checkmate badge (quick 260709)', () => {
+    render(
+      <FlawChessEngineLines
+        rankedLines={[]}
+        isSearching={false}
+        baseFen={START_FEN}
+        rootMover="white"
+        terminalOutcome="checkmate"
+        onMoveClick={vi.fn()}
+      />,
+    );
+    const row = screen.getByTestId('flawchess-terminal-row');
+    expect(row).toBeTruthy();
+    expect(screen.getByText('#0')).toBeTruthy();
+    expect(screen.getByText('Checkmate')).toBeTruthy();
+  });
+
+  it('draw terminalOutcome + empty rankedLines → renders a "½–½" Draw badge', () => {
+    render(
+      <FlawChessEngineLines
+        rankedLines={[]}
+        isSearching={false}
+        baseFen={START_FEN}
+        rootMover="white"
+        terminalOutcome="draw"
+        onMoveClick={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('½–½')).toBeTruthy();
+    expect(screen.getByText('Draw')).toBeTruthy();
+  });
+
+  it('terminalOutcome is ignored while still searching, and when ranked lines exist', () => {
+    const { rerender } = render(
+      <FlawChessEngineLines
+        rankedLines={[]}
+        isSearching={true}
+        baseFen={START_FEN}
+        rootMover="white"
+        terminalOutcome="checkmate"
+        onMoveClick={vi.fn()}
+      />,
+    );
+    // Still searching → skeleton, no terminal row.
+    expect(screen.queryByTestId('flawchess-terminal-row')).toBeNull();
+    expect(screen.getByTestId('analysis-flawchess-loading')).toBeTruthy();
+
+    // Ranked lines present → the real rows win, no terminal row.
+    rerender(
+      <TooltipProvider>
+        <FlawChessEngineLines
+          rankedLines={[LINE_1]}
+          isSearching={false}
+          baseFen={START_FEN}
+          rootMover="white"
+          terminalOutcome="checkmate"
+          onMoveClick={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+    expect(screen.queryByTestId('flawchess-terminal-row')).toBeNull();
   });
 
   it('never renders the bare phrase "best move" unqualified anywhere', () => {

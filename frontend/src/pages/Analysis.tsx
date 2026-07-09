@@ -84,7 +84,7 @@ import {
 } from '@/lib/theme';
 import { selectCandidatesByMass, nearestByElo, classifyMoveQuality, type MoveGrade } from '@/lib/moveQuality';
 import type { MoveQualityEval, EngineLine } from '@/components/analysis/MovesByRatingChart';
-import { sideToMoveFromFen } from '@/lib/liveFlaw';
+import { sideToMoveFromFen, terminalPositionEval } from '@/lib/liveFlaw';
 import type { NodeId, MoveNode } from '@/hooks/useAnalysisBoard';
 import { buildEvalLookup, getByUci, getBySan } from '@/lib/engineEvalLookup';
 import type { RankedLine } from '@/lib/engine/types';
@@ -98,6 +98,10 @@ const ENGINE_NAME = 'Stockfish 18';
 
 /** Cap on the per-session live engine-eval cache (FEN → completed eval), item 4. */
 const LIVE_EVAL_CACHE_MAX = 256;
+
+/** Synthetic eval-bar depth for a terminal (checkmate/draw) position — clears EvalBar's
+ *  mate-display gate (depth >= 8) so a decisive terminal eval fills the bar (Quick 260709-j3k). */
+const TERMINAL_EVAL_DEPTH = 99;
 
 /** Below this width the page renders its mobile takeover layout (matches the shell's
  *  `sm` breakpoint where the app swaps to mobile chrome). */
@@ -790,16 +794,21 @@ export default function Analysis() {
 
   // Phase 158 (SEED-087 SC1/SC3/SC4, SC5 scope fence): parallel RankedLine-
   // shaped display objects — NEVER the live MCTS-core snapshots themselves —
-  // with only `objectiveEvalCp` swapped for the reconciled lookup value. A
-  // resolved mate grade (evalCp null) yields null here, same as the
-  // pre-existing FC-source cp-only limitation (RankedLine has no mate field);
-  // the card renders its existing '…' placeholder, not a bug.
+  // with `objectiveEvalCp`/`objectiveEvalMate` swapped for the reconciled
+  // lookup value. Both are pulled from the SAME resolved grade so a forced-mate
+  // root candidate surfaces `#-4` on the card + agreement verdict instead of the
+  // `…` a null cp alone would print (quick 260709 — the earlier cp-only swap
+  // dropped mate).
   const reconciledRankedLines = useMemo<RankedLine[]>(
     () =>
-      flawChessEngine.rankedLines.slice(0, FC_MAX_LINES).map((line) => ({
-        ...line,
-        objectiveEvalCp: getByUci(evalLookup, line.rootMove)?.evalCp ?? null,
-      })),
+      flawChessEngine.rankedLines.slice(0, FC_MAX_LINES).map((line) => {
+        const resolved = getByUci(evalLookup, line.rootMove);
+        return {
+          ...line,
+          objectiveEvalCp: resolved?.evalCp ?? null,
+          objectiveEvalMate: resolved?.evalMate ?? null,
+        };
+      }),
     [flawChessEngine.rankedLines, evalLookup],
   );
 
@@ -1022,12 +1031,27 @@ export default function Analysis() {
 
   const parentEval = parentFen != null ? engineEvalByFen.get(parentFen) ?? null : null;
 
+  // Deterministic eval for a terminal (checkmate/draw) displayed position — the live
+  // engine reports an ambiguous `mate 0` there, which read as the 0.5 midpoint and
+  // graded a mating move as a blunder (Quick 260709-j3k). Drives both the live
+  // classification below and the right eval bar.
+  const terminalEval = useMemo(() => terminalPositionEval(position), [position]);
+
+  // Game-over state of the shown position, for the FlawChess card's terminal row
+  // (quick 260709). terminalPositionEval reports checkmate as a mate score and a
+  // draw as cp 0; a terminal root has no legal moves so the engine ranks nothing.
+  const flawChessTerminalOutcome: 'checkmate' | 'draw' | null =
+    terminalEval == null ? null : terminalEval.mate != null ? 'checkmate' : 'draw';
+
   const liveFlaw = useLiveMoveFlaw({
     active: liveFlawActive,
     parentFen,
     parentEval,
-    childEvalCp: engine.evalCp,
-    childEvalMate: engine.evalMate,
+    // On a checkmate the child position is decisive for the mover, so the mating move
+    // reads clean (green) instead of a blunder; a genuine stalemate-when-winning still
+    // flags because its cp-0 child correctly drops the mover's expected score.
+    childEvalCp: terminalEval ? terminalEval.cp : engine.evalCp,
+    childEvalMate: terminalEval ? terminalEval.mate : engine.evalMate,
     lastMove,
   });
 
@@ -1362,16 +1386,46 @@ export default function Analysis() {
       ? topLine.practicalScore
       : 1 - topLine.practicalScore
     : 0.5;
-  const leftEvalBarWhiteFraction = flawChessEnabled ? fcWhiteFraction : maiaWhiteFraction;
+  // A terminal position pins the left bar to the deterministic result too: neither the
+  // FlawChess nor the Maia engine emits a ranked line for a checkmate (no legal move),
+  // so their fraction fell back to 0.5 while the Stockfish bar already read decisive
+  // (Quick 260709-j3k follow-up). mate > 0 = White wins (full white), < 0 = Black wins
+  // (full black), draw = midpoint.
+  const terminalWhiteFraction =
+    terminalEval == null
+      ? null
+      : terminalEval.mate != null
+        ? terminalEval.mate > 0
+          ? 1
+          : 0
+        : 0.5;
+  const leftEvalBarWhiteFraction =
+    terminalWhiteFraction ?? (flawChessEnabled ? fcWhiteFraction : maiaWhiteFraction);
   const leftEvalBarAccent = flawChessEnabled ? FLAWCHESS_ENGINE_ACCENT : MAIA_ACCENT;
   const leftEvalBarTestId = flawChessEnabled ? 'analysis-flawchess-eval-bar' : 'analysis-maia-eval-bar';
   // The right bar is labeled "SF" (Stockfish): the real standalone Stockfish eval
   // whenever its switch is on, going neutral when the user turns Stockfish off
   // (`!engineEnabled`). `null`/`0` reads as the sigmoid midpoint in EvalBar's
   // computeWhiteFraction (no data → 0.5).
-  const rightEvalBarEvalCp = engineEnabled ? gameOverlay.evalCp : null;
-  const rightEvalBarEvalMate = engineEnabled ? gameOverlay.evalMate : null;
-  const rightEvalBarDepth = engineEnabled ? gameOverlay.evalDepth : 0;
+  // A terminal position (checkmate/draw) overrides the engine passthrough with the
+  // deterministic eval so the bar fills to the winner (or sits at the midpoint on a
+  // draw) instead of snapping to `mate 0` at ~50% (Quick 260709-j3k). Synthetic depth
+  // clears EvalBar's mate-display gate.
+  const rightEvalBarEvalCp = engineEnabled
+    ? terminalEval
+      ? terminalEval.cp
+      : gameOverlay.evalCp
+    : null;
+  const rightEvalBarEvalMate = engineEnabled
+    ? terminalEval
+      ? terminalEval.mate
+      : gameOverlay.evalMate
+    : null;
+  const rightEvalBarDepth = engineEnabled
+    ? terminalEval
+      ? TERMINAL_EVAL_DEPTH
+      : gameOverlay.evalDepth
+    : 0;
 
   // Board + EvalBar row — the single source of the `analysis-board` ref/testid and the
   // react-chessboard instance. Shared by the desktop and mobile trees (only one renders
@@ -1646,6 +1700,7 @@ export default function Analysis() {
               baseFen={position}
               startPly={currentPly}
               flipped={boardFlipped}
+              terminalOutcome={flawChessTerminalOutcome}
               onMoveClick={playUciLine}
             />
             {/* Agreement verdict (Phase 157-02, REVIEW-02; Phase 158 SEED-087
@@ -1654,19 +1709,24 @@ export default function Analysis() {
                 FlawChess row when standalone Stockfish is off. The FlawChess
                 side is reconciledRankedLines (evalLookup-sourced), so both
                 picks resolve through the SAME lookup — making "FC pick grades
-                higher than the objective best" impossible by construction. */}
-            <FlawChessAgreementVerdict
-              flawChessLine={reconciledRankedLines[0] ?? null}
-              stockfishLine={engine.pvLines[0] ?? null}
-              flawChessRankedLines={reconciledRankedLines}
-              engineEnabled={engineEnabled}
-              elo={selectedElo}
-              baseFen={position}
-              rawProbBySan={rawProbBySan}
-              shownSans={shownSans}
-              onHoverMovesChange={setHoveredQualityMoves}
-              onPlayMove={playProseMove}
-            />
+                higher than the objective best" impossible by construction.
+                Hidden in a terminal position (quick 260709): the game is over, so
+                the "Turn on Stockfish to compare picks." prompt is misleading —
+                the terminal `#0`/`½–½` badge above says it all. */}
+            {flawChessTerminalOutcome == null && (
+              <FlawChessAgreementVerdict
+                flawChessLine={reconciledRankedLines[0] ?? null}
+                stockfishLine={engine.pvLines[0] ?? null}
+                flawChessRankedLines={reconciledRankedLines}
+                engineEnabled={engineEnabled}
+                elo={selectedElo}
+                baseFen={position}
+                rawProbBySan={rawProbBySan}
+                shownSans={shownSans}
+                onHoverMovesChange={setHoveredQualityMoves}
+                onPlayMove={playProseMove}
+              />
+            )}
             {/* Phase 159 D-08: the Human <-> Stockfish play-style slider lives at
                 the bottom of the FlawChess Engine card (it only reshapes this
                 engine's policy). */}
