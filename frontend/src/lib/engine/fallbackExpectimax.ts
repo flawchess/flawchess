@@ -79,6 +79,7 @@ function createRoot(rootFen: string, rootMover: MoverColor): FallbackNode {
     isTerminal: false,
     isExpanded: false,
     objectiveEvalCp: null,
+    objectiveEvalMate: null,
     rawMaiaProb: null,
     children: new Map(),
   };
@@ -98,6 +99,7 @@ function createChildNode(
   prior: number,
   value: number,
   objectiveEvalCp: number | null,
+  objectiveEvalMate: number | null,
   rawMaiaProb: number | null,
   rootMover: MoverColor,
 ): FallbackNode {
@@ -113,6 +115,7 @@ function createChildNode(
     isTerminal: false,
     isExpanded: false,
     objectiveEvalCp,
+    objectiveEvalMate,
     rawMaiaProb,
     children: new Map(),
   };
@@ -215,6 +218,7 @@ async function expandNode(
       prior,
       value,
       grade?.evalCp ?? null,
+      grade?.evalMate ?? null,
       rawPolicy[uci] ?? null,
       rootMover,
     );

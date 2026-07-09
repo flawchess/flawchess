@@ -98,6 +98,7 @@ function createRoot(rootFen: string, rootMover: MoverColor): EngineNode {
     isExpanded: false,
     isClosed: false,
     objectiveEvalCp: null,
+    objectiveEvalMate: null,
     rawMaiaProb: null,
     rootExplorationPrior: 0,
     children: new Map(),
@@ -119,6 +120,7 @@ function createChildNode(
   prior: number,
   value: number,
   objectiveEvalCp: number | null,
+  objectiveEvalMate: number | null,
   rawMaiaProb: number | null,
   rootMover: MoverColor,
 ): EngineNode {
@@ -136,6 +138,7 @@ function createChildNode(
     isExpanded: false,
     isClosed: false,
     objectiveEvalCp,
+    objectiveEvalMate,
     rawMaiaProb,
     rootExplorationPrior: 0,
     children: new Map(),
@@ -263,6 +266,7 @@ function applyExpansion(result: DispatchedExpansion, rootMover: MoverColor): voi
       prior,
       value,
       grade?.evalCp ?? null,
+      grade?.evalMate ?? null,
       rawPolicy[uci] ?? null,
       rootMover,
     );

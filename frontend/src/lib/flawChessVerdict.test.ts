@@ -9,14 +9,19 @@ import { evalToExpectedScore } from '@/lib/liveFlaw';
 import type { RankedLine } from '@/lib/engine/types';
 import type { PvLine } from '@/hooks/uciParser';
 
-/** Minimal RankedLine fixture — objectiveEvalCp is the only field this module reads besides rootMove. */
-function fcLine(rootMove: string, objectiveEvalCp: number | null): RankedLine {
+/** Minimal RankedLine fixture — objectiveEvalCp/objectiveEvalMate are the only eval fields this module reads besides rootMove. */
+function fcLine(
+  rootMove: string,
+  objectiveEvalCp: number | null,
+  objectiveEvalMate: number | null = null,
+): RankedLine {
   return {
     rootMove,
     practicalScore: 0.5,
     objectiveEvalCp,
+    objectiveEvalMate,
     modalPath: [rootMove],
-    modalStats: [{ objectiveEvalCp, maiaProb: null }],
+    modalStats: [{ objectiveEvalCp, objectiveEvalMate, maiaProb: null }],
     visits: 1,
   };
 }
@@ -145,8 +150,8 @@ describe('computeFlawChessVerdict — D-06 null gate', () => {
     expect(computeFlawChessVerdict(fc, null, 'white')).toBeNull();
   });
 
-  it('FC objectiveEvalCp null -> null result', () => {
-    const fc = fcLine('g1f3', null);
+  it('FC objectiveEvalCp AND objectiveEvalMate both null -> null result', () => {
+    const fc = fcLine('g1f3', null, null);
     const sf = sfLine('g1f3', 30);
     expect(computeFlawChessVerdict(fc, sf, 'white')).toBeNull();
   });
@@ -158,7 +163,7 @@ describe('computeFlawChessVerdict — D-06 null gate', () => {
   });
 });
 
-describe('computeFlawChessVerdict — Pitfall 4: FC side is always cp-only', () => {
+describe('computeFlawChessVerdict — mate scores on either side (quick 260709)', () => {
   it('an SF pick expressed as mate still classifies (uses the mate mapping)', () => {
     const fc = fcLine('e2e4', 40);
     const sf = sfLine('d1h5', null, 3); // mate in 3, no evalCp
@@ -168,6 +173,23 @@ describe('computeFlawChessVerdict — Pitfall 4: FC side is always cp-only', () 
     expect(result?.stockfishMove.evalMate).toBe(3);
     expect(result?.stockfishMove.evalCp).toBeNull();
     expect(result?.flawChessMove.evalMate).toBeNull();
+  });
+
+  it('a FORCED-MATE FlawChess pick (cp null, mate set) still classifies instead of dropping the whole verdict', () => {
+    // The bug: a mate leaf grades to evalMate with cp null, so the old
+    // `objectiveEvalCp == null` gate returned null and the verdict slot showed the
+    // muted "Turn on Stockfish" prompt even with Stockfish on. Both engines agree
+    // on the mating move here -> aligned, and the FC side carries the mate.
+    const fc = fcLine('f3g5', null, -4); // FlawChess sees mate in 4 (black mated), cp null
+    const sf = sfLine('f3g5', null, -4);
+    const result = computeFlawChessVerdict(fc, sf, 'white');
+    expect(result).not.toBeNull();
+    expect(result?.tier).toBe('aligned');
+    expect(result?.flawChessMove.evalMate).toBe(-4);
+    expect(result?.flawChessMove.evalCp).toBeNull();
+    // A mate is never "nearly the same eval" as a cp number, and no cp gap exists.
+    expect(result?.objectiveEvalGapCp).toBeNull();
+    expect(result?.nearlySameEval).toBe(false);
   });
 });
 

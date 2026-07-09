@@ -794,16 +794,21 @@ export default function Analysis() {
 
   // Phase 158 (SEED-087 SC1/SC3/SC4, SC5 scope fence): parallel RankedLine-
   // shaped display objects — NEVER the live MCTS-core snapshots themselves —
-  // with only `objectiveEvalCp` swapped for the reconciled lookup value. A
-  // resolved mate grade (evalCp null) yields null here, same as the
-  // pre-existing FC-source cp-only limitation (RankedLine has no mate field);
-  // the card renders its existing '…' placeholder, not a bug.
+  // with `objectiveEvalCp`/`objectiveEvalMate` swapped for the reconciled
+  // lookup value. Both are pulled from the SAME resolved grade so a forced-mate
+  // root candidate surfaces `#-4` on the card + agreement verdict instead of the
+  // `…` a null cp alone would print (quick 260709 — the earlier cp-only swap
+  // dropped mate).
   const reconciledRankedLines = useMemo<RankedLine[]>(
     () =>
-      flawChessEngine.rankedLines.slice(0, FC_MAX_LINES).map((line) => ({
-        ...line,
-        objectiveEvalCp: getByUci(evalLookup, line.rootMove)?.evalCp ?? null,
-      })),
+      flawChessEngine.rankedLines.slice(0, FC_MAX_LINES).map((line) => {
+        const resolved = getByUci(evalLookup, line.rootMove);
+        return {
+          ...line,
+          objectiveEvalCp: resolved?.evalCp ?? null,
+          objectiveEvalMate: resolved?.evalMate ?? null,
+        };
+      }),
     [flawChessEngine.rankedLines, evalLookup],
   );
 

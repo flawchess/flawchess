@@ -293,7 +293,7 @@ function RankedLineRow({
   // Objective is already white-POV cp (RankedLine.objectiveEvalCp) — pass
   // straight to formatScore. Practical is a 0-1 root-STM expected score —
   // convert via the Plan 01 inverse-sigmoid before formatting (D-06).
-  const objectiveText = formatScore(line.objectiveEvalCp, null);
+  const objectiveText = formatScore(line.objectiveEvalCp, line.objectiveEvalMate);
   const practicalCp = expectedScoreToWhitePovCp(line.practicalScore, rootMover);
   const practicalText = formatScore(practicalCp, null);
   // Gold badge shade by practical rank (best/2nd/3rd). noUncheckedIndexedAccess:
@@ -376,7 +376,7 @@ function RankedLineRow({
                         from,
                         to,
                         flipped,
-                        evalText: formatScore(stat?.objectiveEvalCp ?? null, null),
+                        evalText: formatScore(stat?.objectiveEvalCp ?? null, stat?.objectiveEvalMate ?? null),
                         maiaText: formatMaiaPct(stat?.maiaProb ?? null),
                       }
                     : null
