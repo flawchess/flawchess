@@ -45,11 +45,20 @@ import {
   type QualityBucket,
   type QualityBucketKey,
 } from '@/lib/moveQuality';
-import { computePositionVerdict, formatVerdictEval, type PositionVerdictResult, type VerdictMove } from '@/lib/positionVerdict';
+import {
+  computePositionVerdict,
+  formatVerdictEval,
+  type PositionVerdictResult,
+  type StandingBand,
+  type VerdictMove,
+  type VerdictTier,
+} from '@/lib/positionVerdict';
+import { formatPlayerPovEval } from '@/lib/playerPovEval';
 import { ProseSpan } from '@/components/analysis/ProseSpan';
 import { UnifiedMovePopover } from '@/components/analysis/UnifiedMovePopover';
 import type { MoveQualityEval } from '@/components/analysis/MovesByRatingChart';
 import type { MoveCurvePoint } from '@/hooks/useMaiaEngine';
+import type { MoverColor } from '@/lib/liveFlaw';
 
 /** One move surfaced to the page for a board arrow: its SAN + severity color. */
 export interface HoveredQualityMove {
@@ -87,6 +96,9 @@ export interface MaiaMoveQualityBarProps {
   shownSans: string[];
   /** Per-SAN Stockfish-graded quality + eval, keyed by SAN (D-08). */
   qualityBySan: Map<string, MoveQualityEval>;
+  /** Side to move at this position (sideToMoveFromFen) — the addressed player's frame for
+   *  re-signing white-POV evals in the prose (quick 260709-o72). */
+  mover: MoverColor;
   /**
    * Fired with the hovered segment's moves (SAN + severity color) so the page
    * can draw board arrows, or null when nothing is hovered. Omitted on surfaces
@@ -154,6 +166,7 @@ function StockfishEval({ text }: { text: string }): React.ReactNode {
  */
 function ProseMoveSpan({
   move,
+  mover,
   isOpen,
   onOpenDelayed,
   onOpenNow,
@@ -161,14 +174,18 @@ function ProseMoveSpan({
   onPlay,
 }: {
   move: VerdictMove;
+  mover: MoverColor;
   isOpen: boolean;
   onOpenDelayed: () => void;
   onOpenNow: () => void;
   onClose: () => void;
   onPlay?: () => void;
 }): React.ReactElement {
-  const evalText = formatVerdictEval(move.evalCp, move.evalMate);
-  const ariaLabel = `${move.san}, ${move.maiaPct}% at this rating, evaluated ${evalText}. Click to play it.`;
+  // The popover body stays white-POV objective (raw/objective surface, out of scope for the
+  // player-POV rewrite); only the aria-label (announced prose) re-signs to the mover (quick 260709-o72).
+  const objectiveEvalText = formatVerdictEval(move.evalCp, move.evalMate);
+  const povEvalText = formatPlayerPovEval(move.evalCp, move.evalMate, mover);
+  const ariaLabel = `${move.san}, ${move.maiaPct}% at this rating, evaluated ${povEvalText}. Click to play it.`;
 
   return (
     <ProseSpan
@@ -186,62 +203,209 @@ function ProseMoveSpan({
       {/* Unified 3-line popover shared with the FlawChess card (quick 260708-qrr).
           FlawChess's practical eval isn't available in this component's inputs
           (only Maia probabilities + Stockfish grading), so that line is omitted. */}
-      <UnifiedMovePopover objectiveEval={evalText} maiaProbability={`${move.maiaPct}%`} />
+      <UnifiedMovePopover objectiveEval={objectiveEvalText} maiaProbability={`${move.maiaPct}%`} />
     </ProseSpan>
   );
 }
 
 /**
- * Assembles the prose verdict sentence for the resting-state slot, following
- * the safe/tricky/highly-difficult copy templates. `renderMove` produces the
- * interactive span for one named move. `owner` is "you" on the user's move or
- * "your opponent" when the position is the opponent's move (quick 260705-m3z).
+ * Owner-aware standing clause for the decisive StandingBands, or null for
+ * 'level' (which never gets a standing clause — quick 260709-o72). `owner` is
+ * "you" on the user's move or "your opponent" when the position is the
+ * opponent's move (quick 260705-m3z).
  */
-function renderVerdictSentence(
+function renderStandingClause(band: StandingBand, owner: string): string | null {
+  const isYou = owner === 'you';
+  switch (band) {
+    case 'mate-for-you':
+      return isYou ? "You've got a forced mate" : 'Your opponent has a forced mate';
+    case 'winning':
+      return isYou ? "You're winning" : 'Your opponent is winning';
+    case 'better':
+      return isYou ? "You're better" : 'Your opponent is better';
+    case 'level':
+      return null;
+    case 'worse':
+      return isYou ? "You're worse" : 'Your opponent is worse';
+    case 'losing':
+      return isYou ? "You're losing" : 'Your opponent is losing';
+    case 'mate-against':
+      return isYou ? "You're being mated" : 'Your opponent is being mated';
+  }
+}
+
+/** The player-POV eval chip " (+4.0)" / " (-M4)" following a decisive standing clause. */
+function renderStandingChip(verdict: PositionVerdictResult, mover: MoverColor): React.ReactNode {
+  return (
+    <>
+      {' ('}
+      <StockfishEval text={formatPlayerPovEval(verdict.standingEvalCp, verdict.standingEvalMate, mover)} />
+      {')'}
+    </>
+  );
+}
+
+/**
+ * level's own difficulty-only phrasing (quick 260709-o72): level is never
+ * decisive, so it never collapses and never carries a standing clause. safe
+ * renders the difficulty-neutral good-move list alone; tricky/difficult lead
+ * with a neutral "knife-edge" framing naming the escape + the bad moves.
+ */
+function renderLevelClause(
   verdict: PositionVerdictResult,
-  elo: number,
-  owner: string,
   renderMove: (m: VerdictMove) => React.ReactNode,
 ): React.ReactNode {
   const goodNodes = verdict.moves.filter((m) => m.role === 'good').map(renderMove);
   const badNodes = verdict.moves.filter((m) => m.role === 'bad').map(renderMove);
   const escapeMove = verdict.moves.find((m) => m.role === 'escape');
-
-  if (verdict.tier === 'safe') {
-    if (goodNodes.length === 0) return <>At {elo} Elo, this position looks safe for {owner}.</>;
-    return (
-      <>
-        At {elo} Elo, this position is safe for {owner} — {interleaveWithConjunction(goodNodes, 'and')} keep the
-        game on track.
-      </>
-    );
-  }
-
-  const tierWord = verdict.tier === 'tricky' ? 'tricky' : 'highly difficult';
-  const badList = badNodes.length > 0 ? interleaveWithConjunction(badNodes, 'or') : null;
   const escapeNode = escapeMove ? renderMove(escapeMove) : null;
 
-  if (badList === null && escapeNode === null) return <>At {elo} Elo, this position is {tierWord} for {owner}.</>;
-  if (badList === null) {
+  if (verdict.tier === 'safe') {
+    if (goodNodes.length === 0) return <>All solid here.</>;
     return (
       <>
-        At {elo} Elo, this position is {tierWord} for {owner}, though {escapeNode} keeps things on track.
+        All solid — {interleaveWithConjunction(goodNodes, 'and')} keep it simple.
       </>
     );
   }
-  if (escapeNode === null) {
+
+  const badList = badNodes.length > 0 ? interleaveWithConjunction(badNodes, 'and') : null;
+  const badVerb = badNodes.length === 1 ? 'walks' : 'walk';
+  if (escapeNode && badList) {
     return (
       <>
-        At {elo} Elo, this position is {tierWord} for {owner} — {badList} lead to trouble.
+        Roughly balanced, but it&apos;s a knife-edge — {escapeNode} holds, {badList} {badVerb} into trouble.
       </>
     );
   }
+  if (escapeNode) return <>Roughly balanced, but it&apos;s a knife-edge — only {escapeNode} holds.</>;
+  if (badList) {
+    return (
+      <>
+        Roughly balanced, but it&apos;s a knife-edge — {badList} {badVerb} into trouble.
+      </>
+    );
+  }
+  return <>Roughly balanced, but it&apos;s a knife-edge.</>;
+}
+
+/**
+ * Difficulty-neutral phrasing for the "otherwise: KEEP both clauses" bucket
+ * (better/worse in any tier, or winning/losing/mate-for-you in tricky/
+ * difficult): safe -> "all solid"; tricky -> names the escape + the bad
+ * moves as the ways to slip; difficult -> only the escape holds, no bad list
+ * (quick 260709-o72).
+ */
+function renderDifficultyPhrase(
+  tier: VerdictTier,
+  badList: React.ReactNode | null,
+  escapeNode: React.ReactNode | null,
+  goodList: React.ReactNode | null,
+): React.ReactNode {
+  if (tier === 'safe') {
+    return goodList ? <>all solid, {goodList} keep it simple</> : <>all solid</>;
+  }
+  if (tier === 'difficult') {
+    return escapeNode ? (
+      <>it&apos;s one careless move away — only {escapeNode} holds</>
+    ) : (
+      <>it&apos;s one careless move away</>
+    );
+  }
+  // tricky
+  if (escapeNode && badList) return <>only {escapeNode} holds it — {badList} let it slip</>;
+  if (escapeNode) return <>only {escapeNode} holds it</>;
+  if (badList) return <>{badList} can let it slip</>;
+  return <>it&apos;s easy to slip here</>;
+}
+
+/** The "otherwise: KEEP both clauses" sentence — standing clause + chip, then the difficulty phrase. */
+function renderBothClauses(
+  verdict: PositionVerdictResult,
+  standingClauseText: string,
+  chip: React.ReactNode,
+  renderMove: (m: VerdictMove) => React.ReactNode,
+): React.ReactNode {
+  const goodNodes = verdict.moves.filter((m) => m.role === 'good').map(renderMove);
+  const badNodes = verdict.moves.filter((m) => m.role === 'bad').map(renderMove);
+  const escapeMove = verdict.moves.find((m) => m.role === 'escape');
+  const goodList = goodNodes.length > 0 ? interleaveWithConjunction(goodNodes, 'and') : null;
+  const badList = badNodes.length > 0 ? interleaveWithConjunction(badNodes, 'and') : null;
+  const escapeNode = escapeMove ? renderMove(escapeMove) : null;
+  const difficultyPhrase = renderDifficultyPhrase(verdict.tier, badList, escapeNode, goodList);
+  const joiner = verdict.tier === 'safe' ? ' — ' : ', but ';
+
   return (
     <>
-      At {elo} Elo, this position is {tierWord} for {owner} — {badList} lead to trouble, but {escapeNode} keeps
-      things on track.
+      {standingClauseText}
+      {chip}
+      {joiner}
+      {difficultyPhrase}.
     </>
   );
+}
+
+/**
+ * Assembles the "{standing clause} — {difficulty clause}" prose verdict
+ * sentence for the resting-state slot (quick 260709-o72; replaces the old
+ * badMass-only "safe for you"/"tricky for you" copy, which measured
+ * DIFFICULTY of play and never told the player whether they were actually
+ * winning or losing). `renderMove` produces the interactive span for one
+ * named move; `owner` is "you"/"your opponent" (quick 260705-m3z); `mover`
+ * re-signs white-POV evals to the addressed player's frame.
+ *
+ * Deterministic collapse rule:
+ * - mate-against ALWAYS collapses to the shortest-resistance sentence.
+ * - {mate-for-you, winning, losing} + tier 'safe' collapses (nothing to
+ *   coach — the standing is already decided and there's no danger left).
+ * - level never collapses (it's never decisive) — see renderLevelClause.
+ * - everything else KEEPS both clauses — see renderBothClauses.
+ */
+function renderVerdictSentence(
+  verdict: PositionVerdictResult,
+  owner: string,
+  mover: MoverColor,
+  renderMove: (m: VerdictMove) => React.ReactNode,
+): React.ReactNode {
+  if (verdict.standing === 'level') return renderLevelClause(verdict, renderMove);
+
+  const standingClauseText = renderStandingClause(verdict.standing, owner);
+  // Non-null: every non-'level' band has a standing clause (renderStandingClause only
+  // returns null for 'level', already handled above).
+  const chip = renderStandingChip(verdict, mover);
+  const bestMoveNode = verdict.bestMove ? renderMove(verdict.bestMove) : null;
+
+  if (verdict.standing === 'mate-against') {
+    return (
+      <>
+        {standingClauseText}
+        {chip} — {bestMoveNode} is the longest resistance.
+      </>
+    );
+  }
+
+  const isDecisiveSafeCollapse =
+    (verdict.standing === 'mate-for-you' || verdict.standing === 'winning' || verdict.standing === 'losing') &&
+    verdict.tier === 'safe';
+  if (isDecisiveSafeCollapse) {
+    if (verdict.standing === 'losing') {
+      return (
+        <>
+          {standingClauseText}
+          {chip} — {bestMoveNode} is the longest resistance.
+        </>
+      );
+    }
+    const verb = verdict.standing === 'mate-for-you' ? 'keep it simple with' : 'just convert with';
+    return (
+      <>
+        {standingClauseText}
+        {chip} — {verb} {bestMoveNode}.
+      </>
+    );
+  }
+
+  return renderBothClauses(verdict, standingClauseText ?? '', chip, renderMove);
 }
 
 export function MaiaMoveQualityBar({
@@ -249,6 +413,7 @@ export function MaiaMoveQualityBar({
   selectedElo,
   shownSans,
   qualityBySan,
+  mover,
   onHoverMovesChange,
   isOpponentToMove = false,
   onPlayMove,
@@ -271,8 +436,8 @@ export function MaiaMoveQualityBar({
   );
 
   const verdict = useMemo(
-    () => computePositionVerdict(perElo, selectedElo, shownSans, qualityBySan),
-    [perElo, selectedElo, shownSans, qualityBySan],
+    () => computePositionVerdict(perElo, selectedElo, shownSans, qualityBySan, mover),
+    [perElo, selectedElo, shownSans, qualityBySan, mover],
   );
 
   // Single source of truth for the board-arrow overlay: segment hover always
@@ -350,29 +515,29 @@ export function MaiaMoveQualityBar({
     setActiveProseSan(null);
   };
 
-  // Each prose move is followed by its objective (Stockfish) eval in blue parens,
-  // mirroring the FlawChess card's `move (eval)` convention (quick 260708-qrr).
+  // A named move renders as a bare interactive SAN span — quick 260709-o72 dropped the old
+  // trailing " (eval)" parenthetical from the sentence body (it made the standing-clause chip
+  // read redundantly, e.g. "Qxc1 (-M4) is the longest resistance" right after "(-M4)" already
+  // shown). The move's eval is still surfaced via the (now player-POV) aria-label and the
+  // hover/focus popover — never lost, just moved out of the visible sentence text.
   const renderMove = (m: VerdictMove): React.ReactNode => (
-    <Fragment key={m.san}>
-      <ProseMoveSpan
-        move={m}
-        isOpen={activeProseSan === m.san}
-        onOpenDelayed={() => openProseDelayed(m.san)}
-        onOpenNow={() => openProseNow(m.san)}
-        onClose={closeProse}
-        onPlay={
-          onPlayMove
-            ? () => {
-                closeProse();
-                onPlayMove(m.san);
-              }
-            : undefined
-        }
-      />
-      {' ('}
-      <StockfishEval text={formatVerdictEval(m.evalCp, m.evalMate)} />
-      {')'}
-    </Fragment>
+    <ProseMoveSpan
+      key={m.san}
+      move={m}
+      mover={mover}
+      isOpen={activeProseSan === m.san}
+      onOpenDelayed={() => openProseDelayed(m.san)}
+      onOpenNow={() => openProseNow(m.san)}
+      onClose={closeProse}
+      onPlay={
+        onPlayMove
+          ? () => {
+              closeProse();
+              onPlayMove(m.san);
+            }
+          : undefined
+      }
+    />
   );
 
   return (
@@ -463,7 +628,7 @@ export function MaiaMoveQualityBar({
           </span>
         ) : verdict ? (
           <span data-testid="maia-position-verdict">
-            {renderVerdictSentence(verdict, selectedElo, isOpponentToMove ? 'your opponent' : 'you', renderMove)}
+            {renderVerdictSentence(verdict, isOpponentToMove ? 'your opponent' : 'you', mover, renderMove)}
           </span>
         ) : (
           <span className="text-muted-foreground">
