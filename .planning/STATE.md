@@ -23,7 +23,7 @@ progress:
 Phase: 159 (flawchess-engine-policy-temperature-root-move-findability-se) — EXECUTING
 Plan: 4 of 4
 Status: Phase 159 shipped — squash-merged to main
-Last activity: 2026-07-09 - Completed quick task 260709-j3k: checkmate on a free move line no longer reads as a blunder
+Last activity: 2026-07-09 - Completed quick task 260709-k9r: FlawChess Engine card surfaces forced mates (#-N eval + verdict)
 
 ## Project Reference
 
@@ -159,6 +159,7 @@ None active.
 | 260705-m3z | Prose position evaluation (safe/tricky/highly difficult verdict + interactive severity-colored move spans with board arrows and Maia %/eval tooltips) below the Maia move-quality bar | 2026-07-05 | b31a1f45 | [260705-m3z-prose-position-evaluation-below-the-maia](./quick/260705-m3z-prose-position-evaluation-below-the-maia/) |
 | 260708-qrr | Unified move-hover popover (FlawChess/practical gold, Stockfish/objective blue, Maia/human violet — icon-led, whole-line color, omit unavailable) shared by both analysis cards' dotted moves | 2026-07-08 | a339346a | [260708-qrr-unified-move-popover-on-dotted-moves](./quick/260708-qrr-unified-move-popover-on-dotted-moves/) |
 | 260709-j3k | Checkmate on a free move line no longer reads as a blunder — terminal eval derived from the rules so the bar fills to 0%/100% and the mating move reads green | 2026-07-09 | ce8d19b5 | [260709-j3k-analysis-board-a-free-move-line-ending-i](./quick/260709-j3k-analysis-board-a-free-move-line-ending-i/) |
+| 260709-k9r | FlawChess Engine card surfaces forced mates — thread evalMate through RankedLine/search/reconciliation so a mate line shows #-4 (not …) and the agreement verdict narrates instead of the stale "Turn on Stockfish" prompt | 2026-07-09 | 0b02c4f9 | [260709-k9r-fix-flawchess-engine-card-mate-eval-and-](./quick/260709-k9r-fix-flawchess-engine-card-mate-eval-and-/) |
 
 ## Deferred Items
 
