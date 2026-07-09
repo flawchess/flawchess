@@ -111,6 +111,14 @@ export interface FlawChessEngineLinesProps {
   /** Board orientation for the hover-preview miniboards (matches the main board). */
   flipped?: boolean;
   /**
+   * Game-over state of `baseFen`, when the position is terminal (quick 260709
+   * follow-up). A checkmated/drawn root has NO legal moves, so the search
+   * produces zero ranked lines — instead of leaving the card blank (which read
+   * as "still loading"), render a single terminal row: a gold `#0` badge for
+   * checkmate, a `½–½` badge for a draw. Null when the game is still on.
+   */
+  terminalOutcome?: 'checkmate' | 'draw' | null;
+  /**
    * Called when the user clicks a modal-path chip with the UCI moves from the
    * start of the line up to (and including) the clicked move. The board grafts
    * the whole prefix as a sideline (D-10) — identical semantics to EngineLines.
@@ -425,11 +433,19 @@ export function FlawChessEngineLines({
   baseFen,
   rootMover,
   flipped = false,
+  terminalOutcome = null,
   onMoveClick,
 }: FlawChessEngineLinesProps) {
   const resolvedRootMover: MoverColor =
     rootMover ?? (baseFen ? sideToMoveFromFen(baseFen) : 'white');
   const visibleLines = rankedLines.slice(0, MAX_LINES);
+  // A terminal root has no legal moves → no ranked lines. Show a single badge row
+  // (once the search has settled to empty) instead of a blank card (quick 260709).
+  const showTerminalRow = terminalOutcome !== null && rankedLines.length === 0 && !isSearching;
+  // Best/#1 gold shade for the terminal badge — narrowed for noUncheckedIndexedAccess.
+  const terminalBadgeShade =
+    FLAWCHESS_ENGINE_BADGE_SHADES[0] ??
+    FLAWCHESS_ENGINE_BADGE_SHADES[FLAWCHESS_ENGINE_BADGE_SHADES.length - 1];
 
   return (
     <div
@@ -442,6 +458,23 @@ export function FlawChessEngineLines({
           (D-09), avoids layout jump as lines arrive. */}
       {isSearching && rankedLines.length === 0 && (
         <EngineLinesSkeleton testId="analysis-flawchess-loading" rows={MAX_LINES} />
+      )}
+
+      {/* Terminal position — checkmate (`#0`) or draw (`½–½`); the game is over so
+          there is no practical pick to rank. */}
+      {showTerminalRow && (
+        <div
+          className="mx-2 flex items-center gap-1 py-1"
+          data-testid="flawchess-terminal-row"
+          aria-label={terminalOutcome === 'checkmate' ? 'Checkmate' : 'Draw'}
+        >
+          <span className={BADGE_CLASS} style={{ backgroundColor: terminalBadgeShade }}>
+            {terminalOutcome === 'checkmate' ? '#0' : '½–½'}
+          </span>
+          <span className="text-sm text-muted-foreground">
+            {terminalOutcome === 'checkmate' ? 'Checkmate' : 'Draw'}
+          </span>
+        </div>
       )}
 
       {/* Ranked lines — rendered when at least one snapshot has arrived. */}

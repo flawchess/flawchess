@@ -1037,6 +1037,12 @@ export default function Analysis() {
   // classification below and the right eval bar.
   const terminalEval = useMemo(() => terminalPositionEval(position), [position]);
 
+  // Game-over state of the shown position, for the FlawChess card's terminal row
+  // (quick 260709). terminalPositionEval reports checkmate as a mate score and a
+  // draw as cp 0; a terminal root has no legal moves so the engine ranks nothing.
+  const flawChessTerminalOutcome: 'checkmate' | 'draw' | null =
+    terminalEval == null ? null : terminalEval.mate != null ? 'checkmate' : 'draw';
+
   const liveFlaw = useLiveMoveFlaw({
     active: liveFlawActive,
     parentFen,
@@ -1694,6 +1700,7 @@ export default function Analysis() {
               baseFen={position}
               startPly={currentPly}
               flipped={boardFlipped}
+              terminalOutcome={flawChessTerminalOutcome}
               onMoveClick={playUciLine}
             />
             {/* Agreement verdict (Phase 157-02, REVIEW-02; Phase 158 SEED-087
@@ -1702,19 +1709,24 @@ export default function Analysis() {
                 FlawChess row when standalone Stockfish is off. The FlawChess
                 side is reconciledRankedLines (evalLookup-sourced), so both
                 picks resolve through the SAME lookup — making "FC pick grades
-                higher than the objective best" impossible by construction. */}
-            <FlawChessAgreementVerdict
-              flawChessLine={reconciledRankedLines[0] ?? null}
-              stockfishLine={engine.pvLines[0] ?? null}
-              flawChessRankedLines={reconciledRankedLines}
-              engineEnabled={engineEnabled}
-              elo={selectedElo}
-              baseFen={position}
-              rawProbBySan={rawProbBySan}
-              shownSans={shownSans}
-              onHoverMovesChange={setHoveredQualityMoves}
-              onPlayMove={playProseMove}
-            />
+                higher than the objective best" impossible by construction.
+                Hidden in a terminal position (quick 260709): the game is over, so
+                the "Turn on Stockfish to compare picks." prompt is misleading —
+                the terminal `#0`/`½–½` badge above says it all. */}
+            {flawChessTerminalOutcome == null && (
+              <FlawChessAgreementVerdict
+                flawChessLine={reconciledRankedLines[0] ?? null}
+                stockfishLine={engine.pvLines[0] ?? null}
+                flawChessRankedLines={reconciledRankedLines}
+                engineEnabled={engineEnabled}
+                elo={selectedElo}
+                baseFen={position}
+                rawProbBySan={rawProbBySan}
+                shownSans={shownSans}
+                onHoverMovesChange={setHoveredQualityMoves}
+                onPlayMove={playProseMove}
+              />
+            )}
             {/* Phase 159 D-08: the Human <-> Stockfish play-style slider lives at
                 the bottom of the FlawChess Engine card (it only reshapes this
                 engine's policy). */}

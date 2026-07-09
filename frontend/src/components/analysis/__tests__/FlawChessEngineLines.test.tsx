@@ -387,6 +387,69 @@ describe('FlawChessEngineLines', () => {
     expect(screen.queryByTestId('flawchess-line-0-move-0')).toBeNull();
   });
 
+  it('checkmate terminalOutcome + empty rankedLines → renders a gold "#0" Checkmate badge (quick 260709)', () => {
+    render(
+      <FlawChessEngineLines
+        rankedLines={[]}
+        isSearching={false}
+        baseFen={START_FEN}
+        rootMover="white"
+        terminalOutcome="checkmate"
+        onMoveClick={vi.fn()}
+      />,
+    );
+    const row = screen.getByTestId('flawchess-terminal-row');
+    expect(row).toBeTruthy();
+    expect(screen.getByText('#0')).toBeTruthy();
+    expect(screen.getByText('Checkmate')).toBeTruthy();
+  });
+
+  it('draw terminalOutcome + empty rankedLines → renders a "½–½" Draw badge', () => {
+    render(
+      <FlawChessEngineLines
+        rankedLines={[]}
+        isSearching={false}
+        baseFen={START_FEN}
+        rootMover="white"
+        terminalOutcome="draw"
+        onMoveClick={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('½–½')).toBeTruthy();
+    expect(screen.getByText('Draw')).toBeTruthy();
+  });
+
+  it('terminalOutcome is ignored while still searching, and when ranked lines exist', () => {
+    const { rerender } = render(
+      <FlawChessEngineLines
+        rankedLines={[]}
+        isSearching={true}
+        baseFen={START_FEN}
+        rootMover="white"
+        terminalOutcome="checkmate"
+        onMoveClick={vi.fn()}
+      />,
+    );
+    // Still searching → skeleton, no terminal row.
+    expect(screen.queryByTestId('flawchess-terminal-row')).toBeNull();
+    expect(screen.getByTestId('analysis-flawchess-loading')).toBeTruthy();
+
+    // Ranked lines present → the real rows win, no terminal row.
+    rerender(
+      <TooltipProvider>
+        <FlawChessEngineLines
+          rankedLines={[LINE_1]}
+          isSearching={false}
+          baseFen={START_FEN}
+          rootMover="white"
+          terminalOutcome="checkmate"
+          onMoveClick={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+    expect(screen.queryByTestId('flawchess-terminal-row')).toBeNull();
+  });
+
   it('never renders the bare phrase "best move" unqualified anywhere', () => {
     render(
       <TooltipProvider>
