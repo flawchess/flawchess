@@ -50,6 +50,14 @@ const BANNED_SUBSTRINGS = [
   'keeps things on track',
   'lead to trouble',
   'leads to trouble',
+  // Practical-advice wording retired in quick 260709-t4w — it contradicted the
+  // FlawChess Engine card recommending exactly the move the Maia card warned against.
+  'knife-edge',
+  'walks into trouble',
+  'walk into trouble',
+  'let it slip',
+  'careless move',
+  'holds',
 ];
 
 afterEach(cleanup);
@@ -316,7 +324,7 @@ describe('MaiaMoveQualityBar — standing+difficulty prose rewrite (quick 260709
     expect(sentence).toMatch(/Qxc1 is the longest resistance/);
   });
 
-  it('a winning-but-still-tricky position KEEPS both clauses ("only … holds it" + "let it slip")', () => {
+  it('a winning-but-still-tricky position KEEPS both clauses (standing + objective accuracy framing)', () => {
     render(
       <MaiaMoveQualityBar
         perElo={PER_ELO}
@@ -328,8 +336,8 @@ describe('MaiaMoveQualityBar — standing+difficulty prose rewrite (quick 260709
     );
     const sentence = screen.getByTestId('maia-position-verdict').textContent ?? '';
     expect(sentence).toMatch(/You're winning \(\+4\.0\)/);
-    expect(sentence).toMatch(/only Ra8 holds it/);
-    expect(sentence).toMatch(/let it slip/);
+    expect(sentence).toMatch(/Ra8 is the accurate move/);
+    expect(sentence).toMatch(/objectively looser/);
     for (const banned of BANNED_SUBSTRINGS) expect(sentence).not.toMatch(banned);
   });
 
@@ -353,8 +361,8 @@ describe('MaiaMoveQualityBar — standing+difficulty prose rewrite (quick 260709
     );
     const sentence = screen.getByTestId('maia-position-verdict').textContent ?? '';
     expect(sentence).toMatch(/You're worse \(-1\.5\)/);
-    expect(sentence).toMatch(/one careless move away/);
-    expect(sentence).toMatch(/only Escape1 holds/);
+    expect(sentence).toMatch(/Objectively only Escape1 stays accurate/);
+    for (const banned of BANNED_SUBSTRINGS) expect(sentence).not.toMatch(banned);
   });
 
   it('a level (roughly balanced) tricky position never collapses and never mentions "you"/"your opponent"', () => {
@@ -368,7 +376,8 @@ describe('MaiaMoveQualityBar — standing+difficulty prose rewrite (quick 260709
       />,
     );
     const sentence = screen.getByTestId('maia-position-verdict').textContent ?? '';
-    expect(sentence).toMatch(/Roughly balanced, but it's a knife-edge/);
+    expect(sentence).toMatch(/Roughly balanced\./);
+    expect(sentence).toMatch(/is the accurate move|stays accurate|objectively looser/);
     expect(sentence).not.toMatch(/You're/);
     expect(sentence).not.toMatch(/Your opponent/);
     for (const banned of BANNED_SUBSTRINGS) expect(sentence).not.toMatch(banned);

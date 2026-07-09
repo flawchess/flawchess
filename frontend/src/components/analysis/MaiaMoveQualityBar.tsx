@@ -51,7 +51,6 @@ import {
   type PositionVerdictResult,
   type StandingBand,
   type VerdictMove,
-  type VerdictTier,
 } from '@/lib/positionVerdict';
 import { formatPlayerPovEval } from '@/lib/playerPovEval';
 import { ProseSpan } from '@/components/analysis/ProseSpan';
@@ -246,21 +245,18 @@ function renderStandingChip(verdict: PositionVerdictResult, mover: MoverColor): 
 }
 
 /**
- * level's own difficulty-only phrasing (quick 260709-o72): level is never
- * decisive, so it never collapses and never carries a standing clause. safe
- * renders the difficulty-neutral good-move list alone; tricky/difficult lead
- * with a neutral "knife-edge" framing naming the escape + the bad moves.
+ * level's own phrasing (quick 260709-o72): level is never decisive, so it never
+ * collapses and never carries a standing clause. safe renders the good-move list
+ * alone; tricky/difficult use the OBJECTIVE/accuracy framing (quick 260709-t4w —
+ * see renderObjectiveDifficultyClause for why the practical "knife-edge"/"holds"
+ * wording had to go).
  */
 function renderLevelClause(
   verdict: PositionVerdictResult,
   renderMove: (m: VerdictMove) => React.ReactNode,
 ): React.ReactNode {
-  const goodNodes = verdict.moves.filter((m) => m.role === 'good').map(renderMove);
-  const badNodes = verdict.moves.filter((m) => m.role === 'bad').map(renderMove);
-  const escapeMove = verdict.moves.find((m) => m.role === 'escape');
-  const escapeNode = escapeMove ? renderMove(escapeMove) : null;
-
   if (verdict.tier === 'safe') {
+    const goodNodes = verdict.moves.filter((m) => m.role === 'good').map(renderMove);
     if (goodNodes.length === 0) return <>All solid here.</>;
     return (
       <>
@@ -269,78 +265,77 @@ function renderLevelClause(
     );
   }
 
-  const badList = badNodes.length > 0 ? interleaveWithConjunction(badNodes, 'and') : null;
-  const badVerb = badNodes.length === 1 ? 'walks' : 'walk';
-  if (escapeNode && badList) {
-    return (
-      <>
-        Roughly balanced, but it&apos;s a knife-edge — {escapeNode} holds, {badList} {badVerb} into trouble.
-      </>
-    );
-  }
-  if (escapeNode) return <>Roughly balanced, but it&apos;s a knife-edge — only {escapeNode} holds.</>;
-  if (badList) {
-    return (
-      <>
-        Roughly balanced, but it&apos;s a knife-edge — {badList} {badVerb} into trouble.
-      </>
-    );
-  }
-  return <>Roughly balanced, but it&apos;s a knife-edge.</>;
+  return <>Roughly balanced. {renderObjectiveDifficultyClause(verdict, renderMove)}.</>;
 }
 
 /**
- * Difficulty-neutral phrasing for the "otherwise: KEEP both clauses" bucket
- * (better/worse in any tier, or winning/losing/mate-for-you in tricky/
- * difficult): safe -> "all solid"; tricky -> names the escape + the bad
- * moves as the ways to slip; difficult -> only the escape holds, no bad list
- * (quick 260709-o72).
+ * OBJECTIVE/accuracy-framed difficulty clause for the tricky/difficult tiers
+ * (quick 260709-t4w). The Maia card is the OBJECTIVE lens; the FlawChess Engine
+ * card is the PRACTICAL one, and the two legitimately disagree at low ELO (a
+ * move that's objectively a mistake can be the best PRACTICAL pick when the
+ * opponent won't punish it). The previous practical-sounding wording ("Kf1
+ * holds, Kd1 walks into trouble") read as advice NOT to play Kd1 — directly
+ * contradicting the FlawChess card recommending exactly Kd1. So this names the
+ * accurate move + labels the popular looser move(s) as "objectively looser"
+ * (with a light human-tendency note from the move's own Maia %), keeping the
+ * frame explicitly about accuracy, not what to play.
+ *
+ * tricky -> the accurate (escape) move + the objectively-looser popular move(s);
+ * difficult -> the accurate move only (too many ways to err to enumerate).
  */
-function renderDifficultyPhrase(
-  tier: VerdictTier,
-  badList: React.ReactNode | null,
-  escapeNode: React.ReactNode | null,
-  goodList: React.ReactNode | null,
+function renderObjectiveDifficultyClause(
+  verdict: PositionVerdictResult,
+  renderMove: (m: VerdictMove) => React.ReactNode,
 ): React.ReactNode {
-  if (tier === 'safe') {
-    return goodList ? <>all solid, {goodList} keep it simple</> : <>all solid</>;
-  }
-  if (tier === 'difficult') {
-    return escapeNode ? (
-      <>it&apos;s one careless move away — only {escapeNode} holds</>
-    ) : (
-      <>it&apos;s one careless move away</>
+  const escapeMove = verdict.moves.find((m) => m.role === 'escape');
+  const escapeNode = escapeMove ? renderMove(escapeMove) : null;
+  // 'difficult' shows the accurate move only — the bad list is too long to be useful.
+  const badMoves = verdict.tier === 'difficult' ? [] : verdict.moves.filter((m) => m.role === 'bad');
+  const badList = badMoves.length > 0 ? interleaveWithConjunction(badMoves.map(renderMove), 'and') : null;
+  const looserVerb = badMoves.length === 1 ? 'is objectively looser' : 'are objectively looser';
+
+  if (escapeNode && badList) {
+    const topBad = badMoves[0]!;
+    const tendency =
+      badMoves.length === 1 ? <>, but a {topBad.maiaPct}% pick here</> : <>, though popular here</>;
+    return (
+      <>
+        {escapeNode} is the accurate move; {badList} {looserVerb}
+        {tendency}
+      </>
     );
   }
-  // tricky
-  if (escapeNode && badList) return <>only {escapeNode} holds it — {badList} let it slip</>;
-  if (escapeNode) return <>only {escapeNode} holds it</>;
-  if (badList) return <>{badList} can let it slip</>;
-  return <>it&apos;s easy to slip here</>;
+  if (escapeNode) return <>Objectively only {escapeNode} stays accurate</>;
+  if (badList) return <>{badList} {looserVerb}</>;
+  return <>Objectively sharp</>;
 }
 
-/** The "otherwise: KEEP both clauses" sentence — standing clause + chip, then the difficulty phrase. */
+/**
+ * The "otherwise: KEEP both clauses" sentence — standing clause + chip, then the
+ * difficulty phrase. safe keeps the neutral "all solid" wording (no objective-vs-
+ * practical conflict there); tricky/difficult use the objective/accuracy framing.
+ */
 function renderBothClauses(
   verdict: PositionVerdictResult,
   standingClauseText: string,
   chip: React.ReactNode,
   renderMove: (m: VerdictMove) => React.ReactNode,
 ): React.ReactNode {
-  const goodNodes = verdict.moves.filter((m) => m.role === 'good').map(renderMove);
-  const badNodes = verdict.moves.filter((m) => m.role === 'bad').map(renderMove);
-  const escapeMove = verdict.moves.find((m) => m.role === 'escape');
-  const goodList = goodNodes.length > 0 ? interleaveWithConjunction(goodNodes, 'and') : null;
-  const badList = badNodes.length > 0 ? interleaveWithConjunction(badNodes, 'and') : null;
-  const escapeNode = escapeMove ? renderMove(escapeMove) : null;
-  const difficultyPhrase = renderDifficultyPhrase(verdict.tier, badList, escapeNode, goodList);
-  const joiner = verdict.tier === 'safe' ? ' — ' : ', but ';
+  if (verdict.tier === 'safe') {
+    const goodNodes = verdict.moves.filter((m) => m.role === 'good').map(renderMove);
+    const goodList = goodNodes.length > 0 ? interleaveWithConjunction(goodNodes, 'and') : null;
+    return (
+      <>
+        {standingClauseText}
+        {chip} — {goodList ? <>all solid, {goodList} keep it simple</> : <>all solid</>}.
+      </>
+    );
+  }
 
   return (
     <>
       {standingClauseText}
-      {chip}
-      {joiner}
-      {difficultyPhrase}.
+      {chip}. {renderObjectiveDifficultyClause(verdict, renderMove)}.
     </>
   );
 }

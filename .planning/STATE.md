@@ -23,7 +23,7 @@ progress:
 Phase: 159 (flawchess-engine-policy-temperature-root-move-findability-se) — EXECUTING
 Plan: 4 of 4
 Status: Phase 159 shipped — squash-merged to main
-Last activity: 2026-07-09 - Completed quick task 260709-o72: Maia/FlawChess card prose reflects player standing (Option B) + player-POV eval chips
+Last activity: 2026-07-09 - Reframed Maia verdict to the objective/accuracy lens so it no longer contradicts the FlawChess Engine card's practical pick (follow-up to 260709-o72)
 
 ## Project Reference
 
@@ -64,6 +64,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - Phase 158 added: FlawChess Engine displayed-eval provenance reconciliation (SEED-087, amended with third Maia-card provenance chain + shared-fallback design)
 - Phase 159 added: FlawChess Engine policy temperature + root-move findability (SEED-085, Threads A + B committed)
 - Phase 160 added: Analysis page layout and card/element UI polish — ad-hoc improvements via /gsd-quick and /gsd-fast, no preplanning
+- Phase 161 added: Analysis page viewport-locked responsive layout (SEED-088) — fix small-laptop bottom cutoff via 100dvh lock, height-bound board, fluid grid, Tags relocation
 
 ### Decisions
 
