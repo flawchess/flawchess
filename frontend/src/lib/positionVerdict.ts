@@ -23,11 +23,26 @@
 import { nearestByElo, type MoveQuality } from '@/lib/moveQuality';
 import type { MoveCurvePoint } from '@/hooks/useMaiaEngine';
 import { MOVE_QUALITY_BEST, MOVE_QUALITY_BLUNDER, MOVE_QUALITY_GOOD, MOVE_QUALITY_MISTAKE } from '@/lib/theme';
+import type { MoverColor } from '@/lib/liveFlaw';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 /** How hard the position is to play at the selected ELO, from the badMass thresholds. */
 export type VerdictTier = 'safe' | 'tricky' | 'difficult';
+
+/**
+ * The addressed player's objective standing (winning/losing), classified from the
+ * mover-POV eval of the position's objectively best candidate — orthogonal to
+ * VerdictTier, which measures DIFFICULTY of play, not standing (quick 260709-o72).
+ */
+export type StandingBand =
+  | 'mate-for-you'
+  | 'winning'
+  | 'better'
+  | 'level'
+  | 'worse'
+  | 'losing'
+  | 'mate-against';
 
 /** One named move surfaced in the verdict sentence, ready to render + wire to a board arrow. */
 export interface VerdictMove {
@@ -49,6 +64,17 @@ export interface PositionVerdictResult {
    * escape move last, when one exists.
    */
   moves: VerdictMove[];
+  /** The addressed player's objective standing, from the objectively best candidate's mover-POV eval. */
+  standing: StandingBand;
+  /** White-POV centipawns of the objectively best candidate (re-sign via formatPlayerPovEval to render). Null when ungraded. */
+  standingEvalCp: number | null;
+  /** White-POV mate distance of the objectively best candidate. Null when ungraded or not a mate. */
+  standingEvalMate: number | null;
+  /**
+   * The objectively best candidate: the 'best'-graded move when present, else the
+   * candidate with the highest mover-POV eval. Null when no candidate has an eval.
+   */
+  bestMove: VerdictMove | null;
 }
 
 /** Per-SAN grade the caller already has (mirrors MovesByRatingChart's MoveQualityEval shape). */
@@ -66,6 +92,36 @@ export const SAFE_MAX_BAD_MASS = 0.2;
 export const TRICKY_MAX_BAD_MASS = 0.5;
 /** Minimum Maia probability mass for a move to be named in the sentence. The escape move is exempt. */
 export const NAMED_MOVE_MIN_MASS = 0.08;
+
+/** Mover-POV cp at/above this -> 'winning' (or 'losing' at/below the negative). */
+export const STANDING_DECISIVE_CP = 300;
+/** Mover-POV cp at/above this (below STANDING_DECISIVE_CP) -> 'better' (or 'worse' at/below the negative). */
+export const STANDING_BETTER_CP = 100;
+
+// ─── Standing classification (quick 260709-o72) ────────────────────────────
+
+/**
+ * Classifies the addressed player's objective standing from a white-POV eval,
+ * re-signed to `mover`'s frame first. A null eval (no candidate graded yet)
+ * classifies as 'level' — never a false "winning"/"losing" claim.
+ */
+export function classifyStanding(
+  evalCp: number | null,
+  evalMate: number | null,
+  mover: MoverColor,
+): StandingBand {
+  const flip = mover === 'black';
+  const signedCp = flip && evalCp !== null ? -evalCp : evalCp;
+  const signedMate = flip && evalMate !== null ? -evalMate : evalMate;
+
+  if (signedMate !== null) return signedMate > 0 ? 'mate-for-you' : 'mate-against';
+  if (signedCp === null) return 'level';
+  if (signedCp >= STANDING_DECISIVE_CP) return 'winning';
+  if (signedCp >= STANDING_BETTER_CP) return 'better';
+  if (signedCp <= -STANDING_DECISIVE_CP) return 'losing';
+  if (signedCp <= -STANDING_BETTER_CP) return 'worse';
+  return 'level';
+}
 
 // ─── Eval + list formatting (exported for direct unit testing) ────────────
 
@@ -143,6 +199,46 @@ function isBadQuality(quality: MoveQuality): boolean {
   return quality === 'mistake' || quality === 'blunder';
 }
 
+/**
+ * Large weight so a mate score always outranks (mate-for-you) or underranks
+ * (mate-against) any centipawn score when picking the objectively best
+ * candidate by mover-POV eval.
+ */
+const MATE_POV_WEIGHT = 100_000;
+
+/** Mover-POV comparable value for a grade's eval, or null when ungraded (both fields null). */
+function moverPovValue(grade: VerdictMoveGrade, mover: MoverColor): number | null {
+  const flip = mover === 'black';
+  if (grade.evalMate !== null) {
+    const signedMate = flip ? -grade.evalMate : grade.evalMate;
+    return signedMate > 0 ? MATE_POV_WEIGHT - signedMate : -MATE_POV_WEIGHT - signedMate;
+  }
+  if (grade.evalCp !== null) return flip ? -grade.evalCp : grade.evalCp;
+  return null;
+}
+
+/**
+ * The objectively best candidate for the standing eval + bestMove (quick
+ * 260709-o72): the 'best'-graded move when present, else the candidate with
+ * the highest mover-POV eval. Null when no ranked candidate has an eval.
+ */
+function pickBestCandidate(ranked: RankedMove[], mover: MoverColor): RankedMove | null {
+  const bestGraded = ranked.find((m) => m.grade.quality === 'best');
+  if (bestGraded) return bestGraded;
+
+  let best: RankedMove | null = null;
+  let bestValue = -Infinity;
+  for (const m of ranked) {
+    const value = moverPovValue(m.grade, mover);
+    if (value === null) continue;
+    if (value > bestValue) {
+      bestValue = value;
+      best = m;
+    }
+  }
+  return best;
+}
+
 // ─── computePositionVerdict ────────────────────────────────────────────────
 
 /**
@@ -156,6 +252,7 @@ export function computePositionVerdict(
   selectedElo: number,
   shownSans: string[],
   qualityBySan: Map<string, VerdictMoveGrade>,
+  mover: MoverColor,
 ): PositionVerdictResult | null {
   const rung = nearestByElo(perElo, selectedElo);
   const ranked = rankMoves(rung, shownSans, qualityBySan);
@@ -169,9 +266,24 @@ export function computePositionVerdict(
   const tier: VerdictTier =
     badMass < SAFE_MAX_BAD_MASS ? 'safe' : badMass <= TRICKY_MAX_BAD_MASS ? 'tricky' : 'difficult';
 
+  const bestCandidate = pickBestCandidate(ranked, mover);
+  const standingEvalCp = bestCandidate ? bestCandidate.grade.evalCp : null;
+  const standingEvalMate = bestCandidate ? bestCandidate.grade.evalMate : null;
+  const standing = classifyStanding(standingEvalCp, standingEvalMate, mover);
+  const bestMove = bestCandidate
+    ? toVerdictMove(bestCandidate, 'escape', MOVE_QUALITY_GOOD, MOVE_QUALITY_BEST)
+    : null;
+
   if (tier === 'safe') {
     const good = ranked.filter((m) => isGoodQuality(m.grade.quality) && m.probability >= NAMED_MOVE_MIN_MASS);
-    return { tier, moves: good.map((m) => toVerdictMove(m, 'good', MOVE_QUALITY_GOOD, MOVE_QUALITY_GOOD)) };
+    return {
+      tier,
+      moves: good.map((m) => toVerdictMove(m, 'good', MOVE_QUALITY_GOOD, MOVE_QUALITY_GOOD)),
+      standing,
+      standingEvalCp,
+      standingEvalMate,
+      bestMove,
+    };
   }
 
   const bad = ranked.filter((m) => isBadQuality(m.grade.quality) && m.probability >= NAMED_MOVE_MIN_MASS);
@@ -183,5 +295,5 @@ export function computePositionVerdict(
   const escape = ranked.find((m) => m.grade.quality === 'best');
   if (escape) moves.push(toVerdictMove(escape, 'escape', MOVE_QUALITY_GOOD, MOVE_QUALITY_BEST));
 
-  return { tier, moves };
+  return { tier, moves, standing, standingEvalCp, standingEvalMate, bestMove };
 }
