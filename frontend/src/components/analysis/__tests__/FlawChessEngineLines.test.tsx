@@ -219,12 +219,14 @@ describe('FlawChessEngineLines', () => {
     expect(screen.getByText('…')).toBeTruthy();
   });
 
-  it('a forced-mate objective eval renders "#-4", not the "…" placeholder (quick 260709)', () => {
+  it('a forced-mate line renders "#-4" on BOTH the objective and practical badges, not "…" or a saturated cp (quick 260709)', () => {
     // Regression: a mate leaf grades to objectiveEvalMate with cp null, which
-    // previously printed "…" because only objectiveEvalCp was formatted.
+    // previously printed "…" (objective) because only objectiveEvalCp was
+    // formatted, and "-10.0" (practical) because the saturated expected-score cap
+    // was shown. Both now borrow the objective mate distance → "#-4".
     const mateLine: RankedLine = {
       rootMove: 'e2e4',
-      practicalScore: 0.02, // deeply lost for white → tiny expected score
+      practicalScore: 0.02, // deeply lost for white → tiny expected score (would show "-10.0")
       objectiveEvalCp: null,
       objectiveEvalMate: -4,
       modalPath: ['e2e4'],
@@ -242,8 +244,14 @@ describe('FlawChessEngineLines', () => {
         />
       </TooltipProvider>,
     );
-    expect(screen.getByText('#-4')).toBeTruthy();
+    // Both the gold practical badge and the blue objective eval render "#-4".
+    expect(screen.getAllByText('#-4')).toHaveLength(2);
     expect(screen.queryByText('…')).toBeNull();
+    expect(screen.queryByText('-10.0')).toBeNull();
+    // The aria-label reflects the mate on both sides.
+    expect(
+      screen.getByLabelText('Line 1: practically #-4 for you, objectively #-4'),
+    ).toBeTruthy();
   });
 
   it('move hover header shows the ply Stockfish eval (left) + raw Maia probability (right)', async () => {

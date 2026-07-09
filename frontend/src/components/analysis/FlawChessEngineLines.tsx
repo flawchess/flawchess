@@ -294,8 +294,14 @@ function RankedLineRow({
   // straight to formatScore. Practical is a 0-1 root-STM expected score —
   // convert via the Plan 01 inverse-sigmoid before formatting (D-06).
   const objectiveText = formatScore(line.objectiveEvalCp, line.objectiveEvalMate);
-  const practicalCp = expectedScoreToWhitePovCp(line.practicalScore, rootMover);
-  const practicalText = formatScore(practicalCp, null);
+  // The practical score is a probability with no mate-distance concept, so on a
+  // forced-mate line it saturates to a useless ±MATE_CP_EQUIVALENT cap (e.g.
+  // "-10.0"). Borrow the objective mate distance for the badge instead so it reads
+  // "#-1" like the blue objective + the agreement verdict (quick 260709 follow-up).
+  const practicalText =
+    line.objectiveEvalMate != null
+      ? formatScore(null, line.objectiveEvalMate)
+      : formatScore(expectedScoreToWhitePovCp(line.practicalScore, rootMover), null);
   // Gold badge shade by practical rank (best/2nd/3rd). noUncheckedIndexedAccess:
   // lineIndex is 0..MAX_LINES-1 and SHADES has MAX_LINES entries, but narrow anyway.
   const badgeShade =
