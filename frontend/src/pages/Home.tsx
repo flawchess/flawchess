@@ -129,6 +129,21 @@ const featureSections = FEATURES.slice(1);
 const HeroIcon = heroFeature.icon;
 const heroDescItems = Array.isArray(heroFeature.desc) ? heroFeature.desc : [heroFeature.desc];
 
+// Highlight the product name "FlawChess Engine" in gold wherever it appears in a hero
+// bullet (only the first hero bullet contains it), matching the gold hero title/icon.
+const ENGINE_NAME = 'FlawChess Engine';
+function renderHeroBullet(item: string) {
+  const idx = item.indexOf(ENGINE_NAME);
+  if (idx === -1) return item;
+  return (
+    <>
+      {item.slice(0, idx)}
+      <span style={{ color: FLAWCHESS_ENGINE_ACCENT }}>{ENGINE_NAME}</span>
+      {item.slice(idx + ENGINE_NAME.length)}
+    </>
+  );
+}
+
 export function HomePageContent() {
   const { loginAsGuest, isLoading } = useAuth();
   const navigate = useNavigate();
@@ -237,7 +252,7 @@ export function HomePageContent() {
               className="rounded-lg border border-[rgba(205,127,50,0.85)] shadow-[0_0_24px_rgba(205,127,50,0.35)] w-full mb-4"
             />
             <ul className="list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
-              {heroDescItems.map((item, i) => <li key={i}>{item}</li>)}
+              {heroDescItems.map((item, i) => <li key={i}>{renderHeroBullet(item)}</li>)}
             </ul>
           </div>
         </div>
@@ -262,7 +277,7 @@ export function HomePageContent() {
             className="rounded-lg border border-[rgba(205,127,50,0.85)] shadow-[0_0_24px_rgba(205,127,50,0.35)] w-full"
           />
           <ul className="list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
-            {heroDescItems.map((item, i) => <li key={i}>{item}</li>)}
+            {heroDescItems.map((item, i) => <li key={i}>{renderHeroBullet(item)}</li>)}
           </ul>
         </div>
       </section>
