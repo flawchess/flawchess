@@ -12,15 +12,18 @@
  *   EvalChart — below-board eval chart with slider (Phase 140 game mode)
  *
  * Security:
- *   T-138-01: FEN-guard on ?fen= param — malformed FEN degrades to STARTING_FEN.
+ *   ?line= guard: parseAnalysisLineParam degrades a malformed UCI line to its legal
+ *     prefix (or empty) — a hand-typed bad URL can't crash the board.
  *   T-140-02a: NaN-guard on ?game_id= / ?ply= params — malformed → null → isGameMode false.
  *   T-140-02b: L-8 guard on mainLine[ply] accesses — out-of-bounds → undefined → no-op.
  *
  * Engine: on by default (D-06); "Loading engine…" shown in eval area while WASM inits;
  *   board stays interactive throughout (SC#3).
  *
- * Modes: ?fen= seeds free play; ?game_id=X&ply=Y loads the full game at ply Y (game mode).
- *   The legacy tactic mode (?flaw_ply=) was removed in Quick 260627-l2z; clicking a
+ * Modes: ?line=<uci,uci,…> seeds free play with an opening main line (cursor at the end,
+ *   navigable back to move 1); no line → bare start. ?game_id=X&ply=Y loads the full game
+ *   at ply Y (game mode). The legacy ?fen= snapshot param (replaced by ?line=) and the
+ *   legacy tactic mode (?flaw_ply=, removed Quick 260627-l2z) are gone; clicking a
  *   move-list tactic chip grafts the PV as an in-tree sideline with a depth overlay.
  */
 
@@ -46,6 +49,7 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { useGameOverlay } from '@/hooks/useGameOverlay';
 import { useLiveMoveFlaw } from '@/hooks/useLiveMoveFlaw';
 import { useTacticLines, useLibraryGame } from '@/hooks/useLibrary';
+import { parseAnalysisLineParam } from '@/lib/analysisUrl';
 import { toDisplayDepthForOrientation } from '@/lib/tacticDepth';
 import { buildPvArrow } from '@/lib/tacticArrows';
 import { EvalBar } from '@/components/analysis/EvalBar';
@@ -411,25 +415,20 @@ function buildFocusedPvLine(
 /**
  * Default-exported Analysis page (required by React.lazy in App.tsx).
  * ROUTE-01: reachable by authenticated users inside ProtectedLayout.
- * ROUTE-02: ?fen= seeds the board; empty/malformed → standard start.
+ * ROUTE-02: ?line= seeds a free-play opening main line; empty/malformed → standard start.
  * ROUTE-04 (Phase 140): ?game_id=&ply= enters game mode (full game at initial ply).
  */
 export default function Analysis() {
   const [searchParams] = useSearchParams();
-  const fenParam = searchParams.get('fen') ?? undefined;
 
-  // Security FEN-guard (T-138-01): attempt chess.js parse; fall back to
-  // undefined (STARTING_FEN) so a hand-typed bad URL renders the start
-  // position instead of crashing react-chessboard at render.
-  let guardedFen: string | undefined;
-  if (fenParam !== undefined) {
-    try {
-      new Chess(fenParam);
-      guardedFen = fenParam;
-    } catch {
-      // Malformed FEN: degrade to STARTING_FEN (guardedFen stays undefined).
-    }
-  }
+  // Free-play entry point: the opening line to seed as the board's main line,
+  // carried as a `?line=` param of comma-separated UCI moves from the standard
+  // start (replaces the old `?fen=` snapshot — a move list lets the user step
+  // all the way back to move 1). parseAnalysisLineParam degrades a malformed or
+  // hand-typed value to its legal prefix, so bad input can't crash the board —
+  // the same defensive posture the old FEN guard (T-138-01) had.
+  const lineParam = searchParams.get('line');
+  const lineSans = useMemo(() => parseAnalysisLineParam(lineParam), [lineParam]);
 
   // ── URL params — game mode (T-140-02a) ──────────────────────────────────────
   // Security: NaN-guard on numeric params — malformed → null → mode disabled.
@@ -509,7 +508,7 @@ export default function Analysis() {
     clearAllSidelines,
     isOnPvLine,
     containerRef,
-  } = useAnalysisBoard(guardedFen);
+  } = useAnalysisBoard(STARTING_FEN);
 
   // Engine hook must run unconditionally (React rules).
   // 155 UAT un-merge: the standalone Stockfish search runs whenever its own
@@ -661,6 +660,17 @@ export default function Analysis() {
     loadMainLine(gameData.moves, STARTING_FEN);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameData?.moves, isGameMode]);
+
+  // Free play: seed the opening main line from the ?line= param once. The cursor
+  // lands at the end of the line (loadMainLine's default), and the user can step
+  // back to move 1 through the variation tree. hasLoadedMainLine is shared with
+  // game mode — a page is one or the other, never both.
+  useEffect(() => {
+    if (isGameMode || lineSans.length === 0 || hasLoadedMainLine.current) return;
+    hasLoadedMainLine.current = true;
+    loadMainLine(lineSans, STARTING_FEN);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lineSans, isGameMode]);
 
   // Navigate to initialPly AFTER loadMainLine state lands (separate effect — RESEARCH.md Hardest Part 3).
   // Watches mainLine.length so it fires after the batch-reset from loadMainLine.
@@ -1747,7 +1757,17 @@ export default function Analysis() {
     : () => {
         setLiveFlawByNode(new Map());
         setGemByNode(new Map());
-        loadMainLine([], rootFen);
+        if (mainLine.length > 0) {
+          // Opening-line free play (?line=): keep the seeded opening as the main
+          // line, drop any exploration sidelines, and return to the end of the
+          // line (the entry point) — mirrors game mode's clear-and-return reset.
+          clearAllSidelines();
+          const endId = mainLine[mainLine.length - 1];
+          if (endId !== undefined) goToNode(endId);
+        } else {
+          // Bare free play (no line): wipe back to the empty start position.
+          loadMainLine([], rootFen);
+        }
       };
 
   const canReset = currentNodeId !== null;
@@ -2102,8 +2122,8 @@ export default function Analysis() {
       pvFetchPending={isGameMode ? contextualPending : undefined}
       pvFetchError={isGameMode ? contextualError : undefined}
       // deleteSubtree wired unconditionally: the free-move sideline × delete must
-      // work in ?fen= free-play mode too. Previously gated on isGameMode, so in fen
-      // mode the × rendered (free-move blocks always show it) but its handler was
+      // work in free-play mode too. Previously gated on isGameMode, so in free play
+      // the × rendered (free-move blocks always show it) but its handler was
       // undefined and clicking did nothing. deleteSubtree is always safe — it
       // recovers currentNodeId to the fork parent when the current node is deleted.
       onDeleteLine={deleteSubtree}

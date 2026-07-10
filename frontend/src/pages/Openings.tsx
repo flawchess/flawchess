@@ -55,7 +55,7 @@ import { SidebarLayout, type SidebarPanelConfig } from '@/components/layout/Side
 import { getArrowColor } from '@/lib/arrowColor';
 import { apiClient } from '@/api/client';
 import { getBoardContainerClassName } from '@/lib/openingsBoardLayout';
-import { buildAnalysisUrl } from '@/lib/analysisUrl';
+import { buildAnalysisLineUrl } from '@/lib/analysisUrl';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { Color, MatchSide } from '@/types/api';
 import { resolveMatchSide } from '@/types/api';
@@ -563,9 +563,12 @@ export function OpeningsPage() {
     sidebar.setSidebarOpen(null);
   }, [handleLoadBookmark, sidebar]);
 
+  // Send the explorer's opening moves (up to the current cursor) to the analysis
+  // board as a `?line=` main line — so the user can step all the way back to move
+  // 1 there — rather than a bare snapshot FEN (which lost the move history).
   const handleAnalyzePosition = useCallback(() => {
-    navigate(buildAnalysisUrl(chess.position));
-  }, [navigate, chess.position]);
+    navigate(buildAnalysisLineUrl(chess.moveHistory.slice(0, chess.currentPly)));
+  }, [navigate, chess.moveHistory, chess.currentPly]);
 
   // Analyze-position button shows on the board-bearing subtabs (Moves + Games),
   // where the chessboard position is the thing worth sending to the analysis page.

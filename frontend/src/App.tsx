@@ -593,9 +593,10 @@ function SuperuserRoute({ children }: { children: React.ReactNode }) {
 // ─── Analysis route wrapper ───────────────────────────────────────────────────
 
 /**
- * Thin wrapper that reads the `?fen=` search param and keys AnalysisPage by it,
- * so a second entry-point navigation to /analysis?fen=Y remounts the page and
- * resets useAnalysisBoard's non-reactive initialRootFen (Pitfall 2).
+ * Thin wrapper that reads the `?line=` search param and keys AnalysisPage by it,
+ * so a second entry-point navigation to /analysis?line=Y remounts the page and
+ * re-seeds the free-play opening main line (the loadMainLine effect's
+ * hasLoadedMainLine ref is reset by the remount — Pitfall 2).
  *
  * useSearchParams is not in scope at the <Routes> site, so a scoped wrapper
  * keeps the param-driven re-render off all other routes (RESEARCH Pattern A).
@@ -616,7 +617,7 @@ function AnalysisRoute() {
         </div>
       }
     >
-      <AnalysisPage key={params.get('fen') ?? 'start'} />
+      <AnalysisPage key={params.get('line') ?? 'start'} />
     </Suspense>
   );
 }

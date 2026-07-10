@@ -7,8 +7,8 @@
  *
  * Verifies the Analysis page observable behaviors:
  * - Shell renders with required testids (ROUTE-01)
- * - ?fen= param seeds the board root (ROUTE-02)
- * - Malformed ?fen= degrades to standard start without throwing (ROUTE-02 / security)
+ * - ?line= param seeds a free-play opening main line (ROUTE-02)
+ * - Malformed ?line= degrades to standard start without throwing (ROUTE-02 / security)
  * - "Loading engine..." chrome shows while isReady=false, board stays interactive (D-06 / SC#3)
  * - Engine ready hides the loading chrome (D-06)
  * - Phase 155: FlawChess Engine eval-bar precedence (DISPLAY-04) — see the dedicated
@@ -185,7 +185,7 @@ vi.mock('@/hooks/useFlawFilterStore', () => ({
 }));
 
 // NOTE: useAnalysisBoard is NOT mocked — it is pure in-memory and must run for real
-// so ?fen= seeding is genuinely exercised.
+// so ?line= seeding is genuinely exercised.
 
 // jsdom shims required by react-chessboard and responsive components.
 Object.defineProperty(window, 'matchMedia', {
@@ -277,24 +277,25 @@ describe('Analysis page shell', () => {
     expect(screen.getByTestId('analysis-flawchess-eval-bar')).toBeTruthy();
   });
 
-  it('seeds the board from a valid ?fen= param (ROUTE-02)', () => {
-    // A mid-opening FEN: 1. e4 e5 2. Nf3 (white to move, 3rd move)
-    const openingFen = 'rnbqkb1r/pppp1ppp/5n2/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3';
-    const encodedFen = encodeURIComponent(openingFen);
+  it('seeds a free-play opening main line from a valid ?line= param (ROUTE-02)', () => {
+    // 1. e4 e5 2. Nf3 as a UCI line — loadMainLine replays it as the main line
+    // and lands the cursor at the end (white to move, 3rd move).
+    renderAnalysis('/analysis?line=e2e4,e7e5,g1f3');
 
-    renderAnalysis(`/analysis?fen=${encodedFen}`);
-
-    // The page must render without error, and the shell must be present.
-    // useAnalysisBoard consumes the FEN as initialRootFen — the board will not be
-    // at the standard start position when a valid FEN is provided.
+    // The page must render without error, and the shell must be present. The
+    // seeded moves must appear in the variation tree / move list.
     expect(screen.getByTestId('analysis-page')).toBeTruthy();
     expect(screen.getByTestId('analysis-board')).toBeTruthy();
+    // The responsive move list renders both breakpoints; ≥1 "Nf3" node proves
+    // the line was seeded as the main line.
+    expect(screen.getAllByText('Nf3').length).toBeGreaterThan(0);
   });
 
-  it('degrades to start position on malformed ?fen= without throwing (security)', () => {
-    // Malformed FEN: the security guard in Analysis.tsx falls back to STARTING_FEN.
+  it('degrades to the start position on a malformed ?line= without throwing (security)', () => {
+    // parseAnalysisLineParam keeps the legal prefix (here: none) and stops — a
+    // hand-typed bad URL must render the start position, not crash the board.
     expect(() => {
-      renderAnalysis('/analysis?fen=not-a-valid-fen');
+      renderAnalysis('/analysis?line=not-a-real-uci-line');
     }).not.toThrow();
 
     expect(screen.getByTestId('analysis-page')).toBeTruthy();
@@ -362,8 +363,7 @@ describe('Maia eval bar perspective (151.1 UAT regression)', () => {
   it('inverts the expected score to white-POV when Black is to move', () => {
     maiaState.expectedScoreAtSelectedElo = 0.8;
     // Black to move (after 1. e4).
-    const blackToMoveFen = 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1';
-    renderAnalysis(`/analysis?fen=${encodeURIComponent(blackToMoveFen)}`);
+    renderAnalysis('/analysis?line=e2e4');
     fireEvent.click(screen.getByTestId('btn-analysis-flawchess-toggle'));
 
     expect(maiaWhiteFillPercent()).toBeCloseTo(20, 1);
@@ -371,8 +371,8 @@ describe('Maia eval bar perspective (151.1 UAT regression)', () => {
 
   it('uses the expected score directly (white-POV) when White is to move', () => {
     maiaState.expectedScoreAtSelectedElo = 0.8;
-    const whiteToMoveFen = 'rnbqkb1r/pppp1ppp/5n2/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3';
-    renderAnalysis(`/analysis?fen=${encodeURIComponent(whiteToMoveFen)}`);
+    // White to move (after 1. e4 e5 2. Nf3 Nf6 — both knights out).
+    renderAnalysis('/analysis?line=e2e4,e7e5,g1f3,g8f6');
     fireEvent.click(screen.getByTestId('btn-analysis-flawchess-toggle'));
 
     expect(maiaWhiteFillPercent()).toBeCloseTo(80, 1);
