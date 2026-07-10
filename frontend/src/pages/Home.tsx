@@ -421,6 +421,24 @@ export function HomePageContent() {
               verdict.
             </AccordionContent>
           </AccordionItem>
+          <AccordionItem value="flawchess-engine" data-testid="faq-item-flawchess-engine">
+            <AccordionTrigger>How does the FlawChess Engine work?</AccordionTrigger>
+            <AccordionContent>
+              It combines Stockfish with Maia, a human-like neural network, to score each move by
+              how likely you are to find it and convert the resulting position against an opponent
+              at your level, instead of assuming perfect play from both sides. Read the full
+              deep-dive in{' '}
+              <a
+                href="https://github.com/flawchess/flawchess/blob/main/docs/flawchess-engine-explained-2026-07-06.md"
+                className="text-primary underline-offset-4 hover:underline"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                FlawChess Engine explained
+              </a>
+              .
+            </AccordionContent>
+          </AccordionItem>
           <AccordionItem value="requests" data-testid="faq-item-requests">
             <AccordionTrigger>Where can I make feature requests?</AccordionTrigger>
             <AccordionContent>
