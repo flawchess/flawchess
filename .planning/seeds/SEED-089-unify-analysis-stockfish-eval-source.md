@@ -7,6 +7,15 @@ source: /gsd-explore session 2026-07-10 (Adrian's screenshot: Stockfish card Rad
 
 # SEED-089: Unify the analysis-page Stockfish eval source
 
+> **2026-07-10 — superseded as the preferred design by SEED-090** (grading-run-authoritative
+> precedence flip). A critical review found two load-bearing claims below don't hold: the
+> "uncovered ⇒ never Good" guarantee fails at saturated evals (the sigmoid's Good band is
+> ~85cp wide at +4.2 — the screenshot's own regime), and the gap fallback fires routinely
+> (played blunders are usually outside top-K), so the deferred clamp would be mandatory day
+> one. See SEED-090 for details. This seed stays open only as the fallback architecture if
+> the dual-worker CPU/battery cost of SEED-090 ever becomes unacceptable — and if revived,
+> it must ship the monotone clamp from day one. Plan ONE of the two, not both.
+
 ## The problem (user-visible)
 
 On `/analysis`, the three engine cards disagree on the objective (blue) Stockfish eval for the
