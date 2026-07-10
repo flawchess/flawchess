@@ -228,7 +228,7 @@ export function HomePageContent() {
               Below lg the preview renders as a standalone charcoal section further down. */}
           <div data-testid="hero-feature-preview" className="hidden lg:block">
             <div className="flex items-center gap-4 mb-4">
-              <HeroIcon className="h-7 w-7 lg:h-10 lg:w-10 text-muted-foreground shrink-0" strokeWidth={1.5} />
+              <HeroIcon className="h-7 w-7 lg:h-10 lg:w-10 shrink-0" strokeWidth={1.5} style={{ color: FLAWCHESS_ENGINE_ACCENT }} />
               <h2 className="text-xl lg:text-2xl font-bold" style={{ color: FLAWCHESS_ENGINE_ACCENT }}>{heroFeature.heading}</h2>
             </div>
             <img
@@ -253,7 +253,7 @@ export function HomePageContent() {
       >
         <div className="max-w-5xl mx-auto px-4 flex flex-col gap-6">
           <div className="flex items-center gap-4">
-            <HeroIcon className="h-7 w-7 lg:h-10 lg:w-10 text-muted-foreground shrink-0" strokeWidth={1.5} />
+            <HeroIcon className="h-7 w-7 lg:h-10 lg:w-10 shrink-0" strokeWidth={1.5} style={{ color: FLAWCHESS_ENGINE_ACCENT }} />
             <h2 className="text-xl lg:text-2xl font-bold" style={{ color: FLAWCHESS_ENGINE_ACCENT }}>{heroFeature.heading}</h2>
           </div>
           <img
