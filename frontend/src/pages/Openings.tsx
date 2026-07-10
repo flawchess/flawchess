@@ -720,6 +720,7 @@ export function OpeningsPage() {
       gamesOffset={gamesOffset}
       pageSize={PAGE_SIZE}
       onPageChange={setGamesOffset}
+      analyzePly={chess.currentPly}
     />
   );
 

@@ -19,6 +19,8 @@ type GamesTabProps = {
   gamesOffset: number;
   pageSize: number;
   onPageChange: (offset: number) => void;
+  /** Ply of the position shown on the opening board — seeds the Analyze deep-link. */
+  analyzePly: number;
 };
 
 export function GamesTab({
@@ -32,6 +34,7 @@ export function GamesTab({
   gamesOffset,
   pageSize,
   onPageChange,
+  analyzePly,
 }: GamesTabProps) {
   const gamesData = gamesQuery.data;
 
@@ -76,6 +79,7 @@ export function GamesTab({
             offset={gamesOffset}
             limit={pageSize}
             onPageChange={onPageChange}
+            analyzePly={analyzePly}
             hideMatchLabelOnMobile
             matchLabel={(() => {
               const total = gameCount ?? gamesData.stats.total;
