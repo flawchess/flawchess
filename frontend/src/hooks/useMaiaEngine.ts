@@ -62,10 +62,21 @@ export interface UseMaiaEngineState {
   isReady: boolean;
   /** True while a (non-cached) inference is in flight for the current FEN. */
   isAnalyzing: boolean;
+  /**
+   * The FEN `perElo`/`wdl` actually belong to; null while no result is held.
+   * Bug fix (163-REVIEW WR-03): this hook clears `latestResult` in an effect
+   * keyed on `fen`, i.e. one commit AFTER the caller's `fen` prop changes — so
+   * on the navigation commit `perElo` still holds the PREVIOUS position's
+   * curve. Callers writing per-FEN caches must key/guard on `resultFen`, never
+   * on their own current position.
+   */
+  resultFen: string | null;
 }
 
 /** Cached inference result for one FEN — every ladder rung, board-session scoped. */
 interface MaiaResult {
+  /** The FEN this inference was computed for (WR-03 — see `resultFen`). */
+  fen: string;
   perElo: MoveCurvePoint[];
   wdlByElo: { elo: number; wdl: WdlVector }[];
 }
@@ -93,7 +104,7 @@ function buildMaiaResult(fen: string, msg: WorkerResultMessage): MaiaResult {
     moveProbabilities: maskAndSoftmax(policy, fen),
   }));
   const wdlByElo = msg.wdlByElo.map(({ elo, wdl }) => ({ elo, wdl: softmaxWdl(wdl) }));
-  return { perElo, wdlByElo };
+  return { fen, perElo, wdlByElo };
 }
 
 /** Finds the ladder entry whose ELO is numerically closest to `target`. */
@@ -331,5 +342,6 @@ export function useMaiaEngine({ fen, enabled, selectedElo }: UseMaiaEngineOption
     wdl,
     isReady,
     isAnalyzing,
+    resultFen: latestResult?.fen ?? null,
   };
 }

@@ -11,9 +11,15 @@ interface InfoPopoverProps {
   side?: "top" | "bottom" | "left" | "right"
   /** Trigger glyph. Defaults to HelpCircle; pass e.g. Tag for the tag legends. */
   icon?: LucideIcon
+  /**
+   * Custom trigger content, overriding the default `icon` glyph — e.g. a
+   * self-colored SVG badge (GemIcon) that isn't a LucideIcon. When set, the
+   * trigger drops the default brown tint so the glyph keeps its own color.
+   */
+  triggerContent?: React.ReactNode
 }
 
-function InfoPopover({ children, ariaLabel, testId, side = "top", icon: Icon = HelpCircle }: InfoPopoverProps) {
+function InfoPopover({ children, ariaLabel, testId, side = "top", icon: Icon = HelpCircle, triggerContent }: InfoPopoverProps) {
   const [open, setOpen] = React.useState(false)
   const hoverTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -33,13 +39,16 @@ function InfoPopover({ children, ariaLabel, testId, side = "top", icon: Icon = H
         <span
           role="button"
           tabIndex={0}
-          className="text-brand-brown-light/70 hover:text-brand-brown focus:outline-none cursor-pointer"
+          className={cn(
+            "focus:outline-none cursor-pointer",
+            triggerContent ? "inline-flex items-center" : "text-brand-brown-light/70 hover:text-brand-brown",
+          )}
           aria-label={ariaLabel}
           data-testid={testId}
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
         >
-          <Icon className="h-4 w-4" />
+          {triggerContent ?? <Icon className="h-4 w-4" />}
         </span>
       </PopoverPrimitive.Trigger>
       <PopoverPrimitive.Portal>

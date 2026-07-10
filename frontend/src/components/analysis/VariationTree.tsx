@@ -25,6 +25,8 @@ import type { NodeId, MoveNode } from '@/hooks/useAnalysisBoard';
 import { HorizontalMoveList } from '@/components/board/HorizontalMoveList';
 import type { HorizontalMoveItem } from '@/components/board/HorizontalMoveList';
 import { BlunderIcon, MistakeIcon } from '@/components/icons/SeverityGlyphIcon';
+import { GemIcon } from '@/components/icons/GemIcon';
+import { GemMoveBadge } from '@/components/analysis/GemMoveBadge';
 import { moveLabel } from '@/lib/moveNumberLabel';
 import { tacticMotifLabel, tacticDepthBadge } from '@/lib/tacticComparisonMeta';
 import { cn } from '@/lib/utils';
@@ -45,6 +47,53 @@ const ZEBRA_ROW_BG = 'bg-foreground/[0.03]';
 /** Zebra background for a 0-based row index (odd rows striped). */
 function zebraBg(rowIdx: number): string {
   return rowIdx % 2 === 1 ? ZEBRA_ROW_BG : '';
+}
+
+/**
+ * Icon + visibility for a flaw entry's move-list marker. Severity wins over gem
+ * (163-REVIEW WR-05): within the live pipeline the two are mutually exclusive by
+ * construction, but a BACKEND severity (server Stockfish) and the live WASM gem
+ * can legitimately disagree on the same move — one move never renders two badges,
+ * and the severity badge is the more actionable signal.
+ */
+function resolveMarkerIcon(flaw: FlawMarkerEntry | undefined): {
+  show: boolean;
+  Icon: typeof BlunderIcon;
+  isGem: boolean;
+} {
+  if (flaw != null && (flaw.severity === 'blunder' || flaw.severity === 'mistake')) {
+    return { show: true, Icon: flaw.severity === 'blunder' ? BlunderIcon : MistakeIcon, isGem: false };
+  }
+  if (flaw?.gem) return { show: true, Icon: GemIcon, isGem: true };
+  return { show: false, Icon: MistakeIcon, isGem: false };
+}
+
+/**
+ * A move-list flaw/gem marker: the popover-wrapped gem badge (GemMoveBadge)
+ * when the entry is a gem, otherwise the plain severity glyph. Returns null
+ * when the entry warrants no marker, so it drops straight into a trailing slot.
+ * Centralizes the gem-vs-severity branch shared by the desktop and mobile lists.
+ */
+function MoveListMarker({
+  flaw,
+  className,
+}: {
+  flaw: FlawMarkerEntry | undefined;
+  className: string;
+}): ReactNode {
+  const { show, Icon, isGem } = resolveMarkerIcon(flaw);
+  if (!show) return null;
+  if (isGem) {
+    return (
+      <GemMoveBadge
+        className={className}
+        maiaProbability={flaw?.gemMaiaProbability ?? null}
+        elo={flaw?.gemElo ?? null}
+        byOpponent={flaw?.gemByOpponent ?? false}
+      />
+    );
+  }
+  return <Icon className={className} aria-hidden />;
 }
 
 /** Nearest scrollable ancestor of `el`, or null if none before the document. */
@@ -96,6 +145,28 @@ export interface FlawMarkerEntry {
   /** 0-based depth of the allowed tactic (display offset applied by tacticDepthBadge). */
   allowedDepth: number | null;
   severity?: FlawSeverity;
+  /**
+   * True when this node's arrival move is a "gem" (Phase 163, SEED-092) — renders
+   * GemIcon instead of the severity glyph. Mutually exclusive with `severity` by
+   * construction (classifyGem requires the clear best move, never a blunder/mistake).
+   */
+  gem?: boolean;
+  /**
+   * Maia policy probability (0..1) of the gem move at the rung it was detected
+   * on — surfaced in the move-list gem popover. Set only when `gem` is true.
+   */
+  gemMaiaProbability?: number;
+  /**
+   * ELO rung the gem was detected at (the ELO-slider value at detection time) —
+   * surfaced in the move-list gem popover. Set only when `gem` is true.
+   */
+  gemElo?: number;
+  /**
+   * True when the OPPONENT (not the user) played the gem — switches the popover
+   * heading to "Your opponent found a gem move!". Set only when `gem` is true;
+   * always false in free play (no opponent).
+   */
+  gemByOpponent?: boolean;
   /** FlawMarker.ply — passed to onPvChipClick for the useTacticLines fetch key
    *  (this node's own flaw — allowed chip + severity glyph). */
   ply: number;
@@ -497,15 +568,10 @@ function siblingBlockToChips(
     const isLast = i === block.chain.length - 1;
 
     const flaw = flawMarkerByNodeId?.get(nodeId);
-    const showSeverityMarker =
-      flaw != null && (flaw.severity === 'blunder' || flaw.severity === 'mistake');
-    const SeverityIcon = flaw?.severity === 'blunder' ? BlunderIcon : MistakeIcon;
 
     const trailing = isLast ? (
       <span className="text-muted-foreground select-none inline-flex items-center">
-        {showSeverityMarker && (
-          <SeverityIcon className="inline h-4 w-4 ml-0.5 align-middle" aria-hidden />
-        )}
+        <MoveListMarker flaw={flaw} className="inline h-4 w-4 ml-0.5 align-middle" />
         {')'}
         {!block.isTactic && (
           <button
@@ -522,9 +588,9 @@ function siblingBlockToChips(
           </button>
         )}
       </span>
-    ) : showSeverityMarker ? (
-      <SeverityIcon className="inline h-4 w-4 ml-0.5 align-middle" aria-hidden />
-    ) : undefined;
+    ) : (
+      <MoveListMarker flaw={flaw} className="inline h-4 w-4 ml-0.5 align-middle" />
+    );
 
     items.push({
       key: nodeId,
@@ -582,9 +648,6 @@ function MobileTree({
     // of a tactic chip on the move (UAT thl item 3); mobile renders no inline chip, so
     // the glyph is the only flaw cue here.
     const flaw = flawMarkerByNodeId?.get(nodeId);
-    const showSeverityMarker =
-      flaw != null && (flaw.severity === 'blunder' || flaw.severity === 'mistake');
-    const SeverityIcon = flaw?.severity === 'blunder' ? BlunderIcon : MistakeIcon;
 
     items.push({
       key: nodeId,
@@ -594,9 +657,7 @@ function MobileTree({
       isCurrent: nodeId === currentNodeId,
       testId: `variation-node-${nodeId}`,
       ariaLabel: `Move ${label ?? ''} ${node.san}`.trim(),
-      trailing: showSeverityMarker ? (
-        <SeverityIcon className="inline h-4 w-4 ml-0.5 align-middle" aria-hidden />
-      ) : undefined,
+      trailing: <MoveListMarker flaw={flaw} className="inline h-4 w-4 ml-0.5 align-middle" />,
     });
 
     for (const block of blocksByIdx.get(idx) ?? []) items.push(...chipsFor(block));
@@ -724,12 +785,8 @@ function DesktopTree({
     // the user steps forward (Quick 260628-r5v UAT). The variation entries come from the
     // per-node live-flaw cache merged in by Analysis.tsx.
     const severityFlaw = flaw ?? flawMarkerByNodeId?.get(nodeId);
-    // Show the blunder/mistake glyph whenever the severity warrants it, even when a
-    // tactic chip is also present (UAT thl item 3 — icon + chip read as complementary).
-    const showSeverityMarker =
-      severityFlaw != null &&
-      (severityFlaw.severity === 'blunder' || severityFlaw.severity === 'mistake');
-    const SeverityIcon = severityFlaw?.severity === 'blunder' ? BlunderIcon : MistakeIcon;
+    // Show the blunder/mistake/gem glyph whenever it warrants one, even when a tactic
+    // chip is also present (UAT thl item 3 — icon + chip read as complementary).
 
     // Tactic chips render on their OWN line below the move (Quick w8k item 3), so the
     // move text stays scannable and the pills don't crowd the SAN.
@@ -752,11 +809,10 @@ function DesktopTree({
           >
             {node.san}
           </button>
-          {/* Non-tactic blunder/mistake severity glyph stays inline with the SAN —
-              it reads as standard move annotation (e.g. "Qh4 ??"). */}
-          {showSeverityMarker && (
-            <SeverityIcon className="h-4 w-4 inline-block shrink-0" aria-hidden />
-          )}
+          {/* Non-tactic blunder/mistake severity glyph (or the gem badge with its
+              rule popover) stays inline with the SAN — it reads as standard move
+              annotation (e.g. "Qh4 ??"). */}
+          <MoveListMarker flaw={severityFlaw} className="h-4 w-4 inline-block shrink-0" />
         </span>
         {/* Tactic pill chips on a new line below the move (Quick w8k item 3). Extra
             vertical gap + bottom padding keep stacked chips from crowding each other

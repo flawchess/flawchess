@@ -188,6 +188,8 @@ function colorForQuality(quality: MoveQuality | undefined): string {
       return MOVE_QUALITY_MISTAKE;
     case 'blunder':
       return MOVE_QUALITY_BLUNDER;
+    case 'gem':
+      return MAIA_ACCENT;
     default:
       return MOVE_QUALITY_PENDING;
   }

@@ -4,7 +4,10 @@
  * severity glyph badge. Kept in one place so both boards render identical marks.
  */
 
+import { Gem } from 'lucide-react';
+
 import { SEVERITY_GLYPH } from '../../lib/severityGlyph';
+import { GEM_GLYPH } from '../../lib/gemGlyph';
 import type { FlawSeverity } from '../../types/library';
 import { squareToCoords } from './arrowGeometry';
 
@@ -12,10 +15,17 @@ import { squareToCoords } from './arrowGeometry';
  * A severity glyph badge (??/?/!?) drawn in a square's top-right corner — replaces
  * the played-move blunder/mistake/inaccuracy arrow. Optional `label` renders the
  * move's depth in the top-left corner, matching the arrow depth-label style.
+ *
+ * `gem` is an additive, mutually-exclusive alternative to `severity` (Phase 163,
+ * SEED-092): when set, the badge renders the violet gem icon instead of the
+ * severity NAG glyph. No runtime assertion enforces the exclusivity — callers
+ * only ever set one or the other by construction.
  */
 export interface SquareMarker {
   square: string;
-  severity: FlawSeverity;
+  severity?: FlawSeverity;
+  /** Renders the violet gem badge instead of a severity glyph. */
+  gem?: boolean;
   /** Optional depth label (e.g. allowed-tactic depth) rendered top-left. */
   label?: string;
   /** Fill color for the depth label. Defaults to white. */
@@ -43,6 +53,9 @@ const MARKER_RADIUS_SMALL = 0.24; // mini boards (games card) — bumped for leg
 const MARKER_CORNER_OVERLAP = 0.5; // center pulled back from the corner by this × r
 const GLYPH_VIEWBOX_DIAMETER = 22;
 const MARKER_STROKE = 'rgba(0, 0, 0, 0.5)';
+// Gem icon size as a fraction of the badge circle's diameter — sized so the
+// icon sits inside the stroke rather than touching the circle's edge.
+const GEM_ICON_DIAMETER_RATIO = 0.8;
 
 /** A depth-badge number anchored to a square's TOP-LEFT corner. */
 export function DepthLabel({
@@ -90,7 +103,6 @@ function SquareMarkerBadge({
   sqSize: number;
   flipped: boolean;
 }) {
-  const glyph = SEVERITY_GLYPH[marker.severity];
   const [tx, ty] = squareToCoords(marker.square, flipped);
   const radiusFraction = sqSize < SMALL_BOARD_SQ_PX ? MARKER_RADIUS_SMALL : MARKER_RADIUS;
   const r = radiusFraction * sqSize;
@@ -100,6 +112,29 @@ function SquareMarkerBadge({
   const cornerY = (ty - 0.5) * sqSize;
   const cx = cornerX - r * MARKER_CORNER_OVERLAP;
   const cy = cornerY + r * MARKER_CORNER_OVERLAP;
+
+  if (marker.gem) {
+    // Icon at ~80% of the circle diameter so it sits inside the stroke.
+    const iconSize = 2 * r * GEM_ICON_DIAMETER_RATIO;
+    return (
+      <g>
+        <circle cx={cx} cy={cy} r={r} fill={GEM_GLYPH.color} stroke={MARKER_STROKE} strokeWidth={1} />
+        <Gem
+          x={cx - iconSize / 2}
+          y={cy - iconSize / 2}
+          width={iconSize}
+          height={iconSize}
+          stroke="#fff"
+        />
+      </g>
+    );
+  }
+
+  // Severity-less markers are only possible when `gem` is set (handled above,
+  // and mutually exclusive by construction) — guard defensively rather than
+  // indexing SEVERITY_GLYPH with an undefined key.
+  if (!marker.severity) return null;
+  const glyph = SEVERITY_GLYPH[marker.severity];
   // Reuse SeverityGlyphIcon's font-to-diameter ratio so the on-board glyph matches.
   const fontPx = (glyph.fontSize / GLYPH_VIEWBOX_DIAMETER) * (2 * r);
   return (

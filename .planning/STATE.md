@@ -2,34 +2,35 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: FlawChess Engine
-current_phase: 162
-current_phase_name: grading-run-authoritative-eval-reconciliation-precedence-fli
-status: Phase 162 shipped — squash-merged to main (9542a44a)
-stopped_at: Phase 162 planned (3 plans, 3 waves)
-last_updated: "2026-07-10T12:31:34.290Z"
+current_phase: 163
+status: phase_complete
+stopped_at: Phase 163 verified complete (UAT passed)
+last_updated: "2026-07-10T19:32:22.603Z"
 last_activity: 2026-07-10
+last_activity_desc: Phase 163 complete
 progress:
-  total_phases: 1
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  total_phases: 2
+  completed_phases: 2
+  total_plans: 7
+  completed_plans: 7
   percent: 100
+current_phase_name: gem-moves-maia-findability-move-badges-on-analysis-seed-092
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 162 (grading-run-authoritative-eval-reconciliation-precedence-fli) — EXECUTING
-Plan: 3 of 3
-Status: Phase 162 shipped — squash-merged to main (9542a44a)
-Last activity: 2026-07-10 - Completed quick task 260710-k7n: FlawChess Engine homepage hero + README
+Phase: 163
+Plan: 4/4 complete
+Status: Phase 163 complete and verified (UAT passed 2026-07-10) — no phases remain; next is `/gsd-new-milestone` (or deploy 162+163)
+Last activity: 2026-07-10 — Phase 163 UAT passed, phase marked complete
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-07-09 after v2.0 milestone close)
+See: .planning/PROJECT.md (updated 2026-07-10 after Phase 163)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: v2.0 FlawChess Engine shipped 2026-07-09 (Phases 153–161, tagged v2.0). No active milestone. Next: `/gsd-new-milestone`. **Deployed to production** — released incrementally during the milestone across PRs #247, #248, #249 (`origin/production` at #249).
+Current focus: Post-v2.0 standalone Phases 162 (SEED-090 eval-reconciliation precedence flip) and 163 (SEED-092 gem-move badges) both complete and verified 2026-07-10. No active milestone. Next: `/gsd-new-milestone`, and deploy 162+163 (v2.0 itself is live via #247–#249; 162/163 are not yet released).
 
 ## Milestone Progress
 
@@ -155,6 +156,17 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 162-02]: D-03 mirror-image test verified via MaiaMoveQualityBar's positionVerdict prose (escape/bad roles), not the recharts-based MovesByRatingChart, to avoid adding ResponsiveContainer mock machinery Analysis.test.tsx doesn't already carry
 - [Phase 162-03]: Tasks 1+2 combined into one commit — interleaved reconciled memo chain (reconciledStockfishLine beside reconciledBestEval), mirrors 155-04/158-03 precedent
 - [Phase 162-03]: D-12 arrow test verified via scoped Element.prototype.clientWidth spy + SVG path-string diff, not geometry decoding — jsdom's default 0 clientWidth degenerates ArrowOverlay paths to NaN
+- [Phase 163-01]: classifyGem takes no ply/color argument by construction — satisfies D-02/D-04 structurally, not just via test coverage
+- [Phase 163-01]: Free-lunch guard 1 (saturation) test uses +1000/+600 cp instead of the plan's illustrative +800/+400 — the real LICHESS_K sigmoid only compresses the ES gap below MISTAKE_DROP at higher cp magnitudes
+- [Phase 163-01]: bucketKeyForQuality('gem') coverage verified via bucketMovesByQuality (its only real caller) rather than exporting the previously-private bucketKeyForQuality function
+- [Phase 163-02]: GEM_ICON_DIAMETER_RATIO (0.8) added as a named constant for the gem icon's size relative to the badge circle diameter, not a new geometry/position constant
+- [Phase 163-02]: SquareMarkerBadge restructured so cx/cy/r are computed once up front, then branches gem vs. guarded severity lookup, to avoid indexing SEVERITY_GLYPH with an undefined key now that severity is optional
+- [Phase 163-03]: Pitfall-5 audit recorded inline via commit message -- colorForQuality's switch is the only quality-string branch in MovesByRatingChart.tsx; stroke emphasis keys off SAN identity not quality
+- [Phase 163-03]: isGem threaded through ProseMoveSpan as a required boolean prop computed by the parent (renderMove), not read from qualityBySan inside the child
+- [Phase 163-03]: Gem copy row in UnifiedMovePopover uses colSpan={2} -- a single declarative sentence, not a label+value pair like the source rows
+- [Phase 163-04]: Task 1+2 combined into one commit (interleaved memo chain) - Task 1's per-FEN caches are unread until Task 2's gemCandidate memo consumes them
+- [Phase 163-04]: moveListMarkers gem fold has no mainLineSet exclusion - gemActive covers mainline AND free variations (D-05), and moveListMarkers is VariationTree's only data source
+- [Phase 163-04]: Rule 1 fix - boardSquareMarkers reads the LIVE gemCandidate memo (not the sticky gemByNode cache) so an ELO-slider change can hide an already-shown board badge, mirroring liveFlaw (live)/liveFlawByNode (sticky) split
 
 ### Pending Todos
 
@@ -230,9 +242,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 162 context gathered
+**Stopped at:** Phase 163 verified complete (UAT passed) — no phases remain; next is `/gsd-new-milestone` or deploy
 
-**Last session:** 2026-07-10T10:50:52.407Z
+**Last session:** 2026-07-10T19:45:00Z
 
 **Resume file:** 
 
@@ -278,6 +290,10 @@ None
 | Phase 162 P01 | 12min | 2 tasks | 2 files |
 | Phase 162 P02 | 20min | 2 tasks | 2 files |
 | Phase 162 P03 | 22min | 2 tasks | 3 files |
+| Phase 163 P01 | 10min | 2 tasks | 4 files |
+| Phase 163 P02 | 15min | - tasks | - files |
+| Phase 163 P03 | 12min | 2 tasks | 3 files |
+| Phase 163 P04 | 55min | 3 tasks | 3 files |
 
 ## Operator Next Steps
 

@@ -27,8 +27,13 @@ import type { MoveCurvePoint } from '@/hooks/useMaiaEngine';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-/** 5-bucket move quality (NEW, frontend-only — do not merge with FlawSeverity). */
-export type MoveQuality = 'best' | 'good' | 'inaccuracy' | 'mistake' | 'blunder';
+/**
+ * 6-bucket move quality (NEW, frontend-only — do not merge with FlawSeverity).
+ * 'gem' is a positive bucket that overrides 'best' at the display layer (Phase
+ * 163, SEED-092) — applied by the Analysis page's post-hoc gem overlay, not by
+ * `classifyMoveQuality` itself (which stays single-position, Maia-unaware).
+ */
+export type MoveQuality = 'best' | 'good' | 'inaccuracy' | 'mistake' | 'blunder' | 'gem';
 
 /** White-POV eval for one graded candidate move, as stored by the grading hook. */
 export interface MoveGrade {
@@ -204,6 +209,7 @@ function bucketKeyForQuality(quality: MoveQuality | undefined): QualityBucketKey
       return 'inaccuracy';
     case 'best':
     case 'good':
+    case 'gem':
       return 'good';
     default:
       return 'pending'; // not yet graded (D-05 progressive fill)

@@ -15,10 +15,10 @@
  *   describe block below.
  */
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { BEST_MOVE_ARROW } from '@/lib/theme';
+import { BEST_MOVE_ARROW, MAIA_ACCENT } from '@/lib/theme';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { GameFlawCard } from '@/types/library';
@@ -58,10 +58,21 @@ interface GradingMoveGrade {
   /** Retained grading PV (162 UAT card re-source) — optional, mirrors MoveGrade. */
   pv?: string[];
 }
-const gradingState: { gradeMap: Map<string, GradingMoveGrade> } = {
+const gradingState: { gradeMap: Map<string, GradingMoveGrade>; isGrading: boolean } = {
   gradeMap: new Map(),
+  isGrading: false,
 };
 const gradingCalls: { fen: string | null; candidateSans: string[]; enabled: boolean }[] = [];
+
+// Analysis renders TWO useStockfishGradingEngine instances per commit, in hook
+// order: the shared PRIMARY run (FC∪Maia candidate union for the current
+// position) first, then the on-demand gem parent-grade run second. The gating
+// tests below assert the primary run, so they read the second-to-last call
+// (skipping the trailing gem-engine call, which is idle unless a gem candidate
+// needs confirming).
+function lastPrimaryGradingCall(): { fen: string | null; candidateSans: string[]; enabled: boolean } | undefined {
+  return gradingCalls[gradingCalls.length - 2];
+}
 
 vi.mock('@/hooks/useStockfishGradingEngine', () => ({
   useStockfishGradingEngine: (options: {
@@ -72,7 +83,11 @@ vi.mock('@/hooks/useStockfishGradingEngine', () => ({
     gradingCalls.push(options);
     return {
       gradeMap: gradingState.gradeMap,
-      isGrading: false,
+      // WR-03: the real hook reports which FEN the map belongs to; the mock's
+      // mutable gradeMap is by convention always "for" the position under test,
+      // so it belongs to whatever fen Analysis passed in (null when empty).
+      gradeMapFen: gradingState.gradeMap.size > 0 ? options.fen : null,
+      isGrading: gradingState.isGrading,
       isReady: false,
     };
   },
@@ -94,12 +109,15 @@ const maiaState: {
 };
 
 vi.mock('@/hooks/useMaiaEngine', () => ({
-  useMaiaEngine: () => ({
+  useMaiaEngine: (options: { fen: string | null }) => ({
     perElo: maiaState.perElo,
     expectedScoreAtSelectedElo: maiaState.expectedScoreAtSelectedElo,
     wdl: null,
     isReady: false,
     isAnalyzing: false,
+    // WR-03: the real hook reports which FEN the curve belongs to; the mock's
+    // mutable perElo is by convention always "for" the position under test.
+    resultFen: maiaState.perElo.length > 0 ? options.fen : null,
   }),
 }));
 
@@ -218,6 +236,7 @@ afterEach(() => {
   flawChessState.isSearching = false;
   flawChessState.isReady = true;
   gradingState.gradeMap = new Map();
+  gradingState.isGrading = false;
   gradingCalls.length = 0;
   libraryGameState.data = undefined;
 });
@@ -397,13 +416,13 @@ describe('Grading run gating (Phase 158, SEED-087 SC2)', () => {
     renderAnalysis();
 
     // (maiaEnabled=true, flawChessEnabled=true) — the default state.
-    let lastCall = gradingCalls[gradingCalls.length - 1];
+    let lastCall = lastPrimaryGradingCall();
     expect(lastCall?.enabled).toBe(true);
     expect(lastCall?.fen).not.toBeNull();
 
     // (maiaEnabled=false, flawChessEnabled=true) — OR gating keeps it enabled.
     fireEvent.click(screen.getByTestId('btn-analysis-maia-toggle'));
-    lastCall = gradingCalls[gradingCalls.length - 1];
+    lastCall = lastPrimaryGradingCall();
     expect(lastCall?.enabled).toBe(true);
     expect(lastCall?.fen).not.toBeNull();
 
@@ -411,13 +430,13 @@ describe('Grading run gating (Phase 158, SEED-087 SC2)', () => {
     // disabled; fen/enabled stay paired on the SAME condition (RESEARCH
     // Pitfall 5 — the worker must never be alive-but-positionless).
     fireEvent.click(screen.getByTestId('btn-analysis-flawchess-toggle'));
-    lastCall = gradingCalls[gradingCalls.length - 1];
+    lastCall = lastPrimaryGradingCall();
     expect(lastCall?.enabled).toBe(false);
     expect(lastCall?.fen).toBeNull();
 
     // (maiaEnabled=true, flawChessEnabled=false) — OR gating re-enables it.
     fireEvent.click(screen.getByTestId('btn-analysis-maia-toggle'));
-    lastCall = gradingCalls[gradingCalls.length - 1];
+    lastCall = lastPrimaryGradingCall();
     expect(lastCall?.enabled).toBe(true);
     expect(lastCall?.fen).not.toBeNull();
   });
@@ -431,7 +450,7 @@ describe('Grading run gating (Phase 158, SEED-087 SC2)', () => {
 
     renderAnalysis();
 
-    let lastCall = gradingCalls[gradingCalls.length - 1];
+    let lastCall = lastPrimaryGradingCall();
     expect(lastCall?.candidateSans).not.toContain('Nf3');
     expect(lastCall?.candidateSans).not.toContain('e4');
 
@@ -447,7 +466,7 @@ describe('Grading run gating (Phase 158, SEED-087 SC2)', () => {
 
     fireEvent.click(screen.getByTestId('btn-analysis-maia-toggle'));
 
-    lastCall = gradingCalls[gradingCalls.length - 1];
+    lastCall = lastPrimaryGradingCall();
     expect(lastCall?.candidateSans).toContain('Nf3');
     expect(lastCall?.candidateSans).toContain('e4');
   });
@@ -741,5 +760,281 @@ describe('Analysis desktop layout (Phase 161, SEED-088)', () => {
     const humanColumn = screen.getByTestId('analysis-human-column');
     const gridRow = humanColumn.parentElement;
     expect(gridRow?.className).toContain('desk3col:grid-cols-[360px_1fr_360px]');
+  });
+});
+
+// Phase 163 Plan 04 (SEED-092) — gem-move detection wiring. Real navigation (board
+// clicks + move-list clicks) drives useAnalysisBoard for real (it is NOT mocked),
+// so these are genuine integration tests of the parent-position caches
+// (maiaCurveByFen/gradeSummaryByFen), the gemCandidate memo, and the gemByNode
+// sticky cache — not just unit coverage of classifyGem itself (that lives in
+// gemMove.test.ts, Plan 01).
+describe('Gem moves (Phase 163, SEED-092)', () => {
+  // Board squares only render once ChessBoard measures a nonzero width (jsdom
+  // performs no real layout) — mirrors the D-12 arrow test's own clientWidth stub
+  // above, scoped per-test here since every test in this block needs it.
+  let clientWidthSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    clientWidthSpy = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(400);
+  });
+
+  afterEach(() => {
+    clientWidthSpy.mockRestore();
+  });
+
+  // Click-to-click move (CLAUDE.md board convention: two clicks, source then
+  // target) — bubbles through react-chessboard's own square wrapper onClick.
+  function playMove(from: string, to: string): void {
+    fireEvent.click(screen.getByTestId(`square-${from}`));
+    fireEvent.click(screen.getByTestId(`square-${to}`));
+  }
+
+  // Seeds a qualifying gem at the CURRENT (parent) position: `bestSan` beats
+  // `otherSan` by a huge expected-score gap (0.50, far above MISTAKE_DROP=0.1)
+  // and is rare for the mover at the given rung(s) (<= GEM_MAIA_MAX_PROB=0.05).
+  // `evalCp` is WHITE-POV (evalToExpectedScore's own convention) — `mover`
+  // flips the sign so `bestSan` reads as the mover's best move regardless of
+  // color (a Black gem needs a NEGATIVE cp to read as good for Black).
+  function seedGemGrading(
+    bestSan: string,
+    otherSan: string,
+    options: {
+      mover?: 'white' | 'black';
+      perElo?: { elo: number; moveProbabilities: Record<string, number> }[];
+    } = {},
+  ): void {
+    const { mover = 'white', perElo } = options;
+    const sign = mover === 'white' ? 1 : -1;
+    gradingState.gradeMap = new Map([
+      [bestSan, { evalCp: 300 * sign, evalMate: null, depth: 10 }],
+      [otherSan, { evalCp: -300 * sign, evalMate: null, depth: 10 }],
+    ]);
+    maiaState.perElo = perElo ?? [
+      { elo: 1500, moveProbabilities: { [bestSan]: 0.01, [otherSan]: 0.99 } },
+    ];
+  }
+
+  // Forces a re-render without touching chess position, so the FEN-keyed caches
+  // re-read already-mutated mock state (gradingState/maiaState) at the position
+  // that is STILL current — mirrors the "Grading run gating" describe block's own
+  // toggle-forcing pattern above (mutating the mutable mock objects alone does not
+  // trigger a React re-render).
+  function forceRerenderAtCurrentPosition(): void {
+    fireEvent.click(screen.getByTestId('btn-analysis-maia-toggle'));
+    fireEvent.click(screen.getByTestId('btn-analysis-maia-toggle'));
+  }
+
+  // The violet gem SquareMarker renders as a MAIA_ACCENT-filled circle inside the
+  // board's arrow-overlay SVG (boardMarkers.tsx's SquareMarkerBadge gem branch).
+  function boardGemMarkerPresent(): boolean {
+    const overlay = document.querySelector('[data-testid="arrow-overlay"]');
+    return overlay?.querySelector(`circle[fill="${MAIA_ACCENT}"]`) != null;
+  }
+
+  // The move-list GemIcon renders the SAME MAIA_ACCENT-filled circle (GemIcon.tsx),
+  // scoped to the desktop move list so it never matches the board's own marker.
+  function moveListGemIconPresent(): boolean {
+    const tree = screen.getByTestId('variation-tree-desktop');
+    return tree.querySelector(`circle[fill="${MAIA_ACCENT}"]`) != null;
+  }
+
+  it('classifies a freely-played WHITE move as a gem, painting the violet board marker (D-04 white, D-05 free node, squareMarkers assembly)', () => {
+    seedGemGrading('Nf3', 'd4');
+
+    renderAnalysis();
+    playMove('g1', 'f3');
+
+    expect(boardGemMarkerPresent()).toBe(true);
+    expect(moveListGemIconPresent()).toBe(true);
+  });
+
+  it('move-list gem badge popover explains the rule and cites the ELO + Maia probability (follow-on)', async () => {
+    // Seeded at elo 1500 with Nf3 at 1% probability (see seedGemGrading default).
+    seedGemGrading('Nf3', 'd4');
+
+    renderAnalysis();
+    playMove('g1', 'f3');
+    expect(moveListGemIconPresent()).toBe(true);
+
+    // Open the popover on the desktop move-list gem badge (Radix toggles on click).
+    const tree = screen.getByTestId('variation-tree-desktop');
+    fireEvent.click(within(tree).getByTestId('gem-move-popover'));
+
+    // Content is portaled to document.body — the heading (free play = the user's
+    // own move), the rule line, plus the ELO + probability.
+    // (getByText/findByText throw when absent, so a non-throwing return IS the assertion.)
+    expect(await screen.findByText(/Nice, you found a gem move!/i)).toBeTruthy();
+    expect(screen.getByText(/almost never find/i)).toBeTruthy();
+    expect(screen.getByText(/At 1500 ELO/)).toBeTruthy();
+    expect(screen.getByText(/1% chance of being played/)).toBeTruthy();
+  });
+
+  it('gem popover heading names the opponent when the opponent played the gem (game mode)', async () => {
+    // Parent = after 1. e4 e5 (White to move); Nf3 (ply 2) is a WHITE move, so with
+    // user_color=black the gem was played by the OPPONENT.
+    libraryGameState.data = buildGame({
+      moves: ['e4', 'e5', 'Nf3'],
+      flaw_markers: [],
+      user_color: 'black',
+    });
+    seedGemGrading('Nf3', 'Bc4');
+
+    renderAnalysis('/analysis?game_id=1&ply=1');
+    fireEvent.click(
+      within(screen.getByTestId('variation-tree-desktop')).getByRole('button', { name: /Nf3/ }),
+    );
+    expect(moveListGemIconPresent()).toBe(true);
+
+    const tree = screen.getByTestId('variation-tree-desktop');
+    fireEvent.click(within(tree).getByTestId('gem-move-popover'));
+
+    expect(await screen.findByText(/Your opponent found a gem move!/i)).toBeTruthy();
+    expect(screen.getByText(/At 1500 ELO/)).toBeTruthy();
+  });
+
+  it('classifies a freely-played BLACK move as a gem (D-04 both colors)', () => {
+    // A throwaway White move (1. Nc3) reaches a Black-to-move parent position —
+    // its own grading/Maia data is irrelevant to the assertion below.
+    gradingState.gradeMap = new Map([['Nc3', { evalCp: 0, evalMate: null, depth: 10 }]]);
+    maiaState.perElo = [{ elo: 1500, moveProbabilities: { Nc3: 0.5 } }];
+
+    renderAnalysis();
+    playMove('b1', 'c3');
+
+    // Seed the gem setup for the NEW (Black-to-move) parent position, then force a
+    // re-render so the FEN-keyed caches pick it up while it is still current
+    // (RESEARCH Pitfall 1: the cache must be populated WHILE the parent is current).
+    seedGemGrading('Nf6', 'h6', { mover: 'black' });
+    forceRerenderAtCurrentPosition();
+
+    playMove('g8', 'f6');
+
+    expect(boardGemMarkerPresent()).toBe(true);
+  });
+
+  it('classifies a gem on a MAINLINE game node reached via the move list (D-05 mainline coverage)', () => {
+    libraryGameState.data = buildGame({ moves: ['e4', 'e5', 'Nf3'], flaw_markers: [] });
+    // Parent position = after 1. e4 e5 (White to move) — landing directly at
+    // mainLine[1] (?ply=1) so the caches populate for THIS exact FEN on mount,
+    // before navigating to mainLine[2] (Nf3).
+    seedGemGrading('Nf3', 'Bc4');
+
+    renderAnalysis('/analysis?game_id=1&ply=1');
+    fireEvent.click(
+      within(screen.getByTestId('variation-tree-desktop')).getByRole('button', { name: /Nf3/ }),
+    );
+
+    expect(boardGemMarkerPresent()).toBe(true);
+  });
+
+  it('WR-05: a backend severity badge on the same square suppresses the board gem — one square never renders two badges', () => {
+    // Same mainline setup as the D-05 test above, but the played move (Nf3,
+    // ply 2) ALSO carries a backend-precomputed severity marker. The backend
+    // (server Stockfish) and the live WASM pass legitimately diverge (eval
+    // non-determinism), so both pipelines can flag the same square — the
+    // severity badge wins and the gem yields (163-REVIEW WR-05).
+    libraryGameState.data = buildGame({
+      moves: ['e4', 'e5', 'Nf3'],
+      flaw_markers: [
+        {
+          ply: 2,
+          severity: 'mistake',
+          tags: [],
+          is_user: true,
+          move_san: 'Nf3',
+          allowed_tactic_motif: null,
+          allowed_tactic_confidence: null,
+          allowed_tactic_depth: null,
+          missed_tactic_motif: null,
+          missed_tactic_confidence: null,
+          missed_tactic_depth: null,
+        },
+      ],
+    });
+    seedGemGrading('Nf3', 'Bc4');
+
+    renderAnalysis('/analysis?game_id=1&ply=1');
+    fireEvent.click(
+      within(screen.getByTestId('variation-tree-desktop')).getByRole('button', { name: /Nf3/ }),
+    );
+
+    // The backend severity glyph ("?") renders on the board; the violet gem
+    // circle must NOT stack on top of it.
+    const overlay = document.querySelector('[data-testid="arrow-overlay"]');
+    expect(overlay?.textContent).toContain('?');
+    expect(boardGemMarkerPresent()).toBe(false);
+    // Same rule in the move list (163-VERIFICATION gap): the severity icon wins,
+    // the gem icon must not render for that move either.
+    expect(moveListGemIconPresent()).toBe(false);
+  });
+
+  it('sticky: the move-list gem badge persists after navigating away and back (D-06)', () => {
+    seedGemGrading('Nf3', 'd4');
+
+    renderAnalysis();
+    playMove('g1', 'f3');
+    expect(moveListGemIconPresent()).toBe(true);
+
+    // Navigate away: a further (non-gem) reply moves currentNodeId off the gem
+    // node entirely.
+    playMove('e7', 'e5');
+    expect(boardGemMarkerPresent()).toBe(false);
+
+    // Navigate back to the gem node via the move list — gemByNode's sticky entry
+    // (not a live re-derivation, since the mover's OWN parent-position data is
+    // unrelated to the current position now) must still paint the badge.
+    fireEvent.click(
+      within(screen.getByTestId('variation-tree-desktop')).getByRole('button', { name: /Nf3/ }),
+    );
+
+    expect(moveListGemIconPresent()).toBe(true);
+    expect(boardGemMarkerPresent()).toBe(true);
+  });
+
+  it('WR-04: an in-flight (still-streaming) grading pass never seeds the gem cache — no gem badge latches from partial data', () => {
+    // Identical qualifying setup to the D-04 white test above, EXCEPT the
+    // grading run is still streaming (isGrading=true) — the mid-stream summary
+    // must not be cached, so no gem can classify (163-REVIEW WR-04 completeness
+    // gate; the one-way gemByNode latch would otherwise persist a false gem).
+    seedGemGrading('Nf3', 'd4');
+    gradingState.isGrading = true;
+
+    renderAnalysis();
+    playMove('g1', 'f3');
+
+    expect(boardGemMarkerPresent()).toBe(false);
+    expect(moveListGemIconPresent()).toBe(false);
+  });
+
+  it('gem resolution is a one-way sticky latch across ELO-slider moves — board and move-list badges both persist once resolved (D-06)', () => {
+    // Two rungs at the SAME (parent) position: rare at 1500 (qualifies C1), common
+    // at 2600 (would fail C1 for a fresh node). C2 (the parent grade) is untouched
+    // by the ELO change (Pitfall 6). Once the node is RESOLVED as a gem it is a
+    // one-way latch: raising the ELO does not un-mark it. The board now reads the
+    // SAME sticky gemByNode resolution the move list does, so the two can never
+    // disagree, and the popover discloses the detection ELO.
+    seedGemGrading('Nf3', 'd4', {
+      perElo: [
+        { elo: 1500, moveProbabilities: { Nf3: 0.01, d4: 0.99 } },
+        { elo: 2600, moveProbabilities: { Nf3: 0.5, d4: 0.5 } },
+      ],
+    });
+
+    renderAnalysis();
+    playMove('g1', 'f3');
+    expect(boardGemMarkerPresent()).toBe(true);
+    expect(moveListGemIconPresent()).toBe(true);
+
+    // Move the ELO slider to the ladder max (2600) — Radix's End key clamps to it
+    // (mirrors EloSelector.test.tsx's own Home-key clamp-to-min precedent).
+    const eloThumb = within(screen.getByTestId('analysis-elo-selector')).getByRole('slider');
+    eloThumb.focus();
+    fireEvent.keyDown(eloThumb, { key: 'End' });
+
+    // Both badges persist — the resolution is a one-way sticky latch (D-06); the
+    // board no longer re-derives C1 live (it tracks gemByNode, not a live memo).
+    expect(boardGemMarkerPresent()).toBe(true);
+    expect(moveListGemIconPresent()).toBe(true);
   });
 });

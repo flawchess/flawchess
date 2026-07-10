@@ -311,6 +311,14 @@ describe('bucketMovesByQuality', () => {
     expect(buckets.get('good')!.probabilityMass).toBeCloseTo(0.58);
   });
 
+  it('folds a "gem"-quality move into the "good" bucket (Phase 163) — never the "pending" default', () => {
+    const buckets = byKey(
+      bucketMovesByQuality(perElo, 1500, ['Ra8'], quality({ Ra8: 'gem' })),
+    );
+    expect(buckets.get('good')!.moves.map((m) => m.san)).toEqual(['Ra8']);
+    expect(buckets.get('pending')!.moves).toEqual([]);
+  });
+
   it('routes each severity to its own bucket and weights by Maia probability at the nearest rung', () => {
     const buckets = byKey(
       bucketMovesByQuality(

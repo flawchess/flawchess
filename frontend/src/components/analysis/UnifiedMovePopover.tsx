@@ -22,7 +22,7 @@
  * info tooltip — so `text-xs` here is within the CLAUDE.md font-size exception.
  */
 
-import { ChessKnight, Cpu, User } from 'lucide-react';
+import { ChessKnight, Cpu, Gem, User } from 'lucide-react';
 
 import { FLAWCHESS_ENGINE_ARROW, STOCKFISH_ACCENT, MAIA_ACCENT } from '@/lib/theme';
 
@@ -43,18 +43,37 @@ export interface UnifiedMovePopoverProps {
   objectiveEval?: string | null;
   /** Maia human move probability, pre-formatted (e.g. "82%"); null/undefined omits the line. */
   maiaProbability?: string | null;
+  /**
+   * When true, prepends a gem copy line above the source rows. Set by
+   * MaiaMoveQualityBar when the hovered move's quality is 'gem'.
+   */
+  isGem?: boolean;
 }
 
 export function UnifiedMovePopover({
   practicalEval,
   objectiveEval,
   maiaProbability,
+  isGem,
 }: UnifiedMovePopoverProps): React.ReactElement {
   return (
     // 2-column table: source label (icon + name) | eval/probability, so the values
     // align in one right-hand column across the (up to) three source rows.
     <table className="border-collapse">
       <tbody>
+        {isGem && (
+          <tr style={{ color: MAIA_ACCENT }}>
+            <td className="py-0.5" colSpan={2}>
+              <span className="flex items-center gap-1.5">
+                <Gem className={ICON_CLASS} aria-hidden="true" />
+                {/* "this rating", not "your rating" (163-REVIEW IN-01): the C1
+                    probability is evaluated at the draggable ELO slider's value,
+                    which may sit far from the user's own rating. */}
+                Gem — players at this rating almost never find this.
+              </span>
+            </td>
+          </tr>
+        )}
         {practicalEval != null && (
           <tr style={{ color: FLAWCHESS_LINE_COLOR }}>
             <td className="py-0.5">

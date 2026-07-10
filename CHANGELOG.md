@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- Analysis page: "gem" moves — moves that are objectively best or good yet hard for a human to find (low Maia probability) — are now flagged with a violet gem badge on the board, in the move list, on the moves-by-rating chart, and in the move popover, so you can spot the strong ideas most players miss (Phase 163).
+
 ### Fixed
 
 - Analysis page: all per-move evals now come from one reconciled grading-first Stockfish source, so a move labeled "Good" can never show a higher number than the move labeled "Best", and the Stockfish card, FlawChess Engine card, Maia tooltip, board arrow, verdict, and eval bar all agree on the best move (Phase 162).

@@ -605,6 +605,20 @@ Plans:
 ### Phase 163: Gem moves — Maia-findability move badges on /analysis (SEED-092)
 
 **Goal:** Badge the rare move that is both the engine's clearly-only good move AND hard for a human at the player's rating to find, as the positive counterpart to the flaw glyphs. Detection is two-condition: rating-matched Maia probability of the played move ≤ `GEM_MAIA_MAX_PROB` (~3% starting point, strict-side v1 constant) AND expected-score gap to the best alternative ≥ `MISTAKE_DROP` (reusing `evalToExpectedScore` — every alternative would have been at least a mistake). Lazy per-visited-ply classification from the existing MultiPV=2 free run + grading run + Maia curve, cached per ply behind a min-depth stability gate. Surfaces in Maia-violet (`MAIA_ACCENT`): board-corner marker + move-list glyph using the lucide `Gem` icon (SVG-icon variant alongside the text-glyph `boardMarkers` pattern; `MoveQuality` gains a 6th positive bucket overriding "best" — `FlawSeverity` stays negative-only), `MAIA_ACCENT` curve + tooltip label in `MovesByRatingChart`, short popover copy. Pure frontend; no backend changes, no cross-game statistics. See [seeds/SEED-092-gem-moves-maia-findability-badges.md](seeds/SEED-092-gem-moves-maia-findability-badges.md).
-**Requirements**: TBD (tracked via CONTEXT.md decisions)
+**Requirements**: TBD (tracked via CONTEXT.md decisions D-01..D-08)
 **Depends on:** Phase 162
-**Plans:** TBD
+**Plans:** 4/4 plans complete
+
+Plans:
+**Wave 1**
+
+- [x] 163-01-PLAN.md — Detection lib + quality type: gemMove.ts (classifyGem/GEM_MAIA_MAX_PROB/summarizeForGem) + MoveQuality 'gem' bucket (D-01, D-02, D-04, D-07, D-08)
+- [x] 163-02-PLAN.md — Gem badge visual primitives: GEM_GLYPH + GemIcon + boardMarkers SquareMarker.gem variant (D-07)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [x] 163-03-PLAN.md — Quality-surface consumers: MovesByRatingChart violet gem curve + UnifiedMovePopover gem copy + MaiaMoveQualityBar isGem wiring (D-07)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [x] 163-04-PLAN.md — Analysis integration: parent-FEN retention caches + gemByNode sticky cache + board marker + move-list GemIcon + qualityBySanWithGem override + tests (D-03, D-04, D-05, D-06)
