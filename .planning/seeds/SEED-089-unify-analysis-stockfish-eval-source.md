@@ -98,21 +98,45 @@ unknown the headless measurement should settle.
 
 ## Decision (explore session, both agreed)
 
-**Pick: high-MultiPV, full-width, parallel, with a fallback for the rare uncovered Maia move.**
+**Pick: high-MultiPV, full-width, parallel, with a post-hoc gap-only targeted grade as the
+fallback for the rare uncovered Maia move.**
+
+Precedence for a displayed move's blue objective eval:
+
+> **unified free MultiPV=K pass** (primary — all good/top moves + Stockfish's own top-K) →
+> **targeted `searchmoves` grade** over just the Maia candidates absent from the unified map
 
 Reasoning:
-- **Simpler** than searchmoves — no seed search, no union-building step.
-- **Keeps the Stockfish card fast** — stays parallel with Maia, no serialization penalty on first
-  paint. searchmoves would couple the card's start time to Maia inference for no proportional gain.
-- **Coverage gap is rare and graceful** — the displayed Maia candidates (typically 3-5 moves) are
-  near-top in winning/normal positions, so a full-width `MultiPV≈8` covers them almost always.
-  The gap only bites when the human's likely move is a real blunder outside the top-K, and that
-  case has a clean fallback (a tiny targeted grade for just the uncovered move, or render it as
-  "unranked" with no blue eval rather than a divergent number).
-- **Correctness by construction** — because the Stockfish card's "best" and every card's per-move
-  eval now come from the *same* pass, the label/number contradiction cannot occur for any covered
-  move; derive the Best/Good labels from that single map's ranking (drop the separate free-run
-  `bestSan`).
+- **Simpler** than a full searchmoves pass — no seed search, no whole-union build every time.
+- **Keeps the Stockfish card fast** — the primary pass stays parallel with Maia, no serialization
+  penalty on first paint. A full searchmoves union would couple the card's start time to Maia
+  inference for no proportional gain.
+- **The fallback is post-hoc and gap-only** — it runs *after* both the unified pass and Maia have
+  returned, over just the 1-2 genuinely-uncovered moves, not the whole union. Common case
+  (all candidates in top-K): **zero** extra Stockfish calls. This is what keeps it from being a
+  mini-resurrection of old Source B (which always graded the whole union and serialized).
+- **Guaranteed coverage** — every displayed Maia candidate always has a blue eval. This is why we
+  keep a real fallback rather than a "show nothing" terminal render.
+- **Correctness by construction** near the top — the Stockfish card's "best" and every card's
+  per-move eval for good moves come from the *same* pass, so the label/number contradiction cannot
+  occur for a covered move. Derive Best/Good labels from that map's ranking (drop the separate
+  free-run `bestSan`). Uncovered moves are, by construction, eval-lossy enough to be labeled
+  Inaccuracy/Mistake (never "Good"), so a fallback-graded number on them can't invert the
+  Best/Good region.
+- **Match the fallback grade's config to the unified pass** (comparable depth/budget) so its
+  numbers sit on the same scale. Exactness doesn't matter for bad moves, but matching depth avoids
+  gratuitous cross-search wobble.
+
+### Considered and dropped: reuse Source C (MCTS pool grade) for uncovered moves
+
+Tempting because Source C already grades human-likely moves the MCTS explored, so it would cover
+most gaps at **zero** extra cost and seemed to let us delete the fallback entirely. **Dropped**
+because Source C coverage is *also* not guaranteed (a shown Maia candidate with low policy weight
+can be MCTS-pruned → no Source C grade). Since we need a real fallback anyway to *guarantee* every
+candidate is covered, adding Source C as an intermediate display tier stops earning its keep: it
+would introduce a third eval provenance and a third depth flavor into the display for marginal
+savings on an already-rare call. Cleaner to keep two tiers (unified → targeted gap grade) and
+leave Source C purely internal.
 
 ## Implementation sketch (for the plan phase — not decided in detail)
 
@@ -122,17 +146,21 @@ Reasoning:
 - Simplify `engineEvalLookup.ts` / `Analysis.tsx:816-902`: `buildEvalLookup` becomes a single-map
   lookup over the free run; `reconciledRankedLines` / `qualityBySan` / `engineTopLines` all key off
   it; `classifyMoveQuality`'s Best/Good comes from this map's ordering, not free-run `bestSan`.
-- **Fallback path** for a Maia candidate absent from the top-K map: either a small on-demand
-  targeted grade or an explicit "unranked" render (decide in plan). Whichever is chosen, never fall
-  back to a *different-search* number for one move while others use the unified map — that
-  reintroduces the bug.
+- **Fallback path** for a Maia candidate absent from the unified map: a **post-hoc, gap-only
+  targeted `searchmoves` grade** fired after the unified pass + Maia return, over just the
+  uncovered moves, at a config comparable to the unified pass. Common case = zero extra calls.
+  Cards read `unified map ∪ targeted map`.
 - Re-check the depth/`movetime` budget so the Stockfish card's displayed depth doesn't visibly
   regress (headless measurement first).
+- **Residual low-list wobble (do NOT pre-build a guard):** a fallback-graded move could show a hair
+  above the worst *covered* move (both clearly bad). If UAT ever flags it, the cheap fix is to clamp
+  an uncovered move's displayed eval to not exceed the worst covered eval. Speculative — leave out
+  until observed.
 
-## Out of scope / separate thread
+## Source C is display-excluded
 
-- **Source C** (the MCTS pool grade at depth 14) stays — the FlawChess engine needs its own grades
-  to make its move *choice* during search. But the FC card's **per-ply hover-preview evals**
-  currently read from Source C (`modalStats[].objectiveEvalCp`), so they'd be a *third* number.
-  Either switch those previews to the unified map too, or accept they're a deliberately-deeper
-  look-ahead figure and label them as such. Decide in the plan.
+**Source C** (the MCTS pool grade at depth 14) **stays internal** — the FlawChess engine needs it
+to make its move *choice* during search — but it no longer feeds any displayed eval. The FC card's
+per-ply hover-preview evals (currently `modalStats[].objectiveEvalCp` from Source C) **switch to the
+unified map + targeted fallback** too, so no card ever shows a Source C number. This closes the
+"third number in the hover preview" thread cleanly.
