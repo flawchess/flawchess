@@ -2101,7 +2101,12 @@ export default function Analysis() {
       activePvKeys={isGameMode ? activePvKeys : undefined}
       pvFetchPending={isGameMode ? contextualPending : undefined}
       pvFetchError={isGameMode ? contextualError : undefined}
-      onDeleteLine={isGameMode ? deleteSubtree : undefined}
+      // deleteSubtree wired unconditionally: the free-move sideline × delete must
+      // work in ?fen= free-play mode too. Previously gated on isGameMode, so in fen
+      // mode the × rendered (free-move blocks always show it) but its handler was
+      // undefined and clicking did nothing. deleteSubtree is always safe — it
+      // recovers currentNodeId to the fork parent when the current node is deleted.
+      onDeleteLine={deleteSubtree}
     />
   );
 
