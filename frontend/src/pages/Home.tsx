@@ -16,6 +16,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
+import { FLAWCHESS_ENGINE_ACCENT } from '@/lib/theme';
 import { Search, Scale, Filter, TrophyIcon, Timer, Compass, Loader2, UserPlus, DoorOpen, ChessKnight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -228,7 +229,7 @@ export function HomePageContent() {
           <div data-testid="hero-feature-preview" className="hidden lg:block">
             <div className="flex items-center gap-4 mb-4">
               <HeroIcon className="h-7 w-7 lg:h-10 lg:w-10 text-muted-foreground shrink-0" strokeWidth={1.5} />
-              <h2 className="text-xl lg:text-2xl font-bold">{heroFeature.heading}</h2>
+              <h2 className="text-xl lg:text-2xl font-bold" style={{ color: FLAWCHESS_ENGINE_ACCENT }}>{heroFeature.heading}</h2>
             </div>
             <img
               src={heroFeature.screenshot.src}
@@ -253,7 +254,7 @@ export function HomePageContent() {
         <div className="max-w-5xl mx-auto px-4 flex flex-col gap-6">
           <div className="flex items-center gap-4">
             <HeroIcon className="h-7 w-7 lg:h-10 lg:w-10 text-muted-foreground shrink-0" strokeWidth={1.5} />
-            <h2 className="text-xl lg:text-2xl font-bold">{heroFeature.heading}</h2>
+            <h2 className="text-xl lg:text-2xl font-bold" style={{ color: FLAWCHESS_ENGINE_ACCENT }}>{heroFeature.heading}</h2>
           </div>
           <img
             src={heroFeature.screenshot.src}
