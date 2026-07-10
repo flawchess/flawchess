@@ -179,7 +179,7 @@ describe('FlawChessAgreementVerdict', () => {
     expect(sentence).toMatch(/safer follow-ups/);
   });
 
-  it('renders the sharp-divergence (trap) tier naming both picks (D-05/D-07)', () => {
+  it('renders the sharp-divergence tier naming both picks (D-05/D-07)', () => {
     render(
       <FlawChessAgreementVerdict
         flawChessLine={fcLine('e2e4', 40)}
@@ -194,8 +194,8 @@ describe('FlawChessAgreementVerdict', () => {
     );
     const sentence = screen.getByTestId('flawchess-verdict-sentence').textContent ?? '';
     expect(sentence).toMatch(/is objectively best/);
-    expect(sentence).toMatch(/trap for humans/);
-    expect(sentence).toMatch(/FlawChess plays the more reliable/);
+    expect(sentence).toMatch(/demands precise follow-ups/);
+    expect(sentence).toMatch(/FlawChess expects better practical results from/);
     expect(sentence).not.toMatch(/best move/i);
     expect(screen.getByTestId('flawchess-verdict-move-e4')).toBeTruthy();
     expect(screen.getByTestId('flawchess-verdict-move-Nf3')).toBeTruthy();

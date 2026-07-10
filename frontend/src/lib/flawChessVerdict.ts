@@ -9,7 +9,8 @@
  *     playing FlawChess's practical pick instead of Stockfish's objective best
  *     is strictly below SHARP_DROP_THRESHOLD.
  *   - sharp (D-05): different moves, expected-score drop at or above SHARP_DROP_THRESHOLD
- *     (a "trap" — objectively best but too costly/hard for a human).
+ *     (objectively best but the search expects imprecise follow-up play to squander it —
+ *     NOT necessarily a "trap": in sac-for-perpetual cases it's the only good move).
  * Returns `null` (D-06) whenever either side's objective eval hasn't arrived
  * yet — never a bogus tier from a partial snapshot.
  *
