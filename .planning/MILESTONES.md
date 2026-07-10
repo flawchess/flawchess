@@ -1,5 +1,35 @@
 # Milestones: FlawChess
 
+## v2.0 FlawChess Engine (Shipped: 2026-07-09)
+
+**Phases completed:** 9 phases, 24 plans, 51 tasks
+
+**Key accomplishments:**
+
+- Locked `SearchRunner`/`EngineProviders`/`SearchBudget`/`RankedLine`/`EngineSnapshot` contract plus `leafExpectedScore()`, a root-relative wrapper around the existing lichess sigmoid, proven mirrored across root colors by a 5-case fixture test.
+- `backup.ts` — the single genuinely novel file in the v2.0 milestone: a Maia-prior-weighted expectation over the full truncated top-k set for non-root nodes, and a plain max for the root, proven against a hand-computed 0.637 fixture and two negative-assertion baselines that make the "silently degenerates into textbook MCTS" bug structurally testable.
+- `select.ts` — Maia top-k mass-truncation/renormalization (independent 90% constant, no hard cap), deterministic root/non-root PUCT selection with canonical UCI tie-break, and a root-only floor-boosted exploration prior that never touches backup values — all as three distinct, independently unit-tested pure functions.
+- `mctsSearch.ts` — the select→terminal→expand→backup→snapshot orchestrator composing Plans 01-03's primitives into the frozen `SearchRunner` contract, with a private in-memory node tree, chess.js-driven terminal detection, and a concurrency-safe buffer-then-apply-in-canonical-order dispatch loop proven bit-identical at concurrency 1 and 2 via a 9-test suite (ranked output, both-color ELO oracle, truncation, leaf-sigmoid match, depth cutoff, mate-in-1 and forced-mate-in-2 terminal fixtures, and full snapshot-sequence determinism).
+- `fallbackExpectimax.ts` — a sequential depth-limited expectimax implementing the identical `SearchRunner` contract as `mctsSearch.ts`, reusing `backup.ts`/`leafScore.ts`/`select.ts` verbatim, proven via a same-variable SC5 swap-in test with the full Phase 153 gate (lint/tsc/knip/1439 tests) green.
+- `workerPool.ts` — a lazily-spawned, device-adaptive 2-4 Stockfish.wasm worker pool implementing `EngineProviders.grade()` with a priority-queued, pv[0]-keyed, abortable dispatch surface
+- `maiaQueue.ts` — a dedicated, lazily-spawned Maia policy Web Worker implementing `EngineProviders.policy()` with deduped narrow-ELO batching, a separate `(fen, elo)` cache, and a no-drop async FIFO queue
+- Closed two reproduced lifecycle promise-hang defects (CR-01 stopAll, CR-02 terminate) plus abort/input/observability gaps in the Stockfish worker pool, so no `grade()` promise can be left permanently unresolved.
+- Closed the reproduced CR-03 pre-ready worker-init-error deadlock in maiaQueue.ts and added the missing async worker.onerror handler (WR-03), so a Maia ONNX worker failure now self-heals instead of permanently hanging every policy() promise.
+- Two new brand-accent theme tokens, a mate-boundary-guarded inverse-sigmoid `expectedScoreToWhitePovCp` pure function, a hand-rolled `Switch` UI primitive, and compiling Wave 0 test scaffolds for the hook and card Plans 02/03 will build.
+- `useFlawChessEngine({ fen, enabled, elo })` wires the frozen `mctsSearch` SearchRunner against the real Phase 154 `WorkerPool`/`MaiaQueue` providers, throttling live `onSnapshot` output into React state at ~150ms while guaranteeing near-instant first paint and a Pitfall-1-safe abort+stopAll on every FEN navigation.
+- `FlawChessEngineLines.tsx` renders the top 3 FlawChess Engine ranked practical lines as a structural sibling of `EngineLines.tsx`, with a two-number objective/practical score-pair badge and clickable modal-path SAN chips — the visible surface of DISPLAY-02 and DISPLAY-03.
+- Mounted `useFlawChessEngine` on `/analysis`, placed the `FlawChessEngineLines` card above Maia in both desktop and mobile layouts, replaced the single Stockfish toggle with three independent accent-tinted header Switches, and wired the D-04 eval-bar precedence (FC>Maia left, objective-eval handoff right) — the FlawChess Engine is now visible and live on the free-analysis board.
+- Pure `computeFlawChessVerdict` classifier module scoring FlawChess's practical #1 pick against Stockfish's objective #1 pick into aligned/safe/sharp tiers via the app-wide win%-drop scale, with a strict null-gate for incomplete snapshots
+- Prose agreement/divergence verdict below the FlawChess ranked lines, comparing FlawChess's practical #1 pick against Stockfish's objective #1 pick (aligned/safe/sharp tiers), with hoverable click-to-play move spans, board-arrow isolation, and an engine-labeled popover — wired once into the shared `flawChessCard` for automatic game-review parity
+- Measured a real GRADING_MOVETIME_SAFETY_CAP_MS=4000 (no depth cap) via headless WASM sweep, and found/fixed a genuine UCI go-command bug: `searchmoves` must be the LAST clause, or trailing `movetime` is silently dropped.
+- Pure UCI-keyed eval-lookup module (`buildEvalLookup`/`getByUci`/`getBySan`) merging the free-run's `pvLines` and the grading-run's SAN-keyed `gradeMap` with strict free-run-first precedence, structurally excluding the MCTS pool grade as a display source
+- Wired the plan-158-02 evalLookup into Analysis.tsx: promoted the shared grading run to gate on `maiaEnabled || flawChessEnabled` over the FC∪Maia SAN union, added `evalLookup`/`reconciledRankedLines` memos, reconciled `qualityBySan`, and threaded reconciled values into the FC card + agreement verdict — making the Qc7-class "FC pick grades higher than the objective best" misread impossible by construction.
+- New `policyTemperature.ts` implements the standard `p^(1/T)` softmax-temperature reshape (T=1 no-op, T>1 flattens, T<1 sharpens), applied only on the root-mover's own side before the existing 0.9-mass truncation in both `mctsSearch.ts` and `fallbackExpectimax.ts`, with a named `ROOT_CANDIDATE_HARD_CAP=15` guarding the fixed visit budget against pathological flattening — the temperature-adjusted `child.prior` composes with Plan 01's findability ranking automatically, with zero third combiner function.
+- New `TemperatureSelector.tsx` (log-symmetric 0.5-2.0 slider, exact center at 1.0) threaded through `useFlawChessEngine`'s `SearchBudget.policyTemperature` and rendered once in `Analysis.tsx`'s shared ELO-selector block, giving both the mobile Human tab and the desktop human column a "Play style" (Sharper <-> More human) knob that re-runs the FlawChess search and reshapes its ranking live, while the Maia "Moves by Rating" chart keeps showing raw data.
+- Locked the /analysis desktop frame to `100dvh` with a fluid `grid-cols-[360px_1fr_360px]` 3-column layout, a height-aware `ChessBoard` (`clamp(420, min(width,height), 600)`), and the Tags panel relocated to the right column — fixing the small-laptop eval-chart cutoff (SEED-088).
+
+---
+
 ## v1.32 Maia-3 Human-Move Enrichment (Shipped: 2026-07-05)
 
 **Phases completed:** 2 phases (151, 151.1), 10 plans. Phase 151.1 was inserted from SEED-083 (Stockfish-graded Maia moves) and shipped alongside the base phase. Both shipped to `main` via local squash-merge (151.1 = `099b9138`). Phase 152 (Flaw Overlay, Pillars A + B) was demoted to SEED-084 at close — judged not needed for this milestone.

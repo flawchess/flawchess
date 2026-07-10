@@ -34,8 +34,8 @@ import {
 import { MiniBoard } from '@/components/board/MiniBoard';
 import { Tooltip } from '@/components/ui/tooltip';
 
-/** Maximum number of PV lines displayed. */
-const MAX_LINES = 2;
+/** Maximum number of PV lines displayed. Exported (162 UAT) so Analysis.tsx slices the reconciled ranking to the same width. */
+export const MAX_LINES = 2;
 /** Maximum number of plies shown per PV line. */
 const MAX_PLIES = 5;
 /** Miniboard size (px) inside the engine-move hover tooltip. */

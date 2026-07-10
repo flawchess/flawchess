@@ -16,7 +16,8 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
-import { Search, Scale, Filter, TrophyIcon, Timer, Compass, Loader2, UserPlus, DoorOpen } from 'lucide-react';
+import { FLAWCHESS_ENGINE_ACCENT } from '@/lib/theme';
+import { Search, Scale, Filter, TrophyIcon, Timer, Compass, Loader2, UserPlus, DoorOpen, ChessKnight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 // Feature sections — the first entry is rendered in the hero (desktop right column +
@@ -31,6 +32,18 @@ const FEATURES: {
   imagePosition: 'left' | 'right';
 }[] = [
   {
+    slug: 'flawchess-engine',
+    icon: ChessKnight,
+    heading: 'Your Best Practical Move',
+    desc: [
+        'The FlawChess Engine shows your best practical move, not just the objective one: every move is scored by how likely you are to find and execute it, including the follow-ups.',
+        'Judged against a typical human opponent, not perfect defense: each move is scored against the replies a player at their level would realistically pick, so the practical best can differ from the Stockfish best.',
+        'Tuned to your level: powered by Stockfish + Maia, with a “Play style” dial that shifts from human-realistic to engine-precise.',
+    ],
+    screenshot: { src: '/screenshots/flawchess-engine.png', alt: 'FlawChess Engine board view showing the practical score and objective Stockfish evaluation for each candidate move' },
+    imagePosition: 'right',
+  },
+  {
     slug: 'game-analysis',
     icon: Search,
     heading: 'Game and Tactic Analysis',
@@ -41,7 +54,7 @@ const FEATURES: {
         'Filter your whole game history by tactic, depth, and severity.',
     ],
     screenshot: { src: '/screenshots/game-card.png', alt: 'Library game card showing Stockfish eval chart, board with best-move and move-played arrows, and missed/allowed tactic chips (fork, pin)' },
-    imagePosition: 'right',
+    imagePosition: 'left',
   },
   {
     slug: 'opening-explorer',
@@ -115,6 +128,21 @@ const heroFeature = FEATURES[0]!;
 const featureSections = FEATURES.slice(1);
 const HeroIcon = heroFeature.icon;
 const heroDescItems = Array.isArray(heroFeature.desc) ? heroFeature.desc : [heroFeature.desc];
+
+// Highlight the product name "FlawChess Engine" in gold wherever it appears in a hero
+// bullet (only the first hero bullet contains it), matching the gold hero title/icon.
+const ENGINE_NAME = 'FlawChess Engine';
+function renderHeroBullet(item: string) {
+  const idx = item.indexOf(ENGINE_NAME);
+  if (idx === -1) return item;
+  return (
+    <>
+      {item.slice(0, idx)}
+      <span style={{ color: FLAWCHESS_ENGINE_ACCENT }}>{ENGINE_NAME}</span>
+      {item.slice(idx + ENGINE_NAME.length)}
+    </>
+  );
+}
 
 export function HomePageContent() {
   const { loginAsGuest, isLoading } = useAuth();
@@ -215,8 +243,8 @@ export function HomePageContent() {
               Below lg the preview renders as a standalone charcoal section further down. */}
           <div data-testid="hero-feature-preview" className="hidden lg:block">
             <div className="flex items-center gap-4 mb-4">
-              <HeroIcon className="h-7 w-7 lg:h-10 lg:w-10 text-muted-foreground shrink-0" strokeWidth={1.5} />
-              <h2 className="text-xl lg:text-2xl font-bold">{heroFeature.heading}</h2>
+              <HeroIcon className="h-7 w-7 lg:h-10 lg:w-10 shrink-0" strokeWidth={1.5} style={{ color: FLAWCHESS_ENGINE_ACCENT }} />
+              <h2 className="text-xl lg:text-2xl font-bold" style={{ color: FLAWCHESS_ENGINE_ACCENT }}>{heroFeature.heading}</h2>
             </div>
             <img
               src={heroFeature.screenshot.src}
@@ -224,7 +252,7 @@ export function HomePageContent() {
               className="rounded-lg border border-[rgba(205,127,50,0.85)] shadow-[0_0_24px_rgba(205,127,50,0.35)] w-full mb-4"
             />
             <ul className="list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
-              {heroDescItems.map((item, i) => <li key={i}>{item}</li>)}
+              {heroDescItems.map((item, i) => <li key={i}>{renderHeroBullet(item)}</li>)}
             </ul>
           </div>
         </div>
@@ -240,8 +268,8 @@ export function HomePageContent() {
       >
         <div className="max-w-5xl mx-auto px-4 flex flex-col gap-6">
           <div className="flex items-center gap-4">
-            <HeroIcon className="h-7 w-7 lg:h-10 lg:w-10 text-muted-foreground shrink-0" strokeWidth={1.5} />
-            <h2 className="text-xl lg:text-2xl font-bold">{heroFeature.heading}</h2>
+            <HeroIcon className="h-7 w-7 lg:h-10 lg:w-10 shrink-0" strokeWidth={1.5} style={{ color: FLAWCHESS_ENGINE_ACCENT }} />
+            <h2 className="text-xl lg:text-2xl font-bold" style={{ color: FLAWCHESS_ENGINE_ACCENT }}>{heroFeature.heading}</h2>
           </div>
           <img
             src={heroFeature.screenshot.src}
@@ -249,7 +277,7 @@ export function HomePageContent() {
             className="rounded-lg border border-[rgba(205,127,50,0.85)] shadow-[0_0_24px_rgba(205,127,50,0.35)] w-full"
           />
           <ul className="list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
-            {heroDescItems.map((item, i) => <li key={i}>{item}</li>)}
+            {heroDescItems.map((item, i) => <li key={i}>{renderHeroBullet(item)}</li>)}
           </ul>
         </div>
       </section>
@@ -285,7 +313,7 @@ export function HomePageContent() {
             <img
               src={screenshot.src}
               alt={screenshot.alt}
-              className="rounded-lg border border-[rgba(205,127,50,0.85)] shadow-[0_0_24px_rgba(205,127,50,0.35)] w-full lg:transition-transform lg:duration-300 lg:hover:scale-[1.02] lg:hover:shadow-[0_0_32px_rgba(205,127,50,0.5)]"
+              className="rounded-lg border border-[rgba(205,127,50,0.85)] shadow-[0_0_24px_rgba(205,127,50,0.35)] w-full"
             />
           );
           const desktopTextCol = (

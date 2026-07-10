@@ -25,12 +25,13 @@
 
 ## What is FlawChess?
 
-A free, open-source chess analysis platform. Import games from chess.com and lichess to find leaks in your openings, endgames, and time management, with AI-narrated insights that explain what your stats mean. Position matching uses Zobrist hashes (not opening names), so analysis stays consistent across platforms.
+A free, open-source chess analysis platform. Import your games from chess.com and lichess to find leaks in your openings, endgames, and time management. Its signature FlawChess Engine ranks moves by the practical score you'll actually achieve against a real opponent at your level, not the objective-best move a conventional engine would play.
 
-![Opening Explorer](frontend/public/screenshots/opening-explorer.png)
+![FlawChess Engine](frontend/public/screenshots/flawchess-engine.png)
 
 ## Features
 
+- **FlawChess Engine** — an in-browser engine that ranks your moves by expected practical score: the best move you'll actually pull off against an opponent who defends like a real player at your level. Fuses Stockfish's objective evaluation with Maia's human move-prediction (expectimax inside an MCTS budget allocator), and surfaces the traps and swindles a conventional engine ignores.
 - **Endgame analytics** — WDL by endgame type (rook, minor piece, pawn, queen, mixed), conversion rates when up material and recovery rates when down, Endgame ELO timeline per platform/time control, and LLM-narrated personalized feedback explaining what your stats mean.
 - **Opening explorer & insights** — step through any position and see your WDL per candidate move; an automatic 16-half-move scan surfaces opening strengths and weaknesses with deep-links into the explorer; works for scouting opponents too.
 - **Time management stats** — clock advantage/deficit at endgame entry, performance under matching time pressure vs opponents, flag rates per time control.

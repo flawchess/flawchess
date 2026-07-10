@@ -8,6 +8,12 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Fixed
+
+- Analysis page: all per-move evals now come from one reconciled grading-first Stockfish source, so a move labeled "Good" can never show a higher number than the move labeled "Best", and the Stockfish card, FlawChess Engine card, Maia tooltip, board arrow, verdict, and eval bar all agree on the best move (Phase 162).
+
+## [v2.0] FlawChess Engine — 2026-07-09
+
 ### Added
 
 - **FlawChess Engine practical-play analysis on `/analysis`** — a new client-side engine that ranks candidate moves by how well they score *for you in practice*, not just by objective strength. Toggle it on from the analysis header (next to Stockfish and Maia) and each line shows a score pair: the objective Stockfish evaluation alongside the practical-for-you score (e.g. "objectively +3.0, practically +0.9"), plus the modal continuation (your move followed by the opponent's most-likely replies) as clickable chips. Lines appear almost immediately and refine live as the search runs. The engine runs entirely in your browser (a Maia-weighted expectimax search over a Stockfish worker pool and a dedicated Maia policy worker), with no shared-memory headers and pool size adapting to your device. (Phases 153, 154, 155)
@@ -1022,7 +1028,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.32...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.0...HEAD
+[v2.0]: https://github.com/flawchess/flawchess/compare/v1.32...v2.0
 [v1.32]: https://github.com/flawchess/flawchess/compare/v1.31...v1.32
 [v1.31]: https://github.com/flawchess/flawchess/compare/v1.30...v1.31
 [v1.30]: https://github.com/flawchess/flawchess/compare/v1.29...v1.30

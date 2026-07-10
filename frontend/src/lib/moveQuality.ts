@@ -35,6 +35,14 @@ export interface MoveGrade {
   evalCp: number | null;
   evalMate: number | null;
   depth: number;
+  /**
+   * Full PV (UCI moves, starting with the graded move itself) from the search
+   * that produced this grade — retained (162 UAT) so the Stockfish card can
+   * display a graded line's move sequence when the reconciled ranking surfaces
+   * a move outside the free run's own PV lines. Optional: older call sites and
+   * classification-only consumers never read it.
+   */
+  pv?: string[];
 }
 
 export interface MoveQualityInfo {

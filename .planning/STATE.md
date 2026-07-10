@@ -2,39 +2,42 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: FlawChess Engine
-current_phase: 161
-current_phase_name: analysis-page-viewport-locked-responsive-layout-seed-088
-status: executing
-stopped_at: Phase 161 context gathered
-last_updated: "2026-07-09T17:46:00.962Z"
-last_activity: 2026-07-09
-last_activity_desc: Phase 161 execution started
+current_phase: 162
+current_phase_name: grading-run-authoritative-eval-reconciliation-precedence-fli
+status: Phase 162 shipped — squash-merged to main (9542a44a)
+stopped_at: Phase 162 planned (3 plans, 3 waves)
+last_updated: "2026-07-10T12:31:34.290Z"
+last_activity: 2026-07-10
 progress:
-  total_phases: 9
-  completed_phases: 7
-  total_plans: 24
-  completed_plans: 23
-  percent: 78
+  total_phases: 1
+  completed_phases: 1
+  total_plans: 3
+  completed_plans: 3
+  percent: 100
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 161 (analysis-page-viewport-locked-responsive-layout-seed-088) — EXECUTING
-Plan: 1 of 1
-Status: Executing Phase 161
-Last activity: 2026-07-09 — Phase 161 execution started
+Phase: 162 (grading-run-authoritative-eval-reconciliation-precedence-fli) — EXECUTING
+Plan: 3 of 3
+Status: Phase 162 shipped — squash-merged to main (9542a44a)
+Last activity: 2026-07-10 - Completed quick task 260710-k7n: FlawChess Engine homepage hero + README
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-07-04 after v1.31 milestone close)
+See: .planning/PROJECT.md (updated 2026-07-09 after v2.0 milestone close)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: v2.0 FlawChess Engine roadmap created (SEED-082) — 5 phases (153 pure search core; 154 real providers/worker pool; 155 React hook + anytime UI; 156 board arrows + toggles; 157 game-review overlay), all 21 v2.0 requirements mapped (REQUIREMENTS.md's own "19 total" placeholder was a miscount — corrected to 21 in the traceability table). Next: `/gsd-plan-phase 153`. Client-side-only, no backend/schema/migrations/new-deps — builds on the shipped, deployed v1.29 Stockfish.wasm + v1.32 Maia infra. v1.31 and v1.32 are both live in production.
+Current focus: v2.0 FlawChess Engine shipped 2026-07-09 (Phases 153–161, tagged v2.0). No active milestone. Next: `/gsd-new-milestone`. **Deployed to production** — released incrementally during the milestone across PRs #247, #248, #249 (`origin/production` at #249).
 
 ## Milestone Progress
 
-Thirty-two milestones complete (v1.0–v1.32).
+Thirty-three milestones complete (v1.0–v2.0).
+
+v2.0 FlawChess Engine shipped 2026-07-09 — 9 phases (153–161), 24 plans, ~51 tasks, ~69 commits over 5 days. A client-side practical-play analysis engine on `/analysis` (free analysis + game review), zero server load, no persistence, no new deps: a worker-free deterministic search core (Maia-prior-weighted expectimax backup + asymmetric self+opponent ELO, proven against fabricated providers in Phase 153 before any WASM/ONNX; depth-limited expectimax fallback on the same interface) → device-adaptive 2–4 Stockfish.wasm grading pool + dedicated Maia policy worker (154) → `useFlawChessEngine` anytime lines with objective-vs-practical score pairs (155) → amber engine board arrow (156) → aligned/safe/sharp agreement verdict, click-to-play spans (157) → one UCI-keyed lookup reconciling every displayed Stockfish eval (158, SEED-087) → ELO-scaled findability ranking + play-style temperature slider (159, SEED-085) → ad-hoc `/analysis` polish via quick/fast (160) → `100dvh` viewport-locked layout (161, SEED-088). Framing held: never "best move" unqualified. Live-browser UAT for 155/157/161 confirmed at close. Archived to milestones/v2.0-ROADMAP.md + v2.0-REQUIREMENTS.md, phases to milestones/v2.0-phases/, tagged v2.0. **Deployed to production** across releases #247 (phases 153–160), #248, #249 (viewport layout / 161).
+
+v1.32 Maia-3 Human-Move Enrichment shipped 2026-07-05 — 2 phases (151, 151.1), 10 plans. Client-side Maia-3 (`maia3_simplified.onnx` via onnxruntime-web in a lazy Web Worker) on `/analysis`: a per-ELO "Moves by Rating" chart + a Maia WDL eval bar (LEFT; Stockfish RIGHT), live per navigation, zero server round-trip, nothing persisted. Phase 151.1 (SEED-083) recolored chart lines by Stockfish move quality and swapped the top-6 cap for the Maia ≥0.95-mass ∪ {SF-best} set via a second isolated grading worker. Repo relicensed MIT → AGPL-3.0. Phase 152 (Flaw Overlay, Pillars A+B) demoted to SEED-084; MAIA-06 latency measurement accepted as override. No schema/migration; one read-only `current_rating` backend field. Archived to milestones/v1.32-ROADMAP.md + v1.32-REQUIREMENTS.md, phases to milestones/v1.32-phases/, tagged v1.32. **Deployed to production.**
 
 v1.32 Maia-3 Human-Move Enrichment shipped 2026-07-05 — 2 phases (151, 151.1), 10 plans. Client-side Maia-3 (`maia3_simplified.onnx` via onnxruntime-web in a lazy Web Worker) on `/analysis`: a per-ELO "Moves by Rating" chart + a Maia WDL eval bar (LEFT; Stockfish RIGHT), live per navigation, zero server round-trip, nothing persisted. Phase 151.1 (SEED-083) recolored chart lines by Stockfish move quality and swapped the top-6 cap for the Maia ≥0.95-mass ∪ {SF-best} set via a second isolated grading worker. Repo relicensed MIT → AGPL-3.0. Phase 152 (Flaw Overlay, Pillars A+B) demoted to SEED-084; MAIA-06 latency measurement accepted as override. No schema/migration; one read-only `current_rating` backend field. Archived to milestones/v1.32-ROADMAP.md + v1.32-REQUIREMENTS.md, phases to milestones/v1.32-phases/, tagged v1.32. **Deployed to production.**
 
@@ -60,12 +63,14 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- v2.0 FlawChess Engine closed 2026-07-09 (Phases 153–161; tag v2.0). Grew beyond its planned 153–159 scope to include Phase 160 (ad-hoc `/analysis` UI polish, artifact-free quick/fast bucket) and Phase 161 (SEED-088 viewport-locked layout); ROADMAP header lagged at "153–159" until close, corrected to 153–161. Live-browser UAT for 155/157/161 confirmed at close. Roadmap + requirements archived to `milestones/v2.0-ROADMAP.md` + `v2.0-REQUIREMENTS.md`, phases to `milestones/v2.0-phases/`. Reset for the next milestone.
 - v1.31 Pipeline Consolidation closed 2026-07-04 (Phases 148, 149, 150; tag v1.31). Execution decisions + quick-task log archived to `milestones/v1.31-ROADMAP.md`, PROJECT.md Key Decisions, and git. Reset for the next milestone.
 - Phase 151.1 inserted after Phase 151: Stockfish-graded Maia moves on the Moves-by-Rating chart (from SEED-083)
 - Phase 158 added: FlawChess Engine displayed-eval provenance reconciliation (SEED-087, amended with third Maia-card provenance chain + shared-fallback design)
 - Phase 159 added: FlawChess Engine policy temperature + root-move findability (SEED-085, Threads A + B committed)
 - Phase 160 added: Analysis page layout and card/element UI polish — ad-hoc improvements via /gsd-quick and /gsd-fast, no preplanning
 - Phase 161 added: Analysis page viewport-locked responsive layout (SEED-088) — fix small-laptop bottom cutoff via 100dvh lock, height-bound board, fluid grid, Tags relocation
+- Phase 162 added: Grading-run-authoritative eval reconciliation — precedence flip (SEED-090, preferred over SEED-089's unified pass; frontend-only, grading run becomes authoritative for all displayed per-move evals)
 
 ### Decisions
 
@@ -142,6 +147,13 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 159-04]: TEMPERATURE_DEFAULT imported directly from DEFAULT_POLICY_TEMPERATURE rather than declared as a matching literal - makes the Pitfall 7/T-159-08 invariant (slider center === search no-op value) structural, not just test-covered
 - [Phase 159-04]: TemperatureSelector rendered exactly once, inside the pre-existing shared eloSelector JSX const (already rendered in both the mobile humanTab and desktop human column) - mobile/desktop parity via one render site, not two
 - [Phase 159-04]: policyTemperature defaulted (?? DEFAULT_POLICY_TEMPERATURE) at useFlawChessEngine's own SearchBudget-construction call site, not inside a helper - keeps the no-op short-circuit visible at the orchestrator layer per 159-03's established Pitfall 1 discipline
+- [Phase 162-01]: Kept the exact !lookup.has(uci) insertion-order-wins guard on both loops in buildEvalLookup — only reordered which loop runs first (grading loop before free-run loop)
+- [Phase 162-01]: resolveReconciledBest co-located in engineEvalLookup.ts (not moveQuality.ts), reusing evalToExpectedScore/MoverColor from @/lib/liveFlaw verbatim
+- [Phase 162-02]: freeRunCommitted declared as plain const (not useMemo) — cheap boolean, no memoization overhead
+- [Phase 162-02]: reconciledBestUci iterates grading.gradeMap.keys() directly (Pitfall 3 keyspace), not the broader unionSans
+- [Phase 162-02]: D-03 mirror-image test verified via MaiaMoveQualityBar's positionVerdict prose (escape/bad roles), not the recharts-based MovesByRatingChart, to avoid adding ResponsiveContainer mock machinery Analysis.test.tsx doesn't already carry
+- [Phase 162-03]: Tasks 1+2 combined into one commit — interleaved reconciled memo chain (reconciledStockfishLine beside reconciledBestEval), mirrors 155-04/158-03 precedent
+- [Phase 162-03]: D-12 arrow test verified via scoped Element.prototype.clientWidth spy + SVG path-string diff, not geometry decoding — jsdom's default 0 clientWidth degenerates ArrowOverlay paths to NaN
 
 ### Pending Todos
 
@@ -163,6 +175,8 @@ None active.
 | 260709-j3k | Checkmate on a free move line no longer reads as a blunder — terminal eval derived from the rules so the bar fills to 0%/100% and the mating move reads green | 2026-07-09 | ce8d19b5 | [260709-j3k-analysis-board-a-free-move-line-ending-i](./quick/260709-j3k-analysis-board-a-free-move-line-ending-i/) |
 | 260709-k9r | FlawChess Engine card surfaces forced mates — thread evalMate through RankedLine/search/reconciliation so a mate line shows #-4 (not …) and the agreement verdict narrates instead of the stale "Turn on Stockfish" prompt | 2026-07-09 | 0b02c4f9 | [260709-k9r-fix-flawchess-engine-card-mate-eval-and-](./quick/260709-k9r-fix-flawchess-engine-card-mate-eval-and-/) |
 | 260709-o72 | Maia/FlawChess card prose now reflects player standing (Option B: "{standing} — {difficulty}"); player-POV eval chips (−M4 = "You're being mated" not white-POV), standing bands (winning/better/level/worse/losing/mate), decisive+safe collapse to "longest resistance"; FlawChess "safer" → "more reliable" | 2026-07-09 | ca301bee | [260709-o72-fix-maia-flawchess-card-prose-to-reflect](./quick/260709-o72-fix-maia-flawchess-card-prose-to-reflect/) |
+| 260710-e2p | Maia "Moves by Rating" tooltip pins the FlawChess Engine's OWN top pick (reconciledRankedLines[0]) instead of Stockfish's objective best mislabeled "FlawChess"; drops row when FC engine off; removed the "(played)" tag from tooltip rows | 2026-07-10 | 9b409161 | [260710-e2p-show-flawchess-engine-top-pick-in-maia-c](./quick/260710-e2p-show-flawchess-engine-top-pick-in-maia-c/) |
+| 260710-k7n | FlawChess Engine promoted to homepage hero (FEATURES[0]: "Your Best Practical Move" + ChessKnight + 3 bullets, Game/Tactic Analysis to #2); README leads Features with the engine and intro rewritten to headline it (dropped Zobrist-hash + AI-narrated-insights) | 2026-07-10 | c039196b | [260710-k7n-engine-hero-homepage](./quick/260710-k7n-engine-hero-homepage/) |
 
 ## Deferred Items
 
@@ -215,13 +229,13 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 161 context gathered
+**Stopped at:** Phase 162 context gathered
 
-**Last session:** 2026-07-09T17:12:37.609Z
+**Last session:** 2026-07-10T10:50:52.407Z
 
 **Resume file:** 
 
-.planning/phases/161-analysis-page-viewport-locked-responsive-layout-seed-088/161-CONTEXT.md
+None
 
 ## Performance Metrics
 
@@ -260,7 +274,10 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 | Phase 159 P02 | 14min | 2 tasks | 5 files |
 | Phase 159 P03 | 16min | 2 tasks | 9 files |
 | Phase 159 P04 | 20min | 2 tasks | 4 files |
+| Phase 162 P01 | 12min | 2 tasks | 2 files |
+| Phase 162 P02 | 20min | 2 tasks | 2 files |
+| Phase 162 P03 | 22min | 2 tasks | 3 files |
 
 ## Operator Next Steps
 
-- Plan the first v2.0 phase with `/gsd-plan-phase 153`
+- Start the next milestone with /gsd-new-milestone

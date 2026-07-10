@@ -18,6 +18,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { BEST_MOVE_ARROW } from '@/lib/theme';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { GameFlawCard } from '@/types/library';
@@ -54,6 +55,8 @@ interface GradingMoveGrade {
   evalCp: number | null;
   evalMate: number | null;
   depth: number;
+  /** Retained grading PV (162 UAT card re-source) — optional, mirrors MoveGrade. */
+  pv?: string[];
 }
 const gradingState: { gradeMap: Map<string, GradingMoveGrade> } = {
   gradeMap: new Map(),
@@ -79,13 +82,20 @@ vi.mock('@/hooks/useStockfishGradingEngine', () => ({
 // either (Phase 151 Plan 06). Deterministic curve stub via the mutable maiaState —
 // the Maia surfaces' own behavior is covered by useMaiaEngine.test.ts /
 // MovesByRatingChart.test.tsx. expectedScoreAtSelectedElo drives the Maia bar fill.
-const maiaState: { expectedScoreAtSelectedElo: number | null } = {
+// `perElo` defaults to [] (no move-quality-bar/position-verdict rendering);
+// Phase 162's mirror-image label test overrides it with a single rung so
+// MaiaMoveQualityBar's totalMass > 0 gate lets computePositionVerdict run.
+const maiaState: {
+  expectedScoreAtSelectedElo: number | null;
+  perElo: { elo: number; moveProbabilities: Record<string, number> }[];
+} = {
   expectedScoreAtSelectedElo: null,
+  perElo: [],
 };
 
 vi.mock('@/hooks/useMaiaEngine', () => ({
   useMaiaEngine: () => ({
-    perElo: [],
+    perElo: maiaState.perElo,
     expectedScoreAtSelectedElo: maiaState.expectedScoreAtSelectedElo,
     wdl: null,
     isReady: false,
@@ -203,6 +213,7 @@ afterEach(() => {
   engineState.isAnalyzing = false;
   engineState.isReady = false;
   maiaState.expectedScoreAtSelectedElo = null;
+  maiaState.perElo = [];
   flawChessState.rankedLines = [];
   flawChessState.isSearching = false;
   flawChessState.isReady = true;
@@ -410,10 +421,44 @@ describe('Grading run gating (Phase 158, SEED-087 SC2)', () => {
     expect(lastCall?.enabled).toBe(true);
     expect(lastCall?.fen).not.toBeNull();
   });
+
+  it('excludes the free run\'s top-2 root SANs from the grading union while it is still analyzing, and includes them once it has committed (Phase 162 D-02/D-09)', () => {
+    // Mid-search: pvLines empty (cleared on FEN change), isAnalyzing true —
+    // freeRunCommitted must be false, so the free run contributes nothing.
+    engineState.isReady = true;
+    engineState.isAnalyzing = true;
+    engineState.pvLines = [];
+
+    renderAnalysis();
+
+    let lastCall = gradingCalls[gradingCalls.length - 1];
+    expect(lastCall?.candidateSans).not.toContain('Nf3');
+    expect(lastCall?.candidateSans).not.toContain('e4');
+
+    // Committed: pvLines populated AND isAnalyzing false — the free run's
+    // top-2 root SANs (g1f3 -> Nf3, e2e4 -> e4) must now join the union.
+    // Toggling an unrelated switch forces the re-render that re-reads the
+    // mutable engineState (the mock is not itself reactive React state).
+    engineState.isAnalyzing = false;
+    engineState.pvLines = [
+      { moves: ['g1f3'], evalCp: 30, evalMate: null, depth: 18 },
+      { moves: ['e2e4'], evalCp: 25, evalMate: null, depth: 18 },
+    ];
+
+    fireEvent.click(screen.getByTestId('btn-analysis-maia-toggle'));
+
+    lastCall = gradingCalls[gradingCalls.length - 1];
+    expect(lastCall?.candidateSans).toContain('Nf3');
+    expect(lastCall?.candidateSans).toContain('e4');
+  });
 });
 
 describe('Reconciled eval provenance (Phase 158, SEED-087)', () => {
-  it('a move graded by both the free run and the grading run displays the free-run value (SC1 precedence)', () => {
+  it('a move graded by both the free run and the grading run displays the grading value (Phase 162 D-01 grading-first precedence)', () => {
+    // Rule 1 fix: this test previously asserted free-run-first precedence
+    // (Phase 158 SC1). 162-01 flipped buildEvalLookup to grading-first, so a
+    // move graded by BOTH sources must now resolve to the grading (deeper,
+    // depth-parity) value, not the free run's shallower placeholder.
     engineState.isReady = true;
     engineState.pvLines = [{ moves: ['e2e4'], evalCp: 310, evalMate: null, depth: 18 }];
     // objectiveEvalCp seeded at 80 (the grading run's own value) to prove
@@ -433,11 +478,44 @@ describe('Reconciled eval provenance (Phase 158, SEED-087)', () => {
 
     renderAnalysis();
 
-    // The FC card's badge aria-label carries "objectively <cp>" — it must read
-    // the free-run's +3.1, never the grading run's +0.8.
+    // The FC card's badge aria-label carries "objectively <cp>" — under
+    // grading-first precedence it must read the grading run's +0.8, never
+    // the free run's shallower +3.1.
     const badge = screen.getByLabelText(/Line 1: practically/);
-    expect(badge.getAttribute('aria-label')).toContain('objectively +3.1');
-    expect(badge.getAttribute('aria-label')).not.toContain('objectively +0.8');
+    expect(badge.getAttribute('aria-label')).toContain('objectively +0.8');
+    expect(badge.getAttribute('aria-label')).not.toContain('objectively +3.1');
+  });
+
+  it('mirror-image label case: a non-bestSan move with the strictly higher reconciled eval becomes the chart\'s Best, and the free-run bestSan is demoted (Phase 162 D-03)', () => {
+    // Free run's own pick is e4 (bestSan) — the OLD pin this phase replaces.
+    engineState.isReady = true;
+    engineState.pvLines = [{ moves: ['e2e4'], evalCp: 20, evalMate: null, depth: 18 }];
+    // The grading run grades BOTH e4 and Nf3, with Nf3 (NOT the free-run
+    // bestSan) resolving to the strictly higher reconciled eval — the exact
+    // mirror-image scenario this phase's reconciledBestUci pin fixes.
+    gradingState.gradeMap = new Map([
+      ['e4', { evalCp: 20, evalMate: null, depth: 10 }],
+      ['Nf3', { evalCp: 300, evalMate: null, depth: 10 }],
+    ]);
+    // A single Maia rung with both SANs present (any elo — nearestByElo picks
+    // this single rung regardless of the selected ELO default) so
+    // MaiaMoveQualityBar's totalMass > 0 gate lets computePositionVerdict run
+    // and shownSans (selectCandidatesByMass) includes both candidates.
+    maiaState.perElo = [{ elo: 1500, moveProbabilities: { e4: 0.3, Nf3: 0.7 } }];
+
+    renderAnalysis();
+
+    // qualityBySan's designatedBestSan is now the reconciled argmax's SAN
+    // (Nf3, cp 300) — NOT the free-run bestSan (e4, cp 20) — so the position
+    // verdict's prose names Nf3 as the accurate/best move and demotes e4 to
+    // "objectively looser" (a non-best label), never the reverse.
+    const verdictEls = screen.getAllByTestId('maia-position-verdict');
+    expect(verdictEls.length).toBeGreaterThan(0);
+    const text = verdictEls[0]!.textContent ?? '';
+    expect(text).toContain('Nf3');
+    expect(text).toContain('accurate move');
+    expect(text).toContain('e4');
+    expect(text).toContain('objectively looser');
   });
 
   it("the verdict's FC-pick and SF-best evals both resolve through evalLookup, so a stale/inflated raw RankedLine eval never leaks through (SC4)", () => {
@@ -458,7 +536,17 @@ describe('Reconciled eval provenance (Phase 158, SEED-087)', () => {
         visits: 5,
       },
     ];
-    gradingState.gradeMap = new Map([['e4', { evalCp: 40, evalMate: null, depth: 10 }]]);
+    // Rule 1 fix (Phase 162 D-13): the SF side is now the reconciled global
+    // argmax (`reconciledBestUci`), not raw `engine.pvLines[0]` — so the free
+    // run's own top pick (Nf3/g1f3) must ALSO be graded here (matching its own
+    // eval, 130) for the verdict to still name it as the SF side. Without this
+    // second entry, e4 (the only graded candidate) would win the reconciled
+    // argmax instead, which is correct D-12 behavior but not what THIS test
+    // (evalLookup resolution, not argmax selection) is proving.
+    gradingState.gradeMap = new Map([
+      ['e4', { evalCp: 40, evalMate: null, depth: 10 }],
+      ['Nf3', { evalCp: 130, evalMate: null, depth: 10 }],
+    ]);
 
     renderAnalysis();
 
@@ -466,6 +554,106 @@ describe('Reconciled eval provenance (Phase 158, SEED-087)', () => {
     expect(sentence.textContent).toContain('+1.3');
     expect(sentence.textContent).toContain('+0.4');
     expect(sentence.textContent).not.toContain('+10.0');
+  });
+
+  it("shows the grading (reconciled) value for the verdict's Stockfish side even when the SAME move is graded differently by the two sources (Phase 162 D-13 provenance)", () => {
+    // RESEARCH Pitfall 1: `stockfishLine` used to be raw `engine.pvLines[0]`,
+    // bypassing evalLookup entirely — a coverage gap even under the OLD
+    // free-run-first precedence, since this call site never went through the
+    // lookup at all. Both sources grade the SAME move (e4): the free run's
+    // shallower +2.0, the grading run's deeper (and now authoritative) +0.8.
+    engineState.isReady = true;
+    engineState.pvLines = [{ moves: ['e2e4'], evalCp: 200, evalMate: null, depth: 18 }];
+    flawChessState.rankedLines = [
+      {
+        rootMove: 'e2e4',
+        practicalScore: 0.6,
+        objectiveEvalCp: 200,
+        objectiveEvalMate: null,
+        modalPath: ['e2e4'],
+        modalStats: [{ objectiveEvalCp: 200, objectiveEvalMate: null, maiaProb: 0.5 }],
+        visits: 5,
+      },
+    ];
+    gradingState.gradeMap = new Map([['e4', { evalCp: 80, evalMate: null, depth: 10 }]]);
+
+    renderAnalysis();
+
+    // Aligned tier (FC and SF both play e4) — the sentence cites ONE eval for
+    // the shared pick. It must be the reconciled grading value (+0.8), never
+    // the stale free-run value (+2.0) a raw engine.pvLines[0] read would show.
+    const sentence = screen.getByTestId('flawchess-verdict-sentence');
+    expect(sentence.textContent).toContain('+0.8');
+    expect(sentence.textContent).not.toContain('+2.0');
+  });
+
+  it("the Stockfish card's line 1 IS the reconciled global argmax — with the grading run's own PV — even when the free run never searched that move (162 UAT card re-source, supersedes D-12's accepted edge case)", () => {
+    // The UAT screenshot shape: the free run's own top pick (e4-analog for
+    // Rad1) is outranked by a grading-union candidate (Nf3-analog for Bc1)
+    // that never appears in engine.pvLines. Pre-fix the card kept showing the
+    // free run's own 2 lines; now it lists the reconciled top-2 so the card,
+    // arrow, chart crown, and verdict all name the same best move.
+    engineState.isReady = true;
+    engineState.depth = 18;
+    engineState.pvLines = [{ moves: ['e2e4', 'e7e5'], evalCp: 20, evalMate: null, depth: 18 }];
+    gradingState.gradeMap = new Map([
+      ['e4', { evalCp: 20, evalMate: null, depth: 22, pv: ['e2e4', 'e7e5'] }],
+      ['Nf3', { evalCp: 300, evalMate: null, depth: 22, pv: ['g1f3', 'b8c6'] }],
+    ]);
+
+    renderAnalysis();
+
+    // Line 1's first chip renders the grading PV's root move (Nf3), not the
+    // free run's e4; its badge carries the grading eval.
+    expect(screen.getByTestId('engine-line-0-move-0').textContent).toBe('Nf3');
+    expect(screen.getByLabelText('Line 1: +3.0')).toBeTruthy();
+    // The grading PV's continuation renders too (retained pv, not a bare root).
+    expect(screen.getByTestId('engine-line-0-move-1').textContent).toBe('Nc6');
+    // The demoted free-run pick is line 2 with ITS reconciled eval.
+    expect(screen.getByTestId('engine-line-1-move-0').textContent).toBe('e4');
+    expect(screen.getByLabelText('Line 2: +0.2')).toBeTruthy();
+    // Headline depth now describes line 1's own grade (162 UAT supersedes
+    // D-05), not the free run's shallower search.
+    expect(screen.getByTestId('analysis-engine-info').textContent).toContain('Depth 22');
+  });
+
+  it('the sf-0 board arrow follows the reconciled-argmax square, not the free run\'s own pick, when a Maia/FC-only candidate is the global argmax (D-12)', () => {
+    // jsdom performs no real layout — clientWidth defaults to 0, which makes
+    // ChessBoard's ArrowOverlay compute degenerate (NaN) zero-length SVG
+    // paths. Stub a nonzero measured width so the overlay's geometry is real
+    // and two different target squares produce two different `d` strings.
+    const clientWidthSpy = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(400);
+
+    const captureSfArrowPath = (): string | null => {
+      const overlay = document.querySelector('[data-testid="arrow-overlay"]');
+      const sfPath = overlay?.querySelector(`path[fill="${BEST_MOVE_ARROW}"]`);
+      return sfPath?.getAttribute('d') ?? null;
+    };
+
+    try {
+      // Baseline: no grading data yet — reconciledBestUci is null, so the
+      // arrow falls back to the free run's own top pick (e2e4).
+      engineState.isReady = true;
+      engineState.pvLines = [{ moves: ['e2e4'], evalCp: 20, evalMate: null, depth: 18 }];
+      const { unmount } = renderAnalysis();
+      const baselinePath = captureSfArrowPath();
+      expect(baselinePath).not.toBeNull();
+      unmount();
+
+      // Grading lands: Nf3 (an FC/Maia-only candidate that never appears in
+      // engine.pvLines) resolves to the strictly higher reconciled eval — the
+      // exact D-12 scenario the arrow must follow, not the free run's e4.
+      gradingState.gradeMap = new Map([
+        ['e4', { evalCp: 20, evalMate: null, depth: 10 }],
+        ['Nf3', { evalCp: 300, evalMate: null, depth: 10 }],
+      ]);
+      renderAnalysis();
+      const reconciledPath = captureSfArrowPath();
+      expect(reconciledPath).not.toBeNull();
+      expect(reconciledPath).not.toBe(baselinePath);
+    } finally {
+      clientWidthSpy.mockRestore();
+    }
   });
 });
 

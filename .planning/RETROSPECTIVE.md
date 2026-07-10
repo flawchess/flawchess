@@ -4,6 +4,60 @@
 
 > Note: v1.18, v1.19, v1.20, v1.23, v1.25, and v1.27 closes did not add retrospective sections (only the ROADMAP archives + MILESTONES entries were written). Not backfilled here to avoid reconstructing reflections after the fact; their facts live in the corresponding `milestones/v1.XX-ROADMAP.md` and `MILESTONES.md`.
 
+## Milestone: v2.0 — FlawChess Engine
+
+**Shipped:** 2026-07-09 (deployed to production incrementally during the milestone across releases #247, #248, #249)
+**Phases:** 9 (153–161) | **Plans:** 24 | **Tasks:** ~51
+**Timeline:** 5 days (2026-07-05 → 2026-07-09) | ~69 commits since v1.32, 215 files (+35,171 / −2,068)
+
+### What Was Built
+
+A client-side practical-play analysis engine on `/analysis` (SEED-082, + SEED-085/087/088): a Maia-prior-weighted expectimax-in-MCTS search over a device-adaptive 2–4-instance Stockfish.wasm worker pool plus a dedicated Maia policy worker, ranking the strongest *human-playable* line for a player at their rating with an objective/practical score pair per line. It runs entirely in the browser — zero server load, no persistence, no new dependencies.
+
+- **Pure search core (153)** — a frozen `SearchRunner`/`EngineProviders` contract, a root-relative leaf-sigmoid wrapper over the app's own `evalToExpectedScore`, and the one genuinely novel file of the milestone (`backup.ts`: Maia-prior-weighted expectation at inner nodes, root-max at the root), plus a depth-limited expectimax fallback implementing the same interface. All proven against fabricated providers before any WASM/ONNX existed.
+- **Real providers (154)** — a lazily-spawned, priority-queued, pv[0]-keyed, abortable Stockfish worker pool (`workerPool.ts`) and a deduped narrow-ELO-batched Maia policy queue (`maiaQueue.ts`), including two rounds of promise-hang/deadlock lifecycle gap closure (CR-01…CR-03, WR-03).
+- **Live UI (155–156)** — the `useFlawChessEngine` anytime hook (immediate first paint, 150ms throttled refinement, abort+stopAll on every FEN navigation), the `FlawChessEngineLines` score-pair card, three independent accent-tinted engine toggles, eval-bar precedence, and concentric board arrows (amber practical move vs blue objective move).
+- **Agreement verdict (157)** — a pure aligned/safe/sharp classifier and plain-language prose verdict comparing FlawChess's practical #1 against Stockfish's objective #1, with hoverable click-to-play move spans, wired once into the shared card for automatic game-review parity.
+- **Eval reconciliation (158)** — a single UCI-keyed eval lookup (authoritative free MultiPV run first, one shared `searchmoves` grading run second) so every number shown on two+ surfaces (SF card, FC card, Maia chart/quality bar, verdict) renders identically by construction; also fixed a real UCI bug (`searchmoves` must be the last clause or trailing `movetime` is silently dropped).
+- **Findability + play style (159)** — a root-move findability factor (`min(1, P_you/P_ref)·V(X)`) so a ~5%-findable tail move can no longer top the list, a Maia-probability gate on the "far easier to find" verdict copy, and a log-symmetric "Play style" policy-temperature slider (Sharper ↔ More human).
+- **Layout polish (160–161)** — an artifact-free ad-hoc `/gsd-quick`+`/gsd-fast` UI-polish bucket (160), then a viewport-locked `100dvh` `grid-cols-[360px_1fr_360px]` responsive `/analysis` layout with a height-aware board (SEED-088, 161).
+
+### What Worked
+
+- **Pure core first, real providers second.** The one novel algorithm (the Maia-prior-weighted expectimax backup rule + asymmetric self+opponent ELO routing) was proven correct in Phase 153 against *fabricated* providers — a hand-computed 0.637 fixture plus two negative-assertion baselines that make the "silently degenerates into textbook MCTS" failure mode structurally testable — before a single WASM or ONNX byte was integrated. By the time real workers arrived (154), the hard math was settled; integration was routine.
+- **One frozen interface, two search implementations.** `mctsSearch` and the depth-limited `fallbackExpectimax` implement an identical `SearchRunner` contract and reuse `backup.ts`/`leafScore.ts`/`select.ts` verbatim; the fallback was proven by a same-variable swap-in test (SC5), so the escape hatch is real and exercised, not aspirational.
+- **Reconcile-by-construction over reconcile-by-discipline.** Routing every displayed eval through one UCI-keyed lookup (158) made the "FC pick grades higher than the objective best" misread *impossible to render*, rather than something reviewers must keep noticing — the same by-construction instinct that paid off in v1.31's golden-snapshot refactor.
+- **Reusing the app's own primitives.** Leaf scoring wraps `evalToExpectedScore`, move grading reuses `liveFlaw.ts`/`flawThresholds.ts`, the verdict scores on the app-wide win%-drop scale — no new sigmoids or thresholds to calibrate, and the engine's coloring stays consistent with game analysis elsewhere.
+- **Structural gap-closure discipline.** Every worker lifecycle defect (CR-01/02/03, WR-03) was *reproduced* before being fixed, so "no `grade()`/`policy()` promise can hang forever" is a tested invariant rather than a hope.
+
+### What Was Inefficient
+
+- **Scope drifted past the plan and the ROADMAP header lagged.** The milestone was planned as 153–159 but grew to include an ad-hoc UI-polish bucket (160, artifact-free) and a SEED-088 responsive-layout phase (161); the ROADMAP header still read "153–159" until milestone close. The 160 bucket left no SUMMARY/VERIFICATION trail — its work is only recoverable from git, not the planning record.
+- **Live-browser UAT deferred in bulk to close.** The irreducibly-visual/latency gates for 155/156/157/158/159/161 (perceptual smoothness, arrow rendering, hover-arrow isolation, streaming eval reconciliation, real-device memory ceiling, `100dvh` layout) were all routed to human review and only signed off at milestone close — 155's real-device check was itself carried forward from 154. jsdom proved every *mechanism*, but the *experience* rode on one batched manual pass. Phase 161 landed at 3/7 truths verifiable structurally, the rest browser-only.
+- **A known transient reconciliation artifact shipped.** 158's `qualityBySan` fallback for an unresolvable SAN (`{evalCp: null}`) resolves to 0.5 via the sigmoid, which can briefly paint a real severity color off a fabricated even-position score in the stale-map window right after navigation (158-REVIEW WR-04) — narrow, does not affect steady state, but a real edge left in.
+
+### Patterns Established
+
+- **Prove the novel core against fabricated providers before real integration** — settle the algorithm with hand-computed fixtures and negative-assertion baselines while the expensive/uncertain infrastructure (WASM pool, ONNX worker) is still stubbed. Turns a scary integration into execution.
+- **A frozen `SearchRunner`-style interface with a real fallback behind it** — a primary and a degraded implementation of the same contract, the fallback kept exercised by a same-variable swap-in test, not left to rot.
+- **Reconcile-by-construction via a single keyed lookup** — when the same quantity surfaces on N cards, route them all through one lookup with explicit source precedence so divergence is unrenderable, rather than asserting equality after the fact.
+- **Reproduce-then-fix for async lifecycle defects** — every worker promise-hang was reproduced before the fix, making non-hang a tested invariant.
+
+### Key Lessons
+
+1. De-risk the genuinely novel algorithm first, in isolation, against fake providers with negative-assertion tests — the WASM/ONNX plumbing is the easy part once the math is pinned.
+2. Reconcile shared numbers by construction (one keyed lookup with precedence), not by reviewer vigilance — the same move on two cards should be *incapable* of showing two evals.
+3. Batch-deferring every visual/latency gate to milestone close is a real risk concentration: a UI-heavy milestone should schedule at least one mid-flight live-browser pass, not carry six phases of perceptual sign-off to the end.
+4. When a milestone grows past its planned phase range, update the ROADMAP header as the phases land — and give ad-hoc `/gsd-quick` polish buckets at least a thin artifact, or the work vanishes from the planning record.
+
+### Cost Observations
+
+- Five days, 9 phases, 24 plans; the largest single-milestone diff to date (+35,171 / −2,068 across 215 files) — but the bulk is vendored WASM/ONNX assets, generated types, and planning docs, not hand-written logic. Zero new runtime dependencies, no schema, no migration, no server load.
+- Heavy, unavoidable reliance on human live-UAT for the irreducibly-visual and real-device-timing gates — jsdom + fake timers proved every mechanism but none of the experience.
+- Shipped to production incrementally during the milestone (releases #247–#249) rather than in a single deploy at close — the milestone-close bookkeeping (archive, tag, GitHub release) trailed the actual production ship.
+
+---
+
 ## Milestone: v1.32 — Maia-3 Human-Move Enrichment
 
 **Shipped:** 2026-07-05 (merged to `main`; prod deploy pending)
@@ -1069,6 +1123,7 @@ Three table-driven Endgames-page sections replaced with the WDL + ScoreBullet ca
 | v1.15 | 2 | 10 | Eval-based endgame classification: Stockfish hard cutover, per-position phase column, proxy deleted |
 | v1.16 | 5 | 24 | Stockfish eval analyses: opening-stats eval column, transposition WDL, Start-vs-End tiles, LLM prompt awareness |
 | v1.17 | 13 | ~54 | Endgame stats card redesign → statistical-rigor pass; inserted-decimal cadence absorbed a 5→13 phase scope expansion; Endgame Skill dropped, ELO rebuilt as invariant-preserving logistic stretch |
+| v2.0 | 9 | 24 | Client-side practical-play engine (Maia-weighted expectimax-in-MCTS over a Stockfish.wasm pool); pure-core-first-against-fake-providers build order; scope drifted 153–159 → 153–161 (artifact-free 160 bucket + SEED-088 161); visual UAT batch-deferred to close |
 
 ### Top Lessons (Verified Across Milestones)
 

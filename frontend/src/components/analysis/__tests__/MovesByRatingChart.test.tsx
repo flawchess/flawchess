@@ -246,13 +246,12 @@ describe('MovesByRatingTooltipContent (D-08)', () => {
       <MovesByRatingTooltipContent
         label={1500}
         rows={[{ san: 'Ne4', probability: 0.08, color: MOVE_QUALITY_BLUNDER }]}
-        playedSan="Ne4"
         engineTopLines={[]}
         qualityBySan={makeQualityBySan()}
       />,
     );
     const cells = screen.getByTestId('moves-by-rating-tooltip-row-Ne4').querySelectorAll('td');
-    expect(cells[0]?.textContent).toBe('Ne4 (played)');
+    expect(cells[0]?.textContent).toBe('Ne4');
     expect(cells[1]?.textContent).toBe('Blunder');
     expect(cells[2]?.textContent).toBe('-4.0');
     expect(cells[3]?.textContent).toBe('8%');
@@ -263,7 +262,6 @@ describe('MovesByRatingTooltipContent (D-08)', () => {
       <MovesByRatingTooltipContent
         label={1500}
         rows={[{ san: 'O-O', probability: 0.45, color: 'oklch(0.4 0.17 145)' }]}
-        playedSan="Ne4"
         engineTopLines={[]}
         qualityBySan={makeQualityBySan()}
       />,
@@ -280,7 +278,6 @@ describe('MovesByRatingTooltipContent (D-08)', () => {
       <MovesByRatingTooltipContent
         label={1500}
         rows={[{ san: 'a3', probability: 0.3 }]}
-        playedSan="Ne4"
         engineTopLines={[]}
         qualityBySan={makeQualityBySan()}
       />,
@@ -300,7 +297,6 @@ describe('MovesByRatingTooltipContent (D-08)', () => {
       <MovesByRatingTooltipContent
         label={1500}
         rows={[{ san: 'Qh7', probability: 0.9 }]}
-        playedSan={null}
         engineTopLines={[]}
         qualityBySan={qualityBySan}
       />,
@@ -317,7 +313,6 @@ describe('MovesByRatingTooltipContent (D-08)', () => {
       <MovesByRatingTooltipContent
         label={2400}
         rows={[{ san: 'Nf6', probability: 0.42 }]}
-        playedSan={null}
         engineTopLines={[
           { san: 'Nf6', evalCp: 30, evalMate: null },
           { san: 'd5', evalCp: 25, evalMate: null },
@@ -337,7 +332,6 @@ describe('MovesByRatingTooltipContent (D-08)', () => {
       <MovesByRatingTooltipContent
         label={2400}
         rows={[{ san: 'Nf6', probability: 0.42 }]}
-        playedSan={null}
         engineTopLines={[]}
         qualityBySan={new Map([['Nf6', { quality: 'best', evalCp: 30, evalMate: null }]])}
       />,
