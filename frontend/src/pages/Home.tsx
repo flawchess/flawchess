@@ -384,6 +384,24 @@ export function HomePageContent() {
       <section id="faq" className="max-w-2xl mx-auto px-4 py-12 scroll-mt-16">
         <h2 className="text-xl font-bold mb-6">Frequently asked questions</h2>
         <Accordion type="single" collapsible data-testid="faq-accordion">
+          <AccordionItem value="flawchess-engine" data-testid="faq-item-flawchess-engine">
+            <AccordionTrigger>How does the FlawChess Engine work?</AccordionTrigger>
+            <AccordionContent>
+              It combines Stockfish with Maia, a human-like neural network, to score each move by
+              how likely you are to find it and convert the resulting position against an opponent
+              at your level, instead of assuming perfect play from both sides. Read the full
+              deep-dive in{' '}
+              <a
+                href="https://github.com/flawchess/flawchess/blob/main/docs/flawchess-engine-explained-2026-07-06.md"
+                className="text-primary underline-offset-4 hover:underline"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                FlawChess Engine explained
+              </a>
+              .
+            </AccordionContent>
+          </AccordionItem>
           <AccordionItem value="data" data-testid="faq-item-data">
             <AccordionTrigger>
               What data do you access from my chess.com or lichess account?
@@ -411,14 +429,6 @@ export function HomePageContent() {
               queen, and more), plus conversion rates when you enter the endgame ahead and recovery
               rates when you enter behind, scored against Stockfish evaluation. All statistics are
               filterable by time control, color, and recency.
-            </AccordionContent>
-          </AccordionItem>
-          <AccordionItem value="engine" data-testid="faq-item-engine">
-            <AccordionTrigger>Does FlawChess use a chess engine?</AccordionTrigger>
-            <AccordionContent>
-              Yes. Stockfish 18 evaluates key transition positions in your games (end of opening,
-              endgame entry) so we can compare your actual results against the engine's
-              verdict.
             </AccordionContent>
           </AccordionItem>
           <AccordionItem value="requests" data-testid="faq-item-requests">

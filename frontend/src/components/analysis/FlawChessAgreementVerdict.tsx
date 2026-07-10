@@ -226,10 +226,14 @@ function renderVerdictSentence(
     );
   }
 
+  // No "trap"/"more reliable" claims here: the sharp tier only knows the objective-eval
+  // gap, not WHY the search discounted the Stockfish pick. In sac-for-perpetual cases the
+  // objectively best move is the ONLY good move (game 687537 ply 46: Qxh2+ 0.00 vs the
+  // suggested Rxd1 at -3.5) — the discount is follow-up-execution risk, so name that.
   return (
     <>
-      {sfSpan} is objectively best (<StockfishEval text={sfEvalText} />) but it&apos;s a trap for humans. FlawChess plays
-      the more reliable {fcSpan} (<StockfishEval text={fcEvalText} />) instead.
+      {sfSpan} is objectively best (<StockfishEval text={sfEvalText} />) but demands precise follow-ups. At {elo} ELO,
+      FlawChess expects better practical results from {fcSpan} (<StockfishEval text={fcEvalText} />).
     </>
   );
 }

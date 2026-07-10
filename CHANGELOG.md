@@ -11,6 +11,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Fixed
 
 - Analysis page: all per-move evals now come from one reconciled grading-first Stockfish source, so a move labeled "Good" can never show a higher number than the move labeled "Best", and the Stockfish card, FlawChess Engine card, Maia tooltip, board arrow, verdict, and eval bar all agree on the best move (Phase 162).
+- FlawChess Engine verdict: the sharp-divergence sentence no longer calls Stockfish's pick "a trap for humans" or the practical pick "more reliable" — misleading when the objectively best move is the only good one (e.g. a queen sac forcing perpetual). It now names the real mechanism: the best move "demands precise follow-ups" and FlawChess expects better practical results from its pick at your ELO.
 
 ## [v2.0] FlawChess Engine — 2026-07-09
 
