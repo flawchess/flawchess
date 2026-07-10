@@ -391,13 +391,11 @@ const NUM_CELL_CLASS = 'pl-3 text-right tabular-nums';
 export function MovesByRatingTooltipContent({
   label,
   rows,
-  playedSan,
   engineTopLines,
   qualityBySan,
 }: {
   label: string | number;
   rows: MovesTooltipRow[];
-  playedSan: string | null;
   engineTopLines: EngineLine[];
   qualityBySan: Map<string, MoveQualityEval>;
 }): React.ReactElement {
@@ -442,11 +440,9 @@ export function MovesByRatingTooltipContent({
             return (
               <tr key={san} data-testid={`moves-by-rating-tooltip-row-${san}`}>
                 {/* Move name | quality word — both in the move-quality color | eval
-                    (blue) | probability (violet). A muted "(played)" marks the move
-                    actually played. */}
+                    (blue) | probability (violet). */}
                 <td className={`pr-3 ${topPad}`} style={{ color: row.color }}>
                   {san}
-                  {san === playedSan && <span className="text-muted-foreground"> (played)</span>}
                 </td>
                 <td className={`pr-3 ${topPad}`} style={{ color: row.color }}>
                   {qualityWord(graded?.quality)}
@@ -472,7 +468,6 @@ export function MovesByRatingTooltipContent({
  * only), mirroring ScoreGapByTimePressureChart.tsx's inline `content` wrapper.
  */
 function movesTooltipContent(
-  playedSan: string | null,
   engineTopLines: EngineLine[],
   qualityBySan: Map<string, MoveQualityEval>,
 ): (props: {
@@ -493,7 +488,6 @@ function movesTooltipContent(
       <MovesByRatingTooltipContent
         label={label ?? ''}
         rows={rows}
-        playedSan={playedSan}
         engineTopLines={engineTopLines}
         qualityBySan={qualityBySan}
       />
@@ -573,7 +567,7 @@ export function MovesByRatingChart({
             strokeWidth={1.5}
           />
 
-          <ChartTooltip content={movesTooltipContent(playedSan, engineTopLines, qualityBySan)} />
+          <ChartTooltip content={movesTooltipContent(engineTopLines, qualityBySan)} />
 
           {shownSans.map((san) => {
             // Stroke width encodes played/best emphasis ONLY; color encodes quality

@@ -881,32 +881,25 @@ export default function Analysis() {
     return merged;
   }, [evalLookup, grading.gradeMap, position, bestSan]);
 
-  // The primary engine's top PV lines (best + 2nd-best), each as its first move's
-  // SAN + white-POV eval — shown as a reference header in the Maia chart tooltip
-  // (151.1 UAT). Prefer standalone Stockfish (the objective reference); fall back to
-  // the FlawChess Engine's RECONCILED practical top-2 only when Stockfish is off
-  // (WR-04, Phase 158 SEED-087 SC1) — relocated after evalLookup/
-  // reconciledRankedLines so its FC branch can read reconciled values. The
-  // FlawChess source has no mate field, so evalMate is null there.
+  // The FlawChess Engine's top practical pick — its root move's SAN + reconciled
+  // white-POV objective eval — shown as the pinned "FlawChess" reference row atop
+  // the Maia chart tooltip (quick 260710-e2p). Sourced ONLY from the FlawChess
+  // Engine (reconciledRankedLines[0]), NEVER standalone Stockfish: the row is
+  // labeled "FlawChess", so pinning Stockfish's objective best there mislabeled it
+  // as FlawChess (the two diverge exactly when FlawChess trades objective eval for
+  // human findability, e.g. exd6 over Rad1). Empty — which drops the pinned row —
+  // when the FlawChess Engine is off or has no ranked line yet, rather than falling
+  // back to a mislabeled Stockfish pick. Reconciled objective eval matches the FC
+  // card's blue objective aside; the FlawChess source carries mate via the same
+  // reconciled lookup (objectiveEvalMate), so a forced-mate root prints "#-N".
   const engineTopLines = useMemo<EngineLine[]>(() => {
-    const lines: EngineLine[] = [];
-    if (engineEnabled) {
-      for (const line of engine.pvLines.slice(0, 2)) {
-        const san = bestSanFromPv(position, line.moves[0] ?? null);
-        if (san === null) continue;
-        lines.push({ san, evalCp: line.evalCp, evalMate: line.evalMate });
-      }
-      return lines;
-    }
-    if (flawChessEnabled) {
-      for (const line of reconciledRankedLines) {
-        const san = bestSanFromPv(position, line.rootMove);
-        if (san === null) continue;
-        lines.push({ san, evalCp: line.objectiveEvalCp, evalMate: null });
-      }
-    }
-    return lines;
-  }, [position, engineEnabled, engine.pvLines, flawChessEnabled, reconciledRankedLines]);
+    if (!flawChessEnabled) return [];
+    const top = reconciledRankedLines[0];
+    if (!top) return [];
+    const san = bestSanFromPv(position, top.rootMove);
+    if (san === null) return [];
+    return [{ san, evalCp: top.objectiveEvalCp, evalMate: top.objectiveEvalMate }];
+  }, [position, flawChessEnabled, reconciledRankedLines]);
 
   // ── Derived values (game mode — new) ─────────────────────────────────────────
 
