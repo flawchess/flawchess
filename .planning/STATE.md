@@ -23,7 +23,7 @@ progress:
 Phase: 162 (grading-run-authoritative-eval-reconciliation-precedence-fli) — EXECUTING
 Plan: 3 of 3
 Status: Phase 162 shipped — squash-merged to main (9542a44a)
-Last activity: 2026-07-10
+Last activity: 2026-07-10 - Completed quick task 260710-k7n: FlawChess Engine homepage hero + README
 
 ## Project Reference
 
@@ -176,6 +176,7 @@ None active.
 | 260709-k9r | FlawChess Engine card surfaces forced mates — thread evalMate through RankedLine/search/reconciliation so a mate line shows #-4 (not …) and the agreement verdict narrates instead of the stale "Turn on Stockfish" prompt | 2026-07-09 | 0b02c4f9 | [260709-k9r-fix-flawchess-engine-card-mate-eval-and-](./quick/260709-k9r-fix-flawchess-engine-card-mate-eval-and-/) |
 | 260709-o72 | Maia/FlawChess card prose now reflects player standing (Option B: "{standing} — {difficulty}"); player-POV eval chips (−M4 = "You're being mated" not white-POV), standing bands (winning/better/level/worse/losing/mate), decisive+safe collapse to "longest resistance"; FlawChess "safer" → "more reliable" | 2026-07-09 | ca301bee | [260709-o72-fix-maia-flawchess-card-prose-to-reflect](./quick/260709-o72-fix-maia-flawchess-card-prose-to-reflect/) |
 | 260710-e2p | Maia "Moves by Rating" tooltip pins the FlawChess Engine's OWN top pick (reconciledRankedLines[0]) instead of Stockfish's objective best mislabeled "FlawChess"; drops row when FC engine off; removed the "(played)" tag from tooltip rows | 2026-07-10 | 9b409161 | [260710-e2p-show-flawchess-engine-top-pick-in-maia-c](./quick/260710-e2p-show-flawchess-engine-top-pick-in-maia-c/) |
+| 260710-k7n | FlawChess Engine promoted to homepage hero (FEATURES[0]: "Your Best Practical Move" + ChessKnight + 3 bullets, Game/Tactic Analysis to #2); README leads Features with the engine and intro rewritten to headline it (dropped Zobrist-hash + AI-narrated-insights) | 2026-07-10 | c039196b | [260710-k7n-engine-hero-homepage](./quick/260710-k7n-engine-hero-homepage/) |
 
 ## Deferred Items
 
