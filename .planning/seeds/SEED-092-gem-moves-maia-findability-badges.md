@@ -17,8 +17,9 @@ Pure frontend feature on `/analysis`; no cross-game statistics, no backend chang
 
 - **C1 — hard to find:** Maia policy probability of the played move ≤ `GEM_MAIA_MAX_PROB`
   (~3% starting point) at the **rating-matched** Maia model. ELO-adaptivity is free: the
-  probability is already conditioned on rating. Caveat: Maia ladder caps at 1900, so 2000+
-  players get maia-1900 probabilities (acceptable).
+  probability is already conditioned on rating, and the app's `MAIA_ELO_LADDER` spans
+  600-2600 step 100 (as on maiachess.com; see `lib/maiaEncoding.ts` / `useMaiaEngine.ts`),
+  covering essentially all user ratings.
 - **C2 — only good move:** expected score of the played move minus the best *alternative*
   ≥ `MISTAKE_DROP` (0.10, from `@/generated/flawThresholds`). Uses the existing
   `evalToExpectedScore` sigmoid (`lib/liveFlaw.ts`) — no new math. C2 implicitly requires
