@@ -584,7 +584,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 
 ### Phase 162: Grading-run-authoritative eval reconciliation — precedence flip (SEED-090)
 
-**Goal:** Every per-move eval displayed on the analysis page comes from one coherent Stockfish search, so a move labeled "Good" can never show a higher number than the move labeled "Best". Flip `buildEvalLookup` precedence to grading-first (free run only fills not-yet-graded moves), extend `unionSans` with the free run's top-2 root moves so the grading union covers every displayed move by construction, derive Best/Good labels from the reconciled map's own argmax (not the free-run `bestSan` pin), and route the Stockfish card's PV-line evals through the reconciled lookup. Frontend-only; both workers stay as configured today (no depth regression, no new fallback path). Preferred design over SEED-089 per critical review 2026-07-10 — see [seeds/SEED-090-grading-run-authoritative-eval-precedence-flip.md](seeds/SEED-090-grading-run-authoritative-eval-precedence-flip.md).
+**Goal:** Every per-move eval displayed on the analysis page comes from one coherent Stockfish search, so a move labeled "Good" can never show a higher number than the move labeled "Best". Flip `buildEvalLookup` precedence to grading-first (free run only fills not-yet-graded moves), extend `unionSans` with the free run's top-2 root moves so the grading union covers every displayed move by construction, derive Best/Good labels from the reconciled map's own argmax (not the free-run `bestSan` pin), and route the Stockfish card's PV-line evals through the reconciled lookup. Frontend-only; both workers stay as configured today (no depth regression, no new fallback path). Preferred design over SEED-089 per critical review 2026-07-10 — see [seeds/SEED-090-grading-run-authoritative-eval-precedence-flip.md](seeds/closed/SEED-090-grading-run-authoritative-eval-precedence-flip.md).
 **Requirements**: TBD (tracked via CONTEXT.md decisions D-01..D-13)
 **Depends on:** Phase 161
 **Plans:** 3/3 plans complete
@@ -601,3 +601,10 @@ Plans:
 **Wave 3** *(blocked on Wave 2 completion)*
 
 - [x] 162-03-PLAN.md — Reconciled-best consumers: SF arrow, verdict, eval bar, Stockfish card (D-04..D-08, D-12, D-13)
+
+### Phase 163: Gem moves — Maia-findability move badges on /analysis (SEED-092)
+
+**Goal:** Badge the rare move that is both the engine's clearly-only good move AND hard for a human at the player's rating to find, as the positive counterpart to the flaw glyphs. Detection is two-condition: rating-matched Maia probability of the played move ≤ `GEM_MAIA_MAX_PROB` (~3% starting point, strict-side v1 constant) AND expected-score gap to the best alternative ≥ `MISTAKE_DROP` (reusing `evalToExpectedScore` — every alternative would have been at least a mistake). Lazy per-visited-ply classification from the existing MultiPV=2 free run + grading run + Maia curve, cached per ply behind a min-depth stability gate. Surfaces in Maia-violet (`MAIA_ACCENT`): board-corner marker + move-list glyph using the lucide `Gem` icon (SVG-icon variant alongside the text-glyph `boardMarkers` pattern; `MoveQuality` gains a 6th positive bucket overriding "best" — `FlawSeverity` stays negative-only), `MAIA_ACCENT` curve + tooltip label in `MovesByRatingChart`, short popover copy. Pure frontend; no backend changes, no cross-game statistics. See [seeds/SEED-092-gem-moves-maia-findability-badges.md](seeds/SEED-092-gem-moves-maia-findability-badges.md).
+**Requirements**: TBD (tracked via CONTEXT.md decisions)
+**Depends on:** Phase 162
+**Plans:** TBD

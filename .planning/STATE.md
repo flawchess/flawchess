@@ -71,6 +71,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - Phase 160 added: Analysis page layout and card/element UI polish — ad-hoc improvements via /gsd-quick and /gsd-fast, no preplanning
 - Phase 161 added: Analysis page viewport-locked responsive layout (SEED-088) — fix small-laptop bottom cutoff via 100dvh lock, height-bound board, fluid grid, Tags relocation
 - Phase 162 added: Grading-run-authoritative eval reconciliation — precedence flip (SEED-090, preferred over SEED-089's unified pass; frontend-only, grading run becomes authoritative for all displayed per-move evals)
+- Phase 163 added: Gem moves — Maia-findability move badges on /analysis (SEED-092; escalated from a /gsd-quick request 2026-07-10 — sized as phase-scale: ~10+ files, new detection module, open tunables)
 
 ### Decisions
 
