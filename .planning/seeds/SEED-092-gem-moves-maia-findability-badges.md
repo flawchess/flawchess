@@ -61,10 +61,12 @@ ply across navigation.
 
 ## Surfaces (all Maia-violet, `MAIA_ACCENT` from theme.ts)
 
-- Board corner marker + move-list glyph: violet circle, white `!` — extends the
-  `SEVERITY_GLYPH`/`boardMarkers` pattern. Note `FlawSeverity` is negative-only; Gem is
-  a parallel positive tier — extend `MoveQuality` (6th bucket overriding "best") rather
-  than widening `FlawSeverity`.
+- Board corner marker + move-list glyph: violet circle with the white lucide `Gem` icon
+  (not a text `!` glyph) — follows the `SEVERITY_GLYPH`/`boardMarkers` placement pattern,
+  but the symbol is an icon, so the marker needs an SVG-icon variant alongside the
+  text-symbol one. Note `FlawSeverity` is negative-only; Gem is a parallel positive
+  tier — extend `MoveQuality` (6th bucket overriding "best") rather than widening
+  `FlawSeverity`.
 - `MovesByRatingChart`: qualifying move's probability curve rendered in `MAIA_ACCENT`
   instead of its quality-bucket color, plus tooltip label. (The rising-with-ELO curve is
   itself the visual justification for the badge.)
