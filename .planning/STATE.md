@@ -4,17 +4,17 @@ milestone: v2.0
 milestone_name: FlawChess Engine
 current_phase: 0
 status: Awaiting next milestone
-stopped_at: Phase 161 context gathered
-last_updated: "2026-07-09T21:51:06.618Z"
+stopped_at: v2.0 milestone closed and archived
+last_updated: "2026-07-09T22:10:00.000Z"
 last_activity: 2026-07-09
 last_activity_desc: Milestone v2.0 completed and archived
 progress:
   total_phases: 9
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 24
   completed_plans: 24
-  percent: 89
-current_phase_name: analysis-page-viewport-locked-responsive-layout-seed-088
+  percent: 100
+current_phase_name: none (v2.0 shipped)
 ---
 
 # Project State: FlawChess
@@ -28,13 +28,17 @@ Last activity: 2026-07-09 — Milestone v2.0 completed and archived
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-07-04 after v1.31 milestone close)
+See: .planning/PROJECT.md (updated 2026-07-09 after v2.0 milestone close)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: v2.0 FlawChess Engine roadmap created (SEED-082) — 5 phases (153 pure search core; 154 real providers/worker pool; 155 React hook + anytime UI; 156 board arrows + toggles; 157 game-review overlay), all 21 v2.0 requirements mapped (REQUIREMENTS.md's own "19 total" placeholder was a miscount — corrected to 21 in the traceability table). Next: `/gsd-plan-phase 153`. Client-side-only, no backend/schema/migrations/new-deps — builds on the shipped, deployed v1.29 Stockfish.wasm + v1.32 Maia infra. v1.31 and v1.32 are both live in production.
+Current focus: v2.0 FlawChess Engine shipped 2026-07-09 (Phases 153–161, tagged v2.0). No active milestone. Next: `/gsd-new-milestone`. **Deployed to production** — released incrementally during the milestone across PRs #247, #248, #249 (`origin/production` at #249).
 
 ## Milestone Progress
 
-Thirty-two milestones complete (v1.0–v1.32).
+Thirty-three milestones complete (v1.0–v2.0).
+
+v2.0 FlawChess Engine shipped 2026-07-09 — 9 phases (153–161), 24 plans, ~51 tasks, ~69 commits over 5 days. A client-side practical-play analysis engine on `/analysis` (free analysis + game review), zero server load, no persistence, no new deps: a worker-free deterministic search core (Maia-prior-weighted expectimax backup + asymmetric self+opponent ELO, proven against fabricated providers in Phase 153 before any WASM/ONNX; depth-limited expectimax fallback on the same interface) → device-adaptive 2–4 Stockfish.wasm grading pool + dedicated Maia policy worker (154) → `useFlawChessEngine` anytime lines with objective-vs-practical score pairs (155) → amber engine board arrow (156) → aligned/safe/sharp agreement verdict, click-to-play spans (157) → one UCI-keyed lookup reconciling every displayed Stockfish eval (158, SEED-087) → ELO-scaled findability ranking + play-style temperature slider (159, SEED-085) → ad-hoc `/analysis` polish via quick/fast (160) → `100dvh` viewport-locked layout (161, SEED-088). Framing held: never "best move" unqualified. Live-browser UAT for 155/157/161 confirmed at close. Archived to milestones/v2.0-ROADMAP.md + v2.0-REQUIREMENTS.md, phases to milestones/v2.0-phases/, tagged v2.0. **Deployed to production** across releases #247 (phases 153–160), #248, #249 (viewport layout / 161).
+
+v1.32 Maia-3 Human-Move Enrichment shipped 2026-07-05 — 2 phases (151, 151.1), 10 plans. Client-side Maia-3 (`maia3_simplified.onnx` via onnxruntime-web in a lazy Web Worker) on `/analysis`: a per-ELO "Moves by Rating" chart + a Maia WDL eval bar (LEFT; Stockfish RIGHT), live per navigation, zero server round-trip, nothing persisted. Phase 151.1 (SEED-083) recolored chart lines by Stockfish move quality and swapped the top-6 cap for the Maia ≥0.95-mass ∪ {SF-best} set via a second isolated grading worker. Repo relicensed MIT → AGPL-3.0. Phase 152 (Flaw Overlay, Pillars A+B) demoted to SEED-084; MAIA-06 latency measurement accepted as override. No schema/migration; one read-only `current_rating` backend field. Archived to milestones/v1.32-ROADMAP.md + v1.32-REQUIREMENTS.md, phases to milestones/v1.32-phases/, tagged v1.32. **Deployed to production.**
 
 v1.32 Maia-3 Human-Move Enrichment shipped 2026-07-05 — 2 phases (151, 151.1), 10 plans. Client-side Maia-3 (`maia3_simplified.onnx` via onnxruntime-web in a lazy Web Worker) on `/analysis`: a per-ELO "Moves by Rating" chart + a Maia WDL eval bar (LEFT; Stockfish RIGHT), live per navigation, zero server round-trip, nothing persisted. Phase 151.1 (SEED-083) recolored chart lines by Stockfish move quality and swapped the top-6 cap for the Maia ≥0.95-mass ∪ {SF-best} set via a second isolated grading worker. Repo relicensed MIT → AGPL-3.0. Phase 152 (Flaw Overlay, Pillars A+B) demoted to SEED-084; MAIA-06 latency measurement accepted as override. No schema/migration; one read-only `current_rating` backend field. Archived to milestones/v1.32-ROADMAP.md + v1.32-REQUIREMENTS.md, phases to milestones/v1.32-phases/, tagged v1.32. **Deployed to production.**
 
@@ -60,6 +64,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- v2.0 FlawChess Engine closed 2026-07-09 (Phases 153–161; tag v2.0). Grew beyond its planned 153–159 scope to include Phase 160 (ad-hoc `/analysis` UI polish, artifact-free quick/fast bucket) and Phase 161 (SEED-088 viewport-locked layout); ROADMAP header lagged at "153–159" until close, corrected to 153–161. Live-browser UAT for 155/157/161 confirmed at close. Roadmap + requirements archived to `milestones/v2.0-ROADMAP.md` + `v2.0-REQUIREMENTS.md`, phases to `milestones/v2.0-phases/`. Reset for the next milestone.
 - v1.31 Pipeline Consolidation closed 2026-07-04 (Phases 148, 149, 150; tag v1.31). Execution decisions + quick-task log archived to `milestones/v1.31-ROADMAP.md`, PROJECT.md Key Decisions, and git. Reset for the next milestone.
 - Phase 151.1 inserted after Phase 151: Stockfish-graded Maia moves on the Moves-by-Rating chart (from SEED-083)
 - Phase 158 added: FlawChess Engine displayed-eval provenance reconciliation (SEED-087, amended with third Maia-card provenance chain + shared-fallback design)
