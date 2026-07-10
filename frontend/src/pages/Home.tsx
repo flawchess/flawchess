@@ -54,7 +54,7 @@ const FEATURES: {
         'Filter your whole game history by tactic, depth, and severity.',
     ],
     screenshot: { src: '/screenshots/game-card.png', alt: 'Library game card showing Stockfish eval chart, board with best-move and move-played arrows, and missed/allowed tactic chips (fork, pin)' },
-    imagePosition: 'right',
+    imagePosition: 'left',
   },
   {
     slug: 'opening-explorer',
@@ -313,7 +313,7 @@ export function HomePageContent() {
             <img
               src={screenshot.src}
               alt={screenshot.alt}
-              className="rounded-lg border border-[rgba(205,127,50,0.85)] shadow-[0_0_24px_rgba(205,127,50,0.35)] w-full lg:transition-transform lg:duration-300 lg:hover:scale-[1.02] lg:hover:shadow-[0_0_32px_rgba(205,127,50,0.5)]"
+              className="rounded-lg border border-[rgba(205,127,50,0.85)] shadow-[0_0_24px_rgba(205,127,50,0.35)] w-full"
             />
           );
           const desktopTextCol = (
