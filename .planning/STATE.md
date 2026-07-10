@@ -3,11 +3,10 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: FlawChess Engine
 current_phase: 163
-status: phase_complete
+status: Phase 163 shipped — squash-merged to main (55a9f9c7)
 stopped_at: Phase 163 verified complete (UAT passed)
-last_updated: "2026-07-10T19:32:22.603Z"
+last_updated: "2026-07-10T21:08:42.487Z"
 last_activity: 2026-07-10
-last_activity_desc: Phase 163 complete
 progress:
   total_phases: 2
   completed_phases: 2
@@ -23,8 +22,8 @@ current_phase_name: gem-moves-maia-findability-move-badges-on-analysis-seed-092
 
 Phase: 163
 Plan: 4/4 complete
-Status: Phase 163 complete and verified (UAT passed 2026-07-10) — no phases remain; next is `/gsd-new-milestone` (or deploy 162+163)
-Last activity: 2026-07-10 — Phase 163 UAT passed, phase marked complete
+Status: Phase 163 shipped — squash-merged to main (55a9f9c7)
+Last activity: 2026-07-10
 
 ## Project Reference
 
