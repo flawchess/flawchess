@@ -13,6 +13,8 @@ interface GameCardListProps {
   headerAction?: ReactNode;
   matchLabel?: ReactNode;
   hideMatchLabelOnMobile?: boolean;
+  /** When set, each card renders a full-width Analyze button opening the game at this ply. */
+  analyzePly?: number;
 }
 
 export function GameCardList({
@@ -25,6 +27,7 @@ export function GameCardList({
   headerAction,
   matchLabel,
   hideMatchLabelOnMobile = false,
+  analyzePly,
 }: GameCardListProps) {
   const totalPages = Math.max(1, Math.ceil(matchedCount / limit));
   const currentPage = Math.floor(offset / limit) + 1;
@@ -64,7 +67,7 @@ export function GameCardList({
           {/* Card stack */}
           <div className="flex flex-col gap-2">
             {games.map((game) => (
-              <GameCard key={game.game_id} game={game} />
+              <GameCard key={game.game_id} game={game} analyzePly={analyzePly} />
             ))}
           </div>
 

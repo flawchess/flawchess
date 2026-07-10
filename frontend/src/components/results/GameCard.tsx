@@ -1,18 +1,23 @@
-import { BookOpen, Calendar, Clock, Equal, ExternalLink, Hash, Minus, Plus } from 'lucide-react';
+import { BookOpen, Calendar, Clock, Equal, ExternalLink, Hash, Minus, Plus, Search } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { WDL_BORDER_DRAW, WDL_BORDER_LOSS, WDL_BORDER_WIN } from '@/lib/theme';
+import { Button } from '@/components/ui/button';
 import { Card, CardHeader } from '@/components/ui/card';
 import { Tooltip } from '@/components/ui/tooltip';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { gamePlatformUrl } from '@/lib/platformLinks';
+import { buildGameAnalysisUrl } from '@/lib/analysisUrl';
 import { plysToFullMoves } from '@/lib/chess';
 import { formatTimeControl } from '@/lib/formatTimeControl';
 import type { GameRecord, UserResult } from '@/types/api';
 
 interface GameCardProps {
   game: GameRecord;
+  /** When set, renders a full-width Analyze button opening the game at this ply. */
+  analyzePly?: number;
 }
 
 const MOBILE_BOARD_SIZE = 105;
@@ -43,7 +48,7 @@ function formatDate(dateStr: string | null): string {
   }
 }
 
-export function GameCard({ game }: GameCardProps) {
+export function GameCard({ game, analyzePly }: GameCardProps) {
   const whiteName = game.white_username ?? '?';
   const blackName = game.black_username ?? '?';
   const whiteRating = game.white_rating !== null ? `(${game.white_rating})` : '';
@@ -211,6 +216,24 @@ export function GameCard({ game }: GameCardProps) {
           {metadata}
         </div>
       </div>
+
+      {/* Full-width Analyze button — opens the game in game mode at the ply currently
+          shown on the opening board. Only rendered when an analyzePly is supplied. */}
+      {analyzePly != null && (
+        <div className="px-4 pb-3">
+          <Button asChild variant="brand-outline" className="w-full">
+            {/* Real <a> via Link for middle-click / cmd-click new-tab support. */}
+            <Link
+              to={buildGameAnalysisUrl(game.game_id, analyzePly)}
+              data-testid={`game-card-analyze-${game.game_id}`}
+              aria-label="Analyze game"
+            >
+              <Search className="h-4 w-4 mr-1" />
+              Analyze
+            </Link>
+          </Button>
+        </div>
+      )}
     </Card>
   );
 }

@@ -235,6 +235,32 @@ describe('useStockfishGradingEngine', () => {
     expect([...result.current.gradeMap.keys()].sort()).toEqual(['c5', 'e5']);
   });
 
+  it('gradeMapFen reports the FEN the displayed grades belong to, and clears with the map on navigation (163-REVIEW WR-03)', async () => {
+    const { rerender, result } = renderHook(
+      ({ fen }: { fen: string }) =>
+        useStockfishGradingEngine({ fen, candidateSans: CANDIDATES, enabled: true }),
+      { initialProps: { fen: TEST_FEN } },
+    );
+    driveInit(mockWorker);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    // Nothing graded yet — the empty map belongs to no FEN.
+    expect(result.current.gradeMapFen).toBeNull();
+
+    act(() => {
+      mockWorker.simulateMessage('info depth 10 multipv 1 score cp -10 nodes 1000 pv e7e5');
+    });
+    expect(result.current.gradeMap.size).toBe(1);
+    expect(result.current.gradeMapFen).toBe(TEST_FEN);
+
+    // Real navigation clears the displayed map AND its FEN attribution —
+    // per-FEN cache writers key on gradeMapFen, never on their own position.
+    rerender({ fen: TEST_FEN_2 });
+    expect(result.current.gradeMap.size).toBe(0);
+    expect(result.current.gradeMapFen).toBeNull();
+  });
+
   it('stale-guard: a new FEN while thinking sends stop; deferred re-go fires only after the stale bestmove', async () => {
     const { rerender } = renderHook(
       ({ fen }: { fen: string }) =>

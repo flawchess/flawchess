@@ -166,6 +166,7 @@ function StockfishEval({ text }: { text: string }): React.ReactNode {
 function ProseMoveSpan({
   move,
   mover,
+  isGem,
   isOpen,
   onOpenDelayed,
   onOpenNow,
@@ -174,6 +175,7 @@ function ProseMoveSpan({
 }: {
   move: VerdictMove;
   mover: MoverColor;
+  isGem: boolean;
   isOpen: boolean;
   onOpenDelayed: () => void;
   onOpenNow: () => void;
@@ -202,7 +204,11 @@ function ProseMoveSpan({
       {/* Unified 3-line popover shared with the FlawChess card (quick 260708-qrr).
           FlawChess's practical eval isn't available in this component's inputs
           (only Maia probabilities + Stockfish grading), so that line is omitted. */}
-      <UnifiedMovePopover objectiveEval={objectiveEvalText} maiaProbability={`${move.maiaPct}%`} />
+      <UnifiedMovePopover
+        objectiveEval={objectiveEvalText}
+        maiaProbability={`${move.maiaPct}%`}
+        isGem={isGem}
+      />
     </ProseSpan>
   );
 }
@@ -520,6 +526,7 @@ export function MaiaMoveQualityBar({
       key={m.san}
       move={m}
       mover={mover}
+      isGem={qualityBySan.get(m.san)?.quality === 'gem'}
       isOpen={activeProseSan === m.san}
       onOpenDelayed={() => openProseDelayed(m.san)}
       onOpenNow={() => openProseNow(m.san)}

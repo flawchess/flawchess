@@ -1,39 +1,41 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.0
-milestone_name: FlawChess Engine
-current_phase: 162
-current_phase_name: grading-run-authoritative-eval-reconciliation-precedence-fli
-status: Phase 162 shipped — squash-merged to main (9542a44a)
-stopped_at: Phase 162 planned (3 plans, 3 waves)
-last_updated: "2026-07-10T12:31:34.290Z"
+milestone: v2.1
+milestone_name: Analysis Eval Reconciliation & Gem Moves
+current_phase: 163
+status: v2.1 milestone closed — phases 162, 163 archived; tagged v2.1 (deploy pending)
+stopped_at: Milestone v2.1 complete; no active milestone
+last_updated: "2026-07-10T23:30:00.000Z"
 last_activity: 2026-07-10
 progress:
-  total_phases: 1
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  total_phases: 2
+  completed_phases: 2
+  total_plans: 7
+  completed_plans: 7
   percent: 100
+current_phase_name: gem-moves-maia-findability-move-badges-on-analysis-seed-092
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 162 (grading-run-authoritative-eval-reconciliation-precedence-fli) — EXECUTING
-Plan: 3 of 3
-Status: Phase 162 shipped — squash-merged to main (9542a44a)
-Last activity: 2026-07-10 - Completed quick task 260710-k7n: FlawChess Engine homepage hero + README
+Phase: 163 (final phase of v2.1)
+Plan: 4/4 complete
+Status: v2.1 milestone closed — phases 162, 163 archived to milestones/v2.1-phases/; tagged v2.1 (deploy pending)
+Last activity: 2026-07-10 - Completed quick task 260710-x3d: Openings analyze → ?line= opening-moves main line in analysis board (replaces ?fen=)
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-07-09 after v2.0 milestone close)
+See: .planning/PROJECT.md (updated 2026-07-10 after Phase 163)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: v2.0 FlawChess Engine shipped 2026-07-09 (Phases 153–161, tagged v2.0). No active milestone. Next: `/gsd-new-milestone`. **Deployed to production** — released incrementally during the milestone across PRs #247, #248, #249 (`origin/production` at #249).
+Current focus: v2.1 (Analysis Eval Reconciliation & Gem Moves — Phases 162 SEED-090 eval-reconciliation precedence flip, 163 SEED-092 gem-move badges) closed 2026-07-10 — archived, CHANGELOG promoted, tagged v2.1. No active milestone. Next: deploy v2.1 to production (162+163 are merged to main but NOT yet live; v2.0 is live via #247–#249) via `bin/deploy.sh`, then `/gsd-new-milestone`.
 
 ## Milestone Progress
 
-Thirty-three milestones complete (v1.0–v2.0).
+Thirty-four milestones complete (v1.0–v2.1).
+
+v2.1 Analysis Eval Reconciliation & Gem Moves closed 2026-07-10 — 2 phases (162, 163), 7 plans, both frontend-only on `/analysis`. Phase 162 (SEED-090) flipped `buildEvalLookup` to grading-first precedence and introduced a single canonical `resolveReconciledBest`/`reconciledBestUci` that the board arrow, agreement verdict, eval bar, and Best/Good labels all consume, so a "Good" move can never show a higher eval than "Best". Phase 163 (SEED-092) added violet gem badges (lucide `Gem`, `MAIA_ACCENT`) for the rare move that is the engine's clearly-only good move AND hard to find at the player's rating (Maia prob ≤ `GEM_MAIA_MAX_PROB` 0.03 AND expected-score gap ≥ `MISTAKE_DROP`), surfaced on board, move list, moves-by-rating chart, and popover via a new `'gem'` `MoveQuality` bucket. No backend, no schema, no new deps. Archived to milestones/v2.1-ROADMAP.md, phases to milestones/v2.1-phases/, CHANGELOG promoted, tagged v2.1. **Not yet deployed to production** — deploy pending via `bin/deploy.sh`.
 
 v2.0 FlawChess Engine shipped 2026-07-09 — 9 phases (153–161), 24 plans, ~51 tasks, ~69 commits over 5 days. A client-side practical-play analysis engine on `/analysis` (free analysis + game review), zero server load, no persistence, no new deps: a worker-free deterministic search core (Maia-prior-weighted expectimax backup + asymmetric self+opponent ELO, proven against fabricated providers in Phase 153 before any WASM/ONNX; depth-limited expectimax fallback on the same interface) → device-adaptive 2–4 Stockfish.wasm grading pool + dedicated Maia policy worker (154) → `useFlawChessEngine` anytime lines with objective-vs-practical score pairs (155) → amber engine board arrow (156) → aligned/safe/sharp agreement verdict, click-to-play spans (157) → one UCI-keyed lookup reconciling every displayed Stockfish eval (158, SEED-087) → ELO-scaled findability ranking + play-style temperature slider (159, SEED-085) → ad-hoc `/analysis` polish via quick/fast (160) → `100dvh` viewport-locked layout (161, SEED-088). Framing held: never "best move" unqualified. Live-browser UAT for 155/157/161 confirmed at close. Archived to milestones/v2.0-ROADMAP.md + v2.0-REQUIREMENTS.md, phases to milestones/v2.0-phases/, tagged v2.0. **Deployed to production** across releases #247 (phases 153–160), #248, #249 (viewport layout / 161).
 
@@ -71,6 +73,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - Phase 160 added: Analysis page layout and card/element UI polish — ad-hoc improvements via /gsd-quick and /gsd-fast, no preplanning
 - Phase 161 added: Analysis page viewport-locked responsive layout (SEED-088) — fix small-laptop bottom cutoff via 100dvh lock, height-bound board, fluid grid, Tags relocation
 - Phase 162 added: Grading-run-authoritative eval reconciliation — precedence flip (SEED-090, preferred over SEED-089's unified pass; frontend-only, grading run becomes authoritative for all displayed per-move evals)
+- Phase 163 added: Gem moves — Maia-findability move badges on /analysis (SEED-092; escalated from a /gsd-quick request 2026-07-10 — sized as phase-scale: ~10+ files, new detection module, open tunables)
 
 ### Decisions
 
@@ -154,6 +157,17 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 162-02]: D-03 mirror-image test verified via MaiaMoveQualityBar's positionVerdict prose (escape/bad roles), not the recharts-based MovesByRatingChart, to avoid adding ResponsiveContainer mock machinery Analysis.test.tsx doesn't already carry
 - [Phase 162-03]: Tasks 1+2 combined into one commit — interleaved reconciled memo chain (reconciledStockfishLine beside reconciledBestEval), mirrors 155-04/158-03 precedent
 - [Phase 162-03]: D-12 arrow test verified via scoped Element.prototype.clientWidth spy + SVG path-string diff, not geometry decoding — jsdom's default 0 clientWidth degenerates ArrowOverlay paths to NaN
+- [Phase 163-01]: classifyGem takes no ply/color argument by construction — satisfies D-02/D-04 structurally, not just via test coverage
+- [Phase 163-01]: Free-lunch guard 1 (saturation) test uses +1000/+600 cp instead of the plan's illustrative +800/+400 — the real LICHESS_K sigmoid only compresses the ES gap below MISTAKE_DROP at higher cp magnitudes
+- [Phase 163-01]: bucketKeyForQuality('gem') coverage verified via bucketMovesByQuality (its only real caller) rather than exporting the previously-private bucketKeyForQuality function
+- [Phase 163-02]: GEM_ICON_DIAMETER_RATIO (0.8) added as a named constant for the gem icon's size relative to the badge circle diameter, not a new geometry/position constant
+- [Phase 163-02]: SquareMarkerBadge restructured so cx/cy/r are computed once up front, then branches gem vs. guarded severity lookup, to avoid indexing SEVERITY_GLYPH with an undefined key now that severity is optional
+- [Phase 163-03]: Pitfall-5 audit recorded inline via commit message -- colorForQuality's switch is the only quality-string branch in MovesByRatingChart.tsx; stroke emphasis keys off SAN identity not quality
+- [Phase 163-03]: isGem threaded through ProseMoveSpan as a required boolean prop computed by the parent (renderMove), not read from qualityBySan inside the child
+- [Phase 163-03]: Gem copy row in UnifiedMovePopover uses colSpan={2} -- a single declarative sentence, not a label+value pair like the source rows
+- [Phase 163-04]: Task 1+2 combined into one commit (interleaved memo chain) - Task 1's per-FEN caches are unread until Task 2's gemCandidate memo consumes them
+- [Phase 163-04]: moveListMarkers gem fold has no mainLineSet exclusion - gemActive covers mainline AND free variations (D-05), and moveListMarkers is VariationTree's only data source
+- [Phase 163-04]: Rule 1 fix - boardSquareMarkers reads the LIVE gemCandidate memo (not the sticky gemByNode cache) so an ELO-slider change can hide an already-shown board badge, mirroring liveFlaw (live)/liveFlawByNode (sticky) split
 
 ### Pending Todos
 
@@ -177,6 +191,8 @@ None active.
 | 260709-o72 | Maia/FlawChess card prose now reflects player standing (Option B: "{standing} — {difficulty}"); player-POV eval chips (−M4 = "You're being mated" not white-POV), standing bands (winning/better/level/worse/losing/mate), decisive+safe collapse to "longest resistance"; FlawChess "safer" → "more reliable" | 2026-07-09 | ca301bee | [260709-o72-fix-maia-flawchess-card-prose-to-reflect](./quick/260709-o72-fix-maia-flawchess-card-prose-to-reflect/) |
 | 260710-e2p | Maia "Moves by Rating" tooltip pins the FlawChess Engine's OWN top pick (reconciledRankedLines[0]) instead of Stockfish's objective best mislabeled "FlawChess"; drops row when FC engine off; removed the "(played)" tag from tooltip rows | 2026-07-10 | 9b409161 | [260710-e2p-show-flawchess-engine-top-pick-in-maia-c](./quick/260710-e2p-show-flawchess-engine-top-pick-in-maia-c/) |
 | 260710-k7n | FlawChess Engine promoted to homepage hero (FEATURES[0]: "Your Best Practical Move" + ChessKnight + 3 bullets, Game/Tactic Analysis to #2); README leads Features with the engine and intro rewritten to headline it (dropped Zobrist-hash + AI-narrated-insights) | 2026-07-10 | c039196b | [260710-k7n-engine-hero-homepage](./quick/260710-k7n-engine-hero-homepage/) |
+| 260710-wub | Openings "Analyze position" moved from full-width button to a compact Search-icon button in the sidebar strip (desktop) / settings column under bookmarks (mobile), shown on Moves + Games subtabs; fixed the sideline × delete not working in Analysis `?fen=` free-play mode (onDeleteLine was gated on isGameMode) | 2026-07-10 | 27d0507d | [260710-wub-openings-move-analyze-button-to-sidebar-](./quick/260710-wub-openings-move-analyze-button-to-sidebar-/) |
+| 260710-x3d | Openings analyze passes the opening's moves to the analysis board as a `?line=` UCI param (cursor at end, navigable back to move 1), replacing the `?fen=` snapshot; new buildAnalysisLineUrl/parseAnalysisLineParam helpers; game mode kept (user-confirmed) | 2026-07-10 | edce3687 | [260710-x3d-implement-opening-moves-main-line-in-ana](./quick/260710-x3d-implement-opening-moves-main-line-in-ana/) |
 
 ## Deferred Items
 
@@ -229,9 +245,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 162 context gathered
+**Stopped at:** Phase 163 verified complete (UAT passed) — no phases remain; next is `/gsd-new-milestone` or deploy
 
-**Last session:** 2026-07-10T10:50:52.407Z
+**Last session:** 2026-07-10T19:45:00Z
 
 **Resume file:** 
 
@@ -277,6 +293,10 @@ None
 | Phase 162 P01 | 12min | 2 tasks | 2 files |
 | Phase 162 P02 | 20min | 2 tasks | 2 files |
 | Phase 162 P03 | 22min | 2 tasks | 3 files |
+| Phase 163 P01 | 10min | 2 tasks | 4 files |
+| Phase 163 P02 | 15min | - tasks | - files |
+| Phase 163 P03 | 12min | 2 tasks | 3 files |
+| Phase 163 P04 | 55min | 3 tasks | 3 files |
 
 ## Operator Next Steps
 

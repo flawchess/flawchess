@@ -74,6 +74,14 @@ export interface UseStockfishGradingEngineOptions {
 export interface StockfishGradingEngineState {
   /** pv[0]-derived-SAN-keyed grades for the currently requested candidateSans, white-POV normalized. */
   gradeMap: Map<string, MoveGrade>;
+  /**
+   * The FEN `gradeMap`'s grades actually belong to; null while the map is empty.
+   * Bug fix (163-REVIEW WR-03): the map is cleared in an effect one commit
+   * AFTER the caller's `fen` prop changes, so on the navigation commit it still
+   * holds the PREVIOUS position's grades. Callers writing per-FEN caches must
+   * key/guard on `gradeMapFen`, never on their own current position.
+   */
+  gradeMapFen: string | null;
   /** True while a (non-cached) grading search is in flight for the current FEN. */
   isGrading: boolean;
   /** True once the UCI init sequence completes (uciok + readyok). */
@@ -150,6 +158,8 @@ export function useStockfishGradingEngine({
   const [isReady, setIsReady] = useState(false);
   const [isGrading, setIsGrading] = useState(false);
   const [gradeMap, setGradeMap] = useState<Map<string, MoveGrade>>(new Map());
+  /** FEN the displayed gradeMap belongs to (WR-03) — set with every commit, cleared with the map. */
+  const [gradeMapFen, setGradeMapFen] = useState<string | null>(null);
   const [debouncedRequest, setDebouncedRequest] = useState<GradingRequest | null>(null);
 
   // ─── Ref sync (ref-for-latest-value) ───────────────────────────────────────
@@ -177,6 +187,10 @@ export function useStockfishGradingEngine({
       }
     }
     setGradeMap(displayed);
+    // WR-03: record which FEN the displayed grades belong to, so callers can
+    // detect (and skip) the one-commit window where their own position has
+    // already moved on but this hook's state has not yet cleared.
+    setGradeMapFen(fenKey);
   }
 
   // ─── Candidate-set stable dependency key ───────────────────────────────────
@@ -274,6 +288,7 @@ export function useStockfishGradingEngine({
       // A candidateSans-only change (ELO drag, same fen) must NOT clear it —
       // that's exactly Pitfall 2's re-search-avoidance case.
       setGradeMap(new Map());
+      setGradeMapFen(null); // WR-03: an empty map belongs to no FEN
     }
 
     const sans = candidateSansRef.current;
@@ -440,5 +455,5 @@ export function useStockfishGradingEngine({
 
   // ─── Return ────────────────────────────────────────────────────────────────
 
-  return { gradeMap, isGrading, isReady };
+  return { gradeMap, gradeMapFen, isGrading, isReady };
 }

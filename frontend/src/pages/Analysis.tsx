@@ -12,15 +12,18 @@
  *   EvalChart — below-board eval chart with slider (Phase 140 game mode)
  *
  * Security:
- *   T-138-01: FEN-guard on ?fen= param — malformed FEN degrades to STARTING_FEN.
+ *   ?line= guard: parseAnalysisLineParam degrades a malformed UCI line to its legal
+ *     prefix (or empty) — a hand-typed bad URL can't crash the board.
  *   T-140-02a: NaN-guard on ?game_id= / ?ply= params — malformed → null → isGameMode false.
  *   T-140-02b: L-8 guard on mainLine[ply] accesses — out-of-bounds → undefined → no-op.
  *
  * Engine: on by default (D-06); "Loading engine…" shown in eval area while WASM inits;
  *   board stays interactive throughout (SC#3).
  *
- * Modes: ?fen= seeds free play; ?game_id=X&ply=Y loads the full game at ply Y (game mode).
- *   The legacy tactic mode (?flaw_ply=) was removed in Quick 260627-l2z; clicking a
+ * Modes: ?line=<uci,uci,…> seeds free play with an opening main line (cursor at the end,
+ *   navigable back to move 1); no line → bare start. ?game_id=X&ply=Y loads the full game
+ *   at ply Y (game mode). The legacy ?fen= snapshot param (replaced by ?line=) and the
+ *   legacy tactic mode (?flaw_ply=, removed Quick 260627-l2z) are gone; clicking a
  *   move-list tactic chip grafts the PV as an in-tree sideline with a depth overlay.
  */
 
@@ -46,6 +49,7 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { useGameOverlay } from '@/hooks/useGameOverlay';
 import { useLiveMoveFlaw } from '@/hooks/useLiveMoveFlaw';
 import { useTacticLines, useLibraryGame } from '@/hooks/useLibrary';
+import { parseAnalysisLineParam } from '@/lib/analysisUrl';
 import { toDisplayDepthForOrientation } from '@/lib/tacticDepth';
 import { buildPvArrow } from '@/lib/tacticArrows';
 import { EvalBar } from '@/components/analysis/EvalBar';
@@ -87,9 +91,11 @@ import { selectCandidatesByMass, nearestByElo, classifyMoveQuality, type MoveGra
 import type { MoveQualityEval, EngineLine } from '@/components/analysis/MovesByRatingChart';
 import { sideToMoveFromFen, terminalPositionEval, evalToExpectedScore } from '@/lib/liveFlaw';
 import type { NodeId, MoveNode } from '@/hooks/useAnalysisBoard';
+import type { MoveCurvePoint } from '@/hooks/useMaiaEngine';
 import { buildEvalLookup, getByUci, getBySan, resolveReconciledBest, rankReconciledCandidates } from '@/lib/engineEvalLookup';
 import type { RankedLine } from '@/lib/engine/types';
 import type { PvLine } from '@/hooks/uciParser';
+import { classifyGem, summarizeForGem, GEM_MAIA_MAX_PROB } from '@/lib/gemMove';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -409,25 +415,20 @@ function buildFocusedPvLine(
 /**
  * Default-exported Analysis page (required by React.lazy in App.tsx).
  * ROUTE-01: reachable by authenticated users inside ProtectedLayout.
- * ROUTE-02: ?fen= seeds the board; empty/malformed → standard start.
+ * ROUTE-02: ?line= seeds a free-play opening main line; empty/malformed → standard start.
  * ROUTE-04 (Phase 140): ?game_id=&ply= enters game mode (full game at initial ply).
  */
 export default function Analysis() {
   const [searchParams] = useSearchParams();
-  const fenParam = searchParams.get('fen') ?? undefined;
 
-  // Security FEN-guard (T-138-01): attempt chess.js parse; fall back to
-  // undefined (STARTING_FEN) so a hand-typed bad URL renders the start
-  // position instead of crashing react-chessboard at render.
-  let guardedFen: string | undefined;
-  if (fenParam !== undefined) {
-    try {
-      new Chess(fenParam);
-      guardedFen = fenParam;
-    } catch {
-      // Malformed FEN: degrade to STARTING_FEN (guardedFen stays undefined).
-    }
-  }
+  // Free-play entry point: the opening line to seed as the board's main line,
+  // carried as a `?line=` param of comma-separated UCI moves from the standard
+  // start (replaces the old `?fen=` snapshot — a move list lets the user step
+  // all the way back to move 1). parseAnalysisLineParam degrades a malformed or
+  // hand-typed value to its legal prefix, so bad input can't crash the board —
+  // the same defensive posture the old FEN guard (T-138-01) had.
+  const lineParam = searchParams.get('line');
+  const lineSans = useMemo(() => parseAnalysisLineParam(lineParam), [lineParam]);
 
   // ── URL params — game mode (T-140-02a) ──────────────────────────────────────
   // Security: NaN-guard on numeric params — malformed → null → mode disabled.
@@ -507,7 +508,7 @@ export default function Analysis() {
     clearAllSidelines,
     isOnPvLine,
     containerRef,
-  } = useAnalysisBoard(guardedFen);
+  } = useAnalysisBoard(STARTING_FEN);
 
   // Engine hook must run unconditionally (React rules).
   // 155 UAT un-merge: the standalone Stockfish search runs whenever its own
@@ -659,6 +660,17 @@ export default function Analysis() {
     loadMainLine(gameData.moves, STARTING_FEN);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameData?.moves, isGameMode]);
+
+  // Free play: seed the opening main line from the ?line= param once. The cursor
+  // lands at the end of the line (loadMainLine's default), and the user can step
+  // back to move 1 through the variation tree. hasLoadedMainLine is shared with
+  // game mode — a page is one or the other, never both.
+  useEffect(() => {
+    if (isGameMode || lineSans.length === 0 || hasLoadedMainLine.current) return;
+    hasLoadedMainLine.current = true;
+    loadMainLine(lineSans, STARTING_FEN);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lineSans, isGameMode]);
 
   // Navigate to initialPly AFTER loadMainLine state lands (separate effect — RESEARCH.md Hardest Part 3).
   // Watches mainLine.length so it fires after the batch-reset from loadMainLine.
@@ -1031,6 +1043,44 @@ export default function Analysis() {
     return merged;
   }, [evalLookup, grading.gradeMap, position, reconciledBestSan]);
 
+  // Phase 163 (SEED-092): recolors the CURRENT position's reconciled-best candidate
+  // as 'gem' when it satisfies classifyGem — feeds ONLY the chart/bar display sites
+  // (MaiaHumanPanel below), never positionVerdict/the FlawChess card (those stay on
+  // the base qualityBySan; the gem override is a display concern only). Distinct
+  // from the gem block below (~liveFlawByNode section): this memo is
+  // forward-looking over the CURRENT position's own candidates, while that block
+  // classifies the ARRIVAL move that reached the current node against the PARENT
+  // position (graded on demand). Stable ref (returns qualityBySan unchanged) when
+  // no gem qualifies, so consumers memoized on it don't re-render needlessly.
+  const qualityBySanWithGem = useMemo<Map<string, MoveQualityEval>>(() => {
+    if (reconciledBestSan === null) return qualityBySan;
+    const rung = nearestByElo(maia.perElo, selectedElo);
+    const maiaProb = rung?.moveProbabilities[reconciledBestSan] ?? null;
+    // Bug fix (163-REVIEW WR-01): verify the summarized argmax IS the move we are
+    // about to recolor instead of hard-coding playedIsBest: true. When the
+    // summarize argmax diverges from reconciledBestSan (tie-break drift, or a
+    // partially graded map), classifyGem would otherwise evaluate the argmax
+    // pair's gap while a DIFFERENT move gets painted violet — a false gem.
+    // Mirrors the arrival-move path's own `bestSan === playedSan` check (gem
+    // block below).
+    const { bestSan, bestEs, secondBestEs } = summarizeForGem(
+      qualityBySan,
+      sideToMoveFromFen(position),
+    );
+    const isGem = classifyGem({
+      maiaProbability: maiaProb,
+      playedIsBest: bestSan === reconciledBestSan,
+      bestEs,
+      secondBestEs,
+    });
+    if (!isGem) return qualityBySan;
+    const bestInfo = qualityBySan.get(reconciledBestSan);
+    if (!bestInfo) return qualityBySan;
+    const next = new Map(qualityBySan);
+    next.set(reconciledBestSan, { ...bestInfo, quality: 'gem' });
+    return next;
+  }, [qualityBySan, reconciledBestSan, maia.perElo, selectedElo, position]);
+
   // The FlawChess Engine's top practical pick — its root move's SAN + reconciled
   // white-POV objective eval — shown as the pinned "FlawChess" reference row atop
   // the Maia chart tooltip (quick 260710-e2p). Sourced ONLY from the FlawChess
@@ -1199,6 +1249,39 @@ export default function Analysis() {
     });
   }, [position, engine.evalCp, engine.evalMate, engineEnabled]);
 
+  // Phase 163 (SEED-092, RESEARCH Pitfall 1): a per-FEN retention cache for the
+  // Maia curve, mirroring engineEvalByFen exactly — useMaiaEngine only exposes
+  // CURRENT-position data, but gem detection (C1: hard-to-find) needs the PARENT
+  // position's Maia curve once the user has navigated to the child. Retained
+  // while each position is current; read back below (parentFen-keyed) once it's
+  // the parent. Maia is fast and reliably wins the navigation race, so caching it
+  // is safe; the Stockfish grade (C2) is instead fetched on demand per node (see
+  // the gem block below) rather than cached per FEN, which is what used to race.
+  const [maiaCurveByFen, setMaiaCurveByFen] = useState<Map<string, MoveCurvePoint[]>>(
+    () => new Map(),
+  );
+  useEffect(() => {
+    if (!maiaEnabled || maia.perElo.length === 0) return;
+    // Bug fix (163-REVIEW WR-03): useMaiaEngine clears its result one commit
+    // AFTER `position` changes, so on the navigation commit `maia.perElo`
+    // still holds the PARENT's curve — writing it under the child's FEN would
+    // poison the cache (a rapid two-step navigation then classifies the
+    // grandchild's arrival move against the wrong position's policy map).
+    // Only cache when the hook says the curve belongs to the shown position.
+    if (maia.resultFen !== position) return;
+    setMaiaCurveByFen((prev) => {
+      const existing = prev.get(position);
+      if (existing === maia.perElo) return prev; // unchanged (stable ref) — skip re-render
+      const next = new Map(prev);
+      next.set(position, maia.perElo);
+      if (next.size > LIVE_EVAL_CACHE_MAX) {
+        const oldest = next.keys().next().value;
+        if (oldest !== undefined) next.delete(oldest);
+      }
+      return next;
+    });
+  }, [position, maia.perElo, maia.resultFen, maiaEnabled]);
+
   // FEN of the position BEFORE the current move — the live classifier's "best before".
   const parentFen = useMemo<string | null>(() => {
     if (currentNodeId === null) return null;
@@ -1270,6 +1353,133 @@ export default function Analysis() {
     });
   }, [liveFlawActive, currentNodeId, liveFlaw]);
 
+  // Phase 163 (SEED-092 D-03/D-04/D-05/D-06): gem-move detection. Broader gate than
+  // liveFlawActive — D-05 requires coverage on EVERY visited node, mainline AND free
+  // variations, both colors — so this deliberately has NO isGameMode/isOnMainLine/
+  // isOnPvLine exclusion.
+  const gemActive = currentNodeId !== null && parentFen !== null;
+
+  // The numbers behind a detected gem, surfaced in the move-list gem popover — the
+  // ELO rung it was found at, the Maia probability of the move at that rung, and
+  // whether the OPPONENT (not the user) played it (game mode only; switches the
+  // popover heading).
+  type GemDetail = { maiaProbability: number; elo: number; byOpponent: boolean };
+
+  // Sticky per-node gem RESOLUTION. `has(nodeId)` means the node's arrival move has
+  // been graded and resolved — the gate that stops us re-grading it. A non-null
+  // value is a confirmed gem (shows the badge, carries its popover detail); an
+  // explicit `null` is a graded-and-rejected node. Populated ONLY by the on-demand
+  // parent-grade effect below — NOT a per-FEN grade cache.
+  //
+  // This replaces the old gradeSummaryByFen race: the C2 grade was cached per FEN
+  // only when the parent's grading pass COMPLETED while the parent was the current
+  // position. Play the move before that finished and the parent — no longer current
+  // — was never graded again, so the gem never showed (the reported bug). Now the
+  // grade is fetched on demand for the node, so it appears regardless of timing.
+  const [gemByNode, setGemByNode] = useState<Map<NodeId, GemDetail | null>>(() => new Map());
+
+  // C1 (hard to find): the arrival move into the current node and its Maia
+  // probability at the PARENT rung, read from the reliably-cached parent Maia curve
+  // (Maia is fast and wins the navigation race). Cheap, so it gates whether we
+  // bother spinning up a Stockfish pass on the parent at all — gems are rare by
+  // construction, so this passes infrequently. Re-reads at the current selectedElo
+  // so an ELO-slider change can newly qualify a move (additive; never un-resolves).
+  const gemC1 = useMemo<{ playedSan: string; maiaProbability: number } | null>(() => {
+    if (!gemActive || currentNodeId === null || parentFen === null) return null;
+    const playedSan = nodes.get(currentNodeId)?.san ?? null;
+    if (playedSan === null) return null;
+    const parentCurve = maiaCurveByFen.get(parentFen);
+    if (parentCurve === undefined) return null; // parent Maia not cached yet — wait
+    const maiaProbability = nearestByElo(parentCurve, selectedElo)?.moveProbabilities[playedSan] ?? null;
+    if (maiaProbability === null || maiaProbability > GEM_MAIA_MAX_PROB) return null;
+    return { playedSan, maiaProbability };
+  }, [gemActive, currentNodeId, parentFen, nodes, maiaCurveByFen, selectedElo]);
+
+  // Grade the PARENT to confirm C2 (only good move) only when the arrival move is a
+  // rare gem candidate (C1 passed) AND this node is not already resolved.
+  const needParentGemGrade =
+    gemC1 !== null && currentNodeId !== null && !gemByNode.has(currentNodeId);
+
+  // The parent's candidate SANs to grade — the same Maia-mass selection the chart
+  // uses, plus the played move (always included). No free-run contribution (the
+  // free engine is on the child), so C2 is judged over Maia's candidate set.
+  const parentGemCandidateSans = useMemo<string[]>(() => {
+    if (!needParentGemGrade || parentFen === null || gemC1 === null) return [];
+    const parentCurve = maiaCurveByFen.get(parentFen);
+    if (parentCurve === undefined) return [];
+    return selectCandidatesByMass(parentCurve, selectedElo, gemC1.playedSan, null);
+  }, [needParentGemGrade, parentFen, maiaCurveByFen, selectedElo, gemC1]);
+
+  // On-demand SECOND grading worker, pinned to the parent FEN only while a gem
+  // candidate needs confirming (absent/idle otherwise — `enabled` gates worker
+  // creation). Fully isolated from the shared `grading` worker so the current
+  // position's chart / FC card / Stockfish reconciliation are never disturbed
+  // while we grade the parent.
+  const gemGrading = useStockfishGradingEngine({
+    fen: needParentGemGrade ? parentFen : null,
+    candidateSans: parentGemCandidateSans,
+    enabled: gradingEnabled && needParentGemGrade,
+  });
+
+  // When the parent grade completes, run C2 and RESOLVE the node: stamp the gem
+  // detail on a pass, or an explicit null on a miss (so it is never re-graded).
+  useEffect(() => {
+    if (!needParentGemGrade || currentNodeId === null || parentFen === null) return;
+    // Wait for a COMPLETE parent pass keyed to the parent FEN (gradeMapFen guards
+    // against the one-commit-late clear, mirroring the Maia cache's WR-03 guard).
+    if (gemGrading.gradeMapFen !== parentFen || gemGrading.isGrading) return;
+    if (gemGrading.gradeMap.size === 0) return;
+
+    const gradeBySan = new Map<string, { evalCp: number | null; evalMate: number | null }>();
+    for (const [san, g] of gemGrading.gradeMap) {
+      gradeBySan.set(san, { evalCp: g.evalCp, evalMate: g.evalMate });
+    }
+    const mover = sideToMoveFromFen(parentFen);
+    const { bestSan, bestEs, secondBestEs } = summarizeForGem(gradeBySan, mover);
+    const playedSan = nodes.get(currentNodeId)?.san ?? null;
+    const parentCurve = maiaCurveByFen.get(parentFen);
+    const maiaProbability =
+      playedSan !== null
+        ? nearestByElo(parentCurve ?? [], selectedElo)?.moveProbabilities[playedSan] ?? null
+        : null;
+    const isGem = classifyGem({
+      maiaProbability,
+      playedIsBest: bestSan === playedSan,
+      bestEs,
+      secondBestEs,
+    });
+    // The mover made the move; in game mode it's the opponent when it isn't the
+    // user's color. Free play has no opponent, so this stays false there.
+    const byOpponent =
+      isGameMode && gameData?.user_color != null && mover !== gameData.user_color;
+    // classifyGem === true guarantees maiaProbability is non-null (it rejects a
+    // null probability), so the detail's number is safe.
+    const detail: GemDetail | null =
+      isGem && maiaProbability !== null ? { maiaProbability, elo: selectedElo, byOpponent } : null;
+    setGemByNode((prev) => {
+      if (prev.has(currentNodeId)) return prev; // already resolved — first wins
+      const next = new Map(prev);
+      next.set(currentNodeId, detail);
+      if (next.size > LIVE_EVAL_CACHE_MAX) {
+        const oldest = next.keys().next().value;
+        if (oldest !== undefined) next.delete(oldest);
+      }
+      return next;
+    });
+  }, [
+    needParentGemGrade,
+    currentNodeId,
+    parentFen,
+    gemGrading.gradeMap,
+    gemGrading.gradeMapFen,
+    gemGrading.isGrading,
+    nodes,
+    maiaCurveByFen,
+    selectedElo,
+    isGameMode,
+    gameData?.user_color,
+  ]);
+
   // Move-list marker map (item 1, Quick 260628-1t5): merge the game-mode flaw markers with
   // the live free-move severity for the CURRENT node, so a freely-played blunder/mistake
   // paints the same glyph in the move list as on the board (single source — liveFlaw's own
@@ -1281,7 +1491,8 @@ export default function Analysis() {
     const liveSeverity = liveFlaw.squareMarkers[0]?.severity;
     const showCurrentLive =
       currentNodeId !== null && (liveSeverity === 'blunder' || liveSeverity === 'mistake');
-    if (liveFlawByNode.size === 0 && !showCurrentLive) return flawMarkerByNodeId;
+    const hasGemWork = gemByNode.size > 0;
+    if (liveFlawByNode.size === 0 && !showCurrentLive && !hasGemWork) return flawMarkerByNodeId;
 
     const mainLineSet = new Set(mainLine);
     const merged = new Map(flawMarkerByNodeId);
@@ -1303,8 +1514,47 @@ export default function Analysis() {
     if (currentNodeId !== null && (liveSeverity === 'blunder' || liveSeverity === 'mistake')) {
       addLive(currentNodeId, liveSeverity);
     }
+
+    // Phase 163 (SEED-092 D-05/D-06): fold gemByNode's sticky entries into the SAME
+    // map — unlike addLive above, this has NO mainLineSet exclusion. gemActive covers
+    // mainline AND free-variation nodes (D-05), and moveListMarkers is the ONLY map
+    // VariationTree reads, so excluding mainline ids here would silently drop mainline
+    // gem badges from the move list. Merging onto a severity-free entry (e.g. a
+    // tactic-chips-only game entry) keeps its chips and adds the gem.
+    const addGem = (nodeId: NodeId, detail: GemDetail): void => {
+      if (!nodes.has(nodeId)) return; // node deleted (e.g. a collapsed PV fork)
+      const existing = merged.get(nodeId);
+      if (existing?.gem) return; // already flagged
+      // Bug fix (163-REVIEW WR-05, move-list side): a backend/live severity entry on
+      // the same node wins — one move never renders two badges. "Mutually exclusive
+      // by construction" only holds within the live pipeline; a BACKEND severity
+      // (server Stockfish) and the live WASM gem can legitimately disagree.
+      if (existing?.severity != null) return;
+      merged.set(nodeId, {
+        ...(existing ?? {
+          missedMotif: null,
+          allowedMotif: null,
+          missedDepth: null,
+          allowedDepth: null,
+          ply: -1,
+        }),
+        gem: true,
+        // The detection-time rung + probability + who played it, for the
+        // move-list gem popover.
+        gemMaiaProbability: detail.maiaProbability,
+        gemElo: detail.elo,
+        gemByOpponent: detail.byOpponent,
+      });
+    };
+    // Sticky resolutions carry their own detection detail (D-06). Skip null
+    // entries — those are graded-and-rejected nodes (kept only to prevent
+    // re-grading), not gems.
+    for (const [nodeId, detail] of gemByNode) {
+      if (detail !== null) addGem(nodeId, detail);
+    }
+
     return merged;
-  }, [flawMarkerByNodeId, liveFlaw, currentNodeId, liveFlawByNode, mainLine, nodes]);
+  }, [flawMarkerByNodeId, liveFlaw, currentNodeId, liveFlawByNode, mainLine, nodes, gemByNode]);
 
   // Move-list coloring inside the PV sideline (Quick 260628-ojq UAT, extends item 4):
   // teal (TAC_MISSED) for a missed tactic, crimson (TAC_ALLOWED) for an allowed one. Every
@@ -1499,13 +1749,25 @@ export default function Analysis() {
         setOpenLines(new Map());
         setPendingFlaw(null);
         setLiveFlawByNode(new Map()); // drop persisted sideline glyphs on reset
+        setGemByNode(new Map()); // Phase 163: re-derives instantly from the FEN caches on revisit
         // T-140-02b: L-8 guard on initialPly — out-of-bounds is a no-op.
         const nodeId = mainLine[initialPly ?? 0];
         if (nodeId !== undefined) goToNode(nodeId);
       }
     : () => {
         setLiveFlawByNode(new Map());
-        loadMainLine([], rootFen);
+        setGemByNode(new Map());
+        if (mainLine.length > 0) {
+          // Opening-line free play (?line=): keep the seeded opening as the main
+          // line, drop any exploration sidelines, and return to the end of the
+          // line (the entry point) — mirrors game mode's clear-and-return reset.
+          clearAllSidelines();
+          const endId = mainLine[mainLine.length - 1];
+          if (endId !== undefined) goToNode(endId);
+        } else {
+          // Bare free play (no line): wipe back to the empty start position.
+          loadMainLine([], rootFen);
+        }
       };
 
   const canReset = currentNodeId !== null;
@@ -1712,6 +1974,37 @@ export default function Analysis() {
     />
   );
 
+  // Phase 163 (SEED-092 D-06): the board's own gem badge — appended to whichever
+  // base squareMarkers source (precomputed game overlay or live free-move
+  // classification) is currently active. Reads the sticky per-node resolution
+  // (gemByNode) for the CURRENT node, the SAME source the move list uses — so the
+  // two can never disagree, and the badge shows the moment the on-demand parent
+  // grade resolves rather than depending on grade-timing at navigation. A `null`
+  // value is a graded-and-rejected node (no badge). Note (behavior change from the
+  // old live D-03 read): the badge is now sticky at its detection ELO rather than
+  // re-evaluating C1 on every ELO-slider tick — it matches the move list, and the
+  // popover already discloses the detection ELO. An ELO change can still newly
+  // qualify an as-yet-unresolved node (gemC1 above re-reads at selectedElo).
+  const boardSquareMarkers = useMemo(() => {
+    const base =
+      gameOverlay.squareMarkers.length > 0 ? gameOverlay.squareMarkers : liveFlaw.squareMarkers;
+    const gemHere = currentNodeId !== null ? gemByNode.get(currentNodeId) : undefined;
+    // Bug fix (163-REVIEW WR-05): in game mode the base can carry a BACKEND-
+    // precomputed severity marker on lastMove.to (server-side Stockfish), while
+    // the gem's C2 comes from the frontend WASM pass — the two evals diverge by
+    // design (documented eval non-determinism), so "mutually exclusive by
+    // construction" doesn't hold across pipelines. One square never renders two
+    // badges: an existing severity marker wins, the gem yields.
+    if (
+      gemHere != null && // non-null resolution = confirmed gem (null = graded, not a gem)
+      lastMove != null &&
+      !base.some((m) => m.square === lastMove.to && m.severity != null)
+    ) {
+      return [...base, { square: lastMove.to, gem: true }];
+    }
+    return base;
+  }, [gameOverlay.squareMarkers, liveFlaw.squareMarkers, gemByNode, currentNodeId, lastMove]);
+
   // The single react-chessboard instance / `analysis-board` focus target. Shared by the
   // desktop stage and the mobile row (only one renders at a time via isMobile), so the
   // board mounts exactly once either way. `heightRef` is supplied on mobile (the row's own
@@ -1734,9 +2027,7 @@ export default function Analysis() {
       }
       flipped={boardFlipped}
       arrows={boardArrows}
-      squareMarkers={
-        gameOverlay.squareMarkers.length > 0 ? gameOverlay.squareMarkers : liveFlaw.squareMarkers
-      }
+      squareMarkers={boardSquareMarkers}
       maxWidth={BOARD_MAX_WIDTH}
       heightRef={heightRef}
     />
@@ -1830,7 +2121,12 @@ export default function Analysis() {
       activePvKeys={isGameMode ? activePvKeys : undefined}
       pvFetchPending={isGameMode ? contextualPending : undefined}
       pvFetchError={isGameMode ? contextualError : undefined}
-      onDeleteLine={isGameMode ? deleteSubtree : undefined}
+      // deleteSubtree wired unconditionally: the free-move sideline × delete must
+      // work in free-play mode too. Previously gated on isGameMode, so in free play
+      // the × rendered (free-move blocks always show it) but its handler was
+      // undefined and clicking did nothing. deleteSubtree is always safe — it
+      // recovers currentNodeId to the fork parent when the current node is deleted.
+      onDeleteLine={deleteSubtree}
     />
   );
 
@@ -2091,7 +2387,7 @@ export default function Analysis() {
           // above so the free-run pick stays plotted).
           bestSan={reconciledBestSan ?? bestSan}
           shownSans={shownSans}
-          qualityBySan={qualityBySan}
+          qualityBySan={qualityBySanWithGem}
           mover={sideToMoveFromFen(position)}
           engineTopLines={engineTopLines}
           onHoverMovesChange={setHoveredQualityMoves}
@@ -2361,7 +2657,7 @@ export default function Analysis() {
               // mobile Maia tab above (CLAUDE.md mobile/desktop parity).
               bestSan={reconciledBestSan ?? bestSan}
               shownSans={shownSans}
-              qualityBySan={qualityBySan}
+              qualityBySan={qualityBySanWithGem}
               mover={sideToMoveFromFen(position)}
               engineTopLines={engineTopLines}
               onHoverMovesChange={setHoveredQualityMoves}

@@ -8,6 +8,20 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Changed
+- Analysis: gem moves are now flagged a bit more generously — a played move counts as "hard to find" when its Maia probability is at or below 10% (was 5%), so more of the strong-but-rare ideas surface a gem badge.
+- Openings → Analysis: the "Analyze position" action now carries the opening's full move sequence to the analysis board (as a `?line=` URL param) instead of just a snapshot position, so you can step all the way back to move 1 in the variation tree. The board opens at the end of the line (quick 260710-x3d).
+- Openings: the "Analyze position" action moved from a full-width button under the board to a compact search-icon button in the sidebar (desktop) and the board's settings column under Bookmarks (mobile), on both the Moves and Games tabs (quick 260710-wub).
+
+### Fixed
+- Analysis: the × button now removes a sideline when analyzing a position opened via URL (free-play mode), not only in full-game mode (quick 260710-wub).
+
+## [v2.1] Analysis Eval Reconciliation & Gem Moves — 2026-07-10
+
+### Added
+
+- Analysis page: "gem" moves — moves that are objectively best or good yet hard for a human to find (low Maia probability) — are now flagged with a violet gem badge on the board, in the move list, on the moves-by-rating chart, and in the move popover, so you can spot the strong ideas most players miss (Phase 163).
+
 ### Fixed
 
 - Analysis page: all per-move evals now come from one reconciled grading-first Stockfish source, so a move labeled "Good" can never show a higher number than the move labeled "Best", and the Stockfish card, FlawChess Engine card, Maia tooltip, board arrow, verdict, and eval bar all agree on the best move (Phase 162).
@@ -1029,7 +1043,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.0...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.1...HEAD
+[v2.1]: https://github.com/flawchess/flawchess/compare/v2.0...v2.1
 [v2.0]: https://github.com/flawchess/flawchess/compare/v1.32...v2.0
 [v1.32]: https://github.com/flawchess/flawchess/compare/v1.31...v1.32
 [v1.31]: https://github.com/flawchess/flawchess/compare/v1.30...v1.31

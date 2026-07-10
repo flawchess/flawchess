@@ -295,6 +295,34 @@ describe('useMaiaEngine', () => {
     expect(analyzeMessages(mockWorker)[0]?.fen).toBe(TEST_FEN);
   });
 
+  it('resultFen reports the FEN the held curve belongs to, and clears with it (163-REVIEW WR-03)', async () => {
+    vi.advanceTimersByTime(200); // first FEN settles immediately
+    const { rerender, result } = renderHook(
+      ({ fen }: { fen: string }) => useMaiaEngine({ fen, enabled: true, selectedElo: 1500 }),
+      { initialProps: { fen: TEST_FEN } },
+    );
+    driveReady(mockWorker);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    // No result held yet — no FEN to attribute.
+    expect(result.current.resultFen).toBeNull();
+
+    act(() => {
+      mockWorker.simulateMessage(buildResultMessage(TEST_FEN));
+    });
+    expect(result.current.resultFen).toBe(TEST_FEN);
+
+    // Navigating to an uncached FEN clears the curve AND its attribution —
+    // per-FEN cache writers key on resultFen, never on their own position.
+    rerender({ fen: TEST_FEN_2 });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(result.current.perElo).toHaveLength(0);
+    expect(result.current.resultFen).toBeNull();
+  });
+
   it('unmount sends terminate and terminates the Worker (no leak)', () => {
     const { unmount } = renderHook(() => useMaiaEngine({ fen: null, enabled: true, selectedElo: 1500 }));
     unmount();
