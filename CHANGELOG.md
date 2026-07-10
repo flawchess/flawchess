@@ -8,6 +8,12 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Changed
+- Openings: the "Analyze position" action moved from a full-width button under the board to a compact search-icon button in the sidebar (desktop) and the board's settings column under Bookmarks (mobile), on both the Moves and Games tabs (quick 260710-wub).
+
+### Fixed
+- Analysis: the × button now removes a sideline when analyzing a position opened via URL (free-play mode), not only in full-game mode (quick 260710-wub).
+
 ## [v2.1] Analysis Eval Reconciliation & Gem Moves — 2026-07-10
 
 ### Added
