@@ -16,7 +16,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
-import { Search, Scale, Filter, TrophyIcon, Timer, Compass, Loader2, UserPlus, DoorOpen } from 'lucide-react';
+import { Search, Scale, Filter, TrophyIcon, Timer, Compass, Loader2, UserPlus, DoorOpen, ChessKnight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 // Feature sections — the first entry is rendered in the hero (desktop right column +
@@ -30,6 +30,18 @@ const FEATURES: {
   screenshot: { src: string; alt: string };
   imagePosition: 'left' | 'right';
 }[] = [
+  {
+    slug: 'flawchess-engine',
+    icon: ChessKnight,
+    heading: 'Your Best Practical Move',
+    desc: [
+        'The FlawChess Engine shows your best practical move, not just the objective one: every move is scored by how likely you are to find and execute it, including the follow-ups.',
+        'Catch the traps Stockfish ignores: moves that are second-best on paper but win more often against real opponents. Swindle-finding is the engine\'s signature.',
+        'Tuned to your level: powered by Stockfish + Maia, with a “Play style” dial that shifts from human-realistic to engine-precise.',
+    ],
+    screenshot: { src: '/screenshots/flawchess-engine.png', alt: 'FlawChess Engine board view showing the practical score and objective Stockfish evaluation for each candidate move' },
+    imagePosition: 'right',
+  },
   {
     slug: 'game-analysis',
     icon: Search,
