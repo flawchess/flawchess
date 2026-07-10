@@ -792,7 +792,7 @@ describe('Gem moves (Phase 163, SEED-092)', () => {
 
   // Seeds a qualifying gem at the CURRENT (parent) position: `bestSan` beats
   // `otherSan` by a huge expected-score gap (0.50, far above MISTAKE_DROP=0.1)
-  // and is rare for the mover at the given rung(s) (<= GEM_MAIA_MAX_PROB=0.05).
+  // and is rare for the mover at the given rung(s) (<= GEM_MAIA_MAX_PROB=0.1).
   // `evalCp` is WHITE-POV (evalToExpectedScore's own convention) — `mover`
   // flips the sign so `bestSan` reads as the mover's best move regardless of
   // color (a Black gem needs a NEGATIVE cp to read as good for Black).

@@ -55,8 +55,8 @@ describe('classifyGem', () => {
     ).toBe(true);
   });
 
-  it('D-07: GEM_MAIA_MAX_PROB is exactly 0.05', () => {
-    expect(GEM_MAIA_MAX_PROB).toBe(0.05);
+  it('D-07: GEM_MAIA_MAX_PROB is exactly 0.1', () => {
+    expect(GEM_MAIA_MAX_PROB).toBe(0.1);
   });
 
   it('returns false when maiaProbability is null (C1 fail)', () => {

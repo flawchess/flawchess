@@ -9,6 +9,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ## [Unreleased]
 
 ### Changed
+- Analysis: gem moves are now flagged a bit more generously — a played move counts as "hard to find" when its Maia probability is at or below 10% (was 5%), so more of the strong-but-rare ideas surface a gem badge.
 - Openings → Analysis: the "Analyze position" action now carries the opening's full move sequence to the analysis board (as a `?line=` URL param) instead of just a snapshot position, so you can step all the way back to move 1 in the variation tree. The board opens at the end of the line (quick 260710-x3d).
 - Openings: the "Analyze position" action moved from a full-width button under the board to a compact search-icon button in the sidebar (desktop) and the board's settings column under Bookmarks (mobile), on both the Moves and Games tabs (quick 260710-wub).
 

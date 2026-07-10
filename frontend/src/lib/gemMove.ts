@@ -22,7 +22,7 @@ import { MISTAKE_DROP } from '@/generated/flawThresholds';
  *  Deliberately a flat cutoff, not an ELO-scaled iso-rarity curve (D-08 defers
  *  that refinement to a future phase — this constant stays independent of
  *  any per-ELO reference-probability curve). */
-export const GEM_MAIA_MAX_PROB = 0.05;
+export const GEM_MAIA_MAX_PROB = 0.1;
 
 /**
  * C1 (hard to find) AND C2 (only good move). Callers resolve the played
