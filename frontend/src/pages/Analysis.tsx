@@ -49,7 +49,7 @@ import { useTacticLines, useLibraryGame } from '@/hooks/useLibrary';
 import { toDisplayDepthForOrientation } from '@/lib/tacticDepth';
 import { buildPvArrow } from '@/lib/tacticArrows';
 import { EvalBar } from '@/components/analysis/EvalBar';
-import { EngineLines, EngineLinesSkeleton, LINES_MIN_HEIGHT } from '@/components/analysis/EngineLines';
+import { EngineLines, EngineLinesSkeleton, LINES_MIN_HEIGHT, MAX_LINES as SF_MAX_LINES } from '@/components/analysis/EngineLines';
 import { FlawChessEngineLines, MAX_LINES as FC_MAX_LINES } from '@/components/analysis/FlawChessEngineLines';
 import { FlawChessAgreementVerdict } from '@/components/analysis/FlawChessAgreementVerdict';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
@@ -71,7 +71,7 @@ import { BOARD_MAX_WIDTH, computeBoardSize } from '@/components/board/boardSize'
 import { BoardControls } from '@/components/board/BoardControls';
 import { PlayerBar } from '@/components/board/PlayerBar';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { uciToSquares } from '@/lib/sanToSquares';
+import { uciToSquares, sanToUci } from '@/lib/sanToSquares';
 import {
   TAC_MISSED,
   TAC_ALLOWED,
@@ -85,10 +85,11 @@ import {
 } from '@/lib/theme';
 import { selectCandidatesByMass, nearestByElo, classifyMoveQuality, type MoveGrade } from '@/lib/moveQuality';
 import type { MoveQualityEval, EngineLine } from '@/components/analysis/MovesByRatingChart';
-import { sideToMoveFromFen, terminalPositionEval } from '@/lib/liveFlaw';
+import { sideToMoveFromFen, terminalPositionEval, evalToExpectedScore } from '@/lib/liveFlaw';
 import type { NodeId, MoveNode } from '@/hooks/useAnalysisBoard';
-import { buildEvalLookup, getByUci, getBySan } from '@/lib/engineEvalLookup';
+import { buildEvalLookup, getByUci, getBySan, resolveReconciledBest, rankReconciledCandidates } from '@/lib/engineEvalLookup';
 import type { RankedLine } from '@/lib/engine/types';
+import type { PvLine } from '@/hooks/uciParser';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -788,16 +789,35 @@ export default function Analysis() {
     return sans;
   }, [flawChessEnabled, flawChessEngine.rankedLines, position]);
 
-  // Phase 158 (SEED-087 SC2, RESEARCH Pitfall 4): the deduplicated, sorted
-  // union of the Maia chart's shownSans and the FC card's displayed SANs —
-  // the shared grading run's candidate set. Sorted + deduped (mirroring the
-  // grading hook's own candidatesKey pattern) so a re-throttle of the SAME
-  // top moves produces the same array and does not re-trigger the search.
+  // Phase 162 (SEED-090 D-02/D-09): the free run has "committed" a bestmove for
+  // the current position once it has at least one PV line and is no longer
+  // mid-search. `pvLines` is cleared to `[]` on every FEN change and
+  // `isAnalyzing` flips false only on a non-stale bestmove (useStockfishEngine.ts),
+  // so this pairing never reads a stale prior-position PV as committed.
+  const freeRunCommitted = engine.pvLines.length > 0 && !engine.isAnalyzing;
+
+  // Phase 158 (SEED-087 SC2, RESEARCH Pitfall 4) / Phase 162 (SEED-090 D-02/D-09):
+  // the deduplicated, sorted union of the Maia chart's shownSans, the FC card's
+  // displayed SANs, and — once the free run has committed a bestmove for this
+  // position — the free run's own top-2 root SANs. This closes the "no
+  // uncovered displayed move" gap: the grading union now contains everything
+  // the Stockfish card shows, not just what Maia/FlawChess independently
+  // surface. Sorted + deduped via the SAME single `Array.from(new
+  // Set(...)).sort()` (mirroring the grading hook's own candidatesKey pattern)
+  // so a re-throttle of the SAME top moves produces the same array and does
+  // not re-trigger the search.
   const unionSans = useMemo(() => {
     const maiaSans = maiaEnabled ? shownSans : [];
     const fcSans = flawChessEnabled ? flawChessDisplayedSans : [];
-    return Array.from(new Set([...maiaSans, ...fcSans])).sort();
-  }, [maiaEnabled, shownSans, flawChessEnabled, flawChessDisplayedSans]);
+    const freeRunSans: string[] = [];
+    if (freeRunCommitted) {
+      const san0 = bestSanFromPv(position, engine.pvLines[0]?.moves[0] ?? null);
+      const san1 = bestSanFromPv(position, engine.pvLines[1]?.moves[0] ?? null);
+      if (san0 !== null) freeRunSans.push(san0);
+      if (san1 !== null) freeRunSans.push(san1);
+    }
+    return Array.from(new Set([...maiaSans, ...fcSans, ...freeRunSans])).sort();
+  }, [maiaEnabled, shownSans, flawChessEnabled, flawChessDisplayedSans, freeRunCommitted, engine.pvLines, position]);
 
   // Phase 158 (SEED-087 SC2, RESEARCH Pitfall 5): the shared grading run is
   // gated on EITHER display consumer being active — fen/enabled are always
@@ -819,16 +839,107 @@ export default function Analysis() {
     enabled: gradingEnabled,
   });
 
-  // Phase 158 (SEED-087 SC1): the single UCI-keyed eval source every
-  // displayed Stockfish eval on this page resolves through — the free run's
-  // pvLines win by construction (module precedence in buildEvalLookup), so a
-  // move graded by both sources always shows the free-run value, and
-  // progressive refinement is emergent (a resolved UCI's value can never
-  // regress to the grading value).
+  // Phase 158 (SEED-087 SC1) / Phase 162 (SEED-090 D-01): the single
+  // UCI-keyed eval source every displayed Stockfish eval on this page
+  // resolves through — the grading run wins by construction (module
+  // precedence in buildEvalLookup), so a move graded by both sources shows
+  // the deeper, depth-parity grading value; a move graded ONLY by the free
+  // run still resolves to the free-run value until grading catches up.
   const evalLookup = useMemo(
     () => buildEvalLookup(engine.pvLines, grading.gradeMap, position),
     [engine.pvLines, grading.gradeMap, position],
   );
+
+  // The grading run's own SAN keyspace converted to UCI (Pitfall 3 — the SAME
+  // keyspace `qualityBySan` iterates below, NOT the broader `unionSans`, which
+  // only seeds the grading run's search). Hoisted (162 UAT) because BOTH the
+  // argmax below and the card's reconciled ranking (`reconciledPvLines`) rank
+  // over this exact set — sharing it guarantees card line 1 === argmax.
+  const gradedCandidateUcis = useMemo(() => {
+    const candidateUcis: string[] = [];
+    for (const san of grading.gradeMap.keys()) {
+      const uci = sanToUci(position, san);
+      if (uci !== null) candidateUcis.push(uci);
+    }
+    return candidateUcis;
+  }, [grading.gradeMap, position]);
+
+  // Tie-break toward the free run's own bestSan (converted to UCI) so a
+  // genuine expected-score tie prefers the standalone Stockfish pick — shared
+  // by the argmax and the card ranking (162 UAT).
+  const reconciledTieBreakUci = useMemo(
+    () => (bestSan !== null ? sanToUci(position, bestSan) : null),
+    [bestSan, position],
+  );
+
+  // Phase 162 (SEED-090 D-03/D-11/D-10): the SINGLE canonical reconciled-best
+  // UCI every downstream display consumer threads through instead of
+  // re-deriving its own argmax (the Phase 158 anti-pattern this phase exists
+  // to kill) — qualityBySan, the arrow, verdict, eval bar, and card all read
+  // it. Re-derives fresh every render from `evalLookup` — no pinned-label
+  // state (D-10: live argmax per snapshot, never a pin).
+  const reconciledBestUci = useMemo(() => {
+    // 162-REVIEW WR-01: with Maia off + FlawChess on, the grading union is
+    // FC's top-3 only until the free run commits AND the widened union
+    // re-grades — in that window the argmax ran over a candidate set that
+    // cannot contain Stockfish's actual best, so the verdict/arrow/eval bar
+    // could present a non-SF-best FC candidate as "Stockfish's pick" (and the
+    // verdict could falsely claim alignment). Treat the argmax as unresolved
+    // until the committed free-run best is itself a graded candidate — every
+    // consumer already falls back to raw engine.pvLines[0] on null (the
+    // existing first-paint path), which gets the move identity right.
+    const freeRunBestUci = freeRunCommitted ? (engine.pvLines[0]?.moves[0] ?? null) : null;
+    if (freeRunBestUci !== null && !gradedCandidateUcis.includes(freeRunBestUci)) {
+      return null;
+    }
+    return resolveReconciledBest(evalLookup, gradedCandidateUcis, sideToMoveFromFen(position), reconciledTieBreakUci);
+  }, [evalLookup, gradedCandidateUcis, position, reconciledTieBreakUci, freeRunCommitted, engine.pvLines]);
+
+  // 162-REVIEW WR-02: the SAN form of the reconciled argmax, hoisted out of
+  // qualityBySan so BOTH the chart's Best quality/label designation AND its
+  // emphasized (thick) stroke key off the SAME move. Pre-fix the emphasis
+  // prop stayed on the raw free-run bestSan, so the chart could thick-stroke
+  // one move while coloring/naming a DIFFERENT move Best (the exact
+  // mirror-image scenario this phase fixed for the label). Null (no grades
+  // yet) — the chart call sites fall back to the raw bestSan.
+  const reconciledBestSan = useMemo(
+    () => (reconciledBestUci !== null ? bestSanFromPv(position, reconciledBestUci) : null),
+    [reconciledBestUci, position],
+  );
+
+  // Phase 162 (SEED-090 D-13): a PvLine-shaped object for the reconciled-argmax
+  // move, fed to FlawChessAgreementVerdict's `stockfishLine` prop so the
+  // verdict's Stockfish side always names the TRUE global reconciled argmax
+  // with ITS reconciled eval, never raw `engine.pvLines[0]` (RESEARCH Pitfall
+  // 1: this call site bypassed evalLookup entirely pre-162). `moves` carries
+  // the resolved grade's own PV when retained (162 UAT), falling back to the
+  // bare root move; `depth` is the resolved grade's depth, free-run depth as
+  // fallback (cosmetic only — the verdict never renders a PV's depth). null
+  // when reconciledBestUci is null (grading not yet landed) — the call site
+  // below falls back to `engine.pvLines[0]` so first paint still shows a value.
+  const reconciledStockfishLine = useMemo<PvLine | null>(() => {
+    if (reconciledBestUci === null) return null;
+    const resolved = getByUci(evalLookup, reconciledBestUci);
+    return {
+      multipv: 1,
+      depth: resolved?.depth ?? engine.depth,
+      moves: resolved?.pv ?? [reconciledBestUci],
+      evalCp: resolved?.evalCp ?? null,
+      evalMate: resolved?.evalMate ?? null,
+    };
+  }, [reconciledBestUci, evalLookup, engine.depth]);
+
+  // Phase 162 (SEED-090 D-08): the off-main-line eval bar's engine-passthrough
+  // source (useGameOverlay's enginePassthrough branch) — the reconciled best's
+  // eval once grading has landed for this position, else the raw free-run eval
+  // (a natural lookup fallback: reconciledBestUci is null pre-grading or when
+  // gradingEnabled is false, so no special-casing is needed here). Closes
+  // RESEARCH Pitfall 1's second bypass — useGameOverlay's engineEvalCp/Mate/
+  // Depth params previously read `engine.evalCp`/`evalMate`/`depth` raw.
+  const reconciledBestEval = useMemo(() => {
+    const resolved = reconciledBestUci !== null ? getByUci(evalLookup, reconciledBestUci) : null;
+    return resolved ?? { evalCp: engine.evalCp, evalMate: engine.evalMate, depth: engine.depth };
+  }, [reconciledBestUci, evalLookup, engine.evalCp, engine.evalMate, engine.depth]);
 
   // Phase 158 (SEED-087 SC1/SC3/SC4, SC5 scope fence): parallel RankedLine-
   // shaped display objects — NEVER the live MCTS-core snapshots themselves —
@@ -850,6 +961,40 @@ export default function Analysis() {
     [flawChessEngine.rankedLines, evalLookup],
   );
 
+  // Phase 162 UAT (supersedes D-04/D-12's card scope): the Stockfish card's
+  // lines are the top-2 of the reconciled ranking over the FULL grading union
+  // — not the free run's own 2 PVs with swapped evals. This closes the D-12
+  // residual edge case UAT flagged: the arrow/verdict/FC card named a
+  // reconciled best (a Maia/FC-sourced candidate) that the Stockfish card
+  // didn't list. PV move text comes from each grade's retained `pv` (bare
+  // root move as fallback for a pre-`pv` cache entry); per-line depth is the
+  // grade's own depth. Gated on `reconciledBestUci` (the WR-01 guard) so the
+  // card, arrow, and verdict re-source at the same instant; until then the
+  // free run's own lines render with reconciled evals, re-sorted by expected
+  // score (the pre-UAT D-04 behavior, now purely the placeholder path).
+  const reconciledPvLines = useMemo<PvLine[]>(() => {
+    const mover = sideToMoveFromFen(position);
+    if (reconciledBestUci !== null) {
+      const ranked = rankReconciledCandidates(evalLookup, gradedCandidateUcis, mover, reconciledTieBreakUci);
+      return ranked.slice(0, SF_MAX_LINES).map(({ uci, grade }, index) => ({
+        multipv: index + 1,
+        depth: grade.depth,
+        moves: grade.pv ?? [uci],
+        evalCp: grade.evalCp,
+        evalMate: grade.evalMate,
+      }));
+    }
+    const withReconciledEval = engine.pvLines.map((line) => {
+      const uci = line.moves[0];
+      const resolved = uci !== undefined ? getByUci(evalLookup, uci) : null;
+      return resolved !== null ? { ...line, evalCp: resolved.evalCp, evalMate: resolved.evalMate } : line;
+    });
+    return [...withReconciledEval].sort(
+      (a, b) =>
+        evalToExpectedScore(b.evalCp, b.evalMate, mover) - evalToExpectedScore(a.evalCp, a.evalMate, mover),
+    );
+  }, [engine.pvLines, evalLookup, position, reconciledBestUci, gradedCandidateUcis, reconciledTieBreakUci]);
+
   // Phase 151.1 D-08 / Phase 158 (SEED-087 SC3): 5-bucket quality
   // classification of the RECONCILED grades (not the raw grading pass's
   // gradeMap directly) — so a move's displayed number and its severity color
@@ -866,9 +1011,14 @@ export default function Analysis() {
         getBySan(evalLookup, position, san) ?? { evalCp: null, evalMate: null, depth: 0 },
       );
     }
-    // Pass the primary engine's bestSan so the chart's "best" agrees with the
-    // eval bar + engine card (151.1 UAT: reconcile the two Stockfish sources).
-    const infoBySan = classifyMoveQuality(reconciledGradeMap, sideToMoveFromFen(position), bestSan);
+    // Phase 162 (SEED-090 D-03): pass the SAN form of the single reconciled
+    // argmax — NOT the free run's raw bestSan — so the chart's "Best" label
+    // always agrees with the reconciled eval, closing the mirror-image bug
+    // where a free-run pin could label a lower-eval move Best. Null (no
+    // grades yet) falls back to classifyMoveQuality's own top-scorer.
+    // (162-REVIEW WR-02: the SAN is hoisted into reconciledBestSan above so
+    // the chart's emphasis stroke shares it.)
+    const infoBySan = classifyMoveQuality(reconciledGradeMap, sideToMoveFromFen(position), reconciledBestSan);
     const merged = new Map<string, MoveQualityEval>();
     for (const [san, info] of infoBySan) {
       const grade = reconciledGradeMap.get(san);
@@ -879,7 +1029,7 @@ export default function Analysis() {
       });
     }
     return merged;
-  }, [evalLookup, grading.gradeMap, position, bestSan]);
+  }, [evalLookup, grading.gradeMap, position, reconciledBestSan]);
 
   // The FlawChess Engine's top practical pick — its root move's SAN + reconciled
   // white-POV objective eval — shown as the pinned "FlawChess" reference row atop
@@ -999,6 +1149,12 @@ export default function Analysis() {
 
   // Game-mode overlay (Quick 260627): precomputed blue best-move arrow + tactic depth
   // overlay + eval bar, with the live engine supplying only the grey 2nd-best line.
+  // Phase 162 (SEED-090 D-08): the eval-bar passthrough params (engineEvalCp/
+  // Mate/Depth) are now `reconciledBestEval`'s fields, not the raw free-run
+  // eval — closes RESEARCH Pitfall 1's second evalLookup bypass. Off the main
+  // line, useGameOverlay's own enginePassthrough branch surfaces these
+  // unchanged (the hook's internals are untouched — only the caller's source
+  // changed); on the main line the precomputed game eval still wins as before.
   const gameOverlay = useGameOverlay({
     enabled: isGameMode,
     engineEnabled,
@@ -1009,9 +1165,9 @@ export default function Analysis() {
     isOnMainLine,
     lastMove,
     enginePvLines: engine.pvLines,
-    engineEvalCp: engine.evalCp,
-    engineEvalMate: engine.evalMate,
-    engineDepth: engine.depth,
+    engineEvalCp: reconciledBestEval.evalCp,
+    engineEvalMate: reconciledBestEval.evalMate,
+    engineDepth: reconciledBestEval.depth,
   });
 
   // ── Live free-move classification (item 4) ────────────────────────────────────
@@ -1290,7 +1446,15 @@ export default function Analysis() {
     }
     if (engineEnabled) {
       for (let i = 0; i < ARROW_COUNT; i++) {
-        const sfSquares = uciToSquares(engine.pvLines[i]?.moves[0] ?? null);
+        // Phase 162 (SEED-090 D-07/D-12): the green SF arrow follows the TRUE
+        // global reconciled argmax, not the free run's own pvLines[i] — this
+        // may point at a move outside the Stockfish card's 2 displayed lines
+        // (accepted edge case, D-12). Falls back to the free run's own top
+        // line until grading has produced a reconciled best (first paint, no
+        // regression) — reuses the single reconciledBestUci memo, never a
+        // fresh argmax loop (RESEARCH Anti-Pattern).
+        const sfUci = reconciledBestUci ?? engine.pvLines[i]?.moves[0] ?? null;
+        const sfSquares = uciToSquares(sfUci);
         if (sfSquares) {
           arrows.push({
             startSquare: sfSquares.from,
@@ -1303,7 +1467,7 @@ export default function Analysis() {
       }
     }
     return arrows;
-  }, [flawChessEnabled, flawChessEngine.rankedLines, engineEnabled, engine.pvLines]);
+  }, [flawChessEnabled, flawChessEngine.rankedLines, engineEnabled, engine.pvLines, reconciledBestUci]);
 
   // Board arrows (156 UAT — game/free parity): the FC + SF engine-arrow layer is
   // the default overlay in BOTH modes, so the board looks identical whether or not
@@ -1866,19 +2030,24 @@ export default function Analysis() {
               onMoveClick={playUciLine}
             />
             {/* Agreement verdict (Phase 157-02, REVIEW-02; Phase 158 SEED-087
-                SC4): reads Stockfish's TRUE objective #1 from engine.pvLines[0]
-                (D-01) — never engineTopLines, which silently degrades to a
-                FlawChess row when standalone Stockfish is off. The FlawChess
-                side is reconciledRankedLines (evalLookup-sourced), so both
-                picks resolve through the SAME lookup — making "FC pick grades
-                higher than the objective best" impossible by construction.
+                SC4; Phase 162 SEED-090 D-13): the Stockfish side is now
+                `reconciledStockfishLine` — the TRUE global reconciled argmax
+                (`reconciledBestUci`) named at ITS reconciled eval, which may
+                be a different move than raw `engine.pvLines[0]` (D-12 accepted
+                edge case) — never engineTopLines, which silently degrades to a
+                FlawChess row when standalone Stockfish is off. Falls back to
+                `engine.pvLines[0]` pre-grading so first paint still resolves.
+                The FlawChess side is reconciledRankedLines (evalLookup-
+                sourced), so both picks resolve through the SAME lookup —
+                making "FC pick grades higher than the objective best"
+                impossible by construction.
                 Hidden in a terminal position (quick 260709): the game is over, so
                 the "Turn on Stockfish to compare picks." prompt is misleading —
                 the terminal `#0`/`½–½` badge above says it all. */}
             {flawChessTerminalOutcome == null && (
               <FlawChessAgreementVerdict
                 flawChessLine={reconciledRankedLines[0] ?? null}
-                stockfishLine={engine.pvLines[0] ?? null}
+                stockfishLine={reconciledStockfishLine ?? (engine.pvLines[0] ?? null)}
                 flawChessRankedLines={reconciledRankedLines}
                 engineEnabled={engineEnabled}
                 elo={selectedElo}
@@ -1916,7 +2085,11 @@ export default function Analysis() {
           selectedElo={selectedElo}
           perElo={maia.perElo}
           playedSan={playedSan}
-          bestSan={bestSan}
+          // 162-REVIEW WR-02: the chart's emphasized stroke follows the SAME
+          // reconciled Best the quality color/label/verdict designate, not the
+          // raw free-run pick (raw bestSan still feeds selectCandidatesByMass
+          // above so the free-run pick stays plotted).
+          bestSan={reconciledBestSan ?? bestSan}
           shownSans={shownSans}
           qualityBySan={qualityBySan}
           mover={sideToMoveFromFen(position)}
@@ -1953,8 +2126,10 @@ export default function Analysis() {
           Engine off
         </div>
       ) : (
+        // 162 UAT: reconciled top-2 over the full grading union, mobile parity
+        // with the desktop card below (CLAUDE.md mobile-parity rule).
         <EngineLines
-          pvLines={engine.pvLines}
+          pvLines={reconciledPvLines}
           isAnalyzing={engine.isAnalyzing}
           startPly={currentPly}
           baseFen={position}
@@ -2182,7 +2357,9 @@ export default function Analysis() {
               selectedElo={selectedElo}
               perElo={maia.perElo}
               playedSan={playedSan}
-              bestSan={bestSan}
+              // 162-REVIEW WR-02: same reconciled-emphasis threading as the
+              // mobile Maia tab above (CLAUDE.md mobile/desktop parity).
+              bestSan={reconciledBestSan ?? bestSan}
               shownSans={shownSans}
               qualityBySan={qualityBySan}
               mover={sideToMoveFromFen(position)}
@@ -2258,7 +2435,11 @@ export default function Analysis() {
                   icon={Cpu}
                 >
                   {ENGINE_NAME}
-                  {engineEnabled && engine.depth > 0 ? `, Depth ${engine.depth}` : ''}
+                  {/* 162 UAT (supersedes D-05): once the card re-sources to the
+                      reconciled lines, the headline depth describes line 1's own
+                      grade — reconciledBestEval falls back to the free run's
+                      depth pre-grading, so first paint is unchanged. */}
+                  {engineEnabled && reconciledBestEval.depth > 0 ? `, Depth ${reconciledBestEval.depth}` : ''}
                 </EngineToggleHeader>
               </CardHeader>
 
@@ -2275,8 +2456,12 @@ export default function Analysis() {
                 ) : (
                   // 155 UAT un-merge: the standalone Stockfish top-2 (depth
                   // deepening live) shows independently of the FlawChess Engine.
+                  // 162 UAT (supersedes D-04/D-12 card scope): reconciledPvLines
+                  // is the reconciled top-2 over the full grading union, so the
+                  // card always lists the same best move the arrow, chart crown,
+                  // and verdict name.
                   <EngineLines
-                    pvLines={engine.pvLines}
+                    pvLines={reconciledPvLines}
                     isAnalyzing={engine.isAnalyzing}
                     startPly={currentPly}
                     baseFen={position}

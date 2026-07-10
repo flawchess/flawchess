@@ -2,29 +2,29 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: FlawChess Engine
-current_phase: 0
-status: Awaiting next milestone
-stopped_at: v2.0 milestone closed and archived
-last_updated: "2026-07-09T22:10:00.000Z"
-last_activity: 2026-07-09
-last_activity_desc: Milestone v2.0 completed and archived
+current_phase: 162
+current_phase_name: grading-run-authoritative-eval-reconciliation-precedence-fli
+status: verifying
+stopped_at: Phase 162 planned (3 plans, 3 waves)
+last_updated: "2026-07-10T10:52:01.348Z"
+last_activity: 2026-07-10
+last_activity_desc: Phase 162 execution started
 progress:
-  total_phases: 9
-  completed_phases: 9
-  total_plans: 24
-  completed_plans: 24
+  total_phases: 1
+  completed_phases: 1
+  total_plans: 3
+  completed_plans: 3
   percent: 100
-current_phase_name: none (v2.0 shipped)
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: Milestone v2.0 complete
-Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-07-09 — Milestone v2.0 completed and archived
+Phase: 162 (grading-run-authoritative-eval-reconciliation-precedence-fli) — EXECUTING
+Plan: 3 of 3
+Status: Phase complete — ready for verification
+Last activity: 2026-07-10 — Phase 162 execution started
 
 ## Project Reference
 
@@ -148,6 +148,13 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 159-04]: TEMPERATURE_DEFAULT imported directly from DEFAULT_POLICY_TEMPERATURE rather than declared as a matching literal - makes the Pitfall 7/T-159-08 invariant (slider center === search no-op value) structural, not just test-covered
 - [Phase 159-04]: TemperatureSelector rendered exactly once, inside the pre-existing shared eloSelector JSX const (already rendered in both the mobile humanTab and desktop human column) - mobile/desktop parity via one render site, not two
 - [Phase 159-04]: policyTemperature defaulted (?? DEFAULT_POLICY_TEMPERATURE) at useFlawChessEngine's own SearchBudget-construction call site, not inside a helper - keeps the no-op short-circuit visible at the orchestrator layer per 159-03's established Pitfall 1 discipline
+- [Phase 162-01]: Kept the exact !lookup.has(uci) insertion-order-wins guard on both loops in buildEvalLookup — only reordered which loop runs first (grading loop before free-run loop)
+- [Phase 162-01]: resolveReconciledBest co-located in engineEvalLookup.ts (not moveQuality.ts), reusing evalToExpectedScore/MoverColor from @/lib/liveFlaw verbatim
+- [Phase 162-02]: freeRunCommitted declared as plain const (not useMemo) — cheap boolean, no memoization overhead
+- [Phase 162-02]: reconciledBestUci iterates grading.gradeMap.keys() directly (Pitfall 3 keyspace), not the broader unionSans
+- [Phase 162-02]: D-03 mirror-image test verified via MaiaMoveQualityBar's positionVerdict prose (escape/bad roles), not the recharts-based MovesByRatingChart, to avoid adding ResponsiveContainer mock machinery Analysis.test.tsx doesn't already carry
+- [Phase 162-03]: Tasks 1+2 combined into one commit — interleaved reconciled memo chain (reconciledStockfishLine beside reconciledBestEval), mirrors 155-04/158-03 precedent
+- [Phase 162-03]: D-12 arrow test verified via scoped Element.prototype.clientWidth spy + SVG path-string diff, not geometry decoding — jsdom's default 0 clientWidth degenerates ArrowOverlay paths to NaN
 
 ### Pending Todos
 
@@ -222,13 +229,13 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 161 context gathered
+**Stopped at:** Phase 162 context gathered
 
-**Last session:** 2026-07-09T17:12:37.609Z
+**Last session:** 2026-07-10T10:50:52.407Z
 
 **Resume file:** 
 
-.planning/phases/161-analysis-page-viewport-locked-responsive-layout-seed-088/161-CONTEXT.md
+None
 
 ## Performance Metrics
 
@@ -267,6 +274,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 | Phase 159 P02 | 14min | 2 tasks | 5 files |
 | Phase 159 P03 | 16min | 2 tasks | 9 files |
 | Phase 159 P04 | 20min | 2 tasks | 4 files |
+| Phase 162 P01 | 12min | 2 tasks | 2 files |
+| Phase 162 P02 | 20min | 2 tasks | 2 files |
+| Phase 162 P03 | 22min | 2 tasks | 3 files |
 
 ## Operator Next Steps
 

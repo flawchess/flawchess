@@ -357,6 +357,10 @@ export function useStockfishGradingEngine({
           evalCp: toWhitePov(parsed.scoreCp),
           evalMate: toWhitePov(parsed.scoreMate),
           depth: parsed.depth,
+          // 162 UAT: retain the full PV so the Stockfish card can render a
+          // graded line's move sequence when the reconciled ranking surfaces
+          // a move outside the free run's own top-2 (option-2 card re-source).
+          pv: parsed.pv,
         });
 
         // Stream progressively: refine the displayed gradeMap on every info

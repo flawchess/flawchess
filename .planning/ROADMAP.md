@@ -585,10 +585,19 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 ### Phase 162: Grading-run-authoritative eval reconciliation — precedence flip (SEED-090)
 
 **Goal:** Every per-move eval displayed on the analysis page comes from one coherent Stockfish search, so a move labeled "Good" can never show a higher number than the move labeled "Best". Flip `buildEvalLookup` precedence to grading-first (free run only fills not-yet-graded moves), extend `unionSans` with the free run's top-2 root moves so the grading union covers every displayed move by construction, derive Best/Good labels from the reconciled map's own argmax (not the free-run `bestSan` pin), and route the Stockfish card's PV-line evals through the reconciled lookup. Frontend-only; both workers stay as configured today (no depth regression, no new fallback path). Preferred design over SEED-089 per critical review 2026-07-10 — see [seeds/SEED-090-grading-run-authoritative-eval-precedence-flip.md](seeds/SEED-090-grading-run-authoritative-eval-precedence-flip.md).
-**Requirements**: TBD
+**Requirements**: TBD (tracked via CONTEXT.md decisions D-01..D-13)
 **Depends on:** Phase 161
-**Plans:** 0 plans
+**Plans:** 3/3 plans complete
 
 Plans:
+**Wave 1**
 
-- [ ] TBD (run /gsd-plan-phase 162 to break down)
+- [x] 162-01-PLAN.md — Lib layer: grading-first buildEvalLookup + resolveReconciledBest helper (D-01, D-03)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 162-02-PLAN.md — Analysis wiring: gated union extension + canonical reconciledBestUci + chart labels (D-02, D-03, D-09, D-10, D-11)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 162-03-PLAN.md — Reconciled-best consumers: SF arrow, verdict, eval bar, Stockfish card (D-04..D-08, D-12, D-13)

@@ -253,3 +253,70 @@ describe('useGameOverlay violet should-have-played arrow (missed tactic)', () =>
     expect(arrows.find((a) => a.color === TAC_MISSED)).toBeUndefined();
   });
 });
+
+// ── Off-main-line eval-bar passthrough (Phase 162, SEED-090 D-08) ──────────────
+//
+// Off the main line (a sideline / fork with no precomputed data), the hook's
+// enginePassthrough branch surfaces the caller's engineEvalCp/Mate/Depth params
+// UNCHANGED — useGameOverlay's own internals are not touched by Phase 162; only
+// Analysis.tsx's caller-side values change (raw engine.evalCp/Mate/depth ->
+// reconciledBestEval's fields). This proves the passthrough itself is faithful,
+// so wiring a reconciled value through it (rather than the raw free-run eval)
+// is a pure caller-side change with no hook-internal risk.
+describe('useGameOverlay eval-bar passthrough (off main line, Phase 162 D-08)', () => {
+  it('surfaces the caller-supplied engineEvalCp/Mate/Depth unchanged off the main line', () => {
+    const { result } = renderHook(() =>
+      useGameOverlay({
+        ...base,
+        evalSeries: [pt(0, 'e2e4'), pt(1, 'e7e5'), pt(2, 'g1f3')],
+        currentNodeId: 999, // not in mainLine — a sideline/fork, off the main line
+        enginePvLines: [],
+        engineEvalCp: 80,
+        engineEvalMate: null,
+        engineDepth: 14,
+      }),
+    );
+    // No precomputed eval exists off the main line — the hook must surface
+    // exactly what the caller passed (Analysis.tsx's reconciledBestEval), not
+    // a value it re-derives internally.
+    expect(result.current.evalCp).toBe(80);
+    expect(result.current.evalMate).toBeNull();
+    expect(result.current.evalDepth).toBe(14);
+    expect(result.current.usingPrecomputed).toBe(false);
+  });
+
+  it('surfaces a mate passthrough value too, off the main line', () => {
+    const { result } = renderHook(() =>
+      useGameOverlay({
+        ...base,
+        evalSeries: [],
+        currentNodeId: 999,
+        enginePvLines: [],
+        engineEvalCp: null,
+        engineEvalMate: -4,
+        engineDepth: 20,
+      }),
+    );
+    expect(result.current.evalCp).toBeNull();
+    expect(result.current.evalMate).toBe(-4);
+    expect(result.current.evalDepth).toBe(20);
+    expect(result.current.usingPrecomputed).toBe(false);
+  });
+
+  it('still prefers the precomputed eval ON the main line, ignoring the passthrough params', () => {
+    const { result } = renderHook(() =>
+      useGameOverlay({
+        ...base,
+        evalSeries: [pt(0, 'e2e4'), pt(1, 'e7e5'), pt(2, 'g1f3')],
+        currentNodeId: 11, // mainLine[1] — ON the main line
+        enginePvLines: [],
+        engineEvalCp: 80, // the reconciled passthrough value — must be ignored here
+        engineEvalMate: null,
+        engineDepth: 14,
+      }),
+    );
+    expect(result.current.usingPrecomputed).toBe(true);
+    expect(result.current.evalCp).toBe(20); // pt()'s fixed eval_cp, not the passthrough 80
+    expect(result.current.evalDepth).not.toBe(14);
+  });
+});
