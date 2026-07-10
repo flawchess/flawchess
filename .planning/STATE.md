@@ -23,7 +23,7 @@ current_phase_name: gem-moves-maia-findability-move-badges-on-analysis-seed-092
 Phase: 163 (final phase of v2.1)
 Plan: 4/4 complete
 Status: v2.1 milestone closed — phases 162, 163 archived to milestones/v2.1-phases/; tagged v2.1 (deploy pending)
-Last activity: 2026-07-10 - Completed quick task 260710-wub: Openings analyze button relocation + Analysis fen-mode sideline delete fix
+Last activity: 2026-07-10 - Completed quick task 260710-x3d: Openings analyze → ?line= opening-moves main line in analysis board (replaces ?fen=)
 
 ## Project Reference
 
@@ -192,6 +192,7 @@ None active.
 | 260710-e2p | Maia "Moves by Rating" tooltip pins the FlawChess Engine's OWN top pick (reconciledRankedLines[0]) instead of Stockfish's objective best mislabeled "FlawChess"; drops row when FC engine off; removed the "(played)" tag from tooltip rows | 2026-07-10 | 9b409161 | [260710-e2p-show-flawchess-engine-top-pick-in-maia-c](./quick/260710-e2p-show-flawchess-engine-top-pick-in-maia-c/) |
 | 260710-k7n | FlawChess Engine promoted to homepage hero (FEATURES[0]: "Your Best Practical Move" + ChessKnight + 3 bullets, Game/Tactic Analysis to #2); README leads Features with the engine and intro rewritten to headline it (dropped Zobrist-hash + AI-narrated-insights) | 2026-07-10 | c039196b | [260710-k7n-engine-hero-homepage](./quick/260710-k7n-engine-hero-homepage/) |
 | 260710-wub | Openings "Analyze position" moved from full-width button to a compact Search-icon button in the sidebar strip (desktop) / settings column under bookmarks (mobile), shown on Moves + Games subtabs; fixed the sideline × delete not working in Analysis `?fen=` free-play mode (onDeleteLine was gated on isGameMode) | 2026-07-10 | 27d0507d | [260710-wub-openings-move-analyze-button-to-sidebar-](./quick/260710-wub-openings-move-analyze-button-to-sidebar-/) |
+| 260710-x3d | Openings analyze passes the opening's moves to the analysis board as a `?line=` UCI param (cursor at end, navigable back to move 1), replacing the `?fen=` snapshot; new buildAnalysisLineUrl/parseAnalysisLineParam helpers; game mode kept (user-confirmed) | 2026-07-10 | edce3687 | [260710-x3d-implement-opening-moves-main-line-in-ana](./quick/260710-x3d-implement-opening-moves-main-line-in-ana/) |
 
 ## Deferred Items
 
