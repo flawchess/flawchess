@@ -33,8 +33,18 @@ Pure frontend feature on `/analysis`; no cross-game statistics, no backend chang
   recapture heuristic needed.
 
 **Open tunables for UAT:**
-- Exact `GEM_MAIA_MAX_PROB` cutoff (3% is a starting point; consider tying to
-  `pRefForElo` from `lib/engine/findability.ts` instead of a flat cutoff).
+- Exact `GEM_MAIA_MAX_PROB` cutoff (~2-3% starting point). If ELO-conditioned, the curve
+  must slope OPPOSITE to `pRefForElo` (findability.ts): Maia-600 is high-entropy (diffuse
+  probabilities — best moves often sit at 2-4% just from peer noise, risking badge
+  inflation from stumbled-upon moves) while Maia-2600 is concentrated (best move almost
+  always high-probability — a sub-3% best move is spectacular but nearly extinct). So:
+  stricter threshold at low ELO, more generous at high ELO — do NOT reuse the
+  `P_REF_ANCHORS` constants, at most the interpolation helper. v1 plan: ship a constant
+  on the strict side (over-badging at low ELO cheapens the currency; under-badging at
+  2600 affects almost nobody), then calibrate empirically: `useMaiaEngine` already
+  computes the full 21-rung per-ELO curve, so UAT can tabulate badge frequency per rung
+  on real games and derive an iso-rarity (constant badge-frequency) threshold curve from
+  data instead of guessed anchors.
 - Best-try-in-a-lost-position (es 0.05 → 0.20 vs alternatives at 0.05) qualifies under
   these rules. Chesskit excludes still-losing moves; leaning toward KEEPING them (finding
   the only defensive resource deserves celebration), but taste call.
