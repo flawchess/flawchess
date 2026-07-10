@@ -12,7 +12,7 @@ import { useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { Chess } from 'chess.js';
 import { useQuery } from '@tanstack/react-query';
-import { Save, Sparkles, ArrowRightLeft, Swords, BarChart2, Lightbulb, SlidersHorizontal, BookMarked, Microscope } from 'lucide-react';
+import { Save, Sparkles, ArrowRightLeft, Swords, BarChart2, Lightbulb, SlidersHorizontal, BookMarked, Search } from 'lucide-react';
 import { MobileFilterDrawer } from '@/components/filters/MobileFilterDrawer';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -567,6 +567,10 @@ export function OpeningsPage() {
     navigate(buildAnalysisUrl(chess.position));
   }, [navigate, chess.position]);
 
+  // Analyze-position button shows on the board-bearing subtabs (Moves + Games),
+  // where the chessboard position is the thing worth sending to the analysis page.
+  const showAnalyzeButton = activeTab === 'explorer' || activeTab === 'games';
+
   // ── Desktop sidebar panel content ───────────────────────────────────────────
 
   const desktopFilterPanelContent = (
@@ -894,29 +898,44 @@ export function OpeningsPage() {
           activePanel={sidebar.sidebarOpen}
           onActivePanelChange={handleDesktopSidebarOpenChange}
           stripExtra={
-            <Tooltip content={`Played as: ${filters.color === 'white' ? 'White' : 'Black'}`} side="right">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="relative"
-                onClick={() => {
-                  const next = filters.color === 'white' ? 'black' : 'white';
-                  setFilters(prev => ({ ...prev, color: next as Color }));
-                  setBoardFlipped(next === 'black');
-                  sidebar.dismissPlayedAsHint();
-                }}
-                aria-label={`Switch to ${filters.color === 'white' ? 'black' : 'white'}`}
-                data-testid="sidebar-strip-btn-color"
-              >
-                <span className={`inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground ${filters.color === 'white' ? 'bg-white' : 'bg-zinc-900'}`} />
-                {showPlayedAsHint && (
-                  <span className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5" data-testid="played-as-notification-dot">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-                  </span>
-                )}
-              </Button>
-            </Tooltip>
+            <>
+              {showAnalyzeButton && (
+                <Tooltip content="Analyze position" side="right">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleAnalyzePosition}
+                    aria-label="Analyze position"
+                    data-testid="sidebar-strip-btn-analyze"
+                  >
+                    <Search className="h-5 w-5" />
+                  </Button>
+                </Tooltip>
+              )}
+              <Tooltip content={`Played as: ${filters.color === 'white' ? 'White' : 'Black'}`} side="right">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="relative"
+                  onClick={() => {
+                    const next = filters.color === 'white' ? 'black' : 'white';
+                    setFilters(prev => ({ ...prev, color: next as Color }));
+                    setBoardFlipped(next === 'black');
+                    sidebar.dismissPlayedAsHint();
+                  }}
+                  aria-label={`Switch to ${filters.color === 'white' ? 'black' : 'white'}`}
+                  data-testid="sidebar-strip-btn-color"
+                >
+                  <span className={`inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground ${filters.color === 'white' ? 'bg-white' : 'bg-zinc-900'}`} />
+                  {showPlayedAsHint && (
+                    <span className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5" data-testid="played-as-notification-dot">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                    </span>
+                  )}
+                </Button>
+              </Tooltip>
+            </>
           }
         >
             <div className="flex flex-row items-start gap-6">
@@ -941,17 +960,6 @@ export function OpeningsPage() {
                     </InfoPopover>
                   }
                 />
-                {activeTab === 'explorer' && (
-                  <Button
-                    variant="brand-outline"
-                    className="w-full"
-                    onClick={handleAnalyzePosition}
-                    data-testid="btn-analyze-position"
-                  >
-                    <Microscope className="mr-2 h-4 w-4" />
-                    Analyze position
-                  </Button>
-                )}
                 <div className="flex items-center gap-2 px-1 text-sm min-h-[1.25rem]">
                   {chess.openingName ? (
                     <div className="flex items-baseline gap-2">
@@ -1073,20 +1081,9 @@ export function OpeningsPage() {
                     canGoBack={chess.currentPly > 0}
                     canGoForward={chess.currentPly < chess.moveHistory.length}
                   />
-                  {activeTab === 'explorer' && (
-                    <Button
-                      variant="brand-outline"
-                      className="w-full"
-                      onClick={handleAnalyzePosition}
-                      data-testid="btn-analyze-position-mobile"
-                      aria-label="Analyze position"
-                    >
-                      <Microscope className="mr-2 h-4 w-4" />
-                      Analyze position
-                    </Button>
-                  )}
                 </div>
-                {/* Settings column: 4 stacked 44px buttons — filters, played-as, bookmarks, info */}
+                {/* Settings column: stacked 44px buttons — filters, played-as, bookmarks,
+                    analyze (Moves + Games subtabs), info */}
                 <div className="flex flex-col gap-1 w-11" data-testid="openings-mobile-settings-column">
                   <Tooltip content="Open filters" side="left">
                     <Button
@@ -1152,6 +1149,20 @@ export function OpeningsPage() {
                       )}
                     </Button>
                   </Tooltip>
+                  {showAnalyzeButton && (
+                    <Tooltip content="Analyze position" side="left">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-11 w-11 shrink-0 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80"
+                        onClick={handleAnalyzePosition}
+                        data-testid="btn-analyze-position-mobile"
+                        aria-label="Analyze position"
+                      >
+                        <Search className="h-4 w-4" />
+                      </Button>
+                    </Tooltip>
+                  )}
                   <div className="flex h-11 w-11 items-center justify-center">
                     <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info-mobile" side="left">
                       <ChessboardInfoCopy />
