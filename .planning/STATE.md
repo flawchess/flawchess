@@ -4,11 +4,10 @@ milestone: v2.0
 milestone_name: FlawChess Engine
 current_phase: 162
 current_phase_name: grading-run-authoritative-eval-reconciliation-precedence-fli
-status: verifying
+status: Phase 162 shipped — squash-merged to main (9542a44a)
 stopped_at: Phase 162 planned (3 plans, 3 waves)
-last_updated: "2026-07-10T10:52:01.348Z"
+last_updated: "2026-07-10T12:31:34.290Z"
 last_activity: 2026-07-10
-last_activity_desc: Phase 162 execution started
 progress:
   total_phases: 1
   completed_phases: 1
@@ -23,8 +22,8 @@ progress:
 
 Phase: 162 (grading-run-authoritative-eval-reconciliation-precedence-fli) — EXECUTING
 Plan: 3 of 3
-Status: Phase complete — ready for verification
-Last activity: 2026-07-10 — Phase 162 execution started
+Status: Phase 162 shipped — squash-merged to main (9542a44a)
+Last activity: 2026-07-10
 
 ## Project Reference
 
