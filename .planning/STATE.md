@@ -1,11 +1,11 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.0
-milestone_name: FlawChess Engine
+milestone: v2.1
+milestone_name: Analysis Eval Reconciliation & Gem Moves
 current_phase: 163
-status: Phase 163 shipped — squash-merged to main (55a9f9c7)
-stopped_at: Phase 163 verified complete (UAT passed)
-last_updated: "2026-07-10T21:08:42.487Z"
+status: v2.1 milestone closed — phases 162, 163 archived; tagged v2.1 (deploy pending)
+stopped_at: Milestone v2.1 complete; no active milestone
+last_updated: "2026-07-10T23:30:00.000Z"
 last_activity: 2026-07-10
 progress:
   total_phases: 2
@@ -20,20 +20,22 @@ current_phase_name: gem-moves-maia-findability-move-badges-on-analysis-seed-092
 
 ## Current Position
 
-Phase: 163
+Phase: 163 (final phase of v2.1)
 Plan: 4/4 complete
-Status: Phase 163 shipped — squash-merged to main (55a9f9c7)
+Status: v2.1 milestone closed — phases 162, 163 archived to milestones/v2.1-phases/; tagged v2.1 (deploy pending)
 Last activity: 2026-07-10
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-07-10 after Phase 163)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: Post-v2.0 standalone Phases 162 (SEED-090 eval-reconciliation precedence flip) and 163 (SEED-092 gem-move badges) both complete and verified 2026-07-10. No active milestone. Next: `/gsd-new-milestone`, and deploy 162+163 (v2.0 itself is live via #247–#249; 162/163 are not yet released).
+Current focus: v2.1 (Analysis Eval Reconciliation & Gem Moves — Phases 162 SEED-090 eval-reconciliation precedence flip, 163 SEED-092 gem-move badges) closed 2026-07-10 — archived, CHANGELOG promoted, tagged v2.1. No active milestone. Next: deploy v2.1 to production (162+163 are merged to main but NOT yet live; v2.0 is live via #247–#249) via `bin/deploy.sh`, then `/gsd-new-milestone`.
 
 ## Milestone Progress
 
-Thirty-three milestones complete (v1.0–v2.0).
+Thirty-four milestones complete (v1.0–v2.1).
+
+v2.1 Analysis Eval Reconciliation & Gem Moves closed 2026-07-10 — 2 phases (162, 163), 7 plans, both frontend-only on `/analysis`. Phase 162 (SEED-090) flipped `buildEvalLookup` to grading-first precedence and introduced a single canonical `resolveReconciledBest`/`reconciledBestUci` that the board arrow, agreement verdict, eval bar, and Best/Good labels all consume, so a "Good" move can never show a higher eval than "Best". Phase 163 (SEED-092) added violet gem badges (lucide `Gem`, `MAIA_ACCENT`) for the rare move that is the engine's clearly-only good move AND hard to find at the player's rating (Maia prob ≤ `GEM_MAIA_MAX_PROB` 0.03 AND expected-score gap ≥ `MISTAKE_DROP`), surfaced on board, move list, moves-by-rating chart, and popover via a new `'gem'` `MoveQuality` bucket. No backend, no schema, no new deps. Archived to milestones/v2.1-ROADMAP.md, phases to milestones/v2.1-phases/, CHANGELOG promoted, tagged v2.1. **Not yet deployed to production** — deploy pending via `bin/deploy.sh`.
 
 v2.0 FlawChess Engine shipped 2026-07-09 — 9 phases (153–161), 24 plans, ~51 tasks, ~69 commits over 5 days. A client-side practical-play analysis engine on `/analysis` (free analysis + game review), zero server load, no persistence, no new deps: a worker-free deterministic search core (Maia-prior-weighted expectimax backup + asymmetric self+opponent ELO, proven against fabricated providers in Phase 153 before any WASM/ONNX; depth-limited expectimax fallback on the same interface) → device-adaptive 2–4 Stockfish.wasm grading pool + dedicated Maia policy worker (154) → `useFlawChessEngine` anytime lines with objective-vs-practical score pairs (155) → amber engine board arrow (156) → aligned/safe/sharp agreement verdict, click-to-play spans (157) → one UCI-keyed lookup reconciling every displayed Stockfish eval (158, SEED-087) → ELO-scaled findability ranking + play-style temperature slider (159, SEED-085) → ad-hoc `/analysis` polish via quick/fast (160) → `100dvh` viewport-locked layout (161, SEED-088). Framing held: never "best move" unqualified. Live-browser UAT for 155/157/161 confirmed at close. Archived to milestones/v2.0-ROADMAP.md + v2.0-REQUIREMENTS.md, phases to milestones/v2.0-phases/, tagged v2.0. **Deployed to production** across releases #247 (phases 153–160), #248, #249 (viewport layout / 161).
 

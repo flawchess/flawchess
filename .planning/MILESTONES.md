@@ -1,5 +1,19 @@
 # Milestones: FlawChess
 
+## v2.1 Analysis Eval Reconciliation & Gem Moves (Merged to main: 2026-07-10; deploy pending)
+
+**Phases completed:** 2 phases (162, 163), 7 plans
+
+**Key accomplishments:**
+
+- **Phase 162 — grading-run-authoritative eval reconciliation (SEED-090):** flipped `buildEvalLookup` to grading-first precedence, so a move present in both the free run and the grading run resolves to the deeper grading value (the free run only fills not-yet-graded moves). Every "Good" label can no longer show a higher number than "Best".
+- Extended `unionSans` with the free run's top-2 root SANs (gated on `freeRunCommitted`) so the grading union covers every displayed Stockfish-card move by construction, closing the "uncovered displayed move" gap without making `bestSan` circular (D-11 anti-circularity preserved).
+- New canonical `resolveReconciledBest` / `reconciledBestUci` — a single reconciled-argmax resolver that the board arrow, agreement verdict, eval bar, and Best/Good labels all consume instead of re-deriving their own argmax, killing the Phase 158 anti-pattern.
+- Routed the Stockfish card's PV-line evals, the off-main-line eval bar (`reconciledBestEval` → `useGameOverlay`, itself byte-unchanged), and the agreement verdict's `stockfishLine` through the reconciled lookup, closing two RESEARCH Pitfall-1 bypasses. Frontend-only; no worker/depth changes.
+- **Phase 163 — gem moves (SEED-092):** badge the rare move that is both the engine's clearly-only good move AND hard for a human at the player's rating to find. New `gemMove.ts` with two-condition `classifyGem` (rating-matched Maia probability ≤ `GEM_MAIA_MAX_PROB` = 0.03 AND expected-score gap ≥ `MISTAKE_DROP`), mover-agnostic, covering mainline and free variations either color.
+- `MoveQuality` widened to a 6th positive `'gem'` bucket (folded into `'good'` for bucket keying, overriding "best"); `FlawSeverity` stays negative-only.
+- Gem surfaces in Maia-violet (`MAIA_ACCENT`): board-corner `SquareMarker.gem` variant + move-list `GemIcon` (lucide `Gem` SVG-icon variant alongside the text-glyph markers), a violet gem curve + label in `MovesByRatingChart`, and a short `UnifiedMovePopover` gem row. Two page-level per-FEN caches (`maiaCurveByFen`/`gradeSummaryByFen`) make parent-position data reachable after navigation; `gemByNode` sticky cache behind a min-depth stability gate. Pure frontend, no backend, no cross-game statistics.
+
 ## v2.0 FlawChess Engine (Shipped: 2026-07-09)
 
 **Phases completed:** 9 phases, 24 plans, 51 tasks
