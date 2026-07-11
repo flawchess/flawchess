@@ -8,6 +8,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v2.2] Analysis ELO Calibration & Deep-links — 2026-07-11
+
 ### Added
 - Analysis: you can now open any position directly by passing a `?fen=<fen>` URL param, which seeds that position as a fresh free-play analysis root (works alongside the existing `?line=` deep-link, with game > fen > line precedence) (Phase 165).
 
@@ -1047,7 +1049,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.1...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.2...HEAD
+[v2.2]: https://github.com/flawchess/flawchess/compare/v2.1...v2.2
 [v2.1]: https://github.com/flawchess/flawchess/compare/v2.0...v2.1
 [v2.0]: https://github.com/flawchess/flawchess/compare/v1.32...v2.0
 [v1.32]: https://github.com/flawchess/flawchess/compare/v1.31...v1.32

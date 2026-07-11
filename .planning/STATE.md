@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.1
-milestone_name: Analysis Eval Reconciliation & Gem Moves
+milestone: v2.2
+milestone_name: Analysis ELO Calibration & Deep-links
 current_phase: 999.1
 current_phase_name: BACKLOG
-status: verifying
-stopped_at: Completed 164-03-PLAN.md (Phase 164 complete — all 3 plans done)
-last_updated: "2026-07-11T13:52:54.689Z"
+status: milestone_complete
+stopped_at: v2.2 closed — phases 164/165 archived, CHANGELOG promoted, tagged v2.2, GH release created
+last_updated: "2026-07-11T14:20:00.000Z"
 last_activity: 2026-07-11
-last_activity_desc: Phase 165 complete, transitioned to Phase 999.1
+last_activity_desc: v2.2 milestone closed (phases 164, 165) — full release, no deploy (already live via #253/#254)
 progress:
   total_phases: 2
   completed_phases: 2
@@ -30,11 +30,13 @@ Last activity: 2026-07-11 — Phase 165 complete, transitioned to Phase 999.1
 
 See: .planning/PROJECT.md (updated 2026-07-10 after Phase 163)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: v2.1 (Analysis Eval Reconciliation & Gem Moves — Phases 162 SEED-090 eval-reconciliation precedence flip, 163 SEED-092 gem-move badges) closed 2026-07-10 — archived, CHANGELOG promoted, tagged v2.1. No active milestone. Next: deploy v2.1 to production (162+163 are merged to main but NOT yet live; v2.0 is live via #247–#249) via `bin/deploy.sh`, then `/gsd-new-milestone`.
+Current focus: v2.2 (Analysis ELO Calibration & Deep-links — Phase 164 SEED-093 Maia ELO Lichess-blitz normalization, Phase 165 SEED-094 gem-ELO calibration harness + `?fen=` deep-link) closed 2026-07-11 — archived, CHANGELOG promoted, tagged v2.2, GH release created. Both phases already live in production (released individually via #253/#254), so no deploy needed. No active milestone. Next: `/gsd-new-milestone`.
 
 ## Milestone Progress
 
-Thirty-four milestones complete (v1.0–v2.1).
+Thirty-five milestones complete (v1.0–v2.2).
+
+v2.2 Analysis ELO Calibration & Deep-links closed 2026-07-11 — 2 phases (164, 165), 6 plans. Phase 164 (SEED-093) seats each player's analysis-board Maia ELO at their Lichess-blitz-equivalent rating (Maia-3's training scale) via a backend `normalize_to_lichess_blitz` converter (incl. chess.com `classical` → `rapid`), two nullable `*_lichess_blitz` `GameFlawCard` fields computed on-read, and a frontend `deriveRawDefault` read-with-raw-fallback; slider info popover + inline reset. Phase 165 (SEED-094) restored an additive `?fen=<fen>` analysis deep-link (precedence game_id > fen > line) and added a headless Node gem-ELO calibration harness (onnxruntime-web Maia 6 rungs + Stockfish WASM C2 + stratified CSV → TSV in `reports/data/`, importing the real `classifyGem`/`evalToExpectedScore`/`MISTAKE_DROP`); gem generosity relaxed to Maia ≤10%. Archived to milestones/v2.2-ROADMAP.md, phases to milestones/v2.2-phases/, CHANGELOG promoted, tagged v2.2, GH release created. **Deployed to production** — released incrementally as single-phase releases #253 (164) and #254 (165); bundled into v2.2 retroactively at close.
 
 v2.1 Analysis Eval Reconciliation & Gem Moves closed 2026-07-10 — 2 phases (162, 163), 7 plans, both frontend-only on `/analysis`. Phase 162 (SEED-090) flipped `buildEvalLookup` to grading-first precedence and introduced a single canonical `resolveReconciledBest`/`reconciledBestUci` that the board arrow, agreement verdict, eval bar, and Best/Good labels all consume, so a "Good" move can never show a higher eval than "Best". Phase 163 (SEED-092) added violet gem badges (lucide `Gem`, `MAIA_ACCENT`) for the rare move that is the engine's clearly-only good move AND hard to find at the player's rating (Maia prob ≤ `GEM_MAIA_MAX_PROB` 0.03 AND expected-score gap ≥ `MISTAKE_DROP`), surfaced on board, move list, moves-by-rating chart, and popover via a new `'gem'` `MoveQuality` bucket. No backend, no schema, no new deps. Archived to milestones/v2.1-ROADMAP.md, phases to milestones/v2.1-phases/, CHANGELOG promoted, tagged v2.1. **Not yet deployed to production** — deploy pending via `bin/deploy.sh`.
 

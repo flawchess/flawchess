@@ -1,5 +1,16 @@
 # Milestones: FlawChess
 
+## v2.2 Analysis ELO Calibration & Deep-links (Shipped: 2026-07-11; deployed to production, PRs #253/#254)
+
+**Phases completed:** 2 phases (164, 165), 6 plans
+
+**Key accomplishments:**
+
+- **Phase 164 — Maia ELO Lichess-blitz normalization (SEED-093):** the analysis-board Maia ELO slider now seats each player at their Lichess-blitz-equivalent rating (Maia-3's training scale) instead of their raw platform rating, so chess.com and Lichess-non-blitz ratings no longer make the Maia opponent play too strong or too weak. Backend `_invert_table2_column` + `normalize_to_lichess_blitz` converter (including a `classical` → `rapid` mapping for chess.com's long real-time games), two nullable `*_lichess_blitz` fields computed on-read in `_build_card`, and a frontend `deriveRawDefault` read-with-raw-fallback. The ELO label carries an info popover explaining the conversion, with an inline reset once the slider is dragged off the players' rating. Verified 13/13 truths; UAT signed off. Released to production via PR #253.
+- **Phase 165 — Gem-move ELO calibration harness + restore `?fen=` analysis deep-link (SEED-094):** restored an additive `?fen=<fen>` analysis deep-link (`buildAnalysisFenUrl` / `parseAnalysisFenParam` + Analysis.tsx seeding, precedence game_id > fen > line) so arbitrary mid-game positions are directly openable alongside the existing start-anchored `?line=`. Built a headless Node gem-ELO calibration harness (onnxruntime-web Maia across six ELO rungs {600, 1000, 1400, 1800, 2200, 2600} + vendored Stockfish WASM C2 grade + stratified CSV sampling → TSV in `reports/data/`) that imports the real `classifyGem` / `evalToExpectedScore` / `MISTAKE_DROP` for zero reimplementation drift — the empirical basis for an ELO-scaled iso-rarity gem-move ceiling (Phase 163 D-08). Gem badges were also made a touch more generous (Maia probability ≤ 10%, was 5%). Released to production via PR #254.
+
+Both phases shipped as individual GitLab-Flow single-phase releases (#253, #254) and were bundled retroactively into the v2.2 milestone at close. Also bundled: the Openings → Analysis `?line=` handoff and Analyze-position button relocation (quick 260710-x3d / 260710-wub).
+
 ## v2.1 Analysis Eval Reconciliation & Gem Moves (Merged to main: 2026-07-10; deploy pending)
 
 **Phases completed:** 2 phases (162, 163), 7 plans
