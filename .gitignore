@@ -30,6 +30,8 @@ lib/
 lib64/
 # Allow frontend JS source lib (overrides Python lib/ above)
 !frontend/src/lib/
+# Allow the committed Node harness helper lib (Phase 165) — overrides Python lib/ above
+!scripts/lib/
 parts/
 sdist/
 var/

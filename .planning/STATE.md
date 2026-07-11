@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: Analysis Eval Reconciliation & Gem Moves
-current_phase: 164
-current_phase_name: maia-elo-lichess-blitz-normalization
-status: shipping
-stopped_at: Phase 164 verified (13/13) + UAT signed off — shipping to main, then deploy
-last_updated: "2026-07-11T10:22:13.390Z"
+current_phase: 999.1
+current_phase_name: BACKLOG
+status: verifying
+stopped_at: Completed 164-03-PLAN.md (Phase 164 complete — all 3 plans done)
+last_updated: "2026-07-11T13:52:54.689Z"
 last_activity: 2026-07-11
-last_activity_desc: Phase 164 UAT signed off; squash-merging to main and deploying
+last_activity_desc: Phase 165 complete, transitioned to Phase 999.1
 progress:
-  total_phases: 1
-  completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
+  total_phases: 2
+  completed_phases: 2
+  total_plans: 6
+  completed_plans: 6
   percent: 100
 ---
 
@@ -21,10 +21,10 @@ progress:
 
 ## Current Position
 
-Phase: 164 (maia-elo-lichess-blitz-normalization) — COMPLETE (verified 13/13; UAT signed off)
-Plan: 4 of 4
-Status: Shipping Phase 164 — squash-merge to main, then deploy
-Last activity: 2026-07-11 — Phase 164 UAT signed off; shipping + deploying
+Phase: 999.1 — Password Reset (BACKLOG)
+Plan: Not started
+Status: Phase complete — ready for verification
+Last activity: 2026-07-11 — Phase 165 complete, transitioned to Phase 999.1
 
 ## Project Reference
 
@@ -66,6 +66,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 165 added: Gem-move ELO calibration harness + restore `?fen=` analysis deep-link (from SEED-094) — headless Node harness measuring raw Maia prob per ELO rung over ~3000 Kaggle "brilliant" moves (empirical basis for Phase 163 D-08's ELO-scaled iso-rarity ceiling), plus an additive `?fen=` analysis deep-link so the TSV positions are clickable. gsd-tools phase.add numbered it 165 sequentially (164 is the only phase left in `.planning/phases/`).
 - Phase 164 added: Maia ELO Lichess-blitz normalization (from SEED-093) — normalize player ratings to Lichess-blitz for the analysis-board Maia ELO slider default. Numbered manually 164 (gsd-tools phase.add proposed 1 because completed phases are archived out of `.planning/phases/`; project uses absolute numbering).
 - v2.0 FlawChess Engine closed 2026-07-09 (Phases 153–161; tag v2.0). Grew beyond its planned 153–159 scope to include Phase 160 (ad-hoc `/analysis` UI polish, artifact-free quick/fast bucket) and Phase 161 (SEED-088 viewport-locked layout); ROADMAP header lagged at "153–159" until close, corrected to 153–161. Live-browser UAT for 155/157/161 confirmed at close. Roadmap + requirements archived to `milestones/v2.0-ROADMAP.md` + `v2.0-REQUIREMENTS.md`, phases to `milestones/v2.0-phases/`. Reset for the next milestone.
 - v1.31 Pipeline Consolidation closed 2026-07-04 (Phases 148, 149, 150; tag v1.31). Execution decisions + quick-task log archived to `milestones/v1.31-ROADMAP.md`, PROJECT.md Key Decisions, and git. Reset for the next milestone.
@@ -177,6 +178,11 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 164-02]: _seed_db_game extended with optional white_rating/black_rating/time_control_str/time_control_bucket params (defaults unchanged) instead of a parallel seeding helper
 - [Phase 164-03]: Both new *_lichess_blitz fields kept optional (?: number | null) on both TS types (Pitfall 5) so existing fixtures compile and a missing value falls back to raw via ??
 - [Phase 164-03]: Updated useMaiaEloDefault.ts's top-of-file doc comment to describe the normalized-rating-first D-07 rule, kept in sync as part of Task 1
+- [Phase 165-01]: Grade Stockfish C2 over ALL legal root moves (not the frontend's display-union) for an honest playedIsBest in calibration
+- [Phase 165-01]: Apply expensive FEN/SAN validation lazily only to reservoir-slot candidates during stratified sampling, not all ~22M CSV rows
+- [Phase 165-01]: Dedupe quantile strata edges to avoid degenerate empty strata from tied score values undercounting --n
+- [Phase 165]: ?fen= restored additively alongside ?line= (not a revert) per SEED-094/D-06 for arbitrary mid-game snapshot loading
+- [Phase 165]: Precedence game_id > fen > line enforced via rootFenSeed === null guard on shared hasLoadedMainLine ref (T-165-04)
 
 ### Pending Todos
 
@@ -256,7 +262,7 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 **Stopped at:** Completed 164-03-PLAN.md (Phase 164 complete — all 3 plans done)
 
-**Last session:** 2026-07-11T09:37:44.803Z
+**Last session:** 2026-07-11T13:35:33.153Z
 
 **Resume file:** 
 
@@ -309,6 +315,8 @@ None
 | Phase 164 P01 | 20min | 2 tasks | 2 files |
 | Phase 164 P02 | 25min | 2 tasks | 3 files |
 | Phase 164 P03 | 15min | 2 tasks | 3 files |
+| Phase 165 P01 | 17min | 2 tasks | 3 files |
+| Phase 165 P02 | 35min | 3 tasks | 3 files |
 
 ## Operator Next Steps
 
