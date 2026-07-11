@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: Bot Play
-status: planning
-last_updated: "2026-07-11T15:34:55.708Z"
+status: roadmapped
+last_updated: "2026-07-11T16:10:00.000Z"
 last_activity: 2026-07-11
 progress:
-  total_phases: 0
+  total_phases: 6
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,10 +17,10 @@ progress:
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Not started — roadmap created (Phase 166 is next)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-07-11 — Milestone v2.3 started
+Status: Roadmapped (6 phases, 166–171; awaiting `/gsd-plan-phase 166`)
+Last activity: 2026-07-11 — v2.3 roadmap created (Phases 166–171, 26/26 requirements mapped)
 
 ## Project Reference
 
@@ -64,6 +64,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- v2.3 Bot Play roadmap created 2026-07-11 — 6 phases (166–171) in 3 dependency waves (A={166,167}, B={168,169}, C={170,171}), continuing absolute numbering from v2.2's Phase 165. All 26 requirements (BOT/PLAY/STORE/RESUME/CAL) mapped 1:1, no orphans. Keystone Phase 166 (`selectBotMove` two-regime sample↔argmax blend) is imported by both the play loop and the calibration harness; Phase 167 (backend store-on-finish) is fully independent. Phase 166 (slider→temperature/threshold curve + regime discontinuity) and Phase 168 (Maia-in-Node feasibility spike + `onnxruntime-node` version) flagged for plan-time research/spike. UI hints on Phases 169 (clocked board) and 171 (Bots page/setup).
 - Phase 165 added: Gem-move ELO calibration harness + restore `?fen=` analysis deep-link (from SEED-094) — headless Node harness measuring raw Maia prob per ELO rung over ~3000 Kaggle "brilliant" moves (empirical basis for Phase 163 D-08's ELO-scaled iso-rarity ceiling), plus an additive `?fen=` analysis deep-link so the TSV positions are clickable. gsd-tools phase.add numbered it 165 sequentially (164 is the only phase left in `.planning/phases/`).
 - Phase 164 added: Maia ELO Lichess-blitz normalization (from SEED-093) — normalize player ratings to Lichess-blitz for the analysis-board Maia ELO slider default. Numbered manually 164 (gsd-tools phase.add proposed 1 because completed phases are archived out of `.planning/phases/`; project uses absolute numbering).
 - v2.0 FlawChess Engine closed 2026-07-09 (Phases 153–161; tag v2.0). Grew beyond its planned 153–159 scope to include Phase 160 (ad-hoc `/analysis` UI polish, artifact-free quick/fast bucket) and Phase 161 (SEED-088 viewport-locked layout); ROADMAP header lagged at "153–159" until close, corrected to 153–161. Live-browser UAT for 155/157/161 confirmed at close. Roadmap + requirements archived to `milestones/v2.0-ROADMAP.md` + `v2.0-REQUIREMENTS.md`, phases to `milestones/v2.0-phases/`. Reset for the next milestone.

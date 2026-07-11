@@ -85,29 +85,29 @@ Which phases cover which requirements. Filled during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BOT-01 | — | Pending |
-| BOT-02 | — | Pending |
-| BOT-03 | — | Pending |
-| BOT-04 | — | Pending |
-| PLAY-01 | — | Pending |
-| PLAY-02 | — | Pending |
-| PLAY-03 | — | Pending |
-| PLAY-04 | — | Pending |
-| PLAY-05 | — | Pending |
-| PLAY-06 | — | Pending |
-| PLAY-07 | — | Pending |
-| PLAY-08 | — | Pending |
-| PLAY-09 | — | Pending |
-| PLAY-10 | — | Pending |
-| STORE-01 | — | Pending |
-| STORE-02 | — | Pending |
-| STORE-03 | — | Pending |
-| STORE-04 | — | Pending |
-| STORE-05 | — | Pending |
-| STORE-06 | — | Pending |
-| STORE-07 | — | Pending |
-| RESUME-01 | — | Pending |
-| RESUME-02 | — | Pending |
-| CAL-01 | — | Pending |
-| CAL-02 | — | Pending |
-| CAL-03 | — | Pending |
+| BOT-01 | Phase 166 | Pending |
+| BOT-02 | Phase 166 | Pending |
+| BOT-03 | Phase 166 | Pending |
+| BOT-04 | Phase 166 | Pending |
+| PLAY-01 | Phase 171 | Pending |
+| PLAY-02 | Phase 171 | Pending |
+| PLAY-03 | Phase 169 | Pending |
+| PLAY-04 | Phase 169 | Pending |
+| PLAY-05 | Phase 169 | Pending |
+| PLAY-06 | Phase 169 | Pending |
+| PLAY-07 | Phase 169 | Pending |
+| PLAY-08 | Phase 169 | Pending |
+| PLAY-09 | Phase 169 | Pending |
+| PLAY-10 | Phase 171 | Pending |
+| STORE-01 | Phase 167 | Pending |
+| STORE-02 | Phase 167 | Pending |
+| STORE-03 | Phase 167 | Pending |
+| STORE-04 | Phase 167 | Pending |
+| STORE-05 | Phase 167 | Pending |
+| STORE-06 | Phase 167 | Pending |
+| STORE-07 | Phase 167 | Pending |
+| RESUME-01 | Phase 170 | Pending |
+| RESUME-02 | Phase 170 | Pending |
+| CAL-01 | Phase 168 | Pending |
+| CAL-02 | Phase 168 | Pending |
+| CAL-03 | Phase 168 | Pending |
