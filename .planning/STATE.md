@@ -4,11 +4,11 @@ milestone: v2.1
 milestone_name: Analysis Eval Reconciliation & Gem Moves
 current_phase: 164
 current_phase_name: maia-elo-lichess-blitz-normalization
-status: shipping
-stopped_at: Phase 164 verified (13/13) + UAT signed off — shipping to main, then deploy
+status: deployed
+stopped_at: Phase 164 shipped to main + deployed to production (release PR #253, prod @ 1742ed93)
 last_updated: "2026-07-11T10:22:13.390Z"
 last_activity: 2026-07-11
-last_activity_desc: Phase 164 UAT signed off; squash-merging to main and deploying
+last_activity_desc: Phase 164 shipped + deployed to production (PR #253)
 progress:
   total_phases: 1
   completed_phases: 1
@@ -21,10 +21,10 @@ progress:
 
 ## Current Position
 
-Phase: 164 (maia-elo-lichess-blitz-normalization) — COMPLETE (verified 13/13; UAT signed off)
+Phase: 164 (maia-elo-lichess-blitz-normalization) — SHIPPED + DEPLOYED (release PR #253, prod @ 1742ed93)
 Plan: 4 of 4
-Status: Shipping Phase 164 — squash-merge to main, then deploy
-Last activity: 2026-07-11 — Phase 164 UAT signed off; shipping + deploying
+Status: Phase 164 live in production
+Last activity: 2026-07-11 — Phase 164 shipped to main + deployed to production
 
 ## Project Reference
 
