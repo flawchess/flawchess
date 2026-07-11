@@ -1,223 +1,210 @@
-# Feature Research: FlawChess Engine (v2.0)
+# Feature Research
 
-**Domain:** Practical-play / opponent-modeling chess analysis engine (client-side, built on Stockfish + Maia)
-**Researched:** 2026-07-05
-**Confidence:** MEDIUM-HIGH (prior-art source code read directly; UI conventions verified against this codebase; some Polecat internals inferred from partial file fetches)
+**Domain:** "Play against a bot / computer" for a chess web app (FlawChess v2.3 Bot Play)
+**Researched:** 2026-07-11
+**Confidence:** HIGH (well-trodden UX on lichess/chess.com; scope tightly locked in SEED-091 + PROJECT.md)
 
-## 0. Prior Art: Source Read (Polecat + vala-bot)
+> Scope note: this is a **subsequent milestone** adding clocked bot-play to an existing analysis app. The engine (`useFlawChessEngine` / `mctsSearch` + Maia inference), the `/analysis` board with ELO + play-style sliders, the Library games surface, and the import normalization path already exist. Research here is about the **play-a-game feature set** layered on top, not about the engine or analysis. v1 IN/OUT boundaries are locked: draw offers + move sounds IN; premove + takeback OUT.
 
-The seed (SEED-082) requires reading the actual source of the two closest systems before building, not just their marketing pages. Both were fetched and read directly.
+---
 
-### Polecat — github.com/subcreation-studio/Polecat (bradleylovell.com/polecat)
+## How lichess & chess.com actually do "play the computer"
 
-Read: `expectimax.py`, `expectimaxtree.py` (tree node/expansion logic), `maia_player_model.py`, `config.py`, `README.md`, plus the project page.
+Grounding for the categorization below:
 
-**Confirmed from source:**
-- **Algorithm:** genuine expectimax (not MCTS), with several alternate search modes present in the repo (`stochastic_uct.py`, `fixed_stoch_uct.py`, `aggro_fixed_stoch_uct.py`) but the shipped default is `expectimax.py`. Node expansion (`expectimaxtree.py`) prunes children below a `position_probability_cutoff` — a fixed-width, probability-gated expansion, not a node-budget-driven MCTS allocator.
-- **Expected-value recursion:** at opponent-to-move nodes it's a textbook weighted sum — `expected_value += child.local_probability * expectiminimax(child, depth-1, ...)` — structurally identical to what SEED-082 designs, confirming the core recursive shape is not novel.
-- **Leaf conversion:** `heuristic = (evaluation + 1.0) / 2.0` — a linear remap of a `[-1, 1]` engine evaluation to `[0, 1]`, **not a calibrated sigmoid**. This is materially cruder than the lichess eval→win% sigmoid SEED-082 plans for MVP1 — a real, confirmed differentiation point, not just an assumption.
-- **Rating handling:** **no ELO parameter in the search code at all.** `config.py` hardcodes a single opponent-matched Maia weights file (e.g. `maia-1700.pb.gz`) selected by the user editing the config before running — a fixed, single-sided skill model. Polecat's own (engine) side plays via the strong evaluator (Leela weights / Stockfish), unconstrained by any rating. **No asymmetric self-rating, no self-execution-probability modeling** — confirms the seed's read.
-- **Search depth:** "shallow" is qualitative in the README; no explicit ply/node budget documented in the fetched files. Not a live analysis tool — it's an offline experiment harness (`trial.py`, `show_example_game.py`) that plays full games against a Maia opponent model and reports summary stats (51.6 vs 53.5 half-moves to mate vs a 1700-Maia), not a per-position UI.
-- **Endgame behavior:** explicitly defers to Stockfish once it reaches "overwhelming advantage" — an engineering shortcut Polecat needed (it has no dedicated conversion phase of its own), not directly relevant to an analysis tool.
+- **lichess "Play with the computer"** — a setup dialog: pick Stockfish **level 1–8** (mapped to a rough Elo, ~400 up to full strength), **side** (white / black / random), and a **time control** (including "unlimited"/correspondence). The game is a normal board with clocks (if a real TC is chosen), resign, and an offer-draw affordance. Crucially, **the computer game is not a rated server game with a hard enforced running clock** the way human games are — it lives largely client-side and you can leave and come back. At game end you get the result and an "analysis board" link.
+- **chess.com "Play Bots"** — a richer setup: bot **character cards** (avatar + nominal rating), difficulty, side, and options. In-game it exposes analyze / hint / takeback (some behind membership). At game-over a result modal with **Rematch / New Bot / Review (analyze)**. Coach modes are typically untimed; timed modes exist.
+- **Common to both:** the "vs computer" experience is deliberately lower-stakes than rated human play — no anti-cheat, forgiving abandonment, take-backs/hints as training aids.
 
-**Confidence:** MEDIUM — read via WebFetch against raw GitHub source files (not cached training data), cross-checked across 4 files + README + project page; some files (e.g. exact depth constant) were only partially retrievable through the fetch tool's summarization, so treat "no depth budget found" as absence-of-evidence in what was retrievable, not proof none exists.
+FlawChess's twist: the "bot" is the **FlawChess practical-play engine** (Maia-conditioned, ELO-sliderable, symmetric — never adapts to the player), and every finished game is **stored as a real analyzable Library game** feeding the same WDL / endgame / time-management analytics as imported games. That storage-as-first-class-game is the differentiator; the play UI itself is table-stakes. FlawChess deliberately **strips the training aids** (no hints/takeback/eval) precisely because the point is an honest, calibration-grade measurement of the engine's strength.
 
-### vala-bot — github.com/Avo-k/vala (bot: lichess.org/@/vala-bot)
-
-Read: `README.md`, `search.py` (core EV logic), lichess bot profile page.
-
-**Confirmed from source:**
-- **Algorithm:** level-synchronous expectimax, explicitly **not MCTS**. Two-stage pipeline: a cheap depth-1 "trigger screen" (~0.3s) flags positions with exploitation upside, then a full expectimax only runs on flagged positions (~1–1.6s via a parallel `PatriciaPool` of engine subprocesses). This lazy/gated-search structure is a genuinely different engineering approach from SEED-082's always-on MCTS and is worth stealing as a perf idea even though the core algorithm differs.
-- **Engine backbone:** **Patricia 5** (an aggressive NNUE alpha-beta engine), not Stockfish. Supplies MultiPV candidates and leaf centipawns.
-- **Opponent model:** Maia-3 / "Chessformer" (PyTorch) supplies `P(reply | position, elo)` at interior nodes; **shallow nodes use the Lichess Opening Explorer API** (real human reply frequencies, rated-filtered) instead of Maia — realizing an idea attributed to Thomas Ahle's "chess-openings-expectimax" concept. This opening-book-as-cheap-oracle idea is a genuinely useful implementation shortcut not in SEED-082's design.
-- **ELO handling:** exactly one rating knob — `human_elo` (a UCI option, 600–2600, or 0 to auto-track the opponent's live Lichess rating) — feeds Maia's *reply* distribution only. **Vala's own moves are selected via `pool.map_best_move()` at full engine strength, with no ELO constraint on its own future play.** This is the single most load-bearing finding for the novelty question: **neither closest system models its own future execution probability at its own rating.** SEED-082's asymmetric self+opponent design (querying Maia at the *player's own* ELO for the player's own future nodes, not just the opponent's) is corroborated as unclaimed by both systems actually read.
-- **Leaf conversion:** EV is computed directly on the **centipawn scale** (`_to_root_pov()` just flips sign by side to move) — no win% sigmoid at all in the core loop. Confirms SEED-082's lichess-sigmoid leaf conversion is a genuine (if modest) refinement over both prior systems, neither of which calibrates eval→expected-score.
-- **Risk dials:** `risk_cp` (max objective concession allowed) and `margin_cp` (minimum EV uplift required to deviate from engine-best) are explicit, tunable, user-facing knobs — this is the cleanest existing example of "how do you decide whether to play a swindle" and directly informs how FlawChess should frame the objective-vs-practical score pair (i.e., always show the concession size, not just the two scores in isolation).
-- **UCI-line output convention:** per-move info tags candidates as `solid` / `trig` / `BAIT` / `mate`, alongside eval-loss (cp) and EV swing (before→after). This is a good precedent for the FlawChess "why this is the practical pick" copy — swindle-worthy lines should always disclose the cp they cost.
-- **Status:** actively developed bot (2,263 blitz games as of research date), not a static research artifact — the closest thing to a live production analog of what SEED-082 builds, even though it's a *player* not an *analysis tool*.
-
-**Confidence:** MEDIUM — same caveats as Polecat (WebFetch summarization of raw source, not a full manual read of every file); the ELO-asymmetry finding is corroborated independently across the README EV formula, the search.py fetch, and the UCI-option description, so treat that specific finding as higher confidence than the rest.
-
-### Novelty verdict (both systems read)
-
-**Confirmed, not just asserted from the seed:** the core concept — Maia opponent model + engine eval in an expectimax search that deliberately plays engine-suboptimal "trap" moves — is shipped twice already (Polecat as an offline research harness, vala-bot as a live Lichess bot). FlawChess Engine is **not** a novel algorithm class and copy must never claim otherwise.
-
-**What genuinely differs, confirmed by source (not assumption):**
-1. **Asymmetric self-rating.** Neither Polecat nor vala models the *player's own* future moves through Maia at the *player's own* ELO. Both play their own side at full engine strength. SEED-082's design — querying Maia at your ELO for your future nodes, opponent ELO for opponent nodes — is the one substantive unclaimed hook, now corroborated by two independent source reads instead of one prior-art survey.
-2. **Calibrated leaf conversion.** Polecat uses a linear `(eval+1)/2` remap; vala uses raw centipawns. Neither calibrates eval→expected-score. SEED-082's lichess sigmoid (and its deferred per-ELO-bucket upgrade) is a real, if modest, improvement.
-3. **It's an analysis tool, not an opponent bot.** Both prior systems *play* games against humans. FlawChess Engine *analyzes* a position/game for a human to study — output is a displayed line + score pair on a board UI, never an autonomous move. This reframes the "not novel" concern: the correct positioning is "practical-play **analysis**," a use case neither prior system addresses at all (confirms seed framing).
-4. **MCTS-in-expectimax-clothing vs textbook expectimax.** Both prior systems are textbook depth-limited expectimax (Polecat) or level-synchronous two-stage expectimax (vala). SEED-082's MCTS-with-custom-backup is a different search-allocation strategy justified by the node-budget economics of a client-side WASM engine (Stockfish eval costs 50–300ms in-browser vs a native engine's microseconds) — a legitimately different engineering constraint, not a claimed algorithmic novelty.
-
-**Caution:** this is a fast-moving 2024–2026 research area (Maia-2, ALLIE, player-specific Maia-2+MCTS all postdate Polecat). Do not state "asymmetric self-rating is novel" in any public-facing copy without re-checking immediately before ship; treat it internally as "unclaimed by the two closest systems as of 2026-07," not "provably first."
-
-**Sources:**
-- [Polecat project page](https://bradleylovell.com/polecat)
-- [Polecat repo](https://github.com/subcreation-studio/Polecat)
-- [Polecat expectimax.py](https://raw.githubusercontent.com/subcreation-studio/Polecat/main/expectimax.py)
-- [Polecat expectimaxtree.py](https://raw.githubusercontent.com/subcreation-studio/Polecat/main/expectimaxtree.py)
-- [Polecat maia_player_model.py](https://raw.githubusercontent.com/subcreation-studio/Polecat/main/maia_player_model.py)
-- [Polecat config.py](https://raw.githubusercontent.com/subcreation-studio/Polecat/main/config.py)
-- [vala-bot lichess profile](https://lichess.org/@/vala-bot)
-- [vala repo](https://github.com/Avo-k/vala)
-- [vala README](https://raw.githubusercontent.com/Avo-k/vala/main/README.md)
-- [vala search.py](https://raw.githubusercontent.com/Avo-k/vala/main/vala/search.py)
-- [Patricia engine](https://github.com/Adam-Kulju/Patricia)
-- [Maia Chess](https://github.com/CSSLab/maia-chess)
+---
 
 ## Feature Landscape
 
 ### Table Stakes (Users Expect These)
 
-For an *analysis* surface layering a new engine mode onto an existing eval-bar/arrow board (the FlawChess `/analysis` page already ships Stockfish + Maia), these are the baseline expectations a practical-play mode must clear or it reads as broken/incomplete rather than novel.
+Missing any of these makes the bot mode feel broken or unfinished.
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Displayed practical line (modal path) on the board | Every engine line tool (lichess/chess.com analysis) shows *a line*, not just a score; a bare number with no moves is not "analysis" | MEDIUM | Reuse existing PV-arrow + move-list rendering patterns already in `useAnalysisBoard.ts` |
-| Live/anytime refinement (line updates as it "thinks") | Both Stockfish and Maia already refine live on this exact page (`useStockfishEngine`, MultiPV 2, 1500ms/2M-node budget); a new mode that freezes or spinners would regress the page's established feel | MEDIUM | MCTS is anytime-native per SEED-082; the worker pool needs a node-eval priority queue favoring current-best root lines |
-| Board arrows matching the existing visual language | Page already has Stockfish top-2, tactic, and next-move arrow layers with distinct theme.ts colors; a fourth layer must slot into that system, not invent a new one | LOW | `theme.ts` constants (`BEST_MOVE_ARROW`, `SECOND_BEST_ARROW` precedent) — add `FLAWCHESS_ENGINE_ARROW` + `_SECOND` following the same naming/opacity convention |
-| Toggle to show/hide the layer | Every existing arrow layer on this page is user-toggleable (Stockfish, tactic, next-move); an engine layer that can't be hidden breaks the established interaction model | LOW | Follows existing toggle pattern already in `Analysis.tsx` |
-| Objective score alongside the practical score | Stockfish's eval bar already anchors "how good is this position, objectively" on this exact page; removing that reference point while adding a practical score would be confusing, not additive | LOW | Score **pair**, not replacement — "objectively +3.0, practically +0.9 for you" per seed |
-| Works in both free analysis AND game review | Milestone scope explicitly requires both surfaces; Stockfish/Maia already work on both | MEDIUM | Game review adds the played-move arrow (existing) for the "what you played vs what was practically best" comparison loop |
+| Feature | Why Expected | Complexity | Notes / Dependencies |
+|---------|--------------|------------|----------------------|
+| **Setup: strength (ELO slider)** | Every "play computer" flow leads with difficulty | LOW | Reuse the existing `/analysis` ELO slider verbatim → engine `budget.elo`. |
+| **Setup: color choice (white / black / random)** | Universal on lichess & chess.com | LOW | Trivial state; "random" picks a side on Play. Sets who moves first + board orientation. |
+| **Setup: time-control presets** | Clocked play needs a TC; presets are the norm | LOW | Locked list: blitz 3+0/3+2/5+0/5+3 · rapid 10+0/10+5/15+10 · classical 30+0/30+20. **Bullet excluded by design** (client compute headroom). Preset → `{base_seconds, increment_seconds}`; also drives the saved game's TC bucket + player-rating conversion. |
+| **Setup: play-style knob** | Already a first-class engine control here | LOW | Reuse the human↔stockfish play-style slider. Blends sample↔argmax move selection (locked decision #2). Novel vs lichess/chess.com but table-stakes *for this app*. |
+| **Play → live clocked board** | The core action | MEDIUM | react-chessboard + chess.js loop with the engine driving bot moves. Client-side only. |
+| **Two clocks counting down with increment** | Defines "clocked game" | MEDIUM | Fischer increment: decrement mover's clock while thinking, add increment after the move. Needs wall-clock-delta timing (not naive `setInterval` accumulation, which drifts and dies in backgrounded tabs). |
+| **Whose-move indication** | Users must know if it's their turn | LOW | Active-clock highlight + input gating (can't move on bot's turn). |
+| **Legal-move enforcement + click & drag input** | A board allowing illegal moves is broken | LOW | chess.js validation; both drag-drop and click-to-click required project-wide (mobile). Reuse board input from `/analysis`. |
+| **Bot "thinking" affordance** | Instant replies feel robotic / broken | LOW–MEDIUM | Subtle indicator on the bot's side/clock. Pairs with pacing (below). |
+| **Human-like think-time pacing (not instant)** | Instant moves feel wrong AND never burn the bot's clock | MEDIUM | Pace bot delay from its remaining clock; also caps the search budget. Best-effort per seed (perf tuning is polish, not a blocker). Must keep 3+0 playable on mid-range phones (~1–2s/move) and degrade gracefully. |
+| **Move sounds** | Standard on both platforms; **confirmed IN** | LOW | Move / capture / check / game-end sounds + mute toggle. Respect browser autoplay (first interaction unlocks audio). Frontend-only. |
+| **Resign** | Table-stakes everywhere | LOW | Ends game as a loss for the resigner → game-end. |
+| **Flagging (loss on time)** | A clock that can't expire isn't a clock | MEDIUM | Clock hits 0 → loss on time, with the standard "opponent has insufficient mating material → draw" exception. Must fire even after a backgrounded tab (reconcile on focus via wall-clock delta). |
+| **Full game-end detection** | Games must end correctly | MEDIUM | Mate, stalemate, threefold repetition, fifty-move, insufficient material — all from chess.js. Plus resign, flag, draw-agreed. |
+| **End-of-game result screen** | Users expect a clear result + next actions | LOW–MEDIUM | Result (win/loss/draw) + reason (checkmate / resignation / time / stalemate / agreement / repetition / 50-move / insufficient material), **"Analyze this game"** (deep-link into existing analysis/Library), **"New game"**. |
+| **Draw offers** | **Confirmed IN**; standard clocked-game control | MEDIUM | Human offers → bot accept/decline policy (simple: accept when its practical eval is ~level/losing, else decline). Threefold/50-move remain automatic, distinct from agreed draws. Bot-initiated offers optional (keep simple). |
+| **PGN capture with per-move clock (`[%clk]`)** | Without it, time-management analytics silently exclude bot games (locked decision #1) | MEDIUM | Emit standard PGN with `[%clk H:MM:SS]` after each move — exactly the lichess/chess.com format the existing normalization + clock parser expects. Load-bearing, not cosmetic. |
+| **Persist finished game to server** | The whole point: bot games become analyzable Library games | MEDIUM | POST finished PGN → `games` row, `platform='flawchess'`, via existing normalization. Depends on synthetic `platform_game_id`, `rated` + opponent-type values, player-rating conversion. |
+| **localStorage resume (clock paused while away)** | Users close tabs mid-game; losing a casual bot game feels punishing | MEDIUM | Persist game state (FEN/PGN + clocks + config) every move. On return: "Resume game?". Clock **paused while away** (matches lichess computer games). Only finished games reach the server; rage-quits leave no trace in v1. |
+| **Board orientation follows chosen color** | Playing black should flip the board | LOW | Reuse board flip from `/analysis`. |
 
 ### Differentiators (Competitive Advantage)
 
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| Objective-vs-practical score pair with plain-language "why" | No competitor (lichess, chess.com, maiachess.com, Polecat, vala-bot) shows this pair for a human student; it's the single clearest "aha" of the whole milestone | MEDIUM | Copy must always attribute the gap ("...because 14...Rd7!! is only found by 8% at your level") — never a bare number pair |
-| Swindle/trap ranking that "falls out for free" | The search's own math surfaces a line where an inferior-by-Stockfish move is objectively worse but practically better because the likely human reply loses; competitors (vala-bot) treat this as their headline feature for *play*, nobody surfaces it as *pedagogy* | LOW (given MVP1 search) | No dedicated trap-finder UI needed for MVP1 — it emerges automatically as "practically best" outranking "objectively best" in the modal line; defer dedicated UI (branch-point display) to Ambitious tier per seed |
-| "What you played vs what was practically best for you" game-review loop | Existing Played-move arrow already does the "what you played" half; pairing it with the new FlawChess-Engine arrow's "what a player at your level should realistically try" closes a loop no competitor offers (Stockfish-only game review shows "what was objectively best," which is often unfindable and demoralizing) | LOW (composition of two existing pieces) | This is the differentiator that actually uses BOTH new and existing infra — highest leverage-per-line-of-code item in the milestone |
-| Asymmetric self+opponent rating (if shipped, even undisclosed as "novel") | Confirmed unclaimed by both prior-art systems (see §0); makes "practically best FOR YOU" literal rather than aspirational — a 1400 and a 2000 get genuinely different modal lines for the same position even against the same opponent | HIGH | This is the SEED-082 "locked" design, not optional — but do not market it as "novel," market the *analysis-tool* framing instead |
-| Live-refining top-n root lines (anytime search) | lichess/chess.com show a static best line that either completes or doesn't; MCTS's adaptive allocation means the practical line visibly sharpens in real time, matching the page's existing Stockfish live-refine feel | MEDIUM | Already an established UX pattern on this exact page (Stockfish MultiPV) — extending it, not inventing it |
+Where FlawChess's bot mode is more than a generic "play the computer."
 
-### Anti-Features (Commonly Requested, Often Problematic)
+| Feature | Value Proposition | Complexity | Notes / Dependencies |
+|---------|-------------------|------------|----------------------|
+| **Finished games become first-class analyzable Library games** | Play → immediately get WDL / mistake tags / endgame + time analytics on your bot games, same as imports | MEDIUM | Enabled by `platform='flawchess'` + normalization reuse. Nothing on lichess/chess.com folds bot games into a personal analytics corpus this way. Guest caveat: eval pipeline excludes guests, so a guest bot game shows in Library but won't auto-analyze until promotion. |
+| **Practical-play engine as opponent (Maia-conditioned, ELO + play-style)** | The bot plays *human-like* lines at a chosen rating, not a nerfed Stockfish playing alien moves | MEDIUM | Reuses v2.0 engine + v1.32 Maia infra. Sample↔argmax blend from the play-style slider (locked decision #2). Symmetric — bot plays its own ELO, never adapts (adapting corrupts calibration). |
+| **`[%clk]`-annotated PGN → time-management analytics on synthetic games** | Bot games contribute to clock-advantage / flag-rate / time-pressure stats | MEDIUM | Direct consequence of clock capture + the platform filter. Real-import timelines stay clean by construction (opt-in/out via platform filter). |
+| **Save-time converted player rating on every game** | Every game is a calibration data point (player Elo vs result vs bot config), not a thrown-away NULL | MEDIUM | Reuse `useMaiaEloDefault` conversion. Store player rating (lichess-scale, TC-bucket-matched; chess.com converted fallback; NULL only when no imported games) + bot nominal ELO in opponent-rating column + full bot settings (ELO/slider/TC). Substrate for deferred user-results curve fitting. |
+| **Headless anchor-calibration harness (engine test bench)** | First real (ELO × play-style) strength map for the engine; a reusable bench | HIGH | Node harness: bot vs known-strength anchors (raw Maia 1100–1900 argmax; Stockfish skill levels) over a coarse grid. Stockfish-WASM-in-Node verified; **open feasibility item: Maia ONNX headless in Node at harness-viable speed.** Committed in-milestone; independent of the play UI. |
 
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|------------------|-------------|
-| Dedicated trap-finder / branch-point UI in MVP1 | "Show me all the traps in this position" feels like the natural companion to the swindle-ranking insight | Real scope: needs its own interaction design (how do you present *multiple* opponent-reply branches without cluttering one board?), plus its own testing/UAT surface. Explicitly deferred in the seed's "Ambitious" tier | Ship MVP1 with the modal line only; the swindle behavior is still visible (an inferior-by-Stockfish move ranked #1 practically *is* the trap-finder, just without dedicated branch UI) |
-| Per-ELO leaf sigmoids fit from the benchmark DB | "The lichess sigmoid is rating-agnostic past the search horizon — surely per-ELO curves are more accurate" | Real, but it's an isolated, clean swap behind the same leaf-eval interface — no reason to block MVP1 ship on a benchmark-DB fitting exercise that has its own research/validation cost | Ship the lichess sigmoid for MVP1 (seed already scopes this as a deferred, isolated upgrade) |
-| Time-pressure conditioning (clock→temperature / clock→ELO-offset) | Natural next question once you see "practical for you" — surely it should also account for "practical for you with 10 seconds left" | Maia is out-of-distribution for low-clock moves by construction (training data filtered these); doing this right needs its own clock→parameter calibration project against the benchmark DB, not a quick bolt-on | MVP stays clock-free per seed; flagged as the first post-MVP extension, potentially the most defensible "genuinely novel" axis (no published work found conditioning per-move human prediction on remaining clock) |
-| SharedArrayBuffer multithreaded Stockfish for deeper root grading | "More threads = faster = better" is the default performance instinct | Requires COOP/COEP cross-origin isolation; COOP `same-origin` severs `window.opener`, breaking the existing Google OAuth popup flow. Fixable but it's a site-wide deployment decision, not an engine feature, and only helps *root* multi-PV grading, not the many-shallow-leaves workload this search actually does | Pool of 2-4 single-threaded workers (already the seed's locked architecture) — near-linear speedup for the actual (many independent shallow evals) workload with zero deployment blast radius |
-| Feeding search results back to "sharpen" Maia's prior mid-search | Seems like free accuracy — "if the search found a good line, shouldn't Maia learn from it?" | This is the confirmed pitfall from both the KDD 2020 Maia paper and the 2026 Maia-2+MCTS paper: wrapping Maia in search to refine Maia's *own* output measurably degrades its human-move-prediction accuracy (5-10pp) | Use Maia's static single-forward-pass policy as fixed expectimax weights, always; never re-query Maia with search-adjusted context |
-| Deep explicit search (15+ plies) to show "impressive" long practical lines | More depth looks more thorough/impressive in a demo | Maia's probability estimation error compounds multiplicatively along the line, and deep positions look increasingly engine-flavored (out of the human-game distribution Maia was trained on) — a depth-16 "practical" line is more likely to be a compounded-error artifact than a real insight | Keep explicit search shallow (6-10 plies per seed), let the calibrated leaf sigmoid absorb everything beyond the horizon |
-| App-level Zobrist/transposition caching for the practical-play search | FlawChess's entire identity is Zobrist-hash position matching — reusing that infra here feels natural | Positions diverge too fast under this search's branching (opponent-reply fan-out at every ply) for a transposition table to pay off; stockfish.wasm's own internal TT already gives partial reuse for free | Skip app-level caching entirely (seed already locked this decision) |
-| Server-side / hybrid search loop | Could offload heavy compute from mobile devices | Client-server round-trip per node evaluation is latency-miserable for an anytime, live-refining UX; also breaks the milestone's "zero server load, no persistence" architecture and the URL-only analysis-state pattern (v1.29 D-4) | Client-side only: browser Maia inference + stockfish.wasm pool, exactly as locked |
+### Anti-Features (Commonly Requested, Often Problematic — AVOID in v1)
+
+Documenting to prevent scope creep. Several are *especially* wrong here because they corrupt the calibration signal or add server/state complexity the "client-side until done" architecture deliberately avoids.
+
+| Feature | Why Requested | Why Problematic (here) | Alternative |
+|---------|---------------|------------------------|-------------|
+| **Takeback / undo move** | Common training aid on chess.com bot mode | **Already cut.** Corrupts the game as a strength measurement; recorded result no longer reflects real play. Adds fiddly clock-rewind state. | Play it out; analyze afterward in the Library. |
+| **Premove** | Speeds up blitz on human platforms | **Already cut.** Real value only vs a live server clock racing an opponent; here the clock pauses on the bot's turn anyway. Adds input-queue + validation complexity. | Move on your turn; bot pacing keeps the game flowing. |
+| **Hints / best-move suggestions** | "Help me not blunder" | Destroys calibration (result no longer reflects the player's true strength) and turns a game into a tutor. That engine already lives on `/analysis`. | Point users to `/analysis` for training; keep bot play honest. |
+| **Live engine eval / win-bar during play** | Chess.com/lichess show an eval bar in some modes | Same calibration problem + a crutch that changes how people play + extra on-device Stockfish compute during a timed game. | Full eval graph is available *after* the game via Library analysis. |
+| **Opening book / forced book moves for the bot** | "Bot plays weird openings" | Maia's policy already produces human-like openings at the chosen ELO; a bolted-on book breaks the "plays its own strength, symmetric" property and the calibration. | Trust the Maia policy — it's the point. |
+| **In-game chat / bot trash-talk / personas** | chess.com character bots are fun | Pure scope creep; no calibration or analytics value; copy/asset/state work. | Deferred — see "preset bot cards" in future extensions. |
+| **Rematch that re-runs identical config** | chess.com has a Rematch button | Minor, but "New game" already returns to setup with settings retained; a dedicated rematch button is redundant in v1 (not harmful, just not needed). | "New game" preserves last settings; add explicit Rematch later if wanted. |
+| **Rage-quit / abandonment counts as a loss** | Fair for a competitive ladder | Requires server-side tracking of in-progress games — directly contradicts "client-side until done, only finished games reach the server." Tied to the future star/victory system. | v1: rage-quits leave no trace. Revisit with the deferred 3-star system. |
+| **Server-enforced running clock / websockets / live sessions** | "Real" online-game fidelity | Massive infra for zero benefit; it's single-player-vs-local-engine. Clock pausing while away is correct/expected for computer games. | Client-side clock + localStorage resume + one store-on-finish endpoint. |
+| **Adaptive difficulty (bot matches your level)** | Feels friendlier | **Corrupts calibration** — no fixed strength to measure. Explicitly rejected (locked decision #5). | Fixed symmetric ELO the user chooses. |
+| **Rated ladder / bot Elo affecting a user rating** | Gamification | No rating system exists for bot play; premature. Recorded player rating is a save-time *estimate* (±100–150), unfit for precise per-game claims. | Store settings + estimate for later batch curve-fitting; no live rating. |
+| **Preset bot character cards (per-ELO × playstyle)** | Nice browsing UX | Explicitly a future extension in the seed; the ELO + play-style sliders cover v1. | Ship sliders now; add cards post-launch. |
+
+---
 
 ## Feature Dependencies
 
 ```
-Phase 151 primitive (Maia top-k graded by Stockfish, root only)
-    └──requires──> MCTS search loop w/ custom Maia-weighted backup  [MVP1 core]
-                       └──requires──> Modal-path line display + score pair  [MVP1 core]
-                                          └──requires──> FlawChess-Engine arrow layer (top-2)  [MVP1 core]
+Setup screen (ELO + play-style sliders, color, TC preset)
+    └──requires──> existing /analysis sliders + budget.elo plumbing
+    └──feeds────> Live clocked board
 
-Live in-browser Stockfish (v1.29, shipped) ──enhances──> Worker-pool leaf grading (2-4 threads)
-Client-side Maia inference (SEED-081, v1.32, undeployed) ──requires──> asymmetric self+opponent ELO querying
+Live clocked board
+    ├──requires──> FlawChess engine (useFlawChessEngine / mctsSearch) + Maia inference
+    ├──requires──> clock loop (increment, flag detection, background-tab reconcile)
+    ├──requires──> chess.js (legal moves + all draw/mate detection)
+    └──enables───> Bot think-time pacing ──caps──> engine search budget
 
-Played-move arrow (existing, game review only) ──enhances──> "what you played vs practically best" loop
-Moves-by-Rating chart hover (existing) ──substitutes-for──> dedicated Maia arrow layer (seed explicitly drops this 4th layer)
+Game-end detection (mate/stalemate/threefold/50-move/insufficient/resign/flag/draw)
+    └──requires──> Live clocked board
+    └──produces──> Result screen (win/loss/draw + reason)
+                       ├──links──> "Analyze this game" (existing analysis/Library)
+                       └──triggers──> PGN capture
 
-Trap-finder / branch-point UI [Ambitious] ──requires──> Modal-path line display + score pair  [MVP1 core]
-Per-ELO leaf sigmoids [Ambitious] ──requires──> benchmark DB eval+outcome data (already exists, v1.12+)
-Time-pressure conditioning [Ambitious] ──requires──> clock→ELO-offset / clock→temperature calibration (own mini-project)
-SAB multithreading [Ambitious] ──conflicts──> existing Google OAuth popup flow (COOP same-origin severs window.opener)
+PGN capture (with [%clk] per-move clocks)
+    └──requires──> clock loop recording per-move elapsed time
+    └──feeds────> Store-finished-game endpoint
+
+Store-finished-game endpoint
+    ├──requires──> synthetic platform_game_id + rated/opponent-type values
+    ├──requires──> save-time player-rating conversion (useMaiaEloDefault machinery)
+    ├──reuses────> existing import normalization path
+    └──produces──> games row (platform='flawchess') ──> Library games tab + all analytics
+
+localStorage resume ──enhances──> Live clocked board (survives tab close; clock paused)
+
+Anchor-calibration harness (Node)
+    ├──requires──> Stockfish WASM in Node (verified) + Maia ONNX in Node (OPEN feasibility)
+    └──independent of──> the play UI (parallelizable)
 ```
 
 ### Dependency Notes
 
-- **MCTS search requires the Phase 151 primitive:** the per-node "Maia top-k graded by Stockfish" step is the atomic unit MCTS expands at every node — it must exist and be stable before the tree/backup logic can be built on top.
-- **Modal-path display requires the search to exist:** there is nothing to render until at least one full expectimax-in-MCTS pass produces a ranked line; UI work cannot meaningfully start in parallel with the search's core algorithm, though arrow *plumbing* (adding a 4th layer slot) can.
-- **The Played-move arrow enhances but does not gate the new arrow layer:** it already exists (game review only) and simply gains a new pedagogical partner; no new dependency to build.
-- **The Moves-by-Rating chart substitutes for a dedicated Maia arrow layer:** this is a locked scope-reduction (seed explicitly says "no dedicated Maia arrow layer... Maia moves stay reachable by hovering the chart"), not a technical dependency — flagging it here so the roadmap doesn't accidentally re-add a 4th arrow layer as "obviously needed."
-- **SAB multithreading conflicts with the existing OAuth flow:** any phase considering this must either scope Google-login isolation changes into the same phase or explicitly exclude SAB from that phase's scope — this is a genuine architectural conflict, not just added complexity.
-- **Per-ELO leaf sigmoids and time-pressure conditioning both depend on the benchmark DB**, which is a stable, already-shipped asset (v1.12+) — these are lower-risk "Ambitious" items specifically because their data dependency is already satisfied; they're deferred for scope reasons, not readiness reasons.
+- **Store endpoint requires a synthetic game id + rated/opponent-type decisions.** The `(user, platform, platform_game_id)` unique key needs a generated id for `platform='flawchess'`, and `rated` + opponent-type columns need values chosen (flagged as plan-time items in the seed). Blocks nothing else but must be settled before persistence works.
+- **PGN `[%clk]` capture is load-bearing for analytics, not cosmetic.** Missing clock comments → the existing time-management path silently drops the game. The clock loop must record per-move elapsed time from move 1, so clock implementation and PGN capture are coupled — plan them together.
+- **Think-time pacing both improves feel AND caps the search budget.** Same knob (remaining-clock-derived); design as one mechanism, not two.
+- **Flag detection and localStorage resume both hinge on wall-clock reconciliation.** Backgrounded tabs throttle timers; both must recompute elapsed time from a stored wall-clock timestamp on focus/resume, not from accumulated interval ticks.
+- **The calibration harness is architecturally independent** of the play UI and can be built in parallel; its only shared risk is the Maia-ONNX-in-Node feasibility.
+
+---
 
 ## MVP Definition
 
-### Launch With (v1 = MVP1, per seed's phasing)
+### Launch With (v1)
 
-Minimum viable product — what's needed to validate the concept works and reads as a coherent feature, not a research toy.
+- [ ] **Setup screen** — reused ELO + play-style sliders, color choice, TC presets (bullet excluded) — the entry point.
+- [ ] **Live clocked board** driving the FlawChess engine client-side — the core loop.
+- [ ] **Dual clocks + increment + flag-on-time** (background-tab-safe) — makes it a clocked game.
+- [ ] **Whose-move indication + turn-gated legal input** (drag + click) — basic playability.
+- [ ] **Bot thinking affordance + human-like pacing** (best-effort) — non-robotic feel.
+- [ ] **Move sounds** (with mute) — confirmed IN.
+- [ ] **Resign + draw offers** (confirmed IN) — clocked-game controls.
+- [ ] **Full game-end detection** (mate/stalemate/threefold/50-move/insufficient/resign/flag/draw) — correct endings.
+- [ ] **Result screen** — win/loss/draw + reason, "Analyze this game", "New game".
+- [ ] **PGN capture with `[%clk]`** — required for analytics inclusion.
+- [ ] **Store finished game** endpoint → `games` row (`platform='flawchess'`) with bot settings + converted player rating — the strategic payoff.
+- [ ] **localStorage resume** (clock paused while away) — casual-play forgiveness.
+- [ ] **Anchor-calibration harness** — first strength map + engine bench (committed in-milestone; parallel track).
 
-- [ ] MCTS search with custom Maia-weighted backup (opponent ELO at opponent nodes, your ELO at your future nodes, max at root) over the Phase 151 primitive — the algorithmic core; without it there's no engine, just the existing Phase 151 one-ply grading
-- [ ] Stockfish.wasm worker pool (2-4 single-threaded instances) grading leaves in parallel — required for the search to complete in a usable wall-clock time in-browser
-- [ ] Lichess eval→win% sigmoid at leaves (depth 6-10 plies) — the minimum viable leaf calibration; a raw-cp or linear remap (both prior systems' approach) would visibly under-perform on the exact "practical score" number this feature is built to show
-- [ ] Modal-path line display with objective-vs-practical score pair — this IS the feature; without the pair, there is nothing differentiating this from the existing Stockfish eval bar
-- [ ] Live-refining top-n root lines (anytime emission as MCTS visits accumulate) — matches the established page feel (Stockfish already live-refines here); a static "wait then show" result would be a UX regression from the existing bar
-- [ ] FlawChess Engine top-2 board arrow layer, toggleable, distinct theme color — the headline visual deliverable per the milestone description
-- [ ] Works on both free analysis and game review surfaces — explicit milestone scope, not optional
-- [ ] Game review: played-move arrow (existing) + FlawChess-Engine arrow both on by default — closes the "what you played vs practically best for you" loop, the differentiator with the best build-cost/value ratio in the whole milestone
+### Add After Validation (v1.x)
 
-### Add After Validation (v1.x / "Ambitious" tier per seed)
+- [ ] **Rematch button** (re-run identical config) — if users ask; low cost.
+- [ ] **Bot resignation / bot draw offers in dead positions** — polish once accept/decline heuristics prove out.
+- [ ] **Phone-perf tuning** for the search budget under 3+0 — promote from best-effort if devices struggle.
+- [ ] **Low-time clock warning / haptics** — sensory polish.
 
-Features to add once MVP1's core concept is validated with real users.
+### Future Consideration (v2+)
 
-- [ ] Dedicated trap-finder / branch-point UI ("if instead ...Qxb2, played 30% of the time, then...") — trigger: users ask "why is this the practical line" often enough that the score-pair tooltip isn't enough
-- [ ] Per-ELO leaf sigmoids fit from the benchmark DB (replacing the global lichess curve) — trigger: MVP1's global sigmoid is shown to systematically mis-rank practical scores at rating extremes (very low/very high ELO)
-- [ ] SAB-multithreaded root grading — trigger: node-budget is shown to be the binding constraint on practical-line quality at the current 2-4-worker pool size, AND the OAuth-popup conflict has an accepted resolution
-
-### Future Consideration (v2+ beyond this milestone)
-
-Features to defer until this milestone's core concept has product-market validation.
-
-- [ ] Time-pressure conditioning (clock→temperature, clock→ELO-offset calibrated from own DB) — defer: needs its own calibration mini-project against imported clock data; the seed flags this as possibly the most defensible "genuinely novel" axis, so it deserves a dedicated milestone rather than a rushed bolt-on
-- [ ] Maia-2 dual-skill-attention adoption (replacing independent per-rating Maia-1 models with Maia-2's `Q* = Q + (e_a ⊕ e_o)W` skill-aware attention) — defer: an infra swap under the existing Maia layer, worth revisiting once MVP1's asymmetric-rating design is validated and if Maia-2 weights become available for client-side inference
+- [ ] **Preset bot character cards** (per-ELO × playstyle) — browsing UX once sliders validate.
+- [ ] **3-star victory system** — depends on abandonment-as-loss revisit (needs server-side in-progress tracking).
+- [ ] **User-results strength calibration → relabel bots with measured ELO** — deferred; needs data volume.
+- [ ] **Rage-quit accounting** — only once a rating/ladder exists to make it matter.
 
 ## Feature Prioritization Matrix
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| MCTS + custom Maia-weighted backup | HIGH | HIGH | P1 |
-| Stockfish.wasm worker pool (2-4 threads) | HIGH | MEDIUM | P1 |
-| Lichess eval→win% leaf sigmoid | MEDIUM | LOW | P1 |
-| Modal-path line + objective/practical score pair | HIGH | MEDIUM | P1 |
-| Live-refining top-n lines (anytime) | HIGH | MEDIUM (native to MCTS) | P1 |
-| FlawChess Engine arrow layer (top-2, toggleable) | HIGH | LOW (existing arrow infra) | P1 |
-| Game-review played-vs-practical loop | HIGH | LOW (composition of existing pieces) | P1 |
-| Trap-finder / branch-point UI | MEDIUM | HIGH | P2 |
-| Per-ELO leaf sigmoids (benchmark DB fit) | MEDIUM | MEDIUM | P2 |
-| SAB multithreaded root grading | LOW-MEDIUM | HIGH (blocked on OAuth conflict) | P3 |
-| Time-pressure conditioning | MEDIUM-HIGH (novelty potential) | HIGH (own calibration project) | P3 |
+| Setup screen (reused sliders + color + TC) | HIGH | LOW | P1 |
+| Live clocked board + engine loop | HIGH | MEDIUM | P1 |
+| Clocks + increment + flag detection | HIGH | MEDIUM | P1 |
+| Game-end detection (all conditions) | HIGH | MEDIUM | P1 |
+| Result screen (+ Analyze / New game) | HIGH | LOW | P1 |
+| PGN `[%clk]` capture + store endpoint | HIGH | MEDIUM | P1 |
+| localStorage resume | MEDIUM | MEDIUM | P1 |
+| Bot pacing + thinking affordance | MEDIUM | MEDIUM | P1 (best-effort) |
+| Draw offers | MEDIUM | MEDIUM | P1 (confirmed IN) |
+| Move sounds | MEDIUM | LOW | P1 (confirmed IN) |
+| Save-time player-rating conversion on stored game | HIGH (calibration) | MEDIUM | P1 |
+| Anchor-calibration harness | HIGH (project goal) | HIGH | P1 (parallel track) |
+| Rematch button | LOW | LOW | P2 |
+| Preset bot cards | MEDIUM | MEDIUM | P3 |
+| 3-star / rage-quit accounting | LOW (now) | HIGH | P3 |
+| Takeback / hints / live eval / premove | (negative) | — | **CUT** |
 
-**Priority key:**
-- P1: Must have for MVP1 launch
-- P2: Should have, "Ambitious" tier, add when validated
-- P3: Nice to have, own future milestone
+**Priority key:** P1 must-have for launch · P2 add when possible · P3 future.
 
-## Competitor / Prior-Art Feature Analysis
+## Competitor Feature Analysis
 
-| Feature | Polecat | vala-bot | FlawChess Engine (planned) |
-|---------|---------|----------|------------------------------|
-| Search algorithm | Textbook expectimax, probability-cutoff pruned | Level-synchronous two-stage expectimax (trigger screen + full search) | MCTS with custom Maia-weighted expectimax backup (adaptive depth allocation under a small node budget) |
-| Objective engine | Leela Chess Zero weights / Stockfish (comparison only) | Patricia 5 (aggressive NNUE alpha-beta) | Stockfish.wasm (client-side) |
-| Opponent model | Single fixed Maia weights file, user-configured | Maia-3/Chessformer at interior nodes; Lichess Opening Explorer at shallow nodes | Maia (client-side, existing v1.32 infra), single model reused for both sides |
-| Self-rating modeling | None — engine side plays at full strength | None — vala plays via `pool.map_best_move()` at full strength | **Asymmetric**: your ELO for your own future-node queries, opponent ELO for opponent-node queries |
-| Leaf eval→score conversion | Linear remap `(eval+1)/2` | Raw centipawns, no conversion | Lichess sigmoid (calibrated eval→win%), MVP; per-ELO fit deferred |
-| Output surface | Offline experiment harness (plays full games, reports aggregate stats) | Live Lichess bot (plays real games) | Analysis tool (displayed line + score pair on an existing board UI) |
-| Trap/swindle exposure | Emergent in gameplay outcome only | Explicit UCI tag (`BAIT`) + EV-swing reporting | Emergent in the modal line's ranking, no dedicated UI in MVP1 (deferred) |
-| Risk/deviation transparency | Not exposed | `risk_cp` / `margin_cp` dials, per-move info line | Objective-vs-practical score pair with plain-language attribution (planned analog of vala's transparency, aimed at a learner not an operator) |
-
-## UI/UX Conventions Assessed
-
-Reviewed against the FlawChess codebase (`useAnalysisBoard.ts`, `useStockfishEngine.ts`, `lib/theme.ts`, `lib/arrowColor.ts`, `components/analysis/MovesByRatingChart.tsx`) rather than assumed from the seed alone — the arrow-layer system SEED-082 designs is largely an extension of an already-shipped pattern, not new infrastructure.
-
-- **Arrow-layer precedent already shipped (v1.29, Phase 136-138):** the `/analysis` board already renders a Stockfish best-move arrow (`BEST_MOVE_ARROW`) and second-best arrow (`SECOND_BEST_ARROW`), plus a distinct "next move" hint arrow (`NEXT_MOVE_ARROW`, deliberately thinner/more translucent so it reads as a subtle hint layered under the wider engine arrows) and tactic-line arrows (`tacticArrows.ts`). Each layer has its own named color constant in `theme.ts` and its own opacity/width tuning — this is the established idiom the new FlawChess-Engine layer must follow, not invent.
-- **"Disagreement with Stockfish looks intentional" is a solved problem in this codebase already**, not a new UI challenge: the existing move-quality-bar / tactic-arrow system already shows a "best" move and a distinct "second-best" or "missed" move side by side with different hues (blue for engine-best, lighter blue for second-best, red/orange family for flaw-severity). The pattern to reuse for the FlawChess-Engine layer is the same one: a clearly distinct hue (not a shade of Stockfish's blue) plus copy that names *why* two arrows disagree (score-pair + attribution), never a bare unlabeled arrow.
-- **Live-refinement UX precedent:** `useStockfishEngine` already implements the anytime pattern the new engine needs — debounced auto-analysis (150ms rapid-step coalescing), a `movetime`/node-cap dual budget (1500ms wall-clock / 2M nodes), and a two-layer stale-eval guard to avoid flickering results mid-search. The MCTS search's live emission should reuse this exact worker-state-machine shape (idle/thinking/stopping) rather than a new one.
-- **Maia display precedent:** Maia is surfaced via `MovesByRatingChart.tsx` and `MaiaMoveQualityBar.tsx` as a hover/chart interaction, not a permanent board arrow — this is exactly the seed's locked decision to drop a dedicated 4th Maia arrow layer, and it's confirmed as the existing, working pattern rather than a new compromise.
-- **maiachess.com's "played move" arrow claim could not be independently confirmed** from the marketing page content (it did not expose implementation detail); this is a LOW-confidence citation in the seed and should be verified by visiting the live maiachess.com analysis UI directly before repeating the claim in any phase-level design doc.
-- **Neither Polecat nor vala-bot offer any analysis-tool UI to draw from** — both are play-only (offline harness / live bot), so the "how to display a practical line to a learner" question has no direct prior-art answer; FlawChess's existing Stockfish/tactic arrow system is the only real precedent available, which raises this milestone's UI risk slightly (there's no external UI benchmark to copy, only this app's own conventions to extend consistently).
+| Feature | lichess "Play with computer" | chess.com "Play Bots" | FlawChess Bot Play (v1) |
+|---------|------------------------------|-----------------------|-------------------------|
+| Strength selection | 8 Stockfish levels | Bot cards + difficulty slider | Continuous ELO slider (Maia-conditioned) + play-style slider |
+| Opponent nature | Nerfed Stockfish (alien at low levels) | Nerfed Stockfish / personas | Human-like practical-play engine at chosen ELO, symmetric |
+| Time control | Presets incl. unlimited | Presets / untimed coach modes | lichess presets, **bullet excluded**, no untimed |
+| Takeback / hints | Available | Available (some paywalled) | **Deliberately absent** (honest calibration) |
+| Live eval during play | Optional | Optional | **Absent** (crutch + compute cost) |
+| Resign / draw | Yes / offer-draw | Yes | Yes / draw offers (IN) |
+| Move sounds | Yes | Yes | Yes (IN) |
+| Abandonment | Forgiving (client-side) | Forgiving | localStorage resume, clock paused, no server trace until finished |
+| Game stored & analyzable | Analysis-board link, not a personal corpus | Review link | **First-class Library game** feeding WDL/endgame/time analytics |
+| Per-move clocks in PGN | Yes (`[%clk]`) | Yes | Yes (`[%clk]`) — required for analytics |
+| Rematch | Start new | Rematch button | "New game" retains settings (Rematch = P2) |
 
 ## Sources
 
-- [Polecat project page](https://bradleylovell.com/polecat) — MEDIUM confidence
-- [Polecat repository](https://github.com/subcreation-studio/Polecat) — MEDIUM confidence, source read directly
-- [vala-bot Lichess profile](https://lichess.org/@/vala-bot) — MEDIUM confidence
-- [vala repository](https://github.com/Avo-k/vala) — MEDIUM confidence, source read directly
-- [Patricia engine](https://github.com/Adam-Kulju/Patricia) — LOW confidence (not directly read, referenced by vala)
-- [Maia Chess](https://github.com/CSSLab/maia-chess) — LOW confidence (not directly read this session)
-- [maiachess.com](https://maiachess.com) — LOW confidence (page content did not expose UI implementation detail; treat as unresolved for the "played move arrow" precedent claim in SEED-082, worth re-verifying by visiting the live analysis UI rather than the marketing page)
-- FlawChess codebase (`frontend/src/hooks/useAnalysisBoard.ts`, `useStockfishEngine.ts`, `lib/theme.ts`, `lib/arrowColor.ts`, `components/analysis/MovesByRatingChart.tsx`) — HIGH confidence, direct repo read, confirms the existing arrow-layer/toggle/live-refine conventions this milestone must extend
-- `.planning/seeds/SEED-082-human-playable-line-engine.md` — locked design source for this milestone
+- lichess "Play with the computer" — Stockfish levels 1–8, side/TC selection, forgiving computer-game abandonment: [How strong are the stockfish levels? (lichess feedback)](https://lichess.org/forum/lichess-feedback/how-strong-are-the-stockfish-levels), [Abort or resign in a computer game? (lichess)](https://lichess.org/forum/general-chess-discussion/abort-or-resign-in-a-computer-game), [Play with the computer from a position (lichess)](https://lichess.org/forum/general-chess-discussion/is-there-a-way-to-play-the-computer-with-a-specific-fen-position-and-at-a-specific-level)
+- chess.com "Play Bots" — bot cards, in-game analyze/takeback, game-over Rematch/New/Review: [Play Chess Online Against the Computer (chess.com)](https://www.chess.com/play/computer), [How to resign a computer match (chess.com forum)](https://www.chess.com/forum/view/help-support/how-to-resign-a-computer-match)
+- Internal: `.planning/seeds/SEED-091-flawchess-bot-play-milestone.md` (v1 scope + 5 locked decisions + plan-time flags), `.planning/PROJECT.md` "Current Milestone: v2.3 Bot Play"
 
 ---
-*Feature research for: FlawChess Engine (v2.0 milestone)*
-*Researched: 2026-07-05*
+*Feature research for: chess "play against a bot" experience (FlawChess v2.3)*
+*Researched: 2026-07-11*
