@@ -14,6 +14,8 @@
  * Security:
  *   ?line= guard: parseAnalysisLineParam degrades a malformed UCI line to its legal
  *     prefix (or empty) — a hand-typed bad URL can't crash the board.
+ *   ?fen= guard (T-165-03): parseAnalysisFenParam chess.js-validates the decoded FEN,
+ *     degrading a malformed/garbage value to null (free-play start) instead of crashing.
  *   T-140-02a: NaN-guard on ?game_id= / ?ply= params — malformed → null → isGameMode false.
  *   T-140-02b: L-8 guard on mainLine[ply] accesses — out-of-bounds → undefined → no-op.
  *
@@ -21,10 +23,13 @@
  *   board stays interactive throughout (SC#3).
  *
  * Modes: ?line=<uci,uci,…> seeds free play with an opening main line (cursor at the end,
- *   navigable back to move 1); no line → bare start. ?game_id=X&ply=Y loads the full game
- *   at ply Y (game mode). The legacy ?fen= snapshot param (replaced by ?line=) and the
- *   legacy tactic mode (?flaw_ply=, removed Quick 260627-l2z) are gone; clicking a
- *   move-list tactic chip grafts the PV as an in-tree sideline with a depth overlay.
+ *   navigable back to move 1); no line → bare start. ?fen=<encoded fen> additively seeds
+ *   free play with an arbitrary mid-game FEN snapshot as the root (SEED-094 / D-06;
+ *   restored alongside ?line=, not a replacement — no navigable history back to move 1).
+ *   ?game_id=X&ply=Y loads the full game at ply Y (game mode). Precedence when multiple
+ *   params are present: game_id > fen > line. The legacy tactic mode (?flaw_ply=, removed
+ *   Quick 260627-l2z) is gone; clicking a move-list tactic chip grafts the PV as an
+ *   in-tree sideline with a depth overlay.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -49,7 +54,7 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { useGameOverlay } from '@/hooks/useGameOverlay';
 import { useLiveMoveFlaw } from '@/hooks/useLiveMoveFlaw';
 import { useTacticLines, useLibraryGame } from '@/hooks/useLibrary';
-import { parseAnalysisLineParam } from '@/lib/analysisUrl';
+import { parseAnalysisLineParam, parseAnalysisFenParam } from '@/lib/analysisUrl';
 import { toDisplayDepthForOrientation } from '@/lib/tacticDepth';
 import { buildPvArrow } from '@/lib/tacticArrows';
 import { EvalBar } from '@/components/analysis/EvalBar';
@@ -417,6 +422,8 @@ function buildFocusedPvLine(
  * ROUTE-01: reachable by authenticated users inside ProtectedLayout.
  * ROUTE-02: ?line= seeds a free-play opening main line; empty/malformed → standard start.
  * ROUTE-04 (Phase 140): ?game_id=&ply= enters game mode (full game at initial ply).
+ * ?fen= (SEED-094 / D-06): additively seeds a free-play mid-game FEN snapshot root;
+ *   precedence game_id > fen > line when multiple params are present.
  */
 export default function Analysis() {
   const [searchParams] = useSearchParams();
@@ -429,6 +436,15 @@ export default function Analysis() {
   // the same defensive posture the old FEN guard (T-138-01) had.
   const lineParam = searchParams.get('line');
   const lineSans = useMemo(() => parseAnalysisLineParam(lineParam), [lineParam]);
+
+  // Additive `?fen=` snapshot entry point (SEED-094 / D-06): seeds an arbitrary
+  // mid-game FEN (e.g. a gem-ELO calibration harness row) as a free-play root
+  // with no navigable history. parseAnalysisFenParam degrades a malformed or
+  // hand-typed value to null (T-165-03), so a bad URL can't crash the board.
+  // Precedence when both ?fen= and ?line= are present: fen wins (see the
+  // ?line= seeding effect's `rootFenSeed === null` guard below).
+  const fenParam = searchParams.get('fen');
+  const rootFenSeed = useMemo(() => parseAnalysisFenParam(fenParam), [fenParam]);
 
   // ── URL params — game mode (T-140-02a) ──────────────────────────────────────
   // Security: NaN-guard on numeric params — malformed → null → mode disabled.
@@ -664,13 +680,28 @@ export default function Analysis() {
   // Free play: seed the opening main line from the ?line= param once. The cursor
   // lands at the end of the line (loadMainLine's default), and the user can step
   // back to move 1 through the variation tree. hasLoadedMainLine is shared with
-  // game mode — a page is one or the other, never both.
+  // game mode and the ?fen= effect below — a page is exactly one of the three,
+  // never more. `rootFenSeed === null` makes precedence explicit (game_id > fen >
+  // line): when both ?fen= and ?line= are present, fen wins (RESEARCH Landmine 8 —
+  // without this guard, effect ordering alone would decide the winner).
   useEffect(() => {
-    if (isGameMode || lineSans.length === 0 || hasLoadedMainLine.current) return;
+    if (isGameMode || rootFenSeed !== null || lineSans.length === 0 || hasLoadedMainLine.current)
+      return;
     hasLoadedMainLine.current = true;
     loadMainLine(lineSans, STARTING_FEN);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lineSans, isGameMode]);
+  }, [lineSans, isGameMode, rootFenSeed]);
+
+  // Free play: seed an arbitrary mid-game FEN snapshot from the ?fen= param once
+  // (SEED-094 / D-06, additive alongside ?line=). Empty sans + the parsed FEN as
+  // root seeds a free-play root at that exact position — no new hook method
+  // needed. hasLoadedMainLine is shared with the other seeding effects above.
+  useEffect(() => {
+    if (isGameMode || rootFenSeed === null || hasLoadedMainLine.current) return;
+    hasLoadedMainLine.current = true;
+    loadMainLine([], rootFenSeed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rootFenSeed, isGameMode]);
 
   // Navigate to initialPly AFTER loadMainLine state lands (separate effect — RESEARCH.md Hardest Part 3).
   // Watches mainLine.length so it fires after the batch-reset from loadMainLine.

@@ -605,3 +605,15 @@ Plans:
 **Wave 1** *(gap closure — VERIFICATION Truth #13 / REVIEW WR-01)*
 
 - [x] 164-04-PLAN.md — Gap closure: map chess.com `classical` → `rapid` in `normalize_to_lichess_blitz` (non-correspondence long real-time games) + invert unit test + IN-02 integration test (Wave 1)
+
+### Phase 165: Gem-move ELO calibration harness + restore ?fen= analysis deep-link
+
+**Goal:** Build the empirical basis for an ELO-scaled iso-rarity gem-move ceiling (Phase 163 D-08): a headless Node harness that measures, over ~3000 stratified Kaggle "brilliant" moves, the raw Maia probability at each ELO rung {600, 1000, 1400, 1800, 2200, 2600} plus a single Stockfish C2 grade per position, emitting a TSV (raw probs + derived gem-at-0.1 booleans + clickable `?fen=` analysis links) and a drop-off summary. Sub-deliverable: restore an additive `?fen=<fen>` analysis deep-link (alongside the existing start-anchored `?line=`) so the TSV's arbitrary mid-game positions are clickable. Reuse the real engines (onnxruntime-web Maia WASM, vendored Stockfish WASM) and import the actual `classifyGem`/`evalToExpectedScore`/`MISTAKE_DROP` — zero reimplementation drift.
+**Requirements**: SEED-094
+**Depends on:** none (Phase 163 gem-move detection already shipped)
+**Plans:** 2/2 plans complete
+
+Plans:
+
+- [x] 165-01-PLAN.md — Headless Node gem-ELO calibration harness (onnxruntime-web Maia 6 rungs + Stockfish WASM C2 + stratified CSV sampling → TSV in reports/data/), reusing imported gem logic (Wave 1)
+- [x] 165-02-PLAN.md — Additive `?fen=<fen>` analysis deep-link (buildAnalysisFenUrl/parseAnalysisFenParam + Analysis.tsx seeding + precedence game_id > fen > line) (Wave 1)

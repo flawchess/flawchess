@@ -8,9 +8,15 @@
  * The free-play entry point carries an opening line as a `?line=` param: a
  * comma-separated list of UCI moves (e.g. `e2e4,e7e5,g1f3`) replayed from the
  * standard start position. UCI tokens are URL-safe as-is (lowercase letters +
- * digits, plus an optional promotion letter), so no encoding is required — this
- * replaced the earlier `?fen=` snapshot param, which needed encodeURIComponent
- * and could not seed a navigable main line back to move 1.
+ * digits, plus an optional promotion letter), so no encoding is required.
+ *
+ * `?fen=<encoded fen>` is ADDITIVELY restored (SEED-094 / D-06) alongside
+ * `?line=`, not a replacement: it seeds an arbitrary mid-game FEN as a
+ * free-play root with no navigable history back to move 1, which the gem-ELO
+ * calibration harness's TSV rows need (an exact mid-game snapshot, not a
+ * move-list-from-start). `?line=` remains the right choice whenever a full
+ * navigable line is available. Precedence when both are present: fen wins
+ * (see the Analysis.tsx seeding effects).
  */
 
 import { Chess } from 'chess.js';
@@ -19,6 +25,7 @@ const ANALYSIS_PATH = '/analysis';
 const LINE_PARAM = 'line';
 const GAME_ID_PARAM = 'game_id';
 const PLY_PARAM = 'ply';
+const FEN_PARAM = 'fen';
 
 /**
  * Converts a SAN move list (as held by the Openings explorer's `chess.moveHistory`)
@@ -86,4 +93,35 @@ export function parseAnalysisLineParam(lineParam: string | null): string[] {
 export function buildGameAnalysisUrl(gameId: number, ply?: number | null): string {
   if (ply == null) return `${ANALYSIS_PATH}?${GAME_ID_PARAM}=${gameId}`;
   return `${ANALYSIS_PATH}?${GAME_ID_PARAM}=${gameId}&${PLY_PARAM}=${ply}`;
+}
+
+/**
+ * Constructs a navigable /analysis URL carrying an arbitrary mid-game FEN as a
+ * `?fen=` snapshot param (SEED-094 / D-06 additive restoration — see module
+ * doc comment). `encodeURIComponent` handles the FEN's spaces (`%20`) and
+ * slash (`%2F`), which are otherwise query-string-unsafe.
+ */
+export function buildAnalysisFenUrl(fen: string): string {
+  return `${ANALYSIS_PATH}?${FEN_PARAM}=${encodeURIComponent(fen)}`;
+}
+
+/**
+ * Parses a `?fen=` param value: decodes it and validates via chess.js. An
+ * invalid, empty, or null value returns null (T-165-03: defensive guard so a
+ * hand-typed or garbage URL degrades to free-play-start rather than crashing
+ * the board), mirroring parseAnalysisLineParam's tolerance for bad input.
+ */
+export function parseAnalysisFenParam(fenParam: string | null): string | null {
+  if (!fenParam) return null;
+  try {
+    // Bug fix (CR-01): decodeURIComponent must live INSIDE the try. Callers pass
+    // the already-decoded value from react-router / URLSearchParams, but a stray
+    // `%` literal (e.g. `?fen=50%`) makes decodeURIComponent throw URIError. Left
+    // outside the try that crashed the board render, defeating the T-165-03 guard.
+    const fen = decodeURIComponent(fenParam);
+    new Chess(fen);
+    return fen;
+  } catch {
+    return null;
+  }
 }

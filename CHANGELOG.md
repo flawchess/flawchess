@@ -8,6 +8,9 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+- Analysis: you can now open any position directly by passing a `?fen=<fen>` URL param, which seeds that position as a fresh free-play analysis root (works alongside the existing `?line=` deep-link, with game > fen > line precedence) (Phase 165).
+
 ### Changed
 - Analysis: the Maia ELO slider now seats each player at their Lichess-blitz-equivalent rating (Maia's training scale) instead of their raw platform rating, so chess.com and Lichess non-blitz ratings no longer make the Maia opponent play too strong or too weak. The ELO label carries an info popover explaining the conversion, and an inline reset appears once you drag the slider off the players' rating (Phase 164).
 - Analysis: gem moves are now flagged a bit more generously — a played move counts as "hard to find" when its Maia probability is at or below 10% (was 5%), so more of the strong-but-rare ideas surface a gem badge.

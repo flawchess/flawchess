@@ -3,6 +3,8 @@ import {
   buildAnalysisLineUrl,
   parseAnalysisLineParam,
   buildGameAnalysisUrl,
+  buildAnalysisFenUrl,
+  parseAnalysisFenParam,
 } from './analysisUrl';
 
 describe('buildAnalysisLineUrl', () => {
@@ -91,5 +93,50 @@ describe('buildGameAnalysisUrl', () => {
 
   it('omits the ply param when ply is undefined', () => {
     expect(buildGameAnalysisUrl(42)).toBe('/analysis?game_id=42');
+  });
+});
+
+describe('buildAnalysisFenUrl', () => {
+  it('starts with /analysis?fen=', () => {
+    const result = buildAnalysisFenUrl('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+    expect(result.startsWith('/analysis?fen=')).toBe(true);
+  });
+
+  it('encodeURIComponent-encodes a mid-game FEN (space -> %20, / -> %2F)', () => {
+    const fen = '3r2k1/p5pp/1p1Np1q1/2pRP3/5P2/P3n1PP/1PP3Q1/3R3K w - - 1 28';
+    const result = buildAnalysisFenUrl(fen);
+    const value = result.split('fen=')[1];
+    expect(value).toBeDefined();
+    expect(value).not.toMatch(/[ /]/);
+    expect(value).toContain('%20');
+    expect(value).toContain('%2F');
+  });
+});
+
+describe('parseAnalysisFenParam', () => {
+  it('returns null for null', () => {
+    expect(parseAnalysisFenParam(null)).toBeNull();
+  });
+
+  it('returns null for an empty string', () => {
+    expect(parseAnalysisFenParam('')).toBeNull();
+  });
+
+  it('returns null for garbage input', () => {
+    expect(parseAnalysisFenParam('not-a-fen')).toBeNull();
+  });
+
+  // Regression (CR-01): a stray `%` makes decodeURIComponent throw URIError.
+  // The guard must catch it and return null, not crash the board render.
+  it('returns null for a malformed percent-escape', () => {
+    expect(parseAnalysisFenParam('50%')).toBeNull();
+    expect(parseAnalysisFenParam('%')).toBeNull();
+  });
+
+  it('round-trips a mid-game full FEN with buildAnalysisFenUrl', () => {
+    const fen = '3r2k1/p5pp/1p1Np1q1/2pRP3/5P2/P3n1PP/1PP3Q1/3R3K w - - 1 28';
+    const url = buildAnalysisFenUrl(fen);
+    const fenParam = new URLSearchParams(url.split('?')[1]).get('fen');
+    expect(parseAnalysisFenParam(fenParam)).toBe(fen);
   });
 });
