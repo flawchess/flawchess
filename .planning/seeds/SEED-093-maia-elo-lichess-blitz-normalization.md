@@ -61,6 +61,13 @@ matching Table 3 exactly.)
 - Add `white_rating_lichess_blitz` / `black_rating_lichess_blitz` (nullable ints) to the game data
   the analysis board already loads. **Both colors** — side-to-move varies, and `deriveRawDefault`
   picks the mover's color.
+- **Additive, never replacing.** The existing raw `white_rating` / `black_rating` fields stay
+  untouched. The analysis page must keep displaying the **original platform/TC-specific player ELO**
+  (the game's real rating, e.g. "1720 chess.com blitz") — that display reads the raw field
+  (`Analysis.tsx:2056`) and does not change. Only the Maia slider default (`useMaiaEloDefault`)
+  consumes the normalized `*_lichess_blitz` field. So a game can show the player's real 1720 in the
+  header while the slider seats Maia at, say, ~1900 Lichess-blitz-equivalent — two different numbers
+  serving two different purposes, both visible.
 - **Open sub-decision (settle at plan time): on-read vs stored.** Lean = compute on-read during
   API serialization: it's a pure function of `(platform, tc_bucket, rating)` already on the `games`
   row, so no migration and no backfill. Stored columns (computed at import) are the alternative if
