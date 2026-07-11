@@ -429,6 +429,10 @@ async def _seed_db_game(
     white_inaccuracies: int | None = None,
     black_inaccuracies: int | None = None,
     analyzed: bool = True,
+    white_rating: int | None = None,
+    black_rating: int | None = None,
+    time_control_str: str = "600+0",
+    time_control_bucket: str | None = "blitz",
 ) -> object:
     """Insert a Game row, returning the persisted object.
 
@@ -466,8 +470,8 @@ async def _seed_db_game(
         pgn="1. e4 e5 *",
         result=result,
         user_color=user_color,
-        time_control_str="600+0",
-        time_control_bucket="blitz",
+        time_control_str=time_control_str,
+        time_control_bucket=time_control_bucket,
         time_control_seconds=600,
         base_time_seconds=600,
         increment_seconds=0.0,
@@ -480,6 +484,8 @@ async def _seed_db_game(
         black_mistakes=black_mistakes,
         white_inaccuracies=white_inaccuracies,
         black_inaccuracies=black_inaccuracies,
+        white_rating=white_rating,
+        black_rating=black_rating,
         played_at=played_at or _dt.datetime(2026, 1, 1, tzinfo=_dt.timezone.utc),
         full_evals_completed_at=full_evals_completed_at,
     )
@@ -993,6 +999,161 @@ class TestGetLibraryGame:
 
         result = await get_library_game(session, user_id=99983, game_id=999999999)
         assert result is None, f"Expected None for non-existent game_id, got {result}"
+
+    @pytest.mark.asyncio
+    async def test_chesscom_blitz_card_has_higher_normalized_rating(
+        self, db_session: object
+    ) -> None:
+        """A chess.com blitz game's normalized rating is higher than the raw rating.
+
+        Phase 164 (SEED-093): white_rating_lichess_blitz reflects the
+        Lichess-Blitz-equivalent (via normalize_to_lichess_blitz's
+        chess.com-Blitz -> Table 2 chain), while the raw white_rating field is
+        untouched. Rating 1500 is a known Table 2 anchor mapping to 1780.
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.game import Game as GameModel
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99990)
+
+        game_obj = await _seed_db_game(
+            session,
+            user_id=99990,
+            user_color="white",
+            platform="chess.com",
+            time_control_str="600",
+            time_control_bucket="blitz",
+            white_rating=1500,
+            black_rating=1500,
+        )
+        game = cast(GameModel, game_obj)
+
+        card = await get_library_game(session, user_id=99990, game_id=game.id)
+
+        assert card is not None
+        assert card.white_rating == 1500, "raw white_rating must stay unchanged"
+        assert card.black_rating == 1500, "raw black_rating must stay unchanged"
+        assert card.white_rating_lichess_blitz == 1780
+        assert card.black_rating_lichess_blitz == 1780
+        assert card.white_rating_lichess_blitz > card.white_rating
+
+    @pytest.mark.asyncio
+    async def test_correspondence_game_card_has_none_normalized_ratings(
+        self, db_session: object
+    ) -> None:
+        """A chess.com Daily (correspondence) game gets None for both normalized fields.
+
+        Phase 164 (SEED-093, Pitfall 1): is_correspondence_time_control detects the
+        "1/{seconds}" separator in time_control_str regardless of the
+        time_control_bucket the game landed in; raw ratings stay populated.
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.game import Game as GameModel
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99991)
+
+        game_obj = await _seed_db_game(
+            session,
+            user_id=99991,
+            user_color="white",
+            platform="chess.com",
+            time_control_str="1/172800",
+            time_control_bucket="classical",
+            white_rating=1500,
+            black_rating=1500,
+        )
+        game = cast(GameModel, game_obj)
+
+        card = await get_library_game(session, user_id=99991, game_id=game.id)
+
+        assert card is not None
+        assert card.white_rating == 1500
+        assert card.black_rating == 1500
+        assert card.white_rating_lichess_blitz is None
+        assert card.black_rating_lichess_blitz is None
+
+    @pytest.mark.asyncio
+    async def test_null_rating_card_has_none_normalized_ratings(self, db_session: object) -> None:
+        """A game with NULL ratings serializes None normalized fields without raising."""
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.game import Game as GameModel
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99992)
+
+        game_obj = await _seed_db_game(
+            session,
+            user_id=99992,
+            user_color="white",
+            platform="lichess",
+            white_rating=None,
+            black_rating=None,
+        )
+        game = cast(GameModel, game_obj)
+
+        card = await get_library_game(session, user_id=99992, game_id=game.id)
+
+        assert card is not None
+        assert card.white_rating is None
+        assert card.black_rating is None
+        assert card.white_rating_lichess_blitz is None
+        assert card.black_rating_lichess_blitz is None
+
+    @pytest.mark.asyncio
+    async def test_chesscom_classical_noncorrespondence_card_has_normalized_rating(
+        self, db_session: object
+    ) -> None:
+        """A chess.com classical-bucket, non-correspondence game normalizes via rapid.
+
+        Phase 164 gap closure (WR-01 / Truth #13): a classical-bucketed
+        chess.com game that is a genuine long real-time game (not Daily, e.g.
+        "1800+30" — no "/" separator, so is_correspondence_time_control
+        returns False) now normalizes via the rapid column instead of
+        falling back to the raw rating (which was the None-returning bug
+        this plan closes).
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.game import Game as GameModel
+        from app.services.chesscom_to_lichess import convert_chesscom_to_lichess
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99993)
+
+        game_obj = await _seed_db_game(
+            session,
+            user_id=99993,
+            user_color="white",
+            platform="chess.com",
+            time_control_str="1800+30",
+            time_control_bucket="classical",
+            white_rating=1500,
+            black_rating=1500,
+        )
+        game = cast(GameModel, game_obj)
+
+        card = await get_library_game(session, user_id=99993, game_id=game.id)
+
+        assert card is not None
+        assert card.white_rating == 1500, "raw white_rating must stay unchanged"
+        assert card.black_rating == 1500, "raw black_rating must stay unchanged"
+        expected = convert_chesscom_to_lichess(1500, "rapid", "blitz")
+        assert expected is not None
+        assert card.white_rating_lichess_blitz == expected
+        assert card.black_rating_lichess_blitz == expected
 
 
 # ---------------------------------------------------------------------------

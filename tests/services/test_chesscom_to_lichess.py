@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.schemas.normalization import Platform, TimeControlBucket
 from app.services.chesscom_to_lichess import (
     CHESSCOM_BLITZ_TO_LICHESS,
     CHESSCOM_INTRA_TC,
@@ -35,10 +36,12 @@ from app.services.chesscom_to_lichess import (
     CHESSCOM_TO_LICHESS_TABLE_SNAPSHOT,
     ChessComSourceTC,
     LichessTC,
+    _invert_table2_column,
     composed_chesscom_to_lichess_grid,
     convert_chesscom_to_lichess,
     lookup_fide_from_chesscom_blitz,
     lookup_uscf_from_chesscom_blitz,
+    normalize_to_lichess_blitz,
 )
 
 
@@ -315,6 +318,64 @@ def test_composed_grid_omits_none_converter_rows() -> None:
         )
 
 
+# -----------------------------------------------------------------------------
+# _invert_table2_column tests (Phase 164 Plan 01, Task 1).
+#
+# Inverts one of Table 2's Lichess-scale columns (Bullet, Rapid, Classical)
+# back to the chess.com Blitz anchor that produced it. Unlike Table 1's
+# `_invert_intra_tc`, the `classical` column has real None rows (chess.com
+# Blitz 2800/2900/3000) AND a genuine 3-way tie (1935 at chess.com Blitz
+# 1500/1550/1600) -- both must be exercised here, not just Table 1's fully
+# populated, strictly monotone Bullet/Rapid columns.
+# -----------------------------------------------------------------------------
+
+
+def test_invert_table2_column_rapid_exact_anchor_matches_known_row() -> None:
+    # chess.com Blitz 1000 -> Lichess Rapid 1615 (Table 2 row, line 131).
+    assert CHESSCOM_BLITZ_TO_LICHESS[1000]["rapid"] == 1615
+    assert _invert_table2_column(1615, "rapid") == 1000
+
+
+def test_invert_table2_column_rapid_mid_range_interpolates() -> None:
+    # Interior point between chess.com Blitz 1000 (rapid=1615) and 1100 (rapid=1690).
+    low_rapid = CHESSCOM_BLITZ_TO_LICHESS[1000]["rapid"]
+    high_rapid = CHESSCOM_BLITZ_TO_LICHESS[1100]["rapid"]
+    assert low_rapid is not None and high_rapid is not None
+    result = _invert_table2_column(1650, "rapid")
+    assert result is not None
+    assert 1000 <= result <= 1100
+
+
+def test_invert_table2_column_classical_tie_returns_lowest_anchor() -> None:
+    # classical is flat at 1935 across chess.com Blitz anchors 1500/1550/1600
+    # (Pitfall 3) -- the tie resolves to the LOWEST anchor.
+    assert CHESSCOM_BLITZ_TO_LICHESS[1500]["classical"] == 1935
+    assert CHESSCOM_BLITZ_TO_LICHESS[1550]["classical"] == 1935
+    assert CHESSCOM_BLITZ_TO_LICHESS[1600]["classical"] == 1935
+    assert _invert_table2_column(1935, "classical") == 1500
+
+
+def test_invert_table2_column_classical_none_gap_returns_none() -> None:
+    # chess.com Blitz 2700 -> classical 2500 is the last non-None row; 2800/
+    # 2900/3000 are None (Pitfall 4). A rating above the last non-None value
+    # must return None, not raise (the None rows are filtered out first).
+    assert CHESSCOM_BLITZ_TO_LICHESS[2700]["classical"] == 2500
+    assert CHESSCOM_BLITZ_TO_LICHESS[2800]["classical"] is None
+    assert _invert_table2_column(2600, "classical") is None
+
+
+def test_invert_table2_column_below_min_returns_none() -> None:
+    # Table 2 bullet column minimum published value is 975 (chess.com Blitz 500).
+    assert CHESSCOM_BLITZ_TO_LICHESS[500]["bullet"] == 975
+    assert _invert_table2_column(900, "bullet") is None
+
+
+def test_invert_table2_column_above_max_returns_none() -> None:
+    # Table 2 bullet column maximum published value is 3090 (chess.com Blitz 3000).
+    assert CHESSCOM_BLITZ_TO_LICHESS[3000]["bullet"] == 3090
+    assert _invert_table2_column(3200, "bullet") is None
+
+
 def test_composed_grid_fixes_rapid_inflation_bug() -> None:
     """Bug-repro: chess.com rapid ~1461 now maps to ~1795 lichess-rapid, not ~1915.
 
@@ -347,3 +408,110 @@ def test_composed_grid_fixes_rapid_inflation_bug() -> None:
     assert abs(nearest - old_inflated) > _GRID_NEAREST_TOLERANCE, (
         f"corrected nearest-grid {nearest} is still near old inflated {old_inflated}"
     )
+
+
+# -----------------------------------------------------------------------------
+# normalize_to_lichess_blitz tests (Phase 164 Plan 01, Task 2 — SEED-093).
+#
+# Dispatches any (platform, source_tc) rating to its Lichess-Blitz equivalent
+# (Maia-3's training scale). chess.com Daily games are correspondence, so
+# they are represented via is_correspondence=True rather than a distinct
+# source_tc literal (TimeControlBucket has no "daily" member — Daily games
+# bucket under whichever TC the DB assigned, typically "classical").
+# -----------------------------------------------------------------------------
+
+
+def test_normalize_to_lichess_blitz_chesscom_blitz_through_table2() -> None:
+    result = normalize_to_lichess_blitz(1500, "chess.com", "blitz", is_correspondence=False)
+    assert result == convert_chesscom_to_lichess(1500, "blitz", "blitz")
+    assert result == 1780
+
+
+def test_normalize_to_lichess_blitz_chesscom_bullet_via_table1_chain() -> None:
+    assert CHESSCOM_INTRA_TC[1500]["bullet"] == 1400
+    result = normalize_to_lichess_blitz(1400, "chess.com", "bullet", is_correspondence=False)
+    assert result == CHESSCOM_BLITZ_TO_LICHESS[1500]["blitz"]
+    assert result == 1780
+
+
+def test_normalize_to_lichess_blitz_chesscom_rapid_via_table1_chain() -> None:
+    assert CHESSCOM_INTRA_TC[1500]["rapid"] == 1655
+    result = normalize_to_lichess_blitz(1655, "chess.com", "rapid", is_correspondence=False)
+    assert result == CHESSCOM_BLITZ_TO_LICHESS[1500]["blitz"]
+    assert result == 1780
+
+
+def test_normalize_to_lichess_blitz_chesscom_classical_maps_to_rapid() -> None:
+    # chess.com has no native Classical TC in the ChessGoals tables. A
+    # non-correspondence classical-bucketed game is a genuine long real-time
+    # game, so it is treated as rapid-scale (matches the module's own
+    # _BUCKET_TO_SOURCE_TC convention used by the SQL composed-grid pipeline).
+    result = normalize_to_lichess_blitz(1500, "chess.com", "classical", is_correspondence=False)
+    assert result == convert_chesscom_to_lichess(1500, "rapid", "blitz")
+    assert result is not None
+
+
+def test_normalize_to_lichess_blitz_correspondence_returns_none_chesscom() -> None:
+    # chess.com Daily is correspondence — is_correspondence=True short-circuits
+    # before any TC branch, regardless of which bucket the game landed in.
+    assert (
+        normalize_to_lichess_blitz(1500, "chess.com", "classical", is_correspondence=True) is None
+    )
+    assert normalize_to_lichess_blitz(1500, "chess.com", "blitz", is_correspondence=True) is None
+
+
+def test_normalize_to_lichess_blitz_correspondence_returns_none_lichess() -> None:
+    assert normalize_to_lichess_blitz(1500, "lichess", "classical", is_correspondence=True) is None
+    assert normalize_to_lichess_blitz(1500, "lichess", "blitz", is_correspondence=True) is None
+
+
+def test_normalize_to_lichess_blitz_lichess_blitz_identity() -> None:
+    assert normalize_to_lichess_blitz(1780, "lichess", "blitz", is_correspondence=False) == 1780
+
+
+def test_normalize_to_lichess_blitz_lichess_bullet_via_inversion() -> None:
+    assert CHESSCOM_BLITZ_TO_LICHESS[1500]["bullet"] == 1770
+    result = normalize_to_lichess_blitz(1770, "lichess", "bullet", is_correspondence=False)
+    assert result == CHESSCOM_BLITZ_TO_LICHESS[1500]["blitz"]
+    assert result == 1780
+
+
+def test_normalize_to_lichess_blitz_lichess_rapid_via_inversion() -> None:
+    assert CHESSCOM_BLITZ_TO_LICHESS[1500]["rapid"] == 1930
+    result = normalize_to_lichess_blitz(1930, "lichess", "rapid", is_correspondence=False)
+    assert result == CHESSCOM_BLITZ_TO_LICHESS[1500]["blitz"]
+    assert result == 1780
+
+
+def test_normalize_to_lichess_blitz_lichess_classical_via_inversion() -> None:
+    assert CHESSCOM_BLITZ_TO_LICHESS[1000]["classical"] == 1715
+    result = normalize_to_lichess_blitz(1715, "lichess", "classical", is_correspondence=False)
+    assert result == CHESSCOM_BLITZ_TO_LICHESS[1000]["blitz"]
+    assert result == 1420
+
+
+# Convertible (platform, source_tc) combos. lichess+blitz is deliberately
+# EXCLUDED — it is an unconditional identity mapping with no range check, so
+# it has no out-of-range None behavior. That leaves exactly six combos.
+_SIX_CONVERTIBLE_COMBOS: list[tuple[Platform, TimeControlBucket]] = [
+    ("chess.com", "blitz"),
+    ("chess.com", "bullet"),
+    ("chess.com", "rapid"),
+    ("lichess", "bullet"),
+    ("lichess", "rapid"),
+    ("lichess", "classical"),
+]
+
+
+@pytest.mark.parametrize(("platform", "source_tc"), _SIX_CONVERTIBLE_COMBOS)
+def test_normalize_to_lichess_blitz_out_of_range_below_min_returns_none(
+    platform: Platform, source_tc: TimeControlBucket
+) -> None:
+    assert normalize_to_lichess_blitz(100, platform, source_tc, is_correspondence=False) is None
+
+
+@pytest.mark.parametrize(("platform", "source_tc"), _SIX_CONVERTIBLE_COMBOS)
+def test_normalize_to_lichess_blitz_out_of_range_above_max_returns_none(
+    platform: Platform, source_tc: TimeControlBucket
+) -> None:
+    assert normalize_to_lichess_blitz(9999, platform, source_tc, is_correspondence=False) is None

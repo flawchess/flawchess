@@ -2,28 +2,29 @@
 gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: Analysis Eval Reconciliation & Gem Moves
-current_phase: 163
-status: v2.1 milestone closed — phases 162, 163 archived; tagged v2.1 (deploy pending)
-stopped_at: Milestone v2.1 complete; no active milestone
-last_updated: "2026-07-10T23:30:00.000Z"
-last_activity: 2026-07-10
+current_phase: 164
+current_phase_name: maia-elo-lichess-blitz-normalization
+status: shipping
+stopped_at: Phase 164 verified (13/13) + UAT signed off — shipping to main, then deploy
+last_updated: "2026-07-11T10:22:13.390Z"
+last_activity: 2026-07-11
+last_activity_desc: Phase 164 UAT signed off; squash-merging to main and deploying
 progress:
-  total_phases: 2
-  completed_phases: 2
-  total_plans: 7
-  completed_plans: 7
+  total_phases: 1
+  completed_phases: 1
+  total_plans: 4
+  completed_plans: 4
   percent: 100
-current_phase_name: gem-moves-maia-findability-move-badges-on-analysis-seed-092
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 163 (final phase of v2.1)
-Plan: 4/4 complete
-Status: v2.1 milestone closed — phases 162, 163 archived to milestones/v2.1-phases/; tagged v2.1 (deploy pending)
-Last activity: 2026-07-10 - Completed quick task 260710-x3d: Openings analyze → ?line= opening-moves main line in analysis board (replaces ?fen=)
+Phase: 164 (maia-elo-lichess-blitz-normalization) — COMPLETE (verified 13/13; UAT signed off)
+Plan: 4 of 4
+Status: Shipping Phase 164 — squash-merge to main, then deploy
+Last activity: 2026-07-11 — Phase 164 UAT signed off; shipping + deploying
 
 ## Project Reference
 
@@ -169,6 +170,13 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 163-04]: Task 1+2 combined into one commit (interleaved memo chain) - Task 1's per-FEN caches are unread until Task 2's gemCandidate memo consumes them
 - [Phase 163-04]: moveListMarkers gem fold has no mainLineSet exclusion - gemActive covers mainline AND free variations (D-05), and moveListMarkers is VariationTree's only data source
 - [Phase 163-04]: Rule 1 fix - boardSquareMarkers reads the LIVE gemCandidate memo (not the sticky gemByNode cache) so an ELO-slider change can hide an already-shown board badge, mirroring liveFlaw (live)/liveFlawByNode (sticky) split
+- [Phase 164-01]: Leftmost-tie-wins via bisect_left's exact-match branch resolves the classical column's 1935 tie to anchor 1500 (zero-width guard is defensive, not the branch actually exercised)
+- [Phase 164-01]: chess.com Daily represented via is_correspondence=True (no distinct source_tc literal exists) since TimeControlBucket has no 'daily' member
+- [Phase 164-01]: lichess+blitz excluded from the six convertible out-of-range combos - unconditional identity with no range check
+- [Phase 164-02]: cast(Platform, game.platform) / cast(TimeControlBucket, game.time_control_bucket) narrows the DB's plain str columns to normalize_to_lichess_blitz's Literal params, mirroring endgame_service.py's existing cast(TimeControlBucket, tc_str) precedent
+- [Phase 164-02]: _seed_db_game extended with optional white_rating/black_rating/time_control_str/time_control_bucket params (defaults unchanged) instead of a parallel seeding helper
+- [Phase 164-03]: Both new *_lichess_blitz fields kept optional (?: number | null) on both TS types (Pitfall 5) so existing fixtures compile and a missing value falls back to raw via ??
+- [Phase 164-03]: Updated useMaiaEloDefault.ts's top-of-file doc comment to describe the normalized-rating-first D-07 rule, kept in sync as part of Task 1
 
 ### Pending Todos
 
@@ -246,9 +254,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 163 verified complete (UAT passed) — no phases remain; next is `/gsd-new-milestone` or deploy
+**Stopped at:** Completed 164-03-PLAN.md (Phase 164 complete — all 3 plans done)
 
-**Last session:** 2026-07-10T19:45:00Z
+**Last session:** 2026-07-11T09:37:44.803Z
 
 **Resume file:** 
 
@@ -298,6 +306,9 @@ None
 | Phase 163 P02 | 15min | - tasks | - files |
 | Phase 163 P03 | 12min | 2 tasks | 3 files |
 | Phase 163 P04 | 55min | 3 tasks | 3 files |
+| Phase 164 P01 | 20min | 2 tasks | 2 files |
+| Phase 164 P02 | 25min | 2 tasks | 3 files |
+| Phase 164 P03 | 15min | 2 tasks | 3 files |
 
 ## Operator Next Steps
 

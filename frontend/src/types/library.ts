@@ -66,6 +66,10 @@ export interface GameFlawCard {
   black_username: string | null;
   white_rating: number | null;
   black_rating: number | null;
+  // Phase 164 additions — Lichess-blitz-normalized ratings; optional + nullable so
+  // existing fixtures compile and a missing/older value falls back to raw (Pitfall 5).
+  white_rating_lichess_blitz?: number | null;
+  black_rating_lichess_blitz?: number | null;
   opening_name: string | null;
   opening_eco: string | null;
   user_color: string;

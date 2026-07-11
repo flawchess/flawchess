@@ -517,7 +517,12 @@ function ProtectedLayout() {
           </main>
         </div>
         <InstallPromptBanner />
-        <FeedbackButton />
+        {/* 164 UAT: the floating feedback button overlaps the analysis tab content
+            (e.g. the ELO slider) on mobile, so it's hidden below sm on this route;
+            still shown on tablet/desktop where there's room. */}
+        <div className="hidden sm:block">
+          <FeedbackButton />
+        </div>
       </>
     );
   }

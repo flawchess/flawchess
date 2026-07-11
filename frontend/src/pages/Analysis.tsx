@@ -568,7 +568,7 @@ export default function Analysis() {
 
   // D-06/D-07: "you are here" ELO for the Maia surfaces, derived from game-mode
   // rating-at-game-time or free-play current_rating, with user-override precedence.
-  const { selectedElo, setSelectedElo } = useMaiaEloDefault({
+  const { selectedElo, setSelectedElo, defaultElo, resetToDefault } = useMaiaEloDefault({
     isGameMode,
     gameData,
     profile: userProfile,
@@ -2269,13 +2269,19 @@ export default function Analysis() {
       />
     ) : null;
 
-  // Shared ELO slider (155 UAT): drives BOTH the FlawChess and Maia engines. Its
-  // canonical home is the bottom of the FlawChess Engine card (below), where the
-  // header already shows the selected ELO; the mobile Maia tab renders a second copy
-  // since it's a separate screen. Defined before the card so the card can embed it.
+  // Shared ELO slider: drives BOTH the FlawChess and Maia engines, so on desktop it
+  // sits BETWEEN the two cards (164 UAT); each mobile tab (FlawChess / Maia) renders
+  // its own copy since they're separate screens. The FlawChess card header still
+  // reflects the value ("FlawChess Engine (N ELO)"). The reset control snaps back to
+  // the players' rating once the user has dragged off it (164 UAT).
   const eloSelector = (
-    <div className="px-1 flex flex-col gap-2" data-testid="analysis-elo-selector-row">
-      <EloSelector value={selectedElo} onChange={setSelectedElo} />
+    <div className="px-2 flex flex-col gap-2" data-testid="analysis-elo-selector-row">
+      <EloSelector
+        value={selectedElo}
+        onChange={setSelectedElo}
+        defaultElo={defaultElo}
+        onReset={resetToDefault}
+      />
     </div>
   );
 
@@ -2286,7 +2292,9 @@ export default function Analysis() {
   // loading → off → lines CardBody pattern (line ~1585 below): flawChessLoading
   // gates the pre-`isReady` skeleton (worker pool spin-up); once ready,
   // FlawChessEngineLines renders its OWN pre-first-snapshot skeleton internally.
-  const flawChessCard = (
+  // `footer` (164 UAT): mobile passes the ELO slider so it sits inside the card;
+  // desktop omits it (the slider is a standalone row between the two cards there).
+  const renderFlawChessCard = (footer?: React.ReactNode): React.ReactElement => (
     <Card data-testid="analysis-flawchess-panel">
       <CardHeader
         size="compact"
@@ -2362,18 +2370,17 @@ export default function Analysis() {
             </div>
           </>
         )}
-        {/* ELO slider — always shown at the bottom of the card, even when the
-            FlawChess Engine is off, since it also drives the Maia surfaces. The card
-            header already reflects this value ("FlawChess Engine (N ELO)"). */}
-        <div className="mt-2 border-t border-border pt-2">{eloSelector}</div>
+        {/* Mobile-only ELO slider inside the card (164 UAT); always shown, even when
+            the engine is off, since it also drives the Maia surfaces. */}
+        {footer !== undefined && <div className="mt-2">{footer}</div>}
       </CardBody>
     </Card>
   );
 
   // The mobile "Maia" tab content (D-03, LIC-02) — shared across every mobile tab
   // layout below, so this JSX isn't duplicated. The FlawChess card lives in its own
-  // adjacent tab (flawChessTab) rather than here; the shared ELO slider stays with
-  // the Maia panel since it drives both engines.
+  // adjacent tab (flawChessTab) rather than here; the ELO slider sits inside the Maia
+  // card (as its footer) on mobile since it drives both engines (164 UAT).
   const humanTab = (
     <TabsContent value="human" className="min-h-0 overflow-y-auto thin-scrollbar">
       <div className="flex flex-col gap-3 px-3">
@@ -2396,17 +2403,19 @@ export default function Analysis() {
           enabled={maiaEnabled}
           onToggleEnabled={setMaiaEnabled}
           compact
+          footer={eloSelector}
         />
-        {eloSelector}
       </div>
     </TabsContent>
   );
 
   // The mobile "FlawChess" tab content — the FlawChess Engine card, moved out of the
   // Maia tab into its own tab to the right of it. Shared across the mobile tab layouts.
+  // The ELO slider sits inside the card (as its footer) on mobile (164 UAT), since this
+  // is a separate screen from the Maia tab (which carries its own copy).
   const flawChessTab = (
     <TabsContent value="flawchess" className="min-h-0 overflow-y-auto thin-scrollbar">
-      <div className="flex flex-col gap-3 px-3">{flawChessCard}</div>
+      <div className="flex flex-col gap-3 px-3">{renderFlawChessCard(eloSelector)}</div>
     </TabsContent>
   );
 
@@ -2648,7 +2657,11 @@ export default function Analysis() {
                 {playerBar(boardFlipped ? 'white' : 'black')}
               </div>
             )}
-            {flawChessCard}
+            {renderFlawChessCard()}
+            {/* Shared ELO slider between the two cards (164 UAT): it drives both the
+                FlawChess and Maia engines, so it sits in the gap rather than inside
+                either card. */}
+            {eloSelector}
             <MaiaHumanPanel
               selectedElo={selectedElo}
               perElo={maia.perElo}
@@ -2666,8 +2679,6 @@ export default function Analysis() {
               enabled={maiaEnabled}
               onToggleEnabled={setMaiaEnabled}
             />
-            {/* The ELO slider now lives at the bottom of the FlawChess card above (its
-                canonical home), so no separate slider is rendered here on desktop. */}
           </div>
 
           {/* Board column ──────────────────────────────────────────────────── */}
