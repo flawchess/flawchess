@@ -584,3 +584,14 @@ See [milestones/v1.14-ROADMAP.md](milestones/v1.14-ROADMAP.md) for full details.
 See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 
 </details>
+
+### Phase 164: Maia ELO Lichess-blitz normalization
+
+**Goal:** Normalize player ratings to their Lichess-blitz equivalent (Maia-3's training scale) before setting the analysis-board Maia ELO slider default and per-player Maia ELO, so chess.com and Lichess-non-blitz ratings no longer mis-condition Maia's move prediction.
+**Requirements**: SEED-093
+**Depends on:** none
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 164 to break down)

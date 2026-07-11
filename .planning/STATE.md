@@ -65,6 +65,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 164 added: Maia ELO Lichess-blitz normalization (from SEED-093) — normalize player ratings to Lichess-blitz for the analysis-board Maia ELO slider default. Numbered manually 164 (gsd-tools phase.add proposed 1 because completed phases are archived out of `.planning/phases/`; project uses absolute numbering).
 - v2.0 FlawChess Engine closed 2026-07-09 (Phases 153–161; tag v2.0). Grew beyond its planned 153–159 scope to include Phase 160 (ad-hoc `/analysis` UI polish, artifact-free quick/fast bucket) and Phase 161 (SEED-088 viewport-locked layout); ROADMAP header lagged at "153–159" until close, corrected to 153–161. Live-browser UAT for 155/157/161 confirmed at close. Roadmap + requirements archived to `milestones/v2.0-ROADMAP.md` + `v2.0-REQUIREMENTS.md`, phases to `milestones/v2.0-phases/`. Reset for the next milestone.
 - v1.31 Pipeline Consolidation closed 2026-07-04 (Phases 148, 149, 150; tag v1.31). Execution decisions + quick-task log archived to `milestones/v1.31-ROADMAP.md`, PROJECT.md Key Decisions, and git. Reset for the next milestone.
 - Phase 151.1 inserted after Phase 151: Stockfish-graded Maia moves on the Moves-by-Rating chart (from SEED-083)
