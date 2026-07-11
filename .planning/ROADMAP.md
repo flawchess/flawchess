@@ -584,3 +584,24 @@ See [milestones/v1.14-ROADMAP.md](milestones/v1.14-ROADMAP.md) for full details.
 See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 
 </details>
+
+### Phase 164: Maia ELO Lichess-blitz normalization
+
+**Goal:** Normalize player ratings to their Lichess-blitz equivalent (Maia-3's training scale) before setting the analysis-board Maia ELO slider default and per-player Maia ELO, so chess.com and Lichess-non-blitz ratings no longer mis-condition Maia's move prediction.
+**Requirements**: SEED-093
+**Depends on:** none
+**Plans:** 4/4 plans complete — verified (13/13 truths); UAT signed off (ELO slider info popover / inline reset / relocation); completed 2026-07-11
+
+Plans:
+**Wave 1**
+
+- [x] 164-01-PLAN.md — Backend converter: `_invert_table2_column` + `normalize_to_lichess_blitz` + full unit tests (Wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 164-02-PLAN.md — Serialization: two nullable `*_lichess_blitz` fields on `GameFlawCard`, computed on-read in `_build_card` + integration test (Wave 2)
+- [x] 164-03-PLAN.md — Frontend: optional TS fields + `deriveRawDefault` read-with-raw-fallback + hook tests (Wave 2)
+
+**Wave 1** *(gap closure — VERIFICATION Truth #13 / REVIEW WR-01)*
+
+- [x] 164-04-PLAN.md — Gap closure: map chess.com `classical` → `rapid` in `normalize_to_lichess_blitz` (non-correspondence long real-time games) + invert unit test + IN-02 integration test (Wave 1)

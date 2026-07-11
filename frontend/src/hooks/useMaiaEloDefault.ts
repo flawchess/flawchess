@@ -4,10 +4,12 @@
  * Analysis.tsx's already-large render (CLAUDE.md "refactor bloated code on sight").
  *
  * D-07 default rules:
- *   - Game mode: the SIDE-TO-MOVE's color rating-AT-GAME-TIME (`gameData.white_rating`
- *     / `gameData.black_rating` by `sideToMove`) — so on the opponent's move the ELO
- *     defaults to the opponent's rating, matching who is actually choosing the move
- *     (quick 260705-m3z). `sideToMove` omitted → falls back to `gameData.user_color`.
+ *   - Game mode: the SIDE-TO-MOVE's color rating-AT-GAME-TIME, preferring the
+ *     Lichess-blitz-normalized rating (`gameData.white_rating_lichess_blitz` /
+ *     `.black_rating_lichess_blitz`, Phase 164) when present, else the raw
+ *     `gameData.white_rating` / `.black_rating` — so on the opponent's move the ELO
+ *     defaults to the opponent's (normalized) rating, matching who is actually choosing
+ *     the move (quick 260705-m3z). `sideToMove` omitted → falls back to `gameData.user_color`.
  *     Never the frozen current-rating snapshot.
  *   - Free play: the user's current platform rating (`profile.current_rating`),
  *     else the FREE_PLAY_DEFAULT_ELO (1500) midpoint fallback.
@@ -31,6 +33,10 @@ export interface MaiaEloGameData {
   user_color: string;
   white_rating: number | null;
   black_rating: number | null;
+  // Phase 164 additions — Lichess-blitz-normalized ratings; optional + nullable so a
+  // missing value falls back to the raw rating (Pitfall 5).
+  white_rating_lichess_blitz?: number | null;
+  black_rating_lichess_blitz?: number | null;
 }
 
 /** Minimal profile shape this hook needs (structurally satisfied by UserProfile). */
@@ -53,6 +59,19 @@ export interface UseMaiaEloDefaultOptions {
 export interface UseMaiaEloDefaultState {
   selectedElo: number;
   setSelectedElo: (elo: number) => void;
+  /**
+   * The players' derived default ELO (clamped to the ladder bounds) — the value
+   * `resetToDefault` restores to. Used by the EloSelector to show its inline reset
+   * control only while `selectedElo` differs from this.
+   */
+  defaultElo: number;
+  /**
+   * Clears the user-override flag and snaps `selectedElo` back to the derived
+   * default (164 UAT: the slider had no way back to the players' rating without a
+   * page reload). After a reset, re-derivation resumes, so a later gameData/profile
+   * change tracks again — same as a fresh mount.
+   */
+  resetToDefault: () => void;
 }
 
 /** Clamps `rating` into the ladder's [min, max] bounds (no step-snapping — see doc comment above). */
@@ -75,7 +94,10 @@ function deriveRawDefault(
   if (isGameMode) {
     if (gameData == null) return null;
     const moverColor = sideToMove ?? gameData.user_color;
-    return moverColor === 'white' ? gameData.white_rating : gameData.black_rating;
+    if (moverColor === 'white') {
+      return gameData.white_rating_lichess_blitz ?? gameData.white_rating;
+    }
+    return gameData.black_rating_lichess_blitz ?? gameData.black_rating;
   }
   return profile?.current_rating ?? FREE_PLAY_DEFAULT_ELO;
 }
@@ -108,5 +130,14 @@ export function useMaiaEloDefault({
     setSelectedEloState(elo);
   };
 
-  return { selectedElo, setSelectedElo };
+  // The clamped players' default (rawDefault is null only while game-mode data is
+  // still loading — fall back to the same midpoint the initial useState uses).
+  const defaultElo = clampToLadderBounds(rawDefault ?? FREE_PLAY_DEFAULT_ELO);
+
+  const resetToDefault = (): void => {
+    userOverrodeRef.current = false;
+    setSelectedEloState(defaultElo);
+  };
+
+  return { selectedElo, setSelectedElo, defaultElo, resetToDefault };
 }

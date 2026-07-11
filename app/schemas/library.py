@@ -98,6 +98,13 @@ class GameFlawCard(BaseModel):
     black_username: str | None
     white_rating: int | None
     black_rating: int | None
+    # Phase 164 additions (SEED-093): nullable Lichess-Blitz-normalized ratings,
+    # a pure transform of (platform, time_control_bucket, rating) for Maia ELO
+    # slider conditioning. None for correspondence games, chess.com classical,
+    # NULL ratings, or NULL time_control_bucket. Raw white_rating/black_rating
+    # above stay unchanged — the header keeps showing the real platform rating.
+    white_rating_lichess_blitz: int | None = None
+    black_rating_lichess_blitz: int | None = None
     opening_name: str | None
     opening_eco: str | None
     user_color: str

@@ -23,7 +23,7 @@ remaining tag type (game-level dedupe), in a deterministic order.
 import datetime
 import math
 from collections.abc import Sequence
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import sentry_sdk
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -71,6 +71,8 @@ from app.services.flaws_service import (
     _resolve_increment,
     _run_all_moves_pass,
 )
+from app.schemas.normalization import Platform, TimeControlBucket
+from app.services.chesscom_to_lichess import normalize_to_lichess_blitz
 from app.services.normalization import is_correspondence_time_control
 from app.services.openings_service import (
     MIN_GAMES_FOR_TIMELINE,
@@ -521,6 +523,32 @@ def _build_card(
             phase_transition_data = None
             moves_data = None
 
+    # Phase 164 (SEED-093): Lichess-Blitz-normalized ratings for Maia ELO slider
+    # conditioning. Correspondence check runs FIRST (chess.com Daily / lichess
+    # correspondence lack a real-time-play equivalent in either ChessGoals
+    # table) before dispatching by (platform, time_control_bucket).
+    is_correspondence = is_correspondence_time_control(game.time_control_str)
+    white_rating_lichess_blitz = (
+        normalize_to_lichess_blitz(
+            game.white_rating,
+            cast(Platform, game.platform),
+            cast(TimeControlBucket, game.time_control_bucket),
+            is_correspondence=is_correspondence,
+        )
+        if game.white_rating is not None and game.time_control_bucket is not None
+        else None
+    )
+    black_rating_lichess_blitz = (
+        normalize_to_lichess_blitz(
+            game.black_rating,
+            cast(Platform, game.platform),
+            cast(TimeControlBucket, game.time_control_bucket),
+            is_correspondence=is_correspondence,
+        )
+        if game.black_rating is not None and game.time_control_bucket is not None
+        else None
+    )
+
     return GameFlawCard(
         game_id=game.id,
         user_result=derive_user_result(game.result, game.user_color),
@@ -532,6 +560,8 @@ def _build_card(
         black_username=game.black_username,
         white_rating=game.white_rating,
         black_rating=game.black_rating,
+        white_rating_lichess_blitz=white_rating_lichess_blitz,
+        black_rating_lichess_blitz=black_rating_lichess_blitz,
         opening_name=game.opening_name,
         opening_eco=game.opening_eco,
         user_color=game.user_color,

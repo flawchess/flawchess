@@ -95,4 +95,28 @@ describe('EloSelector', () => {
       expect(elo).toBeLessThanOrEqual(1300);
     });
   });
+
+  it('renders the ELO info popover trigger', () => {
+    render(<EloSelector value={1500} onChange={vi.fn()} />);
+    expect(screen.getByTestId('analysis-elo-info-popover')).toBeTruthy();
+  });
+
+  it('hides the reset control while the value equals the default', () => {
+    render(<EloSelector value={1500} onChange={vi.fn()} defaultElo={1500} onReset={vi.fn()} />);
+    expect(screen.queryByTestId('analysis-elo-selector-reset')).toBeNull();
+  });
+
+  it('hides the reset control when no onReset is provided (even off default)', () => {
+    render(<EloSelector value={1700} onChange={vi.fn()} defaultElo={1500} />);
+    expect(screen.queryByTestId('analysis-elo-selector-reset')).toBeNull();
+  });
+
+  it('shows the reset control once the value differs from the default and fires onReset', () => {
+    const onReset = vi.fn();
+    render(<EloSelector value={1700} onChange={vi.fn()} defaultElo={1500} onReset={onReset} />);
+    const reset = screen.getByTestId('analysis-elo-selector-reset');
+    expect(reset.getAttribute('aria-label')).toBe('Reset ELO to 1500');
+    fireEvent.click(reset);
+    expect(onReset).toHaveBeenCalledTimes(1);
+  });
 });

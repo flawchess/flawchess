@@ -17,7 +17,14 @@ import { useMaiaEloDefault, FREE_PLAY_DEFAULT_ELO } from '../useMaiaEloDefault';
 import type { MaiaEloGameData, MaiaEloProfile } from '../useMaiaEloDefault';
 
 function gameData(overrides: Partial<MaiaEloGameData>): MaiaEloGameData {
-  return { user_color: 'white', white_rating: null, black_rating: null, ...overrides };
+  return {
+    user_color: 'white',
+    white_rating: null,
+    black_rating: null,
+    white_rating_lichess_blitz: undefined,
+    black_rating_lichess_blitz: undefined,
+    ...overrides,
+  };
 }
 
 function profile(currentRating: number | null): MaiaEloProfile {
@@ -72,6 +79,70 @@ describe('useMaiaEloDefault', () => {
     expect(result.current.selectedElo).toBe(1720);
   });
 
+  it('game mode: normalized field present for the mover color is used instead of the raw rating', () => {
+    const { result } = renderHook(() =>
+      useMaiaEloDefault({
+        isGameMode: true,
+        gameData: gameData({
+          user_color: 'white',
+          white_rating: 1720,
+          black_rating: 1350,
+          white_rating_lichess_blitz: 1780,
+        }),
+        profile: undefined,
+        sideToMove: 'white',
+      }),
+    );
+    expect(result.current.selectedElo).toBe(1780);
+  });
+
+  it('game mode: normalized field null/absent for the mover color falls back to the raw rating', () => {
+    const { result } = renderHook(() =>
+      useMaiaEloDefault({
+        isGameMode: true,
+        gameData: gameData({
+          user_color: 'white',
+          white_rating: 1720,
+          black_rating: 1350,
+          white_rating_lichess_blitz: null,
+        }),
+        profile: undefined,
+        sideToMove: 'white',
+      }),
+    );
+    expect(result.current.selectedElo).toBe(1720);
+  });
+
+  it('game mode: mixed — normalized present for one color, null for the other — picks per-color by sideToMove', () => {
+    const mixedGameData = gameData({
+      user_color: 'white',
+      white_rating: 1720,
+      black_rating: 1350,
+      white_rating_lichess_blitz: 1780,
+      black_rating_lichess_blitz: null,
+    });
+
+    const white = renderHook(() =>
+      useMaiaEloDefault({
+        isGameMode: true,
+        gameData: mixedGameData,
+        profile: undefined,
+        sideToMove: 'white',
+      }),
+    );
+    expect(white.result.current.selectedElo).toBe(1780);
+
+    const black = renderHook(() =>
+      useMaiaEloDefault({
+        isGameMode: true,
+        gameData: mixedGameData,
+        profile: undefined,
+        sideToMove: 'black',
+      }),
+    );
+    expect(black.result.current.selectedElo).toBe(1350);
+  });
+
   it('free play: resolves from profile.current_rating', () => {
     const { result } = renderHook(() =>
       useMaiaEloDefault({
@@ -112,6 +183,43 @@ describe('useMaiaEloDefault', () => {
     // gameData arrives late — must NOT clobber the user's pick.
     rerender({ gd: gameData({ user_color: 'white', white_rating: 1720, black_rating: 1600 }) });
     expect(result.current.selectedElo).toBe(1900);
+  });
+
+  it('exposes defaultElo as the clamped players default', () => {
+    const { result } = renderHook(() =>
+      useMaiaEloDefault({
+        isGameMode: true,
+        gameData: gameData({ user_color: 'white', white_rating: 1720, black_rating: 1600 }),
+        profile: undefined,
+        sideToMove: 'white',
+      }),
+    );
+    expect(result.current.defaultElo).toBe(1720);
+  });
+
+  it('resetToDefault snaps back to the default and re-arms re-derivation (164 UAT)', () => {
+    const { result, rerender } = renderHook(
+      (props: { gd: MaiaEloGameData | undefined }) =>
+        useMaiaEloDefault({
+          isGameMode: true,
+          gameData: props.gd,
+          profile: undefined,
+          sideToMove: 'white',
+        }),
+      { initialProps: { gd: gameData({ user_color: 'white', white_rating: 1720, black_rating: 1600 }) } },
+    );
+    expect(result.current.selectedElo).toBe(1720);
+
+    // User drags off the default, then resets.
+    act(() => result.current.setSelectedElo(2100));
+    expect(result.current.selectedElo).toBe(2100);
+    act(() => result.current.resetToDefault());
+    expect(result.current.selectedElo).toBe(1720);
+
+    // Re-derivation is re-armed: a later rating change now tracks again (the override
+    // flag was cleared by the reset), rather than staying pinned to the old pick.
+    rerender({ gd: gameData({ user_color: 'white', white_rating: 1450, black_rating: 1600 }) });
+    expect(result.current.selectedElo).toBe(1450);
   });
 
   it('re-derives once when gameData/profile first load, before any user pick', () => {

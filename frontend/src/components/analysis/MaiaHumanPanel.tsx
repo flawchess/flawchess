@@ -70,6 +70,12 @@ export interface MaiaHumanPanelProps {
   enabled?: boolean;
   /** Fired when the header Switch is toggled — wire directly to `setMaiaEnabled`. */
   onToggleEnabled?: (enabled: boolean) => void;
+  /**
+   * Optional footer rendered at the bottom of the card body (164 UAT): on mobile the
+   * shared ELO slider lives inside each card, so the Maia tab passes it here. On
+   * desktop the slider sits between the cards instead, so this is omitted.
+   */
+  footer?: React.ReactNode;
 }
 
 /** Shorter chart on mobile (compact); desktop keeps MovesByRatingChart's default. */
@@ -131,6 +137,7 @@ export function MaiaHumanPanel({
   compact = false,
   enabled,
   onToggleEnabled,
+  footer,
 }: MaiaHumanPanelProps): React.ReactElement {
   // Phase 155 D-03: the header Switch only renders when the caller wires both
   // enabled/onToggleEnabled (Analysis.tsx always does) — omitting them (as the
@@ -161,7 +168,8 @@ export function MaiaHumanPanel({
           <MaiaInfoTooltip />
         </CardHeader>
       )}
-      {/* The ELO slider now lives BELOW this card (155 UAT) — it drives both engines. */}
+      {/* The ELO slider sits between this card and the FlawChess card on desktop; on
+          mobile the caller passes it as `footer` so it lives inside the card (164 UAT). */}
       <CardBody className="flex flex-col gap-3 p-3">
         <MovesByRatingChart
           perElo={perElo}
@@ -185,6 +193,7 @@ export function MaiaHumanPanel({
           isOpponentToMove={isOpponentToMove}
           onPlayMove={onPlayMove}
         />
+        {footer}
       </CardBody>
     </Card>
   );
