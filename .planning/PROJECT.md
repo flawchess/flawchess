@@ -20,25 +20,26 @@ Mobile-first PWA, installable on iOS/Android, with drawer-based filter and bookm
 
 Users get position-precise WDL analysis (openings + endgames + time pressure) on top of their actual chess.com and lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report. No per-platform fragmentation, no manual opening tagging.
 
-## Current Milestone: none — v2.0 FlawChess Engine shipped 2026-07-09
+## Current Milestone: v2.3 Bot Play
 
-**Shipped 2026-07-09** across Phases 153–161 (see Current State and the ✓ v2.0 entries under Validated), and deployed to production incrementally during the milestone (releases #247–#249). Next milestone: `/gsd-new-milestone`. The original v2.0 goal + SEED-082 locked context is preserved below for reference.
-
-**Goal (v2.0, shipped):** Ship the **FlawChess Engine** — a practical-play *analysis* engine (built on Stockfish + Maia) that computes the strongest *human-playable* line for a player at their rating, surfaced on the `/analysis` board in both free analysis and game review. Where Stockfish says "what is objectively best," the FlawChess Engine says "what is practically best *for you*" — the line you could realistically find and follow against an opponent defending like a real human at their level. Sourced from SEED-082; builds directly on the v1.32 Maia inference infra.
+**Goal:** Let users play clocked games against the FlawChess engine on a new top-level **Bots** page — fun, challenging, engaging — and use those games as the first real measurement of the engine's playing strength. Every finished bot game is stored as an analyzable Library game, and a headless anchor-calibration harness produces the first (ELO × play-style) strength map. Sourced from SEED-091 (explore session 2026-07-10, five locked design decisions).
 
 **Target features:**
-- **Client-side MCTS search** over the Phase 151 primitive (Maia top-k candidates graded by Stockfish), with the custom **Maia-weighted expectimax backup** (opponent ELO at opponent nodes, your ELO at your future nodes; root = max), the lichess eval→score sigmoid at leaves, behind a small `position + budget → ranked root lines` interface (so a depth-limited expectimax is a recoverable fallback).
-- **Stockfish.wasm worker pool** (2–4 single-threaded) grading leaves in parallel; **anytime / live-refining** top-n root lines.
-- **Modal-path line display** with the **objective-vs-practical score pair** ("objectively +3.0, practically +0.9 for you"); the search's swindle-ranking behavior is inherent even though dedicated trap-finder UI is deferred.
-- **Board arrow layers** on both surfaces — reuse the existing **Played-move** arrow (game review only), add the **new FlawChess Engine top-2** arrow (the milestone's headline), keep **Stockfish top-2**; no dedicated Maia arrow layer (Maia moves stay reachable by hovering the Moves-by-Rating chart / prose). Game review adds the "what you played vs what was practically best for you" loop.
+- **New "Bots" top-level page** (nav sibling of Library · Openings · Endgames) with a **setup screen** — reuse the analysis-board ELO slider + human↔stockfish play-style slider, color choice, and a lichess-preset time control (blitz 3+0/3+2/5+0/5+3 · rapid 10+0/10+5/15+10 · classical 30+0/30+20; **bullet excluded by design** for client-side compute headroom).
+- **Live clocked game board**, running entirely client-side (the engine already does). **Move selection blends the play-style slider from sample↔argmax**: full-human = sample the temperature-reshaped Maia root policy (one Maia inference/move, no MCTS — cheap for blitz on phones); full-stockfish = argmax practical score from the search; between = practical-score-weighted sampling with slider-controlled sharpness. The bot plays **its own ELO, symmetric** — it never adapts to the player (adapting would corrupt calibration).
+- **Full game lifecycle** — game-end detection (mate/stalemate/threefold/50-move/insufficient material), resign, flagging, **draw offers**, and **move sounds**. Bot think-time is paced from its remaining clock (best-effort; search budget degrades gracefully under time pressure).
+- **localStorage resume** — game state persists every move, clock paused while away, "Resume game?" on return. Only finished games reach the server; rage-quits leave no trace in v1.
+- **Store finished games** — POST the finished PGN **with `[%clk]` clock annotations** to a small endpoint that stores it as a `games` row with `platform='flawchess'` via the existing normalization path (no server sessions, no websockets). The platform value gives analytics inclusion/exclusion for free and keeps endgame-ELO timelines uncontaminated. Store the **bot's full settings** (nominal ELO, slider, TC) and a **converted save-time player rating** (lichess-scale, TC-bucket-matched; NULL only when the user has no imported games), with the bot's nominal ELO in the opponent-rating column. Games appear in the Library games tab and are analyzable like imported games.
+- **Headless anchor-calibration harness** — a Node harness playing the bot against known-strength anchors (raw Maia 1100–1900 argmax; Stockfish skill levels) across a coarse (ELO × slider) grid → first strength map + the engine test bench. Committed this milestone (client-side compute; open feasibility item: Maia ONNX headless in Node at harness-viable speed).
 
-**Key context (locked in SEED-082, not re-opened):**
-- Naming: "FlawChess Engine," framed *"a practical-play analysis engine built on Stockfish and Maia."* Never "best move" unqualified — always "best **practical** move for you." Not claiming a novel engine (Polecat / vala-bot prior art); the one possible novelty hook is the asymmetric self+opponent rating.
-- **Deferred by design:** trap-finder / branch-point UI, per-ELO leaf sigmoids (benchmark-DB fit), time-pressure conditioning (clock→temperature / clock→ELO-offset), SAB multithreading.
-- Reuses the v1.32 Maia inference infra; **client-side only**, zero server load, **no persistence** (analysis state in the URL, consistent with v1.29 D-4). AGPL-3.0 already in place.
-- **Pitfall to honor:** never feed search results back to "sharpen" the Maia prior; keep explicit depth shallow (6–10 plies) so Maia-probability estimation error and out-of-distribution drift stay bounded.
+**Key context (locked in SEED-091, plus 2026-07-11 milestone decisions):**
+- **Access:** no beta gate — all users AND guests can play, and every finished game is saved (guests are first-class `User` rows since v1.8). Interaction to honor: the eval pipeline excludes guests, so a stored guest bot game shows in the Library but won't auto-analyze until the guest promotes.
+- **Play-UI scope for v1:** game-end/resign/flag + **draw offers + move sounds** IN; **premove and takeback OUT**.
+- **Calibration** is committed in-milestone (anchor harness + log settings); **post-launch user-results curve fitting is deferred** to a later milestone once data volume exists. Recorded player rating is a save-time estimate (±100–150 conversion error expected) — fine for fitting across many games, not for precise ELO claims from ten games.
+- **Perf is best-effort:** clock-scaled search budget + human-like pacing are implemented, but phone-perf tuning is polish, not a milestone blocker. Bullet is excluded precisely so slower devices get more think-time headroom.
+- Reuses the v2.0 FlawChess Engine (`useFlawChessEngine` / `mctsSearch`) and v1.32 Maia inference infra. Server touch is deliberately minimal (one store endpoint reusing normalization); the game itself is client-side.
 
-**Baseline:** v1.31 and v1.32 are both live in production, so this milestone builds on the deployed v1.32 Maia inference infra.
+**Baseline:** v2.2 is the latest shipped milestone; v2.1 (Phases 162, 163) is merged to `main` but deploy-pending. All engine + Maia infra this milestone builds on is live in production.
 
 ## Requirements
 
@@ -534,6 +535,9 @@ This document evolves at phase transitions and milestone boundaries.
 2. Core Value check — still the right priority?
 3. Audit Out of Scope — reasons still valid?
 4. Update Context with current state
+
+---
+*Last updated: 2026-07-11 — v2.3 Bot Play milestone opened (sourced from SEED-091, distilled from a 2026-07-10 `/gsd-explore` session with five locked design decisions; continues after v2.2). Lets users play clocked games against the FlawChess engine on a new top-level **Bots** page: a setup screen (ELO + play-style sliders, color, lichess-preset TC — bullet excluded), a live client-side clocked board whose move selection blends the play-style slider from sample↔argmax (full-human = one Maia inference/move, no MCTS; full-stockfish = argmax practical), full game lifecycle (game-end/resign/flag + draw offers + move sounds), localStorage resume with a paused clock, and storage of every finished PGN (with `[%clk]`) as an analyzable `platform='flawchess'` games row carrying the bot's full settings + a converted save-time player rating. A committed headless Node anchor-calibration harness (ELO × play-style grid vs known-strength anchors) produces the first real strength map + engine test bench. Access: all users AND guests, all finished games saved (guest games not auto-analyzed under existing guest eval-exclusion). Play-UI: premove + takeback OUT. Calibration curve-fitting from user results deferred. Perf best-effort. Research-first (clock UI, game-end/draw detection, resume patterns, headless-Maia harness viability). Reuses the v2.0 engine + v1.32 Maia infra; minimal server touch (one store endpoint). (Prior footer below.)*
 
 ---
 *Last updated: 2026-07-10 after Phase 163 (Gem moves, SEED-092). Two post-v2.0 standalone phases complete with no active milestone: Phase 162 (SEED-090, grading-run-authoritative eval reconciliation precedence flip) and Phase 163 (SEED-092, violet gem badges for hard-to-find only-good moves across board/move list/chart/popover, live-vs-sticky ELO-slider semantics). Both frontend-only, verified via UAT. Next is `/gsd-new-milestone` (or deploy). (Prior footer below.)*

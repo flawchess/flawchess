@@ -1,30 +1,26 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.2
-milestone_name: Analysis ELO Calibration & Deep-links
-current_phase: 999.1
-current_phase_name: BACKLOG
-status: milestone_complete
-stopped_at: v2.2 closed — phases 164/165 archived, CHANGELOG promoted, tagged v2.2, GH release created
-last_updated: "2026-07-11T14:20:00.000Z"
+milestone: v2.3
+milestone_name: Bot Play
+status: planning
+last_updated: "2026-07-11T15:34:55.708Z"
 last_activity: 2026-07-11
-last_activity_desc: v2.2 milestone closed (phases 164, 165) — full release, no deploy (already live via #253/#254)
 progress:
-  total_phases: 2
-  completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 999.1 — Password Reset (BACKLOG)
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-07-11 — Phase 165 complete, transitioned to Phase 999.1
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-07-11 — Milestone v2.3 started
 
 ## Project Reference
 
