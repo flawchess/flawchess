@@ -528,25 +528,42 @@ def _build_card(
     # correspondence lack a real-time-play equivalent in either ChessGoals
     # table) before dispatching by (platform, time_control_bucket).
     is_correspondence = is_correspondence_time_control(game.time_control_str)
+    # BUG FIX (Phase 167, RESEARCH Pitfall 3): normalize_to_lichess_blitz has only
+    # chess.com/lichess branches (if platform == "chess.com": ... else: # lichess).
+    # Once Platform gained "flawchess" (Plan 01, D-17), a flawchess game's rating
+    # would silently fall into the lichess else-branch and get re-run through the
+    # Table-2 inversion for non-blitz buckets — but a stored flawchess rating is
+    # ALREADY lichess-blitz-equivalent by construction of anchor_rating (STORE-03).
+    # Guard both call sites so a flawchess rating passes through unchanged instead
+    # of being double-converted.
+    is_flawchess = game.platform == "flawchess"
     white_rating_lichess_blitz = (
-        normalize_to_lichess_blitz(
-            game.white_rating,
-            cast(Platform, game.platform),
-            cast(TimeControlBucket, game.time_control_bucket),
-            is_correspondence=is_correspondence,
+        game.white_rating
+        if is_flawchess
+        else (
+            normalize_to_lichess_blitz(
+                game.white_rating,
+                cast(Platform, game.platform),
+                cast(TimeControlBucket, game.time_control_bucket),
+                is_correspondence=is_correspondence,
+            )
+            if game.white_rating is not None and game.time_control_bucket is not None
+            else None
         )
-        if game.white_rating is not None and game.time_control_bucket is not None
-        else None
     )
     black_rating_lichess_blitz = (
-        normalize_to_lichess_blitz(
-            game.black_rating,
-            cast(Platform, game.platform),
-            cast(TimeControlBucket, game.time_control_bucket),
-            is_correspondence=is_correspondence,
+        game.black_rating
+        if is_flawchess
+        else (
+            normalize_to_lichess_blitz(
+                game.black_rating,
+                cast(Platform, game.platform),
+                cast(TimeControlBucket, game.time_control_bucket),
+                is_correspondence=is_correspondence,
+            )
+            if game.black_rating is not None and game.time_control_bucket is not None
+            else None
         )
-        if game.black_rating is not None and game.time_control_bucket is not None
-        else None
     )
 
     return GameFlawCard(
@@ -673,13 +690,24 @@ async def get_library_games(
     Inaccuracy count comes from oracle columns (games.white_/black_inaccuracies),
     never from game_flaws (D-03). Analysis state is gated on eval coverage, not
     on game_flaws row presence (LIBG-02 — never a false 0/0/0).
+
+    Phase 167 D-03: apply_game_filters now excludes platform='flawchess' by
+    default (D-02, STORE-07). The Library Games tab is the one surface that
+    SHOULD show flawchess bot-practice games, so when the caller passes no
+    explicit platform filter, substitute an explicit list covering all three
+    platforms to opt back in. NOTE: this alone is not sufficient for a bot
+    game to actually surface here — the router's `opponent_type` query param
+    still defaults to "human" (RESEARCH Pitfall 5), which independently
+    excludes is_computer_game=True rows; wiring that default/filter-chip is
+    Phase 171's job, out of scope here.
     """
+    library_platform = platform if platform is not None else ["chess.com", "lichess", "flawchess"]
     try:
         games, matched_count = await library_repository.query_filtered_games(
             session,
             user_id=user_id,
             time_control=time_control,
-            platform=platform,
+            platform=library_platform,
             rated=rated,
             opponent_type=opponent_type,
             from_date=from_date,

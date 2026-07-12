@@ -19,6 +19,16 @@ from app.models.game import Game
 # Do NOT scatter ply % 2 math across query sites — always use is_opponent_expr.
 _PLY_EVEN_MOVER_WHITE = 0  # ply % 2 == 0 means white moved
 
+# ---------------------------------------------------------------------------
+# Default platform exclusion (single source — CONTEXT D-02, Phase 167)
+# ---------------------------------------------------------------------------
+# Flawchess bot-practice games must stay invisible to every default analytics
+# population (STORE-07) while remaining reachable by any caller that passes an
+# explicit platform list including "flawchess" (e.g. library_service's
+# get_library_games opt-in, D-03). This is the ONE central seam — do not
+# scatter per-router platform checks.
+DEFAULT_EXCLUDED_PLATFORMS = ("flawchess",)
+
 
 def mover_is_white_at_ply(ply: int) -> bool:
     """Return True when the mover at *ply* is White (Python read-path helper).
@@ -111,7 +121,10 @@ def apply_game_filters(
     Args:
         stmt: The base SELECT statement to add filters to.
         time_control: Filter by time control buckets (bullet, blitz, rapid, classical).
-        platform: Filter by platform (chess.com, lichess).
+        platform: Filter by platform (chess.com, lichess). None = default
+                 population, which excludes DEFAULT_EXCLUDED_PLATFORMS
+                 ("flawchess") — D-02 (Phase 167, STORE-07). Pass an explicit
+                 list including "flawchess" to opt in (D-03).
         rated: Filter by rated/unrated. None = no filter.
         opponent_type: "human", "bot", or "all".
         from_date: Include games played on or after this date (inclusive). None = no lower bound.
@@ -181,6 +194,13 @@ def apply_game_filters(
         stmt = stmt.where(Game.time_control_bucket.in_(time_control))
     if platform is not None:
         stmt = stmt.where(Game.platform.in_(platform))
+    else:
+        # D-02 (Phase 167): default population (no explicit platform filter)
+        # excludes flawchess bot-practice games from every analytics surface,
+        # including the opponent_type='bot' explicit-filter case (STORE-07,
+        # RESEARCH Pitfall 1). Callers that want flawchess must pass it
+        # explicitly in `platform` (e.g. library_service.get_library_games).
+        stmt = stmt.where(Game.platform.notin_(DEFAULT_EXCLUDED_PLATFORMS))
     if rated is not None:
         stmt = stmt.where(Game.rated == rated)  # noqa: E712
     if opponent_type == "human":

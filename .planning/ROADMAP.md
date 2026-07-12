@@ -46,79 +46,120 @@
 
 **Dependency waves:** A = {166, 167} · B = {168, 169} · C = {170, 171}. `selectBotMove` (166) is the keystone both the play loop and the harness import; backend store-on-finish (167) is fully independent and parallelizable.
 
-- [ ] **Phase 166: Bot Move Selection Core (`selectBotMove`)** - Pure, provider-agnostic sample↔argmax move-selection blend both the app and the harness reuse
-- [ ] **Phase 167: Backend Store-on-Finish** - Persist a finished bot game as a `platform='flawchess'` Library game via the shared normalization path
-- [ ] **Phase 168: Headless Calibration Harness (spike-gated)** - Node harness measuring engine strength across a coarse (ELO × play-style) grid vs known anchors
+- [x] **Phase 166: Bot Move Selection Core (`selectBotMove`)** - Pure, provider-agnostic sample↔argmax move-selection blend both the app and the harness reuse (completed 2026-07-11)
+- [x] **Phase 167: Backend Store-on-Finish** - Persist a finished bot game as a `platform='flawchess'` Library game via the shared normalization path (completed 2026-07-11)
+- [x] **Phase 168: Headless Calibration Harness (spike-gated)** - Node harness measuring engine strength across a coarse (ELO × play-style) grid vs known anchors (completed 2026-07-12)
 - [ ] **Phase 169: Clocked Board + Game Loop (`useBotGame`)** - Live clocked board with pacing, all end conditions, resign/draw, and move sounds
 - [ ] **Phase 170: localStorage Resume** - Leave and resume a bot game with the clock fairly paused; store each finished game exactly once
 - [ ] **Phase 171: Bots Page + Setup Screen + Nav** - New top-level Bots page tying setup, board, resume, and store-on-finish together for users and guests
 
 ### Phase 166: Bot Move Selection Core (`selectBotMove`)
+
 **Goal**: The bot chooses a human-realistic move at its configured strength from a single pure, provider-agnostic function that both the play loop and the calibration harness reuse unchanged.
 **Depends on**: Nothing (builds on existing v2.0 engine primitives — `mctsSearch`, Maia policy, Stockfish grading)
 **Requirements**: BOT-01, BOT-02, BOT-03, BOT-04
 **Success Criteria** (what must be TRUE):
-  1. Given a position and (ELO, play-style) settings, `selectBotMove` returns a legal UCI move: at the full-human end it samples the temperature-reshaped Maia root policy (one inference, no MCTS), at the full-stockfish end it returns the argmax practical score, and blends practical-score-weighted sampling with slider-controlled sharpness in between.
+
+  1. Given a position and (ELO, play-style) settings, `selectBotMove` returns a legal UCI move: at the full-human end it samples the raw Maia root policy (one inference, no MCTS), at the full-stockfish end it returns the argmax practical score, and blends practical-score-weighted sampling with slider-controlled sharpness in between.
   2. At the fastest supported time control the full-human path issues exactly one Maia inference per move, so the bot replies within ~1–2s on a mid-range phone.
   3. The bot's move distribution reflects only its own configured ELO and never shifts on any player-strength input (symmetric, non-adaptive — so strength stays fixed and measurable).
   4. With a fixed injected RNG seed the selection is deterministic and reproducible (unit-testable and harness-repeatable).
   5. When the sampled policy is empty or degenerate, the function still returns a legal fallback move rather than throwing or passing.
-**Plans**: TBD
+
+**Plans**: 1 plan
+
+Plans:
+
+- [x] 166-01-PLAN.md — Pure `selectBotMove` blend (raw-Maia sample ↔ argmax practical score) + pure helpers (`botSampling.ts`) + unit tests
 
 ### Phase 167: Backend Store-on-Finish
+
 **Goal**: A finished bot game is persisted as a first-class `platform='flawchess'` Library game through the shared normalization/persistence path, carrying clocks, full bot settings, and a converted player rating.
 **Depends on**: Nothing (independent of all engine work; parallelizable with Phase 166)
 **Requirements**: STORE-01, STORE-02, STORE-03, STORE-04, STORE-05, STORE-06, STORE-07
 **Success Criteria** (what must be TRUE):
+
   1. POSTing a finished bot PGN creates exactly one `platform='flawchess'` `games` row via a new `normalize_flawchess_game` feeding the existing persistence downstream, and it appears in the Library Games tab, analyzable exactly like an imported game.
   2. The store endpoint rejects a bot PGN missing per-move `[%clk]` annotations, and stored bot games carry both-color clocks so time-management analytics include them.
   3. The stored game records full bot settings (nominal ELO, play-style slider value, TC preset) in a side-table plus a save-time converted player rating (lichess-scale, TC-bucket-matched; NULL only when the user has no imported games) with its rating source, and the bot's nominal ELO in the opponent-rating column.
   4. Re-submitting the same client-owned game UUID returns success without creating a second row (idempotent on the unique constraint).
   5. Bot games are excluded from default analytics (Global Stats, endgame-ELO timelines) but present on Bots/Library surfaces; guests see a caveat that their game is saved but won't auto-analyze until they create an account.
-**Plans**: TBD
+
+**Plans**: 3 plans (2 waves)
+**Wave 1**
+
+- [x] 167-01-PLAN.md — Schema + model + migration foundation (Platform Literal, StoreBotGameRequest/Response, bot_game_settings table)
+- [x] 167-02-PLAN.md — Analytics exclusion + Library opt-in (apply_game_filters default-exclude, get_library_games opt-in, rating double-convert guard)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 167-03-PLAN.md — Normalizer + store service + bots router (normalize_flawchess_game, store_bot_game, POST /bots/games)
 
 ### Phase 168: Headless Calibration Harness (spike-gated)
+
 **Goal**: A headless Node harness measures the engine's real strength across a coarse (ELO × play-style) grid against known-strength anchors, reusing the exact app move-selection code so the measurement reflects what users play against.
 **Depends on**: Phase 166
 **Requirements**: CAL-01, CAL-02, CAL-03
 **Success Criteria** (what must be TRUE):
+
   1. A feasibility spike (the harness's first task) confirms Maia ONNX inference runs headlessly in Node at harness-viable throughput and locks the `onnxruntime-node` version before the full grid is built.
   2. The harness imports and runs the exact same provider-agnostic `selectBotMove` the app uses (via the `@/` alias hook), with zero move-selection reimplementation.
   3. Running the harness plays the bot against raw-Maia 1100–1900 argmax rungs and Stockfish skill levels across a coarse (ELO × play-style) grid and emits a strength-map TSV to `reports/data/`.
-**Plans**: TBD
+
+**Plans**: 3 plans
+**Wave 1**
+
+- [x] 168-01-PLAN.md — Reusable engine foundation (shared Maia/Stockfish bring-up, Node EngineProviders adapter, anchors, opening book) + CAL-02 parity gate
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 168-02-PLAN.md — Bot-vs-anchor game loop + D-03 throughput spike (CAL-03) with go/no-go gate
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 168-03-PLAN.md — Coarse grid sweep + durable results-matrix TSV (D-04) + advisory ELO-estimate summary (D-05) → CAL-01
 
 ### Phase 169: Clocked Board + Game Loop (`useBotGame`)
+
 **Goal**: The user plays a full clocked game against the bot on a live client-side board that handles dual clocks, bot pacing, all end conditions, resign/draw offers, and move sounds.
 **Depends on**: Phase 166
 **Requirements**: PLAY-03, PLAY-04, PLAY-05, PLAY-06, PLAY-07, PLAY-08, PLAY-09
 **Success Criteria** (what must be TRUE):
+
   1. The user plays on a live board with dual Fischer-increment clocks, moving by drag or click, turn-gated to legal moves; the bot paces its replies (not instant) with a think-time budget derived from its remaining clock.
   2. Clocks use a wall-clock (`Date.now()`-delta) model that stays accurate across tab backgrounding and pause while the tab is hidden during the bot's turn, so neither side is unfairly flagged.
   3. The game detects every end condition — checkmate, stalemate, threefold repetition, 50-move, insufficient material, and flag-on-time — and a result screen shows the outcome (win/loss/draw + reason) with "Analyze this game" and "New game" actions.
   4. The user can resign and can offer/accept a draw against the bot.
   5. Move, capture, check, and game-end sounds play with a working mute control, and the game emits per-move `[%clk]` annotations (both colors) in its PGN.
+
 **Plans**: TBD
 **UI hint**: yes
 
 ### Phase 170: localStorage Resume
+
 **Goal**: A user can leave a bot game mid-play and resume it later with the clock fairly paused, and each finished game is stored exactly once.
 **Depends on**: Phase 169
 **Requirements**: RESUME-01, RESUME-02
 **Success Criteria** (what must be TRUE):
+
   1. Game state including a paused-clock snapshot persists to localStorage on every move, and returning to the Bots page offers a "Resume game?" prompt that restores the position and clocks with no away-time billed.
   2. An abandoned (unfinished) game leaves no server trace — only finished games reach the server.
   3. A game already stored on the server is never double-stored on resume (the persisted snapshot clears only after a confirmed store).
+
 **Plans**: TBD
 
 ### Phase 171: Bots Page + Setup Screen + Nav
+
 **Goal**: A new top-level Bots page ties everything together — a setup screen to configure a game, the live clocked board, resume, and store-on-finish — available to both logged-in users and guests.
 **Depends on**: Phase 169, Phase 170, Phase 167
 **Requirements**: PLAY-01, PLAY-02, PLAY-10
 **Success Criteria** (what must be TRUE):
+
   1. A new lazy-loaded top-level **Bots** page sits in the nav as a sibling of Library · Openings · Endgames.
   2. From a setup screen the user picks ELO, play-style, color, and a lichess-preset time control (blitz 3+0/3+2/5+0/5+3 · rapid 10+0/10+5/15+10 · classical 30+0/30+20; no bullet) and starts a game wired to the Phase 169 clocked board loop.
   3. Both logged-in users and guests can play a full bot game, and every finished game is POSTed and saved to their Library.
   4. On game end the result is stored via the Phase 167 endpoint and appears in the Library Games tab, with the guest not-auto-analyzed caveat shown to guests.
+
 **Plans**: TBD
 **UI hint**: yes
 
@@ -197,9 +238,9 @@
 | 163. Gem moves — Maia-findability badges (SEED-092) | 4/4 | Complete (merged to main; deploy pending) | 2026-07-10 |
 | 164. Maia ELO Lichess-blitz normalization (SEED-093) | 4/4 | Complete (released #253) | 2026-07-11 |
 | 165. Gem-ELO calibration harness + ?fen= deep-link (SEED-094) | 2/2 | Complete (released #254) | 2026-07-11 |
-| 166. Bot Move Selection Core (`selectBotMove`) | 0/? | Not started | - |
-| 167. Backend Store-on-Finish | 0/? | Not started | - |
-| 168. Headless Calibration Harness (spike-gated) | 0/? | Not started | - |
+| 166. Bot Move Selection Core (`selectBotMove`) | 1/1 | Complete    | 2026-07-11 |
+| 167. Backend Store-on-Finish | 3/3 | Complete    | 2026-07-11 |
+| 168. Headless Calibration Harness (spike-gated) | 3/3 | Complete    | 2026-07-11 |
 | 169. Clocked Board + Game Loop (`useBotGame`) | 0/? | Not started | - |
 | 170. localStorage Resume | 0/? | Not started | - |
 | 171. Bots Page + Setup Screen + Nav | 0/? | Not started | - |
@@ -210,7 +251,7 @@
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 4/4 plans complete
+**Plans:** 3/3 plans complete
 
 Plans:
 

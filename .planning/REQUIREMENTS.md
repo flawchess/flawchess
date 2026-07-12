@@ -11,10 +11,10 @@ Requirements for this milestone. Each maps to a roadmap phase.
 
 ### Bot Opponent (BOT)
 
-- [ ] **BOT-01**: The bot chooses its move by blending the play-style slider from sampling the temperature-reshaped Maia root policy at the full-human end to argmax practical score at the full-stockfish end (practical-score-weighted sampling with slider-controlled sharpness in between).
-- [ ] **BOT-02**: At the full-human end the bot runs exactly one Maia inference per move (no MCTS pass), so it can reply within ~1–2s on a mid-range phone at the fastest supported time control.
-- [ ] **BOT-03**: The bot plays its own configured ELO symmetrically and never adapts to the player's strength (so its strength stays fixed and measurable).
-- [ ] **BOT-04**: The bot always returns a legal move, falling back gracefully to a legal move when the sampled policy is empty or degenerate.
+- [x] **BOT-01**: The bot chooses its move by blending the play-style slider from sampling the raw Maia root policy at the full-human end to argmax practical score at the full-stockfish end (practical-score-weighted sampling with slider-controlled sharpness in between).
+- [x] **BOT-02**: At the full-human end the bot runs exactly one Maia inference per move (no MCTS pass), so it can reply within ~1–2s on a mid-range phone at the fastest supported time control.
+- [x] **BOT-03**: The bot plays its own configured ELO symmetrically and never adapts to the player's strength (so its strength stays fixed and measurable).
+- [x] **BOT-04**: The bot always returns a legal move, falling back gracefully to a legal move when the sampled policy is empty or degenerate.
 
 ### Play Experience (PLAY)
 
@@ -31,13 +31,13 @@ Requirements for this milestone. Each maps to a roadmap phase.
 
 ### Game Storage (STORE)
 
-- [ ] **STORE-01**: Every finished bot game is stored as a `platform='flawchess'` `games` row via the shared normalization/persistence path (a new PGN→`NormalizedGame` normalizer feeding the existing downstream) and appears in the Library games tab.
-- [ ] **STORE-02**: The stored PGN carries per-move `[%clk]` clock annotations (both colors), so time-management analytics include bot games; the store endpoint rejects a bot PGN missing `[%clk]`.
-- [ ] **STORE-03**: The stored game records a save-time converted (lichess-scale, TC-bucket-matched) player rating — NULL only when the user has no imported games — plus the bot's nominal ELO in the opponent-rating column, with the rating source recorded.
-- [ ] **STORE-04**: The stored game records the full bot settings (nominal ELO, play-style slider value, TC preset) for later calibration.
-- [ ] **STORE-05**: The store endpoint mints/accepts a client-owned game UUID as `platform_game_id` and is idempotent on the unique constraint (a duplicate submit returns success without a second row).
-- [ ] **STORE-06**: Stored bot games are analyzable exactly like imported games; guests see a caveat that their bot games are saved but won't be auto-analyzed until they create an account (existing guest eval-exclusion).
-- [ ] **STORE-07**: Bot games are excluded from default analytics (Global Stats, endgame-ELO timelines) but included in the Bots and Library Games surfaces, consistent with the existing platform/opponent filter.
+- [x] **STORE-01**: Every finished bot game is stored as a `platform='flawchess'` `games` row via the shared normalization/persistence path (a new PGN→`NormalizedGame` normalizer feeding the existing downstream) and appears in the Library games tab.
+- [x] **STORE-02**: The stored PGN carries per-move `[%clk]` clock annotations (both colors), so time-management analytics include bot games; the store endpoint rejects a bot PGN missing `[%clk]`.
+- [x] **STORE-03**: The stored game records a save-time converted (lichess-scale, TC-bucket-matched) player rating — NULL only when the user has no imported games — plus the bot's nominal ELO in the opponent-rating column, with the rating source recorded.
+- [x] **STORE-04**: The stored game records the full bot settings (nominal ELO, play-style slider value, TC preset) for later calibration.
+- [x] **STORE-05**: The store endpoint mints/accepts a client-owned game UUID as `platform_game_id` and is idempotent on the unique constraint (a duplicate submit returns success without a second row).
+- [x] **STORE-06**: Stored bot games are analyzable exactly like imported games; guests see a caveat that their bot games are saved but won't be auto-analyzed until they create an account (existing guest eval-exclusion).
+- [x] **STORE-07**: Bot games are excluded from default analytics (Global Stats, endgame-ELO timelines) but included in the Bots and Library Games surfaces, consistent with the existing platform/opponent filter.
 
 ### Resume (RESUME)
 
@@ -46,9 +46,9 @@ Requirements for this milestone. Each maps to a roadmap phase.
 
 ### Calibration (CAL)
 
-- [ ] **CAL-01**: A headless Node harness plays the bot against known-strength anchors (raw Maia argmax rungs 1100–1900 + Stockfish skill levels) across a coarse (ELO × play-style) grid and emits a strength map as TSV in `reports/data/`.
-- [ ] **CAL-02**: The harness reuses the exact same provider-agnostic `selectBotMove` move-selection code the app uses (via the `@/` alias hook), so the measured strength reflects the code users actually play against.
-- [ ] **CAL-03**: A feasibility spike confirms Maia ONNX inference runs headlessly in Node at harness-viable throughput (and locks the `onnxruntime-node` version) before the full grid is built.
+- [x] **CAL-01**: A headless Node harness plays the bot against known-strength anchors (raw Maia argmax rungs 1100–1900 + Stockfish skill levels) across a coarse (ELO × play-style) grid and emits a strength map as TSV in `reports/data/`.
+- [x] **CAL-02**: The harness reuses the exact same provider-agnostic `selectBotMove` move-selection code the app uses (via the `@/` alias hook), so the measured strength reflects the code users actually play against.
+- [x] **CAL-03**: A feasibility spike confirms Maia ONNX inference runs headlessly in Node at harness-viable throughput (and locks the `onnxruntime-node` version) before the full grid is built.
 
 ## v2 Requirements
 
@@ -85,10 +85,10 @@ Which phases cover which requirements. Filled during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BOT-01 | Phase 166 | Pending |
-| BOT-02 | Phase 166 | Pending |
-| BOT-03 | Phase 166 | Pending |
-| BOT-04 | Phase 166 | Pending |
+| BOT-01 | Phase 166 | Complete |
+| BOT-02 | Phase 166 | Complete |
+| BOT-03 | Phase 166 | Complete |
+| BOT-04 | Phase 166 | Complete |
 | PLAY-01 | Phase 171 | Pending |
 | PLAY-02 | Phase 171 | Pending |
 | PLAY-03 | Phase 169 | Pending |
@@ -99,15 +99,15 @@ Which phases cover which requirements. Filled during roadmap creation.
 | PLAY-08 | Phase 169 | Pending |
 | PLAY-09 | Phase 169 | Pending |
 | PLAY-10 | Phase 171 | Pending |
-| STORE-01 | Phase 167 | Pending |
-| STORE-02 | Phase 167 | Pending |
-| STORE-03 | Phase 167 | Pending |
-| STORE-04 | Phase 167 | Pending |
-| STORE-05 | Phase 167 | Pending |
-| STORE-06 | Phase 167 | Pending |
-| STORE-07 | Phase 167 | Pending |
+| STORE-01 | Phase 167 | Complete |
+| STORE-02 | Phase 167 | Complete |
+| STORE-03 | Phase 167 | Complete |
+| STORE-04 | Phase 167 | Complete |
+| STORE-05 | Phase 167 | Complete |
+| STORE-06 | Phase 167 | Complete |
+| STORE-07 | Phase 167 | Complete |
 | RESUME-01 | Phase 170 | Pending |
 | RESUME-02 | Phase 170 | Pending |
-| CAL-01 | Phase 168 | Pending |
-| CAL-02 | Phase 168 | Pending |
-| CAL-03 | Phase 168 | Pending |
+| CAL-01 | Phase 168 | Complete |
+| CAL-02 | Phase 168 | Complete |
+| CAL-03 | Phase 168 | Complete |

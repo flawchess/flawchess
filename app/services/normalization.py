@@ -4,8 +4,11 @@ Converts chess.com and lichess game objects into NormalizedGame Pydantic models 
 """
 
 import datetime
+import io
 import re
+from typing import cast
 
+import chess.pgn
 import sentry_sdk
 
 from app.schemas.normalization import (
@@ -482,4 +485,209 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> Normalize
         white_blunders=white_analysis.get("blunder"),
         black_blunders=black_analysis.get("blunder"),
         played_at=played_at,
+    )
+
+
+# Phase 167 (STORE-01..06): fixed bot username, never a magic string inline (D-08).
+FLAWCHESS_BOT_USERNAME = "FlawChess Bot"
+# Non-PII server-side label for the human side of a flawchess game (discretion, D-08).
+_FLAWCHESS_PLAYER_USERNAME = "You"
+
+# chess.com/lichess-recognized game result strings (mirrors _CHESSCOM_WIN_RESULTS/
+# _LICHESS_STATUS_MAP's closed-vocab convention above).
+_VALID_GAME_RESULTS: frozenset[str] = frozenset({"1-0", "0-1", "1/2-1/2"})
+
+# A PGN [Termination "..."] header, when present, maps 1:1 to the Termination
+# Literal (RESEARCH Open Question 1 / plan Assumption A1 — Phase 169 coordination
+# point: the request schema (D-14) has no explicit termination field, so this is
+# the only channel for resignation/timeout/abandoned; checkmate/draw are also
+# derivable from the final board state as a fallback below).
+_FLAWCHESS_TERMINATION_HEADER_MAP: dict[str, Termination] = {
+    "checkmate": "checkmate",
+    "resignation": "resignation",
+    "timeout": "timeout",
+    "draw": "draw",
+    "abandoned": "abandoned",
+    "unknown": "unknown",
+}
+
+
+def _clock_presence_by_color(
+    clock_present: list[bool], start_white_to_move: bool
+) -> tuple[bool, bool]:
+    """Return (white_has_clock, black_has_clock) for a mainline's per-node clock presence.
+
+    WR-02 fix: `clock_present[i]` is a per-ply flag in mainline order; which color
+    played ply `i` depends on `start_white_to_move` (from `game.board().turn`), NOT
+    a fixed even=White/odd=Black assumption. A client-supplied SetUp/FEN header pair
+    can start the mainline from a Black-to-move position, which would otherwise
+    silently swap the color labels attached to each parity group.
+    """
+    white_has_clock = any(
+        present for i, present in enumerate(clock_present) if (i % 2 == 0) == start_white_to_move
+    )
+    black_has_clock = any(
+        present for i, present in enumerate(clock_present) if (i % 2 == 0) != start_white_to_move
+    )
+    return white_has_clock, black_has_clock
+
+
+def normalize_flawchess_game(
+    pgn_text: str,
+    game_uuid: str,
+    user_id: int,
+    user_color: Color,
+    bot_elo: int,
+    player_rating: int | None,
+    tc_str: str,
+) -> NormalizedGame | None:
+    """Build a NormalizedGame from a client-POSTed finished bot-game PGN (D-14).
+
+    PGN-only normalizer — unlike normalize_chesscom_game/normalize_lichess_game,
+    there is no platform JSON payload. Every derived field (result, termination,
+    clocks-presence gate, ply_count, result_fen, opening) comes from a single
+    chess.pgn.read_game() parse; the remaining fields (user_color, bot_elo,
+    player_rating, tc_str) are supplied by the caller (store_bot_game_service),
+    which derives player_rating server-side from user_rating_anchors (D-05/D-06)
+    and never trusts the client for it.
+
+    Returns None (never raises past this function) when the PGN is unparseable,
+    has no mainline moves, is missing per-move [%clk] on either color (STORE-02/
+    D-15), or has no recognized Result header ("1-0"/"0-1"/"1/2-1/2") — the router
+    maps None to a 422. These are expected validation outcomes, NOT bugs: no
+    Sentry capture for them (only for a genuinely unexpected parse exception).
+
+    Args:
+        pgn_text: The client-submitted PGN (already length-bounded by the
+            request schema's MAX_BOT_PGN_LENGTH).
+        game_uuid: Client-minted UUID; becomes platform_game_id (D-14, drives
+            idempotency via uq_games_user_platform_game_id, D-11).
+        user_id: Internal user PK (server-derived from the JWT upstream, D-13).
+        user_color: The human player's color in this game.
+        bot_elo: The bot's nominal ELO (placed in the opponent-color rating
+            column, D-08).
+        player_rating: Server-computed converted rating for the player-color
+            column, or None when the user has no anchor for this TC bucket
+            (D-05/D-06).
+        tc_str: Time-control string in the same base_seconds+increment_seconds
+            format parse_time_control/parse_base_and_increment already expect
+            everywhere else in this module (e.g. "180+2") — NOT a minutes-based
+            display label.
+
+    Returns:
+        A NormalizedGame with platform="flawchess", rated=False,
+        is_computer_game=True (D-04), or None on any invalid-input case above.
+    """
+    try:
+        game = chess.pgn.read_game(io.StringIO(pgn_text))
+    except Exception:
+        # Genuinely unexpected parse exception (not the expected-None case) —
+        # Sentry per the module's set_context convention (Sentry rule).
+        sentry_sdk.set_context("flawchess_normalize", {"game_uuid": game_uuid})
+        sentry_sdk.capture_exception()
+        return None
+
+    if game is None:
+        return None  # unparseable PGN — expected 422 case, no Sentry capture
+
+    nodes = list(game.mainline())
+    if not nodes:
+        return None  # no moves — expected 422 case
+
+    # [%clk] presence gate (STORE-02/D-15) — require at least one clock reading
+    # for BOTH colors. WR-02 fix: derive the starting side-to-move from the
+    # board (game.board().turn) instead of assuming White always moves first —
+    # a client-supplied SetUp/FEN header pair can start the mainline from a
+    # Black-to-move position, which would otherwise silently swap the
+    # even/odd-index-to-color mapping (even indices are only White's plies
+    # when White moves first).
+    clock_present = [node.clock() is not None for node in nodes]
+    white_has_clock, black_has_clock = _clock_presence_by_color(
+        clock_present, start_white_to_move=game.board().turn
+    )
+    if not (white_has_clock and black_has_clock):
+        return None  # expected 422 case, no Sentry capture
+
+    result_str = game.headers.get("Result", "")
+    if result_str not in _VALID_GAME_RESULTS:
+        return None  # no/invalid Result header — expected 422 case
+    result: GameResult = cast(GameResult, result_str)
+
+    # Termination: prefer a closed-vocab [Termination "..."] header (Phase 169
+    # coordination point); else derive from the final board state; else "unknown".
+    board = game.end().board()
+    termination_header = game.headers.get("Termination")
+    termination: Termination
+    if termination_header is not None and termination_header in _FLAWCHESS_TERMINATION_HEADER_MAP:
+        termination = _FLAWCHESS_TERMINATION_HEADER_MAP[termination_header]
+        termination_raw = termination_header
+    else:
+        # CR-02 fix: an unrecognized [Termination "..."] header used to be stored
+        # verbatim into termination_raw, unbounded by the length/vocabulary check
+        # that gates the `termination` enum. A crafted header longer than 50 chars
+        # (games.termination_raw is String(50)) reached the INSERT and crashed
+        # _flush_batch with an unhandled Postgres DataError (500) instead of a 422.
+        # Never trust an unrecognized/unbounded header string for termination_raw —
+        # fall back to the closed-vocabulary board-derived `termination` value.
+        if board.is_checkmate():
+            termination = "checkmate"
+        elif (
+            board.is_stalemate()
+            or board.is_insufficient_material()
+            or board.is_fifty_moves()
+            or board.is_repetition(3)
+        ):
+            termination = "draw"
+        else:
+            termination = "unknown"
+        termination_raw = termination
+
+    tc_bucket, tc_seconds = parse_time_control(tc_str)
+    base_time_seconds, increment_seconds = parse_base_and_increment(tc_str)
+
+    # ply_count / result_fen are NOT NormalizedGame fields — _flush_batch's Stage 5
+    # (_collect_position_rows -> process_game_pgn) re-parses the PGN and bulk-UPDATEs
+    # both columns for every newly inserted game, this one included (D-09 reuse).
+    opening_eco, opening_name = find_opening(pgn_text)
+
+    # D-08: converted player rating goes in the player-color column; the bot's
+    # nominal ELO goes in the opponent-color column. Bot username is fixed;
+    # player username is a non-PII server label (discretion).
+    if user_color == "white":
+        white_username = _FLAWCHESS_PLAYER_USERNAME
+        black_username = FLAWCHESS_BOT_USERNAME
+        white_rating = player_rating
+        black_rating = bot_elo
+    else:
+        white_username = FLAWCHESS_BOT_USERNAME
+        black_username = _FLAWCHESS_PLAYER_USERNAME
+        white_rating = bot_elo
+        black_rating = player_rating
+
+    return NormalizedGame(
+        user_id=user_id,
+        platform="flawchess",
+        platform_game_id=game_uuid,
+        platform_url=None,
+        pgn=pgn_text,
+        result=result,
+        user_color=user_color,
+        termination_raw=termination_raw,
+        termination=termination,
+        time_control_str=_normalize_tc_str(tc_str),
+        time_control_bucket=tc_bucket,
+        time_control_seconds=tc_seconds,
+        base_time_seconds=base_time_seconds,
+        increment_seconds=increment_seconds,
+        rated=False,
+        is_computer_game=True,
+        white_username=white_username,
+        black_username=black_username,
+        white_rating=white_rating,
+        black_rating=black_rating,
+        opening_name=opening_name,
+        opening_eco=opening_eco,
+        white_accuracy=None,
+        black_accuracy=None,
+        played_at=datetime.datetime.now(datetime.timezone.utc),
     )

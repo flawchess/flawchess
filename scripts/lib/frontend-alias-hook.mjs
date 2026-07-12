@@ -20,10 +20,25 @@
  * the imported frontend modules would break type-stripping; the gem-parity
  * check (scripts/lib/gem-parity.check.mjs) is the tripwire that catches this
  * before a full calibration run (T-165-02).
+ *
+ * Phase 168 addition: extensionless relative resolution. Every `@/`-aliased
+ * module reached by Phase 165's gem-elo harness (maiaEncoding.ts, gemMove.ts,
+ * liveFlaw.ts, uciParser.ts) only imports OTHER modules via the `@/` alias or
+ * bare package specifiers, so extensionless relative resolution never came
+ * up. Phase 168 imports selectBotMove.ts/mctsSearch.ts, which sit inside
+ * frontend/src/lib/engine/ and import their many siblings relatively and
+ * extensionlessly (`./mctsSearch`, `./types`, `./select`, ...) — exactly what
+ * TypeScript's own `bundler` moduleResolution (Vite) resolves at build time,
+ * but Node's native ESM loader does not (it requires an explicit extension).
+ * The branch below mirrors that resolution ONLY for relative specifiers
+ * whose importer lives under FRONTEND_SRC, falling through to `nextResolve`
+ * for everything else (scripts/*.mjs's own relative imports, bare package
+ * specifiers, etc.) — unchanged behavior for every existing call site.
  */
 import { registerHooks } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
+import fs from 'node:fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -33,6 +48,9 @@ const FRONTEND_SRC = path.resolve(__dirname, '../../frontend/src');
 /** The alias prefix mirrored from frontend/vite.config.ts + frontend/tsconfig.json. */
 const ALIAS_PREFIX = '@/';
 
+/** TypeScript source extension appended to extensionless relative specifiers (Phase 168 addition). */
+const TS_EXT = '.ts';
+
 registerHooks({
   resolve(specifier, context, nextResolve) {
     if (specifier.startsWith(ALIAS_PREFIX)) {
@@ -40,6 +58,23 @@ registerHooks({
       const absolutePath = path.join(FRONTEND_SRC, `${relativePath}.ts`);
       return { url: pathToFileURL(absolutePath).href, shortCircuit: true };
     }
+
+    const isRelative = specifier.startsWith('./') || specifier.startsWith('../');
+    if (isRelative && context.parentURL?.startsWith('file://')) {
+      const parentPath = fileURLToPath(context.parentURL);
+      if (parentPath.startsWith(FRONTEND_SRC + path.sep)) {
+        const resolvedNoExt = path.resolve(path.dirname(parentPath), specifier);
+        const resolvedWithExt = `${resolvedNoExt}${TS_EXT}`;
+        // Only take over when the extensionless path does NOT already exist
+        // (never intercepts a genuine bare-extension import) AND the `.ts`
+        // sibling does — mirrors TypeScript's own bundler-mode resolution,
+        // never guesses beyond that single fallback.
+        if (!fs.existsSync(resolvedNoExt) && fs.existsSync(resolvedWithExt)) {
+          return { url: pathToFileURL(resolvedWithExt).href, shortCircuit: true };
+        }
+      }
+    }
+
     return nextResolve(specifier, context);
   },
 });

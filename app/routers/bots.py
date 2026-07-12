@@ -1,0 +1,39 @@
+"""Bots router: POST /api/bots/games endpoint (Phase 167, STORE-01..06).
+
+HTTP layer only — validation, auth, service call, response/422 mapping. All
+persistence/rating-derivation logic lives in store_bot_game_service.
+"""
+
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_async_session
+from app.models.user import User
+from app.schemas.bots import StoreBotGameRequest, StoreBotGameResponse
+from app.services import store_bot_game_service
+from app.users import current_active_user
+
+router = APIRouter(prefix="/bots", tags=["bots"])
+
+
+@router.post("/games", response_model=StoreBotGameResponse, status_code=200)
+async def store_game(
+    data: StoreBotGameRequest,
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> StoreBotGameResponse:
+    """Persist a finished bot game as a platform='flawchess' Library game.
+
+    user_id is derived from the authenticated JWT — never from the request
+    body (ASVS V4). current_active_user covers guests too (D-13) — same
+    dependency, no special-casing.
+
+    Returns 422 when the PGN is invalid: unparseable, missing per-move
+    [%clk] on either color (STORE-02/D-15), or no recognized Result header.
+    """
+    result = await store_bot_game_service.store_bot_game(session, user.id, data)
+    if result is None:
+        raise HTTPException(status_code=422, detail="Invalid PGN or missing [%clk] annotations")
+    return result

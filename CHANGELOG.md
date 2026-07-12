@@ -8,6 +8,11 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+- Bot play groundwork: a single pure move-selection function (`selectBotMove`) blends human-realistic Maia sampling with practical-score argmax across the play-style slider range — the same code the app's bot and the calibration harness use (Phase 166).
+- Bot play groundwork: finished bot games can be stored as first-class `platform='flawchess'` Library games via `POST /bots/games`, carrying clocks, full bot settings, and a converted player rating; bot games are excluded from analytics by default and opt-in in the Library (Phase 167).
+- Dev: headless calibration harness (`scripts/calibration-harness.mjs`) measures the engine's real playing strength across an (ELO × play-style) grid against Maia and Stockfish anchors — multi-process Stockfish pool, durable per-cell TSV output with `--resume`, an advisory ELO estimate, and a flawchess.com analyze deep-link logged for every game (Phase 168).
+
 ## [v2.2] Analysis ELO Calibration & Deep-links — 2026-07-11
 
 ### Added
