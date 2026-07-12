@@ -49,7 +49,7 @@
 - [x] **Phase 166: Bot Move Selection Core (`selectBotMove`)** - Pure, provider-agnostic sample↔argmax move-selection blend both the app and the harness reuse (completed 2026-07-11)
 - [x] **Phase 167: Backend Store-on-Finish** - Persist a finished bot game as a `platform='flawchess'` Library game via the shared normalization path (completed 2026-07-11)
 - [x] **Phase 168: Headless Calibration Harness (spike-gated)** - Node harness measuring engine strength across a coarse (ELO × play-style) grid vs known anchors (completed 2026-07-12)
-- [ ] **Phase 168.5: Bot Move Pacing & Search Budget (SEED-096)** - Settle the clock/fixed-strength fork, deterministic grades + watchdog fix (SEED-095), soft early stopping + retuned `MAX_NODES` in `mctsSearch`, bounded re-calibration at the shipped budget
+- [x] **Phase 168.5: Bot Move Pacing & Search Budget (SEED-096)** - Settle the clock/fixed-strength fork, deterministic grades + watchdog fix (SEED-095), soft early stopping + retuned `MAX_NODES` in `mctsSearch`, bounded re-calibration at the shipped budget (completed 2026-07-12)
 - [ ] **Phase 169: Clocked Board + Game Loop (`useBotGame`)** - Live clocked board with pacing, all end conditions, resign/draw, and move sounds
 - [ ] **Phase 170: localStorage Resume** - Leave and resume a bot game with the clock fairly paused; store each finished game exactly once
 - [ ] **Phase 171: Bots Page + Setup Screen + Nav** - New top-level Bots page tying setup, board, resume, and store-on-finish together for users and guests
@@ -133,7 +133,20 @@ Plans:
   4. A bounded re-calibration sweep at the shipped budget produces a strength map, and the blend>0 per-move median on the reference box lands near the pacing target.
   5. The D-09 determinism check passes at the new budget and stop condition.
 
-**Plans**: TBD
+**Plans**: 5 plans
+**Wave 1**
+
+- [x] 168.5-01-PLAN.md — SC1: settle the clock/fixed-strength fork + amend Phase 169 SC1 (doc-only)
+- [x] 168.5-02-PLAN.md — SC2: deterministic harness grades (depth-only go + Clear Hash) + watchdog hardening + throughput measurement
+- [x] 168.5-03-PLAN.md — SC3 (frontend): grade-margin early-stop rule in mctsSearch + additive bot-play budget profile
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 168.5-04-PLAN.md — SC3/SC4: measure + lock bot budget, mirror into harness, wire playGame
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 168.5-05-PLAN.md — SC4/SC5: anchor pruning + determinism check at new budget + operator sweep runbook
 
 ### Phase 169: Clocked Board + Game Loop (`useBotGame`)
 
@@ -142,7 +155,7 @@ Plans:
 **Requirements**: PLAY-03, PLAY-04, PLAY-05, PLAY-06, PLAY-07, PLAY-08, PLAY-09
 **Success Criteria** (what must be TRUE):
 
-  1. The user plays on a live board with dual Fischer-increment clocks, moving by drag or click, turn-gated to legal moves; the bot paces its replies (not instant) with a think-time budget derived from its remaining clock.
+  1. The user plays on a live board with dual Fischer-increment clocks, moving by drag or click, turn-gated to legal moves; the bot paces its replies (not instant): search runs at the fixed shipped budget regardless of clock, a small randomized reveal delay floors fast moves, and the bot's clock is debited a fraction-of-remaining synthetic think time (the bot never flags) (168.5 D-04).
   2. Clocks use a wall-clock (`Date.now()`-delta) model that stays accurate across tab backgrounding and pause while the tab is hidden during the bot's turn, so neither side is unfairly flagged.
   3. The game detects every end condition — checkmate, stalemate, threefold repetition, 50-move, insufficient material, and flag-on-time — and a result screen shows the outcome (win/loss/draw + reason) with "Analyze this game" and "New game" actions.
   4. The user can resign and can offer/accept a draw against the bot.
@@ -267,7 +280,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 3/3 plans complete
+**Plans:** 5/5 plans complete
 
 Plans:
 

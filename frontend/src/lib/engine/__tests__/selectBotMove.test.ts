@@ -39,7 +39,7 @@ function makeLine(rootMove: string, practicalScore: number): RankedLine {
 }
 
 function makeSnapshot(lines: RankedLine[]): EngineSnapshot {
-  return { rankedLines: lines, nodesEvaluated: lines.length, budgetExhausted: true };
+  return { rankedLines: lines, nodesEvaluated: lines.length, budgetExhausted: true, stopReason: 'budget' };
 }
 
 interface SearchCall {

@@ -37,6 +37,18 @@ export const ANCHOR_MOVETIME_SLACK_MS = 2500;
 export const SF_SKILL_ELO = { 0: 1320, 3: 1750, 5: 2200 };
 
 /**
+ * Known anchor rating for a parsed `--anchors` token (Phase 168.5-05 D-15):
+ * raw-Maia rung -> its ELO directly, Stockfish skill -> its documented-
+ * approximate Elo (`SF_SKILL_ELO`). Shared by the D-05 advisory per-cell Elo
+ * summary AND D-15's anchor-pruning ascending-order sort — reuses these
+ * existing rating tables rather than hand-rolling a second lookup
+ * (CONTEXT.md "Don't Hand-Roll").
+ */
+export function anchorRatingFor(anchorSpec) {
+  return anchorSpec.kind === 'maia' ? anchorSpec.rungElo : SF_SKILL_ELO[anchorSpec.skillLevel];
+}
+
+/**
  * Raw-Maia argmax anchor: ONE `providers.policy()` call (shares the bot's own
  * Maia session), deterministic argmax with a UCI-ascending tie-break — never
  * weighted sampling (weighted sampling is the bot's own `blend<=0` regime,

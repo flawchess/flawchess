@@ -4,17 +4,17 @@ milestone: v2.3
 milestone_name: Bot Play
 current_phase: 169
 current_phase_name: `useBotGame`
-status: executing
-stopped_at: Completed 168-03-PLAN.md
-last_updated: "2026-07-12T05:43:10.429Z"
+status: verifying
+stopped_at: Completed 168.5-03-PLAN.md
+last_updated: "2026-07-12T14:30:27.480Z"
 last_activity: 2026-07-12
-last_activity_desc: Phase 168 complete, transitioned to Phase 169
+last_activity_desc: Phase 168.5 complete, transitioned to Phase 169
 progress:
-  total_phases: 6
-  completed_phases: 3
-  total_plans: 7
-  completed_plans: 7
-  percent: 50
+  total_phases: 7
+  completed_phases: 4
+  total_plans: 12
+  completed_plans: 12
+  percent: 57
 ---
 
 # Project State: FlawChess
@@ -23,8 +23,8 @@ progress:
 
 Phase: 169 — Clocked Board + Game Loop (`useBotGame`)
 Plan: Not started
-Status: Ready to execute
-Last activity: 2026-07-12 — Phase 168 complete, transitioned to Phase 169
+Status: Phase complete — ready for verification
+Last activity: 2026-07-12 — Phase 168.5 complete, transitioned to Phase 169
 
 ## Project Reference
 
@@ -202,6 +202,20 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 168]: Stockfish pool (workerPool.ts slot-queue analog) parallelizes grade() across N processes: blend=1 full-budget move 190s (1 proc) -> 92s (4 procs), 2.07x speedup — CAL-03 spike found grade() serialization on a single shared Stockfish process was the throughput bottleneck, not Maia/ONNX
 - [Phase 168]: TSV row granularity is per (bot-cell x anchor) cell, streamed durably as soon as each cell's games-per-cell games finish — Reconciles D-04's literal per-cell row schema with WR-01/D-06's incremental-durability requirement
 - [Phase 168]: D-09 determinism check is probabilistic, not a hard guarantee, on a loaded machine — root-caused to a pre-existing D-10 adjudication-eval fragility, confirmed via A/B test against untouched Plan 02 code, not a Plan 03 regression — Movetime-only adjudication eval with no depth ceiling is inherently sensitive to real wall-clock timing, cascading into subsequent grade() hash state; redesigning D-10 is out of this plan's scope
+- [Phase 168.5-01]: Phase 169 SC1 amended to D-04 pacing sentence (fixed shipped budget, randomized reveal delay, fraction-of-remaining synthetic clock debit, bot never flags)
+- [Phase 168.5-01]: SEED-091 clock/fixed-strength fork resolved as fixed strength + synthetic bot clock (D-01), original deferred prose annotated not deleted
+- [Phase 168.5-02]: ADJUDICATION_TARGET_DEPTH finalized at 10 (measured mean 18ms/max 57ms per call) - no need to lower to 8
+- [Phase 168.5-02]: GRADING_WATCHDOG_TIMEOUT_MS=60000 / ADJUDICATION_WATCHDOG_TIMEOUT_MS=20000 confirmed generous (~33x/~350x margin over worst observed latency)
+- [Phase 168.5-02]: ENGINE_RETRY_ATTEMPTS=2 (3 total attempts), gated strictly to the waitFor timeout error message pattern, never a bare catch-all
+- [Phase 168.5-03]: Stop-rule check reads root.children's .value directly (== practicalScore) in the existing canonical apply-order loop — never buildRankedLines' findability-sorted rankScore (Pattern 2)
+- [Phase 168.5-03]: buildSnapshot's new stopReason param defaults to null so untouched fallbackExpectimax.ts callers keep compiling unchanged, rather than making it a required arg
+- [Phase 168.5-03]: All FLAWCHESS_BOT_* values shipped as PROVISIONAL placeholders per RESEARCH.md Pattern 1; Plan 04 locks final numbers from harness measurement
+- [Phase 168.5]: FLAWCHESS_BOT_MAX_NODES=50/_MAX_PLIES=8/_CONCURRENCY=4/_STOP_RULE(marginThreshold=0.05,epsilonThreshold=0.02,stabilityWindow=3,minNodes=8) locked from real-engine measurement — validated the Plan 03 provisional values without change (median ~5.4s, worst-case ~12.7s)
+- [Phase 168.5]: calibration-harness.mjs playGame's SearchBudget now carries stopRule + PINNED FLAWCHESS_BOT_CONCURRENCY (not pool.size) — app==harness determinism no longer silently tracks --stockfish-procs
+- [Phase 168.5-05]: D-15 dynamic-cutoff traversal resolved as bracket-and-expand (split in-window anchors at the bot-cell's own rating, walk each side outward) rather than a single whole-window ascending pass -- the literal ascending-only reading makes the skip-weaker half vacuous
+- [Phase 168.5-05]: ANCHOR_ELO_WINDOW=400, DYNAMIC_CUTOFF_SCORE_EPS=0.05 set from Claude's Discretion, bracketing every D-14 default bot ELO against at least one Maia rung each side
+- [Phase 168.5-05]: SC5 determinism check now proves the SHIPPED FLAWCHESS_BOT_* budget (50 nodes/8 plies/stop-rule/concurrency=4) -- passed, byte-identical 29-ply blend=1 game
+- [Phase 168.5-05]: D-17 bounded pilot via the real harness pipeline confirms the pacing band (median 3.32s, p95 16.72s) under measured CPU contention from a concurrent background sweep; full ~24h re-calibration sweep handed to the operator per D-16, not launched in-phase
 
 ### Pending Todos
 
@@ -280,9 +294,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Completed 168-03-PLAN.md
+**Stopped at:** Completed 168.5-03-PLAN.md
 
-**Last session:** 2026-07-11T23:35:07.492Z
+**Last session:** 2026-07-12T14:04:48.243Z
 
 **Resume file:** 
 
@@ -343,6 +357,11 @@ None
 | Phase 167 P03 | 20min | 3 tasks | 8 files |
 | Phase 168 P01 | 40min | 3 tasks | 7 files |
 | Phase 168 P03 | 95min | 3 tasks | 6 files |
+| Phase 168.5 P01 | 2min | 2 tasks | 2 files |
+| Phase 168.5 P02 | 35min | 3 tasks | 2 files |
+| Phase 168.5 P03 | 20min | 4 tasks | 6 files |
+| Phase 168.5 P04 | 45min | 2 tasks | 2 files |
+| Phase 168.5 P05 | 45min | 3 tasks | 4 files |
 
 ## Operator Next Steps
 

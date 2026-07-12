@@ -241,11 +241,18 @@ function buildRankedLines<N extends SearchTreeNode<N>>(root: N, rootElo: number)
   return scored.map((s) => s.line);
 }
 
+/**
+ * Phase 168.5 D-05/D-06: `stopReason` defaults to `null` so the pre-existing
+ * callers in `fallbackExpectimax.ts` (which has no stop-rule concept) keep
+ * compiling and behaving unchanged — only `mctsSearch.ts`'s own stop-rule-
+ * aware loop passes an explicit value.
+ */
 export function buildSnapshot<N extends SearchTreeNode<N>>(
   root: N,
   nodesEvaluated: number,
   budgetExhausted: boolean,
   rootElo: number,
+  stopReason: EngineSnapshot['stopReason'] = null,
 ): EngineSnapshot {
-  return { rankedLines: buildRankedLines(root, rootElo), nodesEvaluated, budgetExhausted };
+  return { rankedLines: buildRankedLines(root, rootElo), nodesEvaluated, budgetExhausted, stopReason };
 }

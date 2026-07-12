@@ -43,7 +43,7 @@
  */
 
 import { sideToMoveFromFen, type MoverColor } from '@/lib/liveFlaw';
-import type { SearchBudget, EngineProviders, MoveGrade } from './types';
+import type { SearchBudget, EngineProviders, EngineSnapshot, MoveGrade, BotStopRule } from './types';
 import type { SearchRunner } from './guardrail';
 import { truncateAndRenormalize, rootExplorationPriors, selectChild, type SelectionChild } from './select';
 import { leafExpectedScore } from './leafScore';
@@ -159,6 +159,79 @@ function allChildrenClosed(node: EngineNode): boolean {
     if (!child.isClosed) return false;
   }
   return true;
+}
+
+/**
+ * Root-children value extremes the stop-rule check needs (Phase 168.5
+ * D-05/D-06): reads `root.children`'s own `.value` fields directly — the
+ * same values `treeCommon.ts`'s `buildRankedLines` surfaces as
+ * `RankedLine.practicalScore` — never the findability-sorted `rankScore`
+ * (Pattern 2). Returns null when root has no children yet (nothing to
+ * evaluate). `runnerUpValue` is `-Infinity` when there is only one child, so
+ * a single-candidate root trivially satisfies the clear-winner margin.
+ */
+function rootChildValueExtremes(
+  root: EngineNode,
+): { argmaxUci: string; topValue: number; runnerUpValue: number; minValue: number; maxValue: number } | null {
+  const entries: { uci: string; value: number }[] = [];
+  for (const child of root.children.values()) {
+    if (child.uci !== null) entries.push({ uci: child.uci, value: child.value });
+  }
+  const first = entries[0];
+  if (first === undefined) return null;
+  let top = first;
+  let minValue = first.value;
+  let maxValue = first.value;
+  for (const entry of entries) {
+    if (entry.value > top.value) top = entry;
+    if (entry.value < minValue) minValue = entry.value;
+    if (entry.value > maxValue) maxValue = entry.value;
+  }
+  let runnerUpValue = -Infinity;
+  for (const entry of entries) {
+    if (entry.uci === top.uci) continue;
+    if (entry.value > runnerUpValue) runnerUpValue = entry.value;
+  }
+  return { argmaxUci: top.uci, topValue: top.value, runnerUpValue, minValue, maxValue };
+}
+
+/**
+ * Rolling argmax-stability state for the two-sided stop rule (Phase 168.5
+ * D-05/D-06) — owned by a single `mctsSearch` invocation, mutated only by
+ * `stopRuleSatisfied` below.
+ */
+interface StopRuleState {
+  /** Argmax root-child UCI from the previous post-expansion check (null before the first). */
+  stableArgmaxUci: string | null;
+  /** Consecutive post-expansion checks the argmax UCI has held stable — reset to 1 whenever it changes. */
+  stableCheckCount: number;
+}
+
+/**
+ * Two-sided stop-rule check (Phase 168.5 D-05/D-06), evaluated once per
+ * applied expansion in the canonical apply-order loop: updates `state`'s
+ * rolling stability counter, then — gated by BOTH the shared min-nodes floor
+ * and the stability window — fires on EITHER a clear winner (top-vs-runner-up
+ * `.value` margin) or near-tie flatness (max-min `.value` spread). Reads
+ * `root.children`'s own `.value` fields via `rootChildValueExtremes`, never
+ * the findability-sorted `buildRankedLines` (Pattern 2). No wall-clock signal
+ * anywhere — deterministic over the applied-expansion sequence.
+ */
+function stopRuleSatisfied(
+  root: EngineNode,
+  rule: BotStopRule,
+  nodesEvaluated: number,
+  state: StopRuleState,
+): boolean {
+  const extremes = rootChildValueExtremes(root);
+  if (!extremes) return false;
+  state.stableCheckCount = extremes.argmaxUci === state.stableArgmaxUci ? state.stableCheckCount + 1 : 1;
+  state.stableArgmaxUci = extremes.argmaxUci;
+  if (nodesEvaluated < rule.minNodes || state.stableCheckCount < rule.stabilityWindow) return false;
+  return (
+    extremes.topValue - extremes.runnerUpValue >= rule.marginThreshold ||
+    extremes.maxValue - extremes.minValue <= rule.epsilonThreshold
+  );
 }
 
 /**
@@ -368,8 +441,19 @@ export const mctsSearch: SearchRunner = async (rootFen, budget, providers, onSna
 
   let nodesEvaluated = 0;
   let budgetExhausted = false;
+  // Phase 168.5 D-05/D-06: `earlyStop` is a third stop cause, distinct from
+  // both budget exhaustion and abort (see EngineSnapshot.stopReason). Stays
+  // false forever when `budget.stopRule` is undefined (Pattern 2 backward-
+  // compat guard — no wall-clock signal anywhere in this check).
+  let earlyStop = false;
+  // Rolling "has the argmax UCI held stable for stopRule.stabilityWindow
+  // consecutive post-expansion checks" state, shared by BOTH sides of the
+  // two-sided rule (D-05/D-06) — mutated only inside `stopRuleSatisfied`.
+  const stopState: StopRuleState = { stableArgmaxUci: null, stableCheckCount: 0 };
+  const stopReason = (): EngineSnapshot['stopReason'] =>
+    earlyStop ? 'early-stop' : budgetExhausted ? 'budget' : null;
 
-  while (nodesEvaluated < budget.maxNodes && !signal.aborted) {
+  while (nodesEvaluated < budget.maxNodes && !signal.aborted && !earlyStop) {
     const toExpand: { leaf: EngineNode; path: EngineNode[] }[] = [];
 
     // Termination is structural (WR-01), no retry cap needed: every
@@ -434,9 +518,19 @@ export const mctsSearch: SearchRunner = async (rootFen, budget, providers, onSna
       if (result.candidateMap.size === 0) continue; // degenerate close (WR-04): not an expansion event (D-09), no snapshot
       nodesEvaluated += 1;
       if (nodesEvaluated >= budget.maxNodes) budgetExhausted = true;
-      onSnapshot(buildSnapshot(root, nodesEvaluated, budgetExhausted, budget.elo[root.side]));
+
+      // Phase 168.5 D-05/D-06: two-sided stop-rule check, evaluated in this
+      // SAME canonical apply-order loop `onSnapshot` already fires from
+      // (Pattern 2) — see `stopRuleSatisfied`. Skipped entirely when
+      // budget.stopRule is undefined (byte-identical to today, Pitfall 1).
+      if (budget.stopRule && stopRuleSatisfied(root, budget.stopRule, nodesEvaluated, stopState)) {
+        earlyStop = true;
+      }
+
+      onSnapshot(buildSnapshot(root, nodesEvaluated, budgetExhausted, budget.elo[root.side], stopReason()));
+      if (earlyStop) break; // stop applying further dispatched results this round (mirrors the signal.aborted break above)
     }
   }
 
-  return buildSnapshot(root, nodesEvaluated, budgetExhausted, budget.elo[root.side]);
+  return buildSnapshot(root, nodesEvaluated, budgetExhausted, budget.elo[root.side], stopReason());
 };

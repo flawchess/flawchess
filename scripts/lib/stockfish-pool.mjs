@@ -22,6 +22,11 @@
  * through this pool's acquire/release preserves that per-call reset
  * discipline PER PROCESS: a weakened Skill Level set on one engine for an
  * anchor move can never leak into a different engine's bot-grading `go`.
+ *
+ * D-11 (168.5-02, Task 2): `withEngine` also retries a timed-out `go` in
+ * place up to `ENGINE_RETRY_ATTEMPTS` times via `runWithRetry`, reusing
+ * `stopAndSync()` between attempts, so a single slow reply degrades to a
+ * retry rather than aborting the whole multi-hour sweep.
  */
 import { spawnStockfish, STOCKFISH_INIT_TIMEOUT_MS } from './node-engine-providers.mjs';
 import { nodeGrade, evalPositionCp } from './calibration-providers.mjs';
@@ -29,6 +34,18 @@ import { stockfishSkillMove } from './calibration-anchors.mjs';
 
 /** Default pool size — mirrors `workerPool.ts`'s `DESKTOP_POOL_MAX` order of magnitude. */
 export const STOCKFISH_POOL_DEFAULT_SIZE = 4;
+
+/**
+ * Retry attempts (D-11) after a `waitFor` watchdog timeout on a grading or
+ * adjudication `go` — a single late reply must not abort a multi-hour sweep.
+ * 2 retries = 3 total attempts (initial + 2). Engine restart is NOT
+ * attempted here as a further fallback — the harness's existing per-cell
+ * failure path is the last resort once retries are exhausted.
+ */
+export const ENGINE_RETRY_ATTEMPTS = 2;
+
+/** Matches `StockfishUciEngine.waitFor`'s rejection message — the only error class D-11 retries. */
+const TIMEOUT_ERROR_PATTERN = /Stockfish response timeout after/;
 
 /**
  * Acquires the next free engine, or queues the caller until one is released
@@ -55,11 +72,35 @@ function releaseEngine(pool, engine) {
   pool.busy.set(engine, false);
 }
 
+/**
+ * D-11: runs `fn(engine)`, retrying the SAME operation in place up to
+ * `ENGINE_RETRY_ATTEMPTS` times when it rejects with a `waitFor` watchdog
+ * timeout — a single late reply must not fail the whole cell. Between
+ * attempts, `stopAndSync()` resyncs the engine to quiescent (reused verbatim
+ * from `node-engine-providers.mjs`, not reimplemented). Only the timeout
+ * error class is retried: illegal-move/parse errors are deterministic and
+ * would loop forever without ever succeeding.
+ */
+async function runWithRetry(engine, fn) {
+  let lastErr;
+  for (let attempt = 0; attempt <= ENGINE_RETRY_ATTEMPTS; attempt++) {
+    try {
+      return await fn(engine);
+    } catch (err) {
+      lastErr = err;
+      const isTimeout = err instanceof Error && TIMEOUT_ERROR_PATTERN.test(err.message);
+      if (!isTimeout || attempt === ENGINE_RETRY_ATTEMPTS) throw err;
+      await engine.stopAndSync();
+    }
+  }
+  throw lastErr; // unreachable — the loop above always returns or throws
+}
+
 /** Runs `fn` against a free engine, always releasing it back to the pool afterward (success or throw). */
 async function withEngine(pool, fn) {
   const engine = await acquireEngine(pool);
   try {
-    return await fn(engine);
+    return await runWithRetry(engine, fn);
   } catch (err) {
     // WR-01: `fn` (nodeGrade/evalPositionCp/stockfishSkillMove) rejecting most
     // often means its `waitFor` timed out while the engine was still mid-search

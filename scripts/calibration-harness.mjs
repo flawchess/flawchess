@@ -70,12 +70,18 @@ import fs from 'node:fs';
 import { createMaiaSession, resolveFrontendModule } from './lib/node-engine-providers.mjs';
 import { createStockfishPool, STOCKFISH_POOL_DEFAULT_SIZE } from './lib/stockfish-pool.mjs';
 import { makeNodeProviders, adjudicationFallbackStats } from './lib/calibration-providers.mjs';
-import { maiaArgmaxMove, SF_SKILL_ELO } from './lib/calibration-anchors.mjs';
+import { maiaArgmaxMove, SF_SKILL_ELO, anchorRatingFor } from './lib/calibration-anchors.mjs';
 import { OPENING_BOOK, assertOpeningBookUciPrefixes } from './lib/calibration-openings.mjs';
 import { combineAnchorEstimates, wasScoreClamped } from './lib/calibration-elo.mjs';
 
 import { selectBotMove } from '@/lib/engine/selectBotMove';
 import { mulberry32 } from '@/lib/engine/botSampling';
+import {
+  FLAWCHESS_BOT_MAX_NODES,
+  FLAWCHESS_BOT_MAX_PLIES,
+  FLAWCHESS_BOT_CONCURRENCY,
+  FLAWCHESS_BOT_STOP_RULE,
+} from '@/lib/engine/botBudget';
 import { uciToSquares } from '@/lib/sanToSquares';
 import { MAIA_ELO_LADDER } from '@/lib/maiaEncoding';
 
@@ -102,6 +108,15 @@ function analysisLineUrl(opening, moveUcis) {
 
 /** Search-tree ply depth cap (mirrors `FLAWCHESS_ENGINE_MAX_PLIES` — useFlawChessEngine.ts line 45). */
 export const FLAWCHESS_ENGINE_MAX_PLIES = 8;
+
+// ─── Phase 168.5 D-05/D-07/D-09: bot-play budget (shared with the app) ────────
+//
+// Imported above from `@/lib/engine/botBudget` — the SAME module the app's
+// `useFlawChessEngine.ts` re-exports — replacing the former hand-maintained
+// mirror block: a one-sided retune of either side calibrated a bot that does
+// not ship (T-168.5-04-01). Re-exported so the determinism/pruning checks
+// keep importing them from this module.
+export { FLAWCHESS_BOT_MAX_NODES, FLAWCHESS_BOT_MAX_PLIES, FLAWCHESS_BOT_CONCURRENCY, FLAWCHESS_BOT_STOP_RULE };
 
 // ─── D-10: three cost cutoffs (all named constants, tunable/[ASSUMED] per 168-RESEARCH.md Open Question 3) ─
 
@@ -219,10 +234,21 @@ function parseArgs(argv) {
         args.outDir = path.resolve(requireFlagValue(value, key));
         i++;
         break;
-      case 'resume':
-        args.resume = path.resolve(requireFlagValue(value, key));
+      case 'resume': {
+        // The summary sibling path is derived in main() by replacing the
+        // `.tsv` extension; on a non-.tsv resume path that replace is a
+        // no-op, summaryPath === mainTsvPath, and emitEloSummary would
+        // TRUNCATE the just-appended primary results file. Refuse up front.
+        const resumePath = path.resolve(requireFlagValue(value, key));
+        if (!resumePath.endsWith('.tsv')) {
+          throw new Error(
+            `--resume: expected a .tsv file, got ${resumePath} — the summary sibling path is derived by extension`,
+          );
+        }
+        args.resume = resumePath;
         i++;
         break;
+      }
       case 'seed': {
         const raw = requireFlagValue(value, key);
         const parsed = Number.parseInt(raw, 10);
@@ -290,9 +316,18 @@ export function parseAnchorSpec(token) {
 export async function setupHarnessEngines({ stockfishProcs = STOCKFISH_POOL_DEFAULT_SIZE } = {}) {
   const maiaCtx = await createMaiaSession();
   const pool = await createStockfishPool({ size: stockfishProcs });
-  const { Chess } = await resolveFrontendModule('chess.js');
-  const providers = makeNodeProviders(maiaCtx.session, maiaCtx.ort, pool.grade);
-  return { providers, pool, Chess, maiaCtx };
+  // Same seam class as main()'s CR-01 and createStockfishPool's CR-02: if a
+  // later bring-up step throws AFTER the pool spawned, this function never
+  // returns, so no caller holds a reference to quit the N live Stockfish
+  // children — their stdio handles keep the event loop alive (hang + leak).
+  try {
+    const { Chess } = await resolveFrontendModule('chess.js');
+    const providers = makeNodeProviders(maiaCtx.session, maiaCtx.ort, pool.grade);
+    return { providers, pool, Chess, maiaCtx };
+  } catch (err) {
+    pool.quitAll();
+    throw err;
+  }
 }
 
 // ─── D-10 cutoff 1: chess.js terminal-state classification ────────────────────
@@ -392,14 +427,18 @@ function applyUciMove(chess, uci) {
  * visibility rather than only a final report a killed/timed-out run would
  * never reach.
  *
- * `maxNodes`/`maxPlies` (optional) override the D-11 fixed harness constants —
- * ONLY for structural checks (e.g. `calibration-determinism.check.mjs`) that
- * need to prove the seeded-rng/argmax reproducibility property, which does
- * NOT depend on budget size, without paying the full D-11 budget's real cost.
- * Every actual calibration run (`main()` below) always uses the fixed
- * `FLAWCHESS_ENGINE_MAX_NODES`/`FLAWCHESS_ENGINE_MAX_PLIES` defaults — D-11's
- * grid-wide comparability requirement is about calibration runs, not about
- * this determinism-only escape hatch.
+ * `maxNodes`/`maxPlies` (optional) override the Phase 168.5 D-05/D-07/D-09
+ * bot-play budget defaults — ONLY for structural checks (e.g.
+ * `calibration-determinism.check.mjs`) that need to prove the
+ * seeded-rng/argmax reproducibility property, which does NOT depend on
+ * budget size, without paying the full budget's real cost. Every actual
+ * calibration run (`main()` below) always uses the fixed
+ * `FLAWCHESS_BOT_MAX_NODES`/`FLAWCHESS_BOT_MAX_PLIES` defaults — grid-wide
+ * comparability requirement is about calibration runs, not about this
+ * determinism-only escape hatch. The `SearchBudget` also always carries
+ * `stopRule: FLAWCHESS_BOT_STOP_RULE` and the pinned `FLAWCHESS_BOT_CONCURRENCY`
+ * (168.5-04 Task 2) — this measures the shipped bot, not the old
+ * full-budget-no-stop-rule search (T-168.5-04-02).
  */
 export async function playGame({
   Chess,
@@ -412,8 +451,8 @@ export async function playGame({
   botIsWhite,
   gameRng,
   onPly,
-  maxNodes = FLAWCHESS_ENGINE_MAX_NODES,
-  maxPlies = FLAWCHESS_ENGINE_MAX_PLIES,
+  maxNodes = FLAWCHESS_BOT_MAX_NODES,
+  maxPlies = FLAWCHESS_BOT_MAX_PLIES,
 }) {
   const notifyPly = onPly ?? (() => {});
 
@@ -449,9 +488,15 @@ export async function playGame({
             budget: {
               maxNodes,
               maxPlies,
-              // Plan 03: concurrency == pool size — N independent processes,
-              // never overlapping go's on any ONE of them (Pitfall 3).
-              concurrency: pool.size,
+              // Phase 168.5 D-09 (supersedes Plan 03's `pool.size`): the bot's
+              // own concurrency is PINNED to FLAWCHESS_BOT_CONCURRENCY, not
+              // the pool's own process count — app == harness determinism
+              // requires the exact same fixed value on both sides, not a
+              // value that silently tracks `--stockfish-procs` (T-168.5-04-01).
+              concurrency: FLAWCHESS_BOT_CONCURRENCY,
+              // Phase 168.5 D-05/D-06 (Task 2): without this the sweep would
+              // measure a bot without the early-stop rule (T-168.5-04-02).
+              stopRule: FLAWCHESS_BOT_STOP_RULE,
             },
           },
           { policy: providers.policy, grade: providers.grade, rng: gameRng },
@@ -490,7 +535,7 @@ export async function playGame({
 // buffered until the whole multi-cell grid finishes (WR-01/D-06): a crash
 // mid-sweep still keeps every already-completed cell's row on disk.
 
-function newCellTally() {
+export function newCellTally() {
   return {
     games: 0,
     wins: 0,
@@ -513,7 +558,7 @@ function tallyGameResult(tally, result, botIsWhite) {
 }
 
 /** Points/games score (draw = 0.5 point) — 0 for an empty tally (no games played). */
-function tallyScore(tally) {
+export function tallyScore(tally) {
   return tally.games > 0 ? (tally.wins + 0.5 * tally.draws) / tally.games : 0;
 }
 
@@ -530,7 +575,7 @@ function buildTimestamp() {
   return new Date().toISOString().replace(/[:.]/g, '-');
 }
 
-function mainTsvColumns() {
+export function mainTsvColumns() {
   return [
     'bot_elo',
     'bot_blend',
@@ -555,11 +600,16 @@ function mainTsvColumns() {
     'max_plies',
     'stockfish_procs',
     'git_sha',
+    // Phase 168.5-05 D-15: empty for every played cell; populated with a
+    // skip-reason marker (SKIP_REASON_OUT_OF_WINDOW/_LOST_CUTOFF/_WON_CUTOFF)
+    // for a pruned cell (games=0) — every skipped anchor is still a REAL row
+    // here (Pitfall 4), never a silently absent one.
+    'skip_reason',
   ];
 }
 
 /** One (botElo, botBlend, anchor) cell row, rendered as a tab-joined TSV line (D-04 schema). */
-function mainTsvRowLine(row) {
+export function mainTsvRowLine(row) {
   const cells = [
     row.botElo,
     row.botBlend,
@@ -584,6 +634,7 @@ function mainTsvRowLine(row) {
     row.maxPlies,
     row.stockfishProcs,
     row.gitSha,
+    row.skipReason ?? '',
   ];
   return cells.join('\t');
 }
@@ -618,11 +669,6 @@ function openMainTsvWriter(filePath, { append = false } = {}) {
 // inversion). Write-once (like gem-elo's `emitSummary`), not per-row-durable
 // like the main TSV — this is a small DERIVED artifact, not the primary
 // results matrix.
-
-/** Known anchor rating for `combineAnchorEstimates` — raw-Maia rung -> its ELO, Stockfish skill -> its documented-approximate Elo (SF_SKILL_ELO). */
-function anchorRatingFor(anchorSpec) {
-  return anchorSpec.kind === 'maia' ? anchorSpec.rungElo : SF_SKILL_ELO[anchorSpec.skillLevel];
-}
 
 /** Groups the flat `cellRows` list (one per bot-cell x anchor) by (botElo, botBlend) bot-cell. */
 function groupRowsByCell(cellRows) {
@@ -721,7 +767,7 @@ function printSpikeReport({ totalGames, totalMoves, elapsedSec, stockfishProcs }
 // grid-loop skip in main().
 
 /** Cell identity key — the first three TSV columns `(bot_elo, bot_blend, anchor)` (landmine #3). */
-function cellKey(botElo, botBlend, anchorLabel) {
+export function cellKey(botElo, botBlend, anchorLabel) {
   return `${botElo}|${botBlend}|${anchorLabel}`;
 }
 
@@ -769,6 +815,11 @@ function parsePriorRow(line, colIndex, filePath) {
     white: { games: int('white_games'), wins: int('white_wins'), draws: int('white_draws'), losses: int('white_losses') },
     black: { games: int('black_games'), wins: int('black_wins'), draws: int('black_draws'), losses: int('black_losses') },
   };
+  // Phase 168.5-05 D-15: absent column index (older, pre-D-15 TSV) can never
+  // happen here — readPriorTsvLines already refused a header mismatch before
+  // this runs — but `?? ''` keeps this defensive rather than reading `undefined`.
+  const skipReasonIdx = colIndex.get('skip_reason');
+  const skipReason = skipReasonIdx === undefined ? '' : (cells[skipReasonIdx] ?? '');
   return {
     botElo: int('bot_elo'),
     botBlend: Number.parseFloat(cells[colIndex.get('bot_blend')]),
@@ -779,6 +830,7 @@ function parsePriorRow(line, colIndex, filePath) {
     seed: int('seed'),
     maxNodes: int('max_nodes'),
     maxPlies: int('max_plies'),
+    skipReason,
   };
 }
 
@@ -788,14 +840,27 @@ function parsePriorRow(line, colIndex, filePath) {
  * ones we'd play now: games-per-cell (landmine #3), seed / D-11 budget
  * (landmine #4), or a grid axis (a prior cell absent from the current grid).
  */
-function loadPriorSweep(filePath, args, gridKeys) {
+export function loadPriorSweep(filePath, args, gridKeys) {
   const { dataLines, colIndex } = readPriorTsvLines(filePath);
   const completedKeys = new Set();
   const rowByKey = new Map();
 
   for (const line of dataLines) {
     const row = parsePriorRow(line, colIndex, filePath);
-    if (row.games !== args.gamesPerCell) {
+    // Phase 168.5-05 D-15 (Pitfall 4): a pruned cell's row is a REAL row
+    // (games=0, skip_reason populated) but it never played --games-per-cell
+    // games by design — the games-count invariant only applies to PLAYED
+    // rows. A skip row with a nonzero-but-mismatched games count is still a
+    // corruption signal (a skip row must always be games=0), so that case
+    // is checked separately rather than silently accepted.
+    const isSkipped = row.skipReason !== '';
+    if (isSkipped) {
+      if (row.games !== 0) {
+        throw new Error(
+          `--resume: prior cell ${row.anchor} has skip_reason=${row.skipReason} but games=${row.games} (expected 0) — file is corrupt`,
+        );
+      }
+    } else if (row.games !== args.gamesPerCell) {
       throw new Error(
         `--resume: prior cell ${row.anchor} has games=${row.games}, current --games-per-cell=${args.gamesPerCell} — refusing to mix grids`,
       );
@@ -805,10 +870,13 @@ function loadPriorSweep(filePath, args, gridKeys) {
         `--resume: prior seed=${row.seed} differs from current --seed=${args.seed} — refusing to resume a different experiment`,
       );
     }
-    if (row.maxNodes !== FLAWCHESS_ENGINE_MAX_NODES || row.maxPlies !== FLAWCHESS_ENGINE_MAX_PLIES) {
+    // Phase 168.5 Task 2: checks against the BOT budget (not the retired
+    // analysis-board FLAWCHESS_ENGINE_MAX_* mirrors) — a resumed sweep must
+    // refuse to mix a prior run's old 400-node budget with the new bot budget.
+    if (row.maxNodes !== FLAWCHESS_BOT_MAX_NODES || row.maxPlies !== FLAWCHESS_BOT_MAX_PLIES) {
       throw new Error(
         `--resume: prior budget (nodes=${row.maxNodes}, plies=${row.maxPlies}) differs from current ` +
-          `(nodes=${FLAWCHESS_ENGINE_MAX_NODES}, plies=${FLAWCHESS_ENGINE_MAX_PLIES}) — refusing to resume`,
+          `(nodes=${FLAWCHESS_BOT_MAX_NODES}, plies=${FLAWCHESS_BOT_MAX_PLIES}) — refusing to resume`,
       );
     }
     const key = cellKey(row.botElo, row.botBlend, row.anchor);
@@ -824,6 +892,161 @@ function loadPriorSweep(filePath, args, gridKeys) {
     rowByKey.set(key, row);
   }
   return { completedKeys, rowByKey };
+}
+
+// ─── Phase 168.5-05 D-15: anchor pruning (static window + dynamic cutoff) ──────
+// Two independent mechanisms narrow a coarse-grid sweep's wall-clock cost
+// WITHOUT ever shrinking `gridKeys` at runtime (Pitfall 4): every anchor a
+// bot-cell would otherwise play still gets a real TSV row — pruned ones as
+// `games=0` with a populated `skip_reason` — so `--resume`'s grid-membership
+// guard and the "no silent coverage gaps" requirement both hold.
+
+/** Static bracketing (D-15 mechanism 1): an anchor rated more than this many
+ * Elo from a bot-cell's own nominal rating is skipped outright — a
+ * Stockfish-2200 anchor vs a 1100-rated bot (or the reverse) tells the coarse
+ * map nothing "Super strong Stockfish anchors vs weak FlawChess bots doesn't
+ * make any sense" (CONTEXT.md specifics) already predicts. */
+export const ANCHOR_ELO_WINDOW = 400;
+
+/** Dynamic cutoff (D-15 mechanism 2): a cell score within this of 0 or 1 is
+ * treated as a decided direction — anchors further in that SAME direction
+ * (weaker after a sweep, stronger after a shutout) are pruned rather than
+ * played out, since the trend is already established. */
+export const DYNAMIC_CUTOFF_SCORE_EPS = 0.05;
+
+/** D-15 mechanism 1: an anchor fell outside the bot-cell's `ANCHOR_ELO_WINDOW`. */
+export const SKIP_REASON_OUT_OF_WINDOW = 'out_of_window';
+/** D-15 mechanism 2: a stronger-side anchor pruned after a near-0 shutout against a closer, weaker-rated anchor on that same side. */
+export const SKIP_REASON_LOST_CUTOFF = 'lost_cutoff';
+/** D-15 mechanism 2: a weaker-side anchor pruned after a near-100% sweep against a closer, stronger-rated anchor on that same side. */
+export const SKIP_REASON_WON_CUTOFF = 'won_cutoff';
+
+/** Splits a bot-cell's anchor list into in-window / out-of-window (D-15 mechanism 1). */
+function partitionAnchorsByWindow(anchorSpecs, botElo) {
+  const inWindow = [];
+  const outOfWindow = [];
+  for (const anchorSpec of anchorSpecs) {
+    const withinWindow = Math.abs(anchorRatingFor(anchorSpec) - botElo) <= ANCHOR_ELO_WINDOW;
+    (withinWindow ? inWindow : outOfWindow).push(anchorSpec);
+  }
+  return { inWindow, outOfWindow };
+}
+
+/**
+ * D-15 mechanism 2 traversal order. Splits the in-window anchors at the
+ * bot-cell's own nominal rating and walks EACH side outward (bot-adjacent
+ * anchor first) — this is what makes BOTH halves of D-15's stated cutoff
+ * meaningful: a single whole-window ascending pass would make the "skip
+ * weaker" half vacuous, since every weaker anchor would already have been
+ * played by the time a sweep is detected against a stronger one. Splitting
+ * at the bot's own rating and expanding outward on each side means a
+ * decisive result on one side prunes the anchors further out on THAT side,
+ * which have genuinely not been played yet (Claude's Discretion, resolving
+ * an ambiguity CONTEXT.md leaves open — see the 168.5-05-SUMMARY.md
+ * Decisions section for the full rationale).
+ *
+ * `weakerOutward` walks anchors rated below the bot (closest first,
+ * descending); `strongerOutward` walks anchors rated at/above the bot
+ * (closest first, ascending) — each independently ascending in DISTANCE
+ * from the bot's own rating, which is the sense in which D-15's "ascending
+ * strength order" is honored here.
+ */
+function orderAnchorsForDynamicCutoff(inWindowAnchors, botElo) {
+  const weakerOutward = inWindowAnchors
+    .filter((anchorSpec) => anchorRatingFor(anchorSpec) < botElo)
+    .sort((a, b) => anchorRatingFor(b) - anchorRatingFor(a));
+  const strongerOutward = inWindowAnchors
+    .filter((anchorSpec) => anchorRatingFor(anchorSpec) >= botElo)
+    .sort((a, b) => anchorRatingFor(a) - anchorRatingFor(b));
+  return { weakerOutward, strongerOutward };
+}
+
+/** Builds a pruned (games=0) row for a skipped anchor — a real TSV row, never a silently absent one. */
+function buildSkipRow({ botElo, botBlend, anchorSpec, args, gitSha, skipReason }) {
+  return {
+    botElo,
+    botBlend,
+    anchor: anchorSpecLabel(anchorSpec),
+    anchorSpec,
+    tally: newCellTally(),
+    seed: args.seed,
+    maxNodes: FLAWCHESS_BOT_MAX_NODES,
+    maxPlies: FLAWCHESS_BOT_MAX_PLIES,
+    stockfishProcs: args.stockfishProcs,
+    gitSha,
+    skipReason,
+  };
+}
+
+/**
+ * Processes ONE (botElo, botBlend, anchor) cell: reuses a completed `--resume`
+ * row verbatim, writes a pruned `games=0` row if `skipReasonIfPruned` is set
+ * (and no prior row exists), or actually plays the cell via `playCell`.
+ * Always returns the row that was written/reused so the caller's dynamic-
+ * cutoff state can inspect its score, and the gameIndex delta the caller must
+ * apply — a pruned/reused-skip row consumes ZERO gameIndex slices (D-09), a
+ * reused PLAYED row consumes exactly the games it recorded (never a blind
+ * `args.gamesPerCell`, which would over-advance past a pruned resume row).
+ */
+async function processCellAnchor({
+  Chess,
+  providers,
+  pool,
+  botElo,
+  botBlend,
+  anchorSpec,
+  args,
+  gameIndex,
+  priorSweep,
+  tsvWriter,
+  gitSha,
+  skipReasonIfPruned,
+}) {
+  const key = cellKey(botElo, botBlend, anchorSpecLabel(anchorSpec));
+
+  if (priorSweep.completedKeys.has(key)) {
+    // Landmine #1 (SEED-097) + D-15: the prior row's OWN games count is the
+    // truth for how far to fast-forward — a pruned prior row is games=0 and
+    // must not advance gameIndex at all.
+    const row = priorSweep.rowByKey.get(key);
+    return { row, nextGameIndex: gameIndex + row.tally.games, cellMoves: 0, gamesPlayed: 0 };
+  }
+
+  if (skipReasonIfPruned) {
+    const row = buildSkipRow({ botElo, botBlend, anchorSpec, args, gitSha, skipReason: skipReasonIfPruned });
+    tsvWriter.writeRow(row);
+    return { row, nextGameIndex: gameIndex, cellMoves: 0, gamesPlayed: 0 };
+  }
+
+  const { tally, cellMoves, gamesPlayed, nextGameIndex } = await playCell({
+    Chess,
+    providers,
+    pool,
+    botElo,
+    botBlend,
+    anchorSpec,
+    args,
+    gameIndex,
+  });
+  const row = {
+    botElo,
+    botBlend,
+    anchor: anchorSpecLabel(anchorSpec),
+    anchorSpec,
+    tally,
+    seed: args.seed,
+    // Phase 168.5 Task 2: TSV records the ACTUAL budget playGame used
+    // (the bot budget, not the retired analysis-board mirrors).
+    maxNodes: FLAWCHESS_BOT_MAX_NODES,
+    maxPlies: FLAWCHESS_BOT_MAX_PLIES,
+    stockfishProcs: args.stockfishProcs,
+    gitSha,
+    skipReason: '',
+  };
+  // WR-01/D-06: durable — this cell's row is streamed to disk as soon as its
+  // games-per-cell games complete, not buffered until the whole sweep finishes.
+  tsvWriter.writeRow(row);
+  return { row, nextGameIndex, cellMoves, gamesPlayed };
 }
 
 // ─── Main orchestration ────────────────────────────────────────────────────────
@@ -940,22 +1163,13 @@ async function main() {
   try {
     for (const botElo of args.elo) {
       for (const botBlend of args.blends) {
-        for (const anchorSpec of anchorSpecs) {
-          const key = cellKey(botElo, botBlend, anchorSpec.label);
-          if (priorSweep.completedKeys.has(key)) {
-            // Landmine #1: fast-forward the GLOBAL gameIndex by this cell's
-            // games WITHOUT playing — each remaining game's opening/color/seed
-            // derives from the running gameIndex, so a skipped cell must still
-            // consume its slice or the resumed map diverges from a from-scratch
-            // run (D-09 byte-identity).
-            gameIndex += args.gamesPerCell;
-            // Landmine #2: the skipped cell's row is already on disk (we append),
-            // but the advisory ELO summary is computed from in-memory cellRows at
-            // the end — reload the prior row so the summary spans the whole grid.
-            cellRows.push(priorSweep.rowByKey.get(key));
-            continue;
-          }
-          const { tally, cellMoves, gamesPlayed, nextGameIndex } = await playCell({
+        const { inWindow, outOfWindow } = partitionAnchorsByWindow(anchorSpecs, botElo);
+
+        // D-15 mechanism 1 (static bracketing): every out-of-window anchor is
+        // pruned unconditionally — no dynamic-cutoff state to track, since
+        // this decision never depends on any other cell's outcome.
+        for (const anchorSpec of outOfWindow) {
+          const outcome = await processCellAnchor({
             Chess,
             providers,
             pool,
@@ -964,28 +1178,73 @@ async function main() {
             anchorSpec,
             args,
             gameIndex,
+            priorSweep,
+            tsvWriter,
+            gitSha,
+            skipReasonIfPruned: SKIP_REASON_OUT_OF_WINDOW,
           });
-          gameIndex = nextGameIndex;
-          totalMoves += cellMoves;
-          totalGames += gamesPlayed;
+          gameIndex = outcome.nextGameIndex;
+          totalMoves += outcome.cellMoves;
+          totalGames += outcome.gamesPlayed;
+          cellRows.push(outcome.row);
+        }
 
-          const row = {
+        // D-15 mechanism 2 (dynamic cutoff): each side of the in-window
+        // anchor list is walked outward from the bot-cell's own rating,
+        // independently — see `orderAnchorsForDynamicCutoff`'s doc comment.
+        const { weakerOutward, strongerOutward } = orderAnchorsForDynamicCutoff(inWindow, botElo);
+
+        let wonCutoff = false;
+        for (const anchorSpec of weakerOutward) {
+          const outcome = await processCellAnchor({
+            Chess,
+            providers,
+            pool,
             botElo,
             botBlend,
-            anchor: anchorSpecLabel(anchorSpec),
             anchorSpec,
-            tally,
-            seed: args.seed,
-            maxNodes: FLAWCHESS_ENGINE_MAX_NODES,
-            maxPlies: FLAWCHESS_ENGINE_MAX_PLIES,
-            stockfishProcs: args.stockfishProcs,
+            args,
+            gameIndex,
+            priorSweep,
+            tsvWriter,
             gitSha,
-          };
-          // WR-01/D-06: durable — this cell's row is streamed to disk as soon as
-          // its games-per-cell games complete, not buffered until the whole
-          // multi-cell sweep finishes.
-          tsvWriter.writeRow(row);
-          cellRows.push(row);
+            skipReasonIfPruned: wonCutoff ? SKIP_REASON_WON_CUTOFF : null,
+          });
+          gameIndex = outcome.nextGameIndex;
+          totalMoves += outcome.cellMoves;
+          totalGames += outcome.gamesPlayed;
+          cellRows.push(outcome.row);
+          // Only a cell that actually played games (fresh or reloaded-played)
+          // can establish a new cutoff — a games=0 pruned row's score is 0/0
+          // and must never be misread as a shutout.
+          if (!wonCutoff && outcome.row.tally.games > 0 && tallyScore(outcome.row.tally) >= 1 - DYNAMIC_CUTOFF_SCORE_EPS) {
+            wonCutoff = true;
+          }
+        }
+
+        let lostCutoff = false;
+        for (const anchorSpec of strongerOutward) {
+          const outcome = await processCellAnchor({
+            Chess,
+            providers,
+            pool,
+            botElo,
+            botBlend,
+            anchorSpec,
+            args,
+            gameIndex,
+            priorSweep,
+            tsvWriter,
+            gitSha,
+            skipReasonIfPruned: lostCutoff ? SKIP_REASON_LOST_CUTOFF : null,
+          });
+          gameIndex = outcome.nextGameIndex;
+          totalMoves += outcome.cellMoves;
+          totalGames += outcome.gamesPlayed;
+          cellRows.push(outcome.row);
+          if (!lostCutoff && outcome.row.tally.games > 0 && tallyScore(outcome.row.tally) <= DYNAMIC_CUTOFF_SCORE_EPS) {
+            lostCutoff = true;
+          }
         }
       }
     }

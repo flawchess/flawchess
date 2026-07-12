@@ -651,6 +651,113 @@ describe('mctsSearch — degenerate empty candidate set', () => {
   });
 });
 
+// ─── Phase 168.5 D-05/D-06: bot-play stop rule ──────────────────────────────
+
+describe('mctsSearch — Phase 168.5 D-05/D-06 bot-play stop rule', () => {
+  it('clear-winner: a dominant root move stops the search before maxNodes, with stopReason early-stop', async () => {
+    // Reuses ENGINE-01's fixture: e2e4 (200cp, es~0.676) clears e2e3 (50cp,
+    // es~0.546) by ~0.13 — well above marginThreshold. minNodes/
+    // stabilityWindow both 1 so the very first post-expansion check (right
+    // after the root's OWN single expansion) already qualifies — before any
+    // deeper node is ever touched, so root.children's leaf values can never
+    // drift from a later recompute (see the min-nodes-floor test below for
+    // the multi-expansion case).
+    const budget: SearchBudget = {
+      maxNodes: 20,
+      elo: NEUTRAL_BUDGET_ELO,
+      maxPlies: 4,
+      concurrency: 1,
+      stopRule: { marginThreshold: 0.05, epsilonThreshold: 0.02, stabilityWindow: 1, minNodes: 1 },
+    };
+    const providers: EngineProviders = {
+      policy: makeFixedPolicy({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_POLICY }),
+      grade: makeFixedGrade({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_GRADES }),
+    };
+
+    const snapshot = await mctsSearch(SIMPLE_WHITE_FEN, budget, providers, () => {}, freshSignal());
+
+    expect(snapshot.nodesEvaluated).toBeLessThan(budget.maxNodes);
+    expect(snapshot.nodesEvaluated).toBe(1);
+    expect(snapshot.stopReason).toBe('early-stop');
+    expect(snapshot.rankedLines[0]?.rootMove).toBe('e2e4');
+  });
+
+  it('near-tie-flatness: closely-bunched root moves stop the search even with no clear winner', async () => {
+    // e2e4/e2e3/e1d2 graded 15/10/5cp — spread ~0.0092 (within epsilon 0.01)
+    // but top-runnerup margin ~0.0046 (BELOW marginThreshold 0.02, so the
+    // clear-winner side alone would NOT fire) — isolates the flatness branch
+    // of the OR.
+    const CLOSE_GRADES: Record<string, MoveGrade> = {
+      e2e4: { evalCp: 15, evalMate: null, depth: 10 },
+      e2e3: { evalCp: 10, evalMate: null, depth: 10 },
+      e1d2: { evalCp: 5, evalMate: null, depth: 10 },
+    };
+    const budget: SearchBudget = {
+      maxNodes: 20,
+      elo: NEUTRAL_BUDGET_ELO,
+      maxPlies: 4,
+      concurrency: 1,
+      stopRule: { marginThreshold: 0.02, epsilonThreshold: 0.01, stabilityWindow: 1, minNodes: 1 },
+    };
+    const providers: EngineProviders = {
+      policy: makeFixedPolicy({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_POLICY }),
+      grade: makeFixedGrade({ [SIMPLE_WHITE_FEN]: CLOSE_GRADES }),
+    };
+
+    const snapshot = await mctsSearch(SIMPLE_WHITE_FEN, budget, providers, () => {}, freshSignal());
+
+    expect(snapshot.nodesEvaluated).toBeLessThan(budget.maxNodes);
+    expect(snapshot.nodesEvaluated).toBe(1);
+    expect(snapshot.stopReason).toBe('early-stop');
+  });
+
+  it('min-nodes floor: neither side of the rule fires before minNodes expansions have run', async () => {
+    // marginThreshold=0/epsilonThreshold=0/stabilityWindow=1 make both sides
+    // of the rule trivially satisfied at EVERY check (an all-neutral-grade
+    // fixture ties every root child's value at exactly 0.5, forever — a
+    // recompute of an all-0.5 subtree backs up to 0.5 again, so the tie never
+    // drifts) — isolating minNodes as the ONLY gate on when the stop fires.
+    const MIN_NODES_FLOOR = 5;
+    const budget: SearchBudget = {
+      maxNodes: 20,
+      elo: NEUTRAL_BUDGET_ELO,
+      maxPlies: 10,
+      concurrency: 1,
+      stopRule: { marginThreshold: 0, epsilonThreshold: 0, stabilityWindow: 1, minNodes: MIN_NODES_FLOOR },
+    };
+    const providers: EngineProviders = { policy: makeFixedPolicy({}), grade: makeFixedGrade({}) };
+
+    const snapshot = await mctsSearch(SIMPLE_WHITE_FEN, budget, providers, () => {}, freshSignal());
+
+    expect(snapshot.nodesEvaluated).toBe(MIN_NODES_FLOOR);
+    expect(snapshot.stopReason).toBe('early-stop');
+  });
+
+  it('stopRule omitted vs explicitly undefined: byte-identical snapshots (backward-compat no-op, Pattern 2 pitfall)', async () => {
+    const baseBudget = { maxNodes: 5, elo: NEUTRAL_BUDGET_ELO, maxPlies: 3, concurrency: 1 };
+    const providers = (): EngineProviders => ({
+      policy: makeFixedPolicy({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_POLICY }),
+      grade: makeFixedGrade({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_GRADES }),
+    });
+
+    const omitted: SearchBudget = { ...baseBudget };
+    const explicitlyUndefined: SearchBudget = { ...baseBudget, stopRule: undefined };
+
+    const snapshotOmitted = await mctsSearch(SIMPLE_WHITE_FEN, omitted, providers(), () => {}, freshSignal());
+    const snapshotExplicit = await mctsSearch(
+      SIMPLE_WHITE_FEN,
+      explicitlyUndefined,
+      providers(),
+      () => {},
+      freshSignal(),
+    );
+
+    expect(snapshotExplicit).toEqual(snapshotOmitted);
+    // Sanity: this is the pre-existing full-budget path, not an accidental early-stop.
+    expect(snapshotOmitted.stopReason).toBe('budget');
+  });
+});
+
 // ─── ENGINE-07: determinism, concurrency 1 and 2 ────────────────────────────
 
 /** Wraps an async fabricated provider fn with an artificial, deliberately jittered resolution delay. */

@@ -50,25 +50,43 @@ import { MATE_CP_EQUIVALENT } from '@/generated/flawThresholds';
 /** Grading search depth target — matches the app's own `EngineProviders.grade` depth (D-11). */
 export const GRADING_TARGET_DEPTH = 14;
 
-/** Wall-clock safety valve (ms) so a slow position never stalls a `go` (D-11). */
-export const GRADING_MOVETIME_SAFETY_CAP_MS = 2500;
+/**
+ * Adjudication search depth target (D-10 cutoff 2) — deliberately SHALLOWER
+ * than `GRADING_TARGET_DEPTH` because adjudication runs after EVERY ply of
+ * EVERY game (far more often than bot-move grading), so its Clear-Hash cost
+ * compounds fastest (168.5-RESEARCH.md Open Question 2). Value confirmed by
+ * the Task 3 bounded-run measurement (see 168.5-02-SUMMARY.md).
+ */
+export const ADJUDICATION_TARGET_DEPTH = 10;
 
-/** Slack (ms) added above the movetime cap before giving up on a `bestmove` reply. */
-export const SLACK_MS = 2500;
-
-/** Full-strength `Skill Level` value — resets the engine before every bot-grading/adjudication `go` (Pitfall 2). */
+/**
+ * Full-strength `Skill Level` value — resets the engine before every
+ * bot-grading/adjudication `go` (Pitfall 2).
+ */
 const FULL_STRENGTH_SKILL_LEVEL = 20;
 
-/** Wall-clock cap (ms) for a single-line adjudication `go` — a quick eval, not a full MultiPV grade. */
-export const ADJUDICATION_MOVETIME_MS = 500;
+/**
+ * Watchdog timeout (ms) for a grading `go` (D-10/D-11). Independent of any
+ * movetime value — `go` is now depth-only with no engine-side wall-clock
+ * cap, so this constant is the SOLE ceiling on how long a grading call can
+ * take, sized generously above the worst observed depth-14-with-Clear-Hash
+ * latency (see Task 3 measurement in 168.5-02-SUMMARY.md). On timeout,
+ * `stockfish-pool.mjs`'s retry-in-place wrapper (D-11) retries before this
+ * propagates as a failure.
+ */
+export const GRADING_WATCHDOG_TIMEOUT_MS = 60_000;
 
-/** Slack (ms) added above `ADJUDICATION_MOVETIME_MS` before giving up on a `bestmove` reply. */
-export const ADJUDICATION_SLACK_MS = 2500;
+/**
+ * Watchdog timeout (ms) for an adjudication `go` (D-10/D-11). Independent of
+ * any movetime value, sized above the worst observed depth-10-with-Clear-Hash
+ * latency (see Task 3 measurement in 168.5-02-SUMMARY.md).
+ */
+export const ADJUDICATION_WATCHDOG_TIMEOUT_MS = 20_000;
 
 /**
  * WR-06: mutable counter of how often `evalPositionCp` fell back to a neutral
  * 0 cp because no `bound === 'exact'` info line ever surfaced within
- * `ADJUDICATION_MOVETIME_MS`. Module-level (not a return value) so callers
+ * `ADJUDICATION_WATCHDOG_TIMEOUT_MS`. Module-level (not a return value) so callers
  * that never see an individual position's result — `calibration-harness.mjs`'s
  * spike report — can still surface a systematic occurrence instead of it
  * being silently invisible for an entire multi-hour sweep.
@@ -143,16 +161,23 @@ export async function nodeGrade(stockfish, fen, candidateUcis) {
 
   // Pitfall 2: reset the shared engine to full strength FIRST — a prior
   // Stockfish-skill anchor move must never leak a weakened Skill Level into
-  // the bot's own grading search.
+  // the bot's own grading search. `Clear Hash` (D-10) makes the grade a pure
+  // function of (position, depth, clean hash) — load-independent, since a
+  // dirty transposition table from a prior call under real wall-clock timing
+  // is itself a source of nondeterminism.
   stockfish.send(`setoption name Skill Level value ${FULL_STRENGTH_SKILL_LEVEL}`);
   stockfish.send('setoption name UCI_LimitStrength value false');
   stockfish.send(`setoption name MultiPV value ${candidateUcis.length}`);
+  stockfish.send('setoption name Clear Hash');
   stockfish.send(`position fen ${fen}`);
-  stockfish.send(
-    `go depth ${GRADING_TARGET_DEPTH} searchmoves ${candidateUcis.join(' ')} movetime ${GRADING_MOVETIME_SAFETY_CAP_MS}`,
-  );
+  // D-10: depth-only, no movetime — keep searchmoves LAST (trailing tokens
+  // after searchmoves are silently swallowed by the UCI parser, 158-01
+  // landmine). D-11: the watchdog timeout below is now an independent,
+  // generously-sized constant, NOT derived from a movetime value that no
+  // longer exists in this command.
+  stockfish.send(`go depth ${GRADING_TARGET_DEPTH} searchmoves ${candidateUcis.join(' ')}`);
   try {
-    await stockfish.waitFor((line) => line.startsWith('bestmove'), GRADING_MOVETIME_SAFETY_CAP_MS + SLACK_MS);
+    await stockfish.waitFor((line) => line.startsWith('bestmove'), GRADING_WATCHDOG_TIMEOUT_MS);
   } finally {
     off();
   }
@@ -177,10 +202,14 @@ export async function evalPositionCp(stockfish, fen) {
   stockfish.send(`setoption name Skill Level value ${FULL_STRENGTH_SKILL_LEVEL}`);
   stockfish.send('setoption name UCI_LimitStrength value false');
   stockfish.send('setoption name MultiPV value 1');
+  stockfish.send('setoption name Clear Hash');
   stockfish.send(`position fen ${fen}`);
-  stockfish.send(`go movetime ${ADJUDICATION_MOVETIME_MS}`);
+  // D-10: depth-only, no movetime — ADJUDICATION_TARGET_DEPTH is shallower
+  // than grading's depth because adjudication runs after every ply of every
+  // game and its Clear-Hash cost compounds fastest.
+  stockfish.send(`go depth ${ADJUDICATION_TARGET_DEPTH}`);
   try {
-    await stockfish.waitFor((line) => line.startsWith('bestmove'), ADJUDICATION_MOVETIME_MS + ADJUDICATION_SLACK_MS);
+    await stockfish.waitFor((line) => line.startsWith('bestmove'), ADJUDICATION_WATCHDOG_TIMEOUT_MS);
   } finally {
     off();
   }
