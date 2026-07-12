@@ -4,11 +4,10 @@ milestone: v2.3
 milestone_name: Bot Play
 current_phase: 169
 current_phase_name: `useBotGame`
-status: verifying
+status: Phase 168.5 shipped — squash-merged to main (60ff9202)
 stopped_at: Completed 168.5-03-PLAN.md
-last_updated: "2026-07-12T14:30:27.480Z"
+last_updated: "2026-07-12T16:57:55.830Z"
 last_activity: 2026-07-12
-last_activity_desc: Phase 168.5 complete, transitioned to Phase 169
 progress:
   total_phases: 7
   completed_phases: 4
@@ -23,8 +22,8 @@ progress:
 
 Phase: 169 — Clocked Board + Game Loop (`useBotGame`)
 Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-07-12 — Phase 168.5 complete, transitioned to Phase 169
+Status: Phase 168.5 shipped — squash-merged to main (60ff9202)
+Last activity: 2026-07-12
 
 ## Project Reference
 
