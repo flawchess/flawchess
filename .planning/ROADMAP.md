@@ -44,11 +44,12 @@
 
 **Goal:** Let users play clocked games against the FlawChess engine on a new top-level **Bots** page, store every finished game as an analyzable `platform='flawchess'` Library game, and build a headless anchor-calibration harness that first measures the engine's real playing strength. Sourced from SEED-091 (five locked design decisions) + the 2026-07-11 milestone-scoping decisions.
 
-**Dependency waves:** A = {166, 167} · B = {168, 169} · C = {170, 171}. `selectBotMove` (166) is the keystone both the play loop and the harness import; backend store-on-finish (167) is fully independent and parallelizable.
+**Dependency waves:** A = {166, 167} · B = {168} · B2 = {168.5, inserted 2026-07-12} · C = {169} · D = {170, 171}. `selectBotMove` (166) is the keystone both the play loop and the harness import; backend store-on-finish (167) is fully independent and parallelizable. 168.5 blocks 169: at the measured ~110s/move (SEED-096) the engine cannot play a clocked game, and 169's pacing SC depends on the clock/fixed-strength decision made in 168.5.
 
 - [x] **Phase 166: Bot Move Selection Core (`selectBotMove`)** - Pure, provider-agnostic sample↔argmax move-selection blend both the app and the harness reuse (completed 2026-07-11)
 - [x] **Phase 167: Backend Store-on-Finish** - Persist a finished bot game as a `platform='flawchess'` Library game via the shared normalization path (completed 2026-07-11)
 - [x] **Phase 168: Headless Calibration Harness (spike-gated)** - Node harness measuring engine strength across a coarse (ELO × play-style) grid vs known anchors (completed 2026-07-12)
+- [ ] **Phase 168.5: Bot Move Pacing & Search Budget (SEED-096)** - Settle the clock/fixed-strength fork, deterministic grades + watchdog fix (SEED-095), soft early stopping + retuned `MAX_NODES` in `mctsSearch`, bounded re-calibration at the shipped budget
 - [ ] **Phase 169: Clocked Board + Game Loop (`useBotGame`)** - Live clocked board with pacing, all end conditions, resign/draw, and move sounds
 - [ ] **Phase 170: localStorage Resume** - Leave and resume a bot game with the clock fairly paused; store each finished game exactly once
 - [ ] **Phase 171: Bots Page + Setup Screen + Nav** - New top-level Bots page tying setup, board, resume, and store-on-finish together for users and guests
@@ -118,6 +119,21 @@ Plans:
 **Wave 3** *(blocked on Wave 2 completion)*
 
 - [x] 168-03-PLAN.md — Coarse grid sweep + durable results-matrix TSV (D-04) + advisory ELO-estimate summary (D-05) → CAL-01
+
+### Phase 168.5: Bot Move Pacing & Search Budget (SEED-096)
+
+**Goal**: A bot move at any play-style blend returns in seconds, not minutes, via a shipped per-move search budget plus confidence-based early stopping, with the engine's strength re-measured by the harness at exactly the shipped budget (app == harness, D-11).
+**Depends on**: Phase 168
+**Requirements**: TBD at plan time (sourced from SEED-096 — locked direction, Measured 2026-07-12, and Evaluation notes sections)
+**Success Criteria** (what must be TRUE):
+
+  1. The clock/fixed-strength fork (SEED-091 deferred question) is decided and recorded, and Phase 169's SC1 pacing wording is amended to match the decision.
+  2. Harness Stockfish grades are deterministic under load (SEED-095: per-`go` hash reset or depth-capped adjudication) and a single late engine reply no longer kills a sweep (watchdog headroom or retry-in-place).
+  3. `mctsSearch` supports grade-margin (confidence-based) early stopping evaluated in canonical apply order; `MAX_NODES` is retuned from measured per-move cost (SEED-096 "Measured 2026-07-12": ~110s/move at 400 nodes, ~50-node ballpark for a ~15s target); both ship in `useFlawChessEngine.ts` and are mirrored into the harness's D-11 constants.
+  4. A bounded re-calibration sweep at the shipped budget produces a strength map, and the blend>0 per-move median on the reference box lands near the pacing target.
+  5. The D-09 determinism check passes at the new budget and stop condition.
+
+**Plans**: TBD
 
 ### Phase 169: Clocked Board + Game Loop (`useBotGame`)
 
