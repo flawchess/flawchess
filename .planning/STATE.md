@@ -5,7 +5,7 @@ milestone_name: Bot Play
 current_phase: 170
 current_phase_name: localStorage Resume
 status: completed
-stopped_at: Completed 169.5-01-PLAN.md
+stopped_at: Phase 169.5 shipped to main
 last_updated: "2026-07-13T18:26:19.507Z"
 last_activity: 2026-07-13
 last_activity_desc: Phase 169.5 complete, transitioned to Phase 170
@@ -23,8 +23,8 @@ progress:
 
 Phase: 170 — localStorage Resume
 Plan: Not started
-Status: Code-complete — manual UAT pending
-Last activity: 2026-07-13 — Phase 169.5 complete, transitioned to Phase 170
+Status: Ready to plan
+Last activity: 2026-07-13 — Phase 169.5 shipped (squash-merged to main), transitioned to Phase 170
 
 ## Project Reference
 
