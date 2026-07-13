@@ -5,10 +5,10 @@ milestone_name: Bot Play
 current_phase: 170
 current_phase_name: localStorage Resume
 status: ready
-stopped_at: Completed 169-10-PLAN.md (Phase 169 closed; UAT deferred)
-last_updated: "2026-07-13T13:58:40.272Z"
+stopped_at: Shipped Phase 169 (squash-merged to main as 1f671e10; UAT deferred)
+last_updated: "2026-07-13T14:10:00.000Z"
 last_activity: 2026-07-13
-last_activity_desc: Phase 169 complete, transitioned to Phase 170
+last_activity_desc: Phase 169 shipped — squash-merged to main (1f671e10)
 progress:
   total_phases: 7
   completed_phases: 5
@@ -23,8 +23,8 @@ progress:
 
 Phase: 170 — localStorage Resume
 Plan: Not started
-Status: Phase 169 COMPLETE (10/10 plans, 5/5 must-haves verified by mutation testing). **Open debt: its 6 browser-UAT items were deferred by user decision on 2026-07-13 and never run** — tracked in 169-UAT.md, surfaced by `gsd-tools audit-open`, cleared by `/gsd-verify-work 169`. Must be cleared before Bot Play reaches users.
-Last activity: 2026-07-13 — Phase 169 complete (UAT deferred), transitioned to Phase 170
+Status: Phase 169 SHIPPED — squash-merged to main as 1f671e10 (10/10 plans, 5/5 must-haves verified by mutation testing; full pre-merge gate green). **Open debt: its 6 browser-UAT items were deferred by user decision on 2026-07-13 and never run** — tracked in 169-UAT.md, surfaced by `gsd-tools audit-open`, cleared by `/gsd-verify-work 169`. Must be cleared before Bot Play reaches users. Not deployed: main ≠ production.
+Last activity: 2026-07-13 — Phase 169 shipped to main (UAT still deferred)
 
 ## Project Reference
 
