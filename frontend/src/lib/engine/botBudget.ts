@@ -21,6 +21,21 @@
  * rule correctly separates "settled" from "contested" positions) — within
  * the D-07/D-17 target band (median ~5s, worst-case ~15s, pass band 3-8s
  * median/p95<=20s). See 168.5-04-SUMMARY.md for the full measurement record.
+ *
+ * D-19 (169, 2026-07-13 gap closure — READ BEFORE RETUNING ANY CONSTANT
+ * HERE): the ELO mapping calibrated against this budget was measured with
+ * the search ALWAYS running to completion of this exact node budget — the
+ * calibration harness (`scripts/calibration-harness.mjs`) has no clock and
+ * never cuts a search short (168.5 D-04b). Phase 169's per-move think
+ * deadline (`computeThinkDeadlineMs` + `createDeadlineSearch`,
+ * chessClock.ts/deadlineSearch.ts) can now abort a live game's search before
+ * it reaches `FLAWCHESS_BOT_MAX_NODES` when the bot is low on its own clock.
+ * A deadline-cut bot therefore plays MATERIALLY WEAKER than its advertised
+ * ELO for that move — this is accepted and intended (humans get worse in
+ * time trouble too), not a bug to "fix" by loosening the deadline or
+ * shrinking these constants. Do not read calibration-harness numbers as
+ * whole-game strength for a live, clocked bot game — they describe this
+ * budget at FULL completion only.
  */
 
 import type { BotStopRule } from './types';

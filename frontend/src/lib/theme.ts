@@ -428,3 +428,11 @@ export const MOVE_QUALITY_INACCURACY = SEV_INACCURACY;
 export const MOVE_QUALITY_MISTAKE = SEV_MISTAKE;
 export const MOVE_QUALITY_BLUNDER = SEV_BLUNDER;
 export const MOVE_QUALITY_PENDING = 'oklch(0.65 0.02 260)'; // muted neutral gray
+
+// Bot-game clock low-time urgent color (Phase 169 D-07 — ClockDisplay.tsx).
+// Below LOW_TIME_THRESHOLD_MS (chessClock.ts), the active clock's digits
+// switch to this destructive red and gain a ring-2 urgent treatment, matching
+// the shadcn `--destructive` CSS-variable token value so the urgent state
+// reads consistently with the app's other destructive surfaces (resign
+// confirm button, etc.) without hard-coding a duplicate literal.
+export const CLOCK_LOW_TIME_URGENT = 'oklch(0.577 0.245 27.325)';

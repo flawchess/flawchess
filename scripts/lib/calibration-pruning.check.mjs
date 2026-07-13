@@ -28,6 +28,8 @@ import {
   mainTsvColumns,
   mainTsvRowLine,
   newCellTally,
+  isUnanimousWin,
+  isUnanimousLoss,
   cellKey,
   loadPriorSweep,
   parseAnchorSpec,
@@ -84,6 +86,23 @@ function skippedRow(anchorLabel, skipReason) {
     skipReason,
   };
 }
+
+// --- unanimity cutoff trigger: only an all-win / all-loss cell is decided ---
+// A single draw or loss must NOT trip a cutoff (the "won_cutoff/lost_cutoff
+// but no results" bug: a 9W/1D near-sweep used to prune its neighbour to
+// games=0 instead of playing it out).
+function tallyOf(games, wins, draws, losses) {
+  const tally = newCellTally();
+  Object.assign(tally, { games, wins, draws, losses });
+  return tally;
+}
+assert.equal(isUnanimousWin(tallyOf(10, 10, 0, 0)), true, 'all-win (10W) is a unanimous win');
+assert.equal(isUnanimousWin(tallyOf(10, 9, 1, 0)), false, '9W/1D (near-sweep) is NOT a unanimous win');
+assert.equal(isUnanimousWin(tallyOf(0, 0, 0, 0)), false, 'empty tally is never a unanimous win');
+assert.equal(isUnanimousLoss(tallyOf(10, 0, 0, 10)), true, 'all-loss (10L) is a unanimous loss');
+assert.equal(isUnanimousLoss(tallyOf(10, 0, 1, 9)), false, '9L/1D (near-shutout) is NOT a unanimous loss');
+assert.equal(isUnanimousLoss(tallyOf(0, 0, 0, 0)), false, 'empty tally is never a unanimous loss');
+console.log('PASS: unanimity cutoff trigger — only all-win / all-loss cells are decided (draws/splits play out)');
 
 // The fixture cell's anchor AXIS, declared independently of `fixtureRows`
 // — `gridKeys` is derived from THIS list (mirroring how the real sweep

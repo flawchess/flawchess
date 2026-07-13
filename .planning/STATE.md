@@ -2,34 +2,35 @@
 gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: Bot Play
-current_phase: 169
-current_phase_name: `useBotGame`
-status: Phase 168.5 shipped — squash-merged to main (60ff9202)
-stopped_at: Completed 168.5-03-PLAN.md
-last_updated: "2026-07-12T16:57:55.830Z"
-last_activity: 2026-07-12
+current_phase: 170
+current_phase_name: localStorage Resume
+status: ready
+stopped_at: Completed 169-10-PLAN.md (Phase 169 closed; UAT deferred)
+last_updated: "2026-07-13T13:58:40.272Z"
+last_activity: 2026-07-13
+last_activity_desc: Phase 169 complete, transitioned to Phase 170
 progress:
   total_phases: 7
-  completed_phases: 4
-  total_plans: 12
-  completed_plans: 12
-  percent: 57
+  completed_phases: 5
+  total_plans: 22
+  completed_plans: 22
+  percent: 71
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 169 — Clocked Board + Game Loop (`useBotGame`)
+Phase: 170 — localStorage Resume
 Plan: Not started
-Status: Phase 168.5 shipped — squash-merged to main (60ff9202)
-Last activity: 2026-07-12
+Status: Phase 169 COMPLETE (10/10 plans, 5/5 must-haves verified by mutation testing). **Open debt: its 6 browser-UAT items were deferred by user decision on 2026-07-13 and never run** — tracked in 169-UAT.md, surfaced by `gsd-tools audit-open`, cleared by `/gsd-verify-work 169`. Must be cleared before Bot Play reaches users.
+Last activity: 2026-07-13 — Phase 169 complete (UAT deferred), transitioned to Phase 170
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-07-10 after Phase 163)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: v2.2 (Analysis ELO Calibration & Deep-links — Phase 164 SEED-093 Maia ELO Lichess-blitz normalization, Phase 165 SEED-094 gem-ELO calibration harness + `?fen=` deep-link) closed 2026-07-11 — archived, CHANGELOG promoted, tagged v2.2, GH release created. Both phases already live in production (released individually via #253/#254), so no deploy needed. No active milestone. Next: `/gsd-new-milestone`.
+Current focus: **v2.3 Bot Play** — play a real clocked game against a calibrated FlawChess bot. Phases 166 (bot move selection), 167 (backend store-on-finish), 168 (calibration harness), 168.5 (pacing/search budget) and **169 (clocked board + game loop) are complete**; 170 (localStorage resume) is next, then 171 (Bots page + setup screen). Not yet deployed — v2.3 ships at milestone close. Prior milestone v2.2 (Analysis ELO Calibration & Deep-links) closed 2026-07-11 and is live in production via #253/#254.
 
 ## Milestone Progress
 
@@ -215,6 +216,30 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 168.5-05]: ANCHOR_ELO_WINDOW=400, DYNAMIC_CUTOFF_SCORE_EPS=0.05 set from Claude's Discretion, bracketing every D-14 default bot ELO against at least one Maia rung each side
 - [Phase 168.5-05]: SC5 determinism check now proves the SHIPPED FLAWCHESS_BOT_* budget (50 nodes/8 plies/stop-rule/concurrency=4) -- passed, byte-identical 29-ply blend=1 game
 - [Phase 168.5-05]: D-17 bounded pilot via the real harness pipeline confirms the pacing band (median 3.32s, p95 16.72s) under measured CPU contention from a concurrent background sweep; full ~24h re-calibration sweep handed to the operator per D-16, not launched in-phase
+- [Phase 169-01]: chessClock constants set to CONTEXT.md suggested defaults verbatim (REVEAL_DELAY 500-1500ms, SYNTHETIC_DEBIT_DIVISOR=20, SYNTHETIC_INCREMENT_SHARE=0.9, NEVER_FLAG_FLOOR_MS=1000, LOW_TIME_THRESHOLD_MS=10000) — No deviation needed; CONTEXT.md's Claude's-discretion defaults already tuned for plausible 5+0 blitz pacing
+- [Phase 169-01]: Reverted requirements.mark-complete's PLAY-03/04/05 checkbox flip — PLAY-03/04/05 are shared across Plans 01/04/05 (frontmatter) — 169-01 alone only delivers the chessClock math primitives; left [ ] Pending with a partial-delivery note; Plan 04 (useBotGame) actually closes them
+- [Phase 169-02]: Reused MoverColor from @/lib/liveFlaw for winner/userColor instead of a duplicate type; finalizeBotPgn additionally sets a [TimeControl] PGN header from tcStr for fidelity even though the backend receives tc_str as a separate param, not parsed from the header
+- [Phase 169-02]: Reverted requirements.mark-complete's PLAY-06/07/09 checkbox flip: shared across Plans 02/04 (frontmatter; PLAY-07 also Plan 05, PLAY-09 also Plan 06) — 169-02 alone only delivers the pure board-detection/draw-gate/PGN-builder logic; left [ ] Pending with a partial-delivery note; Plans 04/05/06 actually close them
+- [Phase 169-03]: Vendored lila sfx directory (Enigmahack, AGPLv3+) instead of the non-free 'standard' set D-08 originally named (RESEARCH Pitfall 1 correction)
+- [Phase 169-03]: Checkmate.mp3 reconstructed as a byte-copy of Check.mp3 since raw.githubusercontent.com serves lila's own symlink as literal target-path text, not resolved binary content
+- [Phase 169-03]: SoundEvent's single 'game-end' member maps to Checkmate.mp3; Victory/Defeat/Draw remain vendored but unused by sounds.ts today for a future finer-grained surface
+- [Phase 169-04]: D-01 draw-accept score refreshed via best-effort non-blocking pool.grade() after each bot move — selectBotMove exposes no snapshot/practicalScore, only the resolved UCI; defaults to neutral 0.5 which correctly falls through the endgame gate before any bot move resolves
+- [Phase 169-04]: commitMove(move, mover, debitMs) shared by user and bot move paths — caller supplies raw elapsed time or the D-05 reconciled never-flag debit; end-conditions test coverage is checkmate+threefold+flag-on-time since stalemate/fifty-move/insufficient-material are already exhaustively fixture-tested in Plan 02's botGameEnd.test.ts
+- [Phase 169]: CLOCK_LOW_TIME_URGENT set to the exact shadcn --destructive oklch value rather than a new hand-picked red, for consistency with other destructive surfaces
+- [Phase 169]: HorizontalMoveList.tsx extended with an optional activeItemClassName override (default unchanged) so MoveListPanel's brand-brown live-ply highlight doesn't require duplicating the shared shell or touching existing callers
+- [Phase 169]: GameControls' resign trigger Button is a sibling of <Dialog>, not nested inside it -- mirrors the existing FeedbackButton/FeedbackModal controlled open/onOpenChange split since dialog.tsx has no DialogTrigger export
+- [Phase 169-06]: GameResultStrip replaces GameControls in the panel (not shown alongside it) once the dialog is dismissed, per the UI-SPEC's 'replacing the normal in-game controls area' wording
+- [Phase 169-06]: Bots.tsx renders a single mounted tree via a matchMedia isDesktop flag (mirroring Analysis.tsx's useIsMobile precedent) instead of two CSS-hidden trees, since ClockDisplay/MoveListPanel/GameControls carry fixed non-parameterizable data-testids
+- [Phase 169-06]: D-14 stub settings (botElo 1500, blend 0.5, lichess 5+3, userColor white) start the game immediately on route load; PLAY-09's REQUIREMENTS.md traceability row updated to Complete (mark-complete reported the checkbox already set)
+- [Phase 169-08]: D-16 deadline constants tuned by feel (BOT_MOVES_TO_GO=30, BOT_THINK_INCREMENT_SHARE=0.7, min/max band 800-15000ms, BOT_MOVE_OVERHEAD_MS=300) against the 168.5-04 measured search cost (median ~5.4s, worst-case ~12.7s) -- a full 5+3 clock yields a ~12.1s deadline
+- [Phase 169-08]: createDeadlineSearch uses an inner AbortController isolated from the caller's outer signal so a deadline cut and a cancel can never be confused -- the two-signal design, not a reason tag
+- [Phase 169-08]: Reverted requirements.mark-complete for PLAY-04/PLAY-05 -- shared with Plan 09 (frontmatter), which also owns the REQUIREMENTS.md/168.5-CONTEXT.md/botBudget.ts doc amendments per its own Task 3; this plan delivers only the honest-clock math + deadline-search wrapper
+- [Phase 169-09]: resetTurnAnchor() re-baselines pausedAtRef alongside turnStartedAtRef whenever the anchor resets (commitMove, newGame) -- the single fix point for WR-02's future-dated-anchor bug
+- [Phase 169-09]: commitMove computes wasLive from viewedPlyRef/liveGamePlyRef (both refs kept fresh outside the render cycle) rather than closing over moveHistory/viewedPly state, which would be permanently stale since commitMove's deps don't include either
+- [Phase 169-09]: Test G (WR-03) captures a real stale closure (result.current.offerDraw taken before checkmate) rather than trying to win a React effect-flush race -- deterministic and mirrors the bug report's actual mechanism; wouldBotAcceptDraw forced true via a test-only override since Fool's-mate never satisfies the real endgame gate
+- [Phase 169-09]: 168.5-CONTEXT.md D-01/D-02/D-04 get SUPERSEDED annotations appended (original text preserved) rather than rewritten, so the historical record stays intact and future verifiers don't re-fail the phase on stale prose
+- [Phase 169-10]: computeChargeableElapsedMs delegates to the existing computeElapsedMs primitive with pausedAtMs ?? nowMs as the effective now, rather than duplicating the subtraction
+- [Phase 169-10]: flagIfOutOfTime sets the flagged mover's clock to 0 directly before calling finalizeGame, called BEFORE chess.move() in both attemptMove and runBotTurn, replacing the 100ms tick as the sole flag detector
 
 ### Pending Todos
 
@@ -293,9 +318,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Completed 168.5-03-PLAN.md
+**Stopped at:** Completed 169-09-PLAN.md
 
-**Last session:** 2026-07-12T14:04:48.243Z
+**Last session:** 2026-07-13T13:21:46.587Z
 
 **Resume file:** 
 
@@ -361,6 +386,15 @@ None
 | Phase 168.5 P03 | 20min | 4 tasks | 6 files |
 | Phase 168.5 P04 | 45min | 2 tasks | 2 files |
 | Phase 168.5 P05 | 45min | 3 tasks | 4 files |
+| Phase 169 P01 | 6min | 2 tasks | 2 files |
+| Phase 169 P02 | 20min | 3 tasks | 7 files |
+| Phase 169 P03 | 20min | 2 tasks | 11 files |
+| Phase 169 P04 | 23min | 3 tasks | 2 files |
+| Phase 169 P05 | 10min | 3 tasks | 5 files |
+| Phase 169 P06 | 22min | 3 tasks | 4 files |
+| Phase 169 P08 | 20min | 2 tasks | 4 files |
+| Phase 169 P09 | 55min | 3 tasks | 7 files |
+| Phase 169 P10 | 25min | 3 tasks | 5 files |
 
 ## Operator Next Steps
 

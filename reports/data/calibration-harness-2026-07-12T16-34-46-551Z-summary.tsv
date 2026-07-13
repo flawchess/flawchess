@@ -1,0 +1,16 @@
+bot_elo	bot_blend	elo_estimate	any_clamped
+1100	0	878.0	true
+1100	0.5	1336.2	true
+1100	1	1711.5	true
+1500	0	980.3	true
+1500	0.5	1937.9	true
+1500	1	2091.7	true
+1900	0	1479.8	true
+1900	0.5	2307.8	true
+1900	1	2506.2	true
+
+metadata	value
+seed	1
+stockfish_procs	4
+git_sha	b57af6b3
+caveat	SEED-091: this is a COARSE ADVISORY estimate only, never a precise ELO — anchors themselves are approximate (esp. Stockfish Skill Level -> Elo, 168-RESEARCH.md Open Question 2). The primary, caveat-free artifact is the main results-matrix TSV (D-04), not this summary.

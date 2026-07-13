@@ -40,6 +40,9 @@ import { useReadiness } from '@/hooks/useReadiness';
 // First React.lazy boundary in the app — keeps the Stockfish JS/WASM bundle off
 // every other route (ROUTE-01 / D-07). Analysis.tsx uses export default (Pitfall 1).
 const AnalysisPage = lazy(() => import('./pages/Analysis'));
+// Phase 169 D-14: lazy-loaded, unlinked-from-nav /bots route. Bots.tsx also
+// uses export default (mirrors AnalysisPage's Pitfall 1 divergence).
+const BotsPage = lazy(() => import('./pages/Bots'));
 
 const FLAG_OPENINGS_VISITED = 'openings_visited';
 const FLAG_ENDGAMES_VISITED = 'endgames_visited';
@@ -731,6 +734,24 @@ function AppRoutes() {
           <Route path="/endgames/*" element={<ImportRequiredRoute><EndgamesPage /></ImportRequiredRoute>} />
           <Route path="/admin" element={<SuperuserRoute><AdminPage /></SuperuserRoute>} />
           <Route path="/analysis" element={<AnalysisRoute />} />
+          {/* Phase 169 D-14: real /bots route, lazy-loaded, UNLINKED from nav this
+              phase (Phase 171 adds the nav entry). Not wrapped in ImportRequiredRoute
+              or SuperuserRoute — same guest-friendly access posture as /analysis, since
+              free bot play is valid for zero-game/guest users this milestone. */}
+          <Route
+            path="/bots"
+            element={
+              <Suspense
+                fallback={
+                  <div className="p-6 text-sm text-muted-foreground" data-testid="bots-loading">
+                    Loading bot game…
+                  </div>
+                }
+              >
+                <BotsPage />
+              </Suspense>
+            }
+          />
         </Route>
         {/* Catch-all redirects to homepage */}
         <Route path="*" element={<Navigate to="/" replace />} />

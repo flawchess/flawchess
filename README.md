@@ -62,6 +62,14 @@ The files `frontend/public/engine/stockfish-18-lite-single.js` and `frontend/pub
 - License: GPL-3.0
 - Source: https://github.com/nmrugg/stockfish.js
 
+## Sound Assets
+
+The files under `frontend/public/sound/` (`Move.mp3`, `Capture.mp3`, `Check.mp3`, `Checkmate.mp3`, `Victory.mp3`, `Defeat.mp3`, `Draw.mp3`, `LowTime.mp3`, `GenericNotify.mp3`) are vendored from lichess's [lila](https://github.com/lichess-org/lila) `public/sound/sfx` directory, created by **Enigmahack**, and licensed under [GNU Affero General Public License v3 or later (AGPLv3+)](https://www.gnu.org/licenses/agpl-3.0.html) — fully compatible with FlawChess's own AGPL-3.0 license (see the LICENSE file). Note: lila's `public/sound/standard` set (a different, similarly-named directory) is explicitly a **non-free exception** per lila's own `COPYING.md` and is NOT used here — only the `sfx` directory's AGPLv3+ clips are vendored.
+
+- Source: https://github.com/lichess-org/lila/tree/master/public/sound/sfx
+- Author: Enigmahack
+- License: AGPLv3+
+
 ## Getting Started
 
 ### Prerequisites

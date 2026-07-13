@@ -50,7 +50,7 @@
 - [x] **Phase 167: Backend Store-on-Finish** - Persist a finished bot game as a `platform='flawchess'` Library game via the shared normalization path (completed 2026-07-11)
 - [x] **Phase 168: Headless Calibration Harness (spike-gated)** - Node harness measuring engine strength across a coarse (ELO × play-style) grid vs known anchors (completed 2026-07-12)
 - [x] **Phase 168.5: Bot Move Pacing & Search Budget (SEED-096)** - Settle the clock/fixed-strength fork, deterministic grades + watchdog fix (SEED-095), soft early stopping + retuned `MAX_NODES` in `mctsSearch`, bounded re-calibration at the shipped budget (completed 2026-07-12)
-- [ ] **Phase 169: Clocked Board + Game Loop (`useBotGame`)** - Live clocked board with pacing, all end conditions, resign/draw, and move sounds
+- [x] **Phase 169: Clocked Board + Game Loop (`useBotGame`)** - Live clocked board with pacing, all end conditions, resign/draw, and move sounds (completed 2026-07-13)
 - [ ] **Phase 170: localStorage Resume** - Leave and resume a bot game with the clock fairly paused; store each finished game exactly once
 - [ ] **Phase 171: Bots Page + Setup Screen + Nav** - New top-level Bots page tying setup, board, resume, and store-on-finish together for users and guests
 
@@ -155,13 +155,47 @@ Plans:
 **Requirements**: PLAY-03, PLAY-04, PLAY-05, PLAY-06, PLAY-07, PLAY-08, PLAY-09
 **Success Criteria** (what must be TRUE):
 
-  1. The user plays on a live board with dual Fischer-increment clocks, moving by drag or click, turn-gated to legal moves; the bot paces its replies (not instant): search runs at the fixed shipped budget regardless of clock, a small randomized reveal delay floors fast moves, and the bot's clock is debited a fraction-of-remaining synthetic think time (the bot never flags) (168.5 D-04).
-  2. Clocks use a wall-clock (`Date.now()`-delta) model that stays accurate across tab backgrounding and pause while the tab is hidden during the bot's turn, so neither side is unfairly flagged.
+  1. The user plays on a live board with dual Fischer-increment clocks, moving by drag or click, turn-gated to legal moves; the bot paces its replies (not instant): it manages its own clock via a per-move think deadline derived from its remaining time (cutting the search at the deadline and playing its best move so far), a small randomized reveal delay floors fast moves, and its clock is debited the real time its turn actually consumed — so the bot speeds up in time trouble and **can lose on time, like a human** (169 D-15/D-16, superseding the 168.5 D-04 "fixed budget, never flags" model).
+  2. Clocks use a wall-clock (`Date.now()`-delta) model that stays accurate across tab backgrounding and pauses while the tab is hidden during the bot's turn — the pause must reach the value actually **debited** to the bot on commit, not just its displayed clock, so neither side is unfairly flagged (169 D-20).
   3. The game detects every end condition — checkmate, stalemate, threefold repetition, 50-move, insufficient material, and flag-on-time — and a result screen shows the outcome (win/loss/draw + reason) with "Analyze this game" and "New game" actions.
   4. The user can resign and can offer/accept a draw against the bot.
   5. Move, capture, check, and game-end sounds play with a working mute control, and the game emits per-move `[%clk]` annotations (both colors) in its PGN.
 
-**Plans**: TBD
+**Plans**: 10 plans (7 executed + 3 gap-closure, post-verification)
+**Wave 1**
+
+- [x] 169-01-PLAN.md — chessClock.ts pure timing + pacing math (increment, wall-clock delta, D-05 never-flag debit, low-time)
+- [x] 169-02-PLAN.md — botGameEnd / botDrawGate / botGamePgn pure modules (end conditions, D-01/D-04 draw gate, both-color [%clk] PGN)
+- [x] 169-03-PLAN.md — sounds.ts + vendored AGPLv3+ lila sfx assets (mute persistence, iOS unlock, D-09 extras)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 169-04-PLAN.md — useBotGame.ts orchestrator hook (turn-gate, dual clocks + visibility pause, bot pacing, resign/draw, sounds, PGN export)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 169-05-PLAN.md — in-game UI: ClockDisplay, MoveListPanel, GameControls + theme low-time constant
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 169-06-PLAN.md — result UI (dialog + strip) + Bots.tsx stub page + lazy /bots route
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [x] 169-07-PLAN.md — human UAT checkpoint (pacing feel, hidden-tab clock, sound audibility/iOS, end conditions)
+
+**Wave 6** *(gap closure — SC1/SC2 failed verification; D-15..D-20 reverse the never-flag model)*
+
+- [x] 169-08-PLAN.md — honest clock (delete synthetic debit + never-flag clamp) + D-16 `computeThinkDeadlineMs` + `deadlineSearch.ts` cut-at-deadline wrapper with D-18 node floor
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [x] 169-09-PLAN.md — useBotGame rewiring (honest debit, think deadline, D-20 hidden-tab debit, idempotent finalize, scroll-back) + tests + draw-cooldown wiring + doc amendments
+
+**Wave 8** *(gap closure round 2 — re-verification still failed SC1/SC2; 169-REVIEW.md CR-01/CR-02)*
+
+- [x] 169-10-PLAN.md — close the commit-path never-flag backdoor (CR-02/SC1) + route every elapsed read through one pause-aware helper so the hidden-tab pause reaches the bot's committed debit (CR-01/SC2) + revert-proof regression tests
+
 **UI hint**: yes
 
 ### Phase 170: localStorage Resume
@@ -191,6 +225,7 @@ Plans:
 
 **Plans**: TBD
 **UI hint**: yes
+**Blocker (read before planning)**: SEED-100 — SC2's "play-style" knob is `BotGameSettings.blend`. At `blend = 0` the Phase 169 D-16 think deadline is computed and **thrown away** (`selectBotMove` returns from the policy before consulting `deps.search`), so a blend-0 bot has an honest, flaggable clock with **no pacing mechanism**. `Bots.tsx` hardcodes `blend: 0.5` today, which is the only reason it does not bite. Resolve before exposing the slider. See also SEED-099 (the "bot can lose on time" invariant is enforced by comment, not construction).
 
 ## Progress
 
@@ -270,7 +305,7 @@ Plans:
 | 166. Bot Move Selection Core (`selectBotMove`) | 1/1 | Complete    | 2026-07-11 |
 | 167. Backend Store-on-Finish | 3/3 | Complete    | 2026-07-11 |
 | 168. Headless Calibration Harness (spike-gated) | 3/3 | Complete    | 2026-07-11 |
-| 169. Clocked Board + Game Loop (`useBotGame`) | 0/? | Not started | - |
+| 169. Clocked Board + Game Loop (`useBotGame`) | 10/10 | Complete    | 2026-07-13 |
 | 170. localStorage Resume | 0/? | Not started | - |
 | 171. Bots Page + Setup Screen + Nav | 0/? | Not started | - |
 
@@ -280,7 +315,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 5/5 plans complete
+**Plans:** 10/10 plans complete
 
 Plans:
 

@@ -138,11 +138,29 @@ function deriveGameSeed(seed, gameIndex) {
   return (seed + gameIndex * SEED_GAME_INDEX_MULTIPLIER) >>> 0;
 }
 
+// ─── Anchor token prefixes (declared before DEFAULT_ANCHOR_TOKENS builds the maia ladder) ──
+
+const SF_ANCHOR_PREFIX = 'sf';
+const MAIA_ANCHOR_PREFIX = 'maia';
+
 // ─── D-07 default grid (CLI defaults AND the CAL-03 spike's projection basis) ──
 
 const DEFAULT_BOT_ELOS = [1100, 1500, 1900];
 const DEFAULT_BOT_BLENDS = [0, 0.5, 1];
-const DEFAULT_ANCHOR_TOKENS = ['maia1100', 'maia1300', 'maia1500', 'maia1700', 'maia1900', 'sf0', 'sf3', 'sf5'];
+// Maia human-imitation ladder sampled every 200 ELO (maia600, 800, .. 2600 —
+// every other 100-rung of MAIA_ELO_LADDER) plus three Stockfish rungs for the
+// superhuman end Maia can't reach. The 200-ELO spacing keeps the anchor count
+// manageable; the ANCHOR_ELO_WINDOW + dynamic-cutoff pruning further trim
+// anchors too far from each bot cell to be informative.
+const ANCHOR_MAIA_ELO_STEP = 200;
+const DEFAULT_ANCHOR_TOKENS = [
+  ...MAIA_ELO_LADDER.filter((elo) => (elo - MAIA_ELO_LADDER[0]) % ANCHOR_MAIA_ELO_STEP === 0).map(
+    (elo) => `${MAIA_ANCHOR_PREFIX}${elo}`,
+  ),
+  'sf0',
+  'sf3',
+  'sf5',
+];
 const DEFAULT_GAMES_PER_CELL = 20;
 const DEFAULT_SEED = 1;
 const DEFAULT_OUT_DIR = path.join(REPO_ROOT, 'reports/data');
@@ -281,9 +299,6 @@ function validateBlends(blends) {
     }
   }
 }
-
-const SF_ANCHOR_PREFIX = 'sf';
-const MAIA_ANCHOR_PREFIX = 'maia';
 
 /** Parses one `--anchors` token into `{ kind: 'sf', skillLevel }` or `{ kind: 'maia', rungElo }`. */
 export function parseAnchorSpec(token) {
@@ -560,6 +575,24 @@ function tallyGameResult(tally, result, botIsWhite) {
 /** Points/games score (draw = 0.5 point) — 0 for an empty tally (no games played). */
 export function tallyScore(tally) {
   return tally.games > 0 ? (tally.wins + 0.5 * tally.draws) / tally.games : 0;
+}
+
+/**
+ * A cell the bot swept — won EVERY game, no draws and no losses. This is the
+ * ONLY result that establishes a weaker-side won-cutoff: a single draw or loss
+ * (e.g. 9W/1D, score 0.95) is NOT a sweep, so the next weaker anchor is still
+ * played out rather than pruned to games=0. Mirror of `isUnanimousLoss`.
+ */
+export function isUnanimousWin(tally) {
+  return tally.games > 0 && tally.wins === tally.games;
+}
+
+/**
+ * A cell the bot was swept in — lost EVERY game, no draws and no wins. The ONLY
+ * result that establishes a stronger-side lost-cutoff (see `isUnanimousWin`).
+ */
+export function isUnanimousLoss(tally) {
+  return tally.games > 0 && tally.losses === tally.games;
 }
 
 /** Short git SHA of the working tree HEAD — `'unknown'` if git is unavailable (never fatal, WR-01 spirit). */
@@ -908,17 +941,20 @@ export function loadPriorSweep(filePath, args, gridKeys) {
  * make any sense" (CONTEXT.md specifics) already predicts. */
 export const ANCHOR_ELO_WINDOW = 400;
 
-/** Dynamic cutoff (D-15 mechanism 2): a cell score within this of 0 or 1 is
- * treated as a decided direction — anchors further in that SAME direction
- * (weaker after a sweep, stronger after a shutout) are pruned rather than
- * played out, since the trend is already established. */
-export const DYNAMIC_CUTOFF_SCORE_EPS = 0.05;
+/** D-15 mechanism 2 (dynamic cutoff): a cell is only treated as a decided
+ * direction on a UNANIMOUS result — the bot won every game or lost every game
+ * (see `isUnanimousWin`/`isUnanimousLoss`). Anchors further out in that SAME
+ * direction (weaker after an all-win sweep, stronger after an all-loss sweep)
+ * are then pruned rather than played, since the trend is settled. A cell with
+ * any draw or split (e.g. 9W/1D) is NOT decided and its neighbour is played
+ * out. Stronger anchors are pruned ONLY after an all-loss cell; an all-win
+ * cell never stops the climb — it keeps going until the bot is swept. */
 
 /** D-15 mechanism 1: an anchor fell outside the bot-cell's `ANCHOR_ELO_WINDOW`. */
 export const SKIP_REASON_OUT_OF_WINDOW = 'out_of_window';
-/** D-15 mechanism 2: a stronger-side anchor pruned after a near-0 shutout against a closer, weaker-rated anchor on that same side. */
+/** D-15 mechanism 2: a stronger-side anchor pruned after an all-loss sweep against a closer, weaker-rated anchor on that same side. */
 export const SKIP_REASON_LOST_CUTOFF = 'lost_cutoff';
-/** D-15 mechanism 2: a weaker-side anchor pruned after a near-100% sweep against a closer, stronger-rated anchor on that same side. */
+/** D-15 mechanism 2: a weaker-side anchor pruned after an all-win sweep against a closer, stronger-rated anchor on that same side. */
 export const SKIP_REASON_WON_CUTOFF = 'won_cutoff';
 
 /** Splits a bot-cell's anchor list into in-window / out-of-window (D-15 mechanism 1). */
@@ -1214,10 +1250,11 @@ async function main() {
           totalMoves += outcome.cellMoves;
           totalGames += outcome.gamesPlayed;
           cellRows.push(outcome.row);
-          // Only a cell that actually played games (fresh or reloaded-played)
-          // can establish a new cutoff — a games=0 pruned row's score is 0/0
-          // and must never be misread as a shutout.
-          if (!wonCutoff && outcome.row.tally.games > 0 && tallyScore(outcome.row.tally) >= 1 - DYNAMIC_CUTOFF_SCORE_EPS) {
+          // Only a UNANIMOUS win (every game won, no draws/losses) establishes
+          // the weaker-side cutoff — a split or drawn cell leaves the next
+          // weaker anchor to be played out. `isUnanimousWin` already guards
+          // games>0, so a games=0 pruned row can never be misread as a sweep.
+          if (!wonCutoff && isUnanimousWin(outcome.row.tally)) {
             wonCutoff = true;
           }
         }
@@ -1242,7 +1279,10 @@ async function main() {
           totalMoves += outcome.cellMoves;
           totalGames += outcome.gamesPlayed;
           cellRows.push(outcome.row);
-          if (!lostCutoff && outcome.row.tally.games > 0 && tallyScore(outcome.row.tally) <= DYNAMIC_CUTOFF_SCORE_EPS) {
+          // Only a UNANIMOUS loss (every game lost) stops the climb to stronger
+          // anchors; an all-win or split cell keeps climbing until the bot is
+          // swept (per the stronger-side rule).
+          if (!lostCutoff && isUnanimousLoss(outcome.row.tally)) {
             lostCutoff = true;
           }
         }
