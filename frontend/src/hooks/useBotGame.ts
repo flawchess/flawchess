@@ -82,6 +82,8 @@ import { playSound, unlockAudio } from '@/lib/sounds';
 import { createWorkerPool, type WorkerPool } from '@/lib/engine/workerPool';
 import { createMaiaQueue, type MaiaQueue } from '@/lib/engine/maiaQueue';
 import { selectBotMove, type BotMoveDeps } from '@/lib/engine/selectBotMove';
+import { selectBookMove } from '@/lib/engine/openingBook';
+import { loadOpeningPrefixSet } from '@/lib/openings';
 import { createDeadlineSearch, BOT_MIN_SEARCH_NODES } from '@/lib/engine/deadlineSearch';
 import {
   FLAWCHESS_BOT_MAX_NODES,
@@ -89,7 +91,7 @@ import {
   FLAWCHESS_BOT_CONCURRENCY,
   FLAWCHESS_BOT_STOP_RULE,
 } from '@/lib/engine/botBudget';
-import type { SearchBudget } from '@/lib/engine/types';
+import type { SearchBudget, Side } from '@/lib/engine/types';
 
 // ─── Named constants ─────────────────────────────────────────────────────────
 
@@ -211,6 +213,55 @@ function buildBotMoveDeps(deadlineMs: number, queue: MaiaQueue, pool: WorkerPool
   };
 }
 
+/**
+ * Resolves the bot's opening-book move for this turn (169.5, PLAY-11), or
+ * `null` meaning "leave book" — the caller latches `hasLeftBookRef` on `null`
+ * and falls through to `selectBotMove`.
+ *
+ * A book ply costs exactly ONE Maia policy eval (~100ms) and ZERO Stockfish
+ * searches (D-02) — which is the whole point: it is near-instant, clock-cheap,
+ * and it warms Maia by necessity. Extracted to module scope (beside
+ * `buildBotMoveDeps`) so `runBotTurn`'s async body does not grow past
+ * CLAUDE.md's nesting/logic-LOC limits.
+ *
+ * The book is wired HERE, in the hook, and never inside `selectBotMove` —
+ * `scripts/calibration-harness.mjs` imports `selectBotMove` directly and has
+ * its own game loop that never touches this hook, so the harness staying
+ * book-free is STRUCTURAL, not guard-based. Its anchor games already start
+ * from mid-opening FENs (D-04) and a book would corrupt them.
+ */
+async function resolveBookMove(
+  chess: Chess,
+  botElo: number,
+  policy: MaiaQueue['policy'],
+): Promise<string | null> {
+  let prefixSet: ReadonlySet<string>;
+  try {
+    prefixSet = await loadOpeningPrefixSet();
+  } catch (err: unknown) {
+    // The static ECO asset failed to load (404 / offline). Honest degradation:
+    // report it, leave book for the rest of the game, and just search.
+    Sentry.captureException(err, { tags: { source: 'bot-game' } });
+    return null;
+  }
+
+  // The SAN history MUST come from the live board that has the moves pushed. A
+  // `new Chess(fen)` has an EMPTY history, which would make the book treat every
+  // position as the start position and match the wrong prefixes — the one
+  // silent-failure trap on this path (it still yields legal moves, so nothing
+  // would visibly break).
+  const moveHistorySan = chess.history();
+  // Carries both .san and .lan, so no SAN<->UCI conversion is needed anywhere.
+  const legalMoves = chess.moves({ verbose: true });
+  const side: Side = chess.turn();
+
+  const rawPolicy = await policy(chess.fen(), botElo, side);
+
+  // Default weighting only (D-06: the BookWeightingFn seam exists for a future
+  // persona, which this phase deliberately does not build).
+  return selectBookMove(moveHistorySan, legalMoves, prefixSet, rawPolicy, Math.random);
+}
+
 // ─── Hook ────────────────────────────────────────────────────────────────────
 
 export function useBotGame(settings: BotGameSettings): UseBotGameState {
@@ -263,12 +314,31 @@ export function useBotGame(settings: BotGameSettings): UseBotGameState {
    * `createDeadlineSearch`, invisible here. */
   const abortControllerRef = useRef<AbortController | null>(null);
   /** D-01: the bot's best-effort "how good is my position" score, used only
-   * by wouldBotAcceptDraw's near-equal check. Defaults to a neutral 0.5 so an
-   * early draw offer (before any bot move has resolved) correctly falls
-   * through to the endgame gate rather than ever masking it. Updated
-   * best-effort from `pool.grade` after each bot move (D-01's "reuse the
-   * grading provider it already has"). */
-  const lastRootPracticalScoreRef = useRef(0.5);
+   * by wouldBotAcceptDraw's near-equal check. Updated best-effort from
+   * `pool.grade` after each SEARCHED bot move (D-01's "reuse the grading
+   * provider it already has").
+   *
+   * `null` is a SENTINEL meaning *no eval has been computed yet this game* —
+   * it is not a neutral score, and `wouldBotAcceptDraw` refuses on it
+   * outright. This ref therefore only ever holds a score the bot actually
+   * computed. Do NOT "helpfully" restore a numeric default (169.5): the book
+   * runs zero Stockfish evals for its whole window, and a 0.5 default would
+   * sit dead-center in DRAW_ACCEPT_SCORE_BAND while the draw gate's endgame
+   * condition opens on queens-off ALONE — so the bot would accept a draw in a
+   * queens-off book position it never evaluated. (The old comment here claimed
+   * the 0.5 default "correctly falls through to the endgame gate rather than
+   * ever masking it"; that reasoning was wrong — the default SATISFIES both
+   * conditions rather than deferring to either.) */
+  const lastRootPracticalScoreRef = useRef<number | null>(null);
+  /** D-03 (169.5) ONE-WAY leave-book latch, mirroring `outcomeRef`'s
+   * latch-in-a-ref shape. Once the bot leaves book (floor-miss, ply cap, no
+   * candidates, degenerate policy, or a failed prefix-set fetch) it searches
+   * for the rest of the game. This CANNOT be derived from move history: ECO's
+   * 3,641 lines cover nearly every sane early position, so a game can wander
+   * back onto a cataloged prefix after the bot has already started searching,
+   * and a history-derived check would silently re-enter the book. Reset only
+   * in `newGame()`. */
+  const hasLeftBookRef = useRef(false);
   /** D-09: the user's low-time sound fires exactly once per game. */
   const hasFiredLowTimeRef = useRef(false);
   /** Pitfall 4 (iOS autoplay unlock) — fires once, from the first user gesture. */
@@ -548,6 +618,10 @@ export function useBotGame(settings: BotGameSettings): UseBotGameState {
       setDrawOfferPending(false);
       return;
     }
+    // Sentinel contract (169.5): a `null` score means the bot has evaluated
+    // nothing this game (e.g. it is still in book, which runs zero Stockfish
+    // evals) and `wouldBotAcceptDraw` refuses outright — the bot never accepts
+    // a draw off an evaluation it did not run.
     const accepts = wouldBotAcceptDraw(lastRootPracticalScoreRef.current, chessRef.current);
     if (accepts) {
       finalizeGame({ reason: 'draw', drawReason: 'agreement' });
@@ -573,7 +647,10 @@ export function useBotGame(settings: BotGameSettings): UseBotGameState {
     pausedAtRef.current = null;
     resetTurnAnchor();
     outcomeRef.current = null;
-    lastRootPracticalScoreRef.current = 0.5;
+    // Back to the not-yet-evaluated sentinel — a fresh game has evaluated nothing.
+    lastRootPracticalScoreRef.current = null;
+    // SC4: a fresh game re-enters the book.
+    hasLeftBookRef.current = false;
     hasFiredLowTimeRef.current = false;
     setMoveHistory([]);
     updateViewedPly(0);
@@ -686,6 +763,20 @@ export function useBotGame(settings: BotGameSettings): UseBotGameState {
     const queue = createMaiaQueue();
     poolRef.current = pool;
     queueRef.current = queue;
+    // SC5 (169.5): spawn both engines NOW, during the book window, so the
+    // book's near-instant plies pay the worker-spawn cost instead of the first
+    // move the bot actually has to search — which, under the book, is the first
+    // move OUT of book and exactly the one we least want cold. Both are
+    // idempotent (they forward to each provider's own lazy `ensureSpawned()`),
+    // so a re-running effect cannot spawn a second pool. NB: `pool.grade(fen,
+    // [])` would NOT work here — it returns on the WR-05 empty-candidates guard
+    // before spawning anything.
+    pool.warm();
+    queue.warm();
+    // Get the ECO asset fetch in flight before the bot's first turn; the book
+    // helper awaits the same cached promise. Fire-and-forget: a rejection is
+    // handled (and reported) there, on the path that actually needs it.
+    void loadOpeningPrefixSet().catch(() => {});
     return () => {
       pool.terminate();
       queue.terminate();
@@ -729,18 +820,36 @@ export function useBotGame(settings: BotGameSettings): UseBotGameState {
       setIsBotThinking(true);
 
       void (async () => {
-        let uci: string;
+        // 169.5: while in book, the bot answers from the ECO book — ONE Maia
+        // policy eval, ZERO Stockfish searches, `selectBotMove` never called. A
+        // `null` from the book (floor-miss, ply cap, no candidates, degenerate
+        // policy, or a failed asset fetch) is its leave-book signal: the ONE-WAY
+        // latch fires HERE, at the single decline point, and the bot searches
+        // for the rest of the game.
+        const resolveMove = async (): Promise<{ uci: string; fromBook: boolean }> => {
+          if (!hasLeftBookRef.current) {
+            const bookUci = await resolveBookMove(chess, settings.botElo, queue.policy);
+            if (bookUci !== null) return { uci: bookUci, fromBook: true };
+            hasLeftBookRef.current = true;
+          }
+          const searchedUci = await selectBotMove(
+            fen,
+            { elo: settings.botElo, blend: settings.blend, budget },
+            deps,
+            controller.signal,
+          );
+          return { uci: searchedUci, fromBook: false };
+        };
+
+        let resolved: { uci: string; fromBook: boolean };
         try {
-          [uci] = await Promise.all([
-            selectBotMove(
-              fen,
-              { elo: settings.botElo, blend: settings.blend, budget },
-              deps,
-              controller.signal,
-            ),
-            // The reveal delay is still a floor run alongside the search —
-            // but clamped to the SAME deadline (D-16) so it can never itself
-            // push a low-clock bot past its own deadline.
+          [resolved] = await Promise.all([
+            resolveMove(),
+            // The reveal delay is still a floor run alongside the search — but
+            // clamped to the SAME deadline (D-16) so it can never itself push a
+            // low-clock bot past its own deadline. It is also what puts a
+            // near-instant BOOK move inside the reveal band instead of snapping
+            // back at zero latency.
             delay(Math.min(computeRevealDelayMs(Math.random), deadlineMs)),
           ]);
         } catch (err: unknown) {
@@ -760,6 +869,8 @@ export function useBotGame(settings: BotGameSettings): UseBotGameState {
         // Same two-signal contract as the catch above — a cancel that lands
         // exactly as the deadline-cut search resolves still discards the turn.
         if (controller.signal.aborted) return;
+
+        const { uci, fromBook } = resolved;
 
         // D-15/D-20/CR-01 (Plan 10 gap closure): the bot's debit is the
         // honest, real elapsed wall-clock time of this turn (search + reveal
@@ -797,11 +908,29 @@ export function useBotGame(settings: BotGameSettings): UseBotGameState {
         }
 
         setIsBotThinking(false);
+        // A book move is CHEAP, not FREE: it reaches this same commit through
+        // the same chargeableElapsedMs() -> flagIfOutOfTime() -> commitMove()
+        // pipeline as a searched move (169 D-15/D-16/D-20), so it is debited its
+        // real elapsed time (the Maia eval + the reveal delay), it gets the
+        // Fischer increment, and a bot already down to nothing can still flag on
+        // it. There is deliberately no second commit path and no untimed book
+        // bypass.
         commitMove(move, mover, debitMs);
 
-        // D-01: best-effort refresh of the draw-accept score from the
-        // position the bot's own move reached (reuses the grading provider
-        // it already has) — never blocks the move commit above.
+        // D-01: best-effort refresh of the draw-accept score from the position
+        // the bot's own move reached (reuses the grading provider it already
+        // has) — never blocks the move commit above.
+        //
+        // 169.5: SUPPRESSED on book plies, so SC1's "no Stockfish evals while in
+        // book" holds literally. `lastRootPracticalScoreRef` therefore stays at
+        // its not-yet-evaluated `null` sentinel for the whole book window —
+        // which is safe ONLY because `wouldBotAcceptDraw` refuses on that
+        // sentinel. Do NOT "helpfully" restore a numeric default to that ref: a
+        // book line can legally reach a QUEENS-OFF position inside the ply cap
+        // (openings.tsv:1065 trades queens by ply 9) and the draw gate's endgame
+        // condition opens on queens-off ALONE — so a 0.5 default would make the
+        // bot accept a draw in a position it never evaluated.
+        if (fromBook) return;
         pool
           .grade(fen, [uci])
           .then((gradeMap) => {

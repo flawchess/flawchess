@@ -40,17 +40,35 @@ function queensAreOff(chess: Chess): boolean {
 }
 
 /**
- * D-01: whether the bot would accept a draw offer RIGHT NOW — both must
- * hold: (1) its last search's root practicalScore (the same 0-1 expected
- * score the bot already computed — reuse it, do NOT run a fresh grade) is
- * near-equal (within DRAW_ACCEPT_SCORE_BAND of 0.5), and (2) the position is
- * past an endgame/material gate — queens off the board, OR the fullmove
- * number has reached DRAW_ACCEPT_MIN_FULLMOVE as a fallback for
- * queens-still-on positions. An early, lifeless-but-equal position
- * correctly returns false: the endgame gate hasn't opened yet, so play
- * continues.
+ * D-01: whether the bot would accept a draw offer RIGHT NOW.
+ *
+ * `rootPracticalScore` is a SENTINEL-BEARING parameter (Phase 169.5):
+ * - `null` = the bot has not evaluated any position yet this game. It must
+ *   NOT accept — a draw is a game-ending decision and the bot may never make
+ *   one off a number it never computed. Refused immediately, before the board
+ *   is even looked at. There is deliberately no numeric default here: the
+ *   opening book (169.5) runs zero Stockfish evals for the whole book window,
+ *   so this sentinel is genuinely reachable — and because the endgame gate
+ *   below opens on queens-off ALONE, and the shipped ECO corpus contains
+ *   queens-off lines inside the book's ply cap (openings.tsv:1065, the
+ *   Caro-Kann Endgame Variation, has queens off by ply 9), a `0.5` default
+ *   would sit dead-center in DRAW_ACCEPT_SCORE_BAND and hand out a draw in a
+ *   position the bot never looked at.
+ * - a number = a real root practicalScore from the bot's own last search
+ *   (the same 0-1 expected score it already computed — reuse it, do NOT run a
+ *   fresh grade).
+ *
+ * With a real score, BOTH must hold: (1) it is near-equal (within
+ * DRAW_ACCEPT_SCORE_BAND of 0.5), and (2) the position is past an
+ * endgame/material gate — queens off the board, OR the fullmove number has
+ * reached DRAW_ACCEPT_MIN_FULLMOVE as a fallback for queens-still-on
+ * positions. An early, lifeless-but-equal position correctly returns false:
+ * the endgame gate hasn't opened yet, so play continues.
  */
-export function wouldBotAcceptDraw(rootPracticalScore: number, chess: Chess): boolean {
+export function wouldBotAcceptDraw(rootPracticalScore: number | null, chess: Chess): boolean {
+  // Not-yet-evaluated: refuse before anything else (see the sentinel note above).
+  if (rootPracticalScore === null) return false;
+
   const isNearEqual = Math.abs(rootPracticalScore - 0.5) <= DRAW_ACCEPT_SCORE_BAND;
   if (!isNearEqual) return false;
 

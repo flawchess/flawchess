@@ -4,17 +4,17 @@ milestone: v2.3
 milestone_name: Bot Play
 current_phase: 170
 current_phase_name: localStorage Resume
-status: ready
-stopped_at: Shipped Phase 169 (squash-merged to main as 1f671e10; UAT deferred)
-last_updated: "2026-07-13T14:26:01.928Z"
+status: completed
+stopped_at: Completed 169.5-01-PLAN.md
+last_updated: "2026-07-13T18:26:19.507Z"
 last_activity: 2026-07-13
-last_activity_desc: Phase 169 shipped to main (UAT still deferred)
+last_activity_desc: Phase 169.5 complete, transitioned to Phase 170
 progress:
   total_phases: 8
-  completed_phases: 5
-  total_plans: 22
-  completed_plans: 22
-  percent: 63
+  completed_phases: 6
+  total_plans: 26
+  completed_plans: 26
+  percent: 75
 ---
 
 # Project State: FlawChess
@@ -23,8 +23,8 @@ progress:
 
 Phase: 170 — localStorage Resume
 Plan: Not started
-Status: Phase 169 SHIPPED — squash-merged to main as 1f671e10 (10/10 plans, 5/5 must-haves verified by mutation testing; full pre-merge gate green). **Open debt: its 6 browser-UAT items were deferred by user decision on 2026-07-13 and never run** — tracked in 169-UAT.md, surfaced by `gsd-tools audit-open`, cleared by `/gsd-verify-work 169`. Must be cleared before Bot Play reaches users. Not deployed: main ≠ production.
-Last activity: 2026-07-13 — Phase 169 shipped to main (UAT still deferred)
+Status: Code-complete — manual UAT pending
+Last activity: 2026-07-13 — Phase 169.5 complete, transitioned to Phase 170
 
 ## Project Reference
 
@@ -241,6 +241,9 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 169-09]: 168.5-CONTEXT.md D-01/D-02/D-04 get SUPERSEDED annotations appended (original text preserved) rather than rewritten, so the historical record stays intact and future verifiers don't re-fail the phase on stale prose
 - [Phase 169-10]: computeChargeableElapsedMs delegates to the existing computeElapsedMs primitive with pausedAtMs ?? nowMs as the effective now, rather than duplicating the subtraction
 - [Phase 169-10]: flagIfOutOfTime sets the flagged mover's clock to 0 directly before calling finalizeGame, called BEFORE chess.move() in both attemptMove and runBotTurn, replacing the 100ms tick as the sole flag detector
+- [Phase 169.5-01]: OpeningLookup interface bundles fullLineMap + prefixSet as buildLookup()'s single cached return shape, keeping fetch/parse shared between both query directions
+- [Phase 169.5-01]: loadOpeningPrefixSet() does not swallow fetch errors (unlike preloadOpenings()) — the future book caller (plan 04) decides how to react to a rejected promise
+- [Phase 169.5-01]: Did not run requirements.mark-complete for PLAY-11 — shared across all 4 plans in this phase (frontmatter); 169.5-01 alone only delivers the candidate-generation half (prefix set + corpus-parity guard); left [ ] Pending with a partial-delivery note
 
 ### Pending Todos
 
@@ -319,9 +322,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Completed 169-09-PLAN.md
+**Stopped at:** Completed 169.5-01-PLAN.md
 
-**Last session:** 2026-07-13T13:21:46.587Z
+**Last session:** 2026-07-13T15:16:30.982Z
 
 **Resume file:** 
 
@@ -396,6 +399,7 @@ None
 | Phase 169 P08 | 20min | 2 tasks | 4 files |
 | Phase 169 P09 | 55min | 3 tasks | 7 files |
 | Phase 169 P10 | 25min | 3 tasks | 5 files |
+| Phase 169.5 P01 | 25min | 2 tasks | 2 files |
 
 ## Operator Next Steps
 

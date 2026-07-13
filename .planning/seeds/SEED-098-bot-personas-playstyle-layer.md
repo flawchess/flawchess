@@ -82,6 +82,17 @@ deltas should be much smaller, but they are not zero:
 
 ## Caveats
 
+- **Both style levers are currently regime-split — neither works across the whole slider**
+  (added 2026-07-13, see `.planning/notes/2026-07-13-bot-calibration-findings.md` Finding 1).
+  `selectBotMove` is a three-way regime dispatch, not a mix: at **blend = 0** there is no search
+  at all, so no `practicalScore` exists and the **score-shaping lever is dead**; at **blend > 0**
+  the move is chosen by softmax over `practicalScore` and the Maia prior only steers tree
+  expansion, so the **prior-reweighting lever is nearly dead**. An Attacker built today would
+  change character *discontinuously* as the user moves the playstyle slider, with the two
+  mechanisms handing off at the cliff. Whether this needs a blend-formula redesign (log-linear
+  Maia × Stockfish mixture, so both terms are live at every blend) is **measurable, not yet
+  established** — SEED-102's Maia-agreement-rate metric settles it. Check that result before
+  building on the current substrate.
 - **Maia-3 sac-blindness** (see memory `project_engine_self_execution_sac_blindness`): an
   Attacker built on prior reweighting will offer sacrifices it can't follow up (no history
   planes → post-sac follow-up priors collapse). At club ELO this is acceptable flavor

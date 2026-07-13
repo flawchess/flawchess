@@ -106,6 +106,22 @@ export interface WorkerPool {
   stopAll(): void;
   /** Stop + `worker.terminate()` every slot; a later `grade()` call re-spawns the pool. */
   terminate(): void;
+  /**
+   * Spawn the Stockfish worker pool with NO search and no movetime spend, so
+   * the opening-book window (Phase 169.5) pays the worker-spawn cost instead
+   * of the first move the bot actually has to search — which, under the book,
+   * is the first move OUT of book and exactly the one we least want cold.
+   *
+   * Idempotent: the body is a bare `ensureSpawned()` call, which short-circuits
+   * on its own `spawned` flag, so a re-running effect cannot spawn a second pool.
+   *
+   * Do NOT "simplify" this to `grade(fen, [])`. That spawns NOTHING: `grade()`
+   * returns early on the WR-05 empty-candidates guard BEFORE `ensureSpawned()`
+   * is ever reached. It does not throw and does not error — it is a silent
+   * no-op as a prewarm trigger, which is precisely why this dedicated method
+   * exists (pinned by a test in `__tests__/workerPool.test.ts`).
+   */
+  warm(): void;
 }
 
 // ─── Priority queue (POOL-02): plain array, linear max-scan ────────────────
@@ -459,5 +475,10 @@ export function createWorkerPool(): WorkerPool {
     spawned = false;
   }
 
-  return { grade, stopAll, terminate };
+  /** Prewarm: spawn the pool without searching. See `WorkerPool.warm()`. */
+  function warm(): void {
+    ensureSpawned();
+  }
+
+  return { grade, stopAll, terminate, warm };
 }

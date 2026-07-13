@@ -111,9 +111,11 @@ vi.mock('@/lib/botDrawGate', async (importOriginal) => {
 
 const mockGrade = vi.fn();
 const mockPoolTerminate = vi.fn();
+const mockPoolWarm = vi.fn();
 const mockCreateWorkerPool = vi.fn(() => ({
   grade: mockGrade,
   terminate: mockPoolTerminate,
+  warm: mockPoolWarm,
 }));
 vi.mock('@/lib/engine/workerPool', () => ({
   createWorkerPool: () => mockCreateWorkerPool(),
@@ -121,13 +123,41 @@ vi.mock('@/lib/engine/workerPool', () => ({
 
 const mockPolicy = vi.fn();
 const mockQueueTerminate = vi.fn();
+const mockQueueWarm = vi.fn();
 const mockCreateMaiaQueue = vi.fn(() => ({
   policy: mockPolicy,
   terminate: mockQueueTerminate,
+  warm: mockQueueWarm,
 }));
 vi.mock('@/lib/engine/maiaQueue', () => ({
   createMaiaQueue: () => mockCreateMaiaQueue(),
 }));
+
+// 169.5: the ECO prefix set is stubbed with a small SYNTHETIC fixture
+// (PREFIX_SET below) — deterministic and offline. The REAL 3,641-line corpus
+// is already covered by plan 01's whole-corpus parity test; re-reading it here
+// would make these tests depend on a network fetch.
+const mockLoadOpeningPrefixSet = vi.fn();
+vi.mock('@/lib/openings', () => ({
+  loadOpeningPrefixSet: () => mockLoadOpeningPrefixSet(),
+}));
+
+// Passthrough-with-spy on the REAL selectBookMove (mirrors the
+// createDeadlineSearch pattern above): the book's own selection logic is
+// covered by openingBook.test.ts, but the hook must be proven to hand it the
+// LIVE move history — a `new Chess(fen)` would pass an EMPTY history and the
+// book would silently match start-position prefixes forever.
+const mockSelectBookMoveSpy = vi.fn();
+vi.mock('@/lib/engine/openingBook', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/engine/openingBook')>();
+  return {
+    ...actual,
+    selectBookMove: (...args: Parameters<typeof actual.selectBookMove>) => {
+      mockSelectBookMoveSpy(...args);
+      return actual.selectBookMove(...args);
+    },
+  };
+});
 
 const mockPlaySound = vi.fn();
 const mockUnlockAudio = vi.fn();
@@ -142,8 +172,14 @@ vi.mock('@sentry/react', () => ({
 }));
 
 import { useBotGame, type BotGameSettings } from '../useBotGame';
-import { computeThinkDeadlineMs } from '@/lib/chessClock';
+import {
+  computeThinkDeadlineMs,
+  REVEAL_DELAY_MAX_MS,
+  REVEAL_DELAY_MIN_MS,
+} from '@/lib/chessClock';
 import { BOT_MIN_SEARCH_NODES } from '@/lib/engine/deadlineSearch';
+import { BOOK_POLICY_FLOOR } from '@/lib/engine/openingBook';
+import type { MoveGrade } from '@/lib/moveQuality';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -154,6 +190,47 @@ const DEFAULT_SETTINGS: BotGameSettings = {
   incrementSeconds: 0,
   userColor: 'white',
 };
+
+/**
+ * 169.5 — the synthetic ECO prefix set, in the same space-joined-SAN key form
+ * plan 01's real `loadOpeningPrefixSet()` produces. Covers every prefix the
+ * scripted games below walk, including the queens-off Caro-Kann line (note the
+ * `+` on `Qxd1+` — chess.js SAN carries the check suffix, and so does the real
+ * corpus).
+ */
+const PREFIX_SET: ReadonlySet<string> = new Set([
+  'e4',
+  'd4',
+  'Nf3',
+  'c4',
+  'e4 e5',
+  'e4 e5 Nf3',
+  'e4 e5 Nf3 Nc6',
+  'e4 e5 Nf3 Nc6 Bb5',
+  // openings.tsv:1065 — B10 Caro-Kann Defense: Endgame Variation.
+  'e4 c6',
+  'e4 c6 Nf3',
+  'e4 c6 Nf3 d5',
+  'e4 c6 Nf3 d5 d3',
+  'e4 c6 Nf3 d5 d3 dxe4',
+  'e4 c6 Nf3 d5 d3 dxe4 dxe4',
+  'e4 c6 Nf3 d5 d3 dxe4 dxe4 Qxd1+',
+]);
+
+/** A raw (full-legal-move) Maia policy over start-position moves with clearly
+ * unequal mass; every candidate is in PREFIX_SET and e2e4 clears the floor. */
+const BOOK_POLICY: Record<string, number> = { e2e4: 0.5, d2d4: 0.3, g1f3: 0.15, c2c4: 0.05 };
+
+/** A book policy with a single dominant candidate — used where the resulting
+ * move history must be deterministic (variety itself is openingBook.test.ts's
+ * job, not this suite's). */
+const BOOK_POLICY_E4_ONLY: Record<string, number> = { e2e4: 1 };
+
+/** Every SAN the four BOOK_POLICY candidates can produce. */
+const BOOK_SANS = ['e4', 'd4', 'Nf3', 'c4'];
+
+/** Fake duration of a SEARCHED (out-of-book) move in the clock-cost contrast case. */
+const FAKE_SEARCH_MS = 6_000;
 
 /** Advances the fake clock (wrapped in act so React flushes the resulting
  * state updates), the standard way every test lets a bot think/reveal-delay
@@ -190,10 +267,19 @@ describe('useBotGame', () => {
     acceptDrawOverride.value = null;
     mockGrade.mockReset().mockResolvedValue(new Map());
     mockPoolTerminate.mockReset();
+    mockPoolWarm.mockReset();
     mockCreateWorkerPool.mockClear();
-    mockPolicy.mockReset();
+    // Default: an EMPTY policy — nothing clears BOOK_POLICY_FLOOR, so the book
+    // declines on the bot's first turn and every pre-existing (pre-169.5) test
+    // keeps exercising the searched-move path exactly as it did before the
+    // book existed. The `describe('book')` tests below opt IN by resolving a
+    // real policy.
+    mockPolicy.mockReset().mockResolvedValue({});
     mockQueueTerminate.mockReset();
+    mockQueueWarm.mockReset();
     mockCreateMaiaQueue.mockClear();
+    mockLoadOpeningPrefixSet.mockReset().mockResolvedValue(PREFIX_SET);
+    mockSelectBookMoveSpy.mockReset();
     mockPlaySound.mockReset();
     mockUnlockAudio.mockReset();
     mockCaptureException.mockReset();
@@ -722,6 +808,21 @@ describe('useBotGame', () => {
     });
 
     it('a queens-off position satisfying wouldBotAcceptDraw yields a draw-by-agreement outcome', async () => {
+      // 169.5: the grade seeding below is now MANDATORY, and this test is
+      // strictly stronger for it. It used to pass because `mockGrade` resolved
+      // an EMPTY Map, so `lastRootPracticalScoreRef` was never written and the
+      // accept came off its untouched 0.5 default — i.e. the bot accepted a
+      // draw off a score it had never computed, which is exactly the defect the
+      // not-yet-evaluated sentinel fixes. 0.5 is no longer a default the gate
+      // will act on, so the bot must ACTUALLY evaluate the position: resolve a
+      // real near-equal grade (evalCp 0) for whatever UCI is requested, and the
+      // bot accepts because it genuinely looked.
+      const nearEqualGrade: MoveGrade = { evalCp: 0, evalMate: null, depth: 12 };
+      mockGrade.mockImplementation((_fen: string, ucis: string[]) => {
+        const map = new Map<string, MoveGrade>();
+        for (const uci of ucis) map.set(uci, nearEqualGrade);
+        return Promise.resolve(map);
+      });
       mockSelectBotMove
         .mockResolvedValueOnce('e7e5')
         .mockResolvedValueOnce('d8h4')
@@ -759,6 +860,255 @@ describe('useBotGame', () => {
       await advance(0);
 
       expect(result.current.outcome).toEqual({ reason: 'draw', drawReason: 'agreement' });
+    });
+  });
+
+  // ─── book (169.5, PLAY-11) ────────────────────────────────────────────────
+
+  describe('book', () => {
+    /** Bot is WHITE, so it moves on mount and its book turn needs no user move first. */
+    const BOT_AS_WHITE: BotGameSettings = { ...DEFAULT_SETTINGS, userColor: 'black' };
+    /** Same, with a Fischer increment — the clock-cost test needs one to prove commitMove ran. */
+    const BOT_AS_WHITE_INC: BotGameSettings = { ...BOT_AS_WHITE, incrementSeconds: 2 };
+
+    it('no search while in book: zero selectBotMove calls and zero Stockfish grades', async () => {
+      mockPolicy.mockResolvedValue(BOOK_POLICY);
+      const { result, unmount } = renderHook(() => useBotGame(BOT_AS_WHITE));
+      await advance(REVEAL_DELAY_MAX_MS + 100);
+
+      // The bot really did move — and from the book.
+      expect(result.current.moveHistory).toHaveLength(1);
+      expect(BOOK_SANS).toContain(result.current.moveHistory[0]);
+      // SC1, literally: no search, and no Stockfish leaf eval either (the
+      // post-commit draw-accept grade is suppressed on book plies).
+      expect(mockSelectBotMove).not.toHaveBeenCalled();
+      expect(mockGrade).not.toHaveBeenCalled();
+
+      unmount();
+
+      // POSITIVE COMPANION — without this half, a bug where the book branch is
+      // never reached at all (hasLeftBookRef initialized true, prefix-set mock
+      // never resolving, ...) would make the zero-call assertions above pass
+      // VACUOUSLY: a bot that searches every ply also never enters the book.
+      // Here nothing clears the floor, so the book must decline and the search
+      // must re-engage.
+      mockSelectBotMove.mockReset().mockResolvedValue('e2e4');
+      mockPolicy.mockReset().mockResolvedValue({});
+      const second = renderHook(() => useBotGame(BOT_AS_WHITE));
+      await advance(REVEAL_DELAY_MAX_MS + 100);
+
+      expect(mockSelectBotMove).toHaveBeenCalled();
+      expect(second.result.current.moveHistory).toHaveLength(1);
+      second.unmount();
+    });
+
+    it('a book move costs a small fraction of the clock, through the same commit pipeline', async () => {
+      const baseMs = BOT_AS_WHITE_INC.baseSeconds * 1000;
+      const incMs = BOT_AS_WHITE_INC.incrementSeconds * 1000;
+      const ADVANCE_MS = REVEAL_DELAY_MAX_MS + 100;
+
+      mockPolicy.mockResolvedValue(BOOK_POLICY);
+      const { result, unmount } = renderHook(() => useBotGame(BOT_AS_WHITE_INC));
+      await advance(ADVANCE_MS);
+
+      expect(result.current.moveHistory).toHaveLength(1);
+      const bookDebitMs = baseMs + incMs - result.current.whiteClockMs;
+      // The Fischer increment is the LOAD-BEARING assertion: the debit is at
+      // most ADVANCE_MS (1.6s) while the increment is 2s, so the bot's clock can
+      // only end up ABOVE where it started if commitMove applied the increment.
+      // A bypass commit path fails this.
+      expect(result.current.whiteClockMs).toBeGreaterThan(baseMs);
+      // The reveal-delay FLOOR really was applied (the bot did not snap back at
+      // zero latency), and the debit cannot exceed the time that actually elapsed.
+      expect(bookDebitMs).toBeGreaterThanOrEqual(REVEAL_DELAY_MIN_MS);
+      expect(bookDebitMs).toBeLessThanOrEqual(ADVANCE_MS);
+      unmount();
+
+      // CONTRAST: the same commit path for a SEARCHED move debits an order of
+      // magnitude more. Same +increment, so the two differ only in the debit.
+      mockPolicy.mockReset().mockResolvedValue({});
+      mockSelectBotMove.mockReset().mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve('e2e4'), FAKE_SEARCH_MS)),
+      );
+      const second = renderHook(() => useBotGame(BOT_AS_WHITE_INC));
+      await advance(FAKE_SEARCH_MS + 100);
+
+      expect(second.result.current.moveHistory).toHaveLength(1);
+      const searchedDebitMs = baseMs + incMs - second.result.current.whiteClockMs;
+      // The searched move is debited its real think time — and unlike the book
+      // move, that is enough to put the bot's clock BELOW where it started even
+      // with the increment.
+      expect(searchedDebitMs).toBeGreaterThanOrEqual(FAKE_SEARCH_MS);
+      expect(second.result.current.whiteClockMs).toBeLessThan(baseMs);
+      // The point of the contrast: a book ply costs a small fraction of what a
+      // searched ply costs, through the very same commit pipeline.
+      expect(bookDebitMs * 3).toBeLessThan(searchedDebitMs);
+      second.unmount();
+    });
+
+    it('prewarm on mount: both engines spawn during the book window', () => {
+      // SC5. No timers advanced, no move made — the spawn happens on mount.
+      // Revert-check: delete pool.warm()/queue.warm() from the provider
+      // bring-up effect and this goes red.
+      renderHook(() => useBotGame(BOT_AS_WHITE));
+
+      expect(mockPoolWarm).toHaveBeenCalledTimes(1);
+      expect(mockQueueWarm).toHaveBeenCalledTimes(1);
+    });
+
+    it('hands the book the LIVE move history, not an empty one', async () => {
+      // BOOK_PLY_CAP itself is owned and tested at the pure layer
+      // (openingBook.test.ts). What only the HOOK can guarantee is that the
+      // history it hands the book is the REAL one: a `new Chess(fen)` has an
+      // EMPTY history, which would make the book treat every position as the
+      // start position, match the wrong prefixes, and never reach the cap —
+      // while still producing perfectly legal moves, so nothing would look
+      // broken. This asserts the live history reaches selectBookMove.
+      mockPolicy.mockResolvedValueOnce(BOOK_POLICY_E4_ONLY).mockResolvedValueOnce({ g1f3: 1 });
+      const { result } = renderHook(() => useBotGame(BOT_AS_WHITE));
+      await advance(REVEAL_DELAY_MAX_MS + 100);
+
+      act(() => {
+        result.current.attemptMove('e7', 'e5');
+      });
+      await advance(REVEAL_DELAY_MAX_MS + 100);
+
+      expect(result.current.moveHistory).toEqual(['e4', 'e5', 'Nf3']);
+      // The book's SECOND consultation saw the two plies already played.
+      expect(mockSelectBookMoveSpy.mock.calls[1]?.[0]).toEqual(['e4', 'e5']);
+    });
+
+    it('one-way exit: a still-in-book position after a searched move does NOT return to the book', async () => {
+      // Turn 1: book plays e4 (single dominant candidate — deterministic).
+      mockPolicy.mockResolvedValueOnce(BOOK_POLICY_E4_ONLY);
+      mockSelectBotMove.mockReset().mockResolvedValueOnce('g1f3').mockResolvedValueOnce('f1b5');
+      const { result } = renderHook(() => useBotGame(BOT_AS_WHITE));
+      await advance(REVEAL_DELAY_MAX_MS + 100);
+      expect(result.current.moveHistory).toEqual(['e4']);
+
+      // User replies e5 — 'e4 e5' IS in the book.
+      act(() => {
+        result.current.attemptMove('e7', 'e5');
+      });
+      // Turn 2: nothing clears the floor (the beforeEach default {}), so the
+      // book declines, the ONE-WAY latch fires, and the bot searches.
+      await advance(REVEAL_DELAY_MAX_MS + 100);
+      expect(result.current.moveHistory).toEqual(['e4', 'e5', 'Nf3']);
+      expect(mockSelectBotMove).toHaveBeenCalledTimes(1);
+      const policyCallsAfterTurn2 = mockPolicy.mock.calls.length;
+
+      // User replies Nc6 — 'e4 e5 Nf3 Nc6' IS in the book, and the policy below
+      // WOULD clear the floor. This is the position that makes the test valid:
+      // a still-in-book position reached AFTER the bot has already searched.
+      act(() => {
+        result.current.attemptMove('b8', 'c6');
+      });
+      mockPolicy.mockResolvedValue({ f1b5: 1 });
+      await advance(REVEAL_DELAY_MAX_MS + 100);
+
+      // Turn 3: the bot searched AGAIN rather than returning to the book.
+      expect(result.current.moveHistory).toEqual(['e4', 'e5', 'Nf3', 'Nc6', 'Bb5']);
+      expect(mockSelectBotMove).toHaveBeenCalledTimes(2);
+      // The book path is the only caller of deps.policy here (selectBotMove is
+      // mocked and never touches its deps), so an unchanged policy call count
+      // proves the book was not consulted at all on turn 3.
+      expect(mockPolicy.mock.calls.length).toBe(policyCallsAfterTurn2);
+      // Revert-check: delete hasLeftBookRef (let the book run every turn) and
+      // turn 3 re-enters the book — selectBotMove stays at 1 and mockPolicy
+      // increments. RED.
+    });
+
+    it('newGame resets the book: a fresh game re-enters it', async () => {
+      // Latch out of book first: nothing clears the floor, so the bot searches.
+      mockSelectBotMove.mockReset().mockResolvedValue('e2e4');
+      const { result } = renderHook(() => useBotGame(BOT_AS_WHITE));
+      await advance(REVEAL_DELAY_MAX_MS + 100);
+      expect(mockSelectBotMove).toHaveBeenCalledTimes(1);
+      expect(result.current.moveHistory).toHaveLength(1);
+
+      act(() => {
+        result.current.newGame();
+      });
+      // The fresh game gets a real book policy.
+      mockPolicy.mockResolvedValue(BOOK_POLICY);
+      await advance(REVEAL_DELAY_MAX_MS + 100);
+
+      // The bot moved again — from the BOOK this time (the search count did not
+      // grow). Revert-check: remove `hasLeftBookRef.current = false` from
+      // newGame() and this goes red.
+      expect(result.current.moveHistory).toHaveLength(1);
+      expect(BOOK_SANS).toContain(result.current.moveHistory[0]);
+      expect(mockSelectBotMove).toHaveBeenCalledTimes(1);
+    });
+
+    it('the bot does not accept a draw in a queens-off book position it never evaluated', async () => {
+      // The real cataloged line openings.tsv:1065 — B10 Caro-Kann Defense:
+      // Endgame Variation, 1. e4 c6 2. Nf3 d5 3. d3 dxe4 4. dxe4 Qxd1+ 5. Kxd1.
+      // Queens are off by ply 9, well inside BOOK_PLY_CAP (16) — so this is a
+      // position the shipped book can really reach, not an invented one.
+      //
+      // The USER is white here; the bot (black) plays the four book replies.
+      // Each policy has exactly ONE candidate above BOOK_POLICY_FLOOR, so the
+      // sampling has a single outcome (variety is openingBook.test.ts's job).
+      expect(1).toBeGreaterThan(BOOK_POLICY_FLOOR); // the forced candidates below clear it
+      mockPolicy
+        .mockResolvedValueOnce({ c7c6: 1 })
+        .mockResolvedValueOnce({ d7d5: 1 })
+        .mockResolvedValueOnce({ d5e4: 1 })
+        .mockResolvedValueOnce({ d8d1: 1 });
+      // mockSelectBotMove keeps its beforeEach default: a promise that NEVER
+      // resolves. This is load-bearing, not laziness — after the last user move
+      // the bot's turn opens, the book declines (the history has left the
+      // synthetic line), the latch fires, and the search hangs. So no grade can
+      // ever fire and the score ref provably stays at its sentinel.
+      // acceptDrawOverride stays null (the beforeEach default), so the REAL
+      // wouldBotAcceptDraw runs — overriding it would defeat the whole test.
+      const { result } = renderHook(() => useBotGame(DEFAULT_SETTINGS));
+
+      const userMoves: [string, string][] = [
+        ['e2', 'e4'],
+        ['g1', 'f3'],
+        ['d2', 'd3'],
+        ['d3', 'e4'],
+        ['e1', 'd1'],
+      ];
+      for (const [from, to] of userMoves) {
+        act(() => {
+          result.current.attemptMove(from, to);
+        });
+        await advance(REVEAL_DELAY_MAX_MS + 100);
+      }
+
+      // The board really is where we think it is — without this the rest of the
+      // test could pass off a position that never traded queens.
+      expect(result.current.moveHistory).toEqual([
+        'e4',
+        'c6',
+        'Nf3',
+        'd5',
+        'd3',
+        'dxe4',
+        'dxe4',
+        'Qxd1+',
+        'Kxd1',
+      ]);
+      // The bot has evaluated NOTHING this game: the sentinel is genuinely
+      // untouched, not merely overwritten with a 0.5 that happens to look equal.
+      expect(mockGrade).not.toHaveBeenCalled();
+
+      act(() => {
+        result.current.offerDraw();
+      });
+      await advance(0);
+
+      // The bot refuses a draw it has no evaluation for — even though queens
+      // are off and the endgame gate is wide open.
+      expect(result.current.outcome).toBeNull();
+      expect(mockPlaySound).toHaveBeenCalledWith('draw-declined');
+      // Revert-check: restore lastRootPracticalScoreRef's initial value to 0.5
+      // (or drop wouldBotAcceptDraw's null guard) and this goes RED with
+      // outcome === { reason: 'draw', drawReason: 'agreement' } — queens-off
+      // opens the gate and 0.5 sits dead-center in DRAW_ACCEPT_SCORE_BAND.
     });
   });
 

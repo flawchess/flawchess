@@ -51,7 +51,7 @@
 - [x] **Phase 168: Headless Calibration Harness (spike-gated)** - Node harness measuring engine strength across a coarse (ELO × play-style) grid vs known anchors (completed 2026-07-12)
 - [x] **Phase 168.5: Bot Move Pacing & Search Budget (SEED-096)** - Settle the clock/fixed-strength fork, deterministic grades + watchdog fix (SEED-095), soft early stopping + retuned `MAX_NODES` in `mctsSearch`, bounded re-calibration at the shipped budget (completed 2026-07-12)
 - [x] **Phase 169: Clocked Board + Game Loop (`useBotGame`)** - Live clocked board with pacing, all end conditions, resign/draw, and move sounds (completed 2026-07-13)
-- [ ] **Phase 169.5: Bot Opening Book (inserted 2026-07-13)** - Maia-policy-weighted ECO book for the early plies: near-instant, search-free, clock-cheap, varied openings + engine prewarm during the book window
+- [x] **Phase 169.5: Bot Opening Book** - Maia-policy-weighted ECO book for the early plies: near-instant, search-free, clock-cheap, varied openings + engine prewarm during the book window
 - [ ] **Phase 170: localStorage Resume** - Leave and resume a bot game with the clock fairly paused; store each finished game exactly once
 - [ ] **Phase 171: Bots Page + Setup Screen + Nav** - New top-level Bots page tying setup, board, resume, and store-on-finish together for users and guests
 
@@ -199,7 +199,9 @@ Plans:
 
 **UI hint**: yes
 
-### Phase 169.5: Bot Opening Book (SEED-101, inserted 2026-07-13)
+### Phase 169.5: Bot Opening Book
+
+*Inserted 2026-07-13 from the `/gsd-explore` session on slow bot first moves (SEED-101 territory).*
 
 **Goal**: In the opening the bot answers from a book instead of searching, so its early moves are near-instant, cost it almost none of its clock, and vary across games.
 
@@ -219,10 +221,20 @@ Plans:
   - **D-02 Move weighting**: Maia policy at the bot's ELO, over the in-book candidate set. `openings.tsv` carries no frequencies or WDL and most of its 3,641 lines are obscure (Amar Opening, Sodium Attack, Creepy Crawly), so uniform sampling over book continuations would make the bot play garbage openings most of the time. Maia supplies the human-frequency prior the file lacks; the ECO file supplies the theory guardrail and the opening's *name*. One NN eval (~100ms), zero Stockfish.
   - **D-03 Exit rule**: policy floor AND ply cap (SC4). The floor is self-tuning (it fires exactly when no theory move looks human-plausible at that ELO); the cap stops the bot replaying 20 plies of Najdorf theory without ever engaging the engine. Both thresholds are named constants, tuned by feel, in the book module.
   - **D-04 Calibration is NOT perturbed** (read with `botBudget.ts` D-19 before worrying): `scripts/calibration-harness.mjs` already starts *every* anchor game from a mid-opening FEN in `scripts/lib/calibration-openings.mjs`, so the calibrated ELO was never measured on plies 1-8 in the first place. A play-time book moves the app *toward* the harness's regime, not away from it. Do not treat this phase as a strength change requiring re-calibration.
-  - **D-05 Diversity dial**: reuse the existing `policyTemperature.ts` sampling machinery rather than inventing a second sampling path.
+  - **D-05 Sampling reuse**: reuse `botSampling.ts`'s existing raw-policy sampling (the `blend <= 0` regime's `samplePolicy`), renormalized over the in-book candidate subset. Do **NOT** use `applyPolicyTemperature` from `policyTemperature.ts` — Phase 166 D-02 locks that transform out of the bot path (its "flatten = more engine-like" polarity is an artifact of the analysis *ranking* pipeline, where Stockfish grading rescues the surfaced move; in a raw-sampling path there is no rescue, so it would make the bot noisier and weaker and would break the Phase 168 calibration curve). Diversity comes from sampling the policy, not from re-tempering it.
   - **D-06 Troll book is out of scope here**, but the design must leave the hook: `frontend/src/data/trollOpenings.ts` + `lib/trollOpenings.ts` (`deriveUserSideKey`) already exist, and SEED-098's Trickster persona plans to bias the book toward them. Book selection should be structured so a future persona can re-weight candidates without a rewrite.
 
-**Plans**: TBD
+**Plans**: 4 plans
+**Wave 1**
+
+- [x] 169.5-01-PLAN.md — ECO prefix index derived from the existing openings.tsv parse + the whole-corpus SAN-parity property test
+- [x] 169.5-02-PLAN.md — `openingBook.ts`: prefix-filtered candidates, raw-policy floor, ply cap, persona weighting seam, `botSampling` reuse
+- [x] 169.5-03-PLAN.md — engine prewarm: `WorkerPool.warm()` / `MaiaQueue.warm()` (spawn without searching)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 169.5-04-PLAN.md — wire the book into `useBotGame.runBotTurn` ahead of `selectBotMove`, one-way leave-book latch, prewarm on mount
+
 **UI hint**: no (engine/logic only — no new UI surface; the bot simply replies faster in the opening)
 
 ### Phase 170: localStorage Resume
@@ -333,7 +345,7 @@ Plans:
 | 167. Backend Store-on-Finish | 3/3 | Complete    | 2026-07-11 |
 | 168. Headless Calibration Harness (spike-gated) | 3/3 | Complete    | 2026-07-11 |
 | 169. Clocked Board + Game Loop (`useBotGame`) | 10/10 | Complete    | 2026-07-13 |
-| 169.5. Bot Opening Book | 0/? | Not started | - |
+| 169.5. Bot Opening Book | 4/4 | Complete    | 2026-07-13 |
 | 170. localStorage Resume | 0/? | Not started | - |
 | 171. Bots Page + Setup Screen + Nav | 0/? | Not started | - |
 
@@ -343,7 +355,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 10/10 plans complete
+**Plans:** 4/4 plans complete
 
 Plans:
 

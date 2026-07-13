@@ -56,6 +56,20 @@ export interface MaiaQueue {
   policy(fen: string, elo: number, side: Side): Promise<Record<string, number>>;
   /** Post `{type:'terminate'}`, `worker.terminate()`, and reset internal state so a later `policy()` re-spawns. */
   terminate(): void;
+  /**
+   * Spawn the Maia worker (which posts `{type:'init'}` and begins the ONNX
+   * weight load) WITHOUT enqueueing an `analyze` request — the Phase 169.5
+   * prewarm counterpart to `WorkerPool.warm()`.
+   *
+   * This exists even though the opening book's own `deps.policy()` call
+   * already warms Maia by necessity on essentially every bot turn: that makes
+   * "Maia is warm" a latent consequence of "the book happened to run", an
+   * invariant that would break silently under a future config where the book
+   * is disabled or `BOOK_PLY_CAP` is 0. It is the same one-line
+   * `ensureSpawned()` forwarding shape as `WorkerPool.warm()` and costs
+   * nothing. Idempotent — `ensureSpawned()` returns early if a worker exists.
+   */
+  warm(): void;
 }
 
 /** One policy() call awaiting dispatch or resolution. */
@@ -277,5 +291,10 @@ export function createMaiaQueue(): MaiaQueue {
     for (const req of unresolved) req.resolve({});
   }
 
-  return { policy, terminate };
+  /** Prewarm: spawn the worker without an analyze request. See `MaiaQueue.warm()`. */
+  function warm(): void {
+    ensureSpawned();
+  }
+
+  return { policy, terminate, warm };
 }

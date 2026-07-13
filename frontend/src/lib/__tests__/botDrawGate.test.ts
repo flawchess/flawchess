@@ -38,4 +38,16 @@ describe('wouldBotAcceptDraw', () => {
     const chess = new Chess(`4k3/8/8/8/8/8/3Q4/4K3 w - - 0 ${DRAW_ACCEPT_MIN_FULLMOVE}`);
     expect(wouldBotAcceptDraw(0.05, chess)).toBe(false);
   });
+
+  it('declines on the not-yet-evaluated sentinel even with queens off the board', () => {
+    // Phase 169.5. The point of this case is precisely that it is QUEENS-OFF:
+    // the endgame gate is wide open and a 0.5 score would be accepted here
+    // (see the 'accepts a near-equal score once queens are off' case above,
+    // same FEN). Only the null sentinel — the bot has evaluated nothing this
+    // game — stops the accept. Reachable for real: the opening book runs zero
+    // Stockfish evals, and the ECO corpus contains queens-off lines inside
+    // the book's ply cap.
+    const chess = new Chess('4k3/8/8/8/8/8/8/4K3 w - - 0 1');
+    expect(wouldBotAcceptDraw(null, chess)).toBe(false);
+  });
 });
