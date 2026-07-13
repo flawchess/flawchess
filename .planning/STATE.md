@@ -6,15 +6,15 @@ current_phase: 170
 current_phase_name: localStorage Resume
 status: ready
 stopped_at: Shipped Phase 169 (squash-merged to main as 1f671e10; UAT deferred)
-last_updated: "2026-07-13T14:10:00.000Z"
+last_updated: "2026-07-13T14:26:01.928Z"
 last_activity: 2026-07-13
-last_activity_desc: Phase 169 shipped — squash-merged to main (1f671e10)
+last_activity_desc: Phase 169 shipped to main (UAT still deferred)
 progress:
-  total_phases: 7
+  total_phases: 8
   completed_phases: 5
   total_plans: 22
   completed_plans: 22
-  percent: 71
+  percent: 63
 ---
 
 # Project State: FlawChess
@@ -80,6 +80,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - Phase 161 added: Analysis page viewport-locked responsive layout (SEED-088) — fix small-laptop bottom cutoff via 100dvh lock, height-bound board, fluid grid, Tags relocation
 - Phase 162 added: Grading-run-authoritative eval reconciliation — precedence flip (SEED-090, preferred over SEED-089's unified pass; frontend-only, grading run becomes authoritative for all displayed per-move evals)
 - Phase 163 added: Gem moves — Maia-findability move badges on /analysis (SEED-092; escalated from a /gsd-quick request 2026-07-10 — sized as phase-scale: ~10+ files, new detection module, open tunables)
+- Phase 169.5 inserted: Bot Opening Book — inserted 2026-07-13 after a /gsd-explore session on slow bot first moves. Maia-policy-weighted ECO book (frontend/public/openings.tsv) for the early plies; no search, no backend, no re-calibration (the harness already starts from book FENs). New requirement PLAY-11.
 
 ### Decisions
 

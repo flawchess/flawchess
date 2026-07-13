@@ -44,13 +44,14 @@
 
 **Goal:** Let users play clocked games against the FlawChess engine on a new top-level **Bots** page, store every finished game as an analyzable `platform='flawchess'` Library game, and build a headless anchor-calibration harness that first measures the engine's real playing strength. Sourced from SEED-091 (five locked design decisions) + the 2026-07-11 milestone-scoping decisions.
 
-**Dependency waves:** A = {166, 167} · B = {168} · B2 = {168.5, inserted 2026-07-12} · C = {169} · D = {170, 171}. `selectBotMove` (166) is the keystone both the play loop and the harness import; backend store-on-finish (167) is fully independent and parallelizable. 168.5 blocks 169: at the measured ~110s/move (SEED-096) the engine cannot play a clocked game, and 169's pacing SC depends on the clock/fixed-strength decision made in 168.5.
+**Dependency waves:** A = {166, 167} · B = {168} · B2 = {168.5, inserted 2026-07-12} · C = {169} · C2 = {169.5, inserted 2026-07-13} · D = {170, 171}. 169.5 depends on 169 only and is parallelizable with 170/171 (it changes what `useBotGame` asks for a move, not the game loop, resume, or setup surfaces). `selectBotMove` (166) is the keystone both the play loop and the harness import; backend store-on-finish (167) is fully independent and parallelizable. 168.5 blocks 169: at the measured ~110s/move (SEED-096) the engine cannot play a clocked game, and 169's pacing SC depends on the clock/fixed-strength decision made in 168.5.
 
 - [x] **Phase 166: Bot Move Selection Core (`selectBotMove`)** - Pure, provider-agnostic sample↔argmax move-selection blend both the app and the harness reuse (completed 2026-07-11)
 - [x] **Phase 167: Backend Store-on-Finish** - Persist a finished bot game as a `platform='flawchess'` Library game via the shared normalization path (completed 2026-07-11)
 - [x] **Phase 168: Headless Calibration Harness (spike-gated)** - Node harness measuring engine strength across a coarse (ELO × play-style) grid vs known anchors (completed 2026-07-12)
 - [x] **Phase 168.5: Bot Move Pacing & Search Budget (SEED-096)** - Settle the clock/fixed-strength fork, deterministic grades + watchdog fix (SEED-095), soft early stopping + retuned `MAX_NODES` in `mctsSearch`, bounded re-calibration at the shipped budget (completed 2026-07-12)
 - [x] **Phase 169: Clocked Board + Game Loop (`useBotGame`)** - Live clocked board with pacing, all end conditions, resign/draw, and move sounds (completed 2026-07-13)
+- [ ] **Phase 169.5: Bot Opening Book (inserted 2026-07-13)** - Maia-policy-weighted ECO book for the early plies: near-instant, search-free, clock-cheap, varied openings + engine prewarm during the book window
 - [ ] **Phase 170: localStorage Resume** - Leave and resume a bot game with the clock fairly paused; store each finished game exactly once
 - [ ] **Phase 171: Bots Page + Setup Screen + Nav** - New top-level Bots page tying setup, board, resume, and store-on-finish together for users and guests
 
@@ -198,6 +199,32 @@ Plans:
 
 **UI hint**: yes
 
+### Phase 169.5: Bot Opening Book (SEED-101, inserted 2026-07-13)
+
+**Goal**: In the opening the bot answers from a book instead of searching, so its early moves are near-instant, cost it almost none of its clock, and vary across games.
+
+**Depends on**: Phase 169
+**Requirements**: PLAY-11
+**Success Criteria** (what must be TRUE):
+
+  1. While in book, the bot plays without running an MCTS search at all: no Stockfish leaf evals, no node budget consumed. Its reply arrives within the existing `REVEAL_DELAY_MIN_MS`/`REVEAL_DELAY_MAX_MS` reveal band rather than the 5-13s search band, and the clock it is debited for a book move is a small fraction of what a searched move costs it.
+  2. Book candidates are the legal moves that keep the game a prefix of some line in the shipped ECO database (`frontend/public/openings.tsv`, 3,641 lines), and the move is sampled from those candidates weighted by Maia's policy at the bot's configured ELO — so the bot plays human-frequency-realistic, ELO-appropriate theory, not uniformly-sampled ECO obscurities.
+  3. Repeated games from the same start position do not always open identically (the policy-weighted sampling produces genuine opening variety), and the opening played is one the ECO database can name.
+  4. The bot leaves book — and resumes normal `selectBotMove` search — as soon as no in-book continuation clears a Maia policy floor, or a ply cap is reached, whichever comes first. Leaving book is a one-way transition within a game.
+  5. The engine (Stockfish `WorkerPool` + Maia session) is warmed during the book window, so the first *searched* move of the game does not additionally pay worker-spawn + ONNX-load cold start on top of its search.
+
+**Locked decisions (from the 2026-07-13 `/gsd-explore` session — do NOT re-litigate in planning):**
+
+  - **D-01 Book source**: the already-shipped `frontend/public/openings.tsv` (currently used only by `lib/openings.ts` for opening *naming*). No new asset, no backend endpoint, no network dependency — bot play stays fully client-side. Rejected: a `game_positions`-backed DB book (adds a server round-trip and a new aggregate to an all-client bot); a hand-curated static book (narrow, hand-maintained, the human deviates out of it immediately).
+  - **D-02 Move weighting**: Maia policy at the bot's ELO, over the in-book candidate set. `openings.tsv` carries no frequencies or WDL and most of its 3,641 lines are obscure (Amar Opening, Sodium Attack, Creepy Crawly), so uniform sampling over book continuations would make the bot play garbage openings most of the time. Maia supplies the human-frequency prior the file lacks; the ECO file supplies the theory guardrail and the opening's *name*. One NN eval (~100ms), zero Stockfish.
+  - **D-03 Exit rule**: policy floor AND ply cap (SC4). The floor is self-tuning (it fires exactly when no theory move looks human-plausible at that ELO); the cap stops the bot replaying 20 plies of Najdorf theory without ever engaging the engine. Both thresholds are named constants, tuned by feel, in the book module.
+  - **D-04 Calibration is NOT perturbed** (read with `botBudget.ts` D-19 before worrying): `scripts/calibration-harness.mjs` already starts *every* anchor game from a mid-opening FEN in `scripts/lib/calibration-openings.mjs`, so the calibrated ELO was never measured on plies 1-8 in the first place. A play-time book moves the app *toward* the harness's regime, not away from it. Do not treat this phase as a strength change requiring re-calibration.
+  - **D-05 Diversity dial**: reuse the existing `policyTemperature.ts` sampling machinery rather than inventing a second sampling path.
+  - **D-06 Troll book is out of scope here**, but the design must leave the hook: `frontend/src/data/trollOpenings.ts` + `lib/trollOpenings.ts` (`deriveUserSideKey`) already exist, and SEED-098's Trickster persona plans to bias the book toward them. Book selection should be structured so a future persona can re-weight candidates without a rewrite.
+
+**Plans**: TBD
+**UI hint**: no (engine/logic only — no new UI surface; the bot simply replies faster in the opening)
+
 ### Phase 170: localStorage Resume
 
 **Goal**: A user can leave a bot game mid-play and resume it later with the clock fairly paused, and each finished game is stored exactly once.
@@ -306,6 +333,7 @@ Plans:
 | 167. Backend Store-on-Finish | 3/3 | Complete    | 2026-07-11 |
 | 168. Headless Calibration Harness (spike-gated) | 3/3 | Complete    | 2026-07-11 |
 | 169. Clocked Board + Game Loop (`useBotGame`) | 10/10 | Complete    | 2026-07-13 |
+| 169.5. Bot Opening Book | 0/? | Not started | - |
 | 170. localStorage Resume | 0/? | Not started | - |
 | 171. Bots Page + Setup Screen + Nav | 0/? | Not started | - |
 

@@ -28,6 +28,7 @@ Requirements for this milestone. Each maps to a roadmap phase.
 - [x] **PLAY-08**: User hears move / capture / check / game-end sounds, with a mute control.
 - [x] **PLAY-09**: On game end, a result screen shows the outcome (win/loss/draw + reason) with "Analyze this game" and "New game" actions.
 - [ ] **PLAY-10**: Both logged-in users and guests can play bot games and have their finished games saved.
+- [ ] **PLAY-11**: In the opening the bot plays from a book instead of searching — moves that keep the game inside the shipped ECO opening database, weighted by Maia's policy at the bot's ELO — so early moves are near-instant, spend no search budget, cost the bot almost none of its clock, and vary across games.
 
 ### Game Storage (STORE)
 
@@ -99,6 +100,7 @@ Which phases cover which requirements. Filled during roadmap creation.
 | PLAY-08 | Phase 169 | Complete |
 | PLAY-09 | Phase 169 | Complete (Plan 06/7 closes it — GameResultDialog/GameResultStrip result screen with Analyze/New game actions) |
 | PLAY-10 | Phase 171 | Pending |
+| PLAY-11 | Phase 169.5 | Pending |
 | STORE-01 | Phase 167 | Complete |
 | STORE-02 | Phase 167 | Complete |
 | STORE-03 | Phase 167 | Complete |
