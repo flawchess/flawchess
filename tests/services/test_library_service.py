@@ -1327,9 +1327,7 @@ class TestGetLibraryGame:
         assert card.phase_transitions is None
 
     @pytest.mark.asyncio
-    async def test_analyzed_game_moves_and_eval_series_unchanged(
-        self, db_session: object
-    ) -> None:
+    async def test_analyzed_game_moves_and_eval_series_unchanged(self, db_session: object) -> None:
         """Quick 260714-rj5: an analyzed game's card is byte-for-byte unchanged.
 
         Same moves, eval_series, flaw_markers, phase_transitions as before this
