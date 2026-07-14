@@ -24,7 +24,7 @@ progress:
 Phase: 999.1 — Password Reset (BACKLOG)
 Plan: Not started
 Status: Ready to execute
-Last activity: 2026-07-14 — Phase 171 shipped, squash-merged to main (0cad3612)
+Last activity: 2026-07-14 — Completed quick task 260714-pnk: bot games show the player's platform username instead of "You"
 
 ## Project Reference
 
@@ -302,6 +302,7 @@ None active.
 | 260710-x3d | Openings analyze passes the opening's moves to the analysis board as a `?line=` UCI param (cursor at end, navigable back to move 1), replacing the `?fen=` snapshot; new buildAnalysisLineUrl/parseAnalysisLineParam helpers; game mode kept (user-confirmed) | 2026-07-10 | edce3687 | [260710-x3d-implement-opening-moves-main-line-in-ana](./quick/260710-x3d-implement-opening-moves-main-line-in-ana/) |
 | 260712-r4s | Calibration harness `--resume <prior.tsv>` (SEED-097): skips already-swept `(elo,blend,anchor)` cells, fast-forwards the global gameIndex, appends remaining cells → finished map byte-identical to an uninterrupted run; refuses on games-per-cell/seed/budget/grid mismatch or a truncated prior file | 2026-07-12 | b13a1d98 | [260712-r4s-calibration-harness-resume-flag](./quick/260712-r4s-calibration-harness-resume-flag/) |
 | 260714-f2b | Default Opponent Type filter changed from Human to Both (DEFAULT_FILTERS + useStats/useOpeningInsights fallbacks); computer games now included by default across Stats, Openings, Endgames, Library | 2026-07-14 | 912e8c3e | — |
+| 260714-pnk | Bot games show the player's real platform username instead of "You" (lichess → chess.com → "You"), on the /bots clock caption and in the stored `games` row; one resolver per stack (`resolve_player_username` / `resolvePlayerName`) | 2026-07-14 | 355b52d5 | [260714-pnk-show-player-s-platform-username-instead-](./quick/260714-pnk-show-player-s-platform-username-instead-/) |
 
 ## Deferred Items
 

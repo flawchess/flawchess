@@ -18,6 +18,9 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Bot play groundwork: a bot game now survives closing the tab. Returning to `/bots` offers a "Resume game?" prompt showing the position, time control, bot ELO, move count, and how long ago you left, and picks the game up exactly where it stood — the clock is paused while you are away, so only your own thinking time is billed and the bot's interrupted search is refunded. Discarding asks for confirmation first. Abandoned games leave no trace on the server, and a finished game is stored exactly once no matter how many times you reload (Phase 170).
 - Play a bot: Bots is now a real top-level page, linked from the nav on desktop and mobile and open to guests as well as logged-in users. A setup screen configures the game (time control, bot ELO, play style, and your colour, including random), remembers your last choices, and seeds the ELO from your own rating. From there the clocked board, resume, and store-on-finish all hang together: a finished game is saved to your Library with a link to it, "New game" returns to setup, and "Analyze this game" opens the analysis board already oriented to the colour you played (Phase 171).
 
+### Changed
+- Play a bot: your side of the board is now labelled with your real username (your Lichess name, or your chess.com name if you have not linked Lichess) instead of "You", both on the clock while you play and on the saved game in your Library. It still reads "You" if you have linked neither platform (quick 260714-pnk).
+
 ## [v2.2] Analysis ELO Calibration & Deep-links — 2026-07-11
 
 ### Added
