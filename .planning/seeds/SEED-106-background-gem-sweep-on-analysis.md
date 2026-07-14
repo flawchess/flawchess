@@ -59,9 +59,15 @@ per-node resolution — a confirmed `GemDetail` or an explicit `null` miss. The 
   frontend feature — everything else about them is backend-shaped already. Keeping gems in
   the client preserves v2.0's zero-server-load property (SEED-082).
 
-- **D3 — Sweep analyzed games only.** No backend evals ⇒ no free prefilter ⇒ no sweep.
-  Unanalyzed games keep today's lazy behavior and surface the existing one-click Analyze
-  pill instead of burning client CPU.
+- **D3 — Sweep analyzed games only, but trigger on analysis *becoming* ready.** No backend
+  evals ⇒ no free prefilter ⇒ no sweep. Unanalyzed games keep today's lazy behavior and
+  surface the existing one-click Analyze pill instead of burning client CPU.
+  **Amended 2026-07-14 (Adrian):** "analyzed" is not a one-shot check at mount. A bot game
+  opened while its tier-1 analysis runs in the background (the live-updating analysis board
+  from quick 260714-rj5) must be swept the moment the evals arrive. The sweep therefore
+  keys off analysis readiness as a *transition*, not a mount-time boolean — otherwise the
+  single most likely game to be opened mid-analysis (a game the user just played against a
+  bot) is exactly the one that never gets swept.
 
 - **D4 — Prefilter: `played === best_move` AND out of opening book.** Both free.
   Strict `best_move` equality (rather than an es-loss band) fails safe: the backend

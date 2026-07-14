@@ -38,9 +38,9 @@
 - ✅ **v2.0 FlawChess Engine** — Phases 153–161 (incl. 158/159 SEED-driven + 160/161 UI polish) (shipped 2026-07-09) — client-side practical-play analysis engine (Stockfish + Maia expectimax-in-MCTS) on `/analysis`, zero server load (SEED-082) — see [milestones/v2.0-ROADMAP.md](milestones/v2.0-ROADMAP.md)
 - ✅ **v2.1 Analysis Eval Reconciliation & Gem Moves** — Phases 162, 163 (merged to main 2026-07-10; deploy pending) — grading-first eval reconciliation so "Good" never outranks "Best" (SEED-090) + violet gem badges for hard-to-find best moves (SEED-092), both frontend-only on `/analysis` — see [milestones/v2.1-ROADMAP.md](milestones/v2.1-ROADMAP.md)
 - ✅ **v2.2 Analysis ELO Calibration & Deep-links** — Phases 164, 165 (shipped 2026-07-11; deployed to production, PRs #253/#254) — Maia ELO seated at each player's Lichess-blitz-equivalent rating (SEED-093) + additive `?fen=` analysis deep-link and a headless gem-ELO calibration harness (SEED-094) — see [milestones/v2.2-ROADMAP.md](milestones/v2.2-ROADMAP.md)
-- 🚧 **v2.3 Bot Play** — Phases 166–171 (ACTIVE, roadmapped 2026-07-11) — clocked play against the FlawChess engine on a new top-level **Bots** page (`selectBotMove` sample↔argmax blend), every finished game stored as a `platform='flawchess'` analyzable Library game, localStorage resume, and a headless anchor-calibration harness for the first (ELO × play-style) strength map (SEED-091)
+- 🚧 **v2.3 Bot Play** — Phases 166–172 (ACTIVE, roadmapped 2026-07-11; Phase 172 added 2026-07-14) — clocked play against the FlawChess engine on a new top-level **Bots** page (`selectBotMove` sample↔argmax blend), every finished game stored as a `platform='flawchess'` analyzable Library game, localStorage resume, and a headless anchor-calibration harness for the first (ELO × play-style) strength map (SEED-091)
 
-## Active Milestone: v2.3 Bot Play (Phases 166–171)
+## Active Milestone: v2.3 Bot Play (Phases 166–172)
 
 **Goal:** Let users play clocked games against the FlawChess engine on a new top-level **Bots** page, store every finished game as an analyzable `platform='flawchess'` Library game, and build a headless anchor-calibration harness that first measures the engine's real playing strength. Sourced from SEED-091 (five locked design decisions) + the 2026-07-11 milestone-scoping decisions.
 
@@ -54,6 +54,7 @@
 - [x] **Phase 169.5: Bot Opening Book** - Maia-policy-weighted ECO book for the early plies: near-instant, search-free, clock-cheap, varied openings + engine prewarm during the book window
 - [x] **Phase 170: localStorage Resume** - Leave and resume a bot game with the clock fairly paused; store each finished game exactly once (completed 2026-07-14)
 - [x] **Phase 171: Bots Page + Setup Screen + Nav** - New top-level Bots page tying setup, board, resume, and store-on-finish together for users and guests (completed 2026-07-14)
+- [ ] **Phase 172: Background Gem Sweep on Analysis (SEED-106)** - Resolve gems for the whole mainline in the background so badges land ahead of the cursor, plus opening-book markers and a gem-threshold raise
 
 ### Phase 166: Bot Move Selection Core (`selectBotMove`)
 
@@ -311,6 +312,30 @@ Plans:
 **UI hint**: yes
 **Blocker (read before planning)**: SEED-100 — SC2's "play-style" knob is `BotGameSettings.blend`. At `blend = 0` the Phase 169 D-16 think deadline is computed and **thrown away** (`selectBotMove` returns from the policy before consulting `deps.search`), so a blend-0 bot has an honest, flaggable clock with **no pacing mechanism**. `Bots.tsx` hardcodes `blend: 0.5` today, which is the only reason it does not bite. Resolve before exposing the slider. See also SEED-099 (the "bot can lose on time" invariant is enforced by comment, not construction).
 
+### Phase 172: Background Gem Sweep on Analysis (SEED-106)
+
+**Goal**: Gems resolve for the whole mainline in the background while the analysis board is open, so badges fill in ahead of the cursor instead of at it — a gem the user steps past before it renders is a feature that does not exist.
+**Depends on**: Phase 171 (sequencing only; no code dependency — this phase touches `/analysis`, not `/bots`)
+**Requirements**: none — SEED-106 direct (D1–D8 locked 2026-07-14)
+**Success Criteria** (what must be TRUE):
+
+  1. Opening an analyzed game sweeps its whole mainline in the background and fills gem badges ahead of the cursor, via the free → cheap → expensive cascade: free prefilter (`played === best_move` from the already-fetched `EvalPoint`, AND out of opening book), then Maia C1 on the survivors, then a Stockfish parent grade on the few that clear C1 (D4).
+  2. The sweep yields to the position the user is actually looking at — it never starves the live free-run or grading engines for the current node, and the page does not feel slower than it does today (D5).
+  3. Gem classification is pinned to each **mover's own** Lichess-blitz-normalized rating-at-game-time, not the ELO slider — moving the slider no longer shifts which moves are gems (D1, a behavior change from shipped code).
+  4. Unanalyzed games are not swept: they keep today's lazy behavior and surface the existing one-click Analyze pill (D3).
+  5. `GEM_MAIA_MAX_PROB` is raised 0.10 → 0.20, so "hard to find" means "fewer than 1 in 5 rating-peers would play it" (D7).
+  6. The game-detail payload carries an additive `opening_ply_count`, computed on-read from the existing SAN trie (no column, no migration, no backfill), and every ply within it renders a book marker on both the `VariationTree` and the board corner marker — with precedence `severity > gem > book` (D6, D8).
+  7. A **bot game opened while its tier-1 analysis is still running** (quick 260714-rj5's live-updating analysis board) is swept as soon as the evals land — the sweep is triggered by analysis *becoming* ready, not only by it being ready at open time. A game does not stay stuck in lazy mode for the session just because it was unanalyzed when the board mounted.
+
+**Plans**: TBD (run `/gsd-plan-phase 172`)
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 172 to break down)
+
+**UI hint**: yes
+**Seed**: `.planning/seeds/SEED-106-background-gem-sweep-on-analysis.md` — read it before planning; D1–D8 are locked, and the gating question for any plan is **contention (D5), not compute**. Supersedes SEED-092 D-02 (no opening-ply guard).
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -393,6 +418,7 @@ Plans:
 | 169.5. Bot Opening Book | 4/4 | Complete    | 2026-07-13 |
 | 170. localStorage Resume | 5/5 | Complete    | 2026-07-14 |
 | 171. Bots Page + Setup Screen + Nav | 10/10 | Complete    | 2026-07-14 |
+| 172. Background Gem Sweep on Analysis (SEED-106) | 0/0 | Not planned | — |
 
 ## Backlog
 
