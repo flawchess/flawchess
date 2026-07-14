@@ -12,12 +12,15 @@ in the fixture's teardown, verified empirically for this phase).
 
 from __future__ import annotations
 
+import io
 import uuid
 from typing import Literal
 
+import chess.pgn
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.models.bot_game_settings import BotGameSettings
 from app.models.game import Game
 from app.repositories.user_rating_anchors_repository import upsert_anchor
@@ -57,18 +60,27 @@ _PGN_MISSING_CLOCK = (
     "4. Qxf7# {[%clk 0:02:54]} 1-0\n"
 )
 
+# A materially different mainline (Termination differs from _PGN_CHECKMATE too)
+# for D-11's duplicate-re-submit-does-not-rewrite test.
+_PGN_CHECKMATE_ALT = (
+    '[Event "FlawChess Bot Game"]\n[Result "0-1"]\n\n'
+    "1. d4 {[%clk 0:03:00]} d5 {[%clk 0:03:00]} "
+    "2. c4 {[%clk 0:02:58]} e6 {[%clk 0:02:58]} 0-1\n"
+)
+
 
 def _make_request(
     *,
     game_uuid: str | None = None,
     pgn: str = _PGN_CHECKMATE,
     user_color: Literal["white", "black"] = "white",
+    bot_elo: int = _TEST_BOT_ELO,
 ) -> StoreBotGameRequest:
     return StoreBotGameRequest(
         game_uuid=game_uuid or str(uuid.uuid4()),
         pgn=pgn,
         user_color=user_color,
-        bot_elo=_TEST_BOT_ELO,
+        bot_elo=bot_elo,
         play_style_blend=0.5,
         tc_preset=_TC_STR,
     )
@@ -286,3 +298,174 @@ class TestPlayerUsername:
         game = await db_session.get(Game, response.game_id)
         assert game is not None
         assert game.white_username == FLAWCHESS_PLAYER_FALLBACK_USERNAME
+
+
+def _reparse_stored_pgn(pgn_text: str) -> chess.pgn.Headers:
+    """Re-parse a stored games.pgn column and return its headers.
+
+    Every TestPgnHeaders assertion goes through this — never asserts on the
+    in-memory NormalizedGame/StoreBotGameResponse (quick-260714-qaj).
+    """
+    game = chess.pgn.read_game(io.StringIO(pgn_text))
+    assert game is not None
+    return game.headers
+
+
+class TestPgnHeaders:
+    """quick-260714-qaj: the full D-03 header block, stamped end-to-end.
+
+    Every assertion re-reads games.pgn FROM THE DB and re-parses it.
+    """
+
+    async def test_anchored_white_full_header_block(self, db_session: AsyncSession) -> None:
+        user_id = _TEST_USER_ID + 10
+        await ensure_test_user(db_session, user_id)
+        await upsert_anchor(
+            db_session,
+            user_id=user_id,
+            time_control_bucket=_TC_BUCKET,
+            anchor_rating=1550,
+            n_chesscom_games=0,
+            n_lichess_games=25,
+            chesscom_median_native=None,
+            lichess_median_native=1550,
+        )
+        await db_session.flush()
+
+        response = await store_bot_game(db_session, user_id, _make_request())
+        assert response is not None
+
+        game = await db_session.get(Game, response.game_id)
+        assert game is not None
+        headers = _reparse_stored_pgn(game.pgn)
+
+        # D-07: the Site deep link carries the REAL post-INSERT game_id.
+        assert (
+            headers["Site"]
+            == f"{settings.FRONTEND_URL.rstrip('/')}/analysis?game_id={response.game_id}"
+        )
+        assert headers["TimeControl"] == _TC_STR
+        assert headers["Termination"] == "checkmate"
+        assert headers["PlayStyleBlend"] == "0.50"
+        assert headers["Event"] == "FlawChess bot game"
+        assert headers["Round"] == "-"
+        assert headers["Variant"] == "Standard"
+
+    async def test_column_header_consistency(self, db_session: AsyncSession) -> None:
+        """D-01 one-source-of-truth invariant: header values equal their column."""
+        user_id = _TEST_USER_ID + 11
+        await ensure_test_user(db_session, user_id)
+        await upsert_anchor(
+            db_session,
+            user_id=user_id,
+            time_control_bucket=_TC_BUCKET,
+            anchor_rating=1550,
+            n_chesscom_games=0,
+            n_lichess_games=25,
+            chesscom_median_native=None,
+            lichess_median_native=1550,
+        )
+        await db_session.flush()
+
+        response = await store_bot_game(db_session, user_id, _make_request())
+        assert response is not None
+
+        game = await db_session.get(Game, response.game_id)
+        assert game is not None
+        headers = _reparse_stored_pgn(game.pgn)
+
+        assert headers["White"] == game.white_username
+        assert headers["Black"] == game.black_username
+        assert game.white_rating is not None
+        assert int(headers["WhiteElo"]) == game.white_rating
+        assert game.black_rating is not None
+        assert int(headers["BlackElo"]) == game.black_rating
+        assert game.opening_eco is not None
+        assert headers["ECO"] == game.opening_eco
+        assert game.opening_name is not None
+        assert headers["Opening"] == game.opening_name
+        assert headers["Result"] == game.result
+        assert headers["Termination"] == game.termination
+
+    async def test_no_anchor_omits_white_elo_and_rating_source(
+        self, db_session: AsyncSession
+    ) -> None:
+        user_id = _TEST_USER_ID + 12
+        await ensure_test_user(db_session, user_id)
+
+        response = await store_bot_game(db_session, user_id, _make_request())
+        assert response is not None
+
+        game = await db_session.get(Game, response.game_id)
+        assert game is not None
+        assert game.white_rating is None
+        headers = _reparse_stored_pgn(game.pgn)
+
+        assert "WhiteElo" not in headers
+        assert "RatingSource" not in headers
+        assert headers["BlackElo"] == str(_TEST_BOT_ELO)
+
+    async def test_user_plays_black_gets_white_title_on_bot(self, db_session: AsyncSession) -> None:
+        user_id = _TEST_USER_ID + 13
+        await ensure_test_user(db_session, user_id)
+
+        response = await store_bot_game(db_session, user_id, _make_request(user_color="black"))
+        assert response is not None
+
+        game = await db_session.get(Game, response.game_id)
+        assert game is not None
+        headers = _reparse_stored_pgn(game.pgn)
+
+        assert headers["WhiteTitle"] == "BOT"
+        assert "BlackTitle" not in headers
+
+    async def test_clk_survives_end_to_end(self, db_session: AsyncSession) -> None:
+        user_id = _TEST_USER_ID + 14
+        await ensure_test_user(db_session, user_id)
+
+        response = await store_bot_game(db_session, user_id, _make_request())
+        assert response is not None
+
+        game = await db_session.get(Game, response.game_id)
+        assert game is not None
+        reparsed = chess.pgn.read_game(io.StringIO(game.pgn))
+        assert reparsed is not None
+        nodes = list(reparsed.mainline())
+        assert nodes
+        white_to_move = reparsed.board().turn
+        white_clocks = [n.clock() for i, n in enumerate(nodes) if (i % 2 == 0) == white_to_move]
+        black_clocks = [n.clock() for i, n in enumerate(nodes) if (i % 2 == 0) != white_to_move]
+        assert white_clocks and all(c is not None for c in white_clocks)
+        assert black_clocks and all(c is not None for c in black_clocks)
+
+    async def test_duplicate_resubmit_does_not_rewrite_pgn(self, db_session: AsyncSession) -> None:
+        """D-11: a re-submit with a forged PGN + different bot_elo must not
+        overwrite the stored row's PGN (T-qaj-03).
+        """
+        user_id = _TEST_USER_ID + 15
+        await ensure_test_user(db_session, user_id)
+        game_uuid = str(uuid.uuid4())
+
+        first_request = _make_request(game_uuid=game_uuid)
+        first = await store_bot_game(db_session, user_id, first_request)
+        assert first is not None
+        assert first.created is True
+
+        first_game = await db_session.get(Game, first.game_id)
+        assert first_game is not None
+        first_pgn = first_game.pgn
+
+        second_request = _make_request(
+            game_uuid=game_uuid, pgn=_PGN_CHECKMATE_ALT, bot_elo=_TEST_BOT_ELO + 200
+        )
+        second = await store_bot_game(db_session, user_id, second_request)
+        assert second is not None
+        assert second.created is False
+        assert second.game_id == first.game_id
+
+        # Refresh/expire the ORM identity map so the re-read hits the DB, not
+        # a cached in-memory instance.
+        db_session.expire_all()
+        reread_game = await db_session.get(Game, first.game_id)
+        assert reread_game is not None
+        assert reread_game.pgn == first_pgn

@@ -3,19 +3,20 @@
 Orchestrates: server-side rating derivation (D-05/D-06/D-07) -> PGN-only
 normalization (normalize_flawchess_game) -> the existing hot-lane persistence
 path (import_service._flush_batch, D-09) -> a game-id lookup (Pitfall 2, no id
-in _flush_batch's return) -> the one-to-one bot_game_settings insert -> a single
-commit (D-10). The service owns the transaction boundary; _flush_batch itself
-never commits (WR-05).
+in _flush_batch's return) -> a post-insert PGN header stamp + targeted UPDATE
+(quick-260714-qaj, D-07 — the `Site` deep link needs the auto-increment
+`games.id`) -> the one-to-one bot_game_settings insert -> a single commit
+(D-10). The service owns the transaction boundary; _flush_batch itself never
+commits (WR-05).
 """
-
-from typing import Literal
 
 import sentry_sdk
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.bot_game_settings import BotGameSettings
 from app.repositories import game_repository, user_rating_anchors_repository, user_repository
-from app.schemas.bots import StoreBotGameRequest, StoreBotGameResponse
+from app.schemas.bots import RatingSource, StoreBotGameRequest, StoreBotGameResponse
+from app.services.bot_game_pgn import stamp_bot_game_headers
 from app.services.import_service import _flush_batch
 from app.services.normalization import (
     FLAWCHESS_PLAYER_FALLBACK_USERNAME,
@@ -25,8 +26,6 @@ from app.services.normalization import (
 
 # Platform constant — the one value this service ever writes/looks up (D-04/D-17).
 _FLAWCHESS_PLATFORM = "flawchess"
-
-RatingSource = Literal["lichess", "chesscom", "blended"]
 
 
 def _derive_rating_source(
@@ -157,7 +156,8 @@ async def store_bot_game(
 
         if created:
             # D-11: guard so a duplicate re-submit (created=False) never
-            # double-inserts the one-to-one settings row.
+            # double-inserts the one-to-one settings row NOR rewrites the
+            # already-stored PGN (T-qaj-03).
             session.add(
                 BotGameSettings(
                     game_id=game_id,
@@ -167,6 +167,21 @@ async def store_bot_game(
                     rating_source=rating_source,
                 )
             )
+
+            # quick-260714-qaj/D-07: the `Site` deep link needs the row's real
+            # auto-increment `games.id`, which only exists post-INSERT — so the
+            # full header block is stamped here, once, in a second targeted
+            # UPDATE. _flush_batch's Stage 5 position parse already ran against
+            # the raw client PGN and is unaffected (header-only change, the
+            # mainline is untouched).
+            stamped_pgn = stamp_bot_game_headers(
+                normalized=normalized,
+                game_id=game_id,
+                tc_preset=request.tc_preset,
+                rating_source=rating_source,
+                play_style_blend=request.play_style_blend,
+            )
+            await game_repository.update_game_pgn(session, game_id, stamped_pgn)
     except Exception:
         sentry_sdk.set_context(
             "store_bot_game", {"user_id": user_id, "game_uuid": request.game_uuid}
