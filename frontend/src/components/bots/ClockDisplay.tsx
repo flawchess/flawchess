@@ -4,7 +4,9 @@ import { formatClockLabel, isLowTime } from '@/lib/chessClock';
 import { CLOCK_LOW_TIME_URGENT } from '@/lib/theme';
 
 interface ClockDisplayProps {
-  /** Side caption — "You" / "FlawChess Bot" per the UI-SPEC Copywriting Contract. */
+  /** Side caption — the resolved player display name (lichess_username ->
+   * chess_com_username -> "You", see lib/playerName.ts) for the human side,
+   * or "FlawChess Bot" for the bot side, per the UI-SPEC Copywriting Contract. */
   sideLabel: string;
   /** Remaining time in milliseconds. */
   remainingMs: number;

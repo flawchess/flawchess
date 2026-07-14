@@ -40,6 +40,7 @@ import { useDrainPendingStore, useStoreBotGame, toStoreRequest } from '@/hooks/u
 import { readSnapshot, clearSnapshot, type BotGameSnapshot } from '@/lib/botGameSnapshot';
 import { removePendingStore } from '@/lib/botPendingStore';
 import type { MoverColor } from '@/lib/liveFlaw';
+import { resolvePlayerName } from '@/lib/playerName';
 import { setMuted, unlockAudio, useMuted } from '@/lib/sounds';
 import { buildAnalysisLineUrl } from '@/lib/analysisUrl';
 
@@ -189,6 +190,10 @@ interface BotsGameProps {
   /** SC4: threaded down to the result surfaces' guest caveat — sourced from
    * `BotsPage`'s own `useUserProfile()` call, not a second hook call here. */
   isGuest: boolean;
+  /** quick-260714-pnk: the player-side clock caption — resolved by
+   * `BotsPage` from its own `useUserProfile()` call (lichess_username ->
+   * chess_com_username -> "You"), never a second hook call here. */
+  playerName: string;
   /** Discard-confirmed: clears the snapshot and remounts a fresh game
    * (BotsPage's `handleDiscard`, via the `key`-changed remount). */
   onDiscard: () => void;
@@ -210,6 +215,7 @@ function BotsGame({
   ownerKey,
   settings,
   isGuest,
+  playerName,
   onDiscard,
   onNewGame,
 }: BotsGameProps): ReactElement {
@@ -324,7 +330,7 @@ function BotsGame({
   );
   const userClock = (
     <ClockDisplay
-      sideLabel="You"
+      sideLabel={playerName}
       remainingMs={settings.userColor === 'white' ? game.whiteClockMs : game.blackClockMs}
       isActive={game.activeColor === settings.userColor}
       isThinking={false}
@@ -405,6 +411,10 @@ export default function BotsPage(): ReactElement {
   // SC4: passed down to BotsGame's guest caveat — reads `useUserProfile()`
   // once here rather than a second call in BotsGame.
   const isGuest = profile?.is_guest ?? false;
+  // quick-260714-pnk: the player-side clock caption, resolved once here from
+  // the single `useUserProfile()` call above (never a second hook call in
+  // BotsGame) — lichess_username -> chess_com_username -> "You".
+  const playerName = resolvePlayerName(profile);
 
   const [boot, setBoot] = useState<{ resume: BotGameSnapshot | null; nonce: number } | null>(
     null,
@@ -500,6 +510,7 @@ export default function BotsPage(): ReactElement {
         settings={boot.resume.settings}
         ownerKey={ownerKey}
         isGuest={isGuest}
+        playerName={playerName}
         onDiscard={handleDiscard}
         onNewGame={handleNewGame}
       />
@@ -523,6 +534,7 @@ export default function BotsPage(): ReactElement {
       settings={startedSettings}
       ownerKey={ownerKey}
       isGuest={isGuest}
+      playerName={playerName}
       onDiscard={handleDiscard}
       onNewGame={handleNewGame}
     />
