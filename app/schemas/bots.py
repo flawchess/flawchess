@@ -5,10 +5,16 @@ the PGN and user_rating_anchors; the client never supplies those (D-05/D-08/D-14
 """
 
 import uuid
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.normalization import Color
+
+# quick-260714-qaj (F-5): relocated from store_bot_game_service.py to break a
+# circular import (app.services.bot_game_pgn needs it too). This is the closed
+# vocabulary the BotGameSettings.rating_source column CHECKs.
+RatingSource = Literal["lichess", "chesscom", "blended"]
 
 # Named constants (no magic numbers per CLAUDE.md)
 MAX_BOT_PGN_LENGTH = 100_000  # bounds the DoS surface of a client-POSTed PGN (RESEARCH Security)

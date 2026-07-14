@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -99,6 +99,24 @@ async def get_game_id_by_platform_game_id(
         )
     )
     return result.scalar_one_or_none()
+
+
+async def update_game_pgn(session: AsyncSession, game_id: int, pgn: str) -> None:
+    """Overwrite a single game row's stored `pgn` (quick-260714-qaj / D-07).
+
+    The `Site` header of a stored bot game's PGN needs the row's own
+    auto-increment `games.id`, which does not exist at `normalize_flawchess_
+    game` time — so the header block is stamped in a second, targeted UPDATE
+    after the INSERT. Does NOT commit — the caller owns the transaction
+    (D-10).
+
+    Args:
+        session: AsyncSession to use.
+        game_id: The row's internal id (already scoped to the caller's user
+            by the preceding lookup).
+        pgn: The fully re-serialized PGN string to write.
+    """
+    await session.execute(update(Game).where(Game.id == game_id).values(pgn=pgn))
 
 
 async def count_games_for_user(session: AsyncSession, user_id: int) -> int:
