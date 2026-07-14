@@ -75,6 +75,7 @@ import type { FlawMarkerEntry } from '@/components/analysis/VariationTree';
 import type { FlawSeverity } from '@/types/library';
 import { tacticOrientationAtPly } from '@/lib/tacticOrientation';
 import { EvalChart } from '@/components/library/EvalChart';
+import { AnalysisPendingPill } from '@/components/library/AnalysisPendingPill';
 import { AnalysisTagsPanel } from '@/components/analysis/AnalysisTagsPanel';
 import { MaiaHumanPanel } from '@/components/analysis/MaiaHumanPanel';
 import { EloSelector } from '@/components/analysis/EloSelector';
@@ -591,8 +592,11 @@ export default function Analysis() {
 
   // Game-by-id fetch for full-game mode (D-4: existing endpoint, no new backend).
   // Unconditional hook call; enabled only when isGameMode (gameId is null otherwise).
+  // Quick 260714-rj5: `live: true` polls while analysis is pending/leased so a
+  // freshly-enqueued bot game's eval chart appears in place once the job lands.
   const { data: gameData, isError: gameError } = useLibraryGame(
     isGameMode ? gameId : null,
+    { live: true },
   );
 
   // Free-play ELO default source (D-07) — read from useUserProfile(), never useAuth().user
@@ -2203,6 +2207,10 @@ export default function Analysis() {
 
   // The eval-chart element (game mode only) — placed below the board on desktop, inside the
   // Eval tab on mobile. Single instance; rendered in whichever tree is active.
+  // Quick 260714-rj5: this is "the EVAL DATA is ready", not "the game is ready" —
+  // an unanalyzed game-mode card now arrives with moves + phase_transitions
+  // (Task 1) but eval_series/flaw_markers stay null, so the move list and board
+  // render from gameData.moves while evalChartReady stays false.
   const evalChartReady =
     isGameMode &&
     gameId != null &&
@@ -2210,29 +2218,52 @@ export default function Analysis() {
     gameData.flaw_markers != null &&
     gameData.phase_transitions != null &&
     gameData.moves != null;
+  // While analysis hasn't landed yet, show the Pending…/Analyzing… pill where
+  // the eval chart would go instead of nothing (live poll updates active_eval_status).
+  const evalPending =
+    isGameMode &&
+    gameData != null &&
+    !evalChartReady &&
+    (gameData.active_eval_status === 'pending' || gameData.active_eval_status === 'leased');
   // `highlightedPlies` is desktop-only (the tags panel's hover-highlight, Task 3);
   // the mobile evalChart() call site omits it, leaving chart markers un-dimmed there.
-  const evalChart = (heightClass: string, highlightedPlies?: Set<number> | null) =>
-    evalChartReady && gameId != null && gameData?.eval_series != null && gameData.flaw_markers != null && gameData.phase_transitions != null && gameData.moves != null ? (
-      <EvalChart
-        gameId={gameId}
-        evalSeries={gameData.eval_series}
-        flawMarkers={gameData.flaw_markers}
-        phaseTransitions={gameData.phase_transitions}
-        moves={gameData.moves}
-        heightClass={heightClass}
-        initialPly={initialPly}
-        flipped={gameData.user_color === 'black'}
-        sliderTestId="analysis-eval-chart-slider"
-        sliderDisabled={!isOnMainLineForSlider}
-        disableHoverScrub
-        onHoverPlyChange={handleEvalChartPlyChange}
-        syncPly={evalChartPly}
-        commandedPly={tagCommandedPly}
-        commandSeq={tagCommandSeq}
-        highlightedPlies={highlightedPlies}
-      />
-    ) : null;
+  // Renders the eval chart when ready, the pending/leased pill while analysis is
+  // in flight, or null otherwise (free play, or a card with no active job).
+  const evalChart = (heightClass: string, highlightedPlies?: Set<number> | null) => {
+    if (
+      evalChartReady &&
+      gameId != null &&
+      gameData?.eval_series != null &&
+      gameData.flaw_markers != null &&
+      gameData.phase_transitions != null &&
+      gameData.moves != null
+    ) {
+      return (
+        <EvalChart
+          gameId={gameId}
+          evalSeries={gameData.eval_series}
+          flawMarkers={gameData.flaw_markers}
+          phaseTransitions={gameData.phase_transitions}
+          moves={gameData.moves}
+          heightClass={heightClass}
+          initialPly={initialPly}
+          flipped={gameData.user_color === 'black'}
+          sliderTestId="analysis-eval-chart-slider"
+          sliderDisabled={!isOnMainLineForSlider}
+          disableHoverScrub
+          onHoverPlyChange={handleEvalChartPlyChange}
+          syncPly={evalChartPly}
+          commandedPly={tagCommandedPly}
+          commandSeq={tagCommandSeq}
+          highlightedPlies={highlightedPlies}
+        />
+      );
+    }
+    if (evalPending && gameId != null) {
+      return <AnalysisPendingPill gameId={gameId} leased={gameData?.active_eval_status === 'leased'} />;
+    }
+    return null;
+  };
 
   // Desktop board column (Phase 161 UAT). The outer div is the measured "stage" (see the
   // boardStageRef effect): a full-width, viewport-height-locked box. Inside sits ONE tight,
@@ -2290,8 +2321,10 @@ export default function Analysis() {
         )}
 
         {/* EvalChart with slider — game mode only, aligned to the board width.
-            highlightedPlies (Task 3): dims non-matching markers on tags-panel hover. */}
-        {evalChartReady && (
+            highlightedPlies (Task 3): dims non-matching markers on tags-panel hover.
+            Quick 260714-rj5: also renders while analysis is pending/leased, showing
+            the pill in the chart's slot instead of nothing. */}
+        {(evalChartReady || evalPending) && (
           <div data-testid="analysis-eval-chart" className="w-full">
             {evalChart('h-[120px]', tagsHighlightedPlies)}
           </div>
@@ -2510,7 +2543,7 @@ export default function Analysis() {
     >
       <div className="flex flex-col gap-2 pt-1">
         {mobileEngineLines}
-        {evalChartReady && <div className="px-3">{evalChart('h-[120px]')}</div>}
+        {(evalChartReady || evalPending) && <div className="px-3">{evalChart('h-[120px]')}</div>}
       </div>
     </TabsContent>
   );
@@ -2565,104 +2598,61 @@ export default function Analysis() {
             Bounded chart height inside the Eval tab (not h-full): the board already
             dominates the viewport, so a greedy chart pushed the board-controls footer
             off-screen when the mobile browser's URL bar shrank the height. h-[120px]
-            (the established mobile chart height) keeps the footer visible. The full
-            5-tab strip (with Tags) shows only for a loaded, analyzed game; free play
-            and still-loading games drop the Tags tab. */}
-        {isGameMode && evalChartReady ? (
-          <Tabs
-            defaultValue="moves"
-            className="flex min-h-0 flex-1 flex-col gap-2 px-2 pt-2"
-          >
-            <TabsList variant="underline" className="w-full shrink-0">
-              <TabsTrigger value="moves" data-testid="analysis-tab-moves" className="gap-1 px-1">
-                <ArrowLeftRight aria-hidden="true" />
-                Moves
-              </TabsTrigger>
-              {/* Engine-colored tab nav: Eval = Stockfish blue, Maia = violet,
-                  FlawChess = gold — matching each surface's accent (theme.ts). */}
-              <TabsTrigger
-                value="eval"
-                data-testid="analysis-tab-eval"
-                className="gap-1 px-1"
-                style={{ color: STOCKFISH_ACCENT }}
-              >
-                <Cpu aria-hidden="true" />
-                Eval
-              </TabsTrigger>
-              <TabsTrigger
-                value="human"
-                data-testid="analysis-tab-human"
-                className="gap-1 px-1"
-                style={{ color: MAIA_ACCENT }}
-              >
-                <User aria-hidden="true" />
-                Maia
-              </TabsTrigger>
-              <TabsTrigger
-                value="flawchess"
-                data-testid="analysis-tab-flawchess"
-                className="gap-1 px-1"
-                style={{ color: FLAWCHESS_ENGINE_ACCENT }}
-              >
-                <ChessKnight aria-hidden="true" />
-                FlawChess
-              </TabsTrigger>
+            (the established mobile chart height) keeps the footer visible. Quick
+            260714-rj5: collapsed from two near-identical Tabs branches into one —
+            the Tags trigger/content render only once evalChartReady (loaded,
+            analyzed game), so the Tabs subtree itself never remounts when a
+            game-mode card transitions from unanalyzed to analyzed via the live
+            poll (no cursor/variation-tree loss). Free play and a still-loading /
+            unanalyzed game just omit the Tags tab. */}
+        <Tabs defaultValue="moves" className="flex min-h-0 flex-1 flex-col gap-2 px-2 pt-2">
+          <TabsList variant="underline" className="w-full shrink-0">
+            <TabsTrigger value="moves" data-testid="analysis-tab-moves" className="gap-1 px-1">
+              <ArrowLeftRight aria-hidden="true" />
+              Moves
+            </TabsTrigger>
+            {/* Engine-colored tab nav: Eval = Stockfish blue, Maia = violet,
+                FlawChess = gold — matching each surface's accent (theme.ts). */}
+            <TabsTrigger
+              value="eval"
+              data-testid="analysis-tab-eval"
+              className="gap-1 px-1"
+              style={{ color: STOCKFISH_ACCENT }}
+            >
+              <Cpu aria-hidden="true" />
+              Eval
+            </TabsTrigger>
+            <TabsTrigger
+              value="human"
+              data-testid="analysis-tab-human"
+              className="gap-1 px-1"
+              style={{ color: MAIA_ACCENT }}
+            >
+              <User aria-hidden="true" />
+              Maia
+            </TabsTrigger>
+            <TabsTrigger
+              value="flawchess"
+              data-testid="analysis-tab-flawchess"
+              className="gap-1 px-1"
+              style={{ color: FLAWCHESS_ENGINE_ACCENT }}
+            >
+              <ChessKnight aria-hidden="true" />
+              FlawChess
+            </TabsTrigger>
+            {evalChartReady && (
               <TabsTrigger value="tags" data-testid="analysis-tab-tags" className="gap-1 px-1">
                 <Tag aria-hidden="true" />
                 Tags
               </TabsTrigger>
-            </TabsList>
-            {movesTab}
-            {evalTab}
-            {humanTab}
-            {flawChessTab}
-            {tagsTab}
-          </Tabs>
-        ) : (
-          // Free play or a still-loading / unanalyzed game: no eval chart or tags, but
-          // Moves, engine lines (Eval tab), Maia, and FlawChess must all stay reachable.
-          <Tabs defaultValue="moves" className="flex min-h-0 flex-1 flex-col gap-2 px-2 pt-2">
-            <TabsList variant="underline" className="w-full shrink-0">
-              <TabsTrigger value="moves" data-testid="analysis-tab-moves" className="gap-1 px-1">
-                <ArrowLeftRight aria-hidden="true" />
-                Moves
-              </TabsTrigger>
-              {/* Engine-colored tab nav: Eval = Stockfish blue, Maia = violet,
-                  FlawChess = gold — matching each surface's accent (theme.ts). */}
-              <TabsTrigger
-                value="eval"
-                data-testid="analysis-tab-eval"
-                className="gap-1 px-1"
-                style={{ color: STOCKFISH_ACCENT }}
-              >
-                <Cpu aria-hidden="true" />
-                Eval
-              </TabsTrigger>
-              <TabsTrigger
-                value="human"
-                data-testid="analysis-tab-human"
-                className="gap-1 px-1"
-                style={{ color: MAIA_ACCENT }}
-              >
-                <User aria-hidden="true" />
-                Maia
-              </TabsTrigger>
-              <TabsTrigger
-                value="flawchess"
-                data-testid="analysis-tab-flawchess"
-                className="gap-1 px-1"
-                style={{ color: FLAWCHESS_ENGINE_ACCENT }}
-              >
-                <ChessKnight aria-hidden="true" />
-                FlawChess
-              </TabsTrigger>
-            </TabsList>
-            {movesTab}
-            {evalTab}
-            {humanTab}
-            {flawChessTab}
-          </Tabs>
-        )}
+            )}
+          </TabsList>
+          {movesTab}
+          {evalTab}
+          {humanTab}
+          {flawChessTab}
+          {evalChartReady && tagsTab}
+        </Tabs>
 
         {/* In-flow board-controls footer — replaces the suppressed mobile nav bar. */}
         <div

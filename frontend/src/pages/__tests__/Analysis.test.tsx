@@ -1100,3 +1100,144 @@ describe('Gem moves (Phase 163, SEED-092)', () => {
     expect(moveListGemIconPresent()).toBe(true);
   });
 });
+
+// Quick 260714-rj5 (Task 2) — live-polling analysis board with an in-place
+// pending pill. useLibraryGame itself is mocked (see the module mock above),
+// so these tests drive the pill/moves/no-remount behaviors by mutating the
+// mutable libraryGameState.data between renders and forcing a re-render, the
+// same pattern the "Grading run gating" and Gem-moves blocks above use.
+describe('Live-polling analysis board with an in-place pending pill (Quick 260714-rj5)', () => {
+  let clientWidthSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    clientWidthSpy = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(400);
+  });
+
+  afterEach(() => {
+    clientWidthSpy.mockRestore();
+  });
+
+  // Forces a re-render without touching the chess position, so the mock's
+  // already-mutated libraryGameState.data is re-read on the next render
+  // (mirrors the Gem-moves block's forceRerenderAtCurrentPosition).
+  function forceRerender(): void {
+    fireEvent.click(screen.getByTestId('btn-analysis-maia-toggle'));
+    fireEvent.click(screen.getByTestId('btn-analysis-maia-toggle'));
+  }
+
+  function playMove(from: string, to: string): void {
+    fireEvent.click(screen.getByTestId(`square-${from}`));
+    fireEvent.click(screen.getByTestId(`square-${to}`));
+  }
+
+  it("shows the Pending… pill and a navigable move list for an unanalyzed game-mode card with active_eval_status='pending'", () => {
+    libraryGameState.data = buildGame({
+      analysis_state: 'no_engine_analysis',
+      severity_counts: null,
+      chips: [],
+      eval_series: null,
+      flaw_markers: null,
+      phase_transitions: null,
+      moves: ['e4', 'e5'],
+      active_eval_status: 'pending',
+    });
+
+    renderAnalysis('/analysis?game_id=1');
+
+    expect(screen.getByTestId('analyzing-1').textContent).toContain('Pending');
+    // Move list renders from gameData.moves (Task 1 fix) — imported-unanalyzed
+    // dead end no longer shows an empty board.
+    expect(screen.getAllByText('e5').length).toBeGreaterThan(0);
+    // No real eval chart (slider) yet — the pill occupies the chart's slot instead.
+    expect(screen.queryByTestId('analysis-eval-chart-slider')).toBeNull();
+  });
+
+  it("shows the Analyzing… pill when active_eval_status='leased'", () => {
+    libraryGameState.data = buildGame({
+      analysis_state: 'no_engine_analysis',
+      severity_counts: null,
+      chips: [],
+      eval_series: null,
+      flaw_markers: null,
+      phase_transitions: null,
+      moves: ['e4', 'e5'],
+      active_eval_status: 'leased',
+    });
+
+    renderAnalysis('/analysis?game_id=1');
+
+    expect(screen.getByTestId('analyzing-1').textContent).toContain('Analyzing');
+  });
+
+  it('renders no pill and no Analyze button when active_eval_status is null (unanalyzed, unqueued)', () => {
+    libraryGameState.data = buildGame({
+      analysis_state: 'no_engine_analysis',
+      severity_counts: null,
+      chips: [],
+      eval_series: null,
+      flaw_markers: null,
+      phase_transitions: null,
+      moves: ['e4', 'e5'],
+      active_eval_status: null,
+    });
+
+    renderAnalysis('/analysis?game_id=1');
+
+    expect(screen.queryByTestId('analyzing-1')).toBeNull();
+    expect(screen.queryByTestId('btn-analyze-game-1')).toBeNull();
+  });
+
+  it('when the card flips from unanalyzed to analyzed with an IDENTICAL moves array, loadMainLine does not re-fire — the cursor and a user-built sideline survive, and the pill is replaced by the eval chart', () => {
+    libraryGameState.data = buildGame({
+      analysis_state: 'no_engine_analysis',
+      severity_counts: null,
+      chips: [],
+      eval_series: null,
+      flaw_markers: null,
+      phase_transitions: null,
+      moves: ['e4', 'e5'],
+      active_eval_status: 'pending',
+    });
+
+    renderAnalysis('/analysis?game_id=1');
+    expect(screen.getByTestId('analyzing-1')).toBeTruthy();
+
+    const desktopTree = () => screen.getByTestId('variation-tree-desktop');
+
+    // Navigate the cursor back to node 0 (after 1. e4, Black to move) — off the
+    // end of the seeded main line.
+    fireEvent.click(within(desktopTree()).getByTestId('variation-node-0'));
+    expect(within(desktopTree()).getByTestId('variation-node-0').getAttribute('aria-current')).toBe(
+      'step',
+    );
+
+    // Play a sideline diverging from the book main line (c5 instead of e5) —
+    // forks a new node (id 2, since loadMainLine(['e4','e5']) consumed ids 0/1).
+    playMove('c7', 'c5');
+    expect(within(desktopTree()).getByTestId('variation-node-2').getAttribute('aria-current')).toBe(
+      'step',
+    );
+    expect(within(desktopTree()).getAllByText('c5').length).toBeGreaterThan(0);
+
+    // The eval job completes: analysis_state flips to 'analyzed' with the SAME
+    // moves array (byte-identical to what loadMainLine already seeded).
+    libraryGameState.data = buildGame({
+      analysis_state: 'analyzed',
+      moves: ['e4', 'e5'],
+      active_eval_status: null,
+    });
+    forceRerender();
+
+    // No remount: the sideline node (id 2, "c5") still exists and is still the
+    // current node — loadMainLine was NOT called a second time (it would have
+    // reset the tree to mainLine's end, wiping the sideline and moving the
+    // cursor to node 1).
+    expect(within(desktopTree()).getByTestId('variation-node-2').getAttribute('aria-current')).toBe(
+      'step',
+    );
+    expect(within(desktopTree()).getAllByText('c5').length).toBeGreaterThan(0);
+    // Pill gone, eval chart present.
+    expect(screen.queryByTestId('analyzing-1')).toBeNull();
+    expect(screen.getByTestId('analysis-eval-chart-slider')).toBeTruthy();
+  });
+});
