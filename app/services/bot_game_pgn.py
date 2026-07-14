@@ -40,6 +40,32 @@ _PLAY_STYLE_BLEND_DECIMALS = 2
 _SITE_PATH_TEMPLATE = "/analysis?game_id={game_id}"
 
 
+def build_bot_game_url(game_id: int) -> str:
+    """Canonical public URL of a stored bot game — the in-app analysis board.
+
+    The single source of truth for a bot game's own URL. It is written to TWO
+    places, which must never diverge: the PGN's `[Site]` header (D-03) and the
+    `games.platform_url` column. A bot game's "originating platform" IS
+    FlawChess, so unlike chess.com/lichess this URL is self-referential and
+    points back into the app.
+
+    NOTE: because it is self-referential, the frontend deliberately suppresses
+    the "Open game on platform" external link for `platform='flawchess'` (see
+    `frontend/src/lib/platformLinks.ts`) — the card's in-app Analyze button
+    already goes here, and a second control opening a new tab to our own page
+    would be redundant. The column is populated for data completeness and for
+    PGN export, not to drive that link.
+
+    Args:
+        game_id: The row's internal auto-increment `games.id`, known only
+            post-INSERT (D-07).
+
+    Returns:
+        An absolute URL, e.g. `https://flawchess.com/analysis?game_id=693117`.
+    """
+    return settings.FRONTEND_URL.rstrip("/") + _SITE_PATH_TEMPLATE.format(game_id=game_id)
+
+
 def _build_header_pairs(
     *,
     normalized: NormalizedGame,
@@ -55,11 +81,10 @@ def _build_header_pairs(
     can verify the `.strftime` calls without a redundant guard here.
     """
     date_str = played_at.strftime(_PGN_DATE_FORMAT)
-    site = settings.FRONTEND_URL.rstrip("/") + _SITE_PATH_TEMPLATE.format(game_id=game_id)
 
     pairs: list[tuple[str, str]] = [
         ("Event", PGN_EVENT),
-        ("Site", site),
+        ("Site", build_bot_game_url(game_id)),
         ("Date", date_str),
         ("Round", PGN_ROUND),
         ("White", normalized.white_username),

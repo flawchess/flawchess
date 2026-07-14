@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.bot_game_settings import BotGameSettings
 from app.repositories import game_repository, user_rating_anchors_repository, user_repository
 from app.schemas.bots import RatingSource, StoreBotGameRequest, StoreBotGameResponse
-from app.services.bot_game_pgn import stamp_bot_game_headers
+from app.services.bot_game_pgn import build_bot_game_url, stamp_bot_game_headers
 from app.services.import_service import _flush_batch
 from app.services.normalization import (
     FLAWCHESS_PLAYER_FALLBACK_USERNAME,
@@ -168,12 +168,13 @@ async def store_bot_game(
                 )
             )
 
-            # quick-260714-qaj/D-07: the `Site` deep link needs the row's real
-            # auto-increment `games.id`, which only exists post-INSERT — so the
-            # full header block is stamped here, once, in a second targeted
-            # UPDATE. _flush_batch's Stage 5 position parse already ran against
-            # the raw client PGN and is unaffected (header-only change, the
-            # mainline is untouched).
+            # quick-260714-qaj/D-07: both the PGN's `Site` header and the
+            # `platform_url` column need the row's real auto-increment
+            # `games.id`, which only exists post-INSERT — so both are written
+            # here, once, in a second targeted UPDATE, from the same
+            # build_bot_game_url so they cannot diverge. _flush_batch's Stage 5
+            # position parse already ran against the raw client PGN and is
+            # unaffected (header-only change, the mainline is untouched).
             stamped_pgn = stamp_bot_game_headers(
                 normalized=normalized,
                 game_id=game_id,
@@ -181,7 +182,9 @@ async def store_bot_game(
                 rating_source=rating_source,
                 play_style_blend=request.play_style_blend,
             )
-            await game_repository.update_game_pgn(session, game_id, stamped_pgn)
+            await game_repository.update_bot_game_pgn_and_url(
+                session, game_id, stamped_pgn, build_bot_game_url(game_id)
+            )
     except Exception:
         sentry_sdk.set_context(
             "store_bot_game", {"user_id": user_id, "game_uuid": request.game_uuid}

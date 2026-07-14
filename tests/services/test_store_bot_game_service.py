@@ -26,6 +26,7 @@ from app.models.game import Game
 from app.repositories.user_rating_anchors_repository import upsert_anchor
 from app.repositories.user_repository import update_profile
 from app.schemas.bots import StoreBotGameRequest
+from app.services.bot_game_pgn import build_bot_game_url
 from app.services.normalization import FLAWCHESS_BOT_USERNAME, FLAWCHESS_PLAYER_FALLBACK_USERNAME
 from app.services.store_bot_game_service import resolve_player_username, store_bot_game
 from tests.conftest import ensure_test_user
@@ -386,6 +387,10 @@ class TestPgnHeaders:
         assert headers["Opening"] == game.opening_name
         assert headers["Result"] == game.result
         assert headers["Termination"] == game.termination
+        # The platform_url column and the [Site] header are the SAME URL — both
+        # come from build_bot_game_url, so they can never diverge.
+        assert game.platform_url == headers["Site"]
+        assert game.platform_url == build_bot_game_url(response.game_id)
 
     async def test_no_anchor_omits_white_elo_and_rating_source(
         self, db_session: AsyncSession
@@ -438,9 +443,33 @@ class TestPgnHeaders:
         assert white_clocks and all(c is not None for c in white_clocks)
         assert black_clocks and all(c is not None for c in black_clocks)
 
+    async def test_platform_url_points_at_the_in_app_analysis_board(
+        self, db_session: AsyncSession
+    ) -> None:
+        """games.platform_url is populated for bot games (self-referential).
+
+        A bot game's originating platform IS FlawChess, so the column carries
+        the in-app analysis URL rather than an external one. The frontend
+        deliberately renders no "Open game on platform" link for it (see
+        platformLinks.ts) — the column exists for data completeness/export.
+        """
+        user_id = _TEST_USER_ID + 16
+        await ensure_test_user(db_session, user_id)
+
+        response = await store_bot_game(db_session, user_id, _make_request())
+        assert response is not None
+
+        game = await db_session.get(Game, response.game_id)
+        assert game is not None
+        assert game.platform_url is not None
+        assert (
+            game.platform_url
+            == f"{settings.FRONTEND_URL.rstrip('/')}/analysis?game_id={response.game_id}"
+        )
+
     async def test_duplicate_resubmit_does_not_rewrite_pgn(self, db_session: AsyncSession) -> None:
         """D-11: a re-submit with a forged PGN + different bot_elo must not
-        overwrite the stored row's PGN (T-qaj-03).
+        overwrite the stored row's PGN or platform_url (T-qaj-03).
         """
         user_id = _TEST_USER_ID + 15
         await ensure_test_user(db_session, user_id)
@@ -454,6 +483,7 @@ class TestPgnHeaders:
         first_game = await db_session.get(Game, first.game_id)
         assert first_game is not None
         first_pgn = first_game.pgn
+        first_platform_url = first_game.platform_url
 
         second_request = _make_request(
             game_uuid=game_uuid, pgn=_PGN_CHECKMATE_ALT, bot_elo=_TEST_BOT_ELO + 200
@@ -469,3 +499,4 @@ class TestPgnHeaders:
         reread_game = await db_session.get(Game, first.game_id)
         assert reread_game is not None
         assert reread_game.pgn == first_pgn
+        assert reread_game.platform_url == first_platform_url

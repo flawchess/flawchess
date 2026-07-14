@@ -101,22 +101,28 @@ async def get_game_id_by_platform_game_id(
     return result.scalar_one_or_none()
 
 
-async def update_game_pgn(session: AsyncSession, game_id: int, pgn: str) -> None:
-    """Overwrite a single game row's stored `pgn` (quick-260714-qaj / D-07).
+async def update_bot_game_pgn_and_url(
+    session: AsyncSession, game_id: int, pgn: str, platform_url: str
+) -> None:
+    """Write a stored bot game's `pgn` + `platform_url` (quick-260714-qaj / D-07).
 
-    The `Site` header of a stored bot game's PGN needs the row's own
-    auto-increment `games.id`, which does not exist at `normalize_flawchess_
-    game` time — so the header block is stamped in a second, targeted UPDATE
-    after the INSERT. Does NOT commit — the caller owns the transaction
-    (D-10).
+    Both values embed the row's own auto-increment `games.id` (the PGN's
+    `[Site]` header, and the column itself), which does not exist at
+    `normalize_flawchess_game` time — so both are written in a single targeted
+    UPDATE after the INSERT. They come from the same
+    `bot_game_pgn.build_bot_game_url`, so they cannot diverge. Does NOT commit
+    — the caller owns the transaction (D-10).
 
     Args:
         session: AsyncSession to use.
         game_id: The row's internal id (already scoped to the caller's user
             by the preceding lookup).
         pgn: The fully re-serialized PGN string to write.
+        platform_url: The bot game's self-referential in-app URL.
     """
-    await session.execute(update(Game).where(Game.id == game_id).values(pgn=pgn))
+    await session.execute(
+        update(Game).where(Game.id == game_id).values(pgn=pgn, platform_url=platform_url)
+    )
 
 
 async def count_games_for_user(session: AsyncSession, user_id: int) -> int:

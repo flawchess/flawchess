@@ -24,6 +24,18 @@
 // chess.com game URLs are https://www.chess.com/game/{live|daily}/{id}.
 const CHESS_COM_GAME_RE = /^(https?:\/\/(?:www\.)?chess\.com)\/game\/(live|daily)\/(\d+)/i;
 
+/**
+ * Bot games played on FlawChess itself (quick-260714-qaj). Their `platform_url`
+ * IS populated (it is the same in-app `/analysis?game_id=` URL the PGN's `[Site]`
+ * header carries), but it is SELF-REFERENTIAL — there is no external platform to
+ * send the user to. Both link builders return null for it, so the cards render no
+ * "Open game on platform" external-link icon: every card already has an in-app
+ * Analyze / View game button pointing at that exact page, and a second control
+ * opening a NEW TAB back to our own app would be redundant and confusing.
+ * `PlatformIcon` likewise renders nothing for this platform.
+ */
+const SELF_HOSTED_PLATFORM = 'flawchess';
+
 export function platformPlyUrl(
   platform: string,
   platformUrl: string | null,
@@ -32,6 +44,7 @@ export function platformPlyUrl(
 ): string | null {
   if (!platformUrl) return null;
   const p = platform.toLowerCase();
+  if (p === SELF_HOSTED_PLATFORM) return null;
 
   // Navigate to the position AFTER the move at `ply` so the board shows that move.
   const targetPly = ply + 1;
@@ -77,6 +90,7 @@ export function gamePlatformUrl(
   userColor: string,
 ): string | null {
   if (!platformUrl) return null;
+  if (platform.toLowerCase() === SELF_HOSTED_PLATFORM) return null;
   if (platform.toLowerCase() === 'lichess' && userColor.toLowerCase() === 'black') {
     return `${platformUrl}/black`;
   }
