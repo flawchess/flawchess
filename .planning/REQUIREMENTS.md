@@ -18,8 +18,8 @@ Requirements for this milestone. Each maps to a roadmap phase.
 
 ### Play Experience (PLAY)
 
-- [ ] **PLAY-01**: Bot play lives on a new top-level **Bots** page (nav sibling of Library · Openings · Endgames), lazy-loaded.
-- [ ] **PLAY-02**: User can start a new game from a setup screen choosing ELO, play-style, color, and a lichess-preset time control (blitz 3+0/3+2/5+0/5+3 · rapid 10+0/10+5/15+10 · classical 30+0/30+20; no bullet).
+- [x] **PLAY-01**: Bot play lives on a new top-level **Bots** page (nav sibling of Library · Openings · Endgames), lazy-loaded.
+- [x] **PLAY-02**: User can start a new game from a setup screen choosing ELO, play-style, color, and a lichess-preset time control (blitz 3+0/3+2/5+0/5+3 · rapid 10+0/10+5/15+10 · classical 30+0/30+20; no bullet).
 - [x] **PLAY-03**: User plays on a live board with dual clocks counting down with Fischer increment, moving by drag or click-to-move, turn-gated to legal moves.
 - [x] **PLAY-04**: Clocks stay accurate across tab backgrounding (wall-clock delta model) and pause when the tab is hidden while the bot is thinking, so neither side is unfairly flagged.
 - [x] **PLAY-05**: The bot paces its replies (not instant) with a think-time budget derived from its remaining clock (best-effort; degrades gracefully under time pressure).
@@ -27,7 +27,7 @@ Requirements for this milestone. Each maps to a roadmap phase.
 - [x] **PLAY-07**: User can resign, and can offer/accept a draw against the bot.
 - [x] **PLAY-08**: User hears move / capture / check / game-end sounds, with a mute control.
 - [x] **PLAY-09**: On game end, a result screen shows the outcome (win/loss/draw + reason) with "Analyze this game" and "New game" actions.
-- [ ] **PLAY-10**: Both logged-in users and guests can play bot games and have their finished games saved.
+- [x] **PLAY-10**: Both logged-in users and guests can play bot games and have their finished games saved.
 - [x] **PLAY-11**: In the opening the bot plays from a book instead of searching — moves that keep the game inside the shipped ECO opening database, weighted by Maia's policy at the bot's ELO — so early moves are near-instant, spend no search budget, cost the bot almost none of its clock, and vary across games.
 
 ### Game Storage (STORE)
@@ -90,8 +90,8 @@ Which phases cover which requirements. Filled during roadmap creation.
 | BOT-02 | Phase 166 | Complete |
 | BOT-03 | Phase 166 | Complete |
 | BOT-04 | Phase 166 | Complete |
-| PLAY-01 | Phase 171 | Pending |
-| PLAY-02 | Phase 171 | Pending |
+| PLAY-01 | Phase 171 | Complete |
+| PLAY-02 | Phase 171 | Complete |
 | PLAY-03 | Phase 169 | Complete (Plan 04 landed live-board turn-gating; Plan 09 gap closure fixes the WR-05 scroll-back preservation; Plan 10 gap closure closes the CR-01/CR-02 commit-path clock enforcement gaps the board relies on) |
 | PLAY-04 | Phase 169 | Complete (Plan 04 landed wall-clock delta + pause wiring; Plan 10 gap closure closes the CR-01 hidden-tab pause bypass — every elapsed-time consumer now reads through the pause-aware chargeableElapsedMs helper, not just the resume-edge anchor) |
 | PLAY-05 | Phase 169 | Complete (Plan 09 gap closure — D-16 per-move think deadline restores the "budget derived from remaining clock" requirement text; closes the BLOCKED verification gap) |
@@ -99,7 +99,7 @@ Which phases cover which requirements. Filled during roadmap creation.
 | PLAY-07 | Phase 169 | Complete (Plan 05 landed resign/offer-draw UI wiring; Plan 09 gap closure fixes the WR-04 draw-cooldown affordance) |
 | PLAY-08 | Phase 169 | Complete |
 | PLAY-09 | Phase 169 | Complete (Plan 06/7 closes it — GameResultDialog/GameResultStrip result screen with Analyze/New game actions) |
-| PLAY-10 | Phase 171 | Pending |
+| PLAY-10 | Phase 171 | Complete |
 | PLAY-11 | Phase 169.5 | Complete |
 | STORE-01 | Phase 167 | Complete |
 | STORE-02 | Phase 167 | Complete |

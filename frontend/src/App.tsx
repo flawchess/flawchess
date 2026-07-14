@@ -10,7 +10,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { ArrowLeft, BookOpenIcon, MenuIcon, LogOutIcon, TrophyIcon, DoorOpen, Shield, FolderOpen } from 'lucide-react';
+import { ArrowLeft, BookOpenIcon, MenuIcon, LogOutIcon, TrophyIcon, DoorOpen, Shield, FolderOpen, Bot } from 'lucide-react';
 import {
   Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose,
 } from '@/components/ui/drawer';
@@ -66,12 +66,14 @@ function ImportJobWatcher({ jobId, onDone }: { jobId: string; onDone: (jobId: st
 
 const NAV_ITEMS = [
   { to: '/library', label: 'Library', Icon: FolderOpen },
+  { to: '/bots', label: 'Bots', Icon: Bot },
   { to: '/openings', label: 'Openings', Icon: BookOpenIcon },
   { to: '/endgames', label: 'Endgames', Icon: TrophyIcon },
 ] as const;
 
 const BOTTOM_NAV_ITEMS = [
   { to: '/library', label: 'Library', Icon: FolderOpen },
+  { to: '/bots', label: 'Bots', Icon: Bot },
   { to: '/openings', label: 'Openings', Icon: BookOpenIcon },
   { to: '/endgames', label: 'Endgames', Icon: TrophyIcon },
 ] as const;
@@ -84,16 +86,37 @@ const ADMIN_NAV_ITEM = { to: '/admin', label: 'Admin', Icon: Shield } as const;
 
 const ROUTE_TITLES: Record<string, string> = {
   '/library': 'Library',
+  '/bots': 'Bots',
   '/openings': 'Openings',
   '/endgames': 'Endgames',
   '/admin': 'Admin',
   '/analysis': 'Analysis',
 };
 
+// ─── Nav lock helper ──────────────────────────────────────────────────────────
+
+/**
+ * Routes reachable regardless of import state:
+ * - `/library` — where you GO to import, so it can never be import-gated.
+ * - `/admin` — superuser-only, gated by SuperuserRoute instead.
+ * - `/bots` — D-17: free bot play, whose audience IS guests and zero-game users.
+ *
+ * WR-07: this gate used to be copy-pasted into all three nav surfaces with
+ * DIVERGENT clause lists (MobileBottomBar's copy omitted `/admin`), and Phase
+ * 171 had to patch every one of them to add `/bots`. One definition now, so the
+ * next exempt route is a one-line edit and the surfaces cannot disagree.
+ */
+const IMPORT_EXEMPT_ROUTES: ReadonlySet<string> = new Set(['/library', '/admin', '/bots']);
+
+function isNavLocked(to: string, navUnlocked: boolean): boolean {
+  return !IMPORT_EXEMPT_ROUTES.has(to) && !navUnlocked;
+}
+
 // ─── Active route helper ───────────────────────────────────────────────────────
 
 function isActive(to: string, pathname: string): boolean {
   if (to === '/library') return pathname.startsWith('/library');
+  if (to === '/bots') return pathname.startsWith('/bots');
   if (to === '/openings') return pathname.startsWith('/openings');
   if (to === '/endgames') return pathname.startsWith('/endgames');
   return pathname === to;
@@ -101,7 +124,10 @@ function isActive(to: string, pathname: string): boolean {
 
 // ─── Nav header (desktop) ─────────────────────────────────────────────────────
 
-function NavHeader() {
+// Exported (additive) so App.test.tsx can render each nav surface directly —
+// a full <App /> render owns its own BrowserRouter/AuthProvider/QueryClientProvider,
+// which makes route control and hook mocking impractical from the outside.
+export function NavHeader() {
   const location = useLocation();
   const { logout } = useAuth();
   const { data: profile } = useUserProfile();
@@ -132,7 +158,7 @@ function NavHeader() {
           </Link>
           <nav aria-label="Main navigation" className="flex items-stretch h-full">
             {navItems.map(({ to, label, Icon }) => {
-              const locked = to !== '/library' && to !== '/admin' && !navUnlocked;
+              const locked = isNavLocked(to, navUnlocked);
               return (
               <Link
                 key={to}
@@ -209,7 +235,7 @@ function NavHeader() {
 
 // ─── Mobile header ────────────────────────────────────────────────────────────
 
-function MobileHeader() {
+export function MobileHeader() {
   const location = useLocation();
   const { data: profile } = useUserProfile();
   const pageTitle = Object.entries(ROUTE_TITLES).find(
@@ -277,7 +303,7 @@ function AnalysisMobileHeader() {
 
 // ─── Mobile bottom bar ────────────────────────────────────────────────────────
 
-function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
+export function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
   const location = useLocation();
   const { data: profile } = useUserProfile();
   const totalGames = profile != null ? profile.chess_com_game_count + profile.lichess_game_count : 0;
@@ -297,7 +323,7 @@ function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
       className="fixed bottom-0 inset-x-0 flex sm:hidden z-40 bg-background border-t border-border pb-safe"
     >
       {BOTTOM_NAV_ITEMS.map(({ to, label, Icon }) => {
-        const locked = to !== '/library' && !navUnlocked;
+        const locked = isNavLocked(to, navUnlocked);
         return (
         <Link
           key={to}
@@ -360,7 +386,7 @@ function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
 
 // ─── Mobile more drawer ───────────────────────────────────────────────────────
 
-function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const location = useLocation();
   const { logout } = useAuth();
   const { data: profile } = useUserProfile();
@@ -383,7 +409,7 @@ function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
         <div className="px-4 pb-4">
           <nav className="flex flex-col gap-1">
             {navItems.map(({ to, label }) => {
-              const locked = to !== '/library' && to !== '/admin' && !navUnlocked;
+              const locked = isNavLocked(to, navUnlocked);
               return (
               <DrawerClose key={to} asChild>
                 <Link

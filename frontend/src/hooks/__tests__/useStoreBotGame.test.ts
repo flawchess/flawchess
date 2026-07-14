@@ -11,7 +11,8 @@
  *   (`toBackendTcStr` output), identical to the PGN's `[TimeControl]`
  *   header, NOT the lichess minutes-display preset (D-14 corrected).
  * - "retry-predicate" — `shouldRetryStore`'s per-status differentiation:
- *   422 never retries, 401 always retries.
+ *   422 never retries, everything else (401/5xx/network) is BOUNDED at
+ *   `MAX_STORE_RETRIES` (CR-01: the 401 branch used to be unbounded).
  * - "drain" — `useDrainPendingStore`'s per-outcome entry-removal decision:
  *   2xx (created true or false) removes, 422 removes, 401/5xx/network keeps,
  *   a mid-queue failure doesn't abort the rest, an empty queue makes zero
@@ -19,10 +20,10 @@
  *   (the global `MutationCache.onError` already covers every failure).
  * - "mutation" — `useStoreBotGame()` itself: calls `botsApi.storeGame` with
  *   the mapped request and resolves with its response. `useDrainPendingStore`
- *   deliberately does NOT reuse this hook (see its own doc comment — reusing
- *   it would make a 401 retry in-flight forever within one `mutateAsync()`
- *   call and hang the drain loop), so this hook needs its own direct
- *   coverage rather than being exercised transitively via "drain".
+ *   deliberately does NOT reuse this hook (see its own doc comment — one
+ *   attempt per entry per drain, no in-flight retry multiplier), so this hook
+ *   needs its own direct coverage rather than being exercised transitively
+ *   via "drain".
  */
 
 import { createElement, type ReactNode } from 'react';
@@ -144,9 +145,15 @@ describe('retry-predicate', () => {
     expect(shouldRetryStore(1, axiosError(422))).toBe(false);
   });
 
-  it('always retries a 401 (logged out / expired guest token)', () => {
+  // CR-01 regression: a 401 used to return `true` unconditionally (no
+  // failureCount bound), which TanStack Query turns into an unbounded retry
+  // loop that never settles — so `MutationCache.onError` never fired and the
+  // caller's `isSuccess`/`isError` never flipped. The durable retry is the
+  // next-visit drain (D-13), so the in-flight retry MUST be bounded.
+  it('bounds a 401 at MAX_STORE_RETRIES (logged out / expired guest token — never an unbounded loop)', () => {
     expect(shouldRetryStore(0, axiosError(401))).toBe(true);
-    expect(shouldRetryStore(10, axiosError(401))).toBe(true);
+    expect(shouldRetryStore(MAX_STORE_RETRIES, axiosError(401))).toBe(false);
+    expect(shouldRetryStore(10, axiosError(401))).toBe(false);
   });
 
   it('bounds retries for a 500 / network error at MAX_STORE_RETRIES', () => {

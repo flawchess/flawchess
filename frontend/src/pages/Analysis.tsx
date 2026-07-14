@@ -27,9 +27,11 @@
  *   free play with an arbitrary mid-game FEN snapshot as the root (SEED-094 / D-06;
  *   restored alongside ?line=, not a replacement — no navigable history back to move 1).
  *   ?game_id=X&ply=Y loads the full game at ply Y (game mode). Precedence when multiple
- *   params are present: game_id > fen > line. The legacy tactic mode (?flaw_ply=, removed
- *   Quick 260627-l2z) is gone; clicking a move-list tactic chip grafts the PV as an
- *   in-tree sideline with a depth overlay.
+ *   params are present: game_id > fen > line. ?orientation=white|black additively orients
+ *   the board in ANY free-play sub-mode (171 UAT gap 1); game mode ignores it and always
+ *   orients from gameData.user_color. A manual flip still wins over either (hasAutoFlipped).
+ *   The legacy tactic mode (?flaw_ply=, removed Quick 260627-l2z) is gone; clicking a
+ *   move-list tactic chip grafts the PV as an in-tree sideline with a depth overlay.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -54,7 +56,11 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { useGameOverlay } from '@/hooks/useGameOverlay';
 import { useLiveMoveFlaw } from '@/hooks/useLiveMoveFlaw';
 import { useTacticLines, useLibraryGame } from '@/hooks/useLibrary';
-import { parseAnalysisLineParam, parseAnalysisFenParam } from '@/lib/analysisUrl';
+import {
+  parseAnalysisLineParam,
+  parseAnalysisFenParam,
+  parseAnalysisOrientationParam,
+} from '@/lib/analysisUrl';
 import { toDisplayDepthForOrientation } from '@/lib/tacticDepth';
 import { buildPvArrow } from '@/lib/tacticArrows';
 import { EvalBar } from '@/components/analysis/EvalBar';
@@ -446,6 +452,17 @@ export default function Analysis() {
   const fenParam = searchParams.get('fen');
   const rootFenSeed = useMemo(() => parseAnalysisFenParam(fenParam), [fenParam]);
 
+  // Free-play orientation entry point (171 UAT gap 1): `?orientation=white|black`
+  // orients the board when opened from e.g. a finished bot game. Before this,
+  // free play had no orientation input at all — a bot game played as Black
+  // opened white-side-up. parseAnalysisOrientationParam degrades a malformed or
+  // hand-typed value to null (T-171-08-01/02), matching the fen/line guards above.
+  const orientationParam = searchParams.get('orientation');
+  const urlOrientation = useMemo(
+    () => parseAnalysisOrientationParam(orientationParam),
+    [orientationParam]
+  );
+
   // ── URL params — game mode (T-140-02a) ──────────────────────────────────────
   // Security: NaN-guard on numeric params — malformed → null → mode disabled.
   const gameIdRaw = searchParams.get('game_id');
@@ -661,13 +678,19 @@ export default function Analysis() {
 
   // ── Effects (game seeding, board flip, contextual PV insert) ──────────────────
 
-  // Game mode: orient the board to the player's color once (item 5). Black games open
-  // flipped; manual flips afterward win (hasAutoFlipped guard). Free play stays white.
+  // Orient the board to the player's color once (item 5; 171 UAT gap 1). ONE
+  // orientation source for BOTH modes: game mode learns the player's colour
+  // from the backend (gameData.user_color), free play learns it from the URL
+  // (?orientation=). Before 171-08 free play had NO orientation input at all,
+  // so a bot game played as Black opened white-side-up. Black games/lines open
+  // flipped; manual flips afterward win permanently (hasAutoFlipped guard).
+  const autoOrientation = isGameMode ? (gameData?.user_color ?? null) : urlOrientation;
+
   useEffect(() => {
-    if (!isGameMode || gameData?.user_color == null || hasAutoFlipped.current) return;
+    if (autoOrientation === null || hasAutoFlipped.current) return;
     hasAutoFlipped.current = true;
-    setBoardFlipped(gameData.user_color === 'black');
-  }, [isGameMode, gameData?.user_color]);
+    setBoardFlipped(autoOrientation === 'black');
+  }, [autoOrientation]);
 
   // Game mode: seed the board once when game data arrives (L-1: never call from chip click).
   useEffect(() => {

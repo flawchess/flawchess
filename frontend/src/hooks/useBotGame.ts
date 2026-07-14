@@ -158,7 +158,14 @@ const BOT_SEARCH_BUDGET: Omit<SearchBudget, 'elo' | 'policyTemperature'> = {
 export interface BotGameSettings {
   /** The bot's own ELO (BOT-03) — see selectBotMove.ts's D-07 invariant. */
   botElo: number;
-  /** 0 = full-human, 1 = full-stockfish (selectBotMove's regime blend). */
+  /**
+   * REGIME DISPATCH, not a mix (selectBotMove's three-way blend): `0` runs a
+   * single Maia policy call with no MCTS search and is therefore EXEMPT from
+   * the D-16 think deadline in chessClock.ts (the deadline is computed and
+   * built unconditionally, but never consulted at this setting — SEED-100,
+   * Phase 171 D-03); anything `> 0` runs the full search under that deadline.
+   * Pinned by `selectBotMove.test.ts`'s blend=0 "deps.search zero times" test.
+   */
   blend: number;
   /** Starting clock time for both sides, in seconds. */
   baseSeconds: number;
@@ -173,6 +180,10 @@ export interface BotGameSettings {
 export interface UseBotGameState {
   /** FEN of the position currently DISPLAYED (viewedPly), not necessarily live. */
   position: string;
+  /** The from/to squares of the move leading to the DISPLAYED ply (viewedPly), or null at
+   * ply 0. Derived from viewedPly — NOT the live tail — so scrubbing the move list moves the
+   * highlight with it instead of leaving a stale one on the live position. */
+  lastMove: { from: string; to: string } | null;
   /** SAN move history of the live game. */
   moveHistory: string[];
   /** The live game's current ply (== moveHistory.length). */
@@ -224,14 +235,23 @@ export interface UseBotGameState {
 
 // ─── Pure helpers ────────────────────────────────────────────────────────────
 
-/** Replays SAN moves [0, ply) on a fresh board to compute the FEN at that ply. */
-function fenAtPly(moveHistory: string[], ply: number): string {
+/** Replays SAN moves [0, ply) on a fresh board to compute the FEN at that ply,
+ * along with the from/to squares of the move that produced it (or `null` at
+ * ply 0). Mirrors useChessGame.ts's computeInitialChessState replay loop. */
+function replayToPly(
+  moveHistory: string[],
+  ply: number,
+): { fen: string; lastMove: { from: string; to: string } | null } {
   const chess = new Chess();
+  let lastMove: { from: string; to: string } | null = null;
   for (let i = 0; i < ply; i++) {
     // safe: loop bound ensures i < ply <= moveHistory.length
-    chess.move(moveHistory[i]!);
+    const move = chess.move(moveHistory[i]!);
+    if (i === ply - 1) {
+      lastMove = { from: move.from, to: move.to };
+    }
   }
-  return chess.fen();
+  return { fen: chess.fen(), lastMove };
 }
 
 function freshClockBase(baseSeconds: number): { white: number; black: number } {
@@ -486,7 +506,10 @@ export function useBotGame(
 
   const liveGamePly = moveHistory.length;
 
-  const position = useMemo(() => fenAtPly(moveHistory, viewedPly), [moveHistory, viewedPly]);
+  const { fen: position, lastMove } = useMemo(
+    () => replayToPly(moveHistory, viewedPly),
+    [moveHistory, viewedPly],
+  );
 
   const canOfferDrawNow = canOfferDrawGate(movesSinceLastDecline);
 
@@ -1284,6 +1307,7 @@ export function useBotGame(
 
   return {
     position,
+    lastMove,
     moveHistory,
     liveGamePly,
     viewedPly,

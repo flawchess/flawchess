@@ -11,8 +11,11 @@
  *     defaults to the opponent's (normalized) rating, matching who is actually choosing
  *     the move (quick 260705-m3z). `sideToMove` omitted → falls back to `gameData.user_color`.
  *     Never the frozen current-rating snapshot.
- *   - Free play: the user's current platform rating (`profile.current_rating`),
- *     else the FREE_PLAY_DEFAULT_ELO (1500) midpoint fallback.
+ *   - Free play (Phase 171 D-08): the user's normalized `profile.lichess_blitz_equivalent_rating`
+ *     (the blitz-bucket anchor, Phase 171 D-07), else the FREE_PLAY_DEFAULT_ELO (1500)
+ *     midpoint fallback. Deliberately NOT `profile.current_rating` — that is the raw
+ *     platform rating from the user's most recent game, which is inflated for
+ *     chess.com users relative to the Maia/Lichess-blitz scale this slider is on.
  *   - The resolved default is clamped to the MAIA_ELO_LADDER's [min, max] bounds
  *     (NOT snapped to its 100-ELO steps — a rating like 1720 stays 1720; only the
  *     ladder's outer bounds are enforced. useMaiaEngine's own `nearestByElo` picks
@@ -25,7 +28,8 @@ import { useEffect, useRef, useState } from 'react';
 import { MAIA_ELO_LADDER } from '@/lib/maiaEncoding';
 import type { MoverColor } from '@/lib/liveFlaw';
 
-/** Free-play fallback ELO when the user has no `current_rating` (D-07 midpoint). */
+/** Free-play fallback ELO when the user has no normalized blitz-equivalent
+ * rating anchor (D-07 midpoint). */
 export const FREE_PLAY_DEFAULT_ELO = 1500;
 
 /** Minimal game-data shape this hook needs (structurally satisfied by GameFlawCard). */
@@ -39,9 +43,21 @@ export interface MaiaEloGameData {
   black_rating_lichess_blitz?: number | null;
 }
 
-/** Minimal profile shape this hook needs (structurally satisfied by UserProfile). */
+/**
+ * Minimal profile shape this hook needs (structurally satisfied by UserProfile).
+ *
+ * Phase 171 code review (WR-04): `current_rating` was REMOVED from this shape.
+ * D-08 repointed `deriveRawDefault` to `lichess_blitz_equivalent_rating`, which
+ * left `current_rating` a REQUIRED field of this interface that nothing read —
+ * forcing every caller to supply a value with no consumer. Dropping it also
+ * makes the D-08 repoint structurally irreversible-by-accident: the raw
+ * (chess.com-inflated) rating is now not even visible to this hook, so a future
+ * edit cannot silently read it back. `current_rating` remains on the wire
+ * (`UserProfile` / `app/schemas/users.py`) for other consumers.
+ */
 export interface MaiaEloProfile {
-  current_rating: number | null;
+  // Phase 171 D-08: the normalized rating the free-play branch actually reads.
+  lichess_blitz_equivalent_rating: number | null;
 }
 
 export interface UseMaiaEloDefaultOptions {
@@ -99,7 +115,7 @@ function deriveRawDefault(
     }
     return gameData.black_rating_lichess_blitz ?? gameData.black_rating;
   }
-  return profile?.current_rating ?? FREE_PLAY_DEFAULT_ELO;
+  return profile?.lichess_blitz_equivalent_rating ?? FREE_PLAY_DEFAULT_ELO;
 }
 
 export function useMaiaEloDefault({

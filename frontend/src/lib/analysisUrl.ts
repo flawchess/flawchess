@@ -17,6 +17,15 @@
  * move-list-from-start). `?line=` remains the right choice whenever a full
  * navigable line is available. Precedence when both are present: fen wins
  * (see the Analysis.tsx seeding effects).
+ *
+ * `?orientation=white|black` is an OPTIONAL param on ANY free-play entry point
+ * (`?line=`, `?fen=`, or the bare start position) — Analysis.tsx's orientation
+ * derivation applies it to all free-play sub-modes uniformly, not just `?line=`.
+ * Free play previously had no orientation input at all, so a finished bot game
+ * played as Black opened the analysis board white-side-up (171 UAT gap 1,
+ * test 2). An absent param means "no preference" (board stays white); an
+ * explicit value is always emitted, never elided. Game mode (`?game_id=`)
+ * ignores it and orients from the backend's user_color instead.
  */
 
 import { Chess } from 'chess.js';
@@ -26,6 +35,7 @@ const LINE_PARAM = 'line';
 const GAME_ID_PARAM = 'game_id';
 const PLY_PARAM = 'ply';
 const FEN_PARAM = 'fen';
+const ORIENTATION_PARAM = 'orientation';
 
 /**
  * Converts a SAN move list (as held by the Openings explorer's `chess.moveHistory`)
@@ -34,9 +44,14 @@ const FEN_PARAM = 'fen';
  * Replays each SAN on a fresh board from the standard start, emitting one UCI
  * token (`from + to + promotion?`) per move. Stops at the first illegal SAN
  * (defensive — should not happen for a valid explorer history). An empty move
- * list returns the bare `/analysis` path (free play from the start position).
+ * list omits `?line=` (free play from the start position).
+ *
+ * `orientation` is optional (`'white' | 'black'`) and, when passed, is emitted
+ * as `&orientation=<value>` (or as the sole `?orientation=` param when the move
+ * list is empty) — see the module doc comment. Existing callers that omit the
+ * arg (e.g. Openings.tsx) are unaffected.
  */
-export function buildAnalysisLineUrl(sans: string[]): string {
+export function buildAnalysisLineUrl(sans: string[], orientation?: 'white' | 'black'): string {
   const chess = new Chess();
   const uci: string[] = [];
   for (const san of sans) {
@@ -47,8 +62,13 @@ export function buildAnalysisLineUrl(sans: string[]): string {
       break; // stop on illegal SAN (chess.js throws) rather than emitting a broken token
     }
   }
-  if (uci.length === 0) return ANALYSIS_PATH;
-  return `${ANALYSIS_PATH}?${LINE_PARAM}=${uci.join(',')}`;
+
+  const params: string[] = [];
+  if (uci.length > 0) params.push(`${LINE_PARAM}=${uci.join(',')}`);
+  if (orientation) params.push(`${ORIENTATION_PARAM}=${orientation}`);
+
+  if (params.length === 0) return ANALYSIS_PATH;
+  return `${ANALYSIS_PATH}?${params.join('&')}`;
 }
 
 /**
@@ -124,4 +144,16 @@ export function parseAnalysisFenParam(fenParam: string | null): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Parses a `?orientation=` param value: a strict lowercase allowlist of
+ * `'white' | 'black'`. Everything else (null, empty, mixed case, garbage,
+ * a stray `%`) returns `null` and never throws — mirrors
+ * `parseAnalysisFenParam`'s tolerance so a hand-typed bad URL degrades to
+ * the board's white default instead of crashing (T-171-08-01/02).
+ */
+export function parseAnalysisOrientationParam(param: string | null): 'white' | 'black' | null {
+  if (param === 'white' || param === 'black') return param;
+  return null;
 }

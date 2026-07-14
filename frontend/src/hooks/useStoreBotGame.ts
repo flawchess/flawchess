@@ -30,9 +30,6 @@ export const MAX_STORE_RETRIES = 2;
 /** HTTP status the server returns for an invalid PGN (a client bug) — never
  * worth retrying, in-session or across visits. */
 const STATUS_UNPROCESSABLE = 422;
-/** HTTP status for a logged-out user / expired guest token — worth retrying
- * once authenticated. */
-const STATUS_UNAUTHORIZED = 401;
 
 /**
  * Pure mapper from a queued entry to the wire request. Extracted so the
@@ -53,19 +50,32 @@ export function toStoreRequest(entry: PendingStoreEntry): StoreBotGameRequest {
 /**
  * In-flight retry predicate for a single `mutate()` call (D-13). Extracted
  * as a pure, directly-testable function — mirrors `toStoreRequest`'s
- * testability rationale. 422 (invalid PGN) never retries; 401 (logged out /
- * expired guest token) always retries; anything else (network / 5xx) gets a
- * bounded retry.
+ * testability rationale. 422 (invalid PGN) never retries; EVERY other failure
+ * (401, network, 5xx) gets a BOUNDED retry.
+ *
+ * Bug fix (Phase 171 code review, CR-01): this predicate used to return `true`
+ * UNCONDITIONALLY for a 401, with no `failureCount` bound. TanStack Query
+ * treats an always-true `retry` predicate as an unbounded retry loop, so once
+ * Phase 171 gave the hook its first component call site (`Bots.tsx`'s D-21
+ * finish-time store), a finished game POSTed with an expired/absent token
+ * would re-issue `POST /bots/games` forever (~every 30s, `retryDelay`'s cap)
+ * for as long as the result screen stayed mounted. Worse, the mutation never
+ * settled as errored, so the global `MutationCache.onError` never fired
+ * (nothing reached Sentry) and `isSuccess` never flipped (the user saw no
+ * signal at all). An unbounded in-flight retry also bought nothing: the
+ * pending-store queue + next-visit drain IS the "retry once authenticated"
+ * mechanism (D-13), and it is durable across reloads, which an in-flight loop
+ * is not.
  *
  * This predicate only governs in-flight retries of ONE `mutate()` call —
  * whether a queue entry survives to the NEXT page visit is the drain loop's
- * decision (`useDrainPendingStore`), not this predicate's.
+ * decision (`useDrainPendingStore`), not this predicate's. A 401 keeps its
+ * entry there, which is what makes the bound here safe.
  */
 export function shouldRetryStore(failureCount: number, error: unknown): boolean {
   if (!axios.isAxiosError(error)) return failureCount < MAX_STORE_RETRIES;
   const status = error.response?.status;
   if (status === STATUS_UNPROCESSABLE) return false;
-  if (status === STATUS_UNAUTHORIZED) return true;
   return failureCount < MAX_STORE_RETRIES;
 }
 
@@ -105,13 +115,14 @@ export function useStoreBotGame(): UseMutationResult<
  * (it is called fire-and-forget from a mount effect).
  *
  * Uses its own `useMutation` — deliberately WITHOUT `shouldRetryStore` —
- * rather than `useStoreBotGame()`. `shouldRetryStore` returning `true`
- * unconditionally for a 401 means an in-flight retry loop that never settles
- * within one `mutateAsync()` call, which would hang this loop forever on the
- * first 401 entry. The drain's real "retry" IS the next `/bots` mount
- * (D-13) — one attempt per entry per drain is correct here; a single
- * in-session `useStoreBotGame()` (with the predicate) remains available for
- * a future direct, user-triggered "retry now" call site.
+ * rather than `useStoreBotGame()`. The drain's real "retry" IS the next
+ * `/bots` mount (D-13), so exactly ONE attempt per entry per drain is what we
+ * want; the predicate's bounded in-flight retries would just multiply the
+ * HTTP calls of a drain pass (up to `MAX_STORE_RETRIES + 1` per entry) while
+ * a whole queue is being walked, for no durability gain. (Before CR-01 this
+ * paragraph read "`shouldRetryStore` retries a 401 forever, which would hang
+ * this loop" — that unbounded 401 branch is gone, so the reason to keep the
+ * predicate out of the drain is now cost, not a hang.)
  */
 export function useDrainPendingStore(ownerKey: string | null | undefined): {
   drain: () => Promise<void>;

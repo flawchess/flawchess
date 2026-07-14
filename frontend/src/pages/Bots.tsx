@@ -1,22 +1,26 @@
 /**
  * Bots — the /bots page assembling the clocked bot-play board (Phase 169),
- * plus the Phase 170 localStorage resume gate + silent pending-store drain.
+ * the Phase 170 localStorage resume gate + silent pending-store drain, and
+ * the Phase 171 setup screen (D-09/D-11/D-13).
  *
  * Default export (required by React.lazy in App.tsx, mirroring Analysis.tsx's
  * Pitfall 1 divergence from the app's named-export convention).
  *
  * Restructured into an outer `BotsPage` (owner-scope resolution, snapshot
- * detection, pending-store drain — Phase 170 Plan 05) and an inner `BotsGame`
- * (today's game body, unchanged except `BOT_GAME_SETTINGS` swapped for a
- * per-instance `settings` derived from an optional resumed snapshot).
+ * detection, pending-store drain, and now the setup/game phase switch — Phase
+ * 170 Plan 05 + Phase 171 Plan 06) and an inner `BotsGame` (today's game
+ * body, now taking its `settings` as a required prop instead of falling back
+ * to a hardcoded stub).
  *
- * D-14 stub: with NO snapshot present, `BotsGame` still gets a hardcoded
- * `BOT_GAME_SETTINGS` and starts immediately — Phase 171 replaces THAT branch
- * (and only that branch) with the real setup screen (ELO/blend/TC/color
- * pickers) and adds the nav entry. With a snapshot present, `BotsGame` mounts
- * immediately too (so its engines warm — D-03 corrected), but `ResumeGate`
- * overlays the board and nothing starts until the user chooses Resume or
- * Discard (D-04).
+ * SETUP AS THE SINGLE ENTRY POINT (Phase 171, replacing the old D-14 stub
+ * branch): with NO snapshot present, `BotsPage` renders `SetupScreen` and
+ * `BotsGame` is not mounted at all until Start fires. With a snapshot
+ * present, `BotsGame` mounts immediately (so its engines warm — D-03
+ * corrected) and `ResumeGate` overlays the board; nothing starts until the
+ * user chooses Resume or Discard (D-04) — this precedence is UNCHANGED by
+ * this plan. Discard and both result-surface "New game" actions all fall
+ * through to the setup screen (D-11/D-13) rather than auto-starting a fresh
+ * game — there is no second start path.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -29,26 +33,15 @@ import { GameControls } from '@/components/bots/GameControls';
 import { GameResultDialog } from '@/components/bots/GameResultDialog';
 import { GameResultStrip } from '@/components/bots/GameResultStrip';
 import { ResumeGate } from '@/components/bots/ResumeGate';
+import { SetupScreen } from '@/components/bots/SetupScreen';
 import { useBotGame, type BotGameSettings, type UseBotGameState } from '@/hooks/useBotGame';
 import { useUserProfile } from '@/hooks/useUserProfile';
-import { useDrainPendingStore } from '@/hooks/useStoreBotGame';
+import { useDrainPendingStore, useStoreBotGame, toStoreRequest } from '@/hooks/useStoreBotGame';
 import { readSnapshot, clearSnapshot, type BotGameSnapshot } from '@/lib/botGameSnapshot';
+import { removePendingStore } from '@/lib/botPendingStore';
 import type { MoverColor } from '@/lib/liveFlaw';
 import { setMuted, unlockAudio, useMuted } from '@/lib/sounds';
 import { buildAnalysisLineUrl } from '@/lib/analysisUrl';
-
-/**
- * D-14 hardcoded start stub — a lichess-style 5+3 blitz preset (Claude's
- * discretion), bot at a mid-range ELO with a balanced human/Stockfish blend,
- * user playing white. Phase 171 replaces this with the real setup screen.
- */
-const BOT_GAME_SETTINGS: BotGameSettings = {
-  botElo: 1500,
-  blend: 0.5,
-  baseSeconds: 300,
-  incrementSeconds: 3,
-  userColor: 'white',
-};
 
 /** Matches the app's existing `lg` Tailwind breakpoint (1024px) — below this,
  * clocks/move-list/controls stack around the board (mobile: bot clock above,
@@ -78,6 +71,16 @@ interface GamePanelProps {
   dialogDismissed: boolean;
   onToggleMute: () => void;
   onAnalyze: () => void;
+  /** D-11: returns to the setup screen (unmounting BotsGame) — NOT
+   * `game.newGame()`, which would restart in place with the same settings. */
+  onNewGame: () => void;
+  /** D-21: true only once the finish-time store mutation has CONFIRMED
+   * (`useStoreBotGame().isSuccess`) — gates the "Saved to your Library" row
+   * on the result strip. Never true on idle/pending/error. */
+  storeSucceeded: boolean;
+  /** SC4: guests additionally see the not-auto-analyzed caveat alongside the
+   * save confirmation. */
+  isGuest: boolean;
 }
 
 /**
@@ -93,6 +96,9 @@ function GamePanel({
   dialogDismissed,
   onToggleMute,
   onAnalyze,
+  onNewGame,
+  storeSucceeded,
+  isGuest,
 }: GamePanelProps): ReactElement {
   const outcome = game.outcome;
   const showResultStrip = outcome !== null && dialogDismissed;
@@ -110,8 +116,10 @@ function GamePanel({
         <GameResultStrip
           outcome={outcome}
           userColor={userColor}
-          onNewGame={game.newGame}
+          onNewGame={onNewGame}
           onAnalyze={onAnalyze}
+          storeSucceeded={storeSucceeded}
+          isGuest={isGuest}
         />
       ) : (
         <GameControls
@@ -171,30 +179,113 @@ function renderDesktopLayout(
 }
 
 interface BotsGameProps {
-  /** The snapshot to resume from, or `null` for a fresh D-14 stub game. */
+  /** The snapshot to resume from, or `null` for a fresh setup-started game. */
   resume: BotGameSnapshot | null;
   ownerKey: string | null;
+  /** The settings this instance plays with — from the resumed snapshot, or
+   * from the setup screen's Start. REQUIRED, no fallback: `BotsGame` is never
+   * mounted with placeholder settings (T-171-06-02). */
+  settings: BotGameSettings;
+  /** SC4: threaded down to the result surfaces' guest caveat — sourced from
+   * `BotsPage`'s own `useUserProfile()` call, not a second hook call here. */
+  isGuest: boolean;
   /** Discard-confirmed: clears the snapshot and remounts a fresh game
    * (BotsPage's `handleDiscard`, via the `key`-changed remount). */
   onDiscard: () => void;
+  /** D-11: "New game" from either result surface returns to the setup
+   * screen (unmounting this component) — it does NOT call `game.newGame()`. */
+  onNewGame: () => void;
 }
 
 /**
  * The actual game body — today's page, minus owner-scope/snapshot-detection
- * concerns (now `BotsPage`'s job). `settings` comes from the resumed
- * snapshot when present, else the D-14 stub. `ResumeGate` overlays the board
+ * concerns (now `BotsPage`'s job). `settings` is supplied by the caller
+ * (resumed snapshot or setup screen). `ResumeGate` overlays the board
  * whenever a snapshot is present and the hook has not gone live yet
  * (D-03/D-04): the hook is mounted immediately either way, so its provider
  * bring-up effect warms the engines while the gate is still on screen.
  */
-function BotsGame({ resume, ownerKey, onDiscard }: BotsGameProps): ReactElement {
+function BotsGame({
+  resume,
+  ownerKey,
+  settings,
+  isGuest,
+  onDiscard,
+  onNewGame,
+}: BotsGameProps): ReactElement {
   const navigate = useNavigate();
   const isDesktop = useIsDesktop();
   const muted = useMuted();
-  const settings = resume?.settings ?? BOT_GAME_SETTINGS;
+  // D-11: `game.newGame` (a public hook API) is intentionally left UNCALLED
+  // from this UI — both result surfaces below use `onNewGame` (returns to the
+  // setup screen) instead.
+  //
+  // Correction (Phase 171 code review, WR-03): this comment used to claim
+  // "`npm run knip` is the arbiter of whether `newGame` stays exported from
+  // the hook". That was FALSE and worth naming: `newGame` is a PROPERTY of the
+  // object `useBotGame` returns, not a module export, so knip cannot see it
+  // and CI will never flag it. Nothing enforces its removal, and it currently
+  // has NO production caller — it is retained as hook API (with its own
+  // `useBotGame.test.ts` coverage: book reset, uuid re-mint, live reset,
+  // pending-store non-clobber) for a future in-place "rematch" caller. The
+  // invariant that this UI never calls it IS enforced, but by Bots.test.tsx
+  // (`expect(fakeGame.newGame).not.toHaveBeenCalled()` on both result
+  // surfaces), not by a linter.
   const game = useBotGame(settings, resume ?? undefined, ownerKey);
   const [dialogDismissed, setDialogDismissed] = useState(false);
   const hasUnlockedAudioRef = useRef(false);
+
+  // D-21 (the CONTEXT amendment): store the finished game ON FINISH, not
+  // deferred to the next `/bots` mount.
+  //
+  // WHY this exists: `finalizeGame` (useBotGame.ts) only ENQUEUES the
+  // finished game into localStorage — the actual POST used to wait for the
+  // NEXT `/bots` mount's `useDrainPendingStore` drain (BotsPage, below), so
+  // D-20's "Saved to your Library" row had no signal to gate on while the
+  // user was still looking at THIS result screen (171-RESEARCH.md
+  // Pitfall 3).
+  //
+  // WHY `useStoreBotGame()` and not `useDrainPendingStore()`: only the
+  // former returns a full `UseMutationResult` whose `isSuccess` the result
+  // surfaces below can read — the drain hook exposes no per-entry status to
+  // its caller.
+  //
+  // WHY the localStorage queue still exists: it is the offline / 401-retry
+  // durability fallback (Phase 170). This effect is an ADDITIONAL store
+  // trigger, not a replacement (D-21) — `finalizeGame` remains the ONLY
+  // `enqueuePendingStore` call site (170 D-12/SC2 is structural; do not add
+  // a second one here).
+  //
+  // WHY `removePendingStore` on success: it is the double-POST fix. Without
+  // it, the next mount's drain would re-POST a game already stored. The
+  // server is idempotent on `game_uuid` (167 D-11), so a stray double-POST
+  // would be harmless — but harmless is not the bar; D-21 requires it not to
+  // happen, and a call-count test pins it (171-07 Task 3, V-15).
+  const store = useStoreBotGame();
+  const storedGameUuidRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (game.outcome === null) return;
+    if (game.pgn === null) return;
+    if (storedGameUuidRef.current === game.gameUuid) return;
+    // Latch FIRST, before the async mutate call: a re-render while the
+    // mutation is in flight must not double-fire for the same gameUuid.
+    storedGameUuidRef.current = game.gameUuid;
+    store.mutate(
+      toStoreRequest({
+        gameUuid: game.gameUuid,
+        pgn: game.pgn,
+        settings,
+        enqueuedAt: Date.now(),
+      }),
+      { onSuccess: () => removePendingStore(ownerKey, game.gameUuid) },
+    );
+    // Deliberately depends on `store.mutate` (a stable TanStack Query
+    // reference), not the whole `store` object — depending on `store` would
+    // re-run this effect on every mutation status transition (pending ->
+    // success), which the `storedGameUuidRef` latch guards against anyway
+    // but is needless churn.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game.outcome, game.pgn, game.gameUuid, ownerKey, settings, store.mutate]);
 
   // Reset the dismissed flag when a fresh game starts (outcome goes back to null).
   useEffect(() => {
@@ -216,8 +307,8 @@ function BotsGame({ resume, ownerKey, onDiscard }: BotsGameProps): ReactElement 
   }, [muted]);
 
   const handleAnalyze = useCallback((): void => {
-    navigate(buildAnalysisLineUrl(game.moveHistory));
-  }, [navigate, game.moveHistory]);
+    navigate(buildAnalysisLineUrl(game.moveHistory, settings.userColor));
+  }, [navigate, game.moveHistory, settings.userColor]);
 
   const botColor = settings.userColor === 'white' ? 'black' : 'white';
   const flipped = settings.userColor === 'black';
@@ -241,7 +332,12 @@ function BotsGame({ resume, ownerKey, onDiscard }: BotsGameProps): ReactElement 
     />
   );
   const board = (
-    <ChessBoard position={game.position} onPieceDrop={game.attemptMove} flipped={flipped} />
+    <ChessBoard
+      position={game.position}
+      onPieceDrop={game.attemptMove}
+      flipped={flipped}
+      lastMove={game.lastMove}
+    />
   );
   const panel = (
     <GamePanel
@@ -251,6 +347,9 @@ function BotsGame({ resume, ownerKey, onDiscard }: BotsGameProps): ReactElement 
       dialogDismissed={dialogDismissed}
       onToggleMute={handleToggleMute}
       onAnalyze={handleAnalyze}
+      onNewGame={onNewGame}
+      storeSucceeded={store.isSuccess}
+      isGuest={isGuest}
     />
   );
 
@@ -258,7 +357,10 @@ function BotsGame({ resume, ownerKey, onDiscard }: BotsGameProps): ReactElement 
     <div
       data-testid="bots-page"
       onPointerDown={handleFirstInteraction}
-      className="mx-auto flex max-w-5xl flex-col gap-4 p-4"
+      // Bottom-nav clearance (171 UAT gap 3, Task 1) — same pb-20 sm:pb-4
+      // pattern as SetupScreen.tsx's root; see that comment for the full
+      // clearance arithmetic.
+      className="mx-auto flex max-w-5xl flex-col gap-4 p-4 pb-20 sm:pb-4"
     >
       {isDesktop
         ? renderDesktopLayout(botClock, userClock, board, panel)
@@ -279,8 +381,10 @@ function BotsGame({ resume, ownerKey, onDiscard }: BotsGameProps): ReactElement 
           userColor={settings.userColor}
           open={!dialogDismissed}
           onDismiss={() => setDialogDismissed(true)}
-          onNewGame={game.newGame}
+          onNewGame={onNewGame}
           onAnalyze={handleAnalyze}
+          storeSucceeded={store.isSuccess}
+          isGuest={isGuest}
         />
       )}
     </div>
@@ -288,12 +392,28 @@ function BotsGame({ resume, ownerKey, onDiscard }: BotsGameProps): ReactElement 
 }
 
 export default function BotsPage(): ReactElement {
-  const { data: profile, isLoading } = useUserProfile();
+  // WR-08: `isError` is read, not just `isLoading`. A failed profile fetch
+  // SETTLES the query (isLoading false, data undefined), so without this the
+  // page booted normally with `ownerKey = null` and silently degraded to the
+  // shared `…:anon` localStorage bucket: a logged-in user's in-progress
+  // resumable game became invisible, and the new game's snapshot + setup
+  // settings were written into the anon bucket where the NEXT user of the same
+  // browser would find them. The ELO default also silently fell back to 1500,
+  // indistinguishable from "no anchor". None of it surfaced to the user.
+  const { data: profile, isLoading, isError } = useUserProfile();
   const ownerKey = profile?.email ?? null;
+  // SC4: passed down to BotsGame's guest caveat — reads `useUserProfile()`
+  // once here rather than a second call in BotsGame.
+  const isGuest = profile?.is_guest ?? false;
 
   const [boot, setBoot] = useState<{ resume: BotGameSnapshot | null; nonce: number } | null>(
     null,
   );
+  // Settings chosen at setup (Start) or prefilled after a "New game" reset.
+  // `null` means "no started game yet — show the setup screen" whenever
+  // `boot.resume` is also null (D-09/D-13: the setup screen is the single
+  // entry point for every new game; a snapshot still wins over it, D-04).
+  const [startedSettings, setStartedSettings] = useState<BotGameSettings | null>(null);
 
   // Boot effect: read the snapshot only once the profile has settled
   // (`!isLoading`). Reading it earlier would use the `anon` key (T-170-04's
@@ -302,11 +422,14 @@ export default function BotsPage(): ReactElement {
   // change (e.g. login completing) does not re-trigger this effect, matching
   // "lazy seed, not a live subscription" (useBotGame's `resume` prop is a
   // lazy initializer, read once at first render).
+  // WR-08: `isError` gates this too — booting on a failed profile fetch is
+  // exactly the "read the snapshot under the WRONG owner key" trap this effect
+  // already guards against for `isLoading`.
   useEffect(() => {
-    if (isLoading) return;
+    if (isLoading || isError) return;
     if (boot !== null) return;
     setBoot({ resume: readSnapshot(ownerKey), nonce: 0 });
-  }, [isLoading, ownerKey, boot]);
+  }, [isLoading, isError, ownerKey, boot]);
 
   // D-13: drain the pending-store queue on mount, before/independently of the
   // gate — fires exactly once, after the profile has settled, regardless of
@@ -315,21 +438,49 @@ export default function BotsPage(): ReactElement {
   const { drain } = useDrainPendingStore(ownerKey);
   const hasDrainedRef = useRef(false);
   useEffect(() => {
-    if (isLoading) return;
+    // WR-08: never drain under a fallback `anon` key produced by a failed
+    // profile fetch — that would POST (or fail to find) the wrong user's queue.
+    if (isLoading || isError) return;
     if (hasDrainedRef.current) return;
     hasDrainedRef.current = true;
     void drain();
-  }, [isLoading, drain]);
+  }, [isLoading, isError, drain]);
+
+  // Start (from the setup screen): remembers the chosen settings and bumps
+  // `nonce` for a fresh `BotsGame` mount — `useBotGame` initializes with
+  // exactly these settings, never with placeholders (T-171-06-02).
+  const handleStart = useCallback((settings: BotGameSettings): void => {
+    setStartedSettings(settings);
+    setBoot((prev) => ({ resume: null, nonce: (prev?.nonce ?? 0) + 1 }));
+  }, []);
+
+  // D-11: "New game" from either result surface unmounts `BotsGame` and
+  // returns to the setup screen (prefilled from the D-10 key that Start
+  // already wrote) — it does NOT restart in place with the same settings.
+  const handleNewGame = useCallback((): void => {
+    setStartedSettings(null);
+    setBoot((prev) => ({ resume: null, nonce: (prev?.nonce ?? 0) + 1 }));
+  }, []);
 
   // D-05: discard clears ONLY the in-progress snapshot (never the
-  // pending-store queue — D-12's separate key) and remounts `BotsGame` via a
-  // changed `key` with `resume: null`, so the post-discard game gets
-  // `BOT_GAME_SETTINGS` (not the discarded game's settings) and is live from
-  // mount, exactly today's D-14 stub behavior.
+  // pending-store queue — D-12's separate key) and falls through to the
+  // setup screen (D-13) rather than auto-starting a fresh game.
   const handleDiscard = useCallback((): void => {
     clearSnapshot(ownerKey);
+    setStartedSettings(null);
     setBoot((prev) => ({ resume: null, nonce: (prev?.nonce ?? 0) + 1 }));
   }, [ownerKey]);
+
+  // WR-08: BEFORE the `boot === null` loading branch — on a profile error the
+  // boot effect deliberately never runs, so `boot` stays null and this page
+  // would otherwise sit on "Loading…" forever. Standard CLAUDE.md error copy.
+  if (isError) {
+    return (
+      <div data-testid="bots-page-error" className="p-4 text-sm text-muted-foreground">
+        Failed to load your profile. Something went wrong. Please try again in a moment.
+      </div>
+    );
+  }
 
   if (boot === null) {
     return (
@@ -339,7 +490,41 @@ export default function BotsPage(): ReactElement {
     );
   }
 
+  // Snapshot beats setup (170 D-04, unchanged): a resumed game always mounts
+  // `BotsGame` immediately, with `ResumeGate` overlaid.
+  if (boot.resume !== null) {
+    return (
+      <BotsGame
+        key={boot.nonce}
+        resume={boot.resume}
+        settings={boot.resume.settings}
+        ownerKey={ownerKey}
+        isGuest={isGuest}
+        onDiscard={handleDiscard}
+        onNewGame={handleNewGame}
+      />
+    );
+  }
+
+  if (startedSettings === null) {
+    return (
+      <SetupScreen
+        ownerKey={ownerKey}
+        normalizedRating={profile?.lichess_blitz_equivalent_rating ?? null}
+        onStart={handleStart}
+      />
+    );
+  }
+
   return (
-    <BotsGame key={boot.nonce} resume={boot.resume} ownerKey={ownerKey} onDiscard={handleDiscard} />
+    <BotsGame
+      key={boot.nonce}
+      resume={null}
+      settings={startedSettings}
+      ownerKey={ownerKey}
+      isGuest={isGuest}
+      onDiscard={handleDiscard}
+      onNewGame={handleNewGame}
+    />
   );
 }

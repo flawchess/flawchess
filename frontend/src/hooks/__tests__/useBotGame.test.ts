@@ -456,6 +456,100 @@ describe('useBotGame', () => {
     });
   });
 
+  describe('last-move highlight (171 UAT gap 2)', () => {
+    it('is null at the start of a fresh game', () => {
+      const { result } = renderHook(() => useBotGame(DEFAULT_SETTINGS));
+      expect(result.current.lastMove).toBeNull();
+    });
+
+    it('is the user\'s move after 1. e4', () => {
+      const { result } = renderHook(() => useBotGame(DEFAULT_SETTINGS));
+
+      act(() => {
+        result.current.attemptMove('e2', 'e4');
+      });
+
+      expect(result.current.lastMove).toEqual({ from: 'e2', to: 'e4' });
+    });
+
+    it("is the BOT's move (the live tail) after it replies", async () => {
+      mockSelectBotMove.mockResolvedValueOnce('e7e5');
+      const { result } = renderHook(() => useBotGame(DEFAULT_SETTINGS));
+
+      act(() => {
+        result.current.attemptMove('e2', 'e4');
+      });
+      await advance(2000);
+
+      expect(result.current.moveHistory).toEqual(['e4', 'e5']);
+      expect(result.current.lastMove).toEqual({ from: 'e7', to: 'e5' });
+    });
+
+    it('follows viewedPly, NOT the live tail, when scrubbing back (anti-stale-highlight pin)', async () => {
+      mockSelectBotMove.mockResolvedValueOnce('e7e5');
+      const { result } = renderHook(() => useBotGame(DEFAULT_SETTINGS));
+
+      act(() => {
+        result.current.attemptMove('e2', 'e4');
+      });
+      await advance(2000);
+      expect(result.current.moveHistory).toEqual(['e4', 'e5']);
+
+      act(() => {
+        result.current.viewPly(1);
+      });
+
+      // If this ever reverts to deriving lastMove from the live tail
+      // (moveHistory[moveHistory.length - 1]), this assertion fails: it
+      // would report the bot's e7e5 move instead of the ply-1 e2e4 move.
+      expect(result.current.lastMove).toEqual({ from: 'e2', to: 'e4' });
+    });
+
+    it('is null at viewPly(0) (start position, nothing to highlight)', async () => {
+      mockSelectBotMove.mockResolvedValueOnce('e7e5');
+      const { result } = renderHook(() => useBotGame(DEFAULT_SETTINGS));
+
+      act(() => {
+        result.current.attemptMove('e2', 'e4');
+      });
+      await advance(2000);
+
+      act(() => {
+        result.current.viewPly(0);
+      });
+
+      expect(result.current.lastMove).toBeNull();
+    });
+
+    it('snaps back to the live tail on returnToLive()', async () => {
+      mockSelectBotMove.mockResolvedValueOnce('e7e5');
+      const { result } = renderHook(() => useBotGame(DEFAULT_SETTINGS));
+
+      act(() => {
+        result.current.attemptMove('e2', 'e4');
+      });
+      await advance(2000);
+
+      act(() => {
+        result.current.viewPly(1);
+      });
+      expect(result.current.lastMove).toEqual({ from: 'e2', to: 'e4' });
+
+      act(() => {
+        result.current.returnToLive();
+      });
+      expect(result.current.lastMove).toEqual({ from: 'e7', to: 'e5' });
+    });
+
+    it('is non-null on the first render of a resumed game, matching the restored history\'s final move', () => {
+      // Default fixture sans: e4 e5 Nf3 Nc6 — final move is ...Nc6 (b8-c6).
+      const resume = buildResumeSnapshot();
+      const { result } = renderHook(() => useBotGame(DEFAULT_SETTINGS, resume));
+
+      expect(result.current.lastMove).toEqual({ from: 'b8', to: 'c6' });
+    });
+  });
+
   describe('pacing', () => {
     it('ticks the bot clock down in real time during a long think, and debits the REAL elapsed time on commit (D-15 honest clock)', async () => {
       mockSelectBotMove.mockImplementation(

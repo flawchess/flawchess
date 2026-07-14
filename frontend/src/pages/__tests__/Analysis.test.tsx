@@ -763,6 +763,68 @@ describe('Analysis desktop layout (Phase 161, SEED-088)', () => {
   });
 });
 
+// 171-08 (171 UAT gap 1) — free-play `?orientation=` auto-flip. Board squares
+// only render once ChessBoard measures a nonzero width (jsdom performs no
+// real layout) — mirrors the Gem-moves block's own clientWidth stub below.
+//
+// Empirically pinned (once, via a throwaway dump — see plan action): in the
+// UNFLIPPED (white-oriented) default, react-chessboard v5's own squareRenderer
+// emits square-a8 BEFORE square-a1 in DOM order (black's back rank first).
+// So the orientation-independent assertion is: white-oriented => a8 precedes
+// a1 in the DOM (a1BeforeA8 === false); black-oriented (flipped) => a1
+// precedes a8 (a1BeforeA8 === true).
+describe('Board auto-orientation (171 UAT gap 1)', () => {
+  let clientWidthSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    clientWidthSpy = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(400);
+  });
+
+  afterEach(() => {
+    clientWidthSpy.mockRestore();
+  });
+
+  function a1BeforeA8(): boolean {
+    const a1 = screen.getByTestId('square-a1');
+    const a8 = screen.getByTestId('square-a8');
+    return (a1.compareDocumentPosition(a8) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+  }
+
+  it('?line=…&orientation=black renders the board BLACK-oriented', () => {
+    renderAnalysis('/analysis?line=e2e4,e7e5&orientation=black');
+
+    expect(a1BeforeA8()).toBe(true);
+  });
+
+  it('?line=…&orientation=white renders the board WHITE-oriented', () => {
+    renderAnalysis('/analysis?line=e2e4,e7e5&orientation=white');
+
+    expect(a1BeforeA8()).toBe(false);
+  });
+
+  it('?line=… with NO orientation param still renders WHITE-oriented (no Openings regression)', () => {
+    renderAnalysis('/analysis?line=e2e4,e7e5');
+
+    expect(a1BeforeA8()).toBe(false);
+  });
+
+  it('a malformed ?orientation= value does not throw and renders WHITE-oriented', () => {
+    expect(() => {
+      renderAnalysis('/analysis?line=e2e4&orientation=sideways');
+    }).not.toThrow();
+
+    expect(a1BeforeA8()).toBe(false);
+  });
+
+  it("game mode's existing auto-flip from gameData.user_color is unchanged", () => {
+    libraryGameState.data = buildGame({ user_color: 'black' });
+
+    renderAnalysis('/analysis?game_id=1');
+
+    expect(a1BeforeA8()).toBe(true);
+  });
+});
+
 // Phase 163 Plan 04 (SEED-092) — gem-move detection wiring. Real navigation (board
 // clicks + move-list clicks) drives useAnalysisBoard for real (it is NOT mocked),
 // so these are genuine integration tests of the parent-position caches

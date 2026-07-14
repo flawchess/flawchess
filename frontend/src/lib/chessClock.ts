@@ -36,7 +36,17 @@
  * below, a per-move think deadline derived from its own remaining time, that
  * `deadlineSearch.ts` (plan 08 task 2) enforces from OUTSIDE the frozen
  * search core by cutting the in-flight search and returning its best-so-far
- * result.
+ * result — ONLY WHEN `deps.search` is actually consulted (`blend > 0`). At
+ * `blend = 0` (SEED-100, Phase 171 D-03) `selectBotMove.ts` returns from a
+ * single Maia policy sample BEFORE `deps.search` is ever called, so this
+ * deadline is computed (`useBotGame.ts` still calls `computeThinkDeadlineMs`
+ * and builds `deadlineSearch` unconditionally) but never enforced — a
+ * Human-preset bot has an honest, flaggable clock with NO pacing mechanism of
+ * its own; its speed is governed entirely by `computeRevealDelayMs`'s
+ * reveal-delay floor (D-02) and the measured ~0.09s Maia inference cost, both
+ * of which stay well under any realistic blitz/rapid budget (see SEED-100).
+ * Pinned by `selectBotMove.test.ts`'s blend=0 "deps.search zero times"
+ * assertion — do not restore a smaller ad-hoc claim here.
  *
  * D-19 (must-read before retuning ANY constant below or in botBudget.ts): the
  * bot's calibrated ELO (168.5's fixed 50-node budget, measured by

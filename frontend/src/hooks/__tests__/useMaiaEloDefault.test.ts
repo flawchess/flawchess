@@ -5,8 +5,10 @@
  * Behaviors verified:
  * 1. Game mode, white user, white_rating=1720 -> resolved default 1720 (clamped to ladder bounds).
  * 2. Game mode, black user -> resolves from black_rating.
- * 3. Free play, profile.current_rating=1850 -> resolved default 1850.
- * 4. Free play, current_rating null -> resolved default FREE_PLAY_DEFAULT_ELO (1500).
+ * 3. Free play (D-08), profile.lichess_blitz_equivalent_rating=1650 -> resolved default 1650,
+ *    even though a raw (inflated) current_rating of 1900 is present on the profile.
+ * 4. Free play, lichess_blitz_equivalent_rating null -> FREE_PLAY_DEFAULT_ELO (1500);
+ *    current_rating is never a fallback.
  * 5. User-override precedence: a later gameData/profile load does not clobber a user pick.
  * 6. Re-derivation happens when gameData/profile FIRST load (not on every re-render).
  */
@@ -15,6 +17,7 @@ import { describe, it, expect } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useMaiaEloDefault, FREE_PLAY_DEFAULT_ELO } from '../useMaiaEloDefault';
 import type { MaiaEloGameData, MaiaEloProfile } from '../useMaiaEloDefault';
+import { MAIA_ELO_LADDER } from '@/lib/maiaEncoding';
 
 function gameData(overrides: Partial<MaiaEloGameData>): MaiaEloGameData {
   return {
@@ -27,8 +30,26 @@ function gameData(overrides: Partial<MaiaEloGameData>): MaiaEloGameData {
   };
 }
 
-function profile(currentRating: number | null): MaiaEloProfile {
-  return { current_rating: currentRating };
+/**
+ * WR-04: `current_rating` is no longer part of `MaiaEloProfile` — the hook
+ * cannot see it at all, which is the point (D-08's repoint to the normalized
+ * rating is now enforced by the TYPE, not just by an assertion). It is still
+ * supplied here at RUNTIME as a DECOY, on a widened shape: a real `UserProfile`
+ * carries it, so the tests below keep proving that a present-but-inflated raw
+ * rating never leaks into the derived default.
+ */
+type ProfileWithRawRating = MaiaEloProfile & { current_rating: number | null };
+
+const RAW_INFLATED_RATING_DECOY = 1900;
+
+function profile(
+  lichessBlitzEquivalentRating: number | null,
+  currentRatingDecoy: number | null = RAW_INFLATED_RATING_DECOY,
+): ProfileWithRawRating {
+  return {
+    current_rating: currentRatingDecoy,
+    lichess_blitz_equivalent_rating: lichessBlitzEquivalentRating,
+  };
 }
 
 describe('useMaiaEloDefault', () => {
@@ -143,27 +164,55 @@ describe('useMaiaEloDefault', () => {
     expect(black.result.current.selectedElo).toBe(1350);
   });
 
-  it('free play: resolves from profile.current_rating', () => {
+  it('free play: resolves from profile.lichess_blitz_equivalent_rating, NOT the raw current_rating (D-08)', () => {
+    // current_rating (1900, raw/inflated) and lichess_blitz_equivalent_rating (1650,
+    // normalized) deliberately DIFFER here — this is the whole point of D-08. If the
+    // one-line repoint in deriveRawDefault is ever reverted back to current_rating,
+    // this assertion turns red (1900 !== 1650).
     const { result } = renderHook(() =>
       useMaiaEloDefault({
         isGameMode: false,
         gameData: undefined,
-        profile: profile(1850),
+        profile: profile(1650),
       }),
     );
-    expect(result.current.selectedElo).toBe(1850);
+    expect(result.current.selectedElo).toBe(1650);
   });
 
-  it('free play, current_rating null: falls back to FREE_PLAY_DEFAULT_ELO (1500)', () => {
+  it('free play: lichess_blitz_equivalent_rating null falls back to FREE_PLAY_DEFAULT_ELO regardless of current_rating', () => {
     const { result } = renderHook(() =>
       useMaiaEloDefault({
         isGameMode: false,
         gameData: undefined,
+        // current_rating is a non-null 1900, but with no blitz anchor the free-play
+        // default must still fall back to 1500 — current_rating is never a fallback.
         profile: profile(null),
       }),
     );
     expect(result.current.selectedElo).toBe(FREE_PLAY_DEFAULT_ELO);
     expect(FREE_PLAY_DEFAULT_ELO).toBe(1500);
+  });
+
+  it('free play: profile undefined falls back to FREE_PLAY_DEFAULT_ELO', () => {
+    const { result } = renderHook(() =>
+      useMaiaEloDefault({
+        isGameMode: false,
+        gameData: undefined,
+        profile: undefined,
+      }),
+    );
+    expect(result.current.selectedElo).toBe(FREE_PLAY_DEFAULT_ELO);
+  });
+
+  it('free play: a raw lichess_blitz_equivalent_rating outside the ladder still clamps to ladder bounds', () => {
+    const { result } = renderHook(() =>
+      useMaiaEloDefault({
+        isGameMode: false,
+        gameData: undefined,
+        profile: profile(2900),
+      }),
+    );
+    expect(result.current.selectedElo).toBe(MAIA_ELO_LADDER[MAIA_ELO_LADDER.length - 1]);
   });
 
   it('user-override precedence: a user pick wins over a LATER gameData load', () => {

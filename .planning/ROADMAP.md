@@ -53,7 +53,7 @@
 - [x] **Phase 169: Clocked Board + Game Loop (`useBotGame`)** - Live clocked board with pacing, all end conditions, resign/draw, and move sounds (completed 2026-07-13)
 - [x] **Phase 169.5: Bot Opening Book** - Maia-policy-weighted ECO book for the early plies: near-instant, search-free, clock-cheap, varied openings + engine prewarm during the book window
 - [x] **Phase 170: localStorage Resume** - Leave and resume a bot game with the clock fairly paused; store each finished game exactly once (completed 2026-07-14)
-- [ ] **Phase 171: Bots Page + Setup Screen + Nav** - New top-level Bots page tying setup, board, resume, and store-on-finish together for users and guests
+- [x] **Phase 171: Bots Page + Setup Screen + Nav** - New top-level Bots page tying setup, board, resume, and store-on-finish together for users and guests (completed 2026-07-14)
 
 ### Phase 166: Bot Move Selection Core (`selectBotMove`)
 
@@ -280,7 +280,34 @@ Plans:
   3. Both logged-in users and guests can play a full bot game, and every finished game is POSTed and saved to their Library.
   4. On game end the result is stored via the Phase 167 endpoint and appears in the Library Games tab, with the guest not-auto-analyzed caveat shown to guests.
 
-**Plans**: TBD
+**Plans**: 10 plans (7 + 3 gap-closure)
+
+Plans:
+**Wave 1**
+
+- [x] 171-01-PLAN.md — SEED-100 blocker: correct the false D-16 clock comment, document the blend-0 exemption, prove the invariant by mutation (D-03)
+- [x] 171-02-PLAN.md — Backend `lichess_blitz_equivalent_rating` on `/users/me/profile` + the analysis board's free-play ELO fix (D-07, D-08)
+- [x] 171-03-PLAN.md — Nav entries: Bots second, never import-locked, desktop + mobile + drawer; first `App.test.tsx` (D-16/17/18)
+- [x] 171-04-PLAN.md — Setup primitives: TC preset table, play-style control (single-thumb, floors at 0.05), owner-scoped settings key (D-01, D-10, D-14)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 171-05-PLAN.md — The setup screen: ELO / play style / color / time control, Start emits a fully-resolved `BotGameSettings` (D-04/05/07/09/12)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 171-06-PLAN.md — Wire setup into `/bots`: delete the stub, converge fresh-visit + discard + New-game on setup (D-09, D-11, D-13)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 171-07-PLAN.md — Store-on-finish, no double-POST, "Saved to your Library" + guest caveat (D-20, D-21)
+
+**Gap closure** *(from 171-UAT.md — 3 diagnosed gaps)*
+
+- [x] 171-08-PLAN.md — UAT gap 1 (major): orientable free-play `/analysis` URL so the bot game's Analyze CTA opens the board on the player's own side
+- [x] 171-09-PLAN.md — UAT gap 2 (minor): bot board highlights the last played move, derived from `viewedPly` (not the live tail)
+- [x] 171-10-PLAN.md — UAT gap 3 (major): mobile setup screen — bottom-nav clearance + the user-directed density pass (Start 32→48px, chips 44→40px floor)
+
 **UI hint**: yes
 **Blocker (read before planning)**: SEED-100 — SC2's "play-style" knob is `BotGameSettings.blend`. At `blend = 0` the Phase 169 D-16 think deadline is computed and **thrown away** (`selectBotMove` returns from the policy before consulting `deps.search`), so a blend-0 bot has an honest, flaggable clock with **no pacing mechanism**. `Bots.tsx` hardcodes `blend: 0.5` today, which is the only reason it does not bite. Resolve before exposing the slider. See also SEED-099 (the "bot can lose on time" invariant is enforced by comment, not construction).
 
@@ -365,7 +392,7 @@ Plans:
 | 169. Clocked Board + Game Loop (`useBotGame`) | 10/10 | Complete    | 2026-07-13 |
 | 169.5. Bot Opening Book | 4/4 | Complete    | 2026-07-13 |
 | 170. localStorage Resume | 5/5 | Complete    | 2026-07-14 |
-| 171. Bots Page + Setup Screen + Nav | 0/? | Not started | - |
+| 171. Bots Page + Setup Screen + Nav | 10/10 | Complete    | 2026-07-14 |
 
 ## Backlog
 
@@ -373,7 +400,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 5/5 plans complete
+**Plans:** 10/10 plans complete
 
 Plans:
 

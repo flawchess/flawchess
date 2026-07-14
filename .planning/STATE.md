@@ -2,35 +2,35 @@
 gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: Bot Play
-current_phase: 171
-current_phase_name: Bots Page + Setup Screen + Nav
-status: ready_to_plan
-stopped_at: Phase 170 shipped (squash-merged to main, 8bbb1b10) — ready to plan Phase 171
-last_updated: "2026-07-14T05:46:09.491Z"
+current_phase: 999.1
+current_phase_name: BACKLOG
+status: executing
+stopped_at: Phase 171 UI-SPEC approved
+last_updated: "2026-07-14T16:05:47.758Z"
 last_activity: 2026-07-14
-last_activity_desc: Phase 170 shipped — squash-merged to main (8bbb1b10)
+last_activity_desc: Phase 171 complete, transitioned to Phase 999.1
 progress:
   total_phases: 8
-  completed_phases: 7
-  total_plans: 31
-  completed_plans: 31
-  percent: 88
+  completed_phases: 8
+  total_plans: 41
+  completed_plans: 41
+  percent: 100
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 171 — Bots Page + Setup Screen + Nav
+Phase: 999.1 — Password Reset (BACKLOG)
 Plan: Not started
-Status: Ready to plan
-Last activity: 2026-07-14 — Phase 170 shipped, squash-merged to main (8bbb1b10)
+Status: Ready to execute
+Last activity: 2026-07-14 — Phase 171 complete, transitioned to Phase 999.1
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-07-14 after Phase 170)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: **v2.3 Bot Play** — play a real clocked game against a calibrated FlawChess bot. Phases 166 (bot move selection), 167 (backend store-on-finish), 168 (calibration harness), 168.5 (pacing/search budget), 169 (clocked board + game loop), 169.5 (opening book) and **170 (localStorage resume) are complete** — 170 UAT passed 7/7 on a real browser. Only 171 (Bots page + setup screen + nav) remains, and it closes the milestone. Not yet deployed — v2.3 ships at milestone close. Prior milestone v2.2 (Analysis ELO Calibration & Deep-links) closed 2026-07-11 and is live in production via #253/#254.
+Current focus: **v2.3 Bot Play is feature-complete** — play a real clocked game against a calibrated FlawChess bot. All phases are done: 166 (bot move selection), 167 (backend store-on-finish), 168 (calibration harness), 168.5 (pacing/search budget), 169 (clocked board + game loop), 169.5 (opening book), 170 (localStorage resume), and **171 (Bots page + setup screen + nav), which closes the milestone** — 171 UAT passed 5/5, including the mobile Start-button fix confirmed on a real device. Phase 171 still lives on `gsd/phase-171-bots-page-setup-screen-nav` and has NOT been squash-merged to `main` yet; the full pre-merge gate must run first. Not yet deployed — v2.3 ships at milestone close. Prior milestone v2.2 (Analysis ELO Calibration & Deep-links) closed 2026-07-11 and is live in production via #253/#254.
 
 ## Milestone Progress
 
@@ -255,6 +255,26 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 170]: Reverted requirements.mark-complete's RESUME-01 checkbox flip: RESUME-01 is shared across Plans 04/05 (frontmatter) — 170-04 alone delivers the persistence half (snapshot on every move, fold on hide); the SC1 'Resume game?' prompt is Plan 05's job; left [ ] Pending with a partial-delivery note; Plan 05 actually closes it
 - [Phase 170-05]: Date.now() moved into a lazy useState initializer in ResumeGate.tsx to satisfy react-hooks/purity; test assertions use .toBeNull()/.not.toBeNull() (no jest-dom in this project) instead of toBeInTheDocument()
 - [Phase 170-UAT]: ClockDisplay slimmed to roughly the analysis board's PlayerBar proportions (p-4 → px-2 py-1.5, text-xl → text-lg digits) after UAT test 7 flagged the clock strips as too tall on mobile. The card surface was deliberately KEPT rather than going fully borderless like PlayerBar — the active-side fill and the low-time ring need something to paint on, which a live game needs and an analysis board does not.
+- [Phase 171-01]: SEED-100 resolved via fix (b) document+pin, not fix (a) racing the deadline (rejected per RESEARCH.md D-03)
+- [Phase 171-01]: Mutation target refined to disable only the return statement inside the blend<=0 block (not the whole block) so the RED failure lands on the search-count assertion the acceptance criteria names, not the policy-count assertion
+- [Phase 171-02]: _lichess_blitz_equivalent_rating() reads only the blitz TC bucket -- rapid/classical-only anchor users correctly get None (D-07 deliberate semantic)
+- [Phase 171-02]: MaiaEloProfile.lichess_blitz_equivalent_rating added as required (non-optional); current_rating kept on both TS types for other consumers, not deleted
+- [Phase 171]: Exported NavHeader/MobileBottomBar/MobileMoreDrawer/MobileHeader from App.tsx (additive) so App.test.tsx can render each nav surface directly, since App() owns its own BrowserRouter/AuthProvider/QueryClientProvider stack
+- [Phase 171-04]: resolveDefaultBotElo snaps a mid-rung rating via Math.round((clamped-min)/step)*step+min — pinned so 1650 -> 1700 — Plan explicitly allowed either rounding direction for the ambiguous half-rung case; Math.round's native round-half-up behavior was accepted rather than a custom rounding rule.
+- [Phase 171-04]: DEFAULT_BOT_SETUP_SETTINGS.colorPreference defaults to 'random' — No explicit spec guidance in CONTEXT.md/UI-SPEC.md for the default color preference; chosen as the neutral no-preference default consistent with D-12's "Random resolves at Start" framing.
+- [Phase 171-06]: Fixed a stale BOT_GAME_SETTINGS doc-comment reference in SetupScreen.tsx (a Plan 05 leftover, not in this plan's files_modified) to satisfy this plan's own explicit whole-frontend grep gate
+- [Phase 171-06]: handleDiscard() now also resets startedSettings to null in addition to clearing the snapshot and bumping nonce, falling through to setup (D-13) rather than auto-starting
+- [Phase 171-06]: game.newGame left fully in place on the hook (untouched useBotGame.ts); documented at the BotsGame call site that it is no longer reached from the UI (D-11) — npm run knip is the arbiter, ran clean
+- [Phase 171-07]: Link color uses text-brand-brown-light hover:text-brand-brown-highlight (established FlawCard/GameCard convention), not a literal theme.ts export -- no such link-color token exists there
+- [Phase 171-07]: Store-FAILURE test asserts call count strictly increases (not a hardcoded '2') -- shouldRetryStore's real MAX_STORE_RETRIES=2 bounded retry makes one failed finish-time attempt cost 3 real HTTP calls before a remount's drain adds one more
+- [Phase 171-08]: buildAnalysisLineUrl's orientation arg is optional (2nd param) so the existing Openings.tsx:570 caller compiles unchanged with zero edits
+- [Phase 171-08]: No new exported type alias for the orientation union; inline 'white' | 'black' keeps knip's dead-export surface at zero
+- [Phase 171-08]: Square-order assertion pinned empirically (unflipped: a8 precedes a1 in DOM order) rather than assumed
+- [Phase 171-09]: fenAtPly renamed to replayToPly and returns { fen, lastMove } from ONE replay pass, not a second useMemo -- avoids double-replaying moveHistory on every render
+- [Phase 171-09]: lastMove derives from viewedPly, never the live tail, so scrubbing the move list moves the highlight with it (lichess/chess.com behavior); pinned by a dedicated anti-stale-highlight test
+- [Phase 171]: [Phase 171-10]: Kept Task 1 (clearance) and Task 2 (density) as independently revertable commits per the plan's explicit instruction
+- [Phase 171]: [Phase 171-10]: Slider 40px override scoped via [&_[data-slot=slider]]:min-h-10 descendant selector on SetupScreen's root rather than editing the shared ui/slider.tsx primitive's min-h-11 (app-wide 44px contract stays untouched)
+- [Phase 171]: [Phase 171-10]: Could not independently browser-verify the slider override's computed height in this execution environment (no browser tooling available); applied on CSS-specificity grounds, final confirmation deferred to the plan's mandatory real-device human-check
 
 ### Pending Todos
 
@@ -333,9 +353,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 170 complete (UAT 7/7 passed, verification passed), ready to plan Phase 171
+**Stopped at:** Phase 171 UI-SPEC approved
 
-**Last session:** 2026-07-14
+**Last session:** 2026-07-14T15:20:06.645Z
 
 **Resume file:** 
 
@@ -416,6 +436,16 @@ None
 | Phase 170 P03 | 45min | 2 tasks | 2 files |
 | Phase 170 P04 | 40min | 2 tasks | 2 files |
 | Phase 170 P05 | 20min | 2 tasks | 3 files |
+| Phase 171 P01 | 20min | 2 tasks | 2 files |
+| Phase 171 P02 | 6min | 3 tasks | 6 files |
+| Phase 171 P03 | 25min | 2 tasks | 2 files |
+| Phase 171 P04 | 25min | 3 tasks | 8 files |
+| Phase 171 P05 | 12min | 2 tasks | 2 files |
+| Phase 171 P06 | 20min | 2 tasks | 3 files |
+| Phase 171 P07 | 55m | 3 tasks | 6 files |
+| Phase 171 P08 | 7min | 2 tasks | 6 files |
+| Phase 171 P09 | 8min | 2 tasks | 4 files |
+| Phase 171 P10 | 7min | 2 tasks | 4 files |
 
 ## Operator Next Steps
 

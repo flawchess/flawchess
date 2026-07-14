@@ -366,3 +366,153 @@ class TestProfileCurrentRating:
 
         assert resp.status_code == 200
         assert resp.json()["current_rating"] == 1720
+
+
+# ---------------------------------------------------------------------------
+# Phase 171-02 D-07: lichess_blitz_equivalent_rating (blitz-bucket anchor)
+# ---------------------------------------------------------------------------
+
+
+class TestProfileLichessBlitzEquivalentRating:
+    @pytest.mark.asyncio
+    async def test_profile_returns_null_lichess_blitz_when_no_anchors(self):
+        """A freshly registered user (no anchors at all) gets field=None, present."""
+        email = unique_email("blitz_anchor_none")
+        password = "testpassword123"
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            token = await _register_and_login(client, email, password)
+            resp = await client.get(
+                "/api/users/me/profile",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "lichess_blitz_equivalent_rating" in body
+        assert body["lichess_blitz_equivalent_rating"] is None
+
+    @pytest.mark.asyncio
+    async def test_profile_returns_lichess_blitz_anchor_rating(self):
+        """A user with a blitz-bucket anchor gets that anchor's rating."""
+        from app.core.database import async_session_maker
+        from app.repositories.user_rating_anchors_repository import upsert_anchor
+
+        email = unique_email("blitz_anchor_present")
+        password = "testpassword123"
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            user_id, token = await _register_login_and_get_id(client, email, password)
+
+            async with async_session_maker() as session:
+                await upsert_anchor(
+                    session,
+                    user_id=user_id,
+                    time_control_bucket="blitz",
+                    anchor_rating=1740,
+                    n_chesscom_games=0,
+                    n_lichess_games=25,
+                    chesscom_median_native=None,
+                    lichess_median_native=1740,
+                )
+                await session.commit()
+
+            resp = await client.get(
+                "/api/users/me/profile",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "lichess_blitz_equivalent_rating" in body
+        assert body["lichess_blitz_equivalent_rating"] == 1740
+
+    @pytest.mark.asyncio
+    async def test_profile_returns_null_lichess_blitz_when_only_non_blitz_anchors(self):
+        """A user with only rapid/classical anchors (no blitz) gets None -- the
+        blitz-bucket semantic is deliberate, not a bug (D-07)."""
+        from app.core.database import async_session_maker
+        from app.repositories.user_rating_anchors_repository import upsert_anchor
+
+        email = unique_email("blitz_anchor_nonblitz")
+        password = "testpassword123"
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            user_id, token = await _register_login_and_get_id(client, email, password)
+
+            async with async_session_maker() as session:
+                await upsert_anchor(
+                    session,
+                    user_id=user_id,
+                    time_control_bucket="rapid",
+                    anchor_rating=1600,
+                    n_chesscom_games=0,
+                    n_lichess_games=20,
+                    chesscom_median_native=None,
+                    lichess_median_native=1600,
+                )
+                await upsert_anchor(
+                    session,
+                    user_id=user_id,
+                    time_control_bucket="classical",
+                    anchor_rating=1550,
+                    n_chesscom_games=0,
+                    n_lichess_games=15,
+                    chesscom_median_native=None,
+                    lichess_median_native=1550,
+                )
+                await session.commit()
+
+            resp = await client.get(
+                "/api/users/me/profile",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "lichess_blitz_equivalent_rating" in body
+        assert body["lichess_blitz_equivalent_rating"] is None
+
+    @pytest.mark.asyncio
+    async def test_put_profile_returns_lichess_blitz_anchor_rating(self):
+        """PUT /me/profile returns the same field with the same value as GET."""
+        from app.core.database import async_session_maker
+        from app.repositories.user_rating_anchors_repository import upsert_anchor
+
+        email = unique_email("blitz_anchor_put")
+        password = "testpassword123"
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            user_id, token = await _register_login_and_get_id(client, email, password)
+
+            async with async_session_maker() as session:
+                await upsert_anchor(
+                    session,
+                    user_id=user_id,
+                    time_control_bucket="blitz",
+                    anchor_rating=1680,
+                    n_chesscom_games=10,
+                    n_lichess_games=0,
+                    chesscom_median_native=1700,
+                    lichess_median_native=None,
+                )
+                await session.commit()
+
+            resp = await client.put(
+                "/api/users/me/profile",
+                json={"chess_com_username": "someuser"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "lichess_blitz_equivalent_rating" in body
+        assert body["lichess_blitz_equivalent_rating"] == 1680

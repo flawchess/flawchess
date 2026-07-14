@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Dialog,
   DialogContent,
@@ -11,6 +12,14 @@ import { resultCopy, type BotGameOutcome } from '@/lib/botGameEnd';
 import type { MoverColor } from '@/lib/liveFlaw';
 import { WDL_DRAW, WDL_LOSS, WDL_WIN } from '@/lib/theme';
 
+/** D-20/D-21 copy, exported so `GameResultStrip` renders the EXACT same
+ * strings rather than re-typing them — a divergence risk on the "apply
+ * changes to mobile too" surface (the strip is the mobile/dismissed
+ * surface). Verbatim from 171-UI-SPEC.md's Copywriting Contract. */
+export const BOT_GAME_SAVED_COPY = 'Saved to your Library';
+export const GUEST_NOT_AUTO_ANALYZED_COPY =
+  "Guest games aren't analyzed automatically. Use 'Analyze this game' above, or sign up for automatic analysis of every game.";
+
 interface GameResultDialogProps {
   outcome: BotGameOutcome;
   userColor: MoverColor;
@@ -18,6 +27,13 @@ interface GameResultDialogProps {
   onDismiss: () => void;
   onNewGame: () => void;
   onAnalyze: () => void;
+  /** D-21: true only once the finish-time store mutation has CONFIRMED
+   * (`useStoreBotGame().isSuccess`) — this row never renders on
+   * idle/pending/error (no partial-store hedge copy, per UI-SPEC). */
+  storeSucceeded: boolean;
+  /** SC4: guests additionally see the not-auto-analyzed caveat below the
+   * save confirmation; non-guests never see it. */
+  isGuest: boolean;
 }
 
 /** Title text color keyed by outcome, from `userColor`'s point of view — draw
@@ -43,6 +59,8 @@ export function GameResultDialog({
   onDismiss,
   onNewGame,
   onAnalyze,
+  storeSucceeded,
+  isGuest,
 }: GameResultDialogProps): ReactElement {
   const title = resultCopy(outcome, userColor);
   const titleColor = titleColorFor(outcome, userColor);
@@ -66,6 +84,25 @@ export function GameResultDialog({
             New game
           </Button>
         </DialogFooter>
+        {/* D-20/D-21: only renders once the finish-time store has CONFIRMED
+            (never on idle/pending/error) — the "Analyze this game" button
+            above is NOT gated on this and keeps working regardless. */}
+        {storeSucceeded && (
+          <div className="flex flex-col gap-1">
+            <Link
+              to="/library/games"
+              className="text-sm text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
+              data-testid="result-saved-to-library"
+            >
+              {BOT_GAME_SAVED_COPY}
+            </Link>
+            {isGuest && (
+              <p className="text-sm text-muted-foreground" data-testid="result-guest-analysis-caveat">
+                {GUEST_NOT_AUTO_ANALYZED_COPY}
+              </p>
+            )}
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
