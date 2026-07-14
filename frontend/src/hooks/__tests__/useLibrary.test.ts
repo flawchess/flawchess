@@ -67,4 +67,15 @@ describe('libraryGamePollInterval', () => {
   it('returns false when there is no data yet', () => {
     expect(libraryGamePollInterval(undefined, 0)).toBe(false);
   });
+
+  // Regression: the backstop must outlast a realistic tier-1 turnaround. A job
+  // waits on a worker leasing it, so several minutes is normal — a backstop
+  // shorter than that strands the analysis board on "Analyzing…" forever, since
+  // this poll is the board's only refresh driver. Pins the DURATION, not just
+  // the symbol: the other backstop test passes for any value of the constant.
+  it('still polls a game that has been analyzing for several minutes', () => {
+    const card = makeCard({ analysis_state: 'no_engine_analysis' });
+    const threeMinutes = 3 * 60 * 1000;
+    expect(libraryGamePollInterval(card, threeMinutes)).toBe(LIBRARY_GAMES_POLL_INTERVAL_MS);
+  });
 });

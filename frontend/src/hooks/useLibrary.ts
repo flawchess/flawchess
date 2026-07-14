@@ -16,11 +16,20 @@ import { LIBRARY_GAMES_POLL_INTERVAL_MS } from '@/hooks/useEvalCoverage';
 // from alt-tabbing or component re-mounts. Data only changes on new imports.
 const LIBRARY_STALE_TIME = 5 * 60 * 1000;
 
-// Stall backstop (Quick 260714-rj5, T-RJ5-03) for useLibraryGame's live poll:
-// stop polling an unanalyzed game after this much wall-clock time even if the
-// eval job never lands (e.g. a failed job — deferred, see PLAN.md). Mirrors
-// GamesTab's ANALYZE_INFLIGHT_TIMEOUT_MS stall-backstop precedent.
-export const LIBRARY_GAME_POLL_TIMEOUT_MS = 120_000;
+// Runaway guard (Quick 260714-rj5, T-RJ5-03) for useLibraryGame's live poll:
+// stop polling an unanalyzed game after this much wall-clock time.
+//
+// This is deliberately NOT GamesTab's ANALYZE_INFLIGHT_TIMEOUT_MS (120s). That
+// constant bounds only GamesTab's *optimistic* pill; the card there still
+// refreshes via a separate UNBOUNDED poll (analyzedCount < totalCount), so the
+// library recovers whenever the job lands. This hook is the analysis board's
+// ONLY refresh driver, so a 120s cap would strand the board on "Analyzing…"
+// for any tier-1 job slower than two minutes — and a job waits on a worker
+// leasing it, which can easily exceed that when the fleet is busy or idle.
+// Sized instead to comfortably exceed a realistic tier-1 turnaround; it exists
+// only to stop a permanently-stuck job (e.g. one that ends `failed` — see the
+// deferred item in PLAN.md) from polling forever while the user sits on the page.
+export const LIBRARY_GAME_POLL_TIMEOUT_MS = 10 * 60 * 1000;
 
 /**
  * Pure poll-interval decision for useLibraryGame's `live` mode (Quick 260714-rj5).
