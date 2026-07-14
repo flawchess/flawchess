@@ -301,8 +301,8 @@ None active.
 | 260710-wub | Openings "Analyze position" moved from full-width button to a compact Search-icon button in the sidebar strip (desktop) / settings column under bookmarks (mobile), shown on Moves + Games subtabs; fixed the sideline × delete not working in Analysis `?fen=` free-play mode (onDeleteLine was gated on isGameMode) | 2026-07-10 | 27d0507d | [260710-wub-openings-move-analyze-button-to-sidebar-](./quick/260710-wub-openings-move-analyze-button-to-sidebar-/) |
 | 260710-x3d | Openings analyze passes the opening's moves to the analysis board as a `?line=` UCI param (cursor at end, navigable back to move 1), replacing the `?fen=` snapshot; new buildAnalysisLineUrl/parseAnalysisLineParam helpers; game mode kept (user-confirmed) | 2026-07-10 | edce3687 | [260710-x3d-implement-opening-moves-main-line-in-ana](./quick/260710-x3d-implement-opening-moves-main-line-in-ana/) |
 | 260712-r4s | Calibration harness `--resume <prior.tsv>` (SEED-097): skips already-swept `(elo,blend,anchor)` cells, fast-forwards the global gameIndex, appends remaining cells → finished map byte-identical to an uninterrupted run; refuses on games-per-cell/seed/budget/grid mismatch or a truncated prior file | 2026-07-12 | b13a1d98 | [260712-r4s-calibration-harness-resume-flag](./quick/260712-r4s-calibration-harness-resume-flag/) |
-
 | 260714-f2b | Default Opponent Type filter changed from Human to Both (DEFAULT_FILTERS + useStats/useOpeningInsights fallbacks); computer games now included by default across Stats, Openings, Endgames, Library | 2026-07-14 | 912e8c3e | — |
+
 ## Deferred Items
 
 Items acknowledged and deferred at **v1.32 milestone close on 2026-07-05** (acknowledged & proceed on the 31-item pre-close audit — all pre-existing standing backlog, no incomplete v1.32 work):
