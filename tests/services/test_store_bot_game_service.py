@@ -276,9 +276,7 @@ class TestPlayerUsername:
         assert game is not None
         assert game.white_username == "hikaru"
 
-    async def test_no_platform_username_falls_back_to_you(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_no_platform_username_falls_back_to_you(self, db_session: AsyncSession) -> None:
         user_id = _TEST_USER_ID + 8
         await ensure_test_user(db_session, user_id)
 
