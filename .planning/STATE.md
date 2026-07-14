@@ -24,7 +24,7 @@ progress:
 Phase: 999.1 — Password Reset (BACKLOG)
 Plan: Not started
 Status: Ready to execute
-Last activity: 2026-07-14 — Completed quick task 260714-pnk: bot games show the player's platform username instead of "You"
+Last activity: 2026-07-14 — Completed quick task 260714-qaj: stored bot games get a full lichess-comparable PGN header block
 
 ## Project Reference
 
@@ -303,6 +303,7 @@ None active.
 | 260712-r4s | Calibration harness `--resume <prior.tsv>` (SEED-097): skips already-swept `(elo,blend,anchor)` cells, fast-forwards the global gameIndex, appends remaining cells → finished map byte-identical to an uninterrupted run; refuses on games-per-cell/seed/budget/grid mismatch or a truncated prior file | 2026-07-12 | b13a1d98 | [260712-r4s-calibration-harness-resume-flag](./quick/260712-r4s-calibration-harness-resume-flag/) |
 | 260714-f2b | Default Opponent Type filter changed from Human to Both (DEFAULT_FILTERS + useStats/useOpeningInsights fallbacks); computer games now included by default across Stats, Openings, Endgames, Library | 2026-07-14 | 912e8c3e | — |
 | 260714-pnk | Bot games show the player's real platform username instead of "You" (lichess → chess.com → "You"), on the /bots clock caption and in the stored `games` row; one resolver per stack (`resolve_player_username` / `resolvePlayerName`) | 2026-07-14 | 355b52d5 | [260714-pnk-show-player-s-platform-username-instead-](./quick/260714-pnk-show-player-s-platform-username-instead-/) |
+| 260714-qaj | Stored bot games get a full lichess-comparable PGN header block, stamped server-side post-insert (`bot_game_pgn.stamp_bot_game_headers`): Event/Site deep link/Date/Round/White/Black/GameId/UTCDate/UTCTime/Elo/Title/Variant/ECO/Opening + non-standard RatingSource + PlayStyleBlend; player Elo is the Lichess-equivalent anchor, omitted (never "?") when the user has no anchor | 2026-07-14 | e4509e9b | [260714-qaj-enrich-bot-game-pgn-metadata-headers](./quick/260714-qaj-enrich-bot-game-pgn-metadata-headers/) |
 
 ## Deferred Items
 
