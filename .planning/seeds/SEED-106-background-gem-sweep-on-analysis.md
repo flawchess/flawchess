@@ -109,13 +109,17 @@ per-node resolution — a confirmed `GemDetail` or an explicit `null` miss. The 
   C2, nowhere near a real-game rate), so the **absolute** frequencies are inflated and only
   the ratios transfer.
 
-- **D8 — Opening-book markers in the move list.** `opening_ply_count` earns itself twice:
-  it gates the sweep (D4) and marks every ply ≤ `opening_ply_count` as theory.
-  **Open call for the phase:** marker precedence. Today it is severity > gem
-  (`VariationTree.tsx:59-69`, one move never renders two badges). A book move can never be
-  a gem (D4 skips it), but it *can* be an inaccuracy — ECO includes plenty of dubious
-  gambits — so the book marker must either sit below severity or coexist with it in a
-  single marker.
+- **D8 — Opening-book markers, precedence `severity > gem > book`.**
+  `opening_ply_count` earns itself twice: it gates the sweep (D4) and marks every ply ≤
+  `opening_ply_count` as theory.
+  Today the rule is severity > gem (`VariationTree.tsx:59-69`, `resolveMarkerIcon`) — one
+  move never renders two badges. **Book slots in at the bottom: severity overrides the book
+  icon.** A book move can still be an inaccuracy (ECO includes plenty of dubious gambits),
+  and in that case the user needs to see the flaw, not the reassurance that it was theory.
+  Gem-vs-book never actually arises — D4 skips book plies before they can be classified —
+  but the chain is stated in full so the ordering is unambiguous.
+  Applies on **every surface** where gems already render, not just the move list: the
+  `VariationTree` marker and the board corner marker (`boardMarkers.tsx`).
 
 ## Risks / open items for the phase
 
