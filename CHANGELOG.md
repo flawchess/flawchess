@@ -20,6 +20,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 - Play a bot: your side of the board is now labelled with your real username (your Lichess name, or your chess.com name if you have not linked Lichess) instead of "You", both on the clock while you play and on the saved game in your Library. It still reads "You" if you have linked neither platform (quick 260714-pnk).
+- Play a bot: a saved bot game now carries a full PGN header block instead of the empty `[Event "?"]` placeholders, so exporting it to lichess or any other viewer shows the event, a link back to the game, the date and time, both player names, both ratings, the bot's `BOT` title, the opening and its ECO code, and how the game ended. Your rating in the header is your Lichess-equivalent rating for that time control (the same figure the Library stores), and it is left out entirely rather than faked when you have no rating history for that time control (quick 260714-qaj).
 
 ## [v2.2] Analysis ELO Calibration & Deep-links — 2026-07-11
 
