@@ -5,10 +5,10 @@ milestone_name: Bot Play
 current_phase: 171
 current_phase_name: Bots Page + Setup Screen + Nav
 status: ready_to_plan
-stopped_at: Phase 170 complete (UAT 7/7 passed, verification passed) — ready to plan Phase 171
-last_updated: "2026-07-14T05:39:46.932Z"
+stopped_at: Phase 170 shipped (squash-merged to main, 8bbb1b10) — ready to plan Phase 171
+last_updated: "2026-07-14T05:46:09.491Z"
 last_activity: 2026-07-14
-last_activity_desc: Phase 170 complete, transitioned to Phase 171
+last_activity_desc: Phase 170 shipped — squash-merged to main (8bbb1b10)
 progress:
   total_phases: 8
   completed_phases: 7
@@ -24,7 +24,7 @@ progress:
 Phase: 171 — Bots Page + Setup Screen + Nav
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-07-14 — Phase 170 complete, transitioned to Phase 171
+Last activity: 2026-07-14 — Phase 170 shipped, squash-merged to main (8bbb1b10)
 
 ## Project Reference
 
