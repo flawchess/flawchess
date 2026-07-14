@@ -20,6 +20,7 @@ _TEST_USER_ID = 7
 _TEST_GAME_UUID = "8f1e0f9c-6a1b-4e6d-9a0e-1a2b3c4d5e6f"
 _TEST_BOT_ELO = 1500
 _TEST_PLAYER_RATING = 1450
+_TEST_PLAYER_USERNAME = "magnus"
 _TEST_TC_STR = "300+3"  # base+increment SECONDS (Pattern 7), not a "5+3" display label
 
 # Exactly the shape botGamePgn.ts's annotateClock()/finalizeBotPgn() produce:
@@ -50,6 +51,7 @@ class TestBotPgnClkRoundtrip:
             "white",
             _TEST_BOT_ELO,
             _TEST_PLAYER_RATING,
+            _TEST_PLAYER_USERNAME,
             _TEST_TC_STR,
         )
         assert normalized is not None

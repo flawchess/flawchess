@@ -14,10 +14,14 @@ import sentry_sdk
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.bot_game_settings import BotGameSettings
-from app.repositories import game_repository, user_rating_anchors_repository
+from app.repositories import game_repository, user_rating_anchors_repository, user_repository
 from app.schemas.bots import StoreBotGameRequest, StoreBotGameResponse
 from app.services.import_service import _flush_batch
-from app.services.normalization import normalize_flawchess_game, parse_time_control
+from app.services.normalization import (
+    FLAWCHESS_PLAYER_FALLBACK_USERNAME,
+    normalize_flawchess_game,
+    parse_time_control,
+)
 
 # Platform constant — the one value this service ever writes/looks up (D-04/D-17).
 _FLAWCHESS_PLATFORM = "flawchess"
@@ -40,6 +44,37 @@ def _derive_rating_source(
     if n_lichess_games > 0:
         return "lichess"
     return "chesscom"
+
+
+def resolve_player_username(
+    lichess_username: str | None,
+    chess_com_username: str | None,
+) -> str:
+    """Resolve the display name for the human side of a stored bot game.
+
+    Precedence (quick-260714-pnk): lichess_username -> chess_com_username ->
+    FLAWCHESS_PLAYER_FALLBACK_USERNAME ("You"). A blank or whitespace-only
+    column is treated as absent (falls through to the next link in the
+    chain) — the users table columns are nullable String(100) with no
+    non-empty CHECK, so an empty string is reachable via the profile-update
+    endpoint.
+
+    Args:
+        lichess_username: The user's lichess username, or None/blank.
+        chess_com_username: The user's chess.com username, or None/blank.
+
+    Returns:
+        The resolved, stripped display name.
+    """
+    stripped_lichess = (lichess_username or "").strip()
+    if stripped_lichess:
+        return stripped_lichess
+
+    stripped_chesscom = (chess_com_username or "").strip()
+    if stripped_chesscom:
+        return stripped_chesscom
+
+    return FLAWCHESS_PLAYER_FALLBACK_USERNAME
 
 
 async def store_bot_game(
@@ -88,6 +123,13 @@ async def store_bot_game(
             anchor_row.n_lichess_games, anchor_row.n_chesscom_games
         )
 
+    # quick-260714-pnk: resolve the player's display name from their own
+    # profile (never the request body — T-pnk-01 spoofing mitigation). The
+    # row is guaranteed to exist: games.user_id is an FK, so a missing row
+    # is already a hard failure today.
+    user = await user_repository.get_profile(session, user_id)
+    player_username = resolve_player_username(user.lichess_username, user.chess_com_username)
+
     normalized = normalize_flawchess_game(
         request.pgn,
         request.game_uuid,
@@ -95,6 +137,7 @@ async def store_bot_game(
         request.user_color,
         request.bot_elo,
         player_rating,
+        player_username,
         request.tc_preset,
     )
     if normalized is None:

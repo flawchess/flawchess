@@ -17,6 +17,7 @@ _TEST_GAME_UUID = "6f6b7f9a-4b0e-4c6c-9b9a-2a7a2b2c2d2e"
 _TEST_BOT_ELO = 1400
 _TEST_PLAYER_RATING = 1250
 _TEST_TC_STR = "180+2"
+_TEST_PLAYER_USERNAME = "hikaru"
 
 # Scholar's Mate PGN with per-move [%clk] on both colors — a clean checkmate
 # ending so termination-derivation (board.is_checkmate()) is exercised too.
@@ -184,6 +185,7 @@ class TestNormalizeFlawchessGame:
             "white",
             _TEST_BOT_ELO,
             _TEST_PLAYER_RATING,
+            _TEST_PLAYER_USERNAME,
             _TEST_TC_STR,
         )
         assert normalized is not None
@@ -197,6 +199,9 @@ class TestNormalizeFlawchessGame:
         assert normalized.white_rating == _TEST_PLAYER_RATING
         assert normalized.black_rating == _TEST_BOT_ELO
         assert normalized.black_username == FLAWCHESS_BOT_USERNAME
+        # quick-260714-pnk: the caller-resolved player_username reaches the
+        # player-color (white) username column.
+        assert normalized.white_username == _TEST_PLAYER_USERNAME
 
     def test_happy_path_black_user_rating_placement(self) -> None:
         """user_color='black' -> player rating in black column, bot ELO in white column."""
@@ -207,12 +212,16 @@ class TestNormalizeFlawchessGame:
             "black",
             _TEST_BOT_ELO,
             _TEST_PLAYER_RATING,
+            _TEST_PLAYER_USERNAME,
             _TEST_TC_STR,
         )
         assert normalized is not None
         assert normalized.black_rating == _TEST_PLAYER_RATING
         assert normalized.white_rating == _TEST_BOT_ELO
         assert normalized.white_username == FLAWCHESS_BOT_USERNAME
+        # quick-260714-pnk: the caller-resolved player_username reaches the
+        # player-color (black) username column.
+        assert normalized.black_username == _TEST_PLAYER_USERNAME
 
     def test_no_anchor_player_rating_none(self) -> None:
         """player_rating=None (no anchor, D-06) flows through to the games row untouched."""
@@ -223,6 +232,7 @@ class TestNormalizeFlawchessGame:
             "white",
             _TEST_BOT_ELO,
             None,
+            _TEST_PLAYER_USERNAME,
             _TEST_TC_STR,
         )
         assert normalized is not None
@@ -237,6 +247,7 @@ class TestNormalizeFlawchessGame:
             "white",
             _TEST_BOT_ELO,
             _TEST_PLAYER_RATING,
+            _TEST_PLAYER_USERNAME,
             _TEST_TC_STR,
         )
         assert normalized is None
@@ -250,6 +261,7 @@ class TestNormalizeFlawchessGame:
             "white",
             _TEST_BOT_ELO,
             _TEST_PLAYER_RATING,
+            _TEST_PLAYER_USERNAME,
             _TEST_TC_STR,
         )
         assert normalized is None
@@ -263,6 +275,7 @@ class TestNormalizeFlawchessGame:
             "white",
             _TEST_BOT_ELO,
             _TEST_PLAYER_RATING,
+            _TEST_PLAYER_USERNAME,
             _TEST_TC_STR,
         )
         assert normalized is None
@@ -276,6 +289,7 @@ class TestNormalizeFlawchessGame:
             "white",
             _TEST_BOT_ELO,
             _TEST_PLAYER_RATING,
+            _TEST_PLAYER_USERNAME,
             _TEST_TC_STR,
         )
         assert normalized is None
@@ -289,6 +303,7 @@ class TestNormalizeFlawchessGame:
             "white",
             _TEST_BOT_ELO,
             _TEST_PLAYER_RATING,
+            _TEST_PLAYER_USERNAME,
             _TEST_TC_STR,
         )
         assert normalized is not None
@@ -303,6 +318,7 @@ class TestNormalizeFlawchessGame:
             "white",
             _TEST_BOT_ELO,
             _TEST_PLAYER_RATING,
+            _TEST_PLAYER_USERNAME,
             _TEST_TC_STR,
         )
         assert normalized is not None
@@ -323,6 +339,7 @@ class TestNormalizeFlawchessGame:
             "white",
             _TEST_BOT_ELO,
             _TEST_PLAYER_RATING,
+            _TEST_PLAYER_USERNAME,
             _TEST_TC_STR,
         )
         assert normalized is not None
@@ -343,6 +360,7 @@ class TestNormalizeFlawchessGame:
             "white",
             _TEST_BOT_ELO,
             _TEST_PLAYER_RATING,
+            _TEST_PLAYER_USERNAME,
             _TEST_TC_STR,
         )
         assert normalized is not None
@@ -358,6 +376,7 @@ class TestNormalizeFlawchessGame:
             "white",
             _TEST_BOT_ELO,
             _TEST_PLAYER_RATING,
+            _TEST_PLAYER_USERNAME,
             _TEST_TC_STR,
         )
         assert normalized is None

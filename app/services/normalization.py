@@ -490,8 +490,12 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> Normalize
 
 # Phase 167 (STORE-01..06): fixed bot username, never a magic string inline (D-08).
 FLAWCHESS_BOT_USERNAME = "FlawChess Bot"
-# Non-PII server-side label for the human side of a flawchess game (discretion, D-08).
-_FLAWCHESS_PLAYER_USERNAME = "You"
+# Phase quick-260714-pnk: fallback used for the player-color username column
+# when the caller-resolved player_username is unavailable — the caller
+# (store_bot_game_service.resolve_player_username) prefers the user's own
+# lichess/chess.com username and only falls through to this literal when
+# neither is set (D-08 fallback decision).
+FLAWCHESS_PLAYER_FALLBACK_USERNAME = "You"
 
 # chess.com/lichess-recognized game result strings (mirrors _CHESSCOM_WIN_RESULTS/
 # _LICHESS_STATUS_MAP's closed-vocab convention above).
@@ -539,6 +543,7 @@ def normalize_flawchess_game(
     user_color: Color,
     bot_elo: int,
     player_rating: int | None,
+    player_username: str,
     tc_str: str,
 ) -> NormalizedGame | None:
     """Build a NormalizedGame from a client-POSTed finished bot-game PGN (D-14).
@@ -569,6 +574,12 @@ def normalize_flawchess_game(
         player_rating: Server-computed converted rating for the player-color
             column, or None when the user has no anchor for this TC bucket
             (D-05/D-06).
+        player_username: The human player's display name for the player-color
+            username column, already resolved by the caller (store_bot_game_
+            service.resolve_player_username: lichess_username -> chess_com_
+            username -> "You"). This function never resolves it itself — it
+            stays a pure PGN normalizer with no session and no User access.
+            The bot-color column always stays FLAWCHESS_BOT_USERNAME.
         tc_str: Time-control string in the same base_seconds+increment_seconds
             format parse_time_control/parse_base_and_increment already expect
             everywhere else in this module (e.g. "180+2") — NOT a minutes-based
@@ -652,15 +663,15 @@ def normalize_flawchess_game(
 
     # D-08: converted player rating goes in the player-color column; the bot's
     # nominal ELO goes in the opponent-color column. Bot username is fixed;
-    # player username is a non-PII server label (discretion).
+    # player username is the caller-resolved platform username (or "You").
     if user_color == "white":
-        white_username = _FLAWCHESS_PLAYER_USERNAME
+        white_username = player_username
         black_username = FLAWCHESS_BOT_USERNAME
         white_rating = player_rating
         black_rating = bot_elo
     else:
         white_username = FLAWCHESS_BOT_USERNAME
-        black_username = _FLAWCHESS_PLAYER_USERNAME
+        black_username = player_username
         white_rating = bot_elo
         black_rating = player_rating
 

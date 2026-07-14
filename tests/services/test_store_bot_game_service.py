@@ -13,19 +13,25 @@ in the fixture's teardown, verified empirically for this phase).
 from __future__ import annotations
 
 import uuid
+from typing import Literal
 
-import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.bot_game_settings import BotGameSettings
 from app.models.game import Game
 from app.repositories.user_rating_anchors_repository import upsert_anchor
+from app.repositories.user_repository import update_profile
 from app.schemas.bots import StoreBotGameRequest
-from app.services.store_bot_game_service import store_bot_game
+from app.services.normalization import FLAWCHESS_BOT_USERNAME, FLAWCHESS_PLAYER_FALLBACK_USERNAME
+from app.services.store_bot_game_service import resolve_player_username, store_bot_game
 from tests.conftest import ensure_test_user
 
-pytestmark = pytest.mark.asyncio
+# quick-260714-pnk: no module-level `pytestmark = pytest.mark.asyncio` —
+# asyncio_mode = "auto" (pyproject.toml) picks up async tests automatically,
+# and a module-level marker triggers a "marked async but not async" warning
+# on TestResolvePlayerUsername's sync tests (mirrors
+# test_user_benchmark_percentiles_service.py's established pattern).
 
 _TEST_USER_ID = 92500  # unique ID for this test module
 _TEST_BOT_ELO = 1400
@@ -53,12 +59,15 @@ _PGN_MISSING_CLOCK = (
 
 
 def _make_request(
-    *, game_uuid: str | None = None, pgn: str = _PGN_CHECKMATE
+    *,
+    game_uuid: str | None = None,
+    pgn: str = _PGN_CHECKMATE,
+    user_color: Literal["white", "black"] = "white",
 ) -> StoreBotGameRequest:
     return StoreBotGameRequest(
         game_uuid=game_uuid or str(uuid.uuid4()),
         pgn=pgn,
-        user_color="white",
+        user_color=user_color,
         bot_elo=_TEST_BOT_ELO,
         play_style_blend=0.5,
         tc_preset=_TC_STR,
@@ -200,3 +209,82 @@ class TestIdempotency:
             .all()
         )
         assert len(settings_rows) == 1
+
+
+class TestResolvePlayerUsername:
+    """Pure precedence-chain coverage for resolve_player_username (no DB;
+    quick-260714-pnk): lichess -> chess.com -> FLAWCHESS_PLAYER_FALLBACK_USERNAME.
+    """
+
+    def test_lichess_wins_when_both_set(self) -> None:
+        assert resolve_player_username("magnus", "hikaru") == "magnus"
+
+    def test_falls_back_to_chesscom_when_lichess_none(self) -> None:
+        assert resolve_player_username(None, "hikaru") == "hikaru"
+
+    def test_falls_back_to_fallback_when_both_none(self) -> None:
+        assert resolve_player_username(None, None) == FLAWCHESS_PLAYER_FALLBACK_USERNAME
+
+    def test_blank_lichess_falls_through_to_chesscom(self) -> None:
+        assert resolve_player_username("   ", "hikaru") == "hikaru"
+
+    def test_blank_both_falls_back_to_fallback(self) -> None:
+        assert resolve_player_username("  ", "") == FLAWCHESS_PLAYER_FALLBACK_USERNAME
+
+
+class TestPlayerUsername:
+    """DB-backed coverage (quick-260714-pnk): the resolved player_username
+    lands in the games row's player-color username column; the bot-color
+    column always stays FLAWCHESS_BOT_USERNAME.
+    """
+
+    async def test_lichess_username_white(self, db_session: AsyncSession) -> None:
+        user_id = _TEST_USER_ID + 5
+        await ensure_test_user(db_session, user_id)
+        await update_profile(db_session, user_id, {"lichess_username": "magnus"})
+
+        response = await store_bot_game(db_session, user_id, _make_request())
+        assert response is not None
+
+        game = await db_session.get(Game, response.game_id)
+        assert game is not None
+        assert game.white_username == "magnus"
+        assert game.black_username == FLAWCHESS_BOT_USERNAME
+
+    async def test_lichess_username_black(self, db_session: AsyncSession) -> None:
+        user_id = _TEST_USER_ID + 6
+        await ensure_test_user(db_session, user_id)
+        await update_profile(db_session, user_id, {"lichess_username": "magnus"})
+
+        response = await store_bot_game(db_session, user_id, _make_request(user_color="black"))
+        assert response is not None
+
+        game = await db_session.get(Game, response.game_id)
+        assert game is not None
+        assert game.black_username == "magnus"
+        assert game.white_username == FLAWCHESS_BOT_USERNAME
+
+    async def test_chesscom_only_username(self, db_session: AsyncSession) -> None:
+        user_id = _TEST_USER_ID + 7
+        await ensure_test_user(db_session, user_id)
+        await update_profile(db_session, user_id, {"chess_com_username": "hikaru"})
+
+        response = await store_bot_game(db_session, user_id, _make_request())
+        assert response is not None
+
+        game = await db_session.get(Game, response.game_id)
+        assert game is not None
+        assert game.white_username == "hikaru"
+
+    async def test_no_platform_username_falls_back_to_you(
+        self, db_session: AsyncSession
+    ) -> None:
+        user_id = _TEST_USER_ID + 8
+        await ensure_test_user(db_session, user_id)
+
+        response = await store_bot_game(db_session, user_id, _make_request())
+        assert response is not None
+
+        game = await db_session.get(Game, response.game_id)
+        assert game is not None
+        assert game.white_username == FLAWCHESS_PLAYER_FALLBACK_USERNAME
