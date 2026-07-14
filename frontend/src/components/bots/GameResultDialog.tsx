@@ -76,17 +76,12 @@ export function GameResultDialog({
         <DialogHeader>
           <DialogTitle style={{ color: titleColor }}>{title}</DialogTitle>
         </DialogHeader>
-        <DialogFooter>
-          <Button variant="brand-outline" onClick={onAnalyze} data-testid="btn-analyze-game">
-            Analyze this game
-          </Button>
-          <Button variant="default" onClick={onNewGame} data-testid="btn-new-game">
-            New game
-          </Button>
-        </DialogFooter>
         {/* D-20/D-21: only renders once the finish-time store has CONFIRMED
             (never on idle/pending/error) — the "Analyze this game" button
-            above is NOT gated on this and keeps working regardless. */}
+            below is NOT gated on this and keeps working regardless. Must stay
+            ABOVE DialogFooter: the footer bleeds to the dialog edges
+            (-mx-4 -mb-4, rounded-b-xl, border-t) and only renders correctly as
+            the last child — anything after it hangs outside the dialog. */}
         {storeSucceeded && (
           <div className="flex flex-col gap-1">
             <Link
@@ -103,6 +98,14 @@ export function GameResultDialog({
             )}
           </div>
         )}
+        <DialogFooter>
+          <Button variant="brand-outline" onClick={onAnalyze} data-testid="btn-analyze-game">
+            Analyze this game
+          </Button>
+          <Button variant="default" onClick={onNewGame} data-testid="btn-new-game">
+            New game
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
