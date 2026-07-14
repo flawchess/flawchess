@@ -5,10 +5,10 @@ milestone_name: Bot Play
 current_phase: 999.1
 current_phase_name: BACKLOG
 status: executing
-stopped_at: Phase 171 UI-SPEC approved
-last_updated: "2026-07-14T16:05:47.758Z"
+stopped_at: Phase 171 shipped (squash-merged to main, 0cad3612) — milestone v2.3 phases all complete
+last_updated: "2026-07-14T16:15:00.000Z"
 last_activity: 2026-07-14
-last_activity_desc: Phase 171 complete, transitioned to Phase 999.1
+last_activity_desc: Phase 171 shipped — squash-merged to main (0cad3612)
 progress:
   total_phases: 8
   completed_phases: 8
@@ -24,7 +24,7 @@ progress:
 Phase: 999.1 — Password Reset (BACKLOG)
 Plan: Not started
 Status: Ready to execute
-Last activity: 2026-07-14 — Phase 171 complete, transitioned to Phase 999.1
+Last activity: 2026-07-14 — Phase 171 shipped, squash-merged to main (0cad3612)
 
 ## Project Reference
 
