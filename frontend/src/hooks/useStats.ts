@@ -56,14 +56,14 @@ export function useMostPlayedOpenings(filters?: {
     timeControls: filters?.timeControls ?? null,
     platforms: filters?.platforms ?? null,
     rated: filters?.rated ?? null,
-    opponentType: filters?.opponentType ?? 'human',
+    opponentType: filters?.opponentType ?? 'both',
     opponentStrength: filters?.opponentStrength ?? ANY_RANGE,
   };
   const dateParams = dateRangeToWireParams(resolveDateRange(resolvedFilters));
   const timeControl = filters?.timeControls ?? null;
   const platform = filters?.platforms ?? null;
   const rated = filters?.rated ?? null;
-  const opponentType = filters?.opponentType ?? 'human';
+  const opponentType = filters?.opponentType ?? 'both';
   const opponentStrength = filters?.opponentStrength ?? ANY_RANGE;
 
   return useQuery({

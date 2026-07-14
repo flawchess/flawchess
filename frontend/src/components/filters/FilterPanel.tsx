@@ -44,7 +44,7 @@ export interface FilterState {
   timeControls: TimeControl[] | null; // null = all
   platforms: Platform[] | null; // null = all
   rated: boolean | null; // null = all
-  opponentType: OpponentType; // default human = computer games excluded
+  opponentType: OpponentType; // default both = human + computer games included
   /**
    * Opponent strength as a (gap_min, gap_max) range over opponent_rating - user_rating.
    * Default `{ min: null, max: null }` = no filter (Any preset).
@@ -63,7 +63,7 @@ export const DEFAULT_FILTERS: FilterState = {
   timeControls: null,
   platforms: null,
   rated: null,
-  opponentType: 'human',
+  opponentType: 'both',
   opponentStrength: ANY_RANGE,
   recency: null,
   customRange: null,

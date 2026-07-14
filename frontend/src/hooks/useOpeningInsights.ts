@@ -34,7 +34,7 @@ export function useOpeningInsights(filters?: OpeningInsightsFilters) {
   const timeControl = filters?.timeControls ?? null;
   const platform = filters?.platforms ?? null;
   const rated = filters?.rated ?? null;
-  const opponentType = filters?.opponentType ?? 'human';
+  const opponentType = filters?.opponentType ?? 'both';
   const opponentStrength = filters?.opponentStrength ?? ANY_RANGE;
   const gapParams = rangeToQueryParams(opponentStrength);
 
