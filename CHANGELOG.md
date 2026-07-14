@@ -21,6 +21,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Changed
 - Play a bot: your side of the board is now labelled with your real username (your Lichess name, or your chess.com name if you have not linked Lichess) instead of "You", both on the clock while you play and on the saved game in your Library. It still reads "You" if you have linked neither platform (quick 260714-pnk).
 - Play a bot: a saved bot game now carries a full PGN header block instead of the empty `[Event "?"]` placeholders, so exporting it to lichess or any other viewer shows the event, a link back to the game, the date and time, both player names, both ratings, the bot's `BOT` title, the opening and its ECO code, and how the game ended. Your rating in the header is your Lichess-equivalent rating for that time control (the same figure the Library stores), and it is left out entirely rather than faked when you have no rating history for that time control (quick 260714-qaj).
+- Play a bot: "Analyze this game" now actually analyzes it. One click queues the game for engine analysis and opens it on the analysis board, where you can replay the moves straight away while a "Pending…"/"Analyzing…" badge sits where the eval chart will go. When the analysis lands, the eval chart, the flaw icons in the move list, and the missed/allowed tactic badges appear in place — your position in the game is kept, along with any variations you were exploring. Guests get this too: it is the one kind of analysis a guest can request, so the promise on the result screen is finally true (quick 260714-rj5).
+
+### Fixed
+- Library: opening a game that has not been analyzed yet no longer lands you on an empty board. The moves are there to replay immediately, whether or not the engine has looked at the game (quick 260714-rj5).
 
 ## [v2.2] Analysis ELO Calibration & Deep-links — 2026-07-11
 

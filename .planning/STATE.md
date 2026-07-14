@@ -24,7 +24,7 @@ progress:
 Phase: 999.1 — Password Reset (BACKLOG)
 Plan: Not started
 Status: Ready to execute
-Last activity: 2026-07-14 — Completed quick task 260714-qaj: stored bot games get a full lichess-comparable PGN header block
+Last activity: 2026-07-14 — Completed quick task 260714-rj5: bot game tier-1 analysis with a live-updating analysis board
 
 ## Project Reference
 
@@ -304,6 +304,7 @@ None active.
 | 260714-f2b | Default Opponent Type filter changed from Human to Both (DEFAULT_FILTERS + useStats/useOpeningInsights fallbacks); computer games now included by default across Stats, Openings, Endgames, Library | 2026-07-14 | 912e8c3e | — |
 | 260714-pnk | Bot games show the player's real platform username instead of "You" (lichess → chess.com → "You"), on the /bots clock caption and in the stored `games` row; one resolver per stack (`resolve_player_username` / `resolvePlayerName`) | 2026-07-14 | 355b52d5 | [260714-pnk-show-player-s-platform-username-instead-](./quick/260714-pnk-show-player-s-platform-username-instead-/) |
 | 260714-qaj | Stored bot games get a full lichess-comparable PGN header block, stamped server-side post-insert (`bot_game_pgn.stamp_bot_game_headers`): Event/Site deep link/Date/Round/White/Black/GameId/UTCDate/UTCTime/Elo/Title/Variant/ECO/Opening + non-standard RatingSource + PlayStyleBlend; player Elo is the Lichess-equivalent anchor, omitted (never "?") when the user has no anchor | 2026-07-14 | e4509e9b | [260714-qaj-enrich-bot-game-pgn-metadata-headers](./quick/260714-qaj-enrich-bot-game-pgn-metadata-headers/) |
+| 260714-rj5 | "Analyze this game" after a bot game enqueues a tier-1 eval job and opens the analysis board in game mode; the board renders the move list immediately, shows the Pending…/Analyzing… pill in the eval chart's slot, and swaps in the eval chart + flaw icons + tactic badges in place when the job lands (no remount, so the move cursor and variation tree survive). Unanalyzed single-game cards now carry `moves` + `phase_transitions`, which also fixes the empty-board dead end for unanalyzed imported games. Retires the Phase 169 D-20/D-21 "never gated" invariant | 2026-07-14 | 1f27190c | [260714-rj5-bot-game-tier-1-analysis-with-live-updat](./quick/260714-rj5-bot-game-tier-1-analysis-with-live-updat/) |
 
 ## Deferred Items
 
