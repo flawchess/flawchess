@@ -92,6 +92,24 @@ _USER_FRAMED_TAGS: frozenset[FlawTag] = frozenset({"miss", "lucky"})
 _TacticByPlyEntry = tuple[str | None, int | None, int | None, str | None, int | None, int | None]
 
 
+def _derive_phase_transitions(positions: list[GamePosition]) -> PhaseTransitions:
+    """First ply of middlegame (phase==1) and endgame (phase==2), first occurrence wins.
+
+    Quick 260714-rj5: extracted from _build_eval_series's main loop so there is
+    ONE derivation, not two — an unanalyzed card (no eval_series) still needs
+    phase_transitions to render the board's phase markers. No ply-0 transition
+    (D-06): ply 0 is the initial position, not a transition.
+    """
+    middlegame_ply: int | None = None
+    endgame_ply: int | None = None
+    for pos in positions:
+        if pos.phase == 1 and middlegame_ply is None and pos.ply > 0:
+            middlegame_ply = pos.ply
+        elif pos.phase == 2 and endgame_ply is None and pos.ply > 0:
+            endgame_ply = pos.ply
+    return PhaseTransitions(middlegame_ply=middlegame_ply, endgame_ply=endgame_ply)
+
+
 def _build_eval_series(
     game: Game,
     positions: list[GamePosition],
@@ -125,8 +143,6 @@ def _build_eval_series(
     all_moves = _run_all_moves_pass(positions)
     eval_series: list[EvalPoint] = []
     flaw_markers: list[FlawMarker] = []
-    middlegame_ply: int | None = None
-    endgame_ply: int | None = None
 
     # Increment for _build_tags tempo computation (Phase 109: shared helper).
     increment = _resolve_increment(game)
@@ -182,13 +198,6 @@ def _build_eval_series(
                 best_move=pos.best_move,
             )
         )
-
-        # Phase transitions — first ply where phase==1 (middlegame) or phase==2 (endgame).
-        # No ply-0 line (D-06): ply 0 is the initial position, not a transition.
-        if pos.phase == 1 and middlegame_ply is None and pos.ply > 0:
-            middlegame_ply = pos.ply
-        elif pos.phase == 2 and endgame_ply is None and pos.ply > 0:
-            endgame_ply = pos.ply
 
         # Flaw markers from the mover-POV kernel dict (both colors, D-01/D-02).
         # The kernel skips plies with missing eval — no entry → no marker.
@@ -283,7 +292,7 @@ def _build_eval_series(
     return (
         eval_series,
         flaw_markers,
-        PhaseTransitions(middlegame_ply=middlegame_ply, endgame_ply=endgame_ply),
+        _derive_phase_transitions(positions),
     )
 
 
@@ -386,7 +395,12 @@ def _build_card(
 
     Phase 109 (LIBG-10): when is_analyzed and positions are provided, the three
     new eval chart fields (eval_series, flaw_markers, phase_transitions) are
-    populated via _build_eval_series. Unanalyzed games always get None for these.
+    populated via _build_eval_series. Unanalyzed games always get None for
+    eval_series/flaw_markers (no evals exist to synthesize). Quick 260714-rj5:
+    when positions are provided for an unanalyzed game (single-game path only),
+    moves and phase_transitions ARE populated — they derive from move_san/phase
+    on game_positions, not from evals, so an unanalyzed game can still render a
+    navigable board.
 
     Quick 260702-mnd: the card now surfaces every valid tactic slot regardless of
     the active tactic/severity filter — a selected card is a complete picture of
@@ -413,10 +427,18 @@ def _build_card(
         severity_counts = None
         chips = []
         analysis_state = "no_engine_analysis"
+        # Quick 260714-rj5: unanalyzed games have no evals — do NOT synthesize an
+        # all-None eval series — but moves come from game_positions.move_san and
+        # do NOT depend on evals, so an unanalyzed game can still render a
+        # navigable board (fixes the empty-board dead end for unanalyzed/pending
+        # games). get_library_game now always fetches positions; get_library_games
+        # keeps its analyzed-only positions gate, so positions is [] there.
         eval_series_data = None
         flaw_marker_data = None
-        phase_transition_data = None
-        moves_data = None
+        phase_transition_data = _derive_phase_transitions(positions) if positions else None
+        moves_data = (
+            [p.move_san for p in positions if p.move_san is not None] if positions else None
+        )
     else:
         # M+B counts from game_flaws rows (D-02); inaccuracy from oracle (D-03).
         mistake_count = sum(1 for r in flaw_rows if r.severity == 1)
@@ -641,13 +663,14 @@ async def get_library_game(
     # Sequential call on the same AsyncSession (no asyncio.gather per CLAUDE.md).
     active_map = await library_repository.fetch_page_active_eval_status(session, user_id, game_ids)
 
-    positions: list[GamePosition]
-    if is_analyzed:
-        positions = (
-            await library_repository.fetch_page_eval_positions(session, user_id, game_ids)
-        ).get(game_id, [])
-    else:
-        positions = []
+    # Quick 260714-rj5: always fetch positions on the single-game path (not
+    # gated on is_analyzed) — moves come from game_positions.move_san, which
+    # does not depend on evals, so an unanalyzed game can still render a
+    # navigable board. fetch_page_eval_positions has no analyzed-ness predicate
+    # of its own; the GamePosition.user_id == user_id IDOR scoping is preserved.
+    positions: list[GamePosition] = (
+        await library_repository.fetch_page_eval_positions(session, user_id, game_ids)
+    ).get(game_id, [])
 
     return _build_card(
         game,

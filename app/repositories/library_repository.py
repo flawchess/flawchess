@@ -1163,28 +1163,32 @@ async def fetch_page_game_flaws_both_colors(
 async def fetch_page_eval_positions(
     session: AsyncSession,
     user_id: int,
-    analyzed_game_ids: Sequence[int],
+    game_ids: Sequence[int],
 ) -> dict[int, list[GamePosition]]:
-    """Batch-load GamePosition rows for analyzed games on a page, grouped by game_id.
+    """Batch-load GamePosition rows for the given games, grouped by game_id.
 
-    Only called for games in analyzed_set (unanalyzed games get no positions).
-    Selects full ORM objects so _run_all_moves_pass and _build_tags can consume
-    them unchanged. Ordered by game_id, ply ASC for sequential grouping.
-    User-scoped via GamePosition.user_id (IDOR mitigation — T-109-01, same
-    pattern as fetch_page_game_flaws / T-108-08).
+    Plain user-scoped id-list fetch — this function has NO analyzed-ness
+    predicate of its own (Quick 260714-rj5). Callers decide which game_ids to
+    pass: get_library_games still scopes to its analyzed subset (payload-blowup
+    guard for the list endpoint), while get_library_game (single-game path) may
+    now pass an unanalyzed game_id so an unanalyzed game can still carry its
+    move list. Selects full ORM objects so _run_all_moves_pass and _build_tags
+    can consume them unchanged. Ordered by game_id, ply ASC for sequential
+    grouping. User-scoped via GamePosition.user_id (IDOR mitigation — T-109-01,
+    same pattern as fetch_page_game_flaws / T-108-08).
     """
-    if not analyzed_game_ids:
+    if not game_ids:
         return {}
     stmt = (
         select(GamePosition)
         .where(
             GamePosition.user_id == user_id,
-            GamePosition.game_id.in_(analyzed_game_ids),
+            GamePosition.game_id.in_(game_ids),
         )
         .order_by(GamePosition.game_id, GamePosition.ply)
     )
     rows = list((await session.execute(stmt)).scalars().all())
-    result: dict[int, list[GamePosition]] = {gid: [] for gid in analyzed_game_ids}
+    result: dict[int, list[GamePosition]] = {gid: [] for gid in game_ids}
     for row in rows:
         result[row.game_id].append(row)
     return result

@@ -367,6 +367,12 @@ class TestNoEngineAnalysis:
         assert card.analysis_state == "no_engine_analysis"
         assert card.severity_counts is None  # NEVER a false 0/0/0
         assert card.chips == []
+        # Quick 260714-rj5: the LIST endpoint's payload-blowup guard holds — it
+        # keeps scoping fetch_page_eval_positions to the analyzed subset, so an
+        # unanalyzed row here still gets moves=None (not the single-game path's
+        # newly-populated moves list).
+        assert card.moves is None
+        assert card.phase_transitions is None
 
     @pytest.mark.asyncio
     async def test_flawchess_game_included_when_platform_is_none(self, db_session: object) -> None:
@@ -555,6 +561,7 @@ async def _seed_db_pos(
     ply: int,
     eval_cp: int | None = None,
     phase: int = 1,
+    move_san: str | None = None,
 ) -> None:
     """Insert a GamePosition row."""
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -571,7 +578,7 @@ async def _seed_db_pos(
         full_hash=hash(f"f-{g.id}-{ply}"),
         white_hash=hash(f"w-{g.id}-{ply}"),
         black_hash=hash(f"b-{g.id}-{ply}"),
-        move_san=None,
+        move_san=move_san,
         clock_seconds=None,
         phase=phase,
         eval_cp=eval_cp,
@@ -1251,6 +1258,110 @@ class TestGetLibraryGame:
         assert card.black_rating == 1400
         assert card.white_rating_lichess_blitz == 1500, "flawchess rating must not be re-converted"
         assert card.black_rating_lichess_blitz == 1400, "flawchess rating must not be re-converted"
+
+    @pytest.mark.asyncio
+    async def test_unanalyzed_game_with_positions_carries_moves_and_phase_transitions(
+        self, db_session: object
+    ) -> None:
+        """Quick 260714-rj5: an unanalyzed game with positions gets moves + phase_transitions.
+
+        eval_series/flaw_markers/severity_counts stay None (no evals to synthesize),
+        chips stay [], analysis_state stays 'no_engine_analysis' — this is the
+        fix for the empty-board dead end on an unanalyzed/pending single-game card.
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.game import Game as GameModel
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99995)
+
+        game_obj = await _seed_db_game(
+            session, user_id=99995, user_color="white", result="1-0", analyzed=False
+        )
+        game = cast(GameModel, game_obj)
+        await _seed_db_pos(session, game=game, ply=0, phase=0, move_san="e4")
+        await _seed_db_pos(session, game=game, ply=1, phase=0, move_san="e5")
+        await _seed_db_pos(session, game=game, ply=2, phase=1, move_san="Nf3")
+        # Terminal position: move_san is None and must be filtered out of moves.
+        await _seed_db_pos(session, game=game, ply=3, phase=1, move_san=None)
+
+        card = await get_library_game(session, user_id=99995, game_id=game.id)
+
+        assert card is not None
+        assert card.analysis_state == "no_engine_analysis"
+        assert card.moves == ["e4", "e5", "Nf3"]
+        assert card.phase_transitions is not None
+        assert card.phase_transitions.middlegame_ply == 2
+        assert card.eval_series is None
+        assert card.flaw_markers is None
+        assert card.severity_counts is None
+        assert card.chips == []
+
+    @pytest.mark.asyncio
+    async def test_unanalyzed_game_with_no_positions_has_none_moves(
+        self, db_session: object
+    ) -> None:
+        """Quick 260714-rj5: an unanalyzed game with zero positions gets moves=None (not [])."""
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.game import Game as GameModel
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99996)
+
+        game_obj = await _seed_db_game(
+            session, user_id=99996, user_color="white", result="1-0", analyzed=False
+        )
+        game = cast(GameModel, game_obj)
+
+        card = await get_library_game(session, user_id=99996, game_id=game.id)
+
+        assert card is not None
+        assert card.analysis_state == "no_engine_analysis"
+        assert card.moves is None
+        assert card.phase_transitions is None
+
+    @pytest.mark.asyncio
+    async def test_analyzed_game_moves_and_eval_series_unchanged(
+        self, db_session: object
+    ) -> None:
+        """Quick 260714-rj5: an analyzed game's card is byte-for-byte unchanged.
+
+        Same moves, eval_series, flaw_markers, phase_transitions as before this
+        plan's change — the always-fetch-positions path only affects the
+        unanalyzed branch's moves/phase_transitions.
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.game import Game as GameModel
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99997)
+
+        game_obj = await _seed_db_game(session, user_id=99997, user_color="white", result="1-0")
+        game = cast(GameModel, game_obj)
+        await _seed_db_pos(session, game=game, ply=0, eval_cp=0, phase=0, move_san="e4")
+        await _seed_db_pos(session, game=game, ply=1, eval_cp=0, phase=0, move_san="e5")
+        await _seed_db_pos(session, game=game, ply=2, eval_cp=0, phase=1, move_san="Nf3")
+        await _seed_db_pos(session, game=game, ply=3, eval_cp=None, phase=1, move_san=None)
+
+        card = await get_library_game(session, user_id=99997, game_id=game.id)
+
+        assert card is not None
+        assert card.analysis_state == "analyzed"
+        assert card.moves == ["e4", "e5", "Nf3"]
+        assert card.eval_series is not None
+        assert card.flaw_markers is not None
+        assert card.phase_transitions is not None
+        assert card.phase_transitions.middlegame_ply == 2
+        assert card.severity_counts is not None
 
 
 # ---------------------------------------------------------------------------
