@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
 import { Link } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { resultCopy, type BotGameOutcome } from '@/lib/botGameEnd';
 import type { MoverColor } from '@/lib/liveFlaw';
@@ -20,6 +21,9 @@ interface GameResultStripProps {
   /** SC4: guests additionally see the not-auto-analyzed caveat below the
    * save confirmation; non-guests never see it. */
   isGuest: boolean;
+  /** Quick 260714-rj5: mirrors `GameResultDialog`'s analyzeBusy gate — see its
+   * doc comment. This IS the mobile/dismissed surface, so it must land here too. */
+  analyzeBusy: boolean;
 }
 
 /**
@@ -35,6 +39,7 @@ export function GameResultStrip({
   onAnalyze,
   storeSucceeded,
   isGuest,
+  analyzeBusy,
 }: GameResultStripProps): ReactElement {
   const title = resultCopy(outcome, userColor);
 
@@ -46,12 +51,19 @@ export function GameResultStrip({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-sm font-medium text-foreground">{title}</span>
         <div className="flex items-center gap-2">
+          {/* D-21 RETIRED (Quick 260714-rj5) — mirrors GameResultDialog's
+              comment: the Analyze CTA is now store-gated because it needs the
+              server-assigned game_id to enqueue tier-1 analysis and open the
+              game-mode board; a store failure falls back to the free-play
+              ?line= URL. */}
           <Button
             variant="brand-outline"
             size="sm"
             onClick={onAnalyze}
+            disabled={analyzeBusy}
             data-testid="strip-btn-analyze-game"
           >
+            {analyzeBusy && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
             Analyze this game
           </Button>
           <Button variant="default" size="sm" onClick={onNewGame} data-testid="strip-btn-new-game">
@@ -59,9 +71,8 @@ export function GameResultStrip({
           </Button>
         </div>
       </div>
-      {/* D-20/D-21: only renders once the finish-time store has CONFIRMED
-          (never on idle/pending/error) — the Analyze button above is NOT
-          gated on this. */}
+      {/* D-20: only renders once the finish-time store has CONFIRMED (never
+          on idle/pending/error). */}
       {storeSucceeded && (
         <div className="flex flex-col gap-1">
           <Link

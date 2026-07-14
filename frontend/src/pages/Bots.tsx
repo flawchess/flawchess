@@ -37,12 +37,13 @@ import { SetupScreen } from '@/components/bots/SetupScreen';
 import { useBotGame, type BotGameSettings, type UseBotGameState } from '@/hooks/useBotGame';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useDrainPendingStore, useStoreBotGame, toStoreRequest } from '@/hooks/useStoreBotGame';
+import { useTier1EnqueueForGame } from '@/hooks/useEnqueueGame';
 import { readSnapshot, clearSnapshot, type BotGameSnapshot } from '@/lib/botGameSnapshot';
 import { removePendingStore } from '@/lib/botPendingStore';
 import type { MoverColor } from '@/lib/liveFlaw';
 import { resolvePlayerName } from '@/lib/playerName';
 import { setMuted, unlockAudio, useMuted } from '@/lib/sounds';
-import { buildAnalysisLineUrl } from '@/lib/analysisUrl';
+import { buildAnalysisLineUrl, buildGameAnalysisUrl } from '@/lib/analysisUrl';
 
 /** Matches the app's existing `lg` Tailwind breakpoint (1024px) — below this,
  * clocks/move-list/controls stack around the board (mobile: bot clock above,
@@ -82,6 +83,9 @@ interface GamePanelProps {
   /** SC4: guests additionally see the not-auto-analyzed caveat alongside the
    * save confirmation. */
   isGuest: boolean;
+  /** Quick 260714-rj5: threaded to GameResultStrip's Analyze button — see
+   * GameResultDialog's analyzeBusy doc comment. */
+  analyzeBusy: boolean;
 }
 
 /**
@@ -100,6 +104,7 @@ function GamePanel({
   onNewGame,
   storeSucceeded,
   isGuest,
+  analyzeBusy,
 }: GamePanelProps): ReactElement {
   const outcome = game.outcome;
   const showResultStrip = outcome !== null && dialogDismissed;
@@ -121,6 +126,7 @@ function GamePanel({
           onAnalyze={onAnalyze}
           storeSucceeded={storeSucceeded}
           isGuest={isGuest}
+          analyzeBusy={analyzeBusy}
         />
       ) : (
         <GameControls
@@ -312,9 +318,34 @@ function BotsGame({
     setMuted(!muted);
   }, [muted]);
 
+  // D-21 RETIRED (Quick 260714-rj5): Analyze now needs the server-assigned
+  // game_id from the finish-time store (`store`, above) to enqueue tier-1
+  // analysis and land on the game-mode board directly, so it's gated on the
+  // store settling — see GameResultDialog/GameResultStrip's analyzeBusy doc
+  // comments for the full rationale (this replaces the old "never gated"
+  // Phase 169 D-20/D-21 invariant).
+  const enqueueTier1 = useTier1EnqueueForGame();
+  const storedGameId = store.data?.game_id ?? null;
+  // Busy while the store mutation hasn't settled either way yet, OR the
+  // tier-1 enqueue triggered by clicking Analyze is itself in flight.
+  const analyzeBusy = (!store.isSuccess && !store.isError) || enqueueTier1.isPending;
+
   const handleAnalyze = useCallback((): void => {
-    navigate(buildAnalysisLineUrl(game.moveHistory, settings.userColor));
-  }, [navigate, game.moveHistory, settings.userColor]);
+    if (storedGameId === null) {
+      // Store exhausted MAX_STORE_RETRIES (see useStoreBotGame.ts) — fall
+      // back to the free-play ?line= URL so the user is never stranded
+      // without a way to review the game (D-08).
+      navigate(buildAnalysisLineUrl(game.moveHistory, settings.userColor));
+      return;
+    }
+    // onSettled (not onSuccess) is deliberate: an enqueue failure still opens
+    // the game-mode board with its move list, which beats stranding the user
+    // on the result screen. The global MutationCache.onError already reports
+    // the failure to Sentry — no second capture here.
+    enqueueTier1.mutate(storedGameId, {
+      onSettled: () => navigate(buildGameAnalysisUrl(storedGameId)),
+    });
+  }, [storedGameId, enqueueTier1, navigate, game.moveHistory, settings.userColor]);
 
   const botColor = settings.userColor === 'white' ? 'black' : 'white';
   const flipped = settings.userColor === 'black';
@@ -356,6 +387,7 @@ function BotsGame({
       onNewGame={onNewGame}
       storeSucceeded={store.isSuccess}
       isGuest={isGuest}
+      analyzeBusy={analyzeBusy}
     />
   );
 
@@ -391,6 +423,7 @@ function BotsGame({
           onAnalyze={handleAnalyze}
           storeSucceeded={store.isSuccess}
           isGuest={isGuest}
+          analyzeBusy={analyzeBusy}
         />
       )}
     </div>

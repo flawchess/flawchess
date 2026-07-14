@@ -1,9 +1,15 @@
 // @vitest-environment jsdom
 /**
- * GameResultDialog.test.tsx (Phase 171 Plan 07, V-16/V-17) — the D-20/D-21
- * "Saved to your Library" link + guest not-auto-analyzed caveat render
- * strictly gated on `storeSucceeded`/`isGuest`, and the "Analyze this game"
- * CTA is never gated on the store (V-17).
+ * GameResultDialog.test.tsx (Phase 171 Plan 07, V-16/V-17; Quick 260714-rj5
+ * retires V-17) — the D-20 "Saved to your Library" link + guest
+ * not-auto-analyzed caveat render strictly gated on `storeSucceeded`/`isGuest`.
+ *
+ * V-17 RETIRED: the Phase 169 "Analyze this game" is never gated on the
+ * store" invariant no longer holds. Quick 260714-rj5 makes Analyze
+ * store-gated (`analyzeBusy`) — it now needs the server-assigned game_id to
+ * enqueue tier-1 analysis and open the game-mode board directly. The
+ * describe block below covers the NEW invariant: disabled + spinner while
+ * busy, enabled and firing onAnalyze once settled.
  *
  * Mirrors `GameResultStrip.test.tsx` case-for-case — the strip is the
  * mobile/dismissed surface (CLAUDE.md: apply every change to both).
@@ -39,6 +45,7 @@ function renderDialog(overrides: Partial<Parameters<typeof GameResultDialog>[0]>
         onAnalyze={onAnalyze}
         storeSucceeded={false}
         isGuest={false}
+        analyzeBusy={false}
         {...overrides}
       />
     </MemoryRouter>,
@@ -80,26 +87,34 @@ describe('GameResultDialog — Saved to Library + guest caveat (V-16)', () => {
   });
 });
 
-describe('GameResultDialog — Analyze/New-game unaffected by the store (V-17)', () => {
-  it('"Analyze this game" renders, is enabled, and fires onAnalyze even when storeSucceeded is false', () => {
-    const { onAnalyze } = renderDialog({ storeSucceeded: false });
+describe('GameResultDialog — Analyze is store-gated (Quick 260714-rj5, retires V-17)', () => {
+  it('"Analyze this game" is disabled while analyzeBusy is true — click does not fire onAnalyze', () => {
+    const { onAnalyze } = renderDialog({ analyzeBusy: true });
 
-    const btn = screen.getByTestId('btn-analyze-game');
-    expect(btn).toBeTruthy();
-    expect((btn as HTMLButtonElement).disabled).toBe(false);
+    const btn = screen.getByTestId('btn-analyze-game') as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    fireEvent.click(btn);
+    expect(onAnalyze).not.toHaveBeenCalled();
+  });
+
+  it('"Analyze this game" is enabled and fires onAnalyze once analyzeBusy is false, regardless of storeSucceeded', () => {
+    const { onAnalyze } = renderDialog({ analyzeBusy: false, storeSucceeded: false });
+
+    const btn = screen.getByTestId('btn-analyze-game') as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
     fireEvent.click(btn);
     expect(onAnalyze).toHaveBeenCalledTimes(1);
   });
 
-  it('"Analyze this game" still fires onAnalyze when storeSucceeded is true — not re-pointed at the stored game', () => {
-    const { onAnalyze } = renderDialog({ storeSucceeded: true });
+  it('"Analyze this game" still fires onAnalyze when storeSucceeded is true and analyzeBusy is false', () => {
+    const { onAnalyze } = renderDialog({ analyzeBusy: false, storeSucceeded: true });
 
     fireEvent.click(screen.getByTestId('btn-analyze-game'));
     expect(onAnalyze).toHaveBeenCalledTimes(1);
   });
 
-  it('"New game" still calls onNewGame regardless of storeSucceeded', () => {
-    const { onNewGame } = renderDialog({ storeSucceeded: false });
+  it('"New game" still calls onNewGame regardless of storeSucceeded/analyzeBusy', () => {
+    const { onNewGame } = renderDialog({ storeSucceeded: false, analyzeBusy: true });
 
     fireEvent.click(screen.getByTestId('btn-new-game'));
     expect(onNewGame).toHaveBeenCalledTimes(1);

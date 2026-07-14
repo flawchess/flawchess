@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
 import { Link } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -34,6 +35,12 @@ interface GameResultDialogProps {
   /** SC4: guests additionally see the not-auto-analyzed caveat below the
    * save confirmation; non-guests never see it. */
   isGuest: boolean;
+  /** Quick 260714-rj5: true while the store POST is still settling (neither
+   * succeeded nor failed yet) OR the tier-1 enqueue triggered by clicking
+   * Analyze is itself in flight — disables the button and shows a spinner.
+   * See the D-20/D-21 retirement note on the button below for why the
+   * Analyze CTA is now store-gated (it wasn't before this plan). */
+  analyzeBusy: boolean;
 }
 
 /** Title text color keyed by outcome, from `userColor`'s point of view — draw
@@ -61,6 +68,7 @@ export function GameResultDialog({
   onAnalyze,
   storeSucceeded,
   isGuest,
+  analyzeBusy,
 }: GameResultDialogProps): ReactElement {
   const title = resultCopy(outcome, userColor);
   const titleColor = titleColorFor(outcome, userColor);
@@ -76,12 +84,11 @@ export function GameResultDialog({
         <DialogHeader>
           <DialogTitle style={{ color: titleColor }}>{title}</DialogTitle>
         </DialogHeader>
-        {/* D-20/D-21: only renders once the finish-time store has CONFIRMED
-            (never on idle/pending/error) — the "Analyze this game" button
-            below is NOT gated on this and keeps working regardless. Must stay
-            ABOVE DialogFooter: the footer bleeds to the dialog edges
-            (-mx-4 -mb-4, rounded-b-xl, border-t) and only renders correctly as
-            the last child — anything after it hangs outside the dialog. */}
+        {/* D-20: only renders once the finish-time store has CONFIRMED (never
+            on idle/pending/error). Must stay ABOVE DialogFooter: the footer
+            bleeds to the dialog edges (-mx-4 -mb-4, rounded-b-xl, border-t)
+            and only renders correctly as the last child — anything after it
+            hangs outside the dialog. */}
         {storeSucceeded && (
           <div className="flex flex-col gap-1">
             <Link
@@ -99,7 +106,20 @@ export function GameResultDialog({
           </div>
         )}
         <DialogFooter>
-          <Button variant="brand-outline" onClick={onAnalyze} data-testid="btn-analyze-game">
+          {/* D-21 RETIRED (Quick 260714-rj5): the Phase 169 invariant "the
+              Analyze CTA is never gated on the store" no longer holds. Analyze
+              now needs the server-assigned game_id (from the finish-time
+              store) to enqueue tier-1 analysis and open the game-mode board
+              directly, so it's disabled with a spinner until the store
+              settles. A store failure falls back to the free-play ?line= URL
+              (Bots.tsx's handleAnalyze) — the user is never stranded. */}
+          <Button
+            variant="brand-outline"
+            onClick={onAnalyze}
+            disabled={analyzeBusy}
+            data-testid="btn-analyze-game"
+          >
+            {analyzeBusy && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
             Analyze this game
           </Button>
           <Button variant="default" onClick={onNewGame} data-testid="btn-new-game">

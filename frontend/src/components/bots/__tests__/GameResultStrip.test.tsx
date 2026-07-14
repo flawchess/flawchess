@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 /**
- * GameResultStrip.test.tsx (Phase 171 Plan 07, V-16/V-17) — mirrors
- * `GameResultDialog.test.tsx` case-for-case. The strip IS the mobile/
- * dismissed surface (CLAUDE.md: apply every change to both) — a
- * dialog-only test suite would let this surface silently regress.
+ * GameResultStrip.test.tsx (Phase 171 Plan 07, V-16/V-17; Quick 260714-rj5
+ * retires V-17) — mirrors `GameResultDialog.test.tsx` case-for-case. The
+ * strip IS the mobile/dismissed surface (CLAUDE.md: apply every change to
+ * both) — a dialog-only test suite would let this surface silently regress.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -32,6 +32,7 @@ function renderStrip(overrides: Partial<Parameters<typeof GameResultStrip>[0]> =
         onAnalyze={onAnalyze}
         storeSucceeded={false}
         isGuest={false}
+        analyzeBusy={false}
         {...overrides}
       />
     </MemoryRouter>,
@@ -73,26 +74,34 @@ describe('GameResultStrip — Saved to Library + guest caveat (V-16)', () => {
   });
 });
 
-describe('GameResultStrip — Analyze/New-game unaffected by the store (V-17)', () => {
-  it('"Analyze this game" renders, is enabled, and fires onAnalyze even when storeSucceeded is false', () => {
-    const { onAnalyze } = renderStrip({ storeSucceeded: false });
+describe('GameResultStrip — Analyze is store-gated (Quick 260714-rj5, retires V-17)', () => {
+  it('"Analyze this game" is disabled while analyzeBusy is true — click does not fire onAnalyze', () => {
+    const { onAnalyze } = renderStrip({ analyzeBusy: true });
 
-    const btn = screen.getByTestId('strip-btn-analyze-game');
-    expect(btn).toBeTruthy();
-    expect((btn as HTMLButtonElement).disabled).toBe(false);
+    const btn = screen.getByTestId('strip-btn-analyze-game') as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    fireEvent.click(btn);
+    expect(onAnalyze).not.toHaveBeenCalled();
+  });
+
+  it('"Analyze this game" is enabled and fires onAnalyze once analyzeBusy is false, regardless of storeSucceeded', () => {
+    const { onAnalyze } = renderStrip({ analyzeBusy: false, storeSucceeded: false });
+
+    const btn = screen.getByTestId('strip-btn-analyze-game') as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
     fireEvent.click(btn);
     expect(onAnalyze).toHaveBeenCalledTimes(1);
   });
 
-  it('"Analyze this game" still fires onAnalyze when storeSucceeded is true — not re-pointed at the stored game', () => {
-    const { onAnalyze } = renderStrip({ storeSucceeded: true });
+  it('"Analyze this game" still fires onAnalyze when storeSucceeded is true and analyzeBusy is false', () => {
+    const { onAnalyze } = renderStrip({ analyzeBusy: false, storeSucceeded: true });
 
     fireEvent.click(screen.getByTestId('strip-btn-analyze-game'));
     expect(onAnalyze).toHaveBeenCalledTimes(1);
   });
 
-  it('"New game" still calls onNewGame regardless of storeSucceeded', () => {
-    const { onNewGame } = renderStrip({ storeSucceeded: false });
+  it('"New game" still calls onNewGame regardless of storeSucceeded/analyzeBusy', () => {
+    const { onNewGame } = renderStrip({ storeSucceeded: false, analyzeBusy: true });
 
     fireEvent.click(screen.getByTestId('strip-btn-new-game'));
     expect(onNewGame).toHaveBeenCalledTimes(1);

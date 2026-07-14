@@ -61,6 +61,11 @@ vi.mock('@sentry/react', () => ({ captureException: vi.fn() }));
 // preserving everything else) is what lets both real hooks
 // (`useStoreBotGame`/`useDrainPendingStore`, unmocked) run against the same
 // fake network boundary in the tests below.
+//
+// Quick 260714-rj5: also mock `apiClient.post` — `useTier1EnqueueForGame`
+// (unmocked, real hook) POSTs `/imports/eval/tier1/{id}` through it, and the
+// "one-click tier-1 enqueue" describe block below needs to control/observe
+// that call the same way the store tests control `botsApi.storeGame`.
 vi.mock('@/api/client', async () => {
   const actual = await vi.importActual<typeof import('@/api/client')>('@/api/client');
   return {
@@ -68,6 +73,10 @@ vi.mock('@/api/client', async () => {
     botsApi: {
       ...actual.botsApi,
       storeGame: vi.fn(),
+    },
+    apiClient: {
+      ...actual.apiClient,
+      post: vi.fn(),
     },
   };
 });
@@ -211,7 +220,7 @@ if (typeof Element.prototype.scrollIntoView !== 'function') {
   Element.prototype.scrollIntoView = vi.fn();
 }
 
-import { botsApi } from '@/api/client';
+import { botsApi, apiClient } from '@/api/client';
 import BotsPage from '../Bots';
 
 // ─── Test helpers ────────────────────────────────────────────────────────────
@@ -303,6 +312,13 @@ beforeEach(() => {
   // consumed by an unconfigured mock resolving `undefined` as if it were a
   // 2xx. Tests that DO care about the store override this explicitly.
   vi.mocked(botsApi.storeGame).mockRejectedValue(axiosError(500));
+  // Quick 260714-rj5: apiClient.post backs useTier1EnqueueForGame's real
+  // (unmocked) mutation. A benign default resolve — tests that exercise the
+  // enqueue path override this explicitly.
+  vi.mocked(apiClient.post).mockReset();
+  vi.mocked(apiClient.post).mockResolvedValue({
+    data: { status: 'enqueued', game_id: 0 },
+  });
   profileState.data = {
     email: 'user@example.com',
     is_guest: false,
@@ -630,8 +646,16 @@ describe('Analyze CTA carries the played colour (171 UAT gap 1)', () => {
    * B-1: the JOINING LINE ITSELF. `analysisUrl.test.ts` tests a pure function
    * that never renders `Bots`; `Analysis.test.tsx` feeds `/analysis?…` URLs
    * in directly and never renders `Bots`. So nothing but THIS test exercises
-   * `Bots.tsx:310` — the one line that passes `settings.userColor` into
-   * `buildAnalysisLineUrl`. Deleting that 2nd arg must turn these red.
+   * `Bots.tsx`'s free-play fallback branch (storedGameId === null) — the one
+   * line that passes `settings.userColor` into `buildAnalysisLineUrl`.
+   * Deleting that 2nd arg must turn these red.
+   *
+   * Quick 260714-rj5: Analyze is now store-gated (disabled while
+   * `analyzeBusy`). The default `beforeEach` mocks `botsApi.storeGame` to
+   * reject with a 500, so the store settles as ERRORED after
+   * `MAX_STORE_RETRIES` bounded in-flight retries — the free-play fallback
+   * path this test exercises. Waiting for the button to become enabled
+   * before clicking is load-bearing: clicking a disabled button is a no-op.
    */
   async function finishGameAndClickAnalyze(colorTestId: string): Promise<void> {
     fakeGame.moveHistory = ['e4', 'e5'];
@@ -644,6 +668,9 @@ describe('Analyze CTA carries the played colour (171 UAT gap 1)', () => {
     });
 
     await waitFor(() => expect(screen.getByTestId('result-dialog')).toBeTruthy());
+    await waitFor(() =>
+      expect((screen.getByTestId('btn-analyze-game') as HTMLButtonElement).disabled).toBe(false),
+    );
     fireEvent.click(screen.getByTestId('btn-analyze-game'));
   }
 
@@ -663,6 +690,112 @@ describe('Analyze CTA carries the played colour (171 UAT gap 1)', () => {
     const url = navigateSpy.mock.calls[0]?.[0] as string;
     expect(url).toContain('orientation=white');
     expect(url).toContain('line=e2e4,e7e5');
+  });
+});
+
+// Quick 260714-rj5 — one-click Analyze: store confirms -> tier-1 enqueue ->
+// /analysis?game_id=X. `apiClient.post` (mocked at module level above) backs
+// `useTier1EnqueueForGame`'s real, unmocked mutation.
+describe('Analyze CTA — one-click tier-1 enqueue (Quick 260714-rj5)', () => {
+  const STORED_GAME_ID = 42;
+
+  async function finishGame(): Promise<void> {
+    fakeGame.moveHistory = ['e4', 'e5'];
+    renderBots();
+    await startFromSetup();
+
+    act(() => {
+      fakeGame.setPgn('1. e4 e5 *');
+      fakeGame.setOutcome({ reason: 'resignation', winner: 'white' });
+    });
+
+    await waitFor(() => expect(screen.getByTestId('result-dialog')).toBeTruthy());
+  }
+
+  it('Analyze is disabled while the store mutation is still settling', async () => {
+    // Store never resolves during this test — analyzeBusy must stay true.
+    vi.mocked(botsApi.storeGame).mockReturnValue(new Promise(() => undefined));
+
+    await finishGame();
+
+    const btn = screen.getByTestId('btn-analyze-game') as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+  });
+
+  it('store succeeds -> click Analyze -> POSTs tier1 enqueue with the store-returned game_id, then navigates to /analysis?game_id=X', async () => {
+    vi.mocked(botsApi.storeGame).mockResolvedValue({
+      game_id: STORED_GAME_ID,
+      created: true,
+    });
+
+    await finishGame();
+    await waitFor(() =>
+      expect((screen.getByTestId('btn-analyze-game') as HTMLButtonElement).disabled).toBe(false),
+    );
+
+    fireEvent.click(screen.getByTestId('btn-analyze-game'));
+
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(1));
+    expect(apiClient.post).toHaveBeenCalledWith(`/imports/eval/tier1/${STORED_GAME_ID}`);
+
+    await waitFor(() => expect(navigateSpy).toHaveBeenCalledTimes(1));
+    const url = navigateSpy.mock.calls[0]?.[0] as string;
+    expect(url).toBe(`/analysis?game_id=${STORED_GAME_ID}`);
+  });
+
+  it('store errors (retries exhausted) -> click Analyze -> navigates to the free-play ?line= URL WITHOUT attempting a tier1 enqueue', async () => {
+    vi.mocked(botsApi.storeGame).mockRejectedValue(axiosError(500));
+
+    await finishGame();
+    // Bounded MAX_STORE_RETRIES in-flight retries -> the store settles as
+    // errored, re-enabling the button for the fallback path.
+    await waitFor(
+      () => expect((screen.getByTestId('btn-analyze-game') as HTMLButtonElement).disabled).toBe(false),
+      { timeout: 8000 },
+    );
+
+    fireEvent.click(screen.getByTestId('btn-analyze-game'));
+
+    await waitFor(() => expect(navigateSpy).toHaveBeenCalledTimes(1));
+    const url = navigateSpy.mock.calls[0]?.[0] as string;
+    expect(url).toContain('line=e2e4,e7e5');
+    expect(apiClient.post).not.toHaveBeenCalled();
+  });
+
+  it('a tier1 enqueue in flight keeps Analyze disabled, then navigates once the enqueue SETTLES even on error — the user is never stranded', async () => {
+    vi.mocked(botsApi.storeGame).mockResolvedValue({
+      game_id: STORED_GAME_ID,
+      created: true,
+    });
+    let rejectEnqueue: ((err: unknown) => void) | undefined;
+    vi.mocked(apiClient.post).mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectEnqueue = reject;
+      }),
+    );
+
+    await finishGame();
+    await waitFor(() =>
+      expect((screen.getByTestId('btn-analyze-game') as HTMLButtonElement).disabled).toBe(false),
+    );
+
+    fireEvent.click(screen.getByTestId('btn-analyze-game'));
+
+    // The enqueue is now in flight — the button must go back to disabled and
+    // navigation must NOT have fired yet.
+    await waitFor(() =>
+      expect((screen.getByTestId('btn-analyze-game') as HTMLButtonElement).disabled).toBe(true),
+    );
+    expect(navigateSpy).not.toHaveBeenCalled();
+
+    // The enqueue fails — onSettled still opens the game-mode board (never
+    // stranding the user on the result screen), and the Sentry report is left
+    // to the global MutationCache.onError (no duplicate capture here).
+    rejectEnqueue?.(axiosError(500));
+
+    await waitFor(() => expect(navigateSpy).toHaveBeenCalledTimes(1));
+    const url = navigateSpy.mock.calls[0]?.[0] as string;
+    expect(url).toBe(`/analysis?game_id=${STORED_GAME_ID}`);
   });
 });
 
