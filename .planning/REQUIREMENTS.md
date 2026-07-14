@@ -42,8 +42,8 @@ Requirements for this milestone. Each maps to a roadmap phase.
 
 ### Resume (RESUME)
 
-- [ ] **RESUME-01**: User can leave a bot game mid-play and resume it later via a "Resume game?" prompt, with the clock paused while away (persisted to localStorage every move).
-- [ ] **RESUME-02**: Only finished games reach the server; an abandoned (unfinished) game leaves no server trace, and a game already stored is never double-stored on resume.
+- [x] **RESUME-01**: User can leave a bot game mid-play and resume it later via a "Resume game?" prompt, with the clock paused while away (persisted to localStorage every move).
+- [x] **RESUME-02**: Only finished games reach the server; an abandoned (unfinished) game leaves no server trace, and a game already stored is never double-stored on resume.
 
 ### Calibration (CAL)
 
@@ -108,8 +108,8 @@ Which phases cover which requirements. Filled during roadmap creation.
 | STORE-05 | Phase 167 | Complete |
 | STORE-06 | Phase 167 | Complete |
 | STORE-07 | Phase 167 | Complete |
-| RESUME-01 | Phase 170 | Pending |
-| RESUME-02 | Phase 170 | Pending |
+| RESUME-01 | Phase 170 | Complete |
+| RESUME-02 | Phase 170 | Complete |
 | CAL-01 | Phase 168 | Complete |
 | CAL-02 | Phase 168 | Complete |
 | CAL-03 | Phase 168 | Complete |

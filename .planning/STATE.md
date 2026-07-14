@@ -2,35 +2,35 @@
 gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: Bot Play
-current_phase: 170
-current_phase_name: localStorage Resume
-status: completed
-stopped_at: Phase 169.5 shipped to main
-last_updated: "2026-07-13T18:26:19.507Z"
-last_activity: 2026-07-13
-last_activity_desc: Phase 169.5 complete, transitioned to Phase 170
+current_phase: 171
+current_phase_name: Bots Page + Setup Screen + Nav
+status: ready_to_plan
+stopped_at: Phase 170 complete (UAT 7/7 passed, verification passed) — ready to plan Phase 171
+last_updated: "2026-07-14T05:39:46.932Z"
+last_activity: 2026-07-14
+last_activity_desc: Phase 170 complete, transitioned to Phase 171
 progress:
   total_phases: 8
-  completed_phases: 6
-  total_plans: 26
-  completed_plans: 26
-  percent: 75
+  completed_phases: 7
+  total_plans: 31
+  completed_plans: 31
+  percent: 88
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 170 — localStorage Resume
+Phase: 171 — Bots Page + Setup Screen + Nav
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-07-13 — Phase 169.5 shipped (squash-merged to main), transitioned to Phase 170
+Last activity: 2026-07-14 — Phase 170 complete, transitioned to Phase 171
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-07-10 after Phase 163)
+See: .planning/PROJECT.md (updated 2026-07-14 after Phase 170)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: **v2.3 Bot Play** — play a real clocked game against a calibrated FlawChess bot. Phases 166 (bot move selection), 167 (backend store-on-finish), 168 (calibration harness), 168.5 (pacing/search budget) and **169 (clocked board + game loop) are complete**; 170 (localStorage resume) is next, then 171 (Bots page + setup screen). Not yet deployed — v2.3 ships at milestone close. Prior milestone v2.2 (Analysis ELO Calibration & Deep-links) closed 2026-07-11 and is live in production via #253/#254.
+Current focus: **v2.3 Bot Play** — play a real clocked game against a calibrated FlawChess bot. Phases 166 (bot move selection), 167 (backend store-on-finish), 168 (calibration harness), 168.5 (pacing/search budget), 169 (clocked board + game loop), 169.5 (opening book) and **170 (localStorage resume) are complete** — 170 UAT passed 7/7 on a real browser. Only 171 (Bots page + setup screen + nav) remains, and it closes the milestone. Not yet deployed — v2.3 ships at milestone close. Prior milestone v2.2 (Analysis ELO Calibration & Deep-links) closed 2026-07-11 and is live in production via #253/#254.
 
 ## Milestone Progress
 
@@ -244,6 +244,17 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 169.5-01]: OpeningLookup interface bundles fullLineMap + prefixSet as buildLookup()'s single cached return shape, keeping fetch/parse shared between both query directions
 - [Phase 169.5-01]: loadOpeningPrefixSet() does not swallow fetch errors (unlike preloadOpenings()) — the future book caller (plan 04) decides how to react to a rejected promise
 - [Phase 169.5-01]: Did not run requirements.mark-complete for PLAY-11 — shared across all 4 plans in this phase (frontmatter); 169.5-01 alone only delivers the candidate-generation half (prefix set + corpus-parity guard); left [ ] Pending with a partial-delivery note
+- [Phase ?]: D-08 RESOLVED: botGameSnapshot persists chess.pgn() (not SAN+clk-array); a clean version mismatch is a silent hard drop while corruption removes the key and captures to Sentry exactly once
+- [Phase ?]: Did not run requirements.mark-complete for RESUME-01/RESUME-02 — shared across all 5 plans in Phase 170 (frontmatter); 170-01 alone only delivers the persistence primitives (snapshot module, pending-store queue, clock-fold rule), not the resume UI/seam/store-client that fulfills the requirements. Left [ ] Pending with this partial-delivery note (mirrors 169.5-01's PLAY-11 precedent).
+- [Phase 170-localstorage-resume]: tc_preset reuses toBackendTcStr verbatim (base-seconds) — no separate lichess display-preset derivation (D-14 corrected)
+- [Phase 170-localstorage-resume]: useDrainPendingStore uses its own retry-less useMutation instead of reusing useStoreBotGame() — a 401's unconditional-retry predicate would hang mutateAsync forever inside the drain loop
+- [Phase 170-03]: gameUuid and the resume->board replay cache modeled as useState, not useRef as the plan literally specified — react-hooks/refs (react-hooks 7.1.1) forbids reading ref.current during render; useState gives byte-identical external behavior
+- [Phase 170-03]: Task 1 (resume seam) and Task 2 (live gate) committed together — the refs/state block and return statement are physically interleaved by both tasks; matches project precedent (Phase 155-04)
+- [Phase 170-03]: Left RESUME-01 checkbox unmarked (Pending) — shared across Plans 01/03/04/05 (frontmatter); 170-03 alone only delivers the hook resume seam + live gate, not the localStorage write path or the resume-gate UI; Plans 04/05 will actually close it
+- [Phase 170]: Plan 170-04 split Task 1/Task 2 into two atomic commits (orthogonal call sites), verified byte-identical to a combined diff
+- [Phase 170]: Reverted requirements.mark-complete's RESUME-01 checkbox flip: RESUME-01 is shared across Plans 04/05 (frontmatter) — 170-04 alone delivers the persistence half (snapshot on every move, fold on hide); the SC1 'Resume game?' prompt is Plan 05's job; left [ ] Pending with a partial-delivery note; Plan 05 actually closes it
+- [Phase 170-05]: Date.now() moved into a lazy useState initializer in ResumeGate.tsx to satisfy react-hooks/purity; test assertions use .toBeNull()/.not.toBeNull() (no jest-dom in this project) instead of toBeInTheDocument()
+- [Phase 170-UAT]: ClockDisplay slimmed to roughly the analysis board's PlayerBar proportions (p-4 → px-2 py-1.5, text-xl → text-lg digits) after UAT test 7 flagged the clock strips as too tall on mobile. The card surface was deliberately KEPT rather than going fully borderless like PlayerBar — the active-side fill and the low-time ring need something to paint on, which a live game needs and an analysis board does not.
 
 ### Pending Todos
 
@@ -322,9 +333,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Completed 169.5-01-PLAN.md
+**Stopped at:** Phase 170 complete (UAT 7/7 passed, verification passed), ready to plan Phase 171
 
-**Last session:** 2026-07-13T15:16:30.982Z
+**Last session:** 2026-07-14
 
 **Resume file:** 
 
@@ -400,6 +411,11 @@ None
 | Phase 169 P09 | 55min | 3 tasks | 7 files |
 | Phase 169 P10 | 25min | 3 tasks | 5 files |
 | Phase 169.5 P01 | 25min | 2 tasks | 2 files |
+| Phase 170 P01 | 35min | 3 tasks | 6 files |
+| Phase 170-localstorage-resume P02 | 40min | 2 tasks | 4 files |
+| Phase 170 P03 | 45min | 2 tasks | 2 files |
+| Phase 170 P04 | 40min | 2 tasks | 2 files |
+| Phase 170 P05 | 20min | 2 tasks | 3 files |
 
 ## Operator Next Steps
 

@@ -56,6 +56,8 @@
  * convention instead of this module's UI-facing shorthand.
  */
 
+import type { MoverColor } from '@/lib/liveFlaw';
+
 // ─── Named constants ─────────────────────────────────────────────────────────
 
 /** Minimum synthetic "thinking" reveal delay so near-instant bot moves (e.g.
@@ -227,6 +229,45 @@ export function computeRevealDelayMs(rng: () => number): number {
 /** Whether remaining time is below the low-time display threshold (D-07). */
 export function isLowTime(remainingMs: number): boolean {
   return remainingMs < LOW_TIME_THRESHOLD_MS;
+}
+
+/**
+ * Module-private zero-clamped subtraction — kept unexported so `npm run
+ * knip` does not flag a single-consumer export (its only caller is
+ * `foldClockBasesForSnapshot` below).
+ */
+function foldElapsedIntoClockBase(remainingMs: number, elapsedMs: number): number {
+  return Math.max(0, remainingMs - elapsedMs);
+}
+
+/**
+ * Phase 170 D-01/D-02: the SINGLE place the leave/resume clock-fold
+ * asymmetry is expressed. D-01 ("bill think time"): when the USER is the
+ * active side, their in-turn `chargeableElapsedMs` is folded into their own
+ * clock base before the snapshot is written, so a user who thinks 40s and
+ * closes the tab resumes with those 40s spent. D-02 ("refund away time"):
+ * when the BOT is the active side, its clock base is returned unchanged as
+ * of its last commit — the bot's in-flight search dies with the Web Workers
+ * on unload, so billing it for thrown-away work would be wrong (no user
+ * exploit exists: refunding the bot's clock only ever helps the bot).
+ * Always returns a NEW object; never mutates `bases` — the caller passes
+ * `clockBaseRef.current` directly, and mutating it would make the next real
+ * `commitMove()` double-subtract the same elapsed time (once via this fold,
+ * once via its own `chargeableElapsedMs()` read).
+ */
+export function foldClockBasesForSnapshot(
+  bases: { white: number; black: number },
+  activeColor: MoverColor,
+  userColor: MoverColor,
+  chargeableElapsedMs: number,
+): { white: number; black: number } {
+  if (activeColor !== userColor) {
+    return { ...bases };
+  }
+  return {
+    ...bases,
+    [activeColor]: foldElapsedIntoClockBase(bases[activeColor], chargeableElapsedMs),
+  };
 }
 
 /**

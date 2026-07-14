@@ -19,6 +19,11 @@ interface ClockDisplayProps {
  * A single side's clock card for the bot-game board (Phase 169 Plan 05).
  * Digits are formatted by chessClock.ts's formatClockLabel/isLowTime — this
  * component never reimplements clock math or formatting (D-07/UI-SPEC).
+ *
+ * Sized to sit close to the analysis board's PlayerBar strip (170 UAT test 7:
+ * the original p-4 / text-xl card ate too much vertical space on mobile). The
+ * card surface itself stays — the active-side fill and the low-time ring need
+ * something to paint on.
  */
 export function ClockDisplay({
   sideLabel,
@@ -33,7 +38,7 @@ export function ClockDisplay({
     <div
       data-testid={testId}
       className={cn(
-        'flex items-center justify-between gap-2 rounded-[var(--radius)] bg-card p-4',
+        'flex items-center justify-between gap-2 rounded-[var(--radius)] bg-card px-2 py-1.5',
         isActive && 'bg-secondary',
         lowTime && 'ring-2 ring-destructive/40',
       )}
@@ -53,7 +58,7 @@ export function ClockDisplay({
         )}
       </span>
       <span
-        className="text-xl font-bold tabular-nums"
+        className="text-lg font-bold tabular-nums"
         style={lowTime ? { color: CLOCK_LOW_TIME_URGENT } : undefined}
       >
         {formatClockLabel(remainingMs)}

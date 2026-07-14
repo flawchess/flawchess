@@ -54,6 +54,33 @@
  * `viewedPly` to the live position only when the viewer was already live (or
  * the mover is the user, who can only move from the live position anyway) —
  * a bot move no longer ejects the user from D-13 scroll-back.
+ *
+ * RESUME SEAM + LIVE GATE (Phase 170, D-10/D-03/D-11): an optional `resume`
+ * argument lazily seeds every ref/state value below from a `BotGameSnapshot`
+ * instead of a fresh-game default — ONE hook, ONE game loop, no second
+ * restore path. A resumed game mounts with `live: false`: the provider
+ * bring-up effect (pool/queue warm) still fires unconditionally, but the
+ * turn-anchor, clock-tick, and bot-turn-trigger effects wait for the caller
+ * to call `confirmLive()` (from the resume gate's Resume button) before any
+ * clock runs or search starts — "nobody pays for the engine cold-start" and
+ * "no away-time billed" (D-01/D-02/D-03). `gameUuidRef` is minted once at
+ * game start, carried through a resume unchanged, and re-minted ONLY by
+ * `newGame()` (D-11) — this is what keeps the server's
+ * `uq_games_user_platform_game_id` idempotency reachable across a resume.
+ *
+ * PERSISTENCE (Phase 170 Plan 04, D-01/D-02/D-12): this hook owns every
+ * localStorage write for the in-progress snapshot and the finished-game
+ * pending-store queue, at exactly FOUR call sites: (1) `commitMove` writes a
+ * fresh snapshot after every committed move (no fold — the base is already
+ * settled); (2) a dedicated tab-hide/`pagehide` effect writes a snapshot
+ * with the D-01/D-02 fold applied (bills the user's in-turn think time,
+ * refunds the bot's interrupted one); (3) `finalizeGame` enqueues the
+ * finished game to `flawchess_bot_pending_store` and clears the in-progress
+ * snapshot; (4) `newGame` clears the in-progress snapshot only. Call site
+ * (3) is the ONLY `enqueuePendingStore` call site in the codebase — this is
+ * what makes SC2 ("an abandoned game leaves no server trace") STRUCTURAL:
+ * the POST that eventually drains the queue can only ever be fed by a
+ * FINISHED game, because nothing else ever writes into that queue.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -70,6 +97,7 @@ import {
   computeThinkDeadlineMs,
   computeRevealDelayMs,
   isLowTime,
+  foldClockBasesForSnapshot,
 } from '@/lib/chessClock';
 import { detectEndCondition, type BotGameOutcome } from '@/lib/botGameEnd';
 import {
@@ -92,6 +120,14 @@ import {
   FLAWCHESS_BOT_STOP_RULE,
 } from '@/lib/engine/botBudget';
 import type { SearchBudget, Side } from '@/lib/engine/types';
+import {
+  restoreChess,
+  writeSnapshot,
+  clearSnapshot,
+  CURRENT_SNAPSHOT_VERSION,
+  type BotGameSnapshot,
+} from '@/lib/botGameSnapshot';
+import { enqueuePendingStore } from '@/lib/botPendingStore';
 
 // ─── Named constants ─────────────────────────────────────────────────────────
 
@@ -159,6 +195,19 @@ export interface UseBotGameState {
   drawOfferPending: boolean;
   /** Whether the "Offer draw" button is currently clickable (D-04 throttle). */
   canOfferDraw: boolean;
+  /** Stable per-game identifier (Phase 170 D-11): minted once via
+   * `crypto.randomUUID()` at game start, carried unchanged through a resume,
+   * and re-minted ONLY by `newGame()`. This is what keeps the server's
+   * `uq_games_user_platform_game_id` idempotency reachable across a resume. */
+  gameUuid: string;
+  /** False only for a resumed-but-unconfirmed game (Phase 170 D-03) — the
+   * turn-anchor, clock-tick, and bot-turn-trigger effects wait for
+   * `confirmLive()` before running. True from mount for a fresh
+   * (`resume === undefined`) game, matching today's behavior exactly. */
+  live: boolean;
+  /** Confirms a resumed game is ready to become live — call from the resume
+   * gate's Resume button. No-op (already true) for a fresh game. */
+  confirmLive: () => void;
   /** Attempt a user move; returns false (board snaps back) if illegal, off-turn, or off-live-position. */
   attemptMove: (from: string, to: string) => boolean;
   /** View a historical ply (board becomes read-only until returnToLive()). */
@@ -188,6 +237,20 @@ function fenAtPly(moveHistory: string[], ply: number): string {
 function freshClockBase(baseSeconds: number): { white: number; black: number } {
   const ms = baseSeconds * 1000;
   return { white: ms, black: ms };
+}
+
+/**
+ * The SINGLE snapshot->board replay call site (Phase 170 D-10). Several of
+ * the hook's lazy initializers need the restored board's `Chess` instance
+ * and its `history()` — calling `restoreChess` from each one separately
+ * would build several distinct boards for one resume. Callers cache this
+ * result once per mount (see the `restoredRef` lazy-ref pattern below) so a
+ * resume replays the PGN exactly once, not once per re-render.
+ */
+function initFromResume(resume: BotGameSnapshot | undefined): { chess: Chess; history: string[] } {
+  if (resume === undefined) return { chess: new Chess(), history: [] };
+  const chess = restoreChess(resume.pgn);
+  return { chess, history: chess.history() };
 }
 
 /** The D-03 reveal-delay floor as a plain awaitable (Pattern 3 — run via
@@ -264,30 +327,64 @@ async function resolveBookMove(
 
 // ─── Hook ────────────────────────────────────────────────────────────────────
 
-export function useBotGame(settings: BotGameSettings): UseBotGameState {
+/**
+ * @param settings The bot's own play settings for this game.
+ * @param resume Phase 170 D-10: an optional snapshot to restore from — the
+ *   ONE resume seam into this hook's game loop. `undefined` for a fresh
+ *   game (today's only path, unchanged behavior).
+ * @param ownerKey The localStorage owner scope (the user's email, or null
+ *   for anon) — see botGameSnapshot.ts. Threaded through to every
+ *   persistence call site (Plan 04): the every-move snapshot write, the
+ *   tab-hide/pagehide fold write, the finished-game enqueue, and the
+ *   new-game snapshot clear.
+ */
+export function useBotGame(
+  settings: BotGameSettings,
+  resume?: BotGameSnapshot,
+  ownerKey?: string | null,
+): UseBotGameState {
+  // ─── Resume seam: replay the snapshot's PGN exactly ONCE per mount ───────
+  //
+  // `initFromResume` builds a Chess board (and its history()) from the
+  // snapshot's PGN — expensive enough (full PGN replay) that it must not run
+  // on every re-render (this hook re-renders on every 100ms clock tick). A
+  // lazy `useState` initializer (not a manually-cached ref — react-hooks/refs
+  // forbids reading `.current` during render, and every seed below IS read
+  // during render) computes this exactly once, on the very first render,
+  // then every seed below reads the same cached STATE value.
+
+  const [restored] = useState(() => initFromResume(resume));
+  const { chess: restoredChess, history: restoredHistory } = restored;
+  const restoredLivePly = restoredHistory.length;
+
   // ─── Refs ──────────────────────────────────────────────────────────────────
 
-  const chessRef = useRef<Chess>(new Chess());
+  const chessRef = useRef<Chess>(restoredChess);
   const clockBaseRef = useRef<{ white: number; black: number }>(
-    freshClockBase(settings.baseSeconds),
+    resume
+      ? { white: resume.whiteClockMs, black: resume.blackClockMs }
+      : freshClockBase(settings.baseSeconds),
   );
   /** Wall-clock anchor for the current turn. Set to the real `Date.now()` by
    * the mount effect below (react-hooks/purity forbids calling `Date.now()`
    * directly as a `useRef` initializer, since that reads impure state during
    * render) — the effect runs before the clock-tick effect's first `tick()`
-   * call, so this placeholder value is never actually read. */
+   * call, so this placeholder value is never actually read. Deliberately NOT
+   * seeded from `resume` — gated by `live` instead (Task 2, D-03). */
   const turnStartedAtRef = useRef<number>(0);
   const pausedAtRef = useRef<number | null>(null);
   /** WR-05: the ply currently displayed, kept in sync with the `viewedPly`
    * state via `updateViewedPly` below — read by `commitMove` (a stable
    * memoized callback that does not depend on `viewedPly` state) to decide
-   * whether a bot move should snap the view to live. */
-  const viewedPlyRef = useRef(0);
+   * whether a bot move should snap the view to live. Seeded to the live ply
+   * on a resume — a resumed game opens LIVE, not scrolled back to ply 0. */
+  const viewedPlyRef = useRef(restoredLivePly);
   /** The live game's ply BEFORE the in-flight commit, kept in sync with
    * `moveHistory.length` by the effect below. Read alongside `viewedPlyRef`
    * to compute "was the viewer already at the live position" without
-   * `commitMove` depending on `moveHistory` itself. */
-  const liveGamePlyRef = useRef(0);
+   * `commitMove` depending on `moveHistory` itself. Seeded on a resume so it
+   * is correct before the sync effect below has run for the first time. */
+  const liveGamePlyRef = useRef(restoredLivePly);
   /** WR-03 idempotency latch — the FIRST outcome wins. `finalizeGame` is
    * called from async continuations (bot-turn resolution) and effects
    * (draw-offer resolution, clock tick) that can run with a stale render
@@ -337,27 +434,55 @@ export function useBotGame(settings: BotGameSettings): UseBotGameState {
    * 3,641 lines cover nearly every sane early position, so a game can wander
    * back onto a cataloged prefix after the bot has already started searching,
    * and a history-derived check would silently re-enter the book. Reset only
-   * in `newGame()`. */
-  const hasLeftBookRef = useRef(false);
-  /** D-09: the user's low-time sound fires exactly once per game. */
-  const hasFiredLowTimeRef = useRef(false);
+   * in `newGame()`. Seeded from `resume.hasLeftBook` on a resume — Phase 170
+   * D-09: this latch CANNOT be re-derived from move history, so a fresh
+   * `false` here would silently re-enter the book mid-game. */
+  const hasLeftBookRef = useRef(resume?.hasLeftBook ?? false);
+  /** D-09: the user's low-time sound fires exactly once per game. Seeded
+   * from `resume.hasFiredLowTime` on a resume (Phase 170 D-09) so a refresh
+   * cannot re-fire the sound the user already heard this game. */
+  const hasFiredLowTimeRef = useRef(resume?.hasFiredLowTime ?? false);
   /** Pitfall 4 (iOS autoplay unlock) — fires once, from the first user gesture. */
   const hasUnlockedAudioRef = useRef(false);
+  /** Mirror of the `movesSinceLastDecline` state below, kept fresh by the
+   * sync effect near `liveGamePlyRef`'s (same pattern) — Plan 04's snapshot
+   * writes need a fresh read of this value from an event handler that does
+   * not want to depend on (and re-run per) the state itself. */
+  const movesSinceLastDeclineRef = useRef(resume?.movesSinceLastDecline ?? DRAW_OFFER_COOLDOWN_MOVES);
 
   // ─── State ─────────────────────────────────────────────────────────────────
 
-  const [moveHistory, setMoveHistory] = useState<string[]>([]);
-  const [viewedPly, setViewedPly] = useState(0);
-  const [activeColor, setActiveColor] = useState<MoverColor>('white');
-  const [whiteClockMs, setWhiteClockMs] = useState(settings.baseSeconds * 1000);
-  const [blackClockMs, setBlackClockMs] = useState(settings.baseSeconds * 1000);
+  const [moveHistory, setMoveHistory] = useState<string[]>(restoredHistory);
+  const [viewedPly, setViewedPly] = useState(restoredLivePly);
+  const [activeColor, setActiveColor] = useState<MoverColor>(
+    restoredLivePly % 2 === 0 ? 'white' : 'black',
+  );
+  const [whiteClockMs, setWhiteClockMs] = useState(
+    resume?.whiteClockMs ?? settings.baseSeconds * 1000,
+  );
+  const [blackClockMs, setBlackClockMs] = useState(
+    resume?.blackClockMs ?? settings.baseSeconds * 1000,
+  );
   const [outcome, setOutcome] = useState<BotGameOutcome | null>(null);
   const [pgn, setPgn] = useState<string | null>(null);
   const [isBotThinking, setIsBotThinking] = useState(false);
   const [drawOfferPending, setDrawOfferPending] = useState(false);
   /** D-04 throttle counter — initialized at the cooldown value so a draw can
-   * be offered from the very start of a fresh game (no prior decline yet). */
-  const [movesSinceLastDecline, setMovesSinceLastDecline] = useState(DRAW_OFFER_COOLDOWN_MOVES);
+   * be offered from the very start of a fresh game (no prior decline yet).
+   * Seeded from `resume.movesSinceLastDecline` on a resume (Phase 170 D-09)
+   * so a refresh cannot reset the draw-offer cooldown and let it be spammed. */
+  const [movesSinceLastDecline, setMovesSinceLastDecline] = useState(
+    resume?.movesSinceLastDecline ?? DRAW_OFFER_COOLDOWN_MOVES,
+  );
+  /** Phase 170 D-03: false only for a resumed-but-unconfirmed game — see
+   * `UseBotGameState.live`. True from mount for a fresh game (zero behavior
+   * change on today's only path). */
+  const [live, setLive] = useState(resume === undefined);
+  /** Phase 170 D-11: minted once at game start, carried unchanged through a
+   * resume, re-minted ONLY by `newGame()` — see `UseBotGameState.gameUuid`.
+   * State (not a ref) because it is read in the render-phase return value
+   * below (react-hooks/refs forbids reading `.current` during render). */
+  const [gameUuid, setGameUuid] = useState<string>(() => resume?.gameUuid ?? crypto.randomUUID());
 
   const liveGamePly = moveHistory.length;
 
@@ -365,7 +490,14 @@ export function useBotGame(settings: BotGameSettings): UseBotGameState {
 
   const canOfferDrawNow = canOfferDrawGate(movesSinceLastDecline);
 
-  // ─── Keep liveGamePlyRef in sync (WR-05) ─────────────────────────────────
+  /** Phase 170 D-03: confirms a resumed game is ready to go live — the
+   * resume gate's Resume button calls this. Sets `live` unconditionally
+   * true; a no-op re-render for an already-live (fresh) game. */
+  const confirmLive = useCallback((): void => {
+    setLive(true);
+  }, []);
+
+  // ─── Keep liveGamePlyRef / movesSinceLastDeclineRef in sync (WR-05) ─────
   //
   // Runs as a passive effect AFTER each render, so by the time the NEXT
   // commitMove call happens (always triggered by a subsequent user action or
@@ -376,6 +508,10 @@ export function useBotGame(settings: BotGameSettings): UseBotGameState {
   useEffect(() => {
     liveGamePlyRef.current = liveGamePly;
   }, [liveGamePly]);
+
+  useEffect(() => {
+    movesSinceLastDeclineRef.current = movesSinceLastDecline;
+  }, [movesSinceLastDecline]);
 
   /** Sets `viewedPly` state AND keeps `viewedPlyRef` synchronously in sync
    * (WR-05) — every place `viewedPly` changes goes through this. */
@@ -415,6 +551,33 @@ export function useBotGame(settings: BotGameSettings): UseBotGameState {
     return computeChargeableElapsedMs(turnStartedAtRef.current, pausedAtRef.current, Date.now());
   }, []);
 
+  /**
+   * Phase 170 Plan 04: the SINGLE place a `BotGameSnapshot` payload is
+   * assembled. Both persistence write sites (the every-move write in
+   * `commitMove` and the tab-hide/pagehide fold write below) call this with
+   * the (possibly folded) clock bases as the only argument, so the two
+   * writes differ ONLY in what bases they pass — never in how the rest of
+   * the payload is built. Reads `chessRef`/`hasLeftBookRef`/
+   * `hasFiredLowTimeRef`/`movesSinceLastDeclineRef` via refs (safe outside
+   * render), and `gameUuid`/`settings` via closure (both are useCallback
+   * deps below, so a stale read is impossible).
+   */
+  const buildSnapshot = useCallback(
+    (bases: { white: number; black: number }): BotGameSnapshot => ({
+      version: CURRENT_SNAPSHOT_VERSION,
+      gameUuid,
+      settings,
+      pgn: chessRef.current.pgn(),
+      whiteClockMs: bases.white,
+      blackClockMs: bases.black,
+      movesSinceLastDecline: movesSinceLastDeclineRef.current,
+      hasLeftBook: hasLeftBookRef.current,
+      hasFiredLowTime: hasFiredLowTimeRef.current,
+      savedAt: Date.now(),
+    }),
+    [gameUuid, settings],
+  );
+
   // ─── End-of-game finalization ───────────────────────────────────────────────
   //
   // Sets `outcome` (stopping the clock tick via its outcome guard, see
@@ -433,10 +596,27 @@ export function useBotGame(settings: BotGameSettings): UseBotGameState {
       setOutcome(finished);
       setIsBotThinking(false);
       const tcStr = toBackendTcStr(settings.baseSeconds, settings.incrementSeconds);
-      setPgn(finalizeBotPgn(chessRef.current, finished, tcStr));
+      const finalPgn = finalizeBotPgn(chessRef.current, finished, tcStr);
+      setPgn(finalPgn);
+      // Phase 170 D-12/SC2 (STRUCTURAL, do not add a second call site): this
+      // is the ONLY `enqueuePendingStore` call site in the codebase. The
+      // queue that feeds the eventual server POST can only ever be written
+      // to by a FINISHED game, so an abandoned (unfinished) game has no
+      // reachable path to the server — behind the `outcomeRef` latch above,
+      // so a second `finalizeGame` call (e.g. a stale draw-accept resolving
+      // after checkmate) cannot double-enqueue (enqueuePendingStore is also
+      // uuid-idempotent, belt and braces). See `newGame`'s mirrored note
+      // below for why the discard path does NOT touch this queue.
+      enqueuePendingStore(ownerKey, {
+        gameUuid,
+        pgn: finalPgn,
+        settings,
+        enqueuedAt: Date.now(),
+      });
+      clearSnapshot(ownerKey);
       playSound('game-end');
     },
-    [settings.baseSeconds, settings.incrementSeconds],
+    [settings, gameUuid, ownerKey],
   );
 
   /**
@@ -529,8 +709,43 @@ export function useBotGame(settings: BotGameSettings): UseBotGameState {
       // currently in progress, the pause baseline too) — see
       // resetTurnAnchor's doc comment for why the two must travel together.
       resetTurnAnchor();
+
+      // Phase 170 D-01 (primary write path): a snapshot after every
+      // committed move, no fold needed — `clockBaseRef.current[mover]`
+      // above is already the settled post-move, post-increment value by
+      // this point. Skipped for a dormant resumed game (`!live`, so a
+      // stale re-serialization can never overwrite the source snapshot
+      // before the user confirms) and for a terminal move (`outcomeRef` is
+      // already set by the `finalizeGame` call above, whose own
+      // enqueue-and-clear owns persistence for a finished game instead) —
+      // though the `return` a few lines above already makes the terminal
+      // case unreachable here, this guard is kept explicit per the plan's
+      // stated invariant rather than relying on that ordering alone.
+      // Phase 170 D-01 (primary write path): a snapshot after every
+      // committed move, no fold needed — `clockBaseRef.current[mover]`
+      // above is already the settled post-move, post-increment value by
+      // this point. Skipped for a dormant resumed game (`!live`, so a
+      // stale re-serialization can never overwrite the source snapshot
+      // before the user confirms) and for a terminal move (`outcomeRef` is
+      // already set by the `finalizeGame` call above, whose own
+      // enqueue-and-clear owns persistence for a finished game instead) —
+      // though the `return` a few lines above already makes the terminal
+      // case unreachable here, this guard is kept explicit per the plan's
+      // stated invariant rather than relying on that ordering alone.
+      if (live && !outcomeRef.current) {
+        writeSnapshot(ownerKey, buildSnapshot(clockBaseRef.current));
+      }
     },
-    [settings.incrementSeconds, settings.userColor, finalizeGame, resetTurnAnchor, updateViewedPly],
+    [
+      settings.incrementSeconds,
+      settings.userColor,
+      finalizeGame,
+      resetTurnAnchor,
+      updateViewedPly,
+      live,
+      ownerKey,
+      buildSnapshot,
+    ],
   );
 
   // ─── User move (PLAY-03: turn-gate + auto-queen + Fischer increment) ──────
@@ -652,6 +867,9 @@ export function useBotGame(settings: BotGameSettings): UseBotGameState {
     // SC4: a fresh game re-enters the book.
     hasLeftBookRef.current = false;
     hasFiredLowTimeRef.current = false;
+    // D-11: a new game is a new game — reusing the prior uuid would make the
+    // server silently treat it as a duplicate of the game just discarded.
+    setGameUuid(crypto.randomUUID());
     setMoveHistory([]);
     updateViewedPly(0);
     setActiveColor('white');
@@ -662,7 +880,17 @@ export function useBotGame(settings: BotGameSettings): UseBotGameState {
     setIsBotThinking(false);
     setDrawOfferPending(false);
     setMovesSinceLastDecline(DRAW_OFFER_COOLDOWN_MOVES);
-  }, [settings.baseSeconds, resetTurnAnchor, updateViewedPly]);
+    // D-03: a fresh game after a discard must start immediately (Task 2).
+    setLive(true);
+    // Phase 170 D-10: clear the (now-abandoned) in-progress snapshot — a
+    // fresh game has nothing to resume into. Deliberately does NOT touch
+    // the pending-store queue (no `removePendingStore` call): the queue
+    // (D-12) is a separate key that only `finalizeGame` writes to, and a
+    // finished-but-not-yet-stored game must survive starting a new one — if
+    // a new game could drop a queued entry, a failed store followed by
+    // `newGame()` would silently destroy that finished game forever.
+    clearSnapshot(ownerKey);
+  }, [settings.baseSeconds, resetTurnAnchor, updateViewedPly, ownerKey]);
 
   // ─── Turn-anchor mount init ─────────────────────────────────────────────────
   //
@@ -670,8 +898,16 @@ export function useBotGame(settings: BotGameSettings): UseBotGameState {
   // `Date.now()` inside the `turnStartedAtRef` useRef initializer above).
   // Declared BEFORE the clock-tick effect so it runs first within the same
   // commit — React runs passive effects in declaration order.
+  //
+  // Phase 170 D-03 ("anchor after live"): gated by `live` — for a fresh game
+  // `live` is true from mount so this fires immediately exactly as before
+  // (zero behavior change). For a resumed game it no-ops until `confirmLive()`
+  // flips `live` to true, at which point this effect re-runs (its dep array
+  // includes `live`) and sets the anchor at THAT moment — no clock runs while
+  // the resume gate is on screen.
 
   useEffect(() => {
+    if (!live) return;
     const now = Date.now();
     turnStartedAtRef.current = now;
     // CR-01 (bug fix): `visibilitychange` fires only on a TRANSITION, so a game
@@ -683,15 +919,19 @@ export function useBotGame(settings: BotGameSettings): UseBotGameState {
     // shift never runs and the overcharge is permanent. Seed the pause from the
     // INITIAL visibility state.
     if (document.visibilityState === 'hidden') pausedAtRef.current = now;
-  }, []);
+  }, [live]);
 
   // ─── Clock tick (PLAY-04: wall-clock delta, never accumulated ticks) ──────
   //
   // The ACTIVE side's displayed clock is recomputed from the pause-aware
   // chargeableElapsedMs helper on every tick — flag-on-time (the only
   // loop-owned end condition) fires here.
+  //
+  // Phase 170 D-03: gated by `live` — no clock runs while a resumed game's
+  // gate is still on screen (see the turn-anchor effect above).
 
   useEffect(() => {
+    if (!live) return;
     if (outcome) return;
 
     const tick = (): void => {
@@ -734,7 +974,7 @@ export function useBotGame(settings: BotGameSettings): UseBotGameState {
     tick();
     const id = setInterval(tick, CLOCK_TICK_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [activeColor, outcome, finalizeGame, settings.userColor, chargeableElapsedMs]);
+  }, [live, activeColor, outcome, finalizeGame, settings.userColor, chargeableElapsedMs]);
 
   // ─── Hidden-tab pause (PLAY-04, matters most during the bot's think) ──────
 
@@ -756,7 +996,61 @@ export function useBotGame(settings: BotGameSettings): UseBotGameState {
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, []);
 
+  // ─── Snapshot write on tab-hide/pagehide, D-01/D-02 fold ──────────────────
+  //
+  // A SEPARATE effect from the pause-bookkeeping one directly above —
+  // deliberately NOT bolted onto that `[]`-deps handler. This handler needs
+  // to READ `activeColor`/`settings.userColor`/`chargeableElapsedMs` to
+  // build a snapshot; a `[]`-deps closure would silently freeze those at
+  // their first-mount values for the rest of the game (the exact
+  // Phase 169 "half-invariant" shape — a rule enforced in one place,
+  // bypassed via a stale closure in another, invisible to
+  // tsc/eslint/knip/a passing suite). Declared immediately AFTER the
+  // pause-bookkeeping effect so DOM listener registration order (same
+  // order as declaration, for the same event type) guarantees this
+  // handler's `visibilitychange` listener runs AFTER `pausedAtRef` has
+  // already been set for the same event — `chargeableElapsedMs()` below is
+  // then correctly clamped to the instant of hiding, not a later read.
+
+  useEffect(() => {
+    const writeHideTimeSnapshot = (): void => {
+      // No resumable snapshot to overwrite for a dormant (not-yet-confirmed)
+      // resumed game, and a terminal game's persistence is already owned by
+      // `finalizeGame`'s enqueue-and-clear (Task 2) — not this write.
+      if (!live || outcomeRef.current) return;
+      const folded = foldClockBasesForSnapshot(
+        clockBaseRef.current,
+        activeColor,
+        settings.userColor,
+        chargeableElapsedMs(),
+      );
+      writeSnapshot(ownerKey, buildSnapshot(folded));
+    };
+    const handleVisibilityHide = (): void => {
+      if (document.visibilityState === 'hidden') writeHideTimeSnapshot();
+    };
+    // `pagehide` is registered as an additional fallback for hard
+    // navigations / bfcache paths that don't always fire `visibilitychange`
+    // first — never `beforeunload`/`unload`, which are unreliable on mobile
+    // Safari and disable the bfcache in Chromium/Firefox merely by being
+    // registered.
+    document.addEventListener('visibilitychange', handleVisibilityHide);
+    window.addEventListener('pagehide', writeHideTimeSnapshot);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityHide);
+      window.removeEventListener('pagehide', writeHideTimeSnapshot);
+    };
+  }, [live, activeColor, settings.userColor, ownerKey, chargeableElapsedMs, buildSnapshot]);
+
   // ─── Provider bring-up (Pattern 1 — once per game, NOT re-run per FEN) ────
+  //
+  // Phase 170 D-03: this effect MUST stay UNCONDITIONAL with `[]` deps — do
+  // NOT add a `live` guard here. Firing at mount, while a resumed game's
+  // resume gate is still on screen, IS D-03 mechanism 1: a bot with 5s left
+  // must not flag on a worker spawn, and `WorkerPool`/`MaiaQueue` cannot be
+  // warmed from OUTSIDE this hook because they are constructed HERE — there
+  // is no external handle `Bots.tsx` could warm before this hook mounts. A
+  // future reader must not "tidy" this into the `live` gate.
 
   useEffect(() => {
     const pool = createWorkerPool();
@@ -973,12 +1267,18 @@ export function useBotGame(settings: BotGameSettings): UseBotGameState {
   // Depends on the `moveHistory` array REFERENCE (not just its length) so a
   // newGame() reset (same activeColor value as a just-finished game can
   // coincidentally have) still re-triggers via the fresh empty-array identity.
+  //
+  // Phase 170 D-03: gated by `live` — without this guard, a snapshot resumed
+  // on the BOT's turn would start a real search (and commit a think-deadline
+  // clock anchor) the instant this hook mounts, i.e. before the user has
+  // agreed to resume at all.
 
   useEffect(() => {
+    if (!live) return;
     if (outcome) return;
     if (activeColor === settings.userColor) return;
     runBotTurnRef.current?.(BOT_SEARCH_BUDGET);
-  }, [moveHistory, activeColor, outcome, settings.userColor]);
+  }, [live, moveHistory, activeColor, outcome, settings.userColor]);
 
   // ─── Return ────────────────────────────────────────────────────────────────
 
@@ -995,6 +1295,9 @@ export function useBotGame(settings: BotGameSettings): UseBotGameState {
     pgn,
     drawOfferPending,
     canOfferDraw: canOfferDrawNow,
+    gameUuid,
+    live,
+    confirmLive,
     attemptMove,
     viewPly,
     returnToLive,

@@ -52,7 +52,7 @@
 - [x] **Phase 168.5: Bot Move Pacing & Search Budget (SEED-096)** - Settle the clock/fixed-strength fork, deterministic grades + watchdog fix (SEED-095), soft early stopping + retuned `MAX_NODES` in `mctsSearch`, bounded re-calibration at the shipped budget (completed 2026-07-12)
 - [x] **Phase 169: Clocked Board + Game Loop (`useBotGame`)** - Live clocked board with pacing, all end conditions, resign/draw, and move sounds (completed 2026-07-13)
 - [x] **Phase 169.5: Bot Opening Book** - Maia-policy-weighted ECO book for the early plies: near-instant, search-free, clock-cheap, varied openings + engine prewarm during the book window
-- [ ] **Phase 170: localStorage Resume** - Leave and resume a bot game with the clock fairly paused; store each finished game exactly once
+- [x] **Phase 170: localStorage Resume** - Leave and resume a bot game with the clock fairly paused; store each finished game exactly once (completed 2026-07-14)
 - [ ] **Phase 171: Bots Page + Setup Screen + Nav** - New top-level Bots page tying setup, board, resume, and store-on-finish together for users and guests
 
 ### Phase 166: Bot Move Selection Core (`selectBotMove`)
@@ -248,7 +248,25 @@ Plans:
   2. An abandoned (unfinished) game leaves no server trace — only finished games reach the server.
   3. A game already stored on the server is never double-stored on resume (the persisted snapshot clears only after a confirmed store).
 
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+**Wave 1**
+
+- [x] 170-01-PLAN.md — Persistence primitives: versioned snapshot module, bounded pending-store queue, D-01/D-02 clock-fold rule (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 170-02-PLAN.md — Store client: StoreBotGame types, botsApi.storeGame, useStoreBotGame mutation + per-status queue drain (wave 2)
+- [x] 170-03-PLAN.md — useBotGame resume seam: seed every ref/state from the snapshot, stable gameUuid, the `live` prewarm gate (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 170-04-PLAN.md — useBotGame persistence wiring: snapshot on every move, folded snapshot on tab-hide, enqueue-and-clear on finish (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 170-05-PLAN.md — ResumeGate component + Bots.tsx wiring (owner scope, gate overlay, silent drain) + human verification (wave 4)
 
 ### Phase 171: Bots Page + Setup Screen + Nav
 
@@ -346,7 +364,7 @@ Plans:
 | 168. Headless Calibration Harness (spike-gated) | 3/3 | Complete    | 2026-07-11 |
 | 169. Clocked Board + Game Loop (`useBotGame`) | 10/10 | Complete    | 2026-07-13 |
 | 169.5. Bot Opening Book | 4/4 | Complete    | 2026-07-13 |
-| 170. localStorage Resume | 0/? | Not started | - |
+| 170. localStorage Resume | 5/5 | Complete    | 2026-07-14 |
 | 171. Bots Page + Setup Screen + Nav | 0/? | Not started | - |
 
 ## Backlog
@@ -355,7 +373,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 4/4 plans complete
+**Plans:** 5/5 plans complete
 
 Plans:
 

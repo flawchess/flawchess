@@ -27,6 +27,7 @@ import {
   hasFlaggedOnDebit,
   isLowTime,
   formatClockLabel,
+  foldClockBasesForSnapshot,
   REVEAL_DELAY_MIN_MS,
   REVEAL_DELAY_MAX_MS,
   LOW_TIME_THRESHOLD_MS,
@@ -187,6 +188,45 @@ describe('hasFlaggedOnDebit (D-15 honest flag)', () => {
 
   it('does not flag when the debit is less than the remaining time', () => {
     expect(hasFlaggedOnDebit(3000, 1400)).toBe(false);
+  });
+});
+
+describe('fold (Phase 170 D-01/D-02 leave/resume clock-fold asymmetry)', () => {
+  it('D-01: folds the elapsed think time into the active base when the user is on move (white)', () => {
+    const bases = { white: 300_000, black: 300_000 };
+    const folded = foldClockBasesForSnapshot(bases, 'white', 'white', 40_000);
+    expect(folded).toEqual({ white: 260_000, black: 300_000 });
+  });
+
+  it('D-01: folds only the active base when the user is on move as black', () => {
+    const bases = { white: 300_000, black: 300_000 };
+    const folded = foldClockBasesForSnapshot(bases, 'black', 'black', 5_000);
+    expect(folded).toEqual({ white: 300_000, black: 295_000 });
+  });
+
+  it("D-02: does NOT fold on the bot's turn — the bot's interrupted think is refunded, base written as of its last commit", () => {
+    const bases = { white: 300_000, black: 300_000 };
+    const folded = foldClockBasesForSnapshot(bases, 'black', 'white', 40_000);
+    expect(folded).toEqual({ white: 300_000, black: 300_000 });
+  });
+
+  it('clamps the folded base at zero, never negative', () => {
+    const bases = { white: 30_000, black: 300_000 };
+    const folded = foldClockBasesForSnapshot(bases, 'white', 'white', 999_999);
+    expect(folded.white).toBe(0);
+  });
+
+  it('zero elapsed is a no-op', () => {
+    const bases = { white: 300_000, black: 300_000 };
+    const folded = foldClockBasesForSnapshot(bases, 'white', 'white', 0);
+    expect(folded).toEqual({ white: 300_000, black: 300_000 });
+  });
+
+  it('never mutates the input bases object — always returns a fresh object', () => {
+    const bases = { white: 300_000, black: 300_000 };
+    const folded = foldClockBasesForSnapshot(bases, 'white', 'white', 40_000);
+    expect(folded).not.toBe(bases);
+    expect(bases).toEqual({ white: 300_000, black: 300_000 });
   });
 });
 

@@ -52,6 +52,54 @@
  *    cannot flag either side purely from hidden wall-clock time.
  * 9. "finalize-idempotency" (WR-03) — a stale draw-accept resolving after a
  *    bot move has already delivered checkmate cannot overwrite the outcome.
+ * 10. "resume-seed" (Phase 170 D-10/D-09) — a `BotGameSnapshot` passed as the
+ *     hook's `resume` argument seeds `hasLeftBook`, `hasFiredLowTime`,
+ *     `movesSinceLastDecline`, `moveHistory`/`position`/`viewedPly`/
+ *     `liveGamePly` (opens LIVE, not scrolled back), `activeColor` (move-count
+ *     parity), and `whiteClockMs`/`blackClockMs` — each with its OWN named
+ *     assertion (mutation-test discipline: reverting any one seed individually
+ *     must turn a specific test red, per project memory
+ *     feedback_mutation_test_gap_closures).
+ * 11. "no-away-time" (Phase 170 D-01/D-02) — the restored clock bases equal
+ *     the snapshot's bases exactly at mount, even hours of real wall-clock
+ *     time after `savedAt`, and stay frozen until `confirmLive()`.
+ * 12. "stable-uuid" (Phase 170 D-11) — a resumed hook's `gameUuid` equals
+ *     `resume.gameUuid`; a fresh hook mints a fresh `crypto.randomUUID()`;
+ *     `newGame()` re-mints it to a different value.
+ * 13. "prewarm-gate" (Phase 170 D-03) — a resumed hook mounts with
+ *     `live: false`: the provider bring-up effect (`pool.warm()`/
+ *     `queue.warm()`) still fires immediately (unconditional), but the
+ *     turn-anchor/clock-tick/bot-turn-trigger effects wait for
+ *     `confirmLive()` — zero `selectBotMove` calls and a frozen clock before
+ *     it, exactly one call and a ticking clock after. A fresh hook is
+ *     `live: true` from mount, unchanged.
+ * 14. "snapshot-write" (Phase 170 D-01, Plan 04) — `commitMove` writes a
+ *     snapshot after every committed move; `readSnapshot(ownerKey)`'s PGN
+ *     history and clock bases match the hook's own state. Plan 04 REVERT
+ *     PROOF #3: removing the write turns this red.
+ * 15. "hide-fold" (Phase 170 D-01/D-02, Plan 04) — a `visibilitychange`
+ *     (hidden) or `pagehide` event writes a snapshot with the fold applied:
+ *     40s into the USER's turn bills those 40s into the persisted base; the
+ *     same hide during the BOT's turn bills nothing (both bases unchanged).
+ *     `clockBaseRef` itself is never mutated by the write (proven via a
+ *     follow-up commit's debit, not doubled). Plan 04 REVERT PROOF #1/#2.
+ * 16. "finalize-enqueue" (Phase 170 D-12/SC2, Plan 04) — `finalizeGame`
+ *     enqueues exactly one pending-store entry (checkmate/resign/timeout)
+ *     and clears the in-progress snapshot; a stale second `finalizeGame`
+ *     call (WR-03) does not add a second entry. Plan 04 REVERT PROOF #5.
+ * 17. "store-once" (Phase 170 SC2, Plan 04) — an unfinished game's
+ *     `listPendingStore(ownerKey)` stays EMPTY even after a tab-hide and an
+ *     unmount; only `finalizeGame` ever enqueues. Plan 04 REVERT PROOF #4.
+ * 18. "newgame-pending-store" (Phase 170 D-12, Plan 04) — `newGame()` clears
+ *     the in-progress snapshot but leaves an existing pending-store entry
+ *     untouched.
+ *
+ * NOTE: the "Plan 04 REVERT PROOF #N" labels above are Plan 04's OWN
+ * numbering (Task 1: #1-#3, Task 2: #4-#5) — distinct from the pre-existing
+ * "REVERT PROOF #4"/"#5" labels inside the "prewarm-gate" describe block
+ * above, which are Plan 03's own numbering for a different pair of
+ * mechanisms. Both sets of labels are correct within their own plan's
+ * SUMMARY.md; do not conflate them.
  *
  * Scripted move sequences (verified via a direct chess.js run before writing
  * these tests, not hand-derived from memory):
@@ -171,15 +219,26 @@ vi.mock('@sentry/react', () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
 }));
 
+import { Chess } from 'chess.js';
 import { useBotGame, type BotGameSettings } from '../useBotGame';
 import {
   computeThinkDeadlineMs,
   REVEAL_DELAY_MAX_MS,
   REVEAL_DELAY_MIN_MS,
+  LOW_TIME_THRESHOLD_MS,
 } from '@/lib/chessClock';
 import { BOT_MIN_SEARCH_NODES } from '@/lib/engine/deadlineSearch';
 import { BOOK_POLICY_FLOOR } from '@/lib/engine/openingBook';
 import type { MoveGrade } from '@/lib/moveQuality';
+import { DRAW_OFFER_COOLDOWN_MOVES } from '@/lib/botDrawGate';
+import { annotateClock } from '@/lib/botGamePgn';
+import {
+  readSnapshot,
+  restoreChess,
+  CURRENT_SNAPSHOT_VERSION,
+  type BotGameSnapshot,
+} from '@/lib/botGameSnapshot';
+import { listPendingStore, enqueuePendingStore } from '@/lib/botPendingStore';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -232,6 +291,51 @@ const BOOK_SANS = ['e4', 'd4', 'Nf3', 'c4'];
 /** Fake duration of a SEARCHED (out-of-book) move in the clock-cost contrast case. */
 const FAKE_SEARCH_MS = 6_000;
 
+/** Matches a `crypto.randomUUID()` (RFC 4122 v4) string — used to prove a
+ * fresh hook mints a REAL uuid, not a fixed placeholder. */
+const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Phase 170 — builds a resume fixture by playing a REAL chess.js game and
+ * annotating every ply with the SAME `annotateClock` call shape production's
+ * `commitMove` uses (mirrors `botGameSnapshot.test.ts`'s `buildAnnotatedGame`
+ * precedent, Plan 01) — never a hand-typed PGN string, so the fixture
+ * exercises the real produce->consume path through `restoreChess`/`loadPgn`.
+ * `sans` defaults to 4 plies (white to move next); pass a 3-ply list for a
+ * bot-to-move (black) fixture.
+ */
+function buildResumeSnapshot(
+  overrides: Partial<BotGameSnapshot> = {},
+  sans: string[] = ['e4', 'e5', 'Nf3', 'Nc6'],
+): BotGameSnapshot {
+  const chess = new Chess();
+  let whiteMs = 300_000;
+  let blackMs = 300_000;
+  sans.forEach((san, i) => {
+    chess.move(san);
+    if (i % 2 === 0) {
+      whiteMs -= 3_000;
+      annotateClock(chess, whiteMs);
+    } else {
+      blackMs -= 3_000;
+      annotateClock(chess, blackMs);
+    }
+  });
+  return {
+    version: CURRENT_SNAPSHOT_VERSION,
+    gameUuid: 'resume-fixture-uuid',
+    settings: DEFAULT_SETTINGS,
+    pgn: chess.pgn(),
+    whiteClockMs: whiteMs,
+    blackClockMs: blackMs,
+    movesSinceLastDecline: DRAW_OFFER_COOLDOWN_MOVES,
+    hasLeftBook: false,
+    hasFiredLowTime: false,
+    savedAt: Date.now(),
+    ...overrides,
+  };
+}
+
 /** Advances the fake clock (wrapped in act so React flushes the resulting
  * state updates), the standard way every test lets a bot think/reveal-delay
  * resolve without a real setTimeout wait. */
@@ -258,6 +362,7 @@ function setHidden(hidden: boolean): void {
 
 describe('useBotGame', () => {
   beforeEach(() => {
+    localStorage.clear();
     vi.useFakeTimers({ now: 0 });
     mockSelectBotMove.mockReset();
     // Default: never resolves — tests that don't care about the bot's reply
@@ -1179,6 +1284,553 @@ describe('useBotGame', () => {
 
       expect(pgn).toContain('[Termination "checkmate"]');
       expect(pgn).toContain('[Result "0-1"]');
+    });
+  });
+
+  // ─── resume-seed (Phase 170 D-10/D-09) ───────────────────────────────────
+
+  describe('resume-seed', () => {
+    it('hasLeftBook seed survives a resume — the bot searches instead of consulting the book on its next turn', async () => {
+      // 3 plies: black (the bot, userColor=white) to move next.
+      const resume = buildResumeSnapshot({ hasLeftBook: true }, ['e4', 'e5', 'Nf3']);
+      // The book WOULD gladly answer if consulted — proving the skip is real,
+      // not just "nothing cleared the floor" (the rest of the suite's default).
+      mockPolicy.mockResolvedValue(BOOK_POLICY);
+      mockSelectBotMove.mockResolvedValueOnce('b8c6');
+      const { result } = renderHook(() => useBotGame(DEFAULT_SETTINGS, resume));
+
+      act(() => {
+        result.current.confirmLive();
+      });
+      await advance(REVEAL_DELAY_MAX_MS + 100);
+
+      expect(mockPolicy).not.toHaveBeenCalled(); // resolveBookMove never consulted
+      expect(mockSelectBotMove).toHaveBeenCalledTimes(1);
+      expect(result.current.moveHistory).toEqual(['e4', 'e5', 'Nf3', 'Nc6']);
+      // REVERT PROOF #1 (record in SUMMARY): drop the hasLeftBookRef resume
+      // seed (back to `useRef(false)`) and this goes RED — mockPolicy IS
+      // called (the book gets consulted) and moveHistory ends with a
+      // BOOK_POLICY-sampled move instead of 'Nc6'.
+    });
+
+    it('movesSinceLastDecline seed survives a resume — canOfferDraw is false immediately, no confirmLive() needed', () => {
+      const resume = buildResumeSnapshot({ movesSinceLastDecline: 0 });
+      const { result } = renderHook(() => useBotGame(DEFAULT_SETTINGS, resume));
+
+      expect(result.current.canOfferDraw).toBe(false);
+      // REVERT PROOF #2 (record in SUMMARY): drop the movesSinceLastDecline
+      // resume seed (back to `useState(DRAW_OFFER_COOLDOWN_MOVES)`) and this
+      // goes RED — canOfferDraw becomes true on a resumed game whose cooldown
+      // should still be active.
+    });
+
+    it('hasFiredLowTime seed survives a resume — the low-time sound does not re-fire when the threshold is crossed again', async () => {
+      const crossingClockMs = LOW_TIME_THRESHOLD_MS + 500;
+      const resume = buildResumeSnapshot({ hasFiredLowTime: true, whiteClockMs: crossingClockMs });
+      const { result, unmount } = renderHook(() => useBotGame(DEFAULT_SETTINGS, resume));
+
+      act(() => {
+        result.current.confirmLive();
+      });
+      await advance(700);
+
+      expect(result.current.whiteClockMs).toBeLessThan(LOW_TIME_THRESHOLD_MS); // the crossing really happened
+      expect(mockPlaySound).not.toHaveBeenCalledWith('low-time');
+      unmount();
+
+      // POSITIVE COMPANION — without the seed (hasFiredLowTime: false), the
+      // exact same crossing DOES fire the sound, proving the assertion above
+      // is not vacuously true (e.g. the sound being broken generally).
+      mockPlaySound.mockClear();
+      const resumeUnfired = buildResumeSnapshot({
+        hasFiredLowTime: false,
+        whiteClockMs: crossingClockMs,
+      });
+      const second = renderHook(() => useBotGame(DEFAULT_SETTINGS, resumeUnfired));
+      act(() => {
+        second.result.current.confirmLive();
+      });
+      await advance(700);
+
+      expect(mockPlaySound).toHaveBeenCalledWith('low-time');
+      second.unmount();
+      // REVERT PROOF #3 (record in SUMMARY): drop the hasFiredLowTimeRef
+      // resume seed (back to `useRef(false)`) and the FIRST assertion above
+      // goes RED — the sound fires again on a resumed game that already
+      // played it once.
+    });
+
+    it('restores moveHistory/position/viewedPly/liveGamePly LIVE (not scrolled back to ply 0)', () => {
+      const sans = ['e4', 'e5', 'Nf3', 'Nc6'];
+      const resume = buildResumeSnapshot({}, sans);
+      const { result } = renderHook(() => useBotGame(DEFAULT_SETTINGS, resume));
+
+      expect(result.current.moveHistory).toEqual(sans);
+      expect(result.current.liveGamePly).toBe(sans.length);
+      expect(result.current.viewedPly).toBe(sans.length); // live, not 0
+      const expectedChess = new Chess();
+      expectedChess.loadPgn(resume.pgn); // chess.js 1.4.0's loadPgn returns void
+      expect(result.current.position).toBe(expectedChess.fen());
+    });
+
+    it("activeColor is derived from the restored move count's parity", () => {
+      const evenResume = buildResumeSnapshot({}, ['e4', 'e5', 'Nf3', 'Nc6']); // 4 plies -> white
+      const { result: evenResult } = renderHook(() => useBotGame(DEFAULT_SETTINGS, evenResume));
+      expect(evenResult.current.activeColor).toBe('white');
+
+      const oddResume = buildResumeSnapshot({}, ['e4', 'e5', 'Nf3']); // 3 plies -> black
+      const { result: oddResult } = renderHook(() => useBotGame(DEFAULT_SETTINGS, oddResume));
+      expect(oddResult.current.activeColor).toBe('black');
+    });
+
+    it('whiteClockMs/blackClockMs equal the snapshot bases exactly on first render', () => {
+      const resume = buildResumeSnapshot({ whiteClockMs: 123_456, blackClockMs: 98_765 });
+      const { result } = renderHook(() => useBotGame(DEFAULT_SETTINGS, resume));
+
+      expect(result.current.whiteClockMs).toBe(123_456);
+      expect(result.current.blackClockMs).toBe(98_765);
+    });
+
+    it('a fresh hook (resume === undefined) is completely unaffected — the pre-existing suite proves this unmodified', () => {
+      const { result } = renderHook(() => useBotGame(DEFAULT_SETTINGS));
+
+      expect(result.current.moveHistory).toEqual([]);
+      expect(result.current.viewedPly).toBe(0);
+      expect(result.current.liveGamePly).toBe(0);
+      expect(result.current.activeColor).toBe('white');
+      expect(result.current.whiteClockMs).toBe(DEFAULT_SETTINGS.baseSeconds * 1000);
+      expect(result.current.blackClockMs).toBe(DEFAULT_SETTINGS.baseSeconds * 1000);
+      expect(result.current.canOfferDraw).toBe(true);
+    });
+  });
+
+  // ─── no-away-time (Phase 170 D-01/D-02) ──────────────────────────────────
+
+  describe('no-away-time', () => {
+    it('clock bases equal the snapshot exactly at mount, even hours of real wall-clock time after savedAt', () => {
+      const HOURS_LATER_MS = 5 * 60 * 60 * 1000;
+      vi.setSystemTime(HOURS_LATER_MS);
+      const resume = buildResumeSnapshot({ savedAt: 0, whiteClockMs: 250_000, blackClockMs: 200_000 });
+      const { result } = renderHook(() => useBotGame(DEFAULT_SETTINGS, resume));
+
+      expect(result.current.whiteClockMs).toBe(250_000);
+      expect(result.current.blackClockMs).toBe(200_000);
+    });
+
+    it('advancing time further BEFORE confirmLive() still does not move the clocks', async () => {
+      const resume = buildResumeSnapshot({ whiteClockMs: 250_000, blackClockMs: 200_000 });
+      const { result } = renderHook(() => useBotGame(DEFAULT_SETTINGS, resume));
+
+      await advance(10_000);
+
+      expect(result.current.whiteClockMs).toBe(250_000);
+      expect(result.current.blackClockMs).toBe(200_000);
+    });
+  });
+
+  // ─── stable-uuid (Phase 170 D-11) ────────────────────────────────────────
+
+  describe('stable-uuid', () => {
+    it('a resumed hook keeps resume.gameUuid; a fresh hook mints a fresh crypto.randomUUID(); newGame() re-mints', () => {
+      const resume = buildResumeSnapshot({ gameUuid: 'existing-uuid-123' });
+      const { result: resumedResult } = renderHook(() => useBotGame(DEFAULT_SETTINGS, resume));
+      expect(resumedResult.current.gameUuid).toBe('existing-uuid-123');
+
+      const { result } = renderHook(() => useBotGame(DEFAULT_SETTINGS));
+      expect(result.current.gameUuid).toMatch(UUID_V4_PATTERN);
+      expect(result.current.gameUuid).not.toBe('existing-uuid-123');
+
+      const uuidBeforeNewGame = result.current.gameUuid;
+      act(() => {
+        result.current.newGame();
+      });
+      expect(result.current.gameUuid).not.toBe(uuidBeforeNewGame);
+      expect(result.current.gameUuid).toMatch(UUID_V4_PATTERN);
+    });
+  });
+
+  // ─── prewarm-gate (Phase 170 D-03) ───────────────────────────────────────
+
+  describe('prewarm-gate', () => {
+    it('a bot-to-move resume runs zero searches and freezes the bot clock before confirmLive(); exactly one search and a live clock after', async () => {
+      const resume = buildResumeSnapshot({}, ['e4', 'e5', 'Nf3']); // black (bot) to move
+      mockSelectBotMove.mockResolvedValueOnce('b8c6');
+      const { result } = renderHook(() => useBotGame(DEFAULT_SETTINGS, resume));
+
+      expect(result.current.live).toBe(false);
+      await advance(5000);
+      expect(mockSelectBotMove).not.toHaveBeenCalled();
+      expect(result.current.blackClockMs).toBe(resume.blackClockMs); // frozen
+
+      act(() => {
+        result.current.confirmLive();
+      });
+      await advance(REVEAL_DELAY_MAX_MS + 100);
+
+      expect(mockSelectBotMove).toHaveBeenCalledTimes(1);
+      expect(result.current.moveHistory).toEqual(['e4', 'e5', 'Nf3', 'Nc6']);
+      // REVERT PROOF #4 (record in SUMMARY): remove `if (!live) return;` from
+      // the bot-turn-trigger effect and the "zero calls before confirm"
+      // assertion goes RED.
+    });
+
+    it('the providers warm BEFORE confirmLive() on a resumed mount — D-03 mechanism 1 is deliberately NOT gated', () => {
+      const resume = buildResumeSnapshot({}, ['e4', 'e5', 'Nf3']);
+      renderHook(() => useBotGame(DEFAULT_SETTINGS, resume));
+
+      expect(mockPoolWarm).toHaveBeenCalledTimes(1);
+      expect(mockQueueWarm).toHaveBeenCalledTimes(1);
+      // REVERT PROOF #5 (record in SUMMARY): ADD `if (!live) return;` to the
+      // provider bring-up effect and this goes RED.
+    });
+
+    it('a user-to-move resume does not tick the clock before confirmLive(); it ticks after', async () => {
+      const resume = buildResumeSnapshot({}, ['e4', 'e5', 'Nf3', 'Nc6']); // white (user) to move
+      const { result } = renderHook(() => useBotGame(DEFAULT_SETTINGS, resume));
+
+      await advance(5000);
+      expect(result.current.whiteClockMs).toBe(resume.whiteClockMs); // frozen
+
+      act(() => {
+        result.current.confirmLive();
+      });
+      await advance(2000);
+
+      expect(result.current.whiteClockMs).toBeLessThan(resume.whiteClockMs);
+    });
+
+    it('a fresh hook (resume undefined) is live from mount — zero behavior change on today\'s only path', () => {
+      const { result } = renderHook(() => useBotGame(DEFAULT_SETTINGS));
+      expect(result.current.live).toBe(true);
+    });
+
+    it('newGame() sets live back to true, even for a resumed-but-unconfirmed hook', () => {
+      const resume = buildResumeSnapshot({}, ['e4', 'e5', 'Nf3']);
+      const { result } = renderHook(() => useBotGame(DEFAULT_SETTINGS, resume));
+      expect(result.current.live).toBe(false);
+
+      act(() => {
+        result.current.newGame();
+      });
+
+      expect(result.current.live).toBe(true);
+    });
+  });
+
+  // ─── snapshot-write (Phase 170 D-01, Plan 04) ────────────────────────────
+
+  describe('snapshot-write', () => {
+    const OWNER_KEY = 'snapshot-write-owner';
+
+    it('writes a snapshot after a user move whose PGN history and clock bases match the hook state', () => {
+      const { result } = renderHook(() =>
+        useBotGame(DEFAULT_SETTINGS, undefined, OWNER_KEY),
+      );
+
+      act(() => {
+        result.current.attemptMove('e2', 'e4');
+      });
+
+      const snap = readSnapshot(OWNER_KEY);
+      expect(snap).not.toBeNull();
+      expect(restoreChess(snap!.pgn).history()).toEqual(result.current.moveHistory);
+      expect(snap!.whiteClockMs).toBe(result.current.whiteClockMs);
+      expect(snap!.blackClockMs).toBe(result.current.blackClockMs);
+      expect(snap!.gameUuid).toBe(result.current.gameUuid);
+      expect(snap!.hasLeftBook).toBe(false);
+      expect(snap!.hasFiredLowTime).toBe(false);
+    });
+
+    it('fires on EVERY committed move, including a bot reply — not gated on whether this game instance was itself resumed', async () => {
+      mockSelectBotMove.mockResolvedValueOnce('e7e5');
+      const { result } = renderHook(() =>
+        useBotGame(DEFAULT_SETTINGS, undefined, OWNER_KEY),
+      );
+
+      act(() => {
+        result.current.attemptMove('e2', 'e4');
+      });
+      const afterUserMove = readSnapshot(OWNER_KEY);
+      expect(restoreChess(afterUserMove!.pgn).history()).toEqual(['e4']);
+
+      await advance(REVEAL_DELAY_MAX_MS + 100);
+
+      const afterBotMove = readSnapshot(OWNER_KEY);
+      expect(restoreChess(afterBotMove!.pgn).history()).toEqual(['e4', 'e5']);
+    });
+
+    it('does NOT write while a resumed game is dormant (live === false) — commitMove\'s own `live` guard is the backstop, not just UI-level gating', () => {
+      const resume = buildResumeSnapshot({}, ['e4', 'e5', 'Nf3', 'Nc6']); // white (user) to move next
+      const { result } = renderHook(() =>
+        useBotGame(DEFAULT_SETTINGS, resume, OWNER_KEY),
+      );
+      expect(result.current.live).toBe(false);
+      expect(readSnapshot(OWNER_KEY)).toBeNull(); // nothing written on mount alone
+
+      // `attemptMove` has no `live` guard of its own (that gating lives in
+      // the UI layer, Plan 05) — a move applied while still dormant DOES
+      // commit, so this genuinely exercises commitMove's own `if (live &&
+      // ...)` guard as the real backstop, not a vacuous "nothing happened".
+      act(() => {
+        result.current.attemptMove('d2', 'd4');
+      });
+      expect(result.current.moveHistory).toEqual(['e4', 'e5', 'Nf3', 'Nc6', 'd4']);
+      expect(readSnapshot(OWNER_KEY)).toBeNull(); // still no write — dormant guard held
+    });
+  });
+
+  // ─── hide-fold (Phase 170 D-01/D-02, Plan 04) ────────────────────────────
+
+  describe('hide-fold', () => {
+    const OWNER_KEY = 'hide-fold-owner';
+
+    it("D-01: bills the user's 40s of in-turn think time into the persisted white base on hide; the bot's base is unchanged", async () => {
+      renderHook(() => useBotGame(DEFAULT_SETTINGS, undefined, OWNER_KEY)); // userColor: white
+
+      await advance(40_000); // 40s into the user's (white's) turn
+      act(() => {
+        setHidden(true);
+      });
+
+      const snap = readSnapshot(OWNER_KEY);
+      expect(snap).not.toBeNull();
+      expect(snap!.whiteClockMs).toBe(260_000); // 300_000 - 40_000
+      expect(snap!.blackClockMs).toBe(300_000); // bot's base — untouched
+    });
+
+    it("D-02: does NOT fold on the bot's turn — both bases are written unmodified, as of the bot's last commit", async () => {
+      const settings: BotGameSettings = { ...DEFAULT_SETTINGS, userColor: 'black' };
+      renderHook(() => useBotGame(settings, undefined, OWNER_KEY)); // bot is white, moves first
+
+      await advance(0); // let the book decline (beforeEach's empty policy) and the search dispatch
+      await advance(40_000); // 40s into the bot's (white's) turn — search still hanging (default mock)
+      act(() => {
+        setHidden(true);
+      });
+
+      const snap = readSnapshot(OWNER_KEY);
+      expect(snap).not.toBeNull();
+      expect(snap!.whiteClockMs).toBe(300_000); // bot's base — unmodified
+      expect(snap!.blackClockMs).toBe(300_000); // user's base — unmodified too
+    });
+
+    it('a pagehide event produces the same fold write as visibilitychange', async () => {
+      renderHook(() => useBotGame(DEFAULT_SETTINGS, undefined, OWNER_KEY));
+
+      await advance(40_000);
+      act(() => {
+        window.dispatchEvent(new Event('pagehide'));
+      });
+
+      const snap = readSnapshot(OWNER_KEY);
+      expect(snap).not.toBeNull();
+      expect(snap!.whiteClockMs).toBe(260_000);
+    });
+
+    it('a duplicate hidden event (visibilitychange then pagehide, mirroring Safari) does not double-fold — both writes carry the SAME clock bases', async () => {
+      renderHook(() => useBotGame(DEFAULT_SETTINGS, undefined, OWNER_KEY));
+
+      await advance(40_000);
+      act(() => {
+        setHidden(true); // sets pausedAtRef, first write
+      });
+      const firstSnap = readSnapshot(OWNER_KEY);
+
+      act(() => {
+        window.dispatchEvent(new Event('pagehide')); // second write, same clamped elapsed
+      });
+      const secondSnap = readSnapshot(OWNER_KEY);
+
+      expect(firstSnap!.whiteClockMs).toBe(secondSnap!.whiteClockMs);
+      expect(firstSnap!.blackClockMs).toBe(secondSnap!.blackClockMs);
+    });
+
+    it('does not mutate the live clock base — a move committed right after the hide-write debits the normal amount once, not doubled', () => {
+      const { result } = renderHook(() =>
+        useBotGame(DEFAULT_SETTINGS, undefined, OWNER_KEY),
+      );
+
+      // Nothing else advances the fake clock between hide and un-hide, so
+      // chargeableElapsedMs() reads the SAME ~40s both at hide-time (for the
+      // fold) and at the very next commitMove (for the real debit) — if the
+      // fold had mutated clockBaseRef.current instead of writing a copy, the
+      // debit below would be ~80s instead of ~40s. `vi.setSystemTime` (not
+      // `advance`) moves the clock WITHOUT firing the pending 100ms tick
+      // interval, matching this file's existing "the commit path is the
+      // detector, not the tick" convention.
+      vi.setSystemTime(40_000);
+      act(() => {
+        setHidden(true);
+      });
+      act(() => {
+        setHidden(false);
+      });
+      act(() => {
+        result.current.attemptMove('e2', 'e4');
+      });
+
+      const debited = 300_000 - result.current.whiteClockMs;
+      expect(debited).toBeGreaterThanOrEqual(40_000);
+      expect(debited).toBeLessThan(45_000); // NOT ~80_000 (a doubled debit)
+      // Plan 04 REVERT PROOF #2 (record in SUMMARY): make the hide-time
+      // write mutate `clockBaseRef.current` directly instead of passing a
+      // copy from `foldClockBasesForSnapshot` — this assertion goes RED
+      // (debited jumps to ~80_000).
+    });
+  });
+
+  // ─── finalize-enqueue (Phase 170 D-12/SC2, Plan 04) ──────────────────────
+
+  describe('finalize-enqueue', () => {
+    const OWNER_KEY = 'finalize-enqueue-owner';
+
+    it('checkmate enqueues exactly one entry carrying gameUuid/pgn/settings and clears the in-progress snapshot', async () => {
+      mockSelectBotMove.mockResolvedValueOnce('e7e5').mockResolvedValueOnce('d8h4');
+      const { result } = renderHook(() =>
+        useBotGame(DEFAULT_SETTINGS, undefined, OWNER_KEY),
+      );
+
+      act(() => {
+        result.current.attemptMove('f2', 'f3');
+      });
+      await advance(2000);
+      act(() => {
+        result.current.attemptMove('g2', 'g4');
+      });
+      await advance(2000);
+
+      expect(result.current.outcome).toEqual({ reason: 'checkmate', winner: 'black' });
+      const entries = listPendingStore(OWNER_KEY);
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.gameUuid).toBe(result.current.gameUuid);
+      expect(entries[0]?.pgn).toBe(result.current.pgn);
+      expect(entries[0]?.settings).toEqual(DEFAULT_SETTINGS);
+      expect(readSnapshot(OWNER_KEY)).toBeNull();
+    });
+
+    it('resign enqueues exactly one entry and clears the in-progress snapshot', () => {
+      const { result } = renderHook(() =>
+        useBotGame(DEFAULT_SETTINGS, undefined, OWNER_KEY),
+      );
+
+      act(() => {
+        result.current.attemptMove('e2', 'e4');
+      });
+      act(() => {
+        result.current.resign();
+      });
+
+      expect(result.current.outcome).toEqual({ reason: 'resignation', winner: 'black' });
+      const entries = listPendingStore(OWNER_KEY);
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.gameUuid).toBe(result.current.gameUuid);
+      expect(readSnapshot(OWNER_KEY)).toBeNull();
+    });
+
+    it('a flag-on-time enqueues exactly one entry and clears the in-progress snapshot', async () => {
+      const { result } = renderHook(() =>
+        useBotGame({ ...DEFAULT_SETTINGS, baseSeconds: 1 }, undefined, OWNER_KEY),
+      );
+
+      await advance(1100);
+
+      expect(result.current.outcome).toEqual({ reason: 'timeout', winner: 'black' });
+      const entries = listPendingStore(OWNER_KEY);
+      expect(entries).toHaveLength(1);
+      expect(readSnapshot(OWNER_KEY)).toBeNull();
+      // Plan 04 REVERT PROOF #5 (record in SUMMARY): remove the
+      // `clearSnapshot` call from `finalizeGame` — the
+      // `readSnapshot(OWNER_KEY)).toBeNull()` assertion above (and in the
+      // checkmate/resign tests above) goes RED.
+    });
+
+    it('WR-03: a second finalizeGame call (stale draw-accept after checkmate) does not add a second queue entry', async () => {
+      acceptDrawOverride.value = true;
+      mockSelectBotMove.mockResolvedValueOnce('e7e5').mockResolvedValueOnce('d8h4');
+      const { result } = renderHook(() =>
+        useBotGame(DEFAULT_SETTINGS, undefined, OWNER_KEY),
+      );
+      const staleOfferDraw = result.current.offerDraw; // captured before checkmate (WR-03 pattern)
+
+      act(() => {
+        result.current.attemptMove('f2', 'f3');
+      });
+      await advance(2000);
+      act(() => {
+        result.current.attemptMove('g2', 'g4');
+      });
+      await advance(2000);
+
+      expect(result.current.outcome).toEqual({ reason: 'checkmate', winner: 'black' });
+      expect(listPendingStore(OWNER_KEY)).toHaveLength(1);
+
+      act(() => {
+        staleOfferDraw();
+      });
+      await advance(0);
+
+      expect(listPendingStore(OWNER_KEY)).toHaveLength(1); // unchanged — no duplicate entry
+    });
+  });
+
+  // ─── store-once (Phase 170 SC2, Plan 04) ─────────────────────────────────
+
+  describe('store-once', () => {
+    const OWNER_KEY = 'store-once-owner';
+
+    it('an unfinished game leaves the pending-store queue EMPTY even after a tab-hide and an unmount — only finalizeGame ever enqueues', () => {
+      const { result, unmount } = renderHook(() =>
+        useBotGame(DEFAULT_SETTINGS, undefined, OWNER_KEY),
+      );
+
+      act(() => {
+        result.current.attemptMove('e2', 'e4');
+      });
+
+      expect(listPendingStore(OWNER_KEY)).toEqual([]);
+      expect(readSnapshot(OWNER_KEY)).not.toBeNull(); // a snapshot DOES exist
+
+      act(() => {
+        setHidden(true);
+      });
+      unmount();
+
+      expect(listPendingStore(OWNER_KEY)).toEqual([]);
+      // Plan 04 REVERT PROOF #4 (record in SUMMARY): move the
+      // `enqueuePendingStore` call from `finalizeGame` into `commitMove` —
+      // this assertion goes RED (the unfinished game gets queued).
+    });
+  });
+
+  // ─── newgame-pending-store (Phase 170 D-12, Plan 04) ─────────────────────
+
+  describe('newgame-pending-store', () => {
+    const OWNER_KEY = 'newgame-pending-store-owner';
+
+    it('newGame() clears the in-progress snapshot and leaves an existing pending-store entry UNTOUCHED', () => {
+      enqueuePendingStore(OWNER_KEY, {
+        gameUuid: 'already-finished-game',
+        pgn: new Chess().pgn(),
+        settings: DEFAULT_SETTINGS,
+        enqueuedAt: Date.now(),
+      });
+
+      const { result } = renderHook(() =>
+        useBotGame(DEFAULT_SETTINGS, undefined, OWNER_KEY),
+      );
+      act(() => {
+        result.current.attemptMove('e2', 'e4');
+      });
+      expect(readSnapshot(OWNER_KEY)).not.toBeNull();
+
+      act(() => {
+        result.current.newGame();
+      });
+
+      expect(readSnapshot(OWNER_KEY)).toBeNull();
+      const entries = listPendingStore(OWNER_KEY);
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.gameUuid).toBe('already-finished-game');
     });
   });
 });
