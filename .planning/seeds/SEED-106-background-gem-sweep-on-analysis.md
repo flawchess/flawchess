@@ -72,14 +72,25 @@ per-node resolution — a confirmed `GemDetail` or an explicit `null` miss. The 
   `gemByNode` sticky cache. The sweep MUST yield to the position the user is actually
   looking at — never starve the live free-run/grading engines for the current node.
 
-- **D6 — `games.opening_ply_count` (new nullable SmallInteger).** `opening_lookup.py`
-  builds a SAN trie from `app/data/openings.tsv` (3,642 lines), walks to the deepest match,
-  and **throws the depth away** — it returns only `(eco, name)`. Persist that depth,
-  expose it on the game-detail payload. Backfill is pure SAN replay through the trie: no
-  engine, no eval-pipeline load. Rejected alternatives: shipping the trie to the frontend
-  as a generated table (bundle cost in a mobile-first PWA to answer one boolean per ply),
-  and a fixed ply threshold (wrong in both directions — kills real gems in sharp early
-  lines, waves through theory in long ones).
+- **D6 — `opening_ply_count`, computed on-read. No column, no migration, no backfill.**
+  `opening_lookup.py` builds a SAN trie from `app/data/openings.tsv` (3,642 lines) as a
+  module-level singleton (`_TRIE`, line 89), walks to the deepest match, and **throws the
+  depth away** — `find_opening` returns only `(eco, name)`. The walk is a few dozen dict
+  lookups on an already-loaded trie, and the game-detail payload already ships
+  `moves: list[str]` (`app/schemas/library.py:129`), so the depth is simply computed when
+  the game is opened and returned as an additive field. Persisting it would buy nothing and
+  cost a migration plus a backfill over a large prod table.
+  Two implementation details: `find_opening` takes a **PGN** and normalizes to SAN
+  internally, so the detail path wants a `find_opening_from_moves(moves)` variant rather
+  than re-parsing the stored PGN; and the loop tracks `last_result` but not *its* depth, so
+  it needs an index carried alongside.
+  Rejected alternatives: a persisted `games.opening_ply_count` column (migration + backfill
+  for a value that is free to recompute); shipping the trie to the frontend as a generated
+  table (bundle cost in a mobile-first PWA to answer one boolean per ply); and a fixed ply
+  threshold (wrong in both directions — kills real gems in sharp early lines, waves through
+  theory in long ones).
+  Revisit only if book depth is ever needed in a SQL filter or aggregate — nothing in this
+  seed needs that.
   **This supersedes SEED-092's D-02 ("no opening-ply guard").** Rationale: at low ratings a
   memorized theory move has low Maia probability, so C1 cannot distinguish preparation from
   insight. C2 suppresses most book positions (they usually have several playable moves),
@@ -98,8 +109,8 @@ per-node resolution — a confirmed `GemDetail` or an explicit `null` miss. The 
   C2, nowhere near a real-game rate), so the **absolute** frequencies are inflated and only
   the ratios transfer.
 
-- **D8 — Opening-book markers in the move list.** `opening_ply_count` earns its migration
-  twice: it gates the sweep (D4) and marks every ply ≤ `opening_ply_count` as theory.
+- **D8 — Opening-book markers in the move list.** `opening_ply_count` earns itself twice:
+  it gates the sweep (D4) and marks every ply ≤ `opening_ply_count` as theory.
   **Open call for the phase:** marker precedence. Today it is severity > gem
   (`VariationTree.tsx:59-69`, one move never renders two badges). A book move can never be
   a gem (D4 skips it), but it *can* be an inaccuracy — ECO includes plenty of dubious
@@ -121,9 +132,14 @@ per-node resolution — a confirmed `GemDetail` or an explicit `null` miss. The 
 
 ## Scope shape
 
-Frontend sweep + display, plus one additive backend field:
-- Backend: capture trie depth in `opening_lookup.py`, `games.opening_ply_count` column +
-  migration + backfill, expose on the game-detail payload.
-- Frontend: pin gem rung to the mover's seeded rating (D1), background sweep with the
-  free/cheap/expensive cascade (D4/D5), raise `GEM_MAIA_MAX_PROB` (D7), book markers in
-  `VariationTree` (D8).
+Frontend sweep + display, plus one additive (schema-only) backend field. **No migration, no
+backfill, no eval-pipeline change, no new backend dependency.**
+
+- Backend (small): `find_opening_from_moves` variant returning the deepest-match depth,
+  `opening_ply_count` computed on-read and added to the game-detail payload.
+- Frontend (the bulk): pin the gem rung to the mover's seeded rating (D1), background sweep
+  with the free/cheap/expensive cascade and yield-to-cursor scheduling (D4/D5), raise
+  `GEM_MAIA_MAX_PROB` (D7), book markers + severity precedence in `VariationTree` (D8).
+
+The scheduler in D5 is the real work; everything else is small. The gating question for any
+plan is contention, not compute.
