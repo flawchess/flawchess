@@ -82,6 +82,16 @@ strength, and the human↔stockfish temperature slider's strength impact is unme
 - **Clock pressure vs browser compute**: on 3+0 the bot must move in ~1–2s on the user's
   device including mid-range phones; search budget must degrade gracefully under the clock.
   Backgrounded-tab throttling while the bot is "thinking" is a real edge case.
+
+  **Resolved 2026-07-12 (Phase 168.5):** the clock/fixed-strength fork is DECIDED as fixed
+  strength + synthetic bot clock (D-01) — one global search budget maps to one calibrated ELO
+  per config; the bot's search never reads the clock, and neither the pacing above nor the
+  clock-pressure degradation described here happens. Instead: the displayed bot clock is
+  debited a fraction-of-remaining synthetic think time (D-02), so the bot cannot flag; a small
+  TC-independent randomized reveal delay floors near-instant moves so replies don't feel
+  robotic (D-03); and this pacing theater is UX-only, entirely absent from the calibration
+  harness (D-04b). See `.planning/phases/168.5-bot-move-pacing-search-budget-seed-096/168.5-CONTEXT.md`
+  (D-01, D-02, D-03, D-04b) for the full decision record; Phase 169 SC1 is amended to match.
 - **Play-UI scope control**: game-end detection (mate/stalemate/repetition/50-move/
   insufficient material), resign, flagging are required; premove, draw offers, sounds are
   candidates to cut from v1.

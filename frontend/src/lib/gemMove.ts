@@ -21,8 +21,18 @@ import { MISTAKE_DROP } from '@/generated/flawThresholds';
 /** Maia policy-probability ceiling for C1 (D-07) — strict-side v1 constant.
  *  Deliberately a flat cutoff, not an ELO-scaled iso-rarity curve (D-08 defers
  *  that refinement to a future phase — this constant stays independent of
- *  any per-ELO reference-probability curve). */
-export const GEM_MAIA_MAX_PROB = 0.1;
+ *  any per-ELO reference-probability curve).
+ *
+ *  Raised from 0.1 to 0.2 in Phase 172 (SEED-106 D-07): "hard to find" becomes
+ *  "fewer than 1 in 5 rating-peers would play it." Measured against the Phase
+ *  165 calibration TSV (`reports/data/gem-elo-calibration-2026-07-11T14-07-34-084Z.tsv`,
+ *  3,000 positions x 6 rungs), the raise multiplies gem frequency by ~1.35x at
+ *  Maia-600, rising to ~1.8x at 2200-2600 — and it NARROWS the 600-vs-2600 Elo
+ *  skew from 3.8x to 2.9x (strong players were previously starved: only 2.9% of
+ *  even the C2-qualifying positions cleared C1 at the 2600 rung). Caveat: the
+ *  TSV's sample is enriched (21.8% of positions pass C2), so only the RATIOS
+ *  above transfer to real games, not the absolute frequencies. */
+export const GEM_MAIA_MAX_PROB = 0.2;
 
 /**
  * C1 (hard to find) AND C2 (only good move). Callers resolve the played

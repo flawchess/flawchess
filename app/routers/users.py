@@ -12,7 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_async_session
 from app.models.user import User
-from app.repositories import game_repository, import_job_repository, user_repository
+from app.models.user_rating_anchors import TimeControlBucket
+from app.repositories import (
+    game_repository,
+    import_job_repository,
+    user_rating_anchors_repository,
+    user_repository,
+)
+from app.repositories.user_rating_anchors_repository import RatingAnchorRow
 from app.schemas.admin import ImpersonationContext
 from app.schemas.users import GameCountResponse, UserProfileResponse, UserProfileUpdate
 from app.users import current_active_user
@@ -33,6 +40,26 @@ def _primary_current_rating(ratings_by_platform: dict[str, int | None]) -> int |
     scalar without a second query. Returns None if the user has no games.
     """
     return next(iter(ratings_by_platform.values()), None)
+
+
+def _lichess_blitz_equivalent_rating(
+    anchors: dict[TimeControlBucket, RatingAnchorRow],
+) -> int | None:
+    """Return the caller's blitz-bucket anchor rating (Phase 171 D-07), or None.
+
+    ``anchors`` is keyed by TC bucket (bullet/blitz/rapid/classical); only the
+    "blitz" entry is read here -- the D-07 semantic is specifically the blitz
+    bucket's blended lichess-equivalent median (the same anchor Phase 167's
+    store_bot_game_service already trusts for stamping a finished bot game's
+    player rating). A user with anchors ONLY in rapid/classical correctly gets
+    None here -- that's the deliberate blitz-bucket-only semantic, not a bug.
+
+    UI DEFAULT ONLY -- never fed into bot move selection (BOT-03). This value
+    seeds the analysis board's free-play ELO default and the bot setup screen's
+    ELO default; it must never reach the bot's move-selection budget.
+    """
+    row = anchors.get("blitz")
+    return row.anchor_rating if row is not None else None
 
 
 async def _get_impersonation_context(
@@ -81,6 +108,7 @@ async def get_profile(
     counts = await game_repository.count_games_by_platform(session, user.id)
     last_syncs = await import_job_repository.get_last_completed_at_by_platform(session, user.id)
     ratings = await game_repository.get_current_rating_by_platform(session, user.id)
+    anchors = await user_rating_anchors_repository.fetch_anchors_for_user(session, user_id=user.id)
     return UserProfileResponse(
         email=user.email,
         is_superuser=user.is_superuser,
@@ -96,6 +124,7 @@ async def get_profile(
         impersonation=impersonation,
         beta_enabled=user.beta_enabled,
         current_rating=_primary_current_rating(ratings),
+        lichess_blitz_equivalent_rating=_lichess_blitz_equivalent_rating(anchors),
     )
 
 
@@ -110,6 +139,7 @@ async def update_profile(
     counts = await game_repository.count_games_by_platform(session, user.id)
     last_syncs = await import_job_repository.get_last_completed_at_by_platform(session, user.id)
     ratings = await game_repository.get_current_rating_by_platform(session, user.id)
+    anchors = await user_rating_anchors_repository.fetch_anchors_for_user(session, user_id=user.id)
     return UserProfileResponse(
         email=user.email,
         is_superuser=user.is_superuser,
@@ -125,6 +155,7 @@ async def update_profile(
         impersonation=None,
         beta_enabled=updated.beta_enabled,
         current_rating=_primary_current_rating(ratings),
+        lichess_blitz_equivalent_rating=_lichess_blitz_equivalent_rating(anchors),
     )
 
 

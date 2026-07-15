@@ -45,6 +45,14 @@ interface HorizontalMoveListProps {
   emptyText?: string;
   /** data-testid for the outer scroll box. */
   testId?: string;
+  /**
+   * Override the current-item highlight classes (default: `bg-primary
+   * text-primary-foreground hover:bg-primary/90`). Used by callers whose
+   * design system reserves a different accent for the active row (e.g. the
+   * bot-game move list's brand-brown live-position highlight, Phase 169
+   * UI-SPEC) without changing the shared default for existing callers.
+   */
+  activeItemClassName?: string;
 }
 
 export function HorizontalMoveList({
@@ -53,6 +61,7 @@ export function HorizontalMoveList({
   heightClass = 'h-12 sm:h-18',
   emptyText = 'No moves yet',
   testId,
+  activeItemClassName = 'bg-primary text-primary-foreground hover:bg-primary/90',
 }: HorizontalMoveListProps) {
   const activeRef = useRef<HTMLButtonElement>(null);
 
@@ -99,7 +108,7 @@ export function HorizontalMoveList({
               aria-current={item.isCurrent ? 'step' : undefined}
               className={cn(
                 'inline-flex items-center gap-0.5 rounded px-1 py-0.5 font-mono transition-colors hover:bg-accent',
-                item.isCurrent && 'bg-primary text-primary-foreground hover:bg-primary/90',
+                item.isCurrent && activeItemClassName,
                 item.dimmed && !item.isCurrent && 'text-muted-foreground',
               )}
               // Punchline color only when not the active step (the primary

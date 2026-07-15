@@ -30,6 +30,25 @@ export interface EngineProviders {
   grade(fen: string, candidateUcis: string[]): Promise<Map<string, MoveGrade>>;
 }
 
+/**
+ * Bot-play early-stop knobs (Phase 168.5 D-05/D-06) — evaluated in the
+ * `mctsSearch` canonical apply-order loop against `root.children`'s own
+ * `.value` fields (== `RankedLine.practicalScore`), never the findability-
+ * sorted `buildRankedLines` output. Optional on `SearchBudget`; `undefined`
+ * skips the stop-rule check entirely (today's unchanged full-budget
+ * behavior for every existing caller — the analysis board never sets this).
+ */
+export interface BotStopRule {
+  /** D-05: clear-winner margin the top root child's `.value` must lead the runner-up by. */
+  marginThreshold: number;
+  /** D-05: near-tie-flatness spread ceiling across ALL current root children's `.value`s. */
+  epsilonThreshold: number;
+  /** D-05/D-06: consecutive post-expansion checks the argmax UCI must hold stable before either side of the rule can fire. */
+  stabilityWindow: number;
+  /** D-05: shared floor gating BOTH the clear-winner and near-tie-flatness checks — neither fires before this many expansions. */
+  minNodes: number;
+}
+
 /** Bounds one `SearchRunner` invocation (ENGINE-06). */
 export interface SearchBudget {
   /** D-09: one node = one expansion event; the unit this budget counts. */
@@ -44,6 +63,8 @@ export interface SearchBudget {
   extraRootMoves?: string[];
   /** Phase 159 D-06/D-07: reshapes the user's-side policy before truncation; omitted/1 = no-op. */
   policyTemperature?: number;
+  /** Phase 168.5 D-05/D-06: optional bot-play early-stop rule; omitted/undefined = today's unchanged full-budget behavior. */
+  stopRule?: BotStopRule;
 }
 
 /**
@@ -103,4 +124,12 @@ export interface EngineSnapshot {
   nodesEvaluated: number;
   /** True once `SearchBudget.maxNodes`/`maxPlies` stopped the search (not an abort). */
   budgetExhausted: boolean;
+  /**
+   * Phase 168.5 D-05/D-06: why the search stopped, as a sibling of
+   * `budgetExhausted` (never overloading that boolean, which stays
+   * maxNodes/maxPlies-only). `'early-stop'` when `SearchBudget.stopRule`
+   * ended the search early, `'budget'` when maxNodes/maxPlies did, `null`
+   * otherwise (natural tree completion, or an abort).
+   */
+  stopReason: 'budget' | 'early-stop' | null;
 }

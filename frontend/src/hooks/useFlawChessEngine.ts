@@ -44,6 +44,25 @@ const FLAWCHESS_ENGINE_MAX_NODES = 400;
  */
 const FLAWCHESS_ENGINE_MAX_PLIES = 8;
 
+// ─── Bot-play budget (D-07/D-09) ────────────────────────────────────────────
+//
+// ADDITIVE profile for Phase 169's clocked bot games (168.5-RESEARCH.md
+// Pattern 1) — sits ALONGSIDE the analysis-board constants above, never
+// replacing them: retuning FLAWCHESS_ENGINE_MAX_NODES in place would
+// silently degrade the live /analysis engine card, an unrelated regression
+// (Pitfall 1). The values themselves live in the dependency-light
+// `@/lib/engine/botBudget` so the calibration harness imports the SAME
+// definition instead of hand-maintaining a mirror (a divergence would
+// calibrate a bot that does not ship, T-168.5-04-01); re-exported here for
+// app callers (Phase 169's `useBotGame`, which most plausibly calls
+// `selectBotMove` directly, harness-style, not this hook).
+export {
+  FLAWCHESS_BOT_MAX_NODES,
+  FLAWCHESS_BOT_MAX_PLIES,
+  FLAWCHESS_BOT_CONCURRENCY,
+  FLAWCHESS_BOT_STOP_RULE,
+} from '@/lib/engine/botBudget';
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface UseFlawChessEngineOptions {
@@ -84,6 +103,7 @@ const INITIAL_SNAPSHOT: EngineSnapshot = {
   rankedLines: [],
   nodesEvaluated: 0,
   budgetExhausted: false,
+  stopReason: null,
 };
 
 // ─── Hook ────────────────────────────────────────────────────────────────────

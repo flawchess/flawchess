@@ -17,6 +17,7 @@ import type { GameFlawCard, LibraryGamesResponse, FlawStatsResponse, LibraryFlaw
 import type { OpponentStrengthRange } from '@/types/api';
 import { rangeToQueryParams } from '@/lib/opponentStrength';
 import type { FeedbackRequest, FeedbackResponse } from '@/types/feedback';
+import type { StoreBotGameRequest, StoreBotGameResponse } from '@/types/bots';
 
 /**
  * Central Axios instance.
@@ -223,6 +224,13 @@ export const endgameApi = {
 export const feedbackApi = {
   submit: (data: FeedbackRequest) =>
     apiClient.post<FeedbackResponse>('/feedback', data).then(r => r.data),
+};
+
+// ─── Bots API ─────────────────────────────────────────────────────────────────
+
+export const botsApi = {
+  storeGame: (data: StoreBotGameRequest) =>
+    apiClient.post<StoreBotGameResponse>('/bots/games', data).then(r => r.data),
 };
 
 // ─── Library API ──────────────────────────────────────────────────────────────

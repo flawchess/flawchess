@@ -37,6 +37,8 @@
 - ✅ **v1.32 Maia-3 Human-Move Enrichment** — Phases 151, 151.1 (shipped 2026-07-05; Phase 152 demoted to SEED-084; deployed to production) — see [milestones/v1.32-ROADMAP.md](milestones/v1.32-ROADMAP.md)
 - ✅ **v2.0 FlawChess Engine** — Phases 153–161 (incl. 158/159 SEED-driven + 160/161 UI polish) (shipped 2026-07-09) — client-side practical-play analysis engine (Stockfish + Maia expectimax-in-MCTS) on `/analysis`, zero server load (SEED-082) — see [milestones/v2.0-ROADMAP.md](milestones/v2.0-ROADMAP.md)
 - ✅ **v2.1 Analysis Eval Reconciliation & Gem Moves** — Phases 162, 163 (merged to main 2026-07-10; deploy pending) — grading-first eval reconciliation so "Good" never outranks "Best" (SEED-090) + violet gem badges for hard-to-find best moves (SEED-092), both frontend-only on `/analysis` — see [milestones/v2.1-ROADMAP.md](milestones/v2.1-ROADMAP.md)
+- ✅ **v2.2 Analysis ELO Calibration & Deep-links** — Phases 164, 165 (shipped 2026-07-11; deployed to production, PRs #253/#254) — Maia ELO seated at each player's Lichess-blitz-equivalent rating (SEED-093) + additive `?fen=` analysis deep-link and a headless gem-ELO calibration harness (SEED-094) — see [milestones/v2.2-ROADMAP.md](milestones/v2.2-ROADMAP.md)
+- ✅ **v2.3 Bot Play** — Phases 166–172 (incl. 168.5, 169.5) (shipped 2026-07-15) — clocked play against the FlawChess engine on a new top-level **Bots** page (`selectBotMove` sample↔argmax blend), every finished game stored as a `platform='flawchess'` analyzable Library game, localStorage resume, a headless anchor-calibration harness for the first (ELO × play-style) strength map (SEED-091), and a background gem sweep + book markers on `/analysis` (SEED-106, Phase 172) — see [milestones/v2.3-ROADMAP.md](milestones/v2.3-ROADMAP.md)
 
 ## Progress
 
@@ -111,6 +113,16 @@
 | 153-161. v2.0 FlawChess Engine phases | 24/24 | Complete (160 = ad-hoc quick/fast bucket, no artifacts) | 2026-07-09 |
 | 162. Grading-run-authoritative eval reconciliation (SEED-090) | 3/3 | Complete (merged to main; deploy pending) | 2026-07-10 |
 | 163. Gem moves — Maia-findability badges (SEED-092) | 4/4 | Complete (merged to main; deploy pending) | 2026-07-10 |
+| 164. Maia ELO Lichess-blitz normalization (SEED-093) | 4/4 | Complete (released #253) | 2026-07-11 |
+| 165. Gem-ELO calibration harness + ?fen= deep-link (SEED-094) | 2/2 | Complete (released #254) | 2026-07-11 |
+| 166. Bot Move Selection Core (`selectBotMove`) | 1/1 | Complete    | 2026-07-11 |
+| 167. Backend Store-on-Finish | 3/3 | Complete    | 2026-07-11 |
+| 168. Headless Calibration Harness (spike-gated) | 3/3 | Complete    | 2026-07-11 |
+| 169. Clocked Board + Game Loop (`useBotGame`) | 10/10 | Complete    | 2026-07-13 |
+| 169.5. Bot Opening Book | 4/4 | Complete    | 2026-07-13 |
+| 170. localStorage Resume | 5/5 | Complete    | 2026-07-14 |
+| 171. Bots Page + Setup Screen + Nav | 10/10 | Complete    | 2026-07-14 |
+| 172. Background Gem Sweep on Analysis (SEED-106) | 5/5 | Complete    | 2026-07-14 |
 
 ## Backlog
 
@@ -118,7 +130,7 @@
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 4/4 plans complete
+**Plans:** 5/5 plans complete
 
 Plans:
 
@@ -138,6 +150,23 @@ Plans:
 *Phase 999.7 (LLM Endgame-Insights Statistical-Reasoning Rework) promoted to active Phase 102 (v1.23) on 2026-06-01 via `/gsd-explore`; shipped 2026-06-03.*
 
 *Phase 103 (Endgame report LLM prompt refinements) shipped 2026-06-03 as an unplanned follow-on under v1.23 — see the collapsed v1.23 block above and [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md).*
+
+<details>
+<summary>✅ v2.3 Bot Play (Phases 166–172, incl. 168.5, 169.5) — SHIPPED 2026-07-15</summary>
+
+- [x] Phase 166: Bot Move Selection Core (`selectBotMove`) (1/1 plans) — completed 2026-07-11
+- [x] Phase 167: Backend Store-on-Finish (3/3 plans) — completed 2026-07-11
+- [x] Phase 168: Headless Calibration Harness (spike-gated) (3/3 plans) — completed 2026-07-12
+- [x] Phase 168.5: Bot Move Pacing & Search Budget (SEED-096) (5/5 plans) — completed 2026-07-12
+- [x] Phase 169: Clocked Board + Game Loop (`useBotGame`) (10/10 plans) — completed 2026-07-13
+- [x] Phase 169.5: Bot Opening Book (4/4 plans) — completed 2026-07-13
+- [x] Phase 170: localStorage Resume (5/5 plans) — completed 2026-07-14
+- [x] Phase 171: Bots Page + Setup Screen + Nav (10/10 plans) — completed 2026-07-14
+- [x] Phase 172: Background Gem Sweep on Analysis (SEED-106) (5/5 plans) — completed 2026-07-15
+
+Full detail: [milestones/v2.3-ROADMAP.md](milestones/v2.3-ROADMAP.md)
+
+</details>
 
 <details>
 <summary>✅ v2.0 FlawChess Engine (Phases 153–161) — SHIPPED 2026-07-09 (deployed to production, #247–#249)</summary>
@@ -585,35 +614,16 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 
 </details>
 
-### Phase 164: Maia ELO Lichess-blitz normalization
+<details>
+<summary>✅ v2.2 Analysis ELO Calibration & Deep-links (Phases 164, 165) — SHIPPED 2026-07-11 (deployed to production, #253/#254)</summary>
 
-**Goal:** Normalize player ratings to their Lichess-blitz equivalent (Maia-3's training scale) before setting the analysis-board Maia ELO slider default and per-player Maia ELO, so chess.com and Lichess-non-blitz ratings no longer mis-condition Maia's move prediction.
-**Requirements**: SEED-093
-**Depends on:** none
-**Plans:** 4/4 plans complete — verified (13/13 truths); UAT signed off (ELO slider info popover / inline reset / relocation); completed 2026-07-11
+Two independent, mostly-frontend `/analysis` improvements, each released to production individually as it completed and bundled into v2.2 at close. Phase 164 (SEED-093) seats each player's Maia ELO at their Lichess-blitz-equivalent rating (Maia-3's training scale) so chess.com and Lichess-non-blitz ratings no longer mis-condition the human-move engine, with an info popover + inline reset on the slider. Phase 165 (SEED-094) restores an additive `?fen=<fen>` analysis deep-link (precedence game_id > fen > line) and adds a headless Node gem-ELO calibration harness that measures raw Maia probability across six ELO rungs plus a Stockfish C2 grade over ~3000 stratified positions to build the empirical basis for an ELO-scaled iso-rarity gem-move ceiling.
 
-Plans:
-**Wave 1**
+- [x] Phase 164: Maia ELO Lichess-blitz normalization (SEED-093) (4/4 plans) — backend `_invert_table2_column` + `normalize_to_lichess_blitz` converter (incl. chess.com `classical` → `rapid` gap closure), two nullable `*_lichess_blitz` fields computed on-read in `_build_card`, frontend `deriveRawDefault` read-with-raw-fallback; verified 13/13 truths, UAT signed off — completed 2026-07-11 (released #253)
+- [x] Phase 165: Gem-move ELO calibration harness + restore `?fen=` analysis deep-link (SEED-094) (2/2 plans) — headless Node harness (onnxruntime-web Maia 6 rungs + vendored Stockfish WASM C2 + stratified CSV sampling → TSV in `reports/data/`, importing the real `classifyGem`/`evalToExpectedScore`/`MISTAKE_DROP`); additive `?fen=<fen>` deep-link (`buildAnalysisFenUrl`/`parseAnalysisFenParam` + Analysis.tsx seeding, precedence game_id > fen > line) — completed 2026-07-11 (released #254)
 
-- [x] 164-01-PLAN.md — Backend converter: `_invert_table2_column` + `normalize_to_lichess_blitz` + full unit tests (Wave 1)
+**Deployed to production** — released incrementally: Phase 164 via PR #253, Phase 165 via PR #254; `origin/production` is at #254.
 
-**Wave 2** *(blocked on Wave 1 completion)*
+See [milestones/v2.2-ROADMAP.md](milestones/v2.2-ROADMAP.md) for full details.
 
-- [x] 164-02-PLAN.md — Serialization: two nullable `*_lichess_blitz` fields on `GameFlawCard`, computed on-read in `_build_card` + integration test (Wave 2)
-- [x] 164-03-PLAN.md — Frontend: optional TS fields + `deriveRawDefault` read-with-raw-fallback + hook tests (Wave 2)
-
-**Wave 1** *(gap closure — VERIFICATION Truth #13 / REVIEW WR-01)*
-
-- [x] 164-04-PLAN.md — Gap closure: map chess.com `classical` → `rapid` in `normalize_to_lichess_blitz` (non-correspondence long real-time games) + invert unit test + IN-02 integration test (Wave 1)
-
-### Phase 165: Gem-move ELO calibration harness + restore ?fen= analysis deep-link
-
-**Goal:** Build the empirical basis for an ELO-scaled iso-rarity gem-move ceiling (Phase 163 D-08): a headless Node harness that measures, over ~3000 stratified Kaggle "brilliant" moves, the raw Maia probability at each ELO rung {600, 1000, 1400, 1800, 2200, 2600} plus a single Stockfish C2 grade per position, emitting a TSV (raw probs + derived gem-at-0.1 booleans + clickable `?fen=` analysis links) and a drop-off summary. Sub-deliverable: restore an additive `?fen=<fen>` analysis deep-link (alongside the existing start-anchored `?line=`) so the TSV's arbitrary mid-game positions are clickable. Reuse the real engines (onnxruntime-web Maia WASM, vendored Stockfish WASM) and import the actual `classifyGem`/`evalToExpectedScore`/`MISTAKE_DROP` — zero reimplementation drift.
-**Requirements**: SEED-094
-**Depends on:** none (Phase 163 gem-move detection already shipped)
-**Plans:** 2/2 plans complete
-
-Plans:
-
-- [x] 165-01-PLAN.md — Headless Node gem-ELO calibration harness (onnxruntime-web Maia 6 rungs + Stockfish WASM C2 + stratified CSV sampling → TSV in reports/data/), reusing imported gem logic (Wave 1)
-- [x] 165-02-PLAN.md — Additive `?fen=<fen>` analysis deep-link (buildAnalysisFenUrl/parseAnalysisFenParam + Analysis.tsx seeding + precedence game_id > fen > line) (Wave 1)
+</details>

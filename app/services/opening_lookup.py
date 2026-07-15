@@ -118,3 +118,33 @@ def find_opening(pgn: str | None) -> tuple[str | None, str | None]:
     if last_result is None:
         return None, None
     return last_result
+
+
+def find_opening_ply_count(moves: list[str]) -> int:
+    """Return the 1-based ply depth of the deepest known-opening match in moves.
+
+    Phase 172 (SEED-106 D-06): computed on-read from the SAN mainline the
+    game-detail payload already ships (`GameFlawCard.moves`) — no column, no
+    migration, no backfill. Walks the same `_TRIE` singleton as `find_opening`,
+    but (unlike `find_opening`) tracks and returns the *depth* of the deepest
+    result-carrying node rather than discarding it. Gates the background gem
+    sweep (D-04: book plies never enter the cascade) and marks theory plies
+    with the book badge (D-08).
+
+    `moves` is already-tokenized SAN (the same dialect `openings.tsv` uses,
+    including `O-O` castling) — unlike `find_opening`, this does NOT call
+    `_normalize_pgn_to_san_sequence`, since the caller never has a raw PGN.
+
+    Returns 0 if no move matches, if moves is empty, or if the walk reaches
+    trie nodes without ever crossing a result-carrying node (walking the trie
+    is not the same as matching a known opening).
+    """
+    node = _TRIE
+    last_depth = 0
+    for i, move in enumerate(moves):
+        if move not in node.children:
+            break
+        node = node.children[move]
+        if node.result is not None:
+            last_depth = i + 1
+    return last_depth

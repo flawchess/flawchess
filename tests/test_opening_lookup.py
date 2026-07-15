@@ -174,3 +174,68 @@ class TestFindOpening:
         assert eco is not None
         # Should be a Sicilian variant (B2x range or B9x)
         assert name is not None
+
+
+class TestFindOpeningPlyCount:
+    """Tests for find_opening_ply_count (Phase 172, SEED-106 D-06).
+
+    Mirrors TestFindOpening's canonical opening fixtures, but the input is
+    already-tokenized SAN (a list[str], not a PGN string) and the return
+    value is the 1-based ply depth of the deepest match, not (eco, name).
+    """
+
+    def test_full_book_game_returns_deepest_result_depth(self):
+        """1. e4 e5 2. Nf3 matches C40 King's Knight Opening at ply depth 3."""
+        from app.services.opening_lookup import find_opening_ply_count
+
+        assert find_opening_ply_count(["e4", "e5", "Nf3"]) == 3
+
+    def test_leaves_book_mid_line_returns_depth_before_divergence(self):
+        """Italian Game's first 6 plies then a novelty: depth is the deepest
+        result-carrying node BEFORE the divergence, not the divergence index.
+        """
+        from app.services.opening_lookup import find_opening_ply_count
+
+        moves = ["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5", "ZZNovelty"]
+        depth = find_opening_ply_count(moves)
+        assert depth == 6
+        assert depth < len(moves)
+
+    def test_no_book_match_returns_zero(self):
+        """A first move unknown to the trie returns 0."""
+        from app.services.opening_lookup import find_opening_ply_count
+
+        assert find_opening_ply_count(["ZZUnknownFirstMove"]) == 0
+
+    def test_empty_moves_list_returns_zero(self):
+        """An empty moves list returns 0."""
+        from app.services.opening_lookup import find_opening_ply_count
+
+        assert find_opening_ply_count([]) == 0
+
+    def test_walks_trie_but_never_matches_returns_zero(self, monkeypatch):
+        """Walking child nodes without ever crossing a result node returns 0.
+
+        The real openings.tsv trie has a result at every root child (every
+        legal first move maps to some named opening), so this behavior can
+        only be exercised against a synthetic trie: a chain of nodes with
+        children but no result anywhere on the path.
+        """
+        from app.services import opening_lookup
+
+        root = opening_lookup.TrieNode()
+        child_e4 = opening_lookup.TrieNode()
+        child_e5 = opening_lookup.TrieNode()
+        root.children["e4"] = child_e4
+        child_e4.children["e5"] = child_e5
+        # Neither child_e4 nor child_e5 carries a result — the walk proceeds
+        # two plies deep but never matches a known opening.
+        monkeypatch.setattr(opening_lookup, "_TRIE", root)
+
+        assert opening_lookup.find_opening_ply_count(["e4", "e5"]) == 0
+
+    def test_kings_pawn_single_move_returns_depth_one(self):
+        """1. e4 alone matches B00 King's Pawn Game at ply depth 1."""
+        from app.services.opening_lookup import find_opening_ply_count
+
+        assert find_opening_ply_count(["e4"]) == 1

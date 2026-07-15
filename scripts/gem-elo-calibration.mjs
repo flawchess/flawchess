@@ -26,13 +26,16 @@
  *     [--csv temp/brilliants_no_stalemates.csv] [--out-dir reports/data] \
  *     [--rungs 600,1000,1400,1800,2200,2600]
  */
-import { createRequire } from 'node:module';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import readline from 'node:readline';
 import path from 'node:path';
 import fs from 'node:fs';
-import os from 'node:os';
+
+// ─── Shared engine bring-up (Phase 168 CAL-02 no-duplication discipline) ──────
+// Maia ONNX session + Stockfish UCI process bring-up now lives in
+// scripts/lib/node-engine-providers.mjs, imported here AND by the Phase 168
+// calibration harness — never duplicated (behavior-preserving refactor).
+import { resolveFrontendModule, createMaiaSession, spawnStockfish } from './lib/node-engine-providers.mjs';
 
 // ─── Imports from LIVE frontend source (via the @/ alias hook) — D-03 ─────────
 // GemGrade/MoverColor are type-only in gemMove.ts/liveFlaw.ts — NOT imported as
@@ -55,12 +58,16 @@ import { classifyGem, summarizeForGem } from '@/lib/gemMove';
 import { sideToMoveFromFen } from '@/lib/liveFlaw';
 import { MISTAKE_DROP } from '@/generated/flawThresholds';
 import { parseInfoLine } from '@/hooks/uciParser';
+// WR-05: mulberry32 is imported from the same live frontend symbol
+// calibration-harness.mjs uses, not hand-rolled here — this file's own header
+// comment (D-03) states every gem/eval/encoding function is imported, never
+// re-derived, and the local reimplementation contradicted that for the PRNG.
+import { mulberry32 } from '@/lib/engine/botSampling';
 
 // ─── Constants (no magic numbers) ──────────────────────────────────────────────
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-const FRONTEND_DIR = path.resolve(REPO_ROOT, 'frontend');
 
 const DEFAULT_SAMPLE_SIZE = 3000;
 const DEFAULT_SEED = 1;
@@ -73,7 +80,6 @@ const DEFAULT_RUNGS = [600, 1000, 1400, 1800, 2200, 2600];
 const ANALYSIS_BASE_URL = 'https://flawchess.com/analysis';
 const CSV_FIELD_COUNT = 5; // fen,san,site,pieces,score
 const STRATA_COUNT = 15; // equal-count strata by `score`, per D-04 (10-20 recommended)
-const STOCKFISH_INIT_TIMEOUT_MS = 30_000;
 const STOCKFISH_MOVE_TIMEOUT_SLACK_MS = 30_000; // slack above --movetime before we give up on a position
 
 const SUMMARY_PERCENTILES = [
@@ -185,20 +191,10 @@ function validateRungs(rungs) {
   }
 }
 
-// ─── Deterministic PRNG (mulberry32) — seeded reservoir sampling ───────────────
-
-function mulberry32(seed) {
-  let a = seed >>> 0;
-  return function random() {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
 // ─── CSV line streaming (never readFileSync — D-04) ────────────────────────────
+// Deterministic seeded PRNG for stratified reservoir sampling below is
+// `mulberry32`, imported from '@/lib/engine/botSampling' above (WR-05) — no
+// longer a local hand-rolled copy.
 
 function streamCsvLines(csvPath, onRow) {
   return new Promise((resolve, reject) => {
@@ -367,28 +363,6 @@ async function sampleStratified({ csvPath, n, seed, strataCount, chessCtor }) {
   };
 }
 
-// ─── Resolve frontend-vendored runtime deps (onnxruntime-web, chess.js) ────────
-// scripts/gem-elo-calibration.mjs itself is NOT under frontend/src, so bare
-// package specifiers don't resolve from the repo root (no root node_modules).
-// Mirror scripts/inspect_maia_onnx.mjs's createRequire-from-frontend recipe.
-
-async function resolveFrontendModule(packageName) {
-  const requireFromFrontend = createRequire(path.join(FRONTEND_DIR, 'package.json'));
-  const resolved = requireFromFrontend.resolve(packageName);
-  return import(pathToFileURL(resolved).href);
-}
-
-// ─── Maia (onnxruntime-web WASM) — loaded ONCE, reused across all positions ────
-
-async function createMaiaSession() {
-  const ort = (await resolveFrontendModule('onnxruntime-web')).default;
-  ort.env.wasm.numThreads = 1; // matches the browser worker's no-COOP/COEP posture
-  const modelPath = path.resolve(FRONTEND_DIR, 'public/maia/maia3_simplified.onnx');
-  const modelBytes = fs.readFileSync(modelPath);
-  const session = await ort.InferenceSession.create(modelBytes, { executionProviders: ['wasm'] });
-  return { ort, session };
-}
-
 /** One batched forward pass across all rungs for a single FEN (mirrors maia-worker.js's analyze()). */
 async function maiaProbsForPosition({ ort, session }, fen, rungs) {
   const batchSize = rungs.length;
@@ -415,96 +389,8 @@ async function maiaProbsForPosition({ ort, session }, fen, rungs) {
 }
 
 // ─── Stockfish (vendored WASM over UCI) — spawned ONCE, reused across positions ─
-
-/** Thin line-buffered UCI stdin/stdout wrapper around the spawned Stockfish child process. */
-class StockfishUciEngine {
-  constructor(child) {
-    this.child = child;
-    this.buffer = '';
-    this.lineListeners = new Set();
-    this.child.stdout.on('data', (chunk) => {
-      this.buffer += chunk.toString('utf8');
-      const lines = this.buffer.split('\n');
-      this.buffer = lines.pop() ?? '';
-      for (const line of lines) {
-        for (const listener of this.lineListeners) listener(line);
-      }
-    });
-  }
-
-  send(command) {
-    this.child.stdin.write(`${command}\n`);
-  }
-
-  onLine(listener) {
-    this.lineListeners.add(listener);
-    return () => this.lineListeners.delete(listener);
-  }
-
-  waitFor(predicate, timeoutMs) {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        off();
-        reject(new Error(`Stockfish response timeout after ${timeoutMs}ms`));
-      }, timeoutMs);
-      const off = this.onLine((line) => {
-        if (predicate(line)) {
-          clearTimeout(timer);
-          off();
-          resolve(line);
-        }
-      });
-    });
-  }
-
-  async init() {
-    this.send('uci');
-    await this.waitFor((line) => line === 'uciok', STOCKFISH_INIT_TIMEOUT_MS);
-    this.send('isready');
-    await this.waitFor((line) => line === 'readyok', STOCKFISH_INIT_TIMEOUT_MS);
-  }
-
-  /**
-   * WR-01: after a position's `go` search times out (waitFor rejected), the
-   * engine is still searching. Sending the next `position`/`go` on top of a live
-   * search corrupts subsequent grades. Stop the search and block on `readyok` so
-   * the engine is quiescent before the next position — lets the run skip one bad
-   * position and continue instead of aborting the whole multi-hour sweep.
-   */
-  async stopAndSync() {
-    this.send('stop');
-    this.send('isready');
-    await this.waitFor((line) => line === 'readyok', STOCKFISH_INIT_TIMEOUT_MS);
-  }
-
-  terminate() {
-    this.send('quit');
-    this.child.kill();
-  }
-}
-
-async function spawnStockfish() {
-  const engineDir = path.resolve(FRONTEND_DIR, 'public/engine');
-  const srcJsPath = path.join(engineDir, 'stockfish-18-lite-single.js');
-  const srcWasmPath = path.join(engineDir, 'stockfish-18-lite-single.wasm');
-
-  // Copy to a non-ESM .cjs so it auto-starts a UCI CLI on stdin/stdout under Node
-  // (memory note project_headless_stockfish_wasm_verification). The Emscripten
-  // glue locates its .wasm binary at `path.join(__dirname, basename(__filename,
-  // ext) + '.wasm')` — i.e. same directory, SAME basename minus extension — so
-  // the .wasm copy must be renamed to match the .cjs basename exactly, not just
-  // co-located under its original name.
-  const runId = `gem-elo-calibration-stockfish-${process.pid}`;
-  const cjsPath = path.join(os.tmpdir(), `${runId}.cjs`);
-  const wasmPath = path.join(os.tmpdir(), `${runId}.wasm`);
-  fs.copyFileSync(srcJsPath, cjsPath);
-  fs.copyFileSync(srcWasmPath, wasmPath);
-
-  const child = spawn('node', [cjsPath], { stdio: ['pipe', 'pipe', 'pipe'] });
-  const engine = new StockfishUciEngine(child);
-  await engine.init();
-  return engine;
-}
+// StockfishUciEngine + spawnStockfish now live in ./lib/node-engine-providers.mjs
+// (Phase 168), imported above.
 
 /**
  * Grades ALL legal root moves in one MultiPV search (RESEARCH §3 — a full
@@ -734,13 +620,25 @@ async function main() {
   console.log('[gem-elo-calibration] loading Maia onnxruntime-web session...');
   const maiaCtx = await createMaiaSession();
   console.log('[gem-elo-calibration] spawning Stockfish...');
-  const stockfish = await spawnStockfish();
 
   // Open the TSV up front and stream rows as they complete (WR-01 durability).
   const timestamp = buildTimestamp();
   const tsvPath = path.join(args.outDir, `gem-elo-calibration-${timestamp}.tsv`);
   const summaryPath = path.join(args.outDir, `gem-elo-calibration-${timestamp}-summary.tsv`);
-  const tsvWriter = openTsvWriter(tsvPath, args.rungs);
+
+  // CR-01: guard Stockfish spawn through TSV-writer creation in one
+  // try/catch — without this, an `openTsvWriter` failure after Stockfish has
+  // already spawned would leak that live child process (nothing outside this
+  // block ever calls `.terminate()` on it).
+  let stockfish;
+  let tsvWriter;
+  try {
+    stockfish = await spawnStockfish();
+    tsvWriter = openTsvWriter(tsvPath, args.rungs);
+  } catch (err) {
+    stockfish?.terminate();
+    throw err;
+  }
 
   const rows = [];
   let missingMaiaProbCount = 0;

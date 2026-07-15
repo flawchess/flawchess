@@ -367,6 +367,66 @@ class TestNoEngineAnalysis:
         assert card.analysis_state == "no_engine_analysis"
         assert card.severity_counts is None  # NEVER a false 0/0/0
         assert card.chips == []
+        # Quick 260714-rj5: the LIST endpoint's payload-blowup guard holds — it
+        # keeps scoping fetch_page_eval_positions to the analyzed subset, so an
+        # unanalyzed row here still gets moves=None (not the single-game path's
+        # newly-populated moves list).
+        assert card.moves is None
+        assert card.phase_transitions is None
+
+    @pytest.mark.asyncio
+    async def test_flawchess_game_included_when_platform_is_none(self, db_session: object) -> None:
+        """get_library_games opts flawchess back in when platform is None (D-03).
+
+        Phase 167: apply_game_filters now excludes platform='flawchess' by
+        default (D-02, STORE-07). The Library Games tab is the one surface
+        that should keep showing bot-practice games, so get_library_games
+        must substitute an explicit platform list (including 'flawchess')
+        before calling query_filtered_games when the caller passes platform=None.
+        opponent_type='all' bypasses the (separately scoped, Phase 171)
+        is_computer_game gate so this test isolates the platform seam alone.
+        """
+        import uuid
+
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.game import Game as GameModel
+        from app.services.library_service import get_library_games
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99978)
+
+        game = GameModel(
+            user_id=99978,
+            platform="flawchess",
+            platform_game_id=str(uuid.uuid4()),
+            pgn="1. e4 e5 1-0",
+            result="1-0",
+            user_color="white",
+            time_control_str="600+0",
+            time_control_bucket="rapid",
+            rated=False,
+            is_computer_game=True,
+        )
+        session.add(game)
+        await session.flush()
+
+        resp = await get_library_games(
+            session,
+            user_id=99978,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            flaw_severity=None,
+            offset=0,
+            limit=20,
+        )
+        returned_ids = {c.game_id for c in resp.games}
+        assert game.id in returned_ids, "flawchess game must be included when platform is None"
 
 
 # ---------------------------------------------------------------------------
@@ -501,6 +561,7 @@ async def _seed_db_pos(
     ply: int,
     eval_cp: int | None = None,
     phase: int = 1,
+    move_san: str | None = None,
 ) -> None:
     """Insert a GamePosition row."""
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -517,7 +578,7 @@ async def _seed_db_pos(
         full_hash=hash(f"f-{g.id}-{ply}"),
         white_hash=hash(f"w-{g.id}-{ply}"),
         black_hash=hash(f"b-{g.id}-{ply}"),
-        move_san=None,
+        move_san=move_san,
         clock_seconds=None,
         phase=phase,
         eval_cp=eval_cp,
@@ -1154,6 +1215,209 @@ class TestGetLibraryGame:
         assert expected is not None
         assert card.white_rating_lichess_blitz == expected
         assert card.black_rating_lichess_blitz == expected
+
+    @pytest.mark.asyncio
+    async def test_flawchess_rapid_card_has_identity_normalized_rating(
+        self, db_session: object
+    ) -> None:
+        """A flawchess bot-practice game's rating is never double-converted.
+
+        Phase 167 (RESEARCH Pitfall 3): normalize_to_lichess_blitz has only
+        chess.com/lichess branches. A flawchess game's stored rating is ALREADY
+        lichess-blitz-equivalent (STORE-03's anchor_rating), so routing it
+        through the lichess branch's Table-2 inversion for a non-blitz bucket
+        (rapid here) would silently apply a second, spurious conversion.
+        _build_card's platform=='flawchess' guard must pass the raw rating
+        through unchanged for both colors.
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.game import Game as GameModel
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99994)
+
+        game_obj = await _seed_db_game(
+            session,
+            user_id=99994,
+            user_color="white",
+            platform="flawchess",
+            time_control_str="600+0",
+            time_control_bucket="rapid",
+            white_rating=1500,
+            black_rating=1400,
+        )
+        game = cast(GameModel, game_obj)
+
+        card = await get_library_game(session, user_id=99994, game_id=game.id)
+
+        assert card is not None
+        assert card.white_rating == 1500
+        assert card.black_rating == 1400
+        assert card.white_rating_lichess_blitz == 1500, "flawchess rating must not be re-converted"
+        assert card.black_rating_lichess_blitz == 1400, "flawchess rating must not be re-converted"
+
+    @pytest.mark.asyncio
+    async def test_unanalyzed_game_with_positions_carries_moves_and_phase_transitions(
+        self, db_session: object
+    ) -> None:
+        """Quick 260714-rj5: an unanalyzed game with positions gets moves + phase_transitions.
+
+        eval_series/flaw_markers/severity_counts stay None (no evals to synthesize),
+        chips stay [], analysis_state stays 'no_engine_analysis' — this is the
+        fix for the empty-board dead end on an unanalyzed/pending single-game card.
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.game import Game as GameModel
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99995)
+
+        game_obj = await _seed_db_game(
+            session, user_id=99995, user_color="white", result="1-0", analyzed=False
+        )
+        game = cast(GameModel, game_obj)
+        await _seed_db_pos(session, game=game, ply=0, phase=0, move_san="e4")
+        await _seed_db_pos(session, game=game, ply=1, phase=0, move_san="e5")
+        await _seed_db_pos(session, game=game, ply=2, phase=1, move_san="Nf3")
+        # Terminal position: move_san is None and must be filtered out of moves.
+        await _seed_db_pos(session, game=game, ply=3, phase=1, move_san=None)
+
+        card = await get_library_game(session, user_id=99995, game_id=game.id)
+
+        assert card is not None
+        assert card.analysis_state == "no_engine_analysis"
+        assert card.moves == ["e4", "e5", "Nf3"]
+        assert card.phase_transitions is not None
+        assert card.phase_transitions.middlegame_ply == 2
+        assert card.eval_series is None
+        assert card.flaw_markers is None
+        assert card.severity_counts is None
+        assert card.chips == []
+
+    @pytest.mark.asyncio
+    async def test_unanalyzed_game_with_no_positions_has_none_moves(
+        self, db_session: object
+    ) -> None:
+        """Quick 260714-rj5: an unanalyzed game with zero positions gets moves=None (not [])."""
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.game import Game as GameModel
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99996)
+
+        game_obj = await _seed_db_game(
+            session, user_id=99996, user_color="white", result="1-0", analyzed=False
+        )
+        game = cast(GameModel, game_obj)
+
+        card = await get_library_game(session, user_id=99996, game_id=game.id)
+
+        assert card is not None
+        assert card.analysis_state == "no_engine_analysis"
+        assert card.moves is None
+        assert card.phase_transitions is None
+
+    @pytest.mark.asyncio
+    async def test_analyzed_game_moves_and_eval_series_unchanged(self, db_session: object) -> None:
+        """Quick 260714-rj5: an analyzed game's card is byte-for-byte unchanged.
+
+        Same moves, eval_series, flaw_markers, phase_transitions as before this
+        plan's change — the always-fetch-positions path only affects the
+        unanalyzed branch's moves/phase_transitions.
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.game import Game as GameModel
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99997)
+
+        game_obj = await _seed_db_game(session, user_id=99997, user_color="white", result="1-0")
+        game = cast(GameModel, game_obj)
+        await _seed_db_pos(session, game=game, ply=0, eval_cp=0, phase=0, move_san="e4")
+        await _seed_db_pos(session, game=game, ply=1, eval_cp=0, phase=0, move_san="e5")
+        await _seed_db_pos(session, game=game, ply=2, eval_cp=0, phase=1, move_san="Nf3")
+        await _seed_db_pos(session, game=game, ply=3, eval_cp=None, phase=1, move_san=None)
+
+        card = await get_library_game(session, user_id=99997, game_id=game.id)
+
+        assert card is not None
+        assert card.analysis_state == "analyzed"
+        assert card.moves == ["e4", "e5", "Nf3"]
+        assert card.eval_series is not None
+        assert card.flaw_markers is not None
+        assert card.phase_transitions is not None
+        assert card.phase_transitions.middlegame_ply == 2
+        assert card.severity_counts is not None
+
+    @pytest.mark.asyncio
+    async def test_known_opening_game_has_nonzero_opening_ply_count(
+        self, db_session: object
+    ) -> None:
+        """Phase 172 (SEED-106 D-06): a known-opening game's card carries the
+        trie's matched ply depth, computed on-read from moves.
+
+        1. e4 e5 2. Nf3 matches C40 King's Knight Opening at ply depth 3
+        (see tests/test_opening_lookup.py::TestFindOpeningPlyCount, kept in
+        lockstep with this fixture).
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.game import Game as GameModel
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99998)
+
+        game_obj = await _seed_db_game(session, user_id=99998, user_color="white", result="1-0")
+        game = cast(GameModel, game_obj)
+        await _seed_db_pos(session, game=game, ply=0, eval_cp=0, phase=0, move_san="e4")
+        await _seed_db_pos(session, game=game, ply=1, eval_cp=0, phase=0, move_san="e5")
+        await _seed_db_pos(session, game=game, ply=2, eval_cp=0, phase=0, move_san="Nf3")
+        await _seed_db_pos(session, game=game, ply=3, eval_cp=None, phase=1, move_san=None)
+
+        card = await get_library_game(session, user_id=99998, game_id=game.id)
+
+        assert card is not None
+        assert card.moves == ["e4", "e5", "Nf3"]
+        assert card.opening_ply_count == 3
+
+    @pytest.mark.asyncio
+    async def test_unmatched_opening_game_has_zero_opening_ply_count(
+        self, db_session: object
+    ) -> None:
+        """A game whose first move isn't in the opening trie gets opening_ply_count 0."""
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.game import Game as GameModel
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99999)
+
+        game_obj = await _seed_db_game(session, user_id=99999, user_color="white", result="1-0")
+        game = cast(GameModel, game_obj)
+        await _seed_db_pos(session, game=game, ply=0, eval_cp=0, phase=0, move_san="ZZUnknown")
+        await _seed_db_pos(session, game=game, ply=1, eval_cp=None, phase=1, move_san=None)
+
+        card = await get_library_game(session, user_id=99999, game_id=game.id)
+
+        assert card is not None
+        assert card.moves == ["ZZUnknown"]
+        assert card.opening_ply_count == 0
 
 
 # ---------------------------------------------------------------------------

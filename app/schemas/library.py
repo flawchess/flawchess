@@ -131,6 +131,11 @@ class GameFlawCard(BaseModel):
     # (unanalyzed-and-unqueued, or already analyzed). The partial unique index
     # uq_eval_jobs_game_active guarantees at most one active row per game.
     active_eval_status: Literal["pending", "leased"] | None = None
+    # Phase 172 (SEED-106 D-06): 1-based ply depth of the deepest opening-book
+    # match, computed on-read from `moves` (no column, no migration/backfill).
+    # 0 means no known opening prefix matched. Gates the gem sweep and marks
+    # theory plies with the book badge on every surface gems already render.
+    opening_ply_count: int = 0
 
 
 class FlawListItem(BaseModel):

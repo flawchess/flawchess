@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { libraryApi } from '@/api/client';
 import { resolveDateRange, dateRangeToWireParams } from '@/lib/recency';
@@ -8,11 +9,45 @@ import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
 import type { GameFlawCard } from '@/types/library';
 import type { TacticFamily } from '@/lib/tacticComparisonMeta';
 import { depthToQueryParams } from '@/lib/tacticDepth';
+import { LIBRARY_GAMES_POLL_INTERVAL_MS } from '@/hooks/useEvalCoverage';
 
 // Library queries are similar in cost to endgame queries (GROUP BY on FlawRecords).
 // 5 minutes staleTime + no refetch-on-focus prevents redundant DB load
 // from alt-tabbing or component re-mounts. Data only changes on new imports.
 const LIBRARY_STALE_TIME = 5 * 60 * 1000;
+
+// Runaway guard (Quick 260714-rj5, T-RJ5-03) for useLibraryGame's live poll:
+// stop polling an unanalyzed game after this much wall-clock time.
+//
+// This is deliberately NOT GamesTab's ANALYZE_INFLIGHT_TIMEOUT_MS (120s). That
+// constant bounds only GamesTab's *optimistic* pill; the card there still
+// refreshes via a separate UNBOUNDED poll (analyzedCount < totalCount), so the
+// library recovers whenever the job lands. This hook is the analysis board's
+// ONLY refresh driver, so a 120s cap would strand the board on "Analyzing…"
+// for any tier-1 job slower than two minutes — and a job waits on a worker
+// leasing it, which can easily exceed that when the fleet is busy or idle.
+// Sized instead to comfortably exceed a realistic tier-1 turnaround; it exists
+// only to stop a permanently-stuck job (e.g. one that ends `failed` — see the
+// deferred item in PLAN.md) from polling forever while the user sits on the page.
+export const LIBRARY_GAME_POLL_TIMEOUT_MS = 10 * 60 * 1000;
+
+/**
+ * Pure poll-interval decision for useLibraryGame's `live` mode (Quick 260714-rj5).
+ *
+ * Returns LIBRARY_GAMES_POLL_INTERVAL_MS while the card is unanalyzed and the
+ * stall backstop hasn't tripped yet; `false` (no more polling) once the card
+ * is analyzed, when there is no data yet, or once elapsedMs exceeds the
+ * backstop. Exported for direct unit testing.
+ */
+export function libraryGamePollInterval(
+  data: GameFlawCard | undefined,
+  elapsedMs: number,
+): number | false {
+  if (data == null) return false;
+  if (data.analysis_state !== 'no_engine_analysis') return false;
+  if (elapsedMs >= LIBRARY_GAME_POLL_TIMEOUT_MS) return false;
+  return LIBRARY_GAMES_POLL_INTERVAL_MS;
+}
 
 /**
  * Build shared query params for library endpoints from a FilterState.
@@ -183,14 +218,41 @@ export function useTacticComparison(
  * flaw filter (the backend endpoint no longer accepts filter params at all; the
  * filter only affects which games are SELECTED on the Games list). Dropped the
  * flawFilter param and every derived query param.
+ *
+ * Quick 260714-rj5: opt-in `live` polling. When `live` is true and the card is
+ * unanalyzed, refetches every LIBRARY_GAMES_POLL_INTERVAL_MS (via
+ * libraryGamePollInterval) until analysis lands or the stall backstop trips —
+ * this is what lets the Analysis game-mode board pick up a completed eval job
+ * in place, no navigation/remount. `startedAtRef` seeds once per gameId so the
+ * backstop measures from this hook's mount, not from a shared clock.
+ * `refetchOnWindowFocus: true` under `live` catches a backgrounded tab up on
+ * focus; the default (non-live) "View game" modal path is untouched.
  */
-export function useLibraryGame(gameId: number | null): ReturnType<typeof useQuery<GameFlawCard>> {
+export function useLibraryGame(
+  gameId: number | null,
+  options?: { live?: boolean },
+): ReturnType<typeof useQuery<GameFlawCard>> {
+  const live = options?.live ?? false;
+  // Date.now() is an impure call and must not run during render (react-hooks
+  // purity rule) — seed/reset the ref in an effect instead of inline during
+  // the render pass. refetchInterval is only invoked by TanStack Query's
+  // internal scheduler (async, always after mount), so the effect has
+  // already run by the time it reads startedAtRef.
+  const startedAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    startedAtRef.current = Date.now();
+  }, [gameId]);
+
   return useQuery<GameFlawCard>({
     queryKey: ['library-game', gameId],
     queryFn: () => libraryApi.getGame(gameId!),
     enabled: gameId !== null,
-    staleTime: LIBRARY_STALE_TIME,
-    refetchOnWindowFocus: false,
+    staleTime: live ? 0 : LIBRARY_STALE_TIME,
+    refetchOnWindowFocus: live,
+    refetchInterval: live
+      ? (query) =>
+          libraryGamePollInterval(query.state.data, Date.now() - (startedAtRef.current ?? Date.now()))
+      : false,
   });
 }
 

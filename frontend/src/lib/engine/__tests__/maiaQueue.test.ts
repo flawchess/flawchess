@@ -124,6 +124,28 @@ describe('createMaiaQueue', () => {
     expect(vi.mocked(Worker)).toHaveBeenCalledWith(ENGINE_PATH);
   });
 
+  // ─── Prewarm (Phase 169.5, SC5) ────────────────────────────────────────
+
+  it("warm() constructs the worker and posts {type:'init'} without enqueueing an analyze", () => {
+    const queue = createMaiaQueue();
+    queue.warm();
+
+    expect(createdWorkers).toHaveLength(1);
+    expect(vi.mocked(Worker)).toHaveBeenCalledWith(ENGINE_PATH);
+    const worker = createdWorkers[0]!;
+    // The ONNX weight load begins...
+    expect(worker.messages).toContainEqual({ type: 'init' });
+    // ...but no policy request was made, so nothing is queued to analyze.
+    expect(analyzeMessages(worker)).toHaveLength(0);
+  });
+
+  it('warm() is idempotent', () => {
+    const queue = createMaiaQueue();
+    queue.warm();
+    queue.warm();
+    expect(createdWorkers).toHaveLength(1);
+  });
+
   // ─── D-04: dedup + narrow ELOs ─────────────────────────────────────────
 
   it('requests only the distinct ELOs needed, collapsing two same-ELO requests into one analyze call', async () => {

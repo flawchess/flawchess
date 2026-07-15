@@ -340,6 +340,60 @@ describe('createWorkerPool: lifecycle', () => {
     expect(createdWorkers.length).toBe(4); // stubDesktopSizing(6) -> 6-2 clamped -> 4
   });
 
+  // ─── Prewarm (Phase 169.5, SC5) ─────────────────────────────────────────
+
+  it('warm() spawns computePoolSize() workers', () => {
+    const pool = createWorkerPool();
+    pool.warm();
+    expect(createdWorkers.length).toBe(computePoolSize());
+  });
+
+  it('warm() issues no search', () => {
+    const pool = createWorkerPool();
+    pool.warm();
+    // Spawn-time UCI handshake traffic (uci / setoption / isready) is expected
+    // and fine. A `go` is not — warm() must cost no movetime.
+    for (const worker of createdWorkers) {
+      expect(worker.messages.some((m) => m.startsWith('go'))).toBe(false);
+    }
+  });
+
+  it('warm() is idempotent', () => {
+    const pool = createWorkerPool();
+    pool.warm();
+    pool.warm();
+    expect(createdWorkers.length).toBe(computePoolSize());
+  });
+
+  it('grade(fen, []) spawns nothing — WR-05 no-op (this is why warm() exists)', async () => {
+    // Pins RESEARCH.md Pitfall 2. `grade()` returns on the WR-05
+    // empty-candidates guard BEFORE ensureSpawned() runs, so the tempting
+    // prewarm ping `grade(fen, [])` silently warms nothing — it does not
+    // throw, it does not error, it just does not work. This test is what
+    // makes a future "simplification" of warm() into grade(fen, []) go red
+    // instead of shipping a prewarm that never warms.
+    const pool = createWorkerPool();
+    const grades = await pool.grade(TEST_FEN, []);
+    expect(createdWorkers.length).toBe(0);
+    expect(grades.size).toBe(0);
+  });
+
+  it('a real grade() after warm() reuses the warmed pool', async () => {
+    const pool = createWorkerPool();
+    pool.warm();
+    const warmedCount = createdWorkers.length;
+    expect(warmedCount).toBe(computePoolSize());
+
+    const gradePromise = pool.grade(TEST_FEN, ['e7e5']);
+    driveInit(createdWorkers[0]!);
+    createdWorkers[0]!.simulateMessage('info depth 10 multipv 1 score cp 20 nodes 1000 pv e7e5');
+    createdWorkers[0]!.simulateMessage('bestmove e7e5');
+    await gradePromise;
+
+    // The search ran on the pool warm() already spawned — not a throwaway one.
+    expect(createdWorkers.length).toBe(warmedCount);
+  });
+
   it('stopAll() sends stop to every thinking slot and clears the pending queue', async () => {
     const pool = createWorkerPool();
     const first = pool.grade(TEST_FEN, ['e7e5']);

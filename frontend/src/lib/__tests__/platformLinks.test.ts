@@ -93,3 +93,25 @@ describe('supportsPlyDeepLink', () => {
     expect(supportsPlyDeepLink('unknown')).toBe(false);
   });
 });
+
+describe('flawchess bot games (quick-260714-qaj)', () => {
+  // games.platform_url IS populated for bot games, but it is self-referential
+  // (the in-app /analysis board). Both builders must return null so the cards
+  // render no "Open game on platform" external link duplicating the in-app
+  // Analyze / View game button. A regression here would put a new-tab link back
+  // onto every bot game card.
+  const SELF_URL = 'https://flawchess.com/analysis?game_id=693117';
+
+  it('gamePlatformUrl returns null even though platform_url is populated', () => {
+    expect(gamePlatformUrl('flawchess', SELF_URL, 'white')).toBeNull();
+    expect(gamePlatformUrl('flawchess', SELF_URL, 'black')).toBeNull();
+  });
+
+  it('platformPlyUrl returns null even though platform_url is populated', () => {
+    expect(platformPlyUrl('flawchess', SELF_URL, 12, 'black')).toBeNull();
+  });
+
+  it('supportsPlyDeepLink is false', () => {
+    expect(supportsPlyDeepLink('flawchess')).toBe(false);
+  });
+});

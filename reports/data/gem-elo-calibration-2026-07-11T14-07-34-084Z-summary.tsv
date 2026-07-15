@@ -1,0 +1,15 @@
+metric	rung_600	rung_1000	rung_1400	rung_1800	rung_2200	rung_2600
+gem_detection_rate	0.1123	0.0993	0.0767	0.0543	0.0360	0.0293
+raw_prob_p25	0.0340	0.0348	0.0383	0.0460	0.0565	0.0694
+raw_prob_median	0.0777	0.0810	0.1126	0.1486	0.2141	0.2468
+raw_prob_p75	0.1844	0.1993	0.2391	0.3300	0.5152	0.5668
+
+summary_stat	value
+sampled_positions	3000
+total_csv_rows_scanned	22418057
+skipped_field_count_violations	0
+skipped_score_parse_failures	0
+skipped_illegal_san	0
+skipped_unparseable_fen	0
+failed_positions	0
+missing_maia_prob_lookups	0

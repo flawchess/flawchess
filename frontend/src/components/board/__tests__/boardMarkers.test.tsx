@@ -2,7 +2,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
 import { SquareMarkerGroup, type SquareMarker } from '../boardMarkers';
-import { MAIA_ACCENT } from '@/lib/theme';
+import { MAIA_ACCENT, BOOK_MARKER_COLOR } from '@/lib/theme';
 
 function renderMarker(marker: SquareMarker) {
   return render(
@@ -44,5 +44,32 @@ describe('SquareMarkerGroup', () => {
     // No gem icon rendered.
     const nestedIcon = container.querySelectorAll('svg');
     expect(nestedIcon.length).toBe(1);
+  });
+
+  // Phase 172 (SEED-106 D-08): book marker on the board corner marker.
+  it('renders the muted book badge with a BookOpen glyph for a book marker', () => {
+    const { container } = renderMarker({ square: 'e4', book: true });
+
+    const circle = container.querySelector('circle');
+    expect(circle).not.toBeNull();
+    expect(circle?.getAttribute('fill')).toBe(BOOK_MARKER_COLOR);
+
+    // Nested lucide BookOpen icon renders as an inner <svg>.
+    const nestedIcon = container.querySelectorAll('svg');
+    expect(nestedIcon.length).toBeGreaterThan(1);
+
+    // No severity NAG glyph text emitted.
+    const text = container.querySelector('text');
+    expect(text).toBeNull();
+  });
+
+  it('still renders the gem badge when both gem and book could apply (ordering regression)', () => {
+    const { container } = renderMarker({ square: 'e4', gem: true, book: true });
+
+    const circle = container.querySelector('circle');
+    expect(circle).not.toBeNull();
+    // Gem takes precedence over book — same as the shipped fill.
+    expect(circle?.getAttribute('fill')).toBe(MAIA_ACCENT);
+    expect(circle?.getAttribute('fill')).not.toBe(BOOK_MARKER_COLOR);
   });
 });

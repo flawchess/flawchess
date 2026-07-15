@@ -645,4 +645,99 @@ describe('VariationTree', () => {
     const desktopTree = screen.getByTestId('variation-tree-desktop');
     expect(desktopTree.querySelectorAll('svg').length).toBeGreaterThan(0);
   });
+
+  // Phase 172 (SEED-106 D-08): book marker precedence `severity > gem > book`.
+  it('(16) book-only entry renders BookIcon (plain icon, not the gem popover)', () => {
+    const { nodes, mainLine } = buildFixture();
+    const mainLineOnlyNodes = new Map(
+      [...nodes].filter(([id]) => mainLine.includes(id)),
+    );
+    const flawMarkerByNodeId = new Map<NodeId, FlawMarkerEntry>([
+      [2, { missedMotif: null, allowedMotif: null, missedDepth: null, allowedDepth: null, book: true, ply: 1 }],
+    ]);
+    render(
+      <VariationTree
+        nodes={mainLineOnlyNodes}
+        mainLine={mainLine}
+        currentNodeId={null}
+        flawMarkerByNodeId={flawMarkerByNodeId}
+        onNodeClick={vi.fn()}
+      />,
+    );
+    const desktopTree = screen.getByTestId('variation-tree-desktop');
+    // BookIcon renders as a plain aria-hidden SVG carrying the "Opening theory" title.
+    const titles = Array.from(desktopTree.querySelectorAll('title')).map((t) => t.textContent);
+    expect(titles).toContain('Opening theory');
+    // Book is glance-only: no gem popover trigger for this marker.
+    expect(screen.queryByTestId('gem-move-popover')).toBeNull();
+  });
+
+  it('(17) severity + book: severity wins, book icon does not render (D-08)', () => {
+    const { nodes, mainLine } = buildFixture();
+    const mainLineOnlyNodes = new Map(
+      [...nodes].filter(([id]) => mainLine.includes(id)),
+    );
+    const flawMarkerByNodeId = new Map<NodeId, FlawMarkerEntry>([
+      [2, { missedMotif: null, allowedMotif: null, missedDepth: null, allowedDepth: null, severity: 'blunder', book: true, ply: 1 }],
+    ]);
+    render(
+      <VariationTree
+        nodes={mainLineOnlyNodes}
+        mainLine={mainLine}
+        currentNodeId={null}
+        flawMarkerByNodeId={flawMarkerByNodeId}
+        onNodeClick={vi.fn()}
+      />,
+    );
+    const desktopTree = screen.getByTestId('variation-tree-desktop');
+    // The blunder glyph ("??" text) renders...
+    expect(desktopTree.textContent).toContain('??');
+    // ...and the book title is NOT present — severity wins.
+    const titles = Array.from(desktopTree.querySelectorAll('title')).map((t) => t.textContent);
+    expect(titles).not.toContain('Opening theory');
+  });
+
+  it('(18) gem + book: gem icon renders, not book (D-08 — never arises in production per D-04)', () => {
+    const { nodes, mainLine } = buildFixture();
+    const mainLineOnlyNodes = new Map(
+      [...nodes].filter(([id]) => mainLine.includes(id)),
+    );
+    const flawMarkerByNodeId = new Map<NodeId, FlawMarkerEntry>([
+      [2, { missedMotif: null, allowedMotif: null, missedDepth: null, allowedDepth: null, gem: true, book: true, ply: 1 }],
+    ]);
+    render(
+      <VariationTree
+        nodes={mainLineOnlyNodes}
+        mainLine={mainLine}
+        currentNodeId={null}
+        flawMarkerByNodeId={flawMarkerByNodeId}
+        onNodeClick={vi.fn()}
+      />,
+    );
+    const desktopTree = screen.getByTestId('variation-tree-desktop');
+    const titles = Array.from(desktopTree.querySelectorAll('title')).map((t) => t.textContent);
+    expect(titles).toContain('Gem move');
+    expect(titles).not.toContain('Opening theory');
+  });
+
+  it('(19) no severity, gem, or book renders nothing', () => {
+    const { nodes, mainLine } = buildFixture();
+    const mainLineOnlyNodes = new Map(
+      [...nodes].filter(([id]) => mainLine.includes(id)),
+    );
+    const flawMarkerByNodeId = new Map<NodeId, FlawMarkerEntry>([
+      [2, { missedMotif: null, allowedMotif: null, missedDepth: null, allowedDepth: null, ply: 1 }],
+    ]);
+    render(
+      <VariationTree
+        nodes={mainLineOnlyNodes}
+        mainLine={mainLine}
+        currentNodeId={null}
+        flawMarkerByNodeId={flawMarkerByNodeId}
+        onNodeClick={vi.fn()}
+      />,
+    );
+    const desktopTree = screen.getByTestId('variation-tree-desktop');
+    expect(desktopTree.querySelectorAll('svg').length).toBe(0);
+  });
 });

@@ -89,6 +89,15 @@ export const FLAWCHESS_ENGINE_BADGE_SHADES = [
   'oklch(0.53 0.12 80)', // second
   'oklch(0.59 0.10 80)', // third
 ] as const;
+// Book/opening-theory corner-marker identity color (Phase 172, SEED-106 D-08).
+// Chroma 0.04 is deliberately the LOWEST of any corner-marker hue (gem 0.20,
+// Stockfish 0.16, FlawChess 0.14, severities 0.13-0.19), so the book badge
+// visually recedes behind every alert/insight badge — it marks context
+// ("this ply is opening theory"), not a signal worth alarm. Hue 250 sits in
+// the cool-blue family without colliding with Stockfish's 255. Reserved
+// EXCLUSIVELY for the book/opening-theory marker family (BookIcon +
+// boardMarkers's book branch) — never reuse as a general-purpose muted blue.
+export const BOOK_MARKER_COLOR = 'oklch(0.60 0.04 250)';
 export const EVAL_CHART_LINE = 'oklch(0.82 0 0)';
 // Muted grey for the rotated "Midgame" / "Endgame" text labels centered on the
 // phase boundaries — legible over both the light and dark eval-bar regions.
@@ -428,3 +437,11 @@ export const MOVE_QUALITY_INACCURACY = SEV_INACCURACY;
 export const MOVE_QUALITY_MISTAKE = SEV_MISTAKE;
 export const MOVE_QUALITY_BLUNDER = SEV_BLUNDER;
 export const MOVE_QUALITY_PENDING = 'oklch(0.65 0.02 260)'; // muted neutral gray
+
+// Bot-game clock low-time urgent color (Phase 169 D-07 — ClockDisplay.tsx).
+// Below LOW_TIME_THRESHOLD_MS (chessClock.ts), the active clock's digits
+// switch to this destructive red and gain a ring-2 urgent treatment, matching
+// the shadcn `--destructive` CSS-variable token value so the urgent state
+// reads consistently with the app's other destructive surfaces (resign
+// confirm button, etc.) without hard-coding a duplicate literal.
+export const CLOCK_LOW_TIME_URGENT = 'oklch(0.577 0.245 27.325)';

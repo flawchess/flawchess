@@ -106,6 +106,22 @@ export interface WorkerPool {
   stopAll(): void;
   /** Stop + `worker.terminate()` every slot; a later `grade()` call re-spawns the pool. */
   terminate(): void;
+  /**
+   * Spawn the Stockfish worker pool with NO search and no movetime spend, so
+   * the opening-book window (Phase 169.5) pays the worker-spawn cost instead
+   * of the first move the bot actually has to search — which, under the book,
+   * is the first move OUT of book and exactly the one we least want cold.
+   *
+   * Idempotent: the body is a bare `ensureSpawned()` call, which short-circuits
+   * on its own `spawned` flag, so a re-running effect cannot spawn a second pool.
+   *
+   * Do NOT "simplify" this to `grade(fen, [])`. That spawns NOTHING: `grade()`
+   * returns early on the WR-05 empty-candidates guard BEFORE `ensureSpawned()`
+   * is ever reached. It does not throw and does not error — it is a silent
+   * no-op as a prewarm trigger, which is precisely why this dedicated method
+   * exists (pinned by a test in `__tests__/workerPool.test.ts`).
+   */
+  warm(): void;
 }
 
 // ─── Priority queue (POOL-02): plain array, linear max-scan ────────────────
@@ -164,17 +180,31 @@ export function dequeueHighestPriority(
 // by D-01 as brittle/unreliable signals).
 
 /**
- * Compute the number of Stockfish worker slots for this device. Mobile
- * (`hardwareConcurrency <= MOBILE_CORE_THRESHOLD` OR a coarse pointer) always
- * gets `MOBILE_POOL_SIZE`; desktop gets `clamp(cores - DESKTOP_HEADROOM_CORES,
- * DESKTOP_POOL_MIN, DESKTOP_POOL_MAX)`.
+ * True on a "mobile" device: `hardwareConcurrency <= MOBILE_CORE_THRESHOLD` OR
+ * a coarse pointer. Deliberately not user-agent-string sniffing and not
+ * reading the unavailable/coarse-on-Safari device-memory navigator field
+ * (both rejected by D-01 as brittle/unreliable signals).
+ *
+ * Extracted from `computePoolSize()` in Phase 172 (SEED-106 D-05) so the
+ * background gem sweep (`useGemSweep.ts`) can gate itself off on the same
+ * devices the Stockfish pool already downsizes for, via ONE heuristic instead
+ * of two copies that could drift.
  */
-export function computePoolSize(): number {
+export function isLowPowerDevice(): boolean {
   const cores = navigator.hardwareConcurrency || DESKTOP_POOL_MIN;
   const isCoarsePointer =
     typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
-  const isMobile = cores <= MOBILE_CORE_THRESHOLD || isCoarsePointer;
-  if (isMobile) return MOBILE_POOL_SIZE;
+  return cores <= MOBILE_CORE_THRESHOLD || isCoarsePointer;
+}
+
+/**
+ * Compute the number of Stockfish worker slots for this device. Mobile
+ * (`isLowPowerDevice()`) always gets `MOBILE_POOL_SIZE`; desktop gets
+ * `clamp(cores - DESKTOP_HEADROOM_CORES, DESKTOP_POOL_MIN, DESKTOP_POOL_MAX)`.
+ */
+export function computePoolSize(): number {
+  if (isLowPowerDevice()) return MOBILE_POOL_SIZE;
+  const cores = navigator.hardwareConcurrency || DESKTOP_POOL_MIN;
   return Math.min(DESKTOP_POOL_MAX, Math.max(DESKTOP_POOL_MIN, cores - DESKTOP_HEADROOM_CORES));
 }
 
@@ -459,5 +489,10 @@ export function createWorkerPool(): WorkerPool {
     spawned = false;
   }
 
-  return { grade, stopAll, terminate };
+  /** Prewarm: spawn the pool without searching. See `WorkerPool.warm()`. */
+  function warm(): void {
+    ensureSpawned();
+  }
+
+  return { grade, stopAll, terminate, warm };
 }

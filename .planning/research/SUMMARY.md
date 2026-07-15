@@ -1,108 +1,172 @@
 # Project Research Summary
 
-**Project:** FlawChess Engine (v2.0 milestone)
-**Domain:** Client-side MCTS practical-play chess search (expectimax-inside-MCTS, Maia-weighted backup), integrating Stockfish + Maia into a mobile-first React/Vite analysis board
-**Researched:** 2026-07-05
-**Confidence:** HIGH (stack/architecture grounded in direct codebase reads and a locked design spec; features/pitfalls MEDIUM on browser-memory extrapolation and Maia-drift, HIGH on protocol facts already proven in Phase 151/151.1)
+**Project:** FlawChess — v2.3 Bot Play
+**Domain:** Client-side clocked bot-play + synthetic-game storage + headless calibration harness, layered onto an existing React 19 / FastAPI / PostgreSQL chess-analysis PWA
+**Researched:** 2026-07-11
+**Confidence:** HIGH
 
 ## Executive Summary
 
-FlawChess Engine is a client-side chess search that ranks moves by *expected practical score* rather than pure objective evaluation — Stockfish supplies leaf quality, Maia supplies opponent-reply and self-execution probability, combined in an MCTS search with a deliberately non-textbook backup rule (Maia-prior-weighted expectation at non-root nodes, plain max at root, with the ELO used at each node depending asymmetrically on whose move it is). All four researchers converge on the same core verdict: **this ships as glue code over already-shipped infrastructure, not a new dependency.** No new npm packages are needed — the ~150-line MCTS core, the worker pool, and the priority queue are all hand-rolled extensions of patterns this codebase already has proven in `useStockfishGradingEngine.ts` and `useMaiaEngine.ts`. Reading the two closest prior-art systems (Polecat, vala-bot) directly — not just their marketing pages — confirmed the core concept (Maia-model + engine-eval expectimax that plays swindles) is not novel, but also confirmed the one thing FlawChess's design does that neither prior system does: model the *player's own* future execution probability at the *player's own* rating, not just the opponent's. That asymmetric self+opponent rating is the one legitimately unclaimed hook and the copy must never claim more than that.
+v2.3 adds a "play against the computer" surface on top of an app whose hard parts already ship in prod: the FlawChess practical-play engine (`mctsSearch` + Maia-3 ONNX policy + Stockfish.wasm grading), the `/analysis` ELO and play-style sliders, the Library games corpus, and the import→normalization→Zobrist→flaw pipeline. The play UI itself is well-trodden table-stakes (lichess "Play with the computer", chess.com "Play Bots"): a setup screen (strength / color / time control), a live clocked board, resign/draw/flag, game-end detection, a result screen, and move sounds. The genuinely differentiated part is that **every finished bot game is stored as a first-class analyzable Library game** (`platform='flawchess'`), feeding the same WDL / endgame / time-management analytics as imported games, and that a **headless Node calibration harness** produces the engine's first real (ELO × play-style) strength map.
 
-The recommended approach is a strict separation between a pure, framework-agnostic, worker-free search core (`frontend/src/lib/engine/`, testable with fabricated `EngineProviders` and zero WASM/ONNX in the loop) and two thin adapter layers that touch real workers (`workerPool.ts` generalizing the Phase 151.1 Stockfish grading protocol to 2-4 parallel instances; `maiaQueue.ts` as a dedicated, separate Maia worker). This separation is what makes the two highest-risk pieces of logic — the custom backup rule and the ELO-at-node routing — unit-testable with hand-computed fixtures before a single worker exists, and what makes the SEED-mandated depth-limited-expectimax fallback a real, exercised escape hatch rather than an aspirational claim. Build order is five dependency-ordered phases: (A) pure search core + tests, (B) real worker-pool/Maia providers, (C) React hook + anytime UI in free analysis, (D) board arrows + toggles, (E) game-review overlay integration.
+The recommended build is deliberately thin on new dependencies. The clock, move sounds, and `[%clk]` PGN annotations add **zero** new runtime packages: the clock is a ~80-line hand-rolled deadline-based hook, sounds are a small Web Audio wrapper over CC0 assets, and `chess.js@1.4.0` (already installed) emits `[%clk]` via `setComment()`. The only net-new packages are **dev-only** harness tooling — `onnxruntime-node` and `tsx`. Architecturally, the milestone is cheap because of one load-bearing decision already baked into the codebase: **provider injection**. `selectBotMove` (new, pure) and `mctsSearch` (existing) take an `EngineProviders` seam, so the identical move-selection logic runs unchanged in the browser (Workers) and in the Node harness (direct sessions) — the harness therefore measures the exact code users play against. The backend is a one-endpoint touch (`POST /bot-games`) reusing the import persistence path; no websockets, no server game session.
 
-The two risks that matter most are orthogonal to each other and must both be addressed inside the relevant phase, not deferred: mobile Safari's memory ceiling (2-4 Stockfish WASM heaps + 1 Maia ONNX session + the existing eval bar can silently crash/reload the tab on iOS with no catchable exception — cap pool size adaptively and never run the new pool concurrently with the existing free-standing eval bar on the same position) and backup-rule/ELO-routing correctness (the custom Maia-weighted backup is one careless refactor away from silently degenerating into textbook visit-count-weighted MCTS, and ELO-at-node is one off-by-one from being fully inverted — both need golden-value negative-assertion unit tests, not integration tests, as the primary defense). Scope is deliberately narrow: MVP1 ships the modal-path line, the score pair, live-refining top-n lines, and a single new board-arrow layer on both surfaces — trap-finder UI, per-ELO sigmoids, time-pressure modeling, and SharedArrayBuffer multithreading are all explicitly deferred by design, and the arrow layer count was reduced from SEED-082's original 4 to 3 (no dedicated Maia arrow; Maia stays reachable via the existing Moves-by-Rating chart hover).
+The risks are concentrated and well-understood. The clock **must** be a `Date.now()`-delta model (never `setInterval` decrement) and must treat the Page Visibility API as first-class game state, or backgrounded tabs will self-flag the bot or bleed the human's clock. Move selection **must** sample (not argmax) at the human end and run exactly one Maia inference there (no MCTS), or the bot plays hundreds of Elo above nominal and every game is identical — corrupting both playability and calibration. The "reuse the existing normalization path" instruction is a trap: there is **no** PGN→game normalizer today (only chess.com/lichess JSON normalizers with a narrow `Platform` Literal), so a new `normalize_flawchess_game(pgn, …)` is required. And `[%clk]` emission is load-bearing, not cosmetic — omit it and every bot game is silently invisible to time-management stats, permanently (clocks can't be recovered post-hoc).
 
 ## Key Findings
 
 ### Recommended Stack
 
-Zero new frontend dependencies. Every "which library" question resolves to "hand-roll it" because either no maintained library exists (no current MCTS npm package, none would fit the non-standard asymmetric backup rule even if maintained) or the workload is too small to justify one (a few hundred node evaluations per search doesn't need a priority-queue library — a plain array with linear max-scan suffices; `tinyqueue` is named only as a future option past ~1-2k pending nodes). The entire "new" surface is glue code over `stockfish@18.0.8` (lite-single WASM, already vendored) and `onnxruntime-web@1.27.0` (Maia-3, already vendored, already forced to `numThreads=1`).
+The stack story is "consume what ships, add almost nothing." All four net-new concerns (chess clock, move sounds, calibration harness, `[%clk]` emission) resolve without new runtime dependencies except the dev-only harness. Versions were verified via `npm view` and behaviors (chess.js `[%clk]`, engine-module browser-independence, headless Stockfish) confirmed by direct Node execution against the repo's own `node_modules` — hence HIGH confidence. See `STACK.md`.
 
 **Core technologies:**
-- `stockfish` 18.0.8 (lite-single WASM) — leaf-eval workhorse, pooled 2-4 instances, no version bump
-- `onnxruntime-web` 1.27.0 — Maia-3 policy/WDL, single dedicated worker, already pinned single-threaded
-- Hand-rolled MCTS core (`lib/engine/`) — ~150 lines, pure functions, `vitest`-testable with fabricated providers
+- **Hand-rolled `useGameClock`** (deadline-based) — accurate clock — no maintained React chess-clock lib gets the accuracy model right; ~80 lines of `Date.now()`-delta math is the correct pattern and is background-tab-safe.
+- **Hand-rolled `useMoveSounds`** (Web Audio, preloaded buffers) — move/capture/check/end cues — platform-native, no per-play latency, overlapping plays; source **CC0** assets (freesound.org / synthetic), NOT lichess's non-CC0 files. Precache via the existing `vite-plugin-pwa` Workbox config.
+- **`chess.js@1.4.0` `setComment('[%clk h:mm:ss]')`** (already installed) — per-move clock annotation — verified to emit the exact lichess/PGN convention; python-chess already parses it on ingest. No PGN-writer lib.
+- **`onnxruntime-node@1.27.0`** (**devDependency**) — Maia inference in the Node harness — pin to *exactly* match the browser's `onnxruntime-web@1.27.0` (identical opset/kernels → zero model-compat risk); native CPU EP, no browser globals. Must NOT ship in the browser bundle.
+- **`tsx@4.23.0`** (**devDependency**) — run harness TS unbundled — esbuild loader, `@/` alias-aware, no jsdom/build step.
+- **Reused as-is (do NOT replace/re-benchmark):** `mctsSearch` / `useFlawChessEngine`, Maia worker + `onnxruntime-web@1.27.0`, vendored `stockfish-18-lite-single.{js,wasm}`, `policyTemperature`, the import normalization downstream, `react-chessboard`.
 
-**Explicitly rejected:** generic MCTS packages, priority-queue libraries at MVP1 scale, worker-RPC wrappers (Comlink/workerpool), SharedArrayBuffer multithreading (breaks the existing Google OAuth popup flow via COOP/COEP).
+> **Version reconciliation (confirm at plan time):** STACK recommends `onnxruntime-node@1.27.0` to match the pinned `onnxruntime-web@1.27.0` opset exactly. PITFALLS loosely referenced `~1.20.1` "per project memory" — but that `1.20.1` figure is the unrelated **Python** `onnxruntime` package from a different Maia repro, not the Node package. Prefer **1.27.0** (version-match rationale); flag as a plan-time confirm.
 
 ### Expected Features
 
-**Must have (MVP1):** MCTS + custom Maia-weighted backup over the Phase 151 primitive; Stockfish.wasm worker pool (2-4); lichess eval→win% leaf sigmoid; modal-path line + objective-vs-practical score pair; live-refining top-n lines; FlawChess Engine top-2 board arrow, toggleable; works on both free analysis and game review, with the played-vs-practical-best comparison loop in game review (highest leverage-per-LOC item in the milestone).
+The play UI is table-stakes; the storage-as-first-class-game and the calibration harness are the differentiators. v1 IN/OUT boundaries are locked in SEED-091: draw offers + move sounds IN; premove + takeback OUT. FlawChess deliberately **strips the training aids** (no hints/takeback/live-eval) precisely to keep the game an honest, calibration-grade strength measurement. See `FEATURES.md`.
 
-**Should have ("Ambitious" tier, post-validation):** dedicated trap-finder/branch-point UI; per-ELO leaf sigmoids from the benchmark DB; SAB-multithreaded root grading.
+**Must have (table stakes):**
+- Setup screen — reused ELO + play-style sliders, color choice, TC presets (**bullet excluded** by design for compute headroom).
+- Live clocked board driving the engine client-side; dual clocks + Fischer increment + flag-on-time (background-tab-safe).
+- Whose-move indication + turn-gated legal input (drag + click); bot "thinking" affordance + human-like pacing.
+- Full game-end detection (mate/stalemate/threefold/50-move/insufficient/resign/flag/draw-agreed); result screen with "Analyze this game" + "New game".
+- Resign + draw offers; move sounds (with mute).
+- PGN capture with `[%clk]`; store finished game → `games` row (`platform='flawchess'`); localStorage resume (clock paused while away).
 
-**Defer (v2+):** time-pressure conditioning (clock→temperature/ELO-offset — flagged as possibly the most defensible genuinely-novel axis found); Maia-2 dual-skill-attention adoption.
+**Should have (competitive / this-app differentiators):**
+- Finished bot games become first-class analyzable Library games (WDL / mistake tags / endgame + time analytics) — nothing on lichess/chess.com folds bot games into a personal analytics corpus.
+- Practical-play engine as opponent (Maia-conditioned, human-like at chosen ELO, symmetric — never adapts).
+- Save-time converted player rating on every stored game (calibration substrate, not a thrown-away NULL).
+- Headless anchor-calibration harness — first real (ELO × play-style) strength map + reusable engine bench.
+
+**Defer (v1.x / v2+):**
+- Rematch button, bot resignation/draw-offers in dead positions, phone-perf tuning, low-time warnings (v1.x).
+- Preset bot character cards, 3-star victory system, user-results ELO relabeling, rage-quit accounting (v2+ — several need server-side in-progress tracking that v1's client-side design avoids).
+- **CUT entirely:** takeback, premove, hints, live eval during play, opening book for the bot, adaptive difficulty, server-enforced clock/websockets (each corrupts calibration or adds server complexity the design rejects).
 
 ### Architecture Approach
 
-A nested `lib/engine/` subsystem holds the pure, worker-free search core behind a narrow `SearchRunner` guardrail interface (`position + budget + EngineProviders → ranked root lines`, incremental emission). The core never imports `Worker` directly — only an `EngineProviders` interface (`policy()`, `grade()`) — enabling fully deterministic tests against fabricated tables with zero real WASM/ONNX. `workerPool.ts` and `maiaQueue.ts` are the only files touching `postMessage`, each generalizing an already-shipped protocol rather than inventing one. `useFlawChessEngine.ts` is the sole React-aware file.
+The NEW bot surface plugs into EXISTING architecture through the frozen `EngineProviders` seam. The single most important structural constraint: `selectBotMove` must be a **pure, provider-agnostic** function in `lib/engine/` (no React, no `new Worker()`, no DOM) so the Node harness can import it through the `@/` alias hook without dragging in browser dependencies. The browser and harness differ only in how they *build* providers. Backend stays a one-endpoint touch reusing the import persistence path; bot settings live in a side-table, not new columns on the hot `games` table. See `ARCHITECTURE.md`.
 
-**Major components:** (1) `lib/engine/backup.ts` — the one genuinely novel piece, pure and fixture-tested; (2) `lib/engine/mctsSearch.ts`/`select.ts` + `fallbackExpectimax.ts` — orchestrator and the 1-day recovery path behind the identical interface; (3) `workerPool.ts` (2-4 Stockfish workers, priority queue) + `maiaQueue.ts` (dedicated Maia worker); (4) `useFlawChessEngine.ts` + `FlawChessEngineLines.tsx` + `Analysis.tsx` wiring.
+**Major components:**
+1. **`selectBotMove.ts`** (NEW, pure) — maps `(fen, {elo, styleSlider}, providers, budget)` → chosen UCI; owns the sample↔argmax blend across two regimes.
+2. **`useBotGame.ts`** (NEW hook) — game loop: chess.js move tree, dual clocks + increment, side-to-move, pacing, flag/terminal detection, localStorage snapshot each move; holds one persistent pool+queue.
+3. **`BotsPage` + subcomponents** (NEW) — setup screen (reuse `EloSelector` + style slider + color + TC preset), live board, resume prompt, POST on finish; lazy-loaded route, nav sibling to Library/Openings/Endgames.
+4. **`routers/bot_games.py` + `bot_game_service.py`** (NEW) — thin router → build `NormalizedGame`, derive converted player rating, persist via shared path.
+5. **`persist_normalized_games()`** (extracted from `import_service._flush_batch`) + **`bot_game_settings`** side-table + **`normalize_flawchess_game`** (NEW) — the reuse boundary.
+6. **`scripts/bot-calibration.mjs`** (NEW) — clone of the proven `gem-elo-calibration.mjs`; Node providers (onnxruntime-web wasm session + spawned Stockfish `.cjs`) over the (ELO × slider × anchor) grid → TSV.
 
-Suggested build order: **A** pure search core with fake providers → **B** real providers (worker pool + Maia queue) → **C** React hook + anytime UI (free analysis only) → **D** board arrows + toggles → **E** game-review overlay integration.
+> **Store-on-finish reconciliation (compatible, not a contradiction):** ARCHITECTURE says "reuse `_flush_batch` / extract `persist_normalized_games`"; PITFALLS clarifies there is no PGN front-door. The reconciliation: a NEW `normalize_flawchess_game(pgn, …)` builds a `NormalizedGame`, which then feeds the SAME reusable downstream (`find_opening` + position hashing + `_flush_batch`/`persist_normalized_games`). The `Platform` Literal must be **widened** to include `"flawchess"`, but `games.platform` is `String(20)` with no CHECK constraint, so **no column migration** is needed.
 
 ### Critical Pitfalls
 
-1. **Mobile Safari memory ceiling** — 2-4 Stockfish WASM heaps + 1 Maia ONNX session + the existing eval bar can silently crash/reload the tab on iOS. Cap pool size adaptively, never run concurrently with the existing eval bar, real-device profiling before ship.
-2. **Backup rule silently degenerates into textbook MCTS** — negative golden-value unit tests asserting the result ≠ naive/visit-count-weighted average, plus explicit root-vs-non-root branch tests.
-3. **Asymmetric ELO crossed at the node level** — derive "whose ELO" from actual side-to-move color, never depth parity; node-level oracle test covering both root colors.
-4. **Non-determinism from worker-arrival order, not RNG** — canonical sort-by-move-key tie-breaks, stubbed-engine bit-identical repeated-run CI test.
-5. **`multipv` reused as move identity** — the exact bug Phase 151.1 already fixed; reuse the shared `pv[0]`-keyed parsing utility and grep-audit every new call site.
+Top items from `PITFALLS.md` (14 total, each mapped to a phase and verification):
+
+1. **Timer drift + backgrounded-tab throttle (Pitfalls 1–2)** — never subtract per `setInterval` tick; store absolute deadlines and derive display from `Date.now()` deltas (interval repaints only). Make the Page Visibility API first-class: on hide, pause the clock and don't bill away-time; on show, recompute against the wall clock. Otherwise the bot self-flags while hidden or the human returns already flagged.
+2. **Argmax at the human end (Pitfalls 3–5)** — argmax over Maia-predicted human moves plays hundreds of Elo above nominal and makes every game identical. Sample the temperature-reshaped Maia policy at the human end; argmax only at the Stockfish extreme. Fixed sampler order: `policy()` → drop illegal (via `applyUciMoveFen`) → apply temperature → renormalize → sample; fall back to a legal move on empty policy.
+3. **Full MCTS at the human end (Pitfall 4)** — run exactly ONE Maia inference at full-human (no tree); engage `mctsSearch` only as the Stockfish weight rises. Branch on the slider *before* the compute path, or blitz on a mid-range phone can't answer in 1–2 s.
+4. **The "reuse normalization" trap + missing `[%clk]` (Pitfalls 6–7)** — no PGN→game path exists; write `normalize_flawchess_game` and widen the `Platform` Literal. Emit `{[%clk h:mm:ss]}` after every move (both colors) using true post-move remaining time — load-bearing for time-management analytics, unrecoverable if omitted. Add a store-endpoint validation gate that rejects a bot PGN missing `[%clk]`.
+5. **Synthetic id collisions + NULL player rating (Pitfalls 8–9)** — mint `crypto.randomUUID()` at game *start*, persist it in localStorage (survives resume), send as `platform_game_id`; make the store endpoint idempotent on unique-constraint conflict (return 200). Derive a lichess-scale, TC-bucket-matched player rating at save via the existing `useMaiaEloDefault` machinery; NULL only when the user has zero imported games. Record `rating_source` for the ±100–150 caveat.
+6. **Node-ONNX feasibility + unanchored self-play (Pitfalls 13–14)** — de-risk Maia-in-Node with a spike *first* (measure per-inference latency + games/hour); note the gem harness already proves this path works. Always fit strength against external anchors (raw-Maia 1100–1900 argmax rungs + Stockfish skill levels), never pure self-play; sample grid cells evenly.
 
 ## Implications for Roadmap
 
-### Phase 1: Pure Search Core (guardrail + backup + MCTS + fallback, no workers)
-**Rationale:** riskiest logic proven correct before WASM/ONNX exists. **Delivers:** `lib/engine/{types,guardrail,backup,select,mctsSearch,fallbackExpectimax}.ts`, fully unit-tested against fake providers. **Addresses:** MVP1 algorithmic core. **Avoids:** Pitfalls 3, 4, 5, 10.
+Research points to **six phases in three dependency waves**, closely mirroring the `ARCHITECTURE.md` build order. The keystone is `selectBotMove` (Phase 1): everything on the play side and the harness depends on it. The backend store path (Phase 2) is fully independent of engine work and parallelizable. The harness (Phase 3) and clocked board (Phase 4) both depend only on Phase 1 and can run in parallel.
 
-### Phase 2: Real Providers (worker pool + Maia queue)
-**Rationale:** mechanical generalization of already-shipped Phase 151.1 protocol, lowest-risk new-worker-code phase. **Delivers:** `workerPool.ts`, `maiaQueue.ts`, swapped in for fakes. **Uses:** `stockfish` 18.0.8, `onnxruntime-web` 1.27.0. **Implements:** Architecture Patterns 3 & 4. **Avoids:** Pitfall 1 (mobile memory — adaptive sizing lands here), Pitfall 6.
+### Phase 1: Move selection core (`selectBotMove`)
+**Rationale:** Pure, provider-agnostic, depends only on existing engine primitives; foundational to both the app and the harness. Building it wrong (argmax / MCTS-everywhere) is the single highest-impact failure.
+**Delivers:** `selectBotMove.ts` (two-regime sample↔argmax blend) + unit tests with injectable RNG for determinism.
+**Addresses:** practical-play engine as opponent; play-style slider semantics.
+**Avoids:** Pitfalls 3, 4, 5, 10 (argmax, full-MCTS-at-human-end, botched blend, adaptive strength).
 
-### Phase 3: React Hook + Anytime UI (free analysis only)
-**Rationale:** first user-visible surface, arrows deferred. **Delivers:** `useFlawChessEngine.ts` + `FlawChessEngineLines.tsx`. **Addresses:** modal-path/score-pair, live-refining P1 items. **Avoids:** Pitfall 2 (main-thread jank), Pitfall 9 (anytime flicker).
+### Phase 2: Backend store-on-finish
+**Rationale:** Independent of all engine work; parallelizable with Phase 1. Settles the schema/id/rating contracts everything else persists through.
+**Delivers:** `normalize_flawchess_game`, widened `Platform` Literal (no column migration), `bot_game_settings` model+migration, extracted `persist_normalized_games`, `bot_game_service`, thin `routers/bot_games.py`, Pydantic schemas, idempotent + PGN-validating + server-sanity-checked endpoint.
+**Uses:** existing import persistence path, `user_rating_anchors` / `chesscom_to_lichess` rating conversion.
+**Avoids:** Pitfalls 6, 7 (validation gate), 8, 9 (server-derived id + rating).
 
-### Phase 4: Board Arrows + Toggles (free analysis)
-**Rationale:** depends on Phase 3's hook. **Delivers:** new `theme.ts` constants, `flawChessEngineArrows` useMemo, toggles. **Addresses:** headline visual (3-layer arrow system). **Avoids:** Pitfall 8 (disagreement looking broken).
+### Phase 3: Calibration harness (spike-gated)
+**Rationale:** Committed deliverable, architecturally independent of the play UI (depends only on Phase 1). Gate on a Maia-in-Node feasibility spike as the first task — though the shipped `gem-elo-calibration.mjs` already answers the open question YES.
+**Delivers:** `scripts/bot-calibration.mjs` reusing the `@/` alias hook + proven Node providers; first (ELO × play-style) strength map streamed to `reports/data/`.
+**Uses:** `onnxruntime-node@1.27.0` (or onnxruntime-web wasm, per the harness's existing recipe), vendored Stockfish `.cjs`, `tsx`.
+**Avoids:** Pitfalls 13 (spike first), 14 (external anchors, even grid sampling).
 
-### Phase 5: Game-Review Overlay Integration
-**Rationale:** depends on Phase 4. **Delivers:** full locked v2.0 scope, both surfaces. **Addresses:** highest-leverage differentiator (played-vs-practical-best loop).
+### Phase 4: Clocked board + game loop (`useBotGame`)
+**Rationale:** Depends on Phase 1. The heart of the play experience and the home of the highest-risk clock/visibility work.
+**Delivers:** `useBotGame` (dual clocks + increment, pacing, flag + terminal detection, resign, draw offers, move sounds), `useGameClock`, `useMoveSounds`, `botGamePgn` `[%clk]` emission.
+**Uses:** hand-rolled clock/sound hooks, chess.js, `chess.js setComment`.
+**Avoids:** Pitfalls 1, 2 (Date.now()-delta clock + Page Visibility), 7 (client emission).
+
+### Phase 5: localStorage resume
+**Rationale:** Depends on Phase 4; enhances the board with tab-close forgiveness.
+**Delivers:** `botGamePersistence.ts` — persist paused-clock snapshot every move; "Resume game?" gate; clear only after a confirmed 2xx.
+**Avoids:** Pitfall 12 (paused-remaining persistence, no terminal-state resume, no double-store).
+
+### Phase 6: Bots page + nav wiring
+**Rationale:** Depends on Phases 4, 5, 2 — the integration layer.
+**Delivers:** setup screen (reused sliders/color/TC), live board wiring, resume prompt, POST-on-finish, lazy `/bots/*` route + nav sibling, guest analyzed-coverage caveat.
+**Avoids:** Pitfall 11 (guest eval-exclusion UX), analytics-contamination posture (bot games excluded from defaults, opted into Bots + Library Games).
 
 ### Phase Ordering Rationale
-Pure logic → workers → UI → free analysis → game review, each phase depending strictly on the prior phase's stable output. The one novel logic piece (backup rule) gets maximal upfront isolation so the fallback stays a real one-day swap. Mobile memory/pool sizing lands in Phase 2, not a later "polish" phase.
+- **Waves:** A = {1, 2}, B = {3, 4}, C = {5, 6} — matches `ARCHITECTURE.md`'s dependency graph exactly.
+- **`selectBotMove` first** because both the play loop and the harness import it; getting the two-regime blend right up front prevents calibration-corrupting rework.
+- **Backend parallel to engine** because store-on-finish shares no code with move selection and unblocks persistence early.
+- **Harness parallel to the board** because it's non-browser and independent; spiking it early de-risks the one open feasibility item without blocking the UI.
+- **Clock/visibility risk is concentrated in Phase 4**, so it gets a dedicated phase with explicit wall-clock and hide-tab verification rather than being smeared across the UI work.
 
 ### Research Flags
-Needs research: Phase 1 (backup-rule/ELO-oracle test-fixture design), Phase 2 (real-device memory profiling methodology).
-Standard patterns (skip research-phase): Phases 3, 4, 5 (compose already-shipped, well-understood codebase patterns).
+
+Phases likely needing deeper research/spike during planning:
+- **Phase 1:** the exact slider → (temperature, sharpness, regime thresholds) curve is itself a calibration target with a genuine discontinuity at `HUMAN_ONLY_THRESHOLD`; resolve the mapping at plan time and have the harness sweep *through* the boundary. Watch the `policyTemperature` polarity (T<1 = human end) — inverting it was a prior bug.
+- **Phase 3:** gate on a Maia-in-Node feasibility spike (latency + games/hour) as the first task; also confirm the `onnxruntime-node@1.27.0` vs `~1.20.1` version question (prefer 1.27.0 to match the browser opset).
+
+Phases with standard patterns (skip research-phase):
+- **Phase 2:** well-understood extend-the-import-path work against named files; the only design choices (id/rated/opponent-type/rating) are already recommended in `ARCHITECTURE.md`.
+- **Phase 5:** localStorage snapshot/restore is a solved pattern; the pitfalls are enumerated.
+- **Phase 6:** page/nav/route wiring reuses existing `Analysis` lazy-route + slider components.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | npm registry verified directly; codebase conventions cross-checked |
-| Features | MEDIUM-HIGH | Polecat/vala-bot source read directly via WebFetch, some files partially retrievable |
-| Architecture | HIGH | Grounded in direct reads of every relevant hook/component/page |
-| Pitfalls | MEDIUM | HIGH on protocol facts (own postmortems); MEDIUM on browser-memory (third-party, not device-measured); LOW-MEDIUM on Maia-drift extrapolation |
+| Stack | HIGH | Versions verified via `npm view`; chess.js `[%clk]`, engine browser-independence, and headless Stockfish confirmed by direct Node execution against the repo's own install. Only soft spot: sound-asset licensing (verify each CC0 file at plan time). |
+| Features | HIGH | Well-trodden lichess/chess.com UX; scope tightly locked in SEED-091's 5 decisions + PROJECT.md. IN/OUT boundaries explicit. |
+| Architecture | HIGH | Every integration point named against real source; the `EngineProviders` seam and the `gem-elo-calibration.mjs` harness pattern are proven in prod. Store-schema choices are open-by-design but come with clear recommendations. |
+| Pitfalls | HIGH | Grounded in the actual codebase (`mctsSearch.ts`, `normalization.py`, `eval_queue_service.py`, `useMaiaEngine.ts`) plus well-established browser-platform behavior. |
 
-**Overall confidence:** HIGH — hardest technical questions well-answered; residual uncertainty is empirical and correctly deferred to spike/UAT gates.
+**Overall confidence:** HIGH
 
 ### Gaps to Address
-- Real-device mobile memory ceiling unmeasured — needs an explicit iPhone + mid-tier-Android profiling pass in Phase 2 before committing to a default pool size.
-- Opponent-ELO input in free analysis unresolved (symmetric default vs. a second ELO control) — flag as a Phase 3/4 scoping decision via `/gsd-discuss-phase` or `/gsd-ui-phase`.
-- Arrow hue selection — one open high-saturation slot confirmed, final pick is a `/gsd-ui-phase` decision.
-- Node-budget sizing across devices should be a tunable constant, revisited post-UAT.
-- maiachess.com "played move arrow" precedent is LOW confidence — verify against the live UI before repeating the claim.
+
+- **`onnxruntime-node` version (1.27.0 vs ~1.20.1):** cross-file discrepancy resolved in favor of 1.27.0 (matches the pinned browser `onnxruntime-web` opset; the 1.20.1 figure was the unrelated Python package). Confirm at Phase 3 plan time with a one-inference smoke test.
+- **Slider → (temperature, sharpness, thresholds) mapping:** a genuine design decision AND a calibration target, with a distribution discontinuity at the human/search regime boundary. Resolve at Phase 1 plan time; validate with a harness sweep through the seam.
+- **Store-on-finish schema knobs:** `platform_game_id` source (→ server `uuid4`), `rated` (→ False), opponent-type (→ `is_computer_game=True`), bot-ELO/player-rating columns — all have recommendations in `ARCHITECTURE.md` but must be locked at Phase 2 plan time.
+- **Maia-in-Node harness speed:** the one open feasibility item; de-risk with a spike as the first Phase 3 task (fallback: Playwright headless-browser harness driving the real worker).
+- **Sound-asset licensing:** confirm each audio file is genuinely CC0 before committing; do NOT copy lichess assets.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-npm registry (2026-07-05); FlawChess codebase (`useStockfishGradingEngine.ts`, `useMaiaEngine.ts`, `useStockfishEngine.ts`, `useAnalysisBoard.ts`, `Analysis.tsx`, `useGameOverlay.ts`, `moveQuality.ts`, `theme.ts`, `maia-worker.js`); `.planning/seeds/SEED-082-human-playable-line-engine.md`; `.planning/PROJECT.md` v2.0 section; Polecat and vala-bot repo source read directly.
+- `STACK.md` — verified package versions (`npm view`), direct Node execution of `chess.js` `[%clk]` emission and vendored Stockfish, source inspection confirming engine math is browser-global-free.
+- `FEATURES.md` — lichess "Play with the computer" + chess.com "Play Bots" UX; SEED-091 locked scope + PROJECT.md milestone.
+- `ARCHITECTURE.md` — live-source integration points (`useFlawChessEngine`, `mctsSearch`, `maiaQueue`, `import_service._flush_batch`, `normalization.py`, `user_rating_anchors`, `gem-elo-calibration.mjs`); SEED-091 + CLAUDE.md constraints.
+- `PITFALLS.md` — codebase-grounded failure modes (`mctsSearch.ts` determinism/WR-04/WR-07, `normalization.py` Platform Literal, `eval_queue_service.py` guest exclusion, `useMaiaEngine.ts`); CLAUDE.md critical constraints; well-established browser platform behavior (Page Visibility, timer clamping, Worker throttling).
 
 ### Secondary (MEDIUM confidence)
-Maia KDD 2020, ALLIE (ICLR 2025), Maia-2 (NeurIPS 2024); Mobile Safari memory-ceiling third-party measurements; onnxruntime-web GitHub issues (#26858, #22086, #22776, #26827).
+- Project memory: `project_headless_stockfish_wasm_verification` (Stockfish-WASM-in-Node verified), `project_flawchess_engine_prior_art`, `project_frontend_beta_gating_source`.
+- Sound-asset licensing guidance (freesound.org CC0 vs lichess non-CC0) — verify per-file at plan time.
 
 ### Tertiary (LOW confidence)
-maiachess.com marketing page (unconfirmed UI claim); player-specific Maia-2+MCTS (arXiv 2605.11893, background only).
+- The `onnxruntime==1.20.1` memory note — refers to the Python package for a different Maia repro; superseded here by the STACK `onnxruntime-node@1.27.0` recommendation.
 
 ---
-*Research completed: 2026-07-05*
+*Research completed: 2026-07-11*
 *Ready for roadmap: yes*

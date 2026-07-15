@@ -21,4 +21,9 @@ export interface UserProfile {
   // read-only. Feeds the free-play ELO-selector default (Plan 06). Null when the
   // user has no games or their most recent game is unrated.
   current_rating: number | null;
+  // Phase 171 D-07: the user's blitz-bucket anchor (lichess-equivalent, blended
+  // median). Null for guests / users with no blitz-bucket anchor, in which case
+  // the frontend falls back to 1500. UI DEFAULT ONLY — never fed into bot move
+  // selection (BOT-03).
+  lichess_blitz_equivalent_rating: number | null;
 }

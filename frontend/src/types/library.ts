@@ -93,6 +93,12 @@ export interface GameFlawCard {
   // Active eval-job state for the on-demand analyze pill; null when no active job
   // (unanalyzed-and-unqueued, or already analyzed).
   active_eval_status: 'pending' | 'leased' | null;
+  // Phase 172 (SEED-106 D-06): 1-based ply depth of the deepest opening-book
+  // match, computed on-read by the backend from `moves` (no column, no
+  // migration/backfill). 0 = no known opening prefix matched. Always present
+  // (backend field defaults to 0, never omitted) — non-optional, non-nullable.
+  // Gates the background gem sweep and marks theory plies with the book badge.
+  opening_ply_count: number;
 }
 
 /** One ply's white-perspective ES datapoint (mirrors backend EvalPoint). */
@@ -103,7 +109,12 @@ export interface EvalPoint {
   eval_mate: number | null; // signed, white-perspective
   clock_seconds: number | null; // mover's remaining clock after this move; null = no %clk
   move_seconds: number | null;  // time spent on this move (1dp); null when prior clock unknown
-  best_move: string | null;     // engine best move FROM this position (UCI); null when no PV captured
+  // Engine best move FROM this position, in UCI (e.g. "g1f3") — NOT SAN. Null
+  // when no PV was captured. moves[i] / MoveNode.san are SAN (e.g. "Nf3"): a
+  // direct `played === best_move` string comparison silently never matches.
+  // Convert first via sanToUci() (frontend/src/lib/sanToSquares.ts) — this is
+  // the free prefilter's data source for Phase 172's gem sweep (SEED-106 D-04).
+  best_move: string | null;
 }
 
 /**

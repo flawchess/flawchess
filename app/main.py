@@ -19,6 +19,7 @@ from app.core.config import assert_secret_key_configured, settings
 from app.middleware.last_activity import LastActivityMiddleware
 from app.routers import openings, position_bookmarks, imports, auth, feedback
 from app.routers.admin import router as admin_router
+from app.routers.bots import router as bots_router
 from app.routers.endgames import router as endgames_router
 from app.routers.insights import router as insights_router
 from app.routers.eval_remote import router as eval_remote_router
@@ -177,6 +178,7 @@ app.include_router(admin_router, prefix="/api")
 app.include_router(library_router, prefix="/api")
 app.include_router(eval_remote_router, prefix="/api")
 app.include_router(feedback.router, prefix="/api")
+app.include_router(bots_router, prefix="/api")
 
 
 @app.get("/", include_in_schema=False)

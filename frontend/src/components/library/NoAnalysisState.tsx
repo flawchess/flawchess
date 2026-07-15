@@ -1,6 +1,7 @@
 import { Cpu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTier1Enqueue } from '@/hooks/useEnqueueGame';
+import { AnalysisPendingPill } from '@/components/library/AnalysisPendingPill';
 
 interface NoAnalysisStateProps {
   gameId: number;
@@ -66,23 +67,7 @@ export function NoAnalysisState({
 
   if (showPill) {
     // "Analyzing…" once a worker has leased the job; "Pending…" while queued/optimistic.
-    const isLeased = activeEvalStatus === 'leased';
-    const label = isLeased ? 'Analyzing…' : 'Pending…';
-    const ariaLabel = isLeased
-      ? 'Analysis is actively running for this game'
-      : 'Analysis is pending for this game';
-
-    return (
-      <span
-        className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-sm font-bold text-muted-foreground animate-pulse"
-        style={{ background: 'oklch(1 0 0 / 4%)' }}
-        data-testid={`analyzing-${gameId}`}
-        aria-label={ariaLabel}
-      >
-        <Cpu className="h-4 w-4 shrink-0" aria-hidden="true" />
-        {label}
-      </span>
-    );
+    return <AnalysisPendingPill gameId={gameId} leased={activeEvalStatus === 'leased'} />;
   }
 
   return (

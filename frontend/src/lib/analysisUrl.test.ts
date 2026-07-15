@@ -5,6 +5,7 @@ import {
   buildGameAnalysisUrl,
   buildAnalysisFenUrl,
   parseAnalysisFenParam,
+  parseAnalysisOrientationParam,
 } from './analysisUrl';
 
 describe('buildAnalysisLineUrl', () => {
@@ -33,6 +34,21 @@ describe('buildAnalysisLineUrl', () => {
   it('stops at the first illegal SAN', () => {
     const result = buildAnalysisLineUrl(['e4', 'totally-illegal', 'e5']);
     expect(result).toBe('/analysis?line=e2e4');
+  });
+
+  it('appends &orientation=black when an orientation arg is passed', () => {
+    const result = buildAnalysisLineUrl(['e4', 'e5'], 'black');
+    expect(result).toBe('/analysis?line=e2e4,e7e5&orientation=black');
+  });
+
+  it('emits an explicit &orientation=white (not elided)', () => {
+    const result = buildAnalysisLineUrl(['e4'], 'white');
+    expect(result).toBe('/analysis?line=e2e4&orientation=white');
+  });
+
+  it('survives an empty move list, becoming the only param', () => {
+    const result = buildAnalysisLineUrl([], 'black');
+    expect(result).toBe('/analysis?orientation=black');
   });
 });
 
@@ -138,5 +154,41 @@ describe('parseAnalysisFenParam', () => {
     const url = buildAnalysisFenUrl(fen);
     const fenParam = new URLSearchParams(url.split('?')[1]).get('fen');
     expect(parseAnalysisFenParam(fenParam)).toBe(fen);
+  });
+});
+
+describe('parseAnalysisOrientationParam', () => {
+  it('returns "white" for "white"', () => {
+    expect(parseAnalysisOrientationParam('white')).toBe('white');
+  });
+
+  it('returns "black" for "black"', () => {
+    expect(parseAnalysisOrientationParam('black')).toBe('black');
+  });
+
+  it('returns null for null', () => {
+    expect(parseAnalysisOrientationParam(null)).toBeNull();
+  });
+
+  it('returns null for an empty string', () => {
+    expect(parseAnalysisOrientationParam('')).toBeNull();
+  });
+
+  it('returns null for garbage input', () => {
+    expect(parseAnalysisOrientationParam('sideways')).toBeNull();
+  });
+
+  it('is a strict lowercase allowlist (mixed case rejected)', () => {
+    expect(parseAnalysisOrientationParam('WHITE')).toBeNull();
+  });
+
+  it('never throws on a malformed percent-escape', () => {
+    expect(parseAnalysisOrientationParam('%')).toBeNull();
+  });
+
+  it('round-trips with buildAnalysisLineUrl via URLSearchParams', () => {
+    const url = buildAnalysisLineUrl(['e4', 'e5'], 'black');
+    const orientationParam = new URLSearchParams(url.split('?')[1]).get('orientation');
+    expect(parseAnalysisOrientationParam(orientationParam)).toBe('black');
   });
 });

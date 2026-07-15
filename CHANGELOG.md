@@ -8,6 +8,29 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v2.3] Bot Play — 2026-07-15
+
+### Added
+- Bot play groundwork: a single pure move-selection function (`selectBotMove`) blends human-realistic Maia sampling with practical-score argmax across the play-style slider range — the same code the app's bot and the calibration harness use (Phase 166).
+- Bot play groundwork: finished bot games can be stored as first-class `platform='flawchess'` Library games via `POST /bots/games`, carrying clocks, full bot settings, and a converted player rating; bot games are excluded from analytics by default and opt-in in the Library (Phase 167).
+- Dev: headless calibration harness (`scripts/calibration-harness.mjs`) measures the engine's real playing strength across an (ELO × play-style) grid against Maia and Stockfish anchors — multi-process Stockfish pool, durable per-cell TSV output with `--resume`, an advisory ELO estimate, and a flawchess.com analyze deep-link logged for every game (Phase 168).
+- Bot play groundwork: the bot now thinks on a fixed search budget with confidence-based early stopping, so a move lands in seconds rather than minutes; the calibration harness grades deterministically under load and survives a slow engine reply instead of aborting the sweep (Phase 168.5).
+- Bot play groundwork: a full clocked game against the bot is playable end to end on an unlinked `/bots` route — dual Fischer-increment clocks, bot pacing that speeds up as its own clock drops, every end condition (checkmate, stalemate, the draw rules, flagging), resign and draw offers, a result dialog, and move sounds. The nav entry and setup screen arrive with the Bots page (Phase 169).
+- Bot play groundwork: in the opening the bot now answers from a book instead of searching. It plays moves that keep the game inside the shipped ECO database, picked in proportion to how often humans at its rating play them, so its early moves are near-instant, cost it almost none of its clock, and vary from game to game. It leaves the book once no theory move looks plausible at its rating (or a ply cap is hit) and resumes normal search; the engine warms up during the book window, so the first searched move no longer pays a cold start (Phase 169.5).
+- Bot play groundwork: a bot game now survives closing the tab. Returning to `/bots` offers a "Resume game?" prompt showing the position, time control, bot ELO, move count, and how long ago you left, and picks the game up exactly where it stood — the clock is paused while you are away, so only your own thinking time is billed and the bot's interrupted search is refunded. Discarding asks for confirmation first. Abandoned games leave no trace on the server, and a finished game is stored exactly once no matter how many times you reload (Phase 170).
+- Play a bot: Bots is now a real top-level page, linked from the nav on desktop and mobile and open to guests as well as logged-in users. A setup screen configures the game (time control, bot ELO, play style, and your colour, including random), remembers your last choices, and seeds the ELO from your own rating. From there the clocked board, resume, and store-on-finish all hang together: a finished game is saved to your Library with a link to it, "New game" returns to setup, and "Analyze this game" opens the analysis board already oriented to the colour you played (Phase 171).
+- Analysis: opening a game now quietly scans its past moves in the background and marks the openings you had memorized (a book icon) alongside the strong-but-rare "gem" moves it finds, so hard-to-spot ideas from earlier in the game surface without you stepping through every move. The scan runs on its own and always yields to whatever position you are currently looking at, so it never slows down the board (Phase 172).
+
+### Changed
+- Play a bot: your side of the board is now labelled with your real username (your Lichess name, or your chess.com name if you have not linked Lichess) instead of "You", both on the clock while you play and on the saved game in your Library. It still reads "You" if you have linked neither platform (quick 260714-pnk).
+- Play a bot: a saved bot game now carries a full PGN header block instead of the empty `[Event "?"]` placeholders, so exporting it to lichess or any other viewer shows the event, a link back to the game, the date and time, both player names, both ratings, the bot's `BOT` title, the opening and its ECO code, and how the game ended. Your rating in the header is your Lichess-equivalent rating for that time control (the same figure the Library stores), and it is left out entirely rather than faked when you have no rating history for that time control (quick 260714-qaj).
+- Play a bot: "Analyze this game" now actually analyzes it. One click queues the game for engine analysis and opens it on the analysis board, where you can replay the moves straight away while a "Pending…"/"Analyzing…" badge sits where the eval chart will go. When the analysis lands, the eval chart, the flaw icons in the move list, and the missed/allowed tactic badges appear in place — your position in the game is kept, along with any variations you were exploring. Guests get this too: it is the one kind of analysis a guest can request, so the promise on the result screen is finally true (quick 260714-rj5).
+
+### Fixed
+- Library: opening a game that has not been analyzed yet no longer lands you on an empty board. The moves are there to replay immediately, whether or not the engine has looked at the game (quick 260714-rj5).
+
+## [v2.2] Analysis ELO Calibration & Deep-links — 2026-07-11
+
 ### Added
 - Analysis: you can now open any position directly by passing a `?fen=<fen>` URL param, which seeds that position as a fresh free-play analysis root (works alongside the existing `?line=` deep-link, with game > fen > line precedence) (Phase 165).
 
@@ -1047,7 +1070,9 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.1...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.3...HEAD
+[v2.3]: https://github.com/flawchess/flawchess/compare/v2.2...v2.3
+[v2.2]: https://github.com/flawchess/flawchess/compare/v2.1...v2.2
 [v2.1]: https://github.com/flawchess/flawchess/compare/v2.0...v2.1
 [v2.0]: https://github.com/flawchess/flawchess/compare/v1.32...v2.0
 [v1.32]: https://github.com/flawchess/flawchess/compare/v1.31...v1.32

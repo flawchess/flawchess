@@ -1,117 +1,197 @@
-# Stack Research
+# Stack Research — v2.3 Bot Play (NEW capabilities only)
 
-**Domain:** Client-side MCTS practical-play chess engine (FlawChess Engine, SEED-082) — built on already-shipped `onnxruntime-web` (Maia-3) + `stockfish.wasm` (Stockfish 18 lite-single) in-browser Web Workers.
-**Researched:** 2026-07-05
-**Confidence:** HIGH (versions verified against npm registry directly; architecture recommendations verified against the two existing sibling hooks and the locked SEED-082 spec, which already made most of the load-bearing decisions)
+**Domain:** Clocked bot-play added to an existing client-side chess engine (React 19 PWA + FastAPI)
+**Researched:** 2026-07-11
+**Confidence:** HIGH (versions verified via `npm view`; chess.js `[%clk]` behavior and engine-module browser-independence verified by direct Node execution against the repo's own `node_modules`)
 
-**Scope note:** this is a *narrow, additive* stack question — the milestone reuses the entire existing v1.29/v1.32 substrate (Stockfish 18 lite-single WASM, Maia-3 ONNX, `useStockfishEngine`, `useMaiaEngine`, `useStockfishGradingEngine`). Nothing below touches those pins. The finding, in short: **add zero new npm dependencies.** The MCTS engine is glue code over primitives that already exist; every "library" question resolves to "hand-roll it, it's 50–150 lines" because either (a) no maintained library fits the non-standard requirement, or (b) the problem is too small at this workload's scale to justify a dependency.
+## Scope note
+
+This file covers ONLY what is NEW for bot-play. The FlawChess Engine (`useFlawChessEngine` / `mctsSearch`), the Maia-3 ONNX policy worker, the Stockfish.wasm worker pool, the ELO + play-style sliders, `chess.js`, `react-chessboard`, and the game-storage normalization path already ship in prod. See **What NOT to Use / Add** for the explicit "do not replace" list. There are exactly four net-new stack concerns: a chess clock, move sounds, a headless calibration harness, and `[%clk]` PGN emission.
+
+Headline: **only ONE new production-adjacent dependency is warranted** (`onnxruntime-node`, dev-only, for the harness). The clock and sounds are best hand-rolled; `[%clk]` is already covered by the installed `chess.js`.
+
+The prior-milestone (v2.0 engine) stack research is preserved alongside as `STACK.prev-v2.0-engine.md`.
+
+---
 
 ## Recommended Stack
 
-### Core Technologies (already pinned — no change)
+### Core decisions (NEW work)
 
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| `stockfish` (npm, vendors `stockfish-18-lite-single.{js,wasm}`) | 18.0.8 | Leaf-eval workhorse for the MCTS pool | Already vendored to `public/engine/`, non-bundler-processed classic Worker, ~7 MB single-thread NNUE. Confirmed still latest on npm (2026-06-15). No reason to bump for this milestone — do not conflate an engine-version bump with the MCTS feature. |
-| `onnxruntime-web` | 1.27.0 | Maia-3 policy/WDL inference | Already pinned, confirmed still latest (2026-06-19). `maia-worker.js` already forces `ort.env.wasm.numThreads = 1` unconditionally (Phase 136 D-3) because there is no cross-origin isolation — this is *exactly* the config a concurrent Stockfish pool needs it to keep (see Q3 below). No version or config change required. |
-| TypeScript / Vite / React | 6.0.3 / 8.0.14 / 19.2.6 | Existing frontend stack | Unaffected — the engine is pure hook + worker-message logic, no new build-time tooling. |
+| Concern | Decision | Version | Why |
+|---------|----------|---------|-----|
+| Chess clock / timer | **Hand-roll** a deadline-based hook (`useGameClock`) | n/a | No maintained React chess-clock lib is worth a dependency; the correct pattern is ~80 lines and interval libraries get the accuracy model *wrong* (see clock section). |
+| Move sounds | **Hand-roll** a tiny Web Audio wrapper (`useMoveSounds`), preloaded buffers | n/a (Web Audio API is a platform built-in) | 5 short one-shot cues; a lib (howler) adds ~30 KB + a stale dep for something the platform does natively. Precache the audio assets via the existing Workbox/`vite-plugin-pwa` config for offline. |
+| Harness — Maia inference | **`onnxruntime-node`** (swap from `onnxruntime-web`) | **1.27.0** | Exact same ORT version as the pinned `onnxruntime-web@1.27.0` → identical opset/kernel support, zero model-compat risk. Native CPU EP is far faster than WASM for a batch harness, and needs no browser globals (`importScripts`, `self`, `navigator.gpu`, `Worker`). |
+| Harness — Stockfish | **Reuse the vendored `stockfish-18-lite-single.js`** as a `.cjs` child process | already vendored | Already verified working headlessly in Node (memory `project_headless_stockfish_wasm_verification`). No new dependency. |
+| Harness — run TS directly | **`tsx`** (esbuild loader) | **4.23.0** | Runs the exact `mctsSearch.ts` + pure engine modules unbundled, ESM + path-alias aware, no jsdom, no separate build step. Dev-only. |
+| `[%clk h:mm:ss]` PGN emission | **`chess.js` `setComment()`** (already installed) | 1.4.0 (present) | Verified: `setComment('[%clk 0:03:00]')` after each move makes `.pgn()` emit `... e4 {[%clk 0:03:00]} e5 ...` — the exact lichess/PGN standard. No PGN-writer library needed; python-chess already parses it on ingest. |
 
-### Supporting Libraries — recommendation: add none
+### New dependencies to actually add
 
-| Library | Version | Purpose | Verdict |
-|---------|---------|---------|---------|
-| MCTS library (`mcts`, `mcts-js`, `monte-carlo-tree-search`, `ts-mcts`, `fast-mcts`) | n/a | Generic MCTS search | **Do not add.** Checked npm registry directly: only `mcts` (0.0.8, last published 2017, unmaintained) exists under an MCTS-ish name; `mcts-js`, `monte-carlo-tree-search`, `ts-mcts`, `fast-mcts` don't exist as packages. More importantly, none would fit even if maintained — the *algorithm itself* is non-standard (SEED-082's backup rule diverges from every textbook UCT/PUCT library's selection+backup contract, see "Alternatives Considered"). |
-| Priority queue / binary heap (`tinyqueue`, `heap-js`) | 3.0.0 / 2.7.1 | Node-evaluation scheduler favoring best root lines | **Do not add at MVP1 scale.** SEED-082's own node-budget arithmetic says a seconds-scale budget yields "only a few hundred node evaluations" — at N≈hundreds, a linear max-scan over a plain array (`pendingNodes.reduce(maxByPriority)`) costs microseconds per pick and is trivially correct; a binary heap is premature optimization here. `tinyqueue` (4.9 KB unpacked, 0 deps, MIT, Mapbox-maintained) is the one worth reaching for *if and only if* the budget later scales to thousands of pending nodes — note it here as a name to reach for, not a dependency to add now. |
-| Worker-RPC helper (`comlink`, `workerpool`, `threads.js`) | 4.4.2 / 10.0.3 / 1.7.0 | Structuring postMessage traffic to a worker pool | **Do not add.** The existing codebase's own convention (all three engine hooks: `useStockfishEngine`, `useStockfishGradingEngine`, `useMaiaEngine`) is raw `worker.postMessage`/`onmessage` with a hand-rolled state machine — no RPC wrapper anywhere, even for Maia's structured `{type, fen, eloInputs}` protocol. Comlink's overhead (proxying, promise-per-call) doesn't fit a **streaming, cancelable, stateful UCI session** anyway — you'd fight the wrapper to get `stop`/`bestmove` semantics back out. Follow the established pattern instead (see Q1). |
-| Immutable tree / state-management (`immer`, zustand-flavored tree libs) | — | MCTS tree node storage | **Do not add.** The tree is ephemeral, per-analysis-session, discarded on FEN navigation (mirrors `useStockfishGradingEngine`'s per-FEN `Map` cache lifecycle). A plain mutable `Map<nodeId, MctsNode>` or parent-pointer tree of plain objects is sufficient and matches every existing hook's use of raw `useRef<Map<...>>` for ephemeral session caches. |
+| Package | Version | Where | Dev/Prod |
+|---------|---------|-------|----------|
+| `onnxruntime-node` | 1.27.0 | harness only (`scripts/` or a `harness/` workspace) | **devDependency** — must NOT ship in the browser bundle |
+| `tsx` | 4.23.0 | harness runner | **devDependency** |
 
-### Development Tools
+That's it. The clock, sounds, and `[%clk]` add **zero** new runtime dependencies.
 
-| Tool | Purpose | Notes |
-|------|---------|-------|
-| Existing `useStockfishGradingEngine` | Per-node primitive (Maia top-k graded by Stockfish, `searchmoves`-restricted MultiPV) | This IS the MCTS node-expansion primitive per SEED-082 — do not rebuild it, extend it into a pool (see Q1). Its `pv[0]`-keyed grade cache and ELO-independent grading cache pattern should be reused for pool workers as well. |
-| Existing `useMaiaEngine` | Policy prior + WDL at a node | Already returns a full per-ELO curve + WDL from one inference; the MCTS expansion step reads `moveProbabilities` (top-k truncated at ~90% cumulative mass per SEED-082) as the prior — no new Maia call shape needed. |
-| `vitest` | Unit-testing the MCTS core (backup rule, selection, priority scheduler) in isolation | The custom backup rule is exactly the kind of pure-function logic (`backup(node, childValues, priors) -> value`) that should get dense unit tests with fixed node budgets for determinism (SEED-082: "fixed node budgets in tests → reproducible"), decoupled from the Worker/async plumbing. |
+---
+
+## 1. React chess clock / timer — hand-roll, deadline-based
+
+**Recommendation: hand-roll. Do not add a library.** The npm "react-timer"/"react-countdown" family (and the few "chess clock" packages) almost all implement the *wrong* model: they decrement a counter on each `setInterval` tick and accumulate drift, and they stop cold when the tab is backgrounded (browsers throttle `setInterval` to ≥1 s for visible tabs, and much harder for hidden ones — a 3+0 blitz clock would silently freeze). None are worth the dependency for ~80 lines of correct code.
+
+**The correct accurate-timer pattern (this is the standard, and what lichess/chess.com do):**
+
+1. **Store deadlines, not counters.** The source of truth is `deadlineMs = Date.now() + remainingMs` for the side on move (plus the frozen `remainingMs` for the side off move). Never subtract a fixed amount per tick.
+2. **Derive display from `Date.now()` deltas.** On each render tick compute `remaining = deadline - Date.now()`. Drift-free by construction: every frame recomputes against the wall clock, so no error accumulates.
+3. **Drive the UI tick with `setTimeout`/`requestAnimationFrame`, not `setInterval`.** A self-rescheduling `setTimeout` (or `rAF` while visible) at ~100 ms *only repaints* the number; the *value* comes from the delta, so a throttled or skipped tick cannot corrupt time — it just repaints late.
+4. **Page Visibility API for background correctness.** On `visibilitychange`: when hidden, stop the repaint loop; on becoming visible, immediately recompute `remaining = deadline - Date.now()`. Because the deadline is absolute, elapsed background time is accounted for correctly — if the clock ran out while hidden, the recompute detects `remaining <= 0`. This satisfies "survives tab backgrounding / `setInterval` throttling."
+5. **Flag detection on the authoritative delta**, not on a tick reaching zero: check `Date.now() >= deadline` (a) every repaint, (b) on `visibilitychange` → visible, and (c) right before the bot is asked to move. A tick-based zero-check would miss a flag that expired while throttled/hidden.
+6. **Fischer increment:** on move *commit* for a side, `remaining += incrementMs`, then set the opponent's `deadline`. Matches lichess semantics (the mover keeps the increment).
+7. **Pause/resume (localStorage abandonment resume, SEED-091 decision 4):** persist `remainingMs` per side + whose turn it is (a paused clock stores plain remaining values, no live deadline). On resume, rebuild the on-move side's `deadline = Date.now() + remainingMs`. Clock is paused while away.
+
+**Shape:** a `useGameClock({ initialMs, incrementMs })` hook returning `{ whiteMs, blackMs, activeSide, onMove(side), pause(), resume(), flagged }`, plus a pure `computeRemaining(state, now)` helper that is trivially unit-testable (feed it fake `now` values) and reusable in the harness for time-odds simulation. Keep the React `setTimeout` loop thin; put the time math in the pure helper.
+
+**Interaction with bot think-time (SEED-091 pacing note):** the same `remainingMs` feeds both the search-budget ceiling and the human-like move delay. The bot's "thinking" delay must itself be a `setTimeout` scheduled against a deadline (so a backgrounded tab doesn't make the bot move instantly on return) — reuse the same deadline discipline.
+
+---
+
+## 2. Move sounds — hand-roll Web Audio; source CC0 assets
+
+**Recommendation: hand-roll a tiny `useMoveSounds` hook over the Web Audio API.** Five short cues (move, capture, check, game-end, optionally low-time/illegal). ~40 lines: `fetch` each asset once → `AudioContext.decodeAudioData` → cache the `AudioBuffer` → on event, `createBufferSource()` and `start()`. Web Audio is the right layer: **no per-play latency** (buffers pre-decoded), supports **overlapping** plays (rapid moves), needs no DOM nodes.
+
+**Why not the alternatives:**
+- **`<audio>` elements:** simplest, but re-triggering a still-playing element needs `currentTime = 0` gymnastics, overlapping plays need cloned nodes, and first-play decode latency is noticeable. Fine as a fallback, not the primary path.
+- **`howler.js` (2.2.4):** the standard tiny audio lib and it *works*, but ~30 KB gzipped, an aging release cadence, and it solves problems (audio sprites, cross-fade, streaming music) this feature doesn't have. Add it only if sound scope later grows. Documented alternative, not the default.
+
+**Critical browser gotcha (must handle):** `AudioContext` starts `suspended` until a user gesture. Create/resume the context on the first user interaction (the "Play" button on the setup screen is the natural unlock point) and call `ctx.resume()` there. Without this, the first move plays silently on Chrome/Safari. Respect a mute toggle (persist in localStorage) and consider a sound preference / `prefers-reduced-motion`.
+
+**Assets & licensing (be careful):**
+- **Do NOT assume lichess's sound files are freely reusable.** lichess `lila` assets are under lichess's own terms and some carry attribution/CC-BY or bespoke licenses — not clean CC0. Don't copy them without checking each file.
+- **Preferred: CC0.** Source from **freesound.org** filtered to CC0 (public domain), or generate synthetic clicks/thuds (a short sine/triangle burst rendered offline). CC0 avoids attribution obligations awkward in a PWA. Keep a short provenance/license note in the repo even for CC0.
+- Encode as small **`.ogg` + `.mp3`** (or just `.mp3`/`.m4a` — universally supported incl. iOS Safari) at low bitrate; each cue is a few KB.
+
+**PWA / offline:** put audio under `frontend/public/sounds/` and ensure the existing **`vite-plugin-pwa@1.3.0`** Workbox config precaches them (add the audio glob to the precache manifest if `public/` assets aren't already globbed) so sounds work when installed/offline. This mirrors how the vendored engine/maia assets are served verbatim from `public/`.
+
+---
+
+## 3. Headless calibration harness — `onnxruntime-node` is the right swap (feasibility: YES)
+
+**The open feasibility question — "can Maia ONNX run headlessly in Node at harness-viable speed?" — resolves to YES, via `onnxruntime-node`, not `onnxruntime-web` in jsdom.**
+
+### Why not run the browser worker in Node/jsdom
+The Maia path in prod is `mctsSearch.ts` → `maiaQueue.ts` → `new Worker('/maia/maia-worker.js')` → `importScripts(ort.wasm.min.js)`. `maia-worker.js` depends on browser-only globals: `importScripts`, `self.onmessage`/`postMessage`, `navigator.gpu` (WebGPU probe), and the UMD `ort` global. jsdom provides **none** of `Worker`, `importScripts`, or WebGPU; shimming them to run WASM-ORT would be slow and brittle. Reject this approach.
+
+### The clean approach (verified feasible)
+The **encoding + post-processing math is already browser-independent.** Verified by inspection: `src/lib/maiaEncoding.ts` and `src/lib/sanToSquares.ts` import only `chess.js` — no `window`/`self`/`navigator`/`document`. `mctsSearch.ts` imports only pure TS modules (`select`, `leafScore`, `policyTemperature`, `types`, `guardrail`, `liveFlaw`). The browser coupling lives **entirely in the two worker-glue files** (`maia-worker.js`, and the `Worker`-spawning parts of `maiaQueue.ts`).
+
+So the harness reimplements just the thin provider seam in Node:
+
+1. **Maia provider (Node):** load `frontend/public/maia/maia3_simplified.onnx` with `onnxruntime-node`'s `InferenceSession.create(modelPath, { executionProviders: ['cpu'] })`. Feed the **same three inputs** the worker builds — `tokens [B,64,12]`, `elo_self [B]`, `elo_oppo [B]` — using the **ported** `encodeBoardTokens()` from `maiaEncoding.ts` (import it directly via `tsx`, since it's browser-free). Read `logits_move` / `logits_value`, then run the same `maskAndSoftmax` + `sanToUci` to produce the `Record<uci, prob>` that `EngineProviders.policy()` returns. **The existing browser encoding glue ports directly** — same numeric pipeline, minus the Worker envelope.
+2. **Stockfish provider (Node):** spawn the vendored `stockfish-18-lite-single.js` copied to a no-`package.json` dir as `.cjs` and drive it over stdin/stdout UCI — the already-verified recipe. Wrap it to the same `EngineProviders` grading interface `mctsSearch` expects.
+3. **Reuse `mctsSearch.ts` unchanged.** It's pure logic over the `EngineProviders` interface; wire it to the two Node providers. This is the point of the harness — it tests the *identical* search code the browser runs, so the strength map is valid.
+4. **Anchors:** raw-Maia-argmax opponents (1100–1900) reuse the same Node Maia session with a straight argmax over the policy; Stockfish skill-level anchors use `setoption name Skill Level` on the vendored binary.
+
+### Version / packages / runtime
+- **`onnxruntime-node@1.27.0`** — pinned to match `onnxruntime-web@1.27.0` exactly. Eliminates the classic opset/kernel-mismatch trap: same ORT build → the model that runs in the browser runs identically in Node. (The `onnxruntime==1.20.1` in the memory files was the **Python** `onnxruntime` for a *different* Maia repro — irrelevant here; do not down-pin the Node package to it.)
+- **`tsx@4.23.0`** — run `tsx harness/run.ts`; it resolves the `@/` path alias (point tsx at the frontend `tsconfig` or a small `paths` config) and executes ESM TS with no bundler. No jsdom.
+- **Node ≥ 20** (repo has **v24.14.0**; `onnxruntime-node` ships prebuilt binaries for Node 18/20/22/24 on linux-x64/arm64 + macos — no native toolchain needed).
+- **No jsdom, no worker shims, no `Worker` polyfill.** Keeping providers Node-native avoids the entire browser-emulation surface.
+
+### Throughput expectation
+Native CPU ORT runs the small Chessformer model in low single-digit milliseconds per position on a modern CPU — orders of magnitude faster than needed for a coarse `(ELO × slider)` grid. The full-human path is **one Maia inference per move** (no MCTS), so even thousands of games are minutes. The Stockfish-blend path costs more (search), but that's WASM-in-Node compute, already proven. Harness-viable: **comfortably YES.**
+
+### Fallback (if `onnxruntime-node` ever mismatches the model)
+Run `onnxruntime-web`'s **WASM backend inside Node** (`require('onnxruntime-web')`, force `ort.env.wasm.numThreads = 1`, point `wasmPaths` at the vendored `.wasm`). Slower and you re-inherit WASM asset-path fiddliness, but it's the *exact* runtime the browser uses — the tie-breaker oracle if a Node-vs-browser policy discrepancy is ever suspected. Keep it documented, don't build on it by default.
+
+---
+
+## 4. `[%clk]` PGN clock annotations — already covered by chess.js
+
+**No new library. `chess.js@1.4.0` (already installed) emits `[%clk]` correctly** — verified by direct Node execution against the repo's `node_modules`:
+
+```
+c.move('e4'); c.setComment('[%clk 0:03:00]');
+c.move('e5'); c.setComment('[%clk 0:02:58]');
+c.pgn()  →  1. e4 {[%clk 0:03:00]} e5 {[%clk 0:02:58]} 2. Nf3 *
+```
+
+`setComment()` attaches a comment to the position *after* the move just played, and `.pgn()` renders it as `{...}` immediately following the move — exactly the lichess/PGN `[%clk h:mm:ss]` convention. So:
+- **Frontend:** after each committed move, `chess.setComment('[%clk ' + formatClock(remainingMs) + ']')`. Format is `h:mm:ss` (single-digit hours; lichess uses `0:03:00` for 3+0). Hand-write the string — chess.js has no dedicated clock API, but doesn't need one; the annotation is just a structured comment.
+- **Backend:** the existing normalization path uses **python-chess**, which parses `[%clk]` natively (it's how imported chess.com/lichess clock data already lands). The stored `platform='flawchess'` PGN flows through the same reader — **no new backend parsing code**, satisfying SEED-091 decision 1 (time-management stats won't silently exclude bot games).
+
+One caveat to lock at plan time: emit the clock for **both** colors' moves (so time-management analytics have per-side clocks), and decide value semantics — store *remaining time after the move* (lichess convention), computed from the clock hook's `remainingMs` at move-commit (after increment). Keep the formatter a pure function shared with the clock hook.
+
+---
 
 ## Installation
 
 ```bash
-# No new frontend dependencies for this milestone.
-# (Optional, only if node budgets later scale past ~1-2k pending evaluations:)
-# npm install tinyqueue
+# Harness only — dev dependencies, MUST NOT reach the browser bundle
+cd frontend        # or a dedicated harness workspace
+npm install -D onnxruntime-node@1.27.0 tsx@4.23.0
+
+# Clock, sounds, [%clk]: NO installs.
+#   - chess.js@1.4.0 already present (handles [%clk] via setComment)
+#   - Web Audio API + Page Visibility API are platform built-ins
+#   - audio assets: drop CC0 .mp3/.ogg files into frontend/public/sounds/
 ```
+
+---
 
 ## Alternatives Considered
 
 | Recommended | Alternative | When to Use Alternative |
-|-------------|-------------|---------------------------|
-| Hand-rolled MCTS core (custom selection + custom backup) | A maintained MCTS/UCT library (if one existed) | Only if the algorithm were textbook UCT/PUCT (uniform backup, single value estimate per node, standard `argmax(Q + c·U)` selection). SEED-082's backup rule is explicitly non-standard: non-root nodes back up a **Maia-prior-weighted expectation** over expanded children (not a mean-of-visits, not a max), with the *weighting distribution itself switching sides* (opponent-ELO Maia prior at opponent nodes, your-ELO Maia prior at your nodes) while **root stays plain max**. No published MCTS library supports asymmetric per-ply-parity backup semantics or a two-model (policy-from-Maia, value-from-Stockfish) node evaluator; retrofitting one would cost more than writing the ~150-line core fresh. |
-| Extend `useStockfishGradingEngine`'s worker into an N-worker pool | A single shared Stockfish worker doing sequential MultiPV grading | Sequential grading is what Phase 151.1 already does for the root — fine there because it's one search. MCTS needs many *independent* leaf evaluations across the tree per iteration; sequential grading would serialize the whole search behind one WASM instance's queue. Only fall back to single-worker if pool-memory pressure (see Q1/Q3) forces pool size to 1 on constrained devices — treat that as a degraded mode, not the default. |
-| Plain array + linear-scan priority pick | `tinyqueue`/`heap-js` | Switch once profiling shows the pending-node set regularly exceeds ~1–2k entries (unlikely at "seconds-scale, few hundred nodes" per SEED-082) or once time-pressure/ambitious-phase features raise node budgets by an order of magnitude. |
-| Raw `postMessage`/`onmessage` worker protocol per pool member | Comlink/workerpool | Only if a *future* refactor extracts a shared low-level "StockfishWorkerClient" class to de-duplicate the now-triplicated worker-lifecycle/state-machine code across `useStockfishEngine`, `useStockfishGradingEngine`, and the new pool members — that's a legitimate internal refactor (flagged below), but it's still hand-rolled, not a wrapper-library adoption. |
+|-------------|-------------|-------------------------|
+| Hand-rolled deadline clock | `react-countdown` / a "react chess clock" npm pkg | Never for this — they use interval-decrement + accumulate drift and freeze when backgrounded. Not fit for a real chess clock. |
+| Hand-rolled Web Audio `useMoveSounds` | `howler.js@2.2.4` (+ `@types/howler@2.2.13`) | If sound scope grows: audio sprites, background music, cross-fade, or a single-line cross-format fallback. Not needed for 5 one-shot cues. |
+| `onnxruntime-node@1.27.0` for the harness | `onnxruntime-web` WASM backend run *inside* Node | As a correctness oracle when you suspect a Node-vs-browser policy discrepancy (identical runtime), or if a future model uses an op the Node CPU EP lacks. Slower; don't default to it. |
+| `tsx` to run the harness TS | Pre-`tsc` build then run JS; or `ts-node` | If you want a committed compiled artifact. `tsx` (esbuild) is faster to iterate and alias-aware; `ts-node` is slower and stricter about ESM. |
+| Port encoding into Node providers | Run the browser Maia worker under jsdom + Worker/WebGPU shims | Never — jsdom has no `Worker`/`importScripts`/WebGPU; shimming WASM-ORT is slow and brittle. The encoding math is already browser-free, so this is pure downside. |
+| `chess.js setComment` for `[%clk]` | A dedicated PGN writer lib (e.g. `@mliebelt/pgn-*`) | Never here — chess.js already emits the standard annotation; a PGN library is redundant weight. |
 
-## What NOT to Use
+---
 
-| Avoid | Why | Use Instead |
-|-------|-----|--------------|
-| SharedArrayBuffer / Stockfish multi-threaded WASM build | Requires COOP/COEP cross-origin isolation; COOP `same-origin` severs `window.opener`, which breaks the existing Google-OAuth popup flow (a hard, already-documented constraint, D-3/SEED-082). Deployment-level decision explicitly out of scope for this milestone. | The already-decided **pool of 2–4 single-threaded Stockfish workers**, each independently grading a different leaf — embarrassingly parallel, matches the "many shallow evals" workload (unlike lichess's one-deep-search workload), and needs zero cross-origin headers. |
-| `onnxruntime-web` `numThreads > 1` for Maia | Same SAB/cross-origin-isolation requirement as above; also a documented ORT issue (microsoft/onnxruntime #26858) where multi-threaded sessions can hang indefinitely with external-data-file models. `maia-worker.js` already hard-codes `numThreads = 1` for this exact reason (Phase 136 D-3) — do not touch it while adding the Stockfish pool. | Leave Maia's WASM backend single-threaded (or WebGPU, which is a separate GPU execution path with no relation to the Stockfish CPU-side worker pool — the two coexist without contention). |
-| A generic/off-the-shelf MCTS npm package | None exist in a maintained state (`mcts` is 2017-era, unmaintained) and none could express the asymmetric Maia-weighted backup rule without being gutted and rewritten anyway. | Hand-rolled core behind the SEED-082-mandated small interface: `search(position, budget) -> rankedRootLines`, with incremental/anytime emission — this is also the documented guardrail so a depth-limited expectimax fallback is swappable in a day if MCTS tuning stalls. |
-| App-level Zobrist/transposition cache across MCTS nodes | Already explicitly rejected in SEED-082 ("No app-level Zobrist/transposition caching — positions diverge too fast to pay off"). Stockfish's own internal TT already gives partial reuse for free within a single grading search. | Rely on Stockfish's internal hash table (small per-instance `Hash` UCI option, see Q1) plus the existing per-FEN `pv[0]`-keyed grade `Map` cache pattern already used by `useStockfishGradingEngine` — that cache is ELO-independent and reusable as-is for pool workers. |
-| A wrapper/RPC library for worker communication (Comlink et al.) | Doesn't fit a streaming, cancelable, stateful UCI session (`stop`/`bestmove` interleaving, stale-result discarding) — every existing hook in this codebase solved that with a hand-rolled state machine (`idle`/`thinking`/`stopping` + `stopPendingRef`), and a wrapper library would fight that pattern rather than help it. | Copy the `idle`/`thinking`/`stopping` state-machine pattern per pool worker (see Q1). |
-| Bumping Stockfish/onnxruntime-web versions "while we're in there" | Both are already at the latest published npm version (verified 2026-07-05); a version bump is an unrelated, separately-testable change with its own regression surface (NNUE net compatibility, UCI option changes). | Leave both pinned; track version bumps as their own quick task if/when upstream ships something relevant (e.g. a smaller NNUE net). |
-| Fitting per-ELO leaf sigmoids, time-pressure modeling, or a trap-finder UI as part of this stack | All three are explicitly deferred in SEED-082 ("Deferred by design"). Pulling them in now inflates the MVP1 surface the seed deliberately kept small. | Ship MVP1 (single position, modal-path display, lichess global eval→win% sigmoid, live-refining top-n + arrows) first; each deferred item is its own later phase with its own research if needed. |
+## What NOT to Use / Add
 
-## Stack Patterns by Variant
+These already exist and ship in prod. **Do NOT propose replacing, re-selecting, or re-benchmarking them** — bot-play consumes them as-is.
 
-**Q1 — Stockfish.wasm worker pool pattern (no maintained multi-instance library exists; hand-roll):**
+| Do NOT add/replace | Why | Use the existing thing |
+|--------------------|-----|------------------------|
+| Any new chess engine, or a rewrite of `mctsSearch` | The FlawChess Engine (v2.0) is the whole point of measuring; changing it invalidates calibration | `useFlawChessEngine` / `mctsSearch` (`src/lib/engine/`) |
+| A different browser Maia inference stack (tfjs, hosted API) | `onnxruntime-web@1.27.0` + `maia3_simplified.onnx` in a Worker already ships | `public/maia/maia-worker.js`, `maiaQueue.ts` |
+| A different/bundled Stockfish, or WASM threading | Vendored single-thread `stockfish-18-lite-single.{js,wasm}` is deliberately non-Vite-bundled; threading off (no cross-origin isolation) | `public/engine/`, `useStockfishEngine` / the search's grading provider |
+| A move-selection/sampling library | The sample↔argmax blend is the engine's own play-style-slider semantics | reuse the analysis-board play-style slider + root-policy temperature (`policyTemperature.ts`) |
+| A websocket/server game-session layer, an on-chain clock authority | Locked decision: the game is fully client-side; only the finished PGN is POSTed | one small store endpoint reusing the existing normalization path (`platform='flawchess'`) |
+| A backend PGN/`[%clk]` parser | python-chess already parses `[%clk]` on ingest | existing normalization reader |
+| `onnxruntime-node` as a **prod/runtime** dependency | It's a native binary for the Node harness only; the browser keeps using `onnxruntime-web` | mark it `devDependencies`, keep it out of the Vite bundle |
 
-- There is no maintained "Stockfish worker pool" package — `stockfish` (npm) ships the single-instance engine only; nothing on npm wraps it in a pool. Build a thin `StockfishGradingPool` that is structurally `N` copies of `useStockfishGradingEngine`'s worker (same `ENGINE_PATH`, same classic-Worker/non-module load, same `idle`/`thinking`/`stopping` state machine, same `stopPendingRef` stale-result guard, same tab-hide pause) rather than inventing a new worker protocol.
-- **Pool size: 2–4, per SEED-082.** Each worker is a fully independent WASM instance with its own copy of the ~7 MB NNUE net loaded into its own linear memory — pool memory scales roughly linearly with pool size (not shared). Cap `Hash` (UCI option) low per instance (e.g. 8–16 MB) since MultiPV/searchmoves-restricted shallow grading doesn't benefit from a large hash table, and a 4-worker pool at default Hash settings would otherwise multiply memory pressure for no search-quality gain.
-- **Mobile ceiling matters.** This is a mobile-first PWA (CLAUDE.md). iOS Safari's per-tab WebKit memory ceiling is the binding constraint, not desktop RAM. Default the pool size conservatively (start at 2, not 4) and consider `navigator.hardwareConcurrency` as a rough proxy to size up on desktop-class hardware — Chrome-only `navigator.deviceMemory` is not available on Safari, so don't gate on it as the sole signal.
-- **Node-evaluation priority queue**: not a separate library-worthy structure at SEED-082's stated node-budget scale (hundreds of evaluations per search). A plain array of pending `{node, priority}` entries with a linear max-scan on each worker-free event is correct and fast enough; priority is simply "current backed-up value of the root child this node descends from" (ties broken by shallower depth or earlier insertion, kept deterministic per the "no Dirichlet noise, deterministic tie-breaking" requirement).
-- **Reuse, don't rebuild, the grade cache.** `useStockfishGradingEngine`'s existing `pv[0]`-keyed, ELO-independent, FIFO-capped `Map<fen, Map<san, MoveGrade>>` cache is exactly the leaf-eval cache the pool needs — extend its shape to a pool-shared cache (position-only key, no per-worker fragmentation) rather than one cache per worker instance.
-
-**Q2 — MCTS in TypeScript/browser (hand-roll, no library):**
-
-- No maintained TS/JS MCTS library exists that would fit (see "Alternatives Considered"). Build the core as a small, pure, synchronously-testable module: `selectAndExpand(tree) -> leafNode`, `evaluateLeaf(leafNode) -> Promise<value>` (dispatches to the Stockfish pool + Maia hook), `backup(path, value, priors) -> void` (the custom asymmetric rule), `emitRankedLines(tree) -> RankedLine[]` (anytime read, callable after every completed iteration or on a UI-driven cadence).
-- **Anytime/incremental emission is native to MCTS**, not something to add: after any number of completed iterations, `emitRankedLines` just reads current visit counts / backed-up values off root children — no special "partial result" plumbing needed beyond calling it on a timer or on each iteration boundary and pushing into React state (mirrors the existing `commitDisplayedGradeMap`/`commitPvSnapshot` "commit a snapshot on every info-line-equivalent event" pattern already used by both Stockfish hooks).
-- **Guardrail per SEED-082**: keep the tree/search behind `search(position, budget) -> rankedRootLines` so a depth-limited expectimax is a same-interface fallback if MCTS tuning stalls — this argues for the core living in one small, dependency-free module (e.g. `frontend/src/lib/flawchessEngine/`) independent of the React hook that drives it, exactly like `maiaEncoding.ts` is decoupled from `useMaiaEngine`.
-- **Determinism for tests**: no Dirichlet noise, fixed node budgets, deterministic tie-breaking (explicit SEED-082 requirement) — this also means the core module needs zero `Math.random()` calls, which in turn means no MCTS library's default UCB1/PUCT exploration-noise behavior can be reused as-is even if one existed.
-
-**Q3 — onnxruntime-web concurrency with the Stockfish pool:**
-
-- No version or config change needed. `maia-worker.js` already forces `ort.env.wasm.numThreads = 1` unconditionally (comment: "NEVER > 1 — no cross-origin isolation," Phase 136 D-3) and this constraint is orthogonal to the Stockfish pool — Maia's WASM execution stays single-threaded regardless of how many Stockfish workers run.
-- If Maia falls back to its WebGPU path (`ort.env.wasm.numThreads` set before session creation on the WASM fallback only — WebGPU sessions don't spawn wasm worker threads at all), it executes on the GPU, a resource pool entirely separate from the CPU-bound Stockfish workers — no contention to manage.
-- **Real contention is CPU core count, not ORT config.** 2–4 Stockfish workers + 1 Maia WASM/WebGPU worker running concurrently on a low-core mobile device will compete for CPU time regardless of ORT flags; this is a scheduling/UX concern (how snappy does Maia's chart stay while the pool churns) not a library/version concern — no action needed at the stack-selection level, but worth flagging for the phase-planning stage as a real-device profiling item.
-- `onnxruntime-web` known threading hang (microsoft/onnxruntime #26858, `numThreads > 1` + external data files) doesn't apply here — Maia's config never sets `numThreads > 1`, and the model isn't loaded via external data files.
+---
 
 ## Version Compatibility
 
 | Package A | Compatible With | Notes |
-|-----------|-------------------|-------|
-| `stockfish@18.0.8` (lite-single build) | `onnxruntime-web@1.27.0` | No interaction — two independent classic Workers, no shared runtime, no bundler-level conflict (both are non-module scripts served from `public/`, untouched by Vite). |
-| Pool of N `stockfish-18-lite-single.js` Workers | Same-origin, no COOP/COEP | Verified compatible with the existing OAuth-popup constraint precisely because it avoids SharedArrayBuffer — this was the whole point of the "no SAB" architecture decision in SEED-082 and it holds unchanged for N≥2 independent instances (each instance is single-threaded internally; multiplying instances doesn't reintroduce a SAB requirement). |
-| MCTS core module | React 19 hooks | Keep the core framework-agnostic (plain functions/classes) so it can be unit-tested with `vitest` without mounting hooks — the driving hook (`useFlawChessEngine` or similar) is a thin adapter, mirroring how `maiaEncoding.ts` (framework-agnostic) is separated from `useMaiaEngine` (the hook adapter). |
-
-## Sources
-
-- npm registry (direct queries, 2026-07-05): `onnxruntime-web` (latest 1.27.0, published 2026-06-19), `stockfish` (latest 18.0.8, published 2026-06-15), `chess.js` (latest 1.4.0), `mcts` (latest 0.0.8, published 2017 — unmaintained), `mcts-js`/`monte-carlo-tree-search`/`ts-mcts`/`fast-mcts` (none exist), `tinyqueue` (3.0.0), `heap-js` (2.7.1), `comlink` (4.4.2), `workerpool` (10.0.3), `threads` (1.7.0) — HIGH confidence (primary registry data).
-- Codebase read (2026-07-05): `frontend/src/hooks/useStockfishEngine.ts`, `useStockfishGradingEngine.ts`, `useMaiaEngine.ts`, `frontend/public/maia/maia-worker.js` (confirmed `numThreads = 1` forced, Phase 136 D-3), `frontend/public/engine/` + `frontend/public/maia/` vendored asset listing — HIGH confidence (ground truth).
-- `.planning/seeds/SEED-082-human-playable-line-engine.md` — locked design spec (algorithm, architecture, deferred scope) — HIGH confidence (project decision record, treated as authoritative, not re-litigated).
-- WebSearch (2026-07-05): stockfish.wasm worker/threading limits (lichess-org/stockfish.wasm, nmrugg/stockfish.js, DeepWiki Stockfish thread-management docs) — MEDIUM confidence (community sources, cross-checked against the codebase's own already-working single-thread-per-worker pattern).
-- WebSearch (2026-07-05): onnxruntime-web `env.wasm` flags (`numThreads`, `wasmPaths`, `simd`, proxy worker) and known multi-thread hang issue (microsoft/onnxruntime#26858, #25666) — MEDIUM-HIGH confidence (official onnxruntime.ai docs + GitHub issue tracker), cross-checked directly against `maia-worker.js`'s actual config.
-- WebSearch (2026-07-05): Maia-2 skill-aware-attention architecture (CSSLab/maia2, NeurIPS 2024 paper) — MEDIUM confidence, background only; not actionable for this milestone (model already vendored is Maia-3/"Chessformer", out of scope to re-litigate the model choice here).
+|-----------|-----------------|-------|
+| `onnxruntime-node@1.27.0` | `onnxruntime-web@1.27.0` (pinned) | **Match these exactly.** Same ORT version → identical opset/kernel coverage → the browser model runs identically in the harness. Bump them together, never independently. |
+| `onnxruntime-node@1.27.0` | Node 24.14.0 (repo), Node ≥ 20 | Prebuilt binaries for Node 18/20/22/24 on linux/macos x64+arm64; no native build toolchain needed. |
+| `tsx@4.23.0` | TypeScript 6, Vite 8 project | esbuild-based, ESM-native; give it the frontend `tsconfig` (or a small `paths` config) so `@/` aliases resolve in `mctsSearch.ts` and friends. |
+| `chess.js@1.4.0` | existing frontend + python-chess backend | `setComment('[%clk h:mm:ss]')` → `.pgn()` emits `{[%clk ...]}`; python-chess parses it. Verified end-to-end. |
+| Web Audio + Page Visibility APIs | all target browsers incl. iOS Safari | Web Audio needs a user-gesture `resume()`; both APIs are baseline-supported. |
+| audio assets (mp3/ogg) | `vite-plugin-pwa@1.3.0` Workbox | Ensure `public/sounds/*` is in the precache glob for offline PWA playback. |
 
 ---
 
-## Superseded prior research (v1.30 Forcing-Line Tactic Gate — kept for reference, not this milestone)
+## Sources
 
-The section below is retained from the previous stack research pass (2026-06-29, MultiPV=2 + JSONB storage for the backend tactic gate). It is unrelated to the v2.0 FlawChess Engine milestone above and should not be treated as current guidance for this milestone — kept only so the historical backend research isn't lost.
+- Repo `node_modules` version check via `npm view` (2026-07-11): `onnxruntime-node 1.27.0`, `onnxruntime-web 1.27.0` (pinned in `frontend/package.json`), `tsx 4.23.0`, `howler 2.2.4`, `@types/howler 2.2.13`, Node `v24.14.0` — HIGH confidence (authoritative for versions).
+- Direct Node execution of `chess.js@1.4.0` `setComment`/`pgn()` against the repo's own install — confirmed `{[%clk 0:03:00]}` emission — HIGH confidence (behavioral verification, not docs).
+- Source inspection: `frontend/public/maia/maia-worker.js`, `src/lib/engine/maiaQueue.ts`, `src/lib/maiaEncoding.ts`, `src/lib/sanToSquares.ts`, `src/lib/engine/mctsSearch.ts` — confirmed engine math is browser-global-free and worker glue isolates the browser coupling — HIGH confidence.
+- Memory `project_headless_stockfish_wasm_verification` — vendored Stockfish WASM verified headless in Node as `.cjs` — HIGH confidence (prior verification).
+- Web Audio unlock-on-gesture, `setInterval` background throttling, and Page Visibility semantics — MDN-documented platform behavior — MEDIUM-HIGH confidence (standard, not project-specific).
+- Sound-asset licensing (lichess assets not cleanly CC0; prefer freesound.org CC0) — MEDIUM confidence; verify each specific asset's license at plan time before committing files.
 
-**Domain:** Chess tactic analysis — MultiPV=2 engine pass + JSONB persistence (v1.30 Forcing-Line Gate)
-**Researched:** 2026-06-29
-
-Verdict: no new PyPI dependency required. `python-chess` 1.11.x ships a typed `multipv` overload on `UciProtocol.analyse()` returning `List[InfoDict]` (best-first, `info_list[0]` = best line, guard `len(info_list) > 1` for the second line). SQLAlchemy `dialects.postgresql.JSONB` (already used in `llm_log.py`) plus asyncpg's automatic JSONB codec cover storage with no `MutableDict`, no manual codec registration, and no TOAST configuration (blobs ~600 bytes, well under the ~2KB TOAST threshold). `EnginePool` needed a new `_analyse_multipv2()` sibling method (parallel to `_analyse_with_pv()`) since `multipv=2` changes the return type. No UCI `Hash`/`Threads` changes, no GIN index, no sidecar table at launch.
-
-Full detail (exact API signatures, `EnginePool` code, Alembic migration, sources) lives in git history for `.planning/research/STACK.md` prior to 2026-07-05 if needed again.
+---
+*Stack research for: clocked bot-play added to a client-side chess engine (FlawChess v2.3)*
+*Researched: 2026-07-11*

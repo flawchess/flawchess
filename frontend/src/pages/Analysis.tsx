@@ -27,12 +27,14 @@
  *   free play with an arbitrary mid-game FEN snapshot as the root (SEED-094 / D-06;
  *   restored alongside ?line=, not a replacement — no navigable history back to move 1).
  *   ?game_id=X&ply=Y loads the full game at ply Y (game mode). Precedence when multiple
- *   params are present: game_id > fen > line. The legacy tactic mode (?flaw_ply=, removed
- *   Quick 260627-l2z) is gone; clicking a move-list tactic chip grafts the PV as an
- *   in-tree sideline with a depth overlay.
+ *   params are present: game_id > fen > line. ?orientation=white|black additively orients
+ *   the board in ANY free-play sub-mode (171 UAT gap 1); game mode ignores it and always
+ *   orients from gameData.user_color. A manual flip still wins over either (hasAutoFlipped).
+ *   The legacy tactic mode (?flaw_ply=, removed Quick 260627-l2z) is gone; clicking a
+ *   move-list tactic chip grafts the PV as an in-tree sideline with a depth overlay.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode, RefObject } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Chess } from 'chess.js';
@@ -48,13 +50,22 @@ import { useAnalysisBoard } from '@/hooks/useAnalysisBoard';
 import { useStockfishEngine } from '@/hooks/useStockfishEngine';
 import { useStockfishGradingEngine } from '@/hooks/useStockfishGradingEngine';
 import { useMaiaEngine } from '@/hooks/useMaiaEngine';
-import { useMaiaEloDefault } from '@/hooks/useMaiaEloDefault';
+import {
+  useMaiaEloDefault,
+  deriveRawDefault,
+  clampToLadderBounds,
+  FREE_PLAY_DEFAULT_ELO,
+} from '@/hooks/useMaiaEloDefault';
 import { useFlawChessEngine } from '@/hooks/useFlawChessEngine';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useGameOverlay } from '@/hooks/useGameOverlay';
 import { useLiveMoveFlaw } from '@/hooks/useLiveMoveFlaw';
 import { useTacticLines, useLibraryGame } from '@/hooks/useLibrary';
-import { parseAnalysisLineParam, parseAnalysisFenParam } from '@/lib/analysisUrl';
+import {
+  parseAnalysisLineParam,
+  parseAnalysisFenParam,
+  parseAnalysisOrientationParam,
+} from '@/lib/analysisUrl';
 import { toDisplayDepthForOrientation } from '@/lib/tacticDepth';
 import { buildPvArrow } from '@/lib/tacticArrows';
 import { EvalBar } from '@/components/analysis/EvalBar';
@@ -69,6 +80,7 @@ import type { FlawMarkerEntry } from '@/components/analysis/VariationTree';
 import type { FlawSeverity } from '@/types/library';
 import { tacticOrientationAtPly } from '@/lib/tacticOrientation';
 import { EvalChart } from '@/components/library/EvalChart';
+import { AnalysisPendingPill } from '@/components/library/AnalysisPendingPill';
 import { AnalysisTagsPanel } from '@/components/analysis/AnalysisTagsPanel';
 import { MaiaHumanPanel } from '@/components/analysis/MaiaHumanPanel';
 import { EloSelector } from '@/components/analysis/EloSelector';
@@ -94,13 +106,20 @@ import {
 } from '@/lib/theme';
 import { selectCandidatesByMass, nearestByElo, classifyMoveQuality, type MoveGrade } from '@/lib/moveQuality';
 import type { MoveQualityEval, EngineLine } from '@/components/analysis/MovesByRatingChart';
-import { sideToMoveFromFen, terminalPositionEval, evalToExpectedScore } from '@/lib/liveFlaw';
+import {
+  sideToMoveFromFen,
+  terminalPositionEval,
+  evalToExpectedScore,
+  type MoverColor,
+} from '@/lib/liveFlaw';
 import type { NodeId, MoveNode } from '@/hooks/useAnalysisBoard';
 import type { MoveCurvePoint } from '@/hooks/useMaiaEngine';
 import { buildEvalLookup, getByUci, getBySan, resolveReconciledBest, rankReconciledCandidates } from '@/lib/engineEvalLookup';
 import type { RankedLine } from '@/lib/engine/types';
 import type { PvLine } from '@/hooks/uciParser';
 import { classifyGem, summarizeForGem, GEM_MAIA_MAX_PROB } from '@/lib/gemMove';
+import { useGemSweep } from '@/hooks/useGemSweep';
+import { resolveGemVerdict, selectSweepCandidates, type SweepCandidate } from '@/lib/gemSweep';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -446,6 +465,17 @@ export default function Analysis() {
   const fenParam = searchParams.get('fen');
   const rootFenSeed = useMemo(() => parseAnalysisFenParam(fenParam), [fenParam]);
 
+  // Free-play orientation entry point (171 UAT gap 1): `?orientation=white|black`
+  // orients the board when opened from e.g. a finished bot game. Before this,
+  // free play had no orientation input at all — a bot game played as Black
+  // opened white-side-up. parseAnalysisOrientationParam degrades a malformed or
+  // hand-typed value to null (T-171-08-01/02), matching the fen/line guards above.
+  const orientationParam = searchParams.get('orientation');
+  const urlOrientation = useMemo(
+    () => parseAnalysisOrientationParam(orientationParam),
+    [orientationParam]
+  );
+
   // ── URL params — game mode (T-140-02a) ──────────────────────────────────────
   // Security: NaN-guard on numeric params — malformed → null → mode disabled.
   const gameIdRaw = searchParams.get('game_id');
@@ -574,9 +604,46 @@ export default function Analysis() {
 
   // Game-by-id fetch for full-game mode (D-4: existing endpoint, no new backend).
   // Unconditional hook call; enabled only when isGameMode (gameId is null otherwise).
+  // Quick 260714-rj5: `live: true` polls while analysis is pending/leased so a
+  // freshly-enqueued bot game's eval chart appears in place once the job lands.
   const { data: gameData, isError: gameError } = useLibraryGame(
     isGameMode ? gameId : null,
+    { live: true },
   );
+
+  // Quick 260714-rj5: this is "the EVAL DATA is ready", not "the game is ready" —
+  // an unanalyzed game-mode card arrives with moves + phase_transitions but
+  // eval_series/flaw_markers stay null, so the move list and board render from
+  // gameData.moves while evalChartReady stays false. HOISTED here (Phase 172,
+  // SEED-106 D-03) — the background sweep's start effect needs this as its
+  // readiness gate, and it must fire on the FALSE -> TRUE transition (a bot game
+  // opened mid-tier-1-analysis), which this same `useLibraryGame({ live: true })`
+  // poll already delivers. Single declaration; every other consumer below
+  // (evalPending, the eval-chart render, the sweep) reads this ONE const.
+  const evalChartReady =
+    isGameMode &&
+    gameId != null &&
+    gameData?.eval_series != null &&
+    gameData.flaw_markers != null &&
+    gameData.phase_transitions != null &&
+    gameData.moves != null;
+
+  // Phase 172 (SEED-106 D-03): "armed" the moment evalChartReady flips true for
+  // THIS gameId — same render, no one-tick delay (reading evalChartReady
+  // directly avoids waiting on an effect to catch up; that delay is fine for
+  // bookkeeping but not for the READINESS signal itself, which must fire the
+  // instant the evals land, not one render later). `armedGameId` is sticky
+  // protection against evalChartReady flickering false again for a game
+  // already confirmed ready (e.g. a stale poll tick) — it never GATES the
+  // initial transition. Reactive React state, not a ref: this project's lint
+  // config (react-hooks/refs) forbids reading ref.current during render, and
+  // `sweepArmedForGame` below is read during render.
+  const [armedGameId, setArmedGameId] = useState<number | null>(null);
+  useEffect(() => {
+    if (!evalChartReady || gameId == null || armedGameId === gameId) return;
+    setArmedGameId(gameId);
+  }, [evalChartReady, gameId, armedGameId]);
+  const sweepArmedForGame = gameId != null && (evalChartReady || armedGameId === gameId);
 
   // Free-play ELO default source (D-07) — read from useUserProfile(), never useAuth().user
   // (no rating field there, cf. beta-gating memory).
@@ -592,6 +659,22 @@ export default function Analysis() {
     // moves — so the Maia surfaces reflect the actual decision-maker (quick 260705-m3z).
     sideToMove: sideToMoveFromFen(position),
   });
+
+  // Phase 172 (SEED-106 D-01): the gem rung is a property of the GAME, not of
+  // the view — pinned to whichever color actually made the move
+  // (rating-at-game-time), never the reactive ELO slider. `selectedElo`
+  // above keeps driving the live exploration overlay (Maia chart, WDL bar,
+  // FlawChess Engine) exactly as before; this helper is read ONLY by the gem
+  // detection block and (plan 05 Task 2) the background sweep, so a single
+  // source of truth exists for "what rung was this ply detected at" and a
+  // slider nudge can never invalidate it. Reuses `deriveRawDefault` /
+  // `clampToLadderBounds` (exported by useMaiaEloDefault.ts, plan 02) rather
+  // than re-deriving the `*_lichess_blitz ?? raw` fallback chain a second time.
+  const pinnedEloForMover = useCallback(
+    (mover: MoverColor): number =>
+      clampToLadderBounds(deriveRawDefault(isGameMode, gameData, userProfile, mover) ?? FREE_PLAY_DEFAULT_ELO),
+    [isGameMode, gameData, userProfile],
+  );
 
   // Whose move the analysed position is — drives the Maia verdict's you/opponent
   // framing. False in free play (no opponent).
@@ -661,13 +744,19 @@ export default function Analysis() {
 
   // ── Effects (game seeding, board flip, contextual PV insert) ──────────────────
 
-  // Game mode: orient the board to the player's color once (item 5). Black games open
-  // flipped; manual flips afterward win (hasAutoFlipped guard). Free play stays white.
+  // Orient the board to the player's color once (item 5; 171 UAT gap 1). ONE
+  // orientation source for BOTH modes: game mode learns the player's colour
+  // from the backend (gameData.user_color), free play learns it from the URL
+  // (?orientation=). Before 171-08 free play had NO orientation input at all,
+  // so a bot game played as Black opened white-side-up. Black games/lines open
+  // flipped; manual flips afterward win permanently (hasAutoFlipped guard).
+  const autoOrientation = isGameMode ? (gameData?.user_color ?? null) : urlOrientation;
+
   useEffect(() => {
-    if (!isGameMode || gameData?.user_color == null || hasAutoFlipped.current) return;
+    if (autoOrientation === null || hasAutoFlipped.current) return;
     hasAutoFlipped.current = true;
-    setBoardFlipped(gameData.user_color === 'black');
-  }, [isGameMode, gameData?.user_color]);
+    setBoardFlipped(autoOrientation === 'black');
+  }, [autoOrientation]);
 
   // Game mode: seed the board once when game data arrives (L-1: never call from chip click).
   useEffect(() => {
@@ -1322,6 +1411,15 @@ export default function Analysis() {
     return nodes.get(node.parentId)?.fen ?? rootFen;
   }, [currentNodeId, nodes, rootFen]);
 
+  // Phase 172 (SEED-106 D-04/D-08): mainline ply index of the CURRENT node, or
+  // -1 for free-variation nodes / no selection. Shared by the sweep's "already
+  // resolved this ply?" check, needParentGemGrade's double-work guard below, and
+  // both marker memos' book/sweep-gem gates — one computation, several readers.
+  const currentMainlinePly = useMemo(
+    () => (currentNodeId !== null && isOnMainLine(currentNodeId) ? mainLine.indexOf(currentNodeId) : -1),
+    [currentNodeId, isOnMainLine, mainLine],
+  );
+
   // Live classification applies only to freely-played moves off the precomputed line:
   // any node that is NOT a game main-line node (game mode) and NOT a grafted PV node
   // (those are best-play lines). In free-play mode every played node qualifies.
@@ -1413,23 +1511,145 @@ export default function Analysis() {
   // probability at the PARENT rung, read from the reliably-cached parent Maia curve
   // (Maia is fast and wins the navigation race). Cheap, so it gates whether we
   // bother spinning up a Stockfish pass on the parent at all — gems are rare by
-  // construction, so this passes infrequently. Re-reads at the current selectedElo
-  // so an ELO-slider change can newly qualify a move (additive; never un-resolves).
+  // construction, so this passes infrequently. Phase 172 (SEED-106 D-01): the rung
+  // is PINNED to the mover's own rating-at-game-time, not the reactive ELO
+  // slider — a gem is a property of the game, not of the view, and pinning is
+  // what makes a background sweep cacheable at all (otherwise every slider
+  // nudge would invalidate the whole sweep).
   const gemC1 = useMemo<{ playedSan: string; maiaProbability: number } | null>(() => {
     if (!gemActive || currentNodeId === null || parentFen === null) return null;
     const playedSan = nodes.get(currentNodeId)?.san ?? null;
     if (playedSan === null) return null;
     const parentCurve = maiaCurveByFen.get(parentFen);
     if (parentCurve === undefined) return null; // parent Maia not cached yet — wait
-    const maiaProbability = nearestByElo(parentCurve, selectedElo)?.moveProbabilities[playedSan] ?? null;
+    const pinnedElo = pinnedEloForMover(sideToMoveFromFen(parentFen));
+    const maiaProbability = nearestByElo(parentCurve, pinnedElo)?.moveProbabilities[playedSan] ?? null;
     if (maiaProbability === null || maiaProbability > GEM_MAIA_MAX_PROB) return null;
     return { playedSan, maiaProbability };
-  }, [gemActive, currentNodeId, parentFen, nodes, maiaCurveByFen, selectedElo]);
+  }, [gemActive, currentNodeId, parentFen, nodes, maiaCurveByFen, pinnedEloForMover]);
+
+  // Phase 172 (SEED-106 D-04/D-05): the sweep's resolved ply indices (synced
+  // from `sweep.gemByPly` by an effect declared AFTER `sweep`, below), read by
+  // needParentGemGrade to avoid re-grading a ply the sweep already answered.
+  // React state — not sweep.gemByPly directly — breaks what would otherwise be
+  // a circular dependency: needParentGemGrade also feeds the sweep's OWN
+  // liveBusy input, so it cannot depend on the CURRENT render's sweep output;
+  // reading a value the sync effect populated on a PRIOR commit is fine. State
+  // (not a ref) because this project's lint config (react-hooks/refs) forbids
+  // reading ref.current during render, and needParentGemGrade is read during
+  // render — the sync effect's setState also means "the sweep just resolved
+  // this ply" now genuinely re-renders, rather than silently going stale.
+  const [sweepResolvedPlies, setSweepResolvedPlies] = useState<ReadonlySet<number>>(
+    () => new Set(),
+  );
 
   // Grade the PARENT to confirm C2 (only good move) only when the arrival move is a
-  // rare gem candidate (C1 passed) AND this node is not already resolved.
+  // rare gem candidate (C1 passed) AND this node is not already resolved — by
+  // the live path's own sticky cache OR (Phase 172 D-04/D-05) by the sweep.
   const needParentGemGrade =
-    gemC1 !== null && currentNodeId !== null && !gemByNode.has(currentNodeId);
+    gemC1 !== null &&
+    currentNodeId !== null &&
+    !gemByNode.has(currentNodeId) &&
+    !(currentMainlinePly >= 0 && sweepResolvedPlies.has(currentMainlinePly));
+
+  // Phase 172 (SEED-106 D-04): parent FEN of mainLine[i] — the position BEFORE
+  // moves[i] was played. i===0 is the game's root position; MoveNode.fen is the
+  // FEN AFTER the move (useAnalysisBoard.ts), so the parent is the PRECEDING
+  // mainline node's fen. noUncheckedIndexedAccess-safe — an out-of-range i
+  // degrades to null, never throws.
+  const fenAtPly = useCallback(
+    (i: number): string | null => {
+      if (i === 0) return rootFen;
+      const prevNodeId = mainLine[i - 1];
+      if (prevNodeId === undefined) return null;
+      return nodes.get(prevNodeId)?.fen ?? null;
+    },
+    [mainLine, nodes, rootFen],
+  );
+
+  // D-04 free prefilter: the whole mainline's sweep-eligible candidates — pure
+  // data, zero engine work, computed once per (game, eval data) change. Empty
+  // whenever the eval data isn't ready (unanalyzed game — D-03 lazy path).
+  const sweepCandidates = useMemo<SweepCandidate[]>(() => {
+    if (!evalChartReady || gameData?.moves == null || gameData.eval_series == null) return [];
+    return selectSweepCandidates(gameData.moves, gameData.eval_series, gameData.opening_ply_count, fenAtPly);
+  }, [evalChartReady, gameData, fenAtPly]);
+
+  // D-01: each sweep candidate is classified at ITS OWN mover's pinned rung —
+  // the SAME helper (pinnedEloForMover) the live gem path uses, so the sweep
+  // and the live path can never classify the same ply at different rungs.
+  const pinnedEloForPly = useCallback(
+    (plyIndex: number): number => {
+      const fen = fenAtPly(plyIndex);
+      return fen === null ? FREE_PLAY_DEFAULT_ELO : pinnedEloForMover(sideToMoveFromFen(fen));
+    },
+    [fenAtPly, pinnedEloForMover],
+  );
+
+  // The user's color, narrowed from the wire's plain `string` to MoverColor —
+  // null in free play (no game) or for a malformed value (never trusted as-is).
+  const sweepUserColor: MoverColor | null =
+    isGameMode && (gameData?.user_color === 'white' || gameData?.user_color === 'black')
+      ? gameData.user_color
+      : null;
+
+  // Phase 172 (SEED-106 CR-02): the REAL "live engines are busy" signal the
+  // sweep must yield to (D-05). The prior wiring passed only `needParentGemGrade`
+  // — true only while the rare live gem-C2 confirmation is pending — so the D-05
+  // yield-to-cursor guard was inert: the sweep fired a fresh Maia inference + a
+  // Stockfish `go` on essentially every navigation, straight into whatever the
+  // free-run / grading / Maia / FlawChess-pool engines were already doing. Every
+  // term below is declared ABOVE this call and none depend on the sweep (no
+  // circularity — see the sweepResolvedPlies note above). The live per-node
+  // gem-grade (`gemGrading`) is declared AFTER this call, but `needParentGemGrade`
+  // gates its very existence (`enabled: … && needParentGemGrade`), so including
+  // needParentGemGrade here already covers the whole live-gem-grade window.
+  const liveEnginesBusy =
+    engine.isAnalyzing ||
+    maia.isAnalyzing ||
+    grading.isGrading ||
+    flawChessEngine.isSearching ||
+    needParentGemGrade;
+
+  // Phase 172 (SEED-106 D-04/D-05): the background gem sweep — its OWN
+  // dedicated Maia + Stockfish worker instances (useGemSweep.ts, plan 04),
+  // never the live `maia`/`grading`/`gemGrading` instances above. `enabled`
+  // requires the readiness transition to have armed for THIS game (D-03) AND
+  // the same grading-card gate the live path uses (no point sweeping when
+  // neither Maia nor FlawChess panel wants gem data). `liveBusy` yields to ANY
+  // busy live engine (CR-02), honoring the documented contract on both
+  // UseGemSweepOptions and SweepDispatchInput — the live path is the one thing
+  // the sweep must never race for CPU.
+  const sweep = useGemSweep({
+    enabled: sweepArmedForGame && evalChartReady && gradingEnabled,
+    sweepKey: gameId,
+    candidates: sweepCandidates,
+    pinnedEloForPly,
+    liveBusy: liveEnginesBusy,
+    userColor: sweepUserColor,
+  });
+
+  // Syncs sweepResolvedPlies (above) from the sweep's own state — runs AFTER
+  // `sweep` so this can never be the thing `needParentGemGrade` depends on in
+  // the SAME render (breaking the circularity noted above).
+  useEffect(() => {
+    setSweepResolvedPlies(new Set(sweep.gemByPly.keys()));
+  }, [sweep.gemByPly]);
+
+  // Phase 172 (SEED-106 CR-01): resolve the gem verdict for a node with the
+  // documented precedence — the live per-node resolution (gemByNode) is
+  // AUTHORITATIVE the moment it has graded this node, INCLUDING an explicit
+  // `null` "graded, not a gem" verdict. The background sweep (sweep.gemByPly)
+  // is a FALLBACK only, consulted solely when the live path has no answer for
+  // this node. A `gemByNode.get(id) ?? sweep.gemByPly.get(ply)` collapse cannot
+  // express this (`null ?? x === x`), which let the sweep's shallower grade
+  // overrule a deeper live rejection. Both the board badge and the move-list
+  // fold route through here so this precedence lives in exactly one place.
+  const resolveGemFor = useCallback(
+    (nodeId: NodeId, ply: number): GemDetail | null =>
+      resolveGemVerdict(gemByNode, sweep.gemByPly, nodeId, ply),
+    [gemByNode, sweep.gemByPly],
+  );
 
   // The parent's candidate SANs to grade — the same Maia-mass selection the chart
   // uses, plus the played move (always included). No free-run contribution (the
@@ -1438,8 +1658,9 @@ export default function Analysis() {
     if (!needParentGemGrade || parentFen === null || gemC1 === null) return [];
     const parentCurve = maiaCurveByFen.get(parentFen);
     if (parentCurve === undefined) return [];
-    return selectCandidatesByMass(parentCurve, selectedElo, gemC1.playedSan, null);
-  }, [needParentGemGrade, parentFen, maiaCurveByFen, selectedElo, gemC1]);
+    const pinnedElo = pinnedEloForMover(sideToMoveFromFen(parentFen));
+    return selectCandidatesByMass(parentCurve, pinnedElo, gemC1.playedSan, null);
+  }, [needParentGemGrade, parentFen, maiaCurveByFen, pinnedEloForMover, gemC1]);
 
   // On-demand SECOND grading worker, pinned to the parent FEN only while a gem
   // candidate needs confirming (absent/idle otherwise — `enabled` gates worker
@@ -1469,9 +1690,14 @@ export default function Analysis() {
     const { bestSan, bestEs, secondBestEs } = summarizeForGem(gradeBySan, mover);
     const playedSan = nodes.get(currentNodeId)?.san ?? null;
     const parentCurve = maiaCurveByFen.get(parentFen);
+    // Phase 172 (SEED-106 D-01): pinned to the MOVER's own rating-at-game-time —
+    // `mover` above is already "whoever actually made this move", the same
+    // variable byOpponent (below) uses. The stamped GemDetail.elo reports this
+    // pinned rung (the popover's "At N ELO" line), never the live ELO slider.
+    const pinnedElo = pinnedEloForMover(mover);
     const maiaProbability =
       playedSan !== null
-        ? nearestByElo(parentCurve ?? [], selectedElo)?.moveProbabilities[playedSan] ?? null
+        ? nearestByElo(parentCurve ?? [], pinnedElo)?.moveProbabilities[playedSan] ?? null
         : null;
     const isGem = classifyGem({
       maiaProbability,
@@ -1486,7 +1712,7 @@ export default function Analysis() {
     // classifyGem === true guarantees maiaProbability is non-null (it rejects a
     // null probability), so the detail's number is safe.
     const detail: GemDetail | null =
-      isGem && maiaProbability !== null ? { maiaProbability, elo: selectedElo, byOpponent } : null;
+      isGem && maiaProbability !== null ? { maiaProbability, elo: pinnedElo, byOpponent } : null;
     setGemByNode((prev) => {
       if (prev.has(currentNodeId)) return prev; // already resolved — first wins
       const next = new Map(prev);
@@ -1506,7 +1732,7 @@ export default function Analysis() {
     gemGrading.isGrading,
     nodes,
     maiaCurveByFen,
-    selectedElo,
+    pinnedEloForMover,
     isGameMode,
     gameData?.user_color,
   ]);
@@ -1523,7 +1749,20 @@ export default function Analysis() {
     const showCurrentLive =
       currentNodeId !== null && (liveSeverity === 'blunder' || liveSeverity === 'mistake');
     const hasGemWork = gemByNode.size > 0;
-    if (liveFlawByNode.size === 0 && !showCurrentLive && !hasGemWork) return flawMarkerByNodeId;
+    // Phase 172 (SEED-106 D-04/D-05): the background sweep's own gem source.
+    const hasSweepWork = sweep.gemByPly.size > 0;
+    // Phase 172 (SEED-106 D-08): a game with a nonzero opening_ply_count has
+    // book markers to paint even when nothing else in this memo has work.
+    const hasBookWork = (gameData?.opening_ply_count ?? 0) > 0;
+    if (
+      liveFlawByNode.size === 0 &&
+      !showCurrentLive &&
+      !hasGemWork &&
+      !hasSweepWork &&
+      !hasBookWork
+    ) {
+      return flawMarkerByNodeId;
+    }
 
     const mainLineSet = new Set(mainLine);
     const merged = new Map(flawMarkerByNodeId);
@@ -1577,15 +1816,76 @@ export default function Analysis() {
         gemByOpponent: detail.byOpponent,
       });
     };
-    // Sticky resolutions carry their own detection detail (D-06). Skip null
-    // entries — those are graded-and-rejected nodes (kept only to prevent
-    // re-grading), not gems.
-    for (const [nodeId, detail] of gemByNode) {
-      if (detail !== null) addGem(nodeId, detail);
+    // Phase 172 (SEED-106 CR-01/D-04/D-05): fold live per-node resolutions AND
+    // the background sweep's resolved gems through the SHARED `resolveGemFor`
+    // precedence (live wins over the sweep for any node it has graded, INCLUDING
+    // an explicit `null` rejection — the sweep is never consulted for such a
+    // node). Build the candidate node set: every gemByNode key first (ply is
+    // irrelevant there — the live verdict wins, so a `-1` placeholder suffices),
+    // then any sweep-only mainline ply the live path has NOT graded. sweep.gemByPly
+    // is keyed by ply index into mainLine and is NOT gemByNode (Pitfall 4 — the
+    // sweep has its OWN cache, bounded by candidates.length, never the shared
+    // FIFO-256-capped map); display reads the union, nothing is copied between them.
+    const gemNodePlies = new Map<NodeId, number>();
+    for (const nodeId of gemByNode.keys()) gemNodePlies.set(nodeId, -1);
+    for (const plyIndex of sweep.gemByPly.keys()) {
+      const nodeId = mainLine[plyIndex];
+      if (nodeId === undefined || gemNodePlies.has(nodeId)) continue;
+      gemNodePlies.set(nodeId, plyIndex);
+    }
+    for (const [nodeId, ply] of gemNodePlies) {
+      const detail = resolveGemFor(nodeId, ply);
+      if (detail !== null) addGem(nodeId, detail); // null = absent or graded-and-rejected
+    }
+
+    // Phase 172 (SEED-106 D-08): book markers — LOWEST precedence in
+    // severity > gem > book. Only MAINLINE plies before opening_ply_count
+    // qualify (free-variation nodes are never in book — D-04 skips book plies
+    // before they can even become sweep/gem candidates). Must not overwrite an
+    // existing entry that will actually RENDER a glyph — but the move-list's
+    // resolveMarkerIcon only draws blunder/mistake severities, NOT inaccuracy
+    // (there is no inaccuracy glyph there, unlike the board's `!?`). WR-04 fix:
+    // an inaccuracy-severity book ply was suppressed here yet rendered nothing,
+    // leaving the ply blank. Defer only to entries that draw an icon (blunder,
+    // mistake, gem) so an inaccuracy-only book ply falls through to the book badge.
+    const openingPlyCount = gameData?.opening_ply_count ?? 0;
+    if (openingPlyCount > 0) {
+      mainLine.forEach((nodeId, plyIndex) => {
+        if (plyIndex >= openingPlyCount) return;
+        if (!nodes.has(nodeId)) return; // node deleted (e.g. a collapsed PV fork)
+        const existing = merged.get(nodeId);
+        if (
+          existing?.severity === 'blunder' ||
+          existing?.severity === 'mistake' ||
+          existing?.gem === true
+        )
+          return;
+        merged.set(nodeId, {
+          ...(existing ?? {
+            missedMotif: null,
+            allowedMotif: null,
+            missedDepth: null,
+            allowedDepth: null,
+            ply: -1,
+          }),
+          book: true,
+        });
+      });
     }
 
     return merged;
-  }, [flawMarkerByNodeId, liveFlaw, currentNodeId, liveFlawByNode, mainLine, nodes, gemByNode]);
+  }, [
+    flawMarkerByNodeId,
+    liveFlaw,
+    currentNodeId,
+    liveFlawByNode,
+    mainLine,
+    nodes,
+    gemByNode,
+    sweep.gemByPly,
+    resolveGemFor,
+    gameData?.opening_ply_count,
+  ]);
 
   // Move-list coloring inside the PV sideline (Quick 260628-ojq UAT, extends item 4):
   // teal (TAC_MISSED) for a missed tactic, crimson (TAC_ALLOWED) for an allowed one. Every
@@ -2014,27 +2314,58 @@ export default function Analysis() {
   // value is a graded-and-rejected node (no badge). Note (behavior change from the
   // old live D-03 read): the badge is now sticky at its detection ELO rather than
   // re-evaluating C1 on every ELO-slider tick — it matches the move list, and the
-  // popover already discloses the detection ELO. An ELO change can still newly
-  // qualify an as-yet-unresolved node (gemC1 above re-reads at selectedElo).
+  // popover already discloses the detection ELO. Phase 172 (SEED-106 D-01): the
+  // gem rung is now pinned to the mover's own rating-at-game-time, not the live
+  // selectedElo — an ELO-slider change no longer newly qualifies or un-qualifies
+  // any node; pinning is what makes a background sweep cacheable at all.
   const boardSquareMarkers = useMemo(() => {
     const base =
       gameOverlay.squareMarkers.length > 0 ? gameOverlay.squareMarkers : liveFlaw.squareMarkers;
-    const gemHere = currentNodeId !== null ? gemByNode.get(currentNodeId) : undefined;
+    // Phase 172 (SEED-106 CR-01/D-04/D-05): live resolution wins whenever
+    // gemByNode has graded this node — INCLUDING an explicit `null` rejection,
+    // in which case sweep.gemByPly is NOT consulted. `resolveGemFor` centralizes
+    // that precedence (a `??` collapse silently fell through a live `null` to the
+    // sweep's shallower grade). `null` here = absent or graded-and-rejected.
+    const gemHere =
+      currentNodeId !== null ? resolveGemFor(currentNodeId, currentMainlinePly) : undefined;
     // Bug fix (163-REVIEW WR-05): in game mode the base can carry a BACKEND-
     // precomputed severity marker on lastMove.to (server-side Stockfish), while
     // the gem's C2 comes from the frontend WASM pass — the two evals diverge by
     // design (documented eval non-determinism), so "mutually exclusive by
     // construction" doesn't hold across pipelines. One square never renders two
     // badges: an existing severity marker wins, the gem yields.
-    if (
+    const withGem =
       gemHere != null && // non-null resolution = confirmed gem (null = graded, not a gem)
       lastMove != null &&
       !base.some((m) => m.square === lastMove.to && m.severity != null)
+        ? [...base, { square: lastMove.to, gem: true }]
+        : base;
+
+    // Phase 172 (SEED-106 D-08): book marker — LOWEST precedence in
+    // severity > gem > book. Appended only when the current node is a
+    // MAINLINE ply inside the book AND the square carries neither an
+    // existing severity NOR gem marker.
+    const isBookPly =
+      currentMainlinePly >= 0 &&
+      gameData?.opening_ply_count != null &&
+      currentMainlinePly < gameData.opening_ply_count;
+    if (
+      isBookPly &&
+      lastMove != null &&
+      !withGem.some((m) => m.square === lastMove.to && (m.severity != null || m.gem === true))
     ) {
-      return [...base, { square: lastMove.to, gem: true }];
+      return [...withGem, { square: lastMove.to, book: true }];
     }
-    return base;
-  }, [gameOverlay.squareMarkers, liveFlaw.squareMarkers, gemByNode, currentNodeId, lastMove]);
+    return withGem;
+  }, [
+    gameOverlay.squareMarkers,
+    liveFlaw.squareMarkers,
+    resolveGemFor,
+    currentNodeId,
+    currentMainlinePly,
+    lastMove,
+    gameData?.opening_ply_count,
+  ]);
 
   // The single react-chessboard instance / `analysis-board` focus target. Shared by the
   // desktop stage and the mobile row (only one renders at a time via isMobile), so the
@@ -2180,36 +2511,54 @@ export default function Analysis() {
 
   // The eval-chart element (game mode only) — placed below the board on desktop, inside the
   // Eval tab on mobile. Single instance; rendered in whichever tree is active.
-  const evalChartReady =
+  // evalChartReady itself is declared earlier (Phase 172, SEED-106 D-03 hoist —
+  // the sweep-start effect needs it as its readiness gate).
+  // While analysis hasn't landed yet, show the Pending…/Analyzing… pill where
+  // the eval chart would go instead of nothing (live poll updates active_eval_status).
+  const evalPending =
     isGameMode &&
-    gameId != null &&
-    gameData?.eval_series != null &&
-    gameData.flaw_markers != null &&
-    gameData.phase_transitions != null &&
-    gameData.moves != null;
+    gameData != null &&
+    !evalChartReady &&
+    (gameData.active_eval_status === 'pending' || gameData.active_eval_status === 'leased');
   // `highlightedPlies` is desktop-only (the tags panel's hover-highlight, Task 3);
   // the mobile evalChart() call site omits it, leaving chart markers un-dimmed there.
-  const evalChart = (heightClass: string, highlightedPlies?: Set<number> | null) =>
-    evalChartReady && gameId != null && gameData?.eval_series != null && gameData.flaw_markers != null && gameData.phase_transitions != null && gameData.moves != null ? (
-      <EvalChart
-        gameId={gameId}
-        evalSeries={gameData.eval_series}
-        flawMarkers={gameData.flaw_markers}
-        phaseTransitions={gameData.phase_transitions}
-        moves={gameData.moves}
-        heightClass={heightClass}
-        initialPly={initialPly}
-        flipped={gameData.user_color === 'black'}
-        sliderTestId="analysis-eval-chart-slider"
-        sliderDisabled={!isOnMainLineForSlider}
-        disableHoverScrub
-        onHoverPlyChange={handleEvalChartPlyChange}
-        syncPly={evalChartPly}
-        commandedPly={tagCommandedPly}
-        commandSeq={tagCommandSeq}
-        highlightedPlies={highlightedPlies}
-      />
-    ) : null;
+  // Renders the eval chart when ready, the pending/leased pill while analysis is
+  // in flight, or null otherwise (free play, or a card with no active job).
+  const evalChart = (heightClass: string, highlightedPlies?: Set<number> | null) => {
+    if (
+      evalChartReady &&
+      gameId != null &&
+      gameData?.eval_series != null &&
+      gameData.flaw_markers != null &&
+      gameData.phase_transitions != null &&
+      gameData.moves != null
+    ) {
+      return (
+        <EvalChart
+          gameId={gameId}
+          evalSeries={gameData.eval_series}
+          flawMarkers={gameData.flaw_markers}
+          phaseTransitions={gameData.phase_transitions}
+          moves={gameData.moves}
+          heightClass={heightClass}
+          initialPly={initialPly}
+          flipped={gameData.user_color === 'black'}
+          sliderTestId="analysis-eval-chart-slider"
+          sliderDisabled={!isOnMainLineForSlider}
+          disableHoverScrub
+          onHoverPlyChange={handleEvalChartPlyChange}
+          syncPly={evalChartPly}
+          commandedPly={tagCommandedPly}
+          commandSeq={tagCommandSeq}
+          highlightedPlies={highlightedPlies}
+        />
+      );
+    }
+    if (evalPending && gameId != null) {
+      return <AnalysisPendingPill gameId={gameId} leased={gameData?.active_eval_status === 'leased'} />;
+    }
+    return null;
+  };
 
   // Desktop board column (Phase 161 UAT). The outer div is the measured "stage" (see the
   // boardStageRef effect): a full-width, viewport-height-locked box. Inside sits ONE tight,
@@ -2267,8 +2616,10 @@ export default function Analysis() {
         )}
 
         {/* EvalChart with slider — game mode only, aligned to the board width.
-            highlightedPlies (Task 3): dims non-matching markers on tags-panel hover. */}
-        {evalChartReady && (
+            highlightedPlies (Task 3): dims non-matching markers on tags-panel hover.
+            Quick 260714-rj5: also renders while analysis is pending/leased, showing
+            the pill in the chart's slot instead of nothing. */}
+        {(evalChartReady || evalPending) && (
           <div data-testid="analysis-eval-chart" className="w-full">
             {evalChart('h-[120px]', tagsHighlightedPlies)}
           </div>
@@ -2487,7 +2838,7 @@ export default function Analysis() {
     >
       <div className="flex flex-col gap-2 pt-1">
         {mobileEngineLines}
-        {evalChartReady && <div className="px-3">{evalChart('h-[120px]')}</div>}
+        {(evalChartReady || evalPending) && <div className="px-3">{evalChart('h-[120px]')}</div>}
       </div>
     </TabsContent>
   );
@@ -2542,104 +2893,61 @@ export default function Analysis() {
             Bounded chart height inside the Eval tab (not h-full): the board already
             dominates the viewport, so a greedy chart pushed the board-controls footer
             off-screen when the mobile browser's URL bar shrank the height. h-[120px]
-            (the established mobile chart height) keeps the footer visible. The full
-            5-tab strip (with Tags) shows only for a loaded, analyzed game; free play
-            and still-loading games drop the Tags tab. */}
-        {isGameMode && evalChartReady ? (
-          <Tabs
-            defaultValue="moves"
-            className="flex min-h-0 flex-1 flex-col gap-2 px-2 pt-2"
-          >
-            <TabsList variant="underline" className="w-full shrink-0">
-              <TabsTrigger value="moves" data-testid="analysis-tab-moves" className="gap-1 px-1">
-                <ArrowLeftRight aria-hidden="true" />
-                Moves
-              </TabsTrigger>
-              {/* Engine-colored tab nav: Eval = Stockfish blue, Maia = violet,
-                  FlawChess = gold — matching each surface's accent (theme.ts). */}
-              <TabsTrigger
-                value="eval"
-                data-testid="analysis-tab-eval"
-                className="gap-1 px-1"
-                style={{ color: STOCKFISH_ACCENT }}
-              >
-                <Cpu aria-hidden="true" />
-                Eval
-              </TabsTrigger>
-              <TabsTrigger
-                value="human"
-                data-testid="analysis-tab-human"
-                className="gap-1 px-1"
-                style={{ color: MAIA_ACCENT }}
-              >
-                <User aria-hidden="true" />
-                Maia
-              </TabsTrigger>
-              <TabsTrigger
-                value="flawchess"
-                data-testid="analysis-tab-flawchess"
-                className="gap-1 px-1"
-                style={{ color: FLAWCHESS_ENGINE_ACCENT }}
-              >
-                <ChessKnight aria-hidden="true" />
-                FlawChess
-              </TabsTrigger>
+            (the established mobile chart height) keeps the footer visible. Quick
+            260714-rj5: collapsed from two near-identical Tabs branches into one —
+            the Tags trigger/content render only once evalChartReady (loaded,
+            analyzed game), so the Tabs subtree itself never remounts when a
+            game-mode card transitions from unanalyzed to analyzed via the live
+            poll (no cursor/variation-tree loss). Free play and a still-loading /
+            unanalyzed game just omit the Tags tab. */}
+        <Tabs defaultValue="moves" className="flex min-h-0 flex-1 flex-col gap-2 px-2 pt-2">
+          <TabsList variant="underline" className="w-full shrink-0">
+            <TabsTrigger value="moves" data-testid="analysis-tab-moves" className="gap-1 px-1">
+              <ArrowLeftRight aria-hidden="true" />
+              Moves
+            </TabsTrigger>
+            {/* Engine-colored tab nav: Eval = Stockfish blue, Maia = violet,
+                FlawChess = gold — matching each surface's accent (theme.ts). */}
+            <TabsTrigger
+              value="eval"
+              data-testid="analysis-tab-eval"
+              className="gap-1 px-1"
+              style={{ color: STOCKFISH_ACCENT }}
+            >
+              <Cpu aria-hidden="true" />
+              Eval
+            </TabsTrigger>
+            <TabsTrigger
+              value="human"
+              data-testid="analysis-tab-human"
+              className="gap-1 px-1"
+              style={{ color: MAIA_ACCENT }}
+            >
+              <User aria-hidden="true" />
+              Maia
+            </TabsTrigger>
+            <TabsTrigger
+              value="flawchess"
+              data-testid="analysis-tab-flawchess"
+              className="gap-1 px-1"
+              style={{ color: FLAWCHESS_ENGINE_ACCENT }}
+            >
+              <ChessKnight aria-hidden="true" />
+              FlawChess
+            </TabsTrigger>
+            {evalChartReady && (
               <TabsTrigger value="tags" data-testid="analysis-tab-tags" className="gap-1 px-1">
                 <Tag aria-hidden="true" />
                 Tags
               </TabsTrigger>
-            </TabsList>
-            {movesTab}
-            {evalTab}
-            {humanTab}
-            {flawChessTab}
-            {tagsTab}
-          </Tabs>
-        ) : (
-          // Free play or a still-loading / unanalyzed game: no eval chart or tags, but
-          // Moves, engine lines (Eval tab), Maia, and FlawChess must all stay reachable.
-          <Tabs defaultValue="moves" className="flex min-h-0 flex-1 flex-col gap-2 px-2 pt-2">
-            <TabsList variant="underline" className="w-full shrink-0">
-              <TabsTrigger value="moves" data-testid="analysis-tab-moves" className="gap-1 px-1">
-                <ArrowLeftRight aria-hidden="true" />
-                Moves
-              </TabsTrigger>
-              {/* Engine-colored tab nav: Eval = Stockfish blue, Maia = violet,
-                  FlawChess = gold — matching each surface's accent (theme.ts). */}
-              <TabsTrigger
-                value="eval"
-                data-testid="analysis-tab-eval"
-                className="gap-1 px-1"
-                style={{ color: STOCKFISH_ACCENT }}
-              >
-                <Cpu aria-hidden="true" />
-                Eval
-              </TabsTrigger>
-              <TabsTrigger
-                value="human"
-                data-testid="analysis-tab-human"
-                className="gap-1 px-1"
-                style={{ color: MAIA_ACCENT }}
-              >
-                <User aria-hidden="true" />
-                Maia
-              </TabsTrigger>
-              <TabsTrigger
-                value="flawchess"
-                data-testid="analysis-tab-flawchess"
-                className="gap-1 px-1"
-                style={{ color: FLAWCHESS_ENGINE_ACCENT }}
-              >
-                <ChessKnight aria-hidden="true" />
-                FlawChess
-              </TabsTrigger>
-            </TabsList>
-            {movesTab}
-            {evalTab}
-            {humanTab}
-            {flawChessTab}
-          </Tabs>
-        )}
+            )}
+          </TabsList>
+          {movesTab}
+          {evalTab}
+          {humanTab}
+          {flawChessTab}
+          {evalChartReady && tagsTab}
+        </Tabs>
 
         {/* In-flow board-controls footer — replaces the suppressed mobile nav bar. */}
         <div

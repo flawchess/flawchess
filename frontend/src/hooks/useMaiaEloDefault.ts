@@ -11,21 +11,32 @@
  *     defaults to the opponent's (normalized) rating, matching who is actually choosing
  *     the move (quick 260705-m3z). `sideToMove` omitted → falls back to `gameData.user_color`.
  *     Never the frozen current-rating snapshot.
- *   - Free play: the user's current platform rating (`profile.current_rating`),
- *     else the FREE_PLAY_DEFAULT_ELO (1500) midpoint fallback.
+ *   - Free play (Phase 171 D-08): the user's normalized `profile.lichess_blitz_equivalent_rating`
+ *     (the blitz-bucket anchor, Phase 171 D-07), else the FREE_PLAY_DEFAULT_ELO (1500)
+ *     midpoint fallback. Deliberately NOT `profile.current_rating` — that is the raw
+ *     platform rating from the user's most recent game, which is inflated for
+ *     chess.com users relative to the Maia/Lichess-blitz scale this slider is on.
  *   - The resolved default is clamped to the MAIA_ELO_LADDER's [min, max] bounds
  *     (NOT snapped to its 100-ELO steps — a rating like 1720 stays 1720; only the
  *     ladder's outer bounds are enforced. useMaiaEngine's own `nearestByElo` picks
  *     the closest ladder rung for inference regardless of the exact selectedElo).
  *   - Once the user picks a value via the ELO selector, that pick wins permanently
  *     (user-override precedence) — a later gameData/profile load does not clobber it.
+ *
+ * Phase 172 (SEED-106 D-01): `deriveRawDefault` and `clampToLadderBounds` are now
+ * exported (previously module-private) so the background gem sweep can pin each
+ * ply's gem rung to the MOVER's own rating-at-game-time without re-deriving the
+ * fallback chain a second time. This hook's own `selectedElo` state and the
+ * user-override precedence above are UNCHANGED — the slider still owns the live
+ * exploration overlay; only the gem rung stops tracking it.
  */
 
 import { useEffect, useRef, useState } from 'react';
 import { MAIA_ELO_LADDER } from '@/lib/maiaEncoding';
 import type { MoverColor } from '@/lib/liveFlaw';
 
-/** Free-play fallback ELO when the user has no `current_rating` (D-07 midpoint). */
+/** Free-play fallback ELO when the user has no normalized blitz-equivalent
+ * rating anchor (D-07 midpoint). */
 export const FREE_PLAY_DEFAULT_ELO = 1500;
 
 /** Minimal game-data shape this hook needs (structurally satisfied by GameFlawCard). */
@@ -39,9 +50,21 @@ export interface MaiaEloGameData {
   black_rating_lichess_blitz?: number | null;
 }
 
-/** Minimal profile shape this hook needs (structurally satisfied by UserProfile). */
+/**
+ * Minimal profile shape this hook needs (structurally satisfied by UserProfile).
+ *
+ * Phase 171 code review (WR-04): `current_rating` was REMOVED from this shape.
+ * D-08 repointed `deriveRawDefault` to `lichess_blitz_equivalent_rating`, which
+ * left `current_rating` a REQUIRED field of this interface that nothing read —
+ * forcing every caller to supply a value with no consumer. Dropping it also
+ * makes the D-08 repoint structurally irreversible-by-accident: the raw
+ * (chess.com-inflated) rating is now not even visible to this hook, so a future
+ * edit cannot silently read it back. `current_rating` remains on the wire
+ * (`UserProfile` / `app/schemas/users.py`) for other consumers.
+ */
 export interface MaiaEloProfile {
-  current_rating: number | null;
+  // Phase 171 D-08: the normalized rating the free-play branch actually reads.
+  lichess_blitz_equivalent_rating: number | null;
 }
 
 export interface UseMaiaEloDefaultOptions {
@@ -75,7 +98,7 @@ export interface UseMaiaEloDefaultState {
 }
 
 /** Clamps `rating` into the ladder's [min, max] bounds (no step-snapping — see doc comment above). */
-function clampToLadderBounds(rating: number, ladder: readonly number[] = MAIA_ELO_LADDER): number {
+export function clampToLadderBounds(rating: number, ladder: readonly number[] = MAIA_ELO_LADDER): number {
   const min = ladder[0] ?? rating;
   const max = ladder[ladder.length - 1] ?? rating;
   return Math.min(max, Math.max(min, rating));
@@ -84,8 +107,15 @@ function clampToLadderBounds(rating: number, ladder: readonly number[] = MAIA_EL
 /**
  * Raw (pre-clamp) D-07 default, or null while game-mode data hasn't arrived yet
  * (the caller falls back to FREE_PLAY_DEFAULT_ELO for the initial render only).
+ *
+ * Exported as of Phase 172 (SEED-106 D-01): the background gem sweep pins each
+ * ply's gem rung to the MOVER's own rating-at-game-time, independent of the
+ * live Elo slider (`selectedElo`). Re-deriving the `*_lichess_blitz ?? raw`
+ * fallback chain a second time in the sweep would drift the moment Phase 164's
+ * normalization edge cases change — this export is the single source of truth
+ * both the live selector and the sweep read from.
  */
-function deriveRawDefault(
+export function deriveRawDefault(
   isGameMode: boolean,
   gameData: MaiaEloGameData | undefined,
   profile: MaiaEloProfile | undefined,
@@ -99,7 +129,7 @@ function deriveRawDefault(
     }
     return gameData.black_rating_lichess_blitz ?? gameData.black_rating;
   }
-  return profile?.current_rating ?? FREE_PLAY_DEFAULT_ELO;
+  return profile?.lichess_blitz_equivalent_rating ?? FREE_PLAY_DEFAULT_ELO;
 }
 
 export function useMaiaEloDefault({
