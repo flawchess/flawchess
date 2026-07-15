@@ -62,8 +62,8 @@ export function TacticMotifGroup({
   const visible = expanded || !overCap ? motifs : motifs.slice(0, TACTIC_CHIP_CAP_PER_GROUP);
   const hiddenCount = motifs.length - TACTIC_CHIP_CAP_PER_GROUP;
 
-  // Empty group still renders its (placeholder) column so the 3-column grid keeps stable
-  // 1/3 lanes — e.g. a game with allowed tactics but no missed ones shows "Missed —".
+  // Empty groups render nothing (ChipColumn self-hides on isEmpty) — e.g. a game with
+  // allowed tactics but no missed ones omits the Missed section entirely.
   return (
     <ChipColumn
       label={label}

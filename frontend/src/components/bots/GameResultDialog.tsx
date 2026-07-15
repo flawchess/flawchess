@@ -80,7 +80,10 @@ export function GameResultDialog({
         if (!next) onDismiss();
       }}
     >
-      <DialogContent data-testid="result-dialog">
+      {/* Mobile: anchor higher than the shared Dialog's vertical center so the
+          actions sit in comfortable thumb reach instead of mid-screen; desktop
+          keeps the default centered position. */}
+      <DialogContent className="top-[30%] sm:top-1/2" data-testid="result-dialog">
         <DialogHeader>
           <DialogTitle style={{ color: titleColor }}>{title}</DialogTitle>
         </DialogHeader>
