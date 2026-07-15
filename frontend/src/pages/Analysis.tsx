@@ -135,9 +135,13 @@ const LIVE_EVAL_CACHE_MAX = 256;
  *  mate-display gate (depth >= 8) so a decisive terminal eval fills the bar (Quick 260709-j3k). */
 const TERMINAL_EVAL_DEPTH = 99;
 
-/** Below this width the page renders its mobile takeover layout (matches the shell's
- *  `sm` breakpoint where the app swaps to mobile chrome). */
-const MOBILE_BREAKPOINT_PX = 640;
+/** Below this width the page renders its mobile takeover layout. Set to Tailwind's `md`
+ *  (768px) — MUST stay in sync with the shell's height-lock unlock band in ProtectedLayout
+ *  (App.tsx uses `md:max-desk3col:` so [0,768) stays locked for the takeover's footer chain,
+ *  [768,1200) scrolls for the two-column layout). Note this is now above the shell's `sm`
+ *  chrome breakpoint (640px), so the 640–768 slice shows the takeover under the desktop nav
+ *  header — functionally fine (locked shell, full nav available). */
+const MOBILE_BREAKPOINT_PX = 768;
 
 /** The desk3col grid breakpoint (mirrors `--breakpoint-desk3col: 1200px` in index.css):
  *  at/above this width the locked desktop 3-column grid engages; between
