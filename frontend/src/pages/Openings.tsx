@@ -1068,7 +1068,12 @@ export function OpeningsPage() {
           {(activeTab === 'explorer' || activeTab === 'games') && (
             <>
               <div className="flex items-stretch gap-1 px-1">
-                <div className="flex-1 min-w-0 flex flex-col gap-1">
+                {/* Cap the board column at the board's max render width (400px, the
+                    ChessBoard default maxWidth — same value the desktop container uses).
+                    Without this, `flex-1` stretched the column past the (capped) board on
+                    tablet/narrow-desktop widths below `lg`, so BoardControls rendered wider
+                    than the board and the settings column was pushed far to the right. */}
+                <div className="flex-1 min-w-0 max-w-[400px] flex flex-col gap-1">
                   <ChessBoard
                     position={chess.position}
                     onPieceDrop={chess.makeMove}
