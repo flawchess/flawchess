@@ -10,7 +10,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
-- Play-vs-bot board now has a control bar (reset, back, forward, flip board) directly below the board for stepping through the game and flipping orientation. The name/clock strips always match the board width, and the desktop two-column layout is tightened with no gap between the board and the side panel.
+- Play-vs-bot board now has a control bar (reset, back, forward, flip board) directly below the board for stepping through the game and flipping orientation. In the single-column layout the name/clock strips always match the board width and the move list is hidden; the two-column layout now appears on narrower windows (from 800px), keeps a small gap between columns, and sizes the move list to line up with the bottom of the board.
 
 ## [v2.3] Bot Play — 2026-07-15
 

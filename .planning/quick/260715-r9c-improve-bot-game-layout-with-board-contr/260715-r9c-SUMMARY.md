@@ -52,3 +52,24 @@ list + Resign/Draw); "clock = board width" applies to the single-column layout.
 - In-browser visual check skipped: the Claude Chrome extension was not
   connected. Change is presentational and fully covered by the type-check +
   test suite.
+
+## Follow-up tweaks (same task, additional user feedback)
+
+- Small gap (`gap-2`) between the two desktop columns instead of flush.
+- **Move list aligned to the board bottom.** Desktop layout restructured into
+  two rows: top row = board beside (clocks over a `fillHeight` move list that
+  flex-fills the side column via `items-stretch`), so the move-list box bottom
+  lines up exactly with the board bottom; bottom row = board controls under the
+  board, Resign/Draw (or result strip) under the side column. Split the old
+  `GamePanel` into separate `moveList` + `controls` elements;
+  `MoveListPanel` gained a `fillHeight` prop.
+- **Move list hidden in the single-column layout** (it now only appears in the
+  desktop side column).
+- **Breakpoint lowered 1024 → 800px** so the two-column layout appears on
+  narrower windows (sized to fit the 400 board + 320 side column + padding).
+- Commits: 0bf08fe4 (gap + taller list, superseded), d20e7f94 (alignment +
+  hide + breakpoint). Full FE suite green after each (2228 tests).
+
+Note: hiding the move list on single-column also removes its "Return to live
+position" link there; the board controls' forward/reset buttons remain the way
+back to the live position on narrow screens.
