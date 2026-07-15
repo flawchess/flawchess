@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Changed
+
+- Play-vs-bot board now has a control bar (reset, back, forward, flip board) directly below the board for stepping through the game and flipping orientation. The name/clock strips always match the board width, and the desktop two-column layout is tightened with no gap between the board and the side panel.
+
 ## [v2.3] Bot Play — 2026-07-15
 
 ### Added

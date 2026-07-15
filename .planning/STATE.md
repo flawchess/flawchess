@@ -24,7 +24,7 @@ progress:
 Milestone: v2.3 Bot Play — CLOSED 2026-07-15 (phases 166–172, 46 plans)
 Phase: none active (999.1 Password Reset remains in BACKLOG)
 Status: Milestone complete — deploy pending (`bin/deploy.sh`)
-Last activity: 2026-07-15 — Closed v2.3: shipped phase 172, archived phases to milestones/v2.3-phases/, CHANGELOG promoted, tagged v2.3
+Last activity: 2026-07-15 — Completed quick task 260715-r9c: /bots board controls + board-width clocks + no-gap desktop layout
 
 ## Project Reference
 
@@ -323,6 +323,7 @@ None active.
 | 260714-qaj | Stored bot games get a full lichess-comparable PGN header block, stamped server-side post-insert (`bot_game_pgn.stamp_bot_game_headers`): Event/Site deep link/Date/Round/White/Black/GameId/UTCDate/UTCTime/Elo/Title/Variant/ECO/Opening + non-standard RatingSource + PlayStyleBlend; player Elo is the Lichess-equivalent anchor, omitted (never "?") when the user has no anchor | 2026-07-14 | e4509e9b | [260714-qaj-enrich-bot-game-pgn-metadata-headers](./quick/260714-qaj-enrich-bot-game-pgn-metadata-headers/) |
 | 260714-rj5 | "Analyze this game" after a bot game enqueues a tier-1 eval job and opens the analysis board in game mode; the board renders the move list immediately, shows the Pending…/Analyzing… pill in the eval chart's slot, and swaps in the eval chart + flaw icons + tactic badges in place when the job lands (no remount, so the move cursor and variation tree survive). Unanalyzed single-game cards now carry `moves` + `phase_transitions`, which also fixes the empty-board dead end for unanalyzed imported games. Retires the Phase 169 D-20/D-21 "never gated" invariant | 2026-07-14 | 1f27190c | [260714-rj5-bot-game-tier-1-analysis-with-live-updat](./quick/260714-rj5-bot-game-tier-1-analysis-with-live-updat/) |
 | 260715-als | WR-04 (Phase 172 deferred review finding): a book ply carrying an inaccuracy-severity flaw rendered no variation-tree marker at all — the move list's resolveMarkerIcon draws no glyph for inaccuracy, and the book fold was suppressed by any non-null severity. Fixed by deferring only to entries that draw a move-list icon (blunder/mistake/gem); board `!?` surface untouched. Page-level RED→GREEN test | 2026-07-15 | 6d9c12b8 | [260715-als-fix-wr-04-inaccuracy-severity-book-ply-r](./quick/260715-als-fix-wr-04-inaccuracy-severity-book-ply-r/) |
+| 260715-r9c | /bots layout: BoardControls bar (reset/back/forward/flip) below the board, wired to the hook's view-only `viewedPly` cursor; flip is now a manual local toggle. Single-column stack constrained to the board's max width so name/clock strips always match the board; 2-column desktop centers the board + right column as one group with no gap. Layout-only, all 2228 FE tests green | 2026-07-15 | 4b8c1878 | [260715-r9c-improve-bot-game-layout-with-board-contr](./quick/260715-r9c-improve-bot-game-layout-with-board-contr/) |
 
 ## Deferred Items
 
