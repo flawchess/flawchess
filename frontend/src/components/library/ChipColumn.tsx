@@ -6,8 +6,8 @@ interface ChipColumnProps {
   label: string;
   /** Optional test id on the column container. */
   testId?: string;
-  /** When true, render a muted "—" placeholder instead of the chips so the column keeps
-   *  its lane in the grid (stable 1/3 alignment) even with nothing to show. */
+  /** When true, the column has nothing to show and is omitted entirely (no label, no
+   *  placeholder) so empty Missed/Allowed/Context sections don't clutter the layout. */
   isEmpty?: boolean;
   /** Optional node pinned to the right edge of the label row (e.g. a legend tooltip
    *  icon), so each column's explanations sit next to its own label rather than inline
@@ -43,6 +43,9 @@ export function ChipColumn({
   inline = false,
   children,
 }: ChipColumnProps) {
+  // Empty columns are omitted entirely rather than showing a "—" placeholder — an empty
+  // Missed/Allowed/Context section adds no information and just clutters the card/rail.
+  if (isEmpty) return null;
   return (
     // Mobile: label + chips share one flex-wrap line (tags float beside the label). Desktop
     // (md+): label stacks above the chips so the 3-column grid reads as labeled columns.
@@ -62,15 +65,11 @@ export function ChipColumn({
         <span className="text-sm font-medium text-muted-foreground">{label}</span>
         {labelTrailing}
       </div>
-      {isEmpty ? (
-        <span className="text-sm text-muted-foreground/60">—</span>
-      ) : (
-        // Mobile: `contents` dissolves this wrapper so each chip is a direct flex item of the
-        // outer row, wrapping individually beside the label. Desktop (md+): a real flex row.
-        <div className={cn('contents', !inline && 'md:flex md:flex-wrap md:items-center md:gap-1.5')}>
-          {children}
-        </div>
-      )}
+      {/* Mobile: `contents` dissolves this wrapper so each chip is a direct flex item of the
+          outer row, wrapping individually beside the label. Desktop (md+): a real flex row. */}
+      <div className={cn('contents', !inline && 'md:flex md:flex-wrap md:items-center md:gap-1.5')}>
+        {children}
+      </div>
       {footer}
     </div>
   );

@@ -880,17 +880,15 @@ export function LibraryGameCard({
       <TagLegend variant="icon" tags={game.chips} tacticMotifs={[]} gameId={game.game_id} />
     ) : null;
 
-  // Chip block. Quick 260620-sep follow-up: three stable, equal-width labeled columns —
+  // Chip block. Quick 260620-sep follow-up: up to three equal-width labeled columns —
   // Missed | Allowed | Context — that span 1/3 each on wide viewports and stack vertically
-  // below md. The columns show even when a game has no tactic motifs (each empty column
-  // keeps its lane via the ChipColumn "—" placeholder) so every analyzed card reads with
-  // the same organized layout rather than collapsing to a sparse row.
+  // below md. Empty columns are omitted entirely (ChipColumn self-hides on isEmpty) so a
+  // card with no missed/allowed/context tags doesn't show empty labeled sections.
   // Chips grid (Missed | Allowed | Context lanes).
   const renderChipsBlock = () => (
     <div
-      // Always three equal 1/3 lanes (Missed | Allowed | Context). Empty columns keep
-      // their lane via the ChipColumn "—" placeholder so the layout never collapses to
-      // two columns under an active tactic filter (which disrupted the visual flow).
+      // Three 1/3 grid lanes (Missed | Allowed | Context); empty columns render nothing and
+      // their populated siblings left-align into the remaining lanes.
       // gap-x-3 matches the row-1 grid gap (gap-3) so the column gridlines line up — the
       // chart's left edge falls exactly on the MISSED column boundary.
       className="grid grid-cols-1 md:grid-cols-3 gap-x-3 gap-y-2"
