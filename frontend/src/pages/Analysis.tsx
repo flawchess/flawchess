@@ -146,21 +146,31 @@ const MOBILE_BREAKPOINT_PX = 768;
 /** The desk3col grid breakpoint (mirrors `--breakpoint-desk3col: 1200px` in index.css):
  *  at/above this width the locked desktop 3-column grid engages; between
  *  MOBILE_BREAKPOINT_PX and this width the page uses the mid-range two-column layout
- *  (board + moves row, then FlawChess/ELO + Tags/Maia row). Same literal as
+ *  (board + eval chart | tabbed panel). Same literal as
  *  BOARD_WIDTH_LOCK_MIN_PX, kept as its own named constant since it gates a different
  *  concern (which layout tree renders, not the board's height lock). */
 const DESK3COL_BREAKPOINT_PX = 1200;
-
-/** In the mid-range layout the move list is capped at this fraction of the board height
- *  (shorter than the board so the FlawChess/Maia stack rises) while still scrolling
- *  internally. */
-const MID_MOVE_LIST_HEIGHT_RATIO = 0.8;
 
 /** Horizontal space the two flanking eval bars + their `gap-2` gutters consume in the
  *  desktop board row: 2×(w-5 bar = 20px) + 2×(gap-2 = 8px). Subtracted from the stage's
  *  measured width so the board is sized to the space that actually remains beside the
  *  bars (Phase 161 UAT: bars hug the board, board never clips). */
 const BOARD_EVAL_BARS_ALLOWANCE_PX = 56;
+
+/** Mobile board size ceiling — 80px below the shared BOARD_MAX_WIDTH. The mobile layout
+ *  is a vertical stack (board on top, tabs below), so a full-size board crowded the tab
+ *  panel; a smaller board leaves more of the viewport for the tabs. The board is square and
+ *  width-driven on mobile, so this caps its height too. */
+const MOBILE_BOARD_MAX_WIDTH = BOARD_MAX_WIDTH - 80;
+
+/** Max width of the mobile board block (the board + its two flanking eval bars + the
+ *  wrapper's `px-2` side padding). Caps the `flex-1` board container at the mobile board
+ *  ceiling so the board FILLS its container instead of capping short inside a wider one —
+ *  which otherwise leaves a gap between the board's right edge and the SF eval bar and
+ *  pushes the player clock labels past the board's right border. `MOBILE_BOARD_MAX_WIDTH`
+ *  (board) + `BOARD_EVAL_BARS_ALLOWANCE_PX` (bars + gaps) + 16 (`px-2` both sides,
+ *  border-box). Combined with `92vw` at the call site so narrow phones still shrink to fit. */
+const MOBILE_BOARD_BLOCK_MAX_PX = MOBILE_BOARD_MAX_WIDTH + BOARD_EVAL_BARS_ALLOWANCE_PX + 16;
 
 /** The board's height budget only binds in the locked desktop layout, i.e. at/above the
  *  desk3col width breakpoint AND at/above the `short` height-unlock threshold. Both mirror
@@ -222,8 +232,8 @@ type AnalysisLayoutMode = 'mobile' | 'mid' | 'desktop';
 /**
  * Which of the three analysis layouts to render, chosen by viewport width:
  *   • 'mobile'  (< MOBILE_BREAKPOINT_PX)   — full tab takeover, board on top.
- *   • 'mid'     (MOBILE..desk3col)         — two-column grid: board+eval-chart | Stockfish+moves,
- *                                             then FlawChess/ELO | Tags/Maia.
+ *   • 'mid'     (MOBILE..desk3col)         — two equal columns: board |
+ *                                             tabbed panel (Moves | Eval | Maia | FlawChess | Tags).
  *   • 'desktop' (>= desk3col)              — the locked 3-column grid.
  * Driven by JS (not CSS) so the board / eval-chart / variation-tree mount EXACTLY once —
  * a CSS `hidden` split would duplicate their stable `id`/`data-testid`s and the engine board.
@@ -2257,6 +2267,12 @@ export default function Analysis() {
   // locked band; outside it the page scrolls and the board is width-driven.
   const boardStageRef = useRef<HTMLDivElement>(null);
   const [boardWidth, setBoardWidth] = useState(0);
+  // Full rendered height of the board group (caps + board + player rows + controls,
+  // plus the eval chart on desktop). Only consumed by the mid layout, where the left
+  // column IS this group, so the right-column tab panel can be sized to match it exactly
+  // (taller than the bare board — otherwise the tabs stop at the board's bottom edge and
+  // the Maia chart / verdict get clipped short of the controls).
+  const [boardStageHeight, setBoardStageHeight] = useState(0);
   useEffect(() => {
     const stage = boardStageRef.current;
     if (!stage) return; // mobile tree: the desktop stage is not mounted; boardWidth is unused there.
@@ -2274,6 +2290,10 @@ export default function Analysis() {
       const group = el.firstElementChild;
       const boardBoxHeight = containerRef.current?.clientHeight ?? 0;
       const chrome = group ? Math.max(0, group.clientHeight - boardBoxHeight) : 0;
+      // Full group height (board + caps + player rows + controls) — the mid layout sizes
+      // its right-column tab panel to this so the tabs run the full height of the board
+      // block, bottoming out at the board-controls card rather than the board's edge.
+      setBoardStageHeight(group ? group.clientHeight : 0);
       // Reserve the bars allowance AND both slider-slack margins so the board group ends up
       // narrower than its track and centers with EVAL_SLIDER_SLACK_PX of breathing room on
       // each side — room the eval-chart slider's thumb overhang needs to avoid being clipped.
@@ -2651,11 +2671,22 @@ export default function Analysis() {
           <div className="w-full">{boardFooterRow(playerBar(boardFlipped ? 'black' : 'white'))}</div>
         )}
 
+        {/* Board controls directly under the board — moved here from the move-list
+            card footer so they hug the board in BOTH the mid and desktop layouts.
+            Placed ABOVE the eval chart so a too-short locked desktop viewport clips
+            the chart (bottom of the group), never the controls. Capped to the board
+            group width by the parent's maxWidth, so it aligns to the board edges.
+            Charcoal container (Card) to match the surrounding engine cards. */}
+        <Card className="w-full px-1">{boardControls(true, 'sm')}</Card>
+
         {/* EvalChart with slider — game mode only, aligned to the board width.
             highlightedPlies (Task 3): dims non-matching markers on tags-panel hover.
             Quick 260714-rj5: also renders while analysis is pending/leased, showing
-            the pill in the chart's slot instead of nothing. */}
-        {(evalChartReady || evalPending) && (
+            the pill in the chart's slot instead of nothing.
+            Suppressed in the mid layout (!isMid): there the chart lives in the Eval
+            tab (mobile parity), and a second EvalChart under the board would clash on
+            its `eval-chart-${gameId}` testids. Desktop keeps it here under the board. */}
+        {!isMid && (evalChartReady || evalPending) && (
           <div data-testid="analysis-eval-chart" className="w-full">
             {evalChart('h-[120px]', tagsHighlightedPlies)}
           </div>
@@ -2895,6 +2926,65 @@ export default function Analysis() {
     </TabsContent>
   );
 
+  // The full tabbed panel (Moves | Eval | Maia | FlawChess [| Tags]) — the mobile
+  // takeover's whole body AND the mid-range layout's right column (both reuse it
+  // verbatim; only one layout tree renders at a time, so the Tabs mount exactly
+  // once). Needs a height-bounded flex parent (`flex min-h-0 flex-1`) so each tab's
+  // internal scroller resolves: mobile gets it from the takeover column, mid from a
+  // boardWidth-tall wrapper. The Tags trigger/content render only once evalChartReady
+  // (loaded, analyzed game); free play / still-loading games omit them, and the Tabs
+  // subtree never remounts across that transition (no cursor/variation-tree loss).
+  const analysisTabs = (
+    <Tabs defaultValue="moves" className="flex min-h-0 flex-1 flex-col gap-2 px-2 pt-2">
+      <TabsList variant="underline" className="w-full shrink-0">
+        <TabsTrigger value="moves" data-testid="analysis-tab-moves" className="gap-1 px-1">
+          <ArrowLeftRight aria-hidden="true" />
+          Moves
+        </TabsTrigger>
+        {/* Engine-colored tab nav: Eval = Stockfish blue, Maia = violet,
+            FlawChess = gold — matching each surface's accent (theme.ts). */}
+        <TabsTrigger
+          value="eval"
+          data-testid="analysis-tab-eval"
+          className="gap-1 px-1"
+          style={{ color: STOCKFISH_ACCENT }}
+        >
+          <Cpu aria-hidden="true" />
+          Eval
+        </TabsTrigger>
+        <TabsTrigger
+          value="human"
+          data-testid="analysis-tab-human"
+          className="gap-1 px-1"
+          style={{ color: MAIA_ACCENT }}
+        >
+          <User aria-hidden="true" />
+          Maia
+        </TabsTrigger>
+        <TabsTrigger
+          value="flawchess"
+          data-testid="analysis-tab-flawchess"
+          className="gap-1 px-1"
+          style={{ color: FLAWCHESS_ENGINE_ACCENT }}
+        >
+          <ChessKnight aria-hidden="true" />
+          FlawChess
+        </TabsTrigger>
+        {evalChartReady && (
+          <TabsTrigger value="tags" data-testid="analysis-tab-tags" className="gap-1 px-1">
+            <Tag aria-hidden="true" />
+            Tags
+          </TabsTrigger>
+        )}
+      </TabsList>
+      {movesTab}
+      {evalTab}
+      {humanTab}
+      {flawChessTab}
+      {evalChartReady && tagsTab}
+    </Tabs>
+  );
+
   // ── Shared desktop/mid cards ──────────────────────────────────────────────────
   // Extracted from the desktop 3-column return so the mid-range two-column layout can
   // reuse them verbatim (single mount — only one return branch renders). Each references
@@ -2941,10 +3031,11 @@ export default function Analysis() {
     </Card>
   );
 
-  // Move-list card: variation tree fills and scrolls internally, board controls pinned in
-  // the footer band. `flex-1 min-h-0` needs a height-bounded flex parent (desktop: the
-  // board-height region; mid: a boardWidth-tall column) so the tree's absolute-fill scroller
-  // has a definite height (a 0-height parent would render an empty list).
+  // Move-list card (desktop side panel): variation tree fills and scrolls internally.
+  // `flex-1 min-h-0` needs a height-bounded flex parent (the board-height region) so the
+  // tree's absolute-fill scroller has a definite height (a 0-height parent would render an
+  // empty list). The board controls no longer sit in a footer band here — they moved under
+  // the board inside desktopBoardStage (hugging the board like the mid layout).
   const movesCard = (
     <Card
       data-testid="analysis-movelist-card"
@@ -2955,9 +3046,6 @@ export default function Analysis() {
         Moves
       </CardHeader>
       {variationTree('responsive')}
-      <div className="border-t border-border/40 bg-black/20 px-1">
-        {boardControls(true, 'sm')}
-      </div>
     </Card>
   );
 
@@ -2983,20 +3071,30 @@ export default function Analysis() {
   );
 
   // ── Mid-range two-column layout (MOBILE_BREAKPOINT_PX .. desk3col) ─────────────
-  // Two INDEPENDENT columns (masonry, not row-aligned) so each flows on its own and the
-  // Tags panel sits directly under the move-list card with no cross-column alignment gap:
-  //   • left (the narrower 2fr track, so the board renders compact): board + eval chart,
-  //     then FlawChess and the ELO slider.
-  //   • right (the wider 3fr track): Stockfish, move list, Maia. (The flaw-tags panel is
-  //     hidden in this band per UAT; it stays in the desktop and mobile layouts.)
+  // Two columns split 60/40:
+  //   • left (60%):  the board (JS-sized to the column width), its flanking eval bars, the
+  //            player rows, and the board controls. (No eval chart here — mobile parity:
+  //            it lives in the Eval tab; desktopBoardStage suppresses it when isMid.)
+  //   • right (40%): the full tabbed panel (Moves | Eval | Maia | FlawChess | Tags) — the
+  //            SAME analysisTabs the mobile takeover renders, reused verbatim. The eval
+  //            chart sits in the Eval tab below the Stockfish lines, exactly as on mobile.
   // The page scrolls (no viewport height lock in this band, per the shell's
-  // `sm:max-desk3col:` unlock). The move list is wrapped in a bounded-height box (a fraction
-  // of the board height) so its absolute-fill scroller has a definite height (an unbounded
-  // flex-1 parent renders empty) while staying shorter than the board.
+  // `sm:max-desk3col:` unlock). The tab panel is wrapped in a board-height box so each
+  // tab's internal scroller has a definite height (an unbounded flex-1 parent renders
+  // the move tree empty).
   if (isMid) {
-    const movesHeightStyle: CSSProperties | undefined = boardWidth
-      ? { height: Math.round(boardWidth * MID_MOVE_LIST_HEIGHT_RATIO) }
-      : undefined;
+    // Right-column tab panel is bounded to the FULL board-stage height (board + caps +
+    // player rows + controls), so the tabs run the whole height of the board block and
+    // bottom out at the controls card — not clipped short at the board's edge. A bounded
+    // height is also what lets each tab's internal scroller resolve (an unbounded `flex-1`
+    // parent renders the move-tree list empty — the same reason the desktop movesCard
+    // needs a height-bounded flex parent). Falls back to the bare board height, then to
+    // auto, until the stage measures (a brief first-paint transient).
+    const tabPanelHeightStyle: CSSProperties | undefined = boardStageHeight
+      ? { height: Math.round(boardStageHeight) }
+      : boardWidth
+        ? { height: Math.round(boardWidth) }
+        : undefined;
     return (
       <div data-testid="analysis-page" className="flex min-h-0 flex-1 flex-col bg-background">
         <main
@@ -3009,20 +3107,19 @@ export default function Analysis() {
               Failed to load game. Something went wrong. Please try again in a moment.
             </p>
           )}
-          <div className="grid grid-cols-[2fr_3fr] items-start gap-4">
-            {/* Left column — narrower, so the board is compact here. */}
-            <div className="flex min-w-0 flex-col gap-4">
-              {desktopBoardStage}
-              {renderFlawChessCard()}
-              {eloSelector}
-            </div>
-            {/* Right column — Maia flows directly under the move list (Tags hidden here). */}
-            <div className="flex min-w-0 flex-col gap-4">
-              {stockfishCard}
-              <div className="flex min-h-0 flex-col" style={movesHeightStyle}>
-                {movesCard}
-              </div>
-              {desktopMaiaPanel}
+          {/* Two columns split 60/40: the board stage on the left (60%), the full
+              tabbed panel (Moves | Eval | Maia | FlawChess | Tags) on the right (40%) —
+              the same tabs the mobile takeover uses, reused verbatim via analysisTabs. */}
+          <div className="grid grid-cols-[3fr_2fr] items-start gap-4">
+            {/* Left column — the board stage (board + board controls, JS-sized to the
+                column width). The controls live inside desktopBoardStage under the board;
+                the eval chart is NOT here — it lives in the right column's Eval tab
+                (mobile parity), so desktopBoardStage omits it under the board when isMid. */}
+            <div className="flex min-w-0 flex-col gap-2">{desktopBoardStage}</div>
+            {/* Right column — the tabbed panel, bounded to the board height so its
+                tabs scroll internally instead of stretching the page. */}
+            <div className="flex min-h-0 min-w-0 flex-col" style={tabPanelHeightStyle}>
+              {analysisTabs}
             </div>
           </div>
         </main>
@@ -3045,7 +3142,14 @@ export default function Analysis() {
         {/* Board block: source caps + top player, board, bottom player. max-w-[92vw]
             shrinks the board a touch so the name/clock strips top and bottom stay on
             screen (151.1 UAT). Free play has no players — the caps show alone. */}
-        <div className="mx-auto flex w-full max-w-[92vw] shrink-0 flex-col gap-1 px-2 pt-2">
+        <div
+          className="mx-auto flex w-full shrink-0 flex-col gap-1 px-2 pt-2"
+          // Cap at the board's natural block width (board + bars) so the flex-1 board
+          // container never exceeds BOARD_MAX_WIDTH — the board then fills it, the SF eval
+          // bar hugs the board's right edge, and the clock labels right-align to that edge
+          // (min() with 92vw keeps narrow phones shrinking to fit).
+          style={{ maxWidth: `min(92vw, ${MOBILE_BOARD_BLOCK_MAX_PX}px)` }}
+        >
           {boardHeaderRow(
             isGameMode && gameData ? playerBar(boardFlipped ? 'white' : 'black') : null,
           )}
@@ -3071,54 +3175,7 @@ export default function Analysis() {
             game-mode card transitions from unanalyzed to analyzed via the live
             poll (no cursor/variation-tree loss). Free play and a still-loading /
             unanalyzed game just omit the Tags tab. */}
-        <Tabs defaultValue="moves" className="flex min-h-0 flex-1 flex-col gap-2 px-2 pt-2">
-          <TabsList variant="underline" className="w-full shrink-0">
-            <TabsTrigger value="moves" data-testid="analysis-tab-moves" className="gap-1 px-1">
-              <ArrowLeftRight aria-hidden="true" />
-              Moves
-            </TabsTrigger>
-            {/* Engine-colored tab nav: Eval = Stockfish blue, Maia = violet,
-                FlawChess = gold — matching each surface's accent (theme.ts). */}
-            <TabsTrigger
-              value="eval"
-              data-testid="analysis-tab-eval"
-              className="gap-1 px-1"
-              style={{ color: STOCKFISH_ACCENT }}
-            >
-              <Cpu aria-hidden="true" />
-              Eval
-            </TabsTrigger>
-            <TabsTrigger
-              value="human"
-              data-testid="analysis-tab-human"
-              className="gap-1 px-1"
-              style={{ color: MAIA_ACCENT }}
-            >
-              <User aria-hidden="true" />
-              Maia
-            </TabsTrigger>
-            <TabsTrigger
-              value="flawchess"
-              data-testid="analysis-tab-flawchess"
-              className="gap-1 px-1"
-              style={{ color: FLAWCHESS_ENGINE_ACCENT }}
-            >
-              <ChessKnight aria-hidden="true" />
-              FlawChess
-            </TabsTrigger>
-            {evalChartReady && (
-              <TabsTrigger value="tags" data-testid="analysis-tab-tags" className="gap-1 px-1">
-                <Tag aria-hidden="true" />
-                Tags
-              </TabsTrigger>
-            )}
-          </TabsList>
-          {movesTab}
-          {evalTab}
-          {humanTab}
-          {flawChessTab}
-          {evalChartReady && tagsTab}
-        </Tabs>
+        {analysisTabs}
 
         {/* In-flow board-controls footer — replaces the suppressed mobile nav bar. */}
         <div
@@ -3208,8 +3265,9 @@ export default function Analysis() {
             )}
 
             {/* Board-height region: the engine + moves cards together span exactly the
-                board's height at desk3col, so the moves card's bottom border (its controls
-                footer) lands on the board's bottom edge (user UAT). `--analysis-board-h` is
+                board's height at desk3col, so the moves card's bottom border lands on the
+                board's bottom edge (user UAT). The board controls now sit under the board
+                in the center column (not in the moves card footer). `--analysis-board-h` is
                 the JS-measured board size; the desk3col:h-[var(...)] only binds it on the
                 3-column desktop layout, leaving the stacked mobile layout at natural height.
                 The tags panel below then sits beside the bottom player bar + eval chart. */}
@@ -3217,8 +3275,9 @@ export default function Analysis() {
               className="flex min-h-0 flex-col gap-4 desk3col:h-[var(--analysis-board-h)] desk3col:shrink-0"
               style={{ '--analysis-board-h': boardWidth ? `${boardWidth}px` : undefined } as CSSProperties}
             >
-            {/* Engine info + lines + move list — extracted to shared consts (stockfishCard /
-                movesCard) so the mid-range layout reuses them; see their definitions above. */}
+            {/* Engine info + lines + move list (desktop side panel). stockfishCard is also
+                referenced in the mobile/mid Eval tab via mobileEngineLines; movesCard is
+                desktop-only (mid/mobile show the move tree in the Moves tab). */}
             {stockfishCard}
             {movesCard}
             </div>

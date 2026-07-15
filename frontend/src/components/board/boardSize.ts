@@ -10,8 +10,8 @@
 
 /** D-08 floor — the board never shrinks below this even on a very short viewport. */
 export const BOARD_MIN_WIDTH = 420;
-/** D-08 ceiling — the board never grows past today's existing max size. */
-export const BOARD_MAX_WIDTH = 600;
+/** D-08 ceiling — the board never grows past this max size. */
+export const BOARD_MAX_WIDTH = 540;
 
 /**
  * Compute the board's pixel size given a width budget, a height budget, and
