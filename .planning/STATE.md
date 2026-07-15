@@ -4,11 +4,11 @@ milestone: v2.3
 milestone_name: Bot Play
 current_phase: 999.1
 current_phase_name: BACKLOG
-status: verifying
-stopped_at: Completed 172-05-PLAN.md
-last_updated: "2026-07-15T05:07:22.885Z"
+status: milestone_complete
+stopped_at: v2.3 Bot Play milestone closed
+last_updated: "2026-07-15T06:00:00.000Z"
 last_activity: 2026-07-15
-last_activity_desc: Phase 172 complete, transitioned to Phase 999.1
+last_activity_desc: v2.3 Bot Play milestone closed (phases 166-172); ready to deploy
 progress:
   total_phases: 9
   completed_phases: 9
@@ -21,20 +21,22 @@ progress:
 
 ## Current Position
 
-Phase: 999.1 — Password Reset (BACKLOG)
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-07-15 — Completed quick task 260715-als: WR-04 book-marker fix (Phase 172 deferred finding)
+Milestone: v2.3 Bot Play — CLOSED 2026-07-15 (phases 166–172, 46 plans)
+Phase: none active (999.1 Password Reset remains in BACKLOG)
+Status: Milestone complete — deploy pending (`bin/deploy.sh`)
+Last activity: 2026-07-15 — Closed v2.3: shipped phase 172, archived phases to milestones/v2.3-phases/, CHANGELOG promoted, tagged v2.3
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-07-14 after Phase 170)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: **v2.3 Bot Play is feature-complete** — play a real clocked game against a calibrated FlawChess bot. All phases are done: 166 (bot move selection), 167 (backend store-on-finish), 168 (calibration harness), 168.5 (pacing/search budget), 169 (clocked board + game loop), 169.5 (opening book), 170 (localStorage resume), and **171 (Bots page + setup screen + nav), which closes the milestone** — 171 UAT passed 5/5, including the mobile Start-button fix confirmed on a real device. Phase 171 still lives on `gsd/phase-171-bots-page-setup-screen-nav` and has NOT been squash-merged to `main` yet; the full pre-merge gate must run first. Not yet deployed — v2.3 ships at milestone close. Prior milestone v2.2 (Analysis ELO Calibration & Deep-links) closed 2026-07-11 and is live in production via #253/#254.
+Current focus: **v2.3 Bot Play is closed (2026-07-15)** — play a real clocked game against a calibrated FlawChess bot on the new `/bots` page, plus a background gem sweep + book markers on `/analysis`. All nine phases (166, 167, 168, 168.5, 169, 169.5, 170, 171, 172) are shipped and squash-merged to `main` behind the full pre-merge gate. **Deploy pending** — v2.3 is on `main` but not yet on `production`; next action is `bin/deploy.sh`. Prior milestone v2.2 (Analysis ELO Calibration & Deep-links) closed 2026-07-11 and is live in production via #253/#254. Note: v2.1 (Analysis Eval Reconciliation & Gem Moves) merged to main 2026-07-10 and ships with this deploy too (it was never separately deployed).
 
 ## Milestone Progress
 
-Thirty-five milestones complete (v1.0–v2.2).
+Thirty-six milestones complete (v1.0–v2.3).
+
+v2.3 Bot Play closed 2026-07-15 — 9 phases (166, 167, 168, 168.5, 169, 169.5, 170, 171, 172), 46 plans. A new top-level `/bots` page lets users and guests play a full clocked game against a calibrated FlawChess bot: a pure provider-agnostic `selectBotMove` sample↔argmax blend (166) shared by the app and a headless Node calibration harness (168, spike-gated, `onnxruntime-node`) that measures real strength across a coarse (ELO × play-style) grid; per-move search budget + confidence early-stop so moves land in seconds (168.5, SEED-096/095); dual Fischer clocks on a wall-clock delta model with fair pause/flag and bot pacing (169); a Maia-policy-weighted ECO opening book for near-instant early moves (169.5, PLAY-11); localStorage resume with the clock paused while away and exactly-once storage (170); the Bots page + setup screen + nav tying it together (171); and finished games persisted as analyzable `platform='flawchess'` Library games (167). Phase 172 (SEED-106) added a background gem sweep + opening-book markers on `/analysis` (rung pinned to the mover's rating, `GEM_MAIA_MAX_PROB` 0.10→0.20, `opening_ply_count` on-read, precedence severity > gem > book). Also bundled: quicks 260714-pnk/qaj/rj5 and 260715-als. Archived to milestones/v2.3-ROADMAP.md, phases to milestones/v2.3-phases/, CHANGELOG promoted, tagged v2.3, SEED-091 closed. **Deploy pending** via `bin/deploy.sh` (ships v2.1 + v2.3 together).
 
 v2.2 Analysis ELO Calibration & Deep-links closed 2026-07-11 — 2 phases (164, 165), 6 plans. Phase 164 (SEED-093) seats each player's analysis-board Maia ELO at their Lichess-blitz-equivalent rating (Maia-3's training scale) via a backend `normalize_to_lichess_blitz` converter (incl. chess.com `classical` → `rapid`), two nullable `*_lichess_blitz` `GameFlawCard` fields computed on-read, and a frontend `deriveRawDefault` read-with-raw-fallback; slider info popover + inline reset. Phase 165 (SEED-094) restored an additive `?fen=<fen>` analysis deep-link (precedence game_id > fen > line) and added a headless Node gem-ELO calibration harness (onnxruntime-web Maia 6 rungs + Stockfish WASM C2 + stratified CSV → TSV in `reports/data/`, importing the real `classifyGem`/`evalToExpectedScore`/`MISTAKE_DROP`); gem generosity relaxed to Maia ≤10%. Archived to milestones/v2.2-ROADMAP.md, phases to milestones/v2.2-phases/, CHANGELOG promoted, tagged v2.2, GH release created. **Deployed to production** — released incrementally as single-phase releases #253 (164) and #254 (165); bundled into v2.2 retroactively at close.
 

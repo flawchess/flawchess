@@ -8,6 +8,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v2.3] Bot Play — 2026-07-15
+
 ### Added
 - Bot play groundwork: a single pure move-selection function (`selectBotMove`) blends human-realistic Maia sampling with practical-score argmax across the play-style slider range — the same code the app's bot and the calibration harness use (Phase 166).
 - Bot play groundwork: finished bot games can be stored as first-class `platform='flawchess'` Library games via `POST /bots/games`, carrying clocks, full bot settings, and a converted player rating; bot games are excluded from analytics by default and opt-in in the Library (Phase 167).
@@ -1068,7 +1070,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.2...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.3...HEAD
+[v2.3]: https://github.com/flawchess/flawchess/compare/v2.2...v2.3
 [v2.2]: https://github.com/flawchess/flawchess/compare/v2.1...v2.2
 [v2.1]: https://github.com/flawchess/flawchess/compare/v2.0...v2.1
 [v2.0]: https://github.com/flawchess/flawchess/compare/v1.32...v2.0
