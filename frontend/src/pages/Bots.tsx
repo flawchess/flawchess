@@ -27,6 +27,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChessBoard } from '@/components/board/ChessBoard';
+import { BoardControls } from '@/components/board/BoardControls';
 import { ClockDisplay } from '@/components/bots/ClockDisplay';
 import { MoveListPanel } from '@/components/bots/MoveListPanel';
 import { GameControls } from '@/components/bots/GameControls';
@@ -50,6 +51,16 @@ import { buildAnalysisLineUrl, buildGameAnalysisUrl } from '@/lib/analysisUrl';
  * user clock below, per lichess convention); at/above it they move into a
  * side column beside the board (desktop), per the UI-SPEC layout. */
 const DESKTOP_BREAKPOINT_PX = 1024;
+
+/** Max rendered width of the bot-game board, in px. Shared between the
+ * `ChessBoard maxWidth` prop and the single-column stack's `max-width` so the
+ * clock strips / board controls are ALWAYS exactly the board's width: capping
+ * the column at this value means the container never exceeds the board, so the
+ * board (sized to `min(container, this)`) fills the column edge-to-edge. */
+const BOT_BOARD_MAX_WIDTH_PX = 400;
+
+/** Fixed width of the desktop right column (clocks + move list + controls). */
+const DESKTOP_SIDE_COLUMN_PX = 320;
 
 function useIsDesktop(): boolean {
   const [isDesktop, setIsDesktop] = useState(
@@ -147,36 +158,58 @@ function GamePanel({
   );
 }
 
-/** Mobile: bot clock above the board, board, user clock below (lichess
- * convention), then the move list + controls/strip. */
+/** Mobile / single column: bot clock above the board, board, user clock below
+ * (lichess convention), then the board controls, then the move list +
+ * controls/strip. The whole stack is capped at the board's max width and
+ * centered, so the clock strips and board controls always match the board's
+ * width exactly (they never stretch past it on wider single-column widths). */
 function renderMobileLayout(
   botClock: ReactElement,
   userClock: ReactElement,
   board: ReactElement,
+  boardControls: ReactElement,
   panel: ReactElement,
 ): ReactElement {
   return (
-    <div className="flex flex-col gap-3">
+    <div
+      className="mx-auto flex w-full flex-col gap-3"
+      style={{ maxWidth: BOT_BOARD_MAX_WIDTH_PX }}
+    >
       {botClock}
-      <div className="flex justify-center">{board}</div>
+      {board}
       {userClock}
+      {boardControls}
       {panel}
     </div>
   );
 }
 
-/** Desktop: board on the left, a fixed-width side column (both clocks, then
- * the move list + controls/strip) on the right, per the UI-SPEC. */
+/** Desktop: the board (with its controls directly below) and a fixed-width side
+ * column (both clocks, then the move list + controls/strip) sit as one centered
+ * group with NO gap between the two columns. Each column is its own fixed width
+ * so removing the gap actually butts them together (a `flex-1 justify-center`
+ * board would instead reintroduce whitespace between the centered board and the
+ * side column). */
 function renderDesktopLayout(
   botClock: ReactElement,
   userClock: ReactElement,
   board: ReactElement,
+  boardControls: ReactElement,
   panel: ReactElement,
 ): ReactElement {
   return (
-    <div className="flex flex-row gap-4">
-      <div className="flex flex-1 justify-center">{board}</div>
-      <div className="flex w-[320px] shrink-0 flex-col gap-3">
+    <div className="flex flex-row justify-center gap-0">
+      <div
+        className="flex w-full flex-col gap-3"
+        style={{ maxWidth: BOT_BOARD_MAX_WIDTH_PX }}
+      >
+        {board}
+        {boardControls}
+      </div>
+      <div
+        className="flex shrink-0 flex-col gap-3"
+        style={{ width: DESKTOP_SIDE_COLUMN_PX }}
+      >
         {botClock}
         {userClock}
         {panel}
@@ -348,7 +381,24 @@ function BotsGame({
   }, [storedGameId, enqueueTier1, navigate, game.moveHistory, settings.userColor]);
 
   const botColor = settings.userColor === 'white' ? 'black' : 'white';
-  const flipped = settings.userColor === 'black';
+  // Board orientation defaults to the user's own side facing them, but is now a
+  // manual toggle driven by the flip board control (a live-game convenience —
+  // it never affects the game itself, only which way the board is drawn).
+  const [flipped, setFlipped] = useState(settings.userColor === 'black');
+  const handleFlip = useCallback((): void => setFlipped((f) => !f), []);
+
+  // Board-control navigation drives the hook's view-only `viewedPly` cursor
+  // (never the live game): reset jumps to the start, back/forward step one ply.
+  const { viewedPly, liveGamePly, viewPly } = game;
+  const handleBack = useCallback(
+    (): void => viewPly(Math.max(0, viewedPly - 1)),
+    [viewPly, viewedPly],
+  );
+  const handleForward = useCallback(
+    (): void => viewPly(Math.min(liveGamePly, viewedPly + 1)),
+    [viewPly, viewedPly, liveGamePly],
+  );
+  const handleResetView = useCallback((): void => viewPly(0), [viewPly]);
 
   const botClock = (
     <ClockDisplay
@@ -374,6 +424,17 @@ function BotsGame({
       onPieceDrop={game.attemptMove}
       flipped={flipped}
       lastMove={game.lastMove}
+      maxWidth={BOT_BOARD_MAX_WIDTH_PX}
+    />
+  );
+  const boardControls = (
+    <BoardControls
+      onBack={handleBack}
+      onForward={handleForward}
+      onReset={handleResetView}
+      onFlip={handleFlip}
+      canGoBack={viewedPly > 0}
+      canGoForward={viewedPly < liveGamePly}
     />
   );
   const panel = (
@@ -401,8 +462,8 @@ function BotsGame({
       className="mx-auto flex max-w-5xl flex-col gap-4 p-4 pb-20 sm:pb-4"
     >
       {isDesktop
-        ? renderDesktopLayout(botClock, userClock, board, panel)
-        : renderMobileLayout(botClock, userClock, board, panel)}
+        ? renderDesktopLayout(botClock, userClock, board, boardControls, panel)
+        : renderMobileLayout(botClock, userClock, board, boardControls, panel)}
 
       {resume !== null && !game.live && (
         <ResumeGate
