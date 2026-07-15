@@ -139,6 +139,19 @@ const TERMINAL_EVAL_DEPTH = 99;
  *  `sm` breakpoint where the app swaps to mobile chrome). */
 const MOBILE_BREAKPOINT_PX = 640;
 
+/** The desk3col grid breakpoint (mirrors `--breakpoint-desk3col: 1200px` in index.css):
+ *  at/above this width the locked desktop 3-column grid engages; between
+ *  MOBILE_BREAKPOINT_PX and this width the page uses the mid-range two-column layout
+ *  (board + moves row, then FlawChess/ELO + Tags/Maia row). Same literal as
+ *  BOARD_WIDTH_LOCK_MIN_PX, kept as its own named constant since it gates a different
+ *  concern (which layout tree renders, not the board's height lock). */
+const DESK3COL_BREAKPOINT_PX = 1200;
+
+/** In the mid-range layout the move list is capped at this fraction of the board height
+ *  (shorter than the board so the FlawChess/Maia stack rises) while still scrolling
+ *  internally. */
+const MID_MOVE_LIST_HEIGHT_RATIO = 0.8;
+
 /** Horizontal space the two flanking eval bars + their `gap-2` gutters consume in the
  *  desktop board row: 2×(w-5 bar = 20px) + 2×(gap-2 = 8px). Subtracted from the stage's
  *  measured width so the board is sized to the space that actually remains beside the
@@ -200,24 +213,38 @@ const FLAWCHESS_ENGINE_ARROW_WIDTH = 1.0;
  *  and outside the thin white next-move arrow (D-05). */
 const STOCKFISH_ENGINE_ARROW_WIDTH = 0.5;
 
+type AnalysisLayoutMode = 'mobile' | 'mid' | 'desktop';
+
 /**
- * True while the viewport is below the mobile breakpoint. Drives a single-tree render
- * (mobile OR desktop, never both) so the board / eval-chart / variation-tree mount once —
+ * Which of the three analysis layouts to render, chosen by viewport width:
+ *   • 'mobile'  (< MOBILE_BREAKPOINT_PX)   — full tab takeover, board on top.
+ *   • 'mid'     (MOBILE..desk3col)         — two-column grid: board+eval-chart | Stockfish+moves,
+ *                                             then FlawChess/ELO | Tags/Maia.
+ *   • 'desktop' (>= desk3col)              — the locked 3-column grid.
+ * Driven by JS (not CSS) so the board / eval-chart / variation-tree mount EXACTLY once —
  * a CSS `hidden` split would duplicate their stable `id`/`data-testid`s and the engine board.
+ * Exactly one of the three return branches renders, so those shared nodes never coexist.
  */
-function useIsMobile(): boolean {
-  const [isMobile, setIsMobile] = useState(
-    () =>
-      typeof window !== 'undefined' &&
-      window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`).matches,
-  );
+function useAnalysisLayoutMode(): AnalysisLayoutMode {
+  const compute = (): AnalysisLayoutMode => {
+    if (typeof window === 'undefined') return 'desktop';
+    if (window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`).matches) return 'mobile';
+    if (window.matchMedia(`(max-width: ${DESK3COL_BREAKPOINT_PX - 1}px)`).matches) return 'mid';
+    return 'desktop';
+  };
+  const [mode, setMode] = useState<AnalysisLayoutMode>(compute);
   useEffect(() => {
-    const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`);
-    const update = () => setIsMobile(mq.matches);
-    mq.addEventListener('change', update);
-    return () => mq.removeEventListener('change', update);
+    const mqMobile = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`);
+    const mqMid = window.matchMedia(`(max-width: ${DESK3COL_BREAKPOINT_PX - 1}px)`);
+    const update = () => setMode(compute());
+    mqMobile.addEventListener('change', update);
+    mqMid.addEventListener('change', update);
+    return () => {
+      mqMobile.removeEventListener('change', update);
+      mqMid.removeEventListener('change', update);
+    };
   }, []);
-  return isMobile;
+  return mode;
 }
 
 // ─── Shared engine-card header toggle (D-03) ──────────────────────────────────
@@ -493,7 +520,9 @@ export default function Analysis() {
   // via the `?? 0` guards on every mainLine[initialPly] access below).
   const isGameMode = gameId != null;
 
-  const isMobile = useIsMobile();
+  const layoutMode = useAnalysisLayoutMode();
+  const isMobile = layoutMode === 'mobile';
+  const isMid = layoutMode === 'mid';
 
   // D-06: engine on by default; toggle available via infoSlot button.
   const [engineEnabled, setEngineEnabled] = useState(true);
@@ -2266,7 +2295,10 @@ export default function Analysis() {
     // board stays sized for the pre-load (chrome-less) group and the now-taller group
     // overflows the stage, producing a spurious vertical scrollbar (Phase 161 UAT). Re-run
     // on those transitions so the height budget re-subtracts the real chrome and refits.
-  }, [isMobile, containerRef, isGameMode, gameData]);
+    // layoutMode (not just isMobile): the desktop stage mounts in BOTH the mid and desktop
+    // trees, so crossing the desk3col breakpoint remounts it — re-run to re-observe the new
+    // stage node (else the observer stays bound to the unmounted one and boardWidth goes stale).
+  }, [layoutMode, containerRef, isGameMode, gameData]);
 
   // Left eval bar — FlawChess Engine (brown) when enabled (D-04 precedence), else Maia
   // (violet, D-01/D-05, SURF-04). Single expected-score fill: both sources bypass the cp
@@ -2859,6 +2891,141 @@ export default function Analysis() {
     </TabsContent>
   );
 
+  // ── Shared desktop/mid cards ──────────────────────────────────────────────────
+  // Extracted from the desktop 3-column return so the mid-range two-column layout can
+  // reuse them verbatim (single mount — only one return branch renders). Each references
+  // component-scope state directly, exactly as when it was inline.
+
+  // Stockfish engine info + lines card (155/162 UAT: reconciled top-2 over the grading union).
+  const stockfishCard = (
+    <Card data-testid="analysis-engine-card">
+      <CardHeader
+        size="compact"
+        data-testid="analysis-engine-info"
+        className="font-normal text-muted-foreground"
+      >
+        <EngineToggleHeader
+          checked={engineEnabled}
+          onCheckedChange={setEngineEnabled}
+          accent={STOCKFISH_ACCENT}
+          testId="btn-analysis-engine-toggle"
+          ariaLabel="Toggle Stockfish engine"
+          icon={Cpu}
+        >
+          {ENGINE_NAME}
+          {engineEnabled && reconciledBestEval.depth > 0 ? `, Depth ${reconciledBestEval.depth}` : ''}
+        </EngineToggleHeader>
+      </CardHeader>
+      <CardBody className="min-h-[78px] p-2">
+        {engineLoading ? (
+          <EngineLinesSkeleton testId="analysis-engine-loading" />
+        ) : !engineEnabled ? (
+          <div className="flex h-full items-center px-2 text-sm text-muted-foreground">
+            Engine off
+          </div>
+        ) : (
+          <EngineLines
+            pvLines={reconciledPvLines}
+            isAnalyzing={engine.isAnalyzing}
+            startPly={currentPly}
+            baseFen={position}
+            flipped={boardFlipped}
+            onMoveClick={playUciLine}
+          />
+        )}
+      </CardBody>
+    </Card>
+  );
+
+  // Move-list card: variation tree fills and scrolls internally, board controls pinned in
+  // the footer band. `flex-1 min-h-0` needs a height-bounded flex parent (desktop: the
+  // board-height region; mid: a boardWidth-tall column) so the tree's absolute-fill scroller
+  // has a definite height (a 0-height parent would render an empty list).
+  const movesCard = (
+    <Card
+      data-testid="analysis-movelist-card"
+      className="relative flex min-h-0 flex-1 flex-col"
+    >
+      <CardHeader size="compact" data-testid="analysis-movelist-header">
+        <ArrowLeftRight className="h-4 w-4" aria-hidden />
+        Moves
+      </CardHeader>
+      {variationTree('responsive')}
+      <div className="border-t border-border/40 bg-black/20 px-1">
+        {boardControls(true, 'sm')}
+      </div>
+    </Card>
+  );
+
+  // Maia move-quality panel (desktop/mid, non-compact — no in-card ELO footer; the slider is
+  // a standalone row/cell next to it). The mobile Maia tab renders its own compact copy.
+  const desktopMaiaPanel = (
+    <MaiaHumanPanel
+      selectedElo={selectedElo}
+      perElo={maia.perElo}
+      playedSan={playedSan}
+      // 162-REVIEW WR-02: same reconciled-emphasis threading as the mobile Maia tab.
+      bestSan={reconciledBestSan ?? bestSan}
+      shownSans={shownSans}
+      qualityBySan={qualityBySanWithGem}
+      mover={sideToMoveFromFen(position)}
+      engineTopLines={engineTopLines}
+      onHoverMovesChange={setHoveredQualityMoves}
+      isOpponentToMove={isOpponentToMove}
+      onPlayMove={playProseMove}
+      enabled={maiaEnabled}
+      onToggleEnabled={setMaiaEnabled}
+    />
+  );
+
+  // ── Mid-range two-column layout (MOBILE_BREAKPOINT_PX .. desk3col) ─────────────
+  // Two INDEPENDENT columns (masonry, not row-aligned) so each flows on its own and the
+  // Tags panel sits directly under the move-list card with no cross-column alignment gap:
+  //   • left (the narrower 2fr track, so the board renders compact): board + eval chart,
+  //     then FlawChess and the ELO slider.
+  //   • right (the wider 3fr track): Stockfish, move list, Maia. (The flaw-tags panel is
+  //     hidden in this band per UAT; it stays in the desktop and mobile layouts.)
+  // The page scrolls (no viewport height lock in this band, per the shell's
+  // `sm:max-desk3col:` unlock). The move list is wrapped in a bounded-height box (a fraction
+  // of the board height) so its absolute-fill scroller has a definite height (an unbounded
+  // flex-1 parent renders empty) while staying shorter than the board.
+  if (isMid) {
+    const movesHeightStyle: CSSProperties | undefined = boardWidth
+      ? { height: Math.round(boardWidth * MID_MOVE_LIST_HEIGHT_RATIO) }
+      : undefined;
+    return (
+      <div data-testid="analysis-page" className="flex min-h-0 flex-1 flex-col bg-background">
+        <main
+          className="mx-auto w-full px-4 py-4 pb-20 md:px-6"
+          style={{ maxWidth: DESKTOP_GRID_MAX_WIDTH_PX }}
+        >
+          {/* Game load error (CLAUDE.md isError branch). */}
+          {isGameMode && gameError && (
+            <p className="mb-4 text-sm text-muted-foreground">
+              Failed to load game. Something went wrong. Please try again in a moment.
+            </p>
+          )}
+          <div className="grid grid-cols-[2fr_3fr] items-start gap-4">
+            {/* Left column — narrower, so the board is compact here. */}
+            <div className="flex min-w-0 flex-col gap-4">
+              {desktopBoardStage}
+              {renderFlawChessCard()}
+              {eloSelector}
+            </div>
+            {/* Right column — Maia flows directly under the move list (Tags hidden here). */}
+            <div className="flex min-w-0 flex-col gap-4">
+              {stockfishCard}
+              <div className="flex min-h-0 flex-col" style={movesHeightStyle}>
+                {movesCard}
+              </div>
+              {desktopMaiaPanel}
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   // ── Mobile takeover layout (< 640px) ──────────────────────────────────────────
   // Board + eval bar, then a tab view (Moves | Eval | Maia | FlawChess [| Tags]) that
   // fills the space down to the in-flow board-controls footer. The Stockfish PV lines
@@ -3001,23 +3168,7 @@ export default function Analysis() {
                 FlawChess and Maia engines, so it sits in the gap rather than inside
                 either card. */}
             {eloSelector}
-            <MaiaHumanPanel
-              selectedElo={selectedElo}
-              perElo={maia.perElo}
-              playedSan={playedSan}
-              // 162-REVIEW WR-02: same reconciled-emphasis threading as the
-              // mobile Maia tab above (CLAUDE.md mobile/desktop parity).
-              bestSan={reconciledBestSan ?? bestSan}
-              shownSans={shownSans}
-              qualityBySan={qualityBySanWithGem}
-              mover={sideToMoveFromFen(position)}
-              engineTopLines={engineTopLines}
-              onHoverMovesChange={setHoveredQualityMoves}
-              isOpponentToMove={isOpponentToMove}
-              onPlayMove={playProseMove}
-              enabled={maiaEnabled}
-              onToggleEnabled={setMaiaEnabled}
-            />
+            {desktopMaiaPanel}
           </div>
 
           {/* Board column ──────────────────────────────────────────────────── */}
@@ -3062,80 +3213,10 @@ export default function Analysis() {
               className="flex min-h-0 flex-col gap-4 desk3col:h-[var(--analysis-board-h)] desk3col:shrink-0"
               style={{ '--analysis-board-h': boardWidth ? `${boardWidth}px` : undefined } as CSSProperties}
             >
-            {/* Engine info + lines in a fixed-height charcoal Card (Quick 260627-r9g
-                item 3). The info line is the card header; the body never jumps as the
-                engine transitions loading → analyzing → 2 lines. */}
-            <Card data-testid="analysis-engine-card">
-              {/* Info line in the header: engine toggle + "Stockfish 18, Depth d". */}
-              <CardHeader
-                size="compact"
-                data-testid="analysis-engine-info"
-                className="font-normal text-muted-foreground"
-              >
-                <EngineToggleHeader
-                  checked={engineEnabled}
-                  onCheckedChange={setEngineEnabled}
-                  accent={STOCKFISH_ACCENT}
-                  testId="btn-analysis-engine-toggle"
-                  ariaLabel="Toggle Stockfish engine"
-                  icon={Cpu}
-                >
-                  {ENGINE_NAME}
-                  {/* 162 UAT (supersedes D-05): once the card re-sources to the
-                      reconciled lines, the headline depth describes line 1's own
-                      grade — reconciledBestEval falls back to the free run's
-                      depth pre-grading, so first paint is unchanged. */}
-                  {engineEnabled && reconciledBestEval.depth > 0 ? `, Depth ${reconciledBestEval.depth}` : ''}
-                </EngineToggleHeader>
-              </CardHeader>
-
-              {/* min-height (not fixed) — holds a stable floor through the
-                  loading → analyzing → 2-lines transition, but grows to fit a line
-                  the user expands via its chevron (Quick 260628-shc UAT). */}
-              <CardBody className="min-h-[78px] p-2">
-                {engineLoading ? (
-                  <EngineLinesSkeleton testId="analysis-engine-loading" />
-                ) : !engineEnabled ? (
-                  <div className="flex h-full items-center px-2 text-sm text-muted-foreground">
-                    Engine off
-                  </div>
-                ) : (
-                  // 155 UAT un-merge: the standalone Stockfish top-2 (depth
-                  // deepening live) shows independently of the FlawChess Engine.
-                  // 162 UAT (supersedes D-04/D-12 card scope): reconciledPvLines
-                  // is the reconciled top-2 over the full grading union, so the
-                  // card always lists the same best move the arrow, chart crown,
-                  // and verdict name.
-                  <EngineLines
-                    pvLines={reconciledPvLines}
-                    isAnalyzing={engine.isAnalyzing}
-                    startPly={currentPly}
-                    baseFen={position}
-                    flipped={boardFlipped}
-                    onMoveClick={playUciLine}
-                  />
-                )}
-              </CardBody>
-            </Card>
-
-            {/* Move list in a charcoal card. Unlike the engine card above (darker HEADER),
-                the board controls sit in a darker FOOTER band (bg-black/20 border-t —
-                mirror of CardHeader) so the card reads header-less at the top. The card is
-                the column's flex-1 element: the move list fills and scrolls internally, the
-                controls stay pinned at the card bottom (chess.com pattern — UI-SPEC). */}
-            <Card
-              data-testid="analysis-movelist-card"
-              className="relative flex min-h-0 flex-1 flex-col"
-            >
-              <CardHeader size="compact" data-testid="analysis-movelist-header">
-                <ArrowLeftRight className="h-4 w-4" aria-hidden />
-                Moves
-              </CardHeader>
-              {variationTree('responsive')}
-              <div className="border-t border-border/40 bg-black/20 px-1">
-                {boardControls(true, 'sm')}
-              </div>
-            </Card>
+            {/* Engine info + lines + move list — extracted to shared consts (stockfishCard /
+                movesCard) so the mid-range layout reuses them; see their definitions above. */}
+            {stockfishCard}
+            {movesCard}
             </div>
 
             {/* Phase 161 D-04: Tags/badges panel relocated here from the board column
