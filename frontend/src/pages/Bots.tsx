@@ -35,22 +35,24 @@ import { GameResultDialog } from '@/components/bots/GameResultDialog';
 import { GameResultStrip } from '@/components/bots/GameResultStrip';
 import { ResumeGate } from '@/components/bots/ResumeGate';
 import { SetupScreen } from '@/components/bots/SetupScreen';
-import { useBotGame, type BotGameSettings, type UseBotGameState } from '@/hooks/useBotGame';
+import { useBotGame, type BotGameSettings } from '@/hooks/useBotGame';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useDrainPendingStore, useStoreBotGame, toStoreRequest } from '@/hooks/useStoreBotGame';
 import { useTier1EnqueueForGame } from '@/hooks/useEnqueueGame';
 import { readSnapshot, clearSnapshot, type BotGameSnapshot } from '@/lib/botGameSnapshot';
 import { removePendingStore } from '@/lib/botPendingStore';
-import type { MoverColor } from '@/lib/liveFlaw';
 import { resolvePlayerName } from '@/lib/playerName';
 import { setMuted, unlockAudio, useMuted } from '@/lib/sounds';
 import { buildAnalysisLineUrl, buildGameAnalysisUrl } from '@/lib/analysisUrl';
 
-/** Matches the app's existing `lg` Tailwind breakpoint (1024px) — below this,
- * clocks/move-list/controls stack around the board (mobile: bot clock above,
- * user clock below, per lichess convention); at/above it they move into a
- * side column beside the board (desktop), per the UI-SPEC layout. */
-const DESKTOP_BREAKPOINT_PX = 1024;
+/** Width at which the two-column desktop layout kicks in. Below this the
+ * board / clocks / controls stack in a single column (bot clock above the
+ * board, user clock below, per lichess convention) and the move list is
+ * hidden; at/above it the clocks + move list + game controls move into a side
+ * column beside the board. Sized to comfortably fit the board-column
+ * (BOT_BOARD_MAX_WIDTH_PX) + side-column (DESKTOP_SIDE_COLUMN_PX) group plus
+ * page padding and a scrollbar. */
+const DESKTOP_BREAKPOINT_PX = 800;
 
 /** Max rendered width of the bot-game board, in px. Shared between the
  * `ChessBoard maxWidth` prop and the single-column stack's `max-width` so the
@@ -77,98 +79,18 @@ function useIsDesktop(): boolean {
   return isDesktop;
 }
 
-interface GamePanelProps {
-  game: UseBotGameState;
-  userColor: MoverColor;
-  muted: boolean;
-  dialogDismissed: boolean;
-  onToggleMute: () => void;
-  onAnalyze: () => void;
-  /** D-11: returns to the setup screen (unmounting BotsGame) — NOT
-   * `game.newGame()`, which would restart in place with the same settings. */
-  onNewGame: () => void;
-  /** D-21: true only once the finish-time store mutation has CONFIRMED
-   * (`useStoreBotGame().isSuccess`) — gates the "Saved to your Library" row
-   * on the result strip. Never true on idle/pending/error. */
-  storeSucceeded: boolean;
-  /** SC4: guests additionally see the not-auto-analyzed caveat alongside the
-   * save confirmation. */
-  isGuest: boolean;
-  /** Quick 260714-rj5: threaded to GameResultStrip's Analyze button — see
-   * GameResultDialog's analyzeBusy doc comment. */
-  analyzeBusy: boolean;
-}
-
-/**
- * Move list + resign/draw/mute controls (or, once the result dialog is
- * dismissed, the persistent result strip REPLACING the controls area per the
- * UI-SPEC) — shared verbatim by the mobile and desktop layouts below, only
- * its position in the page differs.
- */
-function GamePanel({
-  game,
-  userColor,
-  muted,
-  dialogDismissed,
-  onToggleMute,
-  onAnalyze,
-  onNewGame,
-  storeSucceeded,
-  isGuest,
-  analyzeBusy,
-}: GamePanelProps): ReactElement {
-  const outcome = game.outcome;
-  const showResultStrip = outcome !== null && dialogDismissed;
-
-  return (
-    <div className="flex flex-col gap-3">
-      <MoveListPanel
-        moveHistory={game.moveHistory}
-        liveGamePly={game.liveGamePly}
-        viewedPly={game.viewedPly}
-        onViewPly={game.viewPly}
-        onReturnToLive={game.returnToLive}
-      />
-      {showResultStrip && outcome !== null ? (
-        <GameResultStrip
-          outcome={outcome}
-          userColor={userColor}
-          onNewGame={onNewGame}
-          onAnalyze={onAnalyze}
-          storeSucceeded={storeSucceeded}
-          isGuest={isGuest}
-          analyzeBusy={analyzeBusy}
-        />
-      ) : (
-        <GameControls
-          // WR-04: the props now mean what their names/docs say — `canOfferDraw`
-          // is the D-01 "not already pending, game not over" gate;
-          // `drawCooldownActive` is the D-04 cooldown throttle, which is what
-          // the hook's own `canOfferDraw` (a cooldown-gate boolean) actually
-          // reports (inverted). The net disabled state is unchanged.
-          canOfferDraw={!game.drawOfferPending && game.outcome === null}
-          drawCooldownActive={!game.canOfferDraw}
-          muted={muted}
-          onResignConfirmed={game.resign}
-          onOfferDraw={game.offerDraw}
-          onToggleMute={onToggleMute}
-        />
-      )}
-    </div>
-  );
-}
-
-/** Mobile / single column: bot clock above the board, board, user clock below
- * (lichess convention), then the board controls, then the move list +
- * controls/strip. The whole stack is capped at the board's max width and
- * centered, so the clock strips and board controls always match the board's
- * width exactly (they never stretch past it on wider single-column widths). */
+/** Single column (below DESKTOP_BREAKPOINT_PX): bot clock above the board,
+ * board, user clock below (lichess convention), then the board controls, then
+ * the game controls / result strip. The whole stack is capped at the board's
+ * max width and centered, so the clock strips and board controls always match
+ * the board's width exactly. The move list is intentionally omitted here — it
+ * only appears in the desktop side column. */
 function renderMobileLayout(
   botClock: ReactElement,
   userClock: ReactElement,
   board: ReactElement,
   boardControls: ReactElement,
-  panel: ReactElement,
+  controls: ReactElement,
 ): ReactElement {
   return (
     <div
@@ -179,40 +101,47 @@ function renderMobileLayout(
       {board}
       {userClock}
       {boardControls}
-      {panel}
+      {controls}
     </div>
   );
 }
 
-/** Desktop: the board (with its controls directly below) and a fixed-width side
- * column (both clocks, then the move list + controls/strip) sit as one centered
- * group with NO gap between the two columns. Each column is its own fixed width
- * so removing the gap actually butts them together (a `flex-1 justify-center`
- * board would instead reintroduce whitespace between the centered board and the
- * side column). */
+/** Desktop: two stacked rows sharing the same board-column + side-column
+ * widths. The top row is the board beside the two clocks over a move list that
+ * flex-fills the remaining height — `items-stretch` makes the side column
+ * exactly the board's height, so the move-list box bottom lines up with the
+ * board's bottom. The bottom row puts the board controls under the board and
+ * the game controls / result strip under the side column. */
 function renderDesktopLayout(
   botClock: ReactElement,
   userClock: ReactElement,
   board: ReactElement,
   boardControls: ReactElement,
-  panel: ReactElement,
+  moveList: ReactElement,
+  controls: ReactElement,
 ): ReactElement {
   return (
-    <div className="flex flex-row justify-center gap-2">
-      <div
-        className="flex w-full flex-col gap-3"
-        style={{ maxWidth: BOT_BOARD_MAX_WIDTH_PX }}
-      >
-        {board}
-        {boardControls}
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-row items-stretch justify-center gap-2">
+        <div className="shrink-0" style={{ width: BOT_BOARD_MAX_WIDTH_PX }}>
+          {board}
+        </div>
+        <div
+          className="flex shrink-0 flex-col gap-3"
+          style={{ width: DESKTOP_SIDE_COLUMN_PX }}
+        >
+          {botClock}
+          {userClock}
+          {moveList}
+        </div>
       </div>
-      <div
-        className="flex shrink-0 flex-col gap-3"
-        style={{ width: DESKTOP_SIDE_COLUMN_PX }}
-      >
-        {botClock}
-        {userClock}
-        {panel}
+      <div className="flex flex-row justify-center gap-2">
+        <div className="shrink-0" style={{ width: BOT_BOARD_MAX_WIDTH_PX }}>
+          {boardControls}
+        </div>
+        <div className="shrink-0" style={{ width: DESKTOP_SIDE_COLUMN_PX }}>
+          {controls}
+        </div>
       </div>
     </div>
   );
@@ -437,20 +366,48 @@ function BotsGame({
       canGoForward={viewedPly < liveGamePly}
     />
   );
-  const panel = (
-    <GamePanel
-      game={game}
-      userColor={settings.userColor}
-      muted={muted}
-      dialogDismissed={dialogDismissed}
-      onToggleMute={handleToggleMute}
-      onAnalyze={handleAnalyze}
-      onNewGame={onNewGame}
-      storeSucceeded={store.isSuccess}
-      isGuest={isGuest}
-      analyzeBusy={analyzeBusy}
+  // Move list (desktop side column only — hidden in the single-column layout).
+  // `fillHeight` lets it flex-fill the side column so its box bottom aligns
+  // with the board's bottom.
+  const moveList = (
+    <MoveListPanel
+      moveHistory={game.moveHistory}
+      liveGamePly={game.liveGamePly}
+      viewedPly={viewedPly}
+      onViewPly={viewPly}
+      onReturnToLive={game.returnToLive}
+      fillHeight
     />
   );
+  // Game controls, or — once the result dialog is dismissed — the persistent
+  // result strip that REPLACES them (per the UI-SPEC).
+  const showResultStrip = game.outcome !== null && dialogDismissed;
+  const controls =
+    showResultStrip && game.outcome !== null ? (
+      <GameResultStrip
+        outcome={game.outcome}
+        userColor={settings.userColor}
+        onNewGame={onNewGame}
+        onAnalyze={handleAnalyze}
+        storeSucceeded={store.isSuccess}
+        isGuest={isGuest}
+        analyzeBusy={analyzeBusy}
+      />
+    ) : (
+      <GameControls
+        // WR-04: the props now mean what their names/docs say — `canOfferDraw`
+        // is the D-01 "not already pending, game not over" gate;
+        // `drawCooldownActive` is the D-04 cooldown throttle, which is what the
+        // hook's own `canOfferDraw` (a cooldown-gate boolean) actually reports
+        // (inverted). The net disabled state is unchanged.
+        canOfferDraw={!game.drawOfferPending && game.outcome === null}
+        drawCooldownActive={!game.canOfferDraw}
+        muted={muted}
+        onResignConfirmed={game.resign}
+        onOfferDraw={game.offerDraw}
+        onToggleMute={handleToggleMute}
+      />
+    );
 
   return (
     <div
@@ -462,8 +419,8 @@ function BotsGame({
       className="mx-auto flex max-w-5xl flex-col gap-4 p-4 pb-20 sm:pb-4"
     >
       {isDesktop
-        ? renderDesktopLayout(botClock, userClock, board, boardControls, panel)
-        : renderMobileLayout(botClock, userClock, board, boardControls, panel)}
+        ? renderDesktopLayout(botClock, userClock, board, boardControls, moveList, controls)
+        : renderMobileLayout(botClock, userClock, board, boardControls, controls)}
 
       {resume !== null && !game.live && (
         <ResumeGate
