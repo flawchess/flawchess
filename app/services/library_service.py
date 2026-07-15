@@ -74,6 +74,7 @@ from app.services.flaws_service import (
 from app.schemas.normalization import Platform, TimeControlBucket
 from app.services.chesscom_to_lichess import normalize_to_lichess_blitz
 from app.services.normalization import is_correspondence_time_control
+from app.services.opening_lookup import find_opening_ply_count
 from app.services.openings_service import (
     MIN_GAMES_FOR_TIMELINE,
     derive_user_result,
@@ -588,6 +589,13 @@ def _build_card(
         )
     )
 
+    # Phase 172 (SEED-106 D-06): computed unconditionally for every card (list
+    # mode included), not just the single-game path. This is a few dozen dict
+    # lookups against an already-loaded module-level trie (tens of
+    # microseconds) — gating it to get_library_game alone would fork
+    # _build_card's contract for no measurable gain (RESEARCH Open Question 1).
+    opening_ply_count = find_opening_ply_count(moves_data) if moves_data else 0
+
     return GameFlawCard(
         game_id=game.id,
         user_result=derive_user_result(game.result, game.user_color),
@@ -616,6 +624,7 @@ def _build_card(
         phase_transitions=phase_transition_data,
         moves=moves_data,
         active_eval_status=active_eval_status,
+        opening_ply_count=opening_ply_count,
     )
 
 

@@ -63,6 +63,15 @@ export interface UseMaiaEngineState {
   /** True while a (non-cached) inference is in flight for the current FEN. */
   isAnalyzing: boolean;
   /**
+   * CR-03 (Phase 172, SEED-106): true once the Worker fired an `onerror` — an
+   * async script-load failure (404, CSP block, importScripts failure) that never
+   * throws a catchable exception on the main thread and leaves the worker dead
+   * but silent (distinct from the `type: 'error'` inference failures already
+   * forwarded via onmessage). Lets a consumer (the background gem sweep) abandon
+   * an in-flight request stuck on a worker that will never report `ready`.
+   */
+  hasFailed: boolean;
+  /**
    * The FEN `perElo`/`wdl` actually belong to; null while no result is held.
    * Bug fix (163-REVIEW WR-03): this hook clears `latestResult` in an effect
    * keyed on `fen`, i.e. one commit AFTER the caller's `fen` prop changes — so
@@ -138,6 +147,7 @@ export function useMaiaEngine({ fen, enabled, selectedElo }: UseMaiaEngineOption
 
   const [isReady, setIsReady] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [hasFailed, setHasFailed] = useState(false);
   const [latestResult, setLatestResult] = useState<MaiaResult | null>(null);
 
   // ─── Ref sync ──────────────────────────────────────────────────────────────
@@ -288,6 +298,24 @@ export function useMaiaEngine({ fen, enabled, selectedElo }: UseMaiaEngineOption
       setIsAnalyzing(false);
     };
 
+    // CR-03 (Phase 172, SEED-106): mirror workerPool.createSlot — an async
+    // script-load failure (404, CSP block, importScripts failure) never throws a
+    // catchable JS exception on the main thread; it only surfaces here (the
+    // onmessage `type: 'error'` path only covers inference failures AFTER the
+    // worker booted). Without this handler a dead worker never reports `ready`,
+    // so a gem-sweep candidate on the Maia stage hangs forever. Capture to
+    // Sentry and surface `hasFailed` so the sweep can abandon it.
+    worker.onerror = () => {
+      Sentry.captureException(new Error('Maia worker: worker load failure'), {
+        tags: { source: 'maia-worker', backend: backendRef.current ?? 'unknown' },
+      });
+      setHasFailed(true);
+      setIsReady(false);
+      isReadyRef.current = false;
+      pendingFenRef.current = null;
+      setIsAnalyzing(false);
+    };
+
     worker.postMessage({ type: 'init' });
 
     return () => {
@@ -342,6 +370,7 @@ export function useMaiaEngine({ fen, enabled, selectedElo }: UseMaiaEngineOption
     wdl,
     isReady,
     isAnalyzing,
+    hasFailed,
     resultFen: latestResult?.fen ?? null,
   };
 }

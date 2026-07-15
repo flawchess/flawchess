@@ -16,7 +16,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { BEST_MOVE_ARROW, MAIA_ACCENT } from '@/lib/theme';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -45,6 +45,15 @@ vi.mock('@/hooks/useStockfishEngine', () => ({
   useStockfishEngine: () => ({ ...engineState }),
 }));
 
+// Mock isLowPowerDevice (Phase 172, SEED-106 D-05): useGemSweep.ts's device
+// gate reads navigator.hardwareConcurrency, which jsdom leaves at 0/undefined
+// — isLowPowerDevice() would read this test environment as "low power" and
+// permanently disable the sweep's dedicated instances (enabled: false always)
+// unless pinned deterministically, mirroring 172-04's own useGemSweep.test.ts.
+vi.mock('@/lib/engine/workerPool', () => ({
+  isLowPowerDevice: () => false,
+}));
+
 // Mock useStockfishGradingEngine (Phase 151.1 Plan 04): jsdom has no real Worker for
 // this SECOND classic engine file either. Deterministic gradeMap stub via the
 // mutable gradingState — the grading hook's own behavior is covered by
@@ -64,14 +73,30 @@ const gradingState: { gradeMap: Map<string, GradingMoveGrade>; isGrading: boolea
 };
 const gradingCalls: { fen: string | null; candidateSans: string[]; enabled: boolean }[] = [];
 
-// Analysis renders TWO useStockfishGradingEngine instances per commit, in hook
-// order: the shared PRIMARY run (FC∪Maia candidate union for the current
-// position) first, then the on-demand gem parent-grade run second. The gating
-// tests below assert the primary run, so they read the second-to-last call
-// (skipping the trailing gem-engine call, which is idle unless a gem candidate
-// needs confirming).
+// Analysis renders THREE useStockfishGradingEngine instances per commit, in
+// hook order: the shared PRIMARY run (FC∪Maia candidate union for the current
+// position) first, then (Phase 172, SEED-106 D-05) useGemSweep's OWN
+// dedicated instance — called unconditionally every render, always idle
+// (fen: null) unless the sweep has dispatched a candidate — then the
+// on-demand gem parent-grade run LAST (useGemSweep is wired in Analysis.tsx
+// BEFORE the live gemGrading call, since needParentGemGrade — which
+// gemGrading depends on — must exist before it can be passed to the sweep as
+// liveBusy). The gating tests below assert the primary run, so they read the
+// third-to-last call (skipping BOTH trailing engine calls).
 function lastPrimaryGradingCall(): { fen: string | null; candidateSans: string[]; enabled: boolean } | undefined {
+  return gradingCalls[gradingCalls.length - 3];
+}
+/** The sweep's OWN dedicated grading instance's most recent call — the D-05
+ *  isolation proof's whole reason for existing (the SECOND of the three
+ *  calls per commit per the ordering note above). */
+function lastSweepGradingCall(): { fen: string | null; candidateSans: string[]; enabled: boolean } | undefined {
   return gradingCalls[gradingCalls.length - 2];
+}
+/** The live per-node gem-grading instance's most recent call (Analysis.tsx's
+ *  OWN `gemGrading`, NOT the sweep's dedicated instance — the LAST of the
+ *  three calls per commit per the ordering note above). */
+function lastLiveGemGradingCall(): { fen: string | null; candidateSans: string[]; enabled: boolean } | undefined {
+  return gradingCalls[gradingCalls.length - 1];
 }
 
 vi.mock('@/hooks/useStockfishGradingEngine', () => ({
@@ -108,17 +133,34 @@ const maiaState: {
   perElo: [],
 };
 
+// Phase 172 (SEED-106 D-05): Analysis renders TWO useMaiaEngine instances per
+// commit, in hook order: the live `maia` call first, then useGemSweep's OWN
+// dedicated instance second — called unconditionally every render, always
+// idle (fen: null) unless the sweep has dispatched a candidate. maiaCalls
+// records every call's full options, the mechanism the D-05/SC2 isolation
+// proof needs ("which instance got which fen").
+const maiaCalls: { fen: string | null; enabled: boolean; selectedElo: number }[] = [];
+function lastLiveMaiaCall(): { fen: string | null; enabled: boolean; selectedElo: number } | undefined {
+  return maiaCalls[maiaCalls.length - 2];
+}
+function lastSweepMaiaCall(): { fen: string | null; enabled: boolean; selectedElo: number } | undefined {
+  return maiaCalls[maiaCalls.length - 1];
+}
+
 vi.mock('@/hooks/useMaiaEngine', () => ({
-  useMaiaEngine: (options: { fen: string | null }) => ({
-    perElo: maiaState.perElo,
-    expectedScoreAtSelectedElo: maiaState.expectedScoreAtSelectedElo,
-    wdl: null,
-    isReady: false,
-    isAnalyzing: false,
-    // WR-03: the real hook reports which FEN the curve belongs to; the mock's
-    // mutable perElo is by convention always "for" the position under test.
-    resultFen: maiaState.perElo.length > 0 ? options.fen : null,
-  }),
+  useMaiaEngine: (options: { fen: string | null; enabled: boolean; selectedElo: number }) => {
+    maiaCalls.push(options);
+    return {
+      perElo: maiaState.perElo,
+      expectedScoreAtSelectedElo: maiaState.expectedScoreAtSelectedElo,
+      wdl: null,
+      isReady: false,
+      isAnalyzing: false,
+      // WR-03: the real hook reports which FEN the curve belongs to; the mock's
+      // mutable perElo is by convention always "for" the position under test.
+      resultFen: maiaState.perElo.length > 0 ? options.fen : null,
+    };
+  },
 }));
 
 // Mock useFlawChessEngine (Phase 155): jsdom has no real Worker for the pool this
@@ -238,6 +280,7 @@ afterEach(() => {
   gradingState.gradeMap = new Map();
   gradingState.isGrading = false;
   gradingCalls.length = 0;
+  maiaCalls.length = 0;
   libraryGameState.data = undefined;
 });
 
@@ -729,6 +772,12 @@ function buildGame(overrides: Partial<GameFlawCard> = {}): GameFlawCard {
     phase_transitions: { middlegame_ply: null, endgame_ply: null },
     moves: ['e4'],
     active_eval_status: null,
+    // Phase 172 (SEED-106 D-06): 0 = no known opening prefix — every ply is
+    // eligible for the sweep/gem cascade by default. Every eval_series entry
+    // above also defaults best_move to null, so selectSweepCandidates finds
+    // ZERO candidates for the base fixture regardless of this value — tests
+    // that need real sweep candidates set both explicitly.
+    opening_ply_count: 0,
     ...overrides,
   };
 }
@@ -1099,6 +1148,82 @@ describe('Gem moves (Phase 163, SEED-092)', () => {
     expect(boardGemMarkerPresent()).toBe(true);
     expect(moveListGemIconPresent()).toBe(true);
   });
+
+  it('SC3 (Phase 172, SEED-106 D-01): the ELO slider does not change an already-resolved gem\'s stamped rung', async () => {
+    // Free play, default pinned rung (no gameData/profile) is 1500 — matches
+    // seedGemGrading's default single rung below.
+    seedGemGrading('Nf3', 'd4');
+
+    renderAnalysis();
+    playMove('g1', 'f3');
+    expect(moveListGemIconPresent()).toBe(true);
+
+    // Move the ELO slider to the ladder max (2600) — the D-01 behavior change:
+    // this used to re-derive the gem's rung (nearestByElo against the live
+    // selectedElo); it must now do nothing to an already-resolved gem's rung.
+    const eloThumb = within(screen.getByTestId('analysis-elo-selector')).getByRole('slider');
+    eloThumb.focus();
+    fireEvent.keyDown(eloThumb, { key: 'End' });
+
+    // The badge survives the slider change (existing D-06 sticky-latch
+    // guarantee)...
+    expect(moveListGemIconPresent()).toBe(true);
+
+    // ...and its STAMPED rung is unchanged — still 1500 (D-01: pinned to the
+    // mover's own rating-at-game-time, never the live selectedElo).
+    const tree = screen.getByTestId('variation-tree-desktop');
+    fireEvent.click(within(tree).getByTestId('gem-move-popover'));
+    expect(await screen.findByText(/At 1500 ELO/)).toBeTruthy();
+    expect(screen.queryByText(/At 2600 ELO/)).toBeNull();
+  });
+});
+
+// Quick 260715-als (WR-04) — a book ply that ALSO carries an inaccuracy-severity
+// flaw must still render its book marker in the variation tree. The move list's
+// resolveMarkerIcon only draws a glyph for blunder/mistake severities (no
+// inaccuracy glyph there, unlike the board's `!?`), so the book fold must not
+// defer to an inaccuracy-only entry — otherwise the ply renders NOTHING. This is
+// a page-level test on purpose: the render side (resolveMarkerIcon) was already
+// correct; the bug was the moveListMarkers fold guard suppressing book:true.
+describe('Book marker on an inaccuracy-severity ply (Quick 260715-als, WR-04)', () => {
+  it('an inaccuracy-severity book ply still renders the BookIcon in the move list', () => {
+    // ply 0 (e4) is the ONLY book ply (opening_ply_count=1) AND carries an
+    // inaccuracy with a missed motif — so flawMarkerByNodeId creates a
+    // severity:'inaccuracy' entry (line 1289: motif OR blunder/mistake).
+    // Inaccuracy draws no move-list glyph, so without the WR-04 fix the book fold
+    // defers to it and the ply is blank — and since it is the sole book ply, the
+    // "Opening theory" title vanishes entirely (a clean second book ply would mask
+    // the bug by always rendering its own book badge).
+    libraryGameState.data = buildGame({
+      moves: ['e4', 'e5'],
+      opening_ply_count: 1,
+      flaw_markers: [
+        {
+          ply: 0,
+          severity: 'inaccuracy',
+          tags: [],
+          is_user: true,
+          move_san: 'e4',
+          allowed_tactic_motif: null,
+          allowed_tactic_confidence: null,
+          allowed_tactic_depth: null,
+          missed_tactic_motif: 'fork',
+          missed_tactic_confidence: 0.9,
+          missed_tactic_depth: 12,
+        },
+      ],
+    });
+
+    renderAnalysis('/analysis?game_id=1');
+
+    // BookIcon renders an aria-hidden SVG carrying the "Opening theory" title
+    // (same detection as VariationTree unit test 16). With the pre-fix guard this
+    // title is absent — the inaccuracy entry suppressed the book badge and no
+    // severity glyph exists for inaccuracy, so the marker slot rendered nothing.
+    const desktopTree = screen.getByTestId('variation-tree-desktop');
+    const titles = Array.from(desktopTree.querySelectorAll('title')).map((t) => t.textContent);
+    expect(titles).toContain('Opening theory');
+  });
 });
 
 // Quick 260714-rj5 (Task 2) — live-polling analysis board with an in-place
@@ -1169,7 +1294,7 @@ describe('Live-polling analysis board with an in-place pending pill (Quick 26071
     expect(screen.getByTestId('analyzing-1').textContent).toContain('Analyzing');
   });
 
-  it('renders no pill and no Analyze button when active_eval_status is null (unanalyzed, unqueued)', () => {
+  it('renders no pill and no Analyze button when active_eval_status is null (unanalyzed, unqueued) — SC4: never dispatches sweep work', () => {
     libraryGameState.data = buildGame({
       analysis_state: 'no_engine_analysis',
       severity_counts: null,
@@ -1184,7 +1309,16 @@ describe('Live-polling analysis board with an in-place pending pill (Quick 26071
     renderAnalysis('/analysis?game_id=1');
 
     expect(screen.queryByTestId('analyzing-1')).toBeNull();
+    // The Library-page "Analyze" pill (D-03) lives on a different page/component
+    // (NoAnalysisState.tsx) — never rendered on /analysis itself, so this is a
+    // no-op assertion here by construction; kept for parity with the pre-172
+    // version of this test rather than removed.
     expect(screen.queryByTestId('btn-analyze-game-1')).toBeNull();
+    // SC4 / D-03 (Phase 172, SEED-106): no eval data => no free prefilter =>
+    // the sweep's own dedicated instances never enable, regardless of how long
+    // the page stays mounted — this stays the lazy per-node path, untouched.
+    expect(lastSweepMaiaCall()?.enabled).toBe(false);
+    expect(lastSweepGradingCall()?.enabled).toBe(false);
   });
 
   it('when the card flips from unanalyzed to analyzed with an IDENTICAL moves array, loadMainLine does not re-fire — the cursor and a user-built sideline survive, and the pill is replaced by the eval chart', () => {
@@ -1239,5 +1373,261 @@ describe('Live-polling analysis board with an in-place pending pill (Quick 26071
     // Pill gone, eval chart present.
     expect(screen.queryByTestId('analyzing-1')).toBeNull();
     expect(screen.getByTestId('analysis-eval-chart-slider')).toBeTruthy();
+  });
+
+  it('SC7 (Phase 172, SEED-106 D-03): a bot game opened while tier-1 analysis is still running is swept the moment the evals land — no reload, no remount', async () => {
+    libraryGameState.data = buildGame({
+      analysis_state: 'no_engine_analysis',
+      severity_counts: null,
+      chips: [],
+      eval_series: null,
+      flaw_markers: null,
+      phase_transitions: null,
+      moves: ['e4', 'e5'],
+      active_eval_status: 'leased',
+    });
+
+    renderAnalysis('/analysis?game_id=1');
+
+    // Before the transition: no eval data reaches evalChartReady, so the free
+    // prefilter (D-04) has nothing to work with — the sweep's dedicated
+    // instances stay disabled the entire time the card is mid-analysis.
+    expect(lastSweepMaiaCall()?.enabled).toBe(false);
+    expect(lastSweepGradingCall()?.enabled).toBe(false);
+
+    // The eval job completes: eval_series/moves/opening_ply_count arrive with
+    // a D-04-eligible candidate (best_move === the played move, out of book).
+    libraryGameState.data = buildGame({
+      analysis_state: 'analyzed',
+      moves: ['e4', 'e5'],
+      opening_ply_count: 0,
+      eval_series: [
+        {
+          ply: 0,
+          es: 0.5,
+          eval_cp: 20,
+          eval_mate: null,
+          clock_seconds: null,
+          move_seconds: null,
+          best_move: 'e2e4',
+        },
+        {
+          ply: 1,
+          es: 0.5,
+          eval_cp: 20,
+          eval_mate: null,
+          clock_seconds: null,
+          move_seconds: null,
+          best_move: null,
+        },
+      ],
+      flaw_markers: [],
+      active_eval_status: null,
+    });
+    forceRerender();
+
+    // No remount, no navigation — the SAME useLibraryGame({ live: true }) poll
+    // that flips evalChartReady also arms the sweep, on the exact transition,
+    // not on a fresh mount.
+    await waitFor(() => {
+      expect(lastSweepMaiaCall()?.enabled).toBe(true);
+      expect(lastSweepGradingCall()?.enabled).toBe(true);
+    });
+  });
+});
+
+// Phase 172 (SEED-106 CR-02) — the D-05 yield-to-cursor WIRING proof. The pure
+// function (gemSweep.test.ts) and the hook (useGemSweep.test.ts) both prove the
+// guard works GIVEN a correct `liveBusy` prop; neither can see that Analysis.tsx
+// feeds it the right signal. This is the only test that catches a `liveBusy`
+// wired to a signal that ignores the live engines — it goes RED if `liveBusy`
+// is reverted to the near-always-false `needParentGemGrade`. Recorded RED output
+// in the fix notes per the project's mutation-test discipline.
+describe('D-05 yield-to-cursor wiring (Phase 172, SEED-106 CR-02 — LOAD-BEARING)', () => {
+  let clientWidthSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    clientWidthSpy = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(400);
+  });
+
+  afterEach(() => {
+    clientWidthSpy.mockRestore();
+  });
+
+  it('does NOT dispatch a sweep candidate while a live engine reports busy (engine.isAnalyzing), even though the sweep is armed', async () => {
+    // The sweep's ONE candidate is ply 0 (e4), whose parent is the start FEN.
+    const ROOT_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+    // A live engine is mid-search on the user's current node. This is the whole
+    // point: the sweep must yield the CPU to it (D-05).
+    engineState.isReady = true;
+    engineState.isAnalyzing = true;
+
+    libraryGameState.data = buildGame({
+      moves: ['e4', 'e5'],
+      opening_ply_count: 0,
+      eval_series: [
+        {
+          ply: 0,
+          es: 0.5,
+          eval_cp: 20,
+          eval_mate: null,
+          clock_seconds: null,
+          move_seconds: null,
+          best_move: 'e2e4', // D-04: matches sanToUci(ROOT_FEN, 'e4') — the ONE candidate.
+        },
+        {
+          ply: 1,
+          es: 0.5,
+          eval_cp: 20,
+          eval_mate: null,
+          clock_seconds: null,
+          move_seconds: null,
+          best_move: null, // never a candidate.
+        },
+      ],
+      flaw_markers: [],
+    });
+    // e4 rare at the parent rung (would pass C1 if it ever dispatched); grading
+    // stays EMPTY so a reverted build would leave the candidate mid-cascade with
+    // its ROOT_FEN grade `fen` observable, making the RED unambiguous. Rendering
+    // at ?ply=1 keeps the live cursor's own arrival move (e5) without a cached
+    // parent curve, so needParentGemGrade is false — the exact state under which
+    // the OLD `liveBusy: needParentGemGrade` wiring would (wrongly) let the sweep
+    // fire while a live engine is busy.
+    maiaState.perElo = [{ elo: 1500, moveProbabilities: { e4: 0.01, e5: 0.99 } }];
+
+    renderAnalysis('/analysis?game_id=1&ply=1');
+
+    // The sweep is ARMED (enabled) — so we are proving that liveBusy, not a
+    // disabled sweep, is what blocks the dispatch.
+    await waitFor(() => {
+      expect(lastSweepMaiaCall()?.enabled).toBe(true);
+      expect(lastSweepGradingCall()?.enabled).toBe(true);
+    });
+
+    // Give the sweep's idle-callback fallback (setTimeout(cb, 1)) ample time to
+    // fire if it were ever going to. With the correct wiring it never schedules,
+    // because a live engine is busy.
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    // THE LOAD-BEARING ASSERTIONS. A live engine is busy → the sweep must not
+    // have dispatched its candidate: neither dedicated instance ever received the
+    // candidate's FEN. If `liveBusy` is reverted to `needParentGemGrade` (false
+    // here), the sweep dispatches and the grading instance's `fen` reads ROOT_FEN
+    // — turning this red.
+    expect(lastSweepMaiaCall()?.fen).toBeNull();
+    expect(lastSweepMaiaCall()?.fen).not.toBe(ROOT_FEN);
+    expect(lastSweepGradingCall()?.fen).toBeNull();
+    expect(lastSweepGradingCall()?.fen).not.toBe(ROOT_FEN);
+  });
+});
+
+// Phase 172 (SEED-106 D-05) — the page-level instance-isolation proof. tsc,
+// eslint, knip, and every OTHER test in this file all pass a sweep that
+// shares a worker/hook instance with the live path — this is the ONLY
+// structural guard for that invariant at the page layer (172-04-PLAN.md's
+// hook-layer test is the other). A revert-and-fail-red proof was performed
+// manually per the plan's mandatory instructions; both outputs are recorded
+// in 172-05-SUMMARY.md.
+describe('Instance isolation (Phase 172, SEED-106 D-05 / SC2 — LOAD-BEARING)', () => {
+  let clientWidthSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    clientWidthSpy = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(400);
+  });
+
+  afterEach(() => {
+    clientWidthSpy.mockRestore();
+  });
+
+  it('the live grading/Maia instances are never driven with a sweep candidate FEN, even while the sweep is actively mid-cascade', async () => {
+    // The sweep's ONE candidate (ply 0, e4) has this exact parent FEN — the
+    // literal value never appears in either live instance's call options.
+    const ROOT_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+    libraryGameState.data = buildGame({
+      moves: ['e4', 'e5', 'Nf3'],
+      opening_ply_count: 0,
+      eval_series: [
+        {
+          ply: 0,
+          es: 0.5,
+          eval_cp: 20,
+          eval_mate: null,
+          clock_seconds: null,
+          move_seconds: null,
+          best_move: 'e2e4', // D-04: matches sanToUci(ROOT_FEN, 'e4') — a candidate.
+        },
+        {
+          ply: 1,
+          es: 0.5,
+          eval_cp: 20,
+          eval_mate: null,
+          clock_seconds: null,
+          move_seconds: null,
+          best_move: null, // never a candidate — keeps this test to ONE in-flight ply.
+        },
+        {
+          ply: 2,
+          es: 0.5,
+          eval_cp: 20,
+          eval_mate: null,
+          clock_seconds: null,
+          move_seconds: null,
+          best_move: null,
+        },
+      ],
+      flaw_markers: [],
+    });
+    // Low probability for BOTH the sweep's candidate (e4) and the live
+    // cursor's arrival move (Nf3) — passes C1 for both. gradingState.gradeMap
+    // stays EMPTY (module default, never set in this test) so C2 never
+    // completes for EITHER instance: both candidates stay mid-cascade
+    // indefinitely, which is exactly what this test needs — their `fen`
+    // assignments stay observable instead of resolving and going idle before
+    // the assertions run.
+    maiaState.perElo = [{ elo: 1500, moveProbabilities: { e4: 0.01, Nf3: 0.01 } }];
+
+    renderAnalysis('/analysis?game_id=1&ply=1');
+
+    // Let the sweep's idle-callback fallback (setTimeout(cb, 1)) dispatch its
+    // ONE candidate. liveBusy is false at this point — the cursor's own
+    // arrival move (e5) has no cached parent curve yet, so needParentGemGrade
+    // is false and nothing blocks the sweep's first dispatch.
+    await waitFor(() => {
+      expect(lastSweepGradingCall()?.fen).toBe(ROOT_FEN);
+    });
+
+    // NOW move the LIVE cursor to a node whose arrival move needs a live gem
+    // grade — WHILE the sweep candidate is STILL mid-cascade. useGemSweep
+    // does not abort in-flight work on a live cursor move (its documented
+    // yield-at-dispatch-only semantics — 172-04-SUMMARY.md), so this is
+    // genuine concurrency, not a race the test wins by luck.
+    const tree = screen.getByTestId('variation-tree-desktop');
+    fireEvent.click(within(tree).getByRole('button', { name: /Nf3/ }));
+
+    // THE LOAD-BEARING ASSERTIONS. If the sweep were ever routed through the
+    // SAME hook instance the live path uses, the live instance's `fen` would
+    // read the sweep's ROOT_FEN candidate instead of its own live position —
+    // this is the only mechanism by which that would be caught.
+    await waitFor(() => {
+      // (a) more than one ENABLED instance of each exists simultaneously.
+      expect(lastLiveGemGradingCall()?.enabled).toBe(true);
+      expect(lastSweepGradingCall()?.enabled).toBe(true);
+      expect(lastLiveMaiaCall()?.enabled).toBe(true);
+      expect(lastSweepMaiaCall()?.enabled).toBe(true);
+      // (b) the LIVE grading instance's fen is the live parent FEN — never a
+      // sweep candidate's FEN.
+      expect(lastLiveGemGradingCall()?.fen).not.toBeNull();
+      expect(lastLiveGemGradingCall()?.fen).not.toBe(ROOT_FEN);
+      // (c) the LIVE Maia instance's fen is the current board position —
+      // never a sweep candidate's FEN.
+      expect(lastLiveMaiaCall()?.fen).not.toBeNull();
+      expect(lastLiveMaiaCall()?.fen).not.toBe(ROOT_FEN);
+      // The sweep's OWN instance is untouched by the live cursor's move —
+      // still mid-cascade on its own candidate, unaffected.
+      expect(lastSweepGradingCall()?.fen).toBe(ROOT_FEN);
+    });
   });
 });

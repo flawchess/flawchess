@@ -4,16 +4,16 @@ milestone: v2.3
 milestone_name: Bot Play
 current_phase: 999.1
 current_phase_name: BACKLOG
-status: executing
-stopped_at: Phase 171 shipped (squash-merged to main, 0cad3612) — milestone v2.3 phases all complete
-last_updated: "2026-07-14T16:15:00.000Z"
-last_activity: 2026-07-14
-last_activity_desc: Phase 171 shipped — squash-merged to main (0cad3612)
+status: verifying
+stopped_at: Completed 172-05-PLAN.md
+last_updated: "2026-07-15T05:07:22.885Z"
+last_activity: 2026-07-15
+last_activity_desc: Phase 172 complete, transitioned to Phase 999.1
 progress:
-  total_phases: 8
-  completed_phases: 8
-  total_plans: 41
-  completed_plans: 41
+  total_phases: 9
+  completed_phases: 9
+  total_plans: 46
+  completed_plans: 46
   percent: 100
 ---
 
@@ -23,8 +23,8 @@ progress:
 
 Phase: 999.1 — Password Reset (BACKLOG)
 Plan: Not started
-Status: Ready to execute
-Last activity: 2026-07-14 — Completed quick task 260714-rj5: bot game tier-1 analysis with a live-updating analysis board
+Status: Phase complete — ready for verification
+Last activity: 2026-07-15 — Completed quick task 260715-als: WR-04 book-marker fix (Phase 172 deferred finding)
 
 ## Project Reference
 
@@ -276,6 +276,20 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 171]: [Phase 171-10]: Kept Task 1 (clearance) and Task 2 (density) as independently revertable commits per the plan's explicit instruction
 - [Phase 171]: [Phase 171-10]: Slider 40px override scoped via [&_[data-slot=slider]]:min-h-10 descendant selector on SetupScreen's root rather than editing the shared ui/slider.tsx primitive's min-h-11 (app-wide 44px contract stays untouched)
 - [Phase 171]: [Phase 171-10]: Could not independently browser-verify the slider override's computed height in this execution environment (no browser tooling available); applied on CSS-specificity grounds, final confirmation deferred to the plan's mandatory real-device human-check
+- [Phase 172-01]: Computed opening_ply_count unconditionally in _build_card (list-mode cards too) — negligible cost against the already-loaded trie, avoids forking the card-construction contract
+- [Phase 172-01]: find_opening_ply_count does not call _normalize_pgn_to_san_sequence — caller already has tokenized SAN, keeping find_opening's PGN-taking signature and callers untouched
+- [Phase 172-02]: GEM_MAIA_MAX_PROB set to exactly 0.2 (D-07), doc-comment records Phase 165 TSV ratios (ratios transfer, absolute frequencies do not)
+- [Phase 172-02]: Export-in-place chosen for deriveRawDefault/clampToLadderBounds (D-01) over extracting to a shared module — minimal diff, matches PATTERNS.md analog
+- [Phase 172-02]: selectSweepCandidates uses strict best_move equality (no es-loss band) — fails safe on backend/live-engine disagreement per D-04
+- [Phase 172-03]: BOOK_MARKER_COLOR = oklch(0.60 0.04 250) added verbatim per UI-SPEC — no deviation
+- [Phase 172-03]: MoveListMarker required NO new branch — book falls through the existing plain-icon path severity already uses (confirmed: single resolveMarkerIcon call site covers both desktop and mobile render paths)
+- [Phase 172-04]: Dedicated worker instances chosen over workerPool.ts priority-queue migration (structural fix for D-05 starvation)
+- [Phase 172-04]: SWEEP_GRADING_MOVETIME_MS set to 1000ms, deliberately smaller than the live grading path's 4000ms cap
+- [Phase 172-04]: Sweep yields only at the dispatch gate (never aborts in-flight sweep work on cursor change) - dedicated workers make this safe
+- [Phase 172-04]: Two-layer liveBusy gate (scheduler decision + idle-callback ref re-check) covers the schedule-to-execution race
+- [Phase 172-05]: sweepArmedForGame implemented via useState (armedGameId), not a ref — this project's react-hooks/refs ESLint rule forbids reading ref.current during render — reads evalChartReady directly for the same-render transition; armedGameId is only sticky protection against a later flicker
+- [Phase 172-05]: needParentGemGrade's double-work-avoidance extension uses a companion sweepResolvedPlies useState synced by an effect declared AFTER useGemSweep, not a ref — avoids both the react-hooks/refs lint rule and a circular dependency (needParentGemGrade also feeds the sweep's own liveBusy input)
+- [Phase 172-05]: Actual hook call order is [primary grading, sweep's grading, live gemGrading] and [live maia, sweep's maia] per commit, not [primary, gemGrading, sweep] as first assumed — useGemSweep had to be wired in before parentGemCandidateSans/gemGrading since needParentGemGrade (which both depend on) must exist before it can be passed to the sweep as liveBusy
 
 ### Pending Todos
 
@@ -306,6 +320,7 @@ None active.
 | 260714-pnk | Bot games show the player's real platform username instead of "You" (lichess → chess.com → "You"), on the /bots clock caption and in the stored `games` row; one resolver per stack (`resolve_player_username` / `resolvePlayerName`) | 2026-07-14 | 355b52d5 | [260714-pnk-show-player-s-platform-username-instead-](./quick/260714-pnk-show-player-s-platform-username-instead-/) |
 | 260714-qaj | Stored bot games get a full lichess-comparable PGN header block, stamped server-side post-insert (`bot_game_pgn.stamp_bot_game_headers`): Event/Site deep link/Date/Round/White/Black/GameId/UTCDate/UTCTime/Elo/Title/Variant/ECO/Opening + non-standard RatingSource + PlayStyleBlend; player Elo is the Lichess-equivalent anchor, omitted (never "?") when the user has no anchor | 2026-07-14 | e4509e9b | [260714-qaj-enrich-bot-game-pgn-metadata-headers](./quick/260714-qaj-enrich-bot-game-pgn-metadata-headers/) |
 | 260714-rj5 | "Analyze this game" after a bot game enqueues a tier-1 eval job and opens the analysis board in game mode; the board renders the move list immediately, shows the Pending…/Analyzing… pill in the eval chart's slot, and swaps in the eval chart + flaw icons + tactic badges in place when the job lands (no remount, so the move cursor and variation tree survive). Unanalyzed single-game cards now carry `moves` + `phase_transitions`, which also fixes the empty-board dead end for unanalyzed imported games. Retires the Phase 169 D-20/D-21 "never gated" invariant | 2026-07-14 | 1f27190c | [260714-rj5-bot-game-tier-1-analysis-with-live-updat](./quick/260714-rj5-bot-game-tier-1-analysis-with-live-updat/) |
+| 260715-als | WR-04 (Phase 172 deferred review finding): a book ply carrying an inaccuracy-severity flaw rendered no variation-tree marker at all — the move list's resolveMarkerIcon draws no glyph for inaccuracy, and the book fold was suppressed by any non-null severity. Fixed by deferring only to entries that draw a move-list icon (blunder/mistake/gem); board `!?` surface untouched. Page-level RED→GREEN test | 2026-07-15 | 6d9c12b8 | [260715-als-fix-wr-04-inaccuracy-severity-book-ply-r](./quick/260715-als-fix-wr-04-inaccuracy-severity-book-ply-r/) |
 
 ## Deferred Items
 
@@ -358,9 +373,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 171 UI-SPEC approved
+**Stopped at:** Completed 172-05-PLAN.md
 
-**Last session:** 2026-07-14T15:20:06.645Z
+**Last session:** 2026-07-14T22:02:42.582Z
 
 **Resume file:** 
 
@@ -451,6 +466,11 @@ None
 | Phase 171 P08 | 7min | 2 tasks | 6 files |
 | Phase 171 P09 | 8min | 2 tasks | 4 files |
 | Phase 171 P10 | 7min | 2 tasks | 4 files |
+| Phase 172 P01 | 20min | 3 tasks | 6 files |
+| Phase 172 P02 | 25min | 3 tasks | 6 files |
+| Phase 172 P03 | 20min | 3 tasks | 7 files |
+| Phase 172 P04 | 50min | 3 tasks | 4 files |
+| Phase 172 P05 | ~2h | 3 tasks | 2 files |
 
 ## Operator Next Steps
 

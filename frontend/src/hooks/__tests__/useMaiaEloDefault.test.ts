@@ -15,7 +15,12 @@
 
 import { describe, it, expect } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useMaiaEloDefault, FREE_PLAY_DEFAULT_ELO } from '../useMaiaEloDefault';
+import {
+  useMaiaEloDefault,
+  FREE_PLAY_DEFAULT_ELO,
+  deriveRawDefault,
+  clampToLadderBounds,
+} from '../useMaiaEloDefault';
 import type { MaiaEloGameData, MaiaEloProfile } from '../useMaiaEloDefault';
 import { MAIA_ELO_LADDER } from '@/lib/maiaEncoding';
 
@@ -288,5 +293,83 @@ describe('useMaiaEloDefault', () => {
     // proving the effect keys off the derived value, not "every render".
     rerender({ gd: gameData({ user_color: 'white', white_rating: 1720, black_rating: 1600 }) });
     expect(result.current.selectedElo).toBe(1720);
+  });
+});
+
+/**
+ * Direct-call tests for the exported pure helpers (Phase 172, SEED-106 D-01).
+ * These are called directly (not through the hook) because the gem sweep
+ * consumes them the same way: pinned to a fixed mover, structurally
+ * independent of any slider/selectedElo state.
+ */
+describe('deriveRawDefault / clampToLadderBounds (D-01 direct-call exports)', () => {
+  it('D-01: deriveRawDefault(white) returns white_rating_lichess_blitz, falling back to white_rating when null', () => {
+    const withNormalized = gameData({
+      user_color: 'white',
+      white_rating: 1720,
+      black_rating: 1350,
+      white_rating_lichess_blitz: 1780,
+    });
+    expect(deriveRawDefault(true, withNormalized, undefined, 'white')).toBe(1780);
+
+    const withoutNormalized = gameData({
+      user_color: 'white',
+      white_rating: 1720,
+      black_rating: 1350,
+      white_rating_lichess_blitz: null,
+    });
+    expect(deriveRawDefault(true, withoutNormalized, undefined, 'white')).toBe(1720);
+  });
+
+  it('D-01: the SAME gameData yields DIFFERENT rungs for white vs black — a gem is a property of the game, not of the view', () => {
+    const shared = gameData({
+      user_color: 'white',
+      white_rating: 1720,
+      black_rating: 1350,
+      white_rating_lichess_blitz: 1780,
+      black_rating_lichess_blitz: 1400,
+    });
+    const whiteRung = deriveRawDefault(true, shared, undefined, 'white');
+    const blackRung = deriveRawDefault(true, shared, undefined, 'black');
+    expect(whiteRung).toBe(1780);
+    expect(blackRung).toBe(1400);
+    expect(whiteRung).not.toBe(blackRung);
+  });
+
+  it('deriveRawDefault(true, undefined, ...) returns null — game data not loaded yet', () => {
+    expect(deriveRawDefault(true, undefined, undefined, 'white')).toBeNull();
+  });
+
+  it('clampToLadderBounds clamps to the ladder outer bounds without step-snapping', () => {
+    const min = MAIA_ELO_LADDER[0] as number;
+    const max = MAIA_ELO_LADDER[MAIA_ELO_LADDER.length - 1] as number;
+    expect(clampToLadderBounds(1720)).toBe(1720); // not step-snapped
+    expect(clampToLadderBounds(min - 500)).toBe(min);
+    expect(clampToLadderBounds(max + 500)).toBe(max);
+  });
+
+  it('D-01 regression: setSelectedElo does NOT perturb deriveRawDefault for a fixed mover — the pinned rung is structurally independent of the slider', () => {
+    const gd = gameData({
+      user_color: 'white',
+      white_rating: 1720,
+      black_rating: 1350,
+      white_rating_lichess_blitz: 1780,
+    });
+
+    const { result } = renderHook(() =>
+      useMaiaEloDefault({ isGameMode: true, gameData: gd, profile: undefined, sideToMove: 'white' }),
+    );
+
+    // Baseline: the pinned rung for white, computed directly.
+    expect(deriveRawDefault(true, gd, undefined, 'white')).toBe(1780);
+
+    // Drag the slider to an arbitrary far-off value.
+    act(() => result.current.setSelectedElo(2600));
+    expect(result.current.selectedElo).toBe(2600);
+
+    // deriveRawDefault reads only (isGameMode, gameData, profile, sideToMove) —
+    // it never touches selectedElo — so calling it again for the SAME mover
+    // returns the SAME value, unperturbed by the slider move.
+    expect(deriveRawDefault(true, gd, undefined, 'white')).toBe(1780);
   });
 });

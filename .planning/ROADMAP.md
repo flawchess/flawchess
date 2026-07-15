@@ -54,7 +54,7 @@
 - [x] **Phase 169.5: Bot Opening Book** - Maia-policy-weighted ECO book for the early plies: near-instant, search-free, clock-cheap, varied openings + engine prewarm during the book window
 - [x] **Phase 170: localStorage Resume** - Leave and resume a bot game with the clock fairly paused; store each finished game exactly once (completed 2026-07-14)
 - [x] **Phase 171: Bots Page + Setup Screen + Nav** - New top-level Bots page tying setup, board, resume, and store-on-finish together for users and guests (completed 2026-07-14)
-- [ ] **Phase 172: Background Gem Sweep on Analysis (SEED-106)** - Resolve gems for the whole mainline in the background so badges land ahead of the cursor, plus opening-book markers and a gem-threshold raise
+- [x] **Phase 172: Background Gem Sweep on Analysis (SEED-106)** - Resolve gems for the whole mainline in the background so badges land ahead of the cursor, plus opening-book markers and a gem-threshold raise (completed 2026-07-15)
 
 ### Phase 166: Bot Move Selection Core (`selectBotMove`)
 
@@ -327,11 +327,21 @@ Plans:
   6. The game-detail payload carries an additive `opening_ply_count`, computed on-read from the existing SAN trie (no column, no migration, no backfill), and every ply within it renders a book marker on both the `VariationTree` and the board corner marker — with precedence `severity > gem > book` (D6, D8).
   7. A **bot game opened while its tier-1 analysis is still running** (quick 260714-rj5's live-updating analysis board) is swept as soon as the evals land — the sweep is triggered by analysis *becoming* ready, not only by it being ready at open time. A game does not stay stuck in lazy mode for the session just because it was unanalyzed when the board mounted.
 
-**Plans**: TBD (run `/gsd-plan-phase 172`)
+**Plans**: 5 plans (3 waves)
 
-Plans:
+**Wave 1** *(fully parallel — zero file overlap)*
 
-- [ ] TBD (run /gsd-plan-phase 172 to break down)
+- [x] 172-01-PLAN.md — Backend `opening_ply_count`, computed on-read from the SAN trie (D6) + TS type mirror
+- [x] 172-02-PLAN.md — Pure primitives: `GEM_MAIA_MAX_PROB` 0.10→0.20 (D7), exported rung-pin helpers (D1), `gemSweep.ts` free prefilter (D4) + yield-to-cursor scheduler decision (D5)
+- [x] 172-03-PLAN.md — Book marker display layer: `BOOK_MARKER_COLOR` / `bookGlyph` / `BookIcon`, `severity > gem > book` on both marker surfaces (D8)
+
+**Wave 2** *(blocked on 172-02)*
+
+- [x] 172-04-PLAN.md — `useGemSweep`: dedicated Stockfish + Maia workers, the free→cheap→expensive cascade, the yield-to-cursor scheduler (D5 — the phase's real risk)
+
+**Wave 3** *(blocked on 172-01, 172-02, 172-03, 172-04)*
+
+- [x] 172-05-PLAN.md — `Analysis.tsx` wiring: rung pin (D1), sweep on the analysis-readiness transition (D3), display merge, book marker call sites (D8), and the page-level instance-isolation contention test (SC2)
 
 **UI hint**: yes
 **Seed**: `.planning/seeds/SEED-106-background-gem-sweep-on-analysis.md` — read it before planning; D1–D8 are locked, and the gating question for any plan is **contention (D5), not compute**. Supersedes SEED-092 D-02 (no opening-ply guard).
@@ -418,7 +428,7 @@ Plans:
 | 169.5. Bot Opening Book | 4/4 | Complete    | 2026-07-13 |
 | 170. localStorage Resume | 5/5 | Complete    | 2026-07-14 |
 | 171. Bots Page + Setup Screen + Nav | 10/10 | Complete    | 2026-07-14 |
-| 172. Background Gem Sweep on Analysis (SEED-106) | 0/0 | Not planned | — |
+| 172. Background Gem Sweep on Analysis (SEED-106) | 5/5 | Complete    | 2026-07-14 |
 
 ## Backlog
 
@@ -426,7 +436,7 @@ Plans:
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 10/10 plans complete
+**Plans:** 5/5 plans complete
 
 Plans:
 

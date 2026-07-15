@@ -1361,6 +1361,64 @@ class TestGetLibraryGame:
         assert card.phase_transitions.middlegame_ply == 2
         assert card.severity_counts is not None
 
+    @pytest.mark.asyncio
+    async def test_known_opening_game_has_nonzero_opening_ply_count(
+        self, db_session: object
+    ) -> None:
+        """Phase 172 (SEED-106 D-06): a known-opening game's card carries the
+        trie's matched ply depth, computed on-read from moves.
+
+        1. e4 e5 2. Nf3 matches C40 King's Knight Opening at ply depth 3
+        (see tests/test_opening_lookup.py::TestFindOpeningPlyCount, kept in
+        lockstep with this fixture).
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.game import Game as GameModel
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99998)
+
+        game_obj = await _seed_db_game(session, user_id=99998, user_color="white", result="1-0")
+        game = cast(GameModel, game_obj)
+        await _seed_db_pos(session, game=game, ply=0, eval_cp=0, phase=0, move_san="e4")
+        await _seed_db_pos(session, game=game, ply=1, eval_cp=0, phase=0, move_san="e5")
+        await _seed_db_pos(session, game=game, ply=2, eval_cp=0, phase=0, move_san="Nf3")
+        await _seed_db_pos(session, game=game, ply=3, eval_cp=None, phase=1, move_san=None)
+
+        card = await get_library_game(session, user_id=99998, game_id=game.id)
+
+        assert card is not None
+        assert card.moves == ["e4", "e5", "Nf3"]
+        assert card.opening_ply_count == 3
+
+    @pytest.mark.asyncio
+    async def test_unmatched_opening_game_has_zero_opening_ply_count(
+        self, db_session: object
+    ) -> None:
+        """A game whose first move isn't in the opening trie gets opening_ply_count 0."""
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.game import Game as GameModel
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99999)
+
+        game_obj = await _seed_db_game(session, user_id=99999, user_color="white", result="1-0")
+        game = cast(GameModel, game_obj)
+        await _seed_db_pos(session, game=game, ply=0, eval_cp=0, phase=0, move_san="ZZUnknown")
+        await _seed_db_pos(session, game=game, ply=1, eval_cp=None, phase=1, move_san=None)
+
+        card = await get_library_game(session, user_id=99999, game_id=game.id)
+
+        assert card is not None
+        assert card.moves == ["ZZUnknown"]
+        assert card.opening_ply_count == 0
+
 
 # ---------------------------------------------------------------------------
 # TestActiveEvalStatus — active_eval_status field on GameFlawCard (260615-q1x)

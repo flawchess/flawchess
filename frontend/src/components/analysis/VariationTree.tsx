@@ -26,6 +26,7 @@ import { HorizontalMoveList } from '@/components/board/HorizontalMoveList';
 import type { HorizontalMoveItem } from '@/components/board/HorizontalMoveList';
 import { BlunderIcon, MistakeIcon } from '@/components/icons/SeverityGlyphIcon';
 import { GemIcon } from '@/components/icons/GemIcon';
+import { BookIcon } from '@/components/icons/BookIcon';
 import { GemMoveBadge } from '@/components/analysis/GemMoveBadge';
 import { moveLabel } from '@/lib/moveNumberLabel';
 import { tacticMotifLabel, tacticDepthBadge } from '@/lib/tacticComparisonMeta';
@@ -50,22 +51,36 @@ function zebraBg(rowIdx: number): string {
 }
 
 /**
- * Icon + visibility for a flaw entry's move-list marker. Severity wins over gem
- * (163-REVIEW WR-05): within the live pipeline the two are mutually exclusive by
- * construction, but a BACKEND severity (server Stockfish) and the live WASM gem
- * can legitimately disagree on the same move — one move never renders two badges,
- * and the severity badge is the more actionable signal.
+ * Icon + visibility for a flaw entry's move-list marker. Precedence chain
+ * `severity > gem > book` (163-REVIEW WR-05; extended Phase 172, SEED-106
+ * D-08). Severity wins over gem: within the live pipeline the two are
+ * mutually exclusive by construction, but a BACKEND severity (server
+ * Stockfish) and the live WASM gem can legitimately disagree on the same
+ * move — one move never renders two badges, and the severity badge is the
+ * more actionable signal. Book slots in at the BOTTOM of the chain: a book
+ * move can still be an inaccuracy (ECO includes plenty of dubious gambits),
+ * and in that case the user needs to see the flaw, not the reassurance that
+ * it was theory. Gem-vs-book never actually arises in production — D-04
+ * skips book plies before they can be classified — but the chain is stated
+ * in full so the ordering is unambiguous.
  */
 function resolveMarkerIcon(flaw: FlawMarkerEntry | undefined): {
   show: boolean;
   Icon: typeof BlunderIcon;
   isGem: boolean;
+  isBook: boolean;
 } {
   if (flaw != null && (flaw.severity === 'blunder' || flaw.severity === 'mistake')) {
-    return { show: true, Icon: flaw.severity === 'blunder' ? BlunderIcon : MistakeIcon, isGem: false };
+    return {
+      show: true,
+      Icon: flaw.severity === 'blunder' ? BlunderIcon : MistakeIcon,
+      isGem: false,
+      isBook: false,
+    };
   }
-  if (flaw?.gem) return { show: true, Icon: GemIcon, isGem: true };
-  return { show: false, Icon: MistakeIcon, isGem: false };
+  if (flaw?.gem) return { show: true, Icon: GemIcon, isGem: true, isBook: false };
+  if (flaw?.book) return { show: true, Icon: BookIcon, isGem: false, isBook: true };
+  return { show: false, Icon: MistakeIcon, isGem: false, isBook: false };
 }
 
 /**
@@ -167,6 +182,13 @@ export interface FlawMarkerEntry {
    * always false in free play (no opponent).
    */
   gemByOpponent?: boolean;
+  /**
+   * True when this node's ply is within `opening_ply_count` (Phase 172,
+   * SEED-106 D-08) — set at the `Analysis.tsx` call site that builds
+   * `moveListMarkers`. Lowest precedence in `severity > gem > book`: both
+   * severity and gem override it.
+   */
+  book?: boolean;
   /** FlawMarker.ply — passed to onPvChipClick for the useTacticLines fetch key
    *  (this node's own flaw — allowed chip + severity glyph). */
   ply: number;

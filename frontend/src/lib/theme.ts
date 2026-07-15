@@ -89,6 +89,15 @@ export const FLAWCHESS_ENGINE_BADGE_SHADES = [
   'oklch(0.53 0.12 80)', // second
   'oklch(0.59 0.10 80)', // third
 ] as const;
+// Book/opening-theory corner-marker identity color (Phase 172, SEED-106 D-08).
+// Chroma 0.04 is deliberately the LOWEST of any corner-marker hue (gem 0.20,
+// Stockfish 0.16, FlawChess 0.14, severities 0.13-0.19), so the book badge
+// visually recedes behind every alert/insight badge — it marks context
+// ("this ply is opening theory"), not a signal worth alarm. Hue 250 sits in
+// the cool-blue family without colliding with Stockfish's 255. Reserved
+// EXCLUSIVELY for the book/opening-theory marker family (BookIcon +
+// boardMarkers's book branch) — never reuse as a general-purpose muted blue.
+export const BOOK_MARKER_COLOR = 'oklch(0.60 0.04 250)';
 export const EVAL_CHART_LINE = 'oklch(0.82 0 0)';
 // Muted grey for the rotated "Midgame" / "Endgame" text labels centered on the
 // phase boundaries — legible over both the light and dark eval-bar regions.

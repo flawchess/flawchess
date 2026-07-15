@@ -4,10 +4,11 @@
  * severity glyph badge. Kept in one place so both boards render identical marks.
  */
 
-import { Gem } from 'lucide-react';
+import { Gem, BookOpen } from 'lucide-react';
 
 import { SEVERITY_GLYPH } from '../../lib/severityGlyph';
 import { GEM_GLYPH } from '../../lib/gemGlyph';
+import { BOOK_GLYPH } from '../../lib/bookGlyph';
 import type { FlawSeverity } from '../../types/library';
 import { squareToCoords } from './arrowGeometry';
 
@@ -18,14 +19,23 @@ import { squareToCoords } from './arrowGeometry';
  *
  * `gem` is an additive, mutually-exclusive alternative to `severity` (Phase 163,
  * SEED-092): when set, the badge renders the violet gem icon instead of the
- * severity NAG glyph. No runtime assertion enforces the exclusivity — callers
- * only ever set one or the other by construction.
+ * severity NAG glyph. `book` is a third, equally mutually-exclusive alternative
+ * (Phase 172, SEED-106 D-08): when set, the badge renders the muted book icon
+ * instead of severity or gem. No runtime assertion enforces the exclusivity
+ * across all three — callers only ever set one by construction (the guard lives
+ * in `Analysis.tsx`'s `boardSquareMarkers` memo).
  */
 export interface SquareMarker {
   square: string;
   severity?: FlawSeverity;
   /** Renders the violet gem badge instead of a severity glyph. */
   gem?: boolean;
+  /**
+   * Renders the muted book badge instead of a severity glyph. Mutually
+   * exclusive with `severity`/`gem` BY CONSTRUCTION at the call site (no
+   * runtime assertion — same contract the `gem` field already carries).
+   */
+  book?: boolean;
   /** Optional depth label (e.g. allowed-tactic depth) rendered top-left. */
   label?: string;
   /** Fill color for the depth label. Defaults to white. */
@@ -130,9 +140,26 @@ function SquareMarkerBadge({
     );
   }
 
-  // Severity-less markers are only possible when `gem` is set (handled above,
-  // and mutually exclusive by construction) — guard defensively rather than
-  // indexing SEVERITY_GLYPH with an undefined key.
+  if (marker.book) {
+    // Same ratio as the gem badge — reused verbatim (UI-SPEC: no new geometry constant).
+    const iconSize = 2 * r * GEM_ICON_DIAMETER_RATIO;
+    return (
+      <g>
+        <circle cx={cx} cy={cy} r={r} fill={BOOK_GLYPH.color} stroke={MARKER_STROKE} strokeWidth={1} />
+        <BookOpen
+          x={cx - iconSize / 2}
+          y={cy - iconSize / 2}
+          width={iconSize}
+          height={iconSize}
+          stroke="#fff"
+        />
+      </g>
+    );
+  }
+
+  // Severity-less markers are only possible when `gem`/`book` is set (handled
+  // above, and mutually exclusive by construction) — guard defensively rather
+  // than indexing SEVERITY_GLYPH with an undefined key.
   if (!marker.severity) return null;
   const glyph = SEVERITY_GLYPH[marker.severity];
   // Reuse SeverityGlyphIcon's font-to-diameter ratio so the on-board glyph matches.

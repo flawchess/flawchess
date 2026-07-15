@@ -55,8 +55,19 @@ describe('classifyGem', () => {
     ).toBe(true);
   });
 
-  it('D-07: GEM_MAIA_MAX_PROB is exactly 0.1', () => {
-    expect(GEM_MAIA_MAX_PROB).toBe(0.1);
+  it('D-07 (Phase 172): GEM_MAIA_MAX_PROB is exactly 0.2', () => {
+    expect(GEM_MAIA_MAX_PROB).toBe(0.2);
+  });
+
+  it('D-07 (Phase 172): a maiaProbability of 0.15 with a passing C2 now classifies as a gem (would have failed C1 at the old 0.1 threshold)', () => {
+    expect(
+      classifyGem({
+        maiaProbability: 0.15,
+        playedIsBest: true,
+        bestEs: 0.9,
+        secondBestEs: 0.5,
+      }),
+    ).toBe(true);
   });
 
   it('returns false when maiaProbability is null (C1 fail)', () => {

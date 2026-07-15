@@ -26,6 +26,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as Sentry from '@sentry/react';
 import { Chess } from 'chess.js';
 import { parseInfoLine } from './uciParser';
 import { sanToUci, uciToSquares } from '@/lib/sanToSquares';
@@ -69,6 +70,18 @@ export interface UseStockfishGradingEngineOptions {
   candidateSans: string[];
   /** When false the Worker is not created and grading does not run. */
   enabled: boolean;
+  /**
+   * Movetime cap (ms) for this instance's `go` command, defaulting to
+   * `GRADING_MOVETIME_SAFETY_CAP_MS`. The two live instances (`Analysis.tsx`'s
+   * `grading`/`gemGrading`) omit this and keep the measured 4000ms cap (Phase
+   * 158's headless depth-parity measurement — see the constant's doc comment).
+   * A caller with no deadline — the Phase 172 background sweep
+   * (`useGemSweep.ts`) — passes a deliberately SMALLER value to bound how long
+   * each background candidate pegs a CPU core, trading grading depth for
+   * lower wall-clock cost. This is a genuinely different constant by design,
+   * not a reuse of the live path's cap.
+   */
+  movetimeMs?: number;
 }
 
 export interface StockfishGradingEngineState {
@@ -86,6 +99,15 @@ export interface StockfishGradingEngineState {
   isGrading: boolean;
   /** True once the UCI init sequence completes (uciok + readyok). */
   isReady: boolean;
+  /**
+   * CR-03 (Phase 172, SEED-106): true once the Worker fired an `onerror` — an
+   * async script-load failure (404, CSP block, syntax error) that never throws
+   * a catchable exception on the main thread and so leaves the worker dead but
+   * silent. Lets a consumer (the background gem sweep) abandon an in-flight
+   * request that would otherwise hang forever waiting on a worker that will
+   * never emit `uciok`/`bestmove`.
+   */
+  hasFailed: boolean;
 }
 
 /** A settled (fen, candidateSans) pair ready to be graded — set by the debounce effect. */
@@ -124,6 +146,7 @@ export function useStockfishGradingEngine({
   fen,
   candidateSans,
   enabled,
+  movetimeMs,
 }: UseStockfishGradingEngineOptions): StockfishGradingEngineState {
   // ─── Refs ──────────────────────────────────────────────────────────────────
 
@@ -139,6 +162,9 @@ export function useStockfishGradingEngine({
   const currentFenRef = useRef<string | null>(null);
   const candidateSansRef = useRef<string[]>([]);
   const isReadyRef = useRef(false);
+  /** Ref-for-latest-value: the resolved movetime cap, read by prepareSearch (a
+   *  stable useCallback([]) that cannot close over the `movetimeMs` prop directly). */
+  const movetimeMsRef = useRef(GRADING_MOVETIME_SAFETY_CAP_MS);
 
   /** Per-FEN grade cache: Map<fen, Map<san, MoveGrade>> — ephemeral, board-session-scoped FIFO (mirrors useMaiaEngine's MAIA_CACHE_MAX). */
   const cacheRef = useRef<Map<string, Map<string, MoveGrade>>>(new Map());
@@ -157,6 +183,7 @@ export function useStockfishGradingEngine({
 
   const [isReady, setIsReady] = useState(false);
   const [isGrading, setIsGrading] = useState(false);
+  const [hasFailed, setHasFailed] = useState(false);
   const [gradeMap, setGradeMap] = useState<Map<string, MoveGrade>>(new Map());
   /** FEN the displayed gradeMap belongs to (WR-03) — set with every commit, cleared with the map. */
   const [gradeMapFen, setGradeMapFen] = useState<string | null>(null);
@@ -168,6 +195,7 @@ export function useStockfishGradingEngine({
     currentFenRef.current = fen;
     candidateSansRef.current = candidateSans;
     isReadyRef.current = isReady;
+    movetimeMsRef.current = movetimeMs ?? GRADING_MOVETIME_SAFETY_CAP_MS;
   });
 
   // ─── Shared helper: commit the cache's view of `candidateSans` for `fenKey` to state ──
@@ -263,7 +291,7 @@ export function useStockfishGradingEngine({
     // ordering meant movetime was NEVER actually limiting the search — only
     // the depth clause terminated it. Movetime now correctly caps the search.
     worker.postMessage(
-      `go movetime ${GRADING_MOVETIME_SAFETY_CAP_MS} searchmoves ${candidateUcis.join(' ')}`,
+      `go movetime ${movetimeMsRef.current} searchmoves ${candidateUcis.join(' ')}`,
     );
     stateRef.current = 'thinking';
     setIsGrading(true);
@@ -395,6 +423,14 @@ export function useStockfishGradingEngine({
           const latestSans = candidateSansRef.current;
           if (latestFen !== null && latestSans.length > 0 && document.visibilityState !== 'hidden') {
             prepareSearchRef.current(latestFen, latestSans);
+          } else {
+            // CR-03 (Phase 172, SEED-106): no re-`go` will be issued (position
+            // cleared, no candidates, or tab hidden). Without clearing the flag
+            // here, `isGrading` stays true forever — which the gem sweep's C2
+            // guard reads as "still working", one of the ways a swept candidate
+            // could sit with no timeout out of it (the watchdog now covers that,
+            // but the state must still reflect reality here).
+            setIsGrading(false);
           }
           return;
         }
@@ -406,6 +442,25 @@ export function useStockfishGradingEngine({
 
     worker.onmessage = (e: MessageEvent<string>) => {
       handleLine(e.data);
+    };
+
+    // CR-03 (Phase 172, SEED-106): mirror workerPool.createSlot — an async
+    // script-load failure (404, CSP block, syntax error) never throws a
+    // catchable JS exception on the main thread; it only surfaces here. Without
+    // this handler the worker dies silently: no `uciok` -> `isReady` never flips
+    // -> any in-flight grading request (including a gem-sweep candidate whose C2
+    // depends on this instance) hangs forever. Capture to Sentry (CLAUDE.md
+    // frontend rules — a classic Worker has no Sentry init of its own) and
+    // surface `hasFailed` so the sweep can abandon a candidate stuck on it.
+    worker.onerror = () => {
+      Sentry.captureException(new Error('Stockfish grading worker: worker load failure'), {
+        tags: { source: 'stockfish-grading-worker' },
+      });
+      setHasFailed(true);
+      setIsReady(false);
+      isReadyRef.current = false;
+      setIsGrading(false);
+      stateRef.current = 'idle';
     };
 
     // Kick off UCI initialisation — the engine will respond with 'uciok'.
@@ -455,5 +510,5 @@ export function useStockfishGradingEngine({
 
   // ─── Return ────────────────────────────────────────────────────────────────
 
-  return { gradeMap, gradeMapFen, isGrading, isReady };
+  return { gradeMap, gradeMapFen, isGrading, isReady, hasFailed };
 }

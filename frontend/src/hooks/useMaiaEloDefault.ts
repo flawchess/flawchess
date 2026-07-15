@@ -22,6 +22,13 @@
  *     the closest ladder rung for inference regardless of the exact selectedElo).
  *   - Once the user picks a value via the ELO selector, that pick wins permanently
  *     (user-override precedence) — a later gameData/profile load does not clobber it.
+ *
+ * Phase 172 (SEED-106 D-01): `deriveRawDefault` and `clampToLadderBounds` are now
+ * exported (previously module-private) so the background gem sweep can pin each
+ * ply's gem rung to the MOVER's own rating-at-game-time without re-deriving the
+ * fallback chain a second time. This hook's own `selectedElo` state and the
+ * user-override precedence above are UNCHANGED — the slider still owns the live
+ * exploration overlay; only the gem rung stops tracking it.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -91,7 +98,7 @@ export interface UseMaiaEloDefaultState {
 }
 
 /** Clamps `rating` into the ladder's [min, max] bounds (no step-snapping — see doc comment above). */
-function clampToLadderBounds(rating: number, ladder: readonly number[] = MAIA_ELO_LADDER): number {
+export function clampToLadderBounds(rating: number, ladder: readonly number[] = MAIA_ELO_LADDER): number {
   const min = ladder[0] ?? rating;
   const max = ladder[ladder.length - 1] ?? rating;
   return Math.min(max, Math.max(min, rating));
@@ -100,8 +107,15 @@ function clampToLadderBounds(rating: number, ladder: readonly number[] = MAIA_EL
 /**
  * Raw (pre-clamp) D-07 default, or null while game-mode data hasn't arrived yet
  * (the caller falls back to FREE_PLAY_DEFAULT_ELO for the initial render only).
+ *
+ * Exported as of Phase 172 (SEED-106 D-01): the background gem sweep pins each
+ * ply's gem rung to the MOVER's own rating-at-game-time, independent of the
+ * live Elo slider (`selectedElo`). Re-deriving the `*_lichess_blitz ?? raw`
+ * fallback chain a second time in the sweep would drift the moment Phase 164's
+ * normalization edge cases change — this export is the single source of truth
+ * both the live selector and the sweep read from.
  */
-function deriveRawDefault(
+export function deriveRawDefault(
   isGameMode: boolean,
   gameData: MaiaEloGameData | undefined,
   profile: MaiaEloProfile | undefined,
