@@ -198,7 +198,7 @@ function renderDesktopLayout(
   panel: ReactElement,
 ): ReactElement {
   return (
-    <div className="flex flex-row justify-center gap-0">
+    <div className="flex flex-row justify-center gap-2">
       <div
         className="flex w-full flex-col gap-3"
         style={{ maxWidth: BOT_BOARD_MAX_WIDTH_PX }}

@@ -77,6 +77,10 @@ export function MoveListPanel({
         onMoveClick={onViewPly}
         testId="bot-move-list"
         activeItemClassName="bg-brand-brown/10 text-foreground hover:bg-brand-brown/15"
+        // Taller box in the desktop 2-column layout (lg = the bot page's
+        // DESKTOP_BREAKPOINT_PX), where the side column has ample height next
+        // to the board; mobile/single-column keeps the compact default.
+        heightClass="h-12 sm:h-18 lg:h-80"
       />
       {isScrolledBack && (
         <Button
