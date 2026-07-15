@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 import { HorizontalMoveList } from '@/components/board/HorizontalMoveList';
 import type { HorizontalMoveItem } from '@/components/board/HorizontalMoveList';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 interface MoveListPanelProps {
   moveHistory: string[];
@@ -15,6 +16,11 @@ interface MoveListPanelProps {
   onViewPly: (ply: number) => void;
   /** Snap the displayed position back to the live game position. */
   onReturnToLive: () => void;
+  /** Flex-fill the parent's height instead of the compact fixed-height box.
+   * Used by the desktop side column so the move-list box bottom aligns with
+   * the board's bottom (the parent must be a flex column with a defined
+   * height). */
+  fillHeight?: boolean;
 }
 
 /**
@@ -31,6 +37,7 @@ export function MoveListPanel({
   viewedPly,
   onViewPly,
   onReturnToLive,
+  fillHeight = false,
 }: MoveListPanelProps): ReactElement {
   const isScrolledBack = viewedPly !== liveGamePly;
 
@@ -71,12 +78,15 @@ export function MoveListPanel({
   });
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className={cn('flex flex-col gap-2', fillHeight && 'min-h-0 flex-1')}>
       <HorizontalMoveList
         items={items}
         onMoveClick={onViewPly}
         testId="bot-move-list"
         activeItemClassName="bg-brand-brown/10 text-foreground hover:bg-brand-brown/15"
+        // Fill the parent's height in the desktop side column so the box bottom
+        // aligns with the board's bottom; compact fixed height otherwise.
+        heightClass={fillHeight ? 'min-h-0 flex-1' : 'h-12 sm:h-18'}
       />
       {isScrolledBack && (
         <Button

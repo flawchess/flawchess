@@ -27,6 +27,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChessBoard } from '@/components/board/ChessBoard';
+import { BoardControls } from '@/components/board/BoardControls';
 import { ClockDisplay } from '@/components/bots/ClockDisplay';
 import { MoveListPanel } from '@/components/bots/MoveListPanel';
 import { GameControls } from '@/components/bots/GameControls';
@@ -34,22 +35,34 @@ import { GameResultDialog } from '@/components/bots/GameResultDialog';
 import { GameResultStrip } from '@/components/bots/GameResultStrip';
 import { ResumeGate } from '@/components/bots/ResumeGate';
 import { SetupScreen } from '@/components/bots/SetupScreen';
-import { useBotGame, type BotGameSettings, type UseBotGameState } from '@/hooks/useBotGame';
+import { useBotGame, type BotGameSettings } from '@/hooks/useBotGame';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useDrainPendingStore, useStoreBotGame, toStoreRequest } from '@/hooks/useStoreBotGame';
 import { useTier1EnqueueForGame } from '@/hooks/useEnqueueGame';
 import { readSnapshot, clearSnapshot, type BotGameSnapshot } from '@/lib/botGameSnapshot';
 import { removePendingStore } from '@/lib/botPendingStore';
-import type { MoverColor } from '@/lib/liveFlaw';
 import { resolvePlayerName } from '@/lib/playerName';
 import { setMuted, unlockAudio, useMuted } from '@/lib/sounds';
 import { buildAnalysisLineUrl, buildGameAnalysisUrl } from '@/lib/analysisUrl';
 
-/** Matches the app's existing `lg` Tailwind breakpoint (1024px) — below this,
- * clocks/move-list/controls stack around the board (mobile: bot clock above,
- * user clock below, per lichess convention); at/above it they move into a
- * side column beside the board (desktop), per the UI-SPEC layout. */
-const DESKTOP_BREAKPOINT_PX = 1024;
+/** Width at which the two-column desktop layout kicks in. Below this the
+ * board / clocks / controls stack in a single column (bot clock above the
+ * board, user clock below, per lichess convention) and the move list is
+ * hidden; at/above it the clocks + move list + game controls move into a side
+ * column beside the board. Sized to comfortably fit the board-column
+ * (BOT_BOARD_MAX_WIDTH_PX) + side-column (DESKTOP_SIDE_COLUMN_PX) group plus
+ * page padding and a scrollbar. */
+const DESKTOP_BREAKPOINT_PX = 800;
+
+/** Max rendered width of the bot-game board, in px. Shared between the
+ * `ChessBoard maxWidth` prop and the single-column stack's `max-width` so the
+ * clock strips / board controls are ALWAYS exactly the board's width: capping
+ * the column at this value means the container never exceeds the board, so the
+ * board (sized to `min(container, this)`) fills the column edge-to-edge. */
+const BOT_BOARD_MAX_WIDTH_PX = 400;
+
+/** Fixed width of the desktop right column (clocks + move list + controls). */
+const DESKTOP_SIDE_COLUMN_PX = 320;
 
 function useIsDesktop(): boolean {
   const [isDesktop, setIsDesktop] = useState(
@@ -66,120 +79,69 @@ function useIsDesktop(): boolean {
   return isDesktop;
 }
 
-interface GamePanelProps {
-  game: UseBotGameState;
-  userColor: MoverColor;
-  muted: boolean;
-  dialogDismissed: boolean;
-  onToggleMute: () => void;
-  onAnalyze: () => void;
-  /** D-11: returns to the setup screen (unmounting BotsGame) — NOT
-   * `game.newGame()`, which would restart in place with the same settings. */
-  onNewGame: () => void;
-  /** D-21: true only once the finish-time store mutation has CONFIRMED
-   * (`useStoreBotGame().isSuccess`) — gates the "Saved to your Library" row
-   * on the result strip. Never true on idle/pending/error. */
-  storeSucceeded: boolean;
-  /** SC4: guests additionally see the not-auto-analyzed caveat alongside the
-   * save confirmation. */
-  isGuest: boolean;
-  /** Quick 260714-rj5: threaded to GameResultStrip's Analyze button — see
-   * GameResultDialog's analyzeBusy doc comment. */
-  analyzeBusy: boolean;
-}
-
-/**
- * Move list + resign/draw/mute controls (or, once the result dialog is
- * dismissed, the persistent result strip REPLACING the controls area per the
- * UI-SPEC) — shared verbatim by the mobile and desktop layouts below, only
- * its position in the page differs.
- */
-function GamePanel({
-  game,
-  userColor,
-  muted,
-  dialogDismissed,
-  onToggleMute,
-  onAnalyze,
-  onNewGame,
-  storeSucceeded,
-  isGuest,
-  analyzeBusy,
-}: GamePanelProps): ReactElement {
-  const outcome = game.outcome;
-  const showResultStrip = outcome !== null && dialogDismissed;
-
-  return (
-    <div className="flex flex-col gap-3">
-      <MoveListPanel
-        moveHistory={game.moveHistory}
-        liveGamePly={game.liveGamePly}
-        viewedPly={game.viewedPly}
-        onViewPly={game.viewPly}
-        onReturnToLive={game.returnToLive}
-      />
-      {showResultStrip && outcome !== null ? (
-        <GameResultStrip
-          outcome={outcome}
-          userColor={userColor}
-          onNewGame={onNewGame}
-          onAnalyze={onAnalyze}
-          storeSucceeded={storeSucceeded}
-          isGuest={isGuest}
-          analyzeBusy={analyzeBusy}
-        />
-      ) : (
-        <GameControls
-          // WR-04: the props now mean what their names/docs say — `canOfferDraw`
-          // is the D-01 "not already pending, game not over" gate;
-          // `drawCooldownActive` is the D-04 cooldown throttle, which is what
-          // the hook's own `canOfferDraw` (a cooldown-gate boolean) actually
-          // reports (inverted). The net disabled state is unchanged.
-          canOfferDraw={!game.drawOfferPending && game.outcome === null}
-          drawCooldownActive={!game.canOfferDraw}
-          muted={muted}
-          onResignConfirmed={game.resign}
-          onOfferDraw={game.offerDraw}
-          onToggleMute={onToggleMute}
-        />
-      )}
-    </div>
-  );
-}
-
-/** Mobile: bot clock above the board, board, user clock below (lichess
- * convention), then the move list + controls/strip. */
+/** Single column (below DESKTOP_BREAKPOINT_PX): bot clock above the board,
+ * board, user clock below (lichess convention), then the board controls, then
+ * the game controls / result strip. The whole stack is capped at the board's
+ * max width and centered, so the clock strips and board controls always match
+ * the board's width exactly. The move list is intentionally omitted here — it
+ * only appears in the desktop side column. */
 function renderMobileLayout(
   botClock: ReactElement,
   userClock: ReactElement,
   board: ReactElement,
-  panel: ReactElement,
+  boardControls: ReactElement,
+  controls: ReactElement,
 ): ReactElement {
   return (
-    <div className="flex flex-col gap-3">
+    <div
+      className="mx-auto flex w-full flex-col gap-3"
+      style={{ maxWidth: BOT_BOARD_MAX_WIDTH_PX }}
+    >
       {botClock}
-      <div className="flex justify-center">{board}</div>
+      {board}
       {userClock}
-      {panel}
+      {boardControls}
+      {controls}
     </div>
   );
 }
 
-/** Desktop: board on the left, a fixed-width side column (both clocks, then
- * the move list + controls/strip) on the right, per the UI-SPEC. */
+/** Desktop: two stacked rows sharing the same board-column + side-column
+ * widths. The top row is the board beside the two clocks over a move list that
+ * flex-fills the remaining height — `items-stretch` makes the side column
+ * exactly the board's height, so the move-list box bottom lines up with the
+ * board's bottom. The bottom row puts the board controls under the board and
+ * the game controls / result strip under the side column. */
 function renderDesktopLayout(
   botClock: ReactElement,
   userClock: ReactElement,
   board: ReactElement,
-  panel: ReactElement,
+  boardControls: ReactElement,
+  moveList: ReactElement,
+  controls: ReactElement,
 ): ReactElement {
   return (
-    <div className="flex flex-row gap-4">
-      <div className="flex flex-1 justify-center">{board}</div>
-      <div className="flex w-[320px] shrink-0 flex-col gap-3">
-        {botClock}
-        {userClock}
-        {panel}
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-row items-stretch justify-center gap-2">
+        <div className="shrink-0" style={{ width: BOT_BOARD_MAX_WIDTH_PX }}>
+          {board}
+        </div>
+        <div
+          className="flex shrink-0 flex-col gap-3"
+          style={{ width: DESKTOP_SIDE_COLUMN_PX }}
+        >
+          {botClock}
+          {userClock}
+          {moveList}
+        </div>
+      </div>
+      <div className="flex flex-row justify-center gap-2">
+        <div className="shrink-0" style={{ width: BOT_BOARD_MAX_WIDTH_PX }}>
+          {boardControls}
+        </div>
+        <div className="shrink-0" style={{ width: DESKTOP_SIDE_COLUMN_PX }}>
+          {controls}
+        </div>
       </div>
     </div>
   );
@@ -348,7 +310,24 @@ function BotsGame({
   }, [storedGameId, enqueueTier1, navigate, game.moveHistory, settings.userColor]);
 
   const botColor = settings.userColor === 'white' ? 'black' : 'white';
-  const flipped = settings.userColor === 'black';
+  // Board orientation defaults to the user's own side facing them, but is now a
+  // manual toggle driven by the flip board control (a live-game convenience —
+  // it never affects the game itself, only which way the board is drawn).
+  const [flipped, setFlipped] = useState(settings.userColor === 'black');
+  const handleFlip = useCallback((): void => setFlipped((f) => !f), []);
+
+  // Board-control navigation drives the hook's view-only `viewedPly` cursor
+  // (never the live game): reset jumps to the start, back/forward step one ply.
+  const { viewedPly, liveGamePly, viewPly } = game;
+  const handleBack = useCallback(
+    (): void => viewPly(Math.max(0, viewedPly - 1)),
+    [viewPly, viewedPly],
+  );
+  const handleForward = useCallback(
+    (): void => viewPly(Math.min(liveGamePly, viewedPly + 1)),
+    [viewPly, viewedPly, liveGamePly],
+  );
+  const handleResetView = useCallback((): void => viewPly(0), [viewPly]);
 
   const botClock = (
     <ClockDisplay
@@ -374,22 +353,61 @@ function BotsGame({
       onPieceDrop={game.attemptMove}
       flipped={flipped}
       lastMove={game.lastMove}
+      maxWidth={BOT_BOARD_MAX_WIDTH_PX}
     />
   );
-  const panel = (
-    <GamePanel
-      game={game}
-      userColor={settings.userColor}
-      muted={muted}
-      dialogDismissed={dialogDismissed}
-      onToggleMute={handleToggleMute}
-      onAnalyze={handleAnalyze}
-      onNewGame={onNewGame}
-      storeSucceeded={store.isSuccess}
-      isGuest={isGuest}
-      analyzeBusy={analyzeBusy}
+  const boardControls = (
+    <BoardControls
+      onBack={handleBack}
+      onForward={handleForward}
+      onReset={handleResetView}
+      onFlip={handleFlip}
+      canGoBack={viewedPly > 0}
+      canGoForward={viewedPly < liveGamePly}
     />
   );
+  // Move list (desktop side column only — hidden in the single-column layout).
+  // `fillHeight` lets it flex-fill the side column so its box bottom aligns
+  // with the board's bottom.
+  const moveList = (
+    <MoveListPanel
+      moveHistory={game.moveHistory}
+      liveGamePly={game.liveGamePly}
+      viewedPly={viewedPly}
+      onViewPly={viewPly}
+      onReturnToLive={game.returnToLive}
+      fillHeight
+    />
+  );
+  // Game controls, or — once the result dialog is dismissed — the persistent
+  // result strip that REPLACES them (per the UI-SPEC).
+  const showResultStrip = game.outcome !== null && dialogDismissed;
+  const controls =
+    showResultStrip && game.outcome !== null ? (
+      <GameResultStrip
+        outcome={game.outcome}
+        userColor={settings.userColor}
+        onNewGame={onNewGame}
+        onAnalyze={handleAnalyze}
+        storeSucceeded={store.isSuccess}
+        isGuest={isGuest}
+        analyzeBusy={analyzeBusy}
+      />
+    ) : (
+      <GameControls
+        // WR-04: the props now mean what their names/docs say — `canOfferDraw`
+        // is the D-01 "not already pending, game not over" gate;
+        // `drawCooldownActive` is the D-04 cooldown throttle, which is what the
+        // hook's own `canOfferDraw` (a cooldown-gate boolean) actually reports
+        // (inverted). The net disabled state is unchanged.
+        canOfferDraw={!game.drawOfferPending && game.outcome === null}
+        drawCooldownActive={!game.canOfferDraw}
+        muted={muted}
+        onResignConfirmed={game.resign}
+        onOfferDraw={game.offerDraw}
+        onToggleMute={handleToggleMute}
+      />
+    );
 
   return (
     <div
@@ -401,8 +419,8 @@ function BotsGame({
       className="mx-auto flex max-w-5xl flex-col gap-4 p-4 pb-20 sm:pb-4"
     >
       {isDesktop
-        ? renderDesktopLayout(botClock, userClock, board, panel)
-        : renderMobileLayout(botClock, userClock, board, panel)}
+        ? renderDesktopLayout(botClock, userClock, board, boardControls, moveList, controls)
+        : renderMobileLayout(botClock, userClock, board, boardControls, controls)}
 
       {resume !== null && !game.live && (
         <ResumeGate
