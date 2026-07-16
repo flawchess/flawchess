@@ -57,18 +57,18 @@ Which phases cover which requirements. Filled during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GEMS-01 | — | Pending |
-| GEMS-02 | — | Pending |
-| GEMS-03 | — | Pending |
-| GEMS-04 | — | Pending |
-| GEMS-05 | — | Pending |
-| GEMS-06 | — | Pending |
-| GEMS-07 | — | Pending |
-| BOARD-01 | — | Pending |
-| BOARD-02 | — | Pending |
-| FILT-01 | — | Pending |
-| BACK-01 | — | Pending |
+| GEMS-01 | Phase 174 | Pending |
+| GEMS-02 | Phase 174 | Pending |
+| GEMS-03 | Phase 174 | Pending |
+| GEMS-04 | Phase 174 | Pending |
+| GEMS-05 | Phase 174 | Pending |
+| GEMS-06 | Phase 174 | Pending |
+| GEMS-07 | Phase 174 | Pending |
+| BOARD-01 | Phase 175 | Pending |
+| BOARD-02 | Phase 175 | Pending |
+| FILT-01 | Phase 175 | Pending |
+| BACK-01 | Phase 176 | Pending |
 
 ---
 *Requirements defined: 2026-07-16*
-*Last updated: 2026-07-16 — milestone v2.4 kickoff*
+*Last updated: 2026-07-16 — roadmap created, Phases 174–176 (11/11 requirements mapped, no orphans)*

@@ -39,6 +39,51 @@
 - ✅ **v2.1 Analysis Eval Reconciliation & Gem Moves** — Phases 162, 163 (merged to main 2026-07-10; deploy pending) — grading-first eval reconciliation so "Good" never outranks "Best" (SEED-090) + violet gem badges for hard-to-find best moves (SEED-092), both frontend-only on `/analysis` — see [milestones/v2.1-ROADMAP.md](milestones/v2.1-ROADMAP.md)
 - ✅ **v2.2 Analysis ELO Calibration & Deep-links** — Phases 164, 165 (shipped 2026-07-11; deployed to production, PRs #253/#254) — Maia ELO seated at each player's Lichess-blitz-equivalent rating (SEED-093) + additive `?fen=` analysis deep-link and a headless gem-ELO calibration harness (SEED-094) — see [milestones/v2.2-ROADMAP.md](milestones/v2.2-ROADMAP.md)
 - ✅ **v2.3 Bot Play** — Phases 166–172 (incl. 168.5, 169.5) (shipped 2026-07-15) — clocked play against the FlawChess engine on a new top-level **Bots** page (`selectBotMove` sample↔argmax blend), every finished game stored as a `platform='flawchess'` analyzable Library game, localStorage resume, a headless anchor-calibration harness for the first (ELO × play-style) strength map (SEED-091), and a background gem sweep + book markers on `/analysis` (SEED-106, Phase 172) — see [milestones/v2.3-ROADMAP.md](milestones/v2.3-ROADMAP.md)
+- 🚧 **v2.4 Backend Gem & Great Detection** — Phases 174–176 (ACTIVE, roadmapped 2026-07-16) — move gem/great move detection into the backend full-game analysis pass as stored first-class artifacts (peers to blunder/mistake/tactic tags) via backend Maia-3 inference at eval-apply, replacing the brittle client-side sweep and powering the analysis board plus a Library game filter (SEED-108, supersedes SEED-107)
+
+## Active Milestone: v2.4 Backend Gem & Great Detection (Phases 174–176)
+
+**Goal:** Move gem detection off the brittle client-side sweep into the backend full-game analysis pass, add a second "Great" tier, and make gems/greats stored first-class artifacts (peers to blunder/mistake/tactic tags) that power the analysis board and a game-level filter. Sourced from SEED-108 (design locked via /gsd-explore 2026-07-16, D-2 amended at kickoff to the `INACCURACY_DROP` row gate; supersedes SEED-107).
+
+**Dependency waves:** A = {174} (keystone — backend inference + storage; everything else depends on it) · B = {175, 176} (both depend only on Phase 174, independent of each other — frontend gem/great consumption and corpus backfill are parallelizable).
+
+- [ ] **Phase 174: Backend Maia Inference + Best-Move Storage (spike-gated)** - Backend stores per-ply Maia probability + runner-up eval candidate rows for out-of-book best moves during eval-apply, via a parity-checked Python port of the client's board→tensor encoding
+- [ ] **Phase 175: Board & Filter — Gem/Great Consumption** - The analysis board and Library games filter read gem/great data from stored rows, retiring the client-side sweep
+- [ ] **Phase 176: Backfill** - The existing analyzed corpus gains best-move rows opportunistically via the tier-4 lottery pattern
+
+### Phase 174: Backend Maia Inference + Best-Move Storage (spike-gated)
+**Goal**: Every newly analyzed game automatically stores per-ply Maia-3 probability + Stockfish best/runner-up eval for out-of-book best-move plies that clear the inaccuracy gate, computed once during eval-apply from a Python port of the client's board→tensor encoding, validated against client output.
+**Depends on**: Nothing (first phase of the milestone; builds on the existing `eval_drain`/`eval_apply` multipv=2 pass)
+**Requirements**: GEMS-01, GEMS-02, GEMS-03, GEMS-04, GEMS-05, GEMS-06, GEMS-07
+**Success Criteria** (what must be TRUE):
+  1. A fixture-based parity test proves the Python port of the 12-plane board→tensor encoding + onnxruntime Maia-3 inference produces `maia_prob` values matching the client's onnxruntime-web output within an agreed tolerance, gating all further work in this phase (spike-first, mirroring Phase 168's Maia-in-Node feasibility gate).
+  2. Every newly analyzed game stores a candidate row in a new sibling table (peer to `game_flaws`, e.g. `game_best_moves`) for each out-of-book ply where the played move equals Stockfish's best AND `best_es − second_es ≥ INACCURACY_DROP` (0.05) — each row holds `maia_prob` plus best/second eval as floats (never a gem/great boolean), unique on `(game_id, ply)`.
+  3. Maia inference runs on the backend during eval-apply (not on remote workers, no worker-protocol change) using the mover's pinned lichess-blitz-equivalent rating at game time, clamped into Maia-3's validated 1100–2000 band.
+  4. `onnxruntime` and `numpy` are isolated behind a uv extra/dependency group, so installing the worker image's dependency set does not pull them in.
+  5. Re-querying stored rows against the Gem (`maia_prob ≤ 0.20`) / Great (`(0.20, 0.50]`) thresholds and the existing `MISTAKE_DROP` (0.10) margin reclassifies a game's gems/greats with zero re-analysis — a constants-only retune.
+**Plans**: TBD
+
+### Phase 175: Board & Filter — Gem/Great Consumption
+**Goal**: The analysis board and the Library games filter read gem/great data from the stored backend rows instead of recomputing it client-side, so markers appear instantly regardless of device or live-engine load.
+**Depends on**: Phase 174
+**Requirements**: BOARD-01, BOARD-02, FILT-01
+**Success Criteria** (what must be TRUE):
+  1. Opening an analyzed game on the analysis board shows gem/great markers sourced from `EvalPoint`'s new stored-data fields, appearing immediately with no background sweep delay and no dependency on device power or live-engine load.
+  2. `useGemSweep.ts` is retired (or demoted to a documented free-play-only fallback for positions with no stored analysis); SEED-107 closes as superseded.
+  3. The Library Games filter panel gains "has gem" / "has great" toggles built on the existing flaw/tactic `EXISTS`-based game-filter machinery, and applying a toggle returns only games with at least one qualifying stored row.
+  4. The gem/great filter composes correctly with every other existing game filter (time control, color, rated, opponent type, recency), exactly like the flaw/tactic filters already do.
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 176: Backfill
+**Goal**: The existing analyzed corpus gains best-move rows opportunistically, without a deterministic sweep or an ETA promise, so historical games gradually become eligible for gem/great markers and filtering.
+**Depends on**: Phase 174
+**Requirements**: BACK-01
+**Success Criteria** (what must be TRUE):
+  1. A tier-4-style lottery periodically selects already-analyzed games missing best-move rows (global + random selection, no deterministic sweep) and backfills them through the Phase 174 pipeline.
+  2. The backfill lottery's keying (reuse the existing tier-4 blob lottery directly vs. a parallel lottery scoped to missing best-move rows) is decided and implemented with the same concurrency-safety guarantees (e.g. `SKIP LOCKED`) as the existing lottery pattern.
+  3. Best-move-row coverage across the analyzed corpus visibly increases over time in the database with no operator-run script required and no completion deadline promised.
+**Plans**: TBD
 
 ## Progress
 
@@ -123,6 +168,9 @@
 | 170. localStorage Resume | 5/5 | Complete    | 2026-07-14 |
 | 171. Bots Page + Setup Screen + Nav | 10/10 | Complete    | 2026-07-14 |
 | 172. Background Gem Sweep on Analysis (SEED-106) | 5/5 | Complete    | 2026-07-14 |
+| 174. Backend Maia Inference + Best-Move Storage (spike-gated) | 0/? | Not started | - |
+| 175. Board & Filter — Gem/Great Consumption | 0/? | Not started | - |
+| 176. Backfill | 0/? | Not started | - |
 
 ## Backlog
 

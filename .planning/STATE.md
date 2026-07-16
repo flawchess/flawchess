@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v2.4
 milestone_name: Backend Gem & Great Detection
-status: planning
-last_updated: "2026-07-16T11:01:09.738Z"
+status: roadmapped
+last_updated: "2026-07-16T12:00:00.000Z"
 last_activity: 2026-07-16
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,10 +17,10 @@ progress:
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Not started — roadmap created (Phase 174 is next)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-07-16 — Milestone v2.4 started
+Status: Roadmapped (3 phases, 174–176; awaiting `/gsd-plan-phase 174`)
+Last activity: 2026-07-16 — v2.4 roadmap created (Phases 174–176, 11/11 requirements mapped)
 
 ## Project Reference
 
@@ -66,6 +66,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- v2.4 Backend Gem & Great Detection roadmap created 2026-07-16 — 3 phases (174–176) in 2 dependency waves (A={174}, B={175,176}), continuing absolute numbering from Phase 173 (the v2.3 post-close anchor-calibration addendum). All 11 requirements (GEMS-01..07, BOARD-01/02, FILT-01, BACK-01) mapped 1:1, no orphans. Keystone Phase 174 (backend Maia inference + best-move storage, spike-gated on a Python encoding-parity check mirroring Phase 168's Maia-in-Node feasibility gate) gates everything else; Phases 175 (board + Library-filter frontend consumption) and 176 (opportunistic corpus backfill) depend only on 174, not on each other. UI hint on Phase 175.
 - Phase 172 added 2026-07-14: Background Gem Sweep on Analysis (SEED-106) — resolve gems for the whole mainline in the background (free `played === best_move` + out-of-book prefilter → Maia C1 → Stockfish parent grade), pin the gem rung to the mover's own seeded rating instead of the ELO slider, raise `GEM_MAIA_MAX_PROB` 0.10 → 0.20, and add `opening_ply_count` (computed on-read, no migration) for book markers with precedence `severity > gem > book`. Added to the **v2.3 Bot Play** milestone by explicit user choice even though it is an `/analysis` feature, not bot play — Adrian chose "extend v2.3" over closing the milestone first (2026-07-14); revisit the boundary at milestone close. User amendment at add time: SEED-106 D3 extended so the sweep triggers on analysis *becoming* ready (bot games analyzed in the background on the live-updating analysis board), not only on mount-time readiness. `gsd-tools phase.add` numbered it 172 correctly but appended the section to the end of the file after the archived `<details>` history — moved into the active milestone by hand (the known mature-ROADMAP behavior).
 - v2.3 Bot Play roadmap created 2026-07-11 — 6 phases (166–171) in 3 dependency waves (A={166,167}, B={168,169}, C={170,171}), continuing absolute numbering from v2.2's Phase 165. All 26 requirements (BOT/PLAY/STORE/RESUME/CAL) mapped 1:1, no orphans. Keystone Phase 166 (`selectBotMove` two-regime sample↔argmax blend) is imported by both the play loop and the calibration harness; Phase 167 (backend store-on-finish) is fully independent. Phase 166 (slider→temperature/threshold curve + regime discontinuity) and Phase 168 (Maia-in-Node feasibility spike + `onnxruntime-node` version) flagged for plan-time research/spike. UI hints on Phases 169 (clocked board) and 171 (Bots page/setup).
 - Phase 165 added: Gem-move ELO calibration harness + restore `?fen=` analysis deep-link (from SEED-094) — headless Node harness measuring raw Maia prob per ELO rung over ~3000 Kaggle "brilliant" moves (empirical basis for Phase 163 D-08's ELO-scaled iso-rarity ceiling), plus an additive `?fen=` analysis deep-link so the TSV positions are clickable. gsd-tools phase.add numbered it 165 sequentially (164 is the only phase left in `.planning/phases/`).
