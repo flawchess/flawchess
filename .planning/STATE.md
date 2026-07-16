@@ -4,17 +4,17 @@ milestone: v2.4
 milestone_name: Backend Gem & Great Detection
 current_phase: 175
 current_phase_name: Board & Filter — Gem/Great Consumption
-status: planning
+status: Phase 174 shipped — squash-merged to main (a02ada42)
 stopped_at: Completed 174-07-PLAN.md
-last_updated: "2026-07-16T17:54:08.678Z"
+last_updated: "2026-07-16T18:34:07.585Z"
 last_activity: 2026-07-16
-last_activity_desc: Phase 174 complete, transitioned to Phase 175
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 7
   completed_plans: 7
   percent: 25
+last_activity_desc: Phase 174 complete, transitioned to Phase 175
 ---
 
 # Project State: FlawChess
@@ -23,8 +23,8 @@ progress:
 
 Phase: 175 — Board & Filter — Gem/Great Consumption
 Plan: Not started
-Status: Ready to plan
-Last activity: 2026-07-16 — Phase 174 complete, transitioned to Phase 175
+Status: Phase 174 shipped — squash-merged to main (a02ada42)
+Last activity: 2026-07-16
 
 ## Project Reference
 
