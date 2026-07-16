@@ -4,6 +4,7 @@ created: 2026-07-15
 source: 172-REVIEW.md
 phase_origin: 172
 priority: medium
+resolves_phase: 175
 ---
 
 # Phase 172 deferred code-review findings

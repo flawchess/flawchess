@@ -36,18 +36,20 @@ import json
 from collections.abc import Callable, Coroutine, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import chess
 import chess.pgn
 import sentry_sdk
 import sqlalchemy as sa
 from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_maker
 from app.models.eval_jobs import EvalJob
 from app.models.game import Game
+from app.models.game_best_move import GameBestMove
 from app.models.game_flaw import GameFlaw
 from app.models.game_position import DEDUP_MAX_PLY, GamePosition
 from app.models.opening_position_eval import OpeningPositionEval
@@ -60,9 +62,18 @@ from app.repositories.game_flaws_repository import (
 )
 from app.repositories.worker_heartbeat_repository import upsert_worker_heartbeat
 from app.schemas.eval_remote import AtomicBlobNode, FlawBlobLeasePosition, FlawBlobSubmitEval
+from app.schemas.normalization import Platform, TimeControlBucket
 from app.services import engine as engine_service
+from app.services.best_move_candidates import (
+    mover_color_for_ply,
+    passes_inaccuracy_gate,
+    pinned_elo_for_mover,
+)
 from app.services.flaws_service import FlawRecord, classify_game_flaws, count_game_severities
 from app.services.forcing_line_gate import PvNode
+from app.services.maia_engine import score_move
+from app.services.normalization import is_correspondence_time_control
+from app.services.opening_lookup import find_opening_ply_count
 
 # Phase 119 SEED-045: max drain ticks that may leave a non-terminal hole before
 # the game is stamped complete anyway (with one aggregated warning/Sentry event).
@@ -117,16 +128,43 @@ class _FullPlyEvalTarget:
     game-over terminal, which is deliberately unevaluable and never gets a donor, so its
     NULL post-move eval is legitimate — never counted as a hole."""
 
+    move_uci: str | None = None
+    """Phase 174 GEMS-03 — the UCI of the move PLAYED from this ply's board, captured
+    during the existing PGN walk in _collect_full_ply_targets (Pitfall 3/4: no re-parse,
+    no fresh query). Compared against the ply's Stockfish best_move to find played==best
+    gem candidates. None for the terminal donor (no move is played from it)."""
+
+    move_san: str | None = None
+    """Phase 174 GEMS-03 — the SAN of the move PLAYED from this ply's board, in the same
+    dialect openings.tsv uses (via chess.Board.san). Feeds find_opening_ply_count's
+    out-of-book test without re-parsing the PGN (Pitfall 3). None for the terminal donor."""
+
+    stored_best_move: str | None = None
+    """WR-01 — the row's CURRENT stored best_move from the DB (game_positions.best_move),
+    the lichess-eval analog of eval_cp/eval_mate above. Threaded ONLY by the atomic-submit
+    path (which alone passes preserve_existing_evals=True); the local drain leaves it None
+    (default) since it re-evaluates the whole game each tick. Used by
+    `_is_lichess_best_move_hole` to skip counting an already-resolved lichess ply that a
+    re-lease worker transiently re-fails — eval_cp/eval_mate is useless as that signal for
+    lichess rows (they always carry a non-NULL %eval from import)."""
+
 
 def _collect_full_ply_targets(
     game_id: int,
     pgn_text: str,
     game_positions_rows: Sequence[tuple[int, int, int | None, int | None]],
     include_terminal: bool = False,
+    stored_best_move_by_ply: dict[int, str | None] | None = None,
 ) -> list[_FullPlyEvalTarget]:
     """Collect one target per ply, with an optional terminal eval-donor (EVAL-01, SEED-044).
 
     game_positions_rows: (ply, full_hash, eval_cp, eval_mate) loaded from DB.
+
+    stored_best_move_by_ply (WR-01): optional ply -> current DB best_move map. Only the
+    atomic-submit path (preserve_existing_evals=True) passes it, to seed each target's
+    `stored_best_move` so the lichess-eval hole-counter can skip an already-resolved ply
+    that a re-lease worker transiently re-fails. The drain omits it (default None) — its
+    targets keep stored_best_move=None, which is a no-op under preserve_existing_evals=False.
 
     Per-ply targets snapshot the PRE-PUSH board (the position BEFORE the move at
     that ply), so the engine's eval is the eval OF that position and its best_move
@@ -157,6 +195,7 @@ def _collect_full_ply_targets(
         ply: (fh, cp, mt) for ply, fh, cp, mt in game_positions_rows
     }
 
+    stored_bm = stored_best_move_by_ply or {}
     board = game.board()
     targets: list[_FullPlyEvalTarget] = []
     ply_count = 0
@@ -165,6 +204,14 @@ def _collect_full_ply_targets(
         meta = ply_meta.get(ply)
         if meta is not None:
             fh, cp, mt = meta
+            # Phase 174 GEMS-03: capture the played move's UCI/SAN from the SAME walk
+            # (Pitfall 3/4 — no re-parse, no fresh query). SAN is computed on the
+            # pre-push board so it uses openings.tsv's dialect (O-O castling etc.).
+            move_san: str | None
+            try:
+                move_san = board.san(node.move)
+            except Exception:
+                move_san = None
             targets.append(
                 _FullPlyEvalTarget(
                     game_id=game_id,
@@ -173,6 +220,9 @@ def _collect_full_ply_targets(
                     board=board.copy(),
                     eval_cp=cp,
                     eval_mate=mt,
+                    stored_best_move=stored_bm.get(ply),
+                    move_uci=node.move.uci(),
+                    move_san=move_san,
                 )
             )
         board.push(node.move)
@@ -443,6 +493,29 @@ def _is_engine_hole(target: _FullPlyEvalTarget, preserve_existing_evals: bool) -
     return True
 
 
+def _is_lichess_best_move_hole(target: _FullPlyEvalTarget, preserve_existing_evals: bool) -> bool:
+    """Decide whether a NULL best_move on a lichess-eval ply is a genuine hole (WR-01).
+
+    The lichess-eval analog of `_is_engine_hole`. A lichess-eval game always re-leases
+    its FULL position set (the SEED-076 redundancy filter is bypassed for these games in
+    `_build_lease_positions`), so a NULL best_move normally means the worker genuinely
+    FAILED this ply — a real hole that must hold the game back for a bounded Path-B retry.
+
+    The ONE exception (mirrors `_is_engine_hole`'s existing-eval guard): under an
+    incremental re-lease (preserve_existing_evals=True) a ply whose best_move was already
+    written in a prior attempt can still be re-leased and transiently re-fail on the SAME
+    ply that already has a good value stored. That is not a fresh failure, so it must not
+    be counted — otherwise a game with complete best-move coverage burns an unneeded retry
+    cycle. `target.stored_best_move` (not eval_cp/eval_mate — lichess rows always carry a
+    non-NULL %eval from import) is the correct "already resolved" signal here.
+
+    Returns True (a genuine hole, counted toward failed_ply_count) otherwise.
+    """
+    if preserve_existing_evals and target.stored_best_move is not None:
+        return False
+    return True
+
+
 async def _apply_full_eval_results(
     session: AsyncSession,
     targets: Sequence[_FullPlyEvalTarget],
@@ -476,15 +549,17 @@ async def _apply_full_eval_results(
     is_lichess_eval_game gate (lichess_evals_at IS NOT NULL, D-117-07):
     - is_lichess_eval_game=True: lichess %evals are already post-move and
       authoritative — NEVER shifted or overwritten. Only best_move
-      (engine-supplied; lichess lacks it) is written, at the flaw-adjacent plies
-      that reached the write phase (WR-01 / D-117-13). SEED-044: un-annotated
-      lichess plies are left NULL rather than filled with a pre-push engine eval
-      (which mixed conventions in-game).
+      (engine-supplied; lichess lacks it) is written, for every non-terminal ply
+      the full MultiPV-2 pass covers (Phase 174-06 / SEED-109 — the prior
+      flaw-adjacent-only write is retired). A ply the engine genuinely failed on
+      counts as a hole (see the is_lichess_eval_game branch below) instead of
+      being silently left NULL forever.
     - is_lichess_eval_game=False: engine games get the full post-move eval written.
 
-    Returns the number of failed (NULL-hole) engine-game plies. Sentry reporting
-    is the caller's responsibility — ONE aggregated event per game, never per ply
-    (WR-05).
+    Returns the number of failed (NULL-hole) plies — engine games AND, since
+    Phase 174-06, lichess-eval games too (a NULL best_move on an engine-covered
+    ply). Sentry reporting is the caller's responsibility — ONE aggregated event
+    per game, never per ply (WR-05).
     """
     # Position-keyed resolve for every target (incl. the terminal eval-donor),
     # then the post-move +1 shift at write time (SEED-044).
@@ -521,8 +596,26 @@ async def _apply_full_eval_results(
 
         if is_lichess_eval_game:
             # Preserve lichess %evals (post-move, authoritative); write best_move only.
+            #
+            # Hole-counting parity (Phase 174-06 / SEED-109 item 3): under the full
+            # MultiPV-2 pass (Task 1) every non-terminal ply of a lichess-eval game is
+            # ALWAYS engine-evaluated (dedup_map is always empty for these games), so a
+            # NULL best_move here means the engine genuinely FAILED on this ply, not
+            # "filtered out and never attempted." Count it as a hole so
+            # apply_completion_decision holds the game back for a bounded retry (Path
+            # B/C, SEED-045), exactly like an engine-game hole — otherwise a single
+            # genuine Stockfish failure would self-terminate the game out of the
+            # 174-07 best-move-coverage lottery with a permanent NULL best_move and no
+            # retry, on the SAME tick that stamps full_pv_completed_at.
+            #
+            # WR-01: the hole decision is gated through `_is_lichess_best_move_hole`
+            # (parity with the engine branch's `_is_engine_hole` below) so an
+            # already-resolved ply that a re-lease worker transiently re-fails under
+            # preserve_existing_evals is not miscounted as a fresh hole.
             if best_move is not None:
                 bm_only_rows.append((ply, best_move))
+            elif _is_lichess_best_move_hole(target, preserve_existing_evals):
+                failed_ply_count += 1
             continue
 
         # Engine game: store the POST-MOVE eval (eval of the position AFTER this
@@ -946,8 +1039,9 @@ async def _classify_and_fill_oracle(
     #                (latent until a frontend surface renders it — SEED-054 Part 2).
     #   - ply N+1  = the refutation line from the post-blunder board (D-117-02, the
     #                SEED-039 tactic-motif input).
-    # Each pv_string comes from engine_result_map at its OWN ply. For lichess games
-    # ply N is engine-evaluated thanks to _flaw_engine_plies (SEED-054 Part 1); for
+    # Each pv_string comes from engine_result_map at its OWN ply. Post-174-06 (SEED-109
+    # Option C) lichess-eval games run the full MultiPV-2 pass, so ply N is engine-evaluated
+    # like every other ply (the old _flaw_engine_plies selective path is retired); for
     # chess.com every ply already ran. Opening dedup-transplanted plies are absent
     # from engine_result_map → pv stays NULL there (acceptable per SEED-054). Deduped
     # by ply: consecutive flaws can make one flaw's ply N collide with another's N+1.
@@ -1010,22 +1104,23 @@ async def _classify_with_overlay(
     positions (the batched eval write hasn't run yet), so overlaying is a required
     fill, not a destructive overwrite.
 
-    overlay=False (`_flaw_engine_plies` only): skips the mutation loop entirely and
-    classifies directly on whatever is already stored in game_positions. REQUIRED
-    for is_lichess_eval_game games, whose eval_cp/eval_mate columns already hold the
-    real, permanent lichess %eval (D-116-04) at this PRE-gather point — no engine
-    pass will ever fill them. Applying the overlay here would build `pos_eval` from
-    an empty/pre-gather engine_result_map and overwrite every lichess %eval with
-    None, so classify_game_flaws would see an all-NULL game and return
-    GameNotAnalyzed for every lichess game. This is the exact regression Phase 117's
-    post-deploy sanity check caught ("0% flaw-PV coverage for analyzed lichess
-    games") — do NOT collapse this branch into "pass an empty pos_eval".
+    overlay=False: skips the mutation loop entirely and classifies directly on
+    whatever is already stored in game_positions. Phase 174-06: this branch has no
+    current caller (the lichess-eval flaw pre-classification path that used it,
+    `_flaw_engine_plies`/D-117-13, was retired once lichess-eval games moved to the
+    full MultiPV-2 pass — SEED-109 Option C) — kept as a documented, tested mode
+    for a future direct-classify caller, not dead weight. It remains REQUIRED
+    reading for anyone tempted to re-add it for an is_lichess_eval_game game: the
+    overlay=True mutation loop would build `pos_eval` from an empty/pre-gather
+    engine_result_map and overwrite every lichess %eval with None, so
+    classify_game_flaws would see an all-NULL game and return GameNotAnalyzed for
+    every lichess game — the exact regression Phase 117's post-deploy sanity check
+    caught ("0% flaw-PV coverage for analyzed lichess games").
 
     Uses the caller's own `session` (managed by the caller — either a short-lived
     session opened just for this load, or an already-open session the caller is
-    reusing) rather than opening one internally, since the 4 call sites differ in
-    session lifecycle (3 open+close their own; `_flaw_engine_plies` reuses the
-    caller's already-open load_session).
+    reusing) rather than opening one internally, since call sites differ in
+    session lifecycle (the 3 overlay=True sites each open+close their own).
 
     Returns None when the game is missing or classify reports insufficient eval
     coverage ("reason" in result — GameNotAnalyzed); otherwise the flaw list.
@@ -1050,54 +1145,6 @@ async def _classify_with_overlay(
     if "reason" in flaw_result:
         return None
     return flaw_result
-
-
-async def _flaw_engine_plies(session: AsyncSession, game_id: int) -> set[int]:
-    """Pre-classify a lichess-eval game's flaws to find plies needing an engine pass (D-117-13 / SEED-054).
-
-    Lichess-eval games (is_lichess_eval_game=True) carry a lichess %eval on
-    (nearly) every ply, so the is_lichess_eval_game target filter in
-    _full_drain_tick would otherwise drop every flaw ply before the engine
-    gather — and lichess supplies %eval but NO principal variation and NO
-    best_move. The observed result (prod sanity check ~1 h after the Phase 117
-    deploy) was 0% flaw-PV coverage for analyzed lichess games: every flaw's
-    refutation line (the SEED-039 input) was missing.
-
-    Fix: classify flaws up front from the already-stored %evals — the SAME inputs
-    the write-time classify in _classify_and_fill_oracle uses — and return the set
-    of {flaw_ply, flaw_ply + 1} plies. The caller exempts these from the
-    eval-preservation filter and from the opening dedup so the engine evaluates
-    exactly those positions, while the write path still preserves the lichess
-    %eval (D-116-04). Covers BOTH players' flaws (classify_game_flaws is two-sided
-    per D-06), matching the write-time PV loop.
-
-    Two plies per flaw (SEED-054):
-    - flaw_ply: the pre-blunder decision board → best_move (the better alternative
-      the Flaw/Library arrow renders, read at game_positions[flaw_ply].best_move) +
-      the ideal-continuation pv at the decision ply. This was NULL for lichess
-      games before SEED-054 because the engine only ran at flaw_ply + 1.
-    - flaw_ply + 1: the post-blunder board → the refutation pv (D-117-02, the
-      SEED-039 tactic-motif input).
-
-    Returns an empty set when the game is missing or classification reports
-    insufficient coverage (GameNotAnalyzed) — the caller then falls back to the
-    prior filter behavior (no extra engine calls). Engine-source (non-analyzed)
-    games never call this: their evals aren't computed at load time, and they
-    already get full-game PV coverage from the unfiltered engine pass.
-    """
-    # R4: overlay=False — classify directly on the DB-stored lichess %eval, no
-    # in-memory overlay (see _classify_with_overlay docstring for why this must
-    # NOT collapse into the overlay=True shape used by the other 3 R4 sites).
-    flaw_result = await _classify_with_overlay(game_id, session, overlay=False)
-    if flaw_result is None:
-        # Game missing or GameNotAnalyzed: insufficient eval coverage — fall back
-        # to prior filter.
-        return set()
-    plies: set[int] = set()
-    for flaw in flaw_result:
-        plies.add(flaw["ply"])
-        plies.add(flaw["ply"] + 1)
-    return plies
 
 
 def _reconstruct_pos_eval(
@@ -1684,6 +1731,227 @@ def _signal_flaw_completion(user_id: int) -> None:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Phase 174 GEMS-03: best-move candidate rows (Gem/Great detection)
+# ---------------------------------------------------------------------------
+
+
+def _contiguous_san_prefix(targets: Sequence[_FullPlyEvalTarget]) -> list[str]:
+    """The game's COMPLETE SAN move order, for find_opening_ply_count (CR-01 fix).
+
+    Reconstructed from the DEEPEST non-terminal target's `board.move_stack` — a
+    chess.Board snapshot carries its own full push history regardless of which
+    OTHER targets happen to be present in `targets` — plus that target's own
+    `move_san` (the move about to be played FROM that position, i.e. its ply's
+    own contribution to the prefix). Every target in a single game's `targets`
+    shares the same linear move history by construction (`_collect_full_ply_targets`
+    walks the PGN exactly once), so reconstructing the prefix from the single
+    deepest target is sufficient — no need to walk every target.
+
+    Book moves are always a prefix from ply 0, and find_opening_ply_count stops at
+    the first non-book move, so only this prefix matters.
+
+    Robustness (CR-01, 174-REVIEW): the prior implementation built the prefix by
+    walking `targets` ply-by-ply from 0 using each target's own `move_san` field
+    (`{t.ply: t.move_san ...}`, `while ply in san_by_ply`). That walk depended on
+    ply 0 being PRESENT as its own entry in `targets` — a sparse/pre-filtered
+    `targets` list missing ply 0 (the historical local-drain lichess-eval shape,
+    before Phase 174-06 Task 1 retired that filter) made the walk stop
+    immediately, silently collapsing book depth to 0 and misclassifying a
+    genuinely in-book ply as out-of-book. This implementation never depends on
+    ply 0 being present in `targets` — only on the deepest target's own board
+    carrying real history, true for every real call site (both `_full_drain_tick`
+    and `_apply_atomic_submit` build boards via one continuous PGN/game walk).
+    After Task 1 both production lanes pass full/contiguous ply-0-anchored
+    targets anyway, so this is defense-in-depth for a sparse/future caller, not
+    load-bearing for either lane today (174-REVIEW CR-01 reframed).
+
+    Returns [] when `targets` has no non-terminal entries.
+    """
+    non_terminal = [t for t in targets if not t.is_terminal]
+    if not non_terminal:
+        return []
+    deepest = max(non_terminal, key=lambda t: t.ply)
+    replay_board = chess.Board()
+    sans: list[str] = []
+    for move in deepest.board.move_stack:
+        sans.append(replay_board.san(move))
+        replay_board.push(move)
+    if deepest.move_san is not None:
+        sans.append(deepest.move_san)
+    return sans
+
+
+async def _build_best_move_candidates(
+    game_id: int,
+    targets: Sequence[_FullPlyEvalTarget],
+    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
+    second_best_map: dict[int, tuple[int | None, int | None, str | None]] | None,
+) -> list[dict[str, Any]]:
+    """Build game_best_moves candidate rows for the game (GEMS-03), off any session.
+
+    For each out-of-book ply where the played move == Stockfish's best move AND the
+    move beats the runner-up by >= INACCURACY_DROP in expected score (GEMS-02), score
+    the played move with backend Maia-3 at the mover's pinned+clamped ELO (GEMS-05)
+    and emit a candidate row (raw continuous storage — the Gem/Great tier is decided
+    at query time, GEMS-01/07).
+
+    Session discipline (CLAUDE.md hard rule, mirrors _build_flaw_multipv2_blobs):
+      - candidate identification is pure in-memory (targets + engine_result_map),
+      - the Pitfall-1 targeted evaluate_nodes_multipv2 fallback runs in ONE
+        asyncio.gather with NO session open,
+      - the game's rating metadata is read in a short session that is CLOSED before
+        any Maia inference,
+      - the returned rows are UPSERTed later by apply_full_eval in its own late write
+        session, so they land in the SAME commit as the rest of the eval (T-174-12).
+
+    Pitfall 1 (remote-worker lane): the worker's full-ply pass is MultiPV-1, so
+    second_best_map has NO entry for played==best plies. Each such ply gets a
+    bounded, backend-owned evaluate_nodes_multipv2(board) fallback — NOT a
+    worker-protocol change (the worker is untouched; the extra Stockfish `go` runs
+    on the backend's own SCHED_IDLE pool). second_best_map is None/empty on the
+    remote lane, so every candidate there takes the fallback.
+
+    Returns [] (no rows, no crash) when Maia is disabled (score_move returns None
+    because onnxruntime is absent), the game is gone, or anything unexpected fails —
+    a lean/misconfigured backend must never abort eval-apply over gem detection.
+    """
+    if not targets:
+        return []
+    second_best_map = second_best_map or {}
+    try:
+        # 1. Out-of-book test (pure, in-memory — no re-parse, Pitfall 3).
+        book_plies = find_opening_ply_count(_contiguous_san_prefix(targets))
+
+        # 2. Identify candidates: out-of-book plies where played == Stockfish best.
+        candidate_targets: list[_FullPlyEvalTarget] = []
+        for t in targets:
+            if t.is_terminal or t.move_uci is None or t.ply < book_plies:
+                continue
+            entry = engine_result_map.get(t.ply)
+            if entry is None:
+                continue
+            best_uci = entry[2]
+            if best_uci is None or best_uci != t.move_uci:
+                continue
+            candidate_targets.append(t)
+        if not candidate_targets:
+            return []
+
+        # 3. Pitfall-1 fallback: plies lacking a runner-up get a targeted MultiPV-2
+        #    Stockfish call. ONE gather, NO session open (CLAUDE.md hard rule).
+        fallback_targets = [t for t in candidate_targets if t.ply not in second_best_map]
+        fallback_by_ply: dict[
+            int,
+            tuple[
+                int | None, int | None, str | None, str | None, int | None, int | None, str | None
+            ],
+        ] = {}
+        if fallback_targets:
+            results = await asyncio.gather(
+                *(engine_service.evaluate_nodes_multipv2(t.board) for t in fallback_targets)
+            )
+            for t, res in zip(fallback_targets, results, strict=True):
+                fallback_by_ply[t.ply] = res
+
+        # 4. Rating metadata — short read session, CLOSED before any Maia inference.
+        async with async_session_maker() as read_session:
+            game_row = (
+                await read_session.execute(
+                    select(
+                        Game.white_rating,
+                        Game.black_rating,
+                        Game.platform,
+                        Game.time_control_bucket,
+                        Game.time_control_str,
+                    ).where(Game.id == game_id)
+                )
+            ).one_or_none()
+        if game_row is None:
+            return []
+        white_rating, black_rating, platform_raw, tc_bucket_raw, tc_str = game_row
+        is_correspondence = is_correspondence_time_control(tc_str)
+        platform = cast(Platform, platform_raw)
+        tc_bucket = cast("TimeControlBucket | None", tc_bucket_raw)
+
+        # 5. Gate + Maia inference + row assembly — NO session open.
+        rows: list[dict[str, Any]] = []
+        for t in candidate_targets:
+            played_uci = t.move_uci
+            if played_uci is None:  # unreachable (filtered above); narrows for ty
+                continue
+            best_cp, best_mate, _best_uci, _pv = engine_result_map[t.ply]
+            second = second_best_map.get(t.ply)
+            if second is not None:
+                second_cp, second_mate = second[0], second[1]
+            else:
+                fb = fallback_by_ply.get(t.ply)
+                if fb is None:
+                    continue
+                second_cp, second_mate = fb[4], fb[5]
+
+            mover = mover_color_for_ply(t.ply)
+            if not passes_inaccuracy_gate(best_cp, best_mate, second_cp, second_mate, mover):
+                continue
+
+            raw_rating = white_rating if mover == "white" else black_rating
+            if raw_rating is None:
+                # No rating for the mover — can't pin the Maia ELO; skip gracefully.
+                continue
+            elo = pinned_elo_for_mover(
+                raw_rating=raw_rating,
+                platform=platform,
+                time_control_bucket=tc_bucket,
+                is_correspondence=is_correspondence,
+            )
+            prob = score_move(t.board.fen(), elo, played_uci)
+            if prob is None:
+                # Maia disabled (no onnxruntime) or move not in the policy — no candidate.
+                continue
+            rows.append(
+                {
+                    "game_id": game_id,
+                    "ply": t.ply,
+                    "maia_prob": float(prob),
+                    "best_cp": best_cp,
+                    "best_mate": best_mate,
+                    "second_cp": second_cp,
+                    "second_mate": second_mate,
+                }
+            )
+        return rows
+    except Exception:
+        # Gem detection is a secondary concern: it must never abort the primary eval
+        # write. Report and yield no rows (the eval + flaws still commit).
+        sentry_sdk.set_context("best_move_candidates", {"game_id": game_id})
+        sentry_sdk.capture_exception()
+        return []
+
+
+async def _upsert_best_move_rows(session: AsyncSession, rows: Sequence[dict[str, Any]]) -> None:
+    """Idempotently UPSERT candidate rows on the (game_id, ply) natural key (T-174-12).
+
+    Re-analysis can revisit a game, so ON CONFLICT DO UPDATE refreshes the stored
+    continuous values rather than raising a duplicate-PK error. Does NOT commit — the
+    caller's write_session owns the commit, so rows land in the same transaction as
+    the rest of apply_full_eval.
+    """
+    if not rows:
+        return
+    stmt = pg_insert(GameBestMove).values(list(rows))
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["game_id", "ply"],
+        set_={
+            "maia_prob": stmt.excluded.maia_prob,
+            "best_cp": stmt.excluded.best_cp,
+            "best_mate": stmt.excluded.best_mate,
+            "second_cp": stmt.excluded.second_cp,
+            "second_mate": stmt.excluded.second_mate,
+        },
+    )
+    await session.execute(stmt)
+
+
 async def apply_full_eval(
     write_session: AsyncSession,
     *,
@@ -1719,6 +1987,7 @@ async def apply_full_eval(
     heartbeat_sf_version: str | None = None,
     heartbeat_worker_schema_version: int | None = None,
     heartbeat_n_evals: int = 0,
+    best_move_rows: Sequence[dict[str, Any]] | None = None,
 ) -> tuple[int, bool, int]:
     """Apply one game's full-ply evals -> authoritative classify (+ blobs) -> both
     completion markers, inside the CALLER's write_session (T-117-11 — one commit).
@@ -1779,6 +2048,12 @@ async def apply_full_eval(
         flaw_pv_blobs,
         blobs_pending=blobs_pending,
     )
+
+    # Phase 174 GEMS-03: persist best-move candidate rows (built off-session by
+    # _build_best_move_candidates) in THIS write_session so they commit atomically
+    # with the eval + flaws (T-174-12). Both lanes funnel through here.
+    if best_move_rows:
+        await _upsert_best_move_rows(write_session, best_move_rows)
 
     flaws_written = 0
     if count_flaws_written:

@@ -11,13 +11,13 @@ Requirements for this milestone. Each maps to a roadmap phase.
 
 ### Backend Inference & Storage (GEMS)
 
-- [ ] **GEMS-01**: Every analyzed game stores candidate best-move rows in a new sibling table peer to `game_flaws` (neutral name, e.g. `game_best_moves`): `game_id` FK ondelete=CASCADE, `ply`, `maia_prob`, best/second eval (final column set at phase planning) — floats, never a gem/great boolean; natural-key unique on `(game_id, ply)`.
-- [ ] **GEMS-02**: A candidate row is stored only for out-of-book plies where the played move == Stockfish best AND `best_es − second_es ≥ INACCURACY_DROP` (0.05) — the amended D-2 gate ("the runner-up would have been at least an inaccuracy").
-- [ ] **GEMS-03**: The backend scores candidate plies with Maia-3 (`maia3_simplified.onnx` via onnxruntime, one-time session load) during eval-apply, where `second_best_map` already lands; remote workers stay pure Stockfish with no protocol change.
-- [ ] **GEMS-04**: The Python port of the 12-plane board→tensor encoding passes a fixture-based parity check against client Maia outputs (tolerance defined at phase planning).
-- [ ] **GEMS-05**: Maia inference uses the player's pinned lichess-blitz-equivalent rating at game time (the `pinnedEloForMover` rung, not the reactive slider), with defined clamping for ratings outside Maia-3's validated 1100–2000 band.
-- [ ] **GEMS-06**: onnxruntime + numpy are isolated behind a uv extra/dependency group so the worker image stays lean.
-- [ ] **GEMS-07**: Gem (`maia_prob ≤ 0.20`) and Great (`(0.20, 0.50]`) classification happens at query time from stored floats + the C2 `MISTAKE_DROP` (0.10) margin — both tiers retunable with zero re-analysis; the 0.50 Great ceiling is a starting constant to calibrate against real per-game frequency.
+- [x] **GEMS-01**: Every analyzed game stores candidate best-move rows in a new sibling table peer to `game_flaws` (neutral name, e.g. `game_best_moves`): `game_id` FK ondelete=CASCADE, `ply`, `maia_prob`, best/second eval (final column set at phase planning) — floats, never a gem/great boolean; natural-key unique on `(game_id, ply)`.
+- [x] **GEMS-02**: A candidate row is stored only for out-of-book plies where the played move == Stockfish best AND `best_es − second_es ≥ INACCURACY_DROP` (0.05) — the amended D-2 gate ("the runner-up would have been at least an inaccuracy").
+- [x] **GEMS-03**: The backend scores candidate plies with Maia-3 (`maia3_simplified.onnx` via onnxruntime, one-time session load) during eval-apply, where `second_best_map` already lands; remote workers stay pure Stockfish with no protocol change.
+- [x] **GEMS-04**: The Python port of the 12-plane board→tensor encoding passes a fixture-based parity check against client Maia outputs (tolerance defined at phase planning).
+- [x] **GEMS-05**: Maia inference uses the player's pinned lichess-blitz-equivalent rating at game time (the `pinnedEloForMover` rung, not the reactive slider), clamped to [600, 2600] — the frontend `MAIA_ELO_LADDER` bounds (Phase 174 D-04: the "1100–2000" band is Maia-3's validated draw-rate sub-band, not the clamp bounds).
+- [x] **GEMS-06**: onnxruntime + numpy are isolated behind a uv extra/dependency group so the worker image stays lean.
+- [x] **GEMS-07**: Gem (`maia_prob ≤ 0.20`) and Great (`(0.20, 0.50]`) classification happens at query time from stored floats + the C2 `MISTAKE_DROP` (0.10) margin — both tiers retunable with zero re-analysis; the 0.50 Great ceiling is a starting constant to calibrate against real per-game frequency.
 
 ### Analysis Board (BOARD)
 
@@ -57,13 +57,13 @@ Which phases cover which requirements. Filled during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GEMS-01 | Phase 174 | Pending |
-| GEMS-02 | Phase 174 | Pending |
-| GEMS-03 | Phase 174 | Pending |
-| GEMS-04 | Phase 174 | Pending |
-| GEMS-05 | Phase 174 | Pending |
-| GEMS-06 | Phase 174 | Pending |
-| GEMS-07 | Phase 174 | Pending |
+| GEMS-01 | Phase 174 | Complete |
+| GEMS-02 | Phase 174 | Complete |
+| GEMS-03 | Phase 174 | Complete |
+| GEMS-04 | Phase 174 | Complete |
+| GEMS-05 | Phase 174 | Complete |
+| GEMS-06 | Phase 174 | Complete |
+| GEMS-07 | Phase 174 | Complete |
 | BOARD-01 | Phase 175 | Pending |
 | BOARD-02 | Phase 175 | Pending |
 | FILT-01 | Phase 175 | Pending |

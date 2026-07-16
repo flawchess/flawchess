@@ -74,14 +74,18 @@ class Game(Base):
         # Created in migration 20260614150000 (migration-only, following
         # ix_eval_jobs_user_active Phase 118 precedent).
         # Partial index backing the tier-3 residual-fallback pick in
-        # eval_queue_service._claim_tier3_derived (PV-backfill-only games). Without it
-        # every remote-worker idle poll seq-scanned all of games (~300 ms, the dominant
-        # query by total time). Created in migration 20260623210000.
+        # eval_queue_service._claim_tier3_derived (best-move-backfill-only lichess-eval
+        # games). Without it every remote-worker idle poll seq-scanned all of games
+        # (~300 ms, the dominant query by total time). Originally created (predicate
+        # full_evals_completed_at IS NULL AND lichess_evals_at IS NOT NULL) in migration
+        # 20260623210000; broadened to full_pv_completed_at IS NULL (174-07/SEED-109
+        # item 2 — the residual fallback now also covers eval-complete-but-PV-incomplete
+        # lichess games) and renamed in migration 20260716171823.
         Index(
-            "ix_games_pv_backfill_pending",
+            "ix_games_lichess_pv_backfill_pending",
             "user_id",
             postgresql_where=sa.text(
-                "full_evals_completed_at IS NULL AND lichess_evals_at IS NOT NULL"
+                "lichess_evals_at IS NOT NULL AND full_pv_completed_at IS NULL"
             ),
         ),
     )

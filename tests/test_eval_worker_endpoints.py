@@ -1836,10 +1836,11 @@ class TestAtomicLeaseEndpoint:
     - test_atomic_lease_over_cap_releases_job_and_returns_204: >MAX_SUBMIT_EVALS
       lease positions → 204, not 500 (147-03/SEED-073 over-cap sentinel pattern);
       a held tier-1/2 job is released back to 'pending' instead of staying leased.
-    - test_atomic_lease_lichess_eval_game_releases_lease: is_lichess_eval_game=True
-      claim → 204, held eval_jobs lease released back to 'pending' (Phase 149-03,
-      ports test_lichess_eval_game_claim_releases_lease's Gen-1 scenario to the
-      atomic lane — see 149-RESEARCH.md Pitfall 1).
+    - test_atomic_lease_lichess_eval_game_returns_full_positions: is_lichess_eval_game=True
+      claim → 200 with is_lichess_eval_game=True and every ply leased, not the
+      near-empty lease the SEED-076 redundancy filter would otherwise produce
+      (Phase 174-06/SEED-109 — replaces the retired 204-defer test the Gen-1 lane
+      used to port here per 149-RESEARCH.md Pitfall 1).
     """
 
     @pytest.mark.asyncio
@@ -2026,30 +2027,42 @@ class TestAtomicLeaseEndpoint:
             await _delete_games(eval_worker_session_maker, [game_id])
 
     @pytest.mark.asyncio
-    async def test_atomic_lease_lichess_eval_game_releases_lease(
+    async def test_atomic_lease_lichess_eval_game_returns_full_positions(
         self,
         monkeypatch: pytest.MonkeyPatch,
         eval_worker_session_maker: async_sessionmaker[AsyncSession],
         eval_worker_test_user: int,
     ) -> None:
-        """A deferred lichess-eval tier-1 claim releases its eval_jobs lease (mirrors
-        the deleted Gen-1 test_lichess_eval_game_claim_releases_lease — Phase 149-03
-        Task 1 ports this coverage before TestTier1Claiming is deleted; see
-        149-RESEARCH.md Pitfall 1).
+        """Phase 174-06 (SEED-109): lichess-eval games are NO LONGER deferred at
+        /atomic-lease — replaces the retired test_atomic_lease_lichess_eval_game_releases_lease
+        (the D-4/v1-scope 204 skip it ported from the Gen-1 lane is gone; they now
+        lease and submit like any other game).
 
-        claim_eval_job leases the eval_jobs row before the handler discovers it's a
-        lichess-eval game it defers (D-4 / v1 scope, same as /lease). Without the
-        release fix the row would sit 'leased' for the full lease TTL. Asserts the
-        lease returns 204 AND the row is reset to 'pending' with leased_by cleared.
+        Every game_positions row already carries a %eval (the defining lichess-eval
+        shape). Asserts the lease is NOT collapsed to near-nothing by the SEED-076
+        incremental-redundancy filter, which would otherwise treat every already-
+        eval'd row as "a worker already resolved this" — a premise that does not
+        hold for lichess-eval games, whose %evals came from import, never an
+        engine call (`_build_lease_positions`'s Phase 174-06 docstring).
         """
         monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
         _patch_router_session(monkeypatch, eval_worker_session_maker)
 
         user_id = eval_worker_test_user
-        game_id = await _insert_game(eval_worker_session_maker, user_id)
-
-        # A real 'leased' eval_jobs row — the state claim_eval_job would have left.
-        job_id = await _seed_eval_job(eval_worker_session_maker, game_id, user_id, status="leased")
+        game_id = await _insert_game(
+            eval_worker_session_maker, user_id, pgn="1. e4 e5 2. Nf3 Nc6 *"
+        )
+        # Every row already carries a %eval — the lichess-eval shape (import-supplied,
+        # never engine-derived).
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            game_id,
+            [
+                {"ply": ply, "full_hash": 52000 + ply, "eval_cp": 20 + ply, "eval_mate": None}
+                for ply in range(4)
+            ],
+        )
 
         import app.routers.eval_remote as eval_remote_module
 
@@ -2062,7 +2075,7 @@ class TestAtomicLeaseEndpoint:
                     user_id=user_id,
                     tier=1,
                     is_lichess_eval_game=True,
-                    job_id=job_id,
+                    job_id=None,
                 )
             ),
         )
@@ -2073,21 +2086,25 @@ class TestAtomicLeaseEndpoint:
                     _ATOMIC_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN}
                 )
 
-            assert response.status_code == 204, (
-                f"Lichess-eval game must be deferred with 204, got {response.status_code}"
+            assert response.status_code == 200, (
+                f"lichess-eval game must lease like any other game, got "
+                f"{response.status_code}: {response.text}"
             )
+            body = response.json()
+            assert body["is_lichess_eval_game"] is True
 
-            job_row = await _get_eval_job(eval_worker_session_maker, job_id)
-            assert job_row is not None, f"eval_jobs row {job_id} must still exist"
-            assert job_row["status"] == "pending", (
-                f"Deferred lichess claim must release lease to 'pending'; got {job_row['status']!r}"
+            positions = body["positions"]
+            # All 4 real plies leased, none redundancy-omitted, and NO terminal
+            # donor (lichess games never need one — their %evals are never shifted).
+            assert len(positions) == 4, (
+                "Expected all 4 plies leased (no SEED-076 redundancy omission for "
+                f"lichess-eval games), got {len(positions)}: {positions}"
             )
-            assert job_row["leased_by"] is None, (
-                "leased_by must be cleared when the lease is released"
+            assert all(not p["is_terminal"] for p in positions), (
+                "a lichess-eval game's lease must not include a terminal eval-donor "
+                "position — its %evals are never shifted (Phase 174-06)"
             )
-            assert job_row["completed_at"] is None, (
-                "A released (not completed) job must keep completed_at NULL"
-            )
+            assert {p["ply"] for p in positions} == {0, 1, 2, 3}
         finally:
             await _delete_games(eval_worker_session_maker, [game_id])
 
@@ -2098,6 +2115,11 @@ class TestAtomicSubmitEndpoint:
     - test_atomic_submit_gates_tactic_tag_and_stamps_both_markers: a real forcing
       blob submitted for the server-classified flaw -> the GATED tag is persisted
       AND both completion markers are stamped, atomically, in one call.
+    - test_atomic_submit_lichess_eval_game_produces_best_move_candidate_row
+      (Phase 174-06/SEED-109): a lichess-eval game's atomic-submit — no
+      second-best in the payload (remote worker is MultiPV-1) — produces a
+      GameBestMove row for its out-of-book played==best ply via the Pitfall-1
+      targeted backend fallback, while the stored lichess %evals stay untouched.
     - test_atomic_submit_missing_blob_writes_null_tag: a walkable flaw with zero
       submitted blob_nodes -> the tag is suppressed to NULL (Part A net), completion
       is still stamped (blobs_pending=True — see the deviation documented in
@@ -2244,6 +2266,138 @@ class TestAtomicSubmitEndpoint:
                 )
                 assert full_pv_at is not None, (
                     "full_pv_completed_at must be stamped atomically with the gated tag"
+                )
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_atomic_submit_lichess_eval_game_produces_best_move_candidate_row(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """Phase 174-06 (SEED-109): a lichess-eval game's /atomic-submit produces a
+        GameBestMove row for its out-of-book played==best ply via the Pitfall-1
+        targeted backend fallback (the worker's own pass is MultiPV-1, so
+        second_best_map is None — `_build_best_move_candidates` docstring), while
+        the stored lichess %evals stay byte-identical (never shifted/overwritten).
+
+        Game: 1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 Na5 (8 plies) — book depth 7
+        (find_opening_ply_count), so ply 7 (Na5, c6a5) is the first out-of-book
+        ply. Every submitted eval carries a best_move matching the played move so
+        no ply is left holed; only ply 7's fallback second-best creates a wide
+        enough margin to pass the inaccuracy gate.
+        """
+        import app.services.eval_apply as eval_apply_module
+        from app.models.game import Game
+        from app.models.game_best_move import GameBestMove
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+        monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.1)
+        # ply 7 (Na5) is BLACK to move — cp is White-POV throughout, so a wide
+        # margin FOR BLACK needs best_cp very negative and the fallback's
+        # second_cp comparatively positive (worse for black).
+        fallback_spy = AsyncMock(return_value=(None, None, None, None, 300, None, "b7b5"))
+        monkeypatch.setattr(
+            eval_apply_module.engine_service, "evaluate_nodes_multipv2", fallback_spy
+        )
+
+        italian_pgn = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 Na5 *"
+        played_uci = ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5", "c2c3", "c6a5"]
+        now = datetime.now(timezone.utc)
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(
+            eval_worker_session_maker,
+            user_id,
+            pgn=italian_pgn,
+            lichess_evals_at=now,
+        )
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            game_id,
+            [
+                {"ply": p, "full_hash": 53000 + p, "eval_cp": 15 + p, "eval_mate": None}
+                for p in range(8)
+            ],
+        )
+        # Ply 7 is White to move (mover_color_for_ply(7 - 1)=... even ply=white);
+        # _build_best_move_candidates needs a rating to pin the Maia ELO.
+        async with eval_worker_session_maker() as rating_session:
+            await rating_session.execute(
+                sa.update(Game)
+                .where(Game.id == game_id)
+                .values(white_rating=1500, black_rating=1500, time_control_bucket="blitz")
+            )
+            await rating_session.commit()
+
+        # Every ply carries a best_move matching the played move (no holes); ply 7
+        # is the out-of-book played==best candidate, scored via the Pitfall-1
+        # fallback (no second_cp/mate submitted — remote lane is MultiPV-1).
+        payload = {
+            "game_id": game_id,
+            "sf_version": "Stockfish 18",
+            "worker_schema_version": 1,
+            "evals": [
+                {
+                    "ply": p,
+                    "eval_cp": -300 if p == 7 else None,
+                    "eval_mate": None,
+                    "best_move": played_uci[p],
+                    "pv": None,
+                }
+                for p in range(8)
+            ],
+            "blob_nodes": [],
+            "job_id": None,
+        }
+
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _ATOMIC_SUBMIT_URL,
+                    json=payload,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+            assert fallback_spy.await_count == 1, (
+                "the Pitfall-1 targeted fallback must fire once for ply 7 "
+                "(no second-best in the worker's MultiPV-1 submission)"
+            )
+
+            async with eval_worker_session_maker() as verify:
+                best_move_row = (
+                    await verify.execute(
+                        select(GameBestMove).where(
+                            GameBestMove.game_id == game_id, GameBestMove.ply == 7
+                        )
+                    )
+                ).scalar_one_or_none()
+                assert best_move_row is not None, (
+                    "ply 7 (Na5, out-of-book played==best) must produce a "
+                    "GameBestMove row via the remote-lane Pitfall-1 fallback"
+                )
+                assert best_move_row.maia_prob == pytest.approx(0.1, abs=1e-6)
+
+                for ply in range(8):
+                    gp = await _get_game_position(eval_worker_session_maker, game_id, ply)
+                    assert gp is not None
+                    assert gp["eval_cp"] == 15 + ply, (
+                        f"lichess %eval at ply {ply} must be preserved unchanged "
+                        "(SEED-109 item 4), never shifted/overwritten"
+                    )
+                    assert gp["best_move"] == played_uci[ply], (
+                        f"best_move at ply {ply} must be written from the worker's submission"
+                    )
+
+                game_row = (
+                    await verify.execute(select(Game.lichess_evals_at).where(Game.id == game_id))
+                ).one()
+                assert game_row[0] is not None, (
+                    "games.lichess_evals_at provenance must stay set (SEED-109 item 4)"
                 )
         finally:
             await _delete_games(eval_worker_session_maker, [game_id])

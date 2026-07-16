@@ -33,8 +33,9 @@ not match. Token comparison is constant-time (hmac.compare_digest — no timing 
 Expected / non-exception status codes (do NOT Sentry-capture):
   403 — token not configured
   401 — wrong token
-  204 — empty queue (atomic-lease) or lichess game deferred (atomic-lease) or shallow
-        backlog (entry-lease) or over-cap fat game (atomic-lease)
+  204 — empty queue (atomic-lease) or shallow backlog (entry-lease) or over-cap
+        fat game (atomic-lease) — lichess-eval games are no longer deferred here
+        (Phase 174-06/SEED-109)
   422 — SF version mismatch (entry-submit / atomic-submit) or foreign/out-of-range
         blob token (flaw-blob-submit / atomic-submit)
   404 — game not found (atomic-submit)
@@ -82,6 +83,7 @@ from app.services.eval_apply import (
     _FullPlyEvalTarget,
     _assemble_flaw_blobs_from_submit,
     _batch_update_flaw_pv_lines,
+    _build_best_move_candidates,
     _build_flaw_blob_lease_positions,
     _collect_full_ply_targets,
     _derive_atomic_sentinel_lines,
@@ -261,21 +263,39 @@ def _build_lease_positions(
     pgn_text: str,
     gp_rows: list[tuple[int, int, int | None, int | None]],
     cached_hashes: frozenset[int] = frozenset(),
+    is_lichess_eval_game: bool = False,
 ) -> list[LeasePosition] | None:
     """Collect per-ply FEN positions from a game's PGN for the lease response.
 
     Replays the PGN once to build a ply->board.fen() map, then merges with the
-    target list from _collect_full_ply_targets (include_terminal=True so the last
-    played ply's after-eval can be resolved at submit time — SEED-044 pitfall 3).
+    target list from _collect_full_ply_targets (include_terminal=True for engine
+    games so the last played ply's after-eval can be resolved at submit time —
+    SEED-044 pitfall 3; False for lichess-eval games, mirroring the submit side's
+    own `include_terminal=not is_lichess_eval_game` — their %evals are never
+    shifted, so no terminal eval-donor is ever needed there, Phase 174-06).
 
-    SEED-076 (cache-aware incremental lease): positions already fillable server-side —
-    cached openings (in `opening_position_eval`) and plies whose DB row already has an
-    eval — are omitted so a weak/slow worker never re-grinds them (the exact repeated
-    opening timeout that permanently stamped user 218's games). See
-    `_lease_position_redundant`. The terminal donor is always kept, and if the filter
-    empties the lease (e.g. a board-over game with everything already resolved) we fall
-    back to the full list so a claimed game is never starved of the submit that triggers
-    the server-side dedup fill.
+    SEED-076 (cache-aware incremental lease): for ENGINE games, positions already
+    fillable server-side — cached openings (in `opening_position_eval`) and plies
+    whose DB row already has an eval — are omitted so a weak/slow worker never
+    re-grinds them (the exact repeated opening timeout that permanently stamped
+    user 218's games). See `_lease_position_redundant`. The terminal donor is
+    always kept, and if the filter empties the lease (e.g. a board-over game with
+    everything already resolved) we fall back to the full list so a claimed game
+    is never starved of the submit that triggers the server-side dedup fill.
+
+    Phase 174-06 (SEED-109): this redundancy filter's premise does NOT hold for
+    lichess-eval games and is skipped for them entirely (every position is always
+    leased). `_lease_position_redundant`'s "incremental" check treats an already-
+    eval'd DB row as evidence a PRIOR worker round already resolved that position
+    (eval AND best_move together, since one engine call always produces both) —
+    true for engine games, but false for lichess-eval games, whose %eval columns
+    are populated at IMPORT time, never by an engine call, and carry no best_move
+    at all. Applying the engine-game redundancy premise here would filter a fresh
+    lichess-eval game's lease down to just ply 0 + nothing else (every OTHER ply's
+    preceding row already has an %eval from import) — ply 0 is always inside the
+    opening book, so the resulting submission could never produce a single
+    out-of-book best-move candidate row, defeating this game type's entire reason
+    for reaching /atomic-lease in the first place.
 
     Returns None on PGN parse failure (caller should return 204 — treat as no game).
     Returns a list of LeasePosition (may include an is_terminal=True entry).
@@ -284,7 +304,7 @@ def _build_lease_positions(
         game_id=game_id,
         pgn_text=pgn_text,
         game_positions_rows=gp_rows,
-        include_terminal=True,
+        include_terminal=not is_lichess_eval_game,
     )
     if not targets:
         return None
@@ -320,7 +340,9 @@ def _build_lease_positions(
             continue
         pos = LeasePosition(ply=t.ply, fen=fen, is_terminal=t.is_terminal)
         all_positions.append(pos)
-        if not _lease_position_redundant(t, target_by_ply, cached_hashes):
+        # Phase 174-06: the SEED-076 redundancy check never applies to lichess-eval
+        # games (see docstring) — every position is always leased for them.
+        if is_lichess_eval_game or not _lease_position_redundant(t, target_by_ply, cached_hashes):
             filtered_positions.append(pos)
 
     # SEED-076 safety net: never return an empty lease for a claimed game — the submit
@@ -380,14 +402,20 @@ async def atomic_lease_eval_game(
     /atomic-submit endpoint (147-05). The server re-runs classify_game_flaws
     authoritatively there — it never trusts the worker's local hint-classify.
 
-    Returns 204 when no eligible game is in the queue, when the claimed game is a
-    lichess-eval game (PV-backfill path deferred, mirrors /lease), or when the
-    game's lease payload would exceed MAX_SUBMIT_EVALS positions (over-cap
-    sentinel — reuses the 147-03/SEED-073 "never construct an oversized response,
-    204 instead of 500" pattern). A real chess game essentially never reaches
-    MAX_SUBMIT_EVALS (1024) plies, so this is defense-in-depth, not an expected
-    path; the claimed job (if any) is released back to 'pending' rather than
-    stuck 'leased' for the full TTL, mirroring the lichess-eval-game skip above.
+    Returns 204 when no eligible game is in the queue, or when the game's lease
+    payload would exceed MAX_SUBMIT_EVALS positions (over-cap sentinel — reuses
+    the 147-03/SEED-073 "never construct an oversized response, 204 instead of
+    500" pattern). A real chess game essentially never reaches MAX_SUBMIT_EVALS
+    (1024) plies, so this is defense-in-depth, not an expected path; the claimed
+    job (if any) is released back to 'pending' rather than stuck 'leased' for the
+    full TTL.
+
+    Phase 174-06 (SEED-109): lichess-eval games are NO LONGER deferred here (the
+    prior D-4/v1-scope skip is retired) — they lease and submit like any other
+    game, with `is_lichess_eval_game` threaded through so `_apply_atomic_submit`
+    preserves their stored %evals and writes best_move only (see
+    `_build_lease_positions`'s docstring for why the SEED-076 redundancy filter
+    is bypassed for them).
     """
     # claim_eval_job owns its sessions — no caller session context needed.
     claim = await claim_eval_job(worker_id=worker_id, scope=scope)
@@ -398,12 +426,6 @@ async def atomic_lease_eval_game(
     game_id = claim.game_id
     user_id = claim.user_id
     is_lichess_eval_game = claim.is_lichess_eval_game
-
-    # D-4 / v1 scope: lichess PV-backfill games deferred (mirrors /lease).
-    if is_lichess_eval_game:
-        if claim.job_id is not None:
-            await release_job(claim.job_id)
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     # Load PGN + game_positions in a second short read session.
     async with async_session_maker() as read_session:
@@ -435,7 +457,9 @@ async def atomic_lease_eval_game(
         cached_hashes = await _fetch_cached_opening_hashes(read_session, gp_rows)
     # read_session closed
 
-    positions = _build_lease_positions(game_id, pgn_text, gp_rows, cached_hashes)
+    positions = _build_lease_positions(
+        game_id, pgn_text, gp_rows, cached_hashes, is_lichess_eval_game=is_lichess_eval_game
+    )
     if positions is None:
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -450,7 +474,7 @@ async def atomic_lease_eval_game(
     return AtomicLeaseResponse(
         game_id=game_id,
         user_id=user_id,
-        is_lichess_eval_game=False,
+        is_lichess_eval_game=is_lichess_eval_game,
         positions=positions,
         leased_at=datetime.now(timezone.utc),
         job_id=claim.job_id,
@@ -1055,14 +1079,20 @@ async def _apply_atomic_submit(
                 GamePosition.full_hash,
                 GamePosition.eval_cp,
                 GamePosition.eval_mate,
+                GamePosition.best_move,
             ).where(
                 GamePosition.game_id == game_id,
                 GamePosition.user_id == game.user_id,
             )
         )
+        gp_all = gp_result.all()
         gp_rows: list[tuple[int, int, int | None, int | None]] = [
-            (row.ply, row.full_hash, row.eval_cp, row.eval_mate) for row in gp_result.all()
+            (row.ply, row.full_hash, row.eval_cp, row.eval_mate) for row in gp_all
         ]
+        # WR-01: current DB best_move per ply, so the lichess-eval hole-counter can skip
+        # an already-resolved ply that this re-lease's worker transiently re-fails
+        # (preserve_existing_evals=True below). No-op for engine games / first attempts.
+        stored_best_move_by_ply: dict[int, str | None] = {row.ply: row.best_move for row in gp_all}
     # read_session closed — no sessions open during CPU work below
 
     targets = _collect_full_ply_targets(
@@ -1070,6 +1100,7 @@ async def _apply_atomic_submit(
         pgn_text=pgn_text,
         game_positions_rows=gp_rows,
         include_terminal=not is_lichess_eval_game,
+        stored_best_move_by_ply=stored_best_move_by_ply,
     )
     game_length = sum(1 for t in targets if not t.is_terminal)
 
@@ -1128,6 +1159,16 @@ async def _apply_atomic_submit(
     # =True) suppresses that flaw's tag to NULL rather than persisting it raw.
     flaw_pv_blobs = _assemble_flaw_blobs_from_submit(game_id, body.blob_nodes, sentinel_lines)
 
+    # ── Best-move candidate rows (Phase 174 GEMS-03) ──────────────────────────
+    # Pitfall 1: the remote worker's full-ply pass is MultiPV-1, so there is NO
+    # per-ply second-best here (second_best_map=None). Every played==best candidate
+    # therefore takes the targeted backend-owned evaluate_nodes_multipv2 fallback
+    # inside the builder — the worker protocol / atomic-submit schema stay untouched
+    # (D-3/GEMS-03). The builder runs its gather + Maia inference with NO session
+    # open and reads rating metadata in a short session it closes itself; the rows
+    # are UPSERTed inside apply_full_eval's write session (same commit, T-174-12).
+    best_move_rows = await _build_best_move_candidates(game_id, targets, engine_result_map, None)
+
     # ── Write phase — ONE late session, all UPDATEs + commit atomic (T-117-11) ──
     # Phase 150 R7: the shared write-session body (evals -> classify/oracle/
     # diff-upsert -> Path A/B/C completion decision -> heartbeat) is now
@@ -1173,6 +1214,7 @@ async def _apply_atomic_submit(
             heartbeat_sf_version=body.sf_version,
             heartbeat_worker_schema_version=body.worker_schema_version,
             heartbeat_n_evals=len(body.evals),
+            best_move_rows=best_move_rows,
         )
 
         await write_session.commit()

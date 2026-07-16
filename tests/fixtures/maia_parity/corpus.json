@@ -1,0 +1,107 @@
+{
+  "provenance": {
+    "what": "Client-equivalent Maia-3 policy `maia_prob` (probability of played_uci after legal-move-masked softmax) per (fen, pinned_elo).",
+    "reference_path": "onnxruntime-web WASM execution provider (the exact runtime the browser Maia worker ships) + the LIVE frontend encoding frontend/src/lib/maiaEncoding.ts (encodeBoard + maskAndSoftmax).",
+    "captured_by": "scripts/maia_reference_capture.mjs, run as: node --import ./scripts/lib/frontend-alias-hook.mjs scripts/maia_reference_capture.mjs <candidates.json>",
+    "model": "frontend/public/maia/maia3_simplified.onnx, SHA-256 405bf76c15727dad8728b352c06a8f3c1b80fb2760e8d666b32485c63d75b856 (pinned in frontend/public/maia/README.md).",
+    "elo_convention": "elo_self == elo_oppo == pinned_elo (symmetric-strength sweep, matching maia-worker.js analyze()).",
+    "maia_prob_definition": "POLICY probability of played_uci (post maskAndSoftmax over logits_move), NOT the WDL expected score. This is the value classifyGem's C1 check (gemMove.ts GEM_MAIA_MAX_PROB=0.20) consumes.",
+    "tier_edges": "gem: maia_prob <= 0.20; great: 0.20 < maia_prob <= 0.50; neither: maia_prob > 0.50 (from frontend/src/lib/gemMove.ts + the Great ceiling in CONTEXT.md).",
+    "non_circularity": "These expected values come from the TS encoding + onnxruntime-web WASM path, which is INDEPENDENT of the Python port under test (app/services/maia_encoding.py + onnxruntime CPU). The parity gate therefore measures genuine encoding-port fidelity + CPU-vs-WASM float drift, not a self-comparison.",
+    "anchor_cross_check": "The 2600-ELO Qxh2+/Rxd1 pair reproduces the independently UI-captured values in .planning/notes/2026-07-10-flawchess-engine-self-execution-analysis.md (UI: Qxh2+ 0.4524, Rxd1 0.4184; here: 0.4494, 0.4222) within WebGPU-vs-WASM drift.",
+    "captured_on": "2026-07-16",
+    "coverage": "4 great, 4 gem, 3 neither; minimum margin from a tier edge is 0.033 (Nf3 @1500).",
+    "measured_max_drift": "0.003844 (2026-07-16, Python onnxruntime CPU vs onnxruntime-web WASM reference, 11-entry corpus; max on Rxd1 @2600).",
+    "parity_epsilon": "0.010 (scripts/maia_parity_spike.py PARITY_EPSILON) \u2014 ~2.6x headroom over measured max drift, well below the 0.033 tightest tier-edge margin so no tier flip can hide in the band."
+  },
+  "entries": [
+    {
+      "fen": "3r2k1/1pb2ppp/p2r3q/8/1PB5/2P2Q2/PB3PPP/3R1RK1 b - - 3 24",
+      "pinned_elo": 2600,
+      "played_uci": "h6h2",
+      "played_san": "Qxh2+",
+      "expected_maia_prob": 0.449442,
+      "expected_tier": "great"
+    },
+    {
+      "fen": "3r2k1/1pb2ppp/p2r3q/8/1PB5/2P2Q2/PB3PPP/3R1RK1 b - - 3 24",
+      "pinned_elo": 2600,
+      "played_uci": "d6d1",
+      "played_san": "Rxd1",
+      "expected_maia_prob": 0.422212,
+      "expected_tier": "great"
+    },
+    {
+      "fen": "rnbqkbnr/ppp1pppp/8/3P4/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 2",
+      "pinned_elo": 2000,
+      "played_uci": "g8f6",
+      "played_san": "Nf6",
+      "expected_maia_prob": 0.424277,
+      "expected_tier": "great"
+    },
+    {
+      "fen": "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2",
+      "pinned_elo": 1500,
+      "played_uci": "g1f3",
+      "played_san": "Nf3",
+      "expected_maia_prob": 0.46738,
+      "expected_tier": "great"
+    },
+    {
+      "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "pinned_elo": 1500,
+      "played_uci": "e2e4",
+      "played_san": "e4",
+      "expected_maia_prob": 0.616417,
+      "expected_tier": "neither"
+    },
+    {
+      "fen": "rnbqkbnr/ppp1pppp/8/3P4/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 2",
+      "pinned_elo": 1000,
+      "played_uci": "d8d5",
+      "played_san": "Qxd5",
+      "expected_maia_prob": 0.772958,
+      "expected_tier": "neither"
+    },
+    {
+      "fen": "rnbqkbnr/ppp1pppp/8/3P4/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 2",
+      "pinned_elo": 1500,
+      "played_uci": "d8d5",
+      "played_san": "Qxd5",
+      "expected_maia_prob": 0.634996,
+      "expected_tier": "neither"
+    },
+    {
+      "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "pinned_elo": 1500,
+      "played_uci": "a2a3",
+      "played_san": "a3",
+      "expected_maia_prob": 0.000668,
+      "expected_tier": "gem"
+    },
+    {
+      "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "pinned_elo": 1500,
+      "played_uci": "g1h3",
+      "played_san": "Nh3",
+      "expected_maia_prob": 0.000102,
+      "expected_tier": "gem"
+    },
+    {
+      "fen": "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4",
+      "pinned_elo": 1200,
+      "played_uci": "e1g1",
+      "played_san": "O-O",
+      "expected_maia_prob": 0.081512,
+      "expected_tier": "gem"
+    },
+    {
+      "fen": "8/8/8/4k3/8/8/4P3/4K3 w - - 0 1",
+      "pinned_elo": 1500,
+      "played_uci": "e2e4",
+      "played_san": "e4",
+      "expected_maia_prob": 0.002194,
+      "expected_tier": "gem"
+    }
+  ]
+}

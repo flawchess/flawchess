@@ -66,13 +66,13 @@ from app.services.eval_apply import (
     _batch_update_best_move_rows,  # noqa: F401 — backward-compat re-export (scripts)
     _batch_update_flaw_pv_lines,  # noqa: F401 — backward-compat re-export (scripts)
     _batch_update_pv_rows,  # noqa: F401 — backward-compat re-export (scripts)
+    _build_best_move_candidates,
     _build_flaw_blob_lease_positions,  # noqa: F401 — backward-compat re-export (tests/scripts)
     _build_flaw_multipv2_blobs,
     _build_line_blobs,  # noqa: F401 — backward-compat re-export (tests)
     _classify_with_overlay,
     _collect_full_ply_targets,
     _fetch_dedup_evals,
-    _flaw_engine_plies,
     _reconstruct_pos_eval,
     _signal_flaw_completion,
     _walk_pv_boards,  # noqa: F401 — backward-compat re-export (scripts)
@@ -493,13 +493,15 @@ async def _missing_flaw_pv_targets(
 ) -> list[_FullPlyEvalTarget]:
     """SEED-056: find engine-game flaw plies that took a pv-less opening dedup transplant.
 
-    The lichess path pre-classifies flaws from stored %evals up front (_flaw_engine_plies)
-    and exempts {flaw_ply, flaw_ply + 1} from dedup so they always get a real engine pass
-    (PV + best_move). Fresh engine games can't do that — they have no evals until AFTER
-    the gather — so an opening-region flaw ply whose full_hash matched a dedup donor gets
-    an eval-only transplant with NO pv. The flaw is registered but un-taggable (no
-    refutation line for the SEED-039 motif classifier), and the better-alternative PV at
-    flaw_ply is lost too.
+    Lichess-eval games never seed or draw from the opening dedup cache (Phase 174-06 /
+    SEED-109: dedup_map is always empty for them), so this gap is engine-games-only —
+    the prior lichess pre-classification path (`_flaw_engine_plies`, D-117-13) that used
+    to exempt {flaw_ply, flaw_ply + 1} from a NOW-RETIRED targets filter is gone; lichess
+    games get every ply engine-evaluated directly instead. Fresh engine games can't
+    pre-classify like that anyway — they have no evals until AFTER the gather — so an
+    opening-region flaw ply whose full_hash matched a dedup donor gets an eval-only
+    transplant with NO pv. The flaw is registered but un-taggable (no refutation line for
+    the SEED-039 motif classifier), and the better-alternative PV at flaw_ply is lost too.
 
     Fix: once the gather is done we DO know every ply's eval (engine_result_map for
     engine plies, dedup_map for transplanted ones). Reconstruct the post-move evals
@@ -559,9 +561,10 @@ async def _fill_engine_game_flaw_pvs(
     the pv back into engine_result_map (mutated in place) so the write-session classify
     (tactic tagging) and the pv write pick it up like any engine-evaluated ply.
 
-    No-op for lichess games (they pre-classify up front via _flaw_engine_plies) and when
-    there were no opening dedup hits (no possible gap). MUST be called with NO session open
-    — it runs asyncio.gather (CLAUDE.md hard rule).
+    No-op for lichess games (Phase 174-06: they get every ply engine-evaluated directly —
+    dedup_map is always empty for them, so there is never a dedup transplant to recover a
+    pv from) and when there were no opening dedup hits (no possible gap). MUST be called
+    with NO session open — it runs asyncio.gather (CLAUDE.md hard rule).
     """
     if is_lichess_eval_game:
         return
@@ -723,35 +726,28 @@ async def _full_drain_tick() -> bool:
             game_id, pgn_text, gp_rows, include_terminal=not is_lichess_eval_game
         )
 
-        # WR-01: for is_lichess_eval_game (lichess %eval) games, plies whose row
-        # already carries a non-NULL eval are preserved at write time (D-116-04 /
-        # T-78-17). Filtering here avoids burning 1M-node calls whose results are
-        # discarded.
+        # Phase 174-06 (SEED-109 Option C): the former is_lichess_eval_game targets
+        # filter (WR-01/D-117-13) is RETIRED. Lichess-eval games now get the SAME
+        # full-ply MultiPV-2 pass as any engine game — every non-terminal ply is
+        # engine-evaluated, not just eval-holes + flaw-adjacent plies. That is what
+        # lets _build_best_move_candidates nominate every out-of-book played==best
+        # ply (174-VERIFICATION Truth 2), not just the flaw-adjacent subset the old
+        # filter left visible. The write path still preserves the stored lichess
+        # %evals unchanged (is_lichess_eval_game=True stays the apply_full_eval
+        # argument below) — only best_move/PV are now written for every ply the
+        # engine covers.
         #
-        # D-117-13 / SEED-054 EXCEPTION: flaw plies (flaw_ply AND flaw_ply + 1) must
-        # still be engine-evaluated. flaw_ply + 1 captures the refutation PV; flaw_ply
-        # captures the better-alternative best_move + ideal-continuation PV. Lichess
-        # supplies %eval but NO PV and NO best_move, so without this exemption every
-        # flaw in an analyzed lichess game got 0 PV (verified in prod post-Phase-117)
-        # and a NULL best_move arrow (SEED-054). Pre-classify from the stored %evals
-        # to find {flaw_ply, flaw_ply + 1}, then exempt those plies from the filter.
-        flaw_engine_plies: set[int] = set()
-        if is_lichess_eval_game:
-            flaw_engine_plies = await _flaw_engine_plies(load_session, game_id)
-            targets = [
-                t
-                for t in targets
-                if (t.eval_cp is None and t.eval_mate is None) or t.ply in flaw_engine_plies
-            ]
-
-        # Partition opening-region hashes for dedup (EVAL-03). Flaw plies are
-        # excluded so they always get a real engine eval + best_move + PV instead of
-        # an eval-only dedup transplant (which carries no pv_string — D-117-13).
-        dedup_hashes = [
-            t.full_hash
-            for t in targets
-            if t.ply <= _DEDUP_MAX_PLY and t.ply not in flaw_engine_plies and not t.is_terminal
-        ]
+        # Partition opening-region hashes for dedup (EVAL-03). Lichess-eval games
+        # NEVER seed or draw from the opening dedup cache (their %evals are the DB's
+        # permanent, authoritative provenance — never an engine value, and never
+        # donated to the cache either — SEED-109 item 4): dedup_hashes is empty for
+        # them, so every ply below falls through to a real engine pass instead of a
+        # pv-less dedup transplant.
+        dedup_hashes = (
+            []
+            if is_lichess_eval_game
+            else [t.full_hash for t in targets if t.ply <= _DEDUP_MAX_PLY and not t.is_terminal]
+        )
         dedup_map = await _fetch_dedup_evals(load_session, dedup_hashes)
     # load_session is now closed.
 
@@ -762,18 +758,15 @@ async def _full_drain_tick() -> bool:
     # whole-game per-ply pass becomes multipv=2 (capturing second-best per ply).
     # Tier-1 (QUEUE-03): fan ALL of one game's plies across the pool simultaneously.
     # Tiers 2/3: same gather — the distinction is how the game was claimed, not how it's analyzed.
-    # D-117-13 / SEED-054: flaw plies (flaw_ply and flaw_ply + 1) always go to the
-    # engine (best_move + PV capture), even if a sibling target with the same
-    # full_hash seeded the dedup map.
     # The terminal eval-donor (SEED-044) is always engine-evaluated: it has no
     # full_hash in the dedup map and supplies the last move's after-eval.
+    # Phase 174-06: dedup_map is always empty for lichess-eval games (above), so
+    # every one of their non-terminal plies falls through to a real engine call
+    # here too — the full-ply MultiPV-2 pass SEED-109 requires.
     engine_targets = [
         t
         for t in targets
-        if t.is_terminal
-        or t.ply in flaw_engine_plies
-        or t.ply > _DEDUP_MAX_PLY
-        or t.full_hash not in dedup_map
+        if t.is_terminal or t.ply > _DEDUP_MAX_PLY or t.full_hash not in dedup_map
     ]
     if engine_targets:
         engine_results_raw: Sequence[
@@ -848,6 +841,16 @@ async def _full_drain_tick() -> bool:
         game_id, targets, dedup_map, engine_result_map, second_best_map
     )
 
+    # Step 3e (Phase 174 GEMS-03): build best-move candidate rows. The local lane
+    # already has per-ply second-best in second_best_map (whole-game MultiPV-2 pass),
+    # so the Pitfall-1 fallback rarely fires here. Opens its own short read session
+    # for rating metadata and closes it before Maia inference — still NO write
+    # session open (CLAUDE.md hard rule). Rows are UPSERTed inside apply_full_eval's
+    # write session so they commit atomically with the eval.
+    best_move_rows = await _build_best_move_candidates(
+        game_id, targets, engine_result_map, second_best_map
+    )
+
     # Step 4: write session — open LATE, after gather completes.
     # All UPDATEs, classify hook, oracle counts, markers, and job report in one transaction.
     #
@@ -890,6 +893,7 @@ async def _full_drain_tick() -> bool:
             update_opening_cache=True,
             upsert_opening_cache_fn=_upsert_opening_cache,
             engine_targets_for_cache=engine_targets,
+            best_move_rows=best_move_rows,
         )
 
         await write_session.commit()

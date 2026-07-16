@@ -113,6 +113,7 @@ async def _insert_game(
     time_control_bucket: str | None = "blitz",
     played_at: datetime | None = None,
     full_evals_completed_at: datetime | None = None,
+    full_pv_completed_at: datetime | None = None,
     lichess_evals_at: datetime | None = None,
 ) -> int:
     """Insert a Game row and commit. Returns game_id."""
@@ -131,6 +132,7 @@ async def _insert_game(
             time_control_bucket=time_control_bucket,
             played_at=played_at,
             full_evals_completed_at=full_evals_completed_at,
+            full_pv_completed_at=full_pv_completed_at,
             lichess_evals_at=lichess_evals_at,
         )
         session.add(g)
@@ -901,6 +903,351 @@ class TestTier3Lottery:
             )
         finally:
             await _delete_games(queue_session_maker, [pv_only_game])
+
+    # ─── Phase 174-07 / SEED-109 item 2: residual fallback broadened ──────────
+    # full_evals_completed_at IS NULL -> full_pv_completed_at IS NULL, same
+    # precedence, strict superset population (backfills the ~43k lichess-eval
+    # backlog that's already eval-complete but PV/best-move-incomplete).
+
+    async def test_residual_fallback_includes_full_evals_stamped_backlog_game(
+        self,
+        tier2_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The broadened predicate must select a lichess-eval game that is ALREADY
+        full_evals_completed_at-stamped (the backlog case the OLD predicate missed)
+        as long as full_pv_completed_at IS NULL.
+
+        This is the core proof of the 174-07 broadening: under the pre-174-07
+        predicate (full_evals_completed_at IS NULL) this exact row would NEVER
+        have been selected by the residual fallback.
+        """
+        import app.services.eval_queue_service as svc
+        from app.models.user import User
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+
+        user_id = tier2_test_users["tier3_a"]
+        now = datetime.now(timezone.utc)
+
+        async with queue_session_maker() as session:
+            await session.execute(
+                sa_update(User).where(User.id == user_id).values(last_activity=now)
+            )
+            await session.commit()
+
+        # Backlog case: already eval-complete (full_evals_completed_at set, as a
+        # lichess game commonly is at import) but best-move/PV-incomplete.
+        backlog_game = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_evals_completed_at=now,
+            full_pv_completed_at=None,
+            lichess_evals_at=now,
+            played_at=now,
+        )
+
+        from app.services.eval_queue_service import _claim_tier3_derived
+
+        try:
+            async with queue_session_maker() as session:
+                result = await _claim_tier3_derived(session)
+            assert result is not None, (
+                "Broadened residual fallback must select the full_evals-stamped backlog game"
+            )
+            picked_game_id, _picked_user_id, is_lichess_eval_game = result
+            assert picked_game_id == backlog_game, (
+                f"Expected the backlog game {backlog_game} to be picked; got {picked_game_id}"
+            )
+            assert is_lichess_eval_game is True
+        finally:
+            await _delete_games(queue_session_maker, [backlog_game])
+
+    async def test_residual_fallback_excludes_pv_already_covered_lichess_game(
+        self,
+        tier2_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A lichess-eval game already stamped full_pv_completed_at (best-move
+        coverage already complete) must NEVER be picked by the residual fallback —
+        it has exited the predicate (self-termination)."""
+        import app.services.eval_queue_service as svc
+        from app.models.user import User
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+
+        user_id = tier2_test_users["tier3_a"]
+        now = datetime.now(timezone.utc)
+
+        async with queue_session_maker() as session:
+            await session.execute(
+                sa_update(User).where(User.id == user_id).values(last_activity=now)
+            )
+            await session.commit()
+
+        # Already fully covered — must be excluded.
+        covered_game = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_evals_completed_at=now,
+            full_pv_completed_at=now,
+            lichess_evals_at=now,
+            played_at=now,
+        )
+        # The one remaining eligible backlog game — must be the only pick.
+        uncovered_game = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_evals_completed_at=now,
+            full_pv_completed_at=None,
+            lichess_evals_at=now,
+            played_at=now,
+        )
+
+        from app.services.eval_queue_service import _claim_tier3_derived
+
+        try:
+            async with queue_session_maker() as session:
+                for i in range(10):
+                    result = await _claim_tier3_derived(session)
+                    assert result is not None, f"Draw {i}: expected the uncovered game to be picked"
+                    picked_game_id = result[0]
+                    assert picked_game_id == uncovered_game, (
+                        f"Draw {i}: residual fallback must never pick the already-covered "
+                        f"game {covered_game} (full_pv_completed_at IS NOT NULL); "
+                        f"got {picked_game_id}"
+                    )
+        finally:
+            await _delete_games(queue_session_maker, [covered_game, uncovered_game])
+
+    async def test_residual_fallback_excludes_engine_game_missing_pv(
+        self,
+        tier2_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Scope guard: the broadened predicate stays lichess-eval-only. An ENGINE
+        game (lichess_evals_at IS NULL) that is eval-complete but PV-incomplete
+        (a pre-Phase-117-analyzed row) must NOT be picked by the residual
+        fallback — it is not the 174-07 backfill's target population."""
+        import app.services.eval_queue_service as svc
+        from app.models.user import User
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+
+        user_id = tier2_test_users["tier3_a"]
+        now = datetime.now(timezone.utc)
+
+        async with queue_session_maker() as session:
+            await session.execute(
+                sa_update(User).where(User.id == user_id).values(last_activity=now)
+            )
+            await session.commit()
+
+        # Engine game: eval-complete, PV-incomplete, lichess_evals_at IS NULL.
+        # NOT a needs-engine candidate (full_evals_completed_at IS NOT NULL), and
+        # must NOT be picked up by the (lichess-scoped) residual fallback either.
+        engine_game_no_pv = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_evals_completed_at=now,
+            full_pv_completed_at=None,
+            lichess_evals_at=None,
+            played_at=now,
+        )
+
+        from app.services.eval_queue_service import _claim_tier3_derived
+
+        try:
+            async with queue_session_maker() as session:
+                for i in range(10):
+                    result = await _claim_tier3_derived(session)
+                    if result is not None:
+                        assert result[0] != engine_game_no_pv, (
+                            f"Draw {i}: residual fallback must never pick an engine game "
+                            f"(lichess_evals_at IS NULL); got {result[0]}"
+                        )
+        finally:
+            await _delete_games(queue_session_maker, [engine_game_no_pv])
+
+    async def test_residual_fallback_fires_under_contention(
+        self,
+        tier2_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Non-starvation: with NO needs-engine candidate present and only backlog
+        games remaining, repeated claim_eval_job / _claim_tier3_derived calls
+        SELECT a backlog game with frequency > 0 — the fallback actually fires
+        on every draw, not just an isolated well-formed pick."""
+        import app.services.eval_queue_service as svc
+        from app.models.user import User
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+        monkeypatch.setattr(svc.settings, "EVAL_AUTO_DRAIN_ENABLED", True)
+
+        user_id = tier2_test_users["tier3_a"]
+        now = datetime.now(timezone.utc)
+
+        async with queue_session_maker() as session:
+            await session.execute(
+                sa_update(User).where(User.id == user_id).values(last_activity=now)
+            )
+            await session.commit()
+
+        backlog_game = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_evals_completed_at=now,
+            full_pv_completed_at=None,
+            lichess_evals_at=now,
+            played_at=now,
+        )
+
+        n_draws = 5
+        hits = 0
+        try:
+            for _ in range(n_draws):
+                claimed = await svc.claim_eval_job()
+                if claimed is not None and claimed.game_id == backlog_game:
+                    hits += 1
+                    assert claimed.is_lichess_eval_game is True
+
+            assert hits > 0, (
+                "Broadened residual fallback must fire with frequency > 0 when it is "
+                "the only eligible candidate — got 0 hits across "
+                f"{n_draws} draws (claim_eval_job never returned the backlog game)."
+            )
+        finally:
+            await _delete_games(queue_session_maker, [backlog_game])
+
+    async def test_residual_fallback_es_weighted_recency(
+        self,
+        tier2_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The broadened residual fallback still uses the ES weighted-random key
+        (game_weight from recency + TC), not a deterministic first-row pick — a
+        recently-played backlog game wins a strong majority over a stale one, and
+        the stale one is never fully starved (mirrors test_tier3_recency_weighting
+        but scoped to the pv-backfill predicate)."""
+        import app.services.eval_queue_service as svc
+        from app.models.user import User
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+
+        user_id = tier2_test_users["tier3_a"]
+        now = datetime.now(timezone.utc)
+
+        async with queue_session_maker() as session:
+            await session.execute(
+                sa_update(User).where(User.id == user_id).values(last_activity=now)
+            )
+            await session.commit()
+
+        fresh_game = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_evals_completed_at=now,
+            full_pv_completed_at=None,
+            lichess_evals_at=now,
+            played_at=now,
+        )
+        stale_game = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_evals_completed_at=now,
+            full_pv_completed_at=None,
+            lichess_evals_at=now,
+            played_at=now - timedelta(days=180),
+        )
+
+        from app.services.eval_queue_service import _claim_tier3_derived
+
+        n_draws = 300
+        count_fresh = 0
+        count_stale = 0
+        try:
+            async with queue_session_maker() as session:
+                for _ in range(n_draws):
+                    result = await _claim_tier3_derived(session)
+                    assert result is not None
+                    picked_game_id = result[0]
+                    if picked_game_id == fresh_game:
+                        count_fresh += 1
+                    elif picked_game_id == stale_game:
+                        count_stale += 1
+
+            total = count_fresh + count_stale
+            assert total == n_draws, (
+                f"Expected every draw to pick one of the two backlog games; got "
+                f"{total}/{n_draws} (a draw picked neither — check for a leaked "
+                "backlog row from a sibling test)."
+            )
+            # Random ES key, not a deterministic first-row pick: both games must
+            # win at least one draw (neither is a hard-zero-probability loser).
+            assert count_fresh > 0 and count_stale > 0, (
+                f"Both games must have nonzero draw probability under the ES "
+                f"weighted key; got fresh={count_fresh}, stale={count_stale}"
+            )
+            # Recency preference still dominant: the freshly-played game wins a
+            # strong majority.
+            assert count_fresh > n_draws * 0.65, (
+                f"Recently-played backlog game should win a strong majority; got "
+                f"{count_fresh}/{n_draws} ({count_fresh / n_draws:.1%})"
+            )
+        finally:
+            await _delete_games(queue_session_maker, [fresh_game, stale_game])
+
+    async def test_residual_fallback_excludes_guest_backlog_game(
+        self,
+        tier2_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A guest's lichess-eval backlog game must never be picked by the
+        broadened residual fallback (QUEUE-08 unchanged by the 174-07 broadening)."""
+        import app.services.eval_queue_service as svc
+        from app.models.user import User
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+
+        guest_id = tier2_test_users["guest"]
+        now = datetime.now(timezone.utc)
+
+        # Recently active so the guest would win the user-pick if the guest
+        # filter were absent.
+        async with queue_session_maker() as session:
+            await session.execute(
+                sa_update(User).where(User.id == guest_id).values(last_activity=now)
+            )
+            await session.commit()
+
+        guest_backlog_game = await _insert_game(
+            queue_session_maker,
+            guest_id,
+            full_evals_completed_at=now,
+            full_pv_completed_at=None,
+            lichess_evals_at=now,
+            played_at=now,
+        )
+
+        from app.services.eval_queue_service import _claim_tier3_derived
+
+        try:
+            async with queue_session_maker() as session:
+                for i in range(10):
+                    result = await _claim_tier3_derived(session)
+                    if result is not None:
+                        assert result[0] != guest_backlog_game, (
+                            f"Draw {i}: guest backlog game {guest_backlog_game} must "
+                            "never be picked by the residual fallback"
+                        )
+        finally:
+            await _delete_games(queue_session_maker, [guest_backlog_game])
 
     async def test_tier3_guest_excluded_from_lottery(
         self,

@@ -2,25 +2,29 @@
 gsd_state_version: 1.0
 milestone: v2.4
 milestone_name: Backend Gem & Great Detection
-status: roadmapped
-last_updated: "2026-07-16T12:00:00.000Z"
+current_phase: 175
+current_phase_name: Board & Filter — Gem/Great Consumption
+status: planning
+stopped_at: Completed 174-07-PLAN.md
+last_updated: "2026-07-16T17:54:08.678Z"
 last_activity: 2026-07-16
+last_activity_desc: Phase 174 complete, transitioned to Phase 175
 progress:
-  total_phases: 3
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 4
+  completed_phases: 1
+  total_plans: 7
+  completed_plans: 7
+  percent: 25
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: Not started — roadmap created (Phase 174 is next)
-Plan: —
-Status: Roadmapped (3 phases, 174–176; awaiting `/gsd-plan-phase 174`)
-Last activity: 2026-07-16 — v2.4 roadmap created (Phases 174–176, 11/11 requirements mapped)
+Phase: 175 — Board & Filter — Gem/Great Consumption
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-07-16 — Phase 174 complete, transitioned to Phase 175
 
 ## Project Reference
 
@@ -302,6 +306,19 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 173-02]: Measure-pass extension computes gamesPerMeasure - stats.games (stats.games already includes probe games) — resolves 173-RESEARCH.md Open Question 1 by reusing rather than discarding already-played data
 - [Phase 173-02]: isCrossFamilyPair exported from calibration-anchor-schedule.mjs (shared by checkConnectivity and the orchestrator's retarget logic) rather than duplicated
 - [Phase ?]: [Phase 173-04]: Band-relaxing connectivity rescue (rescueConnectivity/bandDistance, commit a2f96e81, user-approved) fixes D-04 re-target dead-end when a pair's only informative link has no weaker same-family anchor
+- [Phase 174]: 174-01: Maia parity D-02 gate PASSED — PARITY_EPSILON=0.010 derived from measured max drift 0.003844; phase proceeds to Wave 2
+- [Phase 174]: 174-01: encoding module kept numpy-free (stdlib+python-chess) so encoding tests run in the default no-group suite while onnxruntime/numpy stay isolated in the maia-inference uv group
+- [Phase ?]: 174-02: backend Dockerfile installs the maia-inference uv group (--group), worker image stays lean (GEMS-06); isolation asserted by tests/test_dependency_isolation.py
+- [Phase ?]: 174-03: game_best_moves keyed on (game_id, ply) — no user_id (candidacy is position-scoped); raw cp stored, tier decided query-time
+- [Phase ?]: 174-04: Maia ONNX session is an eager singleton (Stockfish-mirrored) with a D-03a ImportError no-op guard + SHA-256 model-pin cross-check; lean/worker images boot without onnxruntime.
+- [Phase ?]: 174-04: Gem/Great/neither classification is a pure function of stored (maia_prob, cp margin) + module constants (GEM_MAIA_MAX_PROB=0.20, GREAT_MAIA_MAX_PROB=0.50) — retune reclassifies the corpus with zero re-analysis (GEMS-07).
+- [Phase ?]: 174-05: best-move candidate builder runs off-session in each eval-apply lane (session-closed-then-gather) and rows persist in apply_full_eval's shared write commit (GEMS-03, T-174-12)
+- [Phase ?]: 174-05: remote-worker lane (Pitfall 1, MultiPV-1) uses a targeted backend-owned evaluate_nodes_multipv2 fallback for played==best plies lacking second-best — worker protocol untouched
+- [Phase ?]: 174-05: measured Maia RSS ~235 MiB, projected backend ~2743/4096 MiB — fits 4GB budget alongside 6-worker Stockfish pool; prod backend-Maia enablement stays human-gated (D-03b)
+- [Phase ?]: 174-06: Bypassed the SEED-076 lease-redundancy filter entirely for lichess-eval games in _build_lease_positions (Rule 1 fix) — its premise (already-eval'd row = already resolved by a prior worker) is false for lichess games, whose %evals come from import; left unfixed the lease collapsed to ply 0 only, defeating Task 2's own acceptance criteria
+- [Phase ?]: 174-06: _contiguous_san_prefix rebuilt around the deepest target's board.move_stack + its own move_san (not a ply-0-anchored walk over the caller's targets list) — fixes CR-01 book-depth collapse on a sparse targets list
+- [Phase ?]: [Phase 174-07]: Broadened the existing residual PV-backfill fallback (full_evals_completed_at IS NULL -> full_pv_completed_at IS NULL) rather than adding a new lottery rung; kept precedence and ES key unchanged
+- [Phase ?]: [Phase 174-07]: Dropped the superseded ix_games_pv_backfill_pending in the same migration that adds ix_games_lichess_pv_backfill_pending, since its predicate no longer matches any query after the broadening
 
 ### Pending Todos
 
@@ -386,9 +403,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Completed 173-04-PLAN.md (phase 173 fully executed)
+**Stopped at:** Completed 174-07-PLAN.md
 
-**Last session:** 2026-07-16T05:09:43.493Z
+**Last session:** 2026-07-16T17:28:40.468Z
 
 **Resume file:**
 
@@ -404,6 +421,13 @@ None
 | Phase 173-anchor-ladder-self-calibration-seed-101 P03 | 20min | 2 tasks | 2 files |
 | Phase 173 P02 | 13min | 2 tasks | 3 files |
 | Phase 173 P04 | 25min | 2 tasks | 5 files |
+| Phase 174 P01 | 14 min | 2 tasks | 8 files |
+| Phase 174 P02 | 8min | 2 tasks | 2 files |
+| Phase 174 P03 | 8min | 2 tasks | 4 files |
+| Phase 174 P04 | 20min | 2 tasks | 5 files |
+| Phase 174 P05 | 45min | 2 tasks | 5 files |
+| Phase 174 P06 | ~50min | 3 tasks | 7 files |
+| Phase 174 P07 | 35min | 2 tasks | 5 files |
 
 ## Performance Metrics
 

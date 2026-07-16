@@ -31,6 +31,18 @@ dev = [
     "ty>=0.0.26",
     "zstandard>=0.22",
 ]
+# Isolated group for backend Maia-3 ONNX inference (Phase 174, GEMS-06). Kept OUT
+# of [project.dependencies] on purpose: that set is shared with the lean remote-worker
+# image (Dockerfile.worker), which must never pull onnxruntime/numpy. Only the backend
+# Dockerfile opts in via `uv sync --group maia-inference`.
+maia-inference = [
+    # PIN EXACTLY 1.20.1 — never a range. onnxruntime>=1.22 SEGFAULTS on the vendored
+    # maia3_simplified.onnx model (verified repro in
+    # .planning/notes/2026-07-10-flawchess-engine-self-execution-analysis.md, Pitfall 2).
+    # Any future bump MUST re-run scripts/maia_parity_spike.py before merging.
+    "onnxruntime==1.20.1",
+    "numpy",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
