@@ -1,0 +1,115 @@
+# Requirements: FlawChess — v2.3 Bot Play
+
+**Defined:** 2026-07-11
+**Core Value:** Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
+
+**Milestone goal:** Let users play clocked games against the FlawChess engine on a new top-level **Bots** page; store every finished game as an analyzable Library game; and build a headless anchor-calibration harness that first measures the engine's real playing strength. Sourced from SEED-091 (five locked design decisions) + the 2026-07-11 milestone-scoping decisions.
+
+## v1 Requirements
+
+Requirements for this milestone. Each maps to a roadmap phase.
+
+### Bot Opponent (BOT)
+
+- [x] **BOT-01**: The bot chooses its move by blending the play-style slider from sampling the raw Maia root policy at the full-human end to argmax practical score at the full-stockfish end (practical-score-weighted sampling with slider-controlled sharpness in between).
+- [x] **BOT-02**: At the full-human end the bot runs exactly one Maia inference per move (no MCTS pass), so it can reply within ~1–2s on a mid-range phone at the fastest supported time control.
+- [x] **BOT-03**: The bot plays its own configured ELO symmetrically and never adapts to the player's strength (so its strength stays fixed and measurable).
+- [x] **BOT-04**: The bot always returns a legal move, falling back gracefully to a legal move when the sampled policy is empty or degenerate.
+
+### Play Experience (PLAY)
+
+- [x] **PLAY-01**: Bot play lives on a new top-level **Bots** page (nav sibling of Library · Openings · Endgames), lazy-loaded.
+- [x] **PLAY-02**: User can start a new game from a setup screen choosing ELO, play-style, color, and a lichess-preset time control (blitz 3+0/3+2/5+0/5+3 · rapid 10+0/10+5/15+10 · classical 30+0/30+20; no bullet).
+- [x] **PLAY-03**: User plays on a live board with dual clocks counting down with Fischer increment, moving by drag or click-to-move, turn-gated to legal moves.
+- [x] **PLAY-04**: Clocks stay accurate across tab backgrounding (wall-clock delta model) and pause when the tab is hidden while the bot is thinking, so neither side is unfairly flagged.
+- [x] **PLAY-05**: The bot paces its replies (not instant) with a think-time budget derived from its remaining clock (best-effort; degrades gracefully under time pressure).
+- [x] **PLAY-06**: The game detects all end conditions — checkmate, stalemate, threefold repetition, 50-move, insufficient material — plus flag-on-time.
+- [x] **PLAY-07**: User can resign, and can offer/accept a draw against the bot.
+- [x] **PLAY-08**: User hears move / capture / check / game-end sounds, with a mute control.
+- [x] **PLAY-09**: On game end, a result screen shows the outcome (win/loss/draw + reason) with "Analyze this game" and "New game" actions.
+- [x] **PLAY-10**: Both logged-in users and guests can play bot games and have their finished games saved.
+- [x] **PLAY-11**: In the opening the bot plays from a book instead of searching — moves that keep the game inside the shipped ECO opening database, weighted by Maia's policy at the bot's ELO — so early moves are near-instant, spend no search budget, cost the bot almost none of its clock, and vary across games.
+
+### Game Storage (STORE)
+
+- [x] **STORE-01**: Every finished bot game is stored as a `platform='flawchess'` `games` row via the shared normalization/persistence path (a new PGN→`NormalizedGame` normalizer feeding the existing downstream) and appears in the Library games tab.
+- [x] **STORE-02**: The stored PGN carries per-move `[%clk]` clock annotations (both colors), so time-management analytics include bot games; the store endpoint rejects a bot PGN missing `[%clk]`.
+- [x] **STORE-03**: The stored game records a save-time converted (lichess-scale, TC-bucket-matched) player rating — NULL only when the user has no imported games — plus the bot's nominal ELO in the opponent-rating column, with the rating source recorded.
+- [x] **STORE-04**: The stored game records the full bot settings (nominal ELO, play-style slider value, TC preset) for later calibration.
+- [x] **STORE-05**: The store endpoint mints/accepts a client-owned game UUID as `platform_game_id` and is idempotent on the unique constraint (a duplicate submit returns success without a second row).
+- [x] **STORE-06**: Stored bot games are analyzable exactly like imported games; guests see a caveat that their bot games are saved but won't be auto-analyzed until they create an account (existing guest eval-exclusion).
+- [x] **STORE-07**: Bot games are excluded from default analytics (Global Stats, endgame-ELO timelines) but included in the Bots and Library Games surfaces, consistent with the existing platform/opponent filter.
+
+### Resume (RESUME)
+
+- [x] **RESUME-01**: User can leave a bot game mid-play and resume it later via a "Resume game?" prompt, with the clock paused while away (persisted to localStorage every move).
+- [x] **RESUME-02**: Only finished games reach the server; an abandoned (unfinished) game leaves no server trace, and a game already stored is never double-stored on resume.
+
+### Calibration (CAL)
+
+- [x] **CAL-01**: A headless Node harness plays the bot against known-strength anchors (raw Maia argmax rungs 1100–1900 + Stockfish skill levels) across a coarse (ELO × play-style) grid and emits a strength map as TSV in `reports/data/`.
+- [x] **CAL-02**: The harness reuses the exact same provider-agnostic `selectBotMove` move-selection code the app uses (via the `@/` alias hook), so the measured strength reflects the code users actually play against.
+- [x] **CAL-03**: A feasibility spike confirms Maia ONNX inference runs headlessly in Node at harness-viable throughput (and locks the `onnxruntime-node` version) before the full grid is built.
+
+## v2 Requirements
+
+Deferred to a future milestone. Tracked, not in this roadmap.
+
+### Bot Presets & Progression
+
+- **BOTX-01**: Preset bot character cards (one per 200-ELO step 600–2600 × play-style presets).
+- **BOTX-02**: 3-star victory system per bot card (depends on abandonment-as-loss accounting).
+
+### Strength Calibration from Real Play
+
+- **CALX-01**: Post-launch curve fitting (player rating vs result vs bot config) over stored bot games to relabel bots with measured ELO.
+- **CALX-02**: Rage-quit / abandonment accounting (e.g. abandoning after move N counts as a loss for star purposes) — needs server-side in-progress tracking.
+
+## Out of Scope
+
+Explicitly excluded from v1. Documented to prevent scope creep.
+
+| Feature | Reason |
+|---------|--------|
+| Premove | Cut from v1 (2026-07-11 decision) — non-trivial board-state handling, low value for a first cut. |
+| Takeback | Cut from v1 — complicates clock/PGN accounting and corrupts calibration integrity. |
+| Hints / live eval bar during play / opening book for the bot | Training aids that corrupt the game as an honest strength measurement; deliberately stripped. |
+| Adaptive difficulty | The bot must play a fixed symmetric ELO; adapting would corrupt calibration. |
+| Bullet time controls | Excluded by design so slower devices get client-side compute headroom. |
+| Server-side game sessions / websockets | Game runs entirely client-side until finished (locked decision 1); only the finished PGN is POSTed. |
+| Rematch button, low-time warnings, bot resignation in dead positions | Polish, deferred to v1.x. |
+| User-results ELO curve fitting | Deferred to a later milestone once stored-game volume exists (locked decision 3). |
+
+## Traceability
+
+Which phases cover which requirements. Filled during roadmap creation.
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| BOT-01 | Phase 166 | Complete |
+| BOT-02 | Phase 166 | Complete |
+| BOT-03 | Phase 166 | Complete |
+| BOT-04 | Phase 166 | Complete |
+| PLAY-01 | Phase 171 | Complete |
+| PLAY-02 | Phase 171 | Complete |
+| PLAY-03 | Phase 169 | Complete (Plan 04 landed live-board turn-gating; Plan 09 gap closure fixes the WR-05 scroll-back preservation; Plan 10 gap closure closes the CR-01/CR-02 commit-path clock enforcement gaps the board relies on) |
+| PLAY-04 | Phase 169 | Complete (Plan 04 landed wall-clock delta + pause wiring; Plan 10 gap closure closes the CR-01 hidden-tab pause bypass — every elapsed-time consumer now reads through the pause-aware chargeableElapsedMs helper, not just the resume-edge anchor) |
+| PLAY-05 | Phase 169 | Complete (Plan 09 gap closure — D-16 per-move think deadline restores the "budget derived from remaining clock" requirement text; closes the BLOCKED verification gap) |
+| PLAY-06 | Phase 169 | Complete (Plan 04 landed board end-condition detection + flag-on-time; Plan 10 gap closure closes the CR-02 commit-path never-flag backdoor, making the bot's timeout loss real per amended SC1) |
+| PLAY-07 | Phase 169 | Complete (Plan 05 landed resign/offer-draw UI wiring; Plan 09 gap closure fixes the WR-04 draw-cooldown affordance) |
+| PLAY-08 | Phase 169 | Complete |
+| PLAY-09 | Phase 169 | Complete (Plan 06/7 closes it — GameResultDialog/GameResultStrip result screen with Analyze/New game actions) |
+| PLAY-10 | Phase 171 | Complete |
+| PLAY-11 | Phase 169.5 | Complete |
+| STORE-01 | Phase 167 | Complete |
+| STORE-02 | Phase 167 | Complete |
+| STORE-03 | Phase 167 | Complete |
+| STORE-04 | Phase 167 | Complete |
+| STORE-05 | Phase 167 | Complete |
+| STORE-06 | Phase 167 | Complete |
+| STORE-07 | Phase 167 | Complete |
+| RESUME-01 | Phase 170 | Complete |
+| RESUME-02 | Phase 170 | Complete |
+| CAL-01 | Phase 168 | Complete |
+| CAL-02 | Phase 168 | Complete |
+| CAL-03 | Phase 168 | Complete |
