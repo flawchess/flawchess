@@ -2,19 +2,18 @@
 gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: Bot Play
-current_phase: 999.1
-current_phase_name: BACKLOG
-status: milestone_complete
-stopped_at: v2.3 Bot Play milestone closed
-last_updated: "2026-07-15T06:00:00.000Z"
-last_activity: 2026-07-15
-last_activity_desc: v2.3 Bot Play milestone closed (phases 166-172); ready to deploy
+current_phase: 173
+status: completed
+stopped_at: Completed 173-04-PLAN.md (phase 173 fully executed)
+last_updated: "2026-07-16T05:34:12.181Z"
+last_activity: 2026-07-16
+last_activity_desc: Phase 173 complete
 progress:
-  total_phases: 9
-  completed_phases: 9
-  total_plans: 46
-  completed_plans: 46
-  percent: 100
+  total_phases: 1
+  completed_phases: 1
+  total_plans: 4
+  completed_plans: 4
+current_phase_name: anchor-ladder-self-calibration-seed-101
 ---
 
 # Project State: FlawChess
@@ -22,9 +21,9 @@ progress:
 ## Current Position
 
 Milestone: v2.3 Bot Play — CLOSED 2026-07-15 (phases 166–172, 46 plans)
-Phase: none active (999.1 Password Reset remains in BACKLOG)
-Status: Milestone complete — deploy pending (`bin/deploy.sh`)
-Last activity: 2026-07-15 — Completed quick task 260715-r9c: /bots board controls + board-width clocks + no-gap desktop layout
+Phase: 173
+Status: All phases complete
+Last activity: 2026-07-16 — Phase 173 complete
 
 ## Project Reference
 
@@ -84,6 +83,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - Phase 162 added: Grading-run-authoritative eval reconciliation — precedence flip (SEED-090, preferred over SEED-089's unified pass; frontend-only, grading run becomes authoritative for all displayed per-move evals)
 - Phase 163 added: Gem moves — Maia-findability move badges on /analysis (SEED-092; escalated from a /gsd-quick request 2026-07-10 — sized as phase-scale: ~10+ files, new detection module, open tunables)
 - Phase 169.5 inserted: Bot Opening Book — inserted 2026-07-13 after a /gsd-explore session on slow bot first moves. Maia-policy-weighted ECO book (frontend/public/openings.tsv) for the early plies; no search, no backend, no re-calibration (the harness already starts from book FENs). New requirement PLAY-11.
+- Phase 173 added: Anchor ladder self-calibration (SEED-101) — round-robin maia/SF anchors, fit internal rating scale; unblocks SEED-102
 
 ### Decisions
 
@@ -292,6 +292,18 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 172-05]: sweepArmedForGame implemented via useState (armedGameId), not a ref — this project's react-hooks/refs ESLint rule forbids reading ref.current during render — reads evalChartReady directly for the same-render transition; armedGameId is only sticky protection against a later flicker
 - [Phase 172-05]: needParentGemGrade's double-work-avoidance extension uses a companion sweepResolvedPlies useState synced by an effect declared AFTER useGemSweep, not a ref — avoids both the react-hooks/refs lint rule and a circular dependency (needParentGemGrade also feeds the sweep's own liveBusy input)
 - [Phase 172-05]: Actual hook call order is [primary grading, sweep's grading, live gemGrading] and [live maia, sweep's maia] per commit, not [primary, gemGrading, sweep] as first assumed — useGemSweep had to be wired in before parentGemCandidateSans/gemGrading since needParentGemGrade (which both depend on) must exist before it can be passed to the sweep as liveBusy
+- [Phase 173-01]: sf8/sf10 documented [ASSUMED] labels/ordering-only (never a Bradley-Terry fit input) directly in the SF_SKILL_ELO doc comment, per D-09/Pitfall 3
+- [Phase 173-01]: playTwoMoverGame's own maxPlies param (game-level PLY_CAP cutoff) kept distinct from playGame's maxPlies param (SearchBudget tree-depth cap) — the thin wrapper never forwards the latter into the former, preserving the pre-extraction PLY_CAP default
+- [Phase 173-01]: playGame's onPly wrapper remaps playTwoMoverGame's color-keyed mover ('white'/'black') back to the bot-relative 'bot'/'anchor' label via (p.mover === 'white') === botIsWhite, keeping the pre-extraction onPly payload byte-identical
+- [Phase 173-03]: fit_bradley_terry returns ratings already on the 400*log10(pi) scale (not raw strengths) so apply_scale_fix operates uniformly on rating dicts
+- [Phase 173-03]: apply_scale_fix assigns the pin anchor's rating directly to value (not via addition) so the D-05 exact-1500.0 pin holds regardless of floating-point rounding
+- [Phase 173-03]: compute_residuals returns a ResidualRow TypedDict instead of dict[str, object] — ty could not statically verify tuple-unpacking row['pair'] on a plain object-valued dict
+- [Phase 173-03]: bootstrap_ci's pinned anchor (maia1500) collapses to a zero-width CI by construction across every resample — documented as expected behavior in test_bootstrap, not a bug
+- [Phase 173-02]: Global gameIndex is a single run-wide counter (not per-pair-local) shared across probe+measure and all pairs, mirroring the bot harness's --resume convention
+- [Phase 173-02]: D-04 re-targeting applies to every dropped cross-family pair on every round (not only when it's the sole surviving link), bounded by MAX_RETARGET_ROUNDS=3
+- [Phase 173-02]: Measure-pass extension computes gamesPerMeasure - stats.games (stats.games already includes probe games) — resolves 173-RESEARCH.md Open Question 1 by reusing rather than discarding already-played data
+- [Phase 173-02]: isCrossFamilyPair exported from calibration-anchor-schedule.mjs (shared by checkConnectivity and the orchestrator's retarget logic) rather than duplicated
+- [Phase ?]: [Phase 173-04]: Band-relaxing connectivity rescue (rescueConnectivity/bandDistance, commit a2f96e81, user-approved) fixes D-04 re-target dead-end when a pair's only informative link has no weaker same-family anchor
 
 ### Pending Todos
 
@@ -376,17 +388,24 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Completed 172-05-PLAN.md
+**Stopped at:** Completed 173-04-PLAN.md (phase 173 fully executed)
 
-**Last session:** 2026-07-14T22:02:42.582Z
+**Last session:** 2026-07-16T05:09:43.493Z
 
-**Resume file:** 
+**Resume file:**
 
 None
 
 ## Performance Metrics
 
 (Cleared at v1.31 close — per-plan timings archived with the milestone.)
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 173-anchor-ladder-self-calibration-seed-101 P03 | 20min | 2 tasks | 2 files |
+| Phase 173 P02 | 13min | 2 tasks | 3 files |
+| Phase 173 P04 | 25min | 2 tasks | 5 files |
 
 ## Performance Metrics
 
@@ -474,6 +493,7 @@ None
 | Phase 172 P03 | 20min | 3 tasks | 7 files |
 | Phase 172 P04 | 50min | 3 tasks | 4 files |
 | Phase 172 P05 | ~2h | 3 tasks | 2 files |
+| Phase 173 P01 | ~20min | 2 tasks | 5 files |
 
 ## Operator Next Steps
 

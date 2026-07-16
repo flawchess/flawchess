@@ -33,8 +33,17 @@ export const ANCHOR_MOVETIME_SLACK_MS = 2500;
  * ONLY for the advisory per-cell Elo estimate (D-05) — never the primary
  * raw W/D/L matrix (D-04). Carries the same +/-100-150 Elo conversion-error
  * caveat SEED-091 already accepts for this milestone.
+ *
+ * Keys `8` and `10` (Phase 173, D-09) are `[ASSUMED]` — 173-RESEARCH.md
+ * Assumption A1's round, explicitly-approximate continuations of the same
+ * spacing above, added so the anchor-ladder orchestrator (Plan 02) has a
+ * superhuman-end Stockfish anchor. Like `0`/`3`/`5` above, these are used
+ * ONLY for labels/ordering and the scheduler's initial cross-family pairing
+ * guess (Pitfall 3) — NEVER as a fit input; the joint Bradley-Terry fit
+ * (`calibration-anchor-fit.py`) derives every anchor's real internal rating
+ * from game outcomes, ignoring this nominal table entirely for sf8/sf10.
  */
-export const SF_SKILL_ELO = { 0: 1320, 3: 1750, 5: 2200 };
+export const SF_SKILL_ELO = { 0: 1320, 3: 1750, 5: 2200, 8: 2600, 10: 2800 };
 
 /**
  * Known anchor rating for a parsed `--anchors` token (Phase 168.5-05 D-15):

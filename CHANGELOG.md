@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- Dev: anchor-vs-anchor self-calibration ladder — a standalone orchestrator (`scripts/calibration-anchor-ladder.mjs`, probe→measure schedule with connectivity guard and resumable ledger) plus a stdlib Bradley-Terry fit (`scripts/calibration_anchor_fit.py`) place all 10 Maia/Stockfish bot anchors on one measured internal scale, published as `INTERNAL_RATING` in `scripts/lib/calibration-internal-scale.mjs`. Key result: the Maia-3 argmax ladder is ~2.8x compressed vs its nominal ELO labels, worst at the top (Phase 173).
+
 ### Changed
 
 - Play-vs-bot board now has a control bar (reset, back, forward, flip board) directly below the board for stepping through the game and flipping orientation. In the single-column layout the name/clock strips always match the board width and the move list is hidden; the two-column layout now appears on narrower windows (from 800px), keeps a small gap between columns, and sizes the move list to line up with the bottom of the board.

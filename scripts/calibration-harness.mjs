@@ -73,6 +73,7 @@ import { makeNodeProviders, adjudicationFallbackStats } from './lib/calibration-
 import { maiaArgmaxMove, SF_SKILL_ELO, anchorRatingFor } from './lib/calibration-anchors.mjs';
 import { OPENING_BOOK, assertOpeningBookUciPrefixes } from './lib/calibration-openings.mjs';
 import { combineAnchorEstimates, wasScoreClamped } from './lib/calibration-elo.mjs';
+import { playTwoMoverGame } from './lib/calibration-game-loop.mjs';
 
 import { selectBotMove } from '@/lib/engine/selectBotMove';
 import { mulberry32 } from '@/lib/engine/botSampling';
@@ -82,7 +83,6 @@ import {
   FLAWCHESS_BOT_CONCURRENCY,
   FLAWCHESS_BOT_STOP_RULE,
 } from '@/lib/engine/botBudget';
-import { uciToSquares } from '@/lib/sanToSquares';
 import { MAIA_ELO_LADDER } from '@/lib/maiaEncoding';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
@@ -131,10 +131,16 @@ export const PLY_CAP = 120;
 
 // ─── D-09: seeded per-game PRNG derivation + opening/color assignment ──────────
 
-/** Prime multiplier spacing adjacent game indices into well-separated mulberry32 seeds. */
-const SEED_GAME_INDEX_MULTIPLIER = 1_000_003;
+/**
+ * Prime multiplier spacing adjacent game indices into well-separated
+ * mulberry32 seeds. Exported (Phase 173, D-08 anti-drift) alongside
+ * `deriveGameSeed` — which closes over it — so Plan 02's anchor-ladder
+ * orchestrator imports the SAME seed-derivation logic instead of
+ * duplicating it.
+ */
+export const SEED_GAME_INDEX_MULTIPLIER = 1_000_003;
 
-function deriveGameSeed(seed, gameIndex) {
+export function deriveGameSeed(seed, gameIndex) {
   return (seed + gameIndex * SEED_GAME_INDEX_MULTIPLIER) >>> 0;
 }
 
@@ -172,15 +178,20 @@ const SECONDS_PER_HOUR = 3600;
 
 // ─── CLI parsing (WR-02 discipline: every value-consuming flag validates) ──────
 
-/** Returns the flag's value, or throws if it's missing (absent or itself a --flag). */
-function requireFlagValue(value, key) {
+/**
+ * Returns the flag's value, or throws if it's missing (absent or itself a
+ * --flag). Exported alongside the other CLI-flag helpers below (Phase 173,
+ * D-08 anti-drift) so Plan 02's anchor-ladder orchestrator imports the SAME
+ * validation logic instead of duplicating the WR-02 fail-loud discipline.
+ */
+export function requireFlagValue(value, key) {
   if (value === undefined || value.startsWith('--')) {
     throw new Error(`Missing value for --${key}`);
   }
   return value;
 }
 
-function parsePositiveIntFlag(value, key, min = 1) {
+export function parsePositiveIntFlag(value, key, min = 1) {
   const raw = requireFlagValue(value, key);
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isInteger(parsed) || parsed < min) {
@@ -189,7 +200,7 @@ function parsePositiveIntFlag(value, key, min = 1) {
   return parsed;
 }
 
-function parseIntList(raw, key) {
+export function parseIntList(raw, key) {
   return raw.split(',').map((token) => {
     const parsed = Number.parseInt(token.trim(), 10);
     if (!Number.isInteger(parsed)) {
@@ -199,7 +210,7 @@ function parseIntList(raw, key) {
   });
 }
 
-function parseFloatList(raw, key) {
+export function parseFloatList(raw, key) {
   return raw.split(',').map((token) => {
     const parsed = Number.parseFloat(token.trim());
     if (!Number.isFinite(parsed)) {
@@ -345,70 +356,11 @@ export async function setupHarnessEngines({ stockfishProcs = STOCKFISH_POOL_DEFA
   }
 }
 
-// ─── D-10 cutoff 1: chess.js terminal-state classification ────────────────────
-
-/** Classifies a chess.js game-over position into a bot-relative W/D/L result, or null if not over. */
-function classifyTerminalResult(chess, botIsWhite) {
-  if (!chess.isGameOver()) return null;
-  if (chess.isCheckmate()) {
-    // The side to move IS the checkmated side (chess.turn() already knows it).
-    const checkmatedIsWhite = chess.turn() === 'w';
-    const botWon = checkmatedIsWhite !== botIsWhite;
-    return { result: botWon ? 'win' : 'loss', reason: 'checkmate' };
-  }
-  if (chess.isStalemate()) return { result: 'draw', reason: 'stalemate' };
-  if (chess.isThreefoldRepetition()) return { result: 'draw', reason: 'threefold_repetition' };
-  if (chess.isInsufficientMaterial()) return { result: 'draw', reason: 'insufficient_material' };
-  if (chess.isDrawByFiftyMoves()) return { result: 'draw', reason: 'fifty_move_rule' };
-  return { result: 'draw', reason: 'draw_other' }; // defensive: isDraw()-true but unclassified above
-}
-
-// ─── D-10 cutoff 2/3: Stockfish adjudication eval + ply cap ────────────────────
-// The single-line white-POV cp eval itself lives in calibration-providers.mjs's
-// `evalPositionCp` (engine-parameterized so stockfish-pool.mjs can route it
-// through any free pool engine, Plan 03 Task 1) — this file only calls it via
-// `pool.evalPosition(fen)` and tracks the sustained-favored-side/ply-cap tally.
-
-/** Updates the sustained-favored-side tracker; returns the favored side once sustained past the threshold. */
-function updateSustainState(sustainState, whitePovCp) {
-  const isBeyondThreshold = Math.abs(whitePovCp) >= ADJUDICATION_CP_THRESHOLD;
-  if (!isBeyondThreshold) {
-    sustainState.side = null;
-    sustainState.count = 0;
-    return null;
-  }
-  const favoredSide = whitePovCp > 0 ? 'w' : 'b';
-  sustainState.count = sustainState.side === favoredSide ? sustainState.count + 1 : 1;
-  sustainState.side = favoredSide;
-  return sustainState.count >= ADJUDICATION_SUSTAIN_PLIES ? favoredSide : null;
-}
-
-function adjudicatedResult(favoredSide, botIsWhite, reason) {
-  const botFavored = (favoredSide === 'w') === botIsWhite;
-  return { result: botFavored ? 'win' : 'loss', reason };
-}
-
-/** D-10 cutoffs 2+3, run only when the position is NOT already chess.js-terminal. Returns null to continue play. */
-async function evaluateNonTerminalCutoffs({ pool, fen, botIsWhite, ply, sustainState }) {
-  const whitePovCp = await pool.evalPosition(fen);
-
-  const sustainedFavoredSide = updateSustainState(sustainState, whitePovCp);
-  if (sustainedFavoredSide !== null) {
-    return adjudicatedResult(sustainedFavoredSide, botIsWhite, 'adjudicated_eval');
-  }
-
-  if (ply >= PLY_CAP) {
-    if (Math.abs(whitePovCp) < ADJUDICATION_CP_THRESHOLD) {
-      return { result: 'draw', reason: 'ply_cap_draw' };
-    }
-    const favoredSide = whitePovCp > 0 ? 'w' : 'b';
-    return adjudicatedResult(favoredSide, botIsWhite, 'ply_cap_decisive');
-  }
-
-  return null;
-}
-
-// ─── Anchor dispatch + move application ────────────────────────────────────────
+// ─── Anchor dispatch ────────────────────────────────────────────────────────
+// D-10 cutoffs 1-3 (chess.js terminal classification, Stockfish adjudication
+// eval, ply cap) and move application now live in the extracted mover-agnostic
+// `calibration-game-loop.mjs` (Phase 173, D-08) — this file only builds the
+// bot/anchor mover closures `playGame` hands to `playTwoMoverGame` below.
 
 async function playAnchorMove({ providers, pool, anchorSpec, fen, gameRng }) {
   if (anchorSpec.kind === 'maia') {
@@ -417,17 +369,15 @@ async function playAnchorMove({ providers, pool, anchorSpec, fen, gameRng }) {
   return pool.skillMove(fen, anchorSpec.skillLevel);
 }
 
-/** Applies a UCI move to a chess.js instance IN PLACE (mirrors treeCommon.ts's applyUciMoveFen move-object shape). */
-function applyUciMove(chess, uci) {
-  const squares = uciToSquares(uci);
-  chess.move({
-    from: squares?.from ?? uci.slice(0, 2),
-    to: squares?.to ?? uci.slice(2, 4),
-    promotion: uci.length > 4 ? uci[4] : undefined,
-  });
-}
+// ─── The bot-vs-anchor game loop (Task 1, Phase 168; thin wrapper since Phase 173) ──
 
-// ─── The bot-vs-anchor game loop (Task 1) ──────────────────────────────────────
+/** Maps a WHITE-POV color-keyed `playTwoMoverGame` result to the bot-relative `win`/`loss`/`draw` shape. */
+function mapColorResultToBotRelative(colorResult, botIsWhite) {
+  if (colorResult === 'draw') return 'draw';
+  const whiteWon = colorResult === 'white_win';
+  const botWon = whiteWon === botIsWhite;
+  return botWon ? 'win' : 'loss';
+}
 
 /**
  * Plays ONE bot-vs-anchor game from `startFen` to a terminal/adjudicated/
@@ -443,7 +393,10 @@ function applyUciMove(chess, uci) {
  * never reach.
  *
  * `maxNodes`/`maxPlies` (optional) override the Phase 168.5 D-05/D-07/D-09
- * bot-play budget defaults — ONLY for structural checks (e.g.
+ * bot-play SEARCH budget defaults (`SearchBudget.maxNodes`/`.maxPlies`, an
+ * unrelated concept to `playTwoMoverGame`'s own `maxPlies` game-ply-cap
+ * parameter, which this wrapper deliberately never touches, leaving it at
+ * its `PLY_CAP` default) — ONLY for structural checks (e.g.
  * `calibration-determinism.check.mjs`) that need to prove the
  * seeded-rng/argmax reproducibility property, which does NOT depend on
  * budget size, without paying the full budget's real cost. Every actual
@@ -454,6 +407,11 @@ function applyUciMove(chess, uci) {
  * `stopRule: FLAWCHESS_BOT_STOP_RULE` and the pinned `FLAWCHESS_BOT_CONCURRENCY`
  * (168.5-04 Task 2) — this measures the shipped bot, not the old
  * full-budget-no-stop-rule search (T-168.5-04-02).
+ *
+ * Delegates to the mover-agnostic `playTwoMoverGame` (Phase 173, D-08/D-10 —
+ * a pure extraction, no behavior change): derives `moverWhite`/`moverBlack`
+ * from `botIsWhite`, then maps the color-keyed result back to this
+ * function's bot-relative `{ result: 'win'|'loss'|'draw', reason }` shape.
  */
 export async function playGame({
   Chess,
@@ -471,74 +429,60 @@ export async function playGame({
 }) {
   const notifyPly = onPly ?? (() => {});
 
-  // [Rule 1 bug fix, Plan 02]: no engine's transposition table is ever cleared
-  // between games otherwise (every engine is reused across the whole grid
-  // sweep — 168-RESEARCH.md's explicit design). Without `ucinewgame`, a fresh
-  // game's early-ply searches can hit/collide with TT entries left over from
-  // an ENTIRELY DIFFERENT earlier game's exploration, silently perturbing
-  // `grade()`'s returned eval/PV for what is otherwise an identical
-  // (fen, candidateUcis) input — breaking D-09's seeded byte-identical-replay
-  // guarantee even though `selectBotMove`'s own rng/argmax logic is fully
-  // deterministic. Plan 03: `pool.newGameAll()` clears EVERY engine in the
-  // pool, not just one — a bot move can land on any free engine.
-  await pool.newGameAll();
+  const selectBotMoveOnce = (fen, rng) =>
+    selectBotMove(
+      fen,
+      {
+        elo: botElo,
+        blend: botBlend,
+        budget: {
+          maxNodes,
+          maxPlies,
+          // Phase 168.5 D-09 (supersedes Plan 03's `pool.size`): the bot's
+          // own concurrency is PINNED to FLAWCHESS_BOT_CONCURRENCY, not
+          // the pool's own process count — app == harness determinism
+          // requires the exact same fixed value on both sides, not a
+          // value that silently tracks `--stockfish-procs` (T-168.5-04-01).
+          concurrency: FLAWCHESS_BOT_CONCURRENCY,
+          // Phase 168.5 D-05/D-06 (Task 2): without this the sweep would
+          // measure a bot without the early-stop rule (T-168.5-04-02).
+          stopRule: FLAWCHESS_BOT_STOP_RULE,
+        },
+      },
+      { policy: providers.policy, grade: providers.grade, rng },
+      // deps.search intentionally omitted (CAL-02) — defaults to the real mctsSearch.
+    );
+  const playAnchorMoveOnce = (fen, rng) => playAnchorMove({ providers, pool, anchorSpec, fen, gameRng: rng });
 
-  const chess = new Chess(startFen);
-  const moveUcis = [];
-  const sustainState = { side: null, count: 0 };
-  let ply = 0;
+  const moverWhite = botIsWhite ? selectBotMoveOnce : playAnchorMoveOnce;
+  const moverBlack = botIsWhite ? playAnchorMoveOnce : selectBotMoveOnce;
 
-  for (;;) {
-    const fen = chess.fen();
-    const whiteToMove = fen.split(' ')[1] !== 'b';
-    const botToMove = whiteToMove === botIsWhite;
+  const colorResult = await playTwoMoverGame({
+    Chess,
+    pool,
+    moverWhite,
+    moverBlack,
+    startFen,
+    gameRng,
+    onPly: (p) =>
+      notifyPly({
+        ply: p.ply,
+        mover: (p.mover === 'white') === botIsWhite ? 'bot' : 'anchor',
+        uci: p.uci,
+        moveMs: p.moveMs,
+      }),
+    // maxPlies intentionally NOT forwarded — playTwoMoverGame's own maxPlies
+    // is the D-10 game-ply-cap (PLY_CAP), a different concept than this
+    // function's own maxPlies param (the SearchBudget's tree-depth cap);
+    // leaving it unset here preserves the pre-extraction PLY_CAP default.
+  });
 
-    const moveStartMs = performance.now();
-    const uci = botToMove
-      ? await selectBotMove(
-          fen,
-          {
-            elo: botElo,
-            blend: botBlend,
-            budget: {
-              maxNodes,
-              maxPlies,
-              // Phase 168.5 D-09 (supersedes Plan 03's `pool.size`): the bot's
-              // own concurrency is PINNED to FLAWCHESS_BOT_CONCURRENCY, not
-              // the pool's own process count — app == harness determinism
-              // requires the exact same fixed value on both sides, not a
-              // value that silently tracks `--stockfish-procs` (T-168.5-04-01).
-              concurrency: FLAWCHESS_BOT_CONCURRENCY,
-              // Phase 168.5 D-05/D-06 (Task 2): without this the sweep would
-              // measure a bot without the early-stop rule (T-168.5-04-02).
-              stopRule: FLAWCHESS_BOT_STOP_RULE,
-            },
-          },
-          { policy: providers.policy, grade: providers.grade, rng: gameRng },
-          // deps.search intentionally omitted (CAL-02) — defaults to the real mctsSearch.
-        )
-      : await playAnchorMove({ providers, pool, anchorSpec, fen, gameRng });
-    const moveMs = performance.now() - moveStartMs;
-
-    try {
-      applyUciMove(chess, uci);
-    } catch (err) {
-      throw new Error(`playGame: illegal move ${uci} at ply ${ply + 1} (fen=${fen}): ${err.message}`);
-    }
-    moveUcis.push(uci);
-    ply++;
-    notifyPly({ ply, mover: botToMove ? 'bot' : 'anchor', uci, moveMs });
-
-    const terminal = classifyTerminalResult(chess, botIsWhite);
-    if (terminal !== null) {
-      return { ...terminal, plies: ply, moveUcis };
-    }
-
-    const cutoff = await evaluateNonTerminalCutoffs({ pool, fen: chess.fen(), botIsWhite, ply, sustainState });
-    if (cutoff !== null) {
-      return { ...cutoff, plies: ply, moveUcis };
-    }
-  }
+  return {
+    result: mapColorResultToBotRelative(colorResult.result, botIsWhite),
+    reason: colorResult.reason,
+    plies: colorResult.plies,
+    moveUcis: colorResult.moveUcis,
+  };
 }
 
 // ─── D-04/D-06: per-cell (bot-cell x anchor) tally + durable main results TSV ──
@@ -595,8 +539,13 @@ export function isUnanimousLoss(tally) {
   return tally.games > 0 && tally.losses === tally.games;
 }
 
-/** Short git SHA of the working tree HEAD — `'unknown'` if git is unavailable (never fatal, WR-01 spirit). */
-function resolveGitSha() {
+/**
+ * Short git SHA of the working tree HEAD — `'unknown'` if git is unavailable
+ * (never fatal, WR-01 spirit). Exported alongside `buildTimestamp` (Phase
+ * 173, D-08 anti-drift) so Plan 02's anchor-ladder orchestrator imports the
+ * SAME git-sha/timestamp logic instead of duplicating it.
+ */
+export function resolveGitSha() {
   try {
     return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
   } catch {
@@ -604,7 +553,7 @@ function resolveGitSha() {
   }
 }
 
-function buildTimestamp() {
+export function buildTimestamp() {
   return new Date().toISOString().replace(/[:.]/g, '-');
 }
 

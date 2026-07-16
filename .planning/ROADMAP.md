@@ -627,3 +627,24 @@ Two independent, mostly-frontend `/analysis` improvements, each released to prod
 See [milestones/v2.2-ROADMAP.md](milestones/v2.2-ROADMAP.md) for full details.
 
 </details>
+
+### Phase 173: Anchor ladder self-calibration (SEED-101)
+
+**Goal:** Round-robin the calibration harness's anchors against each other (Maia-argmax rungs 700–2300, SF Skill 0/3/5/8/10, cross-family games included) and fit a logistic/BayesElo-style rating model over the game graph, placing every anchor on one common internal scale with measured spacing (scale fixed arbitrarily, e.g. maia1500 = 1500; explicitly NOT human ELO). Unblocks SEED-102 and answers whether the Maia-3 argmax ladder is compressed like Maia-1's.
+**Requirements**: TBD (none mapped; plans trace CONTEXT.md decisions D-01–D-13)
+**Depends on:** Phase 172
+**Plans:** 4/4 plans complete
+
+Plans:
+**Wave 1**
+
+- [x] 173-01-PLAN.md — Extract mover-agnostic game loop + wire SF skills 8/10 (D-08/D-09/D-10) [wave 1]
+- [x] 173-03-PLAN.md — Stdlib Bradley-Terry/Elo fit + connectivity guard + tests (D-04/D-05/D-06/D-07) [wave 1]
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 173-02-PLAN.md — Anchor-vs-anchor orchestrator: two-pass probe→measure scheduler + two-tier TSV (D-01/D-02/D-03/D-04/D-13) [wave 2]
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 173-04-PLAN.md — Execute the real sweep + fit the internal scale + findings/compression verdict (D-11/D-12/D-13) [wave 3]
