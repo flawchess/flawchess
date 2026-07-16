@@ -1,29 +1,26 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.3
-milestone_name: Bot Play
-current_phase: 173
-status: completed
-stopped_at: Completed 173-04-PLAN.md (phase 173 fully executed)
-last_updated: "2026-07-16T05:34:12.181Z"
+milestone: v2.4
+milestone_name: Backend Gem & Great Detection
+status: planning
+last_updated: "2026-07-16T11:01:09.738Z"
 last_activity: 2026-07-16
-last_activity_desc: Phase 173 complete
 progress:
-  total_phases: 1
-  completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
-current_phase_name: anchor-ladder-self-calibration-seed-101
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Milestone: v2.3 Bot Play — CLOSED 2026-07-15 (phases 166–172, 46 plans)
-Phase: 173
-Status: All phases complete
-Last activity: 2026-07-16 — Phase 173 complete
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-07-16 — Milestone v2.4 started
 
 ## Project Reference
 

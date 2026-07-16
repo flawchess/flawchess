@@ -45,13 +45,28 @@ flaws.
   frequency once the pipeline exists (same playbook as Phase 172's 0.1 → 0.2
   retune).
 
-### D-2: Candidate set — all out-of-book best-move plies, no C2 gate
+### D-2: Candidate set — out-of-book best-move plies passing the inaccuracy floor
 
-Every out-of-book ply where the played move == Stockfish best gets a stored row
-(`maia_prob` + second-best eval), regardless of whether C2 passes. ~10–20
-rows/game. This is the only analysis-time-baked decision; both C1 band edges
-and the C2 margin stay retunable forever with zero re-analysis. (Gating rows on
-C2 would bake `MISTAKE_DROP` into the corpus — rejected.)
+> **AMENDED 2026-07-16 at v2.4 milestone kickoff.** The original decision
+> ("store ALL out-of-book best-move plies, no gate") was revised in discussion:
+> candidate rows are now gated at analysis time by **`INACCURACY_DROP` (0.05)**
+> — a row is stored (and Maia run) only when
+> `best_es - second_es >= INACCURACY_DROP`, i.e. the runner-up move would have
+> been at least an inaccuracy. Rationale: the near-zero-margin bulk of
+> best-move plies (positions with several roughly equal moves) can never
+> become gems/greats under any plausible retune, so storing them buys nothing;
+> the realistic Gem/Great margin retune band (0.05–0.10+) stays fully
+> query-time. Accepted trade-offs: loosening below 0.05 needs corpus
+> re-analysis (unlikely direction), and the gate couples row storage to the
+> shared flaw-threshold registry (a future `INACCURACY_DROP` retune leaves the
+> corpus mixed-vintage below the new value). Gating at the full C2
+> `MISTAKE_DROP` (0.10) remains rejected — it would bake the classification
+> margin itself into the corpus.
+
+Every out-of-book ply where the played move == Stockfish best AND the margin
+passes the inaccuracy floor gets a stored row (`maia_prob` + second-best
+eval). Both C1 band edges and the C2 margin (within [0.05, ∞)) stay retunable
+forever with zero re-analysis.
 
 ### D-3: Inference host — backend at eval-apply, NOT the workers
 
