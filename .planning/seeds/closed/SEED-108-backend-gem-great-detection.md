@@ -1,8 +1,8 @@
 ---
 id: SEED-108
-status: dormant
+status: closed
 planted: 2026-07-15
-updated: 2026-07-16 (design locked via /gsd-explore — Great moves added, inference moved to backend)
+updated: 2026-07-17 (implemented and shipped as milestone v2.4, Phases 174-176)
 planted_during: v2.3 (post Phase 172 / SEED-106)
 trigger_when: next analysis/insights milestone that can absorb backend Maia inference, or when gem/great game filtering becomes a wanted feature
 scope: medium-large (full milestone: inference + storage, board integration, game filter, backfill)

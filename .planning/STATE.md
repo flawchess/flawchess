@@ -4,37 +4,39 @@ milestone: v2.4
 milestone_name: Backend Gem & Great Detection
 current_phase: 999.1
 current_phase_name: BACKLOG
-status: planning
-stopped_at: Completed 176-01-PLAN.md
-last_updated: "2026-07-17T04:22:10.715Z"
+status: milestone_complete
+stopped_at: v2.4 Backend Gem & Great Detection milestone closed
+last_updated: "2026-07-17T06:00:00.000Z"
 last_activity: 2026-07-17
-last_activity_desc: Phase 176 complete, transitioned to Phase 999.1
+last_activity_desc: v2.4 Backend Gem & Great Detection milestone closed (phases 174-176); ready to deploy
 progress:
-  total_phases: 4
+  total_phases: 3
   completed_phases: 3
-  total_plans: 13
-  completed_plans: 13
-  percent: 75
+  total_plans: 14
+  completed_plans: 14
+  percent: 100
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 999.1 — Password Reset (BACKLOG)
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-07-17 — Phase 176 complete, transitioned to Phase 999.1
+Milestone: v2.4 Backend Gem & Great Detection — CLOSED 2026-07-17 (phases 174–176, 14 plans)
+Phase: none active (999.1 Password Reset remains in BACKLOG)
+Status: Milestone complete — deploy pending (`bin/deploy.sh`)
+Last activity: 2026-07-17 — Closed v2.4: archived phases to milestones/v2.4-phases/, CHANGELOG promoted, tagged v2.4
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-07-14 after Phase 170)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: **v2.3 Bot Play is closed (2026-07-15)** — play a real clocked game against a calibrated FlawChess bot on the new `/bots` page, plus a background gem sweep + book markers on `/analysis`. All nine phases (166, 167, 168, 168.5, 169, 169.5, 170, 171, 172) are shipped and squash-merged to `main` behind the full pre-merge gate. **Deploy pending** — v2.3 is on `main` but not yet on `production`; next action is `bin/deploy.sh`. Prior milestone v2.2 (Analysis ELO Calibration & Deep-links) closed 2026-07-11 and is live in production via #253/#254. Note: v2.1 (Analysis Eval Reconciliation & Gem Moves) merged to main 2026-07-10 and ships with this deploy too (it was never separately deployed).
+Current focus: **v2.4 Backend Gem & Great Detection is closed (2026-07-17)** — gem/great move detection now runs in the backend full-game analysis pass as stored first-class `game_best_moves` rows (Maia-3 at eval-apply), powering the analysis board + eval chart + a Library "has gem"/"has great" filter, with an opportunistic tier-4b corpus backfill lottery (ships OFF behind `BEST_MOVE_BACKFILL_ENABLED`). All three phases (174, 175, 176) are shipped and squash-merged to `main` behind the full pre-merge gate. **Deploy pending** — v2.4 is on `main` but not yet on `production`; next action is `bin/deploy.sh`. Prior milestone v2.3 (Bot Play) closed 2026-07-15 and shipped to production via #255 (bundled with v2.1). Prior milestone v2.2 (Analysis ELO Calibration & Deep-links) closed 2026-07-11 and is live in production via #253/#254.
 
 ## Milestone Progress
 
-Thirty-six milestones complete (v1.0–v2.3).
+Thirty-seven milestones complete (v1.0–v2.4).
+
+v2.4 Backend Gem & Great Detection closed 2026-07-17 — 3 phases (174, 175, 176), 14 plans. Gem/great move detection moved off the brittle client-side sweep into the backend full-game analysis pass as stored first-class `game_best_moves` rows (peers to `game_flaws`). Phase 174 (spike-gated) ports the client's 12-plane board→tensor encoding to Python, runs Maia-3 (`onnxruntime`, isolated `maia-inference` uv group) at eval-apply pinned to the mover's lichess-blitz-equivalent rating (clamped [600, 2600]), and stores a candidate row (`maia_prob` + best/second eval as floats, never a boolean) for each out-of-book played==best ply clearing `INACCURACY_DROP` (0.05) — so Gem (`≤0.20`) / Great (`(0.20, 0.50]`) thresholds retune with zero re-analysis; two SEED-109 gap-closure plans retired the lichess-eval special-case lane + backfilled the existing lichess-eval games. Phase 175 has the analysis board + eval chart + move-cycling badges + Library "has gem"/"has great" filter read the stored rows directly (client `useGemSweep` demoted to a free-play-only fallback; SEED-107 closed as superseded). Phase 176 added a backend-only tier-4b ES-weighted backfill lottery (`_claim_tier4_bestmove`) with a Maia-absence guardrail, gated behind `BEST_MOVE_BACKFILL_ENABLED` (default off). Also bundled: a CI fix installing the `maia-inference` group so `ty` resolves the onnxruntime/numpy imports. Archived to milestones/v2.4-ROADMAP.md, phases to milestones/v2.4-phases/, CHANGELOG promoted, tagged v2.4. **Deploy pending** via `bin/deploy.sh`; the tier-4b backfill flag stays OFF (D-05) and is flipped on in prod as a separately observed step post-deploy.
 
 v2.3 Bot Play closed 2026-07-15 — 9 phases (166, 167, 168, 168.5, 169, 169.5, 170, 171, 172), 46 plans. A new top-level `/bots` page lets users and guests play a full clocked game against a calibrated FlawChess bot: a pure provider-agnostic `selectBotMove` sample↔argmax blend (166) shared by the app and a headless Node calibration harness (168, spike-gated, `onnxruntime-node`) that measures real strength across a coarse (ELO × play-style) grid; per-move search budget + confidence early-stop so moves land in seconds (168.5, SEED-096/095); dual Fischer clocks on a wall-clock delta model with fair pause/flag and bot pacing (169); a Maia-policy-weighted ECO opening book for near-instant early moves (169.5, PLAY-11); localStorage resume with the clock paused while away and exactly-once storage (170); the Bots page + setup screen + nav tying it together (171); and finished games persisted as analyzable `platform='flawchess'` Library games (167). Phase 172 (SEED-106) added a background gem sweep + opening-book markers on `/analysis` (rung pinned to the mover's rating, `GEM_MAIA_MAX_PROB` 0.10→0.20, `opening_ply_count` on-read, precedence severity > gem > book). Also bundled: quicks 260714-pnk/qaj/rj5 and 260715-als. Archived to milestones/v2.3-ROADMAP.md, phases to milestones/v2.3-phases/, CHANGELOG promoted, tagged v2.3, SEED-091 closed. **Deploy pending** via `bin/deploy.sh` (ships v2.1 + v2.3 together).
 

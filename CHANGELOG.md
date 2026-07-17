@@ -8,11 +8,15 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v2.4] Backend Gem & Great Detection — 2026-07-17
+
 ### Added
 
 - Analysis board: your strong "gem" and rare "great" moves are marked instantly from stored analysis data the moment you open an analyzed game — no background scan, regardless of device or engine load (Phase 175).
 - Analysis & Library: eval charts now show violet (gem) and blue (great) dots for your best moves, and clickable "Gem"/"Great" badges step through them. Badge counts and cycling cover your own moves; the analysis board still flags your opponent's gems too (Phase 175).
 - Library: filter your games by whether they contain a "gem" or "great" move, composable with every other game filter (Phase 175).
+- Backend: gem/great moves are now detected server-side during the full-game analysis pass — Maia-3 inference over your out-of-book best moves stores per-ply best-move candidate rows (a first-class artifact peer to blunder/mistake/tactic tags), so the markers come straight from stored data instead of the browser recomputing them each visit (Phase 174).
+- Backend: the existing analyzed corpus is backfilled with gem/great data opportunistically via a tier-4 lottery, so older games gradually become eligible for the new markers and filter without a bulk re-analysis (Phase 176; ships behind an off-by-default flag, enabled in production after rollout).
 - Dev: anchor-vs-anchor self-calibration ladder — a standalone orchestrator (`scripts/calibration-anchor-ladder.mjs`, probe→measure schedule with connectivity guard and resumable ledger) plus a stdlib Bradley-Terry fit (`scripts/calibration_anchor_fit.py`) place all 10 Maia/Stockfish bot anchors on one measured internal scale, published as `INTERNAL_RATING` in `scripts/lib/calibration-internal-scale.mjs`. Key result: the Maia-3 argmax ladder is ~2.8x compressed vs its nominal ELO labels, worst at the top (Phase 173).
 
 ### Changed
@@ -1083,7 +1087,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.3...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.4...HEAD
+[v2.4]: https://github.com/flawchess/flawchess/compare/v2.3...v2.4
 [v2.3]: https://github.com/flawchess/flawchess/compare/v2.2...v2.3
 [v2.2]: https://github.com/flawchess/flawchess/compare/v2.1...v2.2
 [v2.1]: https://github.com/flawchess/flawchess/compare/v2.0...v2.1
