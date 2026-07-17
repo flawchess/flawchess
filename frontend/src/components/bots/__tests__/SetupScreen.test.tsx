@@ -7,7 +7,7 @@
  * jsdom supplies a real `localStorage`.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 
 import { SetupScreen } from '../SetupScreen';
 import {
@@ -223,24 +223,5 @@ describe('mobile density (171 UAT gap 3, Task 2)', () => {
     expect(screen.getByTestId('setup-tc-blitz-3-0')).toBeTruthy();
     expect(screen.getByTestId('setup-tc-rapid-10-0')).toBeTruthy();
     expect(screen.getByTestId('setup-tc-classical-30-0')).toBeTruthy();
-  });
-});
-
-describe('SetupScreen — ELO info popover (D-05)', () => {
-  it('renders the bot-specific honesty caveat copy', async () => {
-    render(<SetupScreen ownerKey={null} normalizedRating={1500} onStart={vi.fn()} />);
-    const trigger = screen.getByTestId('setup-elo-info');
-
-    vi.useFakeTimers();
-    try {
-      fireEvent.mouseEnter(trigger);
-      act(() => {
-        vi.advanceTimersByTime(200);
-      });
-    } finally {
-      vi.useRealTimers();
-    }
-    await waitFor(() => screen.getByText(/rating band whose/i));
-    expect(screen.getByText(/Calibration is still in progress/i)).toBeTruthy();
   });
 });

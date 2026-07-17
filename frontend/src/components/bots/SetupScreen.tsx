@@ -16,7 +16,6 @@
 import { useCallback, useState } from 'react';
 import type { ReactElement } from 'react';
 import { Button } from '@/components/ui/button';
-import { InfoPopover } from '@/components/ui/info-popover';
 import { EloSelector } from '@/components/analysis/EloSelector';
 import { MAIA_ELO_LADDER } from '@/lib/maiaEncoding';
 import { PlayStyleControl } from '@/components/bots/PlayStyleControl';
@@ -245,16 +244,6 @@ export function SetupScreen({ ownerKey, normalizedRating, onStart }: SetupScreen
       className="mx-auto flex max-w-md flex-col gap-3 p-4 pb-20 sm:pb-4 [&_[data-slot=slider]]:min-h-10"
     >
       <div data-testid="setup-elo">
-        <div className="mb-1 flex items-center gap-1">
-          <span className="text-sm text-muted-foreground">Bot strength (ELO)</span>
-          <InfoPopover ariaLabel="About the bot ELO setting" testId="setup-elo-info" side="bottom">
-            <p>
-              This is the rating band whose <strong>style</strong> the bot imitates — not a
-              measured strength. The bot&apos;s real strength also depends on the play-style
-              setting below. Calibration is still in progress.
-            </p>
-          </InfoPopover>
-        </div>
         <EloSelector
           value={state.botElo}
           onChange={state.setBotElo}
