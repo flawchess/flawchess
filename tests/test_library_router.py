@@ -1676,8 +1676,8 @@ async def game_by_id_test_state(test_engine: Any) -> dict[str, Any]:
 class TestLibraryGameById:
     """Tests for GET /api/library/games/{game_id} (Plan 112-02, SC-7).
 
-    Three required cases: own game 200, cross-user 404 (IDOR guard T-112-01),
-    missing game 404.
+    Three cases: own game 200, cross-user 200 (analysis view is not owner-scoped,
+    Quick 260717-agv), missing game 404.
     """
 
     @pytest.mark.asyncio
@@ -1709,14 +1709,15 @@ class TestLibraryGameById:
         )
 
     @pytest.mark.asyncio
-    async def test_library_game_by_id_cross_user_404(
+    async def test_library_game_by_id_cross_user_200(
         self, game_by_id_test_state: dict[str, Any]
     ) -> None:
-        """User A requests user B's game — must return 404 (not 403, not B's card).
+        """User A requests user B's game — returns 200 with B's card (Quick 260717-agv).
 
-        IDOR guard T-112-01: the service returns None for cross-user access and
-        the router maps None → HTTP 404 with detail="Game not found". Returns 404
-        (not 403) to avoid confirming whether the id exists for the requester.
+        The analysis-page game view is intentionally NOT owner-scoped: any
+        authenticated user may inspect any game by url (opponent scouting, game
+        sharing). "Logged in" is the only gate (current_active_user); missing
+        games still 404.
         """
         game_b = game_by_id_test_state["game_b"]
         async with httpx.AsyncClient(
@@ -1727,11 +1728,10 @@ class TestLibraryGameById:
                 headers=game_by_id_test_state["headers_a"],
             )
 
-        assert resp.status_code == 404, (
-            f"IDOR breach: expected 404 for cross-user game, got {resp.status_code}"
+        assert resp.status_code == 200, (
+            f"Expected 200 for cross-user analysis view, got {resp.status_code}: {resp.text}"
         )
-        detail = resp.json().get("detail", "")
-        assert "not found" in detail.lower(), f"Expected 'not found' in detail, got {detail!r}"
+        assert resp.json()["game_id"] == game_b
 
     @pytest.mark.asyncio
     async def test_library_game_by_id_missing_404(
