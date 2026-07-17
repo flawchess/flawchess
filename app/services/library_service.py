@@ -212,6 +212,14 @@ def _build_eval_series(
                 best_row.second_cp,
                 best_row.second_mate,
                 mover_color_for_ply(pos.ply),
+                # Imported-eval divergence guard (Quick 260717-gmg): pos.eval_cp is
+                # lichess's authoritative post-move %eval for a lichess-eval game;
+                # suppress the badge when our best_cp overrates it. Since played ==
+                # best for every candidate, pos.eval_cp describes the same resulting
+                # position as best_cp (both post-best-move).
+                post_move_cp=pos.eval_cp,
+                post_move_mate=pos.eval_mate,
+                is_lichess_eval_game=game.lichess_evals_at is not None,
             )
             if tier != "neither":
                 best_move_tier = tier

@@ -781,6 +781,12 @@ def best_move_exists_from_table(tiers: Sequence[Literal["gem", "great"]]) -> Col
     """
     if not tiers:
         return true()
+    # Imported-eval divergence guard (Quick 260717-gmg): correlate the candidate
+    # ply's game_positions row (PK game_id+user_id+ply) so best_move_tier_sql can
+    # compare our best_cp against lichess's authoritative post-move %eval and drop
+    # a spurious badge — the SQL twin of the board's classify_best_move guard, so
+    # filter and board stay consistent (D-03b).
+    GuardPos = aliased(GamePosition, name="best_move_guard_pos")  # noqa: N806
     tier_expr = best_move_tier_sql(
         GameBestMove.maia_prob,
         GameBestMove.best_cp,
@@ -788,9 +794,24 @@ def best_move_exists_from_table(tiers: Sequence[Literal["gem", "great"]]) -> Col
         GameBestMove.second_cp,
         GameBestMove.second_mate,
         Game.user_color,
+        GuardPos.eval_cp,
+        GuardPos.eval_mate,
+        Game.lichess_evals_at.isnot(None),
     )
     return exists(
-        select(GameBestMove.ply).where(
+        select(GameBestMove.ply)
+        # LEFT join: a candidate ply with no game_positions row leaves the post-move
+        # eval NULL, so the guard fails open (badge kept) — mirrors the Python
+        # `post_es is None -> keep` path, never dropping a badge over missing data.
+        .outerjoin(
+            GuardPos,
+            and_(
+                GuardPos.game_id == GameBestMove.game_id,
+                GuardPos.ply == GameBestMove.ply,
+                GuardPos.user_id == Game.user_id,
+            ),
+        )
+        .where(
             GameBestMove.game_id == Game.id,
             player_only_gate(GameBestMove.ply, Game.user_color),  # D-04a player gate
             tier_expr.in_(tiers),

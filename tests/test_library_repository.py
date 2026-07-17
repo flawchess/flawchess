@@ -67,6 +67,7 @@ async def _seed_game(
     white_blunders: int | None = None,
     platform: str = "lichess",
     full_evals_completed_at: datetime.datetime | None = None,
+    lichess_evals_at: datetime.datetime | None = None,
 ) -> Game:
     """Insert a Game row and flush to obtain an ID.
 
@@ -93,6 +94,7 @@ async def _seed_game(
         is_computer_game=False,
         white_blunders=white_blunders,
         full_evals_completed_at=full_evals_completed_at,
+        lichess_evals_at=lichess_evals_at,
     )
     session.add(game)
     await session.flush()
@@ -2751,6 +2753,58 @@ class TestBestMoveExistsFromTable:
         assert game_white.id in white_only
         assert game_black.id not in white_only, (
             "has_gem must compose with color, not just pass through unfiltered (D-05a)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_best_move_exists_guard_suppresses_divergent_lichess_gem(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Imported-eval divergence guard (Quick 260717-gmg) end-to-end through the
+        EXISTS filter: for a lichess-eval game, a gem candidate whose game_positions
+        eval_cp (lichess's post-move %eval) is far worse than our best_cp is dropped
+        from has_gem; an otherwise-identical game whose position eval agrees stays.
+        """
+        await self._ensure_users(db_session)
+        lichess_at = datetime.datetime(2026, 4, 6, tzinfo=datetime.timezone.utc)
+
+        # Divergent: our best_cp=250 (es ~0.71) but lichess post-move eval_cp=0
+        # (es 0.5) -> 0.21 ES optimism > 0.10 -> guard fires -> excluded.
+        game_divergent = await _seed_game(
+            db_session, user_id=_BMF_USER_ID, user_color="white", lichess_evals_at=lichess_at
+        )
+        await _seed_best_move(db_session, game=game_divergent, ply=2, maia_prob=0.10, best_cp=250)
+        await _seed_position(db_session, game=game_divergent, ply=2, eval_cp=0)
+
+        # Agreeing: lichess post-move eval matches our best_cp -> no optimism -> kept.
+        game_agree = await _seed_game(
+            db_session, user_id=_BMF_USER_ID, user_color="white", lichess_evals_at=lichess_at
+        )
+        await _seed_best_move(db_session, game=game_agree, ply=2, maia_prob=0.10, best_cp=250)
+        await _seed_position(db_session, game=game_agree, ply=2, eval_cp=250)
+
+        matched = await _matching_best_move_ids(db_session, user_id=_BMF_USER_ID, has_gem=True)
+        assert game_agree.id in matched, "gem whose lichess eval agrees must still match has_gem"
+        assert game_divergent.id not in matched, (
+            "gem whose lichess post-move eval is far worse than our best_cp must be "
+            "suppressed by the divergence guard (Quick 260717-gmg)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_best_move_exists_guard_is_noop_for_engine_games(
+        self, db_session: AsyncSession
+    ) -> None:
+        """The same divergence does NOT suppress when lichess_evals_at is NULL (an
+        engine game feeds both surfaces from one engine) — proves the guard is
+        scoped to lichess-eval games, not applied blanketly."""
+        await self._ensure_users(db_session)
+
+        game_engine = await _seed_game(db_session, user_id=_BMF_USER_ID, user_color="white")
+        await _seed_best_move(db_session, game=game_engine, ply=2, maia_prob=0.10, best_cp=250)
+        await _seed_position(db_session, game=game_engine, ply=2, eval_cp=0)
+
+        matched = await _matching_best_move_ids(db_session, user_id=_BMF_USER_ID, has_gem=True)
+        assert game_engine.id in matched, (
+            "an engine game (lichess_evals_at NULL) must not be touched by the guard"
         )
 
     @pytest.mark.asyncio
