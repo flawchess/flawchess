@@ -5026,6 +5026,16 @@ class TestBestMoveSubmitEndpoint:
         monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
         _patch_router_session(monkeypatch, eval_worker_session_maker)
         monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.1)
+        # Ply 2 IS a real candidate with no submitted runner-up, so
+        # _build_best_move_candidates fires its Pitfall-1 fallback for it. With a
+        # warm global Stockfish pool (earlier tests in a serial full-suite run) the
+        # real engine call succeeded and legitimately wrote a ply-2 row, flipping
+        # rows_written to 1 — an order-dependent failure. Stub the fallback to
+        # return no runner-up so this test isolates the foreign-ply invariant only.
+        fallback_stub = AsyncMock(return_value=(None, None, None, None, None, None, None))
+        monkeypatch.setattr(
+            eval_apply_module.engine_service, "evaluate_nodes_multipv2", fallback_stub
+        )
 
         user_id = eval_worker_test_user
         game_id = await _seed_bestmove_submit_game(eval_worker_session_maker, user_id)
