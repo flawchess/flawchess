@@ -101,6 +101,17 @@ describe('bestMoveDotSpec (color/tier binding)', () => {
     expect(bestMoveDotSpec(evalPoint({ best_move_tier: null }))).toBeNull();
   });
 
+  // Quick 260717-rbn regression: best/good are board/card-only tiers. Before the
+  // isRareMoveTier gate they fell into the "not gem → great" branch and painted a
+  // blue dot mislabeled "Great" on the eval chart.
+  it('renders nothing for a best-tier ply (board/card-only, not the eval chart)', () => {
+    expect(bestMoveDotSpec(evalPoint({ best_move_tier: 'best' }))).toBeNull();
+  });
+
+  it('renders nothing for a good-tier ply (board/card-only, not the eval chart)', () => {
+    expect(bestMoveDotSpec(evalPoint({ best_move_tier: 'good' }))).toBeNull();
+  });
+
   it('renders nothing when the ply has no eval, even with a tier', () => {
     expect(bestMoveDotSpec(evalPoint({ best_move_tier: 'gem', es: null }))).toBeNull();
   });

@@ -135,6 +135,16 @@ export interface EvalPoint {
   maia_prob: number | null;
 }
 
+/** The two "rare move" tiers (gem/great) that surface as eval-chart dots and a
+ *  tooltip row. The best/good tiers (Quick 260717-rbn) are analysis-board /
+ *  library-card only and MUST NOT appear on the eval chart — gate every
+ *  eval-chart tier read on this guard so a widened `best_move_tier` never leaks
+ *  best/good into the chart's `=== 'gem' ? … : great` fallback. */
+export type RareMoveTier = 'gem' | 'great';
+export function isRareMoveTier(tier: EvalPoint['best_move_tier']): tier is RareMoveTier {
+  return tier === 'gem' || tier === 'great';
+}
+
 /**
  * One flaw dot for the eval chart (both colors, B/M/I).
  * is_user=true → filled circle (player); is_user=false → hollow circle (opponent).

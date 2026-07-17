@@ -65,6 +65,7 @@ import {
   TAC_ALLOWED,
   TAC_MISSED,
 } from '@/lib/theme';
+import { isRareMoveTier } from '@/types/library';
 import type {
   EvalPoint,
   FlawMarker,
@@ -873,8 +874,13 @@ export function EvalChart({
   // (a gem/great ply is never also a flaw ply), so only shown when there's no flaw
   // detail to display instead. User-scoped to match the dot layer: best_move_tier is
   // position-scoped, so the opponent's tier must NOT surface here either (Plan 06 fix).
+  // isRareMoveTier gate: best_move_tier also carries the board/card-only best/good
+  // tiers (Quick 260717-rbn), which must NOT surface a chart tooltip row — without
+  // this they fell into the `=== 'gem' ? … : Great` fallback below and mislabeled as
+  // "Great" with a blue dot.
   const activeTier =
-    activePoint?.best_move_tier != null &&
+    activePoint != null &&
+    isRareMoveTier(activePoint.best_move_tier) &&
     (userColor == null || isUserPly(activePoint.ply, userColor))
       ? activePoint.best_move_tier
       : null;

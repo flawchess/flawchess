@@ -4923,11 +4923,16 @@ class TestBestMoveSubmitEndpoint:
         """A submit writes a game_best_moves row + stamps best_moves_completed_at,
         and does NOT call apply_full_eval / _classify_and_fill_oracle (S-06/T-177-07)."""
         import app.services.eval_apply as eval_apply_module
+        from app.services import maia_engine
 
         monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
         monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
         _patch_router_session(monkeypatch, eval_worker_session_maker)
         monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.1)
+        # 177-REVIEW CR-01 fix: the stamp is now gated on maia_engine.is_maia_available(),
+        # so this positive-path test must mark Maia present (sentinel session object),
+        # mirroring test_full_drain_tick_tier4b_minimal_path in test_full_eval_drain.py.
+        monkeypatch.setattr(maia_engine, "_session", object())
 
         apply_full_eval_spy = AsyncMock(side_effect=AssertionError("must not be called"))
         classify_spy = AsyncMock(side_effect=AssertionError("must not be called"))
@@ -4968,6 +4973,68 @@ class TestBestMoveSubmitEndpoint:
             assert await _count_game_best_moves(eval_worker_session_maker, game_id) == 1
             stamped = await _get_game_best_moves_completed_at(eval_worker_session_maker, game_id)
             assert stamped is not None, "best_moves_completed_at must be stamped on submit"
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_bestmove_submit_maia_absent_never_stamps(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """GUARDRAIL (177-REVIEW CR-01): with maia_engine._session forced to
+        None, best_moves_completed_at MUST stay NULL after a submit even
+        though score_move is mocked to SUCCEED (rows_written would be
+        non-zero if row-count alone gated the stamp) -- proving the stamp is
+        independently gated by maia_engine.is_maia_available(), never
+        inferred from row count (mirrors the drain-path guardrail,
+        test_maia_absent_never_stamps_best_moves_completed_at in
+        tests/services/test_full_eval_drain.py). Before the fix,
+        _apply_bestmove_submit stamped unconditionally, permanently
+        excluding a Maia-absent backend's submits from the tier-4b lottery
+        (best_moves_completed_at IS NULL predicate) with zero rows written."""
+        import app.services.eval_apply as eval_apply_module
+        from app.services import maia_engine
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+        monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.1)
+        # THE GUARDRAIL SETUP: Maia session forced ABSENT, but score_move is
+        # mocked to SUCCEED anyway. If the stamp were (incorrectly) gated by
+        # rows_written being non-zero rather than is_maia_available(), this
+        # test would wrongly observe the stamp fire.
+        monkeypatch.setattr(maia_engine, "_session", None)
+
+        user_id = eval_worker_test_user
+        game_id = await _seed_bestmove_submit_game(eval_worker_session_maker, user_id)
+
+        payload = {
+            "game_id": game_id,
+            "sf_version": "Stockfish 18",
+            "evals": [
+                {"ply": 2, "second_cp": -100, "second_mate": None, "second_uci": "a2a3"},
+            ],
+        }
+
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _BESTMOVE_SUBMIT_URL,
+                    json=payload,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+
+            stamped = await _get_game_best_moves_completed_at(eval_worker_session_maker, game_id)
+            assert stamped is None, (
+                "GUARDRAIL VIOLATION: best_moves_completed_at must stay NULL when "
+                "maia_engine._session is None (Maia-absent backend), even though "
+                "score_move was mocked to succeed. Stamping here would "
+                "permanently lock this game out of the tier-4b lottery on a "
+                "Maia-absent backend (D-01 correctness requirement)."
+            )
         finally:
             await _delete_games(eval_worker_session_maker, [game_id])
 

@@ -915,18 +915,33 @@ async def _eval_bestmove_positions(
 
     `asyncio.gather` is safe here — no `AsyncSession` is open in the worker process
     (CLAUDE.md gather rule applies to the server only).
+
+    BUG FIX (177-REVIEW WR-01): a failed search (engine failure -> the all-None
+    7-tuple `evaluate_nodes_multipv2` returns when the pool isn't started or the
+    engine errors) is DROPPED from the returned list rather than submitted as a
+    real (second_cp=None, second_mate=None) result. Without this filter, the
+    server's `_apply_bestmove_submit` keys `second_best_map` on presence, not on
+    non-None values, so the Pitfall-1 fallback never fires for that ply — instead
+    the all-None tuple flows into `passes_inaccuracy_gate` (which returns False on
+    any None eval) and the candidate is silently and permanently dropped instead
+    of falling through to the server's own retry safety net. Mirrors the
+    identical drop-on-failure filter in `_eval_targeted_second_best` above.
     """
     boards: list[chess.Board] = [chess.Board(str(pos["fen"])) for pos in positions]
     results = await asyncio.gather(*(pool.evaluate_nodes_multipv2(b) for b in boards))
-    return [
-        {
-            "ply": pos["ply"],
-            "second_cp": r[4],
-            "second_mate": r[5],
-            "second_uci": r[6],
-        }
-        for pos, r in zip(positions, results)
-    ]
+    out: list[dict[str, object]] = []
+    for pos, r in zip(positions, results):
+        if r[0] is None and r[1] is None:
+            continue  # engine failure (all-None 7-tuple) — drop, server fallback covers it
+        out.append(
+            {
+                "ply": pos["ply"],
+                "second_cp": r[4],
+                "second_mate": r[5],
+                "second_uci": r[6],
+            }
+        )
+    return out
 
 
 async def _handle_bestmove_response(

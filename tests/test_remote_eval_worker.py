@@ -44,6 +44,7 @@ from scripts.remote_eval_worker import (
     WORKER_SCHEMA_VERSION,
     _build_blob_walk_targets,
     _eval_atomic_game,
+    _eval_bestmove_positions,
     _eval_entry_positions,
     _eval_flaw_blob_positions,
     _generate_worker_id,
@@ -923,6 +924,39 @@ async def test_handle_bestmove_response_submits_n_entries_no_atomic_submit() -> 
 
     called_urls = [c.args[0] for c in client.post.call_args_list]
     assert "/api/eval/remote/atomic-submit" not in called_urls
+
+
+async def test_eval_bestmove_positions_drops_failed_search() -> None:
+    """WR-01 regression: a failed search (engine failure -> the all-None 7-tuple
+    `evaluate_nodes_multipv2` returns) drops that ply from the returned evals
+    rather than submitting an all-None (second_cp=None, second_mate=None) result
+    as real data. Mirrors `test_eval_atomic_game_targeted_second_best_drops_failed_search`.
+
+    Before the fix, the failed ply was submitted with second_cp/second_mate/
+    second_uci all None. The server's second_best_map is keyed on presence,
+    not on non-None values, so the Pitfall-1 fallback never fired for that ply
+    -- the all-None tuple flowed into passes_inaccuracy_gate (False on any None
+    eval) and the candidate was silently and permanently dropped.
+    """
+    pool = AsyncMock()
+    pool.evaluate_nodes_multipv2 = AsyncMock(
+        side_effect=[
+            (0, None, "e2e4", "e2e4", 10, None, "d2d4"),  # ply 4: succeeds
+            (None, None, None, None, None, None, None),  # ply 8: engine failure
+            (0, None, "b1c3", "b1c3", 30, None, "f2f4"),  # ply 12: succeeds
+        ]
+    )
+    positions: list[dict[str, object]] = [
+        {"ply": 4, "fen": chess.STARTING_FEN},
+        {"ply": 8, "fen": chess.STARTING_FEN},
+        {"ply": 12, "fen": chess.STARTING_FEN},
+    ]
+
+    evals = await _eval_bestmove_positions(pool, positions)
+
+    assert [e["ply"] for e in evals] == [4, 12], (
+        "the failed ply (8) must be dropped, not submitted with all-None values"
+    )
 
 
 async def test_bestmove_lease_204_falls_to_idle_sleep_no_submit() -> None:
