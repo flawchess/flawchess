@@ -57,6 +57,39 @@ and each future worker added actually adds its full capacity.
    it (Sentry tag or metric) so a regression that silently re-grows server Stockfish load is
    visible. Expected steady-state: near zero fallback calls.
 
+## Amendment 2026-07-17: tier-4b lease shape (code-verified — planner must cover this)
+
+The design sketch above is written for the fresh-analysis lanes (needs-engine + lichess
+residual), where the worker's own MultiPV-1 pass is genuinely needed. It does NOT hold for
+the tier-4b population (~416k already-analyzed games), which is the whole payoff. Three
+gaps, verified against current code:
+
+1. **Workers have no route to tier-4b at all.** `_claim_tier4_bestmove` is only reachable
+   via `claim_eval_job(scope=None)` (eval_queue_service.py:864), whose sole consumer is the
+   in-process server-pool drain. The worker ladder uses `scope=explicit`/`scope=idle`, and
+   idle 204s after tier-3. Giving workers a tier-4b lane (extend the idle fall-through
+   under v2 gating, or a dedicated lease) is an explicit deliverable, not an assumption.
+2. **The "worker knows its own best move per ply" premise fails for tier-4b.** The
+   SEED-076 incremental filter (`_lease_position_redundant`) strips every already-eval'd
+   ply from an engine-game lease, so a fully-analyzed game leases as ~just the terminal
+   donor — the worker runs no full pass and cannot find played==best plies itself. (Upside:
+   this same filter means the worker also never redoes the flaw-blob MultiPV-2 walk — no
+   leased plies, no hint-classify, no blobs.) The v2 lease for tier-4b must therefore carry
+   **server-computed candidate plies** (played == stored best_move, out-of-book, from the
+   game's existing best_move/pv columns + book filter). Worker compute is then exactly the
+   N gem-candidate runner-up searches and nothing else.
+3. **Tier-4b submits should skip reclassification.** `_apply_atomic_submit` runs the
+   delete-then-insert `_classify_and_fill_oracle` with blob/tag snapshot-restore; for a
+   tier-4b submit the evals are unchanged, so this is a no-op rewrite that only adds churn
+   on the FLAWCHESS-8D StaleDataError surface. A tier-4b-only submit should write
+   `game_best_moves` + stamp `best_moves_completed_at` and touch nothing else.
+
+Related: the drain's `run_one_full_eval_tick` ignores tier (`_ = tier`, eval_drain.py:908),
+so a drain-picked tier-4b game today re-evaluates EVERY ply at MultiPV-2 and reclassifies
+from scratch — accidentally masked by fallback starvation. If the drain remains a tier-4b
+consumer after this phase, it needs the same tier-aware minimal path (ties into open
+question #1 below).
+
 ## Alternatives considered (and why not)
 
 - **Async server-side fallback queue** (decouple fallback from the submit request): unblocks
