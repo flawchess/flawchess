@@ -25,6 +25,16 @@ POST /eval/remote/atomic-submit — (Phase 147 SEED-074 Part B, D-01/D-02) paire
                                  (same Path A/B/C invariant _apply_submit used to use, CR-01)
                                  -> one commit. No ungated window is ever observable for a
                                  game processed here (see _apply_atomic_submit).
+POST /eval/remote/bestmove-lease — (Phase 177 BACK-02/03, D-02) dedicated, isolated tier-4b
+                                 best-move backfill lease. Server-recomputes the candidate-ply
+                                 set (out-of-book, played == stored best_move) from already-
+                                 stored full-pass data — no engine calls; the worker runs the
+                                 N targeted MultiPV=2 runner-up searches (S-05).
+POST /eval/remote/bestmove-submit — (Phase 177 BACK-02/03, D-02/S-06) paired with
+                                 /bestmove-lease. Writes ONLY game_best_moves rows + stamps
+                                 best_moves_completed_at (see _apply_bestmove_submit) —
+                                 structurally isolated from apply_full_eval / the flaw write
+                                 path (T-177-07).
 
 All endpoints require the X-Operator-Token header (T-120-01 operator auth gate).
 403 when the token is not configured on the server (fail-closed); 401 when it does
@@ -70,6 +80,9 @@ from app.schemas.eval_remote import (
     AtomicLeaseResponse,
     AtomicSubmitRequest,
     AtomicSubmitResponse,
+    BestMoveLeaseResponse,
+    BestMoveSubmitRequest,
+    BestMoveSubmitResponse,
     EntryLeasePosition,
     EntryLeaseResponse,
     EntrySubmitRequest,
@@ -81,15 +94,18 @@ from app.schemas.eval_remote import (
 )
 from app.services.eval_apply import (
     _FullPlyEvalTarget,
+    _apply_bestmove_submit,
     _assemble_flaw_blobs_from_submit,
     _batch_update_flaw_pv_lines,
     _build_best_move_candidates,
+    _build_bestmove_lease_positions,
     _build_flaw_blob_lease_positions,
     _collect_full_ply_targets,
     _derive_atomic_sentinel_lines,
     _fetch_dedup_evals,
     _parse_token,
     _signal_flaw_completion,
+    _stamp_best_moves_completed_directly,
     apply_full_eval,
 )
 
@@ -118,12 +134,23 @@ from app.services.eval_drain import (
 from app.models.game_flaw import GameFlaw
 from app.repositories.game_flaws_repository import bulk_update_tactic_tags
 from app.repositories.worker_heartbeat_repository import upsert_worker_heartbeat
-from app.services.eval_queue_service import _claim_tier4_blob, claim_eval_job, release_job
+from app.services.eval_queue_service import (
+    _claim_tier4_bestmove,
+    _claim_tier4_blob,
+    claim_eval_job,
+    release_job,
+)
 from app.services.flaws_service import _classify_tactic_gated, _recompute_fen_map
 
 # Worker identity for the remote eval worker — distinct from WORKER_ID_SERVER_POOL
 # ("server-pool") so the eval_jobs.leased_by column is traceable per worker type.
 _WORKER_ID_REMOTE: str = "remote-worker"
+
+# Phase 177 PROTO-01/S-03: minimum worker_schema_version accepted on the WHOLE atomic
+# lane (both scope=explicit and scope=idle — Pitfall 4). A v1 worker (or one that
+# omits the query param entirely, the un-updated-binary default) gets 204 no-work
+# rather than a hard error, so it idles harmlessly until the fleet is upgraded.
+WORKER_SCHEMA_VERSION_MIN: int = 2
 
 router = APIRouter(prefix="/eval/remote", tags=["eval-remote"])
 
@@ -299,6 +326,11 @@ def _build_lease_positions(
 
     Returns None on PGN parse failure (caller should return 204 — treat as no game).
     Returns a list of LeasePosition (may include an is_terminal=True entry).
+
+    Phase 177 PROTO-01: each non-terminal LeasePosition carries `move_uci` — the
+    played move's UCI at that ply, sourced directly from `_FullPlyEvalTarget.move_uci`
+    (already captured during `_collect_full_ply_targets`'s own PGN walk, Pitfall 3/4 —
+    no re-parse). None for the terminal donor (no move is played from it).
     """
     targets = _collect_full_ply_targets(
         game_id=game_id,
@@ -338,7 +370,7 @@ def _build_lease_positions(
         fen = fen_by_ply.get(t.ply)
         if fen is None:
             continue
-        pos = LeasePosition(ply=t.ply, fen=fen, is_terminal=t.is_terminal)
+        pos = LeasePosition(ply=t.ply, fen=fen, is_terminal=t.is_terminal, move_uci=t.move_uci)
         all_positions.append(pos)
         # Phase 174-06: the SEED-076 redundancy check never applies to lichess-eval
         # games (see docstring) — every position is always leased for them.
@@ -386,6 +418,10 @@ async def atomic_lease_eval_game(
     _auth: Annotated[None, Depends(require_operator_token)],
     worker_id: Annotated[str, Depends(worker_id_label)],
     scope: Annotated[Literal["explicit", "idle"] | None, Query()] = None,
+    # Phase 177 PROTO-01/S-03: default 1 covers an un-updated worker binary that
+    # omits the param entirely (Pitfall 4) — it must 204 exactly like an explicit
+    # worker_schema_version=1 would.
+    worker_schema_version: Annotated[int, Query()] = 1,
 ) -> Response | AtomicLeaseResponse:
     """Claim the next eval game for the atomic (versioned) eval+blob worker pipeline.
 
@@ -416,7 +452,19 @@ async def atomic_lease_eval_game(
     preserves their stored %evals and writes best_move only (see
     `_build_lease_positions`'s docstring for why the SEED-076 redundancy filter
     is bypassed for them).
+
+    Phase 177 PROTO-01 (S-03): gated on `worker_schema_version` for BOTH
+    scope="explicit" and scope="idle" — a v1 worker (or one that omits the
+    param) gets 204 no-work on the WHOLE atomic lane before any claim is
+    attempted, not just the tier-4b fall-through (Pitfall 4). This forces a
+    clean fleet upgrade instead of allowing indefinite mixed-version server-
+    side fallback load on the fresh lanes.
     """
+    # Phase 177 PROTO-01: version gate FIRST, before any claim (Pitfall 4 — applies
+    # to both scopes uniformly).
+    if worker_schema_version < WORKER_SCHEMA_VERSION_MIN:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
     # claim_eval_job owns its sessions — no caller session context needed.
     claim = await claim_eval_job(worker_id=worker_id, scope=scope)
 
@@ -1148,6 +1196,19 @@ async def _apply_atomic_submit(
                 detail=f"Unknown or foreign token: {node.token!r}",
             )
 
+    # Phase 177 T-177-01: same structural in-range check for worker-submitted
+    # second-best plies — reject BEFORE any write. A ply the server does not
+    # classify as a candidate (in-range but not a real played==best candidate,
+    # T-177-02) is intentionally NOT rejected here — the map lookup below simply
+    # never reads it, mirroring how a foreign-but-in-range blob token is dropped
+    # at the classify SQL join rather than 422'd.
+    for second_best_entry in body.second_best:
+        if not (0 <= second_best_entry.ply < game_length):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Unknown or foreign second_best ply",
+            )
+
     # ── Re-derive un-walkable (flaw_ply, line) pairs server-side (D-06) ────────
     # Entirely from the server's own authoritative classify + the worker's
     # submitted evals/PVs — independent of which tokens the worker submitted.
@@ -1159,15 +1220,21 @@ async def _apply_atomic_submit(
     # =True) suppresses that flaw's tag to NULL rather than persisting it raw.
     flaw_pv_blobs = _assemble_flaw_blobs_from_submit(game_id, body.blob_nodes, sentinel_lines)
 
-    # ── Best-move candidate rows (Phase 174 GEMS-03) ──────────────────────────
-    # Pitfall 1: the remote worker's full-ply pass is MultiPV-1, so there is NO
-    # per-ply second-best here (second_best_map=None). Every played==best candidate
-    # therefore takes the targeted backend-owned evaluate_nodes_multipv2 fallback
-    # inside the builder — the worker protocol / atomic-submit schema stay untouched
-    # (D-3/GEMS-03). The builder runs its gather + Maia inference with NO session
-    # open and reads rating metadata in a short session it closes itself; the rows
-    # are UPSERTed inside apply_full_eval's write session (same commit, T-174-12).
-    best_move_rows = await _build_best_move_candidates(game_id, targets, engine_result_map, None)
+    # ── Best-move candidate rows (Phase 174 GEMS-03, Phase 177 PROTO-03) ───────
+    # A v2 worker runs its own targeted MultiPV-2 re-search for every played==best
+    # ply after its MultiPV-1 pass and submits the results as body.second_best —
+    # threaded into second_best_map here so the builder's Pitfall-1 fallback only
+    # fires for genuine gaps (a v1 worker sending an empty list, or a candidate
+    # ply the worker's local hint-classify missed). The builder runs its gather +
+    # Maia inference with NO session open and reads rating metadata in a short
+    # session it closes itself; the rows are UPSERTed inside apply_full_eval's
+    # write session (same commit, T-174-12). source="worker-submit-fallback" tags
+    # any residual fallback so it is distinguishable from expected drain-local
+    # fallback noise (D-06/OBS-01) — steady-state expectation is near-zero here.
+    second_best_map = {e.ply: (e.second_cp, e.second_mate, e.second_uci) for e in body.second_best}
+    best_move_rows = await _build_best_move_candidates(
+        game_id, targets, engine_result_map, second_best_map, source="worker-submit-fallback"
+    )
 
     # ── Write phase — ONE late session, all UPDATEs + commit atomic (T-117-11) ──
     # Phase 150 R7: the shared write-session body (evals -> classify/oracle/
@@ -1269,6 +1336,93 @@ async def atomic_submit_eval(
             detail="Stockfish version mismatch",
         )
     return await _apply_atomic_submit(
+        game_id=body.game_id,
+        body=body,
+        worker_id=worker_id,
+        last_ip=request.client.host if request.client else None,
+    )
+
+
+# ─── Phase 177 BACK-02/03: tier-4b dedicated lease + submit endpoints (D-02) ──
+
+
+@router.post("/bestmove-lease", response_model=None)
+async def bestmove_lease(
+    _auth: Annotated[None, Depends(require_operator_token)],
+) -> Response | BestMoveLeaseResponse:
+    """Claim one tier-4b-selected game's server-recomputed candidate-ply FENs for
+    worker-side MultiPV=2 runner-up search.
+
+    Dedicated, isolated tier-4b lease endpoint (D-02), mirroring /flaw-blob-lease's
+    isolation from the live-submit path. Does NOT go through claim_eval_job (that
+    bundled path is drain-only, RESEARCH Anti-Patterns) — calls _claim_tier4_bestmove
+    directly, same as /flaw-blob-lease calls _claim_tier4_blob directly.
+
+    Flow:
+    1. BEST_MOVE_BACKFILL_ENABLED gate FIRST (D-04 single switch) — 204 before any
+       DB round-trip when off.
+    2. _claim_tier4_bestmove — 204 when the tier-4b queue is empty.
+    3. _build_bestmove_lease_positions — the server-recomputed candidate-ply set
+       (out-of-book, played == stored best_move; no engine calls, S-05).
+    4. Empty OR over MAX_SUBMIT_EVALS candidates: stamp best_moves_completed_at
+       directly (Pitfall 2 forward-progress guarantee) and return 204, so the ES
+       lottery never re-draws an un-fillable game forever.
+    5. Otherwise return BestMoveLeaseResponse with the candidate FENs (no move_uci
+       on the wire — the server already validated candidacy, Open Question #3).
+    """
+    if not settings.BEST_MOVE_BACKFILL_ENABLED:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    async with async_session_maker() as session:
+        bestmove_pick = await _claim_tier4_bestmove(session)
+    # session closed
+
+    if bestmove_pick is None:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    game_id, _user_id = bestmove_pick
+
+    positions = await _build_bestmove_lease_positions(game_id)
+
+    # Pitfall 2: zero candidates OR over-cap (SEED-073 precedent) both stamp
+    # best_moves_completed_at directly so this game is never re-drawn.
+    if not positions or len(positions) > MAX_SUBMIT_EVALS:
+        await _stamp_best_moves_completed_directly(game_id)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    return BestMoveLeaseResponse(
+        game_id=game_id,
+        positions=positions,
+        leased_at=datetime.now(timezone.utc),
+    )
+
+
+@router.post("/bestmove-submit", response_model=BestMoveSubmitResponse)
+async def bestmove_submit(
+    body: BestMoveSubmitRequest,
+    request: Request,
+    _auth: Annotated[None, Depends(require_operator_token)],
+    worker_id: Annotated[str, Depends(worker_id_label)],
+) -> BestMoveSubmitResponse:
+    """Apply worker-computed MultiPV=2 runner-up evals: write game_best_moves rows
+    + stamp best_moves_completed_at (S-06/D-02).
+
+    Dedicated, isolated submit endpoint for the tier-4b best-move backfill (D-02).
+    Does NOT call apply_full_eval or _classify_and_fill_oracle — structurally
+    isolated from the live eval/flaw write path (T-177-07); see
+    _apply_bestmove_submit for the full write-ordering rationale.
+
+    Expected status codes (do NOT Sentry-capture):
+      404 — game not found
+      422 — SF version mismatch or out-of-range submitted ply (T-177-05)
+    """
+    # D-5 SF-version gate (same as /submit, /entry-submit, /flaw-blob-submit, /atomic-submit).
+    if settings.EXPECTED_SF_VERSION and body.sf_version != settings.EXPECTED_SF_VERSION:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Stockfish version mismatch",
+        )
+    return await _apply_bestmove_submit(
         game_id=body.game_id,
         body=body,
         worker_id=worker_id,

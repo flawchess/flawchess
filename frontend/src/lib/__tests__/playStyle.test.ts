@@ -1,27 +1,25 @@
 import { describe, it, expect } from 'vitest';
 import {
   HUMAN_BLEND,
-  ENGINE_BLEND,
-  PLAY_STYLE_MIN,
-  PLAY_STYLE_MAX,
-  PLAY_STYLE_STEP,
+  LIGHT_BLEND,
+  DEEP_BLEND,
+  BLEND_MAX,
   PLAY_STYLE_DEFAULT_BLEND,
   deriveActivePlayStylePreset,
   formatPlayStyleSummary,
 } from '../playStyle';
 
 describe('constants', () => {
-  it('PLAY_STYLE_MIN is strictly greater than HUMAN_BLEND — the D-01 "slider cannot reach 0" pin', () => {
-    expect(PLAY_STYLE_MIN).toBeGreaterThan(HUMAN_BLEND);
-    expect(PLAY_STYLE_MIN).toBe(0.05);
+  it('pins the three preset blends and the valid-range ceiling', () => {
+    expect(HUMAN_BLEND).toBe(0);
+    expect(LIGHT_BLEND).toBe(0.05);
+    expect(DEEP_BLEND).toBe(0.5);
+    expect(BLEND_MAX).toBe(1);
   });
 
-  it('pins the remaining domain constants', () => {
-    expect(HUMAN_BLEND).toBe(0);
-    expect(ENGINE_BLEND).toBe(1);
-    expect(PLAY_STYLE_STEP).toBe(0.05);
-    expect(PLAY_STYLE_MAX).toBe(1);
-    expect(PLAY_STYLE_DEFAULT_BLEND).toBe(0.5);
+  it('defaults to the Light preset', () => {
+    expect(PLAY_STYLE_DEFAULT_BLEND).toBe(LIGHT_BLEND);
+    expect(PLAY_STYLE_DEFAULT_BLEND).toBe(0.05);
   });
 });
 
@@ -30,34 +28,34 @@ describe('deriveActivePlayStylePreset', () => {
     expect(deriveActivePlayStylePreset(0)).toBe('human');
   });
 
-  it('returns "engine" at blend 1', () => {
-    expect(deriveActivePlayStylePreset(1)).toBe('engine');
+  it('returns "light" at the Light blend 0.05', () => {
+    expect(deriveActivePlayStylePreset(0.05)).toBe('light');
   });
 
-  it('returns null at blend 0.5 (custom value, no preset active)', () => {
-    expect(deriveActivePlayStylePreset(0.5)).toBeNull();
+  it('returns "deep" at the Deep blend 0.5', () => {
+    expect(deriveActivePlayStylePreset(0.5)).toBe('deep');
   });
 
-  it('returns null at the slider floor 0.05 (distinct from the Human regime)', () => {
-    expect(deriveActivePlayStylePreset(0.05)).toBeNull();
+  it('returns null for a non-preset blend (legacy stored value)', () => {
+    expect(deriveActivePlayStylePreset(1)).toBeNull();
+    expect(deriveActivePlayStylePreset(0.35)).toBeNull();
   });
 });
 
 describe('formatPlayStyleSummary', () => {
-  it('returns the Human summary line with no numeric blend value at blend 0', () => {
-    const summary = formatPlayStyleSummary(0);
-    expect(summary).toBe('Human — plays on instinct, no calculation');
-    expect(summary).not.toMatch(/\d/);
+  it('returns behavior prose per preset with no numeric blend or ELO', () => {
+    expect(formatPlayStyleSummary(0)).toBe('Human — instinct, no calculation');
+    expect(formatPlayStyleSummary(0.05)).toBe('Light — calculates a little');
+    expect(formatPlayStyleSummary(0.5)).toBe('Deep — calculates hard');
   });
 
-  it('returns a numeric-first summary containing 0.50 and 50% at blend 0.5', () => {
-    const summary = formatPlayStyleSummary(0.5);
-    expect(summary).toContain('0.50');
-    expect(summary).toContain('50%');
+  it('never leaks a blend number or percentage', () => {
+    for (const blend of [0, 0.05, 0.5]) {
+      expect(formatPlayStyleSummary(blend)).not.toMatch(/\d/);
+    }
   });
 
-  it('rounds the search percentage for a non-round blend', () => {
-    expect(formatPlayStyleSummary(0.05)).toContain('5%');
-    expect(formatPlayStyleSummary(1)).toContain('100%');
+  it('falls back to a neutral line for a non-preset legacy blend', () => {
+    expect(formatPlayStyleSummary(1)).toBe('Custom calculation depth');
   });
 });

@@ -96,10 +96,18 @@ _WORKER_ID_ALPHABET: str = "0123456789abcdefghijklmnopqrstuvwxyz"
 _WORKER_ID_DEFAULT_LEN: int = 8
 
 # Phase 147 SEED-074 Part B (Q5, RESEARCH.md "Claude's Discretion"): observability
-# and stale-worker rejection ONLY — the server never gates correctness on this
-# value, it always re-classifies authoritatively. Bump when the atomic submit
-# payload shape changes in a way the server should be able to distinguish.
-WORKER_SCHEMA_VERSION: int = 1
+# and stale-worker rejection ONLY on /atomic-submit — the server never gates
+# correctness on this value there, it always re-classifies authoritatively. Bump
+# when the atomic submit payload shape changes in a way the server should be able
+# to distinguish.
+#
+# Phase 177 PROTO-01/S-03: bumped 1 -> 2 AND now gates /atomic-lease itself (both
+# scope=explicit and scope=idle, sent as a query param, not just on submit) —
+# a v1 (or version-omitting) worker binary gets 204 (no work) on the WHOLE atomic
+# lane and idles harmlessly until upgraded, rather than leasing tier-1/2/3 work it
+# cannot compute the new fresh-lane second_best[] for. See WORKER_SCHEMA_VERSION_MIN
+# in app/routers/eval_remote.py (the server-side gate this value must clear).
+WORKER_SCHEMA_VERSION: int = 2
 
 # SEED-063 D3: internal marker distinguishing the supervisor (parent, no marker) from
 # the child (marker set) it spawns. NOT an argparse flag — kept out of --help (D3).
@@ -328,11 +336,71 @@ async def _eval_atomic_blob_nodes(
     ]
 
 
+async def _eval_targeted_second_best(
+    pool: EnginePool,
+    positions: list[dict[str, object]],
+    evals: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Targeted MultiPV-2 runner-up search for fresh-lane gem candidates (PROTO-02).
+
+    For every leased position whose `move_uci` (the move actually PLAYED at this
+    ply, Phase 177 lease field) equals this worker's OWN MultiPV-1 best move (from
+    `evals`, the just-completed full-ply pass), run a SECOND, separate
+    `evaluate_nodes_multipv2` search and collect the runner-up eval. This is purely
+    additive: it never widens the full-ply pass itself (which stays MultiPV-1 —
+    Phase 146 D-03 invariant, see `test_eval_positions_uses_multipv1_no_second_best`
+    / `test_eval_atomic_game_full_ply_pass_stays_multipv1`).
+
+    A candidate with no `move_uci` (the terminal donor, or a v1-shaped lease
+    response) is never a candidate — `move_uci is None` never equals a real UCI
+    string. Positions whose own best move differs from the played move (played !=
+    best) are excluded entirely — they were never gem candidates in the first place.
+
+    A failed targeted search (engine failure -> the all-None 7-tuple
+    `evaluate_nodes_multipv2` returns when the pool isn't started or the engine
+    errors) DROPS that ply from the returned list rather than submitting garbage or
+    failing the whole submit (T-177-14) — the server's own Pitfall-1 fallback
+    (`_build_best_move_candidates`) covers the gap for that one ply.
+
+    `asyncio.gather` is safe here — no `AsyncSession` is open in the worker process
+    (CLAUDE.md gather rule applies to the server only).
+    """
+    best_by_ply: dict[int, str | None] = {
+        int(cast(int, e["ply"])): cast("str | None", e.get("best_move")) for e in evals
+    }
+    candidates: list[dict[str, object]] = [
+        pos
+        for pos in positions
+        if (move_uci := cast("str | None", pos.get("move_uci"))) is not None
+        and best_by_ply.get(int(cast(int, pos["ply"]))) == move_uci
+    ]
+    if not candidates:
+        return []
+
+    boards = [chess.Board(str(pos["fen"])) for pos in candidates]
+    results = await asyncio.gather(*(pool.evaluate_nodes_multipv2(b) for b in boards))
+
+    second_best: list[dict[str, object]] = []
+    for pos, r in zip(candidates, results):
+        if r[0] is None and r[1] is None:
+            continue  # engine failure (all-None 7-tuple) — drop, server fallback covers it
+        second_best.append(
+            {
+                "ply": pos["ply"],
+                "second_cp": r[4],
+                "second_mate": r[5],
+                "second_uci": r[6],
+            }
+        )
+    return second_best
+
+
 async def _eval_atomic_game(
     pool: EnginePool,
     positions: list[dict[str, object]],
-) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
-    """Evaluate full-ply (MultiPV-1), then locally hint + blob flaw plies (Part B).
+) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
+    """Evaluate full-ply (MultiPV-1), then locally hint + blob flaw plies (Part B),
+    then run the Phase 177 targeted second-best re-search (PROTO-02).
 
     The full-ply pass reuses `_eval_positions` UNCHANGED (MultiPV-1 — Phase 146
     D-03 invariant; MUST NOT regress to MultiPV-2, see
@@ -341,15 +409,18 @@ async def _eval_atomic_game(
     eval_mate and is NEVER submitted or trusted as authoritative (T-147-03) — it
     only decides which plies get a MultiPV-2 continuation blob walked and
     evaluated for the server to use as gate input in its own independent
-    classify.
+    classify. The targeted second-best re-search (`_eval_targeted_second_best`)
+    runs AFTER both of those, over the played==best plies only (S-01).
 
-    Returns (evals, blob_nodes) — both go straight into the /atomic-submit body.
+    Returns (evals, blob_nodes, second_best) — all three go straight into the
+    /atomic-submit body.
     """
     evals = await _eval_positions(pool, positions)
     flaw_plies = _hint_flaw_plies(evals)
     boards, tokens = _build_blob_walk_targets(positions, evals, flaw_plies)
     blob_nodes = await _eval_atomic_blob_nodes(pool, boards, tokens) if boards else []
-    return evals, blob_nodes
+    second_best = await _eval_targeted_second_best(pool, positions, evals)
+    return evals, blob_nodes, second_best
 
 
 async def _eval_entry_positions(
@@ -595,37 +666,56 @@ async def _run_cycle(
 ) -> bool:
     """Run one D-06 ladder cycle. Returns True when the loop should stop.
 
-    D-06 four-rung ladder (Phase 123 SEED-051; rung 4 added Phase 146 D-04).
-    Rungs 1 and 3 upgraded to the atomic (versioned) eval+blob pair in Phase 147
-    SEED-074 Part B — this worker now exclusively leases/submits its full-ply
-    tiers via /atomic-lease + /atomic-submit so a leased game is never written
-    with a raw/ungated tactic tag (D-01). The old /lease + /submit pair (and this
-    file's own now-removed full-ply response handler, which called it) has been
-    deleted server-side and here — Phase 149-03 PRUNE-01, after confirming zero
-    legacy traffic across the fleet:
-      1. POST /atomic-lease?scope=explicit (tier-1/2 only)
-         200 → eval full-ply (MultiPV-1) + local flaw-ply hint + MultiPV-2
-               blobs, submit to /atomic-submit, done.
+    D-06 ladder, now FIVE rungs (Phase 123 SEED-051; rung 4 added Phase 146 D-04;
+    rung 5 added Phase 177 BACK-02/03). Rungs 1 and 3 upgraded to the atomic
+    (versioned) eval+blob pair in Phase 147 SEED-074 Part B — this worker now
+    exclusively leases/submits its full-ply tiers via /atomic-lease + /atomic-submit
+    so a leased game is never written with a raw/ungated tactic tag (D-01). The old
+    /lease + /submit pair (and this file's own now-removed full-ply response
+    handler, which called it) has been deleted server-side and here — Phase 149-03
+    PRUNE-01, after confirming zero legacy traffic across the fleet:
+      1. POST /atomic-lease?scope=explicit&worker_schema_version=2 (tier-1/2 only)
+         200 → eval full-ply (MultiPV-1) + local flaw-ply hint + MultiPV-2 blobs +
+               the Phase 177 targeted second-best re-search, submit to
+               /atomic-submit, done.
          204 → fall to rung 2.
       2. POST /entry-lease (entry-ply, gated by D-5 backlog probe server-side)
          200 → eval at depth-15, submit to /entry-submit, done.
          204 → fall to rung 3.
-      3. POST /atomic-lease?scope=idle (tier-3 only)
-         200 → same atomic eval+blob+submit path as rung 1.
+      3. POST /atomic-lease?scope=idle&worker_schema_version=2 (tier-3 only)
+         200 → same atomic eval+blob+second-best+submit path as rung 1.
          204 → fall to rung 4.
       4. POST /flaw-blob-lease (tier-4 blob drain, Phase 146 D-04)
          200 → eval continuation FENs at MultiPV-2, submit to /flaw-blob-submit, done.
+         204 → fall to rung 5.
+      5. POST /bestmove-lease (tier-4b best-move backfill, Phase 177 BACK-02/03)
+         200 → eval leased candidate-ply FENs at MultiPV-2 ONLY (no full pass, no
+               blob walk), submit to /bestmove-submit, done.
          204 → all queues empty; sleep idle_sleep.
 
+    Rung 5 is placed strictly AFTER rung 4 (Pitfall 6) so blob backfill (server
+    tier 4) is always attempted before best-move backfill (server tier 5,
+    TIER_BESTMOVE_BACKFILL) — the worker's ladder ordering mirrors the server's
+    own tier-number priority even though the worker never sees the tier numbers
+    themselves.
+
+    Both /atomic-lease calls send worker_schema_version=WORKER_SCHEMA_VERSION as a
+    query param (Phase 177 PROTO-01/S-03/Pitfall 4) — a v1 (or version-omitting)
+    worker binary would be gated to 204 on this WHOLE lane by the server, not just
+    the new tier-4b path.
+
     Busy paths (tier-1, entry-ply) stay at 1-2 calls. Only the fully-idle path
-    makes all 4 round-trips. Entry-ply is always-on (D-08); the server D-5 gate
+    makes all 5 round-trips. Entry-ply is always-on (D-08); the server D-5 gate
     makes it cost nothing when there's no big import.
 
     Returns True only in non-loop mode after a completed cycle (or an idle 204);
     in loop mode it always returns False so _run_loop keeps draining.
     """
     # ── Rung 1: explicit tier-1/2 (atomic eval+blob pair, Phase 147 Part B) ──
-    lease_resp = await client.post("/api/eval/remote/atomic-lease", params={"scope": "explicit"})
+    lease_resp = await client.post(
+        "/api/eval/remote/atomic-lease",
+        params={"scope": "explicit", "worker_schema_version": WORKER_SCHEMA_VERSION},
+    )
 
     if lease_resp.status_code != 204:
         # Got a tier-1/2 game — eval + hint + blob + submit atomically.
@@ -639,15 +729,25 @@ async def _run_cycle(
         return await _handle_entry_ply_response(client, pool, sf_version, dry_run, loop, entry_resp)
 
     # ── Rung 3: idle tier-3 (atomic eval+blob pair) ──────────────────────────
-    idle_resp = await client.post("/api/eval/remote/atomic-lease", params={"scope": "idle"})
+    idle_resp = await client.post(
+        "/api/eval/remote/atomic-lease",
+        params={"scope": "idle", "worker_schema_version": WORKER_SCHEMA_VERSION},
+    )
 
     if idle_resp.status_code == 204:
         # Rung 4: tier-3 empty → try tier-4 flaw-blob drain (Phase 146 D-04).
         blob_resp = await client.post("/api/eval/remote/flaw-blob-lease")
         if blob_resp.status_code == 204:
-            _log("Queue fully empty (204). Sleeping...")
-            await asyncio.sleep(idle_sleep)
-            return not loop
+            # Rung 5: tier-4 blob empty → try tier-4b best-move backfill
+            # (Phase 177 BACK-02/03, Pitfall 6: strictly AFTER rung 4).
+            bestmove_resp = await client.post("/api/eval/remote/bestmove-lease")
+            if bestmove_resp.status_code == 204:
+                _log("Queue fully empty (204). Sleeping...")
+                await asyncio.sleep(idle_sleep)
+                return not loop
+            return await _handle_bestmove_response(
+                client, pool, sf_version, dry_run, loop, bestmove_resp
+            )
         return await _handle_flaw_blob_response(client, pool, sf_version, dry_run, loop, blob_resp)
 
     return await _handle_atomic_response(client, pool, sf_version, dry_run, loop, idle_resp)
@@ -666,12 +766,13 @@ async def _handle_atomic_response(
     Evaluates full-ply at MultiPV-1 (unchanged `_eval_positions`), derives a
     LOCAL flaw-ply HINT via `_run_all_moves_pass` (mistake/blunder only —
     never trusted as authoritative, T-147-03), walks + evaluates MultiPV-2
-    continuation blobs for those hinted plies, then POSTs the full-ply evals
-    and blob nodes TOGETHER to /atomic-submit in one request. The server
-    re-runs `classify_game_flaws` authoritatively there and writes gated
-    tactic tags + both completion markers in one transaction — this rung
-    closes the ungated-window gap the Gen-1 /lease + /submit pair used to
-    leave open (D-01, pair deleted server-side and here in Phase 149-03
+    continuation blobs for those hinted plies, runs the Phase 177 targeted
+    second-best re-search for played==best plies (PROTO-02), then POSTs the
+    full-ply evals, blob nodes, AND second_best TOGETHER to /atomic-submit in
+    one request. The server re-runs `classify_game_flaws` authoritatively there
+    and writes gated tactic tags + both completion markers in one transaction —
+    this rung closes the ungated-window gap the Gen-1 /lease + /submit pair used
+    to leave open (D-01, pair deleted server-side and here in Phase 149-03
     PRUNE-01): this worker's hint only decides WHICH plies get blobbed, never
     WHAT gets persisted.
     """
@@ -685,12 +786,12 @@ async def _handle_atomic_response(
     job_id = data.get("job_id")
 
     _log(f"Atomic-leased game_id={game_id} ({len(positions)} positions). Evaluating...")
-    evals, blob_nodes = await _eval_atomic_game(pool, positions)
+    evals, blob_nodes, second_best = await _eval_atomic_game(pool, positions)
 
     if dry_run:
         _log(
-            f"--dry-run: evaluated {len(evals)} positions + {len(blob_nodes)} blob nodes "
-            f"for game_id={game_id}; skipping submit."
+            f"--dry-run: evaluated {len(evals)} positions + {len(blob_nodes)} blob nodes + "
+            f"{len(second_best)} second_best for game_id={game_id}; skipping submit."
         )
         return not loop
 
@@ -702,6 +803,7 @@ async def _handle_atomic_response(
             "worker_schema_version": WORKER_SCHEMA_VERSION,
             "evals": evals,
             "blob_nodes": blob_nodes,
+            "second_best": second_best,
             "job_id": job_id,
         },
     )
@@ -792,6 +894,83 @@ async def _handle_flaw_blob_response(
     submit_resp.raise_for_status()
     result = submit_resp.json()
     _log(f"Flaw-blob submit game_id={game_id}: blobs_written={result.get('blobs_written')}")
+    return not loop
+
+
+# ─── Rung-5 tier-4b best-move backfill helpers (Phase 177 BACK-02/03) ────────
+
+
+async def _eval_bestmove_positions(
+    pool: EnginePool,
+    positions: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Evaluate tier-4b candidate-ply FENs at MultiPV=2 ONLY (rung 5, S-05).
+
+    No full-ply pass, no blob walk — the server has ALREADY validated played==best
+    candidacy server-side from its own stored data before leasing these FENs (Open
+    Question #3, RESEARCH.md); the worker's only job here is the targeted runner-up
+    search. Mirrors `_eval_flaw_blob_positions`' index mapping (r[4]/r[5]/r[6] only;
+    r[0]-r[3] are intentionally NOT read — there is no best_cp/best_mate/best_move/pv
+    field on `BestMoveSubmitEval`, unlike the flaw-blob pair).
+
+    `asyncio.gather` is safe here — no `AsyncSession` is open in the worker process
+    (CLAUDE.md gather rule applies to the server only).
+    """
+    boards: list[chess.Board] = [chess.Board(str(pos["fen"])) for pos in positions]
+    results = await asyncio.gather(*(pool.evaluate_nodes_multipv2(b) for b in boards))
+    return [
+        {
+            "ply": pos["ply"],
+            "second_cp": r[4],
+            "second_mate": r[5],
+            "second_uci": r[6],
+        }
+        for pos, r in zip(positions, results)
+    ]
+
+
+async def _handle_bestmove_response(
+    client: httpx.AsyncClient,
+    pool: EnginePool,
+    sf_version: str,
+    dry_run: bool,
+    loop: bool,
+    bestmove_lease_resp: httpx.Response,
+) -> bool:
+    """Handle a 200 response from /bestmove-lease (tier-4b best-move backfill, D-02).
+
+    Evaluates each leased candidate-ply FEN at MultiPV=2 only, then POSTs the
+    per-ply runner-up evals to /bestmove-submit. The server writes ONLY
+    game_best_moves rows + stamps best_moves_completed_at (S-06) — it never
+    reclassifies or touches game_flaws (T-177-07). Mirrors
+    `_handle_flaw_blob_response`'s shape; no token to echo here (the lease is
+    already ply-keyed, no PV-walk reassembly needed — S-05).
+    """
+    bestmove_lease_resp.raise_for_status()
+    data = bestmove_lease_resp.json()
+    game_id = data["game_id"]
+    positions = data["positions"]
+
+    _log(
+        f"Bestmove-leased game_id={game_id} ({len(positions)} candidate plies). "
+        "Evaluating at MultiPV=2..."
+    )
+    evals = await _eval_bestmove_positions(pool, positions)
+
+    if dry_run:
+        _log(
+            f"--dry-run: evaluated {len(evals)} bestmove candidate plies for "
+            f"game_id={game_id}; skipping submit."
+        )
+        return not loop
+
+    submit_resp = await client.post(
+        "/api/eval/remote/bestmove-submit",
+        json={"game_id": game_id, "sf_version": sf_version, "evals": evals},
+    )
+    submit_resp.raise_for_status()
+    result = submit_resp.json()
+    _log(f"Bestmove-submit game_id={game_id}: rows_written={result.get('rows_written')}")
     return not loop
 
 

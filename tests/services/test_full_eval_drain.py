@@ -883,6 +883,46 @@ class TestGatherOutsideSession:
             f"hard rule (QUEUE-07 / T-116-06 architectural invariant)."
         )
 
+    def test_gather_outside_session_tier4b_minimal_path(self) -> None:
+        """Phase 177 D-05: same AST scan, targeting the new
+        `_tier4b_minimal_drain_tick` (its own asyncio.gather for the targeted
+        MultiPV-2 runner-up search must also never run inside an async-with
+        session scope)."""
+        from app.services.eval_drain import _tier4b_minimal_drain_tick
+
+        source = inspect.getsource(_tier4b_minimal_drain_tick)
+        tree = ast.parse(source)
+
+        class GatherOutsideSessionChecker(ast.NodeVisitor):
+            def __init__(self) -> None:
+                self.violations: list[int] = []
+                self._async_with_stack: int = 0
+
+            def visit_AsyncWith(self, node: ast.AsyncWith) -> None:  # noqa: N802
+                self._async_with_stack += 1
+                self.generic_visit(node)
+                self._async_with_stack -= 1
+
+            def visit_Call(self, node: ast.Call) -> None:  # noqa: N802
+                func = node.func
+                is_gather = False
+                if isinstance(func, ast.Attribute) and func.attr == "gather":
+                    is_gather = True
+                if isinstance(func, ast.Name) and func.id == "gather":
+                    is_gather = True
+                if is_gather and self._async_with_stack > 0:
+                    self.violations.append(getattr(node, "lineno", -1))
+                self.generic_visit(node)
+
+        checker = GatherOutsideSessionChecker()
+        checker.visit(tree)
+
+        assert checker.violations == [], (
+            f"asyncio.gather() found inside an async-with scope at line(s) "
+            f"{checker.violations} in _tier4b_minimal_drain_tick — violates "
+            f"CLAUDE.md hard rule (QUEUE-07 / T-116-06 architectural invariant)."
+        )
+
 
 # ─── QUEUE-07: yield gate ─────────────────────────────────────────────────────
 
@@ -2129,33 +2169,32 @@ class TestLichessBestMoveBackfill:
 
 
 class TestBestMoveBackfill:
-    """Phase 176 Plan 01: an engine-side (non-lichess) game claimed by tier-4b
-    drains through the full pipeline end-to-end, gets `best_moves_completed_at`
-    stamped (self-termination) — and, the crux, a Maia-absent backend never
-    stamps it even when best-move candidate rows were otherwise produced
-    (guardrail; mutation-test-style negative assertion per project MEMORY.md).
+    """Phase 176 Plan 01 / Phase 177 Plan 03: an engine-side (non-lichess) game
+    claimed by tier-4b drains through the MINIMAL candidate-only path (Phase
+    177 D-05 — fixes the documented `_ = tier` no-op) end-to-end, gets
+    `best_moves_completed_at` stamped (self-termination) — and, the crux, a
+    Maia-absent backend never stamps it even when best-move candidate rows
+    were otherwise produced (guardrail; mutation-test-style negative
+    assertion per project MEMORY.md).
     """
 
     _BACKFILL_PGN: str = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. h3 a6 *"
 
     @staticmethod
     def _engine_mock() -> AsyncMock:
-        """8 non-terminal plies (Italian Game main line booked through ply 5;
-        ply 6 h2h3 is the wide-margin out-of-book played==best candidate; ply 7
-        a7a6 is out-of-book played==best but sub-margin) + 1 terminal eval-donor
-        call (engine games pass include_terminal=True, unlike lichess-eval
-        games — eval_drain.py:726)."""
+        """EXACTLY 2 targeted MultiPV-2 runner-up searches — the minimal
+        drain path (Phase 177 D-05) leases only the out-of-book played==best
+        candidate plies (ply 6 h2h3, wide-margin; ply 7 a7a6, sub-margin) via
+        `_build_bestmove_lease_positions`, never the other 6 in-book plies +
+        terminal eval-donor the old full-pipeline path used to gather. Only
+        indices 4/5/6 (second_cp, second_mate, second_uci) are read by the
+        minimal path — best_cp/best_mate/best_uci come from the STORED
+        game_positions data (Pitfall 1 inverse-shift reconstruction), not
+        from these mock results, so indices 0-3 are left at None."""
         return AsyncMock(
             side_effect=[
-                (20, None, "e2e4", "e2e4", None, None, ""),
-                (20, None, "e7e5", "e7e5", None, None, ""),
-                (30, None, "g1f3", "g1f3", None, None, ""),
-                (30, None, "b8c6", "b8c6", None, None, ""),
-                (60, None, "f1c4", "f1c4", None, None, ""),
-                (60, None, "f8c5", "f8c5", None, None, ""),
-                (300, None, "h2h3", "h2h3", -100, None, "e7e6"),  # ply 6: candidate
-                (10, None, "a7a6", "a7a6", 5, None, "b7b6"),  # ply 7: sub-margin
-                (5, None, "a2a3", "a2a3", None, None, ""),  # terminal donor
+                (None, None, None, None, -500, None, "e7e6"),  # ply 6: wide margin -> candidate
+                (None, None, None, None, 75, None, "b7b6"),  # ply 7: zero margin -> rejected
             ]
         )
 
@@ -2184,27 +2223,38 @@ class TestBestMoveBackfill:
                 .values(white_rating=1500, black_rating=1500)
             )
             await session.commit()
+        # cp_by_ply is the STORED (post-move-shifted) eval_cp per row — row i's
+        # value is the eval OF position i+1 (Pitfall 1 inverse-shift source).
+        # best_move is set ONLY on the two out-of-book rows (6, 7) so
+        # _build_bestmove_lease_positions's played==stored-best test nominates
+        # exactly those two as candidates (plies 0-5 are in-book and skipped
+        # regardless of their best_move value).
         cp_by_ply = [15, 25, 35, 45, 55, 65, 75, 85]
-        gp_rows = [
+        gp_rows: list[dict[str, Any]] = [
             {"ply": i, "full_hash": full_hash_base + i, "eval_cp": cp_by_ply[i], "eval_mate": None}
             for i in range(8)
         ]
+        gp_rows[6]["best_move"] = "h2h3"  # played at ply 6 -> candidate
+        gp_rows[7]["best_move"] = (
+            "a7a6"  # played at ply 7 -> candidate (sub-margin, rejected later)
+        )
         await _insert_game_positions(
             full_drain_session_maker, full_drain_test_user_117, game_id, gp_rows
         )
         return game_id
 
-    async def test_backfill_pick_drains_and_stamps_best_moves_completed_at(
+    async def test_full_drain_tick_tier4b_minimal_path(
         self,
         full_drain_test_user_117: int,
         full_drain_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """A tier-4b-claimed engine game drains end-to-end: gets a
-        game_best_moves row at its wide-margin out-of-book played==best ply,
-        and best_moves_completed_at is stamped afterward with a Maia session
-        present (self-termination — the predicate no longer matches this
-        game_id after the tick)."""
+        """Phase 177 D-05 (the plan's core artifact): a claimed
+        TIER_BESTMOVE_BACKFILL game runs the MINIMAL candidate-only path —
+        writes game_best_moves + stamps best_moves_completed_at, calls
+        `evaluate_nodes_multipv2` EXACTLY twice (only the 2 leased candidate
+        plies, never the other 6 in-book plies + terminal donor the full
+        every-ply gather would visit), and never calls `apply_full_eval`."""
         from app.models.eval_jobs import TIER_BESTMOVE_BACKFILL
         from app.models.game import Game
         from app.models.game_best_move import GameBestMove
@@ -2212,7 +2262,7 @@ class TestBestMoveBackfill:
         from app.services import maia_engine
 
         game_id = await self._seed_backfill_game(
-            full_drain_test_user_117, full_drain_session_maker, 0xB1F1_0000
+            full_drain_test_user_117, full_drain_session_maker, 0xB1F3_0000
         )
 
         drain_module = _patch_drain_for_tick_tests(
@@ -2225,22 +2275,39 @@ class TestBestMoveBackfill:
         )
         monkeypatch.setattr(maia_engine, "_session", object())  # Maia present (sentinel)
         monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.15)
-        monkeypatch.setattr(
-            drain_module.engine_service, "evaluate_nodes_multipv2", self._engine_mock()
-        )
+        engine_mock = self._engine_mock()
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", engine_mock)
+
+        apply_full_eval_calls: list[int] = []
+        real_apply_full_eval = drain_module.apply_full_eval
+
+        async def _spy_apply_full_eval(*args: Any, **kwargs: Any) -> Any:
+            apply_full_eval_calls.append(1)
+            return await real_apply_full_eval(*args, **kwargs)
+
+        monkeypatch.setattr(drain_module, "apply_full_eval", _spy_apply_full_eval)
 
         try:
             processed = await drain_module._full_drain_tick()
             assert processed is True, "Tick must report a processed game"
 
+            assert apply_full_eval_calls == [], (
+                "apply_full_eval must NEVER be called on a TIER_BESTMOVE_BACKFILL "
+                "claim — that is the full every-ply reclassify path, which the "
+                "minimal tier-4b path must bypass entirely (Pitfall 3 fix)."
+            )
+            assert engine_mock.await_count == 2, (
+                "evaluate_nodes_multipv2 must be called EXACTLY twice (the 2 "
+                f"leased candidate plies only); got {engine_mock.await_count} calls "
+                "— the minimal path must never run the full every-ply gather."
+            )
+
             async with full_drain_session_maker() as verify:
-                game_row = (
+                best_moves_at = (
                     await verify.execute(
-                        select(Game.best_moves_completed_at, Game.full_pv_completed_at).where(
-                            Game.id == game_id
-                        )
+                        select(Game.best_moves_completed_at).where(Game.id == game_id)
                     )
-                ).one()
+                ).scalar_one()
                 bm_rows = (
                     (
                         await verify.execute(
@@ -2251,37 +2318,194 @@ class TestBestMoveBackfill:
                     .all()
                 )
 
-            best_moves_at, full_pv_at = game_row
-            assert best_moves_at is not None, (
-                "best_moves_completed_at must be stamped after a hole-free tick "
-                "with a Maia session present (Path A)."
-            )
-            assert full_pv_at is not None
-
+            assert best_moves_at is not None, "best_moves_completed_at must be stamped."
             assert len(bm_rows) == 1, (
                 f"Expected exactly 1 game_best_moves row (ply 6 only); got "
                 f"{len(bm_rows)}: {[r.ply for r in bm_rows]}"
             )
             assert bm_rows[0].ply == 6
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
 
-            # Self-termination: the tier-4b predicate no longer matches this game_id.
+    async def test_non_tier4b_claim_still_takes_full_path(
+        self,
+        full_drain_test_user_117: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Regression guard: a non-tier-4b claim (tier=3, idle backlog) is
+        UNCHANGED — it still runs the full every-ply gather + apply_full_eval
+        reclassify, proving the new tier branch is scoped to
+        TIER_BESTMOVE_BACKFILL only."""
+        import app.services.eval_apply as eval_apply_module
+        from app.services import maia_engine
+
+        game_id = await self._seed_backfill_game(
+            full_drain_test_user_117, full_drain_session_maker, 0xB1F4_0000
+        )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch,
+            full_drain_session_maker,
+            game_id,
+            full_drain_test_user_117,
+            is_lichess_eval_game=False,
+            tier=3,  # idle/tier-3 derived — NOT TIER_BESTMOVE_BACKFILL
+        )
+        monkeypatch.setattr(maia_engine, "_session", object())
+        monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.15)
+
+        # Full path re-evaluates all 8 non-terminal plies + 1 terminal donor.
+        engine_mock = AsyncMock(
+            side_effect=[
+                (20, None, "e2e4", "e2e4", None, None, ""),
+                (20, None, "e7e5", "e7e5", None, None, ""),
+                (30, None, "g1f3", "g1f3", None, None, ""),
+                (30, None, "b8c6", "b8c6", None, None, ""),
+                (60, None, "f1c4", "f1c4", None, None, ""),
+                (60, None, "f8c5", "f8c5", None, None, ""),
+                (300, None, "h2h3", "h2h3", -100, None, "e7e6"),
+                (10, None, "a7a6", "a7a6", 5, None, "b7b6"),
+                (5, None, "a2a3", "a2a3", None, None, ""),
+            ]
+        )
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", engine_mock)
+
+        apply_full_eval_calls: list[int] = []
+        real_apply_full_eval = drain_module.apply_full_eval
+
+        async def _spy_apply_full_eval(*args: Any, **kwargs: Any) -> Any:
+            apply_full_eval_calls.append(1)
+            return await real_apply_full_eval(*args, **kwargs)
+
+        monkeypatch.setattr(drain_module, "apply_full_eval", _spy_apply_full_eval)
+
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is True, "Tick must report a processed game"
+            assert apply_full_eval_calls == [1], (
+                "apply_full_eval must be called exactly once for a non-tier-4b "
+                f"claim; got {len(apply_full_eval_calls)} calls."
+            )
+            assert engine_mock.await_count == 9, (
+                "The full path must gather all 8 non-terminal plies + 1 terminal "
+                f"donor; got {engine_mock.await_count} calls."
+            )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_tier4b_drain_local_fallback_tagged_source(
+        self,
+        full_drain_test_user_117: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """D-06/OBS-01: when the minimal drain path's own targeted search comes
+        back with no usable runner-up for a leased candidate ply,
+        `_build_best_move_candidates`'s Pitfall-1 fallback fires a SECOND
+        `evaluate_nodes_multipv2` call for that ply and tags the Sentry event
+        `source='drain-local'` — queryable apart from the
+        `worker-submit-fallback` regression signal (177-01-SUMMARY.md)."""
+        from app.models.eval_jobs import TIER_BESTMOVE_BACKFILL
+        from app.models.game_best_move import GameBestMove
+        import app.services.eval_apply as eval_apply_module
+        from app.services import maia_engine
+
+        # A rare, non-book opening so book_plies == 0 (ply 1 is out-of-book
+        # from the very start) — 1 candidate ply keeps the fallback trigger
+        # deterministic and isolated.
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_117,
+            pgn="1. a4 h6 *",
+            evals_completed_at=datetime.now(timezone.utc),
+            full_evals_completed_at=datetime.now(timezone.utc),
+            full_pv_completed_at=datetime.now(timezone.utc),
+            lichess_evals_at=None,
+        )
+        from app.models.game import Game
+
+        async with full_drain_session_maker() as session:
+            await session.execute(
+                sa.update(Game.__table__)  # ty: ignore[invalid-argument-type]
+                .where(Game.id == game_id)
+                .values(white_rating=1500, black_rating=1500)
+            )
+            await session.commit()
+        gp_rows: list[dict[str, Any]] = [
+            {"ply": 0, "full_hash": 0xB1F5_0000, "eval_cp": 0, "eval_mate": None},
+            {
+                "ply": 1,
+                "full_hash": 0xB1F5_0001,
+                "eval_cp": 10,
+                "eval_mate": None,
+                "best_move": "h7h6",  # played at ply 1 -> candidate
+            },
+        ]
+        await _insert_game_positions(
+            full_drain_session_maker, full_drain_test_user_117, game_id, gp_rows
+        )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch,
+            full_drain_session_maker,
+            game_id,
+            full_drain_test_user_117,
+            is_lichess_eval_game=False,
+            tier=TIER_BESTMOVE_BACKFILL,
+        )
+        monkeypatch.setattr(maia_engine, "_session", object())
+        monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.15)
+
+        set_tag_calls: list[tuple[str, str]] = []
+        monkeypatch.setattr(
+            eval_apply_module.sentry_sdk,
+            "set_tag",
+            lambda key, value: set_tag_calls.append((key, value)),
+        )
+        monkeypatch.setattr(eval_apply_module.sentry_sdk, "set_context", lambda *a, **kw: None)
+
+        # Call 1: the minimal path's OWN targeted search for ply 1 comes back
+        # with no usable runner-up (both second_cp and second_uci None) -> ply 1
+        # is left OUT of second_best_map -> _build_best_move_candidates's own
+        # Pitfall-1 fallback fires call 2, this time with a real runner-up.
+        # best_cp (ply 1, mover=black) resolves to eval_of_position[1] = row 0's
+        # eval_cp = 0 (white POV, roughly neutral). The runner-up must be
+        # clearly WORSE for black — a HIGHER white-POV cp (favors white) — for
+        # the margin gate to pass in black's favor.
+        engine_mock = AsyncMock(
+            side_effect=[
+                (None, None, None, None, None, None, None),  # ply 1: no runner-up
+                (None, None, "h7h6", None, 1000, None, "b7b5"),  # fallback re-search
+            ]
+        )
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", engine_mock)
+
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is True, "Tick must report a processed game"
+
+            assert engine_mock.await_count == 2, (
+                "expected exactly 2 evaluate_nodes_multipv2 calls (the targeted "
+                f"search + the Pitfall-1 fallback re-search); got {engine_mock.await_count}"
+            )
+            assert ("source", "drain-local") in set_tag_calls, (
+                f"Expected a ('source', 'drain-local') Sentry tag when the "
+                f"drain-local fallback fires, got {set_tag_calls}"
+            )
+
             async with full_drain_session_maker() as verify:
-                still_matches = (
-                    await verify.execute(
-                        select(Game.id).where(
-                            Game.id == game_id,
-                            Game.full_pv_completed_at.isnot(None),
-                            Game.best_moves_completed_at.is_(None),
-                            Game.lichess_evals_at.is_(None),
+                bm_rows = (
+                    (
+                        await verify.execute(
+                            select(GameBestMove).where(GameBestMove.game_id == game_id)
                         )
                     )
-                ).scalar_one_or_none()
-            assert still_matches is None, (
-                "After drain, this game must no longer match the tier-4b backfill "
-                "predicate (full_pv_completed_at IS NOT NULL AND "
-                "best_moves_completed_at IS NULL AND lichess_evals_at IS NULL) — "
-                "self-termination is broken if it does."
-            )
+                    .scalars()
+                    .all()
+                )
+            assert len(bm_rows) == 1
+            assert bm_rows[0].ply == 1
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
 
@@ -2301,9 +2525,9 @@ class TestBestMoveBackfill:
         structurally unsound availability signal). The game stays re-drainable.
 
         Positive counterpart (session present -> stamp fires) is proven by
-        test_backfill_pick_drains_and_stamps_best_moves_completed_at above —
-        per project MEMORY.md "Mutation-test gap closures", both the negative
-        and positive assertions are required, not just the positive path.
+        test_full_drain_tick_tier4b_minimal_path above — per project
+        MEMORY.md "Mutation-test gap closures", both the negative and
+        positive assertions are required, not just the positive path.
         """
         from app.models.game import Game
         from app.models.eval_jobs import TIER_BESTMOVE_BACKFILL

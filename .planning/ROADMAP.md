@@ -665,3 +665,31 @@ Plans:
 **Wave 3** *(blocked on Wave 2 completion)*
 
 - [x] 173-04-PLAN.md — Execute the real sweep + fit the internal scale + findings/compression verdict (D-11/D-12/D-13) [wave 3]
+
+### Phase 177: Worker-side MultiPV-2 gem-candidate searches, protocol v2 (SEED-111)
+
+**Goal:** The server does zero Stockfish work when applying an atomic game submit. Workers compute the gem-candidate runner-up (MultiPV-2) data themselves via a targeted re-search after their MultiPV-1 full pass (only plies where played == worker best; the full pass stays MultiPV-1, preserving the Phase 146 D-03 eval-parity invariant) and include it in the submit payload; the server's apply path becomes pure Maia inference + classification + DB writes. Trust boundary unchanged: the server still applies the played==best check, out-of-book gate, and inaccuracy gate from the submitted numbers. `WORKER_SCHEMA_VERSION` bumps to 2 with gating at the atomic LEASE (v1 workers get 204 no-work on that lane); the server-side fallback stays as an instrumented rare safety net (Sentry tag/metric so silently re-growing server Stockfish load is visible). Expected impact: fleet engines from ~68% to ~95%+ busy and near-linear backfill scaling with added workers (baseline 2026-07-17: ~550 games/h stamped, server pool 8 engines ~92% pinned, local worker engines ~32% idle per cycle).
+**Requirements**: PROTO-01, PROTO-02, PROTO-03, BACK-02, BACK-03, DRAIN-01, OBS-01, MEAS-01 (seed-driven, adopted from 177-RESEARCH.md; no upstream REQUIREMENTS.md entries)
+**Depends on:** Phase 176 (tier-4b backfill lottery is the ~416k-game population this unblocks)
+**Plans:** 4/5 plans executed
+
+Plans:
+
+**Wave 1**
+
+- [x] 177-01-PLAN.md — Protocol v2 schemas + fresh-lane version gating + second_best wiring + fallback Sentry tag (PROTO-01, PROTO-03, OBS-01) [wave 1]
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [x] 177-02-PLAN.md — Dedicated tier-4b /bestmove-lease + /bestmove-submit pair, inverse-shift candidate reconstruction, minimal apply, config fix (BACK-02, BACK-03) [wave 2]
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [x] 177-03-PLAN.md — Drain tier-aware minimal path for tier-4b (fixes `_ = tier` no-op) + drain-local Sentry tag (DRAIN-01, OBS-01) [wave 3]
+- [x] 177-04-PLAN.md — Worker v2: targeted MultiPV-2 re-search + rung-5 tier-4b handler + lease-time version send (PROTO-01, PROTO-02) [wave 3]
+
+**Wave 4** *(blocked on Wave 3; post-deploy)*
+
+- [ ] 177-05-PLAN.md — HUMAN-UAT post-deploy before/after measurement vs SEED-111 baseline (MEAS-01) [wave 4]
+
+**Design note:** Plan 02 deliberately diverges from CONTEXT.md D-01's *literal* "extend the idle fall-through" wording (SEED-072 makes it starve blob backfill — see the `<design_divergence_flag>` in 177-02-PLAN.md) and instead honors D-02's "mirrors the flaw-blob-lease/submit pair pattern" with a dedicated endpoint pair as worker rung-5, preserving D-01's intent (lowest-priority, fresh-work-first, single-flag gate).

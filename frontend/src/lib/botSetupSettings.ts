@@ -18,7 +18,7 @@
 
 import * as Sentry from '@sentry/react';
 import { MAIA_ELO_LADDER } from '@/lib/maiaEncoding';
-import { HUMAN_BLEND, ENGINE_BLEND, PLAY_STYLE_DEFAULT_BLEND } from '@/lib/playStyle';
+import { HUMAN_BLEND, BLEND_MAX, PLAY_STYLE_DEFAULT_BLEND } from '@/lib/playStyle';
 import { DEFAULT_TC_PRESET_LABEL, findPresetByLabel } from '@/lib/botTimeControlPresets';
 
 export const BOT_SETUP_SETTINGS_KEY_PREFIX = 'flawchess_bot_setup_settings:';
@@ -79,7 +79,7 @@ function isValidSetupSettingsShape(value: unknown): value is BotSetupSettings {
   const s = value as Record<string, unknown>;
   return (
     isNumberInRange(s.botElo, LADDER_MIN_ELO, LADDER_MAX_ELO) &&
-    isNumberInRange(s.blend, HUMAN_BLEND, ENGINE_BLEND) &&
+    isNumberInRange(s.blend, HUMAN_BLEND, BLEND_MAX) &&
     typeof s.baseSeconds === 'number' &&
     typeof s.incrementSeconds === 'number' &&
     (s.colorPreference === 'white' || s.colorPreference === 'black' || s.colorPreference === 'random')

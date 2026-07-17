@@ -30,6 +30,11 @@ class LeasePosition(BaseModel):
     ply: int = Field(ge=0)
     fen: str  # board.fen() — full FEN including turn, castling, en passant
     is_terminal: bool  # True for the terminal eval-donor
+    # Phase 177 PROTO-01/S-01: the UCI of the move PLAYED from this ply's board (None
+    # for the terminal donor, or for a v1 worker's earlier lease response shape — this
+    # field is purely additive). The v2 worker compares this against its own MultiPV-1
+    # best to find played==best gem candidates without a second server round-trip.
+    move_uci: str | None = Field(default=None, max_length=MAX_BEST_MOVE_LEN)
 
 
 # ─── Phase 123 SEED-051: entry-ply (import-time) batched schemas (D-07) ──────
@@ -187,6 +192,23 @@ class AtomicBlobNode(BaseModel):
 MAX_SUBMIT_BLOB_NODES: int = 1024
 
 
+class AtomicSecondBestEval(BaseModel):
+    """One worker-computed MultiPV-2 runner-up eval for a played==best fresh-lane
+    ply (Phase 177 PROTO-02/PROTO-03).
+
+    Mirrors AtomicSubmitEval's bounds shape (ply/eval bounds reuse the SAME
+    constants — no new numeric literals). The worker submits one of these for
+    every out-of-book ply where its own MultiPV-1 best equals the played move;
+    the server threads them into `second_best_map` so `_build_best_move_candidates`
+    skips its own targeted Stockfish fallback for every covered ply (S-04).
+    """
+
+    ply: int = Field(ge=0, le=MAX_PLY)
+    second_cp: int | None = Field(ge=EVAL_CP_MIN, le=EVAL_CP_MAX)
+    second_mate: int | None = Field(ge=EVAL_MATE_MIN, le=EVAL_MATE_MAX)
+    second_uci: str | None = Field(max_length=MAX_BEST_MOVE_LEN)
+
+
 class AtomicSubmitRequest(BaseModel):
     """Worker submit payload: full-ply evals + MultiPV-2 blob nodes, submitted together."""
 
@@ -199,6 +221,13 @@ class AtomicSubmitRequest(BaseModel):
     worker_schema_version: int
     evals: list[AtomicSubmitEval] = Field(max_length=MAX_SUBMIT_EVALS)
     blob_nodes: list[AtomicBlobNode] = Field(max_length=MAX_SUBMIT_BLOB_NODES)
+    # Phase 177 PROTO-03: worker-computed gem-candidate runner-up evals for the
+    # fresh lane (v2 workers only). A v1 worker that never sends this field
+    # validates fine (default empty list) — every played==best candidate then
+    # takes the server-side fallback, unchanged from pre-Phase-177 behavior.
+    second_best: list[AtomicSecondBestEval] = Field(
+        default_factory=list, max_length=MAX_SUBMIT_EVALS
+    )
     # Opaque eval_jobs.id token echoed from the lease response; None for tier-3
     # or for a worker that doesn't include the field.
     job_id: int | None = None
@@ -219,3 +248,56 @@ class AtomicSubmitResponse(BaseModel):
     blobs_written: int
     failed_ply_count: int
     stamp_complete: bool
+
+
+# ─── Phase 177 BACK-02/03: tier-4b dedicated lease/submit schema pair (D-02) ──
+#
+# NEW, ISOLATED schema set for the tier-4b best-move backfill lease/submit pair
+# (POST /eval/remote/bestmove-lease + POST /eval/remote/bestmove-submit), mirroring
+# the FlawBlob*-pair's isolation contract above. A tier-4b game already has a
+# complete MultiPV=1 full-ply pass (game_positions.best_move/eval_cp/eval_mate) —
+# the server reconstructs the candidate-ply set itself (out-of-book, played ==
+# stored best_move) and leases the worker ONLY the FENs for those plies. The
+# worker runs exactly the N targeted MultiPV=2 runner-up searches (S-05) and
+# submits back the second-best evals; no move_uci on the wire (the server already
+# validated candidacy — Open Question #3, RESEARCH.md).
+
+
+class BestMoveLeasePosition(BaseModel):
+    """One tier-4b candidate ply's FEN for the worker's runner-up (MultiPV-2) search."""
+
+    ply: int = Field(ge=0, le=MAX_PLY)
+    fen: str  # board.fen() — the pre-move position at this ply
+
+
+class BestMoveLeaseResponse(BaseModel):
+    """Lease response carrying one game's server-recomputed candidate-ply FENs."""
+
+    game_id: int
+    # Bounded by MAX_SUBMIT_EVALS (DoS guard reused — T-145-05/T-123-05 precedent).
+    positions: list[BestMoveLeasePosition] = Field(max_length=MAX_SUBMIT_EVALS)
+    leased_at: datetime
+
+
+class BestMoveSubmitEval(BaseModel):
+    """One worker-computed MultiPV-2 runner-up eval for a candidate ply."""
+
+    ply: int = Field(ge=0, le=MAX_PLY)
+    second_cp: int | None = Field(ge=EVAL_CP_MIN, le=EVAL_CP_MAX)
+    second_mate: int | None = Field(ge=EVAL_MATE_MIN, le=EVAL_MATE_MAX)
+    second_uci: str | None = Field(max_length=MAX_BEST_MOVE_LEN)
+
+
+class BestMoveSubmitRequest(BaseModel):
+    """Worker submit payload: game id, engine version, and per-candidate runner-up evals."""
+
+    game_id: int
+    sf_version: str  # e.g. "Stockfish 18" — for the D-5 version gate
+    evals: list[BestMoveSubmitEval] = Field(max_length=MAX_SUBMIT_EVALS)
+
+
+class BestMoveSubmitResponse(BaseModel):
+    """Submit acknowledgement: how many game_best_moves rows were written."""
+
+    game_id: int
+    rows_written: int

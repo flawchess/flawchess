@@ -45,11 +45,14 @@ from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.database import async_session_maker
+from app.models.eval_jobs import TIER_BESTMOVE_BACKFILL
 from app.models.game import Game
 from app.models.game_position import DEDUP_MAX_PLY, GamePosition
 from app.models.import_job import ImportJob
 from app.repositories.game_repository import users_with_zero_pending
+from app.schemas.eval_remote import MAX_SUBMIT_EVALS
 from app.services import engine as engine_service
+from app.services import maia_engine
 from app.services import percentile_compute_registry
 
 # Phase 150 R7: the shared write-path primitives physically moved to eval_apply.py.
@@ -67,14 +70,19 @@ from app.services.eval_apply import (
     _batch_update_flaw_pv_lines,  # noqa: F401 — backward-compat re-export (scripts)
     _batch_update_pv_rows,  # noqa: F401 — backward-compat re-export (scripts)
     _build_best_move_candidates,
+    _build_bestmove_lease_positions,
     _build_flaw_blob_lease_positions,  # noqa: F401 — backward-compat re-export (tests/scripts)
     _build_flaw_multipv2_blobs,
     _build_line_blobs,  # noqa: F401 — backward-compat re-export (tests)
     _classify_with_overlay,
     _collect_full_ply_targets,
+    _eval_of_position_map,
     _fetch_dedup_evals,
+    _mark_best_moves_completed,
     _reconstruct_pos_eval,
     _signal_flaw_completion,
+    _stamp_best_moves_completed_directly,
+    _upsert_best_move_rows,
     _walk_pv_boards,  # noqa: F401 — backward-compat re-export (scripts)
     apply_full_eval,
 )
@@ -653,6 +661,164 @@ def _log_path_c_capacity_reached(
     )
 
 
+async def _tier4b_minimal_drain_tick(game_id: int, user_id: int) -> bool:
+    """Phase 177 D-05: minimal candidate-only drain path for a TIER_BESTMOVE_BACKFILL
+    claim — fixes the documented `_ = tier` no-op (177-RESEARCH.md Pitfall 3).
+
+    `claim_eval_job` has already selected `game_id` via `_claim_tier4_bestmove`
+    (`_full_drain_tick`'s Step 1); this function does the rest of the tier-4b work
+    in-process, reusing the SAME reconstruction + candidate/writer primitives the
+    dedicated `POST /bestmove-lease` + `POST /bestmove-submit` endpoint pair uses
+    (Plan 02) — never the full every-ply MultiPV-2 gather + `apply_full_eval`
+    reclassify below (that would re-evaluate and re-classify an already-analyzed
+    game from scratch for zero benefit).
+
+    Flow (mirrors bestmove_lease + bestmove_submit, minus the HTTP round-trip):
+    1. `_build_bestmove_lease_positions` — server-recomputed candidate-ply FENs
+       (out-of-book, played == stored `game_positions.best_move`), no engine
+       calls (mirrors `/bestmove-lease` Step 3).
+    2. Zero candidates OR over `MAX_SUBMIT_EVALS`: stamp `best_moves_completed_at`
+       directly (Pitfall 2 forward-progress) and return True — the game IS
+       processed (claimed + terminated), never re-drawn by the ES lottery
+       (mirrors `/bestmove-lease` Step 4).
+    3. Otherwise rebuild `targets` + the inverse-shift `engine_result_map`
+       (Pitfall 1) via the SAME primitives `_apply_bestmove_submit` uses (D-03:
+       lease and submit — and this local variant — reconstruct from the
+       identical stored source of truth, so candidate sets structurally agree),
+       then run the targeted MultiPV-2 runner-up search for EXACTLY the leased
+       candidate plies — ONE `asyncio.gather`, NO session open (CLAUDE.md hard
+       rule). This is the N-search work a worker would do between
+       `/bestmove-lease` and `/bestmove-submit`, executed here in-process on
+       the server pool instead.
+    4. Delegate to `_build_best_move_candidates` (reused verbatim — the margin
+       gate + pinned-ELO Maia scoring are NOT re-derived here) with
+       `source='drain-local'` (D-06) so a residual Pitfall-1 fallback here is
+       Sentry-distinguishable from the worker-submit-path regression signal.
+    5. Write session (opened LATE): UPSERT `game_best_moves` rows + stamp
+       `best_moves_completed_at` IFF `maia_engine.is_maia_available()`
+       (Phase 176 D-01 guardrail — a Maia-absent backend must never stamp,
+       since `_build_best_move_candidates` returns `[]` for BOTH "Maia ran,
+       zero candidates" and "Maia absent"; row count alone cannot
+       distinguish them) + commit. Nothing else — no `apply_full_eval`, no
+       reclassify; `game_flaws` is never read or written (S-06/D-02
+       isolation, T-177-10).
+
+    `user_id` is accepted for signature parity with the caller's already-claimed
+    `(game_id, user_id)` pair; `game_best_moves` rows are keyed on
+    `(game_id, ply)` only, so it is otherwise unused here.
+    """
+    _ = user_id
+
+    positions = await _build_bestmove_lease_positions(game_id)
+    if not positions or len(positions) > MAX_SUBMIT_EVALS:
+        await _stamp_best_moves_completed_directly(game_id)
+        return True
+
+    # Rebuild the SAME targets + inverse-shift engine_result_map
+    # _apply_bestmove_submit builds (Pitfall 1) — short read session, CLOSED
+    # before any engine work.
+    async with async_session_maker() as read_session:
+        game = await read_session.scalar(select(Game).where(Game.id == game_id))
+        if game is None:
+            # Game deleted between claim and this read — nothing to do.
+            return False
+        pgn_text: str = game.pgn
+        gp_result = await read_session.execute(
+            select(
+                GamePosition.ply,
+                GamePosition.best_move,
+                GamePosition.eval_cp,
+                GamePosition.eval_mate,
+            ).where(
+                GamePosition.game_id == game_id,
+                GamePosition.user_id == game.user_id,
+            )
+        )
+        gp_rows = gp_result.all()
+    # read_session closed.
+
+    stored_best_move_by_ply: dict[int, str | None] = {r.ply: r.best_move for r in gp_rows}
+    eval_of_position = _eval_of_position_map([(r.ply, r.eval_cp, r.eval_mate) for r in gp_rows])
+    gp_full_rows: list[tuple[int, int, int | None, int | None]] = [
+        (r.ply, 0, r.eval_cp, r.eval_mate) for r in gp_rows
+    ]
+    targets = _collect_full_ply_targets(
+        game_id=game_id,
+        pgn_text=pgn_text,
+        game_positions_rows=gp_full_rows,
+        include_terminal=False,
+        stored_best_move_by_ply=stored_best_move_by_ply,
+    )
+    if not targets:
+        return False
+
+    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]] = {
+        t.ply: (
+            *eval_of_position.get(t.ply, (None, None)),
+            stored_best_move_by_ply.get(t.ply),
+            None,
+        )
+        for t in targets
+    }
+
+    # Targeted MultiPV-2 runner-up search for EXACTLY the leased candidate
+    # plies — ONE asyncio.gather, NO session open (CLAUDE.md hard rule).
+    targets_by_ply = {t.ply: t for t in targets}
+    search_targets = [targets_by_ply[p.ply] for p in positions if p.ply in targets_by_ply]
+    if not search_targets:
+        await _stamp_best_moves_completed_directly(game_id)
+        return True
+
+    search_results: Sequence[
+        tuple[
+            int | None,
+            int | None,
+            str | None,
+            str | None,
+            int | None,
+            int | None,
+            str | None,
+        ]
+    ] = await asyncio.gather(
+        *(engine_service.evaluate_nodes_multipv2(t.board) for t in search_targets)
+    )
+    # Mirrors the main tick's second_best_map population (line ~816 below): only a
+    # real runner-up result is recorded, so a fully-failed search leaves the ply
+    # absent and lets _build_best_move_candidates's own Pitfall-1 fallback recover
+    # it (tagged source='drain-local' below, D-06).
+    second_best_map: dict[int, tuple[int | None, int | None, str | None]] = {}
+    for t, res in zip(search_targets, search_results, strict=True):
+        second_cp, second_mate, second_uci = res[4], res[5], res[6]
+        if second_cp is not None or second_uci is not None:
+            second_best_map[t.ply] = (second_cp, second_mate, second_uci)
+
+    # Candidate/writer path — reused verbatim (D-05); source='drain-local' tags
+    # a residual Pitfall-1 fallback so it is queryable apart from the
+    # worker-submit-fallback regression signal (D-06).
+    best_move_rows = await _build_best_move_candidates(
+        game_id, targets, engine_result_map, second_best_map, source="drain-local"
+    )
+
+    # Phase 176 D-01 guardrail (apply_completion_decision's maia_available param):
+    # best_moves_completed_at is stamped ONLY when a Maia session was actually
+    # loaded — never inferred from best_move_rows being empty/non-empty, since
+    # _build_best_move_candidates returns [] for BOTH "Maia ran, zero
+    # candidates" and "Maia absent" (row count alone cannot distinguish them).
+    # A Maia-absent backend must never stamp, or the game would be permanently
+    # excluded from the tier-4b lottery with zero best-move rows.
+    maia_available = maia_engine.is_maia_available()
+
+    # Write session — open LATE, UPSERT rows + stamp (iff Maia was available) +
+    # commit. Nothing else.
+    async with async_session_maker() as write_session:
+        await _upsert_best_move_rows(write_session, best_move_rows)
+        if maia_available:
+            await _mark_best_moves_completed(write_session, game_id)
+        await write_session.commit()
+
+    return True
+
+
 async def _full_drain_tick() -> bool:
     """Run ONE full-drain tick: yield gate, queue claim, collect, dedup, gather, write.
 
@@ -691,6 +857,12 @@ async def _full_drain_tick() -> bool:
     tier: int = claimed.tier
     is_lichess_eval_game: bool = claimed.is_lichess_eval_game
     job_id: int | None = claimed.job_id
+
+    # Phase 177 D-05: a TIER_BESTMOVE_BACKFILL claim takes the minimal
+    # candidate-only path — never the full every-ply gather + apply_full_eval
+    # reclassify below (fixes the documented `_ = tier` no-op, Pitfall 3).
+    if tier == TIER_BESTMOVE_BACKFILL:
+        return await _tier4b_minimal_drain_tick(game_id, user_id)
 
     # Step 2: load PGN + game_positions rows for this game.
     # Build targets via _collect_full_ply_targets; partition dedup candidates.
@@ -905,7 +1077,6 @@ async def _full_drain_tick() -> bool:
     # Step 5: per-user cache-completion signal (D-117-11 — no-op stub in Phase 117).
     # Runs AFTER commit so the signal never fires for a partially-committed game.
     _signal_flaw_completion(user_id)
-    _ = tier  # tier is available for Phase 118 tier-aware cache logic
 
     return True
 

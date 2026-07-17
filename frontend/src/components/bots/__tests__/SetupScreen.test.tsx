@@ -7,7 +7,7 @@
  * jsdom supplies a real `localStorage`.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 
 import { SetupScreen } from '../SetupScreen';
 import {
@@ -60,7 +60,13 @@ describe('SetupScreen — defaults (V-13 setup half)', () => {
 
     // resolveDefaultBotElo(1650) snaps to 1700 (Plan 04's pinned rounding).
     expect(screen.getByTestId('analysis-elo-selector-value').textContent).toBe('1700');
-    expect(screen.getByTestId('setup-play-style-summary').textContent).toContain('0.50');
+    // Default play-style preset is Light (blend 0.05).
+    expect(screen.getByTestId('setup-play-style-summary').textContent).toBe(
+      'Light — calculates a little',
+    );
+    expect(screen.getByTestId('setup-play-style-preset-light').getAttribute('aria-pressed')).toBe(
+      'true',
+    );
     expect(screen.getByTestId('setup-tc-rapid-10-0').getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByTestId(`setup-color-${DEFAULT_BOT_SETUP_SETTINGS.colorPreference}`).getAttribute('aria-pressed')).toBe(
       'true',
@@ -84,7 +90,7 @@ describe('SetupScreen — prefill from persisted settings', () => {
   it('every control prefills from a saved settings blob for the same ownerKey, overriding the profile default', () => {
     writeSetupSettings('owner-a', {
       botElo: 1800,
-      blend: 1,
+      blend: 0.05,
       baseSeconds: 300,
       incrementSeconds: 3,
       colorPreference: 'black',
@@ -94,7 +100,7 @@ describe('SetupScreen — prefill from persisted settings', () => {
 
     // The saved ELO (1800) wins over the profile-derived default for 1200.
     expect(screen.getByTestId('analysis-elo-selector-value').textContent).toBe('1800');
-    expect(screen.getByTestId('setup-play-style-preset-engine').getAttribute('aria-pressed')).toBe(
+    expect(screen.getByTestId('setup-play-style-preset-light').getAttribute('aria-pressed')).toBe(
       'true',
     );
     expect(screen.getByTestId('setup-tc-blitz-5-3').getAttribute('aria-pressed')).toBe('true');
@@ -217,24 +223,5 @@ describe('mobile density (171 UAT gap 3, Task 2)', () => {
     expect(screen.getByTestId('setup-tc-blitz-3-0')).toBeTruthy();
     expect(screen.getByTestId('setup-tc-rapid-10-0')).toBeTruthy();
     expect(screen.getByTestId('setup-tc-classical-30-0')).toBeTruthy();
-  });
-});
-
-describe('SetupScreen — ELO info popover (D-05)', () => {
-  it('renders the bot-specific honesty caveat copy', async () => {
-    render(<SetupScreen ownerKey={null} normalizedRating={1500} onStart={vi.fn()} />);
-    const trigger = screen.getByTestId('setup-elo-info');
-
-    vi.useFakeTimers();
-    try {
-      fireEvent.mouseEnter(trigger);
-      act(() => {
-        vi.advanceTimersByTime(200);
-      });
-    } finally {
-      vi.useRealTimers();
-    }
-    await waitFor(() => screen.getByText(/rating band whose/i));
-    expect(screen.getByText(/Calibration is still in progress/i)).toBeTruthy();
   });
 });

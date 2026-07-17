@@ -2,19 +2,18 @@
 gsd_state_version: 1.0
 milestone: v2.4
 milestone_name: Backend Gem & Great Detection
-current_phase: 999.1
-current_phase_name: BACKLOG
-status: milestone_complete
-stopped_at: v2.4 Backend Gem & Great Detection milestone closed
-last_updated: "2026-07-17T06:00:00.000Z"
+current_phase: 177
+current_phase_name: worker-side-multipv2-gem-candidates
+status: executing
+stopped_at: Completed 177-04-PLAN.md
+last_updated: "2026-07-17T17:12:00.000Z"
 last_activity: 2026-07-17
-last_activity_desc: v2.4 Backend Gem & Great Detection milestone closed (phases 174-176); ready to deploy
+last_activity_desc: Phase 177 Plan 04 (worker-side protocol v2 - targeted second-best re-search + rung-5 tier-4b handler) completed
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 14
-  completed_plans: 14
-  percent: 100
+  total_phases: 1
+  completed_phases: 0
+  total_plans: 5
+  completed_plans: 5
 ---
 
 # Project State: FlawChess
@@ -22,9 +21,9 @@ progress:
 ## Current Position
 
 Milestone: v2.4 Backend Gem & Great Detection — CLOSED 2026-07-17 (phases 174–176, 14 plans)
-Phase: none active (999.1 Password Reset remains in BACKLOG)
-Status: Milestone complete — deploy pending (`bin/deploy.sh`)
-Last activity: 2026-07-17 — Closed v2.4: archived phases to milestones/v2.4-phases/, CHANGELOG promoted, tagged v2.4
+Phase: 177 (worker-side-multipv2-gem-candidates) — EXECUTING
+Status: Executing Phase 177 (Plan 04 of 5 complete)
+Last activity: 2026-07-17 — Phase 177 Plan 04 (worker-side protocol v2 — targeted second-best re-search + rung-5 tier-4b handler) completed
 
 ## Project Reference
 
@@ -72,6 +71,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 177 added 2026-07-17: Worker-side MultiPV-2 gem-candidate searches, protocol v2 (SEED-111) — move the gem-candidate runner-up (MultiPV-2, 1M-node) searches off the prod server's Stockfish pool onto the workers (targeted re-search after the MultiPV-1 pass; submit schema v2 gated at the atomic lease; instrumented server fallback), so atomic-submit apply becomes pure Maia + classify + DB writes and tier-4b backfill throughput scales near-linearly with the fleet (measured 2026-07-17: server pool ~92% pinned, fleet engines ~32% idle, ~550 games/h). Standalone post-v2.4 phase (same pattern as Phase 173); numbered and placed manually — mature-ROADMAP `phase.add` misnumbers/misplaces (known behavior, see Phase 164/172 entries).
 - v2.4 Backend Gem & Great Detection roadmap created 2026-07-16 — 3 phases (174–176) in 2 dependency waves (A={174}, B={175,176}), continuing absolute numbering from Phase 173 (the v2.3 post-close anchor-calibration addendum). All 11 requirements (GEMS-01..07, BOARD-01/02, FILT-01, BACK-01) mapped 1:1, no orphans. Keystone Phase 174 (backend Maia inference + best-move storage, spike-gated on a Python encoding-parity check mirroring Phase 168's Maia-in-Node feasibility gate) gates everything else; Phases 175 (board + Library-filter frontend consumption) and 176 (opportunistic corpus backfill) depend only on 174, not on each other. UI hint on Phase 175.
 - Phase 172 added 2026-07-14: Background Gem Sweep on Analysis (SEED-106) — resolve gems for the whole mainline in the background (free `played === best_move` + out-of-book prefilter → Maia C1 → Stockfish parent grade), pin the gem rung to the mover's own seeded rating instead of the ELO slider, raise `GEM_MAIA_MAX_PROB` 0.10 → 0.20, and add `opening_ply_count` (computed on-read, no migration) for book markers with precedence `severity > gem > book`. Added to the **v2.3 Bot Play** milestone by explicit user choice even though it is an `/analysis` feature, not bot play — Adrian chose "extend v2.3" over closing the milestone first (2026-07-14); revisit the boundary at milestone close. User amendment at add time: SEED-106 D3 extended so the sweep triggers on analysis *becoming* ready (bot games analyzed in the background on the live-updating analysis board), not only on mount-time readiness. `gsd-tools phase.add` numbered it 172 correctly but appended the section to the end of the file after the archived `<details>` history — moved into the active milestone by hand (the known mature-ROADMAP behavior).
 - v2.3 Bot Play roadmap created 2026-07-11 — 6 phases (166–171) in 3 dependency waves (A={166,167}, B={168,169}, C={170,171}), continuing absolute numbering from v2.2's Phase 165. All 26 requirements (BOT/PLAY/STORE/RESUME/CAL) mapped 1:1, no orphans. Keystone Phase 166 (`selectBotMove` two-regime sample↔argmax blend) is imported by both the play loop and the calibration harness; Phase 167 (backend store-on-finish) is fully independent. Phase 166 (slider→temperature/threshold curve + regime discontinuity) and Phase 168 (Maia-in-Node feasibility spike + `onnxruntime-node` version) flagged for plan-time research/spike. UI hints on Phases 169 (clocked board) and 171 (Bots page/setup).
@@ -322,6 +322,15 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase ?]: [Phase 174-07]: Broadened the existing residual PV-backfill fallback (full_evals_completed_at IS NULL -> full_pv_completed_at IS NULL) rather than adding a new lottery rung; kept precedence and ES key unchanged
 - [Phase ?]: [Phase 174-07]: Dropped the superseded ix_games_pv_backfill_pending in the same migration that adds ix_games_lichess_pv_backfill_pending, since its predicate no longer matches any query after the broadening
 - [Phase ?]: Moved TIER_BESTMOVE_BACKFILL constant addition from Task 4 to Task 3 (Rule 3 auto-fix) to unblock Task 3 verify tests without a forward dependency on Task 4's lottery rung
+- [Phase ?]: [Phase 177-01]: worker_schema_version defaults to 1 on /atomic-lease (un-updated binary compatibility, Pitfall 4)
+- [Phase ?]: [Phase 177-01]: _build_best_move_candidates's source param defaults to 'drain-local' so the out-of-scope eval_drain.py call site keeps working unchanged
+- [Phase ?]: [Phase 177-01]: second_best tamper guard checks only in-range ply, not candidate membership -- a non-candidate ply is silently dropped at the map lookup, mirroring the blob-node precedent (S-02)
+- [Phase ?]: [Phase 177-02]: _build_bestmove_lease_positions applies only the availability (None-guard) half of the inaccuracy gate at lease time -- the runner-up eval doesn't exist until the worker computes it; the full margin gate + Maia scoring runs once, authoritatively, at submit time via the reused _build_best_move_candidates
+- [Phase ?]: [Phase 177-02]: /bestmove-submit's tamper guard is structural-range-only (422 on out-of-range ply); candidate-membership rejection is achieved for free by _build_best_move_candidates's own independent recompute (never reads second_best_map keys to decide candidacy)
+- [Phase ?]: [Phase 177-02]: _apply_bestmove_submit lives in eval_apply.py (service layer) per the plan's explicit artifact placement, diverging from precedent (_apply_flaw_blob_submit/_apply_atomic_submit live in the router); still raises HTTPException directly for 404/422, matching established error-handling style
+- [Phase ?]: [Phase 177-03]: _tier4b_minimal_drain_tick inlines the reconstruction + write sequence rather than calling _apply_bestmove_submit verbatim, so it can pass source='drain-local' into _build_best_move_candidates (D-06), and preserves the Phase 176 D-01 maia_available guardrail the new tier branch would otherwise bypass (Rule 2 auto-fix, caught by the plan's own pre-existing test)
+- [Phase ?]: Phase 177 Plan 04: split Task 1/Task 2 into two atomic commits despite overlapping code in _run_cycle, by temporarily reverting/reapplying Task 2's additions rather than merging commits
+- [Phase ?]: Phase 177 Plan 04: engine-failure detection for the targeted second-best search checks r[0] is None and r[1] is None (both eval_cp/eval_mate absent) as the unique failure signature
 
 ### Pending Todos
 
@@ -356,6 +365,7 @@ None active.
 | 260715-r9c | /bots layout: BoardControls bar (reset/back/forward/flip) below the board, wired to the hook's view-only `viewedPly` cursor; flip is a manual local toggle. Single-column constrains the stack to the board's max width (clock strips always match the board) and HIDES the move list; two-column desktop (breakpoint lowered 1024→800) is two rows with a small gap so the flex-filled move list bottom aligns with the board bottom, board controls + Resign/Draw beneath. Split GamePanel → move-list + controls; MoveListPanel gained `fillHeight`. Layout-only, all 2228 FE tests green | 2026-07-15 | 4b8c1878 | [260715-r9c-improve-bot-game-layout-with-board-contr](./quick/260715-r9c-improve-bot-game-layout-with-board-contr/) |
 | 260717-agv | Analysis game-view by url (`/analysis?game_id=X`) accessible to any logged-in user, not just the owner. Relaxed `GET /library/games/{game_id}` + tactic-line expansion from an owner IDOR guard to logged-in-only: scope `get_library_game` queries to `owner_id = game.user_id` and `fetch_tactic_lines` by globally-unique `game_id`, keep `current_active_user` as the auth gate. Contained to Analysis.tsx (list endpoint stays owner-scoped). Flipped 3 cross-user IDOR tests to 200; 121 backend tests pass. Intentional: game_ids are enumerable, so any logged-in user can view any game (scouting/sharing) | 2026-07-17 | 4b9d3da2 | [260717-agv-analysis-game-view-any-logged-in-user](./quick/260717-agv-analysis-game-view-any-logged-in-user/) |
 | 260717-gmg | Guard gem/great badges against best_cp vs imported-eval divergence: on lichess-eval games the eval graph preserves lichess's `%eval` while `best_cp`/`best_move` come from our own Stockfish, so a shallow overrating of a sharp line produced spurious badges (game 640125, 55.Qc6+: our −0.82 vs lichess −2.46). Query-time, directional, expected-score guard in `classify_best_move` + SQL twin `best_move_tier_sql` (new `BEST_MOVE_DIVERGENCE_MAX_ES = 0.10`), wired through the board and the Library has-gem/great filter (LEFT-join the candidate ply's `game_positions` row, fail-open). Retroactive (zero re-analysis), no-op for engine games. 12 new tests; full backend suite 3439 passed | 2026-07-17 | aa599bcd | [260717-gmg-gem-great-divergence-guard-lichess-eval](./quick/260717-gmg-gem-great-divergence-guard-lichess-eval/) |
+| 260717-lr9 | Preset-only 3-tier play-style control on the Bots setup screen: replaced the play-style slider + Human/Engine chips with three preset buttons — Human (blend 0), Light (0.05, new default), Deep (0.5). Names describe calculation depth, not a rating (engine not ELO-calibrated yet). playStyle.ts drops the slider constants + transitional `ENGINE_PRESET_BLEND`, adds `LIGHT_BLEND`/`DEEP_BLEND`/`BLEND_MAX` (validation ceiling kept at 1 so legacy blend=1 blobs still validate); `deriveActivePlayStylePreset` 3-way; default flips to Light. Also tightened adjacent setup copy (play-style popover, EloSelector tooltip). Full FE gate green: knip/tsc/eslint + 2298 tests | 2026-07-17 | c6b4c7a4 | [260717-lr9-preset-only-3-tier-play-style-control-hu](./quick/260717-lr9-preset-only-3-tier-play-style-control-hu/) |
 
 ## Deferred Items
 
@@ -408,9 +418,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Completed 176-01-PLAN.md
+**Stopped at:** Completed 177-04-PLAN.md
 
-**Last session:** 2026-07-17T04:05:49.061Z
+**Last session:** 2026-07-17T17:03:14.456Z
 
 **Resume file:**
 
@@ -434,6 +444,10 @@ None
 | Phase 174 P06 | ~50min | 3 tasks | 7 files |
 | Phase 174 P07 | 35min | 2 tasks | 5 files |
 | Phase 176 P01 | 20min | 4 tasks | 8 files |
+| Phase 177 P01 | 14min | 3 tasks | 5 files |
+| Phase 177 P02 | 31min | 3 tasks | 6 files |
+| Phase 177 P03 | 16min | 1 tasks | 2 files |
+| Phase 177 P04 | 25min | 2 tasks | 2 files |
 
 ## Performance Metrics
 
