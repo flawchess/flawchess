@@ -257,6 +257,10 @@ export const libraryApi = {
     tactic_orientation?: string;
     min_tactic_depth?: number;
     max_tactic_depth?: number;
+    // FILT-01 (Phase 175): "has gem" / "has great" Library filter toggles, each
+    // independent (union at the backend when both are true); omitted when false.
+    has_gem?: boolean;
+    has_great?: boolean;
     offset?: number;
     limit?: number;
   }) =>
@@ -273,6 +277,8 @@ export const libraryApi = {
           : {}),
         ...(params.min_tactic_depth != null ? { min_tactic_depth: params.min_tactic_depth } : {}),
         ...(params.max_tactic_depth != null ? { max_tactic_depth: params.max_tactic_depth } : {}),
+        ...(params.has_gem ? { has_gem: true } : {}),
+        ...(params.has_great ? { has_great: true } : {}),
         offset: params.offset ?? 0,
         limit: params.limit ?? 20,
       },

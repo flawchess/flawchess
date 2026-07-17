@@ -86,6 +86,8 @@ async def get_library_games(
     opponent_gap_min: int | None = Query(default=None),
     opponent_gap_max: int | None = Query(default=None),
     color: str | None = Query(default=None),
+    has_gem: bool | None = Query(default=None),
+    has_great: bool | None = Query(default=None),
 ) -> LibraryGamesResponse:
     """Return a paginated, flaw-filterable game archive (LIBG-08).
 
@@ -100,7 +102,10 @@ async def get_library_games(
     carries per-game B/M/I counts and curated chips; chess.com / unanalyzed-
     lichess games carry analysis_state="no_engine_analysis" with
     severity_counts=null (never 0/0/0). When `color` is supplied ("white" or
-    "black"), only games played as that color are returned.
+    "black"), only games played as that color are returned. When `has_gem` /
+    `has_great` is True, only games with >=1 of the user's OWN plies (D-04)
+    classifying as a gem/great best move are returned (FILT-01); both True is a
+    union (gem OR great).
     """
     if from_date is not None and to_date is not None and from_date > to_date:
         raise HTTPException(status_code=422, detail="from_date must be <= to_date")
@@ -124,6 +129,8 @@ async def get_library_games(
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
         color=color,
+        has_gem=has_gem,
+        has_great=has_great,
     )
 
 

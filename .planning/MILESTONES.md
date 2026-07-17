@@ -1,5 +1,19 @@
 # Milestones: FlawChess
 
+## v2.4 Backend Gem & Great Detection (Shipped: 2026-07-17)
+
+**Phases completed:** 3 phases (174, 175, 176), 14 plans
+
+**Key accomplishments:**
+
+- **Phase 174 — Backend Maia Inference + Best-Move Storage (spike-gated):** gem detection moves off the brittle client-side sweep into the backend full-game analysis pass. A spike-gated Python port of the client's 12-plane board→tensor encoding runs Maia-3 (`onnxruntime`) at eval-apply, parity-checked against the client's onnxruntime-web output before any downstream work. Every newly analyzed game stores a `game_best_moves` candidate row (peer to `game_flaws`, unique on `(game_id, ply)`) for each out-of-book ply where the played move equals Stockfish's best AND clears the `INACCURACY_DROP` (0.05) margin — each row holds `maia_prob` plus best/second eval as floats, never a gem/great boolean, so Gem (`maia_prob ≤ 0.20`) / Great (`(0.20, 0.50]`) thresholds are a constants-only retune with zero re-analysis. Maia inference is pinned to the mover's lichess-blitz-equivalent rating at game time, clamped to [600, 2600], and runs backend-only (no worker-protocol change); `onnxruntime`/`numpy` are isolated behind a `maia-inference` uv group so the worker image stays lean. Two gap-closure plans (SEED-109) retired the lichess-eval special-case lane for uniform full-ply coverage and added an opportunistic ES-weighted backfill of the existing ~43k lichess-eval games through the unified pass.
+- **Phase 175 — Board & Filter — Gem/Great Consumption:** the analysis board, eval chart, and move-cycling badges now read gem/great markers straight from `EvalPoint`'s stored fields, appearing instantly with no background-sweep delay and no dependency on device power or live-engine load — the client-side `useGemSweep` is demoted to a documented free-play-only fallback (SEED-107 closes as superseded). Adds a second "Great" tier of primitives (theme colors, icons, badges) across board / badge / popover / variation tree. The Library Games filter panel gains "has gem" / "has great" toggles built on the existing flaw/tactic `EXISTS`-based game-filter machinery, composing correctly with every other game filter. A user-requested wave-5 extension added gem/great eval-chart dots + click-to-cycle badges, all user-scoped via a shared mover-parity helper.
+- **Phase 176 — Backfill:** a backend-only tier-4b opportunistic ES-weighted lottery (`_claim_tier4_bestmove`) drains the already-analyzed corpus through the Phase 174 pipeline (global + random, no deterministic sweep, no ETA), gated behind a dedicated `BEST_MOVE_BACKFILL_ENABLED` kill-switch (default off) plus a Maia-absence guardrail that stamps `best_moves_completed_at` only when Maia actually ran — never inferred from an empty candidate set, so no game is permanently locked out of the lottery.
+
+Also bundled: a CI fix installing the isolated `maia-inference` group (`uv sync --locked --group maia-inference`) so `ty` can resolve the `onnxruntime`/`numpy` imports in the backend suite.
+
+The tier-4b backfill flag ships **OFF** (D-05) — enabling `BEST_MOVE_BACKFILL_ENABLED` in prod is a separate, deliberately observed flag flip after deploy, not part of this merge.
+
 ## v2.3 Bot Play (Shipped: 2026-07-15)
 
 **Phases completed:** 9 phases (166, 167, 168, 168.5, 169, 169.5, 170, 171, 172), 46 plans

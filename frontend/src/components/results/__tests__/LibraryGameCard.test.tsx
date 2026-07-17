@@ -58,12 +58,25 @@ vi.mock('@/hooks/useFlawFilterStore', () => ({
 // can simulate scrubbing the slider to a given ply.
 const scrubCtl = vi.hoisted(() => ({ ply: 0 }));
 vi.mock('@/components/library/EvalChart', () => ({
-  EvalChart: ({ onHoverPlyChange }: { onHoverPlyChange?: (p: number | null) => void }) => (
-    <button
-      type="button"
-      data-testid="stub-eval-chart"
-      onClick={() => onHoverPlyChange?.(scrubCtl.ply)}
-    />
+  EvalChart: ({
+    onHoverPlyChange,
+    commandedPly,
+    commandSeq,
+  }: {
+    onHoverPlyChange?: (p: number | null) => void;
+    commandedPly?: number | null;
+    commandSeq?: number;
+  }) => (
+    <div>
+      <button
+        type="button"
+        data-testid="stub-eval-chart"
+        onClick={() => onHoverPlyChange?.(scrubCtl.ply)}
+      />
+      {/* Exposes the imperative scrub command (Phase 175 Plan 06 gem/great cycling
+          tests) so a click on a badge/chip can be asserted end-to-end. */}
+      <span data-testid="stub-eval-chart-command">{`${commandedPly ?? 'null'}:${commandSeq ?? 0}`}</span>
+    </div>
   ),
 }));
 vi.mock('@/components/board/LazyMiniBoard', () => ({
@@ -355,5 +368,95 @@ describe('LibraryGameCard platform link follows the eval-chart scrub', () => {
     fireEvent.click(screen.getAllByTestId('stub-eval-chart')[0]!);
     const link = screen.getAllByTestId(`game-card-link-${GAME_ID}`)[0];
     expect(link?.getAttribute('href')).toBe('https://lichess.org/abc');
+  });
+});
+
+describe('LibraryGameCard Gem/Great badges (Phase 175 Plan 06)', () => {
+  // makeGame sets user_color: 'white', so even plies (0, 2, 4) are the USER's moves
+  // and odd plies (1, 3) are the opponent's. best_move_tier is POSITION-scoped, so
+  // the fixture deliberately seeds gems/greats on BOTH sides to prove the user-only
+  // filter (Plan 06 fix). User: gem@0, great@2, gem@4. Opponent: gem@1, great@3.
+  function gemGreatGame(): GameFlawCard {
+    return {
+      ...makeGame([]),
+      eval_series: [
+        { ply: 0, es: 0.5, eval_cp: 0, eval_mate: null, best_move_tier: 'gem', maia_prob: 0.1 },
+        { ply: 1, es: 0.55, eval_cp: 10, eval_mate: null, best_move_tier: 'gem', maia_prob: 0.12 },
+        { ply: 2, es: 0.6, eval_cp: 20, eval_mate: null, best_move_tier: 'great', maia_prob: 0.3 },
+        { ply: 3, es: 0.62, eval_cp: 25, eval_mate: null, best_move_tier: 'great', maia_prob: 0.32 },
+        { ply: 4, es: 0.64, eval_cp: 30, eval_mate: null, best_move_tier: 'gem', maia_prob: 0.15 },
+      ],
+    };
+  }
+
+  it('renders no Gem/Great badges when the game has no gem/great plies', () => {
+    renderCard(<LibraryGameCard game={makeGame([])} />);
+    expect(screen.queryAllByTestId(`badge-gem-${GAME_ID}`)).toHaveLength(0);
+    expect(screen.queryAllByTestId(`badge-great-${GAME_ID}`)).toHaveLength(0);
+  });
+
+  it('counts only the USER (even-ply) gems, excluding the opponent gem', () => {
+    renderCard(<LibraryGameCard game={gemGreatGame()} />);
+    const badges = screen.getAllByTestId(`badge-gem-${GAME_ID}`);
+    expect(badges.length).toBeGreaterThan(0);
+    // User gems: ply 0 and ply 4 → 2. The opponent gem at ply 1 is NOT counted.
+    expect(badges[0]?.textContent).toContain('2');
+  });
+
+  it('counts only the USER (even-ply) greats, excluding the opponent great', () => {
+    renderCard(<LibraryGameCard game={gemGreatGame()} />);
+    const badges = screen.getAllByTestId(`badge-great-${GAME_ID}`);
+    expect(badges.length).toBeGreaterThan(0);
+    // User great: ply 2 only → 1. The opponent great at ply 3 is NOT counted.
+    expect(badges[0]?.textContent).toContain('1');
+  });
+
+  it('shows no badge for a Black user when only the opponent (even-ply) has gems', () => {
+    // Black user → odd plies are the user's. The only gem here is on ply 0 (White =
+    // opponent), so the user has zero gems and no Gem badge renders.
+    const game: GameFlawCard = {
+      ...makeGame([]),
+      user_color: 'black',
+      eval_series: [
+        { ply: 0, es: 0.5, eval_cp: 0, eval_mate: null, best_move_tier: 'gem', maia_prob: 0.1 },
+      ],
+    };
+    renderCard(<LibraryGameCard game={game} />);
+    expect(screen.queryAllByTestId(`badge-gem-${GAME_ID}`)).toHaveLength(0);
+  });
+
+  it('omits the Great badge when the game has user gem plies but no user great plies', () => {
+    const game: GameFlawCard = {
+      ...makeGame([]),
+      eval_series: [
+        { ply: 0, es: 0.5, eval_cp: 0, eval_mate: null, best_move_tier: 'gem', maia_prob: 0.1 },
+      ],
+    };
+    renderCard(<LibraryGameCard game={game} />);
+    expect(screen.getAllByTestId(`badge-gem-${GAME_ID}`).length).toBeGreaterThan(0);
+    expect(screen.queryAllByTestId(`badge-great-${GAME_ID}`)).toHaveLength(0);
+  });
+
+  it('activating the Gem badge cycles the eval chart through the USER gem plies only, wrapping', () => {
+    renderCard(<LibraryGameCard game={gemGreatGame()} />);
+    const badge = screen.getAllByTestId(`badge-gem-${GAME_ID}`)[0]!;
+    fireEvent.click(badge);
+    // User gems are plies 0 and 4 — never ply 1 (opponent).
+    expect(screen.getAllByTestId('stub-eval-chart-command')[0]!.textContent).toBe('0:1');
+    fireEvent.click(badge);
+    expect(screen.getAllByTestId('stub-eval-chart-command')[0]!.textContent).toBe('4:2');
+    fireEvent.click(badge);
+    // Wraps back to the first user gem ply.
+    expect(screen.getAllByTestId('stub-eval-chart-command')[0]!.textContent).toBe('0:3');
+  });
+
+  it('activating the Great badge cycles independently through the user great ply', () => {
+    renderCard(<LibraryGameCard game={gemGreatGame()} />);
+    const gemBadge = screen.getAllByTestId(`badge-gem-${GAME_ID}`)[0]!;
+    const greatBadge = screen.getAllByTestId(`badge-great-${GAME_ID}`)[0]!;
+    fireEvent.click(gemBadge);
+    fireEvent.click(greatBadge);
+    // A new ref restarts at position 0 — the user's only great ply (2), never ply 3.
+    expect(screen.getAllByTestId('stub-eval-chart-command')[0]!.textContent).toBe('2:2');
   });
 });

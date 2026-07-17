@@ -72,6 +72,22 @@ export const STOCKFISH_ACCENT = 'oklch(0.58 0.16 255)'; // blue
 // the missed/allowed tactic arrows, and blue is Stockfish — violet sits in the one open
 // hue gap and reads as a distinct "human" identity (151.1 UAT).
 export const MAIA_ACCENT = 'oklch(0.58 0.20 290)'; // violet
+// Gem-tier pill background (Phase 175, FILT-01) — same hue as MAIA_ACCENT at the
+// same 14% alpha as the SEV_*_BG severity-pill composites, for the "has gem"
+// Library filter toggle (FlawFilterControl) to read as one colored pill family
+// with the severity/tag toggles it sits alongside.
+export const MAIA_ACCENT_BG = 'oklch(0.58 0.20 290 / 0.14)';
+// Great-move corner-marker identity color (Phase 175, SEED-108 D-01/D-02). The
+// "great" tier sits one step below gem in the maia_prob band (0.20, 0.50] —
+// a distinct blue hue (not gem's violet 290, not Stockfish's 255, not the
+// desaturated Book blue 250) so all four board-marker identities read apart
+// even though three share the "cool" family. Hue 220 + a higher chroma than
+// Book's 0.04 keeps it legible as an alert-tier badge, not a muted context
+// marker.
+export const GREAT_ACCENT = 'oklch(0.58 0.18 220)'; // blue
+// Great-tier pill background — same hue as GREAT_ACCENT, same 14% alpha
+// convention as MAIA_ACCENT_BG/SEV_*_BG, for the "has great" Library filter toggle.
+export const GREAT_ACCENT_BG = 'oklch(0.58 0.18 220 / 0.14)';
 // FlawChess Engine source accent (Phase 155, D-05; 156 UAT: brown → gold). Tints
 // the FlawChessEngineLines card frame + header caption + "FC" eval-bar fill/cap —
 // the third source alongside Stockfish (blue) and Maia (violet). Gold/amber (not the

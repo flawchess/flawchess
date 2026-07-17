@@ -344,6 +344,10 @@ export function GamesTab() {
         onTacticDepthChange={(next: TacticDepthValue) =>
           setPendingFlawFilter((prev) => ({ ...prev, tacticDepthMin: next.min, tacticDepthMax: next.max }))
         }
+        hasGem={pendingFlawFilter.hasGem}
+        hasGreat={pendingFlawFilter.hasGreat}
+        onHasGemToggle={() => setPendingFlawFilter((prev) => ({ ...prev, hasGem: !prev.hasGem }))}
+        onHasGreatToggle={() => setPendingFlawFilter((prev) => ({ ...prev, hasGreat: !prev.hasGreat }))}
       />
     </div>
   );
@@ -524,6 +528,10 @@ export function GamesTab() {
                 tacticDepthMax: next.max,
               }))
             }
+            hasGem={pendingFlawFilter.hasGem}
+            hasGreat={pendingFlawFilter.hasGreat}
+            onHasGemToggle={() => setPendingFlawFilter((prev) => ({ ...prev, hasGem: !prev.hasGem }))}
+            onHasGreatToggle={() => setPendingFlawFilter((prev) => ({ ...prev, hasGreat: !prev.hasGreat }))}
           />
         </MobileFilterDrawer>
 

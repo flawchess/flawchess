@@ -1,8 +1,8 @@
 ---
 title: Lichess bot ground-truth calibration — play real humans to convert the internal anchor scale to human ELO
-trigger_condition: After SEED-102's surface lands; MANDATORY before any *labeled* bot ships (SEED-091 preset bot cards, SEED-098 personas). NOT a blocker for Phase 171 — see "What this does and does not gate"
+trigger_condition: After SEED-102's curves land; MANDATORY before any *labeled* bot ships (SEED-091 preset bot cards, SEED-098 personas, calibrated custom-bot sliders). NOT a blocker for Phase 171 — see "What this does and does not gate"
 planted_date: 2026-07-13
-source: /gsd-explore session 2026-07-13 (bot blend calibration; see .planning/notes/2026-07-13-bot-calibration-findings.md)
+source: /gsd-explore session 2026-07-13 (bot blend calibration; see .planning/notes/2026-07-13-bot-calibration-findings.md); rescoped 2026-07-15 /gsd-explore (two-style simplification — 2 accounts instead of 3)
 ---
 
 # SEED-103: Lichess bot ground-truth calibration
@@ -18,21 +18,21 @@ honest number when you *print* one.
 - **Does NOT gate Phase 171.** 171 exposes raw `bot_elo` and `blend` sliders and makes no claim
   that the bot plays at the selected rating. That is a legitimate shippable surface. 171's real
   blocker is SEED-100 (blend-0 pacing), which is unrelated to calibration.
-- **DOES gate anything labeled**: SEED-091's preset bot cards (200-ELO steps, 600–2600),
-  SEED-098's personas with an advertised ELO band, and any copy that says "play a 1500 bot".
-  A card labeled 1500 that plays at 980 or 2090 depending on an unrelated slider is a lie, and
-  the 2026-07-12 data says that is exactly what would happen today.
+- **DOES gate anything labeled**: SEED-091's preset bot cards, SEED-098's personas with an
+  advertised ELO band, any copy that says "play a 1500 bot", **and the calibrated custom-bot
+  builder** (decided 2026-07-15): once the custom bot's strength slider means *target ELO*
+  rather than raw `bot_elo`, it is a labeled surface too and sits behind this same gate.
 
 ## Why this is not optional (for labeled bots)
 
 The offline harness **structurally cannot** produce a human ELO number (note, Finding 2):
 
-- Our anchors are search-less (maia-argmax). The bot at blend > 0 runs a real MCTS. Strength is
-  **not transitive across playing styles** — a searching bot beats a tactically-blind 1600 far
-  more easily than it beats a *human* 1600, because it exploits a systematic blind spot rather
-  than winning on general strength.
-- That bias is **correlated with the very axis being calibrated** (blend), so it does not cancel
-  and cannot be removed by relabeling the anchors. Better anchor labels fix the *scale*; they do
+- Our anchors are search-less (maia-argmax). The engine-like bot (blend 0.05) runs a real MCTS.
+  Strength is **not transitive across playing styles** — a searching bot beats a
+  tactically-blind 1600 far more easily than it beats a *human* 1600, because it exploits a
+  systematic blind spot rather than winning on general strength.
+- That bias is **correlated with the style level being calibrated**, so it does not cancel and
+  cannot be removed by relabeling the anchors. Better anchor labels fix the *scale*; they do
   nothing about the exploit.
 
 Playing actual humans is the only measurement without that flaw. It is also the only measurement
@@ -42,22 +42,22 @@ lichess blitz is the native unit of the whole product.
 Precedent: this is exactly how the Maia team got their numbers. maia1 sits at blitz 1368 with
 **RD 45** (lichess's floor) over 421k games.
 
-## Design
+## Design (rescoped 2026-07-15)
 
-**Place the ground-truth points along the blend axis, not the ELO axis.** The anchor bias is
-style-correlated, so the correction plausibly *varies with blend* — that is the thing to measure.
+With only two shipped style levels, the "does the correction vary with blend?" question
+collapses to **one offset per style level**.
 
-Three bot accounts, all at the same `bot_elo` (e.g. 1500), at **blend 0 / 0.5 / 1**. Then:
+**Two bot accounts**, both at the same `bot_elo` (e.g. 1500):
 
-- Correction roughly **constant** across the three → one global offset, apply to the entire
-  SEED-102 surface, done.
-- Correction **grows with blend** → you have directly measured the non-transitivity inflation and
-  can correct it as a function of `b`.
+- **blend 0** (human-like) — also directly quantifies the Maia ladder compression in ground
+  truth (harness says ~980 uncorrected; if lichess says ~1350, that's the compression measured).
+- **blend 0.05** (engine-like) — directly measures the non-transitivity inflation for the
+  searching regime.
 
-Either outcome is a win, and both are cheap relative to their value.
-
-**Free sanity check:** if the harness says blend-0 / bot_elo-1500 plays at 980 and lichess says
-~1350, that is the anchor compression showing up in ground truth, quantified.
+Each account's lichess rating minus its SEED-102 internal rating is that style's correction;
+apply it to the whole 1D curve. If budget allows a third account later, a second point on one
+of the curves (different `bot_elo`) validates that the correction is a constant offset rather
+than a slope change — but two accounts is the minimum viable design.
 
 ## Mechanics
 
@@ -85,14 +85,13 @@ Treat this leg as **validated-when-proven**, not assumed.
 ## Scheduling note
 
 Tier 1 (this) is **wall-clock-bound** (real-time blitz, waiting for opponents — days). Tier 2
-(SEED-102) is **CPU-bound** (an overnight run). They are not a strict dependency chain: the
-configs worth putting on lichess (blend 0 / 0.5 / 1) are known without the surface, so this can
-start in parallel and let games accumulate while SEED-102 computes.
+(SEED-102) is **CPU-bound** (an overnight run). They are not a strict dependency chain: the two
+configs worth putting on lichess (blend 0 and 0.05 at bot_elo 1500) are known without the
+curves, so this can start in parallel and let games accumulate while SEED-102 computes.
 
-If a blend-mixture redesign is later adopted (see note, Finding 1), note that the **endpoints are
-invariant** — `b = 0` (pure Maia policy sample) and `b = 1` (Stockfish argmax) mean the same
-thing before and after. Lichess measurements at the endpoints survive the redesign; only interior
-blends would need re-running.
+Note that `b = 0` (pure Maia policy sample) is invariant under any future engine change to the
+blend formula; the blend-0.05 account would need re-running if the search/sampling regime is
+ever redesigned.
 
 ## Caveat
 

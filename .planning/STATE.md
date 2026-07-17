@@ -1,19 +1,19 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.3
-milestone_name: Bot Play
+milestone: v2.4
+milestone_name: Backend Gem & Great Detection
 current_phase: 999.1
 current_phase_name: BACKLOG
 status: milestone_complete
-stopped_at: v2.3 Bot Play milestone closed
-last_updated: "2026-07-15T06:00:00.000Z"
-last_activity: 2026-07-15
-last_activity_desc: v2.3 Bot Play milestone closed (phases 166-172); ready to deploy
+stopped_at: v2.4 Backend Gem & Great Detection milestone closed
+last_updated: "2026-07-17T06:00:00.000Z"
+last_activity: 2026-07-17
+last_activity_desc: v2.4 Backend Gem & Great Detection milestone closed (phases 174-176); ready to deploy
 progress:
-  total_phases: 9
-  completed_phases: 9
-  total_plans: 46
-  completed_plans: 46
+  total_phases: 3
+  completed_phases: 3
+  total_plans: 14
+  completed_plans: 14
   percent: 100
 ---
 
@@ -21,20 +21,22 @@ progress:
 
 ## Current Position
 
-Milestone: v2.3 Bot Play — CLOSED 2026-07-15 (phases 166–172, 46 plans)
+Milestone: v2.4 Backend Gem & Great Detection — CLOSED 2026-07-17 (phases 174–176, 14 plans)
 Phase: none active (999.1 Password Reset remains in BACKLOG)
 Status: Milestone complete — deploy pending (`bin/deploy.sh`)
-Last activity: 2026-07-15 — Completed quick task 260715-r9c: /bots board controls + board-width clocks + no-gap desktop layout
+Last activity: 2026-07-17 — Closed v2.4: archived phases to milestones/v2.4-phases/, CHANGELOG promoted, tagged v2.4
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-07-14 after Phase 170)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: **v2.3 Bot Play is closed (2026-07-15)** — play a real clocked game against a calibrated FlawChess bot on the new `/bots` page, plus a background gem sweep + book markers on `/analysis`. All nine phases (166, 167, 168, 168.5, 169, 169.5, 170, 171, 172) are shipped and squash-merged to `main` behind the full pre-merge gate. **Deploy pending** — v2.3 is on `main` but not yet on `production`; next action is `bin/deploy.sh`. Prior milestone v2.2 (Analysis ELO Calibration & Deep-links) closed 2026-07-11 and is live in production via #253/#254. Note: v2.1 (Analysis Eval Reconciliation & Gem Moves) merged to main 2026-07-10 and ships with this deploy too (it was never separately deployed).
+Current focus: **v2.4 Backend Gem & Great Detection is closed (2026-07-17)** — gem/great move detection now runs in the backend full-game analysis pass as stored first-class `game_best_moves` rows (Maia-3 at eval-apply), powering the analysis board + eval chart + a Library "has gem"/"has great" filter, with an opportunistic tier-4b corpus backfill lottery (ships OFF behind `BEST_MOVE_BACKFILL_ENABLED`). All three phases (174, 175, 176) are shipped and squash-merged to `main` behind the full pre-merge gate. **Deploy pending** — v2.4 is on `main` but not yet on `production`; next action is `bin/deploy.sh`. Prior milestone v2.3 (Bot Play) closed 2026-07-15 and shipped to production via #255 (bundled with v2.1). Prior milestone v2.2 (Analysis ELO Calibration & Deep-links) closed 2026-07-11 and is live in production via #253/#254.
 
 ## Milestone Progress
 
-Thirty-six milestones complete (v1.0–v2.3).
+Thirty-seven milestones complete (v1.0–v2.4).
+
+v2.4 Backend Gem & Great Detection closed 2026-07-17 — 3 phases (174, 175, 176), 14 plans. Gem/great move detection moved off the brittle client-side sweep into the backend full-game analysis pass as stored first-class `game_best_moves` rows (peers to `game_flaws`). Phase 174 (spike-gated) ports the client's 12-plane board→tensor encoding to Python, runs Maia-3 (`onnxruntime`, isolated `maia-inference` uv group) at eval-apply pinned to the mover's lichess-blitz-equivalent rating (clamped [600, 2600]), and stores a candidate row (`maia_prob` + best/second eval as floats, never a boolean) for each out-of-book played==best ply clearing `INACCURACY_DROP` (0.05) — so Gem (`≤0.20`) / Great (`(0.20, 0.50]`) thresholds retune with zero re-analysis; two SEED-109 gap-closure plans retired the lichess-eval special-case lane + backfilled the existing lichess-eval games. Phase 175 has the analysis board + eval chart + move-cycling badges + Library "has gem"/"has great" filter read the stored rows directly (client `useGemSweep` demoted to a free-play-only fallback; SEED-107 closed as superseded). Phase 176 added a backend-only tier-4b ES-weighted backfill lottery (`_claim_tier4_bestmove`) with a Maia-absence guardrail, gated behind `BEST_MOVE_BACKFILL_ENABLED` (default off). Also bundled: a CI fix installing the `maia-inference` group so `ty` resolves the onnxruntime/numpy imports. Archived to milestones/v2.4-ROADMAP.md, phases to milestones/v2.4-phases/, CHANGELOG promoted, tagged v2.4. **Deploy pending** via `bin/deploy.sh`; the tier-4b backfill flag stays OFF (D-05) and is flipped on in prod as a separately observed step post-deploy.
 
 v2.3 Bot Play closed 2026-07-15 — 9 phases (166, 167, 168, 168.5, 169, 169.5, 170, 171, 172), 46 plans. A new top-level `/bots` page lets users and guests play a full clocked game against a calibrated FlawChess bot: a pure provider-agnostic `selectBotMove` sample↔argmax blend (166) shared by the app and a headless Node calibration harness (168, spike-gated, `onnxruntime-node`) that measures real strength across a coarse (ELO × play-style) grid; per-move search budget + confidence early-stop so moves land in seconds (168.5, SEED-096/095); dual Fischer clocks on a wall-clock delta model with fair pause/flag and bot pacing (169); a Maia-policy-weighted ECO opening book for near-instant early moves (169.5, PLAY-11); localStorage resume with the clock paused while away and exactly-once storage (170); the Bots page + setup screen + nav tying it together (171); and finished games persisted as analyzable `platform='flawchess'` Library games (167). Phase 172 (SEED-106) added a background gem sweep + opening-book markers on `/analysis` (rung pinned to the mover's rating, `GEM_MAIA_MAX_PROB` 0.10→0.20, `opening_ply_count` on-read, precedence severity > gem > book). Also bundled: quicks 260714-pnk/qaj/rj5 and 260715-als. Archived to milestones/v2.3-ROADMAP.md, phases to milestones/v2.3-phases/, CHANGELOG promoted, tagged v2.3, SEED-091 closed. **Deploy pending** via `bin/deploy.sh` (ships v2.1 + v2.3 together).
 
@@ -70,6 +72,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- v2.4 Backend Gem & Great Detection roadmap created 2026-07-16 — 3 phases (174–176) in 2 dependency waves (A={174}, B={175,176}), continuing absolute numbering from Phase 173 (the v2.3 post-close anchor-calibration addendum). All 11 requirements (GEMS-01..07, BOARD-01/02, FILT-01, BACK-01) mapped 1:1, no orphans. Keystone Phase 174 (backend Maia inference + best-move storage, spike-gated on a Python encoding-parity check mirroring Phase 168's Maia-in-Node feasibility gate) gates everything else; Phases 175 (board + Library-filter frontend consumption) and 176 (opportunistic corpus backfill) depend only on 174, not on each other. UI hint on Phase 175.
 - Phase 172 added 2026-07-14: Background Gem Sweep on Analysis (SEED-106) — resolve gems for the whole mainline in the background (free `played === best_move` + out-of-book prefilter → Maia C1 → Stockfish parent grade), pin the gem rung to the mover's own seeded rating instead of the ELO slider, raise `GEM_MAIA_MAX_PROB` 0.10 → 0.20, and add `opening_ply_count` (computed on-read, no migration) for book markers with precedence `severity > gem > book`. Added to the **v2.3 Bot Play** milestone by explicit user choice even though it is an `/analysis` feature, not bot play — Adrian chose "extend v2.3" over closing the milestone first (2026-07-14); revisit the boundary at milestone close. User amendment at add time: SEED-106 D3 extended so the sweep triggers on analysis *becoming* ready (bot games analyzed in the background on the live-updating analysis board), not only on mount-time readiness. `gsd-tools phase.add` numbered it 172 correctly but appended the section to the end of the file after the archived `<details>` history — moved into the active milestone by hand (the known mature-ROADMAP behavior).
 - v2.3 Bot Play roadmap created 2026-07-11 — 6 phases (166–171) in 3 dependency waves (A={166,167}, B={168,169}, C={170,171}), continuing absolute numbering from v2.2's Phase 165. All 26 requirements (BOT/PLAY/STORE/RESUME/CAL) mapped 1:1, no orphans. Keystone Phase 166 (`selectBotMove` two-regime sample↔argmax blend) is imported by both the play loop and the calibration harness; Phase 167 (backend store-on-finish) is fully independent. Phase 166 (slider→temperature/threshold curve + regime discontinuity) and Phase 168 (Maia-in-Node feasibility spike + `onnxruntime-node` version) flagged for plan-time research/spike. UI hints on Phases 169 (clocked board) and 171 (Bots page/setup).
 - Phase 165 added: Gem-move ELO calibration harness + restore `?fen=` analysis deep-link (from SEED-094) — headless Node harness measuring raw Maia prob per ELO rung over ~3000 Kaggle "brilliant" moves (empirical basis for Phase 163 D-08's ELO-scaled iso-rarity ceiling), plus an additive `?fen=` analysis deep-link so the TSV positions are clickable. gsd-tools phase.add numbered it 165 sequentially (164 is the only phase left in `.planning/phases/`).
@@ -84,6 +87,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - Phase 162 added: Grading-run-authoritative eval reconciliation — precedence flip (SEED-090, preferred over SEED-089's unified pass; frontend-only, grading run becomes authoritative for all displayed per-move evals)
 - Phase 163 added: Gem moves — Maia-findability move badges on /analysis (SEED-092; escalated from a /gsd-quick request 2026-07-10 — sized as phase-scale: ~10+ files, new detection module, open tunables)
 - Phase 169.5 inserted: Bot Opening Book — inserted 2026-07-13 after a /gsd-explore session on slow bot first moves. Maia-policy-weighted ECO book (frontend/public/openings.tsv) for the early plies; no search, no backend, no re-calibration (the harness already starts from book FENs). New requirement PLAY-11.
+- Phase 173 added: Anchor ladder self-calibration (SEED-101) — round-robin maia/SF anchors, fit internal rating scale; unblocks SEED-102
 
 ### Decisions
 
@@ -292,6 +296,32 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 172-05]: sweepArmedForGame implemented via useState (armedGameId), not a ref — this project's react-hooks/refs ESLint rule forbids reading ref.current during render — reads evalChartReady directly for the same-render transition; armedGameId is only sticky protection against a later flicker
 - [Phase 172-05]: needParentGemGrade's double-work-avoidance extension uses a companion sweepResolvedPlies useState synced by an effect declared AFTER useGemSweep, not a ref — avoids both the react-hooks/refs lint rule and a circular dependency (needParentGemGrade also feeds the sweep's own liveBusy input)
 - [Phase 172-05]: Actual hook call order is [primary grading, sweep's grading, live gemGrading] and [live maia, sweep's maia] per commit, not [primary, gemGrading, sweep] as first assumed — useGemSweep had to be wired in before parentGemCandidateSans/gemGrading since needParentGemGrade (which both depend on) must exist before it can be passed to the sweep as liveBusy
+- [Phase 173-01]: sf8/sf10 documented [ASSUMED] labels/ordering-only (never a Bradley-Terry fit input) directly in the SF_SKILL_ELO doc comment, per D-09/Pitfall 3
+- [Phase 173-01]: playTwoMoverGame's own maxPlies param (game-level PLY_CAP cutoff) kept distinct from playGame's maxPlies param (SearchBudget tree-depth cap) — the thin wrapper never forwards the latter into the former, preserving the pre-extraction PLY_CAP default
+- [Phase 173-01]: playGame's onPly wrapper remaps playTwoMoverGame's color-keyed mover ('white'/'black') back to the bot-relative 'bot'/'anchor' label via (p.mover === 'white') === botIsWhite, keeping the pre-extraction onPly payload byte-identical
+- [Phase 173-03]: fit_bradley_terry returns ratings already on the 400*log10(pi) scale (not raw strengths) so apply_scale_fix operates uniformly on rating dicts
+- [Phase 173-03]: apply_scale_fix assigns the pin anchor's rating directly to value (not via addition) so the D-05 exact-1500.0 pin holds regardless of floating-point rounding
+- [Phase 173-03]: compute_residuals returns a ResidualRow TypedDict instead of dict[str, object] — ty could not statically verify tuple-unpacking row['pair'] on a plain object-valued dict
+- [Phase 173-03]: bootstrap_ci's pinned anchor (maia1500) collapses to a zero-width CI by construction across every resample — documented as expected behavior in test_bootstrap, not a bug
+- [Phase 173-02]: Global gameIndex is a single run-wide counter (not per-pair-local) shared across probe+measure and all pairs, mirroring the bot harness's --resume convention
+- [Phase 173-02]: D-04 re-targeting applies to every dropped cross-family pair on every round (not only when it's the sole surviving link), bounded by MAX_RETARGET_ROUNDS=3
+- [Phase 173-02]: Measure-pass extension computes gamesPerMeasure - stats.games (stats.games already includes probe games) — resolves 173-RESEARCH.md Open Question 1 by reusing rather than discarding already-played data
+- [Phase 173-02]: isCrossFamilyPair exported from calibration-anchor-schedule.mjs (shared by checkConnectivity and the orchestrator's retarget logic) rather than duplicated
+- [Phase ?]: [Phase 173-04]: Band-relaxing connectivity rescue (rescueConnectivity/bandDistance, commit a2f96e81, user-approved) fixes D-04 re-target dead-end when a pair's only informative link has no weaker same-family anchor
+- [Phase 174]: 174-01: Maia parity D-02 gate PASSED — PARITY_EPSILON=0.010 derived from measured max drift 0.003844; phase proceeds to Wave 2
+- [Phase 174]: 174-01: encoding module kept numpy-free (stdlib+python-chess) so encoding tests run in the default no-group suite while onnxruntime/numpy stay isolated in the maia-inference uv group
+- [Phase ?]: 174-02: backend Dockerfile installs the maia-inference uv group (--group), worker image stays lean (GEMS-06); isolation asserted by tests/test_dependency_isolation.py
+- [Phase ?]: 174-03: game_best_moves keyed on (game_id, ply) — no user_id (candidacy is position-scoped); raw cp stored, tier decided query-time
+- [Phase ?]: 174-04: Maia ONNX session is an eager singleton (Stockfish-mirrored) with a D-03a ImportError no-op guard + SHA-256 model-pin cross-check; lean/worker images boot without onnxruntime.
+- [Phase ?]: 174-04: Gem/Great/neither classification is a pure function of stored (maia_prob, cp margin) + module constants (GEM_MAIA_MAX_PROB=0.20, GREAT_MAIA_MAX_PROB=0.50) — retune reclassifies the corpus with zero re-analysis (GEMS-07).
+- [Phase ?]: 174-05: best-move candidate builder runs off-session in each eval-apply lane (session-closed-then-gather) and rows persist in apply_full_eval's shared write commit (GEMS-03, T-174-12)
+- [Phase ?]: 174-05: remote-worker lane (Pitfall 1, MultiPV-1) uses a targeted backend-owned evaluate_nodes_multipv2 fallback for played==best plies lacking second-best — worker protocol untouched
+- [Phase ?]: 174-05: measured Maia RSS ~235 MiB, projected backend ~2743/4096 MiB — fits 4GB budget alongside 6-worker Stockfish pool; prod backend-Maia enablement stays human-gated (D-03b)
+- [Phase ?]: 174-06: Bypassed the SEED-076 lease-redundancy filter entirely for lichess-eval games in _build_lease_positions (Rule 1 fix) — its premise (already-eval'd row = already resolved by a prior worker) is false for lichess games, whose %evals come from import; left unfixed the lease collapsed to ply 0 only, defeating Task 2's own acceptance criteria
+- [Phase ?]: 174-06: _contiguous_san_prefix rebuilt around the deepest target's board.move_stack + its own move_san (not a ply-0-anchored walk over the caller's targets list) — fixes CR-01 book-depth collapse on a sparse targets list
+- [Phase ?]: [Phase 174-07]: Broadened the existing residual PV-backfill fallback (full_evals_completed_at IS NULL -> full_pv_completed_at IS NULL) rather than adding a new lottery rung; kept precedence and ES key unchanged
+- [Phase ?]: [Phase 174-07]: Dropped the superseded ix_games_pv_backfill_pending in the same migration that adds ix_games_lichess_pv_backfill_pending, since its predicate no longer matches any query after the broadening
+- [Phase ?]: Moved TIER_BESTMOVE_BACKFILL constant addition from Task 4 to Task 3 (Rule 3 auto-fix) to unblock Task 3 verify tests without a forward dependency on Task 4's lottery rung
 
 ### Pending Todos
 
@@ -376,17 +406,32 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Completed 172-05-PLAN.md
+**Stopped at:** Completed 176-01-PLAN.md
 
-**Last session:** 2026-07-14T22:02:42.582Z
+**Last session:** 2026-07-17T04:05:49.061Z
 
-**Resume file:** 
+**Resume file:**
 
 None
 
 ## Performance Metrics
 
 (Cleared at v1.31 close — per-plan timings archived with the milestone.)
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 173-anchor-ladder-self-calibration-seed-101 P03 | 20min | 2 tasks | 2 files |
+| Phase 173 P02 | 13min | 2 tasks | 3 files |
+| Phase 173 P04 | 25min | 2 tasks | 5 files |
+| Phase 174 P01 | 14 min | 2 tasks | 8 files |
+| Phase 174 P02 | 8min | 2 tasks | 2 files |
+| Phase 174 P03 | 8min | 2 tasks | 4 files |
+| Phase 174 P04 | 20min | 2 tasks | 5 files |
+| Phase 174 P05 | 45min | 2 tasks | 5 files |
+| Phase 174 P06 | ~50min | 3 tasks | 7 files |
+| Phase 174 P07 | 35min | 2 tasks | 5 files |
+| Phase 176 P01 | 20min | 4 tasks | 8 files |
 
 ## Performance Metrics
 
@@ -474,6 +519,7 @@ None
 | Phase 172 P03 | 20min | 3 tasks | 7 files |
 | Phase 172 P04 | 50min | 3 tasks | 4 files |
 | Phase 172 P05 | ~2h | 3 tasks | 2 files |
+| Phase 173 P01 | ~20min | 2 tasks | 5 files |
 
 ## Operator Next Steps
 

@@ -60,4 +60,44 @@ describe('libraryApi.getGames', () => {
 
     expect(lastGetParams(getSpy)).not.toHaveProperty('tag');
   });
+
+  // FILT-01 (Phase 175): has_gem/has_great serialize into the query string only
+  // when true, same conditional-inclusion pattern as tactic_orientation above.
+  describe('has_gem / has_great (FILT-01, Phase 175)', () => {
+    it('forwards has_gem: true when has_gem is true', async () => {
+      const getSpy = vi.spyOn(apiClient, 'get').mockResolvedValue(EMPTY_GAMES_RESPONSE);
+      await libraryApi.getGames({ has_gem: true });
+
+      expect(lastGetParams(getSpy)).toMatchObject({ has_gem: true });
+    });
+
+    it('forwards has_great: true when has_great is true', async () => {
+      const getSpy = vi.spyOn(apiClient, 'get').mockResolvedValue(EMPTY_GAMES_RESPONSE);
+      await libraryApi.getGames({ has_great: true });
+
+      expect(lastGetParams(getSpy)).toMatchObject({ has_great: true });
+    });
+
+    it('forwards both has_gem and has_great together', async () => {
+      const getSpy = vi.spyOn(apiClient, 'get').mockResolvedValue(EMPTY_GAMES_RESPONSE);
+      await libraryApi.getGames({ has_gem: true, has_great: true });
+
+      expect(lastGetParams(getSpy)).toMatchObject({ has_gem: true, has_great: true });
+    });
+
+    it('omits has_gem from the request when has_gem is false', async () => {
+      const getSpy = vi.spyOn(apiClient, 'get').mockResolvedValue(EMPTY_GAMES_RESPONSE);
+      await libraryApi.getGames({ has_gem: false });
+
+      expect(lastGetParams(getSpy)).not.toHaveProperty('has_gem');
+    });
+
+    it('omits has_gem/has_great from the request when both are undefined', async () => {
+      const getSpy = vi.spyOn(apiClient, 'get').mockResolvedValue(EMPTY_GAMES_RESPONSE);
+      await libraryApi.getGames({ severity: ['mistake'] });
+
+      expect(lastGetParams(getSpy)).not.toHaveProperty('has_gem');
+      expect(lastGetParams(getSpy)).not.toHaveProperty('has_great');
+    });
+  });
 });

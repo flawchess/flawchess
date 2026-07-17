@@ -1,0 +1,356 @@
+{
+  "_caveat": "INTERNAL SCALE \u2014 NOT human ELO (D-13). Scale fixed arbitrarily so maia1500 == 1500; see .planning/notes/ for the compression-verdict methodology and findings.",
+  "confidence_intervals": {
+    "maia1100": [
+      1272.6715418287959,
+      1461.7419518738893
+    ],
+    "maia1500": [
+      1500.0,
+      1500.0
+    ],
+    "maia1900": [
+      1553.1292240823257,
+      1710.1760666425982
+    ],
+    "maia2300": [
+      1597.6177787308457,
+      1814.4187263105237
+    ],
+    "maia700": [
+      995.6200253502609,
+      1262.7603839190972
+    ],
+    "sf0": [
+      942.0782152817319,
+      1227.2352075396968
+    ],
+    "sf10": [
+      1787.2313500232083,
+      2029.7589927016818
+    ],
+    "sf3": [
+      1292.2563170529836,
+      1452.3533238241537
+    ],
+    "sf5": [
+      1445.5139545366922,
+      1614.1524966924692
+    ],
+    "sf8": [
+      1693.777487286744,
+      1928.5852119061374
+    ]
+  },
+  "internal_rating": {
+    "maia1100": 1373.8671978252728,
+    "maia1500": 1500.0,
+    "maia1900": 1626.3927859700918,
+    "maia2300": 1706.4911760094515,
+    "maia700": 1129.2907280504073,
+    "sf0": 1069.3266806644317,
+    "sf10": 1907.9310161127232,
+    "sf3": 1363.8790670855033,
+    "sf5": 1525.089292909607,
+    "sf8": 1801.1025005114295
+  },
+  "residuals": [
+    {
+      "cross_family": false,
+      "games": 24.0,
+      "observed": 0.375,
+      "pair": [
+        "maia1100",
+        "maia1500"
+      ],
+      "predicted": 0.3260558023602923,
+      "residual": 0.0489441976397077
+    },
+    {
+      "cross_family": false,
+      "games": 8.0,
+      "observed": 0.875,
+      "pair": [
+        "maia1100",
+        "maia700"
+      ],
+      "predicted": 0.8034337702323479,
+      "residual": 0.07156622976765215
+    },
+    {
+      "cross_family": true,
+      "games": 8.0,
+      "observed": 1.0,
+      "pair": [
+        "maia1100",
+        "sf0"
+      ],
+      "predicted": 0.852340372905022,
+      "residual": 0.14765962709497804
+    },
+    {
+      "cross_family": true,
+      "games": 24.0,
+      "observed": 0.4375,
+      "pair": [
+        "maia1100",
+        "sf3"
+      ],
+      "predicted": 0.5143701170533388,
+      "residual": -0.0768701170533388
+    },
+    {
+      "cross_family": true,
+      "games": 24.0,
+      "observed": 0.2708333333333333,
+      "pair": [
+        "maia1100",
+        "sf5"
+      ],
+      "predicted": 0.2951493671220052,
+      "residual": -0.024316033788671865
+    },
+    {
+      "cross_family": false,
+      "games": 24.0,
+      "observed": 0.2916666666666667,
+      "pair": [
+        "maia1500",
+        "maia1900"
+      ],
+      "predicted": 0.32572702286413213,
+      "residual": -0.03406035619746545
+    },
+    {
+      "cross_family": true,
+      "games": 8.0,
+      "observed": 0.875,
+      "pair": [
+        "maia1500",
+        "sf0"
+      ],
+      "predicted": 0.9226675205822985,
+      "residual": -0.047667520582298506
+    },
+    {
+      "cross_family": true,
+      "games": 8.0,
+      "observed": 0.8125,
+      "pair": [
+        "maia1500",
+        "sf3"
+      ],
+      "predicted": 0.6864501130160632,
+      "residual": 0.12604988698393682
+    },
+    {
+      "cross_family": true,
+      "games": 24.0,
+      "observed": 0.5208333333333334,
+      "pair": [
+        "maia1500",
+        "sf5"
+      ],
+      "predicted": 0.4639562356419788,
+      "residual": 0.05687709769135457
+    },
+    {
+      "cross_family": false,
+      "games": 24.0,
+      "observed": 0.375,
+      "pair": [
+        "maia1900",
+        "maia2300"
+      ],
+      "predicted": 0.3867288434218619,
+      "residual": -0.011728843421861923
+    },
+    {
+      "cross_family": true,
+      "games": 8.0,
+      "observed": 0.875,
+      "pair": [
+        "maia1900",
+        "sf0"
+      ],
+      "predicted": 0.9610867652912998,
+      "residual": -0.08608676529129977
+    },
+    {
+      "cross_family": true,
+      "games": 24.0,
+      "observed": 0.20833333333333334,
+      "pair": [
+        "maia1900",
+        "sf10"
+      ],
+      "predicted": 0.16511327139816448,
+      "residual": 0.04322006193516886
+    },
+    {
+      "cross_family": true,
+      "games": 8.0,
+      "observed": 0.875,
+      "pair": [
+        "maia1900",
+        "sf3"
+      ],
+      "predicted": 0.8192316393458413,
+      "residual": 0.05576836065415869
+    },
+    {
+      "cross_family": true,
+      "games": 24.0,
+      "observed": 0.5625,
+      "pair": [
+        "maia1900",
+        "sf5"
+      ],
+      "predicted": 0.6417918487489248,
+      "residual": -0.07929184874892481
+    },
+    {
+      "cross_family": true,
+      "games": 24.0,
+      "observed": 0.2916666666666667,
+      "pair": [
+        "maia1900",
+        "sf8"
+      ],
+      "predicted": 0.2678202571839632,
+      "residual": 0.0238464094827035
+    },
+    {
+      "cross_family": true,
+      "games": 8.0,
+      "observed": 0.875,
+      "pair": [
+        "maia2300",
+        "sf0"
+      ],
+      "predicted": 0.9751034340656618,
+      "residual": -0.1001034340656618
+    },
+    {
+      "cross_family": true,
+      "games": 24.0,
+      "observed": 0.2708333333333333,
+      "pair": [
+        "maia2300",
+        "sf10"
+      ],
+      "predicted": 0.23874344026475725,
+      "residual": 0.03208989306857607
+    },
+    {
+      "cross_family": true,
+      "games": 8.0,
+      "observed": 1.0,
+      "pair": [
+        "maia2300",
+        "sf3"
+      ],
+      "predicted": 0.8778508469173322,
+      "residual": 0.12214915308266783
+    },
+    {
+      "cross_family": true,
+      "games": 8.0,
+      "observed": 0.8125,
+      "pair": [
+        "maia2300",
+        "sf5"
+      ],
+      "predicted": 0.7396659747163534,
+      "residual": 0.07283402528364658
+    },
+    {
+      "cross_family": true,
+      "games": 24.0,
+      "observed": 0.3125,
+      "pair": [
+        "maia2300",
+        "sf8"
+      ],
+      "predicted": 0.3671119835233929,
+      "residual": -0.054611983523392915
+    },
+    {
+      "cross_family": true,
+      "games": 24.0,
+      "observed": 0.6041666666666666,
+      "pair": [
+        "maia700",
+        "sf0"
+      ],
+      "predicted": 0.5854484506942447,
+      "residual": 0.01871821597242196
+    },
+    {
+      "cross_family": true,
+      "games": 8.0,
+      "observed": 0.0,
+      "pair": [
+        "maia700",
+        "sf3"
+      ],
+      "predicted": 0.2058051427510225,
+      "residual": -0.2058051427510225
+    },
+    {
+      "cross_family": true,
+      "games": 24.0,
+      "observed": 0.14583333333333334,
+      "pair": [
+        "maia700",
+        "sf5"
+      ],
+      "predicted": 0.09292775905884511,
+      "residual": 0.052905574274488235
+    },
+    {
+      "cross_family": false,
+      "games": 8.0,
+      "observed": 0.0625,
+      "pair": [
+        "sf0",
+        "sf3"
+      ],
+      "predicted": 0.15504344613567544,
+      "residual": -0.09254344613567544
+    },
+    {
+      "cross_family": false,
+      "games": 8.0,
+      "observed": 0.875,
+      "pair": [
+        "sf10",
+        "sf8"
+      ],
+      "predicted": 0.6490701305332333,
+      "residual": 0.22592986946676674
+    },
+    {
+      "cross_family": false,
+      "games": 24.0,
+      "observed": 0.20833333333333334,
+      "pair": [
+        "sf3",
+        "sf5"
+      ],
+      "predicted": 0.283330513831237,
+      "residual": -0.07499718049790363
+    },
+    {
+      "cross_family": false,
+      "games": 24.0,
+      "observed": 0.125,
+      "pair": [
+        "sf5",
+        "sf8"
+      ],
+      "predicted": 0.1695443835546058,
+      "residual": -0.0445443835546058
+    }
+  ]
+}

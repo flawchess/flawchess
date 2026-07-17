@@ -18,10 +18,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { BEST_MOVE_ARROW, MAIA_ACCENT } from '@/lib/theme';
+import { BEST_MOVE_ARROW, MAIA_ACCENT, GREAT_ACCENT } from '@/lib/theme';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import type { GameFlawCard } from '@/types/library';
+import type { GameFlawCard, EvalPoint } from '@/types/library';
 
 // ── Mock useStockfishEngine: jsdom has no real Worker for the classic engine file.
 // Drive isReady/pvLines states deterministically via the mutable engineState object.
@@ -950,6 +950,23 @@ describe('Gem moves (Phase 163, SEED-092)', () => {
     return tree.querySelector(`circle[fill="${MAIA_ACCENT}"]`) != null;
   }
 
+  // Phase 175 (SEED-108 D-02): the blue "great" SquareMarker renders as a
+  // GREAT_ACCENT-filled circle inside the board's arrow-overlay SVG
+  // (boardMarkers.tsx's SquareMarkerBadge great branch) — mirrors
+  // boardGemMarkerPresent exactly, one hue apart.
+  function boardGreatMarkerPresent(): boolean {
+    const overlay = document.querySelector('[data-testid="arrow-overlay"]');
+    return overlay?.querySelector(`circle[fill="${GREAT_ACCENT}"]`) != null;
+  }
+
+  // The move-list GreatMoveIcon renders the SAME GREAT_ACCENT-filled circle
+  // (GreatMoveIcon.tsx), scoped to the desktop move list — mirrors
+  // moveListGemIconPresent.
+  function moveListGreatIconPresent(): boolean {
+    const tree = screen.getByTestId('variation-tree-desktop');
+    return tree.querySelector(`circle[fill="${GREAT_ACCENT}"]`) != null;
+  }
+
   it('classifies a freely-played WHITE move as a gem, painting the violet board marker (D-04 white, D-05 free node, squareMarkers assembly)', () => {
     seedGemGrading('Nf3', 'd4');
 
@@ -981,12 +998,21 @@ describe('Gem moves (Phase 163, SEED-092)', () => {
     expect(screen.getByText(/1% chance of being played/)).toBeTruthy();
   });
 
-  it('gem popover heading names the opponent when the opponent played the gem (game mode)', async () => {
-    // Parent = after 1. e4 e5 (White to move); Nf3 (ply 2) is a WHITE move, so with
+  it('gem popover heading names the opponent when the opponent played the gem (unanalyzed-game fallback path — no eval_series)', async () => {
+    // Phase 175 (SEED-108 D-01/Pitfall 3): a game-mode fixture with
+    // eval_series present now routes through the STORED tier instead (see
+    // the "Stored gem/great consumption" describe block below), which never
+    // calls seedGemGrading/classifyGem. This test keeps proving the
+    // live-at-cursor byOpponent framing still works for the ONE game-mode
+    // case that genuinely has no stored row to consult: an UNANALYZED game
+    // (eval_series: null) — D-01's documented fallback scenario. Parent =
+    // after 1. e4 e5 (White to move); Nf3 (ply 2) is a WHITE move, so with
     // user_color=black the gem was played by the OPPONENT.
     libraryGameState.data = buildGame({
       moves: ['e4', 'e5', 'Nf3'],
-      flaw_markers: [],
+      flaw_markers: null,
+      eval_series: null,
+      phase_transitions: null,
       user_color: 'black',
     });
     seedGemGrading('Nf3', 'Bc4');
@@ -1024,8 +1050,19 @@ describe('Gem moves (Phase 163, SEED-092)', () => {
     expect(boardGemMarkerPresent()).toBe(true);
   });
 
-  it('classifies a gem on a MAINLINE game node reached via the move list (D-05 mainline coverage)', () => {
-    libraryGameState.data = buildGame({ moves: ['e4', 'e5', 'Nf3'], flaw_markers: [] });
+  it('classifies a gem on a MAINLINE game node reached via the move list (D-05 mainline coverage, unanalyzed-game fallback path)', () => {
+    // Phase 175 (SEED-108 D-01/Pitfall 3): an ANALYZED game's mainline gem now
+    // comes from the stored tier (see the "Stored gem/great consumption"
+    // describe block below) — this test keeps D-05's original coverage
+    // ("gemActive has no isGameMode/isOnMainLine exclusion") alive for the
+    // one game-mode mainline scenario that still legitimately falls back to
+    // live detection: an UNANALYZED game (no eval_series/stored rows yet).
+    libraryGameState.data = buildGame({
+      moves: ['e4', 'e5', 'Nf3'],
+      flaw_markers: null,
+      eval_series: null,
+      phase_transitions: null,
+    });
     // Parent position = after 1. e4 e5 (White to move) — landing directly at
     // mainLine[1] (?ply=1) so the caches populate for THIS exact FEN on mount,
     // before navigating to mainLine[2] (Nf3).
@@ -1039,6 +1076,149 @@ describe('Gem moves (Phase 163, SEED-092)', () => {
     expect(boardGemMarkerPresent()).toBe(true);
   });
 
+  // Phase 175 (SEED-108 D-01/D-02b/D-03) — the STORED gem/great consumption
+  // proof, nested here to reuse this describe block's clientWidthSpy/helper
+  // functions (boardGemMarkerPresent, moveListGemIconPresent, etc.). An
+  // analyzed game's mainline now renders gem/great directly from
+  // EvalPoint.best_move_tier/maia_prob: no seedGemGrading, no maiaState
+  // wiring, no live Maia/Stockfish call of any kind — the counterpart to
+  // every OTHER test in this outer describe, which covers the live-engine
+  // fallback (off-mainline / unanalyzed games) instead.
+  describe('Stored gem/great consumption (Phase 175, SEED-108 D-01/D-02b/D-03)', () => {
+  // A minimal 3-ply analyzed game (e4 e5 Nf3), overriding the ply-2 EvalPoint
+  // with a stored tier. `bestMove` defaults to the UCI of the actually-played
+  // Nf3 (g1f3) — classify_best_move only ever stores a row for a ply where
+  // the played move equals the engine's own best move.
+  function buildAnalyzedGame(
+    ply2Overrides: { best_move_tier: 'gem' | 'great' | null; maia_prob: number | null },
+    gameOverrides: Partial<GameFlawCard> = {},
+  ): GameFlawCard {
+    return buildGame({
+      moves: ['e4', 'e5', 'Nf3'],
+      flaw_markers: [],
+      opening_ply_count: 0,
+      eval_series: [
+        {
+          ply: 0,
+          es: 0.5,
+          eval_cp: 20,
+          eval_mate: null,
+          clock_seconds: null,
+          move_seconds: null,
+          best_move: null,
+          best_move_tier: null,
+          maia_prob: null,
+        } as EvalPoint,
+        {
+          ply: 1,
+          es: 0.5,
+          eval_cp: 20,
+          eval_mate: null,
+          clock_seconds: null,
+          move_seconds: null,
+          best_move: null,
+          best_move_tier: null,
+          maia_prob: null,
+        } as EvalPoint,
+        {
+          ply: 2,
+          es: 0.7,
+          eval_cp: 300,
+          eval_mate: null,
+          clock_seconds: null,
+          move_seconds: null,
+          best_move: 'g1f3',
+          ...ply2Overrides,
+        } as EvalPoint,
+      ],
+      ...gameOverrides,
+    });
+  }
+
+  it('renders the stored GEM badge on the board and move list, with no live grading/Maia call (proves the marker is sourced from stored data)', () => {
+    libraryGameState.data = buildAnalyzedGame({ best_move_tier: 'gem', maia_prob: 0.01 });
+
+    renderAnalysis('/analysis?game_id=1&ply=1');
+    fireEvent.click(
+      within(screen.getByTestId('variation-tree-desktop')).getByRole('button', { name: /Nf3/ }),
+    );
+
+    expect(boardGemMarkerPresent()).toBe(true);
+    expect(moveListGemIconPresent()).toBe(true);
+    // No live compute: seedGemGrading/maiaState were never set for this test
+    // (gradingState.gradeMap/maiaState.perElo stay at their module defaults),
+    // and the live per-node gem-grading instance never received a real fen.
+    expect(lastLiveGemGradingCall()?.fen).toBeNull();
+  });
+
+  it('renders the stored GREAT badge (blue "!") on the board and move list, with no live grading/Maia call', () => {
+    libraryGameState.data = buildAnalyzedGame({ best_move_tier: 'great', maia_prob: 0.35 });
+
+    renderAnalysis('/analysis?game_id=1&ply=1');
+    fireEvent.click(
+      within(screen.getByTestId('variation-tree-desktop')).getByRole('button', { name: /Nf3/ }),
+    );
+
+    expect(boardGreatMarkerPresent()).toBe(true);
+    expect(moveListGreatIconPresent()).toBe(true);
+    expect(lastLiveGemGradingCall()?.fen).toBeNull();
+  });
+
+  it('a mainline ply with best_move_tier=null renders NO marker and never triggers a live grade (Pitfall 3 — row-absence is authoritative)', () => {
+    libraryGameState.data = buildAnalyzedGame({ best_move_tier: null, maia_prob: null });
+    // If the stored-null verdict were ever treated as "unknown" instead of
+    // "checked, not a gem/great", a live fallback would try to grade this
+    // ply — seed data that WOULD classify as a gem if the live path ran, so
+    // a regression here fails LOUD instead of silently passing either way.
+    seedGemGrading('Nf3', 'Bc4');
+
+    renderAnalysis('/analysis?game_id=1&ply=1');
+    fireEvent.click(
+      within(screen.getByTestId('variation-tree-desktop')).getByRole('button', { name: /Nf3/ }),
+    );
+
+    expect(boardGemMarkerPresent()).toBe(false);
+    expect(boardGreatMarkerPresent()).toBe(false);
+    expect(moveListGemIconPresent()).toBe(false);
+    expect(moveListGreatIconPresent()).toBe(false);
+    // The live fallback must never have been consulted for this ply either.
+    expect(lastLiveGemGradingCall()?.fen).toBeNull();
+  });
+
+  it("the popover shows the stored maia_prob stat and the OPPONENT'S heading when the opponent played the stored gem", async () => {
+    // The analyzed board INTENTIONALLY shows BOTH players' stored gems/greats (Plan 05
+    // feature, confirmed by the user 2026-07-17): the board is a study surface, distinct
+    // from the user-only badges/eval-chart dots/cycling (Plan 06). Nf3 (ply 2) is a WHITE
+    // move; user_color=black makes it the OPPONENT'S, so the popover names the opponent.
+    libraryGameState.data = buildAnalyzedGame(
+      { best_move_tier: 'gem', maia_prob: 0.01 },
+      { user_color: 'black' },
+    );
+
+    renderAnalysis('/analysis?game_id=1&ply=1');
+    fireEvent.click(
+      within(screen.getByTestId('variation-tree-desktop')).getByRole('button', { name: /Nf3/ }),
+    );
+    expect(moveListGemIconPresent()).toBe(true);
+
+    const tree = screen.getByTestId('variation-tree-desktop');
+    fireEvent.click(within(tree).getByTestId('gem-move-popover'));
+
+    expect(await screen.findByText(/Your opponent found a gem move!/i)).toBeTruthy();
+    expect(screen.getByText(/At 1500 ELO/)).toBeTruthy();
+    expect(screen.getByText(/1% chance of being played/)).toBeTruthy();
+  });
+  });
+
+  // Remaining "Gem moves (Phase 163, SEED-092)" live-fallback coverage
+  // (WR-05/WR-04/D-06/SC3) continues below — mostly free-play renderAnalysis()
+  // (no game_id, never a stored tier). WR-05 still uses a game-mode fixture
+  // with no `best_move_tier` set, so Phase 175's stored gate ALSO suppresses
+  // its gem badge now (in addition to the severity-precedence rule it was
+  // written to prove) — its "no gem badge" assertions still hold, though the
+  // isolation of "severity alone suppresses it" is weaker than before; the
+  // dedicated stored-vs-severity precedence is proven directly in
+  // boardMarkers.test.tsx / VariationTree, not required to be re-proven here.
   it('WR-05: a backend severity badge on the same square suppresses the board gem — one square never renders two badges', () => {
     // Same mainline setup as the D-05 test above, but the played move (Nf3,
     // ply 2) ALSO carries a backend-precomputed severity marker. The backend
@@ -1375,7 +1555,7 @@ describe('Live-polling analysis board with an in-place pending pill (Quick 26071
     expect(screen.getByTestId('analysis-eval-chart-slider')).toBeTruthy();
   });
 
-  it('SC7 (Phase 172, SEED-106 D-03): a bot game opened while tier-1 analysis is still running is swept the moment the evals land — no reload, no remount', async () => {
+  it('SC7 (Phase 172, SEED-106 D-03), updated for Phase 175 (SEED-108 D-01a): a bot game opened while tier-1 analysis is still running still never arms the sweep once the evals land — the stored path owns the mainline the instant eval_series exists', async () => {
     libraryGameState.data = buildGame({
       analysis_state: 'no_engine_analysis',
       severity_counts: null,
@@ -1426,24 +1606,43 @@ describe('Live-polling analysis board with an in-place pending pill (Quick 26071
     });
     forceRerender();
 
-    // No remount, no navigation — the SAME useLibraryGame({ live: true }) poll
-    // that flips evalChartReady also arms the sweep, on the exact transition,
-    // not on a fresh mount.
-    await waitFor(() => {
-      expect(lastSweepMaiaCall()?.enabled).toBe(true);
-      expect(lastSweepGradingCall()?.enabled).toBe(true);
-    });
+    // Phase 175 (SEED-108 D-01a): the SAME transition that used to arm the
+    // sweep now ALSO flips gameHasStoredBestMoveData true (it mirrors
+    // eval_series readiness) — the sweep's own `!gameHasStoredBestMoveData`
+    // gate keeps it permanently disabled from this point on, even though its
+    // free-prefilter candidate (e4) still qualifies structurally. Give the
+    // transition a tick to settle, then assert it stays off.
+    forceRerender();
+    expect(lastSweepMaiaCall()?.enabled).toBe(false);
+    expect(lastSweepGradingCall()?.enabled).toBe(false);
   });
 });
 
-// Phase 172 (SEED-106 CR-02) — the D-05 yield-to-cursor WIRING proof. The pure
-// function (gemSweep.test.ts) and the hook (useGemSweep.test.ts) both prove the
-// guard works GIVEN a correct `liveBusy` prop; neither can see that Analysis.tsx
-// feeds it the right signal. This is the only test that catches a `liveBusy`
-// wired to a signal that ignores the live engines — it goes RED if `liveBusy`
-// is reverted to the near-always-false `needParentGemGrade`. Recorded RED output
-// in the fix notes per the project's mutation-test discipline.
-describe('D-05 yield-to-cursor wiring (Phase 172, SEED-106 CR-02 — LOAD-BEARING)', () => {
+// Phase 172 (SEED-106 CR-02/D-05) built two LOAD-BEARING page-level proofs
+// here: "the sweep yields to a busy live engine" (CR-02) and "the sweep's
+// dedicated Maia/grading instances never collide with the live path's own
+// instances" (D-05/SC2). Both required the sweep to actually DISPATCH a
+// candidate against a real analyzed-game fixture (eval_series present).
+//
+// Phase 175 (SEED-108 D-01/D-01a) removed that precondition: an analyzed
+// game's `!gameHasStoredBestMoveData` gate now keeps the sweep permanently
+// disabled the instant `eval_series` exists — the exact same fixture shape
+// these two tests needed to arm the sweep. There is consequently no reachable
+// game-mode scenario left in which the sweep dispatches a candidate through
+// Analysis.tsx's real wiring, so the two ORIGINAL tests (their literal
+// "the sweep is armed" / "the sweep is actively mid-cascade" premises) are
+// MOOT — the same "superseded by demotion" treatment D-01a already applies to
+// WR-01/03/05. The underlying invariants they protected are NOT lost:
+//   - the pure yield-to-cursor scheduler decision (`nextSweepDispatch`,
+//     `liveBusy` checked first) is unit-tested directly in gemSweep.test.ts;
+//   - the dedicated (never-shared) Maia/grading instance wiring inside the
+//     hook is unit-tested directly in useGemSweep.test.ts, driving the hook
+//     with `enabled: true` independent of Analysis.tsx's now-permanent gate.
+// What Analysis.tsx CAN still prove — and the two tests below assert — is
+// the NEW invariant: the demotion gate itself holds even when every OTHER
+// precondition for a dispatch (a D-04 candidate, an idle live engine, or a
+// mid-cascade candidate) would otherwise be satisfied.
+describe('Sweep demotion (Phase 175, SEED-108 D-01/D-01a — supersedes Phase 172 CR-02/D-05 dispatch proofs)', () => {
   let clientWidthSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
@@ -1454,14 +1653,10 @@ describe('D-05 yield-to-cursor wiring (Phase 172, SEED-106 CR-02 — LOAD-BEARIN
     clientWidthSpy.mockRestore();
   });
 
-  it('does NOT dispatch a sweep candidate while a live engine reports busy (engine.isAnalyzing), even though the sweep is armed', async () => {
-    // The sweep's ONE candidate is ply 0 (e4), whose parent is the start FEN.
+  it('never dispatches a sweep candidate for an analyzed game even when the live engine is idle and a real D-04 candidate exists (supersedes the CR-02 yield-to-cursor wiring proof)', async () => {
+    // The sweep's would-be candidate is ply 0 (e4), whose parent is the start
+    // FEN — the same fixture shape the old CR-02 test used to arm the sweep.
     const ROOT_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
-
-    // A live engine is mid-search on the user's current node. This is the whole
-    // point: the sweep must yield the CPU to it (D-05).
-    engineState.isReady = true;
-    engineState.isAnalyzing = true;
 
     libraryGameState.data = buildGame({
       moves: ['e4', 'e5'],
@@ -1474,7 +1669,7 @@ describe('D-05 yield-to-cursor wiring (Phase 172, SEED-106 CR-02 — LOAD-BEARIN
           eval_mate: null,
           clock_seconds: null,
           move_seconds: null,
-          best_move: 'e2e4', // D-04: matches sanToUci(ROOT_FEN, 'e4') — the ONE candidate.
+          best_move: 'e2e4', // D-04: matches sanToUci(ROOT_FEN, 'e4') — would be a candidate.
         },
         {
           ply: 1,
@@ -1483,67 +1678,31 @@ describe('D-05 yield-to-cursor wiring (Phase 172, SEED-106 CR-02 — LOAD-BEARIN
           eval_mate: null,
           clock_seconds: null,
           move_seconds: null,
-          best_move: null, // never a candidate.
+          best_move: null,
         },
       ],
       flaw_markers: [],
     });
-    // e4 rare at the parent rung (would pass C1 if it ever dispatched); grading
-    // stays EMPTY so a reverted build would leave the candidate mid-cascade with
-    // its ROOT_FEN grade `fen` observable, making the RED unambiguous. Rendering
-    // at ?ply=1 keeps the live cursor's own arrival move (e5) without a cached
-    // parent curve, so needParentGemGrade is false — the exact state under which
-    // the OLD `liveBusy: needParentGemGrade` wiring would (wrongly) let the sweep
-    // fire while a live engine is busy.
     maiaState.perElo = [{ elo: 1500, moveProbabilities: { e4: 0.01, e5: 0.99 } }];
 
     renderAnalysis('/analysis?game_id=1&ply=1');
 
-    // The sweep is ARMED (enabled) — so we are proving that liveBusy, not a
-    // disabled sweep, is what blocks the dispatch.
-    await waitFor(() => {
-      expect(lastSweepMaiaCall()?.enabled).toBe(true);
-      expect(lastSweepGradingCall()?.enabled).toBe(true);
-    });
+    // No live engine busy, a real D-04 candidate exists — every OLD
+    // precondition for a dispatch is satisfied. The sweep must still be OFF.
+    expect(lastSweepMaiaCall()?.enabled).toBe(false);
+    expect(lastSweepGradingCall()?.enabled).toBe(false);
 
-    // Give the sweep's idle-callback fallback (setTimeout(cb, 1)) ample time to
-    // fire if it were ever going to. With the correct wiring it never schedules,
-    // because a live engine is busy.
+    // Give the idle-callback fallback (setTimeout(cb, 1)) ample time to fire
+    // if it somehow still could.
     await new Promise((resolve) => setTimeout(resolve, 60));
 
-    // THE LOAD-BEARING ASSERTIONS. A live engine is busy → the sweep must not
-    // have dispatched its candidate: neither dedicated instance ever received the
-    // candidate's FEN. If `liveBusy` is reverted to `needParentGemGrade` (false
-    // here), the sweep dispatches and the grading instance's `fen` reads ROOT_FEN
-    // — turning this red.
     expect(lastSweepMaiaCall()?.fen).toBeNull();
     expect(lastSweepMaiaCall()?.fen).not.toBe(ROOT_FEN);
     expect(lastSweepGradingCall()?.fen).toBeNull();
     expect(lastSweepGradingCall()?.fen).not.toBe(ROOT_FEN);
   });
-});
 
-// Phase 172 (SEED-106 D-05) — the page-level instance-isolation proof. tsc,
-// eslint, knip, and every OTHER test in this file all pass a sweep that
-// shares a worker/hook instance with the live path — this is the ONLY
-// structural guard for that invariant at the page layer (172-04-PLAN.md's
-// hook-layer test is the other). A revert-and-fail-red proof was performed
-// manually per the plan's mandatory instructions; both outputs are recorded
-// in 172-05-SUMMARY.md.
-describe('Instance isolation (Phase 172, SEED-106 D-05 / SC2 — LOAD-BEARING)', () => {
-  let clientWidthSpy: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
-    clientWidthSpy = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(400);
-  });
-
-  afterEach(() => {
-    clientWidthSpy.mockRestore();
-  });
-
-  it('the live grading/Maia instances are never driven with a sweep candidate FEN, even while the sweep is actively mid-cascade', async () => {
-    // The sweep's ONE candidate (ply 0, e4) has this exact parent FEN — the
-    // literal value never appears in either live instance's call options.
+  it("the sweep's dedicated instances stay idle throughout an analyzed game, while the live per-node instances work normally (supersedes the D-05/SC2 instance-isolation proof)", async () => {
     const ROOT_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
     libraryGameState.data = buildGame({
@@ -1557,77 +1716,36 @@ describe('Instance isolation (Phase 172, SEED-106 D-05 / SC2 — LOAD-BEARING)',
           eval_mate: null,
           clock_seconds: null,
           move_seconds: null,
-          best_move: 'e2e4', // D-04: matches sanToUci(ROOT_FEN, 'e4') — a candidate.
+          best_move: 'e2e4',
         },
-        {
-          ply: 1,
-          es: 0.5,
-          eval_cp: 20,
-          eval_mate: null,
-          clock_seconds: null,
-          move_seconds: null,
-          best_move: null, // never a candidate — keeps this test to ONE in-flight ply.
-        },
-        {
-          ply: 2,
-          es: 0.5,
-          eval_cp: 20,
-          eval_mate: null,
-          clock_seconds: null,
-          move_seconds: null,
-          best_move: null,
-        },
+        { ply: 1, es: 0.5, eval_cp: 20, eval_mate: null, clock_seconds: null, move_seconds: null, best_move: null },
+        { ply: 2, es: 0.5, eval_cp: 20, eval_mate: null, clock_seconds: null, move_seconds: null, best_move: null },
       ],
       flaw_markers: [],
     });
-    // Low probability for BOTH the sweep's candidate (e4) and the live
-    // cursor's arrival move (Nf3) — passes C1 for both. gradingState.gradeMap
-    // stays EMPTY (module default, never set in this test) so C2 never
-    // completes for EITHER instance: both candidates stay mid-cascade
-    // indefinitely, which is exactly what this test needs — their `fen`
-    // assignments stay observable instead of resolving and going idle before
-    // the assertions run.
-    maiaState.perElo = [{ elo: 1500, moveProbabilities: { e4: 0.01, Nf3: 0.01 } }];
+    // Low probability for an OFF-MAINLINE move (Nc3, diverging from the
+    // stored mainline's Nf3) — passes C1 for the live path.
+    maiaState.perElo = [{ elo: 1500, moveProbabilities: { Nc3: 0.01, Nf3: 0.9 } }];
 
     renderAnalysis('/analysis?game_id=1&ply=1');
 
-    // Let the sweep's idle-callback fallback (setTimeout(cb, 1)) dispatch its
-    // ONE candidate. liveBusy is false at this point — the cursor's own
-    // arrival move (e5) has no cached parent curve yet, so needParentGemGrade
-    // is false and nothing blocks the sweep's first dispatch.
-    await waitFor(() => {
-      expect(lastSweepGradingCall()?.fen).toBe(ROOT_FEN);
-    });
+    // Play a FREE move that diverges from the stored mainline (Nc3 instead of
+    // Nf3) — an off-mainline node has no stored row by construction, so the
+    // live per-node gem mechanism still engages normally under the demoted
+    // sweep, proving the two are independently gated.
+    fireEvent.click(screen.getByTestId('square-b1'));
+    fireEvent.click(screen.getByTestId('square-c3'));
 
-    // NOW move the LIVE cursor to a node whose arrival move needs a live gem
-    // grade — WHILE the sweep candidate is STILL mid-cascade. useGemSweep
-    // does not abort in-flight work on a live cursor move (its documented
-    // yield-at-dispatch-only semantics — 172-04-SUMMARY.md), so this is
-    // genuine concurrency, not a race the test wins by luck.
-    const tree = screen.getByTestId('variation-tree-desktop');
-    fireEvent.click(within(tree).getByRole('button', { name: /Nf3/ }));
-
-    // THE LOAD-BEARING ASSERTIONS. If the sweep were ever routed through the
-    // SAME hook instance the live path uses, the live instance's `fen` would
-    // read the sweep's ROOT_FEN candidate instead of its own live position —
-    // this is the only mechanism by which that would be caught.
     await waitFor(() => {
-      // (a) more than one ENABLED instance of each exists simultaneously.
+      // The live instances are enabled — the sweep's dedicated instances stay
+      // permanently disabled and idle throughout.
       expect(lastLiveGemGradingCall()?.enabled).toBe(true);
-      expect(lastSweepGradingCall()?.enabled).toBe(true);
       expect(lastLiveMaiaCall()?.enabled).toBe(true);
-      expect(lastSweepMaiaCall()?.enabled).toBe(true);
-      // (b) the LIVE grading instance's fen is the live parent FEN — never a
-      // sweep candidate's FEN.
-      expect(lastLiveGemGradingCall()?.fen).not.toBeNull();
-      expect(lastLiveGemGradingCall()?.fen).not.toBe(ROOT_FEN);
-      // (c) the LIVE Maia instance's fen is the current board position —
-      // never a sweep candidate's FEN.
-      expect(lastLiveMaiaCall()?.fen).not.toBeNull();
-      expect(lastLiveMaiaCall()?.fen).not.toBe(ROOT_FEN);
-      // The sweep's OWN instance is untouched by the live cursor's move —
-      // still mid-cascade on its own candidate, unaffected.
-      expect(lastSweepGradingCall()?.fen).toBe(ROOT_FEN);
+      expect(lastSweepGradingCall()?.enabled).toBe(false);
+      expect(lastSweepMaiaCall()?.enabled).toBe(false);
+      expect(lastSweepGradingCall()?.fen).toBeNull();
+      expect(lastSweepGradingCall()?.fen).not.toBe(ROOT_FEN);
+      expect(lastSweepMaiaCall()?.fen).toBeNull();
     });
   });
 });

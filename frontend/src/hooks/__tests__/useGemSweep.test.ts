@@ -361,6 +361,102 @@ describe('useGemSweep', () => {
     }
   });
 
+  // ─── Phase 175 (SEED-108 D-01/D-01a/WR-06) ───────────────────────────────
+  // The sweep is demoted to a fallback-only mechanism: Analysis.tsx now ANDs
+  // `!gameHasStoredBestMoveData` into the `enabled` prop it passes in, so an
+  // analyzed game's mainline never re-derives what the stored backend tier
+  // already owns. `enabled` stays an opaque boolean at this hook's level —
+  // these tests document the TWO scenarios that boolean now represents.
+
+  it('stored-data-disables-sweep: Analysis.tsx passes enabled: false once gameHasStoredBestMoveData is true, and the sweep produces no dispatch even with a real D-04 candidate (Phase 175, SEED-108 D-01)', () => {
+    const c0 = candidate(0);
+    // Would pass C1 (<= GEM_MAIA_MAX_PROB) if the sweep ever ran.
+    maiaState.perElo = [{ elo: 1500, moveProbabilities: { e4: 0.05 } }];
+
+    renderHook((props: UseGemSweepOptions) => useGemSweep(props), {
+      initialProps: baseOptions({ candidates: [c0], enabled: false }),
+    });
+
+    expect(lastMaiaCall()?.enabled).toBe(false);
+    expect(lastMaiaCall()?.fen).toBeNull();
+    expect(lastGradingCall()?.enabled).toBe(false);
+    expect(lastGradingCall()?.fen).toBeNull();
+  });
+
+  it('unanalyzed-still-runs: with enabled: true (Analysis.tsx\'s gate for a game with NO eval_series/stored data), the sweep still dispatches and resolves a candidate as before (D-01 fallback preserved)', async () => {
+    const c0 = candidate(0);
+    maiaState.perElo = [{ elo: 1500, moveProbabilities: { e4: 0.05 } }]; // passes C1
+    // Two graded candidates with a wide gap so classifyGem's C2 (best beats
+    // runner-up by >= MISTAKE_DROP) passes too.
+    gradingState.gradeMap = new Map([
+      ['e4', { evalCp: 300, evalMate: null, depth: 5 }],
+      ['d4', { evalCp: -300, evalMate: null, depth: 5 }],
+    ]);
+
+    const { result } = renderHook((props: UseGemSweepOptions) => useGemSweep(props), {
+      initialProps: baseOptions({ candidates: [c0], enabled: true }),
+    });
+
+    await waitFor(() => {
+      expect(result.current.gemByPly.has(0)).toBe(true);
+    });
+    expect(result.current.gemByPly.get(0)).not.toBeNull();
+  });
+
+  it('stable-callback (WR-06): resolveCandidate is a stable useCallback([]) identity — repeated re-renders mid-cascade never reset the CR-03 watchdog, so an in-flight candidate still resolves at (not restarted past) SWEEP_CANDIDATE_TIMEOUT_MS', () => {
+    vi.useFakeTimers();
+    try {
+      // Maia never resolves (`ready: false` keeps resultFen null), so the
+      // candidate reaches the maia stage and STAYS there — only the watchdog
+      // can move it forward.
+      maiaState.ready = false;
+      maiaState.perElo = [{ elo: 1500, moveProbabilities: { e4: 0.05 } }];
+      const c0 = candidate(0);
+      const { rerender, result } = renderHook((props: UseGemSweepOptions) => useGemSweep(props), {
+        initialProps: baseOptions({ candidates: [c0] }),
+      });
+
+      act(() => {
+        vi.advanceTimersByTime(1); // dispatch idle-callback fires -> c0 in flight
+      });
+      expect(lastMaiaCall()?.fen).toBe(c0.parentFen);
+
+      // Re-render 3 times with a BRAND-NEW candidates array + pinnedEloForPly
+      // closure each time (a fresh reference every render — before WR-06,
+      // this is exactly the shape of caller churn that could have made an
+      // UNSTABLE resolveCandidate re-trigger the watchdog effect's
+      // cleanup+re-schedule on every commit), interleaved with timer
+      // advances that together stay UNDER the watchdog deadline.
+      const REPEAT_RENDERS = 3;
+      const stepMs = Math.floor(SWEEP_CANDIDATE_TIMEOUT_MS / (REPEAT_RENDERS + 1)); // stays under the deadline
+      for (let i = 0; i < REPEAT_RENDERS; i++) {
+        act(() => {
+          vi.advanceTimersByTime(stepMs);
+        });
+        rerender(baseOptions({ candidates: [candidate(0)], pinnedEloForPly: () => 1500 }));
+      }
+      const elapsedUnderDeadline = stepMs * REPEAT_RENDERS;
+      // Not yet resolved — comfortably under SWEEP_CANDIDATE_TIMEOUT_MS. If
+      // any of the 3 re-renders above had reset the watchdog, this assertion
+      // would still trivially pass (a reset watchdog is even FURTHER from
+      // firing) — the real proof is the assertion below.
+      expect(elapsedUnderDeadline).toBeLessThan(SWEEP_CANDIDATE_TIMEOUT_MS);
+      expect(result.current.gemByPly.has(0)).toBe(false);
+
+      // Advance past the ORIGINAL deadline (measured from the FIRST dispatch,
+      // not from the last re-render). A watchdog that had been reset by ANY
+      // of the 3 re-renders above would need a full FRESH
+      // SWEEP_CANDIDATE_TIMEOUT_MS from its last reset point and would NOT
+      // have fired yet here.
+      act(() => {
+        vi.advanceTimersByTime(SWEEP_CANDIDATE_TIMEOUT_MS - elapsedUnderDeadline + 1000);
+      });
+      expect(result.current.gemByPly.get(0)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('WR-02: once every candidate is resolved the dedicated engines are torn down (enabled: false) — hasWork tracks UNRESOLVED candidates, not candidates.length', async () => {
     // Default maiaState (0.9 probability) fails C1, so the single candidate
     // resolves to null (an explicit miss) almost immediately.

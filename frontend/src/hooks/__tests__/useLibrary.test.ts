@@ -12,8 +12,10 @@ import { describe, it, expect } from 'vitest';
 import {
   libraryGamePollInterval,
   LIBRARY_GAME_POLL_TIMEOUT_MS,
+  buildLibraryParams,
 } from '../useLibrary';
 import { LIBRARY_GAMES_POLL_INTERVAL_MS } from '@/hooks/useEvalCoverage';
+import { DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
 import type { GameFlawCard } from '@/types/library';
 
 function makeCard(overrides: Partial<GameFlawCard> = {}): GameFlawCard {
@@ -77,5 +79,39 @@ describe('libraryGamePollInterval', () => {
     const card = makeCard({ analysis_state: 'no_engine_analysis' });
     const threeMinutes = 3 * 60 * 1000;
     expect(libraryGamePollInterval(card, threeMinutes)).toBe(LIBRARY_GAMES_POLL_INTERVAL_MS);
+  });
+});
+
+describe('buildLibraryParams — has_gem / has_great (FILT-01, Phase 175)', () => {
+  it('includes has_gem: true when hasGem is true', () => {
+    const params = buildLibraryParams(DEFAULT_FILTERS, [], [], true, false);
+    expect(params.has_gem).toBe(true);
+  });
+
+  it('omits has_gem when hasGem is false (mirrors rated conditional-inclusion)', () => {
+    const params = buildLibraryParams(DEFAULT_FILTERS, [], [], false, false);
+    expect(params.has_gem).toBeUndefined();
+  });
+
+  it('includes has_great: true when hasGreat is true', () => {
+    const params = buildLibraryParams(DEFAULT_FILTERS, [], [], false, true);
+    expect(params.has_great).toBe(true);
+  });
+
+  it('omits has_great when hasGreat is false', () => {
+    const params = buildLibraryParams(DEFAULT_FILTERS, [], [], true, false);
+    expect(params.has_great).toBeUndefined();
+  });
+
+  it('omits both when hasGem/hasGreat are omitted entirely (default params)', () => {
+    const params = buildLibraryParams(DEFAULT_FILTERS, [], []);
+    expect(params.has_gem).toBeUndefined();
+    expect(params.has_great).toBeUndefined();
+  });
+
+  it('includes both when hasGem and hasGreat are both true', () => {
+    const params = buildLibraryParams(DEFAULT_FILTERS, [], [], true, true);
+    expect(params.has_gem).toBe(true);
+    expect(params.has_great).toBe(true);
   });
 });

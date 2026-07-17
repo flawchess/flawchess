@@ -25,6 +25,7 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from app.models.eval_jobs import EvalJob
 from app.models.game import Game
+from app.models.game_best_move import GameBestMove
 from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
 from app.repositories.game_flaws_repository import (
@@ -34,6 +35,7 @@ from app.repositories.game_flaws_repository import (
 )
 from app.repositories.query_utils import apply_game_filters, is_opponent_expr, player_only_gate
 from app.schemas.library import FlawListItem, TacticLinesResponse
+from app.services.best_move_candidates import best_move_tier_sql
 from app.services.flaws_service import (
     FlawSeverity,
     FlawTag,
@@ -750,6 +752,52 @@ def flaw_exists_from_table(
     )
 
 
+def best_move_exists_from_table(tiers: Sequence[Literal["gem", "great"]]) -> ColumnElement[bool]:
+    """Correlated EXISTS: True iff the game has >=1 of the USER's OWN plies
+    (D-04 player-parity scoping) whose stored game_best_moves candidate row
+    classifies into one of `tiers` ('gem'/'great') via the SAME
+    best_move_tier_sql/classify_best_move classifier the board consumes
+    (D-03b) — board and filter agree by construction, one retune surface.
+
+    game_best_moves has NO user_id column (candidacy is position-scoped, not
+    user-scoped — see GameBestMove's model docstring). IDOR safety therefore
+    comes ENTIRELY from the `GameBestMove.game_id == Game.id` correlation to
+    an already user-scoped outer query (T-175-01) plus player_only_gate
+    (D-04a) — never from a user_id filter here, because none exists on this
+    table. Callers MUST NOT issue this EXISTS without that outer correlation.
+
+    Mover color for the classifier is always Game.user_color: only rows that
+    pass player_only_gate (the mover IS the user) can satisfy the EXISTS, and
+    for those rows mover_color_for_ply(ply) always equals Game.user_color by
+    construction — there is no separate mover-color column to read.
+
+    Returns true() when `tiers` is empty (mirrors flaw_exists_from_table's
+    no-filter sentinel — no filter = match all games).
+
+    Args:
+        tiers: Subset of ["gem", "great"] to match (union semantics — a game
+               qualifies when ANY selected tier is found on ANY player ply).
+               Empty = no filter.
+    """
+    if not tiers:
+        return true()
+    tier_expr = best_move_tier_sql(
+        GameBestMove.maia_prob,
+        GameBestMove.best_cp,
+        GameBestMove.best_mate,
+        GameBestMove.second_cp,
+        GameBestMove.second_mate,
+        Game.user_color,
+    )
+    return exists(
+        select(GameBestMove.ply).where(
+            GameBestMove.game_id == Game.id,
+            player_only_gate(GameBestMove.ply, Game.user_color),  # D-04a player gate
+            tier_expr.in_(tiers),
+        )
+    )
+
+
 def _reconstruct_tags(flaw: GameFlaw) -> list[FlawTag]:
     """Reconstruct FlawTag list from game_flaws typed columns in deterministic order.
 
@@ -1194,6 +1242,34 @@ async def fetch_page_eval_positions(
     return result
 
 
+async def fetch_page_best_moves(
+    session: AsyncSession,
+    game_ids: Sequence[int],
+) -> dict[int, dict[int, GameBestMove]]:
+    """Batch-load GameBestMove candidate rows for the given games, grouped by
+    game_id then ply (Phase 175, BOARD-01).
+
+    NO user_id scoping — game_best_moves has no user_id column (candidacy is a
+    property of the position, not the user; see app/models/game_best_move.py).
+    IDOR safety comes entirely from callers passing an already-user-scoped
+    game_ids list — the same list the existing fetch_page_eval_positions callers
+    pass (get_library_game's IDOR guard, get_library_games's Game.user_id ==
+    user_id filter in query_filtered_games). Never call this with an unscoped
+    game_ids list.
+
+    One query for the whole page (no N+1 per-game call), mirroring
+    fetch_page_eval_positions's batching shape.
+    """
+    if not game_ids:
+        return {}
+    stmt = select(GameBestMove).where(GameBestMove.game_id.in_(game_ids))
+    rows = list((await session.execute(stmt)).scalars().all())
+    result: dict[int, dict[int, GameBestMove]] = {gid: {} for gid in game_ids}
+    for row in rows:
+        result[row.game_id][row.ply] = row
+    return result
+
+
 async def fetch_page_analyzed_set(
     session: AsyncSession,
     user_id: int,
@@ -1609,6 +1685,8 @@ async def query_filtered_games(
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
     color: str | None = None,
+    has_gem: bool | None = None,
+    has_great: bool | None = None,
 ) -> tuple[list[Game], int]:
     """Return paginated user Game objects, optionally flaw-severity/tag/tactic filtered.
 
@@ -1620,8 +1698,11 @@ async def query_filtered_games(
     across families). tactic_families (Quick 260620-pza) restricts to games with
     ≥1 flaw whose tactic motif (in the orientation's column, within the depth
     range) is in the selected families — the same tactic EXISTS the Flaws tab
-    uses, just threaded to the Games tab. When all of flaw_severity / flaw_tags /
-    tactic_families are None/empty the query is a plain filtered archive (no EXISTS).
+    uses, just threaded to the Games tab. has_gem / has_great (FILT-01) restrict
+    to games with >=1 of the user's OWN plies classifying as that tier via the
+    SAME classifier the board uses (D-04/D-05a) — union semantics when both are
+    set. When all of flaw_severity / flaw_tags / tactic_families / has_gem /
+    has_great are None/empty/False the query is a plain filtered archive (no EXISTS).
 
     Returns (page_games, matched_count) where matched_count reflects ALL matching
     games before offset/limit. Ordered played_at DESC nulls last. The user_id is
@@ -1646,6 +1727,8 @@ async def query_filtered_games(
         min_tactic_depth=min_tactic_depth,
         max_tactic_depth=max_tactic_depth,
         user_id=user_id,
+        has_gem=has_gem,
+        has_great=has_great,
     )
 
     # Count total matching games (before pagination).

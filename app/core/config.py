@@ -82,6 +82,19 @@ class Settings(BaseSettings):
     # hundreds-of-thousands-game backlog). Prod opts in explicitly via its .env.
     EVAL_AUTO_DRAIN_ENABLED: bool = False
 
+    # Best-move backfill toggle (Phase 176 BACK-01, D-05). When False (default),
+    # the tier-4b spare-capacity lottery is suppressed even when
+    # EVAL_AUTO_DRAIN_ENABLED is True (BOTH gates are checked — see
+    # claim_eval_job's bundled scope=None path). Independent from
+    # EVAL_AUTO_DRAIN_ENABLED because best-move backfill load is backend-only
+    # and cannot be shed to the remote worker fleet (unlike blob backfill, ~85%
+    # of which the workers carry) — this lets prod pause best-move backfill
+    # under backend CPU/latency pressure without disabling all idle drain.
+    # Default False; enable in prod deliberately after observing backend
+    # RSS/CPU (mirrors 174 D-03b's posture). Do NOT enable in prod as part of
+    # this merge — it is a separate, observed flag flip.
+    BEST_MOVE_BACKFILL_ENABLED: bool = False
+
     # Operator token for the remote eval worker (Phase 120 SEED-048).
     # Empty string = endpoints return 403 (disabled in dev/CI).
     # Prod sets a strong random secret in .env.

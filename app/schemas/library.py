@@ -43,6 +43,16 @@ class EvalPoint(BaseModel):
     # Engine's best move FROM the position at this ply (UCI, e.g. "e2e4" / "e7e8q").
     # None for lichess-eval-only games (no PV captured) and the final position.
     best_move: str | None = None
+    # Phase 175 (BOARD-01): pre-classified gem/great tier from the authoritative
+    # classify_best_move (app.services.best_move_candidates), computed server-side
+    # from the stored game_best_moves row. Null when no candidate row exists for
+    # this ply OR the row classifies "neither" — the board never does its own
+    # cp/margin math for the stored path (D-03).
+    best_move_tier: Literal["gem", "great"] | None = None
+    # Maia policy probability for the popover "X% of rating-peers" stat. Populated
+    # ONLY alongside a non-null best_move_tier — never set from a "neither" row
+    # (Pitfall 5, D-03a).
+    maia_prob: float | None = None
 
 
 class FlawMarker(BaseModel):

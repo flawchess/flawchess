@@ -7,12 +7,17 @@
  * phase-transition annotations (fine top tick + rotated label) centered on the
  * phase boundary (middlegame, endgame — no full vertical lines, no ply-0
  * annotation per D-06), and
- * dual-marker flaw dots (filled = player, hollow = opponent, color = severity — D-07).
+ * dual-marker flaw dots (filled = player, hollow = opponent, color = severity — D-07),
+ * and gem/great dots (Phase 175 Plan 06 — filled violet/blue, sourced from each
+ * EvalPoint's own `best_move_tier`; mutually exclusive with a flaw dot on the same
+ * ply, so both layers can share the same highlightedPlies emphasis/dim convention).
  *
  * Flaw dots use a custom `dot` render prop on an invisible <Line> overlay inside
  * ComposedChart — the established EndgameClockDiffOverTimeChart pattern. This
  * replaces the previously considered <Scatter> approach; recharts 3.8.1 Scatter
  * uses area-based `size` not radius `r`, making pixel-precise sizing unreliable.
+ * The gem/great dots reuse the same pattern via their own independent <Line>
+ * overlay (buildBestMoveDotRenderer) so neither layer's dot logic disturbs the other.
  *
  * Interaction model: one `activePly` state (hoverPly ?? sliderPly) drives the white
  * crosshair + active-ply dot, the floating tooltip, the slider thumb, and the parent
@@ -33,6 +38,10 @@ import { Clock, Cpu } from 'lucide-react';
 import { Area, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from 'recharts';
 import { ChartContainer } from '@/components/ui/chart';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
+import { GemIcon } from '@/components/icons/GemIcon';
+import { GreatMoveIcon } from '@/components/icons/GreatMoveIcon';
+import { bestMoveDotSpec } from '@/lib/bestMoveDot';
+import { isUserPly } from '@/lib/plyOwnership';
 import { TAG_ICONS, getTagColor } from '@/lib/tagVisuals';
 import {
   TACTIC_FAMILY_FOR_MOTIF,
@@ -48,6 +57,8 @@ import {
   EVAL_CHART_LINE,
   EVAL_CHART_PHASE_LABEL,
   EVAL_MARKER_FILTER_OUTLINE,
+  GREAT_ACCENT,
+  MAIA_ACCENT,
   SEV_BLUNDER,
   SEV_INACCURACY,
   SEV_MISTAKE,
@@ -86,6 +97,15 @@ interface EvalChartProps {
    * (standard chess/engine convention). Pass `user_color === 'black'`.
    */
   flipped?: boolean;
+  /**
+   * The user's color, for scoping the gem/great dot layer to the user's OWN moves
+   * (Phase 175 Plan 06 fix). `best_move_tier` is position-scoped (both players'
+   * best moves carry it), so without this the dots painted the opponent's
+   * gems/greats too. Kept SEMANTICALLY SEPARATE from `flipped` (which is a display
+   * concern): move ownership is a data-scoping concern and must stay explicit.
+   * Omitted → every tier renders (no user filter); analyzed callers pass it.
+   */
+  userColor?: 'white' | 'black';
   /**
    * Reports the active scrub ply (from slider or chart hover) to the parent so
    * the miniboard scrubs in sync. At rest the resting slider ply is reported
@@ -443,6 +463,43 @@ function buildDotRenderer(
   };
 }
 
+/**
+ * Custom dot render prop for the gem/great invisible <Line> overlay — a filled
+ * circle only (the user's own good move, like the flaw layer's is_user=true
+ * branch). `best_move_tier` is position-scoped, so the backend DOES record the
+ * opponent's best moves too; those are intentionally excluded here by passing
+ * `userColor` into bestMoveDotSpec (Phase 175 Plan 06 fix — the gem/great surfaces
+ * are user-only). Reads `best_move_tier` straight off the EvalPoint payload (no
+ * marker map needed — every point already carries it).
+ */
+function buildBestMoveDotRenderer(
+  highlightedPlies?: ReadonlySet<number> | null,
+  userColor?: 'white' | 'black',
+) {
+  return function bestMoveDotRenderer(props: {
+    cx?: number;
+    cy?: number;
+    payload?: EvalPoint;
+  }): React.ReactElement {
+    const { cx, cy, payload } = props;
+    if (!payload || cx == null || cy == null || !Number.isFinite(cx) || !Number.isFinite(cy)) {
+      return <g key={`nobest-${String(payload?.ply ?? cx)}`} />;
+    }
+    const spec = bestMoveDotSpec(payload, highlightedPlies, userColor);
+    if (!spec) return <g key={`nobest-${payload.ply}`} />;
+    return (
+      <circle
+        key={`best-${payload.ply}`}
+        cx={cx}
+        cy={cy}
+        r={spec.radius}
+        fill={spec.color}
+        opacity={spec.opacity}
+      />
+    );
+  };
+}
+
 /** PGN move-number label for a ply — even ply = White ("N. san"), odd = Black ("N... san"). */
 function formatMoveLabel(ply: number, san: string | null): string {
   if (!san) return `Ply ${ply}`; // fallback when SAN is missing (e.g. final position)
@@ -509,6 +566,7 @@ export function EvalChart({
   moves,
   heightClass = 'h-[116px]',
   flipped = false,
+  userColor,
   onHoverPlyChange,
   highlightedPlies,
   outlinedPlies,
@@ -527,6 +585,12 @@ export function EvalChart({
   const evalByPly = useMemo(() => new Map(evalSeries.map((p) => [p.ply, p])), [evalSeries]);
   const allMarkerMap = useMemo(() => new Map(flawMarkers.map((m) => [m.ply, m])), [flawMarkers]);
   const dotRenderer = buildDotRenderer(allMarkerMap, highlightedPlies, outlinedPlies);
+  // Gem/great dot layer (Phase 175 Plan 06) — shares the SAME highlightedPlies prop
+  // as the flaw layer, so a Library-card / analysis-panel badge hover emphasizes
+  // gem/great dots exactly like it does severity/tag dots. `userColor` scopes the
+  // layer to the user's OWN plies (best_move_tier is position-scoped, so the
+  // opponent's gems/greats are in the data and must be excluded — Plan 06 fix).
+  const bestMoveDotRenderer = buildBestMoveDotRenderer(highlightedPlies, userColor);
 
   // Chart data trimmed to the eval'd ply range so the fill spans the full width
   // (see trimToEvalRange). Fall back to the raw series if every ply lacks an eval.
@@ -805,6 +869,15 @@ export function EvalChart({
   // Flaw marker at activePly — all severities (blunder/mistake/inaccuracy) show their
   // flaw-detail line in the tooltip whenever the scrub lands on a flaw ply.
   const activeMarker = allMarkerMap.get(activePly);
+  // Gem/great tooltip row (Phase 175 Plan 06) — mutually exclusive with activeMarker
+  // (a gem/great ply is never also a flaw ply), so only shown when there's no flaw
+  // detail to display instead. User-scoped to match the dot layer: best_move_tier is
+  // position-scoped, so the opponent's tier must NOT surface here either (Plan 06 fix).
+  const activeTier =
+    activePoint?.best_move_tier != null &&
+    (userColor == null || isUserPly(activePoint.ply, userColor))
+      ? activePoint.best_move_tier
+      : null;
   const tooltipTags = activeMarker ? activeMarker.tags.filter((t) => !PHASE_TAGS.has(t)) : [];
   // Tactic motifs for the active marker (Phase 126 UAT) — listed first in the tooltip,
   // above the flaw tags. Family-mapped only. Both orientations are listed
@@ -1000,6 +1073,22 @@ export function EvalChart({
             isAnimationActive={false}
           />
 
+          {/* Gem/great dot layer — a second invisible Line, independent of the flaw-
+              marker Line above so neither's dot logic disturbs the other. Reads
+              best_move_tier straight off each EvalPoint (mutually exclusive with a
+              flaw marker on the same ply, so draw order vs the flaw Line never
+              matters); declared before the active-dot Line so the white crosshair
+              dot still paints on top at the active ply. */}
+          <Line
+            type="monotone"
+            dataKey="es"
+            stroke="none"
+            dot={bestMoveDotRenderer}
+            activeDot={false}
+            connectNulls={false}
+            isAnimationActive={false}
+          />
+
           {/* Active-ply dot — white highlight where the crosshair meets the ES line.
               A second invisible Line whose only visible dot is at activePly; declared
               after the flaw-marker Line above so recharts paints it on top (graphical
@@ -1069,6 +1158,19 @@ export function EvalChart({
                   <span>&middot;</span>
                 )}
                 {activePoint.move_seconds != null && <span>Move {activePoint.move_seconds.toFixed(1)}s</span>}
+              </div>
+            )}
+            {!activeMarker && activeTier && (
+              <div
+                className="flex items-center gap-1.5"
+                style={{ color: activeTier === 'gem' ? MAIA_ACCENT : GREAT_ACCENT }}
+              >
+                {activeTier === 'gem' ? (
+                  <GemIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
+                ) : (
+                  <GreatMoveIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
+                )}
+                <span>{activeTier === 'gem' ? 'Gem' : 'Great'}</span>
               </div>
             )}
             {activeMarker && (

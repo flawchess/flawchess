@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { SeverityBadge } from '@/components/library/SeverityBadge';
+import { GemGreatBadge } from '@/components/library/GemGreatBadge';
+import type { BestMoveTier } from '@/components/library/GemGreatBadge';
 import { TacticMotifGroup } from '@/components/library/TacticMotifGroup';
 import { ChipColumn } from '@/components/library/ChipColumn';
 import { TagChip, TagLegend } from '@/components/library/TagChip';
 import { tacticMotifLabel, TACTIC_FAMILY_FOR_MOTIF } from '@/lib/tacticComparisonMeta';
+import { isUserPly } from '@/lib/plyOwnership';
 import type { GameFlawCard, FlawSeverity, FlawTag } from '@/types/library';
 
 /**
@@ -31,13 +34,20 @@ const SEVERITY_ORDER: FlawSeverity[] = ['blunder', 'mistake', 'inaccuracy'];
 type FlawRef =
   | { kind: 'tag'; tag: FlawTag }
   | { kind: 'severity'; severity: FlawSeverity }
-  | { kind: 'motif'; motif: string; orientation: TacticChipOrientation };
+  | { kind: 'motif'; motif: string; orientation: TacticChipOrientation }
+  // Gem/great tier (Phase 175 Plan 06) — sourced from game.eval_series
+  // (best_move_tier), not flaw_markers, so it's a separate ref kind rather than a
+  // FlawSeverity value. Mirrors LibraryGameCard's local 'bestMove' ref kind (each
+  // file keeps its own copy per this component's existing "trivially safe copies,
+  // not shared extractions" convention — see the file header docstring).
+  | { kind: 'bestMove'; tier: BestMoveTier };
 
 function sameFlawRef(a: FlawRef, b: FlawRef): boolean {
   if (a.kind === 'tag' && b.kind === 'tag') return a.tag === b.tag;
   if (a.kind === 'severity' && b.kind === 'severity') return a.severity === b.severity;
   if (a.kind === 'motif' && b.kind === 'motif')
     return a.motif === b.motif && a.orientation === b.orientation;
+  if (a.kind === 'bestMove' && b.kind === 'bestMove') return a.tier === b.tier;
   return false;
 }
 
@@ -150,6 +160,24 @@ export function AnalysisTagsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.flaw_markers]);
 
+  // Gem/great ascending ply lists (Phase 175 Plan 06) — sourced from game.eval_series
+  // (already a prop on `game`, no new prop needed), unlike every other *Plies map
+  // above which is sourced from flaw_markers. eval_series is already ply-ascending.
+  // Bug fix (Plan 06): best_move_tier is POSITION-scoped (both players' best moves),
+  // so filter to the user's OWN plies via isUserPly — otherwise the badge count AND
+  // cycling would include the opponent's gems/greats.
+  const bestMovePlies = useMemo(() => {
+    const userColor = game.user_color;
+    const gem: number[] = [];
+    const great: number[] = [];
+    for (const pt of game.eval_series ?? []) {
+      if (!isUserPly(pt.ply, userColor)) continue;
+      if (pt.best_move_tier === 'gem') gem.push(pt.ply);
+      else if (pt.best_move_tier === 'great') great.push(pt.ply);
+    }
+    return { gem, great };
+  }, [game.eval_series, game.user_color]);
+
   // Click-to-cycle state: clicking a ref advances through its ply list, wrapping;
   // clicking a different ref restarts at position 0.
   const [cycle, setCycle] = useState<{ ref: FlawRef; pos: number } | null>(null);
@@ -159,6 +187,7 @@ export function AnalysisTagsPanel({
   const pliesForRef = (ref: FlawRef): number[] => {
     if (ref.kind === 'tag') return tagPlies.get(ref.tag) ?? [];
     if (ref.kind === 'severity') return severityPlies.get(ref.severity) ?? [];
+    if (ref.kind === 'bestMove') return bestMovePlies[ref.tier];
     return motifPlies.get(motifPliesKey(ref.orientation, ref.motif)) ?? [];
   };
 
@@ -178,6 +207,9 @@ export function AnalysisTagsPanel({
   const highlightedPlies = useMemo(() => {
     const ref = highlight ?? cycle?.ref ?? null;
     if (!ref) return null;
+    // Gem/great plies come from eval_series (bestMovePlies), not flaw_markers — a
+    // direct lookup rather than a flaw_markers scan (Phase 175 Plan 06).
+    if (ref.kind === 'bestMove') return new Set(bestMovePlies[ref.tier]);
     const set = new Set<number>();
     for (const fm of markers) {
       if (!fm.is_user) continue;
@@ -192,7 +224,7 @@ export function AnalysisTagsPanel({
     }
     return set;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [highlight, cycle, game.flaw_markers]);
+  }, [highlight, cycle, game.flaw_markers, bestMovePlies]);
 
   useEffect(() => {
     onHighlightChange?.(highlightedPlies);
@@ -201,7 +233,12 @@ export function AnalysisTagsPanel({
 
   // Belt-and-suspenders: the Analysis page already gates rendering on evalChartReady
   // (which implies flaw_markers present), but guard here too — no NoAnalysisState.
-  if (game.analysis_state !== 'analyzed' || markers.length === 0) return null;
+  // Phase 175 Plan 06: a flawless-but-brilliant game (zero flaw markers) can still
+  // have gem/great plies, so the empty-markers guard must not also suppress those —
+  // only bail when there is truly nothing to show on either axis.
+  const hasBestMovePlies = bestMovePlies.gem.length > 0 || bestMovePlies.great.length > 0;
+  if (game.analysis_state !== 'analyzed' || (markers.length === 0 && !hasBestMovePlies))
+    return null;
 
   const contextChips =
     game.chips.length > 0 ? (
@@ -241,6 +278,23 @@ export function AnalysisTagsPanel({
             />
           );
         })}
+        {/* Gem/Great badges (Phase 175 Plan 06) — same row as the severity badges,
+            only rendered when the game has >=1 ply of that tier. Mounts once
+            (this component itself mounts exactly once regardless of desktop/mobile,
+            per the file header docstring), so no separate mobile-layout wiring is
+            needed here. */}
+        {(['gem', 'great'] as const)
+          .filter((tier) => bestMovePlies[tier].length > 0)
+          .map((tier) => (
+            <GemGreatBadge
+              key={tier}
+              tier={tier}
+              count={bestMovePlies[tier].length}
+              gameId={game.game_id}
+              onHover={(active) => setHighlight(active ? { kind: 'bestMove', tier } : null)}
+              onActivate={() => handleActivate({ kind: 'bestMove', tier })}
+            />
+          ))}
       </div>
       {/* Float each label + its chips on one wrapping line (Missed / Allowed / Context
           stacked as rows), not a 3-column grid — the narrow analysis rail reads better

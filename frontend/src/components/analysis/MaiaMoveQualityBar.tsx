@@ -167,6 +167,7 @@ function ProseMoveSpan({
   move,
   mover,
   isGem,
+  isGreat,
   isOpen,
   onOpenDelayed,
   onOpenNow,
@@ -176,6 +177,11 @@ function ProseMoveSpan({
   move: VerdictMove;
   mover: MoverColor;
   isGem: boolean;
+  /** Phase 175 (SEED-108 D-02b): "great" gets the same popover treatment as
+   *  "gem" everywhere gem appears — mutually exclusive with isGem by
+   *  construction (qualityBySanWithGem's `quality` field is one or the other,
+   *  never both). */
+  isGreat: boolean;
   isOpen: boolean;
   onOpenDelayed: () => void;
   onOpenNow: () => void;
@@ -208,6 +214,7 @@ function ProseMoveSpan({
         objectiveEval={objectiveEvalText}
         maiaProbability={`${move.maiaPct}%`}
         isGem={isGem}
+        isGreat={isGreat}
       />
     </ProseSpan>
   );
@@ -527,6 +534,7 @@ export function MaiaMoveQualityBar({
       move={m}
       mover={mover}
       isGem={qualityBySan.get(m.san)?.quality === 'gem'}
+      isGreat={qualityBySan.get(m.san)?.quality === 'great'}
       isOpen={activeProseSan === m.san}
       onOpenDelayed={() => openProseDelayed(m.san)}
       onOpenNow={() => openProseNow(m.san)}

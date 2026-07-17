@@ -39,6 +39,7 @@
 - ✅ **v2.1 Analysis Eval Reconciliation & Gem Moves** — Phases 162, 163 (merged to main 2026-07-10; deploy pending) — grading-first eval reconciliation so "Good" never outranks "Best" (SEED-090) + violet gem badges for hard-to-find best moves (SEED-092), both frontend-only on `/analysis` — see [milestones/v2.1-ROADMAP.md](milestones/v2.1-ROADMAP.md)
 - ✅ **v2.2 Analysis ELO Calibration & Deep-links** — Phases 164, 165 (shipped 2026-07-11; deployed to production, PRs #253/#254) — Maia ELO seated at each player's Lichess-blitz-equivalent rating (SEED-093) + additive `?fen=` analysis deep-link and a headless gem-ELO calibration harness (SEED-094) — see [milestones/v2.2-ROADMAP.md](milestones/v2.2-ROADMAP.md)
 - ✅ **v2.3 Bot Play** — Phases 166–172 (incl. 168.5, 169.5) (shipped 2026-07-15) — clocked play against the FlawChess engine on a new top-level **Bots** page (`selectBotMove` sample↔argmax blend), every finished game stored as a `platform='flawchess'` analyzable Library game, localStorage resume, a headless anchor-calibration harness for the first (ELO × play-style) strength map (SEED-091), and a background gem sweep + book markers on `/analysis` (SEED-106, Phase 172) — see [milestones/v2.3-ROADMAP.md](milestones/v2.3-ROADMAP.md)
+- ✅ **v2.4 Backend Gem & Great Detection** — Phases 174–176 (shipped 2026-07-17) — move gem/great move detection into the backend full-game analysis pass as stored first-class artifacts (backend Maia-3 inference at eval-apply) powering the analysis board plus a Library game filter, with opportunistic tier-4 lottery backfill (SEED-108, supersedes SEED-107) — see [milestones/v2.4-ROADMAP.md](milestones/v2.4-ROADMAP.md)
 
 ## Progress
 
@@ -123,6 +124,9 @@
 | 170. localStorage Resume | 5/5 | Complete    | 2026-07-14 |
 | 171. Bots Page + Setup Screen + Nav | 10/10 | Complete    | 2026-07-14 |
 | 172. Background Gem Sweep on Analysis (SEED-106) | 5/5 | Complete    | 2026-07-14 |
+| 174. Backend Maia Inference + Best-Move Storage (spike-gated) | 7/7 | Complete    | 2026-07-16 |
+| 175. Board & Filter — Gem/Great Consumption | 6/6 | Complete | 2026-07-17 |
+| 176. Backfill | 1/1 | Complete    | 2026-07-17 |
 
 ## Backlog
 
@@ -150,6 +154,19 @@ Plans:
 *Phase 999.7 (LLM Endgame-Insights Statistical-Reasoning Rework) promoted to active Phase 102 (v1.23) on 2026-06-01 via `/gsd-explore`; shipped 2026-06-03.*
 
 *Phase 103 (Endgame report LLM prompt refinements) shipped 2026-06-03 as an unplanned follow-on under v1.23 — see the collapsed v1.23 block above and [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md).*
+
+<details>
+<summary>✅ v2.4 Backend Gem & Great Detection (Phases 174–176) — SHIPPED 2026-07-17</summary>
+
+- [x] Phase 174: Backend Maia Inference + Best-Move Storage (spike-gated) (7/7 plans) — completed 2026-07-16
+- [x] Phase 175: Board & Filter — Gem/Great Consumption (6/6 plans) — completed 2026-07-17
+- [x] Phase 176: Backfill (1/1 plan) — completed 2026-07-17
+
+Moved gem/great move detection off the brittle client-side sweep into the backend full-game analysis pass as stored first-class artifacts (peers to blunder/mistake/tactic tags): a spike-gated Python port of the client's 12-plane board→tensor encoding runs Maia-3 at eval-apply and stores per-ply `game_best_moves` candidate rows (`maia_prob` + best/second eval), the analysis board + Library "has gem"/"has great" filter read them directly, and a tier-4b opportunistic lottery backfills the existing corpus (flag-gated, ships OFF).
+
+Full detail: [milestones/v2.4-ROADMAP.md](milestones/v2.4-ROADMAP.md)
+
+</details>
 
 <details>
 <summary>✅ v2.3 Bot Play (Phases 166–172, incl. 168.5, 169.5) — SHIPPED 2026-07-15</summary>
@@ -627,3 +644,24 @@ Two independent, mostly-frontend `/analysis` improvements, each released to prod
 See [milestones/v2.2-ROADMAP.md](milestones/v2.2-ROADMAP.md) for full details.
 
 </details>
+
+### Phase 173: Anchor ladder self-calibration (SEED-101)
+
+**Goal:** Round-robin the calibration harness's anchors against each other (Maia-argmax rungs 700–2300, SF Skill 0/3/5/8/10, cross-family games included) and fit a logistic/BayesElo-style rating model over the game graph, placing every anchor on one common internal scale with measured spacing (scale fixed arbitrarily, e.g. maia1500 = 1500; explicitly NOT human ELO). Unblocks SEED-102 and answers whether the Maia-3 argmax ladder is compressed like Maia-1's.
+**Requirements**: TBD (none mapped; plans trace CONTEXT.md decisions D-01–D-13)
+**Depends on:** Phase 172
+**Plans:** 4/4 plans complete
+
+Plans:
+**Wave 1**
+
+- [x] 173-01-PLAN.md — Extract mover-agnostic game loop + wire SF skills 8/10 (D-08/D-09/D-10) [wave 1]
+- [x] 173-03-PLAN.md — Stdlib Bradley-Terry/Elo fit + connectivity guard + tests (D-04/D-05/D-06/D-07) [wave 1]
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 173-02-PLAN.md — Anchor-vs-anchor orchestrator: two-pass probe→measure scheduler + two-tier TSV (D-01/D-02/D-03/D-04/D-13) [wave 2]
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 173-04-PLAN.md — Execute the real sweep + fit the internal scale + findings/compression verdict (D-11/D-12/D-13) [wave 3]

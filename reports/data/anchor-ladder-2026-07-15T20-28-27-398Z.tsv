@@ -1,0 +1,457 @@
+pass	anchor_white	anchor_black	result	reason	plies	game_index	opening	seed	git_sha
+probe	maia1100	maia700	white_win	adjudicated_eval	75	0	Italian Game	1	1df488a7
+probe	maia700	maia1100	white_win	adjudicated_eval	51	1	Ruy Lopez	1	1df488a7
+probe	maia1100	maia700	white_win	adjudicated_eval	36	2	Ruy Lopez, Morphy Defense	1	1df488a7
+probe	maia700	maia1100	black_win	checkmate	27	3	Scotch Game	1	1df488a7
+probe	maia1100	maia700	white_win	checkmate	67	4	Petrov Defense	1	1df488a7
+probe	maia700	maia1100	black_win	checkmate	42	5	Four Knights Game	1	1df488a7
+probe	maia1100	maia700	white_win	checkmate	68	6	Vienna Game	1	1df488a7
+probe	maia700	maia1100	black_win	checkmate	39	7	King's Gambit	1	1df488a7
+probe	maia1100	maia1500	draw	threefold_repetition	105	8	Sicilian Defense, Open	1	1df488a7
+probe	maia1500	maia1100	white_win	adjudicated_eval	97	9	Sicilian Defense, Najdorf	1	1df488a7
+probe	maia1100	maia1500	black_win	adjudicated_eval	39	10	Sicilian Defense, Dragon	1	1df488a7
+probe	maia1500	maia1100	draw	ply_cap_draw	120	11	French Defense	1	1df488a7
+probe	maia1100	maia1500	black_win	checkmate	55	12	French Defense, Advance	1	1df488a7
+probe	maia1500	maia1100	white_win	adjudicated_eval	63	13	Caro-Kann Defense	1	1df488a7
+probe	maia1100	maia1500	white_win	adjudicated_eval	48	14	Caro-Kann Defense, Advance	1	1df488a7
+probe	maia1500	maia1100	white_win	adjudicated_eval	105	15	Scandinavian Defense	1	1df488a7
+probe	maia1500	maia1900	white_win	adjudicated_eval	114	16	Pirc Defense	1	1df488a7
+probe	maia1900	maia1500	white_win	checkmate	45	17	Modern Defense	1	1df488a7
+probe	maia1500	maia1900	white_win	adjudicated_eval	118	18	Alekhine Defense	1	1df488a7
+probe	maia1900	maia1500	draw	ply_cap_draw	120	19	Queen's Gambit Declined	1	1df488a7
+probe	maia1500	maia1900	black_win	adjudicated_eval	47	20	Queen's Gambit Accepted	1	1df488a7
+probe	maia1900	maia1500	white_win	adjudicated_eval	69	21	Slav Defense	1	1df488a7
+probe	maia1500	maia1900	draw	threefold_repetition	62	22	King's Indian Defense	1	1df488a7
+probe	maia1900	maia1500	white_win	adjudicated_eval	93	23	Nimzo-Indian Defense	1	1df488a7
+probe	maia1900	maia2300	white_win	checkmate	49	24	Gruenfeld Defense	1	1df488a7
+probe	maia2300	maia1900	white_win	adjudicated_eval	79	25	Queen's Indian Defense	1	1df488a7
+probe	maia1900	maia2300	black_win	checkmate	38	26	Bogo-Indian Defense	1	1df488a7
+probe	maia2300	maia1900	draw	ply_cap_draw	120	27	Dutch Defense	1	1df488a7
+probe	maia1900	maia2300	black_win	adjudicated_eval	46	28	Benoni Defense	1	1df488a7
+probe	maia2300	maia1900	black_win	checkmate	48	29	English Opening	1	1df488a7
+probe	maia1900	maia2300	white_win	adjudicated_eval	77	30	English Opening, Reversed Sicilian	1	1df488a7
+probe	maia2300	maia1900	black_win	adjudicated_eval	83	31	Reti Opening	1	1df488a7
+probe	sf0	sf3	black_win	adjudicated_eval	41	32	London System	1	1df488a7
+probe	sf3	sf0	white_win	adjudicated_eval	32	33	Italian Game	1	1df488a7
+probe	sf0	sf3	draw	threefold_repetition	88	34	Ruy Lopez	1	1df488a7
+probe	sf3	sf0	white_win	checkmate	68	35	Ruy Lopez, Morphy Defense	1	1df488a7
+probe	sf0	sf3	black_win	checkmate	75	36	Scotch Game	1	1df488a7
+probe	sf3	sf0	white_win	adjudicated_eval	34	37	Petrov Defense	1	1df488a7
+probe	sf0	sf3	black_win	adjudicated_eval	38	38	Four Knights Game	1	1df488a7
+probe	sf3	sf0	white_win	adjudicated_eval	44	39	Vienna Game	1	1df488a7
+probe	sf3	sf5	black_win	adjudicated_eval	42	40	King's Gambit	1	1df488a7
+probe	sf5	sf3	white_win	checkmate	81	41	Sicilian Defense, Open	1	1df488a7
+probe	sf3	sf5	black_win	adjudicated_eval	102	42	Sicilian Defense, Najdorf	1	1df488a7
+probe	sf5	sf3	black_win	adjudicated_eval	95	43	Sicilian Defense, Dragon	1	1df488a7
+probe	sf3	sf5	white_win	adjudicated_eval	67	44	French Defense	1	1df488a7
+probe	sf5	sf3	white_win	adjudicated_eval	90	45	French Defense, Advance	1	1df488a7
+probe	sf3	sf5	draw	ply_cap_draw	120	46	Caro-Kann Defense	1	1df488a7
+probe	sf5	sf3	white_win	adjudicated_eval	56	47	Caro-Kann Defense, Advance	1	1df488a7
+probe	sf5	sf8	black_win	adjudicated_eval	69	48	Scandinavian Defense	1	1df488a7
+probe	sf8	sf5	white_win	adjudicated_eval	53	49	Pirc Defense	1	1df488a7
+probe	sf5	sf8	draw	ply_cap_draw	120	50	Modern Defense	1	1df488a7
+probe	sf8	sf5	black_win	adjudicated_eval	57	51	Alekhine Defense	1	1df488a7
+probe	sf5	sf8	white_win	adjudicated_eval	62	52	Queen's Gambit Declined	1	1df488a7
+probe	sf8	sf5	white_win	adjudicated_eval	37	53	Queen's Gambit Accepted	1	1df488a7
+probe	sf5	sf8	black_win	adjudicated_eval	42	54	Slav Defense	1	1df488a7
+probe	sf8	sf5	white_win	adjudicated_eval	49	55	King's Indian Defense	1	1df488a7
+probe	sf10	sf8	white_win	adjudicated_eval	85	56	Nimzo-Indian Defense	1	1df488a7
+probe	sf8	sf10	black_win	adjudicated_eval	107	57	Gruenfeld Defense	1	1df488a7
+probe	sf10	sf8	white_win	adjudicated_eval	55	58	Queen's Indian Defense	1	1df488a7
+probe	sf8	sf10	black_win	adjudicated_eval	62	59	Bogo-Indian Defense	1	1df488a7
+probe	sf10	sf8	draw	ply_cap_draw	120	60	Dutch Defense	1	1df488a7
+probe	sf8	sf10	black_win	adjudicated_eval	76	61	Benoni Defense	1	1df488a7
+probe	sf10	sf8	draw	ply_cap_draw	120	62	English Opening	1	1df488a7
+probe	sf8	sf10	black_win	adjudicated_eval	79	63	English Opening, Reversed Sicilian	1	1df488a7
+probe	maia1500	sf0	white_win	adjudicated_eval	66	64	Reti Opening	1	1df488a7
+probe	sf0	maia1500	black_win	adjudicated_eval	69	65	London System	1	1df488a7
+probe	maia1500	sf0	white_win	adjudicated_eval	23	66	Italian Game	1	1df488a7
+probe	sf0	maia1500	black_win	adjudicated_eval	30	67	Ruy Lopez	1	1df488a7
+probe	maia1500	sf0	black_win	checkmate	61	68	Ruy Lopez, Morphy Defense	1	1df488a7
+probe	sf0	maia1500	black_win	adjudicated_eval	37	69	Scotch Game	1	1df488a7
+probe	maia1500	sf0	white_win	adjudicated_eval	87	70	Petrov Defense	1	1df488a7
+probe	sf0	maia1500	black_win	adjudicated_eval	36	71	Four Knights Game	1	1df488a7
+probe	maia1100	sf0	white_win	adjudicated_eval	30	72	Vienna Game	1	1df488a7
+probe	sf0	maia1100	black_win	adjudicated_eval	37	73	King's Gambit	1	1df488a7
+probe	maia1100	sf0	white_win	adjudicated_eval	95	74	Sicilian Defense, Open	1	1df488a7
+probe	sf0	maia1100	black_win	adjudicated_eval	32	75	Sicilian Defense, Najdorf	1	1df488a7
+probe	maia1100	sf0	white_win	adjudicated_eval	15	76	Sicilian Defense, Dragon	1	1df488a7
+probe	sf0	maia1100	black_win	checkmate	36	77	French Defense	1	1df488a7
+probe	maia1100	sf0	white_win	adjudicated_eval	96	78	French Defense, Advance	1	1df488a7
+probe	sf0	maia1100	black_win	adjudicated_eval	71	79	Caro-Kann Defense	1	1df488a7
+probe	maia1900	sf3	white_win	adjudicated_eval	78	80	Caro-Kann Defense, Advance	1	1df488a7
+probe	sf3	maia1900	draw	ply_cap_draw	120	81	Scandinavian Defense	1	1df488a7
+probe	maia1900	sf3	white_win	adjudicated_eval	51	82	Pirc Defense	1	1df488a7
+probe	sf3	maia1900	draw	ply_cap_draw	120	83	Modern Defense	1	1df488a7
+probe	maia1900	sf3	white_win	adjudicated_eval	33	84	Alekhine Defense	1	1df488a7
+probe	sf3	maia1900	black_win	adjudicated_eval	59	85	Queen's Gambit Declined	1	1df488a7
+probe	maia1900	sf3	white_win	adjudicated_eval	43	86	Queen's Gambit Accepted	1	1df488a7
+probe	sf3	maia1900	black_win	adjudicated_eval	101	87	Slav Defense	1	1df488a7
+probe	maia1500	sf3	white_win	adjudicated_eval	37	88	King's Indian Defense	1	1df488a7
+probe	sf3	maia1500	draw	ply_cap_draw	120	89	Nimzo-Indian Defense	1	1df488a7
+probe	maia1500	sf3	white_win	adjudicated_eval	58	90	Gruenfeld Defense	1	1df488a7
+probe	sf3	maia1500	draw	threefold_repetition	112	91	Queen's Indian Defense	1	1df488a7
+probe	maia1500	sf3	draw	threefold_repetition	30	92	Bogo-Indian Defense	1	1df488a7
+probe	sf3	maia1500	black_win	adjudicated_eval	42	93	Dutch Defense	1	1df488a7
+probe	maia1500	sf3	white_win	adjudicated_eval	43	94	Benoni Defense	1	1df488a7
+probe	sf3	maia1500	black_win	adjudicated_eval	50	95	English Opening	1	1df488a7
+probe	maia2300	sf5	white_win	adjudicated_eval	59	96	English Opening, Reversed Sicilian	1	1df488a7
+probe	sf5	maia2300	black_win	adjudicated_eval	95	97	Reti Opening	1	1df488a7
+probe	maia2300	sf5	draw	threefold_repetition	50	98	London System	1	1df488a7
+probe	sf5	maia2300	white_win	adjudicated_eval	69	99	Italian Game	1	1df488a7
+probe	maia2300	sf5	white_win	adjudicated_eval	58	100	Ruy Lopez	1	1df488a7
+probe	sf5	maia2300	black_win	adjudicated_eval	97	101	Ruy Lopez, Morphy Defense	1	1df488a7
+probe	maia2300	sf5	white_win	adjudicated_eval	20	102	Scotch Game	1	1df488a7
+probe	sf5	maia2300	black_win	adjudicated_eval	27	103	Petrov Defense	1	1df488a7
+probe	maia1900	sf5	white_win	checkmate	49	104	Four Knights Game	1	1df488a7
+probe	sf5	maia1900	white_win	checkmate	56	105	Vienna Game	1	1df488a7
+probe	maia1900	sf5	white_win	adjudicated_eval	52	106	King's Gambit	1	1df488a7
+probe	sf5	maia1900	white_win	checkmate	47	107	Sicilian Defense, Open	1	1df488a7
+probe	maia1900	sf5	draw	ply_cap_draw	120	108	Sicilian Defense, Najdorf	1	1df488a7
+probe	sf5	maia1900	white_win	adjudicated_eval	81	109	Sicilian Defense, Dragon	1	1df488a7
+probe	maia1900	sf5	draw	ply_cap_draw	120	110	French Defense	1	1df488a7
+probe	sf5	maia1900	black_win	adjudicated_eval	68	111	French Defense, Advance	1	1df488a7
+probe	maia2300	sf8	white_win	adjudicated_eval	70	112	Caro-Kann Defense	1	1df488a7
+probe	sf8	maia2300	white_win	adjudicated_eval	65	113	Caro-Kann Defense, Advance	1	1df488a7
+probe	maia2300	sf8	black_win	adjudicated_eval	56	114	Scandinavian Defense	1	1df488a7
+probe	sf8	maia2300	white_win	adjudicated_eval	57	115	Pirc Defense	1	1df488a7
+probe	maia2300	sf8	black_win	adjudicated_eval	68	116	Modern Defense	1	1df488a7
+probe	sf8	maia2300	draw	threefold_repetition	82	117	Alekhine Defense	1	1df488a7
+probe	maia2300	sf8	black_win	checkmate	98	118	Queen's Gambit Declined	1	1df488a7
+probe	sf8	maia2300	draw	threefold_repetition	66	119	Queen's Gambit Accepted	1	1df488a7
+probe	maia1900	sf8	black_win	checkmate	48	120	Slav Defense	1	1df488a7
+probe	sf8	maia1900	black_win	adjudicated_eval	69	121	King's Indian Defense	1	1df488a7
+probe	maia1900	sf8	draw	ply_cap_draw	120	122	Nimzo-Indian Defense	1	1df488a7
+probe	sf8	maia1900	white_win	adjudicated_eval	63	123	Gruenfeld Defense	1	1df488a7
+probe	maia1900	sf8	black_win	adjudicated_eval	98	124	Queen's Indian Defense	1	1df488a7
+probe	sf8	maia1900	white_win	adjudicated_eval	93	125	Bogo-Indian Defense	1	1df488a7
+probe	maia1900	sf8	draw	ply_cap_draw	120	126	Dutch Defense	1	1df488a7
+probe	sf8	maia1900	white_win	adjudicated_eval	105	127	Benoni Defense	1	1df488a7
+probe	maia2300	sf10	black_win	adjudicated_eval	81	128	English Opening	1	1df488a7
+probe	sf10	maia2300	white_win	adjudicated_eval	78	129	English Opening, Reversed Sicilian	1	1df488a7
+probe	maia2300	sf10	draw	ply_cap_draw	120	130	Reti Opening	1	1df488a7
+probe	sf10	maia2300	white_win	adjudicated_eval	86	131	London System	1	1df488a7
+probe	maia2300	sf10	draw	ply_cap_draw	120	132	Italian Game	1	1df488a7
+probe	sf10	maia2300	black_win	adjudicated_eval	91	133	Ruy Lopez	1	1df488a7
+probe	maia2300	sf10	black_win	adjudicated_eval	63	134	Ruy Lopez, Morphy Defense	1	1df488a7
+probe	sf10	maia2300	white_win	adjudicated_eval	84	135	Scotch Game	1	1df488a7
+probe	maia1900	sf10	black_win	checkmate	58	136	Petrov Defense	1	1df488a7
+probe	sf10	maia1900	draw	threefold_repetition	110	137	Four Knights Game	1	1df488a7
+probe	maia1900	sf10	draw	ply_cap_draw	120	138	Vienna Game	1	1df488a7
+probe	sf10	maia1900	draw	threefold_repetition	92	139	King's Gambit	1	1df488a7
+probe	maia1900	sf10	black_win	adjudicated_eval	114	140	Sicilian Defense, Open	1	1df488a7
+probe	sf10	maia1900	white_win	adjudicated_eval	47	141	Sicilian Defense, Najdorf	1	1df488a7
+probe	maia1900	sf10	draw	threefold_repetition	60	142	Sicilian Defense, Dragon	1	1df488a7
+probe	sf10	maia1900	white_win	adjudicated_eval	111	143	French Defense	1	1df488a7
+probe	maia1900	sf0	white_win	adjudicated_eval	100	144	French Defense, Advance	1	1df488a7
+probe	sf0	maia1900	black_win	adjudicated_eval	34	145	Caro-Kann Defense	1	1df488a7
+probe	maia1900	sf0	white_win	adjudicated_eval	40	146	Caro-Kann Defense, Advance	1	1df488a7
+probe	sf0	maia1900	white_win	adjudicated_eval	53	147	Scandinavian Defense	1	1df488a7
+probe	maia1900	sf0	white_win	adjudicated_eval	51	148	Pirc Defense	1	1df488a7
+probe	sf0	maia1900	black_win	adjudicated_eval	48	149	Modern Defense	1	1df488a7
+probe	maia1900	sf0	white_win	adjudicated_eval	33	150	Alekhine Defense	1	1df488a7
+probe	sf0	maia1900	black_win	adjudicated_eval	47	151	Queen's Gambit Declined	1	1df488a7
+probe	maia700	sf0	white_win	adjudicated_eval	32	152	Queen's Gambit Accepted	1	1df488a7
+probe	sf0	maia700	white_win	checkmate	51	153	Slav Defense	1	1df488a7
+probe	maia700	sf0	white_win	adjudicated_eval	57	154	King's Indian Defense	1	1df488a7
+probe	sf0	maia700	white_win	checkmate	21	155	Nimzo-Indian Defense	1	1df488a7
+probe	maia700	sf0	black_win	checkmate	30	156	Gruenfeld Defense	1	1df488a7
+probe	sf0	maia700	white_win	checkmate	35	157	Queen's Indian Defense	1	1df488a7
+probe	maia700	sf0	white_win	adjudicated_eval	52	158	Bogo-Indian Defense	1	1df488a7
+probe	sf0	maia700	black_win	adjudicated_eval	106	159	Dutch Defense	1	1df488a7
+probe	maia2300	sf3	white_win	adjudicated_eval	45	160	Benoni Defense	1	1df488a7
+probe	sf3	maia2300	black_win	adjudicated_eval	56	161	English Opening	1	1df488a7
+probe	maia2300	sf3	white_win	adjudicated_eval	97	162	English Opening, Reversed Sicilian	1	1df488a7
+probe	sf3	maia2300	black_win	adjudicated_eval	52	163	Reti Opening	1	1df488a7
+probe	maia2300	sf3	white_win	adjudicated_eval	53	164	London System	1	1df488a7
+probe	sf3	maia2300	black_win	adjudicated_eval	51	165	Italian Game	1	1df488a7
+probe	maia2300	sf3	white_win	adjudicated_eval	40	166	Ruy Lopez	1	1df488a7
+probe	sf3	maia2300	black_win	adjudicated_eval	67	167	Ruy Lopez, Morphy Defense	1	1df488a7
+probe	maia1100	sf3	black_win	checkmate	115	168	Scotch Game	1	1df488a7
+probe	sf3	maia1100	white_win	checkmate	33	169	Petrov Defense	1	1df488a7
+probe	maia1100	sf3	black_win	checkmate	42	170	Four Knights Game	1	1df488a7
+probe	sf3	maia1100	draw	threefold_repetition	48	171	Vienna Game	1	1df488a7
+probe	maia1100	sf3	white_win	adjudicated_eval	34	172	King's Gambit	1	1df488a7
+probe	sf3	maia1100	white_win	checkmate	61	173	Sicilian Defense, Open	1	1df488a7
+probe	maia1100	sf3	draw	threefold_repetition	92	174	Sicilian Defense, Najdorf	1	1df488a7
+probe	sf3	maia1100	white_win	adjudicated_eval	119	175	Sicilian Defense, Dragon	1	1df488a7
+probe	maia1500	sf5	black_win	checkmate	64	176	French Defense	1	1df488a7
+probe	sf5	maia1500	draw	insufficient_material	120	177	French Defense, Advance	1	1df488a7
+probe	maia1500	sf5	white_win	adjudicated_eval	71	178	Caro-Kann Defense	1	1df488a7
+probe	sf5	maia1500	black_win	adjudicated_eval	47	179	Caro-Kann Defense, Advance	1	1df488a7
+probe	maia1500	sf5	black_win	checkmate	74	180	Scandinavian Defense	1	1df488a7
+probe	sf5	maia1500	white_win	checkmate	95	181	Pirc Defense	1	1df488a7
+probe	maia1500	sf5	draw	ply_cap_draw	120	182	Modern Defense	1	1df488a7
+probe	sf5	maia1500	black_win	adjudicated_eval	52	183	Alekhine Defense	1	1df488a7
+probe	maia2300	sf0	white_win	adjudicated_eval	69	184	Queen's Gambit Declined	1	1df488a7
+probe	sf0	maia2300	black_win	adjudicated_eval	30	185	Queen's Gambit Accepted	1	1df488a7
+probe	maia2300	sf0	white_win	adjudicated_eval	49	186	Slav Defense	1	1df488a7
+probe	sf0	maia2300	black_win	adjudicated_eval	22	187	King's Indian Defense	1	1df488a7
+probe	maia2300	sf0	black_win	adjudicated_eval	30	188	Nimzo-Indian Defense	1	1df488a7
+probe	sf0	maia2300	black_win	adjudicated_eval	82	189	Gruenfeld Defense	1	1df488a7
+probe	maia2300	sf0	white_win	adjudicated_eval	39	190	Queen's Indian Defense	1	1df488a7
+probe	sf0	maia2300	black_win	adjudicated_eval	26	191	Bogo-Indian Defense	1	1df488a7
+probe	maia700	sf3	black_win	checkmate	68	192	Dutch Defense	1	1df488a7
+probe	sf3	maia700	white_win	checkmate	65	193	Benoni Defense	1	1df488a7
+probe	maia700	sf3	black_win	adjudicated_eval	66	194	English Opening	1	1df488a7
+probe	sf3	maia700	white_win	adjudicated_eval	56	195	English Opening, Reversed Sicilian	1	1df488a7
+probe	maia700	sf3	black_win	adjudicated_eval	73	196	Reti Opening	1	1df488a7
+probe	sf3	maia700	white_win	adjudicated_eval	71	197	London System	1	1df488a7
+probe	maia700	sf3	black_win	adjudicated_eval	50	198	Italian Game	1	1df488a7
+probe	sf3	maia700	white_win	adjudicated_eval	76	199	Ruy Lopez	1	1df488a7
+probe	maia1100	sf5	black_win	adjudicated_eval	63	200	Ruy Lopez, Morphy Defense	1	1df488a7
+probe	sf5	maia1100	white_win	checkmate	12	201	Scotch Game	1	1df488a7
+probe	maia1100	sf5	white_win	adjudicated_eval	57	202	Petrov Defense	1	1df488a7
+probe	sf5	maia1100	black_win	adjudicated_eval	53	203	Four Knights Game	1	1df488a7
+probe	maia1100	sf5	white_win	adjudicated_eval	114	204	Vienna Game	1	1df488a7
+probe	sf5	maia1100	draw	threefold_repetition	120	205	King's Gambit	1	1df488a7
+probe	maia1100	sf5	black_win	checkmate	34	206	Sicilian Defense, Open	1	1df488a7
+probe	sf5	maia1100	white_win	adjudicated_eval	63	207	Sicilian Defense, Najdorf	1	1df488a7
+probe	maia700	sf5	white_win	adjudicated_eval	111	208	Sicilian Defense, Dragon	1	1df488a7
+probe	sf5	maia700	white_win	adjudicated_eval	43	209	French Defense	1	1df488a7
+probe	maia700	sf5	black_win	adjudicated_eval	97	210	French Defense, Advance	1	1df488a7
+probe	sf5	maia700	white_win	adjudicated_eval	25	211	Caro-Kann Defense	1	1df488a7
+probe	maia700	sf5	black_win	checkmate	63	212	Caro-Kann Defense, Advance	1	1df488a7
+probe	sf5	maia700	white_win	adjudicated_eval	40	213	Scandinavian Defense	1	1df488a7
+probe	maia700	sf5	black_win	checkmate	50	214	Pirc Defense	1	1df488a7
+probe	sf5	maia700	draw	threefold_repetition	54	215	Modern Defense	1	1df488a7
+measure	maia1100	maia1500	black_win	checkmate	38	216	Alekhine Defense	1	a2f96e81
+measure	maia1500	maia1100	draw	threefold_repetition	71	217	Queen's Gambit Declined	1	a2f96e81
+measure	maia1100	maia1500	draw	threefold_repetition	46	218	Queen's Gambit Accepted	1	a2f96e81
+measure	maia1500	maia1100	draw	threefold_repetition	70	219	Slav Defense	1	a2f96e81
+measure	maia1100	maia1500	draw	threefold_repetition	53	220	King's Indian Defense	1	a2f96e81
+measure	maia1500	maia1100	white_win	checkmate	33	221	Nimzo-Indian Defense	1	a2f96e81
+measure	maia1100	maia1500	white_win	checkmate	47	222	Gruenfeld Defense	1	a2f96e81
+measure	maia1500	maia1100	draw	threefold_repetition	55	223	Queen's Indian Defense	1	a2f96e81
+measure	maia1100	maia1500	draw	threefold_repetition	115	224	Bogo-Indian Defense	1	a2f96e81
+measure	maia1500	maia1100	draw	threefold_repetition	72	225	Dutch Defense	1	a2f96e81
+measure	maia1100	maia1500	white_win	adjudicated_eval	67	226	Benoni Defense	1	a2f96e81
+measure	maia1500	maia1100	draw	threefold_repetition	90	227	English Opening	1	a2f96e81
+measure	maia1100	maia1500	black_win	adjudicated_eval	62	228	English Opening, Reversed Sicilian	1	a2f96e81
+measure	maia1500	maia1100	white_win	checkmate	66	229	Reti Opening	1	a2f96e81
+measure	maia1100	maia1500	white_win	checkmate	52	230	London System	1	a2f96e81
+measure	maia1500	maia1100	white_win	checkmate	41	231	Italian Game	1	a2f96e81
+measure	maia1500	maia1900	white_win	adjudicated_eval	80	232	Ruy Lopez	1	a2f96e81
+measure	maia1900	maia1500	white_win	adjudicated_eval	66	233	Ruy Lopez, Morphy Defense	1	a2f96e81
+measure	maia1500	maia1900	draw	threefold_repetition	73	234	Scotch Game	1	a2f96e81
+measure	maia1900	maia1500	draw	threefold_repetition	79	235	Petrov Defense	1	a2f96e81
+measure	maia1500	maia1900	black_win	checkmate	32	236	Four Knights Game	1	a2f96e81
+measure	maia1900	maia1500	draw	threefold_repetition	80	237	Vienna Game	1	a2f96e81
+measure	maia1500	maia1900	black_win	adjudicated_eval	53	238	King's Gambit	1	a2f96e81
+measure	maia1900	maia1500	white_win	adjudicated_eval	58	239	Sicilian Defense, Open	1	a2f96e81
+measure	maia1500	maia1900	black_win	adjudicated_eval	82	240	Sicilian Defense, Najdorf	1	a2f96e81
+measure	maia1900	maia1500	black_win	checkmate	42	241	Sicilian Defense, Dragon	1	a2f96e81
+measure	maia1500	maia1900	black_win	adjudicated_eval	96	242	French Defense	1	a2f96e81
+measure	maia1900	maia1500	white_win	adjudicated_eval	36	243	French Defense, Advance	1	a2f96e81
+measure	maia1500	maia1900	black_win	adjudicated_eval	86	244	Caro-Kann Defense	1	a2f96e81
+measure	maia1900	maia1500	draw	threefold_repetition	77	245	Caro-Kann Defense, Advance	1	a2f96e81
+measure	maia1500	maia1900	black_win	adjudicated_eval	56	246	Scandinavian Defense	1	a2f96e81
+measure	maia1900	maia1500	white_win	checkmate	41	247	Pirc Defense	1	a2f96e81
+measure	maia1900	maia2300	black_win	adjudicated_eval	68	248	Modern Defense	1	a2f96e81
+measure	maia2300	maia1900	white_win	adjudicated_eval	83	249	Alekhine Defense	1	a2f96e81
+measure	maia1900	maia2300	draw	threefold_repetition	87	250	Queen's Gambit Declined	1	a2f96e81
+measure	maia2300	maia1900	white_win	adjudicated_eval	49	251	Queen's Gambit Accepted	1	a2f96e81
+measure	maia1900	maia2300	black_win	ply_cap_decisive	120	252	Slav Defense	1	a2f96e81
+measure	maia2300	maia1900	white_win	adjudicated_eval	78	253	King's Indian Defense	1	a2f96e81
+measure	maia1900	maia2300	black_win	ply_cap_decisive	120	254	Nimzo-Indian Defense	1	a2f96e81
+measure	maia2300	maia1900	white_win	checkmate	31	255	Gruenfeld Defense	1	a2f96e81
+measure	maia1900	maia2300	white_win	adjudicated_eval	43	256	Queen's Indian Defense	1	a2f96e81
+measure	maia2300	maia1900	white_win	adjudicated_eval	59	257	Bogo-Indian Defense	1	a2f96e81
+measure	maia1900	maia2300	draw	threefold_repetition	61	258	Dutch Defense	1	a2f96e81
+measure	maia2300	maia1900	draw	threefold_repetition	80	259	Benoni Defense	1	a2f96e81
+measure	maia1900	maia2300	draw	threefold_repetition	90	260	English Opening	1	a2f96e81
+measure	maia2300	maia1900	black_win	adjudicated_eval	75	261	English Opening, Reversed Sicilian	1	a2f96e81
+measure	maia1900	maia2300	black_win	adjudicated_eval	99	262	Reti Opening	1	a2f96e81
+measure	maia2300	maia1900	draw	threefold_repetition	65	263	London System	1	a2f96e81
+measure	sf3	sf5	black_win	adjudicated_eval	38	264	Italian Game	1	a2f96e81
+measure	sf5	sf3	white_win	adjudicated_eval	70	265	Ruy Lopez	1	a2f96e81
+measure	sf3	sf5	black_win	adjudicated_eval	101	266	Ruy Lopez, Morphy Defense	1	a2f96e81
+measure	sf5	sf3	white_win	adjudicated_eval	70	267	Scotch Game	1	a2f96e81
+measure	sf3	sf5	draw	ply_cap_draw	120	268	Petrov Defense	1	a2f96e81
+measure	sf5	sf3	black_win	ply_cap_decisive	120	269	Four Knights Game	1	a2f96e81
+measure	sf3	sf5	black_win	adjudicated_eval	63	270	Vienna Game	1	a2f96e81
+measure	sf5	sf3	white_win	adjudicated_eval	46	271	King's Gambit	1	a2f96e81
+measure	sf3	sf5	black_win	adjudicated_eval	55	272	Sicilian Defense, Open	1	a2f96e81
+measure	sf5	sf3	white_win	adjudicated_eval	53	273	Sicilian Defense, Najdorf	1	a2f96e81
+measure	sf3	sf5	black_win	adjudicated_eval	108	274	Sicilian Defense, Dragon	1	a2f96e81
+measure	sf5	sf3	white_win	adjudicated_eval	56	275	French Defense	1	a2f96e81
+measure	sf3	sf5	black_win	adjudicated_eval	107	276	French Defense, Advance	1	a2f96e81
+measure	sf5	sf3	white_win	adjudicated_eval	68	277	Caro-Kann Defense	1	a2f96e81
+measure	sf3	sf5	black_win	adjudicated_eval	59	278	Caro-Kann Defense, Advance	1	a2f96e81
+measure	sf5	sf3	black_win	adjudicated_eval	99	279	Scandinavian Defense	1	a2f96e81
+measure	sf5	sf8	black_win	adjudicated_eval	63	280	Pirc Defense	1	a2f96e81
+measure	sf8	sf5	white_win	adjudicated_eval	61	281	Modern Defense	1	a2f96e81
+measure	sf5	sf8	black_win	adjudicated_eval	60	282	Alekhine Defense	1	a2f96e81
+measure	sf8	sf5	draw	ply_cap_draw	120	283	Queen's Gambit Declined	1	a2f96e81
+measure	sf5	sf8	black_win	adjudicated_eval	67	284	Queen's Gambit Accepted	1	a2f96e81
+measure	sf8	sf5	white_win	checkmate	81	285	Slav Defense	1	a2f96e81
+measure	sf5	sf8	black_win	adjudicated_eval	68	286	King's Indian Defense	1	a2f96e81
+measure	sf8	sf5	white_win	adjudicated_eval	76	287	Nimzo-Indian Defense	1	a2f96e81
+measure	sf5	sf8	black_win	adjudicated_eval	71	288	Gruenfeld Defense	1	a2f96e81
+measure	sf8	sf5	white_win	adjudicated_eval	79	289	Queen's Indian Defense	1	a2f96e81
+measure	sf5	sf8	black_win	adjudicated_eval	63	290	Bogo-Indian Defense	1	a2f96e81
+measure	sf8	sf5	white_win	adjudicated_eval	89	291	Dutch Defense	1	a2f96e81
+measure	sf5	sf8	black_win	adjudicated_eval	90	292	Benoni Defense	1	a2f96e81
+measure	sf8	sf5	white_win	adjudicated_eval	53	293	English Opening	1	a2f96e81
+measure	sf5	sf8	black_win	adjudicated_eval	67	294	English Opening, Reversed Sicilian	1	a2f96e81
+measure	sf8	sf5	white_win	adjudicated_eval	88	295	Reti Opening	1	a2f96e81
+measure	maia1900	sf5	white_win	adjudicated_eval	45	296	London System	1	a2f96e81
+measure	sf5	maia1900	black_win	adjudicated_eval	66	297	Italian Game	1	a2f96e81
+measure	maia1900	sf5	black_win	adjudicated_eval	69	298	Ruy Lopez	1	a2f96e81
+measure	sf5	maia1900	draw	ply_cap_draw	120	299	Ruy Lopez, Morphy Defense	1	a2f96e81
+measure	maia1900	sf5	white_win	adjudicated_eval	60	300	Scotch Game	1	a2f96e81
+measure	sf5	maia1900	white_win	checkmate	75	301	Petrov Defense	1	a2f96e81
+measure	maia1900	sf5	draw	ply_cap_draw	120	302	Four Knights Game	1	a2f96e81
+measure	sf5	maia1900	black_win	adjudicated_eval	65	303	Vienna Game	1	a2f96e81
+measure	maia1900	sf5	white_win	adjudicated_eval	96	304	King's Gambit	1	a2f96e81
+measure	sf5	maia1900	white_win	adjudicated_eval	113	305	Sicilian Defense, Open	1	a2f96e81
+measure	maia1900	sf5	black_win	adjudicated_eval	60	306	Sicilian Defense, Najdorf	1	a2f96e81
+measure	sf5	maia1900	draw	threefold_repetition	78	307	Sicilian Defense, Dragon	1	a2f96e81
+measure	maia1900	sf5	white_win	adjudicated_eval	51	308	French Defense	1	a2f96e81
+measure	sf5	maia1900	black_win	adjudicated_eval	69	309	French Defense, Advance	1	a2f96e81
+measure	maia1900	sf5	white_win	adjudicated_eval	96	310	Caro-Kann Defense	1	a2f96e81
+measure	sf5	maia1900	white_win	checkmate	62	311	Caro-Kann Defense, Advance	1	a2f96e81
+measure	maia2300	sf8	black_win	adjudicated_eval	83	312	Scandinavian Defense	1	a2f96e81
+measure	sf8	maia2300	white_win	adjudicated_eval	91	313	Pirc Defense	1	a2f96e81
+measure	maia2300	sf8	draw	ply_cap_draw	120	314	Modern Defense	1	a2f96e81
+measure	sf8	maia2300	draw	ply_cap_draw	120	315	Alekhine Defense	1	a2f96e81
+measure	maia2300	sf8	draw	threefold_repetition	105	316	Queen's Gambit Declined	1	a2f96e81
+measure	sf8	maia2300	white_win	checkmate	117	317	Queen's Gambit Accepted	1	a2f96e81
+measure	maia2300	sf8	white_win	adjudicated_eval	75	318	Slav Defense	1	a2f96e81
+measure	sf8	maia2300	draw	ply_cap_draw	120	319	King's Indian Defense	1	a2f96e81
+measure	maia2300	sf8	black_win	adjudicated_eval	69	320	Nimzo-Indian Defense	1	a2f96e81
+measure	sf8	maia2300	draw	ply_cap_draw	120	321	Gruenfeld Defense	1	a2f96e81
+measure	maia2300	sf8	draw	ply_cap_draw	120	322	Queen's Indian Defense	1	a2f96e81
+measure	sf8	maia2300	white_win	checkmate	87	323	Bogo-Indian Defense	1	a2f96e81
+measure	maia2300	sf8	draw	insufficient_material	108	324	Dutch Defense	1	a2f96e81
+measure	sf8	maia2300	draw	threefold_repetition	89	325	Benoni Defense	1	a2f96e81
+measure	maia2300	sf8	draw	ply_cap_draw	120	326	English Opening	1	a2f96e81
+measure	sf8	maia2300	white_win	checkmate	39	327	English Opening, Reversed Sicilian	1	a2f96e81
+measure	maia1900	sf8	black_win	adjudicated_eval	71	328	Reti Opening	1	a2f96e81
+measure	sf8	maia1900	white_win	adjudicated_eval	92	329	London System	1	a2f96e81
+measure	maia1900	sf8	white_win	adjudicated_eval	45	330	Italian Game	1	a2f96e81
+measure	sf8	maia1900	white_win	adjudicated_eval	44	331	Ruy Lopez	1	a2f96e81
+measure	maia1900	sf8	black_win	adjudicated_eval	37	332	Ruy Lopez, Morphy Defense	1	a2f96e81
+measure	sf8	maia1900	draw	ply_cap_draw	120	333	Scotch Game	1	a2f96e81
+measure	maia1900	sf8	draw	ply_cap_draw	120	334	Petrov Defense	1	a2f96e81
+measure	sf8	maia1900	white_win	adjudicated_eval	63	335	Four Knights Game	1	a2f96e81
+measure	maia1900	sf8	white_win	adjudicated_eval	81	336	Vienna Game	1	a2f96e81
+measure	sf8	maia1900	white_win	adjudicated_eval	72	337	King's Gambit	1	a2f96e81
+measure	maia1900	sf8	black_win	adjudicated_eval	74	338	Sicilian Defense, Open	1	a2f96e81
+measure	sf8	maia1900	white_win	adjudicated_eval	91	339	Sicilian Defense, Najdorf	1	a2f96e81
+measure	maia1900	sf8	draw	threefold_repetition	74	340	Sicilian Defense, Dragon	1	a2f96e81
+measure	sf8	maia1900	black_win	adjudicated_eval	74	341	French Defense	1	a2f96e81
+measure	maia1900	sf8	black_win	adjudicated_eval	103	342	French Defense, Advance	1	a2f96e81
+measure	sf8	maia1900	draw	ply_cap_draw	120	343	Caro-Kann Defense	1	a2f96e81
+measure	maia2300	sf10	draw	threefold_repetition	97	344	Caro-Kann Defense, Advance	1	a2f96e81
+measure	sf10	maia2300	draw	ply_cap_draw	120	345	Scandinavian Defense	1	a2f96e81
+measure	maia2300	sf10	draw	threefold_repetition	59	346	Pirc Defense	1	a2f96e81
+measure	sf10	maia2300	white_win	adjudicated_eval	73	347	Modern Defense	1	a2f96e81
+measure	maia2300	sf10	draw	threefold_repetition	100	348	Alekhine Defense	1	a2f96e81
+measure	sf10	maia2300	black_win	adjudicated_eval	108	349	Queen's Gambit Declined	1	a2f96e81
+measure	maia2300	sf10	black_win	adjudicated_eval	62	350	Queen's Gambit Accepted	1	a2f96e81
+measure	sf10	maia2300	white_win	adjudicated_eval	65	351	Slav Defense	1	a2f96e81
+measure	maia2300	sf10	black_win	adjudicated_eval	52	352	King's Indian Defense	1	a2f96e81
+measure	sf10	maia2300	white_win	checkmate	73	353	Nimzo-Indian Defense	1	a2f96e81
+measure	maia2300	sf10	draw	threefold_repetition	104	354	Gruenfeld Defense	1	a2f96e81
+measure	sf10	maia2300	white_win	adjudicated_eval	64	355	Queen's Indian Defense	1	a2f96e81
+measure	maia2300	sf10	black_win	adjudicated_eval	98	356	Bogo-Indian Defense	1	a2f96e81
+measure	sf10	maia2300	white_win	adjudicated_eval	51	357	Dutch Defense	1	a2f96e81
+measure	maia2300	sf10	draw	ply_cap_draw	120	358	Benoni Defense	1	a2f96e81
+measure	sf10	maia2300	draw	ply_cap_draw	120	359	English Opening	1	a2f96e81
+measure	maia1900	sf10	black_win	adjudicated_eval	52	360	English Opening, Reversed Sicilian	1	a2f96e81
+measure	sf10	maia1900	draw	threefold_repetition	108	361	Reti Opening	1	a2f96e81
+measure	maia1900	sf10	black_win	adjudicated_eval	79	362	London System	1	a2f96e81
+measure	sf10	maia1900	black_win	adjudicated_eval	105	363	Italian Game	1	a2f96e81
+measure	maia1900	sf10	draw	threefold_repetition	119	364	Ruy Lopez	1	a2f96e81
+measure	sf10	maia1900	white_win	adjudicated_eval	60	365	Ruy Lopez, Morphy Defense	1	a2f96e81
+measure	maia1900	sf10	black_win	adjudicated_eval	19	366	Scotch Game	1	a2f96e81
+measure	sf10	maia1900	white_win	checkmate	57	367	Petrov Defense	1	a2f96e81
+measure	maia1900	sf10	black_win	adjudicated_eval	99	368	Four Knights Game	1	a2f96e81
+measure	sf10	maia1900	white_win	adjudicated_eval	44	369	Vienna Game	1	a2f96e81
+measure	maia1900	sf10	black_win	adjudicated_eval	35	370	King's Gambit	1	a2f96e81
+measure	sf10	maia1900	white_win	checkmate	97	371	Sicilian Defense, Open	1	a2f96e81
+measure	maia1900	sf10	black_win	checkmate	100	372	Sicilian Defense, Najdorf	1	a2f96e81
+measure	sf10	maia1900	draw	threefold_repetition	101	373	Sicilian Defense, Dragon	1	a2f96e81
+measure	maia1900	sf10	draw	threefold_repetition	113	374	French Defense	1	a2f96e81
+measure	sf10	maia1900	white_win	adjudicated_eval	60	375	French Defense, Advance	1	a2f96e81
+measure	maia700	sf0	draw	ply_cap_draw	120	376	Caro-Kann Defense	1	a2f96e81
+measure	sf0	maia700	white_win	checkmate	54	377	Caro-Kann Defense, Advance	1	a2f96e81
+measure	maia700	sf0	white_win	adjudicated_eval	27	378	Scandinavian Defense	1	a2f96e81
+measure	sf0	maia700	white_win	checkmate	25	379	Pirc Defense	1	a2f96e81
+measure	maia700	sf0	black_win	adjudicated_eval	12	380	Modern Defense	1	a2f96e81
+measure	sf0	maia700	black_win	checkmate	40	381	Alekhine Defense	1	a2f96e81
+measure	maia700	sf0	white_win	adjudicated_eval	33	382	Queen's Gambit Declined	1	a2f96e81
+measure	sf0	maia700	black_win	adjudicated_eval	86	383	Queen's Gambit Accepted	1	a2f96e81
+measure	maia700	sf0	white_win	adjudicated_eval	27	384	Slav Defense	1	a2f96e81
+measure	sf0	maia700	black_win	adjudicated_eval	34	385	King's Indian Defense	1	a2f96e81
+measure	maia700	sf0	white_win	checkmate	39	386	Nimzo-Indian Defense	1	a2f96e81
+measure	sf0	maia700	white_win	adjudicated_eval	45	387	Gruenfeld Defense	1	a2f96e81
+measure	maia700	sf0	white_win	adjudicated_eval	75	388	Queen's Indian Defense	1	a2f96e81
+measure	sf0	maia700	black_win	adjudicated_eval	44	389	Bogo-Indian Defense	1	a2f96e81
+measure	maia700	sf0	black_win	checkmate	22	390	Dutch Defense	1	a2f96e81
+measure	sf0	maia700	black_win	adjudicated_eval	28	391	Benoni Defense	1	a2f96e81
+measure	maia1100	sf3	black_win	adjudicated_eval	56	392	English Opening	1	a2f96e81
+measure	sf3	maia1100	white_win	adjudicated_eval	103	393	English Opening, Reversed Sicilian	1	a2f96e81
+measure	maia1100	sf3	black_win	adjudicated_eval	105	394	Reti Opening	1	a2f96e81
+measure	sf3	maia1100	draw	threefold_repetition	45	395	London System	1	a2f96e81
+measure	maia1100	sf3	white_win	adjudicated_eval	71	396	Italian Game	1	a2f96e81
+measure	sf3	maia1100	white_win	adjudicated_eval	92	397	Ruy Lopez	1	a2f96e81
+measure	maia1100	sf3	white_win	adjudicated_eval	21	398	Ruy Lopez, Morphy Defense	1	a2f96e81
+measure	sf3	maia1100	white_win	checkmate	54	399	Scotch Game	1	a2f96e81
+measure	maia1100	sf3	black_win	adjudicated_eval	107	400	Petrov Defense	1	a2f96e81
+measure	sf3	maia1100	black_win	adjudicated_eval	54	401	Four Knights Game	1	a2f96e81
+measure	maia1100	sf3	white_win	adjudicated_eval	35	402	Vienna Game	1	a2f96e81
+measure	sf3	maia1100	black_win	adjudicated_eval	115	403	King's Gambit	1	a2f96e81
+measure	maia1100	sf3	white_win	adjudicated_eval	70	404	Sicilian Defense, Open	1	a2f96e81
+measure	sf3	maia1100	draw	threefold_repetition	75	405	Sicilian Defense, Najdorf	1	a2f96e81
+measure	maia1100	sf3	white_win	adjudicated_eval	29	406	Sicilian Defense, Dragon	1	a2f96e81
+measure	sf3	maia1100	draw	ply_cap_draw	120	407	French Defense	1	a2f96e81
+measure	maia1500	sf5	white_win	adjudicated_eval	85	408	French Defense, Advance	1	a2f96e81
+measure	sf5	maia1500	black_win	adjudicated_eval	68	409	Caro-Kann Defense	1	a2f96e81
+measure	maia1500	sf5	black_win	checkmate	67	410	Caro-Kann Defense, Advance	1	a2f96e81
+measure	sf5	maia1500	black_win	adjudicated_eval	35	411	Scandinavian Defense	1	a2f96e81
+measure	maia1500	sf5	white_win	adjudicated_eval	65	412	Pirc Defense	1	a2f96e81
+measure	sf5	maia1500	white_win	adjudicated_eval	120	413	Modern Defense	1	a2f96e81
+measure	maia1500	sf5	draw	threefold_repetition	62	414	Alekhine Defense	1	a2f96e81
+measure	sf5	maia1500	white_win	checkmate	19	415	Queen's Gambit Declined	1	a2f96e81
+measure	maia1500	sf5	white_win	adjudicated_eval	59	416	Queen's Gambit Accepted	1	a2f96e81
+measure	sf5	maia1500	white_win	checkmate	45	417	Slav Defense	1	a2f96e81
+measure	maia1500	sf5	white_win	adjudicated_eval	40	418	King's Indian Defense	1	a2f96e81
+measure	sf5	maia1500	black_win	adjudicated_eval	34	419	Nimzo-Indian Defense	1	a2f96e81
+measure	maia1500	sf5	black_win	ply_cap_decisive	120	420	Gruenfeld Defense	1	a2f96e81
+measure	sf5	maia1500	draw	ply_cap_draw	120	421	Queen's Indian Defense	1	a2f96e81
+measure	maia1500	sf5	draw	ply_cap_draw	120	422	Bogo-Indian Defense	1	a2f96e81
+measure	sf5	maia1500	white_win	adjudicated_eval	67	423	Dutch Defense	1	a2f96e81
+measure	maia1100	sf5	black_win	checkmate	46	424	Benoni Defense	1	a2f96e81
+measure	sf5	maia1100	white_win	checkmate	65	425	English Opening	1	a2f96e81
+measure	maia1100	sf5	black_win	checkmate	40	426	English Opening, Reversed Sicilian	1	a2f96e81
+measure	sf5	maia1100	white_win	adjudicated_eval	32	427	Reti Opening	1	a2f96e81
+measure	maia1100	sf5	black_win	checkmate	61	428	London System	1	a2f96e81
+measure	sf5	maia1100	white_win	checkmate	53	429	Italian Game	1	a2f96e81
+measure	maia1100	sf5	black_win	adjudicated_eval	57	430	Ruy Lopez	1	a2f96e81
+measure	sf5	maia1100	white_win	adjudicated_eval	42	431	Ruy Lopez, Morphy Defense	1	a2f96e81
+measure	maia1100	sf5	white_win	adjudicated_eval	82	432	Scotch Game	1	a2f96e81
+measure	sf5	maia1100	black_win	adjudicated_eval	48	433	Petrov Defense	1	a2f96e81
+measure	maia1100	sf5	black_win	adjudicated_eval	46	434	Four Knights Game	1	a2f96e81
+measure	sf5	maia1100	white_win	checkmate	38	435	Vienna Game	1	a2f96e81
+measure	maia1100	sf5	black_win	checkmate	33	436	King's Gambit	1	a2f96e81
+measure	sf5	maia1100	black_win	adjudicated_eval	97	437	Sicilian Defense, Open	1	a2f96e81
+measure	maia1100	sf5	black_win	adjudicated_eval	58	438	Sicilian Defense, Najdorf	1	a2f96e81
+measure	sf5	maia1100	white_win	checkmate	35	439	Sicilian Defense, Dragon	1	a2f96e81
+measure	maia700	sf5	black_win	checkmate	72	440	French Defense	1	a2f96e81
+measure	sf5	maia700	white_win	adjudicated_eval	35	441	French Defense, Advance	1	a2f96e81
+measure	maia700	sf5	black_win	checkmate	60	442	Caro-Kann Defense	1	a2f96e81
+measure	sf5	maia700	white_win	adjudicated_eval	66	443	Caro-Kann Defense, Advance	1	a2f96e81
+measure	maia700	sf5	black_win	adjudicated_eval	102	444	Scandinavian Defense	1	a2f96e81
+measure	sf5	maia700	white_win	adjudicated_eval	117	445	Pirc Defense	1	a2f96e81
+measure	maia700	sf5	draw	ply_cap_draw	120	446	Modern Defense	1	a2f96e81
+measure	sf5	maia700	white_win	checkmate	49	447	Alekhine Defense	1	a2f96e81
+measure	maia700	sf5	black_win	adjudicated_eval	34	448	Queen's Gambit Declined	1	a2f96e81
+measure	sf5	maia700	white_win	adjudicated_eval	111	449	Queen's Gambit Accepted	1	a2f96e81
+measure	maia700	sf5	draw	ply_cap_draw	120	450	Slav Defense	1	a2f96e81
+measure	sf5	maia700	white_win	adjudicated_eval	112	451	King's Indian Defense	1	a2f96e81
+measure	maia700	sf5	white_win	adjudicated_eval	45	452	Nimzo-Indian Defense	1	a2f96e81
+measure	sf5	maia700	white_win	adjudicated_eval	67	453	Gruenfeld Defense	1	a2f96e81
+measure	maia700	sf5	black_win	checkmate	66	454	Queen's Indian Defense	1	a2f96e81
+measure	sf5	maia700	white_win	checkmate	51	455	Bogo-Indian Defense	1	a2f96e81

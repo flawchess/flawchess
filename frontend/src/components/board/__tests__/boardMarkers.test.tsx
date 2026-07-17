@@ -2,7 +2,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
 import { SquareMarkerGroup, type SquareMarker } from '../boardMarkers';
-import { MAIA_ACCENT, BOOK_MARKER_COLOR } from '@/lib/theme';
+import { MAIA_ACCENT, GREAT_ACCENT, BOOK_MARKER_COLOR } from '@/lib/theme';
 
 function renderMarker(marker: SquareMarker) {
   return render(
@@ -70,6 +70,43 @@ describe('SquareMarkerGroup', () => {
     expect(circle).not.toBeNull();
     // Gem takes precedence over book — same as the shipped fill.
     expect(circle?.getAttribute('fill')).toBe(MAIA_ACCENT);
+    expect(circle?.getAttribute('fill')).not.toBe(BOOK_MARKER_COLOR);
+  });
+
+  // Phase 175 (SEED-108 D-01/D-02): great marker on the board corner marker.
+  it('renders the blue great badge with a "!" glyph (GreatMoveIcon-equivalent) for a great marker', () => {
+    const { container } = renderMarker({ square: 'e4', great: true });
+
+    const circle = container.querySelector('circle');
+    expect(circle).not.toBeNull();
+    expect(circle?.getAttribute('fill')).toBe(GREAT_ACCENT);
+
+    // Nested SVG glyph (the hand-drawn "!" — line + dot) renders as an inner <svg>.
+    const nestedSvg = container.querySelectorAll('svg');
+    expect(nestedSvg.length).toBeGreaterThan(1);
+    expect(container.querySelector('line')).not.toBeNull();
+
+    // No severity NAG glyph text emitted.
+    const text = container.querySelector('text');
+    expect(text).toBeNull();
+  });
+
+  it('still renders the gem badge when both gem and great could apply (mutually exclusive by construction, same precedence tier)', () => {
+    const { container } = renderMarker({ square: 'e4', gem: true, great: true });
+
+    const circle = container.querySelector('circle');
+    expect(circle).not.toBeNull();
+    // Gem is checked first — same precedence tier as great, gem wins by ordering.
+    expect(circle?.getAttribute('fill')).toBe(MAIA_ACCENT);
+    expect(circle?.getAttribute('fill')).not.toBe(GREAT_ACCENT);
+  });
+
+  it('great badge renders instead of the book badge when both could apply', () => {
+    const { container } = renderMarker({ square: 'e4', great: true, book: true });
+
+    const circle = container.querySelector('circle');
+    expect(circle).not.toBeNull();
+    expect(circle?.getAttribute('fill')).toBe(GREAT_ACCENT);
     expect(circle?.getAttribute('fill')).not.toBe(BOOK_MARKER_COLOR);
   });
 });

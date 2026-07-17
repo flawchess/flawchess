@@ -201,6 +201,92 @@ describe('FlawFilterControl', () => {
     });
   });
 
+  describe('Best Moves (gem / great toggles, FILT-01 Phase 175)', () => {
+    // Real usage: BOTH library tabs pass showTacticFilter=true. The Games tab is
+    // distinguished ONLY by passing the gem/great toggle handlers (GamesTab), while
+    // the Flaws tab passes none (FlawsTab). The render gate keys on the handlers'
+    // presence, NOT showTacticFilter — the post-verify bug fix. These props mirror
+    // GamesTab's two render sites exactly.
+    const gamesTabProps = {
+      ...defaultProps,
+      showTacticFilter: true,
+      onHasGemToggle: vi.fn(),
+      onHasGreatToggle: vi.fn(),
+    };
+
+    it('renders both toggles on the Games tab (showTacticFilter=true + gem/great handlers)', () => {
+      render(<FlawFilterControl {...gamesTabProps} />);
+      expect(screen.getByTestId('filter-has-gem')).toBeTruthy();
+      expect(screen.getByTestId('filter-has-great')).toBeTruthy();
+    });
+
+    it('hides both toggles on the Flaws tab (showTacticFilter=true, NO gem/great handlers)', () => {
+      // Mirrors FlawsTab: showTacticFilter=true but no onHasGem/GreatToggle props.
+      // Regression guard: the old `!showTactics` gate would WRONGLY hide the section
+      // on the Games tab and (coincidentally) also here — this test only passes with
+      // the handler-presence gate because the Games-tab test above uses the same
+      // showTacticFilter=true, so the two cases now differ ONLY by the handlers.
+      render(<FlawFilterControl {...defaultProps} showTacticFilter />);
+      expect(screen.queryByTestId('filter-has-gem')).toBeNull();
+      expect(screen.queryByTestId('filter-has-great')).toBeNull();
+    });
+
+    it('both toggles default to aria-pressed=false', () => {
+      render(<FlawFilterControl {...gamesTabProps} />);
+      expect(screen.getByTestId('filter-has-gem').getAttribute('aria-pressed')).toBe('false');
+      expect(screen.getByTestId('filter-has-great').getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('reflects hasGem/hasGreat props via aria-pressed', () => {
+      render(<FlawFilterControl {...gamesTabProps} hasGem hasGreat />);
+      expect(screen.getByTestId('filter-has-gem').getAttribute('aria-pressed')).toBe('true');
+      expect(screen.getByTestId('filter-has-great').getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('clicking the has-gem toggle fires onHasGemToggle', () => {
+      const onHasGemToggle = vi.fn();
+      render(<FlawFilterControl {...gamesTabProps} onHasGemToggle={onHasGemToggle} />);
+      fireEvent.click(screen.getByTestId('filter-has-gem'));
+      expect(onHasGemToggle).toHaveBeenCalledTimes(1);
+    });
+
+    it('clicking the has-great toggle fires onHasGreatToggle', () => {
+      const onHasGreatToggle = vi.fn();
+      render(<FlawFilterControl {...gamesTabProps} onHasGreatToggle={onHasGreatToggle} />);
+      fireEvent.click(screen.getByTestId('filter-has-great'));
+      expect(onHasGreatToggle).toHaveBeenCalledTimes(1);
+    });
+
+    it('has-gem and has-great are independent — clicking one does not fire the other', () => {
+      const onHasGemToggle = vi.fn();
+      const onHasGreatToggle = vi.fn();
+      render(
+        <FlawFilterControl
+          {...gamesTabProps}
+          onHasGemToggle={onHasGemToggle}
+          onHasGreatToggle={onHasGreatToggle}
+        />,
+      );
+      fireEvent.click(screen.getByTestId('filter-has-gem'));
+      expect(onHasGemToggle).toHaveBeenCalledTimes(1);
+      expect(onHasGreatToggle).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByTestId('filter-has-great'));
+      expect(onHasGreatToggle).toHaveBeenCalledTimes(1);
+      expect(onHasGemToggle).toHaveBeenCalledTimes(1);
+    });
+
+    it('toggle buttons have aria-label', () => {
+      render(<FlawFilterControl {...gamesTabProps} />);
+      expect(screen.getByTestId('filter-has-gem').getAttribute('aria-label')).toBe(
+        'Filter by gem moves',
+      );
+      expect(screen.getByTestId('filter-has-great').getAttribute('aria-label')).toBe(
+        'Filter by great moves',
+      );
+    });
+  });
+
   describe('tag family groups', () => {
     it('renders all 4 family groups (incl. Game Phase) after expanding Context', () => {
       renderExpanded();

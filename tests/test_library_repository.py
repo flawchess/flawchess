@@ -2586,3 +2586,189 @@ class TestDecidedLostSuppression:
             )
         finally:
             await db_session.execute(delete(Game).where(Game.id == game.id))
+
+
+# ---------------------------------------------------------------------------
+# Phase 175 Plan 01 (FILT-01) — has_gem / has_great filter (-k best_move_exists)
+# ---------------------------------------------------------------------------
+
+# Distinct user IDs so parallel -n auto runs cannot cross-contaminate with
+# other classes' fixtures in this module (mirrors _DL_USER_ID's rationale).
+_BMF_USER_ID = 99996
+_BMF_OTHER_USER_ID = 99994
+
+
+async def _seed_best_move(
+    session: AsyncSession,
+    *,
+    game: Game,
+    ply: int,
+    maia_prob: float,
+    best_cp: int | None = 250,
+    best_mate: int | None = None,
+    second_cp: int | None = 0,
+    second_mate: int | None = None,
+) -> None:
+    """Insert a game_best_moves row directly (no user_id column — position-scoped
+    candidacy, per GameBestMove's model docstring).
+
+    Defaults (best_cp=250 vs second_cp=0) produce a wide WHITE-mover expected-
+    score margin (~0.21, comfortably >= MISTAKE_DROP 0.10); pass a mirrored
+    negative best_cp when seeding a BLACK user's own-move row (matches
+    classify_best_move's black-mover sign-flip convention).
+    """
+    from app.models.game_best_move import GameBestMove
+
+    row = GameBestMove(
+        game_id=game.id,
+        ply=ply,
+        maia_prob=maia_prob,
+        best_cp=best_cp,
+        best_mate=best_mate,
+        second_cp=second_cp,
+        second_mate=second_mate,
+    )
+    session.add(row)
+    await session.flush()
+
+
+async def _matching_best_move_ids(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    has_gem: bool | None = None,
+    has_great: bool | None = None,
+    color: str | None = None,
+) -> set[int]:
+    """Run apply_game_filters with has_gem/has_great (+ optional color) and
+    return the matched game ids, mirroring _matching_game_ids' shape."""
+    stmt = select(Game.id).where(Game.user_id == user_id)
+    stmt = apply_game_filters(
+        stmt,
+        time_control=None,
+        platform=None,
+        rated=None,
+        opponent_type="all",
+        from_date=None,
+        to_date=None,
+        color=color,
+        has_gem=has_gem,
+        has_great=has_great,
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+    return set(rows)
+
+
+class TestBestMoveExistsFromTable:
+    """has_gem / has_great filter (FILT-01) — correlated EXISTS over
+    game_best_moves via best_move_exists_from_table, composed through
+    apply_game_filters (D-04/D-05/D-05a)."""
+
+    async def _ensure_users(self, session: AsyncSession) -> None:
+        from tests.conftest import ensure_test_user
+
+        await ensure_test_user(session, _BMF_USER_ID)
+        await ensure_test_user(session, _BMF_OTHER_USER_ID)
+
+    @pytest.mark.asyncio
+    async def test_best_move_exists_matches_user_own_move_excludes_opponent_move(
+        self, db_session: AsyncSession
+    ) -> None:
+        """A game where the USER played a gem move matches has_gem=True; a game
+        where only the OPPONENT played a gem move does NOT (D-04 player-parity
+        scoping) — proves the filter reads the player's own plies only."""
+        await self._ensure_users(db_session)
+
+        # White user, own gem at ply=2 (even -> white mover -> player).
+        game_own = await _seed_game(db_session, user_id=_BMF_USER_ID, user_color="white")
+        await _seed_best_move(db_session, game=game_own, ply=2, maia_prob=0.10)
+
+        # Same white user, gem at ply=1 (odd -> black mover -> OPPONENT).
+        game_opp = await _seed_game(db_session, user_id=_BMF_USER_ID, user_color="white")
+        await _seed_best_move(db_session, game=game_opp, ply=1, maia_prob=0.10)
+
+        matched = await _matching_best_move_ids(db_session, user_id=_BMF_USER_ID, has_gem=True)
+        assert game_own.id in matched, "game with the user's OWN gem must match has_gem"
+        assert game_opp.id not in matched, (
+            "game where only the OPPONENT played a gem must NOT match has_gem (D-04)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_best_move_exists_has_gem_and_has_great_is_a_union(
+        self, db_session: AsyncSession
+    ) -> None:
+        """has_gem=True AND has_great=True returns games with a gem OR a great
+        (union semantics), never the intersection (D-05)."""
+        await self._ensure_users(db_session)
+
+        game_gem = await _seed_game(db_session, user_id=_BMF_USER_ID, user_color="white")
+        await _seed_best_move(db_session, game=game_gem, ply=2, maia_prob=0.10)
+
+        game_great = await _seed_game(db_session, user_id=_BMF_USER_ID, user_color="white")
+        await _seed_best_move(db_session, game=game_great, ply=2, maia_prob=0.35)
+
+        game_neither = await _seed_game(db_session, user_id=_BMF_USER_ID, user_color="white")
+        await _seed_best_move(db_session, game=game_neither, ply=2, maia_prob=0.60)
+
+        matched = await _matching_best_move_ids(
+            db_session, user_id=_BMF_USER_ID, has_gem=True, has_great=True
+        )
+        assert game_gem.id in matched, "gem-only game must be in the union"
+        assert game_great.id in matched, "great-only game must be in the union"
+        assert game_neither.id not in matched, "neither-tier game must never match"
+
+        # has_gem alone must exclude the great-only game (not a silent OR-always).
+        gem_only = await _matching_best_move_ids(db_session, user_id=_BMF_USER_ID, has_gem=True)
+        assert game_gem.id in gem_only
+        assert game_great.id not in gem_only, "has_gem alone must not also match great"
+
+    @pytest.mark.asyncio
+    async def test_best_move_exists_composes_with_color_filter(
+        self, db_session: AsyncSession
+    ) -> None:
+        """has_gem composes with a simultaneous color filter (D-05a) — a black
+        user's own gem is excluded once color=white is added, proving the EXISTS
+        is ANDed onto the statement rather than replacing it."""
+        await self._ensure_users(db_session)
+
+        game_white = await _seed_game(db_session, user_id=_BMF_USER_ID, user_color="white")
+        await _seed_best_move(db_session, game=game_white, ply=2, maia_prob=0.10)
+
+        # Black user's own gem: black mover at odd ply, cp mirrored negative
+        # (matches classify_best_move's black-mover sign-flip convention).
+        game_black = await _seed_game(db_session, user_id=_BMF_USER_ID, user_color="black")
+        await _seed_best_move(
+            db_session, game=game_black, ply=1, maia_prob=0.10, best_cp=-250, second_cp=0
+        )
+
+        both = await _matching_best_move_ids(db_session, user_id=_BMF_USER_ID, has_gem=True)
+        assert game_white.id in both
+        assert game_black.id in both
+
+        white_only = await _matching_best_move_ids(
+            db_session, user_id=_BMF_USER_ID, has_gem=True, color="white"
+        )
+        assert game_white.id in white_only
+        assert game_black.id not in white_only, (
+            "has_gem must compose with color, not just pass through unfiltered (D-05a)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_best_move_exists_cross_user_isolation(self, db_session: AsyncSession) -> None:
+        """User A's has_gem query never surfaces user B's game (IDOR backstop,
+        T-175-01) — game_best_moves has no user_id column, so isolation must
+        come entirely from the Game.id correlation to the user-scoped outer
+        query, not from a user_id filter on the candidate table itself."""
+        await self._ensure_users(db_session)
+
+        game_a = await _seed_game(db_session, user_id=_BMF_USER_ID, user_color="white")
+        await _seed_best_move(db_session, game=game_a, ply=2, maia_prob=0.10)
+
+        game_b = await _seed_game(db_session, user_id=_BMF_OTHER_USER_ID, user_color="white")
+        await _seed_best_move(db_session, game=game_b, ply=2, maia_prob=0.10)
+
+        matched_as_a = await _matching_best_move_ids(db_session, user_id=_BMF_USER_ID, has_gem=True)
+        assert game_a.id in matched_as_a
+        assert game_b.id not in matched_as_a, (
+            "user A's has_gem query must not surface user B's game (IDOR)"
+        )

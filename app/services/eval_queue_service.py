@@ -21,7 +21,19 @@ pre-populated in eval_jobs for the backlog. This keeps the queue table lean
 returning users (SEED-046).
 
 When the primary lottery finds no candidate (no needs-engine games), a residual
-fallback picks a PV-backfill-only game (lichess_evals_at IS NOT NULL).
+fallback picks a best-move-backfill-only lichess-eval game (lichess_evals_at IS
+NOT NULL AND full_pv_completed_at IS NULL). Phase 174-07/SEED-109 broadened this
+fallback's predicate from full_evals_completed_at IS NULL to full_pv_completed_at
+IS NULL so it also covers the ~43k lichess-eval games that are already eval-complete
+(often stamped at import) but still lack our best_move/PV coverage.
+
+Tier 4b (TIER_BESTMOVE_BACKFILL, Phase 176 BACK-01) is a separate spare-capacity
+lottery ordered after tier-4 blob backfill in the bundled scope=None path: it
+picks a PV-complete, best-move-incomplete, non-lichess-eval, non-guest game
+(the engine-side sibling of the 174-07 residual fallback above) and requires
+BOTH EVAL_AUTO_DRAIN_ENABLED and the dedicated BEST_MOVE_BACKFILL_ENABLED gate
+(D-05) — best-move backfill is backend-only (Maia inference cannot run on the
+remote worker fleet) so it needs an independent kill-switch.
 
 Lease TTL:
   LEASE_TTL_SECONDS = 120
@@ -57,6 +69,7 @@ from app.models.eval_jobs import (
     TIER_EXPLICIT,
     TIER_IDLE_BACKLOG,
     TIER_BLOB_BACKFILL,
+    TIER_BESTMOVE_BACKFILL,
 )  # noqa: F401 — re-export constants for callers
 from app.models.game import Game
 from app.models.user import User
@@ -431,15 +444,27 @@ async def _claim_tier3_derived(
       needed.
 
     RESIDUAL FALLBACK (when no needs-engine candidate exists anywhere):
-      Pick a PV-backfill-only game (full_evals_completed_at IS NULL AND
-      lichess_evals_at IS NOT NULL AND is_guest=false) via the same ES game_weight
-      formula and ORDER BY -ln(random()) / game_weight LIMIT 1 (D-7: same
-      collision shape as Step 2 under contention; symmetry preferred over a
+      Pick a best-move-backfill-only lichess-eval game (full_pv_completed_at IS
+      NULL AND lichess_evals_at IS NOT NULL AND is_guest=false) via the same ES
+      game_weight formula and ORDER BY -ln(random()) / game_weight LIMIT 1 (D-7:
+      same collision shape as Step 2 under contention; symmetry preferred over a
       "left deterministic because rare" carve-out). The guest exclusion is
       expressed as an EXISTS subquery (equivalent to the old JOIN users — a
       game's user_id maps to exactly one user row, so no cardinality change)
       since _es_weighted_game_pick's base query is `FROM games g` alone.
       Returns is_lichess_eval_game=True for this path only.
+
+      Phase 174-07 (SEED-109 item 2): this predicate was BROADENED from
+      full_evals_completed_at IS NULL to full_pv_completed_at IS NULL — its
+      precedence (final fallback after the needs-engine Step 1/2 pick) is
+      UNCHANGED, so no new rung and no new starvation dynamic is introduced. The
+      new population is a strict superset of the old one (an eval-incomplete
+      lichess game is necessarily pv-incomplete too), so this purely ADDS the
+      eval-complete-but-pv-incomplete backlog (~43k games, many stamped
+      full_evals_completed_at at import) without losing any prior behavior.
+      Draining a picked game through the unified 174-06 full pass stamps
+      full_pv_completed_at, which drops it out of this same predicate on the
+      next draw — self-terminating, no operator script, no completion deadline.
 
     This replaces the old D-118-04 last_activity DESC winner-take-all ordering and
     drops the dead lichess_evals_at tiebreaker (live prod bug: it was the LAST ORDER
@@ -507,12 +532,14 @@ async def _claim_tier3_derived(
             # Needs-engine game → is_lichess_eval_game=False by construction.
             return game_id, picked_user_id, False
 
-    # Residual fallback: no needs-engine candidate exists → try PV-backfill-only games.
+    # Residual fallback: no needs-engine candidate exists → try best-move-backfill-only
+    # lichess-eval games (174-07/SEED-109: broadened from full_evals_completed_at IS NULL
+    # to full_pv_completed_at IS NULL — same precedence, strictly superset population).
     # Only path that returns is_lichess_eval_game=True.
     fallback_game_id = await _es_weighted_game_pick(
         session,
         game_where_sql=(
-            "g.full_evals_completed_at IS NULL"
+            "g.full_pv_completed_at IS NULL"
             " AND g.lichess_evals_at IS NOT NULL"
             " AND EXISTS ("
             "SELECT 1 FROM users u WHERE u.id = g.user_id AND u.is_guest = false"
@@ -636,6 +663,86 @@ async def _claim_tier4_blob(
     return game_id, picked_user_id
 
 
+async def _claim_tier4_bestmove(
+    session: AsyncSession,
+) -> tuple[int, int] | None:
+    """Tier-4b spare-capacity lottery: pick one PV-complete non-guest engine game
+    still missing its best-move pass (Phase 176 BACK-01, D-01/D-02/D-03).
+
+    Near-verbatim copy of _claim_tier4_blob's two-stage ES weighted (user ->
+    game) lottery, same plain-SELECT/no-lock shape, reusing the same
+    TIER4_*_HALF_LIFE_DAYS / TIER4_*_WEIGHT_FLOOR constants and GAME_TC_WEIGHTS
+    (no new tunables — Claude's discretion per CONTEXT.md, "reusing tier-4's is
+    the likely default").
+
+    Predicate (identical in BOTH the Stage-1 EXISTS-subquery and the Stage-2
+    WHERE): full_pv_completed_at IS NOT NULL AND best_moves_completed_at IS
+    NULL AND lichess_evals_at IS NULL. The `lichess_evals_at IS NULL` clause is
+    load-bearing (D-03): full_pv_completed_at is stamped for BOTH engine games
+    AND lichess-eval games (174-06 unified the pass), so omitting this clause
+    would make tier-4b contend with 174-07's residual fallback for the SAME
+    lichess-eval-game population — that population is explicitly OUT of this
+    rung's scope (D-03).
+
+    Stage 2's recency anchor is g.full_pv_completed_at (the column this
+    predicate gates on — the event that made the game eligible), mirroring
+    _claim_tier4_blob's anchor-on-eligibility-column pattern.
+
+    Returns (game_id, user_id) or None when no eligible game remains. Once a
+    game's best-move pass stamps best_moves_completed_at (Phase 176 D-01) it
+    stops matching this predicate and is never re-selected (self-termination).
+
+    No eval_jobs row is created — table-less, idempotent-by-construction
+    lottery, same as _claim_tier4_blob.
+
+    Security: all numeric lottery VALUES (tau, floor, tc weights, :picked_user)
+    are bound via the sa.text params dict inside _es_weighted_user_pick /
+    _es_weighted_game_pick — never f-string-interpolated (QUEUE-08 convention).
+    """
+    tau_u_seconds: float = TIER4_USER_RECENCY_HALF_LIFE_DAYS / math.log(2) * 86400.0
+    floor_u: float = TIER4_USER_WEIGHT_FLOOR
+    tau_g_seconds: float = TIER4_GAME_RECENCY_HALF_LIFE_DAYS / math.log(2) * 86400.0
+    floor_g: float = TIER4_GAME_WEIGHT_FLOOR
+
+    # Stage 1: ES weighted user pick over users with an eligible best-move-pending game.
+    picked_user_id = await _es_weighted_user_pick(
+        session,
+        candidate_exists_sql="""
+                SELECT 1 FROM games g
+                WHERE g.user_id = u.id
+                  AND g.full_pv_completed_at IS NOT NULL
+                  AND g.best_moves_completed_at IS NULL
+                  AND g.lichess_evals_at IS NULL
+        """,
+        recency_col_sql="u.last_activity",
+        tau_seconds=tau_u_seconds,
+        floor=floor_u,
+    )
+    if picked_user_id is None:
+        return None
+
+    # Stage 2: ES weighted game pick for the picked user — full_pv_completed_at
+    # recency AND TC priority, mirroring tier-4-blob's game pick.
+    game_id = await _es_weighted_game_pick(
+        session,
+        game_where_sql=(
+            "g.user_id = :picked_user"
+            " AND g.full_pv_completed_at IS NOT NULL"
+            " AND g.best_moves_completed_at IS NULL"
+            " AND g.lichess_evals_at IS NULL"
+        ),
+        recency_col_sql="g.full_pv_completed_at",
+        tau_seconds=tau_g_seconds,
+        game_floor=floor_g,
+        tc_weights=GAME_TC_WEIGHTS,
+        extra_params={"picked_user": picked_user_id},
+    )
+    if game_id is None:
+        return None
+
+    return game_id, picked_user_id
+
+
 # ─── Public API ───────────────────────────────────────────────────────────────
 
 
@@ -746,7 +853,25 @@ async def claim_eval_job(
         blob_pick = await _claim_tier4_blob(session)
 
     if blob_pick is None:
-        return None
+        # Tier-4 blob empty -> try tier-4b best-move backfill (Phase 176
+        # BACK-01, D-02/D-05). EVAL_AUTO_DRAIN_ENABLED is already True at this
+        # point (checked above); only the dedicated gate needs checking here,
+        # BEFORE the DB round-trip (avoids two wasted queries per idle tick
+        # when disabled).
+        if not settings.BEST_MOVE_BACKFILL_ENABLED:
+            return None
+        async with async_session_maker() as session:
+            bestmove_pick = await _claim_tier4_bestmove(session)
+        if bestmove_pick is None:
+            return None
+        game_id4b, user_id4b = bestmove_pick
+        return ClaimedJob(
+            game_id=game_id4b,
+            user_id=user_id4b,
+            tier=TIER_BESTMOVE_BACKFILL,
+            is_lichess_eval_game=False,  # correct by construction (predicate excludes lichess-eval games)
+            job_id=None,  # table-less lottery, no eval_jobs row
+        )
 
     game_id4, user_id4 = blob_pick
     return ClaimedJob(
@@ -782,11 +907,14 @@ async def report_job_complete(job_id: int) -> None:
 async def release_job(job_id: int) -> None:
     """Release a single leased eval_job back to 'pending' so it can be re-claimed.
 
-    Used by the remote lease handler when it claims a tier-1/tier-2 job it cannot
-    process itself (Phase 121: lichess-eval games are deferred to the server pool,
-    which does the flaw-refutation PV backfill — D-4 / D-117-13). Without this the
-    row would sit 'leased' for the full LEASE_TTL_SECONDS before the stale-lease
-    sweep frees it, stalling the very click-to-pickup latency Phase 121 improves.
+    Used by the remote lease handler (`/atomic-lease`) when it claims a tier-1/
+    tier-2 job it cannot hand a real lease payload to — currently only the
+    over-cap sentinel path (a lease that would exceed MAX_SUBMIT_EVALS positions,
+    147-03/SEED-073). Without this the row would sit 'leased' for the full
+    LEASE_TTL_SECONDS before the stale-lease sweep frees it, stalling the very
+    click-to-pickup latency Phase 121 improves. (Historical: Phase 121 also used
+    this for a lichess-eval-game 204-defer path; that path was retired in Phase
+    174-06/SEED-109 — lichess-eval games now lease and submit like any other game.)
 
     Short session; guarded WHERE status='leased' so it is a no-op if the lease was
     already swept/completed/re-claimed (cannot disturb an unrelated job state).

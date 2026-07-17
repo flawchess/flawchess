@@ -1446,21 +1446,27 @@ class TestFlawPv:
         full_drain_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """D-117-13 / SEED-054: analyzed lichess games get a flaw PV + best_move at BOTH
-        flaw plies even though every ply already carries a lichess %eval.
+        """D-117-13 / SEED-054 (adapted for Phase 174-06 Task 1's unified full pass):
+        analyzed lichess games get a flaw PV + best_move at BOTH flaw plies even
+        though every ply already carries a lichess %eval.
 
         Regression guard for the prod-observed 0% flaw-PV coverage on analyzed
-        lichess games: the is_lichess_eval_game eval-preservation filter dropped every
-        flaw ply before the engine gather, so neither the refutation PV nor the
-        better-alternative best_move was captured (lichess supplies %eval but no PV and
-        no best_move). The D-117-13 / SEED-054 fix pre-classifies flaws and exempts
-        {flaw_ply, flaw_ply + 1} from the filter.
+        lichess games: the is_lichess_eval_game eval-preservation filter used to drop
+        every flaw ply before the engine gather, so neither the refutation PV nor the
+        better-alternative best_move was captured (lichess supplies %eval but no PV
+        and no best_move). D-117-13/SEED-054 originally fixed this with a targeted
+        pre-classify-and-exempt mechanism ({flaw_ply, flaw_ply + 1} only); Phase
+        174-06 Task 1 retires that whole mechanism in favor of engine-evaluating
+        EVERY ply (SEED-109) — the flaw-PV guarantee this test protects now falls out
+        of the general full pass rather than a special case.
 
         Setup: all 6 plies carry a pre-existing %eval encoding a white blunder at
-        ply 2. Both ply 2 (flaw_ply) and ply 3 (flaw_ply + 1) should be
-        engine-evaluated (for best_move + PV); the other four plies are preserved
-        without an engine call. Before the fix, the engine was called 0 times (D-117)
-        or only at ply 3 (post-D-117-13, pre-SEED-054) and pv at ply 2 stayed NULL.
+        ply 2. Under the unified full pass every one of the 6 plies is
+        engine-evaluated (for best_move); the flaw-PV write (a SEPARATE, always-
+        flaw-only mechanism — D-117-02 — unrelated to how many plies got engine
+        calls) still only lands `game_positions.pv` at ply 2 (flaw_ply) and ply 3
+        (flaw_ply + 1). Before D-117-13 the engine was called 0 times (D-117); after
+        D-117-13/before this phase it was called only at the 2 flaw-adjacent plies.
         """
         from app.models.game_position import GamePosition
 
@@ -1510,11 +1516,13 @@ class TestFlawPv:
             processed = await drain_module._full_drain_tick()
             assert processed is True, "Tick must report a processed game"
 
-            # Exactly two engine calls: flaw plies 2 and 3 (D-117-13 / SEED-054). The
-            # other four plies are preserved without burning a 1M-node eval.
-            assert mock_evaluate.await_count == 2, (
-                "Both flaw plies (flaw_ply and flaw_ply + 1) should be engine-evaluated "
-                f"for an analyzed game — got {mock_evaluate.await_count} engine calls."
+            # Phase 174-06 Task 1: ALL 6 non-terminal plies are now engine-evaluated
+            # (the targets filter + flaw-ply exemption are retired) — not just the 2
+            # flaw-adjacent plies the pre-174-06 filter used to leave visible.
+            assert mock_evaluate.await_count == 6, (
+                "Every non-terminal ply of a lichess-eval game must be "
+                f"engine-evaluated under the unified full pass — got "
+                f"{mock_evaluate.await_count} engine calls."
             )
 
             async with full_drain_session_maker() as verify:
@@ -1555,7 +1563,139 @@ class TestFlawPv:
             for ply in [0, 1, 4, 5]:
                 assert by_ply.get(ply, (None, None, None))[0] is None, (
                     f"game_positions.pv at ply {ply} must be NULL — pv is only written "
-                    "at flaw plies (ply N and ply N+1; D-117-02 / SEED-054)."
+                    "at flaw plies (ply N and ply N+1; D-117-02 / SEED-054), a "
+                    "SEPARATE mechanism from best_move which is now written at every "
+                    "engine-evaluated ply (Phase 174-06)."
+                )
+                # Phase 174-06: best_move IS now populated beyond the flaw-adjacent
+                # plies — every ply the unified full pass covers.
+                assert by_ply.get(ply, (None, None, None))[2] == "g8f6", (
+                    f"game_positions.best_move at ply {ply} must be set under the "
+                    "unified full pass (Phase 174-06 Task 1), not just at flaw plies."
+                )
+            for ply in range(6):
+                assert by_ply.get(ply, (None, None, None))[1] == cp_by_ply[ply], (
+                    f"The stored lichess %eval at ply {ply} must be preserved "
+                    "unchanged by the full pass (SEED-109 item 4)."
+                )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_lichess_game_forced_null_best_move_is_a_hole_not_false_completion(
+        self,
+        full_drain_test_user_117: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Phase 174-06 / SEED-109 item 3: hole-counting parity — a lichess-eval
+        game whose full pass has exactly one ply's engine call genuinely fail
+        (best_move None) must NOT get `full_pv_completed_at` (or
+        `full_evals_completed_at`) stamped on that tick, and must be left
+        pending for a bounded retry (SEED-045 Path B), exactly like an engine
+        game's hole. Pre-fix, the `is_lichess_eval_game` branch in
+        `_apply_full_eval_results` never incremented `failed_ply_count`, so this
+        same scenario would have silently stamped complete with a permanent
+        NULL best_move at ply 5 — the exact self-terminating-out-of-the-174-07-
+        lottery trap this fix closes.
+        """
+        from app.models.game import Game
+        from app.models.game_position import GamePosition
+
+        now = datetime.now(timezone.utc)
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_117,
+            pgn=_SIX_PLY_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=None,
+            lichess_evals_at=now,
+        )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch,
+            full_drain_session_maker,
+            game_id,
+            full_drain_test_user_117,
+            is_lichess_eval_game=True,
+        )
+
+        # 6 non-terminal plies, engine-evaluated in ply order (dedup_map is always
+        # empty for lichess games, so engine_targets == targets == plies 0-5).
+        # Ply 5's call is forced to fail (best_move=None) — every other ply succeeds.
+        mock_evaluate = AsyncMock(
+            side_effect=[
+                (20, None, "e2e4", "e2e4", None, None, ""),
+                (20, None, "e7e5", "e7e5", None, None, ""),
+                (30, None, "g1f3", "g1f3", None, None, ""),
+                (30, None, "b8c6", "b8c6", None, None, ""),
+                (60, None, "f1c4", "f1c4", None, None, ""),
+                (None, None, None, None, None, None, None),  # ply 5: forced failure
+            ]
+        )
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
+
+        cp_by_ply = [20, 30, -500, -480, 60, 30]
+        gp_rows = [
+            {
+                "ply": i,
+                "full_hash": 0xF06_0000 + i,
+                "eval_cp": cp_by_ply[i],
+                "eval_mate": None,
+            }
+            for i in range(6)
+        ]
+        await _insert_game_positions(
+            full_drain_session_maker, full_drain_test_user_117, game_id, gp_rows
+        )
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is False, (
+                "A tick with a genuine engine-covered hole must NOT report "
+                "'processed' — the game is left pending for retry (Path B)."
+            )
+
+            async with full_drain_session_maker() as verify:
+                game_row = (
+                    await verify.execute(
+                        select(
+                            Game.full_evals_completed_at,
+                            Game.full_pv_completed_at,
+                            Game.full_eval_attempts,
+                        ).where(Game.id == game_id)
+                    )
+                ).one()
+                pos_rows = await verify.execute(
+                    select(GamePosition.ply, GamePosition.best_move, GamePosition.eval_cp)
+                    .where(GamePosition.game_id == game_id)
+                    .order_by(GamePosition.ply)
+                )
+                by_ply = {r[0]: (r[1], r[2]) for r in pos_rows.all()}
+
+            full_evals_at, full_pv_at, attempts = game_row
+            assert full_evals_at is None, (
+                "full_evals_completed_at must NOT be stamped while a genuine "
+                "engine-covered hole remains (SEED-045 Path B)."
+            )
+            assert full_pv_at is None, (
+                "full_pv_completed_at must NOT be stamped while a genuine "
+                "engine-covered hole remains — this is the exact silent "
+                "false-completion trap the hole-counting fix closes."
+            )
+            assert attempts == 1, (
+                f"full_eval_attempts must increment on a Path B tick, got {attempts}"
+            )
+            assert by_ply.get(5, (None, None))[0] is None, (
+                "ply 5's best_move must stay NULL after the forced engine failure "
+                "(the hole itself), not silently defaulted to something else."
+            )
+            for ply in range(5):
+                assert by_ply.get(ply, (None, None))[0] is not None, (
+                    f"ply {ply} must still get its best_move written even though a "
+                    "DIFFERENT ply in the same tick holed (SEED-044 independence)."
+                )
+                assert by_ply.get(ply, (None, None))[1] == cp_by_ply[ply], (
+                    f"The stored lichess %eval at ply {ply} must stay preserved "
+                    "even on a Path B (holed) tick."
                 )
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
@@ -1674,6 +1814,542 @@ class TestFlawPv:
             assert by_ply.get(2, (None, None))[0] is not None, (
                 "game_positions.pv at ply 2 (flaw_ply) must be set (engine-evaluated, "
                 "not dedup'd) — SEED-054 ideal-continuation pv."
+            )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+
+# ─── Phase 174-07 / SEED-109 item 2: lichess best-move backfill ───────────────
+
+
+class TestLichessBestMoveBackfill:
+    """174-07 Task 2: a lichess-eval backlog game (full_pv_completed_at IS NULL)
+    selected by the broadened residual fallback drains through the unified
+    174-06 full pass, gets game_best_moves coverage, keeps its stored lichess
+    %evals untouched, and exits the backfill predicate afterward
+    (self-termination) — all proven end-to-end in one tick.
+    """
+
+    async def test_backfill_pick_drains_gets_best_moves_and_self_terminates(
+        self,
+        full_drain_test_user_117: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """End-to-end: the REAL claim_eval_job -> _claim_tier3_derived residual
+        fallback (not mocked) selects a lichess backlog game, _full_drain_tick
+        drains it, and afterward the game no longer matches the 174-07 backfill
+        predicate.
+
+        PGN: "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. h3 a6 *" — the Italian Game
+        main line (plies 0-5) is fully booked (find_opening_ply_count == 6),
+        so plies 6 (h3) and 7 (a6) are the only out-of-book candidates. Ply 6
+        is engineered to pass the GEMS-02 inaccuracy gate (played == best,
+        wide margin); ply 7 is engineered to fail it (sub-margin) — proving
+        the gate stays selective even under the backfill lane.
+        """
+        from app.models.game import Game
+        from app.models.game_best_move import GameBestMove
+        from app.models.game_position import GamePosition
+        import app.services.eval_apply as eval_apply_module
+        import app.services.eval_drain as drain_module
+        import app.services.eval_queue_service as queue_module
+
+        backfill_pgn = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. h3 a6 *"
+
+        now = datetime.now(timezone.utc)
+        # Backlog game: already eval-complete (as a lichess game commonly is at
+        # import) but PV/best-move-incomplete — the exact 174-07 target row.
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_117,
+            pgn=backfill_pgn,
+            evals_completed_at=now,
+            full_evals_completed_at=now,
+            full_pv_completed_at=None,
+            lichess_evals_at=now,
+        )
+        async with full_drain_session_maker() as session:
+            await session.execute(
+                sa.update(Game.__table__)  # ty: ignore[invalid-argument-type]
+                .where(Game.id == game_id)
+                .values(white_rating=1500, black_rating=1500)
+            )
+            await session.commit()
+
+        # Route the REAL claim_eval_job's internal sessions (eval_queue_service)
+        # to the test DB, and enable auto-drain (default False).
+        monkeypatch.setattr(queue_module, "async_session_maker", full_drain_session_maker)
+        monkeypatch.setattr(queue_module.settings, "EVAL_AUTO_DRAIN_ENABLED", True)
+        # Drain + eval_apply sessions to the test DB, Sentry suppressed, yield
+        # gate forced open (mirrors _patch_drain_for_tick_tests but WITHOUT
+        # mocking claim_eval_job — this test drives the real selection path).
+        monkeypatch.setattr(drain_module, "async_session_maker", full_drain_session_maker)
+        monkeypatch.setattr(eval_apply_module, "async_session_maker", full_drain_session_maker)
+        monkeypatch.setattr(drain_module.sentry_sdk, "capture_exception", lambda *a, **kw: None)
+        monkeypatch.setattr(drain_module.sentry_sdk, "capture_message", lambda *a, **kw: None)
+        monkeypatch.setattr(drain_module.sentry_sdk, "set_tag", lambda *a, **kw: None)
+        monkeypatch.setattr(drain_module.sentry_sdk, "set_context", lambda *a, **kw: None)
+        monkeypatch.setattr(
+            drain_module,
+            "_any_active_import_or_entry_ply_pending",
+            AsyncMock(return_value=False),
+        )
+        monkeypatch.setattr(drain_module, "_build_flaw_multipv2_blobs", AsyncMock(return_value={}))
+        monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.15)
+
+        # 8 non-terminal plies (0-7). Plies 0-5 are the booked Italian Game main
+        # line (best_uci given but irrelevant — book_plies excludes them from
+        # candidacy regardless of played==best). Ply 6 (h2h3, white) is the
+        # out-of-book played==best candidate with a wide margin (passes GEMS-02,
+        # mirrors test_eval_apply.py's known-good 300/-100 example). Ply 7
+        # (a7a6, black) is out-of-book played==best but sub-margin (10/5,
+        # mirrors test_eval_apply.py's known-fail example) — must NOT yield a row.
+        mock_evaluate = AsyncMock(
+            side_effect=[
+                (20, None, "e2e4", "e2e4", None, None, ""),
+                (20, None, "e7e5", "e7e5", None, None, ""),
+                (30, None, "g1f3", "g1f3", None, None, ""),
+                (30, None, "b8c6", "b8c6", None, None, ""),
+                (60, None, "f1c4", "f1c4", None, None, ""),
+                (60, None, "f8c5", "f8c5", None, None, ""),
+                (300, None, "h2h3", "h2h3", -100, None, "e7e6"),  # ply 6: candidate
+                (10, None, "a7a6", "a7a6", 5, None, "b7b6"),  # ply 7: sub-margin
+            ]
+        )
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
+
+        # Stored lichess %evals for all 8 plies — must be preserved unchanged.
+        cp_by_ply = [15, 25, 35, 45, 55, 65, 75, 85]
+        gp_rows = [
+            {"ply": i, "full_hash": 0xB0F1_0000 + i, "eval_cp": cp_by_ply[i], "eval_mate": None}
+            for i in range(8)
+        ]
+        await _insert_game_positions(
+            full_drain_session_maker, full_drain_test_user_117, game_id, gp_rows
+        )
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is True, (
+                "Tick must report a processed game — the backlog game must be "
+                "selected by the real claim_eval_job/residual fallback and "
+                "drained without holes."
+            )
+            assert mock_evaluate.await_count == 8, (
+                "All 8 non-terminal plies of the lichess backlog game must be "
+                f"engine-evaluated under the unified full pass; got "
+                f"{mock_evaluate.await_count} engine calls."
+            )
+
+            async with full_drain_session_maker() as verify:
+                game_row = (
+                    await verify.execute(
+                        select(Game.full_pv_completed_at, Game.full_evals_completed_at).where(
+                            Game.id == game_id
+                        )
+                    )
+                ).one()
+                pos_rows = await verify.execute(
+                    select(GamePosition.ply, GamePosition.eval_cp, GamePosition.best_move)
+                    .where(GamePosition.game_id == game_id)
+                    .order_by(GamePosition.ply)
+                )
+                pos_by_ply = {r[0]: (r[1], r[2]) for r in pos_rows.all()}
+                bm_rows = (
+                    (
+                        await verify.execute(
+                            select(GameBestMove).where(GameBestMove.game_id == game_id)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+
+            full_pv_at, full_evals_at = game_row
+            assert full_pv_at is not None, (
+                "full_pv_completed_at must be stamped after a hole-free tick (Path A)."
+            )
+            assert full_evals_at is not None
+
+            # (b) stored lichess %evals preserved unchanged at every ply.
+            for i in range(8):
+                assert pos_by_ply.get(i, (None, None))[0] == cp_by_ply[i], (
+                    f"ply {i}: stored lichess %eval must be preserved unchanged "
+                    f"(SEED-109 item 4); got {pos_by_ply.get(i, (None, None))[0]!r}"
+                )
+
+            # (a) game_best_moves: exactly one row, at ply 6 (the wide-margin
+            # out-of-book played==best candidate). Ply 7 (sub-margin) must NOT
+            # produce a row — the GEMS-02 gate stays selective under backfill.
+            assert len(bm_rows) == 1, (
+                f"Expected exactly 1 game_best_moves row (ply 6 only); got "
+                f"{len(bm_rows)}: {[(r.ply) for r in bm_rows]}"
+            )
+            bm_row = bm_rows[0]
+            assert bm_row.ply == 6
+            assert bm_row.best_cp == 300
+            assert bm_row.second_cp == -100
+
+            # (c) self-termination: the 174-07 backfill predicate no longer
+            # matches this game — the exact Task 1 predicate, checked directly
+            # against this game_id (not via the lottery, to stay deterministic).
+            async with full_drain_session_maker() as verify:
+                still_matches = (
+                    await verify.execute(
+                        select(Game.id).where(
+                            Game.id == game_id,
+                            Game.lichess_evals_at.isnot(None),
+                            Game.full_pv_completed_at.is_(None),
+                        )
+                    )
+                ).scalar_one_or_none()
+            assert still_matches is None, (
+                "After drain, this game must no longer match the 174-07 backfill "
+                "predicate (lichess_evals_at IS NOT NULL AND full_pv_completed_at "
+                "IS NULL) — self-termination is broken if it does."
+            )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_double_pick_of_same_backlog_game_does_not_duplicate_best_moves(
+        self,
+        full_drain_test_user_117: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Concurrency safety (D-7 residual-duplicate acceptance): two workers
+        picking the SAME backlog game (double-claim under the plain, non-locking
+        residual-fallback SELECT) must not produce duplicate game_best_moves
+        rows — the (game_id, ply) upsert makes re-processing idempotent.
+
+        Simulated by forcing claim_eval_job to return the same game_id twice
+        (mocked claim, mirroring _patch_drain_for_tick_tests) and running two
+        full drain ticks back to back.
+        """
+        from app.models.game import Game
+        from app.models.game_best_move import GameBestMove
+        from app.services.eval_queue_service import ClaimedJob
+
+        now = datetime.now(timezone.utc)
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_117,
+            pgn="1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. h3 a6 *",
+            evals_completed_at=now,
+            full_evals_completed_at=now,
+            full_pv_completed_at=None,
+            lichess_evals_at=now,
+        )
+        async with full_drain_session_maker() as session:
+            await session.execute(
+                sa.update(Game.__table__)  # ty: ignore[invalid-argument-type]
+                .where(Game.id == game_id)
+                .values(white_rating=1500, black_rating=1500)
+            )
+            await session.commit()
+
+        cp_by_ply = [15, 25, 35, 45, 55, 65, 75, 85]
+        gp_rows = [
+            {"ply": i, "full_hash": 0xB0F2_0000 + i, "eval_cp": cp_by_ply[i], "eval_mate": None}
+            for i in range(8)
+        ]
+        await _insert_game_positions(
+            full_drain_session_maker, full_drain_test_user_117, game_id, gp_rows
+        )
+
+        def _engine_mock() -> AsyncMock:
+            return AsyncMock(
+                side_effect=[
+                    (20, None, "e2e4", "e2e4", None, None, ""),
+                    (20, None, "e7e5", "e7e5", None, None, ""),
+                    (30, None, "g1f3", "g1f3", None, None, ""),
+                    (30, None, "b8c6", "b8c6", None, None, ""),
+                    (60, None, "f1c4", "f1c4", None, None, ""),
+                    (60, None, "f8c5", "f8c5", None, None, ""),
+                    (300, None, "h2h3", "h2h3", -100, None, "e7e6"),
+                    (10, None, "a7a6", "a7a6", 5, None, "b7b6"),
+                ]
+            )
+
+        import app.services.eval_apply as eval_apply_module
+
+        monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.15)
+
+        try:
+            for _ in range(2):
+                drain_module = _patch_drain_for_tick_tests(
+                    monkeypatch,
+                    full_drain_session_maker,
+                    game_id,
+                    full_drain_test_user_117,
+                    is_lichess_eval_game=True,
+                )
+                # _patch_drain_for_tick_tests always builds a fresh ClaimedJob and
+                # stubs _build_flaw_multipv2_blobs — override the engine mock only.
+                monkeypatch.setattr(
+                    drain_module.engine_service, "evaluate_nodes_multipv2", _engine_mock()
+                )
+                monkeypatch.setattr(
+                    drain_module,
+                    "claim_eval_job",
+                    AsyncMock(
+                        return_value=ClaimedJob(
+                            game_id=game_id,
+                            user_id=full_drain_test_user_117,
+                            tier=3,
+                            is_lichess_eval_game=True,
+                            job_id=None,
+                        )
+                    ),
+                )
+                processed = await drain_module._full_drain_tick()
+                assert processed is True
+
+            async with full_drain_session_maker() as verify:
+                bm_rows = (
+                    (
+                        await verify.execute(
+                            select(GameBestMove).where(GameBestMove.game_id == game_id)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+
+            assert len(bm_rows) == 1, (
+                "Two picks of the SAME backlog game must upsert on (game_id, ply), "
+                f"not duplicate — expected exactly 1 row, got {len(bm_rows)}."
+            )
+            assert bm_rows[0].ply == 6
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+
+# ─── Phase 176 BACK-01: tier-4b best-move backfill ───────────────────────────
+
+
+class TestBestMoveBackfill:
+    """Phase 176 Plan 01: an engine-side (non-lichess) game claimed by tier-4b
+    drains through the full pipeline end-to-end, gets `best_moves_completed_at`
+    stamped (self-termination) — and, the crux, a Maia-absent backend never
+    stamps it even when best-move candidate rows were otherwise produced
+    (guardrail; mutation-test-style negative assertion per project MEMORY.md).
+    """
+
+    _BACKFILL_PGN: str = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. h3 a6 *"
+
+    @staticmethod
+    def _engine_mock() -> AsyncMock:
+        """8 non-terminal plies (Italian Game main line booked through ply 5;
+        ply 6 h2h3 is the wide-margin out-of-book played==best candidate; ply 7
+        a7a6 is out-of-book played==best but sub-margin) + 1 terminal eval-donor
+        call (engine games pass include_terminal=True, unlike lichess-eval
+        games — eval_drain.py:726)."""
+        return AsyncMock(
+            side_effect=[
+                (20, None, "e2e4", "e2e4", None, None, ""),
+                (20, None, "e7e5", "e7e5", None, None, ""),
+                (30, None, "g1f3", "g1f3", None, None, ""),
+                (30, None, "b8c6", "b8c6", None, None, ""),
+                (60, None, "f1c4", "f1c4", None, None, ""),
+                (60, None, "f8c5", "f8c5", None, None, ""),
+                (300, None, "h2h3", "h2h3", -100, None, "e7e6"),  # ply 6: candidate
+                (10, None, "a7a6", "a7a6", 5, None, "b7b6"),  # ply 7: sub-margin
+                (5, None, "a2a3", "a2a3", None, None, ""),  # terminal donor
+            ]
+        )
+
+    async def _seed_backfill_game(
+        self,
+        full_drain_test_user_117: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        full_hash_base: int,
+    ) -> int:
+        from app.models.game import Game
+
+        now = datetime.now(timezone.utc)
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_117,
+            pgn=self._BACKFILL_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=now,
+            full_pv_completed_at=now,
+            lichess_evals_at=None,
+        )
+        async with full_drain_session_maker() as session:
+            await session.execute(
+                sa.update(Game.__table__)  # ty: ignore[invalid-argument-type]
+                .where(Game.id == game_id)
+                .values(white_rating=1500, black_rating=1500)
+            )
+            await session.commit()
+        cp_by_ply = [15, 25, 35, 45, 55, 65, 75, 85]
+        gp_rows = [
+            {"ply": i, "full_hash": full_hash_base + i, "eval_cp": cp_by_ply[i], "eval_mate": None}
+            for i in range(8)
+        ]
+        await _insert_game_positions(
+            full_drain_session_maker, full_drain_test_user_117, game_id, gp_rows
+        )
+        return game_id
+
+    async def test_backfill_pick_drains_and_stamps_best_moves_completed_at(
+        self,
+        full_drain_test_user_117: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A tier-4b-claimed engine game drains end-to-end: gets a
+        game_best_moves row at its wide-margin out-of-book played==best ply,
+        and best_moves_completed_at is stamped afterward with a Maia session
+        present (self-termination — the predicate no longer matches this
+        game_id after the tick)."""
+        from app.models.eval_jobs import TIER_BESTMOVE_BACKFILL
+        from app.models.game import Game
+        from app.models.game_best_move import GameBestMove
+        import app.services.eval_apply as eval_apply_module
+        from app.services import maia_engine
+
+        game_id = await self._seed_backfill_game(
+            full_drain_test_user_117, full_drain_session_maker, 0xB1F1_0000
+        )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch,
+            full_drain_session_maker,
+            game_id,
+            full_drain_test_user_117,
+            is_lichess_eval_game=False,
+            tier=TIER_BESTMOVE_BACKFILL,
+        )
+        monkeypatch.setattr(maia_engine, "_session", object())  # Maia present (sentinel)
+        monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.15)
+        monkeypatch.setattr(
+            drain_module.engine_service, "evaluate_nodes_multipv2", self._engine_mock()
+        )
+
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is True, "Tick must report a processed game"
+
+            async with full_drain_session_maker() as verify:
+                game_row = (
+                    await verify.execute(
+                        select(Game.best_moves_completed_at, Game.full_pv_completed_at).where(
+                            Game.id == game_id
+                        )
+                    )
+                ).one()
+                bm_rows = (
+                    (
+                        await verify.execute(
+                            select(GameBestMove).where(GameBestMove.game_id == game_id)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+
+            best_moves_at, full_pv_at = game_row
+            assert best_moves_at is not None, (
+                "best_moves_completed_at must be stamped after a hole-free tick "
+                "with a Maia session present (Path A)."
+            )
+            assert full_pv_at is not None
+
+            assert len(bm_rows) == 1, (
+                f"Expected exactly 1 game_best_moves row (ply 6 only); got "
+                f"{len(bm_rows)}: {[r.ply for r in bm_rows]}"
+            )
+            assert bm_rows[0].ply == 6
+
+            # Self-termination: the tier-4b predicate no longer matches this game_id.
+            async with full_drain_session_maker() as verify:
+                still_matches = (
+                    await verify.execute(
+                        select(Game.id).where(
+                            Game.id == game_id,
+                            Game.full_pv_completed_at.isnot(None),
+                            Game.best_moves_completed_at.is_(None),
+                            Game.lichess_evals_at.is_(None),
+                        )
+                    )
+                ).scalar_one_or_none()
+            assert still_matches is None, (
+                "After drain, this game must no longer match the tier-4b backfill "
+                "predicate (full_pv_completed_at IS NOT NULL AND "
+                "best_moves_completed_at IS NULL AND lichess_evals_at IS NULL) — "
+                "self-termination is broken if it does."
+            )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_maia_absent_never_stamps_best_moves_completed_at(
+        self,
+        full_drain_test_user_117: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """GUARDRAIL (the crux, D-01): with maia_engine._session forced to None,
+        best_moves_completed_at MUST stay NULL after the drain tick even though
+        score_move is mocked to SUCCEED (best_move_rows would be non-empty if
+        row-count alone gated the stamp) — proving the stamp is independently
+        gated by maia_engine.is_maia_available(), never inferred from row
+        count (RESEARCH Pitfall 1: _build_best_move_candidates returns [] for
+        BOTH 'Maia ran, zero candidates' AND 'Maia absent', so row count is a
+        structurally unsound availability signal). The game stays re-drainable.
+
+        Positive counterpart (session present -> stamp fires) is proven by
+        test_backfill_pick_drains_and_stamps_best_moves_completed_at above —
+        per project MEMORY.md "Mutation-test gap closures", both the negative
+        and positive assertions are required, not just the positive path.
+        """
+        from app.models.game import Game
+        from app.models.eval_jobs import TIER_BESTMOVE_BACKFILL
+        import app.services.eval_apply as eval_apply_module
+        from app.services import maia_engine
+
+        game_id = await self._seed_backfill_game(
+            full_drain_test_user_117, full_drain_session_maker, 0xB1F2_0000
+        )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch,
+            full_drain_session_maker,
+            game_id,
+            full_drain_test_user_117,
+            is_lichess_eval_game=False,
+            tier=TIER_BESTMOVE_BACKFILL,
+        )
+
+        # THE GUARDRAIL SETUP: Maia session forced ABSENT, but score_move is
+        # mocked to SUCCEED anyway. If the stamp were (incorrectly) gated by
+        # best_move_rows being non-empty rather than is_maia_available(), this
+        # test would wrongly observe the stamp fire.
+        monkeypatch.setattr(maia_engine, "_session", None)
+        monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.15)
+        monkeypatch.setattr(
+            drain_module.engine_service, "evaluate_nodes_multipv2", self._engine_mock()
+        )
+
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is True, "Tick must report a processed game"
+
+            async with full_drain_session_maker() as verify:
+                best_moves_at = (
+                    await verify.execute(
+                        select(Game.best_moves_completed_at).where(Game.id == game_id)
+                    )
+                ).scalar_one()
+
+            assert best_moves_at is None, (
+                "GUARDRAIL VIOLATION: best_moves_completed_at must stay NULL when "
+                "maia_engine._session is None (Maia-absent backend), even though "
+                "score_move was mocked to succeed. Stamping here would "
+                "permanently lock this game out of the tier-4b lottery on a "
+                "Maia-absent backend (D-01 correctness requirement)."
             )
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
@@ -3349,6 +4025,120 @@ class TestBatchedWriteRegression:
             assert row[1] == "e2e4", (
                 "existing best_move must be preserved when the eval-bearing batched "
                 "UPDATE carries best_move=None (COALESCE no-clobber, FLAWCHESS-6B)"
+            )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_lichess_preserve_existing_evals_skips_already_resolved_hole(
+        self,
+        full_drain_test_user_jq1: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """WR-01: preserve_existing_evals parity for the lichess-eval branch.
+
+        A lichess-eval game always re-leases its FULL position set, so an
+        already-resolved ply can be re-submitted and transiently re-fail
+        (best_move None) on the SAME ply that already carries a good stored
+        best_move. Under preserve_existing_evals=True that is NOT a fresh hole
+        and must not be counted (mirrors _is_engine_hole's existing-eval guard),
+        else a game with complete best-move coverage burns an unneeded Path-B
+        retry. lichess rows always have a non-NULL %eval from import, so
+        `stored_best_move` — not eval_cp/eval_mate — is the "already resolved"
+        signal.
+
+        Mutation guard: reverting the `elif _is_lichess_best_move_hole(...)`
+        gate back to an unconditional `else: failed_ply_count += 1` makes the
+        preserve+stored-best_move case return 1, failing this test.
+        """
+        from app.services import eval_drain
+
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_jq1,
+            pgn=_TWO_MOVE_PGN,
+        )
+        # Ply 0 already carries a stored best_move + a lichess %eval (as if a prior
+        # submit resolved it). A later full re-lease's worker fails ply 0 this pass.
+        await _insert_game_positions(
+            full_drain_session_maker,
+            full_drain_test_user_jq1,
+            game_id,
+            [
+                {
+                    "ply": 0,
+                    "full_hash": 0xB0BB1E00,
+                    "eval_cp": 20,  # lichess %eval, always present from import
+                    "eval_mate": None,
+                    "best_move": "e2e4",
+                }
+            ],
+        )
+
+        board = chess.Board()
+
+        def _target(stored_best_move: str | None) -> eval_drain._FullPlyEvalTarget:
+            return eval_drain._FullPlyEvalTarget(
+                game_id=game_id,
+                ply=0,
+                full_hash=0xB0BB1E00,
+                board=board,
+                eval_cp=20,
+                eval_mate=None,
+                stored_best_move=stored_best_move,
+            )
+
+        # Worker returns NO best_move for ply 0 this pass (transient re-failure).
+        engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]] = {
+            0: (20, None, None, None),
+        }
+
+        try:
+            # Case 1: preserve=True AND ply already has a stored best_move → NOT a hole.
+            async with full_drain_session_maker() as session:
+                failed = await eval_drain._apply_full_eval_results(
+                    session,
+                    [_target("e2e4")],
+                    {},
+                    engine_result_map,
+                    True,  # is_lichess_eval_game
+                    preserve_existing_evals=True,
+                )
+                await session.rollback()
+            assert failed == 0, (
+                "an already-resolved lichess ply that transiently re-fails under "
+                "preserve_existing_evals must NOT be counted as a fresh hole (WR-01)"
+            )
+
+            # Case 2 (parity): preserve=True but NO prior best_move stored → genuine hole.
+            async with full_drain_session_maker() as session:
+                failed = await eval_drain._apply_full_eval_results(
+                    session,
+                    [_target(None)],
+                    {},
+                    engine_result_map,
+                    True,
+                    preserve_existing_evals=True,
+                )
+                await session.rollback()
+            assert failed == 1, (
+                "a lichess ply with no prior best_move is a genuine failure — still "
+                "a hole even under preserve_existing_evals"
+            )
+
+            # Case 3 (parity): drain path (preserve=False) → genuine hole regardless.
+            async with full_drain_session_maker() as session:
+                failed = await eval_drain._apply_full_eval_results(
+                    session,
+                    [_target("e2e4")],
+                    {},
+                    engine_result_map,
+                    True,
+                    preserve_existing_evals=False,
+                )
+                await session.rollback()
+            assert failed == 1, (
+                "with preserve_existing_evals=False (the drain path) a NULL best_move "
+                "is always a genuine hole"
             )
         finally:
             await _delete_games(full_drain_session_maker, [game_id])

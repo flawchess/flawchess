@@ -34,6 +34,14 @@ export interface FlawFilterState {
    */
   tacticDepthMin: number;
   tacticDepthMax: number;
+  /**
+   * "Has gem" / "has great" toggles (FILT-01, D-05, Phase 175) — independent
+   * booleans narrowing the Library games list to games containing at least one
+   * stored user-move gem/great (union when both are true, per the backend's
+   * has_gem/has_great EXISTS composition). Default false (no filter).
+   */
+  hasGem: boolean;
+  hasGreat: boolean;
 }
 
 export const DEFAULT_FLAW_FILTER: FlawFilterState = {
@@ -43,6 +51,8 @@ export const DEFAULT_FLAW_FILTER: FlawFilterState = {
   tacticOrientation: 'either',
   tacticDepthMin: DEFAULT_TACTIC_DEPTH_VALUE.min,
   tacticDepthMax: DEFAULT_TACTIC_DEPTH_VALUE.max,
+  hasGem: false,
+  hasGreat: false,
 };
 
 /**
@@ -70,7 +80,10 @@ export function isFlawFilterNonDefault(filter: FlawFilterState): boolean {
     (filter.tacticOrientation ?? 'either') !== 'either' ||
     // Quick 260620-l5k / 260621-sm8: depth range non-default (≠ High/full-range {0, 11}) lights the dot.
     (filter.tacticDepthMin ?? DEFAULT_TACTIC_DEPTH_VALUE.min) !== DEFAULT_TACTIC_DEPTH_VALUE.min ||
-    (filter.tacticDepthMax ?? DEFAULT_TACTIC_DEPTH_VALUE.max) !== DEFAULT_TACTIC_DEPTH_VALUE.max
+    (filter.tacticDepthMax ?? DEFAULT_TACTIC_DEPTH_VALUE.max) !== DEFAULT_TACTIC_DEPTH_VALUE.max ||
+    // Phase 175 (FILT-01, D-05): either "has gem" or "has great" toggle narrows the result set.
+    (filter.hasGem ?? false) ||
+    (filter.hasGreat ?? false)
   );
 }
 

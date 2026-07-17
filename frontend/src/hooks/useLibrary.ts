@@ -55,11 +55,21 @@ export function libraryGamePollInterval(
  * Mirrors buildEndgameParams from useEndgames.ts but drops color/matchSide
  * (the Games subtab shows all colors) and adds optional severity + tag filters.
  * severity and tag are omitted from the params object entirely when empty.
+ *
+ * hasGem/hasGreat (FILT-01, Phase 175) mirror rated's conditional-inclusion
+ * pattern: included as has_gem/has_great only when true, omitted when false
+ * so a default (unfiltered) call sends nothing. Only useLibraryGames passes
+ * these — GET /library/games is the only endpoint that accepts them (Plan
+ * 01); every other buildLibraryParams caller (flaw-stats, flaw-comparison,
+ * tactic-comparison, flaws) omits them by leaving the params at their false
+ * default, which is a no-op for those endpoints' param types.
  */
-function buildLibraryParams(
+export function buildLibraryParams(
   filters: FilterState,
   severity: ('blunder' | 'mistake')[],
   tags: FlawTag[] = [],
+  hasGem = false,
+  hasGreat = false,
 ) {
   const dateParams = dateRangeToWireParams(resolveDateRange(filters));
   return {
@@ -72,6 +82,8 @@ function buildLibraryParams(
     severity: severity.length > 0 ? severity : undefined,
     tag: tags.length > 0 ? tags : undefined,
     color: filters.playedAs === 'either' ? undefined : filters.playedAs,
+    has_gem: hasGem ? true : undefined,
+    has_great: hasGreat ? true : undefined,
   };
 }
 
@@ -102,10 +114,15 @@ export function useLibraryGames(
   // "no flaw filtering" on the Games tab (matching the modified-dot logic), so
   // only send severity/tags when the user actively changed the flaw filter.
   const isFiltering = isFlawFilterNonDefault(flawFilter);
+  // has_gem/has_great are threaded unconditionally (not gated on isFiltering like
+  // severity/tags above): they already default to false, so buildLibraryParams
+  // omits them the same way as an inactive filter — no separate gate needed.
   const params = buildLibraryParams(
     filters,
     isFiltering ? flawFilter.severity : [],
     isFiltering ? flawFilter.tags : [],
+    flawFilter.hasGem,
+    flawFilter.hasGreat,
   );
   // Quick 260620-pza / 260621-sm8: tactic filters on the Games tab (mirrors
   // useLibraryFlaws). Depth + orientation are now independently meaningful, so they

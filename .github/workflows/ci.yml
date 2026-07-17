@@ -40,7 +40,12 @@ jobs:
         run: pip install uv
 
       - name: Install Python dependencies
-        run: uv sync --locked
+        # Include the isolated maia-inference group (onnxruntime/numpy) so ty can
+        # resolve app/services/maia_engine.py's deferred imports (Phase 174). The
+        # group is kept out of [project.dependencies] for the lean worker image
+        # (Dockerfile.worker), but CI type-checks and tests the backend, which the
+        # backend Dockerfile builds with this same group.
+        run: uv sync --locked --group maia-inference
 
       - name: Zone drift check
         run: |
