@@ -88,6 +88,22 @@ def pinned_elo_for_mover(
     (STORE-03), so it skips normalization. When normalization returns None
     (correspondence has no real-time analogue) or the TC bucket is missing, fall
     back to the raw rating, then clamp.
+
+    Known limitation, deliberately accepted (assessed 2026-07-17 on prod data):
+    the raw-rating fallback for correspondence games is a scale mismatch on
+    chess.com — a Daily rating stays on the chess.com scale (between the user's
+    blitz and rapid ratings, i.e. roughly 300 points below its lichess-blitz
+    equivalent at low-mid ratings), so Maia is under-conditioned and gems are
+    slightly easier to earn in chess.com Daily games. For lichess correspondence
+    the raw rating runs only ~60-150 above the same user's blitz rating, and the
+    mild over-conditioning arguably models the deeper thinking time correctly.
+    Left as-is because correspondence is <1% of games (~190 of ~10k candidate
+    rows at assessment time) and any fix would be go-forward only: the pinned
+    ELO conditions the STORED maia_prob at write time, so unlike a threshold
+    retune it cannot reclassify existing rows. If this ever warrants fixing,
+    route chess.com Daily ratings through convert_chesscom_to_lichess as
+    blitz/rapid-scale HERE, not in normalize_to_lichess_blitz (whose None is
+    correct refuse-rather-than-guess behavior for the rating chips).
     """
     if platform == "flawchess":
         normalized: int | None = raw_rating
