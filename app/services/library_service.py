@@ -25,6 +25,7 @@ import math
 from collections.abc import Sequence
 from typing import Any, Literal, cast
 
+import chess
 import sentry_sdk
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -113,11 +114,39 @@ def _derive_phase_transitions(positions: list[GamePosition]) -> PhaseTransitions
     return PhaseTransitions(middlegame_ply=middlegame_ply, endgame_ply=endgame_ply)
 
 
+def _best_move_identity_plies(positions: list[GamePosition]) -> set[int]:
+    """Plies where the played move identity-equals the stored engine best_move.
+
+    Quick 260717-rbn (Task 1): replays ONE chess.Board() over `positions` in ply
+    order. For each position with a move played, parses it via
+    board.parse_san(pos.move_san) on the PRE-move board and compares it by
+    Move-object equality to chess.Move.from_uci(pos.best_move) — never a raw
+    SAN==UCI string compare (they use different notations). Wrapped in
+    try/except mirroring _same_dest_as_best_line's guard posture: a malformed
+    SAN/UCI stops the replay early and returns the plies collected so far,
+    since the board state can no longer be trusted past that point.
+    """
+    identity_plies: set[int] = set()
+    board = chess.Board()
+    try:
+        for pos in positions:
+            if pos.move_san is None:
+                continue
+            played_move = board.parse_san(pos.move_san)
+            if pos.best_move is not None and played_move == chess.Move.from_uci(pos.best_move):
+                identity_plies.add(pos.ply)
+            board.push(played_move)
+    except (ValueError, chess.IllegalMoveError):
+        return identity_plies
+    return identity_plies
+
+
 def _build_eval_series(
     game: Game,
     positions: list[GamePosition],
     tactic_by_ply: dict[int, _TacticByPlyEntry] | None = None,
     best_moves_by_ply: dict[int, GameBestMove] | None = None,
+    opening_ply_count: int = 0,
 ) -> tuple[list[EvalPoint], list[FlawMarker], PhaseTransitions]:
     """Compute white-perspective ES line, flaw markers, and phase transitions.
 
@@ -143,6 +172,12 @@ def _build_eval_series(
                        automatically a marker — Pitfall 3 — classify_best_move is
                        always called on the raw floats). maia_prob is populated
                        ONLY when the tier is not "neither" (Pitfall 5).
+        opening_ply_count: 1-based ply depth of the deepest opening-book match
+                       (Quick 260717-rbn), computed by the caller via
+                       find_opening_ply_count BEFORE calling this function.
+                       Gates the new best/good tiers to out-of-book plies
+                       (pos.ply >= opening_ply_count) — book/theory plies never
+                       get a best/good label. Defaults to 0 (no book gate).
 
     Returns:
         (eval_series, flaw_markers, phase_transitions) tuple where:
@@ -151,6 +186,9 @@ def _build_eval_series(
         - phase_transitions: first ply of middlegame (phase==1) and endgame (phase==2) (D-06)
     """
     all_moves = _run_all_moves_pass(positions)
+    # Quick 260717-rbn (Task 1): plies where the played move identity-equals the
+    # stored engine best_move — the noise-immune basis for the 'best' tier.
+    identity_plies = _best_move_identity_plies(positions)
     eval_series: list[EvalPoint] = []
     flaw_markers: list[FlawMarker] = []
 
@@ -201,7 +239,7 @@ def _build_eval_series(
         # FILT-01 filter's SQL twin agrees with (D-03b). Row presence alone is
         # NEVER the marker (Pitfall 3) — classify_best_move is always called on
         # the raw floats; a [0.05, 0.10) margin row classifies "neither" here.
-        best_move_tier: Literal["gem", "great"] | None = None
+        best_move_tier: Literal["gem", "great", "best", "good"] | None = None
         best_move_maia_prob: float | None = None
         best_row = best_moves_by_ply.get(pos.ply) if best_moves_by_ply else None
         if best_row is not None:
@@ -225,6 +263,24 @@ def _build_eval_series(
                 best_move_tier = tier
                 # Pitfall 5: maia_prob populated ONLY alongside a non-null tier.
                 best_move_maia_prob = best_row.maia_prob
+
+        # Quick 260717-rbn (Task 1): 'best'/'good' tiers, computed live (no
+        # stored row involved). Precedence gem > great > best > good > null —
+        # only applied when gem/great left best_move_tier unset. Gated to
+        # out-of-book plies (pos.ply >= opening_ply_count) with a move played.
+        # 'best': the played move identity-equals the stored engine best_move
+        # (noise-immune — the identity_plies replay). 'good': the mover-POV ES
+        # drop is below INACCURACY_DROP — read from the SAME all_moves dict the
+        # flaw markers below use (all_moves[pos.ply] describes the quality of
+        # pos.move_san per the post-move eval convention documented on
+        # _run_all_moves_pass), not recomputed.
+        if best_move_tier is None and pos.move_san is not None and pos.ply >= opening_ply_count:
+            if pos.ply in identity_plies:
+                best_move_tier = "best"
+            else:
+                entry_for_tier = all_moves.get(pos.ply)
+                if entry_for_tier is not None and entry_for_tier[1] is None:
+                    best_move_tier = "good"
 
         eval_series.append(
             EvalPoint(
@@ -572,19 +628,23 @@ def _build_card(
                         missed_conf_val,
                         missed_depth_val,
                     )
+            # SAN mainline for client-side per-ply board reconstruction on chart
+            # hover. move_san is None on the terminal position only — filter it out
+            # so moves[i] aligns with ply i (positions are ply-ordered). Quick
+            # 260717-rbn: computed BEFORE _build_eval_series (not after, as
+            # previously) so opening_ply_count is available to gate the new
+            # best/good tiers to out-of-book plies.
+            moves_data = [p.move_san for p in positions if p.move_san is not None]
             eval_series_val, flaw_marker_val, phase_transition_val = _build_eval_series(
                 game,
                 positions,
                 tactic_by_ply=tactic_by_ply if tactic_by_ply else None,
                 best_moves_by_ply=best_moves_by_ply,
+                opening_ply_count=find_opening_ply_count(moves_data) if moves_data else 0,
             )
             eval_series_data = eval_series_val
             flaw_marker_data = flaw_marker_val
             phase_transition_data = phase_transition_val
-            # SAN mainline for client-side per-ply board reconstruction on chart
-            # hover. move_san is None on the terminal position only — filter it out
-            # so moves[i] aligns with ply i (positions are ply-ordered).
-            moves_data = [p.move_san for p in positions if p.move_san is not None]
         else:
             eval_series_data = None
             flaw_marker_data = None
