@@ -408,6 +408,39 @@ export function TagFilterLogicInfo({ side = 'bottom' }: { side?: 'top' | 'bottom
   );
 }
 
+/**
+ * BestMovesInfo — help popover for the "Best Moves" (Gem / Great) filter section.
+ * Explains how the two tiers are derived (objectively best move + how rare it is
+ * among rating peers) and that rarity is measured relative to the player's
+ * lichess-blitz-equivalent rating (the scale the Maia model is calibrated on).
+ */
+function BestMovesInfo() {
+  return (
+    <InfoPopover
+      ariaLabel="How best moves are calculated"
+      testId="filter-best-moves-info"
+      side="bottom"
+    >
+      <p>
+        <strong>Gem</strong> and <strong>Great</strong> highlight moves you played that
+        were the engine&apos;s top choice <em>and</em> clearly better than any
+        alternative.
+      </p>
+      <p className="mt-1.5">
+        The two tiers differ by how hard the move was to find. We estimate how often
+        players at your level would find it, measured against your rating converted to
+        a <strong>lichess blitz</strong> equivalent (the scale our model is calibrated
+        on), so a move is judged relative to your own strength.
+      </p>
+      <p className="mt-1.5">
+        <strong>Gem</strong>: fewer than ~1 in 5 rating peers would find it.
+        <br />
+        <strong>Great</strong>: found by roughly 1 in 5 to 1 in 2 peers.
+      </p>
+    </InfoPopover>
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 /**
@@ -512,7 +545,10 @@ export function FlawFilterControl({
           them; FlawsTab passes none — so gate on their presence instead. ──── */}
       {(onHasGemToggle || onHasGreatToggle) && (
         <div className="flex flex-col gap-2">
-          <p className="text-sm text-muted-foreground">Best Moves</p>
+          <div className="flex items-center gap-1">
+            <p className="text-sm text-muted-foreground">Best Moves</p>
+            <BestMovesInfo />
+          </div>
           <div className="flex gap-2 flex-wrap">
             <BestMoveFilterButton
               testId="filter-has-gem"
