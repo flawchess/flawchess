@@ -2,29 +2,29 @@
 gsd_state_version: 1.0
 milestone: v2.4
 milestone_name: Backend Gem & Great Detection
-current_phase: 175
-current_phase_name: board-filter-gem-great-consumption
-status: completed
-stopped_at: Phase 175 context gathered
-last_updated: "2026-07-17T03:04:17.986Z"
-last_activity: 2026-07-16
-last_activity_desc: Phase 175 execution started
+current_phase: 999.1
+current_phase_name: BACKLOG
+status: planning
+stopped_at: Completed 176-01-PLAN.md
+last_updated: "2026-07-17T04:22:10.715Z"
+last_activity: 2026-07-17
+last_activity_desc: Phase 176 complete, transitioned to Phase 999.1
 progress:
   total_phases: 4
-  completed_phases: 1
-  total_plans: 12
-  completed_plans: 7
-  percent: 25
+  completed_phases: 3
+  total_plans: 13
+  completed_plans: 13
+  percent: 75
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 175 (board-filter-gem-great-consumption) — EXECUTING
-Plan: 1 of 5
-Status: Phase 175 shipped — squash-merged to main; BOARD-01/02 + FILT-01 done
-Last activity: 2026-07-16 — Phase 175 execution started
+Phase: 999.1 — Password Reset (BACKLOG)
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-07-17 — Phase 176 complete, transitioned to Phase 999.1
 
 ## Project Reference
 
@@ -319,6 +319,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase ?]: 174-06: _contiguous_san_prefix rebuilt around the deepest target's board.move_stack + its own move_san (not a ply-0-anchored walk over the caller's targets list) — fixes CR-01 book-depth collapse on a sparse targets list
 - [Phase ?]: [Phase 174-07]: Broadened the existing residual PV-backfill fallback (full_evals_completed_at IS NULL -> full_pv_completed_at IS NULL) rather than adding a new lottery rung; kept precedence and ES key unchanged
 - [Phase ?]: [Phase 174-07]: Dropped the superseded ix_games_pv_backfill_pending in the same migration that adds ix_games_lichess_pv_backfill_pending, since its predicate no longer matches any query after the broadening
+- [Phase ?]: Moved TIER_BESTMOVE_BACKFILL constant addition from Task 4 to Task 3 (Rule 3 auto-fix) to unblock Task 3 verify tests without a forward dependency on Task 4's lottery rung
 
 ### Pending Todos
 
@@ -403,13 +404,13 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 175 context gathered
+**Stopped at:** Completed 176-01-PLAN.md
 
-**Last session:** 2026-07-16T19:01:16.633Z
+**Last session:** 2026-07-17T04:05:49.061Z
 
 **Resume file:**
 
-.planning/phases/175-board-filter-gem-great-consumption/175-CONTEXT.md
+None
 
 ## Performance Metrics
 
@@ -428,6 +429,7 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 | Phase 174 P05 | 45min | 2 tasks | 5 files |
 | Phase 174 P06 | ~50min | 3 tasks | 7 files |
 | Phase 174 P07 | 35min | 2 tasks | 5 files |
+| Phase 176 P01 | 20min | 4 tasks | 8 files |
 
 ## Performance Metrics
 

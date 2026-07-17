@@ -2125,6 +2125,236 @@ class TestLichessBestMoveBackfill:
             await _delete_games(full_drain_session_maker, [game_id])
 
 
+# ─── Phase 176 BACK-01: tier-4b best-move backfill ───────────────────────────
+
+
+class TestBestMoveBackfill:
+    """Phase 176 Plan 01: an engine-side (non-lichess) game claimed by tier-4b
+    drains through the full pipeline end-to-end, gets `best_moves_completed_at`
+    stamped (self-termination) — and, the crux, a Maia-absent backend never
+    stamps it even when best-move candidate rows were otherwise produced
+    (guardrail; mutation-test-style negative assertion per project MEMORY.md).
+    """
+
+    _BACKFILL_PGN: str = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. h3 a6 *"
+
+    @staticmethod
+    def _engine_mock() -> AsyncMock:
+        """8 non-terminal plies (Italian Game main line booked through ply 5;
+        ply 6 h2h3 is the wide-margin out-of-book played==best candidate; ply 7
+        a7a6 is out-of-book played==best but sub-margin) + 1 terminal eval-donor
+        call (engine games pass include_terminal=True, unlike lichess-eval
+        games — eval_drain.py:726)."""
+        return AsyncMock(
+            side_effect=[
+                (20, None, "e2e4", "e2e4", None, None, ""),
+                (20, None, "e7e5", "e7e5", None, None, ""),
+                (30, None, "g1f3", "g1f3", None, None, ""),
+                (30, None, "b8c6", "b8c6", None, None, ""),
+                (60, None, "f1c4", "f1c4", None, None, ""),
+                (60, None, "f8c5", "f8c5", None, None, ""),
+                (300, None, "h2h3", "h2h3", -100, None, "e7e6"),  # ply 6: candidate
+                (10, None, "a7a6", "a7a6", 5, None, "b7b6"),  # ply 7: sub-margin
+                (5, None, "a2a3", "a2a3", None, None, ""),  # terminal donor
+            ]
+        )
+
+    async def _seed_backfill_game(
+        self,
+        full_drain_test_user_117: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        full_hash_base: int,
+    ) -> int:
+        from app.models.game import Game
+
+        now = datetime.now(timezone.utc)
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_117,
+            pgn=self._BACKFILL_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=now,
+            full_pv_completed_at=now,
+            lichess_evals_at=None,
+        )
+        async with full_drain_session_maker() as session:
+            await session.execute(
+                sa.update(Game.__table__)  # ty: ignore[invalid-argument-type]
+                .where(Game.id == game_id)
+                .values(white_rating=1500, black_rating=1500)
+            )
+            await session.commit()
+        cp_by_ply = [15, 25, 35, 45, 55, 65, 75, 85]
+        gp_rows = [
+            {"ply": i, "full_hash": full_hash_base + i, "eval_cp": cp_by_ply[i], "eval_mate": None}
+            for i in range(8)
+        ]
+        await _insert_game_positions(
+            full_drain_session_maker, full_drain_test_user_117, game_id, gp_rows
+        )
+        return game_id
+
+    async def test_backfill_pick_drains_and_stamps_best_moves_completed_at(
+        self,
+        full_drain_test_user_117: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A tier-4b-claimed engine game drains end-to-end: gets a
+        game_best_moves row at its wide-margin out-of-book played==best ply,
+        and best_moves_completed_at is stamped afterward with a Maia session
+        present (self-termination — the predicate no longer matches this
+        game_id after the tick)."""
+        from app.models.eval_jobs import TIER_BESTMOVE_BACKFILL
+        from app.models.game import Game
+        from app.models.game_best_move import GameBestMove
+        import app.services.eval_apply as eval_apply_module
+        from app.services import maia_engine
+
+        game_id = await self._seed_backfill_game(
+            full_drain_test_user_117, full_drain_session_maker, 0xB1F1_0000
+        )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch,
+            full_drain_session_maker,
+            game_id,
+            full_drain_test_user_117,
+            is_lichess_eval_game=False,
+            tier=TIER_BESTMOVE_BACKFILL,
+        )
+        monkeypatch.setattr(maia_engine, "_session", object())  # Maia present (sentinel)
+        monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.15)
+        monkeypatch.setattr(
+            drain_module.engine_service, "evaluate_nodes_multipv2", self._engine_mock()
+        )
+
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is True, "Tick must report a processed game"
+
+            async with full_drain_session_maker() as verify:
+                game_row = (
+                    await verify.execute(
+                        select(Game.best_moves_completed_at, Game.full_pv_completed_at).where(
+                            Game.id == game_id
+                        )
+                    )
+                ).one()
+                bm_rows = (
+                    (
+                        await verify.execute(
+                            select(GameBestMove).where(GameBestMove.game_id == game_id)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+
+            best_moves_at, full_pv_at = game_row
+            assert best_moves_at is not None, (
+                "best_moves_completed_at must be stamped after a hole-free tick "
+                "with a Maia session present (Path A)."
+            )
+            assert full_pv_at is not None
+
+            assert len(bm_rows) == 1, (
+                f"Expected exactly 1 game_best_moves row (ply 6 only); got "
+                f"{len(bm_rows)}: {[r.ply for r in bm_rows]}"
+            )
+            assert bm_rows[0].ply == 6
+
+            # Self-termination: the tier-4b predicate no longer matches this game_id.
+            async with full_drain_session_maker() as verify:
+                still_matches = (
+                    await verify.execute(
+                        select(Game.id).where(
+                            Game.id == game_id,
+                            Game.full_pv_completed_at.isnot(None),
+                            Game.best_moves_completed_at.is_(None),
+                            Game.lichess_evals_at.is_(None),
+                        )
+                    )
+                ).scalar_one_or_none()
+            assert still_matches is None, (
+                "After drain, this game must no longer match the tier-4b backfill "
+                "predicate (full_pv_completed_at IS NOT NULL AND "
+                "best_moves_completed_at IS NULL AND lichess_evals_at IS NULL) — "
+                "self-termination is broken if it does."
+            )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_maia_absent_never_stamps_best_moves_completed_at(
+        self,
+        full_drain_test_user_117: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """GUARDRAIL (the crux, D-01): with maia_engine._session forced to None,
+        best_moves_completed_at MUST stay NULL after the drain tick even though
+        score_move is mocked to SUCCEED (best_move_rows would be non-empty if
+        row-count alone gated the stamp) — proving the stamp is independently
+        gated by maia_engine.is_maia_available(), never inferred from row
+        count (RESEARCH Pitfall 1: _build_best_move_candidates returns [] for
+        BOTH 'Maia ran, zero candidates' AND 'Maia absent', so row count is a
+        structurally unsound availability signal). The game stays re-drainable.
+
+        Positive counterpart (session present -> stamp fires) is proven by
+        test_backfill_pick_drains_and_stamps_best_moves_completed_at above —
+        per project MEMORY.md "Mutation-test gap closures", both the negative
+        and positive assertions are required, not just the positive path.
+        """
+        from app.models.game import Game
+        from app.models.eval_jobs import TIER_BESTMOVE_BACKFILL
+        import app.services.eval_apply as eval_apply_module
+        from app.services import maia_engine
+
+        game_id = await self._seed_backfill_game(
+            full_drain_test_user_117, full_drain_session_maker, 0xB1F2_0000
+        )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch,
+            full_drain_session_maker,
+            game_id,
+            full_drain_test_user_117,
+            is_lichess_eval_game=False,
+            tier=TIER_BESTMOVE_BACKFILL,
+        )
+
+        # THE GUARDRAIL SETUP: Maia session forced ABSENT, but score_move is
+        # mocked to SUCCEED anyway. If the stamp were (incorrectly) gated by
+        # best_move_rows being non-empty rather than is_maia_available(), this
+        # test would wrongly observe the stamp fire.
+        monkeypatch.setattr(maia_engine, "_session", None)
+        monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.15)
+        monkeypatch.setattr(
+            drain_module.engine_service, "evaluate_nodes_multipv2", self._engine_mock()
+        )
+
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is True, "Tick must report a processed game"
+
+            async with full_drain_session_maker() as verify:
+                best_moves_at = (
+                    await verify.execute(
+                        select(Game.best_moves_completed_at).where(Game.id == game_id)
+                    )
+                ).scalar_one()
+
+            assert best_moves_at is None, (
+                "GUARDRAIL VIOLATION: best_moves_completed_at must stay NULL when "
+                "maia_engine._session is None (Maia-absent backend), even though "
+                "score_move was mocked to succeed. Stamping here would "
+                "permanently lock this game out of the tier-4b lottery on a "
+                "Maia-absent backend (D-01 correctness requirement)."
+            )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+
 # ─── EVAL-06: classify hook + oracle counts ───────────────────────────────────
 
 

@@ -64,6 +64,7 @@ from app.repositories.worker_heartbeat_repository import upsert_worker_heartbeat
 from app.schemas.eval_remote import AtomicBlobNode, FlawBlobLeasePosition, FlawBlobSubmitEval
 from app.schemas.normalization import Platform, TimeControlBucket
 from app.services import engine as engine_service
+from app.services import maia_engine
 from app.services.best_move_candidates import (
     mover_color_for_ply,
     passes_inaccuracy_gate,
@@ -683,6 +684,24 @@ async def _mark_full_pv_completed(session: AsyncSession, game_id: int) -> None:
     await session.execute(stmt)
 
 
+async def _mark_best_moves_completed(session: AsyncSession, game_id: int) -> None:
+    """Mark one game's best-move pass as attempted (Phase 176 BACK-01/D-01).
+
+    Mirrors _mark_full_pv_completed exactly. Called from apply_completion_decision
+    on Path A/C ONLY when maia_available is True (the guardrail) — a Maia-absent
+    backend must never stamp this, or the game would be permanently excluded from
+    the tier-4b backfill lottery with zero best-move rows.
+    """
+    now_ts = datetime.now(timezone.utc)
+    games_table = Game.__table__
+    stmt = (
+        update(games_table)  # ty: ignore[invalid-argument-type]
+        .where(games_table.c.id == game_id)
+        .values(best_moves_completed_at=now_ts)
+    )
+    await session.execute(stmt)
+
+
 async def apply_completion_decision(
     write_session: AsyncSession,
     *,
@@ -692,6 +711,7 @@ async def apply_completion_decision(
     current_attempts: int,
     source: Literal["full_eval_drain", "remote_eval_worker"],
     on_path_c_capacity_reached: Callable[[int, int, int, str], None],
+    maia_available: bool = False,
 ) -> bool:
     """Apply the shared Path A/B/C completion decision + guarded eval_jobs stamp (R1).
 
@@ -701,16 +721,30 @@ async def apply_completion_decision(
     writes commit atomically with the evals/flaws already written this tick).
 
     Decision tree:
-      A. failed_ply_count == 0 -> no holes: stamp both completion markers.
-         full_eval_attempts unchanged.
+      A. failed_ply_count == 0 -> no holes: stamp both completion markers, plus
+         best_moves_completed_at IFF maia_available (Phase 176 BACK-01/D-01
+         guardrail — see maia_available below). full_eval_attempts unchanged.
       B. failed_ply_count > 0 AND current_attempts + 1 < MAX_EVAL_ATTEMPTS ->
          under cap: do NOT stamp either marker. Increment full_eval_attempts so
          the game is re-picked next tick with a fresh look at the same budget.
       C. failed_ply_count > 0 AND current_attempts + 1 >= MAX_EVAL_ATTEMPTS ->
-         cap reached: stamp anyway (D-116-07 no-infinite-loop invariant) and
-         invoke the caller-supplied on_path_c_capacity_reached callback exactly
-         once. This is the EXPECTED terminal state of the bounded-retry drain,
-         not an error.
+         cap reached: stamp anyway (D-116-07 no-infinite-loop invariant),
+         including best_moves_completed_at IFF maia_available, and invoke the
+         caller-supplied on_path_c_capacity_reached callback exactly once. This
+         is the EXPECTED terminal state of the bounded-retry drain, not an error.
+
+    maia_available (Phase 176 BACK-01/D-01, THE guardrail): whether the process-
+    wide Maia session was loaded (maia_engine.is_maia_available()) at the time
+    apply_full_eval built best_move_rows. best_moves_completed_at is stamped on
+    Path A/C ONLY when this is True — a Maia-absent backend must NEVER stamp it,
+    or the game would be permanently excluded from the tier-4b backfill lottery
+    with zero best-move rows (_build_best_move_candidates returns [] for BOTH
+    "Maia ran, zero candidates" and "Maia absent" — row count alone cannot
+    distinguish them). The stamp is source-agnostic (fires regardless of
+    is_lichess_eval_game) — the lichess exclusion lives ONLY in the tier-4b
+    lottery predicate, never here, mirroring full_pv_completed_at's own
+    unconditional stamping. Defaults to False so any caller that does not thread
+    this through explicitly gets the SAFE behavior (never stamps).
 
     Path-C reporting is deliberately NOT unified: eval_drain.py's in-process tick
     uses logger.warning (FLAWCHESS-5V — an earlier per-tick Sentry call burned the
@@ -736,6 +770,8 @@ async def apply_completion_decision(
         # Path A: no holes — stamp both markers complete.
         await _mark_full_evals_completed(write_session, game_id)
         await _mark_full_pv_completed(write_session, game_id)
+        if maia_available:
+            await _mark_best_moves_completed(write_session, game_id)
         stamp_complete = True
     elif new_attempts < MAX_EVAL_ATTEMPTS:
         # Path B: holes remain, under cap — increment attempts, leave pending.
@@ -751,6 +787,8 @@ async def apply_completion_decision(
         # invariant). Reporting is caller-injected — see docstring above.
         await _mark_full_evals_completed(write_session, game_id)
         await _mark_full_pv_completed(write_session, game_id)
+        if maia_available:
+            await _mark_best_moves_completed(write_session, game_id)
         on_path_c_capacity_reached(game_id, failed_ply_count, new_attempts, source)
         stamp_complete = True
 
@@ -2055,6 +2093,12 @@ async def apply_full_eval(
     if best_move_rows:
         await _upsert_best_move_rows(write_session, best_move_rows)
 
+    # Phase 176 BACK-01/D-01: independent Maia-availability signal for the
+    # completion-marker guardrail below — NEVER inferred from best_move_rows
+    # being empty (RESEARCH Pitfall 1: _build_best_move_candidates returns []
+    # for both "Maia ran, zero candidates" and "Maia absent").
+    maia_available = maia_engine.is_maia_available()
+
     flaws_written = 0
     if count_flaws_written:
         flaws_written = (
@@ -2090,6 +2134,7 @@ async def apply_full_eval(
         current_attempts=current_attempts,
         source=source,
         on_path_c_capacity_reached=on_path_c_capacity_reached,
+        maia_available=maia_available,
     )
 
     if record_heartbeat:

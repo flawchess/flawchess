@@ -49,7 +49,7 @@
 
 - [x] **Phase 174: Backend Maia Inference + Best-Move Storage (spike-gated)** - Backend stores per-ply Maia probability + runner-up eval candidate rows for out-of-book best moves during eval-apply, via a parity-checked Python port of the client's board→tensor encoding (completed 2026-07-16)
 - [x] **Phase 175: Board & Filter — Gem/Great Consumption** - The analysis board and Library games filter read gem/great data from stored rows, retiring the client-side sweep
-- [ ] **Phase 176: Backfill** - The existing analyzed corpus gains best-move rows opportunistically via the tier-4 lottery pattern
+- [x] **Phase 176: Backfill** - The existing analyzed corpus gains best-move rows opportunistically via the tier-4 lottery pattern (completed 2026-07-17)
 
 ### Phase 174: Backend Maia Inference + Best-Move Storage (spike-gated)
 
@@ -120,7 +120,9 @@ Plans:
   2. The backfill lottery's keying (reuse the existing tier-4 blob lottery directly vs. a parallel lottery scoped to missing best-move rows) is decided and implemented with the same concurrency-safety guarantees (e.g. `SKIP LOCKED`) as the existing lottery pattern.
   3. Best-move-row coverage across the analyzed corpus visibly increases over time in the database with no operator-run script required and no completion deadline promised.
 
-**Plans**: TBD
+**Plans**: 1 plan
+
+- [x] 176-01-PLAN.md — migration + best_moves_completed_at marker, config gate, Maia-absent guardrail, tier-4b lottery rung, tests
 
 ## Progress
 
@@ -207,7 +209,7 @@ Plans:
 | 172. Background Gem Sweep on Analysis (SEED-106) | 5/5 | Complete    | 2026-07-14 |
 | 174. Backend Maia Inference + Best-Move Storage (spike-gated) | 7/7 | Complete    | 2026-07-16 |
 | 175. Board & Filter — Gem/Great Consumption | 0/? | Not started | - |
-| 176. Backfill | 0/? | Not started | - |
+| 176. Backfill | 1/1 | Complete    | 2026-07-17 |
 
 ## Backlog
 

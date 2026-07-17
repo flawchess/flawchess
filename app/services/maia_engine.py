@@ -118,6 +118,19 @@ async def start_maia() -> None:
         _session = None
 
 
+def is_maia_available() -> bool:
+    """True when the process-wide Maia session was successfully loaded at
+    lifespan startup (start_maia). Cheap in-memory check — no I/O, no session.
+
+    Used by eval_apply.py's completion-marker guardrail (Phase 176 BACK-01/D-01):
+    a Maia-absent backend must never stamp best_moves_completed_at, or the
+    affected games would be permanently excluded from the tier-4b backfill
+    lottery with zero best-move rows. Formalizes what the test suite already
+    does by reaching into _session directly.
+    """
+    return _session is not None
+
+
 async def stop_maia() -> None:
     """Tear down the process-wide Maia session. Safe to call without a prior start
     (no-op). Idempotent."""

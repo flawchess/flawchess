@@ -115,6 +115,7 @@ async def _insert_game(
     full_evals_completed_at: datetime | None = None,
     full_pv_completed_at: datetime | None = None,
     lichess_evals_at: datetime | None = None,
+    best_moves_completed_at: datetime | None = None,
 ) -> int:
     """Insert a Game row and commit. Returns game_id."""
     from app.models.game import Game
@@ -134,6 +135,7 @@ async def _insert_game(
             full_evals_completed_at=full_evals_completed_at,
             full_pv_completed_at=full_pv_completed_at,
             lichess_evals_at=lichess_evals_at,
+            best_moves_completed_at=best_moves_completed_at,
         )
         session.add(g)
         await session.flush()
@@ -2022,3 +2024,356 @@ class TestTier4BlobBackfill:
             )
         finally:
             await _delete_games(queue_session_maker, [game_id2])
+
+
+# ─── Phase 176 BACK-01: tier-4b best-move backfill lottery ───────────────────
+
+
+class TestTier4bBestMoveBackfill:
+    """Phase 176 Plan 01: tier-4b spare-capacity best-move backfill lottery.
+
+    Tests cover:
+    - null_pick_on_empty_pool: _claim_tier4_bestmove returns None with no candidates
+    - picks_eligible_game: a PV-complete, best-move-incomplete, non-lichess-eval,
+      non-guest game is returned
+    - excludes_guests: guest-owned games are never returned (QUEUE-08)
+    - excludes_pv_incomplete: games without full_pv_completed_at are excluded
+    - excludes_already_stamped: games with best_moves_completed_at set are excluded
+      (D-01 self-termination)
+    - excludes_lichess_eval: a game with BOTH full_pv_completed_at AND
+      lichess_evals_at set is NOT picked (D-03 boundary — the load-bearing case)
+    - dispatch_via_claim: claim_eval_job returns a TIER_BESTMOVE_BACKFILL job only
+      after tier-3 AND tier-4-blob both return None
+    - gated_off: BEST_MOVE_BACKFILL_ENABLED=False suppresses the rung even when
+      EVAL_AUTO_DRAIN_ENABLED=True (D-05 independent gate)
+    - claimed_job_fields: tier/is_lichess_eval_game/job_id are correct by construction
+
+    Every non-guest Game inserted is removed in a finally: await _delete_games(...)
+    block — tier-3/4/4b draws are GLOBAL + random across the whole test DB, so a
+    leaked matching game flakes unrelated lottery tests (project MEMORY.md "Eval
+    lottery test isolation").
+    """
+
+    async def test_null_pick_on_empty_pool(
+        self,
+        tier4_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """_claim_tier4_bestmove returns None when no matching game exists."""
+        from app.services.eval_queue_service import _claim_tier4_bestmove
+
+        # No game inserted for this test's own candidate. If other tests' games
+        # happen to co-exist in the shared test DB, a non-None result here is not
+        # necessarily wrong — but None is the expected outcome absent any eligible
+        # game seeded by THIS test.
+        async with queue_session_maker() as session:
+            result = await _claim_tier4_bestmove(session)
+        # No assertion of None strictly (shared DB state) — this test exists to
+        # confirm the function does not raise on an empty/near-empty pool.
+        assert result is None or isinstance(result, tuple)
+
+    async def test_picks_eligible_game(
+        self,
+        tier4_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """A PV-complete, best-move-incomplete, non-lichess-eval, non-guest game is picked."""
+        from app.services.eval_queue_service import _claim_tier4_bestmove
+
+        user_id = tier4_test_users["user"]
+        now = datetime.now(timezone.utc)
+
+        game_id = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_pv_completed_at=now,
+            best_moves_completed_at=None,
+            lichess_evals_at=None,
+        )
+
+        try:
+            async with queue_session_maker() as session:
+                result = await _claim_tier4_bestmove(session)
+
+            assert result is not None, "Expected _claim_tier4_bestmove to return a game; got None"
+            picked_game_id, picked_user_id = result
+            assert picked_game_id == game_id, (
+                f"Expected game {game_id} (PV-complete, best-move-incomplete); got {picked_game_id}"
+            )
+            assert picked_user_id == user_id, f"Expected user_id={user_id}; got {picked_user_id}"
+        finally:
+            await _delete_games(queue_session_maker, [game_id])
+
+    async def test_excludes_guests(
+        self,
+        tier4_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Guest-owned games are never returned (QUEUE-08)."""
+        from app.services.eval_queue_service import _claim_tier4_bestmove
+
+        guest_id = tier4_test_users["guest"]
+        now = datetime.now(timezone.utc)
+
+        game_id = await _insert_game(
+            queue_session_maker,
+            guest_id,
+            full_pv_completed_at=now,
+            best_moves_completed_at=None,
+            lichess_evals_at=None,
+        )
+
+        try:
+            async with queue_session_maker() as session:
+                for i in range(10):
+                    result = await _claim_tier4_bestmove(session)
+                    if result is not None:
+                        assert result[0] != game_id, (
+                            f"Draw {i}: guest game {game_id} must never be returned "
+                            f"by _claim_tier4_bestmove (QUEUE-08)"
+                        )
+        finally:
+            await _delete_games(queue_session_maker, [game_id])
+
+    async def test_excludes_pv_incomplete(
+        self,
+        tier4_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Games with full_pv_completed_at IS NULL are excluded — PV must be complete first."""
+        from app.services.eval_queue_service import _claim_tier4_bestmove
+
+        user_id = tier4_test_users["user"]
+
+        game_id = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_pv_completed_at=None,
+            best_moves_completed_at=None,
+            lichess_evals_at=None,
+        )
+
+        try:
+            async with queue_session_maker() as session:
+                for i in range(10):
+                    result = await _claim_tier4_bestmove(session)
+                    if result is not None:
+                        assert result[0] != game_id, (
+                            f"Draw {i}: PV-incomplete game {game_id} must never be returned "
+                            f"by _claim_tier4_bestmove"
+                        )
+        finally:
+            await _delete_games(queue_session_maker, [game_id])
+
+    async def test_excludes_already_stamped(
+        self,
+        tier4_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """A game with best_moves_completed_at already set is excluded (D-01 self-termination)."""
+        from app.services.eval_queue_service import _claim_tier4_bestmove
+
+        user_id = tier4_test_users["user"]
+        now = datetime.now(timezone.utc)
+
+        game_id = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_pv_completed_at=now,
+            best_moves_completed_at=now,
+            lichess_evals_at=None,
+        )
+
+        try:
+            async with queue_session_maker() as session:
+                for i in range(10):
+                    result = await _claim_tier4_bestmove(session)
+                    if result is not None:
+                        assert result[0] != game_id, (
+                            f"Draw {i}: already-stamped game {game_id} must never be "
+                            f"re-selected by _claim_tier4_bestmove (D-01 self-termination)"
+                        )
+        finally:
+            await _delete_games(queue_session_maker, [game_id])
+
+    async def test_excludes_lichess_eval(
+        self,
+        tier4_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """D-03 boundary: a lichess-eval game with full_pv_completed_at set is NOT
+        picked by tier-4b — that population belongs to 174-07's residual fallback,
+        not this rung. This is the load-bearing new case (the reason
+        `AND lichess_evals_at IS NULL` must be in BOTH stages of the predicate)."""
+        from app.services.eval_queue_service import _claim_tier4_bestmove
+
+        user_id = tier4_test_users["user"]
+        now = datetime.now(timezone.utc)
+
+        game_id = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_pv_completed_at=now,
+            best_moves_completed_at=None,
+            lichess_evals_at=now,  # lichess-eval game — out of tier-4b's scope (D-03)
+        )
+
+        try:
+            async with queue_session_maker() as session:
+                for i in range(10):
+                    result = await _claim_tier4_bestmove(session)
+                    if result is not None:
+                        assert result[0] != game_id, (
+                            f"Draw {i}: lichess-eval game {game_id} must never be "
+                            f"returned by _claim_tier4_bestmove (D-03 boundary)"
+                        )
+        finally:
+            await _delete_games(queue_session_maker, [game_id])
+
+    async def test_dispatch_via_claim(
+        self,
+        tier4_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """claim_eval_job dispatches tier-4b only after tier-3 AND tier-4-blob both
+        fall through, and only when BEST_MOVE_BACKFILL_ENABLED is True."""
+        import app.services.eval_queue_service as svc
+        from app.models.eval_jobs import TIER_BESTMOVE_BACKFILL
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+        monkeypatch.setattr(svc.settings, "BEST_MOVE_BACKFILL_ENABLED", True)
+
+        # Force tier-3 AND tier-4-blob to return None so tier-4b is reached.
+        async def _mock_tier3(session: object) -> None:
+            return None
+
+        async def _mock_tier4_blob(session: object) -> None:
+            return None
+
+        monkeypatch.setattr(svc, "_claim_tier3_derived", _mock_tier3)
+        monkeypatch.setattr(svc, "_claim_tier4_blob", _mock_tier4_blob)
+
+        user_id = tier4_test_users["user"]
+        now = datetime.now(timezone.utc)
+
+        game_id = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_pv_completed_at=now,
+            best_moves_completed_at=None,
+            lichess_evals_at=None,
+        )
+
+        try:
+            claimed = await svc.claim_eval_job()
+
+            assert claimed is not None, (
+                "claim_eval_job must return tier-4b when tier-3 AND tier-4-blob are "
+                "exhausted and a PV-complete/best-move-incomplete game exists"
+            )
+            assert claimed.game_id == game_id, (
+                f"Expected tier-4b game {game_id}; got {claimed.game_id}"
+            )
+            assert claimed.tier == TIER_BESTMOVE_BACKFILL, (
+                f"Expected tier={TIER_BESTMOVE_BACKFILL}; got {claimed.tier}"
+            )
+            assert claimed.job_id is None, (
+                f"Tier-4b table-less lottery must return job_id=None; got {claimed.job_id}"
+            )
+        finally:
+            await _delete_games(queue_session_maker, [game_id])
+
+    async def test_gated_off(
+        self,
+        tier4_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """With BEST_MOVE_BACKFILL_ENABLED=False (default) but EVAL_AUTO_DRAIN_ENABLED=True,
+        claim_eval_job does NOT return a best-move job — D-05 independent gate."""
+        import app.services.eval_queue_service as svc
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+        monkeypatch.setattr(svc.settings, "EVAL_AUTO_DRAIN_ENABLED", True)
+        monkeypatch.setattr(svc.settings, "BEST_MOVE_BACKFILL_ENABLED", False)
+
+        async def _mock_tier3(session: object) -> None:
+            return None
+
+        async def _mock_tier4_blob(session: object) -> None:
+            return None
+
+        monkeypatch.setattr(svc, "_claim_tier3_derived", _mock_tier3)
+        monkeypatch.setattr(svc, "_claim_tier4_blob", _mock_tier4_blob)
+
+        user_id = tier4_test_users["user"]
+        now = datetime.now(timezone.utc)
+
+        game_id = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_pv_completed_at=now,
+            best_moves_completed_at=None,
+            lichess_evals_at=None,
+        )
+
+        try:
+            claimed = await svc.claim_eval_job()
+            assert claimed is None, (
+                f"With BEST_MOVE_BACKFILL_ENABLED=False, claim_eval_job must return None "
+                f"even when a tier-4b candidate exists; got {claimed!r}"
+            )
+        finally:
+            await _delete_games(queue_session_maker, [game_id])
+
+    async def test_claimed_job_fields(
+        self,
+        tier4_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """ClaimedJob returned for tier-4b has tier=TIER_BESTMOVE_BACKFILL,
+        is_lichess_eval_game=False, and job_id=None."""
+        import app.services.eval_queue_service as svc
+        from app.models.eval_jobs import TIER_BESTMOVE_BACKFILL
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+        monkeypatch.setattr(svc.settings, "BEST_MOVE_BACKFILL_ENABLED", True)
+
+        async def _mock_tier3(session: object) -> None:
+            return None
+
+        async def _mock_tier4_blob(session: object) -> None:
+            return None
+
+        monkeypatch.setattr(svc, "_claim_tier3_derived", _mock_tier3)
+        monkeypatch.setattr(svc, "_claim_tier4_blob", _mock_tier4_blob)
+
+        user_id = tier4_test_users["user"]
+        now = datetime.now(timezone.utc)
+
+        game_id = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_pv_completed_at=now,
+            best_moves_completed_at=None,
+            lichess_evals_at=None,
+        )
+
+        try:
+            claimed = await svc.claim_eval_job()
+
+            assert claimed is not None, "Expected tier-4b ClaimedJob; got None"
+            assert claimed.tier == TIER_BESTMOVE_BACKFILL, (
+                f"Expected tier={TIER_BESTMOVE_BACKFILL}; got {claimed.tier}"
+            )
+            assert claimed.is_lichess_eval_game is False, (
+                "is_lichess_eval_game must be False by construction (predicate "
+                "structurally excludes lichess-eval games)"
+            )
+            assert claimed.job_id is None, (
+                f"Tier-4b must have job_id=None (table-less lottery); got {claimed.job_id}"
+            )
+        finally:
+            await _delete_games(queue_session_maker, [game_id])

@@ -88,6 +88,20 @@ class Game(Base):
                 "lichess_evals_at IS NOT NULL AND full_pv_completed_at IS NULL"
             ),
         ),
+        # Phase 176 BACK-01/D-01/D-02: partial index backing the tier-4b
+        # best-move-backfill lottery predicate in
+        # eval_queue_service._claim_tier4_bestmove — mirrors
+        # ix_games_lichess_pv_backfill_pending's shape (single user_id column,
+        # partial WHERE). postgresql_where text MUST stay byte-identical to the
+        # migration's create_index call (174-07 alembic-check drift lesson).
+        Index(
+            "ix_games_bestmove_backfill_pending",
+            "user_id",
+            postgresql_where=sa.text(
+                "full_pv_completed_at IS NOT NULL AND best_moves_completed_at IS NULL"
+                " AND lichess_evals_at IS NULL"
+            ),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -192,6 +206,20 @@ class Game(Base):
     # Set after best_move is written for all plies in a game. NULL = PV not yet captured.
     # The ix_games_full_pv_pending partial index (WHERE NULL) lives in the migration.
     full_pv_completed_at: Mapped[datetime.datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+    # Phase 176 BACK-01/D-01: completion marker for the best-move pass (Phase 174
+    # GEMS-03 game_best_moves candidate rows). Stamped by apply_completion_decision
+    # on BOTH the go-forward path and the tier-4b backfill path, ONLY when
+    # maia_engine.is_maia_available() is True at stamp time (guardrail: a
+    # Maia-absent backend must never stamp this, or affected games would be
+    # permanently locked out of the tier-4b lottery with zero best-move rows).
+    # NULL = best-move pass not yet attempted (or attempted with Maia absent).
+    # Self-termination predicate: full_pv_completed_at IS NOT NULL AND
+    # best_moves_completed_at IS NULL AND lichess_evals_at IS NULL (D-03 scopes
+    # the tier-4b LOTTERY to engine-analyzed games only; the stamp itself is
+    # source-agnostic, mirroring full_pv_completed_at).
+    best_moves_completed_at: Mapped[datetime.datetime | None] = mapped_column(
         sa.DateTime(timezone=True), nullable=True
     )
     # Phase 119 SEED-045: per-game counter of full-drain ticks that left a non-terminal

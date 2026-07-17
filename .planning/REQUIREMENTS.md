@@ -30,7 +30,7 @@ Requirements for this milestone. Each maps to a roadmap phase.
 
 ### Backfill (BACK)
 
-- [ ] **BACK-01**: The existing analyzed corpus gains best-move rows opportunistically via the tier-4 lottery pattern (global + random, no deterministic sweep, no ETA); backfill lottery keying (reuse tier-4 blob lottery vs a parallel lottery on missing rows) decided at phase planning.
+- [x] **BACK-01**: The existing analyzed corpus gains best-move rows opportunistically via the tier-4 lottery pattern (global + random, no deterministic sweep, no ETA); backfill lottery keying (reuse tier-4 blob lottery vs a parallel lottery on missing rows) decided at phase planning.
 
 ## Future Requirements
 
@@ -67,7 +67,7 @@ Which phases cover which requirements. Filled during roadmap creation.
 | BOARD-01 | Phase 175 | Done |
 | BOARD-02 | Phase 175 | Done |
 | FILT-01 | Phase 175 | Done |
-| BACK-01 | Phase 176 | Pending |
+| BACK-01 | Phase 176 | Complete |
 
 ---
 *Requirements defined: 2026-07-16*

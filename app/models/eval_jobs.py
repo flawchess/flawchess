@@ -15,10 +15,15 @@ from app.models.base import Base
 #   and unaffected — a future tier-2 use would just need a new constant, no
 #   schema change.)
 #   TIER_IDLE_BACKLOG = 3   — idle-backlog drain
-#   TIER_BLOB_BACKFILL = 4  — spare-capacity flaw-blob backfill (lowest priority)
+#   TIER_BLOB_BACKFILL = 4  — spare-capacity flaw-blob backfill
+#   TIER_BESTMOVE_BACKFILL = 5 — spare-capacity best-move backfill (Phase 176
+#   BACK-01, lowest priority; added ahead of the Plan-01 Task 4 lottery rung so
+#   the Task 3 drain/guardrail tests can reference it without a forward
+#   dependency — ClaimedJob.tier is inert downstream, see eval_queue_service.py)
 TIER_EXPLICIT: int = 1
 TIER_IDLE_BACKLOG: int = 3
 TIER_BLOB_BACKFILL: int = 4
+TIER_BESTMOVE_BACKFILL: int = 5
 
 
 class EvalJob(Base):
