@@ -26,6 +26,9 @@ import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { EvalChart } from '@/components/library/EvalChart';
 import { SeverityBadge } from '@/components/library/SeverityBadge';
+import { GemGreatBadge } from '@/components/library/GemGreatBadge';
+import type { BestMoveTier } from '@/components/library/GemGreatBadge';
+import { isUserPly } from '@/lib/plyOwnership';
 import { TagChip, TagLegend } from '@/components/library/TagChip';
 import { TacticMotifGroup } from '@/components/library/TacticMotifGroup';
 import { ChipColumn } from '@/components/library/ChipColumn';
@@ -175,13 +178,17 @@ const TACTIC_ORIENTATION_LABELS: Record<TacticChipOrientation, string> = {
 type FlawRef =
   | { kind: 'tag'; tag: FlawTag }
   | { kind: 'severity'; severity: FlawSeverity }
-  | { kind: 'motif'; motif: string; orientation: TacticChipOrientation };
+  | { kind: 'motif'; motif: string; orientation: TacticChipOrientation }
+  // Gem/great tier (Phase 175 Plan 06) — sourced from eval_series (best_move_tier),
+  // not flaw_markers, so it's a separate ref kind rather than a FlawSeverity value.
+  | { kind: 'bestMove'; tier: BestMoveTier };
 
 function sameFlawRef(a: FlawRef, b: FlawRef): boolean {
   if (a.kind === 'tag' && b.kind === 'tag') return a.tag === b.tag;
   if (a.kind === 'severity' && b.kind === 'severity') return a.severity === b.severity;
   if (a.kind === 'motif' && b.kind === 'motif')
     return a.motif === b.motif && a.orientation === b.orientation;
+  if (a.kind === 'bestMove' && b.kind === 'bestMove') return a.tier === b.tier;
   return false;
 }
 
@@ -244,6 +251,12 @@ export function LibraryGameCard({
   };
 
   const isAnalyzed = game.analysis_state === 'analyzed';
+
+  // Narrowed user color (game.user_color is typed `string`). Used to scope the
+  // gem/great surfaces to the user's OWN plies — best_move_tier is position-scoped,
+  // so gems/greats exist on the opponent's moves too and must be excluded (Plan 06 fix).
+  const userColor: 'white' | 'black' | undefined =
+    game.user_color === 'white' || game.user_color === 'black' ? game.user_color : undefined;
 
   // Clear in-flight state when the games list refetches and the game flips to
   // analyzed — prevents the card staying stuck in "Analyzing…" after the eval
@@ -416,6 +429,24 @@ export function LibraryGameCard({
     return m;
   }, [game.flaw_markers]);
 
+  // Gem/great ascending ply lists (Phase 175 Plan 06), for the Gem/Great badges'
+  // click-to-cycle — sourced from eval_series (best_move_tier), unlike every other
+  // *Plies map above which is sourced from flaw_markers. eval_series is already
+  // ply-ascending, so no separate sort is needed.
+  // Bug fix (Plan 06): best_move_tier is POSITION-scoped (both players' best moves),
+  // so filter to the user's OWN plies via isUserPly — otherwise the badge count AND
+  // cycling would include the opponent's gems/greats.
+  const bestMovePlies = useMemo(() => {
+    const gem: number[] = [];
+    const great: number[] = [];
+    for (const pt of game.eval_series ?? []) {
+      if (userColor != null && !isUserPly(pt.ply, userColor)) continue;
+      if (pt.best_move_tier === 'gem') gem.push(pt.ply);
+      else if (pt.best_move_tier === 'great') great.push(pt.ply);
+    }
+    return { gem, great };
+  }, [game.eval_series, userColor]);
+
   // Transient hover highlight: hovering a tag chip or a severity badge in the flaw
   // column emphasizes the matching markers on this card's eval chart. Inaccuracy is
   // included — its markers are off-chart by default and get revealed on its hover.
@@ -432,6 +463,9 @@ export function LibraryGameCard({
   const highlightedPlies = useMemo(() => {
     const ref = highlight ?? cycle?.ref ?? null;
     if (!ref) return null;
+    // Gem/great plies come from eval_series (bestMovePlies), not flaw_markers — a
+    // direct lookup rather than a flaw_markers scan (Phase 175 Plan 06).
+    if (ref.kind === 'bestMove') return new Set(bestMovePlies[ref.tier]);
     const set = new Set<number>();
     for (const fm of game.flaw_markers ?? []) {
       if (!fm.is_user) continue;
@@ -451,7 +485,7 @@ export function LibraryGameCard({
       if (matches) set.add(fm.ply);
     }
     return set;
-  }, [highlight, cycle, game.flaw_markers]);
+  }, [highlight, cycle, game.flaw_markers, bestMovePlies]);
 
   // Mobile (<sm) miniboard spans 50% of the viewport width; sm+ keeps the fixed size.
   const mobileBoardSize = useMiniBoardSize(MOBILE_BOARD_SIZE);
@@ -533,6 +567,7 @@ export function LibraryGameCard({
   const pliesForRef = (ref: FlawRef): number[] => {
     if (ref.kind === 'tag') return tagPlies.get(ref.tag) ?? [];
     if (ref.kind === 'severity') return severityPlies.get(ref.severity) ?? [];
+    if (ref.kind === 'bestMove') return bestMovePlies[ref.tier];
     return motifPlies.get(motifPliesKey(ref.orientation, ref.motif)) ?? [];
   };
   const handleActivate = (ref: FlawRef) => {
@@ -854,6 +889,25 @@ export function LibraryGameCard({
         })
       : null;
 
+  // Gem/Great count badges (Phase 175 Plan 06) — same shared-element pattern as
+  // severityBadges above: rendered once, reused by both the mobile row and the
+  // desktop vertical stack. Only shown when the game has >=1 ply of that tier.
+  const bestMoveBadges =
+    game.analysis_state === 'analyzed'
+      ? (['gem', 'great'] as const)
+          .filter((tier) => bestMovePlies[tier].length > 0)
+          .map((tier) => (
+            <GemGreatBadge
+              key={tier}
+              tier={tier}
+              count={bestMovePlies[tier].length}
+              gameId={game.game_id}
+              onHover={(active) => setHighlight(active ? { kind: 'bestMove', tier } : null)}
+              onActivate={() => handleActivate({ kind: 'bestMove', tier })}
+            />
+          ))
+      : null;
+
   // Context flaw-tag chips (miss/lucky/low-clock/unrushed/phase…). Reused by both the
   // columned beta layout and the non-beta full-width row. The explanatory legend is split
   // out into `contextLegend` so the columned layout can pin it to the right of the
@@ -953,6 +1007,7 @@ export function LibraryGameCard({
           data-testid={`severity-row-${game.game_id}`}
         >
           {severityBadges}
+          {bestMoveBadges}
         </div>
         {renderChipsBlock()}
       </div>
@@ -1029,6 +1084,7 @@ export function LibraryGameCard({
               phaseTransitions={game.phase_transitions}
               moves={game.moves ?? []}
               flipped={game.user_color === 'black'}
+              userColor={userColor}
               onHoverPlyChange={setHoverPly}
               highlightedPlies={highlightedPlies}
               outlinedPlies={outlinedPlies}
@@ -1106,6 +1162,7 @@ export function LibraryGameCard({
                     phaseTransitions={game.phase_transitions}
                     moves={game.moves ?? []}
                     flipped={game.user_color === 'black'}
+                    userColor={userColor}
                     onHoverPlyChange={setHoverPly}
                     highlightedPlies={highlightedPlies}
                     outlinedPlies={outlinedPlies}
@@ -1125,15 +1182,16 @@ export function LibraryGameCard({
                   />
                 )}
               </div>
-              {/* Severity badges, stacked vertically beside the chart. items-stretch makes
-                  all three share the widest badge's width; justify-center keeps each badge's
-                  count+label centered. Marked as flaw-controls for the outside-pointer
-                  highlight guard. */}
+              {/* Severity + Gem/Great badges, stacked vertically beside the chart.
+                  items-stretch makes all badges share the widest one's width;
+                  justify-center keeps each badge's count+label centered. Marked as
+                  flaw-controls for the outside-pointer highlight guard. */}
               <div
                 className="flex flex-col items-stretch gap-1.5 shrink-0 [&>*]:justify-center"
                 data-testid={`flaw-controls-${game.game_id}`}
               >
                 {severityBadges}
+                {bestMoveBadges}
               </div>
             </div>
           ) : (

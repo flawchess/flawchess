@@ -1,6 +1,6 @@
 ---
 id: SEED-107
-status: dormant
+status: superseded
 planted: 2026-07-15
 planted_during: v2.3 (post Phase 172 / SEED-106)
 trigger_when: next analysis-board reliability pass, or when a user reports a gem move that never gets badged without dwelling on it

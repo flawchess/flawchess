@@ -204,3 +204,96 @@ describe('AnalysisTagsPanel', () => {
     expect(container.firstChild).toBeNull();
   });
 });
+
+describe('AnalysisTagsPanel Gem/Great badges (Phase 175 Plan 06)', () => {
+  // buildGame sets user_color: 'white', so even plies (0, 2, 4) are the USER's moves
+  // and odd plies (1, 3) are the opponent's. best_move_tier is POSITION-scoped, so the
+  // fixture seeds gems/greats on BOTH sides to prove the user-only filter (Plan 06 fix).
+  // User: gem@0, great@2, gem@4. Opponent: gem@1, great@3.
+  const gemGreatFixture = buildGame({
+    severity_counts: { inaccuracy: 0, mistake: 0, blunder: 0 },
+    chips: [],
+    flaw_markers: [],
+    eval_series: [
+      { ply: 0, es: 0.5, eval_cp: 0, eval_mate: null, best_move_tier: 'gem', maia_prob: 0.1 },
+      { ply: 1, es: 0.55, eval_cp: 10, eval_mate: null, best_move_tier: 'gem', maia_prob: 0.12 },
+      { ply: 2, es: 0.6, eval_cp: 20, eval_mate: null, best_move_tier: 'great', maia_prob: 0.3 },
+      { ply: 3, es: 0.62, eval_cp: 25, eval_mate: null, best_move_tier: 'great', maia_prob: 0.32 },
+      { ply: 4, es: 0.64, eval_cp: 30, eval_mate: null, best_move_tier: 'gem', maia_prob: 0.15 },
+    ],
+  });
+
+  it('counts only USER gems/greats, excluding the opponent (odd-ply) ones', () => {
+    render(<AnalysisTagsPanel game={gemGreatFixture} onCyclePly={() => {}} />);
+    // User gems: plies 0, 4 → 2 (opponent gem@1 excluded).
+    expect(screen.getByTestId('badge-gem-1').textContent).toContain('2');
+    // User great: ply 2 → 1 (opponent great@3 excluded).
+    expect(screen.getByTestId('badge-great-1').textContent).toContain('1');
+  });
+
+  it('renders no Gem/Great badges when the game has no gem/great plies', () => {
+    const noBestMoves = buildGame({
+      severity_counts: { inaccuracy: 0, mistake: 1, blunder: 0 },
+      chips: [],
+      flaw_markers: [buildMarker({ ply: 4, severity: 'mistake', is_user: true })],
+      eval_series: [{ ply: 4, es: 0.5, eval_cp: 0, eval_mate: null, best_move_tier: null, maia_prob: null }],
+    });
+    render(<AnalysisTagsPanel game={noBestMoves} onCyclePly={() => {}} />);
+    expect(screen.queryByTestId('badge-gem-1')).toBeNull();
+    expect(screen.queryByTestId('badge-great-1')).toBeNull();
+  });
+
+  it('shows no badge when only the opponent has gems (white user, gem on an odd ply)', () => {
+    const opponentOnlyGem = buildGame({
+      severity_counts: { inaccuracy: 0, mistake: 0, blunder: 0 },
+      chips: [],
+      flaw_markers: [],
+      eval_series: [
+        { ply: 1, es: 0.5, eval_cp: 0, eval_mate: null, best_move_tier: 'gem', maia_prob: 0.1 },
+      ],
+    });
+    const { container } = render(<AnalysisTagsPanel game={opponentOnlyGem} onCyclePly={() => {}} />);
+    // No user flaws, no user gems/greats → the panel renders nothing at all.
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('renders even with zero flaw markers, as long as USER gem/great plies exist', () => {
+    const noFlawsButGem = buildGame({
+      severity_counts: { inaccuracy: 0, mistake: 0, blunder: 0 },
+      chips: [],
+      flaw_markers: [],
+      eval_series: [
+        { ply: 0, es: 0.5, eval_cp: 0, eval_mate: null, best_move_tier: 'gem', maia_prob: 0.1 },
+      ],
+    });
+    const { container } = render(<AnalysisTagsPanel game={noFlawsButGem} onCyclePly={() => {}} />);
+    expect(container.firstChild).not.toBeNull();
+    expect(screen.getByTestId('badge-gem-1')).toBeDefined();
+  });
+
+  it('cycling the Gem badge invokes onCyclePly with the USER gem plies only, wrapping', () => {
+    const onCyclePly = vi.fn();
+    render(<AnalysisTagsPanel game={gemGreatFixture} onCyclePly={onCyclePly} />);
+    const badge = screen.getByTestId('badge-gem-1');
+    fireEvent.click(badge);
+    // User gems are plies 0 and 4 — never ply 1 (opponent).
+    expect(onCyclePly).toHaveBeenNthCalledWith(1, 0);
+    fireEvent.click(badge);
+    expect(onCyclePly).toHaveBeenNthCalledWith(2, 4);
+    fireEvent.click(badge);
+    // Wraps back to the first user gem ply.
+    expect(onCyclePly).toHaveBeenNthCalledWith(3, 0);
+    // Never visits the opponent gem ply.
+    expect(onCyclePly).not.toHaveBeenCalledWith(1);
+  });
+
+  it('cycling the Great badge invokes onCyclePly with the user great ply, independent of Gem', () => {
+    const onCyclePly = vi.fn();
+    render(<AnalysisTagsPanel game={gemGreatFixture} onCyclePly={onCyclePly} />);
+    fireEvent.click(screen.getByTestId('badge-gem-1'));
+    fireEvent.click(screen.getByTestId('badge-great-1'));
+    // The user's only great ply (2), never the opponent great ply 3.
+    expect(onCyclePly).toHaveBeenLastCalledWith(2);
+    expect(onCyclePly).not.toHaveBeenCalledWith(3);
+  });
+});

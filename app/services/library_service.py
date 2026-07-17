@@ -29,6 +29,7 @@ import sentry_sdk
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
+from app.models.game_best_move import GameBestMove
 from app.models.game_flaw import GameFlaw
 from app.repositories import library_repository
 from app.repositories.library_repository import (
@@ -54,6 +55,7 @@ from app.schemas.library import (
     TacticComparisonResponse,
     TagDistribution,
 )
+from app.services.best_move_candidates import classify_best_move, mover_color_for_ply
 from app.services.flaw_delta_zones import FLAW_DELTA_ZONES
 from app.models.game_position import GamePosition
 from app.schemas.library import EvalPoint, FlawMarker, PhaseTransitions
@@ -115,6 +117,7 @@ def _build_eval_series(
     game: Game,
     positions: list[GamePosition],
     tactic_by_ply: dict[int, _TacticByPlyEntry] | None = None,
+    best_moves_by_ply: dict[int, GameBestMove] | None = None,
 ) -> tuple[list[EvalPoint], list[FlawMarker], PhaseTransitions]:
     """Compute white-perspective ES line, flaw markers, and phase transitions.
 
@@ -134,6 +137,12 @@ def _build_eval_series(
                        None = no tactic chip data (default, preserves backward compat).
                        Each motif/conf pair is None when below _TACTIC_CHIP_CONFIDENCE_MIN
                        or when the DB column is NULL.
+        best_moves_by_ply: Optional dict mapping ply -> GameBestMove candidate row
+                       (Phase 175, BOARD-01). None/missing entry -> EvalPoint.
+                       best_move_tier/maia_prob stay null (a stored row is not
+                       automatically a marker — Pitfall 3 — classify_best_move is
+                       always called on the raw floats). maia_prob is populated
+                       ONLY when the tier is not "neither" (Pitfall 5).
 
     Returns:
         (eval_series, flaw_markers, phase_transitions) tuple where:
@@ -187,6 +196,28 @@ def _build_eval_series(
                 move_seconds = round(max(0.0, prior - clock + increment), 1)
             prev_clock[color] = clock
 
+        # Phase 175 (BOARD-01): pre-classified gem/great tier from the stored
+        # game_best_moves row, via the SAME authoritative classify_best_move the
+        # FILT-01 filter's SQL twin agrees with (D-03b). Row presence alone is
+        # NEVER the marker (Pitfall 3) — classify_best_move is always called on
+        # the raw floats; a [0.05, 0.10) margin row classifies "neither" here.
+        best_move_tier: Literal["gem", "great"] | None = None
+        best_move_maia_prob: float | None = None
+        best_row = best_moves_by_ply.get(pos.ply) if best_moves_by_ply else None
+        if best_row is not None:
+            tier = classify_best_move(
+                best_row.maia_prob,
+                best_row.best_cp,
+                best_row.best_mate,
+                best_row.second_cp,
+                best_row.second_mate,
+                mover_color_for_ply(pos.ply),
+            )
+            if tier != "neither":
+                best_move_tier = tier
+                # Pitfall 5: maia_prob populated ONLY alongside a non-null tier.
+                best_move_maia_prob = best_row.maia_prob
+
         eval_series.append(
             EvalPoint(
                 ply=pos.ply,
@@ -197,6 +228,8 @@ def _build_eval_series(
                 move_seconds=move_seconds,
                 # Engine best move FROM this position (NULL for lichess-eval-only games).
                 best_move=pos.best_move,
+                best_move_tier=best_move_tier,
+                maia_prob=best_move_maia_prob,
             )
         )
 
@@ -379,6 +412,7 @@ def _build_card(
     active_eval_status: Literal["pending", "leased"] | None = None,
     *,
     tactic_flaw_rows: list[GameFlaw] | None = None,
+    best_moves_by_ply: dict[int, GameBestMove] | None = None,
 ) -> GameFlawCard:
     """Build one GameFlawCard from pre-fetched game_flaws rows (D-02 migration).
 
@@ -531,7 +565,10 @@ def _build_card(
                         missed_depth_val,
                     )
             eval_series_val, flaw_marker_val, phase_transition_val = _build_eval_series(
-                game, positions, tactic_by_ply=tactic_by_ply if tactic_by_ply else None
+                game,
+                positions,
+                tactic_by_ply=tactic_by_ply if tactic_by_ply else None,
+                best_moves_by_ply=best_moves_by_ply,
             )
             eval_series_data = eval_series_val
             flaw_marker_data = flaw_marker_val
@@ -681,6 +718,14 @@ async def get_library_game(
         await library_repository.fetch_page_eval_positions(session, user_id, game_ids)
     ).get(game_id, [])
 
+    # Phase 175 (BOARD-01): batch-fetch stored best-move candidate rows for this
+    # game, same already-user-scoped game_ids list as fetch_page_eval_positions
+    # (fetch_page_best_moves has no user_id column of its own — IDOR safety comes
+    # from this caller-side scoping).
+    best_moves_by_ply = (await library_repository.fetch_page_best_moves(session, game_ids)).get(
+        game_id, {}
+    )
+
     return _build_card(
         game,
         flaw_rows,
@@ -688,6 +733,7 @@ async def get_library_game(
         positions,
         active_map.get(game_id),
         tactic_flaw_rows=tactic_flaw_rows,
+        best_moves_by_ply=best_moves_by_ply,
     )
 
 
@@ -712,6 +758,8 @@ async def get_library_games(
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
     color: str | None = None,
+    has_gem: bool | None = None,
+    has_great: bool | None = None,
 ) -> LibraryGamesResponse:
     """Return the flaw-filtered paginated games archive (LIBG-08).
 
@@ -732,6 +780,10 @@ async def get_library_games(
     still defaults to "human" (RESEARCH Pitfall 5), which independently
     excludes is_computer_game=True rows; wiring that default/filter-chip is
     Phase 171's job, out of scope here.
+
+    has_gem / has_great (FILT-01, D-04/D-05): threaded straight through to
+    query_filtered_games -> apply_game_filters -> best_move_exists_from_table,
+    no transformation at this layer.
     """
     library_platform = platform if platform is not None else ["chess.com", "lichess", "flawchess"]
     try:
@@ -755,6 +807,8 @@ async def get_library_games(
             opponent_gap_min=opponent_gap_min,
             opponent_gap_max=opponent_gap_max,
             color=color,
+            has_gem=has_gem,
+            has_great=has_great,
         )
 
         if not games:
@@ -794,6 +848,12 @@ async def get_library_games(
             session, user_id, page_game_ids
         )
 
+        # Phase 175 (BOARD-01): batch-fetch stored best-move candidate rows,
+        # scoped to the same analyzed_game_ids as page_positions (unanalyzed
+        # games have no eval_series to attach tiers to). No user_id scoping of
+        # its own — IDOR safety comes from this already-user-scoped id list.
+        page_best_moves = await library_repository.fetch_page_best_moves(session, analyzed_game_ids)
+
         cards = [
             _build_card(
                 game,
@@ -802,6 +862,7 @@ async def get_library_games(
                 page_positions.get(game.id, []),
                 active_status_map.get(game.id),
                 tactic_flaw_rows=page_tactic_flaws.get(game.id, []),
+                best_moves_by_ply=page_best_moves.get(game.id, {}),
             )
             for game in games
         ]

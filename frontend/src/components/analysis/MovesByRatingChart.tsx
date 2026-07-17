@@ -32,6 +32,7 @@ import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import {
   FLAWCHESS_ENGINE_ACCENT,
+  GREAT_ACCENT,
   MAIA_ACCENT,
   MOVE_QUALITY_BEST,
   MOVE_QUALITY_BLUNDER,
@@ -190,6 +191,8 @@ function colorForQuality(quality: MoveQuality | undefined): string {
       return MOVE_QUALITY_BLUNDER;
     case 'gem':
       return MAIA_ACCENT;
+    case 'great':
+      return GREAT_ACCENT;
     default:
       return MOVE_QUALITY_PENDING;
   }

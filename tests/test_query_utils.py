@@ -134,6 +134,84 @@ def test_apply_game_filters_date_range() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Phase 175 Plan 01 (FILT-01) — has_gem / has_great composition (D-04/D-05/D-05a)
+# ---------------------------------------------------------------------------
+
+
+def _base_kwargs() -> dict:
+    """Minimal kwargs shared by every apply_game_filters call in this section."""
+    return dict(
+        time_control=None,
+        platform=None,
+        rated=None,
+        opponent_type="human",
+        from_date=None,
+        to_date=None,
+    )
+
+
+def test_apply_game_filters_no_best_move_filter_when_both_unset() -> None:
+    """has_gem/has_great both None (default) — no game_best_moves EXISTS emitted."""
+    stmt = select(Game)
+    stmt = apply_game_filters(stmt, **_base_kwargs())
+    sql = _compile_sql(stmt)
+    assert "game_best_moves" not in sql, f"Unexpected best-move EXISTS: {sql}"
+
+
+def test_apply_game_filters_has_gem_emits_best_move_exists() -> None:
+    """has_gem=True emits a correlated EXISTS over game_best_moves."""
+    stmt = select(Game)
+    stmt = apply_game_filters(stmt, has_gem=True, **_base_kwargs())
+    sql = _compile_sql(stmt)
+    assert "EXISTS" in sql, f"Missing EXISTS clause: {sql}"
+    assert "game_best_moves" in sql, f"Missing game_best_moves table reference: {sql}"
+
+
+def test_apply_game_filters_has_great_emits_best_move_exists() -> None:
+    """has_great=True alone also emits the same correlated EXISTS machinery."""
+    stmt = select(Game)
+    stmt = apply_game_filters(stmt, has_great=True, **_base_kwargs())
+    sql = _compile_sql(stmt)
+    assert "EXISTS" in sql, f"Missing EXISTS clause: {sql}"
+    assert "game_best_moves" in sql, f"Missing game_best_moves table reference: {sql}"
+
+
+def test_apply_game_filters_has_gem_false_is_a_no_filter() -> None:
+    """has_gem=False (not None) must NOT emit the EXISTS — only True is a filter."""
+    stmt = select(Game)
+    stmt = apply_game_filters(stmt, has_gem=False, has_great=False, **_base_kwargs())
+    sql = _compile_sql(stmt)
+    assert "game_best_moves" not in sql, f"Unexpected best-move EXISTS: {sql}"
+
+
+def test_apply_game_filters_has_gem_composes_with_flaw_and_metadata_filters() -> None:
+    """has_gem composes alongside (not replacing) time_control/color/rated and the
+    flaw EXISTS (D-05a) — both EXISTS clauses must be present simultaneously,
+    never a parallel/exclusive filter path.
+    """
+    stmt = select(Game)
+    stmt = apply_game_filters(
+        stmt,
+        time_control=["blitz"],
+        platform=None,
+        rated=True,
+        opponent_type="human",
+        from_date=None,
+        to_date=None,
+        color="white",
+        flaw_severity=["blunder"],
+        user_id=1,
+        has_gem=True,
+    )
+    sql = _compile_sql(stmt)
+    assert "game_best_moves" in sql, f"Missing gem EXISTS: {sql}"
+    assert "game_flaws" in sql, f"Missing flaw EXISTS — filters must compose, not replace: {sql}"
+    assert "time_control_bucket" in sql
+    assert "user_color" in sql
+    assert "rated" in sql
+
+
+# ---------------------------------------------------------------------------
 # Phase 128 Plan 03 (Task 2 TDD) — orientation dimension tests (D-09)
 # ---------------------------------------------------------------------------
 

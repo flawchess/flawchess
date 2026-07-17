@@ -31,8 +31,26 @@ import { MISTAKE_DROP } from '@/generated/flawThresholds';
  *  skew from 3.8x to 2.9x (strong players were previously starved: only 2.9% of
  *  even the C2-qualifying positions cleared C1 at the 2600 rung). Caveat: the
  *  TSV's sample is enriched (21.8% of positions pass C2), so only the RATIOS
- *  above transfer to real games, not the absolute frequencies. */
+ *  above transfer to real games, not the absolute frequencies.
+ *
+ *  Cross-reference (Phase 175, SEED-108 D-01/D-03c): mirrors the backend's
+ *  authoritative `GEM_MAIA_MAX_PROB` in `app/services/best_move_candidates.py`.
+ *  This frontend copy is used ONLY by the live-engine fallback path
+ *  (classifyGem/classifyGreat, below) — the stored/mainline path always reads
+ *  the backend-classified `EvalPoint.best_move_tier` instead. If the backend
+ *  constant is ever retuned, update this copy too. */
 export const GEM_MAIA_MAX_PROB = 0.2;
+
+/** Maia policy-probability ceiling for the "great" tier's C1 band (Phase 175,
+ *  SEED-108 D-01) — great = maia_prob in (GEM_MAIA_MAX_PROB, GREAT_MAIA_MAX_PROB].
+ *
+ *  Cross-reference: mirrors the backend's authoritative `GREAT_MAIA_MAX_PROB`
+ *  in `app/services/best_move_candidates.py` (starting value, calibrated
+ *  against real per-game frequency once the pipeline runs). Fallback-only
+ *  (D-03c) — the stored/mainline path never calls `classifyGreat`; it always
+ *  reads the backend-classified `EvalPoint.best_move_tier` instead. If the
+ *  backend constant is ever retuned, update this copy too. */
+export const GREAT_MAIA_MAX_PROB = 0.5;
 
 /**
  * C1 (hard to find) AND C2 (only good move). Callers resolve the played
@@ -51,6 +69,31 @@ export function classifyGem(params: {
 }): boolean {
   const { maiaProbability, playedIsBest, bestEs, secondBestEs } = params;
   if (maiaProbability === null || maiaProbability > GEM_MAIA_MAX_PROB) return false;
+  if (!playedIsBest || bestEs === null || secondBestEs === null) return false;
+  return bestEs - secondBestEs >= MISTAKE_DROP;
+}
+
+/**
+ * C1 (moderately hard to find, one tier below gem) AND C2 (only good move —
+ * SAME gate as classifyGem). Fallback-only (D-03c): callers on the live
+ * (unanalyzed) path resolve the played move's Maia probability and the
+ * parent position's best/second-best expected score BEFORE calling this,
+ * same contract as classifyGem. The stored/mainline path never calls this —
+ * it reads the backend-classified `EvalPoint.best_move_tier` instead.
+ */
+export function classifyGreat(params: {
+  /** Played move's Maia probability at the rating-matched rung. */
+  maiaProbability: number | null;
+  /** Played move === argmax over the parent position's graded candidates. */
+  playedIsBest: boolean;
+  /** Parent position's top expected score (mover POV). */
+  bestEs: number | null;
+  /** Parent position's runner-up expected score (mover POV). */
+  secondBestEs: number | null;
+}): boolean {
+  const { maiaProbability, playedIsBest, bestEs, secondBestEs } = params;
+  if (maiaProbability === null) return false;
+  if (maiaProbability <= GEM_MAIA_MAX_PROB || maiaProbability > GREAT_MAIA_MAX_PROB) return false;
   if (!playedIsBest || bestEs === null || secondBestEs === null) return false;
   return bestEs - secondBestEs >= MISTAKE_DROP;
 }

@@ -8,6 +8,7 @@ import { Gem, BookOpen } from 'lucide-react';
 
 import { SEVERITY_GLYPH } from '../../lib/severityGlyph';
 import { GEM_GLYPH } from '../../lib/gemGlyph';
+import { GREAT_GLYPH } from '../../lib/greatGlyph';
 import { BOOK_GLYPH } from '../../lib/bookGlyph';
 import type { FlawSeverity } from '../../types/library';
 import { squareToCoords } from './arrowGeometry';
@@ -19,11 +20,14 @@ import { squareToCoords } from './arrowGeometry';
  *
  * `gem` is an additive, mutually-exclusive alternative to `severity` (Phase 163,
  * SEED-092): when set, the badge renders the violet gem icon instead of the
- * severity NAG glyph. `book` is a third, equally mutually-exclusive alternative
- * (Phase 172, SEED-106 D-08): when set, the badge renders the muted book icon
- * instead of severity or gem. No runtime assertion enforces the exclusivity
- * across all three — callers only ever set one by construction (the guard lives
- * in `Analysis.tsx`'s `boardSquareMarkers` memo).
+ * severity NAG glyph. `great` is a fourth, equally mutually-exclusive
+ * alternative (Phase 175, SEED-108): when set, the badge renders the blue
+ * "great move" icon instead of severity/gem/book. `book` is a third, equally
+ * mutually-exclusive alternative (Phase 172, SEED-106 D-08): when set, the
+ * badge renders the muted book icon instead of severity or gem/great. No
+ * runtime assertion enforces the exclusivity across all four — callers only
+ * ever set one by construction (the guard lives in `Analysis.tsx`'s
+ * `boardSquareMarkers` memo).
  */
 export interface SquareMarker {
   square: string;
@@ -31,9 +35,15 @@ export interface SquareMarker {
   /** Renders the violet gem badge instead of a severity glyph. */
   gem?: boolean;
   /**
+   * Renders the blue "great move" badge instead of a severity glyph. Mutually
+   * exclusive with `severity`/`gem`/`book` BY CONSTRUCTION at the call site
+   * (no runtime assertion — same contract the `gem` field already carries).
+   */
+  great?: boolean;
+  /**
    * Renders the muted book badge instead of a severity glyph. Mutually
-   * exclusive with `severity`/`gem` BY CONSTRUCTION at the call site (no
-   * runtime assertion — same contract the `gem` field already carries).
+   * exclusive with `severity`/`gem`/`great` BY CONSTRUCTION at the call site
+   * (no runtime assertion — same contract the `gem` field already carries).
    */
   book?: boolean;
   /** Optional depth label (e.g. allowed-tactic depth) rendered top-left. */
@@ -140,6 +150,27 @@ function SquareMarkerBadge({
     );
   }
 
+  if (marker.great) {
+    // Same ratio as the gem badge — reused verbatim (UI-SPEC: no new geometry constant).
+    const iconSize = 2 * r * GEM_ICON_DIAMETER_RATIO;
+    return (
+      <g>
+        <circle cx={cx} cy={cy} r={r} fill={GREAT_GLYPH.color} stroke={MARKER_STROKE} strokeWidth={1} />
+        {/* Same "!" glyph markup as GreatMoveIcon.tsx (D-02) so the two never drift. */}
+        <svg
+          x={cx - iconSize / 2}
+          y={cy - iconSize / 2}
+          width={iconSize}
+          height={iconSize}
+          viewBox="0 0 24 24"
+        >
+          <line x1="12" y1="6" x2="12" y2="14" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" />
+          <circle cx="12" cy="18" r="1.4" fill="#fff" />
+        </svg>
+      </g>
+    );
+  }
+
   if (marker.book) {
     // Same ratio as the gem badge — reused verbatim (UI-SPEC: no new geometry constant).
     const iconSize = 2 * r * GEM_ICON_DIAMETER_RATIO;
@@ -157,9 +188,9 @@ function SquareMarkerBadge({
     );
   }
 
-  // Severity-less markers are only possible when `gem`/`book` is set (handled
-  // above, and mutually exclusive by construction) — guard defensively rather
-  // than indexing SEVERITY_GLYPH with an undefined key.
+  // Severity-less markers are only possible when `gem`/`great`/`book` is set
+  // (handled above, and mutually exclusive by construction) — guard
+  // defensively rather than indexing SEVERITY_GLYPH with an undefined key.
   if (!marker.severity) return null;
   const glyph = SEVERITY_GLYPH[marker.severity];
   // Reuse SeverityGlyphIcon's font-to-diameter ratio so the on-board glyph matches.

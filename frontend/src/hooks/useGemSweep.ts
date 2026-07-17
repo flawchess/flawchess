@@ -1,6 +1,22 @@
 /**
  * useGemSweep — the background gem-sweep cascade (Phase 172, SEED-106 D-04/D-05).
  *
+ * ─── DEMOTED to a fallback-only mechanism (Phase 175, SEED-108 D-01/D-01a) ──
+ *
+ * An analyzed game's mainline is no longer swept: it is rendered directly
+ * from the backend's stored `game_best_moves` / `EvalPoint.best_move_tier`
+ * data (Analysis.tsx's `storedTierByPly`/`resolveMarkerFor`), which is
+ * instant and requires no Maia/Stockfish round-trip. This hook's own
+ * candidates (below) are computed from `eval_series`, so its `enabled` gate
+ * is ANDed with `!gameHasStoredBestMoveData` at the call site
+ * (Analysis.tsx) — the sweep now only ever has real work for a game whose
+ * mainline eval data exists but has NOT yet had `best_move_tier` populated
+ * (pre-Phase-176-backfill), which does not happen through this hook's own
+ * candidate source once that data is present. The dedicated-worker
+ * machinery below is kept intact, NOT deleted (D-01), as the documented
+ * fallback for exactly that "no stored tier available" case — SEED-107 (the
+ * original sweep-starvation seed) closes as superseded by this design.
+ *
  * Runs the SAME resolution `Analysis.tsx`'s live gem badge already performs
  * (Maia C1 -> Stockfish parent-grade C2), one candidate at a time, AHEAD of
  * the cursor instead of AT it — for every ply that survived the D-04 free
@@ -53,7 +69,7 @@
  * move-8 gem must not be evicted before the user reaches move 60.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useMaiaEngine } from './useMaiaEngine';
 import { useStockfishGradingEngine } from './useStockfishGradingEngine';
@@ -214,7 +230,16 @@ export function useGemSweep({
 
   // ─── Resolve a candidate: stamp gemByPly and clear in-flight state ───────
 
-  function resolveCandidate(plyIndex: number, detail: SweepGemDetail | null): void {
+  // WR-06 (172-deferred-review-findings.md): resolveCandidate touches only
+  // stable setState setters (setGemByPly/setInFlight/setStage/setGradeContext),
+  // so an empty-dep useCallback identity is correct and stable across
+  // renders. Previously a plain function re-created every render and called
+  // from four effects (C1, C2, CR-03 watchdog, CR-03 fast-fail) with NO
+  // dependency-array entry and no eslint-disable — a latent stale-closure
+  // trap if its body ever grew to read a prop/state closed over from a
+  // stale render. Now a stable reference, listed explicitly in every effect
+  // that calls it.
+  const resolveCandidate = useCallback((plyIndex: number, detail: SweepGemDetail | null): void => {
     setGemByPly((prev) => {
       if (prev.has(plyIndex)) return prev; // already resolved — first wins
       const next = new Map(prev);
@@ -226,7 +251,7 @@ export function useGemSweep({
     setInFlight(null);
     setStage('maia');
     setGradeContext(null);
-  }
+  }, []);
 
   // ─── Dedicated Maia instance (cheap tier) ────────────────────────────────
 
@@ -283,7 +308,7 @@ export function useGemSweep({
       pinnedElo,
     });
     setStage('grade');
-  }, [inFlight, stage, maia.resultFen, maia.perElo, pinnedEloForPly]);
+  }, [inFlight, stage, maia.resultFen, maia.perElo, pinnedEloForPly, resolveCandidate]);
 
   // ─── C2: grade completion -> classifyGem, resolve gem or miss ────────────
 
@@ -311,7 +336,16 @@ export function useGemSweep({
       ? { maiaProbability: gradeContext.maiaProbability, elo: gradeContext.pinnedElo, byOpponent }
       : null;
     resolveCandidate(inFlight.plyIndex, detail);
-  }, [inFlight, stage, gradeContext, grading.gradeMap, grading.gradeMapFen, grading.isGrading, userColor]);
+  }, [
+    inFlight,
+    stage,
+    gradeContext,
+    grading.gradeMap,
+    grading.gradeMapFen,
+    grading.isGrading,
+    userColor,
+    resolveCandidate,
+  ]);
 
   // ─── CR-03: per-candidate watchdog — never let one candidate pin the queue ─
 
@@ -321,14 +355,13 @@ export function useGemSweep({
     // Abandon a candidate that never resolves (dead worker, stuck inference,
     // missed terminal bestmove) as an explicit miss, so the single-in-flight
     // scheduler advances instead of deadlocking for the rest of the session.
-    // Re-armed on every inFlight change; resolveCandidate touches only stable
-    // setState setters (same closure-stability basis as the C1/C2 effects,
-    // which also call it without listing it as a dependency).
+    // Re-armed on every inFlight change; resolveCandidate is now a stable
+    // useCallback([]) identity (WR-06), listed below.
     const timer = window.setTimeout(() => {
       resolveCandidate(plyIndex, null);
     }, SWEEP_CANDIDATE_TIMEOUT_MS);
     return () => window.clearTimeout(timer);
-  }, [inFlight]);
+  }, [inFlight, resolveCandidate]);
 
   // ─── CR-03: fast failure path — abandon a candidate whose dedicated engine
   //     reported a silent worker-load failure, without waiting out the watchdog.
@@ -337,7 +370,7 @@ export function useGemSweep({
     if (inFlight === null) return;
     const failed = stage === 'maia' ? maia.hasFailed : grading.hasFailed;
     if (failed) resolveCandidate(inFlight.plyIndex, null);
-  }, [inFlight, stage, maia.hasFailed, grading.hasFailed]);
+  }, [inFlight, stage, maia.hasFailed, grading.hasFailed, resolveCandidate]);
 
   // ─── D-05 scheduler: decide whether to dispatch the next candidate ───────
 
@@ -352,6 +385,14 @@ export function useGemSweep({
       tabHidden,
       enabled: effectiveEnabled,
     });
+    // IN-03 (172-deferred-review-findings.md): 'idle' ("nothing to dispatch
+    // right now — yielding, disabled, or hidden") and 'done' ("every
+    // candidate has been resolved") are deliberately NOT distinguished here.
+    // Both are simple no-ops for this scheduler effect — nothing downstream
+    // reads which one occurred (UseGemSweepState exposes gemByPly/isSweeping,
+    // neither of which needs a "sweep fully finished" flag), so branching on
+    // the distinction would add a dead code path. `resolvedPlyIndices.size`
+    // is already the "how much is done" signal a future caller could use.
     if (decision.kind !== 'dispatch') return;
 
     const candidate = decision.candidate;

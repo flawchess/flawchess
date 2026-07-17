@@ -88,7 +88,25 @@ Plans:
   3. The Library Games filter panel gains "has gem" / "has great" toggles built on the existing flaw/tactic `EXISTS`-based game-filter machinery, and applying a toggle returns only games with at least one qualifying stored row.
   4. The gem/great filter composes correctly with every other existing game filter (time control, color, rated, opponent type, recency), exactly like the flaw/tactic filters already do.
 
-**Plans**: TBD
+**Plans**: 5 plans (4 waves)
+**Wave 1**
+
+- [x] 175-01-PLAN.md — Backend: has_gem/has_great filter + SQL classifier twin (FILT-01) [wave 1]
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 175-02-PLAN.md — Backend: EvalPoint stored gem/great tier read path (BOARD-01) [wave 2]
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 175-03-PLAN.md — Frontend: "great" tier primitives + board/badge/popover/tree rendering (BOARD-01) [wave 3]
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 175-04-PLAN.md — Frontend: Library "has gem"/"has great" filter toggles (FILT-01) [wave 4]
+- [x] 175-05-PLAN.md — Frontend: Analysis mainline stored-tier consumption + sweep demotion (BOARD-02) [wave 4]
+- [x] 175-06-SUMMARY.md — Frontend: gem/great eval-chart dots + move-cycling badges (user-requested UX-parity extension) [wave 5]
+
 **UI hint**: yes
 
 ### Phase 176: Backfill

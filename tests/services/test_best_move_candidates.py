@@ -16,12 +16,16 @@ sigmoid / ELO normalization / clamp verbatim (no re-derivation).
 
 from __future__ import annotations
 
+import math
 from typing import TypedDict
 
 import pytest
+from sqlalchemy import Float, Integer, String, literal, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services import best_move_candidates as bmc
 from app.services.best_move_candidates import MoverColor
+from app.services.eval_utils import LICHESS_K, eval_cp_to_expected_score
 from app.services.flaws_service import INACCURACY_DROP, MISTAKE_DROP
 
 
@@ -279,3 +283,162 @@ def test_reuses_shared_thresholds_not_local_copies() -> None:
     MISTAKE_DROP, never re-declare them (single-source-of-truth guard)."""
     assert bmc.INACCURACY_DROP is INACCURACY_DROP
     assert bmc.MISTAKE_DROP is MISTAKE_DROP
+
+
+# ─── Group 5: best_move_tier_sql agreement with classify_best_move (FILT-01) ───
+#
+# The SQL twin can only be proven correct by REAL SQL evaluation (func.exp() is
+# a database function, not Python math) — a hand-computed expected value could
+# silently drift from either side. Every case below derives its expected value
+# by calling classify_best_move() with the SAME kwargs, then asserts the
+# DB-evaluated SQL twin agrees, mirroring tests/services/test_flaws_service.py's
+# is_opponent_expr live-DB-evaluation pattern (TestIsOpponentExpr).
+
+# A cp margin whose white-mover ES gap lands exactly in [INACCURACY_DROP,
+# MISTAKE_DROP) = [0.05, 0.10) — Pitfall 3: a stored row in this band must
+# classify NEITHER/NULL regardless of maia_prob. Computed (not hand-picked) by
+# inverting the shared sigmoid, ceiling so the integer cp never undershoots.
+_NARROW_BAND_TARGET_ES_GAP = 0.07
+_narrow_band_target_es = 0.5 + _NARROW_BAND_TARGET_ES_GAP
+_NARROW_BAND_BEST_CP = math.ceil(-math.log(1.0 / _narrow_band_target_es - 1.0) / LICHESS_K)
+_narrow_band_margin = eval_cp_to_expected_score(_NARROW_BAND_BEST_CP, "white") - 0.5
+assert INACCURACY_DROP <= _narrow_band_margin < MISTAKE_DROP, (
+    "fixture construction sanity: margin must land in [INACCURACY_DROP, MISTAKE_DROP)"
+)
+
+_TIER_SQL_FIXTURE_MATRIX: list[tuple[str, _ClassifyKwargs]] = [
+    (
+        "gem_low_prob_wide_margin",
+        dict(maia_prob=0.10, **_WIDE_MARGIN),
+    ),
+    (
+        "great_mid_prob_wide_margin",
+        dict(maia_prob=0.35, **_WIDE_MARGIN),
+    ),
+    (
+        "neither_high_prob_wide_margin",
+        dict(maia_prob=0.60, **_WIDE_MARGIN),
+    ),
+    (
+        "gem_boundary_exactly_gem_max",
+        dict(maia_prob=bmc.GEM_MAIA_MAX_PROB, **_WIDE_MARGIN),
+    ),
+    (
+        "great_boundary_exactly_great_max",
+        dict(maia_prob=bmc.GREAT_MAIA_MAX_PROB, **_WIDE_MARGIN),
+    ),
+    (
+        "neither_margin_narrow_band_low_prob",
+        dict(
+            maia_prob=0.10,
+            best_cp=_NARROW_BAND_BEST_CP,
+            best_mate=None,
+            second_cp=0,
+            second_mate=None,
+            mover_color="white",
+        ),
+    ),
+    (
+        "neither_margin_narrow_band_high_prob",
+        dict(
+            maia_prob=0.60,
+            best_cp=_NARROW_BAND_BEST_CP,
+            best_mate=None,
+            second_cp=0,
+            second_mate=None,
+            mover_color="white",
+        ),
+    ),
+    (
+        "gem_mate_best_white_mover",
+        dict(
+            maia_prob=0.10,
+            best_cp=None,
+            best_mate=2,
+            second_cp=0,
+            second_mate=None,
+            mover_color="white",
+        ),
+    ),
+    (
+        "gem_mate_best_black_mover",
+        dict(
+            maia_prob=0.10,
+            best_cp=None,
+            best_mate=-2,  # black has mate -> good for a black mover
+            second_cp=0,
+            second_mate=None,
+            mover_color="black",
+        ),
+    ),
+    (
+        "neither_missing_best_eval",
+        dict(
+            maia_prob=0.10,
+            best_cp=None,
+            best_mate=None,
+            second_cp=0,
+            second_mate=None,
+            mover_color="white",
+        ),
+    ),
+    (
+        "neither_narrow_margin_low_prob",
+        dict(maia_prob=0.15, **_NARROW_MARGIN),
+    ),
+]
+
+
+async def _eval_tier_sql(
+    session: AsyncSession,
+    *,
+    maia_prob: float,
+    best_cp: int | None,
+    best_mate: int | None,
+    second_cp: int | None,
+    second_mate: int | None,
+    mover_color: MoverColor,
+) -> str | None:
+    """Evaluate best_move_tier_sql(literal(...)) via a real DB query.
+
+    Code-reading alone cannot prove func.exp()-based SQL agrees with the Python
+    sigmoid — only a live evaluation closes the trap (mirrors TestIsOpponentExpr
+    in tests/services/test_flaws_service.py).
+    """
+    expr = bmc.best_move_tier_sql(
+        literal(maia_prob, type_=Float),
+        literal(best_cp, type_=Integer),
+        literal(best_mate, type_=Integer),
+        literal(second_cp, type_=Integer),
+        literal(second_mate, type_=Integer),
+        literal(mover_color, type_=String),
+    )
+    result = await session.execute(select(expr))
+    return result.scalar_one()
+
+
+@pytest.mark.parametrize(
+    "params", [p for _, p in _TIER_SQL_FIXTURE_MATRIX], ids=[i for i, _ in _TIER_SQL_FIXTURE_MATRIX]
+)
+@pytest.mark.asyncio
+async def test_tier_sql_agrees_with_classify_best_move(
+    db_session: AsyncSession, params: _ClassifyKwargs
+) -> None:
+    """best_move_tier_sql (SQL twin) agrees with classify_best_move (Python) on
+    every fixture-matrix case, including the GEM/GREAT boundary, the narrow
+    [0.05, 0.10) margin band (Pitfall 3 — NEITHER regardless of maia_prob), and
+    mate-based bests for both mover colors.
+
+    The expected value is DERIVED from classify_best_move itself (never a
+    hand-computed literal), so the two implementations cannot silently drift
+    apart — a hardcoded expected string would not catch that.
+    """
+    expected = bmc.classify_best_move(**params)
+    expected_tier = None if expected == "neither" else expected
+
+    actual = await _eval_tier_sql(db_session, **params)
+
+    assert actual == expected_tier, (
+        f"SQL twin disagreed with classify_best_move for {params}: "
+        f"sql={actual!r} python={expected!r}"
+    )

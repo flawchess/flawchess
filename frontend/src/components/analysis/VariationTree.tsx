@@ -26,6 +26,7 @@ import { HorizontalMoveList } from '@/components/board/HorizontalMoveList';
 import type { HorizontalMoveItem } from '@/components/board/HorizontalMoveList';
 import { BlunderIcon, MistakeIcon } from '@/components/icons/SeverityGlyphIcon';
 import { GemIcon } from '@/components/icons/GemIcon';
+import { GreatMoveIcon } from '@/components/icons/GreatMoveIcon';
 import { BookIcon } from '@/components/icons/BookIcon';
 import { GemMoveBadge } from '@/components/analysis/GemMoveBadge';
 import { moveLabel } from '@/lib/moveNumberLabel';
@@ -52,42 +53,52 @@ function zebraBg(rowIdx: number): string {
 
 /**
  * Icon + visibility for a flaw entry's move-list marker. Precedence chain
- * `severity > gem > book` (163-REVIEW WR-05; extended Phase 172, SEED-106
- * D-08). Severity wins over gem: within the live pipeline the two are
- * mutually exclusive by construction, but a BACKEND severity (server
- * Stockfish) and the live WASM gem can legitimately disagree on the same
- * move — one move never renders two badges, and the severity badge is the
- * more actionable signal. Book slots in at the BOTTOM of the chain: a book
- * move can still be an inaccuracy (ECO includes plenty of dubious gambits),
- * and in that case the user needs to see the flaw, not the reassurance that
- * it was theory. Gem-vs-book never actually arises in production — D-04
- * skips book plies before they can be classified — but the chain is stated
- * in full so the ordering is unambiguous.
+ * `severity > gem/great > book` (163-REVIEW WR-05; extended Phase 172,
+ * SEED-106 D-08; extended Phase 175, SEED-108 with great sitting alongside
+ * gem in the same tier). Severity wins over gem/great: within the live
+ * pipeline they are mutually exclusive by construction, but a BACKEND
+ * severity (server Stockfish) and the live WASM gem/great can legitimately
+ * disagree on the same move — one move never renders two badges, and the
+ * severity badge is the more actionable signal. Book slots in at the BOTTOM
+ * of the chain: a book move can still be an inaccuracy (ECO includes plenty
+ * of dubious gambits), and in that case the user needs to see the flaw, not
+ * the reassurance that it was theory. Gem/great-vs-book never actually
+ * arises in production — D-04 skips book plies before they can be
+ * classified — but the chain is stated in full so the ordering is
+ * unambiguous.
  */
 function resolveMarkerIcon(flaw: FlawMarkerEntry | undefined): {
   show: boolean;
   Icon: typeof BlunderIcon;
   isGem: boolean;
-  isBook: boolean;
+  isGreat: boolean;
 } {
   if (flaw != null && (flaw.severity === 'blunder' || flaw.severity === 'mistake')) {
     return {
       show: true,
       Icon: flaw.severity === 'blunder' ? BlunderIcon : MistakeIcon,
       isGem: false,
-      isBook: false,
+      isGreat: false,
     };
   }
-  if (flaw?.gem) return { show: true, Icon: GemIcon, isGem: true, isBook: false };
-  if (flaw?.book) return { show: true, Icon: BookIcon, isGem: false, isBook: true };
-  return { show: false, Icon: MistakeIcon, isGem: false, isBook: false };
+  if (flaw?.gem) return { show: true, Icon: GemIcon, isGem: true, isGreat: false };
+  if (flaw?.great) {
+    return { show: true, Icon: GreatMoveIcon, isGem: false, isGreat: true };
+  }
+  // IN-01 (172-deferred-review-findings.md): the `isBook` field this function
+  // used to also return was never read by any caller (MoveListMarker below
+  // only destructures show/Icon/isGem/isGreat) — dropped as dead output
+  // rather than carried forward again.
+  if (flaw?.book) return { show: true, Icon: BookIcon, isGem: false, isGreat: false };
+  return { show: false, Icon: MistakeIcon, isGem: false, isGreat: false };
 }
 
 /**
- * A move-list flaw/gem marker: the popover-wrapped gem badge (GemMoveBadge)
- * when the entry is a gem, otherwise the plain severity glyph. Returns null
- * when the entry warrants no marker, so it drops straight into a trailing slot.
- * Centralizes the gem-vs-severity branch shared by the desktop and mobile lists.
+ * A move-list flaw/gem/great marker: the popover-wrapped badge (GemMoveBadge,
+ * tier-selected) when the entry is a gem or great, otherwise the plain
+ * severity glyph. Returns null when the entry warrants no marker, so it drops
+ * straight into a trailing slot. Centralizes the gem/great-vs-severity branch
+ * shared by the desktop and mobile lists.
  */
 function MoveListMarker({
   flaw,
@@ -96,7 +107,7 @@ function MoveListMarker({
   flaw: FlawMarkerEntry | undefined;
   className: string;
 }): ReactNode {
-  const { show, Icon, isGem } = resolveMarkerIcon(flaw);
+  const { show, Icon, isGem, isGreat } = resolveMarkerIcon(flaw);
   if (!show) return null;
   if (isGem) {
     return (
@@ -105,6 +116,18 @@ function MoveListMarker({
         maiaProbability={flaw?.gemMaiaProbability ?? null}
         elo={flaw?.gemElo ?? null}
         byOpponent={flaw?.gemByOpponent ?? false}
+        tier="gem"
+      />
+    );
+  }
+  if (isGreat) {
+    return (
+      <GemMoveBadge
+        className={className}
+        maiaProbability={flaw?.greatMaiaProbability ?? null}
+        elo={flaw?.greatElo ?? null}
+        byOpponent={flaw?.greatByOpponent ?? false}
+        tier="great"
       />
     );
   }
@@ -183,10 +206,37 @@ export interface FlawMarkerEntry {
    */
   gemByOpponent?: boolean;
   /**
+   * True when this node's arrival move is a "great" move (Phase 175,
+   * SEED-108) — renders GreatMoveIcon instead of the severity glyph. Mutually
+   * exclusive with `severity`/`gem` by construction (classifyGreat requires
+   * the clear best move, never a blunder/mistake, and the (GEM_MAIA_MAX_PROB,
+   * GREAT_MAIA_MAX_PROB] band excludes any maia_prob that would also qualify
+   * as a gem).
+   */
+  great?: boolean;
+  /**
+   * Maia policy probability (0..1) of the great move at the rung it was
+   * detected on — surfaced in the move-list great popover. Set only when
+   * `great` is true.
+   */
+  greatMaiaProbability?: number;
+  /**
+   * ELO rung the great move was detected at (the ELO-slider value at
+   * detection time) — surfaced in the move-list great popover. Set only when
+   * `great` is true.
+   */
+  greatElo?: number;
+  /**
+   * True when the OPPONENT (not the user) played the great move — switches
+   * the popover heading to "Your opponent found a great move!". Set only
+   * when `great` is true; always false in free play (no opponent).
+   */
+  greatByOpponent?: boolean;
+  /**
    * True when this node's ply is within `opening_ply_count` (Phase 172,
    * SEED-106 D-08) — set at the `Analysis.tsx` call site that builds
-   * `moveListMarkers`. Lowest precedence in `severity > gem > book`: both
-   * severity and gem override it.
+   * `moveListMarkers`. Lowest precedence in `severity > gem/great > book`:
+   * severity, gem, and great all override it.
    */
   book?: boolean;
   /** FlawMarker.ply — passed to onPvChipClick for the useTacticLines fetch key

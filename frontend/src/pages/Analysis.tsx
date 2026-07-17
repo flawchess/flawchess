@@ -131,6 +131,13 @@ const ENGINE_NAME = 'Stockfish 18';
 /** Cap on the per-session live engine-eval cache (FEN → completed eval), item 4. */
 const LIVE_EVAL_CACHE_MAX = 256;
 
+/** IN-04 (172-deferred-review-findings.md): named sentinel for a move-list
+ *  marker entry with no associated GAME ply (a genuinely free/off-mainline
+ *  move) — never a bare `-1` literal, so a call site that DOES have a real
+ *  mainline ply available is never tempted to reach for the same magic
+ *  number instead of the ply it actually has. */
+const NO_GAME_PLY = -1;
+
 /** Synthetic eval-bar depth for a terminal (checkmate/draw) position — clears EvalBar's
  *  mate-display gate (depth >= 8) so a decisive terminal eval fills the bar (Quick 260709-j3k). */
 const TERMINAL_EVAL_DEPTH = 99;
@@ -688,6 +695,46 @@ export default function Analysis() {
   }, [evalChartReady, gameId, armedGameId]);
   const sweepArmedForGame = gameId != null && (evalChartReady || armedGameId === gameId);
 
+  // Phase 175 (SEED-108 D-01/D-03): per-ply STORED gem/great tier, straight from
+  // EvalPoint.best_move_tier/maia_prob — the backend's authoritative
+  // classify_best_move output (Plan 02). ply -> {tier, maiaProb}; only entries
+  // with a non-null best_move_tier are kept (Pitfall 3 — a null tier on a
+  // stored row is a real "not gem/great" verdict, never "unknown"). Empty for
+  // an unanalyzed game or free play (eval_series null).
+  const storedTierByPly = useMemo<Map<number, { tier: 'gem' | 'great'; maiaProb: number }>>(() => {
+    const map = new Map<number, { tier: 'gem' | 'great'; maiaProb: number }>();
+    const series = gameData?.eval_series;
+    if (series == null) return map;
+    // The analyzed board INTENTIONALLY shows BOTH players' stored gems/greats (Plan 05
+    // feature, confirmed by the user 2026-07-17): opponent gems are valuable study
+    // context on the board, and resolveMarkerFor's byOpponent path renders the
+    // "Your opponent found a gem move!" popover for them. This is DISTINCT from the
+    // user-only badges/eval-chart dots/cycling (Plan 06 fix, plyOwnership.isUserPly) —
+    // those are "your gems/greats" stats, the board is a study surface. So NO user
+    // filter here: every point with a non-null best_move_tier is kept (Pitfall 3 — a
+    // null tier is a real "not gem/great" verdict, never "unknown").
+    for (const point of series) {
+      if (point.best_move_tier != null && point.maia_prob != null) {
+        map.set(point.ply, { tier: point.best_move_tier, maiaProb: point.maia_prob });
+      }
+    }
+    return map;
+  }, [gameData?.eval_series]);
+
+  // Phase 175 (SEED-108 D-01/BOARD-02, Pitfall 3): true once this game's
+  // eval_series is loaded — every EvalPoint on an analyzed game's eval_series
+  // carries best_move_tier (Plan 02, defaulting null), so eval_series
+  // readiness IS "this game has been checked for stored gem/great data"; a
+  // null tier on a given mainline ply is the real, authoritative answer,
+  // never "not yet checked" (row-absence is authoritative — corpus backfill
+  // of PRE-175 analyzed games is Phase 176's job, out of scope here). Reuses
+  // the STICKY `sweepArmedForGame` signal (not the possibly-flickering
+  // `evalChartReady`) so this can never transiently flip false mid-poll. Both
+  // live gem mechanisms below (`needParentGemGrade`, `useGemSweep`'s
+  // `enabled`) gate on this so neither one re-derives a verdict the stored
+  // path already owns.
+  const gameHasStoredBestMoveData = sweepArmedForGame;
+
   // Free-play ELO default source (D-07) — read from useUserProfile(), never useAuth().user
   // (no rating field there, cf. beta-gating memory).
   const { data: userProfile } = useUserProfile();
@@ -1207,16 +1254,45 @@ export default function Analysis() {
   }, [evalLookup, grading.gradeMap, position, reconciledBestSan]);
 
   // Phase 163 (SEED-092): recolors the CURRENT position's reconciled-best candidate
-  // as 'gem' when it satisfies classifyGem — feeds ONLY the chart/bar display sites
-  // (MaiaHumanPanel below), never positionVerdict/the FlawChess card (those stay on
-  // the base qualityBySan; the gem override is a display concern only). Distinct
+  // as 'gem'/'great' — feeds ONLY the chart/bar display sites (MaiaHumanPanel
+  // below), never positionVerdict/the FlawChess card (those stay on the base
+  // qualityBySan; the gem/great override is a display concern only). Distinct
   // from the gem block below (~liveFlawByNode section): this memo is
   // forward-looking over the CURRENT position's own candidates, while that block
   // classifies the ARRIVAL move that reached the current node against the PARENT
   // position (graded on demand). Stable ref (returns qualityBySan unchanged) when
-  // no gem qualifies, so consumers memoized on it don't re-render needlessly.
+  // no gem/great qualifies, so consumers memoized on it don't re-render needlessly.
+  //
+  // Phase 175 (SEED-108 D-01/D-03, Pitfall 3): for a mainline position of an
+  // analyzed game, the STORED tier of the NEXT mainline move — the move about
+  // to be played from here, at ply `mainlinePlyHere + 1` — is authoritative
+  // and consulted FIRST. `classify_best_move` only ever stores a row for an
+  // out-of-book BEST-move ply, so a stored gem/great can only ever match the
+  // engine's reconciled-best candidate; the `nextNode?.san === reconciledBestSan`
+  // check confirms that agreement rather than assuming it. A null/absent
+  // stored row for an analyzed game's next ply is itself the authoritative
+  // "not a gem/great" answer — the live classifyGem fallback below is never
+  // consulted in that case.
   const qualityBySanWithGem = useMemo<Map<string, MoveQualityEval>>(() => {
     if (reconciledBestSan === null) return qualityBySan;
+
+    const onMainlineHere = currentNodeId === null || isOnMainLine(currentNodeId);
+    if (onMainlineHere) {
+      const mainlinePlyHere = currentNodeId !== null ? mainLine.indexOf(currentNodeId) : -1;
+      const nextPly = mainlinePlyHere + 1;
+      const nextNodeId = mainLine[nextPly];
+      const nextNode = nextNodeId !== undefined ? nodes.get(nextNodeId) : undefined;
+      const stored = storedTierByPly.get(nextPly);
+      if (stored !== undefined && nextNode?.san === reconciledBestSan) {
+        const bestInfo = qualityBySan.get(reconciledBestSan);
+        if (!bestInfo) return qualityBySan;
+        const next = new Map(qualityBySan);
+        next.set(reconciledBestSan, { ...bestInfo, quality: stored.tier });
+        return next;
+      }
+      if (gameHasStoredBestMoveData) return qualityBySan; // Pitfall 3: authoritative, no live fallback
+    }
+
     const rung = nearestByElo(maia.perElo, selectedElo);
     const maiaProb = rung?.moveProbabilities[reconciledBestSan] ?? null;
     // Bug fix (163-REVIEW WR-01): verify the summarized argmax IS the move we are
@@ -1242,7 +1318,19 @@ export default function Analysis() {
     const next = new Map(qualityBySan);
     next.set(reconciledBestSan, { ...bestInfo, quality: 'gem' });
     return next;
-  }, [qualityBySan, reconciledBestSan, maia.perElo, selectedElo, position]);
+  }, [
+    qualityBySan,
+    reconciledBestSan,
+    maia.perElo,
+    selectedElo,
+    position,
+    currentNodeId,
+    isOnMainLine,
+    mainLine,
+    nodes,
+    storedTierByPly,
+    gameHasStoredBestMoveData,
+  ]);
 
   // The FlawChess Engine's top practical pick — its root move's SAN + reconciled
   // white-POV objective eval — shown as the pinned "FlawChess" reference row atop
@@ -1537,6 +1625,18 @@ export default function Analysis() {
   // popover heading).
   type GemDetail = { maiaProbability: number; elo: number; byOpponent: boolean };
 
+  // Phase 175 (SEED-108 D-01/D-03): a resolved gem OR great marker for a
+  // (nodeId, ply) pair — from either the stored backend tier or the live
+  // fallback (see resolveMarkerFor below). `elo` is null only when a stored
+  // marker's mover color couldn't be resolved (should not happen in
+  // practice — fenAtPly always has an entry for a real mainline ply).
+  type ResolvedMarker = {
+    tier: 'gem' | 'great';
+    maiaProbability: number;
+    elo: number | null;
+    byOpponent: boolean;
+  };
+
   // Sticky per-node gem RESOLUTION. `has(nodeId)` means the node's arrival move has
   // been graded and resolved — the gate that stops us re-grading it. A non-null
   // value is a confirmed gem (shows the badge, carries its popover detail); an
@@ -1586,13 +1686,23 @@ export default function Analysis() {
     () => new Set(),
   );
 
+  // Phase 175 (SEED-108 D-01/BOARD-02, Pitfall 2/3): once the current node is
+  // a MAINLINE ply of an ANALYZED game, the stored backend tier already owns
+  // the verdict for it (present or authoritatively null) — the live-at-cursor
+  // C2 confirmation (below) must never re-derive it. Off-mainline nodes
+  // (currentMainlinePly === -1) have no stored row by construction and are
+  // untouched by this gate.
+  const currentNodeCoveredByStoredData = gameHasStoredBestMoveData && currentMainlinePly >= 0;
+
   // Grade the PARENT to confirm C2 (only good move) only when the arrival move is a
   // rare gem candidate (C1 passed) AND this node is not already resolved — by
-  // the live path's own sticky cache OR (Phase 172 D-04/D-05) by the sweep.
+  // the live path's own sticky cache, by (Phase 172 D-04/D-05) the sweep, or
+  // (Phase 175 D-01) the stored backend tier.
   const needParentGemGrade =
     gemC1 !== null &&
     currentNodeId !== null &&
     !gemByNode.has(currentNodeId) &&
+    !currentNodeCoveredByStoredData &&
     !(currentMainlinePly >= 0 && sweepResolvedPlies.has(currentMainlinePly));
 
   // Phase 172 (SEED-106 D-04): parent FEN of mainLine[i] — the position BEFORE
@@ -1663,8 +1773,18 @@ export default function Analysis() {
   // busy live engine (CR-02), honoring the documented contract on both
   // UseGemSweepOptions and SweepDispatchInput — the live path is the one thing
   // the sweep must never race for CPU.
+  //
+  // Phase 175 (SEED-108 D-01/BOARD-02, D-01a): demoted to a fallback-only
+  // gate — `!gameHasStoredBestMoveData` — so the sweep never re-sweeps a
+  // mainline the stored backend data already owns. Because the sweep's own
+  // candidates (`sweepCandidates` above) require `evalChartReady` to be
+  // non-empty, and `gameHasStoredBestMoveData` mirrors that same readiness
+  // signal, this makes the sweep structurally inert for any analyzed game's
+  // mainline going forward — its dedicated-worker machinery is retained
+  // (D-01: demoted, not deleted) as the documented free-play/no-stored-data
+  // fallback (see useGemSweep.ts's file header).
   const sweep = useGemSweep({
-    enabled: sweepArmedForGame && evalChartReady && gradingEnabled,
+    enabled: sweepArmedForGame && evalChartReady && gradingEnabled && !gameHasStoredBestMoveData,
     sweepKey: gameId,
     candidates: sweepCandidates,
     pinnedEloForPly,
@@ -1679,19 +1799,55 @@ export default function Analysis() {
     setSweepResolvedPlies(new Set(sweep.gemByPly.keys()));
   }, [sweep.gemByPly]);
 
-  // Phase 172 (SEED-106 CR-01): resolve the gem verdict for a node with the
-  // documented precedence — the live per-node resolution (gemByNode) is
-  // AUTHORITATIVE the moment it has graded this node, INCLUDING an explicit
-  // `null` "graded, not a gem" verdict. The background sweep (sweep.gemByPly)
-  // is a FALLBACK only, consulted solely when the live path has no answer for
-  // this node. A `gemByNode.get(id) ?? sweep.gemByPly.get(ply)` collapse cannot
-  // express this (`null ?? x === x`), which let the sweep's shallower grade
-  // overrule a deeper live rejection. Both the board badge and the move-list
-  // fold route through here so this precedence lives in exactly one place.
-  const resolveGemFor = useCallback(
-    (nodeId: NodeId, ply: number): GemDetail | null =>
-      resolveGemVerdict(gemByNode, sweep.gemByPly, nodeId, ply),
-    [gemByNode, sweep.gemByPly],
+  // Phase 175 (SEED-108 D-01/D-03, Pitfall 2/3): resolve the gem/GREAT marker
+  // for a node with the FULL documented precedence — the STORED backend tier
+  // (present or authoritatively null, per storedTierByPly/gameHasStoredBest-
+  // MoveData above) wins for any mainline ply of an analyzed game, consulted
+  // BEFORE the live fallback. Only when there is no stored answer for this
+  // (nodeId, ply) — off-mainline, free-play, or an unanalyzed game — does this
+  // fall through to the Phase 172 CR-01 live precedence: the live per-node
+  // resolution (gemByNode) is AUTHORITATIVE the moment it has graded this
+  // node, INCLUDING an explicit `null` "graded, not a gem" verdict; the
+  // background sweep (sweep.gemByPly) is a FALLBACK only, consulted solely
+  // when the live path has no answer. A `gemByNode.get(id) ?? sweep.gemByPly.
+  // get(ply)` collapse cannot express that (`null ?? x === x`), which let the
+  // sweep's shallower grade overrule a deeper live rejection — resolveGemVerdict
+  // (gemSweep.ts) is the shared helper that gets this right. Both the board
+  // badge and the move-list fold route through here so ALL of this precedence
+  // lives in exactly one place.
+  const resolveMarkerFor = useCallback(
+    (nodeId: NodeId, ply: number): ResolvedMarker | null => {
+      if (ply >= 0) {
+        const stored = storedTierByPly.get(ply);
+        if (stored !== undefined) {
+          const fen = fenAtPly(ply);
+          const mover = fen !== null ? sideToMoveFromFen(fen) : null;
+          const userColor = gameData?.user_color;
+          return {
+            tier: stored.tier,
+            maiaProbability: stored.maiaProb,
+            elo: mover !== null ? pinnedEloForMover(mover) : null,
+            byOpponent: isGameMode && userColor != null && mover !== null && mover !== userColor,
+          };
+        }
+        // Pitfall 3: an analyzed game's mainline ply with no stored row is an
+        // authoritative "not a gem/great" — the live fallback is never
+        // consulted for it.
+        if (gameHasStoredBestMoveData) return null;
+      }
+      const gemDetail = resolveGemVerdict(gemByNode, sweep.gemByPly, nodeId, ply);
+      return gemDetail !== null ? { tier: 'gem', ...gemDetail } : null;
+    },
+    [
+      storedTierByPly,
+      fenAtPly,
+      pinnedEloForMover,
+      isGameMode,
+      gameData?.user_color,
+      gameHasStoredBestMoveData,
+      gemByNode,
+      sweep.gemByPly,
+    ],
   );
 
   // The parent's candidate SANs to grade — the same Maia-mass selection the chart
@@ -1794,6 +1950,8 @@ export default function Analysis() {
     const hasGemWork = gemByNode.size > 0;
     // Phase 172 (SEED-106 D-04/D-05): the background sweep's own gem source.
     const hasSweepWork = sweep.gemByPly.size > 0;
+    // Phase 175 (SEED-108 D-01/D-03): the stored backend tier's own source.
+    const hasStoredWork = storedTierByPly.size > 0;
     // Phase 172 (SEED-106 D-08): a game with a nonzero opening_ply_count has
     // book markers to paint even when nothing else in this memo has work.
     const hasBookWork = (gameData?.opening_ply_count ?? 0) > 0;
@@ -1802,6 +1960,7 @@ export default function Analysis() {
       !showCurrentLive &&
       !hasGemWork &&
       !hasSweepWork &&
+      !hasStoredWork &&
       !hasBookWork
     ) {
       return flawMarkerByNodeId;
@@ -1819,7 +1978,7 @@ export default function Analysis() {
         missedDepth: null,
         allowedDepth: null,
         severity,
-        ply: -1, // placeholder — free-move entries carry no game ply
+        ply: NO_GAME_PLY, // free-move entries carry no game ply (IN-04)
       });
     };
     // Persisted sideline classifications first, then the current node's in-flight one.
@@ -1828,61 +1987,93 @@ export default function Analysis() {
       addLive(currentNodeId, liveSeverity);
     }
 
-    // Phase 163 (SEED-092 D-05/D-06): fold gemByNode's sticky entries into the SAME
-    // map — unlike addLive above, this has NO mainLineSet exclusion. gemActive covers
-    // mainline AND free-variation nodes (D-05), and moveListMarkers is the ONLY map
-    // VariationTree reads, so excluding mainline ids here would silently drop mainline
-    // gem badges from the move list. Merging onto a severity-free entry (e.g. a
-    // tactic-chips-only game entry) keeps its chips and adds the gem.
-    const addGem = (nodeId: NodeId, detail: GemDetail): void => {
+    // Phase 163 (SEED-092 D-05/D-06), extended Phase 175 (SEED-108) with
+    // great: fold resolved gem/great entries into the SAME map — unlike
+    // addLive above, this has NO mainLineSet exclusion. gemActive covers
+    // mainline AND free-variation nodes (D-05), and moveListMarkers is the ONLY
+    // map VariationTree reads, so excluding mainline ids here would silently
+    // drop mainline gem/great badges from the move list. Merging onto a
+    // severity-free entry (e.g. a tactic-chips-only game entry) keeps its
+    // chips and adds the gem/great.
+    const addMarker = (nodeId: NodeId, ply: number, detail: ResolvedMarker): void => {
       if (!nodes.has(nodeId)) return; // node deleted (e.g. a collapsed PV fork)
       const existing = merged.get(nodeId);
-      if (existing?.gem) return; // already flagged
+      if (existing?.gem || existing?.great) return; // already flagged
       // Bug fix (163-REVIEW WR-05, move-list side): a backend/live severity entry on
       // the same node wins — one move never renders two badges. "Mutually exclusive
       // by construction" only holds within the live pipeline; a BACKEND severity
-      // (server Stockfish) and the live WASM gem can legitimately disagree.
+      // (server Stockfish) and the live WASM gem/great can legitimately disagree.
       if (existing?.severity != null) return;
-      merged.set(nodeId, {
-        ...(existing ?? {
+      const base =
+        existing ??
+        // IN-04 fix: `ply` is the REAL mainline/sweep ply whenever one is
+        // known (markerNodePlies below only falls back to NO_GAME_PLY for a
+        // genuine free-variation node) — never a synthesized -1 that discards
+        // information the caller actually had.
+        {
           missedMotif: null,
           allowedMotif: null,
           missedDepth: null,
           allowedDepth: null,
-          ply: -1,
-        }),
-        gem: true,
-        // The detection-time rung + probability + who played it, for the
-        // move-list gem popover.
-        gemMaiaProbability: detail.maiaProbability,
-        gemElo: detail.elo,
-        gemByOpponent: detail.byOpponent,
-      });
+          ply,
+        };
+      if (detail.tier === 'great') {
+        merged.set(nodeId, {
+          ...base,
+          great: true,
+          // The detection-time rung + probability + who played it, for the
+          // move-list great popover.
+          greatMaiaProbability: detail.maiaProbability,
+          greatElo: detail.elo ?? undefined,
+          greatByOpponent: detail.byOpponent,
+        });
+      } else {
+        merged.set(nodeId, {
+          ...base,
+          gem: true,
+          // The detection-time rung + probability + who played it, for the
+          // move-list gem popover.
+          gemMaiaProbability: detail.maiaProbability,
+          gemElo: detail.elo ?? undefined,
+          gemByOpponent: detail.byOpponent,
+        });
+      }
     };
-    // Phase 172 (SEED-106 CR-01/D-04/D-05): fold live per-node resolutions AND
-    // the background sweep's resolved gems through the SHARED `resolveGemFor`
-    // precedence (live wins over the sweep for any node it has graded, INCLUDING
-    // an explicit `null` rejection — the sweep is never consulted for such a
-    // node). Build the candidate node set: every gemByNode key first (ply is
-    // irrelevant there — the live verdict wins, so a `-1` placeholder suffices),
-    // then any sweep-only mainline ply the live path has NOT graded. sweep.gemByPly
-    // is keyed by ply index into mainLine and is NOT gemByNode (Pitfall 4 — the
+    // Phase 175 (SEED-108 D-01/D-03), extending Phase 172 (SEED-106 CR-01/
+    // D-04/D-05): fold every mainline ply carrying a STORED tier, every live
+    // per-node resolution, AND the background sweep's resolved gems through
+    // the SHARED `resolveMarkerFor` precedence (stored wins over live, live
+    // wins over the sweep for any node it has graded — INCLUDING an explicit
+    // `null` rejection, in which case the sweep is never consulted for that
+    // node). Build the candidate node set: every stored-tier mainline ply
+    // FIRST (its REAL ply — IN-04), then every gemByNode key not already
+    // covered (its own resolved mainline ply when it has one, else the
+    // NO_GAME_PLY sentinel for a genuine free-variation node), then any
+    // sweep-only mainline ply the live path has NOT graded. sweep.gemByPly is
+    // keyed by ply index into mainLine and is NOT gemByNode (Pitfall 4 — the
     // sweep has its OWN cache, bounded by candidates.length, never the shared
     // FIFO-256-capped map); display reads the union, nothing is copied between them.
-    const gemNodePlies = new Map<NodeId, number>();
-    for (const nodeId of gemByNode.keys()) gemNodePlies.set(nodeId, -1);
+    const markerNodePlies = new Map<NodeId, number>();
+    mainLine.forEach((nodeId, plyIndex) => {
+      if (storedTierByPly.has(plyIndex)) markerNodePlies.set(nodeId, plyIndex);
+    });
+    for (const nodeId of gemByNode.keys()) {
+      if (markerNodePlies.has(nodeId)) continue;
+      const idx = mainLine.indexOf(nodeId);
+      markerNodePlies.set(nodeId, idx >= 0 ? idx : NO_GAME_PLY);
+    }
     for (const plyIndex of sweep.gemByPly.keys()) {
       const nodeId = mainLine[plyIndex];
-      if (nodeId === undefined || gemNodePlies.has(nodeId)) continue;
-      gemNodePlies.set(nodeId, plyIndex);
+      if (nodeId === undefined || markerNodePlies.has(nodeId)) continue;
+      markerNodePlies.set(nodeId, plyIndex);
     }
-    for (const [nodeId, ply] of gemNodePlies) {
-      const detail = resolveGemFor(nodeId, ply);
-      if (detail !== null) addGem(nodeId, detail); // null = absent or graded-and-rejected
+    for (const [nodeId, ply] of markerNodePlies) {
+      const detail = resolveMarkerFor(nodeId, ply);
+      if (detail !== null) addMarker(nodeId, ply, detail); // null = absent or graded-and-rejected
     }
 
     // Phase 172 (SEED-106 D-08): book markers — LOWEST precedence in
-    // severity > gem > book. Only MAINLINE plies before opening_ply_count
+    // severity > gem/great > book. Only MAINLINE plies before opening_ply_count
     // qualify (free-variation nodes are never in book — D-04 skips book plies
     // before they can even become sweep/gem candidates). Must not overwrite an
     // existing entry that will actually RENDER a glyph — but the move-list's
@@ -1890,7 +2081,8 @@ export default function Analysis() {
     // (there is no inaccuracy glyph there, unlike the board's `!?`). WR-04 fix:
     // an inaccuracy-severity book ply was suppressed here yet rendered nothing,
     // leaving the ply blank. Defer only to entries that draw an icon (blunder,
-    // mistake, gem) so an inaccuracy-only book ply falls through to the book badge.
+    // mistake, gem, great) so an inaccuracy-only book ply falls through to the
+    // book badge.
     const openingPlyCount = gameData?.opening_ply_count ?? 0;
     if (openingPlyCount > 0) {
       mainLine.forEach((nodeId, plyIndex) => {
@@ -1900,7 +2092,8 @@ export default function Analysis() {
         if (
           existing?.severity === 'blunder' ||
           existing?.severity === 'mistake' ||
-          existing?.gem === true
+          existing?.gem === true ||
+          existing?.great === true
         )
           return;
         merged.set(nodeId, {
@@ -1909,7 +2102,7 @@ export default function Analysis() {
             allowedMotif: null,
             missedDepth: null,
             allowedDepth: null,
-            ply: -1,
+            ply: plyIndex, // IN-04 fix: the real ply index, never a synthesized -1
           }),
           book: true,
         });
@@ -1926,7 +2119,8 @@ export default function Analysis() {
     nodes,
     gemByNode,
     sweep.gemByPly,
-    resolveGemFor,
+    storedTierByPly,
+    resolveMarkerFor,
     gameData?.opening_ply_count,
   ]);
 
@@ -2377,30 +2571,40 @@ export default function Analysis() {
   const boardSquareMarkers = useMemo(() => {
     const base =
       gameOverlay.squareMarkers.length > 0 ? gameOverlay.squareMarkers : liveFlaw.squareMarkers;
-    // Phase 172 (SEED-106 CR-01/D-04/D-05): live resolution wins whenever
-    // gemByNode has graded this node — INCLUDING an explicit `null` rejection,
-    // in which case sweep.gemByPly is NOT consulted. `resolveGemFor` centralizes
-    // that precedence (a `??` collapse silently fell through a live `null` to the
-    // sweep's shallower grade). `null` here = absent or graded-and-rejected.
-    const gemHere =
-      currentNodeId !== null ? resolveGemFor(currentNodeId, currentMainlinePly) : undefined;
+    // Phase 175 (SEED-108 D-01/D-03), extending Phase 172 (SEED-106 CR-01/
+    // D-04/D-05): the STORED backend tier wins whenever this mainline ply of
+    // an analyzed game has one — present or authoritatively null (Pitfall 3).
+    // Only then does live resolution apply: gemByNode wins whenever it has
+    // graded this node — INCLUDING an explicit `null` rejection, in which
+    // case sweep.gemByPly is NOT consulted. `resolveMarkerFor` centralizes
+    // ALL of this precedence (a `??` collapse silently fell through a live
+    // `null` to the sweep's shallower grade). `null` here = absent or
+    // graded-and-rejected.
+    const markerHere =
+      currentNodeId !== null ? resolveMarkerFor(currentNodeId, currentMainlinePly) : null;
     // Bug fix (163-REVIEW WR-05): in game mode the base can carry a BACKEND-
     // precomputed severity marker on lastMove.to (server-side Stockfish), while
-    // the gem's C2 comes from the frontend WASM pass — the two evals diverge by
+    // the gem/great's C2 comes from the frontend WASM pass (or the backend's
+    // own classifier for the stored path) — the two evals can diverge by
     // design (documented eval non-determinism), so "mutually exclusive by
     // construction" doesn't hold across pipelines. One square never renders two
-    // badges: an existing severity marker wins, the gem yields.
-    const withGem =
-      gemHere != null && // non-null resolution = confirmed gem (null = graded, not a gem)
+    // badges: an existing severity marker wins, the gem/great yields.
+    const withMarker =
+      markerHere !== null && // non-null resolution = confirmed gem/great
       lastMove != null &&
       !base.some((m) => m.square === lastMove.to && m.severity != null)
-        ? [...base, { square: lastMove.to, gem: true }]
+        ? [
+            ...base,
+            markerHere.tier === 'great'
+              ? { square: lastMove.to, great: true }
+              : { square: lastMove.to, gem: true },
+          ]
         : base;
 
     // Phase 172 (SEED-106 D-08): book marker — LOWEST precedence in
-    // severity > gem > book. Appended only when the current node is a
+    // severity > gem/great > book. Appended only when the current node is a
     // MAINLINE ply inside the book AND the square carries neither an
-    // existing severity NOR gem marker.
+    // existing severity NOR gem/great marker.
     const isBookPly =
       currentMainlinePly >= 0 &&
       gameData?.opening_ply_count != null &&
@@ -2408,15 +2612,17 @@ export default function Analysis() {
     if (
       isBookPly &&
       lastMove != null &&
-      !withGem.some((m) => m.square === lastMove.to && (m.severity != null || m.gem === true))
+      !withMarker.some(
+        (m) => m.square === lastMove.to && (m.severity != null || m.gem === true || m.great === true),
+      )
     ) {
-      return [...withGem, { square: lastMove.to, book: true }];
+      return [...withMarker, { square: lastMove.to, book: true }];
     }
-    return withGem;
+    return withMarker;
   }, [
     gameOverlay.squareMarkers,
     liveFlaw.squareMarkers,
-    resolveGemFor,
+    resolveMarkerFor,
     currentNodeId,
     currentMainlinePly,
     lastMove,
@@ -2599,6 +2805,13 @@ export default function Analysis() {
           heightClass={heightClass}
           initialPly={initialPly}
           flipped={gameData.user_color === 'black'}
+          // User-scope the gem/great dot layer (Plan 06 fix): best_move_tier is
+          // position-scoped, so pass user_color to exclude the opponent's gems/greats.
+          userColor={
+            gameData.user_color === 'white' || gameData.user_color === 'black'
+              ? gameData.user_color
+              : undefined
+          }
           sliderTestId="analysis-eval-chart-slider"
           sliderDisabled={!isOnMainLineForSlider}
           disableHoverScrub

@@ -115,6 +115,17 @@ export interface EvalPoint {
   // Convert first via sanToUci() (frontend/src/lib/sanToSquares.ts) — this is
   // the free prefilter's data source for Phase 172's gem sweep (SEED-106 D-04).
   best_move: string | null;
+  // Pre-classified gem/great tier for this ply's stored mainline move (Phase
+  // 175, SEED-108), computed server-side from `game_best_moves` via the
+  // authoritative classify_best_move. Null when no candidate row exists OR the
+  // row classifies "neither" — the board never re-derives this from cp/margin
+  // math for an analyzed game (that's the fallback-only classifyGem/
+  // classifyGreat path in gemMove.ts, D-03c).
+  best_move_tier: 'gem' | 'great' | null;
+  // Maia policy probability (0..1) of the stored mainline move at this ply's
+  // pinned rating rung — set ONLY alongside a non-null best_move_tier (never
+  // populated for a "neither" ply).
+  maia_prob: number | null;
 }
 
 /**

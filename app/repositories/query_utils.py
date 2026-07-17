@@ -115,6 +115,8 @@ def apply_game_filters(
     orientation: Literal["either", "missed", "allowed"] = "either",
     min_tactic_depth: int | None = None,
     max_tactic_depth: int | None = None,
+    has_gem: bool | None = None,
+    has_great: bool | None = None,
 ) -> Any:
     """Apply standard game filter WHERE clauses to a SELECT statement.
 
@@ -175,6 +177,17 @@ def apply_game_filters(
                          that side. Mates obey the range too (the Phase 129 D-04
                          exemption was removed). Note: this site does NOT gate on
                          confidence (Pitfall 3 preserved).
+        has_gem: When True, restrict to games containing >=1 of the USER's own
+                         plies (D-04 player-parity scoping) whose stored
+                         game_best_moves candidate classifies as 'gem' via the
+                         SAME classifier the board uses (best_move_tier_sql /
+                         classify_best_move, GEMS-07/D-03b). None/False = no
+                         gem filter. Composed via a single correlated EXISTS
+                         (best_move_exists_from_table) — never a parallel path
+                         (D-05a, FILT-01).
+        has_great: Same as has_gem for the 'great' tier. has_gem=True AND
+                         has_great=True is a UNION (gem OR great on the single
+                         EXISTS), mirroring the flaw-family EXISTS union (D-05).
 
     Notes:
         When either gap bound is set, games with missing white/black ratings
@@ -249,6 +262,7 @@ def apply_game_filters(
     from app.repositories.library_repository import (
         FAMILY_TO_MOTIF_INTS,
         _tactic_controls_active,
+        best_move_exists_from_table,
         flaw_exists_from_table,
     )
     from app.services.flaws_service import FlawSeverity, FlawTag
@@ -283,4 +297,16 @@ def apply_game_filters(
         # this path is reached only when a filter is active, so exists_pred is a
         # real EXISTS predicate here (not true()).
         stmt = stmt.where(exists_pred)
+
+    # has_gem / has_great (FILT-01, D-04/D-05/D-05a): a single correlated EXISTS
+    # composed alongside (not replacing) the flaw/tactic EXISTS above — both
+    # booleans build ONE tiers list so has_gem=True AND has_great=True is a
+    # UNION (gem OR great on the same row-set), never an intersection.
+    best_move_tiers: list[Literal["gem", "great"]] = []
+    if has_gem:
+        best_move_tiers.append("gem")
+    if has_great:
+        best_move_tiers.append("great")
+    if best_move_tiers:
+        stmt = stmt.where(best_move_exists_from_table(best_move_tiers))
     return stmt

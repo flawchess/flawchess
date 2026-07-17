@@ -24,7 +24,8 @@
 
 import { ChessKnight, Cpu, Gem, User } from 'lucide-react';
 
-import { FLAWCHESS_ENGINE_ARROW, STOCKFISH_ACCENT, MAIA_ACCENT } from '@/lib/theme';
+import { GreatMoveIcon } from '@/components/icons/GreatMoveIcon';
+import { FLAWCHESS_ENGINE_ARROW, STOCKFISH_ACCENT, MAIA_ACCENT, GREAT_ACCENT } from '@/lib/theme';
 
 const ICON_CLASS = 'inline h-3.5 w-3.5 shrink-0';
 
@@ -48,6 +49,13 @@ export interface UnifiedMovePopoverProps {
    * MaiaMoveQualityBar when the hovered move's quality is 'gem'.
    */
   isGem?: boolean;
+  /**
+   * When true, prepends a great-move copy line above the source rows (Phase
+   * 175, SEED-108). Mutually exclusive with `isGem` by construction — a move
+   * classifies as at most one of gem/great. Set by MaiaMoveQualityBar when
+   * the hovered move's quality is 'great'.
+   */
+  isGreat?: boolean;
 }
 
 export function UnifiedMovePopover({
@@ -55,6 +63,7 @@ export function UnifiedMovePopover({
   objectiveEval,
   maiaProbability,
   isGem,
+  isGreat,
 }: UnifiedMovePopoverProps): React.ReactElement {
   return (
     // 2-column table: source label (icon + name) | eval/probability, so the values
@@ -70,6 +79,17 @@ export function UnifiedMovePopover({
                     probability is evaluated at the draggable ELO slider's value,
                     which may sit far from the user's own rating. */}
                 Gem — players at this rating almost never find this.
+              </span>
+            </td>
+          </tr>
+        )}
+        {isGreat && (
+          <tr style={{ color: GREAT_ACCENT }}>
+            <td className="py-0.5" colSpan={2}>
+              <span className="flex items-center gap-1.5">
+                <GreatMoveIcon className={ICON_CLASS} aria-hidden="true" />
+                {/* Same "this rating" phrasing as the gem line (163-REVIEW IN-01). */}
+                Great — players at this rating rarely find this.
               </span>
             </td>
           </tr>

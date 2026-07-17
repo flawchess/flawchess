@@ -10,10 +10,15 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Added
 
+- Analysis board: your strong "gem" and rare "great" moves are marked instantly from stored analysis data the moment you open an analyzed game — no background scan, regardless of device or engine load (Phase 175).
+- Analysis & Library: eval charts now show violet (gem) and blue (great) dots for your best moves, and clickable "Gem"/"Great" badges step through them. Badge counts and cycling cover your own moves; the analysis board still flags your opponent's gems too (Phase 175).
+- Library: filter your games by whether they contain a "gem" or "great" move, composable with every other game filter (Phase 175).
 - Dev: anchor-vs-anchor self-calibration ladder — a standalone orchestrator (`scripts/calibration-anchor-ladder.mjs`, probe→measure schedule with connectivity guard and resumable ledger) plus a stdlib Bradley-Terry fit (`scripts/calibration_anchor_fit.py`) place all 10 Maia/Stockfish bot anchors on one measured internal scale, published as `INTERNAL_RATING` in `scripts/lib/calibration-internal-scale.mjs`. Key result: the Maia-3 argmax ladder is ~2.8x compressed vs its nominal ELO labels, worst at the top (Phase 173).
 
 ### Changed
 
+- Analysis: the client-side gem sweep is retired — gems/greats read from stored analysis data, with the old live scan kept only as a fallback for free-play and unanalyzed positions (Phase 175).
+- Library filters: the "Severity" section is now labelled "Flaws" (Phase 175).
 - Play-vs-bot board now has a control bar (reset, back, forward, flip board) directly below the board for stepping through the game and flipping orientation. In the single-column layout the name/clock strips always match the board width and the move list is hidden; the two-column layout now appears on narrower windows (from 800px), keeps a small gap between columns, and sizes the move list to line up with the bottom of the board.
 
 ## [v2.3] Bot Play — 2026-07-15

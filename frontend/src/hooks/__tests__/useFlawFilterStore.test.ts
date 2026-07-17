@@ -37,6 +37,11 @@ describe('DEFAULT_FLAW_FILTER', () => {
   it('includes empty tacticFamilies', () => {
     expect(DEFAULT_FLAW_FILTER.tacticFamilies).toEqual([]);
   });
+
+  it('includes hasGem = false and hasGreat = false (Phase 175, FILT-01)', () => {
+    expect(DEFAULT_FLAW_FILTER.hasGem).toBe(false);
+    expect(DEFAULT_FLAW_FILTER.hasGreat).toBe(false);
+  });
 });
 
 describe('isFlawFilterNonDefault', () => {
@@ -113,6 +118,24 @@ describe('isFlawFilterNonDefault', () => {
     expect(
       isFlawFilterNonDefault({ ...DEFAULT_FLAW_FILTER, tacticFamilies: ['fork'] }),
     ).toBe(true);
+  });
+
+  it('returns true when hasGem is true (Phase 175, FILT-01)', () => {
+    expect(
+      isFlawFilterNonDefault({ ...DEFAULT_FLAW_FILTER, hasGem: true }),
+    ).toBe(true);
+  });
+
+  it('returns true when hasGreat is true', () => {
+    expect(
+      isFlawFilterNonDefault({ ...DEFAULT_FLAW_FILTER, hasGreat: true }),
+    ).toBe(true);
+  });
+
+  it('returns false when both hasGem and hasGreat are false (default)', () => {
+    expect(
+      isFlawFilterNonDefault({ ...DEFAULT_FLAW_FILTER, hasGem: false, hasGreat: false }),
+    ).toBe(false);
   });
 
   it('returns true when only the max differs from the default {0, 11} (custom {0, 10})', () => {

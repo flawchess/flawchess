@@ -12,7 +12,14 @@
 import { describe, it, expect } from 'vitest';
 import { evalToExpectedScore, type MoverColor } from '@/lib/liveFlaw';
 import { MISTAKE_DROP, LICHESS_K } from '@/generated/flawThresholds';
-import { classifyGem, summarizeForGem, GEM_MAIA_MAX_PROB, type GemGrade } from '../gemMove';
+import {
+  classifyGem,
+  classifyGreat,
+  summarizeForGem,
+  GEM_MAIA_MAX_PROB,
+  GREAT_MAIA_MAX_PROB,
+  type GemGrade,
+} from '../gemMove';
 
 const WHITE: MoverColor = 'white';
 const BLACK: MoverColor = 'black';
@@ -159,6 +166,104 @@ describe('classifyGem', () => {
         bestEs: 0.9,
         secondBestEs: 0.2,
       }),
+    ).toBe(false);
+  });
+});
+
+// ─── classifyGreat ──────────────────────────────────────────────────────────
+
+describe('classifyGreat', () => {
+  it('D-01: qualifying inputs in the (0.20, 0.50] band with a passing C2 margin classify as great', () => {
+    expect(
+      classifyGreat({
+        maiaProbability: 0.35,
+        playedIsBest: true,
+        bestEs: 0.55,
+        secondBestEs: 0.4,
+      }),
+    ).toBe(true);
+  });
+
+  it('GREAT_MAIA_MAX_PROB is exactly 0.5', () => {
+    expect(GREAT_MAIA_MAX_PROB).toBe(0.5);
+  });
+
+  it('returns false at the GEM ceiling (0.10 <= GEM_MAIA_MAX_PROB) — that is a gem, not a great', () => {
+    expect(
+      classifyGreat({
+        maiaProbability: 0.1,
+        playedIsBest: true,
+        bestEs: 0.55,
+        secondBestEs: 0.4,
+      }),
+    ).toBe(false);
+  });
+
+  it('returns false above the GREAT ceiling (0.60 > GREAT_MAIA_MAX_PROB)', () => {
+    expect(
+      classifyGreat({
+        maiaProbability: 0.6,
+        playedIsBest: true,
+        bestEs: 0.55,
+        secondBestEs: 0.4,
+      }),
+    ).toBe(false);
+  });
+
+  it('returns false when the ES margin is below MISTAKE_DROP (0.07 < 0.10), regardless of maiaProbability (shared C2 gate)', () => {
+    expect(
+      classifyGreat({
+        maiaProbability: 0.35,
+        playedIsBest: true,
+        bestEs: 0.47,
+        secondBestEs: 0.4,
+      }),
+    ).toBe(false);
+  });
+
+  it('returns false when maiaProbability is null', () => {
+    expect(
+      classifyGreat({ maiaProbability: null, playedIsBest: true, bestEs: 0.55, secondBestEs: 0.4 }),
+    ).toBe(false);
+  });
+
+  it('returns false when playedIsBest is false', () => {
+    expect(
+      classifyGreat({ maiaProbability: 0.35, playedIsBest: false, bestEs: 0.55, secondBestEs: 0.4 }),
+    ).toBe(false);
+  });
+
+  it('boundary: maiaProbability exactly 0.50 (GREAT_MAIA_MAX_PROB) classifies true — inclusive upper bound', () => {
+    expect(
+      classifyGreat({
+        maiaProbability: GREAT_MAIA_MAX_PROB,
+        playedIsBest: true,
+        bestEs: 0.55,
+        secondBestEs: 0.4,
+      }),
+    ).toBe(true);
+  });
+
+  it('boundary: maiaProbability exactly 0.20 (GEM_MAIA_MAX_PROB) classifies false — half-open (GEM_MAIA_MAX_PROB, GREAT_MAIA_MAX_PROB] band excludes the lower bound', () => {
+    expect(
+      classifyGreat({
+        maiaProbability: GEM_MAIA_MAX_PROB,
+        playedIsBest: true,
+        bestEs: 0.55,
+        secondBestEs: 0.4,
+      }),
+    ).toBe(false);
+  });
+
+  it('returns false when bestEs is null', () => {
+    expect(
+      classifyGreat({ maiaProbability: 0.35, playedIsBest: true, bestEs: null, secondBestEs: 0.4 }),
+    ).toBe(false);
+  });
+
+  it('returns false when secondBestEs is null', () => {
+    expect(
+      classifyGreat({ maiaProbability: 0.35, playedIsBest: true, bestEs: 0.55, secondBestEs: null }),
     ).toBe(false);
   });
 });

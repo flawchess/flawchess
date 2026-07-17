@@ -1750,6 +1750,348 @@ class TestLibraryGameById:
 
 
 # ---------------------------------------------------------------------------
+# Phase 175 Plan 01 (FILT-01) — GET /library/games?has_gem=/has_great=
+# ---------------------------------------------------------------------------
+
+
+async def _seed_best_move_committed(
+    session_maker: async_sessionmaker[AsyncSession],
+    *,
+    game_id: int,
+    ply: int,
+    maia_prob: float,
+    best_cp: int | None = 250,
+    best_mate: int | None = None,
+    second_cp: int | None = 0,
+    second_mate: int | None = None,
+) -> None:
+    """Insert and commit a GameBestMove row (no user_id column — position-scoped
+    candidacy, per GameBestMove's model docstring).
+
+    Defaults (best_cp=250 vs second_cp=0) produce a wide WHITE-mover expected-
+    score margin; pass a mirrored negative best_cp for a BLACK user's own move.
+    """
+    from app.models.game_best_move import GameBestMove
+
+    async with session_maker() as session:
+        row = GameBestMove(
+            game_id=game_id,
+            ply=ply,
+            maia_prob=maia_prob,
+            best_cp=best_cp,
+            best_mate=best_mate,
+            second_cp=second_cp,
+            second_mate=second_mate,
+        )
+        session.add(row)
+        await session.commit()
+
+
+@pytest_asyncio.fixture(scope="module")
+async def best_move_filter_test_state(test_engine: Any) -> dict[str, Any]:
+    """Seed two users for GET /library/games?has_gem=/has_great= tests (FILT-01).
+
+    User A: 3 own-gem games (game1-3, pagination fixture), 1 own-great game
+    (game4), 1 stored-but-neither game (game5), 1 opponent-only-gem game
+    (game6, must be excluded — D-04), 1 own-gem game as BLACK (game7, used to
+    prove has_gem composes with color — D-05a).
+    User B: 1 own-gem game — cross-user isolation target (IDOR backstop).
+
+    Committed rows so the ASGI client sessions see the data.
+    """
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    suffix = uuid.uuid4().hex[:8]
+
+    headers_a, user_a_id = await _register_and_login(f"bmf_a_{suffix}@example.com")
+    headers_b, user_b_id = await _register_and_login(f"bmf_b_{suffix}@example.com")
+
+    def _day(n: int) -> datetime.datetime:
+        return datetime.datetime(2026, 6, n, tzinfo=datetime.timezone.utc)
+
+    # game1-3: white user's own gem (ply=2, even -> white mover -> player).
+    gem_game_ids: list[int] = []
+    for i in range(1, 4):
+        gid = await _seed_game_committed(
+            session_maker, user_id=user_a_id, played_at=_day(i), user_color="white"
+        )
+        await _seed_best_move_committed(session_maker, game_id=gid, ply=2, maia_prob=0.10)
+        gem_game_ids.append(gid)
+
+    # game4: white user's own great (maia_prob in (0.20, 0.50]).
+    game4_great = await _seed_game_committed(
+        session_maker, user_id=user_a_id, played_at=_day(4), user_color="white"
+    )
+    await _seed_best_move_committed(session_maker, game_id=game4_great, ply=2, maia_prob=0.35)
+
+    # game5: stored row present but maia_prob above the great ceiling -> neither.
+    game5_neither = await _seed_game_committed(
+        session_maker, user_id=user_a_id, played_at=_day(5), user_color="white"
+    )
+    await _seed_best_move_committed(session_maker, game_id=game5_neither, ply=2, maia_prob=0.60)
+
+    # game6: gem at ply=1 (odd -> black mover -> OPPONENT for a white user) —
+    # must NOT count towards has_gem (D-04 player-parity scoping).
+    game6_opponent_gem = await _seed_game_committed(
+        session_maker, user_id=user_a_id, played_at=_day(6), user_color="white"
+    )
+    await _seed_best_move_committed(
+        session_maker, game_id=game6_opponent_gem, ply=1, maia_prob=0.10
+    )
+
+    # game7: black user's own gem (ply=1, odd -> black mover -> player); cp
+    # mirrored negative per classify_best_move's black-mover sign convention.
+    game7_gem_black = await _seed_game_committed(
+        session_maker, user_id=user_a_id, played_at=_day(7), user_color="black"
+    )
+    await _seed_best_move_committed(
+        session_maker, game_id=game7_gem_black, ply=1, maia_prob=0.10, best_cp=-250, second_cp=0
+    )
+
+    # User B: own gem game — cross-user isolation target.
+    game_b_gem = await _seed_game_committed(
+        session_maker, user_id=user_b_id, played_at=_day(8), user_color="white"
+    )
+    await _seed_best_move_committed(session_maker, game_id=game_b_gem, ply=2, maia_prob=0.10)
+
+    return {
+        "headers_a": headers_a,
+        "headers_b": headers_b,
+        "gem_game_ids": gem_game_ids,
+        "game4_great": game4_great,
+        "game5_neither": game5_neither,
+        "game6_opponent_gem": game6_opponent_gem,
+        "game7_gem_black": game7_gem_black,
+        "game_b_gem": game_b_gem,
+    }
+
+
+class TestGetLibraryGamesBestMoveFilter:
+    """GET /library/games?has_gem=/has_great= — FILT-01 HTTP boundary."""
+
+    @pytest.mark.asyncio
+    async def test_has_gem_returns_only_the_users_own_gem_games(
+        self, best_move_filter_test_state: dict[str, Any]
+    ) -> None:
+        """?has_gem=true matches the 3 white gem games + the 1 black gem game
+        (game7), excludes the great-only, neither, and opponent-only-gem games."""
+        state = best_move_filter_test_state
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/library/games",
+                params={"has_gem": "true", "limit": 20},
+                headers=state["headers_a"],
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        matched_ids = {g["game_id"] for g in body["games"]}
+
+        expected = set(state["gem_game_ids"]) | {state["game7_gem_black"]}
+        assert matched_ids == expected, f"expected {expected}, got {matched_ids}"
+        assert body["matched_count"] == len(expected)
+        assert state["game4_great"] not in matched_ids
+        assert state["game5_neither"] not in matched_ids
+        assert state["game6_opponent_gem"] not in matched_ids, (
+            "opponent-only gem must be excluded (D-04)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_has_great_returns_only_the_great_game(
+        self, best_move_filter_test_state: dict[str, Any]
+    ) -> None:
+        """?has_great=true matches only game4 (the sole great-tier game)."""
+        state = best_move_filter_test_state
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/library/games",
+                params={"has_great": "true", "limit": 20},
+                headers=state["headers_a"],
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        matched_ids = {g["game_id"] for g in body["games"]}
+        assert matched_ids == {state["game4_great"]}
+        assert body["matched_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_has_gem_and_has_great_is_a_union(
+        self, best_move_filter_test_state: dict[str, Any]
+    ) -> None:
+        """?has_gem=true&has_great=true returns gem OR great games (union, D-05),
+        never the intersection."""
+        state = best_move_filter_test_state
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/library/games",
+                params={"has_gem": "true", "has_great": "true", "limit": 20},
+                headers=state["headers_a"],
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        matched_ids = {g["game_id"] for g in body["games"]}
+
+        expected = set(state["gem_game_ids"]) | {state["game7_gem_black"], state["game4_great"]}
+        assert matched_ids == expected
+        assert body["matched_count"] == len(expected)
+        assert state["game5_neither"] not in matched_ids
+        assert state["game6_opponent_gem"] not in matched_ids
+
+    @pytest.mark.asyncio
+    async def test_has_gem_composes_with_color_filter(
+        self, best_move_filter_test_state: dict[str, Any]
+    ) -> None:
+        """?has_gem=true&color=white excludes the black user's own-gem game
+        (game7) — proves the filters AND together (D-05a), not a parallel path."""
+        state = best_move_filter_test_state
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/library/games",
+                params={"has_gem": "true", "color": "white", "limit": 20},
+                headers=state["headers_a"],
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        matched_ids = {g["game_id"] for g in body["games"]}
+        assert matched_ids == set(state["gem_game_ids"])
+        assert state["game7_gem_black"] not in matched_ids
+
+    @pytest.mark.asyncio
+    async def test_has_gem_pagination_matched_count_stable_across_pages(
+        self, best_move_filter_test_state: dict[str, Any]
+    ) -> None:
+        """matched_count and page contents stay correct with has_gem active
+        across >1 page (Pitfall 1 — predicate lives in SQL, never a Python
+        post-filter that would corrupt LIMIT/OFFSET/matched_count)."""
+        state = best_move_filter_test_state
+        expected = set(state["gem_game_ids"]) | {state["game7_gem_black"]}
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp_p1 = await client.get(
+                "/api/library/games",
+                params={"has_gem": "true", "limit": 2, "offset": 0},
+                headers=state["headers_a"],
+            )
+            resp_p2 = await client.get(
+                "/api/library/games",
+                params={"has_gem": "true", "limit": 2, "offset": 2},
+                headers=state["headers_a"],
+            )
+        assert resp_p1.status_code == 200
+        assert resp_p2.status_code == 200
+        body1, body2 = resp_p1.json(), resp_p2.json()
+
+        assert body1["matched_count"] == len(expected)
+        assert body2["matched_count"] == len(expected)
+        assert len(body1["games"]) == 2
+        assert len(body2["games"]) == 2
+
+        page1_ids = {g["game_id"] for g in body1["games"]}
+        page2_ids = {g["game_id"] for g in body2["games"]}
+        assert page1_ids.isdisjoint(page2_ids), "pages must not overlap"
+        assert page1_ids | page2_ids == expected, "pages together must cover every matched game"
+
+    @pytest.mark.asyncio
+    async def test_has_gem_cross_user_isolation(
+        self, best_move_filter_test_state: dict[str, Any]
+    ) -> None:
+        """User A's ?has_gem=true never surfaces user B's game (IDOR backstop,
+        T-175-01)."""
+        state = best_move_filter_test_state
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/library/games",
+                params={"has_gem": "true", "limit": 20},
+                headers=state["headers_a"],
+            )
+        assert resp.status_code == 200
+        matched_ids = {g["game_id"] for g in resp.json()["games"]}
+        assert state["game_b_gem"] not in matched_ids
+
+
+# ---------------------------------------------------------------------------
+# Phase 175 Plan 02 (BOARD-01) — EvalPoint.best_move_tier/maia_prob round-trip
+# ---------------------------------------------------------------------------
+
+
+@pytest_asyncio.fixture(scope="module")
+async def best_move_tier_test_state(test_engine: Any) -> dict[str, Any]:
+    """Seed one analyzed game with a stored gem-tier game_best_moves row at ply 0
+    (white mover, even ply -> player) for the EvalPoint.best_move_tier/maia_prob
+    HTTP round-trip test.
+    """
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    suffix = uuid.uuid4().hex[:8]
+    headers, user_id = await _register_and_login(f"bmt_{suffix}@example.com")
+
+    game_id = await _seed_game_committed(
+        session_maker,
+        user_id=user_id,
+        played_at=datetime.datetime(2026, 5, 1, tzinfo=datetime.timezone.utc),
+        result="1-0",
+        user_color="white",
+        full_evals_completed_at=datetime.datetime.now(tz=datetime.timezone.utc),
+    )
+    await _seed_positions_committed(
+        session_maker,
+        user_id=user_id,
+        game_id=game_id,
+        positions=_make_analyzed_positions(n_plies=10),
+    )
+    # Gem row at ply 0 (white mover — even ply): wide margin (169 vs 0 -> ES gap
+    # ~0.15), maia_prob=0.10 (<= GEM_MAIA_MAX_PROB).
+    await _seed_best_move_committed(
+        session_maker, game_id=game_id, ply=0, maia_prob=0.10, best_cp=169, second_cp=0
+    )
+
+    return {"headers": headers, "user_id": user_id, "game_id": game_id}
+
+
+class TestEvalPointBestMoveTierRoundTrip:
+    """EvalPoint.best_move_tier/maia_prob serialize over GET /library/games/{id}
+    (BOARD-01) with no internal hash fields leaking (CLAUDE.md V5)."""
+
+    @pytest.mark.asyncio
+    async def test_eval_series_gem_tier_and_maia_prob_serialize_no_hash_leak(
+        self, best_move_tier_test_state: dict[str, Any]
+    ) -> None:
+        state = best_move_tier_test_state
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                f"/api/library/games/{state['game_id']}",
+                headers=state["headers"],
+            )
+        assert resp.status_code == 200
+        card = resp.json()
+        eval_series = card["eval_series"]
+        assert eval_series is not None, "eval_series must be non-null for an analyzed game"
+        point0 = next(p for p in eval_series if p["ply"] == 0)
+        assert point0["best_move_tier"] == "gem", f"expected gem tier, got {point0}"
+        assert point0["maia_prob"] == pytest.approx(0.10, abs=1e-6)
+
+        # Every OTHER ply has no stored row -> best_move_tier/maia_prob both null.
+        for point in eval_series:
+            if point["ply"] != 0:
+                assert point["best_move_tier"] is None
+                assert point["maia_prob"] is None
+
+        # No internal Zobrist hash fields leak anywhere in the card (CLAUDE.md V5).
+        card_str = json.dumps(card)
+        assert "_hash" not in card_str, f"internal hash field leaked in card: {card_str[:500]}"
+
+
+# ---------------------------------------------------------------------------
 # Phase 129 Plan 01 (Task 2 TDD RED) — dual-orientation tactic comparison
 # ---------------------------------------------------------------------------
 

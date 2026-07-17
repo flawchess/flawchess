@@ -23,11 +23,14 @@ ELO normalization, clamp, and drop thresholds verbatim; it never re-declares the
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
+
+from sqlalchemy import case, func, literal
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.schemas.normalization import Platform, TimeControlBucket
 from app.services.chesscom_to_lichess import normalize_to_lichess_blitz
-from app.services.eval_utils import eval_cp_to_expected_score
+from app.services.eval_utils import LICHESS_K, eval_cp_to_expected_score
 from app.services.flaws_service import INACCURACY_DROP, MATE_CP_EQUIVALENT, MISTAKE_DROP
 from app.services.maia_encoding import clamp_to_ladder_bounds
 
@@ -154,3 +157,71 @@ def classify_best_move(
     if maia_prob <= GREAT_MAIA_MAX_PROB:
         return "great"
     return "neither"
+
+
+# ─── SQL twins of _eval_to_expected_score / classify_best_move (FILT-01) ───────
+#
+# The Library "has gem" / "has great" filter (FILT-01) must decide gem/great
+# tiers inside a correlated EXISTS (app/repositories/library_repository.py::
+# best_move_exists_from_table), so the classification needs a SQLAlchemy Core
+# expression twin of the two Python functions above. Board (classify_best_move,
+# called in Python) and filter (these SQL twins) agree by construction because
+# both read the SAME module constants (GEM_MAIA_MAX_PROB, GREAT_MAIA_MAX_PROB,
+# MISTAKE_DROP, MATE_CP_EQUIVALENT) and the same LICHESS_K sigmoid coefficient —
+# never re-declared here (GEMS-07/D-03b: one retune surface).
+#
+# Must stay consistent with _eval_to_expected_score / classify_best_move (the
+# Python counterparts, same module). If either side changes, update the other —
+# same sync discipline as decided_lost_sql / is_decided_lost
+# (app/repositories/library_repository.py).
+
+
+def _es_sql(cp_col: Any, mate_col: Any, user_color_col: Any) -> ColumnElement[float | None]:
+    """SQL twin of _eval_to_expected_score.
+
+    Option-B mate mapping: a mate eval maps to ±MATE_CP_EQUIVALENT centipawns
+    BEFORE the shared Lichess-K sigmoid (mate takes priority over cp when both
+    are present, matching the Python function's `if eval_mate is not None: ...
+    elif eval_cp is not None: ...` branch order). NULL when both cols are NULL.
+    """
+    sign = case((user_color_col == "white", 1.0), else_=-1.0)
+    mate_cp_equiv = case(
+        (mate_col > 0, float(MATE_CP_EQUIVALENT)), else_=-float(MATE_CP_EQUIVALENT)
+    )
+    return case(
+        (mate_col.isnot(None), 1.0 / (1.0 + func.exp(-LICHESS_K * sign * mate_cp_equiv))),
+        (cp_col.isnot(None), 1.0 / (1.0 + func.exp(-LICHESS_K * sign * cp_col))),
+        else_=literal(None),
+    )
+
+
+def best_move_tier_sql(
+    maia_prob_col: Any,
+    best_cp_col: Any,
+    best_mate_col: Any,
+    second_cp_col: Any,
+    second_mate_col: Any,
+    user_color_col: Any,
+) -> ColumnElement[str | None]:
+    """SQL twin of classify_best_move — returns 'gem' / 'great' / NULL.
+
+    NULL is the SQL equivalent of the Python function's "neither" string (the
+    EXISTS filter only ever tests membership in {'gem', 'great'}, so a bare
+    NULL/'neither' distinction would be meaningless here).
+
+    C2 (only-good-move) gate: NULL when either expected score is missing, or
+    when the best-second margin is below MISTAKE_DROP. Given C2, C1
+    (hard-to-find): maia_prob_col <= GEM_MAIA_MAX_PROB -> 'gem'; <=
+    GREAT_MAIA_MAX_PROB -> 'great'; otherwise NULL. Both ceilings are inclusive
+    (<=), matching classify_best_move exactly.
+    """
+    best_es = _es_sql(best_cp_col, best_mate_col, user_color_col)
+    second_es = _es_sql(second_cp_col, second_mate_col, user_color_col)
+    return case(
+        (best_es.is_(None), literal(None)),
+        (second_es.is_(None), literal(None)),
+        ((best_es - second_es) < MISTAKE_DROP, literal(None)),
+        (maia_prob_col <= GEM_MAIA_MAX_PROB, literal("gem")),
+        (maia_prob_col <= GREAT_MAIA_MAX_PROB, literal("great")),
+        else_=literal(None),
+    )

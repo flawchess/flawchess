@@ -18,6 +18,8 @@ import { cn } from '@/lib/utils';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { BlunderIcon, MistakeIcon } from '@/components/icons/SeverityGlyphIcon';
+import { GemIcon } from '@/components/icons/GemIcon';
+import { GreatMoveIcon } from '@/components/icons/GreatMoveIcon';
 import { TagLegend } from '@/components/library/TagChip';
 import type { FlawIcon } from '@/lib/flawComparisonMeta';
 import {
@@ -33,6 +35,10 @@ import {
   SEV_BLUNDER_BG,
   SEV_MISTAKE,
   SEV_MISTAKE_BG,
+  MAIA_ACCENT,
+  MAIA_ACCENT_BG,
+  GREAT_ACCENT,
+  GREAT_ACCENT_BG,
 } from '@/lib/theme';
 import type { FlawTag, TacticOrientation } from '@/types/library';
 import type { TacticFamily, TacticGroupKey } from '@/lib/tacticComparisonMeta';
@@ -74,6 +80,17 @@ export interface FlawFilterControlProps {
    */
   tacticDepth?: TacticDepthValue;
   onTacticDepthChange?: (next: TacticDepthValue) => void;
+  /**
+   * "Has gem" / "has great" toggles (FILT-01, D-05, Phase 175) — independent
+   * booleans narrowing the Library games list. The "Best Moves" section renders
+   * only when the parent supplies onHasGemToggle/onHasGreatToggle — which only
+   * GamesTab does; FlawsTab passes neither. (showTacticFilter can NOT distinguish
+   * the two tabs: both pass it true, so it is the wrong gate for this section.)
+   */
+  hasGem?: boolean;
+  hasGreat?: boolean;
+  onHasGemToggle?: () => void;
+  onHasGreatToggle?: () => void;
 }
 
 // ─── Tag → glyph (lucide icons, rendered at h-3 w-3) ──────────────────────────
@@ -243,6 +260,55 @@ function SeverityFilterButton({ config, selected, onToggle }: SeverityFilterButt
   );
 }
 
+// ─── Best-move filter button (gem / great, FILT-01, Phase 175) ────────────────
+
+interface BestMoveFilterButtonProps {
+  testId: string;
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  ariaLabel: string;
+  color: string;
+  bg: string;
+  selected: boolean;
+  onToggle: () => void;
+}
+
+/**
+ * A "has gem" / "has great" toggle pill, styled identically to
+ * SeverityFilterButton (same pill shape, colored border/background when
+ * selected) but backed by a single independent boolean rather than an
+ * array-membership check — two of these compose as an OR at the backend.
+ */
+function BestMoveFilterButton({
+  testId,
+  icon: Icon,
+  label,
+  ariaLabel,
+  color,
+  bg,
+  selected,
+  onToggle,
+}: BestMoveFilterButtonProps) {
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      aria-pressed={selected}
+      aria-label={ariaLabel}
+      className={cn(
+        'inline-flex items-center gap-1 h-11 sm:h-7 rounded-full px-3 py-0.5 text-sm border transition-colors',
+        !selected
+          && 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',
+      )}
+      style={selected ? { color, borderColor: color, backgroundColor: bg } : undefined}
+      onClick={onToggle}
+    >
+      <Icon className="h-4 w-4 shrink-0" />
+      {label}
+    </button>
+  );
+}
+
 // ─── Tactic family group ────────────────────────────────────────────────────────
 
 interface TacticFamilyGroupProps {
@@ -338,6 +404,8 @@ function TacticFamilyGroup({
  *
  * Renders (top to bottom):
  * - Severity (Blunders / Mistakes) — always on top of the panel (Quick 260624)
+ * - Best Moves (Gem / Great, FILT-01 Phase 175) — Games tab only (gated on the
+ *   presence of the onHasGem/GreatToggle handlers, which only GamesTab passes)
  * - Orientation toggle (showTacticFilter only)
  * - Tactic Depth filter (showTacticFilter only)
  * - Tactic Type family (showTacticFilter only)
@@ -369,6 +437,10 @@ export function FlawFilterControl({
   onOrientationChange,
   tacticDepth = DEFAULT_TACTIC_DEPTH_VALUE,
   onTacticDepthChange,
+  hasGem = false,
+  hasGreat = false,
+  onHasGemToggle,
+  onHasGreatToggle,
 }: FlawFilterControlProps) {
   const [contextOpen, setContextOpen] = useState(false);
   // Advanced tactic group (tier-3 motifs) — collapsed by default (Quick 260623-6pd).
@@ -421,7 +493,7 @@ export function FlawFilterControl({
           Pinned to the top of the panel, above Tactic Depth, on both tabs
           (Quick 260624). Was previously inside the Context collapsible. ──── */}
       <div className="flex flex-col gap-2">
-        <p className="text-sm text-muted-foreground">Severity</p>
+        <p className="text-sm text-muted-foreground">Flaws</p>
         <div className="flex gap-2 flex-wrap">
           {SEVERITY_BUTTONS.map((config) => (
             <SeverityFilterButton
@@ -433,6 +505,43 @@ export function FlawFilterControl({
           ))}
         </div>
       </div>
+
+      {/* ── Best Moves (Gem / Great toggles, FILT-01 D-05, Phase 175) ──────────
+          Two independent booleans (not a 3-state cycle) narrowing the Library
+          games list to games with a stored user-move gem/great; both on is a
+          union at the backend.
+          Bug fix (post-verify): this was gated on `!showTactics`, but BOTH the
+          Games AND Flaws tabs pass showTacticFilter=true, so the section never
+          rendered on the real Games tab. The true discriminator is the parent
+          opting in via the gem/great toggle handlers — only GamesTab passes
+          them; FlawsTab passes none — so gate on their presence instead. ──── */}
+      {(onHasGemToggle || onHasGreatToggle) && (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-muted-foreground">Best Moves</p>
+          <div className="flex gap-2 flex-wrap">
+            <BestMoveFilterButton
+              testId="filter-has-gem"
+              icon={GemIcon}
+              label="Gem"
+              ariaLabel="Filter by gem moves"
+              color={MAIA_ACCENT}
+              bg={MAIA_ACCENT_BG}
+              selected={hasGem}
+              onToggle={() => onHasGemToggle?.()}
+            />
+            <BestMoveFilterButton
+              testId="filter-has-great"
+              icon={GreatMoveIcon}
+              label="Great"
+              ariaLabel="Filter by great moves"
+              color={GREAT_ACCENT}
+              bg={GREAT_ACCENT_BG}
+              selected={hasGreat}
+              onToggle={() => onHasGreatToggle?.()}
+            />
+          </div>
+        </div>
+      )}
 
       {/* ── Tactic difficulty filter (Phase 129 TACUI-06, D-01/D-02/D-03) ──
           Placed first so users size the difficulty band before narrowing by

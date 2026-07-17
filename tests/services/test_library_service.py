@@ -20,6 +20,7 @@ from typing import cast
 import pytest
 
 from app.models.game import Game
+from app.models.game_best_move import GameBestMove
 from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
 from app.services.eval_utils import eval_cp_to_expected_score
@@ -122,6 +123,32 @@ def _make_game(
     game.base_time_seconds = base_time_seconds
     game.increment_seconds = increment_seconds
     return game
+
+
+def _make_best_move(
+    *,
+    game_id: int = 1,
+    ply: int = 0,
+    maia_prob: float = 0.10,
+    best_cp: int | None = 169,  # white-mover ES margin ~0.15 vs second_cp=0 (>= MISTAKE_DROP)
+    best_mate: int | None = None,
+    second_cp: int | None = 0,
+    second_mate: int | None = None,
+) -> GameBestMove:
+    """Build a minimal GameBestMove object for unit testing (no DB flush).
+
+    Default cp pair (169 vs 0) gives a white-mover ES margin of ~0.15, comfortably
+    above MISTAKE_DROP (0.10) — the "wide margin" case used by the gem/great tests.
+    """
+    row = GameBestMove()
+    row.game_id = game_id
+    row.ply = ply
+    row.maia_prob = maia_prob
+    row.best_cp = best_cp
+    row.best_mate = best_mate
+    row.second_cp = second_cp
+    row.second_mate = second_mate
+    return row
 
 
 # Centipawn deltas (white-perspective) that produce a known mover-POV ES drop.
@@ -235,6 +262,100 @@ class TestCountGameSeverities:
         assert isinstance(counts["inaccuracy"], int)
         assert isinstance(counts["mistake"], int)
         assert isinstance(counts["blunder"], int)
+
+
+# ---------------------------------------------------------------------------
+# TestBestMoveTierAssembly (-k eval_series) — Phase 175 Plan 02 (BOARD-01)
+# ---------------------------------------------------------------------------
+
+
+class TestBestMoveTierAssembly:
+    """_build_eval_series populates EvalPoint.best_move_tier/maia_prob from stored
+    game_best_moves rows via classify_best_move — pure in-memory, no DB (mirrors
+    TestCountGameSeverities above)."""
+
+    def test_eval_series_gem_row_populates_tier_and_maia_prob(self) -> None:
+        """maia_prob=0.10 + wide margin (>= MISTAKE_DROP) -> gem, maia_prob carried."""
+        from app.services.library_service import _build_eval_series
+
+        game = _make_game(user_color="white")
+        positions = [_make_pos(ply=0, eval_cp=0, move_san="e4")]
+        best_moves = {0: _make_best_move(maia_prob=0.10)}
+
+        eval_series, _, _ = _build_eval_series(game, positions, best_moves_by_ply=best_moves)
+
+        assert eval_series[0].best_move_tier == "gem"
+        assert eval_series[0].maia_prob == 0.10
+
+    def test_eval_series_great_row_populates_tier_and_maia_prob(self) -> None:
+        """maia_prob=0.35 (between GEM_MAIA_MAX_PROB and GREAT_MAIA_MAX_PROB) -> great."""
+        from app.services.library_service import _build_eval_series
+
+        game = _make_game(user_color="white")
+        positions = [_make_pos(ply=0, eval_cp=0, move_san="e4")]
+        best_moves = {0: _make_best_move(maia_prob=0.35)}
+
+        eval_series, _, _ = _build_eval_series(game, positions, best_moves_by_ply=best_moves)
+
+        assert eval_series[0].best_move_tier == "great"
+        assert eval_series[0].maia_prob == 0.35
+
+    def test_eval_series_narrow_margin_row_yields_null_tier(self) -> None:
+        """Pitfall 3: a stored row with margin in [0.05, 0.10) (best_cp=77 vs
+        second_cp=0 -> ES margin ~0.07) is NOT automatically a marker — row
+        presence alone must not decide the tier; classify_best_move must be
+        called on the raw floats and return 'neither' here (< MISTAKE_DROP)."""
+        from app.services.library_service import _build_eval_series
+
+        game = _make_game(user_color="white")
+        positions = [_make_pos(ply=0, eval_cp=0, move_san="e4")]
+        best_moves = {0: _make_best_move(maia_prob=0.10, best_cp=77, second_cp=0)}
+
+        eval_series, _, _ = _build_eval_series(game, positions, best_moves_by_ply=best_moves)
+
+        assert eval_series[0].best_move_tier is None
+        assert eval_series[0].maia_prob is None
+
+    def test_eval_series_neither_row_leaves_maia_prob_null(self) -> None:
+        """Pitfall 5: a wide-margin row with maia_prob above GREAT_MAIA_MAX_PROB
+        classifies 'neither' -- maia_prob must NOT be populated on the EvalPoint."""
+        from app.services.library_service import _build_eval_series
+
+        game = _make_game(user_color="white")
+        positions = [_make_pos(ply=0, eval_cp=0, move_san="e4")]
+        best_moves = {0: _make_best_move(maia_prob=0.60)}
+
+        eval_series, _, _ = _build_eval_series(game, positions, best_moves_by_ply=best_moves)
+
+        assert eval_series[0].best_move_tier is None
+        assert eval_series[0].maia_prob is None
+
+    def test_eval_series_no_stored_row_yields_null_tier_deterministically(self) -> None:
+        """A mainline ply with NO stored game_best_moves row yields best_move_tier
+        =None deterministically (storage gate 0.05 < classify gate 0.10, so
+        absence is authoritative 'not gem/great') -- no live engine call needed."""
+        from app.services.library_service import _build_eval_series
+
+        game = _make_game(user_color="white")
+        positions = [_make_pos(ply=0, eval_cp=0, move_san="e4")]
+
+        eval_series, _, _ = _build_eval_series(game, positions, best_moves_by_ply={})
+
+        assert eval_series[0].best_move_tier is None
+        assert eval_series[0].maia_prob is None
+
+    def test_eval_series_best_moves_by_ply_defaults_to_none_safe(self) -> None:
+        """Omitting best_moves_by_ply entirely (existing callers/tests) must not
+        crash -- backward-compatible default."""
+        from app.services.library_service import _build_eval_series
+
+        game = _make_game(user_color="white")
+        positions = [_make_pos(ply=0, eval_cp=0, move_san="e4")]
+
+        eval_series, _, _ = _build_eval_series(game, positions)
+
+        assert eval_series[0].best_move_tier is None
+        assert eval_series[0].maia_prob is None
 
 
 # ---------------------------------------------------------------------------
