@@ -372,6 +372,42 @@ function TacticFamilyGroup({
   );
 }
 
+// ─── Filter-logic info popover ──────────────────────────────────────────────────
+
+/**
+ * TagFilterLogicInfo — the "how tag filters combine" help popover. Rendered next to
+ * the "Tags" panel heading (SidebarLayout headerExtra / MobileFilterDrawer
+ * titleAccessory) rather than inside the control, so the explanation lives with the
+ * panel title. `side` defaults to "bottom" since it sits at the top of the panel.
+ */
+export function TagFilterLogicInfo({ side = 'bottom' }: { side?: 'top' | 'bottom' | 'left' | 'right' }) {
+  return (
+    <InfoPopover
+      ariaLabel="How tag filters combine"
+      testId="filter-flaw-logic-info"
+      side={side}
+    >
+      <p>
+        Narrow your games to the ones with the flaws, tactics, and moments
+        you care about, then combine tags to zero in on specific patterns.
+      </p>
+      <p className="mt-1.5">
+        Tags in the same group are combined with <strong>OR</strong>;
+        different groups are combined with <strong>AND</strong>.
+      </p>
+      <p className="mt-1.5">
+        Example: picking <em>Hasty</em> and <em>Unrushed</em> (Timing)
+        plus <em>Miss</em> (Opportunity) keeps flaws that are{' '}
+        <em>(hasty or unrushed)</em> and a <em>miss</em>.
+      </p>
+      <p className="mt-1.5">
+        Applied to games, only games with at least one matching blunder
+        or mistake are included.
+      </p>
+    </InfoPopover>
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 /**
@@ -385,7 +421,9 @@ function TacticFamilyGroup({
  * - Tactic Depth filter (showTacticFilter only)
  * - Tactic Type families incl. "Advanced" (showTacticFilter only) — each a titled section
  * - "Context" section (always) — Timing / Opportunity / Impact / Game Phase
- * - Filter Logic explainer
+ *
+ * The "how tag filters combine" explainer is rendered next to the panel's "Tags"
+ * heading (TagFilterLogicInfo), not inside this control.
  *
  * Tag buttons show the canonical lowercase-with-dash name (matching chips + panel).
  * Each family label carries a brown <TagLegend> Tags-icon popover that explains every
@@ -586,59 +624,36 @@ export function FlawFilterControl({
         </p>
         <div className="flex flex-col gap-3 mt-2">
           {FAMILY_SECTIONS.map((section) => (
-              <div key={section.testid} className="flex flex-col gap-2">
-                <div className="flex items-center gap-1.5">
-                  <p className="text-sm text-muted-foreground">
-                    {section.label}
-                  </p>
-                  <TagLegend
-                    variant="icon"
-                    tags={section.tags}
-                    testId={`${section.testid}-legend`}
-                  />
-                </div>
-                <div
-                  role="group"
-                  aria-label={section.ariaLabel}
-                  data-testid={section.testid}
-                  className="flex flex-wrap gap-2"
-                >
-                  {section.tags.map((tag) => (
-                    <TagFilterButton
-                      key={tag}
-                      tag={tag}
-                      selected={tags.includes(tag)}
-                      color={section.color}
-                      bg={section.bg}
-                      onToggle={handleTagToggle}
-                    />
-                  ))}
-                </div>
+            <div key={section.testid} className="flex flex-col gap-2">
+              <div className="flex items-center gap-1.5">
+                <p className="text-sm text-muted-foreground">
+                  {section.label}
+                </p>
+                <TagLegend
+                  variant="icon"
+                  tags={section.tags}
+                  testId={`${section.testid}-legend`}
+                />
               </div>
-            ))}
-            {/* ── Filter Logic explainer ─────────────────────────────────── */}
-            <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-              <span>Filter Logic</span>
-              <InfoPopover
-                ariaLabel="How tag filters combine"
-                testId="filter-flaw-logic-info"
-                side="top"
+              <div
+                role="group"
+                aria-label={section.ariaLabel}
+                data-testid={section.testid}
+                className="flex flex-wrap gap-2"
               >
-                <p>
-                  Tags in the same group are combined with <strong>OR</strong>;
-                  different groups are combined with <strong>AND</strong>.
-                </p>
-                <p className="mt-1.5">
-                  Example: picking <em>Hasty</em> and <em>Unrushed</em> (Timing)
-                  plus <em>Miss</em> (Opportunity) keeps flaws that are{' '}
-                  <em>(hasty or unrushed)</em> and a <em>miss</em>.
-                </p>
-                <p className="mt-1.5">
-                  Applied to games, only games with at least one matching blunder
-                  or mistake are included.
-                </p>
-              </InfoPopover>
+                {section.tags.map((tag) => (
+                  <TagFilterButton
+                    key={tag}
+                    tag={tag}
+                    selected={tags.includes(tag)}
+                    color={section.color}
+                    bg={section.bg}
+                    onToggle={handleTagToggle}
+                  />
+                ))}
+              </div>
             </div>
+          ))}
         </div>
       </div>
     </div>
