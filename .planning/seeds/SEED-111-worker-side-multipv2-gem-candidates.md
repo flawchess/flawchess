@@ -1,6 +1,6 @@
 ---
 id: SEED-111
-status: open (ready to plan — prod bottleneck measured 2026-07-17)
+status: scheduled (Phase 177 added 2026-07-17 — move to closed/ when the phase ships)
 planted: 2026-07-17
 planted_during: Conversation on 2026-07-17 investigating why the best-move (gem/great) backfill runs at only ~550 games/h. Measured evidence — prod backend container at 798% CPU with all 8 local Stockfish pool engines pinned at ~92%, while the worker fleet's engines idle ~32% of every cycle (local 8-engine worker sampled at ~68% busy over 60s with zero CPU contention and work always leasable). Root cause — the gem-candidate MultiPV-2 runner-up searches (1M nodes each, ~8.6+ stored candidates/game, pre-gate superset larger) run on the SERVER's pool, synchronously inside every atomic-submit request (eval_apply.py _build_best_move_candidates, "Pitfall 1 remote lane" fallback). Maia inference is NOT the bottleneck — uvicorn (Maia + API + classify + PGN parse) uses ~0.5 of one core total.
 trigger_when: Now viable — no external trigger needed. Sequencing consideration only — the lichess-eval lane (~21k games left, ~1.6 days at current rate) will be done before this ships; the payoff is the tier-4b population (~416k games), where the current architecture caps fleet scaling.

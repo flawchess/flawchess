@@ -665,3 +665,14 @@ Plans:
 **Wave 3** *(blocked on Wave 2 completion)*
 
 - [x] 173-04-PLAN.md — Execute the real sweep + fit the internal scale + findings/compression verdict (D-11/D-12/D-13) [wave 3]
+
+### Phase 177: Worker-side MultiPV-2 gem-candidate searches, protocol v2 (SEED-111)
+
+**Goal:** The server does zero Stockfish work when applying an atomic game submit. Workers compute the gem-candidate runner-up (MultiPV-2) data themselves via a targeted re-search after their MultiPV-1 full pass (only plies where played == worker best; the full pass stays MultiPV-1, preserving the Phase 146 D-03 eval-parity invariant) and include it in the submit payload; the server's apply path becomes pure Maia inference + classification + DB writes. Trust boundary unchanged: the server still applies the played==best check, out-of-book gate, and inaccuracy gate from the submitted numbers. `WORKER_SCHEMA_VERSION` bumps to 2 with gating at the atomic LEASE (v1 workers get 204 no-work on that lane); the server-side fallback stays as an instrumented rare safety net (Sentry tag/metric so silently re-growing server Stockfish load is visible). Expected impact: fleet engines from ~68% to ~95%+ busy and near-linear backfill scaling with added workers (baseline 2026-07-17: ~550 games/h stamped, server pool 8 engines ~92% pinned, local worker engines ~32% idle per cycle).
+**Requirements**: TBD (seed-driven; decisions locked in discuss/plan — see `.planning/seeds/SEED-111-worker-side-multipv2-gem-candidates.md`)
+**Depends on:** Phase 176 (tier-4b backfill lottery is the ~416k-game population this unblocks)
+**Plans:** TBD
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 177)
