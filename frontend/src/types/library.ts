@@ -121,10 +121,17 @@ export interface EvalPoint {
   // row classifies "neither" — the board never re-derives this from cp/margin
   // math for an analyzed game (that's the fallback-only classifyGem/
   // classifyGreat path in gemMove.ts, D-03c).
-  best_move_tier: 'gem' | 'great' | null;
+  //
+  // Quick 260717-rbn: widened with two more tiers, both computed live
+  // server-side (no stored row involved). 'best' = the played move
+  // identity-equals the stored best_move (out of book, not gem/great).
+  // 'good' = the mover-POV expected-score drop is below INACCURACY_DROP (out
+  // of book, not best/gem/great). Precedence gem > great > best > good > null.
+  // maia_prob stays null for best/good — it is a gem/great-only rarity stat.
+  best_move_tier: 'gem' | 'great' | 'best' | 'good' | null;
   // Maia policy probability (0..1) of the stored mainline move at this ply's
-  // pinned rating rung — set ONLY alongside a non-null best_move_tier (never
-  // populated for a "neither" ply).
+  // pinned rating rung — set ONLY alongside a non-null gem/great
+  // best_move_tier (never populated for a "neither" ply, nor for best/good).
   maia_prob: number | null;
 }
 

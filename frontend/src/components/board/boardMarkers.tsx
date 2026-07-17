@@ -4,12 +4,14 @@
  * severity glyph badge. Kept in one place so both boards render identical marks.
  */
 
-import { Gem, BookOpen } from 'lucide-react';
+import { Gem, BookOpen, Star, ThumbsUp } from 'lucide-react';
 
 import { SEVERITY_GLYPH } from '../../lib/severityGlyph';
 import { GEM_GLYPH } from '../../lib/gemGlyph';
 import { GREAT_GLYPH } from '../../lib/greatGlyph';
 import { BOOK_GLYPH } from '../../lib/bookGlyph';
+import { BEST_GLYPH } from '../../lib/bestGlyph';
+import { GOOD_GLYPH } from '../../lib/goodGlyph';
 import type { FlawSeverity } from '../../types/library';
 import { squareToCoords } from './arrowGeometry';
 
@@ -24,9 +26,12 @@ import { squareToCoords } from './arrowGeometry';
  * alternative (Phase 175, SEED-108): when set, the badge renders the blue
  * "great move" icon instead of severity/gem/book. `book` is a third, equally
  * mutually-exclusive alternative (Phase 172, SEED-106 D-08): when set, the
- * badge renders the muted book icon instead of severity or gem/great. No
- * runtime assertion enforces the exclusivity across all four — callers only
- * ever set one by construction (the guard lives in `Analysis.tsx`'s
+ * badge renders the muted book icon instead of severity or gem/great. `best`
+ * and `good` are two more, equally mutually-exclusive alternatives (Quick
+ * 260717-rbn): when set, the badge renders a green star (best) / green
+ * thumbs-up (good) icon instead of severity/gem/great/book. No runtime
+ * assertion enforces the exclusivity across all six — callers only ever set
+ * one by construction (the guard lives in `Analysis.tsx`'s
  * `boardSquareMarkers` memo).
  */
 export interface SquareMarker {
@@ -46,6 +51,20 @@ export interface SquareMarker {
    * (no runtime assertion — same contract the `gem` field already carries).
    */
   book?: boolean;
+  /**
+   * Renders the green star "best move" badge instead of a severity glyph.
+   * Mutually exclusive with `severity`/`gem`/`great`/`book`/`good` BY
+   * CONSTRUCTION at the call site (no runtime assertion — same contract the
+   * `gem` field already carries).
+   */
+  best?: boolean;
+  /**
+   * Renders the green thumbs-up "good move" badge instead of a severity
+   * glyph. Mutually exclusive with `severity`/`gem`/`great`/`book`/`best` BY
+   * CONSTRUCTION at the call site (no runtime assertion — same contract the
+   * `gem` field already carries).
+   */
+  good?: boolean;
   /** Optional depth label (e.g. allowed-tactic depth) rendered top-left. */
   label?: string;
   /** Fill color for the depth label. Defaults to white. */
@@ -188,7 +207,41 @@ function SquareMarkerBadge({
     );
   }
 
-  // Severity-less markers are only possible when `gem`/`great`/`book` is set
+  if (marker.best) {
+    // Same ratio/geometry as the gem badge — reused verbatim (Quick 260717-rbn).
+    const iconSize = 2 * r * GEM_ICON_DIAMETER_RATIO;
+    return (
+      <g>
+        <circle cx={cx} cy={cy} r={r} fill={BEST_GLYPH.color} stroke={MARKER_STROKE} strokeWidth={1} />
+        <Star
+          x={cx - iconSize / 2}
+          y={cy - iconSize / 2}
+          width={iconSize}
+          height={iconSize}
+          stroke="#fff"
+        />
+      </g>
+    );
+  }
+
+  if (marker.good) {
+    // Same ratio/geometry as the gem badge — reused verbatim (Quick 260717-rbn).
+    const iconSize = 2 * r * GEM_ICON_DIAMETER_RATIO;
+    return (
+      <g>
+        <circle cx={cx} cy={cy} r={r} fill={GOOD_GLYPH.color} stroke={MARKER_STROKE} strokeWidth={1} />
+        <ThumbsUp
+          x={cx - iconSize / 2}
+          y={cy - iconSize / 2}
+          width={iconSize}
+          height={iconSize}
+          stroke="#fff"
+        />
+      </g>
+    );
+  }
+
+  // Severity-less markers are only possible when `gem`/`great`/`book`/`best`/`good` is set
   // (handled above, and mutually exclusive by construction) — guard
   // defensively rather than indexing SEVERITY_GLYPH with an undefined key.
   if (!marker.severity) return null;

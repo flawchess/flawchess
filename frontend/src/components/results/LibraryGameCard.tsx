@@ -449,16 +449,27 @@ export function LibraryGameCard({
     return { gem, great };
   }, [game.eval_series, userColor]);
 
-  // Gem/great tier per ply, user-scoped — drives the scrubbed-miniboard corner badge
-  // (below). Same source (eval_series.best_move_tier) and same position-scoped →
-  // user-scoped filtering as bestMovePlies: best_move_tier stores BOTH players' best
-  // moves, so isUserPly keeps only the user's own gems/greats. Keyed by ply for the
-  // O(1) lookup the squareMarkers memo needs.
+  // Gem/great/best/good tier per ply, user-scoped — drives the scrubbed-miniboard
+  // corner badge (below). Same source (eval_series.best_move_tier) and same
+  // position-scoped → user-scoped filtering as bestMovePlies: best_move_tier stores
+  // BOTH players' tiers, so isUserPly keeps only the user's own. Keyed by ply for
+  // the O(1) lookup the squareMarkers memo needs.
+  // Quick 260717-rbn: widened to also carry 'best'/'good' (position-scoped like
+  // gem/great, so the SAME isUserPly filter applies) — bestMovePlies above is
+  // intentionally left gem/great-only (best/good count badges/cycling are out
+  // of scope per the plan).
   const bestTierByPly = useMemo(() => {
-    const m = new Map<number, 'gem' | 'great'>();
+    const m = new Map<number, 'gem' | 'great' | 'best' | 'good'>();
     for (const pt of game.eval_series ?? []) {
       if (userColor != null && !isUserPly(pt.ply, userColor)) continue;
-      if (pt.best_move_tier === 'gem' || pt.best_move_tier === 'great') m.set(pt.ply, pt.best_move_tier);
+      if (
+        pt.best_move_tier === 'gem' ||
+        pt.best_move_tier === 'great' ||
+        pt.best_move_tier === 'best' ||
+        pt.best_move_tier === 'good'
+      ) {
+        m.set(pt.ply, pt.best_move_tier);
+      }
     }
     return m;
   }, [game.eval_series, userColor]);
@@ -717,6 +728,10 @@ export function LibraryGameCard({
     const tier = activePly != null ? bestTierByPly.get(activePly) : undefined;
     if (tier === 'gem') return [{ square: hoverEntry.to, gem: true }];
     if (tier === 'great') return [{ square: hoverEntry.to, great: true }];
+    // Quick 260717-rbn: best/good corner badges, same "no flaw here" gate as
+    // gem/great above.
+    if (tier === 'best') return [{ square: hoverEntry.to, best: true }];
+    if (tier === 'good') return [{ square: hoverEntry.to, good: true }];
     return undefined;
   }, [hoverEntry, hoverSeverity, activePly, bestTierByPly]);
 
