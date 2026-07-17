@@ -42,6 +42,7 @@ import chess
 import chess.pgn
 import sentry_sdk
 import sqlalchemy as sa
+from fastapi import HTTPException, status
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,7 +62,14 @@ from app.repositories.game_flaws_repository import (
     flaw_record_to_row,
 )
 from app.repositories.worker_heartbeat_repository import upsert_worker_heartbeat
-from app.schemas.eval_remote import AtomicBlobNode, FlawBlobLeasePosition, FlawBlobSubmitEval
+from app.schemas.eval_remote import (
+    AtomicBlobNode,
+    BestMoveLeasePosition,
+    BestMoveSubmitRequest,
+    BestMoveSubmitResponse,
+    FlawBlobLeasePosition,
+    FlawBlobSubmitEval,
+)
 from app.schemas.normalization import Platform, TimeControlBucket
 from app.services import engine as engine_service
 from app.services import maia_engine
@@ -1825,6 +1833,7 @@ async def _build_best_move_candidates(
     targets: Sequence[_FullPlyEvalTarget],
     engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
     second_best_map: dict[int, tuple[int | None, int | None, str | None]] | None,
+    source: str = "drain-local",
 ) -> list[dict[str, Any]]:
     """Build game_best_moves candidate rows for the game (GEMS-03), off any session.
 
@@ -1843,12 +1852,20 @@ async def _build_best_move_candidates(
       - the returned rows are UPSERTed later by apply_full_eval in its own late write
         session, so they land in the SAME commit as the rest of the eval (T-174-12).
 
-    Pitfall 1 (remote-worker lane): the worker's full-ply pass is MultiPV-1, so
-    second_best_map has NO entry for played==best plies. Each such ply gets a
-    bounded, backend-owned evaluate_nodes_multipv2(board) fallback — NOT a
-    worker-protocol change (the worker is untouched; the extra Stockfish `go` runs
-    on the backend's own SCHED_IDLE pool). second_best_map is None/empty on the
-    remote lane, so every candidate there takes the fallback.
+    Pitfall 1: a ply missing from second_best_map (None/empty map, or a ply the map
+    simply doesn't cover) gets a bounded, backend-owned evaluate_nodes_multipv2(board)
+    fallback — NOT a worker-protocol change (the extra Stockfish `go` runs on the
+    backend's own SCHED_IDLE pool). Phase 177 PROTO-03 made this the RARE case for
+    the remote-worker lane (v2 workers submit their own second-best data via
+    `second_best`, threaded through by the caller); it stays the COMMON case for a
+    tier-4b/local-drain caller that hasn't computed second-best itself.
+
+    source (Phase 177 D-06/OBS-01): a caller-supplied label (e.g. "drain-local",
+    "worker-submit-fallback") tagged on the Sentry event emitted when the fallback
+    branch fires, so a worker-submit-path fallback (the S-04 regression signal,
+    expected ~zero post-shift) is queryable independent of the expected drain-local
+    fallback noise. Defaults to "drain-local" for the existing local-drain/tier-4b
+    call sites, which do not (yet) pass this explicitly.
 
     Returns [] (no rows, no crash) when Maia is disabled (score_move returns None
     because onnxruntime is absent), the game is gone, or anything unexpected fails —
@@ -1886,6 +1903,15 @@ async def _build_best_move_candidates(
             ],
         ] = {}
         if fallback_targets:
+            # Phase 177 D-06/OBS-01: tag by source so a worker-submit-path fallback
+            # (the regression signal, expected ~zero post-shift) is queryable
+            # independent of the expected drain-local fallback noise. Variables go
+            # in set_context, never the message string (CLAUDE.md Sentry rules).
+            sentry_sdk.set_tag("source", source)
+            sentry_sdk.set_context(
+                "best_move_candidates_fallback",
+                {"game_id": game_id, "fallback_ply_count": len(fallback_targets)},
+            )
             results = await asyncio.gather(
                 *(engine_service.evaluate_nodes_multipv2(t.board) for t in fallback_targets)
             )
@@ -1988,6 +2014,259 @@ async def _upsert_best_move_rows(session: AsyncSession, rows: Sequence[dict[str,
         },
     )
     await session.execute(stmt)
+
+
+# ---------------------------------------------------------------------------
+# Phase 177 BACK-02/03: tier-4b dedicated lease/submit (worker-side MultiPV-2)
+# ---------------------------------------------------------------------------
+
+
+def _eval_of_position_map(
+    gp_rows: Sequence[tuple[int, int | None, int | None]],
+) -> dict[int, tuple[int | None, int | None]]:
+    """Invert `_post_move_eval`'s +1 forward post-move shift (Pitfall 1, SEED-044).
+
+    `_post_move_eval` reads row `ply`'s STORED (eval_cp, eval_mate) as the eval of
+    position `ply + 1` (the position AFTER the move played at `ply`). A tier-4b
+    game has no fresh position-keyed engine pass to build `engine_result_map` from
+    (unlike every other call site, which builds it from `_resolve_full_eval` over a
+    FRESH search) — it only has this already-shifted stored data, so this function
+    builds the position-keyed INVERSE: `eval_of_position[ply]` = the eval OF
+    position `ply`, sourced from row `ply - 1`'s stored value.
+
+    `eval_of_position[0]` is never populated (no row -1 exists) — callers MUST
+    read via `.get(ply, (None, None))`, never index directly, so ply=0 resolves
+    to "no eval available" rather than a KeyError.
+
+    gp_rows: (ply, eval_cp, eval_mate) exactly as stored in game_positions
+    (post-move shifted, unmodified — this function does the un-shifting).
+    """
+    return {ply + 1: (eval_cp, eval_mate) for ply, eval_cp, eval_mate in gp_rows}
+
+
+async def _build_bestmove_lease_positions(game_id: int) -> list[BestMoveLeasePosition]:
+    """Phase 177 BACK-02: reconstruct one tier-4b game's candidate-ply FENs from
+    already-stored full-pass data — no engine calls here (the worker runs the N
+    targeted runner-up searches, S-05).
+
+    A tier-4b game already has a complete MultiPV=1 full-ply pass
+    (`full_pv_completed_at IS NOT NULL`, the `_claim_tier4_bestmove` predicate) but
+    no best-move backfill row yet (`best_moves_completed_at IS NULL`). The
+    candidate-ply set mirrors `_build_best_move_candidates`'s steps 1-2 loop SHAPE
+    (RESEARCH "Don't Hand-Roll" — `_contiguous_san_prefix` + `find_opening_ply_count`
+    + the played==best test), reconstructed from `game_positions.best_move`
+    (decision-keyed, un-shifted — row `ply`'s OWN best_move) instead of a fresh
+    engine_result_map.
+
+    Does NOT apply the inaccuracy MARGIN gate (`passes_inaccuracy_gate` needs a
+    runner-up eval, which does not exist until the worker computes it at
+    `/bestmove-submit` time) — only the availability half of that gate's None
+    guard: a ply whose `eval_of_position` (Pitfall 1's inverse-shift reconstruction)
+    is entirely missing can never pass the margin gate regardless of what second
+    the worker later computes, so it is excluded here too, before ever leasing a
+    FEN for it (an efficiency filter, not a correctness requirement — the margin
+    gate itself is re-applied authoritatively at submit time via
+    `_build_best_move_candidates`, D-03 stateless recompute).
+
+    Returns [] (no candidates, no crash) for a missing game, an unparseable PGN,
+    or a game with no stored positions.
+    """
+    async with async_session_maker() as session:
+        game = await session.scalar(select(Game).where(Game.id == game_id))
+        if game is None:
+            return []
+        pgn_text: str = game.pgn
+        gp_result = await session.execute(
+            select(
+                GamePosition.ply,
+                GamePosition.best_move,
+                GamePosition.eval_cp,
+                GamePosition.eval_mate,
+            ).where(
+                GamePosition.game_id == game_id,
+                GamePosition.user_id == game.user_id,
+            )
+        )
+        gp_rows = gp_result.all()
+    # session closed — no CPU work needs a session open
+
+    if not gp_rows:
+        return []
+
+    stored_best_move_by_ply: dict[int, str | None] = {r.ply: r.best_move for r in gp_rows}
+    eval_of_position = _eval_of_position_map([(r.ply, r.eval_cp, r.eval_mate) for r in gp_rows])
+
+    # _collect_full_ply_targets needs (ply, full_hash, eval_cp, eval_mate) rows —
+    # full_hash is unused here (no dedup at play in this lane), passed as 0.
+    gp_full_rows: list[tuple[int, int, int | None, int | None]] = [
+        (r.ply, 0, r.eval_cp, r.eval_mate) for r in gp_rows
+    ]
+    targets = _collect_full_ply_targets(
+        game_id=game_id,
+        pgn_text=pgn_text,
+        game_positions_rows=gp_full_rows,
+        include_terminal=False,
+        stored_best_move_by_ply=stored_best_move_by_ply,
+    )
+    if not targets:
+        return []
+
+    book_plies = find_opening_ply_count(_contiguous_san_prefix(targets))
+
+    positions: list[BestMoveLeasePosition] = []
+    for t in targets:
+        if t.is_terminal or t.move_uci is None or t.ply < book_plies:
+            continue
+        stored_best = t.stored_best_move
+        if stored_best is None or stored_best != t.move_uci:
+            continue
+        best_cp, best_mate = eval_of_position.get(t.ply, (None, None))
+        if best_cp is None and best_mate is None:
+            # Pitfall 1 None guard: no usable eval at this position (includes
+            # ply=0, which has no row -1) — can never pass the margin gate later.
+            continue
+        positions.append(BestMoveLeasePosition(ply=t.ply, fen=t.board.fen()))
+    return positions
+
+
+async def _stamp_best_moves_completed_directly(game_id: int) -> None:
+    """Phase 177 Pitfall 2: stamp `best_moves_completed_at` directly, bypassing the
+    full `apply_completion_decision` Path A/C machinery (S-06 — tier-4b touches
+    nothing else).
+
+    Used at LEASE time for a zero-candidate or over-`MAX_SUBMIT_EVALS` pick so the
+    `_claim_tier4_bestmove` ES lottery never re-draws the same un-fillable game
+    forever (mirrors `/flaw-blob-lease`'s all-sentinel forward-progress write).
+    Safe regardless of Maia availability (Phase 176 D-01's guardrail concern):
+    there are zero (or un-leasable) candidates either way, so Maia would never be
+    invoked for this game regardless of whether it is loaded.
+
+    Opens its own short session, commits, closes — a minimal one-column write,
+    never batched with any other table's write (structural isolation, T-177-07).
+    """
+    async with async_session_maker() as session:
+        await _mark_best_moves_completed(session, game_id)
+        await session.commit()
+
+
+async def _apply_bestmove_submit(
+    game_id: int,
+    body: BestMoveSubmitRequest,
+    worker_id: str,
+    last_ip: str | None,
+) -> BestMoveSubmitResponse:
+    """Apply a tier-4b submit: recompute candidates server-side, score with Maia,
+    write ONLY `game_best_moves` rows + stamp `best_moves_completed_at` (S-06/D-02).
+
+    Structurally isolated from `_apply_atomic_submit` / `apply_full_eval` (T-177-07):
+    no shared write-session code, no `_classify_and_fill_oracle`, `game_flaws` is
+    never read or written here.
+
+    Flow:
+    1. Read phase (short session, closed before CPU work): Game (pgn, user_id) +
+       GamePosition rows (ply, best_move, eval_cp, eval_mate). 404 if the game
+       is gone.
+    2. Rebuild `targets` + the inverse-shift `engine_result_map` (Pitfall 1) —
+       the SAME `_eval_of_position_map` + `_collect_full_ply_targets` primitives
+       `_build_bestmove_lease_positions` uses (D-03: lease and submit reconstruct
+       from the identical source of truth, so they structurally agree).
+    3. Tamper guard (T-177-05): a submitted ply outside `[0, game_length)` is
+       422'd before any write. An in-range ply that is NOT a real candidate is
+       intentionally NOT rejected here (T-177-06) — `_build_best_move_candidates`
+       independently recomputes the candidate-ply set from `targets` +
+       `engine_result_map` (never from `second_best_map`'s keys), so a foreign
+       ply's submitted second-best is simply never read at the map lookup,
+       mirroring the established second_best guard precedent (177-01-SUMMARY.md).
+    4. Delegates to `_build_best_move_candidates` (reused verbatim — the margin
+       gate + pinned-ELO Maia scoring are NOT re-derived here) with the worker's
+       submitted evals as `second_best_map`.
+    5. Write phase: ONE session UPSERTs `game_best_moves` rows + stamps
+       `best_moves_completed_at`, then commits. Nothing else.
+    """
+    async with async_session_maker() as read_session:
+        game = await read_session.scalar(select(Game).where(Game.id == game_id))
+        if game is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Game not found",
+            )
+        pgn_text: str = game.pgn
+        gp_result = await read_session.execute(
+            select(
+                GamePosition.ply,
+                GamePosition.best_move,
+                GamePosition.eval_cp,
+                GamePosition.eval_mate,
+            ).where(
+                GamePosition.game_id == game_id,
+                GamePosition.user_id == game.user_id,
+            )
+        )
+        gp_rows = gp_result.all()
+    # read_session closed — no sessions open during CPU work below
+
+    stored_best_move_by_ply: dict[int, str | None] = {r.ply: r.best_move for r in gp_rows}
+    eval_of_position = _eval_of_position_map([(r.ply, r.eval_cp, r.eval_mate) for r in gp_rows])
+
+    gp_full_rows: list[tuple[int, int, int | None, int | None]] = [
+        (r.ply, 0, r.eval_cp, r.eval_mate) for r in gp_rows
+    ]
+    targets = _collect_full_ply_targets(
+        game_id=game_id,
+        pgn_text=pgn_text,
+        game_positions_rows=gp_full_rows,
+        include_terminal=False,
+        stored_best_move_by_ply=stored_best_move_by_ply,
+    )
+    game_length = len(targets)
+
+    # Position-keyed surrogate for a fresh engine pass (Pitfall 1): best_cp/mate
+    # come from the inverse-shift reconstruction; best_uci is the row's OWN
+    # (un-shifted) stored best_move; pv is unavailable (never used by the
+    # candidate/gate logic below).
+    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]] = {
+        t.ply: (
+            *eval_of_position.get(t.ply, (None, None)),
+            stored_best_move_by_ply.get(t.ply),
+            None,
+        )
+        for t in targets
+    }
+
+    # T-177-05: structural in-range tamper guard, before any write.
+    for e in body.evals:
+        if not (0 <= e.ply < game_length):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Unknown or foreign ply",
+            )
+
+    # T-177-06: the server never trusts WHICH plies the worker chose to send —
+    # `_build_best_move_candidates` below independently recomputes candidacy from
+    # `targets`/`engine_result_map`, so a foreign-but-in-range ply's submitted
+    # second-best is simply never read.
+    second_best_map: dict[int, tuple[int | None, int | None, str | None]] = {
+        e.ply: (e.second_cp, e.second_mate, e.second_uci) for e in body.evals
+    }
+
+    best_move_rows = await _build_best_move_candidates(
+        game_id, targets, engine_result_map, second_best_map, source="tier4b-backfill"
+    )
+
+    async with async_session_maker() as write_session:
+        await _upsert_best_move_rows(write_session, best_move_rows)
+        await _mark_best_moves_completed(write_session, game_id)
+        await upsert_worker_heartbeat(
+            write_session,
+            worker_id=worker_id,
+            last_ip=last_ip,
+            sf_version=body.sf_version,
+            worker_schema_version=None,  # bestmove-submit never sends this (D-03)
+            n_evals=len(body.evals),
+        )
+        await write_session.commit()
+
+    return BestMoveSubmitResponse(game_id=game_id, rows_written=len(best_move_rows))
 
 
 async def apply_full_eval(

@@ -27,7 +27,7 @@ import httpx
 import pytest
 import pytest_asyncio
 import sqlalchemy as sa
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import settings
@@ -142,7 +142,8 @@ async def _insert_game_positions(
     """Insert GamePosition rows for a game and commit.
 
     Each dict: {"ply": int, "full_hash": int, "eval_cp": int|None, "eval_mate": int|None,
-                "phase": int (optional, default 0)}.
+                "phase": int (optional, default 0), "best_move": str|None (optional,
+                the row's OWN un-shifted best_move — Phase 177 tier-4b tests)}.
 
     For entry-ply target collection, at least one row needs phase=1 (midgame) to produce
     a middlegame_entry target. Pass phase=1 in the row dict when needed.
@@ -164,6 +165,7 @@ async def _insert_game_positions(
                     endgame_class=None,
                     eval_cp=r.get("eval_cp"),
                     eval_mate=r.get("eval_mate"),
+                    best_move=r.get("best_move"),
                 )
             )
         await session.commit()
@@ -232,6 +234,34 @@ async def _get_game_entry_eval_leased_by(
     async with session_maker() as session:
         result = await session.execute(select(Game.entry_eval_leased_by).where(Game.id == game_id))
         return result.scalar_one_or_none()
+
+
+async def _get_game_best_moves_completed_at(
+    session_maker: async_sessionmaker[AsyncSession],
+    game_id: int,
+) -> datetime | None:
+    """Fetch Game.best_moves_completed_at (Phase 177 tier-4b completion stamp)."""
+    from app.models.game import Game
+
+    async with session_maker() as session:
+        result = await session.execute(
+            select(Game.best_moves_completed_at).where(Game.id == game_id)
+        )
+        return result.scalar_one_or_none()
+
+
+async def _count_game_best_moves(
+    session_maker: async_sessionmaker[AsyncSession],
+    game_id: int,
+) -> int:
+    """Count game_best_moves rows for a game (Phase 177 tier-4b)."""
+    from app.models.game_best_move import GameBestMove
+
+    async with session_maker() as session:
+        result = await session.execute(
+            select(func.count()).select_from(GameBestMove).where(GameBestMove.game_id == game_id)
+        )
+        return result.scalar_one() or 0
 
 
 async def _delete_games(
@@ -1387,6 +1417,58 @@ def test_flaw_blob_schema_submit_response() -> None:
     assert resp.blobs_written == 3
 
 
+# ─── Phase 177 PROTO-01/PROTO-03: protocol v2 schema tests ───────────────────
+
+
+def test_lease_position_move_uci_defaults_none() -> None:
+    """LeasePosition validates without move_uci (v1-compatible payload shape);
+    move_uci defaults to None when omitted."""
+    from app.schemas.eval_remote import LeasePosition
+
+    pos = LeasePosition(
+        ply=0, fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", is_terminal=False
+    )
+    assert pos.move_uci is None
+
+    pos_with_move = LeasePosition(
+        ply=0,
+        fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        is_terminal=False,
+        move_uci="e2e4",
+    )
+    assert pos_with_move.move_uci == "e2e4"
+
+
+def test_atomic_second_best_eval_rejects_out_of_range_ply() -> None:
+    """AtomicSecondBestEval rejects a ply beyond MAX_PLY (per-field Pydantic bound,
+    mirrors AtomicSubmitEval's own ply bound)."""
+    import pytest
+    from pydantic import ValidationError
+
+    from app.schemas.eval_remote import MAX_PLY, AtomicSecondBestEval
+
+    ev = AtomicSecondBestEval(ply=MAX_PLY, second_cp=10, second_mate=None, second_uci="e2e4")
+    assert ev.ply == MAX_PLY
+
+    with pytest.raises(ValidationError):
+        AtomicSecondBestEval(ply=MAX_PLY + 1, second_cp=10, second_mate=None, second_uci="e2e4")
+
+
+def test_atomic_submit_request_second_best_defaults_empty() -> None:
+    """AtomicSubmitRequest validates with second_best omitted (v1 worker payload
+    shape) and defaults to an empty list."""
+    from app.schemas.eval_remote import AtomicSubmitRequest
+
+    req = AtomicSubmitRequest(
+        game_id=1,
+        sf_version="Stockfish 18",
+        worker_schema_version=1,
+        evals=[],
+        blob_nodes=[],
+    )
+    assert req.second_best == []
+
+
 # ─── Phase 145 Plan 03: POST /eval/remote/flaw-blob-lease endpoint tests ────
 
 # PGN for flaw-blob-lease endpoint tests: 6-half-move game.
@@ -1879,15 +1961,19 @@ class TestAtomicLeaseEndpoint:
 
         import app.routers.eval_remote as eval_remote_module
 
-        monkeypatch.setattr(eval_remote_module, "claim_eval_job", AsyncMock(return_value=None))
+        claim_mock = AsyncMock(return_value=None)
+        monkeypatch.setattr(eval_remote_module, "claim_eval_job", claim_mock)
 
         async with _make_client() as client:
             response = await client.post(
-                _ATOMIC_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN}
+                _ATOMIC_LEASE_URL,
+                params={"worker_schema_version": 2},
+                headers={"X-Operator-Token": _TEST_TOKEN},
             )
         assert response.status_code == 204, (
             f"Expected 204, got {response.status_code}: {response.text}"
         )
+        claim_mock.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_atomic_lease_returns_positions(
@@ -1936,7 +2022,9 @@ class TestAtomicLeaseEndpoint:
         try:
             async with _make_client() as client:
                 response = await client.post(
-                    _ATOMIC_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN}
+                    _ATOMIC_LEASE_URL,
+                    params={"worker_schema_version": 2},
+                    headers={"X-Operator-Token": _TEST_TOKEN},
                 )
 
             assert response.status_code == 200, (
@@ -2017,7 +2105,9 @@ class TestAtomicLeaseEndpoint:
         try:
             async with _make_client() as client:
                 response = await client.post(
-                    _ATOMIC_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN}
+                    _ATOMIC_LEASE_URL,
+                    params={"worker_schema_version": 2},
+                    headers={"X-Operator-Token": _TEST_TOKEN},
                 )
             assert response.status_code == 204, (
                 f"Expected 204 for over-cap game, got {response.status_code}: {response.text}"
@@ -2083,7 +2173,9 @@ class TestAtomicLeaseEndpoint:
         try:
             async with _make_client() as client:
                 response = await client.post(
-                    _ATOMIC_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN}
+                    _ATOMIC_LEASE_URL,
+                    params={"worker_schema_version": 2},
+                    headers={"X-Operator-Token": _TEST_TOKEN},
                 )
 
             assert response.status_code == 200, (
@@ -2105,6 +2197,132 @@ class TestAtomicLeaseEndpoint:
                 "position — its %evals are never shifted (Phase 174-06)"
             )
             assert {p["ply"] for p in positions} == {0, 1, 2, 3}
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_atomic_lease_v1_worker_204(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """Phase 177 PROTO-01/S-03: a v1 worker (worker_schema_version=1, or the
+        param omitted entirely) gets 204 no-work on the WHOLE atomic lane — for
+        BOTH scope=explicit and scope=idle — even with an eligible game present
+        and claim_eval_job mocked to succeed. The gate fires BEFORE any claim
+        attempt (Pitfall 4), asserted via claim_eval_job never being awaited.
+        """
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(eval_worker_session_maker, user_id)
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            game_id,
+            [
+                {"ply": ply, "full_hash": 53000 + ply, "eval_cp": None, "eval_mate": None}
+                for ply in range(2)
+            ],
+        )
+
+        import app.routers.eval_remote as eval_remote_module
+
+        try:
+            for scope in ("explicit", "idle"):
+                for params in (
+                    {"scope": scope, "worker_schema_version": 1},
+                    {"scope": scope},  # param omitted entirely — un-updated binary
+                ):
+                    claim_mock = AsyncMock(
+                        return_value=ClaimedJob(
+                            game_id=game_id,
+                            user_id=user_id,
+                            tier=3,
+                            is_lichess_eval_game=False,
+                            job_id=None,
+                        )
+                    )
+                    monkeypatch.setattr(eval_remote_module, "claim_eval_job", claim_mock)
+
+                    async with _make_client() as client:
+                        response = await client.post(
+                            _ATOMIC_LEASE_URL,
+                            params=params,
+                            headers={"X-Operator-Token": _TEST_TOKEN},
+                        )
+                    assert response.status_code == 204, (
+                        f"Expected 204 for v1 worker (params={params}), got "
+                        f"{response.status_code}: {response.text}"
+                    )
+                    claim_mock.assert_not_awaited()
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_atomic_lease_v2_worker_carries_move_uci(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """Phase 177 PROTO-01: a v2 lease of a game with a played mainline returns
+        positions whose move_uci equals the played UCI at each non-terminal ply
+        (None for the terminal donor)."""
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(
+            eval_worker_session_maker, user_id, pgn="1. e4 e5 2. Nf3 Nc6 *"
+        )
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            game_id,
+            [
+                {"ply": ply, "full_hash": 54000 + ply, "eval_cp": None, "eval_mate": None}
+                for ply in range(4)
+            ],
+        )
+
+        import app.routers.eval_remote as eval_remote_module
+
+        monkeypatch.setattr(
+            eval_remote_module,
+            "claim_eval_job",
+            AsyncMock(
+                return_value=ClaimedJob(
+                    game_id=game_id,
+                    user_id=user_id,
+                    tier=3,
+                    is_lichess_eval_game=False,
+                    job_id=None,
+                )
+            ),
+        )
+
+        try:
+            async with _make_client() as client:
+                response = await client.post(
+                    _ATOMIC_LEASE_URL,
+                    params={"worker_schema_version": 2},
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert response.status_code == 200, (
+                f"Expected 200, got {response.status_code}: {response.text}"
+            )
+            positions = response.json()["positions"]
+            expected_uci_by_ply = {0: "e2e4", 1: "e7e5", 2: "g1f3", 3: "b8c6"}
+            move_uci_by_ply = {p["ply"]: p["move_uci"] for p in positions if not p["is_terminal"]}
+            assert move_uci_by_ply == expected_uci_by_ply, (
+                f"Expected {expected_uci_by_ply}, got {move_uci_by_ply}"
+            )
+            terminal = [p for p in positions if p["is_terminal"]]
+            assert len(terminal) == 1
+            assert terminal[0]["move_uci"] is None, "the terminal eval-donor has no played move"
         finally:
             await _delete_games(eval_worker_session_maker, [game_id])
 
@@ -2870,6 +3088,86 @@ class TestAtomicSubmitEndpoint:
                     )
                 ).scalar_one()
                 assert flaw_count == 0, "Rejection must happen before any write"
+
+                full_evals_at = (
+                    await verify.execute(
+                        select(Game.full_evals_completed_at).where(Game.id == game_id)
+                    )
+                ).scalar_one()
+                assert full_evals_at is None, "No partial write on a rejected submit"
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_atomic_submit_second_best_out_of_range_422(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """Phase 177 T-177-01: a second_best entry whose ply falls outside the
+        game's ply range (0 <= ply < game_length) -> 422, no game_best_moves rows
+        written (mirrors test_atomic_submit_foreign_token_rejected's blob-node
+        precedent, using an equally out-of-range ply == game_length)."""
+        from app.models.game import Game
+        from app.models.game_best_move import GameBestMove
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(eval_worker_session_maker, user_id, pgn=_SIX_PLY_PGN_142)
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            game_id,
+            [
+                {"ply": p, "full_hash": 51500 + p, "eval_cp": None, "eval_mate": None}
+                for p in range(6)
+            ],
+        )
+
+        payload = {
+            "game_id": game_id,
+            "sf_version": "Stockfish 18",
+            "worker_schema_version": 2,
+            "evals": list(_BLUNDER_SUBMIT_EVALS_142),
+            "blob_nodes": [],
+            "second_best": [
+                {
+                    # ply == game_length (6) is one past this 6-ply game's last real
+                    # ply — structurally out of range.
+                    "ply": 6,
+                    "second_cp": -50,
+                    "second_mate": None,
+                    "second_uci": "d2d4",
+                }
+            ],
+            "job_id": None,
+        }
+
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _ATOMIC_SUBMIT_URL,
+                    json=payload,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 422, (
+                f"Out-of-range second_best ply must be rejected with 422 (T-177-01). "
+                f"Got {resp.status_code}: {resp.text}"
+            )
+
+            async with eval_worker_session_maker() as verify:
+                best_move_count = (
+                    await verify.execute(
+                        select(sa.func.count())
+                        .select_from(GameBestMove)
+                        .where(GameBestMove.game_id == game_id)
+                    )
+                ).scalar_one()
+                assert best_move_count == 0, "Rejection must happen before any write"
 
                 full_evals_at = (
                     await verify.execute(
@@ -4319,3 +4617,505 @@ async def test_upsert_opening_cache_backfills_pv_without_overwriting_eval_or_exi
         )
     finally:
         await _delete_opening_cache(eval_worker_session_maker, [hash_pv_less, hash_pv_bearing])
+
+
+# ─── Phase 177 BACK-02/03: tier-4b bestmove-lease/submit endpoint tests ──────
+
+_BESTMOVE_LEASE_URL = "/api/eval/remote/bestmove-lease"
+_BESTMOVE_SUBMIT_URL = "/api/eval/remote/bestmove-submit"
+
+# "1. a4 a5 2. h4 h5" -- find_opening_ply_count(['a4','a5','h4']) == 2 (verified
+# against the real openings.tsv data): plies 0-1 are book, plies 2-3 are out-of-book.
+# UCIs: a4=a2a4, a5=a7a5, h4=h2h4, h5=h7h5.
+_BESTMOVE_PGN: str = "1. a4 a5 2. h4 h5 *"
+
+
+class TestBestMoveLeaseEndpoint:
+    """Phase 177 Task 2: POST /eval/remote/bestmove-lease.
+
+    Tests:
+    - bestmove_lease_requires_operator_token: missing/wrong token -> 403/401
+    - bestmove_lease_disabled_returns_204: BEST_MOVE_BACKFILL_ENABLED=False -> 204,
+      no DB round-trip (settings gate checked BEFORE any claim)
+    - bestmove_lease_empty_queue_returns_204: no tier-4b pick -> 204
+    - bestmove_lease_candidate_plies: server-recomputed candidate set matches the
+      out-of-book/played==best/usable-eval reconstruction
+    - bestmove_lease_zero_candidates_stamps_completed: a picked game with zero
+      candidates stamps best_moves_completed_at directly (Pitfall 2 forward progress)
+    """
+
+    @pytest.mark.asyncio
+    async def test_bestmove_lease_requires_operator_token(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", "")
+        async with _make_client() as client:
+            resp = await client.post(_BESTMOVE_LEASE_URL)
+        assert resp.status_code == 403, f"Expected 403, got {resp.status_code}: {resp.text}"
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        async with _make_client() as client:
+            resp = await client.post(_BESTMOVE_LEASE_URL, headers={"X-Operator-Token": "bad-token"})
+        assert resp.status_code == 401, f"Expected 401, got {resp.status_code}: {resp.text}"
+
+    @pytest.mark.asyncio
+    async def test_bestmove_lease_disabled_returns_204(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """BEST_MOVE_BACKFILL_ENABLED=False -> 204 before any DB round-trip
+        (D-04 single switch)."""
+        import app.routers.eval_remote as eval_remote_module
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "BEST_MOVE_BACKFILL_ENABLED", False)
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        spy = AsyncMock(return_value=None)
+        monkeypatch.setattr(eval_remote_module, "_claim_tier4_bestmove", spy)
+
+        async with _make_client() as client:
+            resp = await client.post(
+                _BESTMOVE_LEASE_URL,
+                headers={"X-Operator-Token": _TEST_TOKEN},
+            )
+        assert resp.status_code == 204, f"Expected 204, got {resp.status_code}: {resp.text}"
+        assert spy.await_count == 0, "_claim_tier4_bestmove must not be called when disabled"
+
+    @pytest.mark.asyncio
+    async def test_bestmove_lease_empty_queue_returns_204(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        import app.routers.eval_remote as eval_remote_module
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "BEST_MOVE_BACKFILL_ENABLED", True)
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+        monkeypatch.setattr(
+            eval_remote_module, "_claim_tier4_bestmove", AsyncMock(return_value=None)
+        )
+
+        async with _make_client() as client:
+            resp = await client.post(
+                _BESTMOVE_LEASE_URL,
+                headers={"X-Operator-Token": _TEST_TOKEN},
+            )
+        assert resp.status_code == 204, f"Expected 204, got {resp.status_code}: {resp.text}"
+
+    @pytest.mark.asyncio
+    async def test_bestmove_lease_candidate_plies(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """A tier-4b-eligible game with an out-of-book played==best ply leases 200
+        with exactly the server-recomputed candidate set (ply+fen only)."""
+        import app.routers.eval_remote as eval_remote_module
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "BEST_MOVE_BACKFILL_ENABLED", True)
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(
+            eval_worker_session_maker,
+            user_id,
+            pgn=_BESTMOVE_PGN,
+            full_evals_completed_at=datetime.now(timezone.utc),
+        )
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            game_id,
+            [
+                {"ply": 0, "full_hash": 1, "best_move": "a2a4", "eval_cp": 1},
+                {"ply": 1, "full_hash": 2, "best_move": "h2h4", "eval_cp": 2},
+                {"ply": 2, "full_hash": 3, "best_move": "h2h4", "eval_cp": 3},
+                # ply 3: played h7h5, stored best differs -> not a candidate.
+                {"ply": 3, "full_hash": 4, "best_move": "a7a6", "eval_cp": 4},
+            ],
+        )
+        monkeypatch.setattr(
+            eval_remote_module,
+            "_claim_tier4_bestmove",
+            AsyncMock(return_value=(game_id, user_id)),
+        )
+
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _BESTMOVE_LEASE_URL,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+            body = resp.json()
+            assert body["game_id"] == game_id
+            assert "leased_at" in body
+            positions = body["positions"]
+            assert [p["ply"] for p in positions] == [2], (
+                f"Expected exactly candidate ply 2, got {positions}"
+            )
+            assert "move_uci" not in positions[0], "lease positions must carry no move_uci field"
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_bestmove_lease_zero_candidates_stamps_completed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """A picked game with zero candidate plies (no GamePosition rows at all)
+        stamps best_moves_completed_at directly and returns 204 (Pitfall 2 forward
+        progress -- the ES lottery must never re-draw it)."""
+        import app.routers.eval_remote as eval_remote_module
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "BEST_MOVE_BACKFILL_ENABLED", True)
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(
+            eval_worker_session_maker,
+            user_id,
+            pgn=_BESTMOVE_PGN,
+            full_evals_completed_at=datetime.now(timezone.utc),
+        )
+        # No GamePosition rows inserted -> zero candidates.
+        monkeypatch.setattr(
+            eval_remote_module,
+            "_claim_tier4_bestmove",
+            AsyncMock(return_value=(game_id, user_id)),
+        )
+
+        try:
+            assert (
+                await _get_game_best_moves_completed_at(eval_worker_session_maker, game_id) is None
+            )
+
+            async with _make_client() as client:
+                resp = await client.post(
+                    _BESTMOVE_LEASE_URL,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 204, f"Expected 204, got {resp.status_code}: {resp.text}"
+
+            stamped = await _get_game_best_moves_completed_at(eval_worker_session_maker, game_id)
+            assert stamped is not None, (
+                "best_moves_completed_at must be stamped directly on a zero-candidate pick"
+            )
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+
+async def _seed_bestmove_submit_game(
+    session_maker: async_sessionmaker[AsyncSession],
+    user_id: int,
+) -> int:
+    """Insert a tier-4b-eligible game (_BESTMOVE_PGN) with GamePosition rows wired
+    so ply 2 (h4, white) is the out-of-book played==best candidate: eval_of_position(2)
+    (row 1's stored eval) is a wide +300 so a submitted second_cp=-100 clears
+    INACCURACY_DROP. Ratings are seeded so _build_best_move_candidates can pin the
+    Maia ELO. Returns game_id."""
+    from app.models.game import Game
+
+    game_id = await _insert_game(
+        session_maker,
+        user_id,
+        pgn=_BESTMOVE_PGN,
+        full_evals_completed_at=datetime.now(timezone.utc),
+    )
+    await _insert_game_positions(
+        session_maker,
+        user_id,
+        game_id,
+        [
+            {"ply": 0, "full_hash": 61500, "best_move": "a2a4", "eval_cp": 1},
+            {"ply": 1, "full_hash": 61501, "best_move": "h2h4", "eval_cp": 300},
+            {"ply": 2, "full_hash": 61502, "best_move": "h2h4", "eval_cp": 3},
+            # ply 3: played h7h5, stored best differs -> never a candidate.
+            {"ply": 3, "full_hash": 61503, "best_move": "a7a6", "eval_cp": 4},
+        ],
+    )
+    async with session_maker() as rating_session:
+        await rating_session.execute(
+            sa.update(Game)
+            .where(Game.id == game_id)
+            .values(white_rating=1500, black_rating=1500, time_control_bucket="blitz")
+        )
+        await rating_session.commit()
+    return game_id
+
+
+class TestBestMoveSubmitEndpoint:
+    """Phase 177 Task 3: POST /eval/remote/bestmove-submit.
+
+    Tests:
+    - bestmove_submit_sf_version_mismatch: version gate -> 422
+    - bestmove_submit_game_not_found: -> 404
+    - bestmove_submit_minimal_write_no_reclassify: writes ONLY game_best_moves +
+      stamps best_moves_completed_at; apply_full_eval/_classify_and_fill_oracle
+      are never called (structural isolation, T-177-07)
+    - bestmove_submit_out_of_range_ply_422: a submitted ply outside [0, game_length)
+      -> 422, no write (T-177-05)
+    - bestmove_submit_foreign_ply_dropped: an in-range, non-candidate ply's
+      second-best is silently dropped -> no row for that ply, still 200 (T-177-06)
+    - bestmove_submit_existing_flaws_unchanged: game_flaws rows are byte-identical
+      before/after (T-177-07)
+    """
+
+    @pytest.mark.asyncio
+    async def test_bestmove_submit_sf_version_mismatch(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "Stockfish 18")
+        payload = {
+            "game_id": 1,
+            "sf_version": "Stockfish 17",
+            "evals": [],
+        }
+        async with _make_client() as client:
+            resp = await client.post(
+                _BESTMOVE_SUBMIT_URL,
+                json=payload,
+                headers={"X-Operator-Token": _TEST_TOKEN},
+            )
+        assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+
+    @pytest.mark.asyncio
+    async def test_bestmove_submit_game_not_found(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        payload = {
+            "game_id": -1,
+            "sf_version": "Stockfish 18",
+            "evals": [],
+        }
+        async with _make_client() as client:
+            resp = await client.post(
+                _BESTMOVE_SUBMIT_URL,
+                json=payload,
+                headers={"X-Operator-Token": _TEST_TOKEN},
+            )
+        assert resp.status_code == 404, f"Expected 404, got {resp.status_code}: {resp.text}"
+
+    @pytest.mark.asyncio
+    async def test_bestmove_submit_minimal_write_no_reclassify(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """A submit writes a game_best_moves row + stamps best_moves_completed_at,
+        and does NOT call apply_full_eval / _classify_and_fill_oracle (S-06/T-177-07)."""
+        import app.services.eval_apply as eval_apply_module
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+        monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.1)
+
+        apply_full_eval_spy = AsyncMock(side_effect=AssertionError("must not be called"))
+        classify_spy = AsyncMock(side_effect=AssertionError("must not be called"))
+        monkeypatch.setattr(eval_apply_module, "apply_full_eval", apply_full_eval_spy)
+        monkeypatch.setattr(eval_apply_module, "_classify_and_fill_oracle", classify_spy)
+
+        user_id = eval_worker_test_user
+        game_id = await _seed_bestmove_submit_game(eval_worker_session_maker, user_id)
+
+        payload = {
+            "game_id": game_id,
+            "sf_version": "Stockfish 18",
+            "evals": [
+                {"ply": 2, "second_cp": -100, "second_mate": None, "second_uci": "a2a3"},
+            ],
+        }
+
+        try:
+            assert await _count_game_best_moves(eval_worker_session_maker, game_id) == 0
+            assert (
+                await _get_game_best_moves_completed_at(eval_worker_session_maker, game_id) is None
+            )
+
+            async with _make_client() as client:
+                resp = await client.post(
+                    _BESTMOVE_SUBMIT_URL,
+                    json=payload,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+            body = resp.json()
+            assert body["game_id"] == game_id
+            assert body["rows_written"] == 1, f"Expected exactly 1 row written, got {body}"
+
+            assert apply_full_eval_spy.await_count == 0, "apply_full_eval must never be called"
+            assert classify_spy.await_count == 0, "_classify_and_fill_oracle must never be called"
+
+            assert await _count_game_best_moves(eval_worker_session_maker, game_id) == 1
+            stamped = await _get_game_best_moves_completed_at(eval_worker_session_maker, game_id)
+            assert stamped is not None, "best_moves_completed_at must be stamped on submit"
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_bestmove_submit_out_of_range_ply_422(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """A submitted ply outside [0, game_length) is rejected 422 before any
+        write (T-177-05)."""
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _seed_bestmove_submit_game(eval_worker_session_maker, user_id)
+
+        payload = {
+            "game_id": game_id,
+            "sf_version": "Stockfish 18",
+            "evals": [
+                # game_length == 4 (plies 0-3) -> ply 4 is one past the end.
+                {"ply": 4, "second_cp": -100, "second_mate": None, "second_uci": "a2a3"},
+            ],
+        }
+
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _BESTMOVE_SUBMIT_URL,
+                    json=payload,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+            assert await _count_game_best_moves(eval_worker_session_maker, game_id) == 0, (
+                "Rejection must happen before any write"
+            )
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_bestmove_submit_foreign_ply_dropped(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """An in-range ply that is NOT a real candidate (ply 3: played != stored
+        best) is silently dropped -- no row for it, and the request still
+        succeeds (T-177-06, mirrors the second_best guard precedent)."""
+        import app.services.eval_apply as eval_apply_module
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+        monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.1)
+
+        user_id = eval_worker_test_user
+        game_id = await _seed_bestmove_submit_game(eval_worker_session_maker, user_id)
+
+        payload = {
+            "game_id": game_id,
+            "sf_version": "Stockfish 18",
+            "evals": [
+                # ply 3 is in-range but never a candidate (played != stored best).
+                {"ply": 3, "second_cp": -100, "second_mate": None, "second_uci": "a2a3"},
+            ],
+        }
+
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _BESTMOVE_SUBMIT_URL,
+                    json=payload,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+            assert resp.json()["rows_written"] == 0, (
+                "A foreign (non-candidate) ply must produce no row"
+            )
+            assert await _count_game_best_moves(eval_worker_session_maker, game_id) == 0
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_bestmove_submit_existing_flaws_unchanged(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """Existing game_flaws rows are byte-identical before/after a bestmove
+        submit -- game_flaws is never read or written here (T-177-07)."""
+        import app.services.eval_apply as eval_apply_module
+        from app.models.game_flaw import GameFlaw
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+        monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.1)
+
+        user_id = eval_worker_test_user
+        game_id = await _seed_bestmove_submit_game(eval_worker_session_maker, user_id)
+        await _insert_flaw_for_lease_test(eval_worker_session_maker, user_id, game_id, ply=2)
+
+        async def _snapshot_flaws() -> list[tuple[object, ...]]:
+            async with eval_worker_session_maker() as session:
+                result = await session.execute(
+                    select(
+                        GameFlaw.game_id,
+                        GameFlaw.ply,
+                        GameFlaw.severity,
+                        GameFlaw.phase,
+                        GameFlaw.is_miss,
+                        GameFlaw.is_lucky,
+                        GameFlaw.is_reversed,
+                        GameFlaw.is_squandered,
+                        GameFlaw.allowed_pv_lines,
+                        GameFlaw.missed_pv_lines,
+                    )
+                    .where(GameFlaw.game_id == game_id)
+                    .order_by(GameFlaw.ply)
+                )
+                return [tuple(row) for row in result.all()]
+
+        payload = {
+            "game_id": game_id,
+            "sf_version": "Stockfish 18",
+            "evals": [
+                {"ply": 2, "second_cp": -100, "second_mate": None, "second_uci": "a2a3"},
+            ],
+        }
+
+        try:
+            before = await _snapshot_flaws()
+            assert len(before) == 1, "fixture must seed exactly one flaw row"
+
+            async with _make_client() as client:
+                resp = await client.post(
+                    _BESTMOVE_SUBMIT_URL,
+                    json=payload,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+
+            after = await _snapshot_flaws()
+            assert after == before, "game_flaws rows must be byte-identical after a bestmove submit"
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])

@@ -168,7 +168,10 @@ async def test_ladder_explicit_first_skips_entry_lease() -> None:
 
     # First call: /atomic-lease with scope=explicit
     first_call = client.post.call_args_list[0]
-    assert first_call == call("/api/eval/remote/atomic-lease", params={"scope": "explicit"})
+    assert first_call == call(
+        "/api/eval/remote/atomic-lease",
+        params={"scope": "explicit", "worker_schema_version": WORKER_SCHEMA_VERSION},
+    )
 
     # Second call: /atomic-submit
     second_call = client.post.call_args_list[1]
@@ -275,7 +278,10 @@ async def test_ladder_falls_to_idle_when_entry_lease_204() -> None:
 
     # Confirm the idle atomic-lease call used scope=idle param
     idle_lease_call = client.post.call_args_list[2]
-    assert idle_lease_call == call("/api/eval/remote/atomic-lease", params={"scope": "idle"})
+    assert idle_lease_call == call(
+        "/api/eval/remote/atomic-lease",
+        params={"scope": "idle", "worker_schema_version": WORKER_SCHEMA_VERSION},
+    )
 
 
 # ─── Depth-15 eval path assertion ─────────────────────────────────────────────
@@ -375,9 +381,10 @@ async def test_ladder_flaw_blob_on_all_tier123_204() -> None:
 
 
 async def test_ladder_all_queues_empty_sleeps_once() -> None:
-    """When all four tiers (including rung-4 flaw-blob) return 204, the worker sleeps exactly once.
+    """When all five tiers (including rung-4 flaw-blob and rung-5 bestmove) return
+    204, the worker sleeps exactly once.
 
-    Regression guard: rung-4 must not introduce a double-sleep (T-146-06).
+    Regression guard: rungs 4/5 must not introduce a double-sleep (T-146-06).
     """
     client = AsyncMock()
     client.post = AsyncMock(
@@ -386,6 +393,7 @@ async def test_ladder_all_queues_empty_sleeps_once() -> None:
             _make_response(204),  # /entry-lease
             _make_response(204),  # /lease?scope=idle
             _make_response(204),  # /flaw-blob-lease
+            _make_response(204),  # /bestmove-lease
         ]
     )
     pool = AsyncMock()
@@ -401,10 +409,13 @@ async def test_ladder_all_queues_empty_sleeps_once() -> None:
         )
         mock_sleep.assert_awaited_once_with(1.0)
 
-    # Confirm rung-4 was actually reached (not just 3-rung sleep)
+    # Confirm rungs 4 and 5 were actually reached (not just an earlier-rung sleep)
     called_urls = [c.args[0] for c in client.post.call_args_list]
     assert "/api/eval/remote/flaw-blob-lease" in called_urls, (
         "rung-4 /flaw-blob-lease was not called — sleep may have fired from rung 3 tail"
+    )
+    assert "/api/eval/remote/bestmove-lease" in called_urls, (
+        "rung-5 /bestmove-lease was not called — sleep may have fired from rung 4 tail"
     )
 
 
@@ -608,7 +619,7 @@ async def test_eval_atomic_game_full_ply_pass_stays_multipv1() -> None:
         return_value=(0, None, "a2a3", "a2a3", 0, None, "b2b3")
     )
 
-    evals, _blob_nodes = await _eval_atomic_game(pool, _ATOMIC_POSITIONS)
+    evals, _blob_nodes, _second_best = await _eval_atomic_game(pool, _ATOMIC_POSITIONS)
 
     assert pool.evaluate_nodes_with_pv.call_count == 3
     for r in evals:
@@ -640,7 +651,7 @@ async def test_eval_atomic_game_hints_and_blobs_flaw_plies_only() -> None:
         ]
     )
 
-    evals, blob_nodes = await _eval_atomic_game(pool, _HINTED_BLUNDER_POSITIONS)
+    evals, blob_nodes, _second_best = await _eval_atomic_game(pool, _HINTED_BLUNDER_POSITIONS)
 
     assert len(evals) == 7
     assert pool.evaluate_nodes_multipv2.call_count == 2
@@ -675,10 +686,11 @@ async def test_eval_atomic_game_no_hinted_flaws_skips_multipv2_entirely() -> Non
     )
     pool.evaluate_nodes_multipv2 = AsyncMock()
 
-    evals, blob_nodes = await _eval_atomic_game(pool, positions)
+    evals, blob_nodes, second_best = await _eval_atomic_game(pool, positions)
 
     assert len(evals) == 2
     assert blob_nodes == []
+    assert second_best == []
     pool.evaluate_nodes_multipv2.assert_not_called()
 
 
@@ -732,6 +744,212 @@ async def test_atomic_submit_payload_shape_and_schema_version() -> None:
     assert body["job_id"] == "job-atomic-1"
     assert len(body["evals"]) == 7
     assert [n["token"] for n in body["blob_nodes"]] == ["2:missed:0", "2:allowed:0"]
+    # _HINTED_BLUNDER_POSITIONS carries no move_uci -- nothing to target (Phase 177).
+    assert body["second_best"] == []
+
+
+# ─── Phase 177 PROTO-01/PROTO-02: version bump + targeted second-best re-search ──
+
+_TARGETED_SECOND_BEST_POSITIONS: list[dict[str, object]] = [
+    {"ply": 0, "fen": chess.STARTING_FEN, "is_terminal": False, "move_uci": "e2e4"},
+    {"ply": 1, "fen": chess.STARTING_FEN, "is_terminal": False, "move_uci": "d7d5"},
+    {"ply": 2, "fen": chess.STARTING_FEN, "is_terminal": True, "move_uci": None},
+]
+
+
+def test_worker_schema_version_is_2() -> None:
+    """WORKER_SCHEMA_VERSION bumped 1 -> 2 (Phase 177 PROTO-01/S-03)."""
+    assert WORKER_SCHEMA_VERSION == 2
+
+
+async def test_eval_atomic_game_targeted_second_best_only_played_best() -> None:
+    """PROTO-02: the targeted MultiPV-2 re-search runs ONLY for plies where the
+    worker's own MultiPV-1 best move equals the leased `move_uci` (the move actually
+    played). A played != best ply (ply 1: best "g1f3" != played "d7d5") and the
+    terminal donor (ply 2: move_uci=None) produce NO second_best entry -- mirrors
+    the server-side played==best gate this data feeds. The full-ply pass stays
+    MultiPV-1 (Phase 146 D-03 invariant, unchanged).
+    """
+    pool = AsyncMock()
+    pool.evaluate_nodes_with_pv = AsyncMock(
+        side_effect=[
+            (0, None, "e2e4", None),  # ply 0: best == played ("e2e4") -> candidate
+            (0, None, "g1f3", None),  # ply 1: best != played ("d7d5") -> not a candidate
+            (0, None, None, None),  # ply 2: terminal donor, move_uci=None -> not a candidate
+        ]
+    )
+    pool.evaluate_nodes_multipv2 = AsyncMock(
+        return_value=(0, None, "e2e4", "e2e4 d7d5", 5, None, "d2d4")
+    )
+
+    evals, blob_nodes, second_best = await _eval_atomic_game(pool, _TARGETED_SECOND_BEST_POSITIONS)
+
+    assert pool.evaluate_nodes_with_pv.call_count == 3, "full-ply pass must stay MultiPV-1"
+    assert blob_nodes == [], "zero eval deltas must not hint any flaw ply"
+    assert len(evals) == 3
+    assert pool.evaluate_nodes_multipv2.call_count == 1, (
+        "evaluate_nodes_multipv2 must be called exactly once -- only for the played==best ply"
+    )
+    assert second_best == [{"ply": 0, "second_cp": 5, "second_mate": None, "second_uci": "d2d4"}]
+
+
+async def test_eval_atomic_game_targeted_second_best_drops_failed_search() -> None:
+    """A failed targeted search (engine failure -> the all-None 7-tuple) drops that
+    ply from second_best rather than submitting garbage or failing the whole submit
+    (T-177-14) -- the server's own Pitfall-1 fallback covers the gap for that ply.
+    """
+    pool = AsyncMock()
+    pool.evaluate_nodes_with_pv = AsyncMock(
+        side_effect=[
+            (0, None, "e2e4", None),
+            (0, None, "g1f3", None),
+            (0, None, None, None),
+        ]
+    )
+    pool.evaluate_nodes_multipv2 = AsyncMock(
+        return_value=(None, None, None, None, None, None, None)
+    )
+
+    _evals, _blob_nodes, second_best = await _eval_atomic_game(
+        pool, _TARGETED_SECOND_BEST_POSITIONS
+    )
+
+    assert second_best == [], "a failed targeted search must drop the ply, not submit garbage"
+
+
+# ─── Phase 177 BACK-02/03: rung-5 tier-4b best-move backfill tests ───────────
+
+
+async def test_ladder_bestmove_lease_only_after_flaw_blob_204() -> None:
+    """Rung 5 (/bestmove-lease) is reached ONLY after rung 4 (/flaw-blob-lease)
+    returns 204 -- Pitfall 6: blob backfill (server tier 4) must always precede
+    best-move backfill (server tier 5 / TIER_BESTMOVE_BACKFILL) on the worker's
+    ladder, mirroring the server's own tier priority (the worker never sees tier
+    numbers directly, only HTTP status codes).
+    """
+    bestmove_lease_body = {
+        "game_id": 88,
+        "positions": [
+            {"ply": 4, "fen": chess.STARTING_FEN},
+            {"ply": 6, "fen": chess.STARTING_FEN},
+        ],
+        "leased_at": "2026-07-17T10:00:00Z",
+    }
+    submit_body = {"game_id": 88, "rows_written": 2}
+
+    client = AsyncMock()
+    client.post = AsyncMock(
+        side_effect=[
+            _make_response(204),  # /atomic-lease?scope=explicit
+            _make_response(204),  # /entry-lease
+            _make_response(204),  # /atomic-lease?scope=idle
+            _make_response(204),  # /flaw-blob-lease
+            _make_response(200, bestmove_lease_body),  # /bestmove-lease
+            _make_response(200, submit_body),  # /bestmove-submit
+        ]
+    )
+
+    pool = AsyncMock()
+    pool.evaluate_nodes_multipv2 = AsyncMock(
+        return_value=(0, None, "e2e4", "e2e4", 5, None, "d2d4")
+    )
+
+    await _run_cycle(
+        client=client, pool=pool, sf_version="sf18", idle_sleep=1.0, dry_run=False, loop=False
+    )
+
+    called_urls = [c.args[0] for c in client.post.call_args_list]
+    blob_idx = called_urls.index("/api/eval/remote/flaw-blob-lease")
+    bestmove_idx = called_urls.index("/api/eval/remote/bestmove-lease")
+    assert bestmove_idx > blob_idx, (
+        "rung-5 /bestmove-lease must be called strictly after rung-4 /flaw-blob-lease"
+    )
+    assert "/api/eval/remote/bestmove-submit" in called_urls
+
+
+async def test_handle_bestmove_response_submits_n_entries_no_atomic_submit() -> None:
+    """A 200 /bestmove-lease with N candidate plies evaluates each at MultiPV=2 ONLY
+    (no full pass, no blob walk) and POSTs exactly N per-ply runner-up entries to
+    /bestmove-submit; /atomic-submit is never called (S-05/D-02 isolation).
+    """
+    bestmove_lease_body = {
+        "game_id": 101,
+        "positions": [
+            {"ply": 4, "fen": chess.STARTING_FEN},
+            {"ply": 8, "fen": chess.STARTING_FEN},
+            {"ply": 12, "fen": chess.STARTING_FEN},
+        ],
+        "leased_at": "2026-07-17T10:00:00Z",
+    }
+    submit_body = {"game_id": 101, "rows_written": 3}
+
+    client = AsyncMock()
+    client.post = AsyncMock(
+        side_effect=[
+            _make_response(204),  # /atomic-lease?scope=explicit
+            _make_response(204),  # /entry-lease
+            _make_response(204),  # /atomic-lease?scope=idle
+            _make_response(204),  # /flaw-blob-lease
+            _make_response(200, bestmove_lease_body),  # /bestmove-lease
+            _make_response(200, submit_body),  # /bestmove-submit
+        ]
+    )
+
+    pool = AsyncMock()
+    pool.evaluate_nodes_multipv2 = AsyncMock(
+        side_effect=[
+            (0, None, "e2e4", "e2e4", 10, None, "d2d4"),
+            (0, None, "g1f3", "g1f3", 20, None, "c2c4"),
+            (0, None, "b1c3", "b1c3", 30, None, "f2f4"),
+        ]
+    )
+
+    await _run_cycle(
+        client=client, pool=pool, sf_version="sf18", idle_sleep=1.0, dry_run=False, loop=False
+    )
+
+    submit_call = client.post.call_args_list[-1]
+    assert submit_call.args[0] == "/api/eval/remote/bestmove-submit"
+    body = submit_call.kwargs["json"]
+    assert body["game_id"] == 101
+    assert body["sf_version"] == "sf18"
+    assert len(body["evals"]) == 3
+    assert [e["ply"] for e in body["evals"]] == [4, 8, 12]
+    assert [e["second_uci"] for e in body["evals"]] == ["d2d4", "c2c4", "f2f4"]
+    assert [e["second_cp"] for e in body["evals"]] == [10, 20, 30]
+    for e in body["evals"]:
+        assert "best_cp" not in e, "BestMoveSubmitEval carries no best_cp field (S-05)"
+        assert "token" not in e, "the tier-4b lease is already ply-keyed, no token to echo"
+
+    called_urls = [c.args[0] for c in client.post.call_args_list]
+    assert "/api/eval/remote/atomic-submit" not in called_urls
+
+
+async def test_bestmove_lease_204_falls_to_idle_sleep_no_submit() -> None:
+    """A 204 /bestmove-lease (all queues empty) results in the idle-sleep path --
+    /bestmove-submit must never be called.
+    """
+    client = AsyncMock()
+    client.post = AsyncMock(
+        side_effect=[
+            _make_response(204),  # /atomic-lease?scope=explicit
+            _make_response(204),  # /entry-lease
+            _make_response(204),  # /atomic-lease?scope=idle
+            _make_response(204),  # /flaw-blob-lease
+            _make_response(204),  # /bestmove-lease
+        ]
+    )
+    pool = AsyncMock()
+
+    with patch("scripts.remote_eval_worker.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        await _run_cycle(
+            client=client, pool=pool, sf_version="sf18", idle_sleep=1.0, dry_run=False, loop=False
+        )
+        mock_sleep.assert_awaited_once_with(1.0)
+
+    called_urls = [c.args[0] for c in client.post.call_args_list]
+    assert "/api/eval/remote/bestmove-lease" in called_urls
+    assert "/api/eval/remote/bestmove-submit" not in called_urls
 
 
 # ─── SEED-063: supervisor/child/once dispatch + watchdog stall predicate ────

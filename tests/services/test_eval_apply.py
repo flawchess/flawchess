@@ -31,6 +31,8 @@ from app.models.game_best_move import GameBestMove
 from app.services import eval_apply
 from app.services.eval_apply import (
     _build_best_move_candidates,
+    _build_bestmove_lease_positions,
+    _eval_of_position_map,
     _FullPlyEvalTarget,
     _upsert_best_move_rows,
 )
@@ -78,6 +80,7 @@ async def _insert_game(
     session_maker: async_sessionmaker[AsyncSession],
     user_id: int,
     *,
+    pgn: str = "*",
     white_rating: int | None = 1500,
     black_rating: int | None = 1500,
     platform: str = "chess.com",
@@ -92,7 +95,7 @@ async def _insert_game(
             user_id=user_id,
             platform=platform,
             platform_game_id=f"eval-apply-{uuid.uuid4().hex}",
-            pgn="*",
+            pgn=pgn,
             result="1-0",
             user_color="white",
             rated=True,
@@ -414,6 +417,90 @@ class TestPitfall1Fallback:
         finally:
             await _delete_game(ea_session_maker, game_id)
 
+    async def test_build_best_move_candidates_uses_submitted_second_best(
+        self,
+        ea_user: int,
+        ea_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch,
+    ) -> None:
+        """Phase 177 PROTO-03: a second_best_map covering ALL candidate plies (the
+        v2-worker submit shape) means the builder runs ZERO fallback Stockfish
+        searches, across multiple candidate plies in the same call."""
+        monkeypatch.setattr(eval_apply, "async_session_maker", ea_session_maker)
+        monkeypatch.setattr(eval_apply, "score_move", lambda fen, elo, uci: 0.15)
+        spy = AsyncMock(return_value=(300, None, "e2e4", None, -100, None, "d2d4"))
+        monkeypatch.setattr(eval_apply.engine_service, "evaluate_nodes_multipv2", spy)
+
+        game_id = await _insert_game(ea_session_maker, ea_user)
+        try:
+            targets = [
+                _target(6, "e2e4", "Ne2"),
+                _target(8, "d2d4", "d4"),
+            ]
+            engine_result_map: _EngineResultMap = {
+                6: (300, None, "e2e4", None),
+                8: (250, None, "d2d4", None),
+            }
+            second_best_map: _SecondBestMap = {
+                6: (-100, None, "d2d4"),
+                8: (-150, None, "e2e4"),
+            }
+
+            rows = await _build_best_move_candidates(
+                game_id, targets, engine_result_map, second_best_map
+            )
+            assert spy.await_count == 0, (
+                "second_best_map covers every candidate ply -- ZERO fallback "
+                "Stockfish searches must run"
+            )
+            assert len(rows) == 2
+        finally:
+            await _delete_game(ea_session_maker, game_id)
+
+    async def test_best_move_candidates_fallback_source_tag(
+        self,
+        ea_user: int,
+        ea_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch,
+    ) -> None:
+        """Phase 177 D-06/OBS-01: when the Pitfall-1 fallback fires, the caller's
+        `source` label is recorded as a Sentry tag under the key "source" — so a
+        worker-submit-path fallback is queryable independent of the expected
+        drain-local fallback noise."""
+        monkeypatch.setattr(eval_apply, "async_session_maker", ea_session_maker)
+        monkeypatch.setattr(eval_apply, "score_move", lambda fen, elo, uci: 0.12)
+        spy = AsyncMock(return_value=(300, None, "e2e4", None, -100, None, "d2d4"))
+        monkeypatch.setattr(eval_apply.engine_service, "evaluate_nodes_multipv2", spy)
+
+        set_tag_calls: list[tuple[str, str]] = []
+        monkeypatch.setattr(
+            eval_apply.sentry_sdk,
+            "set_tag",
+            lambda key, value: set_tag_calls.append((key, value)),
+        )
+        monkeypatch.setattr(eval_apply.sentry_sdk, "set_context", lambda *a, **kw: None)
+
+        game_id = await _insert_game(ea_session_maker, ea_user)
+        try:
+            targets = [_target(6, "e2e4", "Ne2")]
+            engine_result_map: _EngineResultMap = {6: (300, None, "e2e4", None)}
+
+            rows = await _build_best_move_candidates(
+                game_id,
+                targets,
+                engine_result_map,
+                None,  # no second-best coverage -> fallback fires
+                source="worker-submit-fallback",
+            )
+
+            assert spy.await_count == 1, "the fallback must fire once"
+            assert len(rows) == 1
+            assert ("source", "worker-submit-fallback") in set_tag_calls, (
+                f"Expected a ('source', 'worker-submit-fallback') Sentry tag, got {set_tag_calls}"
+            )
+        finally:
+            await _delete_game(ea_session_maker, game_id)
+
 
 # ─── 3. Idempotent upsert ───────────────────────────────────────────────────────
 
@@ -477,3 +564,159 @@ class TestUpsertIdempotency:
             assert await _count_best_moves(ea_session_maker, game_id) == 0
         finally:
             await _delete_game(ea_session_maker, game_id)
+
+
+# ─── 4. Phase 177 BACK-02: tier-4b lease-position reconstruction ────────────────
+
+
+async def _insert_game_positions(
+    session_maker: async_sessionmaker[AsyncSession],
+    user_id: int,
+    game_id: int,
+    rows: list[dict[str, Any]],
+) -> None:
+    """Insert GamePosition rows carrying `best_move` (un-shifted, decision-keyed)
+    and `eval_cp`/`eval_mate` (post-move shifted, SEED-044) exactly as stored,
+    for the tier-4b reconstruction tests below. Each dict: {"ply", "full_hash",
+    "best_move", "eval_cp", "eval_mate"}."""
+    from app.models.game_position import GamePosition
+
+    async with session_maker() as session:
+        for r in rows:
+            session.add(
+                GamePosition(
+                    user_id=user_id,
+                    game_id=game_id,
+                    ply=r["ply"],
+                    full_hash=r.get("full_hash", r["ply"]),
+                    white_hash=0,
+                    black_hash=0,
+                    best_move=r.get("best_move"),
+                    eval_cp=r.get("eval_cp"),
+                    eval_mate=r.get("eval_mate"),
+                )
+            )
+        await session.commit()
+
+
+class TestEvalOfPositionMap:
+    """Pitfall 1: `_eval_of_position_map` inverts `_post_move_eval`'s +1 forward
+    shift — pure, no DB/session needed."""
+
+    def test_inverts_post_move_shift(self) -> None:
+        # Row ply=0's stored eval is "eval of position 1"; row ply=1's stored
+        # eval is "eval of position 2" (SEED-044 post-move convention).
+        gp_rows = [(0, 100, None), (1, -50, None)]
+        result = _eval_of_position_map(gp_rows)
+        assert result == {1: (100, None), 2: (-50, None)}
+
+    def test_ply_zero_resolves_to_none_none_no_crash(self) -> None:
+        """No row -1 exists, so key 0 is never populated — callers MUST read via
+        .get(ply, (None, None)), never index directly (Pitfall 1)."""
+        gp_rows = [(0, 100, None), (1, -50, None)]
+        result = _eval_of_position_map(gp_rows)
+        assert 0 not in result
+        assert result.get(0, (None, None)) == (None, None)
+
+    def test_empty_input_yields_empty_map(self) -> None:
+        assert _eval_of_position_map([]) == {}
+
+
+class TestBestMoveLeasePositions:
+    """`_build_bestmove_lease_positions` (Task 1, BACK-02): server-recomputed
+    tier-4b candidate-ply FENs from already-stored full-pass data — no engine
+    calls (S-05).
+
+    Fixture game: "1. a4 a5 2. h4 h5" -- find_opening_ply_count(['a4','a5','h4'])
+    == 2 (verified against the real openings.tsv data), so plies 0-1 are book and
+    plies 2-3 are out-of-book. UCIs: a4=a2a4, a5=a7a5, h4=h2h4, h5=h7h5.
+    """
+
+    _PGN: str = "1. a4 a5 2. h4 h5 *"
+
+    async def test_out_of_book_played_best_yields_candidate(
+        self,
+        ea_user: int,
+        ea_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch,
+    ) -> None:
+        """Ply 2 (h4, white) is out-of-book, played == stored best_move, and has a
+        usable eval_of_position -- included. Ply 0/1 (book) and ply 3 (played !=
+        stored best) are excluded."""
+        monkeypatch.setattr(eval_apply, "async_session_maker", ea_session_maker)
+
+        game_id = await _insert_game(ea_session_maker, ea_user, pgn=self._PGN)
+        try:
+            await _insert_game_positions(
+                ea_session_maker,
+                ea_user,
+                game_id,
+                [
+                    {"ply": 0, "best_move": "a2a4", "eval_cp": 1, "eval_mate": None},
+                    {"ply": 1, "best_move": "h2h4", "eval_cp": 2, "eval_mate": None},
+                    {"ply": 2, "best_move": "h2h4", "eval_cp": 3, "eval_mate": None},
+                    # ply 3: played h7h5, but stored best_move differs -> not a candidate.
+                    {"ply": 3, "best_move": "a7a6", "eval_cp": 4, "eval_mate": None},
+                ],
+            )
+
+            positions = await _build_bestmove_lease_positions(game_id)
+
+            assert [p.ply for p in positions] == [2]
+        finally:
+            await _delete_game(ea_session_maker, game_id)
+
+    async def test_missing_prior_row_excludes_candidate_no_crash(
+        self,
+        ea_user: int,
+        ea_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch,
+    ) -> None:
+        """A candidate ply whose (ply - 1) row is absent from the DB has no
+        resolvable eval_of_position -- excluded via the Pitfall-1 None guard,
+        without raising."""
+        monkeypatch.setattr(eval_apply, "async_session_maker", ea_session_maker)
+
+        game_id = await _insert_game(ea_session_maker, ea_user, pgn=self._PGN)
+        try:
+            await _insert_game_positions(
+                ea_session_maker,
+                ea_user,
+                game_id,
+                [
+                    {"ply": 0, "best_move": "a2a4", "eval_cp": 1, "eval_mate": None},
+                    # ply 1 row deliberately absent -> eval_of_position(2) unresolvable.
+                    {"ply": 2, "best_move": "h2h4", "eval_cp": 3, "eval_mate": None},
+                ],
+            )
+
+            positions = await _build_bestmove_lease_positions(game_id)
+
+            assert positions == []
+        finally:
+            await _delete_game(ea_session_maker, game_id)
+
+    async def test_no_positions_returns_empty(
+        self,
+        ea_user: int,
+        ea_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch,
+    ) -> None:
+        """A game with no stored GamePosition rows yields no candidates, no crash."""
+        monkeypatch.setattr(eval_apply, "async_session_maker", ea_session_maker)
+
+        game_id = await _insert_game(ea_session_maker, ea_user)
+        try:
+            positions = await _build_bestmove_lease_positions(game_id)
+            assert positions == []
+        finally:
+            await _delete_game(ea_session_maker, game_id)
+
+    async def test_missing_game_returns_empty(
+        self,
+        ea_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch,
+    ) -> None:
+        monkeypatch.setattr(eval_apply, "async_session_maker", ea_session_maker)
+        positions = await _build_bestmove_lease_positions(-1)
+        assert positions == []

@@ -2,19 +2,18 @@
 gsd_state_version: 1.0
 milestone: v2.4
 milestone_name: Backend Gem & Great Detection
-current_phase: 999.1
-current_phase_name: BACKLOG
-status: milestone_complete
-stopped_at: v2.4 Backend Gem & Great Detection milestone closed
-last_updated: "2026-07-17T06:00:00.000Z"
+current_phase: 177
+current_phase_name: worker-side-multipv2-gem-candidates
+status: executing
+stopped_at: Completed 177-04-PLAN.md
+last_updated: "2026-07-17T17:12:00.000Z"
 last_activity: 2026-07-17
-last_activity_desc: v2.4 Backend Gem & Great Detection milestone closed (phases 174-176); ready to deploy
+last_activity_desc: Phase 177 Plan 04 (worker-side protocol v2 - targeted second-best re-search + rung-5 tier-4b handler) completed
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 14
-  completed_plans: 14
-  percent: 100
+  total_phases: 1
+  completed_phases: 0
+  total_plans: 5
+  completed_plans: 5
 ---
 
 # Project State: FlawChess
@@ -22,9 +21,9 @@ progress:
 ## Current Position
 
 Milestone: v2.4 Backend Gem & Great Detection — CLOSED 2026-07-17 (phases 174–176, 14 plans)
-Phase: none active (999.1 Password Reset remains in BACKLOG)
-Status: Milestone complete — deploy pending (`bin/deploy.sh`)
-Last activity: 2026-07-17 — Completed quick task 260717-lr9: preset-only 3-tier play-style control (Human/Light/Deep)
+Phase: 177 (worker-side-multipv2-gem-candidates) — EXECUTING
+Status: Executing Phase 177 (Plan 04 of 5 complete)
+Last activity: 2026-07-17 — Phase 177 Plan 04 (worker-side protocol v2 — targeted second-best re-search + rung-5 tier-4b handler) completed
 
 ## Project Reference
 
@@ -323,6 +322,15 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase ?]: [Phase 174-07]: Broadened the existing residual PV-backfill fallback (full_evals_completed_at IS NULL -> full_pv_completed_at IS NULL) rather than adding a new lottery rung; kept precedence and ES key unchanged
 - [Phase ?]: [Phase 174-07]: Dropped the superseded ix_games_pv_backfill_pending in the same migration that adds ix_games_lichess_pv_backfill_pending, since its predicate no longer matches any query after the broadening
 - [Phase ?]: Moved TIER_BESTMOVE_BACKFILL constant addition from Task 4 to Task 3 (Rule 3 auto-fix) to unblock Task 3 verify tests without a forward dependency on Task 4's lottery rung
+- [Phase ?]: [Phase 177-01]: worker_schema_version defaults to 1 on /atomic-lease (un-updated binary compatibility, Pitfall 4)
+- [Phase ?]: [Phase 177-01]: _build_best_move_candidates's source param defaults to 'drain-local' so the out-of-scope eval_drain.py call site keeps working unchanged
+- [Phase ?]: [Phase 177-01]: second_best tamper guard checks only in-range ply, not candidate membership -- a non-candidate ply is silently dropped at the map lookup, mirroring the blob-node precedent (S-02)
+- [Phase ?]: [Phase 177-02]: _build_bestmove_lease_positions applies only the availability (None-guard) half of the inaccuracy gate at lease time -- the runner-up eval doesn't exist until the worker computes it; the full margin gate + Maia scoring runs once, authoritatively, at submit time via the reused _build_best_move_candidates
+- [Phase ?]: [Phase 177-02]: /bestmove-submit's tamper guard is structural-range-only (422 on out-of-range ply); candidate-membership rejection is achieved for free by _build_best_move_candidates's own independent recompute (never reads second_best_map keys to decide candidacy)
+- [Phase ?]: [Phase 177-02]: _apply_bestmove_submit lives in eval_apply.py (service layer) per the plan's explicit artifact placement, diverging from precedent (_apply_flaw_blob_submit/_apply_atomic_submit live in the router); still raises HTTPException directly for 404/422, matching established error-handling style
+- [Phase ?]: [Phase 177-03]: _tier4b_minimal_drain_tick inlines the reconstruction + write sequence rather than calling _apply_bestmove_submit verbatim, so it can pass source='drain-local' into _build_best_move_candidates (D-06), and preserves the Phase 176 D-01 maia_available guardrail the new tier branch would otherwise bypass (Rule 2 auto-fix, caught by the plan's own pre-existing test)
+- [Phase ?]: Phase 177 Plan 04: split Task 1/Task 2 into two atomic commits despite overlapping code in _run_cycle, by temporarily reverting/reapplying Task 2's additions rather than merging commits
+- [Phase ?]: Phase 177 Plan 04: engine-failure detection for the targeted second-best search checks r[0] is None and r[1] is None (both eval_cp/eval_mate absent) as the unique failure signature
 
 ### Pending Todos
 
@@ -410,9 +418,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Completed 176-01-PLAN.md
+**Stopped at:** Completed 177-04-PLAN.md
 
-**Last session:** 2026-07-17T04:05:49.061Z
+**Last session:** 2026-07-17T17:03:14.456Z
 
 **Resume file:**
 
@@ -436,6 +444,10 @@ None
 | Phase 174 P06 | ~50min | 3 tasks | 7 files |
 | Phase 174 P07 | 35min | 2 tasks | 5 files |
 | Phase 176 P01 | 20min | 4 tasks | 8 files |
+| Phase 177 P01 | 14min | 3 tasks | 5 files |
+| Phase 177 P02 | 31min | 3 tasks | 6 files |
+| Phase 177 P03 | 16min | 1 tasks | 2 files |
+| Phase 177 P04 | 25min | 2 tasks | 2 files |
 
 ## Performance Metrics
 

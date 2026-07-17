@@ -86,10 +86,12 @@ class Settings(BaseSettings):
     # the tier-4b spare-capacity lottery is suppressed even when
     # EVAL_AUTO_DRAIN_ENABLED is True (BOTH gates are checked — see
     # claim_eval_job's bundled scope=None path). Independent from
-    # EVAL_AUTO_DRAIN_ENABLED because best-move backfill load is backend-only
-    # and cannot be shed to the remote worker fleet (unlike blob backfill, ~85%
-    # of which the workers carry) — this lets prod pause best-move backfill
-    # under backend CPU/latency pressure without disabling all idle drain.
+    # EVAL_AUTO_DRAIN_ENABLED so prod can pause best-move backfill without
+    # disabling all idle drain. Phase 177 BACK-02/03 added a dedicated
+    # /bestmove-lease + /bestmove-submit endpoint pair (mirroring the flaw-blob
+    # isolation pattern), so best-move backfill IS now shed-able to the remote
+    # worker fleet — this flag gates BOTH the in-process backend drain AND the
+    # worker-facing lease endpoint (single switch, D-04), not just backend load.
     # Default False; enable in prod deliberately after observing backend
     # RSS/CPU (mirrors 174 D-03b's posture). Do NOT enable in prod as part of
     # this merge — it is a separate, observed flag flip.
