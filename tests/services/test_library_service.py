@@ -92,8 +92,13 @@ def _make_pos(
     clock_seconds: float | None = None,
     phase: int = 1,
     move_san: str | None = None,
+    best_move: str | None = None,
 ) -> GamePosition:
-    """Build a GamePosition with eval fields for pure unit testing (no DB flush)."""
+    """Build a GamePosition with eval fields for pure unit testing (no DB flush).
+
+    Quick 260717-rbn: best_move param added (UCI, e.g. "e2e4") for the new
+    best-tier identity-comparison tests.
+    """
     pos = GamePosition()
     pos.ply = ply
     pos.eval_cp = eval_cp
@@ -101,6 +106,7 @@ def _make_pos(
     pos.clock_seconds = clock_seconds
     pos.phase = phase
     pos.move_san = move_san
+    pos.best_move = best_move
     pos.full_hash = 0
     pos.white_hash = 0
     pos.black_hash = 0
@@ -351,6 +357,154 @@ class TestBestMoveTierAssembly:
 
         game = _make_game(user_color="white")
         positions = [_make_pos(ply=0, eval_cp=0, move_san="e4")]
+
+        eval_series, _, _ = _build_eval_series(game, positions)
+
+        assert eval_series[0].best_move_tier is None
+        assert eval_series[0].maia_prob is None
+
+
+# ---------------------------------------------------------------------------
+# TestBestGoodTiers -- Quick 260717-rbn (Task 1)
+# ---------------------------------------------------------------------------
+
+
+class TestBestGoodTiers:
+    """_build_eval_series 'best'/'good' tier computation -- precedence
+
+    gem > great > best > good > null, out-of-book gate, and identity/drop
+    classification, pure in-memory (mirrors TestBestMoveTierAssembly above).
+    """
+
+    def test_identity_match_neither_row_yields_best(self) -> None:
+        """Out-of-book ply, played == stored best_move (identity), and the
+        stored candidate row classifies 'neither' (maia_prob too high) ->
+        best_move_tier='best', maia_prob stays None."""
+        from app.services.library_service import _build_eval_series
+
+        game = _make_game(user_color="white")
+        positions = [_make_pos(ply=0, eval_cp=0, move_san="e4", best_move="e2e4")]
+        # Wide margin (best_cp=169 vs second_cp=0) but maia_prob=0.60 exceeds
+        # GREAT_MAIA_MAX_PROB -> classify_best_move returns "neither" (mirrors
+        # test_eval_series_neither_row_leaves_maia_prob_null's fixture).
+        best_moves = {0: _make_best_move(maia_prob=0.60)}
+
+        eval_series, _, _ = _build_eval_series(game, positions, best_moves_by_ply=best_moves)
+
+        assert eval_series[0].best_move_tier == "best"
+        assert eval_series[0].maia_prob is None
+
+    def test_sub_inaccuracy_drop_played_not_best_yields_good(self) -> None:
+        """Out-of-book ply, played != best_move, mover-POV ES drop below
+        INACCURACY_DROP -> best_move_tier='good', maia_prob stays None."""
+        from app.services.library_service import _build_eval_series
+
+        game = _make_game(user_color="white")
+        positions = [
+            _make_pos(ply=0, eval_cp=0, move_san=None),  # baseline, no move played
+            # eval unchanged before/after -> drop=0 (< INACCURACY_DROP); best_move
+            # left unset so identity never triggers regardless of played move.
+            _make_pos(ply=1, eval_cp=0, move_san="e4"),
+        ]
+
+        eval_series, _, _ = _build_eval_series(game, positions)
+
+        assert eval_series[1].best_move_tier == "good"
+        assert eval_series[1].maia_prob is None
+
+    def test_negative_drop_played_not_best_yields_good(self) -> None:
+        """A negative drop (played move evaluates BETTER than the pre-move eval)
+        with played != best_move still classifies 'good' (drop < INACCURACY_DROP
+        trivially satisfied for any improvement)."""
+        from app.services.library_service import _build_eval_series
+
+        game = _make_game(user_color="white")
+        positions = [
+            _make_pos(ply=0, eval_cp=100, move_san=None),  # white favored pre-move
+            # cp swings heavily toward black -> an improvement for whichever
+            # mover _run_all_moves_pass attributes this transition to.
+            _make_pos(ply=1, eval_cp=-100, move_san="e4"),
+        ]
+
+        eval_series, _, _ = _build_eval_series(game, positions)
+
+        assert eval_series[1].best_move_tier == "good"
+        assert eval_series[1].maia_prob is None
+
+    def test_gem_tier_never_downgraded_to_best_or_good(self) -> None:
+        """A ply classify_best_move grades 'gem' keeps 'gem' (never downgraded to
+        best/good) and still carries maia_prob -- precedence gem > best/good."""
+        from app.services.library_service import _build_eval_series
+
+        game = _make_game(user_color="white")
+        # Identity ALSO matches (played == best_move) to prove the gem branch
+        # wins over the best/good fallback even when both would otherwise apply.
+        positions = [_make_pos(ply=0, eval_cp=0, move_san="e4", best_move="e2e4")]
+        best_moves = {0: _make_best_move(maia_prob=0.10)}  # -> gem
+
+        eval_series, _, _ = _build_eval_series(game, positions, best_moves_by_ply=best_moves)
+
+        assert eval_series[0].best_move_tier == "gem"
+        assert eval_series[0].maia_prob == 0.10
+
+    def test_book_ply_never_gets_best_or_good(self) -> None:
+        """A book ply (ply < opening_ply_count) with played == best_move gets
+        best_move_tier=None -- no best/good in book, even with an identity match."""
+        from app.services.library_service import _build_eval_series
+
+        game = _make_game(user_color="white")
+        positions = [_make_pos(ply=0, eval_cp=0, move_san="e4", best_move="e2e4")]
+
+        eval_series, _, _ = _build_eval_series(
+            game,
+            positions,
+            opening_ply_count=1,  # ply 0 < 1 -> still in book
+        )
+
+        assert eval_series[0].best_move_tier is None
+        assert eval_series[0].maia_prob is None
+
+    def test_flaw_drop_played_not_best_falls_through_to_null(self) -> None:
+        """A ply whose drop >= INACCURACY_DROP (an inaccuracy/mistake/blunder) and
+        played != best_move gets best_move_tier=None -- falls through to the flaw
+        path rather than being labeled best/good."""
+        from app.services.library_service import _build_eval_series
+
+        game = _make_game(user_color="white")
+        positions = [
+            # Large heavily-black-favored eval collapsing toward equal -- a real
+            # blunder-sized drop for whichever mover this transition is attributed to.
+            _make_pos(ply=0, eval_cp=-500, move_san=None),
+            _make_pos(ply=1, eval_cp=0, move_san="e4", best_move="d2d4"),  # played != best_move
+        ]
+
+        eval_series, _, _ = _build_eval_series(game, positions)
+
+        assert eval_series[1].best_move_tier is None
+        assert eval_series[1].maia_prob is None
+
+    def test_missing_eval_and_absent_best_move_yields_null(self) -> None:
+        """A ply with a missing eval (no all_moves entry) and best_move absent
+        gets best_move_tier=None."""
+        from app.services.library_service import _build_eval_series
+
+        game = _make_game(user_color="white")
+        positions = [
+            _make_pos(ply=0, eval_cp=0, move_san=None),
+            _make_pos(ply=1, eval_cp=None, move_san="e4"),  # missing eval -> no all_moves entry
+        ]
+
+        eval_series, _, _ = _build_eval_series(game, positions)
+
+        assert eval_series[1].best_move_tier is None
+        assert eval_series[1].maia_prob is None
+
+    def test_terminal_position_never_gets_a_tier(self) -> None:
+        """The terminal position (move_san=None) never gets a best/good tier."""
+        from app.services.library_service import _build_eval_series
+
+        game = _make_game(user_color="white")
+        positions = [_make_pos(ply=0, eval_cp=0, move_san=None)]
 
         eval_series, _, _ = _build_eval_series(game, positions)
 
