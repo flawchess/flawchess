@@ -716,8 +716,34 @@ export default function Analysis() {
     // filter here: every point with a non-null best_move_tier is kept (Pitfall 3 — a
     // null tier is a real "not gem/great" verdict, never "unknown").
     for (const point of series) {
-      if (point.best_move_tier != null && point.maia_prob != null) {
+      // Quick 260717-rbn: narrow explicitly to 'gem'/'great' (not just
+      // maia_prob != null) — best_move_tier's type now also includes
+      // 'best'/'good', which maia_prob is never populated for (Pitfall 5),
+      // but TS can't infer that runtime invariant from the maia_prob check alone.
+      if (
+        (point.best_move_tier === 'gem' || point.best_move_tier === 'great') &&
+        point.maia_prob != null
+      ) {
         map.set(point.ply, { tier: point.best_move_tier, maiaProb: point.maia_prob });
+      }
+    }
+    return map;
+  }, [gameData?.eval_series]);
+
+  // Quick 260717-rbn: per-ply STORED best/good tier, straight from
+  // EvalPoint.best_move_tier — mirrors storedTierByPly's shape/no-user-filter
+  // convention above (the board intentionally shows BOTH players' badges, a
+  // study surface, not a "your stats" surface) but keeps only 'best'/'good'
+  // (never 'gem'/'great', which storedTierByPly already owns). maia_prob is
+  // always null for best/good (Pitfall 5) so there is no maia_prob filter
+  // here, unlike storedTierByPly.
+  const storedBestGoodByPly = useMemo<Map<number, 'best' | 'good'>>(() => {
+    const map = new Map<number, 'best' | 'good'>();
+    const series = gameData?.eval_series;
+    if (series == null) return map;
+    for (const point of series) {
+      if (point.best_move_tier === 'best' || point.best_move_tier === 'good') {
+        map.set(point.ply, point.best_move_tier);
       }
     }
     return map;
@@ -2603,10 +2629,29 @@ export default function Analysis() {
           ]
         : base;
 
+    // Quick 260717-rbn: best/good — the same defensive precedence the gem/
+    // great block above uses (yields to any existing severity/gem/great
+    // marker on the square), appended only for the current MAINLINE ply.
+    const bestGoodTier =
+      currentMainlinePly >= 0 ? storedBestGoodByPly.get(currentMainlinePly) : undefined;
+    const withBestGood =
+      bestGoodTier != null &&
+      lastMove != null &&
+      !withMarker.some(
+        (m) => m.square === lastMove.to && (m.severity != null || m.gem === true || m.great === true),
+      )
+        ? [
+            ...withMarker,
+            bestGoodTier === 'best'
+              ? { square: lastMove.to, best: true }
+              : { square: lastMove.to, good: true },
+          ]
+        : withMarker;
+
     // Phase 172 (SEED-106 D-08): book marker — LOWEST precedence in
-    // severity > gem/great > book. Appended only when the current node is a
-    // MAINLINE ply inside the book AND the square carries neither an
-    // existing severity NOR gem/great marker.
+    // severity > gem/great > best/good > book. Appended only when the current
+    // node is a MAINLINE ply inside the book AND the square carries none of
+    // severity/gem/great/best/good.
     const isBookPly =
       currentMainlinePly >= 0 &&
       gameData?.opening_ply_count != null &&
@@ -2614,13 +2659,19 @@ export default function Analysis() {
     if (
       isBookPly &&
       lastMove != null &&
-      !withMarker.some(
-        (m) => m.square === lastMove.to && (m.severity != null || m.gem === true || m.great === true),
+      !withBestGood.some(
+        (m) =>
+          m.square === lastMove.to &&
+          (m.severity != null ||
+            m.gem === true ||
+            m.great === true ||
+            m.best === true ||
+            m.good === true),
       )
     ) {
-      return [...withMarker, { square: lastMove.to, book: true }];
+      return [...withBestGood, { square: lastMove.to, book: true }];
     }
-    return withMarker;
+    return withBestGood;
   }, [
     gameOverlay.squareMarkers,
     liveFlaw.squareMarkers,
@@ -2629,6 +2680,7 @@ export default function Analysis() {
     currentMainlinePly,
     lastMove,
     gameData?.opening_ply_count,
+    storedBestGoodByPly,
   ]);
 
   // Gem/great last-move square highlight: color the scrubbed move's from/to squares in

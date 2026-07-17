@@ -48,10 +48,19 @@ class EvalPoint(BaseModel):
     # from the stored game_best_moves row. Null when no candidate row exists for
     # this ply OR the row classifies "neither" — the board never does its own
     # cp/margin math for the stored path (D-03).
-    best_move_tier: Literal["gem", "great"] | None = None
+    # Quick 260717-rbn: widened with two more tiers, both computed live in
+    # _build_eval_series (no stored row involved). 'best' = the played move
+    # identity-equals the stored game_positions.best_move (out of book, not
+    # gem/great). 'good' = the mover-POV expected-score drop is below
+    # INACCURACY_DROP (out of book, not best/gem/great) — the same "clean move"
+    # convention _run_all_moves_pass already uses for the flaw markers.
+    # Precedence (highest wins): gem > great > best > good > null. maia_prob
+    # stays None for best/good — it is a gem/great-only rarity stat.
+    best_move_tier: Literal["gem", "great", "best", "good"] | None = None
     # Maia policy probability for the popover "X% of rating-peers" stat. Populated
-    # ONLY alongside a non-null best_move_tier — never set from a "neither" row
-    # (Pitfall 5, D-03a).
+    # ONLY alongside a non-null gem/great best_move_tier — never set from a
+    # "neither" row (Pitfall 5, D-03a) nor for best/good (they are not a Maia
+    # rarity stat).
     maia_prob: float | None = None
 
 

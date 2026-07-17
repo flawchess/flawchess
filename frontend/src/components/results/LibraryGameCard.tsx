@@ -449,19 +449,31 @@ export function LibraryGameCard({
     return { gem, great };
   }, [game.eval_series, userColor]);
 
-  // Gem/great tier per ply, user-scoped — drives the scrubbed-miniboard corner badge
-  // (below). Same source (eval_series.best_move_tier) and same position-scoped →
-  // user-scoped filtering as bestMovePlies: best_move_tier stores BOTH players' best
-  // moves, so isUserPly keeps only the user's own gems/greats. Keyed by ply for the
-  // O(1) lookup the squareMarkers memo needs.
+  // Gem/great/best/good tier per ply — drives the scrubbed-miniboard corner badge
+  // (below). Sourced from eval_series.best_move_tier, which is POSITION-scoped
+  // (both players' tiers stored). Deliberately NOT isUserPly-filtered: the
+  // miniboard corner badge mirrors the flaw corner dots (flawByPly above), which
+  // show BOTH players' blunders/mistakes/inaccuracies — so scrubbing onto an
+  // opponent's gem/great/best/good shows its icon too. The user-only scoping stays
+  // on the gem/great COUNT badges + cycling (bestMovePlies above), matching the
+  // user-scoped severity count badges. Keyed by ply for the O(1) lookup the
+  // squareMarkers memo needs.
+  // Quick 260717-rbn widened this to carry 'best'/'good'; the both-players change
+  // (opponent tiers on the miniboard) followed the flaw-dot precedent.
   const bestTierByPly = useMemo(() => {
-    const m = new Map<number, 'gem' | 'great'>();
+    const m = new Map<number, 'gem' | 'great' | 'best' | 'good'>();
     for (const pt of game.eval_series ?? []) {
-      if (userColor != null && !isUserPly(pt.ply, userColor)) continue;
-      if (pt.best_move_tier === 'gem' || pt.best_move_tier === 'great') m.set(pt.ply, pt.best_move_tier);
+      if (
+        pt.best_move_tier === 'gem' ||
+        pt.best_move_tier === 'great' ||
+        pt.best_move_tier === 'best' ||
+        pt.best_move_tier === 'good'
+      ) {
+        m.set(pt.ply, pt.best_move_tier);
+      }
     }
     return m;
-  }, [game.eval_series, userColor]);
+  }, [game.eval_series]);
 
   // Transient hover highlight: hovering a tag chip or a severity badge in the flaw
   // column emphasizes the matching markers on this card's eval chart. Inaccuracy is
@@ -717,6 +729,10 @@ export function LibraryGameCard({
     const tier = activePly != null ? bestTierByPly.get(activePly) : undefined;
     if (tier === 'gem') return [{ square: hoverEntry.to, gem: true }];
     if (tier === 'great') return [{ square: hoverEntry.to, great: true }];
+    // Quick 260717-rbn: best/good corner badges, same "no flaw here" gate as
+    // gem/great above.
+    if (tier === 'best') return [{ square: hoverEntry.to, best: true }];
+    if (tier === 'good') return [{ square: hoverEntry.to, good: true }];
     return undefined;
   }, [hoverEntry, hoverSeverity, activePly, bestTierByPly]);
 

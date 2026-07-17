@@ -2080,10 +2080,33 @@ class TestEvalPointBestMoveTierRoundTrip:
         assert point0["best_move_tier"] == "gem", f"expected gem tier, got {point0}"
         assert point0["maia_prob"] == pytest.approx(0.10, abs=1e-6)
 
-        # Every OTHER ply has no stored row -> best_move_tier/maia_prob both null.
+        # Quick 260717-rbn: every other ply has no stored gem/great row, but the
+        # live 'best'/'good' classifier now applies. _make_analyzed_positions'
+        # fake move_san values ("m0", "m1", ...) are not legal SAN, so the
+        # identity-replay in _best_move_identity_plies fails immediately on ply 0
+        # and 'best' never fires here — only 'good' (sub-INACCURACY_DROP mover-POV
+        # drop) or None (flaw plies / the terminal position) are possible.
+        # Ply 1 = seeded inaccuracy-band drop, ply 2 = seeded blunder (both fall
+        # through to None); plies 3-8 are clean sub-threshold transitions ('good');
+        # ply 9 is the terminal position (move_san=None -> None).
+        expected_tiers: dict[int, str | None] = {
+            1: None,
+            2: None,
+            3: "good",
+            4: "good",
+            5: "good",
+            6: "good",
+            7: "good",
+            8: "good",
+            9: None,
+        }
         for point in eval_series:
             if point["ply"] != 0:
-                assert point["best_move_tier"] is None
+                assert point["best_move_tier"] == expected_tiers[point["ply"]], (
+                    f"ply {point['ply']}: {point}"
+                )
+                # maia_prob is a gem/great-only rarity stat (Pitfall 5) — never
+                # populated for good/None.
                 assert point["maia_prob"] is None
 
         # No internal Zobrist hash fields leak anywhere in the card (CLAUDE.md V5).

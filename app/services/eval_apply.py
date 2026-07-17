@@ -2253,9 +2253,23 @@ async def _apply_bestmove_submit(
         game_id, targets, engine_result_map, second_best_map, source="tier4b-backfill"
     )
 
+    # BUG FIX (177-REVIEW CR-01): this wire endpoint bypasses
+    # apply_completion_decision entirely (it has its own write session), so it
+    # never inherited the Phase 176 D-01 maia_available guardrail the way
+    # _tier4b_minimal_drain_tick (app/services/eval_drain.py) did in Plan 03.
+    # best_moves_completed_at must be stamped ONLY when a Maia session was
+    # actually loaded — never inferred from best_move_rows being empty/non-empty,
+    # since _build_best_move_candidates returns [] for BOTH "Maia ran, zero
+    # candidates" and "Maia absent" (row count alone can't distinguish them). A
+    # Maia-absent backend must never stamp, or the game is permanently excluded
+    # from the tier-4b lottery (best_moves_completed_at IS NULL) with zero rows
+    # and no resweep/backfill path.
+    maia_available = maia_engine.is_maia_available()
+
     async with async_session_maker() as write_session:
         await _upsert_best_move_rows(write_session, best_move_rows)
-        await _mark_best_moves_completed(write_session, game_id)
+        if maia_available:
+            await _mark_best_moves_completed(write_session, game_id)
         await upsert_worker_heartbeat(
             write_session,
             worker_id=worker_id,

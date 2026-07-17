@@ -11,6 +11,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Added
 
 - Backend: gem/great candidate detection now runs on the remote worker fleet — workers compute the runner-up (MultiPV-2) search themselves and submit it with their results, freeing the server engine pool for fresh analysis. A dedicated lease/submit endpoint pair also lets the fleet backfill gem/great data for already-analyzed games, and the server drain takes a minimal candidate-only path for those backfill games (Phase 177).
+- Best/Good move tiers now show on the analysis board and the Library game card miniboard, with green star (Best) and thumbs-up (Good) corner glyphs for both players (Quick 260717-rbn).
 
 ### Changed
 

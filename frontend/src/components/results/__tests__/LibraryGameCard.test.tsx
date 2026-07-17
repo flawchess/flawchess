@@ -80,7 +80,30 @@ vi.mock('@/components/library/EvalChart', () => ({
   ),
 }));
 vi.mock('@/components/board/LazyMiniBoard', () => ({
-  LazyMiniBoard: () => <div data-testid="stub-mini-board" />,
+  // Serialize the scrubbed-ply squareMarkers so corner-badge tier tests can assert
+  // which glyph (gem/great/best/good/severity) the miniboard would render.
+  LazyMiniBoard: ({
+    squareMarkers,
+  }: {
+    squareMarkers?: {
+      square: string;
+      severity?: string;
+      gem?: boolean;
+      great?: boolean;
+      best?: boolean;
+      good?: boolean;
+    }[];
+  }) => {
+    const tierOf = (m: NonNullable<typeof squareMarkers>[number]): string =>
+      m.gem ? 'gem' : m.great ? 'great' : m.best ? 'best' : m.good ? 'good' : (m.severity ?? '');
+    return (
+      <div data-testid="stub-mini-board">
+        {(squareMarkers ?? []).map((m) => (
+          <span key={m.square} data-testid={`mini-board-marker-${tierOf(m)}`} />
+        ))}
+      </div>
+    );
+  },
 }));
 
 import type { ReactElement } from 'react';
@@ -458,5 +481,50 @@ describe('LibraryGameCard Gem/Great badges (Phase 175 Plan 06)', () => {
     fireEvent.click(greatBadge);
     // A new ref restarts at position 0 — the user's only great ply (2), never ply 3.
     expect(screen.getAllByTestId('stub-eval-chart-command')[0]!.textContent).toBe('2:2');
+  });
+});
+
+describe('LibraryGameCard miniboard corner tier badge (both players)', () => {
+  // The scrubbed-miniboard corner badge shows BOTH players' tiers, mirroring the
+  // flaw corner dots (opponent blunders/mistakes/inaccuracies already render). This
+  // differs from the gem/great COUNT badges above, which stay user-scoped.
+  // 5 replayable moves → perPly spans plies 0-4. user_color 'white' → even plies are
+  // the user, odd are the opponent. Seed: user gem@0, OPPONENT great@1, user best@2,
+  // OPPONENT good@3.
+  function bothPlayersTierGame(): GameFlawCard {
+    return {
+      ...makeGame([]),
+      moves: ['e4', 'e5', 'Nf3', 'Nc6', 'Bb5'],
+      eval_series: [
+        { ply: 0, es: 0.5, eval_cp: 0, eval_mate: null, best_move_tier: 'gem', maia_prob: 0.1 },
+        { ply: 1, es: 0.52, eval_cp: 10, eval_mate: null, best_move_tier: 'great', maia_prob: 0.3 },
+        { ply: 2, es: 0.54, eval_cp: 15, eval_mate: null, best_move_tier: 'best', maia_prob: null },
+        { ply: 3, es: 0.56, eval_cp: 20, eval_mate: null, best_move_tier: 'good', maia_prob: null },
+        { ply: 4, es: 0.58, eval_cp: 25, eval_mate: null, best_move_tier: null, maia_prob: null },
+      ],
+    };
+  }
+
+  function scrubTo(ply: number): void {
+    scrubCtl.ply = ply;
+    fireEvent.click(screen.getAllByTestId('stub-eval-chart')[0]!);
+  }
+
+  it("renders the OPPONENT's great corner badge when scrubbed to an opponent (odd) ply", () => {
+    renderCard(<LibraryGameCard game={bothPlayersTierGame()} />);
+    scrubTo(1);
+    expect(screen.getAllByTestId('mini-board-marker-great').length).toBeGreaterThan(0);
+  });
+
+  it("renders the OPPONENT's good corner badge when scrubbed to an opponent (odd) ply", () => {
+    renderCard(<LibraryGameCard game={bothPlayersTierGame()} />);
+    scrubTo(3);
+    expect(screen.getAllByTestId('mini-board-marker-good').length).toBeGreaterThan(0);
+  });
+
+  it("still renders the USER's own best corner badge (even ply)", () => {
+    renderCard(<LibraryGameCard game={bothPlayersTierGame()} />);
+    scrubTo(2);
+    expect(screen.getAllByTestId('mini-board-marker-best').length).toBeGreaterThan(0);
   });
 });

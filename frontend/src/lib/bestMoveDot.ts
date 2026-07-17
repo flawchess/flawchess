@@ -14,7 +14,7 @@
 
 import { isUserPly } from '@/lib/plyOwnership';
 import { GREAT_ACCENT, MAIA_ACCENT } from '@/lib/theme';
-import type { EvalPoint } from '@/types/library';
+import { isRareMoveTier, type EvalPoint } from '@/types/library';
 
 /**
  * Gem/great dot radius — same visual weight as EvalChart.tsx's own
@@ -43,9 +43,12 @@ export interface BestMoveDotSpec {
 }
 
 /**
- * Dot spec for one EvalPoint's gem/great tier. Returns null when the ply has no
- * gem/great tier or no eval (es == null) — mirrors EvalChart's flaw-dot renderer's
- * invisible <g/> branch. An empty/null highlight set is a no-op (never dims
+ * Dot spec for one EvalPoint's gem/great tier. Returns null when the ply is not
+ * a gem/great tier (best/good, "neither", or no tier) or has no eval (es == null)
+ * — mirrors EvalChart's flaw-dot renderer's invisible <g/> branch. The
+ * isRareMoveTier gate is load-bearing: best_move_tier also carries the
+ * board/card-only best/good tiers (Quick 260717-rbn), which must NOT paint an
+ * eval-chart dot. An empty/null highlight set is a no-op (never dims
  * everything), matching the flaw layer's convention.
  *
  * Bug fix (Phase 175 Plan 06): `best_move_tier` is POSITION-scoped — the backend
@@ -61,7 +64,7 @@ export function bestMoveDotSpec(
   highlightedPlies?: ReadonlySet<number> | null,
   userColor?: 'white' | 'black',
 ): BestMoveDotSpec | null {
-  if (point.best_move_tier == null || point.es == null) return null;
+  if (!isRareMoveTier(point.best_move_tier) || point.es == null) return null;
   if (userColor != null && !isUserPly(point.ply, userColor)) return null;
   const highlightActive = highlightedPlies != null && highlightedPlies.size > 0;
   const matched = highlightActive && highlightedPlies!.has(point.ply);
