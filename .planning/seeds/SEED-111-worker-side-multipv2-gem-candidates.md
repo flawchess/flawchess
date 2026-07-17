@@ -64,6 +64,14 @@ and each future worker added actually adds its full capacity.
   cap and fleet scaling stays sublinear. Strictly worse than shifting the work.
 - **Blanket MultiPV-2 full pass on workers**: simplest protocol but breaks the Phase 146 D-03
   eval-parity invariant and costs ~2× nodes on every ply instead of ~25% on a subset.
+- **Worker-side Maia inference** (discussed 2026-07-17, rejected): Maia is ~2% of a core at
+  current rates (all of uvicorn incl. Maia + PGN parse + classify = ~0.5 core) so there is no
+  throughput win, while the costs are real — maia_prob decides gem/great tiers and must be
+  bit-consistent across the fleet (server enforces this via model SHA-256 check at load; a
+  stale model/onnxruntime on one worker would silently skew stored probabilities), workers
+  would need onnxruntime+numpy deps, and the lease would have to carry rating/platform/TC
+  metadata for ELO pinning. If uvicorn ever saturates, escalate server-locally instead:
+  ONNX batching, thread offload (run() releases the GIL), or a same-box sidecar.
 
 ## Open questions for the phase
 
