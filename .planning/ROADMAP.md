@@ -671,7 +671,7 @@ Plans:
 **Goal:** The server does zero Stockfish work when applying an atomic game submit. Workers compute the gem-candidate runner-up (MultiPV-2) data themselves via a targeted re-search after their MultiPV-1 full pass (only plies where played == worker best; the full pass stays MultiPV-1, preserving the Phase 146 D-03 eval-parity invariant) and include it in the submit payload; the server's apply path becomes pure Maia inference + classification + DB writes. Trust boundary unchanged: the server still applies the played==best check, out-of-book gate, and inaccuracy gate from the submitted numbers. `WORKER_SCHEMA_VERSION` bumps to 2 with gating at the atomic LEASE (v1 workers get 204 no-work on that lane); the server-side fallback stays as an instrumented rare safety net (Sentry tag/metric so silently re-growing server Stockfish load is visible). Expected impact: fleet engines from ~68% to ~95%+ busy and near-linear backfill scaling with added workers (baseline 2026-07-17: ~550 games/h stamped, server pool 8 engines ~92% pinned, local worker engines ~32% idle per cycle).
 **Requirements**: PROTO-01, PROTO-02, PROTO-03, BACK-02, BACK-03, DRAIN-01, OBS-01, MEAS-01 (seed-driven, adopted from 177-RESEARCH.md; no upstream REQUIREMENTS.md entries)
 **Depends on:** Phase 176 (tier-4b backfill lottery is the ~416k-game population this unblocks)
-**Plans:** 4/5 plans executed
+**Plans:** 5/5 plans executed
 
 Plans:
 
@@ -690,6 +690,6 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3; post-deploy)*
 
-- [ ] 177-05-PLAN.md — HUMAN-UAT post-deploy before/after measurement vs SEED-111 baseline (MEAS-01) [wave 4]
+- [x] 177-05-PLAN.md — HUMAN-UAT post-deploy before/after measurement vs SEED-111 baseline (MEAS-01) [wave 4]
 
 **Design note:** Plan 02 deliberately diverges from CONTEXT.md D-01's *literal* "extend the idle fall-through" wording (SEED-072 makes it starve blob backfill — see the `<design_divergence_flag>` in 177-02-PLAN.md) and instead honors D-02's "mirrors the flaw-blob-lease/submit pair pattern" with a dedicated endpoint pair as worker rung-5, preserving D-01's intent (lowest-priority, fresh-work-first, single-flag gate).
