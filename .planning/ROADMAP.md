@@ -48,7 +48,7 @@
 **Dependency waves:** A = {174} (keystone — backend inference + storage; everything else depends on it) · B = {175, 176} (both depend only on Phase 174, independent of each other — frontend gem/great consumption and corpus backfill are parallelizable).
 
 - [x] **Phase 174: Backend Maia Inference + Best-Move Storage (spike-gated)** - Backend stores per-ply Maia probability + runner-up eval candidate rows for out-of-book best moves during eval-apply, via a parity-checked Python port of the client's board→tensor encoding (completed 2026-07-16)
-- [ ] **Phase 175: Board & Filter — Gem/Great Consumption** - The analysis board and Library games filter read gem/great data from stored rows, retiring the client-side sweep
+- [x] **Phase 175: Board & Filter — Gem/Great Consumption** - The analysis board and Library games filter read gem/great data from stored rows, retiring the client-side sweep
 - [ ] **Phase 176: Backfill** - The existing analyzed corpus gains best-move rows opportunistically via the tier-4 lottery pattern
 
 ### Phase 174: Backend Maia Inference + Best-Move Storage (spike-gated)

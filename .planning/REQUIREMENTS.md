@@ -21,12 +21,12 @@ Requirements for this milestone. Each maps to a roadmap phase.
 
 ### Analysis Board (BOARD)
 
-- [ ] **BOARD-01**: The analysis board shows gem/great markers from stored backend data for analyzed games (`EvalPoint` gains gem/great fields) — markers appear regardless of device or live-engine load.
-- [ ] **BOARD-02**: `useGemSweep.ts` is retired (or demoted to a free-play fallback for positions with no stored analysis); SEED-107 closes as superseded.
+- [x] **BOARD-01**: The analysis board shows gem/great markers from stored backend data for analyzed games (`EvalPoint` gains gem/great fields) — markers appear regardless of device or live-engine load.
+- [x] **BOARD-02**: `useGemSweep.ts` is retired (or demoted to a free-play fallback for positions with no stored analysis); SEED-107 closes as superseded.
 
 ### Game Filter (FILT)
 
-- [ ] **FILT-01**: User can filter Library games by "has gem" / "has great" moves via the existing flaw/tactic game-filter machinery.
+- [x] **FILT-01**: User can filter Library games by "has gem" / "has great" moves via the existing flaw/tactic game-filter machinery.
 
 ### Backfill (BACK)
 
@@ -64,9 +64,9 @@ Which phases cover which requirements. Filled during roadmap creation.
 | GEMS-05 | Phase 174 | Complete |
 | GEMS-06 | Phase 174 | Complete |
 | GEMS-07 | Phase 174 | Complete |
-| BOARD-01 | Phase 175 | Pending |
-| BOARD-02 | Phase 175 | Pending |
-| FILT-01 | Phase 175 | Pending |
+| BOARD-01 | Phase 175 | Done |
+| BOARD-02 | Phase 175 | Done |
+| FILT-01 | Phase 175 | Done |
 | BACK-01 | Phase 176 | Pending |
 
 ---
