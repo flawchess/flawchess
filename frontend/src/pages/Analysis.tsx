@@ -97,6 +97,8 @@ import {
   TAC_MISSED,
   TAC_ALLOWED,
   MOVE_HIGHLIGHT_GOOD,
+  MOVE_HIGHLIGHT_GEM,
+  MOVE_HIGHLIGHT_GREAT,
   STOCKFISH_ACCENT,
   MAIA_ACCENT,
   FLAWCHESS_ENGINE_ACCENT,
@@ -2629,6 +2631,19 @@ export default function Analysis() {
     gameData?.opening_ply_count,
   ]);
 
+  // Gem/great last-move square highlight: color the scrubbed move's from/to squares in
+  // the tier's badge hue (violet gem / blue great "best move") instead of the generic
+  // green. Derived from the already-resolved boardSquareMarkers, so it inherits their
+  // severity > gem/great precedence — a tier marker sits on the square only when no
+  // severity marker does, so this can never override a flaw's red/orange/yellow tint.
+  const lastMoveTierColor = useMemo(() => {
+    if (lastMove == null) return undefined;
+    const marker = boardSquareMarkers.find((m) => m.square === lastMove.to && (m.gem || m.great));
+    if (marker?.gem) return MOVE_HIGHLIGHT_GEM;
+    if (marker?.great) return MOVE_HIGHLIGHT_GREAT;
+    return undefined;
+  }, [boardSquareMarkers, lastMove]);
+
   // The single react-chessboard instance / `analysis-board` focus target. Shared by the
   // desktop stage and the mobile row (only one renders at a time via isMobile), so the
   // board mounts exactly once either way. `heightRef` is supplied on mobile (the row's own
@@ -2645,6 +2660,7 @@ export default function Analysis() {
       // not-yet-graded moves read green instead of the shared yellow fallback. The engine
       // still overrides to red/orange on a blunder/mistake (and yellow on an inaccuracy).
       lastMoveColor={
+        lastMoveTierColor ??
         gameOverlay.lastMoveHighlightColor ??
         liveFlaw.lastMoveHighlightColor ??
         MOVE_HIGHLIGHT_GOOD

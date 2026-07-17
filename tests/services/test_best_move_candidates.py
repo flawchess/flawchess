@@ -255,6 +255,139 @@ def test_classify_boundary_great_max_is_inclusive() -> None:
     assert bmc.classify_best_move(maia_prob=bmc.GREAT_MAIA_MAX_PROB, **_WIDE_MARGIN) == "great"
 
 
+# ─── Group 3b: imported-eval divergence guard (Quick 260717-gmg) ───────────────
+#
+# For lichess-eval games the eval graph (post_move_cp) is lichess's imported %eval
+# while best_cp is our Stockfish. When our best-move ES is optimistic vs lichess's
+# post-move ES by > BEST_MOVE_DIVERGENCE_MAX_ES, the badge is suppressed. All cases
+# below use _WIDE_MARGIN (best +250 / second 0, white) with a gem-level maia_prob,
+# so any result other than "gem" is the guard (or its absence) speaking.
+
+
+def test_guard_suppresses_gem_when_our_eval_optimistic_vs_lichess() -> None:
+    """best +250 (es ~0.715) but lichess post-move eval 0 (es 0.5): 0.215 ES of
+    optimism > 0.10 -> the would-be gem is suppressed to neither."""
+    assert (
+        bmc.classify_best_move(
+            maia_prob=0.15,
+            post_move_cp=0,
+            post_move_mate=None,
+            is_lichess_eval_game=True,
+            **_WIDE_MARGIN,
+        )
+        == "neither"
+    )
+
+
+def test_guard_is_noop_for_engine_games() -> None:
+    """The exact same divergence does NOT suppress when is_lichess_eval_game=False
+    (engine games feed both surfaces from one engine)."""
+    assert (
+        bmc.classify_best_move(
+            maia_prob=0.15,
+            post_move_cp=0,
+            post_move_mate=None,
+            is_lichess_eval_game=False,
+            **_WIDE_MARGIN,
+        )
+        == "gem"
+    )
+
+
+def test_guard_is_noop_when_lichess_eval_agrees() -> None:
+    """When lichess's post-move eval matches our best_cp (both +250), there is no
+    optimism gap -> the gem stands."""
+    assert (
+        bmc.classify_best_move(
+            maia_prob=0.15,
+            post_move_cp=250,
+            post_move_mate=None,
+            is_lichess_eval_game=True,
+            **_WIDE_MARGIN,
+        )
+        == "gem"
+    )
+
+
+def test_guard_is_directional_pessimistic_divergence_kept() -> None:
+    """When OUR eval is pessimistic vs lichess (best +250 but lichess +500), the
+    gap is negative, not optimism -> the guard does not fire."""
+    assert (
+        bmc.classify_best_move(
+            maia_prob=0.15,
+            post_move_cp=500,
+            post_move_mate=None,
+            is_lichess_eval_game=True,
+            **_WIDE_MARGIN,
+        )
+        == "gem"
+    )
+
+
+def test_guard_is_noop_when_post_move_eval_missing() -> None:
+    """A lichess-eval game with no post-move eval for the ply (both None) fails
+    open — the badge is kept rather than dropped on missing data."""
+    assert (
+        bmc.classify_best_move(
+            maia_prob=0.15,
+            post_move_cp=None,
+            post_move_mate=None,
+            is_lichess_eval_game=True,
+            **_WIDE_MARGIN,
+        )
+        == "gem"
+    )
+
+
+def test_guard_suppresses_the_game_640125_great() -> None:
+    """The reported false positive: 55.Qc6+ (ply 108, white). Our best_cp=-82
+    (es ~0.425), runner-up -217, maia_prob 0.257 -> 'great' by C1/C2, but lichess's
+    preserved post-move eval -246 (es ~0.288) is 0.137 ES worse -> suppressed."""
+    great_before_guard = bmc.classify_best_move(
+        maia_prob=0.257,
+        best_cp=-82,
+        best_mate=None,
+        second_cp=-217,
+        second_mate=None,
+        mover_color="white",
+    )
+    assert great_before_guard == "great"
+
+    assert (
+        bmc.classify_best_move(
+            maia_prob=0.257,
+            best_cp=-82,
+            best_mate=None,
+            second_cp=-217,
+            second_mate=None,
+            mover_color="white",
+            post_move_cp=-246,
+            post_move_mate=None,
+            is_lichess_eval_game=True,
+        )
+        == "neither"
+    )
+
+
+def test_guard_respects_mover_pov_for_black() -> None:
+    """Sign convention: a black mover's optimism is measured in mover POV. best
+    -250 (black es ~0.715) vs lichess post-move 0 (black es 0.5) -> guard fires."""
+    assert (
+        bmc.classify_best_move(
+            maia_prob=0.15,
+            best_cp=-250,
+            best_mate=None,
+            second_cp=0,
+            second_mate=None,
+            mover_color="black",
+            post_move_cp=0,
+            post_move_mate=None,
+            is_lichess_eval_game=True,
+        )
+        == "neither"
+    )
+
+
 # ─── Group 4: constants-only reclassification (GEMS-07 zero-re-analysis) ───────
 
 
@@ -440,5 +573,74 @@ async def test_tier_sql_agrees_with_classify_best_move(
 
     assert actual == expected_tier, (
         f"SQL twin disagreed with classify_best_move for {params}: "
+        f"sql={actual!r} python={expected!r}"
+    )
+
+
+# ─── Group 5b: divergence-guard agreement (SQL twin vs Python, Quick 260717-gmg) ─
+#
+# Each row is (id, classify-kwargs, post_move_cp, is_lichess) covering: guard fires
+# (optimistic + lichess), guard off (engine game), guard off (evals agree), guard
+# off (pessimistic), and the reported 640125 shape.
+_GUARD_FIXTURE_MATRIX: list[tuple[str, _ClassifyKwargs, int | None, bool]] = [
+    ("fires_optimistic_lichess", dict(maia_prob=0.15, **_WIDE_MARGIN), 0, True),
+    ("noop_engine_game", dict(maia_prob=0.15, **_WIDE_MARGIN), 0, False),
+    ("noop_evals_agree", dict(maia_prob=0.15, **_WIDE_MARGIN), 250, True),
+    ("noop_pessimistic", dict(maia_prob=0.15, **_WIDE_MARGIN), 500, True),
+    (
+        "game_640125_qc6",
+        dict(
+            maia_prob=0.257,
+            best_cp=-82,
+            best_mate=None,
+            second_cp=-217,
+            second_mate=None,
+            mover_color="white",
+        ),
+        -246,
+        True,
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "params,post_move_cp,is_lichess",
+    [(p, cp, lic) for _, p, cp, lic in _GUARD_FIXTURE_MATRIX],
+    ids=[i for i, _, _, _ in _GUARD_FIXTURE_MATRIX],
+)
+@pytest.mark.asyncio
+async def test_tier_sql_guard_agrees_with_classify_best_move(
+    db_session: AsyncSession,
+    params: _ClassifyKwargs,
+    post_move_cp: int | None,
+    is_lichess: bool,
+) -> None:
+    """The SQL twin's imported-eval divergence guard agrees with the Python guard.
+    Expected is derived from classify_best_move itself, so board (Python) and
+    Library filter (SQL) cannot drift on the guard (D-03b)."""
+    expected = bmc.classify_best_move(
+        post_move_cp=post_move_cp,
+        post_move_mate=None,
+        is_lichess_eval_game=is_lichess,
+        **params,
+    )
+    expected_tier = None if expected == "neither" else expected
+
+    expr = bmc.best_move_tier_sql(
+        literal(params["maia_prob"], type_=Float),
+        literal(params["best_cp"], type_=Integer),
+        literal(params["best_mate"], type_=Integer),
+        literal(params["second_cp"], type_=Integer),
+        literal(params["second_mate"], type_=Integer),
+        literal(params["mover_color"], type_=String),
+        literal(post_move_cp, type_=Integer),
+        literal(None, type_=Integer),
+        literal(is_lichess),
+    )
+    actual = (await db_session.execute(select(expr))).scalar_one()
+
+    assert actual == expected_tier, (
+        f"SQL guard disagreed with classify_best_move for {params} "
+        f"post_move_cp={post_move_cp} is_lichess={is_lichess}: "
         f"sql={actual!r} python={expected!r}"
     )

@@ -22,6 +22,12 @@ export const MOVE_HIGHLIGHT_SQUARE = 'rgba(255, 255, 0, 0.35)';
 export const MOVE_HIGHLIGHT_BLUNDER = 'oklch(0.58 0.19 25 / 0.35)';
 export const MOVE_HIGHLIGHT_MISTAKE = 'oklch(0.70 0.16 55 / 0.35)';
 export const MOVE_HIGHLIGHT_GOOD = 'oklch(0.55 0.16 145 / 0.35)';
+// Gem/great last-move square highlight — the badge accent hues (MAIA_ACCENT
+// violet / GREAT_ACCENT blue) at the same 0.35 alpha as the severity/good
+// highlights above, so a scrubbed gem/great move's squares read in its own
+// badge color instead of the generic "clean move" green.
+export const MOVE_HIGHLIGHT_GEM = 'oklch(0.58 0.20 290 / 0.35)';
+export const MOVE_HIGHLIGHT_GREAT = 'oklch(0.58 0.18 220 / 0.35)';
 
 // WDL colors — used in all win/draw/loss visualizations
 // Richer base colors; the glass overlay softens them visually when applied

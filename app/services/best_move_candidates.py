@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from sqlalchemy import case, func, literal
+from sqlalchemy import and_, case, func, literal
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.schemas.normalization import Platform, TimeControlBucket
@@ -42,6 +42,18 @@ from app.services.maia_encoding import clamp_to_ladder_bounds
 # defers any per-ELO iso-rarity curve). Named constants — no magic numbers.
 GEM_MAIA_MAX_PROB: float = 0.20
 GREAT_MAIA_MAX_PROB: float = 0.50
+
+# Imported-eval divergence guard (Quick 260717-gmg). For a lichess-eval game the
+# eval graph (game_positions.eval_cp) is lichess's imported %eval, while best_cp
+# is OUR Stockfish (1M nodes) — two different engines. When our best-move eval is
+# more OPTIMISTIC than lichess's authoritative post-move eval (mover POV) by more
+# than this many points of expected score, our shallow search has overrated a
+# sharp line and the "best move" pick is untrustworthy, so we suppress the badge
+# rather than surface a spurious gem/great (e.g. game 640125, 55.Qc6+: our −0.82
+# vs lichess −2.46 = 0.14 ES optimism). Directional (only optimistic divergence
+# is a false positive) and query-time, so retuning reclassifies the corpus with
+# zero re-analysis (GEMS-07). No-op for engine games (one engine feeds both).
+BEST_MOVE_DIVERGENCE_MAX_ES: float = 0.10
 
 MoverColor = Literal["white", "black"]
 BestMoveTier = Literal["gem", "great", "neither"]
@@ -76,6 +88,22 @@ def pinned_elo_for_mover(
     (STORE-03), so it skips normalization. When normalization returns None
     (correspondence has no real-time analogue) or the TC bucket is missing, fall
     back to the raw rating, then clamp.
+
+    Known limitation, deliberately accepted (assessed 2026-07-17 on prod data):
+    the raw-rating fallback for correspondence games is a scale mismatch on
+    chess.com — a Daily rating stays on the chess.com scale (between the user's
+    blitz and rapid ratings, i.e. roughly 300 points below its lichess-blitz
+    equivalent at low-mid ratings), so Maia is under-conditioned and gems are
+    slightly easier to earn in chess.com Daily games. For lichess correspondence
+    the raw rating runs only ~60-150 above the same user's blitz rating, and the
+    mild over-conditioning arguably models the deeper thinking time correctly.
+    Left as-is because correspondence is <1% of games (~190 of ~10k candidate
+    rows at assessment time) and any fix would be go-forward only: the pinned
+    ELO conditions the STORED maia_prob at write time, so unlike a threshold
+    retune it cannot reclassify existing rows. If this ever warrants fixing,
+    route chess.com Daily ratings through convert_chesscom_to_lichess as
+    blitz/rapid-scale HERE, not in normalize_to_lichess_blitz (whose None is
+    correct refuse-rather-than-guess behavior for the rating chips).
     """
     if platform == "flawchess":
         normalized: int | None = raw_rating
@@ -136,6 +164,9 @@ def classify_best_move(
     second_cp: int | None,
     second_mate: int | None,
     mover_color: MoverColor,
+    post_move_cp: int | None = None,
+    post_move_mate: int | None = None,
+    is_lichess_eval_game: bool = False,
 ) -> BestMoveTier:
     """Classify a stored best-move candidate as gem / great / neither, PURELY from
     the stored maia_prob + cp margin and module constants (GEMS-07): no DB, no
@@ -145,6 +176,15 @@ def classify_best_move(
     in mover-POV expected score, else "neither". Given C2, C1 (hard-to-find):
     maia_prob <= GEM_MAIA_MAX_PROB -> "gem"; <= GREAT_MAIA_MAX_PROB -> "great";
     otherwise "neither".
+
+    Imported-eval divergence guard (Quick 260717-gmg): for lichess-eval games
+    (is_lichess_eval_game=True) `post_move_cp`/`post_move_mate` carry lichess's
+    authoritative post-move %eval for this ply. Because a candidate is stored only
+    when played == our Stockfish best, that eval describes the same resulting
+    position as best_cp — so when our best-move expected score exceeds it by more
+    than BEST_MOVE_DIVERGENCE_MAX_ES (mover POV), our search overrated a sharp line
+    and we suppress the badge. No-op for engine games (post-move eval is our own
+    engine, so it never materially diverges) or when the post-move eval is missing.
     """
     best_es = _eval_to_expected_score(best_cp, best_mate, mover_color)
     second_es = _eval_to_expected_score(second_cp, second_mate, mover_color)
@@ -152,6 +192,10 @@ def classify_best_move(
         return "neither"
     if best_es - second_es < MISTAKE_DROP:
         return "neither"
+    if is_lichess_eval_game:
+        post_es = _eval_to_expected_score(post_move_cp, post_move_mate, mover_color)
+        if post_es is not None and best_es - post_es > BEST_MOVE_DIVERGENCE_MAX_ES:
+            return "neither"
     if maia_prob <= GEM_MAIA_MAX_PROB:
         return "gem"
     if maia_prob <= GREAT_MAIA_MAX_PROB:
@@ -202,6 +246,9 @@ def best_move_tier_sql(
     second_cp_col: Any,
     second_mate_col: Any,
     user_color_col: Any,
+    post_move_cp_col: Any = None,
+    post_move_mate_col: Any = None,
+    is_lichess_eval_col: Any = None,
 ) -> ColumnElement[str | None]:
     """SQL twin of classify_best_move — returns 'gem' / 'great' / NULL.
 
@@ -210,18 +257,36 @@ def best_move_tier_sql(
     NULL/'neither' distinction would be meaningless here).
 
     C2 (only-good-move) gate: NULL when either expected score is missing, or
-    when the best-second margin is below MISTAKE_DROP. Given C2, C1
-    (hard-to-find): maia_prob_col <= GEM_MAIA_MAX_PROB -> 'gem'; <=
-    GREAT_MAIA_MAX_PROB -> 'great'; otherwise NULL. Both ceilings are inclusive
+    when the best-second margin is below MISTAKE_DROP. Then the imported-eval
+    divergence guard (Quick 260717-gmg, mirrors classify_best_move): when
+    is_lichess_eval_col is true and the post-move expected score is present and
+    our best-move ES exceeds it by more than BEST_MOVE_DIVERGENCE_MAX_ES, NULL.
+    Given both, C1 (hard-to-find): maia_prob_col <= GEM_MAIA_MAX_PROB -> 'gem';
+    <= GREAT_MAIA_MAX_PROB -> 'great'; otherwise NULL. Both ceilings are inclusive
     (<=), matching classify_best_move exactly.
+
+    The three post-move params default to None: when the caller omits them the
+    guard is inert (no cols to read), so the classifier behaves exactly as before.
     """
     best_es = _es_sql(best_cp_col, best_mate_col, user_color_col)
     second_es = _es_sql(second_cp_col, second_mate_col, user_color_col)
-    return case(
+    branches: list[Any] = [
         (best_es.is_(None), literal(None)),
         (second_es.is_(None), literal(None)),
         ((best_es - second_es) < MISTAKE_DROP, literal(None)),
-        (maia_prob_col <= GEM_MAIA_MAX_PROB, literal("gem")),
-        (maia_prob_col <= GREAT_MAIA_MAX_PROB, literal("great")),
-        else_=literal(None),
-    )
+    ]
+    if is_lichess_eval_col is not None and post_move_cp_col is not None:
+        post_es = _es_sql(post_move_cp_col, post_move_mate_col, user_color_col)
+        branches.append(
+            (
+                and_(
+                    is_lichess_eval_col,
+                    post_es.isnot(None),
+                    (best_es - post_es) > BEST_MOVE_DIVERGENCE_MAX_ES,
+                ),
+                literal(None),
+            )
+        )
+    branches.append((maia_prob_col <= GEM_MAIA_MAX_PROB, literal("gem")))
+    branches.append((maia_prob_col <= GREAT_MAIA_MAX_PROB, literal("great")))
+    return case(*branches, else_=literal(None))

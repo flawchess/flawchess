@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Fixed
+
+- Gem/great badges: on games imported with Lichess evaluations, the "gem"/"great" marker (and the Library "has gem/great" filter) is now suppressed when our own best-move engine disagrees sharply with the imported Lichess evaluation for the same move, removing spurious badges on sharp positions where our shallower search overrated the line. Applies retroactively to already-analyzed games with no re-analysis (Quick 260717-gmg).
+
 ## [v2.4] Backend Gem & Great Detection — 2026-07-17
 
 ### Added

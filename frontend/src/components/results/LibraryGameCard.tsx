@@ -9,6 +9,8 @@ import {
   MOVE_HIGHLIGHT_BLUNDER,
   MOVE_HIGHLIGHT_MISTAKE,
   MOVE_HIGHLIGHT_GOOD,
+  MOVE_HIGHLIGHT_GEM,
+  MOVE_HIGHLIGHT_GREAT,
   WDL_BORDER_DRAW,
   WDL_BORDER_LOSS,
   WDL_BORDER_WIN,
@@ -447,6 +449,20 @@ export function LibraryGameCard({
     return { gem, great };
   }, [game.eval_series, userColor]);
 
+  // Gem/great tier per ply, user-scoped — drives the scrubbed-miniboard corner badge
+  // (below). Same source (eval_series.best_move_tier) and same position-scoped →
+  // user-scoped filtering as bestMovePlies: best_move_tier stores BOTH players' best
+  // moves, so isUserPly keeps only the user's own gems/greats. Keyed by ply for the
+  // O(1) lookup the squareMarkers memo needs.
+  const bestTierByPly = useMemo(() => {
+    const m = new Map<number, 'gem' | 'great'>();
+    for (const pt of game.eval_series ?? []) {
+      if (userColor != null && !isUserPly(pt.ply, userColor)) continue;
+      if (pt.best_move_tier === 'gem' || pt.best_move_tier === 'great') m.set(pt.ply, pt.best_move_tier);
+    }
+    return m;
+  }, [game.eval_series, userColor]);
+
   // Transient hover highlight: hovering a tag chip or a severity badge in the flaw
   // column emphasizes the matching markers on this card's eval chart. Inaccuracy is
   // included — its markers are off-chart by default and get revealed on its hover.
@@ -688,21 +704,36 @@ export function LibraryGameCard({
   // depth label now rides the crimson opponent-response arrow (its target square), not this
   // played-flaw square (Quick 260628-pu2 UAT round 2 — the label was on the wrong square).
   const squareMarkers = useMemo<SquareMarker[] | undefined>(() => {
-    if (!hoverEntry || !hoverSeverity) return undefined;
-    return [
-      {
-        square: hoverEntry.to,
-        severity: hoverSeverity,
-      },
-    ];
-  }, [hoverEntry, hoverSeverity]);
+    if (!hoverEntry) return undefined;
+    // Severity wins (matches the eval-chart tooltip, where a flaw marker suppresses the
+    // gem/great row, and the analysis board's "severity > gem/great" precedence).
+    if (hoverSeverity) {
+      return [{ square: hoverEntry.to, severity: hoverSeverity }];
+    }
+    // Bug fix: the miniboard previously read ONLY flaw_markers, so a scrubbed gem/great
+    // ply showed no glyph even though the tooltip labelled it "Gem"/"Great". Mirror the
+    // tooltip (EvalChart best_move_tier) and analysis board by rendering the tier badge
+    // on the played move's target square when there's no flaw here.
+    const tier = activePly != null ? bestTierByPly.get(activePly) : undefined;
+    if (tier === 'gem') return [{ square: hoverEntry.to, gem: true }];
+    if (tier === 'great') return [{ square: hoverEntry.to, great: true }];
+    return undefined;
+  }, [hoverEntry, hoverSeverity, activePly, bestTierByPly]);
 
-  // Severity-coded last-move overlay (item 5): the scrubbed flaw move gets its
-  // red/orange/yellow tint; a clean scrubbed move reads green. At rest there is no
-  // lastMove, so the color is unused.
-  const lastMoveColor = hoverEntry
-    ? (hoverSeverity ? MOVE_HIGHLIGHT_SEVERITY[hoverSeverity] : MOVE_HIGHLIGHT_GOOD)
-    : undefined;
+  // Severity/tier-coded last-move overlay (item 5): a scrubbed flaw move gets its
+  // red/orange/yellow tint; a gem move reads violet and a great ("best") move reads
+  // blue, matching their corner badges; any other clean scrubbed move reads green. At
+  // rest there is no lastMove, so the color is unused.
+  const lastMoveTier = activePly != null ? bestTierByPly.get(activePly) : undefined;
+  const lastMoveColor = !hoverEntry
+    ? undefined
+    : hoverSeverity
+      ? MOVE_HIGHLIGHT_SEVERITY[hoverSeverity]
+      : lastMoveTier === 'gem'
+        ? MOVE_HIGHLIGHT_GEM
+        : lastMoveTier === 'great'
+          ? MOVE_HIGHLIGHT_GREAT
+          : MOVE_HIGHLIGHT_GOOD;
 
   const whiteName = game.white_username ?? '?';
   const blackName = game.black_username ?? '?';

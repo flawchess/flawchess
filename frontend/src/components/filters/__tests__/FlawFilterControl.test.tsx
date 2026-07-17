@@ -3,7 +3,6 @@ import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { FlawFilterControl } from '../FlawFilterControl';
 import type { FlawTag } from '@/types/library';
-import type { TacticFamily } from '@/lib/tacticComparisonMeta';
 
 // Stub ResizeObserver — required by Radix UI ToggleGroup (added Phase 129 TACUI-06).
 // [Rule 1 - Bug] The ToggleGroup uses @radix-ui/react-use-size which calls ResizeObserver;
@@ -31,12 +30,12 @@ afterEach(() => {
 });
 
 /**
- * Render FlawFilterControl and expand the Context section so family/tag testids are
- * accessible. Use this helper in any test that needs Context tags or family groups.
+ * Render FlawFilterControl. The Context tag families now render as a normal (always
+ * visible) titled section, so no expansion step is needed — this is a thin alias for
+ * render() kept so existing tests read clearly.
  */
 function renderExpanded(props: typeof defaultProps & Record<string, unknown> = defaultProps) {
   render(<FlawFilterControl {...props} />);
-  fireEvent.click(screen.getByTestId('filter-flaw-context-toggle'));
 }
 
 describe('FlawFilterControl', () => {
@@ -63,24 +62,17 @@ describe('FlawFilterControl', () => {
       expect(screen.getByTestId('filter-flaw-tactic-mate').textContent).toBe('checkmate');
     });
 
-    // Advanced tier-3 group (Quick 260623-6pd) — collapsed by default.
+    // Advanced tier-3 group (Quick 260623-6pd) — now a normal always-visible section.
     const ADVANCED_FAMILIES = [
       'trapped_piece', 'x_ray', 'deflection', 'intermezzo', 'interference', 'clearance',
       'capturing_defender', 'en_passant', 'under_promotion',
     ];
 
-    it('Advanced families are hidden until the Advanced toggle is expanded', () => {
+    it('Advanced families render as a normal titled section (no toggle)', () => {
       render(<FlawFilterControl {...defaultProps} showTacticFilter />);
-      const toggle = screen.getByTestId('filter-flaw-advanced-toggle');
-      expect(toggle.getAttribute('aria-expanded')).toBe('false');
-      for (const fam of ADVANCED_FAMILIES) {
-        expect(screen.queryByTestId(`filter-flaw-tactic-${fam}`)).toBeNull();
-      }
-    });
-
-    it('clicking the Advanced toggle reveals x-ray + the 5 tier-3 family buttons', () => {
-      render(<FlawFilterControl {...defaultProps} showTacticFilter />);
-      fireEvent.click(screen.getByTestId('filter-flaw-advanced-toggle'));
+      // The old collapse toggle is gone; the group is rendered directly.
+      expect(screen.queryByTestId('filter-flaw-advanced-toggle')).toBeNull();
+      expect(screen.getByTestId('filter-flaw-tactic-group-advanced')).toBeTruthy();
       for (const fam of ADVANCED_FAMILIES) {
         expect(screen.getByTestId(`filter-flaw-tactic-${fam}`)).toBeTruthy();
       }
@@ -89,23 +81,12 @@ describe('FlawFilterControl', () => {
         .toBe('capturing-defender');
     });
 
-    it('the Advanced toggle is absent on the Games tab (showTacticFilter unset)', () => {
+    it('the Advanced section is absent on the Games tab (showTacticFilter unset)', () => {
       render(<FlawFilterControl {...defaultProps} />);
-      expect(screen.queryByTestId('filter-flaw-advanced-toggle')).toBeNull();
+      expect(screen.queryByTestId('filter-flaw-tactic-group-advanced')).toBeNull();
     });
 
-    it('Advanced toggle shows a "· N" badge counting selected tier-3 families', () => {
-      render(
-        <FlawFilterControl
-          {...defaultProps}
-          showTacticFilter
-          tacticFamilies={['deflection', 'clearance'] as TacticFamily[]}
-        />,
-      );
-      expect(screen.getByTestId('filter-flaw-advanced-toggle').textContent).toContain('Advanced · 2');
-    });
-
-    it('clicking a revealed Advanced family toggles it via onTacticFamiliesChange', () => {
+    it('clicking an Advanced family toggles it via onTacticFamiliesChange', () => {
       const onTacticFamiliesChange = vi.fn();
       render(
         <FlawFilterControl
@@ -115,7 +96,6 @@ describe('FlawFilterControl', () => {
           onTacticFamiliesChange={onTacticFamiliesChange}
         />,
       );
-      fireEvent.click(screen.getByTestId('filter-flaw-advanced-toggle'));
       fireEvent.click(screen.getByTestId('filter-flaw-tactic-deflection'));
       expect(onTacticFamiliesChange).toHaveBeenCalledWith(['deflection']);
     });
@@ -424,61 +404,24 @@ describe('FlawFilterControl', () => {
 
   });
 
-  describe('context collapse (Quick 260620-mjh)', () => {
-    it('Context family groups are hidden by default', () => {
+  describe('context section', () => {
+    it('Context family groups render by default (no collapse)', () => {
       render(<FlawFilterControl {...defaultProps} />);
-      expect(screen.queryByTestId('filter-flaw-family-tempo')).toBeNull();
-    });
-
-    it('the toggle exists with aria-expanded="false" by default', () => {
-      render(<FlawFilterControl {...defaultProps} />);
-      const toggle = screen.getByTestId('filter-flaw-context-toggle');
-      expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    });
-
-    it('aria-expanded becomes "true" after clicking the toggle', () => {
-      render(<FlawFilterControl {...defaultProps} />);
-      const toggle = screen.getByTestId('filter-flaw-context-toggle');
-      fireEvent.click(toggle);
-      expect(toggle.getAttribute('aria-expanded')).toBe('true');
-    });
-
-    it('clicking the toggle reveals Context family groups', () => {
-      render(<FlawFilterControl {...defaultProps} />);
-      fireEvent.click(screen.getByTestId('filter-flaw-context-toggle'));
       expect(screen.getByTestId('filter-flaw-family-tempo')).toBeTruthy();
       expect(screen.getByTestId('filter-flaw-tag-miss')).toBeTruthy();
     });
 
-    it('clicking the toggle twice hides family groups again', () => {
+    it('renders a static "Context" heading, not a toggle', () => {
       render(<FlawFilterControl {...defaultProps} />);
-      const toggle = screen.getByTestId('filter-flaw-context-toggle');
-      fireEvent.click(toggle);
-      fireEvent.click(toggle);
-      expect(screen.queryByTestId('filter-flaw-family-tempo')).toBeNull();
+      expect(screen.queryByTestId('filter-flaw-context-toggle')).toBeNull();
+      const heading = screen.getByTestId('filter-flaw-context-heading');
+      expect(heading.textContent).toBe('Context');
     });
 
-    it('count badge shows "Context · 2" when 2 Context tags are selected', () => {
-      render(
-        <FlawFilterControl
-          {...defaultProps}
-          tags={['miss', 'opening'] as FlawTag[]}
-        />,
-      );
-      const toggle = screen.getByTestId('filter-flaw-context-toggle');
-      expect(toggle.textContent).toContain('Context · 2');
-    });
-
-    it('no count badge when no Context tags are selected', () => {
-      render(<FlawFilterControl {...defaultProps} tags={[] as FlawTag[]} />);
-      const toggle = screen.getByTestId('filter-flaw-context-toggle');
-      expect(toggle.textContent).toContain('Context');
-      expect(toggle.textContent).not.toContain('·');
-    });
-
-    it('Context toggle is present even when showTacticFilter is false (Games tab)', () => {
+    it('Context section renders even when showTacticFilter is false (Games tab)', () => {
       render(<FlawFilterControl {...defaultProps} />);
-      expect(screen.getByTestId('filter-flaw-context-toggle')).toBeTruthy();
+      expect(screen.getByTestId('filter-flaw-context-heading')).toBeTruthy();
+      expect(screen.getByTestId('filter-flaw-family-tempo')).toBeTruthy();
     });
   });
 });

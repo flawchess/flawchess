@@ -212,6 +212,14 @@ def _build_eval_series(
                 best_row.second_cp,
                 best_row.second_mate,
                 mover_color_for_ply(pos.ply),
+                # Imported-eval divergence guard (Quick 260717-gmg): pos.eval_cp is
+                # lichess's authoritative post-move %eval for a lichess-eval game;
+                # suppress the badge when our best_cp overrates it. Since played ==
+                # best for every candidate, pos.eval_cp describes the same resulting
+                # position as best_cp (both post-best-move).
+                post_move_cp=pos.eval_cp,
+                post_move_mate=pos.eval_mate,
+                is_lichess_eval_game=game.lichess_evals_at is not None,
             )
             if tier != "neither":
                 best_move_tier = tier
@@ -667,15 +675,22 @@ def _build_card(
 
 async def get_library_game(
     session: AsyncSession,
-    user_id: int,
     game_id: int,
 ) -> GameFlawCard | None:
-    """Return a single GameFlawCard for a game owned by the authenticated user.
+    """Return a single GameFlawCard for any game, by id.
 
-    IDOR guard (T-112-01): returns None when the game does not exist OR when
-    game.user_id != user_id. The router maps None → HTTP 404 (not 403, to avoid
-    confirming whether the id exists). Do not distinguish missing vs not-owned —
-    both return None.
+    Quick 260717-agv: this is the analysis-page game-view path
+    (GET /library/games/{game_id}, used only by the Analysis board). It is
+    intentionally NOT owner-scoped — any authenticated user may inspect any
+    game by url (e.g. /analysis?game_id=640125) for opponent scouting and game
+    sharing. The requester's identity is irrelevant to WHAT is returned; the
+    only gate is "logged in", enforced by the router's current_active_user
+    dependency. Returns None only when the game does not exist (router → 404).
+
+    Data is scoped to the game's OWNER (game.user_id), not the requester: the
+    flaws, positions and evals for a game live under the owner's user_id, so
+    every downstream batch query is passed owner_id (a different requester would
+    otherwise get empty rows).
 
     Reuses _build_card with the same three batch queries as get_library_games
     (fetch_page_analyzed_set, fetch_page_game_flaws, fetch_page_eval_positions),
@@ -688,34 +703,35 @@ async def get_library_game(
     other purpose — dropped end-to-end (router, service, frontend client/hook).
     """
     game = await session.get(Game, game_id)
-    if game is None or game.user_id != user_id:
+    if game is None:
         return None
 
+    owner_id = game.user_id  # scope data to the owner; any logged-in user may view
     game_ids = [game_id]
 
     is_analyzed = game_id in await library_repository.fetch_page_analyzed_set(
-        session, user_id, game_ids
+        session, owner_id, game_ids
     )
-    flaw_rows = (await library_repository.fetch_page_game_flaws(session, user_id, game_ids)).get(
+    flaw_rows = (await library_repository.fetch_page_game_flaws(session, owner_id, game_ids)).get(
         game_id, []
     )
     # Both-color rows for tactic tooltip population (opponent plies included).
     # WARNING: must not replace flaw_rows — counts/chips stay player-gated.
     tactic_flaw_rows = (
-        await library_repository.fetch_page_game_flaws_both_colors(session, user_id, game_ids)
+        await library_repository.fetch_page_game_flaws_both_colors(session, owner_id, game_ids)
     ).get(game_id, [])
 
     # Fetch active eval-job status for the pending→leased pill transition.
     # Sequential call on the same AsyncSession (no asyncio.gather per CLAUDE.md).
-    active_map = await library_repository.fetch_page_active_eval_status(session, user_id, game_ids)
+    active_map = await library_repository.fetch_page_active_eval_status(session, owner_id, game_ids)
 
     # Quick 260714-rj5: always fetch positions on the single-game path (not
     # gated on is_analyzed) — moves come from game_positions.move_san, which
     # does not depend on evals, so an unanalyzed game can still render a
     # navigable board. fetch_page_eval_positions has no analyzed-ness predicate
-    # of its own; the GamePosition.user_id == user_id IDOR scoping is preserved.
+    # of its own; positions are scoped to owner_id (the game's owner).
     positions: list[GamePosition] = (
-        await library_repository.fetch_page_eval_positions(session, user_id, game_ids)
+        await library_repository.fetch_page_eval_positions(session, owner_id, game_ids)
     ).get(game_id, [])
 
     # Phase 175 (BOARD-01): batch-fetch stored best-move candidate rows for this

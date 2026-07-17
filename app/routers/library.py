@@ -140,12 +140,14 @@ async def get_library_game(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
 ) -> GameFlawCard:
-    """Return a single GameFlawCard for the authenticated user's game (SC-7).
+    """Return a single GameFlawCard for any game, by id (analysis-page view).
 
-    IDOR guard (T-112-01): returns 404 when the game does not exist OR when
-    the game belongs to a different user. Returns 404 (not 403) to avoid
-    confirming whether the id exists for the requester. game_id is typed int
-    so FastAPI rejects non-integer values with 422 (T-112-05).
+    Quick 260717-agv: intentionally NOT owner-scoped. Any authenticated user may
+    inspect any game by url (e.g. /analysis?game_id=640125) for opponent scouting
+    and game sharing. The current_active_user dependency enforces "logged in";
+    the returned data is scoped to the game's owner in the service layer. Returns
+    404 only when the game does not exist. game_id is typed int so FastAPI rejects
+    non-integer values with 422 (T-112-05).
 
     Quick 260702-mnd (D-3): this endpoint no longer accepts severity/tactic
     filter params. It does no game selection, so the params it used to accept
@@ -155,7 +157,6 @@ async def get_library_game(
     """
     card = await library_service.get_library_game(
         session,
-        user_id=user.id,
         game_id=game_id,
     )
     if card is None:
@@ -364,19 +365,17 @@ async def get_tactic_lines(
     Returns both orientations' SAN move lists, raw 0-based depths, motif strings,
     and the full decision-position FEN for chess.js board initialization.
 
-    IDOR guard (T-135-01): returns 404 (not 403) when the flaw does not exist OR
-    belongs to a different user — never confirms whether the id exists for the
-    requester (mirrors get_library_game / T-112-01).
+    Quick 260717-agv: NOT owner-scoped — any authenticated user may expand the
+    tactic lines of any game they inspect on the analysis page (mirrors
+    get_library_game). The current_active_user dependency enforces "logged in".
+    game_id uniquely identifies the game (and thus its owner), so the flaw/PV
+    rows resolve to the owner's data without a requester filter. Returns 404 when
+    no flaw exists at (game_id, ply).
 
     game_id and ply are typed int so FastAPI auto-422-rejects non-integer values
     before the handler runs (T-135-02 / T-112-05 pattern).
-
-    user.id is taken ONLY from the current_active_user JWT dependency — never
-    from a request parameter (IDOR prevention).
     """
-    result = await library_repository.fetch_tactic_lines(
-        session, user_id=user.id, game_id=game_id, ply=ply
-    )
+    result = await library_repository.fetch_tactic_lines(session, game_id=game_id, ply=ply)
     if result is None:
         raise HTTPException(status_code=404, detail="Flaw not found")
     return result

@@ -781,6 +781,12 @@ def best_move_exists_from_table(tiers: Sequence[Literal["gem", "great"]]) -> Col
     """
     if not tiers:
         return true()
+    # Imported-eval divergence guard (Quick 260717-gmg): correlate the candidate
+    # ply's game_positions row (PK game_id+user_id+ply) so best_move_tier_sql can
+    # compare our best_cp against lichess's authoritative post-move %eval and drop
+    # a spurious badge — the SQL twin of the board's classify_best_move guard, so
+    # filter and board stay consistent (D-03b).
+    GuardPos = aliased(GamePosition, name="best_move_guard_pos")  # noqa: N806
     tier_expr = best_move_tier_sql(
         GameBestMove.maia_prob,
         GameBestMove.best_cp,
@@ -788,9 +794,24 @@ def best_move_exists_from_table(tiers: Sequence[Literal["gem", "great"]]) -> Col
         GameBestMove.second_cp,
         GameBestMove.second_mate,
         Game.user_color,
+        GuardPos.eval_cp,
+        GuardPos.eval_mate,
+        Game.lichess_evals_at.isnot(None),
     )
     return exists(
-        select(GameBestMove.ply).where(
+        select(GameBestMove.ply)
+        # LEFT join: a candidate ply with no game_positions row leaves the post-move
+        # eval NULL, so the guard fails open (badge kept) — mirrors the Python
+        # `post_es is None -> keep` path, never dropping a badge over missing data.
+        .outerjoin(
+            GuardPos,
+            and_(
+                GuardPos.game_id == GameBestMove.game_id,
+                GuardPos.ply == GameBestMove.ply,
+                GuardPos.user_id == Game.user_id,
+            ),
+        )
+        .where(
             GameBestMove.game_id == Game.id,
             player_only_gate(GameBestMove.ply, Game.user_color),  # D-04a player gate
             tier_expr.in_(tiers),
@@ -2310,15 +2331,18 @@ def _pv_to_san_list(board: chess.Board, pv: str | None) -> list[str] | None:
 async def fetch_tactic_lines(
     session: AsyncSession,
     *,
-    user_id: int,
     game_id: int,
     ply: int,
 ) -> TacticLinesResponse | None:
     """Fetch and convert the PV walk data for the TacticLineExplorer (Phase 135).
 
-    Returns None when there is no game_flaws row for (user_id, game_id, ply) —
-    the caller raises 404. The IDOR guard is enforced here: game_flaws.user_id
-    must match user_id (T-135-01).
+    Returns None when there is no game_flaws row for (game_id, ply) — the caller
+    raises 404.
+
+    Quick 260717-agv: NOT owner-scoped. game_id is globally unique (games.id PK)
+    and determines the owner, so (game_id, ply) resolves the owner's flaw without
+    a requester filter — any authenticated user inspecting the game on the
+    analysis page may expand its tactic lines (mirrors get_library_game).
 
     Queries game_flaws for the flaw metadata (FEN, tactic depths, motifs) then
     game_positions at ply and ply+1 for the two PV strings. Sequential awaits —
@@ -2337,10 +2361,10 @@ async def fetch_tactic_lines(
     toDisplayDepthForOrientation() in frontend/src/lib/tacticDepth.ts
     (Research Finding 2).
     """
-    # 1. Fetch the flaw row (IDOR check: user_id must match).
+    # 1. Fetch the flaw row. game_id uniquely determines the owner, so no
+    # user_id filter is needed (Quick 260717-agv: cross-user analysis view).
     flaw_q = await session.execute(
         select(GameFlaw).where(
-            GameFlaw.user_id == user_id,
             GameFlaw.game_id == game_id,
             GameFlaw.ply == ply,
         )
@@ -2355,7 +2379,6 @@ async def fetch_tactic_lines(
     # so the decision position's own eval is stored on the PREVIOUS row (ply-1).
     pos_q = await session.execute(
         select(GamePosition).where(
-            GamePosition.user_id == user_id,
             GamePosition.game_id == game_id,
             GamePosition.ply.in_([ply - 1, ply, ply + 1]),
         )

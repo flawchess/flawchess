@@ -14,12 +14,10 @@ import { ANY_RANGE } from '@/lib/opponentStrength';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { TimeControlIcon } from '@/components/icons/TimeControlIcon';
 import { Button } from '@/components/ui/button';
-import { ChevronDown } from 'lucide-react';
 import { OpponentStrengthFilter } from './OpponentStrengthFilter';
 import { CustomRangePopover, formatCustomRangeLabel } from './CustomRangePopover';
 import { CustomRangeDrawer } from './CustomRangeDrawer';
 import { FilterActions } from './FilterActions';
-import { useRevealOnOpen } from '@/hooks/useRevealOnOpen';
 
 // ─── Mobile breakpoint detection ──────────────────────────────────────────────
 // Same threshold as ScoreChart.tsx (768px = Tailwind `md`).
@@ -235,11 +233,6 @@ export function FilterPanel({
   };
   const isMobile = useIsMobile();
 
-  const [moreOpen, setMoreOpen] = useState(false);
-  // Reveal the "More" section's content (and any rows below it) when it expands
-  // inside the scrolling mobile filter drawer.
-  const { ref: moreRef, reveal: revealMore } = useRevealOnOpen<HTMLDivElement>();
-
   const toggleTimeControl = (tc: TimeControl) => {
     const current = filters.timeControls ?? TIME_CONTROLS;
     if (current.includes(tc)) {
@@ -273,7 +266,6 @@ export function FilterPanel({
   };
 
   const show = (field: FilterField) => visibleFilters.includes(field);
-  const showMoreSection = show('opponent') || show('rated');
 
   return (
     <div className="space-y-3">
@@ -477,72 +469,49 @@ export function FilterPanel({
         />
       )}
 
-      {/* More: Opponent Type + Rated */}
-      {showMoreSection && (
-        <div ref={moreRef} className="pt-3 border-t border-border/40">
-          <button
-            type="button"
-            onClick={() => {
-              const next = !moreOpen;
-              setMoreOpen(next);
-              revealMore(next);
+      {/* Opponent Type */}
+      {show('opponent') && (
+        <div>
+          <p className="mb-1 text-sm text-muted-foreground">Opponent Type</p>
+          <ToggleGroup
+            type="single"
+            value={filters.opponentType}
+            onValueChange={(v) => {
+              if (!v) return;
+              update({ opponentType: v as OpponentType });
             }}
-            aria-expanded={moreOpen}
-            data-testid="filter-more-toggle"
-            className="flex w-full items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            variant="outline"
+            size="sm"
+            data-testid="filter-opponent"
+            className="w-full"
           >
-            <ChevronDown
-              className={cn('h-3.5 w-3.5 transition-transform', moreOpen && 'rotate-180')}
-            />
-            More
-          </button>
-          {moreOpen && (
-            <div className="mt-2 space-y-3">
-              {show('opponent') && (
-                <div>
-                  <p className="mb-1 text-sm text-muted-foreground">Opponent Type</p>
-                  <ToggleGroup
-                    type="single"
-                    value={filters.opponentType}
-                    onValueChange={(v) => {
-                      if (!v) return;
-                      update({ opponentType: v as OpponentType });
-                    }}
-                    variant="outline"
-                    size="sm"
-                    data-testid="filter-opponent"
-                    className="w-full"
-                  >
-                    <ToggleGroupItem value="human" data-testid="filter-opponent-human" className="min-h-11 sm:min-h-0 flex-1 text-sm">Human</ToggleGroupItem>
-                    <ToggleGroupItem value="bot" data-testid="filter-opponent-bot" className="min-h-11 sm:min-h-0 flex-1 text-sm">Bot</ToggleGroupItem>
-                    <ToggleGroupItem value="both" data-testid="filter-opponent-both" className="min-h-11 sm:min-h-0 flex-1 text-sm">Both</ToggleGroupItem>
-                  </ToggleGroup>
-                </div>
-              )}
+            <ToggleGroupItem value="human" data-testid="filter-opponent-human" className="min-h-11 sm:min-h-0 flex-1 text-sm">Human</ToggleGroupItem>
+            <ToggleGroupItem value="bot" data-testid="filter-opponent-bot" className="min-h-11 sm:min-h-0 flex-1 text-sm">Bot</ToggleGroupItem>
+            <ToggleGroupItem value="both" data-testid="filter-opponent-both" className="min-h-11 sm:min-h-0 flex-1 text-sm">Both</ToggleGroupItem>
+          </ToggleGroup>
+        </div>
+      )}
 
-              {show('rated') && (
-                <div>
-                  <p className="mb-1 text-sm text-muted-foreground">Rated</p>
-                  <ToggleGroup
-                    type="single"
-                    value={filters.rated === null ? 'all' : filters.rated ? 'rated' : 'casual'}
-                    onValueChange={(v) => {
-                      if (!v) return;
-                      update({ rated: v === 'all' ? null : v === 'rated' });
-                    }}
-                    variant="outline"
-                    size="sm"
-                    data-testid="filter-rated"
-                    className="w-full"
-                  >
-                    <ToggleGroupItem value="all" data-testid="filter-rated-all" className="min-h-11 sm:min-h-0 flex-1 text-sm">All</ToggleGroupItem>
-                    <ToggleGroupItem value="rated" data-testid="filter-rated-rated" className="min-h-11 sm:min-h-0 flex-1 text-sm">Rated</ToggleGroupItem>
-                    <ToggleGroupItem value="casual" data-testid="filter-rated-casual" className="min-h-11 sm:min-h-0 flex-1 text-sm">Casual</ToggleGroupItem>
-                  </ToggleGroup>
-                </div>
-              )}
-            </div>
-          )}
+      {/* Rated */}
+      {show('rated') && (
+        <div>
+          <p className="mb-1 text-sm text-muted-foreground">Rated</p>
+          <ToggleGroup
+            type="single"
+            value={filters.rated === null ? 'all' : filters.rated ? 'rated' : 'casual'}
+            onValueChange={(v) => {
+              if (!v) return;
+              update({ rated: v === 'all' ? null : v === 'rated' });
+            }}
+            variant="outline"
+            size="sm"
+            data-testid="filter-rated"
+            className="w-full"
+          >
+            <ToggleGroupItem value="all" data-testid="filter-rated-all" className="min-h-11 sm:min-h-0 flex-1 text-sm">All</ToggleGroupItem>
+            <ToggleGroupItem value="rated" data-testid="filter-rated-rated" className="min-h-11 sm:min-h-0 flex-1 text-sm">Rated</ToggleGroupItem>
+            <ToggleGroupItem value="casual" data-testid="filter-rated-casual" className="min-h-11 sm:min-h-0 flex-1 text-sm">Casual</ToggleGroupItem>
+          </ToggleGroup>
         </div>
       )}
 

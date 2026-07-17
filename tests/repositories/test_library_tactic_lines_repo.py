@@ -189,7 +189,7 @@ class TestFetchTacticLines:
         )
         await _seed_position(session, uid, game_id, ply + 1, pv=allowed_pv)
 
-        result = await fetch_tactic_lines(session, user_id=uid, game_id=game_id, ply=ply)
+        result = await fetch_tactic_lines(session, game_id=game_id, ply=ply)
 
         assert result is not None
         # Missed PV from decision position
@@ -242,7 +242,7 @@ class TestFetchTacticLines:
         await _seed_position(session, uid, game_id, ply, pv=_PV_4, move_san="e4", best_move="e2e4")
         await _seed_position(session, uid, game_id, ply + 1, pv=_ALLOWED_PV_FROM_AFTER_E4)
 
-        result = await fetch_tactic_lines(session, user_id=uid, game_id=game_id, ply=ply)
+        result = await fetch_tactic_lines(session, game_id=game_id, ply=ply)
 
         assert result is not None
         # Raw 0-based depths returned as-is (no offset applied in repository)
@@ -280,7 +280,7 @@ class TestFetchTacticLines:
         await _seed_position(session, uid, game_id, ply + 1, pv=_ALLOWED_PV_FROM_AFTER_E4)
 
         # Must not raise an exception
-        result = await fetch_tactic_lines(session, user_id=uid, game_id=game_id, ply=ply)
+        result = await fetch_tactic_lines(session, game_id=game_id, ply=ply)
 
         assert result is not None
         # missed_moves should be the full (short) list — no negative slice corruption
@@ -304,7 +304,7 @@ class TestFetchTacticLines:
         await _seed_position(session, uid, game_id, ply, pv=None, move_san="e4", best_move="e2e4")
         await _seed_position(session, uid, game_id, ply + 1, pv=_ALLOWED_PV_FROM_AFTER_E4)
 
-        result = await fetch_tactic_lines(session, user_id=uid, game_id=game_id, ply=ply)
+        result = await fetch_tactic_lines(session, game_id=game_id, ply=ply)
 
         assert result is not None
         assert result.missed_moves is None, "missed_moves should be None when pv is NULL"
@@ -334,7 +334,7 @@ class TestFetchTacticLines:
         await _seed_position(session, uid, game_id, ply, pv=long_pv, move_san="e4")
         await _seed_position(session, uid, game_id, ply + 1, pv=_ALLOWED_PV_FROM_AFTER_E4)
 
-        result = await fetch_tactic_lines(session, user_id=uid, game_id=game_id, ply=ply)
+        result = await fetch_tactic_lines(session, game_id=game_id, ply=ply)
 
         assert result is not None
         assert result.missed_moves is not None
@@ -368,7 +368,7 @@ class TestFetchTacticLines:
             session, uid, game_id, ply + 1, pv=_ALLOWED_PV_FROM_AFTER_E4, eval_cp=999
         )
 
-        result = await fetch_tactic_lines(session, user_id=uid, game_id=game_id, ply=ply)
+        result = await fetch_tactic_lines(session, game_id=game_id, ply=ply)
 
         assert result is not None
         # Missed (decision) eval from pos[ply-1], NOT the post-flaw pos[ply].
@@ -393,7 +393,7 @@ class TestFetchTacticLines:
             session, uid, game_id, ply + 1, pv=_ALLOWED_PV_FROM_AFTER_E4, eval_mate=-3
         )
 
-        result = await fetch_tactic_lines(session, user_id=uid, game_id=game_id, ply=ply)
+        result = await fetch_tactic_lines(session, game_id=game_id, ply=ply)
 
         assert result is not None
         # No pos[-1] → decision eval unavailable.

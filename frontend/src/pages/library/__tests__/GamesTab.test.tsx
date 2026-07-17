@@ -60,6 +60,7 @@ vi.mock('@/components/filters/FlawFilterControl', () => ({
     capturedShowTacticFilter = showTacticFilter;
     return <div data-testid="stub-flaw-filter-control" data-flaw-filter={JSON.stringify({ severity, tags })} />;
   },
+  TagFilterLogicInfo: () => <div data-testid="stub-tag-filter-logic-info" />,
 }));
 
 // Stub LibraryGameCardList to avoid complex rendering

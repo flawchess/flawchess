@@ -2,7 +2,7 @@
 
 Coverage:
 - test_200_shape              : authenticated request for owned flaw returns 200 with TacticLinesResponse fields
-- test_404_wrong_user         : requesting another user's flaw returns 404 (IDOR; not 403)
+- test_cross_user_allowed_200 : requesting another user's flaw returns 200 (Quick 260717-agv)
 - test_404_missing            : game_id/ply with no game_flaws row returns 404
 - test_401_unauthenticated    : no-auth returns 401
 - test_no_hash_leak           : JSON body never exposes internal Zobrist hash field names
@@ -207,15 +207,20 @@ async def test_200_shape(test_engine) -> None:
 
 
 @pytest.mark.asyncio
-async def test_404_wrong_user(test_engine) -> None:
-    """Requesting a flaw belonging to another user returns 404 — not 403 (IDOR; T-135-01)."""
+async def test_cross_user_allowed_200(test_engine) -> None:
+    """Requesting another user's flaw returns 200 (Quick 260717-agv: cross-user analysis view).
+
+    The tactic-line expansion mirrors get_library_game — any authenticated user
+    inspecting a game on the analysis page may expand its tactic lines. "Logged
+    in" is the only gate.
+    """
     # Seed flaw under user B
-    email_b = f"tac-lines-idor-b-{uuid.uuid4().hex[:8]}@example.com"
+    email_b = f"tac-lines-xuser-b-{uuid.uuid4().hex[:8]}@example.com"
     user_id_b, _token_b = await _register_and_login(email_b)
     game_id, ply = await _seed_game_and_flaw(test_engine, user_id_b)
 
     # Authenticate as user A
-    email_a = f"tac-lines-idor-a-{uuid.uuid4().hex[:8]}@example.com"
+    email_a = f"tac-lines-xuser-a-{uuid.uuid4().hex[:8]}@example.com"
     _user_id_a, token_a = await _register_and_login(email_a)
 
     try:
@@ -227,8 +232,10 @@ async def test_404_wrong_user(test_engine) -> None:
                 headers={"Authorization": f"Bearer {token_a}"},
             )
 
-        assert resp.status_code == 404, f"Expected 404 for IDOR, got {resp.status_code}"
-        assert resp.json().get("detail") == "Flaw not found"
+        assert resp.status_code == 200, (
+            f"Expected 200 for cross-user tactic lines, got {resp.status_code}: {resp.text}"
+        )
+        assert resp.json()["flaw_ply"] == ply
     finally:
         await _delete_games(test_engine, [game_id])
 

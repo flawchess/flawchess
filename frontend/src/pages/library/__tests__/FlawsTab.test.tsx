@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -530,11 +530,8 @@ describe('FlawsTab', () => {
       };
       renderFlawsTab('/library/flaws');
 
-      // The "miss" tag is a Context tag — expand the Context section in all mounted
-      // FlawFilterControl instances (desktop sidebar + mobile drawer = 2) before asserting.
-      screen.getAllByTestId('filter-flaw-context-toggle').forEach((toggle) => {
-        fireEvent.click(toggle);
-      });
+      // The "miss" tag is a Context tag — the Context section now renders inline (no
+      // collapse), so its tag buttons are available without expanding anything.
 
       // The "miss" tag button should appear as aria-pressed=true in the FlawFilterControl.
       // The Clear affordance is now in FilterActions (Reset button), not in FlawFilterControl.

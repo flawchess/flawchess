@@ -1099,11 +1099,12 @@ class TestFlawStats:
 
 
 class TestGetLibraryGame:
-    """get_library_game: single-game card builder with IDOR guard.
+    """get_library_game: single-game card builder for the analysis-page view.
 
-    Plan 112-02 (SC-7): GET /api/library/games/{game_id} returns one GameFlawCard
-    for the authenticated user's own game, None for another user's game or a
-    missing game (→ 404 at the router). No router dependency — service-level only.
+    Plan 112-02 (SC-7): GET /api/library/games/{game_id} returns one GameFlawCard.
+    Quick 260717-agv: NOT owner-scoped — returns the owner's card for any game
+    (own or another user's), None only for a missing game (→ 404 at the router).
+    No router dependency — service-level only.
     """
 
     @pytest.mark.asyncio
@@ -1134,20 +1135,20 @@ class TestGetLibraryGame:
         # One blunder flaw
         await _seed_db_flaw(session, game=game, ply=2, severity=2, phase=1)
 
-        card = await get_library_game(session, user_id=99980, game_id=game.id)
+        card = await get_library_game(session, game_id=game.id)
 
         assert card is not None, "Expected a GameFlawCard for own game, got None"
         assert isinstance(card, GameFlawCard), f"Expected GameFlawCard, got {type(card)}"
         assert card.game_id == game.id
 
     @pytest.mark.asyncio
-    async def test_cross_user_returns_none(self, db_session: object) -> None:
-        """get_library_game returns None when game belongs to a different user (IDOR guard).
+    async def test_cross_user_returns_card(self, db_session: object) -> None:
+        """get_library_game returns the owner's card for a cross-user request (Quick 260717-agv).
 
-        Seeds user A with a game. User B requests that game_id. Must return None
-        (not the card, not a 403, not a 404 exception — the IDOR guard lives at
-        the service layer; the router maps None → 404). This is the T-112-01
-        mitigation: game.user_id != user_id → return None.
+        Seeds user A with a game. The analysis-page view is intentionally NOT
+        owner-scoped, so a request for that game_id (any logged-in user) returns
+        user A's card scoped to user A's data — not None. "Logged in" is the only
+        gate, enforced by the router's current_active_user dependency.
         """
         from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1156,17 +1157,16 @@ class TestGetLibraryGame:
         from tests.conftest import ensure_test_user
 
         session = cast(AsyncSession, db_session)
-        await ensure_test_user(session, 99981)  # user A
-        await ensure_test_user(session, 99982)  # user B
+        await ensure_test_user(session, 99981)  # user A (owner)
+        await ensure_test_user(session, 99982)  # user B (requester)
 
         game_obj = await _seed_db_game(session, user_id=99981, user_color="white", result="1-0")
         game_a = cast(GameModel, game_obj)
 
-        # User B tries to fetch user A's game — must return None (IDOR guard)
-        result = await get_library_game(session, user_id=99982, game_id=game_a.id)
-        assert result is None, (
-            f"IDOR breach: expected None for cross-user access, got game_id={getattr(result, 'game_id', result)}"
-        )
+        # A different logged-in user may inspect user A's game (opponent scouting).
+        result = await get_library_game(session, game_id=game_a.id)
+        assert result is not None, "cross-user analysis view must return the owner's card"
+        assert result.game_id == game_a.id
 
     @pytest.mark.asyncio
     async def test_missing_game_returns_none(self, db_session: object) -> None:
@@ -1179,7 +1179,7 @@ class TestGetLibraryGame:
         session = cast(AsyncSession, db_session)
         await ensure_test_user(session, 99983)
 
-        result = await get_library_game(session, user_id=99983, game_id=999999999)
+        result = await get_library_game(session, game_id=999999999)
         assert result is None, f"Expected None for non-existent game_id, got {result}"
 
     @pytest.mark.asyncio
@@ -1214,7 +1214,7 @@ class TestGetLibraryGame:
         )
         game = cast(GameModel, game_obj)
 
-        card = await get_library_game(session, user_id=99990, game_id=game.id)
+        card = await get_library_game(session, game_id=game.id)
 
         assert card is not None
         assert card.white_rating == 1500, "raw white_rating must stay unchanged"
@@ -1254,7 +1254,7 @@ class TestGetLibraryGame:
         )
         game = cast(GameModel, game_obj)
 
-        card = await get_library_game(session, user_id=99991, game_id=game.id)
+        card = await get_library_game(session, game_id=game.id)
 
         assert card is not None
         assert card.white_rating == 1500
@@ -1284,7 +1284,7 @@ class TestGetLibraryGame:
         )
         game = cast(GameModel, game_obj)
 
-        card = await get_library_game(session, user_id=99992, game_id=game.id)
+        card = await get_library_game(session, game_id=game.id)
 
         assert card is not None
         assert card.white_rating is None
@@ -1327,7 +1327,7 @@ class TestGetLibraryGame:
         )
         game = cast(GameModel, game_obj)
 
-        card = await get_library_game(session, user_id=99993, game_id=game.id)
+        card = await get_library_game(session, game_id=game.id)
 
         assert card is not None
         assert card.white_rating == 1500, "raw white_rating must stay unchanged"
@@ -1372,7 +1372,7 @@ class TestGetLibraryGame:
         )
         game = cast(GameModel, game_obj)
 
-        card = await get_library_game(session, user_id=99994, game_id=game.id)
+        card = await get_library_game(session, game_id=game.id)
 
         assert card is not None
         assert card.white_rating == 1500
@@ -1409,7 +1409,7 @@ class TestGetLibraryGame:
         # Terminal position: move_san is None and must be filtered out of moves.
         await _seed_db_pos(session, game=game, ply=3, phase=1, move_san=None)
 
-        card = await get_library_game(session, user_id=99995, game_id=game.id)
+        card = await get_library_game(session, game_id=game.id)
 
         assert card is not None
         assert card.analysis_state == "no_engine_analysis"
@@ -1440,7 +1440,7 @@ class TestGetLibraryGame:
         )
         game = cast(GameModel, game_obj)
 
-        card = await get_library_game(session, user_id=99996, game_id=game.id)
+        card = await get_library_game(session, game_id=game.id)
 
         assert card is not None
         assert card.analysis_state == "no_engine_analysis"
@@ -1471,7 +1471,7 @@ class TestGetLibraryGame:
         await _seed_db_pos(session, game=game, ply=2, eval_cp=0, phase=1, move_san="Nf3")
         await _seed_db_pos(session, game=game, ply=3, eval_cp=None, phase=1, move_san=None)
 
-        card = await get_library_game(session, user_id=99997, game_id=game.id)
+        card = await get_library_game(session, game_id=game.id)
 
         assert card is not None
         assert card.analysis_state == "analyzed"
@@ -1509,7 +1509,7 @@ class TestGetLibraryGame:
         await _seed_db_pos(session, game=game, ply=2, eval_cp=0, phase=0, move_san="Nf3")
         await _seed_db_pos(session, game=game, ply=3, eval_cp=None, phase=1, move_san=None)
 
-        card = await get_library_game(session, user_id=99998, game_id=game.id)
+        card = await get_library_game(session, game_id=game.id)
 
         assert card is not None
         assert card.moves == ["e4", "e5", "Nf3"]
@@ -1534,7 +1534,7 @@ class TestGetLibraryGame:
         await _seed_db_pos(session, game=game, ply=0, eval_cp=0, phase=0, move_san="ZZUnknown")
         await _seed_db_pos(session, game=game, ply=1, eval_cp=None, phase=1, move_san=None)
 
-        card = await get_library_game(session, user_id=99999, game_id=game.id)
+        card = await get_library_game(session, game_id=game.id)
 
         assert card is not None
         assert card.moves == ["ZZUnknown"]
@@ -1680,7 +1680,7 @@ class TestActiveEvalStatus:
         session.add(job)
         await session.flush()
 
-        card = await get_library_game(session, user_id=99987, game_id=game.id)
+        card = await get_library_game(session, game_id=game.id)
         assert card is not None
         assert card.active_eval_status == "pending", (
             f"Expected 'pending', got {card.active_eval_status!r}"
@@ -1705,7 +1705,7 @@ class TestActiveEvalStatus:
         session.add(job)
         await session.flush()
 
-        card = await get_library_game(session, user_id=99988, game_id=game.id)
+        card = await get_library_game(session, game_id=game.id)
         assert card is not None
         assert card.active_eval_status is None, (
             f"Completed job must not surface as active, got {card.active_eval_status!r}"
@@ -1966,7 +1966,7 @@ class TestBuildCardTacticPerSlotSuppression:
             allowed_depth=10,  # would have anchored outside a [1, 2] range under old pruning
         )
 
-        card = await get_library_game(session, user_id=uid, game_id=game.id)
+        card = await get_library_game(session, game_id=game.id)
         assert card is not None
         assert card.flaw_markers is not None
         ply2_marker = next((fm for fm in card.flaw_markers if fm.is_user and fm.ply == 2), None)
@@ -2021,7 +2021,7 @@ class TestBuildCardTacticPerSlotSuppression:
         )
 
         # No tactic params → defaults → no suppression.
-        card = await get_library_game(session, user_id=uid, game_id=game.id)
+        card = await get_library_game(session, game_id=game.id)
         assert card is not None
         assert card.flaw_markers is not None
         ply2_marker = next((fm for fm in card.flaw_markers if fm.is_user and fm.ply == 2), None)
@@ -2182,7 +2182,7 @@ class TestBuildCardTacticPerSlotSuppression:
         )
 
         # Single-game open: both plies' tactics always survive (no severity param exists).
-        card = await get_library_game(session, user_id=uid, game_id=game.id)
+        card = await get_library_game(session, game_id=game.id)
         assert card is not None
         assert card.flaw_markers is not None
         by_ply = {fm.ply: fm for fm in card.flaw_markers if fm.is_user}
@@ -2371,7 +2371,7 @@ class TestOpponentTacticMarker:
             allowed_depth=0,
         )
 
-        card = await get_library_game(session, user_id=uid, game_id=game.id)
+        card = await get_library_game(session, game_id=game.id)
         assert card is not None
         assert card.flaw_markers is not None
 

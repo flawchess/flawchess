@@ -14,7 +14,7 @@ import {
   resetFilterState,
 } from '@/components/filters/FilterPanel';
 import { LibraryFilterPanel } from '@/components/filters/LibraryFilterPanel';
-import { FlawFilterControl } from '@/components/filters/FlawFilterControl';
+import { FlawFilterControl, TagFilterLogicInfo } from '@/components/filters/FlawFilterControl';
 import { FilterActions } from '@/components/filters/FilterActions';
 import { usePulseOnChange, ModifiedDot } from '@/components/filters/FilterModifiedDot';
 import { LibraryGameCardList } from '@/components/results/LibraryGameCardList';
@@ -377,6 +377,7 @@ export function GamesTab() {
       id: 'tags',
       label: 'Tags',
       icon: <Tags className="h-4 w-4" />,
+      headerExtra: <TagFilterLogicInfo />,
       content: tagsFilterPanelContent,
       footer: tagsFilterPanelFooter,
       notificationDot: flawDotNode,
@@ -493,6 +494,7 @@ export function GamesTab() {
           open={mobileFlawFiltersOpen}
           onOpenChange={handleMobileFlawFiltersOpenChange}
           title="Tags"
+          titleAccessory={<TagFilterLogicInfo />}
           contentTestId="drawer-flaw-filter-sidebar"
           closeTestId="btn-close-flaw-filter-drawer"
           footer={
