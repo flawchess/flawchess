@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Changed
+
+- Play-vs-bot setup: the play-style control is now three preset buttons — **Human** (plays on instinct, no calculation), **Light** (a little calculation, the new default), and **Deep** (calculates hard) — replacing the previous slider plus Human/Engine chips. The presets describe calculation depth rather than a rating; bot strength isn't ELO-calibrated yet (Quick 260717-lr9).
+
 ### Fixed
 
 - Gem/great badges: on games imported with Lichess evaluations, the "gem"/"great" marker (and the Library "has gem/great" filter) is now suppressed when our own best-move engine disagrees sharply with the imported Lichess evaluation for the same move, removing spurious badges on sharp positions where our shallower search overrated the line. Applies retroactively to already-analyzed games with no re-analysis (Quick 260717-gmg).

@@ -137,7 +137,7 @@ describe('corruption recovery', () => {
   it.each([
     ['botElo above the ladder max', { ...SETTINGS, botElo: 40_000 }],
     ['botElo below the ladder min', { ...SETTINGS, botElo: 100 }],
-    ['blend above ENGINE_BLEND', { ...SETTINGS, blend: 5 }],
+    ['blend above BLEND_MAX', { ...SETTINGS, blend: 5 }],
     ['blend below HUMAN_BLEND', { ...SETTINGS, blend: -1 }],
     ['a NaN botElo', { ...SETTINGS, botElo: Number.NaN }],
   ])('rejects an out-of-range blob (%s): reads null, clears the key, captures once', (_label, blob) => {

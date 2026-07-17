@@ -40,7 +40,7 @@ function EloInfoTooltip(): React.ReactElement {
     <InfoPopover ariaLabel="About the ELO setting" testId="analysis-elo-info-popover">
       <div className="max-w-xs space-y-2">
         <p>
-          The engines play at this rating. It defaults to the mover's rating, converted to
+          The FlawChess engine selects Maia moves at this rating. It defaults to the player's rating, converted to
           a Lichess Blitz equivalent — the scale the human model is trained on — so strength
           is comparable across platforms and time controls.
         </p>

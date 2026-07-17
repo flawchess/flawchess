@@ -60,7 +60,13 @@ describe('SetupScreen — defaults (V-13 setup half)', () => {
 
     // resolveDefaultBotElo(1650) snaps to 1700 (Plan 04's pinned rounding).
     expect(screen.getByTestId('analysis-elo-selector-value').textContent).toBe('1700');
-    expect(screen.getByTestId('setup-play-style-summary').textContent).toContain('0.50');
+    // Default play-style preset is Light (blend 0.05).
+    expect(screen.getByTestId('setup-play-style-summary').textContent).toBe(
+      'Light — calculates a little',
+    );
+    expect(screen.getByTestId('setup-play-style-preset-light').getAttribute('aria-pressed')).toBe(
+      'true',
+    );
     expect(screen.getByTestId('setup-tc-rapid-10-0').getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByTestId(`setup-color-${DEFAULT_BOT_SETUP_SETTINGS.colorPreference}`).getAttribute('aria-pressed')).toBe(
       'true',
@@ -84,7 +90,7 @@ describe('SetupScreen — prefill from persisted settings', () => {
   it('every control prefills from a saved settings blob for the same ownerKey, overriding the profile default', () => {
     writeSetupSettings('owner-a', {
       botElo: 1800,
-      blend: 1,
+      blend: 0.05,
       baseSeconds: 300,
       incrementSeconds: 3,
       colorPreference: 'black',
@@ -94,7 +100,7 @@ describe('SetupScreen — prefill from persisted settings', () => {
 
     // The saved ELO (1800) wins over the profile-derived default for 1200.
     expect(screen.getByTestId('analysis-elo-selector-value').textContent).toBe('1800');
-    expect(screen.getByTestId('setup-play-style-preset-engine').getAttribute('aria-pressed')).toBe(
+    expect(screen.getByTestId('setup-play-style-preset-light').getAttribute('aria-pressed')).toBe(
       'true',
     );
     expect(screen.getByTestId('setup-tc-blitz-5-3').getAttribute('aria-pressed')).toBe('true');

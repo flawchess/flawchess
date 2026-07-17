@@ -1,51 +1,76 @@
 /**
  * playStyle — pure constants and derivations for the Bots setup screen's
- * play-style control (Phase 171 D-01, PLAY-02).
+ * play-style control (Phase 171 D-01; reworked to preset-only, quick 260717-lr9).
  *
- * The slider floor is 0.05, NOT 0 (SEED-100, D-01, cross-referenced in
- * selectBotMove.ts's own module header): `selectBotMove` is a three-way
- * REGIME DISPATCH, not a continuous mix. `blend <= 0` runs exactly one Maia
- * policy call with no search at all (BOT-02); anything `> 0` runs the full
- * MCTS search and softmax-samples over `practicalScore` at
- * `tau = TAU_MAX * (1 - blend)`. The 0 -> 0.05 step is therefore a ~+950 ELO
- * regime cliff at rung 1500 (harness measurement: ~980 -> ~1938), while the
- * remaining 95% of the axis (0.05 -> 1.00) is a gentle ramp. Putting 0 on the
- * slider's domain would advertise a smooth continuum that does not exist —
- * exactly the kind of dishonesty D-01 forbids. Reaching blend 0 is only
- * possible via the dedicated Human preset button, never by dragging.
+ * The control exposes THREE discrete presets, no slider:
+ *   - Human (blend 0): raw Maia policy sample, no search (BOT-02).
+ *   - Light (blend 0.05, the default): full MCTS search, softmax over
+ *     `practicalScore` at high temperature — a little calculation on top of the
+ *     human-like base.
+ *   - Deep (blend 0.5): same search, lower temperature — calculates hard.
+ *
+ * Why preset-only (no continuous slider): the ELO selector and the blend can't
+ * be disentangled into a predictable combined strength, and the engine is not
+ * ELO-calibrated yet. So these are named by CALCULATION BEHAVIOR ("Light" /
+ * "Deep"), never by rating — three distinct opponents to experiment with, not a
+ * strength ladder. Dropping the slider also retires the old D-01 problem of
+ * advertising a smooth continuum that the three-way regime dispatch in
+ * `selectBotMove` never actually was.
+ *
+ * `blend <= 0` runs exactly one Maia policy call with no search; anything `> 0`
+ * runs the full MCTS search and softmax-samples at `tau = TAU_MAX * (1 - blend)`.
  */
 
-/** Full-human regime: raw Maia policy sample, no search (see module header). */
+/** Human preset: raw Maia policy sample, no search. Also the valid-range floor. */
 export const HUMAN_BLEND = 0;
-/** Full-engine regime: deterministic argmax over practicalScore. */
-export const ENGINE_BLEND = 1;
-
-/** Slider domain floor — strictly greater than HUMAN_BLEND (0.05 > 0). This
- * is the constant-level pin of "the slider cannot reach 0" (D-01). */
-export const PLAY_STYLE_MIN = 0.05;
-export const PLAY_STYLE_MAX = 1;
-export const PLAY_STYLE_STEP = 0.05;
-export const PLAY_STYLE_DEFAULT_BLEND = 0.5;
+/** Light preset: light MCTS search. The default preset. */
+export const LIGHT_BLEND = 0.05;
+/** Deep preset: heavier MCTS search (lower softmax temperature). */
+export const DEEP_BLEND = 0.5;
 
 /**
- * Which preset button (if any) the current blend corresponds to exactly.
- * `null` means neither preset is active — the slider is at a custom value.
+ * Valid-range ceiling for a stored blend, NOT a preset. No preset button emits
+ * blend 1, but the accepted range must stay `[HUMAN_BLEND, BLEND_MAX]` = `[0, 1]`
+ * so legacy stored blobs (the retired Engine preset persisted blend 1.0) still
+ * VALIDATE rather than being treated as corruption — see the WR-01 bug note in
+ * `botSetupSettings.ts`, where an out-of-range blend silently discards a
+ * finished game. Downstream `selectBotMove` still treats blend >= 1 as the
+ * deterministic-argmax regime.
  */
-export function deriveActivePlayStylePreset(blend: number): 'human' | 'engine' | null {
+export const BLEND_MAX = 1;
+
+/** Default preset on a fresh setup screen: Light. */
+export const PLAY_STYLE_DEFAULT_BLEND = LIGHT_BLEND;
+
+export type PlayStylePreset = 'human' | 'light' | 'deep';
+
+/**
+ * Which preset (if any) the current blend corresponds to exactly. `null` means
+ * the blend is not one of the three presets — only reachable from a legacy
+ * stored blob (e.g. an old 1.0); the UI then shows no active preset until the
+ * user clicks one.
+ */
+export function deriveActivePlayStylePreset(blend: number): PlayStylePreset | null {
   if (blend === HUMAN_BLEND) return 'human';
-  if (blend === ENGINE_BLEND) return 'engine';
+  if (blend === LIGHT_BLEND) return 'light';
+  if (blend === DEEP_BLEND) return 'deep';
   return null;
 }
 
 /**
- * Setup-screen play-style summary line (UI-SPEC.md Copywriting Contract,
- * copied verbatim). Human gets a prose-only line (no numeric blend value —
- * 0 is not itself a meaningful "0% search" reading, it's a different regime
- * entirely); every other value gets the numeric-first form matching
- * `OpponentStrengthFilter`'s summary convention.
+ * Setup-screen play-style summary line. Behavior prose only — no blend number,
+ * no "% search", no ELO/strength claim (the engine isn't calibrated yet). A
+ * non-preset legacy blend falls back to a neutral line.
  */
 export function formatPlayStyleSummary(blend: number): string {
-  if (blend === HUMAN_BLEND) return 'Human — plays on instinct, no calculation';
-  const percent = Math.round(blend * 100);
-  return `${blend.toFixed(2)} — blends style with ${percent}% search`;
+  switch (deriveActivePlayStylePreset(blend)) {
+    case 'human':
+      return 'Human — instinct, no calculation';
+    case 'light':
+      return 'Light — calculates a little';
+    case 'deep':
+      return 'Deep — calculates hard';
+    default:
+      return 'Custom calculation depth';
+  }
 }
