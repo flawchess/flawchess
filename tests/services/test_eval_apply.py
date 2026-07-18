@@ -32,6 +32,7 @@ from app.services import eval_apply
 from app.services.eval_apply import (
     _build_best_move_candidates,
     _build_bestmove_lease_positions,
+    _contiguous_san_prefix,
     _eval_of_position_map,
     _FullPlyEvalTarget,
     _upsert_best_move_rows,
@@ -154,6 +155,31 @@ def _target(
         move_uci=move_uci,
         move_san=move_san,
     )
+
+
+# ─── 0. Book-prefix reconstruction ──────────────────────────────────────────────
+
+
+class TestContiguousSanPrefix:
+    """`_contiguous_san_prefix` derives the game's SAN move order from the deepest
+    target's board.move_stack, replayed from the standard start."""
+
+    def test_standard_start_reconstructs_full_prefix(self) -> None:
+        board = chess.Board()
+        board.push_san("e4")
+        board.push_san("e5")
+        target = _target(2, "g1f3", "Nf3", board=board.copy())
+        assert _contiguous_san_prefix([target]) == ["e4", "e5", "Nf3"]
+
+    def test_from_position_game_returns_empty(self) -> None:
+        """A "from position" game (custom initial FEN) has a move_stack legal only
+        from its own root; replaying it from the standard start used to raise
+        AssertionError in san() (FLAWCHESS-8W). It has no standard opening, so the
+        prefix is empty."""
+        board = chess.Board("rnbqkbnr/p1pppppp/8/1p6/2B5/8/PPPP1PPP/RNBQK1NR w KQkq - 0 1")
+        board.push_san("Bxb5")  # c4b5 — illegal from the standard starting position
+        target = _target(1, "a7a6", "a6", board=board.copy())
+        assert _contiguous_san_prefix([target]) == []
 
 
 # ─── 1. Candidate gate ──────────────────────────────────────────────────────────

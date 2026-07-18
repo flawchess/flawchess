@@ -159,14 +159,26 @@ class Game(Base):
     # Final position FEN (piece placement only, from board.board_fen())
     result_fen: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
-    # Engine analysis: game-level accuracy from chess.com (NULL for lichess and unanalyzed games)
+    # Phase 178 D-01: our uniform lichess-formula computed game-level accuracy
+    # (percent, 0-100), populated by the compute path (live hook + backfill) for
+    # every analyzed game regardless of source platform. NULL until computed.
     white_accuracy: Mapped[float | None] = mapped_column(REAL, nullable=True)
     black_accuracy: Mapped[float | None] = mapped_column(REAL, nullable=True)
 
-    # Lichess analysis metrics: ACPL and move quality counts per color
-    # (NULL for chess.com games and unanalyzed lichess games)
+    # Phase 178 D-01: our uniform lichess-formula computed game-level ACPL
+    # (average centipawn loss), populated by the compute path for every
+    # analyzed game regardless of source platform. NULL until computed.
     white_acpl: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     black_acpl: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+
+    # Phase 178 D-02: platform-reported values preserved at import (chess.com
+    # accuracy for chess.com games, lichess accuracy+ACPL for lichess games) —
+    # sparse, validation/comparison signal only, no longer the canonical values.
+    white_accuracy_imported: Mapped[float | None] = mapped_column(REAL, nullable=True)
+    black_accuracy_imported: Mapped[float | None] = mapped_column(REAL, nullable=True)
+    white_acpl_imported: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    black_acpl_imported: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+
     white_inaccuracies: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     black_inaccuracies: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     white_mistakes: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)

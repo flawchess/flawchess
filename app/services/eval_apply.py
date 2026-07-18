@@ -73,6 +73,7 @@ from app.schemas.eval_remote import (
 from app.schemas.normalization import Platform, TimeControlBucket
 from app.services import engine as engine_service
 from app.services import maia_engine
+from app.services.accuracy_acpl import compute_game_accuracy_acpl
 from app.services.best_move_candidates import (
     mover_color_for_ply,
     passes_inaccuracy_gate,
@@ -1063,6 +1064,15 @@ async def _classify_and_fill_oracle(
         # Shouldn't happen (same coverage gate as classify_game_flaws), but be defensive.
         return
 
+    # Phase 178 Plan 03: lichess-compatible accuracy/ACPL (D-01/D-03/D-04). Reuses
+    # the SAME already-loaded `positions` list — zero extra query — and calls the
+    # single shared compute path (Plan 02) that the backfill script also uses.
+    # The compute's own Complete-Sequence Gate is authoritative: it returns None on
+    # an interior eval hole (or a 0-move game) regardless of this pass's completion
+    # stamp, so a holed game correctly leaves all four columns NULL (D-03) while the
+    # oracle-count UPDATE below still executes unconditionally.
+    accuracy_acpl_result = compute_game_accuracy_acpl(positions)
+
     games_table = Game.__table__
     # Bug fix (WR-01): DB errors here MUST propagate — if the oracle-count UPDATE
     # fails the game must be retried, not silently marked complete with NULL counts.
@@ -1076,6 +1086,18 @@ async def _classify_and_fill_oracle(
             black_inaccuracies=counts_black["inaccuracy"],
             black_mistakes=counts_black["mistake"],
             black_blunders=counts_black["blunder"],
+            white_accuracy=(
+                accuracy_acpl_result.white_accuracy if accuracy_acpl_result is not None else None
+            ),
+            black_accuracy=(
+                accuracy_acpl_result.black_accuracy if accuracy_acpl_result is not None else None
+            ),
+            white_acpl=(
+                accuracy_acpl_result.white_acpl if accuracy_acpl_result is not None else None
+            ),
+            black_acpl=(
+                accuracy_acpl_result.black_acpl if accuracy_acpl_result is not None else None
+            ),
         )
     )
 
@@ -1818,6 +1840,14 @@ def _contiguous_san_prefix(targets: Sequence[_FullPlyEvalTarget]) -> list[str]:
     if not non_terminal:
         return []
     deepest = max(non_terminal, key=lambda t: t.ply)
+    # "From position" games (lichess standard variant with a custom initial FEN —
+    # user-facing imports don't filter these) carry a move_stack that is legal only
+    # from their own root, not the standard start. Replaying it from chess.Board()
+    # raised AssertionError in san() (FLAWCHESS-8W). Such games have no standard
+    # opening theory, so book_plies is 0 by definition — return an empty prefix.
+    # Mirrors the custom-FEN-survivor handling in opening_insights_service.py.
+    if deepest.board.root().fen() != chess.STARTING_FEN:
+        return []
     replay_board = chess.Board()
     sans: list[str] = []
     for move in deepest.board.move_stack:
