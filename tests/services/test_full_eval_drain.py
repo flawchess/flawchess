@@ -2958,6 +2958,172 @@ class TestOracleCounts:
             await _delete_games(full_drain_session_maker, [game_id])
 
 
+# ─── Phase 178 Plan 03: live-hook accuracy/ACPL wiring ────────────────────────
+
+
+class TestAccuracyAcplHook:
+    """T-178-03-T/T-178-03-I: the live full-eval-completion hook writes the four
+    canonical accuracy/ACPL columns atomically with oracle counts, and correctly
+    leaves them NULL (never stale/wrong) when the shared compute detects an
+    interior eval hole — even though the completion stamp may still be set
+    (D-03: stamp-complete does not imply hole-free)."""
+
+    async def test_accuracy_acpl_filled_after_hole_free_drain_tick(
+        self,
+        full_drain_test_user_117: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """After a hole-free drain tick, the four canonical columns are non-NULL,
+        in a sane range, and full_evals_completed_at is set in the same committed
+        state (atomicity: both land together, T-178-03-T)."""
+        from app.models.game import Game
+
+        now = datetime.now(timezone.utc)
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_117,
+            pgn=_SIX_PLY_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=None,
+        )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_117
+        )
+
+        eval_sequence = _blunder_eval_sequence()
+        mock_evaluate = AsyncMock(side_effect=eval_sequence)
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
+
+        gp_rows = [
+            {"ply": i, "full_hash": 0xACC0_1234 + i, "eval_cp": None, "eval_mate": None}
+            for i in range(6)
+        ]
+        await _insert_game_positions(
+            full_drain_session_maker, full_drain_test_user_117, game_id, gp_rows
+        )
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is True, "Tick must report a processed game"
+
+            async with full_drain_session_maker() as verify:
+                row = (
+                    await verify.execute(
+                        select(
+                            Game.white_accuracy,
+                            Game.black_accuracy,
+                            Game.white_acpl,
+                            Game.black_acpl,
+                            Game.full_evals_completed_at,
+                        ).where(Game.id == game_id)
+                    )
+                ).one()
+            white_accuracy, black_accuracy, white_acpl, black_acpl, completed_at = row
+
+            assert completed_at is not None, (
+                "full_evals_completed_at must be set after a hole-free drain tick"
+            )
+            for label, value in (
+                ("white_accuracy", white_accuracy),
+                ("black_accuracy", black_accuracy),
+            ):
+                assert value is not None, f"{label} must be non-NULL after a hole-free drain tick"
+                assert 0.0 <= value <= 100.0, f"{label}={value} out of [0,100] range"
+            for label, value in (
+                ("white_acpl", white_acpl),
+                ("black_acpl", black_acpl),
+            ):
+                assert value is not None, f"{label} must be non-NULL after a hole-free drain tick"
+                assert value >= 0, f"{label}={value} must be >= 0"
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_accuracy_acpl_null_on_interior_hole(
+        self,
+        full_drain_test_user_117: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Direct call to `_classify_and_fill_oracle` (the seam under test) with an
+        interior eval hole at ply 2: the compute's own Complete-Sequence Gate
+        returns None, so all four canonical columns stay NULL, while the
+        oracle-count UPDATE still executes and a pre-existing completion stamp is
+        left untouched (D-03 — stamp-complete does not imply hole-free)."""
+        import app.services.eval_apply as eval_apply_module
+        from app.models.game import Game
+
+        now = datetime.now(timezone.utc)
+        # Pre-set full_evals_completed_at to prove the stamp is independent of
+        # this call and stays set regardless of the accuracy/ACPL hole outcome —
+        # `_classify_and_fill_oracle` itself never writes this column.
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_117,
+            pgn=_SIX_PLY_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=now,
+        )
+
+        # Six rows (plies 0-5) mirroring _SIX_PLY_PGN. Ply 2's eval is left NULL
+        # (both eval_cp and eval_mate) — an interior hole per the compute's
+        # Complete-Sequence Gate (_is_hole_free checks the position reached by
+        # each of plies 0-3, i.e. keys 1-4; ply 2's row supplies key 3).
+        gp_rows = [
+            {"ply": 0, "full_hash": 0xB0BE_0100, "eval_cp": 20, "eval_mate": None},
+            {"ply": 1, "full_hash": 0xB0BE_0101, "eval_cp": 30, "eval_mate": None},
+            {"ply": 2, "full_hash": 0xB0BE_0102, "eval_cp": None, "eval_mate": None},  # the hole
+            {"ply": 3, "full_hash": 0xB0BE_0103, "eval_cp": -480, "eval_mate": None},
+            {"ply": 4, "full_hash": 0xB0BE_0104, "eval_cp": 60, "eval_mate": None},
+            {"ply": 5, "full_hash": 0xB0BE_0105, "eval_cp": 30, "eval_mate": None},
+        ]
+        await _insert_game_positions(
+            full_drain_session_maker, full_drain_test_user_117, game_id, gp_rows
+        )
+        try:
+            async with full_drain_session_maker() as session:
+                await eval_apply_module._classify_and_fill_oracle(
+                    session, game_id, engine_result_map={}
+                )
+                await session.commit()
+
+            async with full_drain_session_maker() as verify:
+                row = (
+                    await verify.execute(
+                        select(
+                            Game.white_accuracy,
+                            Game.black_accuracy,
+                            Game.white_acpl,
+                            Game.black_acpl,
+                            Game.white_blunders,
+                            Game.full_evals_completed_at,
+                        ).where(Game.id == game_id)
+                    )
+                ).one()
+            (
+                white_accuracy,
+                black_accuracy,
+                white_acpl,
+                black_acpl,
+                white_blunders,
+                completed_at,
+            ) = row
+
+            assert white_accuracy is None, "white_accuracy must be NULL on an interior eval hole"
+            assert black_accuracy is None, "black_accuracy must be NULL on an interior eval hole"
+            assert white_acpl is None, "white_acpl must be NULL on an interior eval hole"
+            assert black_acpl is None, "black_acpl must be NULL on an interior eval hole"
+            assert white_blunders is not None, (
+                "the oracle-count UPDATE must still execute even when the accuracy/ACPL "
+                "compute returns None (D-03) — white_blunders must not be NULL"
+            )
+            assert completed_at is not None, (
+                "the pre-existing full_evals_completed_at stamp must be left untouched by "
+                "_classify_and_fill_oracle — D-03: stamp-complete does not imply hole-free"
+            )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+
 # ─── Phase 119 SEED-045: hole-aware completion gate + bounded re-pick ──────────
 
 # Shared user ID for Phase 119 tests (distinct range to avoid FK conflicts).

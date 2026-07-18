@@ -11,6 +11,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Added
 
 - Best/Good move tiers now show on the analysis board and the Library game card miniboard, with green star (Best) and thumbs-up (Good) corner glyphs for both players (Quick 260717-rbn).
+- Backend: per-game accuracy and ACPL are now computed with lichess's exact formulas from our own per-ply evals and written into the canonical `games` accuracy/ACPL columns, giving one uniform, cross-platform-comparable methodology; the original platform-provided values are preserved in new `*_imported` columns for validation. A single shared compute path runs both at full-eval completion and in a historical backfill, and games with an incomplete eval sequence are left NULL. Backend-only for now — nothing reads the columns for display yet (Phase 178).
 
 ### Changed
 

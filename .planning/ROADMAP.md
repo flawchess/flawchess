@@ -40,6 +40,7 @@
 - ✅ **v2.2 Analysis ELO Calibration & Deep-links** — Phases 164, 165 (shipped 2026-07-11; deployed to production, PRs #253/#254) — Maia ELO seated at each player's Lichess-blitz-equivalent rating (SEED-093) + additive `?fen=` analysis deep-link and a headless gem-ELO calibration harness (SEED-094) — see [milestones/v2.2-ROADMAP.md](milestones/v2.2-ROADMAP.md)
 - ✅ **v2.3 Bot Play** — Phases 166–172 (incl. 168.5, 169.5) (shipped 2026-07-15) — clocked play against the FlawChess engine on a new top-level **Bots** page (`selectBotMove` sample↔argmax blend), every finished game stored as a `platform='flawchess'` analyzable Library game, localStorage resume, a headless anchor-calibration harness for the first (ELO × play-style) strength map (SEED-091), and a background gem sweep + book markers on `/analysis` (SEED-106, Phase 172) — see [milestones/v2.3-ROADMAP.md](milestones/v2.3-ROADMAP.md)
 - ✅ **v2.4 Backend Gem & Great Detection** — Phases 174–177 (shipped 2026-07-17; Phase 177 folded in post-close 2026-07-18) — move gem/great move detection into the backend full-game analysis pass as stored first-class artifacts (backend Maia-3 inference at eval-apply) powering the analysis board plus a Library game filter, with opportunistic tier-4 lottery backfill (SEED-108, supersedes SEED-107); Phase 177 (SEED-111) then offloads the gem-candidate MultiPV-2 search onto the worker fleet — see [milestones/v2.4-ROADMAP.md](milestones/v2.4-ROADMAP.md)
+- 🚧 **v2.5 Move Statistics** — Phases 178–179 (in progress; 178 complete) — one uniform, lichess-compatible per-game accuracy & ACPL methodology written into repurposed canonical `games` columns so games are comparable across chess.com/lichess/self-analyzed (Phase 178, SEED-110), then a single shared **two-sided Move Stats** component (accuracy strip + a 7-category per-player move-classification table) replacing the badge rows on both the Library game card and the analysis board tags panel (Phase 179, SEED-112)
 
 ## Progress
 
@@ -128,6 +129,8 @@
 | 175. Board & Filter — Gem/Great Consumption | 6/6 | Complete | 2026-07-17 |
 | 176. Backfill | 1/1 | Complete    | 2026-07-17 |
 | 177. Worker-side MultiPV-2 gem-candidate searches (SEED-111, v2.4 addendum) | 5/5 | Complete | 2026-07-17 |
+| 178. Lichess-compatible accuracy & ACPL (computed columns) (v2.5) | 4/4 | Complete | 2026-07-18 |
+| 179. Two-sided Move Stats component (SEED-112, v2.5) | 0/0 | Not started | — |
 
 ## Backlog
 
@@ -670,13 +673,35 @@ Plans:
 
 *Phase 177 (Worker-side MultiPV-2 gem-candidate searches, SEED-111) folded into the **v2.4** milestone 2026-07-18 — full detail in [milestones/v2.4-ROADMAP.md](milestones/v2.4-ROADMAP.md).*
 
+## v2.5 Move Statistics (Phases 178–179) — IN PROGRESS
+
+*A uniform, cross-platform move-quality story: first make per-game accuracy & ACPL comparable across chess.com / lichess / self-analyzed games with one lichess-compatible methodology (Phase 178), then surface it — together with per-player, per-category move counts — in a single shared two-sided **Move Stats** component that replaces the current badge rows on the Library game card and the analysis board tags panel (Phase 179). Phase 178 is complete; Phase 179 is next to plan.*
+
 ### Phase 178: Lichess-compatible accuracy & ACPL (computed columns)
 
-**Goal:** Compute per-game accuracy and ACPL for every analyzed game using lichess's exact formulas, into four new dedicated `games` columns (`white_accuracy_computed` / `black_accuracy_computed` / `white_acpl_computed` / `black_acpl_computed`), from the per-ply evals already in `game_positions`. One uniform methodology so games are comparable across chess.com/lichess/self-analyzed and over time; the existing platform-provided accuracy/acpl columns stay untouched as a comparison signal (our lichess-game numbers should track lichess's own → validation). Single Python path used both at the live hook (full-eval completion) and in a `scripts/backfill_*.py`; gate on a complete per-ply eval sequence (holes → leave NULL). See [seeds/SEED-110](seeds/SEED-110-lichess-compatible-accuracy-acpl.md) for locked design decisions and confirmed lichess formulas.
+**Goal:** Compute per-game accuracy and ACPL for every analyzed game using lichess's exact formulas, written into the **repurposed canonical** `games` columns (`white_accuracy` / `black_accuracy` / `white_acpl` / `black_acpl`) from the per-ply evals already in `game_positions`, with the original platform-provided values preserved in new `*_imported` columns as a comparison/validation signal (D-01/D-02, supersedes SEED-110's `*_computed` proposal). One uniform methodology so games are comparable across chess.com/lichess/self-analyzed and over time; a single Python compute path used both at the live hook (`_classify_and_fill_oracle` full-eval completion) and in `scripts/backfill_accuracy_acpl.py`; gate on a complete per-ply eval sequence (holes → leave NULL); `inaccuracies`/`mistakes`/`blunders` left untouched (D-04). See [seeds/SEED-110](seeds/SEED-110-lichess-compatible-accuracy-acpl.md) for confirmed lichess formulas and the phase CONTEXT for locked decisions D-01..D-11.
 **Requirements**: TBD
 **Depends on:** Phase 177
-**Plans:** 0 plans
+**Plans:** 4/4 plans complete
+
+Plans:
+**Wave 1**
+
+- [x] 178-01-PLAN.md — Migration: add `*_imported` columns, copy platform values in, NULL canonical (D-03) + model columns
+- [x] 178-02-PLAN.md — Shared compute module (`accuracy_acpl.py`): port lichess win%/accuracy/windowed/ACPL formulas + hand-checked fixture tests (D-07..D-11)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 178-03-PLAN.md — Live-hook integration: fill canonical columns atomically in `_classify_and_fill_oracle`, complete-sequence gate (D-01/D-03)
+- [x] 178-04-PLAN.md — Backfill (`backfill_accuracy_acpl.py`) + validation script (computed vs `*_imported`) (D-06/D-07)
+
+### Phase 179: Two-sided Move Stats component (SEED-112)
+
+**Goal:** Replace the current per-card badge rows (severity badges + gem/great badges) on the Library game card and the analysis board tags panel with a single shared **two-sided "Move Stats" component** modeled on chess.com's game-review move-classification table: an accuracy strip on top (one cell per player, **cell background encodes player color** — white bg = white, dark bg = black — so the badge doubles as the color indicator, player always on the left) over a 7-row move-classification table using **FlawChess's own categories** (Gem · Great · Best · Good · Inaccuracy · Mistake · Blunder = 4 positive `best_move_tier`s + 3 severities), with two per-player count columns. Split in two: (a) a **backend/API surfacing** task — attach both-color accuracy (from Phase 178) plus per-player, per-category counts to the `GameFlawCard` and the analysis payload, **NO new engine scoring** (the row-level data already exists: `best_move_tier` is position-scoped and `game_flaws` covers both players, so this deliberately surfaces the **opponent's** positive tiers too, opting out of the user-scoped badge behavior for this one surface — see memory `project_gem_great_user_scoping`); and (b) a **frontend redesign** extracting a shared `MoveStats` component from `LibraryGameCard.tsx` + `AnalysisTagsPanel.tsx` with cycling + filter wiring reworked around a per-cell **(category × side)** model (up to 14 clickable cycle targets extending the `FlawRef` union with a side/color dimension; the global flaw filter stays user-scoped and emphasizes only the player-side cell). Desktop: card sized to the miniboard height (~225px, tight fit); mobile: collapsible (accuracy strip + compact severity summary by default, tap to expand the full table); the analysis board always shows the full table. See [seeds/SEED-112](seeds/SEED-112-two-sided-move-stats-component.md) for the locked design decisions, open unknowns to resolve in discuss/plan, and current-code anchors.
+**Requirements**: TBD
+**Depends on:** Phase 178 (both-player accuracy/ACPL is the accuracy strip's headline and cannot render without it)
+**Plans:** 0/0 (not yet planned — run `/gsd-discuss-phase 179` then `/gsd-plan-phase 179`)
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 178 to break down)
+- [ ] TBD (plan with `/gsd-plan-phase 179`)
