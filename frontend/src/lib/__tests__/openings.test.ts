@@ -68,6 +68,13 @@ interface ParityFailure {
   chessJsSan: string | null;
 }
 
+// This whole-corpus replay is pure synchronous CPU work over 3000+ opening
+// lines (~2s in isolation). Under the full parallel `vitest run` all cores are
+// saturated, so its wall-clock can blow past Vitest's 5s default testTimeout
+// and flake with "Test timed out" — even though nothing is actually wrong. Give
+// it generous headroom (15x the isolated runtime) rather than trimming coverage.
+const CORPUS_PARITY_TIMEOUT_MS = 30_000;
+
 describe('SAN parity (whole corpus)', () => {
   it('every line in the shipped openings.tsv replays legally through chess.js with byte-identical SAN', () => {
     const lines = REAL_TSV.split('\n');
@@ -109,7 +116,7 @@ describe('SAN parity (whole corpus)', () => {
     // Array assertion (not a boolean) so a regression NAMES the offending
     // ECO line instead of just printing `false`.
     expect(failures).toEqual([]);
-  });
+  }, CORPUS_PARITY_TIMEOUT_MS);
 });
 
 describe('prefix set', () => {
