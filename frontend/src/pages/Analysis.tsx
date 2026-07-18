@@ -2539,9 +2539,16 @@ export default function Analysis() {
       // UAT 179: draw the desktop board 20px smaller than its natural fit (floored at
       // BOARD_MIN_WIDTH). Applied to the final size so it's visible whichever constraint
       // binds; mid/mobile (isDesktopWidth false) are untouched.
-      setBoardWidth(
-        isDesktopWidth ? Math.max(BOARD_MIN_WIDTH, raw - DESKTOP_BOARD_SIZE_REDUCTION_PX) : raw,
-      );
+      const desktopBoard = Math.max(BOARD_MIN_WIDTH, raw - DESKTOP_BOARD_SIZE_REDUCTION_PX);
+      // Bug fix: in a ~35px viewport band just above the desk3col breakpoint the fluid 1fr
+      // track is narrow enough that widthBudget drops below BOARD_MIN_WIDTH. The floor above
+      // then pins the board at 420 while the group (board + BOARD_EVAL_BARS_ALLOWANCE_PX)
+      // exceeds the track, so desk3col:overflow-hidden clipped the two flanking eval bars to
+      // slivers. widthBudget already reserves the bars + slider slack, so cap the floored
+      // board to it: the board shrinks below the readability floor in that narrow band
+      // (accepted trade-off) rather than the bars getting cut off. raw=0 (zero-budget guard)
+      // keeps board 0 so ChessBoard's `boardWidth > 0` render gate still fires.
+      setBoardWidth(isDesktopWidth ? Math.min(desktopBoard, widthBudget) : raw);
     };
     measure();
     const observer = new ResizeObserver(measure);
