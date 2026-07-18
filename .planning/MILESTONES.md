@@ -1,5 +1,20 @@
 # Milestones: FlawChess
 
+## v2.5 Move Statistics (Shipped: 2026-07-18)
+
+**Phases completed:** 2 phases, 7 plans, 14 tasks
+
+**Key accomplishments:**
+
+- `app/services/accuracy_acpl.py` — a pure stdlib port of lichess's Win%/per-move-accuracy/windowed-game-accuracy/ACPL formulas, proven against lichess game 296343's real eval sequence (exact ACPL match, accuracy within ±1).
+- Wired the Plan 02 shared compute path into `eval_apply.py::_classify_and_fill_oracle`'s existing atomic `UPDATE games` statement, so every full-eval completion (server drain + remote atomic-submit) now writes lichess-compatible `white_accuracy`/`black_accuracy`/`white_acpl`/`black_acpl` atomically with oracle counts, correctly leaving them NULL on an interior eval hole.
+- during the full dev-DB backfill run, `skipped_none` for user 2's earliest games was much higher than the RESEARCH.md-cited ~0.5% (222 of 279 games on a `--limit 20000` smoke run). Investigation traced this to older chess.com games whose `white_blunders`/`black_blunders`/etc. oracle counts were populated from chess.com's own game-review data at import time (a documented v1.5 feature, "Engine analysis data import ... from chess.com/lichess") rather than our full-ply Stockfish drain — these games have `full_evals_completed_at IS NULL` and **zero** `game_positions.eval_cp`/`eval_mate` values at any ply, so the compute's Complete-Sequence Gate correctly returns `None` for all of them. This is the coarse-SQL-candidate-filter-over-includes / Python-gate-is-authoritative design working exactly as intended (178-RESEARCH.md Pitfall 6) — no code change was needed, and the full unlimited backfill's aggregate numbers (11495/14331 filled, ~80% overall) confirm the earlier ~20% holed rate was concentrated in this one older user's chess.com-review-only games, not representative of the whole corpus.
+- Added `white_accuracy`/`black_accuracy: float | None` to the shared `GameFlawCard` Pydantic model and its frontend TS mirror, sourced exclusively from Phase 178's canonical `Game.white_accuracy`/`black_accuracy` columns via the existing single `_build_card()` construction site — zero new queries, repositories, or migrations.
+- Shared `MoveStats.tsx` presentational component — accuracy strip + always-7-row Gem/Great/Best/Good/Inaccuracy/Mistake/Blunder two-sided count table — plus the pure client-side `moveStatsCounts.ts` derivation module and two new circular Best/Good badge icons, all unit-tested and ready for Plan 03's consumer wiring.
+- Wired the shared `MoveStats` component into both `LibraryGameCard.tsx` and `AnalysisTagsPanel.tsx`, replacing the old badge rows: (category x side) cell cycling, a user-scoped filter ring on player-side cells, mobile compact/expandable behavior, and the analysis-panel empty-state early return dropped. `GemGreatBadge.tsx` deleted knip-clean; `SeverityBadge.tsx` preserved. Followed by a round of live-browser UAT polish.
+
+---
+
 ## v2.4 Backend Gem & Great Detection (Shipped: 2026-07-17)
 
 **Phases completed:** 3 phases (174, 175, 176), 14 plans

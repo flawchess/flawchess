@@ -8,6 +8,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v2.5] Move Statistics — 2026-07-18
+
 ### Added
 
 - Best/Good move tiers now show on the analysis board and the Library game card miniboard, with green star (Best) and thumbs-up (Good) corner glyphs for both players (Quick 260717-rbn).
@@ -1102,7 +1104,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.4...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.5...HEAD
+[v2.5]: https://github.com/flawchess/flawchess/compare/v2.4...v2.5
 [v2.4]: https://github.com/flawchess/flawchess/compare/v2.3...v2.4
 [v2.3]: https://github.com/flawchess/flawchess/compare/v2.2...v2.3
 [v2.2]: https://github.com/flawchess/flawchess/compare/v2.1...v2.2
