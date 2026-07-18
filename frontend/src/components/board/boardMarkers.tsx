@@ -4,13 +4,13 @@
  * severity glyph badge. Kept in one place so both boards render identical marks.
  */
 
-import { Gem, BookOpen, Star, ThumbsUp } from 'lucide-react';
+import { Gem, BookOpen, Check } from 'lucide-react';
 
 import { SEVERITY_GLYPH } from '../../lib/severityGlyph';
 import { GEM_GLYPH } from '../../lib/gemGlyph';
 import { GREAT_GLYPH } from '../../lib/greatGlyph';
 import { BOOK_GLYPH } from '../../lib/bookGlyph';
-import { BEST_GLYPH } from '../../lib/bestGlyph';
+import { BEST_GLYPH, BEST_STAR_POINTS } from '../../lib/bestGlyph';
 import { GOOD_GLYPH } from '../../lib/goodGlyph';
 import type { FlawSeverity } from '../../types/library';
 import { squareToCoords } from './arrowGeometry';
@@ -95,6 +95,10 @@ const MARKER_STROKE = 'rgba(0, 0, 0, 0.5)';
 // Gem icon size as a fraction of the badge circle's diameter — sized so the
 // icon sits inside the stroke rather than touching the circle's edge.
 const GEM_ICON_DIAMETER_RATIO = 0.8;
+// The best badge's sharp star (BEST_STAR_POINTS) carries built-in padding
+// inside its 24×24 box, so at the shared iconSize it reads smaller than the
+// lucide glyphs. Scale it up so it fills the badge like the move-list star.
+const BEST_STAR_SCALE = 1.4;
 
 /** A depth-badge number anchored to a square's TOP-LEFT corner. */
 export function DepthLabel({
@@ -213,13 +217,15 @@ function SquareMarkerBadge({
     return (
       <g>
         <circle cx={cx} cy={cy} r={r} fill={BEST_GLYPH.color} stroke={MARKER_STROKE} strokeWidth={1} />
-        <Star
-          x={cx - iconSize / 2}
-          y={cy - iconSize / 2}
-          width={iconSize}
-          height={iconSize}
-          stroke="#fff"
-        />
+        {/* Same sharp filled star as the move-list BestMoveIcon (shared
+            BEST_STAR_POINTS, a 24×24-centered polygon) — NOT lucide's rounded
+            Star, so the two surfaces render an identical glyph. Transform maps
+            the 24-unit box onto a (scaled) badge centered at (cx,cy). */}
+        <g
+          transform={`translate(${cx} ${cy}) scale(${(iconSize * BEST_STAR_SCALE) / 24}) translate(-12 -12)`}
+        >
+          <polygon points={BEST_STAR_POINTS} fill="#fff" stroke="#fff" strokeWidth={0.6} strokeLinejoin="round" />
+        </g>
       </g>
     );
   }
@@ -230,7 +236,8 @@ function SquareMarkerBadge({
     return (
       <g>
         <circle cx={cx} cy={cy} r={r} fill={GOOD_GLYPH.color} stroke={MARKER_STROKE} strokeWidth={1} />
-        <ThumbsUp
+        {/* White checkmark — matches the move-list GoodMoveIcon glyph. */}
+        <Check
           x={cx - iconSize / 2}
           y={cy - iconSize / 2}
           width={iconSize}

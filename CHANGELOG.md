@@ -15,6 +15,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- The badge rows on the Library game card and the analysis board tags panel are replaced by a single shared **Move Stats** component: a two-sided accuracy strip plus a per-player table counting all seven move categories (Gem, Great, Best, Good, Inaccuracy, Mistake, Blunder) for both you and your opponent. Each count is clickable to cycle through those moves, and on the Library card only your own cells carry the filter ring (Phase 179).
 - Play-vs-bot setup: the play-style control is now three preset buttons — **Human** (plays on instinct, no calculation), **Light** (a little calculation, the new default), and **Deep** (calculates hard) — replacing the previous slider plus Human/Engine chips. The presets describe calculation depth rather than a rating; bot strength isn't ELO-calibrated yet (Quick 260717-lr9).
 
 ### Fixed

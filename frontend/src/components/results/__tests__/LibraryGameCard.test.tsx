@@ -107,12 +107,22 @@ vi.mock('@/components/board/LazyMiniBoard', () => ({
 }));
 
 import type { ReactElement } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { LibraryGameCard } from '../LibraryGameCard';
 import type { GameFlawCard, FlawMarker } from '@/types/library';
 
-/** Wraps any element in a MemoryRouter so useNavigate is available in the subtree. */
+/**
+ * Wraps any element in a MemoryRouter (useNavigate) + a fresh QueryClientProvider
+ * (NoAnalysisState's useTier1Enqueue calls useQueryClient — needed by the D-07
+ * unanalyzed-game test added in Plan 03).
+ */
 function renderCard(ui: ReactElement) {
-  return render(<MemoryRouter>{ui}</MemoryRouter>);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>{ui}</MemoryRouter>
+    </QueryClientProvider>,
+  );
 }
 
 beforeAll(() => {
@@ -177,6 +187,8 @@ function makeGame(markers: FlawMarker[]): GameFlawCard {
     time_control_str: '10+5',
     result_fen: null,
     severity_counts: { inaccuracy: 0, mistake: 0, blunder: 2 },
+    white_accuracy: null,
+    black_accuracy: null,
     chips: [],
     analysis_state: 'analyzed',
     eval_series: [{ ply: 0, es: 0.5, eval_cp: 0, eval_mate: null }],
@@ -184,6 +196,7 @@ function makeGame(markers: FlawMarker[]): GameFlawCard {
     phase_transitions: { middlegame_ply: null, endgame_ply: null },
     moves: ['e4'],
     active_eval_status: null,
+    opening_ply_count: 0,
   };
 }
 
@@ -394,11 +407,12 @@ describe('LibraryGameCard platform link follows the eval-chart scrub', () => {
   });
 });
 
-describe('LibraryGameCard Gem/Great badges (Phase 175 Plan 06)', () => {
+describe('LibraryGameCard MoveStats (Phase 179 Plan 03)', () => {
   // makeGame sets user_color: 'white', so even plies (0, 2, 4) are the USER's moves
-  // and odd plies (1, 3) are the opponent's. best_move_tier is POSITION-scoped, so
-  // the fixture deliberately seeds gems/greats on BOTH sides to prove the user-only
-  // filter (Plan 06 fix). User: gem@0, great@2, gem@4. Opponent: gem@1, great@3.
+  // and odd plies (1, 3) are the opponent's. best_move_tier is POSITION-scoped, and
+  // D-08 deliberately surfaces BOTH sides' tiers on this surface (reversing the old
+  // user-only GemGreatBadge filter). User: gem@0, great@2, gem@4. Opponent: gem@1,
+  // great@3.
   function gemGreatGame(): GameFlawCard {
     return {
       ...makeGame([]),
@@ -412,75 +426,119 @@ describe('LibraryGameCard Gem/Great badges (Phase 175 Plan 06)', () => {
     };
   }
 
-  it('renders no Gem/Great badges when the game has no gem/great plies', () => {
+  it('renders all-zero Gem/Great cells when the game has no gem/great plies', () => {
     renderCard(<LibraryGameCard game={makeGame([])} />);
-    expect(screen.queryAllByTestId(`badge-gem-${GAME_ID}`)).toHaveLength(0);
-    expect(screen.queryAllByTestId(`badge-great-${GAME_ID}`)).toHaveLength(0);
+    expect(screen.getAllByTestId(`move-stats-cell-gem-white-${GAME_ID}`)[0]!.textContent).toBe('0');
+    expect(screen.getAllByTestId(`move-stats-cell-great-white-${GAME_ID}`)[0]!.textContent).toBe('0');
   });
 
-  it('counts only the USER (even-ply) gems, excluding the opponent gem', () => {
+  it('shows BOTH the user gem count and the opponent gem count (D-08)', () => {
     renderCard(<LibraryGameCard game={gemGreatGame()} />);
-    const badges = screen.getAllByTestId(`badge-gem-${GAME_ID}`);
-    expect(badges.length).toBeGreaterThan(0);
-    // User gems: ply 0 and ply 4 → 2. The opponent gem at ply 1 is NOT counted.
-    expect(badges[0]?.textContent).toContain('2');
+    // User (white) gems: ply 0 and ply 4 → 2.
+    expect(screen.getAllByTestId(`move-stats-cell-gem-white-${GAME_ID}`)[0]!.textContent).toBe('2');
+    // Opponent (black) gem: ply 1 → 1, now surfaced too (D-08 reverses the old
+    // user-only GemGreatBadge filter).
+    expect(screen.getAllByTestId(`move-stats-cell-gem-black-${GAME_ID}`)[0]!.textContent).toBe('1');
   });
 
-  it('counts only the USER (even-ply) greats, excluding the opponent great', () => {
+  it('shows BOTH the user great count and the opponent great count (D-08)', () => {
     renderCard(<LibraryGameCard game={gemGreatGame()} />);
-    const badges = screen.getAllByTestId(`badge-great-${GAME_ID}`);
-    expect(badges.length).toBeGreaterThan(0);
-    // User great: ply 2 only → 1. The opponent great at ply 3 is NOT counted.
-    expect(badges[0]?.textContent).toContain('1');
+    expect(screen.getAllByTestId(`move-stats-cell-great-white-${GAME_ID}`)[0]!.textContent).toBe('1');
+    expect(screen.getAllByTestId(`move-stats-cell-great-black-${GAME_ID}`)[0]!.textContent).toBe('1');
   });
 
-  it('shows no badge for a Black user when only the opponent (even-ply) has gems', () => {
-    // Black user → odd plies are the user's. The only gem here is on ply 0 (White =
-    // opponent), so the user has zero gems and no Gem badge renders.
-    const game: GameFlawCard = {
-      ...makeGame([]),
-      user_color: 'black',
-      eval_series: [
-        { ply: 0, es: 0.5, eval_cp: 0, eval_mate: null, best_move_tier: 'gem', maia_prob: 0.1 },
-      ],
-    };
-    renderCard(<LibraryGameCard game={game} />);
-    expect(screen.queryAllByTestId(`badge-gem-${GAME_ID}`)).toHaveLength(0);
-  });
-
-  it('omits the Great badge when the game has user gem plies but no user great plies', () => {
-    const game: GameFlawCard = {
-      ...makeGame([]),
-      eval_series: [
-        { ply: 0, es: 0.5, eval_cp: 0, eval_mate: null, best_move_tier: 'gem', maia_prob: 0.1 },
-      ],
-    };
-    renderCard(<LibraryGameCard game={game} />);
-    expect(screen.getAllByTestId(`badge-gem-${GAME_ID}`).length).toBeGreaterThan(0);
-    expect(screen.queryAllByTestId(`badge-great-${GAME_ID}`)).toHaveLength(0);
-  });
-
-  it('activating the Gem badge cycles the eval chart through the USER gem plies only, wrapping', () => {
+  it('cycling a non-zero cell jumps/advances/wraps; a different cell resets; a zero cell is inert (D-09)', () => {
     renderCard(<LibraryGameCard game={gemGreatGame()} />);
-    const badge = screen.getAllByTestId(`badge-gem-${GAME_ID}`)[0]!;
-    fireEvent.click(badge);
+    const gemWhiteCell = screen.getAllByTestId(`move-stats-cell-gem-white-${GAME_ID}`)[0]!;
+    expect(gemWhiteCell.tagName).toBe('BUTTON');
+    fireEvent.click(gemWhiteCell);
     // User gems are plies 0 and 4 — never ply 1 (opponent).
     expect(screen.getAllByTestId('stub-eval-chart-command')[0]!.textContent).toBe('0:1');
-    fireEvent.click(badge);
+    fireEvent.click(gemWhiteCell);
     expect(screen.getAllByTestId('stub-eval-chart-command')[0]!.textContent).toBe('4:2');
-    fireEvent.click(badge);
+    fireEvent.click(gemWhiteCell);
     // Wraps back to the first user gem ply.
     expect(screen.getAllByTestId('stub-eval-chart-command')[0]!.textContent).toBe('0:3');
+
+    // A different cell restarts the cycle at position 0.
+    const greatWhiteCell = screen.getAllByTestId(`move-stats-cell-great-white-${GAME_ID}`)[0]!;
+    fireEvent.click(greatWhiteCell);
+    expect(screen.getAllByTestId('stub-eval-chart-command')[0]!.textContent).toBe('2:4');
+
+    // A zero cell (no user/opponent blunders in this fixture) is inert — not a
+    // button, and clicking it does nothing to the command nonce.
+    const blunderWhiteCell = screen.getAllByTestId(`move-stats-cell-blunder-white-${GAME_ID}`)[0]!;
+    expect(blunderWhiteCell.tagName).not.toBe('BUTTON');
+    fireEvent.click(blunderWhiteCell);
+    expect(screen.getAllByTestId('stub-eval-chart-command')[0]!.textContent).toBe('2:4');
+  });
+});
+
+describe('LibraryGameCard MoveStats filter ring is user-scoped (D-10)', () => {
+  // user_color 'white'. ply 2 (even) = user blunder; ply 3 (odd) = opponent blunder.
+  function twoSidedBlunderGame(): GameFlawCard {
+    return makeGame([
+      marker({ ply: 2, severity: 'blunder', is_user: true }),
+      marker({ ply: 3, severity: 'blunder', is_user: false }),
+    ]);
+  }
+  const RING_CLASS_FRAGMENT = 'ring-2';
+
+  it('rings only the player-side (white) blunder cell when the severity filter narrows to blunder', () => {
+    filterStore.filter = { ...defaultTestFilter(), severity: ['blunder'] };
+    renderCard(<LibraryGameCard game={twoSidedBlunderGame()} />);
+    const userCell = screen.getAllByTestId(`move-stats-cell-blunder-white-${GAME_ID}`)[0]!;
+    const opponentCell = screen.getAllByTestId(`move-stats-cell-blunder-black-${GAME_ID}`)[0]!;
+    expect(userCell.className).toContain(RING_CLASS_FRAGMENT);
+    // The opponent cell is never ringed by the global (user-scoped) filter...
+    expect(opponentCell.className).not.toContain(RING_CLASS_FRAGMENT);
+    // ...but stays independently clickable for cycling.
+    expect(opponentCell.tagName).toBe('BUTTON');
   });
 
-  it('activating the Great badge cycles independently through the user great ply', () => {
-    renderCard(<LibraryGameCard game={gemGreatGame()} />);
-    const gemBadge = screen.getAllByTestId(`badge-gem-${GAME_ID}`)[0]!;
-    const greatBadge = screen.getAllByTestId(`badge-great-${GAME_ID}`)[0]!;
-    fireEvent.click(gemBadge);
-    fireEvent.click(greatBadge);
-    // A new ref restarts at position 0 — the user's only great ply (2), never ply 3.
-    expect(screen.getAllByTestId('stub-eval-chart-command')[0]!.textContent).toBe('2:2');
+  it('rings no cell when the severity filter is at its default (both blunder+mistake)', () => {
+    renderCard(<LibraryGameCard game={twoSidedBlunderGame()} />);
+    const userCell = screen.getAllByTestId(`move-stats-cell-blunder-white-${GAME_ID}`)[0]!;
+    expect(userCell.className).not.toContain(RING_CLASS_FRAGMENT);
+  });
+});
+
+describe('LibraryGameCard mobile MoveStats collapse (D-06) and unanalyzed pill (D-07)', () => {
+  it('collapsed default shows the accuracy strip + the compact summary row + the chevron toggle; expand reveals the 7-row table', () => {
+    const game: GameFlawCard = {
+      ...makeGame([marker({ ply: 2, severity: 'blunder', is_user: true })]),
+      white_accuracy: 88,
+    };
+    renderCard(<LibraryGameCard game={game} />);
+    // Accuracy strip always renders.
+    expect(screen.getAllByTestId(`move-stats-accuracy-white-${GAME_ID}`).length).toBeGreaterThan(0);
+    // Collapsed (mobile): the compact 8-column summary row renders, including a
+    // per-category cell (UAT 179 — replaces the old severity-badge row).
+    expect(screen.getAllByTestId(`move-stats-compact-${GAME_ID}`).length).toBeGreaterThan(0);
+    expect(screen.getAllByTestId(`move-stats-compact-cell-blunder-${GAME_ID}`).length).toBeGreaterThan(0);
+    // The 7-row table's charcoal card is present but hidden (native `hidden`) while collapsed.
+    const tableCard = screen.getAllByTestId(`move-stats-table-card-${GAME_ID}`)[0]!;
+    expect((tableCard as HTMLElement).hidden).toBe(true);
+
+    const toggle = screen.getAllByTestId('move-stats-expand-toggle')[0]!;
+    fireEvent.click(toggle);
+    const tableCardAfter = screen.getAllByTestId(`move-stats-table-card-${GAME_ID}`)[0]!;
+    expect((tableCardAfter as HTMLElement).hidden).toBe(false);
+  });
+
+  it('an unanalyzed game shows only the analyze pill — no MoveStats strip or table (D-07)', () => {
+    const game: GameFlawCard = {
+      ...makeGame([]),
+      analysis_state: 'no_engine_analysis',
+      severity_counts: null,
+      eval_series: null,
+      flaw_markers: null,
+      phase_transitions: null,
+      moves: null,
+    };
+    renderCard(<LibraryGameCard game={game} />);
+    expect(screen.queryAllByTestId(`move-stats-${GAME_ID}`)).toHaveLength(0);
+    expect(screen.queryAllByTestId('move-stats-expand-toggle')).toHaveLength(0);
   });
 });
 

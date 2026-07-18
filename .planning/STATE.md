@@ -3,27 +3,28 @@ gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: Move Statistics
 current_phase: 179
-status: not-started
-stopped_at: Phase 178 squash-merged to main (local); Phase 179 registered (needs planning)
-last_updated: "2026-07-18T09:42:31.000Z"
+current_phase_name: two-sided-move-stats-component-seed-112
+status: executing
+stopped_at: "Phase 179 Plan 03: Tasks 1-2 complete, paused at Task 3 checkpoint:human-verify (gate=blocking)"
+last_updated: "2026-07-18T12:17:07.763Z"
 last_activity: 2026-07-18
-last_activity_desc: Shipped Phase 178 — squash-merged to local main; Phase 179 (SEED-112) next to plan
+last_activity_desc: Phase 179 Plan 02 executed
 progress:
   total_phases: 2
   completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
-current_phase_name: two-sided-move-stats-component
+  total_plans: 7
+  completed_plans: 6
+  percent: 50
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Milestone: **v2.5 Move Statistics — IN PROGRESS** (phases 178–179). Phase 178 (lichess-compatible accuracy & ACPL computed columns, SEED-110) is complete, 4/4 plans, and **squash-merged to local `main`** 2026-07-18 (full pre-merge gate green; verified 8/8). Phase 179 (two-sided Move Stats component, SEED-112) is registered but **not yet planned** — next action is `/gsd-discuss-phase 179` then `/gsd-plan-phase 179`.
-Phase: 179 (registered, not started)
-Status: Phase 178 shipped to main (local); Phase 179 needs planning
-Last activity: 2026-07-18 — Shipped Phase 178 (squash-merge to main); registered Phase 179 (SEED-112)
+Milestone: **v2.5 Move Statistics — IN PROGRESS** (phases 178–179). Phase 178 (lichess-compatible accuracy & ACPL computed columns, SEED-110) is complete, 4/4 plans, and **squash-merged to local `main`** 2026-07-18 (full pre-merge gate green; verified 8/8). Phase 179 (two-sided Move Stats component, SEED-112) is planned (3 plans) and **executing** — Plan 01 (GameFlawCard backend accuracy passthrough) and Plan 02 (shared MoveStats.tsx component + moveStatsCounts.ts derivation + Best/Good icons, all unit-tested) are complete; Plan 03 (wiring MoveStats into LibraryGameCard.tsx + AnalysisTagsPanel.tsx, mobile collapse, D-10 filter ring, cycling) remains.
+Phase: 179 (two-sided-move-stats-component-seed-112) — EXECUTING (2/3 plans complete)
+Status: Executing Phase 179
+Last activity: 2026-07-18 — Phase 179 Plan 02 executed
 
 **Not yet pushed / deployed:** local `main` is 3 commits ahead of `origin/main` (includes Phase 178). Push to origin and a `main → production` release are separate steps.
 
@@ -346,6 +347,10 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase ?]: [Phase 178-04]: a compute None result (interior hole) is not written as an explicit NULL UPDATE — the candidate query is already gated on white_accuracy IS NULL, so skipping the write keeps each batch's write session lean
 - [Phase ?]: [Phase 178-04]: --limit caps streamed position rows (not games), mirroring backfill_best_move_pv.py; confirmed on dev that a limit landing mid-game harmlessly trips that one game's Complete-Sequence Gate
 - [Phase ?]: [Phase 178-04]: validation script's delta stats computed in Python (not SQL percentile_cont) — per-signal row counts are thousands, not the ~718k backfill scale, so a plain fetch + Python percentile is simpler and fast enough
+- [Phase ?]: [Phase 179-01]: Sourced white_accuracy/black_accuracy ONLY from game.white_accuracy/game.black_accuracy (Phase 178 canonical columns), never *_accuracy_imported, per D-01
+- [Phase ?]: [Phase 179-01]: New GameFlawCard test cases added directly to TestGetLibraryGame (not a new test class), matching the existing normalized-rating-null-case pattern
+- [Phase ?]: [Phase 179-02]: moverColorAtPly added as a NEW export alongside isUserPly (not a replacement) — only Move Stats needs the literal-color variant; every other gem/great surface stays user-scoped per project_gem_great_user_scoping
+- [Phase ?]: [Phase 179-02]: severity glyphs for inaccuracy/mistake/blunder rendered via a local SeverityCategoryIcon reading SEVERITY_GLYPH directly in MoveStats.tsx, not SeverityGlyphIcon.tsx's exported Blunder/MistakeIcon (that file has no inaccuracy variant by design)
 
 ### Pending Todos
 
@@ -434,13 +439,13 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Completed 178-04-PLAN.md
+**Stopped at:** Phase 179 Plan 03: Tasks 1-2 complete, paused at Task 3 checkpoint:human-verify (gate=blocking)
 
-**Last session:** 2026-07-18T09:27:41.610Z
+**Last session:** 2026-07-18T12:17:07.751Z
 
 **Resume file:**
 
-None
+.planning/phases/179-two-sided-move-stats-component-seed-112/179-03-PLAN.md
 
 ## Performance Metrics
 
@@ -468,6 +473,8 @@ None
 | Phase 178 P02 | 12min | 2 tasks | 2 files |
 | Phase 178 P03 | 15min | 2 tasks | 2 files |
 | Phase 178 P04 | 12min | 3 tasks | 3 files |
+| Phase 179 P01 | 18min | 2 tasks | 4 files |
+| Phase 179 P02 | 30min | 2 tasks | 7 files |
 
 ## Performance Metrics
 

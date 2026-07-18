@@ -130,7 +130,7 @@
 | 176. Backfill | 1/1 | Complete    | 2026-07-17 |
 | 177. Worker-side MultiPV-2 gem-candidate searches (SEED-111, v2.4 addendum) | 5/5 | Complete | 2026-07-17 |
 | 178. Lichess-compatible accuracy & ACPL (computed columns) (v2.5) | 4/4 | Complete | 2026-07-18 |
-| 179. Two-sided Move Stats component (SEED-112, v2.5) | 0/0 | Not started | — |
+| 179. Two-sided Move Stats component (SEED-112, v2.5) | 3/3 | Complete | 2026-07-18 |
 
 ## Backlog
 
@@ -700,8 +700,17 @@ Plans:
 **Goal:** Replace the current per-card badge rows (severity badges + gem/great badges) on the Library game card and the analysis board tags panel with a single shared **two-sided "Move Stats" component** modeled on chess.com's game-review move-classification table: an accuracy strip on top (one cell per player, **cell background encodes player color** — white bg = white, dark bg = black — so the badge doubles as the color indicator, player always on the left) over a 7-row move-classification table using **FlawChess's own categories** (Gem · Great · Best · Good · Inaccuracy · Mistake · Blunder = 4 positive `best_move_tier`s + 3 severities), with two per-player count columns. Split in two: (a) a **backend/API surfacing** task — attach both-color accuracy (from Phase 178) plus per-player, per-category counts to the `GameFlawCard` and the analysis payload, **NO new engine scoring** (the row-level data already exists: `best_move_tier` is position-scoped and `game_flaws` covers both players, so this deliberately surfaces the **opponent's** positive tiers too, opting out of the user-scoped badge behavior for this one surface — see memory `project_gem_great_user_scoping`); and (b) a **frontend redesign** extracting a shared `MoveStats` component from `LibraryGameCard.tsx` + `AnalysisTagsPanel.tsx` with cycling + filter wiring reworked around a per-cell **(category × side)** model (up to 14 clickable cycle targets extending the `FlawRef` union with a side/color dimension; the global flaw filter stays user-scoped and emphasizes only the player-side cell). Desktop: card sized to the miniboard height (~225px, tight fit); mobile: collapsible (accuracy strip + compact severity summary by default, tap to expand the full table); the analysis board always shows the full table. See [seeds/SEED-112](seeds/SEED-112-two-sided-move-stats-component.md) for the locked design decisions, open unknowns to resolve in discuss/plan, and current-code anchors.
 **Requirements**: TBD
 **Depends on:** Phase 178 (both-player accuracy/ACPL is the accuracy strip's headline and cannot render without it)
-**Plans:** 0/0 (not yet planned — run `/gsd-discuss-phase 179` then `/gsd-plan-phase 179`)
+**Plans:** 3/3 plans complete
 
 Plans:
+**Wave 1**
 
-- [ ] TBD (plan with `/gsd-plan-phase 179`)
+- [x] 179-01-PLAN.md — Backend: surface canonical white_accuracy/black_accuracy on GameFlawCard (schema + builder + frontend type mirror)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 179-02-PLAN.md — Frontend: shared MoveStats component + client-side per-side count derivation + Best/Good icons
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 179-03-PLAN.md — Frontend: wire MoveStats into Library card (mobile/desktop) + analysis panel, (category × side) cycling + user-scoped filter, delete GemGreatBadge

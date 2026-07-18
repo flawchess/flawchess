@@ -321,6 +321,15 @@ export interface VariationTreeProps {
    * the initial-align is skipped.
    */
   initialPly?: number | null;
+  /**
+   * Nonce that, when incremented, top-aligns the freshly-navigated active move to
+   * the top of the scroller on the next settle (instead of the default minimal-scroll
+   * that would reveal a downward jump at the BOTTOM). Bumped by tag/flaw-line clicks in
+   * the Analysis tags panel so a missed/allowed flaw's move sits at the top with its
+   * unfolded sideline visible below it. Omitted for plain move-by-move navigation, which
+   * keeps the minimal keep-in-view scroll.
+   */
+  topAlignSeq?: number;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -762,11 +771,16 @@ function DesktopTree({
   pvFetchPending,
   pvFetchError,
   initialPly,
+  topAlignSeq,
   onDeleteLine,
 }: VariationTreeProps) {
   const activeRef = useRef<HTMLButtonElement | null>(null);
   const rootPlyVal = rootPly ?? 0;
   const resolvedPvNodeIds = pvNodeIds ?? new Set<NodeId>();
+  // Previous top-align nonce — a change means a tag/flaw-line click asked to top-align
+  // the freshly-navigated move (rather than the default minimal-scroll). Seeded with the
+  // incoming value so mount doesn't count as a command.
+  const prevTopAlignSeq = useRef(topAlignSeq);
 
   // The node the board opens at in game mode (initialPly, defaulting to ply 0).
   // undefined in free play (empty mainLine) — the initial top-align branch is skipped.
@@ -788,6 +802,16 @@ function DesktopTree({
     if (currentNodeId === null) return;
     const el = activeRef.current;
     if (!el) return;
+    // A tag/flaw-line click bumps topAlignSeq to force the freshly-navigated move to the
+    // TOP (so a downward jump lands at the top with any unfolded sideline visible below,
+    // not clipped at the bottom by the default minimal-scroll). Checked before the initial
+    // branch so a mid-session command always wins.
+    if (topAlignSeq !== prevTopAlignSeq.current) {
+      prevTopAlignSeq.current = topAlignSeq;
+      didInitialAlign.current = true;
+      scrollActiveIntoView(el, 'start');
+      return;
+    }
     if (!didInitialAlign.current && initialNodeId !== undefined) {
       // Skip ONLY the initial-load last-node transient: loadMainLine parks currentNodeId at
       // the last mainLine node before the board navigates to the initial ply, and we don't
@@ -805,7 +829,7 @@ function DesktopTree({
       return;
     }
     scrollActiveIntoView(el, 'nearest');
-  }, [currentNodeId, initialNodeId, lastNodeId]);
+  }, [currentNodeId, topAlignSeq, initialNodeId, lastNodeId]);
 
   if (mainLine.length === 0 && nodes.size === 0) {
     return (

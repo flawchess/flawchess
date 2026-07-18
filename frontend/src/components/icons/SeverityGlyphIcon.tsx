@@ -39,12 +39,9 @@ function GlyphBadge({
   style,
   'aria-hidden': ariaHidden = true,
 }: GlyphBadgeProps) {
-  // Tighten the two-char "??" so the larger glyph still clears the dot edge.
-  // textAnchor="middle" counts the trailing letter-spacing gap, which shifts the
-  // glyphs right by half a step; offset x by letterSpacing/2 to re-center.
-  const isMulti = symbol.length > 1;
-  const letterSpacing = isMulti ? -2 : 0;
-  const x = 12 + letterSpacing / 2;
+  // No letter-spacing tightening: the two-char "??"/"?!" clears the dot edge at
+  // this font size on its own, and matching the board glyph (boardMarkers, which
+  // applies none) keeps the "??" from reading cramped in the move list.
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -56,7 +53,7 @@ function GlyphBadge({
     >
       <circle cx="12" cy="12" r="11" fill={color} />
       <text
-        x={x}
+        x="12"
         y="12.5"
         textAnchor="middle"
         dominantBaseline="central"
@@ -64,7 +61,6 @@ function GlyphBadge({
         fontFamily="ui-sans-serif, system-ui, sans-serif"
         fontWeight="700"
         fontSize={fontSize}
-        letterSpacing={isMulti ? letterSpacing : undefined}
       >
         {symbol}
       </text>

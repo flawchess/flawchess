@@ -783,21 +783,29 @@ function buildGame(overrides: Partial<GameFlawCard> = {}): GameFlawCard {
 }
 
 describe('Analysis desktop layout (Phase 161, SEED-088)', () => {
-  it('renders AnalysisTagsPanel in the right column, after the engine card and move list (D-04)', () => {
+  it('renders the MoveStats section in the right column (after the engine card) and the tags below the eval chart (UAT 179)', () => {
     libraryGameState.data = buildGame();
 
     renderAnalysis('/analysis?game_id=1');
 
     const engineCard = screen.getByTestId('analysis-engine-card');
-    const tagsPanel = screen.getByTestId('analysis-tags-panel');
+    // UAT 179: the right column shows the MoveStats (Accuracies + category table)
+    // section only; the Missed/Allowed/Context tags moved to the board column,
+    // below the eval chart (analysis-board-tags).
+    const statsSection = screen.getByTestId('analysis-move-stats-section');
 
-    // DOCUMENT_POSITION_FOLLOWING: tagsPanel comes AFTER the engine card in the DOM
-    // (same compareDocumentPosition pattern as the D-01 FlawChess-card-order test
-    // above) — proving the relocation out of the board column and into the right
-    // column, appended after boardControls().
-    const tagsFollowEngineCard =
-      engineCard.compareDocumentPosition(tagsPanel) & Node.DOCUMENT_POSITION_FOLLOWING;
-    expect(tagsFollowEngineCard).toBeTruthy();
+    // DOCUMENT_POSITION_FOLLOWING: the stats section comes AFTER the engine card in
+    // the DOM — it stays in the right column, appended after boardControls().
+    const statsFollowEngineCard =
+      engineCard.compareDocumentPosition(statsSection) & Node.DOCUMENT_POSITION_FOLLOWING;
+    expect(statsFollowEngineCard).toBeTruthy();
+
+    // The tags now live in the board column below the eval chart, and BEFORE the
+    // engine card (the middle column precedes the right column in the grid).
+    const boardTags = screen.getByTestId('analysis-board-tags');
+    const tagsPrecedeEngineCard =
+      engineCard.compareDocumentPosition(boardTags) & Node.DOCUMENT_POSITION_PRECEDING;
+    expect(tagsPrecedeEngineCard).toBeTruthy();
   });
 
   it('carries the desk3col 3-column grid-cols class on the grid row (D-03)', () => {
