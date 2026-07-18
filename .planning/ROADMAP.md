@@ -669,3 +669,14 @@ Plans:
 - [x] 173-04-PLAN.md — Execute the real sweep + fit the internal scale + findings/compression verdict (D-11/D-12/D-13) [wave 3]
 
 *Phase 177 (Worker-side MultiPV-2 gem-candidate searches, SEED-111) folded into the **v2.4** milestone 2026-07-18 — full detail in [milestones/v2.4-ROADMAP.md](milestones/v2.4-ROADMAP.md).*
+
+### Phase 178: Lichess-compatible accuracy & ACPL (computed columns)
+
+**Goal:** Compute per-game accuracy and ACPL for every analyzed game using lichess's exact formulas, into four new dedicated `games` columns (`white_accuracy_computed` / `black_accuracy_computed` / `white_acpl_computed` / `black_acpl_computed`), from the per-ply evals already in `game_positions`. One uniform methodology so games are comparable across chess.com/lichess/self-analyzed and over time; the existing platform-provided accuracy/acpl columns stay untouched as a comparison signal (our lichess-game numbers should track lichess's own → validation). Single Python path used both at the live hook (full-eval completion) and in a `scripts/backfill_*.py`; gate on a complete per-ply eval sequence (holes → leave NULL). See [seeds/SEED-110](seeds/SEED-110-lichess-compatible-accuracy-acpl.md) for locked design decisions and confirmed lichess formulas.
+**Requirements**: TBD
+**Depends on:** Phase 177
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 178 to break down)
