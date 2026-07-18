@@ -39,7 +39,7 @@
 - ✅ **v2.1 Analysis Eval Reconciliation & Gem Moves** — Phases 162, 163 (merged to main 2026-07-10; deploy pending) — grading-first eval reconciliation so "Good" never outranks "Best" (SEED-090) + violet gem badges for hard-to-find best moves (SEED-092), both frontend-only on `/analysis` — see [milestones/v2.1-ROADMAP.md](milestones/v2.1-ROADMAP.md)
 - ✅ **v2.2 Analysis ELO Calibration & Deep-links** — Phases 164, 165 (shipped 2026-07-11; deployed to production, PRs #253/#254) — Maia ELO seated at each player's Lichess-blitz-equivalent rating (SEED-093) + additive `?fen=` analysis deep-link and a headless gem-ELO calibration harness (SEED-094) — see [milestones/v2.2-ROADMAP.md](milestones/v2.2-ROADMAP.md)
 - ✅ **v2.3 Bot Play** — Phases 166–172 (incl. 168.5, 169.5) (shipped 2026-07-15) — clocked play against the FlawChess engine on a new top-level **Bots** page (`selectBotMove` sample↔argmax blend), every finished game stored as a `platform='flawchess'` analyzable Library game, localStorage resume, a headless anchor-calibration harness for the first (ELO × play-style) strength map (SEED-091), and a background gem sweep + book markers on `/analysis` (SEED-106, Phase 172) — see [milestones/v2.3-ROADMAP.md](milestones/v2.3-ROADMAP.md)
-- ✅ **v2.4 Backend Gem & Great Detection** — Phases 174–176 (shipped 2026-07-17) — move gem/great move detection into the backend full-game analysis pass as stored first-class artifacts (backend Maia-3 inference at eval-apply) powering the analysis board plus a Library game filter, with opportunistic tier-4 lottery backfill (SEED-108, supersedes SEED-107) — see [milestones/v2.4-ROADMAP.md](milestones/v2.4-ROADMAP.md)
+- ✅ **v2.4 Backend Gem & Great Detection** — Phases 174–177 (shipped 2026-07-17; Phase 177 folded in post-close 2026-07-18) — move gem/great move detection into the backend full-game analysis pass as stored first-class artifacts (backend Maia-3 inference at eval-apply) powering the analysis board plus a Library game filter, with opportunistic tier-4 lottery backfill (SEED-108, supersedes SEED-107); Phase 177 (SEED-111) then offloads the gem-candidate MultiPV-2 search onto the worker fleet — see [milestones/v2.4-ROADMAP.md](milestones/v2.4-ROADMAP.md)
 
 ## Progress
 
@@ -127,6 +127,7 @@
 | 174. Backend Maia Inference + Best-Move Storage (spike-gated) | 7/7 | Complete    | 2026-07-16 |
 | 175. Board & Filter — Gem/Great Consumption | 6/6 | Complete | 2026-07-17 |
 | 176. Backfill | 1/1 | Complete    | 2026-07-17 |
+| 177. Worker-side MultiPV-2 gem-candidate searches (SEED-111, v2.4 addendum) | 5/5 | Complete | 2026-07-17 |
 
 ## Backlog
 
@@ -156,13 +157,14 @@ Plans:
 *Phase 103 (Endgame report LLM prompt refinements) shipped 2026-06-03 as an unplanned follow-on under v1.23 — see the collapsed v1.23 block above and [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md).*
 
 <details>
-<summary>✅ v2.4 Backend Gem & Great Detection (Phases 174–176) — SHIPPED 2026-07-17</summary>
+<summary>✅ v2.4 Backend Gem & Great Detection (Phases 174–177) — SHIPPED 2026-07-17</summary>
 
 - [x] Phase 174: Backend Maia Inference + Best-Move Storage (spike-gated) (7/7 plans) — completed 2026-07-16
 - [x] Phase 175: Board & Filter — Gem/Great Consumption (6/6 plans) — completed 2026-07-17
 - [x] Phase 176: Backfill (1/1 plan) — completed 2026-07-17
+- [x] Phase 177: Worker-side MultiPV-2 gem-candidate searches, protocol v2 (SEED-111) (5/5 plans, post-close addendum) — completed 2026-07-17
 
-Moved gem/great move detection off the brittle client-side sweep into the backend full-game analysis pass as stored first-class artifacts (peers to blunder/mistake/tactic tags): a spike-gated Python port of the client's 12-plane board→tensor encoding runs Maia-3 at eval-apply and stores per-ply `game_best_moves` candidate rows (`maia_prob` + best/second eval), the analysis board + Library "has gem"/"has great" filter read them directly, and a tier-4b opportunistic lottery backfills the existing corpus (flag-gated, ships OFF).
+Moved gem/great move detection off the brittle client-side sweep into the backend full-game analysis pass as stored first-class artifacts (peers to blunder/mistake/tactic tags): a spike-gated Python port of the client's 12-plane board→tensor encoding runs Maia-3 at eval-apply and stores per-ply `game_best_moves` candidate rows (`maia_prob` + best/second eval), the analysis board + Library "has gem"/"has great" filter read them directly, and a tier-4b opportunistic lottery backfills the existing corpus (flag-gated, ships OFF). Phase 177 (folded in 2026-07-18) then moves the gem-candidate runner-up (MultiPV-2) search off the server's Stockfish pool onto the worker fleet (protocol v2, dedicated tier-4b lease/submit pair), so atomic-submit apply is pure Maia + classify + DB writes.
 
 Full detail: [milestones/v2.4-ROADMAP.md](milestones/v2.4-ROADMAP.md)
 
@@ -666,30 +668,4 @@ Plans:
 
 - [x] 173-04-PLAN.md — Execute the real sweep + fit the internal scale + findings/compression verdict (D-11/D-12/D-13) [wave 3]
 
-### Phase 177: Worker-side MultiPV-2 gem-candidate searches, protocol v2 (SEED-111)
-
-**Goal:** The server does zero Stockfish work when applying an atomic game submit. Workers compute the gem-candidate runner-up (MultiPV-2) data themselves via a targeted re-search after their MultiPV-1 full pass (only plies where played == worker best; the full pass stays MultiPV-1, preserving the Phase 146 D-03 eval-parity invariant) and include it in the submit payload; the server's apply path becomes pure Maia inference + classification + DB writes. Trust boundary unchanged: the server still applies the played==best check, out-of-book gate, and inaccuracy gate from the submitted numbers. `WORKER_SCHEMA_VERSION` bumps to 2 with gating at the atomic LEASE (v1 workers get 204 no-work on that lane); the server-side fallback stays as an instrumented rare safety net (Sentry tag/metric so silently re-growing server Stockfish load is visible). Expected impact: fleet engines from ~68% to ~95%+ busy and near-linear backfill scaling with added workers (baseline 2026-07-17: ~550 games/h stamped, server pool 8 engines ~92% pinned, local worker engines ~32% idle per cycle).
-**Requirements**: PROTO-01, PROTO-02, PROTO-03, BACK-02, BACK-03, DRAIN-01, OBS-01, MEAS-01 (seed-driven, adopted from 177-RESEARCH.md; no upstream REQUIREMENTS.md entries)
-**Depends on:** Phase 176 (tier-4b backfill lottery is the ~416k-game population this unblocks)
-**Plans:** 5/5 plans complete
-
-Plans:
-
-**Wave 1**
-
-- [x] 177-01-PLAN.md — Protocol v2 schemas + fresh-lane version gating + second_best wiring + fallback Sentry tag (PROTO-01, PROTO-03, OBS-01) [wave 1]
-
-**Wave 2** *(blocked on Wave 1)*
-
-- [x] 177-02-PLAN.md — Dedicated tier-4b /bestmove-lease + /bestmove-submit pair, inverse-shift candidate reconstruction, minimal apply, config fix (BACK-02, BACK-03) [wave 2]
-
-**Wave 3** *(blocked on Wave 2)*
-
-- [x] 177-03-PLAN.md — Drain tier-aware minimal path for tier-4b (fixes `_ = tier` no-op) + drain-local Sentry tag (DRAIN-01, OBS-01) [wave 3]
-- [x] 177-04-PLAN.md — Worker v2: targeted MultiPV-2 re-search + rung-5 tier-4b handler + lease-time version send (PROTO-01, PROTO-02) [wave 3]
-
-**Wave 4** *(blocked on Wave 3; post-deploy)*
-
-- [x] 177-05-PLAN.md — HUMAN-UAT post-deploy before/after measurement vs SEED-111 baseline (MEAS-01) [wave 4]
-
-**Design note:** Plan 02 deliberately diverges from CONTEXT.md D-01's *literal* "extend the idle fall-through" wording (SEED-072 makes it starve blob backfill — see the `<design_divergence_flag>` in 177-02-PLAN.md) and instead honors D-02's "mirrors the flaw-blob-lease/submit pair pattern" with a dedicated endpoint pair as worker rung-5, preserving D-01's intent (lowest-priority, fresh-work-first, single-flag gate).
+*Phase 177 (Worker-side MultiPV-2 gem-candidate searches, SEED-111) folded into the **v2.4** milestone 2026-07-18 — full detail in [milestones/v2.4-ROADMAP.md](milestones/v2.4-ROADMAP.md).*

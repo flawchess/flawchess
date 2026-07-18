@@ -10,7 +10,6 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Added
 
-- Backend: gem/great candidate detection now runs on the remote worker fleet — workers compute the runner-up (MultiPV-2) search themselves and submit it with their results, freeing the server engine pool for fresh analysis. A dedicated lease/submit endpoint pair also lets the fleet backfill gem/great data for already-analyzed games, and the server drain takes a minimal candidate-only path for those backfill games (Phase 177).
 - Best/Good move tiers now show on the analysis board and the Library game card miniboard, with green star (Best) and thumbs-up (Good) corner glyphs for both players (Quick 260717-rbn).
 
 ### Changed
@@ -30,6 +29,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Library: filter your games by whether they contain a "gem" or "great" move, composable with every other game filter (Phase 175).
 - Backend: gem/great moves are now detected server-side during the full-game analysis pass — Maia-3 inference over your out-of-book best moves stores per-ply best-move candidate rows (a first-class artifact peer to blunder/mistake/tactic tags), so the markers come straight from stored data instead of the browser recomputing them each visit (Phase 174).
 - Backend: the existing analyzed corpus is backfilled with gem/great data opportunistically via a tier-4 lottery, so older games gradually become eligible for the new markers and filter without a bulk re-analysis (Phase 176; ships behind an off-by-default flag, enabled in production after rollout).
+- Backend: gem/great candidate detection now runs on the remote worker fleet — workers compute the runner-up (MultiPV-2) search themselves and submit it with their results, freeing the server engine pool for fresh analysis. A dedicated lease/submit endpoint pair also lets the fleet backfill gem/great data for already-analyzed games, and the server drain takes a minimal candidate-only path for those backfill games (Phase 177).
 - Dev: anchor-vs-anchor self-calibration ladder — a standalone orchestrator (`scripts/calibration-anchor-ladder.mjs`, probe→measure schedule with connectivity guard and resumable ledger) plus a stdlib Bradley-Terry fit (`scripts/calibration_anchor_fit.py`) place all 10 Maia/Stockfish bot anchors on one measured internal scale, published as `INTERNAL_RATING` in `scripts/lib/calibration-internal-scale.mjs`. Key result: the Maia-3 argmax ladder is ~2.8x compressed vs its nominal ELO labels, worst at the top (Phase 173).
 
 ### Changed
