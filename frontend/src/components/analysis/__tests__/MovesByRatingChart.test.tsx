@@ -252,9 +252,11 @@ describe('MovesByRatingTooltipContent (D-08)', () => {
     );
     const cells = screen.getByTestId('moves-by-rating-tooltip-row-Ne4').querySelectorAll('td');
     expect(cells[0]?.textContent).toBe('Ne4');
-    expect(cells[1]?.textContent).toBe('Blunder');
-    expect(cells[2]?.textContent).toBe('-4.0');
-    expect(cells[3]?.textContent).toBe('8%');
+    // Column 1 is the quality badge icon (an inline svg).
+    expect(cells[1]?.querySelector('svg')).toBeTruthy();
+    expect(cells[2]?.textContent).toBe('Blunder');
+    expect(cells[3]?.textContent).toBe('-4.0');
+    expect(cells[4]?.textContent).toBe('8%');
   });
 
   it('shows a positive cp eval with a leading + sign and no redundant suffix for the best move', () => {
@@ -268,9 +270,10 @@ describe('MovesByRatingTooltipContent (D-08)', () => {
     );
     const cells = screen.getByTestId('moves-by-rating-tooltip-row-O-O').querySelectorAll('td');
     expect(cells[0]?.textContent).toBe('O-O');
-    expect(cells[1]?.textContent).toBe('Best');
-    expect(cells[2]?.textContent).toBe('+0.5');
-    expect(cells[3]?.textContent).toBe('45%');
+    expect(cells[1]?.querySelector('svg')).toBeTruthy();
+    expect(cells[2]?.textContent).toBe('Best');
+    expect(cells[3]?.textContent).toBe('+0.5');
+    expect(cells[4]?.textContent).toBe('45%');
   });
 
   it('renders "Pending" and an em dash for an ungraded shown move', () => {
@@ -284,9 +287,11 @@ describe('MovesByRatingTooltipContent (D-08)', () => {
     );
     const cells = screen.getByTestId('moves-by-rating-tooltip-row-a3').querySelectorAll('td');
     expect(cells[0]?.textContent).toBe('a3');
-    expect(cells[1]?.textContent).toBe('Pending');
-    expect(cells[2]?.textContent).toBe('—');
-    expect(cells[3]?.textContent).toBe('30%');
+    // Ungraded move: the icon cell is empty (no badge until a grade arrives).
+    expect(cells[1]?.querySelector('svg')).toBeNull();
+    expect(cells[2]?.textContent).toBe('Pending');
+    expect(cells[3]?.textContent).toBe('—');
+    expect(cells[4]?.textContent).toBe('30%');
   });
 
   it('formats a mate score as "#N"', () => {
@@ -303,9 +308,10 @@ describe('MovesByRatingTooltipContent (D-08)', () => {
     );
     const cells = screen.getByTestId('moves-by-rating-tooltip-row-Qh7').querySelectorAll('td');
     expect(cells[0]?.textContent).toBe('Qh7');
-    expect(cells[1]?.textContent).toBe('Best');
-    expect(cells[2]?.textContent).toBe('#3');
-    expect(cells[3]?.textContent).toBe('90%');
+    expect(cells[1]?.querySelector('svg')).toBeTruthy();
+    expect(cells[2]?.textContent).toBe('Best');
+    expect(cells[3]?.textContent).toBe('#3');
+    expect(cells[4]?.textContent).toBe('90%');
   });
 
   it('renders only the top FlawChess move as a reference header', () => {
@@ -322,9 +328,10 @@ describe('MovesByRatingTooltipContent (D-08)', () => {
     );
     const cells = screen.getByTestId('moves-by-rating-tooltip-engine').querySelectorAll('td');
     expect(cells[0]?.textContent).toBe('Nf6');
-    expect(cells[1]?.textContent).toBe('FlawChess');
-    expect(cells[2]?.textContent).toBe('+0.3');
-    expect(cells[3]?.textContent).toBe('42%');
+    expect(cells[1]?.querySelector('svg')).toBeTruthy();
+    expect(cells[2]?.textContent).toBe('FlawChess');
+    expect(cells[3]?.textContent).toBe('+0.3');
+    expect(cells[4]?.textContent).toBe('42%');
   });
 
   it('omits the engine reference header when no engine lines are available', () => {

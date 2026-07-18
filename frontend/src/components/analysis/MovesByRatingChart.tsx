@@ -30,6 +30,7 @@ import {
 } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
+import { MoveQualityIcon } from '@/components/icons/MoveQualityIcon';
 import {
   FLAWCHESS_ENGINE_ACCENT,
   GREAT_ACCENT,
@@ -379,10 +380,11 @@ export interface MovesTooltipRow {
 }
 
 /**
- * Custom tooltip body (D-08): an ELO-rung header over a 4-column table — move name,
- * a label (gold "FlawChess" for the engine's top move, or the Stockfish-graded
- * quality word for each predicted move), the white-POV Stockfish eval (accent blue),
- * and the Maia probability (violet). The move name and quality word share the
+ * Custom tooltip body (D-08): an ELO-rung header over a 5-column table — move name,
+ * the move-quality badge icon (gem/best/…), a label (gold "FlawChess" for the
+ * engine's top move, or the Stockfish-graded quality word for each predicted move),
+ * the white-POV Stockfish eval (accent blue), and the Maia probability (violet).
+ * The move name and quality word share the
  * quality color; the FlawChess row is pinned on top and the shown moves below,
  * sorted by probability descending. The columns align the evals and probabilities.
  * Exported as a standalone component
@@ -392,6 +394,20 @@ export interface MovesTooltipRow {
 // Numeric columns share one right-aligned, tabular-figure class so the Stockfish
 // evals line up in one column and the Maia probabilities in the next.
 const NUM_CELL_CLASS = 'pl-3 text-right tabular-nums';
+
+// Move-quality badge size inside the tooltip's icon column (matches the small
+// inline glyphs elsewhere in the analysis surfaces).
+const TOOLTIP_ICON_CLASS = 'h-4 w-4';
+
+/**
+ * The move-icon column body: the quality badge (gem/best/…) when the move has
+ * been graded, or nothing while it's still pending (the `undefined` case), so
+ * the cell keeps the column's alignment either way.
+ */
+function QualityIconCell({ quality }: { quality: MoveQuality | undefined }): React.ReactElement | null {
+  if (quality === undefined) return null;
+  return <MoveQualityIcon quality={quality} className={TOOLTIP_ICON_CLASS} />;
+}
 
 export function MovesByRatingTooltipContent({
   label,
@@ -409,9 +425,9 @@ export function MovesByRatingTooltipContent({
   return (
     <ChartTooltipBox data-testid="moves-by-rating-tooltip">
       <div className="font-medium text-foreground">{`ELO ${label}`}</div>
-      {/* 4-column table: move | source (gold "FlawChess" or the Maia rating) |
-          Stockfish eval (blue) | Maia probability (violet). Columns align the evals
-          and probabilities; no separator dots. */}
+      {/* 5-column table: move | quality icon | source (gold "FlawChess" or the
+          quality word) | Stockfish eval (blue) | Maia probability (violet). Columns
+          align the evals and probabilities; no separator dots. */}
       <table className="border-collapse">
         <tbody>
           {topLine && (
@@ -424,6 +440,9 @@ export function MovesByRatingTooltipContent({
                 style={{ color: colorForQuality(qualityBySan.get(topLine.san)?.quality) }}
               >
                 {topLine.san}
+              </td>
+              <td className="pr-2">
+                <QualityIconCell quality={qualityBySan.get(topLine.san)?.quality} />
               </td>
               <td className="pr-3" style={{ color: FLAWCHESS_ENGINE_ACCENT }}>
                 FlawChess
@@ -448,6 +467,9 @@ export function MovesByRatingTooltipContent({
                     (blue) | probability (violet). */}
                 <td className={`pr-3 ${topPad}`} style={{ color: row.color }}>
                   {san}
+                </td>
+                <td className={`pr-2 ${topPad}`}>
+                  <QualityIconCell quality={graded?.quality} />
                 </td>
                 <td className={`pr-3 ${topPad}`} style={{ color: row.color }}>
                   {qualityWord(graded?.quality)}
