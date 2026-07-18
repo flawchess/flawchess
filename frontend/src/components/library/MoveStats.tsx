@@ -1,10 +1,6 @@
 import { ChevronDown } from 'lucide-react';
-import { GemIcon } from '@/components/icons/GemIcon';
-import { GreatMoveIcon } from '@/components/icons/GreatMoveIcon';
-import { BestMoveIcon } from '@/components/icons/BestMoveIcon';
-import { GoodMoveIcon } from '@/components/icons/GoodMoveIcon';
+import { MoveQualityIcon } from '@/components/icons/MoveQualityIcon';
 import { Card, CardHeader } from '@/components/ui/card';
-import { SEVERITY_GLYPH } from '@/lib/severityGlyph';
 import { EVAL_BAR_BLACK, EVAL_BAR_WHITE, ACTIVE_FILTER_RING_CLASS } from '@/lib/theme';
 import {
   severityCountsBySide,
@@ -70,53 +66,6 @@ function isSeverityCategory(category: MoveStatCategory): category is FlawSeverit
 
 function sameCellRef(a: MoveStatsCellRef | null | undefined, b: MoveStatsCellRef): boolean {
   return a != null && a.category === b.category && a.side === b.side;
-}
-
-/**
- * A single severity glyph badge (circle + "??"/"?"/"?!" text), rendered
- * inline so all 3 severities share one visual convention here — mirrors
- * `SeverityGlyphIcon.tsx`'s private `GlyphBadge`, which does not export an
- * inaccuracy variant (that file's move-list call sites intentionally omit
- * it; the Move Stats table needs all 3).
- */
-function SeverityCategoryIcon({ severity, className }: { severity: FlawSeverity; className?: string }) {
-  const glyph = SEVERITY_GLYPH[severity];
-  // No letter-spacing tightening — matches the on-board severity glyph
-  // (boardMarkers) so the two-char "??"/"?!" read with natural spacing rather
-  // than cramped.
-  return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden role="img">
-      <circle cx="12" cy="12" r="11" fill={glyph.color} />
-      <text
-        x="12"
-        y="12.5"
-        textAnchor="middle"
-        dominantBaseline="central"
-        fill="#fff"
-        fontFamily="ui-sans-serif, system-ui, sans-serif"
-        fontWeight="700"
-        fontSize={glyph.fontSize}
-      >
-        {glyph.symbol}
-      </text>
-    </svg>
-  );
-}
-
-function CategoryIcon({ category, className }: { category: MoveStatCategory; className?: string }) {
-  if (isSeverityCategory(category)) {
-    return <SeverityCategoryIcon severity={category} className={className} />;
-  }
-  switch (category) {
-    case 'gem':
-      return <GemIcon className={className} aria-hidden />;
-    case 'great':
-      return <GreatMoveIcon className={className} aria-hidden />;
-    case 'best':
-      return <BestMoveIcon className={className} aria-hidden />;
-    case 'good':
-      return <GoodMoveIcon className={className} aria-hidden />;
-  }
 }
 
 function formatAccuracy(value: number | null): string {
@@ -249,7 +198,7 @@ export function MoveStats({
             const inner = (
               <>
                 <span className="text-sm font-bold tabular-nums">{count}</span>
-                <CategoryIcon category={category} className="h-4 w-4" />
+                <MoveQualityIcon quality={category} className="h-4 w-4" />
               </>
             );
             if (count === 0) {
@@ -308,7 +257,7 @@ export function MoveStats({
             {CATEGORY_ORDER.map((category) => (
               <tr key={category} data-testid={tid(`move-stats-row-${category}`, gameId)}>
                 <td className="w-6 py-0.5">
-                  <CategoryIcon category={category} className="h-5 w-5" />
+                  <MoveQualityIcon quality={category} className="h-5 w-5" />
                 </td>
                 <td className="pr-2 text-sm">{CATEGORY_LABELS[category]}</td>
                 {sides.map((side) => {
