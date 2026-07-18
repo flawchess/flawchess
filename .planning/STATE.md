@@ -4,10 +4,10 @@ milestone: v2.5
 milestone_name: Move Statistics
 current_phase: 179
 status: not-started
-stopped_at: Phase 178 complete; v2.5 milestone opened, Phase 179 registered (needs planning)
+stopped_at: Phase 178 squash-merged to main (local); Phase 179 registered (needs planning)
 last_updated: "2026-07-18T09:42:31.000Z"
 last_activity: 2026-07-18
-last_activity_desc: Opened v2.5 Move Statistics milestone (Phases 178–179); registered Phase 179 (SEED-112)
+last_activity_desc: Shipped Phase 178 — squash-merged to local main; Phase 179 (SEED-112) next to plan
 progress:
   total_phases: 2
   completed_phases: 1
@@ -20,10 +20,12 @@ current_phase_name: two-sided-move-stats-component
 
 ## Current Position
 
-Milestone: **v2.5 Move Statistics — IN PROGRESS** (phases 178–179). Phase 178 (lichess-compatible accuracy & ACPL computed columns, SEED-110) is complete, 4/4 plans. Phase 179 (two-sided Move Stats component, SEED-112) is registered but **not yet planned** — next action is `/gsd-discuss-phase 179` then `/gsd-plan-phase 179`.
+Milestone: **v2.5 Move Statistics — IN PROGRESS** (phases 178–179). Phase 178 (lichess-compatible accuracy & ACPL computed columns, SEED-110) is complete, 4/4 plans, and **squash-merged to local `main`** 2026-07-18 (full pre-merge gate green; verified 8/8). Phase 179 (two-sided Move Stats component, SEED-112) is registered but **not yet planned** — next action is `/gsd-discuss-phase 179` then `/gsd-plan-phase 179`.
 Phase: 179 (registered, not started)
-Status: v2.5 opened; Phase 178 complete, Phase 179 needs planning
-Last activity: 2026-07-18 — Opened v2.5 milestone and registered Phase 179 (SEED-112)
+Status: Phase 178 shipped to main (local); Phase 179 needs planning
+Last activity: 2026-07-18 — Shipped Phase 178 (squash-merge to main); registered Phase 179 (SEED-112)
+
+**Not yet pushed / deployed:** local `main` is 3 commits ahead of `origin/main` (includes Phase 178). Push to origin and a `main → production` release are separate steps.
 
 Prior milestone: v2.4 Backend Gem & Great Detection — CLOSED 2026-07-17 (phases 174–176, 14 plans; Phase 177 folded in as a post-close addendum 2026-07-18, 5 plans → 174–177, 19 plans).
 
