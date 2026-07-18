@@ -1840,6 +1840,14 @@ def _contiguous_san_prefix(targets: Sequence[_FullPlyEvalTarget]) -> list[str]:
     if not non_terminal:
         return []
     deepest = max(non_terminal, key=lambda t: t.ply)
+    # "From position" games (lichess standard variant with a custom initial FEN —
+    # user-facing imports don't filter these) carry a move_stack that is legal only
+    # from their own root, not the standard start. Replaying it from chess.Board()
+    # raised AssertionError in san() (FLAWCHESS-8W). Such games have no standard
+    # opening theory, so book_plies is 0 by definition — return an empty prefix.
+    # Mirrors the custom-FEN-survivor handling in opening_insights_service.py.
+    if deepest.board.root().fen() != chess.STARTING_FEN:
+        return []
     replay_board = chess.Board()
     sans: list[str] = []
     for move in deepest.board.move_stack:
