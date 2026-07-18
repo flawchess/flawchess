@@ -2,7 +2,7 @@
 
 *A living document updated after each milestone. Lessons feed forward into future planning.*
 
-> Note: v1.18, v1.19, v1.20, v1.23, v1.25, and v1.27 closes did not add retrospective sections (only the ROADMAP archives + MILESTONES entries were written). Not backfilled here to avoid reconstructing reflections after the fact; their facts live in the corresponding `milestones/v1.XX-ROADMAP.md` and `MILESTONES.md`.
+> Note: v1.18, v1.19, v1.20, v1.23, v1.25, v1.27, and v2.1–v2.5 closes did not add retrospective sections (only the ROADMAP archives + MILESTONES entries were written). Not backfilled here to avoid reconstructing reflections after the fact; their facts live in the corresponding `milestones/vX.Y-ROADMAP.md` and `MILESTONES.md`.
 
 ## Milestone: v2.0 — FlawChess Engine
 

@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
 /**
- * AnalysisTagsPanel vitest suite (quick-260702-nm8).
+ * AnalysisTagsPanel vitest suite (quick-260702-nm8; migrated to MoveStats in
+ * Phase 179 Plan 03, SEED-112).
  *
- * Covers: severity-row counts, click-to-cycle (first/next/wrap/restart), non-user
- * marker exclusion, and the analyzed/no-markers null guard.
+ * Covers: MoveStats cell counts/cycling (first/next/wrap/restart), zero-cell
+ * inertness, both-sided (category × side) coverage (D-08), the 3-column
+ * Missed/Allowed/Context tactic block, and the analyzed-only mount guard
+ * (D-03/D-07 — no markers/tiers emptiness clause).
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -70,6 +73,8 @@ function buildGame(overrides: Partial<GameFlawCard> = {}): GameFlawCard {
     time_control_str: null,
     result_fen: null,
     severity_counts: { inaccuracy: 0, mistake: 0, blunder: 0 },
+    white_accuracy: null,
+    black_accuracy: null,
     chips: [],
     analysis_state: 'analyzed',
     eval_series: null,
@@ -77,11 +82,13 @@ function buildGame(overrides: Partial<GameFlawCard> = {}): GameFlawCard {
     phase_transitions: null,
     moves: null,
     active_eval_status: null,
+    opening_ply_count: 0,
     ...overrides,
   };
 }
 
 describe('AnalysisTagsPanel', () => {
+  // ply 4 (even) = white/user; ply 8 (even) = white/user; ply 12 (even) = white/user.
   const blunderMarker = buildMarker({
     ply: 4,
     severity: 'blunder',
@@ -102,9 +109,9 @@ describe('AnalysisTagsPanel', () => {
     is_user: true,
     tags: ['hasty'],
   });
-  // Non-user marker with its own severity + motif — must be excluded entirely.
+  // Odd ply (7) = black/opponent — a genuinely opposite-side marker for D-08.
   const opponentMarker = buildMarker({
-    ply: 6,
+    ply: 7,
     severity: 'blunder',
     is_user: false,
     missed_tactic_motif: 'skewer',
@@ -112,16 +119,19 @@ describe('AnalysisTagsPanel', () => {
   });
 
   const fixture = buildGame({
-    severity_counts: { inaccuracy: 1, mistake: 1, blunder: 1 },
+    severity_counts: { inaccuracy: 1, mistake: 1, blunder: 2 },
     chips: ['hasty'],
     flaw_markers: [blunderMarker, mistakeMarker, contextMarker, opponentMarker],
   });
 
-  it('renders three SeverityBadge elements with correct counts', () => {
+  it('renders the MoveStats table with correct per-side severity counts', () => {
     render(<AnalysisTagsPanel game={fixture} onCyclePly={() => {}} />);
-    expect(screen.getByTestId('severity-blunder-1').textContent).toContain('1');
-    expect(screen.getByTestId('severity-mistake-1').textContent).toContain('1');
-    expect(screen.getByTestId('severity-inaccuracy-1').textContent).toContain('1');
+    // White (user): 1 blunder (ply 4), 1 mistake (ply 8), 1 inaccuracy (ply 12).
+    expect(screen.getByTestId('move-stats-cell-blunder-white-1').textContent).toBe('1');
+    expect(screen.getByTestId('move-stats-cell-mistake-white-1').textContent).toBe('1');
+    expect(screen.getByTestId('move-stats-cell-inaccuracy-white-1').textContent).toBe('1');
+    // Black (opponent): 1 blunder (ply 7) — surfaced too (D-08).
+    expect(screen.getByTestId('move-stats-cell-blunder-black-1').textContent).toBe('1');
   });
 
   it('renders the 3-column Missed | Allowed | Context block', () => {
@@ -129,14 +139,16 @@ describe('AnalysisTagsPanel', () => {
     expect(screen.getByTestId('tactic-group-missed-1')).toBeDefined();
     expect(screen.getByTestId('tactic-group-allowed-1')).toBeDefined();
     expect(screen.getByTestId('context-column-1')).toBeDefined();
-    // Missed chip present (fork), allowed chip present (pin); opponent's skewer excluded.
+    // Missed chip present (fork, user marker); allowed chip present (pin, user
+    // marker). Opponent's skewer motif is a MISSED chip too (tactic chips stay
+    // user-scoped — unaffected by the D-08 MoveStats rework).
     expect(screen.getByTestId('chip-tactic-missed-fork-1')).toBeDefined();
     expect(screen.getByTestId('chip-tactic-allowed-pin-1')).toBeDefined();
     expect(screen.queryByTestId('chip-tactic-missed-skewer-1')).toBeNull();
   });
 
-  it('cycles onCyclePly first/next/wrap on repeated clicks of the same severity badge', () => {
-    // Two blunder plies so cycling is observable.
+  it('cycles onCyclePly first/next/wrap on repeated clicks of the same MoveStats cell', () => {
+    // Two user (white, even-ply) blunders so cycling is observable.
     const twoBlunders = buildGame({
       severity_counts: { inaccuracy: 0, mistake: 0, blunder: 2 },
       chips: [],
@@ -147,48 +159,49 @@ describe('AnalysisTagsPanel', () => {
     });
     const onCyclePly = vi.fn();
     render(<AnalysisTagsPanel game={twoBlunders} onCyclePly={onCyclePly} />);
-    const badge = screen.getByTestId('severity-blunder-1');
-    fireEvent.click(badge);
+    const cell = screen.getByTestId('move-stats-cell-blunder-white-1');
+    expect(cell.tagName).toBe('BUTTON');
+    fireEvent.click(cell);
     expect(onCyclePly).toHaveBeenNthCalledWith(1, 2);
-    fireEvent.click(badge);
+    fireEvent.click(cell);
     expect(onCyclePly).toHaveBeenNthCalledWith(2, 10);
-    fireEvent.click(badge);
+    fireEvent.click(cell);
     // Wraps back to the first ply.
     expect(onCyclePly).toHaveBeenNthCalledWith(3, 2);
   });
 
-  it('restarts the cycle at position 0 when clicking a different ref', () => {
+  it('restarts the cycle at position 0 when clicking a different cell', () => {
     const onCyclePly = vi.fn();
     render(<AnalysisTagsPanel game={fixture} onCyclePly={onCyclePly} />);
-    fireEvent.click(screen.getByTestId('severity-blunder-1'));
+    fireEvent.click(screen.getByTestId('move-stats-cell-blunder-white-1'));
     expect(onCyclePly).toHaveBeenLastCalledWith(4);
-    fireEvent.click(screen.getByTestId('severity-mistake-1'));
+    fireEvent.click(screen.getByTestId('move-stats-cell-mistake-white-1'));
     expect(onCyclePly).toHaveBeenLastCalledWith(8);
-    // Clicking blunder again restarts at its own first (only) ply.
-    fireEvent.click(screen.getByTestId('severity-blunder-1'));
+    // Clicking blunder again restarts at its own first (only user) ply.
+    fireEvent.click(screen.getByTestId('move-stats-cell-blunder-white-1'));
     expect(onCyclePly).toHaveBeenLastCalledWith(4);
   });
 
-  it('excludes a non-user marker from counts and cycles', () => {
+  it('cycles the opponent (black) blunder cell independently, never visiting the user ply (D-08/D-09)', () => {
     const onCyclePly = vi.fn();
     render(<AnalysisTagsPanel game={fixture} onCyclePly={onCyclePly} />);
-    // Blunder count is 1 (only the user marker), even though a non-user blunder also exists.
-    expect(screen.getByTestId('severity-blunder-1').textContent).toContain('1');
-    fireEvent.click(screen.getByTestId('severity-blunder-1'));
-    // Only ply 4 (user marker) is ever reached — never ply 6 (opponent marker).
-    expect(onCyclePly).toHaveBeenCalledWith(4);
-    expect(onCyclePly).not.toHaveBeenCalledWith(6);
+    fireEvent.click(screen.getByTestId('move-stats-cell-blunder-black-1'));
+    // Only the opponent ply (7) — never the user's blunder ply (4).
+    expect(onCyclePly).toHaveBeenCalledWith(7);
+    expect(onCyclePly).not.toHaveBeenCalledWith(4);
   });
 
-  it('a ref with an empty ply list does not call onCyclePly', () => {
+  it('a zero cell is inert — not a button, never calls onCyclePly', () => {
     const noMistakes = buildGame({
       severity_counts: { inaccuracy: 0, mistake: 0, blunder: 1 },
       chips: [],
-      flaw_markers: [buildMarker({ ply: 1, severity: 'blunder', is_user: true })],
+      flaw_markers: [buildMarker({ ply: 0, severity: 'blunder', is_user: true })],
     });
     const onCyclePly = vi.fn();
     render(<AnalysisTagsPanel game={noMistakes} onCyclePly={onCyclePly} />);
-    fireEvent.click(screen.getByTestId('severity-mistake-1'));
+    const cell = screen.getByTestId('move-stats-cell-mistake-white-1');
+    expect(cell.tagName).not.toBe('BUTTON');
+    fireEvent.click(cell);
     expect(onCyclePly).not.toHaveBeenCalled();
   });
 
@@ -198,18 +211,20 @@ describe('AnalysisTagsPanel', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('returns null when there are no flaw markers', () => {
-    const empty = buildGame({ flaw_markers: [] });
-    const { container } = render(<AnalysisTagsPanel game={empty} onCyclePly={() => {}} />);
-    expect(container.firstChild).toBeNull();
+  it('renders the full all-zero 7-row table for a flawless analyzed game, instead of null (D-03/Pitfall 2)', () => {
+    const flawless = buildGame({ flaw_markers: [] });
+    render(<AnalysisTagsPanel game={flawless} onCyclePly={() => {}} />);
+    expect(screen.getByTestId('analysis-tags-panel')).toBeDefined();
+    expect(screen.getByTestId('move-stats-cell-blunder-white-1').textContent).toBe('0');
+    expect(screen.getByTestId('move-stats-cell-gem-white-1').textContent).toBe('0');
   });
 });
 
-describe('AnalysisTagsPanel Gem/Great badges (Phase 175 Plan 06)', () => {
+describe('AnalysisTagsPanel MoveStats gem/great tiers (Phase 175 Plan 06, both-sided per D-08)', () => {
   // buildGame sets user_color: 'white', so even plies (0, 2, 4) are the USER's moves
-  // and odd plies (1, 3) are the opponent's. best_move_tier is POSITION-scoped, so the
-  // fixture seeds gems/greats on BOTH sides to prove the user-only filter (Plan 06 fix).
-  // User: gem@0, great@2, gem@4. Opponent: gem@1, great@3.
+  // and odd plies (1, 3) are the opponent's. best_move_tier is POSITION-scoped, and
+  // D-08 deliberately surfaces BOTH sides here (reversing the old user-only
+  // GemGreatBadge filter). User: gem@0, great@2, gem@4. Opponent: gem@1, great@3.
   const gemGreatFixture = buildGame({
     severity_counts: { inaccuracy: 0, mistake: 0, blunder: 0 },
     chips: [],
@@ -223,41 +238,21 @@ describe('AnalysisTagsPanel Gem/Great badges (Phase 175 Plan 06)', () => {
     ],
   });
 
-  it('counts only USER gems/greats, excluding the opponent (odd-ply) ones', () => {
+  it('shows BOTH the user gem count and the opponent gem count (D-08)', () => {
     render(<AnalysisTagsPanel game={gemGreatFixture} onCyclePly={() => {}} />);
-    // User gems: plies 0, 4 → 2 (opponent gem@1 excluded).
-    expect(screen.getByTestId('badge-gem-1').textContent).toContain('2');
-    // User great: ply 2 → 1 (opponent great@3 excluded).
-    expect(screen.getByTestId('badge-great-1').textContent).toContain('1');
+    // User (white) gems: plies 0, 4 → 2.
+    expect(screen.getByTestId('move-stats-cell-gem-white-1').textContent).toBe('2');
+    // Opponent (black) gem: ply 1 → 1, now surfaced too.
+    expect(screen.getByTestId('move-stats-cell-gem-black-1').textContent).toBe('1');
   });
 
-  it('renders no Gem/Great badges when the game has no gem/great plies', () => {
-    const noBestMoves = buildGame({
-      severity_counts: { inaccuracy: 0, mistake: 1, blunder: 0 },
-      chips: [],
-      flaw_markers: [buildMarker({ ply: 4, severity: 'mistake', is_user: true })],
-      eval_series: [{ ply: 4, es: 0.5, eval_cp: 0, eval_mate: null, best_move_tier: null, maia_prob: null }],
-    });
-    render(<AnalysisTagsPanel game={noBestMoves} onCyclePly={() => {}} />);
-    expect(screen.queryByTestId('badge-gem-1')).toBeNull();
-    expect(screen.queryByTestId('badge-great-1')).toBeNull();
+  it('shows BOTH the user great count and the opponent great count (D-08)', () => {
+    render(<AnalysisTagsPanel game={gemGreatFixture} onCyclePly={() => {}} />);
+    expect(screen.getByTestId('move-stats-cell-great-white-1').textContent).toBe('1');
+    expect(screen.getByTestId('move-stats-cell-great-black-1').textContent).toBe('1');
   });
 
-  it('shows no badge when only the opponent has gems (white user, gem on an odd ply)', () => {
-    const opponentOnlyGem = buildGame({
-      severity_counts: { inaccuracy: 0, mistake: 0, blunder: 0 },
-      chips: [],
-      flaw_markers: [],
-      eval_series: [
-        { ply: 1, es: 0.5, eval_cp: 0, eval_mate: null, best_move_tier: 'gem', maia_prob: 0.1 },
-      ],
-    });
-    const { container } = render(<AnalysisTagsPanel game={opponentOnlyGem} onCyclePly={() => {}} />);
-    // No user flaws, no user gems/greats → the panel renders nothing at all.
-    expect(container.firstChild).toBeNull();
-  });
-
-  it('renders even with zero flaw markers, as long as USER gem/great plies exist', () => {
+  it('renders even with zero flaw markers, as long as gem/great plies exist (D-03/Pitfall 2)', () => {
     const noFlawsButGem = buildGame({
       severity_counts: { inaccuracy: 0, mistake: 0, blunder: 0 },
       chips: [],
@@ -268,30 +263,30 @@ describe('AnalysisTagsPanel Gem/Great badges (Phase 175 Plan 06)', () => {
     });
     const { container } = render(<AnalysisTagsPanel game={noFlawsButGem} onCyclePly={() => {}} />);
     expect(container.firstChild).not.toBeNull();
-    expect(screen.getByTestId('badge-gem-1')).toBeDefined();
+    expect(screen.getByTestId('move-stats-cell-gem-white-1').textContent).toBe('1');
   });
 
-  it('cycling the Gem badge invokes onCyclePly with the USER gem plies only, wrapping', () => {
+  it('cycling the user gem cell invokes onCyclePly with the user gem plies only, wrapping', () => {
     const onCyclePly = vi.fn();
     render(<AnalysisTagsPanel game={gemGreatFixture} onCyclePly={onCyclePly} />);
-    const badge = screen.getByTestId('badge-gem-1');
-    fireEvent.click(badge);
+    const cell = screen.getByTestId('move-stats-cell-gem-white-1');
+    fireEvent.click(cell);
     // User gems are plies 0 and 4 — never ply 1 (opponent).
     expect(onCyclePly).toHaveBeenNthCalledWith(1, 0);
-    fireEvent.click(badge);
+    fireEvent.click(cell);
     expect(onCyclePly).toHaveBeenNthCalledWith(2, 4);
-    fireEvent.click(badge);
+    fireEvent.click(cell);
     // Wraps back to the first user gem ply.
     expect(onCyclePly).toHaveBeenNthCalledWith(3, 0);
     // Never visits the opponent gem ply.
     expect(onCyclePly).not.toHaveBeenCalledWith(1);
   });
 
-  it('cycling the Great badge invokes onCyclePly with the user great ply, independent of Gem', () => {
+  it('cycling the user great cell is independent of the gem cell', () => {
     const onCyclePly = vi.fn();
     render(<AnalysisTagsPanel game={gemGreatFixture} onCyclePly={onCyclePly} />);
-    fireEvent.click(screen.getByTestId('badge-gem-1'));
-    fireEvent.click(screen.getByTestId('badge-great-1'));
+    fireEvent.click(screen.getByTestId('move-stats-cell-gem-white-1'));
+    fireEvent.click(screen.getByTestId('move-stats-cell-great-white-1'));
     // The user's only great ply (2), never the opponent great ply 3.
     expect(onCyclePly).toHaveBeenLastCalledWith(2);
     expect(onCyclePly).not.toHaveBeenCalledWith(3);

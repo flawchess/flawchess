@@ -80,6 +80,11 @@ export interface GameFlawCard {
   // Phase 106 flaw fields — discriminated by analysis_state:
   // severity_counts is null (never 0/0/0) for unanalyzed games.
   severity_counts: SeverityCountsData | null;
+  // Phase 179 additions (SEED-112, D-01): canonical Phase 178 per-color
+  // accuracy (0-100). Null when not yet computed. No ACPL field (D-02) and no
+  // per-side count fields (D-05 — counts are client-derived in Plan 02).
+  white_accuracy: number | null;
+  black_accuracy: number | null;
   chips: FlawTag[];
   analysis_state: AnalysisState;
   // Phase 109 additions — null for unanalyzed games (analysis_state === 'no_engine_analysis'):

@@ -88,7 +88,7 @@ import { TemperatureSelector, TEMPERATURE_DEFAULT } from '@/components/analysis/
 import type { HoveredQualityMove } from '@/components/analysis/MaiaMoveQualityBar';
 import { ChessBoard } from '@/components/board/ChessBoard';
 import type { BoardArrow } from '@/components/board/ChessBoard';
-import { BOARD_MAX_WIDTH, computeBoardSize } from '@/components/board/boardSize';
+import { BOARD_MAX_WIDTH, BOARD_MIN_WIDTH, computeBoardSize } from '@/components/board/boardSize';
 import { BoardControls } from '@/components/board/BoardControls';
 import { PlayerBar } from '@/components/board/PlayerBar';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -166,6 +166,15 @@ const DESK3COL_BREAKPOINT_PX = 1200;
  *  bars (Phase 161 UAT: bars hug the board, board never clips). */
 const BOARD_EVAL_BARS_ALLOWANCE_PX = 56;
 
+/** Desktop-only board-size reduction (UAT 179): on the ≥1200px desktop analysis layout
+ *  the board is drawn 20px smaller than its natural width/height fit, leaving more room
+ *  for the eval chart + tags stacked below it. Applied to the FINAL computed board size
+ *  (not the max-width ceiling) so it produces a visible 20px reduction regardless of
+ *  whether the width, height, or ceiling constraint binds — the ceiling rarely binds on
+ *  desktop (the board is usually height-limited), which is why a ceiling-only cut is
+ *  invisible. Does NOT affect the mid or mobile layouts. */
+const DESKTOP_BOARD_SIZE_REDUCTION_PX = 20;
+
 /** Mobile board size ceiling — 80px below the shared BOARD_MAX_WIDTH. The mobile layout
  *  is a vertical stack (board on top, tabs below), so a full-size board crowded the tab
  *  panel; a smaller board leaves more of the viewport for the tabs. The board is square and
@@ -208,7 +217,7 @@ const EVAL_SLIDER_SLACK_PX = 12;
 const DESKTOP_GRID_MAX_WIDTH_PX =
   SIDE_COLUMN_WIDTH_PX * 2 +
   DESKTOP_GRID_GAP_PX * 2 +
-  BOARD_MAX_WIDTH +
+  (BOARD_MAX_WIDTH - DESKTOP_BOARD_SIZE_REDUCTION_PX) +
   BOARD_EVAL_BARS_ALLOWANCE_PX +
   EVAL_SLIDER_SLACK_PX * 2;
 
@@ -2412,6 +2421,9 @@ export default function Analysis() {
   // reveal (and re-shows the tooltip after the chart's outside-click dismissal).
   const [tagCommandedPly, setTagCommandedPly] = useState<number | null>(null);
   const [tagCommandSeq, setTagCommandSeq] = useState(0);
+  // Bumped on every tags-panel click so the move list top-aligns the navigated move
+  // (instead of the default minimal-scroll that lands a downward jump at the bottom).
+  const [moveListTopAlignSeq, setMoveListTopAlignSeq] = useState(0);
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
@@ -2501,9 +2513,11 @@ export default function Analysis() {
     const measure = (): void => {
       const el = boardStageRef.current;
       if (!el) return;
+      // Desktop layout = the ≥1200px band (the desk3col 3-column grid). The height
+      // budget only additionally binds once tall enough (`locked`).
+      const isDesktopWidth = window.matchMedia(`(min-width:${BOARD_WIDTH_LOCK_MIN_PX}px)`).matches;
       const locked =
-        window.matchMedia(`(min-width:${BOARD_WIDTH_LOCK_MIN_PX}px)`).matches &&
-        window.matchMedia(`(min-height:${BOARD_HEIGHT_LOCK_MIN_PX}px)`).matches;
+        isDesktopWidth && window.matchMedia(`(min-height:${BOARD_HEIGHT_LOCK_MIN_PX}px)`).matches;
       // Non-board "chrome" (source caps + player rows + eval chart + gaps) shares the board's
       // vertical budget, so subtract it. Derived from the DOM as (group height − board box
       // height) rather than the boardWidth STATE, so it carries no stale closure and settles
@@ -2521,7 +2535,13 @@ export default function Analysis() {
       // each side — room the eval-chart slider's thumb overhang needs to avoid being clipped.
       const widthBudget = el.clientWidth - BOARD_EVAL_BARS_ALLOWANCE_PX - EVAL_SLIDER_SLACK_PX * 2;
       const heightBudget = locked ? el.clientHeight - chrome : Infinity;
-      setBoardWidth(computeBoardSize(widthBudget, heightBudget, BOARD_MAX_WIDTH));
+      const raw = computeBoardSize(widthBudget, heightBudget, BOARD_MAX_WIDTH);
+      // UAT 179: draw the desktop board 20px smaller than its natural fit (floored at
+      // BOARD_MIN_WIDTH). Applied to the final size so it's visible whichever constraint
+      // binds; mid/mobile (isDesktopWidth false) are untouched.
+      setBoardWidth(
+        isDesktopWidth ? Math.max(BOARD_MIN_WIDTH, raw - DESKTOP_BOARD_SIZE_REDUCTION_PX) : raw,
+      );
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -2805,6 +2825,7 @@ export default function Analysis() {
       currentNodeId={currentNodeId}
       rootPly={rootPly}
       initialPly={isGameMode ? initialAlignPly : undefined}
+      topAlignSeq={moveListTopAlignSeq}
       onNodeClick={goToNode}
       decorations={sidelineNodeColors}
       pvNodeIds={isGameMode ? pvNodeIds : undefined}
@@ -2897,6 +2918,56 @@ export default function Analysis() {
     return null;
   };
 
+  // The flaw-tags panel (game mode only, quick-260702-nm8) — MoveStats card + Missed |
+  // Allowed | Context tags. Same readiness gate as the eval chart (implies flaw_markers
+  // present). Cycling a cell/chip reuses the exact goToNode pattern from
+  // handleEvalChartPlyChange — a single call auto-syncs board + move list + eval-chart
+  // crosshair (evalChartPly derives from currentNodeId). `withHighlight` (Task 3, desktop
+  // only) wires the hover-highlight back onto the eval chart. `section` (UAT 179) splits
+  // the panel: desktop renders 'stats' (right column) + 'tags' (below the eval chart);
+  // mobile/mid render the default 'panel' (both stacked) in the Tags tab. Declared before
+  // desktopBoardStage, which embeds the 'tags' section under the eval chart.
+  const tagsPanel = (withHighlight = false, section: 'panel' | 'stats' | 'tags' = 'panel') =>
+    evalChartReady && gameData ? (
+      <AnalysisTagsPanel
+        game={gameData}
+        section={section}
+        onCyclePly={(ply, orientation) => {
+          // T-140-02b: L-8 guard for noUncheckedIndexedAccess.
+          const nodeId = mainLine[ply];
+          // The ply the board should rest on: a missed line forks at ply-1 (the decision
+          // board), an allowed line at ply; context tags / Move Stats cells navigate to the
+          // flaw ply itself.
+          const restPly = orientation !== undefined ? forkPlyForOrientation(ply, orientation) : ply;
+          if (orientation !== undefined && nodeId !== undefined) {
+            // Missed/allowed tactic badge: unfold its sideline AND navigate to the decision
+            // fork (ply-1 for missed, flaw ply for allowed). Unlike the move-list chip, the
+            // tags-card badge NEVER folds an already-open line (UAT): if the sideline is
+            // already unfolded, just navigate to the fork instead of toggling it shut.
+            const key = flawKey({ ply, orientation });
+            if (openLines.has(key)) {
+              const forkNodeId = mainLine[restPly];
+              if (forkNodeId !== undefined) goToNode(forkNodeId);
+            } else {
+              handlePvChipClick(nodeId, { ply, orientation });
+            }
+          } else if (nodeId !== undefined) {
+            goToNode(nodeId);
+          }
+          // Top-align the navigated move so a downward jump lands at the TOP of the move
+          // list (with an unfolded sideline visible below), not clipped at the bottom.
+          setMoveListTopAlignSeq((s) => s + 1);
+          // Surface the eval-chart tooltip on the board's RESTING ply (the fork for a missed
+          // line), NOT the raw flaw ply: the command's onHoverPlyChange re-navigates the
+          // board, so commanding the flaw ply would yank the cursor one move past a missed
+          // line's decision fork on a repeat click.
+          setTagCommandedPly(restPly);
+          setTagCommandSeq((s) => s + 1);
+        }}
+        onHighlightChange={withHighlight ? setTagsHighlightedPlies : undefined}
+      />
+    ) : null;
+
   // Desktop board column (Phase 161 UAT). The outer div is the measured "stage" (see the
   // boardStageRef effect): a full-width, viewport-height-locked box. Inside sits ONE tight,
   // centered group — source caps + top player, the board flanked by its two eval bars, the
@@ -2972,32 +3043,19 @@ export default function Analysis() {
             {evalChart('h-[120px]', tagsHighlightedPlies)}
           </div>
         )}
+
+        {/* Missed/Allowed/Context tags in a charcoal container, below the eval
+            chart (UAT 179). Desktop only (!isMid) — the mid/mobile layouts keep the
+            tags below the MoveStats card in the tabbed panel. Aligned to the board
+            width by the group's maxWidth, filling the slack under the chart. */}
+        {!isMid && (
+          <div className="w-full" data-testid="analysis-board-tags">
+            {tagsPanel(true, 'tags')}
+          </div>
+        )}
       </div>
     </div>
   );
-
-  // The flaw-tags panel (game mode only, quick-260702-nm8) — severity row + Missed |
-  // Allowed | Context chip block. Same readiness gate as the eval chart (implies
-  // flaw_markers present); mounts exactly once regardless of desktop/mobile, mirroring
-  // the evalChart helper above. Cycling a badge/chip reuses the exact goToNode pattern
-  // from handleEvalChartPlyChange — a single call auto-syncs board + move list +
-  // eval-chart crosshair (evalChartPly derives from currentNodeId). `withHighlight`
-  // (Task 3, desktop only) wires the hover-highlight back onto the eval chart.
-  const tagsPanel = (withHighlight = false) =>
-    evalChartReady && gameData ? (
-      <AnalysisTagsPanel
-        game={gameData}
-        onCyclePly={(ply) => {
-          // T-140-02b: L-8 guard for noUncheckedIndexedAccess.
-          const nodeId = mainLine[ply];
-          if (nodeId !== undefined) goToNode(nodeId);
-          // Surface the eval-chart tooltip on the cycled ply (like the game card).
-          setTagCommandedPly(ply);
-          setTagCommandSeq((s) => s + 1);
-        }}
-        onHighlightChange={withHighlight ? setTagsHighlightedPlies : undefined}
-      />
-    ) : null;
 
   // Shared ELO slider: drives BOTH the FlawChess and Maia engines, so on desktop it
   // sits BETWEEN the two cards (164 UAT); each mobile tab (FlawChess / Maia) renders
@@ -3191,11 +3249,15 @@ export default function Analysis() {
     </TabsContent>
   );
 
-  // The mobile "Moves" tab content — the vertical variation tree. Shared across the
-  // mobile tab layouts.
+  // The mobile "Moves" tab content — the vertical variation tree in a charcoal
+  // container (no card header), matching the surrounding tab surfaces. Shared across
+  // the mobile tab layouts and the mid-range right column. The charcoal wrapper keeps
+  // the flex/scroll chain (`min-h-0 flex-1`) so the tree's internal scroller resolves.
   const movesTab = (
-    <TabsContent value="moves" className="flex min-h-0 flex-1 flex-col">
-      {variationTree('vertical')}
+    <TabsContent value="moves" className="flex min-h-0 flex-1 flex-col pb-2">
+      <div className="charcoal-texture flex min-h-0 flex-1 flex-col rounded-md">
+        {variationTree('vertical')}
+      </div>
     </TabsContent>
   );
 
@@ -3563,11 +3625,26 @@ export default function Analysis() {
             {movesCard}
             </div>
 
-            {/* Phase 161 D-04: Tags/badges panel relocated here from the board column
-                (was directly under the eval chart) so that column is board + chart
-                only. withHighlight=true preserved — its hover state still wires back
-                onto the eval chart in the middle column. */}
-            {tagsPanel(true)}
+            {/* Invisible spacer mirroring the board column's BOTTOM player bar so the
+                Accuracies (MoveStats) card top aligns with the board-controls top (UAT
+                179): the board-height region above already lands its bottom on the
+                board's bottom edge, but the board controls sit one player-bar lower (below
+                the footer bar). This spacer drops the stats card by exactly that footer-bar
+                height. desk3col:-my-2 trims the column's gap-4 on BOTH sides of the spacer
+                down to the board column's gap-2, so the net offset is the bar height alone.
+                Same trick as the top spacer; game mode only (free play has no player bars
+                and no stats card). (Quick 260718) */}
+            {isGameMode && gameData && (
+              <div aria-hidden="true" className="hidden desk3col:block desk3col:invisible desk3col:-my-2">
+                {playerBar(boardFlipped ? 'black' : 'white')}
+              </div>
+            )}
+            {/* MoveStats card (Accuracies + two-sided category table) lives in the
+                right column. The Missed/Allowed/Context tags moved back under the eval
+                chart in the board column (UAT 179 — see analysis-board-tags), so this
+                column shows the stats card only. withHighlight=true preserved — its
+                hover/cycle state still wires back onto the eval chart. */}
+            {tagsPanel(true, 'stats')}
           </div>
 
         </div>

@@ -25,3 +25,15 @@ export function isUserPly(ply: number, userColor: 'white' | 'black' | string): b
   if (userColor === 'black') return ply % 2 === 1;
   return false;
 }
+
+/**
+ * The literal board color of the mover at `ply` — even ply = White, odd ply =
+ * Black, the same parity convention `isUserPly` uses above. Unlike
+ * `isUserPly` (which answers "is this the user's move" relative to a given
+ * `userColor`), this answers "which color made this move" unconditionally —
+ * needed by the Move Stats component (Phase 179, D-08) to bucket BOTH
+ * players' counts, not just the user's.
+ */
+export function moverColorAtPly(ply: number): 'white' | 'black' {
+  return ply % 2 === 0 ? 'white' : 'black';
+}

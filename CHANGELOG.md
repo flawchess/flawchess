@@ -8,6 +8,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v2.5] Move Statistics — 2026-07-18
+
 ### Added
 
 - Best/Good move tiers now show on the analysis board and the Library game card miniboard, with green star (Best) and thumbs-up (Good) corner glyphs for both players (Quick 260717-rbn).
@@ -15,6 +17,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- The badge rows on the Library game card and the analysis board tags panel are replaced by a single shared **Move Stats** component: a two-sided accuracy strip plus a per-player table counting all seven move categories (Gem, Great, Best, Good, Inaccuracy, Mistake, Blunder) for both you and your opponent. Each count is clickable to cycle through those moves, and on the Library card only your own cells carry the filter ring (Phase 179).
 - Play-vs-bot setup: the play-style control is now three preset buttons — **Human** (plays on instinct, no calculation), **Light** (a little calculation, the new default), and **Deep** (calculates hard) — replacing the previous slider plus Human/Engine chips. The presets describe calculation depth rather than a rating; bot strength isn't ELO-calibrated yet (Quick 260717-lr9).
 
 ### Fixed
@@ -1101,7 +1104,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.4...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.5...HEAD
+[v2.5]: https://github.com/flawchess/flawchess/compare/v2.4...v2.5
 [v2.4]: https://github.com/flawchess/flawchess/compare/v2.3...v2.4
 [v2.3]: https://github.com/flawchess/flawchess/compare/v2.2...v2.3
 [v2.2]: https://github.com/flawchess/flawchess/compare/v2.1...v2.2

@@ -722,6 +722,10 @@ def _build_card(
         time_control_str=game.time_control_str,
         result_fen=game.result_fen,
         severity_counts=severity_counts,
+        # Phase 179 (SEED-112, D-01): canonical Phase 178 accuracy columns only —
+        # deliberately never game.white_accuracy_imported / black_accuracy_imported.
+        white_accuracy=game.white_accuracy,
+        black_accuracy=game.black_accuracy,
         chips=chips,
         analysis_state=analysis_state,
         eval_series=eval_series_data,

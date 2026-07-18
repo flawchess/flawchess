@@ -16,25 +16,40 @@ Single-path guarantee (D-06/SEED-110 SS4): this script calls the EXACT SAME
 re-implemented here — the only responsibility of this script is candidate
 selection, streaming, and writing the result.
 
-Read path (no N+1)
--------------------
-One server-side cursor (`session.stream(...)`) over a `game_positions JOIN
-games` SELECT ordered by `(game_id, ply)`, so each game's rows are contiguous
-and can be grouped with `itertools.groupby` — mirrors
-`scripts/backfill_best_move_pv.py`'s `_stream_game_batches` /
-`_resolve_boards` streaming pattern, NOT `scripts/backfill_full_evals.py`'s
-load-all-ids-then-per-game-query structure (which would be one extra
-`game_positions` SELECT per game at ~718k-game prod scale).
+Read path (two-phase, index-driven, bounded memory)
+----------------------------------------------------
+BUG-FIX HISTORY: the original design used ONE server-side cursor
+(`session.stream(...)`) over a `game_positions JOIN games` SELECT ordered by
+`(game_id, ply)`. There is no index on `game_positions(game_id, ply)` (the PK
+leads with `user_id`), so at prod scale that ORDER BY compiles to a BLOCKING
+Sort over ~34M joined rows. A Sort emits no rows until it finishes, so the
+"stream" materialized a multi-GB result set into Python before the first batch
+ever committed — it OOM-froze the operator's machine and filled zero games.
+`backfill_best_move_pv.py`'s identical streaming pattern happens to survive
+only because its candidate set is far smaller.
+
+The fix is a two-phase, chunked read that never sorts the whole table:
+  1. Load candidate `games.id`s ONCE (one seq-scan of `games` returning just
+     the ~464k 4-byte ids, ordered by id — a few MB in Python, released
+     immediately).
+  2. For each chunk of `GAMES_PER_BATCH` ids, fetch that chunk's position rows
+     via `WHERE game_id = ANY(:ids) ORDER BY game_id, ply`, which uses
+     `ix_game_positions_game_id` (Index Scan + a tiny incremental sort of only
+     the chunk's rows). Group with `itertools.groupby`, compute, write, commit.
+
+This is NOT the rejected N+1 pattern: it is one indexed SELECT per CHUNK
+(~100 games), not one per game. Memory is bounded to a single chunk
+(~100 games x ~40 plies) regardless of corpus size.
 
 Candidate gate (coarse SQL, not authoritative)
 -----------------------------------------------
-The streaming SELECT filters candidates by `Game.white_blunders.isnot(None)`
-(the `is_analyzed` sentinel) plus `Game.white_accuracy.is_(None)` for
-resumability — it deliberately does NOT filter on `eval_cp`/`eval_mate`
-presence, because the compute function's own interior-hole Complete-Sequence
-Gate is the ONLY authority on whether a game's eval sequence is hole-free
-(178-RESEARCH.md SS "Complete-Sequence Gate"). A presence filter here would
-silently hide holes and wrongly treat a holed game as complete.
+The candidate-id SELECT filters by `Game.white_blunders.isnot(None)` (the
+`is_analyzed` sentinel) plus `Game.white_accuracy.is_(None)` for resumability —
+it deliberately does NOT filter on `eval_cp`/`eval_mate` presence, because the
+compute function's own interior-hole Complete-Sequence Gate is the ONLY
+authority on whether a game's eval sequence is hole-free (178-RESEARCH.md
+SS "Complete-Sequence Gate"). A presence filter here would silently hide holes
+and wrongly treat a holed game as complete.
 
 What it writes
 ---------------
@@ -60,7 +75,7 @@ Usage:
     # Size it first:
     uv run python scripts/backfill_accuracy_acpl.py --db dev --dry-run
 
-    # Smoke on dev:
+    # Smoke on dev (first 500 candidate games):
     uv run python scripts/backfill_accuracy_acpl.py --db dev --limit 500
 
     # Scope to a single user:
@@ -79,7 +94,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from itertools import groupby
 from pathlib import Path
@@ -123,54 +138,34 @@ def _db_url(target: str) -> str:
     return db_url_for_target(target)
 
 
-def _build_candidate_stmt(
-    user_id: int | None, limit: int | None
-) -> Select[tuple[int, int, int, int | None, int | None]]:
-    """Build the streaming SELECT of candidate `game_positions` rows.
+def _build_candidate_ids_stmt(user_id: int | None, limit: int | None) -> Select[tuple[int]]:
+    """Build the SELECT of candidate `games.id`s to backfill.
 
-    Selects (user_id, game_id, ply, eval_cp, eval_mate) for every position row
-    of every analyzed game still missing canonical accuracy/ACPL:
+    Selects `Game.id` for every analyzed game still missing canonical
+    accuracy/ACPL:
     1. `Game.white_blunders.isnot(None)` — the `is_analyzed` sentinel (coarse
        candidate filter, not authoritative — see module docstring).
     2. `Game.white_accuracy.is_(None)` — resumability: already-filled games
        drop out of the candidate set on a re-run.
-    3. `GamePosition.user_id == user_id` when `--user-id` is given.
+    3. `Game.user_id == user_id` when `--user-id` is given.
 
     Deliberately does NOT filter on `eval_cp`/`eval_mate` presence — the
     compute function's own Complete-Sequence Gate is authoritative on holes.
 
-    `user_id` is carried through explicitly (not derived from `game_id` alone)
-    per the plan's key_link: `game_positions`' PK is `(user_id, game_id, ply)`,
-    so downstream code must never assume `game_id` alone uniquely keys a row
-    without also checking `user_id`.
-
-    Ordered by `(game_id, ply)` so every game's rows are CONTIGUOUS, enabling
-    the streaming reader to group by game_id with `itertools.groupby` and
-    replay each game's compute exactly once. `--limit` caps the number of
-    STREAMED POSITION ROWS (not games) — mirrors `backfill_best_move_pv.py`'s
-    convention; a limit that splits a game's rows mid-sequence is expected to
-    trip that game's Complete-Sequence Gate (skipped_none), which is harmless
-    for a smoke check.
+    Returns only the 4-byte `id` (no join to `game_positions`), so the result
+    is a few MB even at full prod scale — the per-chunk position fetch below is
+    what pulls eval rows, and only one chunk at a time. `--limit` caps the
+    number of candidate GAMES (useful for smoke checks).
     """
-    stmt = (
-        select(
-            GamePosition.user_id,
-            GamePosition.game_id,
-            GamePosition.ply,
-            GamePosition.eval_cp,
-            GamePosition.eval_mate,
-        )
-        .join(Game, Game.id == GamePosition.game_id)
-        .where(
-            Game.white_blunders.isnot(None),
-            Game.white_accuracy.is_(None),
-        )
+    stmt = select(Game.id).where(
+        Game.white_blunders.isnot(None),
+        Game.white_accuracy.is_(None),
     )
 
     if user_id is not None:
-        stmt = stmt.where(GamePosition.user_id == user_id)
+        stmt = stmt.where(Game.user_id == user_id)
 
-    stmt = stmt.order_by(GamePosition.game_id, GamePosition.ply)
+    stmt = stmt.order_by(Game.id)
 
     if limit is not None:
         stmt = stmt.limit(limit)
@@ -178,34 +173,35 @@ def _build_candidate_stmt(
     return stmt
 
 
-async def _stream_game_batches(
-    session_maker: async_sessionmaker[AsyncSession],
-    stmt: Select[Any],
-    games_per_batch: int,
-) -> AsyncIterator[list[Any]]:
-    """Stream rows from a server-side cursor, yielding game-batched lists.
+async def _load_candidate_game_ids(
+    session: AsyncSession, user_id: int | None, limit: int | None
+) -> list[int]:
+    """Fetch all candidate `games.id`s in one query (id-ordered, memory-trivial)."""
+    result = await session.execute(_build_candidate_ids_stmt(user_id, limit))
+    return list(result.scalars().all())
 
-    The `(game_id, ply)` ORDER BY keeps each game's rows contiguous, so a
-    batch is flushed as soon as a NEW game_id would cross `games_per_batch`
-    distinct games. Postgres holds the cursor; only one batch is alive in
-    Python at a time (bounded memory at ~718k-game prod scale) — mirrors
-    `backfill_best_move_pv._stream_game_batches` verbatim.
+
+async def _fetch_chunk_positions(session: AsyncSession, game_ids: Sequence[int]) -> list[Any]:
+    """Fetch every position row for a chunk of games, ordered `(game_id, ply)`.
+
+    `game_id = ANY(:ids)` uses `ix_game_positions_game_id` (Index Scan) and the
+    `(game_id, ply)` ORDER BY becomes a tiny incremental sort over only this
+    chunk's rows — NOT a full-table sort (see the module docstring's bug-fix
+    history). The `(game_id, ply)` order keeps each game's rows contiguous so
+    the caller can group with `itertools.groupby`.
     """
-    async with session_maker() as read_session:
-        result = await read_session.stream(stmt)
-        batch: list[Any] = []
-        seen_games: set[int] = set()
-        async for row in result:
-            gid = row.game_id
-            if gid not in seen_games:
-                if len(seen_games) >= games_per_batch:
-                    yield batch
-                    batch = []
-                    seen_games = set()
-                seen_games.add(gid)
-            batch.append(row)
-        if batch:
-            yield batch
+    result = await session.execute(
+        select(
+            GamePosition.user_id,
+            GamePosition.game_id,
+            GamePosition.ply,
+            GamePosition.eval_cp,
+            GamePosition.eval_mate,
+        )
+        .where(GamePosition.game_id.in_(game_ids))
+        .order_by(GamePosition.game_id, GamePosition.ply)
+    )
+    return list(result.all())
 
 
 async def _process_batch(
@@ -284,12 +280,6 @@ async def run_backfill(
         async_engine = None  # type: ignore[assignment]  # not created here; nothing to dispose
         session_maker = _session_maker
 
-    stmt = _build_candidate_stmt(user_id, limit)
-
-    _log(f"Streaming candidate rows in batches of {GAMES_PER_BATCH} games.")
-    if dry_run:
-        _log("--dry-run: computing but NOT writing any UPDATEs.")
-
     rows_seen = 0
     games_processed = 0
     games_filled = 0
@@ -297,8 +287,16 @@ async def run_backfill(
     batch_idx = 0
 
     async with session_maker() as write_session:
-        async for batch in _stream_game_batches(session_maker, stmt, GAMES_PER_BATCH):
+        game_ids = await _load_candidate_game_ids(write_session, user_id, limit)
+        total_candidates = len(game_ids)
+        _log(f"{total_candidates} candidate games; processing in chunks of {GAMES_PER_BATCH}.")
+        if dry_run:
+            _log("--dry-run: computing but NOT writing any UPDATEs.")
+
+        for chunk_start in range(0, total_candidates, GAMES_PER_BATCH):
             batch_idx += 1
+            chunk_ids = game_ids[chunk_start : chunk_start + GAMES_PER_BATCH]
+            batch = await _fetch_chunk_positions(write_session, chunk_ids)
             processed, filled, skipped_none = await _process_batch(
                 batch, write_session, dry_run=dry_run
             )
@@ -307,9 +305,9 @@ async def run_backfill(
             games_filled += filled
             games_skipped_none += skipped_none
             _log(
-                f"  batch {batch_idx} done ({len(batch)} rows; cumulative "
-                f"processed={games_processed}, filled={games_filled}, "
-                f"skipped_none={games_skipped_none})"
+                f"  chunk {batch_idx} done ({len(chunk_ids)} games, {len(batch)} rows; "
+                f"cumulative processed={games_processed}/{total_candidates}, "
+                f"filled={games_filled}, skipped_none={games_skipped_none})"
             )
 
     if games_processed:
@@ -360,7 +358,7 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         metavar="N",
-        help="Cap at N streamed position rows. Useful for smoke checks.",
+        help="Cap at N candidate games. Useful for smoke checks.",
     )
     return parser.parse_args()
 

@@ -1,24 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
-import { SeverityBadge } from '@/components/library/SeverityBadge';
-import { GemGreatBadge } from '@/components/library/GemGreatBadge';
-import type { BestMoveTier } from '@/components/library/GemGreatBadge';
+import { MoveStats } from '@/components/library/MoveStats';
+import type { MoveStatsCellRef } from '@/components/library/MoveStats';
+import type { MoveStatCategory, MoveStatSide } from '@/lib/moveStatsCounts';
 import { TacticMotifGroup } from '@/components/library/TacticMotifGroup';
 import { ChipColumn } from '@/components/library/ChipColumn';
 import { TagChip, TagLegend } from '@/components/library/TagChip';
 import { tacticMotifLabel, TACTIC_FAMILY_FOR_MOTIF } from '@/lib/tacticComparisonMeta';
-import { isUserPly } from '@/lib/plyOwnership';
-import type { GameFlawCard, FlawSeverity, FlawTag } from '@/types/library';
+import { moverColorAtPly } from '@/lib/plyOwnership';
+import type { GameFlawCard, FlawTag } from '@/types/library';
 
 /**
  * Flaw-tags panel for the /analysis page (game mode) — mirrors the Library game
- * card's severity-badge row + 3-column (Missed | Allowed | Context) tactic/context
- * chip block, per quick-260702-nm8. A standalone component (does NOT import from or
- * modify LibraryGameCard, which stays untouched — the card is well-tested).
+ * card's MoveStats table + 3-column (Missed | Allowed | Context) tactic/context
+ * chip block (Phase 179 Plan 03, migrated from the original per-badge-row layout
+ * per quick-260702-nm8). A standalone component (does NOT import from or modify
+ * LibraryGameCard, which stays untouched — the card is well-tested).
  *
- * Clicking a severity badge or tactic/context chip cycles the board through that
- * flaw's positions via `onCyclePly`, mirroring the Library card's click-to-cycle
- * behavior but WITHOUT the card's hover-highlight/eval-chart-outline machinery
- * (no filter store on /analysis — resolved decision 3).
+ * Clicking a MoveStats cell or a tactic/context chip cycles the board through
+ * that flaw's positions via `onCyclePly`, mirroring the Library card's
+ * click-to-cycle behavior but WITHOUT the card's outlinedRef machinery (no
+ * filter store on /analysis — resolved decision 3).
  */
 
 // Re-declared locally (trivially safe copies from LibraryGameCard — not shared
@@ -29,25 +30,24 @@ const TACTIC_ORIENTATION_LABELS: Record<TacticChipOrientation, string> = {
   allowed: 'Allowed',
   missed: 'Missed',
 };
-const SEVERITY_ORDER: FlawSeverity[] = ['blunder', 'mistake', 'inaccuracy'];
 
 type FlawRef =
   | { kind: 'tag'; tag: FlawTag }
-  | { kind: 'severity'; severity: FlawSeverity }
   | { kind: 'motif'; motif: string; orientation: TacticChipOrientation }
-  // Gem/great tier (Phase 175 Plan 06) — sourced from game.eval_series
-  // (best_move_tier), not flaw_markers, so it's a separate ref kind rather than a
-  // FlawSeverity value. Mirrors LibraryGameCard's local 'bestMove' ref kind (each
-  // file keeps its own copy per this component's existing "trivially safe copies,
-  // not shared extractions" convention — see the file header docstring).
-  | { kind: 'bestMove'; tier: BestMoveTier };
+  // Move Stats (category × side) cell (Phase 179 Plan 03, D-09) — replaces the
+  // former separate 'severity'/'bestMove' kinds, mirroring LibraryGameCard's
+  // identical rework (each file keeps its own copy per this component's
+  // existing "trivially safe copies, not shared extractions" convention — see
+  // the file header docstring). side is the literal board color of the mover
+  // (moverColorAtPly), NOT user-relative — D-08 surfaces both players' cells.
+  | { kind: 'category'; category: MoveStatCategory; side: MoveStatSide };
 
 function sameFlawRef(a: FlawRef, b: FlawRef): boolean {
   if (a.kind === 'tag' && b.kind === 'tag') return a.tag === b.tag;
-  if (a.kind === 'severity' && b.kind === 'severity') return a.severity === b.severity;
   if (a.kind === 'motif' && b.kind === 'motif')
     return a.motif === b.motif && a.orientation === b.orientation;
-  if (a.kind === 'bestMove' && b.kind === 'bestMove') return a.tier === b.tier;
+  if (a.kind === 'category' && b.kind === 'category')
+    return a.category === b.category && a.side === b.side;
   return false;
 }
 
@@ -55,10 +55,21 @@ function motifPliesKey(orientation: TacticChipOrientation, motifLabel: string): 
   return `${orientation}:${motifLabel}`;
 }
 
+/** Composite key for the (category × side) plies map (categoryPlies). */
+function categoryPliesKey(category: MoveStatCategory, side: MoveStatSide): string {
+  return `${category}:${side}`;
+}
+
 interface AnalysisTagsPanelProps {
   game: GameFlawCard;
-  /** Cycles the board (+ synced move list + eval-chart crosshair) to a flaw's ply. */
-  onCyclePly: (ply: number) => void;
+  /**
+   * Cycles the board (+ synced move list + eval-chart crosshair) to a flaw's ply.
+   * `orientation` is set only for a missed/allowed tactic-motif chip, so the caller can
+   * unfold that flaw's sideline (and navigate to its decision fork) exactly as clicking
+   * the chip in the move list does. Undefined for context tags and Move Stats cells,
+   * which only navigate.
+   */
+  onCyclePly: (ply: number, orientation?: TacticChipOrientation) => void;
   /**
    * Optional desktop hover-highlight (Task 3, resolved decision 5): reports the set
    * of plies matching the hovered badge/chip so the caller can dim non-matching
@@ -66,6 +77,17 @@ interface AnalysisTagsPanelProps {
    * highlight. Omitted on mobile (the chart lives on a different tab there).
    */
   onHighlightChange?: (plies: Set<number> | null) => void;
+  /**
+   * Which slice of the panel to render (UAT 179):
+   * - `'panel'` (default) — MoveStats + the tags container stacked (mobile/mid,
+   *   where they live together in one tab).
+   * - `'stats'` — the MoveStats card only (desktop right column).
+   * - `'tags'`  — the Missed/Allowed/Context tags charcoal container only
+   *   (desktop, rendered below the eval chart in the board column).
+   * The desktop layout renders one `'stats'` and one `'tags'` instance; each
+   * keeps its own cycle/hover state, both driving `onCyclePly`/`onHighlightChange`.
+   */
+  section?: 'panel' | 'stats' | 'tags';
   className?: string;
 }
 
@@ -73,23 +95,10 @@ export function AnalysisTagsPanel({
   game,
   onCyclePly,
   onHighlightChange,
+  section = 'panel',
   className,
 }: AnalysisTagsPanelProps) {
   const markers = game.flaw_markers ?? [];
-
-  // Per-severity ascending list of the user's marker plies (B/M/I).
-  const severityPlies = useMemo(() => {
-    const m = new Map<FlawSeverity, number[]>();
-    for (const fm of markers) {
-      if (!fm.is_user) continue;
-      const arr = m.get(fm.severity);
-      if (arr) arr.push(fm.ply);
-      else m.set(fm.severity, [fm.ply]);
-    }
-    for (const arr of m.values()) arr.sort((a, b) => a - b);
-    return m;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game.flaw_markers]);
 
   // Per-tag ascending list of the user's marker plies (context chips).
   const tagPlies = useMemo(() => {
@@ -160,23 +169,31 @@ export function AnalysisTagsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.flaw_markers]);
 
-  // Gem/great ascending ply lists (Phase 175 Plan 06) — sourced from game.eval_series
-  // (already a prop on `game`, no new prop needed), unlike every other *Plies map
-  // above which is sourced from flaw_markers. eval_series is already ply-ascending.
-  // Bug fix (Plan 06): best_move_tier is POSITION-scoped (both players' best moves),
-  // so filter to the user's OWN plies via isUserPly — otherwise the badge count AND
-  // cycling would include the opponent's gems/greats.
-  const bestMovePlies = useMemo(() => {
-    const userColor = game.user_color;
-    const gem: number[] = [];
-    const great: number[] = [];
-    for (const pt of game.eval_series ?? []) {
-      if (!isUserPly(pt.ply, userColor)) continue;
-      if (pt.best_move_tier === 'gem') gem.push(pt.ply);
-      else if (pt.best_move_tier === 'great') great.push(pt.ply);
+  // Move Stats (category × side) ascending ply lists (Phase 179 Plan 03, D-09),
+  // for the MoveStats cells' click-to-cycle. Folds BOTH flaw_markers (I/M/B
+  // severities) and eval_series (gem/great/best/good tiers) into one map keyed
+  // by (category, side) via moverColorAtPly — NOT is_user/isUserPly, since D-08
+  // deliberately surfaces both players' cells here (replaces the former
+  // user-only severityPlies/bestMovePlies memos).
+  const categoryPlies = useMemo(() => {
+    const m = new Map<string, number[]>();
+    const push = (category: MoveStatCategory, side: MoveStatSide, ply: number): void => {
+      const key = categoryPliesKey(category, side);
+      const arr = m.get(key);
+      if (arr) arr.push(ply);
+      else m.set(key, [ply]);
+    };
+    for (const fm of markers) {
+      push(fm.severity, moverColorAtPly(fm.ply), fm.ply);
     }
-    return { gem, great };
-  }, [game.eval_series, game.user_color]);
+    for (const pt of game.eval_series ?? []) {
+      if (pt.best_move_tier == null) continue;
+      push(pt.best_move_tier, moverColorAtPly(pt.ply), pt.ply);
+    }
+    for (const arr of m.values()) arr.sort((a, b) => a - b);
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game.flaw_markers, game.eval_series]);
 
   // Click-to-cycle state: clicking a ref advances through its ply list, wrapping;
   // clicking a different ref restarts at position 0.
@@ -186,8 +203,8 @@ export function AnalysisTagsPanel({
 
   const pliesForRef = (ref: FlawRef): number[] => {
     if (ref.kind === 'tag') return tagPlies.get(ref.tag) ?? [];
-    if (ref.kind === 'severity') return severityPlies.get(ref.severity) ?? [];
-    if (ref.kind === 'bestMove') return bestMovePlies[ref.tier];
+    if (ref.kind === 'category')
+      return categoryPlies.get(categoryPliesKey(ref.category, ref.side)) ?? [];
     return motifPlies.get(motifPliesKey(ref.orientation, ref.motif)) ?? [];
   };
 
@@ -197,7 +214,11 @@ export function AnalysisTagsPanel({
     const pos = cycle && sameFlawRef(cycle.ref, ref) ? (cycle.pos + 1) % plies.length : 0;
     setCycle({ ref, pos });
     const ply = plies[pos];
-    if (ply !== undefined) onCyclePly(ply);
+    if (ply === undefined) return;
+    // Missed/allowed motif chips carry their orientation so the caller can unfold the
+    // matching sideline; context tags and Move Stats cells navigate only (single-arg).
+    if (ref.kind === 'motif') onCyclePly(ply, ref.orientation);
+    else onCyclePly(ply);
     // A click also emphasizes this ref's markers, matching LibraryGameCard.
     setHighlight(ref);
   };
@@ -207,15 +228,15 @@ export function AnalysisTagsPanel({
   const highlightedPlies = useMemo(() => {
     const ref = highlight ?? cycle?.ref ?? null;
     if (!ref) return null;
-    // Gem/great plies come from eval_series (bestMovePlies), not flaw_markers — a
-    // direct lookup rather than a flaw_markers scan (Phase 175 Plan 06).
-    if (ref.kind === 'bestMove') return new Set(bestMovePlies[ref.tier]);
+    // Move Stats (category × side) plies come straight from the categoryPlies
+    // map (D-09) — both sides, not gated by is_user (D-08).
+    if (ref.kind === 'category')
+      return new Set(categoryPlies.get(categoryPliesKey(ref.category, ref.side)) ?? []);
     const set = new Set<number>();
     for (const fm of markers) {
       if (!fm.is_user) continue;
       let matches: boolean;
-      if (ref.kind === 'severity') matches = fm.severity === ref.severity;
-      else if (ref.kind === 'tag') matches = fm.tags.includes(ref.tag);
+      if (ref.kind === 'tag') matches = fm.tags.includes(ref.tag);
       else {
         const col = ref.orientation === 'missed' ? fm.missed_tactic_motif : fm.allowed_tactic_motif;
         matches = col != null && tacticMotifLabel(col) === ref.motif;
@@ -224,21 +245,20 @@ export function AnalysisTagsPanel({
     }
     return set;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [highlight, cycle, game.flaw_markers, bestMovePlies]);
+  }, [highlight, cycle, game.flaw_markers, categoryPlies]);
 
   useEffect(() => {
     onHighlightChange?.(highlightedPlies);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [highlightedPlies]);
 
-  // Belt-and-suspenders: the Analysis page already gates rendering on evalChartReady
-  // (which implies flaw_markers present), but guard here too — no NoAnalysisState.
-  // Phase 175 Plan 06: a flawless-but-brilliant game (zero flaw markers) can still
-  // have gem/great plies, so the empty-markers guard must not also suppress those —
-  // only bail when there is truly nothing to show on either axis.
-  const hasBestMovePlies = bestMovePlies.gem.length > 0 || bestMovePlies.great.length > 0;
-  if (game.analysis_state !== 'analyzed' || (markers.length === 0 && !hasBestMovePlies))
-    return null;
+  // D-03/Pitfall 2: mount condition is exactly analysis_state === 'analyzed' — no
+  // markers/tiers emptiness clause. A flawless analyzed game (zero flaw markers
+  // AND zero gem/great plies) now renders the full all-zero 7-row MoveStats
+  // table instead of returning null. Belt-and-suspenders: the Analysis page
+  // already gates mounting this component on evalChartReady (which implies
+  // flaw_markers/eval_series present), but the guard stays here too.
+  if (game.analysis_state !== 'analyzed') return null;
 
   const contextChips =
     game.chips.length > 0 ? (
@@ -261,86 +281,101 @@ export function AnalysisTagsPanel({
       <TagLegend variant="icon" tags={game.chips} tacticMotifs={[]} gameId={game.game_id} />
     ) : null;
 
+  // MoveStats (category × side) wiring — always the full (non-collapsed) table
+  // on /analysis (no mobile collapse per SEED-112), no filter ring (no filter
+  // store on /analysis, resolved decision 3 — mirrors the tactic chips'
+  // `filterRingActive: false` below).
+  const handleMoveStatsCellActivate = (ref: MoveStatsCellRef): void =>
+    handleActivate({ kind: 'category', category: ref.category, side: ref.side });
+  const handleMoveStatsCellHover = (ref: MoveStatsCellRef | null): void =>
+    setHighlight(ref ? { kind: 'category', category: ref.category, side: ref.side } : null);
+  const activeCellRef: MoveStatsCellRef | null =
+    cycle && cycle.ref.kind === 'category'
+      ? { kind: 'category', category: cycle.ref.category, side: cycle.ref.side }
+      : null;
+
+  // Whether this game has any Missed/Allowed/Context tags to show — when false the
+  // charcoal tags container is omitted (no empty box).
+  const hasTags = tacticMotifs.length > 0 || contextChips != null;
+
+  const statsBlock = (
+    <MoveStats
+      game={game}
+      gameId={game.game_id}
+      activeRef={activeCellRef}
+      onCellActivate={handleMoveStatsCellActivate}
+      onCellHover={handleMoveStatsCellHover}
+    />
+  );
+
+  // Tags in a charcoal container, 2-column label|chips rows (ChipColumn `inline` —
+  // the label sits left of its chips), mirroring the Library game card (UAT 179).
+  const tagsBlock = hasTags ? (
+    <div
+      className="charcoal-texture rounded-md p-2 flex flex-col gap-y-2"
+      data-testid={`analysis-tags-block-${game.game_id}`}
+    >
+      {TACTIC_ORIENTATIONS.map((orientation) => {
+        const groupMotifs = tacticMotifs.filter((t) => t.orientation === orientation);
+        return (
+          <TacticMotifGroup
+            key={orientation}
+            orientation={orientation}
+            label={TACTIC_ORIENTATION_LABELS[orientation]}
+            gameId={game.game_id}
+            inline
+            motifs={groupMotifs.map(({ motif }) => ({
+              motif,
+              count: motifPlies.get(motifPliesKey(orientation, motif))?.length ?? 0,
+              // No filter store on /analysis (resolved decision 3) — never ring.
+              filterRingActive: false,
+            }))}
+            onChipHover={(motif, active) =>
+              setHighlight(active ? { kind: 'motif', motif, orientation } : null)
+            }
+            onChipActivate={(motif) => handleActivate({ kind: 'motif', motif, orientation })}
+            legend={
+              <TagLegend
+                variant="icon"
+                tags={[]}
+                tacticMotifs={groupMotifs.map((t) => t.motif)}
+                gameId={game.game_id}
+                testId={`tag-legend-tactic-${orientation}-${game.game_id}`}
+              />
+            }
+          />
+        );
+      })}
+      <ChipColumn
+        label="Context"
+        testId={`context-column-${game.game_id}`}
+        isEmpty={contextChips == null}
+        labelTrailing={contextLegend}
+        inline
+      >
+        {contextChips}
+      </ChipColumn>
+    </div>
+  ) : null;
+
+  if (section === 'stats') {
+    return (
+      <div data-testid="analysis-move-stats-section" className={className}>
+        {statsBlock}
+      </div>
+    );
+  }
+  if (section === 'tags') {
+    return (
+      <div data-testid="analysis-tags-section" className={className}>
+        {tagsBlock}
+      </div>
+    );
+  }
   return (
     <div data-testid="analysis-tags-panel" className={className}>
-      <div className="flex items-center gap-1.5 flex-wrap">
-        {SEVERITY_ORDER.map((sev) => {
-          const counts = game.severity_counts;
-          const count = counts !== null ? (counts[sev] ?? 0) : 0;
-          return (
-            <SeverityBadge
-              key={sev}
-              severity={sev}
-              count={count}
-              gameId={game.game_id}
-              onHover={(active) => setHighlight(active ? { kind: 'severity', severity: sev } : null)}
-              onActivate={() => handleActivate({ kind: 'severity', severity: sev })}
-            />
-          );
-        })}
-        {/* Gem/Great badges (Phase 175 Plan 06) — same row as the severity badges,
-            only rendered when the game has >=1 ply of that tier. Mounts once
-            (this component itself mounts exactly once regardless of desktop/mobile,
-            per the file header docstring), so no separate mobile-layout wiring is
-            needed here. */}
-        {(['gem', 'great'] as const)
-          .filter((tier) => bestMovePlies[tier].length > 0)
-          .map((tier) => (
-            <GemGreatBadge
-              key={tier}
-              tier={tier}
-              count={bestMovePlies[tier].length}
-              gameId={game.game_id}
-              onHover={(active) => setHighlight(active ? { kind: 'bestMove', tier } : null)}
-              onActivate={() => handleActivate({ kind: 'bestMove', tier })}
-            />
-          ))}
-      </div>
-      {/* Float each label + its chips on one wrapping line (Missed / Allowed / Context
-          stacked as rows), not a 3-column grid — the narrow analysis rail reads better
-          with chips floated beside their label, mirroring the mobile card layout. */}
-      <div className="flex flex-col gap-y-2 mt-2">
-        {TACTIC_ORIENTATIONS.map((orientation) => {
-          const groupMotifs = tacticMotifs.filter((t) => t.orientation === orientation);
-          return (
-            <TacticMotifGroup
-              key={orientation}
-              orientation={orientation}
-              label={TACTIC_ORIENTATION_LABELS[orientation]}
-              gameId={game.game_id}
-              inline
-              motifs={groupMotifs.map(({ motif }) => ({
-                motif,
-                count: motifPlies.get(motifPliesKey(orientation, motif))?.length ?? 0,
-                // No filter store on /analysis (resolved decision 3) — never ring.
-                filterRingActive: false,
-              }))}
-              onChipHover={(motif, active) =>
-                setHighlight(active ? { kind: 'motif', motif, orientation } : null)
-              }
-              onChipActivate={(motif) => handleActivate({ kind: 'motif', motif, orientation })}
-              legend={
-                <TagLegend
-                  variant="icon"
-                  tags={[]}
-                  tacticMotifs={groupMotifs.map((t) => t.motif)}
-                  gameId={game.game_id}
-                  testId={`tag-legend-tactic-${orientation}-${game.game_id}`}
-                />
-              }
-            />
-          );
-        })}
-        <ChipColumn
-          label="Context"
-          testId={`context-column-${game.game_id}`}
-          isEmpty={contextChips == null}
-          labelTrailing={contextLegend}
-          inline
-        >
-          {contextChips}
-        </ChipColumn>
-      </div>
+      {statsBlock}
+      {tagsBlock && <div className="mt-2">{tagsBlock}</div>}
     </div>
   );
 }

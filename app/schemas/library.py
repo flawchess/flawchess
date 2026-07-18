@@ -135,6 +135,12 @@ class GameFlawCard(BaseModel):
     # severity_counts is None (never 0/0/0) for unanalyzed games — discriminated
     # by analysis_state.
     severity_counts: SeverityCounts | None
+    # Phase 179 additions (SEED-112, D-01): canonical Phase 178 per-color
+    # accuracy (0-100), sourced ONLY from Game.white_accuracy/black_accuracy —
+    # never the *_accuracy_imported columns. None when not yet computed
+    # (e.g. eval-coverage gate not satisfied).
+    white_accuracy: float | None = None
+    black_accuracy: float | None = None
     chips: list[FlawTag]
     analysis_state: Literal["analyzed", "no_engine_analysis"]
     # Phase 109 additions — null for unanalyzed games (analysis_state === 'no_engine_analysis'):

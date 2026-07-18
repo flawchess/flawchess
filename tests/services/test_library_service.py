@@ -768,6 +768,8 @@ async def _seed_db_game(
     black_rating: int | None = None,
     time_control_str: str = "600+0",
     time_control_bucket: str | None = "blitz",
+    white_accuracy: float | None = None,
+    black_accuracy: float | None = None,
 ) -> object:
     """Insert a Game row, returning the persisted object.
 
@@ -821,6 +823,8 @@ async def _seed_db_game(
         black_inaccuracies=black_inaccuracies,
         white_rating=white_rating,
         black_rating=black_rating,
+        white_accuracy=white_accuracy,
+        black_accuracy=black_accuracy,
         played_at=played_at or _dt.datetime(2026, 1, 1, tzinfo=_dt.timezone.utc),
         full_evals_completed_at=full_evals_completed_at,
     )
@@ -1445,6 +1449,63 @@ class TestGetLibraryGame:
         assert card.black_rating is None
         assert card.white_rating_lichess_blitz is None
         assert card.black_rating_lichess_blitz is None
+
+    @pytest.mark.asyncio
+    async def test_accuracy_round_trips_from_canonical_columns(self, db_session: object) -> None:
+        """Phase 179 (D-01): white_accuracy/black_accuracy pass through from the
+        canonical Game columns, and NULL accuracy serializes as None."""
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.game import Game as GameModel
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99994)
+
+        game_obj = await _seed_db_game(
+            session,
+            user_id=99994,
+            user_color="white",
+            platform="lichess",
+            white_accuracy=91.23,
+            black_accuracy=78.4,
+        )
+        game = cast(GameModel, game_obj)
+
+        card = await get_library_game(session, game_id=game.id)
+
+        assert card is not None
+        assert card.white_accuracy == 91.23
+        assert card.black_accuracy == 78.4
+
+    @pytest.mark.asyncio
+    async def test_null_accuracy_card_has_none_accuracy(self, db_session: object) -> None:
+        """A game with NULL canonical accuracy serializes both fields as None."""
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.game import Game as GameModel
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99995)
+
+        game_obj = await _seed_db_game(
+            session,
+            user_id=99995,
+            user_color="white",
+            platform="lichess",
+            white_accuracy=None,
+            black_accuracy=None,
+        )
+        game = cast(GameModel, game_obj)
+
+        card = await get_library_game(session, game_id=game.id)
+
+        assert card is not None
+        assert card.white_accuracy is None
+        assert card.black_accuracy is None
 
     @pytest.mark.asyncio
     async def test_chesscom_classical_noncorrespondence_card_has_normalized_rating(

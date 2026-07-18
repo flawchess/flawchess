@@ -27,10 +27,10 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { EvalChart } from '@/components/library/EvalChart';
-import { SeverityBadge } from '@/components/library/SeverityBadge';
-import { GemGreatBadge } from '@/components/library/GemGreatBadge';
-import type { BestMoveTier } from '@/components/library/GemGreatBadge';
-import { isUserPly } from '@/lib/plyOwnership';
+import { MoveStats } from '@/components/library/MoveStats';
+import type { MoveStatsCellRef } from '@/components/library/MoveStats';
+import type { MoveStatCategory, MoveStatSide } from '@/lib/moveStatsCounts';
+import { moverColorAtPly } from '@/lib/plyOwnership';
 import { TagChip, TagLegend } from '@/components/library/TagChip';
 import { TacticMotifGroup } from '@/components/library/TacticMotifGroup';
 import { ChipColumn } from '@/components/library/ChipColumn';
@@ -132,9 +132,6 @@ const BORDER_COLORS: Record<UserResult, string> = {
   loss: WDL_BORDER_LOSS,
 };
 
-// Severity order for the badge row (must not wrap — sized to full-label nowrap row).
-const SEVERITY_ORDER: FlawSeverity[] = ['blunder', 'mistake', 'inaccuracy'];
-
 // Flaw-tag families, mirroring the backend game-selection filter
 // (build_flaw_filter_clauses in library_repository.py): OR within family, AND
 // across families. The phase family is handled separately below — phase isn't
@@ -179,19 +176,26 @@ const TACTIC_ORIENTATION_LABELS: Record<TacticChipOrientation, string> = {
 
 type FlawRef =
   | { kind: 'tag'; tag: FlawTag }
-  | { kind: 'severity'; severity: FlawSeverity }
   | { kind: 'motif'; motif: string; orientation: TacticChipOrientation }
-  // Gem/great tier (Phase 175 Plan 06) — sourced from eval_series (best_move_tier),
-  // not flaw_markers, so it's a separate ref kind rather than a FlawSeverity value.
-  | { kind: 'bestMove'; tier: BestMoveTier };
+  // Move Stats (category × side) cell (Phase 179 Plan 03, D-09) — replaces the
+  // former separate 'severity'/'bestMove' kinds. category spans all 7 Move
+  // Stats rows (severities + positive tiers); side is the literal board color
+  // of the mover (moverColorAtPly), NOT user-relative — D-08 deliberately
+  // surfaces both players' cells on this surface.
+  | { kind: 'category'; category: MoveStatCategory; side: MoveStatSide };
 
 function sameFlawRef(a: FlawRef, b: FlawRef): boolean {
   if (a.kind === 'tag' && b.kind === 'tag') return a.tag === b.tag;
-  if (a.kind === 'severity' && b.kind === 'severity') return a.severity === b.severity;
   if (a.kind === 'motif' && b.kind === 'motif')
     return a.motif === b.motif && a.orientation === b.orientation;
-  if (a.kind === 'bestMove' && b.kind === 'bestMove') return a.tier === b.tier;
+  if (a.kind === 'category' && b.kind === 'category')
+    return a.category === b.category && a.side === b.side;
   return false;
+}
+
+/** Composite key for the (category × side) plies map (categoryPlies). */
+function categoryPliesKey(category: MoveStatCategory, side: MoveStatSide): string {
+  return `${category}:${side}`;
 }
 
 // Composite key for the orientation-scoped motif → plies map (motifPlies).
@@ -222,7 +226,8 @@ function formatDate(dateStr: string | null): string {
  * flaw block on mobile.
  *
  * Flaw column branches on analysis_state:
- * - "analyzed"         → SeverityBadge × 3 (nowrap row) + TagChip row (flex-wrap)
+ * - "analyzed"         → MoveStats (accuracies card + two-sided category table)
+ *                        + Missed/Allowed/Context tags card
  * - "no_engine_analysis" → NoAnalysisState pill (never shows "0 Blunders")
  *
  * Security: all user-provided strings (usernames, opening name, platform_url) are
@@ -416,48 +421,40 @@ export function LibraryGameCard({
     return m;
   }, [game.flaw_markers]);
 
-  // Per-severity ascending list of the user's marker plies (B/M/I), for click-to-
-  // cycle on the severity count badges. Inaccuracies are included — the chart
-  // reveals them while their badge drives the highlight.
-  const severityPlies = useMemo(() => {
-    const m = new Map<FlawSeverity, number[]>();
+  // Move Stats (category × side) ascending ply lists (Phase 179 Plan 03, D-09),
+  // for the MoveStats cells' click-to-cycle. Folds BOTH flaw_markers (I/M/B
+  // severities) and eval_series (gem/great/best/good tiers) into one map keyed
+  // by (category, side) via moverColorAtPly — NOT is_user/isUserPly, since D-08
+  // deliberately surfaces both players' cells here (replaces the former
+  // user-only severityPlies/bestMovePlies memos).
+  const categoryPlies = useMemo(() => {
+    const m = new Map<string, number[]>();
+    const push = (category: MoveStatCategory, side: MoveStatSide, ply: number): void => {
+      const key = categoryPliesKey(category, side);
+      const arr = m.get(key);
+      if (arr) arr.push(ply);
+      else m.set(key, [ply]);
+    };
     for (const fm of game.flaw_markers ?? []) {
-      if (!fm.is_user) continue;
-      const arr = m.get(fm.severity);
-      if (arr) arr.push(fm.ply);
-      else m.set(fm.severity, [fm.ply]);
+      push(fm.severity, moverColorAtPly(fm.ply), fm.ply);
+    }
+    for (const pt of game.eval_series ?? []) {
+      if (pt.best_move_tier == null) continue;
+      push(pt.best_move_tier, moverColorAtPly(pt.ply), pt.ply);
     }
     for (const arr of m.values()) arr.sort((a, b) => a - b);
     return m;
-  }, [game.flaw_markers]);
-
-  // Gem/great ascending ply lists (Phase 175 Plan 06), for the Gem/Great badges'
-  // click-to-cycle — sourced from eval_series (best_move_tier), unlike every other
-  // *Plies map above which is sourced from flaw_markers. eval_series is already
-  // ply-ascending, so no separate sort is needed.
-  // Bug fix (Plan 06): best_move_tier is POSITION-scoped (both players' best moves),
-  // so filter to the user's OWN plies via isUserPly — otherwise the badge count AND
-  // cycling would include the opponent's gems/greats.
-  const bestMovePlies = useMemo(() => {
-    const gem: number[] = [];
-    const great: number[] = [];
-    for (const pt of game.eval_series ?? []) {
-      if (userColor != null && !isUserPly(pt.ply, userColor)) continue;
-      if (pt.best_move_tier === 'gem') gem.push(pt.ply);
-      else if (pt.best_move_tier === 'great') great.push(pt.ply);
-    }
-    return { gem, great };
-  }, [game.eval_series, userColor]);
+  }, [game.flaw_markers, game.eval_series]);
 
   // Gem/great/best/good tier per ply — drives the scrubbed-miniboard corner badge
   // (below). Sourced from eval_series.best_move_tier, which is POSITION-scoped
-  // (both players' tiers stored). Deliberately NOT isUserPly-filtered: the
-  // miniboard corner badge mirrors the flaw corner dots (flawByPly above), which
-  // show BOTH players' blunders/mistakes/inaccuracies — so scrubbing onto an
-  // opponent's gem/great/best/good shows its icon too. The user-only scoping stays
-  // on the gem/great COUNT badges + cycling (bestMovePlies above), matching the
-  // user-scoped severity count badges. Keyed by ply for the O(1) lookup the
-  // squareMarkers memo needs.
+  // (both players' tiers stored). Deliberately NOT user-scoped: the miniboard
+  // corner badge mirrors the flaw corner dots (flawByPly above), which show BOTH
+  // players' blunders/mistakes/inaccuracies — so scrubbing onto an opponent's
+  // gem/great/best/good shows its icon too. MoveStats' own count/cycling
+  // (categoryPlies above) is ALSO both-sided now (D-08) — this map and that one
+  // now share the same "show everyone" scoping. Keyed by ply for the O(1) lookup
+  // the squareMarkers memo needs.
   // Quick 260717-rbn widened this to carry 'best'/'good'; the both-players change
   // (opponent tiers on the miniboard) followed the flaw-dot precedent.
   const bestTierByPly = useMemo(() => {
@@ -491,15 +488,15 @@ export function LibraryGameCard({
   const highlightedPlies = useMemo(() => {
     const ref = highlight ?? cycle?.ref ?? null;
     if (!ref) return null;
-    // Gem/great plies come from eval_series (bestMovePlies), not flaw_markers — a
-    // direct lookup rather than a flaw_markers scan (Phase 175 Plan 06).
-    if (ref.kind === 'bestMove') return new Set(bestMovePlies[ref.tier]);
+    // Move Stats (category × side) plies come straight from the categoryPlies
+    // map (D-09) — both sides, not gated by is_user (D-08).
+    if (ref.kind === 'category')
+      return new Set(categoryPlies.get(categoryPliesKey(ref.category, ref.side)) ?? []);
     const set = new Set<number>();
     for (const fm of game.flaw_markers ?? []) {
       if (!fm.is_user) continue;
       let matches: boolean;
-      if (ref.kind === 'severity') matches = fm.severity === ref.severity;
-      else if (ref.kind === 'tag')
+      if (ref.kind === 'tag')
         matches = fm.tags.includes(ref.tag); // inaccuracies have no tags → never match a tag hover
       else {
         // Quick 260620-pza: match the orientation the chip represents.
@@ -513,7 +510,7 @@ export function LibraryGameCard({
       if (matches) set.add(fm.ply);
     }
     return set;
-  }, [highlight, cycle, game.flaw_markers, bestMovePlies]);
+  }, [highlight, cycle, game.flaw_markers, categoryPlies]);
 
   // Mobile (<sm) miniboard spans 50% of the viewport width; sm+ keeps the fixed size.
   const mobileBoardSize = useMiniBoardSize(MOBILE_BOARD_SIZE);
@@ -594,8 +591,8 @@ export function LibraryGameCard({
   // different tag restarts at 0.
   const pliesForRef = (ref: FlawRef): number[] => {
     if (ref.kind === 'tag') return tagPlies.get(ref.tag) ?? [];
-    if (ref.kind === 'severity') return severityPlies.get(ref.severity) ?? [];
-    if (ref.kind === 'bestMove') return bestMovePlies[ref.tier];
+    if (ref.kind === 'category')
+      return categoryPlies.get(categoryPliesKey(ref.category, ref.side)) ?? [];
     return motifPlies.get(motifPliesKey(ref.orientation, ref.motif)) ?? [];
   };
   const handleActivate = (ref: FlawRef) => {
@@ -608,6 +605,34 @@ export function LibraryGameCard({
     setHighlight(ref);
   };
   const commandedPly = cycle ? (pliesForRef(cycle.ref)[cycle.pos] ?? null) : null;
+
+  // MoveStats (category × side) wiring (Phase 179 Plan 03, D-09/D-10) — shared by
+  // both the mobile (collapsible) and desktop MoveStats renders below. Cell
+  // activate/hover route straight through the existing tag/motif handleActivate/
+  // setHighlight machinery via the unified 'category' FlawRef kind.
+  const handleMoveStatsCellActivate = (ref: MoveStatsCellRef): void =>
+    handleActivate({ kind: 'category', category: ref.category, side: ref.side });
+  const handleMoveStatsCellHover = (ref: MoveStatsCellRef | null): void =>
+    setHighlight(ref ? { kind: 'category', category: ref.category, side: ref.side } : null);
+  const activeCellRef: MoveStatsCellRef | null =
+    cycle && cycle.ref.kind === 'category'
+      ? { kind: 'category', category: cycle.ref.category, side: cycle.ref.side }
+      : null;
+  // D-10: the global filter stays user-scoped and rings ONLY the player-side cell
+  // of the matching row (never an opponent cell) — mirrors SeverityBadge's own
+  // isActive semantic (severity narrowed to exactly one of blunder/mistake;
+  // inaccuracy is not a filterable severity, so it never rings, matching
+  // SeverityBadge's existing behavior).
+  const outlinedCellRef: MoveStatsCellRef | null = useMemo(() => {
+    if (userColor == null || flawFilter.severity.length !== 1) return null;
+    const sev = flawFilter.severity[0];
+    if (sev == null) return null;
+    return { kind: 'category', category: sev, side: userColor };
+  }, [flawFilter.severity, userColor]);
+  // D-06 (UAT 179): mobile default shows the accuracy card + the compact
+  // single-line summary row (user-side counts + chevron); tapping the chevron
+  // (move-stats-expand-toggle) reveals the full two-sided 7-row table.
+  const [mobileMoveStatsExpanded, setMobileMoveStatsExpanded] = useState(false);
 
   // End an active click-to-cycle highlight when the user clicks/taps anywhere that
   // isn't this card's eval chart or its flaw chips/badges. `cycle` is a LOCKED
@@ -817,14 +842,14 @@ export function LibraryGameCard({
   // the two inner blocks rather than on the header element.
   const header = (
     <CardHeader as="h4" size="compact" className="rounded-t-md">
-      <span className="hidden md:flex md:items-center md:gap-0 md:min-w-0 md:flex-1 text-foreground">
+      <span className="hidden lg:flex lg:items-center lg:gap-0 lg:min-w-0 lg:flex-1 text-foreground">
         <span className="truncate min-w-0">
           ■ {whiteName} {whiteRating}
           <span className="mx-1.5 text-muted-foreground font-normal">vs</span>□ {blackName}{' '}
           {blackRating}
         </span>
       </span>
-      <div className="flex md:hidden min-w-0 flex-1 flex-col text-foreground">
+      <div className="flex lg:hidden min-w-0 flex-1 flex-col text-foreground">
         <span className="truncate">■ {whiteName} {whiteRating}</span>
         <span className="truncate">□ {blackName} {blackRating}</span>
       </div>
@@ -907,54 +932,6 @@ export function LibraryGameCard({
     </div>
   );
 
-  // Flaw column / block content — branches on analysis_state.
-  // When "no_engine_analysis": severity_counts is null; never read it (T-107-11 mitigated).
-  // Severity count badges — shared elements (same testids + handlers) used by both the
-  // mobile horizontal row and the desktop vertical stack beside the eval chart. Only one
-  // body (mobile vs desktop) is visible at a time, so the reused elements never collide.
-  const severityBadges =
-    game.analysis_state === 'analyzed'
-      ? SEVERITY_ORDER.map((sev) => {
-          const counts = game.severity_counts;
-          // noUncheckedIndexedAccess: narrow severity_counts before reading.
-          const count = counts !== null ? (counts[sev] ?? 0) : 0;
-          // Every badge drives the hover highlight. B/M emphasize their (already
-          // visible) dots; the inaccuracy badge reveals the otherwise-hidden yellow
-          // inaccuracy dots on the chart.
-          return (
-            <SeverityBadge
-              key={sev}
-              severity={sev}
-              count={count}
-              gameId={game.game_id}
-              onHover={(active) =>
-                setHighlight(active ? { kind: 'severity', severity: sev } : null)
-              }
-              onActivate={() => handleActivate({ kind: 'severity', severity: sev })}
-            />
-          );
-        })
-      : null;
-
-  // Gem/Great count badges (Phase 175 Plan 06) — same shared-element pattern as
-  // severityBadges above: rendered once, reused by both the mobile row and the
-  // desktop vertical stack. Only shown when the game has >=1 ply of that tier.
-  const bestMoveBadges =
-    game.analysis_state === 'analyzed'
-      ? (['gem', 'great'] as const)
-          .filter((tier) => bestMovePlies[tier].length > 0)
-          .map((tier) => (
-            <GemGreatBadge
-              key={tier}
-              tier={tier}
-              count={bestMovePlies[tier].length}
-              gameId={game.game_id}
-              onHover={(active) => setHighlight(active ? { kind: 'bestMove', tier } : null)}
-              onActivate={() => handleActivate({ kind: 'bestMove', tier })}
-            />
-          ))
-      : null;
-
   // Context flaw-tag chips (miss/lucky/low-clock/unrushed/phase…). Reused by both the
   // columned beta layout and the non-beta full-width row. The explanatory legend is split
   // out into `contextLegend` so the columned layout can pin it to the right of the
@@ -981,18 +958,18 @@ export function LibraryGameCard({
       <TagLegend variant="icon" tags={game.chips} tacticMotifs={[]} gameId={game.game_id} />
     ) : null;
 
-  // Chip block. Quick 260620-sep follow-up: up to three equal-width labeled columns —
-  // Missed | Allowed | Context — that span 1/3 each on wide viewports and stack vertically
-  // below md. Empty columns are omitted entirely (ChipColumn self-hides on isEmpty) so a
-  // card with no missed/allowed/context tags doesn't show empty labeled sections.
-  // Chips grid (Missed | Allowed | Context lanes).
-  const renderChipsBlock = () => (
+  // Whether this game has any Missed/Allowed/Context tags to show. When false the
+  // tags card is omitted entirely (rather than rendering an empty charcoal box) —
+  // e.g. a flawless game with no tactic motifs or context chips.
+  const hasTags = tacticMotifs.length > 0 || contextChips != null;
+
+  // Tags block (UAT 179): the Missed / Allowed / Context tags rendered as label|chips
+  // rows (ChipColumn `inline` — the label sits left of its chips, matching the mobile
+  // layout), wrapped in a charcoal card. Shared by mobile (below the eval chart) and
+  // desktop (filling the gap under the eval chart). Only rendered when `hasTags`.
+  const renderTagsBlock = () => (
     <div
-      // Three 1/3 grid lanes (Missed | Allowed | Context); empty columns render nothing and
-      // their populated siblings left-align into the remaining lanes.
-      // gap-x-3 matches the row-1 grid gap (gap-3) so the column gridlines line up — the
-      // chart's left edge falls exactly on the MISSED column boundary.
-      className="grid grid-cols-1 md:grid-cols-3 gap-x-3 gap-y-2"
+      className="charcoal-texture rounded-md p-2 flex flex-col gap-y-2"
       data-testid={`flaw-chip-columns-${game.game_id}`}
     >
       {TACTIC_ORIENTATIONS.map((orientation) => {
@@ -1003,6 +980,7 @@ export function LibraryGameCard({
             orientation={orientation}
             label={TACTIC_ORIENTATION_LABELS[orientation]}
             gameId={game.game_id}
+            inline
             motifs={groupMotifs.map(({ motif }) => ({
               motif,
               count: motifPlies.get(motifPliesKey(orientation, motif))?.length ?? 0,
@@ -1035,28 +1013,36 @@ export function LibraryGameCard({
         testId={`context-column-${game.game_id}`}
         isEmpty={contextChips == null}
         labelTrailing={contextLegend}
+        inline
       >
         {contextChips}
       </ChipColumn>
     </div>
   );
 
-  // Mobile flaw block (full-width, stacked): severity row + chips together. Desktop
-  // composes the same `severityBadges` / `renderChipsBlock()` pieces differently (severity
-  // beside the chart, chips on a full-width row below). The display:contents wrapper marks the
-  // cycle-driving controls so the outside-pointer handler keeps the locked highlight alive
-  // while the user clicks chips/badges, yet undims when they click anywhere else.
+  // Mobile flaw block (full-width, stacked): the MoveStats accuracy card + compact
+  // summary row (chevron expands the full two-sided table), then the tags card.
+  // Desktop renders its own MoveStats + tags card in the two-column body below. The
+  // display:contents wrapper marks the cycle-driving controls so the outside-pointer
+  // handler keeps the locked highlight alive while the user clicks chips/cells, yet
+  // undims when they click anywhere else.
   const flawContent =
     game.analysis_state === 'analyzed' ? (
       <div data-testid={`flaw-controls-${game.game_id}`} className="contents">
-        <div
-          className="flex items-center gap-1.5 flex-wrap"
-          data-testid={`severity-row-${game.game_id}`}
-        >
-          {severityBadges}
-          {bestMoveBadges}
-        </div>
-        {renderChipsBlock()}
+        {/* UAT 179: accuracy card + compact 8-column summary row; the chevron
+            (move-stats-expand-toggle) reveals the full two-sided 7-row table. */}
+        <MoveStats
+          game={game}
+          gameId={game.game_id}
+          collapsed={!mobileMoveStatsExpanded}
+          showCompactRow
+          onToggleCollapse={() => setMobileMoveStatsExpanded((v) => !v)}
+          activeRef={activeCellRef}
+          outlinedRef={outlinedCellRef}
+          onCellActivate={handleMoveStatsCellActivate}
+          onCellHover={handleMoveStatsCellHover}
+        />
+        {hasTags && renderTagsBlock()}
       </div>
     ) : (
       <NoAnalysisState
@@ -1099,9 +1085,10 @@ export function LibraryGameCard({
       {header}
 
       {/* Mobile body: board+info row, eval chart block, flaw block. Switches to the
-          desktop two-column body at md (768px) — Quick 260625, one breakpoint later than
-          the previous sm so tablets keep the stacked layout. */}
-      <div className="flex flex-col gap-2 md:hidden px-4 py-4">
+          desktop two-column body at lg (1024px) — one breakpoint later than the previous
+          md so tablets/narrow desktops keep the stacked layout and the eval chart isn't
+          compressed in the three-lane desktop row. */}
+      <div className="flex flex-col gap-2 lg:hidden px-4 py-4">
         <div className="flex gap-3 items-start">
           {boardFen && (
             <LazyMiniBoard
@@ -1150,7 +1137,7 @@ export function LibraryGameCard({
         </div>
         {/* D-06/D-08: Unified Analyze button — mobile, below eval chart. Analyzed games only. */}
         {isAnalyzed && (
-          <div className="md:hidden flex gap-2">
+          <div className="lg:hidden flex gap-2">
             <Button asChild variant="brand-outline" className="w-full">
               {/* Real <a> via Link for middle-click / cmd-click new-tab support. */}
               <Link
@@ -1171,7 +1158,7 @@ export function LibraryGameCard({
           stacking eval chart + severity badges + tactic chips. The date lives in the
           strip (opening · TC · moves · date · result). Mobile keeps the simpler stacked
           body above. */}
-      <div className="hidden md:flex md:flex-col md:gap-2 px-4 py-4">
+      <div className="hidden lg:flex lg:flex-col lg:gap-2 px-4 py-4">
         {/* Full-width metadata strip spanning the whole card, above the board. */}
         {desktopMetaStrip}
         {/* Board + right-column row. */}
@@ -1190,55 +1177,68 @@ export function LibraryGameCard({
               />
             )}
           </div>
-          {/* RIGHT column: eval chart + severity badges, then tactic chips. flex-1 so it
-              fills the remaining width. gap-1 (not gap-2) tightens the space between the
-              chart's slider row and the Missed/Allowed/Context chips below it. */}
+          {/* RIGHT column: a two-lane row — the eval chart + tags card stacked on the
+              left, the MoveStats column (accuracies card + charcoal table) on the right.
+              items-stretch so the tags card fills the gap under the (short) eval chart,
+              matching the taller MoveStats column height (UAT 179). flex-1 fills the
+              remaining card width. */}
           <div className="flex-1 min-w-0 flex flex-col gap-1">
-            {/* Row 1: eval chart + severity badges side-by-side. */}
             {game.analysis_state === 'analyzed' ? (
-            <div className="flex gap-3 items-start">
-              <div
-                className="flex-1 min-w-0 flex items-center justify-center"
-                data-testid={`card-col2-${game.game_id}`}
-              >
-                {game.eval_series && game.flaw_markers && game.phase_transitions ? (
-                  <EvalChart
-                    gameId={game.game_id}
-                    evalSeries={game.eval_series}
-                    flawMarkers={game.flaw_markers}
-                    phaseTransitions={game.phase_transitions}
-                    moves={game.moves ?? []}
-                    flipped={game.user_color === 'black'}
-                    userColor={userColor}
-                    onHoverPlyChange={setHoverPly}
-                    highlightedPlies={highlightedPlies}
-                    outlinedPlies={outlinedPlies}
-                    initialPly={initialPly}
-                    commandedPly={commandedPly}
-                    commandSeq={commandSeq}
-                    // Chart + 16px slider row = 104px.
-                    heightClass="h-[104px]"
-                  />
-                ) : (
-                  <NoAnalysisState
-                    gameId={game.game_id}
-                    isAnalyzed={isAnalyzed}
-                    isInFlight={isInFlight}
-                    onInFlightChange={setInFlight}
-                    activeEvalStatus={game.active_eval_status}
-                  />
+            <div className="flex gap-3 items-stretch">
+              {/* Left lane: eval chart on top, tags card filling the gap below it. */}
+              <div className="flex-1 min-w-0 flex flex-col gap-2">
+                <div
+                  className="flex items-center justify-center"
+                  data-testid={`card-col2-${game.game_id}`}
+                >
+                  {game.eval_series && game.flaw_markers && game.phase_transitions ? (
+                    <EvalChart
+                      gameId={game.game_id}
+                      evalSeries={game.eval_series}
+                      flawMarkers={game.flaw_markers}
+                      phaseTransitions={game.phase_transitions}
+                      moves={game.moves ?? []}
+                      flipped={game.user_color === 'black'}
+                      userColor={userColor}
+                      onHoverPlyChange={setHoverPly}
+                      highlightedPlies={highlightedPlies}
+                      outlinedPlies={outlinedPlies}
+                      initialPly={initialPly}
+                      commandedPly={commandedPly}
+                      commandSeq={commandSeq}
+                      // Chart + 16px slider row = 104px.
+                      heightClass="h-[104px]"
+                    />
+                  ) : (
+                    <NoAnalysisState
+                      gameId={game.game_id}
+                      isAnalyzed={isAnalyzed}
+                      isInFlight={isInFlight}
+                      onInFlightChange={setInFlight}
+                      activeEvalStatus={game.active_eval_status}
+                    />
+                  )}
+                </div>
+                {/* Tags card fills the gap under the eval chart (flex-1). Marked as
+                    flaw-controls for the outside-pointer highlight guard. */}
+                {hasTags && (
+                  <div className="flex-1" data-testid={`flaw-controls-${game.game_id}`}>
+                    {renderTagsBlock()}
+                  </div>
                 )}
               </div>
-              {/* Severity + Gem/Great badges, stacked vertically beside the chart.
-                  items-stretch makes all badges share the widest one's width;
-                  justify-center keeps each badge's count+label centered. Marked as
-                  flaw-controls for the outside-pointer highlight guard. */}
-              <div
-                className="flex flex-col items-stretch gap-1.5 shrink-0 [&>*]:justify-center"
-                data-testid={`flaw-controls-${game.game_id}`}
-              >
-                {severityBadges}
-                {bestMoveBadges}
+              {/* MoveStats column: accuracies card + charcoal category table, ~224px
+                  fixed width beside the miniboard. Marked as flaw-controls for the
+                  outside-pointer highlight guard. */}
+              <div className="shrink-0 w-56" data-testid={`flaw-controls-${game.game_id}`}>
+                <MoveStats
+                  game={game}
+                  gameId={game.game_id}
+                  activeRef={activeCellRef}
+                  outlinedRef={outlinedCellRef}
+                  onCellActivate={handleMoveStatsCellActivate}
+                  onCellHover={handleMoveStatsCellHover}
+                />
               </div>
             </div>
           ) : (
@@ -1250,14 +1250,6 @@ export function LibraryGameCard({
                 onInFlightChange={setInFlight}
                 activeEvalStatus={game.active_eval_status}
               />
-            </div>
-          )}
-          {/* Row 2: tactic chips (analyzed games with chips only). Chips now occupy the right
-              column width instead of full card width; wrapping is expected and acceptable.
-              Marked as flaw-controls for the outside-pointer highlight guard. */}
-          {game.analysis_state === 'analyzed' && (
-            <div className="flex flex-col gap-1.5" data-testid={`flaw-controls-${game.game_id}`}>
-              {renderChipsBlock()}
             </div>
           )}
           </div>
