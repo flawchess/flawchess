@@ -9,6 +9,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ## [Unreleased]
 
 ### Fixed
+- Maia "Human Move Probability" card: when you played a non-best move, the engine's best move is now marked as a gem in the card *before* you play it, matching the gem badge that already appeared once the move was played on the board. The card also classifies that gem at the mover's rating-at-game-time (consistent with the board badge) instead of the ELO slider (Quick 260719-m5g).
 - Best/gem move analysis now reaches games it previously skipped forever: lichess-imported games (with their own evals) and guest games are now covered by the best-move pass. This also un-orphans games whose best-move pass was skipped during a Maia-outage window. Gem/great badges on lichess games are now computed against the engine's own evaluation (previously they could be over-awarded).
 - Mobile analysis board: when analysis of a just-played bot game finishes, the move-quality icons (blunder/mistake, gem/great, book) now appear in the Moves tab automatically. Previously they stayed hidden until you switched to another tab and back.
 
