@@ -1721,6 +1721,56 @@ describe('Mobile Stats tab: present during analysis, then the MoveStats panel (q
     expect(screen.getByTestId('analysis-tab-eval')).toBeTruthy();
     expect(screen.queryByTestId('analysis-tab-stats')).toBeNull();
   });
+
+  // Regression: when the live poll lands analysis while the user is on the mobile Moves
+  // tab, the move-quality icons must appear in place (no manual tab switch). The Moves
+  // subtree is keyed on the analysis-ready transition so it remounts exactly when
+  // analysis lands, matching the manual tab-switch that previously was the only way to
+  // surface the icons. (Fills the deferred D5 UAT gap from quick 260714-rj5.)
+  it('surfaces move-quality icons on the Moves tab when analysis lands via the live poll', () => {
+    libraryGameState.data = buildGame({
+      analysis_state: 'no_engine_analysis',
+      severity_counts: null,
+      chips: [],
+      eval_series: null,
+      flaw_markers: null,
+      phase_transitions: null,
+      moves: ['e4', 'e5'],
+      active_eval_status: 'pending',
+    });
+
+    renderAnalysis('/analysis?game_id=1');
+
+    const moveList = () => screen.getByTestId('variation-tree-desktop');
+    // No severity glyph while analysis is pending.
+    expect(within(moveList()).queryByText('??')).toBeNull();
+
+    // Analysis lands: IDENTICAL moves array, now with a blunder marker on e4 (ply 0).
+    libraryGameState.data = buildGame({
+      analysis_state: 'analyzed',
+      moves: ['e4', 'e5'],
+      active_eval_status: null,
+      flaw_markers: [
+        {
+          ply: 0,
+          severity: 'blunder',
+          tags: [],
+          is_user: true,
+          move_san: 'e4',
+          allowed_tactic_motif: null,
+          allowed_tactic_confidence: null,
+          allowed_tactic_depth: null,
+          missed_tactic_motif: null,
+          missed_tactic_confidence: null,
+          missed_tactic_depth: null,
+        },
+      ],
+    });
+    forceRerender();
+
+    // The Moves-tab list shows the blunder "??" glyph without a manual tab switch.
+    expect(within(moveList()).getAllByText('??').length).toBeGreaterThan(0);
+  });
 });
 
 // Phase 172 (SEED-106 CR-02/D-05) built two LOAD-BEARING page-level proofs

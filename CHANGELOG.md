@@ -10,6 +10,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Fixed
 - Best/gem move analysis now reaches games it previously skipped forever: lichess-imported games (with their own evals) and guest games are now covered by the best-move pass. This also un-orphans games whose best-move pass was skipped during a Maia-outage window. Gem/great badges on lichess games are now computed against the engine's own evaluation (previously they could be over-awarded).
+- Mobile analysis board: when analysis of a just-played bot game finishes, the move-quality icons (blunder/mistake, gem/great, book) now appear in the Moves tab automatically. Previously they stayed hidden until you switched to another tab and back.
 
 ## [v2.5] Move Statistics — 2026-07-18
 
