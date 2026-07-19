@@ -1319,18 +1319,34 @@ export default function Analysis() {
       const nextPly = mainlinePlyHere + 1;
       const nextNodeId = mainLine[nextPly];
       const nextNode = nextNodeId !== undefined ? nodes.get(nextNodeId) : undefined;
+      // Quick 260719-m5g: the stored-data short-circuit below is authoritative ONLY
+      // when the user actually PLAYED the engine best move at this ply.
+      // classify_best_move only ever writes a game_best_moves row for a played==best
+      // ply, so a missing stored row means "the move the user PLAYED here was not a
+      // gem/great" — it says NOTHING about whether the engine best move (which the
+      // user did NOT play) would be a gem. When the played move was non-best (e.g.
+      // Rc7?? while Kd3 was best), fall through to the live classifyGem fallback so
+      // the card marks reconciledBestSan as a gem BEFORE it is played, matching the
+      // on-board gemByNode badge that appears once it IS played.
+      const playedBestHere = nextNode?.san === reconciledBestSan;
       const stored = storedTierByPly.get(nextPly);
-      if (stored !== undefined && nextNode?.san === reconciledBestSan) {
+      if (stored !== undefined && playedBestHere) {
         const bestInfo = qualityBySan.get(reconciledBestSan);
         if (!bestInfo) return qualityBySan;
         const next = new Map(qualityBySan);
         next.set(reconciledBestSan, { ...bestInfo, quality: stored.tier });
         return next;
       }
-      if (gameHasStoredBestMoveData) return qualityBySan; // Pitfall 3: authoritative, no live fallback
+      if (gameHasStoredBestMoveData && playedBestHere) return qualityBySan; // Pitfall 3: authoritative only for the played-best move
     }
 
-    const rung = nearestByElo(maia.perElo, selectedElo);
+    // Quick 260719-m5g: pin the gem's Maia rung to the MOVER's rating-at-game-time
+    // (Phase 172 / SEED-106 D-01 — the gem rung is a property of the GAME, never the
+    // reactive ELO slider), matching the on-board gemByNode badge (pinnedEloForMover)
+    // so the card's pre-play gem and the post-play badge cannot disagree. The live
+    // exploration overlays (Maia chart / WDL bar / FlawChess Engine) keep using
+    // selectedElo — only gem CLASSIFICATION is pinned here.
+    const rung = nearestByElo(maia.perElo, pinnedEloForMover(sideToMoveFromFen(position)));
     const maiaProb = rung?.moveProbabilities[reconciledBestSan] ?? null;
     // Bug fix (163-REVIEW WR-01): verify the summarized argmax IS the move we are
     // about to recolor instead of hard-coding playedIsBest: true. When the
@@ -1359,7 +1375,7 @@ export default function Analysis() {
     qualityBySan,
     reconciledBestSan,
     maia.perElo,
-    selectedElo,
+    pinnedEloForMover,
     position,
     currentNodeId,
     isOnMainLine,
