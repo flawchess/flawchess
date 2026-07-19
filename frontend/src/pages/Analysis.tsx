@@ -3264,9 +3264,25 @@ export default function Analysis() {
   // container (no card header), matching the surrounding tab surfaces. Shared across
   // the mobile tab layouts and the mid-range right column. The charcoal wrapper keeps
   // the flex/scroll chain (`min-h-0 flex-1`) so the tree's internal scroller resolves.
+  //
+  // Bug fix (bot-game live analysis): when the live poll lands analysis on a game the
+  // user is viewing on the Moves tab, the move-quality icons (blunder/mistake, gem/
+  // great, book) did NOT appear in place on mobile — only switching to another tab and
+  // back (a Radix unmount/remount) surfaced them. The move list derives its markers
+  // from gameData via memos that DO recompute on the poll, yet the active tab's already-
+  // mounted subtree kept a stale render; a remount is what reliably picks the icons up.
+  // Keying the subtree on the analysis-ready transition reproduces that remount exactly
+  // when analysis lands (evalChartReady flips false→true once), so the icons show
+  // without a manual tab switch. The move tree, cursor, and any user-built sideline live
+  // in useAnalysisBoard (above VariationTree), so this view remount never loses them.
+  // Free play and already-analyzed games keep a stable key (mounts once, no churn).
+  const moveListKey = isGameMode ? (evalChartReady ? 'moves-analyzed' : 'moves-pending') : 'moves';
   const movesTab = (
     <TabsContent value="moves" className="flex min-h-0 flex-1 flex-col pb-2">
-      <div className="charcoal-texture flex min-h-0 flex-1 flex-col rounded-md">
+      <div
+        key={moveListKey}
+        className="charcoal-texture flex min-h-0 flex-1 flex-col rounded-md"
+      >
         {variationTree('vertical')}
       </div>
     </TabsContent>
