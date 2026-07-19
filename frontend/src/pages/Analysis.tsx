@@ -3268,11 +3268,27 @@ export default function Analysis() {
     </TabsContent>
   );
 
-  // The mobile "Tags" tab content — the flaw-tags panel (game mode only, so it only
-  // appears in the full tab strip below).
+  // The mobile "Tags" tab content — the flaw-tags panel (MoveStats + tactic/context
+  // tags; game mode only). While analysis is still in flight the tab shows the SAME
+  // Analyzing pill the Eval tab uses, then swaps to the panel once evals land — so the
+  // tab is present (and clearly "working") the whole time instead of only popping into
+  // existence once evals arrive. The prior pattern (trigger + content mounted ONLY on
+  // evalChartReady) added a Radix tab to an already-mounted <Tabs> at the ready
+  // transition, which failed to render in place on mobile until a full page reload
+  // (quick 260719-dzh) — the accuracy card + move stats stayed "completely absent" even
+  // though the eval chart had appeared.
   const tagsTab = (
     <TabsContent value="tags" className="min-h-0 overflow-y-auto thin-scrollbar">
-      <div className="px-2">{tagsPanel()}</div>
+      <div className="px-2 pt-1">
+        {evalChartReady ? (
+          tagsPanel()
+        ) : evalPending && gameId != null ? (
+          <AnalysisPendingPill
+            gameId={gameId}
+            leased={gameData?.active_eval_status === 'leased'}
+          />
+        ) : null}
+      </div>
     </TabsContent>
   );
 
@@ -3281,9 +3297,11 @@ export default function Analysis() {
   // verbatim; only one layout tree renders at a time, so the Tabs mount exactly
   // once). Needs a height-bounded flex parent (`flex min-h-0 flex-1`) so each tab's
   // internal scroller resolves: mobile gets it from the takeover column, mid from a
-  // boardWidth-tall wrapper. The Tags trigger/content render only once evalChartReady
-  // (loaded, analyzed game); free play / still-loading games omit them, and the Tabs
-  // subtree never remounts across that transition (no cursor/variation-tree loss).
+  // boardWidth-tall wrapper. The Tags trigger/content render whenever the game is
+  // analyzed OR still being analyzed (evalChartReady || evalPending) — present with an
+  // Analyzing pill during analysis, then the panel once evals land (quick 260719-dzh);
+  // free play / idle unanalyzed games omit them, and the Tabs subtree never remounts
+  // across the transition (no cursor/variation-tree loss).
   const analysisTabs = (
     <Tabs defaultValue="moves" className="flex min-h-0 flex-1 flex-col gap-2 px-2 pt-2">
       <TabsList variant="underline" className="w-full shrink-0">
@@ -3320,7 +3338,7 @@ export default function Analysis() {
           <ChessKnight aria-hidden="true" />
           FlawChess
         </TabsTrigger>
-        {evalChartReady && (
+        {(evalChartReady || evalPending) && (
           <TabsTrigger value="tags" data-testid="analysis-tab-tags" className="gap-1 px-1">
             <Tag aria-hidden="true" />
             Tags
@@ -3331,7 +3349,7 @@ export default function Analysis() {
       {evalTab}
       {humanTab}
       {flawChessTab}
-      {evalChartReady && tagsTab}
+      {(evalChartReady || evalPending) && tagsTab}
     </Tabs>
   );
 
@@ -3520,11 +3538,12 @@ export default function Analysis() {
             off-screen when the mobile browser's URL bar shrank the height. h-[120px]
             (the established mobile chart height) keeps the footer visible. Quick
             260714-rj5: collapsed from two near-identical Tabs branches into one —
-            the Tags trigger/content render only once evalChartReady (loaded,
-            analyzed game), so the Tabs subtree itself never remounts when a
-            game-mode card transitions from unanalyzed to analyzed via the live
-            poll (no cursor/variation-tree loss). Free play and a still-loading /
-            unanalyzed game just omit the Tags tab. */}
+            the Tags trigger/content render whenever the game is analyzed OR being
+            analyzed (evalChartReady || evalPending), showing an Analyzing pill
+            during analysis then the panel once evals land (quick 260719-dzh), so
+            the Tabs subtree itself never remounts when a game-mode card transitions
+            from unanalyzed to analyzed via the live poll (no cursor/variation-tree
+            loss). Free play and an idle unanalyzed game just omit the Tags tab. */}
         {analysisTabs}
 
         {/* In-flow board-controls footer — replaces the suppressed mobile nav bar. */}

@@ -1626,6 +1626,103 @@ describe('Live-polling analysis board with an in-place pending pill (Quick 26071
   });
 });
 
+// Quick 260719-dzh — on the mobile takeover layout the Move Stats / accuracy panel
+// lives in the "Tags" tab. Regression: the Tags trigger + content used to gate on
+// evalChartReady ONLY, so the tab was ADDED to an already-mounted Radix <Tabs> at the
+// moment evals landed — a post-mount tab insertion that failed to render in place on
+// mobile (the panel stayed "completely absent" until a full page reload, even though
+// the eval chart had appeared). Fix: gate on (evalChartReady || evalPending) so the tab
+// is present throughout analysis (Analyzing pill first, then the panel), never added
+// late.
+describe('Mobile Tags tab: present during analysis, then the MoveStats panel (quick 260719-dzh)', () => {
+  const origMatchMedia = window.matchMedia;
+  let clientWidthSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    // Force the mobile takeover: useAnalysisLayoutMode returns 'mobile' when the
+    // max-width mobile media query matches.
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: /max-width/.test(query),
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })) as unknown as typeof window.matchMedia;
+    clientWidthSpy = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(360);
+  });
+
+  afterEach(() => {
+    window.matchMedia = origMatchMedia;
+    clientWidthSpy.mockRestore();
+  });
+
+  // Board flip is a layout-agnostic re-render trigger (present in the mobile footer),
+  // unlike the desktop block's Maia toggle which is buried inside a tab here.
+  function forceRerender(): void {
+    fireEvent.click(screen.getByTestId('board-btn-flip'));
+  }
+
+  it('renders the Tags tab trigger while analysis is still pending — not only once evals land', () => {
+    libraryGameState.data = buildGame({
+      analysis_state: 'no_engine_analysis',
+      severity_counts: null,
+      chips: [],
+      eval_series: null,
+      flaw_markers: null,
+      phase_transitions: null,
+      moves: ['e4', 'e5'],
+      active_eval_status: 'leased',
+    });
+
+    renderAnalysis('/analysis?game_id=1');
+
+    // The mobile takeover is active (Moves tab is the default) and the game is
+    // mid-analysis. The regression: the Tags tab (which hosts the MoveStats / accuracy
+    // panel) must ALREADY be in the tab strip here. The old evalChartReady-only gate
+    // left it absent until evals arrived, then added it to the already-mounted <Tabs>
+    // at that transition — a post-mount insertion that never rendered in place on
+    // mobile (panel "completely absent" until a reload). The tab body only mounts when
+    // active (Radix), so the trigger's presence is what this asserts.
+    expect(screen.getByTestId('analysis-tab-eval')).toBeTruthy(); // confirms mobile tab strip
+    expect(screen.getByTestId('analysis-tab-tags')).toBeTruthy();
+
+    // Evals land in place: analysis_state flips to 'analyzed'. The Tags tab persists
+    // (no remove/re-add churn) — same trigger, no reload needed.
+    libraryGameState.data = buildGame({
+      analysis_state: 'analyzed',
+      moves: ['e4', 'e5'],
+      active_eval_status: null,
+    });
+    forceRerender();
+
+    expect(screen.getByTestId('analysis-tab-tags')).toBeTruthy();
+  });
+
+  it('omits the Tags tab for an idle unanalyzed game with no active eval job', () => {
+    // No active job (active_eval_status null) and unanalyzed: neither evalChartReady nor
+    // evalPending, so the Tags tab is correctly absent (nothing to show, no analysis in
+    // flight) — the gate is (evalChartReady || evalPending), not "always in game mode".
+    libraryGameState.data = buildGame({
+      analysis_state: 'no_engine_analysis',
+      severity_counts: null,
+      chips: [],
+      eval_series: null,
+      flaw_markers: null,
+      phase_transitions: null,
+      moves: ['e4', 'e5'],
+      active_eval_status: null,
+    });
+
+    renderAnalysis('/analysis?game_id=1');
+
+    expect(screen.getByTestId('analysis-tab-eval')).toBeTruthy();
+    expect(screen.queryByTestId('analysis-tab-tags')).toBeNull();
+  });
+});
+
 // Phase 172 (SEED-106 CR-02/D-05) built two LOAD-BEARING page-level proofs
 // here: "the sweep yields to a busy live engine" (CR-02) and "the sweep's
 // dedicated Maia/grading instances never collide with the live path's own
