@@ -4731,3 +4731,137 @@ class TestMultipv2Blobs:
                         )
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
+
+
+class TestTier4bMinimalDrainLichessBestCp:
+    """Quick 260719-fsz Task 2: the minimal tier-4b drain (_tier4b_minimal_drain_tick)
+    must store our-Stockfish best_cp for a LICHESS-eval game, not the stored lichess
+    %eval, so the query-time gem/great divergence guard (library_service.py) is
+    meaningful. Engine games are unchanged (their stored eval already IS our Stockfish).
+
+    Fixture game "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. h3 a6" — the Italian Game main
+    line (plies 0-5) is fully booked (find_opening_ply_count == 6), so ply 6 (h2h3,
+    white) is the out-of-book, played==stored-best gem candidate (same known-good
+    setup as the 174-07 backfill test above). eval_of_position[6] comes from the
+    ply-5 row (post-move shift), seeded as a distinct LICHESS value; the mocked fresh
+    MultiPV-2 search returns a clearly different Stockfish best cp.
+    """
+
+    _PGN: str = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. h3 a6 *"
+    _CANDIDATE_PLY: int = 6
+    _LICHESS_BEST_CP: int = 111  # stored on the ply-5 row -> eval_of_position[6]
+    _FRESH_STOCKFISH_CP: int = 300  # returned by the mocked fresh search (res[0])
+    _SECOND_CP: int = -100  # runner-up -> wide ES margin so ply 6 is a gem candidate
+
+    @pytest.mark.parametrize(
+        ("is_lichess", "expected_best_cp"),
+        [
+            (True, _FRESH_STOCKFISH_CP),  # lichess game: overridden to fresh Stockfish
+            (False, _LICHESS_BEST_CP),  # engine game: stored eval kept unchanged
+        ],
+    )
+    async def test_minimal_drain_best_cp_source(
+        self,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        full_drain_test_user_117: int,
+        monkeypatch: pytest.MonkeyPatch,
+        is_lichess: bool,
+        expected_best_cp: int,
+    ) -> None:
+        import app.services.eval_apply as eval_apply_module
+        import app.services.eval_drain as drain_module
+        from app.models.game_best_move import GameBestMove
+
+        from app.models.game import Game
+
+        now = datetime.now(timezone.utc)
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_117,
+            pgn=self._PGN,
+            full_evals_completed_at=now,
+            full_pv_completed_at=now,
+            lichess_evals_at=now if is_lichess else None,
+        )
+        # Ratings are required to pin the Maia ELO — without them
+        # _build_best_move_candidates skips the mover (no candidate row).
+        async with full_drain_session_maker() as session:
+            await session.execute(
+                sa.update(Game.__table__)  # ty: ignore[invalid-argument-type]
+                .where(Game.id == game_id)
+                .values(white_rating=1500, black_rating=1500)
+            )
+            await session.commit()
+
+        # Route drain + eval_apply sessions to the test DB, suppress Sentry, mock Maia.
+        monkeypatch.setattr(drain_module, "async_session_maker", full_drain_session_maker)
+        monkeypatch.setattr(eval_apply_module, "async_session_maker", full_drain_session_maker)
+        monkeypatch.setattr(drain_module.sentry_sdk, "capture_exception", lambda *a, **kw: None)
+        monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.1)
+        monkeypatch.setattr(drain_module.maia_engine, "is_maia_available", lambda: True)
+
+        # Fresh MultiPV-2 search for the single candidate ply (6): res[0] is the
+        # WHITE-perspective Stockfish best cp, res[4] the runner-up (wide margin).
+        mock_evaluate = AsyncMock(
+            return_value=(
+                self._FRESH_STOCKFISH_CP,
+                None,
+                "h2h3",
+                "h2h3 e7e6",
+                self._SECOND_CP,
+                None,
+                "e7e6",
+            )
+        )
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
+
+        # Plies 0-6 store best_move == played (only ply 6 is out-of-book, so only it
+        # is a candidate); ply 7 stored best_move != played so it is not a candidate.
+        # Ply-5 row carries the LICHESS best_cp -> eval_of_position[6].
+        played_uci = ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5", "h2h3", "a7a6"]
+        gp_rows = [
+            {
+                "ply": i,
+                "full_hash": 0xB600 + i,
+                "best_move": played_uci[i] if i <= self._CANDIDATE_PLY else "b7b6",
+                "eval_cp": self._LICHESS_BEST_CP if i == self._CANDIDATE_PLY - 1 else 20 + i,
+                "eval_mate": None,
+            }
+            for i in range(8)
+        ]
+        await _insert_game_positions(
+            full_drain_session_maker, full_drain_test_user_117, game_id, gp_rows
+        )
+
+        try:
+            processed = await drain_module._tier4b_minimal_drain_tick(
+                game_id, full_drain_test_user_117
+            )
+            assert processed is True, "Minimal tier-4b tick must report the game processed"
+            assert mock_evaluate.await_count == 1, (
+                f"Exactly one candidate ply ({self._CANDIDATE_PLY}) must be searched; "
+                f"got {mock_evaluate.await_count}"
+            )
+
+            async with full_drain_session_maker() as verify:
+                bm_rows = (
+                    await verify.execute(
+                        select(GameBestMove.ply, GameBestMove.best_cp).where(
+                            GameBestMove.game_id == game_id
+                        )
+                    )
+                ).all()
+
+            best_cp_by_ply = {ply: best_cp for ply, best_cp in bm_rows}
+            assert self._CANDIDATE_PLY in best_cp_by_ply, (
+                f"Ply {self._CANDIDATE_PLY} must be a gem candidate and get a "
+                f"game_best_moves row; got {best_cp_by_ply}"
+            )
+            assert best_cp_by_ply[self._CANDIDATE_PLY] == expected_best_cp, (
+                f"{'lichess' if is_lichess else 'engine'} game: stored best_cp must be "
+                f"{expected_best_cp} (got {best_cp_by_ply[self._CANDIDATE_PLY]}). For a lichess "
+                f"game the fresh Stockfish {self._FRESH_STOCKFISH_CP} must override the stored "
+                f"lichess {self._LICHESS_BEST_CP}; for an engine game the stored eval is kept."
+            )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])

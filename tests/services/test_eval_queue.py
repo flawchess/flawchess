@@ -1204,14 +1204,17 @@ class TestTier3Lottery:
         finally:
             await _delete_games(queue_session_maker, [fresh_game, stale_game])
 
-    async def test_residual_fallback_excludes_guest_backlog_game(
+    async def test_residual_fallback_includes_guest_backlog_game(
         self,
         tier2_test_users: dict[str, int],
         queue_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """A guest's lichess-eval backlog game must never be picked by the
-        broadened residual fallback (QUEUE-08 unchanged by the 174-07 broadening)."""
+        """Quick 260719-fsz Population A: a guest's lichess-eval backlog game
+        (full_pv NULL, lichess_evals set) IS now picked by the residual fallback —
+        a deliberate scoped reversal of QUEUE-08 for THIS lichess-eval lane only.
+        (Previously test_residual_fallback_excludes_guest_backlog_game asserted the
+        opposite; the guest EXISTS clause was dropped from the residual game_where.)"""
         import app.services.eval_queue_service as svc
         from app.models.user import User
 
@@ -1220,8 +1223,7 @@ class TestTier3Lottery:
         guest_id = tier2_test_users["guest"]
         now = datetime.now(timezone.utc)
 
-        # Recently active so the guest would win the user-pick if the guest
-        # filter were absent.
+        # Recently active so the guest wins the game-pick recency weighting.
         async with queue_session_maker() as session:
             await session.execute(
                 sa_update(User).where(User.id == guest_id).values(last_activity=now)
@@ -1240,14 +1242,17 @@ class TestTier3Lottery:
         from app.services.eval_queue_service import _claim_tier3_derived
 
         try:
+            # No needs-engine game is seeded, so tier-3 Step-1 returns None and the
+            # residual fallback fires — it must now return the guest lichess game.
             async with queue_session_maker() as session:
-                for i in range(10):
-                    result = await _claim_tier3_derived(session)
-                    if result is not None:
-                        assert result[0] != guest_backlog_game, (
-                            f"Draw {i}: guest backlog game {guest_backlog_game} must "
-                            "never be picked by the residual fallback"
-                        )
+                result = await _claim_tier3_derived(session)
+            assert result is not None, (
+                "Residual fallback must pick the guest lichess-eval backlog game "
+                "(Population A); got None"
+            )
+            assert result[0] == guest_backlog_game, (
+                f"Expected guest backlog game {guest_backlog_game}; got {result[0]}"
+            )
         finally:
             await _delete_games(queue_session_maker, [guest_backlog_game])
 
@@ -2034,14 +2039,17 @@ class TestTier4bBestMoveBackfill:
 
     Tests cover:
     - null_pick_on_empty_pool: _claim_tier4_bestmove returns None with no candidates
-    - picks_eligible_game: a PV-complete, best-move-incomplete, non-lichess-eval,
-      non-guest game is returned
-    - excludes_guests: guest-owned games are never returned (QUEUE-08)
-    - excludes_pv_incomplete: games without full_pv_completed_at are excluded
+    - picks_eligible_game: a PV-complete, best-move-incomplete, non-guest game is returned
+    - includes_guest_orphan: a guest full_pv-set best_moves-NULL game IS picked so guest
+      orphans self-heal (Quick 260719-fsz B2, include_guests=True). tier-3/tier-4-blob
+      still exclude guests (proven elsewhere).
+    - excludes_pv_incomplete: games without full_pv_completed_at are excluded (this also
+      keeps tier-4b disjoint from the residual's full_pv-NULL population)
     - excludes_already_stamped: games with best_moves_completed_at set are excluded
       (D-01 self-termination)
-    - excludes_lichess_eval: a game with BOTH full_pv_completed_at AND
-      lichess_evals_at set is NOT picked (D-03 boundary — the load-bearing case)
+    - includes_lichess_eval_orphan: a lichess-eval game with full_pv set / best_moves NULL
+      IS now picked (Quick 260719-fsz B — the `lichess_evals_at IS NULL` clause was dropped;
+      lanes stay disjoint on full_pv_completed_at)
     - dispatch_via_claim: claim_eval_job returns a TIER_BESTMOVE_BACKFILL job only
       after tier-3 AND tier-4-blob both return None
     - gated_off: BEST_MOVE_BACKFILL_ENABLED=False suppresses the rung even when
@@ -2104,12 +2112,17 @@ class TestTier4bBestMoveBackfill:
         finally:
             await _delete_games(queue_session_maker, [game_id])
 
-    async def test_excludes_guests(
+    async def test_includes_guest_orphan(
         self,
         tier4_test_users: dict[str, int],
         queue_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
-        """Guest-owned games are never returned (QUEUE-08)."""
+        """Quick 260719-fsz Population B2: a guest's full_pv-set, best_moves-NULL game
+        IS picked by tier-4b so guest orphans self-heal (include_guests=True on the
+        Stage-1 user pick). Previously test_excludes_guests asserted the opposite.
+        Note: tier-3 needs-engine + tier-4-blob still exclude guests — that shared
+        default is proven by test_tier3_guest_excluded_from_lottery /
+        test_tier4_excludes_guests."""
         from app.services.eval_queue_service import _claim_tier4_bestmove
 
         guest_id = tier4_test_users["guest"]
@@ -2125,13 +2138,12 @@ class TestTier4bBestMoveBackfill:
 
         try:
             async with queue_session_maker() as session:
-                for i in range(10):
-                    result = await _claim_tier4_bestmove(session)
-                    if result is not None:
-                        assert result[0] != game_id, (
-                            f"Draw {i}: guest game {game_id} must never be returned "
-                            f"by _claim_tier4_bestmove (QUEUE-08)"
-                        )
+                result = await _claim_tier4_bestmove(session)
+            assert result is not None, (
+                f"Expected tier-4b to pick guest orphan {game_id} (B2); got None"
+            )
+            assert result[0] == game_id, f"Expected guest orphan {game_id}; got {result[0]}"
+            assert result[1] == guest_id, f"Expected guest user {guest_id}; got {result[1]}"
         finally:
             await _delete_games(queue_session_maker, [game_id])
 
@@ -2196,15 +2208,18 @@ class TestTier4bBestMoveBackfill:
         finally:
             await _delete_games(queue_session_maker, [game_id])
 
-    async def test_excludes_lichess_eval(
+    async def test_includes_lichess_eval_orphan(
         self,
         tier4_test_users: dict[str, int],
         queue_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
-        """D-03 boundary: a lichess-eval game with full_pv_completed_at set is NOT
-        picked by tier-4b — that population belongs to 174-07's residual fallback,
-        not this rung. This is the load-bearing new case (the reason
-        `AND lichess_evals_at IS NULL` must be in BOTH stages of the predicate)."""
+        """Quick 260719-fsz Population B: a lichess-eval game with full_pv_completed_at
+        SET and best_moves_completed_at NULL (an orphan, e.g. best-move pass skipped
+        during a Maia-down window) IS now picked by tier-4b. The former
+        `AND lichess_evals_at IS NULL` clause was dropped from both stages; the two
+        lanes stay disjoint on full_pv_completed_at (residual takes full_pv NULL, this
+        lane takes full_pv NOT NULL), so no D-03 contention. Previously
+        test_excludes_lichess_eval asserted the opposite."""
         from app.services.eval_queue_service import _claim_tier4_bestmove
 
         user_id = tier4_test_users["user"]
@@ -2215,18 +2230,16 @@ class TestTier4bBestMoveBackfill:
             user_id,
             full_pv_completed_at=now,
             best_moves_completed_at=None,
-            lichess_evals_at=now,  # lichess-eval game — out of tier-4b's scope (D-03)
+            lichess_evals_at=now,  # lichess-eval orphan — now self-heals via tier-4b
         )
 
         try:
             async with queue_session_maker() as session:
-                for i in range(10):
-                    result = await _claim_tier4_bestmove(session)
-                    if result is not None:
-                        assert result[0] != game_id, (
-                            f"Draw {i}: lichess-eval game {game_id} must never be "
-                            f"returned by _claim_tier4_bestmove (D-03 boundary)"
-                        )
+                result = await _claim_tier4_bestmove(session)
+            assert result is not None, (
+                f"Expected tier-4b to pick lichess-eval orphan {game_id} (B); got None"
+            )
+            assert result[0] == game_id, f"Expected lichess-eval orphan {game_id}; got {result[0]}"
         finally:
             await _delete_games(queue_session_maker, [game_id])
 
@@ -2333,8 +2346,10 @@ class TestTier4bBestMoveBackfill:
         queue_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """ClaimedJob returned for tier-4b has tier=TIER_BESTMOVE_BACKFILL,
-        is_lichess_eval_game=False, and job_id=None."""
+        """ClaimedJob for a tier-4b NON-lichess game has tier=TIER_BESTMOVE_BACKFILL,
+        is_lichess_eval_game=False, and job_id=None. (Quick 260719-fsz: the flag is now
+        resolved from the game row rather than hardcoded — see test_claimed_job_lichess_flag
+        for the lichess case.)"""
         import app.services.eval_queue_service as svc
         from app.models.eval_jobs import TIER_BESTMOVE_BACKFILL
 
@@ -2369,11 +2384,57 @@ class TestTier4bBestMoveBackfill:
                 f"Expected tier={TIER_BESTMOVE_BACKFILL}; got {claimed.tier}"
             )
             assert claimed.is_lichess_eval_game is False, (
-                "is_lichess_eval_game must be False by construction (predicate "
-                "structurally excludes lichess-eval games)"
+                "is_lichess_eval_game must be False for a non-lichess game"
             )
             assert claimed.job_id is None, (
                 f"Tier-4b must have job_id=None (table-less lottery); got {claimed.job_id}"
+            )
+        finally:
+            await _delete_games(queue_session_maker, [game_id])
+
+    async def test_claimed_job_lichess_flag(
+        self,
+        tier4_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Quick 260719-fsz honesty fix: for a tier-4b lichess-eval orphan the ClaimedJob
+        resolves is_lichess_eval_game=True from the game row (the old hardcoded False +
+        "excluded by construction" comment is no longer true now that tier-4b admits
+        lichess-eval games)."""
+        import app.services.eval_queue_service as svc
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+        monkeypatch.setattr(svc.settings, "BEST_MOVE_BACKFILL_ENABLED", True)
+
+        async def _mock_tier3(session: object) -> None:
+            return None
+
+        async def _mock_tier4_blob(session: object) -> None:
+            return None
+
+        monkeypatch.setattr(svc, "_claim_tier3_derived", _mock_tier3)
+        monkeypatch.setattr(svc, "_claim_tier4_blob", _mock_tier4_blob)
+
+        user_id = tier4_test_users["user"]
+        now = datetime.now(timezone.utc)
+
+        game_id = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_pv_completed_at=now,
+            best_moves_completed_at=None,
+            lichess_evals_at=now,  # lichess-eval orphan (Population B)
+        )
+
+        try:
+            claimed = await svc.claim_eval_job()
+
+            assert claimed is not None, "Expected tier-4b ClaimedJob for lichess orphan; got None"
+            assert claimed.game_id == game_id, f"Expected game {game_id}; got {claimed.game_id}"
+            assert claimed.is_lichess_eval_game is True, (
+                "is_lichess_eval_game must be resolved True from the game row for a "
+                "lichess-eval orphan (honesty fix)"
             )
         finally:
             await _delete_games(queue_session_maker, [game_id])

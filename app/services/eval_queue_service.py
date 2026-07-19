@@ -294,33 +294,43 @@ async def _es_weighted_user_pick(
     recency_col_sql: str,
     tau_seconds: float,
     floor: float,
+    include_guests: bool = False,
 ) -> int | None:
     """Generic Efraimidis–Spirakis weighted user pick (WRITE-06).
 
     Shared building block behind both _claim_tier3_derived's Step 1 and
-    _claim_tier4_blob's Stage 1 — the acquisition shape (non-guest candidate
-    filter + recency-weighted ES key) is identical between tiers; only the
-    EXISTS predicate narrowing "eligible" candidates and which recency column
-    anchors the decay differ per tier.
+    _claim_tier4_blob's Stage 1 — the acquisition shape (candidate filter +
+    recency-weighted ES key) is identical between tiers; only the EXISTS
+    predicate narrowing "eligible" candidates and which recency column anchors
+    the decay differ per tier.
 
     weight = exp(-Δt/τ) + floor, where Δt = seconds since recency_col_sql
     (COALESCE'd to epoch-0 so NULL → exp term ≈ 0, weight ≈ floor). Pick
     ORDER BY -ln(random()) / weight LIMIT 1 (the ES key: LIMIT 1 = winner).
 
     candidate_exists_sql / recency_col_sql are trusted, hardcoded SQL fragments
-    authored by the two call sites below (never derived from request/user
-    input) — composing query SHAPE from these fixed strings carries no
-    injection surface. All variable VALUES (tau_seconds, floor) are bound via
-    the sa.text params dict — never f-string-interpolated (QUEUE-08).
+    authored by the call sites below (never derived from request/user input) —
+    composing query SHAPE from these fixed strings carries no injection surface.
+    All variable VALUES (tau_seconds, floor) are bound via the sa.text params
+    dict — never f-string-interpolated (QUEUE-08).
+
+    include_guests (default False) keeps the QUEUE-08 guest exclusion for the
+    tier-3 needs-engine Step-1 and tier-4-blob Stage-1 callers. It is passed
+    True ONLY by _claim_tier4_bestmove (Quick 260719-fsz) so guest full_pv-set
+    best_moves-NULL games self-heal through the minimal best-move lane; the
+    guest clause is composed from fixed in-code literals (no request/user
+    input), so toggling it introduces no injection surface.
 
     Returns the picked user_id, or None when no candidate exists.
     """
+    # Fixed-literal composition (no user input) — see include_guests above.
+    guest_clause = "" if include_guests else "u.is_guest = false AND"
     result = await session.execute(
         sa.text(f"""
             SELECT u.id
             FROM users u
-            WHERE u.is_guest = false  -- intentional: guests excluded from automatic bulk analysis; only tier-1 explicit is opened (QUEUE-08)
-              AND EXISTS (
+            WHERE {guest_clause}
+              EXISTS (
                 {candidate_exists_sql}
               )
             ORDER BY
@@ -539,11 +549,13 @@ async def _claim_tier3_derived(
     fallback_game_id = await _es_weighted_game_pick(
         session,
         game_where_sql=(
-            "g.full_pv_completed_at IS NULL"
-            " AND g.lichess_evals_at IS NOT NULL"
-            " AND EXISTS ("
-            "SELECT 1 FROM users u WHERE u.id = g.user_id AND u.is_guest = false"
-            ")"  # intentional: guests excluded from automatic bulk analysis (QUEUE-08)
+            "g.full_pv_completed_at IS NULL AND g.lichess_evals_at IS NOT NULL"
+            # Quick 260719-fsz: guests are now INCLUDED in this residual
+            # lichess-eval lane — a deliberate scoped reversal of QUEUE-08 for
+            # THIS lane only (CONTEXT "Guest data — process them"). ~18.9k guest
+            # lichess games that only have imported evals need the full engine
+            # pass to earn best/gem moves. Other tiers' user pick still excludes
+            # guests via _es_weighted_user_pick's default.
         ),
         recency_col_sql="g.played_at",
         tau_seconds=tau_game_seconds,
@@ -666,8 +678,8 @@ async def _claim_tier4_blob(
 async def _claim_tier4_bestmove(
     session: AsyncSession,
 ) -> tuple[int, int] | None:
-    """Tier-4b spare-capacity lottery: pick one PV-complete non-guest engine game
-    still missing its best-move pass (Phase 176 BACK-01, D-01/D-02/D-03).
+    """Tier-4b spare-capacity lottery: pick one PV-complete game still missing
+    its best-move pass (Phase 176 BACK-01, D-01/D-02/D-03).
 
     Near-verbatim copy of _claim_tier4_blob's two-stage ES weighted (user ->
     game) lottery, same plain-SELECT/no-lock shape, reusing the same
@@ -677,12 +689,16 @@ async def _claim_tier4_bestmove(
 
     Predicate (identical in BOTH the Stage-1 EXISTS-subquery and the Stage-2
     WHERE): full_pv_completed_at IS NOT NULL AND best_moves_completed_at IS
-    NULL AND lichess_evals_at IS NULL. The `lichess_evals_at IS NULL` clause is
-    load-bearing (D-03): full_pv_completed_at is stamped for BOTH engine games
-    AND lichess-eval games (174-06 unified the pass), so omitting this clause
-    would make tier-4b contend with 174-07's residual fallback for the SAME
-    lichess-eval-game population — that population is explicitly OUT of this
-    rung's scope (D-03).
+    NULL. Quick 260719-fsz DROPPED the former `lichess_evals_at IS NULL` clause
+    so lichess-eval games whose best-move pass never landed (full_pv stamped but
+    best_moves NULL — e.g. orphaned during a Maia-down window) self-heal here
+    rather than falling in a permanent coverage hole. This does NOT reintroduce
+    the D-03 contention with 174-07's residual fallback: the residual takes only
+    full_pv_completed_at IS NULL games while this lane takes only
+    full_pv_completed_at IS NOT NULL games, so the two lanes stay DISJOINT on
+    full_pv_completed_at (a game matches at most one). include_guests=True on the
+    Stage-1 user pick lets guest orphans self-heal too (B2); tier-3 needs-engine
+    and tier-4-blob keep excluding guests.
 
     Stage 2's recency anchor is g.full_pv_completed_at (the column this
     predicate gates on — the event that made the game eligible), mirroring
@@ -705,6 +721,7 @@ async def _claim_tier4_bestmove(
     floor_g: float = TIER4_GAME_WEIGHT_FLOOR
 
     # Stage 1: ES weighted user pick over users with an eligible best-move-pending game.
+    # include_guests=True so guest orphans (full_pv set, best_moves NULL) self-heal (B2).
     picked_user_id = await _es_weighted_user_pick(
         session,
         candidate_exists_sql="""
@@ -712,11 +729,11 @@ async def _claim_tier4_bestmove(
                 WHERE g.user_id = u.id
                   AND g.full_pv_completed_at IS NOT NULL
                   AND g.best_moves_completed_at IS NULL
-                  AND g.lichess_evals_at IS NULL
         """,
         recency_col_sql="u.last_activity",
         tau_seconds=tau_u_seconds,
         floor=floor_u,
+        include_guests=True,
     )
     if picked_user_id is None:
         return None
@@ -729,7 +746,6 @@ async def _claim_tier4_bestmove(
             "g.user_id = :picked_user"
             " AND g.full_pv_completed_at IS NOT NULL"
             " AND g.best_moves_completed_at IS NULL"
-            " AND g.lichess_evals_at IS NULL"
         ),
         recency_col_sql="g.full_pv_completed_at",
         tau_seconds=tau_g_seconds,
@@ -862,14 +878,23 @@ async def claim_eval_job(
             return None
         async with async_session_maker() as session:
             bestmove_pick = await _claim_tier4_bestmove(session)
-        if bestmove_pick is None:
-            return None
-        game_id4b, user_id4b = bestmove_pick
+            if bestmove_pick is None:
+                return None
+            game_id4b, user_id4b = bestmove_pick
+            # Quick 260719-fsz: tier-4b now admits lichess-eval games, so the
+            # old "False by construction" is no longer true — resolve the flag
+            # from the game row (same PK lookup the tier-1/2 path uses). The
+            # minimal drain re-derives this itself, so this field is
+            # observability-only here, but a stale False would be a landmine.
+            lichess_at_4b = await session.execute(
+                select(Game.lichess_evals_at).where(Game.id == game_id4b)
+            )
+            is_lichess_4b = lichess_at_4b.scalar_one_or_none() is not None
         return ClaimedJob(
             game_id=game_id4b,
             user_id=user_id4b,
             tier=TIER_BESTMOVE_BACKFILL,
-            is_lichess_eval_game=False,  # correct by construction (predicate excludes lichess-eval games)
+            is_lichess_eval_game=is_lichess_4b,
             job_id=None,  # table-less lottery, no eval_jobs row
         )
 
