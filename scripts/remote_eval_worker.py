@@ -908,10 +908,12 @@ async def _eval_bestmove_positions(
 
     No full-ply pass, no blob walk — the server has ALREADY validated played==best
     candidacy server-side from its own stored data before leasing these FENs (Open
-    Question #3, RESEARCH.md); the worker's only job here is the targeted runner-up
-    search. Mirrors `_eval_flaw_blob_positions`' index mapping (r[4]/r[5]/r[6] only;
-    r[0]-r[3] are intentionally NOT read — there is no best_cp/best_mate/best_move/pv
-    field on `BestMoveSubmitEval`, unlike the flaw-blob pair).
+    Question #3, RESEARCH.md); the worker's only job here is the targeted MultiPV-2
+    search. We submit r[4]/r[5]/r[6] (runner-up) AND r[0]/r[1] (fresh best cp/mate,
+    Quick 260719-fsz): for lichess-eval games the server's stored eval_cp is LICHESS
+    %eval, so it needs our fresh Stockfish best_cp for the divergence guard — see
+    _apply_bestmove_submit. r[2]/r[3] (best_move/pv) are still not needed (the server
+    keeps the stored best_move as the identity key).
 
     `asyncio.gather` is safe here — no `AsyncSession` is open in the worker process
     (CLAUDE.md gather rule applies to the server only).
@@ -939,6 +941,10 @@ async def _eval_bestmove_positions(
                 "second_cp": r[4],
                 "second_mate": r[5],
                 "second_uci": r[6],
+                # Quick 260719-fsz: fresh Stockfish best (MultiPV-2 line 1) so the
+                # server does not fall back to the stored (lichess) eval as best_cp.
+                "best_cp": r[0],
+                "best_mate": r[1],
             }
         )
     return out

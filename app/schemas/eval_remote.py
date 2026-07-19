@@ -280,12 +280,22 @@ class BestMoveLeaseResponse(BaseModel):
 
 
 class BestMoveSubmitEval(BaseModel):
-    """One worker-computed MultiPV-2 runner-up eval for a candidate ply."""
+    """One worker-computed MultiPV-2 eval for a candidate ply.
+
+    best_cp/best_mate (Quick 260719-fsz) carry the worker's FRESH Stockfish best
+    line (MultiPV-2 line 1). They are OPTIONAL for backward compatibility: a
+    pre-260719-fsz worker omits them, so the server falls back to a re-search for
+    lichess games (see _apply_bestmove_submit). Once all workers submit them the
+    server never re-searches. Engine games ignore them (their stored eval already
+    IS our Stockfish).
+    """
 
     ply: int = Field(ge=0, le=MAX_PLY)
     second_cp: int | None = Field(ge=EVAL_CP_MIN, le=EVAL_CP_MAX)
     second_mate: int | None = Field(ge=EVAL_MATE_MIN, le=EVAL_MATE_MAX)
     second_uci: str | None = Field(max_length=MAX_BEST_MOVE_LEN)
+    best_cp: int | None = Field(default=None, ge=EVAL_CP_MIN, le=EVAL_CP_MAX)
+    best_mate: int | None = Field(default=None, ge=EVAL_MATE_MIN, le=EVAL_MATE_MAX)
 
 
 class BestMoveSubmitRequest(BaseModel):

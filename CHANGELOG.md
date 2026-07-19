@@ -8,6 +8,9 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Fixed
+- Best/gem move analysis now reaches games it previously skipped forever: lichess-imported games (with their own evals) and guest games are now covered by the best-move pass. This also un-orphans games whose best-move pass was skipped during a Maia-outage window. Gem/great badges on lichess games are now computed against the engine's own evaluation (previously they could be over-awarded).
+
 ## [v2.5] Move Statistics — 2026-07-18
 
 ### Added

@@ -723,6 +723,8 @@ async def _tier4b_minimal_drain_tick(game_id: int, user_id: int) -> bool:
             # Game deleted between claim and this read — nothing to do.
             return False
         pgn_text: str = game.pgn
+        # Quick 260719-fsz: needed for the divergence-guard-parity override below.
+        is_lichess_eval_game = game.lichess_evals_at is not None
         gp_result = await read_session.execute(
             select(
                 GamePosition.ply,
@@ -791,6 +793,31 @@ async def _tier4b_minimal_drain_tick(game_id: int, user_id: int) -> bool:
         second_cp, second_mate, second_uci = res[4], res[5], res[6]
         if second_cp is not None or second_uci is not None:
             second_best_map[t.ply] = (second_cp, second_mate, second_uci)
+
+    # Quick 260719-fsz — divergence-guard parity. For a lichess-eval game the
+    # engine_result_map best_cp/best_mate came from game_positions.eval_cp, which
+    # holds LICHESS %eval (the full_pv pass preserves it, eval_apply.py:607-629),
+    # NOT our Stockfish. The query-time gem/great divergence guard
+    # (library_service.py:246-261) compares that stored best_cp against
+    # post_move_cp = game_positions.eval_cp — both lichess → the guard would never
+    # fire (over-badging) and would mix units in the C2 margin. Override best_cp/
+    # best_mate from the fresh white-perspective MultiPV-2 search (res[0]/res[1],
+    # same convention as second_cp = res[4]/res[5] above), matching the
+    # atomic-submit path (eval_remote.py:1158). Keep the stored best_move (index 2)
+    # as the identity key so _build_best_move_candidates's played==best test is
+    # unchanged. Engine games are left untouched (their stored eval IS our
+    # Stockfish). Residual edge: a candidate ply absent from search_targets keeps
+    # its lichess best_cp via the builder's own Pitfall-1 fallback
+    # (source='drain-local'); lease candidates ⊇ builder candidates by
+    # construction, so this is not expected to fire.
+    if is_lichess_eval_game:
+        for t, res in zip(search_targets, search_results, strict=True):
+            engine_result_map[t.ply] = (
+                res[0],
+                res[1],
+                stored_best_move_by_ply.get(t.ply),
+                None,
+            )
 
     # Candidate/writer path — reused verbatim (D-05); source='drain-local' tags
     # a residual Pitfall-1 fallback so it is queryable apart from the

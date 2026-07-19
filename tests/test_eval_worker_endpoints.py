@@ -264,6 +264,20 @@ async def _count_game_best_moves(
         return result.scalar_one() or 0
 
 
+async def _get_best_cp_by_ply(
+    session_maker: async_sessionmaker[AsyncSession],
+    game_id: int,
+) -> dict[int, int | None]:
+    """Return {ply: best_cp} for a game's game_best_moves rows (Quick 260719-fsz)."""
+    from app.models.game_best_move import GameBestMove
+
+    async with session_maker() as session:
+        rows = await session.execute(
+            select(GameBestMove.ply, GameBestMove.best_cp).where(GameBestMove.game_id == game_id)
+        )
+        return {ply: best_cp for ply, best_cp in rows.all()}
+
+
 async def _delete_games(
     session_maker: async_sessionmaker[AsyncSession],
     game_ids: list[int],
@@ -4817,19 +4831,25 @@ class TestBestMoveLeaseEndpoint:
 async def _seed_bestmove_submit_game(
     session_maker: async_sessionmaker[AsyncSession],
     user_id: int,
+    *,
+    lichess: bool = False,
 ) -> int:
     """Insert a tier-4b-eligible game (_BESTMOVE_PGN) with GamePosition rows wired
     so ply 2 (h4, white) is the out-of-book played==best candidate: eval_of_position(2)
     (row 1's stored eval) is a wide +300 so a submitted second_cp=-100 clears
     INACCURACY_DROP. Ratings are seeded so _build_best_move_candidates can pin the
-    Maia ELO. Returns game_id."""
+    Maia ELO. With lichess=True the stored eval_cp represents a LICHESS %eval
+    (lichess_evals_at set) — the case where best_cp must NOT come from the stored row.
+    Returns game_id."""
     from app.models.game import Game
 
+    now = datetime.now(timezone.utc)
     game_id = await _insert_game(
         session_maker,
         user_id,
         pgn=_BESTMOVE_PGN,
-        full_evals_completed_at=datetime.now(timezone.utc),
+        full_evals_completed_at=now,
+        lichess_evals_at=now if lichess else None,
     )
     await _insert_game_positions(
         session_maker,
@@ -4973,6 +4993,164 @@ class TestBestMoveSubmitEndpoint:
             assert await _count_game_best_moves(eval_worker_session_maker, game_id) == 1
             stamped = await _get_game_best_moves_completed_at(eval_worker_session_maker, game_id)
             assert stamped is not None, "best_moves_completed_at must be stamped on submit"
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_bestmove_submit_lichess_uses_worker_best_cp(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """Quick 260719-fsz (new worker, Option B): for a LICHESS game the stored
+        eval_cp is lichess %eval, so the worker's submitted fresh best_cp must be
+        used for the game_best_moves row (NOT the stored 300)."""
+        import app.services.eval_apply as eval_apply_module
+        from app.services import maia_engine
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+        monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.1)
+        monkeypatch.setattr(maia_engine, "_session", object())
+        # A submitted best_cp means NO re-search — assert the engine is never called.
+        no_search = AsyncMock(return_value=(None, None, None, None, None, None, None))
+        monkeypatch.setattr(eval_apply_module.engine_service, "evaluate_nodes_multipv2", no_search)
+
+        user_id = eval_worker_test_user
+        game_id = await _seed_bestmove_submit_game(eval_worker_session_maker, user_id, lichess=True)
+        payload = {
+            "game_id": game_id,
+            "sf_version": "Stockfish 18",
+            "evals": [
+                {
+                    "ply": 2,
+                    "second_cp": -100,
+                    "second_mate": None,
+                    "second_uci": "a2a3",
+                    "best_cp": 250,  # fresh Stockfish best from the worker (Option B)
+                    "best_mate": None,
+                },
+            ],
+        }
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _BESTMOVE_SUBMIT_URL, json=payload, headers={"X-Operator-Token": _TEST_TOKEN}
+                )
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+            best_cp_by_ply = await _get_best_cp_by_ply(eval_worker_session_maker, game_id)
+            assert best_cp_by_ply.get(2) == 250, (
+                f"lichess game must store the worker-submitted best_cp 250, not the stored "
+                f"lichess eval 300; got {best_cp_by_ply}"
+            )
+            assert no_search.await_count == 0, "No re-search when the worker submits best_cp"
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_bestmove_submit_lichess_old_worker_researches_best_cp(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """Quick 260719-fsz (old worker, transition fallback): a pre-260719-fsz worker
+        omits best_cp, so for a LICHESS game the server re-searches the candidate ply
+        and stores the FRESH Stockfish best_cp (275), never the stored lichess eval (300)."""
+        import app.services.eval_apply as eval_apply_module
+        from app.services import maia_engine
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+        monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.1)
+        monkeypatch.setattr(maia_engine, "_session", object())
+        # Fresh re-search returns best_cp=275 (res[0]); the runner-up here is unused
+        # (second comes from the submitted -100).
+        research = AsyncMock(return_value=(275, None, "h2h4", "h2h4", -999, None, "a2a3"))
+        monkeypatch.setattr(eval_apply_module.engine_service, "evaluate_nodes_multipv2", research)
+
+        user_id = eval_worker_test_user
+        game_id = await _seed_bestmove_submit_game(eval_worker_session_maker, user_id, lichess=True)
+        payload = {
+            "game_id": game_id,
+            "sf_version": "Stockfish 18",
+            "evals": [
+                # Old-worker payload: no best_cp/best_mate keys.
+                {"ply": 2, "second_cp": -100, "second_mate": None, "second_uci": "a2a3"},
+            ],
+        }
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _BESTMOVE_SUBMIT_URL, json=payload, headers={"X-Operator-Token": _TEST_TOKEN}
+                )
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+            best_cp_by_ply = await _get_best_cp_by_ply(eval_worker_session_maker, game_id)
+            assert best_cp_by_ply.get(2) == 275, (
+                f"lichess game from an old worker must re-search best_cp (275), not use the "
+                f"stored lichess eval (300); got {best_cp_by_ply}"
+            )
+            assert research.await_count == 1, (
+                "The stale lichess ply must be re-searched exactly once"
+            )
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_bestmove_submit_engine_ignores_worker_best_cp(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """Quick 260719-fsz: an ENGINE game's stored eval already IS our Stockfish, so
+        it keeps the stored best_cp (300) and ignores any submitted best_cp — byte-identical
+        to pre-260719-fsz behavior (the is_lichess_eval_game guard)."""
+        import app.services.eval_apply as eval_apply_module
+        from app.services import maia_engine
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+        monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.1)
+        monkeypatch.setattr(maia_engine, "_session", object())
+        no_search = AsyncMock(return_value=(None, None, None, None, None, None, None))
+        monkeypatch.setattr(eval_apply_module.engine_service, "evaluate_nodes_multipv2", no_search)
+
+        user_id = eval_worker_test_user
+        game_id = await _seed_bestmove_submit_game(
+            eval_worker_session_maker, user_id, lichess=False
+        )
+        payload = {
+            "game_id": game_id,
+            "sf_version": "Stockfish 18",
+            "evals": [
+                # Even a new worker's submitted best_cp is ignored for engine games.
+                {
+                    "ply": 2,
+                    "second_cp": -100,
+                    "second_mate": None,
+                    "second_uci": "a2a3",
+                    "best_cp": 999,
+                    "best_mate": None,
+                },
+            ],
+        }
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _BESTMOVE_SUBMIT_URL, json=payload, headers={"X-Operator-Token": _TEST_TOKEN}
+                )
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+            best_cp_by_ply = await _get_best_cp_by_ply(eval_worker_session_maker, game_id)
+            assert best_cp_by_ply.get(2) == 300, (
+                f"engine game must keep the stored best_cp 300 and ignore the submitted 999; "
+                f"got {best_cp_by_ply}"
+            )
+            assert no_search.await_count == 0, "Engine games must never re-search"
         finally:
             await _delete_games(eval_worker_session_maker, [game_id])
 
