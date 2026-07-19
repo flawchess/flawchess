@@ -1,78 +1,93 @@
 ---
-title: Per-style strength lookup curves — target ELO → bot_elo per style level, with honest per-style slider ranges
-trigger_condition: After SEED-102 (curves) and SEED-103 (correction) land; gates *labeled* bots (SEED-091 preset cards, SEED-098 personas, calibrated custom-bot builder). NOT a blocker for Phase 171, which ships raw uncalibrated sliders
+title: Per-preset strength lookup curves — target blitz ELO → bot_elo for Human/Light/Deep, via the internal − G + C offset model, with honest per-preset ranges and an approximate-ELO disclaimer
+trigger_condition: After SEED-102 (three curves + per-preset G) lands. Gates *labeled* bots (preset cards, SEED-098 personas, calibrated custom-bot builder). NOT a blocker for the raw uncalibrated slider surface
 planted_date: 2026-07-13
-source: /gsd-explore session 2026-07-13 (bot blend calibration; see .planning/notes/2026-07-13-bot-calibration-findings.md); rescoped 2026-07-15 /gsd-explore (two-style simplification, Option A per-style ranges)
+source: /gsd-explore 2026-07-13 (see .planning/notes/2026-07-13-bot-calibration-findings.md); rescoped 2026-07-15 (two-style, Option A ranges); re-rescoped 2026-07-19 (three presets, literature-based absolute pin — SEED-103 closed)
 ---
 
-# SEED-104: Per-style strength lookup curves
+# SEED-104: Per-preset strength lookup curves
 
-Turn SEED-102's calibrated curves into the shipping artifact: for each of the two style levels,
-a lookup `target_elo → bot_elo` with an honest per-style strength range.
+Turn SEED-102's three internal-scale curves into the shipping artifact: for each preset, a
+lookup `target_blitz_elo → bot_elo` with an honest per-preset range, an **approximate** ELO
+label, and a disclaimer.
 
-## Rescoped 2026-07-15: the 2D inversion table is dead
+## The offset model (decided 2026-07-19 — no human ground truth)
 
-The original design fit a smooth 2D surface `measured_elo = f(bot_elo, blend)` with an
-interaction term, inverted it analytically, and clamped a continuous playstyle slider per
-target ELO (the "reachability parallelogram"). Decision (2026-07-15 explore session): the
-product ships **two discrete style levels** (blend 0 "human-like", blend 0.05 "engine-like"),
-so this collapses to **two 1D curves**, each fit from ~5 measured points and interpolated in
-100-ELO steps. No surface, no interaction term, no analytic inversion.
+Since SEED-103 (lichess-vs-humans) is **closed**, the absolute scale is set by literature, not
+by our own play. The full conversion is:
 
-## The problem it still solves
+```
+human_blitz(preset, bot_elo) = internal_rating(preset, bot_elo)  −  G_preset  +  C
+```
 
-Unchanged from the original: at fixed `bot_elo`, style changes strength massively (2026-07-12
-run: bot_elo 1500 played ~980 at blend 0 vs ~2090 at blend 1, uncorrected). Two fixed levels
-discretize that coupling but don't remove it — **each level needs its own strength mapping**.
-And `bot_elo` is not a rating; it is a Maia-conditioning input. It never surfaces to users.
-
-## The design (Option A: per-style honest ranges)
-
-The user picks a **style** (human-like / engine-like) and a **target strength** (continuous or
-100-ELO steps). Each style exposes only the range it can actually reach:
-
-| style | internal | expected reachable range (calibration decides) |
+| term | source | value / status |
 |---|---|---|
-| human-like | blend 0, `bot_elo` from curve A | low end down to ~600-ish; ceiling ~1900–2000 (no-search ceiling + Maia ladder top) |
-| engine-like | blend 0.05, `bot_elo` from curve B | floor plausibly ~1200+ (search floor); top toward ~2600 |
+| `internal_rating(preset, bot_elo)` | SEED-102 curves (per preset) | measured |
+| `G_preset` | SEED-102 cross-family split (`rating_vs_Maia − rating_vs_SF`) | measured; ≈0 Human, +ve Light/Deep |
+| `C` | literature (Maia-3 blitz-calibrated by construction; Maia-1 `@maia5`=1581) | **`+40 ± 100`**, single shared constant, hand-tunable |
 
-The two ranges deliberately differ. The overlap zone (roughly 1300–1900, pending measurement)
-is where users get a genuine style choice at equal strength — the product's differentiator.
-Selecting a style outside its range is impossible by construction, which replaces the old
-parallelogram-clamping logic with plain per-style slider bounds.
+`C` is one number for all three presets (the shared internal→human-blitz zero-point). `G_preset`
+is per-preset (removes each searching preset's inflation vs the search-less anchors). Both live as
+named constants in the shipping code; `C` is the knob you refine from experience.
 
-The measured floor/ceiling of each SEED-102 curve **is** the slider range. Ladder caveat still
-applies: Maia-3's validated band is 1100–2000 (`maiaEncoding.ts:35-45`); curve segments built
-on `bot_elo` outside that band are extrapolation and should be flagged or trimmed.
+## Why the model is trustworthy enough to print (with a disclaimer)
+
+- **Units are right by construction.** Maia-3's ELO input is trained on lichess *blitz*;
+  conditioning on 1500 predicts a lichess-1500-blitz player's move. So the internal scale is
+  already a blitz scale, not an arbitrary one — only the strength zero-point (`C`) is uncertain.
+- **`C` is small and bounded.** `internal-1500 ≈ human-blitz 1500–1580` (Maia-1 argmax `@maia5`
+  plays real blitz 1581, +80 over label). Midpoint `+40`, honest band `±100`.
+- **The searching presets don't get a free ride.** Their inflation vs search-less anchors is
+  measured as `G_preset` and subtracted, so "1500 Human" and "1500 Deep" map to genuinely
+  comparable human strength (to within the `±100` band).
+
+Print an **approximate** blitz ELO with a disclaimer (decided 2026-07-19). Do not print a hard
+number. A small human sample could later tighten `C` from ±100 to ±50 (an optional future task,
+NOT planned — see SEED-103 in `closed/`).
+
+## Per-preset honest ranges (Option A)
+
+The user picks a **preset** (Human / Light / Deep) and a **target strength**; each preset exposes
+only the range it can actually reach:
+
+| preset | internal | expected reachable range (SEED-102 measures the real bounds) |
+|---|---|---|
+| Human | blend 0 | low end ~600-ish; ceiling ~1900–2000 (no-search + Maia ladder top) |
+| Light | blend 0.05 | floor plausibly ~1200+ (search floor); mid range, high variety |
+| Deep | blend 0.5 | floor similar to Light; **top toward ~2600** (higher ceiling) |
+
+The ranges deliberately differ. The overlap zone (roughly 1300–1900, pending measurement) is where
+users get a genuine style choice at ~equal strength — the product differentiator, honest only
+because `G_preset` was subtracted. Selecting outside a preset's range is impossible by construction
+(plain per-preset slider bounds). The measured floor/ceiling of each SEED-102 curve **is** the
+slider range. Ladder caveat: Maia-3's validated band is 1100–2000 (`maiaEncoding.ts`); curve
+segments on `bot_elo` outside that band are extrapolation and should be flagged or trimmed.
 
 ## Method
 
-1. Fit each 1D curve `measured_elo = f_style(bot_elo)` to SEED-102's ~5 points (monotone fit;
-   isotonic or low-order polynomial — fit, don't tile).
-2. Apply the per-style SEED-103 correction to convert to human ELO.
-3. Invert each curve into a `target_elo → bot_elo` lookup (100-ELO steps).
-4. **Validate the inversion.** Predict "(bot_elo X, human-like) plays 1500", then *run that
-   cell* in the harness. Two or three confirmation cells per style. This tests the artifact you
-   actually ship, not the model you fit — cheap, and the step most likely to be skipped.
+1. Fit each of the three 1D curves `internal_rating = f_preset(bot_elo)` to SEED-102's ~5 points
+   (monotone fit; isotonic or low-order polynomial — fit, don't tile).
+2. Apply `− G_preset + C` to convert each curve to approximate human blitz ELO.
+3. Invert each curve into a `target_blitz_elo → bot_elo` lookup (100-ELO steps).
+4. **Validate the inversion.** Predict "(bot_elo X, Deep) plays 1700", then *run that cell* in the
+   harness. Two or three confirmation cells per preset. Tests the shipped artifact, not the fitted
+   model — cheap, and the step most likely to be skipped.
 
-## Consumers (the end-goal architecture, decided 2026-07-15)
+## Consumers (end-goal architecture)
 
-The two curves are the **single source of truth for all bot strength claims**:
+The three curves are the **single source of truth for all bot strength claims**:
 
-- **Custom bot builder** (evolution of Phase 171's surface): style toggle + per-style target-ELO
-  slider, both reading these curves. Once it consumes them, it is a labeled surface (SEED-103
-  gate applies).
-- **SEED-091 preset bot cards / SEED-098 personas**: presets become **named points on the same
-  curves** ("1400, human-like" = curve lookup) — nothing new to measure per preset. Persona
-  perturbations (SEED-098) fold in as measured ELO offsets on top, as that seed already
-  proposes; but note SEED-098's own caveat that its levers are split across the blend-0 /
-  blend>0 regimes — with only two levels, each persona lever simply belongs to one style.
+- **Custom bot builder**: preset toggle (Human/Light/Deep) + per-preset target-ELO slider, both
+  reading these curves. A labeled surface (approximate-ELO disclaimer applies).
+- **Preset bot cards / SEED-098 personas**: presets become named points on the curves
+  ("1400, Human" = curve lookup) — nothing new to measure per card. SEED-098 persona perturbations
+  fold in as measured ELO offsets on top; each persona lever belongs to exactly one preset (its
+  blend regime).
 
-## Relationship to Phase 171 (decided 2026-07-13, unchanged)
+## Relationship to the raw uncalibrated slider surface
 
-**Phase 171 ships raw, uncalibrated `bot_elo` + `blend` sliders and does not consume these
-curves.** Uncalibrated sliders make no promise; 171's actual blocker is SEED-100 (blend-0
-pacing). Useful side effect while it exists: play blend 0 vs 0.05 by hand at equal `bot_elo` —
-if they are indistinguishable at the board, the two-style product story has a problem, and
-perceived difference is the actual product metric (cheaper and more decisive than any
-Maia-agreement percentage).
+The raw `bot_elo` + `blend` slider surface makes no strength promise and does not consume these
+curves. These curves are what turn that surface into a *labeled* one. Useful side check while the
+raw surface exists: play Human vs Light vs Deep by hand at equal `bot_elo` — perceived difference
+(Human clearly search-less; Light/Deep clearly stronger, Deep the ceiling) is the real product
+metric, cheaper and more decisive than any agreement percentage.

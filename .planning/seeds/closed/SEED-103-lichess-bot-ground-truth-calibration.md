@@ -7,6 +7,26 @@ source: /gsd-explore session 2026-07-13 (bot blend calibration; see .planning/no
 
 # SEED-103: Lichess bot ground-truth calibration
 
+> **CLOSED — WILL NOT DO (2026-07-19, /gsd-explore).** Running our own lichess BOT account
+> against real humans is wall-clock-bound (days–weeks, dependent on unproven human challenge
+> traffic to a brand-new unknown bot) and, on review, unnecessary. The absolute human-ELO pin it
+> was meant to supply is instead sourced from the **literature** at ±100, which is the accuracy
+> band the product ships in anyway:
+>
+> - Maia-3's ELO input is lichess-**blitz-calibrated by construction** (trained on lichess blitz;
+>   conditioning on 1500 predicts a lichess-1500-blitz player's move), so the internal scale is
+>   already a blitz scale — only the strength zero-point is uncertain.
+> - Maia-1's argmax `@maia5` (rung 1500) plays real lichess **blitz 1581** (+80 over label),
+>   giving `internal-1500 ≈ human-blitz 1500–1580`, i.e. a shared constant `C ≈ +40 ± 100`.
+> - The per-preset style inflation (`G_preset`) that this seed's "non-transitivity" argument
+>   correctly identified is measured **for free** by SEED-102's cross-family (Maia vs Stockfish
+>   anchor) split — no humans needed.
+>
+> So the full conversion `human_blitz = internal − G_preset + C` closes with **zero lichess-bot
+> games** (see SEED-102 / SEED-104). A small human sample could later tighten `C` from ±100 to
+> ±50, but that is an optional future nice-to-have, not planned. The technical reasoning below is
+> retained as the record of *why* the internal scale needs correction at all.
+
 Run the FlawChess bot as a lichess BOT account against real humans, and use the resulting
 rating to correct the offline harness's internal scale to human ELO.
 
