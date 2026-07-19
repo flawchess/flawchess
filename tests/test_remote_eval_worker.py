@@ -918,8 +918,12 @@ async def test_handle_bestmove_response_submits_n_entries_no_atomic_submit() -> 
     assert [e["ply"] for e in body["evals"]] == [4, 8, 12]
     assert [e["second_uci"] for e in body["evals"]] == ["d2d4", "c2c4", "f2f4"]
     assert [e["second_cp"] for e in body["evals"]] == [10, 20, 30]
+    # Quick 260719-fsz: the worker now ALSO submits its fresh best cp/mate (r[0]/r[1])
+    # so the server can use our Stockfish best_cp for lichess games (was: absent).
+    assert [e["best_cp"] for e in body["evals"]] == [0, 0, 0], (
+        "BestMoveSubmitEval now carries the worker's fresh best_cp = r[0]"
+    )
     for e in body["evals"]:
-        assert "best_cp" not in e, "BestMoveSubmitEval carries no best_cp field (S-05)"
         assert "token" not in e, "the tier-4b lease is already ply-keyed, no token to echo"
 
     called_urls = [c.args[0] for c in client.post.call_args_list]
@@ -957,6 +961,30 @@ async def test_eval_bestmove_positions_drops_failed_search() -> None:
     assert [e["ply"] for e in evals] == [4, 12], (
         "the failed ply (8) must be dropped, not submitted with all-None values"
     )
+
+
+async def test_eval_bestmove_positions_includes_best_cp() -> None:
+    """Quick 260719-fsz (Option B): the worker now submits its fresh best cp/mate
+    (r[0]/r[1]) alongside the runner-up, so the server can use our Stockfish best_cp
+    for lichess games instead of the stored lichess %eval. r[2]/r[3] still never leak."""
+    pool = AsyncMock()
+    # (best_cp=120, best_mate=None, best_move="e2e4", pv="e2e4 e7e5",
+    #  second_cp=30, second_mate=None, second_uci="d2d4")
+    pool.evaluate_nodes_multipv2 = AsyncMock(
+        return_value=(120, None, "e2e4", "e2e4 e7e5", 30, None, "d2d4")
+    )
+    positions: list[dict[str, object]] = [{"ply": 6, "fen": chess.STARTING_FEN}]
+
+    evals = await _eval_bestmove_positions(pool, positions)
+
+    assert len(evals) == 1
+    e = evals[0]
+    assert e["best_cp"] == 120, "best_cp must be r[0]"
+    assert e["best_mate"] is None, "best_mate must be r[1]"
+    assert e["second_cp"] == 30, "second_cp must be r[4]"
+    assert e["second_uci"] == "d2d4", "second_uci must be r[6]"
+    assert "best_move" not in e, "r[2] (best_move) must NOT leak into the output dict"
+    assert "pv" not in e, "r[3] (pv) must NOT leak into the output dict"
 
 
 async def test_bestmove_lease_204_falls_to_idle_sleep_no_submit() -> None:

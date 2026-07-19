@@ -2221,6 +2221,8 @@ async def _apply_bestmove_submit(
                 detail="Game not found",
             )
         pgn_text: str = game.pgn
+        # Quick 260719-fsz: needed for the best_cp source decision below.
+        is_lichess_eval_game = game.lichess_evals_at is not None
         gp_result = await read_session.execute(
             select(
                 GamePosition.ply,
@@ -2262,6 +2264,45 @@ async def _apply_bestmove_submit(
         )
         for t in targets
     }
+
+    # Quick 260719-fsz — best_cp source parity for LICHESS games. The base map above
+    # takes best_cp/best_mate from eval_of_position = stored game_positions.eval_cp,
+    # which for a lichess-eval game holds LICHESS %eval, not our Stockfish. Left
+    # as-is, the query-time gem/great divergence guard (library_service.py) compares
+    # that lichess best_cp against post_move_cp (also lichess) — it never fires and
+    # over-badges gems. Engine games are unaffected (their stored eval IS our
+    # Stockfish), so ONLY lichess games are rewritten here.
+    #   - New workers (Option B) submit their fresh best_cp/best_mate → use them.
+    #   - Old workers (pre-260719-fsz) omit them → re-search the affected candidate
+    #     plies here. This is a transient, backward-compatible fallback that stops
+    #     firing once every worker submits best_cp. NO session is open (read_session
+    #     closed above), so the gather obeys the CLAUDE.md rule.
+    if is_lichess_eval_game:
+        targets_by_ply = {t.ply: t for t in targets}
+        stale_targets: list[_FullPlyEvalTarget] = []
+        for e in body.evals:
+            if e.ply not in targets_by_ply:
+                continue
+            if e.best_cp is not None or e.best_mate is not None:
+                engine_result_map[e.ply] = (
+                    e.best_cp,
+                    e.best_mate,
+                    stored_best_move_by_ply.get(e.ply),
+                    None,
+                )
+            else:
+                stale_targets.append(targets_by_ply[e.ply])
+        if stale_targets:
+            fresh_results = await asyncio.gather(
+                *(engine_service.evaluate_nodes_multipv2(t.board) for t in stale_targets)
+            )
+            for t, res in zip(stale_targets, fresh_results, strict=True):
+                engine_result_map[t.ply] = (
+                    res[0],
+                    res[1],
+                    stored_best_move_by_ply.get(t.ply),
+                    None,
+                )
 
     # T-177-05: structural in-range tamper guard, before any write.
     for e in body.evals:
