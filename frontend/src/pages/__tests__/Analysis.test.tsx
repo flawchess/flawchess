@@ -1627,14 +1627,14 @@ describe('Live-polling analysis board with an in-place pending pill (Quick 26071
 });
 
 // Quick 260719-dzh — on the mobile takeover layout the Move Stats / accuracy panel
-// lives in the "Tags" tab. Regression: the Tags trigger + content used to gate on
+// lives in the "Stats" tab. Regression: the Stats trigger + content used to gate on
 // evalChartReady ONLY, so the tab was ADDED to an already-mounted Radix <Tabs> at the
 // moment evals landed — a post-mount tab insertion that failed to render in place on
 // mobile (the panel stayed "completely absent" until a full page reload, even though
 // the eval chart had appeared). Fix: gate on (evalChartReady || evalPending) so the tab
 // is present throughout analysis (Analyzing pill first, then the panel), never added
 // late.
-describe('Mobile Tags tab: present during analysis, then the MoveStats panel (quick 260719-dzh)', () => {
+describe('Mobile Stats tab: present during analysis, then the MoveStats panel (quick 260719-dzh)', () => {
   const origMatchMedia = window.matchMedia;
   let clientWidthSpy: ReturnType<typeof vi.spyOn>;
 
@@ -1665,7 +1665,7 @@ describe('Mobile Tags tab: present during analysis, then the MoveStats panel (qu
     fireEvent.click(screen.getByTestId('board-btn-flip'));
   }
 
-  it('renders the Tags tab trigger while analysis is still pending — not only once evals land', () => {
+  it('renders the Stats tab trigger while analysis is still pending — not only once evals land', () => {
     libraryGameState.data = buildGame({
       analysis_state: 'no_engine_analysis',
       severity_counts: null,
@@ -1680,16 +1680,16 @@ describe('Mobile Tags tab: present during analysis, then the MoveStats panel (qu
     renderAnalysis('/analysis?game_id=1');
 
     // The mobile takeover is active (Moves tab is the default) and the game is
-    // mid-analysis. The regression: the Tags tab (which hosts the MoveStats / accuracy
+    // mid-analysis. The regression: the Stats tab (which hosts the MoveStats / accuracy
     // panel) must ALREADY be in the tab strip here. The old evalChartReady-only gate
     // left it absent until evals arrived, then added it to the already-mounted <Tabs>
     // at that transition — a post-mount insertion that never rendered in place on
     // mobile (panel "completely absent" until a reload). The tab body only mounts when
     // active (Radix), so the trigger's presence is what this asserts.
     expect(screen.getByTestId('analysis-tab-eval')).toBeTruthy(); // confirms mobile tab strip
-    expect(screen.getByTestId('analysis-tab-tags')).toBeTruthy();
+    expect(screen.getByTestId('analysis-tab-stats')).toBeTruthy();
 
-    // Evals land in place: analysis_state flips to 'analyzed'. The Tags tab persists
+    // Evals land in place: analysis_state flips to 'analyzed'. The Stats tab persists
     // (no remove/re-add churn) — same trigger, no reload needed.
     libraryGameState.data = buildGame({
       analysis_state: 'analyzed',
@@ -1698,12 +1698,12 @@ describe('Mobile Tags tab: present during analysis, then the MoveStats panel (qu
     });
     forceRerender();
 
-    expect(screen.getByTestId('analysis-tab-tags')).toBeTruthy();
+    expect(screen.getByTestId('analysis-tab-stats')).toBeTruthy();
   });
 
-  it('omits the Tags tab for an idle unanalyzed game with no active eval job', () => {
+  it('omits the Stats tab for an idle unanalyzed game with no active eval job', () => {
     // No active job (active_eval_status null) and unanalyzed: neither evalChartReady nor
-    // evalPending, so the Tags tab is correctly absent (nothing to show, no analysis in
+    // evalPending, so the Stats tab is correctly absent (nothing to show, no analysis in
     // flight) — the gate is (evalChartReady || evalPending), not "always in game mode".
     libraryGameState.data = buildGame({
       analysis_state: 'no_engine_analysis',
@@ -1719,7 +1719,7 @@ describe('Mobile Tags tab: present during analysis, then the MoveStats panel (qu
     renderAnalysis('/analysis?game_id=1');
 
     expect(screen.getByTestId('analysis-tab-eval')).toBeTruthy();
-    expect(screen.queryByTestId('analysis-tab-tags')).toBeNull();
+    expect(screen.queryByTestId('analysis-tab-stats')).toBeNull();
   });
 });
 

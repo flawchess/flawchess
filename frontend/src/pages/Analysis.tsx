@@ -40,10 +40,10 @@ import { useSearchParams } from 'react-router-dom';
 import { Chess } from 'chess.js';
 import {
   ArrowLeftRight,
+  ChartNoAxesColumn,
   ChessKnight,
   Cpu,
   type LucideIcon,
-  Tag,
   User,
 } from 'lucide-react';
 import { useAnalysisBoard } from '@/hooks/useAnalysisBoard';
@@ -251,7 +251,7 @@ type AnalysisLayoutMode = 'mobile' | 'mid' | 'desktop';
  * Which of the three analysis layouts to render, chosen by viewport width:
  *   • 'mobile'  (< MOBILE_BREAKPOINT_PX)   — full tab takeover, board on top.
  *   • 'mid'     (MOBILE..desk3col)         — two equal columns: board |
- *                                             tabbed panel (Moves | Eval | Maia | FlawChess | Tags).
+ *                                             tabbed panel (Moves | Eval | Maia | FlawChess | Stats).
  *   • 'desktop' (>= desk3col)              — the locked 3-column grid.
  * Driven by JS (not CSS) so the board / eval-chart / variation-tree mount EXACTLY once —
  * a CSS `hidden` split would duplicate their stable `id`/`data-testid`s and the engine board.
@@ -2932,7 +2932,8 @@ export default function Analysis() {
   // crosshair (evalChartPly derives from currentNodeId). `withHighlight` (Task 3, desktop
   // only) wires the hover-highlight back onto the eval chart. `section` (UAT 179) splits
   // the panel: desktop renders 'stats' (right column) + 'tags' (below the eval chart);
-  // mobile/mid render the default 'panel' (both stacked) in the Tags tab. Declared before
+  // mobile/mid render 'stats' in the Stats tab and 'tags' at the bottom of the Eval tab
+  // (quick 260719-ey9 — the default 'panel' slice is now unused there). Declared before
   // desktopBoardStage, which embeds the 'tags' section under the eval chart.
   const tagsPanel = (withHighlight = false, section: 'panel' | 'stats' | 'tags' = 'panel') =>
     evalChartReady && gameData ? (
@@ -3241,9 +3242,11 @@ export default function Analysis() {
     </div>
   );
 
-  // The mobile "Eval" tab content — Stockfish PV lines on top, the eval chart below
-  // (game mode only; evalChart() returns null in free play / before the game loads,
-  // leaving just the engine lines).
+  // The mobile "Eval" tab content — Stockfish PV lines on top, the eval chart below,
+  // then the tactics card (Missed/Allowed/Context tags — quick 260719-ey9 relocated it
+  // here from the old Tags tab) at the bottom. All game-mode only; evalChart() returns
+  // null in free play / before the game loads, and the tags section only renders once
+  // analysis lands (evalChartReady), leaving just the engine lines otherwise.
   const evalTab = (
     <TabsContent
       value="eval"
@@ -3252,6 +3255,7 @@ export default function Analysis() {
       <div className="flex flex-col gap-2 pt-1">
         {mobileEngineLines}
         {(evalChartReady || evalPending) && <div className="px-3">{evalChart('h-[120px]')}</div>}
+        {evalChartReady && <div className="px-3">{tagsPanel(false, 'tags')}</div>}
       </div>
     </TabsContent>
   );
@@ -3268,8 +3272,10 @@ export default function Analysis() {
     </TabsContent>
   );
 
-  // The mobile "Tags" tab content — the flaw-tags panel (MoveStats + tactic/context
-  // tags; game mode only). While analysis is still in flight the tab shows the SAME
+  // The mobile "Stats" tab content — the MoveStats / accuracy card (game mode only;
+  // quick 260719-ey9 renamed the tab from "Tags" and moved the tactic/context tags card
+  // out to the bottom of the Eval tab, so this tab now shows the accuracy + move stats
+  // only via section='stats'). While analysis is still in flight the tab shows the SAME
   // Analyzing pill the Eval tab uses, then swaps to the panel once evals land — so the
   // tab is present (and clearly "working") the whole time instead of only popping into
   // existence once evals arrive. The prior pattern (trigger + content mounted ONLY on
@@ -3277,11 +3283,11 @@ export default function Analysis() {
   // transition, which failed to render in place on mobile until a full page reload
   // (quick 260719-dzh) — the accuracy card + move stats stayed "completely absent" even
   // though the eval chart had appeared.
-  const tagsTab = (
-    <TabsContent value="tags" className="min-h-0 overflow-y-auto thin-scrollbar">
+  const statsTab = (
+    <TabsContent value="stats" className="min-h-0 overflow-y-auto thin-scrollbar">
       <div className="px-2 pt-1">
         {evalChartReady ? (
-          tagsPanel()
+          tagsPanel(false, 'stats')
         ) : evalPending && gameId != null ? (
           <AnalysisPendingPill
             gameId={gameId}
@@ -3292,12 +3298,12 @@ export default function Analysis() {
     </TabsContent>
   );
 
-  // The full tabbed panel (Moves | Eval | Maia | FlawChess [| Tags]) — the mobile
+  // The full tabbed panel (Moves | Eval | Maia | FlawChess [| Stats]) — the mobile
   // takeover's whole body AND the mid-range layout's right column (both reuse it
   // verbatim; only one layout tree renders at a time, so the Tabs mount exactly
   // once). Needs a height-bounded flex parent (`flex min-h-0 flex-1`) so each tab's
   // internal scroller resolves: mobile gets it from the takeover column, mid from a
-  // boardWidth-tall wrapper. The Tags trigger/content render whenever the game is
+  // boardWidth-tall wrapper. The Stats trigger/content render whenever the game is
   // analyzed OR still being analyzed (evalChartReady || evalPending) — present with an
   // Analyzing pill during analysis, then the panel once evals land (quick 260719-dzh);
   // free play / idle unanalyzed games omit them, and the Tabs subtree never remounts
@@ -3339,9 +3345,9 @@ export default function Analysis() {
           FlawChess
         </TabsTrigger>
         {(evalChartReady || evalPending) && (
-          <TabsTrigger value="tags" data-testid="analysis-tab-tags" className="gap-1 px-1">
-            <Tag aria-hidden="true" />
-            Tags
+          <TabsTrigger value="stats" data-testid="analysis-tab-stats" className="gap-1 px-1">
+            <ChartNoAxesColumn aria-hidden="true" />
+            Stats
           </TabsTrigger>
         )}
       </TabsList>
@@ -3349,7 +3355,7 @@ export default function Analysis() {
       {evalTab}
       {humanTab}
       {flawChessTab}
-      {(evalChartReady || evalPending) && tagsTab}
+      {(evalChartReady || evalPending) && statsTab}
     </Tabs>
   );
 
@@ -3443,7 +3449,7 @@ export default function Analysis() {
   //   • left (60%):  the board (JS-sized to the column width), its flanking eval bars, the
   //            player rows, and the board controls. (No eval chart here — mobile parity:
   //            it lives in the Eval tab; desktopBoardStage suppresses it when isMid.)
-  //   • right (40%): the full tabbed panel (Moves | Eval | Maia | FlawChess | Tags) — the
+  //   • right (40%): the full tabbed panel (Moves | Eval | Maia | FlawChess | Stats) — the
   //            SAME analysisTabs the mobile takeover renders, reused verbatim. The eval
   //            chart sits in the Eval tab below the Stockfish lines, exactly as on mobile.
   // The page scrolls (no viewport height lock in this band, per the shell's
@@ -3476,7 +3482,7 @@ export default function Analysis() {
             </p>
           )}
           {/* Two columns split 60/40: the board stage on the left (60%), the full
-              tabbed panel (Moves | Eval | Maia | FlawChess | Tags) on the right (40%) —
+              tabbed panel (Moves | Eval | Maia | FlawChess | Stats) on the right (40%) —
               the same tabs the mobile takeover uses, reused verbatim via analysisTabs. */}
           <div className="grid grid-cols-[3fr_2fr] items-start gap-4">
             {/* Left column — the board stage (board + board controls, JS-sized to the
@@ -3496,7 +3502,7 @@ export default function Analysis() {
   }
 
   // ── Mobile takeover layout (< 640px) ──────────────────────────────────────────
-  // Board + eval bar, then a tab view (Moves | Eval | Maia | FlawChess [| Tags]) that
+  // Board + eval bar, then a tab view (Moves | Eval | Maia | FlawChess [| Stats]) that
   // fills the space down to the in-flow board-controls footer. The Stockfish PV lines
   // live at the top of the Eval tab (not above the board). The shell's back-button
   // header + suppressed bottom nav (ProtectedLayout) complete the takeover.
@@ -3538,12 +3544,12 @@ export default function Analysis() {
             off-screen when the mobile browser's URL bar shrank the height. h-[120px]
             (the established mobile chart height) keeps the footer visible. Quick
             260714-rj5: collapsed from two near-identical Tabs branches into one —
-            the Tags trigger/content render whenever the game is analyzed OR being
+            the Stats trigger/content render whenever the game is analyzed OR being
             analyzed (evalChartReady || evalPending), showing an Analyzing pill
             during analysis then the panel once evals land (quick 260719-dzh), so
             the Tabs subtree itself never remounts when a game-mode card transitions
             from unanalyzed to analyzed via the live poll (no cursor/variation-tree
-            loss). Free play and an idle unanalyzed game just omit the Tags tab. */}
+            loss). Free play and an idle unanalyzed game just omit the Stats tab. */}
         {analysisTabs}
 
         {/* In-flow board-controls footer — replaces the suppressed mobile nav bar. */}
