@@ -60,6 +60,33 @@ lanes — no backfill script, no migration.
 - Full pre-merge gate: `ruff format` (2 files), `ruff check --fix` clean, `ty check` clean,
   `pytest -n auto -x` → **3513 passed, 18 skipped**.
 
+## Follow-up: remote-path best_cp parity (Option B, backward compatible)
+The first cut fixed `best_cp` sourcing only in the IN-PROCESS drain. Review (prompted by
+"will this require updating the workers?") found the REMOTE `/bestmove-submit` path
+(`_apply_bestmove_submit`) — ~85% of tier-4b throughput — had the identical lichess bug:
+it rebuilds `best_cp` from stored `eval_of_position` (= lichess %eval for lichess games).
+The plan had conflated it with the full-eval atomic path (`eval_remote.py:1158`, which does
+use worker evals).
+
+Fix (commit `01d96b50`) — **Option B, made safe for a partial worker rollout**:
+- `BestMoveSubmitEval` gains OPTIONAL `best_cp`/`best_mate` (old workers omit them → payload
+  still validates).
+- `scripts/remote_eval_worker.py` (`_eval_bestmove_positions`) now submits `r[0]`/`r[1]` (the
+  fresh MultiPV-2 best it already computes and used to discard).
+- `_apply_bestmove_submit`: for lichess games, prefer the worker-submitted fresh `best_cp`;
+  for plies from an OLD worker (no `best_cp`), re-search those candidate plies on the backend
+  — a transient fallback that stops firing once all workers are upgraded. Engine games are
+  byte-identical (guarded on `is_lichess_eval_game`).
+- Tests: `test_bestmove_submit_lichess_uses_worker_best_cp` (new worker),
+  `..._lichess_old_worker_researches_best_cp` (old worker fallback),
+  `..._engine_ignores_worker_best_cp` (guard), `test_eval_bestmove_positions_includes_best_cp`
+  (worker); updated `test_handle_bestmove_response_submits_n_entries_no_atomic_submit`
+  (now asserts `best_cp` present). All 4 new fixes mutation-proven. Suite 3517 passed.
+
+**Worker rollout:** correct regardless of worker version. New workers submit fresh best_cp
+(no backend re-search); old workers trigger a transient per-lichess-ply backend re-search
+until upgraded. No forced fleet-wide upgrade required.
+
 ## Not done / out of scope (deliberate)
 - No migration (predicate/logic only). No frontend. No one-off backfill script — the existing
   ~12,643 (B) and ~18,882 (A) drain opportunistically through the lanes at the lowest idle rung.
