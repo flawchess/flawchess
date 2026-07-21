@@ -3,11 +3,10 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: Bot Strength Calibration
 current_phase: 181
-status: completed
+status: Phase 181 shipped — squash-merged to main (2999fd2f)
 stopped_at: Completed 181-02-PLAN.md
-last_updated: "2026-07-21T18:13:52.294Z"
+last_updated: "2026-07-21T18:28:01.882Z"
 last_activity: 2026-07-21
-last_activity_desc: Phase 181 complete
 progress:
   total_phases: 3
   completed_phases: 2
@@ -15,6 +14,7 @@ progress:
   completed_plans: 6
   percent: 67
 current_phase_name: per-preset-strength-lookup-curves
+last_activity_desc: Phase 181 complete
 ---
 
 # Project State: FlawChess
@@ -23,8 +23,8 @@ current_phase_name: per-preset-strength-lookup-curves
 
 Phase: 181
 Plan: Not started
-Status: All phases complete
-Last activity: 2026-07-21 — Phase 181 complete
+Status: Phase 181 shipped — squash-merged to main (2999fd2f)
+Last activity: 2026-07-21
 
 ## Project Reference
 
