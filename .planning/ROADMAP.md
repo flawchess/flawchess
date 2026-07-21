@@ -42,6 +42,7 @@
 - ✅ **v2.4 Backend Gem & Great Detection** — Phases 174–177 (shipped 2026-07-17; Phase 177 folded in post-close 2026-07-18) — move gem/great move detection into the backend full-game analysis pass as stored first-class artifacts (backend Maia-3 inference at eval-apply) powering the analysis board plus a Library game filter, with opportunistic tier-4 lottery backfill (SEED-108, supersedes SEED-107); Phase 177 (SEED-111) then offloads the gem-candidate MultiPV-2 search onto the worker fleet — see [milestones/v2.4-ROADMAP.md](milestones/v2.4-ROADMAP.md)
 - ✅ **v2.5 Move Statistics** — Phases 178–179 (shipped 2026-07-18) — one uniform, lichess-compatible per-game accuracy & ACPL methodology written into repurposed canonical `games` columns so games are comparable across chess.com/lichess/self-analyzed (Phase 178, SEED-110), then a single shared **two-sided Move Stats** component (accuracy strip + a 7-category per-player move-classification table) replacing the badge rows on both the Library game card and the analysis board tags panel (Phase 179, SEED-112) — see [milestones/v2.5-ROADMAP.md](milestones/v2.5-ROADMAP.md)
 - ✅ **v2.6 Bot Strength Calibration** — Phases 173, 180, 181 (shipped 2026-07-21; dev-only, no deploy) — put the bot's play-style presets on a measured strength scale without ever playing a human. Phase 173 (SEED-101) round-robins the calibration anchors into one internal rating scale (verdict: the Maia-3 argmax ladder is ~2.8x compressed); Phase 180 (SEED-102) measures the three-preset (Human/Light/Deep) strength curves on that scale plus the cross-family style-inflation gap `G_preset`; Phase 181 (SEED-104) inverts those curves into per-preset `target_blitz_elo → bot_elo` lookups with honest measured ranges (Human 900–1400, Light 1500–1600, Deep 1600–1800) and an approximate-ELO disclaimer. Nothing in the product reads the lookup yet — see [milestones/v2.6-ROADMAP.md](milestones/v2.6-ROADMAP.md)
+- ⏳ **v2.7 Bot Personas & Playstyle Layer** — Phases 182-184 (in progress) — a roster of 24 named bot personas (4 styles × 6 ELO rungs, 800–1800) on the Bots page, each a complete pinned opponent (preset, calibrated ELO, style params, opening book, resign/draw-offer policy, avatar, bio); style levers land first (Phase 182), then the persona registry + Bots page UI with provisional ELO labels (Phase 183), then per-persona harness calibration finalizes the labels (Phase 184) (SEED-098)
 
 ## Progress
 
@@ -135,6 +136,9 @@
 | 179. Two-sided Move Stats component (SEED-112, v2.5) | 3/3 | Complete | 2026-07-18 |
 | 180. Three-preset bot strength curves (SEED-102, v2.6) | 4/4 | Complete — D-02b pilot operator-approved 2026-07-19 (phase completes at pilot, D-01); Task 3 operator sweep landed 2026-07-21 | 2026-07-21 |
 | 181. Per-preset strength lookup curves (SEED-104, v2.6) | 2/2 | Complete | 2026-07-21 |
+| 182. Style Levers (SEED-098, v2.7) | 0/0 | Not started | - |
+| 183. Persona Registry & Bots Page (SEED-098, v2.7) | 0/0 | Not started | - |
+| 184. Persona Calibration & Strength Honesty (SEED-098, v2.7) | 0/0 | Not started | - |
 
 ## Backlog
 
@@ -672,3 +676,57 @@ Put the bot's play-style presets on a measured strength scale, with no human gro
 See [milestones/v2.6-ROADMAP.md](milestones/v2.6-ROADMAP.md) for full phase detail.
 
 </details>
+
+
+## v2.7 Bot Personas & Playstyle Layer (in progress)
+
+Add distinct playstyles to the bot, surfaced as a roster of 24 named bot personas (4 styles × 6 ELO rungs, 800–1800) on the Bots page. Each persona is a complete pinned opponent — preset, calibrated ELO, style params, opening book, resign/draw-offer policy, avatar, bio — with no persona × strength picker (the persona frame carries the personality, cf. chess.com bots); Custom mode keeps the raw (ELO, preset) knobs for power users. Built in perceptibility-per-effort order: style levers first (opening books, draw contempt/resign policy, prior reweighting, score shaping), then the persona registry + Bots page UI (shipped with provisional ELO labels, independently playable), then per-persona harness calibration (~2 overnight Phase-180 harness runs) finalizes the labels. Sourced from SEED-098 (explore sessions 2026-07-12 + 2026-07-21) on the v2.6 measured-strength substrate (Phases 173/180/181).
+
+- [ ] **Phase 182: Style Levers** - Opening books, draw contempt/resign policy, prior reweighting (Human rungs), and score shaping (Light/Deep rungs) as new bot-only style params
+- [ ] **Phase 183: Persona Registry & Bots Page** - 24-persona typed registry + Bots page grid UI + avatars/bios, provisional ELO labels
+- [ ] **Phase 184: Persona Calibration & Strength Honesty** - Per-persona harness-measured ELO offsets replace the provisional labels, with floor/ceiling honesty constraints
+
+### Phase 182: Style Levers
+
+**Goal**: The bot's play is steerable by style parameters across the full ELO range — distinct opening choices, resign/draw behavior, and move preferences per style — without touching Custom mode or existing invariants (`policyTemperature`, player-derived inputs).
+**Depends on**: Nothing (builds on existing v2.0/v2.3 engine primitives — `botSampling.ts`, `selectBotMove`, `trollOpenings.ts`)
+**Requirements**: STYLE-01, STYLE-02, STYLE-03, STYLE-04, STYLE-05
+**Success Criteria** (what must be TRUE):
+
+  1. A bot configured with a given style plays its style-specific opening book for the first several moves (e.g. Trickster follows a `trollOpenings.ts` trap line; other styles follow their own curated book) instead of falling back to generic book/search moves.
+  2. A bot configured with Grinder-style draw/resign policy keeps playing (does not resign or agree to a draw) in a position where a neutral-style bot would resign or accept a draw; contempt is configurable per style.
+  3. At Human-rung strength (800-1400), a bot's move distribution visibly shifts toward its style's favored move features (e.g. Attacker toward checks/captures/pawn advances, Grinder/Wall toward trades) versus the unstyled baseline, via a cheap chess.js move classifier reweighting Maia's policy probabilities.
+  4. At Light/Deep-rung strength (1600-1800), a bot's chosen move reflects its style's score bonus/malus and variance preference (e.g. a high-variance style more often takes the wider-spread child) added to `practicalScore` before the existing softmax in `selectBotMove`.
+  5. `botSampling.ts` helpers stay pure (no new search machinery) and no style param is derived from the player's rating or play — style params are entirely new bot-only fields, never the analysis-board `policyTemperature`.
+
+**Plans**: TBD
+
+### Phase 183: Persona Registry & Bots Page
+
+**Goal**: Users can browse and start a game against any of 24 named bot personas — each a complete pinned opponent (preset, provisional ELO label, style params, opening book, resign/draw policy, avatar, bio) — while Custom mode keeps exposing the raw (ELO, preset) knobs unchanged.
+**Depends on**: Phase 182
+**Requirements**: PERS-01, PERS-02, PERS-03, PERS-04, AVAT-01, AVAT-02
+**Success Criteria** (what must be TRUE):
+
+  1. User can browse a grid of 24 personas on the Bots page (4 styles × 6 rungs, 800-1800), each showing name, avatar portrait, bio, style, and ELO label.
+  2. User can start a game against any single persona in one action; the game launches with that persona's full pinned config (preset, ELO, style params, opening book, resign/draw policy) with no separate persona/strength selection step.
+  3. The persona roster is defined in one typed registry mapping each of the 24 slots to its complete config, with each rung's preset chosen per the measured ranges (800-1400 Human, 1600 Light/Deep, 1800 Deep).
+  4. User can still choose Custom mode and configure a bot via the existing raw (ELO, preset) controls, unaffected by the new persona roster.
+  5. Each persona's bio conveys a per-tier identity story (e.g. Trickster: trap lines at 800-1200, swindle mode at 1600+), and its avatar is a curated AI-generated portrait consistent with the roster's single style prompt.
+
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 184: Persona Calibration & Strength Honesty
+
+**Goal**: Each persona's displayed ELO label reflects its actual measured strength (style-induced delta included) rather than the raw underlying preset target, and labels honor the measured floor/ceiling honesty constraints.
+**Depends on**: Phase 183
+**Requirements**: CAL-04, CAL-05
+**Success Criteria** (what must be TRUE):
+
+  1. Every persona's ELO label is the calibrated ELO measured via harness runs on the Phase-173 internal anchor scale (not the provisional/raw preset ELO), with a per-persona offset absorbing the style-induced strength delta.
+  2. The bottom rung (800) is labeled honestly as below the measured floor (~900 approx blitz, `beyond_ladder`-flagged extrapolation) instead of a precise, fully-measured value.
+  3. The top rung (1800) is capped at Deep's measured ceiling — no persona claims strength above what Phase 180/181 measured.
+  4. The ~2 overnight harness runs (24 cells × ~4 anchors × ~24 games) complete and produce per-persona offset data that replaces the provisional labels shipped in Phase 183.
+
+**Plans**: TBD

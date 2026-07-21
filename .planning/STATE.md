@@ -6,7 +6,7 @@ status: planning
 last_updated: "2026-07-21T19:00:52.026Z"
 last_activity: 2026-07-21
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,16 +17,16 @@ progress:
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-07-21 — Milestone v2.7 started
+Phase: 182 of 3 (Style Levers)
+Plan: — (not yet planned)
+Status: Ready to plan
+Last activity: 2026-07-21 — ROADMAP.md created: 3 phases (182 Style Levers, 183 Persona Registry & Bots Page, 184 Persona Calibration & Strength Honesty), 13/13 requirements mapped, no orphans
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-07-14 after Phase 170)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: **v2.6 Bot Strength Calibration is closed (2026-07-21)** — the bot's three play-style presets now sit on a measured strength scale built with no human ground truth: an internal anchor rating scale from anchor-vs-anchor round-robin (Phase 173, verdict: the Maia-3 argmax ladder is ~2.8x compressed), three measured strength curves on that scale plus the cross-family style-gap `G_preset` (Phase 180), and a shipping per-preset `target_blitz_elo → bot_elo` lookup with measured ranges Human 900–1400 / Light 1500–1600 / Deep 1600–1800 (Phase 181). **Dev-only — nothing in the product reads the lookup yet, so no deploy is required for this milestone.** Production is at release #267; user-facing fixes accumulated since (three quicks incl. 260721-sgb Maia ORT disposal) ride the next release. Next: `/gsd-new-milestone` — likely candidates are wiring the lookup into the bot builder / preset cards (SEED-098 personas) and extending the ladder above ~1900 (SEED-114).
+Current focus: **v2.7 Bot Personas & Playstyle Layer — ROADMAP.md created (2026-07-21)**, ready to plan Phase 182. Ships a roster of 24 named bot personas (4 styles × 6 ELO rungs, 800–1800) on the Bots page wiring the v2.6 measured-strength lookup into pinned opponents (preset, calibrated ELO, style params, opening book, resign/draw-offer policy, avatar, bio). 3 phases: **182 Style Levers** (opening books, draw contempt/resign policy, prior reweighting on Human rungs, score shaping on Light/Deep rungs — new bot-only fields, `botSampling.ts` stays pure), **183 Persona Registry & Bots Page** (typed 24-slot registry + grid UI + avatars/bios, provisional ELO labels, depends on 182), **184 Persona Calibration & Strength Honesty** (per-persona harness offsets replace provisional labels via ~2 overnight Phase-180 harness runs, honors the 800-floor/1800-ceiling honesty constraints, depends on 183). Production is at release #267; user-facing fixes accumulated since (three quicks incl. 260721-sgb Maia ORT disposal) ride the next release. Next: `/gsd-plan-phase 182`.
 
 ## Deferred Items
 
@@ -106,6 +106,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - Phase 169.5 inserted: Bot Opening Book — inserted 2026-07-13 after a /gsd-explore session on slow bot first moves. Maia-policy-weighted ECO book (frontend/public/openings.tsv) for the early plies; no search, no backend, no re-calibration (the harness already starts from book FENs). New requirement PLAY-11.
 - Phase 173 added: Anchor ladder self-calibration (SEED-101) — round-robin maia/SF anchors, fit internal rating scale; unblocks SEED-102
 - Phase 181 added: Per-preset strength lookup curves (SEED-104) — invert Phase-180 curves into target_blitz_elo → bot_elo lookups
+- v2.7 Bot Personas & Playstyle Layer roadmap created 2026-07-21 — 3 phases (182–184) in a linear dependency chain (182 → 183 → 184), continuing absolute numbering from v2.6's Phase 181. All 13 requirements (PERS-01..04, STYLE-01..05, CAL-04..05, AVAT-01..02) mapped 1:1, no orphans. Ordering chosen deliberately: **182 Style Levers** builds the engine-only capability (opening books, contempt/resign, prior reweighting, score shaping) with no UI; **183 Persona Registry & Bots Page** wires those levers into 24 named personas with a real UI, shipped with provisional (raw preset) ELO labels — independently playable on its own; **184 Persona Calibration & Strength Honesty** then runs the Phase-180 harness against the finished personas and swaps in measured ELO labels. Each phase is independently shippable; labels simply get more honest over the sequence, per SEED-098's locked "persona pins everything" decision. UI hint on Phase 183 (Bots page grid).
 
 ### Decisions
 

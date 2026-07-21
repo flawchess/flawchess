@@ -53,13 +53,27 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| — | — | — |
+| PERS-01 | Phase 183 | Pending |
+| PERS-02 | Phase 183 | Pending |
+| PERS-03 | Phase 183 | Pending |
+| PERS-04 | Phase 183 | Pending |
+| STYLE-01 | Phase 182 | Pending |
+| STYLE-02 | Phase 182 | Pending |
+| STYLE-03 | Phase 182 | Pending |
+| STYLE-04 | Phase 182 | Pending |
+| STYLE-05 | Phase 182 | Pending |
+| CAL-04 | Phase 184 | Pending |
+| CAL-05 | Phase 184 | Pending |
+| AVAT-01 | Phase 183 | Pending |
+| AVAT-02 | Phase 183 | Pending |
 
 **Coverage:**
 - v2.7 requirements: 13 total
-- Mapped to phases: 0
-- Unmapped: 13 ⚠️ (pre-roadmap)
+- Mapped to phases: 13
+- Unmapped: 0 ✓
+
+**Phase mapping rationale:** Style levers (Phase 182) build the engine-level capability first — bot-only style params in `botSampling.ts`/`selectBotMove.ts`, no UI. Persona registry + Bots page (Phase 183) wires those levers into 24 named personas with a real UI, shipped with provisional (raw preset) ELO labels — fully user-shippable on its own. Calibration (Phase 184) then runs the harness against the finished personas and swaps in measured ELO labels, honoring the floor/ceiling honesty constraints. Each phase is independently shippable; labels simply get more honest over the sequence.
 
 ---
 *Requirements defined: 2026-07-21*
-*Last updated: 2026-07-21 after initial definition*
+*Last updated: 2026-07-21 after roadmap creation (Phases 182-184)*
