@@ -41,7 +41,7 @@
 - ✅ **v2.3 Bot Play** — Phases 166–172 (incl. 168.5, 169.5) (shipped 2026-07-15) — clocked play against the FlawChess engine on a new top-level **Bots** page (`selectBotMove` sample↔argmax blend), every finished game stored as a `platform='flawchess'` analyzable Library game, localStorage resume, a headless anchor-calibration harness for the first (ELO × play-style) strength map (SEED-091), and a background gem sweep + book markers on `/analysis` (SEED-106, Phase 172) — see [milestones/v2.3-ROADMAP.md](milestones/v2.3-ROADMAP.md)
 - ✅ **v2.4 Backend Gem & Great Detection** — Phases 174–177 (shipped 2026-07-17; Phase 177 folded in post-close 2026-07-18) — move gem/great move detection into the backend full-game analysis pass as stored first-class artifacts (backend Maia-3 inference at eval-apply) powering the analysis board plus a Library game filter, with opportunistic tier-4 lottery backfill (SEED-108, supersedes SEED-107); Phase 177 (SEED-111) then offloads the gem-candidate MultiPV-2 search onto the worker fleet — see [milestones/v2.4-ROADMAP.md](milestones/v2.4-ROADMAP.md)
 - ✅ **v2.5 Move Statistics** — Phases 178–179 (shipped 2026-07-18) — one uniform, lichess-compatible per-game accuracy & ACPL methodology written into repurposed canonical `games` columns so games are comparable across chess.com/lichess/self-analyzed (Phase 178, SEED-110), then a single shared **two-sided Move Stats** component (accuracy strip + a 7-category per-player move-classification table) replacing the badge rows on both the Library game card and the analysis board tags panel (Phase 179, SEED-112) — see [milestones/v2.5-ROADMAP.md](milestones/v2.5-ROADMAP.md)
-- ⏳ **v2.6 Bot Strength Calibration** — Phases 173, 180 (in progress) — put the bot's play-style presets on a measured strength scale without ever playing a human. Phase 173 (SEED-101, ✅ complete) round-robins the calibration anchors to build one internal rating scale (is the Maia-3 argmax ladder compressed?); Phase 180 (SEED-102, pending) measures the bot's three-preset (Human/Light/Deep) strength curves on that scale plus the cross-family style-inflation gap `G_preset`. Regroups the two standalone post-v2.3 calibration phases under one milestone.
+- ⏳ **v2.6 Bot Strength Calibration** — Phases 173, 180, 181 (in progress) — put the bot's play-style presets on a measured strength scale without ever playing a human. Phase 173 (SEED-101, ✅ complete) round-robins the calibration anchors to build one internal rating scale (is the Maia-3 argmax ladder compressed?); Phase 180 (SEED-102, ✅ complete, sweep landed 2026-07-21) measures the bot's three-preset (Human/Light/Deep) strength curves on that scale plus the cross-family style-inflation gap `G_preset`; Phase 181 (SEED-104) inverts those curves into per-preset `target_blitz_elo → bot_elo` lookups with honest ranges and an approximate-ELO disclaimer. Regroups the two standalone post-v2.3 calibration phases under one milestone.
 
 ## Progress
 
@@ -133,7 +133,8 @@
 | 177. Worker-side MultiPV-2 gem-candidate searches (SEED-111, v2.4 addendum) | 5/5 | Complete | 2026-07-17 |
 | 178. Lichess-compatible accuracy & ACPL (computed columns) (v2.5) | 4/4 | Complete | 2026-07-18 |
 | 179. Two-sided Move Stats component (SEED-112, v2.5) | 3/3 | Complete | 2026-07-18 |
-| 180. Three-preset bot strength curves (SEED-102, v2.6) | 4/4 | ✅ Complete — D-02b pilot operator-approved 2026-07-19 (phase completes at pilot, D-01); Task 3 operator sweep deferred (off critical path) | — |
+| 180. Three-preset bot strength curves (SEED-102, v2.6) | 4/4 | ✅ Complete — D-02b pilot operator-approved 2026-07-19 (phase completes at pilot, D-01); Task 3 operator sweep landed 2026-07-21 | — |
+| 181. Per-preset strength lookup curves (SEED-104, v2.6) | 0/2 | Planned | — |
 
 ## Backlog
 
@@ -655,7 +656,7 @@ See [milestones/v2.2-ROADMAP.md](milestones/v2.2-ROADMAP.md) for full details.
 
 ## v2.6 Bot Strength Calibration (in progress)
 
-Put the bot's play-style presets on a measured strength scale, with no human ground truth. Phase 173 (SEED-101) built the internal anchor rating scale by round-robining the calibration anchors; Phase 180 (SEED-102) measures the bot's three-preset strength curves on that scale plus the cross-family style-inflation gap `G_preset`. Both were standalone post-v2.3 addendum phases; regrouped under this milestone 2026-07-19. Unblocks SEED-104.
+Put the bot's play-style presets on a measured strength scale, with no human ground truth. Phase 173 (SEED-101) built the internal anchor rating scale by round-robining the calibration anchors; Phase 180 (SEED-102) measures the bot's three-preset strength curves on that scale plus the cross-family style-inflation gap `G_preset`. Both were standalone post-v2.3 addendum phases; regrouped under this milestone 2026-07-19. Phase 181 (SEED-104, added 2026-07-21 after the Phase-180 sweep landed) turns those curves into the shipping per-preset `target_blitz_elo → bot_elo` lookup.
 
 ### Phase 173: Anchor ladder self-calibration (SEED-101)
 
@@ -700,3 +701,19 @@ Plans:
 **Wave 3** *(blocked on Wave 2 completion)*
 
 - [x] 180-04-PLAN.md — Logic-layer gate + real-engine pilot (D-02); folded-in HUMAN-UAT operator sweep + fitted curves + findings note (D-01, D-03, D-05) — **D-02a gate GREEN + D-02b pilot operator-APPROVED 2026-07-19 (both families fire, --resume byte-identical, fitter output well-formed). Phase completes at the pilot (D-01). Task 3 operator sweep off critical path, deferred.**
+
+### Phase 181: Per-preset strength lookup curves (SEED-104)
+
+**Goal:** Turn the Phase-180 curves into the shipping strength artifact: fit each preset's `internal_rating = f_preset(bot_elo)` curve (monotone fit over the ~5 measured points), convert to approximate human blitz ELO via `internal − G_preset + C` (C = +40 ± 100 from literature, shared named constant), invert into per-preset `target_blitz_elo → bot_elo` lookups (100-ELO steps) with honest per-preset ranges (the measured floor/ceiling of each curve IS the slider range — note the sweep showed Deep plateaus at ~1950–1970 internal, not the seed's expected ~2600), an approximate-ELO disclaimer, and 2–3 harness confirmation cells per preset validating the inversion. Single source of truth for all labeled bot strength claims (custom bot builder, preset cards, SEED-098 personas).
+**Requirements**: TBD (source seed .planning/seeds/SEED-104-iso-strength-inversion-table.md)
+**Depends on:** Phase 180
+**Plans:** 2/2 plans complete
+
+Plans:
+**Wave 1**
+
+- [x] 181-01-PLAN.md — Core lookup artifact: PAVA fit + pooled-G offset + lowest-wins inversion → components+derived JSON + generated TS (disclaimer) + CI drift step + knip ignore
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 181-02-PLAN.md — Off-grid confirmation-cell prediction file (D-13 interpolated CI) + findings note (measured-curve realities, beyond_ladder mechanism, HUMAN-UAT placeholder)

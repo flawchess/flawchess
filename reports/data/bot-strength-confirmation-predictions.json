@@ -1,0 +1,82 @@
+{
+  "pass_criterion": "D-13: the confirmation cell's measured rating_vs_maia (same fit basis as the shipped lookup) must fall within [ci95_lo, ci95_hi] recorded below. On failure, fold the confirmation games into the fit dataset and re-run scripts/gen_bot_strength_curves.py to regenerate the lookup + TS artifact (D-14) -- no hand-tuning, no band-widening to paper over a miss.",
+  "rows": [
+    {
+      "preset": "human",
+      "blend": 0.0,
+      "target_blitz_elo": 1000,
+      "predicted_bot_elo": 1083,
+      "predicted_internal": 1000.9706054030848,
+      "ci95_lo": 856.003627880722,
+      "ci95_hi": 1094.6837099997686,
+      "harness_cmd": "node --import ./scripts/lib/frontend-alias-hook.mjs scripts/calibration-harness.mjs --elo 1083 --blends 0 --games-per-cell 24 --stockfish-procs 4 --out-dir reports/data/confirmation-human-1083",
+      "fit_cmd": "uv run python scripts/calibration_anchor_fit.py --bot-input reports/data/confirmation-human-1083/*-cells.tsv --out-bot-curves reports/data/confirmation-human-1083-fit.json"
+    },
+    {
+      "preset": "human",
+      "blend": 0.0,
+      "target_blitz_elo": 1200,
+      "predicted_bot_elo": 1588,
+      "predicted_internal": 1200.6894151233284,
+      "ci95_lo": 1096.6340644690117,
+      "ci95_hi": 1300.7260759197318,
+      "harness_cmd": "node --import ./scripts/lib/frontend-alias-hook.mjs scripts/calibration-harness.mjs --elo 1588 --blends 0 --games-per-cell 24 --stockfish-procs 4 --out-dir reports/data/confirmation-human-1588",
+      "fit_cmd": "uv run python scripts/calibration_anchor_fit.py --bot-input reports/data/confirmation-human-1588/*-cells.tsv --out-bot-curves reports/data/confirmation-human-1588-fit.json"
+    },
+    {
+      "preset": "human",
+      "blend": 0.0,
+      "target_blitz_elo": 1300,
+      "predicted_bot_elo": 1741,
+      "predicted_internal": 1300.903551424452,
+      "ci95_lo": 1196.7689477737936,
+      "ci95_hi": 1414.6071909613736,
+      "harness_cmd": "node --import ./scripts/lib/frontend-alias-hook.mjs scripts/calibration-harness.mjs --elo 1741 --blends 0 --games-per-cell 24 --stockfish-procs 4 --out-dir reports/data/confirmation-human-1741",
+      "fit_cmd": "uv run python scripts/calibration_anchor_fit.py --bot-input reports/data/confirmation-human-1741/*-cells.tsv --out-bot-curves reports/data/confirmation-human-1741-fit.json"
+    },
+    {
+      "preset": "light",
+      "blend": 0.05,
+      "target_blitz_elo": 1533,
+      "predicted_bot_elo": 1781,
+      "predicted_internal": 1679.256940588437,
+      "ci95_lo": 1590.978817398211,
+      "ci95_hi": 1780.5281871310385,
+      "harness_cmd": "node --import ./scripts/lib/frontend-alias-hook.mjs scripts/calibration-harness.mjs --elo 1781 --blends 0.05 --games-per-cell 24 --stockfish-procs 4 --out-dir reports/data/confirmation-light-1781",
+      "fit_cmd": "uv run python scripts/calibration_anchor_fit.py --bot-input reports/data/confirmation-light-1781/*-cells.tsv --out-bot-curves reports/data/confirmation-light-1781-fit.json"
+    },
+    {
+      "preset": "light",
+      "blend": 0.05,
+      "target_blitz_elo": 1567,
+      "predicted_bot_elo": 1820,
+      "predicted_internal": 1713.418407744604,
+      "ci95_lo": 1622.4270714200195,
+      "ci95_hi": 1825.334990018644,
+      "harness_cmd": "node --import ./scripts/lib/frontend-alias-hook.mjs scripts/calibration-harness.mjs --elo 1820 --blends 0.05 --games-per-cell 24 --stockfish-procs 4 --out-dir reports/data/confirmation-light-1820",
+      "fit_cmd": "uv run python scripts/calibration_anchor_fit.py --bot-input reports/data/confirmation-light-1820/*-cells.tsv --out-bot-curves reports/data/confirmation-light-1820-fit.json"
+    },
+    {
+      "preset": "deep",
+      "blend": 0.5,
+      "target_blitz_elo": 1667,
+      "predicted_bot_elo": 1298,
+      "predicted_internal": 1874.1044584564272,
+      "ci95_lo": 1755.686158904118,
+      "ci95_hi": 2059.598557644593,
+      "harness_cmd": "node --import ./scripts/lib/frontend-alias-hook.mjs scripts/calibration-harness.mjs --elo 1298 --blends 0.5 --games-per-cell 24 --stockfish-procs 4 --out-dir reports/data/confirmation-deep-1298",
+      "fit_cmd": "uv run python scripts/calibration_anchor_fit.py --bot-input reports/data/confirmation-deep-1298/*-cells.tsv --out-bot-curves reports/data/confirmation-deep-1298-fit.json"
+    },
+    {
+      "preset": "deep",
+      "blend": 0.5,
+      "target_blitz_elo": 1733,
+      "predicted_bot_elo": 1442,
+      "predicted_internal": 1940.0035466665477,
+      "ci95_lo": 1813.9872763359642,
+      "ci95_hi": 2138.5343625651085,
+      "harness_cmd": "node --import ./scripts/lib/frontend-alias-hook.mjs scripts/calibration-harness.mjs --elo 1442 --blends 0.5 --games-per-cell 24 --stockfish-procs 4 --out-dir reports/data/confirmation-deep-1442",
+      "fit_cmd": "uv run python scripts/calibration_anchor_fit.py --bot-input reports/data/confirmation-deep-1442/*-cells.tsv --out-bot-curves reports/data/confirmation-deep-1442-fit.json"
+    }
+  ]
+}

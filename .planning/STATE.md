@@ -2,29 +2,29 @@
 gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: Bot Strength Calibration
-current_phase: 180
-status: Phase 180 shipped — squash-merged to main (5cc7013b)
-stopped_at: 180-04 paused at Task 2 blocking human-verify checkpoint (D-02a gate green; real-engine pilot pending operator)
-last_updated: "2026-07-21T16:08:43.340Z"
+current_phase: 181
+status: completed
+stopped_at: Completed 181-02-PLAN.md
+last_updated: "2026-07-21T18:13:52.294Z"
 last_activity: 2026-07-21
+last_activity_desc: Phase 181 complete
 progress:
-  total_phases: 2
-  completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
-  percent: 50
-current_phase_name: three-preset-bot-strength-curves
-last_activity_desc: Phase 180 marked complete
+  total_phases: 3
+  completed_phases: 2
+  total_plans: 6
+  completed_plans: 6
+  percent: 67
+current_phase_name: per-preset-strength-lookup-curves
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 180 — COMPLETE
-Plan: 4 of 4 — paused at Task 2 blocking human-verify checkpoint
-Status: Phase 180 shipped — squash-merged to main (5cc7013b)
-Last activity: 2026-07-21
+Phase: 181
+Plan: Not started
+Status: All phases complete
+Last activity: 2026-07-21 — Phase 181 complete
 
 ## Project Reference
 
@@ -94,6 +94,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - Phase 163 added: Gem moves — Maia-findability move badges on /analysis (SEED-092; escalated from a /gsd-quick request 2026-07-10 — sized as phase-scale: ~10+ files, new detection module, open tunables)
 - Phase 169.5 inserted: Bot Opening Book — inserted 2026-07-13 after a /gsd-explore session on slow bot first moves. Maia-policy-weighted ECO book (frontend/public/openings.tsv) for the early plies; no search, no backend, no re-calibration (the harness already starts from book FENs). New requirement PLAY-11.
 - Phase 173 added: Anchor ladder self-calibration (SEED-101) — round-robin maia/SF anchors, fit internal rating scale; unblocks SEED-102
+- Phase 181 added: Per-preset strength lookup curves (SEED-104) — invert Phase-180 curves into target_blitz_elo → bot_elo lookups
 
 ### Decisions
 
@@ -352,6 +353,11 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 180-01]: internalRatingFor defined+exported in the new calibration-bot-cell-schedule.mjs (not the harness) — keeps harness->schedule one-directional, avoids a circular import
 - [Phase 180-01]: scoreInInformativeBand+bandDistance wired into locateEstimate as load-bearing logic (informative-band preference + nearest-to-band single-anchor fallback), keeping the exact 5-export surface rather than a dead import
 - [Phase ?]: 180-03: harness selects anchors on the MEASURED internalRatingFor scale via the two-pass locate->measure loop (fixes the 2026-07-12 clamp); raw per-game ledger enables byte-identical --resume; six near-free metric columns + beyond_ladder emitted
+- [Phase ?]: [Phase 181-01]: preset_band() rounds to nearest 25 ELO (new BAND_ROUNDING_STEP constant, distinct from GRID_STEP=100) per D-03's literal formula
+- [Phase ?]: [Phase 181-01]: PRESETS keyed by float blend (0.0/0.05/0.5, matching cells[].bot_blend type); per_preset lookups use f"{blend:g}" to match its string-keyed shape
+- [Phase ?]: D-12 narrow-range fallback: select_confirmation_targets uses a 1/3-2/3 interior split (not GRID_STEP-aligned) when a preset's shipped range spans fewer than 3 GRID_STEPs (Light/Deep's real, narrower-than-hoped ranges)
+- [Phase ?]: D-13 interpolated CI: inverse-variance-pooled center widened by the between-cell rating_vs_maia spread, so a merged PAVA plateau's CI is always at least as wide as either individual member cell's own CI; proven revert-provable
+- [Phase ?]: SEED-104 marked complete per D-11 split delivery (mirrors Phase 180 D-01) — interactive scope fully delivered; overnight confirmation game-play run is operator HUMAN-UAT, tracked in the findings note placeholder
 
 ### Pending Todos
 
@@ -443,9 +449,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Completed 180-03-PLAN.md
+**Stopped at:** Completed 181-02-PLAN.md
 
-**Last session:** 2026-07-19T16:34:13.450Z
+**Last session:** 2026-07-21T17:58:42.371Z
 
 **Resume file:**
 
@@ -482,6 +488,7 @@ None
 | Phase 180 P01 | 10min | 2 tasks | 2 files |
 | Phase 180 P02 | ~20m | 2 tasks | 2 files |
 | Phase 180 P03 | ~22min | 3 tasks | 5 files |
+| Phase 181 P02 | 20min | 2 tasks | 4 files |
 
 ## Performance Metrics
 

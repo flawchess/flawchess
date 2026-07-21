@@ -14,7 +14,8 @@
     "src/components/ui/command.tsx",
     "src/components/ui/popover.tsx",
     "src/components/ui/input-group.tsx",
-    "src/generated/endgameZones.ts"
+    "src/generated/endgameZones.ts",
+    "src/generated/botStrengthCurves.ts"
   ],
   "ignoreBinaries": ["cloudflared"],
   "rules": {
