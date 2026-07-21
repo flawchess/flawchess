@@ -186,20 +186,35 @@ async function analyze(fen, eloInputs) {
     elo_oppo: new ort.Tensor('float32', eloOppo, [batchSize]),
   };
 
-  const outputs = await session.run(feeds);
-  const policyFlat = outputs.logits_move.data;
-  const wdlFlat = outputs.logits_value.data;
+  let outputs;
+  try {
+    outputs = await session.run(feeds);
+    const policyFlat = outputs.logits_move.data;
+    const wdlFlat = outputs.logits_value.data;
 
-  const rawPolicyByElo = eloInputs.map((elo, i) => ({
-    elo,
-    policy: policyFlat.slice(i * POLICY_VOCAB_SIZE, (i + 1) * POLICY_VOCAB_SIZE),
-  }));
-  const wdlByElo = eloInputs.map((elo, i) => ({
-    elo,
-    wdl: wdlFlat.slice(i * WDL_SIZE, (i + 1) * WDL_SIZE),
-  }));
+    // `.slice()` copies the logits out of wasm memory, so the tensors can be disposed
+    // in `finally` below without invalidating what we return.
+    const rawPolicyByElo = eloInputs.map((elo, i) => ({
+      elo,
+      policy: policyFlat.slice(i * POLICY_VOCAB_SIZE, (i + 1) * POLICY_VOCAB_SIZE),
+    }));
+    const wdlByElo = eloInputs.map((elo, i) => ({
+      elo,
+      wdl: wdlFlat.slice(i * WDL_SIZE, (i + 1) * WDL_SIZE),
+    }));
 
-  return { rawPolicyByElo, wdlByElo };
+    return { rawPolicyByElo, wdlByElo };
+  } finally {
+    // BUG FIX (SEED-113, 2026-07-21): onnxruntime-web ort.Tensor buffers live in the wasm
+    // linear heap and MUST be disposed, or every inference leaks them. The same omission in
+    // the calibration harness grew the heap until it threw "memory access out of bounds"
+    // mid-run (~270k policy calls); only a fresh process cleared it. Exposure here is much
+    // lower (per-tab session, WebGPU preferred), but a marathon wasm-only mobile session
+    // hits the same wall. Disposing inputs + outputs per call keeps the heap flat.
+    // Optional-chained to stay safe across ORT backends/versions lacking dispose().
+    for (const t of Object.values(feeds)) t.dispose?.();
+    if (outputs) for (const t of Object.values(outputs)) t.dispose?.();
+  }
 }
 
 // ─── Message handling ───────────────────────────────────────────────────────────────────
