@@ -34,6 +34,7 @@
  * `makeNodeProviders` closes over `pool.grade` directly, not a single engine.
  */
 import { sanToUci } from '@/lib/sanToSquares';
+import { parseBestmove } from '@/hooks/uciParser';
 import {
   encodeBoard,
   maskAndSoftmax,
@@ -121,16 +122,30 @@ async function nodePolicy(session, ort, fen, elo, side) {
     elo_self: new ort.Tensor('float32', eloInput, [1]),
     elo_oppo: new ort.Tensor('float32', eloInput, [1]), // symmetric self/oppo ELO — BOT-03
   };
-  const result = await session.run(feeds);
-  const policySlice = result.logits_move.data.slice(0, POLICY_VOCAB_SIZE);
-  const sanProbs = maskAndSoftmax(policySlice, fen);
+  let result;
+  try {
+    result = await session.run(feeds);
+    // `.slice()` copies the logits out of wasm memory so the output tensors can be
+    // disposed in `finally` below without invalidating what we return.
+    const policySlice = result.logits_move.data.slice(0, POLICY_VOCAB_SIZE);
+    const sanProbs = maskAndSoftmax(policySlice, fen);
 
-  const uciProbs = {};
-  for (const [san, prob] of Object.entries(sanProbs)) {
-    const uci = sanToUci(fen, san);
-    if (uci !== null) uciProbs[uci] = prob;
+    const uciProbs = {};
+    for (const [san, prob] of Object.entries(sanProbs)) {
+      const uci = sanToUci(fen, san);
+      if (uci !== null) uciProbs[uci] = prob;
+    }
+    return uciProbs;
+  } finally {
+    // BUG FIX (SEED-113, 2026-07-21): onnxruntime-web ort.Tensor buffers live in the
+    // wasm linear heap and MUST be disposed, or every inference leaks them. Over
+    // ~270k policy calls (~8.5-9h of a blend>0 sweep) the heap hit its bound and
+    // threw "memory access out of bounds" mid-run; only a fresh process cleared it.
+    // Disposing inputs + outputs per call keeps the heap flat. Optional-chained to
+    // stay safe across ORT backends/versions that may not expose dispose().
+    for (const t of Object.values(feeds)) t.dispose?.();
+    if (result) for (const t of Object.values(result)) t.dispose?.();
   }
-  return uciProbs;
 }
 
 /**
@@ -185,12 +200,16 @@ export async function nodeGrade(stockfish, fen, candidateUcis) {
 }
 
 /**
- * Single-line Stockfish eval (white-POV cp) at `fen` — D-10 cutoff 2
- * (adjudication) and the pool's `evalPosition` surface (Plan 03). Resets
- * every option it depends on first (Pitfall 2): a prior weakened anchor
- * `Skill Level` must never leak into an adjudication `go`.
+ * Single-line Stockfish eval (white-POV cp) + the engine's own `bestmove` at
+ * `fen` — D-10 cutoff 2 (adjudication) plus the Phase-180 near-free
+ * SF-agreement metric. The `bestmove` is a FREE byproduct: `evalPositionCp`
+ * already `waitFor`s the `bestmove` line to end the search, so parsing it costs
+ * ZERO extra engine work (SEED-102 "near-free"). Resets every option it depends
+ * on first (Pitfall 2): a prior weakened anchor `Skill Level` must never leak
+ * into an adjudication `go`. Returns `{ cp, bestUci }` — `bestUci` is `null`
+ * when Stockfish reports `bestmove (none)` (terminal/degenerate position).
  */
-export async function evalPositionCp(stockfish, fen) {
+export async function evalPositionCpWithBest(stockfish, fen) {
   const whitePovSign = fen.split(' ')[1] === 'b' ? -1 : 1;
   let lastExact = null;
   const off = stockfish.onLine((line) => {
@@ -208,18 +227,20 @@ export async function evalPositionCp(stockfish, fen) {
   // than grading's depth because adjudication runs after every ply of every
   // game and its Clear-Hash cost compounds fastest.
   stockfish.send(`go depth ${ADJUDICATION_TARGET_DEPTH}`);
+  let bestmoveLine;
   try {
-    await stockfish.waitFor((line) => line.startsWith('bestmove'), ADJUDICATION_WATCHDOG_TIMEOUT_MS);
+    bestmoveLine = await stockfish.waitFor((line) => line.startsWith('bestmove'), ADJUDICATION_WATCHDOG_TIMEOUT_MS);
   } finally {
     off();
   }
+  const bestUci = parseBestmove(bestmoveLine);
   if (lastExact === null) {
     // WR-06: was a silent, uninstrumented fallback — a systematic occurrence
     // could degrade adjudication accuracy for a whole sweep with zero
     // visibility. Now counted so the harness's throughput report can surface
     // it (see calibration-harness.mjs's printSpikeReport).
     adjudicationFallbackStats.neutralFallbackCount++;
-    return 0; // no exact info line surfaced -- treat as neutral (should not normally occur)
+    return { cp: 0, bestUci }; // no exact info line surfaced -- treat as neutral (should not normally occur)
   }
   const cp =
     lastExact.scoreMate !== null
@@ -227,5 +248,17 @@ export async function evalPositionCp(stockfish, fen) {
         ? MATE_CP_EQUIVALENT
         : -MATE_CP_EQUIVALENT
       : (lastExact.scoreCp ?? 0);
-  return cp * whitePovSign;
+  return { cp: cp * whitePovSign, bestUci };
+}
+
+/**
+ * Single-line Stockfish eval (white-POV cp) at `fen` — D-10 cutoff 2
+ * (adjudication) and the pool's `evalPosition` surface (Plan 03). Thin wrapper
+ * over `evalPositionCpWithBest` that drops the `bestmove` byproduct — callers
+ * that only need the cp (the adjudication cutoff) keep the original scalar
+ * contract unchanged.
+ */
+export async function evalPositionCp(stockfish, fen) {
+  const { cp } = await evalPositionCpWithBest(stockfish, fen);
+  return cp;
 }

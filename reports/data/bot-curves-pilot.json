@@ -1,0 +1,47 @@
+{
+  "_caveat": "INTERNAL SCALE \u2014 NOT human ELO (D-13). Scale fixed arbitrarily so maia1500 == 1500; see .planning/notes/ for the compression-verdict methodology and findings.",
+  "cells": [
+    {
+      "beyond_ladder": true,
+      "bot_blend": 0.0,
+      "bot_elo": 1500,
+      "ci_vs_maia": [
+        1006.242446396252,
+        1276.123576731169
+      ],
+      "ci_vs_sf": [
+        921.3149556420859,
+        1283.5367048652806
+      ],
+      "g_preset": 70.06314086545467,
+      "rating_vs_maia": 1177.286651553482,
+      "rating_vs_sf": 1107.2235106880273
+    },
+    {
+      "beyond_ladder": false,
+      "bot_blend": 0.05,
+      "bot_elo": 1500,
+      "ci_vs_maia": [
+        1301.2980880887803,
+        1654.8353007156707
+      ],
+      "ci_vs_sf": [
+        1333.7598357230015,
+        1580.4724870018226
+      ],
+      "g_preset": 62.92001774376831,
+      "rating_vs_maia": 1518.0865846029799,
+      "rating_vs_sf": 1455.1665668592116
+    }
+  ],
+  "per_preset": {
+    "0": {
+      "g_preset_combined": 70.06314086545467,
+      "n_cells": 1.0
+    },
+    "0.05": {
+      "g_preset_combined": 62.920017743768305,
+      "n_cells": 1.0
+    }
+  }
+}

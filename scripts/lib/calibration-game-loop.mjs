@@ -70,24 +70,46 @@ function adjudicatedResultWhitePov(favoredSide, reason) {
   return { result: favoredSide === 'w' ? 'white_win' : 'black_win', reason };
 }
 
-/** D-10 cutoffs 2+3, run only when the position is NOT already chess.js-terminal. Returns null to continue play. */
+/**
+ * Single white-POV cp eval + the engine's `bestmove` byproduct, degrading to a
+ * cp-only pool (`pool.evalPosition`, `bestUci: null`) when
+ * `pool.evalPositionWithBest` is absent — the game-loop `.check.mjs` stub pool
+ * only defines `evalPosition`, so this keeps that structural check passing while
+ * the real pool (Phase 180) surfaces the `bestmove` for the near-free
+ * SF-agreement metric at ZERO extra engine cost (same single `go`).
+ */
+async function evalWhitePovWithOptionalBest(pool, fen) {
+  if (typeof pool.evalPositionWithBest === 'function') {
+    const { cp, bestUci } = await pool.evalPositionWithBest(fen);
+    return { whitePovCp: cp, bestUci: bestUci ?? null };
+  }
+  return { whitePovCp: await pool.evalPosition(fen), bestUci: null };
+}
+
+/**
+ * D-10 cutoffs 2+3, run only when the position is NOT already chess.js-terminal.
+ * Returns `{ cutoff, whitePovCp, bestUci }`: `cutoff` is the adjudicated/ply-cap
+ * color-keyed result (or `null` to continue play — the pre-Phase-180 return
+ * value), and `whitePovCp`/`bestUci` are the post-move eval + engine best move
+ * surfaced to `onPly` for the Phase-180 near-free metrics (ACPL / blunder rate /
+ * SF-agreement). The eval is computed ONCE and reused for both the cutoff
+ * decision and the metric surface — no extra engine call.
+ */
 export async function evaluateNonTerminalCutoffsWhitePov({ pool, fen, ply, sustainState, maxPlies = PLY_CAP }) {
-  const whitePovCp = await pool.evalPosition(fen);
+  const { whitePovCp, bestUci } = await evalWhitePovWithOptionalBest(pool, fen);
 
   const sustainedFavoredSide = updateSustainState(sustainState, whitePovCp);
+  let cutoff = null;
   if (sustainedFavoredSide !== null) {
-    return adjudicatedResultWhitePov(sustainedFavoredSide, 'adjudicated_eval');
+    cutoff = adjudicatedResultWhitePov(sustainedFavoredSide, 'adjudicated_eval');
+  } else if (ply >= maxPlies) {
+    cutoff =
+      Math.abs(whitePovCp) < ADJUDICATION_CP_THRESHOLD
+        ? { result: 'draw', reason: 'ply_cap_draw' }
+        : adjudicatedResultWhitePov(whitePovCp > 0 ? 'w' : 'b', 'ply_cap_decisive');
   }
 
-  if (ply >= maxPlies) {
-    if (Math.abs(whitePovCp) < ADJUDICATION_CP_THRESHOLD) {
-      return { result: 'draw', reason: 'ply_cap_draw' };
-    }
-    const favoredSide = whitePovCp > 0 ? 'w' : 'b';
-    return adjudicatedResultWhitePov(favoredSide, 'ply_cap_decisive');
-  }
-
-  return null;
+  return { cutoff, whitePovCp, bestUci };
 }
 
 // ─── Move application ──────────────────────────────────────────────────────
@@ -111,7 +133,12 @@ export function applyUciMove(chess, uci) {
  * color). Each mover is `(fen, gameRng) => Promise<uci>`.
  *
  * `onPly` (optional, defaults to a no-op) fires after every applied move
- * with `{ ply, mover: 'white'|'black', uci, moveMs }`.
+ * with `{ ply, mover: 'white'|'black', uci, moveMs, evalCp, bestUci }`.
+ * `evalCp` is the POST-move white-POV cp eval and `bestUci` the engine's best
+ * move in the resulting position (both `null` on a terminal ply, where no
+ * adjudication eval runs, or when the pool has no `evalPositionWithBest`) —
+ * the Phase-180 near-free metric hook. It fires AFTER the adjudication eval so
+ * that eval can be surfaced without a second engine call.
  *
  * `maxPlies` (optional, defaults to `PLY_CAP`) is the D-10 cutoff-3 hard ply
  * cap for THIS GAME (not to be confused with a caller's own search-tree
@@ -152,14 +179,26 @@ export async function playTwoMoverGame({ Chess, pool, moverWhite, moverBlack, st
     }
     moveUcis.push(uci);
     ply++;
-    notifyPly({ ply, mover: whiteToMove ? 'white' : 'black', uci, moveMs });
+    const mover = whiteToMove ? 'white' : 'black';
 
     const terminal = classifyTerminalResultWhitePov(chess);
     if (terminal !== null) {
+      // Terminal ply: no adjudication eval runs, so the near-free eval/best are
+      // null. Still fire onPly so a caller's move log/counter stays complete.
+      notifyPly({ ply, mover, uci, moveMs, evalCp: null, bestUci: null });
       return { ...terminal, plies: ply, moveUcis };
     }
 
-    const cutoff = await evaluateNonTerminalCutoffsWhitePov({ pool, fen: chess.fen(), ply, sustainState, maxPlies });
+    const { cutoff, whitePovCp, bestUci } = await evaluateNonTerminalCutoffsWhitePov({
+      pool,
+      fen: chess.fen(),
+      ply,
+      sustainState,
+      maxPlies,
+    });
+    // Fire onPly AFTER the eval so the post-move cp + best move ride along (the
+    // Phase-180 near-free hook) without a second engine call.
+    notifyPly({ ply, mover, uci, moveMs, evalCp: whitePovCp, bestUci });
     if (cutoff !== null) {
       return { ...cutoff, plies: ply, moveUcis };
     }

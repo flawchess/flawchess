@@ -8,6 +8,9 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+- Dev: three-preset bot strength-curve calibration harness — builds on the Phase 173 internal anchor scale to measure each play-style preset (Human / Light / Deep) against the 10 fixed Maia/Stockfish anchors. A pure-logic two-pass scheduler (`scripts/lib/calibration-bot-cell-schedule.mjs`) locates each bot cell's rough rating then brackets it with a cross-family (Maia + Stockfish) anchor set on the measured `INTERNAL_RATING` scale; a single-parameter pinned-anchor MLE (`fit_bot_cell_rating` in `scripts/calibration_anchor_fit.py`) produces per-cell `rating_vs_maia`/`rating_vs_sf` with CIs and the cross-family style-inflation gap `G_preset`; the harness also records near-free per-game quality metrics (draw rate, length, ACPL, blunder rate, SF/Maia agreement) and a resumable raw-game ledger. Validated on a real-engine pilot; the full ~18-22h three-preset sweep is an operator-run step. Dev-only, not yet wired into the product (feeds a future preset-strength surface, SEED-104) (Phase 180).
+
 ### Fixed
 - Maia "Human Move Probability" card: when you played a non-best move, the engine's best move is now marked as a gem in the card *before* you play it, matching the gem badge that already appeared once the move was played on the board. The card also classifies that gem at the mover's rating-at-game-time (consistent with the board badge) instead of the ELO slider (Quick 260719-m5g).
 - Best/gem move analysis now reaches games it previously skipped forever: lichess-imported games (with their own evals) and guest games are now covered by the best-move pass. This also un-orphans games whose best-move pass was skipped during a Maia-outage window. Gem/great badges on lichess games are now computed against the engine's own evaluation (previously they could be over-awarded).

@@ -41,6 +41,7 @@
 - ✅ **v2.3 Bot Play** — Phases 166–172 (incl. 168.5, 169.5) (shipped 2026-07-15) — clocked play against the FlawChess engine on a new top-level **Bots** page (`selectBotMove` sample↔argmax blend), every finished game stored as a `platform='flawchess'` analyzable Library game, localStorage resume, a headless anchor-calibration harness for the first (ELO × play-style) strength map (SEED-091), and a background gem sweep + book markers on `/analysis` (SEED-106, Phase 172) — see [milestones/v2.3-ROADMAP.md](milestones/v2.3-ROADMAP.md)
 - ✅ **v2.4 Backend Gem & Great Detection** — Phases 174–177 (shipped 2026-07-17; Phase 177 folded in post-close 2026-07-18) — move gem/great move detection into the backend full-game analysis pass as stored first-class artifacts (backend Maia-3 inference at eval-apply) powering the analysis board plus a Library game filter, with opportunistic tier-4 lottery backfill (SEED-108, supersedes SEED-107); Phase 177 (SEED-111) then offloads the gem-candidate MultiPV-2 search onto the worker fleet — see [milestones/v2.4-ROADMAP.md](milestones/v2.4-ROADMAP.md)
 - ✅ **v2.5 Move Statistics** — Phases 178–179 (shipped 2026-07-18) — one uniform, lichess-compatible per-game accuracy & ACPL methodology written into repurposed canonical `games` columns so games are comparable across chess.com/lichess/self-analyzed (Phase 178, SEED-110), then a single shared **two-sided Move Stats** component (accuracy strip + a 7-category per-player move-classification table) replacing the badge rows on both the Library game card and the analysis board tags panel (Phase 179, SEED-112) — see [milestones/v2.5-ROADMAP.md](milestones/v2.5-ROADMAP.md)
+- ⏳ **v2.6 Bot Strength Calibration** — Phases 173, 180 (in progress) — put the bot's play-style presets on a measured strength scale without ever playing a human. Phase 173 (SEED-101, ✅ complete) round-robins the calibration anchors to build one internal rating scale (is the Maia-3 argmax ladder compressed?); Phase 180 (SEED-102, pending) measures the bot's three-preset (Human/Light/Deep) strength curves on that scale plus the cross-family style-inflation gap `G_preset`. Regroups the two standalone post-v2.3 calibration phases under one milestone.
 
 ## Progress
 
@@ -125,12 +126,14 @@
 | 170. localStorage Resume | 5/5 | Complete    | 2026-07-14 |
 | 171. Bots Page + Setup Screen + Nav | 10/10 | Complete    | 2026-07-14 |
 | 172. Background Gem Sweep on Analysis (SEED-106) | 5/5 | Complete    | 2026-07-14 |
+| 173. Anchor ladder self-calibration (SEED-101, v2.6) | 4/4 | Complete | 2026-07-15 |
 | 174. Backend Maia Inference + Best-Move Storage (spike-gated) | 7/7 | Complete    | 2026-07-16 |
 | 175. Board & Filter — Gem/Great Consumption | 6/6 | Complete | 2026-07-17 |
 | 176. Backfill | 1/1 | Complete    | 2026-07-17 |
 | 177. Worker-side MultiPV-2 gem-candidate searches (SEED-111, v2.4 addendum) | 5/5 | Complete | 2026-07-17 |
 | 178. Lichess-compatible accuracy & ACPL (computed columns) (v2.5) | 4/4 | Complete | 2026-07-18 |
 | 179. Two-sided Move Stats component (SEED-112, v2.5) | 3/3 | Complete | 2026-07-18 |
+| 180. Three-preset bot strength curves (SEED-102, v2.6) | 4/4 | ✅ Complete — D-02b pilot operator-approved 2026-07-19 (phase completes at pilot, D-01); Task 3 operator sweep deferred (off critical path) | — |
 
 ## Backlog
 
@@ -650,6 +653,10 @@ See [milestones/v2.2-ROADMAP.md](milestones/v2.2-ROADMAP.md) for full details.
 
 </details>
 
+## v2.6 Bot Strength Calibration (in progress)
+
+Put the bot's play-style presets on a measured strength scale, with no human ground truth. Phase 173 (SEED-101) built the internal anchor rating scale by round-robining the calibration anchors; Phase 180 (SEED-102) measures the bot's three-preset strength curves on that scale plus the cross-family style-inflation gap `G_preset`. Both were standalone post-v2.3 addendum phases; regrouped under this milestone 2026-07-19. Unblocks SEED-104.
+
 ### Phase 173: Anchor ladder self-calibration (SEED-101)
 
 **Goal:** Round-robin the calibration harness's anchors against each other (Maia-argmax rungs 700–2300, SF Skill 0/3/5/8/10, cross-family games included) and fit a logistic/BayesElo-style rating model over the game graph, placing every anchor on one common internal scale with measured spacing (scale fixed arbitrarily, e.g. maia1500 = 1500; explicitly NOT human ELO). Unblocks SEED-102 and answers whether the Maia-3 argmax ladder is compressed like Maia-1's.
@@ -672,3 +679,24 @@ Plans:
 - [x] 173-04-PLAN.md — Execute the real sweep + fit the internal scale + findings/compression verdict (D-11/D-12/D-13) [wave 3]
 
 *Phase 177 (Worker-side MultiPV-2 gem-candidate searches, SEED-111) folded into the **v2.4** milestone 2026-07-18 — full detail in [milestones/v2.4-ROADMAP.md](milestones/v2.4-ROADMAP.md).*
+
+### Phase 180: Three-preset bot strength curves on the internal anchor scale (SEED-102)
+
+**Goal:** Measure the bot's strength as a function of `bot_elo` at three blend presets (Human=0, Light=0.05, Deep=0.5) on the SEED-101/Phase-173 internal anchor scale. First integrate `calibration-internal-scale.mjs` into `calibration-harness.mjs` so anchors are windowed by `INTERNAL_RATING` (not nominal `bot_elo`, the bug that clamped the 2026-07-12 run), enable both anchor families (Maia-argmax rungs AND Stockfish skill levels), and run a locate-then-measure two-pass over a ~5×3 (bot_elo × blend) grid at 24–30 games/cell. Output each preset's per-`bot_elo` strength curve with per-cell CIs plus the load-bearing cross-family split `G_preset = rating_vs_Maia − rating_vs_SF` (the no-human style-inflation gap). Unblocks SEED-104.
+**Requirements**: TBD (none mapped; source seed .planning/seeds/SEED-102-iso-strength-surface-sweep.md)
+**Depends on:** Phase 173
+**Plans:** 3/4 plans executed
+
+Plans:
+**Wave 1**
+
+- [x] 180-01-PLAN.md — Pure-logic bot-cell two-pass scheduler module (internalRatingFor + locate/bracket) + engine-free .check.mjs (D-07)
+- [x] 180-02-PLAN.md — Extend calibration_anchor_fit.py: fit_bot_cell_rating, separate vs-Maia/vs-SF fits, G_preset, bot-curves JSON + pytest (D-06)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 180-03-PLAN.md — Harness internal-scale integration: 10-anchor default (both families), two-pass cell loop, beyond_ladder, raw-ledger resume, near-free metrics (D-04, D-07)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 180-04-PLAN.md — Logic-layer gate + real-engine pilot (D-02); folded-in HUMAN-UAT operator sweep + fitted curves + findings note (D-01, D-03, D-05) — **D-02a gate GREEN + D-02b pilot operator-APPROVED 2026-07-19 (both families fire, --resume byte-identical, fitter output well-formed). Phase completes at the pilot (D-01). Task 3 operator sweep off critical path, deferred.**

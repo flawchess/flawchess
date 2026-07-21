@@ -1,30 +1,30 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.5
-milestone_name: Move Statistics
-status: Awaiting next milestone
-stopped_at: "Milestone v2.5 closed and archived; tagged v2.5; deploying main → production"
-last_updated: "2026-07-18T16:42:39.649Z"
-last_activity: 2026-07-18
-last_activity_desc: Milestone v2.5 completed and archived
+milestone: v2.6
+milestone_name: Bot Strength Calibration
+current_phase: 180
+status: completed
+stopped_at: 180-04 paused at Task 2 blocking human-verify checkpoint (D-02a gate green; real-engine pilot pending operator)
+last_updated: "2026-07-19T20:49:09.306Z"
+last_activity: 2026-07-19
+last_activity_desc: Phase 180 marked complete
 progress:
   total_phases: 2
-  completed_phases: 2
-  total_plans: 7
-  completed_plans: 7
-  percent: 100
-current_phase: 179
-current_phase_name: two-sided-move-stats-component-seed-112
+  completed_phases: 1
+  total_plans: 4
+  completed_plans: 4
+  percent: 50
+current_phase_name: three-preset-bot-strength-curves
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: Milestone v2.5 complete
-Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-07-19 — Completed quick task 260719-fsz: best/gem move coverage for lichess-eval + guest games (two tier-4b coverage holes closed via self-healing lanes)
+Phase: 180 — COMPLETE
+Plan: 4 of 4 — paused at Task 2 blocking human-verify checkpoint
+Status: Phase 180 complete
+Last activity: 2026-07-19 — Phase 180 marked complete
 
 ## Project Reference
 
@@ -74,6 +74,8 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Milestone v2.6 Bot Strength Calibration created 2026-07-19 (explicit user request) — regroups the two standalone post-v2.3 calibration phases under one milestone: **Phase 173** (SEED-101, ✅ complete — internal anchor rating scale) and **Phase 180** (SEED-102, not planned — three-preset bot strength curves + cross-family `G_preset`). Both had been floating as bare `### Phase` headings after v2.5's close with no milestone parent. Changes: top Milestones bullet (⏳ in progress), a `## v2.6 …` grouping heading above Phase 173, a missing Progress-table row for 173 (172→174 gap filled), 180 row tagged v2.6, STATE milestone fields flipped v2.5→v2.6 / Awaiting→In progress. No `/gsd-new-milestone` requirements cycle run — this was a lightweight ROADMAP regroup, not a fresh requirements-gathering milestone. Unblocks SEED-104.
+- Phase 180 added 2026-07-19: Three-preset bot strength curves on the internal anchor scale (SEED-102) — measure the bot's strength vs `bot_elo` at three blend presets (Human=0 no-search, Light=0.05, Deep=0.5) on the SEED-101/Phase-173 internal anchor scale. Harness fixes first: integrate `calibration-internal-scale.mjs` into `calibration-harness.mjs` so anchors window by `INTERNAL_RATING` not nominal `bot_elo` (the bug that clamped the 2026-07-12 run), enable BOTH anchor families (Maia-argmax rungs + Stockfish skill levels), locate-then-measure two-pass over a ~5×3 grid at 24–30 games/cell, per-cell CIs. Load-bearing new output is the cross-family split `G_preset = rating_vs_Maia − rating_vs_SF` (the no-human style-inflation gap) — with a literature constant `C≈+40` it replaces the closed SEED-103 (play real humans). Unblocks SEED-104. **Numbering fix:** `phase.add` computed 174 (it scans only active `.planning/phases/`, where 173 is the max; 174–179 are archived into shipped v2.4/v2.5 milestones) — that would collide with shipped Phase 174, so renumbered to 180 by hand (dir renamed, ROADMAP heading + Progress row + goal patched). Standalone phase like 173/177; NOT yet assigned to a milestone (v2.5 closed, awaiting `/gsd-new-milestone`).
 - Phase 178 added 2026-07-18: Lichess-compatible accuracy & ACPL computed columns (SEED-110) — compute per-game accuracy + ACPL for every analyzed game with one uniform lichess formula (confirmed from scalachess/lila source: `-0.00368208` sigmoid, `103.1668100711649·exp(...)` per-move accuracy with the `+1` uncertainty bonus, windowed-stddev-weighted `(weightedMean+harmonicMean)/2` aggregation seeded at 15cp, ±1000 cp ceiling) into four NEW `games` columns, leaving the existing chess.com-accuracy / lichess-acpl columns untouched as a comparison/validation signal. Per-ply eval comes from whatever analyzed the game (`game_positions.eval_cp`), so the uniform formula reproduces lichess's own accuracy for lichess games (validation surface) and gives our-Stockfish-through-lichess-formula for chess.com/self-analyzed games. Single Python path shared by the live hook (full-eval completion) and a `scripts/backfill_*.py`; complete-sequence gate (eval holes → leave NULL, since the sliding volatility window silently distorts on a hole). Placed after Phase 177 in the v2.4 milestone; `phase.add` numbered 178 sequentially. Open plan-time questions in the seed: exact live-hook seam, `eval_cp` sign + post-move-shift mapping, terminal-ply/0–1-move handling, column names+migration (SMALLINT acpl / REAL accuracy), ~718k-game backfill batching.
 - Phase 177 added 2026-07-17: Worker-side MultiPV-2 gem-candidate searches, protocol v2 (SEED-111) — move the gem-candidate runner-up (MultiPV-2, 1M-node) searches off the prod server's Stockfish pool onto the workers (targeted re-search after the MultiPV-1 pass; submit schema v2 gated at the atomic lease; instrumented server fallback), so atomic-submit apply becomes pure Maia + classify + DB writes and tier-4b backfill throughput scales near-linearly with the fleet (measured 2026-07-17: server pool ~92% pinned, fleet engines ~32% idle, ~550 games/h). Standalone post-v2.4 phase (same pattern as Phase 173); numbered and placed manually — mature-ROADMAP `phase.add` misnumbers/misplaces (known behavior, see Phase 164/172 entries).
 - v2.4 Backend Gem & Great Detection roadmap created 2026-07-16 — 3 phases (174–176) in 2 dependency waves (A={174}, B={175,176}), continuing absolute numbering from Phase 173 (the v2.3 post-close anchor-calibration addendum). All 11 requirements (GEMS-01..07, BOARD-01/02, FILT-01, BACK-01) mapped 1:1, no orphans. Keystone Phase 174 (backend Maia inference + best-move storage, spike-gated on a Python encoding-parity check mirroring Phase 168's Maia-in-Node feasibility gate) gates everything else; Phases 175 (board + Library-filter frontend consumption) and 176 (opportunistic corpus backfill) depend only on 174, not on each other. UI hint on Phase 175.
@@ -347,6 +349,9 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase ?]: [Phase 179-01]: New GameFlawCard test cases added directly to TestGetLibraryGame (not a new test class), matching the existing normalized-rating-null-case pattern
 - [Phase ?]: [Phase 179-02]: moverColorAtPly added as a NEW export alongside isUserPly (not a replacement) — only Move Stats needs the literal-color variant; every other gem/great surface stays user-scoped per project_gem_great_user_scoping
 - [Phase ?]: [Phase 179-02]: severity glyphs for inaccuracy/mistake/blunder rendered via a local SeverityCategoryIcon reading SEVERITY_GLYPH directly in MoveStats.tsx, not SeverityGlyphIcon.tsx's exported Blunder/MistakeIcon (that file has no inaccuracy variant by design)
+- [Phase 180-01]: internalRatingFor defined+exported in the new calibration-bot-cell-schedule.mjs (not the harness) — keeps harness->schedule one-directional, avoids a circular import
+- [Phase 180-01]: scoreInInformativeBand+bandDistance wired into locateEstimate as load-bearing logic (informative-band preference + nearest-to-band single-anchor fallback), keeping the exact 5-export surface rather than a dead import
+- [Phase ?]: 180-03: harness selects anchors on the MEASURED internalRatingFor scale via the two-pass locate->measure loop (fixes the 2026-07-12 clamp); raw per-game ledger enables byte-identical --resume; six near-free metric columns + beyond_ladder emitted
 
 ### Pending Todos
 
@@ -438,13 +443,13 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 179 Plan 03: Tasks 1-2 complete, paused at Task 3 checkpoint:human-verify (gate=blocking)
+**Stopped at:** Completed 180-03-PLAN.md
 
-**Last session:** 2026-07-18T12:17:07.751Z
+**Last session:** 2026-07-19T16:34:13.450Z
 
 **Resume file:**
 
-.planning/phases/179-two-sided-move-stats-component-seed-112/179-03-PLAN.md
+None
 
 ## Performance Metrics
 
@@ -474,6 +479,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 | Phase 178 P04 | 12min | 3 tasks | 3 files |
 | Phase 179 P01 | 18min | 2 tasks | 4 files |
 | Phase 179 P02 | 30min | 2 tasks | 7 files |
+| Phase 180 P01 | 10min | 2 tasks | 2 files |
+| Phase 180 P02 | ~20m | 2 tasks | 2 files |
+| Phase 180 P03 | ~22min | 3 tasks | 5 files |
 
 ## Performance Metrics
 
