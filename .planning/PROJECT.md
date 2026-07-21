@@ -20,17 +20,24 @@ Mobile-first PWA, installable on iOS/Android, with drawer-based filter and bookm
 
 Users get position-precise WDL analysis (openings + endgames + time pressure) on top of their actual chess.com and lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report. No per-platform fragmentation, no manual opening tagging.
 
-## Current Milestone: None — v2.6 Bot Strength Calibration closed 2026-07-21
+## Current Milestone: v2.7 Bot Personas & Playstyle Layer
 
-**Latest closed:** v2.6 Bot Strength Calibration (Phases 173, 180, 181; tag v2.6). The bot's three play-style presets now sit on a measured strength scale derived without a single human game: an internal anchor rating scale from anchor-vs-anchor round-robin (Phase 173 — verdict: the Maia-3 argmax ladder is ~2.8x compressed vs its nominal labels), three measured strength curves on that scale plus the cross-family style-inflation gap `G_preset` (Phase 180), and a PAVA-fitted, lowest-`bot_elo`-wins inversion into per-preset `target_blitz_elo → bot_elo` lookups (Phase 181).
+**Goal:** Ship a roster of 24 named bot personas (4 styles × 6 ELO rungs) on the Bots page — each persona a complete pinned opponent (preset, calibrated ELO, style params, opening book, resign/draw-offer policy, avatar, bio) with honest strength labels from the v2.6 lookup.
 
-**Measured ranges (approximate blitz ELO, the honest numbers):** Human 900–1400, Light 1500–1600, Deep 1600–1800 — well below SEED-102's hoped ~2600 ceiling. Deep plateaus at ~1950–1970 internal; Light's raw curve is genuinely non-monotone (a real dip at bot_elo 1300, pooled into a PAVA plateau rather than smoothed away). Artifacts: `reports/data/bot-strength-lookup.json` + generated `frontend/src/generated/botStrengthCurves.ts`, both CI drift-checked.
+**Target features:**
+- 24-persona roster: The Attacker / The Trickster / The Grinder / The Solid Wall × rungs 800–1800 (200-ELO steps), every slot its own named character with avatar and bio
+- Style levers, built in perceptibility-per-effort order: per-persona opening books (Trickster reuses `frontend/src/lib/trollOpenings.ts`), draw contempt + resign/draw-offer policy, prior reweighting by move features (Human rungs, needs a cheap chess.js move classifier), score shaping + variance bonus in `selectBotMove` (Light/Deep rungs)
+- Per-persona ELO calibration on the Phase-173 internal anchor scale — labeled ELO = calibrated ELO, style-induced strength delta absorbed via per-persona offset (~24 cells × ~4 anchors × ~24 games ≈ 2 overnight Phase-180 harness runs)
+- Bots page persona grid UI; Custom mode keeps the raw (ELO, preset) knobs for power users
+- AI-generated avatar portrait set (one consistent style prompt, 24 characters, manually curated, committed static assets)
 
-**Dev-only:** nothing in the product reads the lookup yet, so v2.6 requires no production deploy. It is the intended single source of truth for every labeled bot-strength claim (custom bot builder, preset cards, SEED-098 personas).
-
-**Deferred:** the overnight off-grid confirmation run validating the inversion at 7 predicted cells (operator HUMAN-UAT; runbook committed in `reports/data/bot-strength-confirmation-predictions.json`).
-
-**Next:** `/gsd-new-milestone`. Leading candidates are wiring the lookup into the bot builder / preset cards (SEED-098 persona roster) and extending the anchor ladder above ~1900 to raise the Deep ceiling (SEED-114).
+**Key context (locked decisions from explore 2026-07-21, SEED-098):**
+- **Persona pins everything** — no persona × strength picker; the persona frame carries the personality (cf. chess.com bots)
+- Goal is **perceived** personality, not measurably distinct play — cheap levers, small strength deltas
+- Rung dictates preset per measured ranges: 800–1400 Human (prior-reweighting lever), 1600 Light/Deep, 1800 Deep (score-shaping lever); regime-agnostic levers (book, contempt, resign policy) carry style identity across all rungs
+- Strength honesty: the 800 rung is below the measured floor (~900 approx blitz); 1800 is exactly Deep's measured ceiling (SEED-114 ladder extension deliberately left dormant)
+- Invariants: style params are NEW fields (D-02/WR-04 — never the analysis-board `policyTemperature`), and bot-only inputs (BOT-03 — never derived from the player); `botSampling.ts` helpers stay pure, no new search machinery
+- Maia-3 sac-blindness is accepted flavor for the Attacker (don't market "sound attacks"); NOT in scope: positional-theme steering (WASM Stockfish returns one cp number)
 
 
 ## Requirements
@@ -537,6 +544,8 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
+*Last updated: 2026-07-21 — v2.7 Bot Personas & Playstyle Layer milestone opened (sourced from SEED-098, redesigned in the 2026-07-21 explore session on the shipped v2.6 substrate). A roster of 24 named bot personas (4 styles × 6 rungs 800–1800, persona-pins-everything) on the Bots page: per-persona opening books, draw contempt + resign policy, prior reweighting on Human rungs, score shaping on Light/Deep rungs, per-persona calibrated ELO via the Phase-180 harness on the Phase-173 anchor scale, AI-generated avatar set. Goal is perceived personality, not measurably distinct play. SEED-114 (ladder extension above ~1900) deliberately left dormant. (Prior footer below.)*
+
 *Last updated: 2026-07-21 after v2.6 Bot Strength Calibration milestone closed (Phases 173, 180, 181; 10 plans; tag v2.6). The bot's three play-style presets now sit on a measured strength scale built with no human ground truth: an internal anchor rating scale from anchor-vs-anchor round-robin (Phase 173, verdict: the Maia-3 argmax ladder is ~2.8x compressed), three measured strength curves plus the cross-family style gap `G_preset` (Phase 180), and a PAVA-fitted lowest-`bot_elo`-wins inversion into per-preset `target_blitz_elo → bot_elo` lookups (Phase 181). Dev-only — nothing reads the lookup yet, so no deploy; production is at #267. Thirty-nine milestones complete (v1.0–v2.6). Closed as `override_closeout` (35 deferred artifact items, no milestone audit — seed-driven, no mapped requirements). Also bundled: quick 260721-sgb (Maia ORT tensor disposal, SEED-113 app half). Next is `/gsd-new-milestone`. (Prior footer below.)*
 
 *Last updated: 2026-07-21 after Phase 181 (per-preset strength lookup curves, SEED-104) completed — the last planned phase of v2.6 Bot Strength Calibration. PAVA-fitted per-preset curves inverted into `target_blitz_elo → bot_elo` lookups with honest ranges (Human 900–1400, Light 1500–1600, Deep 1600–1800 approx-blitz), JSON + generated TS drift-checked in CI, 7 off-grid confirmation cells pending operator HUMAN-UAT. Milestone close is next after the confirmation run. (Prior footer below.)*

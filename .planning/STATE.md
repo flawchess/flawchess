@@ -1,30 +1,26 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.6
-milestone_name: Bot Strength Calibration
-status: Awaiting next milestone
-stopped_at: Completed 181-02-PLAN.md
-last_updated: "2026-07-21T18:51:35.261Z"
+milestone: v2.7
+milestone_name: Bot Personas & Playstyle Layer
+status: planning
+last_updated: "2026-07-21T19:00:52.026Z"
 last_activity: 2026-07-21
-last_activity_desc: Milestone v2.6 completed and archived
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 10
-  completed_plans: 10
-  percent: 100
-current_phase: 181
-current_phase_name: per-preset-strength-lookup-curves
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: Milestone v2.6 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-07-21 — Milestone v2.6 completed and archived
+Status: Defining requirements
+Last activity: 2026-07-21 — Milestone v2.7 started
 
 ## Project Reference
 
