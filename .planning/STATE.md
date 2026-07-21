@@ -3,11 +3,10 @@ gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: Bot Strength Calibration
 current_phase: 180
-status: completed
+status: Phase 180 shipped — squash-merged to main (5cc7013b)
 stopped_at: 180-04 paused at Task 2 blocking human-verify checkpoint (D-02a gate green; real-engine pilot pending operator)
-last_updated: "2026-07-19T20:49:09.306Z"
-last_activity: 2026-07-19
-last_activity_desc: Phase 180 marked complete
+last_updated: "2026-07-21T16:08:43.340Z"
+last_activity: 2026-07-21
 progress:
   total_phases: 2
   completed_phases: 1
@@ -15,6 +14,7 @@ progress:
   completed_plans: 4
   percent: 50
 current_phase_name: three-preset-bot-strength-curves
+last_activity_desc: Phase 180 marked complete
 ---
 
 # Project State: FlawChess
@@ -23,8 +23,8 @@ current_phase_name: three-preset-bot-strength-curves
 
 Phase: 180 — COMPLETE
 Plan: 4 of 4 — paused at Task 2 blocking human-verify checkpoint
-Status: Phase 180 complete
-Last activity: 2026-07-19 — Phase 180 marked complete
+Status: Phase 180 shipped — squash-merged to main (5cc7013b)
+Last activity: 2026-07-21
 
 ## Project Reference
 
