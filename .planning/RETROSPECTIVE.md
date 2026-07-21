@@ -4,6 +4,59 @@
 
 > Note: v1.18, v1.19, v1.20, v1.23, v1.25, v1.27, and v2.1–v2.5 closes did not add retrospective sections (only the ROADMAP archives + MILESTONES entries were written). Not backfilled here to avoid reconstructing reflections after the fact; their facts live in the corresponding `milestones/vX.Y-ROADMAP.md` and `MILESTONES.md`.
 
+## Milestone: v2.6 — Bot Strength Calibration
+
+**Shipped:** 2026-07-21 (dev-only; no production deploy — nothing reads the artifact yet)
+**Phases:** 3 (173, 180, 181) | **Plans:** 10
+**Timeline:** 2026-07-15 → 2026-07-21, spanning v2.4 and v2.5 (173 and 180 ran as standalone post-v2.3 addendum phases and were regrouped under this milestone on 2026-07-19; 181 was added 2026-07-21 once the sweep landed)
+
+### What Was Built
+
+A measurement milestone, not a feature milestone: the bot's three play-style presets were placed on a strength scale derived end to end without a single human game.
+
+- **Internal anchor scale (173, SEED-101)** — `scripts/calibration-anchor-ladder.mjs` round-robins all 10 anchors (Maia-argmax rungs 700–2300 + Stockfish skills 0/3/5/8/10, cross-family games included) under a probe→measure schedule with a connectivity guard and a resumable ledger; a stdlib Bradley-Terry fit (`scripts/calibration_anchor_fit.py`) places them on one common scale published as `INTERNAL_RATING`. Headline: the Maia-3 argmax ladder is **~2.8x compressed** relative to its nominal ELO labels, worst at the top.
+- **Three-preset strength curves (180, SEED-102)** — an engine-free two-pass bot-cell scheduler windows anchors by *measured* internal rating rather than nominal `bot_elo`; a single-parameter pinned-anchor MLE (`fit_bot_cell_rating`) yields per-cell `rating_vs_maia`/`rating_vs_sf` with CIs plus the cross-family style-inflation gap `G_preset`. 15 measured cells over a 5×3 grid, with near-free per-game quality metrics and a byte-identical `--resume`.
+- **Shipping lookup (181, SEED-104)** — hand-rolled PAVA isotonic regression per preset, pooled-`G` + `BLITZ_OFFSET_C = 40` conversion to approximate blitz ELO, lowest-`bot_elo`-wins inversion into 100-step lookups. Emits `reports/data/bot-strength-lookup.json` + generated `frontend/src/generated/botStrengthCurves.ts`, both CI drift-checked, plus 7 off-grid confirmation-cell predictions with inverse-variance-pooled 95% CI bands.
+
+### What Worked
+
+- **Building the measuring stick before measuring.** Phase 173 existed purely to answer "is the anchor ladder's own scale trustworthy?" — and the answer (no, ~2.8x compressed) invalidated the premise every earlier calibration attempt had run on. Ordering the scale phase ahead of the sweep phase is why 180's numbers mean anything.
+- **The measured scale caught a real bug the nominal scale hid.** 180's scheduler windows anchors by `INTERNAL_RATING`; doing so exposed that the 2026-07-12 run had been clamped by nominal-scale anchor selection. A correctness bug surfaced by changing the unit, not by reading the code.
+- **Refusing to smooth away inconvenient data.** Light's raw curve is non-monotone (a real dip at bot_elo 1300). PAVA pools it into a plateau; a spline would have interpolated it into a clean line that claims strength the measurements don't support. The lowest-`bot_elo`-wins inversion rule follows the same instinct: never claim a higher setting buys strength it doesn't.
+- **Engine-free logic gates before engine-hours.** Both 180 and 181 put the expensive machinery behind pure-logic modules with `node --test` / pytest coverage, so an ~18–22h sweep was never the thing that discovered a scheduler bug.
+- **Sibling generators importing, never re-implementing.** 181's confirmation-cell script imports Plan 01's PAVA fit rather than duplicating it, with an acceptance check that greps for the *absence* of a re-implemented `def isotonic_fit(`.
+
+### What Was Inefficient
+
+- **A multi-hour sweep was crashed repeatedly by a five-line bug.** Both blend>0 presets died every ~8.5–9h with an onnxruntime-web "memory access out of bounds" — undisposed ORT tensors leaking the wasm linear heap. The workaround (`bin/preset-supervisor.sh`, a resume-on-crash supervisor) was built and run before the root cause was found. The actual fix, applied at this milestone's close as quick 260721-sgb, is a `try`/`finally` with `dispose?.()`.
+- **Milestone boundaries were assigned retroactively.** 173 and 180 ran as standalone addendum phases attached to v2.3/v2.4, then were regrouped into v2.6 on 2026-07-19, and 181 was added two days later. The work was coherent; the planning record only caught up afterward, and the archival CLI still could not see Phase 173 (its directory had already been archived under `v2.3-phases/`), forcing a `--force` close.
+- **The measured outcome was well below the seed's expectation, and only the sweep could reveal it.** SEED-102 anticipated a ~2600 ceiling; Deep actually plateaus at ~1950–1970 internal (~1800 approx-blitz). Nothing was wasted, but a full milestone was spent to learn that the current ladder cannot reach the strength the product wants — now captured as SEED-114.
+- **The validating run is still outstanding.** The inversion's 7 off-grid confirmation cells are committed with runbook commands and a pass criterion, but the overnight run is deferred operator HUMAN-UAT. The artifact ships unconfirmed off-grid.
+
+### Patterns Established
+
+- **Calibrate the scale before measuring on it** — when the anchors are themselves models, treat their nominal labels as an unverified hypothesis and fit a scale first.
+- **Pure-logic scheduler modules with engine-free check suites** in front of any multi-hour engine run, so the expensive step never discovers a logic bug.
+- **Monotone fits over smooth fits for measured strength** — PAVA plateaus plus lowest-setting-wins inversion, so a flat region is reported as flat instead of interpolated into a promise.
+- **Sibling `gen_*.py` scripts import each other's public functions**, acceptance-gated by grepping for the absence of a duplicated definition.
+- **Ship measured ranges with the disclaimer attached to the artifact**, not to the reader's memory: the generated TS carries the approximate-ELO caveat and CI bands.
+
+### Key Lessons
+
+1. When your measuring instrument is a model, calibrate it first — the ~2.8x compression finding retroactively explains every earlier calibration that "looked wrong".
+2. Chase the crash to root cause before building a supervisor around it. A resume-on-crash wrapper for a 9-hour leak cost more than the five-line `dispose?.()` that fixed it.
+3. A monotone fit is an honesty mechanism, not just a smoothing choice — it is how "we measured a plateau" survives contact with a chart.
+4. Regrouping standalone phases into a milestone after the fact works for the narrative but not for the tooling: the archival CLI counts phases by directory, so already-archived phases read as unstarted.
+5. A milestone whose deliverable is a number can legitimately conclude "the number is worse than we hoped" — the value is that the ceiling is now measured rather than assumed.
+
+### Cost Observations
+
+- Three phases, 10 plans, 35 files (+4,248 / −126) across the 180+181 span. Zero new runtime dependencies, no schema, no migration, no API surface, no deploy.
+- The dominant cost was wall-clock engine time, not tokens: a ~18–22h three-preset sweep plus the Phase 173 anchor round-robin, run by the operator outside the planning loop, with resume-from-ledger doing the heavy lifting after each crash.
+- Closed as `override_closeout`: no milestone audit (seed-driven, no mapped requirements) and 35 deferred artifact items — mostly stale quick-task summaries from the May/June era rather than unfinished work.
+
+---
+
 ## Milestone: v2.0 — FlawChess Engine
 
 **Shipped:** 2026-07-09 (deployed to production incrementally during the milestone across releases #247, #248, #249)

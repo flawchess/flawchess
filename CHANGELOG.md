@@ -8,6 +8,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v2.6] Bot Strength Calibration — 2026-07-21
+
 ### Added
 - Dev: three-preset bot strength-curve calibration harness — builds on the Phase 173 internal anchor scale to measure each play-style preset (Human / Light / Deep) against the 10 fixed Maia/Stockfish anchors. A pure-logic two-pass scheduler (`scripts/lib/calibration-bot-cell-schedule.mjs`) locates each bot cell's rough rating then brackets it with a cross-family (Maia + Stockfish) anchor set on the measured `INTERNAL_RATING` scale; a single-parameter pinned-anchor MLE (`fit_bot_cell_rating` in `scripts/calibration_anchor_fit.py`) produces per-cell `rating_vs_maia`/`rating_vs_sf` with CIs and the cross-family style-inflation gap `G_preset`; the harness also records near-free per-game quality metrics (draw rate, length, ACPL, blunder rate, SF/Maia agreement) and a resumable raw-game ledger. Validated on a real-engine pilot; the full ~18-22h three-preset sweep is an operator-run step. Dev-only, not yet wired into the product (feeds a future preset-strength surface, SEED-104) (Phase 180).
 
@@ -1115,7 +1117,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.5...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.6...HEAD
+[v2.6]: https://github.com/flawchess/flawchess/compare/v2.5...v2.6
 [v2.5]: https://github.com/flawchess/flawchess/compare/v2.4...v2.5
 [v2.4]: https://github.com/flawchess/flawchess/compare/v2.3...v2.4
 [v2.3]: https://github.com/flawchess/flawchess/compare/v2.2...v2.3

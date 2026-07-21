@@ -1,5 +1,28 @@
 # Milestones: FlawChess
 
+## v2.6 Bot Strength Calibration (Shipped: 2026-07-21)
+
+**Phases completed:** 3 phases (173, 180, 181), 10 plans
+
+**Delivered:** the bot's three play-style presets now sit on a measured strength scale, derived end to end without a single human game — an internal anchor rating scale, three measured strength curves on it, and a shipping `target_blitz_elo → bot_elo` lookup with honest ranges.
+
+**Key accomplishments:**
+
+- **Phase 173 — Anchor ladder self-calibration (SEED-101):** a standalone probe→measure orchestrator (`scripts/calibration-anchor-ladder.mjs`, connectivity guard + resumable ledger) round-robins all 10 Maia-argmax and Stockfish-skill anchors against each other, and a stdlib Bradley-Terry fit (`scripts/calibration_anchor_fit.py`) places them on one common internal scale published as `INTERNAL_RATING`. Headline verdict: the Maia-3 argmax ladder is **~2.8x compressed** relative to its nominal ELO labels, worst at the top — the assumption that broke every earlier calibration attempt.
+- **Phase 180 — Three-preset strength curves (SEED-102):** an engine-free two-pass bot-cell scheduler windows anchors by *measured* `INTERNAL_RATING` rather than nominal `bot_elo`, fixing the bug that clamped the 2026-07-12 run. A single-parameter pinned-anchor MLE (`fit_bot_cell_rating`) yields per-cell `rating_vs_maia` / `rating_vs_sf` with CIs plus the load-bearing cross-family style-inflation gap `G_preset`. The harness runs both anchor families, records near-free per-game quality metrics (draw rate, length, ACPL, blunder rate, agreement), and resumes byte-identically from a raw ledger. Gate green + pilot operator-approved 2026-07-19; the full 15-cell sweep landed 2026-07-21.
+- **Phase 181 — Per-preset lookup curves (SEED-104):** `scripts/gen_bot_strength_curves.py` fits each preset with hand-rolled PAVA isotonic regression over its 5 measured points, converts to approximate human blitz ELO via the pooled per-preset style gap plus a shared `BLITZ_OFFSET_C = 40` literature constant, and inverts lowest-`bot_elo`-wins into 100-step lookups. Ships `reports/data/bot-strength-lookup.json` + a generated, knip-clean `frontend/src/generated/botStrengthCurves.ts`, both CI drift-checked. A sibling generator emits 7 off-grid confirmation-cell predictions with inverse-variance-pooled 95% CI bands and runbook commands.
+- **The honest numbers:** measured approximate-blitz ranges are **Human 900–1400, Light 1500–1600, Deep 1600–1800** — well below SEED-102's expected ~2600 ceiling. Deep plateaus at ~1950–1970 internal, and Light's raw curve is genuinely non-monotone (a real measured dip at bot_elo 1300, pooled into a PAVA plateau rather than smoothed away by a spline that would invent strength the data doesn't show). Raising the ceiling is captured as SEED-114.
+
+**Scope note:** dev-only. The lookup artifact ships and is CI drift-checked, but nothing in the product reads it yet — it is the single source of truth for future labeled bot-strength claims (custom bot builder, preset cards, SEED-098 personas). No production deploy is required for this milestone.
+
+**Known verification overrides:** closed as `override_closeout` — 35 open artifact items acknowledged and deferred (see STATE.md → Deferred Items). No v2.6 milestone audit was run: the milestone is seed-driven with no mapped requirements (all "TBD"), and both interactive phases carry a VERIFICATION.md.
+
+**Deferred (operator/HUMAN-UAT):** the overnight off-grid confirmation run validating the inversion at the 7 predicted cells; pass criterion and runbook commands are committed in `reports/data/bot-strength-confirmation-predictions.json`.
+
+**Also bundled:** quick 260721-sgb — dispose Maia ORT tensors in `maia-worker.js` (SEED-113 app half, closing the wasm-heap leak that crashed multi-hour calibration sweeps).
+
+---
+
 ## v2.5 Move Statistics (Shipped: 2026-07-18)
 
 **Phases completed:** 2 phases, 7 plans, 14 tasks

@@ -2,41 +2,56 @@
 gsd_state_version: 1.0
 milestone: v2.6
 milestone_name: Bot Strength Calibration
-current_phase: 181
-status: Phase 181 shipped — squash-merged to main (2999fd2f)
+status: Awaiting next milestone
 stopped_at: Completed 181-02-PLAN.md
-last_updated: "2026-07-21T18:28:01.882Z"
+last_updated: "2026-07-21T18:51:35.261Z"
 last_activity: 2026-07-21
+last_activity_desc: Milestone v2.6 completed and archived
 progress:
   total_phases: 3
-  completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
-  percent: 67
+  completed_phases: 3
+  total_plans: 10
+  completed_plans: 10
+  percent: 100
+current_phase: 181
 current_phase_name: per-preset-strength-lookup-curves
-last_activity_desc: Phase 181 complete
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 181
-Plan: Not started
-Status: Phase 181 shipped — squash-merged to main (2999fd2f)
-Last activity: 2026-07-21
+Phase: Milestone v2.6 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-07-21 — Milestone v2.6 completed and archived
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-07-14 after Phase 170)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: **v2.5 Move Statistics is closed (2026-07-18)** — one uniform lichess-compatible per-game accuracy & ACPL methodology written into repurposed canonical `games` columns (Phase 178), surfaced together with per-player per-category move counts in a single shared two-sided **Move Stats** component that replaces the badge rows on the Library game card and the analysis board tags panel (Phase 179). Both phases squash-merged to `main` behind the full pre-merge gate (backend 3510 passed; frontend 2310 passed); milestone archived, tagged v2.5, CHANGELOG promoted. **Deploying now** via `bin/deploy.sh` (main → production). Note: Phase 178 + the Best/Good move-tier UI quick already reached production via release #262 before close; this deploy ships the remaining v2.5 work (Phase 179 Move Stats component).
+Current focus: **v2.6 Bot Strength Calibration is closed (2026-07-21)** — the bot's three play-style presets now sit on a measured strength scale built with no human ground truth: an internal anchor rating scale from anchor-vs-anchor round-robin (Phase 173, verdict: the Maia-3 argmax ladder is ~2.8x compressed), three measured strength curves on that scale plus the cross-family style-gap `G_preset` (Phase 180), and a shipping per-preset `target_blitz_elo → bot_elo` lookup with measured ranges Human 900–1400 / Light 1500–1600 / Deep 1600–1800 (Phase 181). **Dev-only — nothing in the product reads the lookup yet, so no deploy is required for this milestone.** Production is at release #267; user-facing fixes accumulated since (three quicks incl. 260721-sgb Maia ORT disposal) ride the next release. Next: `/gsd-new-milestone` — likely candidates are wiring the lookup into the bot builder / preset cards (SEED-098 personas) and extending the ladder above ~1900 (SEED-114).
+
+## Deferred Items
+
+Items acknowledged and deferred at milestone close on 2026-07-21 (35 total, `override_closeout`):
+
+| Category | Count | Notes |
+|----------|-------|-------|
+| Debug sessions | 2 | `entry-submit-n-plus-1` (fixed_awaiting_deploy), `insights-diskfull-shm` (awaiting_human_verify) |
+| Quick tasks | 20 | 19 stale carryover (2026-05-31 → 2026-06-16 era, missing SUMMARY artifacts rather than unfinished work) + `260612-bdr` flagged missing |
+| Pending todos | 3 | `172-deferred-review-findings`, bitboard-storage note, WR-01 Tailwind axis label |
+| Dormant seeds | 10 | SEED-037/042/067/069/077/078/098/105/114 + others; all intentionally dormant, surfaced at `/gsd-new-milestone` |
+
+No v2.6 milestone audit was run: the milestone is seed-driven with no mapped requirements (all "TBD"), and both interactive phases carry a VERIFICATION.md.
 
 ## Milestone Progress
 
-Thirty-eight milestones complete (v1.0–v2.5). **v2.5 Move Statistics closed 2026-07-18.**
+Thirty-nine milestones complete (v1.0–v2.6). **v2.6 Bot Strength Calibration closed 2026-07-21.**
 
-v2.5 Move Statistics closed 2026-07-18 — 2 phases (178, 179), 7 plans. **Phase 178 (SEED-110)** repurposes the canonical `games` accuracy/ACPL columns (`white_accuracy`/`black_accuracy`/`white_acpl`/`black_acpl`) to hold values computed with lichess's exact formulas from the per-ply `game_positions` evals, preserving the original platform-provided numbers in new `*_imported` columns for validation; one shared `accuracy_acpl.py` compute path runs both at the live hook (`_classify_and_fill_oracle`) and in `scripts/backfill_accuracy_acpl.py`, gated on a complete per-ply eval sequence (holes → NULL); `inaccuracies`/`mistakes`/`blunders` untouched (D-04). **Phase 179 (SEED-112)** replaced the badge rows on the Library game card and analysis board tags panel with a single shared two-sided **Move Stats** component (accuracy strip with player-color-coded cells + a 7-category Gem/Great/Best/Good/Inaccuracy/Mistake/Blunder per-player count table): a backend/API surfacing task (both-color accuracy onto `GameFlawCard`; NO new engine scoring — deliberately shows the opponent's positive tiers) plus a frontend redesign extracting `MoveStats.tsx` with per-cell (category × side) cycling, a user-scoped filter ring on player cells only, and mobile compact/expand, deleting `GemGreatBadge.tsx` knip-clean. Archived to milestones/v2.5-ROADMAP.md + v2.5-REQUIREMENTS.md, phases to milestones/v2.5-phases/, CHANGELOG promoted, tagged v2.5. **Deploying now** via `bin/deploy.sh`; Phase 178 + the Best/Good UI already reached production via #262 pre-close.
+v2.6 Bot Strength Calibration closed 2026-07-21 — 3 phases (173, 180, 181), 10 plans. Put the bot's play-style presets on a measured strength scale end to end without a single human game. **Phase 173 (SEED-101)** round-robins all 10 Maia-argmax + Stockfish-skill anchors against each other (`scripts/calibration-anchor-ladder.mjs`, probe→measure with connectivity guard + resumable ledger) and fits a stdlib Bradley-Terry model (`scripts/calibration_anchor_fit.py`) placing them on one internal scale published as `INTERNAL_RATING`; headline verdict: the Maia-3 argmax ladder is **~2.8x compressed** vs its nominal labels, worst at the top. **Phase 180 (SEED-102)** measures the three presets (Human=0, Light=0.05, Deep=0.5) on that scale via an engine-free two-pass bot-cell scheduler that windows anchors by *measured* `INTERNAL_RATING` (fixing the nominal-scale bug that clamped the 2026-07-12 run) plus a single-parameter pinned-anchor MLE (`fit_bot_cell_rating`) yielding per-cell `rating_vs_maia`/`rating_vs_sf` with CIs and the style-inflation gap `G_preset`; gate green + pilot operator-approved 2026-07-19, full 15-cell sweep landed 2026-07-21. **Phase 181 (SEED-104)** fits each preset with hand-rolled PAVA isotonic regression, converts to approximate blitz ELO via pooled `G_preset` + shared `BLITZ_OFFSET_C = 40`, and inverts lowest-`bot_elo`-wins into 100-step lookups: `reports/data/bot-strength-lookup.json` + generated `frontend/src/generated/botStrengthCurves.ts` (both CI drift-checked), plus 7 off-grid confirmation-cell predictions with inverse-variance-pooled 95% CI bands. **The honest numbers: Human 900–1400, Light 1500–1600, Deep 1600–1800** — far below the seed's expected ~2600; Deep plateaus at ~1950–1970 internal and Light's raw curve is genuinely non-monotone (real measured dip at bot_elo 1300, pooled into a PAVA plateau rather than smoothed). Raising the ceiling captured as SEED-114. Also bundled: quick 260721-sgb (dispose Maia ORT tensors in `maia-worker.js`, SEED-113 app half). Archived to milestones/v2.6-ROADMAP.md, phases to milestones/v2.6-phases/, CHANGELOG promoted, tagged v2.6. **Dev-only, no deploy** — nothing reads the lookup yet. Deferred: the overnight off-grid confirmation run (operator HUMAN-UAT; runbook committed in the prediction JSON).
+
+v2.5 Move Statistics closed 2026-07-18 — 2 phases (178, 179), 7 plans. **Phase 178 (SEED-110)** repurposes the canonical `games` accuracy/ACPL columns (`white_accuracy`/`black_accuracy`/`white_acpl`/`black_acpl`) to hold values computed with lichess's exact formulas from the per-ply `game_positions` evals, preserving the original platform-provided numbers in new `*_imported` columns for validation; one shared `accuracy_acpl.py` compute path runs both at the live hook (`_classify_and_fill_oracle`) and in `scripts/backfill_accuracy_acpl.py`, gated on a complete per-ply eval sequence (holes → NULL); `inaccuracies`/`mistakes`/`blunders` untouched (D-04). **Phase 179 (SEED-112)** replaced the badge rows on the Library game card and analysis board tags panel with a single shared two-sided **Move Stats** component (accuracy strip with player-color-coded cells + a 7-category Gem/Great/Best/Good/Inaccuracy/Mistake/Blunder per-player count table): a backend/API surfacing task (both-color accuracy onto `GameFlawCard`; NO new engine scoring — deliberately shows the opponent's positive tiers) plus a frontend redesign extracting `MoveStats.tsx` with per-cell (category × side) cycling, a user-scoped filter ring on player cells only, and mobile compact/expand, deleting `GemGreatBadge.tsx` knip-clean. Archived to milestones/v2.5-ROADMAP.md + v2.5-REQUIREMENTS.md, phases to milestones/v2.5-phases/, CHANGELOG promoted, tagged v2.5. **Deployed to production** — confirmed at v2.6 close: Phase 178 + the Best/Good UI landed pre-close via #262, and `origin/production` has since advanced through #265/#266/#267.
 
 v2.4 Backend Gem & Great Detection closed 2026-07-17 — 3 phases (174, 175, 176), 14 plans, plus a post-close addendum Phase 177 (SEED-111, 5 plans) folded into the milestone 2026-07-18 (worker-side MultiPV-2 gem-candidate offload; shipped to production via #261, not in the `v2.4` git tag). Gem/great move detection moved off the brittle client-side sweep into the backend full-game analysis pass as stored first-class `game_best_moves` rows (peers to `game_flaws`). Phase 174 (spike-gated) ports the client's 12-plane board→tensor encoding to Python, runs Maia-3 (`onnxruntime`, isolated `maia-inference` uv group) at eval-apply pinned to the mover's lichess-blitz-equivalent rating (clamped [600, 2600]), and stores a candidate row (`maia_prob` + best/second eval as floats, never a boolean) for each out-of-book played==best ply clearing `INACCURACY_DROP` (0.05) — so Gem (`≤0.20`) / Great (`(0.20, 0.50]`) thresholds retune with zero re-analysis; two SEED-109 gap-closure plans retired the lichess-eval special-case lane + backfilled the existing lichess-eval games. Phase 175 has the analysis board + eval chart + move-cycling badges + Library "has gem"/"has great" filter read the stored rows directly (client `useGemSweep` demoted to a free-play-only fallback; SEED-107 closed as superseded). Phase 176 added a backend-only tier-4b ES-weighted backfill lottery (`_claim_tier4_bestmove`) with a Maia-absence guardrail, gated behind `BEST_MOVE_BACKFILL_ENABLED` (default off). Also bundled: a CI fix installing the `maia-inference` group so `ty` resolves the onnxruntime/numpy imports. Archived to milestones/v2.4-ROADMAP.md, phases to milestones/v2.4-phases/, CHANGELOG promoted, tagged v2.4. **Deploy pending** via `bin/deploy.sh`; the tier-4b backfill flag stays OFF (D-05) and is flipped on in prod as a separately observed step post-deploy.
 
