@@ -151,3 +151,20 @@ describe('GameResultDialog — persona-named copy + Rematch/New opponent (Phase 
     expect(onRematch).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('GameResultDialog — footer stacks the actions (Quick 260722-nlm)', () => {
+  it('never lays the actions out in a row at sm+, so a long "Rematch <Persona>" cannot overflow the dialog', () => {
+    renderDialog({ personaName: 'Miko the Magpie' });
+
+    const footer = document.querySelector('[data-slot="dialog-footer"]');
+    if (footer === null) throw new Error('expected a dialog footer');
+    const classes = footer.className.split(/\s+/);
+
+    // tailwind-merge must have dropped the shared footer's row defaults —
+    // if `sm:flex-row` survives, the three actions bleed outside the
+    // `sm:max-w-sm` dialog border (the reported bug).
+    expect(classes).not.toContain('sm:flex-row');
+    expect(classes).not.toContain('sm:justify-end');
+    expect(classes).toContain('sm:flex-col-reverse');
+  });
+});

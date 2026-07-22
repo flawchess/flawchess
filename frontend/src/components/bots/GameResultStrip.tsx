@@ -58,7 +58,10 @@ export function GameResultStrip({
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-sm font-medium text-foreground">{title}</span>
-        <div className="flex items-center gap-2">
+        {/* Quick 260722-nlm: `flex-wrap` mirrors the dialog's stacking fix —
+            the same three actions overflowed this non-wrapping row on narrow
+            screens (this IS the mobile/dismissed surface). */}
+        <div className="flex flex-wrap items-center gap-2">
           {/* D-21 RETIRED (Quick 260714-rj5) — mirrors GameResultDialog's
               comment: the Analyze CTA is now store-gated because it needs the
               server-assigned game_id to enqueue tier-1 analysis and open the

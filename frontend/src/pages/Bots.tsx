@@ -677,7 +677,11 @@ export default function BotsPage(): ReactElement {
     // Start call the same `handleStart` — no parallel start path.
     return (
       <>
-        <PersonaGrid onSelectPersona={setDetailPersona} onSelectCustom={() => setShowCustomSetup(true)} />
+        <PersonaGrid
+          onSelectPersona={setDetailPersona}
+          onSelectCustom={() => setShowCustomSetup(true)}
+          playerRating={profile?.lichess_blitz_equivalent_rating ?? null}
+        />
         <PersonaDetailSurface
           persona={detailPersona}
           ownerKey={ownerKey}

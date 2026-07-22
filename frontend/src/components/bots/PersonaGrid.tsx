@@ -10,6 +10,7 @@
 import type { ReactElement } from 'react';
 import { PersonaCard } from '@/components/bots/PersonaCard';
 import { Button } from '@/components/ui/button';
+import { InfoPopover } from '@/components/ui/info-popover';
 import {
   STYLE_SECTION_ORDER,
   personasForSection,
@@ -31,9 +32,18 @@ const STYLE_ACCENT: Record<Style, string> = {
 export interface PersonaGridProps {
   onSelectPersona: (persona: Persona) => void;
   onSelectCustom: () => void;
+  /** Quick 260722-nlm: the player's lichess-blitz-equivalent rating (Phase 171
+   * D-07 anchor), resolved by `Bots.tsx` from its single `useUserProfile()`
+   * call. `null` for guests / users with no anchor — the reference line is
+   * then omitted entirely rather than showing a placeholder. */
+  playerRating: number | null;
 }
 
-export function PersonaGrid({ onSelectPersona, onSelectCustom }: PersonaGridProps): ReactElement {
+export function PersonaGrid({
+  onSelectPersona,
+  onSelectCustom,
+  playerRating,
+}: PersonaGridProps): ReactElement {
   return (
     // Bottom-nav clearance (mirrors SetupScreen.tsx's root pb-20 sm:pb-4
     // pattern — this is now the Bots page's default setup-phase root).
@@ -41,6 +51,27 @@ export function PersonaGrid({ onSelectPersona, onSelectCustom }: PersonaGridProp
       data-testid="bots-persona-grid"
       className="mx-auto flex max-w-2xl flex-col gap-6 p-4 pb-20 sm:pb-4"
     >
+      {/* Strength reference for picking an opponent: the persona cards all
+          carry a `~ELO` label, but without the player's own number those
+          labels have nothing to be "similar" to. */}
+      {playerRating !== null && (
+        <div className="-mb-3 flex items-center gap-1" data-testid="bots-player-rating">
+          <p className="text-sm text-muted-foreground">
+            Your estimated blitz rating:{' '}
+            <span className="font-semibold text-foreground">{`~${Math.round(playerRating)}`}</span>
+          </p>
+          <InfoPopover
+            ariaLabel="About your estimated blitz rating"
+            testId="bots-player-rating-info"
+          >
+            <p>
+              Estimated from your imported games and converted to an approximate
+              Lichess blitz scale. Pick a bot near this number for an even game.
+            </p>
+          </InfoPopover>
+        </div>
+      )}
+
       {STYLE_SECTION_ORDER.map((style) => (
         <section key={style} data-testid={`bots-persona-section-${style.toLowerCase()}`}>
           <h2

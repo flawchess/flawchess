@@ -26,7 +26,7 @@
 import * as React from 'react';
 import type { ReactElement } from 'react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
-import { Search } from 'lucide-react';
+import { HelpCircle } from 'lucide-react';
 
 import { PERSONA_CALIBRATION_MEASURED } from '@/generated/personaCalibration';
 import { cn } from '@/lib/utils';
@@ -68,7 +68,7 @@ export function PersonaEloDisclosurePopover({
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
         >
-          <Search className="h-4 w-4" />
+          <HelpCircle className="h-4 w-4" />
         </span>
       </PopoverPrimitive.Trigger>
       <PopoverPrimitive.Portal>

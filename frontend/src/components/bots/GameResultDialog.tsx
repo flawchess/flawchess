@@ -122,7 +122,14 @@ export function GameResultDialog({
             )}
           </div>
         )}
-        <DialogFooter>
+        {/* Quick 260722-nlm: the shared footer's `sm:flex-row` put all three
+            actions on one line, and "Analyze this game" + "New opponent" +
+            "Rematch <Persona>" overflow the dialog's `sm:max-w-sm` width —
+            the buttons visibly bled outside the dialog border. Persona names
+            are variable-length, so a row layout can never be made safe;
+            keeping `flex-col-reverse` at every breakpoint stacks them (primary
+            on top, Analyze at the bottom) and lets each stretch full width. */}
+        <DialogFooter className="sm:flex-col-reverse sm:justify-start">
           {/* D-21 RETIRED (Quick 260714-rj5): the Phase 169 invariant "the
               Analyze CTA is never gated on the store" no longer holds. Analyze
               now needs the server-assigned game_id (from the finish-time
