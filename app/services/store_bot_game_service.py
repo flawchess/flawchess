@@ -19,6 +19,7 @@ from app.schemas.bots import RatingSource, StoreBotGameRequest, StoreBotGameResp
 from app.services.bot_game_pgn import build_bot_game_url, stamp_bot_game_headers
 from app.services.import_service import _flush_batch
 from app.services.normalization import (
+    FLAWCHESS_BOT_USERNAME,
     FLAWCHESS_PLAYER_FALLBACK_USERNAME,
     normalize_flawchess_game,
     parse_time_control,
@@ -129,15 +130,22 @@ async def store_bot_game(
     user = await user_repository.get_profile(session, user_id)
     player_username = resolve_player_username(user.lichess_username, user.chess_com_username)
 
+    # quick-260722-ucc: persona games store the persona's own name + CALIBRATED
+    # ELO instead of the generic "FlawChess Bot" / the raw engine dial. Both
+    # fields are None for a Custom-mode game, preserving current behavior.
+    bot_username = request.persona_name or FLAWCHESS_BOT_USERNAME
+    bot_rating = request.bot_rating if request.bot_rating is not None else request.bot_elo
+
     normalized = normalize_flawchess_game(
         request.pgn,
         request.game_uuid,
         user_id,
         request.user_color,
-        request.bot_elo,
+        bot_rating,
         player_rating,
         player_username,
         request.tc_preset,
+        bot_username=bot_username,
     )
     if normalized is None:
         return None  # STORE-02/D-15 — expected, no Sentry capture, no commit

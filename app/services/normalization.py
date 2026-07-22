@@ -545,6 +545,8 @@ def normalize_flawchess_game(
     player_rating: int | None,
     player_username: str,
     tc_str: str,
+    *,
+    bot_username: str = FLAWCHESS_BOT_USERNAME,
 ) -> NormalizedGame | None:
     """Build a NormalizedGame from a client-POSTed finished bot-game PGN (D-14).
 
@@ -569,8 +571,11 @@ def normalize_flawchess_game(
             idempotency via uq_games_user_platform_game_id, D-11).
         user_id: Internal user PK (server-derived from the JWT upstream, D-13).
         user_color: The human player's color in this game.
-        bot_elo: The bot's nominal ELO (placed in the opponent-color rating
-            column, D-08).
+        bot_elo: The bot's rating for the opponent-color rating column (D-08).
+            For a Custom-mode game this is the raw engine dial; for a persona
+            game the caller (store_bot_game_service) passes the persona's
+            CALIBRATED ELO instead (quick-260722-ucc) — this function itself
+            has no opinion, it just places whatever value it receives.
         player_rating: Server-computed converted rating for the player-color
             column, or None when the user has no anchor for this TC bucket
             (D-05/D-06).
@@ -579,11 +584,14 @@ def normalize_flawchess_game(
             service.resolve_player_username: lichess_username -> chess_com_
             username -> "You"). This function never resolves it itself — it
             stays a pure PGN normalizer with no session and no User access.
-            The bot-color column always stays FLAWCHESS_BOT_USERNAME.
         tc_str: Time-control string in the same base_seconds+increment_seconds
             format parse_time_control/parse_base_and_increment already expect
             everywhere else in this module (e.g. "180+2") — NOT a minutes-based
             display label.
+        bot_username: The bot-color username column value (keyword-only,
+            default FLAWCHESS_BOT_USERNAME). The caller passes the persona's
+            name for a persona game (quick-260722-ucc); any other caller is
+            unaffected by the default.
 
     Returns:
         A NormalizedGame with platform="flawchess", rated=False,
@@ -666,11 +674,11 @@ def normalize_flawchess_game(
     # player username is the caller-resolved platform username (or "You").
     if user_color == "white":
         white_username = player_username
-        black_username = FLAWCHESS_BOT_USERNAME
+        black_username = bot_username
         white_rating = player_rating
         black_rating = bot_elo
     else:
-        white_username = FLAWCHESS_BOT_USERNAME
+        white_username = bot_username
         black_username = player_username
         white_rating = bot_elo
         black_rating = player_rating

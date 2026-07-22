@@ -76,6 +76,8 @@ def _make_request(
     pgn: str = _PGN_CHECKMATE,
     user_color: Literal["white", "black"] = "white",
     bot_elo: int = _TEST_BOT_ELO,
+    persona_name: str | None = None,
+    bot_rating: int | None = None,
 ) -> StoreBotGameRequest:
     return StoreBotGameRequest(
         game_uuid=game_uuid or str(uuid.uuid4()),
@@ -84,6 +86,8 @@ def _make_request(
         bot_elo=bot_elo,
         play_style_blend=0.5,
         tc_preset=_TC_STR,
+        persona_name=persona_name,
+        bot_rating=bot_rating,
     )
 
 
@@ -500,3 +504,60 @@ class TestPgnHeaders:
         assert reread_game is not None
         assert reread_game.pgn == first_pgn
         assert reread_game.platform_url == first_platform_url
+
+
+class TestPersonaNameAndCalibratedRating:
+    """quick-260722-ucc: a persona game stores the persona's name + calibrated
+    ELO (not "FlawChess Bot" / the raw engine dial) on both the PGN and the
+    games columns; nominal_elo (the engine dial) is unchanged either way.
+    """
+
+    async def test_persona_game_stamps_name_and_calibrated_rating(
+        self, db_session: AsyncSession
+    ) -> None:
+        user_id = _TEST_USER_ID + 17
+        await ensure_test_user(db_session, user_id)
+
+        response = await store_bot_game(
+            db_session,
+            user_id,
+            _make_request(persona_name="Ziggy the Wasp", bot_rating=800),
+        )
+        assert response is not None
+
+        game = await db_session.get(Game, response.game_id)
+        assert game is not None
+        # user_color defaults to "white" in _make_request -> bot is black.
+        assert game.black_username == "Ziggy the Wasp"
+        assert game.black_rating == 800
+        headers = _reparse_stored_pgn(game.pgn)
+        assert headers["Black"] == "Ziggy the Wasp"
+        assert headers["BlackElo"] == "800"
+        assert headers["BlackTitle"] == "BOT"
+
+        bot_settings = (
+            await db_session.execute(
+                select(BotGameSettings).where(BotGameSettings.game_id == response.game_id)
+            )
+        ).scalar_one()
+        # nominal_elo stays the raw engine dial (request.bot_elo), never the
+        # calibrated rating.
+        assert bot_settings.nominal_elo == _TEST_BOT_ELO
+
+    async def test_custom_mode_game_keeps_flawchess_bot_and_raw_bot_elo(
+        self, db_session: AsyncSession
+    ) -> None:
+        """persona_name=None, bot_rating=None -> unchanged current behavior."""
+        user_id = _TEST_USER_ID + 18
+        await ensure_test_user(db_session, user_id)
+
+        response = await store_bot_game(db_session, user_id, _make_request())
+        assert response is not None
+
+        game = await db_session.get(Game, response.game_id)
+        assert game is not None
+        assert game.black_username == FLAWCHESS_BOT_USERNAME
+        assert game.black_rating == _TEST_BOT_ELO
+        headers = _reparse_stored_pgn(game.pgn)
+        assert headers["Black"] == FLAWCHESS_BOT_USERNAME
+        assert headers["BlackElo"] == str(_TEST_BOT_ELO)
