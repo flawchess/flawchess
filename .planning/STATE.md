@@ -2,25 +2,29 @@
 gsd_state_version: 1.0
 milestone: v2.7
 milestone_name: Bot Personas & Playstyle Layer
+current_phase: 183
+current_phase_name: Persona Registry & Bots Page
 status: planning
-last_updated: "2026-07-21T19:00:52.026Z"
-last_activity: 2026-07-21
+stopped_at: Completed 182-07-PLAN.md
+last_updated: "2026-07-21T23:15:59.126Z"
+last_activity: 2026-07-22
+last_activity_desc: Phase 182 complete, transitioned to Phase 183
 progress:
   total_phases: 3
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  completed_phases: 1
+  total_plans: 7
+  completed_plans: 7
+  percent: 33
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 182 of 3 (Style Levers)
-Plan: — (not yet planned)
+Phase: 183 — Persona Registry & Bots Page
+Plan: Not started
 Status: Ready to plan
-Last activity: 2026-07-21 — ROADMAP.md created: 3 phases (182 Style Levers, 183 Persona Registry & Bots Page, 184 Persona Calibration & Strength Honesty), 13/13 requirements mapped, no orphans
+Last activity: 2026-07-22 — Phase 182 complete, transitioned to Phase 183
 
 ## Project Reference
 
@@ -370,6 +374,19 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase ?]: D-12 narrow-range fallback: select_confirmation_targets uses a 1/3-2/3 interior split (not GRID_STEP-aligned) when a preset's shipped range spans fewer than 3 GRID_STEPs (Light/Deep's real, narrower-than-hoped ranges)
 - [Phase ?]: D-13 interpolated CI: inverse-variance-pooled center widened by the between-cell rating_vs_maia spread, so a merged PAVA plateau's CI is always at least as wide as either individual member cell's own CI; proven revert-provable
 - [Phase ?]: SEED-104 marked complete per D-11 split delivery (mirrors Phase 180 D-01) — interactive scope fully delivered; overnight confirmation game-play run is operator HUMAN-UAT, tracked in the findings note placeholder
+- [Phase ?]: [Phase 182-01]: Combined Task 1 (types.ts) + Task 2 (treeCommon.ts wiring + tests) into one commit — RankedLine.childScoreSpread is a required field, so Task 1 alone would fail its own tsc -b gate
+- [Phase ?]: [Phase 182-01]: No pre-existing buildRankedLines/buildSnapshot test fixtures existed in treeCommon.test.ts; built minimal self-referential TestNode fixture helpers inline
+- [Phase ?]: 182-02: RESIGN_MIN_FULLMOVE=20 and RESIGN_HYSTERESIS_TURNS=4 set as hand-tuned defaults; wouldBotResign kept as 5 positional args mirroring wouldBotAcceptDraw's convention
+- [Phase 182-03]: styleLinesFor accessor implemented in Task 1's commit alongside the curated data (not deferred to Task 2) since it is tightly coupled to the 8 Set constants; Task 2 added the accompanying corpus-membership test
+- [Phase ?]: [Phase 182-04]: BotStyleParams field names (threshold/hysteresisFloor/contempt/bookBoost/scoreBonus/varianceBonus/featureMultipliers) fixed to match Plan 02's botDrawGate.ts wouldBotResign params and Plans 05/06/07's prose access patterns
+- [Phase ?]: [Phase 182-04]: applyStyleScoreShaping takes only (lines, style), no fen param — flat scalar bonus + childScoreSpread variance term only, no move-feature classification in score shaping
+- [Phase ?]: [Phase 182-04]: styleBookWeighting is a 3-arg factory (styleLinePrefixes, moveHistorySan, boostMultiplier) matching the plan's action text and Plan 07's call-site prose
+- [Phase ?]: 182-05: Wall's isExchange multiplier tuned 1.5 -> 4.0 (with a companion isPawnStorm 0.5 -> 0.3 retune) after the D-11 measurement TSV showed the initial magnitude produced a negative exchange-frequency delta
+- [Phase ?]: 182-05: STYLE-01/STYLE-03 requirements left Pending (not marked complete) - this plan ships BOT_STYLE_BUNDLES data + measurement evidence, but Plans 06/07 wire it into actual selectBotMove/useBotGame runtime behavior
+- [Phase ?]: [Phase 182-06]: STYLE-03/STYLE-05 left Pending (partial delivery) - selectBotMove.ts wires both regime hooks and BotSettings.style, but no real bot game currently sets settings.style until Plan 07's useBotGame.ts/BotGameSettings.style wiring lands
+- [Phase ?]: [Phase 182-06]: Fixed selectBotMove.test.ts's makeLine helper to include RankedLine's required childScoreSpread field (defaulted to null) - was silently missing since Plan 04 added the field, uncaught because *.test.ts is outside tsc -b's build
+- [Phase ?]: [Phase 182-07]: BotGameSettings.style is typed as bare BotStyleParams (matching selectBotMove's shape) with a styleNameFor() reverse-lookup bridge against BOT_STYLE_BUNDLES for the book-line seam that needs a Style name
+- [Phase ?]: [Phase 182-07]: Threaded settings.style into the selectBotMove() search call at runBotTurn (Rule 2 deviation) -- completes STYLE-03/04's live-play wiring per 182-06-SUMMARY.md's flagged gap
 
 ### Pending Todos
 
@@ -461,9 +478,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Completed 181-02-PLAN.md
+**Stopped at:** Completed 182-07-PLAN.md
 
-**Last session:** 2026-07-21T17:58:42.371Z
+**Last session:** 2026-07-21T22:43:52.293Z
 
 **Resume file:**
 
@@ -501,6 +518,13 @@ None
 | Phase 180 P02 | ~20m | 2 tasks | 2 files |
 | Phase 180 P03 | ~22min | 3 tasks | 5 files |
 | Phase 181 P02 | 20min | 2 tasks | 4 files |
+| Phase 182 P01 | 25 min | 2 tasks | 3 files |
+| Phase 182 P02 | 15min | 2 tasks | 2 files |
+| Phase 182 P03 | 20min | 2 tasks | 2 files |
+| Phase 182 P04 | 50min | 3 tasks | 3 files |
+| Phase 182 P05 | 55min | 3 tasks | 4 files |
+| Phase 182 P06 | 25min | 2 tasks | 2 files |
+| Phase 182 P07 | 55min | 3 tasks | 2 files |
 
 ## Performance Metrics
 

@@ -103,6 +103,7 @@ import { detectEndCondition, type BotGameOutcome } from '@/lib/botGameEnd';
 import {
   canOfferDraw as canOfferDrawGate,
   wouldBotAcceptDraw,
+  wouldBotResign,
   DRAW_OFFER_COOLDOWN_MOVES,
 } from '@/lib/botDrawGate';
 import { annotateClock, finalizeBotPgn, toBackendTcStr } from '@/lib/botGamePgn';
@@ -111,6 +112,9 @@ import { createWorkerPool, type WorkerPool } from '@/lib/engine/workerPool';
 import { createMaiaQueue, type MaiaQueue } from '@/lib/engine/maiaQueue';
 import { selectBotMove, type BotMoveDeps } from '@/lib/engine/selectBotMove';
 import { selectBookMove } from '@/lib/engine/openingBook';
+import { styleBookWeighting, type BotStyleParams } from '@/lib/engine/botStyle';
+import { styleLinesFor, type Style } from '@/lib/engine/styleOpeningLines';
+import { BOT_STYLE_BUNDLES } from '@/lib/engine/botStyleBundles';
 import { loadOpeningPrefixSet } from '@/lib/openings';
 import { createDeadlineSearch, BOT_MIN_SEARCH_NODES } from '@/lib/engine/deadlineSearch';
 import {
@@ -173,6 +177,19 @@ export interface BotGameSettings {
   incrementSeconds: number;
   /** Which color the human player is playing. */
   userColor: MoverColor;
+  /**
+   * Optional bot-only style layer (Phase 182, STYLE-01/02/05). The SAME bare
+   * `BotStyleParams` object `selectBotMove.ts`'s `BotSettings.style` accepts
+   * (Plan 06) — never player-derived (BOT-03), never a style NAME (D-01).
+   * `undefined` runs today's exact code path everywhere it is consumed: the
+   * default `maiaPolicyWeighting` book, the Phase 169 draw gate (contempt 0),
+   * and the bot never resigns (D-03). Threaded into three seams below: the
+   * book-weighting call (`resolveBookMove`), the draw-accept contempt shift,
+   * and a new resign-hysteresis check — plus `selectBotMove`'s own
+   * `style`-gated regime hooks (Plan 06), reached via the same object at the
+   * `runBotTurn` search call site.
+   */
+  style?: BotStyleParams;
 }
 
 /** The full state + callback contract this hook exposes. Serializable aside
@@ -280,6 +297,29 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
+ * Reverse-resolves a bare `BotStyleParams` object to its `Style` key by
+ * identity against `BOT_STYLE_BUNDLES` (Phase 182, STYLE-01/Task 1).
+ * `BotGameSettings.style` is deliberately typed as the SAME numeric-only
+ * `BotStyleParams` shape `selectBotMove.ts`'s `BotSettings.style` accepts
+ * (D-01: no style names at the engine layer) — but
+ * `styleOpeningLines.ts`'s curated book-line sets are keyed by `Style` name,
+ * not by the params object itself (per `botStyleBundles.ts`'s own doc
+ * comment: "a bundle references its curated book set by key membership, not
+ * by embedding the set here"). `resolveBookMove` needs this one-hop lookup
+ * to find the right book for a given style. Every style a real caller
+ * supplies is one of the 4 exported `BOT_STYLE_BUNDLES` singleton objects
+ * (D-02) — reference equality is exact for those. A `BotStyleParams` value
+ * NOT sourced from a bundle (a future Custom-mode literal, PERS-04, out of
+ * scope this phase) resolves to `undefined`, and the caller falls back to
+ * the default `maiaPolicyWeighting` — a safe, silent degrade, never a crash.
+ */
+function styleNameFor(style: BotStyleParams): Style | undefined {
+  return (Object.keys(BOT_STYLE_BUNDLES) as Style[]).find(
+    (name) => BOT_STYLE_BUNDLES[name] === style,
+  );
+}
+
+/**
  * Assembles the deps object passed to `selectBotMove` for one bot turn — the
  * ONLY wiring point where the D-16 think deadline reaches the engine, via
  * the injectable `deps.search` seam (Phase 166 D-08). Extracted out of
@@ -317,6 +357,7 @@ async function resolveBookMove(
   chess: Chess,
   botElo: number,
   policy: MaiaQueue['policy'],
+  style: BotStyleParams | undefined,
 ): Promise<string | null> {
   let prefixSet: ReadonlySet<string>;
   try {
@@ -340,8 +381,23 @@ async function resolveBookMove(
 
   const rawPolicy = await policy(chess.fen(), botElo, side);
 
-  // Default weighting only (D-06: the BookWeightingFn seam exists for a future
-  // persona, which this phase deliberately does not build).
+  // Phase 182, STYLE-01/D-03/D-06: a style's curated book lines get their
+  // base Maia weight boosted (styleBookWeighting composes over
+  // maiaPolicyWeighting, never replaces it). `moveHistorySan` is curried in
+  // at construction (Pitfall 2 — BookWeightingFn's own signature has no
+  // history slot); the color set is picked from `chess.turn()` (Open
+  // Question #3). `undefined` style, or a style with no resolvable name
+  // (styleNameFor), falls through to selectBookMove's own default
+  // `maiaPolicyWeighting` — byte-identical to the pre-182 behavior (D-03).
+  const styleName = style ? styleNameFor(style) : undefined;
+  if (style && styleName) {
+    const weighting = styleBookWeighting(
+      styleLinesFor(styleName, side),
+      moveHistorySan,
+      style.bookBoost,
+    );
+    return selectBookMove(moveHistorySan, legalMoves, prefixSet, rawPolicy, Math.random, weighting);
+  }
   return selectBookMove(moveHistorySan, legalMoves, prefixSet, rawPolicy, Math.random);
 }
 
@@ -469,6 +525,19 @@ export function useBotGame(
    * writes need a fresh read of this value from an event handler that does
    * not want to depend on (and re-run per) the state itself. */
   const movesSinceLastDeclineRef = useRef(resume?.movesSinceLastDecline ?? DRAW_OFFER_COOLDOWN_MOVES);
+  /** D-08 (Phase 182, STYLE-02): per-game hysteresis counter for a styled
+   * bot's resign check — consecutive OWN turns (not plies) whose FRESH
+   * practicalScore graded at/below `settings.style.threshold`. Mirrors the
+   * ref-latch pattern every other per-game counter in this hook uses
+   * (Pitfall 3, 182-RESEARCH.md): incremented/reset ONLY inside the same
+   * `pool.grade(...).then(...)` callback that already updates
+   * `lastRootPracticalScoreRef` below — never derived fresh per call, never
+   * module-level. Reset to 0 in `newGame()` alongside the other latches. For
+   * an unstyled game (`settings.style` undefined) this counter is never even
+   * touched — `wouldBotResign` is only ever called inside the
+   * `settings.style` guard (D-03). No resume-seed needed: a resumed game's
+   * fresh hysteresis state naturally rebuilds itself as the bot plays on. */
+  const consecutiveLowScoreTurnsRef = useRef(0);
 
   // ─── State ─────────────────────────────────────────────────────────────────
 
@@ -744,17 +813,6 @@ export function useBotGame(
       // though the `return` a few lines above already makes the terminal
       // case unreachable here, this guard is kept explicit per the plan's
       // stated invariant rather than relying on that ordering alone.
-      // Phase 170 D-01 (primary write path): a snapshot after every
-      // committed move, no fold needed — `clockBaseRef.current[mover]`
-      // above is already the settled post-move, post-increment value by
-      // this point. Skipped for a dormant resumed game (`!live`, so a
-      // stale re-serialization can never overwrite the source snapshot
-      // before the user confirms) and for a terminal move (`outcomeRef` is
-      // already set by the `finalizeGame` call above, whose own
-      // enqueue-and-clear owns persistence for a finished game instead) —
-      // though the `return` a few lines above already makes the terminal
-      // case unreachable here, this guard is kept explicit per the plan's
-      // stated invariant rather than relying on that ordering alone.
       if (live && !outcomeRef.current) {
         writeSnapshot(ownerKey, buildSnapshot(clockBaseRef.current));
       }
@@ -860,7 +918,10 @@ export function useBotGame(
     // nothing this game (e.g. it is still in book, which runs zero Stockfish
     // evals) and `wouldBotAcceptDraw` refuses outright — the bot never accepts
     // a draw off an evaluation it did not run.
-    const accepts = wouldBotAcceptDraw(lastRootPracticalScoreRef.current, chessRef.current);
+    // D-09 (Phase 182, STYLE-02): undefined style ⇒ contempt 0 ⇒ the exact
+    // pre-182 accept target (0.5), unchanged for every unstyled caller.
+    const contempt = settings.style?.contempt ?? 0;
+    const accepts = wouldBotAcceptDraw(lastRootPracticalScoreRef.current, chessRef.current, contempt);
     if (accepts) {
       finalizeGame({ reason: 'draw', drawReason: 'agreement' });
     } else {
@@ -868,7 +929,7 @@ export function useBotGame(
       playSound('draw-declined');
     }
     setDrawOfferPending(false);
-  }, [drawOfferPending, finalizeGame]);
+  }, [drawOfferPending, finalizeGame, settings.style]);
 
   const offerDraw = useCallback((): void => {
     if (outcome) return;
@@ -887,6 +948,9 @@ export function useBotGame(
     outcomeRef.current = null;
     // Back to the not-yet-evaluated sentinel — a fresh game has evaluated nothing.
     lastRootPracticalScoreRef.current = null;
+    // D-08 (Phase 182, STYLE-02): a fresh game's resign hysteresis starts
+    // clean — never leaks a prior game's consecutive-low-score streak.
+    consecutiveLowScoreTurnsRef.current = 0;
     // SC4: a fresh game re-enters the book.
     hasLeftBookRef.current = false;
     hasFiredLowTimeRef.current = false;
@@ -1145,13 +1209,22 @@ export function useBotGame(
         // for the rest of the game.
         const resolveMove = async (): Promise<{ uci: string; fromBook: boolean }> => {
           if (!hasLeftBookRef.current) {
-            const bookUci = await resolveBookMove(chess, settings.botElo, queue.policy);
+            const bookUci = await resolveBookMove(
+              chess,
+              settings.botElo,
+              queue.policy,
+              settings.style,
+            );
             if (bookUci !== null) return { uci: bookUci, fromBook: true };
             hasLeftBookRef.current = true;
           }
+          // STYLE-03/04 (Plan 06's selectBotMove.ts hooks): the SAME
+          // settings.style object also reaches the prior-reweighting
+          // (blend<=0) and score-shaping (search) regime branches there —
+          // undefined here is byte-identical to omitting the field (D-03).
           const searchedUci = await selectBotMove(
             fen,
-            { elo: settings.botElo, blend: settings.blend, budget },
+            { elo: settings.botElo, blend: settings.blend, budget, style: settings.style },
             deps,
             controller.signal,
           );
@@ -1251,13 +1324,50 @@ export function useBotGame(
         pool
           .grade(fen, [uci])
           .then((gradeMap) => {
+            // CR-02 fix (182-REVIEW.md): unlike the search/resolveMove()
+            // path above (which checks controller.signal.aborted per the
+            // D-17 two-signal contract), this continuation had NO staleness
+            // guard — a pool.grade() RPC can resolve arbitrarily late, so a
+            // grade issued for a discarded turn could land after
+            // newGame()/resign() mint a new game, corrupting
+            // lastRootPracticalScoreRef/consecutiveLowScoreTurnsRef with a
+            // stale score and even spuriously resigning the NEW game.
+            // `controller` is the SAME AbortController newGame()/resign()
+            // (via finalizeGame) already abort — bail out if it no longer
+            // matches the live turn.
+            if (controller.signal.aborted) return;
             const grade = gradeMap.get(uci);
             if (grade) {
-              lastRootPracticalScoreRef.current = evalToExpectedScore(
-                grade.evalCp,
-                grade.evalMate,
-                mover,
-              );
+              const score = evalToExpectedScore(grade.evalCp, grade.evalMate, mover);
+              lastRootPracticalScoreRef.current = score;
+
+              // D-07/D-08 (Phase 182, STYLE-02): the resign hysteresis
+              // counter and wouldBotResign check live entirely inside this
+              // `settings.style` guard (D-03: unstyled games never touch
+              // either) and are updated ONLY from a FRESH grade this same
+              // callback just computed — never from a stale prior-turn
+              // score (Task 3's "increments only on a fresh at/below-
+              // threshold score" must-have). Mirrors the ref-latch pattern
+              // (Pitfall 3): mutated here, reset only in newGame().
+              if (settings.style) {
+                if (score <= settings.style.threshold) {
+                  consecutiveLowScoreTurnsRef.current += 1;
+                } else {
+                  consecutiveLowScoreTurnsRef.current = 0;
+                }
+                const resigns = wouldBotResign(
+                  score,
+                  settings.style.threshold,
+                  consecutiveLowScoreTurnsRef.current,
+                  settings.style.hysteresisFloor,
+                  chessRef.current,
+                );
+                if (resigns) {
+                  // The bot resigns — the user wins (mirrors resign()'s own
+                  // winner logic, the confirmed-resign callback above).
+                  finalizeGame({ reason: 'resignation', winner: settings.userColor });
+                }
+              }
             }
           })
           .catch(() => {
@@ -1269,9 +1379,12 @@ export function useBotGame(
       settings.botElo,
       settings.blend,
       settings.incrementSeconds,
+      settings.style,
+      settings.userColor,
       chargeableElapsedMs,
       flagIfOutOfTime,
       commitMove,
+      finalizeGame,
     ],
   );
 

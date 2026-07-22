@@ -115,6 +115,18 @@ export interface RankedLine {
   modalStats: ModalPlyStat[];
   /** Total expansion visits attributed to this root candidate. */
   visits: number;
+  /**
+   * Variance/"sharpness" proxy for this root candidate (Phase 182 D-10): the
+   * max−min spread across the candidate's OWN children's backed-up expected
+   * scores (i.e. the grandchildren of the search root) — the per-candidate
+   * signal STYLE-04's variance-preference lever reads. `null` when the
+   * candidate has 0 or 1 own children (no meaningful spread to report; never
+   * 0-as-a-signal for that empty case). Only comparable within a single
+   * `SearchBudget.concurrency` level — differing concurrency can grow
+   * different subtrees under the same root candidate, so values are not
+   * meant to be compared across concurrency settings.
+   */
+  childScoreSpread: number | null;
 }
 
 /** The output a `SearchRunner` reports — both at completion and per `onSnapshot` tick. */

@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- Dev: bot play-style levers — four named styles (Attacker, Trickster, Grinder, Wall) can now steer a bot's play through new bot-only parameters: a curated per-style opening book, signed draw contempt plus a hysteresis-gated resign policy, Maia policy reweighting by move features (checks, captures, pawn advances, trades) on the Human rungs, and additive score shaping with a variance preference on the Light/Deep rungs. A headless measurement script (`scripts/style-lever-measurement.mjs`) backs the per-style tuning with committed evidence. Every lever is optional and gated: with no style set, bot play and Custom mode are byte-identical to before. Dev-only, nothing selects a style yet (the Bots page personas land in Phase 183) (Phase 182).
+
 ## [v2.6] Bot Strength Calibration — 2026-07-21
 
 ### Added

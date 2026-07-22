@@ -43,6 +43,7 @@ import type { EngineProviders, SearchBudget, RankedLine } from './types';
 import type { SearchRunner } from './guardrail';
 import { mctsSearch } from './mctsSearch';
 import { samplePolicy, sampleRankedLines, argmaxLine, fallbackMove } from './botSampling';
+import { applyStylePriorReweighting, applyStyleScoreShaping, type BotStyleParams } from './botStyle';
 
 /** D-05: linear τ(b) = TAU_MAX * (1 - b) softmax-sharpness curve ceiling. */
 export const TAU_MAX = 0.1;
@@ -75,6 +76,20 @@ export interface BotSettings {
    * error, not a silent pass-through into the bot's search budget.
    */
   budget: Omit<SearchBudget, 'elo' | 'policyTemperature'>;
+  /**
+   * Optional style layer (Phase 182, STYLE-05) — a NEW field kept SEPARATE
+   * from `budget` (deliberately not folded into the `Omit<>` above, so the
+   * D-02/WR-04 `policyTemperature` exclusion stays structural). `undefined`
+   * runs today's exact code path with no reweight/shaping call (D-03) — this
+   * is both the calibration baseline and the Custom-mode default. When
+   * present, it hooks two disjoint regime branches on disjoint data shapes
+   * (Pitfall 5 — never merged into one call):
+   *   - `blend<=0`: `applyStylePriorReweighting` runs between
+   *     `deps.policy()` and `samplePolicy`.
+   *   - the search branch: `applyStyleScoreShaping` runs between `search()`
+   *     and `argmaxLine`/`sampleRankedLines`.
+   */
+  style?: BotStyleParams;
 }
 
 /** Injected providers + RNG (D-08/D-10) so this module stays provider-agnostic. */
@@ -113,7 +128,12 @@ export async function selectBotMove(
   if (blend <= 0) {
     // D-03/BOT-02: exactly ONE policy() call, no MCTS.
     const rawPolicy = await deps.policy(fen, settings.elo, side);
-    const sampled = samplePolicy(rawPolicy, deps.rng);
+    // STYLE-03/D-03: undefined style leaves rawPolicy untouched — byte-
+    // identical to the pre-style code path.
+    const styledPolicy = settings.style
+      ? applyStylePriorReweighting(rawPolicy, fen, settings.style)
+      : rawPolicy;
+    const sampled = samplePolicy(styledPolicy, deps.rng);
     return sampled ?? fallbackMove(fen, deps.rng);
   }
 
@@ -129,7 +149,11 @@ export async function selectBotMove(
   // (Pitfall 5 — mctsSearch's SearchRunner requires a real function, never
   // undefined).
   const snapshot = await search(fen, budget, deps, () => {}, signal);
-  const lines: RankedLine[] = snapshot.rankedLines;
+  // STYLE-04/D-03: undefined style leaves snapshot.rankedLines untouched —
+  // byte-identical to the pre-style code path.
+  const lines: RankedLine[] = settings.style
+    ? applyStyleScoreShaping(snapshot.rankedLines, settings.style)
+    : snapshot.rankedLines;
 
   if (blend >= 1) {
     // D-06: deterministic argmax over practicalScore, UCI-ascending tie-break.

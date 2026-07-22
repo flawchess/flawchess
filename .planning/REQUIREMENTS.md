@@ -15,11 +15,11 @@
 
 ### Style Levers (STYLE)
 
-- [ ] **STYLE-01**: Each persona plays a style-specific opening book (Trickster reuses `frontend/src/lib/trollOpenings.ts`; other styles get curated books)
-- [ ] **STYLE-02**: Personas apply style-specific draw contempt and resign/draw-offer policy (e.g. Grinder never resigns early)
-- [ ] **STYLE-03**: Human-rung personas (800–1400) get prior reweighting — Maia policy probs multiplied by move-feature weights via a cheap chess.js move classifier (checks, captures, pawn storms, exchanges)
-- [ ] **STYLE-04**: Light/Deep-rung personas (1600–1800) get score shaping — style bonus/malus on `practicalScore` before the existing softmax in `selectBotMove`, including variance preference from MCTS child-score spread
-- [ ] **STYLE-05**: Style params are NEW bot-only fields (never the analysis-board `policyTemperature` per D-02/WR-04, never derived from the player per BOT-03); `botSampling.ts` helpers stay pure
+- [x] **STYLE-01**: Each persona plays a style-specific opening book (Trickster reuses `frontend/src/lib/trollOpenings.ts`; other styles get curated books)
+- [x] **STYLE-02**: Personas apply style-specific draw contempt and resign/draw-offer policy (e.g. Grinder never resigns early)
+- [x] **STYLE-03**: Human-rung personas (800–1400) get prior reweighting — Maia policy probs multiplied by move-feature weights via a cheap chess.js move classifier (checks, captures, pawn storms, exchanges)
+- [x] **STYLE-04**: Light/Deep-rung personas (1600–1800) get score shaping — style bonus/malus on `practicalScore` before the existing softmax in `selectBotMove`, including variance preference from MCTS child-score spread
+- [x] **STYLE-05**: Style params are NEW bot-only fields (never the analysis-board `policyTemperature` per D-02/WR-04, never derived from the player per BOT-03); `botSampling.ts` helpers stay pure
 
 ### Calibration (CAL — continues from v2.3's CAL-03)
 
@@ -57,17 +57,18 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PERS-02 | Phase 183 | Pending |
 | PERS-03 | Phase 183 | Pending |
 | PERS-04 | Phase 183 | Pending |
-| STYLE-01 | Phase 182 | Pending |
-| STYLE-02 | Phase 182 | Pending |
-| STYLE-03 | Phase 182 | Pending |
-| STYLE-04 | Phase 182 | Pending |
-| STYLE-05 | Phase 182 | Pending |
+| STYLE-01 | Phase 182 | Complete |
+| STYLE-02 | Phase 182 | Complete |
+| STYLE-03 | Phase 182 | Complete |
+| STYLE-04 | Phase 182 | Complete |
+| STYLE-05 | Phase 182 | Complete |
 | CAL-04 | Phase 184 | Pending |
 | CAL-05 | Phase 184 | Pending |
 | AVAT-01 | Phase 183 | Pending |
 | AVAT-02 | Phase 183 | Pending |
 
 **Coverage:**
+
 - v2.7 requirements: 13 total
 - Mapped to phases: 13
 - Unmapped: 0 ✓

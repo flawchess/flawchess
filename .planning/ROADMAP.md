@@ -136,7 +136,7 @@
 | 179. Two-sided Move Stats component (SEED-112, v2.5) | 3/3 | Complete | 2026-07-18 |
 | 180. Three-preset bot strength curves (SEED-102, v2.6) | 4/4 | Complete — D-02b pilot operator-approved 2026-07-19 (phase completes at pilot, D-01); Task 3 operator sweep landed 2026-07-21 | 2026-07-21 |
 | 181. Per-preset strength lookup curves (SEED-104, v2.6) | 2/2 | Complete | 2026-07-21 |
-| 182. Style Levers (SEED-098, v2.7) | 0/0 | Not started | - |
+| 182. Style Levers (SEED-098, v2.7) | 7/7 | Complete | 2026-07-22 |
 | 183. Persona Registry & Bots Page (SEED-098, v2.7) | 0/0 | Not started | - |
 | 184. Persona Calibration & Strength Honesty (SEED-098, v2.7) | 0/0 | Not started | - |
 
@@ -677,12 +677,11 @@ See [milestones/v2.6-ROADMAP.md](milestones/v2.6-ROADMAP.md) for full phase deta
 
 </details>
 
-
 ## v2.7 Bot Personas & Playstyle Layer (in progress)
 
 Add distinct playstyles to the bot, surfaced as a roster of 24 named bot personas (4 styles × 6 ELO rungs, 800–1800) on the Bots page. Each persona is a complete pinned opponent — preset, calibrated ELO, style params, opening book, resign/draw-offer policy, avatar, bio — with no persona × strength picker (the persona frame carries the personality, cf. chess.com bots); Custom mode keeps the raw (ELO, preset) knobs for power users. Built in perceptibility-per-effort order: style levers first (opening books, draw contempt/resign policy, prior reweighting, score shaping), then the persona registry + Bots page UI (shipped with provisional ELO labels, independently playable), then per-persona harness calibration (~2 overnight Phase-180 harness runs) finalizes the labels. Sourced from SEED-098 (explore sessions 2026-07-12 + 2026-07-21) on the v2.6 measured-strength substrate (Phases 173/180/181).
 
-- [ ] **Phase 182: Style Levers** - Opening books, draw contempt/resign policy, prior reweighting (Human rungs), and score shaping (Light/Deep rungs) as new bot-only style params
+- [x] **Phase 182: Style Levers** - Opening books, draw contempt/resign policy, prior reweighting (Human rungs), and score shaping (Light/Deep rungs) as new bot-only style params (completed 2026-07-22)
 - [ ] **Phase 183: Persona Registry & Bots Page** - 24-persona typed registry + Bots page grid UI + avatars/bios, provisional ELO labels
 - [ ] **Phase 184: Persona Calibration & Strength Honesty** - Per-persona harness-measured ELO offsets replace the provisional labels, with floor/ceiling honesty constraints
 
@@ -699,7 +698,25 @@ Add distinct playstyles to the bot, surfaced as a roster of 24 named bot persona
   4. At Light/Deep-rung strength (1600-1800), a bot's chosen move reflects its style's score bonus/malus and variance preference (e.g. a high-variance style more often takes the wider-spread child) added to `practicalScore` before the existing softmax in `selectBotMove`.
   5. `botSampling.ts` helpers stay pure (no new search machinery) and no style param is derived from the player's rating or play — style params are entirely new bot-only fields, never the analysis-board `policyTemperature`.
 
-**Plans**: TBD
+**Plans**: 7/7 plans executed
+**Wave 1**
+
+- [x] 182-01-PLAN.md — RankedLine.childScoreSpread variance signal (types.ts + treeCommon.ts)
+- [x] 182-02-PLAN.md — Draw contempt + pure wouldBotResign predicate (botDrawGate.ts)
+- [x] 182-03-PLAN.md — Curated per-style×color opening-line prefix sets (styleOpeningLines.ts)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 182-04-PLAN.md — botStyle engine helpers: classifier + prior reweighting + score shaping + book weighting
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 182-05-PLAN.md — 4 named style bundles + D-11 measurement script + D-12 hand-tuning
+- [x] 182-06-PLAN.md — selectBotMove wiring: BotSettings.style + two regime hooks
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 182-07-PLAN.md — useBotGame integration: style book, contempt, resign hysteresis
 
 ### Phase 183: Persona Registry & Bots Page
 
