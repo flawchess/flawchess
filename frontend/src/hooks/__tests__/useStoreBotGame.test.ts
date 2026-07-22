@@ -156,6 +156,8 @@ describe('tc-preset', () => {
       play_style_blend: 0.75,
       tc_preset: '300+3',
       persona_id: null,
+      persona_name: null,
+      bot_rating: null,
     });
   });
 
@@ -171,6 +173,39 @@ describe('tc-preset', () => {
     const entry = makeEntry({ settings: makeSettings({}) });
 
     expect(toStoreRequest(entry).persona_id).toBeNull();
+  });
+
+  // quick-260722-ucc: persona_name/bot_rating are re-derived from personaId
+  // at store time via personaForId, not carried on PendingStoreEntry itself.
+  it('sends the persona name + calibrated ELO (not botElo) for a persona game', () => {
+    const entry = makeEntry({
+      settings: makeSettings({ personaId: 'attacker-800', botElo: 1100 }),
+    });
+    const request = toStoreRequest(entry);
+
+    expect(request.persona_name).toBe('Ziggy the Wasp');
+    // attacker-800's calibratedLabel is "~800" — the honest calibrated ELO,
+    // NOT the 1100 engine dial passed as settings.botElo/bot_elo.
+    expect(request.bot_rating).toBe(800);
+    expect(request.bot_elo).toBe(1100);
+  });
+
+  it('sends persona_name=null and bot_rating=null for a Custom-mode game (no personaId)', () => {
+    const entry = makeEntry({ settings: makeSettings({}) });
+    const request = toStoreRequest(entry);
+
+    expect(request.persona_name).toBeNull();
+    expect(request.bot_rating).toBeNull();
+  });
+
+  it('sends persona_name=null and bot_rating=null for an old queued entry with an unrecognized personaId', () => {
+    const entry = makeEntry({
+      settings: makeSettings({ personaId: 'not-a-real-persona' as never }),
+    });
+
+    expect(() => toStoreRequest(entry)).not.toThrow();
+    expect(toStoreRequest(entry).persona_name).toBeNull();
+    expect(toStoreRequest(entry).bot_rating).toBeNull();
   });
 });
 

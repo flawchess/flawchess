@@ -47,6 +47,10 @@
 import type { Style } from '@/lib/engine/styleOpeningLines';
 import { HUMAN_BLEND, LIGHT_BLEND, DEEP_BLEND } from '@/lib/playStyle';
 import { PERSONA_CALIBRATION } from '@/generated/personaCalibration';
+// quick-260722-ucc: matches PERSONA_CALIBRATION's `label` shape — a tilde
+// followed by an integer (e.g. "~800", "~1850"). Named so the parse intent
+// reads clearly at the call site rather than a bare regex literal.
+const CALIBRATED_LABEL_INTEGER_PATTERN = /\d+/;
 // Type-only import: `verbatimModuleSyntax` (tsconfig.app.json) erases this at
 // compile time, so it introduces no runtime circular dependency even though
 // `useBotGame.ts` also imports `PersonaId` from this module.
@@ -496,6 +500,20 @@ export function personasForRung(rung: Rung): Persona[] {
 export function personaForId(id: PersonaId | string | undefined): Persona | undefined {
   if (id === undefined) return undefined;
   return (PERSONA_REGISTRY as Record<string, Persona>)[id];
+}
+
+/**
+ * quick-260722-ucc: extracts the persona's CALIBRATED ELO (the honest ~label
+ * value a user sees, e.g. `~800` -> `800`) from `calibratedLabel` — NOT
+ * `botElo`, which is the retargeted internal engine dial (e.g. `attacker-800`
+ * has `botElo: 1100`). All 25 labels in `personaCalibration.ts` are a tilde
+ * plus an integer, so a single digit-run match is sufficient; falls back to
+ * `botElo` on the (currently unreachable) no-match case rather than NaN.
+ */
+export function personaCalibratedElo(persona: Persona): number {
+  const match = persona.calibratedLabel.match(CALIBRATED_LABEL_INTEGER_PATTERN);
+  if (match === null) return persona.botElo;
+  return Number(match[0]);
 }
 
 /**
