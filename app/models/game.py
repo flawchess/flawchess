@@ -179,6 +179,13 @@ class Game(Base):
     white_acpl_imported: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     black_acpl_imported: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
 
+    # Phase 185 (T-185-01/A1): client-supplied persona identifier for bot games
+    # played against a named persona (e.g. "attacker-1200"). NULL for custom-mode
+    # bot games and for every pre-existing row (no backfill, no retroactive
+    # persona identity). No FK/CHECK — the persona roster is a frontend-only,
+    # milestone-evolving TS module (RESEARCH A1), not a DB-tracked entity.
+    persona_id: Mapped[str | None] = mapped_column(String(30), nullable=True)
+
     white_inaccuracies: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     black_inaccuracies: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     white_mistakes: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)

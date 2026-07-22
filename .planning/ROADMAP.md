@@ -786,8 +786,14 @@ Plans:
 **Goal:** Bots page follow-ups to Phase 184, per /gsd-explore decisions (2026-07-22): (1) transpose PersonaGrid to 6 rung rows (easiest ~800 on top) × 4 style columns, with a single header row of the 4 style names in their accent colors — no row labels, avatar tints carry style identity within the grid; (2) PersonaCard keeps its vertical stack (avatar, name, calibrated ELO) and gains a stars row at the bottom; (3) server-side per-persona win tracking: nullable `persona_id` on `StoreBotGameRequest` and the `games` table (Alembic migration; persona games only, custom games stay NULL), a small aggregation endpoint returning wins per persona, frontend renders min(wins, 3) gold stars + grey outline stars for the remainder. Any win counts, any time control, no quality tiers; 3 is a display cap only (LEAST(count, 3)); pre-existing games earn nothing (no retroactive persona identity).
 **Requirements**: TBD
 **Depends on:** Phase 184
-**Plans:** 0 plans
+**Plans:** 3/3 plans executed
 
 Plans:
+**Wave 1**
 
-- [ ] TBD (run /gsd-plan-phase 185 to break down)
+- [x] 185-01-PLAN.md — Backend win-tracking vertical slice (tracer): nullable games.persona_id + persist-on-finish + GET /bots/persona-wins aggregation
+- [x] 185-02-PLAN.md — Grid transpose (frontend-only): 6 rung rows × 4 style columns, accent-colored header row, no row labels
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 185-03-PLAN.md — Frontend win-stars: theme constants + useBotPersonaWins fetch, prop-drilled PersonaStars row (min(wins,3) gold + grey outline)

@@ -32,6 +32,7 @@ from app.models.game import Game
 
 BOTS_ENDPOINT = "/api/bots/games"
 LIBRARY_GAMES_ENDPOINT = "/api/library/games"
+PERSONA_WINS_ENDPOINT = "/api/bots/persona-wins"
 
 # Scholar's Mate PGN with per-move [%clk] on both colors.
 _PGN_CHECKMATE = (
@@ -77,8 +78,10 @@ _TEST_BOT_ELO = 1400
 _TEST_TC_PRESET = "180+2"
 
 
-def _make_bot_game_payload(*, game_uuid: str | None = None, pgn: str = _PGN_CHECKMATE) -> dict:
-    return {
+def _make_bot_game_payload(
+    *, game_uuid: str | None = None, pgn: str = _PGN_CHECKMATE, persona_id: str | None = None
+) -> dict:
+    payload = {
         "game_uuid": game_uuid or str(uuid.uuid4()),
         "pgn": pgn,
         "user_color": "white",
@@ -86,6 +89,9 @@ def _make_bot_game_payload(*, game_uuid: str | None = None, pgn: str = _PGN_CHEC
         "play_style_blend": 0.5,
         "tc_preset": _TEST_TC_PRESET,
     }
+    if persona_id is not None:
+        payload["persona_id"] = persona_id
+    return payload
 
 
 async def _register_and_login(email: str, password: str = "testpassword123") -> tuple[int, str]:
@@ -266,3 +272,142 @@ async def test_store_bot_game_idempotent_resubmit(
             .all()
         )
         assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_persona_win_round_trips_to_persona_wins_endpoint(
+    bots_user_client: tuple[int, str],
+) -> None:
+    """Phase 185 tracer: a persona game's win persists to games.persona_id and
+    is reflected by GET /bots/persona-wins for the submitting user.
+    """
+    _user_id, token = bots_user_client
+    headers = {"Authorization": f"Bearer {token}"}
+    persona_id = "attacker-1200"
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        store_resp = await client.post(
+            BOTS_ENDPOINT,
+            json=_make_bot_game_payload(pgn=_PGN_CHECKMATE, persona_id=persona_id),
+            headers=headers,
+        )
+        assert store_resp.status_code == 200, store_resp.text
+        assert store_resp.json()["created"] is True
+
+        wins_resp = await client.get(PERSONA_WINS_ENDPOINT, headers=headers)
+        assert wins_resp.status_code == 200, wins_resp.text
+        assert wins_resp.json() == {persona_id: 1}
+
+
+@pytest.mark.asyncio
+async def test_persona_id_persisted_on_create(
+    bots_user_client: tuple[int, str], test_engine
+) -> None:
+    """persona_id is written to the games row on create."""
+    user_id, token = bots_user_client
+    headers = {"Authorization": f"Bearer {token}"}
+    payload = _make_bot_game_payload(persona_id="grinder-1600")
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post(BOTS_ENDPOINT, json=payload, headers=headers)
+        assert response.status_code == 200, response.text
+        assert response.json()["created"] is True
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        row = (
+            await session.execute(
+                select(Game).where(
+                    Game.user_id == user_id,
+                    Game.platform == "flawchess",
+                    Game.platform_game_id == payload["game_uuid"],
+                )
+            )
+        ).scalar_one()
+        assert row.persona_id == "grinder-1600"
+
+
+@pytest.mark.asyncio
+async def test_persona_id_unchanged_on_idempotent_resubmit(
+    bots_user_client: tuple[int, str], test_engine
+) -> None:
+    """D-11: re-POSTing the same game_uuid does not re-write persona_id."""
+    user_id, token = bots_user_client
+    headers = {"Authorization": f"Bearer {token}"}
+    payload = _make_bot_game_payload(persona_id="wall-800")
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        first = await client.post(BOTS_ENDPOINT, json=payload, headers=headers)
+        assert first.status_code == 200, first.text
+        assert first.json()["created"] is True
+
+        # Resubmit with a DIFFERENT persona_id — since created=False on this
+        # duplicate, the original persona_id must be preserved unchanged.
+        second_payload = dict(payload)
+        second_payload["persona_id"] = "trickster-1400"
+        second = await client.post(BOTS_ENDPOINT, json=second_payload, headers=headers)
+        assert second.status_code == 200, second.text
+        assert second.json()["created"] is False
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        row = (
+            await session.execute(
+                select(Game).where(
+                    Game.user_id == user_id,
+                    Game.platform == "flawchess",
+                    Game.platform_game_id == payload["game_uuid"],
+                )
+            )
+        ).scalar_one()
+        assert row.persona_id == "wall-800"
+
+
+@pytest.mark.asyncio
+async def test_persona_wins_requires_auth() -> None:
+    """T-185-02: unauthenticated GET /bots/persona-wins -> 401."""
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(PERSONA_WINS_ENDPOINT)
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_persona_wins_scoped_to_authenticated_user(
+    bots_user_client: tuple[int, str], test_engine
+) -> None:
+    """T-185-02: user B cannot read user A's persona wins (no cross-user leakage)."""
+    _user_a_id, token_a = bots_user_client
+    email_b = f"bots_test_{uuid.uuid4().hex[:8]}@example.com"
+    user_b_id, token_b = await _register_and_login(email_b)
+
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            headers_a = {"Authorization": f"Bearer {token_a}"}
+            store_resp = await client.post(
+                BOTS_ENDPOINT,
+                json=_make_bot_game_payload(persona_id="solid-wall-1000"),
+                headers=headers_a,
+            )
+            assert store_resp.status_code == 200, store_resp.text
+            assert store_resp.json()["created"] is True
+
+            headers_b = {"Authorization": f"Bearer {token_b}"}
+            wins_resp_b = await client.get(PERSONA_WINS_ENDPOINT, headers=headers_b)
+            assert wins_resp_b.status_code == 200, wins_resp_b.text
+            assert wins_resp_b.json() == {}
+
+            wins_resp_a = await client.get(PERSONA_WINS_ENDPOINT, headers=headers_a)
+            assert wins_resp_a.status_code == 200, wins_resp_a.text
+            assert wins_resp_a.json() == {"solid-wall-1000": 1}
+    finally:
+        await _delete_games_for_user(test_engine, user_b_id)

@@ -51,6 +51,7 @@ import * as Sentry from '@sentry/react';
 import { toBackendTcStr } from '@/lib/botGamePgn';
 import { enqueuePendingStore, listPendingStore, type PendingStoreEntry } from '@/lib/botPendingStore';
 import type { BotGameSettings } from '@/hooks/useBotGame';
+import { BOT_PERSONA_WINS_QUERY_KEY } from '@/hooks/useBotPersonaWins';
 import {
   MAX_STORE_RETRIES,
   shouldRetryStore,
@@ -103,6 +104,25 @@ function makeWrapper(): ({ children }: { children: ReactNode }) => ReactNode {
   };
 }
 
+/** CR-01: same shape as `makeWrapper`, but also returns the `QueryClient`
+ * instance so a test can spy on `invalidateQueries` — `makeWrapper` builds
+ * its client inside the returned component, with no way to reach it from
+ * the test body. */
+function makeWrapperWithClient(): {
+  wrapper: ({ children }: { children: ReactNode }) => ReactNode;
+  client: QueryClient;
+} {
+  const client = new QueryClient({
+    defaultOptions: { mutations: { retry: false } },
+  });
+  return {
+    client,
+    wrapper: function wrapper({ children }: { children: ReactNode }) {
+      return createElement(QueryClientProvider, { client }, children);
+    },
+  };
+}
+
 beforeEach(() => {
   localStorage.clear();
   vi.mocked(botsApi.storeGame).mockReset();
@@ -135,7 +155,22 @@ describe('tc-preset', () => {
       bot_elo: 1800,
       play_style_blend: 0.75,
       tc_preset: '300+3',
+      persona_id: null,
     });
+  });
+
+  it('maps settings.personaId to persona_id when a persona game finishes', () => {
+    const entry = makeEntry({
+      settings: makeSettings({ personaId: 'attacker-800' }),
+    });
+
+    expect(toStoreRequest(entry).persona_id).toBe('attacker-800');
+  });
+
+  it('falls back to null when settings.personaId is absent (Custom-mode game / old queued entry)', () => {
+    const entry = makeEntry({ settings: makeSettings({}) });
+
+    expect(toStoreRequest(entry).persona_id).toBeNull();
   });
 });
 
@@ -282,6 +317,41 @@ describe('drain', () => {
     });
 
     expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  // CR-01 regression: a queued/offline game that drains successfully on a
+  // later `/bots` mount must also refresh the win stars shown on that same
+  // mount — before this fix, `useDrainPendingStore` never touched the query
+  // cache at all, so `useBotPersonaWins`'s 5-minute staleTime kept serving
+  // pre-game counts.
+  it('invalidates the botPersonaWins query cache after a successful drain (CR-01)', async () => {
+    enqueuePendingStore(OWNER_KEY, makeEntry({ gameUuid: 'g1' }));
+    vi.mocked(botsApi.storeGame).mockResolvedValue({ game_id: 1, created: true });
+
+    const { wrapper, client } = makeWrapperWithClient();
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+
+    const { result } = renderHook(() => useDrainPendingStore(OWNER_KEY), { wrapper });
+    await act(async () => {
+      await result.current.drain();
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: BOT_PERSONA_WINS_QUERY_KEY });
+  });
+
+  it('does NOT invalidate the botPersonaWins query cache when every entry fails to drain (CR-01)', async () => {
+    enqueuePendingStore(OWNER_KEY, makeEntry({ gameUuid: 'g1' }));
+    vi.mocked(botsApi.storeGame).mockRejectedValue(axiosError(500));
+
+    const { wrapper, client } = makeWrapperWithClient();
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+
+    const { result } = renderHook(() => useDrainPendingStore(OWNER_KEY), { wrapper });
+    await act(async () => {
+      await result.current.drain();
+    });
+
+    expect(invalidateSpy).not.toHaveBeenCalled();
   });
 });
 

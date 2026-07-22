@@ -2,29 +2,29 @@
 gsd_state_version: 1.0
 milestone: v2.7
 milestone_name: Bot Personas & Playstyle Layer
-current_phase: 184
-current_phase_name: persona-calibration-strength-honesty
-status: executing
-stopped_at: Completed 184-03-PLAN.md
-last_updated: "2026-07-22T15:29:30.781Z"
+current_phase: 185
+current_phase_name: bots-roster-transpose-win-stars
+status: verifying
+stopped_at: Completed 185-03-PLAN.md
+last_updated: "2026-07-22T16:28:03.603Z"
 last_activity: 2026-07-22
-last_activity_desc: "Completed quick task 260722-nlm: bots info icon, stacked game-end actions, player blitz rating above the roster"
+last_activity_desc: Phase 185 execution started
 progress:
   total_phases: 4
-  completed_phases: 2
-  total_plans: 16
-  completed_plans: 15
-  percent: 50
+  completed_phases: 3
+  total_plans: 19
+  completed_plans: 18
+  percent: 75
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 184 (persona-calibration-strength-honesty) — EXECUTING
-Plan: 4 of 4
-Status: Ready to execute
-Last activity: 2026-07-22 — Completed quick task 260722-nlm: bots info icon, stacked game-end actions, player blitz rating above the roster
+Phase: 185 (bots-roster-transpose-win-stars) — EXECUTING
+Plan: 3 of 3
+Status: Phase complete — ready for verification
+Last activity: 2026-07-22 — Phase 185 execution started
 
 ## Project Reference
 
@@ -407,6 +407,11 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase ?]: [Phase 184-02]: Added a CALIBRATION_HARNESS_STYLE env-var seam to calibration-harness.mjs (Rule 2 deviation) so the persona runbook can thread a real BotStyleParams bundle into selectBotMove without modifying preset-supervisor.sh
 - [Phase 184-03]: requirements-completed left empty — CAL-05 is jointly delivered across Plans 02/03/04; this plan wires the honesty UI surfaces (ceiling clamp, floor-acknowledgment popover) against Plan 02's bootstrap placeholder data, not the real measured values from Plan 04's sweep
 - [Phase 184-03]: calibratedLabel added as a sibling field on Persona (not a rename) — rung stays the unchanged structural grid key per the assumption_delta_decision
+- [Phase ?]: 185-01: PersonaWinsResponse is a bare dict[str,int] alias, not a wrapped envelope (matches count_games_by_platform convention)
+- [Phase ?]: 185-02: Single grid-cols-4 container holds both the header row and 6 rung body rows (not one grid div per row) — guarantees column alignment and uniform 8px gaps
+- [Phase ?]: 185-02: personasForRung added as a new exported accessor mirroring personasForSection's abstraction level; DOM-order test rewritten (not patched) to rung-major order, mutation-verified
+- [Phase ?]: PersonaStars renders via a filled-count/empty-count split (not a single MAX_DISPLAY_STARS-length loop) so the Math.min cap is genuinely load-bearing for the required mutation check
+- [Phase ?]: STAR_FILLED/STAR_EMPTY declared as independent theme.ts constants, not an alias of FLAWCHESS_ENGINE_ACCENT, despite the matching gold value
 
 ### Pending Todos
 
@@ -499,9 +504,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Completed 184-03-PLAN.md
+**Stopped at:** Completed 185-03-PLAN.md
 
-**Last session:** 2026-07-22T14:15:45.585Z
+**Last session:** 2026-07-22T16:28:03.588Z
 
 **Resume file:**
 
@@ -554,6 +559,9 @@ None
 | Phase 184 P01 | 35min | 3 tasks | 4 files |
 | Phase 184 P02 | 45min | 3 tasks | 9 files |
 | Phase 184 P03 | 40min | 3 tasks | 9 files |
+| Phase 185 P01 | 35min | 2 tasks | 8 files |
+| Phase 185 P02 | 8min | 2 tasks | 3 files |
+| Phase 185 P03 | 28min | 2 tasks | 10 files |
 
 ## Performance Metrics
 

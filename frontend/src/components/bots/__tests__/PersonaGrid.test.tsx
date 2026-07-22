@@ -3,28 +3,60 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 import { PersonaGrid } from '../PersonaGrid';
-import { STYLE_SECTION_ORDER, personasForSection } from '@/lib/personas/personaRegistry';
+import {
+  STYLE_SECTION_ORDER,
+  RUNGS,
+  personasForSection,
+  personasForRung,
+} from '@/lib/personas/personaRegistry';
+import { ATTACKER_ACCENT, TRICKSTER_ACCENT, GRINDER_ACCENT, WALL_ACCENT } from '@/lib/theme';
 
 afterEach(() => {
   cleanup();
 });
 
+// jsdom normalizes oklch trailing zeros ('0.50' -> '0.5') when reading
+// element.style.color back. Compare on a normalized form so the assertions
+// are robust to jsdom's cosmetic rewrite without weakening the contract.
+function normalizeColor(value: string): string {
+  return value.replace(/(\d+)\.(\d*?)0+(?=\D|$)/g, (match, intPart: string, frac: string) => {
+    if (frac === '') return `${intPart}`;
+    return `${intPart}.${frac}`;
+  });
+}
+
 describe('PersonaGrid', () => {
-  it('renders exactly 24 persona cards, grouped into 4 sections in STYLE_SECTION_ORDER (DOM order)', () => {
+  it('renders exactly 24 persona cards, in rung-major DOM order (rung 800 top -> 1800 bottom, 4 styles per row)', () => {
     render(<PersonaGrid onSelectPersona={vi.fn()} onSelectCustom={vi.fn()} playerRating={null} />);
 
     const container = screen.getByTestId('bots-persona-grid');
     const cards = container.querySelectorAll('[data-testid^="bots-persona-card-"]');
     expect(cards.length).toBe(24);
 
-    // Expected ids, in the exact DOM order the grid should produce: style
-    // sections in STYLE_SECTION_ORDER, each section's 6 personas ascending
-    // by rung (personasForSection).
-    const expectedIds = STYLE_SECTION_ORDER.flatMap((style) =>
-      personasForSection(style).map((persona) => persona.id),
-    );
+    // Expected ids, in the exact DOM order the transposed grid should
+    // produce: rung rows ascending (800 -> 1800), each row's 4 personas in
+    // STYLE_SECTION_ORDER (personasForRung) — rung-major, not style-major.
+    const expectedIds = RUNGS.flatMap((rung) => personasForRung(rung).map((persona) => persona.id));
     const actualIds = Array.from(cards).map((card) => card.getAttribute('data-testid'));
     expect(actualIds).toEqual(expectedIds.map((id) => `bots-persona-card-${id}`));
+  });
+
+  it('renders one header row of 4 style-name cells with the STYLE_ACCENT colors', () => {
+    render(<PersonaGrid onSelectPersona={vi.fn()} onSelectCustom={vi.fn()} playerRating={null} />);
+
+    const expectedAccent: Record<string, string> = {
+      Attacker: ATTACKER_ACCENT,
+      Trickster: TRICKSTER_ACCENT,
+      Grinder: GRINDER_ACCENT,
+      Wall: WALL_ACCENT,
+    };
+    for (const style of STYLE_SECTION_ORDER) {
+      const header = screen.getByTestId(`bots-persona-header-${style.toLowerCase()}`);
+      expect(header.textContent).toBe(style);
+      expect(normalizeColor(header.style.color)).toBe(normalizeColor(expectedAccent[style]));
+    }
+    // No leftover per-style section wrappers from the pre-transpose layout.
+    expect(screen.queryByTestId('bots-persona-section-attacker')).toBeNull();
   });
 
   it('each card shows a non-empty name, a tilde-formatted ELO label, and an avatar', () => {

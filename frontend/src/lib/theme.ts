@@ -488,3 +488,11 @@ export const GRINDER_ACCENT = 'oklch(0.55 0.14 165)'; // earthy teal-green
 export const GRINDER_ACCENT_BG = 'oklch(0.55 0.14 165 / 0.14)';
 export const WALL_ACCENT = 'oklch(0.55 0.12 235)'; // steady blue-gray
 export const WALL_ACCENT_BG = 'oklch(0.55 0.12 235 / 0.14)';
+
+// Persona win-stars row (Phase 185, 185-UI-SPEC.md Color section). Declared as
+// their own independent named constants — NOT an alias/import of
+// FLAWCHESS_ENGINE_ACCENT — even though STAR_FILLED numerically matches it
+// (same gold/amber hue), so the two can diverge independently in the future
+// without an accidental cross-feature recolor.
+export const STAR_FILLED = 'oklch(0.78 0.14 80)'; // gold/amber
+export const STAR_EMPTY = 'oklch(0.45 0 0)'; // mid-grey outline

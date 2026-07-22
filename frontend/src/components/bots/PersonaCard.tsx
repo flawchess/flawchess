@@ -15,12 +15,22 @@
  */
 
 import type { ReactElement } from 'react';
+import { Star } from 'lucide-react';
 import type { Persona } from '@/lib/personas/personaRegistry';
 import { placeholderAvatarFor, resolveAvatarSrc } from '@/lib/personas/personaAvatars';
+import { STAR_FILLED, STAR_EMPTY } from '@/lib/theme';
 
 export interface PersonaCardProps {
   persona: Persona;
   onSelect: (persona: Persona) => void;
+  /** Phase 185: this persona's raw win count, fetched ONCE at `Bots.tsx` page
+   * level (`useBotPersonaWins`) and prop-drilled down through `PersonaGrid` —
+   * never fetched here (keeps this component's bare `render(<PersonaCard/>)`
+   * tests working with no `QueryClientProvider`). `undefined` (loading/error/
+   * not-yet-fetched) renders identically to `0` — a transient fetch failure
+   * must never display a false "0 wins" negative, so both degrade to the same
+   * all-outline zero-state. */
+  winsForPersona?: number;
 }
 
 /** Fixed avatar-circle size (px) — shared by the width/height so the avatar
@@ -28,7 +38,65 @@ export interface PersonaCardProps {
  * grid-column width above it. */
 const AVATAR_SIZE_PX = 48;
 
-export function PersonaCard({ persona, onSelect }: PersonaCardProps): ReactElement {
+/** Icon size (px) for each star glyph in the win-stars row (185-UI-SPEC.md). */
+const STAR_SIZE_PX = 14;
+
+/** Cap on the number of gold-filled stars — a raw win count above this still
+ * renders exactly 3 filled stars, never a 4th star or a "+N" badge this
+ * phase. Always exactly `MAX_DISPLAY_STARS` stars render (filled + outline). */
+const MAX_DISPLAY_STARS = 3;
+
+/**
+ * PersonaStars — a row of exactly `MAX_DISPLAY_STARS` star glyphs: the first
+ * `Math.min(wins, MAX_DISPLAY_STARS)` gold-filled (left to right), the
+ * remainder grey-outline. `undefined`/`0` both render as all-outline (the
+ * loading/error/zero states are deliberately merged — see `winsForPersona`'s
+ * doc comment above).
+ *
+ * The 3 `Star` glyphs are individually `aria-hidden` — the wrapping `<span>`
+ * carries the ONE `aria-label` a screen reader should announce for this row,
+ * kept deliberately separate from the card button's own persona-identity
+ * `aria-label` (185-UI-SPEC.md Accessibility section).
+ */
+function PersonaStars({ wins }: { wins: number | undefined }): ReactElement {
+  const winCount = wins ?? 0;
+  // Split into a filled-count and an empty-count that together always sum to
+  // exactly MAX_DISPLAY_STARS. Without the Math.min cap, a raw winCount above
+  // MAX_DISPLAY_STARS would make emptyCount negative (Array.from clamps a
+  // negative length to 0), so the row would render MORE than
+  // MAX_DISPLAY_STARS stars total — the cap is load-bearing for keeping every
+  // card's row the same fixed height, not just a display nicety.
+  const filledCount = Math.min(winCount, MAX_DISPLAY_STARS);
+  const emptyCount = MAX_DISPLAY_STARS - filledCount;
+
+  return (
+    <span
+      className="flex items-center justify-center gap-0.5"
+      aria-label={`${winCount} win${winCount === 1 ? '' : 's'}`}
+    >
+      {Array.from({ length: filledCount }, (_, i) => (
+        <Star
+          key={`filled-${i}`}
+          aria-hidden="true"
+          size={STAR_SIZE_PX}
+          fill={STAR_FILLED}
+          color={STAR_FILLED}
+        />
+      ))}
+      {Array.from({ length: emptyCount }, (_, i) => (
+        <Star
+          key={`empty-${i}`}
+          aria-hidden="true"
+          size={STAR_SIZE_PX}
+          fill="none"
+          color={STAR_EMPTY}
+        />
+      ))}
+    </span>
+  );
+}
+
+export function PersonaCard({ persona, onSelect, winsForPersona }: PersonaCardProps): ReactElement {
   const avatar = placeholderAvatarFor(persona);
   const avatarSrc = resolveAvatarSrc(persona);
 
@@ -57,6 +125,7 @@ export function PersonaCard({ persona, onSelect }: PersonaCardProps): ReactEleme
       </span>
       <span className="text-sm font-medium text-foreground">{persona.name}</span>
       <span className="text-sm text-muted-foreground">{persona.calibratedLabel}</span>
+      <PersonaStars wins={winsForPersona} />
     </button>
   );
 }

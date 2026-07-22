@@ -17,7 +17,7 @@ import type { GameFlawCard, LibraryGamesResponse, FlawStatsResponse, LibraryFlaw
 import type { OpponentStrengthRange } from '@/types/api';
 import { rangeToQueryParams } from '@/lib/opponentStrength';
 import type { FeedbackRequest, FeedbackResponse } from '@/types/feedback';
-import type { StoreBotGameRequest, StoreBotGameResponse } from '@/types/bots';
+import type { StoreBotGameRequest, StoreBotGameResponse, PersonaWinsResponse } from '@/types/bots';
 
 /**
  * Central Axios instance.
@@ -231,6 +231,8 @@ export const feedbackApi = {
 export const botsApi = {
   storeGame: (data: StoreBotGameRequest) =>
     apiClient.post<StoreBotGameResponse>('/bots/games', data).then(r => r.data),
+  getPersonaWins: () =>
+    apiClient.get<PersonaWinsResponse>('/bots/persona-wins').then(r => r.data),
 };
 
 // ─── Library API ──────────────────────────────────────────────────────────────

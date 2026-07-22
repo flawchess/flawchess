@@ -56,8 +56,10 @@ import type { BotGameSettings } from '@/hooks/useBotGame';
 export type Rung = 800 | 1000 | 1200 | 1400 | 1600 | 1800;
 
 /** All 6 rungs, ascending — the single source of truth `personasForSection`
- * and the registry-construction helpers below iterate over. */
-const RUNGS: readonly Rung[] = [800, 1000, 1200, 1400, 1600, 1800];
+ * and the registry-construction helpers below iterate over. Exported
+ * (Phase 185) so `PersonaGrid` can iterate rung-rows without duplicating
+ * this ordering. */
+export const RUNGS: readonly Rung[] = [800, 1000, 1200, 1400, 1600, 1800];
 
 /** Derived persona id: `${lowercase style}-${rung}`, e.g. `'attacker-800'`,
  * `'trickster-1600'`. A template-literal type over `Style`/`Rung` so every
@@ -472,6 +474,17 @@ export const STYLE_SECTION_ORDER: readonly Style[] = ['Attacker', 'Trickster', '
 /** Returns `style`'s 6 personas ascending by rung (800 -> 1800). */
 export function personasForSection(style: Style): Persona[] {
   return RUNGS.map((rung) => PERSONA_REGISTRY[personaId(style, rung)]);
+}
+
+/**
+ * Rung-major accessor (Phase 185, transposed grid): returns the 4 personas
+ * AT `rung`, one per style, in `STYLE_SECTION_ORDER` order. Mirrors
+ * `personasForSection`'s abstraction level so `PersonaGrid` can iterate
+ * `RUNGS` (rows) outer x this (columns) inner without ever touching
+ * `PERSONA_REGISTRY` directly (Pitfall 1).
+ */
+export function personasForRung(rung: Rung): Persona[] {
+  return STYLE_SECTION_ORDER.map((style) => PERSONA_REGISTRY[personaId(style, rung)]);
 }
 
 /**

@@ -35,6 +35,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft } from 'lucide-react';
 import { ChessBoard } from '@/components/board/ChessBoard';
 import { BoardControls } from '@/components/board/BoardControls';
@@ -53,6 +54,7 @@ import { personaFor, type Persona } from '@/lib/personas/personaRegistry';
 import { placeholderAvatarFor } from '@/lib/personas/personaAvatars';
 import { useBotGame, type BotGameSettings } from '@/hooks/useBotGame';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { useBotPersonaWins, BOT_PERSONA_WINS_QUERY_KEY } from '@/hooks/useBotPersonaWins';
 import { useDrainPendingStore, useStoreBotGame, toStoreRequest } from '@/hooks/useStoreBotGame';
 import { useTier1EnqueueForGame } from '@/hooks/useEnqueueGame';
 import { readSnapshot, clearSnapshot, type BotGameSnapshot } from '@/lib/botGameSnapshot';
@@ -209,6 +211,7 @@ function BotsGame({
   onRematch,
 }: BotsGameProps): ReactElement {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const isDesktop = useIsDesktop();
   const muted = useMuted();
   // D-11: `game.newGame` (a public hook API) is intentionally left UNCALLED
@@ -256,6 +259,13 @@ function BotsGame({
   // server is idempotent on `game_uuid` (167 D-11), so a stray double-POST
   // would be harmless — but harmless is not the bar; D-21 requires it not to
   // happen, and a call-count test pins it (171-07 Task 3, V-15).
+  //
+  // CR-01 fix: onSuccess also invalidates BOT_PERSONA_WINS_QUERY_KEY. Without
+  // this, `useBotPersonaWins`'s 5-minute `staleTime` query instance (mounted
+  // once at `BotsPage` level, never unmounted across the setup -> game ->
+  // result -> "New game" cycle) kept serving its pre-game win counts — a
+  // user who just won a persona game saw the SAME star count on the roster
+  // until the 5-minute window lapsed or a hard reload forced a real refetch.
   const store = useStoreBotGame();
   const storedGameUuidRef = useRef<string | null>(null);
   useEffect(() => {
@@ -272,7 +282,12 @@ function BotsGame({
         settings,
         enqueuedAt: Date.now(),
       }),
-      { onSuccess: () => removePendingStore(ownerKey, game.gameUuid) },
+      {
+        onSuccess: () => {
+          removePendingStore(ownerKey, game.gameUuid);
+          void queryClient.invalidateQueries({ queryKey: BOT_PERSONA_WINS_QUERY_KEY });
+        },
+      },
     );
     // Deliberately depends on `store.mutate` (a stable TanStack Query
     // reference), not the whole `store` object — depending on `store` would
@@ -280,7 +295,7 @@ function BotsGame({
     // success), which the `storedGameUuidRef` latch guards against anyway
     // but is needless churn.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game.outcome, game.pgn, game.gameUuid, ownerKey, settings, store.mutate]);
+  }, [game.outcome, game.pgn, game.gameUuid, ownerKey, settings, store.mutate, queryClient]);
 
   // Reset the dismissed flag when a fresh game starts (outcome goes back to null).
   useEffect(() => {
@@ -515,6 +530,14 @@ export default function BotsPage(): ReactElement {
   // indistinguishable from "no anchor". None of it surfaced to the user.
   const { data: profile, isLoading, isError } = useUserProfile();
   const ownerKey = profile?.email ?? null;
+  // Phase 185: ONE useBotPersonaWins() call here, prop-drilled into
+  // PersonaGrid -> PersonaCard as winsByPersona/winsForPersona (Pattern 3 —
+  // single-fetch-then-prop-drill, mirrors this file's existing single
+  // useUserProfile() -> playerRating prop). Loading/error both resolve to
+  // `undefined` data, which PersonaCard's stars row already renders as its
+  // all-outline zero-state — no isError branch needed here, this is a small
+  // decorative stat row degrading gracefully, not a page-blocking query.
+  const { data: winsByPersona } = useBotPersonaWins();
   // SC4: passed down to BotsGame's guest caveat — reads `useUserProfile()`
   // once here rather than a second call in BotsGame.
   const isGuest = profile?.is_guest ?? false;
@@ -681,6 +704,7 @@ export default function BotsPage(): ReactElement {
           onSelectPersona={setDetailPersona}
           onSelectCustom={() => setShowCustomSetup(true)}
           playerRating={profile?.lichess_blitz_equivalent_rating ?? null}
+          winsByPersona={winsByPersona}
         />
         <PersonaDetailSurface
           persona={detailPersona}

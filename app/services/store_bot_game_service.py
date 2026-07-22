@@ -185,6 +185,15 @@ async def store_bot_game(
             await game_repository.update_bot_game_pgn_and_url(
                 session, game_id, stamped_pgn, build_bot_game_url(game_id)
             )
+
+            # Phase 185 (T-185-01): persist persona_id here too, same
+            # created-gate, same "no data no-op on duplicate resubmit"
+            # reasoning (D-11). None (custom-mode games) is a no-op — the
+            # column stays NULL, matching its default.
+            if request.persona_id is not None:
+                await game_repository.update_bot_game_persona_id(
+                    session, game_id, request.persona_id
+                )
     except Exception:
         sentry_sdk.set_context(
             "store_bot_game", {"user_id": user_id, "game_uuid": request.game_uuid}

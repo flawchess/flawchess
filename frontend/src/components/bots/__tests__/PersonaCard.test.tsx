@@ -75,3 +75,85 @@ describe('PersonaCard', () => {
     expect(img?.getAttribute('src')).toBe(personaWithArt.avatarSrc);
   });
 });
+
+describe('PersonaCard win-stars row (Phase 185)', () => {
+  function starsRow(): HTMLElement {
+    const card = screen.getByTestId(`bots-persona-card-${PERSONA.id}`);
+    const row = card.querySelector('[aria-label$="win"], [aria-label$="wins"]');
+    if (row === null) throw new Error('stars row not found');
+    return row as HTMLElement;
+  }
+
+  it('caps at 3 gold filled stars when winsForPersona is 5 (overflow)', () => {
+    render(<PersonaCard persona={PERSONA} onSelect={vi.fn()} winsForPersona={5} />);
+
+    const stars = starsRow().querySelectorAll('svg');
+    expect(stars).toHaveLength(3);
+    stars.forEach((star) => {
+      expect(star.getAttribute('fill')).not.toBe('none');
+    });
+  });
+
+  it('renders 1 filled + 2 outline stars when winsForPersona is 1', () => {
+    render(<PersonaCard persona={PERSONA} onSelect={vi.fn()} winsForPersona={1} />);
+
+    const stars = Array.from(starsRow().querySelectorAll('svg'));
+    expect(stars).toHaveLength(3);
+    expect(stars[0]?.getAttribute('fill')).not.toBe('none');
+    expect(stars[1]?.getAttribute('fill')).toBe('none');
+    expect(stars[2]?.getAttribute('fill')).toBe('none');
+  });
+
+  it('renders 3 grey-outline stars and no "0 wins" visible text when winsForPersona is 0', () => {
+    render(<PersonaCard persona={PERSONA} onSelect={vi.fn()} winsForPersona={0} />);
+
+    const card = screen.getByTestId(`bots-persona-card-${PERSONA.id}`);
+    const stars = starsRow().querySelectorAll('svg');
+    expect(stars).toHaveLength(3);
+    stars.forEach((star) => {
+      expect(star.getAttribute('fill')).toBe('none');
+    });
+    expect(card.textContent).not.toContain('0 wins');
+    expect(card.textContent).not.toContain('win');
+  });
+
+  it('renders identically (3 outline) when winsForPersona is undefined, and stays clickable', () => {
+    const onSelect = vi.fn();
+    render(<PersonaCard persona={PERSONA} onSelect={onSelect} winsForPersona={undefined} />);
+
+    const stars = starsRow().querySelectorAll('svg');
+    expect(stars).toHaveLength(3);
+    stars.forEach((star) => {
+      expect(star.getAttribute('fill')).toBe('none');
+    });
+    expect(starsRow().getAttribute('aria-label')).toBe('0 wins');
+
+    fireEvent.click(screen.getByTestId(`bots-persona-card-${PERSONA.id}`));
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it('carries a separate stars-row aria-label from the card button aria-label', () => {
+    render(<PersonaCard persona={PERSONA} onSelect={vi.fn()} winsForPersona={2} />);
+
+    const card = screen.getByTestId(`bots-persona-card-${PERSONA.id}`);
+    expect(card.getAttribute('aria-label')).not.toContain('win');
+    expect(starsRow().getAttribute('aria-label')).toBe('2 wins');
+  });
+
+  it('uses a singular "1 win" aria-label (not "1 wins")', () => {
+    render(<PersonaCard persona={PERSONA} onSelect={vi.fn()} winsForPersona={1} />);
+
+    expect(starsRow().getAttribute('aria-label')).toBe('1 win');
+  });
+
+  it('mutation check: reverting the Math.min cap would make the wins>=4 assertion fail', () => {
+    // This test documents the cap behavior tested above (winsForPersona=5 -> 3
+    // filled stars) is load-bearing: MAX_DISPLAY_STARS caps the filled count.
+    render(<PersonaCard persona={PERSONA} onSelect={vi.fn()} winsForPersona={4} />);
+    const stars = starsRow().querySelectorAll('svg');
+    expect(stars).toHaveLength(3);
+    stars.forEach((star) => {
+      expect(star.getAttribute('fill')).not.toBe('none');
+    });
+  });
+});

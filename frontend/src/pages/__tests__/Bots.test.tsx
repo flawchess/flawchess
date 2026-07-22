@@ -66,6 +66,10 @@ vi.mock('@sentry/react', () => ({ captureException: vi.fn() }));
 // (unmocked, real hook) POSTs `/imports/eval/tier1/{id}` through it, and the
 // "one-click tier-1 enqueue" describe block below needs to control/observe
 // that call the same way the store tests control `botsApi.storeGame`.
+// CR-01: `getPersonaWins` is also mocked here (not left as `...actual.botsApi`)
+// so the "store on finish" tests below can assert the win-star cache actually
+// refetches after a successful store, rather than falling through to the
+// real (network-hitting) implementation.
 vi.mock('@/api/client', async () => {
   const actual = await vi.importActual<typeof import('@/api/client')>('@/api/client');
   return {
@@ -73,6 +77,7 @@ vi.mock('@/api/client', async () => {
     botsApi: {
       ...actual.botsApi,
       storeGame: vi.fn(),
+      getPersonaWins: vi.fn(),
     },
     apiClient: {
       ...actual.apiClient,
@@ -326,6 +331,10 @@ beforeEach(() => {
   fakeGame.declineBotDraw.mockClear();
   navigateSpy.mockClear();
   vi.mocked(botsApi.storeGame).mockReset();
+  // CR-01: a benign default so `useBotPersonaWins`'s mount-time fetch resolves
+  // rather than hanging — tests that assert on refetch counts override this.
+  vi.mocked(botsApi.getPersonaWins).mockReset();
+  vi.mocked(botsApi.getPersonaWins).mockResolvedValue({});
   // A safe default: the D-13 mount-drain effect fires on EVERY BotsPage
   // mount now that `useDrainPendingStore` is unmocked (Plan 07). Tests that
   // don't care about the store (e.g. the D-11 setup/discard convergence
@@ -836,6 +845,23 @@ describe('store on finish (D-21)', () => {
     // onSuccess never fired — the entry survives for the D-13 next-visit drain.
     expect(pendingEntryCount()).toBe(1);
   }, 15000);
+
+  // CR-01: without the finish-time store's onSuccess invalidation, this
+  // second call never happens — `useBotPersonaWins`'s 5-minute staleTime
+  // query instance (mounted once at BotsPage level, never unmounted across
+  // this cycle) would keep serving its pre-game win counts.
+  it('invalidates the persona-wins cache after a successful finish-time store, forcing a refetch (CR-01)', async () => {
+    vi.mocked(botsApi.storeGame).mockResolvedValue({ game_id: 1, created: true });
+    renderBots();
+    await startFromSetup();
+
+    await waitFor(() => expect(botsApi.getPersonaWins).toHaveBeenCalledTimes(1));
+
+    finishAndEnqueue(FAKE_GAME_UUID);
+
+    await waitFor(() => expect(botsApi.storeGame).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(botsApi.getPersonaWins).toHaveBeenCalledTimes(2));
+  });
 });
 
 describe('Analyze CTA carries the played colour (171 UAT gap 1)', () => {

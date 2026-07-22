@@ -302,22 +302,25 @@ Not applicable — this is an internal feature extension, not an area with exter
 | A3 | No new DB index is needed for the per-user win-aggregation query at expected scale | Pitfall 5 | If a power user accumulates enough bot games that this becomes measurably slow (unlikely — bot games are a small fraction of a user's total imported history), a follow-up index is a trivial addition, not a redesign |
 | A4 | `persona_id`'s max length should be bounded (e.g. `String(30)`) rather than unbounded `Text`, mirroring `tc_preset`'s CR-01-motivated length bound | Common Pitfalls (Pitfall re: request validation) | If wrong (project prefers `Text` like `rating_source`/`tc_preset` on `bot_game_settings`), a length-bound `String` column is trivially widened later; low risk |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Where does the win-star row's design (spacing, size, gold/grey exact shade) get specified?**
    - What we know: `PersonaCard`'s existing vertical stack (avatar 48px circle, name, ELO label) is unchanged; the phase says the stars row is added "at the bottom."
    - What's unclear: exact icon size, gap, and whether the stars row renders even at `wins === 0` (all 3 grey-outline) or is hidden entirely for zero-win personas.
    - Recommendation: default to ALWAYS rendering 3 stars (grey-outline at 0 wins) for visual consistency across all 24 cards in the transposed grid — hiding the row conditionally would make the grid's row heights inconsistent, which matters more now that cards are column-aligned under a shared header.
+   - **RESOLVED:** the approved 185-UI-SPEC.md locks the full star-row design (14px lucide `Star` icons, `gap-0.5`, `STAR_FILLED`/`STAR_EMPTY` theme constants) and adopts the always-render-3-stars zero-state; cap ownership is frontend `Math.min(wins, 3)` with the backend returning raw counts.
 
 2. **Does the win-aggregation endpoint need to be platform-scoped, or is `persona_id IS NOT NULL` sufficient on its own?**
    - What we know: `persona_id` is only ever set on `platform='flawchess'` rows (custom-mode and any other platform never populate it).
    - What's unclear: whether to add a redundant `platform == 'flawchess'` predicate for defensive clarity/future-proofing, or rely on the invariant.
    - Recommendation: add it anyway — it's a cheap, self-documenting predicate that protects against a future bug where `persona_id` might accidentally get set on a non-flawchess path.
+   - **RESOLVED:** 185-01-PLAN.md's aggregation task explicitly includes the `Game.platform == "flawchess"` predicate alongside `persona_id IS NOT NULL`.
 
 3. **Should `StoreBotGameRequest.persona_id` be validated against a known-shape pattern (e.g. `^[a-z]+-\d{3,4}$`) or just length-bounded?**
    - What we know: the backend has zero knowledge of the frontend's 24-persona registry (by design — no shared enum).
    - What's unclear: whether a shape-regex is worth the maintenance vs. just bounding length and accepting that a malformed value only corrupts the SUBMITTING USER's OWN win-star display (low blast radius — not a cross-user security issue).
    - Recommendation: length bound only (`Field(max_length=30)`), no regex — matches the low-severity, self-scoped nature of a wrong value here (contrast with e.g. `game_uuid`, which DOES get strict UUID validation because it drives cross-request idempotency).
+   - **RESOLVED:** 185-01-PLAN.md adopts `Field(max_length=30)` with no shape regex, per this recommendation.
 
 ## Environment Availability
 

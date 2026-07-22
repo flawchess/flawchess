@@ -1,9 +1,11 @@
 /**
  * PersonaGrid — the Bots page's default setup view (Phase 183, PERS-01/
- * PERS-04). Renders all 24 personas grouped into 4 style sections
- * (`STYLE_SECTION_ORDER`), each ascending by rung 800->1800
- * (`personasForSection`), plus one clearly-visible Custom entry that routes
- * to the unchanged `SetupScreen` (D-01) rather than duplicating any of its
+ * PERS-04). Renders all 24 personas as a transposed grid (Phase 185): one
+ * header row of the 4 style names (`STYLE_SECTION_ORDER`) in their accent
+ * colors, then 6 rung rows ascending 800 (top) -> 1800 (bottom)
+ * (`RUNGS`/`personasForRung`), 4 `PersonaCard`s per row in style order, no
+ * row labels — plus one clearly-visible Custom entry that routes to the
+ * unchanged `SetupScreen` (D-01) rather than duplicating any of its
  * controls here.
  */
 
@@ -13,7 +15,8 @@ import { Button } from '@/components/ui/button';
 import { InfoPopover } from '@/components/ui/info-popover';
 import {
   STYLE_SECTION_ORDER,
-  personasForSection,
+  RUNGS,
+  personasForRung,
   type Persona,
 } from '@/lib/personas/personaRegistry';
 import type { Style } from '@/lib/engine/styleOpeningLines';
@@ -37,12 +40,20 @@ export interface PersonaGridProps {
    * call. `null` for guests / users with no anchor — the reference line is
    * then omitted entirely rather than showing a placeholder. */
   playerRating: number | null;
+  /** Phase 185: per-persona-id raw win counts, fetched ONCE by `Bots.tsx`
+   * (`useBotPersonaWins`) and prop-drilled here — this component never calls
+   * `useQuery` itself (Pattern 3, single-fetch-then-prop-drill), which would
+   * break its existing no-`QueryClientProvider` render tests. `undefined`
+   * while loading/erroring; each card degrades to its own all-outline
+   * zero-state rather than blocking this whole grid. */
+  winsByPersona?: Record<string, number>;
 }
 
 export function PersonaGrid({
   onSelectPersona,
   onSelectCustom,
   playerRating,
+  winsByPersona,
 }: PersonaGridProps): ReactElement {
   return (
     // Bottom-nav clearance (mirrors SetupScreen.tsx's root pb-20 sm:pb-4
@@ -72,21 +83,32 @@ export function PersonaGrid({
         </div>
       )}
 
-      {STYLE_SECTION_ORDER.map((style) => (
-        <section key={style} data-testid={`bots-persona-section-${style.toLowerCase()}`}>
-          <h2
-            className="mb-2 text-sm font-semibold tracking-wide"
+      {/* Single grid-cols-4 container for the header row + all 6 rung body
+          rows, so columns align exactly and row/column gaps stay uniform
+          (8px, per UI-SPEC) — separate from the outer flex column's gap-6.
+          Header cells auto-flow into row 1; RUNGS.flatMap(personasForRung)
+          fills the remaining rows rung-major (800 top -> 1800 bottom), no
+          row labels (locked decision). */}
+      <div className="grid grid-cols-4 gap-2">
+        {STYLE_SECTION_ORDER.map((style) => (
+          <div
+            key={style}
+            data-testid={`bots-persona-header-${style.toLowerCase()}`}
+            className="text-center text-sm font-semibold tracking-wide"
             style={{ color: STYLE_ACCENT[style] }}
           >
             {style}
-          </h2>
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-            {personasForSection(style).map((persona) => (
-              <PersonaCard key={persona.id} persona={persona} onSelect={onSelectPersona} />
-            ))}
           </div>
-        </section>
-      ))}
+        ))}
+        {RUNGS.flatMap((rung) => personasForRung(rung)).map((persona) => (
+          <PersonaCard
+            key={persona.id}
+            persona={persona}
+            onSelect={onSelectPersona}
+            winsForPersona={winsByPersona?.[persona.id]}
+          />
+        ))}
+      </div>
 
       <Button
         variant="brand-outline"

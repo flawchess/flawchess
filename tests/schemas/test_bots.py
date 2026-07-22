@@ -15,6 +15,7 @@ import pytest
 
 from app.schemas.bots import (
     MAX_BOT_PGN_LENGTH,
+    _MAX_PERSONA_ID_LENGTH,
     _MAX_TC_PRESET_LENGTH,
     StoreBotGameRequest,
     StoreBotGameResponse,
@@ -96,6 +97,37 @@ class TestStoreBotGameRequestValidation:
         assert upper.game_uuid == canonical
         assert braced.game_uuid == canonical
         assert urn.game_uuid == canonical
+
+    def test_persona_id_omitted_defaults_to_none(self) -> None:
+        """Custom-mode games omit persona_id entirely — must default to None."""
+        request = StoreBotGameRequest(**_VALID_KWARGS)
+        assert request.persona_id is None
+
+    def test_persona_id_none_accepted(self) -> None:
+        request = StoreBotGameRequest(**_kwargs_with(persona_id=None))
+        assert request.persona_id is None
+
+    def test_persona_id_at_max_length_accepted(self) -> None:
+        """T-185-01: a persona_id at exactly _MAX_PERSONA_ID_LENGTH must validate."""
+        value = "a" * _MAX_PERSONA_ID_LENGTH
+        request = StoreBotGameRequest(**_kwargs_with(persona_id=value))
+        assert request.persona_id == value
+
+    def test_persona_id_over_max_length_rejected(self) -> None:
+        """T-185-01: an overlong persona_id 422s at the Pydantic boundary, never
+        reaching SQL.
+        """
+        with pytest.raises(pydantic.ValidationError):
+            StoreBotGameRequest(**_kwargs_with(persona_id="a" * (_MAX_PERSONA_ID_LENGTH + 1)))
+
+    def test_persona_id_empty_string_rejected(self) -> None:
+        """WR-03: an empty string is not None, so without min_length=1 it would
+        pass validation and get persisted (store_bot_game_service.py's
+        `if request.persona_id is not None:` guard), producing a spurious ""
+        key in GET /bots/persona-wins.
+        """
+        with pytest.raises(pydantic.ValidationError):
+            StoreBotGameRequest(**_kwargs_with(persona_id=""))
 
 
 class TestStoreBotGameResponse:

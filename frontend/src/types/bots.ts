@@ -35,6 +35,10 @@ export interface StoreBotGameRequest {
    * on D-14 in `.planning/phases/170-localstorage-resume/170-CONTEXT.md`.
    */
   tc_preset: string;
+  /** The persona pinned for this game, or `null` for a Custom-mode game with
+   * no persona (Phase 185, PERS-05). Optional on the wire — mirrors the
+   * backend `StoreBotGameRequest.persona_id`'s `default=None`. */
+  persona_id: string | null;
 }
 
 /** Response body for `POST /bots/games`. */
@@ -44,3 +48,11 @@ export interface StoreBotGameResponse {
    * it (idempotent re-POST of the same `game_uuid` — both count as success). */
   created: boolean;
 }
+
+/**
+ * Response body for `GET /bots/persona-wins` (Phase 185). A per-persona-id
+ * map of RAW (uncapped) win counts for the authenticated user — the frontend
+ * applies the `Math.min(wins, MAX_DISPLAY_STARS)` display cap at render time
+ * (`PersonaCard.tsx`), not here.
+ */
+export type PersonaWinsResponse = Record<string, number>;
