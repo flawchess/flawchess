@@ -51,7 +51,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
-from PIL import Image, ImageDraw
+from PIL import Image, ImageChops, ImageDraw
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _PROMPTS_DOC = _REPO_ROOT / "frontend" / "src" / "data" / "personaAvatarPrompts.md"
@@ -80,6 +80,14 @@ AVATAR_SIZE_PX = 512
 # prompt. Tolerance must absorb mild background banding without eating the
 # character's bold dark outline (magenta -> black distance is ~510).
 BG_KEY_TOLERANCE = 120
+
+# The background color Gemini actually renders for the prompt's "#FF00FF" ask
+# (sampled from generated output). A global key against this color catches
+# background pockets fully enclosed by the character (inside ears, between an
+# arm and the body) that a border-connected flood fill can never reach. None
+# of the 24 species have fur/plumage anywhere near this magenta, so a global
+# (not just border-connected) key is safe for this roster.
+BG_KEY_COLOR = (253, 38, 254)
 
 # The image-generation model. Gemini's native image-generation tool.
 IMAGE_GEN_MODEL = "google:gemini-3.1-flash-image"
@@ -255,7 +263,28 @@ def _remove_background(img: Image.Image) -> Image.Image:
         if pixel[3] == 0 or _color_distance(pixel, reference) > BG_KEY_TOLERANCE:
             continue
         ImageDraw.floodfill(rgba, seed, (255, 255, 255, 0), thresh=BG_KEY_TOLERANCE)
-    return rgba
+    return _apply_global_key(rgba)
+
+
+def _apply_global_key(rgba: Image.Image) -> Image.Image:
+    """Turns every pixel within `BG_KEY_TOLERANCE` of `BG_KEY_COLOR` transparent.
+
+    Complements the flood fill: this catches enclosed background pockets the
+    fill can't reach. Removed pixels get white RGB (matching the fill's
+    choice) so the LANCZOS downscale bleeds a neutral tone, not magenta,
+    into semi-transparent edge pixels.
+    """
+    rgb = rgba.convert("RGB")
+    diff = ImageChops.difference(rgb, Image.new("RGB", rgba.size, BG_KEY_COLOR))
+    red, green, blue = diff.split()
+    # Saturating adds are safe: the threshold sits far below the 255 clip.
+    distance = ImageChops.add(ImageChops.add(red, green), blue)
+    keep = distance.point(lambda v: 0 if v <= BG_KEY_TOLERANCE else 255)
+    out = Image.composite(rgb, Image.new("RGB", rgba.size, (255, 255, 255)), keep).convert("RGBA")
+    # multiply() zeroes alpha where keep is 0 and preserves it where keep is 255,
+    # so pixels already cleared by the flood fill stay transparent.
+    out.putalpha(ImageChops.multiply(rgba.getchannel("A"), keep))
+    return out
 
 
 def _downscale_and_save_webp(image_bytes: bytes, persona_id: str) -> Path:
