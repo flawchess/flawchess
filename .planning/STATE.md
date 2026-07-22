@@ -5,16 +5,16 @@ milestone_name: Bot Personas & Playstyle Layer
 current_phase: 185
 current_phase_name: bots-roster-transpose-win-stars
 status: Phase 185 shipped — squash-merged to main (f5ff3ff4)
-stopped_at: Completed 185-03-PLAN.md
-last_updated: "2026-07-22T17:17:02.884Z"
+stopped_at: "Completed quick task 260722-ucc: bot persona name + calibrated ELO"
+last_updated: "2026-07-22T20:03:04.579Z"
 last_activity: 2026-07-22
+last_activity_desc: "Completed quick task 260722-r7t: bot persona avatar generation pipeline (prompts doc + script + seam swap)"
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 19
   completed_plans: 18
   percent: 75
-last_activity_desc: Phase 185 execution started
 ---
 
 # Project State: FlawChess
@@ -412,6 +412,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase ?]: 185-02: personasForRung added as a new exported accessor mirroring personasForSection's abstraction level; DOM-order test rewritten (not patched) to rung-major order, mutation-verified
 - [Phase ?]: PersonaStars renders via a filled-count/empty-count split (not a single MAX_DISPLAY_STARS-length loop) so the Math.min cap is genuinely load-bearing for the required mutation check
 - [Phase ?]: STAR_FILLED/STAR_EMPTY declared as independent theme.ts constants, not an alias of FLAWCHESS_ENGINE_ACCENT, despite the matching gold value
+- [Phase ?]: [Quick 260722-ucc]: normalize_flawchess_game's new bot_username param made keyword-only (default FLAWCHESS_BOT_USERNAME) rather than inserted positionally, to avoid breaking ~12 existing positional call sites
 
 ### Pending Todos
 
@@ -505,9 +506,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Completed 185-03-PLAN.md
+**Stopped at:** Completed quick task 260722-ucc: bot persona name + calibrated ELO
 
-**Last session:** 2026-07-22T16:28:03.588Z
+**Last session:** 2026-07-22T20:03:04.464Z
 
 **Resume file:**
 
