@@ -16,6 +16,7 @@ import pytest
 from app.schemas.bots import (
     MAX_BOT_PGN_LENGTH,
     _MAX_PERSONA_ID_LENGTH,
+    _MAX_PERSONA_NAME_LENGTH,
     _MAX_TC_PRESET_LENGTH,
     StoreBotGameRequest,
     StoreBotGameResponse,
@@ -128,6 +129,39 @@ class TestStoreBotGameRequestValidation:
         """
         with pytest.raises(pydantic.ValidationError):
             StoreBotGameRequest(**_kwargs_with(persona_id=""))
+
+    # quick-260722-ucc: persona_name/bot_rating acceptance + bounds.
+    def test_persona_name_and_bot_rating_omitted_default_to_none(self) -> None:
+        """Custom-mode games omit both fields entirely — must default to None."""
+        request = StoreBotGameRequest(**_VALID_KWARGS)
+        assert request.persona_name is None
+        assert request.bot_rating is None
+
+    def test_persona_name_and_bot_rating_accepted(self) -> None:
+        request = StoreBotGameRequest(**_kwargs_with(persona_name="Ziggy the Wasp", bot_rating=800))
+        assert request.persona_name == "Ziggy the Wasp"
+        assert request.bot_rating == 800
+
+    def test_persona_name_empty_string_rejected(self) -> None:
+        with pytest.raises(pydantic.ValidationError):
+            StoreBotGameRequest(**_kwargs_with(persona_name=""))
+
+    def test_persona_name_at_max_length_accepted(self) -> None:
+        value = "a" * _MAX_PERSONA_NAME_LENGTH
+        request = StoreBotGameRequest(**_kwargs_with(persona_name=value))
+        assert request.persona_name == value
+
+    def test_persona_name_over_max_length_rejected(self) -> None:
+        with pytest.raises(pydantic.ValidationError):
+            StoreBotGameRequest(**_kwargs_with(persona_name="a" * (_MAX_PERSONA_NAME_LENGTH + 1)))
+
+    def test_bot_rating_out_of_range_rejected(self) -> None:
+        with pytest.raises(pydantic.ValidationError):
+            StoreBotGameRequest(**_kwargs_with(bot_rating=100))
+
+    def test_bot_rating_none_accepted(self) -> None:
+        request = StoreBotGameRequest(**_kwargs_with(bot_rating=None))
+        assert request.bot_rating is None
 
 
 class TestStoreBotGameResponse:

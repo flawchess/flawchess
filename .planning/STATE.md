@@ -5,16 +5,16 @@ milestone_name: Bot Personas & Playstyle Layer
 current_phase: 185
 current_phase_name: bots-roster-transpose-win-stars
 status: Phase 185 shipped — squash-merged to main (f5ff3ff4)
-stopped_at: Completed 185-03-PLAN.md
-last_updated: "2026-07-22T17:17:02.884Z"
+stopped_at: "Completed quick task 260722-ucc: bot persona name + calibrated ELO"
+last_updated: "2026-07-22T20:03:04.579Z"
 last_activity: 2026-07-22
+last_activity_desc: "Completed quick task 260722-r7t: bot persona avatar generation pipeline (prompts doc + script + seam swap)"
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 19
   completed_plans: 18
   percent: 75
-last_activity_desc: Phase 185 execution started
 ---
 
 # Project State: FlawChess
@@ -24,7 +24,7 @@ last_activity_desc: Phase 185 execution started
 Phase: 185 (bots-roster-transpose-win-stars) — EXECUTING
 Plan: 3 of 3
 Status: Phase 185 shipped — squash-merged to main (f5ff3ff4)
-Last activity: 2026-07-22 - Completed quick task 260722-r7t: bot persona avatar generation pipeline (prompts doc + script + seam swap)
+Last activity: 2026-07-22 - Completed quick task 260722-ucc: bot persona name + calibrated ELO in PGN and games rating fields
 
 ## Project Reference
 
@@ -412,6 +412,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase ?]: 185-02: personasForRung added as a new exported accessor mirroring personasForSection's abstraction level; DOM-order test rewritten (not patched) to rung-major order, mutation-verified
 - [Phase ?]: PersonaStars renders via a filled-count/empty-count split (not a single MAX_DISPLAY_STARS-length loop) so the Math.min cap is genuinely load-bearing for the required mutation check
 - [Phase ?]: STAR_FILLED/STAR_EMPTY declared as independent theme.ts constants, not an alias of FLAWCHESS_ENGINE_ACCENT, despite the matching gold value
+- [Phase ?]: [Quick 260722-ucc]: normalize_flawchess_game's new bot_username param made keyword-only (default FLAWCHESS_BOT_USERNAME) rather than inserted positionally, to avoid breaking ~12 existing positional call sites
 
 ### Pending Todos
 
@@ -453,6 +454,7 @@ None active.
 | 260719-fsz | Best/gem move (tier-4b) coverage for lichess-eval + guest games. Two coverage holes closed via runtime self-healing lanes (no migration/script): (A) ~18.9k guest lichess games (full_pv NULL) now get the full engine pass — guest clause dropped from the tier-3 residual lichess fallback (scoped QUEUE-08 reversal, this lane only); (B) ~12.6k non-guest lichess orphans (full_pv set, best_moves NULL, orphaned during a Maia-down window) self-heal via _claim_tier4_bestmove — `lichess_evals_at IS NULL` dropped from both stages, lanes stay disjoint on full_pv; (B2) guest orphans self-heal too via include_guests on _es_weighted_user_pick (tier-3/tier-4-blob still exclude guests). Divergence-guard parity: minimal drain stores fresh-Stockfish best_cp for lichess games (not stored lichess %eval) so the query-time gem/great guard doesn't silently over-badge. All 5 fixes mutation-proven; suite 3513 passed | 2026-07-19 | 23ab7f0f | [260719-fsz-ensure-every-fully-analyzed-game-gets-be](./quick/260719-fsz-ensure-every-fully-analyzed-game-gets-be/) |
 | 260722-nlm | Bots UI follow-ups to Phase 184: persona-modal ELO disclosure trigger switched from the Search glyph to HelpCircle; game-end dialog footer now stacks at every breakpoint (the shared `sm:flex-row` put Analyze / New opponent / Rematch <Persona> on one line, overflowing the `sm:max-w-sm` dialog and rendering the buttons outside its border) with `flex-wrap` added to GameResultStrip for mobile parity; PersonaGrid shows the player's estimated blitz rating (profile.lichess_blitz_equivalent_rating) above the roster with an InfoPopover disclosure, omitted entirely when there is no anchor. Footer fix proven by a class-resolution regression test; frontend gate green (2508 tests) | 2026-07-22 | d1cddde2 | [260722-nlm-bot-modal-info-popover-game-end-dialog-l](./quick/260722-nlm-bot-modal-info-popover-game-end-dialog-l/) |
 | 260722-r7t | Bot persona avatar pipeline: personaAvatarPrompts.md enriched with all 24 bios (doc is now the single generation source of truth); new scripts/gen_persona_avatars.py generates missing frontend/src/assets/personas/{id}.webp avatars via pydantic-ai + google:gemini-3.1-flash-image (1:1, 1K → Pillow 512×512 webp; --limit, --logo-ref, --dry-run; Pillow added as dev dep); resolveAvatarSrc() seam swapped to an eager import.meta.glob over assets/personas/*.webp with emoji fallback preserved (delete-and-rerun curation loop). No images committed — user runs the script with GOOGLE_API_KEY. Frontend gate green (2521 tests, tsc, knip) | 2026-07-22 | 729b5ba2 | [260722-r7t-bot-persona-avatar-generation-prompts-do](./quick/260722-r7t-bot-persona-avatar-generation-prompts-do/) |
+| 260722-ucc | Bot games store the persona name and calibrated ELO (not the internal engine dial) in the PGN bot-side name/Elo tags and games username/rating fields; persona_name/bot_rating wire fields, keyword-only bot_username in normalize_flawchess_game; Custom-mode games unchanged | 2026-07-22 | b02cf181 | [260722-ucc-when-playing-a-bot-store-the-bot-persona](./quick/260722-ucc-when-playing-a-bot-store-the-bot-persona/) |
 
 ## Deferred Items
 
@@ -505,9 +507,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Completed 185-03-PLAN.md
+**Stopped at:** Completed quick task 260722-ucc: bot persona name + calibrated ELO
 
-**Last session:** 2026-07-22T16:28:03.588Z
+**Last session:** 2026-07-22T20:03:04.464Z
 
 **Resume file:**
 

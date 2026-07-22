@@ -22,6 +22,7 @@ import type { StoreBotGameRequest, StoreBotGameResponse } from '@/types/bots';
 import { toBackendTcStr } from '@/lib/botGamePgn';
 import { listPendingStore, removePendingStore, type PendingStoreEntry } from '@/lib/botPendingStore';
 import { BOT_PERSONA_WINS_QUERY_KEY } from '@/hooks/useBotPersonaWins';
+import { personaForId, personaCalibratedElo } from '@/lib/personas/personaRegistry';
 
 /** Bounded in-session retries for a transient (network/5xx) store failure. A
  * pending entry blocks nothing — the real retry is "the user's next visit"
@@ -38,6 +39,15 @@ const STATUS_UNPROCESSABLE = 422;
  * testable without mounting a hook.
  */
 export function toStoreRequest(entry: PendingStoreEntry): StoreBotGameRequest {
+  // quick-260722-ucc: re-derive the persona's name + calibrated ELO from
+  // settings.personaId at store time — robust for old queued localStorage
+  // entries (nothing new is persisted into the queue schema, matching Phase
+  // 185's Pitfall-3 note below). `personaForId` returns undefined for a
+  // Custom-mode game (no personaId) or an unrecognized/removed id, both of
+  // which fall back to null (the server then falls back to "FlawChess Bot" /
+  // the raw bot_elo).
+  const persona = personaForId(entry.settings.personaId);
+
   return {
     game_uuid: entry.gameUuid,
     pgn: entry.pgn,
@@ -51,6 +61,8 @@ export function toStoreRequest(entry: PendingStoreEntry): StoreBotGameRequest {
     // isValidPendingEntry/isValidSettingsShape to require personaId, they
     // must still round-trip (Pitfall 3).
     persona_id: entry.settings.personaId ?? null,
+    persona_name: persona?.name ?? null,
+    bot_rating: persona ? personaCalibratedElo(persona) : null,
   };
 }
 

@@ -32,6 +32,11 @@ _MAX_TC_PRESET_LENGTH = 50
 # frontend-only, milestone-evolving TS module (RESEARCH A1); a malformed value
 # only corrupts the submitting user's OWN win-star display (low blast radius).
 _MAX_PERSONA_ID_LENGTH = 30
+# quick-260722-ucc: bounds persona_name, e.g. "Ziggy the Wasp" (60 gives
+# headroom over the registry's longest current name). Same low-blast-radius
+# rationale as persona_id — client-supplied, only affects the submitting
+# user's OWN stored game display.
+_MAX_PERSONA_NAME_LENGTH = 60
 
 
 class StoreBotGameRequest(BaseModel):
@@ -55,6 +60,15 @@ class StoreBotGameRequest(BaseModel):
     # key in count_wins_by_persona's response (its is_not(None) filter includes
     # empty strings too).
     persona_id: str | None = Field(default=None, min_length=1, max_length=_MAX_PERSONA_ID_LENGTH)
+    # quick-260722-ucc: client-supplied persona name + calibrated ELO, same
+    # trust model as persona_id — derived deterministically from personaId on
+    # the frontend, low blast radius (only affects the submitting user's OWN
+    # stored game display). None for a Custom-mode game (backend falls back to
+    # FLAWCHESS_BOT_USERNAME / the raw bot_elo).
+    persona_name: str | None = Field(
+        default=None, min_length=1, max_length=_MAX_PERSONA_NAME_LENGTH
+    )
+    bot_rating: int | None = Field(default=None, ge=_MIN_BOT_ELO, le=_MAX_BOT_ELO)
 
     @field_validator("game_uuid")
     @classmethod

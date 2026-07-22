@@ -39,6 +39,18 @@ export interface StoreBotGameRequest {
    * no persona (Phase 185, PERS-05). Optional on the wire — mirrors the
    * backend `StoreBotGameRequest.persona_id`'s `default=None`. */
   persona_id: string | null;
+  /** The persona's display name (e.g. "Ziggy the Wasp"), or `null` for a
+   * Custom-mode game with no persona (quick-260722-ucc). Client-supplied like
+   * `persona_id` — low blast radius, only affects the submitting user's OWN
+   * game display. Mirrors the backend `StoreBotGameRequest.persona_name`'s
+   * `default=None`. */
+  persona_name: string | null;
+  /** The persona's CALIBRATED ELO (the honest `~label` value the user sees,
+   * e.g. 800) — NOT the internal engine dial `bot_elo` (e.g. 1100). `null`
+   * for a Custom-mode game, in which case the server falls back to `bot_elo`.
+   * Client-supplied like `persona_id` (quick-260722-ucc). Mirrors the backend
+   * `StoreBotGameRequest.bot_rating`'s `default=None`. */
+  bot_rating: number | null;
 }
 
 /** Response body for `POST /bots/games`. */

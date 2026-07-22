@@ -20,6 +20,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- Finished bot games are now saved with the persona's name and its calibrated strength (e.g. ~800) as the opponent's name and rating, in both the PGN header and the game record, instead of the generic "FlawChess Bot" and the bot's internal engine setting. Custom-setup games are unchanged (Quick 260722-ucc).
+
 - The Bots roster is now organized as a strength ladder: six rung rows (~800 at the top, strongest at the bottom) by four style columns, with a single accent-colored style header row. Each card's own ELO label identifies its rung, so the grid needs no row labels, and the four style names fit on one line down to the narrowest phone widths (Phase 185).
 
 ## [v2.6] Bot Strength Calibration — 2026-07-21

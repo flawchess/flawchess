@@ -223,6 +223,63 @@ class TestNormalizeFlawchessGame:
         # player-color (black) username column.
         assert normalized.black_username == _TEST_PLAYER_USERNAME
 
+    def test_happy_path_bot_username_defaults_to_flawchess_bot(self) -> None:
+        """quick-260722-ucc: no bot_username kwarg -> the Custom-mode fallback."""
+        normalized = normalize_flawchess_game(
+            _PGN_BOTH_CLOCKS_CHECKMATE,
+            _TEST_GAME_UUID,
+            _TEST_USER_ID,
+            "white",
+            _TEST_BOT_ELO,
+            _TEST_PLAYER_RATING,
+            _TEST_PLAYER_USERNAME,
+            _TEST_TC_STR,
+        )
+        assert normalized is not None
+        assert normalized.black_username == FLAWCHESS_BOT_USERNAME
+
+    def test_persona_bot_username_and_calibrated_rating_white_user(self) -> None:
+        """quick-260722-ucc: a persona name + calibrated rating go in the
+        bot-color (black, since user_color='white') columns."""
+        calibrated_rating = 800
+        normalized = normalize_flawchess_game(
+            _PGN_BOTH_CLOCKS_CHECKMATE,
+            _TEST_GAME_UUID,
+            _TEST_USER_ID,
+            "white",
+            calibrated_rating,
+            _TEST_PLAYER_RATING,
+            _TEST_PLAYER_USERNAME,
+            _TEST_TC_STR,
+            bot_username="Ziggy the Wasp",
+        )
+        assert normalized is not None
+        assert normalized.black_username == "Ziggy the Wasp"
+        assert normalized.black_rating == calibrated_rating
+        assert normalized.white_username == _TEST_PLAYER_USERNAME
+        assert normalized.white_rating == _TEST_PLAYER_RATING
+
+    def test_persona_bot_username_and_calibrated_rating_black_user(self) -> None:
+        """quick-260722-ucc: mirrored placement when user_color='black' — the
+        persona name + calibrated rating go in the white columns."""
+        calibrated_rating = 800
+        normalized = normalize_flawchess_game(
+            _PGN_BOTH_CLOCKS_CHECKMATE,
+            _TEST_GAME_UUID,
+            _TEST_USER_ID,
+            "black",
+            calibrated_rating,
+            _TEST_PLAYER_RATING,
+            _TEST_PLAYER_USERNAME,
+            _TEST_TC_STR,
+            bot_username="Ziggy the Wasp",
+        )
+        assert normalized is not None
+        assert normalized.white_username == "Ziggy the Wasp"
+        assert normalized.white_rating == calibrated_rating
+        assert normalized.black_username == _TEST_PLAYER_USERNAME
+        assert normalized.black_rating == _TEST_PLAYER_RATING
+
     def test_no_anchor_player_rating_none(self) -> None:
         """player_rating=None (no anchor, D-06) flows through to the games row untouched."""
         normalized = normalize_flawchess_game(
