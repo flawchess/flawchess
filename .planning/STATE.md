@@ -8,7 +8,7 @@ status: planning
 stopped_at: Completed 182-07-PLAN.md
 last_updated: "2026-07-21T23:15:59.126Z"
 last_activity: 2026-07-22
-last_activity_desc: Phase 182 complete, transitioned to Phase 183
+last_activity_desc: Phase 182 shipped — squash-merged to main (15c9949c), transitioned to Phase 183
 progress:
   total_phases: 3
   completed_phases: 1
@@ -24,7 +24,7 @@ progress:
 Phase: 183 — Persona Registry & Bots Page
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-07-22 — Phase 182 complete, transitioned to Phase 183
+Last activity: 2026-07-22 — Phase 182 shipped (squash-merged to main, 15c9949c), transitioned to Phase 183
 
 ## Project Reference
 
