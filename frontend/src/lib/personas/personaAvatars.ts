@@ -1,17 +1,17 @@
 /**
  * personaAvatars — the D-18 placeholder-avatar look (species emoji on a
- * per-style background tint) plus the D-17 forward-compat seam for the
- * future real-art PR (Phase 183, AVAT-01 partial).
+ * per-style background tint) plus the D-17 real-art seam: a Vite
+ * `import.meta.glob` lookup over `frontend/src/assets/personas/*.webp`.
  *
- * RESEARCH.md Pitfall 6: this codebase has ZERO existing precedent for
- * `import.meta.glob`/Vite-bundled `@/assets/*` image imports — every
- * existing app image is a plain `/public/...` string path. Building that
- * import machinery now, before any real `.webp` files exist, risks either
- * dead code or a half-built pattern that doesn't actually satisfy D-17's
- * "build-time existence check" requirement. This module therefore ships
- * ONLY the placeholder path: `resolveAvatarSrc` is the single seam the
- * future real-art PR will need to touch (swap its body for a Vite import
- * lookup) — no glob, no static `.webp`/`.png` import statements here.
+ * `resolveAvatarSrc` globs the assets directory once at module load (`eager:
+ * true`), keyed by each file's basename (the persona id, e.g.
+ * `attacker-800`). A persona with no matching webp resolves to `undefined`,
+ * so `PersonaCard` falls back to the D-18 emoji placeholder — the
+ * generate-curate-swap loop (`scripts/gen_persona_avatars.py`,
+ * `frontend/src/data/personaAvatarPrompts.md`) works by deleting a webp and
+ * rerunning the script; no code change is ever needed here. The glob
+ * matching zero files (before any webp exists) is valid — Vite's glob
+ * returns `{}` — so the build stays green with or without curated art.
  */
 
 import type { Persona } from './personaRegistry';
@@ -48,12 +48,32 @@ export function placeholderAvatarFor(persona: Persona): PlaceholderAvatar {
 }
 
 /**
- * Forward-compat seam (D-17): returns `persona.avatarSrc` if a future PR
- * ever populates it, `undefined` today (every current persona omits the
- * field). No bundling, no glob — the future real-art PR swaps ONLY this
- * function's body for a real Vite-imported lookup; every caller of this
- * function stays unchanged.
+ * Glob every persona webp at module load, keyed by the filename stem (the
+ * persona id). `query: '?url'` + `import: 'default'` yields a plain URL
+ * string per matched file, matching `<img src>`'s expected type — no raw
+ * asset objects leak out of this module.
+ */
+const AVATAR_MODULES = import.meta.glob('../../assets/personas/*.webp', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+}) as Record<string, string>;
+
+/** `AVATAR_MODULES`'s glob-path keys reduced to `{persona-id: url}` — computed
+ * once at module load, not per render. */
+const AVATAR_SRC_BY_ID: Record<string, string> = Object.fromEntries(
+  Object.entries(AVATAR_MODULES).map(([path, url]) => {
+    const stem = path.split('/').pop()?.replace(/\.webp$/, '') ?? path;
+    return [stem, url];
+  }),
+);
+
+/**
+ * Real-art avatar resolution (D-17): `persona.avatarSrc` wins if a persona
+ * ever sets it explicitly (the field's documented override purpose), else
+ * the glob-backed lookup by persona id, else `undefined` (no webp curated
+ * yet — every caller falls back to the D-18 emoji placeholder).
  */
 export function resolveAvatarSrc(persona: Persona): string | undefined {
-  return persona.avatarSrc ?? undefined;
+  return persona.avatarSrc ?? AVATAR_SRC_BY_ID[persona.id];
 }
