@@ -6,15 +6,15 @@ current_phase: 184
 current_phase_name: persona-calibration-strength-honesty
 status: executing
 stopped_at: Completed 184-03-PLAN.md
-last_updated: "2026-07-22T14:15:45.603Z"
+last_updated: "2026-07-22T15:29:30.781Z"
 last_activity: 2026-07-22
-last_activity_desc: Phase 184 execution started
+last_activity_desc: "Completed quick task 260722-nlm: bots info icon, stacked game-end actions, player blitz rating above the roster"
 progress:
-  total_phases: 3
+  total_phases: 4
   completed_phases: 2
   total_plans: 16
   completed_plans: 15
-  percent: 67
+  percent: 50
 ---
 
 # Project State: FlawChess
@@ -111,6 +111,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - Phase 173 added: Anchor ladder self-calibration (SEED-101) — round-robin maia/SF anchors, fit internal rating scale; unblocks SEED-102
 - Phase 181 added: Per-preset strength lookup curves (SEED-104) — invert Phase-180 curves into target_blitz_elo → bot_elo lookups
 - v2.7 Bot Personas & Playstyle Layer roadmap created 2026-07-21 — 3 phases (182–184) in a linear dependency chain (182 → 183 → 184), continuing absolute numbering from v2.6's Phase 181. All 13 requirements (PERS-01..04, STYLE-01..05, CAL-04..05, AVAT-01..02) mapped 1:1, no orphans. Ordering chosen deliberately: **182 Style Levers** builds the engine-only capability (opening books, contempt/resign, prior reweighting, score shaping) with no UI; **183 Persona Registry & Bots Page** wires those levers into 24 named personas with a real UI, shipped with provisional (raw preset) ELO labels — independently playable on its own; **184 Persona Calibration & Strength Honesty** then runs the Phase-180 harness against the finished personas and swaps in measured ELO labels. Each phase is independently shippable; labels simply get more honest over the sequence, per SEED-098's locked "persona pins everything" decision. UI hint on Phase 183 (Bots page grid).
+- Phase 185 added: Bots roster transpose + win stars — from a 2026-07-22 /gsd-explore session on post-184 Bots page follow-ups (grid transpose to rung-rows × style-columns, stars-row persona cards, server-side per-persona win tracking via nullable persona_id + aggregation endpoint)
 
 ### Decisions
 
