@@ -83,3 +83,51 @@ describe('resultCopy', () => {
     expect(resultCopy({ reason: 'draw', drawReason: 'agreement' }, 'white')).toBe('Draw — by agreement');
   });
 });
+
+describe('resultCopy — persona-named bot-actor copy (Phase 183, D-06)', () => {
+  const PERSONA_NAME = 'Riko the Raccoon';
+
+  it('substitutes the persona name into the bot-actor checkmate-loss copy', () => {
+    const lost: BotGameOutcome = { reason: 'checkmate', winner: 'black' };
+    expect(resultCopy(lost, 'white', PERSONA_NAME)).toBe('Riko the Raccoon wins — checkmate');
+  });
+
+  it('substitutes the persona name into the bot-actor timeout-loss copy', () => {
+    const lost: BotGameOutcome = { reason: 'timeout', winner: 'black' };
+    expect(resultCopy(lost, 'white', PERSONA_NAME)).toBe('Riko the Raccoon wins on time');
+  });
+
+  it('substitutes the persona name into the (D-03-unreachable) bot-resigned win copy', () => {
+    const opponentResigned: BotGameOutcome = { reason: 'resignation', winner: 'white' };
+    expect(resultCopy(opponentResigned, 'white', PERSONA_NAME)).toBe(
+      'You won — Riko the Raccoon resigned',
+    );
+  });
+
+  it('leaves the user-actor copy (a user win, or the user resigning) UNCHANGED even with a persona name', () => {
+    const won: BotGameOutcome = { reason: 'checkmate', winner: 'white' };
+    expect(resultCopy(won, 'white', PERSONA_NAME)).toBe('You won — checkmate');
+
+    const wonOnTime: BotGameOutcome = { reason: 'timeout', winner: 'white' };
+    expect(resultCopy(wonOnTime, 'white', PERSONA_NAME)).toBe('You won on time');
+
+    const userResigned: BotGameOutcome = { reason: 'resignation', winner: 'black' };
+    expect(resultCopy(userResigned, 'white', PERSONA_NAME)).toBe('You resigned');
+  });
+
+  it('leaves every draw branch UNCHANGED even with a persona name (no actor)', () => {
+    expect(resultCopy({ reason: 'draw', drawReason: 'stalemate' }, 'white', PERSONA_NAME)).toBe(
+      'Draw — stalemate',
+    );
+    expect(resultCopy({ reason: 'draw', drawReason: 'agreement' }, 'white', PERSONA_NAME)).toBe(
+      'Draw — by agreement',
+    );
+  });
+
+  it('returns the exact pre-183 generic strings when personaName is omitted/null/undefined (Custom game)', () => {
+    const lost: BotGameOutcome = { reason: 'checkmate', winner: 'black' };
+    expect(resultCopy(lost, 'white')).toBe('You lost — checkmate');
+    expect(resultCopy(lost, 'white', null)).toBe('You lost — checkmate');
+    expect(resultCopy(lost, 'white', undefined)).toBe('You lost — checkmate');
+  });
+});

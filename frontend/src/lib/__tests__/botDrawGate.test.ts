@@ -2,12 +2,15 @@ import { Chess } from 'chess.js';
 import { describe, expect, it } from 'vitest';
 
 import {
+  BOT_DRAW_OFFER_COOLDOWN_MOVES,
+  BOT_DRAW_OFFER_MIN_FULLMOVE,
   canOfferDraw,
   DRAW_ACCEPT_MIN_FULLMOVE,
   DRAW_OFFER_COOLDOWN_MOVES,
   RESIGN_HYSTERESIS_TURNS,
   RESIGN_MIN_FULLMOVE,
   wouldBotAcceptDraw,
+  wouldBotOfferDraw,
   wouldBotResign,
 } from '../botDrawGate';
 
@@ -154,6 +157,73 @@ describe('wouldBotResign (D-07/D-08, Phase 182)', () => {
     const chess = pastMinMoveChess();
     const first = wouldBotResign(0.05, RESIGN_THRESHOLD, RESIGN_HYSTERESIS_TURNS, RESIGN_HYSTERESIS_TURNS, chess);
     const second = wouldBotResign(0.05, RESIGN_THRESHOLD, RESIGN_HYSTERESIS_TURNS, RESIGN_HYSTERESIS_TURNS, chess);
+    expect(first).toBe(second);
+    expect(first).toBe(true);
+  });
+});
+
+describe('wouldBotOfferDraw (D-07, Phase 183, Plan 02)', () => {
+  function pastMinMoveChess(): Chess {
+    // queens still on the board — proves the fullmove floor alone gates offers
+    // past the opening, no separate endgame/queens-off branch like wouldBotAcceptDraw.
+    return new Chess(`4k3/8/8/8/8/8/3Q4/4K3 w - - 0 ${BOT_DRAW_OFFER_MIN_FULLMOVE}`);
+  }
+
+  function earlyGameChess(): Chess {
+    return new Chess(); // starting position: fullmove 1, well below the floor
+  }
+
+  it('returns false for the not-yet-evaluated null sentinel, checked before every other argument', () => {
+    expect(wouldBotOfferDraw(null, pastMinMoveChess(), 0, BOT_DRAW_OFFER_COOLDOWN_MOVES)).toBe(false);
+    expect(wouldBotOfferDraw(null, earlyGameChess(), 0.2, 0)).toBe(false);
+  });
+
+  it('offers a dead-equal score once past the fullmove floor with cooldown elapsed', () => {
+    const chess = pastMinMoveChess();
+    expect(wouldBotOfferDraw(0.5, chess, 0, BOT_DRAW_OFFER_COOLDOWN_MOVES)).toBe(true);
+  });
+
+  it('does not offer when movesSinceOwnOffer is below the cooldown, even with a qualifying score', () => {
+    const chess = pastMinMoveChess();
+    expect(wouldBotOfferDraw(0.5, chess, 0, BOT_DRAW_OFFER_COOLDOWN_MOVES - 1)).toBe(false);
+  });
+
+  it('does not offer in an early, still-developing position even with a dead-equal score', () => {
+    const chess = earlyGameChess();
+    expect(wouldBotOfferDraw(0.5, chess, 0, BOT_DRAW_OFFER_COOLDOWN_MOVES)).toBe(false);
+  });
+
+  it('does not offer a clearly-winning score, even past the floor with cooldown elapsed', () => {
+    const chess = pastMinMoveChess();
+    expect(wouldBotOfferDraw(0.9, chess, 0, BOT_DRAW_OFFER_COOLDOWN_MOVES)).toBe(false);
+  });
+
+  describe('contempt shifts the offer target (mirrors wouldBotAcceptDraw D-09)', () => {
+    it('positive contempt (Grinder-like) refuses a dead-equal score a neutral bot would offer', () => {
+      const chess = pastMinMoveChess();
+      expect(wouldBotOfferDraw(0.5, chess, 0, BOT_DRAW_OFFER_COOLDOWN_MOVES)).toBe(true); // neutral baseline
+      // drawValue = 0.5 + 0.2 = 0.7; dead-equal 0.5 now sits outside the shifted
+      // band [0.65, 0.75] — the Grinder-like bot keeps playing on for more.
+      expect(wouldBotOfferDraw(0.5, chess, 0.2, BOT_DRAW_OFFER_COOLDOWN_MOVES)).toBe(false);
+      // It DOES offer once genuinely ahead by the shifted amount.
+      expect(wouldBotOfferDraw(0.7, chess, 0.2, BOT_DRAW_OFFER_COOLDOWN_MOVES)).toBe(true);
+    });
+
+    it('negative contempt (Wall-like) offers a mildly-worse position a neutral bot would refuse', () => {
+      const chess = pastMinMoveChess();
+      // drawValue = 0.5 + (-0.2) = 0.3; a mildly-worse 0.32 score falls inside
+      // the shifted band [0.25, 0.35] — the Wall-like bot offers readily.
+      expect(wouldBotOfferDraw(0.32, chess, -0.2, BOT_DRAW_OFFER_COOLDOWN_MOVES)).toBe(true);
+      // Unshifted (contempt=0), the same 0.32 score is refused (outside the
+      // neutral band [0.45, 0.55]) — proving the shift, not the score, decides it.
+      expect(wouldBotOfferDraw(0.32, chess, 0, BOT_DRAW_OFFER_COOLDOWN_MOVES)).toBe(false);
+    });
+  });
+
+  it('is idempotent: identical arguments always return the identical result, holding no internal state', () => {
+    const chess = pastMinMoveChess();
+    const first = wouldBotOfferDraw(0.5, chess, 0, BOT_DRAW_OFFER_COOLDOWN_MOVES);
+    const second = wouldBotOfferDraw(0.5, chess, 0, BOT_DRAW_OFFER_COOLDOWN_MOVES);
     expect(first).toBe(second);
     expect(first).toBe(true);
   });

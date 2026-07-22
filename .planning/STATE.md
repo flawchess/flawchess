@@ -3,28 +3,28 @@ gsd_state_version: 1.0
 milestone: v2.7
 milestone_name: Bot Personas & Playstyle Layer
 current_phase: 183
-current_phase_name: Persona Registry & Bots Page
-status: planning
-stopped_at: Completed 182-07-PLAN.md
-last_updated: "2026-07-21T23:15:59.126Z"
+current_phase_name: persona-registry-bots-page
+status: verifying
+stopped_at: Completed 183-05-PLAN.md
+last_updated: "2026-07-22T10:11:16.673Z"
 last_activity: 2026-07-22
-last_activity_desc: Phase 182 shipped — squash-merged to main (15c9949c), transitioned to Phase 183
+last_activity_desc: Phase 183 execution started
 progress:
   total_phases: 3
-  completed_phases: 1
-  total_plans: 7
-  completed_plans: 7
-  percent: 33
+  completed_phases: 2
+  total_plans: 12
+  completed_plans: 12
+  percent: 67
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 183 — Persona Registry & Bots Page
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-07-22 — Phase 182 shipped (squash-merged to main, 15c9949c), transitioned to Phase 183
+Phase: 183 (persona-registry-bots-page) — EXECUTING
+Plan: 5 of 5
+Status: Phase complete — ready for verification
+Last activity: 2026-07-22 — Phase 183 execution started
 
 ## Project Reference
 
@@ -387,6 +387,19 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase ?]: [Phase 182-06]: Fixed selectBotMove.test.ts's makeLine helper to include RankedLine's required childScoreSpread field (defaulted to null) - was silently missing since Plan 04 added the field, uncaught because *.test.ts is outside tsc -b's build
 - [Phase ?]: [Phase 182-07]: BotGameSettings.style is typed as bare BotStyleParams (matching selectBotMove's shape) with a styleNameFor() reverse-lookup bridge against BOT_STYLE_BUNDLES for the book-line seam that needs a Style name
 - [Phase ?]: [Phase 182-07]: Threaded settings.style into the selectBotMove() search call at runBotTurn (Rule 2 deviation) -- completes STYLE-03/04's live-play wiring per 182-06-SUMMARY.md's flagged gap
+- [Phase ?]: [Phase 183-01]: RUNG_BLEND[1600] holds a canonical LIGHT_BLEND default for Record completeness; each of the 4 personas at rung 1600 sets its own blend explicitly (Attacker/Wall -> Light, Trickster/Grinder -> Deep) per style identity
+- [Phase ?]: [Phase 183-01]: 24 persona species/names/bios authored per D-09..D-14 conventions as a first draft pending user UAT review/swap (D-13), same process as Phase 182's curated opening lines
+- [Phase ?]: [Phase 183-01]: AVAT-01 intentionally left partial/pending (D-16) — placeholder avatars ship now, real curated art deferred to a future PR using the committed personaAvatarPrompts.md
+- [Phase ?]: wouldBotOfferDraw reuses the existing contempt knob (no new BotStyleParams field) — mirrors wouldBotAcceptDraw's target-shift pattern; A4 resolution
+- [Phase ?]: BOT_DRAW_OFFER_MIN_FULLMOVE=30 chosen independently between RESIGN_MIN_FULLMOVE=20 and DRAW_ACCEPT_MIN_FULLMOVE=40, per Pitfall 7
+- [Phase ?]: [Phase 183-03]: botDrawOffer modeled as a plain boolean (not an object) — sufficient for the Plan 05 banner, other game state already available from the hook (YAGNI)
+- [Phase ?]: [Phase 183-03]: Bot draw-offer auto-expire wired inside commitMove (shared by attemptMove/runBotTurn) gated on mover === settings.userColor, not a separate effect
+- [Phase ?]: [Phase 183-03]: resolveBotDrawOfferUpdate extracted as a pure top-level helper to keep the dense pool.grade().then() callback's nesting depth unchanged (CLAUDE.md limits)
+- [Phase ?]: [Phase 183-03]: outcomeRef.current !== null (not a separate resigns flag) gates 'game already over' in resolveBotDrawOfferUpdate — finalizeGame is synchronous so a same-turn resign is already reflected
+- [Phase ?]: [Phase 183-04]: Custom-mode back affordance rendered as a sibling before <SetupScreen/> (not a wrapper) — SetupScreen.tsx stays byte-unchanged
+- [Phase ?]: [Phase 183-04]: PersonaCard/PersonaDetailSurface consume resolveAvatarSrc (Plan 01's D-17 seam) as a real fallback branch, not just placeholderAvatarFor — required by the plan's backstop truth and to keep npm run knip green
+- [Phase ?]: personaFor(settings) is the single shared personaId->Persona lookup (type-only BotGameSettings import, no runtime circular dependency); resultCopy substitutes the persona name only into bot-actor branches, leaving user-actor/draw copy and the no-persona default byte-identical to pre-183 strings
+- [Phase ?]: Rematch reuses the exact same BotGameSettings object reference via the existing handleStart path (no second start path); New opponent relabels the existing onNewGame action; AVAT-01 stays intentionally open (placeholder avatars only, per 183-01's D-16)
 
 ### Pending Todos
 
@@ -478,9 +491,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Completed 182-07-PLAN.md
+**Stopped at:** Completed 183-05-PLAN.md
 
-**Last session:** 2026-07-21T22:43:52.293Z
+**Last session:** 2026-07-22T10:11:16.657Z
 
 **Resume file:**
 
@@ -525,6 +538,11 @@ None
 | Phase 182 P05 | 55min | 3 tasks | 4 files |
 | Phase 182 P06 | 25min | 2 tasks | 2 files |
 | Phase 182 P07 | 55min | 3 tasks | 2 files |
+| Phase 183 P01 | 25min | 3 tasks | 7 files |
+| Phase 183 P02 | 15min | 1 tasks | 2 files |
+| Phase 183 P03 | 11min | 2 tasks | 2 files |
+| Phase 183 P04 | 20min | 3 tasks | 8 files |
+| Phase 183 P05 | 20min | 3 tasks | 13 files |
 
 ## Performance Metrics
 

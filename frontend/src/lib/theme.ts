@@ -467,3 +467,24 @@ export const MOVE_QUALITY_PENDING = 'oklch(0.65 0.02 260)'; // muted neutral gra
 // reads consistently with the app's other destructive surfaces (resign
 // confirm button, etc.) without hard-coding a duplicate literal.
 export const CLOCK_LOW_TIME_URGENT = 'oklch(0.577 0.245 27.325)';
+
+// Bot persona per-style accent colors (Phase 183, PERS-03/AVAT-01). One accent
+// per style — Attacker/Trickster/Grinder/Wall — used for the Bots page grid's
+// section headers and the D-18 placeholder-avatar background tint. Distinct
+// from every existing WDL/MAIA/severity/tactic hue above: Attacker (15) sits
+// between the crimson TAC_ALLOWED (10) and the blunder red (25) but at a
+// higher chroma so it reads as its own "aggressive" identity rather than a
+// severity color; Trickster (320) is a playful magenta, clearly apart from
+// MAIA_ACCENT's violet (290); Grinder (165) is an earthy teal-green between
+// WDL_WIN (145) and TAC_MISSED (200); Wall (235) is a steady blue-gray,
+// distinct from Stockfish (255) and GREAT_ACCENT (220). `_BG` variants follow
+// the established 14% alpha convention (MAIA_ACCENT_BG et al.) for section
+// header washes and placeholder-avatar tints.
+export const ATTACKER_ACCENT = 'oklch(0.60 0.20 15)'; // fiery red-orange
+export const ATTACKER_ACCENT_BG = 'oklch(0.60 0.20 15 / 0.14)';
+export const TRICKSTER_ACCENT = 'oklch(0.60 0.20 320)'; // playful magenta
+export const TRICKSTER_ACCENT_BG = 'oklch(0.60 0.20 320 / 0.14)';
+export const GRINDER_ACCENT = 'oklch(0.55 0.14 165)'; // earthy teal-green
+export const GRINDER_ACCENT_BG = 'oklch(0.55 0.14 165 / 0.14)';
+export const WALL_ACCENT = 'oklch(0.55 0.12 235)'; // steady blue-gray
+export const WALL_ACCENT_BG = 'oklch(0.55 0.12 235 / 0.14)';

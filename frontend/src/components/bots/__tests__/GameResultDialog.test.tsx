@@ -34,6 +34,7 @@ function renderDialog(overrides: Partial<Parameters<typeof GameResultDialog>[0]>
   const onDismiss = vi.fn();
   const onNewGame = vi.fn();
   const onAnalyze = vi.fn();
+  const onRematch = vi.fn();
   render(
     <MemoryRouter>
       <GameResultDialog
@@ -46,11 +47,13 @@ function renderDialog(overrides: Partial<Parameters<typeof GameResultDialog>[0]>
         storeSucceeded={false}
         isGuest={false}
         analyzeBusy={false}
+        personaName={null}
+        onRematch={onRematch}
         {...overrides}
       />
     </MemoryRouter>,
   );
-  return { onDismiss, onNewGame, onAnalyze };
+  return { onDismiss, onNewGame, onAnalyze, onRematch };
 }
 
 describe('GameResultDialog — Saved to Library + guest caveat (V-16)', () => {
@@ -118,5 +121,33 @@ describe('GameResultDialog — Analyze is store-gated (Quick 260714-rj5, retires
 
     fireEvent.click(screen.getByTestId('btn-new-game'));
     expect(onNewGame).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('GameResultDialog — persona-named copy + Rematch/New opponent (Phase 183, D-06/D-08)', () => {
+  const BOT_LOSS_OUTCOME: BotGameOutcome = { reason: 'checkmate', winner: 'black' };
+
+  it('renders the generic title and NO Rematch button for a Custom game (personaName null)', () => {
+    renderDialog({ personaName: null, outcome: BOT_LOSS_OUTCOME });
+
+    expect(screen.getByTestId('result-dialog').textContent).toContain('You lost — checkmate');
+    expect(screen.queryByTestId('btn-rematch')).toBeNull();
+    expect(screen.getByTestId('btn-new-game').textContent).toBe('New opponent');
+  });
+
+  it('renders the persona-named title and a working "Rematch <Persona>" for a persona game', () => {
+    const { onRematch } = renderDialog({
+      personaName: 'Ziggy the Wasp',
+      outcome: BOT_LOSS_OUTCOME,
+    });
+
+    expect(screen.getByTestId('result-dialog').textContent).toContain(
+      'Ziggy the Wasp wins — checkmate',
+    );
+    const rematchBtn = screen.getByTestId('btn-rematch');
+    expect(rematchBtn.textContent).toBe('Rematch Ziggy the Wasp');
+
+    fireEvent.click(rematchBtn);
+    expect(onRematch).toHaveBeenCalledTimes(1);
   });
 });

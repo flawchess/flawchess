@@ -137,7 +137,7 @@
 | 180. Three-preset bot strength curves (SEED-102, v2.6) | 4/4 | Complete — D-02b pilot operator-approved 2026-07-19 (phase completes at pilot, D-01); Task 3 operator sweep landed 2026-07-21 | 2026-07-21 |
 | 181. Per-preset strength lookup curves (SEED-104, v2.6) | 2/2 | Complete | 2026-07-21 |
 | 182. Style Levers (SEED-098, v2.7) | 7/7 | Complete | 2026-07-22 |
-| 183. Persona Registry & Bots Page (SEED-098, v2.7) | 0/0 | Not started | - |
+| 183. Persona Registry & Bots Page (SEED-098, v2.7) | 0/5 | Planned | - |
 | 184. Persona Calibration & Strength Honesty (SEED-098, v2.7) | 0/0 | Not started | - |
 
 ## Backlog
@@ -731,7 +731,23 @@ Add distinct playstyles to the bot, surfaced as a roster of 24 named bot persona
   4. User can still choose Custom mode and configure a bot via the existing raw (ELO, preset) controls, unaffected by the new persona roster.
   5. Each persona's bio conveys a per-tier identity story (e.g. Trickster: trap lines at 800-1200, swindle mode at 1600+), and its avatar is a curated AI-generated portrait consistent with the roster's single style prompt.
 
-**Plans**: TBD
+**Plans**: 5/5 plans executed
+
+Plans:
+**Wave 1**
+
+- [x] 183-01-PLAN.md — Persona data foundation: 24-slot typed registry + rung→preset table, placeholder avatars + committed prompts, last-used color/TC persistence, per-style theme accents (wave 1)
+- [x] 183-02-PLAN.md — Bot outgoing draw-offer predicate (`wouldBotOfferDraw`) + tuning constants (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 183-03-PLAN.md — useBotGame threading: `BotGameSettings.personaId?` + version-safe snapshot round-trip + bot-offer state/accept/decline (wave 2)
+- [x] 183-04-PLAN.md — Persona grid + card + detail surface + Bots setup-branch integration (one-action Play, Custom routed) (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 183-05-PLAN.md — In-game persona presence: clock avatar+name, draw-offer banner, persona-named result copy, Rematch/New opponent (wave 3)
+
 **UI hint**: yes
 
 ### Phase 184: Persona Calibration & Strength Honesty

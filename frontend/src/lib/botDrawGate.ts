@@ -162,6 +162,101 @@ export function wouldBotAcceptDraw(
  * 3. `chess.moveNumber() >= RESIGN_MIN_FULLMOVE` — the game is past the
  *    early-development window (mirrors DRAW_ACCEPT_MIN_FULLMOVE's role).
  */
+/**
+ * D-07/Pitfall 1 (Phase 183, RESEARCH.md): near-equal band around the
+ * (possibly contempt-shifted) draw target the BOT itself uses when deciding
+ * whether to OFFER a draw. Independent of `DRAW_ACCEPT_SCORE_BAND` by
+ * construction (Pitfall 7: no gate here may blindly reuse another gate's
+ * value) but currently tuned to the same width — offering and accepting
+ * should agree on what counts as a legitimately equal position, and there is
+ * no signal yet that the offer trigger needs a tighter/looser window. Retune
+ * in place if bots offer draws that feel premature or too rare relative to
+ * their own accept behavior. [ASSUMED] hand-tuned; retune in place.
+ */
+export const BOT_DRAW_OFFER_SCORE_BAND = 0.05;
+
+/**
+ * D-07/Pitfall 7 (Phase 183): earliest fullmove at which a bot is permitted
+ * to OFFER a draw, even if its score and cooldown already qualify. Picked
+ * independently from `DRAW_ACCEPT_MIN_FULLMOVE` (40) and `RESIGN_MIN_FULLMOVE`
+ * (20): offering is a bot-INITIATED, declarative action (stronger than merely
+ * tolerating a user's offer or an ongoing loss), so it sits between the two —
+ * later than a resignation floor (a losing bot shouldn't need to wait as long
+ * to give up as an equal bot needs to wait to propose a truce), earlier than
+ * the accept fallback (a bot doesn't need to wait for `wouldBotAcceptDraw`'s
+ * full endgame-adjacent floor before it's willing to PROPOSE, only before it
+ * accepts one). [ASSUMED] hand-tuned; retune in place if offers feel
+ * premature or too late relative to how a real opponent would propose one.
+ */
+export const BOT_DRAW_OFFER_MIN_FULLMOVE = 30;
+
+/**
+ * D-07 (Phase 183): minimum number of the BOT's OWN moves that must pass
+ * between two successive outgoing offers. This is a SEPARATE counter from
+ * `DRAW_OFFER_COOLDOWN_MOVES` (which throttles the USER's offer BUTTON) —
+ * `movesSinceOwnOffer` is caller-owned (mirrors `wouldBotResign`'s
+ * caller-owned hysteresis counter; Plan 03 wires the ref), incremented each
+ * bot turn and reset to 0 whenever the bot itself offers. [ASSUMED]
+ * hand-tuned to prevent offer spam every few moves; retune in place.
+ */
+export const BOT_DRAW_OFFER_COOLDOWN_MOVES = 6;
+
+/**
+ * D-07/Pitfall 1 (Phase 183, RESEARCH.md A4): whether a styled bot would
+ * OFFER a draw RIGHT NOW — the outgoing counterpart to `wouldBotAcceptDraw`
+ * (which only answers "would the bot accept a USER-initiated offer"). A
+ * pure predicate over its four arguments — it holds NO state itself (mirrors
+ * `wouldBotResign`'s Pitfall-3 discipline): the own-offer cooldown counter
+ * (`movesSinceOwnOffer`) is the CALLER's job (Plan 03's `useBotGame.ts`
+ * owns the ref, incremented/reset alongside its other per-game latches),
+ * never read from or written to module-level state here. Calling this
+ * function twice with identical arguments always yields the identical
+ * result.
+ *
+ * `rootPracticalScore` is the SAME sentinel-bearing parameter as
+ * `wouldBotAcceptDraw`/`wouldBotResign`'s: `null` means the bot has not
+ * evaluated any position yet this game (Human rungs, and the opening book's
+ * zero-Stockfish-eval window). It is refused FIRST and UNCONDITIONALLY,
+ * before any other argument is even looked at — a bot must never propose a
+ * game-ending offer off a score it never computed.
+ *
+ * `contempt` (A4 resolution) is the SAME signed knob `wouldBotAcceptDraw`
+ * already reads off `BotStyleParams` — no new field is added. `drawValue =
+ * 0.5 + contempt`, exactly mirroring the accept gate's shift direction: a
+ * positive-contempt style (e.g. Grinder, "wants more than dead-equal") needs
+ * a score genuinely above 0.5 before it will even PROPOSE a draw, so it
+ * offers far more rarely; a negative-contempt style (e.g. Wall, "settles for
+ * less") will propose off a slightly-worse-than-equal score, so it offers
+ * more readily. The band WIDTH (`BOT_DRAW_OFFER_SCORE_BAND`) is unchanged by
+ * contempt — it shifts the center only.
+ *
+ * With a real score, ALL of the following must hold for an offer:
+ * 1. `Math.abs(rootPracticalScore - drawValue) <= BOT_DRAW_OFFER_SCORE_BAND`
+ *    — the position is near the (possibly shifted) draw target.
+ * 2. `chess.moveNumber() >= BOT_DRAW_OFFER_MIN_FULLMOVE` — the game is past
+ *    its own early-development floor (Pitfall 7).
+ * 3. `movesSinceOwnOffer >= BOT_DRAW_OFFER_COOLDOWN_MOVES` — enough of the
+ *    bot's own moves have passed since it last offered (no spam).
+ */
+export function wouldBotOfferDraw(
+  rootPracticalScore: number | null,
+  chess: Chess,
+  contempt: number,
+  movesSinceOwnOffer: number,
+): boolean {
+  // Not-yet-evaluated: refuse before anything else (matches wouldBotAcceptDraw/wouldBotResign's sentinel discipline).
+  if (rootPracticalScore === null) return false;
+
+  const drawValue = 0.5 + contempt; // Same shift direction as wouldBotAcceptDraw's D-09 target.
+  const isNearEqual = Math.abs(rootPracticalScore - drawValue) <= BOT_DRAW_OFFER_SCORE_BAND;
+
+  return (
+    isNearEqual &&
+    chess.moveNumber() >= BOT_DRAW_OFFER_MIN_FULLMOVE &&
+    movesSinceOwnOffer >= BOT_DRAW_OFFER_COOLDOWN_MOVES
+  );
+}
+
 export function wouldBotResign(
   rootPracticalScore: number | null,
   resignThreshold: number,

@@ -104,6 +104,7 @@ import {
   canOfferDraw as canOfferDrawGate,
   wouldBotAcceptDraw,
   wouldBotResign,
+  wouldBotOfferDraw,
   DRAW_OFFER_COOLDOWN_MOVES,
 } from '@/lib/botDrawGate';
 import { annotateClock, finalizeBotPgn, toBackendTcStr } from '@/lib/botGamePgn';
@@ -115,6 +116,7 @@ import { selectBookMove } from '@/lib/engine/openingBook';
 import { styleBookWeighting, type BotStyleParams } from '@/lib/engine/botStyle';
 import { styleLinesFor, type Style } from '@/lib/engine/styleOpeningLines';
 import { BOT_STYLE_BUNDLES } from '@/lib/engine/botStyleBundles';
+import type { PersonaId } from '@/lib/personas/personaRegistry';
 import { loadOpeningPrefixSet } from '@/lib/openings';
 import { createDeadlineSearch, BOT_MIN_SEARCH_NODES } from '@/lib/engine/deadlineSearch';
 import {
@@ -190,6 +192,23 @@ export interface BotGameSettings {
    * `runBotTurn` search call site.
    */
   style?: BotStyleParams;
+  /**
+   * Optional persona identity (Phase 183, PERS-02/PERS-04). Mirrors `style?`'s
+   * optional-everywhere contract exactly: `undefined` means a Custom-mode
+   * game (PERS-04, by construction — the Custom setup flow never sets this
+   * field) and runs today's exact code path everywhere it is consumed. Only
+   * the id STRING is ever carried here — the full `Persona` object (and by
+   * extension its resolved `style` bundle) is looked up ONCE, on demand, via
+   * `PERSONA_REGISTRY`/`personaForId` (`@/lib/personas/personaRegistry`)
+   * wherever a component needs it (e.g. the Plan 05 draw-offer banner, a
+   * future persona badge) — never re-serialized or spread into this settings
+   * object or the snapshot. `personaId` is an INDEPENDENT field, never
+   * derived from `settings.style` via a reverse lookup: 6 personas share one
+   * style bundle by reference (Pitfall 4, 183-01-SUMMARY.md), so a
+   * style-to-persona reverse lookup cannot disambiguate which rung produced
+   * it.
+   */
+  personaId?: PersonaId;
 }
 
 /** The full state + callback contract this hook exposes. Serializable aside
@@ -223,6 +242,19 @@ export interface UseBotGameState {
   drawOfferPending: boolean;
   /** Whether the "Offer draw" button is currently clickable (D-04 throttle). */
   canOfferDraw: boolean;
+  /**
+   * True while the BOT has a live OUTGOING draw offer (Phase 183, D-07) —
+   * the counterpart to `drawOfferPending`, which tracks the user-initiated
+   * direction. Computed at the same `pool.grade().then()` seam as
+   * `wouldBotResign`, gated by `settings.style`. Auto-clears on the user's
+   * next committed move (D-07: "expires on the user's next move").
+   */
+  botDrawOffer: boolean;
+  /** Accepts the bot's own outgoing draw offer — ends the game as an agreed draw. */
+  acceptBotDraw: () => void;
+  /** Dismisses the bot's own outgoing draw offer without ending the game;
+   * the D-07 own-offer cooldown already restarted when the offer was raised. */
+  declineBotDraw: () => void;
   /** Stable per-game identifier (Phase 170 D-11): minted once via
    * `crypto.randomUUID()` at game start, carried unchanged through a resume,
    * and re-minted ONLY by `newGame()`. This is what keeps the server's
@@ -294,6 +326,37 @@ function initFromResume(resume: BotGameSnapshot | undefined): { chess: Chess; hi
  * Promise.all alongside selectBotMove, never sequentially awaited). */
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * D-07 (Phase 183): pure decision + counter update for the bot's own
+ * outgoing draw offer, extracted out of the `pool.grade().then()` callback
+ * (already dense — CLAUDE.md nesting/logic-LOC limits) so this one seam is
+ * isolated and easy to audit. Mirrors `wouldBotResign`'s caller-owned
+ * counter discipline: this function holds no state itself — the caller
+ * (`runBotTurn`) applies the returned mutation to its own refs.
+ *
+ * When an offer is already live or the game just ended (e.g. this same
+ * grade turn resigned), the cooldown counter is simply advanced — never
+ * reset — and no new offer is raised, even if `wouldBotOfferDraw` would
+ * otherwise say yes. Raising a fresh offer always resets the counter to 0
+ * (D-07: "the cooldown restarts").
+ */
+function resolveBotDrawOfferUpdate(
+  score: number,
+  chess: Chess,
+  style: BotStyleParams,
+  movesSinceOwnOffer: number,
+  offerAlreadyLive: boolean,
+  gameAlreadyOver: boolean,
+): { raiseOffer: boolean; nextMovesSinceOwnOffer: number } {
+  if (offerAlreadyLive || gameAlreadyOver) {
+    return { raiseOffer: false, nextMovesSinceOwnOffer: movesSinceOwnOffer + 1 };
+  }
+  const offers = wouldBotOfferDraw(score, chess, style.contempt, movesSinceOwnOffer);
+  return offers
+    ? { raiseOffer: true, nextMovesSinceOwnOffer: 0 }
+    : { raiseOffer: false, nextMovesSinceOwnOffer: movesSinceOwnOffer + 1 };
 }
 
 /**
@@ -538,6 +601,21 @@ export function useBotGame(
    * `settings.style` guard (D-03). No resume-seed needed: a resumed game's
    * fresh hysteresis state naturally rebuilds itself as the bot plays on. */
   const consecutiveLowScoreTurnsRef = useRef(0);
+  /** D-07 (Phase 183): per-game counter for the bot's OWN outgoing
+   * draw-offer cooldown — mirrors `consecutiveLowScoreTurnsRef`'s
+   * caller-owned discipline exactly: mutated ONLY inside the same
+   * `pool.grade(...).then(...)` callback, incremented each bot turn, reset
+   * to 0 whenever the bot actually raises an offer. Reset to 0 in
+   * `newGame()`. Distinct from `movesSinceLastDeclineRef`, which counts the
+   * USER's own moves toward the D-04 offer-BUTTON throttle — different
+   * lifecycle, different direction (outgoing vs the user's button). */
+  const movesSinceOwnOfferRef = useRef(0);
+  /** D-07 (Phase 183): source-of-truth latch for the bot's live outgoing
+   * draw offer, mirroring `outcomeRef`'s raw-mutation-in-a-ref pattern — the
+   * `pool.grade().then()` continuation reads/writes this ref directly
+   * (never the `botDrawOffer` state) to stay stale-closure-safe, then
+   * mirrors the value into `botDrawOffer` state for rendering. */
+  const botDrawOfferRef = useRef(false);
 
   // ─── State ─────────────────────────────────────────────────────────────────
 
@@ -556,6 +634,11 @@ export function useBotGame(
   const [pgn, setPgn] = useState<string | null>(null);
   const [isBotThinking, setIsBotThinking] = useState(false);
   const [drawOfferPending, setDrawOfferPending] = useState(false);
+  /** D-07 (Phase 183): render-facing mirror of `botDrawOfferRef` — the bot's
+   * own live outgoing draw offer. No resume-seed: a resumed game restarts
+   * with no pending bot offer, same as a fresh game (the offer is a
+   * transient in-session flag, not persisted in the snapshot). */
+  const [botDrawOffer, setBotDrawOffer] = useState(false);
   /** D-04 throttle counter — initialized at the cooldown value so a draw can
    * be offered from the very start of a fresh game (no prior decline yet).
    * Seeded from `resume.movesSinceLastDecline` on a resume (Phase 170 D-09)
@@ -743,6 +826,18 @@ export function useBotGame(
     (move: Move, mover: MoverColor, debitMs: number): void => {
       const chess = chessRef.current;
       const incrementMs = settings.incrementSeconds * 1000;
+
+      // D-07 (Phase 183): a bot's outgoing draw offer expires the instant the
+      // USER commits their next move — checked here (not in `attemptMove`)
+      // because this is the single seam both a user move AND a bot move
+      // reach; the `mover === settings.userColor` gate means a bot's own
+      // move commit (which can itself raise a NEW offer moments later, via
+      // the async grade callback) never clears the flag it might be about
+      // to set.
+      if (mover === settings.userColor && botDrawOfferRef.current) {
+        botDrawOfferRef.current = false;
+        setBotDrawOffer(false);
+      }
 
       // CR-02 fix: a plain subtraction, no floor-at-zero. By construction
       // both callers (attemptMove, runBotTurn) already call
@@ -937,6 +1032,26 @@ export function useBotGame(
     setDrawOfferPending(true);
   }, [outcome, canOfferDrawNow]);
 
+  /** D-07 (Phase 183): accepts the bot's own outgoing draw offer. Guards on
+   * `outcomeRef` first, mirroring the user-offer resolution effect above —
+   * a stale accept firing after the game already ended some other way
+   * (e.g. the user flagged, or the offer itself is stale UI) is a no-op. */
+  const acceptBotDraw = useCallback((): void => {
+    if (outcomeRef.current) return;
+    botDrawOfferRef.current = false;
+    setBotDrawOffer(false);
+    finalizeGame({ reason: 'draw', drawReason: 'agreement' });
+  }, [finalizeGame]);
+
+  /** D-07 (Phase 183): dismisses the bot's own outgoing draw offer without
+   * ending the game. The own-offer cooldown already restarted (reset to 0)
+   * the moment the offer was raised, so declining only needs to clear the
+   * pending flag — no separate cooldown reset here. */
+  const declineBotDraw = useCallback((): void => {
+    botDrawOfferRef.current = false;
+    setBotDrawOffer(false);
+  }, []);
+
   // ─── New game ───────────────────────────────────────────────────────────────
 
   const newGame = useCallback((): void => {
@@ -951,6 +1066,12 @@ export function useBotGame(
     // D-08 (Phase 182, STYLE-02): a fresh game's resign hysteresis starts
     // clean — never leaks a prior game's consecutive-low-score streak.
     consecutiveLowScoreTurnsRef.current = 0;
+    // D-07 (Phase 183): a fresh game has no live bot offer and no leaked
+    // own-offer cooldown streak — mirrors consecutiveLowScoreTurnsRef's
+    // per-game reset immediately above.
+    botDrawOfferRef.current = false;
+    setBotDrawOffer(false);
+    movesSinceOwnOfferRef.current = 0;
     // SC4: a fresh game re-enters the book.
     hasLeftBookRef.current = false;
     hasFiredLowTimeRef.current = false;
@@ -1367,6 +1488,26 @@ export function useBotGame(
                   // winner logic, the confirmed-resign callback above).
                   finalizeGame({ reason: 'resignation', winner: settings.userColor });
                 }
+
+                // D-07 (Phase 183, PERS-02/CR-02 discipline): the bot's own
+                // OUTGOING draw offer, checked at this SAME grade seam —
+                // never a second pool.grade() call site. If `resigns` just
+                // ended the game above, `outcomeRef.current` is already set
+                // (finalizeGame is synchronous), so `resolveBotDrawOfferUpdate`
+                // naturally refuses to raise an offer on the same turn.
+                const offerUpdate = resolveBotDrawOfferUpdate(
+                  score,
+                  chessRef.current,
+                  settings.style,
+                  movesSinceOwnOfferRef.current,
+                  botDrawOfferRef.current,
+                  outcomeRef.current !== null,
+                );
+                movesSinceOwnOfferRef.current = offerUpdate.nextMovesSinceOwnOffer;
+                if (offerUpdate.raiseOffer) {
+                  botDrawOfferRef.current = true;
+                  setBotDrawOffer(true);
+                }
               }
             }
           })
@@ -1432,6 +1573,7 @@ export function useBotGame(
     pgn,
     drawOfferPending,
     canOfferDraw: canOfferDrawNow,
+    botDrawOffer,
     gameUuid,
     live,
     confirmLive,
@@ -1440,6 +1582,8 @@ export function useBotGame(
     returnToLive,
     resign,
     offerDraw,
+    acceptBotDraw,
+    declineBotDraw,
     newGame,
   };
 }

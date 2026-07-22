@@ -17,6 +17,10 @@
  * - "owner": snapshots are invisible across different owner keys.
  * - storage-throw: writeSnapshot never lets an exception escape.
  * - clearSnapshot removes only the targeted owner's key.
+ * - "personaId" (Phase 183, PERS-02/PERS-04): a settings.personaId round-trips
+ *   through writeSnapshot/readSnapshot, and a pre-183 personaId-less snapshot
+ *   still validates at CURRENT_SNAPSHOT_VERSION === 1 (no version bump —
+ *   Pitfall 5) with settings.personaId reading back as undefined.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -189,5 +193,50 @@ describe('write/clear behavior', () => {
 
     expect(readSnapshot('a@example.com')).toBeNull();
     expect(readSnapshot('b@example.com')).not.toBeNull();
+  });
+});
+
+describe('personaId (Phase 183, PERS-02/PERS-04)', () => {
+  it('a settings.personaId round-trips intact through writeSnapshot/readSnapshot', () => {
+    const settingsWithPersona: BotGameSettings = { ...SETTINGS, personaId: 'attacker-1200' };
+    const snapshot = buildSnapshot({ settings: settingsWithPersona });
+
+    writeSnapshot('a@example.com', snapshot);
+    const read = readSnapshot('a@example.com');
+
+    expect(read).not.toBeNull();
+    expect(read!.settings.personaId).toBe('attacker-1200');
+  });
+
+  it('a pre-183 snapshot object with no personaId key still validates at version 1 and reads back with settings.personaId === undefined', () => {
+    const key = `${BOT_GAME_SNAPSHOT_KEY_PREFIX}anon`;
+    // Simulates a snapshot written before this plan's field was added — the
+    // `settings` object literally has no `personaId` key at all, not just an
+    // explicit `undefined` value.
+    const preExistingSnapshot = buildSnapshot();
+    localStorage.setItem(key, JSON.stringify(preExistingSnapshot));
+
+    const read = readSnapshot(undefined);
+
+    expect(read).not.toBeNull();
+    expect(read!.version).toBe(CURRENT_SNAPSHOT_VERSION);
+    expect(CURRENT_SNAPSHOT_VERSION).toBe(1); // Pitfall 5: no version bump for this additive field.
+    expect(read!.settings.personaId).toBeUndefined();
+    // Not corruption — no removal, no Sentry capture (mirrors the "version" describe block's assertions).
+    expect(localStorage.getItem(key)).not.toBeNull();
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it('a Custom-mode settings object (no personaId, no style) still round-trips unchanged', () => {
+    const customSettings: BotGameSettings = { ...SETTINGS };
+    const snapshot = buildSnapshot({ settings: customSettings });
+
+    writeSnapshot('a@example.com', snapshot);
+    const read = readSnapshot('a@example.com');
+
+    expect(read).not.toBeNull();
+    expect(read!.settings).toEqual(customSettings);
+    expect(read!.settings.personaId).toBeUndefined();
+    expect(read!.settings.style).toBeUndefined();
   });
 });

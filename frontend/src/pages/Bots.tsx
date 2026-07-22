@@ -13,28 +13,44 @@
  * to a hardcoded stub).
  *
  * SETUP AS THE SINGLE ENTRY POINT (Phase 171, replacing the old D-14 stub
- * branch): with NO snapshot present, `BotsPage` renders `SetupScreen` and
- * `BotsGame` is not mounted at all until Start fires. With a snapshot
+ * branch): with NO snapshot present, `BotsPage` renders a setup view and
+ * `BotsGame` is not mounted at all until Start/Play fires. With a snapshot
  * present, `BotsGame` mounts immediately (so its engines warm — D-03
  * corrected) and `ResumeGate` overlays the board; nothing starts until the
  * user chooses Resume or Discard (D-04) — this precedence is UNCHANGED by
  * this plan. Discard and both result-surface "New game" actions all fall
- * through to the setup screen (D-11/D-13) rather than auto-starting a fresh
+ * through to the setup view (D-11/D-13) rather than auto-starting a fresh
  * game — there is no second start path.
+ *
+ * PERSONA GRID AS THE DEFAULT SETUP VIEW (Phase 183, PERS-01/PERS-02/
+ * PERS-04): the setup view above is now `PersonaGrid` by default, not
+ * `SetupScreen` directly. Selecting a persona opens `PersonaDetailSurface`;
+ * its Play button and `SetupScreen`'s Start button both call the SAME
+ * `handleStart` — the single existing start path (T-183-11). Selecting the
+ * Custom entry shows the unchanged `SetupScreen` instead of the grid. This
+ * plan touches only local UI state (`detailPersona`/`showCustomSetup`) —
+ * the snapshot/resume precedence and boot plumbing above are untouched.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import { ChessBoard } from '@/components/board/ChessBoard';
 import { BoardControls } from '@/components/board/BoardControls';
+import { Button } from '@/components/ui/button';
 import { ClockDisplay } from '@/components/bots/ClockDisplay';
 import { MoveListPanel } from '@/components/bots/MoveListPanel';
 import { GameControls } from '@/components/bots/GameControls';
+import { BotDrawOfferBanner } from '@/components/bots/BotDrawOfferBanner';
 import { GameResultDialog } from '@/components/bots/GameResultDialog';
 import { GameResultStrip } from '@/components/bots/GameResultStrip';
 import { ResumeGate } from '@/components/bots/ResumeGate';
 import { SetupScreen } from '@/components/bots/SetupScreen';
+import { PersonaGrid } from '@/components/bots/PersonaGrid';
+import { PersonaDetailSurface } from '@/components/bots/PersonaDetailSurface';
+import { personaFor, type Persona } from '@/lib/personas/personaRegistry';
+import { placeholderAvatarFor } from '@/lib/personas/personaAvatars';
 import { useBotGame, type BotGameSettings } from '@/hooks/useBotGame';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useDrainPendingStore, useStoreBotGame, toStoreRequest } from '@/hooks/useStoreBotGame';
@@ -168,6 +184,10 @@ interface BotsGameProps {
   /** D-11: "New game" from either result surface returns to the setup
    * screen (unmounting this component) — it does NOT call `game.newGame()`. */
   onNewGame: () => void;
+  /** D-08: "Rematch <Persona>" starts a fresh game with the SAME pinned
+   * settings, via `BotsPage`'s existing `handleStart` — the single existing
+   * start path (never a second one, never `game.newGame()`). */
+  onRematch: (settings: BotGameSettings) => void;
 }
 
 /**
@@ -186,6 +206,7 @@ function BotsGame({
   playerName,
   onDiscard,
   onNewGame,
+  onRematch,
 }: BotsGameProps): ReactElement {
   const navigate = useNavigate();
   const isDesktop = useIsDesktop();
@@ -309,6 +330,10 @@ function BotsGame({
     });
   }, [storedGameId, enqueueTier1, navigate, game.moveHistory, settings.userColor]);
 
+  // D-08: rematch — the SAME pinned settings, via the single existing start
+  // path (BotsPage's handleStart, passed down as onRematch).
+  const handleRematch = useCallback((): void => onRematch(settings), [onRematch, settings]);
+
   const botColor = settings.userColor === 'white' ? 'black' : 'white';
   // Board orientation defaults to the user's own side facing them, but is now a
   // manual toggle driven by the flip board control (a live-game convenience —
@@ -329,9 +354,15 @@ function BotsGame({
   );
   const handleResetView = useCallback((): void => viewPly(0), [viewPly]);
 
+  // Phase 183 (D-06): the ONE shared `personaFor` lookup — resolved once per
+  // render and reused by the clock strip, the draw-offer banner, and the
+  // result surfaces below, rather than each re-implementing the
+  // `settings.personaId -> PERSONA_REGISTRY` ternary inline.
+  const persona = personaFor(settings);
   const botClock = (
     <ClockDisplay
-      sideLabel="FlawChess Bot"
+      sideLabel={persona?.name ?? 'FlawChess Bot'}
+      avatarEmoji={persona ? placeholderAvatarFor(persona).emoji : undefined}
       remainingMs={botColor === 'white' ? game.whiteClockMs : game.blackClockMs}
       isActive={game.activeColor === botColor}
       isThinking={game.isBotThinking}
@@ -392,6 +423,8 @@ function BotsGame({
         storeSucceeded={store.isSuccess}
         isGuest={isGuest}
         analyzeBusy={analyzeBusy}
+        personaName={persona?.name ?? null}
+        onRematch={handleRematch}
       />
     ) : (
       <GameControls
@@ -422,6 +455,27 @@ function BotsGame({
         ? renderDesktopLayout(botClock, userClock, board, boardControls, moveList, controls)
         : renderMobileLayout(botClock, userClock, board, boardControls, controls)}
 
+      {/* D-07: non-blocking — rendered as a sibling near the board/clocks,
+          never a Dialog. Play continues underneath it; the hook auto-expires
+          the offer on the user's next committed move. Capped to the same
+          width as the board+side-column group on desktop / the board alone
+          on mobile, so it never sprawls to the page's max-w-5xl. */}
+      <div
+        className="mx-auto w-full"
+        style={{
+          maxWidth: isDesktop
+            ? BOT_BOARD_MAX_WIDTH_PX + DESKTOP_SIDE_COLUMN_PX
+            : BOT_BOARD_MAX_WIDTH_PX,
+        }}
+      >
+        <BotDrawOfferBanner
+          offerLive={game.botDrawOffer}
+          personaName={persona?.name ?? null}
+          onAccept={game.acceptBotDraw}
+          onDecline={game.declineBotDraw}
+        />
+      </div>
+
       {resume !== null && !game.live && (
         <ResumeGate
           snapshot={resume}
@@ -442,6 +496,8 @@ function BotsGame({
           storeSucceeded={store.isSuccess}
           isGuest={isGuest}
           analyzeBusy={analyzeBusy}
+          personaName={persona?.name ?? null}
+          onRematch={handleRematch}
         />
       )}
     </div>
@@ -470,11 +526,21 @@ export default function BotsPage(): ReactElement {
   const [boot, setBoot] = useState<{ resume: BotGameSnapshot | null; nonce: number } | null>(
     null,
   );
-  // Settings chosen at setup (Start) or prefilled after a "New game" reset.
-  // `null` means "no started game yet — show the setup screen" whenever
-  // `boot.resume` is also null (D-09/D-13: the setup screen is the single
+  // Settings chosen at setup (Start/Play) or prefilled after a "New game"
+  // reset. `null` means "no started game yet — show the setup view" whenever
+  // `boot.resume` is also null (D-09/D-13: the setup view is the single
   // entry point for every new game; a snapshot still wins over it, D-04).
   const [startedSettings, setStartedSettings] = useState<BotGameSettings | null>(null);
+
+  // Phase 183 (PERS-01/PERS-04): local UI state for the persona-first setup
+  // view. `detailPersona` drives `PersonaDetailSurface`'s controlled `open`
+  // (open whenever non-null); `showCustomSetup` swaps the default
+  // `PersonaGrid` for the unchanged `SetupScreen`. Neither participates in
+  // the snapshot/boot plumbing above — both are additive, reset back to the
+  // grid default whenever a fresh setup view is entered (Start/new
+  // game/discard, below).
+  const [detailPersona, setDetailPersona] = useState<Persona | null>(null);
+  const [showCustomSetup, setShowCustomSetup] = useState(false);
 
   // Boot effect: read the snapshot only once the profile has settled
   // (`!isLoading`). Reading it earlier would use the `anon` key (T-170-04's
@@ -507,28 +573,37 @@ export default function BotsPage(): ReactElement {
     void drain();
   }, [isLoading, isError, drain]);
 
-  // Start (from the setup screen): remembers the chosen settings and bumps
-  // `nonce` for a fresh `BotsGame` mount — `useBotGame` initializes with
-  // exactly these settings, never with placeholders (T-171-06-02).
+  // Start (from SetupScreen's Start or PersonaDetailSurface's Play — the
+  // SINGLE existing start path, T-183-11): remembers the chosen settings and
+  // bumps `nonce` for a fresh `BotsGame` mount — `useBotGame` initializes
+  // with exactly these settings, never with placeholders (T-171-06-02).
   const handleStart = useCallback((settings: BotGameSettings): void => {
     setStartedSettings(settings);
+    // Reset the setup view back to its grid default for the NEXT time it is
+    // shown (a later "new game"/discard), not the one just used to start.
+    setShowCustomSetup(false);
+    setDetailPersona(null);
     setBoot((prev) => ({ resume: null, nonce: (prev?.nonce ?? 0) + 1 }));
   }, []);
 
   // D-11: "New game" from either result surface unmounts `BotsGame` and
-  // returns to the setup screen (prefilled from the D-10 key that Start
+  // returns to the setup view (prefilled from the D-10 key that Start
   // already wrote) — it does NOT restart in place with the same settings.
   const handleNewGame = useCallback((): void => {
     setStartedSettings(null);
+    setShowCustomSetup(false);
+    setDetailPersona(null);
     setBoot((prev) => ({ resume: null, nonce: (prev?.nonce ?? 0) + 1 }));
   }, []);
 
   // D-05: discard clears ONLY the in-progress snapshot (never the
   // pending-store queue — D-12's separate key) and falls through to the
-  // setup screen (D-13) rather than auto-starting a fresh game.
+  // setup view (D-13) rather than auto-starting a fresh game.
   const handleDiscard = useCallback((): void => {
     clearSnapshot(ownerKey);
     setStartedSettings(null);
+    setShowCustomSetup(false);
+    setDetailPersona(null);
     setBoot((prev) => ({ resume: null, nonce: (prev?.nonce ?? 0) + 1 }));
   }, [ownerKey]);
 
@@ -564,17 +639,55 @@ export default function BotsPage(): ReactElement {
         playerName={playerName}
         onDiscard={handleDiscard}
         onNewGame={handleNewGame}
+        onRematch={handleStart}
       />
     );
   }
 
   if (startedSettings === null) {
+    // Custom entry (PERS-04): the unchanged SetupScreen, with a way back to
+    // the grid. SetupScreen's own root/props are untouched — the back
+    // affordance renders as a sibling above it, not a wrapper around it.
+    if (showCustomSetup) {
+      return (
+        <>
+          <div className="mx-auto flex max-w-md items-center p-4 pb-0">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Back to bot roster"
+              data-testid="btn-back-to-persona-grid"
+              onClick={() => setShowCustomSetup(false)}
+            >
+              <ArrowLeft className="size-5" aria-hidden="true" />
+            </Button>
+          </div>
+          <SetupScreen
+            ownerKey={ownerKey}
+            normalizedRating={profile?.lichess_blitz_equivalent_rating ?? null}
+            onStart={handleStart}
+          />
+        </>
+      );
+    }
+
+    // Default setup view (PERS-01): browse the 24-persona roster. Selecting
+    // a persona opens the detail surface; selecting Custom routes to
+    // SetupScreen above. Both the detail surface's Play and SetupScreen's
+    // Start call the same `handleStart` — no parallel start path.
     return (
-      <SetupScreen
-        ownerKey={ownerKey}
-        normalizedRating={profile?.lichess_blitz_equivalent_rating ?? null}
-        onStart={handleStart}
-      />
+      <>
+        <PersonaGrid onSelectPersona={setDetailPersona} onSelectCustom={() => setShowCustomSetup(true)} />
+        <PersonaDetailSurface
+          persona={detailPersona}
+          ownerKey={ownerKey}
+          open={detailPersona !== null}
+          onOpenChange={(open) => {
+            if (!open) setDetailPersona(null);
+          }}
+          onStart={handleStart}
+        />
+      </>
     );
   }
 
@@ -588,6 +701,7 @@ export default function BotsPage(): ReactElement {
       playerName={playerName}
       onDiscard={handleDiscard}
       onNewGame={handleNewGame}
+      onRematch={handleStart}
     />
   );
 }

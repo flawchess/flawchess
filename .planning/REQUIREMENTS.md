@@ -8,10 +8,10 @@
 
 ### Persona Roster (PERS)
 
-- [ ] **PERS-01**: User can browse a roster of 24 named bot personas (4 styles × 6 rungs, 800–1800) on the Bots page, each showing name, avatar, bio, style, and ELO label
-- [ ] **PERS-02**: User can start a game against any persona in one action; the persona pins the complete opponent (preset, ELO, style params, opening book, resign/draw-offer policy) — no persona × strength picker
-- [ ] **PERS-03**: Persona definitions live in a single typed registry mapping each slot to its full config, with each rung's preset dictated by the measured ranges (800–1400 Human, 1600 Light/Deep, 1800 Deep)
-- [ ] **PERS-04**: Custom mode keeps the raw (ELO, preset) knobs unchanged for power users
+- [x] **PERS-01**: User can browse a roster of 24 named bot personas (4 styles × 6 rungs, 800–1800) on the Bots page, each showing name, avatar, bio, style, and ELO label
+- [x] **PERS-02**: User can start a game against any persona in one action; the persona pins the complete opponent (preset, ELO, style params, opening book, resign/draw-offer policy) — no persona × strength picker
+- [x] **PERS-03**: Persona definitions live in a single typed registry mapping each slot to its full config, with each rung's preset dictated by the measured ranges (800–1400 Human, 1600 Light/Deep, 1800 Deep)
+- [x] **PERS-04**: Custom mode keeps the raw (ELO, preset) knobs unchanged for power users
 
 ### Style Levers (STYLE)
 
@@ -29,7 +29,7 @@
 ### Avatars & Identity (AVAT)
 
 - [ ] **AVAT-01**: 24 AI-generated avatar portraits in one consistent style, manually curated, committed as static assets
-- [ ] **AVAT-02**: Each persona has a name and short bio conveying its style identity and per-tier story (e.g. Trickster: cheap trap lines at 800–1200, swindle mode + high-variance preference at 1600+)
+- [x] **AVAT-02**: Each persona has a name and short bio conveying its style identity and per-tier story (e.g. Trickster: cheap trap lines at 800–1200, swindle mode + high-variance preference at 1600+)
 
 ## Future Requirements
 
@@ -53,10 +53,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PERS-01 | Phase 183 | Pending |
-| PERS-02 | Phase 183 | Pending |
-| PERS-03 | Phase 183 | Pending |
-| PERS-04 | Phase 183 | Pending |
+| PERS-01 | Phase 183 | Complete |
+| PERS-02 | Phase 183 | Complete |
+| PERS-03 | Phase 183 | Complete |
+| PERS-04 | Phase 183 | Complete |
 | STYLE-01 | Phase 182 | Complete |
 | STYLE-02 | Phase 182 | Complete |
 | STYLE-03 | Phase 182 | Complete |
@@ -65,7 +65,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CAL-04 | Phase 184 | Pending |
 | CAL-05 | Phase 184 | Pending |
 | AVAT-01 | Phase 183 | Pending |
-| AVAT-02 | Phase 183 | Pending |
+| AVAT-02 | Phase 183 | Complete |
 
 **Coverage:**
 

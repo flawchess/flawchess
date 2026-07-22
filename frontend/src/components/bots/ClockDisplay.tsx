@@ -6,8 +6,13 @@ import { CLOCK_LOW_TIME_URGENT } from '@/lib/theme';
 interface ClockDisplayProps {
   /** Side caption — the resolved player display name (lichess_username ->
    * chess_com_username -> "You", see lib/playerName.ts) for the human side,
-   * or "FlawChess Bot" for the bot side, per the UI-SPEC Copywriting Contract. */
+   * or the persona's name / "FlawChess Bot" for the bot side (Phase 183,
+   * D-06), per the UI-SPEC Copywriting Contract. */
   sideLabel: string;
+  /** Persona placeholder-avatar glyph (Phase 183, D-06) — rendered beside
+   * `sideLabel` for a persona game; omitted (no avatar rendered) for a
+   * Custom game or the human side. */
+  avatarEmoji?: string;
   /** Remaining time in milliseconds. */
   remainingMs: number;
   /** The side to move — gets a subtle --secondary highlight (D-06/UI-SPEC). */
@@ -29,6 +34,7 @@ interface ClockDisplayProps {
  */
 export function ClockDisplay({
   sideLabel,
+  avatarEmoji,
   remainingMs,
   isActive,
   isThinking,
@@ -46,6 +52,11 @@ export function ClockDisplay({
       )}
     >
       <span className="flex items-center gap-2 text-sm font-medium">
+        {avatarEmoji && (
+          <span aria-hidden="true" className="text-lg leading-none">
+            {avatarEmoji}
+          </span>
+        )}
         {sideLabel}
         {isThinking && (
           <>

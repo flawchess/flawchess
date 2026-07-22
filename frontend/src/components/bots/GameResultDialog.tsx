@@ -26,8 +26,20 @@ interface GameResultDialogProps {
   userColor: MoverColor;
   open: boolean;
   onDismiss: () => void;
+  /** D-08: relabeled "New opponent" (verbatim `onNewGame` — the existing
+   * single path back to the setup view, now the persona grid by default). */
   onNewGame: () => void;
   onAnalyze: () => void;
+  /** Phase 183 (D-06/D-08): the persona's name for a persona game, or `null`
+   * for a Custom game — resolved once by the caller via the shared
+   * `personaFor` lookup. Drives both the persona-named title (via
+   * `resultCopy`) and whether the "Rematch <Persona>" action renders. */
+  personaName: string | null;
+  /** D-08: starts a new game with the SAME pinned settings (same
+   * personaId/botElo/blend/color/TC) via the caller's `handleStart` — the
+   * single existing start path, never a second one. Only rendered/callable
+   * for a persona game (`personaName !== null`). */
+  onRematch: () => void;
   /** D-21: true only once the finish-time store mutation has CONFIRMED
    * (`useStoreBotGame().isSuccess`) — this row never renders on
    * idle/pending/error (no partial-store hedge copy, per UI-SPEC). */
@@ -69,8 +81,10 @@ export function GameResultDialog({
   storeSucceeded,
   isGuest,
   analyzeBusy,
+  personaName,
+  onRematch,
 }: GameResultDialogProps): ReactElement {
-  const title = resultCopy(outcome, userColor);
+  const title = resultCopy(outcome, userColor, personaName);
   const titleColor = titleColorFor(outcome, userColor);
 
   return (
@@ -125,9 +139,24 @@ export function GameResultDialog({
             {analyzeBusy && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
             Analyze this game
           </Button>
-          <Button variant="default" onClick={onNewGame} data-testid="btn-new-game">
-            New game
+          {/* D-08: "New opponent" reuses the existing onNewGame path (the
+              persona grid is now the default setup view) — no new route.
+              Primary/secondary per CLAUDE.md: with Rematch present (a
+              persona game), Rematch is the single high-emphasis CTA and New
+              opponent steps down to brand-outline; for a Custom game (no
+              Rematch), New opponent stays the sole primary action. */}
+          <Button
+            variant={personaName ? 'brand-outline' : 'default'}
+            onClick={onNewGame}
+            data-testid="btn-new-game"
+          >
+            New opponent
           </Button>
+          {personaName && (
+            <Button variant="default" onClick={onRematch} data-testid="btn-rematch">
+              {`Rematch ${personaName}`}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
