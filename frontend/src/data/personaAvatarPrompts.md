@@ -9,8 +9,9 @@ prompt.
 Real workflow: `scripts/gen_persona_avatars.py` parses this doc (master style
 prompt + per-style demeanor notes + the 24 per-persona descriptor bullets
 below), generates a webp for every persona that has no existing
-`frontend/src/assets/personas/{persona-id}.webp`, downscales to 512×512, and
-writes it there. `resolveAvatarSrc()` (`personaAvatars.ts`) globs
+`frontend/src/assets/personas/{persona-id}.webp`, chroma-keys the flat
+background to transparency, downscales to 512×512, and writes it there (the
+UI paints each persona's style tint behind the transparent avatar). `resolveAvatarSrc()` (`personaAvatars.ts`) globs
 `assets/personas/*.webp` at build time, so a curated webp is picked up
 automatically — no code change needed. Curation loop: tune a bad avatar by
 editing its descriptor line below, delete the stale webp, rerun the script
@@ -25,8 +26,12 @@ detective-horse logo — exactly in rendering style:
 > the FlawChess logo: clean bold black outlines, warm flat cel-shading with
 > soft gradient highlights, big expressive eyes, a slightly oversized head on
 > a compact body, square face-and-shoulders composition (crop at the chest,
-> not a full body), centered on a plain neutral or softly-lit background,
-> approximately 256×256, no text or watermark. The animal's expression and
+> not a full body). The whole head, ears, and any accessories sit fully
+> inside the frame with a comfortable margin of empty background on every
+> side; only the chest may touch the bottom edge, nothing else is cut off.
+> The background is a single flat solid magenta (#FF00FF) with no gradients,
+> shadows, or props (it gets chroma-keyed to transparency by the generation
+> script). No text or watermark. The animal's expression and
 > any accessories (glasses, hats, ties, necklaces, bandanas) should signal
 > its chess playstyle personality — [insert per-persona demeanor/accessory
 > notes below]. Warm, approachable, a little playful; never sinister or

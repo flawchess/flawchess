@@ -4,7 +4,9 @@ Reads `frontend/src/data/personaAvatarPrompts.md` — the single generation
 source (D-15) — and, for every persona that has no existing
 `frontend/src/assets/personas/{persona-id}.webp`, generates a portrait with
 Google's Gemini image model (via pydantic-ai's `NativeTool(ImageGenerationTool)`
-capability), downscales it to 512x512, and writes it as a webp. Deleting a
+capability), chroma-keys the flat background to transparency (the Gemini API
+cannot produce alpha itself), downscales it to 512x512, and writes it as a
+webp. Deleting a
 curated webp and rerunning is the curation loop: this script only targets
 personas that are still missing a file.
 
@@ -49,7 +51,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
-from PIL import Image
+from PIL import Image, ImageDraw
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _PROMPTS_DOC = _REPO_ROOT / "frontend" / "src" / "data" / "personaAvatarPrompts.md"
@@ -68,6 +70,16 @@ _DEMEANOR_PLACEHOLDER = "[insert per-persona demeanor/accessory\nnotes below]."
 # Final avatar dimensions (square) — the model returns a 1:1 image at a larger
 # size; this is a straight downscale, not a crop.
 AVATAR_SIZE_PX = 512
+
+# Chroma-key tolerance (sum of per-channel RGB differences) for the flood fill
+# that turns the border-connected background transparent. The Gemini image API
+# has no alpha/transparency support at all, so the master prompt asks for a
+# flat solid magenta background and this post-step keys it out. The reference
+# color is read from the image's own top-left corner (not hardcoded magenta),
+# so the key also works on images generated with the older white-background
+# prompt. Tolerance must absorb mild background banding without eating the
+# character's bold dark outline (magenta -> black distance is ~510).
+BG_KEY_TOLERANCE = 120
 
 # The image-generation model. Gemini's native image-generation tool.
 IMAGE_GEN_MODEL = "google:gemini-3.1-flash-image"
@@ -213,11 +225,47 @@ def pending_personas(prompts: list[PersonaPrompt]) -> list[PersonaPrompt]:
     return [p for p in prompts if not (_ASSETS_DIR / f"{p.persona_id}.webp").exists()]
 
 
+def _color_distance(a: tuple[int, ...], b: tuple[int, ...]) -> int:
+    """Sum of absolute per-channel RGB differences (alpha ignored)."""
+    return sum(abs(x - y) for x, y in zip(a[:3], b[:3]))
+
+
+def _remove_background(img: Image.Image) -> Image.Image:
+    """Flood-fills the border-connected background region to transparent.
+
+    Seeds from the 4 corners plus the top-center pixel; a seed is only used
+    when its color matches the top-left corner (the one spot the master
+    prompt guarantees is background — the chest may reach the bottom edge,
+    so a bottom seed could sit on the character and must be skipped).
+    """
+    rgba = img.convert("RGBA")
+    width, height = rgba.size
+    seeds = [
+        (0, 0),
+        (width - 1, 0),
+        (0, height - 1),
+        (width - 1, height - 1),
+        (width // 2, 0),
+    ]
+    reference = rgba.getpixel((0, 0))
+    assert isinstance(reference, tuple)
+    for seed in seeds:
+        pixel = rgba.getpixel(seed)
+        assert isinstance(pixel, tuple)
+        if pixel[3] == 0 or _color_distance(pixel, reference) > BG_KEY_TOLERANCE:
+            continue
+        ImageDraw.floodfill(rgba, seed, (255, 255, 255, 0), thresh=BG_KEY_TOLERANCE)
+    return rgba
+
+
 def _downscale_and_save_webp(image_bytes: bytes, persona_id: str) -> Path:
-    """Opens `image_bytes`, resizes to `AVATAR_SIZE_PX` square, saves as webp."""
+    """Keys out the background, resizes to `AVATAR_SIZE_PX` square, saves as webp."""
     _ASSETS_DIR.mkdir(parents=True, exist_ok=True)
     with Image.open(io.BytesIO(image_bytes)) as img:
-        resized = img.convert("RGB").resize((AVATAR_SIZE_PX, AVATAR_SIZE_PX))
+        keyed = _remove_background(img)
+        # LANCZOS on the keyed RGBA blends the hard flood-fill boundary into
+        # smooth partial alpha at the outline — cheap edge anti-aliasing.
+        resized = keyed.resize((AVATAR_SIZE_PX, AVATAR_SIZE_PX), Image.Resampling.LANCZOS)
         output_path = _ASSETS_DIR / f"{persona_id}.webp"
         resized.save(output_path, format="WEBP")
     return output_path
